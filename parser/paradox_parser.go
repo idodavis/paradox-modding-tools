@@ -20,7 +20,8 @@ var (
 
 		{Name: "LBRACE", Pattern: `{`},
 		{Name: "RBRACE", Pattern: `}`},
-		{Name: "ColorType", Pattern: `(hsv|rgb)`},
+		{Name: "COMMA", Pattern: `,`},
+		{Name: "ColorModel", Pattern: `(hsv360|hsv|rgb)`},
 
 		{Name: "Boolean", Pattern: `\b(yes|no)\b`},
 
@@ -28,9 +29,12 @@ var (
 		{Name: "GTE", Pattern: `>=`},
 		{Name: "NEQ", Pattern: `!=`},
 		{Name: "QEQ", Pattern: `\?=`},
+		{Name: "EQEQ", Pattern: `==`},
 
-		{Name: "Number", Pattern: `[-+]?(\d*\.)?\d+`},
-		{Name: "Ident", Pattern: `@?[\p{L}\p{N}_.$:'-]+`},
+		{Name: "VariableCallBracketed", Pattern: `@\[[^\]]+\]`},
+		{Name: "VariableCallSimple", Pattern: `@[\p{L}\p{N}_.$:'&|%/\\-]+`},
+		{Name: "Number", Pattern: `[-+]?(\d*\.)?\d+\b`},
+		{Name: "Ident", Pattern: `[\p{L}\p{N}_.$:'&|%/\\-]+`},
 		{Name: "String", Pattern: `"(\\"|[^"])*"`},
 
 		{Name: "EQ", Pattern: `=`},
@@ -57,22 +61,24 @@ type Node struct {
 type Color struct {
 	Node
 
-	Type *string  `parser:"@ColorType?"`
-	R    float64  `parser:"WS? '{' WS? @Number"`
-	G    float64  `parser:"WS @Number"`
-	B    float64  `parser:"WS @Number"`
-	A    *float64 `parser:"( WS @Number)? WS? '}'"`
+	Model       *string  `parser:"@ColorModel?"`
+	RHue        float64  `parser:"WS? '{' WS? @Number"`
+	GSaturation float64  `parser:"WS @Number"`
+	BValue      float64  `parser:"WS @Number"`
+	A           *float64 `parser:"( WS @Number)? WS? '}'"`
 }
 
 type Literal struct {
 	Node
 
-	Identifier *string    `parser:"@Ident"`
-	String     *string    `parser:"| @String"`
-	Number     *float64   `parser:"| @Number"`
-	Boolean    *string    `parser:"| @Boolean"`
-	Color      *Color     `parser:"| @@"`
-	Array      []*Literal `parser:"| '{' WS? (@@ WS)+ WS? '}'"`
+	Identifier   *string    `parser:"@Ident"`
+	String       *string    `parser:"| @String"`
+	Number       *float64   `parser:"| @Number"`
+	Boolean      *string    `parser:"| @Boolean"`
+	VariableCall *string    `parser:"| (@VariableCallSimple | @VariableCallBracketed)"`
+	Color        *Color     `parser:"| @@"`
+	Array        []*Literal `parser:"| '{' WS? ((@@ WS) | (@@ WS* ',' WS*))+ WS? '}'"`
+	Operator     *string    `parser:"| @(LTE|GTE|NEQ|QEQ|EQEQ|LT|GT)"`
 }
 
 type ObjectEntry struct {
@@ -96,11 +102,10 @@ type Object struct {
 type Expression struct {
 	Node
 
-	Key      string   `parser:"((@Ident WS* (@Ident)?) | @String | @Number)"`
-	Operator *string  `parser:"WS* @(LTE|GTE|NEQ|QEQ|EQ|LT|GT) WS*"`
+	Key      string   `parser:"((@Ident WS* (@Ident)?) | @String | @Number | @Boolean | @VariableCallSimple)"`
+	Operator *string  `parser:"WS* @(LTE|GTE|NEQ|QEQ|EQEQ|EQ|LT|GT) WS*"`
 	Literal  *Literal `parser:"( @@"`
 	Object   *Object  `parser:"| @@ )"`
-	// Qualifier *Expression `parser:"| @@ )"`
 }
 
 type Namespace struct {
@@ -150,18 +155,20 @@ func (l *Literal) ToPrettyString(indent string) string {
 		return fmt.Sprintf("%q", *l.String)
 	case l.Number != nil:
 		return fmt.Sprintf("%v", *l.Number)
+	case l.VariableCall != nil:
+		return *l.VariableCall
 	case l.Color != nil:
-		if l.Color.Type == nil {
+		if l.Color.Model == nil {
 			if l.Color.A == nil {
-				return fmt.Sprintf("{ %v %v %v }", l.Color.R, l.Color.G, l.Color.B)
+				return fmt.Sprintf("{ %v %v %v }", l.Color.RHue, l.Color.GSaturation, l.Color.BValue)
 			} else {
-				return fmt.Sprintf("{ %v %v %v %v }", l.Color.R, l.Color.G, l.Color.B, *l.Color.A)
+				return fmt.Sprintf("{ %v %v %v %v }", l.Color.RHue, l.Color.GSaturation, l.Color.BValue, *l.Color.A)
 			}
 		} else {
 			if l.Color.A == nil {
-				return fmt.Sprintf("%s{ %v %v %v }", *l.Color.Type, l.Color.R, l.Color.G, l.Color.B)
+				return fmt.Sprintf("%s{ %v %v %v }", *l.Color.Model, l.Color.RHue, l.Color.GSaturation, l.Color.BValue)
 			} else {
-				return fmt.Sprintf("%s{ %v %v %v %v }", *l.Color.Type, l.Color.R, l.Color.G, l.Color.B, *l.Color.A)
+				return fmt.Sprintf("%s{ %v %v %v %v }", *l.Color.Model, l.Color.RHue, l.Color.GSaturation, l.Color.BValue, *l.Color.A)
 			}
 		}
 	case l.Array != nil:
@@ -170,6 +177,8 @@ func (l *Literal) ToPrettyString(indent string) string {
 			parts[i] = e.ToPrettyString(indent)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
+	case l.Operator != nil:
+		return *l.Operator
 	}
 	return "null"
 }

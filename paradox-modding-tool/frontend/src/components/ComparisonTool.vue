@@ -1,84 +1,56 @@
 <template>
-  <div class="flex-1 flex flex-col min-h-0 min-w-0 p-4 sm:p-6 overflow-auto bg-dark-input">
-    <div
-      class="w-full max-w-full bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-material border border-dark-border/50 mb-4 sm:mb-6 flex-shrink-0">
+  <div class="flex-1 flex flex-col min-h-0 min-w-0 p-4 sm:p-6 overflow-auto">
+    <div class="w-full max-w-full rounded-xl p-4 sm:p-6 border mb-4 sm:mb-6 shrink-0">
       <h2 class="text-lg sm:text-xl font-semibold mb-4 sm:mb-5">Comparison Tool</h2>
 
       <!-- FileSet A -->
       <div class="mb-4">
         <label class="block mb-2 font-medium text-sm sm:text-base">Compare FileSet/Directory A:</label>
-        <textarea :value="setA.join('\n')" @input="setA = $event.target.value.split('\n').filter(p => p.trim())"
-          rows="3" placeholder="Select files or directories..."
-          class="w-full min-w-0 px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200">
-        </textarea>
+        <Textarea :modelValue="setA.join('\n')" @update:modelValue="setA = normalizeLines($event)" rows="3"
+          placeholder="Select files or directories..." class="w-full min-w-0 px-3 py-2" />
         <div class="flex flex-wrap gap-2 mt-2">
-          <button @click="selectFiles('Select Multiple Files To Compare (A)', '*.txt', 'setA')" class="btn-primary">
-            Select File(s)
-          </button>
-          <button @click="selectFolder('Select Folder To Compare (A)', 'setA')" class="btn-primary">
-            Select Folder
-          </button>
-          <button @click="clearSet('setA')" class="btn-secondary">Clear</button>
+          <Button label="Select File(s)"
+            @click="selectFiles('Select Multiple Files To Compare (A)', '*.txt', 'setA')" />
+          <Button label="Select Folder" @click="selectFolder('Select Folder To Compare (A)', 'setA')" />
+          <Button label="Clear" @click="clearSet('setA')" />
         </div>
       </div>
 
       <!-- FileSet B -->
       <div class="mb-4">
         <label class="block mb-2 font-medium text-sm sm:text-base">Compare FileSet/Directory B:</label>
-        <textarea :value="setB.join('\n')" @input="setB = $event.target.value.split('\n').filter(p => p.trim())"
-          rows="3" placeholder="Select files or directories..."
-          class="w-full min-w-0 px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200">
-        </textarea>
+        <Textarea :modelValue="setB.join('\n')" @update:modelValue="setB = normalizeLines($event)" rows="3"
+          placeholder="Select files or directories..." class="w-full min-w-0 px-3 py-2" />
         <div class="flex flex-wrap gap-2 mt-2">
-          <button @click="selectFiles('Select Multiple Files To Compare (B)', '*.txt', 'setB')" class="btn-primary">
-            Select File(s)
-          </button>
-          <button @click="selectFolder('Select Folder To Compare (B)', 'setB')" class="btn-primary">
-            Select Folder
-          </button>
-          <button @click="clearSet('setB')" class="btn-secondary">Clear</button>
+          <Button label="Select File(s)"
+            @click="selectFiles('Select Multiple Files To Compare (B)', '*.txt', 'setB')" />
+          <Button label="Select Folder" @click="selectFolder('Select Folder To Compare (B)', 'setB')" />
+          <Button label="Clear" @click="clearSet('setB')" />
         </div>
       </div>
 
       <!-- Compare Button -->
-      <button @click="updateMatchingFiles" :disabled="loadingFiles || setA.length === 0 || setB.length === 0"
-        class="w-full mt-4 btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-material">
-        {{ loadingFiles ? 'Finding matching files for comparison...' : 'Compare' }}
-      </button>
+      <Button @click="updateMatchingFiles" :disabled="loadingFiles || setA.length === 0 || setB.length === 0"
+        class="w-full mt-4" :label="loadingFiles ? 'Finding matching files for comparison...' : 'Compare'" />
     </div>
 
-    <!-- File List (table-like, compact rows, sticky header) -->
-    <div v-if="matchingFiles.length > 0"
-      class="flex-1 min-w-0 w-full max-w-full bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-material border border-dark-border/50 overflow-hidden flex flex-col"
-      style="min-height: 200px;">
-      <h3 class="text-base sm:text-lg font-semibold mb-3 flex-shrink-0">Matching Files ({{ matchingFiles.length }})</h3>
-      <div class="flex-1 min-h-0 overflow-auto border border-dark-border/50 rounded-lg">
-        <table class="w-full border-collapse text-sm font-mono">
-          <thead class="sticky top-0 z-10 bg-dark-panel/95 border-b border-dark-border">
-            <tr>
-              <th class="text-left py-2 px-3 text-slate-400 font-medium">Relative path</th>
-              <th class="text-left py-2 px-3 text-slate-400 font-medium w-24">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(file, index) in matchingFiles" :key="index"
-              :class="index % 2 === 0 ? 'bg-dark-input/40' : 'bg-dark-input/20'"
-              class="border-b border-dark-border/30 hover:bg-dark-input transition-colors">
-              <td class="py-1.5 px-3 text-gray-200 truncate max-w-0" :title="file.relativePath">{{ file.relativePath }}
-              </td>
-              <td class="py-1.5 px-3">
-                <button type="button" @click="viewFileDiff(file)" class="btn-accent">
-                  View diff
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <!-- File List (PrimeVue DataTable) -->
+    <DataTable v-if="matchingFiles.length > 0" :value="matchingFiles" stripedRows>
+      <template #header>
+        <span class="text-xl font-bold">Matching Files</span>
+      </template>
+      <Column field="relativePath" header="Relative path">
+      </Column>
+      <Column header="Show Diff">
+        <template #body="{ data }">
+          <Button label="View diff" @click="viewFileDiff(data)" />
+        </template>
+      </Column>
+    </DataTable>
+
     <div v-else-if="!loadingFiles"
-      class="w-full max-w-full bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-material border border-dark-border/50 flex-shrink-0">
-      <p class="text-gray-400 text-center text-sm sm:text-base">
+      class="w-full max-w-full rounded-xl p-4 sm:p-6 border border-dark-border/50 bg-dark-panel/60 shrink-0">
+      <p class="text-gray-300 text-center text-sm sm:text-base">
         Please select both sets of files/directories and click "Compare"
       </p>
     </div>
@@ -92,11 +64,19 @@
 import { GetDiff } from '../../bindings/paradox-modding-tool/diffservice.js'
 import { SelectDirectory, SelectMultipleFiles, CollectFilesFromPaths, FindMatchingFiles } from '../../bindings/paradox-modding-tool/fileservice.js'
 import DiffViewer from './DiffViewer.vue'
+import DataTable from 'primevue/datatable'
+import Button from 'primevue/button'
+import Column from 'primevue/column'
+import Textarea from 'primevue/textarea'
 
 export default {
   name: 'ComparisonTool',
   components: {
-    DiffViewer
+    DiffViewer,
+    Button,
+    DataTable,
+    Column,
+    Textarea
   },
   data() {
     return {
@@ -110,6 +90,9 @@ export default {
     }
   },
   methods: {
+    normalizeLines(value) {
+      return (value || '').split(/\r?\n/).map(p => p.trim()).filter(Boolean)
+    },
     async selectFiles(dialogTitle, filter, fileSet) {
       try {
         const selected = await SelectMultipleFiles(dialogTitle, filter)

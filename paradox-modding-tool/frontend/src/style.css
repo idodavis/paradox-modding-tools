@@ -1,49 +1,15 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* Fill the window in Wails/desktop – grow/shrink with window, no max-width cap */
 html,
 body {
-  margin: 0;
-  padding: 0;
   width: 100%;
   min-width: 100%;
   height: 100%;
   min-height: 100%;
-  overflow: hidden;
-  box-sizing: border-box;
-  background-color: #0f1419; /* dark-bg: no white flash when resizing from any edge */
-}
-
-#app {
-  width: 100%;
-  min-width: 100%;
-  height: 100%;
-  min-height: 100%;
-  max-width: none;
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  background-color: #0f1419;
-}
-
-/* Buttons: fit text, responsive tap target, consistent across app */
-@layer components {
-  .btn {
-    @apply inline-flex items-center justify-center px-5 py-3 min-h-[2.75rem] rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0;
-  }
-  .btn-primary {
-    @apply btn bg-btn-primary hover:bg-btn-primary-hover text-white shadow-material hover:shadow-material-lg;
-  }
-  .btn-secondary {
-    @apply btn bg-gray-600/80 hover:bg-gray-700/80 text-white shadow-material hover:shadow-material-lg;
-  }
-  .link-accent {
-    @apply text-accent-success hover:text-accent-success/90 underline underline-offset-2 transition-colors;
-  }
-  .btn-accent {
-    @apply inline-flex items-center justify-center px-2.5 py-1.5 rounded text-sm font-medium border border-accent-success/60 text-accent-success bg-transparent hover:bg-accent-success/20 transition-colors;
-  }
+  background-color: var(--surface-50);
+  font-family: var(--font-family);
+  font-weight: 400;
+  color: var(--text-color);
+  /* background-color: #0c182b; */
 }

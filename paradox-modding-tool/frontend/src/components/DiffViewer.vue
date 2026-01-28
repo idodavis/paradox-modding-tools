@@ -1,38 +1,29 @@
 <template>
-  <div v-if="visible" class="fixed inset-0 z-[60] flex flex-col bg-dark-bg" @click.self="$emit('close')"
+  <div v-if="visible" class="fixed inset-0 z-60 flex flex-col bg-dark-bg" @click.self="$emit('close')"
     style="pointer-events: auto;">
     <div
-      class="flex-1 flex flex-col min-h-0 min-w-0 m-2 sm:m-4 bg-dark-panel rounded-xl shadow-material-lg border border-dark-border overflow-hidden"
+      class="flex-1 flex flex-col min-h-0 min-w-0 m-2 sm:m-4 bg-dark-panel rounded-xl border border-dark-border overflow-hidden"
       @click.stop style="pointer-events: auto;">
       <!-- Header -->
-      <div class="flex flex-col px-4 sm:px-6 py-4 border-b border-dark-border bg-dark-panel/80 flex-shrink-0">
+      <div class="flex flex-col px-4 sm:px-6 py-4 border-b border-dark-border bg-dark-panel/80 shrink-0">
         <div class="flex justify-between items-center gap-2 mb-3">
           <h2 class="text-lg sm:text-xl font-semibold truncate min-w-0">Diff Viewer</h2>
-          <button @click="$emit('close')" class="btn-primary">Close</button>
+          <Button label="Close" @click="$emit('close')" class="btn-primary" />
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <span class="text-sm text-gray-400 flex-shrink-0">View:</span>
-          <div class="inline-flex overflow-hidden rounded-lg border border-dark-border bg-dark-input/60" role="group"
-            aria-label="View mode">
-            <button type="button"
-              class="min-h-[2.25rem] border-r border-dark-border px-3 py-1.5 text-[0.8125rem] transition-colors last:border-r-0"
-              :class="viewMode === 'unified' ? 'bg-btn-primary/50 text-white hover:bg-btn-primary/65' : 'bg-transparent text-slate-400 hover:bg-dark-border/40 hover:text-slate-200'"
-              @click="viewMode = 'unified'">Unified</button>
-            <button type="button"
-              class="min-h-[2.25rem] border-r border-dark-border px-3 py-1.5 text-[0.8125rem] transition-colors last:border-r-0"
-              :class="viewMode === 'sidebyside' ? 'bg-btn-primary/50 text-white hover:bg-btn-primary/65' : 'bg-transparent text-slate-400 hover:bg-dark-border/40 hover:text-slate-200'"
-              @click="viewMode = 'sidebyside'">Side-by-side</button>
-          </div>
-          <input ref="searchInput" v-model="searchQuery" @input="performSearch" @keydown.enter.prevent="nextMatch"
+          <span class="text-sm text-gray-400 shrink-0">View:</span>
+          <SelectButton v-model="viewMode" :options="viewOptions" optionLabel="label" optionValue="value"
+            class="min-h-9 bg-dark-input/60 border border-dark-border" />
+          <InputText ref="searchInput" v-model="searchQuery" @input="performSearch" @keydown.enter.prevent="nextMatch"
             @keydown.shift.enter.prevent="prevMatch" type="text" placeholder="Search (Ctrl+F)"
-            class="flex-1 min-w-0 px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-btn-primary/50" />
+            class="flex-1 min-w-0 px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50" />
           <span v-if="searchQuery && searchMatches.length > 0" class="text-sm text-gray-400 whitespace-nowrap">{{
             currentMatchIndex + 1 }} / {{ searchMatches.length }}</span>
-          <button v-if="searchQuery" @click="clearSearch" class="btn-secondary">Clear</button>
-          <button v-if="searchQuery && searchMatches.length > 0" @click="prevMatch" class="btn-secondary">↑
-            Prev</button>
-          <button v-if="searchQuery && searchMatches.length > 0" @click="nextMatch" class="btn-secondary">Next
-            ↓</button>
+          <Button v-if="searchQuery" label="Clear" @click="clearSearch" class="btn-secondary" />
+          <Button v-if="searchQuery && searchMatches.length > 0" label="↑ Prev" @click="prevMatch"
+            class="btn-secondary" />
+          <Button v-if="searchQuery && searchMatches.length > 0" label="Next ↓" @click="nextMatch"
+            class="btn-secondary" />
         </div>
       </div>
       <!-- Content -->
@@ -43,10 +34,10 @@
             <div ref="sideBySideScroll" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-dark-panel">
               <div class="flex flex-col" :style="{ height: (headerItemsVisibleHeight + sbsBodyHeight) + 'px' }">
                 <!-- Full-width header band (---/+++ etc.), not tied to column horizontal scroll -->
-                <div class="flex-shrink-0 w-full overflow-x-auto border-b border-dark-border/50 bg-diff-header"
+                <div class="shrink-0 w-full overflow-x-auto border-b border-dark-border/50 bg-diff-header"
                   :style="{ minHeight: headerItemsVisibleHeight + 'px' }">
                   <div v-for="(item, i) in headerItems" :key="item.idx" :ref="el => setLineRef(item.idx, el)"
-                    class="font-mono text-sm leading-6 flex items-center border-l-[3px] border-dark-border/30 flex-shrink-0"
+                    class="font-mono text-sm leading-6 flex items-center border-l-[3px] border-dark-border/30 shrink-0"
                     :class="[
                       (item.line.content || '').trim() === '' ? 'min-h-0 h-0 overflow-hidden border-0' : 'min-h-6',
                       isMatchHighlighted(item.idx) && 'bg-yellow-500/20'
@@ -69,7 +60,7 @@
                   </div>
                 </div>
                 <!-- Two-column body (add/remove/context only) -->
-                <div class="flex flex-shrink-0" :style="{ height: sbsBodyHeight + 'px' }">
+                <div class="flex shrink-0" :style="{ height: sbsBodyHeight + 'px' }">
                   <div class="flex-1 min-w-0 overflow-hidden border-r border-dark-border">
                     <div ref="leftColContent" class="font-mono text-sm leading-6"
                       :style="{ minHeight: sbsBodyHeight + 'px', width: 'max-content', transform: `translateX(-${sbsLeftScroll}px)` }">
@@ -77,9 +68,8 @@
                         class="min-h-6 min-w-full border-l-[3px] border-dark-border/30"
                         :class="[cellClass('left', item.line.type), isMatchHighlighted(item.idx) && 'bg-yellow-500/20']">
                         <div class="flex" style="width: max-content">
-                          <span
-                            class="inline-block min-w-10 text-right tabular-nums text-slate-400 px-2 flex-shrink-0">{{
-                              formatLineNum(item.line.oldLineNum) }}</span>
+                          <span class="inline-block min-w-10 text-right tabular-nums text-slate-400 px-2 shrink-0">{{
+                            formatLineNum(item.line.oldLineNum) }}</span>
                           <span class="whitespace-pre px-2 text-gray-200">{{ showLeft(item.line.type) ?
                             item.line.content : '\u00a0'
                             }}</span>
@@ -94,9 +84,8 @@
                         class="min-h-6 min-w-full border-l-[3px] border-dark-border/30"
                         :class="[cellClass('right', item.line.type), isMatchHighlighted(item.idx) && 'bg-yellow-500/20']">
                         <div class="flex" style="width: max-content">
-                          <span
-                            class="inline-block min-w-10 text-right tabular-nums text-slate-400 px-2 flex-shrink-0">{{
-                              formatLineNum(item.line.newLineNum) }}</span>
+                          <span class="inline-block min-w-10 text-right tabular-nums text-slate-400 px-2 shrink-0">{{
+                            formatLineNum(item.line.newLineNum) }}</span>
                           <span class="whitespace-pre px-2 text-gray-200">{{ (item.line.type === 'add' || item.line.type
                             === 'context')
                             ? item.line.content : '\u00a0' }}</span>
@@ -107,7 +96,7 @@
                 </div>
               </div>
             </div>
-            <div class="flex flex-shrink-0 border-t border-dark-border/60 overflow-hidden" style="height: 16px">
+            <div class="flex shrink-0 border-t border-dark-border/60 overflow-hidden" style="height: 16px">
               <div ref="leftHScroll"
                 class="flex-1 min-w-0 overflow-x-auto overflow-y-hidden border-r border-dark-border/50"
                 style="height: 16px" @scroll="sbsLeftScroll = $event.target.scrollLeft">
@@ -136,7 +125,7 @@
                     :class="[lineClasses(line.type), isMatchHighlighted(visibleStart + i) && 'bg-yellow-500/20']">
                     <div class="flex min-w-full" style="width: max-content">
                       <div
-                        class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 items-center justify-end gap-4 select-none flex-shrink-0">
+                        class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 items-center justify-end gap-4 select-none shrink-0">
                         <span class="inline-block min-w-10 text-right tabular-nums text-slate-400"
                           :class="{ 'text-gray-500': !line.oldLineNum }">{{ formatLineNum(line.oldLineNum) }}</span>
                         <span class="inline-block min-w-10 text-right tabular-nums text-slate-400"
@@ -144,7 +133,7 @@
                       </div>
                       <div class="flex px-3 items-center flex-nowrap">
                         <span v-if="line.type !== 'header' && line.type !== 'other'"
-                          class="inline-block min-w-4 mr-2 font-semibold select-none flex-shrink-0"
+                          class="inline-block min-w-4 mr-2 font-semibold select-none shrink-0"
                           :class="prefixColor(line.type)">{{ prefix(line.type) }}</span>
                         <span class="whitespace-pre">{{ line.content }}</span>
                       </div>
@@ -158,7 +147,7 @@
                   :class="[lineClasses(line.type), isMatchHighlighted(index) && 'bg-yellow-500/20']">
                   <div class="flex min-w-full" style="width: max-content">
                     <div
-                      class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 items-center justify-end gap-4 select-none flex-shrink-0">
+                      class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 items-center justify-end gap-4 select-none shrink-0">
                       <span class="inline-block min-w-10 text-right tabular-nums text-slate-400"
                         :class="{ 'text-gray-500': !line.oldLineNum }">{{ formatLineNum(line.oldLineNum) }}</span>
                       <span class="inline-block min-w-10 text-right tabular-nums text-slate-400"
@@ -168,20 +157,20 @@
                       <template
                         v-if="(line.type === 'header' || line.type === 'other') && (line.content || '').startsWith('---')">
                         <span
-                          class="inline-block min-w-4 mr-2 font-semibold select-none flex-shrink-0 text-red-500/90">---</span>
-                        <span class="text-slate-400 mr-1 flex-shrink-0">Base:</span>
+                          class="inline-block min-w-4 mr-2 font-semibold select-none shrink-0 text-red-500/90">---</span>
+                        <span class="text-slate-400 mr-1 shrink-0">Base:</span>
                         <span class="whitespace-pre">{{ (line.content || '').slice(3).trim() }}</span>
                       </template>
                       <template
                         v-else-if="(line.type === 'header' || line.type === 'other') && (line.content || '').startsWith('+++')">
                         <span
-                          class="inline-block min-w-4 mr-2 font-semibold select-none flex-shrink-0 text-accent-success">+++</span>
-                        <span class="text-slate-400 mr-1 flex-shrink-0">Compare:</span>
+                          class="inline-block min-w-4 mr-2 font-semibold select-none shrink-0 text-accent-success">+++</span>
+                        <span class="text-slate-400 mr-1 shrink-0">Compare:</span>
                         <span class="whitespace-pre">{{ (line.content || '').slice(3).trim() }}</span>
                       </template>
                       <template v-else>
                         <span v-if="line.type !== 'header' && line.type !== 'other'"
-                          class="inline-block min-w-4 mr-2 font-semibold select-none flex-shrink-0"
+                          class="inline-block min-w-4 mr-2 font-semibold select-none shrink-0"
                           :class="prefixColor(line.type)">{{ prefix(line.type) }}</span>
                         <span class="whitespace-pre">{{ line.content }}</span>
                       </template>
@@ -198,12 +187,17 @@
 </template>
 
 <script>
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
+import SelectButton from 'primevue/selectbutton'
+
 const ROW_HEIGHT = 24
 const VIRTUAL_THRESHOLD = 800
 const OVERSCAN = 20
 
 export default {
   name: 'DiffViewer',
+  components: { Button, InputText, SelectButton },
   props: { visible: { type: Boolean, default: false }, lines: { type: Array, default: () => [] }, loading: { type: Boolean, default: false } },
   data() {
     return {
@@ -212,6 +206,10 @@ export default {
       currentMatchIndex: -1,
       lineRefs: {},
       viewMode: 'unified',
+      viewOptions: [
+        { label: 'Unified', value: 'unified' },
+        { label: 'Side-by-side', value: 'sidebyside' }
+      ],
       scrollTop: 0,
       containerHeight: 600,
       sbsLeftScroll: 0,

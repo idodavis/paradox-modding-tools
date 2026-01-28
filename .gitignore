@@ -4,7 +4,7 @@ vanilla-synchronizer/sync-config.yaml
 
 # Regular go-wails framework ignores
 paradox-script-tools/build/bin
-paradox-script-tools/frontend/node_modules
+*/node_modules
 paradox-script-tools/frontend/dist
 
 # Output directory for the paradox script tools

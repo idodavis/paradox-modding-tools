@@ -1,8 +1,7 @@
 <template>
   <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 p-4 sm:p-6 overflow-auto bg-dark-input">
     <!-- Configuration Panel -->
-    <div
-      class="bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 overflow-y-auto shadow-material border border-dark-border/50">
+    <div class="bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 overflow-y-auto border border-dark-border/50">
       <!-- Merge Options -->
       <div class="mb-6">
         <div class="mb-4">
@@ -24,40 +23,42 @@
             </div>
           </details>
 
-          <div class="flex items-center cursor-pointer ml-4">
-            <input type="checkbox" v-model="addAdditionalEntries"
-              class="w-4 h-4 text-btn-primary bg-dark-input border-dark-border rounded focus:ring-btn-primary focus:ring-2" />
-            <span class="ml-2">Add entries from B that don’t exist in A (e.g. mod-only events)</span>
+          <div class="flex items-center ml-4">
+            <Checkbox v-model="addAdditionalEntries" inputId="addAdditionalEntries" binary />
+            <label class="ml-2 cursor-pointer" for="addAdditionalEntries">Add entries from B that don’t exist in A (e.g.
+              mod-only events)</label>
           </div>
 
           <div v-if="addAdditionalEntries" class="mb-4 ml-8">
             <div class="my-2 text-sm text-gray-400">Additional Entry Placement:</div>
             <div class="space-y-2">
-              <label class="flex items-center cursor-pointer">
-                <input type="radio" v-model="entryPlacement" value="bottom"
-                  class="w-4 h-4 text-btn-primary bg-dark-input border-dark-border focus:ring-btn-primary focus:ring-2" />
-                <span class="ml-2">Bottom of file (with sectional comment)</span>
-              </label>
-              <label class="flex items-center cursor-pointer">
-                <input type="radio" v-model="entryPlacement" value="preserve_order"
-                  class="w-4 h-4 text-btn-primary bg-dark-input border-dark-border focus:ring-btn-primary focus:ring-2" />
-                <span class="ml-2">Preserve original order (experimental)</span>
-              </label>
+              <div class="flex items-center">
+                <RadioButton v-model="entryPlacement" inputId="entryPlacementBottom" name="entryPlacement"
+                  value="bottom" />
+                <label class="ml-2 cursor-pointer" for="entryPlacementBottom">Bottom of file (with sectional
+                  comment)</label>
+              </div>
+              <div class="flex items-center">
+                <RadioButton v-model="entryPlacement" inputId="entryPlacementPreserve" name="entryPlacement"
+                  value="preserve_order" />
+                <label class="ml-2 cursor-pointer" for="entryPlacementPreserve">Preserve original order
+                  (experimental)</label>
+              </div>
             </div>
           </div>
 
-          <label class="flex items-center cursor-pointer ml-4">
-            <input type="checkbox" v-model="useKeyList"
-              class="w-4 h-4 text-btn-primary bg-dark-input border-dark-border rounded focus:ring-btn-primary focus:ring-2" />
-            <span class="ml-2">Use key list so B overrides A for specified keys</span>
-          </label>
+          <div class="flex items-center ml-4">
+            <Checkbox v-model="useKeyList" inputId="useKeyList" binary />
+            <label class="ml-2 cursor-pointer" for="useKeyList">Use key list so B overrides A for specified
+              keys</label>
+          </div>
 
           <div v-if="useKeyList" class="my-2 ml-8">
             <label class="block mb-2 font-medium">Keys where B wins (one per line):</label>
             <p class="text-sm text-gray-400 mb-2">List object keys (e.g. event IDs, decision IDs) that your mod has
               added or changed. For these keys the output uses B’s version; all other keys use A’s.</p>
-            <textarea v-model="customKeys" rows="4" placeholder="my_mod_event.0001&#10;my_mod_decision.0001"
-              class="w-full px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200"></textarea>
+            <Textarea v-model="customKeys" rows="4" placeholder="my_mod_event.0001&#10;my_mod_decision.0001"
+              class="w-full px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200" />
           </div>
         </div>
       </div>
@@ -73,12 +74,12 @@
           </label>
           <p class="text-xs text-gray-500 mb-1">Wins by default. When updating a mod: put the latest vanilla/game files
             here.</p>
-          <textarea v-model="pathsAText" rows="3" placeholder="Select files or directories..."
-            class="w-full px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200"></textarea>
+          <Textarea v-model="pathsAText" rows="3" placeholder="Select files or directories..."
+            class="w-full px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200" />
           <div class="flex gap-2 mt-2">
-            <button @click="selectPaths('A', 'pathsAText')" class="btn-primary">Select File(s)</button>
-            <button @click="selectFolderPath('pathsAText')" class="btn-primary">Select Folder</button>
-            <button @click="pathsAText = ''" class="btn-secondary">Clear</button>
+            <Button label="Select File(s)" @click="selectPaths('A', 'pathsAText')" class="btn-primary" />
+            <Button label="Select Folder" @click="selectFolderPath('pathsAText')" class="btn-primary" />
+            <Button label="Clear" @click="pathsAText = ''" class="btn-secondary" />
           </div>
         </div>
 
@@ -90,21 +91,21 @@
           </label>
           <p class="text-xs text-gray-500 mb-1">For keys in the key list, B’s version is used. When updating a mod: put
             your mod files here.</p>
-          <textarea v-model="pathsBText" rows="3" placeholder="Select files or directories..."
-            class="w-full px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200"></textarea>
+          <Textarea v-model="pathsBText" rows="3" placeholder="Select files or directories..."
+            class="w-full px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200" />
           <div class="flex gap-2 mt-2">
-            <button @click="selectPaths('B', 'pathsBText')" class="btn-primary">Select File(s)</button>
-            <button @click="selectFolderPath('pathsBText')" class="btn-primary">Select Folder</button>
-            <button @click="pathsBText = ''" class="btn-secondary">Clear</button>
+            <Button label="Select File(s)" @click="selectPaths('B', 'pathsBText')" class="btn-primary" />
+            <Button label="Select Folder" @click="selectFolderPath('pathsBText')" class="btn-primary" />
+            <Button label="Clear" @click="pathsBText = ''" class="btn-secondary" />
           </div>
         </div>
 
         <div class="mb-4">
           <label class="block mb-2 font-medium">Output Directory:</label>
           <div class="flex gap-2">
-            <input v-model="mergeOutputDir" type="text" placeholder="merger-output"
-              class="flex-1 px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary transition-all duration-200" />
-            <button @click="selectOutputDir" class="btn-primary">Browse</button>
+            <InputText v-model="mergeOutputDir" type="text" placeholder="merger-output"
+              class="flex-1 px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary transition-all duration-200" />
+            <Button label="Browse" @click="selectOutputDir" class="btn-primary" />
           </div>
         </div>
       </div>
@@ -114,53 +115,40 @@
         <label class="block mb-4 text-xl font-semibold">Misc Options</label>
         <div class="my-4">
           <label class="block mb-2 font-medium">Custom Comment Prefix:</label>
-          <input v-model="commentPrefix" type="text" placeholder="# MOD:"
-            class="w-full px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary transition-all duration-200" />
+          <InputText v-model="commentPrefix" type="text" placeholder="# MOD:"
+            class="w-full px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary transition-all duration-200" />
           <p class="text-sm text-gray-400 mt-2 leading-relaxed">Comments with above prefix will be preserved during
             merger.</p>
         </div>
       </div>
 
-      <button @click="runMerge" :disabled="merging"
-        class="w-full mt-6 btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-material">
-        {{ merging ? 'Merging...' : 'Run Merge' }}
-      </button>
+      <Button @click="runMerge" :disabled="merging"
+        class="w-full mt-6 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+        :label="merging ? 'Merging...' : 'Run Merge'" />
     </div>
 
     <!-- Results -->
-    <div v-if="mergeResults.length > 0"
-      class="bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 overflow-hidden shadow-material border border-dark-border/50 flex flex-col min-h-0">
-      <h2 class="text-xl font-semibold mb-3 flex-shrink-0">Results ({{ mergeResults.length }})</h2>
-      <div class="flex-1 min-h-0 overflow-auto border border-dark-border/50 rounded-lg">
-        <table class="w-full border-collapse text-sm">
-          <colgroup>
-            <col style="min-width: 10rem" />
-            <col style="min-width: 5rem" />
-            <col style="min-width: 13rem; width: 1%" />
-          </colgroup>
-          <thead class="sticky top-0 z-10 bg-dark-panel/95 border-b border-dark-border">
-            <tr>
-              <th class="text-left py-2 px-3 text-slate-400 font-medium">File</th>
-              <th class="text-left py-2 px-3 text-slate-400 font-medium">Output</th>
-              <th class="text-right py-2 px-3 text-slate-400 font-medium">Diffs</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(r, i) in mergeResults" :key="i"
-              :class="[i % 2 ? 'bg-dark-input/20' : 'bg-dark-input/40', 'border-b border-dark-border/30 hover:bg-dark-input']">
-              <td class="py-1.5 px-3 text-gray-200 font-mono truncate" :title="r.filePath">{{ r.filePath }}</td>
-              <td class="py-1.5 px-3 text-gray-300 truncate" :title="r.outputPath">{{ baseName(r.outputPath) }}</td>
-              <td class="py-1.5 px-3 text-right whitespace-nowrap">
-                <button type="button" @click="viewDiff(r.fileAPath, r.outputPath)" class="btn-accent text-sm mr-1.5">A
-                  vs Output</button>
-                <button type="button" @click="viewDiff(r.fileBPath, r.outputPath)" class="btn-accent text-sm">B vs
-                  Output</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <DataTable v-if="mergeResults.length > 0" :value="mergeResults" dataKey="filePath"
+      :title="`Results (${mergeResults.length})`" panelClass="overflow-hidden flex flex-col min-h-0">
+      <Column field="filePath" header="File" bodyClass="text-gray-200 font-mono">
+        <template #body="{ data }">
+          <span class="block truncate" :title="data.filePath">{{ data.filePath }}</span>
+        </template>
+      </Column>
+      <Column field="outputPath" header="Output" bodyClass="text-gray-300">
+        <template #body="{ data }">
+          <span class="block truncate" :title="data.outputPath">{{ baseName(data.outputPath) }}</span>
+        </template>
+      </Column>
+      <Column header="Diffs" bodyClass="text-right">
+        <template #body="{ data }">
+          <div class="flex justify-end gap-2">
+            <Button class="btn-accent text-sm" label="A vs Output" @click="viewDiff(data.fileAPath, data.outputPath)" />
+            <Button class="btn-accent text-sm" label="B vs Output" @click="viewDiff(data.fileBPath, data.outputPath)" />
+          </div>
+        </template>
+      </Column>
+    </DataTable>
 
     <!-- Diff Overlay -->
     <DiffViewer :visible="diffFilePath !== null" :lines="diffLines" :loading="loadingDiff" @close="closeDiff" />
@@ -172,10 +160,26 @@ import { SelectDirectory, SelectMultipleFiles } from '../../bindings/paradox-mod
 import { GetDiff } from '../../bindings/paradox-modding-tool/diffservice.js'
 import { MergeMultipleFileSets } from '../../bindings/paradox-modding-tool/mergerservice.js'
 import DiffViewer from './DiffViewer.vue'
+import DataTable from 'primevue/datatable'
+import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
+import Column from 'primevue/column'
+import InputText from 'primevue/inputtext'
+import RadioButton from 'primevue/radiobutton'
+import Textarea from 'primevue/textarea'
 
 export default {
   name: 'MergeTool',
-  components: { DiffViewer },
+  components: {
+    DiffViewer,
+    DataTable,
+    Button,
+    Checkbox,
+    Column,
+    InputText,
+    RadioButton,
+    Textarea
+  },
   data() {
     return {
       pathsAText: '',

@@ -3,11 +3,6 @@
     <!-- Configuration Panel -->
     <div
       class="bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 overflow-y-auto shadow-material border border-dark-border/50">
-      <div class="flex justify-end mb-4">
-        <button type="button" @click="clearState" class="btn-secondary text-sm py-1.5 px-3">
-          Clear state
-        </button>
-      </div>
       <!-- Merge Options -->
       <div class="mb-6">
         <div class="mb-4">
@@ -22,7 +17,8 @@
             <div
               class="px-3 pb-3 pt-0 text-sm text-gray-300 leading-relaxed space-y-2 border-t border-dark-border/30 mt-0">
               <p><strong>A (base)</strong> wins for every key unless it’s in the <strong>key list</strong>; those use
-                <strong>B</strong>.</p>
+                <strong>B</strong>.
+              </p>
               <p class="text-gray-400">After a game update: put <em>vanilla</em> in A, <em>mod</em> in B, and list your
                 mod’s object keys (events, decisions, etc.). Output = vanilla except where you changed things.</p>
             </div>
@@ -72,42 +68,34 @@
         <div class="my-4">
           <label class="block mb-2 font-medium">
             File Set A (Base):
-            <span v-if="mergeSetA.length > 0" class="text-sm text-gray-400 ml-2">({{ mergeSetA.length }} {{
-              mergeSetA.length === 1 ? 'item' : 'items' }})</span>
+            <span v-if="pathsA.length" class="text-sm text-gray-400 ml-2">({{ pathsA.length }} {{ pathsA.length === 1 ?
+              'item' : 'items' }})</span>
           </label>
           <p class="text-xs text-gray-500 mb-1">Wins by default. When updating a mod: put the latest vanilla/game files
             here.</p>
-          <textarea :value="mergeSetA.join('\n')"
-            @input="mergeSetA = $event.target.value.split('\n').filter(p => p.trim())" rows="3"
-            placeholder="Select files or directories..."
+          <textarea v-model="pathsAText" rows="3" placeholder="Select files or directories..."
             class="w-full px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200"></textarea>
           <div class="flex gap-2 mt-2">
-            <button @click="selectFiles('Select Multiple Files To Merge (A)', '*.txt', 'mergeSetA')"
-              class="btn-primary">Select File(s)</button>
-            <button @click="selectFolder('Select Folder To Merge (A)', 'mergeSetA')" class="btn-primary">Select
-              Folder</button>
-            <button @click="clearSet('mergeSetA')" class="btn-secondary">Clear</button>
+            <button @click="selectPaths('A', 'pathsAText')" class="btn-primary">Select File(s)</button>
+            <button @click="selectFolderPath('pathsAText')" class="btn-primary">Select Folder</button>
+            <button @click="pathsAText = ''" class="btn-secondary">Clear</button>
           </div>
         </div>
 
         <div class="mb-4">
           <label class="block mb-2 font-medium">
             File Set B (Mod):
-            <span v-if="mergeSetB.length > 0" class="text-sm text-gray-400 ml-2">({{ mergeSetB.length }} {{
-              mergeSetB.length === 1 ? 'item' : 'items' }})</span>
+            <span v-if="pathsB.length" class="text-sm text-gray-400 ml-2">({{ pathsB.length }} {{ pathsB.length === 1 ?
+              'item' : 'items' }})</span>
           </label>
           <p class="text-xs text-gray-500 mb-1">For keys in the key list, B’s version is used. When updating a mod: put
             your mod files here.</p>
-          <textarea :value="mergeSetB.join('\n')"
-            @input="mergeSetB = $event.target.value.split('\n').filter(p => p.trim())" rows="3"
-            placeholder="Select files or directories..."
+          <textarea v-model="pathsBText" rows="3" placeholder="Select files or directories..."
             class="w-full px-3 py-2 bg-dark-input/80 border border-dark-border rounded-lg text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200"></textarea>
           <div class="flex gap-2 mt-2">
-            <button @click="selectFiles('Select Multiple Files To Merge (B)', '*.txt', 'mergeSetB')"
-              class="btn-primary">Select File(s)</button>
-            <button @click="selectFolder('Select Folder To Merge (B)', 'mergeSetB')" class="btn-primary">Select
-              Folder</button>
-            <button @click="clearSet('mergeSetB')" class="btn-secondary">Clear</button>
+            <button @click="selectPaths('B', 'pathsBText')" class="btn-primary">Select File(s)</button>
+            <button @click="selectFolderPath('pathsBText')" class="btn-primary">Select Folder</button>
+            <button @click="pathsBText = ''" class="btn-secondary">Clear</button>
           </div>
         </div>
 
@@ -139,56 +127,34 @@
       </button>
     </div>
 
-    <!-- Results Panel (table-like, compact rows, lighter actions) -->
+    <!-- Results -->
     <div v-if="mergeResults.length > 0"
       class="bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 overflow-hidden shadow-material border border-dark-border/50 flex flex-col min-h-0">
       <h2 class="text-xl font-semibold mb-3 flex-shrink-0">Results ({{ mergeResults.length }})</h2>
       <div class="flex-1 min-h-0 overflow-auto border border-dark-border/50 rounded-lg">
-        <table class="w-full border-collapse text-sm table-fixed">
+        <table class="w-full border-collapse text-sm">
           <colgroup>
-            <col style="min-width: 14rem; width: 30%" />
-            <col style="width: 4rem" />
-            <col style="width: 4rem" />
-            <col style="width: 4rem" />
-            <col style="min-width: 5rem; width: 12%" />
-            <col style="min-width: 11rem; width: 22%" />
+            <col style="min-width: 10rem" />
+            <col style="min-width: 5rem" />
+            <col style="min-width: 13rem; width: 1%" />
           </colgroup>
           <thead class="sticky top-0 z-10 bg-dark-panel/95 border-b border-dark-border">
             <tr>
               <th class="text-left py-2 px-3 text-slate-400 font-medium">File</th>
-              <th class="text-left py-2 px-2 text-slate-400 font-medium" title="Object keys replaced by B">Changed <span
-                  class="text-gray-500 font-normal">(keys)</span></th>
-              <th class="text-left py-2 px-2 text-slate-400 font-medium" title="Object keys from B not in A">Added <span
-                  class="text-gray-500 font-normal">(keys)</span></th>
-              <th class="text-left py-2 px-2 text-slate-400 font-medium" title="Object keys removed vs A">Removed <span
-                  class="text-gray-500 font-normal">(keys)</span></th>
               <th class="text-left py-2 px-3 text-slate-400 font-medium">Output</th>
-              <th class="text-left py-2 px-3 text-slate-400 font-medium">Diffs vs output</th>
+              <th class="text-right py-2 px-3 text-slate-400 font-medium">Diffs</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(result, index) in mergeResults" :key="index"
-              :class="index % 2 === 0 ? 'bg-dark-input/40' : 'bg-dark-input/20'"
-              class="border-b border-dark-border/30 hover:bg-dark-input transition-colors">
-              <td class="py-1.5 px-3 text-gray-200 font-mono truncate" :title="result.filePath">{{ result.filePath }}
-              </td>
-              <td class="py-1.5 px-2 text-gray-400 tabular-nums">{{ result.changed ?? 0 }}</td>
-              <td class="py-1.5 px-2 tabular-nums" :class="result.added > 0 ? 'text-accent-success' : 'text-gray-400'">
-                {{ result.added ?? 0 }}</td>
-              <td class="py-1.5 px-2 text-gray-400 tabular-nums">{{ result.removed ?? 0 }}</td>
-              <td class="py-1.5 px-3 text-gray-300 truncate" :title="result.outputPath">{{
-                getFileName(result.outputPath) }}</td>
-              <td class="py-1.5 px-3">
-                <span class="inline-flex gap-2 flex-wrap">
-                  <button type="button" @click="viewDiff(index, result.fileAPath, result.outputPath)" class="btn-accent"
-                    title="Diff: File A vs merge output">
-                    A vs Output
-                  </button>
-                  <button type="button" @click="viewDiff(index, result.fileBPath, result.outputPath)" class="btn-accent"
-                    title="Diff: File B vs merge output">
-                    B vs Output
-                  </button>
-                </span>
+            <tr v-for="(r, i) in mergeResults" :key="i"
+              :class="[i % 2 ? 'bg-dark-input/20' : 'bg-dark-input/40', 'border-b border-dark-border/30 hover:bg-dark-input']">
+              <td class="py-1.5 px-3 text-gray-200 font-mono truncate" :title="r.filePath">{{ r.filePath }}</td>
+              <td class="py-1.5 px-3 text-gray-300 truncate" :title="r.outputPath">{{ baseName(r.outputPath) }}</td>
+              <td class="py-1.5 px-3 text-right whitespace-nowrap">
+                <button type="button" @click="viewDiff(r.fileAPath, r.outputPath)" class="btn-accent text-sm mr-1.5">A
+                  vs Output</button>
+                <button type="button" @click="viewDiff(r.fileBPath, r.outputPath)" class="btn-accent text-sm">B vs
+                  Output</button>
               </td>
             </tr>
           </tbody>
@@ -212,8 +178,8 @@ export default {
   components: { DiffViewer },
   data() {
     return {
-      mergeSetA: [],
-      mergeSetB: [],
+      pathsAText: '',
+      pathsBText: '',
       addAdditionalEntries: true,
       entryPlacement: 'bottom',
       useKeyList: false,
@@ -227,48 +193,29 @@ export default {
       loadingDiff: false
     }
   },
+  computed: {
+    pathsA() { return (this.pathsAText || '').split(/\r?\n/).map(p => p.trim()).filter(Boolean) },
+    pathsB() { return (this.pathsBText || '').split(/\r?\n/).map(p => p.trim()).filter(Boolean) }
+  },
   methods: {
-    clearState() {
-      this.mergeSetA = []
-      this.mergeSetB = []
-      this.mergeOutputDir = ''
-      this.mergeResults = []
-      this.addAdditionalEntries = true
-      this.entryPlacement = 'bottom'
-      this.useKeyList = false
-      this.customKeys = ''
-      this.commentPrefix = ''
-      this.diffLines = []
-      this.diffFilePath = null
-    },
-    getFileName(path) {
-      if (!path) return ''
-      const parts = path.split(/[/\\]/)
-      return parts[parts.length - 1] || path
-    },
-    async selectFiles(dialogTitle, filter, fileSet) {
+    baseName(path) { return path ? path.split(/[/\\]/).pop() || path : '' },
+    async selectPaths(label, target) {
       try {
-        const selected = await SelectMultipleFiles(dialogTitle, filter)
-        if (selected && selected.length > 0) {
-          const existing = new Set(this[fileSet])
-          for (const file of selected) {
-            if (!existing.has(file)) this[fileSet].push(file)
-          }
+        const selected = await SelectMultipleFiles('Select Multiple Files To Merge (' + label + ')', '*.txt')
+        if (selected?.length) {
+          const list = [...new Set((target === 'pathsAText' ? this.pathsA : this.pathsB).concat(selected))]
+          this[target] = list.join('\n')
         }
-      } catch (e) {
-        alert('Error selecting files: ' + e)
-      }
+      } catch (e) { alert('Error selecting files: ' + e) }
     },
-    async selectFolder(dialogTitle, fileSet) {
+    async selectFolderPath(target) {
       try {
-        const selected = await SelectDirectory(dialogTitle)
-        if (selected) this[fileSet].push(selected)
-      } catch (e) {
-        alert('Error selecting folder: ' + e)
-      }
-    },
-    clearSet(fileSet) {
-      this[fileSet] = []
+        const sel = await SelectDirectory('Select Folder To Merge')
+        if (sel) {
+          const list = target === 'pathsAText' ? this.pathsA : this.pathsB
+          if (!list.includes(sel)) this[target] = (this[target] ? this[target] + '\n' : '') + sel
+        }
+      } catch (e) { alert('Error selecting folder: ' + e) }
     },
     async selectOutputDir() {
       try {
@@ -279,38 +226,27 @@ export default {
       }
     },
     async runMerge() {
-      if (this.mergeSetA.length === 0 || this.mergeSetB.length === 0) {
-        alert('Please select at least one file or directory for both sets')
-        return
-      }
-      if (!this.mergeOutputDir) {
-        alert('Please select an output directory')
-        return
-      }
+      if (!this.pathsA.length || !this.pathsB.length) { alert('Select at least one file or folder for both sets'); return }
+      if (!this.mergeOutputDir) { alert('Select an output directory'); return }
       this.merging = true
       this.mergeResults = []
       try {
-        const keys = this.useKeyList ? this.customKeys.split('\n').filter(k => k.trim() !== '') : []
-        const results = await MergeMultipleFileSets(this.mergeSetA, this.mergeSetB, this.mergeOutputDir, {
+        const keys = this.useKeyList ? this.customKeys.split('\n').map(k => k.trim()).filter(Boolean) : []
+        const res = await MergeMultipleFileSets(this.pathsA, this.pathsB, this.mergeOutputDir, {
           addAdditionalEntries: this.addAdditionalEntries,
           entryPlacement: this.entryPlacement,
           keyList: keys,
           customCommentPrefix: this.commentPrefix
         })
-        this.mergeResults = results || []
-        if (this.mergeResults.length === 0) {
-          alert('No matching files found between the two sets. Make sure both sets contain files with matching names or paths.')
-        }
-      } catch (e) {
-        alert('Error during merge: ' + e)
-      } finally {
-        this.merging = false
-      }
+        this.mergeResults = res || []
+        if (!this.mergeResults.length) alert('No matching files between the two sets.')
+      } catch (e) { alert('Error during merge: ' + e) }
+      finally { this.merging = false }
     },
-    async viewDiff(resultIndex, beforePath, afterPath) {
-      const result = this.mergeResults[resultIndex]
-      if (!result || result.error) {
-        alert('Cannot view diff: ' + (result?.error || 'Unknown error'))
+    async viewDiff(beforePath, afterPath) {
+      if (!beforePath || !afterPath) return
+      if (beforePath === afterPath) {
+        alert('Output was written over this input file, so there is no diff. Use an output directory different from your input folders.')
         return
       }
       this.loadingDiff = true

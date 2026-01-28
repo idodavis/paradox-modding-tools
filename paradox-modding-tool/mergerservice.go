@@ -63,9 +63,6 @@ func (m *MergerService) MergeMultipleFileSets(pathsA, pathsB []string, outputDir
 		changed := len(mergeResult.EntriesChanged)
 		added := len(mergeResult.EntriesAdded)
 		removed := len(mergeResult.EntriesRemoved)
-		if changed == 0 && added == 0 && removed == 0 {
-			continue // no object-level changes; skip writing and omit from results
-		}
 		outPath := filepath.Join(outputDir, relPath)
 		if err := core.WriteMergedFile(outPath, mergedContent); err != nil {
 			results = append(results, FileMergeResult{

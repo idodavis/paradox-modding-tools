@@ -1,6 +1,7 @@
 <template>
   <div class="flex-1 flex flex-col min-h-0 min-w-0 p-4 sm:p-6 overflow-auto bg-dark-input">
-    <div class="w-full max-w-full bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-material border border-dark-border/50 mb-4 sm:mb-6 flex-shrink-0">
+    <div
+      class="w-full max-w-full bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-material border border-dark-border/50 mb-4 sm:mb-6 flex-shrink-0">
       <h2 class="text-lg sm:text-xl font-semibold mb-4 sm:mb-5">Comparison Tool</h2>
 
       <!-- FileSet A -->
@@ -46,16 +47,33 @@
       </button>
     </div>
 
-    <!-- File List -->
+    <!-- File List (table-like, compact rows, sticky header) -->
     <div v-if="matchingFiles.length > 0"
       class="flex-1 min-w-0 w-full max-w-full bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-material border border-dark-border/50 overflow-hidden flex flex-col"
       style="min-height: 200px;">
-      <h3 class="text-base sm:text-lg font-semibold mb-4 flex-shrink-0">Matching Files ({{ matchingFiles.length }})</h3>
-      <div class="flex-1 min-h-0 overflow-y-auto overflow-x-auto" style="min-height: 120px;">
-        <div v-for="(file, index) in matchingFiles" :key="index" @click="viewFileDiff(file)"
-          class="p-3 mb-2 bg-dark-input/60 rounded-lg border border-dark-border/30 shadow-material cursor-pointer hover:bg-dark-input/80 transition-all duration-200">
-          <div class="text-sm font-mono text-gray-200 break-all">{{ file.relativePath }}</div>
-        </div>
+      <h3 class="text-base sm:text-lg font-semibold mb-3 flex-shrink-0">Matching Files ({{ matchingFiles.length }})</h3>
+      <div class="flex-1 min-h-0 overflow-auto border border-dark-border/50 rounded-lg">
+        <table class="w-full border-collapse text-sm font-mono">
+          <thead class="sticky top-0 z-10 bg-dark-panel/95 border-b border-dark-border">
+            <tr>
+              <th class="text-left py-2 px-3 text-slate-400 font-medium">Relative path</th>
+              <th class="text-left py-2 px-3 text-slate-400 font-medium w-24">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(file, index) in matchingFiles" :key="index"
+              :class="index % 2 === 0 ? 'bg-dark-input/40' : 'bg-dark-input/20'"
+              class="border-b border-dark-border/30 hover:bg-dark-input transition-colors">
+              <td class="py-1.5 px-3 text-gray-200 truncate max-w-0" :title="file.relativePath">{{ file.relativePath }}
+              </td>
+              <td class="py-1.5 px-3">
+                <button type="button" @click="viewFileDiff(file)" class="btn-accent">
+                  View diff
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
     <div v-else-if="!loadingFiles"
@@ -66,12 +84,7 @@
     </div>
 
     <!-- Diff Viewer Overlay -->
-    <DiffViewer
-      :visible="diffFilePath !== null"
-      :lines="diffLines"
-      :loading="loadingDiff"
-      @close="closeDiff"
-    />
+    <DiffViewer :visible="diffFilePath !== null" :lines="diffLines" :loading="loadingDiff" @close="closeDiff" />
   </div>
 </template>
 

@@ -40,4 +40,10 @@ body {
   .btn-secondary {
     @apply btn bg-gray-600/80 hover:bg-gray-700/80 text-white shadow-material hover:shadow-material-lg;
   }
+  .link-accent {
+    @apply text-accent-success hover:text-accent-success/90 underline underline-offset-2 transition-colors;
+  }
+  .btn-accent {
+    @apply inline-flex items-center justify-center px-2.5 py-1.5 rounded text-sm font-medium border border-accent-success/60 text-accent-success bg-transparent hover:bg-accent-success/20 transition-colors;
+  }
 }

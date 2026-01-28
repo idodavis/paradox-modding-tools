@@ -99,3 +99,142 @@ export class FileMatch {
         return new FileMatch(/** @type {Partial<FileMatch>} */($$parsedSource));
     }
 }
+
+/**
+ * FileMergeResult is the result of merging one file (JSON-safe for bindings)
+ */
+export class FileMergeResult {
+    /**
+     * Creates a new FileMergeResult instance.
+     * @param {Partial<FileMergeResult>} [$$source = {}] - The source object to create the FileMergeResult.
+     */
+    constructor($$source = {}) {
+        if (!("filePath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["filePath"] = "";
+        }
+        if (!("fileAPath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["fileAPath"] = "";
+        }
+        if (!("fileBPath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["fileBPath"] = "";
+        }
+        if (!("outputPath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["outputPath"] = "";
+        }
+        if (!("changed" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["changed"] = 0;
+        }
+        if (!("added" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["added"] = 0;
+        }
+        if (!("removed" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["removed"] = 0;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["error"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FileMergeResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {FileMergeResult}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new FileMergeResult(/** @type {Partial<FileMergeResult>} */($$parsedSource));
+    }
+}
+
+/**
+ * MergerOptions configures how files are merged (JSON-safe for bindings)
+ */
+export class MergerOptions {
+    /**
+     * Creates a new MergerOptions instance.
+     * @param {Partial<MergerOptions>} [$$source = {}] - The source object to create the MergerOptions.
+     */
+    constructor($$source = {}) {
+        if (!("addAdditionalEntries" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["addAdditionalEntries"] = false;
+        }
+        if (!("entryPlacement" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["entryPlacement"] = "";
+        }
+        if (!("keyList" in $$source)) {
+            /**
+             * @member
+             * @type {string[]}
+             */
+            this["keyList"] = [];
+        }
+        if (!("customCommentPrefix" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["customCommentPrefix"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MergerOptions instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {MergerOptions}
+     */
+    static createFrom($$source = {}) {
+        const $$createField2_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("keyList" in $$parsedSource) {
+            $$parsedSource["keyList"] = $$createField2_0($$parsedSource["keyList"]);
+        }
+        return new MergerOptions(/** @type {Partial<MergerOptions>} */($$parsedSource));
+    }
+}
+
+// Private type creation functions
+const $$createType0 = $Create.Array($Create.Any);

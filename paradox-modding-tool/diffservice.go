@@ -34,7 +34,7 @@ func (d *DiffService) GetDiff(beforeFilePath string, afterFilePath string) ([]Di
 	before := string(beforeContent)
 	after := string(afterContent)
 	edits := udiff.Strings(before, after)
-	const contextLines = 3
+	const contextLines = 5
 	diffText, err := udiff.ToUnified(beforeFilePath, afterFilePath, before, edits, contextLines)
 	if err != nil {
 		diffText = udiff.Unified(beforeFilePath, afterFilePath, before, after)

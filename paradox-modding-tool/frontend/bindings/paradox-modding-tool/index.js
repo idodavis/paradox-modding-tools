@@ -4,12 +4,16 @@
 
 import * as DiffService from "./diffservice.js";
 import * as FileService from "./fileservice.js";
+import * as MergerService from "./mergerservice.js";
 export {
     DiffService,
-    FileService
+    FileService,
+    MergerService
 };
 
 export {
     DiffLine,
-    FileMatch
+    FileMatch,
+    FileMergeResult,
+    MergerOptions
 } from "./models.js";

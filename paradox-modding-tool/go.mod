@@ -3,6 +3,7 @@ module paradox-modding-tool
 go 1.25
 
 require (
+	github.com/alecthomas/participle/v2 v2.1.1
 	github.com/aymanbagabas/go-udiff v0.3.1
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.64
 )

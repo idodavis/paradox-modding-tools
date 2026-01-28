@@ -13,6 +13,7 @@ export default {
         'dark-border': '#2a3441',
         'btn-primary': '#2563eb',
         'btn-primary-hover': '#3b82f6',
+        'accent-success': '#22c55e',
         'diff-add': 'rgba(16, 185, 129, 0.2)',
         'diff-remove': 'rgba(239, 68, 68, 0.2)',
         'diff-context': 'transparent',

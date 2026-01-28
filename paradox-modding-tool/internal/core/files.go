@@ -26,6 +26,7 @@ func CollectFromPaths(paths []string) (map[string]string, error) {
 		}
 
 		if info.IsDir() {
+			// Walk directory and collect all .txt files
 			err := filepath.Walk(path, func(filePath string, fileInfo os.FileInfo, err error) error {
 				if err != nil {
 					return err
@@ -38,6 +39,7 @@ func CollectFromPaths(paths []string) (map[string]string, error) {
 					if err != nil {
 						return err
 					}
+					// Use directory path + relative path as key to handle multiple directories
 					key := filepath.Join(filepath.Base(path), relPath)
 					files[key] = filePath
 				}
@@ -47,8 +49,10 @@ func CollectFromPaths(paths []string) (map[string]string, error) {
 				return nil, fmt.Errorf("error walking directory %s: %w", path, err)
 			}
 		} else {
+			// Individual file - use filename as key
 			if strings.HasSuffix(strings.ToLower(path), ".txt") {
 				key := filepath.Base(path)
+				// If file already exists, append parent dir to make unique
 				if _, exists := files[key]; exists {
 					parentDir := filepath.Base(filepath.Dir(path))
 					key = filepath.Join(parentDir, key)
@@ -65,12 +69,80 @@ func CollectFromPaths(paths []string) (map[string]string, error) {
 // Returns a map of relativePath -> FileMatch.
 func FindMatching(filesA, filesB map[string]string) map[string]FileMatch {
 	matches := make(map[string]FileMatch)
+	matchedA := make(map[string]bool)
+	matchedB := make(map[string]bool)
+
+	// First, try to match files by their relative path keys (exact match)
 	for keyA, pathA := range filesA {
 		if pathB, exists := filesB[keyA]; exists {
 			matches[keyA] = FileMatch{FileAPath: pathA, FileBPath: pathB}
+			matchedA[keyA] = true
+			matchedB[keyA] = true
 		}
 	}
 
-	// Only exact relative-path matches: files must have the same path+filename in both sets.
+	// Then, try matching by relative path structure (e.g., "events/file.txt")
+	// This handles cases where files are in the same subdirectory structure but different roots
+	for keyA, pathA := range filesA {
+		if matchedA[keyA] {
+			continue
+		}
+
+		// Extract the relative path structure (everything after the first directory component)
+		partsA := strings.Split(keyA, string(filepath.Separator))
+		if len(partsA) > 1 {
+			relStructA := strings.Join(partsA[1:], string(filepath.Separator))
+
+			for keyB, pathB := range filesB {
+				if matchedB[keyB] {
+					continue
+				}
+
+				partsB := strings.Split(keyB, string(filepath.Separator))
+				if len(partsB) > 1 {
+					relStructB := strings.Join(partsB[1:], string(filepath.Separator))
+					if relStructA == relStructB {
+						// Use the more descriptive key
+						matchKey := keyA
+						if len(keyB) > len(keyA) {
+							matchKey = keyB
+						}
+						matches[matchKey] = FileMatch{FileAPath: pathA, FileBPath: pathB}
+						matchedA[keyA] = true
+						matchedB[keyB] = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Finally, try matching by just the filename (for cases where directory structure differs)
+	for keyA, pathA := range filesA {
+		if matchedA[keyA] {
+			continue
+		}
+
+		filenameA := filepath.Base(pathA)
+		for keyB, pathB := range filesB {
+			if matchedB[keyB] {
+				continue
+			}
+
+			filenameB := filepath.Base(pathB)
+			if filenameA == filenameB {
+				// Use the more descriptive key
+				matchKey := keyA
+				if len(keyB) > len(keyA) {
+					matchKey = keyB
+				}
+				matches[matchKey] = FileMatch{FileAPath: pathA, FileBPath: pathB}
+				matchedA[keyA] = true
+				matchedB[keyB] = true
+				break
+			}
+		}
+	}
+
 	return matches
 }

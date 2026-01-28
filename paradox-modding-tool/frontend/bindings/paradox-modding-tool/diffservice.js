@@ -17,6 +17,7 @@ import * as $models from "./models.js";
 
 /**
  * GetDiff returns a structured diff between two files (DiffLine slice with type, content, line numbers).
+ * Uses line-based diff to avoid cascading false positives when only a block of lines changes (e.g. removing comments at the top).
  * @param {string} beforeFilePath
  * @param {string} afterFilePath
  * @returns {$CancellablePromise<$models.DiffLine[]>}

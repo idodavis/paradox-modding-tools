@@ -13,6 +13,7 @@ body {
   min-height: 100%;
   overflow: hidden;
   box-sizing: border-box;
+  background-color: #0f1419; /* dark-bg: no white flash when resizing from any edge */
 }
 
 #app {
@@ -21,9 +22,11 @@ body {
   height: 100%;
   min-height: 100%;
   max-width: none;
-  display: block;
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 0;
+  background-color: #0f1419;
 }
 
 /* Buttons: fit text, responsive tap target, consistent across app */

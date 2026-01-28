@@ -16,8 +16,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * GetDiff generates a structured diff between two files
- * Returns an array of DiffLine objects with type, content, and line numbers
+ * GetDiff returns a structured diff between two files (DiffLine slice with type, content, line numbers).
  * @param {string} beforeFilePath
  * @param {string} afterFilePath
  * @returns {$CancellablePromise<$models.DiffLine[]>}

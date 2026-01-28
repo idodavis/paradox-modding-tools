@@ -21,8 +21,7 @@ type DiffLine struct {
 	NewLineNum *int   `json:"newLineNum"` // Line number in new file (nil if not applicable)
 }
 
-// GetDiff generates a structured diff between two files
-// Returns an array of DiffLine objects with type, content, and line numbers
+// GetDiff returns a structured diff between two files (DiffLine slice with type, content, line numbers).
 func (d *DiffService) GetDiff(beforeFilePath string, afterFilePath string) ([]DiffLine, error) {
 	beforeContent, err := os.ReadFile(beforeFilePath)
 	if err != nil {
@@ -32,11 +31,14 @@ func (d *DiffService) GetDiff(beforeFilePath string, afterFilePath string) ([]Di
 	if err != nil {
 		return nil, fmt.Errorf("error reading file B: %w", err)
 	}
-
-	// Generate unified diff
-	diffText := udiff.Unified(beforeFilePath, afterFilePath, string(beforeContent), string(afterContent))
-
-	// Parse into structured format
+	before := string(beforeContent)
+	after := string(afterContent)
+	edits := udiff.Strings(before, after)
+	const contextLines = 3
+	diffText, err := udiff.ToUnified(beforeFilePath, afterFilePath, before, edits, contextLines)
+	if err != nil {
+		diffText = udiff.Unified(beforeFilePath, afterFilePath, before, after)
+	}
 	return parseDiffToLines(diffText), nil
 }
 

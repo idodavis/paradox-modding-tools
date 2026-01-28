@@ -43,7 +43,8 @@ export function FindMatchingFiles(filesA, filesB) {
 }
 
 /**
- * SelectDirectory opens a directory selection dialog
+ * SelectDirectory opens a directory selection dialog.
+ * Returns ("", nil) when the user cancels so no error dialog is shown.
  * @param {string} title
  * @returns {$CancellablePromise<string>}
  */
@@ -52,7 +53,8 @@ export function SelectDirectory(title) {
 }
 
 /**
- * SelectMultipleFiles opens a file selection dialog allowing multiple file selection
+ * SelectMultipleFiles opens a file selection dialog allowing multiple file selection.
+ * Returns (nil, nil) when the user cancels so no error dialog is shown.
  * @param {string} title
  * @param {string} filter
  * @returns {$CancellablePromise<string[]>}

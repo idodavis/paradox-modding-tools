@@ -18,17 +18,23 @@ type FileMatch struct {
 	FileBPath string `json:"fileBPath"`
 }
 
-// SelectDirectory opens a directory selection dialog
+// SelectDirectory opens a directory selection dialog.
+// Returns ("", nil) when the user cancels so no error dialog is shown.
 func (f *FileService) SelectDirectory(title string) (string, error) {
 	app := application.Get()
 	dialog := app.Dialog.OpenFile()
 	dialog.SetTitle(title)
 	dialog.CanChooseDirectories(true)
 	dialog.CanChooseFiles(false)
-	return dialog.PromptForSingleSelection()
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		return "", nil
+	}
+	return path, nil
 }
 
-// SelectMultipleFiles opens a file selection dialog allowing multiple file selection
+// SelectMultipleFiles opens a file selection dialog allowing multiple file selection.
+// Returns (nil, nil) when the user cancels so no error dialog is shown.
 func (f *FileService) SelectMultipleFiles(title, filter string) ([]string, error) {
 	app := application.Get()
 	dialog := app.Dialog.OpenFile()
@@ -38,7 +44,11 @@ func (f *FileService) SelectMultipleFiles(title, filter string) ([]string, error
 	if filter != "" {
 		dialog.AddFilter(filter, filter)
 	}
-	return dialog.PromptForMultipleSelection()
+	paths, err := dialog.PromptForMultipleSelection()
+	if err != nil {
+		return nil, nil
+	}
+	return paths, nil
 }
 
 // CollectFilesFromPaths collects all .txt files from a mix of files and directories

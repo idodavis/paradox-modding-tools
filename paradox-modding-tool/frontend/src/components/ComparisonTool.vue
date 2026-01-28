@@ -48,9 +48,10 @@
 
     <!-- File List -->
     <div v-if="matchingFiles.length > 0"
-      class="flex-1 min-h-0 min-w-0 w-full max-w-full bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-material border border-dark-border/50 overflow-hidden flex flex-col">
+      class="flex-1 min-w-0 w-full max-w-full bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 shadow-material border border-dark-border/50 overflow-hidden flex flex-col"
+      style="min-height: 200px;">
       <h3 class="text-base sm:text-lg font-semibold mb-4 flex-shrink-0">Matching Files ({{ matchingFiles.length }})</h3>
-      <div class="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
+      <div class="flex-1 min-h-0 overflow-y-auto overflow-x-auto" style="min-height: 120px;">
         <div v-for="(file, index) in matchingFiles" :key="index" @click="viewFileDiff(file)"
           class="p-3 mb-2 bg-dark-input/60 rounded-lg border border-dark-border/30 shadow-material cursor-pointer hover:bg-dark-input/80 transition-all duration-200">
           <div class="text-sm font-mono text-gray-200 break-all">{{ file.relativePath }}</div>
@@ -65,7 +66,12 @@
     </div>
 
     <!-- Diff Viewer Overlay -->
-    <DiffViewer :visible="diffFilePath !== null" :lines="diffLines" :loading="loadingDiff" @close="closeDiff" />
+    <DiffViewer
+      :visible="diffFilePath !== null"
+      :lines="diffLines"
+      :loading="loadingDiff"
+      @close="closeDiff"
+    />
   </div>
 </template>
 
@@ -153,12 +159,10 @@ export default {
     async viewFileDiff(file) {
       this.loadingDiff = true
       this.diffFilePath = file.relativePath
-
       try {
-        const diffLines = await GetDiff(file.fileAPath, file.fileBPath)
-        this.diffLines = diffLines || []
-      } catch (error) {
-        alert('Error loading diff: ' + error)
+        this.diffLines = (await GetDiff(file.fileAPath, file.fileBPath)) || []
+      } catch (e) {
+        alert('Error loading diff: ' + e)
         this.diffLines = []
       } finally {
         this.loadingDiff = false

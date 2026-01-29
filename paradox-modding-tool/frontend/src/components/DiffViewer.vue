@@ -1,11 +1,9 @@
 <template>
-  <div v-if="visible" class="fixed inset-0 z-60 flex flex-col bg-(--p-surface-900)" @click.self="$emit('close')"
-    style="pointer-events: auto;">
-    <div
-      class="flex-1 flex flex-col min-h-0 min-w-0 m-2 bg-dark-panel rounded-xl border border-dark-border overflow-hidden"
-      @click.stop style="pointer-events: auto;">
+  <div v-if="visible" class="fixed inset-0 z-60 flex flex-col bg-(--p-surface-900)" @click.self="$emit('close')">
+    <div class="flex-1 flex flex-col min-h-0 m-2 bg-dark-panel rounded-xl border border-dark-border overflow-hidden"
+      @click.stop>
       <!-- Header -->
-      <div class="flex flex-col px-4 py-4 border-b border-dark-border bg-dark-panel/80">
+      <div class="px-4 py-4 border-b border-dark-border bg-dark-panel/80">
         <div class="flex justify-between items-center gap-2 mb-3">
           <h2 class="text-lg font-semibold truncate min-w-0">Diff Viewer</h2>
           <Button label="Close" @click="$emit('close')" />
@@ -27,21 +25,19 @@
 
       <!-- Content -->
       <div ref="contentWrap" class="flex-1 min-h-0 flex flex-col">
-
-        <!-- Side-by-side: full-width header band above two-column scroll; horizontal bars in fixed strip -->
         <template v-if="viewMode === 'sidebyside' && !loading && lines.length > 0">
           <div class="flex-1 min-h-0 flex flex-col">
             <div ref="sideBySideScroll" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-dark-panel">
-              <div class="flex flex-col" :style="{ height: (headerItemsVisibleHeight + sbsBodyHeight) + 'px' }">
-                <!-- Full-width header band (---/+++ etc.), not tied to column horizontal scroll -->
+              <div :style="{ height: (headerItemsVisibleHeight + sbsBodyHeight) + 'px' }">
+                <!-- Full-width header band (---/+++ etc.) -->
                 <div class="w-full overflow-x-auto border-b border-dark-border/50 bg-diff-header"
                   :style="{ minHeight: headerItemsVisibleHeight + 'px' }">
                   <div v-for="(item, i) in headerItems" :key="item.idx" :ref="el => setLineRef(item.idx, el)"
-                    class="font-mono text-sm leading-6 flex items-center border-l-[3px] border-dark-border/30" :class="[
+                    class="font-mono text-sm leading-6 border-l-[3px] border-dark-border/30" :class="[
                       (item.line.content || '').trim() === '' ? 'min-h-0 h-0 overflow-hidden border-0' : 'min-h-6',
                       isMatchHighlighted(item.idx) && 'bg-yellow-500/20'
                     ]">
-                    <div class="flex px-3 flex-nowrap" style="width: max-content">
+                    <div class="px-3" style="width: max-content">
                       <template v-if="(item.line.content || '').startsWith('---')">
                         <span class="font-semibold text-red-500/90 mr-1 select-none">---</span>
                         <span class="text-slate-400 mr-1">Base:</span>
@@ -58,19 +54,28 @@
                     </div>
                   </div>
                 </div>
-                <!-- Two-column body (add/remove/context only) -->
+                <!-- Two-column body -->
                 <div class="flex" :style="{ height: sbsBodyHeight + 'px' }">
                   <div class="flex-1 min-w-0 overflow-hidden border-r border-dark-border">
                     <div ref="leftColContent" class="font-mono text-sm leading-6"
-                      :style="{ minHeight: sbsBodyHeight + 'px', width: 'max-content', transform: `translateX(-${sbsLeftScroll}px)` }">
+                      :style="{ minHeight: sbsBodyHeight + 'px', width: 'max-content', minWidth: '100%', transform: `translateX(-${sbsLeftScroll}px)` }">
                       <div v-for="item in bodyItems" :key="'L' + item.idx" :ref="el => setLineRef(item.idx, el)"
-                        class="min-h-6 min-w-full border-l-[3px] border-dark-border/30"
-                        :class="[cellClass('left', item.line.type), isMatchHighlighted(item.idx) && 'bg-yellow-500/20']">
-                        <div class="flex">
-                          <span class=" inline-block min-w-10 text-right tabular-nums text-slate-400 px-2">{{
+                        class="flex min-h-6 border-l-[3px]" :class="[
+                          item.line.type === 'remove' ? 'bg-diff-remove border-l-red-500/50' :
+                            item.line.type === 'context' ? 'bg-diff-context border-l-transparent' : 'border-l-transparent',
+                          cellClass('left', item.line.type),
+                          isMatchHighlighted(item.idx) && 'bg-yellow-500/20'
+                        ]">
+                        <div
+                          class="flex min-w-16 border-r border-dark-border/50 bg-dark-input/50 px-2 items-center justify-end select-none">
+                          <span class="min-w-10 text-right tabular-nums text-slate-400">{{
                             formatLineNum(item.line.oldLineNum) }}</span>
-                          <span class="whitespace-pre px-2 text-gray-200">{{ showLeft(item.line.type) ?
-                            item.line.content : '\u00a0'
+                        </div>
+                        <div class="px-3">
+                          <span v-if="showLeft(item.line.type) && item.line.type !== 'context'"
+                            class="min-w-4 mr-2 font-semibold select-none" :class="prefixColor(item.line.type)">{{
+                              prefix(item.line.type) }}</span>
+                          <span class="whitespace-pre">{{ showLeft(item.line.type) ? item.line.content : '\u00a0'
                             }}</span>
                         </div>
                       </div>
@@ -78,15 +83,24 @@
                   </div>
                   <div class="flex-1 min-w-0 overflow-hidden">
                     <div ref="rightColContent" class="font-mono text-sm leading-6"
-                      :style="{ minHeight: sbsBodyHeight + 'px', width: 'max-content', transform: `translateX(-${sbsRightScroll}px)` }">
-                      <div v-for="item in bodyItems" :key="'R' + item.idx"
-                        class="min-h-6 min-w-full border-l-[3px] border-dark-border/30"
-                        :class="[cellClass('right', item.line.type), isMatchHighlighted(item.idx) && 'bg-yellow-500/20']">
-                        <div class="flex">
-                          <span class="inline-block min-w-10 text-right tabular-nums text-slate-400 px-2">{{
+                      :style="{ minHeight: sbsBodyHeight + 'px', width: 'max-content', minWidth: '100%', transform: `translateX(-${sbsRightScroll}px)` }">
+                      <div v-for="item in bodyItems" :key="'R' + item.idx" class="flex min-h-6 border-l-[3px]" :class="[
+                        item.line.type === 'add' ? 'bg-diff-add border-l-emerald-500/50' :
+                          item.line.type === 'context' ? 'bg-diff-context border-l-transparent' : 'border-l-transparent',
+                        cellClass('right', item.line.type),
+                        isMatchHighlighted(item.idx) && 'bg-yellow-500/20'
+                      ]">
+                        <div
+                          class="flex min-w-16 border-r border-dark-border/50 bg-dark-input/50 px-2 items-center justify-end select-none">
+                          <span class="min-w-10 text-right tabular-nums text-slate-400">{{
                             formatLineNum(item.line.newLineNum) }}</span>
-                          <span class="whitespace-pre px-2 text-gray-200">{{ (item.line.type === 'add' || item.line.type
-                            === 'context')
+                        </div>
+                        <div class="px-3">
+                          <span
+                            v-if="(item.line.type === 'add' || item.line.type === 'context') && item.line.type !== 'context'"
+                            class="min-w-4 mr-2 font-semibold select-none" :class="prefixColor(item.line.type)">{{
+                              prefix(item.line.type) }}</span>
+                          <span class="whitespace-pre">{{ (item.line.type === 'add' || item.line.type === 'context')
                             ? item.line.content : '\u00a0' }}</span>
                         </div>
                       </div>
@@ -95,13 +109,13 @@
                 </div>
               </div>
             </div>
-            <div class="flex border-t border-dark-border/60 overflow-hidden" style="height: 16px">
-              <div ref="leftHScroll"
-                class="flex-1 min-w-0 overflow-x-auto overflow-y-hidden border-r border-dark-border/50"
-                style="height: 16px" @scroll="sbsLeftScroll = $event.target.scrollLeft">
+            <!-- Horizontal scrollbars -->
+            <div class="flex border-t border-dark-border/60 h-4">
+              <div ref="leftHScroll" class="flex-1 overflow-x-auto overflow-y-hidden border-r border-dark-border/50"
+                @scroll="sbsLeftScroll = $event.target.scrollLeft">
                 <div :style="{ width: leftScrollWidth + 'px', height: '1px' }" />
               </div>
-              <div ref="rightHScroll" class="flex-1 min-w-0 overflow-x-auto overflow-y-hidden" style="height: 16px"
+              <div ref="rightHScroll" class="flex-1 overflow-x-auto overflow-y-hidden"
                 @scroll="sbsRightScroll = $event.target.scrollLeft">
                 <div :style="{ width: rightScrollWidth + 'px', height: '1px' }" />
               </div>
@@ -115,65 +129,59 @@
             @scroll="scrollTop = $event.target.scrollTop">
             <div v-if="loading" class="p-8 text-center text-gray-400">No differences found. (Or still loading...)</div>
             <div v-else-if="lines.length > 0" class="font-mono text-sm leading-6"
-              style="min-width: 100%; width: max-content;">
-              <div v-if="useVirtualScroll" :style="{ height: totalHeight + 'px', position: 'relative' }" class="w-full">
-                <div
-                  :style="{ transform: `translateY(${visibleStart * 24}px)`, minWidth: '100%', width: 'max-content' }"
-                  class="font-mono text-sm leading-6 absolute left-0 right-0 top-0">
+              style="min-width: 100%; width: max-content">
+              <div v-if="useVirtualScroll" class="w-full relative" :style="{ height: totalHeight + 'px' }">
+                <div class="absolute inset-x-0 top-0"
+                  :style="{ transform: `translateY(${visibleStart * 24}px)`, minWidth: '100%', width: 'max-content' }">
                   <div v-for="(line, i) in visibleLines" :key="visibleStart + i"
-                    :ref="el => setLineRef(visibleStart + i, el)" class="min-h-6 min-w-full border-l-[3px]"
+                    :ref="el => setLineRef(visibleStart + i, el)" class="flex min-h-6 border-l-[3px]"
                     :class="[lineClasses(line.type), isMatchHighlighted(visibleStart + i) && 'bg-yellow-500/20']">
-                    <div class="flex min-w-full" style="width: max-content">
-                      <div
-                        class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 items-center justify-end gap-4 select-none">
-                        <span class="inline-block min-w-10 text-right tabular-nums text-slate-400"
-                          :class="{ 'text-gray-500': !line.oldLineNum }">{{ formatLineNum(line.oldLineNum) }}</span>
-                        <span class="inline-block min-w-10 text-right tabular-nums text-slate-400"
-                          :class="{ 'text-gray-500': !line.newLineNum }">{{ formatLineNum(line.newLineNum) }}</span>
-                      </div>
-                      <div class="flex px-3 items-center flex-nowrap">
-                        <span v-if="line.type !== 'header' && line.type !== 'other'"
-                          class="inline-block min-w-4 mr-2 font-semibold select-none" :class="prefixColor(line.type)">{{
-                            prefix(line.type) }}</span>
-                        <span class="whitespace-pre">{{ line.content }}</span>
-                      </div>
+                    <div
+                      class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 items-center justify-end gap-4 select-none">
+                      <span class="min-w-10 text-right tabular-nums text-slate-400"
+                        :class="{ 'text-gray-500': !line.oldLineNum }">{{ formatLineNum(line.oldLineNum) }}</span>
+                      <span class="min-w-10 text-right tabular-nums text-slate-400"
+                        :class="{ 'text-gray-500': !line.newLineNum }">{{ formatLineNum(line.newLineNum) }}</span>
+                    </div>
+                    <div class="px-3">
+                      <span v-if="line.type !== 'header' && line.type !== 'other'"
+                        class="min-w-4 mr-2 font-semibold select-none" :class="prefixColor(line.type)">{{
+                          prefix(line.type) }}</span>
+                      <span class="whitespace-pre">{{ line.content }}</span>
                     </div>
                   </div>
                 </div>
               </div>
               <template v-else>
                 <div v-for="(line, index) in lines" :key="index" :ref="el => setLineRef(index, el)"
-                  class="min-h-6 min-w-full border-l-[3px]"
+                  class="flex min-h-6 border-l-[3px]"
                   :class="[lineClasses(line.type), isMatchHighlighted(index) && 'bg-yellow-500/20']">
-                  <div class="flex min-w-full" style="width: max-content">
-                    <div
-                      class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 items-center justify-end gap-4 select-none">
-                      <span class="inline-block min-w-10 text-right tabular-nums text-slate-400"
-                        :class="{ 'text-gray-500': !line.oldLineNum }">{{ formatLineNum(line.oldLineNum) }}</span>
-                      <span class="inline-block min-w-10 text-right tabular-nums text-slate-400"
-                        :class="{ 'text-gray-500': !line.newLineNum }">{{ formatLineNum(line.newLineNum) }}</span>
-                    </div>
-                    <div class="flex px-3 items-center flex-nowrap">
-                      <template
-                        v-if="(line.type === 'header' || line.type === 'other') && (line.content || '').startsWith('---')">
-                        <span class="inline-block min-w-4 mr-2 font-semibold select-none text-red-500/90">---</span>
-                        <span class="text-slate-400 mr-1">Base:</span>
-                        <span class="whitespace-pre">{{ (line.content || '').slice(3).trim() }}</span>
-                      </template>
-                      <template
-                        v-else-if="(line.type === 'header' || line.type === 'other') && (line.content || '').startsWith('+++')">
-                        <span class="inline-block min-w-4 mr-2 font-semibold select-none text-accent-success">
-                        </span>
-                        <span class="text-slate-400 mr-1">Compare:</span>
-                        <span class="whitespace-pre">{{ (line.content || '').slice(3).trim() }}</span>
-                      </template>
-                      <template v-else>
-                        <span v-if="line.type !== 'header' && line.type !== 'other'"
-                          class="inline-block min-w-4 mr-2 font-semibold select-none" :class="prefixColor(line.type)">{{
-                            prefix(line.type) }}</span>
-                        <span class="whitespace-pre">{{ line.content }}</span>
-                      </template>
-                    </div>
+                  <div
+                    class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 items-center justify-end gap-4 select-none">
+                    <span class="min-w-10 text-right tabular-nums text-slate-400"
+                      :class="{ 'text-gray-500': !line.oldLineNum }">{{ formatLineNum(line.oldLineNum) }}</span>
+                    <span class="min-w-10 text-right tabular-nums text-slate-400"
+                      :class="{ 'text-gray-500': !line.newLineNum }">{{ formatLineNum(line.newLineNum) }}</span>
+                  </div>
+                  <div class="px-3">
+                    <template
+                      v-if="(line.type === 'header' || line.type === 'other') && (line.content || '').startsWith('---')">
+                      <span class="min-w-4 mr-2 font-semibold select-none text-red-500/90">---</span>
+                      <span class="text-slate-400 mr-1">Base:</span>
+                      <span class="whitespace-pre">{{ (line.content || '').slice(3).trim() }}</span>
+                    </template>
+                    <template
+                      v-else-if="(line.type === 'header' || line.type === 'other') && (line.content || '').startsWith('+++')">
+                      <span class="min-w-4 mr-2 font-semibold select-none text-accent-success">+++</span>
+                      <span class="text-slate-400 mr-1">Compare:</span>
+                      <span class="whitespace-pre">{{ (line.content || '').slice(3).trim() }}</span>
+                    </template>
+                    <template v-else>
+                      <span v-if="line.type !== 'header' && line.type !== 'other'"
+                        class="min-w-4 mr-2 font-semibold select-none" :class="prefixColor(line.type)">{{
+                          prefix(line.type) }}</span>
+                      <span class="whitespace-pre">{{ line.content }}</span>
+                    </template>
                   </div>
                 </div>
               </template>

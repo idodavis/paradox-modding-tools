@@ -1,0 +1,83 @@
+{
+  "objectTypes": {
+    "events": {
+      "name": "Events",
+      "paths": ["events"],
+      "keyPattern": "namespaced",
+      "relatedTypes": ["characters", "traits", "decisions", "scripted_triggers", "scripted_effects"]
+    },
+    "characters": {
+      "name": "Characters",
+      "paths": ["history/characters"],
+      "keyPattern": "numeric",
+      "relatedTypes": ["titles", "traits", "cultures", "religions"]
+    },
+    "traits": {
+      "name": "Traits",
+      "paths": ["common/traits"],
+      "keyPattern": "any",
+      "relatedTypes": ["characters", "events"]
+    },
+    "decisions": {
+      "name": "Decisions",
+      "paths": ["common/decisions"],
+      "keyPattern": "any",
+      "relatedTypes": ["events", "characters", "scripted_triggers", "scripted_effects"]
+    },
+    "governments": {
+      "name": "Governments",
+      "paths": ["common/governments"],
+      "keyPattern": "any",
+      "relatedTypes": ["characters"]
+    },
+    "cultures": {
+      "name": "Cultures",
+      "paths": ["common/culture/cultures"],
+      "keyPattern": "any",
+      "relatedTypes": ["characters", "traditions", "innovations"]
+    },
+    "titles": {
+      "name": "Titles",
+      "paths": ["common/landed_titles", "history/titles"],
+      "keyPattern": "prefixed",
+      "keyPrefixes": ["e_", "k_", "d_", "c_", "b_"],
+      "relatedTypes": ["characters"]
+    },
+    "religions": {
+      "name": "Religions",
+      "paths": ["common/religion/religions"],
+      "keyPattern": "any",
+      "relatedTypes": ["characters", "cultures"]
+    },
+    "traditions": {
+      "name": "Traditions",
+      "paths": ["common/culture/traditions"],
+      "keyPattern": "any",
+      "relatedTypes": ["cultures"]
+    },
+    "innovations": {
+      "name": "Innovations",
+      "paths": ["common/culture/innovations"],
+      "keyPattern": "any",
+      "relatedTypes": ["cultures"]
+    },
+    "scripted_triggers": {
+      "name": "Scripted Triggers",
+      "paths": ["common/scripted_triggers"],
+      "keyPattern": "any",
+      "inlinePaths": ["events", "common/activities"],
+      "inlineKeyPattern": "keyword_prefixed",
+      "inlineKeyKeywords": ["scripted_trigger"],
+      "relatedTypes": ["events", "decisions"]
+    },
+    "scripted_effects": {
+      "name": "Scripted Effects",
+      "paths": ["common/scripted_effects"],
+      "keyPattern": "any",
+      "inlinePaths": ["events", "common/activities"],
+      "inlineKeyPattern": "keyword_prefixed",
+      "inlineKeyKeywords": ["scripted_effect"],
+      "relatedTypes": ["events", "decisions"]
+    }
+  }
+}

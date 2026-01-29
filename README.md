@@ -5,6 +5,17 @@ This is just a place for different tools and utilities I'm currently working on 
 
 ## What's Here
 
+### Paradox Modding Tool
+
+A Cross Platform Desktop Application Modding Tool for speeding up the development of modders of Paradox Interactive Games. Currently It has two funcitons with more to come:
+
+#### Compare Tool
+
+Essential just a diff tool that's most useful to check the difference between multiple files in too different directies that are named the same and share relative paths. Essentially when overriding vanill files you want to be able to see the differences between updates, this tool helps. It can show diff of any too files though as well.
+
+#### Merge Tool
+
+This uses the parser to go through two sets of files and merges matching pairs with one base file and a secondary file, base file always takes precedence unless object keys (eventIDs, accoladeIDs, etc.) are added to a list, then objects matching those keys in the secondary file will take precedence, this way you can update files after a game patch but still keep the oebjects you've modified.
 
 ### Paradox File Parser
 

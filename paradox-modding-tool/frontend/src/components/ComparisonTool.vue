@@ -1,11 +1,11 @@
 <template>
-  <div class="flex-1 flex flex-col min-h-0 min-w-0 p-4 sm:p-6 overflow-auto">
-    <div class="w-full max-w-full rounded-xl p-4 sm:p-6 border mb-4 sm:mb-6 shrink-0">
-      <h2 class="text-lg sm:text-xl font-semibold mb-4 sm:mb-5">Comparison Tool</h2>
+  <div class="flex-1 flex flex-col min-h-0 min-w-0 p-4 overflow-auto">
+    <div class="w-full max-w-full rounded-xl p-4 border border-dark-border mb-4">
+      <h2 class="text-lg font-semibold mb-4">Comparison Tool</h2>
 
       <!-- FileSet A -->
       <div class="mb-4">
-        <label class="block mb-2 font-medium text-sm sm:text-base">Compare FileSet/Directory A:</label>
+        <label class="block mb-2 font-medium text-sm">Compare FileSet/Directory A:</label>
         <Textarea :modelValue="setA.join('\n')" @update:modelValue="setA = normalizeLines($event)" rows="3"
           placeholder="Select files or directories..." class="w-full min-w-0 px-3 py-2" />
         <div class="flex flex-wrap gap-2 mt-2">
@@ -18,7 +18,7 @@
 
       <!-- FileSet B -->
       <div class="mb-4">
-        <label class="block mb-2 font-medium text-sm sm:text-base">Compare FileSet/Directory B:</label>
+        <label class="block mb-2 font-medium text-sm">Compare FileSet/Directory B:</label>
         <Textarea :modelValue="setB.join('\n')" @update:modelValue="setB = normalizeLines($event)" rows="3"
           placeholder="Select files or directories..." class="w-full min-w-0 px-3 py-2" />
         <div class="flex flex-wrap gap-2 mt-2">
@@ -43,14 +43,14 @@
       </Column>
       <Column header="Show Diff">
         <template #body="{ data }">
-          <Button label="View diff" @click="viewFileDiff(data)" />
+          <Button label="View diff" severity="success" variant="outlined" @click="viewFileDiff(data)" />
         </template>
       </Column>
     </DataTable>
 
     <div v-else-if="!loadingFiles"
-      class="w-full max-w-full rounded-xl p-4 sm:p-6 border border-dark-border/50 bg-dark-panel/60 shrink-0">
-      <p class="text-gray-300 text-center text-sm sm:text-base">
+      class="w-full max-w-full rounded-xl p-4 border border-dark-border/50 bg-dark-panel/60">
+      <p class="text-gray-300 text-center text-sm">
         Please select both sets of files/directories and click "Compare"
       </p>
     </div>

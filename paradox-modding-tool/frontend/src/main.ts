@@ -40,18 +40,12 @@ export const MyPreset = definePreset(Aura, {
             900: '{slate.900}',
             950: '{slate.950}'
           },
-            // primary: {
-            //     color: '{primary.400}',
-            //     contrastColor: '{primary.950}',
-            //     hoverColor: '{primary.200}',
-            //     activeColor: '{primary.300}'
-            // },
-            // highlight: {
-            //     background: '{primary.50}',
-            //     focusBackground: '{primary.300}',
-            //     color: '{primary.950}',
-            //     focusColor: '{primary.950}'
-            // }
+          primary: {
+            color: '{primary.600}',
+            inverseColor: '{primary.950}',
+            hoverColor: '{primary.400}',
+            activeColor: '{primary.200}'
+          }
         }
     }
   }
@@ -61,7 +55,7 @@ app.use(PrimeVue, {
   theme: {
     preset: MyPreset,
     options: {
-      darkModeSelector: '.my-dark-mode'
+      darkModeSelector: '.my-dark-theme'
     }
   }
 })

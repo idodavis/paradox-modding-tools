@@ -1,6 +1,8 @@
 {
   "devDependencies": {
+    "@iconify/vue": "^5.0.0",
     "@tailwindcss/vite": "^4.1.18",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
+    "vite-svg-loader": "^5.1.0"
   }
 }

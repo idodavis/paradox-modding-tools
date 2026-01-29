@@ -1,20 +1,19 @@
 <template>
-  <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 p-4 sm:p-6 overflow-auto bg-dark-input">
+  <div class="flex-1 grid grid-cols-1 gap-6 p-4 overflow-auto">
     <!-- Configuration Panel -->
-    <div class="bg-dark-panel/60 backdrop-blur-sm rounded-xl p-4 sm:p-6 overflow-y-auto border border-dark-border/50">
+    <div class="backdrop-blur-sm rounded-xl p-4 overflow-y-auto border border-dark-border">
       <!-- Merge Options -->
-      <div class="mb-6">
+      <div class="mb-10">
         <div class="mb-4">
           <h3 class="text-lg font-semibold mb-3">Merge Options</h3>
 
-          <details class="mb-5 group rounded-lg border border-dark-border/50 bg-dark-input/60 overflow-hidden">
+          <details class="mb-5 group rounded-lg border border-dark-border/50 overflow-hidden">
             <summary
-              class="px-3 py-2 cursor-pointer text-sm text-gray-300 hover:bg-dark-border/20 flex items-center justify-between gap-2 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-              <span class="font-medium text-gray-200">How precedence works</span>
-              <span class="text-gray-500 group-open:rotate-180 transition-transform shrink-0 text-xs">▾</span>
+              class="px-3 py-2 cursor-pointer text-sm text-gray-400 hover:bg-dark-border/50 flex items-center justify-between gap-2">
+              <span class="text-gray-400 font-medium">How precedence works</span>
+              <span class="text-gray-400 group-open:rotate-180 transition-transform">▾</span>
             </summary>
-            <div
-              class="px-3 pb-3 pt-0 text-sm text-gray-300 leading-relaxed space-y-2 border-t border-dark-border/30 mt-0">
+            <div class="px-3 py-3 text-sm text-gray-400 border-t border-dark-border/50">
               <p><strong>A (base)</strong> wins for every key unless it’s in the <strong>key list</strong>; those use
                 <strong>B</strong>.
               </p>
@@ -56,17 +55,17 @@
           <div v-if="useKeyList" class="my-2 ml-8">
             <label class="block mb-2 font-medium">Keys where B wins (one per line):</label>
             <p class="text-sm text-gray-400 mb-2">List object keys (e.g. event IDs, decision IDs) that your mod has
-              added or changed. For these keys the output uses B’s version; all other keys use A’s.</p>
+              added or changed. For these keys the output uses B's version; all other keys use A's.</p>
             <Textarea v-model="customKeys" rows="4" placeholder="my_mod_event.0001&#10;my_mod_decision.0001"
-              class="w-full px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200" />
+              class="w-full px-3 py-2" />
           </div>
         </div>
       </div>
 
       <!-- File/Folder Selection -->
-      <div class="mb-6">
+      <div class="mb-10">
         <label class="block mb-4 text-xl font-semibold">File/Folder Selection</label>
-        <div class="my-4">
+        <div class="mb-8">
           <label class="block mb-2 font-medium">
             File Set A (Base):
             <span v-if="pathsA.length" class="text-sm text-gray-400 ml-2">({{ pathsA.length }} {{ pathsA.length === 1 ?
@@ -75,38 +74,35 @@
           <p class="text-xs text-gray-500 mb-1">Wins by default. When updating a mod: put the latest vanilla/game files
             here.</p>
           <Textarea v-model="pathsAText" rows="3" placeholder="Select files or directories..."
-            class="w-full px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200" />
+            class="w-full px-3 py-2" />
           <div class="flex gap-2 mt-2">
-            <Button label="Select File(s)" @click="selectPaths('A', 'pathsAText')" class="btn-primary" />
-            <Button label="Select Folder" @click="selectFolderPath('pathsAText')" class="btn-primary" />
-            <Button label="Clear" @click="pathsAText = ''" class="btn-secondary" />
+            <Button label="Select File(s)" @click="selectPaths('A', 'pathsAText')" />
+            <Button label="Select Folder" @click="selectFolderPath('pathsAText')" />
+            <Button label="Clear" severity="secondary" @click="pathsAText = ''" />
           </div>
         </div>
 
-        <div class="mb-4">
+        <div class="mb-8">
           <label class="block mb-2 font-medium">
             File Set B (Mod):
             <span v-if="pathsB.length" class="text-sm text-gray-400 ml-2">({{ pathsB.length }} {{ pathsB.length === 1 ?
               'item' : 'items' }})</span>
           </label>
-          <p class="text-xs text-gray-500 mb-1">For keys in the key list, B’s version is used. When updating a mod: put
+          <p class="text-xs text-gray-500 mb-1">For keys in the key list, B's version is used. When updating a mod: put
             your mod files here.</p>
           <Textarea v-model="pathsBText" rows="3" placeholder="Select files or directories..."
-            class="w-full px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary font-mono text-sm transition-all duration-200" />
+            class="w-full px-3 py-2" />
           <div class="flex gap-2 mt-2">
-            <Button label="Select File(s)" @click="selectPaths('B', 'pathsBText')" class="btn-primary" />
-            <Button label="Select Folder" @click="selectFolderPath('pathsBText')" class="btn-primary" />
-            <Button label="Clear" @click="pathsBText = ''" class="btn-secondary" />
+            <Button label="Select File(s)" @click="selectPaths('B', 'pathsBText')" />
+            <Button label="Select Folder" @click="selectFolderPath('pathsBText')" />
+            <Button label="Clear" severity="secondary" @click="pathsBText = ''" />
           </div>
         </div>
 
-        <div class="mb-4">
+        <div>
           <label class="block mb-2 font-medium">Output Directory:</label>
-          <div class="flex gap-2">
-            <InputText v-model="mergeOutputDir" type="text" placeholder="merger-output"
-              class="flex-1 px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary transition-all duration-200" />
-            <Button label="Browse" @click="selectOutputDir" class="btn-primary" />
-          </div>
+          <Textarea v-model="mergeOutputDir" rows="1" placeholder="merger-output" class="w-full px-3 py-2" />
+          <Button label="Browse" @click="selectOutputDir" />
         </div>
       </div>
 
@@ -115,8 +111,7 @@
         <label class="block mb-4 text-xl font-semibold">Misc Options</label>
         <div class="my-4">
           <label class="block mb-2 font-medium">Custom Comment Prefix:</label>
-          <InputText v-model="commentPrefix" type="text" placeholder="# MOD:"
-            class="w-full px-3 py-2 border border-dark-border rounded-lg text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-btn-primary/50 focus:border-btn-primary transition-all duration-200" />
+          <Textarea v-model="commentPrefix" rows="1" placeholder="# MOD:" class="w-full px-3 py-2" />
           <p class="text-sm text-gray-400 mt-2 leading-relaxed">Comments with above prefix will be preserved during
             merger.</p>
         </div>
@@ -143,8 +138,10 @@
       <Column header="Diffs" bodyClass="text-right">
         <template #body="{ data }">
           <div class="flex justify-end gap-2">
-            <Button class="btn-accent text-sm" label="A vs Output" @click="viewDiff(data.fileAPath, data.outputPath)" />
-            <Button class="btn-accent text-sm" label="B vs Output" @click="viewDiff(data.fileBPath, data.outputPath)" />
+            <Button label="A vs Output" severity="info" variant="outlined"
+              @click="viewDiff(data.fileAPath, data.outputPath)" />
+            <Button label="B vs Output" severity="success" variant="outlined"
+              @click="viewDiff(data.fileBPath, data.outputPath)" />
           </div>
         </template>
       </Column>
@@ -164,7 +161,6 @@ import DataTable from 'primevue/datatable'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
-import InputText from 'primevue/inputtext'
 import RadioButton from 'primevue/radiobutton'
 import Textarea from 'primevue/textarea'
 
@@ -176,7 +172,6 @@ export default {
     Button,
     Checkbox,
     Column,
-    InputText,
     RadioButton,
     Textarea
   },

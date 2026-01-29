@@ -76,10 +76,20 @@ func lineDiffsToUnified(fromName, toName string, diffs []diffmatchpatch.Diff, co
 		}
 		lines := strings.Split(d.Text, "\n")
 		for i, ln := range lines {
-			if i < len(lines)-1 || strings.HasSuffix(d.Text, "\n") || ln != "" {
+			// Skip the last empty element if the text ends with \n
+			if i == len(lines)-1 && ln == "" {
+				continue
+			}
+			// Add \n to all lines except the very last one (if it didn't originally end with \n)
+			if i < len(lines)-1 {
 				ops = append(ops, lineOp{kind, ln + "\n"})
-			} else if ln != "" {
-				ops = append(ops, lineOp{kind, ln})
+			} else {
+				// Last line - only add \n if original text had it
+				if strings.HasSuffix(d.Text, "\n") {
+					ops = append(ops, lineOp{kind, ln + "\n"})
+				} else {
+					ops = append(ops, lineOp{kind, ln})
+				}
 			}
 		}
 	}
@@ -260,8 +270,8 @@ func parseDiffToLines(diffText string) []DiffLine {
 				OldLineNum: oldNum,
 				NewLineNum: newNum,
 			})
-		} else {
-			// Other lines (empty, etc.)
+		} else if line != "" {
+			// Other lines (non-empty, non-standard lines)
 			result = append(result, DiffLine{
 				Type:       "other",
 				Content:    line,

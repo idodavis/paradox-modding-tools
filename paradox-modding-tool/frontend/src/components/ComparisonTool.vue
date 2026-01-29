@@ -12,7 +12,7 @@
           <Button label="Select File(s)"
             @click="selectFiles('Select Multiple Files To Compare (A)', '*.txt', 'setA')" />
           <Button label="Select Folder" @click="selectFolder('Select Folder To Compare (A)', 'setA')" />
-          <Button label="Clear" @click="clearSet('setA')" />
+          <Button label="Clear" severity="secondary" @click="clearSet('setA')" />
         </div>
       </div>
 
@@ -25,7 +25,7 @@
           <Button label="Select File(s)"
             @click="selectFiles('Select Multiple Files To Compare (B)', '*.txt', 'setB')" />
           <Button label="Select Folder" @click="selectFolder('Select Folder To Compare (B)', 'setB')" />
-          <Button label="Clear" @click="clearSet('setB')" />
+          <Button label="Clear" severity="secondary" @click="clearSet('setB')" />
         </div>
       </div>
 

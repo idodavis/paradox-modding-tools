@@ -5,11 +5,6 @@ This is just a place for different tools and utilities I'm currently working on 
 
 ## What's Here
 
-### Vanilla Synchronizer
-
-A tool for Crusader Kings III (or possibly other paradox games) modders to easily synchronize and update modded files with the latest vanilla game (script) files, while preserving changes to top-level entities and their comments.
-
-More detail in it's [README.md](vanilla-synchronizer/README.md)
 
 ### Paradox File Parser
 

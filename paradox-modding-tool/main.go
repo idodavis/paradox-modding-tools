@@ -31,6 +31,7 @@ func main() {
 			application.NewService(&DiffService{}),
 			application.NewService(&FileService{}),
 			application.NewService(&MergerService{}),
+			application.NewService(&InventoryService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

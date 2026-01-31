@@ -29,15 +29,19 @@
     <div v-show="currentPage === 'merge'">
       <MergeTool />
     </div>
+    <div v-show="currentPage === 'inventory'">
+      <InventoryTool />
+    </div>
   </div>
 </template>
 
 <script>
 import Menubar from 'primevue/menubar'
 import Button from 'primevue/button'
-import Hub from './components/Hub.vue'
-import ComparisonTool from './components/ComparisonTool.vue'
-import MergeTool from './components/MergeTool.vue'
+import Hub from './pages/Hub.vue'
+import ComparisonTool from './pages/ComparisonTool.vue'
+import MergeTool from './pages/MergeTool.vue'
+import InventoryTool from './pages/InventoryTool.vue'
 import { Icon } from "@iconify/vue";
 
 export default {
@@ -48,6 +52,7 @@ export default {
     Hub,
     ComparisonTool,
     MergeTool,
+    InventoryTool,
     Icon,
   },
   data() {

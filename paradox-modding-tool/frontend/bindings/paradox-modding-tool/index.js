@@ -4,10 +4,12 @@
 
 import * as DiffService from "./diffservice.js";
 import * as FileService from "./fileservice.js";
+import * as InventoryService from "./inventoryservice.js";
 import * as MergerService from "./mergerservice.js";
 export {
     DiffService,
     FileService,
+    InventoryService,
     MergerService
 };
 

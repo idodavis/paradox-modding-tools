@@ -10,11 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@iconify/vue": "^4.1.2",
     "@primeuix/themes": "^2.0.3",
     "@wailsio/runtime": "latest",
+    "echarts": "^5.5.0",
     "primeicons": "^7.0.0",
     "primevue": "^4.5.4",
-    "vue": "^3.5.27"
+    "vue": "^3.5.27",
+    "vue-echarts": "^7.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^ 6.0.3",

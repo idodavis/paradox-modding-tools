@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"paradox-modding-tool/internal/core"
 )
 
 // FileService provides file selection and collection operations
@@ -49,6 +50,102 @@ func (f *FileService) SelectMultipleFiles(title, filter string) ([]string, error
 		return nil, nil
 	}
 	return paths, err
+}
+
+// SelectSingleFile opens a file selection dialog for a single file.
+// Returns ("", nil) when the user cancels so no error dialog is shown.
+func (f *FileService) SelectSingleFile(title, filter string) (string, error) {
+	app := application.Get()
+	dialog := app.Dialog.OpenFile()
+	dialog.SetTitle(title)
+	dialog.CanChooseFiles(true)
+	dialog.CanChooseDirectories(false)
+	if filter != "" {
+		dialog.AddFilter(filter, filter)
+	}
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		return "", nil
+	}
+	return path, err
+}
+
+// GetScriptRoot returns the game script root directory for the given game and install path.
+// CK3: <install>/game, EU5: <install>/game/in_game.
+func (f *FileService) GetScriptRoot(installPath, game string) (string, error) {
+	return core.GameScriptRoot(installPath, game)
+}
+
+// DocFileEntry represents a doc file found under the game script root (JSON-safe for bindings).
+type DocFileEntry struct {
+	RelativePath string `json:"relativePath"`
+	FullPath     string `json:"fullPath"`
+}
+
+// ListGameDocFiles walks the game script root and collects .info (CK3) or readme.txt (EU5) files.
+func (f *FileService) ListGameDocFiles(game string, installPath string) ([]DocFileEntry, error) {
+	root, err := core.GameScriptRoot(installPath, game)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("script root %s: %w", root, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("script root is not a directory: %s", root)
+	}
+	gameNorm := strings.ToLower(strings.TrimSpace(game))
+	var matchExt string
+	var matchExact string
+	if gameNorm == "ck3" {
+		matchExt = ".info"
+	} else if gameNorm == "eu5" {
+		matchExact = "readme.txt"
+	} else {
+		return nil, fmt.Errorf("unknown game: %s", game)
+	}
+	var result []DocFileEntry
+	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		name := info.Name()
+		if matchExact != "" {
+			if strings.EqualFold(name, matchExact) {
+				rel, e := filepath.Rel(root, path)
+				if e != nil {
+					return e
+				}
+				result = append(result, DocFileEntry{RelativePath: filepath.ToSlash(rel), FullPath: path})
+			}
+			return nil
+		}
+		if strings.HasSuffix(strings.ToLower(name), matchExt) {
+			rel, e := filepath.Rel(root, path)
+			if e != nil {
+				return e
+			}
+			result = append(result, DocFileEntry{RelativePath: filepath.ToSlash(rel), FullPath: path})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ReadFileContent reads a file as UTF-8 text.
+func (f *FileService) ReadFileContent(fullPath string) (string, error) {
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+	return string(data), nil
 }
 
 // CollectFilesFromPaths collects all .txt files from a mix of files and directories

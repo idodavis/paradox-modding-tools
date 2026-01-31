@@ -83,3 +83,15 @@ func (m *MergerService) MergeMultipleFileSets(pathsA, pathsB []string, outputDir
 	}
 	return results, nil
 }
+
+// MergeTwoFiles merges two files and returns the merged content. The frontend uses SaveFile to write it to a user-chosen path.
+func (m *MergerService) MergeTwoFiles(fileAPath, fileBPath string, options MergerOptions) (string, error) {
+	coreOpts := core.MergeOptions{
+		AddAdditionalEntries: options.AddAdditionalEntries,
+		EntryPlacement:       options.EntryPlacement,
+		KeyList:              options.KeyList,
+		CustomCommentPrefix:  options.CustomCommentPrefix,
+	}
+	content, _, err := core.GetMergedContent(fileAPath, fileBPath, coreOpts)
+	return content, err
+}

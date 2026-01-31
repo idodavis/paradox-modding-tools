@@ -28,10 +28,12 @@ func main() {
 		Name:        "Paradox Modding Tool",
 		Description: "Tools for comparing and merging Paradox game script files",
 		Services: []application.Service{
+			application.NewService(&BrowserService{}),
 			application.NewService(&DiffService{}),
 			application.NewService(&FileService{}),
 			application.NewService(&MergerService{}),
 			application.NewService(&InventoryService{}),
+			application.NewService(&SettingsService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

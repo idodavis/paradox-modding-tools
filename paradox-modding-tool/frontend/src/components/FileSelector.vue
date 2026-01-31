@@ -1,7 +1,7 @@
 <template>
   <div>
     <label v-if="label" class="block mb-2 font-medium text-sm">{{ label }}</label>
-    <p v-if="hint" class="text-xs text-gray-500 mb-1">{{ hint }}</p>
+    <p v-if="hint" class="text-xs text-(--p-surface-500) mb-1">{{ hint }}</p>
     <Textarea :modelValue="modelValue.join('\n')" @update:modelValue="updatePaths" rows="3" :placeholder="placeholder"
       class="w-full min-w-0 px-3 py-2" />
     <div class="flex flex-wrap gap-2 mt-2">
@@ -9,7 +9,7 @@
       <Button :label="folderButtonLabel" @click="selectFolder" size="small" />
       <Button label="Clear" severity="secondary" @click="clear" size="small" />
     </div>
-    <span v-if="modelValue.length" class="text-sm text-gray-400 mt-1 block">
+    <span v-if="modelValue.length" class="text-sm text-(--p-surface-400) mt-1 block">
       {{ modelValue.length }} {{ modelValue.length === 1 ? 'item' : 'items' }}
     </span>
   </div>
@@ -19,7 +19,7 @@
 import { SelectDirectory, SelectMultipleFiles } from '../../bindings/paradox-modding-tool/fileservice.js'
 import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
-import { parsePathList } from '../utils/paths.js'
+import { parsePathList } from '../utils/general.js'
 
 const props = defineProps({
   modelValue: {

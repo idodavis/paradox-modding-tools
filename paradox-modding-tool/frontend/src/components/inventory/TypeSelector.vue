@@ -7,7 +7,7 @@
       <Button label="All" @click="selectAll" size="small" severity="secondary" text />
       <Button label="None" @click="selectNone" size="small" severity="secondary" text />
     </div>
-    <p v-if="types.length > 0" class="text-xs text-gray-400 mt-1">
+    <p v-if="types.length > 0" class="text-xs text-(--p-surface-400) mt-1">
       {{ types.length }} types available, {{ selected.length }} selected
     </p>
     <p v-if="error" class="text-xs text-red-400 mt-1">

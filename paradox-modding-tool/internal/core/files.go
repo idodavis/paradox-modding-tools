@@ -7,6 +7,20 @@ import (
 	"strings"
 )
 
+// GameScriptRoot returns the game script root directory for the given game and install path.
+// CK3: <install>/game, EU5: <install>/game/in_game.
+func GameScriptRoot(installPath, game string) (string, error) {
+	norm := strings.ToLower(strings.TrimSpace(game))
+	switch norm {
+	case "ck3":
+		return filepath.Join(installPath, "game"), nil
+	case "eu5":
+		return filepath.Join(installPath, "game", "in_game"), nil
+	default:
+		return "", fmt.Errorf("unknown game: %s", game)
+	}
+}
+
 // FileMatch holds a pair of file paths (A and B) for a matched relative path.
 type FileMatch struct {
 	FileAPath string

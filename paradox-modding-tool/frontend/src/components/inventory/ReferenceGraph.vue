@@ -1,8 +1,8 @@
 <template>
   <div class="flex flex-col h-full min-h-0 overflow-hidden bg-dark-bg rounded-lg">
     <div class="flex justify-between p-3 border-b border-dark-border flex-wrap">
-      <span class="text-sm text-gray-400">{{ nodes.length }} nodes, {{ links.length }} edges</span>
-      <span class="text-xs text-gray-500">Scroll to zoom · Drag to pan · Click node for details</span>
+      <span class="text-sm text-(--p-surface-400)">{{ nodes.length }} nodes, {{ links.length }} edges</span>
+      <span class="text-xs text-(--p-surface-500)">Scroll to zoom · Drag to pan · Click node for details</span>
     </div>
 
     <!-- Chart -->

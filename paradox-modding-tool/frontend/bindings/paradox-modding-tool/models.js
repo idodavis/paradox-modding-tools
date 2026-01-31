@@ -7,6 +7,110 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * AppSettings holds persisted app settings (JSON-safe for bindings).
+ */
+export class AppSettings {
+    /**
+     * Creates a new AppSettings instance.
+     * @param {Partial<AppSettings>} [$$source = {}] - The source object to create the AppSettings.
+     */
+    constructor($$source = {}) {
+        if (!("game" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["game"] = "";
+        }
+        if (!("gameInstallPathCk3" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["gameInstallPathCk3"] = "";
+        }
+        if (!("gameInstallPathEu5" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["gameInstallPathEu5"] = "";
+        }
+        if (!("patchNotesFeedUrlCk3" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["patchNotesFeedUrlCk3"] = "";
+        }
+        if (!("patchNotesFeedUrlEu5" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["patchNotesFeedUrlEu5"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new AppSettings instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {AppSettings}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new AppSettings(/** @type {Partial<AppSettings>} */($$parsedSource));
+    }
+}
+
+/**
+ * CheckGameUpdateResult is the result of checking for a game update (JSON-safe for bindings).
+ */
+export class CheckGameUpdateResult {
+    /**
+     * Creates a new CheckGameUpdateResult instance.
+     * @param {Partial<CheckGameUpdateResult>} [$$source = {}] - The source object to create the CheckGameUpdateResult.
+     */
+    constructor($$source = {}) {
+        if (!("latestUpdateId" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["latestUpdateId"] = "";
+        }
+        if (!("latestDate" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["latestDate"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["error"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CheckGameUpdateResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {CheckGameUpdateResult}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new CheckGameUpdateResult(/** @type {Partial<CheckGameUpdateResult>} */($$parsedSource));
+    }
+}
+
+/**
  * DiffLine represents a single line in a diff
  */
 export class DiffLine {
@@ -59,6 +163,149 @@ export class DiffLine {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new DiffLine(/** @type {Partial<DiffLine>} */($$parsedSource));
+    }
+}
+
+/**
+ * DocFileEntry represents a doc file found under the game script root (JSON-safe for bindings).
+ */
+export class DocFileEntry {
+    /**
+     * Creates a new DocFileEntry instance.
+     * @param {Partial<DocFileEntry>} [$$source = {}] - The source object to create the DocFileEntry.
+     */
+    constructor($$source = {}) {
+        if (!("relativePath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["relativePath"] = "";
+        }
+        if (!("fullPath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["fullPath"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DocFileEntry instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {DocFileEntry}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DocFileEntry(/** @type {Partial<DocFileEntry>} */($$parsedSource));
+    }
+}
+
+/**
+ * DocPathCache is the cached doc path list for a game+install path (JSON-safe for bindings).
+ */
+export class DocPathCache {
+    /**
+     * Creates a new DocPathCache instance.
+     * @param {Partial<DocPathCache>} [$$source = {}] - The source object to create the DocPathCache.
+     */
+    constructor($$source = {}) {
+        if (!("paths" in $$source)) {
+            /**
+             * @member
+             * @type {string[]}
+             */
+            this["paths"] = [];
+        }
+        if (!("scannedAt" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["scannedAt"] = "";
+        }
+        if (!("installPath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["installPath"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["lastSeenUpdateId"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DocPathCache instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {DocPathCache}
+     */
+    static createFrom($$source = {}) {
+        const $$createField0_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("paths" in $$parsedSource) {
+            $$parsedSource["paths"] = $$createField0_0($$parsedSource["paths"]);
+        }
+        return new DocPathCache(/** @type {Partial<DocPathCache>} */($$parsedSource));
+    }
+}
+
+/**
+ * DocPathCacheSet is the payload for setting the doc path cache (installPath added server-side).
+ */
+export class DocPathCacheSet {
+    /**
+     * Creates a new DocPathCacheSet instance.
+     * @param {Partial<DocPathCacheSet>} [$$source = {}] - The source object to create the DocPathCacheSet.
+     */
+    constructor($$source = {}) {
+        if (!("paths" in $$source)) {
+            /**
+             * @member
+             * @type {string[]}
+             */
+            this["paths"] = [];
+        }
+        if (!("scannedAt" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["scannedAt"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["lastSeenUpdateId"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DocPathCacheSet instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {DocPathCacheSet}
+     */
+    static createFrom($$source = {}) {
+        const $$createField0_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("paths" in $$parsedSource) {
+            $$parsedSource["paths"] = $$createField0_0($$parsedSource["paths"]);
+        }
+        return new DocPathCacheSet(/** @type {Partial<DocPathCacheSet>} */($$parsedSource));
     }
 }
 
@@ -177,6 +424,51 @@ export class FileMergeResult {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new FileMergeResult(/** @type {Partial<FileMergeResult>} */($$parsedSource));
+    }
+}
+
+/**
+ * LatestPatchNotes is the latest patch notes entry for a game (JSON-safe for bindings).
+ */
+export class LatestPatchNotes {
+    /**
+     * Creates a new LatestPatchNotes instance.
+     * @param {Partial<LatestPatchNotes>} [$$source = {}] - The source object to create the LatestPatchNotes.
+     */
+    constructor($$source = {}) {
+        if (!("url" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["url"] = "";
+        }
+        if (!("title" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["title"] = "";
+        }
+        if (!("description" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["description"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LatestPatchNotes instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {LatestPatchNotes}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LatestPatchNotes(/** @type {Partial<LatestPatchNotes>} */($$parsedSource));
     }
 }
 

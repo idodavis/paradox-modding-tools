@@ -1,31 +1,33 @@
 <template>
-  <div class="flex-1 flex flex-col min-h-0 min-w-0 p-4 overflow-auto">
+  <div class="p-4">
     <!-- Input Panel -->
-    <div class="w-full max-w-full rounded-xl p-4 border border-dark-border mb-4">
-      <h2 class="text-lg font-semibold mb-4">Object Inventory</h2>
+    <Card class="w-full max-w-full mb-4">
+      <template #content>
+        <h2 class="text-lg font-semibold mb-4">Object Inventory</h2>
 
-      <!-- Game Selector -->
-      <div class="mb-4">
-        <label class="block mb-2 font-medium text-sm">Game:</label>
-        <Select v-model="game" :options="games" placeholder="Select a game" class="w-full md:w-56"
-          @change="onGameChange" />
-      </div>
+        <!-- Game Selector -->
+        <div class="mb-4">
+          <label class="block mb-2 font-medium text-sm">Game:</label>
+          <Select v-model="game" :options="games" placeholder="Select a game" class="w-full md:w-56"
+            @change="onGameChange" />
+        </div>
 
-      <!-- File Selector -->
-      <FileSelector v-model="files" class="mb-4" />
+        <!-- File Selector -->
+        <FileSelector v-model="files" class="mb-4" />
 
-      <!-- Type Selector -->
-      <TypeSelector v-model="selectedTypes" :game="game" class="mb-4" />
+        <!-- Type Selector -->
+        <TypeSelector v-model="selectedTypes" :game="game" class="mb-4" />
 
-      <!-- Action Buttons -->
-      <div class="flex flex-wrap gap-2">
-        <Button v-if="!loading" @click="extractInventory" :disabled="files.length === 0 || selectedTypes.length === 0"
-          label="Extract Inventory" />
-        <Button v-if="loading" @click="cancelExtraction" label="Cancel Extraction" severity="danger" />
-        <Button @click="showExportImport = true" :disabled="loading" label="Export / Import" severity="secondary" />
-        <Button @click="clearAll" :disabled="loading" label="Clear All" severity="danger" text />
-      </div>
-    </div>
+        <!-- Action Buttons -->
+        <div class="flex flex-wrap gap-2">
+          <Button v-if="!loading" @click="extractInventory" :disabled="files.length === 0 || selectedTypes.length === 0"
+            label="Extract Inventory" />
+          <Button v-if="loading" @click="cancelExtraction" label="Cancel Extraction" severity="danger" />
+          <Button @click="showExportImport = true" :disabled="loading" label="Export / Import" severity="secondary" />
+          <Button @click="clearAll" :disabled="loading" label="Clear All" severity="danger" text />
+        </div>
+      </template>
+    </Card>
 
     <!-- Results Area: table + item detail drawer -->
     <div v-if="Object.keys(inventory).length > 0" class="flex min-w-0 flex-col">
@@ -38,7 +40,7 @@
 
     <!-- Empty State -->
     <div v-else class="flex-1 flex items-center justify-center">
-      <div class="text-center text-gray-400">
+      <div class="text-center text-(--p-surface-400)">
         <p class="text-lg mb-2">No inventory loaded</p>
         <p class="text-sm">Select files/folders and object types, then click "Extract Inventory"</p>
       </div>
@@ -72,6 +74,7 @@ import { GetSupportedGames, ExtractInventory, CancelExtraction } from '../../bin
 import { CollectFilesFromPaths } from '../../bindings/paradox-modding-tool/fileservice.js'
 import { applyInventoryFilter, countInventoryItems, countReferences } from '../utils/inventory.js'
 import Button from 'primevue/button'
+import Card from 'primevue/card'
 import Select from 'primevue/select'
 import FileSelector from '../components/FileSelector.vue'
 import TypeSelector from '../components/inventory/TypeSelector.vue'

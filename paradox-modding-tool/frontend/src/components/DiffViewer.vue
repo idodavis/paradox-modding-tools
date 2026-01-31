@@ -9,14 +9,14 @@
           <Button label="Close" @click="emit('close')" />
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <span class="text-sm text-gray-400">View:</span>
+          <span class="text-sm text-(--p-surface-400)">View:</span>
           <SelectButton v-model="viewMode"
             :options="[{ label: 'Unified', value: 'unified' }, { label: 'Side-by-side', value: 'sidebyside' }]" optionLabel="label"
             optionValue="value" />
           <InputText ref="searchInput" v-model="searchQuery" @input="performSearch" @keydown.enter.prevent="nextMatch"
             @keydown.shift.enter.prevent="prevMatch" placeholder="Search (Ctrl+F)" class="flex-1 min-w-0 px-3 py-2" />
           <template v-if="searchQuery">
-            <span v-if="searchMatches.length" class="text-sm text-gray-400">{{ currentMatchIndex + 1 }}/{{
+            <span v-if="searchMatches.length" class="text-sm text-(--p-surface-400)">{{ currentMatchIndex + 1 }}/{{
               searchMatches.length }}</span>
             <Button label="Clear" severity="secondary" @click="clearSearch" />
             <Button v-if="searchMatches.length" label="↑" @click="prevMatch" />
@@ -36,7 +36,7 @@
                 class="font-semibold mr-1 select-none">
                 {{ h.content.startsWith('---') ? '---' : '+++' }}
               </span>
-              <span class="text-slate-400 mr-1">{{ h.content.startsWith('---') ? 'Base:' : 'Compare:' }}</span>
+              <span class="text-(--p-surface-400) mr-1">{{ h.content.startsWith('---') ? 'Base:' : 'Compare:' }}</span>
               <span class="whitespace-pre">{{ h.content.slice(3).trim() }}</span>
             </div>
           </div>
@@ -48,7 +48,7 @@
                 <div v-for="r in rows" :key="'L' + r.n" :class="['flex min-h-6 border-l-[3px]', rowClass(r.left)]">
                   <div
                     class="flex min-w-16 border-r border-dark-border/50 bg-dark-input/50 px-2 justify-end select-none">
-                    <span class="min-w-10 text-right tabular-nums text-slate-400">{{ r.n }}</span>
+                    <span class="min-w-10 text-right tabular-nums text-(--p-surface-400)">{{ r.n }}</span>
                   </div>
                   <div class="px-3">
                     <span v-if="r.left?.type === 'remove'" class="mr-2 font-semibold select-none text-red-500/90">-</span>
@@ -64,7 +64,7 @@
                   :class="['flex min-h-6 border-l-[3px]', rowClass(r.right, 'right')]">
                   <div
                     class="flex min-w-16 border-r border-dark-border/50 bg-dark-input/50 px-2 justify-end select-none">
-                    <span class="min-w-10 text-right tabular-nums text-slate-400">{{ r.n }}</span>
+                    <span class="min-w-10 text-right tabular-nums text-(--p-surface-400)">{{ r.n }}</span>
                   </div>
                   <div class="px-3">
                     <span v-if="r.right?.type === 'add'"
@@ -91,16 +91,16 @@
       <!-- Unified View -->
       <template v-else>
         <div ref="unifiedScroll" class="flex-1 overflow-auto bg-dark-panel">
-          <div v-if="!lines.length" class="p-8 text-center text-gray-400">No differences found.</div>
+          <div v-if="!lines.length" class="p-8 text-center text-(--p-surface-400)">No differences found.</div>
           <div v-else class="font-mono text-sm leading-6" style="min-width:100%;width:max-content">
             <div v-for="(l, i) in lines" :key="i"
               :class="['flex min-h-6 border-l-[3px]', lineClass(l.type), isMatch(i) && 'bg-yellow-500/20']">
               <div
                 class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 justify-end gap-4 select-none">
                 <span class="min-w-10 text-right tabular-nums"
-                  :class="l.oldLineNum ? 'text-slate-400' : 'text-gray-500'">{{ l.oldLineNum ?? '' }}</span>
+                  :class="l.oldLineNum ? 'text-(--p-surface-400)' : 'text-(--p-surface-500)'">{{ l.oldLineNum ?? '' }}</span>
                 <span class="min-w-10 text-right tabular-nums"
-                  :class="l.newLineNum ? 'text-slate-400' : 'text-gray-500'">{{ l.newLineNum ?? '' }}</span>
+                  :class="l.newLineNum ? 'text-(--p-surface-400)' : 'text-(--p-surface-500)'">{{ l.newLineNum ?? '' }}</span>
               </div>
               <div class="px-3">
                 <template v-if="l.content?.startsWith('---') || l.content?.startsWith('+++')">
@@ -108,7 +108,7 @@
                     class="mr-2 font-semibold select-none">
                     {{ l.content.slice(0, 3) }}
                   </span>
-                  <span class="text-slate-400 mr-1">{{ l.content.startsWith('---') ? 'Base:' : 'Compare:' }}</span>
+                  <span class="text-(--p-surface-400) mr-1">{{ l.content.startsWith('---') ? 'Base:' : 'Compare:' }}</span>
                   <span class="whitespace-pre">{{ l.content.slice(3).trim() }}</span>
                 </template>
                 <template v-else>

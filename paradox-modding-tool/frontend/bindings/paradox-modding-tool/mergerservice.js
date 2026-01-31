@@ -30,6 +30,17 @@ export function MergeMultipleFileSets(pathsA, pathsB, outputDir, options) {
     }));
 }
 
+/**
+ * MergeTwoFiles merges two files and returns the merged content. The frontend uses SaveFile to write it to a user-chosen path.
+ * @param {string} fileAPath
+ * @param {string} fileBPath
+ * @param {$models.MergerOptions} options
+ * @returns {$CancellablePromise<string>}
+ */
+export function MergeTwoFiles(fileAPath, fileBPath, options) {
+    return $Call.ByID(3948444292, fileAPath, fileBPath, options);
+}
+
 // Private type creation functions
 const $$createType0 = $models.FileMergeResult.createFrom;
 const $$createType1 = $Create.Array($$createType0);

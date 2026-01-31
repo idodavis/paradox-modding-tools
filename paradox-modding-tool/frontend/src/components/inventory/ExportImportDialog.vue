@@ -42,7 +42,7 @@
 
             <!-- Stats -->
             <div class="mb-4 p-3 bg-dark-border/20 rounded text-sm">
-              <p v-if="totalItems === 0" class="text-gray-400">No inventory to export. Import a JSON file or run
+              <p v-if="totalItems === 0" class="text-(--p-surface-400)">No inventory to export. Import a JSON file or run
                 extraction first.</p>
               <template v-else>
                 <p><strong>{{ totalItems }}</strong> items across <strong>{{ Object.keys(exportSource).length
@@ -51,7 +51,7 @@
                 <p v-if="exportOptions.filteredOnly && totalItems !== allItems" class="text-yellow-400 text-xs mt-1">
                   ({{ allItems - totalItems }} items excluded by filter)
                 </p>
-                <p class="text-gray-400 text-xs mt-1">Estimated size: {{ estimatedSize }}</p>
+                <p class="text-(--p-surface-400) text-xs mt-1">Estimated size: {{ estimatedSize }}</p>
               </template>
             </div>
 
@@ -67,7 +67,7 @@
             <div class="mb-4">
               <input type="file" ref="fileInputRef" accept=".json" @change="onFileSelect" class="hidden" />
               <Button label="Select JSON File" @click="fileInputRef?.click()" class="w-full mb-2" />
-              <p v-if="importFile" class="text-sm text-gray-400">Selected: {{ importFile.name }}</p>
+              <p v-if="importFile" class="text-sm text-(--p-surface-400)">Selected: {{ importFile.name }}</p>
             </div>
 
             <!-- Preview -->

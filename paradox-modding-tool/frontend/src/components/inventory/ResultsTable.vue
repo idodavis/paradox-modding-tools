@@ -36,18 +36,18 @@
       </Column>
       <Column field="filePath" header="File" sortable class="min-w-62">
         <template #body="{ data }">
-          <span class="text-sm text-gray-300 truncate" :title="data.filePath">{{ shortenPath(data.filePath) }}</span>
+          <span class="text-sm text-(--p-surface-300) truncate" :title="data.filePath">{{ shortenPath(data.filePath) }}</span>
         </template>
       </Column>
       <Column header="Lines" class="w-25">
         <template #body="{ data }">
-          <span class="text-sm text-gray-400">{{ data.lineStart }}-{{ data.lineEnd }}</span>
+          <span class="text-sm text-(--p-surface-400)">{{ data.lineStart }}-{{ data.lineEnd }}</span>
         </template>
       </Column>
       <Column field="references" header="Refs" sortable dataType="numeric" showFilterMenu showFilterMatchModes
         :filterMatchModeOptions="refsMatchModeOptions" class="w-20">
         <template #body="{ data }">
-          <span class="text-sm text-blue-400">
+          <span class="text-sm text-(--p-primary-400)">
             {{ (data.references && data.references.length) || 0 }}
           </span>
         </template>

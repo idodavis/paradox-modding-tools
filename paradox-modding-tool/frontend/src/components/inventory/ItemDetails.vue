@@ -9,14 +9,14 @@
     <div class="flex-1 overflow-auto p-3">
       <!-- Location -->
       <div class="mb-4">
-        <span class="text-sm font-medium text-gray-400 block mb-1">Location</span>
+        <span class="text-sm font-medium text-(--p-surface-400) block mb-1">Location</span>
         <p class="text-sm font-mono break-all">{{ item.filePath }}</p>
-        <p class="text-xs text-gray-500">Lines {{ item.lineStart }} - {{ item.lineEnd }}</p>
+        <p class="text-xs text-(--p-surface-500)">Lines {{ item.lineStart }} - {{ item.lineEnd }}</p>
       </div>
 
       <!-- Quick Actions -->
       <div class="mb-4">
-        <span class="text-sm font-medium text-gray-400 block mb-2">Quick Actions</span>
+        <span class="text-sm font-medium text-(--p-surface-400) block mb-2">Quick Actions</span>
         <div class="flex flex-wrap gap-1">
           <Button label="Copy Key" size="small" severity="secondary" @click="copyToClipboard(item.key)" />
           <Button label="Copy Path" size="small" severity="secondary" @click="copyToClipboard(item.filePath)" />
@@ -31,9 +31,9 @@
           <div v-for="(ref, idx) in item.references" :key="idx"
             class="flex items-start justify-between gap-2 p-2 rounded text-sm font-mono bg-dark-border/30">
             <div class="min-w-0 flex-1 wrap-break-word">
-              <span class="text-blue-400">{{ ref.targetKey }}</span>
-              <span class="text-gray-500"> ({{ ref.targetType }})</span>
-              <span class="text-gray-600 block text-xs break-all">{{ ref.context }} @ {{ ref.sourceFile }}:{{
+              <span class="text-(--p-primary-400)">{{ ref.targetKey }}</span>
+              <span class="text-(--p-surface-500)"> ({{ ref.targetType }})</span>
+              <span class="text-(--p-surface-600) block text-xs break-all">{{ ref.context }} @ {{ ref.sourceFile }}:{{
                 ref.sourceLine }}</span>
             </div>
             <Button icon="pi pi-copy" size="small" severity="secondary" outlined aria-label="Copy key"

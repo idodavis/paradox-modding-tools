@@ -43,6 +43,38 @@ export function FindMatchingFiles(filesA, filesB) {
 }
 
 /**
+ * GetScriptRoot returns the game script root directory for the given game and install path.
+ * CK3: <install>/game, EU5: <install>/game/in_game.
+ * @param {string} installPath
+ * @param {string} game
+ * @returns {$CancellablePromise<string>}
+ */
+export function GetScriptRoot(installPath, game) {
+    return $Call.ByID(4003673982, installPath, game);
+}
+
+/**
+ * ListGameDocFiles walks the game script root and collects .info (CK3) or readme.txt (EU5) files.
+ * @param {string} game
+ * @param {string} installPath
+ * @returns {$CancellablePromise<$models.DocFileEntry[]>}
+ */
+export function ListGameDocFiles(game, installPath) {
+    return $Call.ByID(3866316244, game, installPath).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType4($result);
+    }));
+}
+
+/**
+ * ReadFileContent reads a file as UTF-8 text.
+ * @param {string} fullPath
+ * @returns {$CancellablePromise<string>}
+ */
+export function ReadFileContent(fullPath) {
+    return $Call.ByID(97925398, fullPath);
+}
+
+/**
  * SaveFile sets where to save a file via dialog and writes the content to the file.
  * Returns ("", nil) when the user cancels so no error dialog is shown.
  * @param {string} defaultName
@@ -73,12 +105,25 @@ export function SelectDirectory(title) {
  */
 export function SelectMultipleFiles(title, filter) {
     return $Call.ByID(3216870446, title, filter).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType3($result);
+        return $$createType5($result);
     }));
+}
+
+/**
+ * SelectSingleFile opens a file selection dialog for a single file.
+ * Returns ("", nil) when the user cancels so no error dialog is shown.
+ * @param {string} title
+ * @param {string} filter
+ * @returns {$CancellablePromise<string>}
+ */
+export function SelectSingleFile(title, filter) {
+    return $Call.ByID(2176788877, title, filter);
 }
 
 // Private type creation functions
 const $$createType0 = $Create.Map($Create.Any, $Create.Any);
 const $$createType1 = $models.FileMatch.createFrom;
 const $$createType2 = $Create.Map($Create.Any, $$createType1);
-const $$createType3 = $Create.Array($Create.Any);
+const $$createType3 = $models.DocFileEntry.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $Create.Array($Create.Any);

@@ -5,16 +5,16 @@
         Tools for comparing and merging Paradox game script files
       </p>
       <div class="grid gap-4 grid-cols-2">
-        <Button @click="$emit('select', 'comparison')" raised class="flex flex-col w-full p-6">
+        <Button @click="emit('select', 'comparison')" raised class="flex flex-col w-full p-6">
           <span class="text-lg font-semibold mb-2">File Compare</span>
           <span class="text-sm">Compare two file sets or directories and view diffs side-by-side or
             unified.</span>
         </Button>
-        <Button @click="$emit('select', 'merge')" raised class="flex flex-col w-full p-6">
+        <Button @click="emit('select', 'merge')" raised class="flex flex-col w-full p-6">
           <span class="text-lg font-semibold mb-2">Script merger</span>
           <span class="text-sm">Merge Paradox script files (base + mod) with configurable options.</span>
         </Button>
-        <Button @click="$emit('select', 'inventory')" raised class="flex flex-col w-full p-6 col-span-2">
+        <Button @click="emit('select', 'inventory')" raised class="flex flex-col w-full p-6 col-span-2">
           <span class="text-lg font-semibold mb-2">Object Inventory</span>
           <span class="text-sm">Extract and explore game objects from script files, view references and dependencies.</span>
         </Button>
@@ -23,12 +23,8 @@
   </div>
 </template>
 
-<script>
+<script setup>
 import Button from 'primevue/button'
 
-export default {
-  name: 'Hub',
-  components: { Button },
-  emits: ['select']
-}
+const emit = defineEmits(['select'])
 </script>

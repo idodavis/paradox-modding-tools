@@ -1,12 +1,12 @@
 <template>
-  <div v-if="visible" class="fixed inset-0 z-60 flex flex-col bg-(--p-surface-900)" @click.self="$emit('close')">
+  <div v-if="visible" class="fixed inset-0 z-60 flex flex-col bg-(--p-surface-900)" @click.self="emit('close')">
     <div class="flex-1 flex flex-col min-h-0 m-2 bg-dark-panel rounded-xl border border-dark-border overflow-hidden"
       @click.stop>
       <!-- Header -->
       <div class="px-4 py-4 border-b border-dark-border bg-dark-panel/80">
         <div class="flex justify-between items-center gap-2 mb-3">
           <h2 class="text-lg font-semibold truncate">Diff Viewer</h2>
-          <Button label="Close" @click="$emit('close')" />
+          <Button label="Close" @click="emit('close')" />
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-sm text-gray-400">View:</span>
@@ -27,7 +27,7 @@
 
       <!-- Side-by-side View -->
       <template v-if="viewMode === 'sidebyside' && lines.length">
-        <div ref="sbsScroll" class="flex-1 overflow-y-auto overflow-x-hidden bg-dark-panel">
+        <div ref="sbsScrollContainer" class="flex-1 overflow-y-auto overflow-x-hidden bg-dark-panel">
           <!-- Header band -->
           <div class="border-b border-dark-border/50 bg-diff-header">
             <div v-for="h in headers" :key="h.idx" class="font-mono text-sm leading-6 min-h-6 px-3"
@@ -125,71 +125,150 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import SelectButton from 'primevue/selectbutton'
 
-export default {
-  name: 'DiffViewer',
-  components: { Button, InputText, SelectButton },
-  props: { visible: Boolean, lines: { type: Array, default: () => [] }, loading: Boolean },
-  data: () => ({
-    searchQuery: '', searchMatches: [], currentMatchIndex: -1, viewMode: 'unified',
-    sbsScroll: { left: 0, right: 0 }, leftColWidth: 0, rightColWidth: 0
-  }),
-  computed: {
-    headers() { return this.lines.filter(l => l.type === 'header' && l.content?.trim()) },
-    rows() {
-      const old = {}, neu = {}
-      let maxO = 0, maxN = 0
-      for (const l of this.lines) {
-        if (l.type === 'header' || l.type === 'other') continue
-        if (l.oldLineNum) { old[l.oldLineNum] = l; maxO = Math.max(maxO, l.oldLineNum) }
-        if (l.newLineNum) { neu[l.newLineNum] = l; maxN = Math.max(maxN, l.newLineNum) }
-      }
-      const r = []
-      for (let i = 1; i <= Math.max(maxO, maxN); i++) {
-        if (old[i] || neu[i]) r.push({ n: i, left: old[i], right: neu[i] })
-      }
-      return r
+const props = defineProps({
+  visible: Boolean,
+  lines: { type: Array, default: () => [] },
+  loading: Boolean
+})
+
+const emit = defineEmits(['close'])
+
+const searchQuery = ref('')
+const searchMatches = ref([])
+const currentMatchIndex = ref(-1)
+const viewMode = ref('unified')
+const sbsScroll = reactive({ left: 0, right: 0 })
+const leftColWidth = ref(0)
+const rightColWidth = ref(0)
+
+const searchInput = ref(null)
+const leftCol = ref(null)
+const rightCol = ref(null)
+const sbsScrollContainer = ref(null)
+const unifiedScroll = ref(null)
+
+const headers = computed(() =>
+  props.lines.filter(l => l.type === 'header' && l.content?.trim())
+)
+
+const rows = computed(() => {
+  const old = {}
+  const neu = {}
+  let maxO = 0
+  let maxN = 0
+  for (const l of props.lines) {
+    if (l.type === 'header' || l.type === 'other') continue
+    if (l.oldLineNum) {
+      old[l.oldLineNum] = l
+      maxO = Math.max(maxO, l.oldLineNum)
     }
-  },
-  watch: {
-    visible(v) { document.body.style.overflow = v ? 'hidden' : '' },
-    lines() { if (this.searchQuery) this.performSearch() }
-  },
-  mounted() { window.addEventListener('keydown', this.onKey) },
-  beforeUnmount() { document.body.style.overflow = ''; window.removeEventListener('keydown', this.onKey) },
-  updated() {
-    this.leftColWidth = this.$refs.leftCol?.scrollWidth
-    this.rightColWidth = this.$refs.rightCol?.scrollWidth
-  },
-  methods: {
-    rowClass(l, side = 'left') {
-      if (!l) return side === 'left' ? 'bg-dark-input/30 border-l-transparent' : 'bg-dark-input/20 border-l-transparent'
-      if (l.type === 'remove') return 'bg-diff-remove border-l-red-500/50'
-      if (l.type === 'add') return 'bg-diff-add border-l-emerald-500/50'
-      return 'bg-diff-context border-l-transparent'
-    },
-    lineClass(t) {
-      return {
-        add: 'bg-diff-add border-l-emerald-500/50', remove: 'bg-diff-remove border-l-red-500/50',
-        header: 'bg-diff-header border-l-transparent', context: 'bg-diff-context border-l-transparent'
-      }[t] || 'border-l-transparent'
-    },
-    isMatch(i) { return this.searchMatches[this.currentMatchIndex] === i },
-    onKey(e) { if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); this.$refs.searchInput?.focus() } },
-    performSearch() {
-      const q = this.searchQuery.trim().toLowerCase()
-      this.searchMatches = q ? this.lines.map((l, i) => l.type !== 'header' && l.type !== 'other' && l.content?.toLowerCase().includes(q) ? i : -1).filter(i => i >= 0) : []
-      this.currentMatchIndex = this.searchMatches.length ? 0 : -1
-      this.scrollToMatch()
-    },
-    nextMatch() { if (this.searchMatches.length) { this.currentMatchIndex = (this.currentMatchIndex + 1) % this.searchMatches.length; this.scrollToMatch() } },
-    prevMatch() { if (this.searchMatches.length) { this.currentMatchIndex = this.currentMatchIndex <= 0 ? this.searchMatches.length - 1 : this.currentMatchIndex - 1; this.scrollToMatch() } },
-    scrollToMatch() { this.$nextTick(() => this.$el.querySelector('.bg-yellow-500\\/20')?.scrollIntoView({ behavior: 'smooth', block: 'center' })) },
-    clearSearch() { this.searchQuery = ''; this.searchMatches = []; this.currentMatchIndex = -1 }
+    if (l.newLineNum) {
+      neu[l.newLineNum] = l
+      maxN = Math.max(maxN, l.newLineNum)
+    }
+  }
+  const r = []
+  for (let i = 1; i <= Math.max(maxO, maxN); i++) {
+    if (old[i] || neu[i]) r.push({ n: i, left: old[i], right: neu[i] })
+  }
+  return r
+})
+
+watch(() => props.visible, (v) => {
+  document.body.style.overflow = v ? 'hidden' : ''
+})
+
+watch(() => props.lines, () => {
+  if (searchQuery.value) performSearch()
+}, { deep: true })
+
+function measureColWidths() {
+  nextTick(() => {
+    leftColWidth.value = leftCol.value?.scrollWidth ?? 0
+    rightColWidth.value = rightCol.value?.scrollWidth ?? 0
+  })
+}
+
+watch([() => props.lines, viewMode], measureColWidths)
+
+function rowClass(l, side = 'left') {
+  if (!l) return side === 'left' ? 'bg-dark-input/30 border-l-transparent' : 'bg-dark-input/20 border-l-transparent'
+  if (l.type === 'remove') return 'bg-diff-remove border-l-red-500/50'
+  if (l.type === 'add') return 'bg-diff-add border-l-emerald-500/50'
+  return 'bg-diff-context border-l-transparent'
+}
+
+function lineClass(t) {
+  return {
+    add: 'bg-diff-add border-l-emerald-500/50',
+    remove: 'bg-diff-remove border-l-red-500/50',
+    header: 'bg-diff-header border-l-transparent',
+    context: 'bg-diff-context border-l-transparent'
+  }[t] || 'border-l-transparent'
+}
+
+function isMatch(i) {
+  return searchMatches.value[currentMatchIndex.value] === i
+}
+
+function onKey(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    e.preventDefault()
+    searchInput.value?.focus()
   }
 }
+
+function performSearch() {
+  const q = searchQuery.value.trim().toLowerCase()
+  searchMatches.value = q
+    ? props.lines
+        .map((l, i) => (l.type !== 'header' && l.type !== 'other' && l.content?.toLowerCase().includes(q) ? i : -1))
+        .filter(i => i >= 0)
+    : []
+  currentMatchIndex.value = searchMatches.value.length ? 0 : -1
+  scrollToMatch()
+}
+
+function nextMatch() {
+  if (searchMatches.value.length) {
+    currentMatchIndex.value = (currentMatchIndex.value + 1) % searchMatches.value.length
+    scrollToMatch()
+  }
+}
+
+function prevMatch() {
+  if (searchMatches.value.length) {
+    currentMatchIndex.value = currentMatchIndex.value <= 0 ? searchMatches.value.length - 1 : currentMatchIndex.value - 1
+    scrollToMatch()
+  }
+}
+
+function scrollToMatch() {
+  nextTick(() => {
+    const container = viewMode.value === 'sidebyside' ? sbsScrollContainer.value : unifiedScroll.value
+    const el = container?.querySelector('.bg-yellow-500\\/20')
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchMatches.value = []
+  currentMatchIndex.value = -1
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+})
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = ''
+  window.removeEventListener('keydown', onKey)
+})
 </script>

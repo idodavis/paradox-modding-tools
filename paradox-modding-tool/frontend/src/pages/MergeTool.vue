@@ -97,7 +97,8 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref } from 'vue'
 import { SelectDirectory } from '../../bindings/paradox-modding-tool/fileservice.js'
 import { GetDiff } from '../../bindings/paradox-modding-tool/diffservice.js'
 import { MergeMultipleFileSets } from '../../bindings/paradox-modding-tool/mergerservice.js'
@@ -111,84 +112,81 @@ import RadioButton from 'primevue/radiobutton'
 import Textarea from 'primevue/textarea'
 import { parsePathList } from '../utils/paths.js'
 
-export default {
-  name: 'MergeTool',
-  components: {
-    DiffViewer,
-    FileSelector,
-    DataTable,
-    Button,
-    Checkbox,
-    Column,
-    RadioButton,
-    Textarea
-  },
-  data() {
-    return {
-      pathsA: [],
-      pathsB: [],
-      addAdditionalEntries: true,
-      entryPlacement: 'bottom',
-      useKeyList: false,
-      customKeys: '',
-      commentPrefix: '',
-      mergeOutputDir: '',
-      merging: false,
-      mergeResults: [],
-      diffLines: [],
-      diffFilePath: null,
-      loadingDiff: false
-    }
-  },
-  methods: {
-    baseName(path) { return path ? path.split(/[/\\]/).pop() || path : '' },
-    async selectOutputDir() {
-      try {
-        const selected = await SelectDirectory('Select Output Directory')
-        if (selected) this.mergeOutputDir = selected
-      } catch (e) {
-        alert('Error selecting directory: ' + e)
-      }
-    },
-    async runMerge() {
-      if (!this.pathsA.length || !this.pathsB.length) { alert('Select at least one file or folder for both sets'); return }
-      if (!this.mergeOutputDir) { alert('Select an output directory'); return }
-      this.merging = true
-      this.mergeResults = []
-      try {
-        const keys = this.useKeyList ? parsePathList(this.customKeys) : []
-        const res = await MergeMultipleFileSets(this.pathsA, this.pathsB, this.mergeOutputDir, {
-          addAdditionalEntries: this.addAdditionalEntries,
-          entryPlacement: this.entryPlacement,
-          keyList: keys,
-          customCommentPrefix: this.commentPrefix
-        })
-        this.mergeResults = res || []
-        if (!this.mergeResults.length) alert('No matching files between the two sets.')
-      } catch (e) { alert('Error during merge: ' + e) }
-      finally { this.merging = false }
-    },
-    async viewDiff(beforePath, afterPath) {
-      if (!beforePath || !afterPath) return
-      if (beforePath === afterPath) {
-        alert('Output was written over this input file, so there is no diff. Use an output directory different from your input folders.')
-        return
-      }
-      this.loadingDiff = true
-      this.diffFilePath = afterPath
-      try {
-        this.diffLines = (await GetDiff(beforePath, afterPath)) || []
-      } catch (e) {
-        alert('Error loading diff: ' + e)
-        this.diffLines = []
-      } finally {
-        this.loadingDiff = false
-      }
-    },
-    closeDiff() {
-      this.diffLines = []
-      this.diffFilePath = null
-    }
+const pathsA = ref([])
+const pathsB = ref([])
+const addAdditionalEntries = ref(true)
+const entryPlacement = ref('bottom')
+const useKeyList = ref(false)
+const customKeys = ref('')
+const commentPrefix = ref('')
+const mergeOutputDir = ref('')
+const merging = ref(false)
+const mergeResults = ref([])
+const diffLines = ref([])
+const diffFilePath = ref(null)
+const loadingDiff = ref(false)
+
+function baseName(path) {
+  return path ? path.split(/[/\\]/).pop() || path : ''
+}
+
+async function selectOutputDir() {
+  try {
+    const selected = await SelectDirectory('Select Output Directory')
+    if (selected) mergeOutputDir.value = selected
+  } catch (e) {
+    alert('Error selecting directory: ' + e)
   }
+}
+
+async function runMerge() {
+  if (!pathsA.value.length || !pathsB.value.length) {
+    alert('Select at least one file or folder for both sets')
+    return
+  }
+  if (!mergeOutputDir.value) {
+    alert('Select an output directory')
+    return
+  }
+  merging.value = true
+  mergeResults.value = []
+  try {
+    const keys = useKeyList.value ? parsePathList(customKeys.value) : []
+    const res = await MergeMultipleFileSets(pathsA.value, pathsB.value, mergeOutputDir.value, {
+      addAdditionalEntries: addAdditionalEntries.value,
+      entryPlacement: entryPlacement.value,
+      keyList: keys,
+      customCommentPrefix: commentPrefix.value
+    })
+    mergeResults.value = res || []
+    if (!mergeResults.value.length) alert('No matching files between the two sets.')
+  } catch (e) {
+    alert('Error during merge: ' + e)
+  } finally {
+    merging.value = false
+  }
+}
+
+async function viewDiff(beforePath, afterPath) {
+  if (!beforePath || !afterPath) return
+  if (beforePath === afterPath) {
+    alert('Output was written over this input file, so there is no diff. Use an output directory different from your input folders.')
+    return
+  }
+  loadingDiff.value = true
+  diffFilePath.value = afterPath
+  try {
+    diffLines.value = (await GetDiff(beforePath, afterPath)) || []
+  } catch (e) {
+    alert('Error loading diff: ' + e)
+    diffLines.value = []
+  } finally {
+    loadingDiff.value = false
+  }
+}
+
+function closeDiff() {
+  diffLines.value = []
+  diffFilePath.value = null
 }
 </script>

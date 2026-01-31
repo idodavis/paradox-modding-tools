@@ -2,9 +2,17 @@ package inventory
 
 import (
 	_ "embed"
+	"errors"
 	"fmt"
 	"sort"
+	"sync/atomic"
 )
+
+// ErrExtractionCancelled is returned when extraction is cancelled via CancelExtraction.
+var ErrExtractionCancelled = errors.New("extraction cancelled")
+
+// cancelExtraction is set to 1 when the user requests cancel; checked at each type boundary.
+var cancelExtraction atomic.Uint32
 
 // Embedded game configurations
 // Each game's config is embedded from its respective subfolder
@@ -72,9 +80,17 @@ func ExtractFromFiles(game string, files []string, objectType string) (*Inventor
 	return extractor.ExtractFromFiles(files, objectType)
 }
 
-// ExtractInventory extracts multiple object types from files with references resolved
-// and precomputes the reference graph. Returns inventory + graph in one pass.
+// CancelExtraction requests that the current ExtractInventory run stop at the next type boundary.
+// Safe to call from another goroutine (e.g. frontend).
+func CancelExtraction() {
+	cancelExtraction.Store(1)
+}
+
+// ExtractInventory extracts multiple object types from files with references resolved.
+// The graph is built on demand in the frontend for the selected item.
+// Returns ErrExtractionCancelled if CancelExtraction was called during the run.
 func ExtractInventory(game string, files []string, objectTypes []string) (*ExtractResult, error) {
+	cancelExtraction.Store(0)
 	config, err := GetConfigForGame(game)
 	if err != nil {
 		return nil, err
@@ -85,8 +101,14 @@ func ExtractInventory(game string, files []string, objectTypes []string) (*Extra
 
 	// Extract all types
 	for _, objectType := range objectTypes {
+		if cancelExtraction.Load() != 0 {
+			return nil, ErrExtractionCancelled
+		}
 		result, err := extractor.ExtractFromFiles(files, objectType)
 		if err != nil {
+			if errors.Is(err, ErrExtractionCancelled) {
+				return nil, ErrExtractionCancelled
+			}
 			// Log error but continue with other types
 			result = &InventoryResult{
 				Type:   objectType,
@@ -94,7 +116,7 @@ func ExtractInventory(game string, files []string, objectTypes []string) (*Extra
 				Errors: []string{err.Error()},
 			}
 		}
-		if len(result.Items) > 0 {
+		if result != nil && len(result.Items) > 0 {
 			inventories[objectType] = result
 		}
 	}
@@ -104,8 +126,5 @@ func ExtractInventory(game string, files []string, objectTypes []string) (*Extra
 		EnrichAllWithReferences(inventories)
 	}
 
-	// Precompute graph data in Go (avoids heavy JS iteration on large inventories)
-	graph := BuildGraphData(inventories)
-
-	return &ExtractResult{Inventory: inventories, Graph: graph}, nil
+	return &ExtractResult{Inventory: inventories}, nil
 }

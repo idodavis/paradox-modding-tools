@@ -17,9 +17,18 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as inventory$0 from "./internal/inventory/models.js";
 
 /**
- * ExtractInventory extracts multiple object types from files with references resolved
- * and precomputes the reference graph.
- * Returns ExtractResult with Inventory (map of type -> InventoryResult) and Graph (nodes + links).
+ * CancelExtraction requests that the current ExtractInventory run stop at the next type boundary.
+ * Call this from the frontend when the user clicks Cancel during extraction.
+ * @returns {$CancellablePromise<void>}
+ */
+export function CancelExtraction() {
+    return $Call.ByID(743443218);
+}
+
+/**
+ * ExtractInventory extracts multiple object types from files with references resolved.
+ * Returns ExtractResult with Inventory (map of type -> InventoryResult). Graph is built in frontend per item.
+ * Returns inventory.ErrExtractionCancelled if CancelExtraction was called during the run.
  * @param {string} game
  * @param {string[]} files
  * @param {string[]} objectTypes

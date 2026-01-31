@@ -127,8 +127,7 @@ type GraphData struct {
 	Links []GraphLink `json:"links"`
 }
 
-// ExtractResult is the return type of ExtractInventory (inventory + precomputed graph)
+// ExtractResult is the return type of ExtractInventory (inventory only; graph is built in frontend per item)
 type ExtractResult struct {
 	Inventory map[string]*InventoryResult `json:"inventory"`
-	Graph     *GraphData                 `json:"graph"`
 }

@@ -35,30 +35,13 @@
   </div>
 </template>
 
-<script>
-import Menubar from 'primevue/menubar'
-import Button from 'primevue/button'
+<script setup>
+import { ref } from 'vue'
 import Hub from './pages/Hub.vue'
 import ComparisonTool from './pages/ComparisonTool.vue'
 import MergeTool from './pages/MergeTool.vue'
 import InventoryTool from './pages/InventoryTool.vue'
-import { Icon } from "@iconify/vue";
+import { Icon } from '@iconify/vue'
 
-export default {
-  name: 'App',
-  components: {
-    Menubar,
-    Button,
-    Hub,
-    ComparisonTool,
-    MergeTool,
-    InventoryTool,
-    Icon,
-  },
-  data() {
-    return {
-      currentPage: 'hub',
-    }
-  }
-}
+const currentPage = ref('hub')
 </script>

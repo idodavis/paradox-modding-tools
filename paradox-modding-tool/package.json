@@ -4,5 +4,8 @@
     "@tailwindcss/vite": "^4.1.18",
     "tailwindcss": "^4.1.18",
     "vite-svg-loader": "^5.1.0"
+  },
+  "dependencies": {
+    "primeicons": "^7.0.0"
   }
 }

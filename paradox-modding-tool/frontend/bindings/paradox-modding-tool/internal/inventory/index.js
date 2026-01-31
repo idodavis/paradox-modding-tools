@@ -4,9 +4,6 @@
 
 export {
     ExtractResult,
-    GraphData,
-    GraphLink,
-    GraphNode,
     InventoryItem,
     InventoryResult,
     ObjectReference

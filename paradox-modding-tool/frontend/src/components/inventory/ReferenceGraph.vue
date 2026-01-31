@@ -1,229 +1,197 @@
 <template>
-  <Dialog :visible="true" modal header="Reference Graph" :style="{ width: '90vw', height: '85vh' }"
-    @update:visible="$emit('close')" :closable="true">
-    <div class="h-full flex flex-col">
-      <!-- Controls -->
-      <div class="mb-2 flex gap-2 items-center">
-        <span class="text-sm text-gray-400">{{ nodes.length }} nodes, {{ links.length }} edges</span>
-        <Button label="Reset View" size="small" severity="secondary" text @click="resetView" />
-      </div>
-
-      <!-- Chart -->
-      <div class="flex-1 min-h-0">
-        <v-chart ref="chart" :option="chartOption" autoresize class="w-full h-full" @click="onNodeClick" />
-      </div>
-
-      <!-- Legend -->
-      <div class="mt-2 flex flex-wrap gap-2">
-        <div v-for="cat in categories" :key="cat.name" class="flex items-center gap-1 text-xs">
-          <span class="w-3 h-3 rounded-full" :style="{ backgroundColor: cat.itemStyle?.color || '#666' }"></span>
-          <span>{{ cat.name }}</span>
-        </div>
-      </div>
+  <div class="flex flex-col h-full min-h-0 overflow-hidden bg-dark-bg rounded-lg">
+    <div class="flex justify-between p-3 border-b border-dark-border flex-wrap">
+      <span class="text-sm text-gray-400">{{ nodes.length }} nodes, {{ links.length }} edges</span>
+      <span class="text-xs text-gray-500">Scroll to zoom · Drag to pan · Click node for details</span>
     </div>
-  </Dialog>
+
+    <!-- Chart -->
+    <v-chart ref="chartRef" :option="chartOption" @click="onNodeClick" />
+  </div>
 </template>
 
-<!-- TODO: Need to open detail view when you double click on a node -->
-<!-- TODO: Need to fix performance for super high node counts (19000+), maybe disable force/physics somehow? -->
-
-<script>
+<script setup>
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { use } from 'echarts/core'
 import { GraphChart } from 'echarts/charts'
 import { TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
-import Dialog from 'primevue/dialog'
-import Button from 'primevue/button'
 
 use([GraphChart, TooltipComponent, LegendComponent, CanvasRenderer])
 
-// Color palette for object types
-const TYPE_COLORS = [
-  '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
-  '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#48b8d0',
-  '#ff9f7f', '#87cefa', '#da70d6', '#32cd32', '#6495ed'
-]
+const props = defineProps({
+  inventory: {
+    type: Object,
+    default: () => ({})
+  },
+  focusItem: {
+    type: Object,
+    required: true
+  }
+})
 
-export default {
-  name: 'ReferenceGraph',
-  components: { VChart, Dialog, Button },
-  props: {
-    inventory: {
-      type: Object,
-      default: () => ({})
-    },
-    /** Precomputed graph from Go backend (nodes + links). When set, used instead of computing from inventory. */
-    graph: {
-      type: Object,
-      default: null
-    },
-    focusItem: {
-      type: Object,
-      default: null
-    }
-  },
-  emits: ['close'],
-  data() {
+const emit = defineEmits(['open-item'])
+
+const chartRef = ref(null)
+
+function getItem(typeName, key) {
+  const result = props.inventory[typeName]
+  if (!result?.items) return null
+  return result.items.find((i) => i.key === key) || null
+}
+
+const nodes = computed(() => {
+  const focus = props.focusItem
+  if (!focus) return []
+  const nodeMap = new Map()
+  const typeSet = new Set()
+  typeSet.add(focus.type)
+
+  const addNode = (item, typeName) => {
+    const nodeId = `${typeName}:${item.key}`
+    if (nodeMap.has(nodeId)) return
+    nodeMap.set(nodeId, true)
+    typeSet.add(typeName)
+    const refCount = item.references?.length || 0
     return {
-      highlightedNode: null
+      id: nodeId,
+      name: item.key,
+      category: 0,
+      symbolSize: Math.min(14 + refCount * 2, 60),
+      value: refCount,
+      itemData: item
     }
-  },
-  computed: {
-    types() {
-      if (this.graph?.nodes?.length) {
-        const typeSet = new Set(this.graph.nodes.map((n) => n.id.split(':')[0]))
-        return [...typeSet].sort()
-      }
-      return Object.keys(this.inventory).sort()
-    },
-    categories() {
-      return this.types.map((type, idx) => ({
-        name: type,
-        itemStyle: { color: TYPE_COLORS[idx % TYPE_COLORS.length] }
-      }))
-    },
-    nodes() {
-      if (this.graph?.nodes?.length) {
-        return this.graph.nodes.map((n) => ({ ...n, itemData: null }))
-      }
-      const nodes = []
-      const nodeMap = new Map()
-      for (const [type, result] of Object.entries(this.inventory)) {
-        const categoryIdx = this.types.indexOf(type)
-        for (const item of result.items || []) {
-          const nodeId = `${type}:${item.key}`
-          if (!nodeMap.has(nodeId)) {
-            const refCount = item.references?.length || 0
-            nodes.push({
-              id: nodeId,
-              name: item.key,
-              category: categoryIdx,
-              symbolSize: Math.min(10 + refCount * 2, 40),
-              value: refCount,
-              itemData: item
-            })
-            nodeMap.set(nodeId, true)
-          }
+  }
+
+  const result = []
+  result.push(addNode(focus, focus.type))
+  for (const ref of focus.references || []) {
+    const item = getItem(ref.targetType, ref.targetKey)
+    if (item) result.push(addNode(item, ref.targetType))
+  }
+  for (const typeName of Object.keys(props.inventory)) {
+    for (const item of props.inventory[typeName].items || []) {
+      const hasRefFromFocus = (item.references || []).some(
+        (r) => r.targetKey === focus.key && r.targetType === focus.type
+      )
+      if (hasRefFromFocus) result.push(addNode(item, typeName))
+    }
+  }
+
+  const typeList = [...typeSet].sort()
+  const typeIdx = (t) => typeList.indexOf(t)
+  result.forEach((n) => {
+    n.category = typeIdx(n.id.split(':')[0])
+  })
+  return result
+})
+
+const links = computed(() => {
+  const focus = props.focusItem
+  if (!focus) return []
+  const linkSet = new Set()
+  const result = []
+  const focusId = `${focus.type}:${focus.key}`
+
+  for (const ref of focus.references || []) {
+    const sourceId = `${ref.targetType}:${ref.targetKey}`
+    const key = `${sourceId}->${focusId}`
+    if (!linkSet.has(key)) {
+      linkSet.add(key)
+      result.push({ source: sourceId, target: focusId })
+    }
+  }
+
+  for (const typeName of Object.keys(props.inventory)) {
+    for (const item of props.inventory[typeName].items || []) {
+      const hasRefFromFocus = (item.references || []).some(
+        (r) => r.targetKey === focus.key && r.targetType === focus.type
+      )
+      if (hasRefFromFocus) {
+        const targetId = `${typeName}:${item.key}`
+        const key = `${focusId}->${targetId}`
+        if (!linkSet.has(key)) {
+          linkSet.add(key)
+          result.push({ source: focusId, target: targetId })
         }
-      }
-      return nodes
-    },
-    links() {
-      if (this.graph?.links?.length) {
-        return this.graph.links
-      }
-      const links = []
-      const linkSet = new Set()
-      for (const [type, result] of Object.entries(this.inventory)) {
-        for (const item of result.items || []) {
-          if (item.references) {
-            for (const ref of item.references) {
-              const sourceId = `${type}:${item.key}`
-              const targetId = `${ref.targetType}:${ref.targetKey}`
-              const linkKey = `${sourceId}->${targetId}`
-              if (!linkSet.has(linkKey)) {
-                links.push({ source: sourceId, target: targetId })
-                linkSet.add(linkKey)
-              }
-            }
-          }
-        }
-      }
-      return links
-    },
-    chartOption() {
-      return {
-        tooltip: {
-          trigger: 'item',
-          formatter: (params) => {
-            if (params.dataType === 'node') {
-              const item = params.data.itemData
-              const typeName = item?.type ?? this.categories[params.data.category]?.name ?? 'unknown'
-              return `<strong>${params.data.name}</strong><br/>
-                      Type: ${typeName}<br/>
-                      References: ${params.data.value ?? 0}`
-            }
-            return ''
-          }
-        },
-        legend: {
-          data: this.categories.map(c => c.name),
-          orient: 'vertical',
-          right: 10,
-          top: 20,
-          textStyle: { color: '#aaa' }
-        },
-        series: [{
-          type: 'graph',
-          layout: 'force',
-          data: this.nodes,
-          links: this.links,
-          categories: this.categories,
-          roam: true,
-          draggable: true,
-          label: {
-            show: true,
-            position: 'right',
-            fontSize: 10,
-            color: '#ccc'
-          },
-          labelLayout: {
-            hideOverlap: true
-          },
-          emphasis: {
-            focus: 'adjacency',
-            lineStyle: { width: 3 }
-          },
-          force: {
-            repulsion: 200,
-            edgeLength: [50, 150],
-            gravity: 0.1
-          },
-          lineStyle: {
-            color: 'source',
-            opacity: 0.5,
-            curveness: 0.1
-          },
-          edgeSymbol: ['none', 'arrow'],
-          edgeSymbolSize: [0, 8]
-        }]
-      }
-    }
-  },
-  mounted() {
-    if (this.focusItem) {
-      this.$nextTick(() => {
-        this.focusOnNode(this.focusItem)
-      })
-    }
-  },
-  methods: {
-    onNodeClick(params) {
-      if (params.dataType === 'node') {
-        this.highlightedNode = params.data
-      }
-    },
-    focusOnNode(item) {
-      // Find the node and center the view on it
-      const nodeId = `${item.type}:${item.key}`
-      const chart = this.$refs.chart
-      if (chart) {
-        chart.dispatchAction({
-          type: 'highlight',
-          seriesIndex: 0,
-          name: item.key
-        })
-      }
-    },
-    resetView() {
-      const chart = this.$refs.chart
-      if (chart) {
-        chart.dispatchAction({
-          type: 'restore'
-        })
       }
     }
   }
+  return result
+})
+
+const types = computed(() => {
+  const typeSet = new Set(nodes.value.map((n) => n.id.split(':')[0]))
+  return [...typeSet].sort()
+})
+
+const categories = computed(() =>
+  types.value.map((type) => ({ name: type }))
+)
+
+const chartOption = computed(() => ({
+  tooltip: {
+    trigger: 'item',
+    formatter: (params) => {
+      if (params.dataType === 'node') {
+        const item = params.data.itemData
+        const typeName = item?.type ?? categories.value[params.data.category]?.name ?? 'unknown'
+        return `<strong>${params.data.name}</strong><br/>
+                Type: ${typeName}<br/>
+                References: ${params.data.value ?? 0}`
+      }
+      return ''
+    }
+  },
+  legend: {
+    data: categories.value.map((c) => c.name),
+    orient: 'vertical',
+    right: 10,
+    top: 20,
+    textStyle: { color: '#aaa' }
+  },
+  series: [{
+    type: 'graph',
+    layout: 'circular',
+    data: nodes.value,
+    links: links.value,
+    categories: categories.value,
+    roam: true,
+    circular: { rotateLabel: true },
+    label: {
+      show: true,
+      position: 'right',
+      fontSize: 12,
+      color: '#fff',
+      formatter: (params) => {
+        const d = params.data
+        if (d?.itemData?.key) return d.itemData.key
+        return d?.name
+      }
+    },
+    labelLayout: { hideOverlap: true },
+    emphasis: { focus: 'adjacency', lineStyle: { width: 3 } },
+    lineStyle: { color: 'source', curveness: 0.1 },
+  }],
+}))
+
+function onNodeClick(params) {
+  if (params?.componentType !== 'series' || params?.dataType !== 'node' || !params?.data) return
+  let item = params.data.itemData
+  if (!item && params.data.name) {
+    const idx = params.data.name.indexOf(':')
+    if (idx > 0) {
+      const typeName = params.data.name.slice(0, idx)
+      const key = params.data.name.slice(idx + 1)
+      item = getItem(typeName, key)
+    }
+  }
+  if (item) emit('open-item', item)
 }
+
+onBeforeUnmount(() => {
+  const chart = chartRef.value?.getChart?.()
+  if (chart) chart.off('click', onNodeClick)
+})
 </script>

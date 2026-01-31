@@ -43,6 +43,18 @@ export function FindMatchingFiles(filesA, filesB) {
 }
 
 /**
+ * SaveFile sets where to save a file via dialog and writes the content to the file.
+ * Returns ("", nil) when the user cancels so no error dialog is shown.
+ * @param {string} defaultName
+ * @param {string} fileType
+ * @param {string} content
+ * @returns {$CancellablePromise<string>}
+ */
+export function SaveFile(defaultName, fileType, content) {
+    return $Call.ByID(2283414560, defaultName, fileType, content);
+}
+
+/**
  * SelectDirectory opens a directory selection dialog.
  * Returns ("", nil) when the user cancels so no error dialog is shown.
  * @param {string} title

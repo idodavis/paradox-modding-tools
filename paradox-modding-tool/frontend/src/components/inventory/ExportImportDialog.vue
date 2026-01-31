@@ -1,6 +1,6 @@
 <template>
-  <Dialog :visible="true" modal header="Export / Import Inventory" :style="{ width: '37.5rem', maxWidth: '90vw' }"
-    @update:visible="$emit('close')" :closable="true">
+  <Dialog :visible="true" modal header="Export / Import Inventory" class="w-150 max-w-[90vw]"
+    @update:visible="emit('close')" :closable="true">
     <Tabs v-model:value="activeTab">
       <TabList>
         <Tab value="export">Export</Tab>
@@ -42,9 +42,11 @@
 
             <!-- Stats -->
             <div class="mb-4 p-3 bg-dark-border/20 rounded text-sm">
-              <p v-if="totalItems === 0" class="text-gray-400">No inventory to export. Import a JSON file or run extraction first.</p>
+              <p v-if="totalItems === 0" class="text-gray-400">No inventory to export. Import a JSON file or run
+                extraction first.</p>
               <template v-else>
-                <p><strong>{{ totalItems }}</strong> items across <strong>{{ Object.keys(filteredInventory).length }}</strong>
+                <p><strong>{{ totalItems }}</strong> items across <strong>{{ Object.keys(exportSource).length
+                    }}</strong>
                   types</p>
                 <p v-if="exportOptions.filteredOnly && totalItems !== allItems" class="text-yellow-400 text-xs mt-1">
                   ({{ allItems - totalItems }} items excluded by filter)
@@ -63,8 +65,8 @@
             <h4 class="font-medium mb-3">Import JSON Inventory</h4>
 
             <div class="mb-4">
-              <input type="file" ref="fileInput" accept=".json" @change="onFileSelect" class="hidden" />
-              <Button label="Select JSON File" @click="$refs.fileInput.click()" class="w-full mb-2" />
+              <input type="file" ref="fileInputRef" accept=".json" @change="onFileSelect" class="hidden" />
+              <Button label="Select JSON File" @click="fileInputRef?.click()" class="w-full mb-2" />
               <p v-if="importFile" class="text-sm text-gray-400">Selected: {{ importFile.name }}</p>
             </div>
 
@@ -84,7 +86,8 @@
   </Dialog>
 </template>
 
-<script>
+<script setup>
+import { ref, reactive, computed } from 'vue'
 import Dialog from 'primevue/dialog'
 import Tabs from 'primevue/tabs'
 import TabList from 'primevue/tablist'
@@ -94,152 +97,130 @@ import TabPanel from 'primevue/tabpanel'
 import Checkbox from 'primevue/checkbox'
 import RadioButton from 'primevue/radiobutton'
 import Button from 'primevue/button'
-import { filterInventory, countInventoryItems } from '../../utils/inventory.js'
+import { countInventoryItems } from '../../utils/inventory.js'
+import { SaveFile } from '../../../bindings/paradox-modding-tool/fileservice.js'
 
-export default {
-  name: 'ExportImportDialog',
-  components: { Dialog, Tabs, TabList, Tab, TabPanels, TabPanel, Checkbox, RadioButton, Button },
-  props: {
-    inventory: {
-      type: Object,
-      required: true
-    },
-    filterText: {
-      type: String,
-      default: ''
-    },
-    filterTypes: {
-      type: Array,
-      default: () => []
-    }
+const props = defineProps({
+  /** Full inventory (used when "Export filtered only" is unchecked). */
+  inventory: {
+    type: Object,
+    required: true
   },
-  emits: ['close', 'import'],
-  data() {
-    return {
-      // Default to Import when no inventory so user can import before extraction
-      activeTab: Object.keys(this.inventory).length === 0 ? 'import' : 'export',
-      exportOptions: {
-        filteredOnly: false,
-        includeRawText: false,
-        format: 'json'
-      },
-      importFile: null,
-      importData: null,
-      importPreview: null
+  /** Current filtered inventory (map shape). Used when "Export filtered only" is checked. */
+  filteredInventory: {
+    type: Object,
+    default: () => ({})
+  }
+})
+
+const emit = defineEmits(['close', 'import'])
+
+const fileInputRef = ref(null)
+
+const activeTab = ref(Object.keys(props.inventory).length === 0 ? 'import' : 'export')
+const exportOptions = reactive({
+  filteredOnly: false,
+  includeRawText: true,
+  format: 'json'
+})
+const importFile = ref(null)
+const importData = ref(null)
+const importPreview = ref(null)
+
+/** Source for export: full inventory or current filtered inventory (no internal filtering). */
+const exportSource = computed(() =>
+  exportOptions.filteredOnly ? props.filteredInventory : props.inventory
+)
+
+const totalItems = computed(() => countInventoryItems(exportSource.value))
+const allItems = computed(() => countInventoryItems(props.inventory))
+
+const estimatedSize = computed(() => {
+  let size = 0
+  for (const result of Object.values(exportSource.value)) {
+    for (const item of result.items) {
+      size += item.key.length + item.filePath.length + 100
+      if (exportOptions.includeRawText && item.rawText) {
+        size += item.rawText.length
+      }
     }
-  },
-  computed: {
-    filteredInventory() {
-      if (!this.exportOptions.filteredOnly) return this.inventory
-      return filterInventory(this.inventory, {
-        filterText: this.filterText,
-        filterTypes: this.filterTypes,
+  }
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+})
+
+function doExport() {
+  const exportData = {}
+  for (const [type, result] of Object.entries(exportSource.value)) {
+    exportData[type] = {
+      type: result.type,
+      totalCount: result.items.length,
+      items: result.items.map((item) => {
+        const exported = {
+          key: item.key,
+          type: item.type,
+          filePath: item.filePath,
+          lineStart: item.lineStart,
+          lineEnd: item.lineEnd
+        }
+        if (exportOptions.includeRawText) {
+          exported.rawText = item.rawText
+        }
+        if (item.references) {
+          exported.references = item.references
+        }
+        return exported
       })
-    },
-    totalItems() {
-      return countInventoryItems(this.filteredInventory)
-    },
-    allItems() {
-      return countInventoryItems(this.inventory)
-    },
-    estimatedSize() {
-      let size = 0
-      for (const result of Object.values(this.filteredInventory)) {
-        for (const item of result.items) {
-          size += item.key.length + item.filePath.length + 100
-          if (this.exportOptions.includeRawText && item.rawText) {
-            size += item.rawText.length
-          }
-        }
-      }
-      if (size < 1024) return `${size} B`
-      if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-      return `${(size / 1024 / 1024).toFixed(1)} MB`
     }
-  },
-  methods: {
-    doExport() {
-      const exportData = {}
+  }
 
-      for (const [type, result] of Object.entries(this.filteredInventory)) {
-        exportData[type] = {
-          type: result.type,
-          totalCount: result.items.length,
-          items: result.items.map(item => {
-            const exported = {
-              key: item.key,
-              type: item.type,
-              filePath: item.filePath,
-              lineStart: item.lineStart,
-              lineEnd: item.lineEnd
-            }
-            if (this.exportOptions.includeRawText) {
-              exported.rawText = item.rawText
-            }
-            if (item.references) {
-              exported.references = item.references
-            }
-            return exported
-          })
-        }
-      }
-
-      let content, filename, mimeType
-      if (this.exportOptions.format === 'json') {
-        content = JSON.stringify(exportData, null, 2)
-        filename = 'inventory.json'
-        mimeType = 'application/json'
-      } else {
-        // CSV export (flat)
-        const rows = [['key', 'type', 'filePath', 'lineStart', 'lineEnd']]
-        for (const result of Object.values(exportData)) {
-          for (const item of result.items) {
-            rows.push([item.key, item.type, item.filePath, item.lineStart, item.lineEnd])
-          }
-        }
-        content = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
-        filename = 'inventory.csv'
-        mimeType = 'text/csv'
-      }
-
-      // Download
-      const blob = new Blob([content], { type: mimeType })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.click()
-      URL.revokeObjectURL(url)
-
-      this.$emit('close')
-    },
-    onFileSelect(event) {
-      const file = event.target.files[0]
-      if (!file) return
-
-      this.importFile = file
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        try {
-          this.importData = JSON.parse(e.target.result)
-          // Build preview
-          this.importPreview = {}
-          for (const [type, result] of Object.entries(this.importData)) {
-            this.importPreview[type] = result.items?.length || 0
-          }
-        } catch (error) {
-          alert('Invalid JSON file: ' + error.message)
-          this.importData = null
-          this.importPreview = null
-        }
-      }
-      reader.readAsText(file)
-    },
-    doImport() {
-      if (this.importData) {
-        this.$emit('import', this.importData)
+  let content, filename, fileType
+  if (exportOptions.format === 'json') {
+    content = JSON.stringify(exportData, null, 2)
+    filename = 'inventory.json'
+    fileType = 'json'
+  } else {
+    const rows = [['key', 'type', 'filePath', 'lineStart', 'lineEnd']]
+    for (const result of Object.values(exportData)) {
+      for (const item of result.items) {
+        rows.push([item.key, item.type, item.filePath, item.lineStart, item.lineEnd])
       }
     }
+    content = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    filename = 'inventory.csv'
+    fileType = 'csv'
+  }
+
+  SaveFile(filename, fileType, content)
+  emit('close')
+}
+
+function onFileSelect(event) {
+  const file = event.target.files[0]
+  if (!file) return
+
+  importFile.value = file
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      importData.value = JSON.parse(e.target.result)
+      importPreview.value = {}
+      for (const [type, result] of Object.entries(importData.value)) {
+        importPreview.value[type] = result.items?.length || 0
+      }
+    } catch (err) {
+      alert('Invalid JSON file: ' + err.message)
+      importData.value = null
+      importPreview.value = null
+    }
+  }
+  reader.readAsText(file)
+}
+
+function doImport() {
+  if (importData.value) {
+    emit('import', importData.value)
   }
 }
 </script>

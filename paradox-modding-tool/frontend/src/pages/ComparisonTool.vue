@@ -39,7 +39,8 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref } from 'vue'
 import { GetDiff } from '../../bindings/paradox-modding-tool/diffservice.js'
 import { CollectFilesFromPaths, FindMatchingFiles } from '../../bindings/paradox-modding-tool/fileservice.js'
 import DiffViewer from '../components/DiffViewer.vue'
@@ -48,81 +49,65 @@ import DataTable from 'primevue/datatable'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
 
-export default {
-  name: 'ComparisonTool',
-  components: {
-    DiffViewer,
-    FileSelector,
-    Button,
-    DataTable,
-    Column
-  },
-  data() {
-    return {
-      setA: [],
-      setB: [],
-      matchingFiles: [],
-      loadingFiles: false,
-      diffLines: [],
-      diffFilePath: null,
-      loadingDiff: false
-    }
-  },
-  methods: {
-    onSetAUpdate(val) {
-      this.setA = val
-      this.matchingFiles = []
-    },
-    onSetBUpdate(val) {
-      this.setB = val
-      this.matchingFiles = []
-    },
-    async updateMatchingFiles() {
-      if (this.setA.length === 0 || this.setB.length === 0) {
-        alert('Please select at least one file or directory for both sets')
-        this.matchingFiles = []
-        return
-      }
+const setA = ref([])
+const setB = ref([])
+const matchingFiles = ref([])
+const loadingFiles = ref(false)
+const diffLines = ref([])
+const diffFilePath = ref(null)
+const loadingDiff = ref(false)
 
-      this.loadingFiles = true
-      try {
-        // Collect files from both sets
-        const filesA = await CollectFilesFromPaths(this.setA)
-        const filesB = await CollectFilesFromPaths(this.setB)
+function onSetAUpdate(val) {
+  setA.value = val
+  matchingFiles.value = []
+}
 
-        // Find matching files
-        const matches = await FindMatchingFiles(filesA, filesB)
+function onSetBUpdate(val) {
+  setB.value = val
+  matchingFiles.value = []
+}
 
-        // Convert to array format for display
-        this.matchingFiles = Object.keys(matches).map(relativePath => ({
-          relativePath,
-          fileAPath: matches[relativePath].fileAPath,
-          fileBPath: matches[relativePath].fileBPath
-        }))
-      } catch (error) {
-        alert('Error finding matching files: ' + error)
-        this.matchingFiles = []
-      } finally {
-        this.loadingFiles = false
-      }
-    },
-    async viewFileDiff(file) {
-      this.loadingDiff = true
-      this.diffFilePath = file.relativePath
-      try {
-        this.diffLines = (await GetDiff(file.fileAPath, file.fileBPath)) || []
-      } catch (e) {
-        alert('Error loading diff: ' + e)
-        this.diffLines = []
-      } finally {
-        this.loadingDiff = false
-      }
-    },
-    closeDiff() {
-      this.diffLines = []
-      this.diffFilePath = null
-      this.loadingDiff = false
-    }
+async function updateMatchingFiles() {
+  if (setA.value.length === 0 || setB.value.length === 0) {
+    alert('Please select at least one file or directory for both sets')
+    matchingFiles.value = []
+    return
   }
+
+  loadingFiles.value = true
+  try {
+    const filesA = await CollectFilesFromPaths(setA.value)
+    const filesB = await CollectFilesFromPaths(setB.value)
+    const matches = await FindMatchingFiles(filesA, filesB)
+    matchingFiles.value = Object.keys(matches).map(relativePath => ({
+      relativePath,
+      fileAPath: matches[relativePath].fileAPath,
+      fileBPath: matches[relativePath].fileBPath
+    }))
+  } catch (error) {
+    alert('Error finding matching files: ' + error)
+    matchingFiles.value = []
+  } finally {
+    loadingFiles.value = false
+  }
+}
+
+async function viewFileDiff(file) {
+  loadingDiff.value = true
+  diffFilePath.value = file.relativePath
+  try {
+    diffLines.value = (await GetDiff(file.fileAPath, file.fileBPath)) || []
+  } catch (e) {
+    alert('Error loading diff: ' + e)
+    diffLines.value = []
+  } finally {
+    loadingDiff.value = false
+  }
+}
+
+function closeDiff() {
+  diffLines.value = []
+  diffFilePath.value = null
+  loadingDiff.value = false
 }
 </script>

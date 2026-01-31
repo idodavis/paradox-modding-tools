@@ -7,7 +7,7 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
- * ExtractResult is the return type of ExtractInventory (inventory + precomputed graph)
+ * ExtractResult is the return type of ExtractInventory (inventory only; graph is built in frontend per item)
  */
 export class ExtractResult {
     /**
@@ -22,13 +22,6 @@ export class ExtractResult {
              */
             this["inventory"] = {};
         }
-        if (!("graph" in $$source)) {
-            /**
-             * @member
-             * @type {GraphData | null}
-             */
-            this["graph"] = null;
-        }
 
         Object.assign(this, $$source);
     }
@@ -40,158 +33,11 @@ export class ExtractResult {
      */
     static createFrom($$source = {}) {
         const $$createField0_0 = $$createType2;
-        const $$createField1_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("inventory" in $$parsedSource) {
             $$parsedSource["inventory"] = $$createField0_0($$parsedSource["inventory"]);
         }
-        if ("graph" in $$parsedSource) {
-            $$parsedSource["graph"] = $$createField1_0($$parsedSource["graph"]);
-        }
         return new ExtractResult(/** @type {Partial<ExtractResult>} */($$parsedSource));
-    }
-}
-
-/**
- * GraphData is the precomputed reference graph for the frontend
- */
-export class GraphData {
-    /**
-     * Creates a new GraphData instance.
-     * @param {Partial<GraphData>} [$$source = {}] - The source object to create the GraphData.
-     */
-    constructor($$source = {}) {
-        if (!("nodes" in $$source)) {
-            /**
-             * @member
-             * @type {GraphNode[]}
-             */
-            this["nodes"] = [];
-        }
-        if (!("links" in $$source)) {
-            /**
-             * @member
-             * @type {GraphLink[]}
-             */
-            this["links"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new GraphData instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {GraphData}
-     */
-    static createFrom($$source = {}) {
-        const $$createField0_0 = $$createType6;
-        const $$createField1_0 = $$createType8;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("nodes" in $$parsedSource) {
-            $$parsedSource["nodes"] = $$createField0_0($$parsedSource["nodes"]);
-        }
-        if ("links" in $$parsedSource) {
-            $$parsedSource["links"] = $$createField1_0($$parsedSource["links"]);
-        }
-        return new GraphData(/** @type {Partial<GraphData>} */($$parsedSource));
-    }
-}
-
-/**
- * GraphLink represents an edge in the reference graph
- */
-export class GraphLink {
-    /**
-     * Creates a new GraphLink instance.
-     * @param {Partial<GraphLink>} [$$source = {}] - The source object to create the GraphLink.
-     */
-    constructor($$source = {}) {
-        if (!("source" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["source"] = "";
-        }
-        if (!("target" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["target"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new GraphLink instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {GraphLink}
-     */
-    static createFrom($$source = {}) {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new GraphLink(/** @type {Partial<GraphLink>} */($$parsedSource));
-    }
-}
-
-/**
- * GraphNode represents a node in the reference graph (for ECharts)
- */
-export class GraphNode {
-    /**
-     * Creates a new GraphNode instance.
-     * @param {Partial<GraphNode>} [$$source = {}] - The source object to create the GraphNode.
-     */
-    constructor($$source = {}) {
-        if (!("id" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["id"] = "";
-        }
-        if (!("name" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["name"] = "";
-        }
-        if (!("category" in $$source)) {
-            /**
-             * @member
-             * @type {number}
-             */
-            this["category"] = 0;
-        }
-        if (!("symbolSize" in $$source)) {
-            /**
-             * @member
-             * @type {number}
-             */
-            this["symbolSize"] = 0;
-        }
-        if (!("value" in $$source)) {
-            /**
-             * @member
-             * @type {number}
-             */
-            this["value"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new GraphNode instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {GraphNode}
-     */
-    static createFrom($$source = {}) {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new GraphNode(/** @type {Partial<GraphNode>} */($$parsedSource));
     }
 }
 
@@ -270,7 +116,7 @@ export class InventoryItem {
      * @returns {InventoryItem}
      */
     static createFrom($$source = {}) {
-        const $$createField6_0 = $$createType10;
+        const $$createField6_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("references" in $$parsedSource) {
             $$parsedSource["references"] = $$createField6_0($$parsedSource["references"]);
@@ -330,8 +176,8 @@ export class InventoryResult {
      * @returns {InventoryResult}
      */
     static createFrom($$source = {}) {
-        const $$createField2_0 = $$createType12;
-        const $$createField3_0 = $$createType13;
+        const $$createField2_0 = $$createType6;
+        const $$createField3_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField2_0($$parsedSource["items"]);
@@ -411,14 +257,8 @@ export class ObjectReference {
 const $$createType0 = InventoryResult.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
 const $$createType2 = $Create.Map($Create.Any, $$createType1);
-const $$createType3 = GraphData.createFrom;
-const $$createType4 = $Create.Nullable($$createType3);
-const $$createType5 = GraphNode.createFrom;
+const $$createType3 = ObjectReference.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = InventoryItem.createFrom;
 const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = GraphLink.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = ObjectReference.createFrom;
-const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = InventoryItem.createFrom;
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = $Create.Array($Create.Any);
+const $$createType7 = $Create.Array($Create.Any);

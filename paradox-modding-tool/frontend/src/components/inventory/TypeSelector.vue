@@ -16,76 +16,58 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { watch, ref, computed } from 'vue'
 import { GetSupportedTypes } from '../../../bindings/paradox-modding-tool/inventoryservice.js'
 import MultiSelect from 'primevue/multiselect'
 import Button from 'primevue/button'
 
-export default {
-  name: 'TypeSelector',
-  components: { MultiSelect, Button },
-  props: {
-    modelValue: {
-      type: Array,
-      default: () => []
-    },
-    game: {
-      type: String,
-      required: true
-    }
+const props = defineProps({
+  modelValue: {
+    type: Array,
+    default: () => []
   },
-  emits: ['update:modelValue'],
-  data() {
-    return {
-      types: [],
-      loading: false,
-      error: null
-    }
-  },
-  computed: {
-    selected: {
-      get() {
-        return this.modelValue
-      },
-      set(value) {
-        this.$emit('update:modelValue', value)
-      }
-    }
-  },
-  watch: {
-    game: {
-      immediate: true,
-      async handler(newGame) {
-        if (newGame) {
-          await this.loadTypes()
-        }
-      }
-    }
-  },
-  methods: {
-    async loadTypes() {
-      this.loading = true
-      this.error = null
-      try {
-        console.log('Loading types for game:', this.game)
-        this.types = await GetSupportedTypes(this.game)
-        console.log('Loaded types:', this.types)
-        // Clear selection when types change
-        this.$emit('update:modelValue', [])
-      } catch (error) {
-        console.error('Failed to load types:', error)
-        this.error = String(error)
-        this.types = []
-      } finally {
-        this.loading = false
-      }
-    },
-    selectAll() {
-      this.$emit('update:modelValue', [...this.types])
-    },
-    selectNone() {
-      this.$emit('update:modelValue', [])
-    }
+  game: {
+    type: String,
+    required: true
   }
+})
+
+const emit = defineEmits(['update:modelValue'])
+
+const types = ref([])
+const loading = ref(false)
+const error = ref(null)
+
+const selected = computed({
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value)
+})
+
+async function loadTypes() {
+  loading.value = true
+  error.value = null
+  try {
+    console.log('Loading types for game:', props.game)
+    types.value = await GetSupportedTypes(props.game)
+    console.log('Loaded types:', types.value)
+    emit('update:modelValue', [])
+  } catch (err) {
+    console.error('Failed to load types:', err)
+    error.value = String(err)
+    types.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(() => props.game, loadTypes, { immediate: true })
+
+function selectAll() {
+  emit('update:modelValue', [...types.value])
+}
+
+function selectNone() {
+  emit('update:modelValue', [])
 }
 </script>

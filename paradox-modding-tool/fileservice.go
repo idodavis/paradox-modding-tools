@@ -30,7 +30,7 @@ func (f *FileService) SelectDirectory(title string) (string, error) {
 	if err != nil {
 		return "", nil
 	}
-	return path, nil
+	return path, err
 }
 
 // SelectMultipleFiles opens a file selection dialog allowing multiple file selection.
@@ -48,7 +48,7 @@ func (f *FileService) SelectMultipleFiles(title, filter string) ([]string, error
 	if err != nil {
 		return nil, nil
 	}
-	return paths, nil
+	return paths, err
 }
 
 // CollectFilesFromPaths collects all .txt files from a mix of files and directories
@@ -193,4 +193,23 @@ func (f *FileService) FindMatchingFiles(filesA, filesB map[string]string) (map[s
 	}
 
 	return matches, nil
+}
+
+// SaveFile sets where to save a file via dialog and writes the content to the file.
+// Returns ("", nil) when the user cancels so no error dialog is shown.
+func (s *FileService) SaveFile(defaultName, fileType string, content string) (string, error) {
+	path, err := application.Get().Dialog.SaveFile().
+		SetFilename(defaultName).
+		AddFilter(fileType, "*."+fileType).
+		PromptForSingleSelection()
+	if err != nil {
+		return "", nil
+	}
+
+	err = os.WriteFile(path, []byte(content), 0o644)
+	if err != nil {
+		err = fmt.Errorf("error writing file %s: %w", path, err)
+	}
+
+	return path, err
 }

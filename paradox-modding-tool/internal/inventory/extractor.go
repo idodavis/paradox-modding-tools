@@ -13,22 +13,13 @@ import (
 	"paradox-modding-tool/internal/parser"
 )
 
-// maxProcsSet tracks whether we've already limited GOMAXPROCS
-var maxProcsSet bool
-
-// DefaultWorkerCount returns the number of worker goroutines for parallel processing.
-// Limits GOMAXPROCS to ~50% of CPU cores to keep system responsive.
+// DefaultWorkerCount returns the number of worker goroutines for parallel file processing.
+// Uses all CPU cores for faster extraction; set PMT_EXTRACT_WORKERS to override (e.g. "4").
 func DefaultWorkerCount() int {
 	cpus := runtime.NumCPU()
-	workers := (cpus + 1) / 2 // ~50% of cores, rounded up
+	workers := cpus - 1
 	if workers < 2 {
 		workers = 2
-	}
-
-	// Limit actual OS threads used by Go runtime (only set once)
-	if !maxProcsSet {
-		runtime.GOMAXPROCS(workers)
-		maxProcsSet = true
 	}
 
 	return workers
@@ -103,7 +94,6 @@ func (e *ObjectExtractor) extractFromPath(relPath string, objectType string) ([]
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, []string{fmt.Sprintf("error walking directory %s: %v", relPath, err)}
 	}
@@ -314,19 +304,25 @@ func (e *ObjectExtractor) ExtractFromFiles(files []string, objectType string) (*
 		}()
 	}
 
-	// Send jobs
-	for _, file := range files {
-		jobs <- file
-	}
-	close(jobs)
-
-	// Wait and close results
+	// Wait and close results (must run so drain can complete on cancel)
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
 
-	// Collect results and deduplicate by key
+	// Send jobs (check cancel so we can abort during processing)
+	for _, file := range files {
+		if cancelExtraction.Load() != 0 {
+			close(jobs)
+			for range results {
+			}
+			return nil, ErrExtractionCancelled
+		}
+		jobs <- file
+	}
+	close(jobs)
+
+	// Collect results and deduplicate by key (check cancel while collecting)
 	seen := make(map[string]bool)
 	result := &InventoryResult{
 		Type:  objectType,
@@ -334,8 +330,12 @@ func (e *ObjectExtractor) ExtractFromFiles(files []string, objectType string) (*
 	}
 
 	for res := range results {
+		if cancelExtraction.Load() != 0 {
+			for range results {
+			}
+			return nil, ErrExtractionCancelled
+		}
 		for _, item := range res.items {
-			// Deduplicate by key (in case both patterns match the same object)
 			if !seen[item.Key] {
 				seen[item.Key] = true
 				result.Items = append(result.Items, item)

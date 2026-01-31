@@ -18,9 +18,15 @@ func (s *InventoryService) GetSupportedTypes(game string) ([]string, error) {
 	return inventory.GetSupportedTypes(game)
 }
 
-// ExtractInventory extracts multiple object types from files with references resolved
-// and precomputes the reference graph.
-// Returns ExtractResult with Inventory (map of type -> InventoryResult) and Graph (nodes + links).
+// ExtractInventory extracts multiple object types from files with references resolved.
+// Returns ExtractResult with Inventory (map of type -> InventoryResult). Graph is built in frontend per item.
+// Returns inventory.ErrExtractionCancelled if CancelExtraction was called during the run.
 func (s *InventoryService) ExtractInventory(game string, files []string, objectTypes []string) (*inventory.ExtractResult, error) {
 	return inventory.ExtractInventory(game, files, objectTypes)
+}
+
+// CancelExtraction requests that the current ExtractInventory run stop at the next type boundary.
+// Call this from the frontend when the user clicks Cancel during extraction.
+func (s *InventoryService) CancelExtraction() {
+	inventory.CancelExtraction()
 }

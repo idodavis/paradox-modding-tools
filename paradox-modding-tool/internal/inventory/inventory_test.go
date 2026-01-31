@@ -312,7 +312,7 @@ func TestExtractWithReferences(t *testing.T) {
 		t.Skip("No test files found")
 	}
 
-	// Extract both types with references and graph in one call
+	// Extract both types with references in one call
 	result, err := ExtractInventory("ck3", allFiles, []string{"characters", "titles"})
 	if err != nil {
 		t.Fatalf("Failed to extract inventory: %v", err)
@@ -321,10 +321,6 @@ func TestExtractWithReferences(t *testing.T) {
 	inventories := result.Inventory
 	charResult := inventories["characters"]
 	titleResult := inventories["titles"]
-
-	if result.Graph == nil || len(result.Graph.Nodes) == 0 {
-		t.Error("Expected non-empty graph data")
-	}
 
 	t.Logf("Extracted %d characters and %d titles", charResult.TotalCount, titleResult.TotalCount)
 

@@ -19,28 +19,21 @@
 
       <!-- Action Buttons -->
       <div class="flex flex-wrap gap-2">
-        <Button @click="extractInventory" :disabled="loading || files.length === 0 || selectedTypes.length === 0"
-          :label="loading ? 'Extracting...' : 'Extract Inventory'" />
-        <Button @click="showGraph = true" :disabled="Object.keys(inventory).length === 0" label="View Graph"
-          severity="secondary" />
-        <Button @click="showExportImport = true" label="Export / Import" severity="secondary" />
-        <Button @click="clearAll" label="Clear All" severity="danger" text />
+        <Button v-if="!loading" @click="extractInventory" :disabled="files.length === 0 || selectedTypes.length === 0"
+          label="Extract Inventory" />
+        <Button v-if="loading" @click="cancelExtraction" label="Cancel Extraction" severity="danger" />
+        <Button @click="showExportImport = true" :disabled="loading" label="Export / Import" severity="secondary" />
+        <Button @click="clearAll" :disabled="loading" label="Clear All" severity="danger" text />
       </div>
     </div>
 
-    <!-- Results Area -->
-    <div v-if="Object.keys(inventory).length > 0" class="flex flex-1 gap-4 min-h-150">
-      <!-- Results Table -->
-      <div class="flex-1 min-w-0 flex flex-col">
-        <ResultsTable :inventory="inventory" :filter-text="filterText" :filter-types="filterTypes"
-          @select="selectedItem = $event" @update:filter-text="filterText = $event"
-          @update:filter-types="filterTypes = $event" class="flex-1" />
-      </div>
-
-      <!-- Detail Panel -->
-      <div v-if="selectedItem" class="w-96">
-        <ItemDetailPanel :item="selectedItem" @close="selectedItem = null" @view-in-graph="viewItemInGraph" />
-      </div>
+    <!-- Results Area: table + item detail drawer -->
+    <div v-if="Object.keys(inventory).length > 0" class="flex min-w-0 flex-col">
+      <ResultsTable :inventory="inventory" :loading="loading" :filter-state="filterState" @select="onSelectItem" />
+      <Drawer v-model:visible="drawerVisible" position="right" class="w-full! md:w-100! lg:w-150!"
+        :header="selectedItem ? selectedItem.key : ''">
+        <ItemDetails v-if="selectedItem" :item="selectedItem" @view-in-graph="viewItemInGraph" />
+      </Drawer>
     </div>
 
     <!-- Empty State -->
@@ -51,174 +44,214 @@
       </div>
     </div>
 
-    <!-- Reference Graph Modal -->
-    <ReferenceGraph v-if="showGraph" :inventory="inventory" :graph="graph" :focus-item="graphFocusItem"
-      @close="showGraph = false" />
+    <!-- Graph: fullscreen Drawer (only when open; item detail opens as Dialog on node click) -->
+    <Drawer v-if="showGraph" :visible="true" position="full" header="Reference Graph"
+      @update:visible="(v) => { if (!v) closeGraph() }">
+      <div class="h-full min-h-0 flex flex-col overflow-hidden">
+        <ReferenceGraph v-if="graphFocusItem" :inventory="inventory" :focus-item="graphFocusItem"
+          @open-item="openItemFromGraph" />
+      </div>
+    </Drawer>
 
-    <!-- Export/Import Dialog: can open before extraction to import only -->
-    <ExportImportDialog v-if="showExportImport" :inventory="inventory" :filter-text="filterText"
-      :filter-types="filterTypes" @close="showExportImport = false" @import="onImport" />
+    <!-- Item detail Dialog on top of graph when a node is clicked (z-index above fullscreen Drawer) -->
+    <Dialog v-if="graphDetailItem" :visible="true" modal :header="graphDetailItem?.key ?? 'Item details'" class="z-1300"
+      :closable="true" @update:visible="(v) => { if (!v) graphDetailItem = null }">
+      <ItemDetails v-if="graphDetailItem" :item="graphDetailItem" @close="graphDetailItem = null"
+        @view-in-graph="(it) => { graphDetailItem = null; graphFocusItem = it }" />
+    </Dialog>
+
+    <!-- Export/Import Dialog: uses current filtered state from filterState (no internal filtering). -->
+    <ExportImportDialog v-if="showExportImport" :inventory="inventory" :filtered-inventory="filteredInventoryForExport"
+      @close="showExportImport = false" @import="onImport" />
   </div>
 </template>
 
-<script>
-import { GetSupportedGames, GetSupportedTypes, ExtractInventory } from '../../bindings/paradox-modding-tool/inventoryservice.js'
+<script setup>
+import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { GetSupportedGames, ExtractInventory, CancelExtraction } from '../../bindings/paradox-modding-tool/inventoryservice.js'
 import { CollectFilesFromPaths } from '../../bindings/paradox-modding-tool/fileservice.js'
-import { countInventoryItems, countReferences } from '../utils/inventory.js'
+import { applyInventoryFilter, countInventoryItems, countReferences } from '../utils/inventory.js'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import FileSelector from '../components/FileSelector.vue'
 import TypeSelector from '../components/inventory/TypeSelector.vue'
 import ResultsTable from '../components/inventory/ResultsTable.vue'
-import ItemDetailPanel from '../components/inventory/ItemDetailPanel.vue'
+import ItemDetails from '../components/inventory/ItemDetails.vue'
 import ReferenceGraph from '../components/inventory/ReferenceGraph.vue'
 import ExportImportDialog from '../components/inventory/ExportImportDialog.vue'
+import Dialog from 'primevue/dialog'
+import Drawer from 'primevue/drawer'
 
-export default {
-  name: 'InventoryTool',
-  components: {
-    Button,
-    Select,
-    FileSelector,
-    TypeSelector,
-    ResultsTable,
-    ItemDetailPanel,
-    ReferenceGraph,
-    ExportImportDialog,
-  },
-  data() {
-    return {
-      // Input state
-      game: 'ck3',
-      games: [],
-      files: [],
-      selectedTypes: [],
+const game = ref('ck3')
+const games = ref([])
+const files = ref([])
+const selectedTypes = ref([])
+const inventory = ref({})
+const loading = ref(false)
+/** Filter state for table and export (single source of truth). Match modes use PrimeVue FilterMatchMode values. */
+const filterState = reactive({
+  keyText: '',
+  keyMatchMode: 'contains',
+  typeNames: [],
+  refsValue: null,
+  refsMatchMode: 'gte'
+})
+/** Precomputed filtered map for export when "Export filtered only" is checked. */
+const filteredInventoryForExport = computed(() => applyInventoryFilter(inventory.value, filterState).map)
+const selectedItem = ref(null)
+const drawerVisible = ref(false)
+const showGraph = ref(false)
+const graphFocusItem = ref(null)
+const graphDetailItem = ref(null)
+const showExportImport = ref(false)
 
-      // Results state
-      inventory: {}, // Map<string, InventoryResult> - includes references on items
-      graph: null,   // { nodes, links } from Go (precomputed reference graph)
-      loading: false,
+watch(selectedItem, (item) => {
+  drawerVisible.value = !!item
+})
+watch(drawerVisible, (visible) => {
+  if (!visible) selectedItem.value = null
+})
 
-      // UI state
-      filterText: '',
-      filterTypes: [],
-      selectedItem: null,
-      showGraph: false,
-      graphFocusItem: null,
-      showExportImport: false,
+onMounted(async () => {
+  try {
+    console.log('InventoryTool: Loading supported games...')
+    games.value = await GetSupportedGames()
+    console.log('InventoryTool: Loaded games:', games.value)
+    if (games.value.length > 0 && !games.value.includes(game.value)) {
+      game.value = games.value[0]
     }
-  },
-  async mounted() {
-    try {
-      console.log('InventoryTool: Loading supported games...')
-      this.games = await GetSupportedGames()
-      console.log('InventoryTool: Loaded games:', this.games)
-      if (this.games.length > 0 && !this.games.includes(this.game)) {
-        this.game = this.games[0]
-      }
-    } catch (error) {
-      console.error('Failed to load supported games:', error)
+  } catch (err) {
+    console.error('Failed to load supported games:', err)
+  }
+})
+
+function onGameChange() {
+  console.log('Game changed to:', game.value)
+  selectedTypes.value = []
+  inventory.value = {}
+  selectedItem.value = null
+}
+
+async function extractInventory() {
+  console.log('extractInventory called', { files: files.value, types: selectedTypes.value })
+  if (files.value.length === 0 || selectedTypes.value.length === 0) {
+    console.log('Early return: no files or types selected')
+    return
+  }
+
+  loading.value = true
+  inventory.value = {}
+  selectedItem.value = null
+
+  try {
+    console.log('Collecting files from paths...')
+    const fileMap = await CollectFilesFromPaths(files.value)
+    const collectedFiles = Object.values(fileMap || {})
+    console.log('Collected', collectedFiles.length, 'files')
+
+    if (collectedFiles.length === 0) {
+      alert('No .txt files found in the selected paths')
+      loading.value = false
+      return
     }
-  },
-  methods: {
-    onGameChange() {
-      console.log('Game changed to:', this.game)
-      this.selectedTypes = []
-      this.inventory = {}
-      this.graph = null
-      this.selectedItem = null
-    },
-    async extractInventory() {
-      console.log('extractInventory called', { files: this.files, types: this.selectedTypes })
-      if (this.files.length === 0 || this.selectedTypes.length === 0) {
-        console.log('Early return: no files or types selected')
-        return
+
+    console.log('Extracting types:', selectedTypes.value, 'from', collectedFiles.length, 'files')
+    const result = await ExtractInventory(game.value, collectedFiles, selectedTypes.value)
+    inventory.value = result.inventory || {}
+
+    filterState.typeNames = Object.keys(inventory.value)
+    const totalItems = countInventoryItems(inventory.value)
+    const totalRefs = countReferences(inventory.value)
+    console.log('Extraction complete. Types:', filterTypes.value, 'Total items:', totalItems, 'Total refs:', totalRefs)
+  } catch (err) {
+    const msg = String(err?.message ?? err)
+    if (msg.toLowerCase().includes('cancelled')) {
+      console.log('Extraction cancelled by user')
+      if (Object.keys(inventory.value).length > 0) {
+        filterState.typeNames = Object.keys(inventory.value)
       }
+    } else {
+      console.error('Extraction error:', err)
+      alert('Error extracting inventory: ' + msg)
+    }
+  } finally {
+    loading.value = false
+  }
+}
 
-      this.loading = true
-      this.inventory = {}
-      this.graph = null
-      this.selectedItem = null
+function viewItemInGraph(item) {
+  closeDrawer()
+  graphFocusItem.value = item
+  graphDetailItem.value = null
+  showGraph.value = true
+}
 
-      try {
-        // First, collect all .txt files from the selected paths (handles directories)
-        console.log('Collecting files from paths...')
-        const fileMap = await CollectFilesFromPaths(this.files)
-        const collectedFiles = Object.values(fileMap || {})
-        console.log('Collected', collectedFiles.length, 'files')
+function onSelectItem(item) {
+  selectedItem.value = item
+  drawerVisible.value = !!item
+}
 
-        if (collectedFiles.length === 0) {
-          alert('No .txt files found in the selected paths')
-          this.loading = false
-          return
-        }
+function closeDrawer() {
+  drawerVisible.value = false
+  selectedItem.value = null
+}
 
-        // Extract all types with references and precomputed graph in one call
-        console.log('Extracting types:', this.selectedTypes, 'from', collectedFiles.length, 'files')
-        const result = await ExtractInventory(this.game, collectedFiles, this.selectedTypes)
-        this.inventory = result.inventory || {}
-        this.graph = result.graph || null
+function cancelExtraction() {
+  CancelExtraction()
+}
 
-        // Set filter types to all extracted types
-        this.filterTypes = Object.keys(this.inventory)
-        const totalItems = countInventoryItems(this.inventory)
-        const totalRefs = countReferences(this.inventory)
-        console.log('Extraction complete. Types:', this.filterTypes, 'Total items:', totalItems, 'Total refs:', totalRefs)
-      } catch (error) {
-        console.error('Extraction error:', error)
-        alert('Error extracting inventory: ' + error)
-      } finally {
-        this.loading = false
-      }
-    },
-    viewItemInGraph(item) {
-      this.graphFocusItem = item
-      this.showGraph = true
-    },
-    onImport(importedData) {
-      // Normalize and load: tolerate missing rawText / references, then set or merge into inventory
-      const normalized = {}
-      for (const [type, result] of Object.entries(importedData)) {
-        const items = (result.items || []).map((item) => ({
-          key: item.key,
-          type: item.type ?? type,
-          filePath: item.filePath ?? '',
-          lineStart: item.lineStart,
-          lineEnd: item.lineEnd,
-          rawText: item.rawText ?? '',
-          references: Array.isArray(item.references) ? item.references : [],
-        }))
-        normalized[type] = { type, totalCount: items.length, items }
-      }
-      // Replace or merge: if we had no inventory, replace; else merge by key
-      if (Object.keys(this.inventory).length === 0) {
-        this.inventory = { ...normalized }
-        this.graph = null
-      } else {
-        for (const [type, result] of Object.entries(normalized)) {
-          if (this.inventory[type]) {
-            const existingKeys = new Set(this.inventory[type].items.map((i) => i.key))
-            for (const item of result.items) {
-              if (!existingKeys.has(item.key)) {
-                this.inventory[type].items.push(item)
-              }
-            }
-            this.inventory[type].totalCount = this.inventory[type].items.length
-          } else {
-            this.inventory[type] = result
+function closeGraph() {
+  showGraph.value = false
+  graphFocusItem.value = null
+  graphDetailItem.value = null
+}
+
+function openItemFromGraph(item) {
+  graphDetailItem.value = item
+}
+
+function onImport(importedData) {
+  const normalized = {}
+  for (const [type, result] of Object.entries(importedData)) {
+    const items = (result.items || []).map((item) => ({
+      key: item.key,
+      type: item.type ?? type,
+      filePath: item.filePath ?? '',
+      lineStart: item.lineStart,
+      lineEnd: item.lineEnd,
+      rawText: item.rawText ?? '',
+      references: Array.isArray(item.references) ? item.references : [],
+    }))
+    normalized[type] = { type, totalCount: items.length, items }
+  }
+  if (Object.keys(inventory.value).length === 0) {
+    inventory.value = { ...normalized }
+  } else {
+    for (const [type, result] of Object.entries(normalized)) {
+      if (inventory.value[type]) {
+        const existingKeys = new Set(inventory.value[type].items.map((i) => i.key))
+        for (const item of result.items) {
+          if (!existingKeys.has(item.key)) {
+            inventory.value[type].items.push(item)
           }
         }
+        inventory.value[type].totalCount = inventory.value[type].items.length
+      } else {
+        inventory.value[type] = result
       }
-      this.filterTypes = [...new Set([...this.filterTypes, ...Object.keys(normalized)])]
-      this.showExportImport = false
-    },
-    clearAll() {
-      this.inventory = {}
-      this.graph = null
-      this.selectedItem = null
-      this.filterText = ''
-      this.filterTypes = []
     }
   }
+  filterState.typeNames = [...new Set([...filterState.typeNames, ...Object.keys(normalized)])]
+  showExportImport.value = false
+}
+
+function clearAll() {
+  inventory.value = {}
+  selectedItem.value = null
+  filterState.keyText = ''
+  filterState.keyMatchMode = 'contains'
+  filterState.typeNames = []
+  filterState.refsValue = null
+  filterState.refsMatchMode = 'gte'
 }
 </script>

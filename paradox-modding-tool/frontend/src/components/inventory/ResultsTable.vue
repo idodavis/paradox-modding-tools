@@ -36,7 +36,8 @@
       </Column>
       <Column field="filePath" header="File" sortable class="min-w-62">
         <template #body="{ data }">
-          <span class="text-sm text-(--p-surface-300) truncate" :title="data.filePath">{{ shortenPath(data.filePath) }}</span>
+          <span class="text-sm text-(--p-surface-300) truncate" :title="data.filePath">{{ shortenPath(data.filePath)
+          }}</span>
         </template>
       </Column>
       <Column header="Lines" class="w-25">
@@ -64,15 +65,9 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
-import InputText from 'primevue/inputtext'
-import InputNumber from 'primevue/inputnumber'
-import MultiSelect from 'primevue/multiselect'
-import Select from 'primevue/select'
-import Tag from 'primevue/tag'
 import { FilterMatchMode } from '@primevue/core/api'
 import { applyInventoryFilter } from '../../utils/inventory.js'
+import { shortenPath } from '../../utils/general.js'
 
 const keyMatchModeOptions = [
   { label: 'Contains', value: FilterMatchMode.CONTAINS },
@@ -156,14 +151,5 @@ const filterTypeOptions = computed(() => {
 
 function onRowSelect(event) {
   emit('select', event.data)
-}
-
-function shortenPath(path) {
-  if (!path) return ''
-  const parts = path.split(/[/\\]/)
-  if (parts.length > 3) {
-    return '.../' + parts.slice(-3).join('/')
-  }
-  return path
 }
 </script>

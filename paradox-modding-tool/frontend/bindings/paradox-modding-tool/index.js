@@ -19,7 +19,6 @@ export {
 
 export {
     AppSettings,
-    CheckGameUpdateResult,
     DiffLine,
     DocFileEntry,
     DocPathCache,

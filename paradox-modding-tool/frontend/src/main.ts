@@ -57,6 +57,16 @@ app.use(PrimeVue, {
     options: {
       darkModeSelector: '.my-dark-theme'
     }
+  },
+  pt: {
+    Panel: {
+      contentContainer: { class: 'min-w-0 overflow-hidden' },
+      contentWrapper: { class: 'min-w-0 overflow-hidden flex flex-col' },
+      content: { class: 'min-w-0 flex flex-col flex-1 overflow-hidden' }
+    },
+    Tabs: { root: { class: 'flex-1 min-h-0 flex flex-col' } },
+    TabPanels: { root: { class: 'flex-1 min-h-0 flex flex-col overflow-hidden' } },
+    TabPanel: { root: { class: 'flex flex-col flex-1 min-h-0 overflow-hidden' } }
   }
 })
 

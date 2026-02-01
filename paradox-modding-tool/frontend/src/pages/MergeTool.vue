@@ -247,14 +247,6 @@
 
 <script setup>
 import { ref } from 'vue'
-import Tabs from 'primevue/tabs'
-import TabList from 'primevue/tablist'
-import Tab from 'primevue/tab'
-import TabPanels from 'primevue/tabpanels'
-import TabPanel from 'primevue/tabpanel'
-import Card from 'primevue/card'
-import InputText from 'primevue/inputtext'
-import Button from 'primevue/button'
 import {
   SelectDirectory,
   GetScriptRoot,
@@ -265,11 +257,6 @@ import { GetDiff } from '../../bindings/paradox-modding-tool/diffservice.js'
 import { MergeMultipleFileSets, MergeTwoFiles } from '../../bindings/paradox-modding-tool/mergerservice.js'
 import DiffViewer from '../components/DiffViewer.vue'
 import FileSelector from '../components/FileSelector.vue'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
-import Checkbox from 'primevue/checkbox'
-import RadioButton from 'primevue/radiobutton'
-import Textarea from 'primevue/textarea'
 import { useAppSettings } from '../composables/useAppSettings'
 import { parsePathList } from '../utils/general.js'
 

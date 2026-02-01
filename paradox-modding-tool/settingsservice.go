@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	appConfigDirName         = "Paradox Modding Tool"
-	settingsFileName         = "settings.json"
-	patchnotesCacheFileName  = "patchnotes-cache.json"
-	docpathsCacheFileName    = "docpaths-cache.json"
-	patchnotesCacheTTL       = 7 * 24 * time.Hour
+	appConfigDirName        = "Paradox Modding Tool"
+	settingsFileName        = "settings.json"
+	patchnotesCacheFileName = "patchnotes-cache.json"
+	docpathsCacheFileName   = "docpaths-cache.json"
+	patchnotesCacheTTL      = 7 * 24 * time.Hour
 
 	// Steam app IDs (used for SteamDB PatchnotesRSS)
 	steamAppIDCK3 = "1158310"
@@ -157,10 +157,9 @@ func (s *SettingsService) SetDocPathCache(game, installPath string, data DocPath
 	}
 	key := docpathsCacheKey(game, installPath)
 	c[key] = &DocPathCache{
-		Paths:            data.Paths,
-		ScannedAt:        data.ScannedAt,
-		InstallPath:      installPath,
-		LastSeenUpdateId: data.LastSeenUpdateId,
+		Paths:       data.Paths,
+		ScannedAt:   data.ScannedAt,
+		InstallPath: installPath,
 	}
 	return writeConfigFile(docpathsCacheFileName, c)
 }
@@ -347,120 +346,4 @@ func decodeXMLText(s string) string {
 	s = strings.ReplaceAll(s, "&quot;", "\"")
 	s = strings.ReplaceAll(s, "&apos;", "'")
 	return s
-}
-
-// CheckGameUpdateResult is the result of checking for a game update (JSON-safe for bindings).
-type CheckGameUpdateResult struct {
-	LatestUpdateID string `json:"latestUpdateId"`
-	LatestDate     string `json:"latestDate"`
-	Error          string `json:"error,omitempty"`
-}
-
-// CheckGameUpdate fetches the patch-notes feed for the game and returns the latest item id and date.
-// Uses feed URL from settings, or built-in Steam community announcements URL if empty.
-func (s *SettingsService) CheckGameUpdate(game string) (CheckGameUpdateResult, error) {
-	settings, err := s.GetSettings()
-	if err != nil {
-		return CheckGameUpdateResult{}, err
-	}
-	var feedURL string
-	switch strings.ToLower(game) {
-	case "ck3":
-		feedURL = settings.PatchNotesFeedUrlCk3
-		if feedURL == "" {
-			feedURL = "https://store.steampowered.com/feeds/news/app/" + steamAppIDCK3 + "/"
-		}
-	case "eu5":
-		feedURL = settings.PatchNotesFeedUrlEu5
-		if feedURL == "" {
-			feedURL = "https://store.steampowered.com/feeds/news/app/" + steamAppIDEU5 + "/"
-		}
-	default:
-		return CheckGameUpdateResult{}, fmt.Errorf("unknown game: %s", game)
-	}
-	return fetchLatestFeedItem(feedURL)
-}
-
-// fetchLatestFeedItem fetches a URL and parses it as RSS/Atom to return the first item's id and date.
-func fetchLatestFeedItem(feedURL string) (CheckGameUpdateResult, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, feedURL, nil)
-	if err != nil {
-		return CheckGameUpdateResult{}, err
-	}
-	req.Header.Set("User-Agent", "Paradox-Modding-Tool/1.0")
-	resp, err := client.Do(req)
-	if err != nil {
-		return CheckGameUpdateResult{Error: err.Error()}, nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return CheckGameUpdateResult{Error: fmt.Sprintf("HTTP %d", resp.StatusCode)}, nil
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return CheckGameUpdateResult{Error: err.Error()}, nil
-	}
-	return parseFeedLatestItem(body, feedURL)
-}
-
-// minimal RSS/Atom parsing to get first item link and date
-func parseFeedLatestItem(body []byte, baseURL string) (CheckGameUpdateResult, error) {
-	s := string(body)
-	// RSS 2.0: <item><link>...</link><pubDate>...</pubDate>
-	// Atom: <entry><link href="..."/><updated>...</updated>
-	const (
-		rssItem  = "<item>"
-		rssLink  = "<link>"
-		rssLinkC = "</link>"
-		rssPub   = "<pubdate>"
-		rssPubC  = "</pubdate>"
-		atomEnt  = "<entry>"
-		atomLink = "href=\""
-		atomUpd  = "<updated>"
-		atomUpdC = "</updated>"
-	)
-	lower := strings.ToLower(s)
-	out := CheckGameUpdateResult{}
-	// Try RSS first
-	if idx := strings.Index(lower, rssItem); idx >= 0 {
-		itemBlock := s[idx : idx+min(4096, len(s)-idx)]
-		itemLower := strings.ToLower(itemBlock)
-		if i := strings.Index(itemLower, rssLink); i >= 0 {
-			start := i + len(rssLink)
-			if j := strings.Index(itemBlock[start:], rssLinkC); j >= 0 {
-				out.LatestUpdateID = strings.TrimSpace(itemBlock[start : start+j])
-			}
-		}
-		if i := strings.Index(itemLower, rssPub); i >= 0 {
-			start := i + len(rssPub)
-			if j := strings.Index(itemBlock[start:], rssPubC); j >= 0 {
-				out.LatestDate = strings.TrimSpace(itemBlock[start : start+j])
-			}
-		}
-		if out.LatestUpdateID != "" || out.LatestDate != "" {
-			return out, nil
-		}
-	}
-	// Try Atom
-	if idx := strings.Index(lower, atomEnt); idx >= 0 {
-		entryBlock := s[idx : idx+min(4096, len(s)-idx)]
-		entryLower := strings.ToLower(entryBlock)
-		if i := strings.Index(entryLower, atomLink); i >= 0 {
-			start := i + len(atomLink)
-			if j := strings.Index(entryBlock[start:], "\""); j >= 0 {
-				out.LatestUpdateID = entryBlock[start : start+j]
-			}
-		}
-		if i := strings.Index(entryLower, atomUpd); i >= 0 {
-			start := i + len(atomUpd)
-			if j := strings.Index(entryBlock[start:], atomUpdC); j >= 0 {
-				out.LatestDate = strings.TrimSpace(entryBlock[start : start+j])
-			}
-		}
-		if out.LatestUpdateID != "" || out.LatestDate != "" {
-			return out, nil
-		}
-	}
-	return out, nil
 }

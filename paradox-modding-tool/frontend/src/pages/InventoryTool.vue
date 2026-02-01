@@ -5,13 +5,6 @@
       <template #content>
         <h2 class="text-lg font-semibold mb-4">Object Inventory</h2>
 
-        <!-- Game Selector -->
-        <div class="mb-4">
-          <label class="block mb-2 font-medium text-sm">Game:</label>
-          <Select v-model="game" :options="games" placeholder="Select a game" class="w-full md:w-56"
-            @change="onGameChange" />
-        </div>
-
         <!-- File Selector -->
         <FileSelector v-model="files" class="mb-4" />
 
@@ -73,17 +66,12 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { GetSupportedGames, ExtractInventory, CancelExtraction } from '../../bindings/paradox-modding-tool/inventoryservice.js'
 import { CollectFilesFromPaths } from '../../bindings/paradox-modding-tool/fileservice.js'
 import { applyInventoryFilter, countInventoryItems, countReferences } from '../utils/inventory.js'
-import Button from 'primevue/button'
-import Card from 'primevue/card'
-import Select from 'primevue/select'
 import FileSelector from '../components/FileSelector.vue'
 import TypeSelector from '../components/inventory/TypeSelector.vue'
 import ResultsTable from '../components/inventory/ResultsTable.vue'
 import ItemDetails from '../components/inventory/ItemDetails.vue'
 import ReferenceGraph from '../components/inventory/ReferenceGraph.vue'
 import ExportImportDialog from '../components/inventory/ExportImportDialog.vue'
-import Dialog from 'primevue/dialog'
-import Drawer from 'primevue/drawer'
 
 const game = ref('ck3')
 const games = ref([])

@@ -19,8 +19,6 @@
 <script setup>
 import { watch, ref, computed } from 'vue'
 import { GetSupportedTypes } from '../../../bindings/paradox-modding-tool/inventoryservice.js'
-import MultiSelect from 'primevue/multiselect'
-import Button from 'primevue/button'
 
 const props = defineProps({
   modelValue: {

@@ -16,12 +16,13 @@
     "echarts": "^5.5.0",
     "primeicons": "^7.0.0",
     "primevue": "^4.5.4",
+    "shiki": "^3.22.0",
     "vue": "^3.5.27",
     "vue-echarts": "^7.0.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^ 6.0.3",
     "@tailwindcss/vite": "^4.1.18",
+    "@vitejs/plugin-vue": "^ 6.0.3",
     "vite": "^7.3.1"
   }
 }

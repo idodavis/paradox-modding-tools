@@ -29,7 +29,7 @@
       </div>
     </header>
 
-    <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div class="flex flex-col flex-1 min-h-0 overflow-auto">
       <div v-if="currentPage === 'hub'" class="flex-1 flex flex-col min-h-0">
         <Hub @select="currentPage = $event" />
       </div>
@@ -66,9 +66,6 @@ import InventoryTool from './pages/InventoryTool.vue'
 import ModdingDocs from './pages/ModdingDocs.vue'
 import Settings from './pages/Settings.vue'
 import { Icon } from '@iconify/vue'
-import Select from 'primevue/select'
-import Button from 'primevue/button'
-import Drawer from 'primevue/drawer'
 import { useAppSettings } from './composables/useAppSettings'
 import { getHelpForPage } from './utils/helpContent'
 

@@ -117,16 +117,6 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import Tabs from 'primevue/tabs'
-import TabList from 'primevue/tablist'
-import Tab from 'primevue/tab'
-import TabPanels from 'primevue/tabpanels'
-import TabPanel from 'primevue/tabpanel'
-import InputText from 'primevue/inputtext'
-import Button from 'primevue/button'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
-import Card from 'primevue/card'
 import { GetDiff } from '../../bindings/paradox-modding-tool/diffservice.js'
 import {
   CollectFilesFromPaths,

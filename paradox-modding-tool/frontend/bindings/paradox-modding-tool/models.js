@@ -66,51 +66,6 @@ export class AppSettings {
 }
 
 /**
- * CheckGameUpdateResult is the result of checking for a game update (JSON-safe for bindings).
- */
-export class CheckGameUpdateResult {
-    /**
-     * Creates a new CheckGameUpdateResult instance.
-     * @param {Partial<CheckGameUpdateResult>} [$$source = {}] - The source object to create the CheckGameUpdateResult.
-     */
-    constructor($$source = {}) {
-        if (!("latestUpdateId" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["latestUpdateId"] = "";
-        }
-        if (!("latestDate" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["latestDate"] = "";
-        }
-        if (/** @type {any} */(false)) {
-            /**
-             * @member
-             * @type {string | undefined}
-             */
-            this["error"] = undefined;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new CheckGameUpdateResult instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {CheckGameUpdateResult}
-     */
-    static createFrom($$source = {}) {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new CheckGameUpdateResult(/** @type {Partial<CheckGameUpdateResult>} */($$parsedSource));
-    }
-}
-
-/**
  * DiffLine represents a single line in a diff
  */
 export class DiffLine {

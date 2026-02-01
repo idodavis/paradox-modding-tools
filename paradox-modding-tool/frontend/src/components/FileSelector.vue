@@ -17,8 +17,6 @@
 
 <script setup>
 import { SelectDirectory, SelectMultipleFiles } from '../../bindings/paradox-modding-tool/fileservice.js'
-import Button from 'primevue/button'
-import Textarea from 'primevue/textarea'
 import { parsePathList } from '../utils/general.js'
 
 const props = defineProps({

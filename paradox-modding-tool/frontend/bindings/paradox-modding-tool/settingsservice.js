@@ -16,18 +16,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * CheckGameUpdate fetches the patch-notes feed for the game and returns the latest item id and date.
- * Uses feed URL from settings, or built-in Steam community announcements URL if empty.
- * @param {string} game
- * @returns {$CancellablePromise<$models.CheckGameUpdateResult>}
- */
-export function CheckGameUpdate(game) {
-    return $Call.ByID(3396789159, game).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
-    }));
-}
-
-/**
  * ClearDocPathCache removes the doc path cache entry for the game+install path.
  * @param {string} game
  * @param {string} installPath
@@ -45,7 +33,7 @@ export function ClearDocPathCache(game, installPath) {
  */
 export function GetDocPathCache(game, installPath) {
     return $Call.ByID(3621539709, game, installPath).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType2($result);
+        return $$createType1($result);
     }));
 }
 
@@ -57,7 +45,7 @@ export function GetDocPathCache(game, installPath) {
  */
 export function GetLatestPatchNotes(game) {
     return $Call.ByID(2762062460, game).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType3($result);
+        return $$createType2($result);
     }));
 }
 
@@ -67,7 +55,7 @@ export function GetLatestPatchNotes(game) {
  */
 export function GetSettings() {
     return $Call.ByID(3034808949).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType4($result);
+        return $$createType3($result);
     }));
 }
 
@@ -92,8 +80,7 @@ export function SetDocPathCache(game, installPath, data) {
 }
 
 // Private type creation functions
-const $$createType0 = $models.CheckGameUpdateResult.createFrom;
-const $$createType1 = $models.DocPathCache.createFrom;
-const $$createType2 = $Create.Nullable($$createType1);
-const $$createType3 = $models.LatestPatchNotes.createFrom;
-const $$createType4 = $models.AppSettings.createFrom;
+const $$createType0 = $models.DocPathCache.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);
+const $$createType2 = $models.LatestPatchNotes.createFrom;
+const $$createType3 = $models.AppSettings.createFrom;

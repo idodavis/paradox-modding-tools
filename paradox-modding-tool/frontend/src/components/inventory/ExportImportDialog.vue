@@ -42,11 +42,12 @@
 
             <!-- Stats -->
             <div class="mb-4 p-3 bg-dark-border/20 rounded text-sm">
-              <p v-if="totalItems === 0" class="text-(--p-surface-400)">No inventory to export. Import a JSON file or run
+              <p v-if="totalItems === 0" class="text-(--p-surface-400)">No inventory to export. Import a JSON file or
+                run
                 extraction first.</p>
               <template v-else>
                 <p><strong>{{ totalItems }}</strong> items across <strong>{{ Object.keys(exportSource).length
-                    }}</strong>
+                }}</strong>
                   types</p>
                 <p v-if="exportOptions.filteredOnly && totalItems !== allItems" class="text-yellow-400 text-xs mt-1">
                   ({{ allItems - totalItems }} items excluded by filter)
@@ -88,15 +89,6 @@
 
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import Dialog from 'primevue/dialog'
-import Tabs from 'primevue/tabs'
-import TabList from 'primevue/tablist'
-import Tab from 'primevue/tab'
-import TabPanels from 'primevue/tabpanels'
-import TabPanel from 'primevue/tabpanel'
-import Checkbox from 'primevue/checkbox'
-import RadioButton from 'primevue/radiobutton'
-import Button from 'primevue/button'
 import { countInventoryItems } from '../../utils/inventory.js'
 import { SaveFile } from '../../../bindings/paradox-modding-tool/fileservice.js'
 

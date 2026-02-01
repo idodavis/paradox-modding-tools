@@ -34,10 +34,6 @@
 </template>
 
 <script setup>
-import Card from 'primevue/card'
-import InputText from 'primevue/inputtext'
-import Button from 'primevue/button'
-import Select from 'primevue/select'
 import { useAppSettings } from '../composables/useAppSettings'
 import { SelectDirectory } from '../../bindings/paradox-modding-tool/fileservice.js'
 

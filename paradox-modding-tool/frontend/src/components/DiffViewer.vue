@@ -11,8 +11,8 @@
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-sm text-(--p-surface-400)">View:</span>
           <SelectButton v-model="viewMode"
-            :options="[{ label: 'Unified', value: 'unified' }, { label: 'Side-by-side', value: 'sidebyside' }]" optionLabel="label"
-            optionValue="value" />
+            :options="[{ label: 'Unified', value: 'unified' }, { label: 'Side-by-side', value: 'sidebyside' }]"
+            optionLabel="label" optionValue="value" />
           <InputText ref="searchInput" v-model="searchQuery" @input="performSearch" @keydown.enter.prevent="nextMatch"
             @keydown.shift.enter.prevent="prevMatch" placeholder="Search (Ctrl+F)" class="flex-1 min-w-0 px-3 py-2" />
           <template v-if="searchQuery">
@@ -51,7 +51,8 @@
                     <span class="min-w-10 text-right tabular-nums text-(--p-surface-400)">{{ r.n }}</span>
                   </div>
                   <div class="px-3">
-                    <span v-if="r.left?.type === 'remove'" class="mr-2 font-semibold select-none text-red-500/90">-</span>
+                    <span v-if="r.left?.type === 'remove'"
+                      class="mr-2 font-semibold select-none text-red-500/90">-</span>
                     <span class="whitespace-pre">{{ r.left?.content || '\u00a0' }}</span>
                   </div>
                 </div>
@@ -98,9 +99,11 @@
               <div
                 class="flex min-w-32 border-r border-dark-border/50 bg-dark-input/50 px-3 justify-end gap-4 select-none">
                 <span class="min-w-10 text-right tabular-nums"
-                  :class="l.oldLineNum ? 'text-(--p-surface-400)' : 'text-(--p-surface-500)'">{{ l.oldLineNum ?? '' }}</span>
+                  :class="l.oldLineNum ? 'text-(--p-surface-400)' : 'text-(--p-surface-500)'">{{ l.oldLineNum ?? ''
+                  }}</span>
                 <span class="min-w-10 text-right tabular-nums"
-                  :class="l.newLineNum ? 'text-(--p-surface-400)' : 'text-(--p-surface-500)'">{{ l.newLineNum ?? '' }}</span>
+                  :class="l.newLineNum ? 'text-(--p-surface-400)' : 'text-(--p-surface-500)'">{{ l.newLineNum ?? ''
+                  }}</span>
               </div>
               <div class="px-3">
                 <template v-if="l.content?.startsWith('---') || l.content?.startsWith('+++')">
@@ -108,7 +111,8 @@
                     class="mr-2 font-semibold select-none">
                     {{ l.content.slice(0, 3) }}
                   </span>
-                  <span class="text-(--p-surface-400) mr-1">{{ l.content.startsWith('---') ? 'Base:' : 'Compare:' }}</span>
+                  <span class="text-(--p-surface-400) mr-1">{{ l.content.startsWith('---') ? 'Base:' : 'Compare:'
+                    }}</span>
                   <span class="whitespace-pre">{{ l.content.slice(3).trim() }}</span>
                 </template>
                 <template v-else>
@@ -127,9 +131,6 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
-import SelectButton from 'primevue/selectbutton'
 
 const props = defineProps({
   visible: Boolean,
@@ -228,8 +229,8 @@ function performSearch() {
   const q = searchQuery.value.trim().toLowerCase()
   searchMatches.value = q
     ? props.lines
-        .map((l, i) => (l.type !== 'header' && l.type !== 'other' && l.content?.toLowerCase().includes(q) ? i : -1))
-        .filter(i => i >= 0)
+      .map((l, i) => (l.type !== 'header' && l.type !== 'other' && l.content?.toLowerCase().includes(q) ? i : -1))
+      .filter(i => i >= 0)
     : []
   currentMatchIndex.value = searchMatches.value.length ? 0 : -1
   scrollToMatch()

@@ -13,3 +13,25 @@ export function parsePathList(text) {
 export function openURLInBrowser(url) {
   BrowserService.OpenURL(url).catch(() => {})
 }
+
+export async function copyToClipboard(content) {
+  try {
+    await navigator.clipboard.writeText(content)
+  } catch (err) {
+    console.error('Failed to copy:', err)
+  }
+}
+
+export function shortenPath(path) {
+  if (!path) return ''
+  const parts = path.split(/[/\\]/)
+  if (parts.length > 3) {
+    return '.../' + parts.slice(-3).join('/')
+  }
+  return path
+}
+
+export function fileNameFromPath(path) {
+  if (!path) return ''
+  return path.split(/[/\\]/).pop()
+}

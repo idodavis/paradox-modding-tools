@@ -29,7 +29,6 @@ declare module 'vue' {
     MultiSelect: typeof import('primevue/multiselect')['default']
     Panel: typeof import('primevue/panel')['default']
     RadioButton: typeof import('primevue/radiobutton')['default']
-    ReferenceGraph: typeof import('./src/components/inventory/ReferenceGraph.vue')['default']
     ResultsTable: typeof import('./src/components/inventory/ResultsTable.vue')['default']
     Select: typeof import('primevue/select')['default']
     SelectButton: typeof import('primevue/selectbutton')['default']

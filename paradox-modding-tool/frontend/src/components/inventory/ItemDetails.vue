@@ -20,7 +20,6 @@
         <div class="flex flex-wrap gap-1">
           <Button label="Copy Key" size="small" severity="secondary" @click="copyToClipboard(item.key)" />
           <Button label="Copy Path" size="small" severity="secondary" @click="copyToClipboard(item.filePath)" />
-          <Button label="View Graph" size="small" severity="secondary" @click="emit('view-in-graph', item)" />
         </div>
       </div>
 
@@ -88,7 +87,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['close', 'view-in-graph'])
+const emit = defineEmits(['close'])
 
 const typeFields = ref([])
 const rawTextUnavailable = computed(() => !props.item?.rawText || props.item.rawText.length === 0)

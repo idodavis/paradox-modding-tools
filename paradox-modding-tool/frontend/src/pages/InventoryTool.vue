@@ -29,34 +29,16 @@
 
     <!-- Results Area -->
     <div v-if="hasExtraction" class="flex min-w-0 flex-col">
-      <ResultsTable
-        :value="pageItemsWithIds"
-        :total-records="totalRecords"
-        :lazy="true"
-        :first="(currentPage - 1) * pageSize"
-        :rows="pageSize"
-        filterDisplay="row"
-        paginator
-        :rowsPerPageOptions="[10, 25, 50, 100]"
-        :loading="loading || pageLoading"
-        selectionMode="single"
-        v-model:selection="selectedRow"
-        dataKey="uniqueId"
-        :sortField="sortField"
-        :sortOrder="sortOrder"
-        :current-page="currentPage"
-        :page-size="pageSize"
-        :available-type-names="availableTypeNames"
-        :filter-state="filterState"
-        @select="onSelectItem"
-        @filter-change="onFilterChange"
-        @page="onPage"
-        @sort="onSort"
-        stripedRows
-      />
+      <ResultsTable :value="pageItemsWithIds" :total-records="totalRecords" :lazy="true"
+        :first="(currentPage - 1) * pageSize" :rows="pageSize" filterDisplay="row" paginator
+        :rowsPerPageOptions="[10, 25, 50, 100]" :loading="loading || pageLoading" selectionMode="single"
+        v-model:selection="selectedRow" dataKey="uniqueId" :sortField="sortField" :sortOrder="sortOrder"
+        :current-page="currentPage" :page-size="pageSize" :available-type-names="availableTypeNames"
+        :filter-state="filterState" @select="onSelectItem" @filter-change="onFilterChange" @page="onPage" @sort="onSort"
+        stripedRows />
       <Drawer v-model:visible="drawerVisible" position="right" class="w-full! md:w-100! lg:w-150!"
         :header="selectedItem ? selectedItem.key : ''">
-        <ItemDetails v-if="selectedItem" :game="game" :item="selectedItem" @view-in-graph="viewItemInGraph" />
+        <ItemDetails v-if="selectedItem" :game="game" :item="selectedItem" />
       </Drawer>
     </div>
 
@@ -66,29 +48,6 @@
         <p class="text-sm">Select files/folders and object types, then click "Extract Inventory"</p>
       </div>
     </div>
-
-    <!-- Graph: fullscreen Drawer -->
-    <Drawer v-if="showGraph" :visible="true" position="full" header="Reference Graph"
-      @update:visible="(v) => { if (!v) closeGraph() }">
-      <div class="h-full min-h-0 flex flex-col overflow-hidden">
-        <ReferenceGraph
-          v-if="graphFocusItem"
-          :graph-data="graphData"
-          :focus-item="graphFocusItem"
-          :refs-offset="graphRefsOffset"
-          :referrers-offset="graphReferrersOffset"
-          @open-item="openItemFromGraph"
-          @next-refs="onNextRefs"
-          @next-referrers="onNextReferrers"
-        />
-      </div>
-    </Drawer>
-
-    <Dialog v-if="graphDetailItem" :visible="true" modal :header="graphDetailItem?.key ?? 'Item details'" class="z-1300"
-      :closable="true" @update:visible="(v) => { if (!v) graphDetailItem = null }">
-      <ItemDetails v-if="graphDetailItem" :game="game" :item="graphDetailItem" @close="graphDetailItem = null"
-        @view-in-graph="(it) => { graphDetailItem = null; graphFocusItem = it }" />
-    </Dialog>
 
     <ExportImportDialog v-if="showExportImport" :extract-result="extractResult" :filter-state="filterState"
       :has-extraction="hasExtraction" @close="showExportImport = false" @import="onImport" />
@@ -102,10 +61,8 @@ import FileSelector from '../components/FileSelector.vue'
 import TypeSelector from '../components/inventory/TypeSelector.vue'
 import ResultsTable from '../components/inventory/ResultsTable.vue'
 import ItemDetails from '../components/inventory/ItemDetails.vue'
-import ReferenceGraph from '../components/inventory/ReferenceGraph.vue'
 import ExportImportDialog from '../components/inventory/ExportImportDialog.vue'
 import { useAppSettings } from '../composables/useAppSettings'
-import { buildGraphData } from '../utils/inventoryGraph.js'
 
 const { game } = useAppSettings()
 const files = ref([])
@@ -129,11 +86,6 @@ const filterState = reactive({
 const selectedItem = ref(null)
 const selectedRow = ref(null)
 const drawerVisible = ref(false)
-const showGraph = ref(false)
-const graphFocusItem = ref(null)
-const graphDetailItem = ref(null)
-const graphRefsOffset = ref(0)
-const graphReferrersOffset = ref(0)
 const showExportImport = ref(false)
 
 const pageData = ref({ items: [], totalRecords: 0 })
@@ -176,21 +128,6 @@ async function loadPage() {
     pageLoading.value = false
   }
 }
-
-const graphData = computed(() => {
-  if (!graphFocusItem.value || !extractResult.value?.items) {
-    return { nodes: [], links: [], totalRefs: 0, totalReferrers: 0 }
-  }
-  return buildGraphData(
-    extractResult.value.items,
-    graphFocusItem.value.type,
-    graphFocusItem.value.key,
-    graphRefsOffset.value,
-    100,
-    graphReferrersOffset.value,
-    100
-  )
-})
 
 watch(selectedItem, (item) => {
   drawerVisible.value = !!item
@@ -281,36 +218,6 @@ async function extractInventory() {
 
 function cancelExtraction() {
   CancelExtraction()
-}
-
-function viewItemInGraph(item) {
-  drawerVisible.value = false
-  selectedItem.value = null
-  graphFocusItem.value = item
-  graphDetailItem.value = null
-  showGraph.value = true
-}
-
-function closeGraph() {
-  showGraph.value = false
-  graphFocusItem.value = null
-  graphDetailItem.value = null
-}
-
-function openItemFromGraph(item) {
-  graphDetailItem.value = item
-}
-
-function onNextRefs() {
-  const total = graphData.value.totalRefs || 0
-  if (total <= 0) return
-  graphRefsOffset.value = (graphRefsOffset.value + 100) % Math.max(1, total)
-}
-
-function onNextReferrers() {
-  const total = graphData.value.totalReferrers || 0
-  if (total <= 0) return
-  graphReferrersOffset.value = (graphReferrersOffset.value + 100) % Math.max(1, total)
 }
 
 function onImport(importedData) {

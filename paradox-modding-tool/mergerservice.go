@@ -7,7 +7,11 @@ import (
 	"paradox-modding-tool/internal/core"
 )
 
-// MergerService provides script merge operations
+// ############
+// MergerService
+// ############
+
+// MergerService merges matching script files from two path sets into an output directory using core merge logic.
 type MergerService struct{}
 
 // MergerOptions configures how files are merged (JSON-safe for bindings)

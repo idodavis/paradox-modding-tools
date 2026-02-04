@@ -1,11 +1,34 @@
 <template>
   <div class="flex flex-col rounded-xl border border-dark-border overflow-hidden overscroll-none">
-    <!-- DataTable: :filters (PrimeVue shape) so filter icon overlay works; @update:filters syncs overlay choices to filterState. No v-model:filters to avoid recursion. -->
-    <DataTable :value="filteredData" :filters="filtersForDataTable" filterDisplay="row" paginator :rows="10"
-      :loading="loading" selectionMode="single" v-model:selection="selectedRow" dataKey="uniqueId"
-      @rowSelect="onRowSelect" @update:filters="onFiltersUpdate" stripedRows>
+    <DataTable
+      :value="value"
+      :totalRecords="totalRecords"
+      :lazy="true"
+      :first="(currentPage - 1) * pageSize"
+      :rows="pageSize"
+      :filters="filtersForDataTable"
+      filterDisplay="row"
+      paginator
+      :rowsPerPageOptions="[10, 25, 50, 100]"
+      :loading="loading"
+      selectionMode="single"
+      v-model:selection="selectedRow"
+      dataKey="uniqueId"
+      :sortField="sortField"
+      :sortOrder="sortOrder"
+      @rowSelect="onRowSelect"
+      @update:filters="onFiltersUpdate"
+      @page="onPage"
+      @sort="onSort"
+      stripedRows
+    >
       <template #empty> No objects found. </template>
-      <template #loading> Loading inventory data. Please wait. </template>
+      <template #loading>
+        <div class="flex items-center gap-3 p-4">
+          <ProgressSpinner style="width: 28px; height: 28px" strokeWidth="4" />
+          <span>Loading inventory data. Please wait.</span>
+        </div>
+      </template>
       <Column field="key" header="Key" sortable dataType="text" showFilterMenu showFilterMatchModes
         :filterMatchModeOptions="keyMatchModeOptions" class="min-w-50">
         <template #body="{ data }">
@@ -13,19 +36,29 @@
         </template>
         <template #filter>
           <div class="flex flex-col gap-1">
-            <InputText :modelValue="filterState.keyText" @update:modelValue="filterState.keyText = $event" type="text"
+            <InputText :modelValue="keyTextLocal" @update:modelValue="onKeyFilterInput($event)" type="text"
               placeholder="Search by key" class="w-full min-w-0" />
           </div>
         </template>
       </Column>
-      <Column field="type" header="Type" sortable showFilterMenu class="w-37">
+      <Column field="type" header="Type" sortable showFilterMenu class="w-37 min-w-0">
         <template #body="{ data }">
           <Tag :value="data.type" severity="success" />
         </template>
         <template #filter>
-          <MultiSelect :modelValue="filterState.typeNames" @update:modelValue="filterState.typeNames = $event"
-            :options="filterTypeOptions" optionLabel="type" optionValue="type" placeholder="All types"
-            class="w-full min-w-0">
+          <MultiSelect
+            :modelValue="filterState.typeNames"
+            @update:modelValue="filterState.typeNames = $event"
+            :options="filterTypeOptions"
+            optionLabel="type"
+            optionValue="type"
+            placeholder="All types"
+            :maxSelectedLabels="3"
+            filter
+            filterPlaceholder="Type to filter..."
+            class="w-full min-w-0 [&_.p-multiselect-label]:min-h-0 [&_.p-multiselect-trigger]:overflow-hidden [&_.p-multiselect-trigger]:max-h-10"
+            panelClass="max-h-56 overflow-auto"
+          >
             <template #option="slotProps">
               <div class="flex items-center gap-2">
                 <Tag :value="slotProps.option.type" severity="success" />
@@ -66,8 +99,18 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { FilterMatchMode } from '@primevue/core/api'
-import { applyInventoryFilter } from '../../utils/inventory.js'
+import ProgressSpinner from 'primevue/progressspinner'
 import { shortenPath } from '../../utils/general.js'
+
+const DEBOUNCE_KEY_MS = 200
+
+function useDebounceFn(fn, ms) {
+  let timeout = null
+  return (...args) => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => { fn(...args); timeout = null }, ms)
+  }
+}
 
 const keyMatchModeOptions = [
   { label: 'Contains', value: FilterMatchMode.CONTAINS },
@@ -87,39 +130,68 @@ const refsMatchModeOptions = [
   { label: '<', value: FilterMatchMode.LESS_THAN }
 ]
 
-const emit = defineEmits(['select', 'filter-change'])
+const emit = defineEmits(['select', 'filter-change', 'sort', 'page'])
 
 const props = defineProps({
-  inventory: {
-    type: Object,
-    required: true
+  /** Current page items (with uniqueId for dataKey). */
+  value: {
+    type: Array,
+    default: () => []
+  },
+  totalRecords: {
+    type: Number,
+    default: 0
   },
   loading: {
     type: Boolean,
     default: false
   },
-  /** Reactive filter state (owned by parent). Mutations here update table and export. */
   filterState: {
     type: Object,
     required: true
+  },
+  /** All type names from extraction (for type filter dropdown). */
+  availableTypeNames: {
+    type: Array,
+    default: () => []
+  },
+  sortField: {
+    type: String,
+    default: 'key'
+  },
+  sortOrder: {
+    type: Number,
+    default: 1
+  },
+  currentPage: {
+    type: Number,
+    default: 1
+  },
+  pageSize: {
+    type: Number,
+    default: 25
   }
 })
 
 const selectedRow = ref(null)
-const filteredData = ref([])
+const keyTextLocal = ref('')
 
-/** PrimeVue-shaped filters so the filter icon overlay has data; derived from filterState. */
+const filterTypeOptions = computed(() =>
+  (props.availableTypeNames || []).slice().sort().map((type) => ({ type }))
+)
+
 const filtersForDataTable = computed(() => ({
-  key: { value: props.filterState.keyText ?? null, matchMode: props.filterState.keyMatchMode || 'contains' },
+  key: { value: keyTextLocal.value ?? props.filterState.keyText ?? null, matchMode: props.filterState.keyMatchMode || 'contains' },
   type: { value: props.filterState.typeNames ?? [], matchMode: 'in' },
   references: { value: props.filterState.refsValue ?? null, matchMode: props.filterState.refsMatchMode || 'gte' }
 }))
 
-/** When user picks match mode (or clears) in the filter overlay, sync back to filterState. */
 function onFiltersUpdate(filters) {
   if (!filters) return
   if (filters.key) {
-    props.filterState.keyText = filters.key.value ?? ''
+    const v = filters.key.value ?? ''
+    keyTextLocal.value = v
+    props.filterState.keyText = v
     props.filterState.keyMatchMode = filters.key.matchMode || 'contains'
   }
   if (filters.type) {
@@ -132,22 +204,27 @@ function onFiltersUpdate(filters) {
   emit('filter-change', filters)
 }
 
-function applyFilters() {
-  const { flat } = applyInventoryFilter(props.inventory, props.filterState)
-  filteredData.value = flat
+function onKeyFilterInput(value) {
+  keyTextLocal.value = value
+  debouncedSetKeyText(value)
+}
+
+const debouncedSetKeyText = useDebounceFn((value) => {
+  props.filterState.keyText = value
+}, DEBOUNCE_KEY_MS)
+
+function onPage(event) {
+  emit('page', event)
+}
+
+function onSort(event) {
+  emit('sort', event)
 }
 
 watch(
-  [() => props.inventory, () => props.filterState],
-  () => {
-    applyFilters()
-  },
-  { immediate: true, deep: true }
+  () => props.filterState.keyText,
+  (v) => { keyTextLocal.value = v ?? '' }
 )
-
-const filterTypeOptions = computed(() => {
-  return Object.keys(props.inventory || {}).sort().map((type) => ({ type }))
-})
 
 function onRowSelect(event) {
   emit('select', event.data)

@@ -72,7 +72,7 @@ import {
 } from '../../bindings/paradox-modding-tool/settingsservice.js'
 import CodeViewer from '../components/CodeViewer.vue'
 
-const { game, gameInstallPath, setGame, setGameInstallPath, loadSettings } = useAppSettings()
+const { game, gameInstallPath } = useAppSettings()
 
 const activeTab = ref('0')
 

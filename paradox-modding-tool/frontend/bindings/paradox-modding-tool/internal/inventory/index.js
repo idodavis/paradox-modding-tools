@@ -4,7 +4,8 @@
 
 export {
     ExtractResult,
+    FilterState,
+    FilteredSortedPage,
     InventoryItem,
-    InventoryResult,
     ObjectReference
 } from "./models.js";

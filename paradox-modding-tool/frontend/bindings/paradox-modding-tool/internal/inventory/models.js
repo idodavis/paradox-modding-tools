@@ -7,7 +7,7 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
- * ExtractResult is the return type of ExtractInventory (inventory only; graph is built in frontend per item)
+ * ExtractResult is returned by ExtractInventory: items keyed by type and any non-fatal parse errors.
  */
 export class ExtractResult {
     /**
@@ -15,12 +15,19 @@ export class ExtractResult {
      * @param {Partial<ExtractResult>} [$$source = {}] - The source object to create the ExtractResult.
      */
     constructor($$source = {}) {
-        if (!("inventory" in $$source)) {
+        if (!("items" in $$source)) {
             /**
              * @member
-             * @type {{ [_: string]: InventoryResult | null }}
+             * @type {{ [_: string]: InventoryItem[] }}
              */
-            this["inventory"] = {};
+            this["items"] = {};
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string[] | undefined}
+             */
+            this["errors"] = undefined;
         }
 
         Object.assign(this, $$source);
@@ -33,16 +40,125 @@ export class ExtractResult {
      */
     static createFrom($$source = {}) {
         const $$createField0_0 = $$createType2;
+        const $$createField1_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("inventory" in $$parsedSource) {
-            $$parsedSource["inventory"] = $$createField0_0($$parsedSource["inventory"]);
+        if ("items" in $$parsedSource) {
+            $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
+        }
+        if ("errors" in $$parsedSource) {
+            $$parsedSource["errors"] = $$createField1_0($$parsedSource["errors"]);
         }
         return new ExtractResult(/** @type {Partial<ExtractResult>} */($$parsedSource));
     }
 }
 
 /**
- * InventoryItem represents a single extracted game object with metadata
+ * FilterState is the filter state for table filtering and export (same shape as frontend).
+ */
+export class FilterState {
+    /**
+     * Creates a new FilterState instance.
+     * @param {Partial<FilterState>} [$$source = {}] - The source object to create the FilterState.
+     */
+    constructor($$source = {}) {
+        if (!("keyText" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["keyText"] = "";
+        }
+        if (!("keyMatchMode" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["keyMatchMode"] = "";
+        }
+        if (!("typeNames" in $$source)) {
+            /**
+             * @member
+             * @type {string[]}
+             */
+            this["typeNames"] = [];
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | null | undefined}
+             */
+            this["refsValue"] = undefined;
+        }
+        if (!("refsMatchMode" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["refsMatchMode"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FilterState instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {FilterState}
+     */
+    static createFrom($$source = {}) {
+        const $$createField2_0 = $$createType3;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("typeNames" in $$parsedSource) {
+            $$parsedSource["typeNames"] = $$createField2_0($$parsedSource["typeNames"]);
+        }
+        return new FilterState(/** @type {Partial<FilterState>} */($$parsedSource));
+    }
+}
+
+/**
+ * FilteredSortedPage is the result of FilterAndSortPage: one page of items and total count.
+ */
+export class FilteredSortedPage {
+    /**
+     * Creates a new FilteredSortedPage instance.
+     * @param {Partial<FilteredSortedPage>} [$$source = {}] - The source object to create the FilteredSortedPage.
+     */
+    constructor($$source = {}) {
+        if (!("items" in $$source)) {
+            /**
+             * @member
+             * @type {InventoryItem[]}
+             */
+            this["items"] = [];
+        }
+        if (!("totalRecords" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["totalRecords"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FilteredSortedPage instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {FilteredSortedPage}
+     */
+    static createFrom($$source = {}) {
+        const $$createField0_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("items" in $$parsedSource) {
+            $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
+        }
+        return new FilteredSortedPage(/** @type {Partial<FilteredSortedPage>} */($$parsedSource));
+    }
+}
+
+/**
+ * InventoryItem represents a single extracted game object with metadata.
  */
 export class InventoryItem {
     /**
@@ -106,6 +222,14 @@ export class InventoryItem {
              */
             this["references"] = undefined;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * Attributes lists attributes in the object body and whether they are present.
+             * @member
+             * @type {{ [_: string]: boolean } | undefined}
+             */
+            this["attributes"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }
@@ -116,76 +240,16 @@ export class InventoryItem {
      * @returns {InventoryItem}
      */
     static createFrom($$source = {}) {
-        const $$createField6_0 = $$createType4;
+        const $$createField6_0 = $$createType5;
+        const $$createField7_0 = $$createType6;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("references" in $$parsedSource) {
             $$parsedSource["references"] = $$createField6_0($$parsedSource["references"]);
         }
+        if ("attributes" in $$parsedSource) {
+            $$parsedSource["attributes"] = $$createField7_0($$parsedSource["attributes"]);
+        }
         return new InventoryItem(/** @type {Partial<InventoryItem>} */($$parsedSource));
-    }
-}
-
-/**
- * InventoryResult contains the results of an inventory operation
- */
-export class InventoryResult {
-    /**
-     * Creates a new InventoryResult instance.
-     * @param {Partial<InventoryResult>} [$$source = {}] - The source object to create the InventoryResult.
-     */
-    constructor($$source = {}) {
-        if (!("type" in $$source)) {
-            /**
-             * Type is the object type that was inventoried
-             * @member
-             * @type {string}
-             */
-            this["type"] = "";
-        }
-        if (!("totalCount" in $$source)) {
-            /**
-             * TotalCount is the total number of objects found
-             * @member
-             * @type {number}
-             */
-            this["totalCount"] = 0;
-        }
-        if (!("items" in $$source)) {
-            /**
-             * Items contains all extracted objects
-             * @member
-             * @type {InventoryItem[]}
-             */
-            this["items"] = [];
-        }
-        if (/** @type {any} */(false)) {
-            /**
-             * Errors contains any non-fatal errors encountered during extraction
-             * @member
-             * @type {string[] | undefined}
-             */
-            this["errors"] = undefined;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new InventoryResult instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {InventoryResult}
-     */
-    static createFrom($$source = {}) {
-        const $$createField2_0 = $$createType6;
-        const $$createField3_0 = $$createType7;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("items" in $$parsedSource) {
-            $$parsedSource["items"] = $$createField2_0($$parsedSource["items"]);
-        }
-        if ("errors" in $$parsedSource) {
-            $$parsedSource["errors"] = $$createField3_0($$parsedSource["errors"]);
-        }
-        return new InventoryResult(/** @type {Partial<InventoryResult>} */($$parsedSource));
     }
 }
 
@@ -254,11 +318,10 @@ export class ObjectReference {
 }
 
 // Private type creation functions
-const $$createType0 = InventoryResult.createFrom;
-const $$createType1 = $Create.Nullable($$createType0);
+const $$createType0 = InventoryItem.createFrom;
+const $$createType1 = $Create.Array($$createType0);
 const $$createType2 = $Create.Map($Create.Any, $$createType1);
-const $$createType3 = ObjectReference.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = InventoryItem.createFrom;
-const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = $Create.Array($Create.Any);
+const $$createType3 = $Create.Array($Create.Any);
+const $$createType4 = ObjectReference.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = $Create.Map($Create.Any, $Create.Any);

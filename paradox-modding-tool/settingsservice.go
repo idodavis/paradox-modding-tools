@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+// ############
+// SettingsService
+// ############
+
 const (
 	appConfigDirName        = "Paradox Modding Tool"
 	settingsFileName        = "settings.json"
@@ -35,7 +39,7 @@ type AppSettings struct {
 	PatchNotesFeedUrlEu5 string `json:"patchNotesFeedUrlEu5"`
 }
 
-// SettingsService provides persisted app settings and update-check.
+// SettingsService provides persisted app settings, doc path cache, and latest patch notes (SteamDB RSS).
 type SettingsService struct{}
 
 // settingsPath returns the path to settings.json in the app config directory.

@@ -1,45 +1,10 @@
 package inventory
 
-// ObjectTypeConfig defines how to identify and extract a specific type of game object
-type ObjectTypeConfig struct {
-	// Name is the display name for this object type
-	Name string `json:"name"`
+////////////////////////////////////////////////////////////
+// Result types
+////////////////////////////////////////////////////////////
 
-	// Paths are the relative directory paths to scan for files of this type
-	Paths []string `json:"paths"`
-
-	// KeyPattern defines how to identify object keys:
-	// - "numeric": keys must be numeric (e.g., character IDs like 1001)
-	// - "prefixed": keys must start with specific prefixes (e.g., e_, k_, d_ for titles)
-	// - "namespaced": keys follow namespace.id pattern (e.g., events)
-	// - "keyword_prefixed": keys start with a keyword (e.g., "scripted_trigger name")
-	// - "any": accept any key
-	KeyPattern string `json:"keyPattern"`
-
-	// KeyPrefixes are the valid prefixes when KeyPattern is "prefixed"
-	KeyPrefixes []string `json:"keyPrefixes,omitempty"`
-
-	// KeyKeywords are the keywords when KeyPattern is "keyword_prefixed"
-	// The actual object name follows the keyword (e.g., "scripted_trigger my_trigger")
-	KeyKeywords []string `json:"keyKeywords,omitempty"`
-
-	// InlinePaths are additional paths to scan for inline definitions
-	// (e.g., scripted_triggers defined inline in event files)
-	InlinePaths []string `json:"inlinePaths,omitempty"`
-
-	// InlineKeyPattern is the pattern used for inline definitions (if different from KeyPattern)
-	// e.g., "keyword_prefixed" for scripted_trigger definitions in event files
-	InlineKeyPattern string `json:"inlineKeyPattern,omitempty"`
-
-	// InlineKeyKeywords are the keywords for inline keyword_prefixed patterns
-	InlineKeyKeywords []string `json:"inlineKeyKeywords,omitempty"`
-
-	// RelatedTypes lists other object types that may reference this type
-	// Used for deep inventory link tracking
-	RelatedTypes []string `json:"relatedTypes,omitempty"`
-}
-
-// InventoryItem represents a single extracted game object with metadata
+// InventoryItem represents a single extracted game object with metadata.
 type InventoryItem struct {
 	// Key is the unique identifier for this object (e.g., character ID, event name)
 	Key string `json:"key"`
@@ -65,6 +30,9 @@ type InventoryItem struct {
 
 	// References contains resolved references to other objects
 	References []ObjectReference `json:"references,omitempty"`
+
+	// Attributes lists attributes in the object body and whether they are present.
+	Attributes map[string]bool `json:"attributes,omitempty"`
 }
 
 // ObjectReference represents a reference between two game objects
@@ -85,49 +53,31 @@ type ObjectReference struct {
 	SourceLine int `json:"sourceLine"`
 }
 
-// InventoryResult contains the results of an inventory operation
+// InventoryResult is used for export: one type's items (and optional metadata).
 type InventoryResult struct {
-	// Type is the object type that was inventoried
-	Type string `json:"type"`
-
-	// TotalCount is the total number of objects found
-	TotalCount int `json:"totalCount"`
-
-	// Items contains all extracted objects
-	Items []InventoryItem `json:"items"`
-
-	// Errors contains any non-fatal errors encountered during extraction
-	Errors []string `json:"errors,omitempty"`
+	Type       string          `json:"type"`
+	TotalCount int             `json:"totalCount"`
+	Items      []InventoryItem `json:"items"`
+	Errors     []string        `json:"errors,omitempty"`
 }
 
-// InventoryConfig holds the complete configuration for all object types
-type InventoryConfig struct {
-	// ObjectTypes maps type identifiers to their configurations
-	ObjectTypes map[string]ObjectTypeConfig `json:"objectTypes"`
-}
-
-// GraphNode represents a node in the reference graph (for ECharts)
-type GraphNode struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Category   int     `json:"category"`
-	SymbolSize float64 `json:"symbolSize"`
-	Value      int     `json:"value"`
-}
-
-// GraphLink represents an edge in the reference graph
-type GraphLink struct {
-	Source string `json:"source"`
-	Target string `json:"target"`
-}
-
-// GraphData is the precomputed reference graph for the frontend
-type GraphData struct {
-	Nodes []GraphNode `json:"nodes"`
-	Links []GraphLink `json:"links"`
-}
-
-// ExtractResult is the return type of ExtractInventory (inventory only; graph is built in frontend per item)
+// ExtractResult is returned by ExtractInventory: items keyed by type and any non-fatal parse errors.
 type ExtractResult struct {
-	Inventory map[string]*InventoryResult `json:"inventory"`
+	Items  map[string][]InventoryItem `json:"items"`
+	Errors []string                   `json:"errors,omitempty"`
+}
+
+// FilterState is the filter state for table filtering and export (same shape as frontend).
+type FilterState struct {
+	KeyText       string   `json:"keyText"`
+	KeyMatchMode  string   `json:"keyMatchMode"`
+	TypeNames     []string `json:"typeNames"`
+	RefsValue     *int     `json:"refsValue,omitempty"`
+	RefsMatchMode string   `json:"refsMatchMode"`
+}
+
+// FilteredSortedPage is the result of FilterAndSortPage: one page of items and total count.
+type FilteredSortedPage struct {
+	Items        []InventoryItem `json:"items"`
+	TotalRecords int             `json:"totalRecords"`
 }

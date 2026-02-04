@@ -4,29 +4,35 @@ import (
 	"paradox-modding-tool/internal/inventory"
 )
 
-// InventoryService provides inventory functionality for Paradox game objects
-// Exposed to the Wails frontend
+// ############
+// InventoryService
+// ############
+
+// InventoryService exposes inventory functionality to the Wails frontend (supported types, schema, extraction, cancel).
 type InventoryService struct{}
 
-// GetSupportedGames returns a list of supported game identifiers
-func (s *InventoryService) GetSupportedGames() []string {
-	return inventory.GetSupportedGames()
-}
-
-// GetSupportedTypes returns object types available for a specific game
+// GetSupportedTypes returns the sorted list of object type names for the given game.
 func (s *InventoryService) GetSupportedTypes(game string) ([]string, error) {
 	return inventory.GetSupportedTypes(game)
 }
 
+// GetAttributes returns attribute names for an object type (from schema).
+func (s *InventoryService) GetAttributes(game string, typeName string) ([]string, error) {
+	return inventory.GetAttributes(game, typeName)
+}
+
+// GetFilteredSortedPage returns one page of filtered and sorted inventory items for the results table.
+func (s *InventoryService) GetFilteredSortedPage(result *inventory.ExtractResult, filterState inventory.FilterState, sortField string, sortOrder int, first, rows int) (*inventory.FilteredSortedPage, error) {
+	return inventory.FilterAndSortPage(result, &filterState, sortField, sortOrder, first, rows), nil
+}
+
 // ExtractInventory extracts multiple object types from files with references resolved.
-// Returns ExtractResult with Inventory (map of type -> InventoryResult). Graph is built in frontend per item.
-// Returns inventory.ErrExtractionCancelled if CancelExtraction was called during the run.
+// Returns items keyed by type and any parse errors. Returns inventory.ErrExtractionCancelled if the user cancelled.
 func (s *InventoryService) ExtractInventory(game string, files []string, objectTypes []string) (*inventory.ExtractResult, error) {
 	return inventory.ExtractInventory(game, files, objectTypes)
 }
 
-// CancelExtraction requests that the current ExtractInventory run stop at the next type boundary.
-// Call this from the frontend when the user clicks Cancel during extraction.
+// CancelExtraction signals the running ExtractInventory to stop and discard results (immediate, clears in-memory data).
 func (s *InventoryService) CancelExtraction() {
 	inventory.CancelExtraction()
 }

@@ -5,13 +5,10 @@
       <template #content>
         <h2 class="text-lg font-semibold mb-4">Object Inventory</h2>
 
-        <!-- File Selector -->
         <FileSelector v-model="files" class="mb-4" />
 
-        <!-- Type Selector -->
         <TypeSelector v-model="selectedTypes" :game="game" class="mb-4" />
 
-        <!-- Action Buttons -->
         <div class="flex flex-wrap gap-2">
           <Button v-if="!loading" @click="extractInventory" :disabled="files.length === 0 || selectedTypes.length === 0"
             label="Extract Inventory" />
@@ -22,16 +19,47 @@
       </template>
     </Card>
 
-    <!-- Results Area: table + item detail drawer -->
-    <div v-if="Object.keys(inventory).length > 0" class="flex min-w-0 flex-col">
-      <ResultsTable :inventory="inventory" :loading="loading" :filter-state="filterState" @select="onSelectItem" />
+    <!-- Extraction errors (if any) -->
+    <Message v-if="extractionErrors.length > 0" severity="warn" :closable="false" class="mb-4">
+      <p class="font-medium mb-1">Parse errors during extraction ({{ extractionErrors.length }}):</p>
+      <ul class="list-disc pl-5 text-sm max-h-32 overflow-auto">
+        <li v-for="(err, i) in extractionErrors" :key="i">{{ err }}</li>
+      </ul>
+    </Message>
+
+    <!-- Results Area -->
+    <div v-if="hasExtraction" class="flex min-w-0 flex-col">
+      <ResultsTable
+        :value="pageItemsWithIds"
+        :total-records="totalRecords"
+        :lazy="true"
+        :first="(currentPage - 1) * pageSize"
+        :rows="pageSize"
+        filterDisplay="row"
+        paginator
+        :rowsPerPageOptions="[10, 25, 50, 100]"
+        :loading="loading || pageLoading"
+        selectionMode="single"
+        v-model:selection="selectedRow"
+        dataKey="uniqueId"
+        :sortField="sortField"
+        :sortOrder="sortOrder"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :available-type-names="availableTypeNames"
+        :filter-state="filterState"
+        @select="onSelectItem"
+        @filter-change="onFilterChange"
+        @page="onPage"
+        @sort="onSort"
+        stripedRows
+      />
       <Drawer v-model:visible="drawerVisible" position="right" class="w-full! md:w-100! lg:w-150!"
         :header="selectedItem ? selectedItem.key : ''">
-        <ItemDetails v-if="selectedItem" :item="selectedItem" @view-in-graph="viewItemInGraph" />
+        <ItemDetails v-if="selectedItem" :game="game" :item="selectedItem" @view-in-graph="viewItemInGraph" />
       </Drawer>
     </div>
 
-    <!-- Empty State -->
     <div v-else class="flex-1 flex items-center justify-center">
       <div class="text-center text-(--p-surface-400)">
         <p class="text-lg mb-2">No inventory loaded</p>
@@ -39,47 +67,58 @@
       </div>
     </div>
 
-    <!-- Graph: fullscreen Drawer (only when open; item detail opens as Dialog on node click) -->
+    <!-- Graph: fullscreen Drawer -->
     <Drawer v-if="showGraph" :visible="true" position="full" header="Reference Graph"
       @update:visible="(v) => { if (!v) closeGraph() }">
       <div class="h-full min-h-0 flex flex-col overflow-hidden">
-        <ReferenceGraph v-if="graphFocusItem" :inventory="inventory" :focus-item="graphFocusItem"
-          @open-item="openItemFromGraph" />
+        <ReferenceGraph
+          v-if="graphFocusItem"
+          :graph-data="graphData"
+          :focus-item="graphFocusItem"
+          :refs-offset="graphRefsOffset"
+          :referrers-offset="graphReferrersOffset"
+          @open-item="openItemFromGraph"
+          @next-refs="onNextRefs"
+          @next-referrers="onNextReferrers"
+        />
       </div>
     </Drawer>
 
-    <!-- Item detail Dialog on top of graph when a node is clicked (z-index above fullscreen Drawer) -->
     <Dialog v-if="graphDetailItem" :visible="true" modal :header="graphDetailItem?.key ?? 'Item details'" class="z-1300"
       :closable="true" @update:visible="(v) => { if (!v) graphDetailItem = null }">
-      <ItemDetails v-if="graphDetailItem" :item="graphDetailItem" @close="graphDetailItem = null"
+      <ItemDetails v-if="graphDetailItem" :game="game" :item="graphDetailItem" @close="graphDetailItem = null"
         @view-in-graph="(it) => { graphDetailItem = null; graphFocusItem = it }" />
     </Dialog>
 
-    <!-- Export/Import Dialog: uses current filtered state from filterState (no internal filtering). -->
-    <ExportImportDialog v-if="showExportImport" :inventory="inventory" :filtered-inventory="filteredInventoryForExport"
-      @close="showExportImport = false" @import="onImport" />
+    <ExportImportDialog v-if="showExportImport" :extract-result="extractResult" :filter-state="filterState"
+      :has-extraction="hasExtraction" @close="showExportImport = false" @import="onImport" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { GetSupportedGames, ExtractInventory, CancelExtraction } from '../../bindings/paradox-modding-tool/inventoryservice.js'
-import { CollectFilesFromPaths } from '../../bindings/paradox-modding-tool/fileservice.js'
-import { applyInventoryFilter, countInventoryItems, countReferences } from '../utils/inventory.js'
+import { ref, reactive, computed, watch } from 'vue'
+import { ExtractInventory, CancelExtraction, GetFilteredSortedPage } from '../../bindings/paradox-modding-tool/inventoryservice.js'
 import FileSelector from '../components/FileSelector.vue'
 import TypeSelector from '../components/inventory/TypeSelector.vue'
 import ResultsTable from '../components/inventory/ResultsTable.vue'
 import ItemDetails from '../components/inventory/ItemDetails.vue'
 import ReferenceGraph from '../components/inventory/ReferenceGraph.vue'
 import ExportImportDialog from '../components/inventory/ExportImportDialog.vue'
+import { useAppSettings } from '../composables/useAppSettings'
+import { buildGraphData } from '../utils/inventoryGraph.js'
 
-const game = ref('ck3')
-const games = ref([])
+const { game } = useAppSettings()
 const files = ref([])
 const selectedTypes = ref([])
-const inventory = ref({})
+const hasExtraction = ref(false)
 const loading = ref(false)
-/** Filter state for table and export (single source of truth). Match modes use PrimeVue FilterMatchMode values. */
+const extractResult = ref(null)
+const extractionErrors = ref([])
+const sortField = ref('key')
+const sortOrder = ref(1)
+const currentPage = ref(1)
+const pageSize = ref(25)
+const availableTypeNames = ref([])
 const filterState = reactive({
   keyText: '',
   keyMatchMode: 'contains',
@@ -87,14 +126,71 @@ const filterState = reactive({
   refsValue: null,
   refsMatchMode: 'gte'
 })
-/** Precomputed filtered map for export when "Export filtered only" is checked. */
-const filteredInventoryForExport = computed(() => applyInventoryFilter(inventory.value, filterState).map)
 const selectedItem = ref(null)
+const selectedRow = ref(null)
 const drawerVisible = ref(false)
 const showGraph = ref(false)
 const graphFocusItem = ref(null)
 const graphDetailItem = ref(null)
+const graphRefsOffset = ref(0)
+const graphReferrersOffset = ref(0)
 const showExportImport = ref(false)
+
+const pageData = ref({ items: [], totalRecords: 0 })
+const pageLoading = ref(false)
+
+const totalRecords = computed(() => pageData.value.totalRecords)
+const pageItemsWithIds = computed(() =>
+  (pageData.value.items || []).map((item, i) => ({ ...item, uniqueId: `${item.type}-${item.key}-${i}` }))
+)
+
+async function loadPage() {
+  if (!extractResult.value?.items) {
+    pageData.value = { items: [], totalRecords: 0 }
+    return
+  }
+  pageLoading.value = true
+  try {
+    const first = (currentPage.value - 1) * pageSize.value
+    const result = await GetFilteredSortedPage(
+      extractResult.value,
+      {
+        keyText: filterState.keyText,
+        keyMatchMode: filterState.keyMatchMode || 'contains',
+        typeNames: filterState.typeNames || [],
+        refsValue: filterState.refsValue ?? null,
+        refsMatchMode: filterState.refsMatchMode || 'gte'
+      },
+      sortField.value || 'key',
+      sortOrder.value ?? 1,
+      first,
+      pageSize.value
+    )
+    pageData.value = result
+      ? { items: result.items || [], totalRecords: result.totalRecords ?? 0 }
+      : { items: [], totalRecords: 0 }
+  } catch (err) {
+    console.error('Load page error:', err)
+    pageData.value = { items: [], totalRecords: 0 }
+  } finally {
+    pageLoading.value = false
+  }
+}
+
+const graphData = computed(() => {
+  if (!graphFocusItem.value || !extractResult.value?.items) {
+    return { nodes: [], links: [], totalRefs: 0, totalReferrers: 0 }
+  }
+  return buildGraphData(
+    extractResult.value.items,
+    graphFocusItem.value.type,
+    graphFocusItem.value.key,
+    graphRefsOffset.value,
+    100,
+    graphReferrersOffset.value,
+    100
+  )
+})
 
 watch(selectedItem, (item) => {
   drawerVisible.value = !!item
@@ -102,65 +198,78 @@ watch(selectedItem, (item) => {
 watch(drawerVisible, (visible) => {
   if (!visible) selectedItem.value = null
 })
+watch(
+  [
+    () => hasExtraction.value,
+    () => extractResult.value,
+    () => ({ ...filterState }),
+    sortField,
+    sortOrder,
+    currentPage,
+    pageSize
+  ],
+  () => {
+    if (hasExtraction.value) loadPage()
+  },
+  { immediate: true, deep: true }
+)
 
-onMounted(async () => {
-  try {
-    console.log('InventoryTool: Loading supported games...')
-    games.value = await GetSupportedGames()
-    console.log('InventoryTool: Loaded games:', games.value)
-    if (games.value.length > 0 && !games.value.includes(game.value)) {
-      game.value = games.value[0]
-    }
-  } catch (err) {
-    console.error('Failed to load supported games:', err)
-  }
-})
+watch([game], () => {
+  clearAll()
+}, { immediate: true })
 
-function onGameChange() {
-  console.log('Game changed to:', game.value)
-  selectedTypes.value = []
-  inventory.value = {}
-  selectedItem.value = null
+function onFilterChange() {
+  currentPage.value = 1
+}
+
+function onSort(event) {
+  sortField.value = event.sortField || 'key'
+  sortOrder.value = event.sortOrder ?? 1
+  currentPage.value = 1
+}
+
+function onPage(event) {
+  const first = event.first ?? 0
+  const rows = event.rows ?? pageSize.value
+  pageSize.value = rows
+  currentPage.value = Math.floor(first / rows) + 1
+}
+
+function onSelectItem(item) {
+  selectedItem.value = item || null
+  selectedRow.value = item || null
+  drawerVisible.value = !!item
+}
+
+function onFiltersUpdate() {
+  currentPage.value = 1
 }
 
 async function extractInventory() {
-  console.log('extractInventory called', { files: files.value, types: selectedTypes.value })
-  if (files.value.length === 0 || selectedTypes.value.length === 0) {
-    console.log('Early return: no files or types selected')
-    return
-  }
+  if (files.value.length === 0 || selectedTypes.value.length === 0) return
 
   loading.value = true
-  inventory.value = {}
+  hasExtraction.value = false
+  extractResult.value = null
+  extractionErrors.value = []
   selectedItem.value = null
+  selectedRow.value = null
 
   try {
-    console.log('Collecting files from paths...')
-    const fileMap = await CollectFilesFromPaths(files.value)
-    const collectedFiles = Object.values(fileMap || {})
-    console.log('Collected', collectedFiles.length, 'files')
-
-    if (collectedFiles.length === 0) {
-      alert('No .txt files found in the selected paths')
-      loading.value = false
-      return
+    const result = await ExtractInventory(game.value, files.value, selectedTypes.value)
+    if (result) {
+      extractResult.value = result
+      extractionErrors.value = result.errors || []
+      const typeNames = result.items ? Object.keys(result.items) : []
+      availableTypeNames.value = typeNames.sort()
+      filterState.typeNames = typeNames
+      hasExtraction.value = typeNames.length > 0
+      currentPage.value = 1
     }
-
-    console.log('Extracting types:', selectedTypes.value, 'from', collectedFiles.length, 'files')
-    const result = await ExtractInventory(game.value, collectedFiles, selectedTypes.value)
-    inventory.value = result.inventory || {}
-
-    filterState.typeNames = Object.keys(inventory.value)
-    const totalItems = countInventoryItems(inventory.value)
-    const totalRefs = countReferences(inventory.value)
-    console.log('Extraction complete. Types:', filterTypes.value, 'Total items:', totalItems, 'Total refs:', totalRefs)
   } catch (err) {
     const msg = String(err?.message ?? err)
     if (msg.toLowerCase().includes('cancelled')) {
-      console.log('Extraction cancelled by user')
-      if (Object.keys(inventory.value).length > 0) {
-        filterState.typeNames = Object.keys(inventory.value)
-      }
+      clearAll()
     } else {
       console.error('Extraction error:', err)
       alert('Error extracting inventory: ' + msg)
@@ -170,25 +279,16 @@ async function extractInventory() {
   }
 }
 
+function cancelExtraction() {
+  CancelExtraction()
+}
+
 function viewItemInGraph(item) {
-  closeDrawer()
+  drawerVisible.value = false
+  selectedItem.value = null
   graphFocusItem.value = item
   graphDetailItem.value = null
   showGraph.value = true
-}
-
-function onSelectItem(item) {
-  selectedItem.value = item
-  drawerVisible.value = !!item
-}
-
-function closeDrawer() {
-  drawerVisible.value = false
-  selectedItem.value = null
-}
-
-function cancelExtraction() {
-  CancelExtraction()
 }
 
 function closeGraph() {
@@ -201,48 +301,59 @@ function openItemFromGraph(item) {
   graphDetailItem.value = item
 }
 
+function onNextRefs() {
+  const total = graphData.value.totalRefs || 0
+  if (total <= 0) return
+  graphRefsOffset.value = (graphRefsOffset.value + 100) % Math.max(1, total)
+}
+
+function onNextReferrers() {
+  const total = graphData.value.totalReferrers || 0
+  if (total <= 0) return
+  graphReferrersOffset.value = (graphReferrersOffset.value + 100) % Math.max(1, total)
+}
+
 function onImport(importedData) {
-  const normalized = {}
+  const items = {}
   for (const [type, result] of Object.entries(importedData)) {
-    const items = (result.items || []).map((item) => ({
+    const list = (result?.items || []).map((item) => ({
       key: item.key,
       type: item.type ?? type,
       filePath: item.filePath ?? '',
       lineStart: item.lineStart,
       lineEnd: item.lineEnd,
       rawText: item.rawText ?? '',
-      references: Array.isArray(item.references) ? item.references : [],
+      references: Array.isArray(item.references) ? item.references : []
     }))
-    normalized[type] = { type, totalCount: items.length, items }
+    if (list.length) items[type] = list
   }
-  if (Object.keys(inventory.value).length === 0) {
-    inventory.value = { ...normalized }
-  } else {
-    for (const [type, result] of Object.entries(normalized)) {
-      if (inventory.value[type]) {
-        const existingKeys = new Set(inventory.value[type].items.map((i) => i.key))
-        for (const item of result.items) {
-          if (!existingKeys.has(item.key)) {
-            inventory.value[type].items.push(item)
-          }
-        }
-        inventory.value[type].totalCount = inventory.value[type].items.length
-      } else {
-        inventory.value[type] = result
-      }
-    }
+  if (Object.keys(items).length === 0) {
+    showExportImport.value = false
+    return
   }
-  filterState.typeNames = [...new Set([...filterState.typeNames, ...Object.keys(normalized)])]
+  extractResult.value = { items, errors: [] }
+  extractionErrors.value = []
+  const newTypes = Object.keys(items)
+  availableTypeNames.value = [...new Set([...availableTypeNames.value, ...newTypes])]
+  filterState.typeNames = [...new Set([...filterState.typeNames, ...newTypes])]
+  hasExtraction.value = true
+  currentPage.value = 1
   showExportImport.value = false
 }
 
 function clearAll() {
-  inventory.value = {}
+  hasExtraction.value = false
+  extractResult.value = null
+  extractionErrors.value = []
+  availableTypeNames.value = []
+  pageData.value = { items: [], totalRecords: 0 }
   selectedItem.value = null
+  selectedRow.value = null
   filterState.keyText = ''
   filterState.keyMatchMode = 'contains'
   filterState.typeNames = []
   filterState.refsValue = null
   filterState.refsMatchMode = 'gte'
+  currentPage.value = 1
 }
 </script>

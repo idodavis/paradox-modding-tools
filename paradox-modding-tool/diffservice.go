@@ -10,7 +10,11 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// DiffService provides diff functionality for comparing files
+// ############
+// DiffService
+// ############
+
+// DiffService provides structured diffs between two files (line-based, with line numbers).
 type DiffService struct{}
 
 // DiffLine represents a single line in a diff

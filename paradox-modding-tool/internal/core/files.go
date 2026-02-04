@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+// ############
+// Game script root and path discovery
+// ############
+
 // GameScriptRoot returns the game script root directory for the given game and install path.
 // CK3: <install>/game, EU5: <install>/game/in_game.
 func GameScriptRoot(installPath, game string) (string, error) {
@@ -20,6 +24,10 @@ func GameScriptRoot(installPath, game string) (string, error) {
 		return "", fmt.Errorf("unknown game: %s", game)
 	}
 }
+
+// ############
+// File collection and matching
+// ############
 
 // FileMatch holds a pair of file paths (A and B) for a matched relative path.
 type FileMatch struct {

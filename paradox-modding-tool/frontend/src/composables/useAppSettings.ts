@@ -2,12 +2,6 @@ import { ref, computed, onMounted } from 'vue'
 import { GetSettings, SaveSettings } from '../../bindings/paradox-modding-tool/settingsservice.js'
 import type { AppSettings } from '../../bindings/paradox-modding-tool/models.js'
 
-/** Default Steam install paths (hints/placeholders). Windows; adjust for macOS/Linux if needed. */
-export const DEFAULT_STEAM_PATH_CK3 =
-  'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Crusader Kings III'
-export const DEFAULT_STEAM_PATH_EU5 =
-  'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis V'
-
 const game = ref<string>('ck3')
 const gameInstallPathCk3 = ref<string>('')
 const gameInstallPathEu5 = ref<string>('')

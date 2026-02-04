@@ -4,7 +4,11 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// BrowserService opens URLs in the system default browser.
+// ############
+// BrowserService
+// ############
+
+// BrowserService opens URLs in the system default browser (Windows, macOS, Linux).
 type BrowserService struct{}
 
 // OpenURL opens the given URL in the user's default browser.

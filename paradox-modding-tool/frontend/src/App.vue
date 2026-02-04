@@ -50,6 +50,11 @@
       </div>
     </div>
 
+    <footer
+      class="shrink-0 h-6 px-3 flex items-center justify-end border-t border-(--p-surface-700) bg-(--p-surface-900)">
+      <span class="text-xs text-(--p-surface-500)">v{{ appVersion }}</span>
+    </footer>
+
     <Drawer v-model:visible="helpDrawerVisible" position="right" :header="helpContent.title"
       :style="{ width: 'min(400px, 100vw)' }">
       <p class="text-sm text-(--p-surface-300)">{{ helpContent.body }}</p>
@@ -60,6 +65,9 @@
 <script setup>
 import { ref, computed } from 'vue'
 import Hub from './pages/Hub.vue'
+
+/** App version (semver). Single source of truth for footer. */
+const appVersion = '0.5.0'
 import ComparisonTool from './pages/ComparisonTool.vue'
 import MergeTool from './pages/MergeTool.vue'
 import InventoryTool from './pages/InventoryTool.vue'

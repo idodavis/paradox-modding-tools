@@ -1,10 +1,14 @@
 package core
 
 import (
-	"paradox-modding-tool/internal/parser"
+	parser "paradox-modding-tool/internal/interpreter"
 )
 
-// MergeOptions configures how files are merged
+// ############
+// Merge options and result types
+// ############
+
+// MergeOptions configures how files are merged (additional entries, placement, key list, comment prefix).
 type MergeOptions struct {
 	// AddAdditionalEntries determines whether to add entries from the other file that don't exist in the base
 	AddAdditionalEntries bool
@@ -19,14 +23,14 @@ type MergeOptions struct {
 	CustomCommentPrefix string
 }
 
-// FileSet represents a set of files to merge
+// FileSet represents a set of files to merge (root dir and relative paths).
 type FileSet struct {
 	RootDir      string   // Root directory for the file set
 	Files        []string // List of relative file paths
 	RelativePath string   // For single file operations
 }
 
-// MergeResult contains information about what changed during a merge
+// MergeResult holds added/removed/changed/kept keys and any error for a merge.
 type MergeResult struct {
 	FilePath       string
 	EntriesAdded   []string // Keys that were added from file B
@@ -36,7 +40,7 @@ type MergeResult struct {
 	Error          error
 }
 
-// ModdedObject represents an object from a mod file with its comment
+// ModdedObject holds a parsed object expression and its leading comment.
 type ModdedObject struct {
 	ObjectExpr *parser.Expression
 	Comment    string

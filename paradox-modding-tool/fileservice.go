@@ -1,16 +1,27 @@
 package main
 
 import (
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
+
+	"paradox-modding-tool/internal/core"
+	"paradox-modding-tool/internal/inventory"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"paradox-modding-tool/internal/core"
 )
 
-// FileService provides file selection and collection operations
+// ############
+// FileService
+// ############
+
+// FileService provides directory/file selection dialogs and game script root / doc path discovery.
 type FileService struct{}
 
 // FileMatch represents a matched file pair
@@ -309,4 +320,108 @@ func (s *FileService) SaveFile(defaultName, fileType string, content string) (st
 	}
 
 	return path, err
+}
+
+// ExportInventoryFromBackend uses the given extraction result, applies filterState, optionally fills raw text, shows folder dialog, and writes the file.
+// Returns the path of the written file, or ("", nil) if the user cancels, or ("", err) if no inventory or write failure.
+func (s *FileService) ExportInventoryFromBackend(extractResult *inventory.ExtractResult, filterState inventory.FilterState, format string, includeRawText bool) (string, error) {
+	exportData := inventory.FilterForExport(extractResult, &filterState)
+	if len(exportData) == 0 {
+		return "", fmt.Errorf("no inventory data to export")
+	}
+	return s.exportInventoryToPath(exportData, format, includeRawText)
+}
+
+// openExportFolderDialog opens the folder dialog and returns the full path for the export file (user may cancel).
+func (s *FileService) openExportFolderDialog(format string) (string, error) {
+	app := application.Get()
+	folder, err := app.Dialog.OpenFile().
+		SetTitle("Select Export Folder").
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		PromptForSingleSelection()
+	if err != nil || folder == "" {
+		return "", nil
+	}
+	ext := ".json"
+	if format == "csv" {
+		ext = ".csv"
+	}
+	filename := fmt.Sprintf("export_%s%s", time.Now().Format("2006-01-02_15-04-05"), ext)
+	return filepath.Join(folder, filename), nil
+}
+
+func (s *FileService) exportInventoryToPath(exportData map[string]*inventory.InventoryResult, format string, includeRawText bool) (string, error) {
+	path, err := s.openExportFolderDialog(format)
+	if err != nil || path == "" {
+		return "", nil
+	}
+	return s.exportToPath(path, exportData, format, includeRawText)
+}
+
+func (s *FileService) exportToPath(path string, exportData map[string]*inventory.InventoryResult, format string, includeRawText bool) (string, error) {
+	dataToEncode := exportData
+
+	f, err := os.Create(path)
+	if err != nil {
+		return "", fmt.Errorf("export: create file: %w", err)
+	}
+	defer f.Close()
+
+	if format == "csv" {
+		w := csv.NewWriter(f)
+		if err := writeExportCSV(w, dataToEncode); err != nil {
+			return "", fmt.Errorf("export: write CSV: %w", err)
+		}
+	} else {
+		enc := json.NewEncoder(f)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(dataToEncode); err != nil {
+			return "", fmt.Errorf("export: encode JSON: %w", err)
+		}
+	}
+
+	return path, nil
+}
+
+func writeExportCSV(w *csv.Writer, exportData map[string]*inventory.InventoryResult) error {
+	header := []string{"key", "type", "filePath", "lineStart", "lineEnd"}
+	if err := w.Write(header); err != nil {
+		return err
+	}
+	for _, result := range exportData {
+		if result == nil {
+			continue
+		}
+		for _, item := range result.Items {
+			row := []string{
+				item.Key,
+				item.Type,
+				item.FilePath,
+				fmt.Sprintf("%d", item.LineStart),
+				fmt.Sprintf("%d", item.LineEnd),
+			}
+			if err := w.Write(row); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// OpenFolder opens the given folder path in the system file manager (e.g. Explorer on Windows, Finder on macOS).
+func (s *FileService) OpenFolder(folderPath string) error {
+	if folderPath == "" {
+		return nil
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer", filepath.ToSlash(folderPath))
+	case "darwin":
+		cmd = exec.Command("open", folderPath)
+	default:
+		cmd = exec.Command("xdg-open", folderPath)
+	}
+	return cmd.Start()
 }

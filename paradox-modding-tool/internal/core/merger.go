@@ -6,10 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"paradox-modding-tool/internal/parser"
+	parser "paradox-modding-tool/internal/interpreter"
 )
 
-// WriteMergedFile writes the merged content to an output file
+// ############
+// Merge: file write and content
+// ############
+
+// WriteMergedFile writes content to outputPath, creating parent directories if needed.
 func WriteMergedFile(outputPath string, content string) error {
 	// Ensure output directory exists
 	dir := filepath.Dir(outputPath)
@@ -31,7 +35,7 @@ func WriteMergedFile(outputPath string, content string) error {
 	return nil
 }
 
-// collectObjectsAndComments collects all entries with objects that match the key pattern
+// collectObjectsAndComments collects entries with objects and comments matching prefix into a keyed map.
 // Also grabs comments if they contain the specified prefix
 func collectObjectsAndComments(entries []*parser.Entry, prefix string) map[string]ModdedObject {
 	objects := make(map[string]ModdedObject)
@@ -64,7 +68,7 @@ func collectObjectsAndComments(entries []*parser.Entry, prefix string) map[strin
 	return objects
 }
 
-// GetMergedContent returns the merged content as a string without writing to file
+// GetMergedContent parses both files, merges objects according to options, and returns merged string and MergeResult.
 func GetMergedContent(fileAPath, fileBPath string, options MergeOptions) (string, *MergeResult, error) {
 	result := &MergeResult{
 		FilePath:       fileAPath,

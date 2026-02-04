@@ -24,6 +24,24 @@
         </div>
       </div>
 
+      <!-- Fields / Sub-objects: field keys from type schema; ✓ = present in this object -->
+      <Panel v-if="fieldsTable.length > 0" header="Fields / Sub-objects" toggleable class="mb-4">
+        <p class="text-xs text-(--p-surface-500) mb-2">Expected fields for this type; ✓ = present in this object.</p>
+        <DataTable :value="fieldsTable" size="small" class="text-sm" stripedRows>
+          <Column field="key" header="Field" class="min-w-40">
+            <template #body="{ data }">
+              <span class="font-mono text-xs">{{ data.key }}</span>
+            </template>
+          </Column>
+          <Column field="present" header="Present" class="w-20">
+            <template #body="{ data }">
+              <i v-if="data.present" class="pi pi-check text-(--p-green-400)" aria-hidden="true" />
+              <span v-else class="text-(--p-surface-500)">—</span>
+            </template>
+          </Column>
+        </DataTable>
+      </Panel>
+
       <!-- References: PrimeVue Panel (toggleable); content constrained and scrollable -->
       <Panel v-if="item.references && item.references.length > 0" :header="`References (${item.references.length})`"
         toggleable class="mb-4 ">
@@ -42,9 +60,12 @@
         </div>
       </Panel>
 
-      <!-- Raw Text: PrimeVue Panel (toggleable); content constrained and scrollable -->
+      <!-- Raw Text: from item.rawText (set at extraction); unavailable for imported items that omit it -->
       <Panel header="Raw Text" toggleable class="mb-4 flex flex-col min-h-0">
-        <CodeViewer class="border border-(--p-surface-800) rounded-lg max-h-120" :content="item.rawText"
+        <div v-if="rawTextUnavailable" class="text-sm text-(--p-surface-500) p-2">
+          Raw text is unavailable for this item (e.g. imported without raw text).
+        </div>
+        <CodeViewer v-else class="border border-(--p-surface-800) rounded-lg max-h-120" :content="displayRawText"
           :filename="fileNameFromPath(item.filePath)" />
       </Panel>
     </div>
@@ -52,9 +73,15 @@
 </template>
 
 <script setup>
+import { ref, watch, computed } from 'vue'
+import { GetAttributes } from '../../../bindings/paradox-modding-tool/inventoryservice.js'
 import { fileNameFromPath } from '../../utils/general.js'
 
-defineProps({
+const props = defineProps({
+  game: {
+    type: String,
+    default: 'ck3'
+  },
   item: {
     type: Object,
     required: true
@@ -62,6 +89,42 @@ defineProps({
 })
 
 const emit = defineEmits(['close', 'view-in-graph'])
+
+const typeFields = ref([])
+const rawTextUnavailable = computed(() => !props.item?.rawText || props.item.rawText.length === 0)
+const displayRawText = computed(() => props.item?.rawText ?? '')
+
+watch(
+  () => [props.game, props.item?.type],
+  async ([game, type]) => {
+    if (!game || !type) {
+      typeFields.value = []
+      return
+    }
+    try {
+      const fields = await GetAttributes(game, type)
+      typeFields.value = fields || []
+    } catch (err) {
+      console.error('Failed to load type schema:', err)
+      typeFields.value = []
+    }
+  },
+  { immediate: true }
+)
+
+/** Present keys from item.attributes (set during extraction); fallback to empty for imported items. */
+const presentAttributes = computed(() => {
+  const attrs = props.item?.attributes
+  if (!attrs || typeof attrs !== 'object') return new Set()
+  return new Set(Object.keys(attrs).filter((k) => attrs[k]))
+})
+
+const fieldsTable = computed(() =>
+  typeFields.value.map((key) => ({
+    key,
+    present: presentAttributes.value.has(key)
+  }))
+)
 
 async function copyToClipboard(text) {
   try {

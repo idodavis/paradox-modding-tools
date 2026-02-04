@@ -23,11 +23,12 @@
         </div>
       </div>
 
-      <!-- Fields / Sub-objects: field keys from type schema; ✓ = present in this object -->
-      <Panel v-if="fieldsTable.length > 0" header="Fields / Sub-objects" toggleable class="mb-4">
-        <p class="text-xs text-(--p-surface-500) mb-2">Expected fields for this type; ✓ = present in this object.</p>
-        <DataTable :value="fieldsTable" size="small" class="text-sm" stripedRows>
-          <Column field="key" header="Field" class="min-w-40">
+      <!-- Attributes: attribute keys from type schema; ✓ = present in this object -->
+      <Panel v-if="attributesTable.length > 0" header="Attributes" toggleable class="mb-4">
+        <p class="text-xs text-(--p-surface-500) mb-2">Expected attributes for this type; ✓ = present in this object.
+        </p>
+        <DataTable :value="attributesTable" size="small" class="text-sm" stripedRows>
+          <Column field="key" header="Attribute" class="min-w-40">
             <template #body="{ data }">
               <span class="font-mono text-xs">{{ data.key }}</span>
             </template>
@@ -89,7 +90,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-const typeFields = ref([])
+const itemAttributes = ref([])
 const rawTextUnavailable = computed(() => !props.item?.rawText || props.item.rawText.length === 0)
 const displayRawText = computed(() => props.item?.rawText ?? '')
 
@@ -97,15 +98,15 @@ watch(
   () => [props.game, props.item?.type],
   async ([game, type]) => {
     if (!game || !type) {
-      typeFields.value = []
+      itemAttributes.value = []
       return
     }
     try {
-      const fields = await GetAttributes(game, type)
-      typeFields.value = fields || []
+      const attributes = await GetAttributes(game, type)
+      itemAttributes.value = attributes || []
     } catch (err) {
       console.error('Failed to load type schema:', err)
-      typeFields.value = []
+      itemAttributes.value = []
     }
   },
   { immediate: true }
@@ -118,8 +119,8 @@ const presentAttributes = computed(() => {
   return new Set(Object.keys(attrs).filter((k) => attrs[k]))
 })
 
-const fieldsTable = computed(() =>
-  typeFields.value.map((key) => ({
+const attributesTable = computed(() =>
+  attributes.value.map((key) => ({
     key,
     present: presentAttributes.value.has(key)
   }))

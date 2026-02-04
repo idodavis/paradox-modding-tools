@@ -22,13 +22,6 @@ export class ExtractResult {
              */
             this["items"] = {};
         }
-        if (/** @type {any} */(false)) {
-            /**
-             * @member
-             * @type {string[] | undefined}
-             */
-            this["errors"] = undefined;
-        }
 
         Object.assign(this, $$source);
     }
@@ -40,13 +33,9 @@ export class ExtractResult {
      */
     static createFrom($$source = {}) {
         const $$createField0_0 = $$createType2;
-        const $$createField1_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
-        }
-        if ("errors" in $$parsedSource) {
-            $$parsedSource["errors"] = $$createField1_0($$parsedSource["errors"]);
         }
         return new ExtractResult(/** @type {Partial<ExtractResult>} */($$parsedSource));
     }

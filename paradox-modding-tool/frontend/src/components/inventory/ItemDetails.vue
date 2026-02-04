@@ -120,7 +120,7 @@ const presentAttributes = computed(() => {
 })
 
 const attributesTable = computed(() =>
-  attributes.value.map((key) => ({
+  itemAttributes.value.map((key) => ({
     key,
     present: presentAttributes.value.has(key)
   }))

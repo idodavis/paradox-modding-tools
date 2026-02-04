@@ -63,8 +63,7 @@ type InventoryResult struct {
 
 // ExtractResult is returned by ExtractInventory: items keyed by type and any non-fatal parse errors.
 type ExtractResult struct {
-	Items  map[string][]InventoryItem `json:"items"`
-	Errors []string                   `json:"errors,omitempty"`
+	Items map[string][]InventoryItem `json:"items"`
 }
 
 // FilterState is the filter state for table filtering and export (same shape as frontend).

@@ -6,8 +6,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sort"
-	"strings"
-	"sync"
 	"sync/atomic"
 
 	parser "paradox-modding-tool/internal/interpreter"
@@ -16,7 +14,7 @@ import (
 )
 
 // ErrExtractionCancelled is returned when the user cancels extraction.
-var ErrExtractionCancelled = errors.New("extraction cancelled")
+var ErrExtractionCancelled = errors.New("Extraction cancelled.")
 
 const maxParseErrorsBeforeAbort = 5
 
@@ -71,7 +69,7 @@ type extractVisitor struct {
 }
 
 // VisitExpression classifies top-level and inline keys with the CK3 evaluator and emits inventory items.
-// Only top-level (depth 0) expressions or inlineTypes are emitted as events
+// Only top-level (depth 0) expressions or inlineTypes are emitted as valid objects
 func (v *extractVisitor) VisitExpression(expr *parser.Expression, ctx *walk.Context) {
 	if expr == nil || expr.Key == "" {
 		return
@@ -152,11 +150,9 @@ func ExtractFromFile(ast *parser.ParadoxFile, filePath string, game string, obje
 // Only .txt files are processed. Returns ExtractResult (items keyed by type + parse errors) or a fatal error if cancelled or too many parse failures.
 func ExtractInventory(game string, basePaths []string, objectTypes []string) (*ExtractResult, error) {
 	cancelExtract.Store(false)
-	defer cancelExtract.Store(false)
 
 	result := make(map[string][]InventoryItem)
 	var parseErrors []string
-	var parseErrorMu sync.Mutex
 
 	for _, basePath := range basePaths {
 		if cancelExtract.Load() {
@@ -166,18 +162,13 @@ func ExtractInventory(game string, basePaths []string, objectTypes []string) (*E
 		basePath := basePath
 		walkErr := filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				parseErrorMu.Lock()
 				parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", path, err))
-				n := len(parseErrors)
-				parseErrorMu.Unlock()
-				if n > maxParseErrorsBeforeAbort {
+				if len(parseErrors) > maxParseErrorsBeforeAbort {
 					return fs.SkipAll
 				}
 				return nil
 			}
-			if d.IsDir() {
-				return nil
-			}
+
 			if filepath.Ext(path) != ".txt" {
 				return nil
 			}
@@ -186,21 +177,9 @@ func ExtractInventory(game string, basePaths []string, objectTypes []string) (*E
 				return fs.SkipAll
 			}
 
-			relPath, err := filepath.Rel(basePath, path)
+			schemaPath, err := filepath.Rel(basePath, path)
 			if err != nil {
-				relPath = path
-			}
-			relPath = filepath.ToSlash(relPath)
-			// Schema paths are like "events", "history/characters". When user selects a subfolder
-			// (e.g. .../events), relPath is just "foo.txt" and wouldn't match. Build a path that
-			// includes the segment so we get "events/foo.txt" for schema matching.
-			schemaPath := relPath
-			if relPath == "." || relPath == "" {
-				// Single file selected: path is the file; use parent dir name + filename.
-				schemaPath = filepath.ToSlash(filepath.Join(filepath.Base(filepath.Dir(path)), filepath.Base(path)))
-			} else if !strings.Contains(relPath, "/") {
-				// File directly under selected dir: prepend basePath's last component.
-				schemaPath = filepath.ToSlash(filepath.Join(filepath.Base(basePath), relPath))
+				schemaPath = path
 			}
 
 			applicableTypes := applicableTypesForFile(game, schemaPath, objectTypes)
@@ -210,11 +189,8 @@ func ExtractInventory(game string, basePaths []string, objectTypes []string) (*E
 
 			ast, err := parser.ParseFile(path)
 			if err != nil {
-				parseErrorMu.Lock()
 				parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", path, err))
-				n := len(parseErrors)
-				parseErrorMu.Unlock()
-				if n > maxParseErrorsBeforeAbort {
+				if len(parseErrors) > maxParseErrorsBeforeAbort {
 					return fs.SkipAll
 				}
 				return nil
@@ -228,16 +204,13 @@ func ExtractInventory(game string, basePaths []string, objectTypes []string) (*E
 		})
 
 		if walkErr != nil && walkErr != fs.SkipAll {
-			return &ExtractResult{nil, parseErrors}, fmt.Errorf("walk %s: %w", basePath, walkErr)
+			return nil, fmt.Errorf("walk %s: %w", basePath, walkErr)
 		}
 		if cancelExtract.Load() {
 			return nil, ErrExtractionCancelled
 		}
-		parseErrorMu.Lock()
-		n := len(parseErrors)
-		parseErrorMu.Unlock()
-		if n > maxParseErrorsBeforeAbort {
-			return &ExtractResult{nil, parseErrors}, fmt.Errorf("too many parse errors (%d); extraction aborted", n)
+		if len(parseErrors) > maxParseErrorsBeforeAbort {
+			return nil, fmt.Errorf("too many parse errors (%s); extraction aborted", parseErrors)
 		}
 	}
 
@@ -246,7 +219,7 @@ func ExtractInventory(game string, basePaths []string, objectTypes []string) (*E
 	}
 
 	EnrichAllWithReferences(result)
-	return &ExtractResult{Items: result, Errors: parseErrors}, nil
+	return &ExtractResult{Items: result}, nil
 }
 
 // GetSupportedTypes returns the sorted list of object type names for the given game.

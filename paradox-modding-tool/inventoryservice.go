@@ -21,14 +21,14 @@ func (s *InventoryService) GetAttributes(game string, typeName string) ([]string
 	return inventory.GetAttributes(game, typeName)
 }
 
-// GetFilteredSortedPage returns one page of filtered and sorted inventory items for the results table.
-func (s *InventoryService) GetFilteredSortedPage(result *inventory.ExtractResult, filterState inventory.FilterState, sortField string, sortOrder int, first, rows int) (*inventory.FilteredSortedPage, error) {
-	return inventory.FilterAndSortPage(result, &filterState, sortField, sortOrder, first, rows), nil
+// GetFilteredSortedPage returns one page of filtered and sorted inventory items from the stored extract result.
+func (s *InventoryService) GetFilteredSortedPage(filterState inventory.FilterState, sortField string, sortOrder int, first, rows int) (*inventory.FilteredSortedPage, error) {
+	return inventory.FilterAndSortPage(&filterState, sortField, sortOrder, first, rows), nil
 }
 
 // ExtractInventory extracts multiple object types from files with references resolved.
 // Returns items keyed by type and any parse errors. Returns inventory.ErrExtractionCancelled if the user cancelled.
-func (s *InventoryService) ExtractInventory(game string, files []string, objectTypes []string) (*inventory.ExtractResult, error) {
+func (s *InventoryService) ExtractInventory(game string, files []string, objectTypes []string) error {
 	return inventory.ExtractInventory(game, files, objectTypes)
 }
 

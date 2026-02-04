@@ -13,12 +13,13 @@ import (
 	"paradox-modding-tool/internal/interpreter/walk"
 )
 
-// ErrExtractionCancelled is returned when the user cancels extraction.
-var ErrExtractionCancelled = errors.New("Extraction cancelled.")
-
 const maxParseErrorsBeforeAbort = 5
 
-var cancelExtract atomic.Bool
+var (
+	storedInventory        *ExtractResult
+	ErrExtractionCancelled = errors.New("Extraction cancelled.")
+	cancelExtract          = &atomic.Bool{}
+)
 
 // CancelExtraction signals any running ExtractInventory to stop and discard results.
 // Call from the frontend when the user presses Cancel. The flag is reset when extraction exits.
@@ -57,6 +58,30 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// GetSupportedTypes returns the sorted list of object type names for the given game.
+// For "ck3" returns CK3 schema type names; other games return nil.
+func GetSupportedTypes(game string) ([]string, error) {
+	if game != "ck3" {
+		return nil, nil
+	}
+	names := ck3.GetSchemaNames()
+	sort.Strings(names)
+	return names, nil
+}
+
+// GetAttributes returns the list of attribute names for an object type and game.
+// For "ck3" returns the schema's Attributes; other games or unknown types return nil.
+func GetAttributes(game, typeName string) ([]string, error) {
+	if game != "ck3" {
+		return nil, nil
+	}
+	schema, ok := ck3.GetSchema(typeName)
+	if !ok {
+		return nil, nil
+	}
+	return schema.Attributes, nil
 }
 
 type extractVisitor struct {
@@ -148,7 +173,7 @@ func ExtractFromFile(ast *parser.ParadoxFile, filePath string, game string, obje
 
 // ExtractInventory extracts inventory items from the given basePaths that match the given objectTypes.
 // Only .txt files are processed. Returns ExtractResult (items keyed by type + parse errors) or a fatal error if cancelled or too many parse failures.
-func ExtractInventory(game string, basePaths []string, objectTypes []string) (*ExtractResult, error) {
+func ExtractInventory(game string, basePaths []string, objectTypes []string) error {
 	cancelExtract.Store(false)
 
 	result := make(map[string][]InventoryItem)
@@ -156,7 +181,7 @@ func ExtractInventory(game string, basePaths []string, objectTypes []string) (*E
 
 	for _, basePath := range basePaths {
 		if cancelExtract.Load() {
-			return nil, ErrExtractionCancelled
+			return ErrExtractionCancelled
 		}
 
 		basePath := basePath
@@ -204,44 +229,38 @@ func ExtractInventory(game string, basePaths []string, objectTypes []string) (*E
 		})
 
 		if walkErr != nil && walkErr != fs.SkipAll {
-			return nil, fmt.Errorf("walk %s: %w", basePath, walkErr)
+			return fmt.Errorf("walk %s: %w", basePath, walkErr)
 		}
 		if cancelExtract.Load() {
-			return nil, ErrExtractionCancelled
+			return ErrExtractionCancelled
 		}
 		if len(parseErrors) > maxParseErrorsBeforeAbort {
-			return nil, fmt.Errorf("too many parse errors (%s); extraction aborted", parseErrors)
+			return fmt.Errorf("too many parse errors (%s); extraction aborted", parseErrors)
 		}
 	}
 
 	if cancelExtract.Load() {
-		return nil, ErrExtractionCancelled
+		return ErrExtractionCancelled
 	}
 
 	EnrichAllWithReferences(result)
-	return &ExtractResult{Items: result}, nil
+
+	// Store the result
+	SetStored(&ExtractResult{Items: result})
+	return nil
 }
 
-// GetSupportedTypes returns the sorted list of object type names for the given game.
-// For "ck3" returns CK3 schema type names; other games return nil.
-func GetSupportedTypes(game string) ([]string, error) {
-	if game != "ck3" {
-		return nil, nil
-	}
-	names := ck3.GetSchemaNames()
-	sort.Strings(names)
-	return names, nil
+// SetStored replaces the stored extract result (e.g. after ExtractInventory or import).
+func SetStored(r *ExtractResult) {
+	storedInventory = r
 }
 
-// GetAttributes returns the list of attribute names for an object type and game.
-// For "ck3" returns the schema's Attributes; other games or unknown types return nil.
-func GetAttributes(game, typeName string) ([]string, error) {
-	if game != "ck3" {
-		return nil, nil
-	}
-	schema, ok := ck3.GetSchema(typeName)
-	if !ok {
-		return nil, nil
-	}
-	return schema.Attributes, nil
+// GetStored returns the stored extract result, or nil if none.
+func GetStored() *ExtractResult {
+	return storedInventory
+}
+
+// ClearStored clears the stored result (e.g. on cancel or "Clear all").
+func ClearStored() {
+	storedInventory = nil
 }

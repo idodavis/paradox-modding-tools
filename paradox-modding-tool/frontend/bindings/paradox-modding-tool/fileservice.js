@@ -34,16 +34,15 @@ export function CollectFilesFromPaths(paths) {
 }
 
 /**
- * ExportInventoryFromBackend uses the given extraction result, applies filterState, optionally fills raw text, shows folder dialog, and writes the file.
+ * ExportInventoryFromBackend uses the stored extraction result, applies filterState, and saves to a file chosen by the user.
  * Returns the path of the written file, or ("", nil) if the user cancels, or ("", err) if no inventory or write failure.
- * @param {inventory$0.ExtractResult | null} extractResult
  * @param {inventory$0.FilterState} filterState
  * @param {string} format
  * @param {boolean} includeRawText
  * @returns {$CancellablePromise<string>}
  */
-export function ExportInventoryFromBackend(extractResult, filterState, format, includeRawText) {
-    return $Call.ByID(2655947101, extractResult, filterState, format, includeRawText);
+export function ExportInventoryFromBackend(filterState, format, includeRawText) {
+    return $Call.ByID(2655947101, filterState, format, includeRawText);
 }
 
 /**

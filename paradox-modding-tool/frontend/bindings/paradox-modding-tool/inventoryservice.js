@@ -29,12 +29,10 @@ export function CancelExtraction() {
  * @param {string} game
  * @param {string[]} files
  * @param {string[]} objectTypes
- * @returns {$CancellablePromise<inventory$0.ExtractResult | null>}
+ * @returns {$CancellablePromise<void>}
  */
 export function ExtractInventory(game, files, objectTypes) {
-    return $Call.ByID(4163016662, game, files, objectTypes).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
-    }));
+    return $Call.ByID(4163016662, game, files, objectTypes);
 }
 
 /**
@@ -45,13 +43,12 @@ export function ExtractInventory(game, files, objectTypes) {
  */
 export function GetAttributes(game, typeName) {
     return $Call.ByID(3349659334, game, typeName).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType2($result);
+        return $$createType0($result);
     }));
 }
 
 /**
- * GetFilteredSortedPage returns one page of filtered and sorted inventory items for the results table.
- * @param {inventory$0.ExtractResult | null} result
+ * GetFilteredSortedPage returns one page of filtered and sorted inventory items from the stored extract result.
  * @param {inventory$0.FilterState} filterState
  * @param {string} sortField
  * @param {number} sortOrder
@@ -59,9 +56,9 @@ export function GetAttributes(game, typeName) {
  * @param {number} rows
  * @returns {$CancellablePromise<inventory$0.FilteredSortedPage | null>}
  */
-export function GetFilteredSortedPage(result, filterState, sortField, sortOrder, first, rows) {
-    return $Call.ByID(1776626858, result, filterState, sortField, sortOrder, first, rows).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType4($result);
+export function GetFilteredSortedPage(filterState, sortField, sortOrder, first, rows) {
+    return $Call.ByID(1776626858, filterState, sortField, sortOrder, first, rows).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType2($result);
     }));
 }
 
@@ -72,13 +69,11 @@ export function GetFilteredSortedPage(result, filterState, sortField, sortOrder,
  */
 export function GetSupportedTypes(game) {
     return $Call.ByID(840319924, game).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType2($result);
+        return $$createType0($result);
     }));
 }
 
 // Private type creation functions
-const $$createType0 = inventory$0.ExtractResult.createFrom;
-const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = $Create.Array($Create.Any);
-const $$createType3 = inventory$0.FilteredSortedPage.createFrom;
-const $$createType4 = $Create.Nullable($$createType3);
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = inventory$0.FilteredSortedPage.createFrom;
+const $$createType2 = $Create.Nullable($$createType1);

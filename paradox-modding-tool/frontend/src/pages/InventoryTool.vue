@@ -29,17 +29,12 @@
 
     <!-- Results Area -->
     <div v-if="hasExtraction" class="flex min-w-0 flex-col">
-      <ResultsTable :value="pageItemsWithIds" :total-records="totalRecords" :lazy="true"
+      <ResultsTable :value="pageData.items" :total-records="pageData.totalRecords" :lazy="true"
         :first="(currentPage - 1) * pageSize" :rows="pageSize" filterDisplay="row" paginator
         :rowsPerPageOptions="[10, 25, 50, 100]" :loading="loading || pageLoading" selectionMode="single"
-        v-model:selection="selectedRow" dataKey="uniqueId" :sortField="sortField" :sortOrder="sortOrder"
+        dataKey="uniqueId" :sortField="sortField" :sortOrder="sortOrder"
         :current-page="currentPage" :page-size="pageSize" :available-type-names="availableTypeNames"
-        :filter-state="filterState" @select="onSelectItem" @filter-change="onFilterChange" @page="onPage" @sort="onSort"
-        stripedRows />
-      <Drawer v-model:visible="drawerVisible" position="right" class="w-full! md:w-100! lg:w-150!"
-        :header="selectedItem ? selectedItem.key : ''">
-        <ItemDetails v-if="selectedItem" :game="game" :item="selectedItem" />
-      </Drawer>
+        :filter-state="filterState" :game="game" @page="onPage" @sort="onSort" stripedRows />
     </div>
 
     <div v-else class="flex-1 flex items-center justify-center">
@@ -49,18 +44,17 @@
       </div>
     </div>
 
-    <ExportImportDialog v-if="showExportImport" :extract-result="extractResult" :filter-state="filterState"
-      :has-extraction="hasExtraction" @close="showExportImport = false" @import="onImport" />
+    <ExportImportDialog v-if="showExportImport" :filter-state="filterState" :has-extraction="hasExtraction"
+      @close="showExportImport = false" @import="onImport" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import { ExtractInventory, CancelExtraction, GetFilteredSortedPage } from '../../bindings/paradox-modding-tool/inventoryservice.js'
 import FileSelector from '../components/FileSelector.vue'
 import TypeSelector from '../components/inventory/TypeSelector.vue'
 import ResultsTable from '../components/inventory/ResultsTable.vue'
-import ItemDetails from '../components/inventory/ItemDetails.vue'
 import ExportImportDialog from '../components/inventory/ExportImportDialog.vue'
 import { useAppSettings } from '../composables/useAppSettings'
 
@@ -69,35 +63,26 @@ const files = ref([])
 const selectedTypes = ref([])
 const hasExtraction = ref(false)
 const loading = ref(false)
-const extractResult = ref(null)
 const extractionErrors = ref([])
 const sortField = ref('key')
-const sortOrder = ref(1)
+const sortOrder = ref(-1)
 const currentPage = ref(1)
 const pageSize = ref(25)
 const availableTypeNames = ref([])
 const filterState = reactive({
   keyText: '',
-  keyMatchMode: 'contains',
+  keyMatchMode: 'CONTAINS',
   typeNames: [],
   refsValue: null,
-  refsMatchMode: 'gte'
+  refsMatchMode: 'GREATER_THAN_OR_EQUAL_TO'
 })
-const selectedItem = ref(null)
-const selectedRow = ref(null)
-const drawerVisible = ref(false)
 const showExportImport = ref(false)
 
 const pageData = ref({ items: [], totalRecords: 0 })
 const pageLoading = ref(false)
 
-const totalRecords = computed(() => pageData.value.totalRecords)
-const pageItemsWithIds = computed(() =>
-  (pageData.value.items || []).map((item, i) => ({ ...item, uniqueId: `${item.type}-${item.key}-${i}` }))
-)
-
 async function loadPage() {
-  if (!extractResult.value?.items) {
+  if (!hasExtraction.value) {
     pageData.value = { items: [], totalRecords: 0 }
     return
   }
@@ -105,13 +90,12 @@ async function loadPage() {
   try {
     const first = (currentPage.value - 1) * pageSize.value
     const result = await GetFilteredSortedPage(
-      extractResult.value,
       {
         keyText: filterState.keyText,
-        keyMatchMode: filterState.keyMatchMode || 'contains',
+        keyMatchMode: filterState.keyMatchMode || 'CONTAINS',
         typeNames: filterState.typeNames || [],
         refsValue: filterState.refsValue ?? null,
-        refsMatchMode: filterState.refsMatchMode || 'gte'
+        refsMatchMode: filterState.refsMatchMode || 'GREATER_THAN_OR_EQUAL_TO'
       },
       sortField.value || 'key',
       sortOrder.value ?? 1,
@@ -129,57 +113,24 @@ async function loadPage() {
   }
 }
 
-watch(selectedItem, (item) => {
-  drawerVisible.value = !!item
-})
-watch(drawerVisible, (visible) => {
-  if (!visible) selectedItem.value = null
-})
-watch(
-  [
-    () => hasExtraction.value,
-    () => extractResult.value,
-    () => ({ ...filterState }),
-    sortField,
-    sortOrder,
-    currentPage,
-    pageSize
-  ],
-  () => {
-    if (hasExtraction.value) loadPage()
-  },
-  { immediate: true, deep: true }
-)
-
-watch([game], () => {
-  clearAll()
+watch([hasExtraction, () => filterState.keyText, () => filterState.keyMatchMode, () => filterState.typeNames, () => filterState.refsValue, () => filterState.refsMatchMode, sortField, sortOrder, currentPage, pageSize], () => {
+  if (hasExtraction.value) loadPage()
 }, { immediate: true })
 
-function onFilterChange() {
+watch([() => filterState.keyText, () => filterState.keyMatchMode, () => filterState.typeNames, () => filterState.refsValue, () => filterState.refsMatchMode, sortField, sortOrder], () => {
   currentPage.value = 1
-}
+})
+
+watch(game, clearAll, { immediate: true })
 
 function onSort(event) {
   sortField.value = event.sortField || 'key'
   sortOrder.value = event.sortOrder ?? 1
-  currentPage.value = 1
 }
 
 function onPage(event) {
-  const first = event.first ?? 0
-  const rows = event.rows ?? pageSize.value
-  pageSize.value = rows
-  currentPage.value = Math.floor(first / rows) + 1
-}
-
-function onSelectItem(item) {
-  selectedItem.value = item || null
-  selectedRow.value = item || null
-  drawerVisible.value = !!item
-}
-
-function onFiltersUpdate() {
-  currentPage.value = 1
+  pageSize.value = event.rows ?? pageSize.value
+  currentPage.value = Math.floor((event.first ?? 0) / pageSize.value) + 1
 }
 
 async function extractInventory() {
@@ -187,22 +138,21 @@ async function extractInventory() {
 
   loading.value = true
   hasExtraction.value = false
-  extractResult.value = null
   extractionErrors.value = []
-  selectedItem.value = null
-  selectedRow.value = null
+  pageData.value = { items: [], totalRecords: 0 }
 
   try {
-    const result = await ExtractInventory(game.value, files.value, selectedTypes.value)
-    if (result) {
-      extractResult.value = result
-      extractionErrors.value = result.errors || []
-      const typeNames = result.items ? Object.keys(result.items) : []
-      availableTypeNames.value = typeNames.sort()
-      filterState.typeNames = typeNames
-      hasExtraction.value = typeNames.length > 0
-      currentPage.value = 1
-    }
+    await ExtractInventory(game.value, files.value, selectedTypes.value)
+    // After extraction succeeds, load the first page
+    hasExtraction.value = true
+    currentPage.value = 1
+    filterState.typeNames = []
+    // Load the initial page
+    await loadPage()
+    // Extract type names from the first page items (temporary until ExtractInventory returns summary)
+    const typeSet = new Set()
+    pageData.value.items.forEach(item => typeSet.add(item.type))
+    availableTypeNames.value = Array.from(typeSet).sort()
   } catch (err) {
     const msg = String(err?.message ?? err)
     if (msg.toLowerCase().includes('cancelled')) {
@@ -220,47 +170,22 @@ function cancelExtraction() {
   CancelExtraction()
 }
 
-function onImport(importedData) {
-  const items = {}
-  for (const [type, result] of Object.entries(importedData)) {
-    const list = (result?.items || []).map((item) => ({
-      key: item.key,
-      type: item.type ?? type,
-      filePath: item.filePath ?? '',
-      lineStart: item.lineStart,
-      lineEnd: item.lineEnd,
-      rawText: item.rawText ?? '',
-      references: Array.isArray(item.references) ? item.references : []
-    }))
-    if (list.length) items[type] = list
-  }
-  if (Object.keys(items).length === 0) {
-    showExportImport.value = false
-    return
-  }
-  extractResult.value = { items, errors: [] }
-  extractionErrors.value = []
-  const newTypes = Object.keys(items)
-  availableTypeNames.value = [...new Set([...availableTypeNames.value, ...newTypes])]
-  filterState.typeNames = [...new Set([...filterState.typeNames, ...newTypes])]
-  hasExtraction.value = true
-  currentPage.value = 1
+async function onImport(importedData) {
+  // For now, this is a placeholder - import should call backend ImportInventory API
+  console.warn('Import functionality needs to be updated to use backend ImportInventory API')
   showExportImport.value = false
 }
 
 function clearAll() {
   hasExtraction.value = false
-  extractResult.value = null
   extractionErrors.value = []
   availableTypeNames.value = []
   pageData.value = { items: [], totalRecords: 0 }
-  selectedItem.value = null
-  selectedRow.value = null
   filterState.keyText = ''
-  filterState.keyMatchMode = 'contains'
+  filterState.keyMatchMode = 'CONTAINS'
   filterState.typeNames = []
   filterState.refsValue = null
-  filterState.refsMatchMode = 'gte'
+  filterState.refsMatchMode = 'GREATER_THAN_OR_EQUAL_TO'
   currentPage.value = 1
 }
 </script>

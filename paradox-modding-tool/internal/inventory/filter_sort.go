@@ -6,63 +6,63 @@ import (
 )
 
 // matchKeyFilter returns true if key passes the filter (keyText empty = pass all).
-func matchKeyFilter(key, keyText, mode string) bool {
+func keyFilterMatchMode(key, keyText, mode string) bool {
 	if keyText == "" {
 		return true
 	}
 	switch mode {
-	case "contains":
+	case "CONTAINS":
 		return strings.Contains(key, keyText)
-	case "startsWith":
-		return strings.HasPrefix(key, keyText)
-	case "equals":
+	case "EQUALS":
 		return key == keyText
+	case "NOT_CONTAINS":
+		return !strings.Contains(key, keyText)
+	case "NOT_EQUALS":
+		return key != keyText
 	default:
 		return strings.Contains(key, keyText)
 	}
 }
 
-// FilterItems returns items from result that match filterState, grouped by type.
-// If filterState is nil, all items are included. Used by both export and table.
-func FilterItems(result *ExtractResult, filterState *FilterState) map[string][]InventoryItem {
-	if result == nil || result.Items == nil {
-		return nil
+// FilterItems filters the stored extract result based on the filterState.
+func FilterItems(filterState *FilterState) (map[string][]InventoryItem, error) {
+	// If filterState is nil, nothing is done.
+	if filterState == nil {
+		return nil, nil
 	}
+	inventory := GetStored()
+
 	out := make(map[string][]InventoryItem)
 	typeSet := make(map[string]bool)
-	if filterState != nil {
-		for _, t := range filterState.TypeNames {
-			typeSet[t] = true
-		}
+	for _, t := range filterState.TypeNames {
+		typeSet[t] = true
 	}
-	keyText := ""
-	keyMatchMode := "contains"
-	if filterState != nil {
-		keyText = filterState.KeyText
-		keyMatchMode = filterState.KeyMatchMode
-	}
-	for typeName, items := range result.Items {
-		if filterState != nil && len(typeSet) > 0 && !typeSet[typeName] {
+
+	keyText := filterState.KeyText
+	keyMatchMode := filterState.KeyMatchMode
+
+	for typeName, items := range inventory.Items {
+		if len(typeSet) > 0 && !typeSet[typeName] {
 			continue
 		}
 		var filtered []InventoryItem
 		for _, it := range items {
-			if !matchKeyFilter(it.Key, keyText, keyMatchMode) {
+			if !keyFilterMatchMode(it.Key, keyText, keyMatchMode) {
 				continue
 			}
-			if filterState != nil && filterState.RefsValue != nil {
+			if filterState.RefsValue != nil {
 				n := len(it.References)
 				switch filterState.RefsMatchMode {
-				case "gte":
+				case "GREATER_THAN_OR_EQUAL_TO":
 					if n < *filterState.RefsValue {
 						continue
 					}
-				case "lte":
-					if n > *filterState.RefsValue {
+				case "EQUALS":
+					if n != *filterState.RefsValue {
 						continue
 					}
-				case "eq":
-					if n != *filterState.RefsValue {
+				case "LESS_THAN_OR_EQUAL_TO":
+					if n > *filterState.RefsValue {
 						continue
 					}
 				}
@@ -73,7 +73,7 @@ func FilterItems(result *ExtractResult, filterState *FilterState) map[string][]I
 			out[typeName] = filtered
 		}
 	}
-	return out
+	return out, nil
 }
 
 // flattenItems turns a map type->items into a single slice (items already have Type set).
@@ -116,12 +116,6 @@ func lessByField(a, b InventoryItem, sortField string, asc bool) bool {
 		} else {
 			cmp = 0
 		}
-	case "filePath":
-		if a.FilePath < b.FilePath {
-			cmp = -1
-		} else if a.FilePath > b.FilePath {
-			cmp = 1
-		}
 	case "key":
 		fallthrough
 	default:
@@ -139,17 +133,15 @@ func lessByField(a, b InventoryItem, sortField string, asc bool) bool {
 
 // FilterAndSortPage filters and sorts the extract result, then returns the requested page.
 // first is the 0-based index of the first item; rows is the page size.
-func FilterAndSortPage(result *ExtractResult, filterState *FilterState, sortField string, sortOrder int, first, rows int) *FilteredSortedPage {
-	filtered := FilterItems(result, filterState)
+func FilterAndSortPage(filterState *FilterState, sortField string, sortOrder int, first, rows int) *FilteredSortedPage {
+	filtered, err := FilterItems(filterState)
+	if err != nil {
+		return nil
+	}
+
 	flat := flattenItems(filtered)
 	total := len(flat)
 	sortItems(flat, sortField, sortOrder)
-	if first < 0 {
-		first = 0
-	}
-	if rows <= 0 {
-		rows = 25
-	}
 	end := first + rows
 	if end > total {
 		end = total
@@ -161,15 +153,15 @@ func FilterAndSortPage(result *ExtractResult, filterState *FilterState, sortFiel
 	return &FilteredSortedPage{Items: page, TotalRecords: total}
 }
 
-// FilterForExport filters ExtractResult by FilterState and returns a map suitable for export (e.g. JSON/CSV).
-func FilterForExport(result *ExtractResult, filterState *FilterState) map[string]*InventoryResult {
-	filtered := FilterItems(result, filterState)
-	if filtered == nil {
+// FilterForExport filters the stored ExtractResult by FilterState and returns a map suitable for export (e.g. JSON/CSV).
+func FilterForExport(filterState *FilterState) map[string]*FilterSortResult {
+	filtered, err := FilterItems(filterState)
+	if err != nil {
 		return nil
 	}
-	out := make(map[string]*InventoryResult)
+	out := make(map[string]*FilterSortResult)
 	for typeName, items := range filtered {
-		out[typeName] = &InventoryResult{Type: typeName, TotalCount: len(items), Items: items}
+		out[typeName] = &FilterSortResult{Type: typeName, TotalCount: len(items), Items: items}
 	}
 	return out
 }

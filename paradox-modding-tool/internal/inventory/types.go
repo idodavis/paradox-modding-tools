@@ -54,7 +54,7 @@ type ObjectReference struct {
 }
 
 // InventoryResult is used for export: one type's items (and optional metadata).
-type InventoryResult struct {
+type FilterSortResult struct {
 	Type       string          `json:"type"`
 	TotalCount int             `json:"totalCount"`
 	Items      []InventoryItem `json:"items"`

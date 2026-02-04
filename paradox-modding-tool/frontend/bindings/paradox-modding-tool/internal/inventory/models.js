@@ -7,41 +7,6 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
- * ExtractResult is returned by ExtractInventory: items keyed by type and any non-fatal parse errors.
- */
-export class ExtractResult {
-    /**
-     * Creates a new ExtractResult instance.
-     * @param {Partial<ExtractResult>} [$$source = {}] - The source object to create the ExtractResult.
-     */
-    constructor($$source = {}) {
-        if (!("items" in $$source)) {
-            /**
-             * @member
-             * @type {{ [_: string]: InventoryItem[] }}
-             */
-            this["items"] = {};
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ExtractResult instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {ExtractResult}
-     */
-    static createFrom($$source = {}) {
-        const $$createField0_0 = $$createType2;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("items" in $$parsedSource) {
-            $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
-        }
-        return new ExtractResult(/** @type {Partial<ExtractResult>} */($$parsedSource));
-    }
-}
-
-/**
  * FilterState is the filter state for table filtering and export (same shape as frontend).
  */
 export class FilterState {
@@ -95,7 +60,7 @@ export class FilterState {
      * @returns {FilterState}
      */
     static createFrom($$source = {}) {
-        const $$createField2_0 = $$createType3;
+        const $$createField2_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("typeNames" in $$parsedSource) {
             $$parsedSource["typeNames"] = $$createField2_0($$parsedSource["typeNames"]);
@@ -137,7 +102,7 @@ export class FilteredSortedPage {
      * @returns {FilteredSortedPage}
      */
     static createFrom($$source = {}) {
-        const $$createField0_0 = $$createType1;
+        const $$createField0_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -229,8 +194,8 @@ export class InventoryItem {
      * @returns {InventoryItem}
      */
     static createFrom($$source = {}) {
-        const $$createField6_0 = $$createType5;
-        const $$createField7_0 = $$createType6;
+        const $$createField6_0 = $$createType4;
+        const $$createField7_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("references" in $$parsedSource) {
             $$parsedSource["references"] = $$createField6_0($$parsedSource["references"]);
@@ -307,10 +272,9 @@ export class ObjectReference {
 }
 
 // Private type creation functions
-const $$createType0 = InventoryItem.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $Create.Map($Create.Any, $$createType1);
-const $$createType3 = $Create.Array($Create.Any);
-const $$createType4 = ObjectReference.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = $Create.Map($Create.Any, $Create.Any);
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = InventoryItem.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = ObjectReference.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $Create.Map($Create.Any, $Create.Any);

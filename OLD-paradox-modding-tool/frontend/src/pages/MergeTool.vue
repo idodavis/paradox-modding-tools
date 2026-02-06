@@ -257,7 +257,7 @@ import { GetDiff } from '../../bindings/paradox-modding-tool/diffservice.js'
 import { MergeMultipleFileSets, MergeTwoFiles } from '../../bindings/paradox-modding-tool/mergerservice.js'
 import DiffViewer from '../components/DiffViewer.vue'
 import FileSelector from '../components/FileSelector.vue'
-import { useAppSettings } from '../composables/useAppSettings'
+import { useAppSettings } from '../composables/useAppSettings.js'
 import { parsePathList } from '../utils/general.js'
 
 const { game, gameInstallPath } = useAppSettings()

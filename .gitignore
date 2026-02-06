@@ -1,13 +1,4 @@
-# Util files not meant for the publics eye
-vanilla-synchronizer/sync-output/
-vanilla-synchronizer/sync-config.yaml
-
-# Regular go-wails framework ignores
-paradox-script-tools/build/bin
-*/node_modules
-paradox-script-tools/frontend/dist
-
-# Output directory for the paradox script tools
-paradox-script-tools/merger-output
-
 */test-files
+*/node_modules
+*/dist
+*/bin

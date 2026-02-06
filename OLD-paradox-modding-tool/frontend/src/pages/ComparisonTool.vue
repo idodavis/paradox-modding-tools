@@ -126,7 +126,7 @@ import {
 } from '../../bindings/paradox-modding-tool/fileservice.js'
 import DiffViewer from '../components/DiffViewer.vue'
 import FileSelector from '../components/FileSelector.vue'
-import { useAppSettings } from '../composables/useAppSettings'
+import { useAppSettings } from '../composables/useAppSettings.js'
 
 const { game, gameInstallPath } = useAppSettings()
 

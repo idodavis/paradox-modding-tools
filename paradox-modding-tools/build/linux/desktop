@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A paradox-modding-tools application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/paradox-modding-tools %u
+Terminal=false
+Type=Application
+Icon=paradox-modding-tools
+Categories=Utility;
+StartupWMClass=paradox-modding-tools
+
+ 

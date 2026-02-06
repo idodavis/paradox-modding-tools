@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=paradox-modding-tools
+Exec=paradox-modding-tools
+Icon=paradox-modding-tools
+Categories=Development;
+Terminal=false
+Keywords=wails
+Version=1.0
+StartupNotify=false

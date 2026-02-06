@@ -1,0 +1,31 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:dev": "vite build --minify false --mode development",
+    "build": "vite build --mode production",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@wailsio/runtime": "latest",
+    "tailwindcss": "^4.1.18",
+    "@tanstack/svelte-virtual": "^3.13.18",
+    "@tanstack/table-core": "^8.21.3"
+  },
+  "devDependencies": {
+    "@iconify/svelte": "^5.2.1",
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "@tsconfig/svelte": "^5.0.6",
+    "daisyui": "^5.5.17",
+    "svelte": "^5.43.8",
+    "svelte-check": "^4.3.4",
+    "tslib": "^2.8.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4"
+  }
+}

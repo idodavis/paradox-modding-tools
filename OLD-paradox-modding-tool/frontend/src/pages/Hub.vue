@@ -113,8 +113,8 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { GetLatestPatchNotes } from '../../bindings/paradox-modding-tool/settingsservice.js'
-import { useAppSettings } from '../composables/useAppSettings'
-import { openURLInBrowser } from '../utils/general'
+import { useAppSettings } from '../composables/useAppSettings.js'
+import { openURLInBrowser } from '../utils/general.js'
 import ck3Bg from '../assets/CK3-All_Under_Heaven.jpg'
 import eu5Bg from '../assets/EUV-Release.jpg'
 

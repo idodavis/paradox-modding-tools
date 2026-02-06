@@ -32,9 +32,9 @@
       <ResultsTable :value="pageData.items" :total-records="pageData.totalRecords" :lazy="true"
         :first="(currentPage - 1) * pageSize" :rows="pageSize" filterDisplay="row" paginator
         :rowsPerPageOptions="[10, 25, 50, 100]" :loading="loading || pageLoading" selectionMode="single"
-        dataKey="uniqueId" :sortField="sortField" :sortOrder="sortOrder"
-        :current-page="currentPage" :page-size="pageSize" :available-type-names="availableTypeNames"
-        :filter-state="filterState" :game="game" @page="onPage" @sort="onSort" stripedRows />
+        dataKey="uniqueId" :sortField="sortField" :sortOrder="sortOrder" :current-page="currentPage"
+        :page-size="pageSize" :available-type-names="availableTypeNames" :filter-state="filterState" :game="game"
+        @page="onPage" @sort="onSort" stripedRows />
     </div>
 
     <div v-else class="flex-1 flex items-center justify-center">
@@ -56,7 +56,7 @@ import FileSelector from '../components/FileSelector.vue'
 import TypeSelector from '../components/inventory/TypeSelector.vue'
 import ResultsTable from '../components/inventory/ResultsTable.vue'
 import ExportImportDialog from '../components/inventory/ExportImportDialog.vue'
-import { useAppSettings } from '../composables/useAppSettings'
+import { useAppSettings } from '../composables/useAppSettings.js'
 
 const { game } = useAppSettings()
 const files = ref([])

@@ -183,34 +183,6 @@ export class DocPathCacheSet {
 }
 
 /**
- * FileMatch represents a matched file pair
- */
-export class FileMatch {
-    "fileAPath": string;
-    "fileBPath": string;
-
-    /** Creates a new FileMatch instance. */
-    constructor($$source: Partial<FileMatch> = {}) {
-        if (!("fileAPath" in $$source)) {
-            this["fileAPath"] = "";
-        }
-        if (!("fileBPath" in $$source)) {
-            this["fileBPath"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new FileMatch instance from a string or object.
-     */
-    static createFrom($$source: any = {}): FileMatch {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new FileMatch($$parsedSource as Partial<FileMatch>);
-    }
-}
-
-/**
  * LatestPatchNotes is the latest patch notes entry for a game (JSON-safe for bindings).
  */
 export class LatestPatchNotes {
@@ -239,6 +211,34 @@ export class LatestPatchNotes {
     static createFrom($$source: any = {}): LatestPatchNotes {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new LatestPatchNotes($$parsedSource as Partial<LatestPatchNotes>);
+    }
+}
+
+/**
+ * FileMatch represents a matched path pair
+ */
+export class PathMatch {
+    "pathA": string;
+    "pathB": string;
+
+    /** Creates a new PathMatch instance. */
+    constructor($$source: Partial<PathMatch> = {}) {
+        if (!("pathA" in $$source)) {
+            this["pathA"] = "";
+        }
+        if (!("pathB" in $$source)) {
+            this["pathB"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PathMatch instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PathMatch {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PathMatch($$parsedSource as Partial<PathMatch>);
     }
 }
 

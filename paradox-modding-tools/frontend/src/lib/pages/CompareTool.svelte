@@ -1,32 +1,26 @@
 <script lang="ts">
   import { Tabs, Tab, Card, CardBody, FileSelector, Grid } from "@components";
   import { game, gameInstallPathCk3, gameInstallPathEu5 } from "@stores/app";
-  import {
-    GetGameScriptRoot,
-    CollectFilesFromPaths,
-    FindMatchingFiles,
-  } from "@services/fileservice";
-  import type { FileMatch } from "@services/models";
-  import { showToast } from "@stores/toast";
+  import { VanillaCompare } from "@services/compareservice";
+  import type { PathMatch } from "@services/models";
 
   const gameInstallPath = $derived(
     $game === "CK3" ? $gameInstallPathCk3 : $gameInstallPathEu5,
   );
   let modPaths = $state<string[]>([]);
-  let matchingFiles = $state<{ [key: string]: FileMatch }>({});
+  let matchingFiles = $state<Record<string, PathMatch | undefined>>({});
 
   async function runCompare() {
-    const gameScriptRoot = await GetGameScriptRoot($game, gameInstallPath);
-    const filesA = await CollectFilesFromPaths([gameScriptRoot]);
-    const filesB = await CollectFilesFromPaths(modPaths);
-    matchingFiles = await FindMatchingFiles(filesA, filesB);
+    matchingFiles = await VanillaCompare($game, gameInstallPath, modPaths);
   }
-  type MatchRow = FileMatch & { relativePath: string };
+  type MatchRow = PathMatch & { relativePath: string };
   const rows = $derived(
-    Object.entries(matchingFiles).map(([relativePath, match]) => ({
-      relativePath,
-      ...match,
-    })) as MatchRow[],
+    Object.entries(matchingFiles)
+      .filter(([, match]) => match !== undefined)
+      .map(([relativePath, match]) => ({
+        relativePath,
+        ...match,
+      })) as MatchRow[],
   );
   const columns = $derived([
     { field: "relativePath", headerName: "Relative path" },

@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -18,12 +16,6 @@ import (
 
 // FileService provides directory/file selection dialogs and game script root / doc path discovery.
 type FileService struct{}
-
-// FileMatch represents a matched file pair
-type FileMatch struct {
-	FileAPath string `json:"fileAPath"`
-	FileBPath string `json:"fileBPath"`
-}
 
 // SelectDirectory opens a directory selection dialog.
 // Returns ("", nil) when the user cancels so no error dialog is shown.
@@ -87,19 +79,6 @@ func (f *FileService) SelectFiles(title, filter string) ([]string, error) {
 		return nil, nil
 	}
 	return paths, err
-}
-
-// GetScriptRoot returns the game script root directory for the given game and install path.
-// CK3: <install>/game, EU5: <install>/game/in_game.
-func (f *FileService) GetGameScriptRoot(game string, installPath string) (string, error) {
-	switch game {
-	case "CK3":
-		return filepath.Join(installPath, "game"), nil
-	case "EU5":
-		return filepath.Join(installPath, "game", "in_game"), nil
-	default:
-		return "", fmt.Errorf("unknown game: %s", game)
-	}
 }
 
 // DocFileEntry represents a doc file found under the game script root (JSON-safe for bindings).
@@ -174,10 +153,18 @@ func (f *FileService) ReadFileContent(fullPath string) (string, error) {
 	return string(data), nil
 }
 
-// FIXME: Figure Out Why this is so slow for Vanilla/Large Directories
-// TODO: Windows is way faster, need to switch dev environment to windows native...RIP
-// Combine with FindMatchingFiles and GetGameScriptRoot for Vanilla Compares/Mergers
-// Could actually make CollectFilesFromPaths and CollectFilesFromPaths internal functions behind GetGameScriptRoot
+// GetScriptRoot returns the game script root directory for the given game and install path.
+// CK3: <install>/game, EU5: <install>/game/in_game.
+func (f *FileService) GetGameScriptRoot(game string, installPath string) (string, error) {
+	switch game {
+	case "CK3":
+		return filepath.Join(installPath, "game"), nil
+	case "EU5":
+		return filepath.Join(installPath, "game", "in_game"), nil
+	default:
+		return "", fmt.Errorf("unknown game: %s", game)
+	}
+}
 
 // CollectFilesFromPaths collects all .txt files from a mix of files and directories
 // Returns a map of relativePath -> fullPath
@@ -211,97 +198,20 @@ func (f *FileService) CollectFilesFromPaths(inputPaths []string) (map[string]str
 	return files, nil
 }
 
-// FindMatchingFiles finds files that exist in both sets by matching relative paths
-// Returns a map of relativePath -> FileMatch
-func (f *FileService) FindMatchingFiles(filesA, filesB map[string]string) (map[string]FileMatch, error) {
-	matches := make(map[string]FileMatch)
+// FileMatch represents a matched path pair
+type PathMatch struct {
+	PathA string `json:"pathA"`
+	PathB string `json:"pathB"`
+}
+
+// FindMatchingPaths finds paths that exist in both sets by matching relative paths
+// Returns a map of relativePath -> PathMatch
+func (f *FileService) FindMatchingPaths(filesA, filesB map[string]string) (map[string]PathMatch, error) {
+	matches := make(map[string]PathMatch)
 	for rel, pathA := range filesA {
 		if pathB, ok := filesB[rel]; ok {
-			matches[rel] = FileMatch{FileAPath: pathA, FileBPath: pathB}
+			matches[rel] = PathMatch{PathA: pathA, PathB: pathB}
 		}
 	}
 	return matches, nil
-}
-
-// SaveFile sets where to save a file via dialog and writes the content to the file.
-// Returns ("", nil) when the user cancels so no error dialog is shown.
-func (s *FileService) SaveFile(defaultName, fileType string, content string) (string, error) {
-	path, err := application.Get().Dialog.SaveFile().
-		SetFilename(defaultName).
-		AddFilter(fileType, "*."+fileType).
-		PromptForSingleSelection()
-	if err != nil {
-		return "", nil
-	}
-
-	err = os.WriteFile(path, []byte(content), 0o644)
-	if err != nil {
-		err = fmt.Errorf("error writing file %s: %w", path, err)
-	}
-
-	return path, err
-}
-
-// ExportInventoryFromBackend uses the stored extraction result, applies filterState, and saves to a file chosen by the user.
-// Returns the path of the written file, or ("", nil) if the user cancels, or ("", err) if no inventory or write failure.
-// func (s *FileService) ExportInventoryFromBackend(filterState inventory.FilterState, format string, includeRawText bool) (string, error) {
-// 	exportData := inventory.FilterForExport(&filterState)
-// 	if len(exportData) == 0 {
-// 		return "", fmt.Errorf("no inventory data to export")
-// 	}
-
-// 	var content string
-// 	var fileType string
-// 	if format == "csv" {
-// 		fileType = "csv"
-// 		var buf strings.Builder
-// 		w := csv.NewWriter(&buf)
-// 		header := []string{"type", "key", "filePath", "lineStart", "lineEnd"}
-// 		if includeRawText {
-// 			header = append(header, "rawText")
-// 		}
-// 		w.Write(header)
-// 		for _, result := range exportData {
-// 			for _, item := range result.Items {
-// 				row := []string{item.Type, item.Key, item.FilePath, fmt.Sprintf("%d", item.LineStart), fmt.Sprintf("%d", item.LineEnd)}
-// 				if includeRawText {
-// 					row = append(row, item.RawText)
-// 				}
-// 				w.Write(row)
-// 			}
-// 		}
-// 		w.Flush()
-// 		content = buf.String()
-// 	} else {
-// 		fileType = "json"
-// 		if !includeRawText {
-// 			for _, result := range exportData {
-// 				for i := range result.Items {
-// 					result.Items[i].RawText = ""
-// 				}
-// 			}
-// 		}
-// 		jsonBytes, _ := json.MarshalIndent(exportData, "", "  ")
-// 		content = string(jsonBytes)
-// 	}
-
-// 	timestamp := time.Now().Format("2006-01-02_15-04-05")
-// 	return s.SaveFile(fmt.Sprintf("inventory_export_%s.%s", timestamp, fileType), fileType, content)
-// }
-
-// OpenFolder opens the given folder path in the system file manager (e.g. Explorer on Windows, Finder on macOS).
-func (s *FileService) OpenFolder(folderPath string) error {
-	if folderPath == "" {
-		return nil
-	}
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("explorer", filepath.ToSlash(folderPath))
-	case "darwin":
-		cmd = exec.Command("open", folderPath)
-	default:
-		cmd = exec.Command("xdg-open", folderPath)
-	}
-	return cmd.Start()
 }

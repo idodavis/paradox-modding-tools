@@ -15,23 +15,21 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * FIXME: Figure Out Why this is so slow for Vanilla/Large Directories
- * TODO: Windows is way faster, need to switch dev environment to windows native...RIP
  * CollectFilesFromPaths collects all .txt files from a mix of files and directories
  * Returns a map of relativePath -> fullPath
  */
-export function CollectFilesFromPaths(inputPaths: string[]): $CancellablePromise<{ [_: string]: string }> {
+export function CollectFilesFromPaths(inputPaths: string[]): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(1545587832, inputPaths).then(($result: any) => {
         return $$createType0($result);
     });
 }
 
 /**
- * FindMatchingFiles finds files that exist in both sets by matching relative paths
- * Returns a map of relativePath -> FileMatch
+ * FindMatchingPaths finds paths that exist in both sets by matching relative paths
+ * Returns a map of relativePath -> PathMatch
  */
-export function FindMatchingFiles(filesA: { [_: string]: string }, filesB: { [_: string]: string }): $CancellablePromise<{ [_: string]: $models.FileMatch }> {
-    return $Call.ByID(3781625008, filesA, filesB).then(($result: any) => {
+export function FindMatchingPaths(filesA: { [_ in string]?: string }, filesB: { [_ in string]?: string }): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
+    return $Call.ByID(2990739391, filesA, filesB).then(($result: any) => {
         return $$createType2($result);
     });
 }
@@ -54,25 +52,10 @@ export function ListGameDocFiles(game: string, installPath: string): $Cancellabl
 }
 
 /**
- * OpenFolder opens the given folder path in the system file manager (e.g. Explorer on Windows, Finder on macOS).
- */
-export function OpenFolder(folderPath: string): $CancellablePromise<void> {
-    return $Call.ByID(2316467521, folderPath);
-}
-
-/**
  * ReadFileContent reads a file as UTF-8 text.
  */
 export function ReadFileContent(fullPath: string): $CancellablePromise<string> {
     return $Call.ByID(1203948956, fullPath);
-}
-
-/**
- * SaveFile sets where to save a file via dialog and writes the content to the file.
- * Returns ("", nil) when the user cancels so no error dialog is shown.
- */
-export function SaveFile(defaultName: string, fileType: string, content: string): $CancellablePromise<string> {
-    return $Call.ByID(3260874390, defaultName, fileType, content);
 }
 
 /**
@@ -113,7 +96,7 @@ export function SelectSingleFile(title: string, filter: string): $CancellablePro
 
 // Private type creation functions
 const $$createType0 = $Create.Map($Create.Any, $Create.Any);
-const $$createType1 = $models.FileMatch.createFrom;
+const $$createType1 = $models.PathMatch.createFrom;
 const $$createType2 = $Create.Map($Create.Any, $$createType1);
 const $$createType3 = $models.DocFileEntry.createFrom;
 const $$createType4 = $Create.Array($$createType3);

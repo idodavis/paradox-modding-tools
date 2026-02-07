@@ -31,6 +31,7 @@ func main() {
 		Services: []application.Service{
 			application.NewService(&services.FileService{}),
 			application.NewService(&services.DiffService{}),
+			application.NewService(&services.CompareService{}),
 			application.NewService(&services.SettingsService{}),
 			application.NewService(&services.BrowserService{}),
 		},

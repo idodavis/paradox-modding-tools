@@ -7,7 +7,6 @@
     type GridOptions,
     type GridApi,
     themeQuartz,
-    colorSchemeDarkBlue,
   } from "ag-grid-community";
 
   // Register AG Grid Modules
@@ -17,12 +16,23 @@
   export let rowData: Array<any> = [];
 
   // Create a custom dark theme using Theming API
-  const darkTheme = themeQuartz.withPart(colorSchemeDarkBlue).withParams({
-    backgroundColor: "#212121",
-    foregroundColor: "#ffffff",
-    headerBackgroundColor: "#37474f",
-    headerTextColor: "#cfd8dc",
-    oddRowBackgroundColor: "#263238",
+  const darkTheme = themeQuartz.withParams({
+    accentColor: "#B387FA",
+    backgroundColor: "#1A1E28",
+    borderColor: "#14171F",
+    browserColorScheme: "dark",
+    chromeBackgroundColor: {
+      ref: "foregroundColor",
+      mix: 0.07,
+      onto: "backgroundColor",
+    },
+    fontFamily: {
+      googleFont: "IBM Plex Sans",
+    },
+    foregroundColor: "#9FB9D0",
+    headerBackgroundColor: "#0D1016",
+    headerFontSize: 14,
+    wrapperBorderRadius: 8,
   });
 
   let gridDiv: HTMLDivElement;

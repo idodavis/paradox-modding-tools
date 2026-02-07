@@ -184,7 +184,6 @@ func ExtractInventory(game string, basePaths []string, objectTypes []string) err
 			return ErrExtractionCancelled
 		}
 
-		basePath := basePath
 		walkErr := filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", path, err))

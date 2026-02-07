@@ -15,13 +15,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
+ * FIXME: Figure Out Why this is so slow for Vanilla/Large Directories
+ * TODO: Windows is way faster, need to switch dev environment to windows native...RIP
  * CollectFilesFromPaths collects all .txt files from a mix of files and directories
  * Returns a map of relativePath -> fullPath
- * For individual files, uses the filename as the relative path
- * For directories, uses the relative path from the directory root
  */
-export function CollectFilesFromPaths(paths: string[]): $CancellablePromise<{ [_: string]: string }> {
-    return $Call.ByID(1545587832, paths).then(($result: any) => {
+export function CollectFilesFromPaths(inputPaths: string[]): $CancellablePromise<{ [_: string]: string }> {
+    return $Call.ByID(1545587832, inputPaths).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -40,8 +40,8 @@ export function FindMatchingFiles(filesA: { [_: string]: string }, filesB: { [_:
  * GetScriptRoot returns the game script root directory for the given game and install path.
  * CK3: <install>/game, EU5: <install>/game/in_game.
  */
-export function GetScriptRoot(installPath: string, game: string): $CancellablePromise<string> {
-    return $Call.ByID(2313931968, installPath, game);
+export function GetGameScriptRoot(game: string, installPath: string): $CancellablePromise<string> {
+    return $Call.ByID(4081809646, game, installPath);
 }
 
 /**

@@ -9,7 +9,9 @@ export const gameInstallPathEu5 = writable<string>('');
 
 export function gotoPage(page: 'hub' | 'compare-tool' | 'settings') {
   currentPage.update((current) => {
-    lastPage.set(current);  // remember where we were before navigating
+    if (current !== page) {
+      lastPage.set(current);
+    }
     return page;
   });
 }
@@ -30,3 +32,4 @@ export async function saveSettings() {
     gameInstallPathEu5: get(gameInstallPathEu5),
   });
 }
+

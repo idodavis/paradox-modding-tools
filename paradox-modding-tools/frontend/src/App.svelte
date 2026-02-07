@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Card, CardBody } from "./lib/components";
+  import ck3Bg from "@assets/CK3-All_Under_Heaven.jpg";
+  import eu5Bg from "@assets/EUV-Release.jpg";
+  import { Card, CardBody, Toast } from "@components";
   import Icon from "@iconify/svelte";
-  import CompareTool from "./lib/pages/CompareTool.svelte";
-  import Settings from "./lib/pages/Settings.svelte";
-  import ck3Bg from "./assets/CK3-All_Under_Heaven.jpg";
-  import eu5Bg from "./assets/EUV-Release.jpg";
-  import { game, currentPage, gotoPage, loadSettings } from "./lib/stores/app";
-  import { GetLatestPatchNotes } from "../bindings/paradox-modding-tools/services/settingsservice";
-  import { OpenURL } from "../bindings/paradox-modding-tools/services/browserservice";
-  import type { LatestPatchNotes } from "../bindings/paradox-modding-tools/services";
+  import CompareTool from "@pages/CompareTool.svelte";
+  import Settings from "@pages/Settings.svelte";
+  import { game, currentPage, gotoPage, loadSettings } from "@stores/app";
+  import { GetLatestPatchNotes } from "@services/settingsservice";
+  import { OpenURL } from "@services/browserservice";
+  import type { LatestPatchNotes } from "@services/models";
 
   const backgroundImage = $derived($game === "EU5" ? eu5Bg : ck3Bg);
   let latestPatchNotes = $state<Record<string, LatestPatchNotes>>({});
@@ -25,9 +25,10 @@
   });
 </script>
 
+<Toast />
 <div class="min-h-screen flex flex-col">
   <!-- Navbar (solid, on top of background) -->
-  <div class="navbar bg-base-300 shadow-sm p-6 z-10">
+  <div class="navbar bg-(--navbar-bg) shadow-sm p-6 z-10">
     <button
       class="navbar-start gap-4 cursor-pointer hover:opacity-80 transition-opacity"
       onclick={() => gotoPage("hub")}

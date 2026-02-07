@@ -1,29 +1,48 @@
 <script lang="ts">
-  import Icon from "@iconify/svelte";
-  import { Tabs, Tab, Card, CardBody } from "../components";
-  import { game, gameInstallPathCk3, gameInstallPathEu5 } from "../stores/app";
+  import { Tabs, Tab, Card, CardBody, FileSelector, Grid } from "@components";
+  import { game, gameInstallPathCk3, gameInstallPathEu5 } from "@stores/app";
   import {
-    SelectFiles,
-    SelectDirectories,
-  } from "../../../bindings/paradox-modding-tools/services/fileservice";
+    GetGameScriptRoot,
+    CollectFilesFromPaths,
+    FindMatchingFiles,
+  } from "@services/fileservice";
+  import type { FileMatch } from "@services/models";
+  import { showToast } from "@stores/toast";
 
-  let selectedPaths = $state<string[]>([]);
+  const gameInstallPath = $derived(
+    $game === "CK3" ? $gameInstallPathCk3 : $gameInstallPathEu5,
+  );
+  let modPaths = $state<string[]>([]);
+  let matchingFiles = $state<{ [key: string]: FileMatch }>({});
 
-  async function selectFiles() {
-    selectedPaths = selectedPaths.concat(
-      await SelectFiles("Select files", "*.txt"),
-    );
+  async function runCompare() {
+    const gameScriptRoot = await GetGameScriptRoot($game, gameInstallPath);
+    const filesA = await CollectFilesFromPaths([gameScriptRoot]);
+    const filesB = await CollectFilesFromPaths(modPaths);
+    matchingFiles = await FindMatchingFiles(filesA, filesB);
   }
-
-  async function selectDirectories() {
-    selectedPaths = selectedPaths.concat(
-      await SelectDirectories("Select folder(s)"),
-    );
-  }
-
-  function clear() {
-    selectedPaths = [];
-  }
+  type MatchRow = FileMatch & { relativePath: string };
+  const rows = $derived(
+    Object.entries(matchingFiles).map(([relativePath, match]) => ({
+      relativePath,
+      ...match,
+    })) as MatchRow[],
+  );
+  const columns = $derived([
+    { field: "relativePath", headerName: "Relative path" },
+    {
+      headerName: "Show Diff",
+      cellRenderer: (params: { data: MatchRow }) => {
+        const btn = document.createElement("button");
+        btn.className = "btn btn-sm btn-primary";
+        btn.textContent = "Show Diff";
+        btn.onclick = () => {
+          if (params.data) console.log("Show diff:", params.data);
+        };
+        return btn;
+      },
+    },
+  ]);
 </script>
 
 <div class="p-4">
@@ -62,46 +81,30 @@
                 {/if})
               </p>
             </fieldset>
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend text-base-content/90"
-                >Mod (B):</legend
-              >
-              <textarea
-                class="textarea w-full max-w-2xl"
-                readonly
-                value={selectedPaths.join("\n")}
-                placeholder="Select folder or files to compare with Vanilla"
-              ></textarea>
-              <div class="flex flex-wrap gap-2 max-w-2xl w-full">
-                <button
-                  type="button"
-                  class="btn btn-soft btn-secondary w-39"
-                  onclick={selectFiles}
-                >
-                  Browse Files
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-soft btn-secondary w-39"
-                  onclick={selectDirectories}
-                >
-                  Browse Folders
-                </button>
-                <button type="button" class="btn w-25 ml-auto" onclick={clear}>
-                  Clear
-                  <Icon icon="mdi:trash-can" class="size-4" />
-                </button>
-              </div>
-            </fieldset>
+            <FileSelector
+              mode="filesAndFolders"
+              dialogTitle="Select Mod (B) files/folders"
+              fileBtnText="Select Files"
+              folderBtnText="Select Folders"
+              placeholder="Select folder or files to compare with Vanilla"
+              initialValue={modPaths}
+              onPathsChange={(paths: string[]) => (modPaths = paths)}
+            />
           </div>
+          <button
+            type="button"
+            class="btn btn-soft btn-wide btn-primary"
+            onclick={runCompare}
+            disabled={gameInstallPath === ""}
+          >
+            Run Compare
+          </button>
         </CardBody>
       </Card>
       <Card class="mt-10 border border-base-content/40">
         <CardBody>
           <h3 class="card-title justify-center mb-10">Matching Files</h3>
-          <p class="text-center">
-            Select Mod (B) files/folders, then click Compare.
-          </p>
+          <Grid columnDefs={columns} rowData={rows} />
         </CardBody>
       </Card>
     </Tab>

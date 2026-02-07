@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/sergi/go-diff v1.4.0
-	github.com/wailsapp/wails/v3 v3.0.0-alpha.67
+	github.com/wailsapp/wails/v3 v3.0.0-alpha.68
 )
 
 require (

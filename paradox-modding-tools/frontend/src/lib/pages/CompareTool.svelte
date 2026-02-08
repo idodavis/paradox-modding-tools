@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { Tabs, Tab, Card, CardBody, FileSelector, Grid } from "@components";
+  import {
+    Tabs,
+    Tab,
+    Card,
+    CardBody,
+    FileSelector,
+    Grid,
+    DiffViewer,
+  } from "@components";
   import { game, gameInstallPathCk3, gameInstallPathEu5 } from "@stores/app";
   import { VanillaCompare } from "@services/compareservice";
   import type { PathMatch } from "@services/models";
@@ -9,10 +17,12 @@
   );
   let modPaths = $state<string[]>([]);
   let matchingFiles = $state<Record<string, PathMatch | undefined>>({});
+  let selectedForDiff = $state<MatchRow | null>(null);
 
   async function runCompare() {
     matchingFiles = await VanillaCompare($game, gameInstallPath, modPaths);
   }
+
   type MatchRow = PathMatch & { relativePath: string };
   const rows = $derived(
     Object.entries(matchingFiles)
@@ -31,7 +41,7 @@
         btn.className = "btn btn-sm btn-primary";
         btn.textContent = "Show Diff";
         btn.onclick = () => {
-          if (params.data) console.log("Show diff:", params.data);
+          selectedForDiff = params.data;
         };
         return btn;
       },
@@ -95,12 +105,6 @@
           </button>
         </CardBody>
       </Card>
-      <Card class="mt-10 border border-base-content/40">
-        <CardBody>
-          <h3 class="card-title justify-center mb-10">Matching Files</h3>
-          <Grid columnDefs={columns} rowData={rows} />
-        </CardBody>
-      </Card>
     </Tab>
     <Tab
       tabGroup="compare-mode"
@@ -113,4 +117,18 @@
       contentClass="bg-base-300 border-base-300 p-6">Any two files</Tab
     >
   </Tabs>
+  <Card class="mt-10 border border-base-content/40">
+    <CardBody>
+      <h3 class="card-title justify-center mb-10">Matching Files</h3>
+      <Grid columnDefs={columns} rowData={rows} />
+    </CardBody>
+  </Card>
 </div>
+
+{#if selectedForDiff}
+  <DiffViewer
+    oldFile={selectedForDiff.pathA}
+    newFile={selectedForDiff.pathB}
+    onclose={() => (selectedForDiff = null)}
+  />
+{/if}

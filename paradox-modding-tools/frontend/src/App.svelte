@@ -26,6 +26,7 @@
 </script>
 
 <Toast />
+<!-- TODO: Look at Daisyui Hero Image OVerlay for the background piece of this page -->
 <div class="min-h-screen flex flex-col">
   <!-- Navbar (solid, on top of background) -->
   <div class="navbar bg-(--navbar-bg) shadow-sm p-6 z-10">

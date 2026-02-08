@@ -11,6 +11,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "@git-diff-view/file": "^0.0.39",
+    "@git-diff-view/svelte": "^0.0.13",
     "@tailwindcss/vite": "^4.1.18",
     "@wailsio/runtime": "latest",
     "ag-grid-community": "^35.0.1",

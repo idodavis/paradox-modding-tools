@@ -11,7 +11,7 @@
   let {
     oldFile,
     newFile,
-    lang = "hcl",
+    lang = "nginx",
     highlighting = true,
     onclose,
   }: {

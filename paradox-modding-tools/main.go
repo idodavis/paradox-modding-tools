@@ -30,10 +30,10 @@ func main() {
 		Description: "A demo of using raw HTML & CSS",
 		Services: []application.Service{
 			application.NewService(&services.FileService{}),
-			application.NewService(&services.DiffService{}),
-			application.NewService(&services.CompareService{}),
-			application.NewService(&services.SettingsService{}),
 			application.NewService(&services.BrowserService{}),
+			application.NewService(&services.CompareService{}),
+			application.NewService(&services.ModDocService{}),
+			application.NewService(&services.SettingsService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

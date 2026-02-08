@@ -9,18 +9,33 @@
     DiffViewer,
   } from "@components";
   import { game, gameInstallPathCk3, gameInstallPathEu5 } from "@stores/app";
-  import { VanillaCompare } from "@services/compareservice";
+  import { VanillaCompare, TwoSetsCompare } from "@services/compareservice";
   import type { PathMatch } from "@services/models";
 
   const gameInstallPath = $derived(
     $game === "CK3" ? $gameInstallPathCk3 : $gameInstallPathEu5,
   );
-  let modPaths = $state<string[]>([]);
+  let modPaths: string[] = $state([]);
+  let setAPaths: string[] = $state([]);
+  let setBPaths: string[] = $state([]);
+  let fileAPath: string = $state("");
+  let fileBPath: string = $state("");
   let matchingFiles = $state<Record<string, PathMatch | undefined>>({});
   let selectedForDiff = $state<MatchRow | null>(null);
 
-  async function runCompare() {
+  async function runVanillaCompare() {
     matchingFiles = await VanillaCompare($game, gameInstallPath, modPaths);
+  }
+  async function runTwoSetsCompare() {
+    matchingFiles = await TwoSetsCompare(setAPaths, setBPaths);
+  }
+  async function runAnyTwoFilesCompare() {
+    matchingFiles = {
+      "Comparing Two Files": {
+        pathA: fileAPath,
+        pathB: fileBPath,
+      } as PathMatch,
+    };
   }
 
   type MatchRow = PathMatch & { relativePath: string };
@@ -33,18 +48,19 @@
       })) as MatchRow[],
   );
   const columns = $derived([
-    { field: "relativePath", headerName: "Relative path" },
+    { field: "relativePath", headerName: "Relative path", flex: 10 },
     {
       headerName: "Show Diff",
       cellRenderer: (params: { data: MatchRow }) => {
         const btn = document.createElement("button");
-        btn.className = "btn btn-sm btn-primary";
+        btn.className = "btn btn-sm btn-primary btn-outline";
         btn.textContent = "Show Diff";
         btn.onclick = () => {
           selectedForDiff = params.data;
         };
         return btn;
       },
+      flex: 1,
     },
   ]);
 </script>
@@ -98,7 +114,7 @@
           <button
             type="button"
             class="btn btn-soft btn-wide btn-primary"
-            onclick={runCompare}
+            onclick={runVanillaCompare}
             disabled={gameInstallPath === ""}
           >
             Run Compare
@@ -109,18 +125,92 @@
     <Tab
       tabGroup="compare-mode"
       label="Two Sets / Directories"
-      contentClass="bg-base-300 border-base-300 p-6">Two sets / directories</Tab
+      contentClass="bg-base-300 border-base-300 p-6"
     >
+      <Card>
+        <CardBody>
+          <p class="text-base text-base-content/90 mb-4">
+            Select two sets of files/directories to compare:
+          </p>
+          <div class="mb-4">
+            <FileSelector
+              mode="filesAndFolders"
+              dialogTitle="Select Set A files/folders"
+              fileBtnText="Select Files"
+              folderBtnText="Select Folders"
+              placeholder="Select folder or files for Set A"
+              initialValue={setAPaths}
+              onPathsChange={(paths: string[]) => (setAPaths = paths)}
+            />
+            <FileSelector
+              mode="filesAndFolders"
+              dialogTitle="Select Set B files/folders"
+              fileBtnText="Select Files"
+              folderBtnText="Select Folders"
+              placeholder="Select folder or files for Set B"
+              initialValue={setBPaths}
+              onPathsChange={(paths: string[]) => (setBPaths = paths)}
+            />
+          </div>
+          <button
+            type="button"
+            class="btn btn-soft btn-wide btn-primary"
+            onclick={runTwoSetsCompare}
+            disabled={setAPaths.length === 0 || setBPaths.length === 0}
+          >
+            Run Compare
+          </button>
+        </CardBody>
+      </Card>
+    </Tab>
     <Tab
       tabGroup="compare-mode"
       label="Any Two Files"
-      contentClass="bg-base-300 border-base-300 p-6">Any two files</Tab
+      contentClass="bg-base-300 border-base-300 p-6"
     >
+      <Card>
+        <CardBody>
+          <p class="text-base text-base-content/90 mb-4">
+            Select two files to compare:
+          </p>
+          <div class="mb-4">
+            <FileSelector
+              mode="fileOnly"
+              dialogTitle="Select File A"
+              fileBtnText="Select File"
+              placeholder="Select file for File A"
+              initialValue={[fileAPath]}
+              onPathsChange={(paths: string[]) => (fileAPath = paths[0])}
+            />
+            <FileSelector
+              mode="fileOnly"
+              dialogTitle="Select File B"
+              fileBtnText="Select File"
+              placeholder="Select file for File B"
+              initialValue={[fileBPath]}
+              onPathsChange={(paths: string[]) => (fileBPath = paths[0])}
+            />
+          </div>
+          <button
+            type="button"
+            class="btn btn-soft btn-wide btn-primary"
+            onclick={runAnyTwoFilesCompare}
+            disabled={fileAPath === "" || fileBPath === ""}
+          >
+            Run Compare
+          </button>
+        </CardBody>
+      </Card>
+    </Tab>
   </Tabs>
-  <Card class="mt-10 border border-base-content/40">
+  <Card class="px-10">
     <CardBody>
-      <h3 class="card-title justify-center mb-10">Matching Files</h3>
-      <Grid columnDefs={columns} rowData={rows} />
+      <h3 class="card-title justify-center mb-4">Results</h3>
+      <Grid
+        columnDefs={columns}
+        rowData={rows}
+        className="h-88 border-base-200 border-4 rounded-lg"
+      />
     </CardBody>
   </Card>
 </div>

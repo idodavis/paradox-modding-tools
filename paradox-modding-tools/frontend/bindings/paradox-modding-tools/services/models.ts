@@ -34,57 +34,6 @@ export class AppSettings {
 }
 
 /**
- * DiffLine represents a single line in a diff
- */
-export class DiffLine {
-    /**
-     * "header", "add", "remove", "context", "other"
-     */
-    "type": string;
-
-    /**
-     * The line content
-     */
-    "content": string;
-
-    /**
-     * Line number in old file (nil if not applicable)
-     */
-    "oldLineNum": number | null;
-
-    /**
-     * Line number in new file (nil if not applicable)
-     */
-    "newLineNum": number | null;
-
-    /** Creates a new DiffLine instance. */
-    constructor($$source: Partial<DiffLine> = {}) {
-        if (!("type" in $$source)) {
-            this["type"] = "";
-        }
-        if (!("content" in $$source)) {
-            this["content"] = "";
-        }
-        if (!("oldLineNum" in $$source)) {
-            this["oldLineNum"] = null;
-        }
-        if (!("newLineNum" in $$source)) {
-            this["newLineNum"] = null;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new DiffLine instance from a string or object.
-     */
-    static createFrom($$source: any = {}): DiffLine {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new DiffLine($$parsedSource as Partial<DiffLine>);
-    }
-}
-
-/**
  * DocFileEntry represents a doc file found under the game script root (JSON-safe for bindings).
  */
 export class DocFileEntry {
@@ -112,73 +61,51 @@ export class DocFileEntry {
     }
 }
 
-/**
- * DocPathCache is the cached doc path list for a game+install path (JSON-safe for bindings).
- */
-export class DocPathCache {
-    "paths": string[];
-    "scannedAt": string;
-    "installPath": string;
-    "lastSeenUpdateId"?: string;
+export class FileCollectorFilter {
+    /**
+     * e.g. [".txt", ".lua"]
+     */
+    "Extensions": string[];
 
-    /** Creates a new DocPathCache instance. */
-    constructor($$source: Partial<DocPathCache> = {}) {
-        if (!("paths" in $$source)) {
-            this["paths"] = [];
+    /**
+     * e.g. ["readme.txt", "mod.lua"]
+     */
+    "FileNames": string[];
+
+    /**
+     * e.g. "^(readme|mod)\.txt$"
+     */
+    "Regex": string;
+
+    /** Creates a new FileCollectorFilter instance. */
+    constructor($$source: Partial<FileCollectorFilter> = {}) {
+        if (!("Extensions" in $$source)) {
+            this["Extensions"] = [];
         }
-        if (!("scannedAt" in $$source)) {
-            this["scannedAt"] = "";
+        if (!("FileNames" in $$source)) {
+            this["FileNames"] = [];
         }
-        if (!("installPath" in $$source)) {
-            this["installPath"] = "";
+        if (!("Regex" in $$source)) {
+            this["Regex"] = "";
         }
 
         Object.assign(this, $$source);
     }
 
     /**
-     * Creates a new DocPathCache instance from a string or object.
+     * Creates a new FileCollectorFilter instance from a string or object.
      */
-    static createFrom($$source: any = {}): DocPathCache {
+    static createFrom($$source: any = {}): FileCollectorFilter {
         const $$createField0_0 = $$createType0;
+        const $$createField1_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("paths" in $$parsedSource) {
-            $$parsedSource["paths"] = $$createField0_0($$parsedSource["paths"]);
+        if ("Extensions" in $$parsedSource) {
+            $$parsedSource["Extensions"] = $$createField0_0($$parsedSource["Extensions"]);
         }
-        return new DocPathCache($$parsedSource as Partial<DocPathCache>);
-    }
-}
-
-/**
- * DocPathCacheSet is the payload for setting the doc path cache (installPath added server-side).
- */
-export class DocPathCacheSet {
-    "paths": string[];
-    "scannedAt": string;
-    "lastSeenUpdateId"?: string;
-
-    /** Creates a new DocPathCacheSet instance. */
-    constructor($$source: Partial<DocPathCacheSet> = {}) {
-        if (!("paths" in $$source)) {
-            this["paths"] = [];
+        if ("FileNames" in $$parsedSource) {
+            $$parsedSource["FileNames"] = $$createField1_0($$parsedSource["FileNames"]);
         }
-        if (!("scannedAt" in $$source)) {
-            this["scannedAt"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new DocPathCacheSet instance from a string or object.
-     */
-    static createFrom($$source: any = {}): DocPathCacheSet {
-        const $$createField0_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("paths" in $$parsedSource) {
-            $$parsedSource["paths"] = $$createField0_0($$parsedSource["paths"]);
-        }
-        return new DocPathCacheSet($$parsedSource as Partial<DocPathCacheSet>);
+        return new FileCollectorFilter($$parsedSource as Partial<FileCollectorFilter>);
     }
 }
 

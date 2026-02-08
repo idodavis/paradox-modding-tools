@@ -2,12 +2,12 @@ import { writable, get } from 'svelte/store';
 import { SaveSettings, GetSettings } from '../../../bindings/paradox-modding-tools/services/settingsservice';
 
 export const game = writable<'CK3' | 'EU5'>('CK3');
-export const currentPage = writable<'hub' | 'compare-tool' | 'settings'>('hub');
-export const lastPage = writable<'hub' | 'compare-tool' | 'settings'>('hub');
+export const currentPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs'>('hub');
+export const lastPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs'>('hub');
 export const gameInstallPathCk3 = writable<string>('');
 export const gameInstallPathEu5 = writable<string>('');
 
-export function gotoPage(page: 'hub' | 'compare-tool' | 'settings') {
+export function gotoPage(page: 'hub' | 'settings' | 'compare-tool' | 'modding-docs') {
   currentPage.update((current) => {
     if (current !== page) {
       lastPage.set(current);

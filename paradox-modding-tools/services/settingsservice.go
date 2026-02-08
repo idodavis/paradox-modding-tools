@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -88,96 +87,6 @@ func writeConfigFile(filename string, data any) error {
 		return err
 	}
 	return os.WriteFile(path, bytes, 0o644)
-}
-
-// DocPathCache is the cached doc path list for a game+install path (JSON-safe for bindings).
-type DocPathCache struct {
-	Paths            []string `json:"paths"`
-	ScannedAt        string   `json:"scannedAt"`
-	InstallPath      string   `json:"installPath"`
-	LastSeenUpdateId string   `json:"lastSeenUpdateId,omitempty"`
-}
-
-// DocPathCacheSet is the payload for setting the doc path cache (installPath added server-side).
-type DocPathCacheSet struct {
-	Paths            []string `json:"paths"`
-	ScannedAt        string   `json:"scannedAt"`
-	LastSeenUpdateId string   `json:"lastSeenUpdateId,omitempty"`
-}
-
-// pathHash returns a hash of the path matching the frontend (32-bit, base36).
-func pathHash(path string) string {
-	var h uint32
-	for _, c := range path {
-		h = h*31 + uint32(c)
-	}
-	return strconv.FormatUint(uint64(h), 36)
-}
-
-func docpathsCacheKey(game, installPath string) string {
-	return strings.ToLower(strings.TrimSpace(game)) + "_" + pathHash(installPath)
-}
-
-func loadDocpathsCache() (map[string]*DocPathCache, error) {
-	var c map[string]*DocPathCache
-	_ = readConfigFile(docpathsCacheFileName, &c)
-	if c == nil {
-		c = make(map[string]*DocPathCache)
-	}
-	return c, nil
-}
-
-// GetDocPathCache returns the cached doc path list for the game+install path, or nil if not found.
-func (s *SettingsService) GetDocPathCache(game, installPath string) (*DocPathCache, error) {
-	game = strings.ToLower(strings.TrimSpace(game))
-	installPath = strings.TrimSpace(installPath)
-	if game == "" || installPath == "" {
-		return nil, nil
-	}
-	c, err := loadDocpathsCache()
-	if err != nil {
-		return nil, err
-	}
-	entry := c[docpathsCacheKey(game, installPath)]
-	if entry == nil || len(entry.Paths) == 0 {
-		return nil, nil
-	}
-	return entry, nil
-}
-
-// SetDocPathCache writes the doc path cache for the game+install path to disk (same dir as settings).
-func (s *SettingsService) SetDocPathCache(game, installPath string, data DocPathCacheSet) error {
-	game = strings.ToLower(strings.TrimSpace(game))
-	installPath = strings.TrimSpace(installPath)
-	if game == "" || installPath == "" {
-		return nil
-	}
-	c, err := loadDocpathsCache()
-	if err != nil {
-		return err
-	}
-	key := docpathsCacheKey(game, installPath)
-	c[key] = &DocPathCache{
-		Paths:       data.Paths,
-		ScannedAt:   data.ScannedAt,
-		InstallPath: installPath,
-	}
-	return writeConfigFile(docpathsCacheFileName, c)
-}
-
-// ClearDocPathCache removes the doc path cache entry for the game+install path.
-func (s *SettingsService) ClearDocPathCache(game, installPath string) error {
-	game = strings.ToLower(strings.TrimSpace(game))
-	installPath = strings.TrimSpace(installPath)
-	if game == "" || installPath == "" {
-		return nil
-	}
-	c, err := loadDocpathsCache()
-	if err != nil {
-		return err
-	}
-	delete(c, docpathsCacheKey(game, installPath))
-	return writeConfigFile(docpathsCacheFileName, c)
 }
 
 // GetSettings loads settings from disk. Returns default values if file does not exist.

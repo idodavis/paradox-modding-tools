@@ -9,11 +9,15 @@ func (c *CompareService) VanillaCompare(game string, vanillaInstallPath string, 
 	if err != nil {
 		return nil, err
 	}
-	vanillaFiles, err := c.fileService.CollectFilesFromPaths([]string{gameScriptRoot})
+	vanillaFiles, err := c.fileService.CollectFilesFromPaths([]string{gameScriptRoot}, FileCollectorFilter{
+		Extensions: []string{".txt"},
+	})
 	if err != nil {
 		return nil, err
 	}
-	modFiles, err := c.fileService.CollectFilesFromPaths(modPaths)
+	modFiles, err := c.fileService.CollectFilesFromPaths(modPaths, FileCollectorFilter{
+		Extensions: []string{".txt"},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -25,11 +29,15 @@ func (c *CompareService) VanillaCompare(game string, vanillaInstallPath string, 
 }
 
 func (c *CompareService) TwoSetsCompare(setA []string, setB []string) (map[string]PathMatch, error) {
-	filesA, err := c.fileService.CollectFilesFromPaths(setA)
+	filesA, err := c.fileService.CollectFilesFromPaths(setA, FileCollectorFilter{
+		Extensions: []string{".txt"},
+	})
 	if err != nil {
 		return nil, err
 	}
-	filesB, err := c.fileService.CollectFilesFromPaths(setB)
+	filesB, err := c.fileService.CollectFilesFromPaths(setB, FileCollectorFilter{
+		Extensions: []string{".txt"},
+	})
 	if err != nil {
 		return nil, err
 	}

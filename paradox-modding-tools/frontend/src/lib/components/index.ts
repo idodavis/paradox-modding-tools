@@ -6,3 +6,4 @@ export { default as FileSelector } from './wrappers/FileSelector.svelte';
 export { default as Toast } from './wrappers/Toast.svelte';
 export { default as Grid } from './Common/Grid.svelte';
 export { default as DiffViewer } from './Common/DiffViewer.svelte';
+export { default as FileTree } from './wrappers/FileTree.svelte';

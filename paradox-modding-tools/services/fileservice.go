@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -166,9 +168,15 @@ func (f *FileService) GetGameScriptRoot(game string, installPath string) (string
 	}
 }
 
+type FileCollectorFilter struct {
+	Extensions []string // e.g. [".txt", ".lua"]
+	FileNames  []string // e.g. ["readme.txt", "mod.lua"]
+	Regex      string   // e.g. "^(readme|mod)\.txt$"
+}
+
 // CollectFilesFromPaths collects all .txt files from a mix of files and directories
 // Returns a map of relativePath -> fullPath
-func (f *FileService) CollectFilesFromPaths(inputPaths []string) (map[string]string, error) {
+func (f *FileService) CollectFilesFromPaths(inputPaths []string, filter FileCollectorFilter) (map[string]string, error) {
 	files := make(map[string]string)
 
 	for _, inputPath := range inputPaths {
@@ -179,9 +187,18 @@ func (f *FileService) CollectFilesFromPaths(inputPaths []string) (map[string]str
 			if d.IsDir() {
 				return nil
 			}
-			if filepath.Ext(path) != ".txt" {
+
+			// Apply filters if provided
+			if len(filter.Extensions) > 0 && !slices.Contains(filter.Extensions, filepath.Ext(path)) {
 				return nil
 			}
+			if len(filter.FileNames) > 0 && !slices.Contains(filter.FileNames, filepath.Base(path)) {
+				return nil
+			}
+			if filter.Regex != "" && !regexp.MustCompile(filter.Regex).MatchString(path) {
+				return nil
+			}
+
 			// grab relative path from inputPath to
 			rel, err := filepath.Rel(inputPath, path)
 			if err != nil {
@@ -208,10 +225,89 @@ type PathMatch struct {
 // Returns a map of relativePath -> PathMatch
 func (f *FileService) FindMatchingPaths(filesA, filesB map[string]string) (map[string]PathMatch, error) {
 	matches := make(map[string]PathMatch)
-	for rel, pathA := range filesA {
-		if pathB, ok := filesB[rel]; ok {
-			matches[rel] = PathMatch{PathA: pathA, PathB: pathB}
+	matchedA := make(map[string]bool)
+	matchedB := make(map[string]bool)
+
+	// First, try to match files by their relative path keys (exact match)
+	for keyA, pathA := range filesA {
+		if pathB, exists := filesB[keyA]; exists {
+			matches[keyA] = PathMatch{
+				PathA: pathA,
+				PathB: pathB,
+			}
+			matchedA[keyA] = true
+			matchedB[keyA] = true
 		}
 	}
+
+	// Then, try matching by relative path structure (e.g., "events/file.txt")
+	// This handles cases where files are in the same subdirectory structure but different roots
+	for keyA, pathA := range filesA {
+		if matchedA[keyA] {
+			continue
+		}
+
+		// Extract the relative path structure (everything after the first directory component)
+		partsA := strings.Split(keyA, string(filepath.Separator))
+		if len(partsA) > 1 {
+			relStructA := strings.Join(partsA[1:], string(filepath.Separator))
+
+			for keyB, pathB := range filesB {
+				if matchedB[keyB] {
+					continue
+				}
+
+				partsB := strings.Split(keyB, string(filepath.Separator))
+				if len(partsB) > 1 {
+					relStructB := strings.Join(partsB[1:], string(filepath.Separator))
+					if relStructA == relStructB {
+						// Use the more descriptive key
+						matchKey := keyA
+						if len(keyB) > len(keyA) {
+							matchKey = keyB
+						}
+						matches[matchKey] = PathMatch{
+							PathA: pathA,
+							PathB: pathB,
+						}
+						matchedA[keyA] = true
+						matchedB[keyB] = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Finally, try matching by just the filename (for cases where directory structure differs)
+	for keyA, pathA := range filesA {
+		if matchedA[keyA] {
+			continue
+		}
+
+		filenameA := filepath.Base(pathA)
+		for keyB, pathB := range filesB {
+			if matchedB[keyB] {
+				continue
+			}
+
+			filenameB := filepath.Base(pathB)
+			if filenameA == filenameB {
+				// Use the more descriptive key
+				matchKey := keyA
+				if len(keyB) > len(keyA) {
+					matchKey = keyB
+				}
+				matches[matchKey] = PathMatch{
+					PathA: pathA,
+					PathB: pathB,
+				}
+				matchedA[keyA] = true
+				matchedB[keyB] = true
+				break
+			}
+		}
+	}
+
 	return matches, nil
 }

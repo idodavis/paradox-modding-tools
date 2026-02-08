@@ -5,6 +5,7 @@
   import { Card, CardBody, Toast } from "@components";
   import Icon from "@iconify/svelte";
   import CompareTool from "@pages/CompareTool.svelte";
+  import ModdingDocs from "@pages/ModdingDocs.svelte";
   import Settings from "@pages/Settings.svelte";
   import { game, currentPage, gotoPage, loadSettings } from "@stores/app";
   import { GetLatestPatchNotes } from "@services/settingsservice";
@@ -26,7 +27,7 @@
 </script>
 
 <Toast />
-<!-- TODO: Look at Daisyui Hero Image OVerlay for the background piece of this page -->
+<!-- TODO: Look at Daisyui Hero Image OVerlay for the background piece of this -->
 <div class="min-h-screen flex flex-col">
   <!-- Navbar (solid, on top of background) -->
   <div class="navbar bg-(--navbar-bg) shadow-sm p-6 z-10">
@@ -79,7 +80,10 @@
                 for CK3 and EU5.
               </p>
               <div class="card-actions justify-end">
-                <button class="btn btn-primary btn-outline btn-sm">Open</button>
+                <button
+                  class="btn btn-primary btn-outline btn-sm"
+                  onclick={() => gotoPage("modding-docs")}>Open</button
+                >
               </div>
             </CardBody>
           </Card>
@@ -157,15 +161,19 @@
 
     <!-- Background layers (behind navbar and content) -->
     <div
-      class="absolute inset-0 z-0 bg-cover bg-center opacity-30"
+      class="absolute inset-0 z-0 bg-cover bg-center opacity-55"
       style="background-image: url({backgroundImage})"
     ></div>
     <div
-      class="absolute inset-0 z-0 bg-[radial-gradient(ellipse_at_center,var(--color-base-200)_0%,transparent_65%)]"
+      class="absolute inset-0 z-0 bg-[radial-gradient(ellipse_at_center,var(--color-base-200)_0%,transparent_75%)]"
     ></div>
   {:else if $currentPage === "compare-tool"}
     <main>
       <CompareTool />
+    </main>
+  {:else if $currentPage === "modding-docs"}
+    <main>
+      <ModdingDocs />
     </main>
   {:else if $currentPage === "settings"}
     <main>

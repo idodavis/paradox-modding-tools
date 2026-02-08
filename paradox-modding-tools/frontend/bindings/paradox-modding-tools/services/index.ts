@@ -3,23 +3,21 @@
 
 import * as BrowserService from "./browserservice.js";
 import * as CompareService from "./compareservice.js";
-import * as DiffService from "./diffservice.js";
 import * as FileService from "./fileservice.js";
+import * as ModDocService from "./moddocservice.js";
 import * as SettingsService from "./settingsservice.js";
 export {
     BrowserService,
     CompareService,
-    DiffService,
     FileService,
+    ModDocService,
     SettingsService
 };
 
 export {
     AppSettings,
-    DiffLine,
     DocFileEntry,
-    DocPathCache,
-    DocPathCacheSet,
+    FileCollectorFilter,
     LatestPatchNotes,
     PathMatch
 } from "./models.js";

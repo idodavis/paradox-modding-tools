@@ -18,8 +18,8 @@ import * as $models from "./models.js";
  * CollectFilesFromPaths collects all .txt files from a mix of files and directories
  * Returns a map of relativePath -> fullPath
  */
-export function CollectFilesFromPaths(inputPaths: string[]): $CancellablePromise<{ [_ in string]?: string }> {
-    return $Call.ByID(1545587832, inputPaths).then(($result: any) => {
+export function CollectFilesFromPaths(inputPaths: string[], filter: $models.FileCollectorFilter): $CancellablePromise<{ [_ in string]?: string }> {
+    return $Call.ByID(1545587832, inputPaths, filter).then(($result: any) => {
         return $$createType0($result);
     });
 }

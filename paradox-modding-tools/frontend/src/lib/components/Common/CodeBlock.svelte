@@ -1,13 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Icon from "@iconify/svelte";
-  import {
-    type BundledLanguage,
-    type BundledTheme,
-    type HighlighterGeneric,
-  } from "shiki";
+  import type { Highlighter } from "shiki";
   import { CopyToClipboard } from "@services/clipboardservice";
   import { getHighlighter } from "@utils/shiki";
+  import { Dialog } from "@components";
 
   let {
     content,
@@ -27,85 +24,115 @@
     class?: string;
   } = $props();
 
-  let highlighter = $state<HighlighterGeneric<
-    BundledLanguage,
-    BundledTheme
-  > | null>(null);
+  let highlighter = $state<Highlighter | null>(null);
   let html = $state<string | null>(null);
-  let fullScreenVisible = $state(false);
+  let fullscreenOpen = $state(false);
 
-  onMount(async () => {
-    highlighter = await getHighlighter();
+  const name = $derived(
+    typeof filename === "string"
+      ? filename
+      : ((filename as { name?: string })?.name ?? "Select a file"),
+  );
+
+  onMount(() => {
+    getHighlighter().then((h) => (highlighter = h));
   });
 
   $effect(() => {
     const h = highlighter;
     const c = content;
-    const lang = language;
-    if (!h || c == null || c === "") return;
-    html = h.codeToHtml(c, { lang, theme: "one-dark-pro" });
+    if (!h || !c) {
+      html = null;
+      return;
+    }
+    Promise.resolve(h.codeToHtml(c, { lang: language, theme: "one-dark-pro" }))
+      .then((r) => (html = r))
+      .catch(() => (html = null));
   });
 
-  const contentLines = $derived(content.split("\n"));
+  function copy() {
+    CopyToClipboard(String(content ?? ""));
+  }
+
+  const lines = $derived((content ?? "").split("\n"));
 </script>
 
-<div class="flex flex-col p-2 bg-dark-input {codeBlockClass}">
-  <div class="p-2 border-b border-base-content/20 flex justify-between gap-2">
-    <span>{{ filename }}</span>
-    {#if showCopyButton || showFullScreenButton}
-      <div class="flex items-center gap-1">
+<div
+  class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-1 bg-dark-input {codeBlockClass}"
+>
+  <div class="flex justify-between gap-2 border-b border-base-content/20 pb-2">
+    <span class="truncate" title={name}>{name}</span>
+    {#if (showCopyButton || showFullScreenButton) && content}
+      <div class="flex gap-1">
         {#if showCopyButton}
           <button
-            onclick={() => CopyToClipboard(content)}
-            class="btn btn-soft btn-secondary"
+            type="button"
+            class="btn btn-soft btn-secondary btn"
+            onclick={copy}
           >
-            <Icon icon="mdi:copy" />
+            <Icon icon="mdi:content-copy" />
           </button>
         {/if}
         {#if showFullScreenButton}
           <button
-            onclick={() => (fullScreenVisible = true)}
-            class="btn btn-soft btn-secondary"
+            type="button"
+            class="btn btn-soft btn-secondary btn"
+            onclick={() => (fullscreenOpen = true)}
           >
-            <Icon icon="mdi:window-maximize" />
+            <Icon icon="mdi:fullscreen" />
           </button>
         {/if}
       </div>
     {/if}
   </div>
-  <div class="mockup-code w-full bg-dark-input">
+  <div
+    class="min-h-0 flex-1 overflow-auto text-left [&_pre]:whitespace-pre [&_pre]:!m-0 [&_pre]:!p-2"
+  >
     {#if content}
-      {#each contentLines as line, index}
-        <pre data-prefix={index + 1}><code>{line}</code></pre>
-      {/each}
+      {#if html}
+        <div class="min-w-max p-2">{@html html}</div>
+      {:else}
+        <div class="mockup-code w-full min-w-max bg-dark-input">
+          {#each lines as line, i}
+            <pre data-prefix={String(i + 1)}><code>{line}</code></pre>
+          {/each}
+        </div>
+      {/if}
     {:else}
       <p class="p-4">{placeholder}</p>
     {/if}
   </div>
-  {#if fullScreenVisible}
-    <dialog
-      id="my_modal_3"
-      class="modal fixed inset-0 w-screen h-screen bg-dark-input"
-    >
-      <div class="modal-box">
-        <form method="dialog">
-          <button class="btn btn-circle btn-ghost absolute right-2 top-2"
-            >✕</button
-          >
-        </form>
-        <div class="mockup-code w-full bg-dark-input">
-          <h3 class="text-lg font-bold p-2 border-b border-base-content/20">
-            {filename}
-          </h3>
-          {#if content}
-            {#each contentLines as line, index}
-              <pre data-prefix={index + 1}><code>{line}</code></pre>
-            {/each}
-          {:else}
-            <p class="p-4">{placeholder}</p>
-          {/if}
-        </div>
-      </div>
-    </dialog>
-  {/if}
 </div>
+
+<Dialog
+  bind:open={fullscreenOpen}
+  contentProps={{
+    class:
+      "fixed inset-0 z-50 w-full h-full bg-dark-input flex-col overflow-auto",
+  }}
+>
+  {#snippet title()}
+    <div
+      class="flex justify-between items-center p-2 border-b border-base-content/20"
+    >
+      <h3 class="font-bold truncate pl-2">{name}</h3>
+      <button
+        class="btn btn-circle btn-ghost btn-sm"
+        onclick={() => (fullscreenOpen = false)}>✕</button
+      >
+    </div>
+  {/snippet}
+  {#snippet description()}
+    <div class="min-h-0 flex-1 overflow-auto text-left [&_pre]:!p-2">
+      {#if html}
+        <div class="min-w-max p-2">{@html html}</div>
+      {:else}
+        <div class="mockup-code w-full min-w-max bg-dark-input">
+          {#each lines as line, i}
+            <pre data-prefix={String(i + 1)}><code>{line}</code></pre>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/snippet}
+</Dialog>

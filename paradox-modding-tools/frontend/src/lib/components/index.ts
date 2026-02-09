@@ -8,3 +8,4 @@ export { default as Grid } from './Common/Grid.svelte';
 export { default as DiffViewer } from './Common/DiffViewer.svelte';
 export { default as FileTree } from './Common/FileTree.svelte';
 export { default as CodeBlock } from './Common/CodeBlock.svelte';
+export { default as Dialog } from './bits/Dialog.svelte';

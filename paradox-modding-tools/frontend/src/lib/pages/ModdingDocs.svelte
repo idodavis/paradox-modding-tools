@@ -65,7 +65,7 @@
       tabGroup="modding-docs"
       label="Script docs"
       selected
-      contentClass="flex flex-col bg-base-300 border-base-300"
+      contentClass="flex flex-col min-h-0 bg-base-300 border-base-300 h-[calc(100vh-6rem)]"
       ><Card>
         <CardBody>
           <div class="flex flex-wrap items-end gap-4">
@@ -95,30 +95,33 @@
           </div>
         </CardBody>
       </Card>
-      <Card class="flex-1 min-h-0 flex flex-col">
-        <CardBody>
-          <div class="flex flex-1 rounded-lg border border-base-content/20">
-            <div class="flex-1 flex flex-col overflow-hidden bg-base-200">
+      <Card class="flex-1 min-h-0 min-w-0 flex flex-col">
+        <CardBody class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2">
+          <div class="flex flex-1 min-h-0 min-w-0 overflow-hidden rounded-lg border border-base-content/20">
+            <div class="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-base-200 rounded-l-lg">
               <input
                 type="text"
-                class="input w-full"
+                class="input input-sm w-full rounded-none"
                 bind:value={filterText}
                 oninput={(e: Event) =>
                   (filterText = (e.target as HTMLInputElement).value)}
                 placeholder="Filter by filename"
               />
-              <FileTree
-                tree={docTree}
-                filter={filterText}
-                fileColor="text-accent"
-                {onFileClick}
-              />
+              <div class="flex-1 min-h-0 overflow-auto">
+                <FileTree
+                  tree={docTree}
+                  filter={filterText}
+                  fileColor="text-accent"
+                  {onFileClick}
+                />
+              </div>
             </div>
-            <div class="flex-1 bg-dark-input">
+            <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-dark-input rounded-r-lg">
               <CodeBlock
-                class="min-h-200"
                 content={selectedEntry?.content ?? ""}
-                filename={selectedEntry?.name ?? "Select a file"}
+                filename={selectedEntry?.name != null
+                  ? String(selectedEntry.name)
+                  : "Select a file"}
                 placeholder="Select a file to view content"
                 language="hcl"
               />

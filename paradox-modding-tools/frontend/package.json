@@ -16,6 +16,7 @@
     "@tailwindcss/vite": "^4.1.18",
     "@wailsio/runtime": "latest",
     "ag-grid-community": "^35.0.1",
+    "bits-ui": "^2.15.5",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {

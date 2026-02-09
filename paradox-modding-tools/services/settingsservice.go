@@ -22,21 +22,17 @@ const (
 	docpathsCacheFileName   = "modding-docs-cache.json"
 	patchnotesCacheTTL      = 7 * 24 * time.Hour
 
-	// Steam app IDs (used for SteamDB PatchnotesRSS)
-	steamAppIDCK3 = "1158310"
-	steamAppIDEU5 = "3450310"
-
 	steamDBPatchnotesRSS = "https://steamdb.info/api/PatchnotesRSS/?appid="
 )
+
+// SettingsService provides persisted app settings, doc path cache, and latest patch notes (SteamDB RSS).
+type SettingsService struct{}
 
 // AppSettings holds persisted app settings (JSON-safe for bindings).
 type AppSettings struct {
 	GameInstallPathCk3 string `json:"gameInstallPathCk3"`
 	GameInstallPathEu5 string `json:"gameInstallPathEu5"`
 }
-
-// SettingsService provides persisted app settings, doc path cache, and latest patch notes (SteamDB RSS).
-type SettingsService struct{}
 
 // settingsPath returns the path to settings.json in the app config directory.
 func settingsPath() (string, error) {

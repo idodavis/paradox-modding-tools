@@ -1,11 +1,27 @@
 import { writable, get } from 'svelte/store';
-import { SaveSettings, GetSettings } from '../../../bindings/paradox-modding-tools/services/settingsservice';
+import { SaveSettings, GetSettings } from '@services/settingsservice';
+import { GetAppConstants } from '@services/constantsservice';
+import type { AppConstants } from '@services/models';
 
 export const game = writable<'CK3' | 'EU5'>('CK3');
 export const currentPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs'>('hub');
 export const lastPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs'>('hub');
 export const gameInstallPathCk3 = writable<string>('');
 export const gameInstallPathEu5 = writable<string>('');
+export const appConstants = writable<AppConstants>({
+  ck3: {
+    steamAppId: '',
+    wikiUrl: '',
+    docFileName: '',
+    scriptRootFolder: '',
+  },
+  eu5: {
+    steamAppId: '',
+    wikiUrl: '',
+    docFileName: '',
+    scriptRootFolder: '',
+  },
+});
 
 export function gotoPage(page: 'hub' | 'settings' | 'compare-tool' | 'modding-docs') {
   currentPage.update((current) => {
@@ -33,3 +49,7 @@ export async function saveSettings() {
   });
 }
 
+export async function loadAppConstants() {
+  const constants = await GetAppConstants();
+  appConstants.set(constants);
+}

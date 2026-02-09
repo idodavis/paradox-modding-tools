@@ -7,7 +7,13 @@
   import CompareTool from "@pages/CompareTool.svelte";
   import ModdingDocs from "@pages/ModdingDocs.svelte";
   import Settings from "@pages/Settings.svelte";
-  import { game, currentPage, gotoPage, loadSettings } from "@stores/app";
+  import {
+    game,
+    currentPage,
+    gotoPage,
+    loadSettings,
+    loadAppConstants,
+  } from "@stores/app";
   import { GetLatestPatchNotes } from "@services/settingsservice";
   import { OpenURL } from "@services/browserservice";
   import type { LatestPatchNotes } from "@services/models";
@@ -17,6 +23,7 @@
 
   onMount(() => {
     loadSettings();
+    loadAppConstants();
     GetLatestPatchNotes("CK3").then((result) => {
       latestPatchNotes["CK3"] = result;
     });
@@ -30,7 +37,7 @@
 <!-- TODO: Look at Daisyui Hero Image OVerlay for the background piece of this -->
 <div class="min-h-screen flex flex-col">
   <!-- Navbar (solid, on top of background) -->
-  <div class="navbar bg-(--navbar-bg) shadow-sm p-6 z-10">
+  <div class="navbar bg-navbar shadow-sm p-6 z-10">
     <button
       class="navbar-start gap-4 cursor-pointer hover:opacity-80 transition-opacity"
       onclick={() => gotoPage("hub")}

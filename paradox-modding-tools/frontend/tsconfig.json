@@ -15,7 +15,8 @@
       "@components/wrappers/*": ["./src/lib/components/wrappers/*"],
       "@pages/*": ["./src/lib/pages/*"],
       "@stores/*": ["./src/lib/stores/*"],
-      "@assets/*": ["./src/assets/*"]
+      "@assets/*": ["./src/assets/*"],
+      "@utils/*": ["./src/lib/utils/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "bindings"],

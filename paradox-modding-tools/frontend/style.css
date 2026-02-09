@@ -2,11 +2,8 @@
 @plugin "daisyui";
 
 @theme {
-  --font-sans: 'Rockwell Nova', 'Roboto Slab', 'DejaVu Serif', 'Sitka Small', serif;
-}
-
-:root {
-  --navbar-bg: hsl(222, 26%, 7%)
+  --color-navbar: hsl(222, 26%, 7%);
+  --color-dark-input: #151922;
 }
 
 @plugin "daisyui/theme" {

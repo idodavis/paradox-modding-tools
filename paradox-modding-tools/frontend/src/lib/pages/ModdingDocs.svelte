@@ -1,21 +1,55 @@
 <script lang="ts">
-  import { Tab, Tabs, Card, CardBody } from "@components";
-  import { game, gameInstallPathCk3, gameInstallPathEu5 } from "@stores/app";
-  import { Scan } from "@services/moddocservice";
+  import { onMount } from "svelte";
+  import { Tab, Tabs, Card, CardBody, FileTree, CodeBlock } from "@components";
+  import {
+    game,
+    gameInstallPathCk3,
+    gameInstallPathEu5,
+    appConstants,
+  } from "@stores/app";
+  import { Scan, GetDocPathCache } from "@services/moddocservice";
+  import { BuildTree, ReadFileContent } from "@services/fileservice";
+  import type { TreeNode } from "@services/models";
 
   const currentInstallPath = $derived(
     $game === "CK3" ? $gameInstallPathCk3 : $gameInstallPathEu5,
   );
+  const currentScriptRootFolder = $derived(
+    $game === "CK3"
+      ? $appConstants.ck3.scriptRootFolder
+      : $appConstants.eu5.scriptRootFolder,
+  );
 
   let filterText = $state("");
   let docFiles = $state<string[]>([]);
+  let docTree = $state<TreeNode[]>([]);
+  let selectedEntry = $state<{ name: string; content: string }>();
+
+  // Load the cache if it exists
+  onMount(async () => {
+    const cache = await GetDocPathCache($game, currentInstallPath);
+    if (cache) {
+      docFiles = cache.paths;
+      docTree = await BuildTree(docFiles);
+    }
+  });
 
   async function scan() {
     try {
       docFiles = await Scan($game, currentInstallPath);
+      docTree = await BuildTree(docFiles);
     } catch (error) {
       console.error(error);
     }
+  }
+
+  async function onFileClick(file: TreeNode) {
+    selectedEntry = {
+      name: file.name,
+      content: await ReadFileContent(
+        currentInstallPath + "/" + currentScriptRootFolder + "/" + file.relPath,
+      ),
+    };
   }
 
   const wikiUrl = $derived(
@@ -31,12 +65,12 @@
       tabGroup="modding-docs"
       label="Script docs"
       selected
-      contentClass="bg-base-300 border-base-300 p-2"
+      contentClass="flex flex-col bg-base-300 border-base-300"
       ><Card>
         <CardBody>
           <div class="flex flex-wrap items-end gap-4">
             <div class="min-w-200">
-              <fieldset class="fieldset mb-4">
+              <fieldset class="fieldset">
                 <legend class="fieldset-legend text-base-content/90"
                   >Game install path:</legend
                 >
@@ -58,17 +92,13 @@
                 </button>
               </fieldset>
             </div>
-          </div></CardBody
-        >
+          </div>
+        </CardBody>
       </Card>
-      <Card>
+      <Card class="flex-1 min-h-0 flex flex-col">
         <CardBody>
-          <div
-            class="flex flex-1 min-h-0 overflow-hidden rounded-lg border border-(--p-surface-800)"
-          >
-            <div
-              class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-l pr-1"
-            >
+          <div class="flex flex-1 rounded-lg border border-base-content/20">
+            <div class="flex-1 flex flex-col overflow-hidden bg-base-200">
               <input
                 type="text"
                 class="input w-full"
@@ -77,23 +107,21 @@
                   (filterText = (e.target as HTMLInputElement).value)}
                 placeholder="Filter by filename"
               />
-              <div class="flex-1 min-h-0 overflow-auto">
-                <!-- TODO: Finish FileTree component -->
-                <!-- <FileTree files={docFiles} /> -->
-              </div>
+              <FileTree
+                tree={docTree}
+                filter={filterText}
+                fileColor="text-accent"
+                {onFileClick}
+              />
             </div>
-            <div
-              class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-r -ml-px"
-            >
-              <!-- TODO: Finish CodeBlock component -->
-              <!-- <CodeBlock
-                v-if="fileContent !== null"
-                :content="fileContent"
-                :filename="selectedEntry?.relativePath ?? 'Select a file'"
-              /> -->
-              <p class="p-4 text-slate-400 bg-dark-input">
-                Select a file to view content.
-              </p>
+            <div class="flex-1 bg-dark-input">
+              <CodeBlock
+                class="min-h-200"
+                content={selectedEntry?.content ?? ""}
+                filename={selectedEntry?.name ?? "Select a file"}
+                placeholder="Select a file to view content"
+                language="hcl"
+              />
             </div>
           </div>
         </CardBody>

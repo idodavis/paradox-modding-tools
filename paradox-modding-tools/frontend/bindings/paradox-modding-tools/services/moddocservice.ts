@@ -5,11 +5,26 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
+/**
+ * GetDocPathCache returns the cached doc path list for the game+install path, or nil if not found.
+ */
+export function GetDocPathCache(game: string, installPath: string): $CancellablePromise<$models.DocPathCache | null> {
+    return $Call.ByID(4098167898, game, installPath).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 export function Scan(game: string, installPath: string): $CancellablePromise<string[]> {
     return $Call.ByID(3940026476, game, installPath).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType2($result);
     });
 }
 
 // Private type creation functions
-const $$createType0 = $Create.Array($Create.Any);
+const $$createType0 = $models.DocPathCache.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);
+const $$createType2 = $Create.Array($Create.Any);

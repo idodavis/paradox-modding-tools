@@ -83,71 +83,9 @@ func (f *FileService) SelectFiles(title, filter string) ([]string, error) {
 	return paths, err
 }
 
-// DocFileEntry represents a doc file found under the game script root (JSON-safe for bindings).
-type DocFileEntry struct {
-	RelativePath string `json:"relativePath"`
-	FullPath     string `json:"fullPath"`
-}
-
-// ListGameDocFiles walks the game script root and collects .info (CK3) or readme.txt (EU5) files.
-func (f *FileService) ListGameDocFiles(game string, installPath string) ([]DocFileEntry, error) {
-	root, err := f.GetGameScriptRoot(installPath, game)
-	if err != nil {
-		return nil, err
-	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return nil, fmt.Errorf("script root %s: %w", root, err)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("script root is not a directory: %s", root)
-	}
-	gameNorm := strings.ToLower(strings.TrimSpace(game))
-	var matchExt string
-	var matchExact string
-	if gameNorm == "ck3" {
-		matchExt = ".info"
-	} else if gameNorm == "eu5" {
-		matchExact = "readme.txt"
-	} else {
-		return nil, fmt.Errorf("unknown game: %s", game)
-	}
-	var result []DocFileEntry
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		name := info.Name()
-		if matchExact != "" {
-			if strings.EqualFold(name, matchExact) {
-				rel, e := filepath.Rel(root, path)
-				if e != nil {
-					return e
-				}
-				result = append(result, DocFileEntry{RelativePath: filepath.ToSlash(rel), FullPath: path})
-			}
-			return nil
-		}
-		if strings.HasSuffix(strings.ToLower(name), matchExt) {
-			rel, e := filepath.Rel(root, path)
-			if e != nil {
-				return e
-			}
-			result = append(result, DocFileEntry{RelativePath: filepath.ToSlash(rel), FullPath: path})
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 // ReadFileContent reads a file as UTF-8 text.
 func (f *FileService) ReadFileContent(fullPath string) (string, error) {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
@@ -160,9 +98,9 @@ func (f *FileService) ReadFileContent(fullPath string) (string, error) {
 func (f *FileService) GetGameScriptRoot(game string, installPath string) (string, error) {
 	switch game {
 	case "CK3":
-		return filepath.Join(installPath, "game"), nil
+		return filepath.Join(installPath, scriptRootFolderCK3), nil
 	case "EU5":
-		return filepath.Join(installPath, "game", "in_game"), nil
+		return filepath.Join(installPath, scriptRootFolderEU5), nil
 	default:
 		return "", fmt.Errorf("unknown game: %s", game)
 	}
@@ -310,4 +248,36 @@ func (f *FileService) FindMatchingPaths(filesA, filesB map[string]string) (map[s
 	}
 
 	return matches, nil
+}
+
+type TreeNode struct {
+	RelPath  string     `json:"relPath"`
+	Name     string     `json:"name"`
+	Children []TreeNode `json:"children"`
+}
+
+// BuildTree builds a file tree from a list of paths
+func (f *FileService) BuildTree(paths []string) []TreeNode {
+	var tree []TreeNode
+	for _, path := range paths {
+		tree = AddToTree(tree, path, strings.Split(filepath.ToSlash(path), "/"))
+	}
+	return tree
+}
+
+// AddToTree adds a node to the tree recursively
+func AddToTree(root []TreeNode, relPath string, nodeNames []string) []TreeNode {
+	if len(nodeNames) > 0 {
+		var i int
+		for i = 0; i < len(root); i++ {
+			if root[i].Name == nodeNames[0] { // already in tree
+				break
+			}
+		}
+		if i == len(root) {
+			root = append(root, TreeNode{RelPath: relPath, Name: nodeNames[0]})
+		}
+		root[i].Children = AddToTree(root[i].Children, relPath, nodeNames[1:])
+	}
+	return root
 }

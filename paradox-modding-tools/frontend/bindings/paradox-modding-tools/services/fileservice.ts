@@ -15,12 +15,21 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
+ * BuildTree builds a file tree from a list of paths
+ */
+export function BuildTree(paths: string[]): $CancellablePromise<$models.TreeNode[]> {
+    return $Call.ByID(4120140263, paths).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
  * CollectFilesFromPaths collects all .txt files from a mix of files and directories
  * Returns a map of relativePath -> fullPath
  */
 export function CollectFilesFromPaths(inputPaths: string[], filter: $models.FileCollectorFilter): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(1545587832, inputPaths, filter).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType2($result);
     });
 }
 
@@ -30,7 +39,7 @@ export function CollectFilesFromPaths(inputPaths: string[], filter: $models.File
  */
 export function FindMatchingPaths(filesA: { [_ in string]?: string }, filesB: { [_ in string]?: string }): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
     return $Call.ByID(2990739391, filesA, filesB).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -40,15 +49,6 @@ export function FindMatchingPaths(filesA: { [_ in string]?: string }, filesB: { 
  */
 export function GetGameScriptRoot(game: string, installPath: string): $CancellablePromise<string> {
     return $Call.ByID(4081809646, game, installPath);
-}
-
-/**
- * ListGameDocFiles walks the game script root and collects .info (CK3) or readme.txt (EU5) files.
- */
-export function ListGameDocFiles(game: string, installPath: string): $CancellablePromise<$models.DocFileEntry[]> {
-    return $Call.ByID(1629466670, game, installPath).then(($result: any) => {
-        return $$createType4($result);
-    });
 }
 
 /**
@@ -95,9 +95,9 @@ export function SelectSingleFile(title: string, filter: string): $CancellablePro
 }
 
 // Private type creation functions
-const $$createType0 = $Create.Map($Create.Any, $Create.Any);
-const $$createType1 = $models.PathMatch.createFrom;
-const $$createType2 = $Create.Map($Create.Any, $$createType1);
-const $$createType3 = $models.DocFileEntry.createFrom;
-const $$createType4 = $Create.Array($$createType3);
+const $$createType0 = $models.TreeNode.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $Create.Map($Create.Any, $Create.Any);
+const $$createType3 = $models.PathMatch.createFrom;
+const $$createType4 = $Create.Map($Create.Any, $$createType3);
 const $$createType5 = $Create.Array($Create.Any);

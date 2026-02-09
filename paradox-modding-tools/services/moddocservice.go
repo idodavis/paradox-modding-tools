@@ -28,22 +28,24 @@ type DocPathCacheSet struct {
 	LastSeenUpdateId string   `json:"lastSeenUpdateId,omitempty"`
 }
 
+// TODO: Look Into Moving Cache to it's own service and migrate settings/patchnotes caches there as well.
+// TODO: Add a way to clear the cache.
+
 func (m *ModDocService) Scan(game string, installPath string) ([]string, error) {
 	// Check if the cache is valid
-	cache, err := m.getDocPathCache(game, installPath)
+	cache, err := m.GetDocPathCache(game, installPath)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse the scanned at date
-	scannedAt, err := time.Parse(time.RFC3339, cache.ScannedAt)
-	if err != nil {
-		return nil, err
-	}
-
-	// If cache is valid, return the paths
-	if cache != nil && time.Since(scannedAt) < time.Hour*24*7 {
-		return cache.Paths, nil
+	if cache != nil {
+		scannedAt, err := time.Parse(time.RFC3339, cache.ScannedAt)
+		if err != nil {
+			return nil, err
+		}
+		if time.Since(scannedAt) < time.Hour*24*7 {
+			return cache.Paths, nil
+		}
 	}
 
 	// If cache is empty, scan the game script root
@@ -71,8 +73,8 @@ func (m *ModDocService) Scan(game string, installPath string) ([]string, error) 
 
 	// Convert the files map to a slice of strings
 	filesSlice := make([]string, 0, len(files))
-	for _, file := range files {
-		filesSlice = append(filesSlice, file)
+	for relPath := range files {
+		filesSlice = append(filesSlice, relPath)
 	}
 
 	// Set/update the cache
@@ -111,7 +113,7 @@ func loadDocpathsCache() (map[string]*DocPathCache, error) {
 }
 
 // GetDocPathCache returns the cached doc path list for the game+install path, or nil if not found.
-func (m *ModDocService) getDocPathCache(game, installPath string) (*DocPathCache, error) {
+func (m *ModDocService) GetDocPathCache(game, installPath string) (*DocPathCache, error) {
 	game = strings.ToLower(strings.TrimSpace(game))
 	installPath = strings.TrimSpace(installPath)
 	if game == "" || installPath == "" {

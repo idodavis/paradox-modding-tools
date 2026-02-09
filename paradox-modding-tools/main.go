@@ -34,6 +34,8 @@ func main() {
 			application.NewService(&services.CompareService{}),
 			application.NewService(&services.ModDocService{}),
 			application.NewService(&services.SettingsService{}),
+			application.NewService(&services.ConstantsService{}),
+			application.NewService(&services.ClipboardService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

@@ -5,6 +5,39 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+export class AppConstants {
+    "ck3": CK3Constants;
+    "eu5": EU5Constants;
+
+    /** Creates a new AppConstants instance. */
+    constructor($$source: Partial<AppConstants> = {}) {
+        if (!("ck3" in $$source)) {
+            this["ck3"] = (new CK3Constants());
+        }
+        if (!("eu5" in $$source)) {
+            this["eu5"] = (new EU5Constants());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new AppConstants instance from a string or object.
+     */
+    static createFrom($$source: any = {}): AppConstants {
+        const $$createField0_0 = $$createType0;
+        const $$createField1_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("ck3" in $$parsedSource) {
+            $$parsedSource["ck3"] = $$createField0_0($$parsedSource["ck3"]);
+        }
+        if ("eu5" in $$parsedSource) {
+            $$parsedSource["eu5"] = $$createField1_0($$parsedSource["eu5"]);
+        }
+        return new AppConstants($$parsedSource as Partial<AppConstants>);
+    }
+}
+
 /**
  * AppSettings holds persisted app settings (JSON-safe for bindings).
  */
@@ -33,31 +66,106 @@ export class AppSettings {
     }
 }
 
-/**
- * DocFileEntry represents a doc file found under the game script root (JSON-safe for bindings).
- */
-export class DocFileEntry {
-    "relativePath": string;
-    "fullPath": string;
+export class CK3Constants {
+    "steamAppId": string;
+    "wikiUrl": string;
+    "scriptRootFolder": string;
+    "docFileName": string;
 
-    /** Creates a new DocFileEntry instance. */
-    constructor($$source: Partial<DocFileEntry> = {}) {
-        if (!("relativePath" in $$source)) {
-            this["relativePath"] = "";
+    /** Creates a new CK3Constants instance. */
+    constructor($$source: Partial<CK3Constants> = {}) {
+        if (!("steamAppId" in $$source)) {
+            this["steamAppId"] = "";
         }
-        if (!("fullPath" in $$source)) {
-            this["fullPath"] = "";
+        if (!("wikiUrl" in $$source)) {
+            this["wikiUrl"] = "";
+        }
+        if (!("scriptRootFolder" in $$source)) {
+            this["scriptRootFolder"] = "";
+        }
+        if (!("docFileName" in $$source)) {
+            this["docFileName"] = "";
         }
 
         Object.assign(this, $$source);
     }
 
     /**
-     * Creates a new DocFileEntry instance from a string or object.
+     * Creates a new CK3Constants instance from a string or object.
      */
-    static createFrom($$source: any = {}): DocFileEntry {
+    static createFrom($$source: any = {}): CK3Constants {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new DocFileEntry($$parsedSource as Partial<DocFileEntry>);
+        return new CK3Constants($$parsedSource as Partial<CK3Constants>);
+    }
+}
+
+/**
+ * DocPathCache is the cached doc path list for a game+install path (JSON-safe for bindings).
+ */
+export class DocPathCache {
+    "paths": string[];
+    "scannedAt": string;
+    "installPath": string;
+    "lastSeenUpdateId"?: string;
+
+    /** Creates a new DocPathCache instance. */
+    constructor($$source: Partial<DocPathCache> = {}) {
+        if (!("paths" in $$source)) {
+            this["paths"] = [];
+        }
+        if (!("scannedAt" in $$source)) {
+            this["scannedAt"] = "";
+        }
+        if (!("installPath" in $$source)) {
+            this["installPath"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DocPathCache instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DocPathCache {
+        const $$createField0_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("paths" in $$parsedSource) {
+            $$parsedSource["paths"] = $$createField0_0($$parsedSource["paths"]);
+        }
+        return new DocPathCache($$parsedSource as Partial<DocPathCache>);
+    }
+}
+
+export class EU5Constants {
+    "steamAppId": string;
+    "wikiUrl": string;
+    "scriptRootFolder": string;
+    "docFileName": string;
+
+    /** Creates a new EU5Constants instance. */
+    constructor($$source: Partial<EU5Constants> = {}) {
+        if (!("steamAppId" in $$source)) {
+            this["steamAppId"] = "";
+        }
+        if (!("wikiUrl" in $$source)) {
+            this["wikiUrl"] = "";
+        }
+        if (!("scriptRootFolder" in $$source)) {
+            this["scriptRootFolder"] = "";
+        }
+        if (!("docFileName" in $$source)) {
+            this["docFileName"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new EU5Constants instance from a string or object.
+     */
+    static createFrom($$source: any = {}): EU5Constants {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new EU5Constants($$parsedSource as Partial<EU5Constants>);
     }
 }
 
@@ -96,8 +204,8 @@ export class FileCollectorFilter {
      * Creates a new FileCollectorFilter instance from a string or object.
      */
     static createFrom($$source: any = {}): FileCollectorFilter {
-        const $$createField0_0 = $$createType0;
-        const $$createField1_0 = $$createType0;
+        const $$createField0_0 = $$createType2;
+        const $$createField1_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Extensions" in $$parsedSource) {
             $$parsedSource["Extensions"] = $$createField0_0($$parsedSource["Extensions"]);
@@ -169,5 +277,42 @@ export class PathMatch {
     }
 }
 
+export class TreeNode {
+    "relPath": string;
+    "name": string;
+    "children": TreeNode[];
+
+    /** Creates a new TreeNode instance. */
+    constructor($$source: Partial<TreeNode> = {}) {
+        if (!("relPath" in $$source)) {
+            this["relPath"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("children" in $$source)) {
+            this["children"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TreeNode instance from a string or object.
+     */
+    static createFrom($$source: any = {}): TreeNode {
+        const $$createField2_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("children" in $$parsedSource) {
+            $$parsedSource["children"] = $$createField2_0($$parsedSource["children"]);
+        }
+        return new TreeNode($$parsedSource as Partial<TreeNode>);
+    }
+}
+
 // Private type creation functions
-const $$createType0 = $Create.Array($Create.Any);
+const $$createType0 = CK3Constants.createFrom;
+const $$createType1 = EU5Constants.createFrom;
+const $$createType2 = $Create.Array($Create.Any);
+const $$createType3 = TreeNode.createFrom;
+const $$createType4 = $Create.Array($$createType3);

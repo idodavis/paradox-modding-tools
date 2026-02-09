@@ -6,7 +6,7 @@
   import { ReadFileContent } from "@services/fileservice";
   import { onMount, onDestroy } from "svelte";
 
-  // TODO: Cleanup and maybe use daisyui modal or something for some of the styling
+  // TODO: Cleanup and and look into bits-ui Dialog component for better implementation.
 
   let {
     oldFile,

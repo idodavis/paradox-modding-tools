@@ -53,9 +53,7 @@
   }
 
   const wikiUrl = $derived(
-    $game === "EU5"
-      ? "https://eu5.paradoxwikis.com/Modding"
-      : "https://ck3.paradoxwikis.com/Modding",
+    $game === "CK3" ? $appConstants.ck3.wikiUrl : $appConstants.eu5.wikiUrl,
   );
 </script>
 
@@ -65,49 +63,73 @@
       tabGroup="modding-docs"
       label="Script docs"
       selected
-      contentClass="flex flex-col min-h-0 bg-base-300 border-base-300 h-[calc(100vh-6rem)]"
+      contentClass="flex flex-col min-h-0 bg-base-300 border-base-300 h-[calc(92vh-6rem)]"
       ><Card>
         <CardBody>
-          <div class="flex flex-wrap items-end gap-4">
-            <div class="min-w-200">
-              <fieldset class="fieldset">
-                <legend class="fieldset-legend text-base-content/90"
-                  >Game install path:</legend
-                >
-                <input
-                  type="text"
-                  class="input w-full max-w-2xl"
-                  readonly
-                  value={$game === "CK3"
-                    ? $gameInstallPathCk3
-                    : $gameInstallPathEu5}
-                  placeholder="Set in Settings (gear icon in header)"
-                />
-                <button
-                  type="button"
-                  class="btn btn-soft btn-accent btn-wide"
-                  onclick={scan}
-                >
-                  Scan
-                </button>
-              </fieldset>
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend text-base-content/90"
+              >Game install path:</legend
+            >
+            <div class="flex gap-2">
+              <input
+                type="text"
+                class="input flex-1 min-w-0"
+                readonly
+                value={$game === "CK3"
+                  ? $gameInstallPathCk3
+                  : $gameInstallPathEu5}
+                placeholder="Set in Settings (gear icon in header)"
+              />
+              <button
+                type="button"
+                class="btn btn-soft btn-accent"
+                onclick={scan}
+              >
+                Scan
+              </button>
             </div>
-          </div>
+          </fieldset>
         </CardBody>
       </Card>
       <Card class="flex-1 min-h-0 min-w-0 flex flex-col">
-        <CardBody class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2">
-          <div class="flex flex-1 min-h-0 min-w-0 overflow-hidden rounded-lg border border-base-content/20">
-            <div class="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-base-200 rounded-l-lg">
-              <input
-                type="text"
-                class="input input-sm w-full rounded-none"
-                bind:value={filterText}
-                oninput={(e: Event) =>
-                  (filterText = (e.target as HTMLInputElement).value)}
-                placeholder="Filter by filename"
-              />
-              <div class="flex-1 min-h-0 overflow-auto">
+        <CardBody
+          class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2"
+        >
+          <div
+            class="flex flex-1 min-h-0 overflow-hidden rounded-lg border-2 border-base-content/30"
+          >
+            <div
+              class="flex min-w-0 flex-1 flex-col overflow-hidden bg-base-200 rounded-l-lg border-r-2 border-base-content/20"
+            >
+              <div
+                class="px-3 py-2 bg-base-300 border-b border-base-content/20"
+              >
+                <label class="label py-1" for="file-filter-input">
+                  <span class="label-text font-semibold text-sm"
+                    >Filter Files</span
+                  >
+                </label>
+                <div class="relative">
+                  <input
+                    id="file-filter-input"
+                    type="text"
+                    class="input input-bordered w-full bg-base-100 focus:bg-base-100"
+                    bind:value={filterText}
+                    placeholder="Type to filter by filename..."
+                  />
+                  {#if filterText}
+                    <button
+                      type="button"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+                      onclick={() => (filterText = "")}
+                      title="Clear filter"
+                    >
+                      ✕
+                    </button>
+                  {/if}
+                </div>
+              </div>
+              <div class="flex-1 min-h-0 overflow-auto p-2">
                 <FileTree
                   tree={docTree}
                   filter={filterText}
@@ -116,12 +138,12 @@
                 />
               </div>
             </div>
-            <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-dark-input rounded-r-lg">
+            <div
+              class="flex min-w-0 flex-1 flex-col overflow-hidden bg-dark-input rounded-r-lg shadow-inner"
+            >
               <CodeBlock
                 content={selectedEntry?.content ?? ""}
-                filename={selectedEntry?.name != null
-                  ? String(selectedEntry.name)
-                  : "Select a file"}
+                filename={selectedEntry?.name ?? "Select a file"}
                 placeholder="Select a file to view content"
                 language="hcl"
               />

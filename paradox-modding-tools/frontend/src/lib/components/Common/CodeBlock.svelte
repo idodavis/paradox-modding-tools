@@ -29,9 +29,7 @@
   let fullscreenOpen = $state(false);
 
   const name = $derived(
-    typeof filename === "string"
-      ? filename
-      : ((filename as { name?: string })?.name ?? "Select a file"),
+    typeof filename === "string" ? filename : "Select a file",
   );
 
   onMount(() => {
@@ -58,35 +56,40 @@
 </script>
 
 <div
-  class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-1 bg-dark-input {codeBlockClass}"
+  class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-dark-input {codeBlockClass}"
 >
-  <div class="flex justify-between gap-2 border-b border-base-content/20 pb-2">
-    <span class="truncate" title={name}>{name}</span>
-    {#if (showCopyButton || showFullScreenButton) && content}
-      <div class="flex gap-1">
-        {#if showCopyButton}
-          <button
-            type="button"
-            class="btn btn-soft btn-secondary btn"
-            onclick={copy}
-          >
-            <Icon icon="mdi:content-copy" />
-          </button>
-        {/if}
-        {#if showFullScreenButton}
-          <button
-            type="button"
-            class="btn btn-soft btn-secondary btn"
-            onclick={() => (fullscreenOpen = true)}
-          >
-            <Icon icon="mdi:fullscreen" />
-          </button>
-        {/if}
-      </div>
-    {/if}
+  <div class="px-3 py-2 bg-base-300 border-b border-base-content/20">
+    <div class="label py-1">
+      <span class="label-text font-semibold text-sm">File Content</span>
+    </div>
+    <div class="flex items-center justify-between gap-2 h-10">
+      <span class="truncate font-medium text-sm" title={name}>{name}</span>
+      {#if (showCopyButton || showFullScreenButton) && content}
+        <div class="flex flex-shrink-0 gap-1">
+          {#if showCopyButton}
+            <button
+              type="button"
+              class="btn btn-soft btn-secondary btn-sm"
+              onclick={copy}
+            >
+              <Icon icon="mdi:content-copy" />
+            </button>
+          {/if}
+          {#if showFullScreenButton}
+            <button
+              type="button"
+              class="btn btn-soft btn-secondary btn-sm"
+              onclick={() => (fullscreenOpen = true)}
+            >
+              <Icon icon="mdi:fullscreen" />
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
   </div>
   <div
-    class="min-h-0 flex-1 overflow-auto text-left [&_pre]:whitespace-pre [&_pre]:!m-0 [&_pre]:!p-2"
+    class="min-h-0 flex-1 overflow-auto text-left p-1 [&_pre]:whitespace-pre [&_pre]:!m-0 [&_pre]:!p-2"
   >
     {#if content}
       {#if html}

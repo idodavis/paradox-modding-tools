@@ -42,18 +42,18 @@
   });
 </script>
 
-<ul class="menu w-full {fileTreeClass}">
+<ul class="menu w-full {fileTreeClass} [&_summary]:pr-6 [&_summary]:overflow-visible">
   {#each filteredTree() as node}
     {#if node.children.length > 0}
-      <li>
-        <details>
-          <summary
+      <li class="overflow-visible">
+        <details class="overflow-visible">
+          <summary class="overflow-visible"
             ><Icon
               icon="mdi:folder"
               class="h-4 w-4 {folderColor}"
             />{node.name}</summary
           >
-          <ul>
+          <ul class="pl-4 overflow-visible">
             <Self
               tree={node.children}
               {filter}

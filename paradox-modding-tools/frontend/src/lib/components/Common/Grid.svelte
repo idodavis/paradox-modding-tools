@@ -16,11 +16,19 @@
     columnDefs,
     rowData,
     className = "",
+    gridOptions: userGridOptions = {},
   }: {
     columnDefs: Array<any>;
     rowData: Array<any>;
     className?: string;
+    /** Optional AG-Grid options merged with defaults (e.g. pagination, filter, rowSelection, onRowClicked). */
+    gridOptions?: Partial<GridOptions<any>>;
   } = $props();
+
+  const gridContainerClass = $derived(
+    "rounded-xl border-2 border-base-content/20 bg-base-200/70 shadow-lg shadow-black/20 overflow-hidden " +
+      (className || ""),
+  );
 
   // Create a custom dark theme using Theming API
   const darkTheme = themeQuartz.withParams({
@@ -47,6 +55,7 @@
         flex: 1,
         minWidth: 100,
       },
+      ...userGridOptions,
     };
 
     if (gridDiv) {
@@ -64,4 +73,4 @@
 </script>
 
 <!-- Grid Container -->
-<div bind:this={gridDiv} class={className}></div>
+<div bind:this={gridDiv} class={gridContainerClass}></div>

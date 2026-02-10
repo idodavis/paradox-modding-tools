@@ -28,9 +28,9 @@ func CancelExtraction() {
 }
 
 // applicableTypesForFile returns object types that apply to relPath for the given game,
-// intersected with the requested types. For "ck3" uses ck3.ApplicableTypesForPath; other games return nil.
+// intersected with the requested types. For CK3 uses ck3.ApplicableTypesForPath; other games return nil.
 func applicableTypesForFile(game, relPath string, objectTypes []string) []string {
-	if game != "ck3" {
+	if game != "CK3" {
 		return nil
 	}
 	pathTypes := ck3.ApplicableTypesForPath(relPath)
@@ -61,9 +61,9 @@ func containsString(slice []string, s string) bool {
 }
 
 // GetSupportedTypes returns the sorted list of object type names for the given game.
-// For "ck3" returns CK3 schema type names; other games return nil.
+// For "CK3" returns CK3 schema type names; other games return nil.
 func GetSupportedTypes(game string) ([]string, error) {
-	if game != "ck3" {
+	if game != "CK3" {
 		return nil, nil
 	}
 	names := ck3.GetSchemaNames()
@@ -72,9 +72,9 @@ func GetSupportedTypes(game string) ([]string, error) {
 }
 
 // GetAttributes returns the list of attribute names for an object type and game.
-// For "ck3" returns the schema's Attributes; other games or unknown types return nil.
+// For "CK3" returns the schema's Attributes; other games or unknown types return nil.
 func GetAttributes(game, typeName string) ([]string, error) {
-	if game != "ck3" {
+	if game != "CK3" {
 		return nil, nil
 	}
 	schema, ok := ck3.GetSchema(typeName)

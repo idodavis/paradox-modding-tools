@@ -131,6 +131,7 @@ func lessByField(a, b InventoryItem, sortField string, asc bool) bool {
 	return cmp < 0
 }
 
+// TODO: Remove all filtering and sorting as AG-Grid now handles this in the front-end....beutifully.
 // FilterAndSortPage filters and sorts the extract result, then returns the requested page.
 // first is the 0-based index of the first item; rows is the page size.
 func FilterAndSortPage(filterState *FilterState, sortField string, sortOrder int, first, rows int) *FilteredSortedPage {

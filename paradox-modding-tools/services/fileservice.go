@@ -93,6 +93,28 @@ func (f *FileService) ReadFileContent(fullPath string) (string, error) {
 	return string(data), nil
 }
 
+// SaveFile opens a save-file dialog, then writes content to the chosen path as UTF-8.
+// Returns ("", nil) when the user cancels so no error dialog is shown.
+func (f *FileService) SaveFile(title, defaultName string, content string) (string, error) {
+	app := application.Get()
+	dialog := app.Dialog.SaveFile()
+	if title != "" {
+		dialog.SetMessage(title)
+	}
+	if defaultName != "" {
+		dialog.SetFilename(defaultName)
+	}
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		return "", nil
+	}
+	fullPath := filepath.Clean(filepath.FromSlash(path))
+	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+		return "", fmt.Errorf("write file: %w", err)
+	}
+	return fullPath, nil
+}
+
 // GetScriptRoot returns the game script root directory for the given game and install path.
 // CK3: <install>/game, EU5: <install>/game/in_game.
 func (f *FileService) GetGameScriptRoot(game string, installPath string) (string, error) {

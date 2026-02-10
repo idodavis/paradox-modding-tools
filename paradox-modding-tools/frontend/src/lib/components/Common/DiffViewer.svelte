@@ -31,6 +31,9 @@
   let diffContainerRef = $state<HTMLDivElement | null>(null);
   let searchInputRef = $state<HTMLInputElement | null>(null);
 
+  const oldFileName = $derived(oldFile?.split(/[/\\]/).pop() ?? oldFile ?? "");
+  const newFileName = $derived(newFile?.split(/[/\\]/).pop() ?? newFile ?? "");
+  const hasNoDiffs = $derived(diffFile !== null && diffFile.diffLineLength === 0);
   const HL = "diff-search-highlight";
 
   function nav(dir: 1 | -1) {
@@ -125,8 +128,10 @@
     <div
       class="px-4 py-3 border-b border-base-content/20 bg-base-200/80 flex flex-col gap-2"
     >
-      <div class="flex justify-between items-center">
-        <h2 class="text-lg font-semibold truncate">Diff Viewer</h2>
+      <div class="flex justify-between items-center gap-2">
+        <h2 class="text-lg font-semibold truncate">
+          Comparing: <span class="text-primary">{oldFileName}</span> ↔ <span class="text-secondary">{newFileName}</span>
+        </h2>
         <button
           type="button"
           class="btn btn-ghost btn-sm"
@@ -192,6 +197,8 @@
       class="min-h-0 flex-1 overflow-auto bg-base-100"
     >
       {#if error}<p class="p-4 text-error">Error: {error}</p>
+      {:else if hasNoDiffs}
+        <p class="p-8 text-center text-base-content/70">No differences between the files.</p>
       {:else if diffFile}
         <DiffView
           {diffFile}

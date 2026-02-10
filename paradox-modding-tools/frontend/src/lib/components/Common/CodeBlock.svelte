@@ -36,6 +36,13 @@
     getHighlighter().then((h) => (highlighter = h));
   });
 
+  const linePrefixTransformer = {
+    name: "line-prefix",
+    line(node: { properties?: Record<string, unknown> }, line: number) {
+      if (node.properties) node.properties["data-prefix"] = String(line);
+    },
+  };
+
   $effect(() => {
     const h = highlighter;
     const c = content;
@@ -43,7 +50,13 @@
       html = null;
       return;
     }
-    Promise.resolve(h.codeToHtml(c, { lang: language, theme: "one-dark-pro" }))
+    Promise.resolve(
+      h.codeToHtml(c, {
+        lang: language,
+        theme: "one-dark-pro",
+        transformers: [linePrefixTransformer],
+      }),
+    )
       .then((r) => (html = r))
       .catch(() => (html = null));
   });
@@ -56,16 +69,13 @@
 </script>
 
 <div
-  class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-dark-input {codeBlockClass}"
+  class="code-block-root flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border border-base-300 bg-dark-input {codeBlockClass}"
 >
   <div class="px-3 py-2 bg-base-300 border-b border-base-content/20">
-    <div class="label py-1">
-      <span class="label-text font-semibold text-sm">File Content</span>
-    </div>
     <div class="flex items-center justify-between gap-2 h-10">
-      <span class="truncate font-medium text-sm" title={name}>{name}</span>
+      <span class="truncate font-semibold text-accent min-w-0">{name}</span>
       {#if (showCopyButton || showFullScreenButton) && content}
-        <div class="flex flex-shrink-0 gap-1">
+        <div class="flex gap-1">
           {#if showCopyButton}
             <button
               type="button"
@@ -88,12 +98,10 @@
       {/if}
     </div>
   </div>
-  <div
-    class="min-h-0 flex-1 overflow-auto text-left p-1 [&_pre]:whitespace-pre [&_pre]:!m-0 [&_pre]:!p-2"
-  >
+  <div class="code-block-editor min-h-0 flex-1 overflow-auto">
     {#if content}
       {#if html}
-        <div class="min-w-max p-2">{@html html}</div>
+        <div class="code-block-lines min-w-max">{@html html}</div>
       {:else}
         <div class="mockup-code w-full min-w-max bg-dark-input">
           {#each lines as line, i}
@@ -109,18 +117,17 @@
 
 <Dialog
   bind:open={fullscreenOpen}
-  contentProps={{
-    class:
-      "fixed inset-0 z-50 w-full h-full bg-dark-input flex-col overflow-auto",
-  }}
+  size="fullscreen"
+  contentProps={{ class: "z-50 bg-dark-input flex flex-col overflow-auto" }}
 >
   {#snippet title()}
     <div
-      class="flex justify-between items-center p-2 border-b border-base-content/20"
+      class="flex justify-between items-center border-b border-base-content/20"
     >
-      <h3 class="font-bold truncate pl-2">{name}</h3>
+      <h3 class="font-bold truncate text-accent">{name}</h3>
       <button
-        class="btn btn-circle btn-ghost btn-sm"
+        type="button"
+        class="btn btn-circle btn-ghost"
         onclick={() => (fullscreenOpen = false)}>✕</button
       >
     </div>
@@ -128,7 +135,7 @@
   {#snippet description()}
     <div class="min-h-0 flex-1 overflow-auto text-left [&_pre]:!p-2">
       {#if html}
-        <div class="min-w-max p-2">{@html html}</div>
+        <div class="code-block-lines min-w-max">{@html html}</div>
       {:else}
         <div class="mockup-code w-full min-w-max bg-dark-input">
           {#each lines as line, i}
@@ -139,3 +146,21 @@
     </div>
   {/snippet}
 </Dialog>
+
+<style>
+  :global(.code-block-lines .line) {
+    position: relative;
+    padding-left: 2.5rem;
+  }
+  :global(.code-block-lines .line::before) {
+    content: attr(data-prefix);
+    position: absolute;
+    left: 0;
+    width: 1.5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: inherit;
+    opacity: 0.6;
+    user-select: none;
+  }
+</style>

@@ -218,6 +218,55 @@ export class FileCollectorFilter {
 }
 
 /**
+ * FileMergeResult is the result of merging one file (JSON-safe for bindings)
+ */
+export class FileMergeResult {
+    "filePath": string;
+    "fileAPath": string;
+    "fileBPath": string;
+    "outputPath": string;
+    "changed": number;
+    "added": number;
+    "removed": number;
+    "error"?: string;
+
+    /** Creates a new FileMergeResult instance. */
+    constructor($$source: Partial<FileMergeResult> = {}) {
+        if (!("filePath" in $$source)) {
+            this["filePath"] = "";
+        }
+        if (!("fileAPath" in $$source)) {
+            this["fileAPath"] = "";
+        }
+        if (!("fileBPath" in $$source)) {
+            this["fileBPath"] = "";
+        }
+        if (!("outputPath" in $$source)) {
+            this["outputPath"] = "";
+        }
+        if (!("changed" in $$source)) {
+            this["changed"] = 0;
+        }
+        if (!("added" in $$source)) {
+            this["added"] = 0;
+        }
+        if (!("removed" in $$source)) {
+            this["removed"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FileMergeResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): FileMergeResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new FileMergeResult($$parsedSource as Partial<FileMergeResult>);
+    }
+}
+
+/**
  * LatestPatchNotes is the latest patch notes entry for a game (JSON-safe for bindings).
  */
 export class LatestPatchNotes {
@@ -246,6 +295,46 @@ export class LatestPatchNotes {
     static createFrom($$source: any = {}): LatestPatchNotes {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new LatestPatchNotes($$parsedSource as Partial<LatestPatchNotes>);
+    }
+}
+
+/**
+ * MergerOptions configures how files are merged (JSON-safe for bindings)
+ */
+export class MergerOptions {
+    "addAdditionalEntries": boolean;
+    "entryPlacement": string;
+    "keyList": string[];
+    "customCommentPrefix": string;
+
+    /** Creates a new MergerOptions instance. */
+    constructor($$source: Partial<MergerOptions> = {}) {
+        if (!("addAdditionalEntries" in $$source)) {
+            this["addAdditionalEntries"] = false;
+        }
+        if (!("entryPlacement" in $$source)) {
+            this["entryPlacement"] = "";
+        }
+        if (!("keyList" in $$source)) {
+            this["keyList"] = [];
+        }
+        if (!("customCommentPrefix" in $$source)) {
+            this["customCommentPrefix"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MergerOptions instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MergerOptions {
+        const $$createField2_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("keyList" in $$parsedSource) {
+            $$parsedSource["keyList"] = $$createField2_0($$parsedSource["keyList"]);
+        }
+        return new MergerOptions($$parsedSource as Partial<MergerOptions>);
     }
 }
 

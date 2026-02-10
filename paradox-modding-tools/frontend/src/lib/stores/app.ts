@@ -4,8 +4,8 @@ import { GetAppConstants } from '@services/constantsservice';
 import type { AppConstants } from '@services/models';
 
 export const game = writable<'CK3' | 'EU5'>('CK3');
-export const currentPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs'>('hub');
-export const lastPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs'>('hub');
+export const currentPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs' | 'merge-tool' | 'inventory'>('hub');
+export const lastPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs' | 'merge-tool' | 'inventory'>('hub');
 export const gameInstallPathCk3 = writable<string>('');
 export const gameInstallPathEu5 = writable<string>('');
 export const appConstants = writable<AppConstants>({
@@ -23,7 +23,7 @@ export const appConstants = writable<AppConstants>({
   },
 });
 
-export function gotoPage(page: 'hub' | 'settings' | 'compare-tool' | 'modding-docs') {
+export function gotoPage(page: 'hub' | 'settings' | 'compare-tool' | 'modding-docs' | 'merge-tool' | 'inventory') {
   currentPage.update((current) => {
     if (current !== page) {
       lastPage.set(current);

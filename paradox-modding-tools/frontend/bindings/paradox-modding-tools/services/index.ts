@@ -6,6 +6,8 @@ import * as ClipboardService from "./clipboardservice.js";
 import * as CompareService from "./compareservice.js";
 import * as ConstantsService from "./constantsservice.js";
 import * as FileService from "./fileservice.js";
+import * as InventoryService from "./inventoryservice.js";
+import * as MergeService from "./mergeservice.js";
 import * as ModDocService from "./moddocservice.js";
 import * as SettingsService from "./settingsservice.js";
 export {
@@ -14,6 +16,8 @@ export {
     CompareService,
     ConstantsService,
     FileService,
+    InventoryService,
+    MergeService,
     ModDocService,
     SettingsService
 };
@@ -25,7 +29,9 @@ export {
     DocPathCache,
     EU5Constants,
     FileCollectorFilter,
+    FileMergeResult,
     LatestPatchNotes,
+    MergerOptions,
     PathMatch,
     TreeNode
 } from "./models.js";

@@ -6,6 +6,8 @@
   import Icon from "@iconify/svelte";
   import CompareTool from "@pages/CompareTool.svelte";
   import ModdingDocs from "@pages/ModdingDocs.svelte";
+  import MergeTool from "@pages/MergeTool.svelte";
+  import InventoryTool from "@pages/InventoryTool.svelte";
   import Settings from "@pages/Settings.svelte";
   import {
     game,
@@ -116,7 +118,10 @@
                 Merge Paradox script files with configurable options.
               </p>
               <div class="card-actions justify-end">
-                <button class="btn btn-primary btn-outline btn-sm">Open</button>
+                <button
+                  class="btn btn-primary btn-outline btn-sm"
+                  onclick={() => gotoPage("merge-tool")}>Open</button
+                >
               </div>
             </CardBody>
           </Card>
@@ -128,7 +133,10 @@
                 type, view references and more.
               </p>
               <div class="card-actions justify-end">
-                <button class="btn btn-primary btn-outline btn-sm">Open</button>
+                <button
+                  class="btn btn-primary btn-outline btn-sm"
+                  onclick={() => gotoPage("inventory")}>Open</button
+                >
               </div>
             </CardBody>
           </Card>
@@ -185,6 +193,14 @@
   {:else if $currentPage === "settings"}
     <main>
       <Settings />
+    </main>
+  {:else if $currentPage === "merge-tool"}
+    <main>
+      <MergeTool />
+    </main>
+  {:else if $currentPage === "inventory"}
+    <main>
+      <InventoryTool />
     </main>
   {/if}
 </div>

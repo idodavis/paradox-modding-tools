@@ -25,6 +25,7 @@
   let docTree = $state<TreeNode[]>([]);
   let selectedEntry = $state<{ name: string; content: string }>();
 
+  // TODO: Make sure to switch caches when game is changed.
   // Load the cache if it exists
   onMount(async () => {
     const cache = await GetDocPathCache($game, currentInstallPath);
@@ -102,7 +103,7 @@
               class="flex min-w-0 flex-1 flex-col overflow-hidden bg-base-200 rounded-l-lg border-r-2 border-base-content/20"
             >
               <div
-                class="px-3 py-2 bg-base-300 border-b border-base-content/20"
+                class="flex h-[5.5rem] flex-col justify-center px-3 py-2 bg-base-300 border-b border-base-content/20"
               >
                 <label class="label py-1" for="file-filter-input">
                   <span class="label-text font-semibold text-sm"
@@ -141,6 +142,12 @@
             <div
               class="flex min-w-0 flex-1 flex-col overflow-hidden bg-dark-input rounded-r-lg shadow-inner"
             >
+              <!-- File Content label only (ModdingDocs); CodeBlock header border aligns with file tree -->
+              <div
+                class="flex h-[calc(2rem-1px)] items-center px-3 bg-base-300 text-sm text-base-content/60"
+              >
+                File Content
+              </div>
               <CodeBlock
                 content={selectedEntry?.content ?? ""}
                 filename={selectedEntry?.name ?? "Select a file"}

@@ -11,8 +11,6 @@
     };
   }
 
-  type Item = { value: string; label: string };
-
   let {
     items = [],
     selected = $bindable([] as string[]),
@@ -22,7 +20,7 @@
     class: className = "",
     disabled = false,
   }: {
-    items?: Item[];
+    items?: string[];
     selected?: string[];
     placeholder?: string;
     checkboxColor?:
@@ -60,17 +58,17 @@
               <input
                 type="checkbox"
                 class="checkbox checkbox-sm {checkboxColor}"
-                checked={selected.includes(item.value)}
+                checked={selected.includes(item)}
                 onchange={(e) => {
                   const checked = (e.target as HTMLInputElement).checked;
                   if (checked) {
-                    selected = [...selected, item.value];
+                    selected = [...selected, item];
                   } else {
-                    selected = selected.filter((v) => v !== item.value);
+                    selected = selected.filter((v) => v !== item);
                   }
                 }}
               />
-              <span class="label-text">{item.label}</span>
+              <span class="label-text">{item}</span>
             </label>
           </li>
         {/each}

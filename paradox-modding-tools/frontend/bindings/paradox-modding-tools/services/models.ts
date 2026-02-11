@@ -267,6 +267,100 @@ export class FileMergeResult {
 }
 
 /**
+ * InventoryItem represents a single extracted game object with metadata.
+ */
+export class InventoryItem {
+    /**
+     * Key is the unique identifier for this object (e.g., character ID, event name)
+     */
+    "key": string;
+
+    /**
+     * Type is the object type (e.g., "characters", "events", "traits")
+     */
+    "type": string;
+
+    /**
+     * FilePath is the relative path to the file containing this object
+     */
+    "filePath": string;
+
+    /**
+     * LineStart is the line number where the object definition begins
+     */
+    "lineStart": number;
+
+    /**
+     * LineEnd is the line number where the object definition ends
+     */
+    "lineEnd": number;
+
+    /**
+     * RawText contains the original text of the object definition
+     */
+    "rawText": string;
+
+    /**
+     * References contains resolved references to other objects
+     */
+    "references"?: ObjectReference[];
+
+    /**
+     * Referrers contains references to this object from other objects
+     */
+    "referrers"?: ObjectReference[];
+
+    /**
+     * Attributes lists attributes in the object body and whether they are present
+     */
+    "attributes"?: { [_ in string]?: boolean };
+
+    /** Creates a new InventoryItem instance. */
+    constructor($$source: Partial<InventoryItem> = {}) {
+        if (!("key" in $$source)) {
+            this["key"] = "";
+        }
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+        if (!("filePath" in $$source)) {
+            this["filePath"] = "";
+        }
+        if (!("lineStart" in $$source)) {
+            this["lineStart"] = 0;
+        }
+        if (!("lineEnd" in $$source)) {
+            this["lineEnd"] = 0;
+        }
+        if (!("rawText" in $$source)) {
+            this["rawText"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new InventoryItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): InventoryItem {
+        const $$createField6_0 = $$createType4;
+        const $$createField7_0 = $$createType4;
+        const $$createField8_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("references" in $$parsedSource) {
+            $$parsedSource["references"] = $$createField6_0($$parsedSource["references"]);
+        }
+        if ("referrers" in $$parsedSource) {
+            $$parsedSource["referrers"] = $$createField7_0($$parsedSource["referrers"]);
+        }
+        if ("attributes" in $$parsedSource) {
+            $$parsedSource["attributes"] = $$createField8_0($$parsedSource["attributes"]);
+        }
+        return new InventoryItem($$parsedSource as Partial<InventoryItem>);
+    }
+}
+
+/**
  * LatestPatchNotes is the latest patch notes entry for a game (JSON-safe for bindings).
  */
 export class LatestPatchNotes {
@@ -339,6 +433,65 @@ export class MergerOptions {
 }
 
 /**
+ * ObjectReference represents a reference between two game objects
+ */
+export class ObjectReference {
+    /**
+     * Key is the key of the referenced object
+     */
+    "key": string;
+
+    /**
+     * Type is the type of the referenced object
+     */
+    "type": string;
+
+    /**
+     * FilePath is the file where the reference was found
+     */
+    "filePath": string;
+
+    /**
+     * LineStart is the line number where the object definition begins (only for referrers)
+     */
+    "lineStart": number;
+
+    /**
+     * LineEnd is the line number where the object definition ends (only for referrers)
+     */
+    "lineEnd": number;
+
+    /** Creates a new ObjectReference instance. */
+    constructor($$source: Partial<ObjectReference> = {}) {
+        if (!("key" in $$source)) {
+            this["key"] = "";
+        }
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+        if (!("filePath" in $$source)) {
+            this["filePath"] = "";
+        }
+        if (!("lineStart" in $$source)) {
+            this["lineStart"] = 0;
+        }
+        if (!("lineEnd" in $$source)) {
+            this["lineEnd"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ObjectReference instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ObjectReference {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ObjectReference($$parsedSource as Partial<ObjectReference>);
+    }
+}
+
+/**
  * FileMatch represents a matched path pair
  */
 export class PathMatch {
@@ -390,7 +543,7 @@ export class TreeNode {
      * Creates a new TreeNode instance from a string or object.
      */
     static createFrom($$source: any = {}): TreeNode {
-        const $$createField2_0 = $$createType4;
+        const $$createField2_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("children" in $$parsedSource) {
             $$parsedSource["children"] = $$createField2_0($$parsedSource["children"]);
@@ -403,5 +556,8 @@ export class TreeNode {
 const $$createType0 = CK3Constants.createFrom;
 const $$createType1 = EU5Constants.createFrom;
 const $$createType2 = $Create.Array($Create.Any);
-const $$createType3 = TreeNode.createFrom;
+const $$createType3 = ObjectReference.createFrom;
 const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $Create.Map($Create.Any, $Create.Any);
+const $$createType6 = TreeNode.createFrom;
+const $$createType7 = $Create.Array($$createType6);

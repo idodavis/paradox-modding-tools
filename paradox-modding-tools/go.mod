@@ -7,6 +7,8 @@ require (
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.68
 )
 
+require golang.org/x/sync v0.19.0
+
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect

@@ -15,13 +15,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * CancelMerge signals any running multi-file merge to stop. Partial results may be returned.
- */
-export function CancelMerge(): $CancellablePromise<void> {
-    return $Call.ByID(1785905195);
-}
-
-/**
  * MergeMultipleFileSets merges matching files from pathsA and pathsB into outputDir.
  * Uses core for discovery/matching and merge logic.
  */
@@ -29,13 +22,6 @@ export function MergeMultipleFileSets(pathsA: string[], pathsB: string[], output
     return $Call.ByID(2908210642, pathsA, pathsB, outputDir, options).then(($result: any) => {
         return $$createType1($result);
     });
-}
-
-/**
- * MergeTwoFiles merges two files and returns the merged content.
- */
-export function MergeTwoFiles(fileAPath: string, fileBPath: string, options: $models.MergerOptions): $CancellablePromise<string> {
-    return $Call.ByID(3807305580, fileAPath, fileBPath, options);
 }
 
 /**
@@ -47,7 +33,6 @@ export function MergeTwoFilesAndSave(fileAPath: string, fileBPath: string, optio
 
 /**
  * MergeVanillaMod runs the full vanilla-vs-mod merge: resolves game script root, then merges into outputDir.
- * Single backend call for the frontend. Supports cancellation via CancelMerge.
  */
 export function MergeVanillaMod(game: string, installPath: string, modPaths: string[], outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[]> {
     return $Call.ByID(1897491292, game, installPath, modPaths, outputDir, options).then(($result: any) => {

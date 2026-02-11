@@ -30,8 +30,10 @@ export {
     EU5Constants,
     FileCollectorFilter,
     FileMergeResult,
+    InventoryItem,
     LatestPatchNotes,
     MergerOptions,
+    ObjectReference,
     PathMatch,
     TreeNode
 } from "./models.js";

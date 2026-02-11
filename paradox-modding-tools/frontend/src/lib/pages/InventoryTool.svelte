@@ -11,16 +11,14 @@
   import {
     GetSupportedTypes,
     ExtractInventory,
-    CancelExtraction,
-    GetFilteredSortedPage,
   } from "@services/inventoryservice";
-  import type { InventoryItem } from "@services/internal/inventory/models";
+  import type { InventoryItem } from "@services/models";
   import ItemDetails from "../components/inventory/ItemDetails.svelte";
   import ExportImportDialog from "../components/inventory/ExportImportDialog.svelte";
 
   let files = $state<string[]>([]);
   let selectedTypes = $state<string[]>([]);
-  let supportedTypes = $state<{ value: string; label: string }[]>([]);
+  let supportedTypes = $state<string[]>([]);
   let hasExtraction = $state(false);
   let loading = $state(false);
   let extractionErrors = $state<string[]>([]);
@@ -28,18 +26,24 @@
   let selectedItem = $state<InventoryItem | null>(null);
   let itemDetailsOpen = $state(false);
   let showExportImport = $state(false);
+  let extractionPromise = $state<
+    (Promise<unknown> & { cancel?: () => void }) | null
+  >(null);
 
   $effect(() => {
     if (!itemDetailsOpen) selectedItem = null;
   });
+
   $effect(() => {
-    if (!$game) return;
-    GetSupportedTypes($game).then((t) => {
-      supportedTypes = (t ?? []).map((v) => ({ value: v, label: v }));
-    });
+    GetSupportedTypes($game).then((t) => (supportedTypes = t));
   });
 
-  const typeItems = $derived(supportedTypes);
+  function cancelExtraction() {
+    if (extractionPromise?.cancel) {
+      extractionPromise.cancel();
+    }
+    extractionPromise = null;
+  }
 
   async function doExtract() {
     if (!files.length || !selectedTypes.length) return;
@@ -48,28 +52,18 @@
     extractionErrors = [];
     allItems = [];
     try {
-      await ExtractInventory($game, files, selectedTypes);
+      extractionPromise = ExtractInventory($game, files, selectedTypes);
+      const items = await extractionPromise;
       hasExtraction = true;
-      const page = await GetFilteredSortedPage(
-        {
-          keyText: "",
-          keyMatchMode: "CONTAINS",
-          typeNames: [],
-          refsValue: null,
-          refsMatchMode: "GREATER_THAN_OR_EQUAL_TO",
-        },
-        "key",
-        1,
-        0,
-        100000,
-      );
-      allItems = page?.items ?? [];
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.toLowerCase().includes("cancelled")) clearAll();
-      else extractionErrors = [msg];
+      allItems = (items ?? []) as InventoryItem[];
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.toLowerCase().includes("cancel")) {
+        extractionErrors = [msg];
+      }
     } finally {
       loading = false;
+      extractionPromise = null;
     }
   }
 
@@ -98,10 +92,12 @@
       flex: 3,
     },
     {
-      field: "lineStart",
-      headerName: "Line Start",
-      filter: true,
-      sortable: true,
+      field: "lines",
+      headerName: "Lines",
+      valueGetter: (p: { data?: InventoryItem }) =>
+        `${p.data?.lineStart ?? 0} - ${p.data?.lineEnd ?? 0}`,
+      filter: false,
+      sortable: false,
       flex: 1,
     },
     {
@@ -109,6 +105,13 @@
       flex: 1,
       valueGetter: (p: { data?: InventoryItem }) =>
         p.data?.references?.length ?? 0,
+      filter: true,
+    },
+    {
+      headerName: "Referrers",
+      flex: 1,
+      valueGetter: (p: { data?: InventoryItem }) =>
+        p.data?.referrers?.length ?? 0,
       filter: true,
     },
   ]);
@@ -144,7 +147,7 @@
             type="button"
             class="btn btn-ghost btn-sm mt-1"
             disabled={supportedTypes.length === 0}
-            onclick={() => (selectedTypes = supportedTypes.map((t) => t.value))}
+            onclick={() => (selectedTypes = supportedTypes)}
           >
             Select all
           </button>
@@ -167,7 +170,7 @@
             onclick={doExtract}>Extract</button
           >
         {:else}
-          <button type="button" class="btn btn-error" onclick={CancelExtraction}
+          <button type="button" class="btn btn-error" onclick={cancelExtraction}
             >Cancel</button
           >
         {/if}
@@ -203,7 +206,9 @@
       gridOptions={{
         pagination: true,
         paginationPageSize: 20,
-        rowSelection: "single",
+        rowSelection: {
+          mode: "singleRow",
+        },
         onRowClicked: (e) => {
           if (e?.data) {
             selectedItem = e.data;

@@ -12,37 +12,23 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as inventory$0 from "./internal/inventory/models.js";
+import * as $models from "./models.js";
 
 /**
- * CancelExtraction signals the running ExtractInventory to stop and discard results (immediate, clears in-memory data).
+ * ExtractInventory extracts inventory items from the given basePaths that match the given objectTypes.
+ * Only .txt files are processed. Returns items and parse errors or a fatal error if cancelled or too many parse failures.
  */
-export function CancelExtraction(): $CancellablePromise<void> {
-    return $Call.ByID(2645923500);
-}
-
-/**
- * ExtractInventory extracts multiple object types from files with references resolved.
- * Returns items keyed by type and any parse errors. Returns inventory.ErrExtractionCancelled if the user cancelled.
- */
-export function ExtractInventory(game: string, files: string[], objectTypes: string[]): $CancellablePromise<void> {
-    return $Call.ByID(383781064, game, files, objectTypes);
-}
-
-/**
- * GetAttributes returns attribute names for an object type (from schema).
- */
-export function GetAttributes(game: string, typeName: string): $CancellablePromise<string[]> {
-    return $Call.ByID(3409867136, game, typeName).then(($result: any) => {
-        return $$createType0($result);
+export function ExtractInventory(game: string, basePaths: string[], objectTypes: string[]): $CancellablePromise<$models.InventoryItem[]> {
+    return $Call.ByID(383781064, game, basePaths, objectTypes).then(($result: any) => {
+        return $$createType1($result);
     });
 }
 
 /**
- * GetFilteredSortedPage returns one page of filtered and sorted inventory items from the stored extract result.
+ * GetAttributes returns the list of attribute names for an object type and game.
  */
-export function GetFilteredSortedPage(filterState: inventory$0.FilterState, sortField: string, sortOrder: number, first: number, rows: number): $CancellablePromise<inventory$0.FilteredSortedPage | null> {
-    return $Call.ByID(2427132672, filterState, sortField, sortOrder, first, rows).then(($result: any) => {
+export function GetAttributes(game: string, typeName: string): $CancellablePromise<string[]> {
+    return $Call.ByID(3409867136, game, typeName).then(($result: any) => {
         return $$createType2($result);
     });
 }
@@ -52,11 +38,11 @@ export function GetFilteredSortedPage(filterState: inventory$0.FilterState, sort
  */
 export function GetSupportedTypes(game: string): $CancellablePromise<string[]> {
     return $Call.ByID(1823722162, game).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType2($result);
     });
 }
 
 // Private type creation functions
-const $$createType0 = $Create.Array($Create.Any);
-const $$createType1 = inventory$0.FilteredSortedPage.createFrom;
-const $$createType2 = $Create.Nullable($$createType1);
+const $$createType0 = $models.InventoryItem.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $Create.Array($Create.Any);

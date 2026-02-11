@@ -13,7 +13,6 @@
     MergeVanillaMod,
     MergeMultipleFileSets,
     MergeTwoFilesAndSave,
-    CancelMerge,
   } from "@services/mergeservice";
   import type { FileMergeResult, MergerOptions } from "@services/models";
 
@@ -35,6 +34,9 @@
   let merging = $state(false);
   let mergeResults = $state<FileMergeResult[]>([]);
   let selectedForDiff = $state<{ pathA: string; pathB: string } | null>(null);
+  let mergePromise = $state<
+    (Promise<unknown> & { cancel?: () => void }) | null
+  >(null);
 
   const options = $derived.by(
     (): MergerOptions => ({
@@ -56,32 +58,49 @@
     any: !!fileAPath && !!fileBPath,
   });
 
+  function cancelMerge() {
+    if (mergePromise?.cancel) {
+      mergePromise.cancel();
+    }
+    mergePromise = null;
+  }
+
   async function runMerge(mode: "vanilla" | "sets" | "any") {
     if (!canRun[mode]) return;
     merging = true;
     mergeResults = [];
+    mergePromise = null;
     try {
       if (mode === "any") {
-        const path = await MergeTwoFilesAndSave(fileAPath, fileBPath, options);
+        mergePromise = MergeTwoFilesAndSave(fileAPath, fileBPath, options);
+        const path = await mergePromise;
         if (path) alert("Saved to: " + path);
       } else {
-        const res =
+        mergePromise =
           mode === "vanilla"
-            ? await MergeVanillaMod(
+            ? MergeVanillaMod(
                 $game,
                 gameInstallPath!.trim(),
                 modPaths,
                 outputDir,
                 options,
               )
-            : await MergeMultipleFileSets(pathsA, pathsB, outputDir, options);
+            : MergeMultipleFileSets(pathsA, pathsB, outputDir, options);
+        const res = (await mergePromise) as
+          | FileMergeResult[]
+          | null
+          | undefined;
         mergeResults = res ?? [];
         if (!mergeResults.length) alert("No matching files.");
       }
     } catch (e) {
-      alert("Error: " + e);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.toLowerCase().includes("cancel")) {
+        alert("Error: " + msg);
+      }
     } finally {
       merging = false;
+      mergePromise = null;
     }
   }
 
@@ -235,7 +254,7 @@
             <button
               type="button"
               class="btn btn-soft btn-wide btn-error"
-              onclick={() => CancelMerge()}>Cancel</button
+              onclick={cancelMerge}>Cancel</button
             >
           {:else}
             <button
@@ -289,7 +308,7 @@
             <button
               type="button"
               class="btn btn-soft btn-wide btn-error"
-              onclick={() => CancelMerge()}>Cancel</button
+              onclick={cancelMerge}>Cancel</button
             >
           {:else}
             <button
@@ -328,14 +347,20 @@
             initialValue={fileBPath ? [fileBPath] : []}
             onPathsChange={(p) => (fileBPath = p[0] ?? "")}
           />
-          <button
-            type="button"
-            class="btn btn-soft btn-wide btn-primary mt-4"
-            disabled={merging || !canRun.any}
-            onclick={() => runMerge("any")}
-          >
-            {merging ? "Merging…" : "Merge and save"}
-          </button>
+          {#if merging}
+            <button
+              type="button"
+              class="btn btn-soft btn-wide btn-error mt-4"
+              onclick={cancelMerge}>Cancel</button
+            >
+          {:else}
+            <button
+              type="button"
+              class="btn btn-soft btn-wide btn-primary mt-4"
+              disabled={!canRun.any}
+              onclick={() => runMerge("any")}>Merge and save</button
+            >
+          {/if}
         </CardBody>
       </Card>
     </Tab>

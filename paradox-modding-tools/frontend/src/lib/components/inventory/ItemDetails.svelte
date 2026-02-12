@@ -2,7 +2,7 @@
   import { CodeBlock } from "@components";
   import { CopyToClipboard } from "@services/clipboardservice";
   import { GetAttributes } from "@services/inventoryservice";
-  import type { InventoryItem } from "@services/internal/inventory/models";
+  import type { InventoryItem } from "@services/models";
 
   let {
     item = null,
@@ -89,10 +89,10 @@
         {:else}
           {#each references as ref}
             <div class="p-2 rounded text-sm font-mono bg-base-300">
-              <span class="text-primary">{ref.targetKey}</span>
-              <span class="text-base-content/60">({ref.targetType})</span>
+              <span class="text-primary">{ref.key}</span>
+              <span class="text-base-content/60">({ref.type})</span>
               <span class="text-base-content/50 block text-xs"
-                >{ref.sourceFile}:{ref.sourceLine}</span
+                >{ref.filePath}:{ref.lineStart}</span
               >
             </div>
           {/each}

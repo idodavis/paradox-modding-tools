@@ -8,17 +8,13 @@
     Grid,
     DiffViewer,
   } from "@components";
-  import { game, gameInstallPathCk3, gameInstallPathEu5 } from "@stores/app";
+  import { game, gameInstallPath } from "@stores/app";
   import {
     MergeVanillaMod,
     MergeMultipleFileSets,
     MergeTwoFilesAndSave,
   } from "@services/mergeservice";
   import type { FileMergeResult, MergerOptions } from "@services/models";
-
-  const gameInstallPath = $derived(
-    $game === "CK3" ? $gameInstallPathCk3 : $gameInstallPathEu5,
-  );
 
   let pathsA = $state<string[]>([]);
   let pathsB = $state<string[]>([]);
@@ -38,6 +34,12 @@
     (Promise<unknown> & { cancel?: () => void }) | null
   >(null);
 
+  $effect(() => {
+    $game;
+    mergeResults = [];
+    selectedForDiff = null;
+  });
+
   const options = $derived.by(
     (): MergerOptions => ({
       addAdditionalEntries,
@@ -53,7 +55,7 @@
   );
 
   const canRun = $derived({
-    vanilla: !!gameInstallPath?.trim() && modPaths.length > 0 && !!outputDir,
+    vanilla: !!$gameInstallPath?.trim() && modPaths.length > 0 && !!outputDir,
     sets: pathsA.length > 0 && pathsB.length > 0 && !!outputDir,
     any: !!fileAPath && !!fileBPath,
   });
@@ -80,7 +82,7 @@
           mode === "vanilla"
             ? MergeVanillaMod(
                 $game,
-                gameInstallPath!.trim(),
+                $gameInstallPath!.trim(),
                 modPaths,
                 outputDir,
                 options,
@@ -227,7 +229,7 @@
               type="text"
               class="input input-bordered w-full max-w-2xl mb-2"
               readonly
-              value={gameInstallPath ?? ""}
+              value={$gameInstallPath ?? ""}
               placeholder="Game path (Modding Docs / Settings)"
             />
             <p class="label text-xs">{$game}</p>

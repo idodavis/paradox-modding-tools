@@ -1,43 +1,36 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { Tab, Tabs, Card, CardBody, FileTree, CodeBlock } from "@components";
+  import { game, gameInstallPath, appConstants } from "@stores/app";
   import {
-    game,
-    gameInstallPathCk3,
-    gameInstallPathEu5,
-    appConstants,
-  } from "@stores/app";
-  import { Scan, GetDocPathCache } from "@services/moddocservice";
-  import { BuildTree, ReadFileContent } from "@services/fileservice";
+    Scan,
+    GetDocPathCache,
+    GetDocContent,
+  } from "@services/moddocservice";
+  import { BuildTree } from "@services/fileservice";
   import type { TreeNode } from "@services/models";
-
-  const currentInstallPath = $derived(
-    $game === "CK3" ? $gameInstallPathCk3 : $gameInstallPathEu5,
-  );
-  const currentScriptRootFolder = $derived(
-    $game === "CK3"
-      ? $appConstants.ck3.scriptRootFolder
-      : $appConstants.eu5.scriptRootFolder,
-  );
 
   let filterText = $state("");
   let docFiles = $state<string[]>([]);
   let docTree = $state<TreeNode[]>([]);
   let selectedEntry = $state<{ name: string; content: string }>();
 
-  // TODO: Make sure to switch caches when game is changed.
-  // Load the cache if it exists
-  onMount(async () => {
-    const cache = await GetDocPathCache($game, currentInstallPath);
-    if (cache) {
-      docFiles = cache.paths;
-      docTree = await BuildTree(docFiles);
-    }
+  $effect(() => {
+    const g = $game;
+    const path = $gameInstallPath;
+    GetDocPathCache(g, path).then(async (cache) => {
+      if (cache) {
+        docFiles = cache.paths;
+        docTree = await BuildTree(docFiles);
+      } else {
+        docFiles = [];
+        docTree = [];
+      }
+    });
   });
 
   async function scan() {
     try {
-      docFiles = await Scan($game, currentInstallPath);
+      docFiles = await Scan($game, $gameInstallPath);
       docTree = await BuildTree(docFiles);
     } catch (error) {
       console.error(error);
@@ -45,11 +38,10 @@
   }
 
   async function onFileClick(file: TreeNode) {
+    const content = await GetDocContent($game, $gameInstallPath, file.relPath);
     selectedEntry = {
       name: file.name,
-      content: await ReadFileContent(
-        currentInstallPath + "/" + currentScriptRootFolder + "/" + file.relPath,
-      ),
+      content: content ?? "",
     };
   }
 
@@ -76,14 +68,13 @@
                 type="text"
                 class="input flex-1 min-w-0"
                 readonly
-                value={$game === "CK3"
-                  ? $gameInstallPathCk3
-                  : $gameInstallPathEu5}
+                value={$gameInstallPath}
                 placeholder="Set in Settings (gear icon in header)"
               />
               <button
                 type="button"
                 class="btn btn-soft btn-accent"
+                disabled={!$gameInstallPath?.trim()}
                 onclick={scan}
               >
                 Scan

@@ -156,5 +156,5 @@ func (m *MergeService) MergeTwoFilesAndSave(ctx context.Context, fileAPath, file
 	if err != nil {
 		return "", err
 	}
-	return m.FileService.SaveFile("Save merged file", "merged.txt", content)
+	return m.FileService.SaveFile("Save merged file", "merged.txt", content, ".txt")
 }

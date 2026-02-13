@@ -16,6 +16,11 @@ import (
 // FileService
 // ############
 
+const (
+	scriptRootFolderCK3 = "game"
+	scriptRootFolderEU5 = "game/in_game"
+)
+
 // FileService provides directory/file selection dialogs and game script root / doc path discovery.
 type FileService struct{}
 
@@ -95,7 +100,7 @@ func (f *FileService) ReadFileContent(fullPath string) (string, error) {
 
 // SaveFile opens a save-file dialog, then writes content to the chosen path as UTF-8.
 // Returns ("", nil) when the user cancels so no error dialog is shown.
-func (f *FileService) SaveFile(title, defaultName string, content string) (string, error) {
+func (f *FileService) SaveFile(title, defaultName, content, ext string) (string, error) {
 	app := application.Get()
 	dialog := app.Dialog.SaveFile()
 	if title != "" {
@@ -109,6 +114,14 @@ func (f *FileService) SaveFile(title, defaultName string, content string) (strin
 		return "", nil
 	}
 	fullPath := filepath.Clean(filepath.FromSlash(path))
+
+	wantExt := ext
+	if wantExt != "" && !strings.HasPrefix(wantExt, ".") {
+		wantExt = "." + wantExt
+	}
+	if wantExt != "" && filepath.Ext(fullPath) != wantExt {
+		fullPath = fullPath + wantExt
+	}
 	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}

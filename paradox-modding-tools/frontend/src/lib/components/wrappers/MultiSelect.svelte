@@ -19,6 +19,7 @@
     size = "w-48",
     class: className = "",
     disabled = false,
+    searchable = true,
   }: {
     items?: string[];
     selected?: string[];
@@ -30,9 +31,23 @@
     size?: string;
     class?: string;
     disabled?: boolean;
+    searchable?: boolean;
   } = $props();
 
   let open = $state(false);
+  let searchQuery = $state("");
+
+  $effect(() => {
+    if (!open) searchQuery = "";
+  });
+
+  const filteredItems = $derived(
+    searchable && searchQuery
+      ? items.filter((i) =>
+          i.toLowerCase().includes(searchQuery.toLowerCase().trim()),
+        )
+      : items,
+  );
 </script>
 
 <div class={className} use:clickOutside={() => (open = false)}>
@@ -49,10 +64,19 @@
     <div
       class="dropdown-content {size} max-h-60 overflow-x-hidden overflow-y-auto rounded-box bg-base-100 p-2 shadow z-50"
     >
+      {#if searchable}
+        <input
+          type="text"
+          placeholder="Search…"
+          class="input input-bordered input-sm mb-2 w-full"
+          bind:value={searchQuery}
+          onclick={(e) => e.stopPropagation()}
+        />
+      {/if}
       <ul
         class="menu flex-nowrap w-full flex flex-col gap-0 bg-transparent p-0"
       >
-        {#each items as item}
+        {#each filteredItems as item}
           <li>
             <label class="label cursor-pointer justify-start gap-2">
               <input

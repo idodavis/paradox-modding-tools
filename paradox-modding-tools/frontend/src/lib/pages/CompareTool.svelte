@@ -8,13 +8,9 @@
     Grid,
     DiffViewer,
   } from "@components";
-  import { game, gameInstallPathCk3, gameInstallPathEu5 } from "@stores/app";
+  import { game, gameInstallPath } from "@stores/app";
   import { VanillaCompare, TwoSetsCompare } from "@services/compareservice";
   import type { PathMatch } from "@services/models";
-
-  const gameInstallPath = $derived(
-    $game === "CK3" ? $gameInstallPathCk3 : $gameInstallPathEu5,
-  );
   let modPaths: string[] = $state([]);
   let setAPaths: string[] = $state([]);
   let setBPaths: string[] = $state([]);
@@ -23,8 +19,14 @@
   let matchingFiles = $state<Record<string, PathMatch | undefined>>({});
   let selectedForDiff = $state<MatchRow | null>(null);
 
+  $effect(() => {
+    $game;
+    matchingFiles = {};
+    selectedForDiff = null;
+  });
+
   async function runVanillaCompare() {
-    matchingFiles = await VanillaCompare($game, gameInstallPath, modPaths);
+    matchingFiles = await VanillaCompare($game, $gameInstallPath, modPaths);
   }
   async function runTwoSetsCompare() {
     matchingFiles = await TwoSetsCompare(setAPaths, setBPaths);
@@ -87,9 +89,7 @@
                 type="text"
                 class="input w-full max-w-2xl"
                 readonly
-                value={$game === "CK3"
-                  ? $gameInstallPathCk3
-                  : $gameInstallPathEu5}
+                value={$gameInstallPath}
                 placeholder="Set game install path in Modding Docs or header settings"
               />
               <p class="label">
@@ -115,7 +115,7 @@
             type="button"
             class="btn btn-soft btn-wide btn-primary"
             onclick={runVanillaCompare}
-            disabled={gameInstallPath === ""}
+            disabled={$gameInstallPath === ""}
           >
             Run Compare
           </button>

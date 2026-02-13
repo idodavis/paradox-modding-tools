@@ -18,6 +18,7 @@ type Schema struct {
 	Paths             []string `json:"paths"`
 	KeyPattern        string   `json:"keyPattern"`
 	KeyPrefixes       []string `json:"keyPrefixes,omitempty"`
+	KeySuffixes       []string `json:"keySuffixes,omitempty"`
 	Attributes        []string `json:"attributes,omitempty"`
 	InlineKeyPattern  string   `json:"inlineKeyPattern,omitempty"`
 	InlineKeyKeywords []string `json:"inlineKeyKeywords,omitempty"`
@@ -30,7 +31,7 @@ type schemaFile struct {
 var schemas map[string]Schema
 
 // Pattern registry: name → (key, params) → (displayKey, ok). Only place key logic lives.
-var matchers map[string]func(key string, p struct{ Keywords, Prefixes []string }) (displayKey string, ok bool)
+var matchers map[string]func(key string, p struct{ Keywords, Prefixes, Suffixes []string }) (displayKey string, ok bool)
 
 func init() {
 	var f schemaFile
@@ -38,12 +39,12 @@ func init() {
 		panic("ck3-evaluator: load ck3_objects.json: " + err.Error())
 	}
 	schemas = f.Schemas
-	matchers = map[string]func(key string, p struct{ Keywords, Prefixes []string }) (displayKey string, ok bool){
-		"numeric": func(key string, _ struct{ Keywords, Prefixes []string }) (string, bool) {
+	matchers = map[string]func(key string, p struct{ Keywords, Prefixes, Suffixes []string }) (displayKey string, ok bool){
+		"numeric": func(key string, _ struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) {
 			_, err := strconv.ParseInt(key, 10, 64)
 			return key, err == nil
 		},
-		"prefixed": func(key string, p struct{ Keywords, Prefixes []string }) (string, bool) {
+		"prefixed": func(key string, p struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) {
 			for _, pre := range p.Prefixes {
 				if strings.HasPrefix(key, pre) {
 					return key, true
@@ -51,18 +52,29 @@ func init() {
 			}
 			return "", false
 		},
-		"namespaced": func(key string, _ struct{ Keywords, Prefixes []string }) (string, bool) {
+		"suffixed": func(key string, p struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) {
+			for _, suf := range p.Suffixes {
+				if strings.HasSuffix(key, suf) {
+					return key, true
+				}
+			}
+			return "", false
+		},
+		"namespaced": func(key string, _ struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) {
 			return key, namespacedRE.MatchString(key)
 		},
 		"keyword_prefixed": matcherKeywordPrefixed,
-		"identifier_no_dot": func(key string, _ struct{ Keywords, Prefixes []string }) (string, bool) {
+		"identifier_no_dot": func(key string, _ struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) {
 			return key, identifierRE.MatchString(key)
 		},
-		"any": func(key string, _ struct{ Keywords, Prefixes []string }) (string, bool) { return key, true },
+		"date": func(key string, _ struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) {
+			return key, dateRE.MatchString(key)
+		},
+		"any": func(key string, _ struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) { return key, true },
 	}
 }
 
-func matcherKeywordPrefixed(key string, p struct{ Keywords, Prefixes []string }) (string, bool) {
+func matcherKeywordPrefixed(key string, p struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) {
 	for _, kw := range p.Keywords {
 		if (strings.HasPrefix(key, kw+" ") || (len(key) > len(kw) && strings.HasPrefix(key, kw))) && len(key) > len(kw) {
 			displayKey := strings.TrimPrefix(key, kw+" ")
@@ -80,6 +92,7 @@ func matcherKeywordPrefixed(key string, p struct{ Keywords, Prefixes []string })
 var (
 	namespacedRE = regexp.MustCompile(`^[\w]+\.[\w.]+$`)
 	identifierRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+	dateRE       = regexp.MustCompile(`^\d+\.\d+\.\d+$`) // CK3 date format: Y.M.D
 )
 
 // GetSchema returns the schema for a type name, or false if unknown.
@@ -125,7 +138,7 @@ func ApplicableTypesForPath(filePath string) []string {
 // Single-schema classification; use ClassifyKey for multiple types.
 func MatchKey(key string, schema *Schema, inline bool) (displayKey string, ok bool) {
 	pattern := schema.KeyPattern
-	params := struct{ Keywords, Prefixes []string }{schema.InlineKeyKeywords, schema.KeyPrefixes}
+	params := struct{ Keywords, Prefixes, Suffixes []string }{schema.InlineKeyKeywords, schema.KeyPrefixes, schema.KeySuffixes}
 	if inline && schema.InlineKeyPattern != "" {
 		pattern = schema.InlineKeyPattern
 	}
@@ -164,9 +177,14 @@ func otherInline(key, excludeType string) bool {
 	return false
 }
 
-// ClassifyKey returns (typeName, displayKey, true) if key matches one of applicableTypes (first match).
-// Caller uses this from a visitor: ctx.Depth==0 → top-level types, ctx.Depth>0 → inline types.
-func ClassifyKey(key string, hasObject bool, applicableTypes []string, inline bool) (typeName, displayKey string, ok bool) {
+// ClassifyKey returns (typeName, displayKey, true) if key matches one of applicableTypes (first match)
+// and uses attrs for disambiguation when multiple schemas match. When attrs is nil or empty, falls back to first match.
+func ClassifyKey(key string, hasObject bool, attrs map[string]bool, applicableTypes []string, inline bool) (typeName, displayKey string, ok bool) {
+	var candidates []struct {
+		t          string
+		displayKey string
+		score      int
+	}
 	for _, t := range applicableTypes {
 		schema, has := GetSchema(t)
 		if !has || otherInline(key, t) {
@@ -186,9 +204,30 @@ func ClassifyKey(key string, hasObject bool, applicableTypes []string, inline bo
 				continue
 			}
 		}
-		return t, displayKey, true
+		score := 0
+		if len(attrs) > 0 {
+			for _, a := range schema.Attributes {
+				if attrs[a] {
+					score++
+				}
+			}
+		}
+		candidates = append(candidates, struct {
+			t          string
+			displayKey string
+			score      int
+		}{t, displayKey, score})
 	}
-	return "", "", false
+	if len(candidates) == 0 {
+		return "", "", false
+	}
+	best := 0
+	for i := 1; i < len(candidates); i++ {
+		if candidates[i].score > candidates[best].score {
+			best = i
+		}
+	}
+	return candidates[best].t, candidates[best].displayKey, true
 }
 
 // InlineTypesFor returns type names from the given list that have InlineKeyPattern set (for use when walking objects).

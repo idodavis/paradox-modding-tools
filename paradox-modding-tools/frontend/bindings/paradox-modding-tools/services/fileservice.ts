@@ -62,8 +62,8 @@ export function ReadFileContent(fullPath: string): $CancellablePromise<string> {
  * SaveFile opens a save-file dialog, then writes content to the chosen path as UTF-8.
  * Returns ("", nil) when the user cancels so no error dialog is shown.
  */
-export function SaveFile(title: string, defaultName: string, content: string): $CancellablePromise<string> {
-    return $Call.ByID(3260874390, title, defaultName, content);
+export function SaveFile(title: string, defaultName: string, content: string, ext: string): $CancellablePromise<string> {
+    return $Call.ByID(3260874390, title, defaultName, content, ext);
 }
 
 /**

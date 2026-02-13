@@ -1,72 +1,99 @@
 <script lang="ts">
   import { CodeBlock } from "@components";
   import { CopyToClipboard } from "@services/clipboardservice";
-  import { GetAttributes } from "@services/inventoryservice";
-  import type { InventoryItem } from "@services/models";
+  import { GetAttributes, GetItemDetails } from "@services/inventoryservice";
+  import type { InventoryItemRow, ItemDetails as ItemDetailsType } from "@services/models";
 
   let {
-    item = null,
+    inventoryId = null,
+    itemType = null,
+    itemKey = null,
+    row = null,
     game = "CK3",
-  }: { item: InventoryItem | null; game?: string } = $props();
+  }: {
+    inventoryId: string | null;
+    itemType: string | null;
+    itemKey: string | null;
+    row: InventoryItemRow | null;
+    game?: string;
+  } = $props();
+
+  let details = $state<ItemDetailsType | null>(null);
+
+  $effect(() => {
+    if (!inventoryId || !itemType || !itemKey) {
+      details = null;
+      return;
+    }
+    GetItemDetails(inventoryId, itemType, itemKey).then((d) => {
+      details = d ?? null;
+    });
+  });
 
   let itemAttributes = $state<string[]>([]);
   $effect(() => {
-    if (!game || !item?.type) {
+    if (!game || !itemType) {
       itemAttributes = [];
       return;
     }
-    GetAttributes(game, item.type).then((a) => {
+    GetAttributes(game, itemType).then((a) => {
       itemAttributes = a ?? [];
     });
   });
 
   const presentSet = $derived.by(() => {
-    const attrs = item?.attributes;
+    const attrs = details?.attributes;
     if (!attrs || typeof attrs !== "object") return new Set<string>();
     return new Set(Object.keys(attrs).filter((k) => attrs[k]));
   });
   const attributesTable = $derived(
     itemAttributes.map((key) => ({ key, present: presentSet.has(key) })),
   );
-  const rawText = $derived(item?.rawText ?? "");
-  const fileName = $derived(item?.filePath?.split(/[/\\]/).pop() ?? "");
-  const references = $derived(item?.references ?? []);
+  const rawText = $derived(details?.rawText ?? "");
+  const fileName = $derived(row?.filePath?.split(/[/\\]/).pop() ?? "");
+  const references = $derived(details?.references ?? []);
+  const referrers = $derived(details?.referrers ?? []);
+  const refSections = $derived([
+    { title: "Referrers", items: referrers },
+    { title: "References", items: references },
+  ]);
 </script>
 
-{#if !item}
+{#if !row}
   <p class="text-base-content/60 p-4">No item selected</p>
 {:else}
   <div class="flex flex-col h-full overflow-auto p-3 space-y-3">
-    <span class="badge badge-primary">{item.type}</span>
+    <span class="badge badge-primary">{row.type}</span>
     <div>
-      <p class="text-sm font-mono break-all">{item.filePath}</p>
+      <p class="text-sm font-mono break-all">{row.filePath}</p>
       <p class="text-xs text-base-content/60">
-        Lines {item.lineStart}–{item.lineEnd}
+        Lines {row.lineStart}–{row.lineEnd}
       </p>
     </div>
     <div class="flex gap-2">
       <button
         type="button"
         class="btn btn-sm btn-ghost"
-        onclick={() => item?.key && CopyToClipboard(item.key)}>Copy Key</button
+        onclick={() => row?.key && CopyToClipboard(row.key)}>Copy Key</button
       >
       <button
         type="button"
         class="btn btn-sm btn-ghost"
-        onclick={() => item?.filePath && CopyToClipboard(item.filePath)}
+        onclick={() => row?.filePath && CopyToClipboard(row.filePath)}
         >Copy Path</button
       >
     </div>
     {#if attributesTable.length > 0}
-      <details class="collapse collapse-arrow bg-base-200 rounded">
+      <details class="collapse collapse-arrow rounded bg-base-200">
         <summary class="collapse-title text-sm">Attributes</summary>
         <div class="collapse-content">
-          <table class="table table-xs">
+          <div class="max-h-48 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain">
+            <table class="table table-xs">
             <tbody>
-              {#each attributesTable as row}<tr
-                  ><td class="font-mono text-xs">{row.key}</td>
+              {#each attributesTable as attrRow}<tr
+                  ><td class="font-mono text-xs">{attrRow.key}</td>
                   <td>
-                    {#if row.present}
+                    {#if attrRow.present}
                       <span class="text-success">✓</span>
                     {:else}
                       —
@@ -76,47 +103,44 @@
               {/each}
             </tbody>
           </table>
+          </div>
         </div>
       </details>
     {/if}
-    <details class="collapse collapse-arrow bg-base-200 rounded">
-      <summary class="collapse-title text-sm">
-        References ({references.length})
-      </summary>
-      <div class="collapse-content max-h-48 overflow-auto space-y-1">
-        {#if references.length === 0}
-          <p class="text-sm text-base-content/60 p-2">None</p>
-        {:else}
-          {#each references as ref}
-            <div class="p-2 rounded text-sm font-mono bg-base-300">
-              <span class="text-primary">{ref.key}</span>
-              <span class="text-base-content/60">({ref.type})</span>
-              <span class="text-base-content/50 block text-xs"
-                >{ref.filePath}:{ref.lineStart}</span
-              >
-            </div>
-          {/each}
-        {/if}
-      </div>
-    </details>
-    <details class="collapse collapse-arrow bg-base-200 rounded">
+    {#each refSections as { title, items }}
+      <details class="collapse collapse-arrow rounded bg-base-200">
+        <summary class="collapse-title text-sm">{title} ({items.length})</summary>
+        <div class="collapse-content">
+          <div class="max-h-48 min-h-0 space-y-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+            {#if items.length === 0}
+              <p class="p-2 text-sm text-base-content/60">None</p>
+            {:else}
+              {#each items as ref}
+                <div class="rounded bg-base-300 p-2 text-sm font-mono">
+                  <span class="text-primary">{ref.key}</span>
+                  <span class="text-base-content/60">({ref.type})</span>
+                  <span class="text-base-content/50 block text-xs">{ref.filePath}:{ref.lineStart}</span>
+                </div>
+              {/each}
+            {/if}
+          </div>
+        </div>
+      </details>
+    {/each}
+    <details class="collapse collapse-arrow rounded bg-base-200">
       <summary class="collapse-title text-sm">Raw Text</summary>
       <div class="collapse-content overflow-hidden">
         {#if !rawText}
-          <p class="text-sm text-base-content/60 p-2">Unavailable</p>
+          <p class="p-2 text-sm text-base-content/60">Unavailable</p>
         {:else}
-          <div
-            class="flex flex-col max-h-[50vh] min-h-0 rounded-lg border border-base-300 overflow-hidden"
-          >
-            <CodeBlock
-              content={rawText}
-              filename={fileName}
-              language="hcl"
-              showCopyButton={true}
-              showFullScreenButton={false}
-              class="min-h-0 flex-1"
-            />
-          </div>
+          <CodeBlock
+            content={rawText}
+            filename={fileName}
+            language="hcl"
+            showCopyButton={true}
+            showFullScreenButton={false}
+            class="max-h-[50vh] min-h-0 rounded-lg border border-base-300 overflow-auto"
+          />
         {/if}
       </div>
     </details>

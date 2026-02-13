@@ -5,45 +5,20 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
-export class AppConstants {
-    "ck3": CK3Constants;
-    "eu5": EU5Constants;
-
-    /** Creates a new AppConstants instance. */
-    constructor($$source: Partial<AppConstants> = {}) {
-        if (!("ck3" in $$source)) {
-            this["ck3"] = (new CK3Constants());
-        }
-        if (!("eu5" in $$source)) {
-            this["eu5"] = (new EU5Constants());
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new AppConstants instance from a string or object.
-     */
-    static createFrom($$source: any = {}): AppConstants {
-        const $$createField0_0 = $$createType0;
-        const $$createField1_0 = $$createType1;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("ck3" in $$parsedSource) {
-            $$parsedSource["ck3"] = $$createField0_0($$parsedSource["ck3"]);
-        }
-        if ("eu5" in $$parsedSource) {
-            $$parsedSource["eu5"] = $$createField1_0($$parsedSource["eu5"]);
-        }
-        return new AppConstants($$parsedSource as Partial<AppConstants>);
-    }
-}
-
 /**
- * AppSettings holds persisted app settings (JSON-safe for bindings).
+ * AppSettings holds persisted app settings and game constants (JSON-safe for bindings).
  */
 export class AppSettings {
     "gameInstallPathCk3": string;
     "gameInstallPathEu5": string;
+    "ck3_steamAppId": string;
+    "ck3_wikiUrl": string;
+    "ck3_scriptRootFolder": string;
+    "ck3_docFileName": string;
+    "eu5_steamAppId": string;
+    "eu5_wikiUrl": string;
+    "eu5_scriptRootFolder": string;
+    "eu5_docFileName": string;
 
     /** Creates a new AppSettings instance. */
     constructor($$source: Partial<AppSettings> = {}) {
@@ -52,6 +27,30 @@ export class AppSettings {
         }
         if (!("gameInstallPathEu5" in $$source)) {
             this["gameInstallPathEu5"] = "";
+        }
+        if (!("ck3_steamAppId" in $$source)) {
+            this["ck3_steamAppId"] = "";
+        }
+        if (!("ck3_wikiUrl" in $$source)) {
+            this["ck3_wikiUrl"] = "";
+        }
+        if (!("ck3_scriptRootFolder" in $$source)) {
+            this["ck3_scriptRootFolder"] = "";
+        }
+        if (!("ck3_docFileName" in $$source)) {
+            this["ck3_docFileName"] = "";
+        }
+        if (!("eu5_steamAppId" in $$source)) {
+            this["eu5_steamAppId"] = "";
+        }
+        if (!("eu5_wikiUrl" in $$source)) {
+            this["eu5_wikiUrl"] = "";
+        }
+        if (!("eu5_scriptRootFolder" in $$source)) {
+            this["eu5_scriptRootFolder"] = "";
+        }
+        if (!("eu5_docFileName" in $$source)) {
+            this["eu5_docFileName"] = "";
         }
 
         Object.assign(this, $$source);
@@ -66,39 +65,6 @@ export class AppSettings {
     }
 }
 
-export class CK3Constants {
-    "steamAppId": string;
-    "wikiUrl": string;
-    "scriptRootFolder": string;
-    "docFileName": string;
-
-    /** Creates a new CK3Constants instance. */
-    constructor($$source: Partial<CK3Constants> = {}) {
-        if (!("steamAppId" in $$source)) {
-            this["steamAppId"] = "";
-        }
-        if (!("wikiUrl" in $$source)) {
-            this["wikiUrl"] = "";
-        }
-        if (!("scriptRootFolder" in $$source)) {
-            this["scriptRootFolder"] = "";
-        }
-        if (!("docFileName" in $$source)) {
-            this["docFileName"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new CK3Constants instance from a string or object.
-     */
-    static createFrom($$source: any = {}): CK3Constants {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new CK3Constants($$parsedSource as Partial<CK3Constants>);
-    }
-}
-
 /**
  * DocPathCache is the cached doc path list for a game+install path (JSON-safe for bindings).
  */
@@ -106,7 +72,6 @@ export class DocPathCache {
     "paths": string[];
     "scannedAt": string;
     "installPath": string;
-    "lastSeenUpdateId"?: string;
 
     /** Creates a new DocPathCache instance. */
     constructor($$source: Partial<DocPathCache> = {}) {
@@ -127,7 +92,7 @@ export class DocPathCache {
      * Creates a new DocPathCache instance from a string or object.
      */
     static createFrom($$source: any = {}): DocPathCache {
-        const $$createField0_0 = $$createType2;
+        const $$createField0_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("paths" in $$parsedSource) {
             $$parsedSource["paths"] = $$createField0_0($$parsedSource["paths"]);
@@ -136,36 +101,31 @@ export class DocPathCache {
     }
 }
 
-export class EU5Constants {
-    "steamAppId": string;
-    "wikiUrl": string;
-    "scriptRootFolder": string;
-    "docFileName": string;
+/**
+ * ExtractInventoryResult is returned by ExtractInventory after saving to DB.
+ */
+export class ExtractInventoryResult {
+    "inventoryId": string;
+    "totalCount": number;
 
-    /** Creates a new EU5Constants instance. */
-    constructor($$source: Partial<EU5Constants> = {}) {
-        if (!("steamAppId" in $$source)) {
-            this["steamAppId"] = "";
+    /** Creates a new ExtractInventoryResult instance. */
+    constructor($$source: Partial<ExtractInventoryResult> = {}) {
+        if (!("inventoryId" in $$source)) {
+            this["inventoryId"] = "";
         }
-        if (!("wikiUrl" in $$source)) {
-            this["wikiUrl"] = "";
-        }
-        if (!("scriptRootFolder" in $$source)) {
-            this["scriptRootFolder"] = "";
-        }
-        if (!("docFileName" in $$source)) {
-            this["docFileName"] = "";
+        if (!("totalCount" in $$source)) {
+            this["totalCount"] = 0;
         }
 
         Object.assign(this, $$source);
     }
 
     /**
-     * Creates a new EU5Constants instance from a string or object.
+     * Creates a new ExtractInventoryResult instance from a string or object.
      */
-    static createFrom($$source: any = {}): EU5Constants {
+    static createFrom($$source: any = {}): ExtractInventoryResult {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new EU5Constants($$parsedSource as Partial<EU5Constants>);
+        return new ExtractInventoryResult($$parsedSource as Partial<ExtractInventoryResult>);
     }
 }
 
@@ -204,8 +164,8 @@ export class FileCollectorFilter {
      * Creates a new FileCollectorFilter instance from a string or object.
      */
     static createFrom($$source: any = {}): FileCollectorFilter {
-        const $$createField0_0 = $$createType2;
-        const $$createField1_0 = $$createType2;
+        const $$createField0_0 = $$createType0;
+        const $$createField1_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Extensions" in $$parsedSource) {
             $$parsedSource["Extensions"] = $$createField0_0($$parsedSource["Extensions"]);
@@ -267,56 +227,19 @@ export class FileMergeResult {
 }
 
 /**
- * InventoryItem represents a single extracted game object with metadata.
+ * InventoryItemRow is a lightweight grid row (key, type, file_path, lines, counts).
  */
-export class InventoryItem {
-    /**
-     * Key is the unique identifier for this object (e.g., character ID, event name)
-     */
+export class InventoryItemRow {
     "key": string;
-
-    /**
-     * Type is the object type (e.g., "characters", "events", "traits")
-     */
     "type": string;
-
-    /**
-     * FilePath is the relative path to the file containing this object
-     */
     "filePath": string;
-
-    /**
-     * LineStart is the line number where the object definition begins
-     */
     "lineStart": number;
-
-    /**
-     * LineEnd is the line number where the object definition ends
-     */
     "lineEnd": number;
+    "referencesCount": number;
+    "referrersCount": number;
 
-    /**
-     * RawText contains the original text of the object definition
-     */
-    "rawText": string;
-
-    /**
-     * References contains resolved references to other objects
-     */
-    "references"?: ObjectReference[];
-
-    /**
-     * Referrers contains references to this object from other objects
-     */
-    "referrers"?: ObjectReference[];
-
-    /**
-     * Attributes lists attributes in the object body and whether they are present
-     */
-    "attributes"?: { [_ in string]?: boolean };
-
-    /** Creates a new InventoryItem instance. */
-    constructor($$source: Partial<InventoryItem> = {}) {
+    /** Creates a new InventoryItemRow instance. */
+    constructor($$source: Partial<InventoryItemRow> = {}) {
         if (!("key" in $$source)) {
             this["key"] = "";
         }
@@ -332,31 +255,110 @@ export class InventoryItem {
         if (!("lineEnd" in $$source)) {
             this["lineEnd"] = 0;
         }
-        if (!("rawText" in $$source)) {
-            this["rawText"] = "";
+        if (!("referencesCount" in $$source)) {
+            this["referencesCount"] = 0;
+        }
+        if (!("referrersCount" in $$source)) {
+            this["referrersCount"] = 0;
         }
 
         Object.assign(this, $$source);
     }
 
     /**
-     * Creates a new InventoryItem instance from a string or object.
+     * Creates a new InventoryItemRow instance from a string or object.
      */
-    static createFrom($$source: any = {}): InventoryItem {
-        const $$createField6_0 = $$createType4;
-        const $$createField7_0 = $$createType4;
-        const $$createField8_0 = $$createType5;
+    static createFrom($$source: any = {}): InventoryItemRow {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new InventoryItemRow($$parsedSource as Partial<InventoryItemRow>);
+    }
+}
+
+/**
+ * InventorySummary is a lightweight inventory listing (for ListInventories).
+ */
+export class InventorySummary {
+    "id": string;
+    "name": string;
+    "game": string;
+    "createdAt": string;
+    "totalCount": number;
+
+    /** Creates a new InventorySummary instance. */
+    constructor($$source: Partial<InventorySummary> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("game" in $$source)) {
+            this["game"] = "";
+        }
+        if (!("createdAt" in $$source)) {
+            this["createdAt"] = "";
+        }
+        if (!("totalCount" in $$source)) {
+            this["totalCount"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new InventorySummary instance from a string or object.
+     */
+    static createFrom($$source: any = {}): InventorySummary {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new InventorySummary($$parsedSource as Partial<InventorySummary>);
+    }
+}
+
+/**
+ * ItemDetails is the full details for a single item (for GetItemDetails).
+ */
+export class ItemDetails {
+    "rawText": string;
+    "references": ObjectReference[];
+    "referrers": ObjectReference[];
+    "attributes": { [_ in string]?: boolean };
+
+    /** Creates a new ItemDetails instance. */
+    constructor($$source: Partial<ItemDetails> = {}) {
+        if (!("rawText" in $$source)) {
+            this["rawText"] = "";
+        }
+        if (!("references" in $$source)) {
+            this["references"] = [];
+        }
+        if (!("referrers" in $$source)) {
+            this["referrers"] = [];
+        }
+        if (!("attributes" in $$source)) {
+            this["attributes"] = {};
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ItemDetails instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ItemDetails {
+        const $$createField1_0 = $$createType2;
+        const $$createField2_0 = $$createType2;
+        const $$createField3_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("references" in $$parsedSource) {
-            $$parsedSource["references"] = $$createField6_0($$parsedSource["references"]);
+            $$parsedSource["references"] = $$createField1_0($$parsedSource["references"]);
         }
         if ("referrers" in $$parsedSource) {
-            $$parsedSource["referrers"] = $$createField7_0($$parsedSource["referrers"]);
+            $$parsedSource["referrers"] = $$createField2_0($$parsedSource["referrers"]);
         }
         if ("attributes" in $$parsedSource) {
-            $$parsedSource["attributes"] = $$createField8_0($$parsedSource["attributes"]);
+            $$parsedSource["attributes"] = $$createField3_0($$parsedSource["attributes"]);
         }
-        return new InventoryItem($$parsedSource as Partial<InventoryItem>);
+        return new ItemDetails($$parsedSource as Partial<ItemDetails>);
     }
 }
 
@@ -366,7 +368,7 @@ export class InventoryItem {
 export class LatestPatchNotes {
     "url": string;
     "title": string;
-    "description": string;
+    "contents": string;
 
     /** Creates a new LatestPatchNotes instance. */
     constructor($$source: Partial<LatestPatchNotes> = {}) {
@@ -376,8 +378,8 @@ export class LatestPatchNotes {
         if (!("title" in $$source)) {
             this["title"] = "";
         }
-        if (!("description" in $$source)) {
-            this["description"] = "";
+        if (!("contents" in $$source)) {
+            this["contents"] = "";
         }
 
         Object.assign(this, $$source);
@@ -423,7 +425,7 @@ export class MergerOptions {
      * Creates a new MergerOptions instance from a string or object.
      */
     static createFrom($$source: any = {}): MergerOptions {
-        const $$createField2_0 = $$createType2;
+        const $$createField2_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("keyList" in $$parsedSource) {
             $$parsedSource["keyList"] = $$createField2_0($$parsedSource["keyList"]);
@@ -433,33 +435,14 @@ export class MergerOptions {
 }
 
 /**
- * ObjectReference represents a reference between two game objects
+ * ObjectReference represents a reference between two game objects.
  */
 export class ObjectReference {
-    /**
-     * Key is the key of the referenced object
-     */
     "key": string;
-
-    /**
-     * Type is the type of the referenced object
-     */
     "type": string;
-
-    /**
-     * FilePath is the file where the reference was found
-     */
     "filePath": string;
-
-    /**
-     * LineStart is the line number where the object definition begins (only for referrers)
-     */
-    "lineStart": number;
-
-    /**
-     * LineEnd is the line number where the object definition ends (only for referrers)
-     */
-    "lineEnd": number;
+    "lineStart"?: number;
+    "lineEnd"?: number;
 
     /** Creates a new ObjectReference instance. */
     constructor($$source: Partial<ObjectReference> = {}) {
@@ -471,12 +454,6 @@ export class ObjectReference {
         }
         if (!("filePath" in $$source)) {
             this["filePath"] = "";
-        }
-        if (!("lineStart" in $$source)) {
-            this["lineStart"] = 0;
-        }
-        if (!("lineEnd" in $$source)) {
-            this["lineEnd"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -543,7 +520,7 @@ export class TreeNode {
      * Creates a new TreeNode instance from a string or object.
      */
     static createFrom($$source: any = {}): TreeNode {
-        const $$createField2_0 = $$createType7;
+        const $$createField2_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("children" in $$parsedSource) {
             $$parsedSource["children"] = $$createField2_0($$parsedSource["children"]);
@@ -553,11 +530,9 @@ export class TreeNode {
 }
 
 // Private type creation functions
-const $$createType0 = CK3Constants.createFrom;
-const $$createType1 = EU5Constants.createFrom;
-const $$createType2 = $Create.Array($Create.Any);
-const $$createType3 = ObjectReference.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = $Create.Map($Create.Any, $Create.Any);
-const $$createType6 = TreeNode.createFrom;
-const $$createType7 = $Create.Array($$createType6);
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = ObjectReference.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = $Create.Map($Create.Any, $Create.Any);
+const $$createType4 = TreeNode.createFrom;
+const $$createType5 = $Create.Array($$createType4);

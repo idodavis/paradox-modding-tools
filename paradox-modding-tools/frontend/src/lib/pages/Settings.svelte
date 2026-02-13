@@ -9,6 +9,7 @@
     loadSettings,
   } from "@stores/app";
   import { showToast } from "@stores/toast";
+  import * as DbService from "@services/dbservice";
 
   onMount(() => {
     loadSettings();
@@ -21,6 +22,32 @@
       type: "alert-success",
       duration: 3000,
     });
+  }
+
+  async function resetData() {
+    if (
+      !confirm(
+        "Reset all data? This will delete inventories, doc cache, and patch notes. Game install paths and constants will be kept.",
+      )
+    ) {
+      return;
+    }
+    try {
+      await DbService.ResetData();
+      await loadSettings();
+      showToast({
+        message: "Data reset complete.",
+        type: "alert-success",
+        duration: 3000,
+      });
+    } catch (e) {
+      showToast({
+        message:
+          "Reset failed: " + (e instanceof Error ? e.message : String(e)),
+        type: "alert-error",
+        duration: 5000,
+      });
+    }
   }
 </script>
 
@@ -79,6 +106,25 @@
             Save Settings
           </button>
         </div>
+      </CardBody>
+    </Card>
+
+    <Card class="mt-6 bg-base-300 border border-base-content/10">
+      <CardBody class="p-6">
+        <h3 class="card-title text-base-content/90 mb-2 text-error">
+          Reset data
+        </h3>
+        <p class="text-sm text-base-content/80 mb-4">
+          Permanently delete all inventories, doc cache, and patch notes. Game
+          install paths and app constants are preserved.
+        </p>
+        <button
+          type="button"
+          class="btn btn-error btn-outline"
+          onclick={resetData}
+        >
+          Reset all data
+        </button>
       </CardBody>
     </Card>
   </div>

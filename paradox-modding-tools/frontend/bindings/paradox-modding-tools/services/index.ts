@@ -4,33 +4,35 @@
 import * as BrowserService from "./browserservice.js";
 import * as ClipboardService from "./clipboardservice.js";
 import * as CompareService from "./compareservice.js";
-import * as ConstantsService from "./constantsservice.js";
+import * as DbService from "./dbservice.js";
 import * as FileService from "./fileservice.js";
 import * as InventoryService from "./inventoryservice.js";
 import * as MergeService from "./mergeservice.js";
 import * as ModDocService from "./moddocservice.js";
 import * as SettingsService from "./settingsservice.js";
+import * as SteamService from "./steamservice.js";
 export {
     BrowserService,
     ClipboardService,
     CompareService,
-    ConstantsService,
+    DbService,
     FileService,
     InventoryService,
     MergeService,
     ModDocService,
-    SettingsService
+    SettingsService,
+    SteamService
 };
 
 export {
-    AppConstants,
     AppSettings,
-    CK3Constants,
     DocPathCache,
-    EU5Constants,
+    ExtractInventoryResult,
     FileCollectorFilter,
     FileMergeResult,
-    InventoryItem,
+    InventoryItemRow,
+    InventorySummary,
+    ItemDetails,
     LatestPatchNotes,
     MergerOptions,
     ObjectReference,

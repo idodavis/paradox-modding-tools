@@ -7,7 +7,21 @@ require (
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.68
 )
 
-require golang.org/x/sync v0.19.0
+require (
+	github.com/frustra/bbcode v0.0.0-20201127003707-6ef347fbe1c8
+	golang.org/x/sync v0.19.0
+	modernc.org/sqlite v1.45.0
+)
+
+require (
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
+	modernc.org/libc v1.67.6 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.11.0 // indirect
+)
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

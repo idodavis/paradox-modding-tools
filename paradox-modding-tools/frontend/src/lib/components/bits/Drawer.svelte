@@ -90,9 +90,13 @@
 <Dialog.Root bind:open>
   <Dialog.Portal>
     <Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" {...overlayProps} />
-    <Dialog.Content class="drawer-panel {panelClass}" style={sizeStyle} data-side={side}>
+    <Dialog.Content
+      class="drawer-panel {panelClass}"
+      style={sizeStyle}
+      data-side={side}
+    >
       <div
-        class="flex items-center justify-between gap-2 border-b border-base-content/20 px-3 py-2 bg-base-200 shrink-0"
+        class="flex items-center justify-between gap-2 border-b border-base-content/20 px-3 py-2 bg-base-200"
       >
         {#if titleSnippet}
           <div class="font-semibold truncate">{@render titleSnippet()}</div>
@@ -118,7 +122,9 @@
           onpointercancel={onResizePointerUp}
         >
           <span
-            class="rounded-full bg-base-content/30 pointer-events-none {isVertical ? 'w-12 h-1' : 'w-1 h-8'}"
+            class="rounded-full bg-base-content/30 pointer-events-none {isVertical
+              ? 'w-12 h-1'
+              : 'w-1 h-8'}"
             aria-hidden="true"
           ></span>
         </div>
@@ -141,19 +147,35 @@
     animation: drawer-slide-bottom 0.2s ease-out;
   }
   @keyframes drawer-slide-right {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
   }
   @keyframes drawer-slide-left {
-    from { transform: translateX(-100%); }
-    to { transform: translateX(0); }
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
   }
   @keyframes drawer-slide-top {
-    from { transform: translateY(-100%); }
-    to { transform: translateY(0); }
+    from {
+      transform: translateY(-100%);
+    }
+    to {
+      transform: translateY(0);
+    }
   }
   @keyframes drawer-slide-bottom {
-    from { transform: translateY(100%); }
-    to { transform: translateY(0); }
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
   }
 </style>

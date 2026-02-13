@@ -10,7 +10,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * GetDocPathCache returns the cached doc path list for the game+install path, or nil if not found.
+ * GetDocContent returns the content of a doc file from doc_files.
+ */
+export function GetDocContent(game: string, installPath: string, relPath: string): $CancellablePromise<string> {
+    return $Call.ByID(1072141760, game, installPath, relPath);
+}
+
+/**
+ * GetDocPathCache returns the doc path list from doc_files for the game+install path.
  */
 export function GetDocPathCache(game: string, installPath: string): $CancellablePromise<$models.DocPathCache | null> {
     return $Call.ByID(4098167898, game, installPath).then(($result: any) => {

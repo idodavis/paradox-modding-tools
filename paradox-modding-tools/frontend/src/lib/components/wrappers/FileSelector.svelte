@@ -16,6 +16,7 @@
     folderBtnText = "Select Folder(s)",
     fileFilter = "*.txt; *.json",
     underHint = "",
+    clearLabel = "Clear",
     initialValue = [],
     onPathsChange,
   }: {
@@ -27,6 +28,7 @@
     folderBtnText?: string;
     fileFilter?: string;
     underHint?: string;
+    clearLabel?: string;
     initialValue?: string[];
     onPathsChange?: (paths: string[]) => void;
   } = $props();
@@ -92,7 +94,7 @@
         {folderBtnText}
       </button>
       <button type="button" class="btn w-25 ml-auto" onclick={clear}>
-        Clear
+        {clearLabel}
         <Icon icon="mdi:trash-can" class="size-4" />
       </button>
     </div>

@@ -7,6 +7,7 @@ export const currentPage = writable<'hub' | 'settings' | 'compare-tool' | 'moddi
 export const lastPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs' | 'merge-tool' | 'inventory'>('hub');
 export const gameInstallPathCk3 = writable<string>('');
 export const gameInstallPathEu5 = writable<string>('');
+export const helpOpen = writable<boolean>(false);
 
 export const gameInstallPath = derived(
   [game, gameInstallPathCk3, gameInstallPathEu5],
@@ -16,6 +17,7 @@ export const gameInstallPath = derived(
 export const appSettings = writable<AppSettings>({
   gameInstallPathCk3: '',
   gameInstallPathEu5: '',
+  mergeOutputDir: '',
   ck3_steamAppId: '',
   ck3_wikiUrl: '',
   ck3_scriptRootFolder: '',
@@ -33,6 +35,7 @@ export const appConstants = derived(appSettings, ($s) => ({
 
 export function gotoPage(page: 'hub' | 'settings' | 'compare-tool' | 'modding-docs' | 'merge-tool' | 'inventory') {
   currentPage.update((current) => {
+    helpOpen.set(false);
     if (current !== page) {
       lastPage.set(current);
     }
@@ -55,6 +58,7 @@ export async function saveSettings() {
   await SaveSettings({
     gameInstallPathCk3: get(gameInstallPathCk3),
     gameInstallPathEu5: get(gameInstallPathEu5),
+    mergeOutputDir: get(appSettings).mergeOutputDir ?? '',
     ck3_steamAppId: get(appSettings).ck3_steamAppId,
     ck3_wikiUrl: get(appSettings).ck3_wikiUrl,
     ck3_scriptRootFolder: get(appSettings).ck3_scriptRootFolder,

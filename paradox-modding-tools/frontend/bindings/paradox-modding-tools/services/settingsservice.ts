@@ -15,12 +15,35 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
+ * DeleteMergePreset removes a preset by name.
+ */
+export function DeleteMergePreset(name: string): $CancellablePromise<void> {
+    return $Call.ByID(241571328, name);
+}
+
+/**
+ * GetMergePresets returns saved merge presets from app_settings.
+ */
+export function GetMergePresets(): $CancellablePromise<$models.MergePreset[]> {
+    return $Call.ByID(3580251362).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
  * GetSettings loads settings and game constants from app_settings table.
  */
 export function GetSettings(): $CancellablePromise<$models.AppSettings> {
     return $Call.ByID(1419253203).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType2($result);
     });
+}
+
+/**
+ * SaveMergePreset saves a merge preset by name.
+ */
+export function SaveMergePreset(name: string, options: $models.MergerOptions): $CancellablePromise<void> {
+    return $Call.ByID(3311953510, name, options);
 }
 
 /**
@@ -31,4 +54,6 @@ export function SaveSettings(settings: $models.AppSettings): $CancellablePromise
 }
 
 // Private type creation functions
-const $$createType0 = $models.AppSettings.createFrom;
+const $$createType0 = $models.MergePreset.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $models.AppSettings.createFrom;

@@ -26,11 +26,11 @@
   } = $props();
 
   const gridContainerClass = $derived(
-    "rounded-xl border-2 border-base-content/20 bg-base-200/70 shadow-lg shadow-black/20 overflow-hidden " +
+    "rounded-lg border border-base-content/20 bg-base-100 overflow-hidden " +
       (className || ""),
   );
 
-  // Create a custom dark theme using Theming API
+  // Create a custom dark theme aligned with DaisyUI base colors
   const darkTheme = themeQuartz.withParams({
     accentColor: "#B387FA",
     backgroundColor: "#1A1E28",
@@ -53,7 +53,7 @@
       rowData,
       defaultColDef: {
         flex: 1,
-        minWidth: 100,
+        minWidth: 120,
       },
       ...userGridOptions,
     };

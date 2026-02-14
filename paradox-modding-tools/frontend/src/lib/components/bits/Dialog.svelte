@@ -2,7 +2,7 @@
   import type { Snippet } from "svelte";
   import { Dialog, type WithoutChild } from "bits-ui";
 
-  type Size = "sm" | "md" | "lg" | "xl" | "fullscreen";
+  type Size = "sm" | "md" | "lg" | "xl" | "2xl" | "fullscreen";
 
   type Props = Dialog.RootProps & {
     triggerDialog?: Snippet;
@@ -35,6 +35,7 @@
     md: `${baseModal} max-h-[min(90vh,28rem)] max-w-md`,
     lg: `${baseModal} max-h-[min(90vh,32rem)] max-w-lg`,
     xl: `${baseModal} max-h-[min(90vh,36rem)] max-w-xl`,
+    "2xl": `${baseModal} max-h-[min(95vh,42rem)] max-w-3xl`,
     fullscreen:
       "fixed inset-0 z-50 w-full h-full max-w-none max-h-none rounded-none border-0 p-6",
   };

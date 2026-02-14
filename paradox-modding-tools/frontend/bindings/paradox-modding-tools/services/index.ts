@@ -34,8 +34,14 @@ export {
     InventorySummary,
     ItemDetails,
     LatestPatchNotes,
+    MergeConflictChunk,
+    MergePair,
+    MergePreset,
     MergerOptions,
     ObjectReference,
     PathMatch,
-    TreeNode
+    PreviewItem,
+    ResolvedConflict,
+    TreeNode,
+    ValidationError
 } from "./models.js";

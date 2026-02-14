@@ -15,31 +15,70 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * MergeMultipleFileSets merges matching files from pathsA and pathsB into outputDir.
- * Uses core for discovery/matching and merge logic.
+ * GenerateMergeReport builds a Markdown report from merge results.
  */
-export function MergeMultipleFileSets(pathsA: string[], pathsB: string[], outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[]> {
-    return $Call.ByID(2908210642, pathsA, pathsB, outputDir, options).then(($result: any) => {
+export function GenerateMergeReport(results: $models.FileMergeResult[], totalAdded: number, totalChanged: number, totalRemoved: number, labelA: string, labelB: string): $CancellablePromise<string> {
+    return $Call.ByID(1204015806, results, totalAdded, totalChanged, totalRemoved, labelA, labelB);
+}
+
+/**
+ * GetMergeConflicts returns structured conflict chunks for the assisted merge editor.
+ */
+export function GetMergeConflicts(fileAPath: string, fileBPath: string, options: $models.MergerOptions): $CancellablePromise<$models.MergeConflictChunk[]> {
+    return $Call.ByID(2239209270, fileAPath, fileBPath, options).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 /**
- * MergeTwoFilesAndSave merges two files, opens the save dialog, and writes the result. Single backend call.
+ * MergeMultipleFileSetsFiltered merges only the given relPaths (from preview). Pass nil/empty to merge all.
  */
-export function MergeTwoFilesAndSave(fileAPath: string, fileBPath: string, options: $models.MergerOptions): $CancellablePromise<string> {
-    return $Call.ByID(1515496208, fileAPath, fileBPath, options);
+export function MergeMultipleFileSetsFiltered(pathsA: string[], pathsB: string[], outputDir: string, options: $models.MergerOptions, onlyRelPaths: string[]): $CancellablePromise<$models.FileMergeResult[]> {
+    return $Call.ByID(2985426941, pathsA, pathsB, outputDir, options, onlyRelPaths).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 /**
- * MergeVanillaMod runs the full vanilla-vs-mod merge: resolves game script root, then merges into outputDir.
+ * MergePairs merges explicitly paired files. outputDir is the base output directory.
  */
-export function MergeVanillaMod(game: string, installPath: string, modPaths: string[], outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[]> {
-    return $Call.ByID(1897491292, game, installPath, modPaths, outputDir, options).then(($result: any) => {
-        return $$createType1($result);
+export function MergePairs(pairs: $models.MergePair[], outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[]> {
+    return $Call.ByID(2960739598, pairs, outputDir, options).then(($result: any) => {
+        return $$createType3($result);
     });
+}
+
+/**
+ * MergePreview returns a preview of what would be merged (no files written).
+ */
+export function MergePreview(pathsA: string[], pathsB: string[], outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[]> {
+    return $Call.ByID(2633360575, pathsA, pathsB, outputDir, options).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+/**
+ * ValidateMergedFiles runs the Paradox parser on each path and returns parse errors.
+ */
+export function ValidateMergedFiles(paths: string[]): $CancellablePromise<$models.ValidationError[]> {
+    return $Call.ByID(31895744, paths).then(($result: any) => {
+        return $$createType7($result);
+    });
+}
+
+/**
+ * WriteMergedFile writes content to outputPath as UTF-8 with BOM (no dialog). For merge editor save.
+ */
+export function WriteMergedFile(outputPath: string, content: string): $CancellablePromise<void> {
+    return $Call.ByID(98673460, outputPath, content);
 }
 
 // Private type creation functions
-const $$createType0 = $models.FileMergeResult.createFrom;
+const $$createType0 = $models.MergeConflictChunk.createFrom;
 const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $models.FileMergeResult.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = $models.PreviewItem.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = $models.ValidationError.createFrom;
+const $$createType7 = $Create.Array($$createType6);

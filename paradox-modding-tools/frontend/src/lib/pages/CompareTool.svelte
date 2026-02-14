@@ -8,7 +8,7 @@
     Grid,
     DiffViewer,
   } from "@components";
-  import { game, gameInstallPath } from "@stores/app";
+  import { game, gameInstallPath } from "@stores/app.svelte";
   import { VanillaCompare, TwoSetsCompare } from "@services/compareservice";
   import type { PathMatch } from "@services/models";
   let modPaths: string[] = $state([]);

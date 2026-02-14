@@ -34,11 +34,11 @@ export function CollectFilesFromPaths(inputPaths: string[], filter: $models.File
 }
 
 /**
- * FindMatchingPaths finds paths that exist in both sets by matching relative paths
- * Returns a map of relativePath -> PathMatch
+ * FindMatchingPaths finds paths that exist in both sets. When matchByFilenameOnly is true,
+ * matches only by filename (e.g. for zz_mod_file.txt where paths differ).
  */
-export function FindMatchingPaths(filesA: { [_ in string]?: string }, filesB: { [_ in string]?: string }): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
-    return $Call.ByID(2990739391, filesA, filesB).then(($result: any) => {
+export function FindMatchingPaths(filesA: { [_ in string]?: string }, filesB: { [_ in string]?: string }, matchByFilenameOnly: boolean): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
+    return $Call.ByID(2990739391, filesA, filesB, matchByFilenameOnly).then(($result: any) => {
         return $$createType4($result);
     });
 }

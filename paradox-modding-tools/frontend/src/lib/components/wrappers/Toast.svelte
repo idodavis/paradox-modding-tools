@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { toasts } from "@stores/toast"; // or wherever the store lives
+  import { toasts } from "@stores/toast.svelte"; // or wherever the store lives
 </script>
 
 {#each $toasts as item (item.id)}
-  <div class="toast {item.placement}">
+  <div class="toast z-100 {item.placement}">
     <div class="alert {item.type}">
       {#if item.contentHtml}
         {@html item.contentHtml}

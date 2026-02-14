@@ -21,7 +21,7 @@ func (c *CompareService) VanillaCompare(game string, vanillaInstallPath string, 
 	if err != nil {
 		return nil, err
 	}
-	matches, err := c.fileService.FindMatchingPaths(vanillaFiles, modFiles)
+	matches, err := c.fileService.FindMatchingPaths(vanillaFiles, modFiles, false)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (c *CompareService) TwoSetsCompare(setA []string, setB []string) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	matches, err := c.fileService.FindMatchingPaths(filesA, filesB)
+	matches, err := c.fileService.FindMatchingPaths(filesA, filesB, false)
 	if err != nil {
 		return nil, err
 	}

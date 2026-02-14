@@ -1,22 +1,25 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { DiffModeEnum, DiffView, DiffFile } from "@git-diff-view/svelte";
+  import { DiffModeEnum, DiffView, type DiffFile } from "@git-diff-view/svelte";
   import { generateDiffFile } from "@git-diff-view/file";
   import "@git-diff-view/svelte/styles/diff-view.css";
   import { ReadFileContent } from "@services/fileservice";
-  import { onMount, onDestroy } from "svelte";
-
-  // TODO: Cleanup and and look into bits-ui Dialog component for better implementation.
+  import Icon from "@iconify/svelte";
+  import { Dialog } from "@components";
 
   let {
     oldFile,
     newFile,
+    oldFileName: customOldFileName,
+    newFileName: customNewFileName,
     lang = "nginx",
     highlighting = true,
     onclose,
   }: {
     oldFile: string;
     newFile: string;
+    oldFileName?: string;
+    newFileName?: string;
     lang?: string;
     highlighting?: boolean;
     onclose?: () => void;
@@ -30,10 +33,17 @@
   let currentMatchIndex = $state(-1);
   let diffContainerRef = $state<HTMLDivElement | null>(null);
   let searchInputRef = $state<HTMLInputElement | null>(null);
+  let open = $state(true);
 
-  const oldFileName = $derived(oldFile?.split(/[/\\]/).pop() ?? oldFile ?? "");
-  const newFileName = $derived(newFile?.split(/[/\\]/).pop() ?? newFile ?? "");
-  const hasNoDiffs = $derived(diffFile !== null && diffFile.diffLineLength === 0);
+  const oldFileName = $derived(
+    customOldFileName ?? oldFile?.split(/[/\\]/).pop() ?? oldFile ?? "",
+  );
+  const newFileName = $derived(
+    customNewFileName ?? newFile?.split(/[/\\]/).pop() ?? newFile ?? "",
+  );
+  const hasNoDiffs = $derived(
+    diffFile !== null && diffFile.diffLineLength === 0,
+  );
   const HL = "diff-search-highlight";
 
   function nav(dir: 1 | -1) {
@@ -47,8 +57,16 @@
   }
 
   $effect(() => {
+    if (!open) {
+      onclose?.();
+    }
+  });
+
+  $effect(() => {
     error = null;
+    diffFile = null;
     (async () => {
+      if (!oldFile || !newFile) return;
       try {
         const [a, b] = await Promise.all([
           ReadFileContent(oldFile),
@@ -83,7 +101,8 @@
     const q = searchQuery.trim().toLowerCase();
     const i = currentMatchIndex;
     tick().then(() => {
-      c?.querySelectorAll(`.${HL}`).forEach((el) => el.classList.remove(HL));
+      if (!c) return;
+      c.querySelectorAll(`.${HL}`).forEach((el) => el.classList.remove(HL));
       if (!c || !q) {
         matchCount = 0;
         return;
@@ -100,43 +119,37 @@
     });
   });
 
-  const onKey = (e: KeyboardEvent) => {
+  function onKey(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key === "f") {
       e.preventDefault();
       searchInputRef?.focus();
     }
-  };
-  onMount(() => window.addEventListener("keydown", onKey));
-  onDestroy(() => {
-    document.body.style.overflow = "";
-    window.removeEventListener("keydown", onKey);
-  });
+  }
 </script>
 
-<div
-  class="fixed inset-0 z-50 bg-base-300/95 flex flex-col"
-  role="dialog"
-  aria-modal="true"
-  aria-label="Diff Viewer"
-  tabindex="-1"
-  onclick={(e) => e.target === e.currentTarget && onclose?.()}
-  onkeydown={(e) => e.key === "Escape" && onclose?.()}
+<svelte:window onkeydown={onKey} />
+
+<Dialog
+  bind:open
+  size="fullscreen"
+  contentProps={{ class: "flex flex-col overflow-hidden !p-0 bg-base-100" }}
 >
-  <div
-    class="m-4 flex flex-col min-h-0 flex-1 bg-base-100 rounded-xl border border-base-content/20 overflow-hidden shadow-xl"
-  >
+  {#snippet title()}
     <div
-      class="px-4 py-3 border-b border-base-content/20 bg-base-200/80 flex flex-col gap-2"
+      class="px-4 py-3 border-b border-base-content/20 bg-base-200/80 flex flex-col gap-2 shrink-0"
     >
       <div class="flex justify-between items-center gap-2">
         <h2 class="text-lg font-semibold truncate">
-          Comparing: <span class="text-primary">{oldFileName}</span> ↔ <span class="text-secondary">{newFileName}</span>
+          Comparing: <span class="text-primary">{oldFileName}</span> ↔
+          <span class="text-secondary">{newFileName}</span>
         </h2>
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm"
-          onclick={() => onclose?.()}>Close</button
-        >
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            onclick={() => (open = false)}>Close</button
+          >
+        </div>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm text-base-content/70">View:</span>
@@ -192,24 +205,31 @@
         {/if}
       </div>
     </div>
-    <div
-      bind:this={diffContainerRef}
-      class="min-h-0 flex-1 overflow-auto bg-base-100"
-    >
-      {#if error}<p class="p-4 text-error">Error: {error}</p>
-      {:else if hasNoDiffs}
-        <p class="p-8 text-center text-base-content/70">No differences between the files.</p>
-      {:else if diffFile}
-        <DiffView
-          {diffFile}
-          diffViewMode={viewModeState}
-          diffViewTheme="dark"
-          diffViewHighlight={highlighting}
-        />
-      {/if}
-    </div>
+  {/snippet}
+
+  {#snippet description()}
+    <span class="sr-only">Diff viewer</span>
+  {/snippet}
+
+  <div
+    bind:this={diffContainerRef}
+    class="min-h-0 flex-1 overflow-auto bg-base-100 relative"
+  >
+    {#if error}<p class="p-4 text-error">Error: {error}</p>
+    {:else if hasNoDiffs}
+      <p class="p-8 text-center text-base-content/70">
+        No differences between the files.
+      </p>
+    {:else if diffFile}
+      <DiffView
+        {diffFile}
+        diffViewMode={viewModeState}
+        diffViewTheme="dark"
+        diffViewHighlight={highlighting}
+      />
+    {/if}
   </div>
-</div>
+</Dialog>
 
 <style>
   :global(.diff-search-highlight),

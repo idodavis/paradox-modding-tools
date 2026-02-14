@@ -7,7 +7,7 @@
     Drawer,
     MultiSelect,
   } from "@components";
-  import { game } from "@stores/app";
+  import { game } from "@stores/app.svelte";
   import * as InventoryService from "@services/inventoryservice";
   import type {
     ExtractInventoryResult,
@@ -380,7 +380,7 @@
   <ExportImportDialog
     bind:open={showExportImport}
     {hasExtraction}
-    currentInventoryId={currentInventoryId}
+    {currentInventoryId}
     game={$game}
     itemCount={allItems.length}
     onImportSuccess={async (id) => {

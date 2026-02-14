@@ -11,6 +11,7 @@ import { Create as $Create } from "@wailsio/runtime";
 export class AppSettings {
     "gameInstallPathCk3": string;
     "gameInstallPathEu5": string;
+    "mergeOutputDir": string;
     "ck3_steamAppId": string;
     "ck3_wikiUrl": string;
     "ck3_scriptRootFolder": string;
@@ -27,6 +28,9 @@ export class AppSettings {
         }
         if (!("gameInstallPathEu5" in $$source)) {
             this["gameInstallPathEu5"] = "";
+        }
+        if (!("mergeOutputDir" in $$source)) {
+            this["mergeOutputDir"] = "";
         }
         if (!("ck3_steamAppId" in $$source)) {
             this["ck3_steamAppId"] = "";
@@ -145,6 +149,16 @@ export class FileCollectorFilter {
      */
     "Regex": string;
 
+    /**
+     * regex on rel path, e.g. "events/" - include only if matches
+     */
+    "IncludePath": string;
+
+    /**
+     * regex on rel path, e.g. "common/" - exclude if matches
+     */
+    "ExcludePath": string;
+
     /** Creates a new FileCollectorFilter instance. */
     constructor($$source: Partial<FileCollectorFilter> = {}) {
         if (!("Extensions" in $$source)) {
@@ -155,6 +169,12 @@ export class FileCollectorFilter {
         }
         if (!("Regex" in $$source)) {
             this["Regex"] = "";
+        }
+        if (!("IncludePath" in $$source)) {
+            this["IncludePath"] = "";
+        }
+        if (!("ExcludePath" in $$source)) {
+            this["ExcludePath"] = "";
         }
 
         Object.assign(this, $$source);
@@ -188,6 +208,9 @@ export class FileMergeResult {
     "changed": number;
     "added": number;
     "removed": number;
+    "entriesChanged"?: string[];
+    "entriesAdded"?: string[];
+    "resolvedConflicts"?: ResolvedConflict[];
     "error"?: string;
 
     /** Creates a new FileMergeResult instance. */
@@ -221,7 +244,19 @@ export class FileMergeResult {
      * Creates a new FileMergeResult instance from a string or object.
      */
     static createFrom($$source: any = {}): FileMergeResult {
+        const $$createField7_0 = $$createType0;
+        const $$createField8_0 = $$createType0;
+        const $$createField9_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("entriesChanged" in $$parsedSource) {
+            $$parsedSource["entriesChanged"] = $$createField7_0($$parsedSource["entriesChanged"]);
+        }
+        if ("entriesAdded" in $$parsedSource) {
+            $$parsedSource["entriesAdded"] = $$createField8_0($$parsedSource["entriesAdded"]);
+        }
+        if ("resolvedConflicts" in $$parsedSource) {
+            $$parsedSource["resolvedConflicts"] = $$createField9_0($$parsedSource["resolvedConflicts"]);
+        }
         return new FileMergeResult($$parsedSource as Partial<FileMergeResult>);
     }
 }
@@ -345,9 +380,9 @@ export class ItemDetails {
      * Creates a new ItemDetails instance from a string or object.
      */
     static createFrom($$source: any = {}): ItemDetails {
-        const $$createField1_0 = $$createType2;
-        const $$createField2_0 = $$createType2;
-        const $$createField3_0 = $$createType3;
+        const $$createField1_0 = $$createType4;
+        const $$createField2_0 = $$createType4;
+        const $$createField3_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("references" in $$parsedSource) {
             $$parsedSource["references"] = $$createField1_0($$parsedSource["references"]);
@@ -395,18 +430,157 @@ export class LatestPatchNotes {
 }
 
 /**
+ * MergeConflictChunk is a unit of content for the assisted merge editor (JSON-safe for bindings).
+ */
+export class MergeConflictChunk {
+    /**
+     * "unchanged" or "conflict"
+     */
+    "type": string;
+
+    /**
+     * object key when type is "conflict"
+     */
+    "key": string;
+
+    /**
+     * for unchanged
+     */
+    "text": string;
+
+    /**
+     * for conflict
+     */
+    "textA": string;
+
+    /**
+     * for conflict
+     */
+    "textB": string;
+
+    /** Creates a new MergeConflictChunk instance. */
+    constructor($$source: Partial<MergeConflictChunk> = {}) {
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+        if (!("key" in $$source)) {
+            this["key"] = "";
+        }
+        if (!("text" in $$source)) {
+            this["text"] = "";
+        }
+        if (!("textA" in $$source)) {
+            this["textA"] = "";
+        }
+        if (!("textB" in $$source)) {
+            this["textB"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MergeConflictChunk instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MergeConflictChunk {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new MergeConflictChunk($$parsedSource as Partial<MergeConflictChunk>);
+    }
+}
+
+/**
+ * MergePair is a user-specified file pair (JSON-safe for bindings)
+ */
+export class MergePair {
+    "pathA": string;
+    "pathB": string;
+
+    /**
+     * e.g. "merged_events.txt"; empty = use PathA basename
+     */
+    "outputName": string;
+
+    /** Creates a new MergePair instance. */
+    constructor($$source: Partial<MergePair> = {}) {
+        if (!("pathA" in $$source)) {
+            this["pathA"] = "";
+        }
+        if (!("pathB" in $$source)) {
+            this["pathB"] = "";
+        }
+        if (!("outputName" in $$source)) {
+            this["outputName"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MergePair instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MergePair {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new MergePair($$parsedSource as Partial<MergePair>);
+    }
+}
+
+/**
+ * MergePreset holds a named merge options profile (JSON-safe for bindings)
+ */
+export class MergePreset {
+    "name": string;
+    "options": MergerOptions;
+
+    /** Creates a new MergePreset instance. */
+    constructor($$source: Partial<MergePreset> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("options" in $$source)) {
+            this["options"] = (new MergerOptions());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MergePreset instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MergePreset {
+        const $$createField1_0 = $$createType6;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("options" in $$parsedSource) {
+            $$parsedSource["options"] = $$createField1_0($$parsedSource["options"]);
+        }
+        return new MergePreset($$parsedSource as Partial<MergePreset>);
+    }
+}
+
+/**
  * MergerOptions configures how files are merged (JSON-safe for bindings)
  */
 export class MergerOptions {
     "addAdditionalEntries": boolean;
+    "manualConflictResolution": boolean;
     "entryPlacement": string;
     "keyList": string[];
-    "customCommentPrefix": string;
+    "matchByFilenameOnly": boolean;
+    "includePathPattern": string;
+    "excludePathPattern": string;
+    "outputFilename": string;
+
+    /**
+     * e.g. "_merged" meaning: events/foo.txt -> events/foo_merged.txt
+     */
+    "outputFileSuffix": string;
 
     /** Creates a new MergerOptions instance. */
     constructor($$source: Partial<MergerOptions> = {}) {
         if (!("addAdditionalEntries" in $$source)) {
             this["addAdditionalEntries"] = false;
+        }
+        if (!("manualConflictResolution" in $$source)) {
+            this["manualConflictResolution"] = false;
         }
         if (!("entryPlacement" in $$source)) {
             this["entryPlacement"] = "";
@@ -414,8 +588,20 @@ export class MergerOptions {
         if (!("keyList" in $$source)) {
             this["keyList"] = [];
         }
-        if (!("customCommentPrefix" in $$source)) {
-            this["customCommentPrefix"] = "";
+        if (!("matchByFilenameOnly" in $$source)) {
+            this["matchByFilenameOnly"] = false;
+        }
+        if (!("includePathPattern" in $$source)) {
+            this["includePathPattern"] = "";
+        }
+        if (!("excludePathPattern" in $$source)) {
+            this["excludePathPattern"] = "";
+        }
+        if (!("outputFilename" in $$source)) {
+            this["outputFilename"] = "";
+        }
+        if (!("outputFileSuffix" in $$source)) {
+            this["outputFileSuffix"] = "";
         }
 
         Object.assign(this, $$source);
@@ -425,10 +611,10 @@ export class MergerOptions {
      * Creates a new MergerOptions instance from a string or object.
      */
     static createFrom($$source: any = {}): MergerOptions {
-        const $$createField2_0 = $$createType0;
+        const $$createField3_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("keyList" in $$parsedSource) {
-            $$parsedSource["keyList"] = $$createField2_0($$parsedSource["keyList"]);
+            $$parsedSource["keyList"] = $$createField3_0($$parsedSource["keyList"]);
         }
         return new MergerOptions($$parsedSource as Partial<MergerOptions>);
     }
@@ -496,6 +682,86 @@ export class PathMatch {
     }
 }
 
+/**
+ * PreviewItem is a single file match for the merge preview (JSON-safe for bindings)
+ */
+export class PreviewItem {
+    "relPath": string;
+    "pathA": string;
+    "pathB": string;
+    "outputPath": string;
+    "wouldOverwrite": boolean;
+
+    /** Creates a new PreviewItem instance. */
+    constructor($$source: Partial<PreviewItem> = {}) {
+        if (!("relPath" in $$source)) {
+            this["relPath"] = "";
+        }
+        if (!("pathA" in $$source)) {
+            this["pathA"] = "";
+        }
+        if (!("pathB" in $$source)) {
+            this["pathB"] = "";
+        }
+        if (!("outputPath" in $$source)) {
+            this["outputPath"] = "";
+        }
+        if (!("wouldOverwrite" in $$source)) {
+            this["wouldOverwrite"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PreviewItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PreviewItem {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PreviewItem($$parsedSource as Partial<PreviewItem>);
+    }
+}
+
+/**
+ * ResolvedConflict records a conflict that was auto-resolved (for report/audit).
+ */
+export class ResolvedConflict {
+    "key": string;
+
+    /**
+     * "A" or "B"
+     */
+    "usedSide": string;
+
+    /**
+     * "directive", "keyList", "default"
+     */
+    "reason": string;
+
+    /** Creates a new ResolvedConflict instance. */
+    constructor($$source: Partial<ResolvedConflict> = {}) {
+        if (!("key" in $$source)) {
+            this["key"] = "";
+        }
+        if (!("usedSide" in $$source)) {
+            this["usedSide"] = "";
+        }
+        if (!("reason" in $$source)) {
+            this["reason"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ResolvedConflict instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ResolvedConflict {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ResolvedConflict($$parsedSource as Partial<ResolvedConflict>);
+    }
+}
+
 export class TreeNode {
     "relPath": string;
     "name": string;
@@ -520,7 +786,7 @@ export class TreeNode {
      * Creates a new TreeNode instance from a string or object.
      */
     static createFrom($$source: any = {}): TreeNode {
-        const $$createField2_0 = $$createType5;
+        const $$createField2_0 = $$createType8;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("children" in $$parsedSource) {
             $$parsedSource["children"] = $$createField2_0($$parsedSource["children"]);
@@ -529,10 +795,45 @@ export class TreeNode {
     }
 }
 
+/**
+ * ValidationError describes a parse error in a merged file (JSON-safe for bindings)
+ */
+export class ValidationError {
+    "path": string;
+    "line": number;
+    "error": string;
+
+    /** Creates a new ValidationError instance. */
+    constructor($$source: Partial<ValidationError> = {}) {
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("line" in $$source)) {
+            this["line"] = 0;
+        }
+        if (!("error" in $$source)) {
+            this["error"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ValidationError instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ValidationError {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ValidationError($$parsedSource as Partial<ValidationError>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);
-const $$createType1 = ObjectReference.createFrom;
+const $$createType1 = ResolvedConflict.createFrom;
 const $$createType2 = $Create.Array($$createType1);
-const $$createType3 = $Create.Map($Create.Any, $Create.Any);
-const $$createType4 = TreeNode.createFrom;
-const $$createType5 = $Create.Array($$createType4);
+const $$createType3 = ObjectReference.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $Create.Map($Create.Any, $Create.Any);
+const $$createType6 = MergerOptions.createFrom;
+const $$createType7 = TreeNode.createFrom;
+const $$createType8 = $Create.Array($$createType7);

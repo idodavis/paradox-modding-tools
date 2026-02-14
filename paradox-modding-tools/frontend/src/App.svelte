@@ -9,8 +9,14 @@
   import MergeTool from "@pages/MergeTool.svelte";
   import InventoryTool from "@pages/InventoryTool.svelte";
   import Settings from "@pages/Settings.svelte";
-  import { game, currentPage, gotoPage, loadSettings } from "@stores/app";
-  import { showToast } from "@stores/toast";
+  import {
+    game,
+    currentPage,
+    gotoPage,
+    loadSettings,
+    helpOpen,
+  } from "@stores/app.svelte";
+  import { showToast } from "@stores/toast.svelte";
   import { GetLatestPatchNotes } from "@services/steamservice";
   import { OpenURL } from "@services/browserservice";
   import type { LatestPatchNotes } from "@services/models";
@@ -100,8 +106,12 @@
       >
         <Icon icon="mdi:cog" class="size-6" />
       </button>
-      <button class="btn btn-square btn-ghost" type="button">
-        <Icon icon="mdi:help-circle" class="size-6" />
+      <button
+        class="btn btn-square btn-ghost"
+        type="button"
+        onclick={() => helpOpen.update((v) => !v)}
+      >
+        <Icon icon="mdi:help-circle" class="size-6 text-accent" />
       </button>
     </div>
   </div>

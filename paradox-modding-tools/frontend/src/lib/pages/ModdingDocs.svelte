@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Tab, Tabs, Card, CardBody, FileTree, CodeBlock } from "@components";
-  import { game, gameInstallPath, appConstants } from "@stores/app";
+  import { game, gameInstallPath, appConstants } from "@stores/app.svelte";
   import {
     Scan,
     GetDocPathCache,

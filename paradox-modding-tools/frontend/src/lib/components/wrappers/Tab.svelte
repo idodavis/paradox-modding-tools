@@ -6,6 +6,7 @@
     selected = false,
     class: tabClass = "",
     contentClass = "",
+    onclick,
     children,
     ...restProps
   }: {
@@ -14,6 +15,7 @@
     selected?: boolean;
     class?: string;
     contentClass?: string;
+    onclick?: (event: MouseEvent) => void;
     children?: import("svelte").Snippet;
   } = $props();
 
@@ -58,6 +60,7 @@
   name={tabGroup}
   class="tab {tabClass}"
   aria-label={label}
+  {onclick}
   {...restProps}
 />
 

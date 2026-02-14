@@ -5,10 +5,11 @@
     goBack,
     gameInstallPathCk3,
     gameInstallPathEu5,
+    appSettings,
     saveSettings,
     loadSettings,
-  } from "@stores/app";
-  import { showToast } from "@stores/toast";
+  } from "@stores/app.svelte";
+  import { showToast } from "@stores/toast.svelte";
   import * as DbService from "@services/dbservice";
 
   onMount(() => {
@@ -95,6 +96,21 @@
               gameInstallPathEu5.set(paths[0])}
           />
         </div>
+        <h3 class="card-title text-base-content/90 mb-2 mt-6">Merge Tool</h3>
+        <p class="text-sm text-base-content/80 mb-4">
+          Default output directory for merge operations.
+        </p>
+        <FileSelector
+          mode="folderOnly"
+          dialogTitle="Default merge output dir"
+          folderBtnText="Browse"
+          placeholder="Merge output directory"
+          initialValue={$appSettings?.mergeOutputDir
+            ? [$appSettings.mergeOutputDir]
+            : []}
+          onPathsChange={(p) =>
+            appSettings.update((s) => ({ ...s, mergeOutputDir: p[0] ?? "" }))}
+        />
         <div
           class="card-actions justify-end mt-6 pt-4 border-t border-base-content/10"
         >

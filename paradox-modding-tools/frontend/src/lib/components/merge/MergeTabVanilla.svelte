@@ -24,19 +24,19 @@
       placeholder="Game path (Modding Docs / Settings)"
     />
     <FileSelector
-      mode="folderOnly"
+      mode="folder"
       legend="Mod folder (B)"
       dialogTitle="Select Mod Folder"
-      folderBtnText="Select Folder"
+      btnText="Select Folder"
       placeholder="Mod folder (B)"
       initialValue={store.modPaths}
       onPathsChange={(p) => (store.modPaths = p)}
     />
     <FileSelector
       legend="Output dir"
-      mode="folderOnly"
+      mode="folder"
       dialogTitle="Output dir"
-      folderBtnText="Browse"
+      btnText="Browse"
       placeholder="Output directory"
       initialValue={store.outputDir ? [store.outputDir] : []}
       onPathsChange={(p) => (store.outputDir = p[0] ?? "")}

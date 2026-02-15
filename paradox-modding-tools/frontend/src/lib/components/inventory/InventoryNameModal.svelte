@@ -42,7 +42,7 @@
   const submitLabel = $derived(mode === "save" ? "Save" : "Rename");
 </script>
 
-<Dialog bind:open contentProps={{ class: "max-w-md" }}>
+<Dialog bind:open contentProps={{ class: "max-w-md p-6" }}>
   {#snippet title()}{title}{/snippet}
   {#snippet description()}
     {mode === "save"
@@ -55,7 +55,7 @@
     </button>
   {/snippet}
 
-  <div class="flex flex-col gap-4 py-2">
+  <div class="flex flex-col gap-4 py-4">
     <input
       type="text"
       class="input input-bordered w-full"

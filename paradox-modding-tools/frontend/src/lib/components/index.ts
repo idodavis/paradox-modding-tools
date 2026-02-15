@@ -14,3 +14,8 @@ export { default as MultiSelect } from './wrappers/MultiSelect.svelte';
 export { default as MergeHelp } from './merge/MergeHelp.svelte';
 export { default as MergeOptionsPanel } from './merge/MergeOptionsPanel.svelte';
 export { default as MergeResults } from './merge/MergeResults.svelte';
+export { default as ExportImportDialog } from './inventory/ExportImportDialog.svelte';
+export { default as InventoryCard } from './inventory/InventoryCard.svelte';
+export { default as InventoryNameModal } from './inventory/InventoryNameModal.svelte';
+export { default as InventoryHelp } from './inventory/InventoryHelp.svelte';
+export { default as ItemDetails } from './inventory/ItemDetails.svelte';

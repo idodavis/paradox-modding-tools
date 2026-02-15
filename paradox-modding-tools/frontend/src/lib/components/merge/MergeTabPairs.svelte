@@ -9,7 +9,7 @@
   <CardBody>
     <p class="text-sm text-base-content/90 mb-1">
       <strong>When to use:</strong> Explicitly pair files when paths differ (e.g.
-      vanilla vs mod structure).
+      two different mods).
     </p>
     <p class="text-sm text-base-content/70 mb-4">
       Add pairs (A↔B), set optional output name per pair. Output dir is the
@@ -17,9 +17,9 @@
     </p>
     <FileSelector
       legend="Output dir"
-      mode="folderOnly"
+      mode="folder"
       dialogTitle="Output dir"
-      folderBtnText="Browse"
+      btnText="Browse"
       placeholder="Output directory"
       initialValue={store.outputDir ? [store.outputDir] : []}
       onPathsChange={(p) => (store.outputDir = p[0] ?? "")}
@@ -38,18 +38,18 @@
           class="flex flex-wrap items-center gap-2 p-2 rounded border border-base-content/20 bg-base-200/50"
         >
           <FileSelector
-            mode="fileOnly"
+            mode="file"
             dialogTitle="File A"
-            fileBtnText="A"
+            btnText="A"
             placeholder="A"
             initialValue={pair.pathA ? [pair.pathA] : []}
             onPathsChange={(p) => store.updatePair(i, "pathA", p[0] ?? "")}
           />
           <span class="text-base-content/50">↔</span>
           <FileSelector
-            mode="fileOnly"
+            mode="file"
             dialogTitle="File B"
-            fileBtnText="B"
+            btnText="B"
             placeholder="B"
             initialValue={pair.pathB ? [pair.pathB] : []}
             onPathsChange={(p) => store.updatePair(i, "pathB", p[0] ?? "")}

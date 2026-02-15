@@ -71,7 +71,7 @@ func (d *DbService) initSchema() error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS inventory_items (
 			id INTEGER PRIMARY KEY,
-			inventory_id TEXT NOT NULL REFERENCES inventories(id) ON DELETE CASCADE,
+			inventory_id TEXT NOT NULL,
 			key TEXT NOT NULL,
 			type TEXT NOT NULL,
 			file_path TEXT NOT NULL,
@@ -82,6 +82,7 @@ func (d *DbService) initSchema() error {
 			referrers TEXT,
 			attributes TEXT,
 			UNIQUE(inventory_id, type, key)
+			FOREIGN KEY(inventory_id) REFERENCES inventories(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_inv_items_lookup ON inventory_items(inventory_id, type)`,
 		`CREATE TABLE IF NOT EXISTS doc_files (

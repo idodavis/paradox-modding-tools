@@ -76,9 +76,9 @@
         <div class="space-y-6">
           <!-- TODO: Prevent cancel dialog from clearing the input -->
           <FileSelector
-            mode="folderOnly"
+            mode="folder"
             dialogTitle="Select CK3 game directory"
-            folderBtnText="Browse"
+            btnText="Browse"
             placeholder="Select CK3 game directory"
             underHint="Steam example: C:\Program Files (x86)\Steam\steamapps\common\Crusader Kings III"
             initialValue={[$gameInstallPathCk3]}
@@ -86,9 +86,9 @@
               gameInstallPathCk3.set(paths[0])}
           />
           <FileSelector
-            mode="folderOnly"
+            mode="folder"
             dialogTitle="Select EU5 game directory"
-            folderBtnText="Browse"
+            btnText="Browse"
             placeholder="Select EU5 game directory"
             underHint="Steam example: C:\Program Files (x86)\Steam\steamapps\common\Europa Universalis V"
             initialValue={[$gameInstallPathEu5]}
@@ -101,9 +101,9 @@
           Default output directory for merge operations.
         </p>
         <FileSelector
-          mode="folderOnly"
+          mode="folder"
           dialogTitle="Default merge output dir"
-          folderBtnText="Browse"
+          btnText="Browse"
           placeholder="Merge output directory"
           initialValue={$appSettings?.mergeOutputDir
             ? [$appSettings.mergeOutputDir]

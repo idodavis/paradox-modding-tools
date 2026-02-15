@@ -1,34 +1,27 @@
 <script lang="ts">
   import Icon from "@iconify/svelte";
-  import {
-    SelectFiles,
-    SelectDirectories,
-    SelectSingleFile,
-    SelectDirectory,
-  } from "@services/fileservice";
+  import { SelectSingleFile, SelectDirectory } from "@services/fileservice";
 
   let {
     legend = "File Legend:",
-    mode = "filesAndFolders",
-    placeholder = "Select Files or Folders...",
-    dialogTitle = "Select Files or Folders...",
-    fileBtnText = "Select File(s)",
-    folderBtnText = "Select Folder(s)",
+    mode = "file",
+    placeholder = "Select File...",
+    dialogTitle = "Select File...",
+    btnText = "Select File",
+    btnColor = "btn-primary",
     fileFilter = "*.txt; *.json",
     underHint = "",
-    clearLabel = "Clear",
     initialValue = [],
     onPathsChange,
   }: {
     legend?: string;
-    mode?: "filesAndFolders" | "fileOnly" | "folderOnly";
+    mode?: "file" | "folder";
     placeholder?: string;
     dialogTitle?: string;
-    fileBtnText?: string;
-    folderBtnText?: string;
+    btnText?: string;
+    btnColor?: string;
     fileFilter?: string;
     underHint?: string;
-    clearLabel?: string;
     initialValue?: string[];
     onPathsChange?: (paths: string[]) => void;
   } = $props();
@@ -41,20 +34,8 @@
     }
   });
 
-  async function selectFiles() {
-    selectedPaths = selectedPaths.concat(
-      await SelectFiles(dialogTitle, fileFilter),
-    );
-    onPathsChange?.(selectedPaths);
-  }
-
   async function selectSingleFile() {
     selectedPaths[0] = await SelectSingleFile(dialogTitle, fileFilter);
-    onPathsChange?.(selectedPaths);
-  }
-
-  async function selectDirectories() {
-    selectedPaths = selectedPaths.concat(await SelectDirectories(dialogTitle));
     onPathsChange?.(selectedPaths);
   }
 
@@ -62,53 +43,19 @@
     selectedPaths[0] = await SelectDirectory(dialogTitle);
     onPathsChange?.(selectedPaths);
   }
-
-  function clear() {
-    selectedPaths = [];
-    onPathsChange?.(selectedPaths);
-  }
 </script>
 
 <fieldset class="fieldset">
   <legend class="fieldset-legend text-base-content/90">{legend}</legend>
-  {#if mode === "filesAndFolders"}
-    <textarea
-      class="textarea w-full max-w-2xl"
-      readonly
-      value={selectedPaths.join("\n")}
-      {placeholder}
-    ></textarea>
-    <div class="flex flex-wrap gap-2 max-w-2xl w-full">
-      <button
-        type="button"
-        class="btn btn-soft btn-secondary w-39"
-        onclick={selectFiles}
-      >
-        {fileBtnText}
-      </button>
-      <button
-        type="button"
-        class="btn btn-soft btn-secondary w-39"
-        onclick={selectDirectories}
-      >
-        {folderBtnText}
-      </button>
-      <button type="button" class="btn w-25 ml-auto" onclick={clear}>
-        {clearLabel}
-        <Icon icon="mdi:trash-can" class="size-4" />
-      </button>
-    </div>
-    {#if underHint !== ""}
-      <p class="label">{underHint}</p>
-    {/if}
-  {:else if mode === "fileOnly"}
+  {#if mode === "file"}
     <div class="join">
       <button
         type="button"
-        class="btn btn-soft btn-primary join-item"
+        class="btn btn-soft {btnColor} join-item"
         onclick={selectSingleFile}
       >
-        {fileBtnText}
+        <Icon icon="mdi:file-edit-outline" class="w-4 h-4 mr-1" />
+        {btnText}
       </button>
       <input
         type="text"
@@ -121,14 +68,15 @@
     {#if underHint !== ""}
       <p class="label">{underHint}</p>
     {/if}
-  {:else if mode === "folderOnly"}
+  {:else if mode === "folder"}
     <div class="join">
       <button
         type="button"
-        class="btn btn-soft btn-primary join-item"
+        class="btn btn-soft {btnColor} join-item"
         onclick={selectSingleDirectory}
       >
-        {folderBtnText}
+        <Icon icon="mdi:folder-outline" class="w-4 h-4 mr-1" />
+        {btnText}
       </button>
       <input
         type="text"

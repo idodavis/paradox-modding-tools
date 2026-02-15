@@ -88,11 +88,11 @@
 <Dialog
   bind:open
   contentProps={{
-    class: "max-w-[92vw] w-[44rem] max-h-[min(90vh,38rem)] pt-6",
+    class: "max-w-[92vw] w-[44rem] max-h-[min(90vh,38rem)] p-0 flex flex-col",
   }}
 >
   {#snippet title()}
-    <div class="flex flex-col gap-0.5 -my-1">
+    <div class="flex flex-col gap-0.5 px-6 pt-6 pb-2">
       <span class="text-base font-semibold tracking-tight">Export & Import</span
       >
       <span class="text-xs font-normal text-base-content/60"
@@ -109,17 +109,17 @@
     <button
       type="button"
       class="btn btn-sm btn-ghost"
-      onclick={() => (open = false)}>Close</button
+      onclick={() => (open = false)}>✕</button
     >
   {/snippet}
 
-  <div class="mt-3 pt-3 border-t border-base-300">
+  <div class="flex-1 overflow-hidden flex flex-col">
     <Tabs class="tabs-border tabs-lg">
       <Tab
         tabGroup="exp-imp"
         label="Export"
         selected={hasExtraction}
-        contentClass="p-4"
+        contentClass="p-6"
       >
         {#if isLargeInventory}
           <div class="alert alert-warning mb-4 text-sm flex flex-col">
@@ -156,7 +156,7 @@
         tabGroup="exp-imp"
         label="Import"
         selected={!hasExtraction}
-        contentClass="p-4"
+        contentClass="p-6"
       >
         <input
           type="file"
@@ -165,12 +165,17 @@
           class="hidden"
           id="imp-file"
         />
-        <label for="imp-file" class="btn btn-ghost w-full mb-4 cursor-pointer"
+        <label
+          for="imp-file"
+          class="btn btn-soft w-full mb-4 cursor-pointer border-dashed border-2 h-24 flex flex-col gap-2"
           >Select CSV file</label
         >
         {#if importPreview > 0}
-          <div class="mb-4 p-2 bg-base-200 rounded text-sm">
-            {importPreview} items
+          <div
+            class="mb-4 p-3 bg-base-200 rounded-lg text-sm flex justify-between items-center"
+          >
+            <span>Ready to import</span>
+            <span class="badge badge-neutral">{importPreview} items</span>
           </div>
         {/if}
         <button

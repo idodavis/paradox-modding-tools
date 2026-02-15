@@ -7,53 +7,27 @@
     Drawer,
     MultiSelect,
   } from "@components";
-  import { game } from "@stores/app.svelte";
-  import * as InventoryService from "@services/inventoryservice";
-  import type {
-    ExtractInventoryResult,
-    InventoryItemRow,
-    InventorySummary,
-  } from "@services/models";
-  import ItemDetails from "../components/inventory/ItemDetails.svelte";
-  import InventoryCard from "../components/inventory/InventoryCard.svelte";
-  import ExportImportDialog from "../components/inventory/ExportImportDialog.svelte";
-  import InventoryNameModal from "../components/inventory/InventoryNameModal.svelte";
+  import { game, helpOpen } from "@stores/app.svelte";
+  import type { InventoryItemRow, InventorySummary } from "@services/models";
+  import {
+    ItemDetails,
+    InventoryCard,
+    ExportImportDialog,
+    InventoryNameModal,
+    InventoryHelp,
+  } from "@components";
+  import {
+    createInventoryStore,
+    setInventoryStore,
+  } from "@stores/inventory.svelte";
 
-  let files = $state<string[]>([]);
-  let selectedTypes = $state<string[]>([]);
-  let supportedTypes = $state<string[]>([]);
-  let hasExtraction = $state(false);
-  let loading = $state(false);
-  let extractionErrors = $state<string[]>([]);
-  let allItems = $state<InventoryItemRow[]>([]);
-  let currentInventoryId = $state<string | null>(null);
-  let currentInventoryGame = $state<string | null>(null);
-  let selectedRow = $state<InventoryItemRow | null>(null);
-  let savedInventories = $state<InventorySummary[]>([]);
-  let isCurrentTemp = $state(false);
-  let itemDetailsOpen = $state(false);
-  let showExportImport = $state(false);
-  let nameModal = $state<{
-    open: boolean;
-    mode: "save" | "rename";
-    invId: string | null;
-  }>({
-    open: false,
-    mode: "save",
-    invId: null,
+  const store = createInventoryStore();
+  setInventoryStore(store);
+
+  $effect(() => {
+    $game;
+    store.refresh();
   });
-  let extractionPromise = $state<
-    (Promise<unknown> & { cancel?: () => void }) | null
-  >(null);
-
-  const typesDisabled = $derived(supportedTypes.length === 0);
-  const extractDisabled = $derived(!files.length || !selectedTypes.length);
-
-  const nameModalInitialName = $derived(
-    nameModal.mode === "save"
-      ? `${$game} - ${new Date().toISOString().slice(0, 10)} - ${Math.random().toString(36).slice(2, 8)}`
-      : (savedInventories.find((i) => i.id === nameModal.invId)?.name ?? ""),
-  );
 
   const columnDefs = $derived([
     {
@@ -90,144 +64,85 @@
   ]);
 
   $effect(() => {
-    if (!itemDetailsOpen) selectedRow = null;
+    if (!store.itemDetailsOpen) store.selectedRow = null;
   });
-
-  $effect(() => {
-    Promise.all([
-      InventoryService.GetSupportedTypes($game),
-      InventoryService.ListInventoriesForGame($game),
-    ]).then(([types, list]) => {
-      supportedTypes = types ?? [];
-      savedInventories = list ?? [];
-    });
-  });
-
-  $effect(() => {
-    if (
-      currentInventoryId &&
-      currentInventoryGame !== null &&
-      currentInventoryGame !== $game
-    ) {
-      clearAll();
-    }
-  });
-
-  async function refresh() {
-    const list = await InventoryService.ListInventoriesForGame($game);
-    savedInventories = list ?? [];
-    return list ?? [];
-  }
-
-  async function doExtract() {
-    if (!files.length || !selectedTypes.length) return;
-    loading = true;
-    clearAll();
-    try {
-      extractionPromise = InventoryService.ExtractInventory(
-        $game,
-        files,
-        selectedTypes,
-      );
-      const result = (await extractionPromise) as ExtractInventoryResult | null;
-      if (result) {
-        currentInventoryId = result.inventoryId;
-        currentInventoryGame = $game;
-        hasExtraction = true;
-        isCurrentTemp = true;
-        allItems =
-          (await InventoryService.GetInventoryItems(result.inventoryId)) ?? [];
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.toLowerCase().includes("cancel")) extractionErrors = [msg];
-    } finally {
-      loading = false;
-      extractionPromise = null;
-    }
-  }
-
-  async function loadInventory(inv: InventorySummary) {
-    currentInventoryId = inv.id;
-    currentInventoryGame = inv.game;
-    hasExtraction = true;
-    isCurrentTemp = false;
-    allItems = (await InventoryService.GetInventoryItems(inv.id)) ?? [];
-  }
-
-  async function handleNameModalSave(name: string) {
-    if (!nameModal.invId) return;
-    if (nameModal.mode === "save") {
-      await InventoryService.SaveInventory(nameModal.invId, name);
-      isCurrentTemp = false;
-    } else {
-      await InventoryService.RenameInventory(nameModal.invId, name);
-      if (currentInventoryId === nameModal.invId) {
-        const idx = savedInventories.findIndex((i) => i.id === nameModal.invId);
-        if (idx >= 0)
-          savedInventories[idx] = { ...savedInventories[idx], name };
-      }
-    }
-    refresh();
-  }
-
-  async function handleDelete(inv: InventorySummary) {
-    await InventoryService.DeleteInventory(inv.id);
-    if (currentInventoryId === inv.id) clearAll();
-    refresh();
-  }
-
-  function clearAll() {
-    hasExtraction = false;
-    extractionErrors = [];
-    allItems = [];
-    currentInventoryId = null;
-    currentInventoryGame = null;
-    isCurrentTemp = false;
-    selectedRow = null;
-    itemDetailsOpen = false;
-  }
-
-  function openModal(mode: "save" | "rename", inv?: InventorySummary) {
-    nameModal = {
-      open: true,
-      mode,
-      invId: currentInventoryId ?? inv?.id ?? null,
-    };
-  }
 </script>
 
-<div class="relative p-4">
+<InventoryHelp bind:open={$helpOpen} />
+
+<div class="relative p-4 max-w-full min-w-0">
   <Card class="mb-4">
     <CardBody>
-      <div class="flex gap-4 items-start min-w-0">
-        <div class="flex-1 min-w-0 max-w-2xl">
+      <div class="flex flex-col gap-6">
+        <div class="space-y-4">
           <FileSelector
-            legend="Files / folders"
-            mode="filesAndFolders"
-            dialogTitle="Files or folders"
-            fileBtnText="Files"
-            folderBtnText="Folders"
-            placeholder="Paths…"
-            initialValue={files}
-            onPathsChange={(p) => (files = p)}
-            clearLabel="Clear"
+            legend="Folder to Extract"
+            mode="folder"
+            dialogTitle="Select a folder"
+            btnText="Folder"
+            btnColor="btn-secondary"
+            placeholder="Folder containing the inventory (e.g. mod folder, game files)"
+            initialValue={store.files}
+            onPathsChange={(p) => (store.files = p)}
           />
-        </div>
-        {#if savedInventories.length > 0}
-          <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
-            <span
-              class="fieldset-legend text-base-content/90 mb-1 block text-sm font-medium"
-              >Saved Inventories ({savedInventories.length})</span
+          <div>
+            <span class="label text-base-content/90 mb-1 block font-medium"
+              >Object types</span
             >
-            <div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-1">
-              {#each savedInventories as inv}
-                <div class="flex-shrink-0 snap-center w-52">
+            <div class="flex flex-wrap items-center gap-2">
+              <MultiSelect
+                items={store.supportedTypes}
+                bind:selected={store.selectedTypes}
+                placeholder="Select types…"
+                checkboxColor="checkbox-success"
+                disabled={store.typesDisabled}
+                size="w-full sm:w-72"
+              />
+              <div class="join">
+                <button
+                  type="button"
+                  class="join-item btn btn-soft btn-sm"
+                  disabled={store.typesDisabled}
+                  onclick={() => (store.selectedTypes = store.supportedTypes)}
+                  >All</button
+                >
+                <button
+                  type="button"
+                  class="join-item btn btn-soft btn-sm"
+                  disabled={store.typesDisabled || !store.selectedTypes.length}
+                  onclick={() => (store.selectedTypes = [])}>None</button
+                >
+              </div>
+            </div>
+            <p class="mt-2 text-xs text-base-content/60">
+              Note: gfx/, gui/, and music/ types are not currently supported.
+            </p>
+          </div>
+        </div>
+
+        {#if store.savedInventories.length > 0}
+          <div
+            class="flex flex-col min-w-0 overflow-hidden bg-base-200/50 rounded-xl border border-base-content/10 p-3"
+          >
+            <div class="flex justify-between items-center mb-2 px-1">
+              <span class="text-sm font-semibold text-base-content/80"
+                >Saved Inventories</span
+              >
+              <span class="badge badge-sm badge-neutral"
+                >{store.savedInventories.length}</span
+              >
+            </div>
+            <div
+              class="flex flex-row gap-3 overflow-x-auto pb-2 custom-scrollbar"
+            >
+              {#each store.savedInventories as inv}
+                <div class="w-72 flex-none">
                   <InventoryCard
                     {inv}
-                    onLoad={loadInventory}
-                    onRename={() => openModal("rename", inv)}
-                    onDelete={handleDelete}
+                    isActive={store.currentInventoryId === inv.id}
+                    onLoad={(i) => store.loadInventory(i)}
+                    onRename={() => store.openModal("rename", inv)}
+                    onDelete={(i) => store.handleDelete(i)}
                   />
                 </div>
               {/each}
@@ -235,100 +150,80 @@
           </div>
         {/if}
       </div>
-      <div class="my-4">
-        <span class="label text-base-content/90 mb-1 block">Object types</span>
-        <div class="flex flex-wrap items-center gap-2">
-          <MultiSelect
-            items={supportedTypes}
-            bind:selected={selectedTypes}
-            placeholder="Types…"
-            checkboxColor="checkbox-success"
-            disabled={typesDisabled}
-            size="w-72"
-          />
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm"
-            disabled={typesDisabled}
-            onclick={() => (selectedTypes = supportedTypes)}>Select all</button
-          >
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm"
-            disabled={typesDisabled || !selectedTypes.length}
-            onclick={() => (selectedTypes = [])}>Clear types</button
-          >
-        </div>
-        <p class="mt-2 text-xs text-base-content/60">
-          gfx/, gui/, and music/ object types are not supported. They will not
-          appear in reports and may be mistyped if present in processed files.
-        </p>
-      </div>
-      <div class="flex flex-wrap gap-2">
+
+      <div
+        class="flex flex-wrap gap-2 mt-6 pt-4 border-t border-base-content/10"
+      >
         <button
           type="button"
-          class="btn {loading ? 'btn-error' : 'btn-primary'}"
-          disabled={loading ? false : extractDisabled}
-          onclick={loading
+          class="btn {store.loading
+            ? 'btn-soft btn-error'
+            : 'btn-primary'} min-w-[120px]"
+          disabled={store.loading ? false : store.extractDisabled}
+          onclick={store.loading
             ? () => {
-                extractionPromise?.cancel?.();
-                extractionPromise = null;
+                store.cancelExtraction();
               }
-            : doExtract}
+            : () => store.doExtract()}
         >
-          {loading ? "Cancel" : "Extract"}
+          {store.loading ? "Cancel" : "Extract"}
         </button>
         <button
           type="button"
-          class="btn btn-ghost"
-          disabled={loading}
-          onclick={() => (showExportImport = true)}>Export / Import</button
+          class="btn btn-soft"
+          disabled={store.loading}
+          onclick={() => (store.showExportImport = true)}
+          >Export / Import</button
         >
         <button
           type="button"
-          class="btn btn-ghost btn-error"
-          disabled={loading}
-          onclick={clearAll}>Clear results</button
+          class="btn btn-ghost text-error hover:bg-error/10"
+          disabled={store.loading}
+          onclick={() => store.clearAll()}>Clear results</button
         >
       </div>
     </CardBody>
   </Card>
 
   <div class="min-w-0">
-    {#if extractionErrors.length > 0}
+    {#if store.extractionErrors.length > 0}
       <div class="alert alert-warning mb-4">
-        <span class="font-medium">Errors ({extractionErrors.length}):</span>
+        <span class="font-medium"
+          >Errors ({store.extractionErrors.length}):</span
+        >
         <ul class="list-disc pl-5 text-sm max-h-24 overflow-auto">
-          {#each extractionErrors as err}<li>{err}</li>{/each}
+          {#each store.extractionErrors as err}<li>{err}</li>{/each}
         </ul>
       </div>
     {/if}
 
-    {#if hasExtraction}
+    {#if store.hasExtraction}
       <Card class="border border-base-300 shadow-sm">
         <CardBody class="p-4">
-          <div class="mb-3 flex items-center justify-between">
-            <span class="text-sm text-base-content/70"
-              >{allItems.length} items</span
+          <div
+            class="mb-3 flex items-center justify-between bg-base-200/50 p-2 rounded-lg border border-base-content/5"
+          >
+            <span class="text-sm font-medium text-base-content/80 ml-2"
+              >{store.allItems.length.toLocaleString()} items found</span
             >
-            {#if isCurrentTemp}
+            {#if store.isCurrentTemp}
               <button
                 type="button"
                 class="btn btn-primary btn-sm"
-                onclick={() => openModal("save")}>Save</button
+                onclick={() => store.openModal("save")}>Save Inventory</button
               >
             {/if}
           </div>
           <Grid
             {columnDefs}
-            rowData={allItems}
+            rowData={store.allItems}
             gridOptions={{
               pagination: true,
               paginationPageSize: 20,
               onRowClicked: (e) => {
                 if (e?.data) {
-                  selectedRow = e.data;
-                  itemDetailsOpen = true;
+                  store.selectedRow = e.data;
+                  store.itemDetailsOpen = true;
                 }
               },
             }}
@@ -347,46 +242,46 @@
 </div>
 
 <Drawer
-  bind:open={itemDetailsOpen}
+  bind:open={store.itemDetailsOpen}
   side="right"
   defaultSize={580}
-  contentClass="max-w-[90vw]"
+  contentClass="max-w-[90vw] shadow-2xl"
 >
   {#snippet titleSnippet()}Item Details{/snippet}
   {#snippet closeSnippet()}
     <button
       type="button"
       class="btn btn-sm btn-ghost"
-      onclick={() => (itemDetailsOpen = false)}>Close</button
+      onclick={() => (store.itemDetailsOpen = false)}>Close</button
     >
   {/snippet}
   <ItemDetails
-    inventoryId={currentInventoryId}
-    itemType={selectedRow?.type ?? null}
-    itemKey={selectedRow?.key ?? null}
-    row={selectedRow}
+    inventoryId={store.currentInventoryId}
+    itemType={store.selectedRow?.type ?? null}
+    itemKey={store.selectedRow?.key ?? null}
+    row={store.selectedRow}
     game={$game}
   />
 </Drawer>
 
 <InventoryNameModal
-  bind:open={nameModal.open}
-  mode={nameModal.mode}
-  initialName={nameModalInitialName}
-  onsave={handleNameModalSave}
+  bind:open={store.nameModal.open}
+  mode={store.nameModal.mode}
+  initialName={store.nameModalInitialName}
+  onsave={(name) => store.handleNameModalSave(name)}
 />
 
-{#if showExportImport}
+{#if store.showExportImport}
   <ExportImportDialog
-    bind:open={showExportImport}
-    {hasExtraction}
-    {currentInventoryId}
+    bind:open={store.showExportImport}
+    hasExtraction={store.hasExtraction}
+    currentInventoryId={store.currentInventoryId}
     game={$game}
-    itemCount={allItems.length}
+    itemCount={store.allItems.length}
     onImportSuccess={async (id) => {
-      const list = await refresh();
+      await store.refresh();
       const inv =
-        list.find((i) => i.id === id) ??
+        store.savedInventories.find((i) => i.id === id) ??
         ({
           id,
           name: "Imported",
@@ -394,7 +289,7 @@
           createdAt: "",
           totalCount: 0,
         } as InventorySummary);
-      await loadInventory(inv);
+      await store.loadInventory(inv);
     }}
   />
 {/if}

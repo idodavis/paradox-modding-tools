@@ -16,28 +16,28 @@
       that option is on).
     </p>
     <FileSelector
-      mode="filesAndFolders"
+      legend="Set A"
+      mode="folder"
       dialogTitle="Set A"
-      fileBtnText="Files"
-      folderBtnText="Folders"
+      btnText="Browse"
       placeholder="A"
       initialValue={store.pathsA}
       onPathsChange={(p) => (store.pathsA = p)}
     />
     <FileSelector
-      mode="filesAndFolders"
+      legend="Set B"
+      mode="folder"
       dialogTitle="Set B"
-      fileBtnText="Files"
-      folderBtnText="Folders"
+      btnText="Browse"
       placeholder="B"
       initialValue={store.pathsB}
       onPathsChange={(p) => (store.pathsB = p)}
     />
     <FileSelector
       legend="Output dir"
-      mode="folderOnly"
+      mode="folder"
       dialogTitle="Output dir"
-      folderBtnText="Browse"
+      btnText="Browse"
       placeholder="Output directory"
       initialValue={store.outputDir ? [store.outputDir] : []}
       onPathsChange={(p) => (store.outputDir = p[0] ?? "")}
@@ -62,7 +62,7 @@
           type="button"
           class="btn btn-soft btn-wide btn-primary"
           disabled={!store.canRun}
-          onclick={() => store.runPreview("sets")}>Run Merge</button
+          onclick={() => store.runMerge("sets")}>Run Merge</button
         >
       {:else}
         <button

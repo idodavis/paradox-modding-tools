@@ -19,5 +19,5 @@
       "@utils/*": ["./src/lib/utils/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "bindings"],
+  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "bindings", "../../InventoryHelp.svelte"],
 }

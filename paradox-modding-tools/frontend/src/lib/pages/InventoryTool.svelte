@@ -12,7 +12,6 @@
   import {
     ItemDetails,
     InventoryCard,
-    ExportImportDialog,
     InventoryNameModal,
     InventoryHelp,
   } from "@components";
@@ -170,13 +169,6 @@
         </button>
         <button
           type="button"
-          class="btn btn-soft"
-          disabled={store.loading}
-          onclick={() => (store.showExportImport = true)}
-          >Export / Import</button
-        >
-        <button
-          type="button"
           class="btn btn-ghost text-error hover:bg-error/10"
           disabled={store.loading}
           onclick={() => store.clearAll()}>Clear results</button
@@ -270,26 +262,3 @@
   initialName={store.nameModalInitialName}
   onsave={(name) => store.handleNameModalSave(name)}
 />
-
-{#if store.showExportImport}
-  <ExportImportDialog
-    bind:open={store.showExportImport}
-    hasExtraction={store.hasExtraction}
-    currentInventoryId={store.currentInventoryId}
-    game={$game}
-    itemCount={store.allItems.length}
-    onImportSuccess={async (id) => {
-      await store.refresh();
-      const inv =
-        store.savedInventories.find((i) => i.id === id) ??
-        ({
-          id,
-          name: "Imported",
-          game: $game,
-          createdAt: "",
-          totalCount: 0,
-        } as InventorySummary);
-      await store.loadInventory(inv);
-    }}
-  />
-{/if}

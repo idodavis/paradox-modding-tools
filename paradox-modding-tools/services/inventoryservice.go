@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"database/sql"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -12,8 +11,6 @@ import (
 	"runtime"
 	"slices"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -458,120 +455,4 @@ func (i *InventoryService) ServiceShutdown() error {
 		}
 	}
 	return nil
-}
-
-// ExportInventory returns the inventory as CSV. includeRaw controls whether rawText is included.
-func (i *InventoryService) ExportInventory(inventoryId string, includeRaw bool) (string, error) {
-	if i.DB == nil {
-		return "", fmt.Errorf("database not initialized")
-	}
-	var exists int
-	if err := i.DB.QueryRow(`SELECT 1 FROM inventories WHERE id = ?`, inventoryId).Scan(&exists); err == sql.ErrNoRows {
-		return "", fmt.Errorf("inventory not found")
-	} else if err != nil {
-		return "", err
-	}
-	rows, err := i.DB.Query(`SELECT key, type, file_path, line_start, line_end, raw_text
-		FROM inventory_items WHERE inventory_id = ? ORDER BY type, key`, inventoryId)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-
-	var sb strings.Builder
-	w := csv.NewWriter(&sb)
-	header := []string{"type", "key", "filePath", "lineStart", "lineEnd"}
-	if includeRaw {
-		header = append(header, "rawText")
-	}
-	if err := w.Write(header); err != nil {
-		return "", err
-	}
-	for rows.Next() {
-		var key, itemType, filePath, rawText sql.NullString
-		var lineStart, lineEnd int
-		if err := rows.Scan(&key, &itemType, &filePath, &lineStart, &lineEnd, &rawText); err != nil {
-			return "", err
-		}
-		row := []string{itemType.String, key.String, filePath.String, strconv.Itoa(lineStart), strconv.Itoa(lineEnd)}
-		if includeRaw {
-			row = append(row, rawText.String)
-		}
-		if err := w.Write(row); err != nil {
-			return "", err
-		}
-	}
-	w.Flush()
-	if err := w.Error(); err != nil {
-		return "", err
-	}
-	return sb.String(), rows.Err()
-}
-
-// ImportInventory creates a new inventory from CSV. Returns the new inventory ID.
-func (i *InventoryService) ImportInventory(game string, csvData string) (string, error) {
-	if i.DB == nil {
-		return "", fmt.Errorf("database not initialized")
-	}
-	r := csv.NewReader(strings.NewReader(csvData))
-	records, err := r.ReadAll()
-	if err != nil {
-		return "", fmt.Errorf("invalid CSV: %w", err)
-	}
-	if len(records) < 2 {
-		return "", fmt.Errorf("CSV has no data rows")
-	}
-	header := records[0]
-	typeIdx := sliceIndex(header, "type")
-	keyIdx := sliceIndex(header, "key")
-	filePathIdx := sliceIndex(header, "filePath")
-	lineStartIdx := sliceIndex(header, "lineStart")
-	lineEndIdx := sliceIndex(header, "lineEnd")
-	rawTextIdx := sliceIndex(header, "rawText")
-	if typeIdx < 0 || keyIdx < 0 || filePathIdx < 0 || lineStartIdx < 0 || lineEndIdx < 0 {
-		return "", fmt.Errorf("CSV missing required columns: type, key, filePath, lineStart, lineEnd")
-	}
-
-	inventoryId := uuid.New().String()
-	createdAt := time.Now().Format("2006-01-02")
-	if _, err := i.DB.Exec(`INSERT INTO inventories (id, name, game, base_paths, object_types, created_at, is_temporary) VALUES (?, ?, ?, ?, ?, ?, 0)`,
-		inventoryId, "Imported", game, "[]", "[]", createdAt); err != nil {
-		return "", err
-	}
-
-	stmt, err := i.DB.Prepare(`INSERT INTO inventory_items (inventory_id, key, type, file_path, line_start, line_end, raw_text, "references", referrers, attributes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return "", err
-	}
-	defer stmt.Close()
-
-	emptyJSON := "[]"
-	for _, rec := range records[1:] {
-		if len(rec) <= max(typeIdx, keyIdx, filePathIdx, lineStartIdx, lineEndIdx) {
-			continue
-		}
-		typ, key, path := rec[typeIdx], rec[keyIdx], rec[filePathIdx]
-		if typ == "" || key == "" {
-			continue
-		}
-		lineStart, _ := strconv.Atoi(rec[lineStartIdx])
-		lineEnd, _ := strconv.Atoi(rec[lineEndIdx])
-		rawText := ""
-		if rawTextIdx >= 0 && rawTextIdx < len(rec) {
-			rawText = rec[rawTextIdx]
-		}
-		if _, err := stmt.Exec(inventoryId, key, typ, path, lineStart, lineEnd, rawText, emptyJSON, emptyJSON, "{}"); err != nil {
-			return "", err
-		}
-	}
-	return inventoryId, nil
-}
-
-func sliceIndex(s []string, v string) int {
-	for i, x := range s {
-		if x == v {
-			return i
-		}
-	}
-	return -1
 }

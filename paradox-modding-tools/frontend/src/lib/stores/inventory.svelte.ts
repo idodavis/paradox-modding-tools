@@ -29,7 +29,6 @@ export class InventoryStore {
   isCurrentTemp = $state(false);
   
   itemDetailsOpen = $state(false);
-  showExportImport = $state(false);
   
   nameModal = $state<{
     open: boolean;

@@ -2,8 +2,8 @@ import { writable, derived, get } from 'svelte/store';
 import { SaveSettings, GetSettings } from '@services/settingsservice';
 
 export const game = writable<'CK3' | 'EU5'>('CK3');
-export const currentPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs' | 'merge-tool' | 'inventory'>('hub');
-export const lastPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-docs' | 'merge-tool' | 'inventory'>('hub');
+export const currentPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-resources' | 'merge-tool' | 'inventory'>('hub');
+export const lastPage = writable<'hub' | 'settings' | 'compare-tool' | 'modding-resources' | 'merge-tool' | 'inventory'>('hub');
 export const helpOpen = writable<boolean>(false);
 
 export const appSettings = writable<Record<string, string>>({});
@@ -18,7 +18,7 @@ export const appConstants = derived(appSettings, ($s) => ({
   eu5: { scriptRootFolder: $s['eu5.eu5_scriptRootFolder'], wikiUrl: $s['eu5.eu5_wikiUrl'] },
 }));
 
-export function gotoPage(page: 'hub' | 'settings' | 'compare-tool' | 'modding-docs' | 'merge-tool' | 'inventory') {
+export function gotoPage(page: 'hub' | 'settings' | 'compare-tool' | 'modding-resources' | 'merge-tool' | 'inventory') {
   currentPage.update((current) => {
     helpOpen.set(false);
     if (current !== page) {

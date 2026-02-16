@@ -9,11 +9,11 @@
     DiffViewer,
   } from "@components";
   import { game, gameInstallPath } from "@stores/app.svelte";
-  import { VanillaCompare, TwoSetsCompare } from "@services/compareservice";
+  import { VanillaCompare, DirectoryCompare } from "@services/compareservice";
   import type { PathMatch } from "@services/models";
-  let modPaths: string[] = $state([]);
-  let setAPaths: string[] = $state([]);
-  let setBPaths: string[] = $state([]);
+  let modPath: string = $state("");
+  let setAPath: string = $state("");
+  let setBPath: string = $state("");
   let fileAPath: string = $state("");
   let fileBPath: string = $state("");
   let matchingFiles = $state<Record<string, PathMatch | undefined>>({});
@@ -26,12 +26,12 @@
   });
 
   async function runVanillaCompare() {
-    matchingFiles = await VanillaCompare($game, $gameInstallPath, modPaths);
+    matchingFiles = await VanillaCompare($game, $gameInstallPath, modPath);
   }
-  async function runTwoSetsCompare() {
-    matchingFiles = await TwoSetsCompare(setAPaths, setBPaths);
+  async function runDirectoryCompare() {
+    matchingFiles = await DirectoryCompare(setAPath, setBPath);
   }
-  async function runAnyTwoFilesCompare() {
+  async function runFileCompare() {
     matchingFiles = {
       "Comparing Two Files": {
         pathA: fileAPath,
@@ -106,8 +106,8 @@
               dialogTitle="Select Mod (B) files/folders"
               btnText="Browse"
               placeholder="Select folder or files to compare with Vanilla"
-              initialValue={modPaths[0] ?? ""}
-              onPathChange={(p) => (modPaths[0] = p ?? "")}
+              initialValue={modPath ?? ""}
+              onPathChange={(p) => (modPath = p ?? "")}
             />
           </div>
           <button
@@ -123,7 +123,7 @@
     </Tab>
     <Tab
       tabGroup="compare-mode"
-      label="Two Sets / Directories"
+      label="Directory vs Directory"
       contentClass="bg-base-300 border-base-300 p-6"
     >
       <Card>
@@ -137,23 +137,23 @@
               dialogTitle="Select Set A files/folders"
               btnText="Browse"
               placeholder="Select folder or files for Set A"
-              initialValue={setAPaths[0] ?? ""}
-              onPathChange={(p) => (setAPaths[0] = p ?? "")}
+              initialValue={setAPath ?? ""}
+              onPathChange={(p) => (setAPath = p ?? "")}
             />
             <FileSelector
               mode="folder"
               dialogTitle="Select Set B files/folders"
               btnText="Browse"
               placeholder="Select folder or files for Set B"
-              initialValue={setBPaths[0] ?? ""}
-              onPathChange={(p) => (setBPaths[0] = p ?? "")}
+              initialValue={setBPath ?? ""}
+              onPathChange={(p) => (setBPath = p ?? "")}
             />
           </div>
           <button
             type="button"
             class="btn btn-soft btn-wide btn-primary"
-            onclick={runTwoSetsCompare}
-            disabled={setAPaths[0] === "" || setBPaths[0] === ""}
+            onclick={runDirectoryCompare}
+            disabled={setAPath === "" || setBPath === ""}
           >
             Run Compare
           </button>
@@ -162,7 +162,7 @@
     </Tab>
     <Tab
       tabGroup="compare-mode"
-      label="Any Two Files"
+      label="File vs File"
       contentClass="bg-base-300 border-base-300 p-6"
     >
       <Card>
@@ -191,7 +191,7 @@
           <button
             type="button"
             class="btn btn-soft btn-wide btn-primary"
-            onclick={runAnyTwoFilesCompare}
+            onclick={runFileCompare}
             disabled={fileAPath === "" || fileBPath === ""}
           >
             Run Compare

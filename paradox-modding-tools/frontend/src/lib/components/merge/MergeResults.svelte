@@ -19,6 +19,10 @@
   >([]);
   let errorMsg = $state("");
 
+  function openDiff(pathA: string, pathB: string) {
+    store.selectedForDiff = { pathA, pathB };
+  }
+
   const summary = $derived.by(() => ({
     files: results.length,
     added: results.reduce(
@@ -75,13 +79,11 @@
         const btnA = document.createElement("button");
         btnA.className = "btn btn-xs btn-primary";
         btnA.textContent = `${labelA}↔Merged`;
-        btnA.onclick = () =>
-          (store.selectedForDiff = { pathA: d.fileAPath, pathB: d.outputPath });
+        btnA.onclick = () => openDiff(d.fileAPath, d.outputPath);
         const btnB = document.createElement("button");
         btnB.className = "btn btn-xs btn-secondary";
         btnB.textContent = `${labelB}↔Merged`;
-        btnB.onclick = () =>
-          (store.selectedForDiff = { pathA: d.fileBPath, pathB: d.outputPath });
+        btnB.onclick = () => openDiff(d.fileBPath, d.outputPath);
         div.append(btnA, btnB);
         return div;
       },
@@ -181,20 +183,24 @@
               </span>
             {/if}
           </div>
-          <div class="flex gap-2" onclick={(e) => e.stopPropagation()}>
+          <div class="flex gap-2">
             <button
               type="button"
               class="btn btn-sm btn-ghost"
               disabled={savingReport}
-              onclick={saveReport}
-              >{savingReport ? "Saving…" : "Save report"}</button
+              onclick={(e) => {
+                e.stopPropagation();
+                saveReport();
+              }}>{savingReport ? "Saving…" : "Save report"}</button
             >
             <button
               type="button"
               class="btn btn-sm btn-ghost"
               disabled={validating}
-              onclick={runValidation}
-              >{validating ? "Validating…" : "Validate"}</button
+              onclick={(e) => {
+                e.stopPropagation();
+                runValidation();
+              }}>{validating ? "Validating…" : "Validate"}</button
             >
           </div>
         </summary>

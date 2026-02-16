@@ -24,11 +24,11 @@ export function BuildTree(paths: string[]): $CancellablePromise<$models.TreeNode
 }
 
 /**
- * CollectFilesFromPaths collects all .txt files from a mix of files and directories
+ * CollectFilesFromPath collects all .txt files from a mix of files and directories
  * Returns a map of relativePath -> fullPath
  */
-export function CollectFilesFromPaths(inputPaths: string[], filter: $models.FileCollectorFilter): $CancellablePromise<{ [_ in string]?: string }> {
-    return $Call.ByID(1545587832, inputPaths, filter).then(($result: any) => {
+export function CollectFilesFromPath(inputPath: string, filter: $models.FileCollectorFilter): $CancellablePromise<{ [_ in string]?: string }> {
+    return $Call.ByID(2863705307, inputPath, filter).then(($result: any) => {
         return $$createType2($result);
     });
 }

@@ -425,16 +425,16 @@ func (m *MergeService) GetMergeConflicts(ctx context.Context, fileAPath, fileBPa
 }
 
 // MergePreview returns a preview of what would be merged (no files written).
-func (m *MergeService) MergePreview(ctx context.Context, pathsA, pathsB []string, outputDir string, options MergerOptions) ([]PreviewItem, error) {
+func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB string, outputDir string, options MergerOptions) ([]PreviewItem, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 	filter := buildCollectFilter(options)
-	filesA, err := m.FileService.CollectFilesFromPaths(pathsA, filter)
+	filesA, err := m.FileService.CollectFilesFromPath(pathA, filter)
 	if err != nil {
 		return nil, fmt.Errorf("error collecting files from set A: %w", err)
 	}
-	filesB, err := m.FileService.CollectFilesFromPaths(pathsB, filter)
+	filesB, err := m.FileService.CollectFilesFromPath(pathB, filter)
 	if err != nil {
 		return nil, fmt.Errorf("error collecting files from set B: %w", err)
 	}
@@ -457,23 +457,18 @@ func (m *MergeService) MergePreview(ctx context.Context, pathsA, pathsB []string
 	return items, nil
 }
 
-// MergeMultipleFileSetsFiltered merges only the given relPaths (from preview). Pass nil/empty to merge all.
-func (m *MergeService) MergeMultipleFileSetsFiltered(ctx context.Context, pathsA, pathsB []string, outputDir string, options MergerOptions, onlyRelPaths []string) ([]FileMergeResult, error) {
-	return m.mergeMultipleFileSets(ctx, pathsA, pathsB, outputDir, options, onlyRelPaths)
-}
-
-func (m *MergeService) mergeMultipleFileSets(ctx context.Context, pathsA, pathsB []string, outputDir string, options MergerOptions, onlyRelPaths []string) ([]FileMergeResult, error) {
+func (m *MergeService) MergeDirs(ctx context.Context, pathA, pathB string, outputDir string, options MergerOptions, onlyRelPaths []string) ([]FileMergeResult, error) {
 	// If the context is cancelled (from the frontend), return the error
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
 	filter := buildCollectFilter(options)
-	filesA, err := m.FileService.CollectFilesFromPaths(pathsA, filter)
+	filesA, err := m.FileService.CollectFilesFromPath(pathA, filter)
 	if err != nil {
 		return nil, fmt.Errorf("error collecting files from set A: %w", err)
 	}
-	filesB, err := m.FileService.CollectFilesFromPaths(pathsB, filter)
+	filesB, err := m.FileService.CollectFilesFromPath(pathB, filter)
 	if err != nil {
 		return nil, fmt.Errorf("error collecting files from set B: %w", err)
 	}

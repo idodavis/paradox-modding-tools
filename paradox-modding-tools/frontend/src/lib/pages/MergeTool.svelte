@@ -1,10 +1,17 @@
 <script lang="ts">
-  import { Tabs, Tab, DiffViewer } from "@components";
-  import { MergeHelp, MergeOptionsPanel, MergeResults } from "@components";
-  import MergeEditor from "../components/merge/MergeEditor.svelte";
-  import MergeTabVanilla from "../components/merge/MergeTabVanilla.svelte";
-  import MergeTabSets from "../components/merge/MergeTabSets.svelte";
-  import MergeTabPairs from "../components/merge/MergeTabPairs.svelte";
+  import {
+    Tabs,
+    Tab,
+    DiffViewer,
+    MergeTabVanilla,
+    MergeTabDirs,
+    MergeTabPairs,
+    MergeEditor,
+    MergeHelp,
+    MergeOptionsPanel,
+    MergeResults,
+  } from "@components";
+
   import { createMergeStore, setMergeStore } from "@stores/merge.svelte";
   import { game, helpOpen } from "@stores/app.svelte";
 
@@ -46,7 +53,7 @@
       contentClass="bg-base-300 border-base-300 p-6"
       onclick={() => (store.activeTab = "sets")}
     >
-      <MergeTabSets />
+      <MergeTabDirs />
     </Tab>
     <Tab
       tabGroup="merge-mode"

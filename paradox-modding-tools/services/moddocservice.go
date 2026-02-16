@@ -55,7 +55,7 @@ func (m *ModDocService) Scan(game string, installPath string) ([]string, error) 
 	default:
 		return nil, errors.New("unknown game: " + game)
 	}
-	files, err := m.FileService.CollectFilesFromPaths([]string{gameScriptRoot}, filter)
+	files, err := m.FileService.CollectFilesFromPath(gameScriptRoot, filter)
 	if err != nil {
 		return nil, err
 	}

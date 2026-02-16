@@ -5,7 +5,7 @@
   import { Card, CardBody, Dialog, Toast } from "@components";
   import Icon from "@iconify/svelte";
   import CompareTool from "@pages/CompareTool.svelte";
-  import ModdingDocs from "@pages/ModdingDocs.svelte";
+  import ModdingResources from "@pages/ModdingResources.svelte";
   import MergeTool from "@pages/MergeTool.svelte";
   import InventoryTool from "@pages/InventoryTool.svelte";
   import Settings from "@pages/Settings.svelte";
@@ -32,7 +32,7 @@
       {
         hub: "",
         "compare-tool": "File Compare",
-        "modding-docs": "Modding Resources",
+        "modding-resources": "Modding Resources",
         "merge-tool": "Script Merger",
         inventory: "Inventory Explorer",
         settings: "Settings",
@@ -132,7 +132,7 @@
               <div class="card-actions justify-end">
                 <button
                   class="btn btn-primary btn-outline btn-sm"
-                  onclick={() => gotoPage("modding-docs")}>Open</button
+                  onclick={() => gotoPage("modding-resources")}>Open</button
                 >
               </div>
             </CardBody>
@@ -282,8 +282,8 @@
     <main class="flex-1 min-h-0 overflow-auto">
       {#if $currentPage === "compare-tool"}
         <CompareTool />
-      {:else if $currentPage === "modding-docs"}
-        <ModdingDocs />
+      {:else if $currentPage === "modding-resources"}
+        <ModdingResources />
       {:else if $currentPage === "settings"}
         <Settings />
       {:else if $currentPage === "merge-tool"}

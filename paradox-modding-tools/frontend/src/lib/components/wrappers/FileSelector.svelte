@@ -2,8 +2,6 @@
   import Icon from "@iconify/svelte";
   import { SelectSingleFile, SelectDirectory } from "@services/fileservice";
 
-  // TODO: Refactor frontend usage of this component as paths are now singular.
-
   let {
     legend = "File Legend:",
     mode = "file",

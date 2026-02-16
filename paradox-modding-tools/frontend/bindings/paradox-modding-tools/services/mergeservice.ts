@@ -30,11 +30,8 @@ export function GetMergeConflicts(fileAPath: string, fileBPath: string, options:
     });
 }
 
-/**
- * MergeMultipleFileSetsFiltered merges only the given relPaths (from preview). Pass nil/empty to merge all.
- */
-export function MergeMultipleFileSetsFiltered(pathsA: string[], pathsB: string[], outputDir: string, options: $models.MergerOptions, onlyRelPaths: string[]): $CancellablePromise<$models.FileMergeResult[]> {
-    return $Call.ByID(2985426941, pathsA, pathsB, outputDir, options, onlyRelPaths).then(($result: any) => {
+export function MergeDirs(pathA: string, pathB: string, outputDir: string, options: $models.MergerOptions, onlyRelPaths: string[]): $CancellablePromise<$models.FileMergeResult[]> {
+    return $Call.ByID(303028829, pathA, pathB, outputDir, options, onlyRelPaths).then(($result: any) => {
         return $$createType3($result);
     });
 }
@@ -51,8 +48,8 @@ export function MergePairs(pairs: $models.MergePair[], outputDir: string, option
 /**
  * MergePreview returns a preview of what would be merged (no files written).
  */
-export function MergePreview(pathsA: string[], pathsB: string[], outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[]> {
-    return $Call.ByID(2633360575, pathsA, pathsB, outputDir, options).then(($result: any) => {
+export function MergePreview(pathA: string, pathB: string, outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[]> {
+    return $Call.ByID(2633360575, pathA, pathB, outputDir, options).then(($result: any) => {
         return $$createType5($result);
     });
 }

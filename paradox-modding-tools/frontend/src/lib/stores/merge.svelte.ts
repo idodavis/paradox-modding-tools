@@ -1,9 +1,10 @@
 import { getContext, setContext } from "svelte";
-import * as MergeService from "@services/mergeservice";
 import { GetGameScriptRoot } from "@services/fileservice";
+import { MergePreview, MergePairs, MergeDirs, WriteMergedFile, GetMergeConflicts } from "@services/mergeservice";
+import type { FileMergeResult, MergerOptions } from "@services/models";
 import { appSettings, saveSettings, game, gameInstallPath } from "@stores/app.svelte";
 import { get } from "svelte/store";
-import type { FileMergeResult, MergerOptions } from "@services/models";
+
 
 export type PreviewItem = {
   relPath: string;
@@ -31,9 +32,9 @@ export class MergeStore {
   });
 
   // Inputs
-  pathsA = $state<string[]>([]);
-  pathsB = $state<string[]>([]);
-  modPaths = $state<string[]>([]);
+  pathA = $state<string>("");
+  pathB = $state<string>("");
+  modPath = $state<string>("");
   filePairs = $state<{ pathA: string; pathB: string; outputName: string }[]>([]);
   
   // Output
@@ -57,7 +58,7 @@ export class MergeStore {
   // Manual Merge State
   manualMergeQueue = $state<{ relPath: string; pathA: string; pathB: string }[]>([]);
   currentManualFile = $state<{ relPath: string; pathA: string; pathB: string } | null>(null);
-  manualRoots = $state<{ a: string[]; b: string[] }>({ a: [], b: [] });
+  manualRoots = $state<{ a: string; b: string }>({ a: "", b: "" });
 
   mergePromise: (Promise<unknown> & { cancel?: () => void }) | null = null;
 
@@ -102,15 +103,15 @@ export class MergeStore {
   get canRun() {
     const installPath = get(gameInstallPath);
     return {
-      vanilla: !!installPath?.trim() && this.modPaths.length > 0 && !!this.outputDir,
-      sets: this.pathsA.length > 0 && this.pathsB.length > 0 && !!this.outputDir,
+      vanilla: !!installPath?.trim() && !!this.modPath?.trim() && !!this.outputDir,
+      dirs: !!this.pathA?.trim() && !!this.pathB?.trim() && !!this.outputDir,
       pairs: this.filePairs.length > 0 && this.filePairs.some((p) => p.pathA && p.pathB) && !!this.outputDir,
     };
   }
 
   get labels() {
     if (this.activeTab === "vanilla") return { a: "Vanilla", b: "Mod" };
-    if (this.activeTab === "sets") return { a: "Set A", b: "Set B" };
+    if (this.activeTab === "dirs") return { a: "Set A", b: "Set B" };
     return { a: "File A", b: "File B" };
   }
 
@@ -122,7 +123,7 @@ export class MergeStore {
     this.selectedRelPaths = {};
   }
 
-  async runPreview(mode: "vanilla" | "sets") {
+  async runPreview(mode: "vanilla" | "dirs") {
     if (!this.canRun[mode]) return;
     this.previewing = true;
     this.previewItems = [];
@@ -133,12 +134,12 @@ export class MergeStore {
       const installPath = get(gameInstallPath) ?? "";
       const currentGame = get(game);
       
-      const setA = mode === "vanilla" 
-        ? [await GetGameScriptRoot(currentGame, installPath.trim())] 
-        : this.pathsA;
-      const setB = mode === "vanilla" ? this.modPaths : this.pathsB;
+      const setAPath = mode === "vanilla" 
+        ? await GetGameScriptRoot(currentGame, installPath.trim()) 
+        : this.pathA;
+      const setBPath = mode === "vanilla" ? this.modPath : this.pathB;
 
-      const items = (await (MergeService as any).MergePreview(setA, setB, this.outputDir, this.options)) ?? [];
+      const items = await MergePreview(setAPath, setBPath, this.outputDir, this.options) ?? [];
       this.previewItems = items;
       
       const sel: Record<string, boolean> = {};
@@ -153,7 +154,7 @@ export class MergeStore {
     }
   }
 
-  async runMerge(mode: "vanilla" | "sets") {
+  async runMerge(mode: "vanilla" | "dirs") {
     if (!this.canRun[mode]) return;
     this.merging = true;
     this.mergeResults = [];
@@ -163,10 +164,10 @@ export class MergeStore {
       const installPath = get(gameInstallPath) ?? "";
       const currentGame = get(game);
       
-      const setA = mode === "vanilla" 
-        ? [await GetGameScriptRoot(currentGame, installPath.trim())] 
-        : this.pathsA;
-      const setB = mode === "vanilla" ? this.modPaths : this.pathsB;
+      const setAPath = mode === "vanilla" 
+        ? await GetGameScriptRoot(currentGame, installPath.trim()) 
+        : this.pathA;
+      const setBPath = mode === "vanilla" ? this.modPath : this.pathB;
 
       if (this.config.manualConflictResolution) {
         const toProcess = this.previewItems.filter((p) => this.selectedRelPaths[p.relPath] !== false);
@@ -175,7 +176,7 @@ export class MergeStore {
           pathA: p.pathA,
           pathB: p.pathB,
         }));
-        this.manualRoots = { a: setA, b: setB };
+        this.manualRoots = { a: setAPath, b: setBPath };
         this.processManualQueue();
         return;
       }
@@ -185,8 +186,8 @@ export class MergeStore {
         .map((p) => p.relPath);
 
       if (selectedForMerge.length > 0) {
-        this.mergePromise = (MergeService as any).MergeMultipleFileSetsFiltered(
-          setA, setB, this.outputDir, this.options, selectedForMerge
+        this.mergePromise = MergeDirs(
+          setAPath, setBPath, this.outputDir, this.options, selectedForMerge
         );
         const res = await this.mergePromise;
         this.mergeResults = (res as FileMergeResult[]) ?? [];
@@ -213,7 +214,7 @@ export class MergeStore {
     
     try {
       if (this.filePairs.length > 0) {
-        this.mergePromise = (MergeService as any).MergePairs(this.filePairs, this.outputDir, this.options);
+        this.mergePromise = MergePairs(this.filePairs, this.outputDir, this.options);
         const res = await this.mergePromise;
         this.mergeResults = (res as FileMergeResult[]) ?? [];
       }
@@ -234,11 +235,11 @@ export class MergeStore {
     }
     const next = this.manualMergeQueue[0];
     try {
-      const conflicts = await (MergeService as any).GetMergeConflicts(next.pathA, next.pathB, this.options);
+      const conflicts = await GetMergeConflicts(next.pathA, next.pathB, this.options);
       if (conflicts.some((c: any) => c.type === "conflict")) {
         this.currentManualFile = next;
       } else {
-        const res = await (MergeService as any).MergeMultipleFileSetsFiltered(
+        const res = await MergeDirs(
           this.manualRoots.a, this.manualRoots.b, this.outputDir, this.options, [next.relPath]
         );
         if (res && res.length > 0) this.mergeResults.push(...res);
@@ -258,7 +259,7 @@ export class MergeStore {
     const outPath = item?.outputPath || `${this.outputDir}/${this.currentManualFile.relPath}`;
     
     try {
-      await (MergeService as any).WriteMergedFile(outPath, content);
+      await WriteMergedFile(outPath, content);
       this.mergeResults.push({
         filePath: this.currentManualFile.relPath,
         fileAPath: this.currentManualFile.pathA,

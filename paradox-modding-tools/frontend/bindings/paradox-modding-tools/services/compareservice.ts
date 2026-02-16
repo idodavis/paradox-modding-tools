@@ -9,14 +9,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function TwoSetsCompare(setA: string[], setB: string[]): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
-    return $Call.ByID(187204234, setA, setB).then(($result: any) => {
+export function DirectoryCompare(setAPath: string, setBPath: string): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
+    return $Call.ByID(3511042450, setAPath, setBPath).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
-export function VanillaCompare(game: string, vanillaInstallPath: string, modPaths: string[]): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
-    return $Call.ByID(311089558, game, vanillaInstallPath, modPaths).then(($result: any) => {
+export function VanillaCompare(game: string, vanillaInstallPath: string, modPath: string): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
+    return $Call.ByID(311089558, game, vanillaInstallPath, modPath).then(($result: any) => {
         return $$createType1($result);
     });
 }

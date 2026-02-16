@@ -149,50 +149,48 @@ type FileCollectorFilter struct {
 	ExcludePath string   // regex on rel path, e.g. "common/" - exclude if matches
 }
 
-// CollectFilesFromPaths collects all .txt files from a mix of files and directories
+// CollectFilesFromPath collects all .txt files from a mix of files and directories
 // Returns a map of relativePath -> fullPath
-func (f *FileService) CollectFilesFromPaths(inputPaths []string, filter FileCollectorFilter) (map[string]string, error) {
+func (f *FileService) CollectFilesFromPath(inputPath string, filter FileCollectorFilter) (map[string]string, error) {
 	files := make(map[string]string)
 
-	for _, inputPath := range inputPaths {
-		walkErr := filepath.WalkDir(inputPath, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-
-			if len(filter.Extensions) > 0 && !slices.Contains(filter.Extensions, filepath.Ext(path)) {
-				return nil
-			}
-			if len(filter.FileNames) > 0 && !slices.Contains(filter.FileNames, filepath.Base(path)) {
-				return nil
-			}
-			rel, err := filepath.Rel(inputPath, path)
-			if err != nil {
-				return err
-			}
-			relSlash := filepath.ToSlash(rel)
-			if filter.Regex != "" && !regexp.MustCompile(filter.Regex).MatchString(path) {
-				return nil
-			}
-			if filter.IncludePath != "" {
-				if re, err := regexp.Compile(filter.IncludePath); err == nil && !re.MatchString(relSlash) {
-					return nil
-				}
-			}
-			if filter.ExcludePath != "" {
-				if re, err := regexp.Compile(filter.ExcludePath); err == nil && re.MatchString(relSlash) {
-					return nil
-				}
-			}
-			files[relSlash] = path
-			return nil
-		})
-		if walkErr != nil && walkErr != fs.SkipAll {
-			return nil, fmt.Errorf("Tree walk error in %s: %w", inputPath, walkErr)
+	walkErr := filepath.WalkDir(inputPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		if d.IsDir() {
+			return nil
+		}
+
+		if len(filter.Extensions) > 0 && !slices.Contains(filter.Extensions, filepath.Ext(path)) {
+			return nil
+		}
+		if len(filter.FileNames) > 0 && !slices.Contains(filter.FileNames, filepath.Base(path)) {
+			return nil
+		}
+		rel, err := filepath.Rel(inputPath, path)
+		if err != nil {
+			return err
+		}
+		relSlash := filepath.ToSlash(rel)
+		if filter.Regex != "" && !regexp.MustCompile(filter.Regex).MatchString(path) {
+			return nil
+		}
+		if filter.IncludePath != "" {
+			if re, err := regexp.Compile(filter.IncludePath); err == nil && !re.MatchString(relSlash) {
+				return nil
+			}
+		}
+		if filter.ExcludePath != "" {
+			if re, err := regexp.Compile(filter.ExcludePath); err == nil && re.MatchString(relSlash) {
+				return nil
+			}
+		}
+		files[relSlash] = path
+		return nil
+	})
+	if walkErr != nil && walkErr != fs.SkipAll {
+		return nil, fmt.Errorf("Tree walk error in %s: %w", inputPath, walkErr)
 	}
 
 	return files, nil

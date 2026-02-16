@@ -422,12 +422,6 @@
 </Dialog>
 
 <style>
-  /* Ensure pre-wrap respects newlines */
-  .whitespace-pre-wrap {
-    white-space: pre-wrap;
-    word-break: break-all;
-  }
-
   /* Force transparency for code blocks inside conflict rows to show selection background */
   :global(.conflict-row .code-block-root),
   :global(.conflict-row .code-block-editor),

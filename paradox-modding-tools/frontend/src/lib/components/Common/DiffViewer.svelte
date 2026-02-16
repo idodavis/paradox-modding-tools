@@ -4,7 +4,6 @@
   import { generateDiffFile } from "@git-diff-view/file";
   import "@git-diff-view/svelte/styles/diff-view.css";
   import { ReadFileContent } from "@services/fileservice";
-  import Icon from "@iconify/svelte";
   import { Dialog } from "@components";
 
   let {
@@ -26,6 +25,7 @@
   } = $props();
 
   let diffFile = $state<DiffFile | null>(null);
+  let filesAreEqual = $state(false);
   let error = $state<string | null>(null);
   let viewModeState = $state<DiffModeEnum>(DiffModeEnum.Split);
   let searchQuery = $state("");
@@ -42,7 +42,7 @@
     customNewFileName ?? newFile?.split(/[/\\]/).pop() ?? newFile ?? "",
   );
   const hasNoDiffs = $derived(
-    diffFile !== null && diffFile.diffLineLength === 0,
+    filesAreEqual || (diffFile !== null && diffFile.diffLineLength === 0),
   );
   const HL = "diff-search-highlight";
 
@@ -65,6 +65,8 @@
   $effect(() => {
     error = null;
     diffFile = null;
+    filesAreEqual = false;
+
     (async () => {
       if (!oldFile || !newFile) return;
       try {
@@ -72,6 +74,10 @@
           ReadFileContent(oldFile),
           ReadFileContent(newFile),
         ]);
+        if (a === b) {
+          filesAreEqual = true;
+          return;
+        }
         const d = generateDiffFile(oldFile, a, newFile, b, lang, lang);
         d.initTheme("dark");
         d.init();

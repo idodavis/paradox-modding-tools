@@ -21,8 +21,8 @@
       dialogTitle="Set A"
       btnText="Browse"
       placeholder="A"
-      initialValue={store.pathsA[0] ?? ""}
-      onPathChange={(p) => (store.pathsA[0] = p)}
+      initialValue={store.pathA ?? ""}
+      onPathChange={(p) => (store.pathA = p)}
     />
     <FileSelector
       legend="Set B"
@@ -30,8 +30,8 @@
       dialogTitle="Set B"
       btnText="Browse"
       placeholder="B"
-      initialValue={store.pathsB[0] ?? ""}
-      onPathChange={(p) => (store.pathsB[0] = p)}
+      initialValue={store.pathB ?? ""}
+      onPathChange={(p) => (store.pathB = p)}
     />
     <FileSelector
       legend="Output dir"
@@ -62,14 +62,14 @@
           type="button"
           class="btn btn-soft btn-wide btn-primary"
           disabled={!store.canRun}
-          onclick={() => store.runMerge("sets")}>Run Merge</button
+          onclick={() => store.runMerge("dirs")}>Run Merge</button
         >
       {:else}
         <button
           type="button"
           class="btn btn-soft btn-wide btn-primary"
           disabled={!store.canRun || store.previewing}
-          onclick={() => store.runPreview("sets")}
+          onclick={() => store.runPreview("dirs")}
           >{store.previewing ? "Previewing..." : "Preview Merge"}</button
         >
       {/if}

@@ -3,9 +3,16 @@ package walk
 import (
 	"strconv"
 	"strings"
+	"sync"
 
 	parser "paradox-modding-tools/services/internal/interpreter"
 )
+
+var mapPool = sync.Pool{
+	New: func() any {
+		return make(map[string]bool)
+	},
+}
 
 // TopLevelKeys returns the set of expression keys at the top level of obj (for attribute detection).
 func TopLevelKeys(obj *parser.Object) map[string]bool {
@@ -26,77 +33,74 @@ func CollectIdentifiers(expr *parser.Expression, selfKey string) []string {
 	if expr == nil {
 		return nil
 	}
-	var out []string
-	if expr.Literal != nil {
-		out = append(out, collectFromLiteral(expr.Literal)...)
+	seen := mapPool.Get().(map[string]bool)
+	defer func() {
+		clear(seen)
+		mapPool.Put(seen)
+	}()
+	collectFromExpression(expr, selfKey, seen)
+
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
 	}
-	if expr.Object != nil {
-		out = append(out, collectFromObject(expr.Object, selfKey)...)
-	}
-	return dedupeStrings(out)
+	return out
 }
 
-func collectFromLiteral(lit *parser.Literal) []string {
-	if lit == nil {
-		return nil
+func collectFromExpression(expr *parser.Expression, selfKey string, seen map[string]bool) {
+	if expr.Literal != nil {
+		collectFromLiteral(expr.Literal, seen)
 	}
-	var out []string
+	if expr.Object != nil {
+		collectFromObject(expr.Object, selfKey, seen)
+	}
+}
+
+func collectFromLiteral(lit *parser.Literal, seen map[string]bool) {
+	if lit == nil {
+		return
+	}
 	if lit.Identifier != nil {
-		out = append(out, *lit.Identifier)
+		seen[*lit.Identifier] = true
 	}
 	if lit.Number != nil {
 		n := *lit.Number
 		if n == float64(int64(n)) {
-			out = append(out, strconv.FormatInt(int64(n), 10))
+			seen[strconv.FormatInt(int64(n), 10)] = true
 		}
 	}
 	if lit.String != nil {
 		s := *lit.String
 		if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-			out = append(out, s[1:len(s)-1])
+			seen[s[1:len(s)-1]] = true
 		}
 	}
 	if lit.Array != nil {
 		for _, elem := range lit.Array {
-			out = append(out, collectFromLiteral(elem)...)
+			collectFromLiteral(elem, seen)
 		}
 	}
-	return out
 }
 
-func collectFromObject(obj *parser.Object, selfKey string) []string {
+func collectFromObject(obj *parser.Object, selfKey string, seen map[string]bool) {
 	if obj == nil {
-		return nil
+		return
 	}
-	var out []string
 	for _, entry := range obj.Entries {
 		if entry.Expression != nil {
 			k := entry.Expression.Key
 			if k != "" && k != selfKey {
-				out = append(out, k)
+				seen[k] = true
 			}
-			out = append(out, CollectIdentifiers(entry.Expression, selfKey)...)
+			collectFromExpression(entry.Expression, selfKey, seen)
 		}
 		if entry.Literal != nil {
-			out = append(out, collectFromLiteral(entry.Literal)...)
+			collectFromLiteral(entry.Literal, seen)
 		}
 		if entry.Object != nil {
-			out = append(out, collectFromObject(entry.Object, selfKey)...)
+			collectFromObject(entry.Object, selfKey, seen)
 		}
 	}
-	return out
-}
-
-func dedupeStrings(ss []string) []string {
-	seen := make(map[string]bool)
-	result := make([]string, 0, len(ss))
-	for _, s := range ss {
-		if !seen[s] {
-			seen[s] = true
-			result = append(result, s)
-		}
-	}
-	return result
 }
 
 // LineEnd returns the line number of the last line of the node's raw text (for expressions, use expr.GetRawText()).

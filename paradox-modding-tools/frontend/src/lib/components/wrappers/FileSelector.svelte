@@ -2,6 +2,8 @@
   import Icon from "@iconify/svelte";
   import { SelectSingleFile, SelectDirectory } from "@services/fileservice";
 
+  // TODO: Refactor frontend usage of this component as paths are now singular.
+
   let {
     legend = "File Legend:",
     mode = "file",
@@ -11,8 +13,8 @@
     btnColor = "btn-primary",
     fileFilter = "*.txt; *.json",
     underHint = "",
-    initialValue = [],
-    onPathsChange,
+    initialValue = "",
+    onPathChange,
   }: {
     legend?: string;
     mode?: "file" | "folder";
@@ -22,26 +24,26 @@
     btnColor?: string;
     fileFilter?: string;
     underHint?: string;
-    initialValue?: string[];
-    onPathsChange?: (paths: string[]) => void;
+    initialValue?: string;
+    onPathChange?: (path: string) => void;
   } = $props();
 
-  let selectedPaths = $state<string[]>([]);
+  let selectedPath = $state<string>("");
 
   $effect(() => {
     if (initialValue.length > 0) {
-      selectedPaths = [...initialValue];
+      selectedPath = initialValue;
     }
   });
 
   async function selectSingleFile() {
-    selectedPaths[0] = await SelectSingleFile(dialogTitle, fileFilter);
-    onPathsChange?.(selectedPaths);
+    selectedPath = await SelectSingleFile(dialogTitle, fileFilter);
+    onPathChange?.(selectedPath);
   }
 
   async function selectSingleDirectory() {
-    selectedPaths[0] = await SelectDirectory(dialogTitle);
-    onPathsChange?.(selectedPaths);
+    selectedPath = await SelectDirectory(dialogTitle);
+    onPathChange?.(selectedPath);
   }
 </script>
 
@@ -61,7 +63,7 @@
         type="text"
         class="input join-item flex-1"
         readonly
-        value={selectedPaths[0]}
+        value={selectedPath}
         {placeholder}
       />
     </div>
@@ -82,7 +84,7 @@
         type="text"
         class="input join-item flex-1"
         readonly
-        value={selectedPaths[0]}
+        value={selectedPath}
         {placeholder}
       />
     </div>

@@ -25,9 +25,7 @@ export {
 };
 
 export {
-    AppSettings,
     DocPathCache,
-    ExtractInventoryResult,
     FileCollectorFilter,
     FileMergeResult,
     InventoryItemRow,
@@ -38,7 +36,6 @@ export {
     MergePair,
     MergePreset,
     MergerOptions,
-    ObjectReference,
     PathMatch,
     PreviewItem,
     ResolvedConflict,

@@ -142,11 +142,11 @@ func (f *FileService) GetGameScriptRoot(game string, installPath string) (string
 }
 
 type FileCollectorFilter struct {
-	Extensions   []string // e.g. [".txt", ".lua"]
-	FileNames    []string // e.g. ["readme.txt", "mod.lua"]
-	Regex        string   // e.g. "^(readme|mod)\.txt$"
-	IncludePath  string   // regex on rel path, e.g. "events/" - include only if matches
-	ExcludePath  string   // regex on rel path, e.g. "common/" - exclude if matches
+	Extensions  []string // e.g. [".txt", ".lua"]
+	FileNames   []string // e.g. ["readme.txt", "mod.lua"]
+	Regex       string   // e.g. "^(readme|mod)\.txt$"
+	IncludePath string   // regex on rel path, e.g. "events/" - include only if matches
+	ExcludePath string   // regex on rel path, e.g. "common/" - exclude if matches
 }
 
 // CollectFilesFromPaths collects all .txt files from a mix of files and directories

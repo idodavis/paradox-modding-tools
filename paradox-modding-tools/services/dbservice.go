@@ -2,12 +2,12 @@ package services
 
 import (
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 )
 
@@ -18,23 +18,18 @@ const (
 
 // DbService manages the SQLite database.
 type DbService struct {
-	DB *sql.DB
+	DB *sqlx.DB
 }
 
 // ServiceShutdown closes the database connection. Called by Wails when the app exits.
 func (d *DbService) ServiceShutdown() error {
-	if d.DB != nil {
-		_, _ = d.DB.Exec("VACUUM")
-		return d.DB.Close()
-	}
+	_, _ = d.DB.Exec("VACUUM")
+	return d.DB.Close()
 	return nil
 }
 
 // ServiceStartup opens the database and initializes the schema. Call from main before creating services that need DB.
 func (d *DbService) ServiceStartup() error {
-	if d.DB != nil {
-		return nil
-	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return fmt.Errorf("user config dir: %w", err)
@@ -44,11 +39,19 @@ func (d *DbService) ServiceStartup() error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	dbPath := filepath.Join(appDir, dbFileName)
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sqlx.Open("sqlite", dbPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
 	d.DB = db
+
+	// Performance tuning
+	if _, err := d.DB.Exec(`PRAGMA journal_mode = WAL`); err != nil {
+		return fmt.Errorf("set wal mode: %w", err)
+	}
+	if _, err := d.DB.Exec(`PRAGMA synchronous = NORMAL`); err != nil {
+		return fmt.Errorf("set synchronous normal: %w", err)
+	}
 
 	// Enable foreign keys so ON DELETE CASCADE works
 	if _, err := d.DB.Exec(`PRAGMA foreign_keys = ON`); err != nil {
@@ -64,7 +67,7 @@ func (d *DbService) initSchema() error {
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			game TEXT NOT NULL,
-			base_paths TEXT NOT NULL,
+			base_path TEXT NOT NULL,
 			object_types TEXT NOT NULL,
 			created_at TEXT NOT NULL,
 			is_temporary INTEGER DEFAULT 0

@@ -106,8 +106,8 @@
               dialogTitle="Select Mod (B) files/folders"
               btnText="Browse"
               placeholder="Select folder or files to compare with Vanilla"
-              initialValue={modPaths}
-              onPathsChange={(paths: string[]) => (modPaths = paths)}
+              initialValue={modPaths[0] ?? ""}
+              onPathChange={(p) => (modPaths[0] = p ?? "")}
             />
           </div>
           <button
@@ -137,23 +137,23 @@
               dialogTitle="Select Set A files/folders"
               btnText="Browse"
               placeholder="Select folder or files for Set A"
-              initialValue={setAPaths}
-              onPathsChange={(paths: string[]) => (setAPaths = paths)}
+              initialValue={setAPaths[0] ?? ""}
+              onPathChange={(p) => (setAPaths[0] = p ?? "")}
             />
             <FileSelector
               mode="folder"
               dialogTitle="Select Set B files/folders"
               btnText="Browse"
               placeholder="Select folder or files for Set B"
-              initialValue={setBPaths}
-              onPathsChange={(paths: string[]) => (setBPaths = paths)}
+              initialValue={setBPaths[0] ?? ""}
+              onPathChange={(p) => (setBPaths[0] = p ?? "")}
             />
           </div>
           <button
             type="button"
             class="btn btn-soft btn-wide btn-primary"
             onclick={runTwoSetsCompare}
-            disabled={setAPaths.length === 0 || setBPaths.length === 0}
+            disabled={setAPaths[0] === "" || setBPaths[0] === ""}
           >
             Run Compare
           </button>
@@ -176,16 +176,16 @@
               dialogTitle="Select File A"
               btnText="Select File"
               placeholder="Select file for File A"
-              initialValue={[fileAPath]}
-              onPathsChange={(paths: string[]) => (fileAPath = paths[0])}
+              initialValue={fileAPath ?? ""}
+              onPathChange={(p) => (fileAPath = p ?? "")}
             />
             <FileSelector
               mode="file"
               dialogTitle="Select File B"
               btnText="Select File"
               placeholder="Select file for File B"
-              initialValue={[fileBPath]}
-              onPathsChange={(paths: string[]) => (fileBPath = paths[0])}
+              initialValue={fileBPath ?? ""}
+              onPathChange={(p) => (fileBPath = p ?? "")}
             />
           </div>
           <button

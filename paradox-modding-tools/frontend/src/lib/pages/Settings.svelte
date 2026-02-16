@@ -3,8 +3,6 @@
   import { Card, CardBody, FileSelector } from "@components";
   import {
     goBack,
-    gameInstallPathCk3,
-    gameInstallPathEu5,
     appSettings,
     saveSettings,
     loadSettings,
@@ -81,9 +79,12 @@
             btnText="Browse"
             placeholder="Select CK3 game directory"
             underHint="Steam example: C:\Program Files (x86)\Steam\steamapps\common\Crusader Kings III"
-            initialValue={[$gameInstallPathCk3]}
-            onPathsChange={(paths: string[]) =>
-              gameInstallPathCk3.set(paths[0])}
+            initialValue={$appSettings["ck3.install_path"] ?? ""}
+            onPathChange={(p) =>
+              appSettings.update((s) => ({
+                ...s,
+                "ck3.install_path": p ?? "",
+              }))}
           />
           <FileSelector
             mode="folder"
@@ -91,9 +92,12 @@
             btnText="Browse"
             placeholder="Select EU5 game directory"
             underHint="Steam example: C:\Program Files (x86)\Steam\steamapps\common\Europa Universalis V"
-            initialValue={[$gameInstallPathEu5]}
-            onPathsChange={(paths: string[]) =>
-              gameInstallPathEu5.set(paths[0])}
+            initialValue={$appSettings["eu5.install_path"] ?? ""}
+            onPathChange={(p) =>
+              appSettings.update((s) => ({
+                ...s,
+                "eu5.install_path": p ?? "",
+              }))}
           />
         </div>
         <h3 class="card-title text-base-content/90 mb-2 mt-6">Merge Tool</h3>
@@ -105,11 +109,12 @@
           dialogTitle="Default merge output dir"
           btnText="Browse"
           placeholder="Merge output directory"
-          initialValue={$appSettings?.mergeOutputDir
-            ? [$appSettings.mergeOutputDir]
-            : []}
-          onPathsChange={(p) =>
-            appSettings.update((s) => ({ ...s, mergeOutputDir: p[0] ?? "" }))}
+          initialValue={$appSettings["_global.merge_output_dir"] ?? ""}
+          onPathChange={(p) =>
+            appSettings.update((s) => ({
+              ...s,
+              "_global.merge_output_dir": p ?? "",
+            }))}
         />
         <div
           class="card-actions justify-end mt-6 pt-4 border-t border-base-content/10"

@@ -12,6 +12,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as repos$0 from "./internal/repos/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -22,19 +26,10 @@ export function DeleteInventory(id: string): $CancellablePromise<void> {
 }
 
 /**
- * ExportInventory returns the inventory as CSV. includeRaw controls whether rawText is included.
+ * ExtractInventory extracts inventory items from basePath that match objectTypes. Writes to DB as temporary; returns inventoryId and totalCount. Only .txt files are processed. Deletes prior temporary inventories before inserting.
  */
-export function ExportInventory(inventoryId: string, includeRaw: boolean): $CancellablePromise<string> {
-    return $Call.ByID(2263271, inventoryId, includeRaw);
-}
-
-/**
- * ExtractInventory extracts inventory items from basePaths that match objectTypes. Writes to DB as temporary; returns inventoryId and totalCount. Only .txt files are processed. Deletes prior temporary inventories before inserting.
- */
-export function ExtractInventory(game: string, basePaths: string[], objectTypes: string[]): $CancellablePromise<$models.ExtractInventoryResult | null> {
-    return $Call.ByID(383781064, game, basePaths, objectTypes).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function ExtractInventory(game: string, basePath: string, objectTypes: string[]): $CancellablePromise<string | null> {
+    return $Call.ByID(383781064, game, basePath, objectTypes);
 }
 
 /**
@@ -42,7 +37,7 @@ export function ExtractInventory(game: string, basePaths: string[], objectTypes:
  */
 export function GetAttributes(game: string, typeName: string): $CancellablePromise<string[]> {
     return $Call.ByID(3409867136, game, typeName).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType0($result);
     });
 }
 
@@ -51,7 +46,7 @@ export function GetAttributes(game: string, typeName: string): $CancellablePromi
  */
 export function GetInventoryItems(inventoryId: string): $CancellablePromise<$models.InventoryItemRow[]> {
     return $Call.ByID(3075356477, inventoryId).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType2($result);
     });
 }
 
@@ -60,7 +55,7 @@ export function GetInventoryItems(inventoryId: string): $CancellablePromise<$mod
  */
 export function GetItemDetails(inventoryId: string, itemType: string, itemKey: string): $CancellablePromise<$models.ItemDetails | null> {
     return $Call.ByID(3246543216, inventoryId, itemType, itemKey).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType4($result);
     });
 }
 
@@ -69,15 +64,8 @@ export function GetItemDetails(inventoryId: string, itemType: string, itemKey: s
  */
 export function GetSupportedTypes(game: string): $CancellablePromise<string[]> {
     return $Call.ByID(1823722162, game).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType0($result);
     });
-}
-
-/**
- * ImportInventory creates a new inventory from CSV. Returns the new inventory ID.
- */
-export function ImportInventory(game: string, csvData: string): $CancellablePromise<string> {
-    return $Call.ByID(1948374234, game, csvData);
 }
 
 /**
@@ -85,7 +73,7 @@ export function ImportInventory(game: string, csvData: string): $CancellableProm
  */
 export function ListInventoriesForGame(game: string): $CancellablePromise<$models.InventorySummary[]> {
     return $Call.ByID(328231442, game).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType6($result);
     });
 }
 
@@ -104,12 +92,10 @@ export function SaveInventory(id: string, name: string): $CancellablePromise<voi
 }
 
 // Private type creation functions
-const $$createType0 = $models.ExtractInventoryResult.createFrom;
-const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = $Create.Array($Create.Any);
-const $$createType3 = $models.InventoryItemRow.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = $models.ItemDetails.createFrom;
-const $$createType6 = $Create.Nullable($$createType5);
-const $$createType7 = $models.InventorySummary.createFrom;
-const $$createType8 = $Create.Array($$createType7);
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = repos$0.InventoryItemRow.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = repos$0.ItemDetails.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
+const $$createType5 = repos$0.InventorySummary.createFrom;
+const $$createType6 = $Create.Array($$createType5);

@@ -1,16 +1,27 @@
 package services
 
 import (
-	"database/sql"
 	"errors"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"paradox-modding-tools/services/internal/repos"
+
+	"github.com/jmoiron/sqlx"
 )
 
 type ModDocService struct {
 	FileService *FileService
-	DB          *sql.DB
+	DB          *sqlx.DB
+	repo        *repos.ModDocRepository
+}
+
+func (m *ModDocService) getRepo() *repos.ModDocRepository {
+	if m.repo == nil {
+		m.repo = repos.NewModDocRepository(m.DB)
+	}
+	return m.repo
 }
 
 // DocPathCache is the cached doc path list for a game+install path (JSON-safe for bindings).
@@ -53,19 +64,14 @@ func (m *ModDocService) Scan(game string, installPath string) ([]string, error) 
 	hash := installPathHash(installPath)
 	fetchedAt := time.Now().UTC().Format(time.RFC3339)
 
+	repo := m.getRepo()
 	for relPath, absPath := range files {
 		filesSlice = append(filesSlice, relPath)
-		if m.DB == nil {
-			continue
-		}
 		content, err := m.FileService.ReadFileContent(absPath)
 		if err != nil {
 			content = ""
 		}
-		_, err = m.DB.Exec(`INSERT INTO doc_files (game, install_path_hash, rel_path, abs_path, content, fetched_at) VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT(game, install_path_hash, rel_path) DO UPDATE SET abs_path=excluded.abs_path, content=excluded.content, fetched_at=excluded.fetched_at`,
-			gameNorm, hash, relPath, absPath, content, fetchedAt)
-		if err != nil {
+		if err := repo.UpsertDocFile(gameNorm, hash, relPath, absPath, content, fetchedAt); err != nil {
 			return nil, err
 		}
 	}
@@ -80,25 +86,18 @@ func (m *ModDocService) GetDocPathCache(game, installPath string) (*DocPathCache
 	if gameNorm == "" || installPath == "" {
 		return nil, nil
 	}
-	if m.DB == nil {
-		return nil, nil
-	}
 	hash := installPathHash(installPath)
-	rows, err := m.DB.Query(`SELECT rel_path, fetched_at FROM doc_files WHERE game = ? AND install_path_hash = ? ORDER BY rel_path`, gameNorm, hash)
+	files, err := m.getRepo().GetDocFiles(gameNorm, hash)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+
 	var paths []string
 	var scannedAt string
-	for rows.Next() {
-		var relPath, ft string
-		if err := rows.Scan(&relPath, &ft); err != nil {
-			return nil, err
-		}
-		paths = append(paths, relPath)
-		if ft > scannedAt {
-			scannedAt = ft
+	for _, f := range files {
+		paths = append(paths, f.RelPath)
+		if f.FetchedAt > scannedAt {
+			scannedAt = f.FetchedAt
 		}
 	}
 	if len(paths) == 0 {
@@ -115,17 +114,6 @@ func (m *ModDocService) GetDocContent(game, installPath, relPath string) (string
 	if gameNorm == "" || installPath == "" || relPath == "" {
 		return "", nil
 	}
-	if m.DB == nil {
-		return "", nil
-	}
 	hash := installPathHash(installPath)
-	var content string
-	err := m.DB.QueryRow(`SELECT content FROM doc_files WHERE game = ? AND install_path_hash = ? AND rel_path = ?`, gameNorm, hash, relPath).Scan(&content)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return content, nil
+	return m.getRepo().GetDocContent(gameNorm, hash, relPath)
 }

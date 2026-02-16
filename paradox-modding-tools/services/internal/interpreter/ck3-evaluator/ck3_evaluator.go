@@ -28,7 +28,10 @@ type schemaFile struct {
 	Schemas map[string]Schema `json:"schemas"`
 }
 
-var schemas map[string]Schema
+var (
+	schemas       map[string]Schema
+	inlineSchemas []Schema
+)
 
 // Pattern registry: name → (key, params) → (displayKey, ok). Only place key logic lives.
 var matchers map[string]func(key string, p struct{ Keywords, Prefixes, Suffixes []string }) (displayKey string, ok bool)
@@ -39,6 +42,11 @@ func init() {
 		panic("ck3-evaluator: load ck3_objects.json: " + err.Error())
 	}
 	schemas = f.Schemas
+	for _, s := range schemas {
+		if s.InlineKeyPattern != "" {
+			inlineSchemas = append(inlineSchemas, s)
+		}
+	}
 	matchers = map[string]func(key string, p struct{ Keywords, Prefixes, Suffixes []string }) (displayKey string, ok bool){
 		"numeric": func(key string, _ struct{ Keywords, Prefixes, Suffixes []string }) (string, bool) {
 			_, err := strconv.ParseInt(key, 10, 64)
@@ -166,8 +174,8 @@ func MatchKey(key string, schema *Schema, inline bool) (displayKey string, ok bo
 
 // otherInline returns whether key matches another type's inline pattern (schema-driven).
 func otherInline(key, excludeType string) bool {
-	for name, s := range schemas {
-		if name == excludeType || s.InlineKeyPattern == "" {
+	for _, s := range inlineSchemas {
+		if s.Name == excludeType {
 			continue
 		}
 		if _, ok := MatchKey(key, &s, true); ok {

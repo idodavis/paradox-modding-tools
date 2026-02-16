@@ -1,18 +1,14 @@
 import { getContext, setContext } from "svelte";
-import * as InventoryService from "@services/inventoryservice";
 import { game } from "@stores/app.svelte";
 import { get } from "svelte/store";
-import type {
-  ExtractInventoryResult,
-  InventoryItemRow,
-  InventorySummary,
-} from "@services/models";
+import { InventorySummary, InventoryItemRow } from "@services/models";
+import { GetSupportedTypes, ListInventoriesForGame, ExtractInventory, GetInventoryItems, SaveInventory, RenameInventory, DeleteInventory} from "@services/inventoryservice";
 
 const INVENTORY_STORE_KEY = Symbol("INVENTORY_STORE");
 
 export class InventoryStore {
   // State
-  files = $state<string[]>([]);
+  file = $state<string>("");
   selectedTypes = $state<string[]>([]);
   supportedTypes = $state<string[]>([]);
   
@@ -47,7 +43,7 @@ export class InventoryStore {
   }
 
   get extractDisabled() {
-    return !this.files.length || !this.selectedTypes.length;
+    return !this.file || !this.selectedTypes.length;
   }
 
   get nameModalInitialName() {
@@ -61,8 +57,8 @@ export class InventoryStore {
   async refresh() {
     const g = get(game);
     const [types, list] = await Promise.all([
-      (InventoryService as any).GetSupportedTypes(g),
-      (InventoryService as any).ListInventoriesForGame(g),
+      GetSupportedTypes(g),
+      ListInventoriesForGame(g),
     ]);
     this.supportedTypes = types ?? [];
     this.savedInventories = list ?? [];
@@ -81,21 +77,21 @@ export class InventoryStore {
     
     try {
       // Unwrap proxies to ensure Wails can marshal them correctly
-      const filesArg = $state.snapshot(this.files);
+      const filesArg = $state.snapshot(this.file);
       const typesArg = $state.snapshot(this.selectedTypes);
       
-      this.extractionPromise = (InventoryService as any).ExtractInventory(
+      this.extractionPromise = ExtractInventory(
         g,
         filesArg,
         typesArg,
       );
-      const result = (await this.extractionPromise) as ExtractInventoryResult | null;
-      if (result) {
-        this.currentInventoryId = result.inventoryId;
+      const inventoryId = (await this.extractionPromise) as string | null;
+      if (inventoryId) {
+        this.currentInventoryId = inventoryId;
         this.currentInventoryGame = g;
         this.hasExtraction = true;
         this.isCurrentTemp = true;
-        this.allItems = (await (InventoryService as any).GetInventoryItems(result.inventoryId)) ?? [];
+        this.allItems = (await GetInventoryItems(inventoryId)) ?? [];
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -111,22 +107,22 @@ export class InventoryStore {
     this.currentInventoryGame = inv.game;
     this.hasExtraction = true;
     this.isCurrentTemp = false;
-    this.allItems = (await (InventoryService as any).GetInventoryItems(inv.id)) ?? [];
+    this.allItems = (await GetInventoryItems(inv.id)) ?? [];
   }
 
   async handleNameModalSave(name: string) {
     if (!this.nameModal.invId) return;
     if (this.nameModal.mode === "save") {
-      await (InventoryService as any).SaveInventory(this.nameModal.invId, name);
+      await SaveInventory(this.nameModal.invId, name);
       this.isCurrentTemp = false;
     } else {
-      await (InventoryService as any).RenameInventory(this.nameModal.invId, name);
-      await this.refresh();
+      await RenameInventory(this.nameModal.invId, name);
     }
+    await this.refresh();
   }
 
   async handleDelete(inv: InventorySummary) {
-    await (InventoryService as any).DeleteInventory(inv.id);
+    await DeleteInventory(inv.id);
     if (this.currentInventoryId === inv.id) this.clearAll();
     this.refresh();
   }
@@ -158,6 +154,8 @@ export class InventoryStore {
     this.loading = false;
   }
 }
+
+export const inventoryStore = new InventoryStore();
 
 export function createInventoryStore() {
   return new InventoryStore();

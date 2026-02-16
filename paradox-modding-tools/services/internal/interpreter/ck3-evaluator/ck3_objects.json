@@ -385,6 +385,22 @@
         "disallow_random_traits"
       ]
     },
+    "coat_of_arms": {
+      "name": "Coat of Arms",
+      "paths": [
+        "common/coat_of_arms/coat_of_arms"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": [
+        "pattern",
+        "color1",
+        "color2",
+        "color3",
+        "colored_emblem",
+        "textured_emblem",
+        "sub"
+      ]
+    },
     "combat_effects": {
       "name": "Combat Effects",
       "paths": [
@@ -1512,6 +1528,27 @@
         "scale"
       ]
     },
+    "music": {
+      "name": "Music",
+      "paths": [
+        "music"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": [
+        "music",
+        "pause_factor",
+        "mood",
+        "prioritized_mood",
+        "is_valid",
+        "can_be_interrupted",
+        "years",
+        "months",
+        "days",
+        "calls",
+        "reset",
+        "dlc"
+      ]
+    },
     "name_equivalency": {
       "name": "Name Equivalency",
       "paths": [
@@ -1785,6 +1822,20 @@
         "stewardship",
         "intrigue",
         "learning"
+      ]
+    },
+    "scripted_costs": {
+      "name": "Scripted Costs",
+      "paths": [
+        "common/scripted_costs"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": [
+        "prestige",
+        "gold",
+        "piety",
+        "influence",
+        "round"
       ]
     },
     "scripted_effects": {

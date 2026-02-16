@@ -21,8 +21,8 @@
       dialogTitle="Output dir"
       btnText="Browse"
       placeholder="Output directory"
-      initialValue={store.outputDir ? [store.outputDir] : []}
-      onPathsChange={(p) => (store.outputDir = p[0] ?? "")}
+      initialValue={store.outputDir ? store.outputDir : ""}
+      onPathChange={(p) => (store.outputDir = p ?? "")}
     />
     <label class="flex items-center gap-2 cursor-pointer mt-2 mb-4">
       <input
@@ -42,8 +42,8 @@
             dialogTitle="File A"
             btnText="A"
             placeholder="A"
-            initialValue={pair.pathA ? [pair.pathA] : []}
-            onPathsChange={(p) => store.updatePair(i, "pathA", p[0] ?? "")}
+            initialValue={pair.pathA ? pair.pathA : ""}
+            onPathChange={(p) => store.updatePair(i, "pathA", p ?? "")}
           />
           <span class="text-base-content/50">↔</span>
           <FileSelector
@@ -51,8 +51,8 @@
             dialogTitle="File B"
             btnText="B"
             placeholder="B"
-            initialValue={pair.pathB ? [pair.pathB] : []}
-            onPathsChange={(p) => store.updatePair(i, "pathB", p[0] ?? "")}
+            initialValue={pair.pathB ? pair.pathB : ""}
+            onPathChange={(p) => store.updatePair(i, "pathB", p ?? "")}
           />
           <input
             type="text"

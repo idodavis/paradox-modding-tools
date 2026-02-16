@@ -31,9 +31,9 @@ export function GetMergePresets(): $CancellablePromise<$models.MergePreset[]> {
 }
 
 /**
- * GetSettings loads settings and game constants from app_settings table.
+ * GetSettings loads settings as a map "game.key" -> value.
  */
-export function GetSettings(): $CancellablePromise<$models.AppSettings> {
+export function GetSettings(): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(1419253203).then(($result: any) => {
         return $$createType2($result);
     });
@@ -49,11 +49,11 @@ export function SaveMergePreset(name: string, options: $models.MergerOptions): $
 /**
  * SaveSettings writes user settings to app_settings table.
  */
-export function SaveSettings(settings: $models.AppSettings): $CancellablePromise<void> {
+export function SaveSettings(settings: { [_ in string]?: string }): $CancellablePromise<void> {
     return $Call.ByID(3145424170, settings);
 }
 
 // Private type creation functions
 const $$createType0 = $models.MergePreset.createFrom;
 const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $models.AppSettings.createFrom;
+const $$createType2 = $Create.Map($Create.Any, $Create.Any);

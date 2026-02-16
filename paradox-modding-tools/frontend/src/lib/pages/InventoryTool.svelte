@@ -8,19 +8,15 @@
     MultiSelect,
   } from "@components";
   import { game, helpOpen } from "@stores/app.svelte";
-  import type { InventoryItemRow, InventorySummary } from "@services/models";
   import {
     ItemDetails,
     InventoryCard,
     InventoryNameModal,
     InventoryHelp,
   } from "@components";
-  import {
-    createInventoryStore,
-    setInventoryStore,
-  } from "@stores/inventory.svelte";
+  import { inventoryStore, setInventoryStore } from "@stores/inventory.svelte";
 
-  const store = createInventoryStore();
+  const store = inventoryStore;
   setInventoryStore(store);
 
   $effect(() => {
@@ -47,7 +43,7 @@
     {
       field: "lines",
       headerName: "Lines",
-      valueGetter: (p: { data?: InventoryItemRow }) =>
+      valueGetter: (p: { data?: any }) =>
         `${p.data?.lineStart ?? 0} - ${p.data?.lineEnd ?? 0}`,
       filter: false,
       sortable: false,
@@ -81,8 +77,8 @@
             btnText="Folder"
             btnColor="btn-secondary"
             placeholder="Folder containing the inventory (e.g. mod folder, game files)"
-            initialValue={store.files}
-            onPathsChange={(p) => (store.files = p)}
+            initialValue={store.file}
+            onPathChange={(p) => (store.file = p)}
           />
           <div>
             <span class="label text-base-content/90 mb-1 block font-medium"
@@ -227,7 +223,7 @@
       <div
         class="flex items-center justify-center py-16 text-center text-base-content/60"
       >
-        <p>No inventory. Select paths and types, then Extract.</p>
+        <p>No inventory. Select path and types, then Extract.</p>
       </div>
     {/if}
   </div>

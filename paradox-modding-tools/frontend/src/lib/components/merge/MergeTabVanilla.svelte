@@ -29,8 +29,8 @@
       dialogTitle="Select Mod Folder"
       btnText="Select Folder"
       placeholder="Mod folder (B)"
-      initialValue={store.modPaths}
-      onPathsChange={(p) => (store.modPaths = p)}
+      initialValue={store.modPaths[0] ?? ""}
+      onPathChange={(p) => (store.modPaths[0] = p ?? "")}
     />
     <FileSelector
       legend="Output dir"
@@ -38,8 +38,8 @@
       dialogTitle="Output dir"
       btnText="Browse"
       placeholder="Output directory"
-      initialValue={store.outputDir ? [store.outputDir] : []}
-      onPathsChange={(p) => (store.outputDir = p[0] ?? "")}
+      initialValue={store.outputDir ? store.outputDir : ""}
+      onPathChange={(p) => (store.outputDir = p ?? "")}
     />
     <label class="flex items-center gap-2 cursor-pointer mt-2">
       <input

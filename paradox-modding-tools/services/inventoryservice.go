@@ -2,8 +2,6 @@ package services
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
@@ -18,39 +16,49 @@ import (
 	parser "paradox-modding-tools/services/internal/interpreter"
 	ck3 "paradox-modding-tools/services/internal/interpreter/ck3-evaluator"
 	walk "paradox-modding-tools/services/internal/interpreter/walk"
+	"paradox-modding-tools/services/internal/repos"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"golang.org/x/sync/errgroup"
 )
 
-var maxConcurrency = max(1, runtime.GOMAXPROCS(0))
+var blackListPaths = []string{
+	"content_source",
+	"common/console_groups",
+	"fonts",
+	"gfx",
+	"licenses",
+	"sound",
+	"tests",
+	"tools",
+	"map_data",
+	"gui",
+	"reader_export",
+	"dlc",
+	"dlc_metadata",
+	"data_binding",
+}
+
+var maxConcurrency = max(1, int(float64(runtime.GOMAXPROCS(0))*0.80))
 
 // InventoryService exposes inventory functionality to the Wails frontend (supported types, schema, extraction, save, list).
 type InventoryService struct {
-	DB *sql.DB
+	DB   *sqlx.DB
+	repo *repos.InventoryRepository
 }
 
-// InventoryItem represents a single extracted game object with metadata.
-type InventoryItem struct {
-	Key           string            `json:"key"`
-	Type          string            `json:"type"`
-	FilePath      string            `json:"filePath"`
-	LineStart     int               `json:"lineStart"`
-	LineEnd       int               `json:"lineEnd"`
-	RawText       string            `json:"rawText"`
-	PotentialRefs []string          `json:"-"`
-	References    []ObjectReference `json:"references,omitempty"`
-	Referrers     []ObjectReference `json:"referrers,omitempty"`
-	Attributes    map[string]bool   `json:"attributes,omitempty"`
-}
+type (
+	InventorySummary = repos.InventorySummary
+	InventoryItemRow = repos.InventoryItemRow
+	ItemDetails      = repos.ItemDetails
+)
 
-// ObjectReference represents a reference between two game objects.
-type ObjectReference struct {
-	Key       string `json:"key"`
-	Type      string `json:"type"`
-	FilePath  string `json:"filePath"`
-	LineStart int    `json:"lineStart,omitempty"`
-	LineEnd   int    `json:"lineEnd,omitempty"`
+func (i *InventoryService) getRepo() *repos.InventoryRepository {
+	if i.repo == nil {
+		i.repo = repos.NewInventoryRepository(i.DB)
+	}
+	return i.repo
 }
 
 // GetSupportedTypes returns the sorted list of object type names for the given game.
@@ -81,7 +89,7 @@ type extractVisitor struct {
 	objectTypes []string
 	inlineTypes []string
 	seen        map[string]map[string]bool
-	onItem      func(InventoryItem)
+	onItem      func(repos.InventoryItem)
 }
 
 // VisitExpression classifies top-level and inline keys with the CK3 evaluator and emits inventory items.
@@ -91,11 +99,16 @@ func (v *extractVisitor) VisitExpression(expr *parser.Expression, ctx *walk.Cont
 	}
 	inline := ctx.Depth > 0
 	hasObject := expr.Object != nil
+
+	// Optimization: Try to classify based on Key first to avoid expensive TopLevelKeys allocation.
+	typeName, displayKey, ok := ck3.ClassifyKey(expr.Key, hasObject, nil, v.objectTypes, inline)
+
 	var attrs map[string]bool
-	if expr.Object != nil {
+	if ok && hasObject {
 		attrs = walk.TopLevelKeys(expr.Object)
+		// Re-classify to ensure attrs don't disqualify it (or if they refine the type).
+		typeName, displayKey, ok = ck3.ClassifyKey(expr.Key, hasObject, attrs, v.objectTypes, inline)
 	}
-	typeName, displayKey, ok := ck3.ClassifyKey(expr.Key, hasObject, attrs, v.objectTypes, inline)
 	if !ok {
 		return
 	}
@@ -115,7 +128,7 @@ func (v *extractVisitor) VisitExpression(expr *parser.Expression, ctx *walk.Cont
 	lineEnd := walk.LineEnd(lineStart, raw)
 	potentialRefs := walk.CollectIdentifiers(expr, displayKey)
 
-	v.onItem(InventoryItem{
+	v.onItem(repos.InventoryItem{
 		Key:           displayKey,
 		Type:          typeName,
 		FilePath:      v.filePath,
@@ -128,7 +141,7 @@ func (v *extractVisitor) VisitExpression(expr *parser.Expression, ctx *walk.Cont
 }
 
 // processFile walks the AST with the interpreter and returns inventory items.
-func processFile(path string, game string, objectTypes []string) ([]InventoryItem, error) {
+func processFile(path string, game string, objectTypes []string) ([]repos.InventoryItem, error) {
 	if game != "CK3" || len(objectTypes) == 0 {
 		return nil, nil
 	}
@@ -157,13 +170,13 @@ func processFile(path string, game string, objectTypes []string) ([]InventoryIte
 		seen[t] = make(map[string]bool)
 	}
 
-	var items []InventoryItem
+	var items []repos.InventoryItem
 	v := &extractVisitor{
 		filePath:    path,
 		objectTypes: applicableTypes,
 		inlineTypes: inlineTypes,
 		seen:        seen,
-		onItem:      func(it InventoryItem) { items = append(items, it) },
+		onItem:      func(it repos.InventoryItem) { items = append(items, it) },
 	}
 	walk.Walk(ast, v)
 
@@ -171,7 +184,7 @@ func processFile(path string, game string, objectTypes []string) ([]InventoryIte
 }
 
 // enrichWithReferences resolves PotentialRefs and adds reference information to all inventory items.
-func enrichWithReferences(ctx context.Context, items []InventoryItem) {
+func enrichWithReferences(ctx context.Context, items []repos.InventoryItem) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -183,7 +196,7 @@ func enrichWithReferences(ctx context.Context, items []InventoryItem) {
 
 	for index := range items {
 		for _, potentialRef := range items[index].PotentialRefs {
-			items[index].References = append(items[index].References, ObjectReference{
+			items[index].References = append(items[index].References, repos.ObjectReference{
 				Key:       potentialRef,
 				Type:      items[index].Type,
 				FilePath:  items[index].FilePath,
@@ -191,7 +204,7 @@ func enrichWithReferences(ctx context.Context, items []InventoryItem) {
 				LineEnd:   items[index].LineEnd,
 			})
 			if j, ok := itemIndex[potentialRef]; ok {
-				items[j].Referrers = append(items[j].Referrers, ObjectReference{
+				items[j].Referrers = append(items[j].Referrers, repos.ObjectReference{
 					Key:       items[index].Key,
 					Type:      items[index].Type,
 					FilePath:  items[index].FilePath,
@@ -203,256 +216,113 @@ func enrichWithReferences(ctx context.Context, items []InventoryItem) {
 	}
 }
 
-// ExtractInventoryResult is returned by ExtractInventory after saving to DB.
-type ExtractInventoryResult struct {
-	InventoryId string `json:"inventoryId"`
-	TotalCount  int    `json:"totalCount"`
-}
+// ExtractInventory extracts inventory items from basePath that match objectTypes. Writes to DB as temporary; returns inventoryId and totalCount. Only .txt files are processed. Deletes prior temporary inventories before inserting.
+func (i *InventoryService) ExtractInventory(ctx context.Context, game, basePath string, objectTypes []string) (*string, error) {
+	// Wipe any previous temporary inventories to keep the DB clean
+	_ = i.getRepo().DeleteTemporaryInventories()
 
-// InventorySummary is a lightweight inventory listing (for ListInventories).
-type InventorySummary struct {
-	Id         string `json:"id"`
-	Name       string `json:"name"`
-	Game       string `json:"game"`
-	CreatedAt  string `json:"createdAt"`
-	TotalCount int    `json:"totalCount"`
-}
-
-// InventoryItemRow is a lightweight grid row (key, type, file_path, lines, counts).
-type InventoryItemRow struct {
-	Key             string `json:"key"`
-	Type            string `json:"type"`
-	FilePath        string `json:"filePath"`
-	LineStart       int    `json:"lineStart"`
-	LineEnd         int    `json:"lineEnd"`
-	ReferencesCount int    `json:"referencesCount"`
-	ReferrersCount  int    `json:"referrersCount"`
-}
-
-// ItemDetails is the full details for a single item (for GetItemDetails).
-type ItemDetails struct {
-	RawText    string            `json:"rawText"`
-	References []ObjectReference `json:"references"`
-	Referrers  []ObjectReference `json:"referrers"`
-	Attributes map[string]bool   `json:"attributes"`
-}
-
-// ExtractInventory extracts inventory items from basePaths that match objectTypes. Writes to DB as temporary; returns inventoryId and totalCount. Only .txt files are processed. Deletes prior temporary inventories before inserting.
-func (i *InventoryService) ExtractInventory(ctx context.Context, game string, basePaths []string, objectTypes []string) (*ExtractInventoryResult, error) {
-	if i.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
+	shouldSkip := func(path string) bool {
+		rel, _ := filepath.Rel(basePath, path)
+		return slices.Contains(blackListPaths, filepath.ToSlash(rel))
 	}
-	semaphore := make(chan struct{}, maxConcurrency)
 
+	semaphore := make(chan struct{}, maxConcurrency)
 	eg, egCtx := errgroup.WithContext(ctx)
 	var mu sync.Mutex
-	var items []InventoryItem
+	var items []repos.InventoryItem
 
-	for _, basePath := range basePaths {
-		walkErr := filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
+	walkErr := filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if shouldSkip(path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".txt" {
+			return nil
+		}
+
+		filePath := path
+		eg.Go(func() error {
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			if egCtx.Err() != nil {
+				return egCtx.Err()
 			}
 
-			filePath := path
-			eg.Go(func() error {
-				semaphore <- struct{}{}
-				defer func() { <-semaphore }()
-
-				if filepath.Ext(path) != ".txt" {
-					return nil
-				}
-
-				if egCtx.Err() != nil {
-					return egCtx.Err()
-				}
-
-				itemsForFile, err := processFile(filePath, game, objectTypes)
-				if err != nil {
-					log.Printf("inventory: skip (parse error) %s: %v", filePath, err)
-					return nil
-				}
-
-				mu.Lock()
-				items = append(items, itemsForFile...)
-				mu.Unlock()
+			itemsForFile, err := processFile(filePath, game, objectTypes)
+			if err != nil {
+				log.Printf("inventory: skip (parse error) %s: %v", filePath, err)
 				return nil
-			})
+			}
+
+			mu.Lock()
+			items = append(items, itemsForFile...)
+			mu.Unlock()
+
 			return nil
 		})
-		if err := eg.Wait(); err != nil {
-			return nil, err
-		}
-		if walkErr != nil && walkErr != fs.SkipAll {
-			return nil, fmt.Errorf("walk %s: %w", basePath, walkErr)
-		}
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	if walkErr != nil && walkErr != fs.SkipAll {
+		return nil, fmt.Errorf("walk %s: %w", basePath, walkErr)
 	}
 
 	enrichWithReferences(ctx, items)
 
-	_, _ = i.DB.Exec(`DELETE FROM inventories WHERE is_temporary = 1`)
+	repo := i.getRepo()
 
 	inventoryId := uuid.New().String()
-	createdAt := time.Now().Format("2006-01-02")
-	basePathsJSON, _ := json.Marshal(basePaths)
-	objectTypesJSON, _ := json.Marshal(objectTypes)
-	name := fmt.Sprintf("%s - %s", game, createdAt)
-
-	_, err := i.DB.Exec(`INSERT INTO inventories (id, name, game, base_paths, object_types, created_at, is_temporary) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-		inventoryId, name, game, string(basePathsJSON), string(objectTypesJSON), createdAt)
-	if err != nil {
+	name := fmt.Sprintf("%s - %s", game, time.Now().Format("2006-01-02"))
+	if err := repo.CreateInventory(inventoryId, name, game, basePath, objectTypes); err != nil {
 		return nil, fmt.Errorf("insert inventory: %w", err)
 	}
 
-	batchSize := 1000
-	for b := 0; b < len(items); b += batchSize {
-		end := b + batchSize
-		if end > len(items) {
-			end = len(items)
-		}
-		batch := items[b:end]
-		tx, err := i.DB.Begin()
-		if err != nil {
-			return nil, err
-		}
-		stmt, err := tx.Prepare(`INSERT INTO inventory_items (inventory_id, key, type, file_path, line_start, line_end, raw_text, "references", referrers, attributes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(inventory_id, type, key) DO UPDATE SET
-			file_path = excluded.file_path, line_start = excluded.line_start, line_end = excluded.line_end,
-			raw_text = excluded.raw_text, "references" = excluded."references", referrers = excluded.referrers, attributes = excluded.attributes`)
-		if err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-		for _, it := range batch {
-			refsJSON, _ := json.Marshal(it.References)
-			referrersJSON, _ := json.Marshal(it.Referrers)
-			attrsJSON, _ := json.Marshal(it.Attributes)
-			_, err = stmt.Exec(inventoryId, it.Key, it.Type, it.FilePath, it.LineStart, it.LineEnd, it.RawText, string(refsJSON), string(referrersJSON), string(attrsJSON))
-			if err != nil {
-				stmt.Close()
-				tx.Rollback()
-				return nil, err
-			}
-		}
-		stmt.Close()
-		if err := tx.Commit(); err != nil {
-			return nil, err
-		}
+	if err := repo.SaveInventoryItems(inventoryId, items); err != nil {
+		return nil, err
 	}
 
-	return &ExtractInventoryResult{InventoryId: inventoryId, TotalCount: len(items)}, nil
+	return &inventoryId, nil
 }
 
 // ListInventoriesForGame returns saved (non-temporary) inventories for the given game, ordered by created_at DESC.
 func (i *InventoryService) ListInventoriesForGame(game string) ([]InventorySummary, error) {
-	if i.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
-	}
-	rows, err := i.DB.Query(`SELECT inv.id, inv.name, inv.game, inv.created_at,
-		(SELECT COUNT(*) FROM inventory_items WHERE inventory_id = inv.id) AS total_count
-		FROM inventories inv WHERE inv.game = ? AND (inv.is_temporary = 0 OR inv.is_temporary IS NULL) ORDER BY inv.created_at DESC`, game)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []InventorySummary
-	for rows.Next() {
-		var s InventorySummary
-		if err := rows.Scan(&s.Id, &s.Name, &s.Game, &s.CreatedAt, &s.TotalCount); err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+	return i.getRepo().ListInventories(game)
 }
 
 // SaveInventory marks an inventory as saved (persists name and sets is_temporary=0).
 func (i *InventoryService) SaveInventory(id, name string) error {
-	if i.DB == nil {
-		return fmt.Errorf("database not initialized")
-	}
-	_, err := i.DB.Exec(`UPDATE inventories SET name = ?, is_temporary = 0 WHERE id = ?`, name, id)
-	return err
+	return i.getRepo().SaveInventory(id, name)
 }
 
 // GetInventoryItems returns lightweight rows for the grid (no raw_text, references, referrers).
 func (i *InventoryService) GetInventoryItems(inventoryId string) ([]InventoryItemRow, error) {
-	if i.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
-	}
-	rows, err := i.DB.Query(`SELECT key, type, file_path, line_start, line_end,
-		COALESCE(json_array_length("references"), 0), COALESCE(json_array_length(referrers), 0)
-		FROM inventory_items WHERE inventory_id = ? ORDER BY type, key`, inventoryId)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []InventoryItemRow
-	for rows.Next() {
-		var r InventoryItemRow
-		if err := rows.Scan(&r.Key, &r.Type, &r.FilePath, &r.LineStart, &r.LineEnd, &r.ReferencesCount, &r.ReferrersCount); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return i.getRepo().GetInventoryItems(inventoryId)
 }
 
 // GetItemDetails returns full details for a single item (on row selection).
 func (i *InventoryService) GetItemDetails(inventoryId, itemType, itemKey string) (*ItemDetails, error) {
-	if i.DB == nil {
-		return nil, fmt.Errorf("database not initialized")
-	}
-	var rawText, refsJSON, referrersJSON, attrsJSON sql.NullString
-	err := i.DB.QueryRow(`SELECT raw_text, "references", referrers, attributes FROM inventory_items WHERE inventory_id = ? AND type = ? AND key = ?`,
-		inventoryId, itemType, itemKey).Scan(&rawText, &refsJSON, &referrersJSON, &attrsJSON)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	out := &ItemDetails{RawText: rawText.String}
-	if refsJSON.Valid && refsJSON.String != "" {
-		json.Unmarshal([]byte(refsJSON.String), &out.References)
-	}
-	if referrersJSON.Valid && referrersJSON.String != "" {
-		json.Unmarshal([]byte(referrersJSON.String), &out.Referrers)
-	}
-	if attrsJSON.Valid && attrsJSON.String != "" {
-		json.Unmarshal([]byte(attrsJSON.String), &out.Attributes)
-	}
-	if out.Attributes == nil {
-		out.Attributes = make(map[string]bool)
-	}
-	return out, nil
+	return i.getRepo().GetItemDetails(inventoryId, itemType, itemKey)
 }
 
 // RenameInventory updates the inventory name.
 func (i *InventoryService) RenameInventory(id, newName string) error {
-	if i.DB == nil {
-		return fmt.Errorf("database not initialized")
-	}
-	_, err := i.DB.Exec(`UPDATE inventories SET name = ? WHERE id = ?`, newName, id)
-	return err
+	return i.getRepo().RenameInventory(id, newName)
 }
 
 // DeleteInventory removes an inventory and its items (cascade).
 func (i *InventoryService) DeleteInventory(id string) error {
-	if i.DB == nil {
-		return fmt.Errorf("database not initialized")
-	}
-	_, err := i.DB.Exec(`DELETE FROM inventories WHERE id = ?`, id)
-	return err
+	return i.getRepo().DeleteInventory(id)
 }
 
 // ServiceShutdown deletes temporary inventories. Called by Wails when the app exits.
 func (i *InventoryService) ServiceShutdown() error {
-	if i.DB != nil {
-		_, err := i.DB.Exec(`DELETE FROM inventories WHERE is_temporary = 1`)
-		if err != nil {
-			return fmt.Errorf("failed to delete temporary inventories: %w", err)
-		}
-	}
-	return nil
+	return i.getRepo().DeleteTemporaryInventories()
 }

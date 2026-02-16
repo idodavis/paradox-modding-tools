@@ -21,8 +21,8 @@
       dialogTitle="Set A"
       btnText="Browse"
       placeholder="A"
-      initialValue={store.pathsA}
-      onPathsChange={(p) => (store.pathsA = p)}
+      initialValue={store.pathsA[0] ?? ""}
+      onPathChange={(p) => (store.pathsA[0] = p)}
     />
     <FileSelector
       legend="Set B"
@@ -30,8 +30,8 @@
       dialogTitle="Set B"
       btnText="Browse"
       placeholder="B"
-      initialValue={store.pathsB}
-      onPathsChange={(p) => (store.pathsB = p)}
+      initialValue={store.pathsB[0] ?? ""}
+      onPathChange={(p) => (store.pathsB[0] = p)}
     />
     <FileSelector
       legend="Output dir"
@@ -39,8 +39,8 @@
       dialogTitle="Output dir"
       btnText="Browse"
       placeholder="Output directory"
-      initialValue={store.outputDir ? [store.outputDir] : []}
-      onPathsChange={(p) => (store.outputDir = p[0] ?? "")}
+      initialValue={store.outputDir ? store.outputDir : ""}
+      onPathChange={(p) => (store.outputDir = p ?? "")}
     />
     <label class="flex items-center gap-2 cursor-pointer mt-2">
       <input

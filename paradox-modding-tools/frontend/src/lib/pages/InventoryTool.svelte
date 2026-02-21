@@ -167,7 +167,7 @@
           type="button"
           class="btn btn-ghost text-error hover:bg-error/10"
           disabled={store.loading}
-          onclick={() => store.clearAll()}>Clear results</button
+          onclick={() => store.clearAll()}>Clear Results</button
         >
       </div>
     </CardBody>

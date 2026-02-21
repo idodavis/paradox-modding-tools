@@ -45,9 +45,6 @@ export function MergePairs(pairs: $models.MergePair[], outputDir: string, option
     });
 }
 
-/**
- * MergePreview returns a preview of what would be merged (no files written).
- */
 export function MergePreview(pathA: string, pathB: string, outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[]> {
     return $Call.ByID(2633360575, pathA, pathB, outputDir, options).then(($result: any) => {
         return $$createType5($result);

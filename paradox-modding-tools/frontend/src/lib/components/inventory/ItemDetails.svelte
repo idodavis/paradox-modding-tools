@@ -165,10 +165,9 @@
           <CodeBlock
             content={rawText}
             filename={fileName}
-            language="hcl"
             showCopyButton={true}
             showFullScreenButton={true}
-            class="max-h-[400px] min-h-0 border-t border-base-content/10 rounded-none"
+            class="h-96 min-h-0 border-t border-base-content/10 rounded-none"
           />
         {/if}
       </div>

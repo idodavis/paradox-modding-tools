@@ -5,7 +5,6 @@
   import { onMount } from "svelte";
   import Icon from "@iconify/svelte";
   import { showToast } from "@stores/toast.svelte";
-  import { diffLines } from "diff";
 
   let { fileAPath, fileBPath, relPath, options, onSave, onSkip } = $props<{
     fileAPath: string;
@@ -122,73 +121,24 @@
     }
   }
 
-  // Calculate start lines for each chunk to maintain visual continuity in CodeBlocks
-  const lineMeta = $derived.by(() => {
-    let lineA = 1;
-    let lineB = 1;
-    let lineRes = 1;
-    const meta: { a: number; b: number; res: number }[] = [];
-
-    for (let i = 0; i < chunks.length; i++) {
-      meta.push({ a: lineA, b: lineB, res: lineRes });
-      const c = chunks[i];
-      if (c.type === "unchanged" || c.type === "added") {
-        const linesCount = (
-          c.text.endsWith("\n") ? c.text.slice(0, -1) : c.text
-        ).split(/\r\n|\r|\n/).length;
-        lineA += linesCount;
-        lineB += linesCount;
-        lineRes += linesCount;
-      } else {
-        const linesA = (
-          c.textA.endsWith("\n") ? c.textA.slice(0, -1) : c.textA
-        ).split(/\r\n|\r|\n/).length;
-        const linesB = (
-          c.textB.endsWith("\n") ? c.textB.slice(0, -1) : c.textB
-        ).split(/\r\n|\r|\n/).length;
-        const val = resultValues[i] ?? "";
-        const linesRes = (val.endsWith("\n") ? val.slice(0, -1) : val).split(
-          /\r\n|\r|\n/,
-        ).length;
-
-        lineA += linesA;
-        lineB += linesB;
-        lineRes += linesRes;
-      }
-    }
-    return meta;
-  });
-
   function prepareText(text: string) {
-    // Remove trailing newline for display in CodeBlock to avoid extra empty line at bottom of block
+    // Remove trailing newline: Monaco doesn't show a blank final line but the text content is preserved for save.
     if (text.endsWith("\n")) return text.slice(0, -1);
     return text;
   }
 
-  const diffs = $derived(
-    chunks.map((c) => {
-      if (c.type === "unchanged" || c.type === "added") return { a: [], b: [] };
-      const diff = diffLines(c.textA, c.textB);
-      let lineA = 1;
-      let lineB = 1;
-      const a: number[] = [];
-      const b: number[] = [];
+  // Monaco uses absolute inset-0 positioning — cells need an explicit pixel height.
+  // Line counts are pre-computed by the backend so no text parsing is needed here.
+  const MONACO_LINE_PX = 19;
+  const MONACO_PADDING_PX = 20;
+  const MONACO_MIN_PX = 60;
 
-      diff.forEach((part) => {
-        if (part.added) {
-          for (let i = 0; i < (part.count ?? 0); i++) b.push(lineB + i);
-          lineB += part.count ?? 0;
-        } else if (part.removed) {
-          for (let i = 0; i < (part.count ?? 0); i++) a.push(lineA + i);
-          lineA += part.count ?? 0;
-        } else {
-          lineA += part.count ?? 0;
-          lineB += part.count ?? 0;
-        }
-      });
-      return { a, b };
-    }),
-  );
+  function editorHeight(lineCount: number): number {
+    return Math.max(
+      lineCount * MONACO_LINE_PX + MONACO_PADDING_PX,
+      MONACO_MIN_PX,
+    );
+  }
 </script>
 
 <Dialog
@@ -291,43 +241,51 @@
         {#each chunks as chunk, i}
           {#if chunk.type === "unchanged" || chunk.type === "added"}
             <!-- Unchanged: Show in all 3 columns -->
+            {@const h = editorHeight(chunk.lineCountA)}
             <div
               class="col-span-1 border-b border-base-content/5 bg-base-100/50 opacity-60 hover:opacity-100 transition-opacity flex flex-col"
+              style="height: {h}px"
             >
               <CodeBlock
                 filename={fileAPath}
                 content={prepareText(chunk.text)}
                 hideHeader
-                startLine={lineMeta[i].a}
                 class="!border-0 !bg-transparent flex-1"
-                highlightLines={diffs[i].a}
-                highlightColor="bg-error/20"
               />
             </div>
             <div
               class="col-span-1 border-b border-base-content/5 bg-base-100/50 opacity-60 hover:opacity-100 transition-opacity flex flex-col"
+              style="height: {h}px"
             >
               <CodeBlock
                 filename={fileBPath}
                 content={prepareText(chunk.text)}
                 hideHeader
-                startLine={lineMeta[i].res}
                 class="!border-0 !bg-transparent flex-1"
               />
             </div>
             <div
               class="col-span-1 border-b border-base-content/5 bg-base-100/50 opacity-60 hover:opacity-100 transition-opacity flex flex-col"
+              style="height: {h}px"
             >
               <CodeBlock
                 filename={`Merge Output`}
                 content={prepareText(chunk.text)}
                 hideHeader
-                startLine={lineMeta[i].b}
                 class="!border-0 !bg-transparent flex-1"
               />
             </div>
           {:else}
             <!-- Conflict Row -->
+            {@const hA = editorHeight(chunk.lineCountA)}
+            {@const hB = editorHeight(chunk.lineCountB)}
+            {@const hRes =
+              resolvedState[i] === "A"
+                ? hA
+                : resolvedState[i] === "B"
+                  ? hB
+                  : Math.max(hA, hB)}
+            {@const headerH = 40}
             <div class="contents group conflict-row">
               <!-- A Side -->
               <div
@@ -335,9 +293,11 @@
                 class="relative border-b border-base-content/10 transition-colors flex flex-col"
                 class:bg-primary={resolvedState[i] === "A"}
                 class:bg-opacity-10={resolvedState[i] === "A"}
+                style="height: {hA + headerH}px"
               >
                 <div
                   class="p-2 flex justify-between items-center bg-base-100/30 border-b border-base-content/5"
+                  style="height: {headerH}px"
                 >
                   <span class="text-xs font-bold opacity-50">A (Vanilla)</span>
                   <button
@@ -352,19 +312,18 @@
                   filename={fileAPath}
                   content={prepareText(chunk.textA)}
                   hideHeader
-                  startLine={lineMeta[i].a}
                   class="!border-0 !bg-transparent flex-1"
-                  highlightLines={diffs[i].a}
-                  highlightColor="bg-error/20"
                 />
               </div>
 
               <!-- Result Side -->
               <div
                 class="relative border-b border-base-content/10 bg-base-100 flex flex-col"
+                style="height: {hRes + headerH}px"
               >
                 <div
-                  class="p-2 flex justify-center items-center bg-base-100/30 border-b border-base-content/5 h-[40px]"
+                  class="p-2 flex justify-center items-center bg-base-100/30 border-b border-base-content/5"
+                  style="height: {headerH}px"
                 >
                   <span class="text-xs font-bold opacity-50">Result</span>
                 </div>
@@ -373,7 +332,6 @@
                     filename="Result"
                     content={prepareText(resultValues[i])}
                     hideHeader
-                    startLine={lineMeta[i].res}
                     class="!border-0 !bg-transparent flex-1"
                   />
                 {:else}
@@ -390,9 +348,11 @@
                 class="relative border-b border-base-content/10 transition-colors flex flex-col"
                 class:bg-secondary={resolvedState[i] === "B"}
                 class:bg-opacity-10={resolvedState[i] === "B"}
+                style="height: {hB + headerH}px"
               >
                 <div
                   class="p-2 flex justify-between items-center bg-base-100/30 border-b border-base-content/5"
+                  style="height: {headerH}px"
                 >
                   <span class="text-xs font-bold opacity-50">B (Mod)</span>
                   <button
@@ -407,10 +367,7 @@
                   filename={fileBPath}
                   content={prepareText(chunk.textB)}
                   hideHeader
-                  startLine={lineMeta[i].b}
                   class="!border-0 !bg-transparent flex-1"
-                  highlightLines={diffs[i].b}
-                  highlightColor="bg-success/20"
                 />
               </div>
             </div>

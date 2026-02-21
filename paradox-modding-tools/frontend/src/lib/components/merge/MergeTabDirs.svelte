@@ -9,25 +9,26 @@
 <Card>
   <CardBody>
     <p class="text-sm text-base-content/90 mb-1">
-      <strong>When to use:</strong> Comparing two mod versions or any two file sets.
+      <strong>When to use:</strong> Merging two different script mods or versions
+      of the same mod.
     </p>
     <p class="text-sm text-base-content/70 mb-4">
-      A = base set, B = other set. Files are matched by path (or filename if
-      that option is on).
+      A = base directory, B = other directory. Files are matched by path (or
+      filename if that option is on).
     </p>
     <FileSelector
-      legend="Set A"
+      legend="Directory A"
       mode="folder"
-      dialogTitle="Set A"
+      dialogTitle="Directory A"
       btnText="Browse"
       placeholder="A"
       initialValue={store.pathA ?? ""}
       onPathChange={(p) => (store.pathA = p)}
     />
     <FileSelector
-      legend="Set B"
+      legend=" Directory B"
       mode="folder"
-      dialogTitle="Set B"
+      dialogTitle="Directory B"
       btnText="Browse"
       placeholder="B"
       initialValue={store.pathB ?? ""}

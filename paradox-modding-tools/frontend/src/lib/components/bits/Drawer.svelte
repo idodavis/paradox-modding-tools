@@ -67,7 +67,10 @@
     const sign = side === "right" || side === "bottom" ? -1 : 1;
     const next = Math.max(
       200,
-      Math.min(900, dragStart.startSize + delta * sign),
+      Math.min(
+        isVertical ? window.innerHeight * 0.8 : window.innerWidth * 0.8,
+        dragStart.startSize + delta * sign,
+      ),
     );
     size = next;
   }

@@ -6,7 +6,9 @@
     CardBody,
     FileSelector,
     Grid,
-    DiffViewer,
+    SplitPane,
+    DiffPaneContent,
+    Dialog,
   } from "@components";
   import { game, gameInstallPath } from "@stores/app.svelte";
   import { VanillaCompare, DirectoryCompare } from "@services/compareservice";
@@ -17,12 +19,20 @@
   let fileAPath: string = $state("");
   let fileBPath: string = $state("");
   let matchingFiles = $state<Record<string, PathMatch | undefined>>({});
-  let selectedForDiff = $state<MatchRow | null>(null);
+  let selectedIndex = $state<number | null>(null);
+  let showFullscreen = $state(false);
+  let gridApi = $state<any>(null);
+
+  function navigateTo(i: number) {
+    selectedIndex = i;
+    gridApi?.getDisplayedRowAtIndex(i)?.setSelected(true, true);
+    gridApi?.ensureIndexVisible(i, "middle");
+  }
 
   $effect(() => {
     $game;
     matchingFiles = {};
-    selectedForDiff = null;
+    selectedIndex = null;
   });
 
   async function runVanillaCompare() {
@@ -49,22 +59,12 @@
         ...match,
       })) as MatchRow[],
   );
-  const columns = $derived([
-    { field: "relativePath", headerName: "Relative path", flex: 10 },
-    {
-      headerName: "Show Diff",
-      cellRenderer: (params: { data: MatchRow }) => {
-        const btn = document.createElement("button");
-        btn.className = "btn btn-sm btn-primary btn-outline";
-        btn.textContent = "Show Diff";
-        btn.onclick = () => {
-          selectedForDiff = params.data;
-        };
-        return btn;
-      },
-      flex: 1,
-    },
-  ]);
+  const selectedRow = $derived(
+    selectedIndex !== null ? (rows[selectedIndex] ?? null) : null,
+  );
+  const columns = [
+    { field: "relativePath", headerName: "Relative path", flex: 1 },
+  ];
 </script>
 
 <div class="p-4">
@@ -106,18 +106,27 @@
               dialogTitle="Select Mod (B) files/folders"
               btnText="Browse"
               placeholder="Select folder or files to compare with Vanilla"
-              initialValue={modPath ?? ""}
+              initialValue={modPath}
               onPathChange={(p) => (modPath = p ?? "")}
             />
           </div>
-          <button
-            type="button"
-            class="btn btn-soft btn-wide btn-primary"
-            onclick={runVanillaCompare}
-            disabled={$gameInstallPath === ""}
+          <div
+            class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10"
           >
-            Run Compare
-          </button>
+            <button
+              type="button"
+              class="btn btn-soft btn-wide btn-primary"
+              onclick={runVanillaCompare}
+              disabled={$gameInstallPath === "" || modPath === ""}
+            >
+              Run Compare
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost text-error hover:bg-error/10"
+              onclick={() => (matchingFiles = {})}>Clear Results</button
+            >
+          </div>
         </CardBody>
       </Card>
     </Tab>
@@ -137,7 +146,7 @@
               dialogTitle="Select Set A files/folders"
               btnText="Browse"
               placeholder="Select folder or files for Set A"
-              initialValue={setAPath ?? ""}
+              initialValue={setAPath}
               onPathChange={(p) => (setAPath = p ?? "")}
             />
             <FileSelector
@@ -145,18 +154,27 @@
               dialogTitle="Select Set B files/folders"
               btnText="Browse"
               placeholder="Select folder or files for Set B"
-              initialValue={setBPath ?? ""}
+              initialValue={setBPath}
               onPathChange={(p) => (setBPath = p ?? "")}
             />
           </div>
-          <button
-            type="button"
-            class="btn btn-soft btn-wide btn-primary"
-            onclick={runDirectoryCompare}
-            disabled={setAPath === "" || setBPath === ""}
+          <div
+            class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10"
           >
-            Run Compare
-          </button>
+            <button
+              type="button"
+              class="btn btn-soft btn-wide btn-primary"
+              onclick={runDirectoryCompare}
+              disabled={setAPath === "" || setBPath === ""}
+            >
+              Run Compare
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost text-error hover:bg-error/10"
+              onclick={() => (matchingFiles = {})}>Clear Results</button
+            >
+          </div>
         </CardBody>
       </Card>
     </Tab>
@@ -176,7 +194,7 @@
               dialogTitle="Select File A"
               btnText="Select File"
               placeholder="Select file for File A"
-              initialValue={fileAPath ?? ""}
+              initialValue={fileAPath}
               onPathChange={(p) => (fileAPath = p ?? "")}
             />
             <FileSelector
@@ -184,38 +202,102 @@
               dialogTitle="Select File B"
               btnText="Select File"
               placeholder="Select file for File B"
-              initialValue={fileBPath ?? ""}
+              initialValue={fileBPath}
               onPathChange={(p) => (fileBPath = p ?? "")}
             />
           </div>
-          <button
-            type="button"
-            class="btn btn-soft btn-wide btn-primary"
-            onclick={runFileCompare}
-            disabled={fileAPath === "" || fileBPath === ""}
+          <div
+            class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10"
           >
-            Run Compare
-          </button>
+            <button
+              type="button"
+              class="btn btn-soft btn-wide btn-primary"
+              onclick={runFileCompare}
+              disabled={fileAPath === "" || fileBPath === ""}
+            >
+              Run Compare
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost text-error hover:bg-error/10"
+              onclick={() => (matchingFiles = {})}>Clear Results</button
+            >
+          </div>
         </CardBody>
       </Card>
     </Tab>
   </Tabs>
-  <Card class="px-10">
-    <CardBody>
-      <h3 class="card-title justify-center mb-4">Results</h3>
-      <Grid
-        columnDefs={columns}
-        rowData={rows}
-        className="h-88 border-base-200 border-4 rounded-lg"
-      />
+  <Card>
+    <CardBody class="!p-0">
+      <div class="px-4 py-3 border-b border-base-content/20 bg-base-200/50">
+        <h3 class="font-semibold text-sm">Results</h3>
+      </div>
+      <SplitPane
+        rightOpen={selectedIndex !== null}
+        defaultRightSize={580}
+        class="h-svh"
+      >
+        {#snippet left()}
+          <Grid
+            columnDefs={columns}
+            rowData={rows}
+            className="h-full w-full"
+            gridOptions={{
+              rowSelection: "single",
+              onGridReady: (e: any) => {
+                gridApi = e.api;
+              },
+              onRowClicked: (e: any) => {
+                selectedIndex = e.rowIndex;
+              },
+            }}
+          />
+        {/snippet}
+
+        {#snippet right()}
+          <DiffPaneContent
+            oldFile={selectedRow?.pathA ?? ""}
+            newFile={selectedRow?.pathB ?? ""}
+            hasPrev={selectedIndex !== null && selectedIndex > 0}
+            hasNext={selectedIndex !== null && selectedIndex < rows.length - 1}
+            navLabel={selectedIndex !== null
+              ? `${selectedIndex + 1} / ${rows.length}`
+              : undefined}
+            onPrev={() => {
+              if (selectedIndex !== null && selectedIndex > 0)
+                navigateTo(selectedIndex - 1);
+            }}
+            onNext={() => {
+              if (selectedIndex !== null && selectedIndex < rows.length - 1)
+                navigateTo(selectedIndex + 1);
+            }}
+            onFullscreen={() => (showFullscreen = true)}
+          />
+        {/snippet}
+      </SplitPane>
     </CardBody>
   </Card>
 </div>
 
-{#if selectedForDiff}
-  <DiffViewer
-    oldFile={selectedForDiff.pathA}
-    newFile={selectedForDiff.pathB}
-    onclose={() => (selectedForDiff = null)}
-  />
-{/if}
+<Dialog
+  bind:open={showFullscreen}
+  size="fullscreen"
+  contentProps={{ class: "flex flex-col overflow-hidden !p-0 bg-base-100" }}
+>
+  {#snippet title()}
+    <div
+      class="px-4 py-2 border-b border-base-content/20 bg-base-200 flex items-center justify-between shrink-0"
+    >
+      <h2 class="text-base font-semibold">File Comparison View</h2>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm"
+        onclick={() => (showFullscreen = false)}>Close</button
+      >
+    </div>
+  {/snippet}
+  {#snippet description()}<span class="sr-only">Diff viewer</span>{/snippet}
+  {#if showFullscreen && selectedRow}
+    <DiffPaneContent oldFile={selectedRow.pathA} newFile={selectedRow.pathB} />
+  {/if}
+</Dialog>

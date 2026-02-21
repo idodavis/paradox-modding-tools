@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { Card, CardBody, Grid } from "@components";
+  import {
+    Card,
+    CardBody,
+    Grid,
+    SplitPane,
+    DiffPaneContent,
+    Dialog,
+  } from "@components";
   import { showToast } from "@stores/toast.svelte";
   import * as MergeService from "@services/mergeservice";
   import { SaveFile } from "@services/fileservice";
@@ -19,9 +26,42 @@
   >([]);
   let errorMsg = $state("");
 
-  function openDiff(pathA: string, pathB: string) {
-    store.selectedForDiff = { pathA, pathB };
+  // Split-pane diff state
+  let selectedIndex = $state<number | null>(null);
+  let diffSide = $state<"A" | "B">("A");
+  let showFullscreen = $state(false);
+  let gridApi = $state<any>(null);
+
+  function navigateTo(i: number) {
+    selectedIndex = i;
+    gridApi?.getDisplayedRowAtIndex(i)?.setSelected(true, true);
+    gridApi?.ensureIndexVisible(i, "middle");
   }
+
+  const selectedResult = $derived(
+    selectedIndex !== null ? (results[selectedIndex] ?? null) : null,
+  );
+
+  const currentOldFile = $derived(
+    selectedResult
+      ? diffSide === "A"
+        ? selectedResult.fileAPath
+        : selectedResult.fileBPath
+      : "",
+  );
+  const currentNewFile = $derived(selectedResult?.outputPath ?? "");
+  const currentOldFileName = $derived(
+    selectedResult ? (diffSide === "A" ? labelA : labelB) : "",
+  );
+  const currentOldColor = $derived(
+    diffSide === "A" ? "text-primary" : "text-secondary",
+  );
+
+  // Reset selectedIndex when results change
+  $effect(() => {
+    results;
+    selectedIndex = null;
+  });
 
   const summary = $derived.by(() => ({
     files: results.length,
@@ -39,67 +79,32 @@
     ),
   }));
 
-  const conflicts = $derived.by(() =>
+  const conflicts = $derived(
     results.filter(
-      (r: FileMergeResult) =>
-        r.resolvedConflicts && r.resolvedConflicts.length > 0,
+      (r: FileMergeResult) => (r.resolvedConflicts?.length ?? 0) > 0,
     ),
   );
 
-  const columns = $derived([
-    {
-      field: "fileAPath",
-      headerName: "A path",
-      flex: 2,
-      valueFormatter: (p: any) => truncate(p.value),
-    },
-    {
-      field: "fileBPath",
-      headerName: "B path",
-      flex: 2,
-      valueFormatter: (p: any) => truncate(p.value),
-    },
-    {
-      field: "outputPath",
-      headerName: "Output",
-      flex: 2,
-      valueFormatter: (p: any) => truncate(p.value),
-    },
-    { field: "changed", headerName: "Δ", flex: 1 },
-    { field: "added", headerName: "+", flex: 1 },
-    { field: "removed", headerName: "-", flex: 1 },
-    {
-      headerName: "Diff",
-      minWidth: 140,
-      flex: 3,
-      cellRenderer: (params: any) => {
-        const d = params.data;
-        const div = document.createElement("div");
-        div.className = "flex gap-1";
-        const btnA = document.createElement("button");
-        btnA.className = "btn btn-xs btn-primary";
-        btnA.textContent = `${labelA}↔Merged`;
-        btnA.onclick = () => openDiff(d.fileAPath, d.outputPath);
-        const btnB = document.createElement("button");
-        btnB.className = "btn btn-xs btn-secondary";
-        btnB.textContent = `${labelB}↔Merged`;
-        btnB.onclick = () => openDiff(d.fileBPath, d.outputPath);
-        div.append(btnA, btnB);
-        return div;
-      },
-    },
-  ]);
-
   function truncate(p: string) {
-    if (!p) return "";
     const parts = p.split(/[/\\]/);
     return parts.length > 2
-      ? `.../${parts.slice(-2).join("/")}`
+      ? `.../ ${parts.slice(-2).join("/")}`
       : (parts.pop() ?? p);
   }
 
+  const columns = [
+    {
+      field: "filePath",
+      headerName: "File",
+      flex: 3,
+      valueFormatter: (p: any) => truncate(p.value),
+    },
+    { field: "changed", headerName: "Δ", flex: 1, maxWidth: 70 },
+    { field: "added", headerName: "+", flex: 1, maxWidth: 70 },
+    { field: "removed", headerName: "-", flex: 1, maxWidth: 70 },
+  ];
+
   async function saveReport() {
-    if (!results.length) return;
     savingReport = true;
     try {
       const md = await Merge.GenerateMergeReport(
@@ -128,7 +133,6 @@
     const outputs = results
       .map((r: FileMergeResult) => r.outputPath)
       .filter(Boolean);
-    if (!outputs.length) return;
     validating = true;
     validationErrors = [];
     try {
@@ -151,13 +155,13 @@
 <section class="mt-6">
   <h3 class="text-sm font-semibold text-base-content/90 mb-3">Results</h3>
   <Card>
-    <CardBody>
+    <CardBody class="!p-0">
       {#if errorMsg}
-        <div class="text-error text-sm mb-2">{errorMsg}</div>
+        <div class="text-error text-sm p-3">{errorMsg}</div>
       {/if}
 
       <details
-        class="mb-4 rounded-lg border border-base-content/20 bg-base-200/50 overflow-hidden group"
+        class="border-b border-base-content/20 bg-base-200/50 overflow-hidden"
         open={conflicts.length > 0}
       >
         <summary
@@ -179,7 +183,7 @@
             >
             {#if conflicts.length > 0}
               <span class="badge badge-warning badge-sm ml-2">
-                {conflicts.length} resolved conflicts (click to view)
+                {conflicts.length} resolved conflicts
               </span>
             {/if}
           </div>
@@ -240,13 +244,14 @@
       </details>
 
       {#if validationErrors.length > 0}
-        <details class="mb-4 rounded-lg border border-error/30 bg-error/5" open>
+        <details class="border-b border-error/30 bg-error/5" open>
           <summary
             class="px-3 py-2 text-sm font-medium cursor-pointer text-error bg-base-200/80"
-            >Validation errors ({validationErrors.length})</summary
           >
+            Validation errors ({validationErrors.length})
+          </summary>
           <ul
-            class="px-3 py-3 space-y-2 text-sm text-error/90 border-t border-base-content/10"
+            class="p-3 space-y-2 text-sm text-error/90 border-t border-base-content/10"
           >
             {#each validationErrors as ve}
               <li
@@ -258,11 +263,111 @@
           </ul>
         </details>
       {/if}
-      <Grid
-        columnDefs={columns}
-        rowData={results}
-        className="min-h-[560px] h-[min(70vh,600px)] w-full"
-      />
+
+      <SplitPane
+        rightOpen={selectedIndex !== null}
+        defaultRightSize={580}
+        class="h-svh"
+      >
+        {#snippet left()}
+          <Grid
+            columnDefs={columns}
+            rowData={results}
+            className="h-full w-full"
+            gridOptions={{
+              rowSelection: "single",
+              onGridReady: (e: any) => {
+                gridApi = e.api;
+              },
+              onRowClicked: (e: any) => {
+                selectedIndex = e.rowIndex;
+              },
+              getRowStyle: (params: any) =>
+                params.rowIndex === selectedIndex
+                  ? { background: "oklch(var(--p, 0.5 0.2 250)/0.15)" }
+                  : undefined,
+            }}
+          />
+        {/snippet}
+
+        {#snippet right()}
+          <DiffPaneContent
+            oldFile={currentOldFile}
+            newFile={currentNewFile}
+            oldFileName={currentOldFileName}
+            newFileName="Merged Output"
+            oldFileColor={currentOldColor}
+            newFileColor="text-accent"
+            hasPrev={selectedIndex !== null && selectedIndex > 0}
+            hasNext={selectedIndex !== null &&
+              selectedIndex < results.length - 1}
+            navLabel={selectedIndex !== null
+              ? `${selectedIndex + 1} / ${results.length}`
+              : undefined}
+            onPrev={() => {
+              if (selectedIndex !== null && selectedIndex > 0)
+                navigateTo(selectedIndex - 1);
+            }}
+            onNext={() => {
+              if (selectedIndex !== null && selectedIndex < results.length - 1)
+                navigateTo(selectedIndex + 1);
+            }}
+            onFullscreen={() => (showFullscreen = true)}
+          >
+            {#snippet extraHeader()}
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-medium text-base-content/60"
+                  >Compare:</span
+                >
+                <div class="join">
+                  <button
+                    type="button"
+                    class="join-item btn btn-sm btn-outline"
+                    class:btn-primary={diffSide === "A"}
+                    onclick={() => (diffSide = "A")}>{labelA}↔Merged</button
+                  >
+                  <button
+                    type="button"
+                    class="join-item btn btn-sm btn-outline"
+                    class:btn-secondary={diffSide === "B"}
+                    onclick={() => (diffSide = "B")}>{labelB}↔Merged</button
+                  >
+                </div>
+              </div>
+            {/snippet}
+          </DiffPaneContent>
+        {/snippet}
+      </SplitPane>
     </CardBody>
   </Card>
 </section>
+
+<Dialog
+  bind:open={showFullscreen}
+  size="fullscreen"
+  contentProps={{ class: "flex flex-col overflow-hidden !p-0 bg-base-100" }}
+>
+  {#snippet title()}
+    <div
+      class="px-4 py-2 border-b border-base-content/20 bg-base-200 flex items-center justify-between shrink-0"
+    >
+      <h2 class="text-base font-semibold">File Comparison View</h2>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm"
+        onclick={() => (showFullscreen = false)}>Close</button
+      >
+    </div>
+  {/snippet}
+  {#snippet description()}<span class="sr-only">Diff viewer</span>{/snippet}
+  {#if showFullscreen && selectedResult}
+    <DiffPaneContent
+      oldFile={currentOldFile}
+      newFile={currentNewFile}
+      oldFileName={currentOldFileName}
+      newFileName="Merged Output"
+      oldFileColor={currentOldColor}
+      newFileColor="text-accent"
+    />
+  {/if}
+</Dialog>

@@ -216,10 +216,11 @@ export class LatestPatchNotes {
 
 /**
  * MergeConflictChunk is a unit of content for the assisted merge editor (JSON-safe for bindings).
+ * Consecutive unchanged/added chunks are consolidated into single chunks by GetMergeConflicts.
  */
 export class MergeConflictChunk {
     /**
-     * "unchanged" or "conflict"
+     * "unchanged", "added", or "conflict"
      */
     "type": string;
 
@@ -229,19 +230,29 @@ export class MergeConflictChunk {
     "key": string;
 
     /**
-     * for unchanged
+     * for unchanged/added
      */
     "text": string;
 
     /**
-     * for conflict
+     * for conflict: vanilla side
      */
     "textA": string;
 
     /**
-     * for conflict
+     * for conflict: mod side
      */
     "textB": string;
+
+    /**
+     * visual lines contributed to the A/unchanged column
+     */
+    "lineCountA": number;
+
+    /**
+     * visual lines contributed to the B column (differs from A for conflicts)
+     */
+    "lineCountB": number;
 
     /** Creates a new MergeConflictChunk instance. */
     constructor($$source: Partial<MergeConflictChunk> = {}) {
@@ -259,6 +270,12 @@ export class MergeConflictChunk {
         }
         if (!("textB" in $$source)) {
             this["textB"] = "";
+        }
+        if (!("lineCountA" in $$source)) {
+            this["lineCountA"] = 0;
+        }
+        if (!("lineCountB" in $$source)) {
+            this["lineCountB"] = 0;
         }
 
         Object.assign(this, $$source);

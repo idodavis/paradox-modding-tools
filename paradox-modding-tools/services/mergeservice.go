@@ -65,12 +65,15 @@ type ResolvedConflict struct {
 }
 
 // MergeConflictChunk is a unit of content for the assisted merge editor (JSON-safe for bindings).
+// Consecutive unchanged/added chunks are consolidated into single chunks by GetMergeConflicts.
 type MergeConflictChunk struct {
-	Type  string `json:"type"`  // "unchanged" or "conflict"
-	Key   string `json:"key"`   // object key when type is "conflict"
-	Text  string `json:"text"`  // for unchanged
-	TextA string `json:"textA"` // for conflict
-	TextB string `json:"textB"` // for conflict
+	Type       string `json:"type"`       // "unchanged", "added", or "conflict"
+	Key        string `json:"key"`        // object key when type is "conflict"
+	Text       string `json:"text"`       // for unchanged/added
+	TextA      string `json:"textA"`      // for conflict: vanilla side
+	TextB      string `json:"textB"`      // for conflict: mod side
+	LineCountA int    `json:"lineCountA"` // visual lines contributed to the A/unchanged column
+	LineCountB int    `json:"lineCountB"` // visual lines contributed to the B column (differs from A for conflicts)
 }
 
 // scriptObject represents a parsed top-level entry (assignment or object) with its comments.
@@ -359,6 +362,57 @@ func (m *MergeService) WriteMergedFile(outputPath string, content string) error 
 	return err
 }
 
+// chunkLineCount returns the number of visual lines Monaco will display for s.
+// A trailing newline does not add an extra blank line.
+func chunkLineCount(s string) int {
+	if s == "" {
+		return 1
+	}
+	n := strings.Count(s, "\n")
+	if strings.HasSuffix(s, "\n") {
+		return n // trailing newline is not a new visual line
+	}
+	return n + 1
+}
+
+// setChunkLineCounts populates LineCountA/B for a single chunk.
+func setChunkLineCounts(c *MergeConflictChunk) {
+	switch c.Type {
+	case "unchanged", "added":
+		lc := chunkLineCount(c.Text)
+		c.LineCountA = lc
+		c.LineCountB = lc
+	case "conflict":
+		c.LineCountA = chunkLineCount(c.TextA)
+		c.LineCountB = chunkLineCount(c.TextB)
+	}
+}
+
+// consolidateChunks merges consecutive unchanged/added chunks into single chunks,
+// reducing the number of Monaco editors needed in the UI.
+func consolidateChunks(chunks []MergeConflictChunk) []MergeConflictChunk {
+	result := make([]MergeConflictChunk, 0, len(chunks))
+	for _, c := range chunks {
+		setChunkLineCounts(&c)
+		if len(result) > 0 {
+			last := &result[len(result)-1]
+			if (last.Type == "unchanged" || last.Type == "added") &&
+				(c.Type == "unchanged" || c.Type == "added") {
+				last.Text += c.Text
+				last.LineCountA += c.LineCountA
+				last.LineCountB += c.LineCountB
+				// keep type as "unchanged" if either chunk is unchanged
+				if c.Type == "unchanged" {
+					last.Type = "unchanged"
+				}
+				continue
+			}
+		}
+		result = append(result, c)
+	}
+	return result
+}
+
 // GetMergeConflicts returns structured conflict chunks for the assisted merge editor.
 func (m *MergeService) GetMergeConflicts(ctx context.Context, fileAPath, fileBPath string, options MergerOptions) ([]MergeConflictChunk, error) {
 	if ctx.Err() != nil {
@@ -421,10 +475,9 @@ func (m *MergeService) GetMergeConflicts(ctx context.Context, fileAPath, fileBPa
 		}
 	}
 
-	return chunks, nil
+	return consolidateChunks(chunks), nil
 }
 
-// MergePreview returns a preview of what would be merged (no files written).
 func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB string, outputDir string, options MergerOptions) ([]PreviewItem, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

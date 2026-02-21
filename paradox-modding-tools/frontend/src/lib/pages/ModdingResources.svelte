@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { Tab, Tabs, Card, CardBody, FileTree, CodeBlock } from "@components";
+  import {
+    Tab,
+    Tabs,
+    Card,
+    CardBody,
+    FileTree,
+    CodeBlock,
+    SplitPane,
+  } from "@components";
   import { game, gameInstallPath, appConstants } from "@stores/app.svelte";
   import {
     Scan,
@@ -87,66 +95,64 @@
         <CardBody
           class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2"
         >
-          <div
-            class="flex flex-1 min-h-0 overflow-hidden rounded-lg border-2 border-base-content/30"
-          >
-            <div
-              class="flex min-w-0 flex-1 flex-col overflow-hidden bg-base-200 rounded-l-lg border-r-2 border-base-content/20"
-            >
-              <div
-                class="flex h-[5.5rem] flex-col justify-center px-3 py-2 bg-base-300 border-b border-base-content/20"
-              >
-                <label class="label py-1" for="file-filter-input">
-                  <span class="label-text font-semibold text-sm"
-                    >Filter Files</span
-                  >
-                </label>
-                <div class="relative">
-                  <input
-                    id="file-filter-input"
-                    type="text"
-                    class="input input-bordered w-full bg-base-100 focus:bg-base-100"
-                    bind:value={filterText}
-                    placeholder="Type to filter by filename..."
-                  />
-                  {#if filterText}
-                    <button
-                      type="button"
-                      class="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
-                      onclick={() => (filterText = "")}
-                      title="Clear filter"
+          <SplitPane fixedSide="left" class="flex-1 min-h-0">
+            {#snippet left()}
+              <div class="flex flex-col h-full overflow-hidden bg-base-200">
+                <div
+                  class="flex h-[5.5rem] shrink-0 flex-col justify-center px-3 py-2 bg-base-300 border-b border-base-content/20"
+                >
+                  <label class="label py-1" for="file-filter-input">
+                    <span class="label-text font-semibold text-sm"
+                      >Filter Files</span
                     >
-                      ✕
-                    </button>
-                  {/if}
+                  </label>
+                  <div class="relative">
+                    <input
+                      id="file-filter-input"
+                      type="text"
+                      class="input input-bordered w-full bg-base-100 focus:bg-base-100"
+                      bind:value={filterText}
+                      placeholder="Type to filter by filename..."
+                    />
+                    {#if filterText}
+                      <button
+                        type="button"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+                        onclick={() => (filterText = "")}
+                        title="Clear filter"
+                      >
+                        ✕
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+                <div class="flex-1 min-h-0 overflow-auto p-2">
+                  <FileTree
+                    tree={docTree}
+                    filter={filterText}
+                    fileColor="text-accent"
+                    {onFileClick}
+                  />
                 </div>
               </div>
-              <div class="flex-1 min-h-0 overflow-auto p-2">
-                <FileTree
-                  tree={docTree}
-                  filter={filterText}
-                  fileColor="text-accent"
-                  {onFileClick}
+            {/snippet}
+            {#snippet right()}
+              <div
+                class="flex flex-col h-full overflow-hidden bg-dark-input shadow-inner"
+              >
+                <div
+                  class="flex h-8 shrink-0 items-center px-3 bg-base-300 border-b border-base-content/20 text-sm text-base-content/60"
+                >
+                  File Content
+                </div>
+                <CodeBlock
+                  content={selectedEntry?.content ?? ""}
+                  filename={selectedEntry?.name ?? "Select a file"}
+                  placeholder="Select a file to view content"
                 />
               </div>
-            </div>
-            <div
-              class="flex min-w-0 flex-1 flex-col overflow-hidden bg-dark-input rounded-r-lg shadow-inner"
-            >
-              <!-- File Content label only (ModdingDocs); CodeBlock header border aligns with file tree -->
-              <div
-                class="flex h-[calc(2rem-1px)] items-center px-3 bg-base-300 text-sm text-base-content/60"
-              >
-                File Content
-              </div>
-              <CodeBlock
-                content={selectedEntry?.content ?? ""}
-                filename={selectedEntry?.name ?? "Select a file"}
-                placeholder="Select a file to view content"
-                language="hcl"
-              />
-            </div>
-          </div>
+            {/snippet}
+          </SplitPane>
         </CardBody>
       </Card>
     </Tab>

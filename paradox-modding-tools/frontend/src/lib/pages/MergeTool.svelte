@@ -2,7 +2,6 @@
   import {
     Tabs,
     Tab,
-    DiffViewer,
     MergeTabVanilla,
     MergeTabDirs,
     MergeTabPairs,
@@ -49,9 +48,9 @@
     </Tab>
     <Tab
       tabGroup="merge-mode"
-      label="Two sets"
+      label="Two Directories"
       contentClass="bg-base-300 border-base-300 p-6"
-      onclick={() => (store.activeTab = "sets")}
+      onclick={() => (store.activeTab = "dirs")}
     >
       <MergeTabDirs />
     </Tab>
@@ -70,21 +69,16 @@
   {/if}
 </div>
 
-{#if store.selectedForDiff}
-  <DiffViewer
-    oldFile={store.selectedForDiff.pathA}
-    newFile={store.selectedForDiff.pathB}
-    onclose={() => (store.selectedForDiff = null)}
-  />
-{/if}
-
 {#if store.currentManualFile}
   <MergeEditor
     fileAPath={store.currentManualFile.pathA}
     fileBPath={store.currentManualFile.pathB}
     relPath={store.currentManualFile.relPath}
     options={store.options}
-    onSave={(c, s) => store.onManualSave(c, s)}
+    onSave={(
+      c: string,
+      s: { changed: number; added: number; removed: number },
+    ) => store.onManualSave(c, s)}
     onSkip={() => store.onManualSkip()}
   />
 {/if}

@@ -1,389 +1,311 @@
 <script lang="ts">
-  import { Dialog, CodeBlock } from "@components";
-  import * as MergeService from "@services/mergeservice";
-  import type { MergeConflictChunk, MergerOptions } from "@services/models";
-  import { onMount } from "svelte";
-  import Icon from "@iconify/svelte";
+  import { Dialog, LangThemeSelect, SplitPane } from "@components";
+  import DiffView from "../common/DiffView.svelte";
+  import EditorView from "../common/EditorView.svelte";
+  import { getConflictIndices, buildMergedContent, computeMergeStats, getMergeStore } from "@stores/merge.svelte";
+  import type { MergeConflictChunk } from "@services/models";
   import { showToast } from "@stores/toast.svelte";
 
-  let { fileAPath, fileBPath, relPath, options, onSave, onSkip } = $props<{
+  const mergeStore = getMergeStore();
+
+  let { fileAPath, fileBPath, relPath, chunks, onSave, onAutoMerge, onSkip, onCancel } = $props<{
     fileAPath: string;
     fileBPath: string;
     relPath: string;
-    options: MergerOptions;
-    onSave: (
-      content: string,
-      stats: { changed: number; added: number; removed: number },
-    ) => void;
+    chunks: MergeConflictChunk[];
+    onSave: (content: string, stats: { changed: number; added: number }) => void;
+    onAutoMerge: () => void;
     onSkip: () => void;
+    onCancel: () => void;
   }>();
 
-  let chunks = $state<MergeConflictChunk[]>([]);
   let resultValues = $state<Record<number, string>>({});
-  let resolvedState = $state<Record<number, "A" | "B" | "Custom" | undefined>>(
-    {},
-  );
-  let loading = $state(true);
-  let error = $state("");
+  let resolvedState = $state<Record<number, "A" | "B" | "Custom" | undefined>>({});
   let open = $state(true);
+  let closing = false;
 
-  const Merge = MergeService as any;
-
-  onMount(async () => {
-    try {
-      chunks = await Merge.GetMergeConflicts(fileAPath, fileBPath, options);
-      // No default selection to force user choice
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
-    }
+  $effect(() => {
+    relPath;
+    if (conflictCount > 0) currentConflictNum = 1;
   });
 
+  function stripNL(text: string) {
+    const p = text.match(/^(\r?\n)+/)?.[0] ?? "";
+    return { body: text.slice(p.length), offset: p.split("\n").length - 1, prefix: p };
+  }
+
   function choose(index: number, side: "A" | "B") {
-    const chunk = chunks[index];
-    if (chunk.type !== "conflict") return;
-    resultValues[index] = side === "A" ? chunk.textA : chunk.textB;
+    const c = chunks[index];
+    if (c?.type !== "conflict") return;
+    resultValues[index] = side === "A" ? c.textA : c.textB;
     resolvedState[index] = side;
   }
 
-  function chooseAll(side: "A" | "B") {
-    chunks.forEach((c, i) => {
-      if (c.type === "conflict") {
-        resultValues[i] = side === "A" ? c.textA : c.textB;
-        resolvedState[i] = side;
-      }
-    });
+  function chooseRest(side: "A" | "B") {
+    for (const idx of conflictIndices) {
+      if (!resolvedState[idx]) choose(idx, side);
+    }
   }
 
+  const conflictIndices = $derived(getConflictIndices(chunks));
+  const conflictCount = $derived(conflictIndices.length);
+  const addedCount = $derived(chunks.filter((c: MergeConflictChunk) => c.type === "added").length);
+  const resolvedCount = $derived(Object.values(resolvedState).filter(Boolean).length);
+  const unresolvedCount = $derived(conflictCount - resolvedCount);
+
+  function close(action: () => void) {
+    closing = true;
+    open = false;
+    action();
+  }
   function save() {
-    const unresolved = chunks.some(
-      (c, i) => c.type === "conflict" && !resolvedState[i],
-    );
-    if (unresolved) {
-      showToast({
-        message: "Please resolve all conflicts before saving.",
-        type: "alert-warning",
-      });
+    if (conflictCount > 0 && unresolvedCount > 0) {
+      showToast({ message: "Please resolve all conflicts before saving.", type: "alert-warning" });
       return;
     }
-
-    let changed = 0;
-    let added = 0;
-
-    const content = chunks
-      .map((c, i) => {
-        if (c.type === "unchanged") return c.text;
-        if (c.type === "added") {
-          added++;
-          return c.text;
-        }
-        if (resolvedState[i] !== "A") changed++;
-        return resultValues[i] ?? "";
-      })
-      .join("");
-    open = false;
-    onSave(content, { changed, added, removed: 0 });
-  }
-
-  function skip() {
-    open = false;
-    onSkip();
-  }
-
-  const conflictIndices = $derived(
-    chunks
-      .map((c, i) => (c.type === "conflict" ? i : -1))
-      .filter((i) => i !== -1),
-  );
-  const conflictCount = $derived(conflictIndices.length);
-  const resolvedCount = $derived(Object.keys(resolvedState).length);
-
-  let currentConflictIdx = $state(-1);
-
-  function scrollToConflict(idx: number) {
-    if (idx < 0 || idx >= conflictIndices.length) return;
-    currentConflictIdx = idx;
-    const chunkIndex = conflictIndices[idx];
-    const el = document.getElementById(`chunk-start-${chunkIndex}`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-
-  function nextConflict() {
-    if (currentConflictIdx < conflictCount - 1) {
-      scrollToConflict(currentConflictIdx + 1);
-    }
-  }
-
-  function prevConflict() {
-    if (currentConflictIdx > 0) {
-      scrollToConflict(currentConflictIdx - 1);
-    }
-  }
-
-  function prepareText(text: string) {
-    // Remove trailing newline: Monaco doesn't show a blank final line but the text content is preserved for save.
-    if (text.endsWith("\n")) return text.slice(0, -1);
-    return text;
-  }
-
-  // Monaco uses absolute inset-0 positioning — cells need an explicit pixel height.
-  // Line counts are pre-computed by the backend so no text parsing is needed here.
-  const MONACO_LINE_PX = 19;
-  const MONACO_PADDING_PX = 20;
-  const MONACO_MIN_PX = 60;
-
-  function editorHeight(lineCount: number): number {
-    return Math.max(
-      lineCount * MONACO_LINE_PX + MONACO_PADDING_PX,
-      MONACO_MIN_PX,
+    close(
+      conflictCount === 0
+        ? onAutoMerge
+        : () => onSave(buildMergedContent(chunks, resultValues), computeMergeStats(chunks, resolvedState)),
     );
   }
+
+  let currentConflictNum = $state(1);
+
+  const currentChunkIndex = $derived(
+    currentConflictNum >= 1 && currentConflictNum <= conflictCount
+      ? (conflictIndices[currentConflictNum - 1] ?? -1)
+      : -1,
+  );
+  const currentChunk = $derived(currentChunkIndex >= 0 ? chunks[currentChunkIndex] : null);
+  const currentChoice = $derived(currentChunkIndex >= 0 ? resolvedState[currentChunkIndex] : undefined);
+
+  const diffDisplay = $derived.by(() => {
+    if (!currentChunk) return null;
+    const a = stripNL(currentChunk.textA),
+      b = stripNL(currentChunk.textB);
+    return {
+      textA: a.body,
+      textB: b.body,
+      startLineA: currentChunk.startLineA + a.offset,
+      startLineB: currentChunk.startLineB + b.offset,
+    };
+  });
+
+  const resultDisplay = $derived.by(() => {
+    if (currentChunkIndex < 0 || !resolvedState[currentChunkIndex]) return "";
+    return stripNL(resultValues[currentChunkIndex] ?? "").body;
+  });
+
+  function onResultChange(value: string) {
+    if (currentChunkIndex < 0 || !currentChunk) return;
+    resultValues[currentChunkIndex] = stripNL(currentChunk.textA).prefix + value;
+    resolvedState[currentChunkIndex] = "Custom";
+  }
+
+  function goToConflict(num: number) {
+    if (num >= 1 && num <= conflictCount) currentConflictNum = num;
+  }
+
+  const choiceBadge = $derived(
+    currentChoice === "A"
+      ? { cls: "badge-primary", text: `Chose ${mergeStore.labels.a}` }
+      : currentChoice === "B"
+        ? { cls: "badge-secondary", text: `Chose ${mergeStore.labels.b}` }
+        : currentChoice === "Custom"
+          ? { cls: "badge-warning", text: "Custom" }
+          : { cls: "badge-warning", text: "Unresolved" },
+  );
 </script>
 
 <Dialog
   bind:open
   size="fullscreen"
   contentProps={{ class: "flex flex-col overflow-hidden !p-0 bg-base-100" }}
-  onOpenChange={(o) => !o && onSkip()}
+  onOpenChange={(o) => {
+    if (!o && !closing) onSkip();
+  }}
 >
   {#snippet title()}
-    <div
-      class="px-4 py-3 border-b border-base-content/20 bg-base-200/80 flex flex-col gap-2 shrink-0"
-    >
-      <div class="flex flex-col gap-1">
-        <div class="flex justify-between items-center gap-2">
-          <div class="flex items-center gap-2 min-w-0">
-            <h2 class="text-lg font-semibold truncate" title={relPath}>
-              Resolving: <span class="text-primary">{relPath}</span>
-            </h2>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="join mr-2">
-              <button
-                class="join-item btn btn-sm btn-soft"
-                onclick={prevConflict}
-                disabled={currentConflictIdx <= 0}
-              >
-                <Icon icon="mdi:chevron-up" /> Prev
-              </button>
-              <button
-                class="join-item btn btn-sm btn-soft"
-                onclick={nextConflict}
-                disabled={conflictCount === 0 ||
-                  currentConflictIdx >= conflictCount - 1}
-              >
-                Next <Icon icon="mdi:chevron-down" />
-              </button>
-            </div>
-            <button
-              class="btn btn-sm btn-primary"
-              onclick={save}
-              disabled={resolvedCount < conflictCount}
-            >
-              Save & Continue
-            </button>
-            <button class="btn btn-sm btn-ghost" onclick={skip}
-              >Skip File</button
-            >
-          </div>
-        </div>
-        <div class="text-xs text-base-content/60 flex gap-4 truncate">
-          <span title={fileAPath}>A: ...{fileAPath.slice(-50)}</span>
-          <span title={fileBPath}>B: ...{fileBPath.slice(-50)}</span>
-          <span class="badge badge-sm badge-neutral"
-            >{resolvedCount}/{conflictCount} resolved</span
+    <div class="px-4 py-2.5 border-b border-base-content/20 bg-base-200/80 flex flex-col gap-1.5 shrink-0">
+      <!-- Row 1: Title + Cancel -->
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-semibold truncate min-w-0" title={relPath}>
+          Resolving: <span class="text-primary">{relPath}</span>
+        </h2>
+        <button class="btn btn-sm btn-ghost text-error/70 hover:text-error shrink-0" onclick={() => close(onCancel)}>
+          Cancel Merge
+        </button>
+      </div>
+
+      <!-- Row 2: Paths + info + layout toggle -->
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-base-content/60">
+        <span title={fileAPath} class="text-primary/70">{mergeStore.labels.a}: ...{fileAPath.slice(-50)}</span>
+        <span title={fileBPath} class="text-secondary/70">{mergeStore.labels.b}: ...{fileBPath.slice(-50)}</span>
+        {#if conflictCount > 0}
+          <span
+            class="badge badge-sm"
+            class:badge-success={resolvedCount === conflictCount}
+            class:badge-warning={resolvedCount < conflictCount}
           >
+            {resolvedCount}/{conflictCount} resolved
+          </span>
+        {:else}
+          <span class="badge badge-sm badge-info">No conflicts</span>
+        {/if}
+        <div class="flex items-center gap-3 ml-auto">
+          <span class="text-xs text-base-content/50">Result</span>
+          <div class="join">
+            <button
+              type="button"
+              class="join-item btn btn-sm btn-outline"
+              class:btn-primary={mergeStore.mergeResultLayout === "right"}
+              onclick={() => (mergeStore.mergeResultLayout = "right")}
+            >
+              Right
+            </button>
+            <button
+              type="button"
+              class="join-item btn btn-sm btn-outline"
+              class:btn-primary={mergeStore.mergeResultLayout === "bottom"}
+              onclick={() => (mergeStore.mergeResultLayout = "bottom")}
+            >
+              Bottom
+            </button>
+          </div>
+          <span class="text-base-content/20">|</span>
+          <LangThemeSelect />
         </div>
       </div>
-      <div class="flex gap-2 text-xs">
-        <button class="btn btn-xs btn-soft" onclick={() => chooseAll("A")}
-          >Accept All A (Vanilla)</button
+
+      <!-- Row 3: Skip + Conflict nav / no-conflict info + Save -->
+      <div class="flex items-center gap-3 pt-1.5 border-t border-base-content/15">
+        <button class="btn btn-sm btn-outline shrink-0" onclick={() => close(onSkip)}>Skip File</button>
+
+        {#if conflictCount > 0}
+          <div class="flex items-center gap-2 flex-1 justify-center flex-wrap">
+            <div class="join">
+              <button
+                type="button"
+                class="join-item btn btn-sm btn-outline"
+                disabled={currentConflictNum <= 1}
+                onclick={() => goToConflict(currentConflictNum - 1)}
+              >
+                Prev
+              </button>
+              <button
+                type="button"
+                class="join-item btn btn-sm btn-outline"
+                disabled={currentConflictNum >= conflictCount}
+                onclick={() => goToConflict(currentConflictNum + 1)}
+              >
+                Next
+              </button>
+            </div>
+            <span class="font-medium tabular-nums text-sm text-base-content"
+              >Conflict {currentConflictNum} of {conflictCount}</span
+            >
+            {#if currentChunk}
+              <span class="badge badge-sm {choiceBadge.cls}">{choiceBadge.text}</span>
+              <span class="text-base-content/20 mx-1">|</span>
+              {#if unresolvedCount > 0}
+                <button type="button" class="btn btn-xs btn-ghost" onclick={() => chooseRest("A")}>
+                  Rest → {mergeStore.labels.a}
+                </button>
+                <button type="button" class="btn btn-xs btn-ghost" onclick={() => chooseRest("B")}>
+                  Rest → {mergeStore.labels.b}
+                </button>
+                <span class="text-base-content/20">|</span>
+              {/if}
+              <button
+                type="button"
+                class="btn btn-sm {currentChoice === 'A' ? 'btn-primary' : 'btn-outline btn-primary'}"
+                onclick={() => choose(currentChunkIndex, "A")}
+              >
+                Choose {mergeStore.labels.a}
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm {currentChoice === 'B' ? 'btn-secondary' : 'btn-outline btn-secondary'}"
+                onclick={() => choose(currentChunkIndex, "B")}
+              >
+                Choose {mergeStore.labels.b}
+              </button>
+            {/if}
+          </div>
+        {:else}
+          <div class="flex-1 text-center text-sm text-base-content/60">
+            {#if addedCount > 0}
+              No shared-key conflicts — {addedCount} addition{addedCount > 1 ? "s" : ""} from {mergeStore.labels.b} will
+              be appended
+            {:else}
+              Files are identical — nothing to merge
+            {/if}
+          </div>
+        {/if}
+
+        <button
+          class="btn btn-sm btn-primary shrink-0"
+          onclick={save}
+          disabled={conflictCount > 0 && resolvedCount < conflictCount}
         >
-        <button class="btn btn-xs btn-soft" onclick={() => chooseAll("B")}
-          >Accept All B (Mod)</button
-        >
+          Save & Continue
+        </button>
       </div>
     </div>
   {/snippet}
 
-  {#snippet description()}
-    <span class="sr-only">Merge Editor</span>
-  {/snippet}
+  {#snippet description()}<span class="sr-only">Merge Editor</span>{/snippet}
 
-  <div class="flex-1 overflow-auto bg-base-100">
-    {#if loading}
-      <div class="flex justify-center items-center h-full">
-        <span class="loading loading-spinner loading-lg"></span>
-      </div>
-    {:else if error}
-      <div class="text-error p-4">{error}</div>
-    {:else}
-      <div
-        class="grid grid-cols-3 min-w-[1000px] divide-x divide-base-content/10"
+  <div class="flex-1 min-h-0 overflow-hidden">
+    {#if diffDisplay}
+      <SplitPane
+        orientation={mergeStore.mergeResultLayout === "right" ? "horizontal" : "vertical"}
+        defaultSecondSize={mergeStore.mergeResultLayout === "right" ? 480 : 300}
+        fixedSide="second"
+        class="h-full rounded-none! border-0!"
       >
-        <div
-          class="font-bold text-center py-2 bg-base-200/50 text-xs uppercase tracking-wider sticky top-0 z-10 border-b border-base-content/10"
-        >
-          A (Vanilla)
-        </div>
-        <div
-          class="font-bold text-center py-2 bg-base-200/50 text-xs uppercase tracking-wider sticky top-0 z-10 border-b border-base-content/10"
-        >
-          Result
-        </div>
-        <div
-          class="font-bold text-center py-2 bg-base-200/50 text-xs uppercase tracking-wider sticky top-0 z-10 border-b border-base-content/10"
-        >
-          B (Mod)
-        </div>
-
-        {#each chunks as chunk, i}
-          {#if chunk.type === "unchanged" || chunk.type === "added"}
-            <!-- Unchanged: Show in all 3 columns -->
-            {@const h = editorHeight(chunk.lineCountA)}
-            <div
-              class="col-span-1 border-b border-base-content/5 bg-base-100/50 opacity-60 hover:opacity-100 transition-opacity flex flex-col"
-              style="height: {h}px"
-            >
-              <CodeBlock
-                filename={fileAPath}
-                content={prepareText(chunk.text)}
-                hideHeader
-                class="!border-0 !bg-transparent flex-1"
-              />
-            </div>
-            <div
-              class="col-span-1 border-b border-base-content/5 bg-base-100/50 opacity-60 hover:opacity-100 transition-opacity flex flex-col"
-              style="height: {h}px"
-            >
-              <CodeBlock
-                filename={fileBPath}
-                content={prepareText(chunk.text)}
-                hideHeader
-                class="!border-0 !bg-transparent flex-1"
-              />
-            </div>
-            <div
-              class="col-span-1 border-b border-base-content/5 bg-base-100/50 opacity-60 hover:opacity-100 transition-opacity flex flex-col"
-              style="height: {h}px"
-            >
-              <CodeBlock
-                filename={`Merge Output`}
-                content={prepareText(chunk.text)}
-                hideHeader
-                class="!border-0 !bg-transparent flex-1"
-              />
-            </div>
-          {:else}
-            <!-- Conflict Row -->
-            {@const hA = editorHeight(chunk.lineCountA)}
-            {@const hB = editorHeight(chunk.lineCountB)}
-            {@const hRes =
-              resolvedState[i] === "A"
-                ? hA
-                : resolvedState[i] === "B"
-                  ? hB
-                  : Math.max(hA, hB)}
-            {@const headerH = 40}
-            <div class="contents group conflict-row">
-              <!-- A Side -->
-              <div
-                id="chunk-start-{i}"
-                class="relative border-b border-base-content/10 transition-colors flex flex-col"
-                class:bg-primary={resolvedState[i] === "A"}
-                class:bg-opacity-10={resolvedState[i] === "A"}
-                style="height: {hA + headerH}px"
-              >
-                <div
-                  class="p-2 flex justify-between items-center bg-base-100/30 border-b border-base-content/5"
-                  style="height: {headerH}px"
-                >
-                  <span class="text-xs font-bold opacity-50">A (Vanilla)</span>
-                  <button
-                    class="btn btn-xs btn-primary"
-                    class:btn-outline={resolvedState[i] !== "A"}
-                    onclick={() => choose(i, "A")}
-                  >
-                    {resolvedState[i] === "A" ? "Selected" : "Choose A"}
-                  </button>
-                </div>
-                <CodeBlock
-                  filename={fileAPath}
-                  content={prepareText(chunk.textA)}
-                  hideHeader
-                  class="!border-0 !bg-transparent flex-1"
-                />
-              </div>
-
-              <!-- Result Side -->
-              <div
-                class="relative border-b border-base-content/10 bg-base-100 flex flex-col"
-                style="height: {hRes + headerH}px"
-              >
-                <div
-                  class="p-2 flex justify-center items-center bg-base-100/30 border-b border-base-content/5"
-                  style="height: {headerH}px"
-                >
-                  <span class="text-xs font-bold opacity-50">Result</span>
-                </div>
-                {#if resultValues[i] !== undefined}
-                  <CodeBlock
-                    filename="Result"
-                    content={prepareText(resultValues[i])}
-                    hideHeader
-                    class="!border-0 !bg-transparent flex-1"
-                  />
-                {:else}
-                  <div
-                    class="flex-1 flex items-center justify-center text-base-content/30 text-sm italic p-4"
-                  >
-                    Select A or B
-                  </div>
-                {/if}
-              </div>
-
-              <!-- B Side -->
-              <div
-                class="relative border-b border-base-content/10 transition-colors flex flex-col"
-                class:bg-secondary={resolvedState[i] === "B"}
-                class:bg-opacity-10={resolvedState[i] === "B"}
-                style="height: {hB + headerH}px"
-              >
-                <div
-                  class="p-2 flex justify-between items-center bg-base-100/30 border-b border-base-content/5"
-                  style="height: {headerH}px"
-                >
-                  <span class="text-xs font-bold opacity-50">B (Mod)</span>
-                  <button
-                    class="btn btn-xs btn-secondary"
-                    class:btn-outline={resolvedState[i] !== "B"}
-                    onclick={() => choose(i, "B")}
-                  >
-                    {resolvedState[i] === "B" ? "Selected" : "Choose B"}
-                  </button>
-                </div>
-                <CodeBlock
-                  filename={fileBPath}
-                  content={prepareText(chunk.textB)}
-                  hideHeader
-                  class="!border-0 !bg-transparent flex-1"
-                />
-              </div>
-            </div>
-          {/if}
-        {/each}
+        {#snippet first()}
+          <DiffView
+            originalContent={diffDisplay.textA}
+            modifiedContent={diffDisplay.textB}
+            originalLabel={mergeStore.labels.a}
+            modifiedLabel={mergeStore.labels.b}
+            origFirstLine={diffDisplay.startLineA}
+            modFirstLine={diffDisplay.startLineB}
+            class="h-full"
+          />
+        {/snippet}
+        {#snippet second()}
+          <EditorView
+            content={resultDisplay}
+            label="Result"
+            labelClass="bg-accent/10 text-accent"
+            firstLineNumber={diffDisplay.startLineA}
+            readOnly={false}
+            onContentChange={onResultChange}
+            class="h-full"
+          />
+        {/snippet}
+      </SplitPane>
+    {:else}
+      <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/50">
+        {#if conflictCount === 0 && addedCount > 0}
+          <span class="text-lg font-medium">No shared-key conflicts</span>
+          <span class="text-sm"
+            >{addedCount} entry additions from {mergeStore.labels.b} will be appended to the merged output.</span
+          >
+          <span class="text-xs text-base-content/30">Click Save & Continue to auto-merge, or Skip File to skip.</span>
+        {:else if conflictCount === 0}
+          <span class="text-lg font-medium">Files are identical</span>
+          <span class="text-sm">No differences found between the two files.</span>
+          <span class="text-xs text-base-content/30"
+            >Click Save & Continue to write the output, or Skip File to skip.</span
+          >
+        {:else}
+          <span class="text-sm">No conflict selected</span>
+        {/if}
       </div>
     {/if}
   </div>
 </Dialog>
-
-<style>
-  /* Force transparency for code blocks inside conflict rows to show selection background */
-  :global(.conflict-row .code-block-root),
-  :global(.conflict-row .code-block-editor),
-  :global(.conflict-row .mockup-code),
-  :global(.conflict-row pre) {
-    background-color: transparent !important;
-  }
-</style>

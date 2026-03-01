@@ -1,11 +1,8 @@
 <script lang="ts">
-  import { CodeBlock } from "@components";
+  import { EditorPane } from "@components";
   import { CopyToClipboard } from "@services/clipboardservice";
   import { GetAttributes, GetItemDetails } from "@services/inventoryservice";
-  import type {
-    InventoryItemRow,
-    ItemDetails as ItemDetailsType,
-  } from "@services/models";
+  import type { InventoryItemRow, ItemDetails as ItemDetailsType } from "@services/models";
 
   let {
     inventoryId = null,
@@ -49,9 +46,7 @@
     if (!attrs || typeof attrs !== "object") return new Set<string>();
     return new Set(Object.keys(attrs).filter((k) => attrs[k]));
   });
-  const attributesTable = $derived(
-    itemAttributes.map((key) => ({ key, present: presentSet.has(key) })),
-  );
+  const attributesTable = $derived(itemAttributes.map((key) => ({ key, present: presentSet.has(key) })));
   const rawText = $derived(details?.rawText ?? "");
   const fileName = $derived(row?.filePath?.split(/[/\\]/).pop() ?? "");
   const references = $derived(details?.references ?? []);
@@ -65,15 +60,11 @@
 {#if !row}
   <p class="text-base-content/60 p-4">No item selected</p>
 {:else}
-  <div
-    class="flex flex-col h-full overflow-y-auto overflow-x-hidden p-4 space-y-4 pr-6"
-  >
+  <div class="flex flex-col h-full overflow-y-auto overflow-x-hidden p-4 space-y-4 pr-6">
     <div class="flex items-center justify-between gap-2">
       <span class="badge badge-primary badge-lg">{row.type}</span>
       <span class="text-sm text-base-content/80">{row.key}</span>
-      <span class="text-xs font-mono text-base-content/50"
-        >Lines {row.lineStart}–{row.lineEnd}</span
-      >
+      <span class="text-xs font-mono text-base-content/50">Lines {row.lineStart}–{row.lineEnd}</span>
     </div>
 
     <div class="p-3 bg-base-200/50 rounded-lg border border-base-content/10">
@@ -81,22 +72,17 @@
     </div>
 
     <div class="flex gap-2">
-      <button
-        type="button"
-        class="btn btn-sm btn-soft flex-1"
-        onclick={() => row?.key && CopyToClipboard(row.key)}>Copy Key</button
+      <button type="button" class="btn btn-sm btn-soft flex-1" onclick={() => row?.key && CopyToClipboard(row.key)}
+        >Copy Key</button
       >
       <button
         type="button"
         class="btn btn-sm btn-soft flex-1"
-        onclick={() => row?.filePath && CopyToClipboard(row.filePath)}
-        >Copy Path</button
+        onclick={() => row?.filePath && CopyToClipboard(row.filePath)}>Copy Path</button
       >
     </div>
     {#if attributesTable.length > 0}
-      <details
-        class="collapse collapse-arrow rounded-lg border border-base-content/10 bg-base-100"
-      >
+      <details class="collapse collapse-arrow rounded-lg border border-base-content/10 bg-base-100">
         <summary class="collapse-title text-sm font-medium">Attributes</summary>
         <div class="collapse-content !pb-2">
           <div class="max-h-60 overflow-y-auto custom-scrollbar">
@@ -120,9 +106,7 @@
       </details>
     {/if}
     {#each refSections as { title, items }}
-      <details
-        class="collapse collapse-arrow rounded-lg border border-base-content/10 bg-base-100"
-      >
+      <details class="collapse collapse-arrow rounded-lg border border-base-content/10 bg-base-100">
         <summary class="collapse-title text-sm font-medium"
           >{title} <span class="opacity-60">({items.length})</span></summary
         >
@@ -137,14 +121,9 @@
                 >
                   <div class="flex justify-between items-baseline">
                     <span class="text-primary font-semibold">{ref.key}</span>
-                    <span
-                      class="text-xs text-base-content/60 bg-base-300 px-1.5 py-0.5 rounded"
-                      >{ref.type}</span
-                    >
+                    <span class="text-xs text-base-content/60 bg-base-300 px-1.5 py-0.5 rounded">{ref.type}</span>
                   </div>
-                  <span
-                    class="text-base-content/50 block text-xs mt-1 truncate"
-                    title="{ref.filePath}:{ref.lineStart}"
+                  <span class="text-base-content/50 block text-xs mt-1 truncate" title="{ref.filePath}:{ref.lineStart}"
                     >{ref.filePath}:{ref.lineStart}</span
                   >
                 </div>
@@ -154,15 +133,13 @@
         </div>
       </details>
     {/each}
-    <details
-      class="collapse collapse-arrow rounded-lg border border-base-content/10 bg-base-100"
-    >
+    <details class="collapse collapse-arrow rounded-lg border border-base-content/10 bg-base-100">
       <summary class="collapse-title text-sm font-medium">Raw Text</summary>
       <div class="collapse-content !pb-0 !px-0">
         {#if !rawText}
           <p class="p-4 text-sm text-base-content/60">Unavailable</p>
         {:else}
-          <CodeBlock
+          <EditorPane
             content={rawText}
             filename={fileName}
             showCopyButton={true}

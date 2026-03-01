@@ -1,19 +1,7 @@
 <script lang="ts">
-  import {
-    Tab,
-    Tabs,
-    Card,
-    CardBody,
-    FileTree,
-    CodeBlock,
-    SplitPane,
-  } from "@components";
+  import { Tab, Tabs, Card, CardBody, FileTree, EditorPane, SplitPane } from "@components";
   import { game, gameInstallPath, appConstants } from "@stores/app.svelte";
-  import {
-    Scan,
-    GetDocPathCache,
-    GetDocContent,
-  } from "@services/moddocservice";
+  import { Scan, GetDocPathCache, GetDocContent } from "@services/moddocservice";
   import { BuildTree } from "@services/fileservice";
   import type { TreeNode } from "@services/models";
 
@@ -53,9 +41,7 @@
     };
   }
 
-  const wikiUrl = $derived(
-    $game === "CK3" ? $appConstants.ck3.wikiUrl : $appConstants.eu5.wikiUrl,
-  );
+  const wikiUrl = $derived($game === "CK3" ? $appConstants.ck3.wikiUrl : $appConstants.eu5.wikiUrl);
 </script>
 
 <div class="p-2">
@@ -68,9 +54,7 @@
       ><Card>
         <CardBody>
           <fieldset class="fieldset">
-            <legend class="fieldset-legend text-base-content/90"
-              >Game install path:</legend
-            >
+            <legend class="fieldset-legend text-base-content/90">Game install path:</legend>
             <div class="flex gap-2">
               <input
                 type="text"
@@ -79,12 +63,7 @@
                 value={$gameInstallPath}
                 placeholder="Set in Settings (gear icon in header)"
               />
-              <button
-                type="button"
-                class="btn btn-soft btn-accent"
-                disabled={!$gameInstallPath?.trim()}
-                onclick={scan}
-              >
+              <button type="button" class="btn btn-soft btn-accent" disabled={!$gameInstallPath?.trim()} onclick={scan}>
                 Scan
               </button>
             </div>
@@ -92,19 +71,15 @@
         </CardBody>
       </Card>
       <Card class="flex-1 min-h-0 min-w-0 flex flex-col">
-        <CardBody
-          class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2"
-        >
-          <SplitPane fixedSide="left" class="flex-1 min-h-0">
-            {#snippet left()}
+        <CardBody class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2">
+          <SplitPane fixedSide="first" class="flex-1 min-h-0">
+            {#snippet first()}
               <div class="flex flex-col h-full overflow-hidden bg-base-200">
                 <div
                   class="flex h-[5.5rem] shrink-0 flex-col justify-center px-3 py-2 bg-base-300 border-b border-base-content/20"
                 >
                   <label class="label py-1" for="file-filter-input">
-                    <span class="label-text font-semibold text-sm"
-                      >Filter Files</span
-                    >
+                    <span class="label-text font-semibold text-sm">Filter Files</span>
                   </label>
                   <div class="relative">
                     <input
@@ -127,25 +102,18 @@
                   </div>
                 </div>
                 <div class="flex-1 min-h-0 overflow-auto p-2">
-                  <FileTree
-                    tree={docTree}
-                    filter={filterText}
-                    fileColor="text-accent"
-                    {onFileClick}
-                  />
+                  <FileTree tree={docTree} filter={filterText} fileColor="text-accent" {onFileClick} />
                 </div>
               </div>
             {/snippet}
-            {#snippet right()}
-              <div
-                class="flex flex-col h-full overflow-hidden bg-dark-input shadow-inner"
-              >
+            {#snippet second()}
+              <div class="flex flex-col h-full overflow-hidden bg-dark-input shadow-inner">
                 <div
                   class="flex h-8 shrink-0 items-center px-3 bg-base-300 border-b border-base-content/20 text-sm text-base-content/60"
                 >
                   File Content
                 </div>
-                <CodeBlock
+                <EditorPane
                   content={selectedEntry?.content ?? ""}
                   filename={selectedEntry?.name ?? "Select a file"}
                   placeholder="Select a file to view content"
@@ -156,16 +124,8 @@
         </CardBody>
       </Card>
     </Tab>
-    <Tab
-      tabGroup="modding-docs"
-      label="Modding Wiki"
-      contentClass="bg-base-300 border-base-300 p-2"
-    >
-      <iframe
-        src={wikiUrl}
-        title="'Modding Wiki'"
-        class="w-full h-[calc(96vh-10rem)]"
-      ></iframe>
+    <Tab tabGroup="modding-docs" label="Modding Wiki" contentClass="bg-base-300 border-base-300 p-2">
+      <iframe src={wikiUrl} title="'Modding Wiki'" class="w-full h-[calc(96vh-10rem)]"></iframe>
     </Tab>
   </Tabs>
 </div>

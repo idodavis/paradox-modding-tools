@@ -1,12 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Card, CardBody, FileSelector } from "@components";
-  import {
-    goBack,
-    appSettings,
-    saveSettings,
-    loadSettings,
-  } from "@stores/app.svelte";
+  import { goBack, appSettings, saveSettings, loadSettings } from "@stores/app.svelte";
   import { showToast } from "@stores/toast.svelte";
   import * as DbService from "@services/dbservice";
 
@@ -41,8 +36,7 @@
       });
     } catch (e) {
       showToast({
-        message:
-          "Reset failed: " + (e instanceof Error ? e.message : String(e)),
+        message: "Reset failed: " + (e instanceof Error ? e.message : String(e)),
         type: "alert-error",
         duration: 5000,
       });
@@ -59,17 +53,13 @@
     >
       ← Back
     </button>
-    <h2 class="text-center text-xl font-semibold mb-4 text-base-content/90">
-      Settings
-    </h2>
+    <h2 class="text-center text-xl font-semibold mb-4 text-base-content/90">Settings</h2>
     <Card class="bg-base-300 border border-base-content/10">
       <CardBody class="p-6">
-        <h3 class="card-title text-base-content/90 mb-2">
-          Game install directories
-        </h3>
+        <h3 class="card-title text-base-content/90 mb-2">Game install directories</h3>
         <p class="text-sm text-base-content/80 mb-4">
-          Set the (top-level) install path for each game. These are used by
-          Modding Docs, Compare (vanilla vs mod), and Merge (vanilla vs mod).
+          Set the (top-level) install path for each game. These are used by Modding Docs, Compare (vanilla vs mod), and
+          Merge (vanilla vs mod).
         </p>
         <div class="space-y-6">
           <!-- TODO: Prevent cancel dialog from clearing the input -->
@@ -101,9 +91,7 @@
           />
         </div>
         <h3 class="card-title text-base-content/90 mb-2 mt-6">Merge Tool</h3>
-        <p class="text-sm text-base-content/80 mb-4">
-          Default output directory for merge operations.
-        </p>
+        <p class="text-sm text-base-content/80 mb-4">Default output directory for merge operations.</p>
         <FileSelector
           mode="folder"
           dialogTitle="Default merge output dir"
@@ -116,36 +104,20 @@
               "_global.merge_output_dir": p ?? "",
             }))}
         />
-        <div
-          class="card-actions justify-end mt-6 pt-4 border-t border-base-content/10"
-        >
-          <button
-            type="button"
-            class="btn btn-soft btn-secondary"
-            onclick={save}
-          >
-            Save Settings
-          </button>
+        <div class="card-actions justify-end mt-6 pt-4 border-t border-base-content/10">
+          <button type="button" class="btn btn-soft btn-secondary" onclick={save}> Save Settings </button>
         </div>
       </CardBody>
     </Card>
 
     <Card class="mt-6 bg-base-300 border border-base-content/10">
       <CardBody class="p-6">
-        <h3 class="card-title text-base-content/90 mb-2 text-error">
-          Reset data
-        </h3>
+        <h3 class="card-title text-base-content/90 mb-2 text-error">Reset data</h3>
         <p class="text-sm text-base-content/80 mb-4">
-          Permanently delete all inventories, doc cache, and patch notes. Game
-          install paths and app constants are preserved.
+          Permanently delete all inventories, doc cache, and patch notes. Game install paths and app constants are
+          preserved.
         </p>
-        <button
-          type="button"
-          class="btn btn-error btn-outline"
-          onclick={resetData}
-        >
-          Reset all data
-        </button>
+        <button type="button" class="btn btn-error btn-outline" onclick={resetData}> Reset all data </button>
       </CardBody>
     </Card>
   </div>

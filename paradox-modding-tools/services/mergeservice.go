@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	parser "paradox-modding-tools/services/internal/interpreter"
@@ -24,7 +25,6 @@ type MergeService struct {
 type MergerOptions struct {
 	AddAdditionalEntries     bool     `json:"addAdditionalEntries"`
 	ManualConflictResolution bool     `json:"manualConflictResolution"`
-	EntryPlacement           string   `json:"entryPlacement"`
 	KeyList                  []string `json:"keyList"`
 	MatchByFilenameOnly      bool     `json:"matchByFilenameOnly"`
 	IncludePathPattern       string   `json:"includePathPattern"`
@@ -50,7 +50,6 @@ type FileMergeResult struct {
 	OutputPath        string             `json:"outputPath"`
 	Changed           int                `json:"changed"`
 	Added             int                `json:"added"`
-	Removed           int                `json:"removed"`
 	EntriesChanged    []string           `json:"entriesChanged,omitempty"`
 	EntriesAdded      []string           `json:"entriesAdded,omitempty"`
 	ResolvedConflicts []ResolvedConflict `json:"resolvedConflicts,omitempty"`
@@ -64,16 +63,18 @@ type ResolvedConflict struct {
 	Reason   string `json:"reason"`   // "directive", "keyList", "default"
 }
 
-// MergeConflictChunk is a unit of content for the assisted merge editor (JSON-safe for bindings).
-// Consecutive unchanged/added chunks are consolidated into single chunks by GetMergeConflicts.
+// MergeConflictChunk is a unit of content for the assisted merge editor (and internal merge iteration).
+// ObjA/ObjB are internal-only; JSON output omits them.
 type MergeConflictChunk struct {
-	Type       string `json:"type"`       // "unchanged", "added", or "conflict"
-	Key        string `json:"key"`        // object key when type is "conflict"
-	Text       string `json:"text"`       // for unchanged/added
-	TextA      string `json:"textA"`      // for conflict: vanilla side
-	TextB      string `json:"textB"`      // for conflict: mod side
-	LineCountA int    `json:"lineCountA"` // visual lines contributed to the A/unchanged column
-	LineCountB int    `json:"lineCountB"` // visual lines contributed to the B column (differs from A for conflicts)
+	Type       string        `json:"type"` // "unchanged", "added", or "conflict"
+	TextA      string        `json:"textA"`
+	TextB      string        `json:"textB"`
+	StartLineA int           `json:"startLineA"`
+	StartLineB int           `json:"startLineB"`
+	EndLineA   int           `json:"endLineA"`
+	EndLineB   int           `json:"endLineB"`
+	ObjA       *scriptObject `json:"-"`
+	ObjB       *scriptObject `json:"-"`
 }
 
 // scriptObject represents a parsed top-level entry (assignment or object) with its comments.
@@ -83,32 +84,42 @@ type scriptObject struct {
 	ValueText  string   // Just the value part (for normalization)
 	Comments   []string // Preceding comments
 	PreferSide string   // "A" or "B" parsed from directives
+	StartLine  int
+	EndLine    int
 }
 
-func buildCollectFilter(options MergerOptions) FileCollectorFilter {
-	f := FileCollectorFilter{Extensions: []string{".txt"}}
-	if options.IncludePathPattern != "" {
-		f.IncludePath = options.IncludePathPattern
+func buildCollectFilter(opts MergerOptions) FileCollectorFilter {
+	return FileCollectorFilter{
+		Extensions:  []string{".txt"},
+		IncludePath: opts.IncludePathPattern,
+		ExcludePath: opts.ExcludePathPattern,
 	}
-	if options.ExcludePathPattern != "" {
-		f.ExcludePath = options.ExcludePathPattern
+}
+
+// collectAndMatch collects files from pathA/pathB and returns matching pairs.
+func (m *MergeService) collectAndMatch(pathA, pathB string, opts MergerOptions) (map[string]PathMatch, error) {
+	filter := buildCollectFilter(opts)
+	filesA, err := m.FileService.CollectFilesFromPath(pathA, filter)
+	if err != nil {
+		return nil, fmt.Errorf("collecting files from A: %w", err)
 	}
-	return f
+	filesB, err := m.FileService.CollectFilesFromPath(pathB, filter)
+	if err != nil {
+		return nil, fmt.Errorf("collecting files from B: %w", err)
+	}
+	matches, err := m.FileService.FindMatchingPaths(filesA, filesB, opts.MatchByFilenameOnly)
+	if err != nil {
+		return nil, fmt.Errorf("finding matches: %w", err)
+	}
+	return matches, nil
 }
 
 func outputPathWithSuffix(outputDir, relPath, suffix string) string {
 	if suffix == "" {
 		return filepath.Join(outputDir, relPath)
 	}
-	dir := filepath.Dir(relPath)
-	base := filepath.Base(relPath)
-	ext := filepath.Ext(base)
-	name := strings.TrimSuffix(base, ext)
-	newBase := name + suffix + ext
-	if filepath.Ext(newBase) != ".txt" {
-		newBase = newBase + ".txt"
-	}
-	return filepath.Join(outputDir, dir, newBase)
+	ext := filepath.Ext(relPath)
+	return filepath.Join(outputDir, strings.TrimSuffix(relPath, ext)+suffix+".txt")
 }
 
 var (
@@ -129,18 +140,12 @@ func parsePrecedenceFromComment(comment string) string {
 	return ""
 }
 
-// normalize removes comments and collapses whitespace to prevent false positives.
 func normalize(text string) string {
-	noComments := commentStripRe.ReplaceAllString(text, "")
-	return whitespaceStripRe.ReplaceAllString(noComments, "")
+	return whitespaceStripRe.ReplaceAllString(commentStripRe.ReplaceAllString(text, ""), "")
 }
 
-// areSemanticallyEqual checks if two entities are effectively the same logic.
-func areSemanticallyEqual(textA, textB string) bool {
-	if textA == textB {
-		return true
-	}
-	return normalize(textA) == normalize(textB)
+func areSemanticallyEqual(a, b string) bool {
+	return a == b || normalize(a) == normalize(b)
 }
 
 func parseFileObjects(path string) ([]scriptObject, string, error) {
@@ -154,27 +159,25 @@ func parseFileObjects(path string) ([]scriptObject, string, error) {
 	var pendingComments []string
 
 	lineEnding := "\n"
+	currentLine := 1
+	pendingStartLine := 1
 
 	for _, entry := range f.Entries {
-		// Accumulate raw text for everything (comments, whitespace, expressions)
 		rawText := entry.GetRawText()
 		if lineEnding == "\n" && strings.Contains(rawText, "\r\n") {
 			lineEnding = "\r\n"
 		}
+
 		pendingPreamble.WriteString(rawText)
+
+		lineDelta := strings.Count(rawText, "\n")
+		inclusiveEndLine := currentLine + lineDelta
 
 		if c := entry.Comment; c != "" {
 			pendingComments = append(pendingComments, c)
 		}
 
 		if expr := entry.Expression; expr != nil && expr.Key != "" {
-			key := expr.Key
-			rawExpr := expr.GetRawText()
-
-			// The preamble includes the expression's raw text because we appended entry.GetRawText() above.
-			// So fullText is everything since the last object (comments + whitespace + this object).
-			fullText := pendingPreamble.String()
-
 			prefer := ""
 			for _, pc := range pendingComments {
 				if p := parsePrecedenceFromComment(pc); p != "" {
@@ -184,21 +187,28 @@ func parseFileObjects(path string) ([]scriptObject, string, error) {
 			}
 
 			objects = append(objects, scriptObject{
-				Key:        key,
-				RawText:    fullText,
-				ValueText:  rawExpr,
+				Key:        expr.Key,
+				RawText:    pendingPreamble.String(),
+				ValueText:  expr.GetRawText(),
 				Comments:   pendingComments,
 				PreferSide: prefer,
+				StartLine:  pendingStartLine,
+				EndLine:    inclusiveEndLine,
 			})
+
 			pendingPreamble.Reset()
 			pendingComments = nil
+			pendingStartLine = inclusiveEndLine + 1
 		}
+
+		currentLine += lineDelta
 	}
 
-	// Handle trailing content (comments/whitespace at EOF)
 	if pendingPreamble.Len() > 0 {
 		objects = append(objects, scriptObject{
-			RawText: pendingPreamble.String(),
+			RawText:   pendingPreamble.String(),
+			StartLine: pendingStartLine,
+			EndLine:   currentLine,
 		})
 	}
 
@@ -206,205 +216,156 @@ func parseFileObjects(path string) ([]scriptObject, string, error) {
 	if f.BOM != "" {
 		bom = f.BOM
 	}
-
 	return objects, bom, nil
 }
 
-// determinePrecedence decides which version to use based on keys and directives.
-func determinePrecedence(key string, objectA, objectB scriptObject, options MergerOptions) (string, string) {
-	// 1. Key List (Highest Priority)
-	for _, k := range options.KeyList {
-		if k == key {
-			return "B", "keyList"
+func determinePrecedence(key string, a, b scriptObject, opts MergerOptions) (string, string) {
+	if slices.Contains(opts.KeyList, key) {
+		return "B", "keyList"
+	}
+	for _, obj := range []scriptObject{a, b} {
+		if obj.PreferSide != "" {
+			return obj.PreferSide, "directive"
 		}
 	}
-
-	// 2. Directives in A (Protect)
-	if objectA.PreferSide == "A" {
-		return "A", "directive"
-	}
-	if objectA.PreferSide == "B" {
-		return "B", "directive"
-	}
-
-	// 3. Directives in B (Override)
-	if objectB.PreferSide == "B" {
-		return "B", "directive"
-	}
-	if objectB.PreferSide == "A" {
-		return "A", "directive"
-	}
-
-	// 4. Default
 	return "A", "default"
 }
 
-type internalMergeResult struct {
+// mergeResult holds the result of merging one file (internal use).
+type mergeResult struct {
 	Content           string
 	EntriesAdded      []string
-	EntriesRemoved    []string
 	EntriesChanged    []string
-	EntriesKept       []string
 	ResolvedConflicts []ResolvedConflict
 }
 
-func (m *MergeService) performMerge(fileAPath, fileBPath string, options MergerOptions) (*internalMergeResult, error) {
+func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOptions) ([]MergeConflictChunk, string, error) {
 	objectsA, bom, err := parseFileObjects(fileAPath)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing file A: %w", err)
+		return nil, "", fmt.Errorf("parsing file A: %w", err)
 	}
 	objectsB, _, err := parseFileObjects(fileBPath)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing file B: %w", err)
+		return nil, "", fmt.Errorf("parsing file B: %w", err)
 	}
-
-	lineEnding := "\r\n"
-
-	mapB := make(map[string]scriptObject)
+	mapB := make(map[string]scriptObject, len(objectsB))
 	for _, e := range objectsB {
 		if e.Key != "" {
 			mapB[e.Key] = e
 		}
 	}
+	keysInA := make(map[string]bool, len(objectsA))
+	var items []MergeConflictChunk
 
-	var output strings.Builder
-	output.WriteString(bom)
-
-	result := &internalMergeResult{}
-	processedKeysInB := make(map[string]bool)
-
-	// Iterate A
-	for _, objA := range objectsA {
-		// Handle loose comments/whitespace
-		if objA.Key == "" {
-			output.WriteString(objA.RawText)
-			continue
+	for _, entA := range objectsA {
+		a := entA
+		chunk := MergeConflictChunk{
+			Type: "unchanged", TextA: a.RawText,
+			StartLineA: a.StartLine, EndLineA: a.EndLine, ObjA: &a,
 		}
-
-		key := objA.Key
-		objB, existsInB := mapB[key]
-
-		if existsInB {
-			processedKeysInB[key] = true
-			decision, reason := determinePrecedence(key, objA, objB, options)
-			isDifferent := !areSemanticallyEqual(objA.ValueText, objB.ValueText)
-
-			if decision == "B" {
-				output.WriteString(objB.RawText)
-
-				if isDifferent {
-					result.EntriesChanged = append(result.EntriesChanged, key)
-					result.ResolvedConflicts = append(result.ResolvedConflicts, ResolvedConflict{
-						Key: key, UsedSide: "B", Reason: reason,
-					})
-				}
-			} else {
-				// Keep A
-				output.WriteString(objA.RawText)
-
-				if isDifferent {
-					result.EntriesKept = append(result.EntriesKept, key)
-					result.ResolvedConflicts = append(result.ResolvedConflicts, ResolvedConflict{
-						Key: key, UsedSide: "A", Reason: reason,
-					})
-				} else {
-					result.EntriesKept = append(result.EntriesKept, key)
+		if a.Key != "" {
+			keysInA[a.Key] = true
+			if entB, ok := mapB[a.Key]; ok {
+				b := entB
+				chunk.StartLineB, chunk.EndLineB, chunk.ObjB = b.StartLine, b.EndLine, &b
+				if !areSemanticallyEqual(a.ValueText, b.ValueText) {
+					chunk.Type, chunk.TextB = "conflict", b.RawText
 				}
 			}
-		} else {
-			// Only in A
-			output.WriteString(objA.RawText)
-			result.EntriesKept = append(result.EntriesKept, key)
 		}
+		items = append(items, chunk)
 	}
-
-	// Iterate Additions from B
-	if options.AddAdditionalEntries {
-		var newEntries []scriptObject
-
-		// Iterate B to find new entries (preserving B's order)
-		for _, objB := range objectsB {
-			if objB.Key != "" && !processedKeysInB[objB.Key] {
-				newEntries = append(newEntries, objB)
-			}
-		}
-
-		if len(newEntries) > 0 {
-			header := lineEnding + "############# Additional Entries From B (PDX-Merge-Tools) #############" + lineEnding
-			output.WriteString(header)
-
-			for _, objB := range newEntries {
-				output.WriteString(objB.RawText)
-				result.EntriesAdded = append(result.EntriesAdded, objB.Key)
+	if opts.AddAdditionalEntries {
+		for _, entB := range objectsB {
+			if entB.Key != "" && !keysInA[entB.Key] {
+				b := entB
+				items = append(items, MergeConflictChunk{
+					Type: "added", TextB: "# Additional entry from B\n" + b.RawText,
+					StartLineB: b.StartLine, EndLineB: b.EndLine, ObjB: &b,
+				})
 			}
 		}
 	}
-
-	result.Content = output.String()
-	return result, nil
+	return items, bom, nil
 }
 
-// WriteMergedFile writes content to outputPath as UTF-8 with BOM (no dialog). For merge editor save.
-func (m *MergeService) WriteMergedFile(outputPath string, content string) error {
-	dir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("error creating output directory: %w", err)
+func (m *MergeService) performMerge(fileAPath, fileBPath string, opts MergerOptions) (*mergeResult, error) {
+	items, bom, err := m.mergeFileItems(fileAPath, fileBPath, opts)
+	if err != nil {
+		return nil, err
+	}
+	var out strings.Builder
+	out.WriteString(bom)
+	r := &mergeResult{}
+	addHeader := false
+
+	for _, it := range items {
+		switch it.Type {
+		case "unchanged":
+			out.WriteString(it.TextA)
+			continue
+		case "added":
+			if !addHeader {
+				out.WriteString("\r\n############# Additional Entries From B (PDX-Merge-Tools) #############\r\n")
+				addHeader = true
+			}
+			out.WriteString(it.TextB)
+			r.EntriesAdded = append(r.EntriesAdded, it.ObjB.Key)
+			continue
+		}
+		// conflict
+		decision, reason := determinePrecedence(it.ObjA.Key, *it.ObjA, *it.ObjB, opts)
+		if decision == "B" {
+			out.WriteString(it.TextB)
+			r.EntriesChanged = append(r.EntriesChanged, it.ObjA.Key)
+		} else {
+			out.WriteString(it.TextA)
+		}
+		r.ResolvedConflicts = append(r.ResolvedConflicts, ResolvedConflict{
+			Key: it.ObjA.Key, UsedSide: decision, Reason: reason,
+		})
+	}
+	r.Content = out.String()
+	return r, nil
+}
+
+// WriteMergedFile writes content to outputPath as UTF-8 with BOM.
+func (m *MergeService) WriteMergedFile(outputPath, content string) error {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return fmt.Errorf("creating output directory: %w", err)
 	}
 	if !strings.HasPrefix(content, utf8BOM) {
 		content = utf8BOM + content
 	}
-	file, err := os.Create(outputPath)
+	return os.WriteFile(outputPath, []byte(content), 0o644)
+}
+
+func (m *MergeService) mergeAndWrite(pathA, pathB, outputPath, filePath string, opts MergerOptions) FileMergeResult {
+	mr, err := m.performMerge(pathA, pathB, opts)
 	if err != nil {
-		return fmt.Errorf("error creating output file: %w", err)
+		return FileMergeResult{FilePath: filePath, Error: err.Error()}
 	}
-	defer file.Close()
-	_, err = file.WriteString(content)
-	return err
-}
-
-// chunkLineCount returns the number of visual lines Monaco will display for s.
-// A trailing newline does not add an extra blank line.
-func chunkLineCount(s string) int {
-	if s == "" {
-		return 1
+	if err := m.WriteMergedFile(outputPath, mr.Content); err != nil {
+		return FileMergeResult{FilePath: filePath, Error: err.Error()}
 	}
-	n := strings.Count(s, "\n")
-	if strings.HasSuffix(s, "\n") {
-		return n // trailing newline is not a new visual line
-	}
-	return n + 1
-}
-
-// setChunkLineCounts populates LineCountA/B for a single chunk.
-func setChunkLineCounts(c *MergeConflictChunk) {
-	switch c.Type {
-	case "unchanged", "added":
-		lc := chunkLineCount(c.Text)
-		c.LineCountA = lc
-		c.LineCountB = lc
-	case "conflict":
-		c.LineCountA = chunkLineCount(c.TextA)
-		c.LineCountB = chunkLineCount(c.TextB)
+	return FileMergeResult{
+		FilePath: filePath, FileAPath: pathA, FileBPath: pathB, OutputPath: outputPath,
+		Changed: len(mr.EntriesChanged), Added: len(mr.EntriesAdded),
+		EntriesChanged: mr.EntriesChanged, EntriesAdded: mr.EntriesAdded, ResolvedConflicts: mr.ResolvedConflicts,
 	}
 }
 
-// consolidateChunks merges consecutive unchanged/added chunks into single chunks,
-// reducing the number of Monaco editors needed in the UI.
+// consolidateChunks merges consecutive same-type non-conflict chunks into single chunks.
 func consolidateChunks(chunks []MergeConflictChunk) []MergeConflictChunk {
 	result := make([]MergeConflictChunk, 0, len(chunks))
 	for _, c := range chunks {
-		setChunkLineCounts(&c)
 		if len(result) > 0 {
 			last := &result[len(result)-1]
-			if (last.Type == "unchanged" || last.Type == "added") &&
-				(c.Type == "unchanged" || c.Type == "added") {
-				last.Text += c.Text
-				last.LineCountA += c.LineCountA
-				last.LineCountB += c.LineCountB
-				// keep type as "unchanged" if either chunk is unchanged
-				if c.Type == "unchanged" {
-					last.Type = "unchanged"
-				}
+			if last.Type == c.Type && c.Type == "unchanged" {
+				last.TextA += c.TextA
+				last.TextB += c.TextB
+				last.EndLineA = c.EndLineA
+				last.EndLineB = c.EndLineB
 				continue
 			}
 		}
@@ -418,86 +379,24 @@ func (m *MergeService) GetMergeConflicts(ctx context.Context, fileAPath, fileBPa
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-
-	entitiesA, _, err := parseFileObjects(fileAPath)
+	items, _, err := m.mergeFileItems(fileAPath, fileBPath, options)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing file A: %w", err)
+		return nil, err
 	}
-	entitiesB, _, err := parseFileObjects(fileBPath)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing file B: %w", err)
-	}
-
-	mapB := make(map[string]scriptObject)
-	for _, e := range entitiesB {
-		if e.Key != "" {
-			mapB[e.Key] = e
-		}
-	}
-
-	var chunks []MergeConflictChunk
-	processedKeysInB := make(map[string]bool)
-
-	for _, entA := range entitiesA {
-		if entA.Key == "" {
-			chunks = append(chunks, MergeConflictChunk{Type: "unchanged", Text: entA.RawText})
-			continue
-		}
-
-		key := entA.Key
-		entB, existsInB := mapB[key]
-
-		if existsInB {
-			processedKeysInB[key] = true
-			if !areSemanticallyEqual(entA.ValueText, entB.ValueText) {
-				chunks = append(chunks, MergeConflictChunk{Type: "conflict", Key: key, TextA: entA.RawText, TextB: entB.RawText})
-			} else {
-				chunks = append(chunks, MergeConflictChunk{Type: "unchanged", Text: entA.RawText})
-			}
-		} else {
-			chunks = append(chunks, MergeConflictChunk{Type: "unchanged", Text: entA.RawText})
-		}
-	}
-
-	if options.AddAdditionalEntries {
-		var newEntries []scriptObject
-		for _, entB := range entitiesB {
-			if entB.Key != "" && !processedKeysInB[entB.Key] {
-				newEntries = append(newEntries, entB)
-			}
-		}
-
-		if len(newEntries) > 0 {
-			chunks = append(chunks, MergeConflictChunk{Type: "unchanged", Text: "# Additional entries from B\n"})
-			for _, entB := range newEntries {
-				chunks = append(chunks, MergeConflictChunk{Type: "added", Text: entB.RawText})
-			}
-		}
-	}
-
-	return consolidateChunks(chunks), nil
+	return consolidateChunks(items), nil
 }
 
-func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB string, outputDir string, options MergerOptions) ([]PreviewItem, error) {
+func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB, outputDir string, opts MergerOptions) ([]PreviewItem, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	filter := buildCollectFilter(options)
-	filesA, err := m.FileService.CollectFilesFromPath(pathA, filter)
+	matches, err := m.collectAndMatch(pathA, pathB, opts)
 	if err != nil {
-		return nil, fmt.Errorf("error collecting files from set A: %w", err)
-	}
-	filesB, err := m.FileService.CollectFilesFromPath(pathB, filter)
-	if err != nil {
-		return nil, fmt.Errorf("error collecting files from set B: %w", err)
-	}
-	matches, err := m.FileService.FindMatchingPaths(filesA, filesB, options.MatchByFilenameOnly)
-	if err != nil {
-		return nil, fmt.Errorf("error finding matching paths: %w", err)
+		return nil, err
 	}
 	var items []PreviewItem
 	for relPath, match := range matches {
-		outPath := outputPathWithSuffix(outputDir, relPath, options.OutputFileSuffix)
+		outPath := outputPathWithSuffix(outputDir, relPath, opts.OutputFileSuffix)
 		_, overwrite := os.Stat(outPath)
 		items = append(items, PreviewItem{
 			RelPath:        relPath,
@@ -510,77 +409,24 @@ func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB string, ou
 	return items, nil
 }
 
-func (m *MergeService) MergeDirs(ctx context.Context, pathA, pathB string, outputDir string, options MergerOptions, onlyRelPaths []string) ([]FileMergeResult, error) {
-	// If the context is cancelled (from the frontend), return the error
+func (m *MergeService) MergeDirs(ctx context.Context, pathA, pathB, outputDir string, opts MergerOptions, onlyRelPaths []string) ([]FileMergeResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-
-	filter := buildCollectFilter(options)
-	filesA, err := m.FileService.CollectFilesFromPath(pathA, filter)
+	matches, err := m.collectAndMatch(pathA, pathB, opts)
 	if err != nil {
-		return nil, fmt.Errorf("error collecting files from set A: %w", err)
+		return nil, err
 	}
-	filesB, err := m.FileService.CollectFilesFromPath(pathB, filter)
-	if err != nil {
-		return nil, fmt.Errorf("error collecting files from set B: %w", err)
-	}
-	matches, err := m.FileService.FindMatchingPaths(filesA, filesB, options.MatchByFilenameOnly)
-	if err != nil {
-		return nil, fmt.Errorf("error finding matching paths: %w", err)
-	}
-
-	// If the context is cancelled (from the frontend), return the error
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	include := make(map[string]bool)
-	for _, r := range onlyRelPaths {
-		include[r] = true
-	}
-
 	var results []FileMergeResult
 	for relPath, match := range matches {
-		if len(onlyRelPaths) > 0 && !include[relPath] {
+		if len(onlyRelPaths) > 0 && !slices.Contains(onlyRelPaths, relPath) {
 			continue
 		}
-		// If the context is cancelled (from the frontend), return the error
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-
-		mergeResult, err := m.performMerge(match.PathA, match.PathB, options)
-		if err != nil {
-			results = append(results, FileMergeResult{
-				FilePath: relPath,
-				Error:    err.Error(),
-			})
-			continue
-		}
-		changed := len(mergeResult.EntriesChanged)
-		added := len(mergeResult.EntriesAdded)
-		removed := len(mergeResult.EntriesRemoved)
-		outPath := outputPathWithSuffix(outputDir, relPath, options.OutputFileSuffix)
-		if err := m.WriteMergedFile(outPath, mergeResult.Content); err != nil {
-			results = append(results, FileMergeResult{
-				FilePath: relPath,
-				Error:    err.Error(),
-			})
-			continue
-		}
-		results = append(results, FileMergeResult{
-			FilePath:          relPath,
-			FileAPath:         match.PathA,
-			FileBPath:         match.PathB,
-			OutputPath:        outPath,
-			Changed:           changed,
-			Added:             added,
-			Removed:           removed,
-			EntriesChanged:    mergeResult.EntriesChanged,
-			EntriesAdded:      mergeResult.EntriesAdded,
-			ResolvedConflicts: mergeResult.ResolvedConflicts,
-		})
+		outPath := outputPathWithSuffix(outputDir, relPath, opts.OutputFileSuffix)
+		results = append(results, m.mergeAndWrite(match.PathA, match.PathB, outPath, relPath, opts))
 	}
 	return results, nil
 }
@@ -592,8 +438,16 @@ type MergePair struct {
 	OutputName string `json:"outputName"` // e.g. "merged_events.txt"; empty = use PathA basename
 }
 
-// MergePairs merges explicitly paired files. outputDir is the base output directory.
-func (m *MergeService) MergePairs(ctx context.Context, pairs []MergePair, outputDir string, options MergerOptions) ([]FileMergeResult, error) {
+func outputPathForPair(outputDir string, pathA, outputName string) string {
+	out := outputName
+	if out == "" {
+		out = filepath.Base(pathA)
+	}
+	return filepath.Join(outputDir, strings.TrimSuffix(out, filepath.Ext(out))+".txt")
+}
+
+// MergePairs merges explicitly paired files.
+func (m *MergeService) MergePairs(ctx context.Context, pairs []MergePair, outputDir string, opts MergerOptions) ([]FileMergeResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -602,35 +456,8 @@ func (m *MergeService) MergePairs(ctx context.Context, pairs []MergePair, output
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		mergeResult, err := m.performMerge(p.PathA, p.PathB, options)
-		if err != nil {
-			results = append(results, FileMergeResult{FilePath: p.PathA, Error: err.Error()})
-			continue
-		}
-		outName := p.OutputName
-		if outName == "" {
-			outName = filepath.Base(p.PathA)
-		}
-		if filepath.Ext(outName) != ".txt" {
-			outName = outName + ".txt"
-		}
-		outPath := filepath.Join(outputDir, outName)
-		if err := m.WriteMergedFile(outPath, mergeResult.Content); err != nil {
-			results = append(results, FileMergeResult{FilePath: p.PathA, Error: err.Error()})
-			continue
-		}
-		results = append(results, FileMergeResult{
-			FilePath:          p.PathA,
-			FileAPath:         p.PathA,
-			FileBPath:         p.PathB,
-			OutputPath:        outPath,
-			Changed:           len(mergeResult.EntriesChanged),
-			Added:             len(mergeResult.EntriesAdded),
-			Removed:           len(mergeResult.EntriesRemoved),
-			EntriesChanged:    mergeResult.EntriesChanged,
-			EntriesAdded:      mergeResult.EntriesAdded,
-			ResolvedConflicts: mergeResult.ResolvedConflicts,
-		})
+		outPath := outputPathForPair(outputDir, p.PathA, p.OutputName)
+		results = append(results, m.mergeAndWrite(p.PathA, p.PathB, outPath, p.PathA, opts))
 	}
 	return results, nil
 }
@@ -666,43 +493,37 @@ func (m *MergeService) GenerateMergeReport(results []FileMergeResult, totalAdded
 	if labelB == "" {
 		labelB = "B"
 	}
+	sideLabel := map[string]string{"A": labelA, "B": labelB}
 	var b strings.Builder
-	b.WriteString("# Merge Report\n\n")
-	b.WriteString(fmt.Sprintf("**Summary:** %d files · +%d added · %d changed · -%d removed\n\n", len(results), totalAdded, totalChanged, totalRemoved))
+	fmt.Fprintf(&b, "# Merge Report\n\n**Summary:** %d files · +%d added · %d changed · -%d removed\n\n", len(results), totalAdded, totalChanged, totalRemoved)
 	for _, r := range results {
-		b.WriteString(fmt.Sprintf("## %s\n\n", r.FilePath))
+		fmt.Fprintf(&b, "## %s\n\n", r.FilePath)
 		if r.Error != "" {
-			b.WriteString(fmt.Sprintf("**Error:** %s\n\n", r.Error))
+			fmt.Fprintf(&b, "**Error:** %s\n\n", r.Error)
 			continue
 		}
-		b.WriteString(fmt.Sprintf("**Stats:** +%d added, %d changed, -%d removed\n\n", r.Added, r.Changed, r.Removed))
-
-		if len(r.EntriesAdded) > 0 {
-			b.WriteString("### Added\n")
-			for _, k := range r.EntriesAdded {
-				b.WriteString(fmt.Sprintf("- %s\n", k))
+		fmt.Fprintf(&b, "**Stats:** +%d added, %d changed\n\n", r.Added, r.Changed)
+		for _, sec := range []struct {
+			title string
+			items []string
+		}{{"Added", r.EntriesAdded}, {"Changed", r.EntriesChanged}} {
+			if len(sec.items) == 0 {
+				continue
+			}
+			b.WriteString("### " + sec.title + "\n")
+			for _, k := range sec.items {
+				b.WriteString("- " + k + "\n")
 			}
 			b.WriteString("\n")
 		}
-		if len(r.EntriesChanged) > 0 {
-			b.WriteString("### Changed\n")
-			for _, k := range r.EntriesChanged {
-				b.WriteString(fmt.Sprintf("- %s\n", k))
-			}
-			b.WriteString("\n")
-		}
-
 		if len(r.ResolvedConflicts) > 0 {
 			b.WriteString("### Resolved Conflicts\n")
 			for _, c := range r.ResolvedConflicts {
-				side := c.UsedSide
-				switch side {
-				case "A":
-					side = labelA
-				case "B":
-					side = labelB
+				side := sideLabel[c.UsedSide]
+				if side == "" {
+					side = c.UsedSide
 				}
-				b.WriteString(fmt.Sprintf("- **%s**: Used %s (%s)\n", c.Key, side, c.Reason))
+				fmt.Fprintf(&b, "- **%s**: Used %s (%s)\n", c.Key, side, c.Reason)
 			}
 			b.WriteString("\n")
 		}

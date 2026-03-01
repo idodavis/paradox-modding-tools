@@ -1,21 +1,15 @@
 <script lang="ts">
-  import {
-    Tabs,
-    Tab,
-    MergeTabVanilla,
-    MergeTabDirs,
-    MergeTabPairs,
-    MergeEditor,
-    MergeHelp,
-    MergeOptionsPanel,
-    MergeResults,
-  } from "@components";
-
+  import { Tabs, Tab, MergeTabContent, MergeEditor, MergeHelp, MergeOptionsPanel, MergeResults } from "@components";
   import { createMergeStore, setMergeStore } from "@stores/merge.svelte";
   import { game, helpOpen } from "@stores/app.svelte";
 
   const store = createMergeStore();
   setMergeStore(store);
+  const MERGE_MODES = [
+    { id: "vanilla" as const, label: "Vanilla vs mod" },
+    { id: "dirs" as const, label: "Two Directories" },
+    { id: "pairs" as const, label: "File Pairs" },
+  ];
 
   $effect(() => {
     $game;
@@ -28,40 +22,24 @@
   <MergeOptionsPanel />
 
   {#if store.errorMsg}
-    <div
-      class="mb-4 p-3 rounded-lg bg-error/20 text-error text-sm border border-error/30"
-    >
+    <div class="mb-4 p-3 rounded-lg bg-error/20 text-error text-sm border border-error/30">
       {store.errorMsg}
     </div>
   {/if}
 
   <h3 class="text-sm font-semibold text-base-content/90 mb-3">Choose mode</h3>
   <Tabs class="tabs-border tabs-xl">
-    <Tab
-      tabGroup="merge-mode"
-      label="Vanilla vs mod"
-      selected
-      contentClass="bg-base-300 border-base-300 p-6"
-      onclick={() => (store.activeTab = "vanilla")}
-    >
-      <MergeTabVanilla />
-    </Tab>
-    <Tab
-      tabGroup="merge-mode"
-      label="Two Directories"
-      contentClass="bg-base-300 border-base-300 p-6"
-      onclick={() => (store.activeTab = "dirs")}
-    >
-      <MergeTabDirs />
-    </Tab>
-    <Tab
-      tabGroup="merge-mode"
-      label="File Pairs"
-      contentClass="bg-base-300 border-base-300 p-6"
-      onclick={() => (store.activeTab = "pairs")}
-    >
-      <MergeTabPairs />
-    </Tab>
+    {#each MERGE_MODES as m}
+      <Tab
+        tabGroup="merge-mode"
+        label={m.label}
+        selected={store.activeTab === m.id}
+        contentClass="bg-base-300 border-base-300 p-6"
+        onclick={() => (store.activeTab = m.id)}
+      >
+        <MergeTabContent mode={m.id} />
+      </Tab>
+    {/each}
   </Tabs>
 
   {#if store.mergeResults.length > 0}
@@ -74,11 +52,10 @@
     fileAPath={store.currentManualFile.pathA}
     fileBPath={store.currentManualFile.pathB}
     relPath={store.currentManualFile.relPath}
-    options={store.options}
-    onSave={(
-      c: string,
-      s: { changed: number; added: number; removed: number },
-    ) => store.onManualSave(c, s)}
-    onSkip={() => store.onManualSkip()}
+    chunks={store.currentManualFile.chunks}
+    onSave={(c, s) => store.manualSave(c, s)}
+    onAutoMerge={() => store.autoMergeCurrentFile()}
+    onSkip={() => store.manualNext()}
+    onCancel={() => store.cancelManualMerge()}
   />
 {/if}

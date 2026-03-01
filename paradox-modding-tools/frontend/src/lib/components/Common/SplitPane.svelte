@@ -2,107 +2,119 @@
   import type { Snippet } from "svelte";
 
   let {
-    left,
-    right,
-    rightOpen = true,
-    defaultRightSize = 600,
-    fixedSide = "right",
+    first,
+    second,
+    secondOpen = true,
+    defaultSecondSize = 600,
+    fixedSide = "second",
+    orientation = "horizontal",
     class: className = "",
   }: {
-    left: Snippet;
-    right: Snippet;
-    rightOpen?: boolean;
-    defaultRightSize?: number;
-    fixedSide?: "left" | "right";
+    first: Snippet;
+    second: Snippet;
+    secondOpen?: boolean;
+    defaultSecondSize?: number;
+    fixedSide?: "first" | "second";
+    orientation?: "horizontal" | "vertical";
     class?: string;
   } = $props();
 
   let fixedSize = $state<number | undefined>(undefined);
-  const currentSize = $derived(fixedSize ?? defaultRightSize);
-  let dragStart = $state<{ x: number; startSize: number } | null>(null);
+  const currentSize = $derived(fixedSize ?? defaultSecondSize);
+  let dragStart = $state<{ pos: number; startSize: number } | null>(null);
+
+  const isHorizontal = $derived(orientation === "horizontal");
 
   function onResizePointerDown(e: PointerEvent) {
     e.preventDefault();
-    dragStart = { x: e.clientX, startSize: currentSize };
+    dragStart = { pos: isHorizontal ? e.clientX : e.clientY, startSize: currentSize };
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   }
 
   function onResizePointerMove(e: PointerEvent) {
     if (!dragStart) return;
-    // fixedSide="right": moving handle left grows the right panel
-    // fixedSide="left":  moving handle right grows the left panel
-    const delta =
-      fixedSide === "left" ? e.clientX - dragStart.x : dragStart.x - e.clientX;
-    const maxSize = window.innerWidth * 0.8;
+    const current = isHorizontal ? e.clientX : e.clientY;
+    const maxDim = isHorizontal ? window.innerWidth : window.innerHeight;
+    const delta = fixedSide === "first" ? current - dragStart.pos : dragStart.pos - current;
+    const maxSize = maxDim * 0.8;
     fixedSize = Math.max(200, Math.min(maxSize, dragStart.startSize + delta));
   }
 
   function onResizePointerUp(e: PointerEvent) {
-    if (dragStart)
-      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    if (dragStart) (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
     dragStart = null;
   }
 
-  const handleMarkup = `w-2 shrink-0 cursor-col-resize touch-none bg-base-300 hover:bg-primary/30 transition-colors flex items-center justify-center select-none`;
+  const handleClass = $derived(
+    isHorizontal
+      ? "w-2 shrink-0 cursor-col-resize touch-none bg-base-300 hover:bg-primary/30 transition-colors flex items-center justify-center select-none"
+      : "h-2 shrink-0 cursor-row-resize touch-none bg-base-300 hover:bg-primary/30 transition-colors flex items-center justify-center select-none",
+  );
+
+  const handlePip = $derived(
+    isHorizontal
+      ? "w-0.5 h-8 rounded-full bg-base-content/25"
+      : "h-0.5 w-8 rounded-full bg-base-content/25",
+  );
+
+  const fixedStyle = $derived(
+    isHorizontal
+      ? `width: ${currentSize}px; max-width: calc(100% - 200px)`
+      : `height: ${currentSize}px; max-height: calc(100% - 200px)`,
+  );
 </script>
 
 <div
-  class="flex min-h-0 w-full overflow-hidden rounded-lg border border-base-content/20 {className}"
+  class="{isHorizontal ? 'flex' : 'flex flex-col'} min-h-0 w-full overflow-hidden rounded-lg border border-base-content/20 {className}"
 >
-  {#if fixedSide === "left"}
-    <!-- Fixed-width left panel -->
+  {#if fixedSide === "first"}
     <div
-      class="shrink-0 min-h-0 overflow-hidden flex flex-col"
-      style="width: {currentSize}px; max-width: calc(100% - 200px)"
+      class="shrink-0 min-h-0 overflow-hidden flex flex-col {isHorizontal ? '' : 'min-w-0'}"
+      style={fixedStyle}
     >
-      {@render left()}
+      {@render first()}
     </div>
 
-    {#if rightOpen}
-      <!-- Drag handle -->
+    {#if secondOpen}
       <div
-        class={handleMarkup}
+        class={handleClass}
         role="separator"
         aria-label="Drag to resize"
-        aria-orientation="vertical"
+        aria-orientation={isHorizontal ? "vertical" : "horizontal"}
         onpointerdown={onResizePointerDown}
         onpointermove={onResizePointerMove}
         onpointerup={onResizePointerUp}
       >
-        <div class="w-0.5 h-8 rounded-full bg-base-content/25"></div>
+        <div class={handlePip}></div>
       </div>
 
-      <!-- Fluid right panel -->
       <div class="min-w-0 flex-1 min-h-0 overflow-hidden">
-        {@render right()}
+        {@render second()}
       </div>
     {/if}
   {:else}
-    <!-- Fluid left panel -->
     <div class="min-w-0 flex-1 min-h-0 overflow-hidden">
-      {@render left()}
+      {@render first()}
     </div>
 
-    {#if rightOpen}
-      <!-- Drag handle -->
+    {#if secondOpen}
       <div
-        class={handleMarkup}
+        class={handleClass}
         role="separator"
         aria-label="Drag to resize"
-        aria-orientation="vertical"
+        aria-orientation={isHorizontal ? "vertical" : "horizontal"}
         onpointerdown={onResizePointerDown}
         onpointermove={onResizePointerMove}
         onpointerup={onResizePointerUp}
       >
-        <div class="w-0.5 h-8 rounded-full bg-base-content/25"></div>
+        <div class={handlePip}></div>
       </div>
 
-      <!-- Fixed-width right panel -->
       <div
-        class="shrink-0 min-h-0 overflow-hidden flex flex-col"
-        style="width: {currentSize}px; max-width: calc(100% - 200px)"
+        class="shrink-0 min-h-0 overflow-hidden flex flex-col {isHorizontal ? '' : 'min-w-0'}"
+        style={fixedStyle}
       >
-        {@render right()}
+        {@render second()}
       </div>
     {/if}
   {/if}

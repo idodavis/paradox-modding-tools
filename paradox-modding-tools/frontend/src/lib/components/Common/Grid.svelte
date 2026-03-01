@@ -26,8 +26,7 @@
   } = $props();
 
   const gridContainerClass = $derived(
-    "rounded-lg border border-base-content/20 bg-base-100 overflow-hidden " +
-      (className || ""),
+    "rounded-lg border border-base-content/20 bg-base-100 overflow-hidden " + (className || ""),
   );
 
   // Create a custom dark theme aligned with DaisyUI base colors

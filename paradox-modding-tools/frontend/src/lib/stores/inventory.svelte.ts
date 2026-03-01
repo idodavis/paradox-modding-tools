@@ -2,7 +2,15 @@ import { getContext, setContext } from "svelte";
 import { game } from "@stores/app.svelte";
 import { get } from "svelte/store";
 import { InventorySummary, InventoryItemRow } from "@services/models";
-import { GetSupportedTypes, ListInventoriesForGame, ExtractInventory, GetInventoryItems, SaveInventory, RenameInventory, DeleteInventory} from "@services/inventoryservice";
+import {
+  GetSupportedTypes,
+  ListInventoriesForGame,
+  ExtractInventory,
+  GetInventoryItems,
+  SaveInventory,
+  RenameInventory,
+  DeleteInventory,
+} from "@services/inventoryservice";
 
 const INVENTORY_STORE_KEY = Symbol("INVENTORY_STORE");
 
@@ -11,21 +19,21 @@ export class InventoryStore {
   file = $state<string>("");
   selectedTypes = $state<string[]>([]);
   supportedTypes = $state<string[]>([]);
-  
+
   hasExtraction = $state(false);
   loading = $state(false);
   extractionErrors = $state<string[]>([]);
-  
+
   allItems = $state<InventoryItemRow[]>([]);
   currentInventoryId = $state<string | null>(null);
   currentInventoryGame = $state<string | null>(null);
-  
+
   selectedRow = $state<InventoryItemRow | null>(null);
   savedInventories = $state<InventorySummary[]>([]);
   isCurrentTemp = $state(false);
-  
+
   itemDetailsOpen = $state(false);
-  
+
   nameModal = $state<{
     open: boolean;
     mode: "save" | "rename";
@@ -56,13 +64,10 @@ export class InventoryStore {
 
   async refresh() {
     const g = get(game);
-    const [types, list] = await Promise.all([
-      GetSupportedTypes(g),
-      ListInventoriesForGame(g),
-    ]);
+    const [types, list] = await Promise.all([GetSupportedTypes(g), ListInventoriesForGame(g)]);
     this.supportedTypes = types ?? [];
     this.savedInventories = list ?? [];
-    
+
     // Clear if game changed and we have an active inventory from another game
     if (this.currentInventoryId && this.currentInventoryGame !== null && this.currentInventoryGame !== g) {
       this.clearAll();
@@ -74,17 +79,13 @@ export class InventoryStore {
     this.loading = true;
     this.clearAll();
     const g = get(game);
-    
+
     try {
       // Unwrap proxies to ensure Wails can marshal them correctly
       const filesArg = $state.snapshot(this.file);
       const typesArg = $state.snapshot(this.selectedTypes);
-      
-      this.extractionPromise = ExtractInventory(
-        g,
-        filesArg,
-        typesArg,
-      );
+
+      this.extractionPromise = ExtractInventory(g, filesArg, typesArg);
       const inventoryId = (await this.extractionPromise) as string | null;
       if (inventoryId) {
         this.currentInventoryId = inventoryId;
@@ -145,7 +146,7 @@ export class InventoryStore {
       invId: this.currentInventoryId ?? inv?.id ?? null,
     };
   }
-  
+
   cancelExtraction() {
     if (this.extractionPromise?.cancel) {
       this.extractionPromise.cancel();

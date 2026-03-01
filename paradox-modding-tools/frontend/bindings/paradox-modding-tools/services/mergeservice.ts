@@ -30,23 +30,23 @@ export function GetMergeConflicts(fileAPath: string, fileBPath: string, options:
     });
 }
 
-export function MergeDirs(pathA: string, pathB: string, outputDir: string, options: $models.MergerOptions, onlyRelPaths: string[]): $CancellablePromise<$models.FileMergeResult[]> {
-    return $Call.ByID(303028829, pathA, pathB, outputDir, options, onlyRelPaths).then(($result: any) => {
+export function MergeDirs(pathA: string, pathB: string, outputDir: string, opts: $models.MergerOptions, onlyRelPaths: string[]): $CancellablePromise<$models.FileMergeResult[]> {
+    return $Call.ByID(303028829, pathA, pathB, outputDir, opts, onlyRelPaths).then(($result: any) => {
         return $$createType3($result);
     });
 }
 
 /**
- * MergePairs merges explicitly paired files. outputDir is the base output directory.
+ * MergePairs merges explicitly paired files.
  */
-export function MergePairs(pairs: $models.MergePair[], outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[]> {
-    return $Call.ByID(2960739598, pairs, outputDir, options).then(($result: any) => {
+export function MergePairs(pairs: $models.MergePair[], outputDir: string, opts: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[]> {
+    return $Call.ByID(2960739598, pairs, outputDir, opts).then(($result: any) => {
         return $$createType3($result);
     });
 }
 
-export function MergePreview(pathA: string, pathB: string, outputDir: string, options: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[]> {
-    return $Call.ByID(2633360575, pathA, pathB, outputDir, options).then(($result: any) => {
+export function MergePreview(pathA: string, pathB: string, outputDir: string, opts: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[]> {
+    return $Call.ByID(2633360575, pathA, pathB, outputDir, opts).then(($result: any) => {
         return $$createType5($result);
     });
 }
@@ -61,7 +61,7 @@ export function ValidateMergedFiles(paths: string[]): $CancellablePromise<$model
 }
 
 /**
- * WriteMergedFile writes content to outputPath as UTF-8 with BOM (no dialog). For merge editor save.
+ * WriteMergedFile writes content to outputPath as UTF-8 with BOM.
  */
 export function WriteMergedFile(outputPath: string, content: string): $CancellablePromise<void> {
     return $Call.ByID(98673460, outputPath, content);

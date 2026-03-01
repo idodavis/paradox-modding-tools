@@ -5,13 +5,12 @@
  *   Types/constants  – MonacoApi, MonacoEditor, MonacoModel, CODE_THEMES, CODE_LANGUAGES …
  *   Stores           – codeTheme, codeLanguage
  *   Lifecycle ctx    – EditorCtx, DiffCtx (reactive classes, instantiate in component script)
- *   Helpers          – setLang, disposeMany, wireSyncedScroll
  *   Reactive reads   – monacoActive.lang / monacoActive.theme ($state object, mirrors stores)
  */
 
+import { untrack } from "svelte";
 import { init } from "modern-monaco";
-import { writable } from "svelte/store";
-import { get } from "svelte/store";
+import { writable, get } from "svelte/store";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,9 +18,7 @@ export type MonacoApi = Awaited<ReturnType<typeof init>>;
 export type MonacoEditor = ReturnType<MonacoApi["editor"]["create"]>;
 export type MonacoModel = ReturnType<MonacoApi["editor"]["createModel"]>;
 export type MonacoEditorOptions = Parameters<MonacoApi["editor"]["create"]>[1];
-export type MonacoDiffEditorOptions = Parameters<
-  MonacoApi["editor"]["createDiffEditor"]
->[1];
+export type MonacoDiffEditorOptions = Parameters<MonacoApi["editor"]["createDiffEditor"]>[1];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -128,59 +125,11 @@ export function getBaseDiffEditorOptions(): MonacoDiffEditorOptions {
     automaticLayout: true,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
-    padding: { top: 16, bottom: 16 },
+    padding: { top: 4, bottom: 4 },
   };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-export function setLang(
-  monaco: MonacoApi,
-  lang: string,
-  ...models: Array<MonacoModel | null>
-) {
-  for (const m of models)
-    if (m) (monaco as any).editor.setModelLanguage(m, lang);
-}
-
-export function disposeMany(
-  ...items: Array<{ dispose?: () => void } | null | undefined>
-) {
-  for (const item of items) item?.dispose?.();
-}
-
-export function wireSyncedScroll(
-  editors: MonacoEditor[],
-  onAnyScroll?: () => void,
-): () => void {
-  let syncing = false;
-  const ds = editors.map((src) =>
-    src.onDidScrollChange(() => {
-      if (syncing) {
-        onAnyScroll?.();
-        return;
-      }
-      syncing = true;
-      const top = src.getScrollTop();
-      const left = src.getScrollLeft();
-      for (const t of editors) {
-        if (t === src) continue;
-        t.setScrollTop(top);
-        t.setScrollLeft(left);
-      }
-      syncing = false;
-      onAnyScroll?.();
-    }),
-  );
-  return () => disposeMany(...ds);
-}
-
-function upsertModel(
-  monaco: MonacoApi,
-  current: MonacoModel | null,
-  value: string,
-  lang: string,
-): MonacoModel {
+function upsertModel(monaco: MonacoApi, current: MonacoModel | null, value: string, lang: string): MonacoModel {
   if (!current) return monaco.editor.createModel(value, lang);
   if (current.getLanguageId() !== lang) {
     current.dispose();
@@ -197,13 +146,16 @@ export class EditorCtx {
   editor = $state<MonacoEditor | null>(null);
   model = $state<MonacoModel | null>(null);
   host = $state<HTMLElement | null>(null);
+  firstLineNumber = $state(1);
+  /** True while setValue is running — lets consumers ignore onDidChangeContent */
+  programmatic = false;
 
   private stopLoad: () => void;
   private ownedModel = false;
   private _value = $state("");
   private _lang = $state<string | undefined>(undefined);
   private extraOptions: any;
-  readonly readOnly: boolean;
+  readOnly = $state(true);
 
   constructor(opts: { readOnly?: boolean; options?: any } = {}) {
     this.readOnly = opts.readOnly ?? true;
@@ -211,13 +163,23 @@ export class EditorCtx {
     this.stopLoad = loadMonaco((m) => (this.monaco = m));
 
     $effect(() => {
-      if (!this.monaco || !this.host || this.editor) return;
-      this.editor = this.monaco.editor.create(this.host, {
+      const host = this.host;
+      const monaco = this.monaco;
+      if (!monaco || !host) return;
+      const ro = untrack(() => this.readOnly);
+      const ed = monaco.editor.create(host, {
         ...getBaseEditorOptions(),
         ...this.extraOptions,
-        readOnly: this.readOnly,
-        model: this.model ?? undefined,
+        readOnly: ro,
       } as any);
+      this.editor = ed;
+      return () => {
+        ed.dispose();
+      };
+    });
+
+    $effect(() => {
+      if (this.editor) this.editor.updateOptions({ readOnly: this.readOnly });
     });
 
     $effect(() => {
@@ -225,10 +187,20 @@ export class EditorCtx {
     });
 
     $effect(() => {
-      if (!this.monaco || !this._value) return;
+      if (!this.monaco || this._value == null) return;
       const l = this._lang ?? monacoActive.lang;
       this.ownedModel = true;
+      this.programmatic = true;
       this.model = upsertModel(this.monaco, this.model, this._value, l);
+      this.programmatic = false;
+    });
+
+    $effect(() => {
+      if (!this.editor) return;
+      const fln = this.firstLineNumber;
+      this.editor.updateOptions({
+        lineNumbers: fln > 1 ? (n: number) => String(n + fln - 1) : "on",
+      } as any);
     });
 
     $effect(() => {
@@ -257,6 +229,8 @@ export class DiffCtx {
   modifiedModel = $state<MonacoModel | null>(null);
   host = $state<HTMLElement | null>(null);
   renderSideBySide = $state(true);
+  origFirstLine = $state(1);
+  modFirstLine = $state(1);
 
   private stopLoad: () => void;
   private _orig = $state("");
@@ -270,12 +244,19 @@ export class DiffCtx {
     this.stopLoad = loadMonaco((m) => (this.monaco = m));
 
     $effect(() => {
-      if (!this.monaco || !this.host || this.diffEditor) return;
-      this.diffEditor = this.monaco.editor.createDiffEditor(this.host, {
+      const host = this.host;
+      const monaco = this.monaco;
+      if (!monaco || !host) return;
+      const sbs = untrack(() => this.renderSideBySide);
+      const ed = monaco.editor.createDiffEditor(host, {
         ...getBaseDiffEditorOptions(),
-        renderSideBySide: this.renderSideBySide,
+        renderSideBySide: sbs,
         ...this.extraOptions,
       } as any);
+      this.diffEditor = ed;
+      return () => {
+        ed.dispose();
+      };
     });
 
     $effect(() => {
@@ -286,25 +267,28 @@ export class DiffCtx {
     });
 
     $effect(() => {
-      if (!this.monaco || !this._orig) return;
-      const l = this._lang ?? monacoActive.lang;
-      this.originalModel = upsertModel(
-        this.monaco,
-        this.originalModel,
-        this._orig,
-        l,
-      );
-      this.modifiedModel = upsertModel(
-        this.monaco,
-        this.modifiedModel,
-        this._mod,
-        l,
-      );
+      if (!this.diffEditor) return;
+      const origFln = this.origFirstLine;
+      const modFln = this.modFirstLine;
+      const orig = this.diffEditor.getOriginalEditor?.();
+      const mod = this.diffEditor.getModifiedEditor?.();
+      orig?.updateOptions({
+        lineNumbers: origFln > 1 ? (n: number) => String(n + origFln - 1) : "on",
+      } as any);
+      mod?.updateOptions({
+        lineNumbers: modFln > 1 ? (n: number) => String(n + modFln - 1) : "on",
+      } as any);
     });
 
     $effect(() => {
-      if (!this.diffEditor || !this.originalModel || !this.modifiedModel)
-        return;
+      if (!this.monaco || this._orig == null) return;
+      const l = this._lang ?? monacoActive.lang;
+      this.originalModel = upsertModel(this.monaco, this.originalModel, this._orig, l);
+      this.modifiedModel = upsertModel(this.monaco, this.modifiedModel, this._mod, l);
+    });
+
+    $effect(() => {
+      if (!this.diffEditor || !this.originalModel || !this.modifiedModel) return;
       this.diffEditor.setModel({
         original: this.originalModel,
         modified: this.modifiedModel,

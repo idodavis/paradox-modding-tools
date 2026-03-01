@@ -1,19 +1,7 @@
 <script lang="ts">
-  import {
-    Card,
-    CardBody,
-    FileSelector,
-    Grid,
-    Drawer,
-    MultiSelect,
-  } from "@components";
+  import { Card, CardBody, FileSelector, Grid, Drawer, MultiSelect } from "@components";
   import { game, helpOpen } from "@stores/app.svelte";
-  import {
-    ItemDetails,
-    InventoryCard,
-    InventoryNameModal,
-    InventoryHelp,
-  } from "@components";
+  import { ItemDetails, InventoryCard, InventoryNameModal, InventoryHelp } from "@components";
   import { inventoryStore, setInventoryStore } from "@stores/inventory.svelte";
 
   const store = inventoryStore;
@@ -43,8 +31,7 @@
     {
       field: "lines",
       headerName: "Lines",
-      valueGetter: (p: { data?: any }) =>
-        `${p.data?.lineStart ?? 0} - ${p.data?.lineEnd ?? 0}`,
+      valueGetter: (p: { data?: any }) => `${p.data?.lineStart ?? 0} - ${p.data?.lineEnd ?? 0}`,
       filter: false,
       sortable: false,
       flex: 1,
@@ -81,9 +68,7 @@
             onPathChange={(p) => (store.file = p)}
           />
           <div>
-            <span class="label text-base-content/90 mb-1 block font-medium"
-              >Object types</span
-            >
+            <span class="label text-base-content/90 mb-1 block font-medium">Object types</span>
             <div class="flex flex-wrap items-center gap-2">
               <MultiSelect
                 items={store.supportedTypes}
@@ -98,8 +83,7 @@
                   type="button"
                   class="join-item btn btn-soft btn-sm"
                   disabled={store.typesDisabled}
-                  onclick={() => (store.selectedTypes = store.supportedTypes)}
-                  >All</button
+                  onclick={() => (store.selectedTypes = store.supportedTypes)}>All</button
                 >
                 <button
                   type="button"
@@ -120,16 +104,10 @@
             class="flex flex-col min-w-0 overflow-hidden bg-base-200/50 rounded-xl border border-base-content/10 p-3"
           >
             <div class="flex justify-between items-center mb-2 px-1">
-              <span class="text-sm font-semibold text-base-content/80"
-                >Saved Inventories</span
-              >
-              <span class="badge badge-sm badge-neutral"
-                >{store.savedInventories.length}</span
-              >
+              <span class="text-sm font-semibold text-base-content/80">Saved Inventories</span>
+              <span class="badge badge-sm badge-neutral">{store.savedInventories.length}</span>
             </div>
-            <div
-              class="flex flex-row gap-3 overflow-x-auto pb-2 custom-scrollbar"
-            >
+            <div class="flex flex-row gap-3 overflow-x-auto pb-2 custom-scrollbar">
               {#each store.savedInventories as inv}
                 <div class="w-72 flex-none">
                   <InventoryCard
@@ -146,14 +124,10 @@
         {/if}
       </div>
 
-      <div
-        class="flex flex-wrap gap-2 mt-6 pt-4 border-t border-base-content/10"
-      >
+      <div class="flex flex-wrap gap-2 mt-6 pt-4 border-t border-base-content/10">
         <button
           type="button"
-          class="btn {store.loading
-            ? 'btn-soft btn-error'
-            : 'btn-primary'} min-w-[120px]"
+          class="btn {store.loading ? 'btn-soft btn-error' : 'btn-primary'} min-w-[120px]"
           disabled={store.loading ? false : store.extractDisabled}
           onclick={store.loading
             ? () => {
@@ -176,9 +150,7 @@
   <div class="min-w-0">
     {#if store.extractionErrors.length > 0}
       <div class="alert alert-warning mb-4">
-        <span class="font-medium"
-          >Errors ({store.extractionErrors.length}):</span
-        >
+        <span class="font-medium">Errors ({store.extractionErrors.length}):</span>
         <ul class="list-disc pl-5 text-sm max-h-24 overflow-auto">
           {#each store.extractionErrors as err}<li>{err}</li>{/each}
         </ul>
@@ -191,15 +163,13 @@
           <div
             class="mb-3 flex items-center justify-between bg-base-200/50 p-2 rounded-lg border border-base-content/5"
           >
-            <span class="text-sm font-medium text-base-content/80 ml-2"
-              >{store.allItems.length.toLocaleString()} items found</span
-            >
+            <span class="text-sm font-medium text-base-content/80 ml-2">
+              {store.allItems.length.toLocaleString()} items found
+            </span>
             {#if store.isCurrentTemp}
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                onclick={() => store.openModal("save")}>Save Inventory</button
-              >
+              <button type="button" class="btn btn-primary btn-sm" onclick={() => store.openModal("save")}>
+                Save Inventory
+              </button>
             {/if}
           </div>
           <Grid
@@ -220,28 +190,17 @@
         </CardBody>
       </Card>
     {:else}
-      <div
-        class="flex items-center justify-center py-16 text-center text-base-content/60"
-      >
+      <div class="flex items-center justify-center py-16 text-center text-base-content/60">
         <p>No inventory. Select path and types, then Extract.</p>
       </div>
     {/if}
   </div>
 </div>
 
-<Drawer
-  bind:open={store.itemDetailsOpen}
-  side="right"
-  defaultSize={580}
-  contentClass="max-w-[90vw] shadow-2xl"
->
+<Drawer bind:open={store.itemDetailsOpen} side="right" defaultSize={580} contentClass="max-w-[90vw] shadow-2xl">
   {#snippet titleSnippet()}Item Details{/snippet}
   {#snippet closeSnippet()}
-    <button
-      type="button"
-      class="btn btn-sm btn-ghost"
-      onclick={() => (store.itemDetailsOpen = false)}>Close</button
-    >
+    <button type="button" class="btn btn-sm btn-ghost" onclick={() => (store.itemDetailsOpen = false)}>Close</button>
   {/snippet}
   <ItemDetails
     inventoryId={store.currentInventoryId}

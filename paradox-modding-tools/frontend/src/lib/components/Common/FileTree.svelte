@@ -47,30 +47,19 @@
     {#if node.children.length > 0}
       <li class="overflow-visible">
         <details class="overflow-visible">
-          <summary class="overflow-visible"
-            ><Icon
-              icon="mdi:folder"
-              class="h-4 w-4 {folderColor}"
-            />{node.name}</summary
-          >
+          <summary class="overflow-visible">
+            <Icon icon="mdi:folder" class="h-4 w-4 {folderColor}" />
+            {node.name}
+          </summary>
           <ul class="pl-4 overflow-visible">
-            <Self
-              tree={node.children}
-              {filter}
-              {folderColor}
-              {fileColor}
-              {onFileClick}
-            />
+            <Self tree={node.children} {filter} {folderColor} {fileColor} {onFileClick} />
           </ul>
         </details>
       </li>
     {:else}
       <li>
         <button onclick={() => onFileClick?.(node)}
-          ><Icon
-            icon="mdi:file"
-            class="h-4 w-4 {fileColor}"
-          />{node.name}</button
+          ><Icon icon="mdi:file" class="h-4 w-4 {fileColor}" />{node.name}</button
         >
       </li>
     {/if}

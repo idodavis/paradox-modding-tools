@@ -23,25 +23,14 @@
   }
 </script>
 
-<div
-  class="mt-4 border border-base-content/20 rounded-lg overflow-hidden bg-base-100"
->
-  <div
-    class="bg-base-200/50 px-3 py-2 flex items-center justify-between border-b border-base-content/10"
-  >
+<div class="mt-4 border border-base-content/20 rounded-lg overflow-hidden bg-base-100">
+  <div class="bg-base-200/50 px-3 py-2 flex items-center justify-between border-b border-base-content/10">
     <div class="text-sm font-medium">
-      Merge Preview <span class="opacity-60">({previewItems.length} files)</span
-      >
+      Merge Preview <span class="opacity-60">({previewItems.length} files)</span>
     </div>
     <div class="join">
-      <button
-        class="btn btn-xs join-item btn-soft"
-        onclick={() => selectAllPreview(true)}>Select All</button
-      >
-      <button
-        class="btn btn-xs join-item btn-soft"
-        onclick={() => selectAllPreview(false)}>None</button
-      >
+      <button class="btn btn-xs join-item btn-soft" onclick={() => selectAllPreview(true)}>Select All</button>
+      <button class="btn btn-xs join-item btn-soft" onclick={() => selectAllPreview(false)}>None</button>
     </div>
   </div>
   <div class="max-h-60 overflow-y-auto">
@@ -52,15 +41,9 @@
             <input
               type="checkbox"
               class="checkbox checkbox-xs"
-              checked={previewItems.every(
-                (p: PreviewItem) => selectedRelPaths[p.relPath] !== false,
-              )}
-              indeterminate={previewItems.some(
-                (p: PreviewItem) => selectedRelPaths[p.relPath] === false,
-              ) &&
-                previewItems.some(
-                  (p: PreviewItem) => selectedRelPaths[p.relPath] !== false,
-                )}
+              checked={previewItems.every((p: PreviewItem) => selectedRelPaths[p.relPath] !== false)}
+              indeterminate={previewItems.some((p: PreviewItem) => selectedRelPaths[p.relPath] === false) &&
+                previewItems.some((p: PreviewItem) => selectedRelPaths[p.relPath] !== false)}
               onclick={(e) => selectAllPreview(e.currentTarget.checked)}
             />
           </th>
@@ -74,10 +57,7 @@
             class="hover:bg-base-200/30 cursor-pointer"
             onclick={(e) => {
               if ((e.target as HTMLElement).tagName !== "INPUT") {
-                setPreviewSelected(
-                  item.relPath,
-                  selectedRelPaths[item.relPath] === false,
-                );
+                setPreviewSelected(item.relPath, selectedRelPaths[item.relPath] === false);
               }
             }}
           >
@@ -86,8 +66,7 @@
                 type="checkbox"
                 class="checkbox checkbox-xs"
                 checked={selectedRelPaths[item.relPath] !== false}
-                onchange={(e) =>
-                  setPreviewSelected(item.relPath, e.currentTarget.checked)}
+                onchange={(e) => setPreviewSelected(item.relPath, e.currentTarget.checked)}
               />
             </td>
             <td class="font-mono text-xs">{item.relPath}</td>
@@ -95,9 +74,7 @@
               {#if item.wouldOverwrite}
                 <span class="badge badge-warning badge-xs">Overwrite</span>
               {:else}
-                <span class="badge badge-success badge-outline badge-xs"
-                  >New</span
-                >
+                <span class="badge badge-success badge-outline badge-xs">New</span>
               {/if}
             </td>
           </tr>

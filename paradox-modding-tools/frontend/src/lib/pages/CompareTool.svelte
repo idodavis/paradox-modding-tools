@@ -1,15 +1,5 @@
 <script lang="ts">
-  import {
-    Tabs,
-    Tab,
-    Card,
-    CardBody,
-    FileSelector,
-    Grid,
-    SplitPane,
-    DiffPaneContent,
-    Dialog,
-  } from "@components";
+  import { Tabs, Tab, Card, CardBody, FileSelector, Grid, SplitPane, DiffPaneContent, Dialog } from "@components";
   import { game, gameInstallPath } from "@stores/app.svelte";
   import { VanillaCompare, DirectoryCompare } from "@services/compareservice";
   import type { PathMatch } from "@services/models";
@@ -59,22 +49,13 @@
         ...match,
       })) as MatchRow[],
   );
-  const selectedRow = $derived(
-    selectedIndex !== null ? (rows[selectedIndex] ?? null) : null,
-  );
-  const columns = [
-    { field: "relativePath", headerName: "Relative path", flex: 1 },
-  ];
+  const selectedRow = $derived(selectedIndex !== null ? (rows[selectedIndex] ?? null) : null);
+  const columns = [{ field: "relativePath", headerName: "Relative path", flex: 1 }];
 </script>
 
 <div class="p-4">
   <Tabs class="tabs-border tabs-xl">
-    <Tab
-      tabGroup="compare-mode"
-      label="Vanilla vs Mod"
-      selected
-      contentClass="bg-base-300 border-base-300 p-6 "
-    >
+    <Tab tabGroup="compare-mode" label="Vanilla vs Mod" selected contentClass="bg-base-300 border-base-300 p-6 ">
       <Card>
         <CardBody>
           <p class="text-base text-base-content/90 mb-4">
@@ -82,9 +63,7 @@
           </p>
           <div class="mb-4">
             <fieldset class="fieldset mb-4">
-              <legend class="fieldset-legend text-base-content/90"
-                >Vanilla (A):</legend
-              >
+              <legend class="fieldset-legend text-base-content/90">Vanilla (A):</legend>
               <input
                 type="text"
                 class="input w-full max-w-2xl"
@@ -110,9 +89,7 @@
               onPathChange={(p) => (modPath = p ?? "")}
             />
           </div>
-          <div
-            class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10"
-          >
+          <div class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10">
             <button
               type="button"
               class="btn btn-soft btn-wide btn-primary"
@@ -130,16 +107,10 @@
         </CardBody>
       </Card>
     </Tab>
-    <Tab
-      tabGroup="compare-mode"
-      label="Directory vs Directory"
-      contentClass="bg-base-300 border-base-300 p-6"
-    >
+    <Tab tabGroup="compare-mode" label="Directory vs Directory" contentClass="bg-base-300 border-base-300 p-6">
       <Card>
         <CardBody>
-          <p class="text-base text-base-content/90 mb-4">
-            Select two sets of files/directories to compare:
-          </p>
+          <p class="text-base text-base-content/90 mb-4">Select two sets of files/directories to compare:</p>
           <div class="mb-4">
             <FileSelector
               mode="folder"
@@ -158,9 +129,7 @@
               onPathChange={(p) => (setBPath = p ?? "")}
             />
           </div>
-          <div
-            class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10"
-          >
+          <div class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10">
             <button
               type="button"
               class="btn btn-soft btn-wide btn-primary"
@@ -178,16 +147,10 @@
         </CardBody>
       </Card>
     </Tab>
-    <Tab
-      tabGroup="compare-mode"
-      label="File vs File"
-      contentClass="bg-base-300 border-base-300 p-6"
-    >
+    <Tab tabGroup="compare-mode" label="File vs File" contentClass="bg-base-300 border-base-300 p-6">
       <Card>
         <CardBody>
-          <p class="text-base text-base-content/90 mb-4">
-            Select two files to compare:
-          </p>
+          <p class="text-base text-base-content/90 mb-4">Select two files to compare:</p>
           <div class="mb-4">
             <FileSelector
               mode="file"
@@ -206,9 +169,7 @@
               onPathChange={(p) => (fileBPath = p ?? "")}
             />
           </div>
-          <div
-            class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10"
-          >
+          <div class="flex flex-wrap gap-2 pt-4 border-t border-base-content/10">
             <button
               type="button"
               class="btn btn-soft btn-wide btn-primary"
@@ -232,12 +193,8 @@
       <div class="px-4 py-3 border-b border-base-content/20 bg-base-200/50">
         <h3 class="font-semibold text-sm">Results</h3>
       </div>
-      <SplitPane
-        rightOpen={selectedIndex !== null}
-        defaultRightSize={580}
-        class="h-svh"
-      >
-        {#snippet left()}
+      <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-svh">
+        {#snippet first()}
           <Grid
             columnDefs={columns}
             rowData={rows}
@@ -254,22 +211,18 @@
           />
         {/snippet}
 
-        {#snippet right()}
+        {#snippet second()}
           <DiffPaneContent
             oldFile={selectedRow?.pathA ?? ""}
             newFile={selectedRow?.pathB ?? ""}
             hasPrev={selectedIndex !== null && selectedIndex > 0}
             hasNext={selectedIndex !== null && selectedIndex < rows.length - 1}
-            navLabel={selectedIndex !== null
-              ? `${selectedIndex + 1} / ${rows.length}`
-              : undefined}
+            navLabel={selectedIndex !== null ? `${selectedIndex + 1} / ${rows.length}` : undefined}
             onPrev={() => {
-              if (selectedIndex !== null && selectedIndex > 0)
-                navigateTo(selectedIndex - 1);
+              if (selectedIndex !== null && selectedIndex > 0) navigateTo(selectedIndex - 1);
             }}
             onNext={() => {
-              if (selectedIndex !== null && selectedIndex < rows.length - 1)
-                navigateTo(selectedIndex + 1);
+              if (selectedIndex !== null && selectedIndex < rows.length - 1) navigateTo(selectedIndex + 1);
             }}
             onFullscreen={() => (showFullscreen = true)}
           />
@@ -285,15 +238,9 @@
   contentProps={{ class: "flex flex-col overflow-hidden !p-0 bg-base-100" }}
 >
   {#snippet title()}
-    <div
-      class="px-4 py-2 border-b border-base-content/20 bg-base-200 flex items-center justify-between shrink-0"
-    >
+    <div class="px-4 py-2 border-b border-base-content/20 bg-base-200 flex items-center justify-between shrink-0">
       <h2 class="text-base font-semibold">File Comparison View</h2>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm"
-        onclick={() => (showFullscreen = false)}>Close</button
-      >
+      <button type="button" class="btn btn-ghost btn-sm" onclick={() => (showFullscreen = false)}>Close</button>
     </div>
   {/snippet}
   {#snippet description()}<span class="sr-only">Diff viewer</span>{/snippet}

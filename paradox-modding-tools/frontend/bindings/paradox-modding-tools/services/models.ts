@@ -119,7 +119,6 @@ export class FileMergeResult {
     "outputPath": string;
     "changed": number;
     "added": number;
-    "removed": number;
     "entriesChanged"?: string[];
     "entriesAdded"?: string[];
     "resolvedConflicts"?: ResolvedConflict[];
@@ -145,9 +144,6 @@ export class FileMergeResult {
         if (!("added" in $$source)) {
             this["added"] = 0;
         }
-        if (!("removed" in $$source)) {
-            this["removed"] = 0;
-        }
 
         Object.assign(this, $$source);
     }
@@ -156,18 +152,18 @@ export class FileMergeResult {
      * Creates a new FileMergeResult instance from a string or object.
      */
     static createFrom($$source: any = {}): FileMergeResult {
+        const $$createField6_0 = $$createType0;
         const $$createField7_0 = $$createType0;
-        const $$createField8_0 = $$createType0;
-        const $$createField9_0 = $$createType2;
+        const $$createField8_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("entriesChanged" in $$parsedSource) {
-            $$parsedSource["entriesChanged"] = $$createField7_0($$parsedSource["entriesChanged"]);
+            $$parsedSource["entriesChanged"] = $$createField6_0($$parsedSource["entriesChanged"]);
         }
         if ("entriesAdded" in $$parsedSource) {
-            $$parsedSource["entriesAdded"] = $$createField8_0($$parsedSource["entriesAdded"]);
+            $$parsedSource["entriesAdded"] = $$createField7_0($$parsedSource["entriesAdded"]);
         }
         if ("resolvedConflicts" in $$parsedSource) {
-            $$parsedSource["resolvedConflicts"] = $$createField9_0($$parsedSource["resolvedConflicts"]);
+            $$parsedSource["resolvedConflicts"] = $$createField8_0($$parsedSource["resolvedConflicts"]);
         }
         return new FileMergeResult($$parsedSource as Partial<FileMergeResult>);
     }
@@ -215,55 +211,25 @@ export class LatestPatchNotes {
 }
 
 /**
- * MergeConflictChunk is a unit of content for the assisted merge editor (JSON-safe for bindings).
- * Consecutive unchanged/added chunks are consolidated into single chunks by GetMergeConflicts.
+ * MergeConflictChunk is a unit of content for the assisted merge editor (and internal merge iteration).
+ * ObjA/ObjB are internal-only; JSON output omits them.
  */
 export class MergeConflictChunk {
     /**
      * "unchanged", "added", or "conflict"
      */
     "type": string;
-
-    /**
-     * object key when type is "conflict"
-     */
-    "key": string;
-
-    /**
-     * for unchanged/added
-     */
-    "text": string;
-
-    /**
-     * for conflict: vanilla side
-     */
     "textA": string;
-
-    /**
-     * for conflict: mod side
-     */
     "textB": string;
-
-    /**
-     * visual lines contributed to the A/unchanged column
-     */
-    "lineCountA": number;
-
-    /**
-     * visual lines contributed to the B column (differs from A for conflicts)
-     */
-    "lineCountB": number;
+    "startLineA": number;
+    "startLineB": number;
+    "endLineA": number;
+    "endLineB": number;
 
     /** Creates a new MergeConflictChunk instance. */
     constructor($$source: Partial<MergeConflictChunk> = {}) {
         if (!("type" in $$source)) {
             this["type"] = "";
-        }
-        if (!("key" in $$source)) {
-            this["key"] = "";
-        }
-        if (!("text" in $$source)) {
-            this["text"] = "";
         }
         if (!("textA" in $$source)) {
             this["textA"] = "";
@@ -271,11 +237,17 @@ export class MergeConflictChunk {
         if (!("textB" in $$source)) {
             this["textB"] = "";
         }
-        if (!("lineCountA" in $$source)) {
-            this["lineCountA"] = 0;
+        if (!("startLineA" in $$source)) {
+            this["startLineA"] = 0;
         }
-        if (!("lineCountB" in $$source)) {
-            this["lineCountB"] = 0;
+        if (!("startLineB" in $$source)) {
+            this["startLineB"] = 0;
+        }
+        if (!("endLineA" in $$source)) {
+            this["endLineA"] = 0;
+        }
+        if (!("endLineB" in $$source)) {
+            this["endLineB"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -364,7 +336,6 @@ export class MergePreset {
 export class MergerOptions {
     "addAdditionalEntries": boolean;
     "manualConflictResolution": boolean;
-    "entryPlacement": string;
     "keyList": string[];
     "matchByFilenameOnly": boolean;
     "includePathPattern": string;
@@ -383,9 +354,6 @@ export class MergerOptions {
         }
         if (!("manualConflictResolution" in $$source)) {
             this["manualConflictResolution"] = false;
-        }
-        if (!("entryPlacement" in $$source)) {
-            this["entryPlacement"] = "";
         }
         if (!("keyList" in $$source)) {
             this["keyList"] = [];
@@ -413,10 +381,10 @@ export class MergerOptions {
      * Creates a new MergerOptions instance from a string or object.
      */
     static createFrom($$source: any = {}): MergerOptions {
-        const $$createField3_0 = $$createType0;
+        const $$createField2_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("keyList" in $$parsedSource) {
-            $$parsedSource["keyList"] = $$createField3_0($$parsedSource["keyList"]);
+            $$parsedSource["keyList"] = $$createField2_0($$parsedSource["keyList"]);
         }
         return new MergerOptions($$parsedSource as Partial<MergerOptions>);
     }

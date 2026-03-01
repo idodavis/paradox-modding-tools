@@ -34,7 +34,6 @@
     const o = p.options;
     config.addAdditionalEntries = o.addAdditionalEntries ?? true;
     config.manualConflictResolution = o.manualConflictResolution ?? false;
-    config.entryPlacement = o.entryPlacement ?? "bottom";
     config.useKeyList = (o.keyList?.length ?? 0) > 0;
     config.customKeys = (o.keyList ?? []).join("\n");
     config.matchByFilenameOnly = o.matchByFilenameOnly ?? false;
@@ -50,7 +49,7 @@
     const options: MergerOptions = {
       manualConflictResolution: config.manualConflictResolution,
       addAdditionalEntries: config.addAdditionalEntries,
-      entryPlacement: config.entryPlacement,
+      entryPlacement: "bottom",
       keyList: config.useKeyList
         ? config.customKeys
             .split(/\r?\n/)
@@ -95,9 +94,7 @@
       <span>Merge options</span>
       <span class="group-open:rotate-180 transition-transform">▾</span>
     </summary>
-    <div
-      class="px-3 py-4 text-sm border-t border-base-content/20 space-y-4 bg-base-100"
-    >
+    <div class="px-3 py-4 text-sm border-t border-base-content/20 space-y-4 bg-base-100">
       <!-- Presets -->
       <div class="pb-2 border-b border-base-content/10 space-y-2">
         <span class="block text-xs font-medium">Presets</span>
@@ -182,47 +179,11 @@
           class="flex items-center gap-2 cursor-pointer"
           title="Append entities that exist only in B to the merged output"
         >
-          <input
-            type="checkbox"
-            class="checkbox checkbox-sm"
-            bind:checked={config.addAdditionalEntries}
-          />
+          <input type="checkbox" class="checkbox checkbox-sm" bind:checked={config.addAdditionalEntries} />
           <span>Add entries from B not in A</span>
         </label>
-        <p class="text-xs text-base-content/60 mt-1 ml-6">
-          Entities in B that don't exist in A are appended.
-        </p>
+        <p class="text-xs text-base-content/60 mt-1 ml-6">Entities in B that don't exist in A are appended.</p>
       </div>
-
-      {#if config.addAdditionalEntries}
-        <div class="ml-6 space-y-2">
-          <p class="text-xs text-base-content/60">
-            Where to place added entries:
-          </p>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="placement"
-                class="radio radio-sm"
-                value="bottom"
-                bind:group={config.entryPlacement}
-              />
-              <span>Bottom</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="placement"
-                class="radio radio-sm"
-                value="preserve_order"
-                bind:group={config.entryPlacement}
-              />
-              <span>Preserve order</span>
-            </label>
-          </div>
-        </div>
-      {/if}
 
       <div
         class:opacity-50={config.manualConflictResolution}
@@ -232,16 +193,10 @@
           class="flex items-center gap-2 cursor-pointer"
           title="For these keys, always use B's version even when A has them"
         >
-          <input
-            type="checkbox"
-            class="checkbox checkbox-sm"
-            bind:checked={config.useKeyList}
-          />
+          <input type="checkbox" class="checkbox checkbox-sm" bind:checked={config.useKeyList} />
           <span>Key list (B overrides A)</span>
         </label>
-        <p class="text-xs text-base-content/60 mt-1 ml-6">
-          One key per line. B wins for these entities.
-        </p>
+        <p class="text-xs text-base-content/60 mt-1 ml-6">One key per line. B wins for these entities.</p>
       </div>
       {#if config.useKeyList}
         <textarea
@@ -253,11 +208,7 @@
       {/if}
 
       <label class="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          class="checkbox checkbox-sm"
-          bind:checked={config.matchByFilenameOnly}
-        />
+        <input type="checkbox" class="checkbox checkbox-sm" bind:checked={config.matchByFilenameOnly} />
         <span>Match by filename only</span>
       </label>
 

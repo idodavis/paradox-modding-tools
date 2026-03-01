@@ -9,19 +9,23 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal"
 	parser "paradox-modding-tools/services/internal/interpreter"
 )
 
-// ############
-// MergeService
-// ############
+const (
+	additionalEntriesHdr = "\n############# Additional Entries From B (PDX-Merge-Tools) #############\n"
+	additionalEntryIntro = "\n# Additional entry from B"
+)
+
+var precedenceRe = regexp.MustCompile(`(?i)(?:PREFER|USE|MERGE)\s*:\s*([AB])|(?i)(?:PROTECT|KEEP)`)
 
 // MergeService merges matching script files from two path sets into an output directory using core merge logic.
 type MergeService struct {
 	FileService *FileService
 }
 
-// MergerOptions configures how files are merged (JSON-safe for bindings)
+// MergerOptions configures how files are merged.
 type MergerOptions struct {
 	AddAdditionalEntries     bool     `json:"addAdditionalEntries"`
 	ManualConflictResolution bool     `json:"manualConflictResolution"`
@@ -29,11 +33,10 @@ type MergerOptions struct {
 	MatchByFilenameOnly      bool     `json:"matchByFilenameOnly"`
 	IncludePathPattern       string   `json:"includePathPattern"`
 	ExcludePathPattern       string   `json:"excludePathPattern"`
-	OutputFilename           string   `json:"outputFilename"`
 	OutputFileSuffix         string   `json:"outputFileSuffix"` // e.g. "_merged" meaning: events/foo.txt -> events/foo_merged.txt
 }
 
-// PreviewItem is a single file match for the merge preview (JSON-safe for bindings)
+// PreviewItem is a single file match for the merge preview.
 type PreviewItem struct {
 	RelPath        string `json:"relPath"`
 	PathA          string `json:"pathA"`
@@ -42,7 +45,7 @@ type PreviewItem struct {
 	WouldOverwrite bool   `json:"wouldOverwrite"`
 }
 
-// FileMergeResult is the result of merging one file (JSON-safe for bindings)
+// FileMergeResult is the result of merging one file.
 type FileMergeResult struct {
 	FilePath          string             `json:"filePath"`
 	FileAPath         string             `json:"fileAPath"`
@@ -77,6 +80,20 @@ type MergeConflictChunk struct {
 	ObjB       *scriptObject `json:"-"`
 }
 
+// MergePair is a user-specified file pair for explicit merging.
+type MergePair struct {
+	PathA      string `json:"pathA"`
+	PathB      string `json:"pathB"`
+	OutputName string `json:"outputName"` // e.g. "merged_events.txt"; empty = use PathA basename
+}
+
+// ValidationError describes a parse error in a merged file.
+type ValidationError struct {
+	Path  string `json:"path"`
+	Line  int    `json:"line"`
+	Error string `json:"error"`
+}
+
 // scriptObject represents a parsed top-level entry (assignment or object) with its comments.
 type scriptObject struct {
 	Key        string
@@ -88,30 +105,120 @@ type scriptObject struct {
 	EndLine    int
 }
 
-func buildCollectFilter(opts MergerOptions) FileCollectorFilter {
-	return FileCollectorFilter{
+// mergeResult holds the result of merging one file (internal use).
+type mergeResult struct {
+	Content           string
+	EntriesAdded      []string
+	EntriesChanged    []string
+	ResolvedConflicts []ResolvedConflict
+}
+
+// MergePreview collects matching files from pathA/pathB and returns preview items with output paths.
+func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB, outputDir string, opts MergerOptions) ([]PreviewItem, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	matches, err := m.FileService.CollectAndMatchPaths(pathA, pathB, FileCollectorFilter{
 		Extensions:  []string{".txt"},
 		IncludePath: opts.IncludePathPattern,
 		ExcludePath: opts.ExcludePathPattern,
+	}, opts.MatchByFilenameOnly)
+	if err != nil {
+		return nil, err
 	}
+	var items []PreviewItem
+	for relPath, match := range matches {
+		outPath := outputPathWithSuffix(outputDir, relPath, opts.OutputFileSuffix)
+		_, overwrite := os.Stat(outPath)
+		items = append(items, PreviewItem{
+			RelPath:        relPath,
+			PathA:          match.PathA,
+			PathB:          match.PathB,
+			OutputPath:     outPath,
+			WouldOverwrite: overwrite == nil,
+		})
+	}
+	return items, nil
 }
 
-// collectAndMatch collects files from pathA/pathB and returns matching pairs.
-func (m *MergeService) collectAndMatch(pathA, pathB string, opts MergerOptions) (map[string]PathMatch, error) {
-	filter := buildCollectFilter(opts)
-	filesA, err := m.FileService.CollectFilesFromPath(pathA, filter)
-	if err != nil {
-		return nil, fmt.Errorf("collecting files from A: %w", err)
+// Merge performs the merge for each task (PreviewItem) and writes results. Single entry point for merge operations.
+func (m *MergeService) Merge(ctx context.Context, tasks []PreviewItem, opts MergerOptions) ([]FileMergeResult, error) {
+	var results []FileMergeResult
+	for _, task := range tasks {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		results = append(results, m.mergeAndWrite(task.PathA, task.PathB, task.OutputPath, task.RelPath, opts))
 	}
-	filesB, err := m.FileService.CollectFilesFromPath(pathB, filter)
-	if err != nil {
-		return nil, fmt.Errorf("collecting files from B: %w", err)
+	return results, nil
+}
+
+// GetMergeConflicts returns structured conflict chunks for the assisted merge editor.
+func (m *MergeService) GetMergeConflicts(ctx context.Context, fileAPath, fileBPath string, options MergerOptions) ([]MergeConflictChunk, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
-	matches, err := m.FileService.FindMatchingPaths(filesA, filesB, opts.MatchByFilenameOnly)
+	items, _, err := m.mergeFileItems(fileAPath, fileBPath, options)
 	if err != nil {
-		return nil, fmt.Errorf("finding matches: %w", err)
+		return nil, err
 	}
-	return matches, nil
+	return consolidateChunks(items), nil
+}
+
+// ValidateMergedFiles runs the Paradox parser on each path and returns parse errors.
+func (m *MergeService) ValidateMergedFiles(paths []string) []ValidationError {
+	results := parser.ValidatePaths(paths)
+	errs := make([]ValidationError, len(results))
+	for i, r := range results {
+		errs[i] = ValidationError{Path: r.Path, Line: r.Line, Error: r.Error}
+	}
+	return errs
+}
+
+// GenerateMergeReport builds a Markdown report from merge results.
+func (m *MergeService) GenerateMergeReport(results []FileMergeResult, totalAdded, totalChanged, totalRemoved int, labelA, labelB string) string {
+	if labelA == "" {
+		labelA = "A"
+	}
+	if labelB == "" {
+		labelB = "B"
+	}
+	sideLabel := map[string]string{"A": labelA, "B": labelB}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Merge Report\n\n**Summary:** %d files · +%d added · %d changed · -%d removed\n\n", len(results), totalAdded, totalChanged, totalRemoved)
+	for _, r := range results {
+		fmt.Fprintf(&b, "## %s\n\n", r.FilePath)
+		if r.Error != "" {
+			fmt.Fprintf(&b, "**Error:** %s\n\n", r.Error)
+			continue
+		}
+		fmt.Fprintf(&b, "**Stats:** +%d added, %d changed\n\n", r.Added, r.Changed)
+		for _, sec := range []struct {
+			title string
+			items []string
+		}{{"Added", r.EntriesAdded}, {"Changed", r.EntriesChanged}} {
+			if len(sec.items) == 0 {
+				continue
+			}
+			b.WriteString("### " + sec.title + "\n")
+			for _, k := range sec.items {
+				b.WriteString("- " + k + "\n")
+			}
+			b.WriteString("\n")
+		}
+		if len(r.ResolvedConflicts) > 0 {
+			b.WriteString("### Resolved Conflicts\n")
+			for _, c := range r.ResolvedConflicts {
+				side := sideLabel[c.UsedSide]
+				if side == "" {
+					side = c.UsedSide
+				}
+				fmt.Fprintf(&b, "- **%s**: Used %s (%s)\n", c.Key, side, c.Reason)
+			}
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 func outputPathWithSuffix(outputDir, relPath, suffix string) string {
@@ -122,13 +229,6 @@ func outputPathWithSuffix(outputDir, relPath, suffix string) string {
 	return filepath.Join(outputDir, strings.TrimSuffix(relPath, ext)+suffix+".txt")
 }
 
-var (
-	precedenceRe      = regexp.MustCompile(`(?i)(?:PREFER|USE|MERGE)\s*:\s*([AB])|(?i)(?:PROTECT|KEEP)`)
-	commentStripRe    = regexp.MustCompile(`(?m)#.*$`)
-	whitespaceStripRe = regexp.MustCompile(`\s+`)
-	utf8BOM           = "\uFEFF"
-)
-
 func parsePrecedenceFromComment(comment string) string {
 	comment = strings.TrimSpace(strings.TrimPrefix(comment, "#"))
 	if m := precedenceRe.FindStringSubmatch(comment); len(m) > 0 {
@@ -138,14 +238,6 @@ func parsePrecedenceFromComment(comment string) string {
 		return "A" // PROTECT/KEEP -> keep from A
 	}
 	return ""
-}
-
-func normalize(text string) string {
-	return whitespaceStripRe.ReplaceAllString(commentStripRe.ReplaceAllString(text, ""), "")
-}
-
-func areSemanticallyEqual(a, b string) bool {
-	return a == b || normalize(a) == normalize(b)
 }
 
 func parseFileObjects(path string) ([]scriptObject, string, error) {
@@ -231,14 +323,7 @@ func determinePrecedence(key string, a, b scriptObject, opts MergerOptions) (str
 	return "A", "default"
 }
 
-// mergeResult holds the result of merging one file (internal use).
-type mergeResult struct {
-	Content           string
-	EntriesAdded      []string
-	EntriesChanged    []string
-	ResolvedConflicts []ResolvedConflict
-}
-
+// mergeFileItems builds conflict chunks by comparing parsed objects from fileA and fileB.
 func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOptions) ([]MergeConflictChunk, string, error) {
 	objectsA, bom, err := parseFileObjects(fileAPath)
 	if err != nil {
@@ -268,7 +353,7 @@ func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOp
 			if entB, ok := mapB[a.Key]; ok {
 				b := entB
 				chunk.StartLineB, chunk.EndLineB, chunk.ObjB = b.StartLine, b.EndLine, &b
-				if !areSemanticallyEqual(a.ValueText, b.ValueText) {
+				if !internal.ScriptValuesEqual(a.ValueText, b.ValueText) {
 					chunk.Type, chunk.TextB = "conflict", b.RawText
 				}
 			}
@@ -280,7 +365,7 @@ func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOp
 			if entB.Key != "" && !keysInA[entB.Key] {
 				b := entB
 				items = append(items, MergeConflictChunk{
-					Type: "added", TextB: "# Additional entry from B\n" + b.RawText,
+					Type: "added", TextB: additionalEntryIntro + b.RawText,
 					StartLineB: b.StartLine, EndLineB: b.EndLine, ObjB: &b,
 				})
 			}
@@ -289,6 +374,7 @@ func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOp
 	return items, bom, nil
 }
 
+// performMerge resolves conflicts using precedence rules and produces final content.
 func (m *MergeService) performMerge(fileAPath, fileBPath string, opts MergerOptions) (*mergeResult, error) {
 	items, bom, err := m.mergeFileItems(fileAPath, fileBPath, opts)
 	if err != nil {
@@ -306,7 +392,7 @@ func (m *MergeService) performMerge(fileAPath, fileBPath string, opts MergerOpti
 			continue
 		case "added":
 			if !addHeader {
-				out.WriteString("\r\n############# Additional Entries From B (PDX-Merge-Tools) #############\r\n")
+				out.WriteString(additionalEntriesHdr)
 				addHeader = true
 			}
 			out.WriteString(it.TextB)
@@ -329,32 +415,6 @@ func (m *MergeService) performMerge(fileAPath, fileBPath string, opts MergerOpti
 	return r, nil
 }
 
-// WriteMergedFile writes content to outputPath as UTF-8 with BOM.
-func (m *MergeService) WriteMergedFile(outputPath, content string) error {
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
-		return fmt.Errorf("creating output directory: %w", err)
-	}
-	if !strings.HasPrefix(content, utf8BOM) {
-		content = utf8BOM + content
-	}
-	return os.WriteFile(outputPath, []byte(content), 0o644)
-}
-
-func (m *MergeService) mergeAndWrite(pathA, pathB, outputPath, filePath string, opts MergerOptions) FileMergeResult {
-	mr, err := m.performMerge(pathA, pathB, opts)
-	if err != nil {
-		return FileMergeResult{FilePath: filePath, Error: err.Error()}
-	}
-	if err := m.WriteMergedFile(outputPath, mr.Content); err != nil {
-		return FileMergeResult{FilePath: filePath, Error: err.Error()}
-	}
-	return FileMergeResult{
-		FilePath: filePath, FileAPath: pathA, FileBPath: pathB, OutputPath: outputPath,
-		Changed: len(mr.EntriesChanged), Added: len(mr.EntriesAdded),
-		EntriesChanged: mr.EntriesChanged, EntriesAdded: mr.EntriesAdded, ResolvedConflicts: mr.ResolvedConflicts,
-	}
-}
-
 // consolidateChunks merges consecutive same-type non-conflict chunks into single chunks.
 func consolidateChunks(chunks []MergeConflictChunk) []MergeConflictChunk {
 	result := make([]MergeConflictChunk, 0, len(chunks))
@@ -374,159 +434,18 @@ func consolidateChunks(chunks []MergeConflictChunk) []MergeConflictChunk {
 	return result
 }
 
-// GetMergeConflicts returns structured conflict chunks for the assisted merge editor.
-func (m *MergeService) GetMergeConflicts(ctx context.Context, fileAPath, fileBPath string, options MergerOptions) ([]MergeConflictChunk, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	items, _, err := m.mergeFileItems(fileAPath, fileBPath, options)
+// mergeAndWrite performs merge and writes the result to outputPath.
+func (m *MergeService) mergeAndWrite(pathA, pathB, outputPath, filePath string, opts MergerOptions) FileMergeResult {
+	mr, err := m.performMerge(pathA, pathB, opts)
 	if err != nil {
-		return nil, err
+		return FileMergeResult{FilePath: filePath, Error: err.Error()}
 	}
-	return consolidateChunks(items), nil
-}
-
-func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB, outputDir string, opts MergerOptions) ([]PreviewItem, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	if err := m.FileService.WriteWithBOM(outputPath, mr.Content); err != nil {
+		return FileMergeResult{FilePath: filePath, Error: err.Error()}
 	}
-	matches, err := m.collectAndMatch(pathA, pathB, opts)
-	if err != nil {
-		return nil, err
+	return FileMergeResult{
+		FilePath: filePath, FileAPath: pathA, FileBPath: pathB, OutputPath: outputPath,
+		Changed: len(mr.EntriesChanged), Added: len(mr.EntriesAdded),
+		EntriesChanged: mr.EntriesChanged, EntriesAdded: mr.EntriesAdded, ResolvedConflicts: mr.ResolvedConflicts,
 	}
-	var items []PreviewItem
-	for relPath, match := range matches {
-		outPath := outputPathWithSuffix(outputDir, relPath, opts.OutputFileSuffix)
-		_, overwrite := os.Stat(outPath)
-		items = append(items, PreviewItem{
-			RelPath:        relPath,
-			PathA:          match.PathA,
-			PathB:          match.PathB,
-			OutputPath:     outPath,
-			WouldOverwrite: overwrite == nil,
-		})
-	}
-	return items, nil
-}
-
-func (m *MergeService) MergeDirs(ctx context.Context, pathA, pathB, outputDir string, opts MergerOptions, onlyRelPaths []string) ([]FileMergeResult, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	matches, err := m.collectAndMatch(pathA, pathB, opts)
-	if err != nil {
-		return nil, err
-	}
-	var results []FileMergeResult
-	for relPath, match := range matches {
-		if len(onlyRelPaths) > 0 && !slices.Contains(onlyRelPaths, relPath) {
-			continue
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		outPath := outputPathWithSuffix(outputDir, relPath, opts.OutputFileSuffix)
-		results = append(results, m.mergeAndWrite(match.PathA, match.PathB, outPath, relPath, opts))
-	}
-	return results, nil
-}
-
-// MergePair is a user-specified file pair (JSON-safe for bindings)
-type MergePair struct {
-	PathA      string `json:"pathA"`
-	PathB      string `json:"pathB"`
-	OutputName string `json:"outputName"` // e.g. "merged_events.txt"; empty = use PathA basename
-}
-
-func outputPathForPair(outputDir string, pathA, outputName string) string {
-	out := outputName
-	if out == "" {
-		out = filepath.Base(pathA)
-	}
-	return filepath.Join(outputDir, strings.TrimSuffix(out, filepath.Ext(out))+".txt")
-}
-
-// MergePairs merges explicitly paired files.
-func (m *MergeService) MergePairs(ctx context.Context, pairs []MergePair, outputDir string, opts MergerOptions) ([]FileMergeResult, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	var results []FileMergeResult
-	for _, p := range pairs {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		outPath := outputPathForPair(outputDir, p.PathA, p.OutputName)
-		results = append(results, m.mergeAndWrite(p.PathA, p.PathB, outPath, p.PathA, opts))
-	}
-	return results, nil
-}
-
-// ValidationError describes a parse error in a merged file (JSON-safe for bindings)
-type ValidationError struct {
-	Path  string `json:"path"`
-	Line  int    `json:"line"`
-	Error string `json:"error"`
-}
-
-// ValidateMergedFiles runs the Paradox parser on each path and returns parse errors.
-func (m *MergeService) ValidateMergedFiles(paths []string) []ValidationError {
-	var errs []ValidationError
-	for _, p := range paths {
-		_, err := parser.ParseFile(p)
-		if err != nil {
-			line := 0
-			if pe, ok := err.(interface{ Line() int }); ok {
-				line = pe.Line()
-			}
-			errs = append(errs, ValidationError{Path: p, Line: line, Error: err.Error()})
-		}
-	}
-	return errs
-}
-
-// GenerateMergeReport builds a Markdown report from merge results.
-func (m *MergeService) GenerateMergeReport(results []FileMergeResult, totalAdded, totalChanged, totalRemoved int, labelA, labelB string) string {
-	if labelA == "" {
-		labelA = "A"
-	}
-	if labelB == "" {
-		labelB = "B"
-	}
-	sideLabel := map[string]string{"A": labelA, "B": labelB}
-	var b strings.Builder
-	fmt.Fprintf(&b, "# Merge Report\n\n**Summary:** %d files · +%d added · %d changed · -%d removed\n\n", len(results), totalAdded, totalChanged, totalRemoved)
-	for _, r := range results {
-		fmt.Fprintf(&b, "## %s\n\n", r.FilePath)
-		if r.Error != "" {
-			fmt.Fprintf(&b, "**Error:** %s\n\n", r.Error)
-			continue
-		}
-		fmt.Fprintf(&b, "**Stats:** +%d added, %d changed\n\n", r.Added, r.Changed)
-		for _, sec := range []struct {
-			title string
-			items []string
-		}{{"Added", r.EntriesAdded}, {"Changed", r.EntriesChanged}} {
-			if len(sec.items) == 0 {
-				continue
-			}
-			b.WriteString("### " + sec.title + "\n")
-			for _, k := range sec.items {
-				b.WriteString("- " + k + "\n")
-			}
-			b.WriteString("\n")
-		}
-		if len(r.ResolvedConflicts) > 0 {
-			b.WriteString("### Resolved Conflicts\n")
-			for _, c := range r.ResolvedConflicts {
-				side := sideLabel[c.UsedSide]
-				if side == "" {
-					side = c.UsedSide
-				}
-				fmt.Fprintf(&b, "- **%s**: Used %s (%s)\n", c.Key, side, c.Reason)
-			}
-			b.WriteString("\n")
-		}
-	}
-	return b.String()
 }

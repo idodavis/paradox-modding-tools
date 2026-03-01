@@ -1,8 +1,6 @@
 package services
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,7 +23,6 @@ type DbService struct {
 func (d *DbService) ServiceShutdown() error {
 	_, _ = d.DB.Exec("VACUUM")
 	return d.DB.Close()
-	return nil
 }
 
 // ServiceStartup opens the database and initializes the schema. Call from main before creating services that need DB.
@@ -167,10 +164,4 @@ func (d *DbService) ResetData() error {
 		return fmt.Errorf("delete patchnotes: %w", err)
 	}
 	return d.seedGameConstants()
-}
-
-// installPathHash returns a SHA256 hex hash of the install path for use as install_path_hash.
-func installPathHash(path string) string {
-	h := sha256.Sum256([]byte(path))
-	return hex.EncodeToString(h[:])
 }

@@ -1,8 +1,10 @@
 <script lang="ts">
   import { Card, CardBody, FileSelector, Grid, Drawer, MultiSelect } from "@components";
-  import { game, helpOpen } from "@stores/app.svelte";
-  import { ItemDetails, InventoryCard, InventoryNameModal, InventoryHelp } from "@components";
+  import { game } from "@stores/app.svelte";
+  import { ItemDetails, InventoryCard, InventoryNameModal } from "@components";
   import { inventoryStore, setInventoryStore } from "@stores/inventory.svelte";
+  import type { InventoryItemRow } from "@services/models";
+  import type { ValueGetterParams } from "ag-grid-community";
 
   const store = inventoryStore;
   setInventoryStore(store);
@@ -31,7 +33,8 @@
     {
       field: "lines",
       headerName: "Lines",
-      valueGetter: (p: { data?: any }) => `${p.data?.lineStart ?? 0} - ${p.data?.lineEnd ?? 0}`,
+      valueGetter: (p: ValueGetterParams<InventoryItemRow>) =>
+        `${p.data?.lineStart ?? 0} - ${p.data?.lineEnd ?? 0}`,
       filter: false,
       sortable: false,
       flex: 1,
@@ -49,8 +52,6 @@
     if (!store.itemDetailsOpen) store.selectedRow = null;
   });
 </script>
-
-<InventoryHelp bind:open={$helpOpen} />
 
 <div class="relative p-4 max-w-full min-w-0">
   <Card class="mb-4">

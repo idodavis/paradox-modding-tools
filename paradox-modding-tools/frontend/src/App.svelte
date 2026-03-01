@@ -2,20 +2,15 @@
   import { onMount } from "svelte";
   import ck3Bg from "@assets/CK3-All_Under_Heaven.jpg";
   import eu5Bg from "@assets/EUV-Release.jpg";
-  import { Card, CardBody, Dialog, Toast } from "@components";
+  import { Card, CardBody, Dialog, Toast, HelpDialog } from "@components";
+  import { helpConfig } from "./lib/config/helpConfig";
   import Icon from "@iconify/svelte";
   import CompareTool from "@pages/CompareTool.svelte";
   import ModdingResources from "@pages/ModdingResources.svelte";
   import MergeTool from "@pages/MergeTool.svelte";
   import InventoryTool from "@pages/InventoryTool.svelte";
   import Settings from "@pages/Settings.svelte";
-  import {
-    game,
-    currentPage,
-    gotoPage,
-    loadSettings,
-    helpOpen,
-  } from "@stores/app.svelte";
+  import { game, currentPage, gotoPage, loadSettings, helpOpen } from "@stores/app.svelte";
   import { showToast } from "@stores/toast.svelte";
   import { GetLatestPatchNotes } from "@services/steamservice";
   import { OpenURL } from "@services/browserservice";
@@ -57,17 +52,18 @@
       event.preventDefault(); // prevent default console error if desired
     };
     window.addEventListener("unhandledrejection", handleRejection);
-    return () =>
-      window.removeEventListener("unhandledrejection", handleRejection);
+    return () => window.removeEventListener("unhandledrejection", handleRejection);
   });
 </script>
 
+<!-- Toast and HelpDialog use fixed/portal rendering - they must not affect layout -->
 <Toast />
+<div class="fixed">
+  <HelpDialog bind:open={$helpOpen} page={$currentPage} config={helpConfig} />
+</div>
 <div class="min-h-screen flex flex-col">
   <!-- Navbar -->
-  <div
-    class="navbar bg-base-200 border-b border-base-300 shadow-sm px-6 py-3 z-10"
-  >
+  <div class="navbar bg-base-200 border-b border-base-300 shadow-sm px-6 py-3 z-10">
     <div class="navbar-start gap-4 min-w-0">
       {#if $currentPage === "hub"}
         <div class="flex items-center gap-3">
@@ -82,11 +78,7 @@
           </div>
         </div>
       {:else}
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm gap-1.5"
-          onclick={() => gotoPage("hub")}
-        >
+        <button type="button" class="btn btn-ghost btn-sm gap-1.5" onclick={() => gotoPage("hub")}>
           <Icon icon="mdi:arrow-left" class="size-4" />
           Hub
         </button>
@@ -99,18 +91,10 @@
         <option value="CK3">CK3</option>
         <option value="EU5">EU5</option>
       </select>
-      <button
-        class="btn btn-square btn-ghost"
-        type="button"
-        onclick={() => gotoPage("settings")}
-      >
+      <button class="btn btn-square btn-ghost" type="button" onclick={() => gotoPage("settings")}>
         <Icon icon="mdi:cog" class="size-6" />
       </button>
-      <button
-        class="btn btn-square btn-ghost"
-        type="button"
-        onclick={() => helpOpen.update((v) => !v)}
-      >
+      <button class="btn btn-square btn-ghost" type="button" onclick={() => helpOpen.update((v) => !v)}>
         <Icon icon="mdi:help-circle" class="size-6 text-accent" />
       </button>
     </div>
@@ -124,15 +108,13 @@
         <div class="grid gap-4 grid-cols-1 sm:grid-cols-2">
           <Card class="shadow-lg bg-base-300/85">
             <CardBody>
-              <h2 class="card-title">Modding Resoruces</h2>
+              <h2 class="card-title">Modding Resources</h2>
               <p class="text-sm text-base-content/80">
-                Browse script help files (.info / readme.txt) and modding wiki
-                for CK3 and EU5.
+                Browse script help files (.info / readme.txt) and modding wiki for CK3 and EU5.
               </p>
               <div class="card-actions justify-end">
-                <button
-                  class="btn btn-primary btn-outline btn-sm"
-                  onclick={() => gotoPage("modding-resources")}>Open</button
+                <button class="btn btn-primary btn-outline btn-sm" onclick={() => gotoPage("modding-resources")}
+                  >Open</button
                 >
               </div>
             </CardBody>
@@ -141,13 +123,10 @@
             <CardBody>
               <h2 class="card-title">File Compare</h2>
               <p class="text-sm text-base-content/80">
-                Compare two file sets or directories and view diffs side-by-side
-                or in unified format.
+                Compare two file sets or directories and view diffs side-by-side or in unified format.
               </p>
               <div class="card-actions justify-end">
-                <button
-                  class="btn btn-primary btn-outline btn-sm"
-                  onclick={() => gotoPage("compare-tool")}>Open</button
+                <button class="btn btn-primary btn-outline btn-sm" onclick={() => gotoPage("compare-tool")}>Open</button
                 >
               </div>
             </CardBody>
@@ -155,14 +134,9 @@
           <Card class="shadow-lg bg-base-300/85">
             <CardBody>
               <h2 class="card-title">Script Merger</h2>
-              <p class="text-sm text-base-content/80">
-                Merge Paradox script files with configurable options.
-              </p>
+              <p class="text-sm text-base-content/80">Merge Paradox script files with configurable options.</p>
               <div class="card-actions justify-end">
-                <button
-                  class="btn btn-primary btn-outline btn-sm"
-                  onclick={() => gotoPage("merge-tool")}>Open</button
-                >
+                <button class="btn btn-primary btn-outline btn-sm" onclick={() => gotoPage("merge-tool")}>Open</button>
               </div>
             </CardBody>
           </Card>
@@ -170,14 +144,10 @@
             <CardBody>
               <h2 class="card-title">Inventory Explorer</h2>
               <p class="text-sm text-base-content/80">
-                Extract and explore game objects from script files. Filter by
-                type, view references and more.
+                Extract and explore game objects from script files. Filter by type, view references and more.
               </p>
               <div class="card-actions justify-end">
-                <button
-                  class="btn btn-primary btn-outline btn-sm"
-                  onclick={() => gotoPage("inventory")}>Open</button
-                >
+                <button class="btn btn-primary btn-outline btn-sm" onclick={() => gotoPage("inventory")}>Open</button>
               </div>
             </CardBody>
           </Card>
@@ -190,25 +160,14 @@
         role="button"
         tabindex="0"
         onclick={() => latestPatchNotes[$game] && (patchNotesDialogOpen = true)}
-        onkeydown={(e: KeyboardEvent) =>
-          e.key === "Enter" &&
-          latestPatchNotes[$game] &&
-          (patchNotesDialogOpen = true)}
+        onkeydown={(e: KeyboardEvent) => e.key === "Enter" && latestPatchNotes[$game] && (patchNotesDialogOpen = true)}
       >
-        <Card
-          class="bg-base-300/85 max-w-100 min-h-100 max-h-160 shadow-xl hover:bg-base-300/95 transition-colors"
-        >
+        <Card class="bg-base-300/85 max-w-100 min-h-100 max-h-160 shadow-xl hover:bg-base-300/95 transition-colors">
           <figure>
-            <img
-              src={backgroundImage}
-              alt="Game Wallpaper"
-              class="opacity-85"
-            />
+            <img src={backgroundImage} alt="Game Wallpaper" class="opacity-85" />
           </figure>
           <CardBody>
-            <span class="badge badge-md badge-secondary mb-2"
-              >Latest Patch Notes</span
-            >
+            <span class="badge badge-md badge-secondary mb-2">Latest Patch Notes</span>
             {#if latestPatchNotes[$game]}
               <h2 class="card-title mb-8">
                 {latestPatchNotes[$game].title}
@@ -241,16 +200,12 @@
         }}
       >
         {#snippet title()}
-          <div
-            class="flex justify-between items-center border-b border-base-content/20"
-          >
+          <div class="flex justify-between items-center border-b border-base-content/20">
             <h3 class="font-bold truncate text-accent">
               {currentPatchNotes.title}
             </h3>
-            <button
-              type="button"
-              class="btn btn-circle btn-ghost"
-              onclick={() => (patchNotesDialogOpen = false)}>✕</button
+            <button type="button" class="btn btn-circle btn-ghost" onclick={() => (patchNotesDialogOpen = false)}
+              >✕</button
             >
           </div>
         {/snippet}
@@ -261,8 +216,7 @@
           <div class="flex justify-end gap-2">
             <button
               class="btn btn-secondary btn-outline btn-sm"
-              onclick={() =>
-                currentPatchNotes.url && OpenURL(currentPatchNotes.url)}
+              onclick={() => currentPatchNotes.url && OpenURL(currentPatchNotes.url)}
             >
               <Icon icon="mdi:open-in-new" class="size-4" /> Open on SteamDB
             </button>

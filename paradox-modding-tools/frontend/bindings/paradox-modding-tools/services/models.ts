@@ -110,7 +110,7 @@ export class FileCollectorFilter {
 }
 
 /**
- * FileMergeResult is the result of merging one file (JSON-safe for bindings)
+ * FileMergeResult is the result of merging one file.
  */
 export class FileMergeResult {
     "filePath": string;
@@ -263,42 +263,6 @@ export class MergeConflictChunk {
 }
 
 /**
- * MergePair is a user-specified file pair (JSON-safe for bindings)
- */
-export class MergePair {
-    "pathA": string;
-    "pathB": string;
-
-    /**
-     * e.g. "merged_events.txt"; empty = use PathA basename
-     */
-    "outputName": string;
-
-    /** Creates a new MergePair instance. */
-    constructor($$source: Partial<MergePair> = {}) {
-        if (!("pathA" in $$source)) {
-            this["pathA"] = "";
-        }
-        if (!("pathB" in $$source)) {
-            this["pathB"] = "";
-        }
-        if (!("outputName" in $$source)) {
-            this["outputName"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new MergePair instance from a string or object.
-     */
-    static createFrom($$source: any = {}): MergePair {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new MergePair($$parsedSource as Partial<MergePair>);
-    }
-}
-
-/**
  * MergePreset holds a named merge options profile (JSON-safe for bindings)
  */
 export class MergePreset {
@@ -331,7 +295,7 @@ export class MergePreset {
 }
 
 /**
- * MergerOptions configures how files are merged (JSON-safe for bindings)
+ * MergerOptions configures how files are merged.
  */
 export class MergerOptions {
     "addAdditionalEntries": boolean;
@@ -340,7 +304,6 @@ export class MergerOptions {
     "matchByFilenameOnly": boolean;
     "includePathPattern": string;
     "excludePathPattern": string;
-    "outputFilename": string;
 
     /**
      * e.g. "_merged" meaning: events/foo.txt -> events/foo_merged.txt
@@ -366,9 +329,6 @@ export class MergerOptions {
         }
         if (!("excludePathPattern" in $$source)) {
             this["excludePathPattern"] = "";
-        }
-        if (!("outputFilename" in $$source)) {
-            this["outputFilename"] = "";
         }
         if (!("outputFileSuffix" in $$source)) {
             this["outputFileSuffix"] = "";
@@ -419,7 +379,7 @@ export class PathMatch {
 }
 
 /**
- * PreviewItem is a single file match for the merge preview (JSON-safe for bindings)
+ * PreviewItem is a single file match for the merge preview.
  */
 export class PreviewItem {
     "relPath": string;
@@ -532,7 +492,7 @@ export class TreeNode {
 }
 
 /**
- * ValidationError describes a parse error in a merged file (JSON-safe for bindings)
+ * ValidationError describes a parse error in a merged file.
  */
 export class ValidationError {
     "path": string;

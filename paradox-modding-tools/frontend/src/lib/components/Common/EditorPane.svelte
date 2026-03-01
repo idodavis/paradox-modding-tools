@@ -69,7 +69,7 @@
       {@render headerContent(false)}
     </div>
   {/if}
-  <div class="relative min-h-0 flex-1 overflow-hidden">
+  <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
     <EditorView {content} {firstLineNumber} {placeholder} />
     {#if !content}
       <p class="pointer-events-none absolute left-4 top-3 opacity-60">

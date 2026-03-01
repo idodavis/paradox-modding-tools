@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	internal "paradox-modding-tools/services/internal"
 	"paradox-modding-tools/services/internal/repos"
 
 	"github.com/jmoiron/sqlx"
@@ -61,7 +62,7 @@ func (m *ModDocService) Scan(game string, installPath string) ([]string, error) 
 	}
 
 	filesSlice := make([]string, 0, len(files))
-	hash := installPathHash(installPath)
+	hash := internal.InstallPathHash(installPath)
 	fetchedAt := time.Now().UTC().Format(time.RFC3339)
 
 	repo := m.getRepo()
@@ -86,7 +87,7 @@ func (m *ModDocService) GetDocPathCache(game, installPath string) (*DocPathCache
 	if gameNorm == "" || installPath == "" {
 		return nil, nil
 	}
-	hash := installPathHash(installPath)
+	hash := internal.InstallPathHash(installPath)
 	files, err := m.getRepo().GetDocFiles(gameNorm, hash)
 	if err != nil {
 		return nil, err
@@ -114,6 +115,6 @@ func (m *ModDocService) GetDocContent(game, installPath, relPath string) (string
 	if gameNorm == "" || installPath == "" || relPath == "" {
 		return "", nil
 	}
-	hash := installPathHash(installPath)
+	hash := internal.InstallPathHash(installPath)
 	return m.getRepo().GetDocContent(gameNorm, hash, relPath)
 }

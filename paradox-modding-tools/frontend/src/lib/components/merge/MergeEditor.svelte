@@ -2,7 +2,13 @@
   import { Dialog, LangThemeSelect, SplitPane } from "@components";
   import DiffView from "../common/DiffView.svelte";
   import EditorView from "../common/EditorView.svelte";
-  import { getConflictIndices, buildMergedContent, computeMergeStats, getMergeStore } from "@stores/merge.svelte";
+  import {
+    getConflictIndices,
+    getAddedIndices,
+    buildMergedContent,
+    computeMergeStats,
+  } from "@stores/mergeEditor.svelte";
+  import { getMergeStore } from "@stores/merge.svelte";
   import type { MergeConflictChunk } from "@services/models";
   import { showToast } from "@stores/toast.svelte";
 
@@ -21,12 +27,33 @@
 
   let resultValues = $state<Record<number, string>>({});
   let resolvedState = $state<Record<number, "A" | "B" | "Custom" | undefined>>({});
+  let includedAdditions = $state<Record<number, boolean>>({});
+  let editorTab = $state<"conflicts" | "additions">("conflicts");
   let open = $state(true);
   let closing = false;
 
+  const conflictIndices = $derived(getConflictIndices(chunks));
+  const addedIndices = $derived(getAddedIndices(chunks));
+  const conflictCount = $derived(conflictIndices.length);
+  const addedCount = $derived(addedIndices.length);
+  const showAdditionsTab = $derived(mergeStore.config.addAdditionalEntries && addedCount > 0);
+
   $effect(() => {
     relPath;
-    if (conflictCount > 0) currentConflictNum = 1;
+    chunks;
+    if (conflictCount > 0) {
+      currentConflictNum = 1;
+      editorTab = "conflicts";
+    } else if (showAdditionsTab) {
+      currentAdditionNum = 1;
+      editorTab = "additions";
+    }
+    if (addedCount > 0) currentAdditionNum = 1;
+    if (mergeStore.config.addAdditionalEntries) {
+      const next: Record<number, boolean> = {};
+      for (const i of addedIndices) next[i] = true;
+      includedAdditions = next;
+    }
   });
 
   function stripNL(text: string) {
@@ -47,11 +74,9 @@
     }
   }
 
-  const conflictIndices = $derived(getConflictIndices(chunks));
-  const conflictCount = $derived(conflictIndices.length);
-  const addedCount = $derived(chunks.filter((c: MergeConflictChunk) => c.type === "added").length);
   const resolvedCount = $derived(Object.values(resolvedState).filter(Boolean).length);
   const unresolvedCount = $derived(conflictCount - resolvedCount);
+  const includedCount = $derived(addedIndices.filter((i) => includedAdditions[i]).length);
 
   function close(action: () => void) {
     closing = true;
@@ -64,20 +89,29 @@
       return;
     }
     close(
-      conflictCount === 0
+      conflictCount === 0 && addedCount === 0
         ? onAutoMerge
-        : () => onSave(buildMergedContent(chunks, resultValues), computeMergeStats(chunks, resolvedState)),
+        : () =>
+            onSave(
+              buildMergedContent(chunks, resultValues, includedAdditions),
+              computeMergeStats(chunks, resolvedState, includedAdditions),
+            ),
     );
   }
 
   let currentConflictNum = $state(1);
+  let currentAdditionNum = $state(1);
 
   const currentChunkIndex = $derived(
     currentConflictNum >= 1 && currentConflictNum <= conflictCount
       ? (conflictIndices[currentConflictNum - 1] ?? -1)
       : -1,
   );
+  const currentAdditionIndex = $derived(
+    currentAdditionNum >= 1 && currentAdditionNum <= addedCount ? (addedIndices[currentAdditionNum - 1] ?? -1) : -1,
+  );
   const currentChunk = $derived(currentChunkIndex >= 0 ? chunks[currentChunkIndex] : null);
+  const currentAdditionChunk = $derived(currentAdditionIndex >= 0 ? chunks[currentAdditionIndex] : null);
   const currentChoice = $derived(currentChunkIndex >= 0 ? resolvedState[currentChunkIndex] : undefined);
 
   const diffDisplay = $derived.by(() => {
@@ -93,9 +127,34 @@
   });
 
   const resultDisplay = $derived.by(() => {
+    if (editorTab === "additions") {
+      if (!currentAdditionChunk) return "";
+      return includedAdditions[currentAdditionIndex] ? stripNL(currentAdditionChunk.textB).body : "(excluded)";
+    }
     if (currentChunkIndex < 0 || !resolvedState[currentChunkIndex]) return "";
     return stripNL(resultValues[currentChunkIndex] ?? "").body;
   });
+
+  const additionsDiffDisplay = $derived.by(() => {
+    if (!currentAdditionChunk) return null;
+    const b = stripNL(currentAdditionChunk.textB);
+    return {
+      textA: "(not in A)",
+      textB: b.body,
+      startLineA: 1,
+      startLineB: currentAdditionChunk.startLineB + b.offset,
+    };
+  });
+
+  function setAdditionIncluded(index: number, value: boolean) {
+    includedAdditions = { ...includedAdditions, [index]: value };
+  }
+  function setAllAdditions(value: boolean) {
+    includedAdditions = Object.fromEntries(addedIndices.map((i) => [i, value]));
+  }
+  function goToAddition(num: number) {
+    if (num >= 1 && num <= addedCount) currentAdditionNum = num;
+  }
 
   function onResultChange(value: string) {
     if (currentChunkIndex < 0 || !currentChunk) return;
@@ -138,7 +197,33 @@
         </button>
       </div>
 
-      <!-- Row 2: Paths + info + layout toggle -->
+      <!-- Row 2: Tabs (when conflicts or additions) -->
+      {#if conflictCount > 0 || showAdditionsTab}
+        <div class="flex gap-1">
+          <button
+            type="button"
+            class="btn btn-sm"
+            class:btn-primary={editorTab === "conflicts"}
+            class:btn-ghost={editorTab !== "conflicts"}
+            onclick={() => (editorTab = "conflicts")}
+          >
+            Conflicts ({conflictCount})
+          </button>
+          {#if showAdditionsTab}
+            <button
+              type="button"
+              class="btn btn-sm"
+              class:btn-primary={editorTab === "additions"}
+              class:btn-ghost={editorTab !== "additions"}
+              onclick={() => (editorTab = "additions")}
+            >
+              Additions ({addedCount})
+            </button>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Row 3: Paths + info + layout toggle -->
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-base-content/60">
         <span title={fileAPath} class="text-primary/70">{mergeStore.labels.a}: ...{fileAPath.slice(-50)}</span>
         <span title={fileBPath} class="text-secondary/70">{mergeStore.labels.b}: ...{fileBPath.slice(-50)}</span>
@@ -149,6 +234,14 @@
             class:badge-warning={resolvedCount < conflictCount}
           >
             {resolvedCount}/{conflictCount} resolved
+          </span>
+        {:else if showAdditionsTab}
+          <span
+            class="badge badge-sm"
+            class:badge-success={includedCount === addedCount}
+            class:badge-warning={includedCount < addedCount}
+          >
+            {includedCount}/{addedCount} included
           </span>
         {:else}
           <span class="badge badge-sm badge-info">No conflicts</span>
@@ -178,33 +271,35 @@
         </div>
       </div>
 
-      <!-- Row 3: Skip + Conflict nav / no-conflict info + Save -->
+      <!-- Row 4: Skip + Conflict/Additions nav + Save -->
       <div class="flex items-center gap-3 pt-1.5 border-t border-base-content/15">
         <button class="btn btn-sm btn-outline shrink-0" onclick={() => close(onSkip)}>Skip File</button>
 
-        {#if conflictCount > 0}
-          <div class="flex items-center gap-2 flex-1 justify-center flex-wrap">
-            <div class="join">
-              <button
-                type="button"
-                class="join-item btn btn-sm btn-outline"
-                disabled={currentConflictNum <= 1}
-                onclick={() => goToConflict(currentConflictNum - 1)}
-              >
-                Prev
-              </button>
-              <button
-                type="button"
-                class="join-item btn btn-sm btn-outline"
-                disabled={currentConflictNum >= conflictCount}
-                onclick={() => goToConflict(currentConflictNum + 1)}
-              >
-                Next
-              </button>
-            </div>
-            <span class="font-medium tabular-nums text-sm text-base-content"
-              >Conflict {currentConflictNum} of {conflictCount}</span
+        {#snippet prevNext(goTo: (num: number) => void, current: number, total: number, label: string)}
+          <div class="join">
+            <button
+              type="button"
+              class="join-item btn btn-sm btn-outline"
+              disabled={current <= 1}
+              onclick={() => goTo(current - 1)}
             >
+              Prev
+            </button>
+            <button
+              type="button"
+              class="join-item btn btn-sm btn-outline"
+              disabled={current >= total}
+              onclick={() => goTo(current + 1)}
+            >
+              Next
+            </button>
+          </div>
+          <span class="font-medium tabular-nums text-sm text-base-content">{label} {current} of {total}</span>
+        {/snippet}
+
+        {#if editorTab === "conflicts" && conflictCount > 0}
+          <div class="flex items-center gap-2 flex-1 justify-center flex-wrap">
+            {@render prevNext(goToConflict, currentConflictNum, conflictCount, "Conflict")}
             {#if currentChunk}
               <span class="badge badge-sm {choiceBadge.cls}">{choiceBadge.text}</span>
               <span class="text-base-content/20 mx-1">|</span>
@@ -233,12 +328,40 @@
               </button>
             {/if}
           </div>
+        {:else if editorTab === "additions" && addedCount > 0}
+          <div class="flex items-center gap-2 flex-1 justify-center flex-wrap">
+            {@render prevNext(goToAddition, currentAdditionNum, addedCount, "Addition")}
+            {#if currentAdditionIndex >= 0}
+              <span
+                class="badge badge-sm"
+                class:badge-success={includedAdditions[currentAdditionIndex]}
+                class:badge-ghost={!includedAdditions[currentAdditionIndex]}
+              >
+                {includedAdditions[currentAdditionIndex] ? "Included" : "Excluded"}
+              </span>
+              <span class="text-base-content/20 mx-1">|</span>
+              <button
+                type="button"
+                class="btn btn-xs btn-ghost"
+                onclick={() => setAdditionIncluded(currentAdditionIndex, !includedAdditions[currentAdditionIndex])}
+              >
+                {includedAdditions[currentAdditionIndex] ? "Exclude" : "Include"}
+              </button>
+              <span class="text-base-content/20 mx-1">|</span>
+              <button type="button" class="btn btn-xs btn-ghost" onclick={() => setAllAdditions(true)}>
+                Include all
+              </button>
+              <button type="button" class="btn btn-xs btn-ghost" onclick={() => setAllAdditions(false)}>
+                Exclude all
+              </button>
+            {/if}
+          </div>
         {:else}
           <div class="flex-1 text-center text-sm text-base-content/60">
-            {#if addedCount > 0}
-              No shared-key conflicts — {addedCount} addition{addedCount > 1 ? "s" : ""} from {mergeStore.labels.b} will
-              be appended
-            {:else}
+            {#if addedCount > 0 && !showAdditionsTab}
+              No shared-key conflicts — {addedCount} addition{addedCount > 1 ? "s" : ""} from {mergeStore.labels.b}{" "}
+              will be appended
+            {:else if addedCount === 0 && conflictCount === 0}
               Files are identical — nothing to merge
             {/if}
           </div>
@@ -258,7 +381,8 @@
   {#snippet description()}<span class="sr-only">Merge Editor</span>{/snippet}
 
   <div class="flex-1 min-h-0 overflow-hidden">
-    {#if diffDisplay}
+    {#if (editorTab === "conflicts" && diffDisplay) || (editorTab === "additions" && additionsDiffDisplay)}
+      {@const activeDiff = (editorTab === "additions" ? additionsDiffDisplay : diffDisplay)!}
       <SplitPane
         orientation={mergeStore.mergeResultLayout === "right" ? "horizontal" : "vertical"}
         defaultSecondSize={mergeStore.mergeResultLayout === "right" ? 480 : 300}
@@ -267,12 +391,12 @@
       >
         {#snippet first()}
           <DiffView
-            originalContent={diffDisplay.textA}
-            modifiedContent={diffDisplay.textB}
-            originalLabel={mergeStore.labels.a}
+            originalContent={activeDiff.textA}
+            modifiedContent={activeDiff.textB}
+            originalLabel={editorTab === "additions" ? "(not in A)" : mergeStore.labels.a}
             modifiedLabel={mergeStore.labels.b}
-            origFirstLine={diffDisplay.startLineA}
-            modFirstLine={diffDisplay.startLineB}
+            origFirstLine={activeDiff.startLineA}
+            modFirstLine={activeDiff.startLineB}
             class="h-full"
           />
         {/snippet}
@@ -281,8 +405,8 @@
             content={resultDisplay}
             label="Result"
             labelClass="bg-accent/10 text-accent"
-            firstLineNumber={diffDisplay.startLineA}
-            readOnly={false}
+            firstLineNumber={activeDiff.startLineA}
+            readOnly={editorTab === "additions"}
             onContentChange={onResultChange}
             class="h-full"
           />

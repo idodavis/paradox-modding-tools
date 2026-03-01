@@ -42,7 +42,7 @@
   });
 </script>
 
-<div class="flex flex-col {className}">
+<div class="flex min-h-0 flex-1 flex-col h-full {className}">
   {#if label}
     <div class="text-sm font-semibold py-2 px-3 shrink-0 border-b-2 border-base-content/15 {labelClass}">
       {label}
@@ -51,7 +51,7 @@
       {/if}
     </div>
   {/if}
-  <div class="relative flex-1">
+  <div class="relative min-h-0 flex-1 overflow-hidden">
     <div class="absolute inset-0" bind:this={ctx.host}></div>
     {#if !content}
       <p>{placeholder}</p>

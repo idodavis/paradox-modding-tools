@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "@iconify/svelte";
   import { Card, CardBody, FileSelector } from "@components";
   import MergePreview from "./MergePreview.svelte";
   import { getMergeStore } from "@stores/merge.svelte";
@@ -22,7 +23,7 @@
       whenToUse: "Merging a mod into your game.",
       explanation: "A = vanilla game files, B = mod files. Output goes to your chosen directory.",
       canRun: () => store.canRun.vanilla,
-      run: () => store.runMerge("vanilla"),
+      run: () => store.runDirMerge("vanilla"),
       preview: () => store.runPreview("vanilla"),
       hasPreview: true,
     },
@@ -31,7 +32,7 @@
       explanation:
         "A = base directory, B = other directory. Files are matched by path (or filename if that option is on).",
       canRun: () => store.canRun.dirs,
-      run: () => store.runMerge("dirs"),
+      run: () => store.runDirMerge("dirs"),
       preview: () => store.runPreview("dirs"),
       hasPreview: true,
     },
@@ -55,6 +56,20 @@
           : cfg.hasPreview
             ? "Preview Merge"
             : "Run Merge",
+  );
+  const resolutionTooltip = $derived(
+    store.config.manualConflictResolution
+      ? "A merge editor will open for each file"
+      : "Conflicts resolved automatically; A wins by default",
+  );
+  const primaryAction = $derived(
+    store.merging
+      ? null
+      : mode === "pairs"
+        ? { label: "Run Merge", onClick: () => cfg.run(), disabled: !cfg.canRun() }
+        : store.previewItems.length > 0
+          ? { label: "Run Merge", onClick: () => cfg.run(), disabled: !cfg.canRun() }
+          : { label: primaryLabel!, onClick: () => cfg.preview!(), disabled: !cfg.canRun() || store.previewing },
   );
 </script>
 
@@ -102,8 +117,6 @@
         initialValue={store.pathB ?? ""}
         onPathChange={(p) => (store.pathB = p ?? "")}
       />
-    {:else}
-      <!-- pairs: output dir first, then pair list -->
     {/if}
 
     {#if mode !== "pairs"}
@@ -138,7 +151,7 @@
       </label>
       <div class="space-y-2 mb-4">
         {#each store.filePairs as pair, i}
-          <div class="flex flex-wrap items-center gap-2 p-2 rounded border border-base-content/20 bg-base-200/50">
+          <div class="flex flex-wrap items-center gap-2 p-2 rounded border border-base-content/10 bg-base-200/50">
             <FileSelector
               mode="file"
               dialogTitle="File A"
@@ -163,56 +176,38 @@
               value={pair.outputName}
               oninput={(e) => store.updatePair(i, "outputName", (e.target as HTMLInputElement).value)}
             />
-            <button type="button" class="btn btn-ghost btn-xs" onclick={() => store.removePair(i)} title="Remove pair"
-              >×</button
-            >
+            <button type="button" class="btn btn-ghost btn-sm" onclick={() => store.removePair(i)} title="Remove pair">
+              <Icon icon="mdi:delete-outline" class="size-4 text-error/70 hover:text-error" />
+            </button>
           </div>
         {/each}
       </div>
-      <div class="flex gap-2">
+    {/if}
+    <div class="flex flex-wrap gap-2 items-center" class:mt-3={mode !== "pairs"}>
+      {#if mode === "pairs"}
         <button type="button" class="btn btn-outline btn-secondary btn-sm" onclick={() => store.addPair()}
           >+ Add pair</button
         >
-        {#if store.merging}
-          <button type="button" class="btn btn-soft btn-wide btn-error" onclick={() => store.cancelMerge()}
-            >Cancel</button
-          >
-        {:else}
-          <button
-            type="button"
-            class="btn btn-soft btn-wide btn-primary"
-            disabled={!cfg.canRun()}
-            onclick={() => cfg.run()}>Run Merge</button
-          >
-        {/if}
-        <button type="button" class="btn btn-soft btn-ghost" onclick={() => store.reset()}>Clear</button>
-      </div>
-    {:else}
-      <div class="flex flex-wrap gap-2 mt-3">
-        {#if store.merging}
-          <button type="button" class="btn btn-soft btn-wide btn-error" onclick={() => store.cancelMerge()}
-            >Cancel</button
-          >
-        {:else if store.previewItems.length > 0}
-          <button
-            type="button"
-            class="btn btn-soft btn-wide btn-primary"
-            disabled={!cfg.canRun()}
-            onclick={() => cfg.run()}>Run Merge</button
-          >
-        {:else}
-          <button
-            type="button"
-            class="btn btn-soft btn-wide btn-primary"
-            disabled={!cfg.canRun() || store.previewing}
-            onclick={() => cfg.preview!()}>{primaryLabel}</button
-          >
-        {/if}
-        <button type="button" class="btn btn-soft btn-ghost" onclick={() => store.reset()}>Clear</button>
-      </div>
-      {#if store.previewItems.length > 0}
-        <MergePreview previewItems={store.previewItems} bind:selectedRelPaths={store.selectedRelPaths} />
       {/if}
+      {#if store.merging}
+        <button type="button" class="btn btn-sm btn-outline btn-error" onclick={() => store.cancelMerge()}
+          >Cancel</button
+        >
+      {:else if primaryAction}
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          disabled={primaryAction.disabled}
+          onclick={primaryAction.onClick}>{primaryAction.label}</button
+        >
+      {/if}
+      <span class="badge badge-sm badge-ghost" title={resolutionTooltip}
+        >Resolution: {store.config.manualConflictResolution ? "Manual" : "Auto"}</span
+      >
+      <button type="button" class="btn btn-sm btn-ghost" onclick={() => store.reset()}>Clear</button>
+    </div>
+    {#if mode !== "pairs" && store.previewItems.length > 0}
+      <MergePreview previewItems={store.previewItems} bind:selectedRelPaths={store.selectedRelPaths} />
     {/if}
   </CardBody>
 </Card>

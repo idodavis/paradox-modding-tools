@@ -24,12 +24,21 @@ export function BuildTree(paths: string[]): $CancellablePromise<$models.TreeNode
 }
 
 /**
+ * CollectAndMatchPaths collects files from both paths and returns matching pairs.
+ */
+export function CollectAndMatchPaths(pathA: string, pathB: string, filter: $models.FileCollectorFilter, matchByFilenameOnly: boolean): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
+    return $Call.ByID(1380774949, pathA, pathB, filter, matchByFilenameOnly).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
  * CollectFilesFromPath collects all .txt files from a mix of files and directories
  * Returns a map of relativePath -> fullPath
  */
 export function CollectFilesFromPath(inputPath: string, filter: $models.FileCollectorFilter): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(2863705307, inputPath, filter).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -39,14 +48,10 @@ export function CollectFilesFromPath(inputPath: string, filter: $models.FileColl
  */
 export function FindMatchingPaths(filesA: { [_ in string]?: string }, filesB: { [_ in string]?: string }, matchByFilenameOnly: boolean): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
     return $Call.ByID(2990739391, filesA, filesB, matchByFilenameOnly).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType3($result);
     });
 }
 
-/**
- * GetScriptRoot returns the game script root directory for the given game and install path.
- * CK3: <install>/game, EU5: <install>/game/in_game.
- */
 export function GetGameScriptRoot(game: string, installPath: string): $CancellablePromise<string> {
     return $Call.ByID(4081809646, game, installPath);
 }
@@ -58,54 +63,28 @@ export function ReadFileContent(fullPath: string): $CancellablePromise<string> {
     return $Call.ByID(1203948956, fullPath);
 }
 
-/**
- * SaveFile opens a save-file dialog, then writes content to the chosen path as UTF-8.
- * Returns ("", nil) when the user cancels so no error dialog is shown.
- */
 export function SaveFile(title: string, defaultName: string, content: string, ext: string): $CancellablePromise<string> {
     return $Call.ByID(3260874390, title, defaultName, content, ext);
 }
 
-/**
- * SelectDirectories opens a directory selection dialog allowing multiple selections.
- * Returns (nil, nil) when the user cancels so no error dialog is shown.
- */
-export function SelectDirectories(title: string): $CancellablePromise<string[]> {
-    return $Call.ByID(2349219276, title).then(($result: any) => {
-        return $$createType5($result);
-    });
-}
-
-/**
- * SelectDirectory opens a directory selection dialog.
- * Returns ("", nil) when the user cancels so no error dialog is shown.
- */
 export function SelectDirectory(title: string): $CancellablePromise<string> {
     return $Call.ByID(421942968, title);
 }
 
-/**
- * SelectFiles opens a file selection dialog allowing multiple selections.
- * Returns (nil, nil) when the user cancels so no error dialog is shown.
- */
-export function SelectFiles(title: string, filter: string): $CancellablePromise<string[]> {
-    return $Call.ByID(362567264, title, filter).then(($result: any) => {
-        return $$createType5($result);
-    });
+export function SelectSingleFile(title: string, filter: string): $CancellablePromise<string> {
+    return $Call.ByID(430312767, title, filter);
 }
 
 /**
- * SelectSingleFile opens a file selection dialog for a single file.
- * Returns ("", nil) when the user cancels so no error dialog is shown.
+ * WriteWithBOM writes content to outputPath as UTF-8 with BOM. Creates parent directories as needed.
  */
-export function SelectSingleFile(title: string, filter: string): $CancellablePromise<string> {
-    return $Call.ByID(430312767, title, filter);
+export function WriteWithBOM(outputPath: string, content: string): $CancellablePromise<void> {
+    return $Call.ByID(239287030, outputPath, content);
 }
 
 // Private type creation functions
 const $$createType0 = $models.TreeNode.createFrom;
 const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $Create.Map($Create.Any, $Create.Any);
-const $$createType3 = $models.PathMatch.createFrom;
-const $$createType4 = $Create.Map($Create.Any, $$createType3);
-const $$createType5 = $Create.Array($Create.Any);
+const $$createType2 = $models.PathMatch.createFrom;
+const $$createType3 = $Create.Map($Create.Any, $$createType2);
+const $$createType4 = $Create.Map($Create.Any, $Create.Any);

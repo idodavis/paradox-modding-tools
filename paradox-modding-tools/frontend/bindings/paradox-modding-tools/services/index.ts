@@ -33,7 +33,6 @@ export {
     ItemDetails,
     LatestPatchNotes,
     MergeConflictChunk,
-    MergePair,
     MergePreset,
     MergerOptions,
     PathMatch,

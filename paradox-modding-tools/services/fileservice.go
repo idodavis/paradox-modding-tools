@@ -12,20 +12,15 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// ############
-// FileService
-// ############
-
 const (
 	scriptRootFolderCK3 = "game"
 	scriptRootFolderEU5 = "game/in_game"
+	utf8BOM             = "\uFEFF"
 )
 
 // FileService provides directory/file selection dialogs and game script root / doc path discovery.
 type FileService struct{}
 
-// SelectDirectory opens a directory selection dialog.
-// Returns ("", nil) when the user cancels so no error dialog is shown.
 func (f *FileService) SelectDirectory(title string) (string, error) {
 	app := application.Get()
 	dialog := app.Dialog.OpenFile()
@@ -39,22 +34,6 @@ func (f *FileService) SelectDirectory(title string) (string, error) {
 	return path, err
 }
 
-// SelectDirectories opens a directory selection dialog allowing multiple selections.
-// Returns (nil, nil) when the user cancels so no error dialog is shown.
-func (f *FileService) SelectDirectories(title string) ([]string, error) {
-	app := application.Get()
-	dialog := app.Dialog.OpenFile()
-	dialog.SetTitle(title)
-	dialog.CanChooseDirectories(true)
-	paths, err := dialog.PromptForMultipleSelection()
-	if err != nil {
-		return nil, nil
-	}
-	return paths, err
-}
-
-// SelectSingleFile opens a file selection dialog for a single file.
-// Returns ("", nil) when the user cancels so no error dialog is shown.
 func (f *FileService) SelectSingleFile(title, filter string) (string, error) {
 	app := application.Get()
 	dialog := app.Dialog.OpenFile()
@@ -71,21 +50,15 @@ func (f *FileService) SelectSingleFile(title, filter string) (string, error) {
 	return path, err
 }
 
-// SelectFiles opens a file selection dialog allowing multiple selections.
-// Returns (nil, nil) when the user cancels so no error dialog is shown.
-func (f *FileService) SelectFiles(title, filter string) ([]string, error) {
-	app := application.Get()
-	dialog := app.Dialog.OpenFile()
-	dialog.SetTitle(title)
-	dialog.CanChooseFiles(true)
-	if filter != "" {
-		dialog.AddFilter(filter, filter)
+// WriteWithBOM writes content to outputPath as UTF-8 with BOM. Creates parent directories as needed.
+func (f *FileService) WriteWithBOM(outputPath, content string) error {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return fmt.Errorf("creating output directory: %w", err)
 	}
-	paths, err := dialog.PromptForMultipleSelection()
-	if err != nil {
-		return nil, nil
+	if !strings.HasPrefix(content, utf8BOM) {
+		content = utf8BOM + content
 	}
-	return paths, err
+	return os.WriteFile(outputPath, []byte(content), 0o644)
 }
 
 // ReadFileContent reads a file as UTF-8 text.
@@ -98,8 +71,6 @@ func (f *FileService) ReadFileContent(fullPath string) (string, error) {
 	return string(data), nil
 }
 
-// SaveFile opens a save-file dialog, then writes content to the chosen path as UTF-8.
-// Returns ("", nil) when the user cancels so no error dialog is shown.
 func (f *FileService) SaveFile(title, defaultName, content, ext string) (string, error) {
 	app := application.Get()
 	dialog := app.Dialog.SaveFile()
@@ -128,8 +99,6 @@ func (f *FileService) SaveFile(title, defaultName, content, ext string) (string,
 	return fullPath, nil
 }
 
-// GetScriptRoot returns the game script root directory for the given game and install path.
-// CK3: <install>/game, EU5: <install>/game/in_game.
 func (f *FileService) GetGameScriptRoot(game string, installPath string) (string, error) {
 	switch game {
 	case "CK3":
@@ -209,6 +178,19 @@ func (f *FileService) FindMatchingPaths(filesA, filesB map[string]string, matchB
 		return f.findMatchingByFilenameOnly(filesA, filesB), nil
 	}
 	return f.findMatchingByPath(filesA, filesB), nil
+}
+
+// CollectAndMatchPaths collects files from both paths and returns matching pairs.
+func (f *FileService) CollectAndMatchPaths(pathA, pathB string, filter FileCollectorFilter, matchByFilenameOnly bool) (map[string]PathMatch, error) {
+	filesA, err := f.CollectFilesFromPath(pathA, filter)
+	if err != nil {
+		return nil, err
+	}
+	filesB, err := f.CollectFilesFromPath(pathB, filter)
+	if err != nil {
+		return nil, err
+	}
+	return f.FindMatchingPaths(filesA, filesB, matchByFilenameOnly)
 }
 
 func (f *FileService) findMatchingByFilenameOnly(filesA, filesB map[string]string) map[string]PathMatch {

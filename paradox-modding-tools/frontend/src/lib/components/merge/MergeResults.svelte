@@ -5,23 +5,28 @@
   import { SaveFile } from "@services/fileservice";
   import type { FileMergeResult } from "@services/models";
   import { getMergeStore } from "@stores/merge.svelte";
+  import type { GridApi } from "ag-grid-community";
+  import type {
+    ValueFormatterParams,
+    RowClassParams,
+    ICellRendererParams,
+    GridReadyEvent,
+    RowClickedEvent,
+  } from "ag-grid-community";
 
   const store = getMergeStore();
   const results = $derived(store.mergeResults);
   const { a: labelA, b: labelB } = $derived(store.labels);
-
-  const Merge = MergeService as any;
 
   let savingReport = $state(false);
   let validating = $state(false);
   let validationErrors = $state<{ path: string; line: number; error: string }[]>([]);
   let errorMsg = $state("");
 
-  // Split-pane diff state
   let selectedIndex = $state<number | null>(null);
   let diffSide = $state<"A" | "B">("A");
   let showFullscreen = $state(false);
-  let gridApi = $state<any>(null);
+  let gridApi = $state<GridApi | null>(null);
 
   function navigateTo(i: number) {
     selectedIndex = i;
@@ -38,7 +43,6 @@
   const currentOldFileName = $derived(selectedResult ? (diffSide === "A" ? labelA : labelB) : "");
   const currentOldColor = $derived(diffSide === "A" ? "text-primary" : "text-secondary");
 
-  // Reset selectedIndex when results change
   $effect(() => {
     results;
     selectedIndex = null;
@@ -48,39 +52,32 @@
     files: results.length,
     added: results.reduce((s: number, x: FileMergeResult) => s + (x.added ?? 0), 0),
     changed: results.reduce((s: number, x: FileMergeResult) => s + (x.changed ?? 0), 0),
-    removed: results.reduce((s: number, x: FileMergeResult) => s + (x.removed ?? 0), 0),
   }));
 
   const conflicts = $derived(results.filter((r: FileMergeResult) => (r.resolvedConflicts?.length ?? 0) > 0));
 
-  function truncate(p: string) {
+  function truncatePath(p: string) {
+    if (!p) return "";
     const parts = p.split(/[/\\]/);
-    return parts.length > 2 ? `.../ ${parts.slice(-2).join("/")}` : (parts.pop() ?? p);
+    return parts.length > 2 ? `.../${parts.slice(-2).join("/")}` : (parts.pop() ?? p);
   }
 
   const columns = [
     {
-      field: "filePath",
-      headerName: "File",
+      field: "outputPath",
+      headerName: "Saved to",
       flex: 3,
-      valueFormatter: (p: any) => truncate(p.value),
+      valueFormatter: (p: ValueFormatterParams) => truncatePath(p.value),
+      tooltipValueGetter: (p: ICellRendererParams) => p.data?.outputPath ?? "",
     },
     { field: "changed", headerName: "Δ", flex: 1, maxWidth: 70 },
     { field: "added", headerName: "+", flex: 1, maxWidth: 70 },
-    { field: "removed", headerName: "-", flex: 1, maxWidth: 70 },
   ];
 
   async function saveReport() {
     savingReport = true;
     try {
-      const md = await Merge.GenerateMergeReport(
-        results,
-        summary.added,
-        summary.changed,
-        summary.removed,
-        labelA,
-        labelB,
-      );
+      const md = await MergeService.GenerateMergeReport(results, summary.added, summary.changed, 0, labelA, labelB);
       const path = await SaveFile("Save merge report", "merge_report.md", md, "md");
       if (path) showToast({ message: "Report saved", type: "alert-success" });
     } catch (e) {
@@ -95,7 +92,7 @@
     validating = true;
     validationErrors = [];
     try {
-      const errs = await Merge.ValidateMergedFiles(outputs);
+      const errs = await MergeService.ValidateMergedFiles(outputs);
       validationErrors = errs ?? [];
       showToast({
         message: validationErrors.length ? `${validationErrors.length} errors` : "All valid",
@@ -112,7 +109,7 @@
 <section class="mt-6">
   <h3 class="text-sm font-semibold text-base-content/90 mb-3">Results</h3>
   <Card>
-    <CardBody class="!p-0">
+    <CardBody class="p-0!">
       {#if errorMsg}
         <div class="text-error text-sm p-3">{errorMsg}</div>
       {/if}
@@ -126,7 +123,6 @@
             <span class="badge badge-primary badge-sm">{summary.files} files</span>
             <span class="badge badge-success badge-sm">+{summary.added} added</span>
             <span class="badge badge-warning badge-sm">{summary.changed} changed</span>
-            <span class="badge badge-error badge-sm">-{summary.removed} removed</span>
             {#if conflicts.length > 0}
               <span class="badge badge-warning badge-sm ml-2">
                 {conflicts.length} resolved conflicts
@@ -141,8 +137,10 @@
               onclick={(e) => {
                 e.stopPropagation();
                 saveReport();
-              }}>{savingReport ? "Saving…" : "Save report"}</button
+              }}
             >
+              {savingReport ? "Saving…" : "Save report"}
+            </button>
             <button
               type="button"
               class="btn btn-sm btn-ghost"
@@ -150,8 +148,10 @@
               onclick={(e) => {
                 e.stopPropagation();
                 runValidation();
-              }}>{validating ? "Validating…" : "Validate"}</button
+              }}
             >
+              {validating ? "Validating…" : "Validate"}
+            </button>
           </div>
         </summary>
 
@@ -163,7 +163,7 @@
                   {file.filePath}
                 </div>
                 <ul class="space-y-1 ml-2">
-                  {#each (file as any).resolvedConflicts as c}
+                  {#each file.resolvedConflicts ?? [] as c}
                     <li class="flex items-center gap-2 text-xs">
                       <code class="bg-base-200 px-1 rounded">{c.key}</code>
                       <span class="text-base-content/60">→</span>
@@ -171,8 +171,9 @@
                         class="font-medium"
                         class:text-primary={c.usedSide === "A"}
                         class:text-secondary={c.usedSide === "B"}
-                        >{c.usedSide === "A" ? labelA : c.usedSide === "B" ? labelB : c.usedSide}</span
                       >
+                        {c.usedSide === "A" ? labelA : c.usedSide === "B" ? labelB : c.usedSide}
+                      </span>
                       <span class="text-base-content/50">({c.reason})</span>
                     </li>
                   {/each}
@@ -198,7 +199,7 @@
         </details>
       {/if}
 
-      <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-svh">
+      <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-[calc(96vh-10rem)]">
         {#snippet first()}
           <Grid
             columnDefs={columns}
@@ -206,13 +207,15 @@
             className="h-full w-full"
             gridOptions={{
               rowSelection: "single",
-              onGridReady: (e: any) => {
+              enableBrowserTooltips: true,
+              tooltipShowDelay: 200,
+              onGridReady: (e: GridReadyEvent) => {
                 gridApi = e.api;
               },
-              onRowClicked: (e: any) => {
+              onRowClicked: (e: RowClickedEvent) => {
                 selectedIndex = e.rowIndex;
               },
-              getRowStyle: (params: any) =>
+              getRowStyle: (params: RowClassParams) =>
                 params.rowIndex === selectedIndex ? { background: "oklch(var(--p, 0.5 0.2 250)/0.15)" } : undefined,
             }}
           />
@@ -224,8 +227,6 @@
             newFile={currentNewFile}
             oldFileName={currentOldFileName}
             newFileName="Merged Output"
-            oldFileColor={currentOldColor}
-            newFileColor="text-accent"
             hasPrev={selectedIndex !== null && selectedIndex > 0}
             hasNext={selectedIndex !== null && selectedIndex < results.length - 1}
             navLabel={selectedIndex !== null ? `${selectedIndex + 1} / ${results.length}` : undefined}
@@ -245,14 +246,18 @@
                     type="button"
                     class="join-item btn btn-sm btn-outline"
                     class:btn-primary={diffSide === "A"}
-                    onclick={() => (diffSide = "A")}>{labelA}↔Merged</button
+                    onclick={() => (diffSide = "A")}
                   >
+                    {labelA}↔Merged
+                  </button>
                   <button
                     type="button"
                     class="join-item btn btn-sm btn-outline"
                     class:btn-secondary={diffSide === "B"}
-                    onclick={() => (diffSide = "B")}>{labelB}↔Merged</button
+                    onclick={() => (diffSide = "B")}
                   >
+                    {labelB}↔Merged
+                  </button>
                 </div>
               </div>
             {/snippet}
@@ -281,8 +286,6 @@
       newFile={currentNewFile}
       oldFileName={currentOldFileName}
       newFileName="Merged Output"
-      oldFileColor={currentOldColor}
-      newFileColor="text-accent"
     />
   {/if}
 </Dialog>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { GridApi } from "ag-grid-community";
   import { Tabs, Tab, Card, CardBody, FileSelector, Grid, SplitPane, DiffPaneContent, Dialog } from "@components";
   import { game, gameInstallPath } from "@stores/app.svelte";
   import { VanillaCompare, DirectoryCompare } from "@services/compareservice";
@@ -11,7 +12,7 @@
   let matchingFiles = $state<Record<string, PathMatch | undefined>>({});
   let selectedIndex = $state<number | null>(null);
   let showFullscreen = $state(false);
-  let gridApi = $state<any>(null);
+  let gridApi = $state<GridApi | null>(null);
 
   function navigateTo(i: number) {
     selectedIndex = i;
@@ -55,7 +56,7 @@
 
 <div class="p-4">
   <Tabs class="tabs-border tabs-xl">
-    <Tab tabGroup="compare-mode" label="Vanilla vs Mod" selected contentClass="bg-base-300 border-base-300 p-6 ">
+    <Tab tabGroup="compare-mode" label="Vanilla vs Mod" selected contentClass="bg-base-300 border-base-300 p-6">
       <Card>
         <CardBody>
           <p class="text-base text-base-content/90 mb-4">
@@ -73,11 +74,7 @@
               />
               <p class="label">
                 Based on current game: {$game} - (root script directory:
-                {#if $game === "CK3"}
-                  game
-                {:else}
-                  game/in_game
-                {/if})
+                {#if $game === "CK3"}game{:else}game/in_game{/if})
               </p>
             </fieldset>
             <FileSelector
@@ -94,10 +91,8 @@
               type="button"
               class="btn btn-soft btn-wide btn-primary"
               onclick={runVanillaCompare}
-              disabled={$gameInstallPath === "" || modPath === ""}
+              disabled={$gameInstallPath === "" || modPath === ""}>Run Compare</button
             >
-              Run Compare
-            </button>
             <button
               type="button"
               class="btn btn-ghost text-error hover:bg-error/10"
@@ -134,10 +129,8 @@
               type="button"
               class="btn btn-soft btn-wide btn-primary"
               onclick={runDirectoryCompare}
-              disabled={setAPath === "" || setBPath === ""}
+              disabled={setAPath === "" || setBPath === ""}>Run Compare</button
             >
-              Run Compare
-            </button>
             <button
               type="button"
               class="btn btn-ghost text-error hover:bg-error/10"
@@ -174,10 +167,8 @@
               type="button"
               class="btn btn-soft btn-wide btn-primary"
               onclick={runFileCompare}
-              disabled={fileAPath === "" || fileBPath === ""}
+              disabled={fileAPath === "" || fileBPath === ""}>Run Compare</button
             >
-              Run Compare
-            </button>
             <button
               type="button"
               class="btn btn-ghost text-error hover:bg-error/10"
@@ -189,11 +180,11 @@
     </Tab>
   </Tabs>
   <Card>
-    <CardBody class="!p-0">
+    <CardBody class="p-0!">
       <div class="px-4 py-3 border-b border-base-content/20 bg-base-200/50">
         <h3 class="font-semibold text-sm">Results</h3>
       </div>
-      <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-svh">
+      <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-[calc(96vh-10rem)">
         {#snippet first()}
           <Grid
             columnDefs={columns}
@@ -201,10 +192,10 @@
             className="h-full w-full"
             gridOptions={{
               rowSelection: "single",
-              onGridReady: (e: any) => {
+              onGridReady: (e) => {
                 gridApi = e.api;
               },
-              onRowClicked: (e: any) => {
+              onRowClicked: (e) => {
                 selectedIndex = e.rowIndex;
               },
             }}

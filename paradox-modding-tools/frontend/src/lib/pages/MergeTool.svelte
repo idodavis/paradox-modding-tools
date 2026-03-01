@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { Tabs, Tab, MergeTabContent, MergeEditor, MergeHelp, MergeOptionsPanel, MergeResults } from "@components";
-  import { createMergeStore, setMergeStore } from "@stores/merge.svelte";
-  import { game, helpOpen } from "@stores/app.svelte";
+  import { Tabs, Tab, MergeTabContent, MergeEditor, MergeOptionsPanel, MergeResults } from "@components";
+  import { setMergeStore } from "@stores/merge.svelte";
+  import { game } from "@stores/app.svelte";
 
-  const store = createMergeStore();
-  setMergeStore(store);
+const store = setMergeStore();
   const MERGE_MODES = [
     { id: "vanilla" as const, label: "Vanilla vs mod" },
     { id: "dirs" as const, label: "Two Directories" },
@@ -17,17 +16,17 @@
   });
 </script>
 
-<div class="p-4 max-w-full min-w-0">
-  <MergeHelp bind:open={$helpOpen} />
+<div class="p-4 max-w-full min-w-0 flex flex-col gap-4">
   <MergeOptionsPanel />
 
   {#if store.errorMsg}
-    <div class="mb-4 p-3 rounded-lg bg-error/20 text-error text-sm border border-error/30">
+    <div class="p-3 rounded border border-error/30 bg-error/20 text-error text-sm">
       {store.errorMsg}
     </div>
   {/if}
 
-  <h3 class="text-sm font-semibold text-base-content/90 mb-3">Choose mode</h3>
+  <section>
+    <p class="text-xs font-semibold uppercase tracking-wide text-base-content/50 mb-2">Merge mode</p>
   <Tabs class="tabs-border tabs-xl">
     {#each MERGE_MODES as m}
       <Tab
@@ -41,6 +40,7 @@
       </Tab>
     {/each}
   </Tabs>
+  </section>
 
   {#if store.mergeResults.length > 0}
     <MergeResults />
@@ -49,9 +49,9 @@
 
 {#if store.currentManualFile}
   <MergeEditor
-    fileAPath={store.currentManualFile.pathA}
-    fileBPath={store.currentManualFile.pathB}
-    relPath={store.currentManualFile.relPath}
+    fileAPath={store.currentManualFile.task.pathA}
+    fileBPath={store.currentManualFile.task.pathB}
+    relPath={store.currentManualFile.task.relPath}
     chunks={store.currentManualFile.chunks}
     onSave={(c, s) => store.manualSave(c, s)}
     onAutoMerge={() => store.autoMergeCurrentFile()}

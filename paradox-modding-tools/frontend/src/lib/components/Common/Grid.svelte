@@ -9,7 +9,6 @@
     themeQuartz,
   } from "ag-grid-community";
 
-  // Register AG Grid Modules
   ModuleRegistry.registerModules([AllCommunityModule]);
 
   let {
@@ -29,7 +28,6 @@
     "rounded-lg border border-base-content/20 bg-base-100 overflow-hidden " + (className || ""),
   );
 
-  // Create a custom dark theme aligned with DaisyUI base colors
   const darkTheme = themeQuartz.withParams({
     accentColor: "#B387FA",
     backgroundColor: "#1A1E28",
@@ -62,7 +60,6 @@
     }
   });
 
-  // Update grid when rowData or columnDefs change (e.g. after Run Compare)
   $effect(() => {
     if (gridApi) {
       gridApi.setGridOption("rowData", rowData);
@@ -71,5 +68,4 @@
   });
 </script>
 
-<!-- Grid Container -->
 <div bind:this={gridDiv} class={gridContainerClass}></div>

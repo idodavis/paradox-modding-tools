@@ -2,28 +2,31 @@
   import { onMount } from "svelte";
   import * as SettingsService from "@services/settingsservice";
   import { showToast } from "@stores/toast.svelte";
-  import type { MergerOptions } from "@services/models";
+  import type { MergerOptions, MergePreset } from "@services/models";
   import { getMergeStore } from "@stores/merge.svelte";
 
   type MergePresetItem = { name: string; options: MergerOptions };
 
   const store = getMergeStore();
-  // Access config via store.config
   const config = store.config;
 
   let presets = $state<MergePresetItem[]>([]);
+  let currentPresetName = $state<string | null>(null);
   let presetNameToSave = $state("");
   let errorMsg = $state("");
 
   async function loadPresets() {
     try {
       const p = (await SettingsService.GetMergePresets()) ?? [];
-      presets = p.map((x: any) => ({ name: x.name, options: x.options }));
+      presets = p.map((x: MergePreset) => ({ name: x.name, options: x.options }));
 
       const last = localStorage.getItem("last_merge_preset");
       if (last) {
         const found = presets.find((x) => x.name === last);
-        if (found) applyPreset(found);
+        if (found) {
+          applyPreset(found);
+          currentPresetName = last;
+        }
       }
     } catch {
       presets = [];
@@ -39,9 +42,9 @@
     config.matchByFilenameOnly = o.matchByFilenameOnly ?? false;
     config.includePathPattern = o.includePathPattern ?? "";
     config.excludePathPattern = o.excludePathPattern ?? "";
-    config.outputFilename = o.outputFilename ?? "";
     config.outputFileSuffix = o.outputFileSuffix ?? "";
     localStorage.setItem("last_merge_preset", p.name);
+    currentPresetName = p.name;
   }
 
   async function saveCurrentPreset() {
@@ -49,7 +52,6 @@
     const options: MergerOptions = {
       manualConflictResolution: config.manualConflictResolution,
       addAdditionalEntries: config.addAdditionalEntries,
-      entryPlacement: "bottom",
       keyList: config.useKeyList
         ? config.customKeys
             .split(/\r?\n/)
@@ -59,13 +61,14 @@
       matchByFilenameOnly: config.matchByFilenameOnly,
       includePathPattern: config.includePathPattern,
       excludePathPattern: config.excludePathPattern,
-      outputFilename: config.outputFilename,
       outputFileSuffix: config.outputFileSuffix,
     };
     try {
-      await SettingsService.SaveMergePreset(presetNameToSave.trim(), options);
+      const name = presetNameToSave.trim();
+      await SettingsService.SaveMergePreset(name, options);
       showToast({ message: "Preset saved", type: "alert-success" });
-      localStorage.setItem("last_merge_preset", presetNameToSave.trim());
+      localStorage.setItem("last_merge_preset", name);
+      currentPresetName = name;
       presetNameToSave = "";
       loadPresets();
     } catch (e) {
@@ -76,6 +79,7 @@
   async function deletePreset(name: string) {
     try {
       await SettingsService.DeleteMergePreset(name);
+      if (currentPresetName === name) currentPresetName = null;
       showToast({ message: "Preset deleted", type: "alert-success" });
       loadPresets();
     } catch (e) {
@@ -86,32 +90,56 @@
   onMount(() => loadPresets());
 </script>
 
-<div class="rounded-lg border border-primary/20 bg-base-200/30 mb-4">
+<div class="rounded-lg border border-base-content/10 bg-base-200/30 mb-4 overflow-hidden">
+  <!-- Always-visible summary bar -->
+  <div class="px-4 py-2 flex flex-wrap items-center gap-2 gap-y-1.5 border-b border-base-content/10 bg-base-200/50">
+    <span class="text-xs font-semibold uppercase tracking-wide text-base-content/50 pr-2">Options:</span>
+    <span
+      class="badge badge-sm"
+      class:badge-primary={!config.manualConflictResolution}
+      class:badge-secondary={config.manualConflictResolution}
+    >
+      Resolution: {config.manualConflictResolution ? "Manual" : "Auto"}
+    </span>
+    <span class="badge badge-sm badge-ghost">
+      Add from B: {config.addAdditionalEntries ? "Yes" : "No"}
+    </span>
+    <span class="badge badge-sm badge-ghost">
+      Preset: {currentPresetName ?? "None"}
+    </span>
+  </div>
+
   <details class="group">
     <summary
-      class="px-4 py-3 cursor-pointer text-sm flex items-center justify-between font-semibold select-none hover:bg-base-200/50 transition-colors rounded-lg"
+      class="px-4 py-2.5 cursor-pointer text-sm flex items-center justify-between font-medium select-none hover:bg-base-200/50 transition-colors border-b border-base-content/10"
     >
-      <span>Merge options</span>
-      <span class="group-open:rotate-180 transition-transform">▾</span>
+      <span class="text-base-content/70">More options</span>
+      <span class="group-open:rotate-180 transition-transform text-base-content/50">▾</span>
     </summary>
     <div class="px-3 py-4 text-sm border-t border-base-content/20 space-y-4 bg-base-100">
       <!-- Presets -->
       <div class="pb-2 border-b border-base-content/10 space-y-2">
         <span class="block text-xs font-medium">Presets</span>
         <div class="flex flex-wrap gap-2 items-center">
-          <select
-            class="select select-bordered select-sm max-w-[160px]"
-            onchange={(e) => {
-              const name = (e.target as HTMLSelectElement).value;
-              const p = presets.find((x) => x.name === name);
-              if (p) applyPreset(p);
-            }}
-          >
-            <option value="">Load preset…</option>
-            {#each presets as p}
-              <option value={p.name}>{p.name}</option>
-            {/each}
-          </select>
+          {#if currentPresetName === null && presets.length === 0}
+            <span class="text-xs text-base-content/50">No preset</span>
+          {:else}
+            <select
+              class="select select-bordered select-sm max-w-[160px]"
+              value={currentPresetName ?? ""}
+              onchange={(e) => {
+                const name = (e.target as HTMLSelectElement).value;
+                currentPresetName = name || null;
+                const p = presets.find((x) => x.name === name);
+                if (p) applyPreset(p);
+              }}
+            >
+              <option value="">— No preset —</option>
+              {#each presets as p}
+                <option value={p.name}>{p.name}</option>
+              {/each}
+            </select>
+          {/if}
           <input
             type="text"
             class="input input-bordered input-sm w-28"
@@ -122,8 +150,10 @@
             type="button"
             class="btn btn-ghost btn-sm"
             disabled={!presetNameToSave.trim()}
-            onclick={saveCurrentPreset}>Save</button
+            onclick={saveCurrentPreset}
           >
+            Save
+          </button>
           {#if presets.length > 0}
             <span class="text-base-content/50 text-xs">Delete:</span>
             {#each presets as p}
@@ -131,8 +161,10 @@
                 type="button"
                 class="btn btn-ghost btn-xs px-1"
                 title={`Delete ${p.name}`}
-                onclick={() => deletePreset(p.name)}>{p.name} ×</button
+                onclick={() => deletePreset(p.name)}
               >
+                {p.name} ×
+              </button>
             {/each}
           {/if}
         </div>
@@ -171,13 +203,10 @@
         </p>
       </div>
 
-      <div
-        class:opacity-50={config.manualConflictResolution}
-        class:pointer-events-none={config.manualConflictResolution}
-      >
+      <div>
         <label
           class="flex items-center gap-2 cursor-pointer"
-          title="Append entities that exist only in B to the merged output"
+          title="Append entities that exist only in B to the merged output. In Manual mode, these become the Additions tab."
         >
           <input type="checkbox" class="checkbox checkbox-sm" bind:checked={config.addAdditionalEntries} />
           <span>Add entries from B not in A</span>
@@ -188,17 +217,20 @@
       <div
         class:opacity-50={config.manualConflictResolution}
         class:pointer-events-none={config.manualConflictResolution}
+        title={config.manualConflictResolution ? "Key list only affects Auto mode (conflicts are resolved manually in Manual mode)" : "For these keys, always use B's version even when A has them"}
       >
-        <label
-          class="flex items-center gap-2 cursor-pointer"
-          title="For these keys, always use B's version even when A has them"
-        >
-          <input type="checkbox" class="checkbox checkbox-sm" bind:checked={config.useKeyList} />
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            bind:checked={config.useKeyList}
+            disabled={config.manualConflictResolution}
+          />
           <span>Key list (B overrides A)</span>
         </label>
-        <p class="text-xs text-base-content/60 mt-1 ml-6">One key per line. B wins for these entities.</p>
+        <p class="text-xs text-base-content/60 mt-1 ml-6">One key per line. B wins for these entities. Only applies in Auto mode.</p>
       </div>
-      {#if config.useKeyList}
+      {#if config.useKeyList && !config.manualConflictResolution}
         <textarea
           class="textarea textarea-bordered w-full text-sm ml-6"
           rows="2"

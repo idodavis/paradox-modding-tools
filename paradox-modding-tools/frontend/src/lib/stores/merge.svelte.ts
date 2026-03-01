@@ -1,24 +1,25 @@
 import { getContext, setContext } from "svelte";
-import { GetGameScriptRoot } from "@services/fileservice";
-import { MergePreview, MergePairs, MergeDirs, WriteMergedFile, GetMergeConflicts } from "@services/mergeservice";
+import { GetGameScriptRoot, WriteWithBOM } from "@services/fileservice";
+import { MergePreview, Merge, GetMergeConflicts } from "@services/mergeservice";
 import type { FileMergeResult, MergerOptions, MergeConflictChunk, PreviewItem } from "@services/models";
 import { appSettings, saveSettings, game, gameInstallPath } from "@stores/app.svelte";
 import { get } from "svelte/store";
 
-type ResolvedSide = "A" | "B" | "Custom" | undefined;
-
-export const getConflictIndices = (chunks: MergeConflictChunk[]) =>
-  chunks.flatMap((c, i) => (c.type === "conflict" ? [i] : []));
-
-export const buildMergedContent = (chunks: MergeConflictChunk[], rv: Record<number, string>) =>
-  chunks.map((c, i) => (c.type === "unchanged" ? c.textA : c.type === "added" ? c.textB : (rv[i] ?? ""))).join("");
-
-export const computeMergeStats = (chunks: MergeConflictChunk[], resolved: Record<number, ResolvedSide>) => ({
-  changed: chunks.filter((c, i) => c.type === "conflict" && resolved[i] !== "A").length,
-  added: chunks.filter((c) => c.type === "added").length,
-});
-
 const isCancelError = (e: unknown) => String(e).toLowerCase().includes("cancel");
+
+export function pairsToTasks(
+  pairs: { pathA: string; pathB: string; outputName: string }[],
+  outputDir: string,
+): PreviewItem[] {
+  const base = outputDir.replace(/\/?$/, "");
+  return pairs
+    .filter((p) => p.pathA && p.pathB)
+    .map((p) => {
+      const baseName = p.outputName?.trim() || p.pathA.split(/[/\\]/).pop() || "output";
+      const relPath = baseName.replace(/\.[^.]+$/, "") + ".txt";
+      return { relPath, pathA: p.pathA, pathB: p.pathB, outputPath: `${base}/${relPath}`, wouldOverwrite: false };
+    });
+}
 
 const MERGE_STORE_KEY = Symbol("MERGE_STORE");
 
@@ -32,7 +33,6 @@ export class MergeStore {
     matchByFilenameOnly: false,
     includePathPattern: "",
     excludePathPattern: "",
-    outputFilename: "",
     outputFileSuffix: "",
   });
 
@@ -57,13 +57,8 @@ export class MergeStore {
   selectedRelPaths = $state<Record<string, boolean>>({});
   mergeResults = $state<FileMergeResult[]>([]);
 
-  manualMergeQueue = $state<{ relPath: string; pathA: string; pathB: string }[]>([]);
-  currentManualFile = $state<{
-    relPath: string;
-    pathA: string;
-    pathB: string;
-    chunks: MergeConflictChunk[];
-  } | null>(null);
+  manualMergeQueue = $state<PreviewItem[]>([]);
+  currentManualFile = $state<{ task: PreviewItem; chunks: MergeConflictChunk[] } | null>(null);
 
   /** Persists across the manual-merge queue so layout sticks after save/skip */
   mergeResultLayout = $state<"right" | "bottom">("right");
@@ -101,7 +96,6 @@ export class MergeStore {
       matchByFilenameOnly: this.config.matchByFilenameOnly,
       includePathPattern: this.config.includePathPattern,
       excludePathPattern: this.config.excludePathPattern,
-      outputFilename: this.config.outputFilename,
       outputFileSuffix: this.config.outputFileSuffix,
     };
   }
@@ -174,49 +168,34 @@ export class MergeStore {
     }
   }
 
-  async runMerge(mode: "vanilla" | "dirs") {
-    if (!this.canRun[mode]) return;
-    const { pathA, pathB } = await this.getPathsForMode(mode);
-    const selected = this.previewItems.filter((p) => this.selectedRelPaths[p.relPath] !== false);
+  async runMergeWithTasks(tasks: PreviewItem[]) {
+    if (!tasks.length) {
+      this.errorMsg = "No files selected.";
+      return;
+    }
     if (this.config.manualConflictResolution) {
       this.mergeResults = [];
       this.errorMsg = "";
-      this.manualMergeQueue = selected.map((p) => ({ relPath: p.relPath, pathA: p.pathA, pathB: p.pathB }));
+      this.manualMergeQueue = tasks;
       this.merging = true;
       this.processManualQueue();
       return;
     }
-    const relPaths = selected.map((p) => p.relPath);
-    if (!relPaths.length) {
-      this.errorMsg = "No files selected.";
-      return;
-    }
-    this.mergePromise = MergeDirs(pathA, pathB, this.outputDir, this.options, relPaths);
+    this.mergePromise = Merge(tasks, this.options);
     await this.runAsyncMerge(() => this.mergePromise! as Promise<FileMergeResult[]>);
+  }
+
+  async runDirMerge(mode: "vanilla" | "dirs") {
+    if (!this.canRun[mode]) return;
+    const selected = this.previewItems.filter((p) => this.selectedRelPaths[p.relPath] !== false);
+    await this.runMergeWithTasks(selected);
   }
 
   async runPairMerge() {
     if (!this.canRun.pairs) return;
-    const validPairs = this.filePairs.filter((p) => p.pathA && p.pathB);
-    if (this.config.manualConflictResolution && validPairs.length) {
-      this.mergeResults = [];
-      this.errorMsg = "";
-      const base = this.outputDir.replace(/\/?$/, "");
-      const items = validPairs.map((p) => {
-        const baseName = p.outputName?.trim() || p.pathA.split(/[/\\]/).pop() || "output";
-        const relPath = baseName.replace(/\.[^.]+$/, "") + ".txt";
-        return { relPath, pathA: p.pathA, pathB: p.pathB };
-      });
-      this.previewItems = items.map((p) => ({ ...p, outputPath: `${base}/${p.relPath}`, wouldOverwrite: false }));
-      this.selectedRelPaths = Object.fromEntries(items.map((p) => [p.relPath, true]));
-      this.manualMergeQueue = items;
-      this.merging = true;
-      this.processManualQueue();
-      return;
-    }
-    if (!validPairs.length) return;
-    this.mergePromise = MergePairs(validPairs, this.outputDir, this.options);
-    await this.runAsyncMerge(() => this.mergePromise! as Promise<FileMergeResult[]>);
+    const tasks = pairsToTasks(this.filePairs, this.outputDir);
+    if (!tasks.length) return;
+    await this.runMergeWithTasks(tasks);
   }
 
   async processManualQueue() {
@@ -224,12 +203,12 @@ export class MergeStore {
       this.merging = false;
       return;
     }
-    const next = this.manualMergeQueue[0];
+    const task = this.manualMergeQueue[0];
     try {
-      const chunks = await GetMergeConflicts(next.pathA, next.pathB, this.options);
-      this.currentManualFile = { relPath: next.relPath, pathA: next.pathA, pathB: next.pathB, chunks };
+      const chunks = await GetMergeConflicts(task.pathA, task.pathB, this.options);
+      this.currentManualFile = { task, chunks };
     } catch (e) {
-      console.error("Error checking conflicts for", next.relPath, e);
+      console.error("Error checking conflicts for", task.relPath, e);
       this.manualMergeQueue.shift();
       this.processManualQueue();
     }
@@ -237,30 +216,26 @@ export class MergeStore {
 
   async autoMergeCurrentFile() {
     if (!this.currentManualFile) return;
-    const { relPath, pathA, pathB } = this.currentManualFile;
-    const pair = [{ pathA, pathB, outputName: relPath }];
+    const { task } = this.currentManualFile;
     try {
-      const results = await MergePairs(pair, this.outputDir, this.options);
+      const results = await Merge([task], this.options);
       if (results?.length) this.mergeResults.push(...results);
     } catch (e) {
-      this.errorMsg = `Failed to auto-merge ${relPath}: ${e}`;
+      this.errorMsg = `Failed to auto-merge ${task.relPath}: ${e}`;
     }
     this.manualNext();
   }
 
   async manualSave(content: string, stats: { changed: number; added: number }) {
     if (!this.currentManualFile) return;
-    const { relPath, pathA, pathB } = this.currentManualFile;
-    const outPath =
-      this.previewItems.find((p) => p.relPath === relPath)?.outputPath ??
-      `${this.outputDir.replace(/\/?$/, "")}/${relPath}`;
+    const { task } = this.currentManualFile;
     try {
-      await WriteMergedFile(outPath, content);
+      await WriteWithBOM(task.outputPath, content);
       this.mergeResults.push({
-        filePath: relPath,
-        fileAPath: pathA,
-        fileBPath: pathB,
-        outputPath: outPath,
+        filePath: task.relPath,
+        fileAPath: task.pathA,
+        fileBPath: task.pathB,
+        outputPath: task.outputPath,
         ...stats,
         resolvedConflicts: [{ key: "Manual", usedSide: "Manual", reason: "User selection" }],
       });
@@ -289,18 +264,16 @@ export class MergeStore {
 
   private saveOutputDir() {
     if (this.rememberOutputDir && this.outputDir) {
-      appSettings.update((s) => ({ ...s, mergeOutputDir: this.outputDir }));
+      appSettings.update((s) => ({ ...s, "_global.merge_output_dir": this.outputDir }));
       saveSettings();
     }
   }
 }
 
-export function createMergeStore() {
-  return new MergeStore();
-}
-
-export function setMergeStore(store: MergeStore) {
-  setContext(MERGE_STORE_KEY, store);
+export function setMergeStore(store?: MergeStore): MergeStore {
+  const s = store ?? new MergeStore();
+  setContext(MERGE_STORE_KEY, s);
+  return s;
 }
 
 export function getMergeStore() {

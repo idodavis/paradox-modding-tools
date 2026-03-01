@@ -125,7 +125,7 @@
       </Card>
     </Tab>
     <Tab tabGroup="modding-docs" label="Modding Wiki" contentClass="bg-base-300 border-base-300 p-2">
-      <iframe src={wikiUrl} title="'Modding Wiki'" class="w-full h-[calc(96vh-10rem)]"></iframe>
+      <iframe src={wikiUrl} title="Modding Wiki" class="w-full h-[calc(96vh-10rem)]"></iframe>
     </Tab>
   </Tabs>
 </div>

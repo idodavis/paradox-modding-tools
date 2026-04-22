@@ -1,7 +1,7 @@
-*.vscode/*
+.vscode
+.task
 */test-files
-*/node_modules
-*/dist
-*/bin
-
-*.cursor/*
+frontend/node_modules/**
+frontend/dist/**
+bin/**
+.cursor/**

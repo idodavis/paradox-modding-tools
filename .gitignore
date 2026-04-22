@@ -1,8 +1,7 @@
-# Util files not meant for the publics eye
-vanilla-synchronizer/sync-output/
-parser/.antlr
-vanilla-synchronizer/sync-config.yaml
-
-# Testing Directoriess
-testing-*/
-examples/test*
+.vscode
+.task
+*/test-files
+frontend/node_modules/**
+frontend/dist/**
+bin/**
+.cursor/**

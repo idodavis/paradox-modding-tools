@@ -1,0 +1,48 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: PMT --default, retro, pastel, dracula, luxury, autumn, business, coffee, dim;
+}
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-navbar: hsl(222, 26%, 7%);
+  --color-dark-input: #151922;
+}
+
+@plugin "daisyui/theme" {
+  name: "PMT";
+  default: true;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: hsl(223 22% 13%);
+  --color-base-200: hsl(224, 22%, 10%);
+  --color-base-300: hsl(222, 26%, 7%);
+  --color-base-content: oklch(77.4% 0.043 245.152);
+  --color-primary: oklch(82% 0.136 87.900);
+  --color-primary-content: oklch(14.94% 0.031 39.947);
+  --color-secondary: oklch(77.4% 0.136 167.300);
+  --color-secondary-content: oklch(14.507% 0.035 2.72);
+  --color-accent: oklch(71.294% 0.166 299.844);
+  --color-accent-content: oklch(14.258% 0.033 299.844);
+  --color-neutral: hsl(222, 26%, 7%);
+  --color-neutral-content: oklch(98% 0.001 106.423);
+  --color-info: oklch(85.559% 0.085 206.015);
+  --color-info-content: oklch(17.111% 0.017 206.015);
+  --color-success: oklch(85.6% 0.128 144.778);
+  --color-success-content: oklch(17.112% 0.017 144.778);
+  --color-warning: oklch(88.8% 0.113 104);
+  --color-warning-content: oklch(17.113% 0.016 74.427);
+  --color-error: oklch(79% 0.235 28.400);
+  --color-error-content: oklch(17.102% 0.015 16.886);
+  --radius-selector: 0.25rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.21875rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+
+

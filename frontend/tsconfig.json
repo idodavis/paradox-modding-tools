@@ -1,0 +1,23 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@services/*": ["./bindings/paradox-modding-tools/services/*"],
+      "@components": ["./src/lib/components"],
+      "@components/wrappers/*": ["./src/lib/components/wrappers/*"],
+      "@pages/*": ["./src/lib/pages/*"],
+      "@stores/*": ["./src/lib/stores/*"],
+      "@assets/*": ["./src/assets/*"],
+      "@utils/*": ["./src/lib/utils/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "bindings"],
+}

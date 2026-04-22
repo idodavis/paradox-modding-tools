@@ -41,7 +41,7 @@
   );
   const currentNewFile = $derived(selectedResult?.outputPath ?? "");
   const currentOldFileName = $derived(selectedResult ? (diffSide === "A" ? labelA : labelB) : "");
-  const currentOldColor = $derived(diffSide === "A" ? "text-primary" : "text-secondary");
+  const currentOldColor = $derived(diffSide === "A" ? "bg-primary/10 text-primary" : "bg-secondary/10 text-secondary");
 
   $effect(() => {
     results;
@@ -70,8 +70,8 @@
       valueFormatter: (p: ValueFormatterParams) => truncatePath(p.value),
       tooltipValueGetter: (p: ICellRendererParams) => p.data?.outputPath ?? "",
     },
-    { field: "changed", headerName: "Δ", flex: 1, maxWidth: 70 },
-    { field: "added", headerName: "+", flex: 1, maxWidth: 70 },
+    { field: "changed", headerName: "Changed", flex: 1, maxWidth: 80 },
+    { field: "added", headerName: "Added", flex: 1, maxWidth: 80 },
   ];
 
   async function saveReport() {
@@ -120,14 +120,10 @@
         >
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-semibold">Summary</span>
-            <span class="badge badge-primary badge-sm">{summary.files} files</span>
-            <span class="badge badge-success badge-sm">+{summary.added} added</span>
-            <span class="badge badge-warning badge-sm">{summary.changed} changed</span>
-            {#if conflicts.length > 0}
-              <span class="badge badge-warning badge-sm ml-2">
-                {conflicts.length} resolved conflicts
-              </span>
-            {/if}
+            <span class="badge badge-primary badge-sm">{summary.files} files merged</span>
+            <span class="badge badge-success badge-sm">{summary.added} objects added (from {labelB})</span>
+            <span class="badge badge-warning badge-sm">{summary.changed} objects changed (from {labelA})</span>
+            <span>across all mergers</span>
           </div>
           <div class="flex gap-2">
             <button
@@ -199,7 +195,7 @@
         </details>
       {/if}
 
-      <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-[calc(96vh-10rem)]">
+      <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-[calc(93.5vh-6rem)]">
         {#snippet first()}
           <Grid
             columnDefs={columns}
@@ -227,6 +223,8 @@
             newFile={currentNewFile}
             oldFileName={currentOldFileName}
             newFileName="Merged Output"
+            originalLabelClass={currentOldColor}
+            modifiedLabelClass="bg-accent/10 text-accent"
             hasPrev={selectedIndex !== null && selectedIndex > 0}
             hasNext={selectedIndex !== null && selectedIndex < results.length - 1}
             navLabel={selectedIndex !== null ? `${selectedIndex + 1} / ${results.length}` : undefined}
@@ -286,6 +284,8 @@
       newFile={currentNewFile}
       oldFileName={currentOldFileName}
       newFileName="Merged Output"
+      originalLabelClass={currentOldColor}
+      modifiedLabelClass="bg-accent/10 text-accent"
     />
   {/if}
 </Dialog>

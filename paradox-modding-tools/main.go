@@ -30,6 +30,11 @@ func main() {
 		log.Fatalf("db startup: %v", err)
 	}
 
+	logSvc := &services.LogService{}
+	if err := logSvc.ServiceStartup(); err != nil {
+		log.Fatalf("log startup: %v", err)
+	}
+
 	fileSvc := &services.FileService{}
 	mergeSvc := &services.MergeService{FileService: fileSvc}
 	modDocSvc := &services.ModDocService{FileService: fileSvc, DB: dbSvc.DB}
@@ -41,6 +46,7 @@ func main() {
 		Name:        "paradox-modding-tools",
 		Description: "A demo of using raw HTML & CSS",
 		Services: []application.Service{
+			application.NewService(logSvc),
 			application.NewService(dbSvc),
 			application.NewService(fileSvc),
 			application.NewService(&services.BrowserService{}),

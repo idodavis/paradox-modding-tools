@@ -57,6 +57,13 @@ export function GetGameScriptRoot(game: string, installPath: string): $Cancellab
 }
 
 /**
+ * GetUserDownloadsDir returns the user's Downloads directory (e.g. ~/Downloads).
+ */
+export function GetUserDownloadsDir(): $CancellablePromise<string> {
+    return $Call.ByID(1105998516);
+}
+
+/**
  * ReadFileContent reads a file as UTF-8 text.
  */
 export function ReadFileContent(fullPath: string): $CancellablePromise<string> {

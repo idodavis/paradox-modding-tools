@@ -19,7 +19,7 @@ release: "1"
 contents:
   - src: "./bin/paradox-modding-tools"
     dst: "/usr/local/bin/paradox-modding-tools"
-  - src: "./build/appicon.png"
+  - src: "./frontend/src/assets/PMT-SquareIcon-Mint.png"
     dst: "/usr/share/icons/hicolor/128x128/apps/paradox-modding-tools.png"
   - src: "./build/linux/paradox-modding-tools.desktop"
     dst: "/usr/share/applications/paradox-modding-tools.desktop"

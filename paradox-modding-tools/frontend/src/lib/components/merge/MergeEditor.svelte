@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Dialog, LangThemeSelect, SplitPane } from "@components";
-  import DiffView from "../common/DiffView.svelte";
-  import EditorView from "../common/EditorView.svelte";
+  import DiffView from "../ui/editors/DiffView.svelte";
+  import EditorView from "../ui/editors/EditorView.svelte";
   import {
     getConflictIndices,
     getAddedIndices,
@@ -36,7 +36,7 @@
   const addedIndices = $derived(getAddedIndices(chunks));
   const conflictCount = $derived(conflictIndices.length);
   const addedCount = $derived(addedIndices.length);
-  const showAdditionsTab = $derived(mergeStore.config.addAdditionalEntries && addedCount > 0);
+  const showAdditionsTab = $derived(mergeStore.config.addAdditionalEntries);
 
   $effect(() => {
     relPath;
@@ -199,12 +199,11 @@
 
       <!-- Row 2: Tabs (when conflicts or additions) -->
       {#if conflictCount > 0 || showAdditionsTab}
-        <div class="flex gap-1">
+        <div class="tabs tabs-boxed tabs-sm">
           <button
             type="button"
-            class="btn btn-sm"
-            class:btn-primary={editorTab === "conflicts"}
-            class:btn-ghost={editorTab !== "conflicts"}
+            class="tab"
+            class:tab-active={editorTab === "conflicts"}
             onclick={() => (editorTab = "conflicts")}
           >
             Conflicts ({conflictCount})
@@ -212,9 +211,8 @@
           {#if showAdditionsTab}
             <button
               type="button"
-              class="btn btn-sm"
-              class:btn-primary={editorTab === "additions"}
-              class:btn-ghost={editorTab !== "additions"}
+              class="tab"
+              class:tab-active={editorTab === "additions"}
               onclick={() => (editorTab = "additions")}
             >
               Additions ({addedCount})
@@ -271,8 +269,11 @@
         </div>
       </div>
 
-      <!-- Row 4: Skip + Conflict/Additions nav + Save -->
+      <!-- Row 4: File X of X + Skip | Conflict/Additions nav | Choose + Remaining | Save -->
       <div class="flex items-center gap-3 pt-1.5 border-t border-base-content/15">
+        <span class="font-medium tabular-nums text-sm text-base-content/80 shrink-0">
+          File {mergeStore.manualFileIndex + 1} of {mergeStore.manualFileTotal}
+        </span>
         <button class="btn btn-sm btn-outline shrink-0" onclick={() => close(onSkip)}>Skip File</button>
 
         {#snippet prevNext(goTo: (num: number) => void, current: number, total: number, label: string)}
@@ -303,15 +304,6 @@
             {#if currentChunk}
               <span class="badge badge-sm {choiceBadge.cls}">{choiceBadge.text}</span>
               <span class="text-base-content/20 mx-1">|</span>
-              {#if unresolvedCount > 0}
-                <button type="button" class="btn btn-xs btn-ghost" onclick={() => chooseRest("A")}>
-                  Rest → {mergeStore.labels.a}
-                </button>
-                <button type="button" class="btn btn-xs btn-ghost" onclick={() => chooseRest("B")}>
-                  Rest → {mergeStore.labels.b}
-                </button>
-                <span class="text-base-content/20">|</span>
-              {/if}
               <button
                 type="button"
                 class="btn btn-sm {currentChoice === 'A' ? 'btn-primary' : 'btn-outline btn-primary'}"
@@ -326,6 +318,15 @@
               >
                 Choose {mergeStore.labels.b}
               </button>
+              {#if unresolvedCount > 0}
+                <span class="text-base-content/20 mx-1">|</span>
+                <button type="button" class="btn btn-sm btn-outline" onclick={() => chooseRest("A")}>
+                  Remaining → {mergeStore.labels.a}
+                </button>
+                <button type="button" class="btn btn-sm btn-outline" onclick={() => chooseRest("B")}>
+                  Remaining → {mergeStore.labels.b}
+                </button>
+              {/if}
             {/if}
           </div>
         {:else if editorTab === "additions" && addedCount > 0}
@@ -358,7 +359,9 @@
           </div>
         {:else}
           <div class="flex-1 text-center text-sm text-base-content/60">
-            {#if addedCount > 0 && !showAdditionsTab}
+            {#if editorTab === "additions" && addedCount === 0}
+              No additions from {mergeStore.labels.b}
+            {:else if addedCount > 0 && !showAdditionsTab}
               No shared-key conflicts — {addedCount} addition{addedCount > 1 ? "s" : ""} from {mergeStore.labels.b}{" "}
               will be appended
             {:else if addedCount === 0 && conflictCount === 0}

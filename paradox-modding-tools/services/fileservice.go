@@ -21,6 +21,15 @@ const (
 // FileService provides directory/file selection dialogs and game script root / doc path discovery.
 type FileService struct{}
 
+// GetUserDownloadsDir returns the user's Downloads directory (e.g. ~/Downloads).
+func (f *FileService) GetUserDownloadsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "Downloads", "PMT-Merge"), nil
+}
+
 func (f *FileService) SelectDirectory(title string) (string, error) {
 	app := application.Get()
 	dialog := app.Dialog.OpenFile()

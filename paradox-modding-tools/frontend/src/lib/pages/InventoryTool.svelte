@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Card, CardBody, FileSelector, Grid, Drawer, MultiSelect } from "@components";
+  import { Card, CardBody, FileSelector, Grid, Drawer, Select } from "@components";
   import { game } from "@stores/app.svelte";
   import { ItemDetails, InventoryCard, InventoryNameModal } from "@components";
   import { inventoryStore, setInventoryStore } from "@stores/inventory.svelte";
@@ -33,8 +33,7 @@
     {
       field: "lines",
       headerName: "Lines",
-      valueGetter: (p: ValueGetterParams<InventoryItemRow>) =>
-        `${p.data?.lineStart ?? 0} - ${p.data?.lineEnd ?? 0}`,
+      valueGetter: (p: ValueGetterParams<InventoryItemRow>) => `${p.data?.lineStart ?? 0} - ${p.data?.lineEnd ?? 0}`,
       filter: false,
       sortable: false,
       flex: 1,
@@ -71,13 +70,17 @@
           <div>
             <span class="label text-base-content/90 mb-1 block font-medium">Object types</span>
             <div class="flex flex-wrap items-center gap-2">
-              <MultiSelect
+              <Select
+                mode="multiple"
                 items={store.supportedTypes}
-                bind:selected={store.selectedTypes}
+                selected={store.selectedTypes}
                 placeholder="Select types…"
-                checkboxColor="checkbox-success"
                 disabled={store.typesDisabled}
-                size="w-full sm:w-72"
+                scrollable
+                searchable
+                contentWidth="trigger"
+                triggerClass="select select-bordered sm:w-72"
+                onValueChange={(v) => (store.selectedTypes = (v ?? []) as string[])}
               />
               <div class="join">
                 <button

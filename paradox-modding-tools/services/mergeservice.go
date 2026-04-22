@@ -15,7 +15,6 @@ import (
 
 const (
 	additionalEntriesHdr = "\n############# Additional Entries From B (PDX-Merge-Tools) #############\n"
-	additionalEntryIntro = "\n# Additional entry from B"
 )
 
 var precedenceRe = regexp.MustCompile(`(?i)(?:PREFER|USE|MERGE)\s*:\s*([AB])|(?i)(?:PROTECT|KEEP)`)
@@ -34,6 +33,7 @@ type MergerOptions struct {
 	IncludePathPattern       string   `json:"includePathPattern"`
 	ExcludePathPattern       string   `json:"excludePathPattern"`
 	OutputFileSuffix         string   `json:"outputFileSuffix"` // e.g. "_merged" meaning: events/foo.txt -> events/foo_merged.txt
+	OutputDir                string   `json:"outputDir"`
 }
 
 // PreviewItem is a single file match for the merge preview.
@@ -365,7 +365,7 @@ func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOp
 			if entB.Key != "" && !keysInA[entB.Key] {
 				b := entB
 				items = append(items, MergeConflictChunk{
-					Type: "added", TextB: additionalEntryIntro + b.RawText,
+					Type: "added", TextB: b.RawText,
 					StartLineB: b.StartLine, EndLineB: b.EndLine, ObjB: &b,
 				})
 			}

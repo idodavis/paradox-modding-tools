@@ -309,6 +309,7 @@ export class MergerOptions {
      * e.g. "_merged" meaning: events/foo.txt -> events/foo_merged.txt
      */
     "outputFileSuffix": string;
+    "outputDir": string;
 
     /** Creates a new MergerOptions instance. */
     constructor($$source: Partial<MergerOptions> = {}) {
@@ -332,6 +333,9 @@ export class MergerOptions {
         }
         if (!("outputFileSuffix" in $$source)) {
             this["outputFileSuffix"] = "";
+        }
+        if (!("outputDir" in $$source)) {
+            this["outputDir"] = "";
         }
 
         Object.assign(this, $$source);

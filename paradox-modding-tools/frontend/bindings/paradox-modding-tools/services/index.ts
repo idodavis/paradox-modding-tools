@@ -7,6 +7,7 @@ import * as CompareService from "./compareservice.js";
 import * as DbService from "./dbservice.js";
 import * as FileService from "./fileservice.js";
 import * as InventoryService from "./inventoryservice.js";
+import * as LogService from "./logservice.js";
 import * as MergeService from "./mergeservice.js";
 import * as ModDocService from "./moddocservice.js";
 import * as SettingsService from "./settingsservice.js";
@@ -18,6 +19,7 @@ export {
     DbService,
     FileService,
     InventoryService,
+    LogService,
     MergeService,
     ModDocService,
     SettingsService,

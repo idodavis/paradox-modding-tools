@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import LangThemeSelect from "./LangThemeSelect.svelte";
+  import LangThemeSelect from "../form-controls/LangThemeSelect.svelte";
   import DiffView from "./DiffView.svelte";
   import { ReadFileContent } from "@services/fileservice";
 
@@ -9,6 +9,8 @@
     newFile = "",
     oldFileName: customOldFileName,
     newFileName: customNewFileName,
+    originalLabelClass = "bg-primary/10 text-primary",
+    modifiedLabelClass = "bg-secondary/10 text-secondary",
     hasPrev = false,
     hasNext = false,
     navLabel,
@@ -22,6 +24,8 @@
     newFile?: string;
     oldFileName?: string;
     newFileName?: string;
+    originalLabelClass?: string;
+    modifiedLabelClass?: string;
     hasPrev?: boolean;
     hasNext?: boolean;
     navLabel?: string;
@@ -127,7 +131,8 @@
       modifiedLabel={newFileName}
       originalFileName={oldFileBaseName && oldFileBaseName !== oldFileName ? oldFileBaseName : undefined}
       modifiedFileName={newFileBaseName && newFileBaseName !== newFileName ? newFileBaseName : undefined}
-      modifiedLabelClass="bg-accent/10 text-accent"
+      {originalLabelClass}
+      {modifiedLabelClass}
       class="flex-1 min-h-0"
     />
   {/if}

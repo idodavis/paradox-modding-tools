@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Dialog } from "@components";
   import EditorView from "./EditorView.svelte";
-  import LangThemeSelect from "./LangThemeSelect.svelte";
+  import LangThemeSelect from "../form-controls/LangThemeSelect.svelte";
   import Icon from "@iconify/svelte";
   import { CopyToClipboard } from "@services/clipboardservice";
 
@@ -70,11 +70,12 @@
     </div>
   {/if}
   <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-    <EditorView {content} {firstLineNumber} {placeholder} />
-    {#if !content}
-      <p class="pointer-events-none absolute left-4 top-3 opacity-60">
-        {placeholder}
-      </p>
+    {#if content}
+      <EditorView {content} {firstLineNumber} {placeholder} />
+    {:else}
+      <div class="flex flex-1 items-center justify-center p-4 text-base-content/50">
+        <p>{placeholder}</p>
+      </div>
     {/if}
   </div>
 </div>
@@ -93,6 +94,12 @@
   </div>
 
   <div class="flex-1 overflow-hidden">
-    <EditorView {content} {firstLineNumber} {placeholder} />
+    {#if content}
+      <EditorView {content} {firstLineNumber} {placeholder} />
+    {:else}
+      <div class="flex h-full items-center justify-center p-4 text-base-content/50">
+        <p>{placeholder}</p>
+      </div>
+    {/if}
   </div>
 </Dialog>

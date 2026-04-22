@@ -1,7 +1,9 @@
 <script lang="ts">
   import { Tab, Tabs, Card, CardBody, FileTree, EditorPane, SplitPane } from "@components";
+  import Icon from "@iconify/svelte";
   import { game, gameInstallPath, appConstants } from "@stores/app.svelte";
   import { Scan, GetDocPathCache, GetDocContent } from "@services/moddocservice";
+  import { OpenURL } from "@services/browserservice";
   import { BuildTree } from "@services/fileservice";
   import type { TreeNode } from "@services/models";
 
@@ -44,13 +46,13 @@
   const wikiUrl = $derived($game === "CK3" ? $appConstants.ck3.wikiUrl : $appConstants.eu5.wikiUrl);
 </script>
 
-<div class="p-2">
+<div class="relative p-4 max-w-full min-w-0">
   <Tabs class="tabs-border tabs-xl">
     <Tab
       tabGroup="modding-docs"
       label="Script docs"
       selected
-      contentClass="flex flex-col min-h-0 bg-base-300 border-base-300 h-[calc(92vh-6rem)]"
+      contentClass="flex flex-col min-h-0 bg-base-200/50 border-base-content/10 h-[calc(93.5vh-6rem)]"
       ><Card>
         <CardBody>
           <fieldset class="fieldset">
@@ -76,7 +78,7 @@
             {#snippet first()}
               <div class="flex flex-col h-full overflow-hidden bg-base-200">
                 <div
-                  class="flex h-[5.5rem] shrink-0 flex-col justify-center px-3 py-2 bg-base-300 border-b border-base-content/20"
+                  class="flex h-22 shrink-0 flex-col justify-center px-3 py-2 bg-base-200/50 border-b border-base-content/10"
                 >
                   <label class="label py-1" for="file-filter-input">
                     <span class="label-text font-semibold text-sm">Filter Files</span>
@@ -109,7 +111,7 @@
             {#snippet second()}
               <div class="flex flex-col h-full overflow-hidden bg-dark-input shadow-inner">
                 <div
-                  class="flex h-8 shrink-0 items-center px-3 bg-base-300 border-b border-base-content/20 text-sm text-base-content/60"
+                  class="flex h-8 shrink-0 items-center px-3 bg-base-200/50 border-b border-base-content/10 text-sm font-bold text-base-content/60"
                 >
                   File Content
                 </div>
@@ -124,8 +126,20 @@
         </CardBody>
       </Card>
     </Tab>
-    <Tab tabGroup="modding-docs" label="Modding Wiki" contentClass="bg-base-300 border-base-300 p-2">
-      <iframe src={wikiUrl} title="Modding Wiki" class="w-full h-[calc(96vh-10rem)]"></iframe>
+    <Tab
+      tabGroup="modding-docs"
+      label="Modding Wiki"
+      contentClass="bg-base-200/50 border-base-content/10 p-2 h-[calc(93.5vh-6rem)]"
+    >
+      <div class="flex flex-col gap-2 h-full">
+        <div class="flex justify-end shrink-0">
+          <button type="button" class="btn btn-sm btn-secondary btn-outline" onclick={() => OpenURL(wikiUrl)}>
+            <Icon icon="mdi:open-in-new" class="size-4" />
+            Open in Browser
+          </button>
+        </div>
+        <iframe src={wikiUrl} title="Modding Wiki" class="w-full flex-1 min-h-0"></iframe>
+      </div>
     </Tab>
   </Tabs>
 </div>

@@ -51,12 +51,22 @@
       })) as MatchRow[],
   );
   const selectedRow = $derived(selectedIndex !== null ? (rows[selectedIndex] ?? null) : null);
-  const columns = [{ field: "relativePath", headerName: "Relative path", flex: 1 }];
+  const columns = [
+    {
+      field: "relativePath",
+      headerName: "Relative path",
+      flex: 1,
+      tooltipValueGetter: (p: { data?: MatchRow; value?: string }) =>
+        p.data?.relativePath === "Comparing Two Files"
+          ? "Click to view diff. In File vs File mode, the two files may not share a common path."
+          : (p.value ?? ""),
+    },
+  ];
 </script>
 
-<div class="p-4">
+<div class="relative p-4 max-w-full min-w-0">
   <Tabs class="tabs-border tabs-xl">
-    <Tab tabGroup="compare-mode" label="Vanilla vs Mod" selected contentClass="bg-base-300 border-base-300 p-6">
+    <Tab tabGroup="compare-mode" label="Vanilla vs Mod" selected contentClass="bg-base-200/50 border-base-content/10 p-6">
       <Card>
         <CardBody>
           <p class="text-base text-base-content/90 mb-4">
@@ -96,13 +106,16 @@
             <button
               type="button"
               class="btn btn-ghost text-error hover:bg-error/10"
-              onclick={() => (matchingFiles = {})}>Clear Results</button
+              onclick={() => {
+                matchingFiles = {};
+                selectedIndex = null;
+              }}>Clear Results</button
             >
           </div>
         </CardBody>
       </Card>
     </Tab>
-    <Tab tabGroup="compare-mode" label="Directory vs Directory" contentClass="bg-base-300 border-base-300 p-6">
+    <Tab tabGroup="compare-mode" label="Directory vs Directory" contentClass="bg-base-200/50 border-base-content/10 p-6">
       <Card>
         <CardBody>
           <p class="text-base text-base-content/90 mb-4">Select two sets of files/directories to compare:</p>
@@ -134,13 +147,16 @@
             <button
               type="button"
               class="btn btn-ghost text-error hover:bg-error/10"
-              onclick={() => (matchingFiles = {})}>Clear Results</button
+              onclick={() => {
+                matchingFiles = {};
+                selectedIndex = null;
+              }}>Clear Results</button
             >
           </div>
         </CardBody>
       </Card>
     </Tab>
-    <Tab tabGroup="compare-mode" label="File vs File" contentClass="bg-base-300 border-base-300 p-6">
+    <Tab tabGroup="compare-mode" label="File vs File" contentClass="bg-base-200/50 border-base-content/10 p-6">
       <Card>
         <CardBody>
           <p class="text-base text-base-content/90 mb-4">Select two files to compare:</p>
@@ -172,55 +188,60 @@
             <button
               type="button"
               class="btn btn-ghost text-error hover:bg-error/10"
-              onclick={() => (matchingFiles = {})}>Clear Results</button
+              onclick={() => {
+                matchingFiles = {};
+                selectedIndex = null;
+              }}>Clear Results</button
             >
           </div>
         </CardBody>
       </Card>
     </Tab>
   </Tabs>
-  <Card>
-    <CardBody class="p-0!">
-      <div class="px-4 py-3 border-b border-base-content/20 bg-base-200/50">
-        <h3 class="font-semibold text-sm">Results</h3>
-      </div>
-      <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-[calc(96vh-10rem)">
-        {#snippet first()}
-          <Grid
-            columnDefs={columns}
-            rowData={rows}
-            className="h-full w-full"
-            gridOptions={{
-              rowSelection: "single",
-              onGridReady: (e) => {
-                gridApi = e.api;
-              },
-              onRowClicked: (e) => {
-                selectedIndex = e.rowIndex;
-              },
-            }}
-          />
-        {/snippet}
+  {#if rows.length > 0}
+    <h3 class="mt-6 text-sm font-semibold text-base-content/90 mb-3">Results</h3>
+    <Card>
+      <CardBody class="p-0!">
+        <SplitPane secondOpen={selectedIndex !== null} defaultSecondSize={580} class="h-[calc(93.5vh-6rem)]">
+          {#snippet first()}
+            <Grid
+              columnDefs={columns}
+              rowData={rows}
+              className="h-full w-full"
+              gridOptions={{
+                rowSelection: "single",
+                enableBrowserTooltips: true,
+                tooltipShowDelay: 200,
+                onGridReady: (e) => {
+                  gridApi = e.api;
+                },
+                onRowClicked: (e) => {
+                  selectedIndex = e.rowIndex;
+                },
+              }}
+            />
+          {/snippet}
 
-        {#snippet second()}
-          <DiffPaneContent
-            oldFile={selectedRow?.pathA ?? ""}
-            newFile={selectedRow?.pathB ?? ""}
-            hasPrev={selectedIndex !== null && selectedIndex > 0}
-            hasNext={selectedIndex !== null && selectedIndex < rows.length - 1}
-            navLabel={selectedIndex !== null ? `${selectedIndex + 1} / ${rows.length}` : undefined}
-            onPrev={() => {
-              if (selectedIndex !== null && selectedIndex > 0) navigateTo(selectedIndex - 1);
-            }}
-            onNext={() => {
-              if (selectedIndex !== null && selectedIndex < rows.length - 1) navigateTo(selectedIndex + 1);
-            }}
-            onFullscreen={() => (showFullscreen = true)}
-          />
-        {/snippet}
-      </SplitPane>
-    </CardBody>
-  </Card>
+          {#snippet second()}
+            <DiffPaneContent
+              oldFile={selectedRow?.pathA ?? ""}
+              newFile={selectedRow?.pathB ?? ""}
+              hasPrev={selectedIndex !== null && selectedIndex > 0}
+              hasNext={selectedIndex !== null && selectedIndex < rows.length - 1}
+              navLabel={selectedIndex !== null ? `${selectedIndex + 1} / ${rows.length}` : undefined}
+              onPrev={() => {
+                if (selectedIndex !== null && selectedIndex > 0) navigateTo(selectedIndex - 1);
+              }}
+              onNext={() => {
+                if (selectedIndex !== null && selectedIndex < rows.length - 1) navigateTo(selectedIndex + 1);
+              }}
+              onFullscreen={() => (showFullscreen = true)}
+            />
+          {/snippet}
+        </SplitPane>
+      </CardBody>
+    </Card>
+  {/if}
 </div>
 
 <Dialog

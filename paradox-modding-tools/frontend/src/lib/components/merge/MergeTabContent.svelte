@@ -57,11 +57,6 @@
             ? "Preview Merge"
             : "Run Merge",
   );
-  const resolutionTooltip = $derived(
-    store.config.manualConflictResolution
-      ? "A merge editor will open for each file"
-      : "Conflicts resolved automatically; A wins by default",
-  );
   const primaryAction = $derived(
     store.merging
       ? null
@@ -119,64 +114,37 @@
       />
     {/if}
 
-    {#if mode !== "pairs"}
-      <FileSelector
-        legend="Output dir"
-        mode="folder"
-        dialogTitle="Output dir"
-        btnText="Browse"
-        placeholder="Output directory"
-        initialValue={store.outputDir ?? ""}
-        onPathChange={(p) => (store.outputDir = p ?? "")}
-      />
-      <label class="flex items-center gap-2 cursor-pointer mt-2">
-        <input type="checkbox" class="checkbox checkbox-sm" bind:checked={store.rememberOutputDir} />
-        <span>Remember output dir</span>
-      </label>
-    {/if}
-
     {#if mode === "pairs"}
-      <FileSelector
-        legend="Output dir"
-        mode="folder"
-        dialogTitle="Output dir"
-        btnText="Browse"
-        placeholder="Output directory"
-        initialValue={store.outputDir ?? ""}
-        onPathChange={(p) => (store.outputDir = p ?? "")}
-      />
-      <label class="flex items-center gap-2 cursor-pointer mt-2 mb-4">
-        <input type="checkbox" class="checkbox checkbox-sm" bind:checked={store.rememberOutputDir} />
-        <span>Remember output dir</span>
-      </label>
-      <div class="space-y-2 mb-4">
+      <div class="space-y-3 mb-4">
         {#each store.filePairs as pair, i}
           <div class="flex flex-wrap items-center gap-2 p-2 rounded border border-base-content/10 bg-base-200/50">
-            <FileSelector
-              mode="file"
-              dialogTitle="File A"
-              btnText="A"
-              placeholder="A"
-              initialValue={pair.pathA ?? ""}
-              onPathChange={(p) => store.updatePair(i, "pathA", p ?? "")}
-            />
-            <span class="text-base-content/50">↔</span>
-            <FileSelector
-              mode="file"
-              dialogTitle="File B"
-              btnText="B"
-              placeholder="B"
-              initialValue={pair.pathB ?? ""}
-              onPathChange={(p) => store.updatePair(i, "pathB", p ?? "")}
-            />
             <input
               type="text"
-              class="input input-bordered input-sm w-40"
+              class="input input-bordered input-sm w-40 shrink-0"
               placeholder="Output name (optional)"
               value={pair.outputName}
               oninput={(e) => store.updatePair(i, "outputName", (e.target as HTMLInputElement).value)}
             />
-            <button type="button" class="btn btn-ghost btn-sm" onclick={() => store.removePair(i)} title="Remove pair">
+            <div class="flex flex-wrap items-center gap-2 flex-1">
+              <FileSelector
+                mode="file"
+                dialogTitle="File A"
+                btnText="A"
+                placeholder="A"
+                initialValue={pair.pathA ?? ""}
+                onPathChange={(p) => store.updatePair(i, "pathA", p ?? "")}
+              />
+              <span class="text-base-content/50 self-center">↔</span>
+              <FileSelector
+                mode="file"
+                dialogTitle="File B"
+                btnText="B"
+                placeholder="B"
+                initialValue={pair.pathB ?? ""}
+                onPathChange={(p) => store.updatePair(i, "pathB", p ?? "")}
+              />
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm shrink-0" onclick={() => store.removePair(i)} title="Remove pair">
               <Icon icon="mdi:delete-outline" class="size-4 text-error/70 hover:text-error" />
             </button>
           </div>
@@ -201,9 +169,6 @@
           onclick={primaryAction.onClick}>{primaryAction.label}</button
         >
       {/if}
-      <span class="badge badge-sm badge-ghost" title={resolutionTooltip}
-        >Resolution: {store.config.manualConflictResolution ? "Manual" : "Auto"}</span
-      >
       <button type="button" class="btn btn-sm btn-ghost" onclick={() => store.reset()}>Clear</button>
     </div>
     {#if mode !== "pairs" && store.previewItems.length > 0}

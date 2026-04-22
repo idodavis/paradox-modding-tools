@@ -36,8 +36,7 @@
     lg: `${baseModal} max-h-[min(90vh,32rem)] max-w-lg`,
     xl: `${baseModal} max-h-[min(90vh,36rem)] max-w-xl`,
     "2xl": `${baseModal} max-h-[min(95vh,42rem)] max-w-3xl`,
-    fullscreen:
-      "fixed inset-0 z-50 w-full h-full max-w-none max-h-none rounded-none border-0 p-6",
+    fullscreen: "fixed inset-0 z-50 w-full h-full max-w-none max-h-none rounded-none border-0 p-6",
   };
   const contentClass = $derived(sizeClasses[size]);
   const mergedContentProps = $derived({
@@ -46,23 +45,25 @@
   });
 </script>
 
-<Dialog.Root bind:open {...restProps}>
-  <Dialog.Trigger>
-    {@render triggerDialog?.()}
-  </Dialog.Trigger>
-  <Dialog.Portal>
-    <Dialog.Overlay {...overlayProps} />
-    <Dialog.Content {...mergedContentProps}>
-      <Dialog.Title>
-        {@render title()}
-      </Dialog.Title>
-      <Dialog.Description>
-        {@render description()}
-      </Dialog.Description>
-      {@render children?.()}
-      <Dialog.Close>
-        {@render closeDialog?.()}
-      </Dialog.Close>
-    </Dialog.Content>
-  </Dialog.Portal>
-</Dialog.Root>
+<div class="fixed">
+  <Dialog.Root bind:open {...restProps}>
+    <Dialog.Trigger>
+      {@render triggerDialog?.()}
+    </Dialog.Trigger>
+    <Dialog.Portal>
+      <Dialog.Overlay {...overlayProps} />
+      <Dialog.Content {...mergedContentProps}>
+        <Dialog.Title>
+          {@render title()}
+        </Dialog.Title>
+        <Dialog.Description>
+          {@render description()}
+        </Dialog.Description>
+        {@render children?.()}
+        <Dialog.Close>
+          {@render closeDialog?.()}
+        </Dialog.Close>
+      </Dialog.Content>
+    </Dialog.Portal>
+  </Dialog.Root>
+</div>

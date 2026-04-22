@@ -12,7 +12,7 @@
   async function save() {
     await saveSettings();
     showToast({
-      message: "Settings saved.",
+      message: "Settings saved",
       type: "alert-success",
       duration: 3000,
     });
@@ -44,7 +44,7 @@
   }
 </script>
 
-<div class="p-4">
+<div class="relative p-4 max-w-full min-w-0">
   <div class="max-w-3xl mx-auto w-full">
     <button
       type="button"
@@ -53,10 +53,9 @@
     >
       ← Back
     </button>
-    <h2 class="text-center text-xl font-semibold mb-4 text-base-content/90">Settings</h2>
-    <Card class="bg-base-300 border border-base-content/10">
+    <Card class="bg-base-200/50 border border-base-content/10">
       <CardBody class="p-6">
-        <h3 class="card-title text-base-content/90 mb-2">Game install directories</h3>
+        <h3 class="card-title text-base-content/90 mb-2">Game Install Directories</h3>
         <p class="text-sm text-base-content/80 mb-4">
           Set the (top-level) install path for each game. These are used by Modding Docs, Compare (vanilla vs mod), and
           Merge (vanilla vs mod).
@@ -90,20 +89,6 @@
               }))}
           />
         </div>
-        <h3 class="card-title text-base-content/90 mb-2 mt-6">Merge Tool</h3>
-        <p class="text-sm text-base-content/80 mb-4">Default output directory for merge operations.</p>
-        <FileSelector
-          mode="folder"
-          dialogTitle="Default merge output dir"
-          btnText="Browse"
-          placeholder="Merge output directory"
-          initialValue={$appSettings["_global.merge_output_dir"] ?? ""}
-          onPathChange={(p) =>
-            appSettings.update((s) => ({
-              ...s,
-              "_global.merge_output_dir": p ?? "",
-            }))}
-        />
         <div class="card-actions justify-end mt-6 pt-4 border-t border-base-content/10">
           <button type="button" class="btn btn-soft btn-secondary" onclick={save}> Save Settings </button>
         </div>

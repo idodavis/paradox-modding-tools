@@ -1,5 +1,7 @@
 @import "tailwindcss";
-@plugin "daisyui";
+@plugin "daisyui" {
+  themes: PMT --default, retro, pastel, dracula, luxury, autumn, business, coffee, dim;
+}
 @plugin "@tailwindcss/typography";
 
 @theme {
@@ -8,7 +10,7 @@
 }
 
 @plugin "daisyui/theme" {
-  name: "sunset-PMT";
+  name: "PMT";
   default: true;
   prefersdark: true;
   color-scheme: "dark";

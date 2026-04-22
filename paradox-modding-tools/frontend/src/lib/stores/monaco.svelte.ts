@@ -34,7 +34,22 @@ export const CODE_THEMES = [
   "material-theme-palenight",
   "tokyo-night",
   "catppuccin-latte",
-];
+] as const;
+
+/** Human-readable labels for CODE_THEMES (kebab-case → Title Case) */
+export const CODE_THEME_LABELS: Record<(typeof CODE_THEMES)[number], string> = {
+  "one-dark-pro": "One Dark Pro",
+  "one-light": "One Light",
+  "ayu-dark": "Ayu Dark",
+  "ayu-light": "Ayu Light",
+  "github-dark-default": "GitHub Dark",
+  "github-light-default": "GitHub Light",
+  "material-theme-darker": "Material Darker",
+  "material-theme-lighter": "Material Lighter",
+  "material-theme-palenight": "Material Palenight",
+  "tokyo-night": "Tokyo Night",
+  "catppuccin-latte": "Catppuccin Latte",
+};
 
 export const CODE_LANGUAGES = [
   "hcl",
@@ -79,12 +94,12 @@ export function getMonaco(): Promise<MonacoApi> {
   if (!monacoPromise) {
     monacoPromise = init({
       defaultTheme: "one-dark-pro",
-      themes: CODE_THEMES,
+      themes: [...CODE_THEMES],
       langs: CODE_LANGUAGES,
     }).catch(() =>
       init({
         defaultTheme: "one-dark-pro",
-        themes: CODE_THEMES,
+        themes: [...CODE_THEMES],
         langs: CODE_LANGUAGES,
       }),
     );

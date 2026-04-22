@@ -33,7 +33,7 @@ const store = setMergeStore();
         tabGroup="merge-mode"
         label={m.label}
         selected={store.activeTab === m.id}
-        contentClass="bg-base-300 border-base-300 p-6"
+        contentClass="bg-base-200/50 border-base-content/10 p-6"
         onclick={() => (store.activeTab = m.id)}
       >
         <MergeTabContent mode={m.id} />

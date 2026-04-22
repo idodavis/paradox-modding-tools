@@ -20,7 +20,6 @@
     columnDefs: Array<any>;
     rowData: Array<any>;
     className?: string;
-    /** Optional AG-Grid options merged with defaults (e.g. pagination, filter, rowSelection, onRowClicked). */
     gridOptions?: Partial<GridOptions<any>>;
   } = $props();
 
@@ -28,14 +27,13 @@
     "rounded-lg border border-base-content/20 bg-base-100 overflow-hidden " + (className || ""),
   );
 
-  const darkTheme = themeQuartz.withParams({
-    accentColor: "#B387FA",
-    backgroundColor: "#1A1E28",
-    borderColor: "#14171F",
-    browserColorScheme: "dark",
-    oddRowBackgroundColor: "hsl(220, 29%, 6%)",
-    foregroundColor: "#9FB9D0",
-    headerBackgroundColor: "#0D1016",
+  const theme = themeQuartz.withParams({
+    accentColor: "var(--color-accent)",
+    backgroundColor: "var(--color-base-100)",
+    foregroundColor: "var(--color-base-content)",
+    headerBackgroundColor: "var(--color-base-300)",
+    oddRowBackgroundColor: "var(--color-base-200)",
+    borderColor: "var(--color-base-300)",
     headerFontSize: 16,
     wrapperBorderRadius: 4,
   });
@@ -45,7 +43,7 @@
 
   onMount(() => {
     const gridOptions: GridOptions<any> = {
-      theme: darkTheme,
+      theme: theme,
       columnDefs,
       rowData,
       defaultColDef: {

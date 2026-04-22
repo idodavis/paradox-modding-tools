@@ -2,7 +2,7 @@ import { getContext, setContext } from "svelte";
 import { GetGameScriptRoot, WriteWithBOM } from "@services/fileservice";
 import { MergePreview, Merge, GetMergeConflicts } from "@services/mergeservice";
 import type { FileMergeResult, MergerOptions, MergeConflictChunk, PreviewItem } from "@services/models";
-import { appSettings, saveSettings, game, gameInstallPath } from "@stores/app.svelte";
+import { game, gameInstallPath } from "@stores/app.svelte";
 import { get } from "svelte/store";
 
 const isCancelError = (e: unknown) => String(e).toLowerCase().includes("cancel");
@@ -44,7 +44,6 @@ export class MergeStore {
 
   // Output
   outputDir = $state("");
-  rememberOutputDir = $state(false);
 
   // State
   activeTab = $state("vanilla");
@@ -63,6 +62,13 @@ export class MergeStore {
   /** Persists across the manual-merge queue so layout sticks after save/skip */
   mergeResultLayout = $state<"right" | "bottom">("right");
 
+  get manualFileTotal(): number {
+    return this.mergeResults.length + this.manualMergeQueue.length + (this.currentManualFile ? 1 : 0);
+  }
+  get manualFileIndex(): number {
+    return this.currentManualFile ? this.mergeResults.length : 0;
+  }
+
   mergePromise: (Promise<unknown> & { cancel?: () => void }) | null = null;
 
   addPair(pathA = "", pathB = "", outputName = "") {
@@ -75,12 +81,6 @@ export class MergeStore {
 
   updatePair(i: number, field: "pathA" | "pathB" | "outputName", value: string) {
     this.filePairs[i][field] = value;
-  }
-
-  constructor() {
-    // Initialize output dir from settings
-    const def = get(appSettings)["_global.merge_output_dir"];
-    if (def) this.outputDir = def;
   }
 
   get options(): MergerOptions {
@@ -97,6 +97,7 @@ export class MergeStore {
       includePathPattern: this.config.includePathPattern,
       excludePathPattern: this.config.excludePathPattern,
       outputFileSuffix: this.config.outputFileSuffix,
+      outputDir: this.outputDir,
     };
   }
 
@@ -159,7 +160,6 @@ export class MergeStore {
     try {
       const res = await fn();
       this.mergeResults = Array.isArray(res) ? res : [];
-      this.saveOutputDir();
     } catch (e) {
       if (!isCancelError(e)) this.errorMsg = e instanceof Error ? e.message : String(e);
     } finally {
@@ -260,13 +260,6 @@ export class MergeStore {
     this.currentManualFile = null;
     this.manualMergeQueue = [];
     this.merging = false;
-  }
-
-  private saveOutputDir() {
-    if (this.rememberOutputDir && this.outputDir) {
-      appSettings.update((s) => ({ ...s, "_global.merge_output_dir": this.outputDir }));
-      saveSettings();
-    }
   }
 }
 

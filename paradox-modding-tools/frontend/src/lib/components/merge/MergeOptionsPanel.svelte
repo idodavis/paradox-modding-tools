@@ -1,11 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { FileSelector } from "@components";
   import * as SettingsService from "@services/settingsservice";
   import { showToast } from "@stores/toast.svelte";
   import type { MergerOptions, MergePreset } from "@services/models";
   import { getMergeStore } from "@stores/merge.svelte";
+  import { GetUserDownloadsDir } from "@services/fileservice";
 
   type MergePresetItem = { name: string; options: MergerOptions };
+
+  let defaultOutputDir = $state("");
 
   const store = getMergeStore();
   const config = store.config;
@@ -21,12 +25,12 @@
       presets = p.map((x: MergePreset) => ({ name: x.name, options: x.options }));
 
       const last = localStorage.getItem("last_merge_preset");
-      if (last) {
-        const found = presets.find((x) => x.name === last);
-        if (found) {
-          applyPreset(found);
-          currentPresetName = last;
-        }
+      const found = last ? presets.find((x) => x.name === last) : null;
+      if (found) {
+        applyPreset(found);
+        currentPresetName = last;
+      } else if (!store.outputDir) {
+        store.outputDir = defaultOutputDir;
       }
     } catch {
       presets = [];
@@ -43,6 +47,7 @@
     config.includePathPattern = o.includePathPattern ?? "";
     config.excludePathPattern = o.excludePathPattern ?? "";
     config.outputFileSuffix = o.outputFileSuffix ?? "";
+    store.outputDir = o.outputDir?.trim() || defaultOutputDir || "";
     localStorage.setItem("last_merge_preset", p.name);
     currentPresetName = p.name;
   }
@@ -62,6 +67,7 @@
       includePathPattern: config.includePathPattern,
       excludePathPattern: config.excludePathPattern,
       outputFileSuffix: config.outputFileSuffix,
+      outputDir: store.outputDir ?? "",
     };
     try {
       const name = presetNameToSave.trim();
@@ -87,7 +93,10 @@
     }
   }
 
-  onMount(() => loadPresets());
+  onMount(async () => {
+    defaultOutputDir = (await GetUserDownloadsDir()) ?? "";
+    await loadPresets();
+  });
 </script>
 
 <div class="rounded-lg border border-base-content/10 bg-base-200/30 mb-4 overflow-hidden">
@@ -99,13 +108,16 @@
       class:badge-primary={!config.manualConflictResolution}
       class:badge-secondary={config.manualConflictResolution}
     >
-      Resolution: {config.manualConflictResolution ? "Manual" : "Auto"}
+      {config.manualConflictResolution ? "Manual" : "Auto"}
     </span>
     <span class="badge badge-sm badge-ghost">
       Add from B: {config.addAdditionalEntries ? "Yes" : "No"}
     </span>
     <span class="badge badge-sm badge-ghost">
       Preset: {currentPresetName ?? "None"}
+    </span>
+    <span class="badge badge-sm badge-ghost truncate max-w-48" title={store.outputDir || "Downloads"}>
+      Out: {store.outputDir || "Downloads"}
     </span>
   </div>
 
@@ -132,6 +144,7 @@
                 currentPresetName = name || null;
                 const p = presets.find((x) => x.name === name);
                 if (p) applyPreset(p);
+                else if (!store.outputDir) store.outputDir = defaultOutputDir;
               }}
             >
               <option value="">— No preset —</option>
@@ -217,7 +230,9 @@
       <div
         class:opacity-50={config.manualConflictResolution}
         class:pointer-events-none={config.manualConflictResolution}
-        title={config.manualConflictResolution ? "Key list only affects Auto mode (conflicts are resolved manually in Manual mode)" : "For these keys, always use B's version even when A has them"}
+        title={config.manualConflictResolution
+          ? "Key list only affects Auto mode (conflicts are resolved manually in Manual mode)"
+          : "For these keys, always use B's version even when A has them"}
       >
         <label class="flex items-center gap-2 cursor-pointer">
           <input
@@ -228,7 +243,9 @@
           />
           <span>Key list (B overrides A)</span>
         </label>
-        <p class="text-xs text-base-content/60 mt-1 ml-6">One key per line. B wins for these entities. Only applies in Auto mode.</p>
+        <p class="text-xs text-base-content/60 mt-1 ml-6">
+          One key per line. B wins for these entities. Only applies in Auto mode.
+        </p>
       </div>
       {#if config.useKeyList && !config.manualConflictResolution}
         <textarea
@@ -273,6 +290,16 @@
           bind:value={config.outputFileSuffix}
         />
       </label>
+
+      <FileSelector
+        mode="folder"
+        legend="Output directory"
+        dialogTitle="Select Output Directory"
+        btnText="Browse"
+        placeholder="Output directory for merged files"
+        initialValue={store.outputDir ?? ""}
+        onPathChange={(p) => (store.outputDir = p ?? "")}
+      />
     </div>
   </details>
 </div>

@@ -2,38 +2,25 @@
   import { onMount } from "svelte";
   import ck3Bg from "@assets/CK3-All_Under_Heaven.jpg";
   import eu5Bg from "@assets/EUV-Release.jpg";
-  import { Card, CardBody, Dialog, Toast, HelpDialog } from "@components";
-  import { helpConfig } from "./lib/config/helpConfig";
+  import { Card, CardBody, Dialog, Toast, PageHelp, AppNavbar, PMTLogo } from "@components";
   import Icon from "@iconify/svelte";
   import CompareTool from "@pages/CompareTool.svelte";
-  import ModdingResources from "@pages/ModdingResources.svelte";
+  import ModdingDocs from "@pages/ModdingDocs.svelte";
   import MergeTool from "@pages/MergeTool.svelte";
   import InventoryTool from "@pages/InventoryTool.svelte";
   import Settings from "@pages/Settings.svelte";
-  import { game, currentPage, gotoPage, loadSettings, helpOpen } from "@stores/app.svelte";
-  import { showToast } from "@stores/toast.svelte";
+  import { game, currentPage, gotoPage, loadSettings } from "@stores/app.svelte";
+  import { LogError } from "@services/logservice";
   import { GetLatestPatchNotes } from "@services/steamservice";
   import { OpenURL } from "@services/browserservice";
   import type { LatestPatchNotes } from "@services/models";
+  import pkg from "../package.json";
 
   const backgroundImage = $derived($game === "EU5" ? eu5Bg : ck3Bg);
   let latestPatchNotes = $state<Record<string, LatestPatchNotes>>({});
   let patchNotesDialogOpen = $state(false);
 
   const currentPatchNotes = $derived(latestPatchNotes[$game]);
-
-  const pageTitle = $derived(
-    (
-      {
-        hub: "",
-        "compare-tool": "File Compare",
-        "modding-resources": "Modding Resources",
-        "merge-tool": "Script Merger",
-        inventory: "Inventory Explorer",
-        settings: "Settings",
-      } as Record<string, string>
-    )[$currentPage] ?? "Tools",
-  );
 
   onMount(() => {
     loadSettings();
@@ -43,78 +30,48 @@
     GetLatestPatchNotes("EU5").then((result) => {
       latestPatchNotes["EU5"] = result;
     });
-    const handleRejection = (event: PromiseRejectionEvent) => {
-      const err = event.reason;
+    const logErr = (msg: string, stack?: string) => LogError(msg, stack ?? "").catch(() => {});
+    const handleRejection = (e: PromiseRejectionEvent) => {
+      const err = e.reason;
       const msg = err instanceof Error ? err.message : String(err);
-      // Optional: skip user-initiated cancels (e.g. file dialog)
       if (msg.toLowerCase().includes("cancel")) return;
-      showToast({ message: msg, type: "alert-error", duration: 6000 });
-      event.preventDefault(); // prevent default console error if desired
+      if (/\b(t\.with|monaco|minified|startLineNumber)\b/i.test(msg)) return;
+      const stack = err instanceof Error ? err.stack ?? "" : "";
+      logErr(msg, stack);
+      e.preventDefault();
+    };
+    const handleError = (e: ErrorEvent) => {
+      const msg = e.message ?? String(e);
+      logErr(msg, e.error instanceof Error ? e.error.stack ?? "" : "");
     };
     window.addEventListener("unhandledrejection", handleRejection);
-    return () => window.removeEventListener("unhandledrejection", handleRejection);
+    window.addEventListener("error", handleError);
+    return () => {
+      window.removeEventListener("unhandledrejection", handleRejection);
+      window.removeEventListener("error", handleError);
+    };
   });
 </script>
 
-<!-- Toast and HelpDialog use fixed/portal rendering - they must not affect layout -->
+<!-- Toast uses fixed/portal rendering - must not affect layout -->
 <Toast />
-<div class="fixed">
-  <HelpDialog bind:open={$helpOpen} page={$currentPage} config={helpConfig} />
-</div>
-<div class="min-h-screen flex flex-col">
-  <!-- Navbar -->
-  <div class="navbar bg-base-200 border-b border-base-300 shadow-sm px-6 py-3 z-10">
-    <div class="navbar-start gap-4 min-w-0">
-      {#if $currentPage === "hub"}
-        <div class="flex items-center gap-3">
-          <div class="flex items-center justify-center size-10">
-            <Icon icon="logos:adonisjs-icon" class="size-10" />
-          </div>
-          <div>
-            <h2 class="text-xl font-bold text-left">Paradox Modding Tools</h2>
-            <span class="text-xs text-base-content/70 font-medium uppercase">
-              Tools and Utilities for Paradox Mod Developers
-            </span>
-          </div>
-        </div>
-      {:else}
-        <button type="button" class="btn btn-ghost btn-sm gap-1.5" onclick={() => gotoPage("hub")}>
-          <Icon icon="mdi:arrow-left" class="size-4" />
-          Hub
-        </button>
-        <span class="text-base-content/50">/</span>
-        <h1 class="text-lg font-semibold truncate">{pageTitle}</h1>
-      {/if}
-    </div>
-    <div class="navbar-end gap-2">
-      <select class="select select-bordered w-32" bind:value={$game}>
-        <option value="CK3">CK3</option>
-        <option value="EU5">EU5</option>
-      </select>
-      <button class="btn btn-square btn-ghost" type="button" onclick={() => gotoPage("settings")}>
-        <Icon icon="mdi:cog" class="size-6" />
-      </button>
-      <button class="btn btn-square btn-ghost" type="button" onclick={() => helpOpen.update((v) => !v)}>
-        <Icon icon="mdi:help-circle" class="size-6 text-accent" />
-      </button>
-    </div>
-  </div>
+<div class="h-screen overflow-hidden flex flex-col">
+  <AppNavbar />
 
   {#if $currentPage === "hub"}
     <!-- Main content: centered cards + vertical banner -->
-    <main class="flex flex-1 gap-6 max-w-7xl mx-auto items-center z-10">
+    <main class="flex flex-1 min-h-0 overflow-auto gap-6 max-w-7xl mx-auto items-center z-10">
       <!-- Tool cards column -->
       <div class="flex-1 flex flex-col justify-center">
         <div class="grid gap-4 grid-cols-1 sm:grid-cols-2">
           <Card class="shadow-lg bg-base-300/85">
             <CardBody>
-              <h2 class="card-title">Modding Resources</h2>
+              <h2 class="card-title">Modding Docs</h2>
               <p class="text-sm text-base-content/80">
                 Browse script help files (.info / readme.txt) and modding wiki for CK3 and EU5.
               </p>
               <div class="card-actions justify-end">
-                <button class="btn btn-primary btn-outline btn-sm" onclick={() => gotoPage("modding-resources")}
-                  >Open</button
+                <button class="btn btn-primary btn-outline btn-sm" onclick={() => gotoPage("modding-docs")}>Open</button
                 >
               </div>
             </CardBody>
@@ -196,7 +153,7 @@
         bind:open={patchNotesDialogOpen}
         size="fullscreen"
         contentProps={{
-          class: "z-50 bg-dark-input flex flex-col overflow-auto",
+          class: "z-50 bg-base-200 flex flex-col overflow-auto",
         }}
       >
         {#snippet title()}
@@ -236,8 +193,8 @@
     <main class="flex-1 min-h-0 overflow-auto">
       {#if $currentPage === "compare-tool"}
         <CompareTool />
-      {:else if $currentPage === "modding-resources"}
-        <ModdingResources />
+      {:else if $currentPage === "modding-docs"}
+        <ModdingDocs />
       {:else if $currentPage === "settings"}
         <Settings />
       {:else if $currentPage === "merge-tool"}
@@ -247,4 +204,12 @@
       {/if}
     </main>
   {/if}
+
+  <footer
+    class="shrink-0 z-10 flex items-center justify-between px-2 text-sm text-base-content bg-base-200 border-t border-base-300"
+  >
+    <PMTLogo iconHeight={25} textHeight={30} />
+    <PageHelp page={$currentPage} />
+    <span class="font-mono">v{pkg.version}</span>
+  </footer>
 </div>

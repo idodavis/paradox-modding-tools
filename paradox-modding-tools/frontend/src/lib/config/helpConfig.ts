@@ -1,4 +1,4 @@
-export type PageId = "hub" | "compare-tool" | "merge-tool" | "inventory" | "modding-resources" | "settings";
+export type PageId = "hub" | "compare-tool" | "merge-tool" | "inventory" | "modding-docs" | "settings";
 
 export type HelpBlock =
   | { type: "paragraph"; text: string }
@@ -36,7 +36,7 @@ export const helpConfig: Record<PageId, HelpConfig> = {
         blocks: [
           {
             type: "paragraph",
-            text: "Use the cards on the Hub to open each tool. The header provides: game selector (CK3/EU5), Settings (gear icon), and Help (this dialog). Click the back arrow or Hub when inside a tool to return.",
+            text: "Use the cards on the Hub to open each tool. The header provides: game selector (CK3/EU5) and Settings (gear icon). The footer shows a Help button for the current page. Click the back arrow or Hub when inside a tool to return.",
           },
         ],
       },
@@ -82,6 +82,10 @@ export const helpConfig: Record<PageId, HelpConfig> = {
           {
             type: "paragraph",
             text: "The grid lists matched files. Click a row to view the side-by-side diff in the split pane. Use Prev/Next to move between files. Fullscreen opens a larger diff view.",
+          },
+          {
+            type: "paragraph",
+            text: 'In File vs File mode, the grid shows "Comparing Two Files" when the two chosen files don\'t share a common path. Click that row to view the diff—the files are paired by your selection, not by path.',
           },
         ],
       },
@@ -269,8 +273,8 @@ other_key = {
       },
     ],
   },
-  "modding-resources": {
-    title: "Modding Resources Help",
+  "modding-docs": {
+    title: "Modding Docs Help",
     sections: [
       {
         heading: "Overview",
@@ -287,6 +291,10 @@ other_key = {
           {
             type: "paragraph",
             text: "Set the game install path in the field (or in Settings). Click Scan to discover doc files in the game directory. The file tree lists all found docs; click a file to view its content in the editor pane. Use the filter to narrow by filename.",
+          },
+          {
+            type: "paragraph",
+            text: "Scan searches the game install directory for script documentation files (.info, readme.txt, etc.). Run Scan after a fresh install or after a game patch, since file locations may change.",
           },
         ],
       },

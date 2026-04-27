@@ -23,11 +23,7 @@ export { default as Tab } from "./ui/layout/Tab.svelte";
 export { default as Tabs } from "./ui/layout/Tabs.svelte";
 
 // UI editors
-export { default as DiffView } from "./ui/editors/DiffView.svelte";
 export { default as DiffPane } from "./ui/editors/DiffPane.svelte";
-export { default as DiffPaneContent } from "./ui/editors/DiffPane.svelte";
-export { default as FileTree } from "./ui/editors/FileTree.svelte";
-export { default as EditorView } from "./ui/editors/EditorView.svelte";
 export { default as EditorPane } from "./ui/editors/EditorPane.svelte";
 
 // Feature: merge

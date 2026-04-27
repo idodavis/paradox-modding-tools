@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import LangThemeSelect from "../form-controls/LangThemeSelect.svelte";
-  import DiffView from "./DiffView.svelte";
   import { ReadFileContent } from "@services/fileservice";
+  import { codeLanguage, codeTheme, monacoDiff } from "@stores/code-editor.svelte";
 
   let {
     oldFile = "",
@@ -123,17 +123,31 @@
   {#if error}
     <div class="flex items-center justify-center flex-1 text-error p-4 text-sm">Error: {error}</div>
   {:else}
-    <DiffView
-      {originalContent}
-      {modifiedContent}
-      {renderSideBySide}
-      originalLabel={oldFileName}
-      modifiedLabel={newFileName}
-      originalFileName={oldFileBaseName && oldFileBaseName !== oldFileName ? oldFileBaseName : undefined}
-      modifiedFileName={newFileBaseName && newFileBaseName !== newFileName ? newFileBaseName : undefined}
-      {originalLabelClass}
-      {modifiedLabelClass}
-      class="flex-1 min-h-0"
-    />
+    <div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+      <div class="flex shrink-0 border-b-2 border-base-content/15">
+        <div class="flex-1 py-2 px-3 text-sm font-semibold {originalLabelClass}">
+          {oldFileName}
+          {#if oldFileBaseName && oldFileBaseName !== oldFileName}
+            <span class="font-normal text-base-content/50 ml-1">{oldFileBaseName}</span>
+          {/if}
+        </div>
+        <div class="flex-1 py-2 px-3 text-sm font-semibold {modifiedLabelClass}" class:text-right={!renderSideBySide}>
+          {newFileName}
+          {#if newFileBaseName && newFileBaseName !== newFileName}
+            <span class="font-normal text-base-content/50 ml-1">{newFileBaseName}</span>
+          {/if}
+        </div>
+      </div>
+      <div
+        class="relative min-h-0 flex-1 overflow-hidden"
+        use:monacoDiff={{
+          original: originalContent,
+          modified: modifiedContent,
+          language: $codeLanguage,
+          theme: $codeTheme,
+          renderSideBySide,
+        }}
+      ></div>
+    </div>
   {/if}
 </div>

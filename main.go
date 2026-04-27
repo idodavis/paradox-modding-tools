@@ -25,6 +25,9 @@ func init() {
 // and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
 // logs any error that might occur.
 func main() {
+	//////////////////////////////////////////////
+	// Initialize the application main services //
+	//////////////////////////////////////////////
 	dbSvc := &services.DbService{}
 	if err := dbSvc.ServiceStartup(); err != nil {
 		log.Fatalf("db startup: %v", err)
@@ -36,11 +39,14 @@ func main() {
 	}
 
 	fileSvc := &services.FileService{}
+	compareSvc := &services.CompareService{FileService: fileSvc}
 	mergeSvc := &services.MergeService{FileService: fileSvc}
 	modDocSvc := &services.ModDocService{FileService: fileSvc, DB: dbSvc.DB}
 	settingsSvc := &services.SettingsService{DB: dbSvc.DB}
 	steamSvc := &services.SteamService{DB: dbSvc.DB}
 	invSvc := &services.InventoryService{DB: dbSvc.DB}
+	browserSvc := &services.BrowserService{}
+	clipboardSvc := &services.ClipboardService{}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -49,12 +55,12 @@ func main() {
 			application.NewService(logSvc),
 			application.NewService(dbSvc),
 			application.NewService(fileSvc),
-			application.NewService(&services.BrowserService{}),
-			application.NewService(&services.CompareService{}),
+			application.NewService(browserSvc),
+			application.NewService(compareSvc),
 			application.NewService(modDocSvc),
 			application.NewService(settingsSvc),
 			application.NewService(steamSvc),
-			application.NewService(&services.ClipboardService{}),
+			application.NewService(clipboardSvc),
 			application.NewService(invSvc),
 			application.NewService(mergeSvc),
 		},

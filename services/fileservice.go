@@ -38,9 +38,9 @@ func (f *FileService) SelectDirectory(title string) (string, error) {
 	dialog.CanChooseFiles(false)
 	path, err := dialog.PromptForSingleSelection()
 	if err != nil {
-		return "", nil
+		return "", err
 	}
-	return path, err
+	return path, nil
 }
 
 func (f *FileService) SelectSingleFile(title, filter string) (string, error) {
@@ -54,9 +54,9 @@ func (f *FileService) SelectSingleFile(title, filter string) (string, error) {
 	}
 	path, err := dialog.PromptForSingleSelection()
 	if err != nil {
-		return "", nil
+		return "", err
 	}
-	return path, err
+	return path, nil
 }
 
 // WriteWithBOM writes content to outputPath as UTF-8 with BOM. Creates parent directories as needed.

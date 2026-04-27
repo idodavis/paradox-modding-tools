@@ -1,15 +1,12 @@
 <script lang="ts">
-  import { Tab, Tabs, Card, CardBody, FileTree, EditorPane, SplitPane } from "@components";
+  import { Tab, Tabs, Card, CardBody, EditorPane, SplitPane } from "@components";
+  import { FileTree as PierreFileTree } from "@pierre/trees";
   import Icon from "@iconify/svelte";
   import { game, gameInstallPath, appConstants } from "@stores/app.svelte";
   import { Scan, GetDocPathCache, GetDocContent } from "@services/moddocservice";
   import { OpenURL } from "@services/browserservice";
-  import { BuildTree } from "@services/fileservice";
-  import type { TreeNode } from "@services/models";
 
-  let filterText = $state("");
   let docFiles = $state<string[]>([]);
-  let docTree = $state<TreeNode[]>([]);
   let selectedEntry = $state<{ name: string; content: string }>();
 
   $effect(() => {
@@ -18,10 +15,8 @@
     GetDocPathCache(g, path).then(async (cache) => {
       if (cache) {
         docFiles = cache.paths;
-        docTree = await BuildTree(docFiles);
       } else {
         docFiles = [];
-        docTree = [];
       }
     });
   });
@@ -29,21 +24,43 @@
   async function scan() {
     try {
       docFiles = await Scan($game, $gameInstallPath);
-      docTree = await BuildTree(docFiles);
     } catch (error) {
       console.error(error);
     }
   }
 
-  async function onFileClick(file: TreeNode) {
-    const content = await GetDocContent($game, $gameInstallPath, file.relPath);
+  async function onFileClick(path: string) {
+    const content = await GetDocContent($game, $gameInstallPath, path);
     selectedEntry = {
-      name: file.name,
+      name: path.split(/[/\\]/).at(-1) ?? path,
       content: content ?? "",
     };
   }
 
   const wikiUrl = $derived($game === "CK3" ? $appConstants.ck3.wikiUrl : $appConstants.eu5.wikiUrl);
+
+  function pierreTree(node: HTMLDivElement, paths: string[]) {
+    const tree = new PierreFileTree({
+      paths,
+      search: true,
+      fileTreeSearchMode: "hide-non-matches",
+      onSelectionChange: (selectedPaths) => {
+        const path = selectedPaths.at(-1);
+        if (path) onFileClick(path);
+      },
+    });
+
+    tree.render({ fileTreeContainer: node });
+
+    return {
+      update(nextPaths: string[]) {
+        tree.resetPaths(nextPaths);
+      },
+      destroy() {
+        tree.cleanUp();
+      },
+    };
+  }
 </script>
 
 <div class="relative p-4 max-w-full min-w-0">
@@ -77,34 +94,8 @@
           <SplitPane fixedSide="first" class="flex-1 min-h-0">
             {#snippet first()}
               <div class="flex flex-col h-full overflow-hidden bg-base-200">
-                <div
-                  class="flex h-22 shrink-0 flex-col justify-center px-3 py-2 bg-base-200/50 border-b border-base-content/10"
-                >
-                  <label class="label py-1" for="file-filter-input">
-                    <span class="label-text font-semibold text-sm">Filter Files</span>
-                  </label>
-                  <div class="relative">
-                    <input
-                      id="file-filter-input"
-                      type="text"
-                      class="input input-bordered w-full bg-base-100 focus:bg-base-100"
-                      bind:value={filterText}
-                      placeholder="Type to filter by filename..."
-                    />
-                    {#if filterText}
-                      <button
-                        type="button"
-                        class="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
-                        onclick={() => (filterText = "")}
-                        title="Clear filter"
-                      >
-                        ✕
-                      </button>
-                    {/if}
-                  </div>
-                </div>
                 <div class="flex-1 min-h-0 overflow-auto p-2">
-                  <FileTree tree={docTree} filter={filterText} fileColor="text-accent" {onFileClick} />
+                  <div class="h-full min-h-0 overflow-hidden" use:pierreTree={docFiles}></div>
                 </div>
               </div>
             {/snippet}

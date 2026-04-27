@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { GridApi } from "ag-grid-community";
-  import { Tabs, Tab, Card, CardBody, FileSelector, Grid, SplitPane, DiffPaneContent, Dialog } from "@components";
+  import { Tabs, Tab, Card, CardBody, FileSelector, Grid, SplitPane, DiffPane, Dialog } from "@components";
   import { game, gameInstallPath } from "@stores/app.svelte";
   import { VanillaCompare, DirectoryCompare } from "@services/compareservice";
   import type { PathMatch } from "@services/models";
@@ -223,7 +223,7 @@
           {/snippet}
 
           {#snippet second()}
-            <DiffPaneContent
+            <DiffPane
               oldFile={selectedRow?.pathA ?? ""}
               newFile={selectedRow?.pathB ?? ""}
               hasPrev={selectedIndex !== null && selectedIndex > 0}
@@ -257,6 +257,6 @@
   {/snippet}
   {#snippet description()}<span class="sr-only">Diff viewer</span>{/snippet}
   {#if showFullscreen && selectedRow}
-    <DiffPaneContent oldFile={selectedRow.pathA} newFile={selectedRow.pathB} />
+    <DiffPane oldFile={selectedRow.pathA} newFile={selectedRow.pathB} />
   {/if}
 </Dialog>

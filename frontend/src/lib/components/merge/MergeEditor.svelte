@@ -1,7 +1,5 @@
 <script lang="ts">
   import { Dialog, LangThemeSelect, SplitPane } from "@components";
-  import DiffView from "../ui/editors/DiffView.svelte";
-  import EditorView from "../ui/editors/EditorView.svelte";
   import {
     getConflictIndices,
     getAddedIndices,
@@ -9,6 +7,7 @@
     computeMergeStats,
   } from "@stores/mergeEditor.svelte";
   import { getMergeStore } from "@stores/merge.svelte";
+  import { codeLanguage, codeTheme, monacoDiff, monacoEditor } from "@stores/code-editor.svelte";
   import type { MergeConflictChunk } from "@services/models";
   import { showToast } from "@stores/toast.svelte";
 
@@ -144,6 +143,12 @@
       startLineA: 1,
       startLineB: currentAdditionChunk.startLineB + b.offset,
     };
+  });
+
+  const currentDiffFirstLine = $derived.by(() => {
+    const active = editorTab === "additions" ? additionsDiffDisplay : diffDisplay;
+    if (!active) return 1;
+    return editorTab === "additions" ? active.startLineB : active.startLineA;
   });
 
   function setAdditionIncluded(index: number, value: boolean) {
@@ -393,26 +398,45 @@
         class="h-full rounded-none! border-0!"
       >
         {#snippet first()}
-          <DiffView
-            originalContent={activeDiff.textA}
-            modifiedContent={activeDiff.textB}
-            originalLabel={editorTab === "additions" ? "(not in A)" : mergeStore.labels.a}
-            modifiedLabel={mergeStore.labels.b}
-            origFirstLine={activeDiff.startLineA}
-            modFirstLine={activeDiff.startLineB}
-            class="h-full"
-          />
+          <div class="flex h-full min-h-0 flex-col overflow-hidden">
+            <div class="flex shrink-0 border-b-2 border-base-content/15">
+              <div class="flex-1 py-2 px-3 text-sm font-semibold bg-primary/10 text-primary">
+                {editorTab === "additions" ? "(not in A)" : mergeStore.labels.a}
+              </div>
+              <div class="flex-1 py-2 px-3 text-sm font-semibold bg-secondary/10 text-secondary">
+                {mergeStore.labels.b}
+              </div>
+            </div>
+            <div
+              class="relative min-h-0 flex-1 overflow-hidden"
+              use:monacoDiff={{
+                original: activeDiff.textA,
+                modified: activeDiff.textB,
+                language: $codeLanguage,
+                theme: $codeTheme,
+                firstLineNumber: currentDiffFirstLine,
+              }}
+            ></div>
+          </div>
         {/snippet}
         {#snippet second()}
-          <EditorView
-            content={resultDisplay}
-            label="Result"
-            labelClass="bg-accent/10 text-accent"
-            firstLineNumber={activeDiff.startLineA}
-            readOnly={editorTab === "additions"}
-            onContentChange={onResultChange}
-            class="h-full"
-          />
+          <div class="flex h-full min-h-0 flex-col overflow-hidden">
+            <div class="text-sm font-semibold py-2 px-3 shrink-0 border-b-2 border-base-content/15 bg-accent/10 text-accent">
+              Result
+            </div>
+            <div
+              class="relative min-h-0 flex-1 overflow-hidden"
+              use:monacoEditor={{
+                value: resultDisplay,
+                language: $codeLanguage,
+                theme: $codeTheme,
+                readOnly: editorTab === "additions",
+                firstLineNumber: currentDiffFirstLine,
+                placeholder: "Choose a side or edit the result",
+                onChange: onResultChange,
+              }}
+            ></div>
+          </div>
         {/snippet}
       </SplitPane>
     {:else}

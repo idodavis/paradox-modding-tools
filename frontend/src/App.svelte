@@ -35,7 +35,6 @@
       const err = e.reason;
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.toLowerCase().includes("cancel")) return;
-      if (/\b(t\.with|monaco|minified|startLineNumber)\b/i.test(msg)) return;
       const stack = err instanceof Error ? err.stack ?? "" : "";
       logErr(msg, stack);
       e.preventDefault();

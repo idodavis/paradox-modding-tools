@@ -11,24 +11,25 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "@monaco-editor/loader": "^1.7.0",
+    "@pierre/trees": "^1.0.0-beta.3",
     "@tailwindcss/typography": "^0.5.19",
-    "@tailwindcss/vite": "^4.2.1",
+    "@tailwindcss/vite": "^4.2.4",
     "@wailsio/runtime": "latest",
-    "ag-grid-community": "^35.1.0",
-    "bits-ui": "^2.16.3",
-    "modern-monaco": "^0.4.0",
-    "tailwindcss": "^4.2.1"
+    "ag-grid-community": "^35.2.1",
+    "bits-ui": "^2.18.0",
+    "monaco-editor": "^0.55.1",
+    "tailwindcss": "^4.2.4"
   },
   "devDependencies": {
     "@iconify/svelte": "^5.2.1",
-    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tsconfig/svelte": "^5.0.8",
     "daisyui": "^5.5.19",
-    "shiki": "^4.0.1",
-    "svelte": "^5.53.7",
-    "svelte-check": "^4.4.0",
+    "svelte": "^5.55.0",
+    "svelte-check": "^4.4.6",
     "tslib": "^2.8.1",
-    "typescript": "~5.9.3",
-    "vite": "^7.3.1"
+    "typescript": "~6.0.3",
+    "vite": "^8.0.10"
   }
 }

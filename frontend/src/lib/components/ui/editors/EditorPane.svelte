@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Dialog } from "@components";
-  import EditorView from "./EditorView.svelte";
   import LangThemeSelect from "../form-controls/LangThemeSelect.svelte";
   import Icon from "@iconify/svelte";
   import { CopyToClipboard } from "@services/clipboardservice";
+  import { codeLanguage, codeTheme, monacoEditor } from "@stores/code-editor.svelte";
 
   let {
     content,
@@ -70,13 +70,17 @@
     </div>
   {/if}
   <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-    {#if content}
-      <EditorView {content} {firstLineNumber} {placeholder} />
-    {:else}
-      <div class="flex flex-1 items-center justify-center p-4 text-base-content/50">
-        <p>{placeholder}</p>
-      </div>
-    {/if}
+    <div
+      class="absolute inset-0 overflow-hidden"
+      use:monacoEditor={{
+        value: content ?? "",
+        language: $codeLanguage,
+        theme: $codeTheme,
+        readOnly: true,
+        firstLineNumber,
+        placeholder,
+      }}
+    ></div>
   </div>
 </div>
 
@@ -94,12 +98,16 @@
   </div>
 
   <div class="flex-1 overflow-hidden">
-    {#if content}
-      <EditorView {content} {firstLineNumber} {placeholder} />
-    {:else}
-      <div class="flex h-full items-center justify-center p-4 text-base-content/50">
-        <p>{placeholder}</p>
-      </div>
-    {/if}
+    <div
+      class="h-full overflow-hidden"
+      use:monacoEditor={{
+        value: content ?? "",
+        language: $codeLanguage,
+        theme: $codeTheme,
+        readOnly: true,
+        firstLineNumber,
+        placeholder,
+      }}
+    ></div>
   </div>
 </Dialog>

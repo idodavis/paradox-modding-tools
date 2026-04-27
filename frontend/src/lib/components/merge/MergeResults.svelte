@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Card, CardBody, Grid, SplitPane, DiffPaneContent, Dialog } from "@components";
+  import { Card, CardBody, Grid, SplitPane, DiffPane, Dialog } from "@components";
   import { showToast } from "@stores/toast.svelte";
   import * as MergeService from "@services/mergeservice";
   import { SaveFile } from "@services/fileservice";
@@ -153,13 +153,13 @@
 
         {#if conflicts.length > 0}
           <div class="px-4 py-3 space-y-3 text-sm border-t border-base-content/10 bg-base-100">
-            {#each conflicts as file}
+            {#each conflicts as file (file.outputPath)}
               <div class="rounded border border-warning/20 bg-warning/5 p-2">
                 <div class="font-medium mb-1 text-base-content/80">
                   {file.filePath}
                 </div>
                 <ul class="space-y-1 ml-2">
-                  {#each file.resolvedConflicts ?? [] as c}
+                  {#each file.resolvedConflicts ?? [] as c (`${file.outputPath}:${c.key}`)}
                     <li class="flex items-center gap-2 text-xs">
                       <code class="bg-base-200 px-1 rounded">{c.key}</code>
                       <span class="text-base-content/60">→</span>
@@ -186,7 +186,7 @@
             Validation errors ({validationErrors.length})
           </summary>
           <ul class="p-3 space-y-2 text-sm text-error/90 border-t border-base-content/10">
-            {#each validationErrors as ve}
+            {#each validationErrors as ve (`${ve.path}:${ve.line}:${ve.error}`)}
               <li class="flex gap-2 flex-wrap border border-error/20 bg-base-100 px-2 py-1 rounded">
                 <code>{ve.path}</code> <span>L{ve.line}: {ve.error}</span>
               </li>
@@ -218,7 +218,7 @@
         {/snippet}
 
         {#snippet second()}
-          <DiffPaneContent
+          <DiffPane
             oldFile={currentOldFile}
             newFile={currentNewFile}
             oldFileName={currentOldFileName}
@@ -259,7 +259,7 @@
                 </div>
               </div>
             {/snippet}
-          </DiffPaneContent>
+          </DiffPane>
         {/snippet}
       </SplitPane>
     </CardBody>
@@ -279,7 +279,7 @@
   {/snippet}
   {#snippet description()}<span class="sr-only">Diff viewer</span>{/snippet}
   {#if showFullscreen && selectedResult}
-    <DiffPaneContent
+    <DiffPane
       oldFile={currentOldFile}
       newFile={currentNewFile}
       oldFileName={currentOldFileName}

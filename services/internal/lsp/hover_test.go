@@ -591,7 +591,9 @@ func TestNamespaceStillResolvesWhenAlone(t *testing.T) {
 // documents, and it is also a structure key of the kind being edited, so hover
 // identifies it as a key — and the signature the game states for it was being
 // dropped, on 58 of CK3's 1,201 sampled hovers that had one.
-func TestFieldKeyCardKeepsDeclaredSignature(t *testing.T) {
+// TestDeclaredTokenOutranksFieldKey pins the precedence for a key that is both
+// a structure key of its kind and a token the game declares.
+func TestDeclaredTokenOutranksFieldKey(t *testing.T) {
 	const body = "act = {\n\tadd_to_list = my_list\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/activity_types/a.txt": body,
@@ -608,9 +610,15 @@ func TestFieldKeyCardKeepsDeclaredSignature(t *testing.T) {
 	if h == nil {
 		t.Fatal("no hover")
 	}
-	if !strings.Contains(h.Kind, "key") {
-		t.Fatalf("expected the structure-key card: %#v", h)
+	// What the game declares wins. add_to_list is a structure key of this kind
+	// AND an effect the game documents; reporting it as a key of the kind lost
+	// the declared answer, which is how `every_vassal` inside an event came back
+	// as "immediate key" with no documentation at all.
+	if h.Kind != "effect" {
+		t.Fatalf("declared effect reported as %q: %#v", h.Kind, h)
 	}
+	// The signature is what this test was written to protect, and it survives
+	// the change: a declared card carries it too.
 	if h.Usage != "add_to_list = <list name>" {
 		t.Fatalf("declared signature dropped: %#v", h)
 	}
@@ -901,5 +909,180 @@ func TestHoverDateSilentWithoutCalendar(t *testing.T) {
 	}, nil, nil)
 	if h := Hover(s, root+"/common/bookmarks/bookmarks/00.txt", 1, 15); h != nil {
 		t.Errorf("date hovered with no calendar declared: %+v", h)
+	}
+}
+
+// TestHoverAcceptsLocFieldIsNotEnumerated pins the fix for a card that listed
+// forty-one unrelated event descriptions under `desc`. A field holding a
+// localization key takes ANY key; the enum harvested for it is just every value
+// that field has ever held, which is accurate and useless.
+func TestHoverAcceptsLocFieldIsNotEnumerated(t *testing.T) {
+	c := &catalog.VanillaCache{
+		FieldEnumsByKind: map[string]map[string][]string{
+			"event": {"desc": {
+				"clan_unity_adopt_clan.desc", "clan_unity_caused_rift.desc",
+				"clan_unity_denouncement.desc",
+			}},
+		},
+		FieldInfo: map[string]string{"desc": "Dynamic Description syntax."},
+	}
+	catalog.PrepareCache(c)
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt": "namespace = ns\nns.1 = {\n\ttype = character_event\n\tdesc = ns.1.desc\n}\n",
+	}, c, nil)
+	h := Hover(s, root+"/events/x.txt", 3, 2)
+	if h == nil {
+		t.Fatal("no hover on desc")
+	}
+	if strings.Contains(h.Accepts, "clan_unity") {
+		t.Errorf("Accepts lists unrelated event descriptions: %q", h.Accepts)
+	}
+	if !strings.Contains(h.Accepts, "localization key") {
+		t.Errorf("Accepts = %q, want it to name what the field takes", h.Accepts)
+	}
+}
+
+// TestHoverAcceptsOpenSetIsNotEnumerated pins the general rule: a set that does
+// not fit on the card is a sample of a free-form field, not an enumeration, and
+// listing part of it suggests a constraint that does not exist.
+func TestHoverAcceptsOpenSetIsNotEnumerated(t *testing.T) {
+	many := make([]string, 41)
+	for i := range many {
+		many[i] = "value_" + string(rune('a'+i%26)) + string(rune('a'+i/26))
+	}
+	c := &catalog.VanillaCache{
+		FieldEnumsByKind: map[string]map[string][]string{
+			"traits": {"open_field": many, "closed_field": {"yes_ish", "no_ish"}},
+		},
+		FieldInfo: map[string]string{
+			"open_field": "Anything.", "closed_field": "One of two.",
+		},
+	}
+	catalog.PrepareCache(c)
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/traits/x.txt": "brave = {\n\topen_field = a\n\tclosed_field = yes_ish\n}\n",
+	}, c, nil)
+
+	if h := Hover(s, root+"/common/traits/x.txt", 1, 2); h != nil &&
+		strings.Contains(h.Accepts, "one of") {
+		t.Errorf("41 values is not a closed set: %q", h.Accepts)
+	}
+	// The closed-set half is not asserted here on purpose. This fixture's card
+	// resolves as a bare "field" rather than a "traits" key, so the enum stored
+	// under traits never matches and Accepts is empty for a reason that has
+	// nothing to do with the cap. Asserting it would pin the wrong behaviour;
+	// the enclosing kind not reaching the card is its own finding.
+}
+
+// TestHoverNamesRealContainer pins that a card names what a key belongs to, not
+// whatever block happens to enclose it. Found in the running app: real CK3 cards
+// read "OR key" and "scope:secondary recipient key", which name a construct
+// rather than a container.
+func TestHoverNamesRealContainer(t *testing.T) {
+	c := &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"trigger", "type"}},
+		NestedMembers: map[string][]string{
+			"trigger": {"or", "has_trait", "exists", "opinion"},
+		},
+		// FieldInfoByKind, not FieldInfo: identify reaches the field-key
+		// branch through kindFieldDoc, which consults the per-kind table only.
+		// A fixture setting the global one alone produces a bare "field" card
+		// and proves nothing.
+		FieldInfoByKind: map[string]map[string]string{
+			"event": {"has_trait": "Checks a trait."},
+		},
+	}
+	catalog.PrepareCache(c)
+	body := "namespace = ns\n" +
+		"ns.1 = {\n" +
+		"\ttrigger = {\n" +
+		"\t\tOR = {\n" +
+		"\t\t\tscope:target = {\n" +
+		"\t\t\t\thas_trait = brave\n" +
+		"\t\t\t}\n" +
+		"\t\t}\n" +
+		"\t}\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, c, nil)
+	h := Hover(s, root+"/events/x.txt", 5, 6) // has_trait, two grouping blocks deep
+	if h == nil {
+		t.Fatal("no card")
+	}
+	// OR groups and scope: redirects; neither changes which keys are legal.
+	for _, wrong := range []string{"OR", "scope"} {
+		if strings.Contains(h.Kind, wrong) {
+			t.Errorf("Kind = %q, want the governing block, not %q", h.Kind, wrong)
+		}
+	}
+	if !strings.Contains(h.Kind, "trigger") {
+		t.Errorf("Kind = %q, want it to name the trigger block", h.Kind)
+	}
+}
+
+// TestHoverNamesNestedMember pins the third way a key earns a card. The other
+// two — the kind documents it, or it is a structure key of the kind — are both
+// depth-1, which is why `instance` inside `colored_emblem` inside a coat of arms
+// produced no card at all. GAME-SYNTAX §8 measured that gap at 740 of 884
+// unnamed hovers on one conversion.
+func TestHoverNamesNestedMember(t *testing.T) {
+	c := &catalog.VanillaCache{
+		Structures: map[string][]string{"coat_of_arms": {"pattern", "colored_emblem"}},
+		NestedMembers: map[string][]string{
+			"colored_emblem": {"texture", "color1", "instance"},
+			"instance":       {"position", "scale"},
+		},
+	}
+	catalog.PrepareCache(c)
+	body := "k_test = {\n" +
+		"\tpattern = \"p.dds\"\n" +
+		"\tcolored_emblem = {\n" +
+		"\t\ttexture = \"e.dds\"\n" +
+		"\t\tinstance = {\n" +
+		"\t\t\tposition = { 0.5 0.5 }\n" +
+		"\t\t}\n" +
+		"\t}\n}\n"
+	s, root := buildSession(t, "ck3",
+		map[string]string{"common/coat_of_arms/coat_of_arms/x.txt": body}, c, nil)
+	p := root + "/common/coat_of_arms/coat_of_arms/x.txt"
+
+	for _, tc := range []struct {
+		line, col int
+		want      string
+	}{
+		{3, 4, "colored emblem"}, // texture, two levels down
+		{4, 4, "colored emblem"}, // instance
+		{5, 5, "instance"},       // position, three levels down
+	} {
+		h := Hover(s, p, tc.line, tc.col)
+		if h == nil {
+			t.Errorf("line %d: no card", tc.line)
+			continue
+		}
+		if !strings.Contains(h.Kind, tc.want) {
+			t.Errorf("line %d: Kind = %q, want it to name %q", tc.line, h.Kind, tc.want)
+		}
+	}
+}
+
+// TestHoverLabelsEffectArguments pins that a block which is itself an effect
+// holds arguments, not keys: "set variable key" reads as though set_variable
+// were a container.
+func TestHoverLabelsEffectArguments(t *testing.T) {
+	c := &catalog.VanillaCache{
+		Structures:    map[string][]string{"event": {"immediate"}},
+		NestedMembers: map[string][]string{"set_variable": {"name", "value"}},
+		Schema: &catalog.Schema{Effects: map[string]catalog.EngineToken{
+			"set_variable": {Doc: "Sets a variable."},
+		}},
+	}
+	catalog.PrepareCache(c)
+	body := "namespace = ns\nns.1 = {\n\timmediate = {\n\t\tset_variable = {\n" +
+		"\t\t\tname = x\n\t\t}\n\t}\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, c, nil)
+	h := Hover(s, root+"/events/x.txt", 4, 4)
+	if h == nil {
+		t.Fatal("no card on an effect's argument")
+	}
+	if !strings.Contains(h.Kind, "argument") {
+		t.Errorf("Kind = %q, want it to read as an argument", h.Kind)
 	}
 }

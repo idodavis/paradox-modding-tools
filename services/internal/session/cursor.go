@@ -36,6 +36,11 @@ type probe struct {
 	saveOK          bool
 	inKey           bool
 	slotKey         string
+	// inNested is true when the enclosing block is deeper than the definition.
+	inNested bool
+	// blockPath is the keys of the enclosing assignments, outermost first, so a
+	// card can look past blocks that group without containing.
+	blockPath []string
 	// slotAssign is the assignment slotKey names, kept so a card can read the
 	// siblings of the thing under the cursor — what a weight is a share of.
 	slotAssign *jomini.Assignment
@@ -154,6 +159,14 @@ func fillCompleteSlot(at *probe, chain []jomini.Statement, off int) {
 		if len(assigns) >= 2 {
 			at.slotAssign = assigns[len(assigns)-2]
 			at.slotKey = at.slotAssign.Key.Text
+			// Deeper than the definition itself. A field directly under
+			// `ns.1 = { … }` has the definition as its block, and that is the
+			// position the install's documentation is written for; a field under
+			// a block under the definition is not.
+			at.inNested = len(assigns) > 2
+			for _, x := range assigns[:len(assigns)-1] {
+				at.blockPath = append(at.blockPath, x.Key.Text)
+			}
 		}
 		return
 	}

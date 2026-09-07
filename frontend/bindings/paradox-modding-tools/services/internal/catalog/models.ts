@@ -278,6 +278,20 @@ export interface VanillaCache {
      * well-evidenced: the members that clear a coverage floor, most-used first.
      */
     "snippets"?: { [_ in string]?: SnippetMember[] | null } | null;
+
+    /**
+     * NestedMembers is block key -> the members that block holds, most-used
+     * first. What lets a query answer "what belongs inside triggered_desc?"
+     * rather than only "what belongs inside an event?".
+     */
+    "nestedMembers"?: { [_ in string]?: string[] | null } | null;
+
+    /**
+     * AmbiguousFields are field names that appear inside more than one kind of
+     * block, so the install's single description of them is about the wrong
+     * position most of the time.
+     */
+    "ambiguousFields"?: { [_ in string]?: boolean } | null;
     "structureBlocks"?: { [_ in string]?: string[] | null } | null;
     "vocabulary": string[] | null;
     "guiTypes": string[] | null;

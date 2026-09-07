@@ -3,7 +3,6 @@
 package session
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,6 +57,10 @@ type Inspect struct {
 
 type identity struct {
 	path, name, kind, owner, locFilter, extractKind string
+	// block is the key of the enclosing block, when the cursor sits inside one.
+	// What lets a card tell `trigger` in a triggered_desc from `trigger` in a
+	// portrait, which the install documents once, by name, for both.
+	block string
 	// docs is prose the identify step worked out itself, for the cards whose
 	// content is computed from the cursor's surroundings rather than looked up.
 	docs string
@@ -68,6 +71,40 @@ type identity struct {
 	fieldKey, local                    bool
 	spanStart, spanEnd                 int
 	assignStart, assignEnd, assignLine int
+}
+
+// nestedBlock returns the block that actually governs the cursor, or empty at a
+// definition's own level.
+//
+// Logic operators and scope switches are skipped. `OR = { … }` and
+// `scope:secondary_recipient = { … }` group and redirect; neither changes which
+// keys are legal, so neither is what a key belongs to. Using them produced cards
+// reading "OR key" and "scope:secondary recipient key", which name a construct
+// rather than a container.
+func nestedBlock(at probe) string {
+	if !at.inNested {
+		return ""
+	}
+	for i := len(at.blockPath) - 1; i >= 1; i-- {
+		if !transparentBlock(at.blockPath[i]) {
+			return at.blockPath[i]
+		}
+	}
+	return ""
+}
+
+// transparentBlock reports a block that groups or redirects without changing
+// which keys may be written inside it.
+func transparentBlock(key string) bool {
+	if strings.ContainsRune(key, ':') {
+		return true // a scope switch: scope:x, culture:y
+	}
+	switch strings.ToLower(key) {
+	case "or", "and", "not", "nor", "nand", "trigger_if", "trigger_else",
+		"trigger_else_if", "if", "else", "else_if", "root", "prev", "this":
+		return true
+	}
+	return false
 }
 
 // PrettyKind is the Kind line: CanonicalKind, then underscores to spaces.
@@ -507,12 +544,42 @@ func (s *Session) identify(path string, line, col int) (identity, bool) {
 			// is the honest answer; it is the wrong answer that was the bug.
 			return identity{}, false
 		}
+		// A dotted key is a scope chain, not a name: `holder.culture = { … }`
+		// walks to the holder and then to their culture. Resolve the segment
+		// under the cursor, so hovering `holder` explains the hop it makes
+		// rather than producing no card at all.
+		if seg, ok := dottedSegmentAt(a.Key.Text, at.off-a.Key.Range.Start); ok {
+			if id, found := s.segmentIdentity(path, seg); found {
+				return id, true
+			}
+		}
+		// What the game DECLARES the key to be wins over what the install walk
+		// inferred about the kind it sits in. `every_vassal = { … }` inside an
+		// event's immediate block is an effect the game documents; claimed as a
+		// field key it came back as "immediate key" with no documentation at
+		// all, and `name` inside `set_variable = { … }` came back as
+		// "set variable key". Both lost a declared answer to a derived one,
+		// which is the fault this whole engine is organised against.
+		//
+		// Only names the game's own script_docs declare. A name merely harvested
+		// from the corpus is derived too, and must not outrank a field.
+		if s.DeclaresEngineName(a.Key.Text) {
+			if ck := s.vocabRole(a.Key.Text); ck != "" {
+				return identity{path: path, name: a.Key.Text, kind: ck}, true
+			}
+		}
 		docs := s.kindFieldDoc(a.Key.Text, at.kind)
+		block := nestedBlock(at)
+		// A key the install writes inside this block earns a card even when the
+		// kind neither documents it nor lists it: both of those are depth-1, so
+		// `instance` inside `colored_emblem` inside a coat of arms produced
+		// nothing at all — 740 of 884 unnamed hovers on one conversion.
 		if docs != "" || s.isStructKey(at.kind, a.Key.Text) ||
+			s.IsNestedMember(block, a.Key.Text) ||
 			loc.Classify(a.Key.Text) != loc.PropNone {
 			return identity{
 				path: path, name: a.Key.Text, kind: at.kind, fieldKey: true,
-				extractKind: at.kind,
+				extractKind: at.kind, block: block,
 			}, true
 		}
 		if d := s.resolveNonLoc(a.Key.Text); d != nil {
@@ -662,9 +729,23 @@ func (s *Session) fillCard(id identity) *Inspect {
 	case id.local:
 		return s.localAssignCard(id)
 	case id.fieldKey:
-		docs := s.FieldDoc(id.name, id.extractKind)
-		ins := s.inspectOf(id.extractKind, id.name, docs)
-		ins.Kind += " key"
+		docs := s.FieldDocIn(id.name, id.extractKind, id.block)
+		// Name the block the key is actually in. "event key" is true of
+		// `type` and of a `trigger` four levels down, which tells a reader
+		// nothing about where they are — and where they are is what decides
+		// what the key means.
+		label, suffix := id.extractKind, " key"
+		if id.block != "" {
+			label = id.block
+			// A block that is itself an effect or trigger contains arguments,
+			// not keys: "set variable key" and "add key" read as though
+			// set_variable were a container.
+			if s.DeclaresEngineName(id.block) {
+				suffix = " argument"
+			}
+		}
+		ins := s.inspectOf(label, id.name, docs)
+		ins.Kind += suffix
 		// composeHint describes the KIND — its scope type, how it is cited, how
 		// its localization keys are named. None of that is about the field under
 		// the cursor, and inspectOf attaches it whenever the field itself has no
@@ -1390,19 +1471,59 @@ func (s *Session) fieldAccepts(kind, field string) string {
 	if k := s.FieldValueKind(field); k != "" && !jomini.IsEphemeral(k) {
 		return "accepts a " + PrettyKind(k)
 	}
-	// A closed set is the most useful thing of all when it exists.
-	if enums := s.FieldEnums(kind, field); len(enums) > 0 {
-		shown := enums
-		extra := 0
-		if len(shown) > maxAcceptedValues {
-			extra = len(shown) - maxAcceptedValues
-			shown = shown[:maxAcceptedValues]
-		}
-		out := "one of: " + strings.Join(shown, ", ")
-		if extra > 0 {
-			out += fmt.Sprintf(", +%d more", extra)
-		}
-		return out
+	// A field holding a localization key takes any key, not one of a set. The
+	// enum harvested for it is just every key that field has ever held, which
+	// for an event's `desc` is the descriptions of every unrelated event in the
+	// install — accurate, and useless.
+	if loc.Classify(field) != loc.PropNone {
+		return "accepts a localization key"
 	}
-	return ""
+	// A closed set is the most useful thing of all when it really is closed. A
+	// set that does not fit on the card is not an enumeration, it is a sample of
+	// a free-form field, and listing eight of forty-one values suggests a
+	// constraint that does not exist.
+	enums := s.FieldEnums(kind, field)
+	if len(enums) == 0 || len(enums) > maxAcceptedValues {
+		return ""
+	}
+	return "one of: " + strings.Join(enums, ", ")
+}
+
+// dottedSegmentAt returns the segment of a dotted chain containing off, or false
+// when the text is not a chain.
+//
+// `holder.culture` is two hops, and a reader hovering either half is asking
+// about that half. Splitting is cheap and the alternative is what happened
+// before: the whole string resolved to nothing and the card never appeared.
+func dottedSegmentAt(text string, off int) (string, bool) {
+	if off < 0 || off > len(text) || !strings.ContainsRune(text, '.') {
+		return "", false
+	}
+	start := strings.LastIndexByte(text[:off], '.') + 1
+	end := strings.IndexByte(text[off:], '.')
+	if end < 0 {
+		end = len(text)
+	} else {
+		end += off
+	}
+	seg := text[start:end]
+	if seg == "" {
+		return "", false
+	}
+	return seg, true
+}
+
+// segmentIdentity names one hop of a scope chain, if the game declares it.
+func (s *Session) segmentIdentity(path, seg string) (identity, bool) {
+	if p, ok := jomini.ParsePrefixed(seg); ok {
+		kind := jomini.PrefixKind(p.Prefix)
+		if kind == "" {
+			kind = p.Prefix
+		}
+		return s.ephemeralID(path, p.Name, kind), true
+	}
+	if ck := s.vocabRole(seg); ck != "" {
+		return identity{path: path, name: seg, kind: ck}, true
+	}
+	return identity{}, false
 }

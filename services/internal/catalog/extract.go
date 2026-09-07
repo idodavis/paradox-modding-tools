@@ -21,6 +21,14 @@ var (
 )
 
 // stoplist are grammar/logic words never harvested as structure keys or vocabulary.
+// neverAKey is the subset of stoplist that is not a key anywhere: a value, an
+// operand, or a scope word. Unlike the rest of stoplist these cannot appear on
+// the left of an `=`, so they are excluded from the nested table too.
+var neverAKey = map[string]bool{
+	"this": true, "root": true, "prev": true, "from": true,
+	"yes": true, "no": true,
+}
+
 var stoplist = map[string]bool{
 	"if": true, "else": true, "else_if": true, "limit": true, "and": true,
 	"or": true, "not": true, "nor": true, "nand": true, "this": true,
@@ -52,6 +60,9 @@ type FileExtract struct {
 	// rest runs for mods too. See the assignment site for why they are separate.
 	MemberKind   string
 	StructCounts map[string]int
+	// StructNested is block key -> member key -> occurrences, so a member is
+	// known under the block it belongs to rather than only under its file's kind.
+	StructNested map[string]map[string]int
 	StructBlocks map[string]int
 	Vocab        map[string]bool
 	GUITypes     map[string]bool
@@ -141,6 +152,11 @@ func extractForms(
 		ex.Defs, ex.GUITypes, ex.GUIProps = extractKeywordName(
 			res.Root, res.Lines(), absPath, origin,
 		)
+		// GUI took a branch of its own and never harvested block members, so a
+		// whole file kind had no structure model: hovering `offset` inside a
+		// texticon produced no card at all. The nested harvest is generic —
+		// key to child — so it reads GUI as readily as script.
+		_, _, _, ex.StructNested = harvestStructVocab(res.Root)
 	case game.ModeTopLevelKey, game.ModeEventID:
 		if rule.Mode == game.ModeEventID {
 			var nsRefs []Ref
@@ -170,8 +186,9 @@ func extractForms(
 			kind = "event"
 		}
 		ex.MemberKind = kind
-		counts, blocks, vocab := harvestStructVocab(res.Root)
+		counts, blocks, vocab, nested := harvestStructVocab(res.Root)
 		ex.StructCounts = counts
+		ex.StructNested = nested
 		if harvestBodies {
 			ex.StructKind = kind
 			ex.StructBlocks, ex.Vocab = blocks, vocab
@@ -504,10 +521,58 @@ func extractKeywordName(
 	return defs, guiTypes, guiProps
 }
 
-func harvestStructVocab(root *jomini.Root) (counts, blocks map[string]int, vocab map[string]bool) {
+// nestedDepth bounds how far below a definition members are recorded under their
+// parent. Three covers `event > first_valid > triggered_desc > trigger`, which is
+// the shape that sent readers to the portrait documentation; going deeper grows
+// the table for blocks nobody edits by hand.
+const nestedDepth = 3
+
+func harvestStructVocab(root *jomini.Root) (
+	counts, blocks map[string]int, vocab map[string]bool,
+	nested map[string]map[string]int,
+) {
 	counts, blocks, vocab = map[string]int{}, map[string]int{}, map[string]bool{}
+	nested = map[string]map[string]int{}
 	if root == nil {
-		return counts, blocks, vocab
+		return counts, blocks, vocab, nested
+	}
+	// Record a member under the key of the block it sits in. The grandchildren
+	// were already being walked -- they went into the flat vocab bag, which is
+	// why `trigger` inside triggered_desc was documented as a portrait's
+	// trigger: every name was known, and none of them knew where it belonged.
+	var under func(parent string, b *jomini.Block, depth int)
+	under = func(parent string, b *jomini.Block, depth int) {
+		if b == nil || depth > nestedDepth {
+			return
+		}
+		for _, c := range b.Statements {
+			ca, ok := c.(*jomini.Assignment)
+			if !ok || ca.Key.Quoted {
+				continue
+			}
+			k := strings.ToLower(ca.Key.Text)
+			if !nameOKRe.MatchString(k) || neverAKey[k] {
+				continue
+			}
+			if !stoplist[k] {
+				vocab[k] = true
+			}
+			// Recorded and recursed even when the kind vocabulary stoplists it.
+			// That list keeps control flow out of a KIND's member names, which
+			// is right, but `first_valid`, `triggered_desc`, `limit` and `if`
+			// are exactly the blocks worth knowing the inside of — and they are
+			// legitimate keys in the positions they appear, which is what this
+			// table is for.
+			if parent != "" {
+				m := nested[parent]
+				if m == nil {
+					m = map[string]int{}
+					nested[parent] = m
+				}
+				m[k]++
+			}
+			under(k, jomini.BlockOf(ca.Value), depth+1)
+		}
 	}
 	for _, st := range root.Statements {
 		a, ok := st.(*jomini.Assignment)
@@ -531,18 +596,11 @@ func harvestStructVocab(root *jomini.Root) (counts, blocks map[string]int, vocab
 			vocab[k] = true
 			if sub := jomini.BlockOf(ca.Value); sub != nil {
 				blocks[k]++
-				for _, gc := range sub.Statements {
-					if ga, ok := gc.(*jomini.Assignment); ok && !ga.Key.Quoted {
-						gk := strings.ToLower(ga.Key.Text)
-						if nameOKRe.MatchString(gk) && !stoplist[gk] {
-							vocab[gk] = true
-						}
-					}
-				}
+				under(k, sub, 1)
 			}
 		}
 	}
-	return counts, blocks, vocab
+	return counts, blocks, vocab, nested
 }
 
 type edgeFrame struct {

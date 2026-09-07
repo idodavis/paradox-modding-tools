@@ -772,3 +772,85 @@ using the same chain completion uses in `valueItems` — fire key, script name,
 answer "what is this" and "what can go here" from one source. Today that would
 change nothing, and speculative machinery here is how the engine got its
 hardcoded edge cases in the first place.
+
+## 14. A block name is not a position
+
+`NestedMembers` keys block members by the block's own name — `triggered_desc`
+holds `trigger` and `desc`, `limit` holds `exists`, `not`, `has_trait`. Merging
+the evidence by name is what makes an occurrence floor mean anything, and it is
+right for **offering** keys: the worst case is a suggestion that does not belong,
+which costs a keystroke.
+
+It is not enough for **judging** them. `option` is a block in a CK3 event and a
+block in `common/accolade_names`, and they hold nothing in common. Measured:
+
+| Game | `unknown-key` findings on ~400 vanilla files |
+|---|---|
+| CK3 | **18,341** |
+| Vic3 | 6 |
+| EU5 | 4 |
+
+CK3's number is one name colliding across kinds, not eighteen thousand defects.
+The check also took the vanilla gate from 20s to 244s on CK3 alone, because it
+walks every block of every file rather than answering about one cursor.
+
+**So `unknown-key` is not implemented.** It is the one check that reports an
+*absence* — everything else fires on a positive contradiction of something the
+game declares — and an absence is only meaningful once the model can tell
+`event > option` from `accolade_names > option`. That needs the member table
+keyed by **kind plus path**, not by block name, and the same measurement rerun
+against it.
+
+Recording this so the next attempt starts from the number rather than from the
+idea: the pathed model made completion correct at every depth, and that was not
+sufficient to make the diagnostic safe.
+
+## 15. LSP quality, measured against real mods
+
+Measured through the running app against the user's own CK3 and EU5 workspaces —
+not fixtures — at real identifier positions rather than fixed columns. Blind
+column sampling reports whitespace as a failure and gave 25% where the same file
+measures 98%.
+
+**Hover**, at 277 identifier positions across all three games:
+
+| | named | with docs |
+|---|---|---|
+| CK3 | 118/120 (98%) | 88 (73%) |
+| Vic3 | 119/120 (99%) | 75 (63%) |
+| EU5 | 36/37 (97%) | 14 (38%) |
+
+The unnamed remainder is `this` — a scope keyword that correctly produces no
+card — and one EU5 portrait key. §8 recorded 77% naming with the depth gap as
+the cause; pathed block members closed it.
+
+EU5's 38% documentation rate against CK3's 73% is a content difference, not an
+engine one: EU5 documents fewer of its fields.
+
+**Completion**, key position, same 157 places: no `yes`/`no` fallback anywhere,
+15 positions offering nothing, and most of those sit on a definition's own name
+where there is nothing to suggest.
+
+**Completion**, value position, 121 places:
+
+| | answered | `yes`/`no` only | empty |
+|---|---|---|---|
+| CK3 | 55/100 | 16 | 29 |
+| Vic3 | 54/100 | 39 | 7 |
+| EU5 | 10/21 | 4 | 7 |
+
+Victoria 3 found a fault the other two hid: its mods lean far harder on scripted
+triggers invoked as `x = yes`, and a parameterless macro was claiming that slot
+and returning nothing. Worth 3 positions on CK3 and 17 on Vic3. **A third corpus
+is worth more than more tests against an existing one.**
+
+Every `yes`/`no` result was a genuinely boolean field (`is_landed`, `is_ai`,
+`decaying`), so that is the right answer rather than a fallback. The remaining
+empties are flags — author-invented, nothing to offer — and definition names.
+
+**Go-to-definition and references**: of every hover card that knows a site,
+26 of 26 had a working jump and working references. No failures.
+
+Re-measure with the MCP (`WAILS_MCP=1 wails3 dev`) rather than by reasoning:
+five of the bugs behind these numbers were invisible in the source and obvious
+in one call.

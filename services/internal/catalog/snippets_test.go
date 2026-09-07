@@ -2,7 +2,11 @@
 
 package catalog
 
-import "testing"
+import (
+	"testing"
+
+	"paradox-modding-tools/services/internal/parser/jomini"
+)
 
 func defsOf(kind string, n int) []Def {
 	out := make([]Def, n)
@@ -80,5 +84,63 @@ func TestDeriveSnippetsCaps(t *testing.T) {
 		defsOf("decisions", 20))
 	if n := len(got["decisions"]); n != maxSnippetMembers {
 		t.Errorf("skeleton has %d members, want the cap of %d", n, maxSnippetMembers)
+	}
+}
+
+// TestHarvestNestedMembers pins the fix for a completion that offered an event's
+// top-level keys no matter how deep the cursor was. The blocks worth knowing the
+// inside of are exactly the ones the kind-vocabulary stoplist excludes.
+func TestHarvestNestedMembers(t *testing.T) {
+	src := "ns.1 = {\n" +
+		"\ttype = character_event\n" +
+		"\tdesc = {\n" +
+		"\t\tfirst_valid = {\n" +
+		"\t\t\ttriggered_desc = {\n" +
+		"\t\t\t\ttrigger = { is_ai = yes }\n" +
+		"\t\t\t\tdesc = a.desc\n" +
+		"\t\t\t}\n" +
+		"\t\t\tdesc = b.desc\n" +
+		"\t\t}\n" +
+		"\t}\n" +
+		"}\n"
+	_, _, vocab, nested := harvestStructVocab(jomini.Parse(jomini.Normalize(src)).Root)
+
+	// first_valid, triggered_desc and limit are stoplisted out of a kind's
+	// member vocabulary on purpose — and they are precisely the parents this
+	// table exists for.
+	if got := nested["triggered_desc"]; got["trigger"] == 0 || got["desc"] == 0 {
+		t.Errorf("triggered_desc members = %v, want trigger and desc", got)
+	}
+	if got := nested["first_valid"]; got["triggered_desc"] == 0 {
+		t.Errorf("first_valid members = %v, want triggered_desc", got)
+	}
+	if got := nested["desc"]; got["first_valid"] == 0 {
+		t.Errorf("desc members = %v, want first_valid", got)
+	}
+	// A value is never a key, so it must not become one.
+	if _, bad := nested["is_ai"]["yes"]; bad {
+		t.Errorf("yes recorded as a key inside is_ai")
+	}
+	// The kind vocabulary is unchanged: control flow stays out of it.
+	if vocab["first_valid"] || vocab["triggered_desc"] {
+		t.Errorf("stoplisted keys leaked into the kind vocabulary: %v", vocab)
+	}
+}
+
+// TestDeriveAmbiguousFields pins what makes a name-keyed description
+// untrustworthy: the same field name used inside several different blocks.
+func TestDeriveAmbiguousFields(t *testing.T) {
+	got := deriveAmbiguousFields(map[string][]string{
+		"triggered_desc": {"trigger", "desc"},
+		"left_portrait":  {"trigger", "character"},
+		"option":         {"name"},
+	})
+	if !got["trigger"] {
+		t.Error("trigger is used in two blocks; want ambiguous")
+	}
+	for _, unambiguous := range []string{"desc", "character", "name"} {
+		if got[unambiguous] {
+			t.Errorf("%s appears in one block only; want unambiguous", unambiguous)
+		}
 	}
 }

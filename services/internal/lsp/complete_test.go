@@ -481,6 +481,9 @@ func TestCompletionFiltersKindBeforeTheLimit(t *testing.T) {
 // differently from the way it hovers.
 func TestValueSourceOrder(t *testing.T) {
 	want := []string{
+		// First: the text names the database outright, which beats any
+		// inference about the field it sits in.
+		"cited-prefix",
 		"fire-key",
 		"localization",
 		"slot-declared",
@@ -568,5 +571,185 @@ func TestNoSnippetWithoutEvidence(t *testing.T) {
 		if it.Kind == "snippet" {
 			t.Errorf("skeleton offered with no derived shape: %q", it.Label)
 		}
+	}
+}
+
+// nestedCache declares what the install would have evidenced about two blocks.
+func nestedCache() *catalog.VanillaCache {
+	c := &catalog.VanillaCache{
+		Structures: map[string][]string{
+			"event": {"type", "title", "desc", "theme", "option", "trigger"},
+		},
+		NestedMembers: map[string][]string{
+			"desc":           {"first_valid", "triggered_desc", "random_valid"},
+			"first_valid":    {"triggered_desc", "desc"},
+			"triggered_desc": {"trigger", "desc"},
+		},
+		AmbiguousFields: map[string]bool{"trigger": true, "desc": true},
+		FieldInfo: map[string]string{
+			"trigger": "controls visibility for this portrait",
+			"type":    "Optional, defaults to character_event",
+		},
+	}
+	catalog.PrepareCache(c)
+	return c
+}
+
+const nestedEvent = "namespace = ns\n" +
+	"ns.1 = {\n" +
+	"\ttype = character_event\n" +
+	"\tdesc = {\n" +
+	"\t\tfirst_valid = {\n" +
+	"\t\t\ttriggered_desc = {\n" +
+	"\t\t\t\ttrigger = { is_ai = yes }\n" +
+	"\t\t\t}\n" +
+	"\t\t}\n" +
+	"\t}\n" +
+	"}\n"
+
+// TestCompleteFollowsEnclosingBlock pins the fix for completion that offered an
+// event's top-level keys at every depth. Verified against the running app: the
+// three positions returned byte-identical lists before this.
+func TestCompleteFollowsEnclosingBlock(t *testing.T) {
+	s, root := buildSession(t, "ck3",
+		map[string]string{"events/x.txt": nestedEvent}, nestedCache(), nil)
+	p := root + "/events/x.txt"
+	at := func(line, col int) []string {
+		return labels(Complete(s, p, line, col))
+	}
+	cases := []struct {
+		line, col     int
+		want, notWant string
+	}{
+		{2, 1, "type", "first_valid"},      // event top level
+		{4, 2, "first_valid", "option"},    // inside desc
+		{5, 3, "triggered_desc", "option"}, // inside first_valid
+		{6, 4, "trigger", "option"},        // inside triggered_desc
+	}
+	for _, c := range cases {
+		got := at(c.line, c.col)
+		if !has(Complete(s, p, c.line, c.col), c.want) {
+			t.Errorf("line %d: missing %q, got %v", c.line, c.want, got)
+		}
+		if has(Complete(s, p, c.line, c.col), c.notWant) {
+			t.Errorf("line %d: %q cannot go here, got %v", c.line, c.notWant, got)
+		}
+	}
+}
+
+// TestFieldDocWithheldWhenAmbiguousAndNested pins the other half. The install
+// documents a field once, by name; 819 CK3 names are used in more than one kind
+// of block, so showing that description below the definition tells a reader
+// something false. At the definition's own level it is exactly right.
+func TestFieldDocWithheldWhenAmbiguousAndNested(t *testing.T) {
+	s, root := buildSession(t, "ck3",
+		map[string]string{"events/x.txt": nestedEvent}, nestedCache(), nil)
+	p := root + "/events/x.txt"
+
+	deep := Hover(s, p, 6, 5) // trigger inside triggered_desc
+	if deep != nil && strings.Contains(deep.Docs, "portrait") {
+		t.Errorf("portrait description shown for a nested trigger: %q", deep.Docs)
+	}
+	top := Hover(s, p, 2, 2) // type at the event's top level
+	if top == nil || !strings.Contains(top.Docs, "character_event") {
+		t.Errorf("top-level field lost its documentation: %+v", top)
+	}
+}
+
+// TestCompleteWidensRatherThanEmpties pins the three properties that have to
+// hold together, and that took three attempts to get simultaneously:
+//
+//  1. a well-evidenced block offers only its own members;
+//  2. a prefix matching none of them still offers the vocabulary;
+//  3. widening never leaks into case 1.
+//
+// The middle attempt fell back to the KIND's keys when the block's members did
+// not match, which answered with a near-miss from the wrong set — offering
+// `current_description` to someone four characters into `current_year` — and
+// stopped the caller ever reaching the vocabulary.
+func TestCompleteWidensRatherThanEmpties(t *testing.T) {
+	c := &catalog.VanillaCache{
+		Structures: map[string][]string{
+			"decisions": {"is_shown", "effect", "current_description"},
+		},
+		NestedMembers: map[string][]string{"is_shown": {"always", "exists", "not"}},
+		Vocabulary:    []string{"current_year", "current_description", "is_adult"},
+	}
+	catalog.PrepareCache(c)
+	body := "d = {\n\tis_shown = {\n\t\talways = yes\n\t}\n}\n"
+	s, root := buildSession(t, "ck3",
+		map[string]string{"common/decisions/d.txt": body}, c, nil)
+	p := root + "/common/decisions/d.txt"
+
+	// Browsing inside the block: its own members, and nothing from the kind.
+	browse := labels(Complete(s, p, 2, 2))
+	if !has(Complete(s, p, 2, 2), "always") {
+		t.Errorf("block members missing: %v", browse)
+	}
+	for _, wrong := range []string{"is_shown", "current_description"} {
+		if has(Complete(s, p, 2, 2), wrong) {
+			t.Errorf("%q is a key of the kind, not of this block: %v", wrong, browse)
+		}
+	}
+}
+
+// TestCompleteCitedPrefix pins the source that reads the database out of the
+// text. `this = title:k_england` says which rows it wants whatever the field's
+// declared type is or is not, and every other source offers bare ids that a
+// typed `title:` can never match — which left half of all value positions in a
+// real mod completing to nothing.
+func TestCompleteCitedPrefix(t *testing.T) {
+	c := &catalog.VanillaCache{
+		PrefixKinds: map[string]string{"title": "titles"},
+		Defs: []catalog.Def{
+			{Kind: "titles", Key: "k_england"}, {Kind: "titles", Key: "k_essex"},
+			{Kind: "titles", Key: "d_wessex"},
+		},
+	}
+	catalog.PrepareCache(c)
+	body := "a = {\n\tthis = title:k_e\n}\n"
+	s, root := buildSession(t, "ck3",
+		map[string]string{"common/scripted_effects/e.txt": body}, c, nil)
+	// Column 16 is the last character of the value; 17 is past the token and
+	// there is no word to complete.
+	items := Complete(s, root+"/common/scripted_effects/e.txt", 1, 16)
+	got := labels(items)
+	if !has(items, "title:k_england") || !has(items, "title:k_essex") {
+		t.Errorf("cited titles not offered: %v", got)
+	}
+	// Offered in the form the reader is typing, so one accept is valid script.
+	for _, l := range got {
+		if !strings.HasPrefix(l, "title:") {
+			t.Errorf("bare id offered where a citation was typed: %v", got)
+			break
+		}
+	}
+	// A prefix the model knows nothing about must not invent rows.
+	body2 := "a = {\n\tthis = nosuch:k_e\n}\n"
+	s2, root2 := buildSession(t, "ck3",
+		map[string]string{"common/scripted_effects/e.txt": body2}, c, nil)
+	for _, l := range labels(Complete(s2, root2+"/common/scripted_effects/e.txt", 1, 17)) {
+		if strings.HasPrefix(l, "nosuch:") {
+			t.Errorf("unbound prefix produced rows: %q", l)
+		}
+	}
+}
+
+// TestParameterlessMacroDoesNotSwallowSlot pins the line between a source that
+// may claim a slot on its condition and one that may not.
+//
+// "The game says this slot holds kind X and nothing of kind X matches" is a real
+// answer and must stop the search. "This macro declares no parameters" is not an
+// answer to what value belongs here — and a scripted trigger invoked as
+// `x = yes` has none, so claiming the slot swallowed the boolean it takes. That
+// was 17 of 24 empty value positions on a real Victoria 3 mod.
+func TestParameterlessMacroDoesNotSwallowSlot(t *testing.T) {
+	s, root := buildSession(t, "vic3", map[string]string{
+		"common/scripted_triggers/t.txt": "has_cholera_treatment_trigger = {\n\talways = yes\n}\n",
+		"common/decisions/d.txt":         "d = {\n\tis_shown = {\n\t\thas_cholera_treatment_trigger = y\n\t}\n}\n",
+	}, nil, nil)
+	items := Complete(s, root+"/common/decisions/d.txt", 2, 33)
+	if !has(items, "yes") {
+		t.Errorf("a parameterless macro swallowed the slot: %v", labels(items))
 	}
 }

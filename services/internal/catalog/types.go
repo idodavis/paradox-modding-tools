@@ -14,7 +14,7 @@ import (
 // before deriveNestedOptions was made order-independent has 352 CK3 defs under
 // whichever kind that scan's threads happened to pick, and nothing else would
 // invalidate it.
-const CacheFormatVersion = 28
+const CacheFormatVersion = 29
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -148,7 +148,15 @@ type VanillaCache struct {
 	Structures      map[string][]string          `json:"structures"`
 	// Snippets is the derived skeleton for each kind whose shape is
 	// well-evidenced: the members that clear a coverage floor, most-used first.
-	Snippets         map[string][]SnippetMember     `json:"snippets,omitempty"`
+	Snippets map[string][]SnippetMember `json:"snippets,omitempty"`
+	// NestedMembers is block key -> the members that block holds, most-used
+	// first. What lets a query answer "what belongs inside triggered_desc?"
+	// rather than only "what belongs inside an event?".
+	NestedMembers map[string][]string `json:"nestedMembers,omitempty"`
+	// AmbiguousFields are field names that appear inside more than one kind of
+	// block, so the install's single description of them is about the wrong
+	// position most of the time.
+	AmbiguousFields  map[string]bool                `json:"ambiguousFields,omitempty"`
 	StructureBlocks  map[string][]string            `json:"structureBlocks,omitempty"`
 	Vocabulary       []string                       `json:"vocabulary"`
 	GUITypes         []string                       `json:"guiTypes"`

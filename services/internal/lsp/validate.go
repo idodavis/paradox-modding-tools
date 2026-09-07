@@ -116,7 +116,11 @@ func (f diagFile) unresolvedRefDiags() []Diagnostic {
 		// Only where the prefix is bound to a database PMT actually holds. An
 		// unbound prefix means PMT does not know the database, which is not
 		// evidence that the key is missing from it.
-		if kind == "" || !f.s.KindHasDefs(kind) {
+		//
+		// And never for an ephemeral kind. `flag:private_chamber` names a value
+		// the script invents as it runs, the same as a saved scope or a
+		// variable; nothing defines it anywhere, so an absence proves nothing.
+		if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
 			return true
 		}
 		if len(f.s.FindDefsOf(id, kind, 1, false, true)) > 0 {
@@ -165,7 +169,7 @@ func (f diagFile) wrongValueTypeDiags() []Diagnostic {
 			return true
 		}
 		cite, kind := f.s.CiteFormOfScope(target)
-		if kind == "" || !f.s.KindHasDefs(kind) {
+		if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
 			return true
 		}
 		// A citation of the right type is correct however it is spelled, and so

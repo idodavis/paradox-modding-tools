@@ -256,7 +256,23 @@ func scriptItems(
 	case "trigger", "effect":
 		return vocabAndCallDefs(s, prefix, slot, scope)
 	default:
-		return structureItems(s, path, at.Kind, prefix)
+		// Structure first, vocabulary behind it. A block PMT cannot name a slot
+		// for is still usually a trigger or effect context: a decision's
+		// `is_shown` holds triggers, and offering only the decision's own keys
+		// meant `current_year` was never suggested no matter how much of it was
+		// typed. Rank puts structure keys ahead of tokens, so the block's own
+		// members stay first and the rest is there when nothing else fits.
+		items := structureItems(s, path, at.Kind, at.SlotKey, prefix)
+		if len(items) > 0 {
+			return items
+		}
+		// Only when structure has nothing to say. With an empty prefix the
+		// block's own members ARE the answer -- inside `triggered_desc = { … }`
+		// that is `desc` and `trigger`, and appending the whole vocabulary
+		// there is the noise this nesting work removed. But a reader four
+		// characters into `current_year` inside a decision's is_shown matched
+		// none of them and got nothing at all, and nothing is always worse.
+		return vocabAndCallDefs(s, prefix, "", scope)
 	}
 }
 
@@ -296,6 +312,32 @@ type valueSource struct {
 // that had too little evidence to clear its coverage floor, all the way to
 // offering `yes` and `no`.
 var valueSources = []valueSource{
+	// The text itself names the database. `this = title:k_england` says which
+	// rows it wants, whatever the field's declared type is or is not, and every
+	// other source offers bare ids that the typed `title:` can never match --
+	// so half of all value positions in a real mod completed to nothing.
+	{"cited-prefix", func(s *session.Session, _, _, prefix string) ([]CompletionItem, bool) {
+		cite, _, ok := strings.Cut(prefix, ":")
+		if !ok || cite == "" {
+			return nil, false
+		}
+		// Ephemeral kinds included, unlike the diagnostics. A saved scope cannot
+		// be JUDGED -- the script invents it -- but the ones already saved in
+		// this workspace are exactly what a reader typing `scope:` wants, and
+		// they are harvested as definitions like anything else.
+		// A bound database first, then the language prefixes. `scope:` is not a
+		// database PMT bound to anything -- it is Clausewitz grammar -- so the
+		// session's table says nothing about it while jomini's does, and every
+		// `scope:` a reader typed completed to nothing.
+		kind := s.PrefixKind(cite)
+		if kind == "" {
+			kind = jomini.PrefixKind(cite)
+		}
+		if kind == "" || !s.KindHasDefs(kind) {
+			return nil, false
+		}
+		return citedDefsOfType(s, prefix, cite, kind), true
+	}},
 	{"fire-key", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
 		fk := s.FireKind(parentKey)
 		if fk == "" {
@@ -329,17 +371,25 @@ var valueSources = []valueSource{
 		}
 		return defsOfType(s, prefix, k), true
 	}},
+	// Declining on an empty result, unlike the declared sources above. "The game
+	// says this slot holds kind X and nothing of kind X matches" is a real
+	// answer; "this macro declares no parameters" is not an answer to what value
+	// belongs here. A scripted trigger invoked as `x = yes` has no parameters at
+	// all, and claiming the slot swallowed the boolean it actually takes -- 17
+	// of 24 empty value positions on a real Victoria 3 mod.
 	{"macro-params", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
 		if !s.IsMacroDef(parentKey) && !s.IsMacroKind(parentKey) {
 			return nil, false
 		}
-		return scriptParamItems(s, parentKey, prefix), true
+		items := scriptParamItems(s, parentKey, prefix)
+		return items, len(items) > 0
 	}},
 	{"macro-call-params", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
 		if !macroCallParent(s, parentKey) {
 			return nil, false
 		}
-		return scriptParamItems(s, parentKey, prefix), true
+		items := scriptParamItems(s, parentKey, prefix)
+		return items, len(items) > 0
 	}},
 	{"field-enums", func(s *session.Session, kind, parentKey, prefix string) ([]CompletionItem, bool) {
 		enums := s.FieldEnums(kind, parentKey)
@@ -476,7 +526,15 @@ func valueFallback(prefix string) []CompletionItem {
 	return out
 }
 
-func structureItems(s *session.Session, path, kind, prefix string) []CompletionItem {
+// structureItems offers the keys that belong where the cursor is.
+//
+// block is the key of the enclosing block. When the install evidenced what that
+// block holds, its members come first and the kind's top-level keys are dropped:
+// inside `triggered_desc = { … }` an event's `option` and `theme` are not
+// offered, because they cannot go there. Without evidence for the block this
+// falls back to the kind exactly as before, so nothing is lost where the model
+// is thin.
+func structureItems(s *session.Session, path, kind, block, prefix string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
 	add := func(label, detail string) {
@@ -485,6 +543,19 @@ func structureItems(s *session.Session, path, kind, prefix string) []CompletionI
 		}
 		seen[label] = true
 		out = append(out, documented(s, label, detail, kind))
+	}
+	// When the install evidenced what this block holds, that is the answer and
+	// the kind's own keys are not: inside `triggered_desc = { … }` an event's
+	// `option` and `theme` cannot go there. Returning empty when the prefix
+	// matches none of them is deliberate — the caller widens to the vocabulary,
+	// which is where a half-typed `current_year` lives. Falling back to the
+	// KIND instead would answer with a near-miss from the wrong set and stop
+	// the caller ever widening.
+	if members := s.NestedMembers(block); len(members) > 0 {
+		for _, k := range members {
+			add(k, block)
+		}
+		return out
 	}
 	for _, k := range s.Structures(kind) {
 		add(k, kind)

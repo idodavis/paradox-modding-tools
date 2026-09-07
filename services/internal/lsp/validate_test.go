@@ -196,3 +196,21 @@ func TestDiagnosticCodesRegistry(t *testing.T) {
 		}
 	}
 }
+
+// TestUnresolvedRefIgnoresEphemeral pins the fix for six findings on a real CK3
+// mod. `flag:private_chamber` names a value the script invents as it runs — the
+// same as a saved scope or a variable — so nothing defines it anywhere and an
+// absence proves nothing.
+func TestUnresolvedRefIgnoresEphemeral(t *testing.T) {
+	c := citeCache()
+	c.PrefixKinds["flag"] = "flag"
+	catalog.PrepareCache(c)
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/flags/f.txt": "some_flag = { }\n",
+		"common/scripted_effects/e.txt": "a = {\n" +
+			"\tset_variable = { name = where value = flag:private_chamber }\n}\n",
+	}, c, nil)
+	if hasCode(Diagnose(s, root+"/common/scripted_effects/e.txt"), "unresolved-ref") {
+		t.Errorf("a flag the script invents was reported as unresolved")
+	}
+}

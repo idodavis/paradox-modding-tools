@@ -97,6 +97,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	}
 
 	structures := keysByCount(acc.structures)
+	nestedMembers := deriveNestedMembers(acc.nested)
 	kinds := deriveFieldValueKinds(acc.fieldRHS, acc.defs)
 	if derived != nil {
 		derived.FieldValueKinds = kinds
@@ -134,6 +135,8 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		FieldInfo:        fieldInfo,
 		FieldInfoByKind:  fieldByKind,
 		Structures:       structures,
+		NestedMembers:    nestedMembers,
+		AmbiguousFields:  deriveAmbiguousFields(nestedMembers),
 		Snippets:         deriveSnippets(acc.structures, acc.structBlocks, acc.defs),
 		StructureBlocks:  blockKeys(acc.structures, acc.structBlocks),
 		Vocabulary:       sortedKeys(acc.vocab),
@@ -282,15 +285,19 @@ func gather(roots []string) inventory {
 // accum collects FileExtract results from all workers behind one mutex. It is
 // the single merge sink for both Scan and BuildIndex.
 type accum struct {
-	mu             sync.Mutex
-	defs           []Def
-	refs           []Ref
-	edges          []Edge
-	cands          []CallCandidate
-	loc            map[string]map[string]LocEntry
-	locOrder       map[string]map[string]int
-	structures     map[string]map[string]int
-	structBlocks   map[string]map[string]int
+	mu           sync.Mutex
+	defs         []Def
+	refs         []Ref
+	edges        []Edge
+	cands        []CallCandidate
+	loc          map[string]map[string]LocEntry
+	locOrder     map[string]map[string]int
+	structures   map[string]map[string]int
+	structBlocks map[string]map[string]int
+	// nested is block key -> member key -> occurrences, across the whole walk.
+	// Not keyed by kind: a block named triggered_desc holds the same members
+	// wherever it appears, and merging the evidence makes the floor meaningful.
+	nested         map[string]map[string]int
 	vocab          map[string]bool
 	guiTypes       map[string]bool
 	guiProps       map[string]bool
@@ -305,6 +312,7 @@ func newAccum() *accum {
 		locOrder:       map[string]map[string]int{},
 		structures:     map[string]map[string]int{},
 		structBlocks:   map[string]map[string]int{},
+		nested:         map[string]map[string]int{},
 		vocab:          map[string]bool{},
 		guiTypes:       map[string]bool{},
 		guiProps:       map[string]bool{},
@@ -326,6 +334,9 @@ func (a *accum) merge(ex FileExtract) {
 	}
 	if ex.StructKind != "" {
 		addCounts(&a.structBlocks, ex.StructKind, ex.StructBlocks)
+	}
+	for parent, members := range ex.StructNested {
+		addCounts(&a.nested, parent, members)
 	}
 	maps.Copy(a.vocab, ex.Vocab)
 	maps.Copy(a.guiTypes, ex.GUITypes)

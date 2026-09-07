@@ -101,3 +101,79 @@ func deriveSnippets(
 	}
 	return out
 }
+
+const (
+	// minNestedHits is how often a member must be seen inside a block before it
+	// is part of that block's shape. A block appears far more often than a
+	// definition does, so a single sighting is even weaker evidence here than
+	// it is for a kind.
+	minNestedHits = 3
+	// maxNestedMembers bounds one block's member list.
+	maxNestedMembers = 40
+)
+
+// deriveNestedMembers turns raw block-member counts into the member list for
+// each block, most-used first.
+//
+// This is what lets a query answer "what belongs inside triggered_desc?" rather
+// than only "what belongs inside an event?". Keyed by the block's own name: a
+// block called limit holds the same members wherever it appears, and merging the
+// evidence is what makes the floor mean anything.
+func deriveNestedMembers(nested map[string]map[string]int) map[string][]string {
+	if len(nested) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(nested))
+	for parent, counts := range nested {
+		members := make([]string, 0, len(counts))
+		for k, n := range counts {
+			if n >= minNestedHits {
+				members = append(members, k)
+			}
+		}
+		if len(members) == 0 {
+			continue
+		}
+		slices.SortFunc(members, func(a, b string) int {
+			if c := cmp.Compare(counts[b], counts[a]); c != 0 {
+				return c
+			}
+			return strings.Compare(a, b)
+		})
+		if len(members) > maxNestedMembers {
+			members = members[:maxNestedMembers]
+		}
+		out[parent] = members
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// minAmbiguousParents is how many distinct blocks a field name must appear in
+// before a single global description of it is untrustworthy. Two is enough: a
+// name used in two different places has two different meanings often enough
+// that showing one of them is a coin flip.
+const minAmbiguousParents = 2
+
+// deriveAmbiguousFields marks the field names that appear inside more than one
+// kind of block, so a global description of them can be withheld.
+func deriveAmbiguousFields(nested map[string][]string) map[string]bool {
+	parents := map[string]int{}
+	for _, members := range nested {
+		for _, m := range members {
+			parents[m]++
+		}
+	}
+	out := map[string]bool{}
+	for field, n := range parents {
+		if n >= minAmbiguousParents {
+			out[field] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}

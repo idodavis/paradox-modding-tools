@@ -69,6 +69,19 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 			if err != nil {
 				t.Fatalf("scan: %v", err)
 			}
+			// Nested coverage is logged here because the scan has already
+			// happened: the model that decides what completion offers inside a
+			// block, and whether a field's description can be trusted, is a
+			// per-game number worth seeing next to the diagnostics.
+			t.Logf("NESTED %s: %d blocks, %d ambiguous field names",
+				g.game, len(cache.NestedMembers), len(cache.AmbiguousFields))
+			for _, b := range []string{"limit", "trigger", "modifier"} {
+				if m := cache.NestedMembers[b]; len(m) > 0 {
+					n := min(len(m), 5)
+					t.Logf("  %s holds %v (+%d)", b, m[:n], len(m)-n)
+				}
+			}
+
 			root := sampleIntoMod(t, install, g.game)
 			s := session.NewWithLoc("gate", g.game, "english", cache, vloc,
 				[]catalog.ModInput{{Origin: "mod", Root: root, Name: "vanilla-sample"}})

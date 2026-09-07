@@ -423,7 +423,12 @@ func (s *Session) fieldDocLocked(key, kind string) string {
 			return m[lk]
 		}
 	}
-	if v := s.cache.FieldInfo[lk]; v != "" {
+	// The global description is per field NAME, not per position. A name used
+	// inside several different blocks has several meanings, and showing one of
+	// them is a coin flip: `trigger` inside a triggered_desc was explained as
+	// controlling "visibility for this portrait". Kind-specific prose above is
+	// still trusted; this is only the catch-all.
+	if v := s.cache.FieldInfo[lk]; v != "" && !s.cache.AmbiguousFields[lk] {
 		return v
 	}
 	// Install prose wins over the game's dump prose, so the schema is consulted last.
@@ -820,4 +825,79 @@ func (s *Session) CalendarFor(path string) catalog.ModCalendar {
 		}
 	}
 	return catalog.ModCalendar{}
+}
+
+// NestedMembers returns the members the install writes inside a block of this
+// name, most-used first, or nil when the block was not evidenced.
+//
+// Keyed by the block's own name rather than by the enclosing kind: a block
+// called `limit` or `triggered_desc` holds the same members wherever it appears,
+// and merging the evidence is what makes the occurrence floor mean anything.
+func (s *Session) NestedMembers(block string) []string {
+	if block == "" {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil {
+		return nil
+	}
+	return s.cache.NestedMembers[strings.ToLower(block)]
+}
+
+// FieldDocIsAmbiguous reports a field name that appears inside several different
+// blocks, so no single description can be about the one under the cursor.
+//
+// `trigger` sits in a portrait, in a triggered_desc, in an option and in a
+// dozen other blocks. The install's own documentation is written per field name,
+// not per position, so showing it anywhere shows it in the wrong place most of
+// the time — hovering `trigger` inside triggered_desc explained it as
+// controlling "visibility for this portrait".
+func (s *Session) FieldDocIsAmbiguous(field string) bool {
+	if field == "" {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil {
+		return false
+	}
+	return s.cache.AmbiguousFields[strings.ToLower(field)]
+}
+
+// FieldDocIn is FieldDoc, but silent for a field whose meaning depends on where
+// it sits when the cursor is inside a block.
+//
+// The install documents a field once, by NAME. That is fine at a definition's
+// top level, where the name has one meaning. It is wrong inside a nested block:
+// CK3 describes `trigger` as controlling "visibility for this portrait", and
+// showing that for the `trigger` of a triggered_desc tells a reader something
+// false about the line they are on. 819 CK3 field names are used in more than
+// one kind of block.
+//
+// Saying nothing is the honest answer — there is no per-position documentation
+// to show instead, and the card still names the key and what it accepts.
+func (s *Session) FieldDocIn(key, kind, block string) string {
+	if block != "" && s.FieldDocIsAmbiguous(key) {
+		return ""
+	}
+	return s.FieldDoc(key, kind)
+}
+
+// IsNestedMember reports a key the install writes inside a block of this name.
+//
+// The third way a key earns a card. The other two — the kind documents it, or it
+// is a structure key of the kind — are both depth-1, which is why `instance`
+// inside `colored_emblem` inside a coat of arms produced nothing at all.
+func (s *Session) IsNestedMember(block, key string) bool {
+	if block == "" || key == "" {
+		return false
+	}
+	lk := strings.ToLower(key)
+	for _, m := range s.NestedMembers(block) {
+		if m == lk {
+			return true
+		}
+	}
+	return false
 }

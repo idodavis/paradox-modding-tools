@@ -502,3 +502,37 @@ func TestDropAll(t *testing.T) {
 		t.Fatal("DropAll left a session")
 	}
 }
+
+// TestDottedSegmentAt covers splitting a scope chain so each hop can be named.
+// `holder.culture = { … }` walks to the holder and then to their culture, and a
+// reader hovering either half is asking about that half; before this the whole
+// string resolved to nothing and no card appeared at all.
+func TestDottedSegmentAt(t *testing.T) {
+	const chain = "holder.culture"
+	cases := []struct {
+		off  int
+		want string
+		ok   bool
+	}{
+		{0, "holder", true},
+		{3, "holder", true},
+		{6, "holder", true},  // on the dot: the segment that ends there
+		{7, "culture", true}, // first char after it
+		{11, "culture", true},
+		{len(chain), "culture", true},
+	}
+	for _, c := range cases {
+		got, ok := dottedSegmentAt(chain, c.off)
+		if ok != c.ok || got != c.want {
+			t.Errorf("dottedSegmentAt(%q, %d) = %q,%v want %q,%v",
+				chain, c.off, got, ok, c.want, c.ok)
+		}
+	}
+	// Not a chain: leave it to the resolvers that handle whole names.
+	if _, ok := dottedSegmentAt("holder", 2); ok {
+		t.Error("a plain name is not a chain")
+	}
+	if _, ok := dottedSegmentAt("holder.culture", 99); ok {
+		t.Error("an offset past the end is not a segment")
+	}
+}

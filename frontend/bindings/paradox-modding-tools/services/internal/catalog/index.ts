@@ -17,5 +17,6 @@ export type {
     Schema,
     ScopeLink,
     ScopeType,
+    SnippetMember,
     VanillaCache
 } from "./models.js";

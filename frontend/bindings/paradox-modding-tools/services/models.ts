@@ -287,4 +287,12 @@ export interface WorkspaceMod {
     "workshopIgnore"?: string;
     "isBroken": boolean;
     "createdAt": string;
+
+    /**
+     * Era and EpochOffset declare the calendar this mod's dates are written in.
+     * Not derivable — nothing in a mod states the offset — so a person sets it
+     * once, and with nothing set every date reads exactly as written.
+     */
+    "era"?: string;
+    "epochOffset"?: number;
 }

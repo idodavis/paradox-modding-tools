@@ -36,10 +36,22 @@ export function Definition(workspaceID: string, path: string, line: number, char
 }
 
 /**
- * Diagnose returns diagnostics for a file.
+ * Diagnose returns diagnostics for a file, with the user's per-code severities
+ * applied.
+ * 
+ * Severities are applied here rather than inside Diagnose so a toggle takes
+ * effect on the next keystroke without a rescan, and so the checks themselves
+ * stay ignorant of configuration.
  */
 export function Diagnose(workspaceID: string, path: string): $CancellablePromise<lsp$0.Diagnostic[] | null> {
     return $Call.ByID(2414394907, workspaceID, path);
+}
+
+/**
+ * DiagnosticCodes lists every check, for the IDE settings surface.
+ */
+export function DiagnosticCodes(): $CancellablePromise<lsp$0.DiagnosticCode[] | null> {
+    return $Call.ByID(4095535154);
 }
 
 /**

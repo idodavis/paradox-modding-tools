@@ -548,6 +548,15 @@ func (s *Session) identify(path string, line, col int) (identity, bool) {
 	// branch above claims them — so a `random_list` weight and a numeric key in
 	// the file that defines it are unaffected.
 	if jomini.IsLiteralValue(at.word) {
+		// One exception, and only where a person declared it: a total conversion
+		// offsets its years so the engine's arithmetic works, and 8209.2.1 is
+		// read by a human who would otherwise subtract 7,782 in their head. With
+		// no calendar declared this stays exactly as it was — silent.
+		if era := catalog.EraDate(at.word, s.CalendarFor(path)); era != "" {
+			return identity{
+				path: path, name: at.word, kind: "date", docs: era,
+			}, true
+		}
 		return identity{}, false
 	}
 	// Everything past this point is a question about which SOURCE gets to name
@@ -638,6 +647,11 @@ func (s *Session) fillCard(id identity) *Inspect {
 			s.attachSite(ins, id.def.Path, id.def.Line, id.def.Origin, id.def.Start)
 		}
 		return ins
+	case id.kind == "date":
+		return &Inspect{
+			Kind: "date", Key: id.name, Docs: id.docs,
+			RawKind: id.kind, Name: id.name,
+		}
 	case id.kind == "weight":
 		return &Inspect{
 			Kind: "weight", Key: id.name, Docs: id.docs,

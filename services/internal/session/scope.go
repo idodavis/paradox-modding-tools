@@ -382,3 +382,32 @@ func (s *Session) TokensInScope(scope, slot, prefix string, limit int) []string 
 	}
 	return out
 }
+
+// ScopeTokens is the set of engine tokens the game declares usable in scope,
+// effects and triggers together, lowercased.
+//
+// For ranking rather than filtering. Completion used to replace its token list
+// with the scope-valid one, which hides everything else — and that is only safe
+// while the scope walk is right. The walk now answers in far more places than
+// it used to, so a wrong answer would silently remove correct tokens instead of
+// merely mis-ordering them. Empty scope returns nil, meaning "no opinion".
+func (s *Session) ScopeTokens(scope string) map[string]bool {
+	if scope == "" {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sc := s.schemaLocked()
+	if sc == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(sc.Effects)+len(sc.Triggers))
+	for _, bag := range []map[string]catalog.EngineToken{sc.Effects, sc.Triggers} {
+		for name, t := range bag {
+			if catalog.UsableIn(t.In, scope) {
+				out[strings.ToLower(name)] = true
+			}
+		}
+	}
+	return out
+}

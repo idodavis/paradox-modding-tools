@@ -522,3 +522,51 @@ func TestValueDeclaredOutranksDerived(t *testing.T) {
 		}
 	}
 }
+
+// TestSnippetOffered covers the derived skeleton reaching completion: it is
+// offered at the top level of a file, carries snippet placeholders, and ranks
+// behind the names — someone part-way through a word wants the token, not a
+// twelve-line block dropped into their file.
+func TestSnippetOffered(t *testing.T) {
+	c := &catalog.VanillaCache{
+		Snippets: map[string][]catalog.SnippetMember{
+			"traits": {
+				{Key: "diplomacy", Hits: 10, Of: 10},
+				{Key: "icon", Block: true, Hits: 9, Of: 10},
+			},
+		},
+	}
+	catalog.PrepareCache(c)
+	s, root := buildSession(t, "ck3",
+		map[string]string{"common/traits/00_traits.txt": "\n"}, c, nil)
+	items := Complete(s, root+"/common/traits/00_traits.txt", 0, 0)
+
+	var snip *CompletionItem
+	for i := range items {
+		if items[i].Kind == "snippet" {
+			snip = &items[i]
+		}
+	}
+	if snip == nil {
+		t.Fatalf("no skeleton offered: %v", labels(items))
+	}
+	for _, want := range []string{"diplomacy = ${", "icon = {", "${1:", "$0"} {
+		if !strings.Contains(snip.InsertText, want) {
+			t.Errorf("insert text missing %q:\n%s", want, snip.InsertText)
+		}
+	}
+}
+
+// TestNoSnippetWithoutEvidence pins the floor reaching the user: a kind the
+// install did not evidence a shape for offers nothing rather than a guess.
+func TestNoSnippetWithoutEvidence(t *testing.T) {
+	c := &catalog.VanillaCache{}
+	catalog.PrepareCache(c)
+	s, root := buildSession(t, "ck3",
+		map[string]string{"common/traits/00_traits.txt": "\n"}, c, nil)
+	for _, it := range Complete(s, root+"/common/traits/00_traits.txt", 0, 0) {
+		if it.Kind == "snippet" {
+			t.Errorf("skeleton offered with no derived shape: %q", it.Label)
+		}
+	}
+}

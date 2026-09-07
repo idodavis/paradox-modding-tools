@@ -29,7 +29,10 @@ type SessionService struct {
 
 	mu         sync.Mutex
 	scanCancel context.CancelFunc
-	wikiCancel context.CancelFunc
+	// autoScanning guards the background rescan so repeated EnsureSession calls
+	// — the UI polls health — do not stack scans on top of each other.
+	autoScanning bool
+	wikiCancel   context.CancelFunc
 }
 
 // LanguageHealth is the compact Library/IDE index status strip.
@@ -156,6 +159,7 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 		}
 		inputs = append(inputs, catalog.ModInput{
 			Origin: m.ID, Root: m.Path, Order: i, Name: m.Name,
+			Calendar: catalog.ModCalendar{Era: m.Era, EpochOffset: m.EpochOffset},
 		})
 	}
 	sess := session.NewWithLoc(id, ws.GameID, lang, cache, vloc, inputs)
@@ -180,7 +184,52 @@ func (s *SessionService) EnsureSession(workspaceID string) (_ *LanguageHealth, e
 	if _, err = s.sess(workspaceID); err != nil {
 		return nil, err
 	}
-	return s.languageHealth(workspaceID)
+	h, err := s.languageHealth(workspaceID)
+	if err == nil {
+		s.autoRescan(h)
+	}
+	return h, err
+}
+
+// autoRescan starts an install scan in the background when the cached semantics
+// are missing or predate the installed game version.
+//
+// The session already tolerates a nil or stale cache and serves degraded
+// results, so the user keeps working while this runs; progress reaches the UI
+// through the same lang:scan-progress event the manual button uses, and the
+// button stays as an override. Only one scan runs at a time — scanning is the
+// largest allocation in the app, and a second one while a session is live would
+// double it.
+func (s *SessionService) autoRescan(h *LanguageHealth) {
+	if h == nil || h.InstallID == "" || !h.InstallOk {
+		return
+	}
+	// A scan is worth starting when there is no cache at all, or when the cache
+	// was built against a different game version. Anything else — a stale
+	// script_docs dump, a mod edit — is not a reason to walk the install.
+	if h.ScannedAt != "" && !h.CacheStale {
+		return
+	}
+	s.mu.Lock()
+	if s.autoScanning || s.scanCancel != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.autoScanning = true
+	s.mu.Unlock()
+
+	installID := h.InstallID
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			s.autoScanning = false
+			s.mu.Unlock()
+		}()
+		// Errors are deliberately swallowed: this was not asked for, so a
+		// failure must not surface as one. The health strip already reports the
+		// cache as stale, and the manual button remains.
+		_, _ = s.RebuildInstallSemantics(installID)
+	}()
 }
 
 func (s *SessionService) cancel() {

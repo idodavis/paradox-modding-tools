@@ -875,3 +875,31 @@ func TestHoverAcceptsSilentWhenUnknown(t *testing.T) {
 		t.Errorf("Accepts = %q, want empty", h.Accepts)
 	}
 }
+
+// TestHoverDateInModEra covers the calendar reading aid end to end: a date in a
+// mod that declares an era hovers as the year its players see.
+func TestHoverDateInModEra(t *testing.T) {
+	withCalendar(t, catalog.ModCalendar{Era: "AC", EpochOffset: 7782})
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/bookmarks/bookmarks/00.txt": "bm = {\n\tstart_date = 8082.1.1\n}\n",
+	}, nil, nil)
+	h := Hover(s, root+"/common/bookmarks/bookmarks/00.txt", 1, 15)
+	if h == nil {
+		t.Fatal("no hover on a date in a mod with a declared era")
+	}
+	if !strings.Contains(h.Docs, "300.1.1 AC") {
+		t.Errorf("Docs = %q, want the era form", h.Docs)
+	}
+}
+
+// TestHoverDateSilentWithoutCalendar is the guardrail for the whole feature: no
+// calendar, no card. A date is a number, and saying anything about it is the bug
+// that made 1178.1.1 hover as a struggle.
+func TestHoverDateSilentWithoutCalendar(t *testing.T) {
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/bookmarks/bookmarks/00.txt": "bm = {\n\tstart_date = 8082.1.1\n}\n",
+	}, nil, nil)
+	if h := Hover(s, root+"/common/bookmarks/bookmarks/00.txt", 1, 15); h != nil {
+		t.Errorf("date hovered with no calendar declared: %+v", h)
+	}
+}

@@ -175,3 +175,34 @@ one is and why it is that number is measured in
 | Health `scriptDocsEffects` | `SessionService.GetLanguageHealth` |
 | Guide UI | `GuidePane.vue` + monaco aux bar (`pmt.guide`) |
 | Graph layout | frontend `useGraphLayout` + `@dagrejs/dagre` |
+
+## Diagnostic codes
+
+Every check PMT reports carries a code. The code is what `# pmt:ignore <code>`
+suppresses, what the settings menu toggles, and what the sweep counts, so it is
+part of the vocabulary rather than an implementation detail.
+
+Vanilla files are never diagnosed — harvest belongs in the scan cache, not in
+IDE lint — so every code below describes something in a mod.
+
+| Code | Says |
+|---|---|
+| `duplicate-definition` | one key defined twice inside a single origin; load order decides which survives |
+| `loc-header-mismatch` | a localization file's `l_<lang>:` header disagrees with its folder |
+| `missing-bom` | a localization file without the UTF-8 BOM the games require |
+| `missing-descriptor` | a mod with no `descriptor.mod` |
+| `missing-required-loc` | a key the game will look for that nothing defines |
+| `required-loc` | a definition missing localization its kind conventionally has |
+| `unknown-event` | an event id fired or called that no file defines |
+| `unresolved-ref` | `culture:nonexistent` — a citation naming a database PMT holds, and a key nothing defines |
+| `wrong-localization-folder` | a localization file under the wrong language folder |
+| `wrong-scope` | an effect or trigger used in a scope the game does not allow |
+| `wrong-value-type` | a value contradicting the argument type the game declares for that key |
+
+Parse errors carry their own codes from the parser.
+
+**Every code here fires only on something the game declares.** The derived
+passes — install-inferred field types, coverage-floored conventions — are
+deliberately not consulted by any diagnostic. They exist to offer a completion
+and to name a hover, where being wrong costs a wrong suggestion; a diagnostic
+that is wrong tells a modder their correct script is broken. See GAME-SYNTAX §13.

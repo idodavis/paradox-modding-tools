@@ -5,6 +5,7 @@ export type {
     CodeAction,
     CompletionItem,
     Diagnostic,
+    DiagnosticCode,
     FoldingRange,
     HoverResult,
     HoverValue,

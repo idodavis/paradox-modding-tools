@@ -3,9 +3,11 @@ package lsp
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/modfile"
 	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/parser/loc"
@@ -42,8 +44,9 @@ func Complete(s *session.Session, path string, line, col int) []CompletionItem {
 	if at.Word != "" && at.Start < at.Off {
 		prefix = at.Src[at.Start:at.Off]
 	}
-	items := scriptItems(s, path, at, prefix, s.ScopeAt(path, line, col))
-	Rank(s, at.Kind, items)
+	scope := s.ScopeAt(path, line, col)
+	items := scriptItems(s, path, at, prefix, scope)
+	Rank(s, at.Kind, scope, items)
 	return stamp(capComplete(items))
 }
 
@@ -264,6 +267,9 @@ func rootItems(s *session.Session, kind, prefix string) []CompletionItem {
 		out = append(out, item(ck, kind))
 	}
 	out = append(out, defsOfType(s, prefix, ck)...)
+	// Last: a skeleton is the answer when nothing else is, and someone part-way
+	// through a name wants the name.
+	out = append(out, snippetItem(s, kind, prefix)...)
 	return out
 }
 
@@ -520,10 +526,15 @@ func vocabAndCallDefs(s *session.Session, prefix, vocabKind, scope string) []Com
 		// the corpus instead of nothing at all.
 		tokens = s.Vocab("vocabulary")
 	}
+	// Scope-valid tokens go first, but nothing is removed. Replacing the list
+	// with the scope-valid one hid everything else, which is only safe while the
+	// scope walk is right — and the walk now answers in far more places than it
+	// did, so a wrong answer would silently drop correct tokens rather than
+	// merely mis-order them. Ordering here rather than in Rank because the
+	// maxComplete cap is applied while the list is built: sorting afterwards
+	// would rank items the cap had already thrown away.
 	if scope != "" && s.HasSchema() {
-		if scoped := s.TokensInScope(scope, vocabKind, prefix, maxComplete); len(scoped) > 0 {
-			tokens = scoped
-		}
+		tokens = scopeFirst(tokens, s.ScopeTokens(scope))
 	}
 	for _, k := range tokens {
 		add(k, vocabKind)
@@ -570,29 +581,115 @@ func defsOfType(s *session.Session, prefix, defType string) []CompletionItem {
 	return out
 }
 
+// scopeFirst puts the tokens the game declares usable here at the front,
+// keeping the rest behind them rather than dropping them. inScope nil means the
+// scope is unknown, which is not the same as "nothing is valid".
+func scopeFirst(tokens []string, inScope map[string]bool) []string {
+	if len(inScope) == 0 {
+		return tokens
+	}
+	valid := make([]string, 0, len(tokens))
+	rest := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		if inScope[strings.ToLower(t)] {
+			valid = append(valid, t)
+		} else {
+			rest = append(rest, t)
+		}
+	}
+	return append(valid, rest...)
+}
+
 // rankSets orders completion items: the kind's own structure keys first, then
-// the engine tokens legal here, then everything else.
+// the engine tokens the game declares usable in this scope, then everything
+// else, and last the tokens the game says do not belong here.
+//
+// Last, not absent. A token ranked bottom is still one keystroke away if the
+// scope walk got it wrong; a token filtered out is simply gone, and the modder
+// has no way to tell the difference between "not valid here" and "PMT does not
+// know about it".
 type rankSets struct {
-	structKeys, effects, triggers map[string]bool
+	structKeys, effects, triggers, inScope map[string]bool
 }
 
 func (m rankSets) rank(label string) int {
 	k := strings.ToLower(label)
+	isToken := m.effects[k] || m.effects[label] || m.triggers[k] || m.triggers[label]
 	switch {
 	case m.structKeys[k] || m.structKeys[label]:
 		return 0
-	case m.effects[k] || m.effects[label] || m.triggers[k] || m.triggers[label]:
+	case len(m.inScope) > 0 && m.inScope[k]:
 		return 1
-	default:
+	case isToken:
 		return 2
+	case len(m.inScope) > 0 && isDeclaredElsewhere(m, k):
+		return 4
+	default:
+		return 3
 	}
 }
 
-// Rank reorders completion items in place.
-func Rank(s *session.Session, kind string, items []CompletionItem) {
+// isDeclaredElsewhere reports a token the game declares but not for this scope.
+func isDeclaredElsewhere(m rankSets, k string) bool {
+	return m.effects[k] || m.triggers[k]
+}
+
+// Rank reorders completion items in place. An empty scope means "no opinion",
+// which leaves the ordering exactly as it was before scopes were consulted.
+func Rank(s *session.Session, kind, scope string, items []CompletionItem) {
 	sk, ef, tr := s.MemberSets(kind)
-	m := rankSets{structKeys: sk, effects: ef, triggers: tr}
+	m := rankSets{
+		structKeys: sk, effects: ef, triggers: tr,
+		inScope: s.ScopeTokens(scope),
+	}
 	slices.SortStableFunc(items, func(a, b CompletionItem) int {
 		return cmp.Compare(m.rank(a.Label), m.rank(b.Label))
 	})
+}
+
+// snippetItem offers the derived skeleton for a kind as one completion.
+//
+// Ranked and labelled as a skeleton rather than mixed in with the kind's keys:
+// someone part-way through a word wants the token, not a twelve-line block
+// dropped into their file. It only appears at the top level of a file, which is
+// where a new definition is written.
+func snippetItem(s *session.Session, kind, prefix string) []CompletionItem {
+	members := s.Snippet(kind)
+	if len(members) == 0 {
+		return nil
+	}
+	label := jomini.CanonicalKind(kind)
+	if label == "" {
+		label = kind
+	}
+	if !lowerPrefix(label, prefix) {
+		return nil
+	}
+	return []CompletionItem{{
+		Label:      label,
+		Detail:     "skeleton",
+		Kind:       "snippet",
+		InsertText: renderSnippet(label, members),
+		Documentation: "The shape " + label +
+			" definitions take in this install, most-used members first.",
+	}}
+}
+
+// renderSnippet writes LSP snippet text: `${n:placeholder}` tab stops in the
+// order a reader fills them, and `$0` where the cursor finishes.
+func renderSnippet(label string, members []catalog.SnippetMember) string {
+	var b strings.Builder
+	tab := 1
+	fmt.Fprintf(&b, "${%d:%s_name} = {\n", tab, label)
+	tab++
+	for _, m := range members {
+		if m.Block {
+			fmt.Fprintf(&b, "\t%s = {\n\t\t$%d\n\t}\n", m.Key, tab)
+		} else {
+			fmt.Fprintf(&b, "\t%s = ${%d:value}\n", m.Key, tab)
+		}
+		tab++
+	}
+	b.WriteString("\t$0\n}")
+	return b.String()
 }

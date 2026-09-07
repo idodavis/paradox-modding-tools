@@ -57,6 +57,9 @@ func Diagnose(s *session.Session, path string) []Diagnostic {
 	out = append(out, f.requiredLocDiags()...)
 	out = append(out, f.unknownEventDiags()...)
 	out = append(out, f.wrongScopeDiags()...)
+	out = append(out, f.duplicateDefDiags()...)
+	out = append(out, f.unresolvedRefDiags()...)
+	out = append(out, f.wrongValueTypeDiags()...)
 	out = append(out, descriptorDiags(s, path)...)
 
 	sup := scanSuppressions(f.src)

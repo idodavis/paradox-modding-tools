@@ -790,3 +790,34 @@ func (s *Session) IsEnumValue(kind, key string) bool {
 	}
 	return false
 }
+
+// Snippet returns the derived skeleton members for kind, most-used first, or
+// nil when the install did not evidence a shape for it.
+func (s *Session) Snippet(kind string) []catalog.SnippetMember {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil {
+		return nil
+	}
+	if m := s.cache.Snippets[kind]; len(m) > 0 {
+		return m
+	}
+	return s.cache.Snippets[jomini.CanonicalKind(kind)]
+}
+
+// CalendarFor returns the era a path's mod declares, or an undeclared calendar.
+//
+// Keyed by origin because a workspace can hold several mods and only one of them
+// may be a total conversion; a file's dates mean what its own mod says they mean.
+func (s *Session) CalendarFor(path string) catalog.ModCalendar {
+	origin, _, ok := s.Locate(path)
+	if !ok {
+		return catalog.ModCalendar{}
+	}
+	for _, m := range s.Mods() {
+		if m.Origin == origin {
+			return m.Calendar
+		}
+	}
+	return catalog.ModCalendar{}
+}

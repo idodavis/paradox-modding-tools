@@ -9,7 +9,7 @@
     "build:dev": "vite build --minify false --mode development",
     "build": "vite build --mode production",
     "preview": "vite preview",
-    "check": "vue-tsc --noEmit"
+    "check": "node scripts/check.mjs --noEmit"
   },
   "dependencies": {
     "@codingame/monaco-vscode-api": "36.2.7",
@@ -69,6 +69,7 @@
     "@types/sortablejs": "^1.15.9",
     "@vitejs/plugin-vue": "^6.0.8",
     "esbuild": "^0.28.2",
+    "tsc-js": "npm:typescript@^5.9.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vue-tsc": "^3.3.11"

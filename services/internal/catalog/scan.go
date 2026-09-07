@@ -134,6 +134,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		FieldInfo:        fieldInfo,
 		FieldInfoByKind:  fieldByKind,
 		Structures:       structures,
+		Snippets:         deriveSnippets(acc.structures, acc.structBlocks, acc.defs),
 		StructureBlocks:  blockKeys(acc.structures, acc.structBlocks),
 		Vocabulary:       sortedKeys(acc.vocab),
 		GUITypes:         sortedKeys(acc.guiTypes),

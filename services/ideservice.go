@@ -6,11 +6,16 @@ package services
 import (
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/session"
+	"strings"
 )
 
 // IdeService exposes editor Did* and LSP methods over Wails.
 type IdeService struct {
 	Session *SessionService
+	// Settings supplies per-diagnostic severities. Optional: a nil Settings
+	// means every check reports at its own default, which is what the tests and
+	// any embedder that does not care about configuration want.
+	Settings *SettingsService
 }
 
 // DidOpen syncs an editor buffer into the session.
@@ -42,11 +47,41 @@ func (s *IdeService) DidSave(workspaceID, path string) error {
 	})
 }
 
-// Diagnose returns diagnostics for a file.
+// Diagnose returns diagnostics for a file, with the user's per-code severities
+// applied.
+//
+// Severities are applied here rather than inside Diagnose so a toggle takes
+// effect on the next keystroke without a rescan, and so the checks themselves
+// stay ignorant of configuration.
 func (s *IdeService) Diagnose(workspaceID, path string) ([]lsp.Diagnostic, error) {
 	return withSession(s.Session, workspaceID, func(sess *session.Session) []lsp.Diagnostic {
-		return lsp.Diagnose(sess, path)
+		return lsp.ApplySeverities(lsp.Diagnose(sess, path), s.diagSeverities())
 	})
+}
+
+// DiagnosticCodes lists every check, for the IDE settings surface.
+func (s *IdeService) DiagnosticCodes() ([]lsp.DiagnosticCode, error) {
+	return lsp.DiagnosticCodes(), nil
+}
+
+// diagSeverities reads the "ide" settings namespace, where each diagnostic code
+// is a key whose value is off / warning / error.
+func (s *IdeService) diagSeverities() map[string]string {
+	out := map[string]string{}
+	if s.Settings == nil {
+		return out
+	}
+	all, err := s.Settings.GetSettings()
+	if err != nil {
+		return out
+	}
+	const prefix = "ide.diag."
+	for k, v := range all {
+		if code, ok := strings.CutPrefix(k, prefix); ok {
+			out[code] = v
+		}
+	}
+	return out
 }
 
 // Hover returns hover info at a 0-based UTF-8 position.

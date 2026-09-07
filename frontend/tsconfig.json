@@ -10,10 +10,8 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "skipLibCheck": true,
-    "ignoreDeprecations": "6.0",
-    "types": ["vite/client"],
-    "baseUrl": ".",
+    "skipLibCheck": true,
+    "types": ["vite/client"],
     "paths": {
       "@services/*": ["./bindings/paradox-modding-tools/services/*"],
       "@assets/*": ["./src/assets/*"]

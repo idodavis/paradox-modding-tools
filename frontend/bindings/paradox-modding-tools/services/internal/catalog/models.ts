@@ -239,6 +239,26 @@ export interface ScopeType {
 }
 
 /**
+ * SnippetMember is one line of a derived skeleton.
+ */
+export interface SnippetMember {
+    "key": string;
+
+    /**
+     * Block is true when the member is written as a block rather than a scalar,
+     * decided by how the install writes it more often than not.
+     */
+    "block"?: boolean;
+
+    /**
+     * Hits of Of definitions carry this member. Kept so a floor can be
+     * recalibrated against real numbers instead of guessed at.
+     */
+    "hits": number;
+    "of": number;
+}
+
+/**
  * VanillaCache is the vanilla script model for one install + version.
  */
 export interface VanillaCache {
@@ -252,6 +272,12 @@ export interface VanillaCache {
     "fieldInfo": { [_ in string]?: string } | null;
     "fieldInfoByKind": { [_ in string]?: { [_ in string]?: string } | null } | null;
     "structures": { [_ in string]?: string[] | null } | null;
+
+    /**
+     * Snippets is the derived skeleton for each kind whose shape is
+     * well-evidenced: the members that clear a coverage floor, most-used first.
+     */
+    "snippets"?: { [_ in string]?: SnippetMember[] | null } | null;
     "structureBlocks"?: { [_ in string]?: string[] | null } | null;
     "vocabulary": string[] | null;
     "guiTypes": string[] | null;

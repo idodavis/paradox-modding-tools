@@ -14,7 +14,7 @@ import (
 // before deriveNestedOptions was made order-independent has 352 CK3 defs under
 // whichever kind that scan's threads happened to pick, and nothing else would
 // invalidate it.
-const CacheFormatVersion = 27
+const CacheFormatVersion = 28
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -90,6 +90,34 @@ type ModInput struct {
 	Root   string
 	Order  int
 	Name   string
+	// Calendar is the era this mod's dates are written in, when it declares one.
+	// Empty means the dates mean what they say, which is the case for every mod
+	// that is not a total conversion.
+	Calendar ModCalendar
+}
+
+// ModCalendar is how a mod's date literals map to the era its players see.
+//
+// A total conversion offsets the year so the engine's date arithmetic still
+// works: A Game of Thrones writes start_date = 8082.1.1 for what the game shows
+// as 300 AC. Every date in that mod's script is read by a human who must
+// subtract 7,782 in their head.
+//
+// Not derivable, and deliberately not guessed. Nothing in a mod declares the
+// offset, and inferring it from bookmark dates would be a guess dressed as a
+// fact — so it is metadata a person states once, and with none stated nothing
+// anywhere changes.
+type ModCalendar struct {
+	// Era is the suffix shown after a converted year, e.g. "AC".
+	Era string `json:"era,omitempty"`
+	// EpochOffset is subtracted from the script year to get the era year.
+	EpochOffset int `json:"epochOffset,omitempty"`
+}
+
+// Declared reports whether this calendar says anything. An undeclared calendar
+// must leave every date exactly as written.
+func (c ModCalendar) Declared() bool {
+	return c.Era != "" || c.EpochOffset != 0
 }
 
 // LocEntry is one localization value with its source file and line.
@@ -114,10 +142,13 @@ type VanillaCache struct {
 	GameVersion   string `json:"gameVersion"`
 	ScannedAt     string `json:"scannedAt"`
 
-	Defs             []Def                          `json:"defs"`
-	FieldInfo        map[string]string              `json:"fieldInfo"`
-	FieldInfoByKind  map[string]map[string]string   `json:"fieldInfoByKind"`
-	Structures       map[string][]string            `json:"structures"`
+	Defs            []Def                        `json:"defs"`
+	FieldInfo       map[string]string            `json:"fieldInfo"`
+	FieldInfoByKind map[string]map[string]string `json:"fieldInfoByKind"`
+	Structures      map[string][]string          `json:"structures"`
+	// Snippets is the derived skeleton for each kind whose shape is
+	// well-evidenced: the members that clear a coverage floor, most-used first.
+	Snippets         map[string][]SnippetMember     `json:"snippets,omitempty"`
 	StructureBlocks  map[string][]string            `json:"structureBlocks,omitempty"`
 	Vocabulary       []string                       `json:"vocabulary"`
 	GUITypes         []string                       `json:"guiTypes"`

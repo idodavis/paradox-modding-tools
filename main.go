@@ -27,7 +27,7 @@ func main() {
 	sessSvc := &services.SessionService{Store: store}
 	settingsSvc := &services.SettingsService{Store: store, Session: sessSvc, Version: version}
 	workspaceSvc := &services.WorkspaceService{Store: store, Session: sessSvc}
-	ideSvc := &services.IdeService{Session: sessSvc}
+	ideSvc := &services.IdeService{Session: sessSvc, Settings: settingsSvc}
 	viewsSvc := &services.ViewsService{Session: sessSvc}
 	wikiSvc := &services.WikiService{Session: sessSvc}
 	searchSvc := &services.SearchService{}

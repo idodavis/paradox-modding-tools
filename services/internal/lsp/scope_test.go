@@ -73,9 +73,30 @@ func TestCompleteFiltersByScope(t *testing.T) {
 	if !has(items, "add_title_law") {
 		t.Errorf("landed_title scope missing add_title_law: %v", labels(items))
 	}
-	if has(items, "add_gold") {
-		t.Errorf("add_gold is character-only but offered inside capital_county: %v", labels(items))
+	// Ranked below, not removed. Hiding is only safe while the scope walk is
+	// right, and a modder cannot tell a hidden token from one PMT never heard
+	// of. Bottom of the list says "the game says this does not belong here"
+	// while still being one keystroke away.
+	if !has(items, "add_gold") {
+		t.Errorf("add_gold should still be offered, ranked last: %v", labels(items))
 	}
+	if !ranksBefore(items, "add_title_law", "add_gold") {
+		t.Errorf("scope-valid token not ranked first: %v", labels(items))
+	}
+}
+
+// ranksBefore reports whether first appears ahead of second.
+func ranksBefore(items []CompletionItem, first, second string) bool {
+	fi, si := -1, -1
+	for i, it := range items {
+		if it.Label == first && fi < 0 {
+			fi = i
+		}
+		if it.Label == second && si < 0 {
+			si = i
+		}
+	}
+	return fi >= 0 && si >= 0 && fi < si
 }
 
 // The same file, one block deeper, flips back to character through holder.
@@ -97,8 +118,9 @@ func TestCompleteFollowsScopeBackOut(t *testing.T) {
 	if !has(items, "add_gold") {
 		t.Errorf("holder returns to character, want add_gold: %v", labels(items))
 	}
-	if has(items, "add_title_law") {
-		t.Errorf("add_title_law offered in character scope: %v", labels(items))
+	if !ranksBefore(items, "add_gold", "add_title_law") {
+		t.Errorf("holder returns to character; add_gold should rank first: %v",
+			labels(items))
 	}
 }
 
@@ -117,9 +139,9 @@ func TestCompleteTriggersByScope(t *testing.T) {
 	if !has(items, "has_title_law") {
 		t.Errorf("want has_title_law in landed_title trigger: %v", labels(items))
 	}
-	if has(items, "is_adult") {
-		t.Errorf("is_adult is character-only: %v", labels(items))
-	}
+	// is_adult is absent here because of the "ha" prefix, not the scope — the
+	// assertion that used to sit here passed for that reason and tested nothing.
+	// The scope contract is ranking, and it is pinned in the effect tests above.
 }
 
 // Without a schema there is no engine API to offer, but what the walk harvested

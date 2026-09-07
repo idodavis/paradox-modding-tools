@@ -27,6 +27,18 @@ func write(t *testing.T, root, rel, body string) string {
 	return p
 }
 
+// testCalendar is applied to the mod buildSession creates. Package-level so the
+// common builder keeps one signature; set it with withCalendar.
+var testCalendar catalog.ModCalendar
+
+// withCalendar declares an era for the mod the next buildSession creates, and
+// clears it when the test ends.
+func withCalendar(t *testing.T, c catalog.ModCalendar) {
+	t.Helper()
+	testCalendar = c
+	t.Cleanup(func() { testCalendar = catalog.ModCalendar{} })
+}
+
 func buildSession(
 	t *testing.T, game string, files map[string]string,
 	cache *catalog.VanillaCache, vloc *catalog.VanillaLoc,
@@ -45,7 +57,7 @@ func buildSession(
 		write(t, root, rel, body)
 	}
 	s := session.NewWithLoc("ws", game, "english", cache, vloc, []catalog.ModInput{
-		{Origin: "mod", Root: root, Order: 0},
+		{Origin: "mod", Root: root, Order: 0, Calendar: testCalendar},
 	})
 	for rel, body := range files {
 		s.DidOpen(filepath.Join(root, filepath.FromSlash(rel)), body)

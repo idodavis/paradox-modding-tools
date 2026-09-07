@@ -40,6 +40,27 @@ export interface Diagnostic {
 }
 
 /**
+ * DiagnosticCode describes one check for the settings surface.
+ */
+export interface DiagnosticCode {
+    "code": string;
+    "summary": string;
+
+    /**
+     * Default is the severity when the user has not chosen one.
+     */
+    "default": string;
+
+    /**
+     * Experimental marks a check whose ship condition — zero findings across
+     * all three vanilla installs — has not been demonstrated yet. Off by
+     * default: a check that cries wolf teaches a modder to ignore the panel,
+     * which costs more than the check is worth.
+     */
+    "experimental"?: boolean;
+}
+
+/**
  * FoldingRange is a foldable line span (0-based, inclusive).
  */
 export interface FoldingRange {

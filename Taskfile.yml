@@ -89,6 +89,15 @@ tasks:
       # raise the number.
       - go test -short -timeout 60s ./...
 
+  check:
+    summary: >
+      Type-check the frontend, .vue files included (~30s). vue-tsc wraps the
+      JavaScript tsc, which TypeScript 7 no longer ships, so it drives the
+      `tsc-js` alias instead — see frontend/scripts/check.mjs.
+    dir: frontend
+    cmds:
+      - npm run check
+
   test:full:
     summary: >
       Backend tests including the real-install tier (~30s). Needs
@@ -97,6 +106,18 @@ tasks:
     dir: services
     cmds:
       - go test -timeout 60s ./...
+      - task: check
+
+  test:gate:
+    summary: >
+      The ship condition for every semantic diagnostic: zero findings on the
+      game's own script (~20s per game). A check that fires on vanilla is telling
+      a modder correct script is wrong. Needs PMT_TEST_INSTALL_{CK3,VIC3,EU5}.
+    dir: services
+    env:
+      PMT_VANILLA_GATE: "1"
+    cmds:
+      - go test ./internal/views/ -run TestVanillaDiagnosticsClean -v -timeout 30m
 
   test:probe:
     summary: >

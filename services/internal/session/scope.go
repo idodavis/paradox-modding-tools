@@ -55,13 +55,6 @@ func (s *Session) SchemaSource() catalog.SchemaSource {
 	return sc.Source
 }
 
-// scopeOfKind returns the scope type a database holds ("cultures" → "culture").
-func (s *Session) scopeOfKind(kind string) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.scopeOfKindLocked(kind)
-}
-
 func (s *Session) scopeOfKindLocked(kind string) string {
 	if s.cache == nil || len(s.cache.KindScope) == 0 {
 		return ""
@@ -104,18 +97,6 @@ func (s *Session) scopeLink(key string) (catalog.ScopeLink, bool) {
 	}
 	l, ok := sc.Links[strings.ToLower(key)]
 	return l, ok
-}
-
-// scopeType returns the declared capabilities of one scope type.
-func (s *Session) scopeType(name string) (catalog.ScopeType, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	sc := s.schemaLocked()
-	if sc == nil {
-		return catalog.ScopeType{}, false
-	}
-	t, ok := sc.Scopes[strings.ToLower(name)]
-	return t, ok
 }
 
 // ScopeAt returns the scope type in force at (line, UTF-8 column), or "" when
@@ -171,7 +152,37 @@ func (s *Session) ScopeAt(path string, line, col int) string {
 }
 
 // scopeWalk carries the scope stack so `prev` and `root` resolve properly.
-type scopeWalk struct{ stack []string }
+type scopeWalk struct {
+	stack []string
+	// rooted records that the BOTTOM of the stack is the real root scope,
+	// which only an on_action declares. Without it the stack bottom is simply
+	// the first hop the walk happened to take, and `root` must not pretend
+	// otherwise: CK3's camp_party_actions.txt writes
+	// `random_attending_character = { limit = { root = { any_attending_character`,
+	// where root is the ACTIVITY the pulse action runs on. Reading it as
+	// stack[0] answered "character" and reported nine pieces of correct vanilla
+	// script as wrong-scope.
+	rooted bool
+}
+
+// A saved scope -- `scope:my_vassal = { … }` -- is deliberately NOT entered,
+// though vanilla CK3 alone opens 69,823 blocks that way, fourteen times the
+// dotted chains. Resolving the name to the scope it was saved in was tried and
+// measured at eight false positives over 750 vanilla files, from two causes:
+//
+//   - one name saved several times at different scopes in one file
+//     (CK3 background_terrain_scope, four save sites), so a single-pass walk
+//     picks whichever it reached first; and, not fixable by being stricter,
+//   - the engine coercing an effect to a related scope. EU5 writes
+//     `scope:target_location = { add_stability = … }` where add_stability
+//     declares country only, and does so throughout -- the same shape as CK3's
+//     set_county_faith in a province and Victoria 3's random_scope_state in a
+//     state.
+//
+// The second is a gap in the model, not in the resolution: PMT has no declared
+// source for which scopes an engine silently coerces between. Entering saved
+// scopes has to wait for one, because a check that accuses correct script of
+// being wrong is worse than a check that stays quiet.
 
 func (w *scopeWalk) cur() string {
 	if len(w.stack) == 0 {
@@ -184,13 +195,37 @@ func (w *scopeWalk) push(scope string) { w.stack = append(w.stack, scope) }
 
 // step applies one block key. It reports false when the transition is unknown,
 // which stops the walk rather than reporting a wrong scope.
+// step follows a key, which may be a dotted chain: `root.liege.primary_title`
+// hops three times. Splitting here rather than at each caller means hover and
+// wrong-scope cannot disagree about where a chain lands.
+//
+// Any segment failing fails the whole chain. Callers clone the walk and discard
+// it on false, so a partly-applied chain never leaks -- and stopping is the
+// right answer, because a chain PMT can only half-follow ends somewhere it
+// cannot name.
 func (w *scopeWalk) step(sc *catalog.Schema, key string) bool {
+	// A date is not a chain. History files key their blocks by one --
+	// `867.1.1 = { … }` -- and splitting that steps through "867", "1", "1".
+	if !strings.Contains(key, ".") || jomini.IsDateLiteral(key) {
+		return w.stepOne(sc, key)
+	}
+	for _, seg := range strings.Split(key, ".") {
+		if seg == "" || !w.stepOne(sc, seg) {
+			return false
+		}
+	}
+	return true
+}
+
+func (w *scopeWalk) stepOne(sc *catalog.Schema, key string) bool {
 	k := strings.ToLower(game.KeyIdentity("", key))
 	switch k {
 	case "this":
 		return true
 	case "root":
-		if len(w.stack) == 0 {
+		// Only when the bottom of the stack really is the root. Otherwise the
+		// scope is one PMT cannot name, and the walk stops rather than guess.
+		if !w.rooted || len(w.stack) == 0 {
 			return false
 		}
 		w.push(w.stack[0])
@@ -285,12 +320,23 @@ func (s *Session) ScopeMisuses(path string) []ScopeMisuse {
 		if !ok || a.Key.Quoted {
 			continue
 		}
-		w := s.defRootScopeLocked(sc, kind, a)
 		b := jomini.ChildBlock(a)
-		if w.cur() == "" || b == nil {
+		if b == nil {
 			continue
 		}
-		s.walkMisuse(sc, b, w, "", &out)
+		// A missing root is not a dead end -- the same rule ScopeAt states a few
+		// functions down, and it was fixed there and not here. Only on_action
+		// files declare a starting scope, so bailing on an empty one meant
+		// wrong-scope never looked inside an event, a decision, a scripted
+		// effect or a trait: it ran in common/on_action and nowhere else, on
+		// every game.
+		//
+		// Nothing is loosened by continuing. step() already takes a declared hop
+		// on the game's word when the current scope is unknown, and walkMisuse
+		// reports only once w.cur() is non-empty, so a misuse is still judged
+		// against a scope something DECLARED rather than one PMT assumed.
+		w := s.defRootScopeLocked(sc, kind, a)
+		s.walkMisuse(sc, b, w, "", nil, &out)
 	}
 	return out
 }
@@ -309,14 +355,58 @@ func (s *Session) defRootScopeLocked(
 ) scopeWalk {
 	if kind == "on_action" {
 		if scope := sc.OnActions[strings.ToLower(def.Key.Text)]; scope != "" && scope != "none" {
-			return scopeWalk{stack: []string{scope}}
+			return scopeWalk{stack: []string{scope}, rooted: true}
+		}
+		return scopeWalk{}
+	}
+	if kind == "event" {
+		if scope := s.eventRootScopeLocked(sc, def.Key.Text); scope != "" {
+			return scopeWalk{stack: []string{scope}, rooted: true}
 		}
 	}
 	return scopeWalk{}
 }
 
+// eventRootScopeLocked is the scope an event's body runs in, taken from the
+// on_actions that fire it.
+//
+// An event does not declare its own scope, and its `type` does not either --
+// `activity_event` and `letter_event` bodies are both character-scoped, so
+// reading the type as a scope reported thousands of correct vanilla lines as
+// wrong-scope. What DOES declare it is the on_action: on_actions.log states the
+// scope each one runs in, and an event fired by one runs in that same scope.
+//
+// Measured across all three installs, every event reachable from a scoped
+// on_action has exactly ONE root scope -- 4,376 on CK3, 932 on Victoria 3, 2,027
+// on EU5, and not a single conflict. So a disagreement means something PMT does
+// not understand, and the honest answer is no root at all rather than a pick.
+//
+// Edges come from the session, not the cache, so a mod's own on_action firing a
+// mod's own event counts the same as vanilla's.
+func (s *Session) eventRootScopeLocked(sc *catalog.Schema, event string) string {
+	found := ""
+	for _, e := range s.edgesByTo[event] {
+		scope := sc.OnActions[strings.ToLower(e.From)]
+		if scope == "" || scope == "none" {
+			continue
+		}
+		if found == "" {
+			found = scope
+			continue
+		}
+		if found != scope {
+			return ""
+		}
+	}
+	return found
+}
+
+// walkMisuse judges each statement of a block against the scope the walk says
+// it runs in. params names the arguments the enclosing token declares, which are
+// consumed by that token rather than executed in the scope it produces.
 func (s *Session) walkMisuse(
-	sc *catalog.Schema, b *jomini.Block, w scopeWalk, slot string, out *[]ScopeMisuse,
+	sc *catalog.Schema, b *jomini.Block, w scopeWalk, slot string,
+	params map[string]bool, out *[]ScopeMisuse,
 ) {
 	for _, st := range b.Statements {
 		a, ok := st.(*jomini.Assignment)
@@ -325,21 +415,32 @@ func (s *Session) walkMisuse(
 		}
 		key := a.Key.Text
 		lk := strings.ToLower(game.KeyIdentity("", key))
-		// A mod macro may share a name with an engine token; the macro wins.
-		if _, shadowed := s.macroDefKinds[key]; !shadowed && slot != "" && w.cur() != "" {
-			if t, role, ok := sc.Token(lk); ok && role == slot &&
-				!catalog.UsableIn(t.In, w.cur()) {
-				*out = append(*out, ScopeMisuse{
-					Key: key, Scope: w.cur(), Allowed: t.In,
-					Start: a.Key.Range.Start, End: a.Key.Range.End,
-				})
+		// An argument the enclosing token declares is not a statement in the
+		// scope that token produces. CK3 documents
+		// `any_trait_in_category = { category = fame/health/etc }`, and
+		// `category` is separately a declared trigger on artifact -- so judging
+		// it reported correct vanilla script as wrong-scope.
+		//
+		// Only the JUDGEMENT is skipped, never the descent: `limit` is a
+		// declared argument of every iterator, and skipping the statement whole
+		// would stop the walk entering the one block most misuses sit in.
+		if !params[lk] {
+			// A mod macro may share a name with an engine token; the macro wins.
+			if _, shadowed := s.macroDefKinds[key]; !shadowed && slot != "" && w.cur() != "" {
+				if t, role, ok := sc.Token(lk); ok && role == slot &&
+					!catalog.UsableIn(t.In, w.cur()) {
+					*out = append(*out, ScopeMisuse{
+						Key: key, Scope: w.cur(), Allowed: t.In,
+						Start: a.Key.Range.Start, End: a.Key.Range.End,
+					})
+				}
 			}
 		}
 		child := jomini.ChildBlock(a)
 		if child == nil {
 			continue
 		}
-		next := scopeWalk{stack: slices.Clone(w.stack)}
+		next := scopeWalk{stack: slices.Clone(w.stack), rooted: w.rooted}
 		if !next.step(sc, key) {
 			continue
 		}
@@ -347,7 +448,7 @@ func (s *Session) walkMisuse(
 		if ns := jomini.ScriptSlot(lk); ns != "" {
 			nextSlot = ns
 		}
-		s.walkMisuse(sc, child, next, nextSlot, out)
+		s.walkMisuse(sc, child, next, nextSlot, sc.TokenParams(lk), out)
 	}
 }
 

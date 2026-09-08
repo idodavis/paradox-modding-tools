@@ -339,3 +339,172 @@ func TestCompleteKeepsCallDefs(t *testing.T) {
 		t.Errorf("mod scripted_effect missing: %v", labels(items))
 	}
 }
+
+// TestWrongScopeOutsideOnActions is the bug every other test in this file
+// missed by construction: they all build a common/on_action file, which is the
+// only kind that declares its own starting scope. ScopeMisuses bailed on an
+// empty root, so the check ran there and NOWHERE else -- not in an event, a
+// decision, a scripted effect or a trait, on any of the three games.
+//
+// ScopeAt was fixed for exactly this and says so in a comment; ScopeMisuses,
+// twenty lines away, was not.
+func TestWrongScopeOutsideOnActions(t *testing.T) {
+	// every_vassal declares Targets: character, so it establishes a character
+	// scope with nothing before it. add_title_law is landed_title only.
+	const body = "namespace = test\n\ntest.1 = {\n" +
+		"\timmediate = {\n\t\tevery_vassal = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n"
+	s, root := buildSession(t, "ck3",
+		map[string]string{"events/x.txt": body}, scopedCache(), nil)
+	diags := Diagnose(s, root+"/events/x.txt")
+	if !hasDiag(diags, "wrong-scope") {
+		t.Fatalf("no wrong-scope inside an event body: %+v", diags)
+	}
+}
+
+// TestWrongScopeSilentWithoutDeclaredScope: continuing past an empty root must
+// not start guessing. Where nothing declared establishes a scope there is
+// nothing to contradict, so the check stays quiet.
+func TestWrongScopeSilentWithoutDeclaredScope(t *testing.T) {
+	const body = "namespace = test\n\ntest.1 = {\n" +
+		"\timmediate = {\n\t\tadd_title_law = x\n\t}\n}\n"
+	s, root := buildSession(t, "ck3",
+		map[string]string{"events/x.txt": body}, scopedCache(), nil)
+	if diags := Diagnose(s, root+"/events/x.txt"); hasDiag(diags, "wrong-scope") {
+		t.Errorf("judged a scope nothing declared: %+v", diags)
+	}
+}
+
+// TestWrongScopeRootWithoutDeclaredRoot is nine vanilla CK3 findings, all one
+// shape. camp_party_actions.txt writes
+//
+//	effect = { random_attending_character = { limit = { root = { any_… } } } }
+//
+// where root is the ACTIVITY the pulse action runs on. Only an on_action
+// declares its root scope, so the walk's stack bottom here is just the first hop
+// it happened to take -- "character" -- and reading root as stack[0] reported
+// correct vanilla script as wrong-scope. An unrooted walk must treat root as a
+// scope it cannot name.
+func TestWrongScopeRootWithoutDeclaredRoot(t *testing.T) {
+	const body = "namespace = test\n\ntest.1 = {\n\timmediate = {\n" +
+		"\t\tevery_vassal = {\n\t\t\troot = {\n\t\t\t\tadd_title_law = x\n" +
+		"\t\t\t}\n\t\t}\n\t}\n}\n"
+	s, root := buildSession(t, "ck3",
+		map[string]string{"events/x.txt": body}, scopedCache(), nil)
+	if diags := Diagnose(s, root+"/events/x.txt"); hasDiag(diags, "wrong-scope") {
+		t.Errorf("judged `root` against a scope nothing declared: %+v", diags)
+	}
+}
+
+// And where the root IS declared, root still resolves and is still judged.
+func TestWrongScopeRootWhenDeclared(t *testing.T) {
+	const body = "on_birth = {\n\teffect = {\n\t\tcapital_county = {\n" +
+		"\t\t\troot = {\n\t\t\t\tadd_title_law = x\n\t\t\t}\n\t\t}\n\t}\n}\n"
+	s, p := scopedSession(t, body)
+	if !hasDiag(Diagnose(s, p), "wrong-scope") {
+		t.Errorf("on_birth declares a character root; add_title_law is landed_title only")
+	}
+}
+
+// TestWrongScopeFollowsDottedChain: `root.capital_county = { … }` is two hops,
+// and the walk stopped dead at the dot. ck3-tiger models these explicitly
+// (open_builder / finalize_builder); PMT was silent rather than wrong, which is
+// safe and useless -- a chain is one of the commonest ways to change scope.
+func TestWrongScopeFollowsDottedChain(t *testing.T) {
+	// on_birth roots at character; .capital_county hops to landed_title, where
+	// add_gold does not belong.
+	const bad = "on_birth = {\n\teffect = {\n\t\troot.capital_county = {\n" +
+		"\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n"
+	s, p := scopedSession(t, bad)
+	if !hasDiag(Diagnose(s, p), "wrong-scope") {
+		t.Errorf("chain not followed: add_gold is character-only, root.capital_county is a title")
+	}
+
+	// The same chain with a title effect is correct and must stay silent.
+	const good = "on_birth = {\n\teffect = {\n\t\troot.capital_county = {\n" +
+		"\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n"
+	s2, p2 := scopedSession(t, good)
+	if hasDiag(Diagnose(s2, p2), "wrong-scope") {
+		t.Errorf("false positive on a correct chain")
+	}
+
+	// Three hops, back to character: add_gold belongs again.
+	const back = "on_birth = {\n\teffect = {\n\t\troot.capital_county.holder = {\n" +
+		"\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n"
+	s3, p3 := scopedSession(t, back)
+	if hasDiag(Diagnose(s3, p3), "wrong-scope") {
+		t.Errorf("false positive after hopping back to character")
+	}
+}
+
+// TestScopeChainStopsOnUnknownSegment: half a chain is not a scope. A segment
+// PMT cannot resolve ends the walk rather than leaving the previous hop's scope
+// in place to be judged against.
+func TestScopeChainStopsOnUnknownSegment(t *testing.T) {
+	const body = "on_birth = {\n\teffect = {\n\t\troot.not_a_link.capital_county = {\n" +
+		"\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n"
+	s, p := scopedSession(t, body)
+	if hasDiag(Diagnose(s, p), "wrong-scope") {
+		t.Errorf("judged a chain it could not follow")
+	}
+}
+
+// TestScopeChainIgnoresDates: a history file keys blocks by a date, and
+// splitting 867.1.1 would step through "867", "1", "1".
+func TestScopeChainIgnoresDates(t *testing.T) {
+	const body = "on_birth = {\n\teffect = {\n\t\t867.1.1 = {\n" +
+		"\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n"
+	s, p := scopedSession(t, body)
+	if hasDiag(Diagnose(s, p), "wrong-scope") {
+		t.Errorf("treated a date as a scope chain")
+	}
+}
+
+// TestEventRootFromOnAction: an event does not declare its own scope, but the
+// on_action that fires it does. on_actions.log states on_birth runs on a
+// character, so a `root` block inside an event on_birth fires is a character.
+//
+// This is the path TestScopeAtEventTypeIsNotAScope names. Reading the event's
+// `type` instead was tried and measured: activity_event and letter_event bodies
+// are both character-scoped, so the type is a presentation window, not a scope.
+func TestEventRootFromOnAction(t *testing.T) {
+	files := map[string]string{
+		"common/on_action/x.txt": "on_birth = {\n\tevents = {\n\t\tt.1\n\t}\n}\n",
+		"events/y.txt": "namespace = t\n\nt.1 = {\n\timmediate = {\n" +
+			"\t\troot = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n",
+	}
+	s, root := buildSession(t, "ck3", files, scopedCache(), nil)
+	if !hasDiag(Diagnose(s, root+"/events/y.txt"), "wrong-scope") {
+		t.Errorf("on_birth roots at character; add_title_law is landed_title only")
+	}
+}
+
+// And an event nothing scoped fires keeps no root at all, so `root` stays a
+// scope PMT cannot name and nothing is judged against it.
+func TestEventWithoutOnActionHasNoRoot(t *testing.T) {
+	files := map[string]string{
+		"events/y.txt": "namespace = t\n\nt.1 = {\n\timmediate = {\n" +
+			"\t\troot = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n",
+	}
+	s, root := buildSession(t, "ck3", files, scopedCache(), nil)
+	if hasDiag(Diagnose(s, root+"/events/y.txt"), "wrong-scope") {
+		t.Errorf("judged an event root nothing declared")
+	}
+}
+
+// Two on_actions of different scopes firing one event is a disagreement PMT
+// cannot resolve, so it declares no root rather than picking. Vanilla has not a
+// single case across the three games, but a mod can create one.
+func TestEventRootConflictYieldsNoRoot(t *testing.T) {
+	c := scopedCache()
+	c.Schema.OnActions["on_title_gain"] = "landed_title"
+	files := map[string]string{
+		"common/on_action/x.txt": "on_birth = {\n\tevents = {\n\t\tt.1\n\t}\n}\n" +
+			"on_title_gain = {\n\tevents = {\n\t\tt.1\n\t}\n}\n",
+		"events/y.txt": "namespace = t\n\nt.1 = {\n\timmediate = {\n" +
+			"\t\troot = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n",
+	}
+	s, root := buildSession(t, "ck3", files, c, nil)
+	if hasDiag(Diagnose(s, root+"/events/y.txt"), "wrong-scope") {
+		t.Errorf("picked a root where two on_actions disagree")
+	}
+}

@@ -13,3 +13,7 @@ services/internal/steamugc/steam.stamp
 services/internal/steamugc/*.tar
 services/internal/steamugc/binembed/bin/*
 !services/internal/steamugc/binembed/bin/.keep
+
+# `go test -c` output: <pkg>.test.exe next to the package
+*.test
+*.test.exe

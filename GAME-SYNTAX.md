@@ -854,3 +854,295 @@ empties are flags — author-invented, nothing to offer — and definition names
 Re-measure with the MCP (`WAILS_MCP=1 wails3 dev`) rather than by reasoning:
 five of the bugs behind these numbers were invisible in the source and obvious
 in one call.
+
+### §14 resolved: `unknown-key` ships
+
+The measurement stands — keyed by block name alone the check fired 18,341 times
+on 400 vanilla CK3 files — but the fix was smaller than "key the member table by
+kind plus path". It was enough to record, per block name, **which kinds it was
+seen under**, and judge only the names exactly one kind uses.
+
+`option` is a block in a CK3 event and another in `common/accolade_names`, so it
+is excluded. `triggered_desc` belongs to events alone, so it is judged.
+
+| | CK3 | Vic3 | EU5 |
+|---|---|---|---|
+| by block name | 18,341 | 6 | 4 |
+| unambiguous names only | **0** | **0** | **0** |
+
+Two other gates were needed alongside it: a block must carry at least six
+recorded members before an absence means anything, and files under `gfx/` are
+excluded because they are asset data in a different syntax rather than script.
+
+`duplicate-definition` reached zero on CK3 and EU5 by the same kind of
+distinction — `Def.Nested` records whether a definition was harvested at a file's
+top level or from inside another one, which took CK3 from 1,614 to 0. Its
+remaining 10 on Victoria 3 are **genuine**: vanilla defines 14 coat-of-arms keys
+twice, verified by scanning the files directly rather than by trusting PMT.
+
+## 16. A declaration keyword makes a definition file-local
+
+`scripted_trigger foo = { … }` written inline is **not** the same object as
+`foo = { … }` in `common/scripted_triggers/`. The engine resolves the inline
+form within its own file.
+
+The parser sees `scripted_trigger` as a stray bare word and `foo = {…}` as an
+ordinary assignment, so nothing about the shape says "local" — the keyword does,
+and `extractKeywordName` is where it is recorded (`Def.Local`).
+
+Measured, CK3 vanilla: **3,809 inline declarations** (2,432 `scripted_trigger`,
+1,377 `scripted_effect`), and **every one sits under `events/`**, beside the
+event that calls it. `common/scripted_triggers/` uses the bare form exclusively.
+Vic3 and EU5 vanilla use the keyword form not at all; CK3 mods do (31 across two
+in the test corpus).
+
+Two consequences, and they pull in opposite directions from the obvious fix:
+
+- **A repeat across files is required, not a collision.** ck3-quieter-events
+  carries one `allow_naming_on_birth_of_dynasty_child_trigger` in both
+  `birth_events.txt` and `quieter_events_events.txt`, commented *"Duplicating
+  because CK3 is dumb and can't find it in the birth_events.txt file"*. The mod
+  author found this by running the game. `duplicate-definition` skips `Local`.
+- **Do not merge the kinds.** The obvious tidy-up is to canonicalise the inline
+  `scripted_trigger` onto the folder's `scripted_triggers`. That would let
+  go-to-definition jump from a call in one file to an inline body in another —
+  a body the engine cannot see from there. The accidental singular/plural split
+  encodes a real distinction; `Definition` confines `Local` defs to their own
+  file instead.
+
+## 17. Each game documents itself in a different shape, and one of them is not prose
+
+Five formats, and PMT reads doc files with a single harvester, so a format it
+does not recognise is prose it reads and discards rather than a file it skips.
+
+| Shape | Game | Example |
+|---|---|---|
+| comment **above** the key | CK3 `_*.info` | `# localization key` ⏎ `adjective = "adjective_1"` |
+| comment **trailing** the key | Vic3 `.md` | `building_group = bg_key   # *reference to building group*` |
+| `# - key: <type> desc` bullets | EU5 | `# - build_time: <integer> building time in days` |
+| `key = <type> desc` — **no hash between type and prose** | EU5 | `# type = <diplomacy/subject/union> defines if the relation …` |
+| `### brief: name ( type )` header, prose, lone `#`, then the key | CK3 | `_governments.info` |
+
+The last two were being read and thrown away, and they are why EU5 looked
+undocumented next to CK3:
+
+- The angle-bracket form documents **297 EU5 keys** and almost nothing else
+  (CK3 1, Vic3 2). `docKeyRe` matched the key and `inlineHashDoc` looked for a
+  `#` that is not there, so the key was recorded with an *empty* doc.
+- The `brief` form's convention is to close the prose with a lone `#` before the
+  key it describes. Treating that `#` as the end of the comment block dropped the
+  description from nearly every one: `_governments.info` documents ~100 keys and
+  yielded **6**. A genuinely blank line still ends a block; a bare `#` does not.
+
+Discovery had one gap too: `.info` files were required to start with `_`, which
+is a CK3 convention (162 of its 166). EU5 writes **23 of its 32** without it.
+
+Measured field docs harvested from each install, before → after:
+
+| | files | keys | documented | prose→doc yield |
+|---|---|---|---|---|
+| CK3 | 162 → 166 | 2,863 → 2,905 | 1,703 → **2,094** | 31% → **38%** |
+| Vic3 | 93 | 1,223 | 808 → **810** | 21% → **22%** |
+| EU5 | 84 → **107** | 1,587 → **1,764** | 830 → **1,174** | 35% → **45%** |
+
+**Vic3 barely moves, and that is the real finding about Vic3.** Its `.md` files
+are *narrative*, not field annotation: `treaty_articles.md` is 468 lines
+explaining what source and target mean for directed versus mutual articles, and
+yields 15 field docs because only 15 lines are about a field.
+`ship_name_definitions.md` is 198 lines of ship names and correctly yields none.
+That prose is the best teaching material in the install and PMT surfaces none of
+it — a presentation gap, not a parsing one, and not the same problem as the two
+fixed above.
+
+Those brackets and parentheses also carry a **declared type**, and all three
+games write them — the angle form is not EU5-only as the doc-yield work first
+suggested. Harvested into `DeclaredFieldTypes`, classified once in
+`catalog/declared.go`:
+
+| | declarations | closed value sets | primitive / loc | declined |
+|---|---|---|---|---|
+| CK3 | 299 | 18 | 80 | 201 |
+| Vic3 | 54 | 15 | 15 | 24 |
+| EU5 | 447 | 91 | 99 | 257 |
+
+A **closed value set** (`yes/no`, `none/mutual/giving/receiving`) is the only
+half a diagnostic can judge, and EU5 carries 91 of them — the game states the
+set, so a value outside it is wrong without any inference. That is
+`wrong-declared-value`, experimental and default off.
+
+The **declined** column is the design, not a shortfall. Three families refuse:
+script constructs (`trigger`, `effect`, `script value`, `mtth`) because
+script_docs already declares them and names the database rather than a word;
+`database key` / `key` / `enum` because they name no *particular* database, so
+reporting them restates that a value goes here; and `dynamic desc` because the
+slot also accepts a `first_valid` block, so "localization key" would teach a rule
+that is too narrow. Whole and decimal numbers stay apart — `= 2.5` in an integer
+field is a real mistake and only a distinction can say so.
+
+Prose wears the same brackets — EU5's `<name of global variable list with the
+list of candidates in>`, Vic3's `<locator_name_1>` — so recognition is an
+allow-list rather than a shape rule. A pass-through for identifier-shaped
+unknowns was measured and rejected: it would gain `government_type` (2) and
+`dlc_flag` (3) while admitting `locator_name_1` (4) and every future
+placeholder. The allow-list's cost is a type lost each time a game adds a word,
+which a rescan cannot fix but one line can.
+## 18. What declares an event's scope, and what only looks like it does
+
+An event body runs in a scope, but the event states it nowhere. Two candidates
+look like they declare it. One does not.
+
+**`type` does not.** `type = character_event` is a presentation window, not a
+scope: CK3's `activity_event` and `letter_event` bodies are *both*
+character-scoped. Reading the prefix as a scope reported thousands of correct
+vanilla lines as `wrong-scope`, and the schema cannot save it — `activity` is a
+real declared scope type, so a "the name proposes, the schema disposes" check
+confirms the wrong answer confidently. `TestScopeAtEventTypeIsNotAScope` exists
+to stop this being re-derived; it has now stopped it twice.
+
+**The on_action does.** `on_actions.log` states the scope each on_action runs in,
+and an event it fires runs in that same scope. Measured over the fire graph:
+
+| | events | reached from a scoped on_action | with 1 root scope | with 2+ |
+|---|---|---|---|---|
+| CK3 | 9,791 | 4,376 | 4,376 | **0** |
+| Vic3 | 2,264 | 932 | 932 | **0** |
+| EU5 | 7,528 | 2,027 | 2,027 | **0** |
+
+Not one event in any of the three installs is fired by two on_actions of
+different scopes. That is what made **scope sets unnecessary** for this: the
+obvious next step after tiger's bitflag `Scopes` was to make the walk carry a set
+so an event could be "character or country", and the corpus says no such event
+exists. A disagreement therefore means something PMT does not understand, and
+`eventRootScopeLocked` returns no root rather than picking one.
+
+Edges are read from the session rather than the cache, so a mod's own on_action
+firing a mod's own event counts exactly as vanilla's does.
+
+## 19. `root` is only meaningful where a root was declared
+
+Only an on_action declares its own starting scope. Everywhere else the scope walk
+begins empty and builds up from declared links and iterators — which is fine for
+judging a token, because a token is judged against the current scope and there
+simply is none until something declares one.
+
+`root` is the exception. It means "the bottom of the stack", and with no declared
+root the bottom is merely the first hop the walk happened to take. CK3's
+`camp_party_actions.txt` writes
+
+```
+effect = { random_attending_character = { limit = { root = { any_attending_character = … } } } }
+```
+
+where `root` is the *activity* the pulse action runs on. Reading it as `stack[0]`
+answered `character` and reported nine pieces of correct vanilla script.
+`scopeWalk.rooted` records whether the bottom is real; an unrooted walk refuses
+`root` instead. ck3-tiger reaches the same conclusion independently, with
+`is_unrooted` / `new_unrooted()` for contexts where "the relationship to root is
+not known".
+
+## 20. A dotted key is a scope chain, and skipping it is not neutral
+
+`root.liege.primary_title = { … }` is three hops. The walk matched keys whole, so
+a dotted key resolved to nothing and the walk stopped — silent rather than wrong,
+and useless: **5,135 dotted block keys in vanilla CK3 alone** were dead ends
+(`domicile_location.culture` 437, `root.faith` 355, `root.location` 277,
+`root.culture` 230).
+
+Splitting happens inside `step`, not at the callers, so hover and `wrong-scope`
+cannot disagree about where a chain lands. Any segment failing fails the whole
+chain: callers clone the walk and discard it on failure, so a half-followed chain
+never leaves a scope behind to be judged against. A date is not a chain —
+`867.1.1` would otherwise step through "867", "1", "1".
+
+Still not followed, and silent rather than wrong: saved scopes (`scope:foo`),
+prefix cites (`title:k_england`). tiger models both.
+
+### Where `wrong-scope` actually ran before this
+
+Nowhere except `common/on_action/`. `ScopeMisuses` bailed on an empty root, and
+only on_actions declare one — so events, decisions, scripted effects, traits and
+modifier bodies were never checked, on any of the three games. `ScopeAt` had been
+fixed for exactly this and says so in a comment twenty lines away; `ScopeMisuses`
+had not. Every test in `lsp/scope_test.go` built a `common/on_action/` fixture,
+so the suite passed while the check was inert everywhere a modder writes script.
+**A suite that only exercises the case that works cannot report the feature dead.**
+
+## 21. The engine coerces scopes, and nothing declares which
+
+`wrong-scope` judges a token against `Supported Scopes`. That list says where an
+effect is *documented*, not where it *works*, and the gap is real script:
+
+| game | written in | declared for | token |
+|---|---|---|---|
+| CK3 | `province` | `landed_title` | `set_county_faith` |
+| Vic3 | `state` | country / front / state_region / … | `random_scope_state` |
+| EU5 | `location` | `country` | `add_stability`, `add_country_modifier` |
+| EU5 | `location` | `market` | `every_merchant_in_market` |
+| EU5 | `location` | `building` | `building_category` |
+| EU5 | `province_definition` | `country` | `random_owned_location` |
+
+Every one is vanilla, and every one is the same shape: a contained thing used
+where its container or owner is expected, which the engine resolves silently.
+`add_stability` appears 1,927 times in EU5's events alone.
+
+**This was invisible until the check ran.** `wrong-scope` was confined to
+`common/on_action/`, and `scope:` blocks were never entered, so no coerced use
+was ever reached. Widening the check surfaced a gap in the model, not a
+regression.
+
+### Why it is not yet fixable, measured
+
+- **Not in script_docs.** `Supported Scopes` is the only scope data the game
+  prints, and these uses contradict it.
+- **Not derivable from declared links.** Tested against all six pairs: links
+  explain three (EU5 `location` reaches country, market and building) and miss
+  three — CK3 `province → landed_title` and Vic3 `state → country` have no such
+  link, and EU5's `province_definition` declares *no* outgoing links at all. A
+  one-hop-link rule would also be far too permissive: `location` alone produces
+  ten distinct output types, so it would accept ten scopes' worth of tokens.
+- **ck3-tiger does not derive it either.** Its `scopes.rs` enforces strict
+  matching with no coercion mechanism; where the game's docs are wrong, tiger's
+  hand-maintained schema is simply corrected by a person. PMT cannot take that
+  route without giving up the property that a game update is a rescan.
+
+The one PMT-native path left is to harvest the (token, scope) pairs vanilla
+actually uses and treat them as legal — vanilla being correct by definition, the
+same reasoning `knownVanillaFindings` rests on. It is permissive in the right
+direction for an accusing check. It needs a scope walk over the whole install
+during a scan, whose cost is not yet measured.
+
+### What this blocks
+
+Saved scopes (`scope:x = { … }`) — **69,823 block keys in vanilla CK3 alone**,
+fourteen times the dotted chains — and prefix cites (`title:k_england = { … }`,
+~4,300). Resolving saved scopes was built and measured at eight false positives
+over 750 vanilla files, every one a coercion case and none a resolution error: a
+stricter re-save rule changed nothing. It was reverted. Entering these blocks
+without a coercion model turns correct script into an accusation.
+
+## 22. script_docs is not always right either
+
+The whole engine rests on declared beating derived, and §21 already showed
+`Supported Scopes` describing where an effect is *documented* rather than where
+it works. The documentation can also be plainly stale.
+
+Victoria 3 ships `common/company_charter_types/company_charter_types.md`:
+
+```
+type = <investment/monopoly/new_industry/trade/colonization>
+```
+
+and `00_company_charter_types.txt:122` writes `type = industry`. All five other
+charter types use a documented value; this one does not, and the game ships it,
+so the script is right and the doc is stale.
+
+That is one finding in one file, and it is the reason `wrong-declared-value`
+stays experimental and off. The check is correct — a value outside the set the
+game states — and the set is wrong. Nothing in the install says which of the two
+to believe.
+
+**What this costs.** A closed value set is the strongest evidence PMT has for an
+accusing check: the game names the values. If even that can be stale, then every
+declared-source check needs a vanilla gate before it is enabled, not just the
+derived ones. The gate is the only thing that catches this, because it is the
+only place PMT compares its judgement against script the game itself ships.

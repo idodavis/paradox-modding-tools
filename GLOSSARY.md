@@ -187,19 +187,26 @@ IDE lint — so every code below describes something in a mod.
 
 | Code | Says |
 |---|---|
-| `duplicate-definition` | one key defined twice inside a single origin; load order decides which survives |
+| `duplicate-definition` | one key defined twice inside a single origin, at a file's top level; load order decides which survives |
 | `loc-header-mismatch` | a localization file's `l_<lang>:` header disagrees with its folder |
 | `missing-bom` | a localization file without the UTF-8 BOM the games require |
 | `missing-descriptor` | a mod with no `descriptor.mod` |
 | `missing-required-loc` | a key the game will look for that nothing defines |
 | `required-loc` | a definition missing localization its kind conventionally has |
 | `unknown-event` | an event id fired or called that no file defines |
+| `unknown-token` | an effect or trigger neither declared by the game nor defined as a scripted macro. **Experimental, default off**: 442 findings on vanilla fell to 3 by reading declared argument lists, and the last 3 are EU5 `attribute_columns`, where `effect` names a column rather than opening a script slot |
+| `unknown-key` | a key that is not a member of the block it sits in, where that block name belongs to exactly one kind |
 | `unresolved-ref` | `culture:nonexistent` — a citation naming a database PMT holds, and a key nothing defines |
+| `wrong-declared-value` | a value outside the closed set the game documents for that field — EU5 writing `# uses_diplo_capacity = <none/mutual/giving/receiving>`. **Experimental, default off**: it fires once on vanilla Victoria 3, where the game documents `type = <investment/monopoly/new_industry/trade/colonization>` and its own `00_company_charter_types.txt` writes `type = industry`. The check is right and the documentation is stale — see GAME-SYNTAX 22 |
 | `wrong-localization-folder` | a localization file under the wrong language folder |
 | `wrong-scope` | an effect or trigger used in a scope the game does not allow |
 | `wrong-value-type` | a value contradicting the argument type the game declares for that key |
 
-Parse errors carry their own codes from the parser.
+Parse errors carry their own codes from the parser (`unclosed-brace`, `stray-close`,
+`unterminated-string`, `missing-value`, and the localization ones prefixed `loc-`).
+They are in the registry too, under the `parse` group rather than `check`: they
+reach `ApplySeverities` like any other code, so leaving them out made them
+settable and not un-settable.
 
 **Every code here fires only on something the game declares.** The derived
 passes — install-inferred field types, coverage-floored conventions — are

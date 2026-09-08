@@ -58,7 +58,9 @@ func EventSectionRole(name string) string {
 }
 
 var triggerSlotKeys = map[string]bool{
-	"limit": true, "potential": true,
+	// alternative_limit is the else-branch of a limit, so its body is triggers
+	// like any other limit's.
+	"limit": true, "alternative_limit": true, "potential": true,
 	"and": true, "or": true, "not": true, "nor": true, "nand": true,
 }
 

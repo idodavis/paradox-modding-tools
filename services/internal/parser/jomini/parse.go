@@ -11,7 +11,6 @@ type Result struct {
 	Comments []Comment
 	Src      string
 	lines    *LineIndex
-	tokens   []token
 }
 
 // Lines returns the LineIndex for Src (built at parse time).
@@ -22,17 +21,17 @@ func (r Result) Lines() *LineIndex {
 	return NewLineIndex(r.Src)
 }
 
-// LineIndents is brace-depth indent per line from the stored token stream.
+// LineIndents is brace-depth indent per line. It tokenizes Src: a Result does
+// not keep its tokens, because only the two editor-time readers here ever want
+// them and a scan would otherwise carry one buffer per open file.
 func (r Result) LineIndents() []int {
-	toks := r.tokens
-	if toks == nil {
-		toks = tokenize(r.Src)
-	}
+	toks := tokenize(r.Src)
+	defer putTokens(toks)
 	return lineIndentsFrom(r.Src, toks)
 }
 
 // TokenAt returns the identifier covering off (UTF-8 bytes). Comments yield
-// an empty word. A zero Result tokenizes Src on the fly.
+// an empty word. Src is tokenized on the fly; see LineIndents.
 func (r Result) TokenAt(off int) (word string, start, end int) {
 	src := r.Src
 	if off < 0 {
@@ -42,9 +41,10 @@ func (r Result) TokenAt(off int) (word string, start, end int) {
 		off = len(src)
 	}
 	start, end = off, off
-	toks := r.tokens
-	if toks == nil && src != "" {
+	var toks []token
+	if src != "" {
 		toks = tokenize(src)
+		defer putTokens(toks)
 	}
 	for _, t := range toks {
 		if t.kind == tokEOF || off < t.start || off > t.end {
@@ -98,13 +98,17 @@ func Parse(src string) Result {
 	toks := tokenize(src)
 	p := &parser{text: src, tokens: toks}
 	root := p.parse()
+	// The tokens are not kept. Both readers -- LineIndents and TokenAt --
+	// re-tokenize when the field is nil, and every editor caller already builds
+	// a bare Result{Src: src} that has none, so retention only kept a buffer per
+	// open Result alive for the GC to scan.
+	putTokens(toks)
 	return Result{
 		Root:     root,
 		Errors:   p.errors,
 		Comments: p.comments,
 		Src:      src,
 		lines:    li,
-		tokens:   toks,
 	}
 }
 

@@ -4,6 +4,8 @@
 
 package jomini
 
+import "sync"
+
 // tokenKind enumerates the lexical token classes of Paradox script.
 type tokenKind uint8
 
@@ -49,12 +51,38 @@ func isWordTerminator(c byte) bool {
 }
 
 // tokenize lexes the entire source into tokens (with a trailing EOF). Never panics.
+// tokenPool reuses token buffers across parses. A scan walks the install four
+// times over and tokenize was 27.9% of everything it allocated, all of it thrown
+// away a moment later -- the CST slices its strings out of the source, so no
+// token outlives the parse that produced it.
+var tokenPool sync.Pool
+
+// getTokens takes a buffer sized for text, from the pool where one fits.
+func getTokens(text string) []token {
+	want := len(text)/8 + 16
+	if v := tokenPool.Get(); v != nil {
+		if b, ok := v.([]token); ok && cap(b) >= want {
+			return b[:0]
+		}
+	}
+	return make([]token, 0, want)
+}
+
+// putTokens returns a buffer. Very large ones are dropped rather than pinned:
+// one 5 MB file would otherwise keep its buffer alive for the whole run.
+func putTokens(b []token) {
+	if cap(b) > 1<<20 {
+		return
+	}
+	tokenPool.Put(b[:0]) //nolint:staticcheck // slices are the point here
+}
+
 func tokenize(text string) []token {
 	// Measured across 900 CK3 vanilla files: 8.84 bytes per token. The buffer
 	// assumed 4, so every parse over-allocated the token slice 2.2×, and a scan
 	// parses the whole install several times over. Slightly under-guessing costs
 	// at most one doubling; over-guessing costs the difference on every file.
-	tokens := make([]token, 0, len(text)/8+16)
+	tokens := getTokens(text)
 	length := len(text)
 	i := 0
 

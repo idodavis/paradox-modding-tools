@@ -264,11 +264,6 @@ func ConventionOwner(
 	return "", "", false
 }
 
-// IsStop reports a grammar/logic word that is never an object key.
-func IsStop(key string) bool {
-	return stoplist[strings.ToLower(key)]
-}
-
 func (v *Derived) mergeLocal(local *Derived) {
 	if local == nil {
 		return
@@ -360,7 +355,7 @@ func collectFieldCites(root *jomini.Root) []typedCite {
 		if _, ok := jomini.ParsePrefixed(sc.Text); ok {
 			return true
 		}
-		if !defNameRe.MatchString(sc.Text) || IsStop(sc.Text) {
+		if !jomini.IsDefName(sc.Text) || jomini.IsStop(sc.Text) {
 			return true
 		}
 		out = append(out, typedCite{prefix: a.Key.Text, id: sc.Text})
@@ -396,7 +391,7 @@ func deriveFireKeys(root *jomini.Root, eventIDs, onActionIDs map[string]bool) ma
 				}
 				continue
 			}
-			if !a.Key.Quoted && !stoplist[strings.ToLower(a.Key.Text)] &&
+			if !a.Key.Quoted && !jomini.IsStop(a.Key.Text) &&
 				loc.Classify(a.Key.Text) == loc.PropNone &&
 				!strings.EqualFold(a.Key.Text, "id") {
 				for _, to := range fireTargets(a.Value) {
@@ -453,7 +448,7 @@ func fireTargets(v jomini.Value) []string {
 }
 
 func classifyFireTarget(s string, eventIDs, onActionIDs map[string]bool) string {
-	if eventIDs[s] || eventIDRe.MatchString(s) {
+	if eventIDs[s] || jomini.IsEventID(s) {
 		return "event"
 	}
 	if onActionIDs[s] {
@@ -553,7 +548,7 @@ func addNestedCite(
 	dst map[string][]string, defKeys map[string]bool, gameID string,
 	c typedCite, prefixKinds map[string]string,
 ) {
-	if c.id == "" || defKeys[c.id] || stoplist[strings.ToLower(c.id)] {
+	if c.id == "" || defKeys[c.id] || jomini.IsStop(c.id) {
 		return
 	}
 	childKind := nestedChildKind(gameID, c.prefix, c.id, prefixKinds)
@@ -644,9 +639,9 @@ func deriveNestedShapes(
 		return nil
 	}
 	type acc struct {
-		parent, group, prefix string
-		ok, clash             bool
-		letters               map[byte]bool
+		parent, group string
+		ok, clash     bool
+		letters       map[byte]bool
 	}
 	byChild := map[string]*acc{}
 	// A second walk: where those ids sit is only answerable once every citation
@@ -769,13 +764,15 @@ func applyNestedShape(
 	var defs []Def
 	add := func(a *jomini.Assignment) {
 		name := game.KeyIdentity(gameID, a.Key.Text)
-		if !defNameRe.MatchString(name) || stoplist[strings.ToLower(name)] {
+		if !jomini.IsDefName(name) || jomini.IsStop(name) {
 			return
 		}
 		if !looksLikeObject(a.Value) {
 			return
 		}
-		defs = append(defs, makeDef(shape.ChildKind, name, path, origin, a.Key.Range, li))
+		d := makeDef(shape.ChildKind, name, path, origin, a.Key.Range, li)
+		d.Nested = true
+		defs = append(defs, d)
 	}
 	if shape.GroupKey != "" {
 		var walk func([]jomini.Statement)
@@ -934,7 +931,7 @@ func keywordDeclared(stmts []jomini.Statement, i int) bool {
 	if !ok || sc.Quoted {
 		return false
 	}
-	return keywordNameKind(sc.Text) != ""
+	return game.DeclKeywordKind(sc.Text) != ""
 }
 
 func defKeySet(defs []Def) map[string]bool {
@@ -1316,30 +1313,6 @@ func harvestGetSet(src string) map[string]bool {
 func isDataFnByte(c byte) bool {
 	return c == '_' || (c >= '0' && c <= '9') ||
 		(c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
-}
-
-func leadingKindProse(text string) string {
-	var lines []string
-	for _, raw := range strings.Split(text, "\n") {
-		body, hashed := peelDocLine(raw)
-		if body == "" {
-			if len(lines) > 0 {
-				break
-			}
-			continue
-		}
-		if !hashed {
-			break
-		}
-		if docKeyRe.MatchString(body) || attrBulletRe.MatchString(body) {
-			break
-		}
-		lines = append(lines, body)
-		if len(lines) >= 4 {
-			break
-		}
-	}
-	return authorProse(lines)
 }
 
 // locField reports a script property the corpus shows holds localization keys,

@@ -34,7 +34,7 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 		})}
 	}
 	if ins.Def != nil {
-		return definitionSites(s, ins.Name, ins.Def)
+		return definitionSites(s, path, ins.Name, ins.Def)
 	}
 	return nil
 }
@@ -55,8 +55,11 @@ func References(s *session.Session, path string, line, col int) []Location {
 }
 
 // definitionSites lists every def of key, FIOS/Resolve winner first.
-func definitionSites(s *session.Session, key string, winner *catalog.Def) []Location {
+func definitionSites(
+	s *session.Session, from, key string, winner *catalog.Def,
+) []Location {
 	seen := map[string]bool{}
+	here := session.CanonPath(from)
 	var out []Location
 	// An ephemeral winner (saved scope, script param) confines the sites to its
 	// own kind; a real def does not, so this is resolved once up front.
@@ -70,6 +73,14 @@ func definitionSites(s *session.Session, key string, winner *catalog.Def) []Loca
 	wantNamespace := winner != nil && jomini.CanonicalKind(winner.Kind) == "namespace"
 	add := func(d catalog.Def) {
 		if d.Key != key {
+			return
+		}
+		// A definition the other file declares inline is invisible to this one:
+		// the engine resolves an inline `scripted_trigger foo = { ... }` within
+		// its own file, which is why mods carry the same one in several event
+		// files. Offering it turned F12 into a peek listing two bodies, one of
+		// which this file cannot call. See catalog.Def.Local.
+		if d.Local && session.CanonPath(d.Path) != here {
 			return
 		}
 		if ephemeralKind != "" && jomini.CanonicalKind(d.Kind) != ephemeralKind {

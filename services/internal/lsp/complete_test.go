@@ -488,6 +488,10 @@ func TestValueSourceOrder(t *testing.T) {
 		"localization",
 		"slot-declared",
 		"target-declared",
+		// The game stating a closed set in its own documentation. Declared, so
+		// above the derived slot and the harvested enum; below the script_docs
+		// sources, which name a database rather than a type word.
+		"slot-declared-doc",
 		"slot-derived",
 		"macro-params",
 		"macro-call-params",

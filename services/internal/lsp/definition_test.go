@@ -558,3 +558,37 @@ func TestDefinitionHasNoDuplicateSites(t *testing.T) {
 		}
 	}
 }
+
+// TestDefinitionConfinesInlineDeclarations: F12 on a call must offer only the
+// body this file can actually reach. Listing the other file's copy made the
+// editor open a peek with two bodies, one of them invisible to the engine here.
+func TestDefinitionConfinesInlineDeclarations(t *testing.T) {
+	const decl = "scripted_trigger allow_naming_trigger = {\n\tis_ai = no\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/birth_events.txt": "namespace = birth\n\n" + decl +
+			"\nbirth.1 = {\n\ttrigger = {\n\t\tallow_naming_trigger = yes\n\t}\n}\n",
+		"events/quieter_events.txt": "namespace = qe\n\n" + decl,
+	}, nil, nil)
+
+	path := root + "/events/birth_events.txt"
+	src := s.FileText(path)
+	line, col := -1, 0
+	for i, l := range strings.Split(src, "\n") {
+		if c := strings.Index(l, "allow_naming_trigger = yes"); c >= 0 {
+			line, col = i, c+3
+			break
+		}
+	}
+	if line < 0 {
+		t.Fatalf("call site not found in\n%s", src)
+	}
+	locs := Definition(s, path, line, col)
+	if len(locs) == 0 {
+		t.Fatalf("no definition for the inline trigger")
+	}
+	for _, l := range locs {
+		if session.CanonPath(l.URI) != session.CanonPath(path) {
+			t.Errorf("jumped to %s; an inline declaration in another file is not visible here", l.URI)
+		}
+	}
+}

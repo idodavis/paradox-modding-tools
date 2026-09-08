@@ -532,6 +532,74 @@ func (s *Session) FieldValueKind(field string) string {
 	return s.fieldValueKinds[strings.ToLower(field)]
 }
 
+// DeclaredFieldType is what the game's own shipped documentation says a field
+// holds. Per-kind first, because a field name means different things in
+// different blocks -- `type` is a value set inside a scripted relation and an
+// event presentation kind inside an event.
+//
+// Install-only, like StructKind and for the same reason: this outranks the
+// derived types, so what feeds it has to be the game speaking, not a mod's
+// readme.
+func (s *Session) DeclaredFieldType(kind, field string) catalog.DeclaredType {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil {
+		return catalog.DeclaredType{}
+	}
+	lf := strings.ToLower(field)
+	for _, k := range []string{kind, jomini.CanonicalKind(kind)} {
+		if k == "" {
+			continue
+		}
+		if m := s.cache.DeclaredFieldTypesByKind[k]; m != nil {
+			if raw := m[lf]; raw != "" {
+				return catalog.ClassifyDeclaredType(raw)
+			}
+		}
+	}
+	if raw := s.cache.DeclaredFieldTypes[lf]; raw != "" {
+		return catalog.ClassifyDeclaredType(raw)
+	}
+	return catalog.DeclaredType{}
+}
+
+// TokenParams is the set of argument names the game declares inside a token's
+// block, from the usage lines script_docs prints beside it. Arguments are
+// consumed by the token, not executed in the scope it produces.
+func (s *Session) TokenParams(key string) map[string]bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.schemaLocked().TokenParams(key)
+}
+
+// DeclaredValueSet is the closed set a game's own documentation states for a
+// field of this kind, or nil.
+//
+// Per-kind only, with no global fallback, unlike DeclaredFieldType. The global
+// map holds whatever the first file to document a name happened to say about
+// it, and `type` is `<diplomacy/subject/union>` inside a scripted relation and
+// an event presentation kind inside an event -- GAME-SYNTAX 3f. A hover can
+// afford to be wrong about that; a check that accuses correct script cannot.
+func (s *Session) DeclaredValueSet(kind, field string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil {
+		return nil
+	}
+	lf := strings.ToLower(field)
+	for _, k := range []string{kind, jomini.CanonicalKind(kind)} {
+		if k == "" {
+			continue
+		}
+		if m := s.cache.DeclaredFieldTypesByKind[k]; m != nil {
+			if raw := m[lf]; raw != "" {
+				return catalog.ClassifyDeclaredType(raw).Values
+			}
+		}
+	}
+	return nil
+}
+
 // FieldEnums returns unique harvested scalar values for a kind+field, or nil.
 func (s *Session) FieldEnums(kind, field string) []string {
 	s.mu.RLock()
@@ -900,4 +968,18 @@ func (s *Session) IsNestedMember(block, key string) bool {
 		}
 	}
 	return false
+}
+
+// BlockIsJudgeable reports a block whose members can be judged rather than
+// merely suggested: a name exactly one kind uses.
+func (s *Session) BlockIsJudgeable(block string) bool {
+	if block == "" {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil {
+		return false
+	}
+	return s.cache.UnambiguousBlocks[strings.ToLower(block)]
 }

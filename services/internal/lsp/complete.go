@@ -364,6 +364,16 @@ var valueSources = []valueSource{
 		items := targetItems(s, parentKey, prefix)
 		return items, len(items) > 0
 	}},
+	// A closed set the game states in its own documentation. Above slot-derived
+	// for the usual reason, and it declines on an empty set rather than on an
+	// empty result: "the docs name no type for this field" is not an answer.
+	{"slot-declared-doc", func(s *session.Session, kind, parentKey, prefix string) ([]CompletionItem, bool) {
+		dt := s.DeclaredFieldType(kind, parentKey)
+		if len(dt.Values) == 0 {
+			return nil, false
+		}
+		return enumItems(dt.Values, prefix), true
+	}},
 	{"slot-derived", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
 		k := s.FieldValueKind(parentKey)
 		if k == "" {

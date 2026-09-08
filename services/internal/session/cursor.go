@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 
-	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/parser/loc"
@@ -325,7 +324,7 @@ func macroCallAt(res jomini.Result, off int) (kind, name string, assign *jomini.
 		for _, st := range stmts {
 			if vs, ok := st.(*jomini.ValueStmt); ok {
 				if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted &&
-					!catalog.IsStop(sc.Text) {
+					!jomini.IsStop(sc.Text) {
 					marker, markStart, markEnd = sc.Text, sc.Range.Start, sc.Range.End
 				} else {
 					marker = ""

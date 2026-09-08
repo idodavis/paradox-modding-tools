@@ -988,7 +988,7 @@ func (s *Session) scopeTargetExpr(d *catalog.Def) string {
 		if isIteratorKey(low) {
 			return iteratorLabel(a)
 		}
-		if catalog.IsStop(k) || jomini.ScriptSlot(k) != "" {
+		if jomini.IsStop(k) || jomini.ScriptSlot(k) != "" {
 			if low == "root" {
 				return "root"
 			}
@@ -1466,6 +1466,20 @@ func (s *Session) fieldAccepts(kind, field string) string {
 	// Declared slot: script_docs name the database this key holds.
 	if r, ok := jomini.ScriptName(field); ok && r.Kind != "" {
 		return "accepts a " + PrettyKind(r.Kind)
+	}
+	// Declared by the game's own documentation. Above every derived source and
+	// above the harvested enum, which is only ever a sample of how vanilla
+	// happens to use the field; below TokenTarget and ScriptName because those
+	// come from script_docs, which is the same authority in machine-readable
+	// form and names a database rather than a type word.
+	if dt := s.DeclaredFieldType(kind, field); dt.Known() {
+		if len(dt.Values) > 0 {
+			return "one of: " + strings.Join(dt.Values, ", ")
+		}
+		if dt.Array {
+			return "accepts several " + dt.Prim + " values"
+		}
+		return "accepts a " + dt.Prim
 	}
 	// Derived slot: what the install walk inferred, behind its coverage floor.
 	if k := s.FieldValueKind(field); k != "" && !jomini.IsEphemeral(k) {

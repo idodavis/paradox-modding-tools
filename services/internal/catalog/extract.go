@@ -5,7 +5,6 @@ package catalog
 import (
 	"cmp"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -14,11 +13,7 @@ import (
 	"paradox-modding-tools/services/internal/parser/loc"
 )
 
-var (
-	defNameRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
-	eventIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+\.\d+$`)
-	nameOKRe  = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-)
+var ()
 
 // stoplist are grammar/logic words never harvested as structure keys or vocabulary.
 // neverAKey is the subset of stoplist that is not a key anywhere: a value, an
@@ -27,15 +22,6 @@ var (
 var neverAKey = map[string]bool{
 	"this": true, "root": true, "prev": true, "from": true,
 	"yes": true, "no": true,
-}
-
-var stoplist = map[string]bool{
-	"if": true, "else": true, "else_if": true, "limit": true, "and": true,
-	"or": true, "not": true, "nor": true, "nand": true, "this": true,
-	"root": true, "prev": true, "from": true, "yes": true, "no": true,
-	"value": true, "add": true, "multiply": true, "divide": true,
-	"subtract": true, "min": true, "max": true, "factor": true, "base": true,
-	"first_valid": true, "triggered_desc": true, "random_list": true,
 }
 
 // EdgeKindCall marks a scripted-effect invocation (not drawn on the canvas).
@@ -63,11 +49,16 @@ type FileExtract struct {
 	// StructNested is block key -> member key -> occurrences, so a member is
 	// known under the block it belongs to rather than only under its file's kind.
 	StructNested map[string]map[string]int
-	StructBlocks map[string]int
-	Vocab        map[string]bool
-	GUITypes     map[string]bool
-	GUIProps     map[string]bool
-	FieldRHS     map[string]map[string]bool
+	// StructNestedKind is the kind whose files these blocks were seen in. A
+	// block name means different things under different kinds — CK3 has an
+	// `option` in an event and another in accolade_names — so a check that
+	// judges an absence needs to know whether the name is ambiguous.
+	StructNestedKind string
+	StructBlocks     map[string]int
+	Vocab            map[string]bool
+	GUITypes         map[string]bool
+	GUIProps         map[string]bool
+	FieldRHS         map[string]map[string]bool
 	// FieldListRHS is the bare members of a list value, keyed by the field that
 	// holds the list. See extractFieldListValues.
 	FieldListRHS map[string]map[string]bool
@@ -157,6 +148,7 @@ func extractForms(
 		// texticon produced no card at all. The nested harvest is generic —
 		// key to child — so it reads GUI as readily as script.
 		_, _, _, ex.StructNested = harvestStructVocab(res.Root)
+		ex.StructNestedKind = "gui"
 	case game.ModeTopLevelKey, game.ModeEventID:
 		if rule.Mode == game.ModeEventID {
 			var nsRefs []Ref
@@ -189,6 +181,7 @@ func extractForms(
 		counts, blocks, vocab, nested := harvestStructVocab(res.Root)
 		ex.StructCounts = counts
 		ex.StructNested = nested
+		ex.StructNestedKind = kind
 		if harvestBodies {
 			ex.StructKind = kind
 			ex.StructBlocks, ex.Vocab = blocks, vocab
@@ -355,7 +348,7 @@ func leadingComment(src string, li *jomini.LineIndex, line int) string {
 		if n+1 < li.LineCount() {
 			end = li.LineStart(n + 1)
 		}
-		body, hashed := peelDocLine(src[start:end])
+		body, hashed := jomini.PeelComment(src[start:end])
 		if !hashed {
 			break // a blank line or real script ends the block
 		}
@@ -382,7 +375,7 @@ func extractTopLevel(root *jomini.Root, li *jomini.LineIndex, gameID, kind, path
 			continue
 		}
 		name := game.KeyIdentity(gameID, a.Key.Text)
-		if !defNameRe.MatchString(name) || name == "namespace" {
+		if !jomini.IsDefName(name) || name == "namespace" {
 			continue
 		}
 		// A date is not a definition. The games key their history files by one —
@@ -414,14 +407,14 @@ func extractEventID(
 		}
 		if strings.EqualFold(a.Key.Text, "namespace") {
 			sc, ok := a.Value.(*jomini.Scalar)
-			if !ok || sc.Quoted || sc.Text == "" || !defNameRe.MatchString(sc.Text) {
+			if !ok || sc.Quoted || sc.Text == "" || !jomini.IsDefName(sc.Text) {
 				continue
 			}
 			currentNs = sc.Text
 			defs = append(defs, makeDef("namespace", sc.Text, path, origin, sc.Range, li))
 			continue
 		}
-		if !eventIDRe.MatchString(a.Key.Text) {
+		if !jomini.IsEventID(a.Key.Text) {
 			continue
 		}
 		defs = append(defs, makeDef("event", a.Key.Text, path, origin, a.Key.Range, li))
@@ -434,20 +427,6 @@ func extractEventID(
 		}
 	}
 	return defs, refs
-}
-
-func keywordNameKind(kw string) string {
-	switch strings.ToLower(kw) {
-	case "type", "template", "local_template":
-		return "gui_type"
-	case "types":
-		return "types"
-	default:
-		if IsStop(kw) {
-			return ""
-		}
-		return kw
-	}
 }
 
 // extractKeywordName harvests `type X` / `template X` GUI forms and any other
@@ -468,7 +447,7 @@ func extractKeywordName(
 			if !ok || sc.Quoted {
 				continue
 			}
-			kind := keywordNameKind(sc.Text)
+			kind := game.DeclKeywordKind(sc.Text)
 			if kind == "" {
 				continue
 			}
@@ -482,10 +461,12 @@ func extractKeywordName(
 				}
 				continue
 			}
-			if !defNameRe.MatchString(named.Key.Text) {
+			if !jomini.IsDefName(named.Key.Text) {
 				continue
 			}
-			defs = append(defs, makeDef(kind, named.Key.Text, path, origin, named.Key.Range, li))
+			d := makeDef(kind, named.Key.Text, path, origin, named.Key.Range, li)
+			d.Local = game.DeclIsLocal(sc.Text)
+			defs = append(defs, d)
 			if kind == "gui_type" {
 				guiTypes[named.Key.Text] = true
 			}
@@ -513,7 +494,7 @@ func extractKeywordName(
 			return true
 		}
 		k := strings.ToLower(a.Key.Text)
-		if nameOKRe.MatchString(k) && !stoplist[k] {
+		if jomini.IsLowerName(k) && !jomini.IsStop(k) {
 			guiProps[k] = true
 		}
 		return true
@@ -551,10 +532,10 @@ func harvestStructVocab(root *jomini.Root) (
 				continue
 			}
 			k := strings.ToLower(ca.Key.Text)
-			if !nameOKRe.MatchString(k) || neverAKey[k] {
+			if !jomini.IsLowerName(k) || neverAKey[k] {
 				continue
 			}
-			if !stoplist[k] {
+			if !jomini.IsStop(k) {
 				vocab[k] = true
 			}
 			// Recorded and recursed even when the kind vocabulary stoplists it.
@@ -589,7 +570,7 @@ func harvestStructVocab(root *jomini.Root) (
 				continue
 			}
 			k := strings.ToLower(ca.Key.Text)
-			if !nameOKRe.MatchString(k) || stoplist[k] {
+			if !jomini.IsLowerName(k) || jomini.IsStop(k) {
 				continue
 			}
 			counts[k]++
@@ -645,7 +626,7 @@ func objectRefKey(gameID, kind, text string) (string, bool) {
 	// Grammar words are never object names. `c:FRA ?= this` recorded `this` as a
 	// reference 253 times on one Vic3 mod; the stoplist already knew better, but
 	// nothing on the reference path consulted it.
-	if IsStop(text) {
+	if jomini.IsStop(text) {
 		return "", false
 	}
 	if _, ok := jomini.ParsePrefixed(text); ok {
@@ -747,7 +728,7 @@ func extractRefsAndEdges(
 						// trigger_event.
 						numericEvent := isDigitKey(key) && fk == "event"
 						walkFireTargets(a.Value, derived, func(to string, start, end int) {
-							if numericEvent && !eventIDRe.MatchString(to) {
+							if numericEvent && !jomini.IsEventID(to) {
 								return
 							}
 							refs = append(refs, Ref{

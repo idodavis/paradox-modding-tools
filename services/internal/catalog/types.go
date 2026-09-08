@@ -14,7 +14,7 @@ import (
 // before deriveNestedOptions was made order-independent has 352 CK3 defs under
 // whichever kind that scan's threads happened to pick, and nothing else would
 // invalidate it.
-const CacheFormatVersion = 29
+const CacheFormatVersion = 33
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -52,6 +52,20 @@ type Def struct {
 	Origin   string `json:"origin,omitempty"`
 	OwnerKey string `json:"ownerKey,omitempty"`
 	Value    string `json:"value,omitempty"`
+	// Nested marks a definition harvested from inside another one rather than at
+	// a file's top level: a game rule's options, a script parameter, the members
+	// of a nested shape. They are real definitions -- they are cited, hovered and
+	// navigated to -- but they are not the file's subject, and a check that
+	// treats them as one reports every activity type's `special_guests` as a
+	// duplicate of every other's.
+	Nested bool `json:"nested,omitempty"`
+	// Local marks a definition the file DECLARES inline -- `scripted_trigger
+	// foo = { ... }`, a GUI `local_template` -- rather than one a folder gives a
+	// kind to. The engine resolves these per file, so a repeated Local key is
+	// required rather than a defect, and a call must never be navigated to a
+	// Local body in another file. game.LocalDeclKeywords lists the keywords and
+	// which game writes them; GAME-SYNTAX 16 has the evidence.
+	Local bool `json:"local,omitempty"`
 
 	// Doc is the comment block written immediately above the definition. For
 	// most objects it is the only description that exists: script_docs covers
@@ -153,6 +167,10 @@ type VanillaCache struct {
 	// first. What lets a query answer "what belongs inside triggered_desc?"
 	// rather than only "what belongs inside an event?".
 	NestedMembers map[string][]string `json:"nestedMembers,omitempty"`
+	// UnambiguousBlocks are the block names used by exactly one kind. Only those
+	// can have an absence judged: `option` is a block in a CK3 event and another
+	// in accolade_names, holding nothing in common.
+	UnambiguousBlocks map[string]bool `json:"unambiguousBlocks,omitempty"`
 	// AmbiguousFields are field names that appear inside more than one kind of
 	// block, so the install's single description of them is about the wrong
 	// position most of the time.
@@ -167,14 +185,23 @@ type VanillaCache struct {
 	CallRefs         []Ref                          `json:"callRefs,omitempty"` // scripted_* call sites
 	FieldValueKinds  map[string]string              `json:"fieldValueKinds,omitempty"`
 	FieldEnumsByKind map[string]map[string][]string `json:"fieldEnumsByKind,omitempty"`
-	PrefixKinds      map[string]string              `json:"prefixKinds,omitempty"`
-	FireKeys         map[string]string              `json:"fireKeys,omitempty"`
-	NestedShapes     []NestedShape                  `json:"nestedShapes,omitempty"`
-	Wrappers         []string                       `json:"wrappers,omitempty"`
-	LocAffixes       map[string][]LocAffix          `json:"locAffixes,omitempty"`
-	LocFields        []string                       `json:"locFields,omitempty"`
-	LocListFields    []string                       `json:"locListFields,omitempty"`
-	LocMemberAffixes map[string][]LocAffix          `json:"locMemberAffixes,omitempty"`
+	// DeclaredFieldTypes is what a game's own shipped documentation says a field
+	// holds, verbatim: `yes/no`, `script value`, `bool`, `database key, optional`.
+	// Every install writes some of these -- CK3 in `### brief: name ( type )`
+	// headers, all three in `key = <type> prose` -- and they are DECLARED, so
+	// they outrank FieldValueKinds and FieldEnumsByKind, which are inferred from
+	// how vanilla happens to use a field. Raw on purpose: ClassifyDeclaredType
+	// decides what the words mean, in one place.
+	DeclaredFieldTypes       map[string]string            `json:"declaredFieldTypes,omitempty"`
+	DeclaredFieldTypesByKind map[string]map[string]string `json:"declaredFieldTypesByKind,omitempty"`
+	PrefixKinds              map[string]string            `json:"prefixKinds,omitempty"`
+	FireKeys                 map[string]string            `json:"fireKeys,omitempty"`
+	NestedShapes             []NestedShape                `json:"nestedShapes,omitempty"`
+	Wrappers                 []string                     `json:"wrappers,omitempty"`
+	LocAffixes               map[string][]LocAffix        `json:"locAffixes,omitempty"`
+	LocFields                []string                     `json:"locFields,omitempty"`
+	LocListFields            []string                     `json:"locListFields,omitempty"`
+	LocMemberAffixes         map[string][]LocAffix        `json:"locMemberAffixes,omitempty"`
 	// LocKeyAffixes are shapes that derive one loc key from another, so a key
 	// nothing cites is still explained. Not per kind: the stem is a key, not a def.
 	LocKeyAffixes []LocKeyAffix     `json:"locKeyAffixes,omitempty"`
@@ -275,6 +302,12 @@ func prepareCacheOnce(c *VanillaCache) {
 	}
 	if c.FieldEnumsByKind == nil {
 		c.FieldEnumsByKind = map[string]map[string][]string{}
+	}
+	if c.DeclaredFieldTypes == nil {
+		c.DeclaredFieldTypes = map[string]string{}
+	}
+	if c.DeclaredFieldTypesByKind == nil {
+		c.DeclaredFieldTypesByKind = map[string]map[string]string{}
 	}
 	if c.PrefixKinds == nil {
 		c.PrefixKinds = map[string]string{}

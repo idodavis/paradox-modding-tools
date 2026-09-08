@@ -25,11 +25,7 @@ import (
 const locValueLimit = 200
 const scanConcurrency = 8
 
-var (
-	docKeyRe     = regexp.MustCompile(`^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$`)
-	attrBulletRe = regexp.MustCompile(`^-\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::|=)\s*(.*)$`)
-	tokenRe      = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)`)
-)
+var tokenRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)`)
 
 // ScanRequest is the install harvest input. script_docs come from UserDataDir.
 type ScanRequest struct {
@@ -82,7 +78,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	}
 
 	progress(onProgress, 80, "reading game info")
-	fieldInfo, fieldByKind, kindInfo, docStructs := harvestGameInfo(req.GameID, inv.info)
+	fieldInfo, fieldByKind, kindInfo, docStructs, declTypes, declByKind := harvestGameInfo(req.GameID, inv.info)
 	for kind, keys := range docStructs {
 		set := acc.structures[kind]
 		if set == nil {
@@ -109,42 +105,45 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	// noise like `$CHARACTER$.culture`. Data functions are harvested in the
 	// first corpus pass, where the source text is already in hand.
 	c := &VanillaCache{
-		FormatVersion:    CacheFormatVersion,
-		InstallID:        req.InstallID,
-		GameID:           req.GameID,
-		InstallPath:      req.InstallPath,
-		GameVersion:      version,
-		ScannedAt:        time.Now().UTC().Format(time.RFC3339),
-		Defs:             dropEphemeralDefs(acc.defs),
-		Edges:            acc.edges,
-		LocRefs:          append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
-		CallRefs:         macroCallRefs(acc.refs),
-		FieldValueKinds:  kinds,
-		FieldEnumsByKind: deriveFieldEnums(acc.fieldRHSByKind, kinds),
-		PrefixKinds:      derived.PrefixKinds,
-		KindScope:        derived.KindScope,
-		FireKeys:         derived.FireKeys,
-		NestedShapes:     derived.NestedShapes,
-		Wrappers:         sortedKeys(derived.Wrappers),
-		LocAffixes:       deriveLocAffixes(acc.defs, locKeys),
-		LocFields:        sortedKeys(derived.LocFields),
-		LocListFields:    sortedKeys(derived.LocListFields),
-		LocMemberAffixes: deriveLocMemberAffixes(structures, locKeys),
-		LocKeyAffixes:    deriveLocKeyAffixes(locKeys),
-		KindInfo:         kindInfo,
-		FieldInfo:        fieldInfo,
-		FieldInfoByKind:  fieldByKind,
-		Structures:       structures,
-		NestedMembers:    nestedMembers,
-		AmbiguousFields:  deriveAmbiguousFields(nestedMembers),
-		Snippets:         deriveSnippets(acc.structures, acc.structBlocks, acc.defs),
-		StructureBlocks:  blockKeys(acc.structures, acc.structBlocks),
-		Vocabulary:       sortedKeys(acc.vocab),
-		GUITypes:         sortedKeys(acc.guiTypes),
-		GUIProps:         sortedKeys(acc.guiProps),
-		DataFunctions:    sortedKeys(dataFns),
-		LocEngineSlots:   engineSlots,
-		MetaKeys:         readMetaKeys(req.InstallPath, inv.meta),
+		FormatVersion:            CacheFormatVersion,
+		InstallID:                req.InstallID,
+		GameID:                   req.GameID,
+		InstallPath:              req.InstallPath,
+		GameVersion:              version,
+		ScannedAt:                time.Now().UTC().Format(time.RFC3339),
+		Defs:                     dropEphemeralDefs(acc.defs),
+		Edges:                    acc.edges,
+		LocRefs:                  append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
+		CallRefs:                 macroCallRefs(acc.refs),
+		FieldValueKinds:          kinds,
+		FieldEnumsByKind:         deriveFieldEnums(acc.fieldRHSByKind, kinds),
+		PrefixKinds:              derived.PrefixKinds,
+		KindScope:                derived.KindScope,
+		FireKeys:                 derived.FireKeys,
+		NestedShapes:             derived.NestedShapes,
+		Wrappers:                 sortedKeys(derived.Wrappers),
+		LocAffixes:               deriveLocAffixes(acc.defs, locKeys),
+		LocFields:                sortedKeys(derived.LocFields),
+		LocListFields:            sortedKeys(derived.LocListFields),
+		LocMemberAffixes:         deriveLocMemberAffixes(structures, locKeys),
+		LocKeyAffixes:            deriveLocKeyAffixes(locKeys),
+		KindInfo:                 kindInfo,
+		FieldInfo:                fieldInfo,
+		FieldInfoByKind:          fieldByKind,
+		DeclaredFieldTypes:       declTypes,
+		DeclaredFieldTypesByKind: declByKind,
+		Structures:               structures,
+		NestedMembers:            nestedMembers,
+		UnambiguousBlocks:        unambiguousBlocks(acc.blockKinds),
+		AmbiguousFields:          deriveAmbiguousFields(nestedMembers),
+		Snippets:                 deriveSnippets(acc.structures, acc.structBlocks, acc.defs),
+		StructureBlocks:          blockKeys(acc.structures, acc.structBlocks),
+		Vocabulary:               sortedKeys(acc.vocab),
+		GUITypes:                 sortedKeys(acc.guiTypes),
+		GUIProps:                 sortedKeys(acc.guiProps),
+		DataFunctions:            sortedKeys(dataFns),
+		LocEngineSlots:           engineSlots,
+		MetaKeys:                 readMetaKeys(req.InstallPath, inv.meta),
 	}
 
 	progress(onProgress, 90, "reading script_docs")
@@ -208,7 +207,7 @@ func ClassifyRel(rel, name string) string {
 	lower := strings.ToLower(name)
 	slash := strings.ReplaceAll(rel, "\\", "/")
 	switch {
-	case isGameInfoName(name):
+	case game.IsDocFile(name):
 		return "info"
 	case strings.HasSuffix(lower, ".gui"):
 		return "gui"
@@ -231,20 +230,6 @@ func ClassifyRel(rel, name string) string {
 		return "script"
 	}
 	return ""
-}
-
-// isGameInfoName reports CK3 `_*.info` / `*.md` and EU5 readme/info text files.
-// Underscored data (`_default.txt`, `_hardcoded.txt`) stays unclassified.
-func isGameInfoName(name string) bool {
-	lower := strings.ToLower(name)
-	if strings.HasSuffix(lower, ".md") {
-		return true
-	}
-	if strings.HasPrefix(name, "_") && strings.HasSuffix(lower, ".info") {
-		return true
-	}
-	stem := strings.Trim(strings.TrimSuffix(lower, filepath.Ext(lower)), "_")
-	return stem == "readme" || stem == "info"
 }
 
 // walkClassified walks root and hands each ClassifyRel-recognized file to fn.
@@ -297,7 +282,10 @@ type accum struct {
 	// nested is block key -> member key -> occurrences, across the whole walk.
 	// Not keyed by kind: a block named triggered_desc holds the same members
 	// wherever it appears, and merging the evidence makes the floor meaningful.
-	nested         map[string]map[string]int
+	nested map[string]map[string]int
+	// blockKinds is block name -> the kinds it was seen under. A name used by
+	// one kind can be judged; a name used by several cannot.
+	blockKinds     map[string]map[string]bool
 	vocab          map[string]bool
 	guiTypes       map[string]bool
 	guiProps       map[string]bool
@@ -313,6 +301,7 @@ func newAccum() *accum {
 		structures:     map[string]map[string]int{},
 		structBlocks:   map[string]map[string]int{},
 		nested:         map[string]map[string]int{},
+		blockKinds:     map[string]map[string]bool{},
 		vocab:          map[string]bool{},
 		guiTypes:       map[string]bool{},
 		guiProps:       map[string]bool{},
@@ -337,6 +326,12 @@ func (a *accum) merge(ex FileExtract) {
 	}
 	for parent, members := range ex.StructNested {
 		addCounts(&a.nested, parent, members)
+		if ex.StructNestedKind != "" {
+			if a.blockKinds[parent] == nil {
+				a.blockKinds[parent] = map[string]bool{}
+			}
+			a.blockKinds[parent][ex.StructNestedKind] = true
+		}
 	}
 	maps.Copy(a.vocab, ex.Vocab)
 	maps.Copy(a.guiTypes, ex.GUITypes)
@@ -765,15 +760,19 @@ func HarvestLoc(ctx context.Context, gameID, installPath, locLang string) (*Vani
 	return v, err
 }
 
-// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field prose.
+// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field
+// prose and the declared types written beside it.
 func harvestGameInfo(gameID string, docs []fileRef) (
 	fieldDocs map[string]string,
 	byKind map[string]map[string]string,
 	kindInfo map[string]string,
 	structs map[string]map[string]bool,
+	declTypes map[string]string,
+	declByKind map[string]map[string]string,
 ) {
 	fieldDocs, byKind, structs = map[string]string{}, map[string]map[string]string{}, map[string]map[string]bool{}
 	kindInfo = map[string]string{}
+	declTypes, declByKind = map[string]string{}, map[string]map[string]string{}
 	for _, f := range docs {
 		raw, err := os.ReadFile(f.abs)
 		if err != nil {
@@ -781,11 +780,30 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 		}
 		kind := game.MatchExtract(gameID, f.rel).Kind
 		if kind != "" && kindInfo[kind] == "" {
-			if prose := leadingKindProse(string(raw)); prose != "" {
+			if prose := game.LeadingKindProse(string(raw)); prose != "" {
 				kindInfo[kind] = prose
 			}
 		}
-		for key, doc := range harvestDocFile(string(raw)) {
+		harvested, typed := game.ParseDocFile(string(raw))
+		// Types are filed the same way prose is: globally for the fields whose
+		// name means one thing everywhere, and per kind because it does not --
+		// `type` is a value set inside a scripted relation and something else
+		// entirely inside an event. Per-kind wins at lookup.
+		for key, t := range typed {
+			if declTypes[key] == "" {
+				declTypes[key] = t
+			}
+			if kind == "" {
+				continue
+			}
+			if declByKind[kind] == nil {
+				declByKind[kind] = map[string]string{}
+			}
+			if declByKind[kind][key] == "" {
+				declByKind[kind][key] = t
+			}
+		}
+		for key, doc := range harvested {
 			if doc != "" && fieldDocs[key] == "" {
 				fieldDocs[key] = doc
 			}
@@ -807,113 +825,7 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 			}
 		}
 	}
-	return fieldDocs, byKind, kindInfo, structs
-}
-
-// harvestDocFile extracts field prose from `_*.info`, markdown, and commented
-// READMEs. Comments above a key, on the same line, or immediately before a
-// closing `}` (EU5 `key = { # desc }` / below-the-brace) all attach. Fully
-// hashed lines are peeled so templates still yield `key = value` pairs.
-// `# - key: desc` attribute lists are harvested.
-func harvestDocFile(text string) map[string]string {
-	out := map[string]string{}
-	var pending []string
-	lastKey := ""
-	for _, raw := range strings.Split(text, "\n") {
-		body, hashed := peelDocLine(raw)
-		if body == "" {
-			pending = pending[:0]
-			continue
-		}
-		if m := attrBulletRe.FindStringSubmatch(body); m != nil {
-			putFieldDoc(out, m[1], attrProse(m[2]))
-			pending = pending[:0]
-			lastKey = ""
-			continue
-		}
-		if m := docKeyRe.FindStringSubmatch(body); m != nil {
-			key := strings.ToLower(m[2])
-			inline := inlineHashDoc(m[3])
-			putFieldDoc(out, key, prose(append(pending, inline)))
-			if nameOKRe.MatchString(key) && !stoplist[key] {
-				lastKey = key
-			} else {
-				lastKey = ""
-			}
-			pending = pending[:0]
-			continue
-		}
-		if body == "}" || strings.HasPrefix(body, "}") {
-			if lastKey != "" {
-				appendFieldDoc(out, lastKey, prose(pending))
-			}
-			pending = pending[:0]
-			continue
-		}
-		if hashed {
-			pending = append(pending, body)
-			continue
-		}
-		pending = pending[:0]
-	}
-	return out
-}
-
-// peelDocLine strips leading `#` markers so commented READMEs parse as script.
-func peelDocLine(raw string) (body string, hashed bool) {
-	t := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
-	if t == "" {
-		return "", false
-	}
-	hashed = strings.HasPrefix(t, "#")
-	for strings.HasPrefix(t, "#") {
-		t = strings.TrimSpace(t[1:])
-	}
-	return t, hashed
-}
-
-func inlineHashDoc(rhs string) string {
-	h := strings.IndexByte(rhs, '#')
-	if h < 0 {
-		return ""
-	}
-	return strings.TrimSpace(strings.TrimLeft(rhs[h+1:], "# "))
-}
-
-// attrProse is the description after `# - key: <type> …` / `= { … }: …`.
-func attrProse(rhs string) string {
-	rhs = strings.TrimSpace(rhs)
-	if i := strings.Index(rhs, "}:"); i >= 0 {
-		return strings.TrimSpace(rhs[i+2:])
-	}
-	if h := strings.IndexByte(rhs, '#'); h >= 0 {
-		return strings.TrimSpace(rhs[h+1:])
-	}
-	if strings.HasPrefix(rhs, "{") {
-		return ""
-	}
-	return rhs
-}
-
-func putFieldDoc(out map[string]string, key, doc string) {
-	key = strings.ToLower(key)
-	if !nameOKRe.MatchString(key) || stoplist[key] {
-		return
-	}
-	if _, seen := out[key]; !seen || (out[key] == "" && doc != "") {
-		out[key] = doc
-	}
-}
-
-func appendFieldDoc(out map[string]string, key, extra string) {
-	if extra == "" || key == "" {
-		return
-	}
-	if out[key] == "" {
-		out[key] = extra
-		return
-	}
-	out[key] = prose([]string{out[key], extra})
+	return fieldDocs, byKind, kindInfo, structs, declTypes, declByKind
 }
 
 // readMetaKeys collects top-level keys from .metadata/metadata.json files.

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 )
 
@@ -147,21 +148,6 @@ func kindFromDocFilename(name string) string {
 	default:
 		return ""
 	}
-}
-
-// looksMarkdownDocs picks the splitter: EU5 and Vic3 head blocks with `##`,
-// CK3 separates them with `----`.
-func looksMarkdownDocs(text string) bool {
-	for _, line := range strings.Split(text, "\n") {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "## ") || strings.HasPrefix(t, "### ") {
-			return true
-		}
-		if strings.HasPrefix(t, "----") {
-			return false
-		}
-	}
-	return false
 }
 
 func stripDocMarkup(s string) string {
@@ -406,12 +392,12 @@ func (s *Schema) ingest(kind, text string) {
 			text = text[:i]
 		}
 	}
-	for _, b := range splitDocBlocks(text) {
-		if b.name == "" {
+	for _, b := range game.SplitDumpBlocks(text) {
+		if b.Name == "" {
 			continue
 		}
-		f := b.fields()
-		key := strings.ToLower(b.name)
+		f := blockFields(b)
+		key := strings.ToLower(b.Name)
 		switch kind {
 		case "scope_type":
 			s.Scopes[key] = ScopeType{
@@ -726,164 +712,6 @@ func (s *Schema) addSavedScopes(tail string) {
 	slices.Sort(s.SavedScopes)
 }
 
-// docBlock is one documented token: its name plus the body lines under it.
-type docBlock struct {
-	name  string
-	lines []string
-}
-
-// splitDocBlocks picks the syntax the file uses and splits it into blocks.
-func splitDocBlocks(text string) []docBlock {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	switch {
-	case looksMarkdownDocs(text):
-		return splitMarkdownBlocks(text)
-	case strings.Contains(text, "\n----"):
-		return splitClassicBlocks(text)
-	default:
-		return splitBareBlocks(text)
-	}
-}
-
-// splitMarkdownBlocks reads EU5/Vic3 "## name" / "### name" headings.
-func splitMarkdownBlocks(text string) []docBlock {
-	var out []docBlock
-	var cur *docBlock
-	for _, raw := range strings.Split(text, "\n") {
-		h := strings.TrimSpace(raw)
-		if strings.HasPrefix(h, "## ") || strings.HasPrefix(h, "### ") {
-			if cur != nil {
-				out = append(out, *cur)
-			}
-			cur = &docBlock{name: tokenRe.FindString(strings.TrimLeft(h, "# "))}
-			continue
-		}
-		if cur != nil {
-			cur.lines = append(cur.lines, raw)
-		}
-	}
-	if cur != nil {
-		out = append(out, *cur)
-	}
-	return out
-}
-
-// splitClassicBlocks reads CK3 "----"-separated blocks. The header is either
-// "name - description" (effects, triggers, targets) or "name:" (on_actions).
-func splitClassicBlocks(text string) []docBlock {
-	var out []docBlock
-	for _, chunk := range strings.Split(text, "----") {
-		var b docBlock
-		for _, raw := range strings.Split(chunk, "\n") {
-			t := strings.TrimSpace(raw)
-			if t == "" {
-				continue
-			}
-			if b.name == "" {
-				if strings.Contains(strings.ToLower(t), "documentation") {
-					continue
-				}
-				b.name = tokenRe.FindString(t)
-				if b.name == "" {
-					continue
-				}
-				if i := strings.Index(t, " - "); i >= 0 {
-					b.lines = append(b.lines, t[i+3:])
-				}
-				continue
-			}
-			b.lines = append(b.lines, t)
-		}
-		if b.name != "" {
-			out = append(out, b)
-		}
-	}
-	return out
-}
-
-// splitBareBlocks reads files whose headers are a bare "name:" at column 0
-// (event_scopes.log, Vic3 modifiers.log) or "Tag: name" (CK3 modifiers.log).
-// Body lines carry "Label: value".
-func splitBareBlocks(text string) []docBlock {
-	var out []docBlock
-	var cur *docBlock
-	flush := func() {
-		if cur != nil && cur.name != "" {
-			out = append(out, *cur)
-		}
-		cur = nil
-	}
-	for _, raw := range strings.Split(text, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(raw), "---") {
-			flush()
-			continue
-		}
-		if name, rest, ok := bareHeader(raw); ok {
-			flush()
-			cur = &docBlock{name: name}
-			if rest != "" {
-				cur.lines = append(cur.lines, rest)
-			}
-			continue
-		}
-		if cur != nil {
-			cur.lines = append(cur.lines, raw)
-		}
-	}
-	flush()
-	return out
-}
-
-// bareHeader matches the three header shapes these files use:
-//
-//	name:            unindented, nothing after the colon (event_scopes, Vic3 modifiers)
-//	Tag: name        CK3 modifiers, optionally followed by ", Categories: ..."
-//	key: name        older Vic3 modifiers, indented
-//
-// Vic3 changed from the third form to the first between game versions, so both
-// are accepted. Names carrying a $PLACEHOLDER$ are templates, not tokens.
-// bareHeader returns the block's name and whatever the header line carried
-// after it. That tail is the token's category list, which CK3 and EU5 write on
-// the header rather than on a line of its own:
-//
-//	Tag: local_trades_per_burgher, Categories: Location, , All,
-//
-// Discarding the tail threw away the only thing either game says about a
-// modifier — EU5 documents 2,436 of them and gives prose for none.
-func bareHeader(raw string) (name, rest string, ok bool) {
-	t := strings.TrimRight(raw, " \t\r")
-	if t == "" {
-		return "", "", false
-	}
-	trimmed := strings.TrimLeft(t, " \t")
-	for _, p := range []string{"Tag:", "key:"} {
-		after, cut := strings.CutPrefix(trimmed, p)
-		if !cut {
-			continue
-		}
-		after = strings.TrimSpace(after)
-		head := after
-		if i := strings.IndexByte(after, ','); i > 0 {
-			head, rest = strings.TrimSpace(after[:i]), strings.TrimSpace(after[i+1:])
-		}
-		name = tokenRe.FindString(head)
-		if name == "" || name != head {
-			return "", "", false
-		}
-		return name, rest, true
-	}
-	// The bare "name:" form must be unindented, or every "  Mask: x" body line
-	// would start a new block.
-	if t != trimmed || !strings.HasSuffix(t, ":") {
-		return "", "", false
-	}
-	name = strings.TrimSuffix(t, ":")
-	if name == "" || name != tokenRe.FindString(name) {
-		return "", "", false
-	}
-	return name, "", true
-}
-
 // docFields is one block's labelled values plus whatever prose was left over.
 type docFields struct {
 	vals  map[string]string
@@ -905,11 +733,16 @@ type docFields struct {
 // Reading it as prose left EngineToken.Usage empty for every token in every
 // game — so signature help had nothing to show and every hover ran the
 // signature together with the description in one blob.
-func (b docBlock) fields() docFields {
+// blockFields reads the "Label: value" body of a dump block.
+//
+// A function rather than a method: game.DocBlock is the LAYOUT -- the carving
+// of a dump into named blocks, which differs per game -- while what the labels
+// mean is the same everywhere and belongs here.
+func blockFields(b game.DocBlock) docFields {
 	f := docFields{vals: map[string]string{}}
 	var body, usage []string
 	depth := 0
-	for _, raw := range b.lines {
+	for _, raw := range b.Lines {
 		t := stripDocMarkup(strings.TrimSpace(raw))
 		if t == "" || docPlaceholder(t) {
 			continue
@@ -938,7 +771,7 @@ func (b docBlock) fields() docFields {
 			}
 			continue
 		}
-		if depth > 0 || usageStart(b.name, t) {
+		if depth > 0 || usageStart(b.Name, t) {
 			usage = append(usage, t)
 			depth += strings.Count(t, "{") - strings.Count(t, "}")
 			if depth < 0 {
@@ -1059,4 +892,97 @@ func cmpFirst(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// iterPrefixes are the four spellings of one iterator. They document each other
+// unevenly -- CK3 declares `category` on any_trait_in_category and omits it on
+// random_trait_in_category -- so the family is read as one.
+var iterPrefixes = []string{"any_", "every_", "random_", "ordered_"}
+
+// TokenParams is the set of argument names the game declares inside a token's
+// block, read from the usage lines script_docs prints beside it:
+//
+//	any_trait_in_category = { category = fame/health/etc }
+//
+// `category` there is an argument consumed by the iterator, not a trigger
+// evaluated in the trait scope it produces -- and `category` IS a declared
+// trigger, on artifact, so judging it reported correct vanilla script.
+//
+// Declared data, not a heuristic: an iterator whose arguments the game does not
+// document contributes none, and a game update is a rescan.
+func (s *Schema) TokenParams(key string) map[string]bool {
+	if s == nil {
+		return nil
+	}
+	k := strings.ToLower(key)
+	out := map[string]bool{}
+	add := func(name string) {
+		if t, _, ok := s.Token(name); ok {
+			for _, p := range usageParams(t.Usage) {
+				out[p] = true
+			}
+		}
+	}
+	add(k)
+	for _, p := range iterPrefixes {
+		if stem, cut := strings.CutPrefix(k, p); cut {
+			for _, q := range iterPrefixes {
+				add(q + stem)
+			}
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// usageParams reads the keys assigned at the top level of a usage block.
+//
+// The whole usage is one stream, not a line at a time: the game prints
+// multi-line signatures, and looking for `{` per line saw only the first.
+// add_activity_log_entry declares eight arguments across nine lines, `tags`
+// among them, and `tags` is otherwise unknown -- 308 findings on vanilla CK3.
+//
+// Whitespace does NOT end a name: the game writes `limit = { … }` with spaces
+// around the operator and `<count=num/all>` without them, and only the second
+// form survived clearing the word on a space.
+func usageParams(usage string) []string {
+	var out []string
+	ident := func(c byte) bool {
+		return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9')
+	}
+	depth, word, started := 0, "", false
+	for i := 0; i < len(usage); i++ {
+		c := usage[i]
+		switch {
+		case c == '{':
+			depth++
+			started = true
+			word = ""
+		case c == '}':
+			if depth > 0 {
+				depth--
+			}
+			word = ""
+		case !started:
+			// Before the first brace is the token's own name and operator.
+		case c == '=':
+			if depth == 1 && word != "" && jomini.IsLowerName(word) {
+				out = append(out, word)
+			}
+			word = ""
+		case c == ' ' || c == '\t':
+			// Keep the word: the operator may be spaced away from it.
+		case ident(c):
+			word += string(c)
+		default:
+			// A placeholder's brackets, a slash, a comment hash: whatever was
+			// accumulating is not a key being assigned.
+			word = ""
+		}
+	}
+	return out
 }

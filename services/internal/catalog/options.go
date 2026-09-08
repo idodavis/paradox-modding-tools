@@ -399,10 +399,12 @@ func applyOptionShape(
 	var defs []Def
 	add := func(a *jomini.Assignment) {
 		name := game.KeyIdentity(gameID, a.Key.Text)
-		if skip[name] || !defNameRe.MatchString(name) || stoplist[strings.ToLower(name)] {
+		if skip[name] || !jomini.IsDefName(name) || jomini.IsStop(name) {
 			return
 		}
-		defs = append(defs, makeDef(shape.ChildKind, name, path, origin, a.Key.Range, li))
+		d := makeDef(shape.ChildKind, name, path, origin, a.Key.Range, li)
+		d.Nested = true
+		defs = append(defs, d)
 	}
 	for _, st := range root.Statements {
 		top, ok := st.(*jomini.Assignment)

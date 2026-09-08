@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -267,6 +268,10 @@ func TestClassifyRel(t *testing.T) {
 		rel, name, want string
 	}{
 		{"common/x/_traits.info", "_traits.info", "info"},
+		// EU5 writes 23 of its 32 .info files with no leading underscore --
+		// that prefix is a CK3 convention, not part of the format.
+		{"common/x/00_cultures.info", "00_cultures.info", "info"},
+		{"common/x/ai_diplochance.info", "ai_diplochance.info", "info"},
 		{"common/x/readme.txt", "readme.txt", "info"},
 		{"common/x/__readme.txt", "__readme.txt", "info"},
 		{"common/x/____Info.txt", "____Info.txt", "info"},
@@ -291,64 +296,6 @@ func TestClassifyRel(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestHarvestDocFile(t *testing.T) {
-	tests := []struct {
-		name, src, key, want string
-	}{
-		{
-			name: "ck3 above comment",
-			src:  "# The trait category\ncategory = personality\n",
-			key:  "category", want: "trait category",
-		},
-		{
-			name: "below block comment",
-			src:  "allow = {\n\t# must also pass category\n}\n",
-			key:  "allow", want: "must also pass",
-		},
-		{
-			name: "below does not steal next above",
-			src: "# Event presentation type\ntype = character_event\n" +
-				"# Dynamic loc key\ntitle = loc_key\n",
-			key: "title", want: "Dynamic",
-		},
-		{
-			name: "eu5 attribute bullets",
-			src: "# ATTRIBUTES\n" +
-				"# - build_time: <integer> building time in days\n" +
-				"# - allow: <trigger> can the building be built\n",
-			key: "build_time", want: "building time",
-		},
-		{
-			name: "commented template inline",
-			src:  "#\ttype = country_event\t\t# Defines the scope\n",
-			key:  "type", want: "Defines the scope",
-		},
-		{
-			name: "inline plus below block",
-			src:  "chance = { # weight\n\t# extra lines\n}\n",
-			key:  "chance", want: "weight extra lines",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := harvestDocFile(tt.src)
-			if !strings.Contains(got[tt.key], tt.want) {
-				t.Fatalf("harvestDocFile()[%q] = %q, want substring %q (all=%v)",
-					tt.key, got[tt.key], tt.want, got)
-			}
-		})
-	}
-	t.Run("ck3 type keeps above comment", func(t *testing.T) {
-		got := harvestDocFile(
-			"# Event presentation type\ntype = character_event\n" +
-				"# Dynamic loc key\ntitle = loc_key\n",
-		)
-		if !strings.Contains(got["type"], "presentation") {
-			t.Fatalf("type = %q, want presentation", got["type"])
-		}
-	})
 }
 
 func TestScanEU5ShippedDocs(t *testing.T) {
@@ -855,5 +802,38 @@ func TestLeadingCommentKeepsLineBreaks(t *testing.T) {
 	if lines[2] != "- a living holder" {
 		t.Errorf("line 3 = %q, want the list item with its indent normalised",
 			lines[2])
+	}
+}
+
+// TestKeywordDeclarationLocality pins which declaration keywords produce a
+// file-local definition. Vanilla CK3 declares 3,809 inline scripted_* bodies
+// and every one sits under events/, beside the event that calls it; the engine
+// resolves them per file, so a repeat in another file is a separate macro.
+func TestKeywordDeclarationLocality(t *testing.T) {
+	for _, tt := range []struct {
+		src   string
+		kind  string
+		local bool
+	}{
+		{"scripted_trigger foo_trigger = {\n\tis_ai = no\n}\n", "scripted_trigger", true},
+		{"scripted_effect foo_effect = {\n\tadd_gold = 1\n}\n", "scripted_effect", true},
+		{"local_template Bar = {\n\tx = 1\n}\n", "gui_type", true},
+		// A GUI type is visible to every .gui file; that is the point of one.
+		{"type Baz = {\n\tx = 1\n}\n", "gui_type", false},
+		{"template Qux = {\n\tx = 1\n}\n", "gui_type", false},
+	} {
+		t.Run(tt.kind+"/"+strconv.FormatBool(tt.local), func(t *testing.T) {
+			res := jomini.Parse(tt.src)
+			defs, _, _ := extractKeywordName(res.Root, res.Lines(), "a.txt", "")
+			if len(defs) != 1 {
+				t.Fatalf("got %d defs, want 1", len(defs))
+			}
+			if defs[0].Kind != tt.kind {
+				t.Errorf("kind = %q, want %q", defs[0].Kind, tt.kind)
+			}
+			if defs[0].Local != tt.local {
+				t.Errorf("Local = %v, want %v", defs[0].Local, tt.local)
+			}
+		})
 	}
 }

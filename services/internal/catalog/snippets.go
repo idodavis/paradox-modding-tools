@@ -177,3 +177,26 @@ func deriveAmbiguousFields(nested map[string][]string) map[string]bool {
 	}
 	return out
 }
+
+// unambiguousBlocks names the blocks that appear under exactly one kind.
+//
+// A block name is not a position: CK3 has an `option` inside an event and
+// another inside common/accolade_names, holding nothing in common. Merging them
+// by name is right for OFFERING keys — the worst case is a suggestion that does
+// not belong — and fatal for judging an absence, which reported 18,341 findings
+// on 400 vanilla files. Only a name one kind uses can be judged.
+func unambiguousBlocks(blockKinds map[string]map[string]bool) map[string]bool {
+	if len(blockKinds) == 0 {
+		return nil
+	}
+	out := map[string]bool{}
+	for block, kinds := range blockKinds {
+		if len(kinds) == 1 {
+			out[block] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}

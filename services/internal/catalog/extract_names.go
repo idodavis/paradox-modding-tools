@@ -32,9 +32,12 @@ func extractScriptNames(
 					name, start, end, found := scriptNameSpan(a, r.InnerKey)
 					if found && name != "" {
 						if r.IsDef {
+							// Ephemeral and script-name definitions live inside
+							// another definition, never at a file's top level.
 							d := makeDef(r.Kind, name, path, origin,
 								jomini.Range{Start: start, End: end}, li)
 							d.Value = scriptNameValue(a, r)
+							d.Nested = true
 							defs = append(defs, d)
 						} else {
 							refs = append(refs, Ref{

@@ -663,6 +663,49 @@ func (w *WorkspaceService) SetInstallVersion(id, version string) error {
 	})
 }
 
+// SetWorkspaceModCalendar declares the era a mod's date literals are written in.
+//
+// A setter of its own rather than two more parameters on UpdateWorkspaceMod,
+// which already takes eight positional strings: a calendar is set once and
+// rarely, by someone who knows their mod offsets the year, and it has nothing to
+// do with the name-and-colour edits that method carries.
+//
+// era "" with offset 0 clears it, and a cleared calendar has to leave every date
+// exactly as written -- that guardrail is the whole reason the feature is opt-in.
+func (w *WorkspaceService) SetWorkspaceModCalendar(
+	workspaceID, modID, era string, epochOffset int,
+) error {
+	err := w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		for i := range ws.Mods {
+			if ws.Mods[i].ID != modID {
+				continue
+			}
+			ws.Mods[i].Era = strings.TrimSpace(era)
+			ws.Mods[i].EpochOffset = epochOffset
+			return nil
+		}
+		return fmt.Errorf("mod not found")
+	})
+	if err != nil {
+		return err
+	}
+	// The session holds the calendar, so it has to be rebuilt before the next
+	// hover reads a date. Dropping it is enough: the pool builds on demand.
+	if w.Session != nil {
+		w.Session.pool().Drop(workspaceID)
+	}
+	// And the editor has to be told. VS Code caches inlay hints per document and
+	// re-requests them only when a provider says they changed, so without this a
+	// modder sets a calendar and sees nothing until they edit the file -- or
+	// clears one and keeps seeing eras that no longer apply.
+	emitLang("lang:calendar-changed", map[string]any{"workspaceId": workspaceID})
+	return nil
+}
+
 // SetWorkspaceLocLang sets default loc language and loc-harvests if a session is live.
 func (w *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
 	var inst *GameInstall

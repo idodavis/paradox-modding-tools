@@ -9,6 +9,8 @@ export const MOD_HELP = {
   thumb: "Explorer folder icon and origin filters. Not always used on Origin/Mod Badges.",
   descMd: "Markdown listing description. Empty uses mod-description.md in the mod folder. The file must already exist.",
   descBb: "BBCode sent to Steam. Empty uses mod-description.bbcode. The file must already exist.",
+  calendar:
+    "Total conversions offset the year so the engine’s date arithmetic still works — A Game of Thrones writes 8082.1.1 for what players see as 300 AC. Set the era and offset and PMT reads dates back in that era on hover. Nothing is guessed, and with nothing set every date reads exactly as written. Never changes what is saved to disk.",
   workshopIgnore:
     "Gitignore syntax, stored in this workspace. Steam never uploads: dotfiles (except .metadata/), .gitignore, and patterns in a .gitignore in the mod folder. Export writes .workshop-ignore; Import reads it. Editing that file in the IDE does nothing until Import.",
 } as const;
@@ -60,12 +62,72 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:expanded": [open: boolean];
   patch: [patch: ModPatch];
+  /** Persisted by SetWorkspaceModCalendar, not UpdateWorkspaceMod. */
+  calendar: [era: string, epochOffset: number];
   importIgnore: [];
   exportIgnore: [];
   remove: [];
 }>();
 
 const ignoreOpen = shallowRef(false);
+const deriveOpen = shallowRef(false);
+const exWritten = shallowRef("");
+const exSeen = shallowRef("");
+
+/** A stand-in date, so the current setting is legible without hunting for one. */
+const SAMPLE_DATE = "8082.1.1";
+
+/**
+ * Work out the epoch offset from an example: a date as the mod's script writes
+ * it, and the year a player actually sees for it.
+ *
+ * AGoT writes `8082.1.1` for what the game shows as year 300, so the offset is
+ * 7782 and the hover subtracts it from every date in the mod.
+ *
+ * Deliberately permissive, and that is the opposite of how the engine's derived
+ * types are treated. A calendar is a READING AID -- it never changes what is
+ * written to disk -- so a bad offset costs a misleading hover, not a wrong type
+ * or a false accusation. Refusing a shape a mod already uses would be the more
+ * expensive mistake, so:
+ *
+ *   - a bare year works as well as a full date ("8082" and "8082.1.1" both give
+ *     8082), on either side;
+ *   - a negative result is kept, for a mod whose script years run BELOW the ones
+ *     it displays;
+ *   - only genuinely unparseable input returns null, which is what leaves the
+ *     button disabled.
+ *
+ * @param written a date literal as it appears in script, e.g. "8082.1.1"
+ * @param seen the year a player sees for that date, e.g. "300"
+ */
+function offsetFromExample(written: string, seen: string): number | null {
+  const yearOf = (raw: string): number | null => {
+    const head = raw.trim().split(".")[0];
+    if (head === undefined || head === "" || head === "-") return null;
+    const n = Number(head);
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+  };
+  const w = yearOf(written);
+  const s = yearOf(seen);
+  if (w === null || s === null) return null;
+  return w - s;
+}
+
+function emitCalendar(era: string, epochOffset: number): void {
+  emit("calendar", era, epochOffset);
+}
+
+/** What SAMPLE_DATE reads as under the current setting. */
+const preview = computed(() => {
+  const era = props.mod.era ?? "";
+  const off = props.mod.epochOffset ?? 0;
+  if (!era && !off) return "";
+  const parts = SAMPLE_DATE.split(".");
+  parts[0] = String(Number(parts[0]) - off);
+  return parts.join(".") + (era ? " " + era : "");
+});
+
+const derivedOffset = computed(() => offsetFromExample(exWritten.value, exSeen.value));
 
 /** Palette or stored hex for the collapsed header swatch. */
 const swatch = computed(() =>
@@ -169,6 +231,67 @@ const swatch = computed(() =>
               />
             </div>
           </UFormField>
+        </div>
+
+        <div class="space-y-2 border-t border-default pt-3">
+          <div class="flex items-center gap-1">
+            <span class="text-sm font-medium">Calendar</span>
+            <FieldHelpTip :text="MOD_HELP.calendar" />
+          </div>
+          <div class="flex flex-wrap items-end gap-3">
+            <UFormField label="Era" class="w-24">
+              <UInput
+                :model-value="mod.era ?? ''"
+                placeholder="AC"
+                size="sm"
+                @update:model-value="emitCalendar(String($event ?? ''), mod.epochOffset ?? 0)"
+              />
+            </UFormField>
+            <UFormField label="Year offset" class="w-32">
+              <UInput
+                type="number"
+                :model-value="mod.epochOffset ?? 0"
+                size="sm"
+                @update:model-value="emitCalendar(mod.era ?? '', Number($event) || 0)"
+              />
+            </UFormField>
+            <UButton
+              :label="deriveOpen ? 'Hide helper' : 'Work it out'"
+              color="neutral"
+              variant="outline"
+              size="xs"
+              @click="deriveOpen = !deriveOpen"
+            />
+            <UButton
+              v-if="(mod.era ?? '') || (mod.epochOffset ?? 0)"
+              label="Clear"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              @click="emitCalendar('', 0)"
+            />
+          </div>
+          <p v-if="preview" class="text-xs text-muted">
+            A date written <code>{{ SAMPLE_DATE }}</code> reads
+            <code>{{ preview }}</code> on hover.
+          </p>
+          <div v-if="deriveOpen" class="flex flex-wrap items-end gap-3 rounded-md bg-elevated/50 p-3">
+            <UFormField label="Date as written" class="w-36">
+              <UInput v-model="exWritten" placeholder="8082.1.1" size="sm" />
+            </UFormField>
+            <UFormField label="Year players see" class="w-32">
+              <UInput v-model="exSeen" placeholder="300" size="sm" />
+            </UFormField>
+            <UButton
+              label="Use this offset"
+              size="xs"
+              :disabled="derivedOffset === null"
+              @click="emitCalendar(mod.era ?? '', derivedOffset ?? 0)"
+            />
+            <p v-if="exWritten && exSeen && derivedOffset === null" class="text-xs text-error">
+              Enter a date like 8082.1.1 and the year it should read.
+            </p>
+          </div>
         </div>
 
         <div class="space-y-2">

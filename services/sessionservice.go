@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -32,7 +33,16 @@ type SessionService struct {
 	// autoScanning guards the background rescan so repeated EnsureSession calls
 	// — the UI polls health — do not stack scans on top of each other.
 	autoScanning bool
-	wikiCancel   context.CancelFunc
+	// autoNow is the install a background rescan is walking right now, and
+	// autoQueue the ones that asked while it ran. They WAIT rather than run
+	// together, because scanning is the largest allocation in the app -- but
+	// waiting is the point: dropping them is what left Victoria 3 and EU5 with
+	// no vanilla model at all after a CacheFormatVersion bump, reporting
+	// cacheStale false the whole time, with every check that needs vanilla
+	// silently answering nothing.
+	autoNow    string
+	autoQueue  []string
+	wikiCancel context.CancelFunc
 }
 
 // LanguageHealth is the compact Library/IDE index status strip.
@@ -210,26 +220,57 @@ func (s *SessionService) autoRescan(h *LanguageHealth) {
 	if h.ScannedAt != "" && !h.CacheStale {
 		return
 	}
+	if s.queueAutoScan(h.InstallID) {
+		go s.drainAutoScans()
+	}
+}
+
+// queueAutoScan records installID as wanting a background rescan and reports
+// whether the caller should start draining. A scan already in flight means the
+// id waits its turn instead of being thrown away.
+func (s *SessionService) queueAutoScan(installID string) bool {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.autoScanning || s.scanCancel != nil {
-		s.mu.Unlock()
-		return
+		if installID != s.autoNow && !slices.Contains(s.autoQueue, installID) {
+			s.autoQueue = append(s.autoQueue, installID)
+		}
+		return false
 	}
 	s.autoScanning = true
-	s.mu.Unlock()
+	s.autoNow = installID
+	return true
+}
 
-	installID := h.InstallID
-	go func() {
-		defer func() {
-			s.mu.Lock()
-			s.autoScanning = false
-			s.mu.Unlock()
-		}()
+// nextAutoScan finishes the current install and takes the next waiting one,
+// returning "" when the queue is empty.
+func (s *SessionService) nextAutoScan() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.autoNow = ""
+	if len(s.autoQueue) > 0 {
+		s.autoNow, s.autoQueue = s.autoQueue[0], s.autoQueue[1:]
+	}
+	return s.autoNow
+}
+
+// drainAutoScans walks each queued install in turn, one at a time.
+func (s *SessionService) drainAutoScans() {
+	defer func() {
+		s.mu.Lock()
+		s.autoScanning, s.autoNow = false, ""
+		s.mu.Unlock()
+	}()
+	s.mu.Lock()
+	id := s.autoNow
+	s.mu.Unlock()
+	for id != "" {
 		// Errors are deliberately swallowed: this was not asked for, so a
 		// failure must not surface as one. The health strip already reports the
 		// cache as stale, and the manual button remains.
-		_, _ = s.RebuildInstallSemantics(installID)
-	}()
+		_, _ = s.RebuildInstallSemantics(id)
+		id = s.nextAutoScan()
+	}
 }
 
 func (s *SessionService) cancel() {

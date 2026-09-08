@@ -135,7 +135,7 @@ func WriteAppID(dir string, appID uint32) error {
 }
 
 const (
-	previewTypeImage int32 = 0
+	previewTypeImage int32 = iota
 	maxExtraPreviews       = 32
 )
 

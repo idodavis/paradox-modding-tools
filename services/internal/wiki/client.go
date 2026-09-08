@@ -253,7 +253,7 @@ func parsePage(ctx context.Context, api, title string) (html string, revid int, 
 	}
 	secs := make([]Section, 0, len(parsed.Parse.Sections))
 	for _, s := range parsed.Parse.Sections {
-		secs = append(secs, Section{TocLevel: s.TocLevel, Line: s.Line, Anchor: s.Anchor})
+		secs = append(secs, Section(s))
 	}
 	return parsed.Parse.Text, parsed.Parse.Revid, secs, nil
 }

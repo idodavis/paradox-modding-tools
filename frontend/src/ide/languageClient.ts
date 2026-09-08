@@ -21,6 +21,7 @@ import {
   FormatDocument,
   FoldingRanges,
   CodeActions,
+  InlayHints,
 } from "@services/ideservice";
 import type {
   WorkspaceEdit as LspWorkspaceEdit,
@@ -362,7 +363,14 @@ export function registerLanguageClient(getWorkspaceId: () => string): vscode.Dis
         doc.uri,
         list.map((d) => {
           const sev = d.severity === 1 ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning;
-          return new vscode.Diagnostic(rangeToVsCode(doc, d.range), d.message, sev);
+          const v = new vscode.Diagnostic(rangeToVsCode(doc, d.range), d.message, sev);
+          // The code was computed, registered and made toggleable, and then not
+          // shown: the Problems panel named no check, so a modder who wanted a
+          // finding to stop had nothing to look up in Editor settings. Source
+          // marks the finding as PMT's rather than the workbench's own.
+          v.source = "PMT";
+          if (d.code) v.code = d.code;
+          return v;
         }),
       );
     } catch {
@@ -396,6 +404,36 @@ export function registerLanguageClient(getWorkspaceId: () => string): vscode.Dis
           md.appendMarkdown(`\n\n${hoverEventGraphLink(h.key)}`);
         }
         return new vscode.Hover(md);
+      },
+    }),
+  );
+  // Fired when a mod's calendar changes. VS Code caches inlay hints per document
+  // and re-requests them only when the provider says they are stale, so without
+  // this a modder sets an era and sees nothing until they edit the file.
+  const inlayChanged = new vscode.EventEmitter<void>();
+  subs.push(inlayChanged);
+
+  // A mod's own era, drawn beside the dates its script is written in. Silent
+  // for every mod that declares no calendar, which the backend decides before
+  // it parses anything -- so this costs nothing in an ordinary workspace.
+  registerLangProviders(subs, (lang) =>
+    vscode.languages.registerInlayHintsProvider(lang, {
+      onDidChangeInlayHints: inlayChanged.event,
+      async provideInlayHints(doc, range) {
+        const id = getWorkspaceId();
+        if (!id) return [];
+        const hints = (await InlayHints(id, pathOf(doc))) ?? [];
+        return hints
+          .map((h) => {
+            const r = rangeToVsCode(doc, h.range);
+            const hint = new vscode.InlayHint(r.end, h.label);
+            hint.tooltip = h.tooltip;
+            hint.paddingLeft = true;
+            return hint;
+          })
+          // The editor asks for the visible span; returning the whole file
+          // would draw hints it then has to throw away on every scroll.
+          .filter((h) => range.contains(h.position));
       },
     }),
   );
@@ -606,6 +644,10 @@ export function registerLanguageClient(getWorkspaceId: () => string): vscode.Dis
     syncOpen(doc);
     void refreshDiags(doc);
   }
+
+  Events.On("lang:calendar-changed", () => {
+    inlayChanged.fire();
+  });
 
   Events.On("lang:cache-updated", () => {
     for (const doc of vscode.workspace.textDocuments) {

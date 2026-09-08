@@ -111,6 +111,14 @@ export function Hover(workspaceID: string, path: string, line: number, character
 }
 
 /**
+ * InlayHints returns the era form of each date literal, for a mod that declares
+ * a calendar. Empty for every mod that does not, which is nearly all of them.
+ */
+export function InlayHints(workspaceID: string, path: string): $CancellablePromise<lsp$0.InlayHint[] | null> {
+    return $Call.ByID(1595071124, workspaceID, path);
+}
+
+/**
  * References returns reference locations.
  */
 export function References(workspaceID: string, path: string, line: number, character: number): $CancellablePromise<lsp$0.Location[] | null> {

@@ -18,6 +18,26 @@ export interface Def {
     "value"?: string;
 
     /**
+     * Nested marks a definition harvested from inside another one rather than at
+     * a file's top level: a game rule's options, a script parameter, the members
+     * of a nested shape. They are real definitions -- they are cited, hovered and
+     * navigated to -- but they are not the file's subject, and a check that
+     * treats them as one reports every activity type's `special_guests` as a
+     * duplicate of every other's.
+     */
+    "nested"?: boolean;
+
+    /**
+     * Local marks a definition the file DECLARES inline -- `scripted_trigger
+     * foo = { ... }`, a GUI `local_template` -- rather than one a folder gives a
+     * kind to. The engine resolves these per file, so a repeated Local key is
+     * required rather than a defect, and a call must never be navigated to a
+     * Local body in another file. game.LocalDeclKeywords lists the keywords and
+     * which game writes them; GAME-SYNTAX 16 has the evidence.
+     */
+    "local"?: boolean;
+
+    /**
      * Doc is the comment block written immediately above the definition. For
      * most objects it is the only description that exists: script_docs covers
      * the engine API, not script, so no dump describes an event, a decision, a
@@ -287,6 +307,13 @@ export interface VanillaCache {
     "nestedMembers"?: { [_ in string]?: string[] | null } | null;
 
     /**
+     * UnambiguousBlocks are the block names used by exactly one kind. Only those
+     * can have an absence judged: `option` is a block in a CK3 event and another
+     * in accolade_names, holding nothing in common.
+     */
+    "unambiguousBlocks"?: { [_ in string]?: boolean } | null;
+
+    /**
      * AmbiguousFields are field names that appear inside more than one kind of
      * block, so the install's single description of them is about the wrong
      * position most of the time.
@@ -306,6 +333,18 @@ export interface VanillaCache {
     "callRefs"?: Ref[] | null;
     "fieldValueKinds"?: { [_ in string]?: string } | null;
     "fieldEnumsByKind"?: { [_ in string]?: { [_ in string]?: string[] | null } | null } | null;
+
+    /**
+     * DeclaredFieldTypes is what a game's own shipped documentation says a field
+     * holds, verbatim: `yes/no`, `script value`, `bool`, `database key, optional`.
+     * Every install writes some of these -- CK3 in `### brief: name ( type )`
+     * headers, all three in `key = <type> prose` -- and they are DECLARED, so
+     * they outrank FieldValueKinds and FieldEnumsByKind, which are inferred from
+     * how vanilla happens to use a field. Raw on purpose: ClassifyDeclaredType
+     * decides what the words mean, in one place.
+     */
+    "declaredFieldTypes"?: { [_ in string]?: string } | null;
+    "declaredFieldTypesByKind"?: { [_ in string]?: { [_ in string]?: string } | null } | null;
     "prefixKinds"?: { [_ in string]?: string } | null;
     "fireKeys"?: { [_ in string]?: string } | null;
     "nestedShapes"?: NestedShape[] | null;

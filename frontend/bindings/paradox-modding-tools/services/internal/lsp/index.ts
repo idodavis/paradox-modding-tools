@@ -9,6 +9,7 @@ export type {
     FoldingRange,
     HoverResult,
     HoverValue,
+    InlayHint,
     Location,
     Position,
     Range,

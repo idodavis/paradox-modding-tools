@@ -180,6 +180,21 @@ export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromi
 }
 
 /**
+ * SetWorkspaceModCalendar declares the era a mod's date literals are written in.
+ * 
+ * A setter of its own rather than two more parameters on UpdateWorkspaceMod,
+ * which already takes eight positional strings: a calendar is set once and
+ * rarely, by someone who knows their mod offsets the year, and it has nothing to
+ * do with the name-and-colour edits that method carries.
+ * 
+ * era "" with offset 0 clears it, and a cleared calendar has to leave every date
+ * exactly as written -- that guardrail is the whole reason the feature is opt-in.
+ */
+export function SetWorkspaceModCalendar(workspaceID: string, modID: string, era: string, epochOffset: number): $CancellablePromise<void> {
+    return $Call.ByID(2457080507, workspaceID, modID, era, epochOffset);
+}
+
+/**
  * UpdateGameInstall updates path, then refreshes version.
  */
 export function UpdateGameInstall(id: string, path: string): $CancellablePromise<$models.GameInstall | null> {

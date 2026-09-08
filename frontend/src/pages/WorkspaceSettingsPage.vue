@@ -19,6 +19,7 @@ import {
   ReorderWorkspaceMods,
   SetInstallVersion,
   SetWorkspaceLocLang,
+  SetWorkspaceModCalendar,
   UpdateGameInstall,
   UpdateWorkspace,
   UpdateWorkspaceMod,
@@ -35,6 +36,7 @@ import CreateModForm from "../components/CreateModForm.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import AddInstallCard from "../components/AddInstallCard.vue";
 import ScriptDocsGuide from "../components/ScriptDocsGuide.vue";
+import DiagnosticSettings from "../components/DiagnosticSettings.vue";
 import { useLanguageHealth } from "../composables/useLanguageHealth";
 import OriginColorField, { ORIGIN_COLOR_DESC } from "../components/OriginColorField.vue";
 import WorkspaceModCard, { MOD_HELP, type ModPatch } from "../components/WorkspaceModCard.vue";
@@ -375,6 +377,7 @@ const COPY = {
   mods: "Last listed wins (LIOS). Drag the left grip to reorder. Color and thumbnail paint explorer and origin chips.",
   modColor: ORIGIN_COLOR_DESC,
   ...MOD_HELP,
+  editor: "Which language checks report findings in the editor, and how loudly. Applies to every workspace — these are IDE settings, not workspace ones.",
   remove: "Drops the workspace record. Mod folders on disk stay.",
 } as const;
 
@@ -445,8 +448,11 @@ const loadOrderCopy = computed(() => {
     : "Last listed wins for most kinds. Vanilla loses to any mod. Conflicts labels each row.";
 });
 const showDanger = computed(() => matchesFilter("Danger", "Remove workspace", COPY.remove));
+const showEditor = computed(() =>
+  matchesFilter("Editor", "Diagnostics", "Checks", "Severity", COPY.editor),
+);
 
-type SettingsSection = "overview" | "game" | "mods" | "danger";
+type SettingsSection = "overview" | "game" | "mods" | "editor" | "danger";
 
 const section = shallowRef<SettingsSection>("overview");
 
@@ -455,6 +461,7 @@ const visibleSections = computed<SettingsSection[]>(() => {
     ["overview", showOverview.value],
     ["game", showGame.value],
     ["mods", showMods.value],
+    ["editor", showEditor.value],
     ["danger", showDanger.value],
   ];
   return rows.filter(([, on]) => on).map(([id]) => id);
@@ -472,6 +479,7 @@ watch(
       case "overview":
       case "game":
       case "mods":
+      case "editor":
       case "danger":
         section.value = s;
         return;
@@ -486,6 +494,7 @@ const sectionMeta: Record<SettingsSection, { label: string; icon: string }> = {
   overview: { label: "Overview", icon: "i-lucide-layout-dashboard" },
   game: { label: "Game", icon: "i-lucide-gamepad-2" },
   mods: { label: "Mods", icon: "i-lucide-puzzle" },
+  editor: { label: "Editor", icon: "i-lucide-file-search" },
   danger: { label: "Danger", icon: "i-lucide-triangle-alert" },
 };
 
@@ -511,6 +520,7 @@ function saveSection(): void {
       return;
     case "game":
     case "mods":
+    case "editor":
     case "danger":
       return;
     default: {
@@ -524,6 +534,33 @@ function saveSection(): void {
 function patchMod(mod: WorkspaceMod, patch: ModPatch): void {
   Object.assign(mod, patch);
   void persistMod(mod);
+}
+
+/** The calendar has its own setter, so it does not go through persistMod.
+ *
+ * Debounced, and not only to spare the round trip: setting a calendar DROPS the
+ * session, because the era is read when a hover formats a date and the session
+ * holds the mod records it was built from. Typing "AC" into the era box would
+ * otherwise rebuild the whole language model once per letter. */
+const persistCalendar = useDebounceFn(
+  async (mod: WorkspaceMod, era: string, epochOffset: number) => {
+    try {
+      await SetWorkspaceModCalendar(id.value, mod.id, era, epochOffset);
+    } catch (e) {
+      toast.add({
+        title: e instanceof Error ? e.message : String(e),
+        color: "error",
+      });
+    }
+  },
+  600,
+);
+
+/** Show the change at once, persist it once the typing stops. */
+function setModCalendar(mod: WorkspaceMod, era: string, epochOffset: number): void {
+  mod.era = era;
+  mod.epochOffset = epochOffset;
+  void persistCalendar(mod, era, epochOffset);
 }
 
 async function exportIgnore(mod: WorkspaceMod): Promise<void> {
@@ -724,6 +761,7 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                   :thumb-url="wsStore.thumbUrls[mod.id]"
                   @update:expanded="setModExpanded(mod.id, $event)"
                   @patch="patchMod(mod, $event)"
+                  @calendar="(era, off) => setModCalendar(mod, era, off)"
                   @import-ignore="importIgnore(mod)"
                   @export-ignore="exportIgnore(mod)"
                   @remove="removeMod(mod)"
@@ -754,6 +792,11 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
             />
           </div>
 
+          <div v-else-if="section === 'editor'" class="space-y-5">
+            <UFormField label="Diagnostics" :description="COPY.editor">
+              <DiagnosticSettings />
+            </UFormField>
+          </div>
           <div v-else-if="section === 'danger'" class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
             <UFormField label="Remove workspace" :description="COPY.remove">
               <UButton label="Remove workspace" color="error" variant="outline" size="sm" @click="removeOpen = true" />

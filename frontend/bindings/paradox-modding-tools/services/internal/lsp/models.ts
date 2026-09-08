@@ -47,6 +47,13 @@ export interface DiagnosticCode {
     "summary": string;
 
     /**
+     * Group separates the semantic checks from the parse errors, which the
+     * settings surface shows apart because silencing a parse error hides a file
+     * the game cannot read at all.
+     */
+    "group": string;
+
+    /**
      * Default is the severity when the user has not chosen one.
      */
     "default": string;
@@ -119,6 +126,16 @@ export interface HoverResult {
 export interface HoverValue {
     "text": string;
     "count": number;
+}
+
+/**
+ * InlayHint is text the editor draws inline at Range.End without editing the
+ * buffer. Columns are UTF-8 bytes, like every other range PMT returns.
+ */
+export interface InlayHint {
+    "range": Range;
+    "label": string;
+    "tooltip"?: string;
 }
 
 /**

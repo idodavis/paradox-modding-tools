@@ -59,6 +59,14 @@ func (s *IdeService) Diagnose(workspaceID, path string) ([]lsp.Diagnostic, error
 	})
 }
 
+// InlayHints returns the era form of each date literal, for a mod that declares
+// a calendar. Empty for every mod that does not, which is nearly all of them.
+func (s *IdeService) InlayHints(workspaceID, path string) ([]lsp.InlayHint, error) {
+	return withSession(s.Session, workspaceID, func(sess *session.Session) []lsp.InlayHint {
+		return lsp.InlayHints(sess, path)
+	})
+}
+
 // DiagnosticCodes lists every check, for the IDE settings surface.
 func (s *IdeService) DiagnosticCodes() ([]lsp.DiagnosticCode, error) {
 	return lsp.DiagnosticCodes(), nil

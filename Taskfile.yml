@@ -89,6 +89,15 @@ tasks:
       # raise the number.
       - go test -short -timeout 60s ./...
 
+  test:race:
+    summary: >
+      What CI runs (~9s). The race detector is the only thing that can catch a
+      lock-discipline regression, and GLOSSARY makes that discipline binding on
+      every consolidation. Keep this identical to .github/workflows/test.yml.
+    dir: services
+    cmds:
+      - go test -short -race -timeout 60s ./...
+
   check:
     summary: >
       Type-check the frontend, .vue files included (~30s). vue-tsc wraps the
@@ -101,9 +110,14 @@ tasks:
   test:full:
     summary: >
       Backend tests including the real-install tier (~30s). Needs
-      PMT_TEST_INSTALL_{CK3,VIC3,EU5} and PMT_TEST_DOCS_{CK3,VIC3,EU5};
-      the heavy tests skip themselves when those are unset.
+      PMT_TEST_INSTALL_{CK3,VIC3,EU5} and PMT_TEST_DOCS_{CK3,VIC3,EU5}. Unlike
+      `task test`, these now FAIL rather than skip when those are unset —
+      PMT_TEST_TIER=full says the corpus tier was asked for, and a tier that can
+      silently be empty is not a tier. Use `task test` if you do not have the
+      installs.
     dir: services
+    env:
+      PMT_TEST_TIER: full
     cmds:
       - go test -timeout 60s ./...
       - task: check

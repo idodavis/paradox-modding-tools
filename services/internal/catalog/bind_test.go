@@ -123,7 +123,7 @@ func realBind(t *testing.T, g realGame) (map[string]string, map[string]string, [
 	install := os.Getenv(g.installEnv)
 	docs := os.Getenv(g.docsEnv)
 	if install == "" || docs == "" {
-		t.Skipf("%s / %s not set", g.installEnv, g.docsEnv)
+		corpusEnv(t, "%s / %s not set", g.installEnv, g.docsEnv)
 	}
 	if _, err := os.Stat(install); err != nil {
 		t.Skipf("%s: %v", g.installEnv, err)

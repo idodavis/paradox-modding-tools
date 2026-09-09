@@ -1,6 +1,7 @@
 .vscode
 .task
 .cursor
+.claude
 bin
 frontend/dist
 frontend/node_modules

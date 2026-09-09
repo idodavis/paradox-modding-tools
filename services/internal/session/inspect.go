@@ -279,17 +279,16 @@ func (s *Session) FireKind(key string) string {
 func (s *Session) ConventionLocKeys(kind, id string, minCoverage int) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return catalog.ConventionKeys(id, s.locAffixesLocked(kind), minCoverage)
-}
-
-func (s *Session) locAffixesLocked(kind string) []catalog.LocAffix {
 	if s.cache == nil {
 		return nil
 	}
-	if a := s.cache.LocAffixes[kind]; len(a) > 0 {
-		return a
+	// A kind harvested under its plural or prefixed spelling shares the
+	// canonical kind's affixes; the exact spelling wins where it has any.
+	affixes := s.cache.LocAffixes[kind]
+	if len(affixes) == 0 {
+		affixes = s.cache.LocAffixes[jomini.CanonicalKind(kind)]
 	}
-	return s.cache.LocAffixes[jomini.CanonicalKind(kind)]
+	return catalog.ConventionKeys(id, affixes, minCoverage)
 }
 
 // LocConventionOwner reports the definition a loc key names by convention —
@@ -787,7 +786,15 @@ func (s *Session) defCard(word string, d *catalog.Def) *Inspect {
 	if ins.Usage == "" {
 		ins.Usage = s.macroUsage(d)
 	}
-	ins.Body = s.conventionLocBody(d)
+	// The card's prose comes from the def's own localization, found through
+	// whichever naming convention the kind actually follows. First hit wins:
+	// the conventions are already ranked by how well they hold for the kind.
+	for _, key := range s.ConventionLocKeys(d.Kind, d.Key, catalog.LocConventionUsed) {
+		if text, ok := s.DefaultLoc(key); ok && text != "" {
+			ins.Body = unescapeLocDisplay(text)
+			break
+		}
+	}
 	s.attachSite(ins, d.Path, d.Line, d.Origin, d.Start)
 	s.attachOverlay(ins, d)
 	return ins
@@ -1022,18 +1029,6 @@ func iteratorLabel(a *jomini.Assignment) string {
 		}
 	}
 	return k
-}
-
-func (s *Session) conventionLocBody(d *catalog.Def) string {
-	if d == nil {
-		return ""
-	}
-	for _, key := range s.ConventionLocKeys(d.Kind, d.Key, catalog.LocConventionUsed) {
-		if text, ok := s.DefaultLoc(key); ok && text != "" {
-			return unescapeLocDisplay(text)
-		}
-	}
-	return ""
 }
 
 func (s *Session) docsOnly(word, kind string) string {

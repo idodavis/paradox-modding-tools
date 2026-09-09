@@ -131,7 +131,7 @@ func TestDocShapeAttribution(t *testing.T) {
 		})
 	}
 	if len(seen) == 0 {
-		t.Skip("set PMT_TEST_INSTALL_{CK3,VIC3,EU5} to check attribution")
+		corpusEnv(t, "set PMT_TEST_INSTALL_{CK3,VIC3,EU5} to check attribution")
 	}
 	for _, s := range DocShapes {
 		if docShapeChecks[s.Summary].detect == nil {
@@ -200,4 +200,20 @@ func TestParseDocFile(t *testing.T) {
 			t.Fatalf("type = %q, want presentation", got["type"])
 		}
 	})
+}
+
+// corpusEnv skips when the real-install tier was not requested, and FAILS when
+// it was requested but the environment cannot serve it.
+//
+// A tier that can silently be empty is not a tier. With PMT_TEST_TIER unset a
+// missing variable means "not run" and a skip is right; with PMT_TEST_TIER=full
+// it means "cannot run", and a green suite that quietly executed none of the
+// corpus tests is indistinguishable from a correct one. A typo in
+// PMT_TEST_DOCS_CK3 used to produce exactly that.
+func corpusEnv(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("PMT_TEST_TIER") == "full" {
+		t.Fatalf("PMT_TEST_TIER=full but "+format, args...)
+	}
+	t.Skipf(format, args...)
 }

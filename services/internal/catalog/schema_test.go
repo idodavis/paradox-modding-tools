@@ -298,7 +298,7 @@ func realDocs(t *testing.T, env string) string {
 	t.Helper()
 	dir := os.Getenv(env)
 	if dir == "" {
-		t.Skipf("%s not set", env)
+		corpusEnv(t, "%s not set", env)
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Skipf("%s = %q: %v", env, dir, err)

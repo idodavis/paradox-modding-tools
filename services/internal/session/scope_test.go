@@ -302,7 +302,7 @@ func realInstall(t *testing.T, installEnv, docsEnv string) (install, docs string
 	}
 	install, docs = os.Getenv(installEnv), os.Getenv(docsEnv)
 	if install == "" || docs == "" {
-		t.Skipf("%s / %s not set", installEnv, docsEnv)
+		corpusEnv(t, "%s / %s not set", installEnv, docsEnv)
 	}
 	if _, err := os.Stat(install); err != nil {
 		t.Skipf("%s: %v", installEnv, err)
@@ -378,4 +378,20 @@ func TestScopeNoFalsePositivesVic3(t *testing.T) {
 
 func TestScopeNoFalsePositivesEU5(t *testing.T) {
 	checkNoFalsePositives(t, "eu5", "PMT_TEST_INSTALL_EU5", "PMT_TEST_DOCS_EU5", "game")
+}
+
+// corpusEnv skips when the real-install tier was not requested, and FAILS when
+// it was requested but the environment cannot serve it.
+//
+// A tier that can silently be empty is not a tier. With PMT_TEST_TIER unset a
+// missing variable means "not run" and a skip is right; with PMT_TEST_TIER=full
+// it means "cannot run", and a green suite that quietly executed none of the
+// corpus tests is indistinguishable from a correct one. A typo in
+// PMT_TEST_DOCS_CK3 used to produce exactly that.
+func corpusEnv(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("PMT_TEST_TIER") == "full" {
+		t.Fatalf("PMT_TEST_TIER=full but "+format, args...)
+	}
+	t.Skipf(format, args...)
 }

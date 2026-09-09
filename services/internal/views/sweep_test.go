@@ -240,7 +240,7 @@ func TestSweepWorkspaceHealth(t *testing.T) {
 func sweepGame(t *testing.T, game, appID, installEnv string, base baselineFile) {
 	install := os.Getenv(installEnv)
 	if install == "" {
-		t.Skipf("%s not set", installEnv)
+		corpusEnv(t, "%s not set", installEnv)
 	}
 	ents, err := os.ReadDir(filepath.Join(workshopRoot, appID))
 	if err != nil {
@@ -592,7 +592,7 @@ func TestHealthIsDeterministic(t *testing.T) {
 	}
 	install := os.Getenv("PMT_TEST_INSTALL_" + strings.ToUpper(game))
 	if install == "" {
-		t.Skipf("PMT_TEST_INSTALL_%s not set", strings.ToUpper(game))
+		corpusEnv(t, "PMT_TEST_INSTALL_%s not set", strings.ToUpper(game))
 	}
 	// An empty PMT_DET_MOD checks every mod of the game. One mod passing proves
 	// little: the drift chased here was visible only in a game's total, and the
@@ -825,4 +825,20 @@ func logClusters(t *testing.T, label string, keys []string, sig func(string) str
 		t.Logf("  %s %-34s %6d  e.g. %s", label, r.sig, r.n, r.ex)
 	}
 	t.Logf("  %s: %d clusters, top 25 cover %d of %d", label, len(rows), top, len(keys))
+}
+
+// corpusEnv skips when the real-install tier was not requested, and FAILS when
+// it was requested but the environment cannot serve it.
+//
+// A tier that can silently be empty is not a tier. With PMT_TEST_TIER unset a
+// missing variable means "not run" and a skip is right; with PMT_TEST_TIER=full
+// it means "cannot run", and a green suite that quietly executed none of the
+// corpus tests is indistinguishable from a correct one. A typo in
+// PMT_TEST_DOCS_CK3 used to produce exactly that.
+func corpusEnv(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("PMT_TEST_TIER") == "full" {
+		t.Fatalf("PMT_TEST_TIER=full but "+format, args...)
+	}
+	t.Skipf(format, args...)
 }

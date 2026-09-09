@@ -1,0 +1,76 @@
+# Gate every push and PR on the backend tests. Before this existed, release.yml
+# built and tagged without ever invoking `go test`, so the 60s test contract, the
+# vanilla gate and the sweep were developer discipline rather than enforcement.
+#
+# -race is affordable and was never wired up: measured green in 8.2s uncached on
+# the full suite. It is the only mechanism that can catch a lock-discipline
+# regression, which GLOSSARY declares binding on every consolidation.
+#
+# The real-install tier (PMT_TEST_INSTALL_*) and the vanilla gate cannot run
+# here — they need the three games. Those stay manual, per the plan's
+# harvest-changing-items rule.
+name: Test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    branches: [master]
+    paths-ignore:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+      - ".github/workflows/test.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Go tests (race)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+
+      - name: gofmt
+        run: |
+          set -euo pipefail
+          out="$(gofmt -l services)"
+          if [ -n "${out}" ]; then
+            echo "::error::gofmt needed on:"; echo "${out}"; exit 1
+          fi
+
+      - name: go vet
+        working-directory: services
+        run: go vet ./...
+
+      # -timeout 60s is the contract, not a safety net. A test that needs longer
+      # belongs behind an opt-in task; if this starts failing, move the test
+      # rather than raising the number.
+      - name: go test -race
+        working-directory: services
+        run: go test -short -race -timeout 60s ./...
+
+  frontend:
+    name: Frontend typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run check

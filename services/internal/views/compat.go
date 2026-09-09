@@ -73,8 +73,13 @@ func Compatibility(s *session.Session, order []string) HealthReport {
 			out.Conflicts++
 		}
 	}
-	dep, dang := refRows(s)
-	out.Depends, out.Dangling = len(dep), len(dang)
+	// From the counters, not from the slices: both are capped to the row budget,
+	// so counting them reported "500 dangling" for a total conversion with
+	// thousands. Coverage already had this right 180 lines away in
+	// loccoverage.go; the comment there did not stop the same bug being written
+	// here, which is the case for a test over both rather than a note on one.
+	dep, dang, nDep, nDang := refRows(s)
+	out.Depends, out.Dangling = nDep, nDang
 	out.Rows = append(out.Rows, dep...)
 	out.Rows = append(out.Rows, dang...)
 	return out
@@ -170,7 +175,10 @@ func skipCompatRef(r catalog.Ref) bool {
 	return jomini.IsEphemeral(r.Kind)
 }
 
-func refRows(s *session.Session) (depends, dangling []HealthRow) {
+// refRows returns the depends and dangling rows, each capped at compatRefCap,
+// plus how many there are in total. The counts are the KPI; the slices are what
+// the table can show.
+func refRows(s *session.Session) (depends, dangling []HealthRow, nDepends, nDangling int) {
 	type dangID struct{ kind, name, from string }
 	dangMap := map[dangID]*HealthRow{}
 	seenDep := map[string]bool{}
@@ -183,19 +191,22 @@ func refRows(s *session.Session) (depends, dangling []HealthRow) {
 		if !ok || from == "" || from == game.OriginVanilla {
 			continue
 		}
-		// Deliberately lazy. Building a site reads the file off disk and splits
-		// it into lines, and almost every reference in a workspace resolves
-		// fine — so doing it up front meant one disk read and a full line split
-		// per reference, for a row that was then thrown away. On a total
-		// conversion that is hundreds of thousands of reads and it dominated
-		// the whole of Workspace Health.
+		// Deliberately lazy, and snippet-free. Building a site is cheap; filling
+		// its snippet reads the file off disk and splits it into lines, and
+		// almost every reference in a workspace resolves fine — so doing it up
+		// front meant one disk read and a full line split per reference, for a
+		// row that was then thrown away. On a total conversion that is hundreds
+		// of thousands of reads and it dominated the whole of Workspace Health.
+		//
+		// The snippets are filled at the end, for the rows that survive sorting
+		// and the row budget. Dangling rows cannot be capped as they are
+		// collected — the cap applies to the sorted set — so filling here read
+		// files for up to 2,500 rows nobody would ever see.
 		siteOnce := func() OverrideSite {
-			os := OverrideSite{
+			return OverrideSite{
 				Origin: from, OriginName: s.OriginName(from),
 				Path: r.Path, Rel: s.DisplayRel(r.Path), Line: r.Line,
 			}
-			fillSnippet(s, &os)
-			return os
 		}
 		d := s.Resolve(r.Key)
 		if d == nil {
@@ -240,10 +251,16 @@ func refRows(s *session.Session) (depends, dangling []HealthRow) {
 			continue
 		}
 		id := from + "\x00" + r.Kind + "\x00" + r.Key + "\x00" + to
-		if seenDep[id] || len(depends) >= compatRefCap {
+		if seenDep[id] {
 			continue
 		}
 		seenDep[id] = true
+		nDepends++
+		// Counted above the cap, materialised below it — and siteOnce still runs
+		// only for a row that is kept, so the budget still bounds the disk reads.
+		if len(depends) >= compatRefCap {
+			continue
+		}
 		depends = append(depends, HealthRow{
 			Type: compatDepends, Kind: r.Kind, Name: r.Key,
 			Sites: []OverrideSite{siteOnce()}, Refs: 1,
@@ -251,7 +268,8 @@ func refRows(s *session.Session) (depends, dangling []HealthRow) {
 			To: to, ToName: s.OriginName(to),
 		})
 	}
-	dangling = make([]HealthRow, 0, len(dangMap))
+	nDangling = len(dangMap)
+	dangling = make([]HealthRow, 0, nDangling)
 	for _, row := range dangMap {
 		dangling = append(dangling, *row)
 	}
@@ -260,7 +278,18 @@ func refRows(s *session.Session) (depends, dangling []HealthRow) {
 	if len(dangling) > compatRefCap {
 		dangling = dangling[:compatRefCap]
 	}
-	return depends, dangling
+	fillSnippets(s, depends)
+	fillSnippets(s, dangling)
+	return depends, dangling, nDepends, nDangling
+}
+
+// fillSnippets reads the source lines for rows that survived the row budget.
+func fillSnippets(s *session.Session, rows []HealthRow) {
+	for i := range rows {
+		for j := range rows[i].Sites {
+			fillSnippet(s, &rows[i].Sites[j])
+		}
+	}
 }
 
 func healthRowLess(a, b HealthRow) int {

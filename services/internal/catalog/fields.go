@@ -53,10 +53,10 @@ const minFieldHits = 2
 func deriveFieldValueKinds(rhs map[string]map[string]bool, defs []Def) map[string]string {
 	kindsByKey := map[string][]string{}
 	for _, d := range defs {
-		k := jomini.CanonicalKind(d.Kind)
-		if k == "" || d.Key == "" || jomini.IsEphemeral(k) {
+		if !IsCitableDef(d) {
 			continue
 		}
+		k := jomini.CanonicalKind(d.Kind)
 		seen := false
 		for _, have := range kindsByKey[d.Key] {
 			if have == k {

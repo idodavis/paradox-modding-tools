@@ -214,6 +214,118 @@ func TestWriteNewModVic3OmitsLatest(t *testing.T) {
 	}
 }
 
+// Where a thumbnail lives and what descriptor a game uses are independent facts.
+// PMT keyed the first off the second, which was wrong for all of Victoria 3: it
+// writes metadata.json AND puts the thumbnail at the mod root, and not one of
+// the 14 Vic3 workshop mods measured keeps it in .metadata alone.
+func TestThumbnailPathConvention(t *testing.T) {
+	cases := []struct {
+		game, ext, want string
+	}{
+		{"ck3", ".png", "thumbnail.png"},
+		{"vic3", ".png", "thumbnail.png"},
+		{"eu5", ".png", ".metadata/thumbnail.png"},
+		{"eu5", ".gif", ".metadata/thumbnail.gif"},
+		{"ck3", "", "thumbnail.png"},
+		{"", ".png", "thumbnail.png"},
+	}
+	for _, c := range cases {
+		t.Run(c.game+c.ext, func(t *testing.T) {
+			got, exists := ThumbnailPath(c.game, t.TempDir(), c.ext)
+			if exists {
+				t.Error("empty mod reported an existing thumbnail")
+			}
+			if got != c.want {
+				t.Errorf("ThumbnailPath = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// A mod that already made a choice keeps it, whatever the game's convention.
+// Rewriting to the convention left Vic3 and EU5 mods with two thumbnail files
+// and the descriptor naming the stale one.
+func TestThumbnailPathAdoptsWhatTheModHas(t *testing.T) {
+	cases := []struct {
+		name, game, put, want string
+	}{
+		{"eu5 mod that uses the root", "eu5", "thumbnail.png", "thumbnail.png"},
+		{"vic3 mod that uses .metadata", "vic3", ".metadata/thumbnail.png", ".metadata/thumbnail.png"},
+		{"a gif, which the corpus ships", "ck3", "thumbnail.gif", "thumbnail.gif"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			p := filepath.Join(root, filepath.FromSlash(c.put))
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got, exists := ThumbnailPath(c.game, root, ".png")
+			if !exists {
+				t.Fatalf("ThumbnailPath did not find %s", c.put)
+			}
+			if got != c.want {
+				t.Errorf("ThumbnailPath = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// A mod carrying both — 4 of 14 Vic3, 2 of 13 EU5 — resolves to the one the
+// game itself reads, not to whichever the walk happened to reach first.
+func TestThumbnailPathPrefersTheGamesOwnDirectory(t *testing.T) {
+	for _, c := range []struct{ game, want string }{
+		{"vic3", "thumbnail.png"},
+		{"eu5", ".metadata/thumbnail.png"},
+	} {
+		t.Run(c.game, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, ".metadata"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, rel := range []string{"thumbnail.png", ".metadata/thumbnail.png"} {
+				if err := os.WriteFile(
+					filepath.Join(root, filepath.FromSlash(rel)), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got, _ := ThumbnailPath(c.game, root, ".png"); got != c.want {
+				t.Errorf("ThumbnailPath = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// EU5 writes the file into .metadata/ and still declares `"picture":
+// "thumbnail.png"` — every one of the 31 workshop mods measured declares a bare
+// file name. The path written and the value declared are two different strings.
+func TestWriteNewModEU5ThumbnailGoesBesideMetadata(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "art.gif")
+	if err := os.WriteFile(src, []byte("gif"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "m")
+	if err := WriteNewMod(NewModOpts{
+		GameID: "eu5", Root: root, Name: "M",
+		SupportedVersion: "1", LocLang: "english", ThumbnailSrc: src,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".metadata", "thumbnail.gif")); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".metadata", "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"picture": "thumbnail.gif"`) {
+		t.Fatalf("picture must be the bare name, not a path: %s", raw)
+	}
+}
+
 func TestWriteNewModThumbnail(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "art.png")
 	if err := os.WriteFile(src, []byte("png"), 0o644); err != nil {

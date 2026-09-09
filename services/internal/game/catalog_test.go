@@ -185,6 +185,16 @@ func TestParseDocFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, _ := ParseDocFile(tt.src)
+			// want == "" means "no prose attaches to this key", which is a rule
+			// in its own right — Contains(s, "") is always true, so the one row
+			// asserting a negative was the one row this loop could not check.
+			if tt.want == "" {
+				if got[tt.key] != "" {
+					t.Fatalf("ParseDocFile()[%q] = %q, want no prose at all",
+						tt.key, got[tt.key])
+				}
+				return
+			}
 			if !strings.Contains(got[tt.key], tt.want) {
 				t.Fatalf("ParseDocFile()[%q] = %q, want substring %q (all=%v)",
 					tt.key, got[tt.key], tt.want, got)

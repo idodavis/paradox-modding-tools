@@ -251,7 +251,7 @@ func Lookup(s *session.Session, key string) *LocLookup {
 	}
 	text := locValue(s, key)
 	hit := &LocLookup{Key: key, Text: text}
-	if file, line, origin, ok := s.LocSite(key); ok {
+	if file, line, _, origin, ok := s.LocSite(key); ok {
 		hit.Path, hit.Line, hit.Origin = file, line, originID(origin)
 		hit.OriginName = s.OriginName(hit.Origin)
 	}

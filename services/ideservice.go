@@ -53,9 +53,15 @@ func (s *IdeService) DidSave(workspaceID, path string) error {
 // Severities are applied here rather than inside Diagnose so a toggle takes
 // effect on the next keystroke without a rescan, and so the checks themselves
 // stay ignorant of configuration.
+//
+// The same settings also decide which checks run at all. That is not the checks
+// reading configuration — they are handed a yes or no, never a severity — it is
+// this layer declining to pay for a result it is about to throw away.
 func (s *IdeService) Diagnose(workspaceID, path string) ([]lsp.Diagnostic, error) {
 	return withSession(s.Session, workspaceID, func(sess *session.Session) []lsp.Diagnostic {
-		return lsp.ApplySeverities(lsp.Diagnose(sess, path), s.diagSeverities())
+		sev := s.diagSeverities()
+		return lsp.ApplySeverities(
+			lsp.DiagnoseEnabled(sess, path, lsp.EnabledCodes(sev)), sev)
 	})
 }
 

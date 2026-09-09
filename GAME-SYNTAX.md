@@ -498,7 +498,7 @@ Real-install tests, skipped when the env var is absent:
 | Named-body folder is not a wrapper | `TestNamedBodyFolderIsNeverAWrapper` |
 | Nested child must be declared | `TestDeriveNestedShapesNeedsDeclaredChild` |
 | Cache size ceiling | `catalog/scansize_test.go` |
-| Scope walk, zero false positives on vanilla | `session/scopereal_test.go` |
+| Scope walk, zero false positives on vanilla | `session/scope_test.go` |
 
 **Rule for adding to this file:** record the measurement and the reproduction,
 not the conclusion alone. Every wrong turn in this engine came from reasoning
@@ -735,43 +735,6 @@ token. Electing 323 CK3 fields there put `has_trait` and `capital` on the
 loc_key path; 179 is the honest number.
 
 ---
-
-## 11. Primitives: the set is small, closed, and must be complete
-
-A third of CK3's model is keyed by a bare number, so every integer in script can
-collide with a definition:
-
-| Game | definitions | keyed by a bare number |
-|---|---|---|
-| **CK3** | 215,448 | **68,109 (32%)** — characters 38,020, province_terrain 12,720, provinces 10,887, dynasties 4,223, map_data 1,465 |
-| Vic3 | 41,011 | 0 |
-| EU5 | 142,258 | 240 |
-
-Left alone, `value = 5` resolves to a province. Measured on A Game of Thrones,
-**4,044 of 11,411** literal values would resolve against some database — every
-one of them a `provinces` hit on an arithmetic operand: `value`, `add`, `weight`,
-`days`, `MIN`, `MAX`, `divide`, `count`.
-
-**The defence is not context-tracking, it is a complete primitive set.** A
-literal in a value position is a value, full stop, and the set of things that
-look like literals is small and closed: **number, date, boolean**. Every bug of
-this shape so far was a hole in that set rather than a flaw in the rule — dates
-were missing, which is why `game_start_date < 1178.1.1` hovered as a struggle.
-
-Two measurements say the rule is not too blunt:
-
-- literal values sitting in a slot whose type the engine already knows: **zero**,
-  across a 21,499-file conversion. Suppressing them costs nothing today.
-- assignment keys never reach the rule, so a `random_list` weight and a numeric
-  key in the file that defines it keep their own handling (§3f).
-
-If a future game does put a literal in a typed slot, the fix is already designed
-and should not be built before then: resolve it through the slot's declared type
-using the same chain completion uses in `valueItems` — fire key, script name,
-`Supported Targets`, then field value kind. Hover and completion would then
-answer "what is this" and "what can go here" from one source. Today that would
-change nothing, and speculative machinery here is how the engine got its
-hardcoded edge cases in the first place.
 
 ## 14. A block name is not a position
 
@@ -1146,3 +1109,37 @@ accusing check: the game names the values. If even that can be stale, then every
 declared-source check needs a vanilla gate before it is enabled, not just the
 derived ones. The gate is the only thing that catches this, because it is the
 only place PMT compares its judgement against script the game itself ships.
+
+## 23. A mod's thumbnail location is not implied by its descriptor format
+
+Measured over the 31 Steam workshop mods on this machine, 2026-09-08:
+
+| Game | Descriptor | Convention | root only | `.metadata` only | both | none |
+|---|---|---|---|---|---|---|
+| CK3 | `descriptor.mod` | root | 3 | 0 | 0 | 1 |
+| Victoria 3 | `.metadata/metadata.json` | **root** | 10 | **0** | 4 | 0 |
+| EU5 | `.metadata/metadata.json` | **`.metadata/`** | 0 | 11 | 2 | 0 |
+
+Victoria 3 is the case that separates the two facts: it uses the metadata
+descriptor and puts its thumbnail at the mod root, and **not one Vic3 mod in the
+corpus keeps it in `.metadata` alone**. Deriving the location from the descriptor
+format — which PMT did — is wrong for a whole game.
+
+Three further facts from the same corpus:
+
+- **The declaration is a bare file name, always.** Every mod that declares one
+  writes `"picture": "thumbnail.png"`, including the EU5 mods whose file sits in
+  `.metadata/`. The field is read relative to the descriptor's own directory, so
+  PMT must never write a path into it.
+- **The declaration is usually absent, and unreliable when present.** Of 14 Vic3
+  mods only 2 declare a thumbnail; of 13 EU5 mods, 4 — under two spellings, one
+  of them `"picture": null`. The file is discoverable, so detection beats the
+  declaration and the declaration is the fallback.
+- **Extensions in use: png and gif, no svg.** EU5's Basileia Romaion declares
+  `"picture": "thumbnail.gif"`. PMT accepted `.svg`, which nobody ships, and
+  rejected `.gif`, which is in use.
+
+**The rule that follows:** adopt what the mod already has — for reading, for
+replacing and for the listing — and consult the per-game convention
+(`game.GameInfo.ThumbnailDir`) only when the mod has none. This is the same
+"don't fight what mods already do" rule the mod calendar follows.

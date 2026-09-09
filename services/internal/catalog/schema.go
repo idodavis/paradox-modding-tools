@@ -444,8 +444,23 @@ func (s *Schema) ingest(kind, text string) {
 
 // --- Binding declared types to harvested databases ---------------------------
 
-// minBindCites is the evidence floor: below this a coincidental key match is
-// plausible, so the type stays unbound and callers fall back.
+// minBindCites is the evidence floor for the CITATION join: below this a
+// coincidental key match is plausible, so the join declines.
+//
+// The type does not then stay unbound. bindOne falls through to nameMatchKind,
+// which binds a scope type to a folder whose name matches it singular or plural.
+// That is deliberate and it is not a guess: measured across all three vanilla
+// installs, every one of the 18 name-matched bindings is a real folder —
+// struggle/struggles (2 defs), road_type/road_types (4),
+// parliament_agenda/parliament_agendas (128), province/provinces (10,863). The
+// last is why the fallback exists at all: CK3 cites provinces as `p:xB0D0E0`
+// map colours, which are not script rows, so the citation join can never make a
+// binding the folder name states outright.
+//
+// An earlier version of this comment said the type "stays unbound", and a
+// floor was proposed for nameMatchKind on the strength of it. Measurement found
+// nothing to floor out — every candidate was legitimate — so the fallback keeps
+// its behaviour and this comment now describes it.
 const minBindCites = 3
 
 // bindFloor is the share of a prefix's citations its folders must explain for
@@ -509,10 +524,10 @@ func bindKinds(s *Schema, defs []Def, cites []typedCite) (prefixKind, kindScope 
 
 	keysByKind := map[string]map[string]bool{}
 	for _, d := range defs {
-		k := jomini.CanonicalKind(d.Kind)
-		if k == "" || d.Key == "" || jomini.IsEphemeral(k) {
+		if !IsCitableDef(d) {
 			continue
 		}
+		k := jomini.CanonicalKind(d.Kind)
 		set := keysByKind[k]
 		if set == nil {
 			set = map[string]bool{}

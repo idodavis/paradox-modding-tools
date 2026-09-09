@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -30,7 +31,7 @@ func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHel
 	}
 	usage := s.TokenUsage(key)
 	if usage == "" {
-		if d := s.Resolve(key); d != nil && s.IsMacroKind(d.Kind) {
+		if d := s.Resolve(key); d != nil && jomini.IsMacroKind(d.Kind) {
 			usage = s.TokenUsage(d.Key)
 		}
 	}

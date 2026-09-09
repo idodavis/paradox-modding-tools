@@ -141,16 +141,17 @@ func extractScriptParams(
 	return defs, refs
 }
 
+// scriptedMacroKeys is IsCitableDef plus two exclusions of its own, and they are
+// deliberate: a `$PARAM$` site resolves against names a macro body could call,
+// and neither an event namespace nor a GUI template is callable from script.
 func scriptedMacroKeys(defs []Def) map[string]bool {
 	out := map[string]bool{}
 	for _, d := range defs {
 		k := jomini.CanonicalKind(d.Kind)
-		if jomini.IsEphemeral(k) || k == "loc_key" || k == "namespace" || k == "gui_type" {
+		if !IsCitableDef(d) || k == jomini.KindNamespace || k == jomini.KindGUIType {
 			continue
 		}
-		if d.Key != "" {
-			out[d.Key] = true
-		}
+		out[d.Key] = true
 	}
 	return out
 }

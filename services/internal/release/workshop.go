@@ -210,16 +210,39 @@ func ParseYouTubeID(s string) (string, error) {
 }
 
 // CopyMod copies a mod tree into dest, applying gitignore + workshop ignore rules.
+//
+// Symlinked directories are followed and their contents copied. WalkDir reports
+// a symlink as a non-directory whatever it points at, so a linked folder went to
+// CopyFile, os.Open followed it to a directory, io.Copy returned EISDIR, and the
+// error escaped the walk — one linked folder anywhere in the tree aborted the
+// entire publish. Steam receives real files, so copying the contents is the only
+// answer that both completes and uploads the mod the modder has.
 func CopyMod(src, dest, extraIgnore string) error {
-	patterns := loadIgnorePatterns(src, extraIgnore)
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+	var seen []os.FileInfo
+	if fi, err := os.Stat(src); err == nil {
+		seen = append(seen, fi)
+	}
+	return copyTree(src, dest, loadIgnorePatterns(src, extraIgnore), &seen)
+}
+
+// copyTree is CopyMod's body. seen holds the directories already entered, so a
+// link pointing at one of its own ancestors terminates.
+//
+// Identity is os.SameFile, not a resolved path. filepath.EvalSymlinks does not
+// resolve a Windows junction — it hands back the link's own path — so keying on
+// it made every hop through a self-referential junction look like a new
+// directory. SameFile compares what the filesystem says the directory is.
+func copyTree(src, dest string, patterns []string, seen *[]os.FileInfo) error {
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(src, path)
+		rel, err := filepath.Rel(src, p)
 		if err != nil {
 			return err
 		}
+		// A link is asked what it points at only once the ignore rules have had
+		// their say, so an ignored link is never resolved at all.
 		if skipStage(rel, d.IsDir(), patterns) {
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -230,8 +253,54 @@ func CopyMod(src, dest, extraIgnore string) error {
 		if d.IsDir() {
 			return os.MkdirAll(out, 0o755)
 		}
-		return CopyFile(path, out)
+		// WalkDir lstats, so anything pointing at a directory arrives here
+		// looking like a file. Ask what it IS rather than how it was made: a
+		// Unix symlink is ModeSymlink, but a Windows junction — which is what an
+		// unprivileged Windows account can actually create, and therefore what
+		// modders have — is ModeIrregular. Testing the mode caught only the
+		// first, which is the half of the bug that does not happen on Windows.
+		if !d.Type().IsRegular() {
+			fi, err := os.Stat(p)
+			if err != nil {
+				return nil // a broken link is not a reason to fail a publish
+			}
+			if fi.IsDir() {
+				return copyLinkedDir(p, out, fi, patterns, seen)
+			}
+		}
+		return CopyFile(p, out)
 	})
+}
+
+// copyLinkedDir copies the contents of a linked directory into dest.
+//
+// It enumerates the children itself rather than handing the link to WalkDir:
+// WalkDir lstats its root, sees a non-directory, and returns without reading a
+// single entry, so walking the link copied nothing at all.
+func copyLinkedDir(
+	link, dest string, fi os.FileInfo, patterns []string, seen *[]os.FileInfo,
+) error {
+	for _, s := range *seen {
+		if os.SameFile(s, fi) {
+			return nil
+		}
+	}
+	*seen = append(*seen, fi)
+	ents, err := os.ReadDir(link)
+	if err != nil {
+		return nil
+	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	for _, e := range ents {
+		err := copyTree(filepath.Join(link, e.Name()), filepath.Join(dest, e.Name()),
+			patterns, seen)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CopyFile copies one file, creating parent directories as needed.

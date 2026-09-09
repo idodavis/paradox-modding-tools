@@ -85,7 +85,9 @@ func saveJSON(path string, f *Sidecar) error {
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
 		return err
 	}
-	_ = os.Remove(path)
+	// No os.Remove first: Rename replaces atomically on POSIX, and Go's Windows
+	// Rename already passes MOVEFILE_REPLACE_EXISTING. Removing opened a window
+	// where the good file was gone and the replacement was still only a .tmp.
 	return os.Rename(tmp, path)
 }
 

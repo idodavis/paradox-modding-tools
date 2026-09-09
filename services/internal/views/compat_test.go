@@ -3,6 +3,8 @@
 package views
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -81,6 +83,36 @@ t.2 = { type = character_event }
 	}
 	if got.Depends < 1 || got.Dangling < 1 {
 		t.Fatalf("counts depends=%d dangling=%d", got.Depends, got.Dangling)
+	}
+}
+
+// The KPI is how many there are, not how many the table can show. Counting the
+// slice reported "500 dangling" for a total conversion with thousands — the same
+// fault loccoverage.go had already fixed and commented 180 lines away.
+func TestCompatibilityCountsAreNotTheRowBudget(t *testing.T) {
+	t.Parallel()
+	const want = compatRefCap + 37
+	var body strings.Builder
+	body.WriteString("namespace = t\nt.1 = {\n\ttype = character_event\n\timmediate = {\n")
+	for i := 0; i < want; i++ {
+		fmt.Fprintf(&body, "\t\ttrigger_event = t.%d\n", 9000+i)
+	}
+	body.WriteString("\t}\n}\n")
+
+	s := twoModTrees(t, map[string]string{"events/a.txt": body.String()}, nil)
+	got := Compatibility(s, nil)
+	rows := 0
+	for _, r := range got.Rows {
+		if r.Type == compatDangling {
+			rows++
+		}
+	}
+	if rows != compatRefCap {
+		t.Errorf("dangling rows = %d, want the full budget of %d", rows, compatRefCap)
+	}
+	if got.Dangling != want {
+		t.Errorf("Dangling KPI = %d, want %d (the count, not the %d rows shown)",
+			got.Dangling, want, rows)
 	}
 }
 

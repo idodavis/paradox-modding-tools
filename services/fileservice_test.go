@@ -192,3 +192,48 @@ func TestReadEditableBase64NamesImagesSeparately(t *testing.T) {
 		t.Errorf("raw reader must not refuse a dds: %+v", got)
 	}
 }
+
+// TestWriteFileBase64IsAtomic pins that the editor's save path never truncates
+// the file it is replacing. This is the one file PMT writes that a user cannot
+// regenerate; every derived cache already wrote temp-then-rename.
+func TestWriteFileBase64IsAtomic(t *testing.T) {
+	f := &FileService{}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "00_traits.txt")
+
+	if err := f.WriteFileBase64(path, base64.StdEncoding.EncodeToString([]byte("first"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.WriteFileBase64(path, base64.StdEncoding.EncodeToString([]byte("second"))); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "second" {
+		t.Fatalf("got %q, want %q", got, "second")
+	}
+
+	// No temp files survive a successful write; a stray .pmt* beside the user's
+	// script would show up in the explorer and in a published mod.
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ents) != 1 {
+		var names []string
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("want only the target file, got %v", names)
+	}
+
+	// A failed write leaves the previous contents intact rather than truncating.
+	if err := f.WriteFileBase64(path, "not-valid-base64!!"); err == nil {
+		t.Fatal("want a decode error")
+	}
+	if got, _ := os.ReadFile(path); string(got) != "second" {
+		t.Fatalf("a failed write damaged the file: %q", got)
+	}
+}

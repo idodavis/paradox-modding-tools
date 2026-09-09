@@ -93,6 +93,30 @@ func ScriptSlot(key string) string {
 	return ""
 }
 
+// IsScopeNeutral reports a block key whose body runs in the SAME scope as the
+// block around it: Clausewitz control flow, the named sections of an event, and
+// the sections of an on_action.
+//
+// This is language rather than data, so it is the one scope table that cannot
+// come from a dump. It is deliberately a list of what does NOT change scope —
+// the complement is open-ended and grows with every game patch, while this side
+// is the engine's own grammar and does not.
+func IsScopeNeutral(key string) bool {
+	switch strings.ToLower(key) {
+	case "if", "else", "else_if", "while", "switch", "limit", "trigger_if",
+		"trigger_else", "trigger_else_if", "alternative_limit",
+		"and", "or", "not", "nor", "nand", "potential",
+		"trigger", "immediate", "effect", "option", "after",
+		"cancellation_trigger", "on_trigger_fail", "random_list", "modifier",
+		// on_action sections. An on_action's declared scope is the scope its
+		// own body runs in, so an event fired from one of these runs in it too.
+		"events", "random_events", "first_valid", "on_actions", "fallback",
+		"weight_multiplier":
+		return true
+	}
+	return false
+}
+
 // ScriptNameRule describes how an assignment key harvests an ephemeral name.
 type ScriptNameRule struct {
 	Kind     string // saved_scope, var, global_var, …
@@ -270,6 +294,25 @@ var structuralDocs = map[string]string{
 func StructuralDoc(key string) string {
 	return structuralDocs[strings.ToLower(key)]
 }
+
+// The PMT-assigned kind sentinels. game.MatchExtract hands these out by file
+// shape; every OTHER kind is the parent folder's name and is therefore
+// game-derived, so `traits`, `provinces` and `casus_belli_types` appear and
+// disappear as a patch adds and removes folders.
+//
+// Only the sentinels get constants. Enumerating the game-derived kinds would be
+// the hand-maintained schema that makes a rival validator lag every patch, and
+// not needing one is this project's whole wedge.
+const (
+	KindLocKey        = "loc_key"
+	KindLocValue      = "loc_value"
+	KindNamespace     = "namespace"
+	KindEvent         = "event"
+	KindOnAction      = "on_action"
+	KindGUIType       = "gui_type"
+	KindModDescriptor = "mod_descriptor"
+	KindScriptParam   = "script_param"
+)
 
 // IsObjectKind reports a kind whose definitions are things script can point at.
 //

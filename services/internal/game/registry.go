@@ -43,6 +43,19 @@ type GameInfo struct {
 	// "metadata" (.metadata/metadata.json).
 	Descriptor string `json:"descriptor,omitempty"`
 
+	// ThumbnailDir is where a NEW listing image goes, relative to the mod root:
+	// "" for the root itself, ".metadata" beside the metadata file.
+	//
+	// A separate field because it is a separate fact. Keying it off Descriptor
+	// was wrong for a whole game: Victoria 3 uses metadata.json AND puts its
+	// thumbnail at the root, and not one of the 14 Vic3 workshop mods measured
+	// puts it in .metadata alone. GAME-SYNTAX has the table. Only consulted when
+	// the mod has no thumbnail yet — an existing one keeps its place.
+	//
+	// Backend-only, like FIOSKinds: it decides where PMT writes a file, and the
+	// frontend is told the resulting path on the listing.
+	ThumbnailDir string `json:"-"`
+
 	// DocsFolderName is the per-game Documents subfolder (e.g. "Crusader Kings III").
 	DocsFolderName string `json:"docsFolderName,omitempty"`
 	// ScriptDocsSubdir is where in-game console dumps land ("logs" or "docs").
@@ -96,13 +109,15 @@ var registry = map[string]*GameInfo{
 		FirstWins:        "GUI types, templates, and events are first-wins.",
 	},
 	"eu5": {
-		ID:               "eu5",
-		Name:             "Europa Universalis V",
-		ShortName:        "EU5",
-		WikiAPI:          "https://eu5.paradoxwikis.com/api.php",
-		ScriptRoot:       "game",
-		StageRoots:       []string{"in_game", "main_menu", "loading_screen"},
-		Descriptor:       "metadata",
+		ID:         "eu5",
+		Name:       "Europa Universalis V",
+		ShortName:  "EU5",
+		WikiAPI:    "https://eu5.paradoxwikis.com/api.php",
+		ScriptRoot: "game",
+		StageRoots: []string{"in_game", "main_menu", "loading_screen"},
+		Descriptor: "metadata",
+		// 11 of 13 EU5 workshop mods; none at the root only.
+		ThumbnailDir:     ".metadata",
 		DocsFolderName:   "Europa Universalis V",
 		ScriptDocsSubdir: "docs",
 		EntryModes:       []string{"INJECT", "REPLACE", "TRY_INJECT", "TRY_REPLACE", "INJECT_OR_CREATE", "REPLACE_OR_CREATE"},

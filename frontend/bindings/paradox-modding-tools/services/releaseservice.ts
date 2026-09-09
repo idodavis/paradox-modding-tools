@@ -43,7 +43,12 @@ export function Convert(src: string, to: string): $CancellablePromise<$models.Co
 }
 
 /**
- * CopyThumbnail copies src onto the game thumb path and returns the new rel.
+ * CopyThumbnail replaces the mod's listing image with src and returns the path
+ * it wrote, relative to the mod root.
+ * 
+ * It replaces in place: a mod that already has a thumbnail keeps where it put
+ * it. Writing to the game's convention instead left Victoria 3 and EU5 mods with
+ * two thumbnail files and the descriptor naming the stale one.
  */
 export function CopyThumbnail(workspaceID: string, modID: string, src: string): $CancellablePromise<string> {
     return $Call.ByID(909999901, workspaceID, modID, src);

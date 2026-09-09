@@ -241,7 +241,17 @@ func (w *scopeWalk) stepOne(sc *catalog.Schema, key string) bool {
 	// An unknown current scope cannot contradict the declared input list, so the
 	// hop is taken on the game's word. Whether the link was legal where the
 	// modder used it is wrong-scope's question, not this one.
-	if l, ok := sc.Links[k]; ok && l.Out != "" {
+	//
+	// A link declaring several output types names no single scope, so it is not
+	// a hop this walk can take — the same answer it gives everywhere else it
+	// cannot name a scope. EU5 declares `modifier` with "Output Scopes: value,
+	// boolean", and every weight block in all three games opens with
+	// `modifier = { … }`, so entering it put correct country-scoped script in a
+	// scope named after two primitives. Tried and rejected as the fix: also
+	// refusing links that require data. It was not needed — the comma alone
+	// clears all three installs — and it would have cost `culture = { … }`,
+	// which is both a data citation and a real hop.
+	if l, ok := sc.Links[k]; ok && l.Out != "" && !strings.Contains(l.Out, ",") {
 		if len(l.In) == 0 || w.cur() == "" || slices.Contains(l.In, w.cur()) {
 			w.push(l.Out)
 			return true
@@ -275,16 +285,11 @@ func (w *scopeWalk) stepOne(sc *catalog.Schema, key string) bool {
 // scopeNeutral reports block keys that group script without changing scope.
 // These are Clausewitz control flow, which is language rather than data, so it
 // is the one table here that cannot come from a dump.
+// The table moved to jomini so the harvest can ask the same question; the
+// ScriptSlot fallback stays here, because it is reached only after stepOne has
+// already taken the iterator branch.
 func scopeNeutral(k string) bool {
-	switch k {
-	case "if", "else", "else_if", "while", "switch", "limit", "trigger_if",
-		"trigger_else", "trigger_else_if", "alternative_limit",
-		"and", "or", "not", "nor", "nand", "potential",
-		"trigger", "immediate", "effect", "option", "after",
-		"cancellation_trigger", "on_trigger_fail", "random_list", "modifier":
-		return true
-	}
-	return jomini.ScriptSlot(k) != ""
+	return jomini.IsScopeNeutral(k) || jomini.ScriptSlot(k) != ""
 }
 
 // ScopeMisuse is one engine token used where the game does not allow it.
@@ -374,18 +379,31 @@ func (s *Session) defRootScopeLocked(
 // `activity_event` and `letter_event` bodies are both character-scoped, so
 // reading the type as a scope reported thousands of correct vanilla lines as
 // wrong-scope. What DOES declare it is the on_action: on_actions.log states the
-// scope each one runs in, and an event fired by one runs in that same scope.
+// scope each one runs in, and an event fired by one runs in that same scope --
+// but only when the fire site sits at the on_action's own scope level, which is
+// what Edge.Rescoped records.
 //
-// Measured across all three installs, every event reachable from a scoped
-// on_action has exactly ONE root scope -- 4,376 on CK3, 932 on Victoria 3, 2,027
-// on EU5, and not a single conflict. So a disagreement means something PMT does
-// not understand, and the honest answer is no root at all rather than a pick.
+// Measured across all three installs, every event reachable that way has exactly
+// ONE root scope, and not a single conflict. So a disagreement means something
+// PMT does not understand, and the honest answer is no root at all rather than a
+// pick. Re-measured after I.1b corrected edge attribution: 7,517 / 1,736 / 2,283
+// edges come from a scoped on_action (CK3 / Vic3 / EU5), of which 74 / 4 / 6 are
+// rescoped, leaving 4,697 / 979 / 2,158 events with a root scope -- more than
+// the 4,376 / 932 / 2,027 this comment recorded before, because the edges are
+// now right.
 //
 // Edges come from the session, not the cache, so a mod's own on_action firing a
 // mod's own event counts the same as vanilla's.
 func (s *Session) eventRootScopeLocked(sc *catalog.Schema, event string) string {
 	found := ""
 	for _, e := range s.edgesByTo[event] {
+		// An on_action states the scope its own body runs in. A fire site under
+		// a block that changed scope is somewhere else entirely, and reading the
+		// declaration through it is how faith-scoped on_faith_monthly came to
+		// call 24 lines of correct character-scoped script wrong.
+		if e.Rescoped {
+			continue
+		}
 		scope := sc.OnActions[strings.ToLower(e.From)]
 		if scope == "" || scope == "none" {
 			continue

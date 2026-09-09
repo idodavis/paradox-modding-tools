@@ -181,7 +181,7 @@ func resolveLocalization(s *Session, path string, at probe) (identity, bool) {
 	if at.inKey || !s.locDefined(at.word) {
 		return identity{}, false
 	}
-	file, ln, origin, ok := s.LocSite(at.word)
+	file, ln, _, origin, ok := s.LocSite(at.word)
 	if !ok {
 		return identity{}, false
 	}
@@ -202,7 +202,7 @@ func resolveDataFunction(s *Session, path string, at probe) (identity, bool) {
 
 func resolveMacroKind(s *Session, path string, at probe) (identity, bool) {
 	ck := jomini.CanonicalKind(at.word)
-	if !s.IsMacroKind(ck) {
+	if !jomini.IsMacroKind(ck) {
 		return identity{}, false
 	}
 	return identity{path: path, name: at.word, kind: ck}, true

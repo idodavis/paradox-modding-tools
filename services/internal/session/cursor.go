@@ -110,11 +110,11 @@ func (s *Session) paramOwnerIn(chain []jomini.Statement) string {
 			continue
 		}
 		key := a.Key.Text
-		if s.IsMacroKind(jomini.CanonicalKind(key)) || s.IsMacroDef(key) {
+		if jomini.IsMacroKind(jomini.CanonicalKind(key)) || s.IsMacroDef(key) {
 			return key
 		}
 		d := s.Resolve(key)
-		if d != nil && s.IsMacroKind(d.Kind) {
+		if d != nil && jomini.IsMacroKind(d.Kind) {
 			return key
 		}
 	}

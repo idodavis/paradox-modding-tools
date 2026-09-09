@@ -158,7 +158,14 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 		// Stale formatVersion discards the file (no migration). Do not fail
 		// the session — that leaves the IDE unmounted until a UI reload.
 		cache, _ = catalog.LoadCache(inst.ID, ver)
-		vloc, _ = catalog.LoadVanillaLoc(inst.ID, ver, lang)
+		// The harvesting wrapper, not catalog.LoadVanillaLoc: Rescan writes only
+		// the english sidecar (scan.go passes LocLang "english"), and every other
+		// language is harvested on first use. Loading without that fallback left
+		// a workspace whose default language is not english with vloc == nil —
+		// no vanilla loc in hover or completion, and InheritedLocKeys empty, so
+		// Workspace Health reported every vanilla key the mod cites as missing.
+		vloc, _ = loadVanillaLoc(
+			context.Background(), inst.ID, inst.GameID, inst.Path, ver, lang)
 	}
 	inputs := make([]catalog.ModInput, 0, len(ws.Mods))
 	mods := append([]WorkspaceMod(nil), ws.Mods...)
@@ -215,8 +222,10 @@ func (s *SessionService) autoRescan(h *LanguageHealth) {
 		return
 	}
 	// A scan is worth starting when there is no cache at all, or when the cache
-	// was built against a different game version. Anything else — a stale
-	// script_docs dump, a mod edit — is not a reason to walk the install.
+	// no longer describes the install — a different game version, or binaries
+	// newer than the scan for the games that report no version. Anything else —
+	// a stale script_docs dump, a mod edit — is not a reason to walk the
+	// install.
 	if h.ScannedAt != "" && !h.CacheStale {
 		return
 	}
@@ -326,6 +335,13 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 	if err := catalog.SaveCache(c); err != nil {
 		return nil, err
 	}
+	// Every sidecar for this install goes, not just the one being rewritten.
+	// Scan only ever harvests english; the other languages keep the previous
+	// patch's filename under a pinned or "latest" version key and LoadVanillaLoc
+	// accepts them, so a rescan used to leave them silently pre-patch. They come
+	// back on first use through loadVanillaLoc — which is why this is safe only
+	// with that harvesting fallback in place.
+	_ = catalog.DropVanillaLocFiles(inst.ID)
 	if err := catalog.SaveVanillaLoc(inst.ID, ver, "english", vloc); err != nil {
 		return nil, err
 	}
@@ -457,7 +473,7 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 		Source: string(st.Source), Effects: st.Effects, Triggers: st.Triggers,
 		ScopeTypes: st.ScopeTypes, Prefixes: st.Prefixes, OnActions: st.OnActions,
 		ReadAt: st.ReadAt, Archived: st.Archived, Folder: st.Folder,
-		Stale:        dumpsPredateInstall(st.ReadAt, inst.Path),
+		Stale:        predatesInstall(st.ReadAt, inst.Path),
 		LaunchOption: "-debug_mode",
 		Command:      "script_docs",
 	}
@@ -477,18 +493,35 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 		liveDetected != inst.VersionDetected {
 		h.CacheStale = true
 	}
+	// Every test above compares version strings, and all three skip when there
+	// is no version to compare — which is EU5's normal state, since
+	// ReadGameVersion needs launcher-settings.json and EU5 ships none. Such an
+	// install pins "latest", so a patched game was served from a pre-patch model
+	// indefinitely and reported as current. That is P3's "a patch is a rescan"
+	// failing precisely where it was promised.
+	//
+	// The binaries' mtime needs no version string and works on all three games.
+	if predatesInstall(h.ScannedAt, inst.Path) {
+		h.CacheStale = true
+	}
 	return h, nil
 }
 
-// dumpsPredateInstall reports that the game was patched after the dumps were
-// written. The dumps record no version of their own, so this compares
-// timestamps: the newest dump mtime against when the install was last patched.
-// An unknown install time means "cannot tell", never stale.
-func dumpsPredateInstall(readAt, installPath string) bool {
-	if readAt == "" {
+// predatesInstall reports that the game was patched after stamp was written.
+//
+// Timestamps rather than versions, because the version string is not always
+// there to compare: ReadGameVersion needs launcher-settings.json, which EU5 does
+// not ship, so such an install pins "latest" and every version-equality test
+// silently skips. InstallUpdatedAt reads the binaries instead and works on all
+// three games. An unknown install time means "cannot tell", never stale.
+//
+// Used for both the script_docs dumps and the model cache: neither records a
+// version of its own that can be trusted across all games.
+func predatesInstall(stamp, installPath string) bool {
+	if stamp == "" {
 		return false
 	}
-	wrote, err := time.Parse(time.RFC3339, readAt)
+	wrote, err := time.Parse(time.RFC3339, stamp)
 	if err != nil {
 		return false
 	}

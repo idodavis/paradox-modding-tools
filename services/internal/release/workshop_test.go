@@ -2,9 +2,12 @@ package release
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseYouTubeID(t *testing.T) {
@@ -60,6 +63,76 @@ func TestCopyModSkipsGit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dest, ".git")); err == nil {
 		t.Fatal("copied .git")
+	}
+}
+
+// linkDir points link at target, by whatever mechanism this machine allows.
+//
+// os.Symlink to a directory needs SeCreateSymbolicLink on Windows, which an
+// ordinary account does not hold, so these tests skipped on the platform most
+// PMT users are on — and the bug they cover is one a publish hits. A junction
+// needs no privilege and Go reports it as ModeSymlink, which is the case
+// CopyMod actually has to handle.
+func linkDir(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err == nil {
+		return
+	}
+	if runtime.GOOS != "windows" {
+		t.Skipf("cannot link %s -> %s", link, target)
+	}
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+		t.Skipf("no symlink privilege and mklink /J failed: %v: %s", err, out)
+	}
+}
+
+// One symlinked folder anywhere in a mod tree used to abort the whole publish:
+// WalkDir calls a symlink a file, CopyFile's os.Open follows it to a directory,
+// and io.Copy returns EISDIR straight out of the walk.
+func TestCopyModFollowsLinkedDirectories(t *testing.T) {
+	src, dest, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(outside, "shared.txt"), []byte("shared"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkDir(t, outside, filepath.Join(src, "assets"))
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyMod(src, dest, ""); err != nil {
+		t.Fatalf("a linked folder aborted the publish: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "a.txt")); err != nil {
+		t.Error("ordinary file missing:", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dest, "assets", "shared.txt"))
+	if err != nil {
+		t.Fatalf("linked folder's contents not copied: %v", err)
+	}
+	if string(raw) != "shared" {
+		t.Errorf("contents = %q, want shared", raw)
+	}
+}
+
+// A link pointing at its own ancestor must terminate, not recurse forever.
+func TestCopyModStopsAtALinkCycle(t *testing.T) {
+	src, dest := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkDir(t, src, filepath.Join(src, "loop"))
+	done := make(chan error, 1)
+	go func() { done <- CopyMod(src, dest, "") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("CopyMod: %v", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("CopyMod did not terminate on a self-referential link")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "a.txt")); err != nil {
+		t.Error("ordinary file missing:", err)
 	}
 }
 

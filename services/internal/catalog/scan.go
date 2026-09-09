@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -50,6 +51,20 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	onProgress := req.OnProgress
 	progress(onProgress, 5, "listing files")
 	inv := gather(scriptRoots(info, req.InstallPath))
+
+	// A game whose script root holds nothing is not an empty game — it is the
+	// wrong folder. walkClassified discards its walk error, so a missing,
+	// moved or mis-pointed install arrives here as an empty inventory rather
+	// than a failure, and without this guard Scan would return a 0-def cache
+	// with a fresh ScannedAt, SaveCache would write it over the good one, and
+	// CacheStale would then read false forever. The symptom is not silence:
+	// unresolved-ref is gated on KindHasDefs, which is satisfied by the mod's
+	// own defs, so a mod extending `traits` gets a false finding on every
+	// vanilla trait it cites.
+	if len(inv.script) == 0 {
+		return nil, nil, fmt.Errorf(
+			"no script files under %s: check the install path", req.InstallPath)
+	}
 
 	// The declared type system is read first: binding prefixes to databases
 	// needs it during the walk, not after. Live dumps win and refresh PMT's

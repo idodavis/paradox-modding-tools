@@ -119,7 +119,10 @@ tasks:
     env:
       PMT_TEST_TIER: full
     cmds:
-      - go test -timeout 60s ./...
+      # Not 60s. That contract governs `task test`, the loop run on every change;
+      # this tier scans three real installs and measured 126s for catalog alone.
+      # The sweep is excluded by PMT_TEST_SWEEP, not by this number.
+      - go test -timeout 600s ./...
       - task: check
 
   test:gate:
@@ -131,7 +134,10 @@ tasks:
     env:
       PMT_VANILLA_GATE: "1"
     cmds:
-      - go test ./internal/views/ -run TestVanillaDiagnosticsClean -v -timeout 30m
+      # Both gates. TestVanillaEventScopeClean was unreachable by any task in the
+      # repo — -short skipped it, PMT_VANILLA_GATE gated it, and this -run
+      # pattern did not match its name — so 104 lines never executed.
+      - go test ./internal/views/ -run 'TestVanilla(DiagnosticsClean|EventScopeClean)' -v -timeout 30m
 
   test:probe:
     summary: >
@@ -153,5 +159,7 @@ tasks:
       determinism guard alongside, because a count that moves between runs cannot
       be read as a regression either way.
     dir: services
+    env:
+      PMT_TEST_SWEEP: "1"
     cmds:
       - go test ./internal/views/ -run 'TestSweep|TestHealthIsDeterministic' -v -timeout 3600s

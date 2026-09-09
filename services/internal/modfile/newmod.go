@@ -8,7 +8,9 @@ import (
 	"io"
 	"os"
 	"paradox-modding-tools/services/internal/game"
+	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -94,7 +96,7 @@ func WriteNewMod(opts NewModOpts) error {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
-	picture, err := copyThumbnail(root, opts.ThumbnailSrc)
+	picture, err := copyThumbnail(opts.GameID, root, opts.ThumbnailSrc)
 	if err != nil {
 		return err
 	}
@@ -130,24 +132,35 @@ func writeDescriptions(root, name, description string) error {
 	return os.WriteFile(filepath.Join(root, DescBbName), []byte(bb), 0o644)
 }
 
-func copyThumbnail(root, src string) (string, error) {
+// copyThumbnail installs src as the mod's listing image and returns the value
+// for the descriptor's picture field.
+//
+// That value is the bare file name, NOT the path written. Every one of the 31
+// workshop mods measured declares `"picture": "thumbnail.png"` — including the
+// EU5 mods whose file sits in .metadata/ — so the field is read relative to the
+// descriptor's own directory and a mod PMT writes must look like the mods the
+// games ship. ThumbnailPath is what answers "where is the file".
+func copyThumbnail(gameID, root, src string) (string, error) {
 	src = strings.TrimSpace(src)
 	if src == "" {
 		return "", nil
 	}
 	ext := strings.ToLower(filepath.Ext(src))
-	switch ext {
-	case ".png", ".jpg", ".jpeg", ".svg":
-	default:
-		return "", fmt.Errorf("thumbnail must be png, jpg, or svg")
+	if !slices.Contains(ThumbnailExts, ext) {
+		return "", fmt.Errorf("thumbnail must be one of %s",
+			strings.Join(ThumbnailExts, ", "))
 	}
-	name := "thumbnail" + ext
+	rel, _ := ThumbnailPath(gameID, root, ext)
+	abs := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return "", err
+	}
 	in, err := os.Open(src)
 	if err != nil {
 		return "", err
 	}
 	defer in.Close()
-	out, err := os.Create(filepath.Join(root, name))
+	out, err := os.Create(abs)
 	if err != nil {
 		return "", err
 	}
@@ -155,7 +168,7 @@ func copyThumbnail(root, src string) (string, error) {
 	if _, err := io.Copy(out, in); err != nil {
 		return "", err
 	}
-	return name, nil
+	return path.Base(rel), nil
 }
 
 func writeDescriptor(info *game.GameInfo, root, name, supported, picture string) error {

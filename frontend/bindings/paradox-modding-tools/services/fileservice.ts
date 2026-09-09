@@ -76,6 +76,11 @@ export function StatPath(fullPath: string): $CancellablePromise<$models.PathStat
 
 /**
  * WriteFileBase64 writes raw bytes from standard base64.
+ * 
+ * Temp-then-rename, because this is the editor's save path and the only file
+ * PMT writes that it cannot regenerate. A failed in-place write — disk full,
+ * permission lost mid-save, the process dying — truncates the modder's script.
+ * Every derived cache already writes this way; the irreplaceable file did not.
  */
 export function WriteFileBase64(fullPath: string, b64: string): $CancellablePromise<void> {
     return $Call.ByID(256026061, fullPath, b64);

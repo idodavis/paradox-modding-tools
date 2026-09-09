@@ -3,6 +3,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,6 +86,11 @@ type Store struct {
 	mu   sync.Mutex
 	path string
 	cfg  Config
+	// loadErr is set when config.json existed but could not be read for a
+	// reason that is not a deliberate reset. The store then serves an empty
+	// config but refuses to write, so a transient read failure cannot destroy
+	// a good file.
+	loadErr error
 }
 
 func appConfigDir() (string, error) {
@@ -107,13 +113,29 @@ func emptyConfig() Config {
 	return Config{FormatVersion: configFormatVersion, Settings: map[string]map[string]string{}}
 }
 
+// errConfigReset marks the two load failures where starting empty is CORRECT:
+// a missing formatVersion and a version mismatch. Both are deliberate — a bump
+// wipes rather than migrates, because the config is small and re-enterable.
+var errConfigReset = errors.New("config reset")
+
 func newStore(path string) *Store {
 	s := &Store{path: path, cfg: emptyConfig()}
-	if c, err := loadConfig(path); err == nil {
+	c, err := loadConfig(path)
+	switch {
+	case err == nil:
 		s.cfg = c
 		if s.cfg.Settings == nil {
 			s.cfg.Settings = map[string]map[string]string{}
 		}
+	case os.IsNotExist(err), errors.Is(err, errConfigReset):
+		// First run, or a deliberate format reset. Empty is right.
+	default:
+		// The file may be perfectly good and merely unreadable right now — an
+		// antivirus hold, a permission blip, OneDrive mid-sync. Starting empty
+		// presents as a first run, and the next Mutate would write that empty
+		// config over the real one, losing every install, workspace and mod
+		// with no backup and no way back. Refuse to write instead.
+		s.loadErr = err
 	}
 	return s
 }
@@ -126,10 +148,10 @@ func loadConfig(path string) (Config, error) {
 	n, err := sonic.Get(raw, "formatVersion")
 	got, nerr := n.Int64()
 	if err != nil || nerr != nil {
-		return Config{}, fmt.Errorf("missing formatVersion")
+		return Config{}, fmt.Errorf("missing formatVersion: %w", errConfigReset)
 	}
 	if int(got) != configFormatVersion {
-		return Config{}, fmt.Errorf("format %d != %d", got, configFormatVersion)
+		return Config{}, fmt.Errorf("format %d != %d: %w", got, configFormatVersion, errConfigReset)
 	}
 	var dst Config
 	if err := sonic.Unmarshal(raw, &dst); err != nil {
@@ -150,11 +172,15 @@ func saveConfig(path string, cfg *Config) error {
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
 		return err
 	}
-	_ = os.Remove(path)
+	// No os.Remove first: Rename replaces atomically on POSIX, and Go's Windows
+	// Rename already passes MOVEFILE_REPLACE_EXISTING. Removing opened a window
+	// where the good file was gone and the replacement was still only a .tmp.
 	return os.Rename(tmp, path)
 }
 
-// OpenStore loads config.json (missing or version mismatch → empty; drops SQLite).
+// OpenStore loads config.json and drops the legacy SQLite files. Missing or a
+// version mismatch → empty and writable; any other read failure → empty but
+// read-only, so a transient error cannot overwrite a good file.
 func OpenStore() (*Store, error) {
 	dir, err := appConfigDir()
 	if err != nil {
@@ -171,10 +197,15 @@ func (s *Store) Read(fn func(*Config)) {
 	fn(&s.cfg)
 }
 
-// Mutate runs fn then saves. A fn error skips save.
+// Mutate runs fn then saves. A fn error skips save, and so does an unreadable
+// config: writing the empty stand-in over a file that exists and could not be
+// read would lose every install, workspace and mod.
 func (s *Store) Mutate(fn func(*Config) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.loadErr != nil {
+		return fmt.Errorf("config.json unreadable, refusing to overwrite it: %w", s.loadErr)
+	}
 	if err := fn(&s.cfg); err != nil {
 		return err
 	}

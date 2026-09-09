@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -143,5 +145,52 @@ func TestCache(t *testing.T) {
 		t.Fatal("expected format mismatch")
 	} else if err.Error() != fmt.Sprintf("format 2 != %d", LocFormatVersion) {
 		t.Fatalf("mismatch error = %v", err)
+	}
+}
+
+// A cache the engine will refuse must not be reported as a scan that happened.
+// PeekCacheScannedAt feeds the install list's "last scanned" date, and it used
+// to answer from the file's existence alone — so after a format bump the UI
+// showed a recent scan for a model LoadCache had already discarded, and the one
+// visible signal that a rescan was needed said everything was fine.
+func TestPeekCacheScannedAtRefusesAWrongFormat(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("AppData", dir)
+	const id, ver = "peek-test", "1.0"
+	c := &VanillaCache{
+		FormatVersion: CacheFormatVersion, InstallID: id, GameID: "ck3",
+		GameVersion: ver, ScannedAt: "2026-09-09T00:00:00Z",
+	}
+	if err := SaveCache(c); err != nil {
+		t.Fatal(err)
+	}
+	if got := PeekCacheScannedAt(id, ver); got != c.ScannedAt {
+		t.Fatalf("current format: got %q, want %q", got, c.ScannedAt)
+	}
+	// Rewrite it as the version before this one, which is what a user's disk
+	// holds the moment CacheFormatVersion moves.
+	path, err := vanillaJSON("vanilla", id, ver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := strings.Replace(string(raw),
+		`"formatVersion":`+strconv.Itoa(CacheFormatVersion),
+		`"formatVersion":`+strconv.Itoa(CacheFormatVersion-1), 1)
+	if old == string(raw) {
+		t.Fatal("could not rewrite the format version; the field's spelling changed")
+	}
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadCache(id, ver); err == nil {
+		t.Fatal("LoadCache accepted the old format; this test's premise is gone")
+	}
+	if got := PeekCacheScannedAt(id, ver); got != "" {
+		t.Errorf("reported %q for a cache LoadCache refuses", got)
 	}
 }

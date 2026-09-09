@@ -149,7 +149,7 @@ func locDefined(s *session.Session, key string) bool {
 	if _, ok := s.DefaultLoc(key); ok {
 		return true
 	}
-	_, _, _, ok := s.LocSite(key)
+	_, _, _, _, ok := s.LocSite(key)
 	return ok
 }
 

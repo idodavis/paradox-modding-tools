@@ -232,7 +232,7 @@ func identReferencesOwned(s *session.Session, word, kind, owner string) []Locati
 		}
 	}
 	if kind == "" && !hasLocDef {
-		if file, ln, _, ok := s.LocSite(word); ok {
+		if file, ln, _, _, ok := s.LocSite(word); ok {
 			add(defLocation(s, catalog.Def{
 				Kind: "loc_key", Key: word, Path: file, Line: ln,
 			}))

@@ -53,6 +53,13 @@ func ck3Schema() *catalog.Schema {
 
 func scopeSession(t *testing.T, rel, body string) (*session.Session, string) {
 	t.Helper()
+	return scopeSessionWith(t, ck3Schema(), rel, body)
+}
+
+func scopeSessionWith(
+	t *testing.T, schema *catalog.Schema, rel, body string,
+) (*session.Session, string) {
+	t.Helper()
 	root := t.TempDir()
 	p := filepath.Join(root, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -64,7 +71,7 @@ func scopeSession(t *testing.T, rel, body string) (*session.Session, string) {
 	if err := os.WriteFile(filepath.Join(root, "descriptor.mod"), []byte("name=\"t\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cache := &catalog.VanillaCache{Schema: ck3Schema()}
+	cache := &catalog.VanillaCache{Schema: schema}
 	catalog.PrepareCache(cache)
 	s := session.NewWithLoc("ws", "ck3", "english", cache, nil,
 		[]catalog.ModInput{{Origin: "mod", Root: root, Order: 0}})
@@ -106,6 +113,113 @@ func TestScopeAtOnActionRoot(t *testing.T) {
 `
 	s, p := scopeSession(t, "common/on_action/x.txt", body)
 	line, col := at(body, "add_gold")
+	if got := s.ScopeAt(p, line, col); got != "character" {
+		t.Errorf("ScopeAt = %q, want character", got)
+	}
+}
+
+// An event's root scope comes from the on_action that fires it — but only when
+// the fire site is at the on_action's own scope level.
+//
+// CK3's on_faith_monthly is faith-scoped and reaches
+// `trigger_event = global_religion.1000` fourteen blocks deep, inside
+// character-scoped iterators, so the event runs on a character. Reading the
+// on_action's declaration through that nesting reported 24 lines of correct
+// vanilla CK3 as wrong-scope. The edge itself is right and the Event Graph is
+// unaffected; only the scope inference has to decline.
+//
+// This became reachable when defContainers started attributing an edge to the
+// object that encloses it instead of to a saved scope (plan I.1b): before that,
+// the nested fire site produced an edge from `scope:ruler_target`, which names
+// no on_action, so no root scope was derived and the wrong premise never fired.
+func TestEventRootScopeIgnoresRescopedFireSite(t *testing.T) {
+	sc := ck3Schema()
+	sc.OnActions["on_faith_monthly"] = "faith"
+	sc.Scopes["faith"] = catalog.ScopeType{
+		ChangeScopes: true, ExecuteEffects: true, EvaluateTriggers: true,
+	}
+	root := t.TempDir()
+	write := func(rel, body string) string {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// Fired at the on_action's own level, and again from inside an iterator.
+	write("common/on_action/faith.txt", `on_faith_monthly = {
+	events = {
+		faith_at_root.1
+	}
+	effect = {
+		every_vassal = {
+			trigger_event = faith_nested.1
+		}
+	}
+}
+`)
+	eventBody := `namespace = faith_at_root
+
+faith_at_root.1 = {
+	type = character_event
+	immediate = {
+		add_gold = 1
+	}
+}
+
+namespace = faith_nested
+
+faith_nested.1 = {
+	type = character_event
+	immediate = {
+		add_gold = 2
+	}
+}
+`
+	ep := write("events/faith.txt", eventBody)
+	if err := os.WriteFile(filepath.Join(root, "descriptor.mod"),
+		[]byte("name=\"t\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache := &catalog.VanillaCache{Schema: sc}
+	catalog.PrepareCache(cache)
+	s := session.NewWithLoc("ws", "ck3", "english", cache, nil,
+		[]catalog.ModInput{{Origin: "mod", Root: root, Order: 0}})
+	s.DidOpen(ep, eventBody)
+
+	line, col := at(eventBody, "add_gold = 1")
+	if got := s.ScopeAt(ep, line, col); got != "faith" {
+		t.Errorf("top-level fire: scope = %q, want faith", got)
+	}
+	line, col = at(eventBody, "add_gold = 2")
+	if got := s.ScopeAt(ep, line, col); got != "" {
+		t.Errorf("fire site nested under every_vassal: scope = %q, want none", got)
+	}
+}
+
+// A link that declares several output types names no scope, so the walk stops
+// rather than adopting the list as a scope name. EU5's `modifier` link outputs
+// "value, boolean", and every weight block in every game opens with
+// `modifier = { … }` — three lines of correct vanilla EU5 were reported as
+// wrong-scope in a scope called "value, boolean".
+func TestScopeAtMultiOutputLinkIsNotAHop(t *testing.T) {
+	sc := ck3Schema()
+	sc.Links["modifier"] = catalog.ScopeLink{Global: true, Out: "value, boolean"}
+	body := `on_birth = {
+	weight_multiplier = {
+		modifier = {
+			add_gold = 5
+		}
+	}
+}
+`
+	s, p := scopeSessionWith(t, sc, "common/on_action/x.txt", body)
+	line, col := at(body, "add_gold")
+	// modifier is scope-neutral, so the character root still holds. What must
+	// NOT happen is the link being taken and the scope becoming its output list.
 	if got := s.ScopeAt(p, line, col); got != "character" {
 		t.Errorf("ScopeAt = %q, want character", got)
 	}

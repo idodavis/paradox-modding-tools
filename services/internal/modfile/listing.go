@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"paradox-modding-tools/services/internal/game"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -84,13 +85,57 @@ func EnsureDescriptions(root, name, description string) error {
 	return nil
 }
 
-// ThumbnailRel is the on-disk thumb path relative to the mod root.
-func ThumbnailRel(gameID string) string {
-	info := game.Get(gameID)
-	if info != nil && info.Descriptor == "metadata" {
-		return filepath.Join(".metadata", "thumbnail.png")
+// ThumbnailExts are the listing-image extensions PMT reads and writes, in the
+// order a mod carrying several is resolved.
+//
+// Measured over 31 workshop mods: 37 png, 2 gif, no svg. gif is in use — EU5's
+// Basileia Romaion declares `"picture": "thumbnail.gif"` — and was rejected by
+// every write path while svg, which nobody ships, was accepted.
+var ThumbnailExts = []string{".png", ".gif", ".jpg", ".jpeg"}
+
+// ThumbnailPath answers both thumbnail questions at once: where this mod's
+// listing image IS, and where a new one should go.
+//
+// exists reports that the mod already has one, in which case rel is that exact
+// file and it keeps its place. Only a mod with none is given the game's
+// convention (game.GameInfo.ThumbnailDir) with ext.
+//
+// Both locations are searched for every game, because mods do not follow one
+// convention: 4 of 14 Victoria 3 workshop mods carry a thumbnail in both places
+// and 10 carry it only at the root, while EU5 is the mirror image. The game's
+// own directory is searched first so a mod with both resolves the way the game
+// reads it.
+//
+// One function rather than the three that used to disagree: ThumbnailRel keyed
+// the location off descriptor format, copyThumbnail ignored the game entirely
+// and always wrote to the root, and listingThumb fell back to the declared
+// `picture` only after ThumbnailRel missed. A Vic3 mod made by the wizard and
+// re-thumbnailed on the Release page ended up with two thumbnail files and
+// `picture` naming the stale one.
+func ThumbnailPath(gameID, root, ext string) (rel string, exists bool) {
+	dirs := []string{"", ".metadata"}
+	if conv := thumbnailDir(gameID); conv != "" {
+		dirs = []string{conv, ""}
 	}
-	return "thumbnail.png"
+	for _, dir := range dirs {
+		for _, e := range ThumbnailExts {
+			r := path.Join(dir, "thumbnail"+e)
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(r))); err == nil {
+				return r, true
+			}
+		}
+	}
+	if ext == "" {
+		ext = ThumbnailExts[0]
+	}
+	return path.Join(thumbnailDir(gameID), "thumbnail"+strings.ToLower(ext)), false
+}
+
+func thumbnailDir(gameID string) string {
+	if info := game.Get(gameID); info != nil {
+		return info.ThumbnailDir
+	}
+	return ""
 }
 
 func readDescriptorMod(src string) ListingFields {

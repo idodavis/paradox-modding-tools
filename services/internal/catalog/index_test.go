@@ -782,6 +782,37 @@ func TestWinner(t *testing.T) {
 	}
 }
 
+// Session.Resolve buckets by key alone, so a bucket can span kinds. FIOS/LIOS is
+// a per-kind rule, and Winner used to read it from mods[0] — so the same three
+// defs in a different slice order gave a different winner. Ordering inside the
+// bucket comes from map iteration and index build order, so that was a live
+// nondeterminism, not a hypothetical one.
+func TestWinnerMixedKindBucketIsOrderIndependent(t *testing.T) {
+	// vic3: event is FIOS, decision is LIOS.
+	defs := []Def{
+		{Kind: "decision", Key: "x", Origin: "a"},
+		{Kind: "event", Key: "x", Origin: "b"},
+		{Kind: "event", Key: "x", Origin: "c"},
+	}
+	order := map[string]int{"a": 0, "b": 1, "c": 2}
+	// event reduces under FIOS -> b, not c. decision has only a. Across kinds
+	// there is no engine rule, so the later-loaded of the two wins: b over a.
+	const wantKind, wantOrigin = "event", "b"
+
+	perms := [][3]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}}
+	for _, p := range perms {
+		in := []Def{defs[p[0]], defs[p[1]], defs[p[2]]}
+		w := Winner("vic3", in, order)
+		if w == nil {
+			t.Fatalf("%v: no winner", p)
+		}
+		if w.Kind != wantKind || w.Origin != wantOrigin {
+			t.Errorf("%v: winner = %s/%s, want %s/%s",
+				p, w.Kind, w.Origin, wantKind, wantOrigin)
+		}
+	}
+}
+
 func TestContests(t *testing.T) {
 	vanilla := []Def{{Kind: "trait", Key: "brave", Origin: "", Path: "vanilla.txt", Line: 9}}
 	modPair := []Def{
@@ -961,5 +992,51 @@ func TestExpandPathsWithoutTable(t *testing.T) {
 	expandPaths(c)
 	if !strings.HasSuffix(c.Defs[0].Path, "00_traits.txt") {
 		t.Errorf("path mangled without a table: %q", c.Defs[0].Path)
+	}
+}
+
+// TestFireEdgeFromIsTheEnclosingObject pins that an event's fire edges are
+// attributed to the event, not to whatever ephemeral name was declared just
+// above them.
+//
+// defContainers was the only one of six "what counts as a definition" predicates
+// that did not exclude ephemeral kinds, so a `saved_scope` def — created at the
+// line of the save_scope_as RHS, INSIDE the event body — became a container.
+// containerAt binary-searches for the LAST container at or before a line, so the
+// saved scope won over the event enclosing it.
+//
+// Measured on the real installs before the fix: 5,604 of CK3's 17,073 non-call
+// edges (32.8%) and 1,501 of Vic3's 3,847 (39.0%) had a From that was not a
+// definition at all — `bloc_leaving_reason -> festival.2000`,
+// `spouse_seeker -> wedding.2`. That is the Event Graph's source node.
+//
+// The two fixtures that would have caught it were split across the bug:
+// eventSrc asserts the edge and has no save_scope_as; `saved` has a
+// save_scope_as and no trigger_event.
+func TestFireEdgeFromIsTheEnclosingObject(t *testing.T) {
+	const src = `namespace = t
+t.1 = {
+	type = character_event
+	immediate = {
+		save_scope_as = tgt
+		trigger_event = t.2
+	}
+}
+`
+	ex := ExtractFile("ck3", `C:\mod\events\t.txt`, "events/t.txt", "mod", src, true)
+	if len(ex.Edges) == 0 {
+		t.Fatal("no edges harvested — the fixture stopped exercising the path")
+	}
+	if !hasEdge(ex.Edges, "t.1", "t.2", "") {
+		var got []string
+		for _, e := range ex.Edges {
+			got = append(got, e.From+" -> "+e.To)
+		}
+		t.Fatalf("fire edge is not attributed to the event; got %v", got)
+	}
+	for _, e := range ex.Edges {
+		if e.From == "tgt" {
+			t.Errorf("saved scope %q became an edge source", e.From)
+		}
 	}
 }

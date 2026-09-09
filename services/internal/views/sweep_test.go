@@ -228,8 +228,8 @@ func answered(items []lsp.CompletionItem) bool {
 // until the whole sweep completes. On a multi-minute run that is the difference
 // between watching progress and staring at nothing.
 func TestSweepWorkspaceHealth(t *testing.T) {
-	if testing.Short() {
-		t.Skip("walks three installs and every workshop mod")
+	if testing.Short() || os.Getenv("PMT_TEST_SWEEP") == "" {
+		t.Skip("~9min; run `task test:sweep`")
 	}
 	base := loadBaseline(t)
 	for _, g := range sweepGames {
@@ -580,8 +580,8 @@ func sampleDiagnostics(s *session.Session, root string) (map[string]int, int) {
 // when chasing something: an empty PMT_DET_MOD runs every mod of the game,
 // which is ~45s for Victoria 3 and ~11min for EU5.
 func TestHealthIsDeterministic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("scans a real install")
+	if testing.Short() || os.Getenv("PMT_TEST_SWEEP") == "" {
+		t.Skip("scans a real install and a conversion; run `task test:sweep`")
 	}
 	// Defaults to a Victoria 3 conversion because it is the fastest one that
 	// exercises the whole path. Point it elsewhere to chase a specific drift:

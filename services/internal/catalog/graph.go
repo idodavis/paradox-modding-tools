@@ -53,6 +53,18 @@ func fireSiteKind(stack []edgeFrame, fireKey string) (kind, nameKey string) {
 	return "effect", ""
 }
 
+// fireSiteRescopes reports whether anything between the enclosing definition and
+// the fire site changed scope. stack[0] is the definition's own key, which is
+// where its declared scope applies, so the walk starts below it.
+func fireSiteRescopes(stack []edgeFrame) bool {
+	for _, fr := range stack[min(1, len(stack)):] {
+		if !jomini.IsScopeNeutral(fr.key) {
+			return true
+		}
+	}
+	return false
+}
+
 func optionNameKey(v jomini.Value) string {
 	b := jomini.BlockOf(v)
 	if b == nil {

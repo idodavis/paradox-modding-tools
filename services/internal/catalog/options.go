@@ -25,11 +25,37 @@ const (
 	// account for. The real cases sit at 96–100%; the noise sat at 80–92%.
 	optionCoverage = 95
 	// optionOwnerShare is the share of the owner's inner keys that must be rows.
-	// Storing the complement only makes sense when rows dominate: EU5's `start`
-	// blocks matched a field on 6,009 names out of 38,182 inner keys, and calling
-	// the other 32,173 "fields to skip" is both wrong and half a megabyte of
-	// cache. Real option databases sit at 64–96%.
+	// Storing the complement only makes sense when rows dominate. Real option
+	// databases sit at 64–96%.
+	//
+	// It does NOT reject a data blob, which is what it was believed to do. In a
+	// blob almost every key is unique, so optionFieldShare skips nothing and the
+	// ratio is ~100% — EU5's `start` scored a perfect 38,017 of 38,017 and
+	// sailed through. See maxOptionKeysPerParent, which is the guard that
+	// actually catches it.
 	optionOwnerShare = 50
+
+	// maxOptionKeysPerParent caps how many inner keys one parent instance may
+	// hold before the block is a file dump rather than a database.
+	//
+	// This is the shape claim optionOwnerShare was reaching for and measured
+	// against the wrong denominator: a database groups a handful of rows under
+	// each parent, so keys-per-parent stays small no matter how many parents a
+	// patch adds. A blob is one giant block.
+	//
+	// Measured over all three vanilla installs, 2026-09-08, every candidate the
+	// pass considered:
+	//
+	//	start/father              1357.8   28 parents, 38,017 keys  <- the blob
+	//	animations_props            90.5    8 parents,    724 keys  <- largest real
+	//	animations                  29.7   47 parents,  1,395 keys
+	//	genes/age                   13.9    9 parents,    125 keys
+	//	map_data/area                9.8   82 parents,    805 keys
+	//	everything else             < 8
+	//
+	// 250 sits ~2.8x above the largest genuine shape and 5.4x below the blob.
+	// The gap is wide because the two things are not the same kind of object.
+	maxOptionKeysPerParent = 250
 )
 
 // optionOwner is a block that may hold an option database: the kind of the
@@ -167,12 +193,7 @@ func deriveNestedOptions(
 	if len(fieldRHS) == 0 {
 		return nil
 	}
-	defKeys := map[string]bool{}
-	for _, d := range defs {
-		if d.Key != "" && !jomini.IsEphemeral(d.Kind) && d.Kind != "loc_key" {
-			defKeys[d.Key] = true
-		}
-	}
+	defKeys := defKeySet(defs)
 	// Fields that agree on an owner are the same database seen through
 	// different verbs (has_realm_law / add_realm_law / remove_realm_law), so
 	// they are folded together and the busiest field names the kind.
@@ -331,6 +352,14 @@ func deriveNestedOptions(
 				continue
 			}
 			rows++
+		}
+		// A parent instance holding hundreds of keys is a file dump, not a
+		// database of rows. EU5's game-setup `start` blocks reached here with
+		// 38,017 keys across 28 parents and minted 57,652 defs — 40% of the
+		// whole EU5 model — under a kind named after whichever field happened
+		// to win: `institutions`, `maliki_school`, `add_market`.
+		if len(w.keys) > w.parents*maxOptionKeysPerParent {
+			continue
 		}
 		if rows*100 < len(w.keys)*optionOwnerShare {
 			continue

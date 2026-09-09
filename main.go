@@ -50,6 +50,24 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
 		},
+		// One instance per user. The config store reads config.json once at
+		// launch and every Mutate rewrites the whole file from that snapshot,
+		// with no mtime re-check and no lock — so two instances silently erase
+		// each other's installs, workspaces and settings. They also share one
+		// cache directory and one `config.json.tmp`. Double-clicking the icon
+		// twice is not an exotic path, so the fix belongs here rather than in
+		// per-write locking.
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.idodavis.paradox-modding-tools",
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+				// Raise the window the user already has instead of exiting
+				// silently, which reads as "the app failed to start".
+				if w := application.Get().Window.Current(); w != nil {
+					w.Restore()
+					w.Focus()
+				}
+			},
+		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},

@@ -837,3 +837,38 @@ func TestKeywordDeclarationLocality(t *testing.T) {
 		})
 	}
 }
+
+// TestScanRejectsEmptyScriptRoot pins the guard that a wrong install path is a
+// failure, not an empty game.
+//
+// walkClassified discards its walk error, so a missing or mis-pointed install
+// arrives as an empty inventory rather than an error. Without the guard, Scan
+// returned a 0-def cache with a fresh ScannedAt, SaveCache wrote it over the
+// good one, and CacheStale then read false forever — nothing would ever
+// re-trigger. The memory note "install env is the game root" is this bug.
+func TestScanRejectsEmptyScriptRoot(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		root func(t *testing.T) string
+	}{
+		{"path does not exist", func(t *testing.T) string {
+			return filepath.Join(t.TempDir(), "no-such-install")
+		}},
+		{"path exists but holds no script", func(t *testing.T) string {
+			return t.TempDir()
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := Scan(context.Background(), ScanRequest{
+				GameID: "ck3", InstallID: "scan-empty-test",
+				InstallPath: tt.root(t), Version: "latest",
+			})
+			if err == nil {
+				t.Fatal("want an error, got a cache — an empty scan would overwrite the good one")
+			}
+			if !strings.Contains(err.Error(), "check the install path") {
+				t.Fatalf("error should name the cause, got %v", err)
+			}
+		})
+	}
+}

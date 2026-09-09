@@ -150,13 +150,70 @@ func scanRealInstall(t *testing.T, gameID, installEnv string) {
 	if len(loaded.Defs) != len(c.Defs) {
 		t.Errorf("round trip lost defs: %d -> %d", len(c.Defs), len(loaded.Defs))
 	}
-	// Paths must come back as real locations, not indices.
+	// Paths must come back as real locations, not indices. Checking every def
+	// rather than the first: the previous `break` here meant a cache whose
+	// first def happened to carry an empty Path asserted nothing at all.
 	for _, d := range loaded.Defs {
 		if d.Path != "" && !filepath.IsAbs(d.Path) {
 			t.Fatalf("def path did not expand: %+v", d)
 		}
-		break
 	}
+
+	assertDerivedShare(t, gameID, c)
+}
+
+// maxDerivedKindShare caps any single derived kind's share of a game's model.
+//
+// This is a SHAPE assertion, not a corpus measurement, so it survives a patch:
+// no legitimate database is a sixth of a game's definitions, whatever is
+// installed. A derivation that produces one has run away.
+//
+// It exists because the vanilla gate cannot catch this class. Phantom defs
+// SUPPRESS findings rather than create them — knownAnywhere ends in FindDefs,
+// so every phantom key becomes a word that unknown-token and unknown-key can
+// never report. A gate that counts findings sees fewer, not more, and passes.
+//
+// Measured 2026-09-08: EU5's `father` was 40.5% of the model (57,652 of
+// 142,258), minted by deriveNestedOptions over the game-setup `start` blocks —
+// keys like `institutions` and `maliki_school`, filed under whichever field won
+// betterOptionField. GAME-SYNTAX §5 records that exact parent as the case
+// optionOwnerShare was built to reject.
+const maxDerivedKindShare = 15
+
+// assertDerivedShare fails when one derivation accounts for too much of the
+// model. NestedShapes names every kind the nested and option passes mint, so
+// the derived set does not have to be hardcoded and follows the game.
+func assertDerivedShare(t *testing.T, gameID string, c *VanillaCache) {
+	t.Helper()
+	if c == nil || len(c.Defs) == 0 {
+		return
+	}
+	derived := make(map[string]bool, len(c.NestedShapes))
+	for _, s := range c.NestedShapes {
+		derived[s.ChildKind] = true
+	}
+	counts := map[string]int{}
+	for _, d := range c.Defs {
+		if derived[d.Kind] {
+			counts[d.Kind]++
+		}
+	}
+	worstKind, worst := "", 0
+	for kind, n := range counts {
+		if n > worst {
+			worstKind, worst = kind, n
+		}
+		if share := 100 * n / len(c.Defs); share >= maxDerivedKindShare {
+			t.Errorf("%s: derived kind %q is %d%% of the model (%d of %d defs) — "+
+				"a derivation has run away; see plan T-0",
+				gameID, kind, share, n, len(c.Defs))
+		}
+	}
+	// Logged even when passing: this is the number to diff before and after a
+	// change to the nested or option passes.
+	t.Logf("%s: %d derived kinds, largest %q at %d of %d defs (%.1f%%)",
+		gameID, len(counts), worstKind, worst, len(c.Defs),
+		100*float64(worst)/float64(len(c.Defs)))
 }
 
 func TestScanSizeCK3(t *testing.T)  { scanRealInstall(t, "ck3", "PMT_TEST_INSTALL_CK3") }
@@ -177,4 +234,59 @@ func corpusEnv(t *testing.T, format string, args ...any) {
 		t.Fatalf("PMT_TEST_TIER=full but "+format, args...)
 	}
 	t.Skipf(format, args...)
+}
+
+// TestAssertDerivedShare proves the ceiling actually fires, without needing an
+// install. Written because the corpus assertion above only runs on a machine
+// with PMT_TEST_INSTALL_* set, and an assertion nobody can execute is the thing
+// this plan keeps finding.
+func TestAssertDerivedShare(t *testing.T) {
+	// One shape minting "father", plus enough ordinary defs to set the base.
+	build := func(phantoms, ordinary int) *VanillaCache {
+		c := &VanillaCache{
+			NestedShapes: []NestedShape{{ParentKind: "start", ChildKind: "father", IsOption: true}},
+		}
+		for i := 0; i < phantoms; i++ {
+			c.Defs = append(c.Defs, Def{Kind: "father", Key: "p"})
+		}
+		for i := 0; i < ordinary; i++ {
+			c.Defs = append(c.Defs, Def{Kind: "traits", Key: "t"})
+		}
+		return c
+	}
+
+	t.Run("a runaway derivation fails", func(t *testing.T) {
+		// 40 of 100 — EU5's shape as measured 2026-09-08.
+		fake := &testing.T{}
+		assertDerivedShare(fake, "eu5", build(40, 60))
+		if !fake.Failed() {
+			t.Fatal("a derived kind at 40% of the model must fail")
+		}
+	})
+
+	t.Run("a real database passes", func(t *testing.T) {
+		// 2 of 100 — CK3's `option` sits under 1%.
+		fake := &testing.T{}
+		assertDerivedShare(fake, "ck3", build(2, 98))
+		if fake.Failed() {
+			t.Fatal("a small genuine database must not trip the ceiling")
+		}
+	})
+
+	t.Run("a kind no shape mints is not counted", func(t *testing.T) {
+		// `characters` is 33% of CK3 and is harvested, not derived. Counting
+		// harvested kinds would make the ceiling fire on every game.
+		c := build(0, 0)
+		for i := 0; i < 40; i++ {
+			c.Defs = append(c.Defs, Def{Kind: "characters", Key: "c"})
+		}
+		for i := 0; i < 60; i++ {
+			c.Defs = append(c.Defs, Def{Kind: "traits", Key: "t"})
+		}
+		fake := &testing.T{}
+		assertDerivedShare(fake, "ck3", c)
+		if fake.Failed() {
+			t.Fatal("harvested kinds are not derived and must not be counted")
+		}
+	})
 }

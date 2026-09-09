@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func writeSearchTree(t *testing.T, root string) {
@@ -302,20 +301,35 @@ func TestTextSearchCancel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(5 * time.Millisecond)
-		cancel()
-	}()
 	ss := &SearchService{}
-	res, err := ss.TextSearch(ctx, TextSearchQuery{
+	q := TextSearchQuery{
 		Pattern: "needle",
 		Folders: []TextSearchFolder{{Path: root}},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(res.Hits) > 8000 {
-		t.Fatal("cancel did not stop search promptly")
+
+	// The full result, so the cancelled run has something real to be smaller
+	// than. The previous assertion was `len(res.Hits) > 8000` against a fixture
+	// of 40 files x 200 lines — exactly 8,000 — so it was unreachable even with
+	// cancellation removed entirely.
+	full, err := ss.TextSearch(context.Background(), q)
+	if err != nil {
+		t.Fatalf("uncancelled search: %v", err)
+	}
+	if len(full.Hits) == 0 {
+		t.Fatal("fixture produced no hits; the test would prove nothing")
+	}
+
+	// Cancelled before the call, not on a timer: a 5ms race against the walk
+	// decides nothing on a fast machine, where the search finishes first and
+	// the test passes for the wrong reason.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res, err := ss.TextSearch(ctx, q)
+	if err != nil {
+		t.Fatalf("cancellation must not surface as an error: %v", err)
+	}
+	if len(res.Hits) >= len(full.Hits) {
+		t.Fatalf("cancel did not stop the search: got %d hits, full run is %d",
+			len(res.Hits), len(full.Hits))
 	}
 }

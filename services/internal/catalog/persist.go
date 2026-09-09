@@ -3,6 +3,7 @@
 package catalog
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,7 +60,27 @@ func saveJSON(path string, v any) error {
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
 		return err
 	}
-	_ = os.Remove(path)
+	// Rename first: on POSIX that replaces atomically, and Go's Windows Rename
+	// does pass MOVEFILE_REPLACE_EXISTING. Remove only when it fails.
+	//
+	// Removing unconditionally is wrong — it opens a window where the good file
+	// is gone and the replacement is still only a .tmp. But NOT removing at all
+	// was worse, and specifically worse on Windows: replace-existing returns
+	// ERROR_ACCESS_DENIED whenever anything holds the destination open, and Go
+	// opens files with FILE_SHARE_DELETE, so unlinking the name succeeds exactly
+	// where replacing it does not. A 98 MB cache being read by the app or walked
+	// by an antivirus is that case, and it left every rescan writing a .tmp the
+	// engine then refused — a scan that ran, cost minutes, and changed nothing.
+	//
+	// So: atomic where the platform gives it, and a fallback that still lands
+	// the file where it does not. The window only opens after the safe path has
+	// already failed.
+	if err := os.Rename(tmp, path); err == nil {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return os.Rename(tmp, path)
 }
 
@@ -113,7 +134,14 @@ func LoadCache(installID, version string) (*VanillaCache, error) {
 	return loadCacheFile(path)
 }
 
-// PeekCacheScannedAt returns scannedAt from the vanilla JSON without loading defs.
+// PeekCacheScannedAt returns scannedAt from the vanilla JSON without loading
+// defs, and "" when the file is one LoadCache would refuse.
+//
+// The version check is the point, not an extra. Without it this answered "is
+// there a cache?" by a different rule than LoadCache — file exists, versus file
+// exists AND the format matches — so after a CacheFormatVersion bump the install
+// list went on showing the previous scan date for a model the engine had already
+// discarded. Nothing looked wrong while hover had no vanilla model at all.
 func PeekCacheScannedAt(installID, version string) string {
 	path, err := vanillaJSON("vanilla", installID, version)
 	if err != nil {
@@ -121,6 +149,13 @@ func PeekCacheScannedAt(installID, version string) string {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		return ""
+	}
+	if n, err := sonic.Get(raw, "formatVersion"); err == nil {
+		if got, nerr := n.Int64(); nerr != nil || int(got) != CacheFormatVersion {
+			return ""
+		}
+	} else {
 		return ""
 	}
 	n, err := sonic.Get(raw, "scannedAt")
@@ -181,6 +216,33 @@ func LoadVanillaLoc(installID, version, lang string) (*VanillaLoc, error) {
 // and the archived script_docs copies. Dropping the archive here is deliberate:
 // this is the "forget this install" path, and a stale archive would otherwise
 // outlive the install it describes.
+// DropVanillaLocFiles removes an install's localization sidecars, leaving the
+// model cache and the script_docs archive alone.
+//
+// Rescan harvests only english (Scan is called with LocLang "english"; every
+// other language is harvested on first use). With a pinned or "latest" version
+// key the other languages keep the previous patch's filename, and LoadVanillaLoc
+// accepts them because the format still matches — so a rescan after a game patch
+// left every non-english workspace reading pre-patch vanilla loc. Dropping them
+// costs one re-harvest on next demand, which loadVanillaLoc already does.
+func DropVanillaLocFiles(installID string) error {
+	dir, err := CacheDir()
+	if err != nil {
+		return err
+	}
+	prefix := "vanilla-loc-" + sanitize(installID)
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), prefix) {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+	return nil
+}
+
 func DropVanillaFiles(installID string) error {
 	dir, err := CacheDir()
 	if err != nil {

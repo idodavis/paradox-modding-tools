@@ -1086,3 +1086,37 @@ func TestHoverLabelsEffectArguments(t *testing.T) {
 		t.Errorf("Kind = %q, want it to read as an argument", h.Kind)
 	}
 }
+
+// TestLocHoverCarriesColumn pins that a workspace localization key's card
+// carries a column, not just a line.
+//
+// locCard passed a literal 0 as the site's start offset. attachSite only
+// computes Col when start > 0, and languageClient.ts gates the ENTIRE selection
+// object on Col — so the correct Line was computed, marshalled, shipped, and
+// then dropped, and every localization hover opened the .yml at line 1.
+//
+// `.Col` had zero assertions anywhere in the suite while locCard sat at 90%
+// coverage: the code ran on nearly every hover test and none of them looked.
+func TestLocHoverCarriesColumn(t *testing.T) {
+	// Two keys, so the one under test is not on the first line — a column of 0
+	// on line 1 would be indistinguishable from the bug.
+	locBody := "l_english:\n first_key:0 \"one\"\n wanted_key:0 \"two\"\n"
+	script := "ns.1 = {\n\ttitle = wanted_key\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt":                         script,
+		"localization/english/a_l_english.yml": locBody,
+	}, nil, nil)
+
+	line, col := lineCol(script, "wanted_key")
+	h := Hover(s, filepath.Join(root, "events", "x.txt"), line, col)
+	if h == nil {
+		t.Fatal("no hover card for a localization key")
+	}
+	if h.Line == 0 {
+		t.Fatalf("card carries no line: %+v", h)
+	}
+	if h.Col == 0 {
+		t.Fatalf("card carries line %d but no column — the editor opens the file "+
+			"at line 1 because languageClient gates the selection on Col", h.Line)
+	}
+}

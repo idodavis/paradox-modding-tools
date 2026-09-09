@@ -75,11 +75,20 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_VANILLA_GATE") == "" {
 		t.Skip("walks an install; set PMT_VANILLA_GATE=1")
 	}
+	// Asking for the gate and getting a pass in no time is the worst outcome
+	// available: it reads as "vanilla is clean" when it means "nothing ran".
+	// The loop below used to `continue` past a missing install, so with none set
+	// this reported success having asserted nothing — the same hole the corpus
+	// tier had, in the one test whose whole job is to be believed.
+	ran := 0
 	for _, g := range sweepGames {
 		install := os.Getenv(g.installEnv)
 		if install == "" {
+			t.Errorf("PMT_VANILLA_GATE is set but %s is not: the gate cannot "+
+				"clear a game it never scanned", g.installEnv)
 			continue
 		}
+		ran++
 		t.Run(g.game, func(t *testing.T) {
 			id := "gate-" + g.game
 			t.Cleanup(func() { _ = catalog.DropVanillaFiles(id) })
@@ -154,6 +163,9 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 					c, counts[c], g.game, knownVanillaFindings[g.game+"/"+c])
 			}
 		})
+	}
+	if ran == 0 {
+		t.Fatal("the gate scanned no game: a pass here means nothing")
 	}
 }
 

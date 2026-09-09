@@ -269,6 +269,13 @@ func (v *Derived) mergeLocal(local *Derived) {
 		return
 	}
 	v.PrefixKinds = mergeStringMap(v.PrefixKinds, local.PrefixKinds)
+	// KindScope travels with PrefixKinds: one bindKinds call produces both, and
+	// they are written on adjacent lines at the cache. Dropping it here left a
+	// cache with PrefixKinds populated and KindScope empty whenever `rebind`
+	// took one of its early returns — and session/scope.go treats an empty
+	// KindScope as a silent fallback, so scope checking switched itself off with
+	// no error anywhere.
+	v.KindScope = mergeStringMap(v.KindScope, local.KindScope)
 	v.FireKeys = mergeStringMap(v.FireKeys, local.FireKeys)
 	v.FieldValueKinds = mergeStringMap(v.FieldValueKinds, local.FieldValueKinds)
 	for kind, list := range local.LocAffixes {
@@ -622,12 +629,7 @@ func deriveNestedShapes(
 	prefixKinds map[string]string, schema *Schema,
 	cites, fieldCites []typedCite,
 ) []NestedShape {
-	defKeys := map[string]bool{}
-	for _, d := range defs {
-		if d.Key != "" && !jomini.IsEphemeral(d.Kind) && d.Kind != "loc_key" {
-			defKeys[d.Key] = true
-		}
-	}
+	defKeys := defKeySet(defs)
 	idChild := map[string][]string{}
 	for _, c := range cites {
 		addNestedCite(idChild, defKeys, gameID, c, prefixKinds)
@@ -934,10 +936,13 @@ func keywordDeclared(stmts []jomini.Statement, i int) bool {
 	return game.DeclKeywordKind(sc.Text) != ""
 }
 
+// defKeySet is the set of names already spoken for by a real definition. Passes
+// that invent a database from unexplained citations subtract it first, so a name
+// with a home is never handed a second one.
 func defKeySet(defs []Def) map[string]bool {
 	out := map[string]bool{}
 	for _, d := range defs {
-		if d.Key != "" && !jomini.IsEphemeral(d.Kind) && d.Kind != "loc_key" {
+		if IsCitableDef(d) {
 			out[d.Key] = true
 		}
 	}

@@ -4,6 +4,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -218,10 +219,20 @@ func (s *Session) externalChange(path string) {
 	s.emitFS(path, false)
 }
 
+// reindexFromDisk re-reads path into the model. deleted reports that the file is
+// GONE — the only read failure that may drop its definitions.
+//
+// Every error used to count as deletion, and externalChange acts on it, so one
+// transient failure erased every definition in the file. On Windows that is the
+// common case rather than the rare one: the watcher fires on the write, the
+// writer still holds an exclusive handle, and the sharing violation arrives
+// before the file is readable. A permission error or a full disk did the same.
+// Those now leave the model alone — stale beats empty, and the next write
+// reindexes anyway.
 func (s *Session) reindexFromDisk(path string) (deleted bool) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return true
+		return errors.Is(err, os.ErrNotExist)
 	}
 	text, _ := jomini.Decode(raw)
 	s.mu.Lock()
@@ -475,7 +486,13 @@ func (s *Session) ResolveMatching(key string, keep func(catalog.Def) bool) *cata
 }
 
 // LocSite returns the winning localization definition site for key.
-func (s *Session) LocSite(key string) (file string, line int, origin string, ok bool) {
+// LocSite locates a localization key's definition.
+//
+// start is the byte offset of the key within the file, or 0 when it is not
+// known. A workspace def carries one; the vanilla sidecar does not, because
+// catalog.LocEntry stores only Value/Path/Line. Callers that navigate must
+// treat 0 as "line only" rather than as column zero — see attachSite.
+func (s *Session) LocSite(key string) (file string, line, start int, origin string, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var locDefs []catalog.Def
@@ -485,14 +502,14 @@ func (s *Session) LocSite(key string) (file string, line int, origin string, ok 
 		}
 	}
 	if w := catalog.Winner(s.GameID, locDefs, s.order); w != nil {
-		return w.Path, w.Line, w.Origin, true
+		return w.Path, w.Line, w.Start, w.Origin, true
 	}
 	if s.vanillaLoc != nil {
 		if site, hit := s.vanillaLoc.Sites[key]; hit {
-			return site.Path, site.Line, game.OriginVanilla, true
+			return site.Path, site.Line, 0, game.OriginVanilla, true
 		}
 	}
-	return "", 0, "", false
+	return "", 0, 0, "", false
 }
 
 // Mods returns the workspace mods in the order they were supplied.

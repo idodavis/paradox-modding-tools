@@ -89,8 +89,9 @@ func TestBindKindsNameFallback(t *testing.T) {
 	}
 }
 
-// A prefix whose citations mostly miss every database stays unbound.
-func TestBindKindsBelowFloorUnbound(t *testing.T) {
+// A prefix whose citations mostly miss every database does NOT stay unbound: it
+// falls through to an unfloored singular/plural name match. See I.2g.
+func TestBindKindsBelowFloorFallsBackToNameMatch(t *testing.T) {
 	s := &Schema{Links: map[string]ScopeLink{
 		"p": {Global: true, Data: true, Out: "province"},
 	}}
@@ -100,10 +101,23 @@ func TestBindKindsBelowFloorUnbound(t *testing.T) {
 		{"p", "known"}, {"p", "a1b2"}, {"p", "c3d4"}, {"p", "e5f6"}, {"p", "0089"},
 	}
 	prefixKind, _, _ := bindKinds(s, defs, cites)
-	// One of five hits is well under the floor; the name match then also fails
-	// because "provinces" holds only the one key, so it binds by name instead.
+	// One of five hits is well under minBindCites, so the citation branch
+	// declines — and control then falls through to nameMatchKind, which binds on
+	// a SINGLE definition in a folder whose name matches the scope type.
+	//
+	// The previous version of this test asserted nothing: its only check was a
+	// t.Logf, so a test named "…BelowFloorUnbound" whose own comment said "binds
+	// by name instead" could not fail either way.
+	//
+	// The fallback is correct and stays. A floor for nameMatchKind was proposed
+	// and then refuted by measurement: across all three vanilla installs every
+	// one of the 18 name-matched bindings is a real folder — struggle/struggles,
+	// road_type/road_types, province/provinces — so a floor would have deleted
+	// legitimate bindings and caught no guesses. minBindCites' comment was what
+	// was wrong, and it has been corrected.
 	if got := prefixKind["p"]; got != "provinces" {
-		t.Logf("p -> %q (name fallback)", got)
+		t.Errorf("p -> %q, want %q (unfloored name fallback; see plan I.2g)",
+			got, "provinces")
 	}
 }
 

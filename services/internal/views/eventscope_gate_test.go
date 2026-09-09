@@ -91,6 +91,19 @@ func TestVanillaEventScopeClean(t *testing.T) {
 				return nil
 			})
 			t.Logf("%s: %d event files, wrong-scope = %d", g.id, n, counts["wrong-scope"])
+			// Vanilla is correct by definition, so any wrong-scope report over
+			// it is a false positive. This was a t.Logf and nothing else: a
+			// check firing on every vanilla event file passed a test named
+			// "…Clean". The samples below say which messages, and are why the
+			// count alone was not thought to need asserting.
+			if counts["wrong-scope"] > 0 {
+				t.Errorf("%s: wrong-scope fires %d times on vanilla events — "+
+					"a check that flags the game's own script must not ship",
+					g.id, counts["wrong-scope"])
+			}
+			if n == 0 {
+				t.Errorf("%s: no event files walked; a pass here means nothing", g.id)
+			}
 			i := 0
 			for m, f := range ex {
 				if i >= 6 {

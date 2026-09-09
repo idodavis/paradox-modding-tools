@@ -42,6 +42,10 @@ export function Definition(workspaceID: string, path: string, line: number, char
  * Severities are applied here rather than inside Diagnose so a toggle takes
  * effect on the next keystroke without a rescan, and so the checks themselves
  * stay ignorant of configuration.
+ * 
+ * The same settings also decide which checks run at all. That is not the checks
+ * reading configuration — they are handed a yes or no, never a severity — it is
+ * this layer declining to pay for a result it is about to throw away.
  */
 export function Diagnose(workspaceID: string, path: string): $CancellablePromise<lsp$0.Diagnostic[] | null> {
     return $Call.ByID(2414394907, workspaceID, path);

@@ -178,6 +178,30 @@ func TestApplySeverities(t *testing.T) {
 	}
 }
 
+// EnabledCodes decides whether a check RUNS; ApplySeverities decides whether its
+// findings are KEPT. They resolve a setting by the same rule, written twice, so
+// they are pinned to each other here — a disagreement would be a check that
+// silently stops running while the panel still claims to be watching for it.
+func TestEnabledCodesAgreesWithApplySeverities(t *testing.T) {
+	// Everything a settings map can hold, including the two shapes that mean
+	// "back to the default": absent, and stored-but-empty.
+	values := []string{"", SevOff, SevWarning, SevError, "nonsense"}
+	for _, c := range DiagnosticCodes() {
+		for _, v := range append([]string{"\x00absent"}, values...) {
+			settings := map[string]string{}
+			if v != "\x00absent" {
+				settings[c.Code] = v
+			}
+			kept := len(ApplySeverities(
+				[]Diagnostic{{Code: c.Code, Severity: sevWarning}}, settings)) == 1
+			if got := EnabledCodes(settings)[c.Code]; got != kept {
+				t.Errorf("%s with setting %q: EnabledCodes=%v but ApplySeverities "+
+					"keeps=%v", c.Code, v, got, kept)
+			}
+		}
+	}
+}
+
 // TestDiagnosticCodesRegistry pins that every code a check can emit is listed,
 // because the registry is what the settings surface and pmt:ignore docs read.
 // A code missing from it is a code nobody can turn off -- and, worse, one that

@@ -32,8 +32,8 @@ export interface Def {
      * foo = { ... }`, a GUI `local_template` -- rather than one a folder gives a
      * kind to. The engine resolves these per file, so a repeated Local key is
      * required rather than a defect, and a call must never be navigated to a
-     * Local body in another file. game.LocalDeclKeywords lists the keywords and
-     * which game writes them; GAME-SYNTAX 16 has the evidence.
+     * Local body in another file. game.LocalDeclPrefix names the keyword family
+     * and game.DeclKeywords lists them; GAME-SYNTAX 16 has the evidence.
      */
     "local"?: boolean;
 
@@ -57,6 +57,19 @@ export interface Edge {
     "line": number;
     "kind"?: string;
     "nameKey"?: string;
+
+    /**
+     * Rescoped marks a fire site sitting under a block that changed scope, so
+     * the event does NOT run in the scope its source declares.
+     * 
+     * CK3's on_faith_monthly is faith-scoped and calls
+     * `trigger_event = global_religion.1000` fourteen blocks deep, inside
+     * character-scoped iterators. Reading the on_action's scope as the event's
+     * root accused 31 lines of vanilla CK3 of wrong-scope. The graph is
+     * unaffected — the edge is real and the arrow points the right way; only
+     * the scope inference must decline.
+     */
+    "rescoped"?: boolean;
 }
 
 /**

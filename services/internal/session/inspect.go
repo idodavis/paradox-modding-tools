@@ -235,12 +235,14 @@ func (s *Session) composeHint(kind, _ string) string {
 	return strings.Join(parts, " · ")
 }
 
-// IsMacroKind reports a kind whose definitions are invoked by name (scripted_*).
-func (s *Session) IsMacroKind(kind string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return jomini.IsMacroKind(kind)
-}
+// Session.IsMacroKind is deliberately gone: it took the read lock and then
+// answered from jomini alone, reading no session state. Callers use
+// jomini.IsMacroKind directly.
+//
+// The lock was the reason to remove it rather than a reason to keep it. A method
+// that locks but reads nothing invites being called from inside a locked
+// section, and Go's RWMutex deadlocks on a recursive RLock as soon as a writer
+// is queued behind it — which a background rescan is.
 
 // IsMacroDef reports that key is a harvested scripted-macro definition.
 func (s *Session) IsMacroDef(key string) bool {
@@ -562,9 +564,17 @@ func (s *Session) identify(path string, line, col int) (identity, bool) {
 		//
 		// Only names the game's own script_docs declare. A name merely harvested
 		// from the corpus is derived too, and must not outrank a field.
+		// This one stays where it is: it is positional, not precedence. Whether a
+		// key is a declared token or the enclosing kind's field has to be
+		// decided before the field-key branch below, and resolveWord runs after
+		// identify has finished. It carries the vocabulary resolver's `via`
+		// because that is the source the answer came from — via names the
+		// source, not the function that reached it.
 		if s.DeclaresEngineName(a.Key.Text) {
 			if ck := s.vocabRole(a.Key.Text); ck != "" {
-				return identity{path: path, name: a.Key.Text, kind: ck}, true
+				return identity{
+					path: path, name: a.Key.Text, kind: ck, via: "vocabulary",
+				}, true
 			}
 		}
 		docs := s.kindFieldDoc(a.Key.Text, at.kind)
@@ -581,15 +591,17 @@ func (s *Session) identify(path string, line, col int) (identity, bool) {
 				extractKind: at.kind, block: block,
 			}, true
 		}
-		if d := s.resolveNonLoc(a.Key.Text); d != nil {
-			return identity{path: path, name: d.Key, kind: d.Kind, def: d}, true
-		}
-		if ck := jomini.CanonicalKind(a.Key.Text); s.IsMacroKind(ck) {
-			return identity{path: path, name: a.Key.Text, kind: ck}, true
-		}
-		if ck := s.vocabRole(a.Key.Text); ck != "" {
-			return identity{path: path, name: a.Key.Text, kind: ck}, true
-		}
+		// Nothing else here. What used to follow was a hand-written
+		// definition -> macro-kind -> vocabulary ladder, which is a subset of
+		// resolve.go's order written a second time — and written in the wrong
+		// order: it asked macro-kind, derived from a folder name, BEFORE
+		// vocabulary, declared by script_docs. That is the one inversion
+		// resolve.go exists to prevent, and no test could see it because the
+		// order tests compare indices in wordResolvers rather than asking which
+		// resolver claimed a word.
+		//
+		// Falling through to resolveWord runs the canonical order and stamps
+		// `via`, so a wrong card can now name the step that produced it.
 	}
 	if at.word == "" {
 		return identity{}, false
@@ -650,7 +662,7 @@ func (s *Session) identifyLoc(path string, line, col int) (identity, bool) {
 		path: path, name: hit.key, kind: "loc_key",
 		spanStart: hit.start, spanEnd: hit.end,
 	}
-	if file, ln, origin, ok := s.LocSite(hit.key); ok {
+	if file, ln, _, origin, ok := s.LocSite(hit.key); ok {
 		id.def = &catalog.Def{
 			Kind: "loc_key", Key: hit.key, Path: file, Line: ln, Origin: origin,
 		}
@@ -853,14 +865,20 @@ func (s *Session) ephemeralCard(name, kind string, d *catalog.Def) *Inspect {
 
 func (s *Session) locCard(key string) *Inspect {
 	text, _ := s.DefaultLoc(key)
-	file, line, origin, ok := s.LocSite(key)
+	file, line, start, origin, ok := s.LocSite(key)
 	if text == "" && !ok {
 		return nil
 	}
 	ins := s.inspectOf("loc_key", key, "")
 	ins.Body = unescapeLocDisplay(text)
 	if ok {
-		s.attachSite(ins, file, line, origin, 0)
+		// start, not 0. attachSite only computes Col when start > 0, and
+		// languageClient gates the whole selection object on Col — so passing 0
+		// shipped the right Line and then dropped it, opening every
+		// localization hover at line 1. Vanilla keys still pass 0 because the
+		// sidecar's LocEntry has no offset to give; that half needs a
+		// LocFormatVersion bump and lands with the interning change.
+		s.attachSite(ins, file, line, origin, start)
 		s.attachOverlay(ins, &catalog.Def{
 			Kind: "loc_key", Key: key, Path: file, Line: line, Origin: origin,
 		})
@@ -884,7 +902,7 @@ func (s *Session) scriptParamCounts(name, owner string) map[string]int {
 	counts := map[string]int{}
 	if owner != "" {
 		for _, r := range s.RefsTo(owner) {
-			if !s.IsMacroKind(r.Kind) || r.Path == "" {
+			if !jomini.IsMacroKind(r.Kind) || r.Path == "" {
 				continue
 			}
 			if v := s.callArgScalar(r.Path, r.Start, owner, name); v != "" {
@@ -1220,15 +1238,14 @@ func (s *Session) attachSite(ins *Inspect, path string, line int, origin string,
 // denotes is not something override order gets to decide. A namespace still
 // resolves when nothing else of that name does, so hovering one still works.
 func (s *Session) resolveNonLoc(word string) *catalog.Def {
-	keep := func(d catalog.Def) bool {
-		return d.Kind != "loc_key" && !jomini.IsEphemeral(d.Kind)
-	}
 	if d := s.ResolveMatching(word, func(d catalog.Def) bool {
 		return jomini.IsObjectKind(d.Kind)
 	}); d != nil {
 		return d
 	}
-	return s.ResolveMatching(word, keep)
+	// Second pass drops only the namespace exclusion, so a namespace still
+	// resolves when nothing else of that name does.
+	return s.ResolveMatching(word, catalog.IsCitableDef)
 }
 
 func (s *Session) resolveOfKind(word, kind string) *catalog.Def {
@@ -1255,7 +1272,7 @@ func (s *Session) locDefined(key string) bool {
 	if _, ok := s.DefaultLoc(key); ok {
 		return true
 	}
-	_, _, _, ok := s.LocSite(key)
+	_, _, _, _, ok := s.LocSite(key)
 	return ok
 }
 
@@ -1523,16 +1540,26 @@ func dottedSegmentAt(text string, off int) (string, bool) {
 }
 
 // segmentIdentity names one hop of a scope chain, if the game declares it.
+// segmentIdentity names one segment of a dotted chain.
+//
+// The two named resolvers rather than a copy of their bodies: this function's
+// first half was byte-identical to resolveLanguagePrefix and its second half to
+// resolveVocabulary, which made it the third place the resolution order was
+// written. A copy cannot be re-ordered when the canonical list is, and it
+// stamped no `via`.
 func (s *Session) segmentIdentity(path, seg string) (identity, bool) {
-	if p, ok := jomini.ParsePrefixed(seg); ok {
-		kind := jomini.PrefixKind(p.Prefix)
-		if kind == "" {
-			kind = p.Prefix
+	at := probe{word: seg}
+	for _, r := range []wordResolver{
+		{"language-prefix", resolveLanguagePrefix},
+		{"vocabulary", resolveVocabulary},
+	} {
+		if id, ok := r.resolve(s, path, at); ok {
+			id.via = r.name
+			if id.path == "" {
+				id.path = path
+			}
+			return id, true
 		}
-		return s.ephemeralID(path, p.Name, kind), true
-	}
-	if ck := s.vocabRole(seg); ck != "" {
-		return identity{path: path, name: seg, kind: ck}, true
 	}
 	return identity{}, false
 }

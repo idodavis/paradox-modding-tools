@@ -279,7 +279,7 @@ func scriptItems(
 func rootItems(s *session.Session, kind, prefix string) []CompletionItem {
 	var out []CompletionItem
 	ck := jomini.CanonicalKind(kind)
-	if s.IsMacroKind(ck) && lowerPrefix(ck, prefix) {
+	if jomini.IsMacroKind(ck) && lowerPrefix(ck, prefix) {
 		out = append(out, item(ck, kind))
 	}
 	out = append(out, defsOfType(s, prefix, ck)...)
@@ -388,7 +388,7 @@ var valueSources = []valueSource{
 	// all, and claiming the slot swallowed the boolean it actually takes -- 17
 	// of 24 empty value positions on a real Victoria 3 mod.
 	{"macro-params", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
-		if !s.IsMacroDef(parentKey) && !s.IsMacroKind(parentKey) {
+		if !s.IsMacroDef(parentKey) && !jomini.IsMacroKind(parentKey) {
 			return nil, false
 		}
 		items := scriptParamItems(s, parentKey, prefix)
@@ -503,7 +503,7 @@ func macroCallParent(s *session.Session, key string) bool {
 	if d == nil {
 		return false
 	}
-	return s.IsMacroKind(d.Kind)
+	return jomini.IsMacroKind(d.Kind)
 }
 
 func enumItems(vals []string, prefix string) []CompletionItem {

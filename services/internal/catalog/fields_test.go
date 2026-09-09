@@ -7,6 +7,7 @@ package catalog
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -32,6 +33,40 @@ func TestDeriveFieldValueKinds(t *testing.T) {
 	}, defs)
 	if _, hit := conflict["theme"]; hit {
 		t.Fatalf("conflict should omit theme: %v", conflict)
+	}
+}
+
+// A mod that localizes its own objects must not lose the field types that name
+// them, and a localization key must never BE a field type.
+//
+// Every object has a caption, so in a workspace with loc files most def keys are
+// also loc keys. Admitting loc_key defs here made those keys ambiguous, and an
+// ambiguous key drops the whole field: on A Game of Thrones 111 correct types
+// went silent (`add_innovation` -> innovations, `add_perk` -> lifestyle_perks)
+// while 183 fields were typed `loc_key` instead — among them `has_policy` and
+// `add_random_innovation`, which the game DECLARES as tokens. Whether a field
+// holds a caption is deriveLocFields' question and it refuses exactly those,
+// because it checks Schema.HasName first. See plan I.2f.
+func TestDeriveFieldValueKindsIgnoresLocalization(t *testing.T) {
+	defs := []Def{
+		{Kind: "innovations", Key: "innovation_bannus"},
+		{Kind: "innovations", Key: "innovation_motte"},
+		// The mod's own localization of those two, plus an unrelated caption.
+		{Kind: "loc_key", Key: "innovation_bannus"},
+		{Kind: "loc_key", Key: "innovation_motte"},
+		{Kind: "loc_key", Key: "my_tooltip_a"},
+		{Kind: "loc_key", Key: "my_tooltip_b"},
+	}
+	got := deriveFieldValueKinds(map[string]map[string]bool{
+		"add_innovation": {"innovation_bannus": true, "innovation_motte": true},
+		"custom_tooltip": {"my_tooltip_a": true, "my_tooltip_b": true},
+	}, defs)
+	if got["add_innovation"] != "innovations" {
+		t.Errorf("add_innovation = %q, want innovations (localizing an object"+
+			" must not untype the field that names it)", got["add_innovation"])
+	}
+	if k, hit := got["custom_tooltip"]; hit {
+		t.Errorf("custom_tooltip typed %q; loc keys are deriveLocFields' job", k)
 	}
 }
 
@@ -651,4 +686,107 @@ func ownersOf(files []parsedScript) map[optionOwner]*ownerKeys {
 		addOptionOwners("ck3", f.f.rel, f.res.Root, out)
 	}
 	return out
+}
+
+// TestDeriveNestedOptionsRejectsDataBlob pins maxOptionKeysPerParent.
+//
+// EU5's `main_menu/setup/start/*.txt` are game-setup data, not a database: 28
+// parent blocks holding 38,017 distinct inner keys. Every key was unique, so
+// optionFieldShare skipped none of them, optionOwnerShare saw a perfect
+// 38,017-of-38,017 "rows dominate" ratio, and the pass minted 57,652 defs —
+// 40% of the entire EU5 model — under a kind named `father`, after whichever
+// field won betterOptionField. Among them: `institutions` (a field name),
+// `add_market` (a declared effect).
+//
+// The guard is keys-per-parent, because that is the shape claim: a database
+// groups a handful of rows under each parent however many parents exist, while
+// a blob is one giant block. Measured, the largest genuine shape across all
+// three games was 90.5 keys/parent; the blob was 1,357.8.
+func TestDeriveNestedOptionsRejectsDataBlob(t *testing.T) {
+	// One parent holding far more keys than any real database groups.
+	var blob, uses strings.Builder
+	blob.WriteString("setup_1 = {\n")
+	for i := range maxOptionKeysPerParent * 2 {
+		fmt.Fprintf(&blob, "\tkey_%d = { v = 1 }\n", i)
+	}
+	blob.WriteString("}\n")
+	for i := range minOptionRefs * 2 {
+		fmt.Fprintf(&uses, "e_%d = { limit = { father = key_%d } }\n", i, i)
+	}
+	files := []parsedScript{
+		parseAs("common/game_rules/00_setup.txt", blob.String()),
+		parseAs("common/scripted_triggers/use.txt", uses.String()),
+	}
+	var defs []Def
+	for _, f := range files {
+		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
+	}
+	got := deriveNestedOptions("ck3", defs, fieldRHSOf(files), ownersOf(files))
+	if len(got) != 0 {
+		t.Fatalf("claimed a database on a %d-key blob under one parent: %+v",
+			maxOptionKeysPerParent*2, got)
+	}
+
+	// The floor case: the same shape within the cap is still a database, so the
+	// guard rejects blobs rather than small parents.
+	small, smallUses := strings.Builder{}, strings.Builder{}
+	small.WriteString("rule_1 = {\n")
+	for i := range minOptionRefs * 2 {
+		fmt.Fprintf(&small, "\topt_%d = { flag = f }\n", i)
+	}
+	small.WriteString("}\n")
+	for i := range minOptionRefs * 2 {
+		fmt.Fprintf(&smallUses, "e_%d = { limit = { has_game_rule = opt_%d } }\n", i, i)
+	}
+	ok := []parsedScript{
+		parseAs("common/game_rules/00_rules.txt", small.String()),
+		parseAs("common/scripted_triggers/use.txt", smallUses.String()),
+	}
+	defs = defs[:0]
+	for _, f := range ok {
+		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
+	}
+	if got := deriveNestedOptions("ck3", defs, fieldRHSOf(ok), ownersOf(ok)); len(got) == 0 {
+		t.Fatal("a genuine option database inside the cap must still be found")
+	}
+}
+
+// TestMergeLocalCoversEveryDerivedField walks Derived by reflection so a field
+// added later cannot be silently left out of mergeLocal.
+//
+// KindScope was: Derived had nine fields and mergeLocal handled eight. It and
+// PrefixKinds come out of one bindKinds call and are written on adjacent lines,
+// so the omission was invisible by reading. The consequence was not a missing
+// map but a silent behaviour change — session/scope.go treats an empty
+// KindScope as "do not filter", so scope checking turned itself off whenever
+// `rebind` hit one of its early returns.
+//
+// Written as reflection rather than a field list because a field list is the
+// same thing that already drifted.
+func TestMergeLocalCoversEveryDerivedField(t *testing.T) {
+	// A local with every field non-zero, so anything mergeLocal skips stays
+	// zero in the destination and names itself.
+	local := &Derived{
+		PrefixKinds:     map[string]string{"p": "provinces"},
+		KindScope:       map[string]string{"provinces": "province"},
+		FireKeys:        map[string]string{"trigger_event": "event"},
+		NestedShapes:    []NestedShape{{ParentKind: "game_rules", ChildKind: "game_rule"}},
+		Wrappers:        map[string]bool{"COUNTRIES": true},
+		FieldValueKinds: map[string]string{"has_trait": "traits"},
+		LocAffixes:      map[string][]LocAffix{"traits": {{Suf: "_desc"}}},
+		LocFields:       map[string]bool{"name": true},
+		LocListFields:   map[string]bool{"names": true},
+	}
+	dst := derivedFromCache(nil)
+	dst.mergeLocal(local)
+
+	rv := reflect.ValueOf(*dst)
+	rt := rv.Type()
+	for i := range rt.NumField() {
+		if rv.Field(i).Len() == 0 {
+			t.Errorf("mergeLocal does not carry %s: a field added to Derived must "+
+				"be merged, or it silently vanishes on the incremental path",
+				rt.Field(i).Name)
+		}
+	}
 }

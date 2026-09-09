@@ -381,7 +381,7 @@ func (f diagFile) unknownKeyDiags() []Diagnostic {
 // token, a scripted macro, a definition, or a name carrying script grammar. A
 // name the engine knows is not evidence of a typo wherever it appears.
 func (f diagFile) knownAnywhere(key string) bool {
-	if f.s.DeclaresEngineName(key) || f.s.IsMacroDef(key) || f.s.IsMacroKind(key) {
+	if f.s.DeclaresEngineName(key) || f.s.IsMacroDef(key) || jomini.IsMacroKind(key) {
 		return true
 	}
 	if strings.ContainsAny(key, "$.:@") {

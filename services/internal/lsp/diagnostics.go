@@ -32,9 +32,24 @@ type diagFile struct {
 	refs []catalog.Ref
 }
 
-// Diagnose returns diagnostics for path. Suppressions (# pmt:ignore) are honored.
+// Diagnose runs every check. Suppressions (# pmt:ignore) are honored.
 // Install (vanilla) files are silent — harvest stays in the scan cache, not IDE lint.
 func Diagnose(s *session.Session, path string) []Diagnostic {
+	return DiagnoseEnabled(s, path, nil)
+}
+
+// DiagnoseEnabled is Diagnose with the checks the user has switched off skipped
+// rather than run and discarded.
+//
+// A nil or empty set means run everything, so the vanilla gate and the sweep get
+// the full surface whatever a user has configured — a gate that only checks what
+// happens to be enabled is not a gate.
+func DiagnoseEnabled(
+	s *session.Session, path string, enabled map[string]bool,
+) []Diagnostic {
+	if len(enabled) == 0 {
+		enabled = nil
+	}
 	if origin, _, ok := s.Locate(path); ok && origin == game.OriginVanilla {
 		return nil
 	}
@@ -61,8 +76,22 @@ func Diagnose(s *session.Session, path string) []Diagnostic {
 	out = append(out, f.unresolvedRefDiags()...)
 	out = append(out, f.wrongValueTypeDiags()...)
 	out = append(out, f.unknownKeyDiags()...)
-	out = append(out, f.declaredValueDiags()...)
-	out = append(out, f.unknownTokenDiags()...)
+	// The two experimental checks are the only ones gated, because they are the
+	// only ones that default to off — and running a check whose every finding
+	// ApplySeverities will discard is pure cost. Measured on a 30 KB CK3 event
+	// file: unknownTokenDiags is 593 µs of Diagnose's 873 µs, so two thirds of
+	// the work on every keystroke was thrown away. declaredValueDiags is 1.9 µs
+	// and is gated for consistency, not for the microseconds.
+	//
+	// The checks stay ignorant of configuration: they are not passed the
+	// settings, only asked whether to run. ApplySeverities still decides what a
+	// finding means.
+	if enabled == nil || enabled["wrong-declared-value"] {
+		out = append(out, f.declaredValueDiags()...)
+	}
+	if enabled == nil || enabled["unknown-token"] {
+		out = append(out, f.unknownTokenDiags()...)
+	}
 	out = append(out, descriptorDiags(s, path)...)
 
 	sup := scanSuppressions(f.src)

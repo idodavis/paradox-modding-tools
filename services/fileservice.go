@@ -225,16 +225,45 @@ func viewableImage(head []byte) bool {
 }
 
 // WriteFileBase64 writes raw bytes from standard base64.
+//
+// Temp-then-rename, because this is the editor's save path and the only file
+// PMT writes that it cannot regenerate. A failed in-place write — disk full,
+// permission lost mid-save, the process dying — truncates the modder's script.
+// Every derived cache already writes this way; the irreplaceable file did not.
 func (f *FileService) WriteFileBase64(fullPath, b64 string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return fmt.Errorf("decode: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+	dir := filepath.Dir(fullPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	return os.WriteFile(fullPath, data, 0o644)
+	// Same directory, so the rename stays on one filesystem and stays atomic.
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(fullPath)+".pmt*")
+	if err != nil {
+		return fmt.Errorf("temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename succeeds
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write: %w", err)
+	}
+	// Sync before rename: a rename can be durable while the bytes are not,
+	// which would leave a file that exists and is empty.
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return fmt.Errorf("chmod: %w", err)
+	}
+	return os.Rename(tmpName, fullPath)
 }
 
 // ListDirectory lists immediate children of dirPath (non-recursive).

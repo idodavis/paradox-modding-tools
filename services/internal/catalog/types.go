@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"paradox-modding-tools/services/internal/parser/jomini"
 )
 
 // CacheFormatVersion is the on-disk schema of VanillaCache. Bump it when the
@@ -14,7 +16,24 @@ import (
 // before deriveNestedOptions was made order-independent has 352 CK3 defs under
 // whichever kind that scan's threads happened to pick, and nothing else would
 // invalidate it.
-const CacheFormatVersion = 33
+//
+// 34 covers two content changes, neither of which any other check invalidates:
+//
+//   - maxOptionKeysPerParent. An older cache holds 57,652 phantom EU5 defs of
+//     kind `father` — 40% of that model — harvested from the game-setup `start`
+//     blocks. Worse than noise: knownAnywhere ends in FindDefs, so each one is a
+//     word unknown-token and unknown-key can never report.
+//   - defContainers using jomini.IsObjectKind. An older cache attributes 5,604
+//     of CK3's 17,073 non-call edges (32.8%) and 1,501 of Vic3's 3,847 (39.0%)
+//     to a saved scope rather than to the event that encloses it. The edge
+//     counts are unchanged; the Event Graph's source node was wrong.
+//
+// 35 adds Edge.Rescoped, which the fix above made necessary. Once an edge names
+// the on_action that really encloses it, eventRootScopeLocked starts reading
+// that on_action's declared scope as the event's — and a fire site nested under
+// a scope change is not in that scope at all. An older cache has the flag unset
+// everywhere, which is the pre-fix behaviour, so the bump is what turns it on.
+const CacheFormatVersion = 35
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -63,8 +82,8 @@ type Def struct {
 	// foo = { ... }`, a GUI `local_template` -- rather than one a folder gives a
 	// kind to. The engine resolves these per file, so a repeated Local key is
 	// required rather than a defect, and a call must never be navigated to a
-	// Local body in another file. game.LocalDeclKeywords lists the keywords and
-	// which game writes them; GAME-SYNTAX 16 has the evidence.
+	// Local body in another file. game.LocalDeclPrefix names the keyword family
+	// and game.DeclKeywords lists them; GAME-SYNTAX 16 has the evidence.
 	Local bool `json:"local,omitempty"`
 
 	// Doc is the comment block written immediately above the definition. For
@@ -72,6 +91,34 @@ type Def struct {
 	// the engine API, not script, so no dump describes an event, a decision, a
 	// trait or a scripted macro. Authors write a comment instead.
 	Doc string `json:"doc,omitempty"`
+}
+
+// IsCitableDef reports a definition whose key names a real object, so a
+// citation, a field value or a nested-shape join may bind to it.
+//
+// One question, previously asked at seven sites with four answers. The three
+// that disagreed:
+//
+//   - deriveFieldValueKinds and bindKinds admitted loc_key. Whether a field
+//     holds a localization key is deriveLocFields' question, and that pass has
+//     four guards this one does not — chiefly schema.HasName, so it refuses to
+//     retype a token the game declares. Without it, `has_policy` and
+//     `add_random_innovation` were typed loc_key on a mod that localizes them,
+//     which is a derived pass overruling a declared one. Worse, the collision
+//     made the key ambiguous and so DROPPED the field: on A Game of Thrones
+//     111 correct types (`add_innovation` -> innovations, `add_perk` ->
+//     lifestyle_perks) were suppressed by the mod's own loc file.
+//   - resolveNonLoc omitted the empty-key check, which is unreachable there
+//     (ResolveMatching buckets by a non-empty word) but not worth preserving as
+//     a difference.
+//
+// jomini.IsObjectKind is the stricter sibling for "resolve this name to a
+// thing": it also rejects `namespace`. That is right when a hover must not land
+// on an event id prefix, and wrong here — a namespace still occupies the name,
+// and a derivation that treats the name as free invents a database for it.
+func IsCitableDef(d Def) bool {
+	k := jomini.CanonicalKind(d.Kind)
+	return k != "" && k != jomini.KindLocKey && d.Key != "" && !jomini.IsEphemeral(k)
 }
 
 // Ref is a use-site. Kind is "loc", "loc-broad", "loc-convention",
@@ -96,6 +143,16 @@ type Edge struct {
 	Line    int    `json:"line"`
 	Kind    string `json:"kind,omitempty"`
 	NameKey string `json:"nameKey,omitempty"`
+	// Rescoped marks a fire site sitting under a block that changed scope, so
+	// the event does NOT run in the scope its source declares.
+	//
+	// CK3's on_faith_monthly is faith-scoped and calls
+	// `trigger_event = global_religion.1000` fourteen blocks deep, inside
+	// character-scoped iterators. Reading the on_action's scope as the event's
+	// root accused 31 lines of vanilla CK3 of wrong-scope. The graph is
+	// unaffected — the edge is real and the arrow points the right way; only
+	// the scope inference must decline.
+	Rescoped bool `json:"rescoped,omitempty"`
 }
 
 // ModInput is one workspace mod: Origin id, Root folder, load Order, display Name.

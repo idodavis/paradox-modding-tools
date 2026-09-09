@@ -593,10 +593,22 @@ type defAtLine struct {
 	key  string
 }
 
+// defContainers lists the objects a line can belong to, for containerAt.
+//
+// IsObjectKind rather than a hand-written exclusion list: this was the only one
+// of six "what counts as a definition" predicates that did not exclude ephemeral
+// kinds, and jomini's own comment names itself the canonical one — "anything
+// resolving a name to a thing wants this predicate".
+//
+// The cost of the omission was that a `saved_scope` def, created at the line of
+// a save_scope_as RHS *inside* an event body, outranked the event as a
+// container — containerAt takes the LAST container at or before a line. On the
+// real installs that made 5,604 of CK3's 17,073 non-call edges and 1,501 of
+// Vic3's 3,847 point at a source node that does not exist.
 func defContainers(defs []Def) []defAtLine {
 	var out []defAtLine
 	for _, d := range defs {
-		if d.Kind != "loc_key" && d.Kind != "namespace" {
+		if jomini.IsObjectKind(d.Kind) {
 			out = append(out, defAtLine{d.Line, d.Key})
 		}
 	}
@@ -738,6 +750,7 @@ func extractRefsAndEdges(
 							edges = append(edges, Edge{
 								From: from, To: to, Via: key, Path: path,
 								Line: li.PositionAt(start).Line, Kind: kind, NameKey: nameKey,
+								Rescoped: fireSiteRescopes(stack),
 							})
 						})
 					} else if from != "" && from != key {

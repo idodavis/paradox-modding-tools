@@ -4,6 +4,8 @@
 package catalog
 
 import (
+	"slices"
+
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 )
@@ -20,36 +22,57 @@ type Contest struct {
 }
 
 // Winner picks the effective definition. order is origin → rank; vanilla always loses.
+//
+// FIOS/LIOS is a property of the KIND, so a bucket spanning more than one kind
+// has no single rule to reduce under. Each kind is reduced under its own rule
+// and the per-kind winners are then compared by load order. Callers that need a
+// particular kind narrow first: Contests buckets by kind before it gets here,
+// and ResolveMatching takes a filter. Session.Resolve does not, so its answer
+// for a key two mods define under different kinds is best-effort — but stable,
+// which is the part that was missing.
 func Winner(gameID string, defs []Def, order map[string]int) *Def {
 	if len(defs) == 0 {
 		return nil
 	}
 	var vanilla *Def
-	var mods []Def
+	var kinds []string
+	byKind := map[string][]Def{}
 	for i := range defs {
 		if defs[i].Origin == "" {
 			vanilla = &defs[i]
-		} else {
-			mods = append(mods, defs[i])
+			continue
 		}
+		k := defs[i].Kind
+		if _, seen := byKind[k]; !seen {
+			kinds = append(kinds, k)
+		}
+		byKind[k] = append(byKind[k], defs[i])
 	}
-	if len(mods) == 0 {
+	if len(kinds) == 0 {
 		return vanilla
 	}
-	fios := game.IsFIOS(gameID, mods[0].Kind)
-	best := 0
-	for i := 1; i < len(mods); i++ {
-		ri, rb := order[mods[i].Origin], order[mods[best].Origin]
-		if fios {
-			if ri < rb {
-				best = i
+	slices.Sort(kinds) // ties across kinds resolve lexically, never by slice position
+	var best *Def
+	for _, kind := range kinds {
+		mods := byKind[kind]
+		fios := game.IsFIOS(gameID, kind)
+		b := 0
+		for i := 1; i < len(mods); i++ {
+			ri, rb := order[mods[i].Origin], order[mods[b].Origin]
+			if fios {
+				if ri < rb {
+					b = i
+				}
+			} else if ri >= rb { // LIOS: latest wins, ties -> later in slice
+				b = i
 			}
-		} else if ri >= rb { // LIOS: latest wins, ties -> later in slice
-			best = i
+		}
+		if best == nil || order[mods[b].Origin] > order[best.Origin] {
+			w := mods[b]
+			best = &w
 		}
 	}
-	w := mods[best]
-	return &w
+	return best
 }
 
 func skipOverrideKind(t string) bool {

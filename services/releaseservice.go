@@ -10,8 +10,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -230,14 +232,30 @@ func (r *ReleaseService) BumpVersion(current, kind string) string {
 	}
 }
 
-// CopyThumbnail copies src onto the game thumb path and returns the new rel.
+// CopyThumbnail replaces the mod's listing image with src and returns the path
+// it wrote, relative to the mod root.
+//
+// It replaces in place: a mod that already has a thumbnail keeps where it put
+// it. Writing to the game's convention instead left Victoria 3 and EU5 mods with
+// two thumbnail files and the descriptor naming the stale one.
 func (r *ReleaseService) CopyThumbnail(workspaceID, modID, src string) (string, error) {
 	ws, mod, err := r.workspaceMod(workspaceID, modID)
 	if err != nil {
 		return "", err
 	}
-	rel := modfile.ThumbnailRel(ws.GameID)
-	dest := filepath.Join(mod.Path, rel)
+	ext := strings.ToLower(filepath.Ext(src))
+	if !slices.Contains(modfile.ThumbnailExts, ext) {
+		return "", fmt.Errorf("thumbnail must be one of %s",
+			strings.Join(modfile.ThumbnailExts, ", "))
+	}
+	rel, existed := modfile.ThumbnailPath(ws.GameID, mod.Path, ext)
+	// Same directory, new extension: drop the file being superseded rather than
+	// leaving two for listingThumb to choose between.
+	if existed && !strings.EqualFold(path.Ext(rel), ext) {
+		_ = os.Remove(filepath.Join(mod.Path, filepath.FromSlash(rel)))
+		rel = rel[:len(rel)-len(path.Ext(rel))] + ext
+	}
+	dest := filepath.Join(mod.Path, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
 	}
@@ -473,20 +491,28 @@ func releasePreviews(previews []WorkshopPreview) []release.Preview {
 	return out
 }
 
-// listingThumb is the on-disk listing thumb (thumbnail.png / .metadata/thumbnail.png).
+// listingThumb locates the mod's listing image on disk.
+//
+// The declared picture is the fallback, not the primary: of 14 Victoria 3
+// workshop mods only 2 declare one at all, under two spellings, and one EU5 mod
+// declares `"picture": null`. The file itself is discoverable, so it is the
+// better source. picture still gets a turn — a mod may name something other than
+// `thumbnail.*` — and is tried beside the descriptor as well as at the root,
+// because every mod measured writes it as a bare file name whatever directory
+// the file is in.
 func listingThumb(gameID, root, picture string) (rel, abs string) {
-	rel = filepath.ToSlash(modfile.ThumbnailRel(gameID))
-	abs = filepath.Join(root, filepath.FromSlash(rel))
-	if _, err := os.Stat(abs); err == nil {
-		return rel, abs
+	if rel, found := modfile.ThumbnailPath(gameID, root, ""); found {
+		return rel, filepath.Join(root, filepath.FromSlash(rel))
 	}
 	if picture == "" {
 		return "", ""
 	}
-	rel = filepath.ToSlash(picture)
-	abs = filepath.Join(root, filepath.FromSlash(rel))
-	if _, err := os.Stat(abs); err == nil {
-		return rel, abs
+	for _, dir := range []string{"", ".metadata"} {
+		rel = path.Join(dir, filepath.ToSlash(picture))
+		abs = filepath.Join(root, filepath.FromSlash(rel))
+		if _, err := os.Stat(abs); err == nil {
+			return rel, abs
+		}
 	}
 	return "", ""
 }

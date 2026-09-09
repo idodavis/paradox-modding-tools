@@ -37,6 +37,46 @@ func writeFiles(t *testing.T, files map[string]string) string {
 	return root
 }
 
+// A file that cannot be read is not a file that was deleted. The watcher fires
+// on a write while the writer still holds the handle, so on Windows a sharing
+// violation during save is the ordinary case — and treating it as deletion
+// dropped every definition in the file out of the model.
+func TestExternalChangeKeepsDefsWhenTheFileIsMerelyUnreadable(t *testing.T) {
+	root := writeFiles(t, map[string]string{
+		"common/traits/00.txt": "brave = { category = personality }\n",
+	})
+	file := filepath.Join(root, "common", "traits", "00.txt")
+	s := NewWithLoc("ws", "ck3", "english", nil, nil, []catalog.ModInput{
+		{Origin: "mod", Root: root, Order: 0},
+	})
+	if s.Resolve("brave") == nil {
+		t.Fatal("brave not indexed to begin with")
+	}
+
+	// A directory in the file's place reads as an error that is not ErrNotExist,
+	// which is what a sharing violation, a permission error and a full disk all
+	// look like from here.
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(file, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.externalChange(file)
+	if s.Resolve("brave") == nil {
+		t.Error("an unreadable file dropped its definitions; stale beats empty")
+	}
+
+	// Actually gone is still gone.
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	s.externalChange(file)
+	if d := s.Resolve("brave"); d != nil {
+		t.Errorf("deleted file kept its definitions: %+v", d)
+	}
+}
+
 func TestReindexCoalesces(t *testing.T) {
 	root := writeFiles(t, map[string]string{
 		"common/traits/00.txt": "brave = { category = personality }\n",
@@ -131,7 +171,7 @@ func TestQueries(t *testing.T) {
 		"ResolveMatching")
 	must(t, len(s.ModDefsOf("t.1")) > 0 && len(s.FindDefs("t.1", 10, true, false)) > 0 &&
 		len(s.DefsInFile(ev)) > 0, "ModDefsOf/FindDefs/DefsInFile")
-	_, _, _, locOK := s.LocSite("k.t")
+	_, _, _, _, locOK := s.LocSite("k.t")
 	v, locValOK := s.DefaultLoc("k.t")
 	_, locFileOK := s.LocFile("mod", "english")
 	must(t, locOK && locValOK && v == "Hi" && locFileOK, "loc site/default/file")
@@ -535,4 +575,71 @@ func TestDottedSegmentAt(t *testing.T) {
 	if _, ok := dottedSegmentAt("holder.culture", 99); ok {
 		t.Error("an offset past the end is not a segment")
 	}
+}
+
+// TestResolutionOrderViaEndToEnd asserts which resolver actually claims a word,
+// through the public Inspect path.
+//
+// Every other resolution-order test in this package compares indices in the
+// wordResolvers slice — they pin the LIST, not the behaviour, so a second copy
+// of the ladder elsewhere in the package is invisible to all of them. One
+// existed: identify's assignment-key branch re-implemented
+// definition -> macro-kind -> vocabulary by hand, asking macro-kind (derived)
+// BEFORE vocabulary (declared) — the inversion resolve.go exists to prevent.
+//
+// `via` is stamped by resolveWord alone, so a word that resolves through a
+// hand-written copy carries no via at all. That is what this test detects.
+func TestResolutionOrderViaEndToEnd(t *testing.T) {
+	body := "namespace = t\n\nt.1 = {\n\ttitle = k.t\n\tadd_gold = 5\n}\n"
+	root := writeFiles(t, map[string]string{
+		"events/x.txt":                         body,
+		"localization/english/a_l_english.yml": "l_english:\n k.t:0 \"Hi\"\n",
+	})
+	ev := filepath.Join(root, "events", "x.txt")
+	cache := &catalog.VanillaCache{
+		InstallPath: "/game",
+		Vocabulary:  []string{"add_gold"},
+		Schema: &catalog.Schema{
+			Effects: map[string]catalog.EngineToken{"add_gold": {}},
+		},
+	}
+	s := NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
+		{Origin: "mod", Root: root, Name: "M", Order: 0},
+	})
+
+	for _, tt := range []struct {
+		name, word, wantVia string
+	}{
+		// A declared engine token must be claimed by `vocabulary`, the declared
+		// tier — not by macro-kind, and not by a hand-written branch that
+		// stamps no via at all.
+		{"declared effect", "add_gold", "vocabulary"},
+		// A harvested object is claimed by `definition`.
+		{"harvested event", "t.1", "definition"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			line, col := lineColOf(body, tt.word)
+			ins := s.Inspect(ev, line, col)
+			if ins == nil {
+				t.Fatalf("no card for %q", tt.word)
+			}
+			if ins.Via == "" {
+				t.Fatalf("%q resolved with no via: it did not go through "+
+					"resolveWord, so some other ladder claimed it", tt.word)
+			}
+			if ins.Via != tt.wantVia {
+				t.Errorf("%q claimed by %q, want %q", tt.word, ins.Via, tt.wantVia)
+			}
+		})
+	}
+}
+
+// lineColOf is the 0-based line and UTF-8 column of the first occurrence.
+func lineColOf(src, needle string) (int, int) {
+	for i, ln := range strings.Split(src, "\n") {
+		if c := strings.Index(ln, needle); c >= 0 {
+			return i, c
+		}
+	}
+	return 0, 0
 }

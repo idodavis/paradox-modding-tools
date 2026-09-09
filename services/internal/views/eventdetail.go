@@ -207,7 +207,7 @@ func locIfAny(s *session.Session, id string) *EventLocField {
 	for _, key := range []string{id, id + ".t"} {
 		if t := locValue(s, key); t != "" {
 			f := &EventLocField{Key: key, Text: t}
-			if file, line, _, ok := s.LocSite(key); ok {
+			if file, line, _, _, ok := s.LocSite(key); ok {
 				f.Path, f.Line = file, line
 			}
 			return f

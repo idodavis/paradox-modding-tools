@@ -131,6 +131,30 @@ func severityOf(name string) int {
 // next keystroke with no rescan, and so the checks themselves stay ignorant of
 // configuration — a check that reads settings is a check that can be wrong in
 // two ways.
+// EnabledCodes is the set of checks whose findings ApplySeverities will keep, so
+// a caller can decline to run the rest instead of running them and discarding
+// the result. unknownTokenDiags is default-off and was measured at 593 µs of
+// Diagnose's 873 µs on a 30 KB CK3 event file — two thirds of every keystroke.
+//
+// It resolves a setting by exactly the rule ApplySeverities uses, and
+// TestEnabledCodesAgreesWithApplySeverities holds the two together. Two rules
+// that must agree and are written twice are two rules that eventually disagree —
+// and here the disagreement would be a check silently not running.
+func EnabledCodes(settings map[string]string) map[string]bool {
+	out := make(map[string]bool, len(diagnosticCodes))
+	for _, c := range diagnosticCodes {
+		want, ok := settings[c.Code]
+		if !ok || want == "" {
+			want = ""
+			if c.Experimental {
+				want = SevOff
+			}
+		}
+		out[c.Code] = want == "" || severityOf(want) != 0
+	}
+	return out
+}
+
 func ApplySeverities(ds []Diagnostic, settings map[string]string) []Diagnostic {
 	defaults := map[string]string{}
 	for _, c := range diagnosticCodes {

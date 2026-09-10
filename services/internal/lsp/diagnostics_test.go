@@ -125,6 +125,9 @@ func TestSignatureHelpAndSchemaDiags(t *testing.T) {
 	cache := &catalog.VanillaCache{
 		Schema: &catalog.Schema{Effects: map[string]catalog.EngineToken{
 			"add_gold": {Usage: "add_gold = { $VALUE$ }"},
+			// Declared: since T-3 unknown-event fires only where the fire key
+			// is stated by the game, not merely learned from the corpus.
+			"trigger_event": {Target: "event"},
 		}},
 		FieldInfo: map[string]string{"add_gold": "gold"},
 		LocAffixes: map[string][]catalog.LocAffix{

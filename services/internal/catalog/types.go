@@ -33,7 +33,18 @@ import (
 // that on_action's declared scope as the event's — and a fire site nested under
 // a scope change is not in that scope at all. An older cache has the flag unset
 // everywhere, which is the pre-fix behaviour, so the bump is what turns it on.
-const CacheFormatVersion = 35
+//
+// 36 is the smallest content change here yet and still needs the bump: the name
+// shapes now accept Unicode letters, so Victoria 3's `mon_general_petar_vukotić`
+// is harvested as the character template it is. Three or so tokens across the
+// three installs — but the rule is not about magnitude. An older cache is a
+// model missing objects the install contains, and nothing else would notice.
+//
+// 37 stops option databases harvesting declared engine names as rows: 639 CK3
+// defs and 2 EU5 ones were triggers and effects (`is_alive`, `save_scope_as`),
+// which resolveDefinition ranks above the declared token. An older cache still
+// holds them.
+const CacheFormatVersion = 37
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -83,7 +94,7 @@ type Def struct {
 	// kind to. The engine resolves these per file, so a repeated Local key is
 	// required rather than a defect, and a call must never be navigated to a
 	// Local body in another file. game.LocalDeclPrefix names the keyword family
-	// and game.DeclKeywords lists them; GAME-SYNTAX 16 has the evidence.
+	// and jomini.DeclKeywords lists them; GAME-SYNTAX 16 has the evidence.
 	Local bool `json:"local,omitempty"`
 
 	// Doc is the comment block written immediately above the definition. For
@@ -132,6 +143,14 @@ type Ref struct {
 	Start    int    `json:"start"`
 	End      int    `json:"end"`
 	OwnerKey string `json:"ownerKey,omitempty"`
+	// Derived marks a reference whose KIND came from an install-derived pass
+	// (FieldValueKinds, FireKeys) rather than from something the game declares.
+	// Accusing surfaces skip these: both incidents in this project's history —
+	// 859 `body_part` rows and 4,033 fire rows — were a strong derived pass
+	// reaching a surface that tells a modder their script is wrong. Not
+	// persisted in practice: only loc and call refs reach the cache, and
+	// neither is derived-marked.
+	Derived bool `json:"derived,omitempty"`
 }
 
 // Edge is a directed event-graph link. Kind "call" is a scripted-effect invocation.

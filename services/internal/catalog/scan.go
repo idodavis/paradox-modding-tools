@@ -107,9 +107,11 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		}
 	}
 
+	// One grouping of acc.defs for the three derivations below.
+	accIdx := newDefIndex(acc.defs)
 	structures := keysByCount(acc.structures)
 	nestedMembers := deriveNestedMembers(acc.nested)
-	kinds := deriveFieldValueKinds(acc.fieldRHS, acc.defs)
+	kinds := deriveFieldValueKinds(acc.fieldRHS, accIdx)
 	if derived != nil {
 		derived.FieldValueKinds = kinds
 	}
@@ -137,7 +139,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		FireKeys:                 derived.FireKeys,
 		NestedShapes:             derived.NestedShapes,
 		Wrappers:                 sortedKeys(derived.Wrappers),
-		LocAffixes:               deriveLocAffixes(acc.defs, locKeys),
+		LocAffixes:               deriveLocAffixes(accIdx, locKeys),
 		LocFields:                sortedKeys(derived.LocFields),
 		LocListFields:            sortedKeys(derived.LocListFields),
 		LocMemberAffixes:         deriveLocMemberAffixes(structures, locKeys),
@@ -151,7 +153,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		NestedMembers:            nestedMembers,
 		UnambiguousBlocks:        unambiguousBlocks(acc.blockKinds),
 		AmbiguousFields:          deriveAmbiguousFields(nestedMembers),
-		Snippets:                 deriveSnippets(acc.structures, acc.structBlocks, acc.defs),
+		Snippets:                 deriveSnippets(acc.structures, acc.structBlocks, accIdx),
 		StructureBlocks:          blockKeys(acc.structures, acc.structBlocks),
 		Vocabulary:               sortedKeys(acc.vocab),
 		GUITypes:                 sortedKeys(acc.guiTypes),
@@ -232,7 +234,7 @@ func ClassifyRel(rel, name string) string {
 		if strings.Contains(slash, "localization") {
 			return "loc"
 		}
-	case lower == "metadata.json":
+	case lower == game.MetadataFile:
 		return "meta"
 	case strings.HasSuffix(lower, ".txt") && !strings.HasPrefix(name, "_"):
 		if !strings.Contains(slash, "/") {
@@ -282,9 +284,9 @@ func gather(roots []string) inventory {
 	return inv
 }
 
-// accum collects FileExtract results from all workers behind one mutex. It is
+// Evidence collects FileExtract results from all workers behind one mutex. It is
 // the single merge sink for both Scan and BuildIndex.
-type accum struct {
+type Evidence struct {
 	mu           sync.Mutex
 	defs         []Def
 	refs         []Ref
@@ -305,12 +307,11 @@ type accum struct {
 	guiTypes       map[string]bool
 	guiProps       map[string]bool
 	fieldRHS       map[string]map[string]bool
-	fieldListRHS   map[string]map[string]bool
 	fieldRHSByKind map[string]map[string]map[string]bool
 }
 
-func newAccum() *accum {
-	return &accum{
+func newEvidence() *Evidence {
+	return &Evidence{
 		loc:            map[string]map[string]LocEntry{},
 		locOrder:       map[string]map[string]int{},
 		structures:     map[string]map[string]int{},
@@ -321,12 +322,11 @@ func newAccum() *accum {
 		guiTypes:       map[string]bool{},
 		guiProps:       map[string]bool{},
 		fieldRHS:       map[string]map[string]bool{},
-		fieldListRHS:   map[string]map[string]bool{},
 		fieldRHSByKind: map[string]map[string]map[string]bool{},
 	}
 }
 
-func (a *accum) merge(ex FileExtract) {
+func (a *Evidence) merge(ex FileExtract) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.defs = append(a.defs, ex.Defs...)
@@ -351,14 +351,6 @@ func (a *accum) merge(ex FileExtract) {
 	maps.Copy(a.vocab, ex.Vocab)
 	maps.Copy(a.guiTypes, ex.GUITypes)
 	maps.Copy(a.guiProps, ex.GUIProps)
-	for field, vals := range ex.FieldListRHS {
-		m := a.fieldListRHS[field]
-		if m == nil {
-			m = map[string]bool{}
-			a.fieldListRHS[field] = m
-		}
-		maps.Copy(m, vals)
-	}
 	for field, vals := range ex.FieldRHS {
 		m := a.fieldRHS[field]
 		if m == nil {
@@ -425,22 +417,34 @@ func walkFiles(ctx context.Context, files []fileRef, fn func(fileRef) error) err
 func collectExtracts(
 	ctx context.Context, gameID string, files []fileRef, bodies bool,
 	cache *VanillaCache, schema *Schema, locKeys map[string]bool,
-) (*accum, *Derived, map[string]bool, error) {
+) (*Evidence, *Derived, map[string]bool, error) {
 	corp := corpus{ctx: ctx, gameID: gameID, files: files}
 	dataFns := map[string]bool{}
 	fieldRHS := map[string]map[string]bool{}
 	fieldListRHS := map[string]map[string]bool{}
 	var baseDefs []Def
+	var cites, fieldCites []typedCite
 	var mu sync.Mutex
 
 	// First pass gathers only what the derivations need: every def key, the
-	// values each field takes, and the data functions in the source text.
+	// values each field takes, the data functions in the source text, and the
+	// citations.
+	//
+	// The citations depend on nothing but the file, so gathering them here
+	// rather than in deriveAll's walk is what lets the nested-database
+	// placement fold into that walk instead of needing a third (II.4): with
+	// every citation known before deriveAll starts, which child kinds are cited
+	// and undefined is answerable before its walk rather than after.
 	if err := corp.walk(func(f fileRef, res jomini.Result) error {
 		ex := extractForms(gameID, f.abs, f.rel, f.origin, res, bodies)
 		fns := harvestGetSet(res.Src)
+		c := collectTypedCites(res.Root)
+		fc := collectFieldCites(res.Root)
 		mu.Lock()
 		defer mu.Unlock()
 		baseDefs = append(baseDefs, ex.Defs...)
+		cites = append(cites, c...)
+		fieldCites = append(fieldCites, fc...)
 		maps.Copy(dataFns, fns)
 		for field, vals := range ex.FieldRHS {
 			m := fieldRHS[field]
@@ -450,7 +454,9 @@ func collectExtracts(
 			}
 			maps.Copy(m, vals)
 		}
-		for field, vals := range ex.FieldListRHS {
+		// Only pass 1 wants list members: nothing downstream reads them, so
+		// pass 2 computing them again was 42% of its extractForms time.
+		for field, vals := range extractFieldListValues(res.Root) {
 			m := fieldListRHS[field]
 			if m == nil {
 				m = map[string]bool{}
@@ -464,12 +470,17 @@ func collectExtracts(
 	}
 
 	derived := derivedFromCache(cache)
-	local, cites := deriveAll(gameID, corp, baseDefs, schema, fieldRHS)
+	// One grouping of baseDefs for every derivation below: deriveAll's event and
+	// on_action id sets, its citable key set, the type join inside it, and the
+	// field typing and loc-field key set after it. Five walks of the whole def
+	// slice before II.2.
+	baseIdx := newDefIndex(baseDefs)
+	local := deriveAll(gameID, corp, baseDefs, baseIdx, schema, fieldRHS, cites, fieldCites)
 	derived.mergeLocal(local)
 	if derived.FieldValueKinds == nil {
 		derived.FieldValueKinds = map[string]string{}
 	}
-	for k, v := range deriveFieldValueKinds(fieldRHS, baseDefs) {
+	for k, v := range deriveFieldValueKinds(fieldRHS, baseIdx) {
 		if derived.FieldValueKinds[k] == "" {
 			derived.FieldValueKinds[k] = v
 		}
@@ -478,7 +489,7 @@ func collectExtracts(
 	// a mod's `last_name` is read as localization for the same reason vanilla's
 	// is.
 	if len(locKeys) > 0 {
-		defKeys := defKeySet(baseDefs)
+		defKeys := baseIdx.citableKeys()
 		derived.LocFields = deriveLocFields(fieldRHS, locKeys, defKeys, schema)
 		derived.LocListFields = deriveLocFields(fieldListRHS, locKeys, defKeys, schema)
 	}
@@ -489,13 +500,13 @@ func collectExtracts(
 	// citations are indexed once, corpus-wide: a nested database is routinely
 	// declared in one file and cited from another.
 	citedByKind := citedIDsByKind(derived.NestedShapes, cites, derived.PrefixKinds)
-	acc := newAccum()
+	acc := newEvidence()
 	if err := corp.walk(func(f fileRef, res jomini.Result) error {
 		ex := extractForms(gameID, f.abs, f.rel, f.origin, res, bodies)
 		ex.Defs = applyDerivedDefs(gameID, f.abs, f.origin, f.rel, res, ex.Defs, derived, citedByKind)
 		ex.Refs = append(ex.Refs, conventionLocRefs(res.Lines(), f.abs, ex.Defs, derived)...)
 		bodyRefs, edges, cands := extractRefsAndEdges(
-			gameID, res.Root, res.Lines(), f.abs, ex.Defs, derived,
+			gameID, res.Root, res.Lines(), f.abs, ex.Defs, derived, schema,
 		)
 		ex.Refs = append(ex.Refs, bodyRefs...)
 		ex.Edges, ex.Cands = edges, cands
@@ -522,7 +533,7 @@ func collectExtracts(
 
 // harvestLocFiles merges loc YAML that loadParsed skipped (not Jomini).
 func harvestLocFiles(
-	ctx context.Context, gameID string, files []fileRef, bodies bool, acc *accum,
+	ctx context.Context, gameID string, files []fileRef, bodies bool, acc *Evidence,
 ) error {
 	// walkN rather than walkFiles: the index is the file's load order, and the
 	// merge needs it to decide which value wins when two files define one key.
@@ -593,47 +604,51 @@ func (c corpus) walk(fn func(fileRef, jomini.Result) error) error {
 // comes from bindKinds, a join against declared types, so without a schema there
 // is no prefix table at all rather than a guessed one.
 func deriveAll(
-	gameID string, corp corpus, defs []Def, s *Schema,
+	gameID string, corp corpus, defs []Def, idx *defIndex, s *Schema,
 	fieldRHS map[string]map[string]bool,
-) (*Derived, []typedCite) {
-	ev, oa := eventOnActionIDs(defs)
-	var cites, fieldCites []typedCite
+	cites, fieldCites []typedCite,
+) *Derived {
+	ev, oa := idx.keysOfKind("event"), idx.keysOfKind("on_action")
 	fireCounts := map[string]*fireCount{}
 	wrappers := map[string]bool{}
 	owners := map[optionOwner]*ownerKeys{}
-	defKeys := defKeySet(defs)
+	defKeys := idx.citableKeys()
+	// Both of these are answerable before the walk now that the citations come
+	// from the first pass, and that is what folded the nested-database
+	// placement into this walk instead of a third one (II.4).
+	prefix, kindScope := bindPrefixes(s, idx, cites)
+	idChild := nestedIDChild(gameID, defKeys, prefix, cites, fieldCites)
+	byChild := map[string]*nestedWanted{}
 	var mu sync.Mutex
 	// One walk for every fact that depends only on a single file. Each corpus
 	// walk re-parses the whole install, so folding these together is worth more
 	// than any micro-optimisation inside them.
 	_ = corp.walk(func(f fileRef, res jomini.Result) error {
-		c := collectTypedCites(res.Root)
-		fc := collectFieldCites(res.Root)
 		fire := deriveFireKeys(res.Root, ev, oa)
 		wraps := deriveWrappers(gameID, f.rel, res.Root, defKeys)
 		mu.Lock()
 		defer mu.Unlock()
-		cites = append(cites, c...)
-		fieldCites = append(fieldCites, fc...)
 		fireCounts = mergeFireCounts(fireCounts, fire)
 		for _, w := range wraps {
 			wrappers[w] = true
 		}
 		addOptionOwners(gameID, f.rel, res.Root, owners)
+		if len(idChild) > 0 {
+			observeNestedWanted(gameID, f.rel, res.Root, idChild, byChild)
+		}
 		return nil
 	})
-	prefix, kindScope := bindPrefixes(s, defs, cites)
-	shapes := deriveNestedShapes(gameID, corp, defs, prefix, s, cites, fieldCites)
+	shapes := nestedShapesFrom(byChild, s)
 	// Option databases are found through fields rather than typed cites, so they
 	// are a separate join, but they harvest through the same NestedShape path.
-	shapes = append(shapes, deriveNestedOptions(gameID, defs, fieldRHS, owners)...)
+	shapes = append(shapes, deriveNestedOptions(gameID, s, defs, defKeys, fieldRHS, owners)...)
 	return &Derived{
 		PrefixKinds:  prefix,
 		KindScope:    kindScope,
 		FireKeys:     resolveFireKinds(fireCounts),
 		Wrappers:     wrappers,
 		NestedShapes: shapes,
-	}, cites
+	}
 }
 
 // bindPrefixes resolves the typed-prefix table from the game's declared links.
@@ -641,11 +656,11 @@ func deriveAll(
 // every prefix that matters (culture, title, trait, character, province) while
 // inventing thirteen that are not prefixes at all, which is what made hover
 // report the wrong kind.
-func bindPrefixes(s *Schema, defs []Def, cites []typedCite) (prefixKind, kindScope map[string]string) {
+func bindPrefixes(s *Schema, idx *defIndex, cites []typedCite) (prefixKind, kindScope map[string]string) {
 	if s.Empty() {
 		return nil, nil
 	}
-	prefixKind, kindScope, _ = bindKinds(s, defs, cites)
+	prefixKind, kindScope, _ = bindKinds(s, idx, cites)
 	return prefixKind, kindScope
 }
 
@@ -655,7 +670,7 @@ func rebind(v *Derived, s *Schema, defs []Def, cites []typedCite) {
 	if v == nil || s.Empty() || len(defs) == 0 {
 		return
 	}
-	prefixKind, kindScope, _ := bindKinds(s, defs, cites)
+	prefixKind, kindScope, _ := bindKinds(s, newDefIndex(defs), cites)
 	if len(prefixKind) == 0 {
 		return
 	}
@@ -846,7 +861,7 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 // readMetaKeys collects top-level keys from .metadata/metadata.json files.
 func readMetaKeys(installPath string, metas []string) []string {
 	set := map[string]bool{}
-	paths := append([]string{filepath.Join(installPath, ".metadata", "metadata.json")}, metas...)
+	paths := append([]string{filepath.Join(installPath, game.MetadataDir, game.MetadataFile)}, metas...)
 	for _, p := range paths {
 		raw, err := os.ReadFile(p)
 		if err != nil {
@@ -969,7 +984,7 @@ func prose(parts []string) string {
 // set, which only exists once the install has been scanned, and the earliest
 // point that has it is here. Filtering the row later would leave a wrong
 // reference in the model for hover and find-references to trip over too.
-func dropEngineSlotRefs(acc *accum, cache *VanillaCache) {
+func dropEngineSlotRefs(acc *Evidence, cache *VanillaCache) {
 	if acc == nil || cache == nil || len(cache.LocEngineSlots) == 0 {
 		return
 	}
@@ -997,7 +1012,7 @@ func dropEngineSlotRefs(acc *accum, cache *VanillaCache) {
 // untranslated count moved by one or two across identical sweeps, which makes it
 // useless as a threshold. order is the file's index in the walk list, which is
 // mod load order and then walk order within a mod.
-func (a *accum) mergeLocOrdered(order int, d LocDelta) {
+func (a *Evidence) mergeLocOrdered(order int, d LocDelta) {
 	if d.Lang == "" || len(d.Vals) == 0 {
 		return
 	}

@@ -8,7 +8,11 @@
 
 package jomini
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
 // stopWords are keys that structure a script rather than name anything: control
 // flow, boolean literals, arithmetic in a script value, and the description
@@ -34,32 +38,66 @@ func IsStop(key string) bool { return stopWords[strings.ToLower(key)] }
 // nameshapes_test.go pins each against the pattern it replaced, and fuzzes the
 // equivalence, because a silent difference changes what the whole model harvests.
 
-// IsDefName reports `^[A-Za-z0-9_][A-Za-z0-9_.-]*$` -- a definition key.
+// The games ship non-ASCII identifiers and PMT has to read them. Victoria 3's
+// `mon_general_petar_vukotić` is a vanilla character template DEFINITION; CK3
+// saves a scope as `Linnéa`; a Victoria 3 mod names a journal entry
+// `bpm_je_propaganda_of_the_deed_бомбометр`. Roughly 3 such tokens across the
+// three vanilla installs and 11 across 31 workshop mods -- rare, and wrong every
+// time it occurs.
+//
+// A byte at or above utf8.RuneSelf opens a multi-byte sequence, so it is decoded
+// and judged by unicode. ASCII costs one extra comparison per byte and no
+// allocation, which keeps these off the profile they were written to leave.
+//
+// Deliberately still rejected: `country_event·` (U+00B7 is punctuation, not a
+// letter), which is a real mod typo these predicates should keep catching.
+
+// IsDefName reports a definition key: the ASCII shape
+// `^[A-Za-z0-9_][A-Za-z0-9_.-]*$`, widened to any Unicode letter or digit.
 func IsDefName(s string) bool {
 	if s == "" {
 		return false
 	}
-	if !isAlnumUnder(s[0]) {
-		return false
-	}
-	for i := 1; i < len(s); i++ {
-		if c := s[i]; !isAlnumUnder(c) && c != '.' && c != '-' {
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if !isAlnumUnder(c) && !(i > 0 && (c == '.' || c == '-')) {
+				return false
+			}
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 			return false
 		}
+		i += size
 	}
 	return true
 }
 
-// IsEventID reports `^[A-Za-z0-9_-]+\.\d+$` -- `namespace.1234`.
+// IsEventID reports `namespace.1234`: the ASCII shape `^[A-Za-z0-9_-]+\.\d+$`,
+// with the namespace half widened the same way as IsDefName. The number after
+// the dot stays ASCII digits — it is an engine-assigned index, not a name.
 func IsEventID(s string) bool {
 	dot := strings.LastIndexByte(s, '.')
 	if dot <= 0 || dot == len(s)-1 {
 		return false
 	}
-	for i := 0; i < dot; i++ {
-		if c := s[i]; !isAlnumUnder(c) && c != '-' {
+	for i := 0; i < dot; {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if !isAlnumUnder(c) && c != '-' {
+				return false
+			}
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:dot])
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 			return false
 		}
+		i += size
 	}
 	for i := dot + 1; i < len(s); i++ {
 		if c := s[i]; c < '0' || c > '9' {
@@ -69,15 +107,33 @@ func IsEventID(s string) bool {
 	return true
 }
 
-// IsLowerName reports `^[a-z][a-z0-9_]*$` -- a lowercase script identifier.
+// IsLowerName reports a lowercase script identifier: the ASCII shape
+// `^[a-z][a-z0-9_]*$`, widened to any lowercase Unicode letter.
+//
+// Lowercase, not any letter: this decides whether a word is an effect or trigger
+// name, and the games write those in lower case. A script with no case
+// distinction stays out, which is correct — nothing in the three games names a
+// token that way, and admitting it would widen the vocabulary on a guess.
 func IsLowerName(s string) bool {
-	if s == "" || s[0] < 'a' || s[0] > 'z' {
+	if s == "" {
 		return false
 	}
-	for i := 1; i < len(s); i++ {
-		if c := s[i]; c != '_' && (c < 'a' || c > 'z') && (c < '0' || c > '9') {
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			ok := (c >= 'a' && c <= 'z') ||
+				(i > 0 && (c == '_' || (c >= '0' && c <= '9')))
+			if !ok {
+				return false
+			}
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !unicode.IsLower(r) && !(i > 0 && unicode.IsDigit(r)) {
 			return false
 		}
+		i += size
 	}
 	return true
 }

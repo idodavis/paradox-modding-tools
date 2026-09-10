@@ -7,7 +7,6 @@ package catalog
 
 import (
 	"maps"
-	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/parser/loc"
 	"slices"
 	"strings"
@@ -50,24 +49,8 @@ const minFieldHits = 2
 
 // deriveFieldValueKinds types a field from the definitions its values name: the
 // values that resolve must agree on one kind, and enough of them must resolve.
-func deriveFieldValueKinds(rhs map[string]map[string]bool, defs []Def) map[string]string {
-	kindsByKey := map[string][]string{}
-	for _, d := range defs {
-		if !IsCitableDef(d) {
-			continue
-		}
-		k := jomini.CanonicalKind(d.Kind)
-		seen := false
-		for _, have := range kindsByKey[d.Key] {
-			if have == k {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			kindsByKey[d.Key] = append(kindsByKey[d.Key], k)
-		}
-	}
+func deriveFieldValueKinds(rhs map[string]map[string]bool, idx *defIndex) map[string]string {
+	kindsByKey := idx.kindsByKey
 	out := map[string]string{}
 	for field, vals := range rhs {
 		// A bare number is a weight, not a field name. Typing `20` as `event`

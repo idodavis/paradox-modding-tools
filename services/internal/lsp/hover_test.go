@@ -954,8 +954,12 @@ func TestHoverAcceptsOpenSetIsNotEnumerated(t *testing.T) {
 		FieldEnumsByKind: map[string]map[string][]string{
 			"traits": {"open_field": many, "closed_field": {"yes_ish", "no_ish"}},
 		},
-		FieldInfo: map[string]string{
-			"open_field": "Anything.", "closed_field": "One of two.",
+		// FieldInfoByKind, not FieldInfo: FieldEnums looks up by the card's
+		// kind, and a fixture setting only the global table produces a bare
+		// "field" card whose kind is "". The enum then never matches and both
+		// assertions below hold vacuously — which is what this test did before.
+		FieldInfoByKind: map[string]map[string]string{
+			"traits": {"open_field": "Anything.", "closed_field": "One of two."},
 		},
 	}
 	catalog.PrepareCache(c)
@@ -963,15 +967,22 @@ func TestHoverAcceptsOpenSetIsNotEnumerated(t *testing.T) {
 		"common/traits/x.txt": "brave = {\n\topen_field = a\n\tclosed_field = yes_ish\n}\n",
 	}, c, nil)
 
-	if h := Hover(s, root+"/common/traits/x.txt", 1, 2); h != nil &&
-		strings.Contains(h.Accepts, "one of") {
+	h := Hover(s, root+"/common/traits/x.txt", 1, 2)
+	if h == nil {
+		t.Fatal("no card for open_field")
+	}
+	if strings.Contains(h.Accepts, "one of") {
 		t.Errorf("41 values is not a closed set: %q", h.Accepts)
 	}
-	// The closed-set half is not asserted here on purpose. This fixture's card
-	// resolves as a bare "field" rather than a "traits" key, so the enum stored
-	// under traits never matches and Accepts is empty for a reason that has
-	// nothing to do with the cap. Asserting it would pin the wrong behaviour;
-	// the enclosing kind not reaching the card is its own finding.
+	// The closed half is the control: without it, an Accepts that is empty for
+	// any reason at all passes the assertion above.
+	cl := Hover(s, root+"/common/traits/x.txt", 2, 2)
+	if cl == nil {
+		t.Fatal("no card for closed_field")
+	}
+	if !strings.Contains(cl.Accepts, "one of") {
+		t.Errorf("two values IS a closed set, got %q", cl.Accepts)
+	}
 }
 
 // TestHoverNamesRealContainer pins that a card names what a key belongs to, not

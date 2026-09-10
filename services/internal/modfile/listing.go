@@ -113,7 +113,7 @@ var ThumbnailExts = []string{".png", ".gif", ".jpg", ".jpeg"}
 // re-thumbnailed on the Release page ended up with two thumbnail files and
 // `picture` naming the stale one.
 func ThumbnailPath(gameID, root, ext string) (rel string, exists bool) {
-	dirs := []string{"", ".metadata"}
+	dirs := []string{"", game.MetadataDir}
 	if conv := thumbnailDir(gameID); conv != "" {
 		dirs = []string{conv, ""}
 	}

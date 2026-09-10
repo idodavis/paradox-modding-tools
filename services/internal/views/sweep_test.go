@@ -20,7 +20,6 @@ package views
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -258,11 +257,22 @@ func sweepGame(t *testing.T, game, appID, installEnv string, base baselineFile) 
 	}
 	scanTook := time.Since(scanStart)
 
+	// The four total conversions plus two small mods per game. All 31 took ~7
+	// minutes and the extra 24 are small mods that add events; the conversions
+	// are where the engine actually breaks. PMT_SWEEP_ALL=1 runs everything.
 	var dirs []os.DirEntry
+	small := 0
 	for _, e := range ents {
-		if e.IsDir() {
-			dirs = append(dirs, e)
+		if !e.IsDir() {
+			continue
 		}
+		if totalConversions[appID+"/"+e.Name()] == "" && os.Getenv("PMT_SWEEP_ALL") == "" {
+			if small >= 2 {
+				continue
+			}
+			small++
+		}
+		dirs = append(dirs, e)
 	}
 	// Serial, and the memory is handed back between mods.
 	//
@@ -378,6 +388,51 @@ func isFault(rowType string) bool {
 	return false
 }
 
+// assertDanglingCeiling is the sweep's one gate, and it covers dangling only.
+//
+// V.3 called this test out for counting `unclassified` and never asserting it.
+// Asserting it whole is not available: `missing` is thousands of rows and moves
+// whenever a workshop mod ships a new string, so a ratchet on it fails on other
+// people's updates rather than on a PMT change. `dangling` is the other half of
+// isFault and it is bounded — 182 rows across all three games — and it is the
+// row that accuses the modder of referencing something that does not exist.
+//
+// A ceiling rather than zero because the backlog is real and unreviewed: the
+// classification work is Phase 7's. A ceiling still makes a NEW dangling row a
+// failure, which is what the baseline machinery exists for. Lower it as rows
+// are classified; raising it needs a reason in the commit.
+func assertDanglingCeiling(t *testing.T, game string, scores []modScore) {
+	t.Helper()
+	path := filepath.Join("testdata", "health-ceilings.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v (the ceiling is part of the gate, not optional)", path, err)
+	}
+	var ceil map[string]int
+	if err := json.Unmarshal(raw, &ceil); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	limit, ok := ceil[game]
+	if !ok {
+		t.Fatalf("%s has no ceiling in %s", game, path)
+	}
+	n := 0
+	for _, sc := range scores {
+		for _, r := range sc.unclassified {
+			if r.Type == "dangling" {
+				n++
+			}
+		}
+	}
+	t.Logf("SWEEP %s: %d unclassified dangling rows, ceiling %d", game, n, limit)
+	if n > limit {
+		t.Errorf("%s: %d unclassified dangling rows against a ceiling of %d — "+
+			"either the engine regressed, or the rows are genuine mod defects "+
+			"and belong in testdata/health-baseline.json with a reason",
+			game, n, limit)
+	}
+}
+
 func reportGame(t *testing.T, game string, scores []modScore) {
 	t.Helper()
 	sort.Slice(scores, func(i, j int) bool {
@@ -406,6 +461,7 @@ func reportGame(t *testing.T, game string, scores []modScore) {
 	}
 	t.Logf("SWEEP %s: %d mods, %d with nothing unclassified, %d unclassified rows",
 		game, len(scores), clean, unclassified)
+	assertDanglingCeiling(t, game, scores)
 	// Live heap after a mod, not process RSS: RSS also holds memory the
 	// collector has freed but not returned, which says more about GOGC than
 	// about what a workspace costs. Phase 9 wants to build a second model while
@@ -650,181 +706,6 @@ func TestHealthIsDeterministic(t *testing.T) {
 			report(c1, l1, mod), report(c2, l2, mod))
 		debug.FreeOSMemory()
 	}
-}
-
-// calibrates the "orphaned" rule against vanilla.
-//
-// Vanilla is the corpus where the loc keys and the script that cites them ship
-// from the same build, so a vanilla key the rule calls orphaned is almost always
-// a mechanism PMT does not model rather than a defect Paradox shipped. That
-// makes the vanilla orphan rate a direct read on how much of the mod residue is
-// engine fault -- which is the question the baseline cannot answer on its own.
-//
-// Probe, not an assertion: run with PMT_LOC_RESIDUE=1 and read the clusters.
-func TestVanillaLocResidue(t *testing.T) {
-	if testing.Short() || os.Getenv("PMT_LOC_RESIDUE") == "" {
-		t.Skip("probe; set PMT_LOC_RESIDUE=1")
-	}
-	for _, g := range sweepGames {
-		install := os.Getenv(g.installEnv)
-		if install == "" {
-			t.Logf("%s: %s not set", g.game, g.installEnv)
-			continue
-		}
-		t.Run(g.game, func(t *testing.T) {
-			id := "residue-" + g.game
-			t.Cleanup(func() { _ = catalog.DropVanillaFiles(id) })
-			cache, vloc, err := catalog.Scan(context.Background(), catalog.ScanRequest{
-				InstallID: id, GameID: g.game, InstallPath: install,
-				Version: "residue", LocLang: "english",
-			})
-			if err != nil {
-				t.Fatalf("scan: %v", err)
-			}
-			s := session.NewWithLoc("residue", g.game, "english", cache, vloc, nil)
-			defer s.Close()
-
-			// Print what the rule accepted, not just what it scored. A shape
-			// list that reads as nonsense is a failure even if the number fell.
-			for i, af := range cache.LocKeyAffixes {
-				if i >= 20 {
-					t.Logf("  affix: %d accepted in total", len(cache.LocKeyAffixes))
-					break
-				}
-				t.Logf("  affix %-24q + %-18q %6d of %6d",
-					af.Pre, af.Suf, af.Keys, af.Of)
-			}
-			keys := s.InheritedLocKeys("english")
-			used := s.UsedLocKeys()
-			var residue []string
-			nUsed, nConv := 0, 0
-			for _, k := range keys {
-				if used[k] {
-					nUsed++
-					continue
-				}
-				if s.LocKeyExplained(k) {
-					nConv++
-					continue
-				}
-				residue = append(residue, k)
-			}
-			pct := func(n int) string {
-				if len(keys) == 0 {
-					return "0%"
-				}
-				return fmt.Sprintf("%.1f%%", 100*float64(n)/float64(len(keys)))
-			}
-			t.Logf("RESIDUE %s: %d english keys | cited %d (%s) | convention %d (%s) | ORPHAN %d (%s)",
-				g.game, len(keys), nUsed, pct(nUsed), nConv, pct(nConv),
-				len(residue), pct(len(residue)))
-			logClusters(t, "prefix", residue, func(k string) string { return headToken(k, 2) })
-			logClusters(t, "suffix", residue, func(k string) string { return tailToken(k, 2) })
-			convResidue(t, g.game, g.appID, cache, vloc)
-		})
-	}
-}
-
-// convResidue measures the same rule on the total conversions, reusing the
-// install scan above rather than repeating it. The rate is the point, not the
-// count: conversions are enormous, so a rate at or below vanilla's means the
-// residue is the engine's gap applied to more keys, not cruft the mod added.
-func convResidue(
-	t *testing.T, game, appID string, cache *catalog.VanillaCache, vloc *catalog.VanillaLoc,
-) {
-	t.Helper()
-	var ids []string
-	for key := range totalConversions {
-		if strings.HasPrefix(key, appID+"/") {
-			ids = append(ids, strings.TrimPrefix(key, appID+"/"))
-		}
-	}
-	sort.Strings(ids)
-	for _, modID := range ids {
-		s := session.NewWithLoc(game, game, "english", cache, vloc,
-			[]catalog.ModInput{{
-				Origin: "mod",
-				Root:   filepath.Join(workshopRoot, appID, modID),
-				Name:   modID,
-			}})
-		inherited := map[string]bool{}
-		for _, k := range s.InheritedLocKeys(locSourceLang) {
-			inherited[k] = true
-		}
-		used := s.UsedLocKeys()
-		own, orphan := 0, 0
-		s.EachLoc(func(lang, k string, _ catalog.LocEntry) {
-			if lang != locSourceLang || inherited[k] {
-				return
-			}
-			own++
-			if used[k] || s.LocKeyExplained(k) {
-				return
-			}
-			orphan++
-		})
-		rate := 0.0
-		if own > 0 {
-			rate = 100 * float64(orphan) / float64(own)
-		}
-		t.Logf("CONV %-24s own english keys %6d | orphan %6d (%.1f%%)",
-			totalConversions[appID+"/"+modID], own, orphan, rate)
-		s.Close()
-	}
-}
-
-// headToken returns the first n underscore-separated tokens of key.
-func headToken(key string, n int) string {
-	p := strings.Split(key, "_")
-	if len(p) <= n {
-		return key
-	}
-	return strings.Join(p[:n], "_") + "_*"
-}
-
-// tailToken returns the last n underscore-separated tokens of key.
-func tailToken(key string, n int) string {
-	p := strings.Split(key, "_")
-	if len(p) <= n {
-		return key
-	}
-	return "*_" + strings.Join(p[len(p)-n:], "_")
-}
-
-func logClusters(t *testing.T, label string, keys []string, sig func(string) string) {
-	t.Helper()
-	n := map[string]int{}
-	ex := map[string]string{}
-	for _, k := range keys {
-		s := sig(k)
-		n[s]++
-		if ex[s] == "" {
-			ex[s] = k
-		}
-	}
-	type row struct {
-		sig, ex string
-		n       int
-	}
-	rows := make([]row, 0, len(n))
-	for s, c := range n {
-		rows = append(rows, row{s, ex[s], c})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].n != rows[j].n {
-			return rows[i].n > rows[j].n
-		}
-		return rows[i].sig < rows[j].sig
-	})
-	top := 0
-	for i, r := range rows {
-		if i >= 25 {
-			break
-		}
-		top += r.n
-		t.Logf("  %s %-34s %6d  e.g. %s", label, r.sig, r.n, r.ex)
-	}
-	t.Logf("  %s: %d clusters, top 25 cover %d of %d", label, len(rows), top, len(keys))
 }
 
 // corpusEnv skips when the real-install tier was not requested, and FAILS when

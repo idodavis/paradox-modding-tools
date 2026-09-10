@@ -210,6 +210,16 @@ func refRows(s *session.Session) (depends, dangling []HealthRow, nDepends, nDang
 		}
 		d := s.Resolve(r.Key)
 		if d == nil {
+			// T-3, and it belongs on this branch alone. A reference whose KIND
+			// came from a derived pass never accuses: 859 `body_part` rows came
+			// from FieldValueKinds and 4,033 fire rows from FireKeys, both
+			// strong passes reaching the most accusing surface in the product.
+			// The `depends` branch above still counts them, because saying two
+			// mods touch the same object is not an accusation — skipping them
+			// in skipCompatRef instead lost that, and the tests caught it.
+			if r.Derived {
+				continue
+			}
 			if s.DeclaresEngineName(r.Key) {
 				// The game's own API, not a missing object.
 				continue

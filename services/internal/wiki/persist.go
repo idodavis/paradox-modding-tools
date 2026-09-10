@@ -2,6 +2,7 @@
 package wiki
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,9 +86,15 @@ func saveJSON(path string, f *Sidecar) error {
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
 		return err
 	}
-	// No os.Remove first: Rename replaces atomically on POSIX, and Go's Windows
-	// Rename already passes MOVEFILE_REPLACE_EXISTING. Removing opened a window
-	// where the good file was gone and the replacement was still only a .tmp.
+	// Rename first; remove only if it fails. See services/store.go: a Windows
+	// replace-rename over an open destination returns ERROR_ACCESS_DENIED,
+	// while unlinking the name succeeds.
+	if err := os.Rename(tmp, path); err == nil {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return os.Rename(tmp, path)
 }
 

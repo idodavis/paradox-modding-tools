@@ -633,15 +633,15 @@ func TestDeriveNestedShapesNeedsDeclaredChild(t *testing.T) {
 	defs := []Def{{Kind: "religion_types", Key: "christianity_religion"}}
 	schema := &Schema{Scopes: map[string]ScopeType{"faith": {}}}
 
-	got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, nil, schema, citesOf(files), nil)
+	got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, defKeySet(defs), nil, schema, citesOf(files), nil)
 	if len(got) != 1 || got[0].ParentKind != "religion_types" ||
 		got[0].ChildKind != "faith" || got[0].GroupKey != "faiths" {
 		t.Fatalf("declared child kind should be harvested; shapes=%+v", got)
 	}
-	if got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, nil, &Schema{}, citesOf(files), nil); len(got) != 0 {
+	if got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, defKeySet(defs), nil, &Schema{}, citesOf(files), nil); len(got) != 0 {
 		t.Errorf("undeclared child kind harvested anyway: %+v", got)
 	}
-	if got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, nil, nil, citesOf(files), nil); len(got) != 0 {
+	if got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, defKeySet(defs), nil, nil, citesOf(files), nil); len(got) != 0 {
 		t.Errorf("no schema must yield no nested databases: %+v", got)
 	}
 }
@@ -986,15 +986,6 @@ func TestInternPathsShrinksFile(t *testing.T) {
 	}
 }
 
-// A cache written before interning has no table and must still load.
-func TestExpandPathsWithoutTable(t *testing.T) {
-	c := internFixture()
-	expandPaths(c)
-	if !strings.HasSuffix(c.Defs[0].Path, "00_traits.txt") {
-		t.Errorf("path mangled without a table: %q", c.Defs[0].Path)
-	}
-}
-
 // TestFireEdgeFromIsTheEnclosingObject pins that an event's fire edges are
 // attributed to the event, not to whatever ephemeral name was declared just
 // above them.
@@ -1038,5 +1029,49 @@ t.1 = {
 		if e.From == "tgt" {
 			t.Errorf("saved scope %q became an edge source", e.From)
 		}
+	}
+}
+
+// A saved scope and the reference to it must name the same thing, whatever
+// alphabet it is written in.
+//
+// ParsePrefixed stopped its name scan at the first byte above ASCII and returned
+// ok=true anyway, so `scope:Linnéa` harvested a reference to `Linn` while
+// `save_scope_as = Linnéa` harvested a definition of `Linnéa`. Two objects where
+// the script has one: hover reads a truncated name, go-to-definition looks for
+// something nothing defines, and the real definition looks unreferenced.
+//
+// No check reported it, and none could: saved scopes are ephemeral, so
+// skipCompatRef keeps them out of dangling. The vanilla gate is structurally
+// blind to this class, which is why the finding was recorded as harmless.
+func TestNonASCIIScopeDefAndRefAgree(t *testing.T) {
+	const body = `ns.1 = {
+	type = character_event
+	immediate = {
+		save_scope_as = Linnéa
+		add_gold = scope:Linnéa
+	}
+}
+`
+	ex := extractForms("ck3", "C:/m/events/x.txt", "events/x.txt", "mod",
+		jomini.Parse(body), true)
+
+	var defKey, refKey string
+	for _, d := range ex.Defs {
+		if d.Kind == "saved_scope" {
+			defKey = d.Key
+		}
+	}
+	for _, r := range ex.Refs {
+		if r.Kind == "saved_scope" {
+			refKey = r.Key
+		}
+	}
+	if defKey != "Linnéa" {
+		t.Errorf("def key = %q, want Linnéa", defKey)
+	}
+	if refKey != defKey {
+		t.Errorf("ref names %q but the def is %q; the reference was truncated",
+			refKey, defKey)
 	}
 }

@@ -6,6 +6,7 @@ package jomini
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ephemeralPrefixes are the language prefixes that name a value living only for
@@ -42,11 +43,30 @@ func ParsePrefixed(text string) (Prefixed, bool) {
 		return Prefixed{}, false
 	}
 	i := colon + 1
-	if i >= len(text) || !isAlphaByte(text[i]) {
+	if i >= len(text) || !startsName(text[i:]) {
 		return Prefixed{}, false
 	}
-	for i < len(text) && (isAlphaByte(text[i]) || isDigitByte(text[i]) || text[i] == '_') {
-		i++
+	// Non-ASCII does not end the name, it continues it. Stopping at the first
+	// byte above ASCII did not fail — it returned ok=true with a TRUNCATED name,
+	// so `scope:Linnéa` referenced `Linn` while `save_scope_as = Linnéa` defined
+	// `Linnéa`. Two objects where the script has one: hover reads the wrong name,
+	// go-to-definition looks for something nothing defines, and the real
+	// definition looks unused. No check reports it, because saved scopes are
+	// ephemeral and skipCompatRef keeps them out of dangling.
+	for i < len(text) {
+		c := text[i]
+		if c < utf8.RuneSelf {
+			if !isAlphaByte(c) && !isDigitByte(c) && c != '_' {
+				break
+			}
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(text[i:])
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			break
+		}
+		i += size
 	}
 	return Prefixed{
 		Prefix:  prefix,
@@ -58,6 +78,19 @@ func ParsePrefixed(text string) (Prefixed, bool) {
 
 func isAlphaByte(c byte) bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
+
+// startsName reports that s opens with a letter, ASCII or not. A digit still
+// does not start a name: `var:2` is arithmetic, not an identifier.
+func startsName(s string) bool {
+	if s == "" {
+		return false
+	}
+	if s[0] < utf8.RuneSelf {
+		return isAlphaByte(s[0])
+	}
+	r, _ := utf8.DecodeRuneInString(s)
+	return unicode.IsLetter(r)
 }
 
 func isDigitByte(c byte) bool { return c >= '0' && c <= '9' }

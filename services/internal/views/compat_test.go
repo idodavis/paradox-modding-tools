@@ -11,9 +11,19 @@ import (
 	"paradox-modding-tools/services/internal/session"
 )
 
+// twoModTrees builds the two-mod workspace with a minimal declared type system.
+//
+// The schema is not decoration. Since T-3 a dangling row requires the reference
+// to rest on something the game DECLARES, so a fixture with no schema produces
+// no dangling rows at all — correctly, because without script_docs PMT cannot
+// know `trigger_event` is real. CK3 declares it, so the fixture says so.
 func twoModTrees(t *testing.T, aFiles, bFiles map[string]string) *session.Session {
 	t.Helper()
-	return twoModTreesWithCache(t, nil, aFiles, bFiles)
+	return twoModTreesWithCache(t, &catalog.VanillaCache{
+		Schema: &catalog.Schema{Effects: map[string]catalog.EngineToken{
+			"trigger_event": {Target: "event"},
+		}},
+	}, aFiles, bFiles)
 }
 
 func twoModTreesWithCache(

@@ -507,7 +507,7 @@ func listingThumb(gameID, root, picture string) (rel, abs string) {
 	if picture == "" {
 		return "", ""
 	}
-	for _, dir := range []string{"", ".metadata"} {
+	for _, dir := range []string{"", game.MetadataDir} {
 		rel = path.Join(dir, filepath.ToSlash(picture))
 		abs = filepath.Join(root, filepath.FromSlash(rel))
 		if _, err := os.Stat(abs); err == nil {

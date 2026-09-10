@@ -205,6 +205,23 @@ func (w *WorkspaceService) AddWorkspaceMod(
 	workspaceID, name, path, thumbnail string,
 ) (*WorkspaceMod, error) {
 	_, statErr := os.Stat(path)
+	// An empty thumbnail is discovered, not assumed. The caller used to compute
+	// `<root>/thumbnail<ext>` itself, which was a second copy of a rule that is
+	// now per-game — EU5 keeps the file in .metadata — and GameInfo.ThumbnailDir
+	// is backend-only, so the frontend cannot compute it even in principle. This
+	// asks the same modfile.ThumbnailPath the Release page reads, so a mod's
+	// thumbnail is one answer from one place whoever adds it.
+	if thumbnail == "" {
+		var gameID string
+		w.Store.Read(func(c *Config) {
+			if ws := findWorkspace(c, workspaceID); ws != nil {
+				gameID = ws.GameID
+			}
+		})
+		if rel, found := modfile.ThumbnailPath(gameID, path, ""); found {
+			thumbnail = filepath.Join(path, filepath.FromSlash(rel))
+		}
+	}
 	mod := WorkspaceMod{
 		ID: uuid.New().String(), Name: name, Path: path,
 		Thumbnail: thumbnail, IsBroken: statErr != nil, CreatedAt: nowUTC(),

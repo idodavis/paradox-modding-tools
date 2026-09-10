@@ -61,17 +61,30 @@ watch(thumbnailSrc, async (src) => {
   }
 });
 
+/**
+ * Where the mod will be created — the folder name as Go's ModSlug makes it, not
+ * as typed. It lowercases, turns every run of non-alphanumerics into one
+ * underscore, trims those from the ends, and falls back to "mod".
+ *
+ * This is a second copy of a Go rule and it is kept deliberately: previewing
+ * `… / My Great Mod!` for something created at `…\my_great_mod` is a promise the
+ * app does not keep, and ModSlug is not bound. Bind it and delete this.
+ */
+function modSlug(name: string): string {
+  const out = name
+    .trim()
+    .toLowerCase()
+    // \p{Nd}, not \p{N}: Go's ModSlug uses unicode.IsDigit, which is Nd alone.
+    .replace(/[^\p{L}\p{Nd}]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
+  return out || "mod";
+}
+
 const preview = computed(() => {
   const folder = name.value.trim();
   if (!parent.value || !folder) return "";
-  return `${parent.value.replace(/[\\/]+$/, "")} / ${folder}`;
+  return `${parent.value.replace(/[\\/]+$/, "")} / ${modSlug(folder)}`;
 });
-
-function thumbDest(root: string, src: string): string {
-  const ext = src.includes(".") ? src.slice(src.lastIndexOf(".")) : "";
-  const sep = root.includes("\\") ? "\\" : "/";
-  return `${root.replace(/[\\/]+$/, "")}${sep}thumbnail${ext.toLowerCase()}`;
-}
 
 /** Write the skeleton and emit the new mod root. */
 async function submit(): Promise<void> {
@@ -89,8 +102,10 @@ async function submit(): Promise<void> {
       thumbnailSrc.value,
     );
     if (!path) throw new Error("Failed to create mod");
-    const thumb = thumbnailSrc.value ? thumbDest(path, thumbnailSrc.value) : "";
-    emit("created", path, thumb);
+    // Where the thumbnail landed is Go's answer, not one to recompute here:
+    // it is per-game (EU5 keeps it in .metadata) and GameInfo.ThumbnailDir is
+    // backend-only. AddWorkspaceMod discovers it when this is empty.
+    emit("created", path, "");
     name.value = "";
     description.value = "";
     thumbnailSrc.value = "";

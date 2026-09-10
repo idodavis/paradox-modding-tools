@@ -233,3 +233,62 @@ func TestWorkspaceService_CountWorkspacesUsingInstall(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+// An empty thumbnail is discovered from the mod on disk, per game.
+//
+// The Create-mod form used to compute `<root>/thumbnail<ext>` itself. That was a
+// second copy of a rule that has since become per-game — EU5 keeps the file in
+// .metadata — and GameInfo.ThumbnailDir is backend-only, so the frontend could
+// not have computed it even in principle. An EU5 mod created in the app stored a
+// path to a file that was not there, and its card showed no image.
+func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ game, rel string }{
+		{"ck3", "thumbnail.png"},
+		{"vic3", "thumbnail.png"},
+		{"eu5", ".metadata/thumbnail.png"},
+		// A mod that put it somewhere else keeps its own choice.
+		{"eu5", "thumbnail.gif"},
+	} {
+		t.Run(c.game+"/"+c.rel, func(t *testing.T) {
+			svc := testWorkspaceService(t)
+			if err := svc.Store.Mutate(func(cfg *Config) error {
+				cfg.Workspaces = append(cfg.Workspaces, Workspace{
+					ID: "ws", GameID: c.game, Name: "T",
+				})
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			abs := filepath.Join(root, filepath.FromSlash(c.rel))
+			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(abs, []byte("img"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			mod, err := svc.AddWorkspaceMod("ws", "M", root, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mod.Thumbnail != abs {
+				t.Errorf("Thumbnail = %q, want %q", mod.Thumbnail, abs)
+			}
+		})
+	}
+}
+
+// A mod with no thumbnail must not be given a path to one that is not there.
+func TestAddWorkspaceModLeavesThumbnailEmptyWhenThereIsNone(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	seedWorkspace(t, svc.Store, "ws", "inst")
+	mod, err := svc.AddWorkspaceMod("ws", "M", t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.Thumbnail != "" {
+		t.Errorf("Thumbnail = %q, want empty", mod.Thumbnail)
+	}
+}

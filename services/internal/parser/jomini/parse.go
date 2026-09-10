@@ -120,6 +120,31 @@ type parser struct {
 	pos      int
 	errors   []ParseError
 	comments []Comment
+
+	// Node slabs. A CK3 scan allocated 109M objects, 90% of them one AST node
+	// at a time here, and the GC cost of scanning them was ~20% of scan CPU.
+	//
+	// A full slab is REPLACED, never grown: append would copy to a new array
+	// and every pointer already handed out would address the stale copy. Full
+	// slabs stay alive through those pointers, which is exactly what is wanted.
+	scalars []Scalar
+	assigns []Assignment
+	values  []ValueStmt
+	blocks  []Block
+	tagged  []TaggedBlock
+}
+
+// nodeSlab is how many nodes one allocation covers. 512 Scalars is ~20 KB —
+// large enough that the allocation count collapses, small enough that a
+// one-statement file does not hold a big buffer alive.
+const nodeSlab = 512
+
+func slabAlloc[T any](slab *[]T, v T) *T {
+	if len(*slab) == cap(*slab) {
+		*slab = make([]T, 0, nodeSlab)
+	}
+	*slab = append(*slab, v)
+	return &(*slab)[len(*slab)-1]
 }
 
 func (p *parser) parse() *Root {
@@ -195,7 +220,7 @@ func (p *parser) parseStatement() Statement {
 	// A block starting here is an anonymous list element.
 	if tok.kind == tokLBrace {
 		block := p.parseBlock()
-		return &ValueStmt{Value: block, Range: block.Range}
+		return slabAlloc(&p.values, ValueStmt{Value: block, Range: block.Range})
 	}
 
 	if tok.kind == tokWord || tok.kind == tokString {
@@ -216,17 +241,17 @@ func (p *parser) parseStatement() Statement {
 			if value != nil {
 				end = value.NodeRange().End
 			}
-			return &Assignment{Key: *key, Op: opTok.value, Value: value, Range: Range{Start: key.Range.Start, End: end}}
+			return slabAlloc(&p.assigns, Assignment{Key: *key, Op: opTok.value, Value: value, Range: Range{Start: key.Range.Start, End: end}})
 		}
 
 		// GUI-style `key { ... }` with no operator.
 		if next.kind == tokLBrace {
 			block := p.parseBlock()
-			return &Assignment{Key: *key, Op: "", Value: block, Range: Range{Start: key.Range.Start, End: block.Range.End}}
+			return slabAlloc(&p.assigns, Assignment{Key: *key, Op: "", Value: block, Range: Range{Start: key.Range.Start, End: block.Range.End}})
 		}
 
 		// Bare scalar — list element.
-		return &ValueStmt{Value: key, Range: key.Range}
+		return slabAlloc(&p.values, ValueStmt{Value: key, Range: key.Range})
 	}
 
 	p.advance()
@@ -245,7 +270,7 @@ func (p *parser) parseValueAfterOperator() Value {
 	// A comparison operator used as a value (list/any triggers).
 	if tok.kind == tokOp {
 		opTok := p.advance()
-		return &Scalar{Text: p.text[opTok.start:opTok.end], Quoted: false, Range: Range{Start: opTok.start, End: opTok.end}}
+		return slabAlloc(&p.scalars, Scalar{Text: p.text[opTok.start:opTok.end], Quoted: false, Range: Range{Start: opTok.start, End: opTok.end}})
 	}
 
 	if tok.kind == tokWord || tok.kind == tokString {
@@ -257,7 +282,7 @@ func (p *parser) parseValueAfterOperator() Value {
 		scalar := p.makeScalar(p.advance())
 		if p.peek().kind == tokLBrace {
 			block := p.parseBlock()
-			return &TaggedBlock{Tag: *scalar, Block: *block, Range: Range{Start: scalar.Range.Start, End: block.Range.End}}
+			return slabAlloc(&p.tagged, TaggedBlock{Tag: *scalar, Block: *block, Range: Range{Start: scalar.Range.Start, End: block.Range.End}})
 		}
 		return scalar
 	}
@@ -298,12 +323,12 @@ func (p *parser) parseBlock() *Block {
 		}
 	}
 
-	return &Block{
+	return slabAlloc(&p.blocks, Block{
 		Statements: statements,
 		Range:      Range{Start: openBrace, End: end},
 		OpenBrace:  openBrace,
 		CloseBrace: closeBrace,
-	}
+	})
 }
 
 // makeScalar builds a Scalar from a word/string token, stripping quotes from
@@ -322,7 +347,7 @@ func (p *parser) makeScalar(tok token) *Scalar {
 		} else {
 			inner = p.text[tok.start+1 : tok.end-1]
 		}
-		return &Scalar{Text: inner, Quoted: true, Range: Range{Start: tok.start, End: tok.end}}
+		return slabAlloc(&p.scalars, Scalar{Text: inner, Quoted: true, Range: Range{Start: tok.start, End: tok.end}})
 	}
-	return &Scalar{Text: p.text[tok.start:tok.end], Quoted: false, Range: Range{Start: tok.start, End: tok.end}}
+	return slabAlloc(&p.scalars, Scalar{Text: p.text[tok.start:tok.end], Quoted: false, Range: Range{Start: tok.start, End: tok.end}})
 }

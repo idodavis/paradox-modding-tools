@@ -50,12 +50,9 @@ type SnippetMember struct {
 // that member was itself a block. defs supplies the denominator — the number of
 // definitions of the kind — which is what turns a raw count into evidence.
 func deriveSnippets(
-	structures, blocks map[string]map[string]int, defs []Def,
+	structures, blocks map[string]map[string]int, idx *defIndex,
 ) map[string][]SnippetMember {
-	total := map[string]int{}
-	for _, d := range defs {
-		total[d.Kind]++
-	}
+	total := idx.defsByKind
 	out := map[string][]SnippetMember{}
 	for kind, counts := range structures {
 		of := total[kind]

@@ -38,7 +38,7 @@ func TestDeriveSnippetsNeedsEvidence(t *testing.T) {
 	}
 	defs := append(defsOf("traits", 10), defsOf("tiny_kind", 3)...)
 
-	got := deriveSnippets(structures, blocks, defs)
+	got := deriveSnippets(structures, blocks, newDefIndex(defs))
 	if _, ok := got["tiny_kind"]; ok {
 		t.Errorf("tiny_kind has only 3 definitions; no shape should be derived")
 	}
@@ -81,7 +81,7 @@ func TestDeriveSnippetsCaps(t *testing.T) {
 		counts[string(rune('a'+i%26))+string(rune('a'+i/26))] = 20
 	}
 	got := deriveSnippets(map[string]map[string]int{"decisions": counts}, nil,
-		defsOf("decisions", 20))
+		newDefIndex(defsOf("decisions", 20)))
 	if n := len(got["decisions"]); n != maxSnippetMembers {
 		t.Errorf("skeleton has %d members, want the cap of %d", n, maxSnippetMembers)
 	}

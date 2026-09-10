@@ -38,7 +38,7 @@ func TestBindKindsJoin(t *testing.T) {
 		{"bg", "bg_mining"}, {"bg", "bg_farming"}, {"bg", "bg_arts"},
 	}
 
-	prefixKind, kindScope, bound := bindKinds(s, defs, cites)
+	prefixKind, kindScope, bound := bindKinds(s, newDefIndex(defs), cites)
 	if prefixKind["cu"] != "cultures" {
 		t.Errorf("cu -> %q, want cultures", prefixKind["cu"])
 	}
@@ -65,7 +65,7 @@ func TestBindKindsEvidenceFloor(t *testing.T) {
 	}}
 	defs := []Def{{Kind: "gadgets", Key: "a"}, {Kind: "gadgets", Key: "b"}}
 	cites := []typedCite{{"xx", "a"}, {"xx", "b"}}
-	prefixKind, _, _ := bindKinds(s, defs, cites)
+	prefixKind, _, _ := bindKinds(s, newDefIndex(defs), cites)
 	if _, ok := prefixKind["xx"]; ok {
 		t.Errorf("bound on %d cites, floor is %d", len(cites), minBindCites)
 	}
@@ -77,7 +77,7 @@ func TestBindKindsNameFallback(t *testing.T) {
 		"trait": {Global: true, Data: true, Out: "trait"},
 	}}
 	defs := []Def{{Kind: "traits", Key: "brave"}}
-	prefixKind, kindScope, bound := bindKinds(s, defs, nil)
+	prefixKind, kindScope, bound := bindKinds(s, newDefIndex(defs), nil)
 	if prefixKind["trait"] != "traits" {
 		t.Fatalf("trait -> %q, want traits", prefixKind["trait"])
 	}
@@ -100,7 +100,7 @@ func TestBindKindsBelowFloorFallsBackToNameMatch(t *testing.T) {
 	cites := []typedCite{
 		{"p", "known"}, {"p", "a1b2"}, {"p", "c3d4"}, {"p", "e5f6"}, {"p", "0089"},
 	}
-	prefixKind, _, _ := bindKinds(s, defs, cites)
+	prefixKind, _, _ := bindKinds(s, newDefIndex(defs), cites)
 	// One of five hits is well under minBindCites, so the citation branch
 	// declines — and control then falls through to nameMatchKind, which binds on
 	// a SINGLE definition in a folder whose name matches the scope type.
@@ -129,23 +129,46 @@ type realGame struct {
 	wantPrefix map[string]string
 }
 
+// realSchema reads a real game's type system the way the app does, from every
+// directory scriptDocsDirs names.
+//
+// A single directory cannot express the layout. CK3 dumps all six files to
+// `logs/`; Vic3 and EU5 write five to `docs/` and leave only `event_scopes.log`
+// in `logs/`. So PMT_TEST_DOCS_* pointed at either one yields a schema that is
+// non-nil and half missing — and a tier measuring the derived half against a
+// partial declared half reports confident, wrong numbers. The env var is kept
+// as an override, and added to the list rather than replacing it.
+func realSchema(t *testing.T, gameID, install, docs, docsEnv string) *Schema {
+	t.Helper()
+	dirs := scriptDocsDirs(gameID, install)
+	if docs != "" {
+		dirs = append(dirs, docs)
+	}
+	s := ReadSchema(dirs)
+	if s == nil || len(s.Effects) == 0 || len(s.Triggers) == 0 || len(s.Links) == 0 {
+		t.Fatalf("%s: incomplete type system from %v (effects/triggers live in "+
+			"docs/, event_scopes.log in logs/); set %s if the dumps are elsewhere",
+			gameID, dirs, docsEnv)
+	}
+	return s
+}
+
 func realBind(t *testing.T, g realGame) (map[string]string, map[string]string, []KindBinding) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("walks a full game install")
 	}
 	install := os.Getenv(g.installEnv)
+	// The docs env is an override now, not a requirement: scriptDocsDirs finds
+	// the dumps from the install the same way the app does.
 	docs := os.Getenv(g.docsEnv)
-	if install == "" || docs == "" {
-		corpusEnv(t, "%s / %s not set", g.installEnv, g.docsEnv)
+	if install == "" {
+		corpusEnv(t, "%s not set", g.installEnv)
 	}
 	if _, err := os.Stat(install); err != nil {
 		t.Skipf("%s: %v", g.installEnv, err)
 	}
-	s := ReadSchema([]string{docs})
-	if s == nil {
-		t.Fatalf("no schema under %s", docs)
-	}
+	s := realSchema(t, g.id, install, docs, g.docsEnv)
 
 	// Go through the real pipeline: nested databases (CK3 faiths, sub-tier
 	// titles) only become defs after applyDerivedDefs, and collectExtracts is
@@ -175,7 +198,7 @@ func realBind(t *testing.T, g realGame) (map[string]string, map[string]string, [
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, _, bound := bindKinds(s, acc.defs, cites)
+	_, _, bound := bindKinds(s, newDefIndex(acc.defs), cites)
 	logUnexplained(t, acc.defs, cites, bound)
 	joined, named := 0, 0
 	for _, b := range bound {

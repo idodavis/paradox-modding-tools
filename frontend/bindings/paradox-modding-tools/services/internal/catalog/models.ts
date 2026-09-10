@@ -33,7 +33,7 @@ export interface Def {
      * kind to. The engine resolves these per file, so a repeated Local key is
      * required rather than a defect, and a call must never be navigated to a
      * Local body in another file. game.LocalDeclPrefix names the keyword family
-     * and game.DeclKeywords lists them; GAME-SYNTAX 16 has the evidence.
+     * and jomini.DeclKeywords lists them; GAME-SYNTAX 16 has the evidence.
      */
     "local"?: boolean;
 
@@ -180,6 +180,17 @@ export interface Ref {
     "start": number;
     "end": number;
     "ownerKey"?: string;
+
+    /**
+     * Derived marks a reference whose KIND came from an install-derived pass
+     * (FieldValueKinds, FireKeys) rather than from something the game declares.
+     * Accusing surfaces skip these: both incidents in this project's history —
+     * 859 `body_part` rows and 4,033 fire rows — were a strong derived pass
+     * reaching a surface that tells a modder their script is wrong. Not
+     * persisted in practice: only loc and call refs reach the cache, and
+     * neither is derived-marked.
+     */
+    "derived"?: boolean;
 }
 
 /**

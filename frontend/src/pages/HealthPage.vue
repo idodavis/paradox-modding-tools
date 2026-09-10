@@ -96,17 +96,17 @@ const vanilla = computed(() => ws.originVanilla);
 const selectedFilter = shallowRef<HealthFilter | null>(null);
 const locLang = shallowRef("");
 
-/** Persisted SortOrder ids (then name). */
-const persistedOrder = computed(() => {
-  const mods = ws.workspaceMods.slice();
-  mods.sort((a, b) => {
-    const ao = a.sortOrder ?? 0;
-    const bo = b.sortOrder ?? 0;
-    if (ao !== bo) return ao - bo;
-    return (a.name ?? "").localeCompare(b.name ?? "");
-  });
-  return mods.map((m) => m.id);
-});
+/**
+ * The persisted order, as Go stored it. cloneWorkspace runs sortWorkspaceMods
+ * before ListWorkspaces returns, so this list is already in load order.
+ *
+ * It must not be re-sorted here, and this is not cosmetic: the array is both
+ * what GetHealth receives and what orderDirty compares against, and load order
+ * is the FIOS/LIOS input. Re-sorting with localeCompare against Go's
+ * strings.Compare — byte order, which disagrees on case — made Save look dirty
+ * on load and handed Go a different winner than the one it had persisted.
+ */
+const persistedOrder = computed(() => ws.workspaceMods.map((m) => m.id));
 
 /** Local chip order passed to GetHealth. Not persisted until Save. */
 const previewOrder = ref<string[]>([]);

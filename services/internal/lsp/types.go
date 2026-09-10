@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
+
 	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -142,7 +144,7 @@ func isMetaFile(s *session.Session, path string) bool {
 		return false
 	}
 	l := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
-	return strings.Contains(l, "/.metadata/") && strings.HasSuffix(l, "/metadata.json")
+	return strings.HasSuffix(l, "/"+game.MetadataDir+"/"+game.MetadataFile)
 }
 
 func locDefined(s *session.Session, key string) bool {

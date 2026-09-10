@@ -188,7 +188,7 @@ func writeDescriptorMod(root, name, supported, picture string) error {
 	if picture != "" {
 		fmt.Fprintf(&b, "picture=\"%s\"\n", picture)
 	}
-	return os.WriteFile(filepath.Join(root, "descriptor.mod"), []byte(b.String()), 0o644)
+	return os.WriteFile(filepath.Join(root, game.DescriptorModFile), []byte(b.String()), 0o644)
 }
 
 func writeMetadataJSON(root, name, supported, picture string) error {
@@ -207,9 +207,9 @@ func writeMetadataJSON(root, name, supported, picture string) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(root, ".metadata")
+	dir := filepath.Join(root, game.MetadataDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "metadata.json"), append(raw, '\n'), 0o644)
+	return os.WriteFile(filepath.Join(dir, game.MetadataFile), append(raw, '\n'), 0o644)
 }

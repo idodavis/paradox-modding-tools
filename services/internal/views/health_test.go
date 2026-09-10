@@ -20,6 +20,12 @@ func TestHealthDanglingHygieneAndGroup(t *testing.T) {
 		Links: map[string]catalog.ScopeLink{
 			"faith": {Out: "faith", Global: true, Data: true},
 		},
+		// Declared, because since T-3 a dangling row must rest on something the
+		// game states. CK3 declares trigger_event; a fixture that omits it is
+		// asserting the behaviour of an install with no script_docs.
+		Effects: map[string]catalog.EngineToken{
+			"trigger_event": {Target: "event"},
+		},
 	}
 	van := catalog.ExtractParsed("ck3",
 		"common/religion/religion_types/r.txt",

@@ -51,7 +51,7 @@ func BuildIndex(ctx context.Context, gameID string, mods []ModInput, cache *Vani
 	if cache != nil && len(cache.Defs) > 0 {
 		defs = append(append([]Def{}, cache.Defs...), acc.defs...)
 	}
-	kinds := deriveFieldValueKinds(acc.fieldRHS, defs)
+	kinds := deriveFieldValueKinds(acc.fieldRHS, newDefIndex(defs))
 	var fireKeys map[string]string
 	if derived != nil {
 		fireKeys = derived.FireKeys

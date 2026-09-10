@@ -221,7 +221,10 @@ func (f diagFile) unknownEventDiags() []Diagnostic {
 	}
 	var out []Diagnostic
 	for _, r := range f.refs {
-		if r.Kind != "event" || f.s.Resolve(r.Key) != nil {
+		// Every event ref is emitted under derived.fireKind — there is no other
+		// emitter — so without this the check is 100% derived-fed while
+		// GLOSSARY claimed no diagnostic consults a derived pass (T-3).
+		if r.Derived || r.Kind != "event" || f.s.Resolve(r.Key) != nil {
 			continue
 		}
 		ns, rest, ok := strings.Cut(r.Key, ".")
@@ -259,10 +262,7 @@ func descriptorDiags(s *session.Session, path string) []Diagnostic {
 	if strings.Contains(rel, string(filepath.Separator)) && filepath.Base(path) != filepath.Base(want) {
 		return nil
 	}
-	msg := "Mod is missing descriptor.mod."
-	if s.GameID == "vic3" || s.GameID == "eu5" {
-		msg = "Mod is missing .metadata/metadata.json."
-	}
+	msg := "Mod is missing " + game.DescriptorFile(s.GameID) + "."
 	return []Diagnostic{diag(Range{}, sevWarning, msg, "missing-descriptor")}
 }
 

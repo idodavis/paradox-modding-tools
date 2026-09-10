@@ -147,11 +147,18 @@ func expandGameDataPath(p string) string {
 
 // DescriptorPath is the expected descriptor file for gameID under a mod root.
 func DescriptorPath(gameID, root string) string {
-	info := Get(gameID)
-	if info != nil && info.Descriptor == "metadata" {
-		return filepath.Join(root, ".metadata", "metadata.json")
+	return filepath.Join(root, filepath.FromSlash(DescriptorFile(gameID)))
+}
+
+// DescriptorFile is the mod-root descriptor's path relative to the mod, in
+// slash form. One statement of the fact: DescriptorPath builds the absolute
+// path from it and the LSP names it in the missing-descriptor message, which
+// until G1 re-derived it with the last game-id branch outside this package.
+func DescriptorFile(gameID string) string {
+	if info := Get(gameID); info != nil && info.Descriptor == "metadata" {
+		return ".metadata/metadata.json"
 	}
-	return filepath.Join(root, "descriptor.mod")
+	return "descriptor.mod"
 }
 
 // FindInstalls returns Steam-detected installs for a game.
@@ -302,3 +309,14 @@ func newestFileIn(dir string) time.Time {
 	}
 	return newest
 }
+
+// MetadataDir and MetadataFile name the metadata descriptor's location. They
+// are constants rather than registry fields because the layout is a Paradox
+// convention rather than a per-title fact — what varies is WHICH descriptor a
+// game uses, and GameInfo.Descriptor already holds that. Before G2 the two
+// strings were spelled out in seven places across five packages.
+const (
+	DescriptorModFile = "descriptor.mod"
+	MetadataDir       = ".metadata"
+	MetadataFile      = "metadata.json"
+)

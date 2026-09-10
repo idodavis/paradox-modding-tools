@@ -43,18 +43,22 @@ const (
 	// each parent, so keys-per-parent stays small no matter how many parents a
 	// patch adds. A blob is one giant block.
 	//
-	// Measured over all three vanilla installs, 2026-09-08, every candidate the
-	// pass considered:
+	// A number, and deliberately, because the structural alternative was built
+	// and measured on 2026-09-09 and does not work. Requiring the owner field to
+	// be declared *admits* the blob — `optionKindName` strips the verb, so the
+	// field `father` matches EU5's declared `change_father` — while rejecting 14
+	// of the 36 genuine shapes across the three games, among them genes/template,
+	// traits/track and map_data/area. It fails at the one case it exists for.
+	//
+	// Measured over all three vanilla installs, keys per parent instance:
 	//
 	//	start/father              1357.8   28 parents, 38,017 keys  <- the blob
 	//	animations_props            90.5    8 parents,    724 keys  <- largest real
-	//	animations                  29.7   47 parents,  1,395 keys
-	//	genes/age                   13.9    9 parents,    125 keys
-	//	map_data/area                9.8   82 parents,    805 keys
-	//	everything else             < 8
+	//	everything else             < 30
 	//
 	// 250 sits ~2.8x above the largest genuine shape and 5.4x below the blob.
-	// The gap is wide because the two things are not the same kind of object.
+	// TestOptionKeysPerParentBand asserts both margins against the installs, so
+	// a patch that closes either gap fails a test rather than passing silently.
 	maxOptionKeysPerParent = 250
 )
 
@@ -186,14 +190,17 @@ func addOptionOwners(gameID, rel string, root *jomini.Root, out map[optionOwner]
 // tuned against CK3, Vic3 and EU5 vanilla: quantities and dotted values are not
 // names, a field must reference at least minOptionRefs distinct names, and one
 // block must account for optionCoverage of them.
+// defKeys is passed in for the same reason as in deriveNestedShapes: deriveAll
+// has already built it, and rebuilding it here was the third pass over one
+// slice.
 func deriveNestedOptions(
-	gameID string, defs []Def, fieldRHS map[string]map[string]bool,
+	gameID string, s *Schema, defs []Def, defKeys map[string]bool,
+	fieldRHS map[string]map[string]bool,
 	owners map[optionOwner]*ownerKeys,
 ) []NestedShape {
 	if len(fieldRHS) == 0 {
 		return nil
 	}
-	defKeys := defKeySet(defs)
 	// Fields that agree on an owner are the same database seen through
 	// different verbs (has_realm_law / add_realm_law / remove_realm_law), so
 	// they are folded together and the busiest field names the kind.
@@ -347,6 +354,14 @@ func deriveNestedOptions(
 		var skip []string
 		rows := 0
 		for n, seen := range w.keys {
+			// A name the game declares as an effect or trigger is a statement,
+			// not a row. 424 of CK3's activity-type "options" were declared
+			// triggers, and resolveDefinition ranks a derived def above the
+			// declared token.
+			if _, _, ok := s.Token(n); ok {
+				skip = append(skip, n)
+				continue
+			}
 			if w.parents > 1 && seen*100 >= w.parents*optionFieldShare {
 				skip = append(skip, n)
 				continue

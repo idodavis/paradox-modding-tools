@@ -13,8 +13,6 @@ import (
 	"paradox-modding-tools/services/internal/parser/loc"
 )
 
-var ()
-
 // stoplist are grammar/logic words never harvested as structure keys or vocabulary.
 // neverAKey is the subset of stoplist that is not a key anywhere: a value, an
 // operand, or a scope word. Unlike the rest of stoplist these cannot appear on
@@ -59,12 +57,9 @@ type FileExtract struct {
 	GUITypes         map[string]bool
 	GUIProps         map[string]bool
 	FieldRHS         map[string]map[string]bool
-	// FieldListRHS is the bare members of a list value, keyed by the field that
-	// holds the list. See extractFieldListValues.
-	FieldListRHS map[string]map[string]bool
 	// LocOrder is the file's index in the walk list, i.e. its load order. It
 	// decides which value survives when two files define one key; see
-	// accum.mergeLocOrdered.
+	// Evidence.mergeLocOrdered.
 	LocOrder int
 }
 
@@ -119,11 +114,11 @@ func ExtractParsed(
 		schema = overlay.Schema
 	}
 	derived.mergeLocal(deriveFile(gameID, rel, res, ex.Defs, schema))
-	derived.mergeLocal(&Derived{FieldValueKinds: deriveFieldValueKinds(ex.FieldRHS, ex.Defs)})
+	derived.mergeLocal(&Derived{FieldValueKinds: deriveFieldValueKinds(ex.FieldRHS, newDefIndex(ex.Defs))})
 	ex.Defs = applyDerivedDefs(gameID, absPath, origin, rel, res, ex.Defs, derived, nil)
 	ex.Refs = append(ex.Refs, conventionLocRefs(res.Lines(), absPath, ex.Defs, derived)...)
 	bodyRefs, edges, cands := extractRefsAndEdges(
-		gameID, res.Root, res.Lines(), absPath, ex.Defs, derived,
+		gameID, res.Root, res.Lines(), absPath, ex.Defs, derived, schema,
 	)
 	ex.Refs = append(ex.Refs, bodyRefs...)
 	ex.Edges, ex.Cands = edges, cands
@@ -196,7 +191,6 @@ func extractForms(
 	ex.Defs = append(ex.Defs, paramDefs...)
 	ex.Refs = append(ex.Refs, paramRefs...)
 	ex.FieldRHS = extractFieldRHS(res.Root)
-	ex.FieldListRHS = extractFieldListValues(res.Root)
 	return ex
 }
 
@@ -204,8 +198,9 @@ func extractForms(
 // empty here: prefixes are bound against the whole install by bindKinds, and one
 // edited file is not evidence enough to rebind anything.
 func deriveFile(gameID, rel string, res jomini.Result, defs []Def, schema *Schema) *Derived {
-	ev, oa := eventOnActionIDs(defs)
-	fire := resolveFireKinds(deriveFireKeys(res.Root, ev, oa))
+	idx := newDefIndex(defs)
+	fire := resolveFireKinds(deriveFireKeys(
+		res.Root, idx.keysOfKind("event"), idx.keysOfKind("on_action")))
 	if fire == nil {
 		fire = map[string]string{}
 	}
@@ -214,11 +209,12 @@ func deriveFile(gameID, rel string, res jomini.Result, defs []Def, schema *Schem
 		FireKeys:    fire,
 		Wrappers:    map[string]bool{},
 	}
-	for _, w := range deriveWrappers(gameID, rel, res.Root, defKeySet(defs)) {
+	defKeys := idx.citableKeys()
+	for _, w := range deriveWrappers(gameID, rel, res.Root, defKeys) {
 		v.Wrappers[w] = true
 	}
 	v.NestedShapes = deriveNestedShapes(
-		gameID, oneFile(gameID, rel, res), defs, v.PrefixKinds, schema,
+		gameID, oneFile(gameID, rel, res), defs, defKeys, v.PrefixKinds, schema,
 		collectTypedCites(res.Root), collectFieldCites(res.Root))
 	return v
 }
@@ -447,7 +443,7 @@ func extractKeywordName(
 			if !ok || sc.Quoted {
 				continue
 			}
-			kind := game.DeclKeywordKind(sc.Text)
+			kind := jomini.DeclKeywordKind(sc.Text)
 			if kind == "" {
 				continue
 			}
@@ -465,7 +461,7 @@ func extractKeywordName(
 				continue
 			}
 			d := makeDef(kind, named.Key.Text, path, origin, named.Key.Range, li)
-			d.Local = game.DeclIsLocal(sc.Text)
+			d.Local = jomini.DeclIsLocal(sc.Text)
 			defs = append(defs, d)
 			if kind == "gui_type" {
 				guiTypes[named.Key.Text] = true
@@ -652,7 +648,7 @@ func objectRefKey(gameID, kind, text string) (string, bool) {
 
 func extractRefsAndEdges(
 	gameID string, root *jomini.Root, li *jomini.LineIndex, path string, defs []Def,
-	derived *Derived,
+	derived *Derived, schema *Schema,
 ) ([]Ref, []Edge, []CallCandidate) {
 	var refs []Ref
 	var edges []Edge
@@ -724,6 +720,7 @@ func extractRefsAndEdges(
 										Key: refKey, Kind: rk, Path: path,
 										Line:  li.PositionAt(sc.Range.Start).Line,
 										Start: sc.Range.Start, End: sc.Range.End,
+										Derived: true,
 									})
 								}
 							}
@@ -746,6 +743,10 @@ func extractRefsAndEdges(
 							refs = append(refs, Ref{
 								Key: to, Kind: fk, Path: path,
 								Line: li.PositionAt(start).Line, Start: start, End: end,
+								// Declared beats derived, and that cuts both ways: the
+								// game DECLARES trigger_event, so a fire ref at one is
+								// evidence even though FireKeys is how PMT learned it.
+								Derived: !schema.HasName(key),
 							})
 							edges = append(edges, Edge{
 								From: from, To: to, Via: key, Path: path,

@@ -117,13 +117,27 @@ function emitCalendar(era: string, epochOffset: number): void {
   emit("calendar", era, epochOffset);
 }
 
-/** What SAMPLE_DATE reads as under the current setting. */
+/**
+ * What SAMPLE_DATE reads as under the current setting — and it must agree with
+ * catalog.EraDate, which is what the editor's hover and inlay hint actually use.
+ *
+ * EraDate has two guards. The shape check (3 or 4 dotted parts) cannot fire
+ * here, because SAMPLE_DATE is a constant. The `era <= 0` one can, and without
+ * it this card showed a negative year for an offset larger than the sample
+ * while the editor correctly rendered nothing — the settings screen promising a
+ * conversion the editor then declined to make.
+ *
+ * Go is not asked directly because EraDate is not bound; if it is ever exposed,
+ * this should call it instead of matching it.
+ */
 const preview = computed(() => {
   const era = props.mod.era ?? "";
   const off = props.mod.epochOffset ?? 0;
   if (!era && !off) return "";
   const parts = SAMPLE_DATE.split(".");
-  parts[0] = String(Number(parts[0]) - off);
+  const year = Number(parts[0]) - off;
+  if (year <= 0) return "";
+  parts[0] = String(year);
   return parts.join(".") + (era ? " " + era : "");
 });
 

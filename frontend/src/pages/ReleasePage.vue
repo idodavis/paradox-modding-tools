@@ -130,8 +130,26 @@ watch(loaded, async (next) => {
 });
 
 const isCk3 = computed(() => listing.value?.gameId === "ck3");
-const patchNext = computed(() => bumpHint(listing.value?.version ?? "", "patch"));
-const minorNext = computed(() => bumpHint(listing.value?.version ?? "", "minor"));
+
+// The label on a button has to be what the button does. These came from a local
+// bumpHint(), a second copy of Go's bumpAt that had already drifted: on an empty
+// version Go returns 1.0.0 while the hint said 0.0.1, so the button read
+// "patch → 0.0.1" and wrote 1.0.0. Asking the same RPC the click uses deletes
+// the second rule rather than re-synchronising it.
+const patchNext = ref("");
+const minorNext = ref("");
+watch(
+  () => listing.value?.version ?? "",
+  async (v) => {
+    const [patch, minor] = await Promise.all([
+      BumpVersion(v, "patch"),
+      BumpVersion(v, "minor"),
+    ]);
+    patchNext.value = patch;
+    minorNext.value = minor;
+  },
+  { immediate: true },
+);
 
 const mediaSlides = computed((): MediaSlide[] =>
   (listing.value?.previews ?? []).map((p) => previewSlide(p, previewUrls.value)),
@@ -385,18 +403,6 @@ const ignoreSummary = computed(() => {
 const error = computed(() => loadError.value?.message ?? publishError.value?.message ?? "");
 
 /** Match Go bumpAt for patch/minor button labels. */
-function bumpHint(v: string, kind: "patch" | "minor"): string {
-  const parts = (v.trim() || "0.0.0").split(".");
-  while (parts.length < 3) parts.push("0");
-  const idx = kind === "minor" ? 1 : 2;
-  const n = Number.parseInt(parts[idx] ?? "0", 10) || 0;
-  parts[idx] = String(n + 1);
-  for (let i = idx + 1; i < parts.length; i++) {
-    if (/^\d+$/.test(parts[i] ?? "")) parts[i] = "0";
-  }
-  return parts.join(".");
-}
-
 /** ReadFileBase64 → blob URL (same as workspace thumbs; never file://). */
 async function blobUrl(abs: string): Promise<string> {
   try {

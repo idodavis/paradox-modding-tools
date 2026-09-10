@@ -527,18 +527,6 @@ func mergeFireCounts(dst, src map[string]*fireCount) map[string]*fireCount {
 	return dst
 }
 
-func eventOnActionIDs(defs []Def) (events, onActions map[string]bool) {
-	events, onActions = map[string]bool{}, map[string]bool{}
-	for _, d := range defs {
-		switch jomini.CanonicalKind(d.Kind) {
-		case "event":
-			events[d.Key] = true
-		case "on_action":
-			onActions[d.Key] = true
-		}
-	}
-	return events, onActions
-}
 func nestedChildKind(gameID, prefix, id string, prefixKinds map[string]string) string {
 	if prefixKinds != nil {
 		if k := prefixKinds[prefix]; k != "" {
@@ -624,12 +612,47 @@ func walkNestedWanted(
 // `religion_types -> faith`, the case this pass exists for. Anything dropped
 // either was not an object at all, or already has its own folder and needs no
 // nested harvest (EU5 `production_methods` is `in_game/common/production_methods`).
+// defKeys is passed in rather than rebuilt: deriveAll already has it, and this
+// and deriveNestedOptions were each recomputing the same set over the same
+// slice — three passes where one will do. Callers outside deriveAll pass
+// defKeySet(defs).
 func deriveNestedShapes(
-	gameID string, corp corpus, defs []Def,
+	gameID string, corp corpus, defs []Def, defKeys map[string]bool,
 	prefixKinds map[string]string, schema *Schema,
 	cites, fieldCites []typedCite,
 ) []NestedShape {
-	defKeys := defKeySet(defs)
+	idChild := nestedIDChild(gameID, defKeys, prefixKinds, cites, fieldCites)
+	if len(idChild) == 0 {
+		return nil
+	}
+	byChild := map[string]*nestedWanted{}
+	var mu sync.Mutex
+	_ = corp.walk(func(f fileRef, res jomini.Result) error {
+		mu.Lock()
+		defer mu.Unlock()
+		observeNestedWanted(gameID, f.rel, res.Root, idChild, byChild)
+		return nil
+	})
+	return nestedShapesFrom(byChild, schema)
+}
+
+// nestedWanted is where one cited-but-undefined child kind was found: the
+// parent it sits under, the group key inside that parent, and the first-letter
+// set of its keys.
+type nestedWanted struct {
+	parent, group string
+	ok, clash     bool
+	letters       map[byte]bool
+}
+
+// nestedIDChild is the citation half of the join — which child kinds are cited
+// and have no definition — and it needs no walk at all. Splitting it out is
+// what let II.4 fold the placement walk into deriveAll's: with the citations
+// gathered in the first pass, this is answerable before the second one starts.
+func nestedIDChild(
+	gameID string, defKeys map[string]bool, prefixKinds map[string]string,
+	cites, fieldCites []typedCite,
+) map[string][]string {
 	idChild := map[string][]string{}
 	for _, c := range cites {
 		addNestedCite(idChild, defKeys, gameID, c, prefixKinds)
@@ -637,45 +660,43 @@ func deriveNestedShapes(
 	for _, c := range fieldCites {
 		addNestedCite(idChild, defKeys, gameID, c, prefixKinds)
 	}
-	if len(idChild) == 0 {
-		return nil
-	}
-	type acc struct {
-		parent, group string
-		ok, clash     bool
-		letters       map[byte]bool
-	}
-	byChild := map[string]*acc{}
-	// A second walk: where those ids sit is only answerable once every citation
-	// is known, so this cannot fold into the pass above.
-	var mu sync.Mutex
-	_ = corp.walk(func(f fileRef, res jomini.Result) error {
-		mu.Lock()
-		defer mu.Unlock()
-		walkNestedWanted(gameID, f.rel, res.Root, idChild,
-			func(parent, group, childKey, childKind string) {
-				a := byChild[childKind]
-				if a == nil {
-					a = &acc{
-						parent: parent, group: group, ok: true,
-						letters: map[byte]bool{},
-					}
-					byChild[childKind] = a
+	return idChild
+}
+
+// observeNestedWanted is the per-file half. Accumulation is commutative — a
+// clash flag, a group that nulls on disagreement, a letter set — so it does not
+// care which walk it rides on or in what order files arrive.
+func observeNestedWanted(
+	gameID, rel string, root *jomini.Root,
+	idChild map[string][]string, byChild map[string]*nestedWanted,
+) {
+	walkNestedWanted(gameID, rel, root, idChild,
+		func(parent, group, childKey, childKind string) {
+			a := byChild[childKind]
+			if a == nil {
+				a = &nestedWanted{
+					parent: parent, group: group, ok: true,
+					letters: map[byte]bool{},
 				}
-				if a.parent != parent {
-					a.clash = true
-				}
-				if a.group != group {
-					a.group = ""
-				}
-				if a.letters != nil && len(childKey) > 2 && childKey[1] == '_' {
-					a.letters[childKey[0]] = true
-				} else if a.letters != nil {
-					a.letters = nil
-				}
-			})
-		return nil
-	})
+				byChild[childKind] = a
+			}
+			if a.parent != parent {
+				a.clash = true
+			}
+			if a.group != group {
+				a.group = ""
+			}
+			if a.letters != nil && len(childKey) > 2 && childKey[1] == '_' {
+				a.letters[childKey[0]] = true
+			} else if a.letters != nil {
+				a.letters = nil
+			}
+		})
+}
+
+// nestedShapesFrom turns the accumulator into shapes, keeping only child kinds
+// the game declares.
+func nestedShapesFrom(byChild map[string]*nestedWanted, schema *Schema) []NestedShape {
 	var out []NestedShape
 	for child, a := range byChild {
 		if !a.ok || a.clash || a.parent == "" {
@@ -933,21 +954,13 @@ func keywordDeclared(stmts []jomini.Statement, i int) bool {
 	if !ok || sc.Quoted {
 		return false
 	}
-	return game.DeclKeywordKind(sc.Text) != ""
+	return jomini.DeclKeywordKind(sc.Text) != ""
 }
 
 // defKeySet is the set of names already spoken for by a real definition. Passes
 // that invent a database from unexplained citations subtract it first, so a name
 // with a home is never handed a second one.
-func defKeySet(defs []Def) map[string]bool {
-	out := map[string]bool{}
-	for _, d := range defs {
-		if IsCitableDef(d) {
-			out[d.Key] = true
-		}
-	}
-	return out
-}
+func defKeySet(defs []Def) map[string]bool { return newDefIndex(defs).citableKeys() }
 
 func dropWrapperDefs(defs []Def, wrappers map[string]bool) []Def {
 	if len(wrappers) == 0 {
@@ -979,31 +992,11 @@ func dropWrapperDefs(defs []Def, wrappers map[string]bool) []Def {
 // key, find the spans of it that name a definition, and record the surrounding
 // prefix and suffix as a candidate convention for that definition's kind. A
 // candidate becomes a convention when enough distinct definitions share it.
-func deriveLocAffixes(defs []Def, locKeys map[string]bool) map[string][]LocAffix {
-	if len(locKeys) == 0 || len(defs) == 0 {
+func deriveLocAffixes(idx *defIndex, locKeys map[string]bool) map[string][]LocAffix {
+	if len(locKeys) == 0 || len(idx.kindsByKey) == 0 {
 		return nil
 	}
-	kindsOf := make(map[string][]string, len(defs))
-	seen := map[string]map[string]bool{}
-	total := map[string]int{}
-	for _, d := range defs {
-		k := jomini.CanonicalKind(d.Kind)
-		if d.Key == "" || !jomini.IsObjectKind(k) {
-			continue
-		}
-		ids := seen[k]
-		if ids == nil {
-			ids = map[string]bool{}
-			seen[k] = ids
-		}
-		if !ids[d.Key] {
-			ids[d.Key] = true
-			total[k]++
-		}
-		if !slices.Contains(kindsOf[d.Key], k) {
-			kindsOf[d.Key] = append(kindsOf[d.Key], k)
-		}
-	}
+	kindsOf, total := idx.objectNames()
 	return affixesFrom(kindsOf, total, locKeys)
 }
 

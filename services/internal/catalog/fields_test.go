@@ -24,13 +24,13 @@ func TestDeriveFieldValueKinds(t *testing.T) {
 	}
 	ok := deriveFieldValueKinds(map[string]map[string]bool{
 		"theme": {"seduction": true, "intrigue": true},
-	}, defs)
+	}, newDefIndex(defs))
 	if ok["theme"] != "event_theme" {
 		t.Fatalf("theme = %v", ok)
 	}
 	conflict := deriveFieldValueKinds(map[string]map[string]bool{
 		"theme": {"seduction": true, "brave": true},
-	}, defs)
+	}, newDefIndex(defs))
 	if _, hit := conflict["theme"]; hit {
 		t.Fatalf("conflict should omit theme: %v", conflict)
 	}
@@ -60,7 +60,7 @@ func TestDeriveFieldValueKindsIgnoresLocalization(t *testing.T) {
 	got := deriveFieldValueKinds(map[string]map[string]bool{
 		"add_innovation": {"innovation_bannus": true, "innovation_motte": true},
 		"custom_tooltip": {"my_tooltip_a": true, "my_tooltip_b": true},
-	}, defs)
+	}, newDefIndex(defs))
 	if got["add_innovation"] != "innovations" {
 		t.Errorf("add_innovation = %q, want innovations (localizing an object"+
 			" must not untype the field that names it)", got["add_innovation"])
@@ -83,13 +83,13 @@ func TestDeriveFieldValueKindsNeedsCorroboration(t *testing.T) {
 	// 1 of 2 values resolves: clears the ratio, but rests on one coincidence.
 	if got := deriveFieldValueKinds(map[string]map[string]bool{
 		"body_part": {"head": true, "torso": true},
-	}, defs); got["body_part"] != "" {
+	}, newDefIndex(defs)); got["body_part"] != "" {
 		t.Fatalf("body_part typed on a single hit: %v", got)
 	}
 	// A second corroborating value is enough.
 	if got := deriveFieldValueKinds(map[string]map[string]bool{
 		"artifact_visual": {"head": true, "helmet": true},
-	}, defs); got["artifact_visual"] != "visuals" {
+	}, newDefIndex(defs)); got["artifact_visual"] != "visuals" {
 		t.Fatalf("artifact_visual = %v, want visuals", got)
 	}
 }
@@ -125,7 +125,7 @@ func TestDeriveFieldValueKindsNeedsCoverage(t *testing.T) {
 	for i := range 30 {
 		thin["remove_variable"][string(rune('a'+i%26))+"_var"+string(rune('0'+i/26))] = true
 	}
-	if got := deriveFieldValueKinds(thin, defs); got["remove_variable"] != "" {
+	if got := deriveFieldValueKinds(thin, newDefIndex(defs)); got["remove_variable"] != "" {
 		t.Errorf("typed on 1 of %d values: %q", len(thin["remove_variable"]), got["remove_variable"])
 	}
 
@@ -137,7 +137,7 @@ func TestDeriveFieldValueKindsNeedsCoverage(t *testing.T) {
 		many = append(many, Def{Kind: "achievements", Key: key})
 		rich["give_achievement"][key] = true
 	}
-	if got := deriveFieldValueKinds(rich, many); got["give_achievement"] != "achievements" {
+	if got := deriveFieldValueKinds(rich, newDefIndex(many)); got["give_achievement"] != "achievements" {
 		t.Errorf("10/10 coverage did not type the field: %v", got)
 	}
 }
@@ -196,7 +196,7 @@ func TestDeriveLocAffixes(t *testing.T) {
 	// A key that names nothing at all must contribute no convention.
 	locKeys["some_unrelated_prose_key"] = true
 
-	got := deriveLocAffixes(defs, locKeys)["achievements"]
+	got := deriveLocAffixes(newDefIndex(defs), locKeys)["achievements"]
 	want := []LocAffix{
 		{Pre: "ACHIEVEMENT_", Defs: 10, Of: 10},
 		{Pre: "ACHIEVEMENT_DESC_", Defs: 9, Of: 10},
@@ -469,7 +469,7 @@ func TestDeriveLocAffixesAdmitsSliceConventions(t *testing.T) {
 		locKeys[fmt.Sprintf("ODD_acc_%03d", i)] = true
 	}
 
-	got := deriveLocAffixes(defs, locKeys)["accessories"]
+	got := deriveLocAffixes(newDefIndex(defs), locKeys)["accessories"]
 	var shapes []string
 	for _, a := range got {
 		shapes = append(shapes, a.Key("<id>"))
@@ -542,7 +542,7 @@ func TestDeriveNestedOptionsGameRules(t *testing.T) {
 	for _, f := range files {
 		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
 	}
-	shapes := deriveNestedOptions("ck3", defs, fieldRHSOf(files), ownersOf(files))
+	shapes := deriveNestedOptions("ck3", nil, defs, defKeySet(defs), fieldRHSOf(files), ownersOf(files))
 
 	var got *NestedShape
 	for i := range shapes {
@@ -607,7 +607,7 @@ func TestOptionShapeHarvestsModAddedOption(t *testing.T) {
 	for _, f := range files {
 		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
 	}
-	shapes := deriveNestedOptions("ck3", defs, fieldRHSOf(files), ownersOf(files))
+	shapes := deriveNestedOptions("ck3", nil, defs, defKeySet(defs), fieldRHSOf(files), ownersOf(files))
 	var shape NestedShape
 	for _, s := range shapes {
 		if s.ParentKind == "game_rules" {
@@ -645,7 +645,7 @@ func TestOptionShapeHarvestsScalarRows(t *testing.T) {
 	for _, f := range files {
 		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
 	}
-	shapes := deriveNestedOptions("ck3", defs, fieldRHSOf(files), ownersOf(files))
+	shapes := deriveNestedOptions("ck3", nil, defs, defKeySet(defs), fieldRHSOf(files), ownersOf(files))
 	var shape NestedShape
 	for _, s := range shapes {
 		if s.ChildKind == "cultural_parameter" {
@@ -674,7 +674,7 @@ func TestDeriveNestedOptionsIgnoresThinEvidence(t *testing.T) {
 	for _, f := range files {
 		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
 	}
-	if got := deriveNestedOptions("ck3", defs, fieldRHSOf(files), ownersOf(files)); len(got) != 0 {
+	if got := deriveNestedOptions("ck3", nil, defs, defKeySet(defs), fieldRHSOf(files), ownersOf(files)); len(got) != 0 {
 		t.Fatalf("claimed a database on %d references: %+v", 4, got)
 	}
 }
@@ -686,6 +686,49 @@ func ownersOf(files []parsedScript) map[optionOwner]*ownerKeys {
 		addOptionOwners("ck3", f.f.rel, f.res.Root, out)
 	}
 	return out
+}
+
+// TestDeriveNestedOptionsSkipsDeclaredNames pins T-0's structural half: a name
+// the game declares as an effect or trigger is a statement inside the block,
+// never a row of it. On the real installs 639 CK3 defs and 2 EU5 ones were
+// declared tokens, and resolveDefinition ranks a derived def above the
+// declared one — so the phantom shadowed the token it was named after.
+func TestDeriveNestedOptionsSkipsDeclaredNames(t *testing.T) {
+	files, _ := ruleFixture(6)
+	// `is_alive` sits among the options exactly as a trigger statement does
+	// inside a real option body.
+	files = append(files, parseAs("common/game_rules/01_more.txt",
+		"rule_x = {\n\tcategories = { c }\n\tdefault = opt_x\n"+
+			"\topt_x = { flag = f }\n\tis_alive = { flag = f }\n}\n"))
+	var defs []Def
+	for _, f := range files {
+		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
+	}
+	s := &Schema{Triggers: map[string]EngineToken{"is_alive": {}}}
+	shapes := deriveNestedOptions("ck3", s, defs, defKeySet(defs),
+		fieldRHSOf(files), ownersOf(files))
+
+	var got *NestedShape
+	for i := range shapes {
+		if shapes[i].ParentKind == "game_rules" {
+			got = &shapes[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("no game_rules shape; shapes=%+v", shapes)
+	}
+	if !slices.Contains(got.SkipKeys, "is_alive") {
+		t.Errorf("SkipKeys = %v, want the declared trigger excluded", got.SkipKeys)
+	}
+	// Without the schema the same name is harvested, so the test is measuring
+	// the rule rather than the fixture.
+	bare := deriveNestedOptions("ck3", nil, defs, defKeySet(defs),
+		fieldRHSOf(files), ownersOf(files))
+	for _, sh := range bare {
+		if sh.ParentKind == "game_rules" && slices.Contains(sh.SkipKeys, "is_alive") {
+			t.Error("is_alive was skipped with no schema: the fixture, not the rule")
+		}
+	}
 }
 
 // TestDeriveNestedOptionsRejectsDataBlob pins maxOptionKeysPerParent.
@@ -721,7 +764,7 @@ func TestDeriveNestedOptionsRejectsDataBlob(t *testing.T) {
 	for _, f := range files {
 		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
 	}
-	got := deriveNestedOptions("ck3", defs, fieldRHSOf(files), ownersOf(files))
+	got := deriveNestedOptions("ck3", nil, defs, defKeySet(defs), fieldRHSOf(files), ownersOf(files))
 	if len(got) != 0 {
 		t.Fatalf("claimed a database on a %d-key blob under one parent: %+v",
 			maxOptionKeysPerParent*2, got)
@@ -746,7 +789,7 @@ func TestDeriveNestedOptionsRejectsDataBlob(t *testing.T) {
 	for _, f := range ok {
 		defs = append(defs, extractForms("ck3", f.f.abs, f.f.rel, "", f.res, false).Defs...)
 	}
-	if got := deriveNestedOptions("ck3", defs, fieldRHSOf(ok), ownersOf(ok)); len(got) == 0 {
+	if got := deriveNestedOptions("ck3", nil, defs, defKeySet(defs), fieldRHSOf(ok), ownersOf(ok)); len(got) == 0 {
 		t.Fatal("a genuine option database inside the cap must still be found")
 	}
 }

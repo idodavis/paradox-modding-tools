@@ -17,17 +17,17 @@ const emit = defineEmits<{
   select: [id: string];
 }>();
 
-/** Sort by sortOrder then name — not config insertion order. */
-const ordered = computed(() => {
-  const mods = props.mods.slice();
-  mods.sort((a, b) => {
-    const ao = a.sortOrder ?? 0;
-    const bo = b.sortOrder ?? 0;
-    if (ao !== bo) return ao - bo;
-    return (a.name ?? "").localeCompare(b.name ?? "");
-  });
-  return mods;
-});
+/**
+ * Already sorted by sortOrder then name — cloneWorkspace runs
+ * sortWorkspaceMods before ListWorkspaces returns, so every consumer gets one
+ * order from one place.
+ *
+ * This used to re-sort with localeCompare against Go's strings.Compare, which
+ * is byte order: the two disagree on case, so a mixed-case workspace was shown
+ * in a different order than the one Go persisted. Re-sorting a sorted array by
+ * a second rule is how they drifted; not re-sorting is the fix.
+ */
+const ordered = computed(() => props.mods);
 </script>
 
 <template>

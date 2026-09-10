@@ -126,12 +126,14 @@ func TestParseTypedRejectsDottedPrefixes(t *testing.T) {
 // it replaced, `^(scope|var|local_var|global_var):([A-Za-z][A-Za-z0-9_]*)`.
 func TestParsePrefixedMatchesPattern(t *testing.T) {
 	t.Parallel()
-	re := regexp.MustCompile(`^(scope|var|local_var|global_var):([A-Za-z][A-Za-z0-9_]*)`)
+	re := regexp.MustCompile(`^(scope|var|local_var|global_var):(\p{L}[\p{L}\p{Nd}_]*)`)
 	for _, s := range []string{
 		"", "scope", "scope:", "scope:x", "scope:my_target.culture",
 		"var:gold", "local_var:i", "global_var:g1", "globalvar:x",
 		"scope:1bad", "scope:_bad", "culture:english", "xscope:y",
 		"var:a.b:c", "scope:A_9z", "var:", "scope::x",
+		"scope:Linnéa", "var:bomb_бомбометр", "scope:vukotić.culture",
+		"scope:é", "scope:·", "var:x·y",
 	} {
 		m := re.FindStringSubmatch(s)
 		p, ok := ParsePrefixed(s)

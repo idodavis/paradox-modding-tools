@@ -208,8 +208,29 @@ They are in the registry too, under the `parse` group rather than `check`: they
 reach `ApplySeverities` like any other code, so leaving them out made them
 settable and not un-settable.
 
-**Every code here fires only on something the game declares.** The derived
-passes — install-inferred field types, coverage-floored conventions — are
-deliberately not consulted by any diagnostic. They exist to offer a completion
-and to name a hover, where being wrong costs a wrong suggestion; a diagnostic
-that is wrong tells a modder their correct script is broken. See GAME-SYNTAX §13.
+**A derived pass never accuses. That is enforced, not asserted.** The derived
+passes — install-inferred field types, coverage-floored conventions — exist to
+offer a completion and to name a hover, where being wrong costs a wrong
+suggestion; a diagnostic that is wrong tells a modder their correct script is
+broken. See GAME-SYNTAX §13.
+
+The enforcement is `catalog.Ref.Derived`, set where a reference's KIND came from
+an install-derived pass rather than from a declaration. `refRows` drops those
+before emitting a **dangling** row, and `unknownEventDiags` skips them. Both
+incidents in this project's history were a strong derived pass reaching an
+accusing surface — 859 `body_part` rows from `FieldValueKinds`, 4,033 fire rows
+from `FireKeys` — and this is the mechanism that stops it.
+
+**Two codes are derived-fed with a calibration, and saying otherwise was the
+bug.** `required-loc` rests on `LocAffixes` at floor 100 and `unknown-key` on
+`NestedMembers` + `UnambiguousBlocks`; both are kept, because each has a
+published zero-findings-on-vanilla calibration. The honest claim is *"derived
+where the floor is calibrated against vanilla, declared everywhere else"* — the
+previous wording, that no diagnostic consults a derived pass, was false for
+three of the twelve.
+
+**Declared beats derived cuts both ways.** A fire reference is NOT derived when
+the game declares the fire key: CK3 states `trigger_event`, so `unknown-event`
+still reports a mod firing an event nobody defines. Only a fire key PMT inferred
+from the corpus is silenced. With no `script_docs` at all nothing is declared,
+so these checks correctly go quiet rather than guess.

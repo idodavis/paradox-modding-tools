@@ -336,3 +336,77 @@ func IsObjectKind(kind string) bool {
 	}
 	return !IsEphemeral(kind)
 }
+
+// --- Declaration keywords -----------------------------------------------------
+//
+// Moved here from internal/game (plan G4). Every row lists all three games and
+// no function takes a game id: this is Clausewitz grammar, not a per-title
+// fact, and game/doc.go's own rule says shared grammar belongs in jomini
+// however it was discovered.
+
+// The parser sees the keyword as a stray bare word before an ordinary
+// assignment, so nothing about the SHAPE says what is being declared. Only the
+// keyword does, which is why these are a table rather than a switch.
+type DeclKeyword struct {
+	Keyword string   // the word before the name
+	Kind    string   // the kind this declaration produces
+	Local   bool     // the engine resolves the name within its own file
+	Games   []string // which games write it; the parser accepts all
+	Note    string   // why Local is what it is
+}
+
+// DeclKeywords are the forms whose keyword does NOT name their kind. Read by
+// DeclKeywordKind and DeclIsLocal.
+//
+// Any keyword not listed names its own kind: `scripted_trigger foo = { … }`
+// declares a scripted_trigger. LocalDeclPrefix then decides whether it is
+// file-local.
+var DeclKeywords = []DeclKeyword{
+	{Keyword: "type", Kind: "gui_type", Local: false,
+		Games: []string{"ck3", "vic3", "eu5"},
+		Note:  "a GUI type is visible to every .gui file; that is the point"},
+	{Keyword: "template", Kind: "gui_type", Local: false,
+		Games: []string{"ck3", "vic3", "eu5"},
+		Note:  "as type"},
+	{Keyword: "local_template", Kind: "gui_type", Local: true,
+		Games: []string{"ck3", "vic3", "eu5"},
+		Note:  "says so in its name"},
+	{Keyword: "types", Kind: "types", Local: false,
+		Games: []string{"ck3", "vic3", "eu5"},
+		Note:  "a container of declarations, not a declaration"},
+}
+
+// LocalDeclPrefix marks the keyword family the engine resolves per file, so a
+// name declared under it is invisible to other files and mods repeat it on
+// purpose.
+//
+// GAME: ck3 writes `scripted_trigger foo = { … }` inline in events files — 3,809
+// in vanilla, every one under events/. Victoria 3 and EU5 do not use the form.
+// See catalog.Def.Local and GAME-SYNTAX 16.
+const LocalDeclPrefix = "scripted_"
+
+// DeclKeywordKind is the kind a declaration keyword produces, or "" when the
+// word is script grammar rather than a declaration.
+func DeclKeywordKind(kw string) string {
+	lower := strings.ToLower(kw)
+	for _, d := range DeclKeywords {
+		if d.Keyword == lower {
+			return d.Kind
+		}
+	}
+	if IsStop(kw) {
+		return ""
+	}
+	return kw
+}
+
+// DeclIsLocal reports a declaration the engine resolves within its own file.
+func DeclIsLocal(kw string) bool {
+	lower := strings.ToLower(kw)
+	for _, d := range DeclKeywords {
+		if d.Keyword == lower {
+			return d.Local
+		}
+	}
+	return strings.HasPrefix(lower, LocalDeclPrefix)
+}

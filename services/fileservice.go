@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"paradox-modding-tools/services/internal/game"
 )
 
 const maxOpenBytes = 8 << 20
@@ -263,6 +265,16 @@ func (f *FileService) WriteFileBase64(fullPath, b64 string) error {
 	if err := os.Chmod(tmpName, 0o644); err != nil {
 		return fmt.Errorf("chmod: %w", err)
 	}
+	// Rename first; remove only if it fails. A Windows replace-rename returns
+	// ERROR_ACCESS_DENIED when anything holds the destination open — the game,
+	// another editor, an antivirus — while unlinking the name succeeds. Without
+	// the fallback the save is simply refused. See services/store.go.
+	if err := os.Rename(tmpName, fullPath); err == nil {
+		return nil
+	}
+	if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return os.Rename(tmpName, fullPath)
 }
 
@@ -280,7 +292,7 @@ func (f *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry, e
 		if name == "." || name == ".." {
 			continue
 		}
-		if !showAll && strings.HasPrefix(name, ".") && name != ".metadata" {
+		if !showAll && strings.HasPrefix(name, ".") && name != game.MetadataDir {
 			continue
 		}
 		out = append(out, DirEntry{

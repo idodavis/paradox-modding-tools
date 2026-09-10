@@ -11,6 +11,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+
+	"paradox-modding-tools/services/internal/game"
 	"regexp"
 	"slices"
 	"strings"
@@ -20,7 +22,7 @@ const (
 	previewDir        = "workshop/previews"
 	videosRel         = "workshop/videos.txt"
 	maxWorkshopExtras = 10
-	metadataDir       = ".metadata"
+	metadataDir       = game.MetadataDir
 )
 
 var youtubeIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)

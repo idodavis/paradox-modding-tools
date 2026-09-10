@@ -172,9 +172,17 @@ func saveConfig(path string, cfg *Config) error {
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
 		return err
 	}
-	// No os.Remove first: Rename replaces atomically on POSIX, and Go's Windows
-	// Rename already passes MOVEFILE_REPLACE_EXISTING. Removing opened a window
-	// where the good file was gone and the replacement was still only a .tmp.
+	// Rename first, so the replace is atomic where the platform gives it.
+	// Remove only on failure: Windows returns ERROR_ACCESS_DENIED for a
+	// replace-rename over a destination anything holds open, where unlinking
+	// the name succeeds. Removing unconditionally was the old bug — it opened a
+	// window with no config.json at all.
+	if err := os.Rename(tmp, path); err == nil {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return os.Rename(tmp, path)
 }
 

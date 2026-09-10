@@ -3,6 +3,7 @@
 package views
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -350,4 +351,53 @@ func mustRows(t *testing.T, s *session.Session) []HealthRow {
 	t.Helper()
 	_, rows := Coverage(s)
 	return rows
+}
+
+// The KPI is how many there are, not how many the table can show. This is the
+// sibling of TestCompatibilityCountsAreNotTheRowBudget: Coverage already
+// increments its counter above the budget check, and nothing said so, which is
+// how the same fault was written afresh in compat.go 180 lines away.
+func TestCoverageCountsAreNotTheRowBudget(t *testing.T) {
+	const want = healthLocCap + 37
+	var body strings.Builder
+	body.WriteString("namespace = ns\n")
+	for i := 0; i < want; i++ {
+		fmt.Fprintf(&body, "ns.%d = {\n\ttype = character_event\n\ttitle = miss_%d\n}\n",
+			i+1, i)
+	}
+	// A language only appears once the mod ships a file for it, and the one key
+	// in it is used so it does not become an orphan row spending the same budget.
+	body.WriteString("ns.9999 = {\n\ttype = character_event\n\tdesc = anchor\n}\n")
+	s := buildSession(t, "ck3", nil, nil, []catalog.ModInput{
+		oneMod(t, "ck3", map[string]string{
+			"events/x.txt": body.String(),
+			"localization/english/a_l_english.yml": "" +
+				"l_english:\n anchor:0 \"A\"\n",
+		}),
+	})
+	langs, rows := Coverage(s)
+
+	shown := 0
+	for _, r := range rows {
+		if r.Type == "missing" && r.Language == "english" {
+			shown++
+		}
+	}
+	if shown != healthLocCap {
+		t.Errorf("missing rows = %d, want the full budget of %d", shown, healthLocCap)
+	}
+	found := false
+	for _, l := range langs {
+		if l.Language != "english" {
+			continue
+		}
+		found = true
+		if l.Missing != want {
+			t.Errorf("Missing KPI = %d, want %d (the count, not the %d rows shown)",
+				l.Missing, want, shown)
+		}
+	}
+	if !found {
+		t.Fatal("no english language row at all")
+	}
 }

@@ -141,7 +141,11 @@ tasks:
 
   test:probe:
     summary: >
-      Engine probes over the real installs and the total conversions (~5min).
+      Engine probes over the real installs and the total conversions (~6min).
+      Needs PMT_TEST_INSTALL_* and PMT_TEST_DOCS_*; point the DOCS vars at a
+      directory holding effects.log and triggers.log — a game's own logs/ may
+      hold event_scopes.log and nothing else, and the probes now fatal on that
+      rather than measuring against an empty type system.
       Opt-in and never part of test or test:full. Reports the vanilla orphan
       rate, which is what says how much of the mod residue is engine gap rather
       than mod defect — see GAME-SYNTAX §12.
@@ -149,7 +153,10 @@ tasks:
     env:
       PMT_LOC_RESIDUE: "1"
     cmds:
-      - go test ./internal/views/ -run TestVanillaLocResidue -v -timeout 3600s
+      - go test -tags probe ./internal/views/ -run TestVanillaLocResidue -v -timeout 3600s
+      # T-0's band: maxOptionKeysPerParent is a number, so it is checked against
+      # the installs rather than trusted. Build-tagged out of every other tier.
+      - go test -tags probe ./internal/catalog/ -run 'TestOption|TestBindByName|TestDefIndex|TestModelFingerprint' -v -timeout 1800s
 
   test:sweep:
     summary: >

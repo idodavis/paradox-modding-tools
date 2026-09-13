@@ -204,12 +204,6 @@ func refRows(s *session.Session) (depends, dangling []HealthRow, nDepends, nDang
 			if !s.KindHasDefs(r.Kind) {
 				continue
 			}
-			// The kind's own definitions use this word as a value, so it is a
-			// member of that kind's vocabulary — `role = admiral` against the
-			// archetypes listed inside character_roles.
-			if s.IsEnumValue(r.Kind, r.Key) {
-				continue
-			}
 			id := dangID{r.Kind, r.Key, from}
 			if g := dangMap[id]; g != nil {
 				if len(g.Sites) < maxRowSites {

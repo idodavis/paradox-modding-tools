@@ -103,8 +103,7 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 			// happened: the model that decides what completion offers inside a
 			// block, and whether a field's description can be trusted, is a
 			// per-game number worth seeing next to the diagnostics.
-			t.Logf("NESTED %s: %d blocks, %d ambiguous field names",
-				g.game, len(cache.NestedMembers), len(cache.AmbiguousFields))
+			t.Logf("NESTED %s: %d blocks", g.game, len(cache.NestedMembers))
 			for _, b := range []string{"limit", "trigger", "modifier"} {
 				if m := cache.NestedMembers[b]; len(m) > 0 {
 					n := min(len(m), 5)

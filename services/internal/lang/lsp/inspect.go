@@ -416,7 +416,7 @@ func fillCard(s *session.Session, id identity) *Inspect {
 	case id.local:
 		return localAssignCard(s, id)
 	case id.fieldKey:
-		docs := s.FieldDocIn(id.name, id.extractKind, id.block)
+		docs := s.FieldDoc(id.name, id.extractKind)
 		// Name the block the key is actually in. "event key" is true of
 		// `type` and of a `trigger` four levels down, which tells a reader
 		// nothing about where they are — and where they are is what decides
@@ -936,10 +936,6 @@ func trimFloat(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
-// maxAcceptedValues bounds the enumeration on a card. A closed set is the point;
-// a hundred of them is a wall of text that teaches nothing.
-const maxAcceptedValues = 8
-
 // fieldAccepts states what a field's value may be, in one line.
 //
 // This is the answer for the fields that have no prose anywhere — 28% of them
@@ -1132,22 +1128,11 @@ func fieldAccepts(s *session.Session, kind, field string) string {
 	if k := s.FieldValueKind(field); k != "" && !jomini.IsEphemeral(k) {
 		return "accepts a " + PrettyKind(k)
 	}
-	// A field holding a localization key takes any key, not one of a set. The
-	// enum harvested for it is just every key that field has ever held, which
-	// for an event's `desc` is the descriptions of every unrelated event in the
-	// install — accurate, and useless.
+	// A field holding a localization key takes any key, not one of a set.
 	if loc.Classify(field) != loc.PropNone {
 		return "accepts a localization key"
 	}
-	// A closed set is the most useful thing of all when it really is closed. A
-	// set that does not fit on the card is not an enumeration, it is a sample of
-	// a free-form field, and listing eight of forty-one values suggests a
-	// constraint that does not exist.
-	enums := s.FieldEnums(kind, field)
-	if len(enums) == 0 || len(enums) > maxAcceptedValues {
-		return ""
-	}
-	return "one of: " + strings.Join(enums, ", ")
+	return ""
 }
 func docsOnly(s *session.Session, word, kind string) string {
 	doc := s.FieldDoc(word, kind)

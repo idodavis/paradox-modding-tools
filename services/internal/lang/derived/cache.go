@@ -46,7 +46,11 @@ import (
 // defs and 2 EU5 ones were triggers and effects (`is_alive`, `save_scope_as`),
 // which resolveDefinition ranks above the declared token. An older cache still
 // holds them.
-const CacheFormatVersion = 37
+//
+// 38 drops the cut projections: Snippets, MetaKeys, FieldEnumsByKind and
+// AmbiguousFields. Nothing derives them any more; an older cache still carries
+// the stale values.
+const CacheFormatVersion = 38
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -58,14 +62,6 @@ type NestedShape struct {
 	// KeyPrefix is the shared `X_` first letters of discovered child keys
 	// (CK3 titles: "ekdcb"). Empty means harvest every matching block.
 	KeyPrefix string `json:"keyPrefix,omitempty"`
-	// SkipKeys marks an option database and lists the inner keys that are
-	// ordinary fields rather than rows — a game rule's `categories` and
-	// `default`. Everything else under the parent is a row, so a mod that adds
-	// its own option is picked up without re-deriving anything.
-	SkipKeys []string `json:"skipKeys,omitempty"`
-	// IsOption distinguishes an option database with nothing to skip (every key
-	// under the group is a row) from an ordinary cite-driven nested shape.
-	IsOption bool `json:"isOption,omitempty"`
 }
 
 // LocFormatVersion is the on-disk schema of a vanilla loc sidecar.
@@ -238,9 +234,6 @@ type VanillaCache struct {
 	FieldInfo       map[string]string            `json:"fieldInfo"`
 	FieldInfoByKind map[string]map[string]string `json:"fieldInfoByKind"`
 	Structures      map[string][]string          `json:"structures"`
-	// Snippets is the derived skeleton for each kind whose shape is
-	// well-evidenced: the members that clear a coverage floor, most-used first.
-	Snippets map[string][]SnippetMember `json:"snippets,omitempty"`
 	// NestedMembers is block key -> the members that block holds, most-used
 	// first. What lets a query answer "what belongs inside triggered_desc?"
 	// rather than only "what belongs inside an event?".
@@ -248,28 +241,16 @@ type VanillaCache struct {
 	// UnambiguousBlocks are the block names used by exactly one kind. Only those
 	// can have an absence judged: `option` is a block in a CK3 event and another
 	// in accolade_names, holding nothing in common.
-	UnambiguousBlocks map[string]bool `json:"unambiguousBlocks,omitempty"`
-	// AmbiguousFields are field names that appear inside more than one kind of
-	// block, so the install's single description of them is about the wrong
-	// position most of the time.
-	AmbiguousFields  map[string]bool                `json:"ambiguousFields,omitempty"`
-	StructureBlocks  map[string][]string            `json:"structureBlocks,omitempty"`
-	Vocabulary       []string                       `json:"vocabulary"`
-	GUITypes         []string                       `json:"guiTypes"`
-	GUIProps         []string                       `json:"guiProps"`
-	MetaKeys         []string                       `json:"metaKeys"`
-	Edges            []Edge                         `json:"edges,omitempty"`
-	LocRefs          []Ref                          `json:"locRefs,omitempty"`
-	CallRefs         []Ref                          `json:"callRefs,omitempty"` // scripted_* call sites
-	FieldValueKinds  map[string]string              `json:"fieldValueKinds,omitempty"`
-	FieldEnumsByKind map[string]map[string][]string `json:"fieldEnumsByKind,omitempty"`
-	// DeclaredFieldTypes is what a game's own shipped documentation says a field
-	// holds, verbatim: `yes/no`, `script value`, `bool`, `database key, optional`.
-	// Every install writes some of these -- CK3 in `### brief: name ( type )`
-	// headers, all three in `key = <type> prose` -- and they are DECLARED, so
-	// they outrank FieldValueKinds and FieldEnumsByKind, which are inferred from
-	// how vanilla happens to use a field. Raw on purpose: declared.ClassifyDeclaredType
-	// decides what the words mean, in one place.
+	UnambiguousBlocks map[string]bool     `json:"unambiguousBlocks,omitempty"`
+	StructureBlocks   map[string][]string `json:"structureBlocks,omitempty"`
+	Vocabulary        []string            `json:"vocabulary"`
+	GUITypes          []string            `json:"guiTypes"`
+	GUIProps          []string            `json:"guiProps"`
+	Edges             []Edge              `json:"edges,omitempty"`
+	LocRefs           []Ref               `json:"locRefs,omitempty"`
+	CallRefs          []Ref               `json:"callRefs,omitempty"` // scripted_* call sites
+	FieldValueKinds   map[string]string   `json:"fieldValueKinds,omitempty"`
+	// DeclaredFieldTypes is DECLARED by the game's own docs, so it outranks FieldValueKinds.
 	DeclaredFieldTypes       map[string]string            `json:"declaredFieldTypes,omitempty"`
 	DeclaredFieldTypesByKind map[string]map[string]string `json:"declaredFieldTypesByKind,omitempty"`
 	PrefixKinds              map[string]string            `json:"prefixKinds,omitempty"`
@@ -377,9 +358,6 @@ func prepareCacheOnce(c *VanillaCache) {
 	}
 	if c.FieldValueKinds == nil {
 		c.FieldValueKinds = map[string]string{}
-	}
-	if c.FieldEnumsByKind == nil {
-		c.FieldEnumsByKind = map[string]map[string][]string{}
 	}
 	if c.DeclaredFieldTypes == nil {
 		c.DeclaredFieldTypes = map[string]string{}

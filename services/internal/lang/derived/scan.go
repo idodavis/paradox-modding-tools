@@ -4,6 +4,7 @@
 package derived
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -15,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/services/internal/game"
@@ -66,7 +66,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	// needs it during the walk, not after. Live dumps win and refresh PMT's
 	// archived copy; the archive stands in when the user's have been removed.
 	docDirs := scriptDocsDirs(req.GameID, req.InstallPath)
-	schema, _ := loadSchema(req.InstallID, version, docDirs)
+	schema := declared.ReadSchema(docDirs)
 
 	// Localization is read before the script walk, not after, because
 	// deriveLocFields needs the key set to decide which script properties hold
@@ -129,7 +129,6 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		LocRefs:                  append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
 		CallRefs:                 macroCallRefs(acc.refs),
 		FieldValueKinds:          kinds,
-		FieldEnumsByKind:         deriveFieldEnums(acc.fieldRHSByKind, kinds),
 		PrefixKinds:              derived.PrefixKinds,
 		KindScope:                derived.KindScope,
 		FireKeys:                 derived.FireKeys,
@@ -148,15 +147,12 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		Structures:               structures,
 		NestedMembers:            nestedMembers,
 		UnambiguousBlocks:        unambiguousBlocks(acc.blockKinds),
-		AmbiguousFields:          deriveAmbiguousFields(nestedMembers),
-		Snippets:                 deriveSnippets(acc.structures, acc.structBlocks, accIdx),
 		StructureBlocks:          blockKeys(acc.structures, acc.structBlocks),
 		Vocabulary:               sortedKeys(acc.vocab),
 		GUITypes:                 sortedKeys(acc.guiTypes),
 		GUIProps:                 sortedKeys(acc.guiProps),
 		DataFunctions:            sortedKeys(dataFns),
 		LocEngineSlots:           engineSlots,
-		MetaKeys:                 readMetaKeys(req.InstallPath, inv.meta),
 	}
 
 	progress(onProgress, 90, "reading script_docs")
@@ -195,6 +191,49 @@ func scriptDocsDirs(gameID, installPath string) []string {
 	return out
 }
 
+// SchemaStatus is what the Workspace Health strip needs to know about the
+// declared type system, read without loading the model. script_docs is a couple
+// of megabytes; the model is ninety, and health is polled.
+type SchemaStatus struct {
+	Source     declared.SchemaSource `json:"source"`
+	Effects    int                   `json:"effects"`
+	Triggers   int                   `json:"triggers"`
+	ScopeTypes int                   `json:"scopeTypes"`
+	Prefixes   int                   `json:"prefixes"`
+	OnActions  int                   `json:"onActions"`
+	// ReadAt is the newest dump mtime (RFC3339), for staleness against the install.
+	ReadAt string `json:"readAt,omitempty"`
+	// Archived always reports false: PMT no longer archives script_docs.
+	Archived bool `json:"archived"`
+	// Folder is where this game writes its dumps, for the walkthrough.
+	Folder string `json:"folder,omitempty"`
+}
+
+// ReadSchemaStatus reports the type system's state for one install, read live.
+func ReadSchemaStatus(gameID, installPath string) SchemaStatus {
+	dirs := scriptDocsDirs(gameID, installPath)
+	st := SchemaStatus{Source: declared.SchemaMissing}
+	for _, d := range dirs {
+		if _, err := os.Stat(d); err == nil {
+			st.Folder = d
+			break
+		}
+	}
+	if st.Folder == "" && len(dirs) > 0 {
+		st.Folder = dirs[0]
+	}
+	sc := declared.ReadSchema(dirs)
+	if sc == nil {
+		return st
+	}
+	st.Source = declared.SchemaLive
+	st.Effects, st.Triggers = len(sc.Effects), len(sc.Triggers)
+	st.ScopeTypes, st.OnActions = len(sc.Scopes), len(sc.OnActions)
+	st.Prefixes = len(sc.Prefixes())
+	st.ReadAt = sc.ReadAt
+	return st
+}
+
 func scriptRoots(info *game.GameInfo, installPath string) []string {
 	if info.ScriptRoot != "" {
 		return []string{filepath.Join(installPath, info.ScriptRoot)}
@@ -212,7 +251,7 @@ type fileRef struct{ abs, rel, origin string }
 // inventory buckets the walked files by role.
 type inventory struct {
 	script, gui, info []fileRef
-	loc, meta         []string
+	loc               []string
 }
 
 // ClassifyRel buckets a file by name/rel for the install walk and mod indexer.
@@ -304,8 +343,6 @@ func gather(roots []string) inventory {
 				inv.gui = append(inv.gui, f)
 			case "loc":
 				inv.loc = append(inv.loc, f.abs)
-			case "meta":
-				inv.meta = append(inv.meta, f.abs)
 			case "script":
 				inv.script = append(inv.script, f)
 			}
@@ -492,7 +529,7 @@ func collectExtracts(
 
 	derived := derivedFromCache(cache)
 	baseIdx := newDefIndex(baseDefs)
-	local := deriveAll(gameID, corp, baseDefs, baseIdx, schema, fieldRHS, cites, fieldCites)
+	local := deriveAll(gameID, corp, baseIdx, schema, cites, fieldCites)
 	derived.mergeLocal(local)
 	if derived.FieldValueKinds == nil {
 		derived.FieldValueKinds = map[string]string{}
@@ -536,7 +573,7 @@ func collectExtracts(
 	// Nested databases (CK3 faiths under religions, sub-tier landed titles) only
 	// exist as defs after applyDerivedDefs, so the first bind could not see them.
 	// Re-bind against the complete set now that it does.
-	rebind(derived, schema, acc.defs, cites)
+	rebind(derived, schema, acc.defs)
 
 	if err := harvestLocFiles(ctx, gameID, files, bodies, acc); err != nil {
 		return acc, derived, dataFns, err
@@ -613,16 +650,14 @@ func (c corpus) walk(fn func(fileRef, jomini.Result) error) error {
 // comes from bindKinds, a join against declared types, so without a schema there
 // is no prefix table at all rather than a guessed one.
 func deriveAll(
-	gameID string, corp corpus, defs []Def, idx *defIndex, s *declared.Schema,
-	fieldRHS map[string]map[string]bool,
+	gameID string, corp corpus, idx *defIndex, s *declared.Schema,
 	cites, fieldCites []typedCite,
 ) *Derived {
 	ev, oa := idx.keysOfKind("event"), idx.keysOfKind("on_action")
 	fireCounts := map[string]*fireCount{}
 	wrappers := map[string]bool{}
-	owners := map[optionOwner]*ownerKeys{}
 	defKeys := idx.citableKeys()
-	prefix, kindScope := bindPrefixes(s, idx, cites)
+	prefix, kindScope := bindPrefixes(s, idx)
 	idChild := nestedIDChild(gameID, defKeys, prefix, cites, fieldCites)
 	byChild := map[string]*nestedWanted{}
 	var mu sync.Mutex
@@ -638,16 +673,12 @@ func deriveAll(
 		for _, w := range wraps {
 			wrappers[w] = true
 		}
-		addOptionOwners(gameID, f.rel, res.Root, owners)
 		if len(idChild) > 0 {
 			observeNestedWanted(gameID, f.rel, res.Root, idChild, byChild)
 		}
 		return nil
 	})
 	shapes := nestedShapesFrom(byChild, s)
-	// Option databases are found through fields rather than typed cites, so they
-	// are a separate join, but they harvest through the same NestedShape path.
-	shapes = append(shapes, deriveNestedOptions(gameID, s, defs, defKeys, fieldRHS, owners)...)
 	return &Derived{
 		PrefixKinds:  prefix,
 		KindScope:    kindScope,
@@ -657,21 +688,19 @@ func deriveAll(
 	}
 }
 
-func bindPrefixes(s *declared.Schema, idx *defIndex, cites []typedCite) (prefixKind, kindScope map[string]string) {
+func bindPrefixes(s *declared.Schema, idx *defIndex) (prefixKind, kindScope map[string]string) {
 	if s.Empty() {
 		return nil, nil
 	}
-	prefixKind, kindScope, _ = bindKinds(s, idx, cites)
-	return prefixKind, kindScope
+	return bindKinds(s, idx)
 }
 
-// rebind re-runs the type join once nested defs exist, keeping whichever
-// binding explains more of the citations.
-func rebind(v *Derived, s *declared.Schema, defs []Def, cites []typedCite) {
+// rebind re-runs the bind once nested defs (CK3 faiths under religions) exist.
+func rebind(v *Derived, s *declared.Schema, defs []Def) {
 	if v == nil || s.Empty() || len(defs) == 0 {
 		return
 	}
-	prefixKind, kindScope, _ := bindKinds(s, newDefIndex(defs), cites)
+	prefixKind, kindScope := bindKinds(s, newDefIndex(defs))
 	if len(prefixKind) == 0 {
 		return
 	}
@@ -851,26 +880,6 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 	return fieldDocs, byKind, kindInfo, structs, declTypes, declByKind
 }
 
-// readMetaKeys collects top-level keys from .metadata/metadata.json files.
-func readMetaKeys(installPath string, metas []string) []string {
-	set := map[string]bool{}
-	paths := append([]string{filepath.Join(installPath, game.MetadataDir, game.MetadataFile)}, metas...)
-	for _, p := range paths {
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		var obj map[string]any
-		if sonic.Unmarshal(raw, &obj) != nil {
-			continue
-		}
-		for k := range obj {
-			set[k] = true
-		}
-	}
-	return sortedKeys(set)
-}
-
 var dataFnRe = regexp.MustCompile(`\b((?:Get|Set)[A-Za-z0-9_]+)\b`)
 
 func enrichDataTypes(dir string, c *VanillaCache) {
@@ -956,6 +965,78 @@ func blockKeys(counts, blocks map[string]map[string]int) map[string][]string {
 		}
 		slices.Sort(keys)
 		out[kind] = keys
+	}
+	return out
+}
+
+const (
+	// minNestedHits is how often a member must be seen inside a block before it
+	// is part of that block's shape. A block appears far more often than a
+	// definition does, so a single sighting is even weaker evidence here than
+	// it is for a kind.
+	minNestedHits = 3
+	// maxNestedMembers bounds one block's member list.
+	maxNestedMembers = 40
+)
+
+// deriveNestedMembers turns raw block-member counts into the member list for
+// each block, most-used first.
+//
+// This is what lets a query answer "what belongs inside triggered_desc?" rather
+// than only "what belongs inside an event?". Keyed by the block's own name: a
+// block called limit holds the same members wherever it appears, and merging the
+// evidence is what makes the floor mean anything.
+func deriveNestedMembers(nested map[string]map[string]int) map[string][]string {
+	if len(nested) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(nested))
+	for parent, counts := range nested {
+		members := make([]string, 0, len(counts))
+		for k, n := range counts {
+			if n >= minNestedHits {
+				members = append(members, k)
+			}
+		}
+		if len(members) == 0 {
+			continue
+		}
+		slices.SortFunc(members, func(a, b string) int {
+			if c := cmp.Compare(counts[b], counts[a]); c != 0 {
+				return c
+			}
+			return strings.Compare(a, b)
+		})
+		if len(members) > maxNestedMembers {
+			members = members[:maxNestedMembers]
+		}
+		out[parent] = members
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// unambiguousBlocks names the blocks that appear under exactly one kind.
+//
+// A block name is not a position: CK3 has an `option` inside an event and
+// another inside common/accolade_names, holding nothing in common. Merging them
+// by name is right for OFFERING keys — the worst case is a suggestion that does
+// not belong — and fatal for judging an absence, which reported 18,341 findings
+// on 400 vanilla files. Only a name one kind uses can be judged.
+func unambiguousBlocks(blockKinds map[string]map[string]bool) map[string]bool {
+	if len(blockKinds) == 0 {
+		return nil
+	}
+	out := map[string]bool{}
+	for block, kinds := range blockKinds {
+		if len(kinds) == 1 {
+			out[block] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

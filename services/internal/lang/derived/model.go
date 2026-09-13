@@ -54,12 +54,10 @@ type Model struct {
 	// modMembers are block-member key names per kind from the mods, and
 	// memberSets is the lazily built per-kind set the orphan check probes. Only
 	// kinds that actually carry a member convention are ever built.
-	modMembers       map[string][]string
-	memberSets       map[string]map[string]bool
-	fieldValueKinds  map[string]string
-	modFieldKinds    map[string]string
-	modFieldEnums    map[string]map[string][]string
-	fieldEnumsByKind map[string]map[string][]string
+	modMembers      map[string][]string
+	memberSets      map[string]map[string]bool
+	fieldValueKinds map[string]string
+	modFieldKinds   map[string]string
 	// kindsWithDefs is every kind something actually defines, so a reference to a
 	// kind with no definitions anywhere can be recognised as an engine concept.
 	kindsWithDefs map[string]bool
@@ -272,11 +270,6 @@ func (m *Model) rebuildFieldKinds() {
 		vanilla = m.cache.FieldValueKinds
 	}
 	m.fieldValueKinds = MergeFieldValueKinds(vanilla, m.modFieldKinds)
-	var vanEnums map[string]map[string][]string
-	if m.cache != nil {
-		vanEnums = m.cache.FieldEnumsByKind
-	}
-	m.fieldEnumsByKind = MergeFieldEnums(vanEnums, m.modFieldEnums)
 }
 
 func (m *Model) addDefs(defs []Def) {
@@ -411,7 +404,6 @@ func NewModel(
 	m.addRefs(idx.Refs)
 	m.addEdges(idx.Edges)
 	m.modFieldKinds = idx.FieldValueKinds
-	m.modFieldEnums = idx.FieldEnumsByKind
 	m.modFireKeys = maps.Clone(idx.FireKeys)
 	m.modMembers = idx.Structures
 	m.rebuildLocByFile()

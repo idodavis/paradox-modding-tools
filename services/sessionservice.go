@@ -471,7 +471,7 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 	ver := derived.CacheVersion(h.GameVersion)
 	// The type system is read straight from script_docs rather than out of the
 	// model: a couple of megabytes instead of ninety, and health is polled.
-	st := derived.ReadSchemaStatus(inst.GameID, inst.ID, inst.Path, ver)
+	st := derived.ReadSchemaStatus(inst.GameID, inst.Path)
 	h.Schema = ScriptDocsHealth{
 		Source: string(st.Source), Effects: st.Effects, Triggers: st.Triggers,
 		ScopeTypes: st.ScopeTypes, Prefixes: st.Prefixes, OnActions: st.OnActions,

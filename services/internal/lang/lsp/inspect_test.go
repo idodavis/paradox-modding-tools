@@ -913,16 +913,9 @@ func TestHoverDateSilentWithoutCalendar(t *testing.T) {
 
 // TestHoverAcceptsLocFieldIsNotEnumerated pins the fix for a card that listed
 // forty-one unrelated event descriptions under `desc`. A field holding a
-// localization key takes ANY key; the enum harvested for it is just every value
-// that field has ever held, which is accurate and useless.
+// localization key takes ANY key, not one of a set.
 func TestHoverAcceptsLocFieldIsNotEnumerated(t *testing.T) {
 	c := &derived.VanillaCache{
-		FieldEnumsByKind: map[string]map[string][]string{
-			"event": {"desc": {
-				"clan_unity_adopt_clan.desc", "clan_unity_caused_rift.desc",
-				"clan_unity_denouncement.desc",
-			}},
-		},
 		FieldInfo: map[string]string{"desc": "Dynamic Description syntax."},
 	}
 	derived.PrepareCache(c)
@@ -933,50 +926,8 @@ func TestHoverAcceptsLocFieldIsNotEnumerated(t *testing.T) {
 	if h == nil {
 		t.Fatal("no hover on desc")
 	}
-	if strings.Contains(h.Accepts, "clan_unity") {
-		t.Errorf("Accepts lists unrelated event descriptions: %q", h.Accepts)
-	}
 	if !strings.Contains(h.Accepts, "localization key") {
 		t.Errorf("Accepts = %q, want it to name what the field takes", h.Accepts)
-	}
-}
-
-// TestHoverAcceptsOpenSetIsNotEnumerated pins the general rule: a set that does
-// not fit on the card is a sample of a free-form field, not an enumeration, and
-// listing part of it suggests a constraint that does not exist.
-func TestHoverAcceptsOpenSetIsNotEnumerated(t *testing.T) {
-	many := make([]string, 41)
-	for i := range many {
-		many[i] = "value_" + string(rune('a'+i%26)) + string(rune('a'+i/26))
-	}
-	c := &derived.VanillaCache{
-		FieldEnumsByKind: map[string]map[string][]string{
-			"traits": {"open_field": many, "closed_field": {"yes_ish", "no_ish"}},
-		},
-		FieldInfoByKind: map[string]map[string]string{
-			"traits": {"open_field": "Anything.", "closed_field": "One of two."},
-		},
-	}
-	derived.PrepareCache(c)
-	s, root := buildSession(t, "ck3", map[string]string{
-		"common/traits/x.txt": "brave = {\n\topen_field = a\n\tclosed_field = yes_ish\n}\n",
-	}, c, nil)
-
-	h := Hover(s, root+"/common/traits/x.txt", 1, 2)
-	if h == nil {
-		t.Fatal("no card for open_field")
-	}
-	if strings.Contains(h.Accepts, "one of") {
-		t.Errorf("41 values is not a closed set: %q", h.Accepts)
-	}
-	// The closed half is the control: without it, an Accepts that is empty for
-	// any reason at all passes the assertion above.
-	cl := Hover(s, root+"/common/traits/x.txt", 2, 2)
-	if cl == nil {
-		t.Fatal("no card for closed_field")
-	}
-	if !strings.Contains(cl.Accepts, "one of") {
-		t.Errorf("two values IS a closed set, got %q", cl.Accepts)
 	}
 }
 

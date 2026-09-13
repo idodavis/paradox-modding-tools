@@ -515,8 +515,6 @@ func TestScanEU5PrefixBinding(t *testing.T) {
 		"stockholm = { province = 1 }\nuppsala = { province = 2 }\nlund = { province = 3 }\n")
 	writeMod(t, base, "game/in_game/common/countries/x.txt",
 		"SWE = { color = { 1 2 3 } }\nDAN = { color = { 1 2 3 } }\nNOR = { color = { 1 2 3 } }\n")
-	// Each prefix needs at least minBindCites citations before it binds; one
-	// coincidental key match is not evidence.
 	writeMod(t, base, "game/in_game/events/e.txt", `namespace = ns
 ns.1 = { type = country_event }
 ns.2 = { type = country_event }
@@ -536,19 +534,19 @@ ev = {
 	ud := filepath.Join(t.TempDir(), "ud")
 	pinUserData(t, base, ud)
 	// The prefix table is read from the game's declared scope links, so the
-	// test must supply them the way script_docs does.
+	// test must supply them the way script_docs does; bindKinds matches by name.
 	writeEventTargets(t, ud, "docs", `# Event Target Documentation
 ### location
 Get the location with the specified key
 Requires Data: yes
 Global Link: yes
-Output Scopes: location
+Output Scopes: map_data
 
 ### c
 Get the country with the specified tag
 Requires Data: yes
 Global Link: yes
-Output Scopes: country
+Output Scopes: countries
 `)
 	t.Cleanup(func() { _ = DropVanillaFiles("eu5votes") })
 	c, _, err := Scan(context.Background(), ScanRequest{
@@ -558,8 +556,11 @@ Output Scopes: country
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PrefixKinds["location"] == "" && c.PrefixKinds["c"] == "" {
-		t.Fatalf("prefix kinds empty: %v", c.PrefixKinds)
+	if c.PrefixKinds["location"] != "map_data" {
+		t.Fatalf("location -> %q, want map_data", c.PrefixKinds["location"])
+	}
+	if c.PrefixKinds["c"] != "countries" {
+		t.Fatalf("c -> %q, want countries", c.PrefixKinds["c"])
 	}
 	if c.FireKeys["trigger_event_silently"] != "event" {
 		t.Fatalf("fire keys=%v", c.FireKeys)
@@ -705,7 +706,7 @@ ns.1 = {
 ### c
 Requires Data: yes
 Global Link: yes
-Output Scopes: country
+Output Scopes: country_definitions
 
 ### cu
 Requires Data: yes
@@ -715,12 +716,12 @@ Output Scopes: culture
 ### bt
 Requires Data: yes
 Global Link: yes
-Output Scopes: building_type
+Output Scopes: buildings
 
 ### je
 Requires Data: yes
 Global Link: yes
-Output Scopes: journal_entry
+Output Scopes: journal_entries
 
 ### p
 Requires Data: yes
@@ -735,8 +736,8 @@ Output Scopes: province
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PrefixKinds["c"] == "" || c.PrefixKinds["cu"] == "" ||
-		c.PrefixKinds["bt"] == "" || c.PrefixKinds["je"] == "" {
+	if c.PrefixKinds["c"] != "country_definitions" || c.PrefixKinds["cu"] != "cultures" ||
+		c.PrefixKinds["bt"] != "buildings" || c.PrefixKinds["je"] != "journal_entries" {
 		t.Fatalf("prefix kinds=%v", c.PrefixKinds)
 	}
 	if c.PrefixKinds["p"] != "" {

@@ -1,14 +1,12 @@
 // fields.go types a field from the values it takes: `field = value` where every
-// value names a def of one kind makes the field that kind, and a small closed
-// set of scalars makes it an enum. Both are install-derived — no dump states
-// which field holds which type — and both merge mods over vanilla.
+// value names a def of one kind makes the field that kind. Install-derived — no
+// dump states which field holds which type — and merges mods over vanilla.
 
 package derived
 
 import (
 	"paradox-modding-tools/services/internal/lang/declared"
 	"paradox-modding-tools/services/internal/lang/loc"
-	"slices"
 	"strings"
 )
 
@@ -60,90 +58,6 @@ func deriveFieldValueKinds(rhs map[string]map[string]bool, idx *defIndex) map[st
 
 func MergeFieldValueKinds(vanilla, mods map[string]string) map[string]string {
 	return mergeStringMap(vanilla, mods)
-}
-
-const fieldEnumMin, fieldEnumMax = 2, 64
-
-// deriveFieldEnums keeps unique scalar RHS per kind+field when the field did not
-// resolve to a def type and the unique count is a small enum (2–64).
-func deriveFieldEnums(
-	byKind map[string]map[string]map[string]bool,
-	typed map[string]string,
-) map[string]map[string][]string {
-	typedL := map[string]bool{}
-	for k := range typed {
-		typedL[strings.ToLower(k)] = true
-	}
-	var out map[string]map[string][]string
-	for kind, fields := range byKind {
-		for field, vals := range fields {
-			if typedL[strings.ToLower(field)] {
-				continue
-			}
-			if n := len(vals); n < fieldEnumMin || n > fieldEnumMax {
-				continue
-			}
-			keys := make([]string, 0, len(vals))
-			for v := range vals {
-				keys = append(keys, v)
-			}
-			slices.Sort(keys)
-			if out == nil {
-				out = map[string]map[string][]string{}
-			}
-			m := out[kind]
-			if m == nil {
-				m = map[string][]string{}
-				out[kind] = m
-			}
-			m[strings.ToLower(field)] = keys
-		}
-	}
-	return out
-}
-
-// MergeFieldEnums overlays mod enums on vanilla per kind+field.
-func MergeFieldEnums(
-	vanilla, mods map[string]map[string][]string,
-) map[string]map[string][]string {
-	if len(vanilla) == 0 && len(mods) == 0 {
-		return nil
-	}
-	out := cloneFieldEnums(vanilla)
-	if out == nil {
-		out = map[string]map[string][]string{}
-	}
-	for kind, fields := range mods {
-		dst := out[kind]
-		if dst == nil {
-			dst = map[string][]string{}
-			out[kind] = dst
-		}
-		for field, vals := range fields {
-			dst[strings.ToLower(field)] = slices.Clone(vals)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func cloneFieldEnums(
-	in map[string]map[string][]string,
-) map[string]map[string][]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]map[string][]string, len(in))
-	for kind, fields := range in {
-		m := make(map[string][]string, len(fields))
-		for field, vals := range fields {
-			m[field] = slices.Clone(vals)
-		}
-		out[kind] = m
-	}
-	return out
 }
 
 // minLocFieldHits and locFieldCoverage are the evidence floors for deciding a

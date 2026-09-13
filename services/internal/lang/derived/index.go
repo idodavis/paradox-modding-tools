@@ -13,14 +13,13 @@ import (
 
 // Harvest is the in-memory result of indexing a workspace's mods.
 type Harvest struct {
-	Defs             []Def
-	Refs             []Ref
-	Edges            []Edge
-	Loc              map[string]map[string]LocEntry
-	Order            []string
-	FieldValueKinds  map[string]string
-	FieldEnumsByKind map[string]map[string][]string
-	FireKeys         map[string]string
+	Defs            []Def
+	Refs            []Ref
+	Edges           []Edge
+	Loc             map[string]map[string]LocEntry
+	Order           []string
+	FieldValueKinds map[string]string
+	FireKeys        map[string]string
 	// Structures are the block-member key names the mods declare, per kind. The
 	// walk already collected these and threw them away; the orphan check needs
 	// them, because a mod's new game-rule option is a member name that exists in
@@ -61,9 +60,8 @@ func BuildIndex(ctx context.Context, gameID string, mods []ModInput, cache *Vani
 	return Harvest{
 		Defs: acc.defs, Refs: acc.refs, Edges: acc.edges, Loc: acc.loc,
 		Order: uniqKeep(order), FieldValueKinds: kinds,
-		FieldEnumsByKind: deriveFieldEnums(acc.fieldRHSByKind, kinds),
-		FireKeys:         fireKeys,
-		Structures:       keysByCount(acc.structures),
+		FireKeys:   fireKeys,
+		Structures: keysByCount(acc.structures),
 	}, err
 }
 

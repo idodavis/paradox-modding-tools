@@ -292,7 +292,7 @@ func TestCompleteDottedReplace(t *testing.T) {
 	}
 }
 
-func TestCompleteRootAndEnums(t *testing.T) {
+func TestCompleteRootAndUnknownField(t *testing.T) {
 	src := "script"
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/scripted_triggers/x.txt": src,
@@ -305,26 +305,14 @@ func TestCompleteRootAndEnums(t *testing.T) {
 
 	cache := &derived.VanillaCache{
 		Structures: map[string][]string{"event": {"type", "immediate"}},
-		FieldEnumsByKind: map[string]map[string][]string{
-			"event": {"type": {"character_event", "letter_event"}},
-		},
 	}
-	body := "test.1 = {\n\ttype = c\n}\n"
-	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
-	f = filepath.Join(root, "events", "x.txt")
-	line, col := lineCol(body, "type = c")
-	items = Complete(s, f, line, col+len("type = c"))
-	if !hasComplete(items, "character_event") {
-		t.Fatalf("type enum: %v", labels(items))
-	}
-
 	unk := "test.1 = {\n\tunknown_field = \n}\n"
 	s, root = buildSession(t, "ck3", map[string]string{
 		"events/x.txt": unk,
 		"events/y.txt": "other.1 = { type = character_event }\n",
 	}, cache, nil)
 	f = filepath.Join(root, "events", "x.txt")
-	line, col = lineCol(unk, "unknown_field = ")
+	line, col := lineCol(unk, "unknown_field = ")
 	items = Complete(s, f, line, col+len("unknown_field = "))
 	if !hasComplete(items, "yes") {
 		t.Fatalf("unknown_field yes: %v", labels(items))
@@ -492,7 +480,6 @@ func TestValueSourceOrder(t *testing.T) {
 		"slot-derived",
 		"macro-params",
 		"macro-call-params",
-		"field-enums",
 	}
 	if len(valueSources) != len(want) {
 		t.Fatalf("source count = %d, want %d — add it to the list here too",
@@ -527,54 +514,6 @@ func TestValueDeclaredOutranksDerived(t *testing.T) {
 	}
 }
 
-// TestSnippetOffered covers the derived skeleton reaching completion: it is
-// offered at the top level of a file, carries snippet placeholders, and ranks
-// behind the names — someone part-way through a word wants the token, not a
-// twelve-line block dropped into their file.
-func TestSnippetOffered(t *testing.T) {
-	c := &derived.VanillaCache{
-		Snippets: map[string][]derived.SnippetMember{
-			"traits": {
-				{Key: "diplomacy", Hits: 10, Of: 10},
-				{Key: "icon", Block: true, Hits: 9, Of: 10},
-			},
-		},
-	}
-	derived.PrepareCache(c)
-	s, root := buildSession(t, "ck3",
-		map[string]string{"common/traits/00_traits.txt": "\n"}, c, nil)
-	items := Complete(s, root+"/common/traits/00_traits.txt", 0, 0)
-
-	var snip *CompletionItem
-	for i := range items {
-		if items[i].Kind == "snippet" {
-			snip = &items[i]
-		}
-	}
-	if snip == nil {
-		t.Fatalf("no skeleton offered: %v", labels(items))
-	}
-	for _, want := range []string{"diplomacy = ${", "icon = {", "${1:", "$0"} {
-		if !strings.Contains(snip.InsertText, want) {
-			t.Errorf("insert text missing %q:\n%s", want, snip.InsertText)
-		}
-	}
-}
-
-// TestNoSnippetWithoutEvidence pins the floor reaching the user: a kind the
-// install did not evidence a shape for offers nothing rather than a guess.
-func TestNoSnippetWithoutEvidence(t *testing.T) {
-	c := &derived.VanillaCache{}
-	derived.PrepareCache(c)
-	s, root := buildSession(t, "ck3",
-		map[string]string{"common/traits/00_traits.txt": "\n"}, c, nil)
-	for _, it := range Complete(s, root+"/common/traits/00_traits.txt", 0, 0) {
-		if it.Kind == "snippet" {
-			t.Errorf("skeleton offered with no derived shape: %q", it.Label)
-		}
-	}
-}
-
 // nestedCache declares what the install would have evidenced about two blocks.
 func nestedCache() *derived.VanillaCache {
 	c := &derived.VanillaCache{
@@ -586,7 +525,6 @@ func nestedCache() *derived.VanillaCache {
 			"first_valid":    {"triggered_desc", "desc"},
 			"triggered_desc": {"trigger", "desc"},
 		},
-		AmbiguousFields: map[string]bool{"trigger": true, "desc": true},
 		FieldInfo: map[string]string{
 			"trigger": "controls visibility for this portrait",
 			"type":    "Optional, defaults to character_event",
@@ -635,25 +573,6 @@ func TestCompleteFollowsEnclosingBlock(t *testing.T) {
 		if has(Complete(s, p, c.line, c.col), c.notWant) {
 			t.Errorf("line %d: %q cannot go here, got %v", c.line, c.notWant, got)
 		}
-	}
-}
-
-// TestFieldDocWithheldWhenAmbiguousAndNested pins the other half. The install
-// documents a field once, by name; 819 CK3 names are used in more than one kind
-// of block, so showing that description below the definition tells a reader
-// something false. At the definition's own level it is exactly right.
-func TestFieldDocWithheldWhenAmbiguousAndNested(t *testing.T) {
-	s, root := buildSession(t, "ck3",
-		map[string]string{"events/x.txt": nestedEvent}, nestedCache(), nil)
-	p := root + "/events/x.txt"
-
-	deep := Hover(s, p, 6, 5) // trigger inside triggered_desc
-	if deep != nil && strings.Contains(deep.Docs, "portrait") {
-		t.Errorf("portrait description shown for a nested trigger: %q", deep.Docs)
-	}
-	top := Hover(s, p, 2, 2) // type at the event's top level
-	if top == nil || !strings.Contains(top.Docs, "character_event") {
-		t.Errorf("top-level field lost its documentation: %+v", top)
 	}
 }
 

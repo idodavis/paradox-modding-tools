@@ -1,13 +1,11 @@
-// complete.go serves completion for script, loc, mod, and metadata files.
+// complete.go serves completion for script, loc, and mod files.
 package lsp
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 	"strings"
 
-	"paradox-modding-tools/services/internal/lang/derived"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
@@ -24,9 +22,6 @@ func Complete(s *session.Session, path string, line, col int) []CompletionItem {
 	}
 	if s.KindFor(path) == "mod" {
 		return stamp(prefixFilter(modItems(), completePrefix(s, path, line, col)))
-	}
-	if s.IsMetaFile(path) {
-		return stamp(prefixFilter(metaItems(s), completePrefix(s, path, line, col)))
 	}
 	if s.KindFor(path) == "loc" || s.KindFor(path) == "gui" {
 		if items := dataFnItems(s, path, line, col); len(items) > 0 {
@@ -179,18 +174,6 @@ func modItems() []CompletionItem {
 	return out
 }
 
-func metaItems(s *session.Session) []CompletionItem {
-	keys := s.Vocab("meta")
-	if len(keys) == 0 {
-		return nil
-	}
-	out := make([]CompletionItem, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, item(k, "metadata"))
-	}
-	return out
-}
-
 func dataFnItems(s *session.Session, path string, line, col int) []CompletionItem {
 	src := s.FileText(path)
 	if src == "" {
@@ -283,9 +266,6 @@ func rootItems(s *session.Session, kind, prefix string) []CompletionItem {
 		out = append(out, item(ck, kind))
 	}
 	out = append(out, defsOfType(s, prefix, ck)...)
-	// Last: a skeleton is the answer when nothing else is, and someone part-way
-	// through a name wants the name.
-	out = append(out, snippetItem(s, kind, prefix)...)
 	return out
 }
 
@@ -400,13 +380,6 @@ var valueSources = []valueSource{
 		}
 		items := scriptParamItems(s, parentKey, prefix)
 		return items, len(items) > 0
-	}},
-	{"field-enums", func(s *session.Session, kind, parentKey, prefix string) ([]CompletionItem, bool) {
-		enums := s.FieldEnums(kind, parentKey)
-		if len(enums) == 0 {
-			return nil, false
-		}
-		return enumItems(enums, prefix), true
 	}},
 }
 
@@ -706,51 +679,4 @@ func Rank(s *session.Session, kind, scope string, items []CompletionItem) {
 	slices.SortStableFunc(items, func(a, b CompletionItem) int {
 		return cmp.Compare(m.rank(a.Label), m.rank(b.Label))
 	})
-}
-
-// snippetItem offers the derived skeleton for a kind as one completion.
-//
-// Ranked and labelled as a skeleton rather than mixed in with the kind's keys:
-// someone part-way through a word wants the token, not a twelve-line block
-// dropped into their file. It only appears at the top level of a file, which is
-// where a new definition is written.
-func snippetItem(s *session.Session, kind, prefix string) []CompletionItem {
-	members := s.Snippet(kind)
-	if len(members) == 0 {
-		return nil
-	}
-	label := jomini.CanonicalKind(kind)
-	if label == "" {
-		label = kind
-	}
-	if !lowerPrefix(label, prefix) {
-		return nil
-	}
-	return []CompletionItem{{
-		Label:      label,
-		Detail:     "skeleton",
-		Kind:       "snippet",
-		InsertText: renderSnippet(label, members),
-		Documentation: "The shape " + label +
-			" definitions take in this install, most-used members first.",
-	}}
-}
-
-// renderSnippet writes LSP snippet text: `${n:placeholder}` tab stops in the
-// order a reader fills them, and `$0` where the cursor finishes.
-func renderSnippet(label string, members []derived.SnippetMember) string {
-	var b strings.Builder
-	tab := 1
-	fmt.Fprintf(&b, "${%d:%s_name} = {\n", tab, label)
-	tab++
-	for _, m := range members {
-		if m.Block {
-			fmt.Fprintf(&b, "\t%s = {\n\t\t$%d\n\t}\n", m.Key, tab)
-		} else {
-			fmt.Fprintf(&b, "\t%s = ${%d:value}\n", m.Key, tab)
-		}
-		tab++
-	}
-	b.WriteString("\t$0\n}")
-	return b.String()
 }

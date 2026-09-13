@@ -175,8 +175,6 @@ func (m *Model) Vocab(kind string) []string {
 		return m.cache.GUITypes
 	case "gui_prop":
 		return m.cache.GUIProps
-	case "meta":
-		return m.cache.MetaKeys
 	case "datafunction":
 		return m.cache.DataFunctions
 	default:
@@ -318,23 +316,6 @@ func (m *Model) DeclaredFieldType(kind, field string) declared.DeclaredType {
 	return declared.DeclaredType{}
 }
 
-func (m *Model) FieldEnums(kind, field string) []string {
-	lk := strings.ToLower(field)
-	try := func(k string) []string {
-		if k == "" || m.fieldEnumsByKind == nil {
-			return nil
-		}
-		if m := m.fieldEnumsByKind[k]; m != nil {
-			return m[lk]
-		}
-		return nil
-	}
-	if v := try(kind); len(v) > 0 {
-		return v
-	}
-	return try(jomini.CanonicalKind(kind))
-}
-
 func (m *Model) CacheInfo() (installPath, scannedAt, gameVersion, installID string) {
 	if m.cache == nil {
 		return "", "", "", ""
@@ -363,13 +344,6 @@ func (m *Model) NestedMembers(block string) []string {
 		return nil
 	}
 	return m.cache.NestedMembers[strings.ToLower(block)]
-}
-
-func (m *Model) FieldDocIn(key, kind, block string) string {
-	if block != "" && m.FieldDocIsAmbiguous(key) {
-		return ""
-	}
-	return m.FieldDoc(key, kind)
 }
 
 func (m *Model) IsNestedMember(block, key string) bool {
@@ -626,7 +600,7 @@ func (m *Model) fieldDoc(key, kind string) string {
 	// them is a coin flip: `trigger` inside a triggered_desc was explained as
 	// controlling "visibility for this portrait". Kind-specific prose above is
 	// still trusted; this is only the catch-all.
-	if v := m.cache.FieldInfo[lk]; v != "" && !m.cache.AmbiguousFields[lk] {
+	if v := m.cache.FieldInfo[lk]; v != "" {
 		return v
 	}
 	// Install prose wins over the game's dump prose, so the Schema is consulted last.
@@ -762,36 +736,6 @@ func (m *Model) KindHasDefs(kind string) bool {
 	return m.kindsWithDefs[jomini.CanonicalKind(kind)]
 }
 
-// IsEnumValue reports that a kind's own definitions use this word as a scalar
-// value. Vic3 role archetypes (`admiral`, `general`) appear only as values of
-// `type` inside character_roles, so `role = admiral` names a member of that
-// kind's vocabulary, not a row that has gone missing.
-func (m *Model) IsEnumValue(kind, key string) bool {
-	if kind == "" || key == "" {
-		return false
-	}
-	for _, m := range []map[string]map[string][]string{m.fieldEnumsByKind, m.modFieldEnums} {
-		for _, vals := range m[jomini.CanonicalKind(kind)] {
-			if slices.Contains(vals, key) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// Snippet returns the derived skeleton members for kind, most-used first, or
-// nil when the install did not evidence a shape for it.
-func (m *Model) Snippet(kind string) []SnippetMember {
-	if m.cache == nil {
-		return nil
-	}
-	if m := m.cache.Snippets[kind]; len(m) > 0 {
-		return m
-	}
-	return m.cache.Snippets[jomini.CanonicalKind(kind)]
-}
-
 // BlockIsJudgeable reports a block whose members can be judged rather than
 // merely suggested: a name exactly one kind uses.
 func (m *Model) BlockIsJudgeable(block string) bool {
@@ -853,13 +797,4 @@ func addLocKeys(seen map[string]bool, out *[]string, k string) {
 	}
 	seen[k] = true
 	*out = append(*out, k)
-}
-func (m *Model) FieldDocIsAmbiguous(field string) bool {
-	if field == "" {
-		return false
-	}
-	if m.cache == nil {
-		return false
-	}
-	return m.cache.AmbiguousFields[strings.ToLower(field)]
 }

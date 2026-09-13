@@ -68,8 +68,8 @@ func lower(s string) string {
 }
 
 func frag(href string) string {
-	if i := strings.IndexByte(href, '#'); i >= 0 {
-		return href[i+1:]
+	if _, after, ok := strings.Cut(href, "#"); ok {
+		return after
 	}
 	return ""
 }
@@ -91,7 +91,7 @@ func drop(n *html.Node) bool {
 	if dropTag[n.DataAtom] || dropID[lower(attrVal(n, "id"))] || prefixed(attrVal(n, "id")) {
 		return true
 	}
-	for _, t := range strings.Fields(attrVal(n, "class")) {
+	for t := range strings.FieldsSeq(attrVal(n, "class")) {
 		if dropClass[strings.ToLower(t)] {
 			return true
 		}

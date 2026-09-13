@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/parser/jomini"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
 const (
@@ -82,16 +82,16 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 
 	nodes := make([]EventGraphNode, 0, len(selected))
 	for id := range selected {
-		if strings.HasPrefix(id, morePrefix) {
-			parent := strings.TrimPrefix(id, morePrefix)
+		if after, ok := strings.CutPrefix(id, morePrefix); ok {
+			parent := after
 			nodes = append(nodes, EventGraphNode{
 				ID: id, Kind: "more",
 				Title: "+" + strconv.Itoa(hidden[parent]) + " more",
 			})
 			continue
 		}
-		if strings.HasPrefix(id, moreInPrefix) {
-			parent := strings.TrimPrefix(id, moreInPrefix)
+		if after, ok := strings.CutPrefix(id, moreInPrefix); ok {
+			parent := after
 			nodes = append(nodes, EventGraphNode{
 				ID: id, Kind: "more",
 				Title: "+" + strconv.Itoa(hiddenIn[parent]) + " fired by",
@@ -128,7 +128,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 func storedEdges(s *session.Session, macroKeys map[string]bool) []EventGraphEdge {
 	var out []EventGraphEdge
 	for _, e := range s.EdgesFrom("") {
-		if e.Kind == catalog.EdgeKindCall {
+		if e.Kind == derived.EdgeKindCall {
 			continue
 		}
 		if e.Kind != "via" && macroKeys[e.From] {

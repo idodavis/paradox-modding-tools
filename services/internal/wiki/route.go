@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/parser/jomini"
+	"paradox-modding-tools/services/internal/lang/jomini"
 )
 
 const guideTabCap = 6
@@ -23,8 +23,8 @@ func foldWord(w string) string {
 	if len(w) <= 2 || strings.HasSuffix(w, "ss") {
 		return w
 	}
-	if strings.HasSuffix(w, "s") {
-		return strings.TrimSuffix(w, "s")
+	if before, ok := strings.CutSuffix(w, "s"); ok {
+		return before
 	}
 	return w
 }
@@ -84,7 +84,7 @@ func addTokens(set map[string]bool, s string) {
 		return
 	}
 	set[s] = true
-	for _, w := range strings.Fields(s) {
+	for w := range strings.FieldsSeq(s) {
 		set[w] = true
 	}
 }

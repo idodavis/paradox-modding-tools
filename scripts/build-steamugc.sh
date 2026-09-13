@@ -32,9 +32,6 @@ case "$GOOS" in
   windows)
     cp "$SRC/win64/steam_api64.dll" "$DEST/"
     ;;
-  darwin)
-    cp "$SRC/osx/libsteam_api.dylib" "$DEST/"
-    ;;
   *)
     cp "$SRC/linux64/libsteam_api.so" "$DEST/"
     ;;

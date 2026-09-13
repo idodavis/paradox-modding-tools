@@ -27,7 +27,7 @@ import type {
   WorkspaceEdit as LspWorkspaceEdit,
   Location as LspLocation,
   HoverResult,
-} from "@services/internal/lsp/models";
+} from "@services/internal/lang/lsp/models";
 import { originHexByOriginId } from "./rootDecorations";
 
 const OPEN_EVENT_GRAPH = "pmt.openInEventGraph";

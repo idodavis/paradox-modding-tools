@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -162,52 +161,48 @@ func (r *ReleaseService) Convert(src, to string) ConvertResult {
 	}
 }
 
-// AddWorkshopPreview copies an image into workshop/previews (Steam extra cap).
-func (r *ReleaseService) AddWorkshopPreview(workspaceID, modID, srcPath string) (*Listing, error) {
+// editWorkshop resolves the mod, applies one workshop edit and reloads the
+// listing. The four methods below are Wails-bound, so each needs its own name
+// and signature; only the edit differs, and it was written out four times.
+func (r *ReleaseService) editWorkshop(
+	workspaceID, modID string, edit func(modPath string) error,
+) (*Listing, error) {
 	ws, mod, err := r.workspaceMod(workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	if err := release.AddPreview(mod.Path, srcPath); err != nil {
+	if err := edit(mod.Path); err != nil {
 		return nil, err
 	}
 	return r.loadFrom(ws, mod)
+}
+
+// AddWorkshopPreview copies an image into workshop/previews (Steam extra cap).
+func (r *ReleaseService) AddWorkshopPreview(workspaceID, modID, srcPath string) (*Listing, error) {
+	return r.editWorkshop(workspaceID, modID, func(p string) error {
+		return release.AddPreview(p, srcPath)
+	})
 }
 
 // RemoveWorkshopPreview deletes one extra image under workshop/previews.
 func (r *ReleaseService) RemoveWorkshopPreview(workspaceID, modID, rel string) (*Listing, error) {
-	ws, mod, err := r.workspaceMod(workspaceID, modID)
-	if err != nil {
-		return nil, err
-	}
-	if err := release.RemovePreview(mod.Path, rel); err != nil {
-		return nil, err
-	}
-	return r.loadFrom(ws, mod)
+	return r.editWorkshop(workspaceID, modID, func(p string) error {
+		return release.RemovePreview(p, rel)
+	})
 }
 
 // AddWorkshopVideo appends a YouTube id from a watch/embed/youtu.be URL or raw id.
 func (r *ReleaseService) AddWorkshopVideo(workspaceID, modID, urlOrID string) (*Listing, error) {
-	ws, mod, err := r.workspaceMod(workspaceID, modID)
-	if err != nil {
-		return nil, err
-	}
-	if err := release.AddVideo(mod.Path, urlOrID); err != nil {
-		return nil, err
-	}
-	return r.loadFrom(ws, mod)
+	return r.editWorkshop(workspaceID, modID, func(p string) error {
+		return release.AddVideo(p, urlOrID)
+	})
 }
 
 // RemoveWorkshopVideo drops one YouTube id from workshop/videos.txt.
 func (r *ReleaseService) RemoveWorkshopVideo(workspaceID, modID, id string) (*Listing, error) {
-	ws, mod, err := r.workspaceMod(workspaceID, modID)
-	if err != nil {
-		return nil, err
-	}
-	if err := release.RemoveVideo(mod.Path, id); err != nil {
-		return nil, err
-	}
-	return r.loadFrom(ws, mod)
+	return r.editWorkshop(workspaceID, modID, func(p string) error {
+		return release.RemoveVideo(p, id)
+	})
 }
 
 // DraftChangelog returns a version stub for the Steam change note field.
@@ -256,20 +251,7 @@ func (r *ReleaseService) CopyThumbnail(workspaceID, modID, src string) (string, 
 		rel = rel[:len(rel)-len(path.Ext(rel))] + ext
 	}
 	dest := filepath.Join(mod.Path, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return "", err
-	}
-	in, err := os.Open(src)
-	if err != nil {
-		return "", err
-	}
-	defer in.Close()
-	out, err := os.Create(dest)
-	if err != nil {
-		return "", err
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
+	if err := release.CopyFile(src, dest); err != nil {
 		return "", err
 	}
 	return filepath.ToSlash(rel), nil
@@ -367,35 +349,17 @@ func (r *ReleaseService) PublishSteam(in Listing) (*PublishResult, error) {
 	return result, nil
 }
 
+// workspaceMod is findMod plus the one thing every release path needs: a mod
+// with no path on disk is nothing this service can read, write or publish.
 func (r *ReleaseService) workspaceMod(workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
-	var ws Workspace
-	var mod WorkspaceMod
-	var foundWS, foundMod bool
-	r.Store.Read(func(c *Config) {
-		w := findWorkspace(c, workspaceID)
-		if w == nil {
-			return
-		}
-		ws = *w
-		foundWS = true
-		for i := range w.Mods {
-			if w.Mods[i].ID == modID {
-				mod = w.Mods[i]
-				foundMod = true
-				return
-			}
-		}
-	})
-	if !foundWS {
-		return nil, nil, fmt.Errorf("workspace not found")
-	}
-	if !foundMod {
-		return nil, nil, fmt.Errorf("mod not found")
+	ws, mod, err := findMod(r.Store, workspaceID, modID)
+	if err != nil {
+		return nil, nil, err
 	}
 	if mod.Path == "" {
 		return nil, nil, fmt.Errorf("mod has no path")
 	}
-	return &ws, &mod, nil
+	return ws, mod, nil
 }
 
 func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
@@ -491,15 +455,6 @@ func releasePreviews(previews []WorkshopPreview) []release.Preview {
 	return out
 }
 
-// listingThumb locates the mod's listing image on disk.
-//
-// The declared picture is the fallback, not the primary: of 14 Victoria 3
-// workshop mods only 2 declare one at all, under two spellings, and one EU5 mod
-// declares `"picture": null`. The file itself is discoverable, so it is the
-// better source. picture still gets a turn — a mod may name something other than
-// `thumbnail.*` — and is tried beside the descriptor as well as at the root,
-// because every mod measured writes it as a bare file name whatever directory
-// the file is in.
 func listingThumb(gameID, root, picture string) (rel, abs string) {
 	if rel, found := modfile.ThumbnailPath(gameID, root, ""); found {
 		return rel, filepath.Join(root, filepath.FromSlash(rel))
@@ -520,11 +475,11 @@ func listingThumb(gameID, root, picture string) (rel, abs string) {
 // steamEResultCode parses an EResult integer from a Steam helper error string.
 func steamEResultCode(err string) (int, bool) {
 	const prefix = "EResult "
-	i := strings.Index(err, prefix)
-	if i < 0 {
+	_, after, ok := strings.Cut(err, prefix)
+	if !ok {
 		return 0, false
 	}
-	n, e := strconv.Atoi(strings.Fields(err[i+len(prefix):])[0])
+	n, e := strconv.Atoi(strings.Fields(after)[0])
 	return n, e == nil
 }
 

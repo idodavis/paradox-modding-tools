@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/parser/jomini"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
 const (
@@ -69,7 +69,7 @@ func Detail(s *session.Session, id string) *EventDetail {
 		}
 	}
 	block := jomini.BlockOf(stmt.Value)
-	_, _, fields := inspectBlock(s, block, lineOf, nil)
+	lines, targets, fields := inspectBlock(s, block, lineOf, nil)
 	detail := &EventDetail{
 		ID: id, Kind: kind, Path: d.Path, Rel: s.DisplayRel(d.Path),
 		Origin: originID(d.Origin), OriginName: s.OriginName(originID(d.Origin)),
@@ -80,7 +80,6 @@ func Detail(s *session.Session, id string) *EventDetail {
 		detail.Namespace = eventNamespace(s, d, id)
 	}
 	if kind != "event" {
-		lines, targets, _ := inspectBlock(s, block, lineOf, nil)
 		detail.Title = locIfAny(s, id)
 		detail.Sections = []EventSectionInfo{{
 			Name: kind, Lines: lines, Targets: targets,
@@ -165,7 +164,7 @@ func viaHopLabel(chain string) string {
 	return "via " + parts[0] + " … " + parts[len(parts)-1]
 }
 
-func labeledEdge(s *session.Session, e catalog.Edge) EventGraphEdge {
+func labeledEdge(s *session.Session, e derived.Edge) EventGraphEdge {
 	out := EventGraphEdge{From: e.From, To: e.To, Via: e.Via, Kind: e.Kind}
 	if e.Kind == "via" {
 		chain := e.NameKey

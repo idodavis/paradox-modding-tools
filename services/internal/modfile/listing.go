@@ -23,7 +23,50 @@ type ListingFields struct {
 	ShortDescription string
 }
 
+type listingField struct {
+	mod  string
+	json string
+	// jsonAlso are keys read but never written. EU5's Basileia Romaion
+	// declares `thumbnail` where the game itself writes `picture`.
+	jsonAlso []string
+	// modDropEmpty removes the line rather than writing `key=""`. The launcher
+	// requires name and version, so those two keep an empty value; the rest are
+	// optional and an empty one is noise.
+	modDropEmpty bool
+	// jsonKeepEmpty leaves the key alone instead of deleting it. Only picture,
+	// which ThumbnailPath owns — clearing it from here would drop a thumbnail
+	// the Release page never touched.
+	jsonKeepEmpty bool
+
+	get func(*ListingFields) string
+	set func(*ListingFields, string)
+}
+
+// listingFields is also the order missing keys are appended to a .mod file.
+var listingFields = []listingField{
+	{mod: "name", json: "name",
+		get: func(f *ListingFields) string { return f.Name },
+		set: func(f *ListingFields, v string) { f.Name = v }},
+	{mod: "version", json: "version",
+		get: func(f *ListingFields) string { return f.Version },
+		set: func(f *ListingFields, v string) { f.Version = v }},
+	{mod: "supported_version", json: "supported_game_version", modDropEmpty: true,
+		get: func(f *ListingFields) string { return f.SupportedVersion },
+		set: func(f *ListingFields, v string) { f.SupportedVersion = v }},
+	{mod: "remote_file_id", json: "remote_file_id", modDropEmpty: true,
+		get: func(f *ListingFields) string { return f.RemoteFileID },
+		set: func(f *ListingFields, v string) { f.RemoteFileID = v }},
+	{mod: "picture", json: "picture", jsonAlso: []string{"thumbnail"},
+		modDropEmpty: true, jsonKeepEmpty: true,
+		get: func(f *ListingFields) string { return f.Picture },
+		set: func(f *ListingFields, v string) { f.Picture = v }},
+	{json: "short_description",
+		get: func(f *ListingFields) string { return f.ShortDescription },
+		set: func(f *ListingFields, v string) { f.ShortDescription = v }},
+}
+
 // ReadListingFields loads CK3 .mod or Vic3/EU5 metadata.json under root.
+
 func ReadListingFields(gameID, root string) (ListingFields, error) {
 	path := game.DescriptorPath(gameID, root)
 	raw, err := os.ReadFile(path)
@@ -85,12 +128,6 @@ func EnsureDescriptions(root, name, description string) error {
 	return nil
 }
 
-// ThumbnailExts are the listing-image extensions PMT reads and writes, in the
-// order a mod carrying several is resolved.
-//
-// Measured over 31 workshop mods: 37 png, 2 gif, no svg. gif is in use — EU5's
-// Basileia Romaion declares `"picture": "thumbnail.gif"` — and was rejected by
-// every write path while svg, which nobody ships, was accepted.
 var ThumbnailExts = []string{".png", ".gif", ".jpg", ".jpeg"}
 
 // ThumbnailPath answers both thumbnail questions at once: where this mod's
@@ -151,17 +188,11 @@ func readDescriptorMod(src string) ListingFields {
 		if !ok {
 			continue
 		}
-		switch k {
-		case "name":
-			f.Name = v
-		case "version":
-			f.Version = v
-		case "supported_version":
-			f.SupportedVersion = v
-		case "remote_file_id":
-			f.RemoteFileID = v
-		case "picture":
-			f.Picture = v
+		for _, lf := range listingFields {
+			if lf.mod == k {
+				lf.set(&f, v)
+				break
+			}
 		}
 	}
 	return f
@@ -171,12 +202,11 @@ func patchDescriptorMod(src string, f ListingFields) string {
 	if strings.TrimSpace(src) == "" {
 		src = "version=\"1.0\"\nname=\"mod\"\n"
 	}
-	set := map[string]string{
-		"name":              quoteMod(f.Name),
-		"version":           quoteMod(f.Version),
-		"supported_version": quoteMod(f.SupportedVersion),
-		"remote_file_id":    quoteMod(f.RemoteFileID),
-		"picture":           quoteMod(f.Picture),
+	byMod := map[string]listingField{}
+	for _, lf := range listingFields {
+		if lf.mod != "" {
+			byMod[lf.mod] = lf
+		}
 	}
 	seen := map[string]bool{}
 	var out []string
@@ -192,28 +222,24 @@ func patchDescriptorMod(src string, f ListingFields) string {
 		}
 		k, _, ok := splitModKV(line)
 		if ok {
-			if val, want := set[k]; want {
+			if lf, want := byMod[k]; want {
 				seen[k] = true
-				if val == `""` && (k == "remote_file_id" || k == "picture" ||
-					k == "supported_version") {
+				v := lf.get(&f)
+				if v == "" && lf.modDropEmpty {
 					continue
 				}
-				out = append(out, k+"="+val)
+				out = append(out, k+"="+quoteMod(v))
 				continue
 			}
 		}
 		out = append(out, line)
 	}
-	for _, k := range []string{
-		"name", "version", "supported_version", "remote_file_id", "picture",
-	} {
-		if seen[k] {
+	// A key the file never had is appended only when it has something to say.
+	for _, lf := range listingFields {
+		if lf.mod == "" || seen[lf.mod] || lf.get(&f) == "" {
 			continue
 		}
-		if set[k] == `""` {
-			continue
-		}
-		out = append(out, k+"="+set[k])
+		out = append(out, lf.mod+"="+quoteMod(lf.get(&f)))
 	}
 	if !seen["tags"] && len(f.Tags) > 0 {
 		out = append(out, formatModTags(f.Tags)...)
@@ -272,13 +298,9 @@ func readMetadataJSON(raw []byte) (ListingFields, error) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return ListingFields{}, err
 	}
-	f := ListingFields{
-		Name:             strField(m, "name"),
-		Version:          strField(m, "version"),
-		SupportedVersion: strField(m, "supported_game_version"),
-		RemoteFileID:     strField(m, "remote_file_id"),
-		Picture:          firstStr(m, "picture", "thumbnail"),
-		ShortDescription: strField(m, "short_description"),
+	var f ListingFields
+	for _, lf := range listingFields {
+		lf.set(&f, firstStr(m, append([]string{lf.json}, lf.jsonAlso...)...))
 	}
 	if arr, ok := m["tags"].([]any); ok {
 		for _, v := range arr {
@@ -297,13 +319,15 @@ func patchMetadataJSON(raw []byte, f ListingFields) ([]byte, error) {
 	} else if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
-	setStr(m, "name", f.Name)
-	setStr(m, "version", f.Version)
-	setStr(m, "supported_game_version", f.SupportedVersion)
-	setStr(m, "remote_file_id", f.RemoteFileID)
-	setStr(m, "short_description", f.ShortDescription)
-	if f.Picture != "" {
-		m["picture"] = f.Picture
+	for _, lf := range listingFields {
+		v := strings.TrimSpace(lf.get(&f))
+		if v == "" {
+			if !lf.jsonKeepEmpty {
+				delete(m, lf.json)
+			}
+			continue
+		}
+		m[lf.json] = v
 	}
 	if f.Tags != nil {
 		tags := make([]any, 0, len(f.Tags))
@@ -337,19 +361,10 @@ func firstStr(m map[string]any, keys ...string) string {
 	return ""
 }
 
-func setStr(m map[string]any, k, v string) {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		delete(m, k)
-		return
-	}
-	m[k] = v
-}
-
 // FirstParagraph is the first non-empty paragraph of listing text (short_description).
 func FirstParagraph(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
-	for _, p := range strings.Split(s, "\n\n") {
+	for p := range strings.SplitSeq(s, "\n\n") {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			if len(p) > 200 {
@@ -366,7 +381,6 @@ func BumpPatch(v string) string {
 	return bumpAt(v, 2)
 }
 
-// BumpMinor increments the middle numeric component and zeros the patch.
 func BumpMinor(v string) string {
 	return bumpAt(v, 1)
 }
@@ -391,9 +405,6 @@ func bumpAt(v string, idx int) string {
 	return strings.Join(parts, ".")
 }
 
-// DescriptorModKeys is the descriptor.mod key list, offered as completion
-// inside a .mod file. It describes the packaging format, not the script
-// language, which is why it lives here rather than with the game rules.
 var DescriptorModKeys = []string{
 	"name", "version", "tags", "supported_version", "path",
 	"remote_file_id", "picture", "dependencies",

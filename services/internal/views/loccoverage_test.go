@@ -3,12 +3,14 @@
 package views
 
 import (
+	"paradox-modding-tools/services/internal/lang/loc"
+
 	"fmt"
 	"strings"
 	"testing"
 
-	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
 func coverageIssue(rows []HealthRow, lang, kind, key string) bool {
@@ -21,9 +23,9 @@ func coverageIssue(rows []HealthRow, lang, kind, key string) bool {
 }
 
 func TestCoverageStrictAndSkips(t *testing.T) {
-	s := buildSession(t, "ck3", nil, &catalog.VanillaLoc{
-		Sites: map[string]catalog.LocEntry{"vanilla_key": {Value: "Hi"}},
-	}, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+	s := buildSession(t, "ck3", nil, &derived.VanillaLoc{
+		Sites: map[string]derived.LocEntry{"vanilla_key": {Value: "Hi"}},
+	}, []derived.ModInput{oneMod(t, "ck3", map[string]string{
 		"events/x.txt": `namespace = ns
 ns.1 = {
 	type = character_event
@@ -71,12 +73,12 @@ ns.1 = {
 }
 
 func TestCoverageConventionLocsInGenericFile(t *testing.T) {
-	s := buildSession(t, "ck3", &catalog.VanillaCache{
-		LocAffixes: map[string][]catalog.LocAffix{
+	s := buildSession(t, "ck3", &derived.VanillaCache{
+		LocAffixes: map[string][]loc.Affix{
 			"decisions":  {{Defs: 10, Of: 10}, {Suf: "_desc", Defs: 10, Of: 10}},
 			"game_rules": {{Pre: "game_rule_", Defs: 10, Of: 10}},
 		},
-	}, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+	}, nil, []derived.ModInput{oneMod(t, "ck3", map[string]string{
 		"common/game_rules/00.txt": `my_rule = {
 	default = opt_a
 	opt_a = { }
@@ -146,11 +148,11 @@ func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 }
 
 func TestCoverageIgnoresVanillaCacheRefs(t *testing.T) {
-	s := buildSession(t, "ck3", &catalog.VanillaCache{
-		LocRefs: []catalog.Ref{{
+	s := buildSession(t, "ck3", &derived.VanillaCache{
+		LocRefs: []derived.Ref{{
 			Key: "vanilla_title", Kind: "loc", Path: "game/events/x.txt", Line: 1,
 		}},
-	}, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+	}, nil, []derived.ModInput{oneMod(t, "ck3", map[string]string{
 		"events/x.txt": `namespace = ns
 ns.1 = { title = event_message_title }
 `,
@@ -175,7 +177,7 @@ ns.1 = { title = event_message_title }
 }
 
 func TestCoverageMissingNotSuppressedByDefaultLang(t *testing.T) {
-	s := session.NewWithLoc("ws", "ck3", "english", nil, nil, []catalog.ModInput{
+	s := session.NewWithLoc("ws", "ck3", "english", nil, nil, []derived.ModInput{
 		oneMod(t, "ck3", map[string]string{
 			"events/x.txt": `namespace = ns
 ns.1 = { type = character_event title = used_key }
@@ -194,7 +196,7 @@ ns.1 = { type = character_event title = used_key }
 }
 
 func TestCoverageSkipsDescriptorName(t *testing.T) {
-	s := buildSession(t, "ck3", nil, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+	s := buildSession(t, "ck3", nil, nil, []derived.ModInput{oneMod(t, "ck3", map[string]string{
 		"events/x.txt": `namespace = ns
 ns.1 = { type = character_event title = used_key }
 `,
@@ -214,7 +216,7 @@ ns.1 = { type = character_event title = used_key }
 }
 
 func TestCoverageSkipsMetadataName(t *testing.T) {
-	s := buildSession(t, "vic3", nil, nil, []catalog.ModInput{oneMod(t, "vic3", map[string]string{
+	s := buildSession(t, "vic3", nil, nil, []derived.ModInput{oneMod(t, "vic3", map[string]string{
 		"events/x.txt": `namespace = ns
 ns.1 = { type = character_event title = used_key }
 `,
@@ -237,19 +239,19 @@ ns.1 = { type = character_event title = used_key }
 // and `setting_<option>_desc`. Nothing owned those, so every option a mod added
 // produced two orphaned keys.
 func TestCoverageGameRuleOptionLocIsNotOrphaned(t *testing.T) {
-	s := buildSession(t, "ck3", &catalog.VanillaCache{
+	s := buildSession(t, "ck3", &derived.VanillaCache{
 		// What a scan derives from vanilla: rules are definitions, options are
 		// block members, and each has its own convention.
-		LocAffixes: map[string][]catalog.LocAffix{
+		LocAffixes: map[string][]loc.Affix{
 			"game_rules": {{Pre: "rule_", Defs: 81, Of: 81}},
 		},
-		LocMemberAffixes: map[string][]catalog.LocAffix{
+		LocMemberAffixes: map[string][]loc.Affix{
 			"game_rules": {
 				{Pre: "setting_", Defs: 297, Of: 304},
 				{Pre: "setting_", Suf: "_desc", Defs: 294, Of: 304},
 			},
 		},
-	}, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+	}, nil, []derived.ModInput{oneMod(t, "ck3", map[string]string{
 		"common/game_rules/00.txt": `secret_unbeliever_found_rule = {
 	default = suf_quieter
 	suf_vanilla = { flag = GG_can_change_rule }
@@ -293,11 +295,11 @@ func TestCoverageGameRuleOptionLocIsNotOrphaned(t *testing.T) {
 func TestCoverageCitedIdIsNotOrphaned(t *testing.T) {
 	// The field type is what makes the reference exist at all; without it this
 	// fixture harvests nothing and the test would pass for the wrong reason.
-	c := &catalog.VanillaCache{
+	c := &derived.VanillaCache{
 		FieldValueKinds: map[string]string{"modifier": "opinion_modifiers"},
 	}
-	catalog.PrepareCache(c)
-	s := buildSession(t, "ck3", c, nil, []catalog.ModInput{oneMod(t, "ck3",
+	derived.PrepareCache(c)
+	s := buildSession(t, "ck3", c, nil, []derived.ModInput{oneMod(t, "ck3",
 		map[string]string{
 			"common/opinion_modifiers/00_x.txt": "friend_after_subjugation = {\n\topinion = 20\n}\n",
 			"common/scripted_effects/e.txt": "do_it = {\n" +
@@ -322,15 +324,15 @@ func TestCoverageCitedIdIsNotOrphaned(t *testing.T) {
 // game rule category is declared by the rules that cite it, so
 // `game_rule_category_<id>` had no definition to own it and read as an orphan.
 func TestCoverageAffixOverCitedNameIsNotOrphaned(t *testing.T) {
-	c := &catalog.VanillaCache{
+	c := &derived.VanillaCache{
 		FieldValueKinds: map[string]string{"category": "game_rule_categories"},
 		// The convention as the install would have yielded it.
-		LocAffixes: map[string][]catalog.LocAffix{
+		LocAffixes: map[string][]loc.Affix{
 			"game_rule_categories": {{Pre: "game_rule_category_", Defs: 9, Of: 9}},
 		},
 	}
-	catalog.PrepareCache(c)
-	s := buildSession(t, "ck3", c, nil, []catalog.ModInput{oneMod(t, "ck3",
+	derived.PrepareCache(c)
+	s := buildSession(t, "ck3", c, nil, []derived.ModInput{oneMod(t, "ck3",
 		map[string]string{
 			"common/game_rules/00_r.txt": "my_rule = {\n\tcategory = my_category\n}\n",
 			"localization/english/a_l_english.yml": "" +
@@ -361,14 +363,14 @@ func TestCoverageCountsAreNotTheRowBudget(t *testing.T) {
 	const want = healthLocCap + 37
 	var body strings.Builder
 	body.WriteString("namespace = ns\n")
-	for i := 0; i < want; i++ {
+	for i := range want {
 		fmt.Fprintf(&body, "ns.%d = {\n\ttype = character_event\n\ttitle = miss_%d\n}\n",
 			i+1, i)
 	}
 	// A language only appears once the mod ships a file for it, and the one key
 	// in it is used so it does not become an orphan row spending the same budget.
 	body.WriteString("ns.9999 = {\n\ttype = character_event\n\tdesc = anchor\n}\n")
-	s := buildSession(t, "ck3", nil, nil, []catalog.ModInput{
+	s := buildSession(t, "ck3", nil, nil, []derived.ModInput{
 		oneMod(t, "ck3", map[string]string{
 			"events/x.txt": body.String(),
 			"localization/english/a_l_english.yml": "" +

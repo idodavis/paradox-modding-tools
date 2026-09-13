@@ -11,9 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bytedance/sonic"
-
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/lang/derived"
 )
 
 const (
@@ -141,49 +140,18 @@ func newStore(path string) *Store {
 }
 
 func loadConfig(path string) (Config, error) {
-	raw, err := os.ReadFile(path)
+	cfg, err := derived.LoadJSON[Config](path, configFormatVersion)
 	if err != nil {
+		if errors.Is(err, derived.ErrFormat) {
+			return Config{}, fmt.Errorf("%w: %w", err, errConfigReset)
+		}
 		return Config{}, err
 	}
-	n, err := sonic.Get(raw, "formatVersion")
-	got, nerr := n.Int64()
-	if err != nil || nerr != nil {
-		return Config{}, fmt.Errorf("missing formatVersion: %w", errConfigReset)
-	}
-	if int(got) != configFormatVersion {
-		return Config{}, fmt.Errorf("format %d != %d: %w", got, configFormatVersion, errConfigReset)
-	}
-	var dst Config
-	if err := sonic.Unmarshal(raw, &dst); err != nil {
-		return Config{}, err
-	}
-	return dst, nil
+	return *cfg, nil
 }
 
 func saveConfig(path string, cfg *Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	raw, err := sonic.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
-		return err
-	}
-	// Rename first, so the replace is atomic where the platform gives it.
-	// Remove only on failure: Windows returns ERROR_ACCESS_DENIED for a
-	// replace-rename over a destination anything holds open, where unlinking
-	// the name succeeds. Removing unconditionally was the old bug — it opened a
-	// window with no config.json at all.
-	if err := os.Rename(tmp, path); err == nil {
-		return nil
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return derived.SaveJSON(path, cfg)
 }
 
 // OpenStore loads config.json and drops the legacy SQLite files. Missing or a

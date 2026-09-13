@@ -18,3 +18,7 @@ services/internal/steamugc/binembed/bin/*
 # `go test -c` output: <pkg>.test.exe next to the package
 *.test
 *.test.exe
+
+# Wails writes bindings to a .bindings-tmp-<pid> dir and moves them into place;
+# an interrupted run leaves one behind. 13 of these were committed once.
+frontend/.bindings-tmp-*/

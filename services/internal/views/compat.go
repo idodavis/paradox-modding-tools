@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/parser/jomini"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
 const compatRefCap = 500
@@ -115,12 +115,12 @@ func contestRows(s *session.Session, order []string) []HealthRow {
 
 // overrideSites is one OverrideSite per origin+path+line. Same-line twins from
 // a DidOpen path-key miss are dropped; distinct lines stay (two real blocks).
-func overrideSites(s *session.Session, defs []catalog.Def) []OverrideSite {
+func overrideSites(s *session.Session, defs []derived.Def) []OverrideSite {
 	seen := make(map[string]bool, len(defs))
 	sites := make([]OverrideSite, 0, len(defs))
 	for _, d := range defs {
 		o := originID(d.Origin)
-		id := o + "\x00" + session.CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
+		id := o + "\x00" + derived.CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
 		if seen[id] {
 			continue
 		}
@@ -148,26 +148,17 @@ func fillSnippet(s *session.Session, site *OverrideSite) {
 	if len(lines) == 0 {
 		return
 	}
-	hit := site.Line
-	if hit < 0 {
-		hit = 0
-	}
+	hit := max(site.Line, 0)
 	if hit >= len(lines) {
 		hit = len(lines) - 1
 	}
-	start := hit - snippetPad
-	if start < 0 {
-		start = 0
-	}
-	end := hit + snippetPad + 1
-	if end > len(lines) {
-		end = len(lines)
-	}
+	start := max(hit-snippetPad, 0)
+	end := min(hit+snippetPad+1, len(lines))
 	site.SnippetFrom = start
 	site.Snippet = strings.Join(lines[start:end], "\n")
 }
 
-func skipCompatRef(r catalog.Ref) bool {
+func skipCompatRef(r derived.Ref) bool {
 	switch r.Kind {
 	case "loc", "loc-broad", "loc-convention", "namespace":
 		return true
@@ -191,17 +182,6 @@ func refRows(s *session.Session) (depends, dangling []HealthRow, nDepends, nDang
 		if !ok || from == "" || from == game.OriginVanilla {
 			continue
 		}
-		// Deliberately lazy, and snippet-free. Building a site is cheap; filling
-		// its snippet reads the file off disk and splits it into lines, and
-		// almost every reference in a workspace resolves fine — so doing it up
-		// front meant one disk read and a full line split per reference, for a
-		// row that was then thrown away. On a total conversion that is hundreds
-		// of thousands of reads and it dominated the whole of Workspace Health.
-		//
-		// The snippets are filled at the end, for the rows that survive sorting
-		// and the row budget. Dangling rows cannot be capped as they are
-		// collected — the cap applies to the sorted set — so filling here read
-		// files for up to 2,500 rows nobody would ever see.
 		siteOnce := func() OverrideSite {
 			return OverrideSite{
 				Origin: from, OriginName: s.OriginName(from),
@@ -210,17 +190,10 @@ func refRows(s *session.Session) (depends, dangling []HealthRow, nDepends, nDang
 		}
 		d := s.Resolve(r.Key)
 		if d == nil {
-			// T-3, and it belongs on this branch alone. A reference whose KIND
-			// came from a derived pass never accuses: 859 `body_part` rows came
-			// from FieldValueKinds and 4,033 fire rows from FireKeys, both
-			// strong passes reaching the most accusing surface in the product.
-			// The `depends` branch above still counts them, because saying two
-			// mods touch the same object is not an accusation — skipping them
-			// in skipCompatRef instead lost that, and the tests caught it.
 			if r.Derived {
 				continue
 			}
-			if s.DeclaresEngineName(r.Key) {
+			if s.Schema().HasName(r.Key) {
 				// The game's own API, not a missing object.
 				continue
 			}

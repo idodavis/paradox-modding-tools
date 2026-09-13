@@ -4,8 +4,8 @@
 package services
 
 import (
-	"paradox-modding-tools/services/internal/lsp"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/lsp"
+	"paradox-modding-tools/services/internal/lang/session"
 	"strings"
 )
 

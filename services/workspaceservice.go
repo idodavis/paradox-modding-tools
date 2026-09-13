@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/lang/derived"
 	"paradox-modding-tools/services/internal/modfile"
 
 	"github.com/google/uuid"
@@ -36,11 +36,8 @@ func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error
 		for _, inst := range c.Installs {
 			if inst.GameID == gameID {
 				cp := inst
-				ver := cp.Version
-				if ver == "" {
-					ver = "latest"
-				}
-				cp.ScannedAt = catalog.PeekCacheScannedAt(cp.ID, ver)
+				ver := derived.CacheVersion(cp.Version)
+				cp.ScannedAt = derived.PeekCacheScannedAt(cp.ID, ver)
 				out = append(out, cp)
 			}
 		}
@@ -60,9 +57,7 @@ func (w *WorkspaceService) AddGameInstall(gameID, name, path, version string) (*
 	if version == "" {
 		version = detected
 	}
-	if version == "" {
-		version = "latest"
-	}
+	version = derived.CacheVersion(version)
 	inst := GameInstall{
 		ID: uuid.New().String(), GameID: gameID, Name: name, Path: path,
 		Version: version, VersionDetected: detected, CreatedAt: nowUTC(),
@@ -173,11 +168,7 @@ func (w *WorkspaceService) DeleteWorkspace(id string) error {
 // UpdateWorkspace updates workspace fields.
 func (w *WorkspaceService) UpdateWorkspace(id, name, installID string) error {
 	var rebuild bool
-	err := w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, id)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
+	err := w.mutateWorkspace(id, func(ws *Workspace) error {
 		rebuild = ws.InstallID != installID
 		ws.Name, ws.InstallID = name, installID
 		return nil
@@ -226,11 +217,7 @@ func (w *WorkspaceService) AddWorkspaceMod(
 		ID: uuid.New().String(), Name: name, Path: path,
 		Thumbnail: thumbnail, IsBroken: statErr != nil, CreatedAt: nowUTC(),
 	}
-	err := w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, workspaceID)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
+	err := w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		mod.SortOrder = len(ws.Mods)
 		ws.Mods = append(ws.Mods, mod)
 		return nil
@@ -278,11 +265,7 @@ func (w *WorkspaceService) CreateMod(
 
 // RemoveWorkspaceMod detaches a mod from a workspace.
 func (w *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
-	err := w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, workspaceID)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
+	err := w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		kept := ws.Mods[:0]
 		found := false
 		for _, m := range ws.Mods {
@@ -306,11 +289,7 @@ func (w *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
 
 // ReorderWorkspaceMods writes SortOrder from the given id list.
 func (w *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []string) error {
-	err := w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, workspaceID)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
+	err := w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		if len(modIDs) != len(ws.Mods) {
 			return fmt.Errorf("mod id set incomplete")
 		}
@@ -341,11 +320,7 @@ func (w *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []str
 func (w *WorkspaceService) UpdateWorkspaceMod(
 	workspaceID, modID, name, color, thumbnail, descMdRel, descBbRel, workshopIgnore string,
 ) error {
-	return w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, workspaceID)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
+	return w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		for i := range ws.Mods {
 			if ws.Mods[i].ID != modID {
 				continue
@@ -398,18 +373,9 @@ func (w *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (stri
 		return "", err
 	}
 	text := string(raw)
-	err = w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, workspaceID)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
-		for i := range ws.Mods {
-			if ws.Mods[i].ID == modID {
-				ws.Mods[i].WorkshopIgnore = text
-				return nil
-			}
-		}
-		return fmt.Errorf("mod not found")
+	err = w.mutateMod(workspaceID, modID, func(m *WorkspaceMod) error {
+		m.WorkshopIgnore = text
+		return nil
 	})
 	if err != nil {
 		return "", err
@@ -417,11 +383,11 @@ func (w *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (stri
 	return text, nil
 }
 
-func (w *WorkspaceService) modRef(workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
+func findMod(store *Store, workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
 	var ws Workspace
 	var mod WorkspaceMod
 	var foundWS, foundMod bool
-	w.Store.Read(func(c *Config) {
+	store.Read(func(c *Config) {
 		w := findWorkspace(c, workspaceID)
 		if w == nil {
 			return
@@ -443,6 +409,10 @@ func (w *WorkspaceService) modRef(workspaceID, modID string) (*Workspace, *Works
 		return nil, nil, fmt.Errorf("mod not found")
 	}
 	return &ws, &mod, nil
+}
+
+func (w *WorkspaceService) modRef(workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
+	return findMod(w.Store, workspaceID, modID)
 }
 
 // listingRel stores a description path relative to the mod root. Empty keeps the default.
@@ -478,11 +448,7 @@ func listingRel(root, chosen string) (string, error) {
 
 // SaveIdeSession stores open editor paths for a workspace.
 func (w *WorkspaceService) SaveIdeSession(workspaceID string, files []string, active string) error {
-	return w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, workspaceID)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
+	return w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		ws.IdeOpenFiles = append([]string(nil), files...)
 		ws.IdeActiveFile = active
 		return nil
@@ -506,11 +472,7 @@ func (w *WorkspaceService) UpdateWorkspacePrefs(
 	if !legalDefaultTools[defaultTool] {
 		return fmt.Errorf("invalid default tool")
 	}
-	return w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, workspaceID)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
+	return w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		ws.ResetIdeOnOpen = resetIdeOnOpen
 		ws.DefaultTool = defaultTool
 		ws.GameColor = gameColor
@@ -650,7 +612,7 @@ func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err err
 	if len(inUse) > 0 {
 		return inUse, fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))
 	}
-	if err := catalog.DropVanillaFiles(id); err != nil {
+	if err := derived.DropVanillaFiles(id); err != nil {
 		return nil, err
 	}
 	return nil, w.Store.Mutate(func(c *Config) error {
@@ -667,9 +629,7 @@ func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err err
 
 // SetInstallVersion pins the cache-key version (user override; empty → latest).
 func (w *WorkspaceService) SetInstallVersion(id, version string) error {
-	if version == "" {
-		version = "latest"
-	}
+	version = derived.CacheVersion(version)
 	return w.Store.Mutate(func(c *Config) error {
 		inst := findInstall(c, id)
 		if inst == nil {
@@ -692,20 +652,10 @@ func (w *WorkspaceService) SetInstallVersion(id, version string) error {
 func (w *WorkspaceService) SetWorkspaceModCalendar(
 	workspaceID, modID, era string, epochOffset int,
 ) error {
-	err := w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, workspaceID)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
-		for i := range ws.Mods {
-			if ws.Mods[i].ID != modID {
-				continue
-			}
-			ws.Mods[i].Era = strings.TrimSpace(era)
-			ws.Mods[i].EpochOffset = epochOffset
-			return nil
-		}
-		return fmt.Errorf("mod not found")
+	err := w.mutateMod(workspaceID, modID, func(m *WorkspaceMod) error {
+		m.Era = strings.TrimSpace(era)
+		m.EpochOffset = epochOffset
+		return nil
 	})
 	if err != nil {
 		return err
@@ -726,6 +676,7 @@ func (w *WorkspaceService) SetWorkspaceModCalendar(
 // SetWorkspaceLocLang sets default loc language and loc-harvests if a session is live.
 func (w *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
 	var inst *GameInstall
+	// Not mutateWorkspace: this one needs the Config too, for findInstall.
 	err := w.Store.Mutate(func(c *Config) error {
 		ws := findWorkspace(c, id)
 		if ws == nil {
@@ -756,4 +707,25 @@ func (w *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
 	}
 	live.ReplaceVanillaLoc(vloc)
 	return nil
+}
+
+func (w *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Workspace) error) error {
+	return w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		return fn(ws)
+	})
+}
+
+func (w *WorkspaceService) mutateMod(workspaceID, modID string, fn func(*WorkspaceMod) error) error {
+	return w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+		for i := range ws.Mods {
+			if ws.Mods[i].ID == modID {
+				return fn(&ws.Mods[i])
+			}
+		}
+		return fmt.Errorf("mod not found")
+	})
 }

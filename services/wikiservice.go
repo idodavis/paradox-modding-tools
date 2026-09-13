@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/session"
 	"paradox-modding-tools/services/internal/wiki"
 )
 

@@ -5,9 +5,10 @@ package views
 import (
 	"testing"
 
-	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/parser/jomini"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/declared"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
 func TestHealthDanglingHygieneAndGroup(t *testing.T) {
@@ -15,26 +16,26 @@ func TestHealthDanglingHygieneAndGroup(t *testing.T) {
 	// CK3 faiths have no folder of their own; they exist only nested under a
 	// religion_type, and are harvested only because the game declares `faith`
 	// as a scope type. A cache with no Schema harvests no nested databases.
-	schema := &catalog.Schema{
-		Scopes: map[string]catalog.ScopeType{"faith": {}, "culture": {}},
-		Links: map[string]catalog.ScopeLink{
+	schema := &declared.Schema{
+		Scopes: map[string]declared.ScopeType{"faith": {}, "culture": {}},
+		Links: map[string]declared.ScopeLink{
 			"faith": {Out: "faith", Global: true, Data: true},
 		},
 		// Declared, because since T-3 a dangling row must rest on something the
 		// game states. CK3 declares trigger_event; a fixture that omits it is
 		// asserting the behaviour of an install with no script_docs.
-		Effects: map[string]catalog.EngineToken{
+		Effects: map[string]declared.EngineToken{
 			"trigger_event": {Target: "event"},
 		},
 	}
-	van := catalog.ExtractParsed("ck3",
+	van := derived.ExtractParsed("ck3",
 		"common/religion/religion_types/r.txt",
 		"common/religion/religion_types/r.txt",
 		"",
 		jomini.Parse("christianity_religion = { faiths = { catholic = { color = { 1 1 1 } exists = faith:catholic } } }\n"),
 		false,
-		&catalog.VanillaCache{Schema: schema})
-	s := twoModTreesWithCache(t, &catalog.VanillaCache{Defs: van.Defs, Schema: schema},
+		&derived.VanillaCache{Schema: schema})
+	s := twoModTreesWithCache(t, &derived.VanillaCache{Defs: van.Defs, Schema: schema},
 		map[string]string{
 			"common/culture/cultures/c.txt": "english = { }\n",
 			"common/script_values/v.txt":    "named_sv = { value = 1 }\n",
@@ -97,7 +98,7 @@ t.1 = {
 
 func TestHealthLocEveryLanguage(t *testing.T) {
 	t.Parallel()
-	s := session.NewWithLoc("ws", "ck3", "french", nil, nil, []catalog.ModInput{
+	s := session.NewWithLoc("ws", "ck3", "french", nil, nil, []derived.ModInput{
 		oneMod(t, "ck3", map[string]string{
 			"events/x.txt": `namespace = ns
 ns.1 = { type = character_event title = used_key }

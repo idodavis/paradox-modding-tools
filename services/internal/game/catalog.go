@@ -21,9 +21,10 @@ package game
 import (
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
-	"paradox-modding-tools/services/internal/parser/jomini"
+	"paradox-modding-tools/services/internal/lang/jomini"
 )
 
 // ---------------------------------------------------------------------------
@@ -114,13 +115,13 @@ var DocShapes = []DocShape{
 		Games:   []string{"ck3", "vic3", "eu5"},
 		Where:   "every doc file kind — ~61 CK3 files, 30 Vic3, 42 EU5",
 		Value: func(rhs string) (doc, typ string, ok bool) {
-			h := strings.IndexByte(rhs, '#')
-			if h < 0 {
+			_, after, ok := strings.Cut(rhs, "#")
+			if !ok {
 				return "", "", false
 			}
 			// A type may precede the hash: `x = <yes/no> # why`.
 			typ, _ = splitAngle(rhs)
-			return strings.TrimSpace(strings.TrimLeft(rhs[h+1:], "# ")), typ, true
+			return strings.TrimSpace(strings.TrimLeft(after, "# ")), typ, true
 		},
 	},
 	{
@@ -160,16 +161,6 @@ var (
 )
 
 // ParseDocFile reads one documentation file.
-//
-// GAME: all three. It handles every shape in DocShapes and asks which game it is
-// reading nowhere — that is what lets a game add a sixth shape without a branch.
-//
-// Returns two maps keyed by field name:
-//
-//	docs   the prose describing the field
-//	types  what the game says it HOLDS, verbatim: "yes/no", "script value",
-//	       "bool", "database key, optional". Raw on purpose;
-//	       catalog.ClassifyDeclaredType decides what the words mean, in one place.
 func ParseDocFile(text string) (docs, types map[string]string) {
 	out := map[string]string{}
 	types = map[string]string{}
@@ -186,7 +177,7 @@ func ParseDocFile(text string) (docs, types map[string]string) {
 	var pending []string // comment lines waiting for the key they describe
 	lastKey := ""        // the key a closing brace should attach prose to
 
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		body, hashed := jomini.PeelComment(raw)
 
 		if body == "" {
@@ -214,7 +205,7 @@ func ParseDocFile(text string) (docs, types map[string]string) {
 			// prose is the comment lines above — the positional shape.
 			doc, typ := valueShape(m[3])
 			putType(key, typ)
-			putFieldDoc(out, key, docProse(append(pending, doc)))
+			putFieldDoc(out, key, jomini.Prose(append(pending, doc)))
 			if jomini.IsLowerName(key) && !jomini.IsStop(key) {
 				lastKey = key
 			} else {
@@ -227,7 +218,7 @@ func ParseDocFile(text string) (docs, types map[string]string) {
 		if strings.HasPrefix(body, "}") {
 			// `key = { # desc }` puts the description below the brace.
 			if lastKey != "" {
-				appendFieldDoc(out, lastKey, docProse(pending))
+				appendFieldDoc(out, lastKey, jomini.Prose(pending))
 			}
 			pending = pending[:0]
 			continue
@@ -286,7 +277,7 @@ func splitAngle(rhs string) (typ, rest string) {
 // lines.
 func LeadingKindProse(text string) string {
 	var lines []string
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		body, hashed := jomini.PeelComment(raw)
 		if body == "" {
 			if len(lines) > 0 {
@@ -305,7 +296,7 @@ func LeadingKindProse(text string) string {
 			break
 		}
 	}
-	return docAuthorProse(lines)
+	return jomini.AuthorProse(lines)
 }
 
 // attrProse is the description after `- key: <type> …` or `= { … }: …`.
@@ -344,25 +335,7 @@ func appendFieldDoc(out map[string]string, key, extra string) {
 		out[key] = extra
 		return
 	}
-	out[key] = docProse([]string{out[key], extra})
-}
-
-// docProse joins comment fragments into one line, reflowing them.
-func docProse(parts []string) string {
-	return strings.TrimSpace(strings.Join(strings.Fields(strings.Join(parts, " ")), " "))
-}
-
-// docAuthorProse joins comment lines KEEPING the author's line breaks. The games
-// console-wrap their own dump prose, which docProse reflows; a comment a modder
-// typed is not wrapped and must not be.
-func docAuthorProse(parts []string) string {
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := strings.Join(strings.Fields(p), " "); t != "" {
-			out = append(out, t)
-		}
-	}
-	return strings.Join(out, "\n")
+	out[key] = jomini.Prose([]string{out[key], extra})
 }
 
 // ---------------------------------------------------------------------------
@@ -409,7 +382,7 @@ var DumpFormats = []DumpFormat{
 		Name:  "markdown headings",
 		Games: []string{"vic3", "eu5"},
 		Detect: func(text string) bool {
-			for _, line := range strings.Split(text, "\n") {
+			for line := range strings.SplitSeq(text, "\n") {
 				t := strings.TrimSpace(line)
 				if strings.HasPrefix(t, "## ") || strings.HasPrefix(t, "### ") {
 					return true
@@ -463,7 +436,7 @@ func SplitDumpBlocks(text string) []DocBlock {
 func splitMarkdownDump(text string) []DocBlock {
 	var out []DocBlock
 	var cur *DocBlock
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		h := strings.TrimSpace(raw)
 		if strings.HasPrefix(h, "## ") || strings.HasPrefix(h, "### ") {
 			if cur != nil {
@@ -486,9 +459,9 @@ func splitMarkdownDump(text string) []DocBlock {
 // `name - description` (effects, triggers, targets) or `name:` (on_actions).
 func splitClassicDump(text string) []DocBlock {
 	var out []DocBlock
-	for _, chunk := range strings.Split(text, "----") {
+	for chunk := range strings.SplitSeq(text, "----") {
 		var b DocBlock
-		for _, raw := range strings.Split(chunk, "\n") {
+		for raw := range strings.SplitSeq(chunk, "\n") {
 			t := strings.TrimSpace(raw)
 			if t == "" {
 				continue
@@ -501,8 +474,8 @@ func splitClassicDump(text string) []DocBlock {
 				if b.Name == "" {
 					continue
 				}
-				if i := strings.Index(t, " - "); i >= 0 {
-					b.Lines = append(b.Lines, t[i+3:])
+				if _, after, ok := strings.Cut(t, " - "); ok {
+					b.Lines = append(b.Lines, after)
 				}
 				continue
 			}
@@ -528,12 +501,7 @@ var ModifierAreaLabels = []string{"use areas", "mask"}
 // spelling. Case-insensitive; the dumps are not consistent about it.
 func IsModifierAreaLabel(header string) bool {
 	h := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(header), ":")))
-	for _, l := range ModifierAreaLabels {
-		if h == l {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ModifierAreaLabels, h)
 }
 
 // splitBareDump reads files whose headers are a bare "name:" at column 0
@@ -548,7 +516,7 @@ func splitBareDump(text string) []DocBlock {
 		}
 		cur = nil
 	}
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(raw), "---") {
 			flush()
 			continue

@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/declared"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
 // twoModTrees builds the two-mod workspace with a minimal declared type system.
@@ -19,15 +20,15 @@ import (
 // know `trigger_event` is real. CK3 declares it, so the fixture says so.
 func twoModTrees(t *testing.T, aFiles, bFiles map[string]string) *session.Session {
 	t.Helper()
-	return twoModTreesWithCache(t, &catalog.VanillaCache{
-		Schema: &catalog.Schema{Effects: map[string]catalog.EngineToken{
+	return twoModTreesWithCache(t, &derived.VanillaCache{
+		Schema: &declared.Schema{Effects: map[string]declared.EngineToken{
 			"trigger_event": {Target: "event"},
 		}},
 	}, aFiles, bFiles)
 }
 
 func twoModTreesWithCache(
-	t *testing.T, cache *catalog.VanillaCache, aFiles, bFiles map[string]string,
+	t *testing.T, cache *derived.VanillaCache, aFiles, bFiles map[string]string,
 ) *session.Session {
 	t.Helper()
 	a, b := t.TempDir(), t.TempDir()
@@ -39,7 +40,7 @@ func twoModTreesWithCache(
 	for rel, body := range bFiles {
 		write(t, b, rel, body)
 	}
-	return session.NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
+	return session.NewWithLoc("ws", "ck3", "english", cache, nil, []derived.ModInput{
 		{Origin: "modA", Root: a, Order: 0, Name: "A"},
 		{Origin: "modB", Root: b, Order: 1, Name: "B"},
 	})
@@ -104,7 +105,7 @@ func TestCompatibilityCountsAreNotTheRowBudget(t *testing.T) {
 	const want = compatRefCap + 37
 	var body strings.Builder
 	body.WriteString("namespace = t\nt.1 = {\n\ttype = character_event\n\timmediate = {\n")
-	for i := 0; i < want; i++ {
+	for i := range want {
 		fmt.Fprintf(&body, "\t\ttrigger_event = t.%d\n", 9000+i)
 	}
 	body.WriteString("\t}\n}\n")
@@ -137,7 +138,7 @@ func twoMods(t *testing.T, game, aBody, bBody string) *session.Session {
 	write(t, b, desc, body)
 	write(t, a, "common/traits/a.txt", aBody)
 	write(t, b, "common/traits/b.txt", bBody)
-	return session.NewWithLoc("ws", game, "english", nil, nil, []catalog.ModInput{
+	return session.NewWithLoc("ws", game, "english", nil, nil, []derived.ModInput{
 		{Origin: "modA", Root: a, Order: 0},
 		{Origin: "modB", Root: b, Order: 1},
 	})
@@ -191,7 +192,7 @@ func TestOverrideSitesDedupe(t *testing.T) {
 		"brave = { category = personality }\n",
 		"brave = { category = personality }\n")
 	path := s.ModDefsOf("brave")[0].Path
-	twins := []catalog.Def{
+	twins := []derived.Def{
 		{Origin: "modA", Path: path, Line: 1},
 		{Origin: "modA", Path: path, Line: 1},
 		{Origin: "modA", Path: path, Line: 9},

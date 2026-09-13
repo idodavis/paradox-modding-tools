@@ -1,6 +1,7 @@
 package release
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -65,10 +66,5 @@ func TestUnknownBBCodeLiteral(t *testing.T) {
 }
 
 func hasNote(notes []string, want string) bool {
-	for _, n := range notes {
-		if n == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(notes, want)
 }

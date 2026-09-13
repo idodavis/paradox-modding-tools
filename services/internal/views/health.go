@@ -2,7 +2,7 @@
 
 package views
 
-import "paradox-modding-tools/services/internal/session"
+import "paradox-modding-tools/services/internal/lang/session"
 
 // HealthLang is per-language loc KPI counts (every language, not just default).
 type HealthLang struct {

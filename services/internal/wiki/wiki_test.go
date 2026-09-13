@@ -119,8 +119,8 @@ func TestNeededHotfixVsMinor(t *testing.T) {
 func TestNeededMissingPatches(t *testing.T) {
 	useTempCache(t)
 	if err := saveGuides(&Sidecar{
-		header: header{GameID: "ck3", FetchedVersion: "1.19.6", FetchedMajor: 1, FetchedMinor: 19},
-		Pages:  []Page{{Title: "Event modding", HTML: "<p>x</p>", Revid: 1}},
+		GameID: "ck3", FetchedVersion: "1.19.6", FetchedMajor: 1, FetchedMinor: 19,
+		Pages: []Page{{Title: "Event modding", HTML: "<p>x</p>", Revid: 1}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestExtractModding(t *testing.T) {
 func TestLookupEventFile(t *testing.T) {
 	useTempCache(t)
 	if err := saveGuides(&Sidecar{
-		header: header{GameID: "ck3", FetchedMajor: 1, FetchedMinor: 16},
+		GameID: "ck3", FetchedMajor: 1, FetchedMinor: 16,
 		Pages: []Page{
 			{Title: "Event modding", HTML: `<h2 id="Effects">Effects</h2><p>events</p>`,
 				Snippets: []string{"namespace = x"}},
@@ -361,8 +361,8 @@ func TestLookupRouting(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			useTempCache(t)
 			if err := saveGuides(&Sidecar{
-				header: header{GameID: c.game, FetchedMajor: 1, FetchedMinor: 1},
-				Pages:  c.pages,
+				GameID: c.game, FetchedMajor: 1, FetchedMinor: 1,
+				Pages: c.pages,
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -398,7 +398,7 @@ func TestSanitizeDropsDumpTables(t *testing.T) {
 	t.Parallel()
 	var dump strings.Builder
 	dump.WriteString(`<div class="mw-parser-output"><p>intro</p><table>`)
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		fmt.Fprintf(&dump, "<tr><td>dump%d</td></tr>", i)
 	}
 	dump.WriteString(`</table><table><tr><td>keep0</td></tr><tr><td>keep1</td></tr>` +
@@ -415,7 +415,7 @@ func TestSanitizeDropsDumpTables(t *testing.T) {
 
 func TestFormatMismatchEmpty(t *testing.T) {
 	useTempCache(t)
-	path, err := guidesPath("ck3")
+	path, err := sidecarPath(kindGuides, "ck3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -778,7 +778,7 @@ func TestReshapeMovesAndDrops(t *testing.T) {
 func TestServeTimeReshape(t *testing.T) {
 	useTempCache(t)
 	if err := saveGuides(&Sidecar{
-		header: header{GameID: "ck3", FetchedMajor: 1, FetchedMinor: 16},
+		GameID: "ck3", FetchedMajor: 1, FetchedMinor: 16,
 		Pages: []Page{{
 			Title: "Event modding",
 			HTML: `<h2>Contents</h2><ol><li>1 Location</li></ol>

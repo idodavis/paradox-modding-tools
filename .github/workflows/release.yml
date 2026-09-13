@@ -1,9 +1,9 @@
-# Zip Windows/Linux builds on non-docs master pushes. Tag only after every matrix cell succeeds.
+# Zip Windows/Linux builds on non-docs main pushes. Tag only after every matrix cell succeeds.
 name: Build and Release
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths-ignore:
       - "docs/**"
       - ".github/workflows/pages.yml"
@@ -18,7 +18,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-master
+  group: release-main
   cancel-in-progress: false
 
 jobs:
@@ -97,7 +97,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.1"
 
       - uses: actions/setup-node@v4
         with:

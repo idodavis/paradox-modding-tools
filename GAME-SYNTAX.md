@@ -493,12 +493,12 @@ Real-install tests, skipped when the env var is absent:
 
 | Fact | Test |
 |---|---|
-| Schema counts, prefix binding coverage | `catalog/bind_test.go`, `schema_test.go` |
+| Schema counts, prefix binding coverage | `derived/bind_test.go`, `declared/schema_test.go` |
 | Keyword pair is not a wrapper | `TestKeywordDeclaredBlockIsNotAWrapper` |
 | Named-body folder is not a wrapper | `TestNamedBodyFolderIsNeverAWrapper` |
 | Nested child must be declared | `TestDeriveNestedShapesNeedsDeclaredChild` |
-| Cache size ceiling | `catalog/scansize_test.go` |
-| Scope walk, zero false positives on vanilla | `session/scope_test.go` |
+| Cache size ceiling | `derived/bench_scan_test.go` |
+| Scope walk, zero false positives on vanilla | `lsp/cursor_test.go` |
 
 **Rule for adding to this file:** record the measurement and the reproduction,
 not the conclusion alone. Every wrong turn in this engine came from reasoning
@@ -1026,7 +1026,7 @@ Nowhere except `common/on_action/`. `ScopeMisuses` bailed on an empty root, and
 only on_actions declare one — so events, decisions, scripted effects, traits and
 modifier bodies were never checked, on any of the three games. `ScopeAt` had been
 fixed for exactly this and says so in a comment twenty lines away; `ScopeMisuses`
-had not. Every test in `lsp/scope_test.go` built a `common/on_action/` fixture,
+had not. Every test in `lsp/cursor_test.go` built a `common/on_action/` fixture,
 so the suite passed while the check was inert everywhere a modder writes script.
 **A suite that only exercises the case that works cannot report the feature dead.**
 

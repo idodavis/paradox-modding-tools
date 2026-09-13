@@ -156,7 +156,7 @@ tasks:
       - go test -tags probe ./internal/views/ -run TestVanillaLocResidue -v -timeout 3600s
       # T-0's band: maxOptionKeysPerParent is a number, so it is checked against
       # the installs rather than trusted. Build-tagged out of every other tier.
-      - go test -tags probe ./internal/catalog/ -run 'TestOption|TestBindByName|TestDefIndex|TestModelFingerprint' -v -timeout 1800s
+      - go test -tags probe ./internal/lang/derived/ -run 'TestOption|TestBindByName|TestDefIndex|TestModelFingerprint' -v -timeout 1800s
 
   test:sweep:
     summary: >

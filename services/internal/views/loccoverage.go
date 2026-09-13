@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
 // locSourceLang is the game inherit / authoring language for untranslated.
@@ -33,7 +33,7 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 	// copies of the whole loc corpus, which on a total conversion is most of the
 	// memory this function uses.
 	byLang := map[string]map[string]locSite{}
-	s.EachLoc(func(lang, k string, v catalog.LocEntry) {
+	s.EachLoc(func(lang, k string, v derived.LocEntry) {
 		entries := byLang[lang]
 		if entries == nil {
 			entries = map[string]locSite{}
@@ -136,8 +136,11 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 	}
 
 	outLangs := make([]HealthLang, 0, len(langs))
+	// Once for every language, not once per language: the base key set does not
+	// depend on the language, and this ran on every drag of the load-order
+	// preview (LOC.4).
+	inherited := s.InheritedLocKeys(langs)
 	for _, lang := range langs {
-		inheritedKeys := inheritKeys(s, lang)
 		entries := byLang[lang]
 		outLangs = append(outLangs, HealthLang{Language: lang, Defined: len(entries)})
 		// Per language deliberately: a translator wants to see which keys they
@@ -146,7 +149,7 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 		// already provides — that is inheritedKeys' job, and it was failing for
 		// every non-default language.
 		for key, sites := range referenced {
-			if _, ok := entries[key]; ok || inheritedKeys[key] {
+			if _, ok := entries[key]; ok || inherited.Has(lang, key) {
 				continue
 			}
 			for _, site := range sites {
@@ -154,7 +157,7 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 			}
 		}
 		for key, site := range entries {
-			if used[key] || inheritedKeys[key] {
+			if used[key] || inherited.Has(lang, key) {
 				continue
 			}
 			// A key nothing cites can still be consumed by name: the engine
@@ -222,14 +225,6 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 	}
 	slices.SortFunc(rows, healthRowLess)
 	return outLangs, rows
-}
-
-func inheritKeys(s *session.Session, lang string) map[string]bool {
-	out := map[string]bool{}
-	for _, k := range s.InheritedLocKeys(lang) {
-		out[k] = true
-	}
-	return out
 }
 
 func skipLocIssueFile(s *session.Session, path string) bool {

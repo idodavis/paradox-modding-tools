@@ -79,65 +79,58 @@ func fetchPages(
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		inf := info[normTitle(m.Title)]
-		revid := inf.LastRevid
-		if p, ok := old[normTitle(m.Title)]; ok && p.Revid != 0 && p.Revid == revid && p.HTML != "" {
-			out = append(out, p)
-			done++
-			if progress != nil {
-				progress(done, total, kind)
-			}
-			continue
-		}
-		raw, parsedRevid, sections, err := parsePage(ctx, api, m.Title)
-		keepOld := func() {
-			if p, ok := old[normTitle(m.Title)]; ok {
+		// The progress epilogue runs once per item however the body exits.
+		func() {
+			defer func() {
+				done++
+				if progress != nil {
+					progress(done, total, kind)
+				}
+			}()
+			inf := info[normTitle(m.Title)]
+			revid := inf.LastRevid
+			if p, ok := old[normTitle(m.Title)]; ok && p.Revid != 0 && p.Revid == revid && p.HTML != "" {
 				out = append(out, p)
+				return
 			}
-		}
-		if err != nil {
-			keepOld()
-			done++
-			if progress != nil {
-				progress(done, total, kind)
+			raw, parsedRevid, sections, err := parsePage(ctx, api, m.Title)
+			keepOld := func() {
+				if p, ok := old[normTitle(m.Title)]; ok {
+					out = append(out, p)
+				}
 			}
-			continue
-		}
-		if parsedRevid != 0 {
-			revid = parsedRevid
-		}
-		clean, snippets := sanitize(raw, wikiBase)
-		if clean == "" || len(clean) > htmlCap {
-			keepOld()
-			done++
-			if progress != nil {
-				progress(done, total, kind)
+			if err != nil {
+				keepOld()
+				return
 			}
-			continue
-		}
-		pageID := m.PageID
-		if inf.PageID != 0 {
-			pageID = inf.PageID
-		}
-		p := Page{
-			PageID:    pageID,
-			Title:     m.Title,
-			URL:       pageURL(gameID, m.Title),
-			Revid:     revid,
-			FetchedAt: nowUTC(),
-			License:   License,
-			Sections:  sections,
-			HTML:      clean,
-			Snippets:  snippets,
-		}
-		if kind == "patches" {
-			p.ModdingHTML = extractModding(clean)
-		}
-		out = append(out, p)
-		done++
-		if progress != nil {
-			progress(done, total, kind)
-		}
+			if parsedRevid != 0 {
+				revid = parsedRevid
+			}
+			clean, snippets := sanitize(raw, wikiBase)
+			if clean == "" || len(clean) > htmlCap {
+				keepOld()
+				return
+			}
+			pageID := m.PageID
+			if inf.PageID != 0 {
+				pageID = inf.PageID
+			}
+			p := Page{
+				PageID:    pageID,
+				Title:     m.Title,
+				URL:       pageURL(gameID, m.Title),
+				Revid:     revid,
+				FetchedAt: nowUTC(),
+				License:   License,
+				Sections:  sections,
+				HTML:      clean,
+				Snippets:  snippets,
+			}
+			if kind == "patches" {
+				p.ModdingHTML = extractModding(clean)
+			}
+			out = append(out, p)
+		}()
 	}
 	return out, nil
 }

@@ -4,7 +4,7 @@
 package services
 
 import (
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/session"
 	"paradox-modding-tools/services/internal/views"
 )
 

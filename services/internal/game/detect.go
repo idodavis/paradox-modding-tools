@@ -91,7 +91,7 @@ func userDataCandidates(gameID, installPath string) []string {
 		nativeDocs = filepath.Join(home, "Documents", "Paradox Interactive", name)
 	}
 	switch runtime.GOOS {
-	case "windows", "darwin":
+	case "windows":
 		add(nativeDocs)
 	default:
 		xdg := os.Getenv("XDG_DATA_HOME")
@@ -198,8 +198,15 @@ func FindInstalls(gameID string) []DetectedInstall {
 func steamLibraries() []string {
 	seen := map[string]bool{}
 	var libs []string
+	// Resolved before dedup: ~/.steam/steam is usually a link to ~/.local/share/Steam.
 	add := func(p string) {
-		if p == "" || seen[p] {
+		if p == "" {
+			return
+		}
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			p = r
+		}
+		if seen[p] {
 			return
 		}
 		seen[p] = true
@@ -230,9 +237,6 @@ func defaultSteamRoots() []string {
 			}
 		}
 		return roots
-	case "darwin":
-		home, _ := os.UserHomeDir()
-		return []string{filepath.Join(home, "Library", "Application Support", "Steam")}
 	default:
 		home, _ := os.UserHomeDir()
 		return []string{

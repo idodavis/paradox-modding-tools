@@ -1,5 +1,5 @@
 // sessionservice.go is the Wails RPC shell for the session pool, install scan,
-// and language health. Feature logic stays in session / catalog.
+// and language health. Feature logic stays in session / derived.
 
 package services
 
@@ -15,9 +15,9 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/session"
 	"paradox-modding-tools/services/internal/wiki"
 )
 
@@ -55,6 +55,8 @@ type LanguageHealth struct {
 	ScriptDocsEffects int    `json:"scriptDocsEffects"`
 	IndexReady        bool   `json:"indexReady"`
 	DefCount          int    `json:"defCount"`
+	// WatchError is set when the watcher lost part of a mod root; external edits may go unindexed.
+	WatchError string `json:"watchError"`
 
 	// Schema is the declared type system's state. Without it PMT still resolves
 	// definitions, references, conflicts and loc coverage from the install walk;
@@ -94,6 +96,7 @@ func recoverErr(err *error) {
 	}
 }
 
+// withSession runs fn under the session's read lock, once per request; buffer writes use withSessionDo and lock themselves.
 func withSession[T any](s *SessionService, workspaceID string, fn func(*session.Session) T) (v T, err error) {
 	defer recoverErr(&err)
 	sess, e := s.sess(workspaceID)
@@ -101,15 +104,19 @@ func withSession[T any](s *SessionService, workspaceID string, fn func(*session.
 		err = e
 		return
 	}
+	sess.RLock()
+	defer sess.RUnlock()
 	return fn(sess), nil
 }
 
-func withSessionDo(s *SessionService, workspaceID string, fn func(*session.Session)) error {
-	_, err := withSession(s, workspaceID, func(sess *session.Session) struct{} {
-		fn(sess)
-		return struct{}{}
-	})
-	return err
+func withSessionDo(s *SessionService, workspaceID string, fn func(*session.Session)) (err error) {
+	defer recoverErr(&err)
+	sess, e := s.sess(workspaceID)
+	if e != nil {
+		return e
+	}
+	fn(sess)
+	return nil
 }
 
 func (s *SessionService) pool() *session.Pool {
@@ -148,17 +155,14 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 	if lang == "" {
 		lang = "english"
 	}
-	var cache *catalog.VanillaCache
-	var vloc *catalog.VanillaLoc
+	var cache *derived.VanillaCache
+	var vloc *derived.VanillaLoc
 	if inst != nil {
-		ver := inst.Version
-		if ver == "" {
-			ver = "latest"
-		}
+		ver := derived.CacheVersion(inst.Version)
 		// Stale formatVersion discards the file (no migration). Do not fail
 		// the session — that leaves the IDE unmounted until a UI reload.
-		cache, _ = catalog.LoadCache(inst.ID, ver)
-		// The harvesting wrapper, not catalog.LoadVanillaLoc: Rescan writes only
+		cache, _ = derived.LoadCache(inst.ID, ver)
+		// The harvesting wrapper, not derived.LoadVanillaLoc: Rescan writes only
 		// the english sidecar (scan.go passes LocLang "english"), and every other
 		// language is harvested on first use. Loading without that fallback left
 		// a workspace whose default language is not english with vloc == nil —
@@ -167,16 +171,16 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 		vloc, _ = loadVanillaLoc(
 			context.Background(), inst.ID, inst.GameID, inst.Path, ver, lang)
 	}
-	inputs := make([]catalog.ModInput, 0, len(ws.Mods))
+	inputs := make([]derived.ModInput, 0, len(ws.Mods))
 	mods := append([]WorkspaceMod(nil), ws.Mods...)
 	sortWorkspaceMods(mods)
 	for i, m := range mods {
 		if m.IsBroken {
 			continue
 		}
-		inputs = append(inputs, catalog.ModInput{
+		inputs = append(inputs, derived.ModInput{
 			Origin: m.ID, Root: m.Path, Order: i, Name: m.Name,
-			Calendar: catalog.ModCalendar{Era: m.Era, EpochOffset: m.EpochOffset},
+			Calendar: derived.ModCalendar{Era: m.Era, EpochOffset: m.EpochOffset},
 		})
 	}
 	sess := session.NewWithLoc(id, ws.GameID, lang, cache, vloc, inputs)
@@ -277,7 +281,7 @@ func (s *SessionService) drainAutoScans() {
 		// Errors are deliberately swallowed: this was not asked for, so a
 		// failure must not surface as one. The health strip already reports the
 		// cache as stale, and the manual button remains.
-		_, _ = s.RebuildInstallSemantics(id)
+		_ = s.RebuildInstallSemantics(id)
 		id = s.nextAutoScan()
 	}
 }
@@ -292,7 +296,7 @@ func (s *SessionService) cancel() {
 }
 
 // RebuildInstallSemantics scans an install into VanillaCache + loc sidecar.
-func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.VanillaCache, err error) {
+func (s *SessionService) RebuildInstallSemantics(installID string) (err error) {
 	defer recoverErr(&err)
 	var inst GameInstall
 	var ok bool
@@ -302,12 +306,9 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 		}
 	})
 	if !ok {
-		return nil, fmt.Errorf("install not found")
+		return fmt.Errorf("install not found")
 	}
-	ver := inst.Version
-	if ver == "" {
-		ver = "latest"
-	}
+	ver := derived.CacheVersion(inst.Version)
 	s.cancel()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
@@ -315,7 +316,7 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 	s.mu.Unlock()
 	defer cancel()
 
-	c, vloc, err := catalog.Scan(ctx, catalog.ScanRequest{
+	c, vloc, err := derived.Scan(ctx, derived.ScanRequest{
 		InstallID: inst.ID, GameID: inst.GameID, InstallPath: inst.Path,
 		Version: ver, LocLang: "english",
 		OnProgress: func(pct int, msg string) {
@@ -330,10 +331,10 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 		},
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := catalog.SaveCache(c); err != nil {
-		return nil, err
+	if err := derived.SaveCache(c); err != nil {
+		return err
 	}
 	// Every sidecar for this install goes, not just the one being rewritten.
 	// Scan only ever harvests english; the other languages keep the previous
@@ -341,9 +342,9 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 	// accepts them, so a rescan used to leave them silently pre-patch. They come
 	// back on first use through loadVanillaLoc — which is why this is safe only
 	// with that harvesting fallback in place.
-	_ = catalog.DropVanillaLocFiles(inst.ID)
-	if err := catalog.SaveVanillaLoc(inst.ID, ver, "english", vloc); err != nil {
-		return nil, err
+	_ = derived.DropVanillaLocFiles(inst.ID)
+	if err := derived.SaveVanillaLoc(inst.ID, ver, "english", vloc); err != nil {
+		return err
 	}
 	detected := game.ReadGameVersion(inst.Path)
 	_ = s.Store.Mutate(func(cfg *Config) error {
@@ -401,7 +402,9 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 			continue
 		}
 		live.ReplaceCache(c)
+		live.RLock()
 		lang := live.DefaultLang()
+		live.RUnlock()
 		sloc := vloc
 		if lang != "english" {
 			sloc, _ = loadVanillaLoc(ctx, inst.ID, inst.GameID, inst.Path, ver, lang)
@@ -409,7 +412,7 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 		live.ReplaceVanillaLoc(sloc)
 	}
 	emitLang("lang:cache-updated", map[string]any{"installId": installID})
-	return c, nil
+	return nil
 }
 
 // GetLanguageHealth returns install/cache/session status for the workspace.
@@ -450,8 +453,11 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 	live := s.pool().Get(workspaceID)
 	if live != nil {
 		h.IndexReady = true
+		live.RLock()
 		h.DefCount = live.DefCount()
 		_, scanned, ver, _ := live.CacheInfo()
+		h.WatchError = live.WatchError()
+		live.RUnlock()
 		if scanned != "" {
 			h.ScannedAt = scanned
 		}
@@ -462,13 +468,10 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 	if inst == nil {
 		return h, nil
 	}
-	ver := h.GameVersion
-	if ver == "" {
-		ver = "latest"
-	}
+	ver := derived.CacheVersion(h.GameVersion)
 	// The type system is read straight from script_docs rather than out of the
 	// model: a couple of megabytes instead of ninety, and health is polled.
-	st := catalog.ReadSchemaStatus(inst.GameID, inst.ID, inst.Path, ver)
+	st := derived.ReadSchemaStatus(inst.GameID, inst.ID, inst.Path, ver)
 	h.Schema = ScriptDocsHealth{
 		Source: string(st.Source), Effects: st.Effects, Triggers: st.Triggers,
 		ScopeTypes: st.ScopeTypes, Prefixes: st.Prefixes, OnActions: st.OnActions,
@@ -480,7 +483,7 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 	h.ScriptDocsEffects = st.Effects
 
 	if live == nil || h.ScannedAt == "" {
-		if c, e := catalog.LoadCache(inst.ID, ver); e == nil && c != nil {
+		if c, e := derived.LoadCache(inst.ID, ver); e == nil && c != nil {
 			if h.ScannedAt == "" {
 				h.ScannedAt = c.ScannedAt
 			}
@@ -532,21 +535,19 @@ func predatesInstall(stamp, installPath string) bool {
 // loadVanillaLoc returns the loc sidecar, harvesting and saving if it is missing.
 func loadVanillaLoc(
 	ctx context.Context, installID, gameID, installPath, version, lang string,
-) (*catalog.VanillaLoc, error) {
-	if version == "" {
-		version = "latest"
-	}
+) (*derived.VanillaLoc, error) {
+	version = derived.CacheVersion(version)
 	if lang == "" {
 		lang = "english"
 	}
-	if v, e := catalog.LoadVanillaLoc(installID, version, lang); e == nil {
+	if v, e := derived.LoadVanillaLoc(installID, version, lang); e == nil {
 		return v, nil
 	}
-	v, err := catalog.HarvestLoc(ctx, gameID, installPath, lang)
+	v, err := derived.HarvestLoc(ctx, gameID, installPath, lang)
 	if err != nil {
 		return nil, err
 	}
-	_ = catalog.SaveVanillaLoc(installID, version, lang, v)
+	_ = derived.SaveVanillaLoc(installID, version, lang, v)
 	return v, nil
 }
 

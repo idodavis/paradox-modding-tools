@@ -17,7 +17,7 @@ import (
 	"slices"
 	"strings"
 
-	"paradox-modding-tools/services/internal/parser/jomini"
+	"paradox-modding-tools/services/internal/lang/jomini"
 )
 
 // OriginVanilla is the session/IDE origin id for game files (not a cache filename).

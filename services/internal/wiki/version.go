@@ -44,17 +44,14 @@ func stale(f *Sidecar, maj, min int) bool {
 // Missing either sidecar → true. Unparseable version → false when both exist.
 // Hotfix (same major.minor) → false. Newer major/minor on either sidecar → true.
 func Needed(gameID, scanVersion string) bool {
-	if !hasGuides(gameID) || !hasPatches(gameID) {
+	guides, gerr := LoadGuides(gameID)
+	patches, perr := LoadPatches(gameID)
+	if gerr != nil || perr != nil {
 		return true
 	}
 	maj, min, ok := ParseMajorMinor(scanVersion)
 	if !ok {
 		return false
-	}
-	guides, gerr := LoadGuides(gameID)
-	patches, perr := LoadPatches(gameID)
-	if gerr != nil || perr != nil {
-		return true
 	}
 	return stale(guides, maj, min) || stale(patches, maj, min)
 }

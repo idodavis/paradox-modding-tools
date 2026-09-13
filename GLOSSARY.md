@@ -169,8 +169,8 @@ one is and why it is that number is measured in
 | `VanillaCache`, `Scan`, `BuildIndex`, `ClassifyRel` | `services/internal/catalog` |
 | `ReadSchema`, `bindKinds`, dump archive | `catalog/schema.go`, `schemaarchive.go` |
 | The four `Derive*` passes | `catalog/derive.go` |
-| `FieldDoc`, the whole session query API | `session/query.go` (read-only; `session.go` is the mutable half) |
-| LSP tests | beside the request: `hover_test.go`, `definition_test.go`, `complete_test.go`, `diagnostics_test.go`, `scope_test.go`; `lsp_test.go` is fixtures only |
+| `FieldDoc` and every other lookup | `derived.Model`, embedded in `session.Session`; `session.go` adds only buffers and the writers |
+| LSP tests | beside the request: `inspect_test.go`, `definition_test.go`, `complete_test.go`, `diagnostics_test.go`, `cursor_test.go`; `lsp_test.go` is fixtures only |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
 | Health `scriptDocsEffects` | `SessionService.GetLanguageHealth` |
 | Guide UI | `GuidePane.vue` + monaco aux bar (`pmt.guide`) |

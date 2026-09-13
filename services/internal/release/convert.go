@@ -280,7 +280,7 @@ func BBCodeToMarkdown(src string) Result {
 		case "img":
 			b.WriteString("![](" + strings.TrimSpace(body) + ")")
 		case "quote":
-			for _, line := range strings.Split(strings.TrimSpace(BBCodeToMarkdown(body).Text), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(BBCodeToMarkdown(body).Text), "\n") {
 				b.WriteString("> " + line + "\n")
 			}
 		case "code":

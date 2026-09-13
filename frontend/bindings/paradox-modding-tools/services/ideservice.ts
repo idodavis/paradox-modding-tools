@@ -12,7 +12,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as lsp$0 from "./internal/lsp/models.js";
+import * as lsp$0 from "./internal/lang/lsp/models.js";
 
 /**
  * CodeActions returns quick-fixes for the file.

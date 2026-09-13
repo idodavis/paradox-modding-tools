@@ -136,8 +136,8 @@ func folderGlobs(f TextSearchFolder) []string {
 func splitGlobs(all []string) globSet {
 	var gs globSet
 	for _, g := range all {
-		if strings.HasPrefix(g, "!") {
-			gs.excludes = append(gs.excludes, strings.TrimPrefix(g, "!"))
+		if after, ok := strings.CutPrefix(g, "!"); ok {
+			gs.excludes = append(gs.excludes, after)
 			continue
 		}
 		gs.includes = append(gs.includes, g)
@@ -156,8 +156,8 @@ func pathMatchPattern(pattern, rel string) bool {
 	if dirPat == "" {
 		return true
 	}
-	if strings.HasPrefix(dirPat, "**/") {
-		suffix := strings.TrimPrefix(dirPat, "**/")
+	if after, ok := strings.CutPrefix(dirPat, "**/"); ok {
+		suffix := after
 		if suffix == "" {
 			return true
 		}
@@ -225,10 +225,7 @@ func skipSearchDir(name string, isDir bool) bool {
 }
 
 func fileHasNUL(data []byte) bool {
-	n := len(data)
-	if n > searchNulProbe {
-		n = searchNulProbe
-	}
+	n := min(len(data), searchNulProbe)
 	return bytes.Contains(data[:n], []byte{0})
 }
 

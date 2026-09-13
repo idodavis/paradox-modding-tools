@@ -68,6 +68,7 @@ const schemaChip = computed(() => {
     </span>
     <span>{{ health.scriptDocsEffects }} effects</span>
     <span v-if="health.indexReady">{{ health.defCount }} defs</span>
+    <span v-if="health.watchError" class="text-warning" :title="health.watchError">watch degraded</span>
     <span v-else>index pending</span>
     <span v-if="!scanning && lastScanned">Scanned {{ lastScanned }}</span>
     <div v-if="scanning" class="flex min-w-40 max-w-64 flex-1 items-center gap-2">

@@ -267,7 +267,7 @@ func TestVideoIDsDedupe(t *testing.T) {
 func TestWorkshopExtrasCap(t *testing.T) {
 	root := t.TempDir()
 	dir := t.TempDir()
-	for i := 0; i < maxWorkshopExtras; i++ {
+	for i := range maxWorkshopExtras {
 		src := filepath.Join(dir, "shot-"+string(rune('a'+i))+".png")
 		if err := os.WriteFile(src, []byte("png"), 0o644); err != nil {
 			t.Fatal(err)

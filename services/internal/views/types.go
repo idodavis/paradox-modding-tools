@@ -6,10 +6,10 @@ import (
 	"regexp"
 	"strings"
 
-	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/parser/jomini"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
 // EventGraphParams selects which definitions to draw.
@@ -164,7 +164,7 @@ func locValue(s *session.Session, key string) string {
 }
 
 // eventNamespace is the declared namespace for an event, else the id prefix.
-func eventNamespace(s *session.Session, d *catalog.Def, id string) string {
+func eventNamespace(s *session.Session, d *derived.Def, id string) string {
 	if d != nil {
 		var last string
 		for _, x := range s.DefsInFile(d.Path) {

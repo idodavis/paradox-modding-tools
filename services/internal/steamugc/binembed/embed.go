@@ -47,8 +47,6 @@ func apiLibName() string {
 	switch runtime.GOOS {
 	case "windows":
 		return "steam_api64.dll"
-	case "darwin":
-		return "libsteam_api.dylib"
 	default:
 		return "libsteam_api.so"
 	}

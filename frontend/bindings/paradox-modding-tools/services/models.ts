@@ -106,6 +106,11 @@ export interface LanguageHealth {
     "defCount": number;
 
     /**
+     * WatchError is set when the watcher lost part of a mod root; external edits may go unindexed.
+     */
+    "watchError": string;
+
+    /**
      * Schema is the declared type system's state. Without it PMT still resolves
      * definitions, references, conflicts and loc coverage from the install walk;
      * scope-aware completion, typed hover and the scope diagnostics need it.

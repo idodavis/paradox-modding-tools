@@ -23,7 +23,6 @@ func TestOpenLib(t *testing.T) {
 	candidates := []string{
 		filepath.Join("sdk", "win64", "steam_api64.dll"),
 		filepath.Join("sdk", "linux64", "libsteam_api.so"),
-		filepath.Join("sdk", "osx", "libsteam_api.dylib"),
 	}
 	path := ""
 	for _, c := range candidates {

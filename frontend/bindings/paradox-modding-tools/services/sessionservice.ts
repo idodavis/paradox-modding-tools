@@ -12,10 +12,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as catalog$0 from "./internal/catalog/models.js";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -35,7 +31,7 @@ export function GetLanguageHealth(workspaceID: string): $CancellablePromise<$mod
 /**
  * RebuildInstallSemantics scans an install into VanillaCache + loc sidecar.
  */
-export function RebuildInstallSemantics(installID: string): $CancellablePromise<catalog$0.VanillaCache | null> {
+export function RebuildInstallSemantics(installID: string): $CancellablePromise<void> {
     return $Call.ByID(521221046, installID);
 }
 

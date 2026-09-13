@@ -1,0 +1,46 @@
+# Which projections each wiring path produces (plan II.0).
+# Regenerate: go test ./internal/lang/derived/ -run Coverage -update-coverage
+
+[derived (collectExtracts, shared by every path)]
+  FieldValueKinds
+  FireKeys
+  KindScope
+  LocAffixes
+  LocFields
+  LocListFields
+  NestedShapes
+  PrefixKinds
+  Wrappers
+
+[mod index (BuildIndex -> Harvest)]
+  Defs
+  Edges
+  FieldValueKinds
+  FireKeys
+  Loc
+  Order
+  Refs
+  Structures
+
+[per-file save (ExtractFile -> FileExtract)]
+  Cands
+  Defs
+  Edges
+  FieldRHS
+  MemberKind
+  Refs
+  StructBlocks
+  StructCounts
+  StructKind
+  StructNested
+  StructNestedKind
+  Vocab
+
+[derived, then dropped by the mod index]
+  KindScope
+  LocAffixes
+  LocFields
+  LocListFields
+  NestedShapes
+  PrefixKinds
+  Wrappers

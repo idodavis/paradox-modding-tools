@@ -273,7 +273,7 @@ func TestReadersShareTheLockWhileWritersReindex(t *testing.T) {
 			defer wg.Done()
 			s.RLock()
 			defer s.RUnlock()
-			_ = s.EdgesFrom("")
+			_ = s.EdgesFrom("t.1")
 			_ = s.EdgesTo("t.2")
 			_ = s.Resolve("t.1")
 			_ = s.Parsed(ev)

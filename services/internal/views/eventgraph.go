@@ -5,6 +5,7 @@ package views
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,10 +25,9 @@ const (
 
 // Graph returns the event graph for the live session. Layout is not computed.
 func Graph(s *session.Session, params EventGraphParams) EventGraph {
-	picker, kinds, macroKeys := s.GraphCatalog(params.Origins)
-	sugg := suggestionsOf(picker, params.Namespace)
+	_, kinds, macroKeys := s.GraphCatalog(params.Origins)
 	if params.Root == "" {
-		return EventGraph{Suggestions: sugg, EmptyReason: "Pick a root event."}
+		return EventGraph{EmptyReason: "Pick a root event."}
 	}
 
 	maxNodes := params.MaxNodes
@@ -35,23 +35,27 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 		maxNodes = defaultMaxNodes
 	}
 
-	edges := storedEdges(s, macroKeys)
+	edges := collect(s, params.Root, kinds, macroKeys)
 	selected, truncated, hidden, hiddenIn := neighborhood(
 		edges, params.Root, kinds, maxNodes, params.Expand,
 	)
 
+	// Every stored edge between two selected nodes is drawn, cross-links included.
 	outEdges := make([]EventGraphEdge, 0)
 	seen := map[string]bool{}
-	for _, e := range edges {
-		if !selected[e.From] || !selected[e.To] {
-			continue
+	for _, id := range slices.Sorted(maps.Keys(selected)) {
+		for _, e := range s.EdgesFrom(id) {
+			if !selected[e.To] || !keepEdge(e, macroKeys) {
+				continue
+			}
+			ge := labeledEdge(s, e)
+			key := ge.From + "→" + ge.To + ":" + ge.Via + ":" + ge.Label + ":" + ge.Kind
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			outEdges = append(outEdges, ge)
 		}
-		key := e.From + "→" + e.To + ":" + e.Via + ":" + e.Label + ":" + e.Kind
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		outEdges = append(outEdges, e)
 	}
 
 	for parent, n := range hidden {
@@ -119,22 +123,44 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 	}
 	slices.SortFunc(nodes, func(a, b EventGraphNode) int { return cmp.Compare(a.ID, b.ID) })
 
-	return EventGraph{
-		Nodes: nodes, Edges: outEdges, Truncated: truncated,
-		Suggestions: sugg,
-	}
+	return EventGraph{Nodes: nodes, Edges: outEdges, Truncated: truncated}
 }
 
-func storedEdges(s *session.Session, macroKeys map[string]bool) []EventGraphEdge {
+// keepEdge drops call edges and a macro's own fires: a macro is a hop, not a node.
+func keepEdge(e derived.Edge, macroKeys map[string]bool) bool {
+	return e.Kind != derived.EdgeKindCall &&
+		(e.Kind == derived.EdgeKindVia || !macroKeys[e.From])
+}
+
+// collect gathers root's outgoing neighbourhood to outDepth, then what fires it.
+func collect(
+	s *session.Session, root string, kinds map[string]string, macroKeys map[string]bool,
+) []EventGraphEdge {
 	var out []EventGraphEdge
-	for _, e := range s.EdgesFrom("") {
-		if e.Kind == derived.EdgeKindCall {
-			continue
+	type item struct {
+		id    string
+		depth int
+	}
+	seen := map[string]bool{root: true}
+	for q := []item{{root, 0}}; len(q) > 0; q = q[1:] {
+		cur := q[0]
+		for _, e := range s.EdgesFrom(cur.id) {
+			if !keepEdge(e, macroKeys) {
+				continue
+			}
+			out = append(out, labeledEdge(s, e))
+			// An on_action hub is drawn but not walked through, as in neighborhood.
+			if seen[e.To] || cur.depth+1 > outDepth || (kinds[e.To] != "event" && e.To != root) {
+				continue
+			}
+			seen[e.To] = true
+			q = append(q, item{e.To, cur.depth + 1})
 		}
-		if e.Kind != "via" && macroKeys[e.From] {
-			continue
+	}
+	for _, e := range s.EdgesTo(root) {
+		if keepEdge(e, macroKeys) {
+			out = append(out, labeledEdge(s, e))
 		}
-		out = append(out, labeledEdge(s, e))
 	}
 	return out
 }
@@ -222,45 +248,4 @@ func neighborhood(
 		hiddenIn[root] = len(inbound)
 	}
 	return selected, truncated, hidden, hiddenIn
-}
-
-func suggestionsOf(vocab map[string]string, namespace string) EventGraphSuggestions {
-	ids := make([]SuggestionItem, 0, len(vocab))
-	for id, origin := range vocab {
-		if namespace != "" && !strings.HasPrefix(id, namespace+".") {
-			continue
-		}
-		ids = append(ids, SuggestionItem{ID: id, Origin: originID(origin)})
-	}
-	slices.SortFunc(ids, func(a, b SuggestionItem) int {
-		if n := cmp.Compare(a.ID, b.ID); n != 0 {
-			return n
-		}
-		return cmp.Compare(a.Origin, b.Origin)
-	})
-	nsSeen := map[string]map[string]bool{}
-	for id, origin := range vocab {
-		dot := strings.IndexByte(id, '.')
-		if dot <= 0 {
-			continue
-		}
-		n := id[:dot]
-		if nsSeen[n] == nil {
-			nsSeen[n] = map[string]bool{}
-		}
-		nsSeen[n][origin] = true
-	}
-	namespaces := make([]SuggestionItem, 0)
-	for n, origins := range nsSeen {
-		for origin := range origins {
-			namespaces = append(namespaces, SuggestionItem{ID: n, Origin: originID(origin)})
-		}
-	}
-	slices.SortFunc(namespaces, func(a, b SuggestionItem) int {
-		if n := cmp.Compare(a.ID, b.ID); n != 0 {
-			return n
-		}
-		return cmp.Compare(a.Origin, b.Origin)
-	})
-	return EventGraphSuggestions{IDs: ids, Namespaces: namespaces}
 }

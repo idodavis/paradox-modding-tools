@@ -1,6 +1,6 @@
-// graph.go builds the fire graph: which keys fire events, which call sites
-// invoke a scripted macro, and the indirect hops between them that let the Event
-// Graph draw an event reached only through a chain of macros.
+// graph.go builds the fire graph: which keys fire events and which call sites
+// invoke a scripted macro. The indirect hops between the two are not stored:
+// EdgesTo/EdgesFrom walk the call index per query.
 
 package derived
 
@@ -213,70 +213,4 @@ func ApplyCallEdges(cands []CallCandidate, macroKeys map[string]bool) []Edge {
 		}
 	}
 	return out
-}
-
-const maxViaHops = 3
-
-// DeriveVia extends stored edges with indirect hops through scripted-macro nodes.
-func DeriveVia(stored []Edge, cache *VanillaCache, macroKeys map[string]bool) []Edge {
-	if cache != nil {
-		stored = append(stored, cache.Edges...)
-	}
-	calls := map[string]map[string]bool{}
-	fires := map[string][]Edge{}
-	direct := map[string]bool{}
-	for _, e := range stored {
-		switch {
-		case e.Kind == EdgeKindCall:
-			if calls[e.From] == nil {
-				calls[e.From] = map[string]bool{}
-			}
-			calls[e.From][e.To] = true
-		case macroKeys[e.From]:
-			fires[e.From] = append(fires[e.From], e)
-		default:
-			direct[e.From+"→"+e.To] = true
-		}
-	}
-	var via []Edge
-	for from, hop := range calls {
-		if macroKeys[from] {
-			continue
-		}
-		visited := map[string]bool{}
-		type step struct {
-			eff   string
-			chain []string
-		}
-		var q []step
-		for eff := range hop {
-			visited[eff] = true
-			q = append(q, step{eff, []string{eff}})
-		}
-		for n := 0; n < maxViaHops && len(q) > 0; n++ {
-			var next []step
-			for _, st := range q {
-				for _, fired := range fires[st.eff] {
-					if fired.To == from || direct[from+"→"+fired.To] {
-						continue
-					}
-					direct[from+"→"+fired.To] = true
-					via = append(via, Edge{
-						From: from, To: fired.To, Via: fired.Via,
-						Path: fired.Path, Line: fired.Line, Kind: "via",
-						NameKey: strings.Join(st.chain, " → "),
-					})
-				}
-				for deeper := range calls[st.eff] {
-					if visited[deeper] {
-						continue
-					}
-					visited[deeper] = true
-					next = append(next, step{deeper, append(append([]string{}, st.chain...), deeper)})
-				}
-			}
-			q = next
-		}
-	}
-	return via
 }

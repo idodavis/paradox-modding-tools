@@ -23,23 +23,10 @@ type EventGraphParams struct {
 
 // EventGraph is a coordinate-free node/edge payload for frontend layout.
 type EventGraph struct {
-	Nodes       []EventGraphNode      `json:"nodes"`
-	Edges       []EventGraphEdge      `json:"edges"`
-	Truncated   bool                  `json:"truncated"`
-	Suggestions EventGraphSuggestions `json:"suggestions"`
-	EmptyReason string                `json:"emptyReason,omitempty"`
-}
-
-// EventGraphSuggestions is the catalog for root and namespace pickers.
-type EventGraphSuggestions struct {
-	IDs        []SuggestionItem `json:"ids"`
-	Namespaces []SuggestionItem `json:"namespaces"`
-}
-
-// SuggestionItem is one picker entry. Origin is "vanilla" or a mod id.
-type SuggestionItem struct {
-	ID     string `json:"id"`
-	Origin string `json:"origin"`
+	Nodes       []EventGraphNode `json:"nodes"`
+	Edges       []EventGraphEdge `json:"edges"`
+	Truncated   bool             `json:"truncated"`
+	EmptyReason string           `json:"emptyReason,omitempty"`
 }
 
 // EventGraphNode is one graph card. There is no x/y: layout is frontend dagre.

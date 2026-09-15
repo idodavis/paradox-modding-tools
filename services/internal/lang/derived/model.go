@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/jomini"
@@ -56,10 +55,6 @@ type Model struct {
 	// kindsWithDefs is every kind something actually defines, so a reference to a
 	// kind with no definitions anywhere can be recognised as an engine concept.
 	kindsWithDefs map[string]bool
-	// viaMu serialises the lazy via build between readers sharing the session RLock.
-	viaMu    sync.Mutex
-	viaByTo  map[string][]Edge
-	viaDirty bool
 }
 
 // CanonPath is for comparison, never for a value anything downstream displays or
@@ -101,7 +96,6 @@ func (m *Model) Reindex(path, rel, text string, parsed jomini.Result) {
 	m.locByLang = MergeLoc(m.locByLang, ex.Loc)
 	m.recordLocFile(ex.Loc)
 	m.lastIndexed[key] = text
-	m.viaDirty = true
 }
 
 // DropPath removes every index entry sourced from path.
@@ -330,38 +324,6 @@ func (m *Model) rebuildMacroSets() {
 	})
 }
 
-func (m *Model) EnsureVia() {
-	m.viaMu.Lock()
-	defer m.viaMu.Unlock()
-	if !m.viaDirty {
-		return
-	}
-	var stored []Edge
-	for _, edges := range m.edgesByFile {
-		stored = append(stored, edges...)
-	}
-	m.viaByTo = map[string][]Edge{}
-	for _, e := range DeriveVia(stored, m.cache, m.macroKeys) {
-		m.viaByTo[e.To] = append(m.viaByTo[e.To], e)
-	}
-	m.viaDirty = false
-}
-
-func (m *Model) allEdges() []Edge {
-	m.EnsureVia()
-	var out []Edge
-	for _, edges := range m.edgesByFrom {
-		out = append(out, edges...)
-	}
-	if m.cache != nil {
-		out = append(out, m.cache.Edges...)
-	}
-	for _, edges := range m.viaByTo {
-		out = append(out, edges...)
-	}
-	return out
-}
-
 func NewModel(
 	gameID, defaultLang string,
 	cache *VanillaCache, vloc *VanillaLoc, mods []ModInput,
@@ -413,7 +375,6 @@ func (m *Model) rebuildProjections() {
 	m.rebuildCacheIndex()
 	m.rebuildFieldKinds()
 	m.rebuildMacroSets()
-	m.viaDirty = true
 }
 
 // ReplaceCache swaps the vanilla cache after a rescan, keeping the mod index.

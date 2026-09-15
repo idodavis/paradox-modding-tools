@@ -166,14 +166,9 @@ func viaHopLabel(chain string) string {
 
 func labeledEdge(s *session.Session, e derived.Edge) EventGraphEdge {
 	out := EventGraphEdge{From: e.From, To: e.To, Via: e.Via, Kind: e.Kind}
-	if e.Kind == "via" {
-		chain := e.NameKey
-		if chain == "" {
-			chain = e.Via
-		}
-		if chain != "" {
-			out.Via = chain
-			out.Label = viaHopLabel(chain)
+	if e.Kind == derived.EdgeKindVia {
+		if e.Via != "" {
+			out.Label = viaHopLabel(e.Via)
 		}
 		return out
 	}

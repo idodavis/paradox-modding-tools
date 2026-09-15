@@ -43,7 +43,6 @@ export interface EventGraph {
     "nodes": EventGraphNode[] | null;
     "edges": EventGraphEdge[] | null;
     "truncated": boolean;
-    "suggestions": EventGraphSuggestions;
     "emptyReason"?: string;
 }
 
@@ -81,14 +80,6 @@ export interface EventGraphParams {
     "origins"?: string[] | null;
     "maxNodes"?: number;
     "expand"?: string[] | null;
-}
-
-/**
- * EventGraphSuggestions is the catalog for root and namespace pickers.
- */
-export interface EventGraphSuggestions {
-    "ids": SuggestionItem[] | null;
-    "namespaces": SuggestionItem[] | null;
 }
 
 /**
@@ -229,12 +220,4 @@ export interface OverrideSite {
 export interface RefKindGroup {
     "kind": string;
     "refs": EventRefInfo[] | null;
-}
-
-/**
- * SuggestionItem is one picker entry. Origin is "vanilla" or a mod id.
- */
-export interface SuggestionItem {
-    "id": string;
-    "origin": string;
 }

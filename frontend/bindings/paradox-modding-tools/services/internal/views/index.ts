@@ -8,7 +8,6 @@ export type {
     EventGraphEdge,
     EventGraphNode,
     EventGraphParams,
-    EventGraphSuggestions,
     EventLocField,
     EventOptionInfo,
     EventRefInfo,
@@ -20,6 +19,5 @@ export type {
     HealthRow,
     LocLookup,
     OverrideSite,
-    RefKindGroup,
-    SuggestionItem
+    RefKindGroup
 } from "./models.js";

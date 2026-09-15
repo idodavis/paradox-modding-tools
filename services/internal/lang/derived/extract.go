@@ -26,6 +26,9 @@ var neverAKey = map[string]bool{
 // EdgeKindCall marks a scripted-effect invocation (not drawn on the canvas).
 const EdgeKindCall = "call"
 
+// EdgeKindVia marks a hop synthesized through a chain of macro calls.
+const EdgeKindVia = "via"
+
 // CallCandidate is a possible scripted_* invocation; ApplyCallEdges keeps
 // effects for the graph, ApplyCallRefs keeps trigger/effect/modifier refs.
 type CallCandidate struct {

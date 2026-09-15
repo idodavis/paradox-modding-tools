@@ -5,14 +5,14 @@
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useQuery } from "@pinia/colada";
-import { useLocalStorage } from "@vueuse/core";
+import { refDebounced, useLocalStorage } from "@vueuse/core";
 import { GetEventDetail, GetEventGraph } from "@services/viewsservice";
+import { WorkspaceSymbols } from "@services/ideservice";
 import type { EventGraphParams } from "@services/internal/views/models";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import GraphCanvas from "../components/graph/GraphCanvas.vue";
 import EventDetailPanel from "../components/graph/EventDetailPanel.vue";
-import GameIcon from "../components/GameIcon.vue";
 import OriginSelectMenu from "../components/OriginSelectMenu.vue";
 import { PILL_UI } from "../components/OriginBadge.vue";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
@@ -21,8 +21,6 @@ import { originHex } from "../ide/rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
 
 defineOptions({ name: "EventGraphPage" });
-
-const MENU_UI = { content: "min-w-96 w-[420px]", viewport: "max-h-96" };
 
 const route = useRoute();
 const ws = useWorkspaceStore();
@@ -54,34 +52,6 @@ const originItems = computed(() => [
 ]);
 const origins = ref<string[]>([]);
 const originsNarrowed = computed(() => origins.value.length > 0 && origins.value.length < originItems.value.length);
-const originColors = computed(
-  (): Record<string, string> =>
-    Object.fromEntries([
-      [
-        vanilla.value,
-        originHex({
-          kind: "game",
-          path: "",
-          color: ws.activeWorkspace?.gameColor,
-        }),
-      ],
-      ...liveMods.value.map((m, i) => [
-        m.id,
-        originHex({
-          kind: "mod",
-          path: m.path,
-          color: m.color,
-          wrapIndex: i,
-        }),
-      ]),
-    ]),
-);
-
-/** Explorer-matching swatch for a picker or payload origin. */
-function itemOriginHex(origin: string | undefined): string {
-  const key = !origin || origin === vanilla.value ? vanilla.value : origin;
-  return originColors.value[key] ?? originHex({ kind: "mod", path: origin ?? "" });
-}
 
 const workspaceId = computed(() => String(route.params.id ?? ""));
 const live = useLiveEnabled(workspaceId);
@@ -106,11 +76,7 @@ const graphParams = computed((): EventGraphParams => {
   return p;
 });
 
-const {
-  data: graph,
-  error: graphError,
-  isPending: graphPending,
-} = useQuery({
+const { data: graph, error: graphError } = useQuery({
   key: () => ["session", "graph", workspaceId.value, graphParams.value],
   query: () => GetEventGraph(workspaceId.value, graphParams.value),
   enabled: () => live.value,
@@ -123,9 +89,35 @@ const { data: detailData } = useQuery({
   enabled: () => live.value && !!selectedId.value,
 });
 
+const rootPickerOpen = ref(false);
+const symbolTerm = ref("");
+const symbolQuery = refDebounced(symbolTerm, 200);
+
+const { data: symbolData, isLoading: symbolsLoading } = useQuery({
+  key: () => ["session", "symbols", workspaceId.value, symbolQuery.value],
+  query: () => WorkspaceSymbols(workspaceId.value, symbolQuery.value),
+  enabled: () => live.value && symbolQuery.value.length > 0,
+  placeholderData: (prev) => prev,
+});
+
+/** WorkspaceSymbols already ranked and capped the hits, so the palette must not refilter. */
+const rootGroups = computed(() => [
+  {
+    id: "symbols",
+    ignoreFilter: true,
+    items: (symbolData.value ?? []).map((sym) => ({
+      label: sym.name,
+      suffix: sym.containerName,
+      onSelect: () => {
+        setRoot(sym.name);
+        rootPickerOpen.value = false;
+      },
+    })),
+  },
+]);
+
 const detail = computed(() => (selectedId.value ? detailData.value : null));
 const error = computed(() => graphError.value?.message ?? "");
-const loading = computed(() => graphPending.value && !graph.value);
 
 /** Click: select; more-stubs append their parent to Expand. */
 function onSelect(id: string): void {
@@ -164,9 +156,6 @@ function onShowMore(): void {
 }
 function setLayout(v: string): void {
   if (v === "lr" || v === "tree") layout.value = v;
-}
-function onNamespace(v: string | null | undefined): void {
-  namespace.value = v ?? undefined;
 }
 function setRoot(v: string | null | undefined): void {
   if (v) root.value = v;
@@ -236,57 +225,30 @@ function applyGraphTargetFromQuery(): void {
 
     <UDashboardToolbar class="px-2 sm:px-2">
       <template #left>
-        <USelectMenu
-          :model-value="root"
-          :items="graph?.suggestions?.ids ?? []"
-          label-key="id"
-          value-key="id"
-          placeholder="Root event"
-          size="md"
-          class="min-w-64 flex-1"
-          :ui="MENU_UI"
-          :loading="loading"
-          :virtualize="(graph?.suggestions?.ids?.length ?? 0) > 400"
-          @update:model-value="setRoot"
+        <UModal
+          v-model:open="rootPickerOpen"
+          title="Root event"
+          description="Search the workspace for the event, on_action or decision to draw from."
+          :ui="{ content: 'sm:max-w-xl' }"
         >
-          <template #item-leading="{ item }">
-            <img
-              v-if="item.origin && ws.thumbUrls[item.origin]"
-              :src="ws.thumbUrls[item.origin]"
-              alt=""
-              class="size-4 rounded-sm object-cover"
-            />
-            <GameIcon
-              v-else-if="!item.origin || item.origin === vanilla"
-              :game-id="ws.activeWorkspace?.gameId ?? ws.currentGameId"
-            />
-            <span
-              v-else
-              class="size-2 shrink-0 rounded-full"
-              :style="{ backgroundColor: itemOriginHex(item.origin) }"
+          <UButton
+            :label="root ?? 'Root event'"
+            icon="i-lucide-search"
+            size="md"
+            color="neutral"
+            variant="outline"
+            class="min-w-64 flex-1 justify-start"
+          />
+          <template #body>
+            <UCommandPalette
+              v-model:search-term="symbolTerm"
+              :groups="rootGroups"
+              :loading="symbolsLoading"
+              placeholder="Search events, on_actions, decisions…"
+              class="h-80"
             />
           </template>
-        </USelectMenu>
-        <USelectMenu
-          :model-value="namespace"
-          :items="graph?.suggestions?.namespaces ?? []"
-          label-key="id"
-          value-key="id"
-          placeholder="Namespace"
-          size="md"
-          class="w-56"
-          :ui="MENU_UI"
-          clear
-          @update:model-value="onNamespace"
-        >
-          <template #item-leading="{ item }">
-            <span
-              v-if="item.id"
-              class="size-2 shrink-0 rounded-full"
-              :style="{ backgroundColor: itemOriginHex(item.origin) }"
-            />
-          </template>
-        </USelectMenu>
+        </UModal>
         <OriginSelectMenu v-model="origins" :items="originItems" />
         <UButton
           label="Clear"

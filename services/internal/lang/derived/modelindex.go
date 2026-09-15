@@ -463,17 +463,65 @@ func (m *Model) KindFor(path string) string {
 	return ClassifyRel(strings.ReplaceAll(rel, "\\", "/"), filepath.Base(path))
 }
 
-// Schema is the declared type system this model was built against, or nil when
-// the user has not run script_docs. Callers must degrade rather than guess.
-// EdgesFrom are the graph edges leaving id, mods first then vanilla. Empty id
-// means every edge.
+// maxViaHops caps the macro chain a via edge may cross.
+const maxViaHops = 3
+
+// EdgesFrom are the edges leaving id, mods then vanilla, then the via hops.
 func (m *Model) EdgesFrom(id string) []Edge {
 	if id == "" {
-		return m.allEdges()
+		return nil
 	}
 	out := append(append([]Edge{}, m.edgesByFrom[id]...), m.cacheEdgesByFrom[id]...)
+	type step struct {
+		macro string
+		chain []string
+	}
+	var q []step
+	seen, visited := map[string]bool{id: true}, map[string]bool{}
+	// A macro is a hop, not a node: nothing is synthesized when id is one.
+	if !m.macroKeys[id] {
+		for _, e := range out {
+			seen[e.To] = true
+			if e.Kind == EdgeKindCall && m.macroKeys[e.To] && !visited[e.To] {
+				visited[e.To] = true
+				q = append(q, step{e.To, []string{e.To}})
+			}
+		}
+	}
+	for len(q) > 0 {
+		st := q[0]
+		q = q[1:]
+		for _, e := range append(append([]Edge{}, m.edgesByFrom[st.macro]...), m.cacheEdgesByFrom[st.macro]...) {
+			if e.Kind == EdgeKindCall {
+				if m.macroKeys[e.To] && !visited[e.To] && len(st.chain) < maxViaHops {
+					visited[e.To] = true
+					q = append(q, step{e.To, append(append([]string{}, st.chain...), e.To)})
+				}
+				continue
+			}
+			if seen[e.To] {
+				continue
+			}
+			seen[e.To] = true
+			out = append(out, Edge{
+				From: id, To: e.To, Via: strings.Join(st.chain, " → "),
+				Path: e.Path, Line: e.Line, Kind: EdgeKindVia, Rescoped: e.Rescoped,
+			})
+		}
+	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+// callersOf lists the defs whose call edges reach macro, mods then vanilla.
+func (m *Model) callersOf(macro string) []string {
+	var out []string
+	for _, e := range append(append([]Edge{}, m.edgesByTo[macro]...), m.cacheEdgesByTo[macro]...) {
+		if e.Kind == EdgeKindCall {
+			out = append(out, e.From)
+		}
 	}
 	return out
 }
@@ -704,14 +752,47 @@ func (m *Model) EachLoc(fn func(lang, key string, e LocEntry)) {
 	}
 }
 
-// EdgesTo returns stored call+fire/via edges arriving at id.
+// EdgesTo are the edges arriving at id, mods then vanilla, then the via hops.
 func (m *Model) EdgesTo(id string) []Edge {
 	if id == "" {
 		return nil
 	}
-	m.EnsureVia()
-	out := append(append(append([]Edge{}, m.edgesByTo[id]...),
-		m.cacheEdgesByTo[id]...), m.viaByTo[id]...)
+	out := append(append([]Edge{}, m.edgesByTo[id]...), m.cacheEdgesByTo[id]...)
+	type step struct {
+		chain []string
+		fire  Edge
+	}
+	var q []step
+	seen, visited := map[string]bool{id: true}, map[string]bool{}
+	for _, e := range out {
+		seen[e.From] = true
+		if e.Kind != EdgeKindCall && m.macroKeys[e.From] && !visited[e.From] {
+			visited[e.From] = true
+			q = append(q, step{[]string{e.From}, e})
+		}
+	}
+	for len(q) > 0 {
+		st := q[0]
+		q = q[1:]
+		for _, caller := range m.callersOf(st.chain[0]) {
+			if m.macroKeys[caller] {
+				if !visited[caller] && len(st.chain) < maxViaHops {
+					visited[caller] = true
+					q = append(q, step{append([]string{caller}, st.chain...), st.fire})
+				}
+				continue
+			}
+			if seen[caller] {
+				continue
+			}
+			seen[caller] = true
+			out = append(out, Edge{
+				From: caller, To: id, Via: strings.Join(st.chain, " → "),
+				Path: st.fire.Path, Line: st.fire.Line, Kind: EdgeKindVia,
+				Rescoped: st.fire.Rescoped,
+			})
+		}
+	}
 	if len(out) == 0 {
 		return nil
 	}

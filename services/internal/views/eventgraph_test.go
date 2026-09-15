@@ -224,27 +224,9 @@ mod.1 = { type = character_event
 	if len(empty.Nodes) != 0 || empty.EmptyReason == "" {
 		t.Fatalf("empty root nodes=%d reason=%q", len(empty.Nodes), empty.EmptyReason)
 	}
-	var birth, modOrig bool
-	for _, it := range empty.Suggestions.IDs {
-		birth = birth || (it.ID == "birth.1" && it.Origin == "vanilla")
-		modOrig = modOrig || (it.ID == "mod.1" && it.Origin == "mod")
-	}
-	if !birth || !modOrig {
-		t.Fatalf("suggestions = %+v", empty.Suggestions.IDs)
-	}
 	rooted := nodeIDs(Graph(s, EventGraphParams{Root: "mod.1"}))
 	if rooted["mod.1"].Origin != "mod" || rooted["birth.1"].Origin != "vanilla" {
 		t.Fatalf("rooted = %v", rooted)
-	}
-	for _, it := range Graph(s, EventGraphParams{Origins: []string{"mod"}}).Suggestions.IDs {
-		if it.ID == "birth.1" {
-			t.Fatal("vanilla should not be in mod-only picker")
-		}
-	}
-	for _, it := range Graph(s, EventGraphParams{Namespace: "birth"}).Suggestions.IDs {
-		if !strings.HasPrefix(it.ID, "birth.") {
-			t.Fatalf("namespace filter leaked %q", it.ID)
-		}
 	}
 
 	fg := Graph(s, EventGraphParams{Root: "r.1"})
@@ -289,6 +271,38 @@ mod.1 = { type = character_event
 		if Detail(gs, "test.1") == nil {
 			t.Errorf("%s detail nil", gameID)
 		}
+	}
+}
+
+func TestGraphDrawsEdgesBetweenSelectedNodes(t *testing.T) {
+	s := buildSession(t, "ck3", nil, nil, []derived.ModInput{oneMod(t, "ck3", map[string]string{
+		"events/x.txt": `namespace = x
+x.0 = { type = character_event
+	immediate = { trigger_event = x.1 trigger_event = x.2 }
+}
+x.1 = { type = character_event immediate = { trigger_event = x.2 } }
+x.2 = { type = character_event immediate = { trigger_event = x.3 } }
+x.3 = { type = character_event immediate = { trigger_event = x.4 trigger_event = x.5 } }
+x.4 = { type = character_event immediate = { trigger_event = x.5 } }
+x.5 = { type = character_event }
+`,
+	})})
+	has := func(g EventGraph, from, to string) bool {
+		for _, e := range g.Edges {
+			if e.From == from && e.To == to {
+				return true
+			}
+		}
+		return false
+	}
+	// x.4 and x.5 both sit at the depth limit; the edge between them is still drawn.
+	if g := Graph(s, EventGraphParams{Root: "x.1"}); !has(g, "x.4", "x.5") {
+		t.Fatalf("max-depth cross edge missing: %+v", g.Edges)
+	}
+	// x.0 is lifted in as an inbound node: its other edge into the set counts too.
+	exp := Graph(s, EventGraphParams{Root: "x.1", Expand: []string{"x.1"}})
+	if !has(exp, "x.0", "x.2") {
+		t.Fatalf("inbound cross edge missing: %+v", exp.Edges)
 	}
 }
 
@@ -374,19 +388,4 @@ func TestDetailNonEvent(t *testing.T) {
 	if len(d.Sections) == 0 {
 		t.Fatal("want pretty-script body")
 	}
-}
-
-func TestSuggestionsOfKeepsHighLetterIDs(t *testing.T) {
-	vocab := map[string]string{}
-	for i := range 3000 {
-		vocab[fmt.Sprintf("a.%d", i)] = ""
-	}
-	vocab["secrets.1"] = ""
-	got := suggestionsOf(vocab, "")
-	for _, it := range got.IDs {
-		if it.ID == "secrets.1" {
-			return
-		}
-	}
-	t.Fatal("secrets.1 missing from uncapped suggestions")
 }

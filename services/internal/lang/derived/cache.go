@@ -50,7 +50,9 @@ import (
 // 38 drops the cut projections: Snippets, MetaKeys, FieldEnumsByKind and
 // AmbiguousFields. Nothing derives them any more; an older cache still carries
 // the stale values.
-const CacheFormatVersion = 38
+//
+// 39 replaces the four affix projections with LocConventions, one template rule per kind.
+const CacheFormatVersion = 39
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -130,7 +132,7 @@ func IsCitableDef(d Def) bool {
 	return k != "" && k != jomini.KindLocKey && d.Key != "" && !jomini.IsEphemeral(k)
 }
 
-// Ref is a use-site. Kind is "loc", "loc-broad", "loc-convention",
+// Ref is a use-site. Kind is "loc", "loc-broad",
 // "event", "on_action", or an ephemeral/script kind. OwnerKey scopes
 // script_param refs to the enclosing scripted_* call.
 type Ref struct {
@@ -257,15 +259,13 @@ type VanillaCache struct {
 	FireKeys                 map[string]string            `json:"fireKeys,omitempty"`
 	NestedShapes             []NestedShape                `json:"nestedShapes,omitempty"`
 	Wrappers                 []string                     `json:"wrappers,omitempty"`
-	LocAffixes               map[string][]loc.Affix       `json:"locAffixes,omitempty"`
-	LocFields                []string                     `json:"locFields,omitempty"`
-	LocListFields            []string                     `json:"locListFields,omitempty"`
-	LocMemberAffixes         map[string][]loc.Affix       `json:"locMemberAffixes,omitempty"`
-	// LocKeyAffixes are shapes that derive one loc key from another, so a key
-	// nothing cites is still explained. Not per kind: the stem is a key, not a def.
-	LocKeyAffixes []loc.KeyAffix    `json:"locKeyAffixes,omitempty"`
-	KindInfo      map[string]string `json:"kindInfo,omitempty"`
-	DataFunctions []string          `json:"dataFunctions,omitempty"`
+	// LocConventions is the key templates each kind's definitions are localized under, learned from the install's own loc.
+	LocConventions map[string][]loc.Convention `json:"locConventions,omitempty"`
+	// LocKeyPrefixes build one loc key out of another (EU5's NOT_<key>): the stem is a key, not a def.
+	LocKeyPrefixes []string          `json:"locKeyPrefixes,omitempty"`
+	LocFields      []string          `json:"locFields,omitempty"`
+	KindInfo       map[string]string `json:"kindInfo,omitempty"`
+	DataFunctions  []string          `json:"dataFunctions,omitempty"`
 
 	// LocEngineSlots are `$NAME$` interpolations the game's own localization
 	// uses but never defines as a key — `$EFFECT_LIST_BULLET$`, `$ACTION$`,
@@ -371,8 +371,8 @@ func prepareCacheOnce(c *VanillaCache) {
 	if c.FireKeys == nil {
 		c.FireKeys = map[string]string{}
 	}
-	if c.LocAffixes == nil {
-		c.LocAffixes = map[string][]loc.Affix{}
+	if c.LocConventions == nil {
+		c.LocConventions = map[string][]loc.Convention{}
 	}
 	if c.KindInfo == nil {
 		c.KindInfo = map[string]string{}

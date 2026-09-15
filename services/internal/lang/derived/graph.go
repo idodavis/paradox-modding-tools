@@ -16,7 +16,7 @@ func locKindRefs(refs []Ref) []Ref {
 	var out []Ref
 	for _, r := range refs {
 		switch r.Kind {
-		case "loc", "loc-broad", "loc-convention":
+		case "loc", "loc-broad":
 			out = append(out, r)
 		}
 	}

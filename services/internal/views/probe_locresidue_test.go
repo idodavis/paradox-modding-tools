@@ -53,20 +53,22 @@ func TestVanillaLocResidue(t *testing.T) {
 			s := session.NewWithLoc("residue", g.game, "english", cache, vloc, nil)
 			defer s.Close()
 
-			// Print what the rule accepted, not just what it scored. A shape
+			// Print what the rule accepted, not just what it scored. A template
 			// list that reads as nonsense is a failure even if the number fell.
-			for i, af := range cache.LocKeyAffixes {
-				if i >= 20 {
-					t.Logf("  affix: %d accepted in total", len(cache.LocKeyAffixes))
-					break
-				}
-				t.Logf("  affix %-24q + %-18q %6d of %6d",
-					af.Pre, af.Suf, af.Keys, af.Of)
+			for kind, cs := range cache.LocConventions {
+				t.Logf("  convention %-32s %v", kind, cs)
 			}
 			inh := s.InheritedLocKeys([]string{"english"})
 			var keys []string
 			inh.Each("english", func(k string) { keys = append(keys, k) })
-			used := s.UsedLocKeys()
+			used := map[string]bool{}
+			for _, r := range cache.LocRefs {
+				used[r.Key] = true
+			}
+			isKey := map[string]bool{}
+			for _, k := range keys {
+				isKey[k] = true
+			}
 			var residue []string
 			nUsed, nConv := 0, 0
 			for _, k := range keys {
@@ -74,7 +76,7 @@ func TestVanillaLocResidue(t *testing.T) {
 					nUsed++
 					continue
 				}
-				if s.LocKeyExplained(k) {
+				if stemRead(k, cache.LocKeyPrefixes, func(s string) bool { return isKey[s] }) {
 					nConv++
 					continue
 				}
@@ -121,14 +123,15 @@ func convResidue(
 		inh := s.InheritedLocKeys([]string{locSourceLang})
 		inherited := map[string]bool{}
 		inh.Each(locSourceLang, func(k string) { inherited[k] = true })
-		used := s.UsedLocKeys()
+		used := usedByOrigin(s)
 		own, orphan := 0, 0
-		s.EachLoc(func(lang, k string, _ derived.LocEntry) {
+		s.EachLoc(func(lang, k string, e derived.LocEntry) {
 			if lang != locSourceLang || inherited[k] {
 				return
 			}
 			own++
-			if used[k] || s.LocKeyExplained(k) {
+			origin, _, _ := s.Locate(e.Path)
+			if used[originID(origin)][k] {
 				return
 			}
 			orphan++

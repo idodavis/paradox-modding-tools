@@ -172,6 +172,7 @@ func locSeverity(code loc.ErrorCode) int {
 	}
 }
 
+// missingLocDiags reports a script field citing a loc key nothing defines.
 func (f diagFile) missingLocDiags() []Diagnostic {
 	var out []Diagnostic
 	for _, r := range f.refs {
@@ -184,17 +185,20 @@ func (f diagFile) missingLocDiags() []Diagnostic {
 	return out
 }
 
+// requiredLocDiags demands the keys a kind's universal conventions name; a coverage short of 1 is a habit.
 func (f diagFile) requiredLocDiags() []Diagnostic {
 	if f.src == "" {
 		return nil
 	}
 	var out []Diagnostic
 	for _, d := range f.s.DefsInFile(f.path) {
-		// Required-grade conventions only. Telling a modder a key is missing
-		// asserts the game demands it, and a shape most of a kind happens to
-		// share is a habit — it belongs in the orphan check, not in a warning.
-		for _, key := range f.s.ConventionLocKeys(
-			d.Kind, d.Key, loc.ConventionRequired) {
+		var required []loc.Convention
+		for _, c := range f.s.LocConventionsOf(d.Kind) {
+			if c.Coverage >= 1 {
+				required = append(required, c)
+			}
+		}
+		for _, key := range loc.Expand(d.Key, required) {
 			if f.s.LocDefined(key) {
 				continue
 			}

@@ -21,7 +21,7 @@ export interface CompletionItem {
      * property | value
      */
     "kind"?: string;
-    "range"?: Range;
+    "range": Range;
     "insertText"?: string;
 }
 

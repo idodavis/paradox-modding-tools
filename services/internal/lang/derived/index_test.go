@@ -11,7 +11,6 @@ import (
 
 	"paradox-modding-tools/services/internal/lang/declared"
 	"paradox-modding-tools/services/internal/lang/jomini"
-	"paradox-modding-tools/services/internal/lang/loc"
 )
 
 func writeMod(t *testing.T, root, rel, content string) {
@@ -325,8 +324,7 @@ real_effect = {
 	t.Run("message title is loc not convention id", func(t *testing.T) {
 		ex := extractCK3("common/messages/x.txt",
 			"quieter_events_neutral = {\n\ttitle = event_message_title\n}\n", "mod")
-		if hasRef(ex.Refs, "loc", "quieter_events_neutral") ||
-			hasRef(ex.Refs, "loc-convention", "quieter_events_neutral") {
+		if hasRef(ex.Refs, "loc", "quieter_events_neutral") {
 			t.Fatalf("invented message loc: %v", ex.Refs)
 		}
 		if !hasRef(ex.Refs, "loc", "event_message_title") {
@@ -469,41 +467,6 @@ real_effect = {
 		}
 		if !findDef(ex.Defs, "game_rules", "my_rule") {
 			t.Fatalf("the rule itself must still be a def: %v", ex.Defs)
-		}
-	})
-	t.Run("decision convention keys", func(t *testing.T) {
-		id := "ai_mogyer_adopt_christianity"
-		ex := extractCK3Overlay("common/decisions/x.txt",
-			id+" = {\n\tselection_tooltip = "+id+"_tooltip\n}\n",
-			"mod", &VanillaCache{LocAffixes: map[string][]loc.Affix{
-				"decisions": {{Defs: 10, Of: 10}, {Suf: "_desc", Defs: 10, Of: 10}},
-			}})
-		if !hasRef(ex.Refs, "loc-convention", id) ||
-			!hasRef(ex.Refs, "loc-convention", id+"_desc") {
-			t.Fatalf("missing decision convention loc: %v", ex.Refs)
-		}
-		if hasRef(ex.Refs, "loc-convention", id+"_confirm") {
-			t.Fatalf("encyclopedia extra convention: %v", ex.Refs)
-		}
-		if !hasRef(ex.Refs, "loc", "ai_mogyer_adopt_christianity_tooltip") {
-			t.Fatalf("selection_tooltip not harvested: %v", ex.Refs)
-		}
-	})
-	t.Run("game_rules convention keys", func(t *testing.T) {
-		ex := extractCK3Overlay("common/game_rules/x.txt",
-			"my_rule = {\n\tdefault = a\n\ta = { }\n}\n", "mod",
-			&VanillaCache{LocAffixes: map[string][]loc.Affix{
-				"game_rules": {{Pre: "game_rule_", Defs: 10, Of: 10}},
-			}})
-		if hasRef(ex.Refs, "loc", "my_rule") || hasRef(ex.Refs, "loc-convention", "my_rule") {
-			t.Fatalf("bare rule id: %v", ex.Refs)
-		}
-		if !hasRef(ex.Refs, "loc-convention", "game_rules_my_rule") &&
-			!hasRef(ex.Refs, "loc-convention", "game_rule_my_rule") {
-			t.Fatalf("missing kind_id convention: %v", ex.Refs)
-		}
-		if hasRef(ex.Refs, "loc-convention", "setting_a") {
-			t.Fatalf("encyclopedia setting_ key: %v", ex.Refs)
 		}
 	})
 	t.Run("trigger localization slots are loc refs", func(t *testing.T) {
@@ -694,7 +657,7 @@ func TestListMembersAreLocRefs(t *testing.T) {
 		"\tmale_names = { Abbas Ali Ibrahim }\n" +
 		"\tcadet_dynasty_names = { \"dynn_Rasulid\" \"dynn_Umarid\" }\n" +
 		"\tsome_other_list = { not_a_key also_not }\n}\n"
-	cache := &VanillaCache{LocListFields: []string{
+	cache := &VanillaCache{LocFields: []string{
 		"male_names", "cadet_dynasty_names",
 	}}
 	ex := extractCK3Overlay("common/culture/name_lists/x.txt", body, "mod", cache)

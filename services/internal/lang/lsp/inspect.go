@@ -151,7 +151,7 @@ func InspectAt(s *session.Session, path string, line, col int) *Inspect {
 // Called from Inspect rather than from fillCard because it needs the cursor
 // position, and because it holds no lock of its own: ScopeAt and scopeLink each
 // take the read lock, so doing this inside a locked card builder would deadlock
-// the way LocConventionOwner did inside EachLoc.
+// the way a locked model lookup did inside EachLoc.
 func fillScope(s *session.Session, ins *Inspect, path string, line, col int, id identity) {
 	ins.Scope = ScopeAt(s, path, line, col)
 	// A scope link is the one token whose whole purpose is to move somewhere
@@ -180,24 +180,6 @@ func inspectOf(s *session.Session, kind, key, docs string) *Inspect {
 // section, and Go's RWMutex deadlocks on a recursive RLock as soon as a writer
 // is queued behind it — which a background rescan is.
 
-// LocKeyExplained reports whether anything in the model can account for key,
-// without saying what. It is deliberately more permissive than
-// LocConventionOwner and answers a different question.
-//
-// The two have opposite failure costs. Hover and go-to-definition need to know
-// WHICH definition owns a key, so a wrong answer sends the reader to the wrong
-// file — that path stays strict. The orphan check only needs to know whether
-// anything consumes the key at all, and a wrong answer there tells a modder
-// their correct localization is dead. Returning a bool and nothing else is what
-// keeps the permissive side from leaking into the strict one: it cannot produce
-// a link because it does not produce an identity.
-//
-// nameKinds visits the kinds anything in the model files under id --
-// definitions first, then the kinds references were harvested as.
-//
-// rebuildMemberSets indexes block-member names for the kinds that carry a
-// localization member convention, and only those — 22 kinds on CK3 rather than
-// the 218 the install has structures for.
 func identify(s *session.Session, path string, line, col int) (identity, bool) {
 	if s.KindFor(path) == "loc" {
 		return identifyLoc(s, path, line, col)
@@ -474,10 +456,8 @@ func defCard(s *session.Session, word string, d *derived.Def) *Inspect {
 	if ins.Usage == "" {
 		ins.Usage = s.MacroUsage(d)
 	}
-	// The card's prose comes from the def's own localization, found through
-	// whichever naming convention the kind actually follows. First hit wins:
-	// the conventions are already ranked by how well they hold for the kind.
-	for _, key := range s.ConventionLocKeys(d.Kind, d.Key, loc.ConventionUsed) {
+	// First hit wins: conventions are sorted by coverage, then by the plainest shape.
+	for _, key := range s.ConventionLocKeys(d.Kind, d.Key) {
 		if text, ok := s.DefaultLoc(key); ok && text != "" {
 			ins.Body = unescapeLocDisplay(text)
 			break

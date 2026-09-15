@@ -1,5 +1,5 @@
 // loccoverage_test.go covers strict-only missing loc, broad-field skips,
-// game-rule / message-filter orphans, and descriptor/metadata name refs.
+// mod-local orphans, and descriptor/metadata name refs.
 package views
 
 import (
@@ -56,10 +56,10 @@ ns.1 = {
 		t.Fatal("loc-broad name= should not be missing")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "setting_rule") {
-		t.Fatal("unused game_rules loc is orphaned without a convention vote")
+		t.Fatal("unused game_rules loc has no convention to explain it")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "filter_key") {
-		t.Fatal("unused message_filter loc is orphaned without a convention vote")
+		t.Fatal("unused message_filter loc has no convention to explain it")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "orphan_key") {
 		t.Fatal("unused loc should stay orphaned")
@@ -74,9 +74,9 @@ ns.1 = {
 
 func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 	s := buildSession(t, "ck3", &derived.VanillaCache{
-		LocAffixes: map[string][]loc.Affix{
-			"decisions":  {{Defs: 10, Of: 10}, {Suf: "_desc", Defs: 10, Of: 10}},
-			"game_rules": {{Pre: "game_rule_", Defs: 10, Of: 10}},
+		LocConventions: map[string][]loc.Convention{
+			"decisions":  {{Template: "{id}", Coverage: 1}, {Template: "{id}_desc", Coverage: 1}},
+			"game_rules": {{Template: "game_rule_{id}", Coverage: 1}},
 		},
 	}, nil, []derived.ModInput{oneMod(t, "ck3", map[string]string{
 		"common/game_rules/00.txt": `my_rule = {
@@ -105,24 +105,24 @@ func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 			" cn_hungarian_empire_adj:0 \"Hungarian\"\n unused_key:0 \"U\"\n",
 	})})
 	_, cov := Coverage(s)
-	if coverageIssue(cov, "english", "orphaned", "game_rules_my_rule") &&
+	if !coverageIssue(cov, "english", "orphaned", "game_rules_my_rule") ||
 		coverageIssue(cov, "english", "orphaned", "game_rule_my_rule") {
-		t.Fatal("voted game_rules kind_id loc should not be orphaned")
+		t.Fatal("the learned prefix names the rule; the plural spelling names nothing")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "rule_my_rule") {
-		t.Fatal("encyclopedia rule_<id> is unused without a vote")
+		t.Fatal("encyclopedia rule_<id> is not a template")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "setting_opt_a") {
-		t.Fatal("encyclopedia setting_ key is unused without a vote")
+		t.Fatal("encyclopedia setting_ key is not a template")
 	}
 	if coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity") {
 		t.Fatal("decision id loc should not be orphaned")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_tooltip") {
-		t.Fatal("encyclopedia <id>_tooltip is unused without a vote")
+		t.Fatal("encyclopedia <id>_tooltip is not a template")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_confirm") {
-		t.Fatal("encyclopedia <id>_confirm is unused without a vote")
+		t.Fatal("encyclopedia <id>_confirm is not a template")
 	}
 	if coverageIssue(cov, "english", "orphaned", "HRE_CONQUEST_WAR_NAME") {
 		t.Fatal("war_name cite should not be orphaned")
@@ -137,7 +137,7 @@ func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 		t.Fatal("decision id_desc loc should not be orphaned")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "cn_hungarian_empire_adj") {
-		t.Fatal("encyclopedia flavorization loc is unused without a vote")
+		t.Fatal("encyclopedia flavorization loc is not a template")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "my_msg") {
 		t.Fatal("message def id is not a loc key")
@@ -234,69 +234,51 @@ ns.1 = { type = character_event title = used_key }
 	}
 }
 
-// A game rule is a definition and gets `rule_<id>`; its options are nested one
-// level inside it and never become definitions, yet each gets `setting_<option>`
-// and `setting_<option>_desc`. Nothing owned those, so every option a mod added
-// produced two orphaned keys.
-func TestCoverageGameRuleOptionLocIsNotOrphaned(t *testing.T) {
-	s := buildSession(t, "ck3", &derived.VanillaCache{
-		// What a scan derives from vanilla: rules are definitions, options are
-		// block members, and each has its own convention.
-		LocAffixes: map[string][]loc.Affix{
-			"game_rules": {{Pre: "rule_", Defs: 81, Of: 81}},
+// Orphaned is mod-local: a key is dead only when the mod that DEFINES it has nothing that reads it.
+func TestCoverageOrphanIsModLocal(t *testing.T) {
+	c := &derived.VanillaCache{
+		LocKeyPrefixes: []string{"NOT"},
+		LocConventions: map[string][]loc.Convention{
+			"traits": {{Template: "{id}", Coverage: 1}},
 		},
-		LocMemberAffixes: map[string][]loc.Affix{
-			"game_rules": {
-				{Pre: "setting_", Defs: 297, Of: 304},
-				{Pre: "setting_", Suf: "_desc", Defs: 294, Of: 304},
-			},
-		},
-	}, nil, []derived.ModInput{oneMod(t, "ck3", map[string]string{
-		"common/game_rules/00.txt": `secret_unbeliever_found_rule = {
-	default = suf_quieter
-	suf_vanilla = { flag = GG_can_change_rule }
-	suf_quieter = { flag = GG_can_change_rule }
-}
-`,
-		"localization/english/mod_l_english.yml": "" +
-			"l_english:\n rule_secret_unbeliever_found_rule:0 \"R\"\n" +
-			" setting_suf_quieter:0 \"Quieter\"\n" +
-			" setting_suf_quieter_desc:0 \"Fewer events.\"\n" +
-			" setting_suf_vanilla:0 \"Vanilla\"\n" +
-			" genuinely_unused_key:0 \"U\"\n",
-	})})
+	}
+	derived.PrepareCache(c)
+	modA := oneMod(t, "ck3", map[string]string{
+		"common/traits/a.txt": "brave = { }\n",
+		"localization/english/a_l_english.yml": "" +
+			"l_english:\n brave:0 \"Brave\"\n a_nested:0 \"see $a_stem$\"\n" +
+			" a_stem:0 \"Stem\"\n a_dead:0 \"Nothing reads this\"\n" +
+			" NOT_brave:0 \"Not brave\"\n NOT_nothing:0 \"Stem is not a key\"\n" +
+			" a_concept:0 \"see [Concept('my_concept')]\"\n my_concept:0 \"A concept\"\n",
+	})
+	modB := oneMod(t, "ck3", map[string]string{
+		"events/b.txt":                         "namespace = ns\nns.1 = { title = a_dead }\n",
+		"localization/english/b_l_english.yml": "l_english:\n b_dead:0 \"Also dead\"\n",
+	})
+	modB.Origin, modB.Order = "mod2", 1
+	s := buildSession(t, "ck3", c, nil, []derived.ModInput{modA, modB})
 	_, cov := Coverage(s)
-	// The option names exist in no install — the mod invented them — so this
-	// only works because BuildIndex now carries the mods' own member names.
-	for _, key := range []string{
-		"rule_secret_unbeliever_found_rule",
-		"setting_suf_quieter", "setting_suf_quieter_desc", "setting_suf_vanilla",
-	} {
+	// Read by its own mod: a convention over its own def, a `$key$` and a `[Concept(…)]` in its own values.
+	for _, key := range []string{"brave", "a_stem", "NOT_brave", "my_concept"} {
 		if coverageIssue(cov, "english", "orphaned", key) {
-			t.Errorf("%s is consumed by convention, not orphaned", key)
+			t.Errorf("%s is read by its own mod, not orphaned", key)
 		}
 	}
-	// And a key nothing explains is still reported. Suppressing everything
-	// would be no better than suppressing nothing.
-	if !coverageIssue(cov, "english", "orphaned", "genuinely_unused_key") {
-		t.Error("a key with no owner must still be orphaned")
+	// a_dead is cited only by the OTHER mod, so it is still dead in this one.
+	for _, key := range []string{"a_nested", "a_dead", "b_dead", "NOT_nothing", "a_concept"} {
+		if !coverageIssue(cov, "english", "orphaned", key) {
+			t.Errorf("%s has no reader in its own mod: %+v", key, cov)
+		}
 	}
 }
 
-// TestCoverageCitedIdIsNotOrphaned pins the fix for the loudest remaining
-// orphan false positive: a key that shares its name with an object script
-// cites. The engine reads an object's id and its localization by the same name,
-// so `friend_after_subjugation` sitting in an opinion modifier's block accounts
-// for the key of that name — and go-to-references already found those uses
-// while the orphan check called the key dead.
-//
-// The reference here is an ordinary field value, not a loc property, which is
-// the whole point: UsedLocKeys only counts refs filed under a loc kind.
+// The loudest orphan false positive: a key sharing its name with an object the mod defines.
 func TestCoverageCitedIdIsNotOrphaned(t *testing.T) {
-	// The field type is what makes the reference exist at all; without it this
-	// fixture harvests nothing and the test would pass for the wrong reason.
 	c := &derived.VanillaCache{
 		FieldValueKinds: map[string]string{"modifier": "opinion_modifiers"},
+		LocConventions: map[string][]loc.Convention{
+			"opinion_modifiers": {{Template: "{id}", Coverage: 1}},
+		},
 	}
 	derived.PrepareCache(c)
 	s := buildSession(t, "ck3", c, nil, []derived.ModInput{oneMod(t, "ck3",
@@ -317,42 +299,6 @@ func TestCoverageCitedIdIsNotOrphaned(t *testing.T) {
 	if !coverageIssue(cov, "english", "orphaned", "truly_unused_key") {
 		t.Errorf("genuinely unused key not reported: %+v", cov)
 	}
-}
-
-// TestCoverageAffixOverCitedNameIsNotOrphaned pins the second half of the same
-// rule: a convention whose stem is a name script uses but never defines. A CK3
-// game rule category is declared by the rules that cite it, so
-// `game_rule_category_<id>` had no definition to own it and read as an orphan.
-func TestCoverageAffixOverCitedNameIsNotOrphaned(t *testing.T) {
-	c := &derived.VanillaCache{
-		FieldValueKinds: map[string]string{"category": "game_rule_categories"},
-		// The convention as the install would have yielded it.
-		LocAffixes: map[string][]loc.Affix{
-			"game_rule_categories": {{Pre: "game_rule_category_", Defs: 9, Of: 9}},
-		},
-	}
-	derived.PrepareCache(c)
-	s := buildSession(t, "ck3", c, nil, []derived.ModInput{oneMod(t, "ck3",
-		map[string]string{
-			"common/game_rules/00_r.txt": "my_rule = {\n\tcategory = my_category\n}\n",
-			"localization/english/a_l_english.yml": "" +
-				"l_english:\n game_rule_category_my_category:0 \"Mine\"\n" +
-				" game_rule_category_nobody_cites_this:0 \"Dead\"\n",
-		})})
-	if coverageIssue(mustRows(t, s), "english", "orphaned", "game_rule_category_my_category") {
-		t.Errorf("convention over a cited name reported as orphaned")
-	}
-	// Same convention, stem nothing names: still an orphan.
-	if !coverageIssue(mustRows(t, s), "english", "orphaned",
-		"game_rule_category_nobody_cites_this") {
-		t.Errorf("convention over an unknown stem not reported")
-	}
-}
-
-func mustRows(t *testing.T, s *session.Session) []HealthRow {
-	t.Helper()
-	_, rows := Coverage(s)
-	return rows
 }
 
 // The KPI is how many there are, not how many the table can show. This is the

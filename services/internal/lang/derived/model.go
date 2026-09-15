@@ -48,14 +48,9 @@ type Model struct {
 	// scopePrefix and scopeKind answer "a token declares it takes a <scope
 	// type> — how does the user write one?": as `prefix:id`, or as a bare key
 	// of some database. Both reverse a table that is otherwise scanned whole.
-	scopePrefix map[string]string
-	scopeKind   map[string]string
-	modFireKeys map[string]string
-	// modMembers are block-member key names per kind from the mods, and
-	// memberSets is the lazily built per-kind set the orphan check probes. Only
-	// kinds that actually carry a member convention are ever built.
-	modMembers      map[string][]string
-	memberSets      map[string]map[string]bool
+	scopePrefix     map[string]string
+	scopeKind       map[string]string
+	modFireKeys     map[string]string
 	fieldValueKinds map[string]string
 	modFieldKinds   map[string]string
 	// kindsWithDefs is every kind something actually defines, so a reference to a
@@ -285,7 +280,7 @@ func (m *Model) addRefs(refs []Ref) {
 		m.refsByKey[r.Key] = append(m.refsByKey[r.Key], r)
 		p := CanonPath(r.Path)
 		m.refsByFile[p] = append(m.refsByFile[p], r)
-		if r.Kind == "loc" || r.Kind == "loc-broad" || r.Kind == "loc-convention" {
+		if r.Kind == "loc" || r.Kind == "loc-broad" {
 			m.locRefsByFile[p] = append(m.locRefsByFile[p], r)
 		}
 	}
@@ -405,21 +400,19 @@ func NewModel(
 	m.addEdges(idx.Edges)
 	m.modFieldKinds = idx.FieldValueKinds
 	m.modFireKeys = maps.Clone(idx.FireKeys)
-	m.modMembers = idx.Structures
 	m.rebuildLocByFile()
 	m.rebuildProjections()
 	return m
 }
 
 // rebuildProjections re-derives everything computed FROM the cache and the mod
-// index. Four calls in a fixed order, and they were written out at all three
-// sites that change the model — so a fifth projection added later would have
+// index. Three calls in a fixed order, and they were written out at all three
+// sites that change the model — so a fourth projection added later would have
 // been missed at one of them.
 func (m *Model) rebuildProjections() {
 	m.rebuildCacheIndex()
 	m.rebuildFieldKinds()
 	m.rebuildMacroSets()
-	m.rebuildMemberSets()
 	m.viaDirty = true
 }
 

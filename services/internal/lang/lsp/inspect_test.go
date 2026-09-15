@@ -319,8 +319,8 @@ func TestGameRuleSettingHover(t *testing.T) {
 		"localization/english/a_l_english.yml": locYml,
 		"events/e.txt":                         use,
 	}, &derived.VanillaCache{
-		LocAffixes: map[string][]loc.Affix{
-			"game_rule_setting": {{Pre: "game_rule_setting_", Defs: 10, Of: 10}},
+		LocConventions: map[string][]loc.Convention{
+			"game_rule_setting": {{Template: "game_rule_setting_{id}", Coverage: 1}},
 		},
 	}, &derived.VanillaLoc{
 		Sites: map[string]derived.LocEntry{
@@ -661,8 +661,8 @@ func TestFieldKeyCardDoesNotDescribeItsKind(t *testing.T) {
 	}, &derived.VanillaCache{
 		Structures: map[string][]string{"coat_of_arms": {"color2"}},
 		// The kind has a localization convention; the field does not.
-		LocAffixes: map[string][]loc.Affix{
-			"coat_of_arms": {{Defs: 10, Of: 10}},
+		LocConventions: map[string][]loc.Convention{
+			"coat_of_arms": {{Template: "{id}", Coverage: 1}},
 		},
 	}, nil)
 	f := filepath.Join(root, "common", "coat_of_arms", "coat_of_arms", "c.txt")
@@ -687,11 +687,8 @@ func TestFieldKeyCardDoesNotDescribeItsKind(t *testing.T) {
 func TestKindHintHasNoLocConvention(t *testing.T) {
 	const body = "my_trait = {\n\tcategory = personality\n}\n"
 	cache := &derived.VanillaCache{
-		LocAffixes: map[string][]loc.Affix{
-			"traits": {
-				{Defs: 10, Of: 10},               // the key is the id
-				{Suf: "_desc", Defs: 10, Of: 10}, // this one is worth saying
-			},
+		LocConventions: map[string][]loc.Convention{
+			"traits": {{Template: "{id}", Coverage: 1}, {Template: "{id}_desc", Coverage: 1}},
 		},
 	}
 	s, root := buildSession(t, "ck3",

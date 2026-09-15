@@ -35,9 +35,7 @@ type Derived struct {
 	NestedShapes    []NestedShape
 	Wrappers        map[string]bool
 	FieldValueKinds map[string]string
-	LocAffixes      map[string][]loc.Affix
 	LocFields       map[string]bool
-	LocListFields   map[string]bool
 }
 
 // derivedFromCache copies the persisted derived maps so a live reindex can
@@ -49,9 +47,7 @@ func derivedFromCache(c *VanillaCache) *Derived {
 		FireKeys:        map[string]string{},
 		Wrappers:        map[string]bool{},
 		FieldValueKinds: map[string]string{},
-		LocAffixes:      map[string][]loc.Affix{},
 		LocFields:       map[string]bool{},
-		LocListFields:   map[string]bool{},
 	}
 	if c == nil {
 		return v
@@ -60,12 +56,8 @@ func derivedFromCache(c *VanillaCache) *Derived {
 	maps.Copy(v.PrefixKinds, c.PrefixKinds)
 	maps.Copy(v.FireKeys, c.FireKeys)
 	maps.Copy(v.FieldValueKinds, c.FieldValueKinds)
-	maps.Copy(v.LocAffixes, c.LocAffixes)
 	for _, f := range c.LocFields {
 		v.LocFields[f] = true
-	}
-	for _, f := range c.LocListFields {
-		v.LocListFields[f] = true
 	}
 	for _, w := range c.Wrappers {
 		v.Wrappers[w] = true
@@ -94,16 +86,6 @@ func (v *Derived) fieldKind(key string) string {
 	return v.FieldValueKinds[strings.ToLower(key)]
 }
 
-func (v *Derived) locAffixes(kind string) []loc.Affix {
-	if v == nil {
-		return nil
-	}
-	if a := v.LocAffixes[kind]; len(a) > 0 {
-		return a
-	}
-	return v.LocAffixes[jomini.CanonicalKind(kind)]
-}
-
 func (v *Derived) mergeLocal(local *Derived) {
 	if local == nil {
 		return
@@ -118,16 +100,8 @@ func (v *Derived) mergeLocal(local *Derived) {
 	v.KindScope = mergeStringMap(v.KindScope, local.KindScope)
 	v.FireKeys = mergeStringMap(v.FireKeys, local.FireKeys)
 	v.FieldValueKinds = mergeStringMap(v.FieldValueKinds, local.FieldValueKinds)
-	for kind, list := range local.LocAffixes {
-		if len(list) > 0 {
-			v.LocAffixes[kind] = list
-		}
-	}
 	for f := range local.LocFields {
 		v.LocFields[f] = true
-	}
-	for f := range local.LocListFields {
-		v.LocListFields[f] = true
 	}
 	for k, ok := range local.Wrappers {
 		if ok {
@@ -793,7 +767,7 @@ func keywordDeclared(stmts []jomini.Statement, i int) bool {
 //
 // Grouped under IsCitableDef because that is what most of them want:
 // defKeySet, bindKinds and deriveFieldValueKinds apply exactly this filter, and
-// IsObjectKind — deriveLocAffixes' rule — is this filter minus `namespace`, so
+// IsObjectKind — deriveLocConventions' rule — is this filter minus `namespace`, so
 // it narrows from here rather than needing its own walk. deriveSnippets is the
 // one that does not: it counts definitions per RAW kind, so defsByKind is kept
 // beside the rest and counts everything.
@@ -852,33 +826,6 @@ func (x *defIndex) citableKeys() map[string]bool {
 // the install has none; callers only read it.
 func (x *defIndex) keysOfKind(kind string) map[string]bool { return x.keysByKind[kind] }
 
-// objectNames narrows to IsObjectKind — this index minus `namespace`, which is
-// the only kind citable and not an object. Returns the kinds each name has and
-// how many distinct names each kind holds, which is what the affix derivation
-// weighs a shape against.
-func (x *defIndex) objectNames() (kindsOf map[string][]string, total map[string]int) {
-	kindsOf = make(map[string][]string, len(x.kindsByKey))
-	total = make(map[string]int, len(x.keysByKind))
-	for k, keys := range x.keysByKind {
-		if !jomini.IsObjectKind(k) {
-			continue
-		}
-		total[k] = len(keys)
-	}
-	for key, kinds := range x.kindsByKey {
-		var keep []string
-		for _, k := range kinds {
-			if jomini.IsObjectKind(k) {
-				keep = append(keep, k)
-			}
-		}
-		if len(keep) > 0 {
-			kindsOf[key] = keep
-		}
-	}
-	return kindsOf, total
-}
-
 // defKeySet is the set of names already spoken for by a real definition. Passes
 // that invent a database from unexplained citations subtract it first, so a name
 // with a home is never handed a second one.
@@ -898,28 +845,32 @@ func dropWrapperDefs(defs []Def, wrappers map[string]bool) []Def {
 	return out
 }
 
-// deriveLocAffixes reads the install's own localization to work out how each
-// kind names its keys.
-//
-// It replaced a three-way vote between `id`, `id_desc` and `kind_id`. Those are
-// three real conventions, but they are three of many — Victoria 3 alone writes
-// `ACHIEVEMENT_<id>`, `ACHIEVEMENT_DESC_<id>`, `notification_<id>_tooltip`,
-// `HUB_NAME_<state>_farm`, `SINGULAR_DEMONYM_<culture>` — and picking one
-// winner per kind left every other key for that kind looking defined-but-unused.
-// Nothing about those shapes is guessable, which is exactly why they are read
-// from the corpus rather than listed in code: a game update that invents a new
-// one is picked up by the next scan.
-//
-// The method is the same as every other derivation here. Take each localization
-// key, find the spans of it that name a definition, and record the surrounding
-// prefix and suffix as a candidate convention for that definition's kind. A
-// candidate becomes a convention when enough distinct definitions share it.
-func deriveLocAffixes(idx *defIndex, locKeys map[string]bool) map[string][]loc.Affix {
-	if len(locKeys) == 0 || len(idx.kindsByKey) == 0 {
+// locConventionFloor is the share of a kind's definitions a template must hold for.
+const locConventionFloor = 0.9
+
+// deriveLocConventions reads the install's own localization to work out which key templates each kind uses.
+func deriveLocConventions(
+	idx *defIndex, structures map[string][]string, keys *loc.Keys,
+) map[string][]loc.Convention {
+	if keys == nil || len(idx.keysByKind) == 0 {
 		return nil
 	}
-	kindsOf, total := idx.objectNames()
-	return loc.AffixesFrom(kindsOf, total, locKeys)
+	out := map[string][]loc.Convention{}
+	for kind, ks := range idx.keysByKind {
+		// IsObjectKind, not IsCitableDef: a namespace is an event-id prefix with no loc of its own.
+		if !jomini.IsObjectKind(kind) {
+			continue
+		}
+		cs := loc.Learn(slices.Collect(maps.Keys(ks)),
+			structures[kind], keys, locConventionFloor)
+		if len(cs) > 0 {
+			out[kind] = cs
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func locKeySet(sites map[string]LocEntry) map[string]bool {
@@ -970,19 +921,10 @@ func isDataFnByte(c byte) bool {
 }
 
 // locField reports a script property the corpus shows holds localization keys,
-// beyond the engine property names parser/loc lists outright.
+// beyond the engine property names parser/loc lists outright. Its LIST members are keys too.
 func (v *Derived) locField(key string) bool {
 	if v == nil {
 		return false
 	}
 	return v.LocFields[key] || v.LocFields[strings.ToLower(key)]
-}
-
-// locListField reports a property whose LIST members are localization keys —
-// a culture's `male_names`, its `cadet_dynasty_names`.
-func (v *Derived) locListField(key string) bool {
-	if v == nil {
-		return false
-	}
-	return v.LocListFields[key] || v.LocListFields[strings.ToLower(key)]
 }

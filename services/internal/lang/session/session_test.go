@@ -146,6 +146,7 @@ func TestQueries(t *testing.T) {
 	root := writeFiles(t, map[string]string{
 		"events/x.txt":                         body,
 		"localization/english/a_l_english.yml": "l_english:\n k.t:0 \"Hi\"\n",
+		"localization/spanish/zz_l_spanish.yml": "l_spanish:\n k.t:0 \"Hola\"\n",
 	})
 	ev := filepath.Join(root, "events", "x.txt")
 	loc := filepath.Join(root, "localization", "english", "a_l_english.yml")
@@ -163,16 +164,18 @@ func TestQueries(t *testing.T) {
 	})
 	s.DropLocIndex()
 	s.DidOpen(loc, "l_english:\n k.t:0 \"Hi\"\n")
+	s.DidOpen(filepath.Join(root, "localization", "spanish", "zz_l_spanish.yml"), "l_spanish:\n k.t:0 \"Hola\"\n")
 
 	must(t, s.DefaultLang() == "english" && s.DefCount() >= 2 && s.Resolve("t.1") != nil, "defs")
 	must(t, s.ResolveMatching("t.1", func(d derived.Def) bool { return d.Kind == "event" }) != nil,
 		"ResolveMatching")
 	must(t, len(s.ModDefsOf("t.1")) > 0 && len(s.FindDefs("t.1", 10, true, false)) > 0 &&
 		len(s.DefsInFile(ev)) > 0, "ModDefsOf/FindDefs/DefsInFile")
-	_, _, _, _, locOK := s.LocSite("k.t")
+	siteFile, _, _, _, locOK := s.LocSite("k.t")
 	v, locValOK := s.DefaultLoc("k.t")
 	_, locFileOK := s.LocFile("mod", "english")
 	must(t, locOK && locValOK && v == "Hi" && locFileOK, "loc site/default/file")
+	must(t, derived.SamePath(siteFile, loc), "LocSite must prefer the default language over a later-sorting spanish file: "+siteFile)
 	eachSaw := ""
 	s.EachLoc(func(lang, k string, e derived.LocEntry) {
 		if lang == "english" && k == "k.t" {

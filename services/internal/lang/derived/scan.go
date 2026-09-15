@@ -107,6 +107,8 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	accIdx := newDefIndex(acc.defs)
 	structures := keysByCount(acc.structures)
 	nestedMembers := deriveNestedMembers(acc.nested)
+	// Indexed here, not at harvest: the index is ~80 MB and the parallel walk is the heap peak.
+	locIndex := loc.NewKeys(locKeys)
 	kinds := deriveFieldValueKinds(acc.fieldRHS, accIdx)
 	if derived != nil {
 		derived.FieldValueKinds = kinds
@@ -134,11 +136,9 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		FireKeys:                 derived.FireKeys,
 		NestedShapes:             derived.NestedShapes,
 		Wrappers:                 sortedKeys(derived.Wrappers),
-		LocAffixes:               deriveLocAffixes(accIdx, locKeys),
+		LocConventions:           deriveLocConventions(accIdx, structures, locIndex),
+		LocKeyPrefixes:           loc.LearnKeyPrefixes(locIndex, locConventionFloor),
 		LocFields:                sortedKeys(derived.LocFields),
-		LocListFields:            sortedKeys(derived.LocListFields),
-		LocMemberAffixes:         loc.DeriveMemberAffixes(structures, locKeys),
-		LocKeyAffixes:            loc.DeriveKeyAffixes(locKeys),
 		KindInfo:                 kindInfo,
 		FieldInfo:                fieldInfo,
 		FieldInfoByKind:          fieldByKind,
@@ -539,13 +539,12 @@ func collectExtracts(
 			derived.FieldValueKinds[k] = v
 		}
 	}
-	// The install derives its own; a mod walk keeps what the cache carried, so
-	// a mod's `last_name` is read as localization for the same reason vanilla's
-	// is.
+	// The install derives its own; a mod walk keeps the cache's. Scalar and LIST sides both hold keys.
 	if len(locKeys) > 0 {
 		defKeys := baseIdx.citableKeys()
-		derived.LocFields = deriveLocFields(fieldRHS, locKeys, defKeys, schema)
-		derived.LocListFields = deriveLocFields(fieldListRHS, locKeys, defKeys, schema)
+		derived.LocFields = map[string]bool{}
+		maps.Copy(derived.LocFields, deriveLocFields(fieldRHS, locKeys, defKeys, schema))
+		maps.Copy(derived.LocFields, deriveLocFields(fieldListRHS, locKeys, defKeys, schema))
 	}
 	baseDefs = nil
 
@@ -558,7 +557,6 @@ func collectExtracts(
 	if err := corp.walk(func(f fileRef, res jomini.Result) error {
 		ex := extractForms(gameID, f.abs, f.rel, f.origin, res, bodies)
 		ex.Defs = applyDerivedDefs(gameID, f.abs, f.origin, f.rel, res, ex.Defs, derived, citedByKind)
-		ex.Refs = append(ex.Refs, conventionLocRefs(res.Lines(), f.abs, ex.Defs, derived)...)
 		bodyRefs, edges, cands := extractRefsAndEdges(
 			gameID, res.Root, res.Lines(), f.abs, ex.Defs, derived, schema,
 		)

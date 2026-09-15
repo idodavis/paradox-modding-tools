@@ -41,6 +41,9 @@ func TestDiagnose(t *testing.T) {
 		{"ORDER interp is not loc", "ck3", "localization/english/a_l_english.yml",
 			"l_english:\n war:0 \"$ORDER$ fight\"\n",
 			"", "missing-required-loc"},
+		// A definition with no learned convention is never demanded a key.
+		{"no convention, no required-loc", "ck3", "common/traits/t.txt",
+			"brave = { }\n", "", "required-loc"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,6 +53,7 @@ func TestDiagnose(t *testing.T) {
 			if tt.want != "" && !hasDiag(diags, tt.want) {
 				t.Fatalf("missing %s: %v", tt.want, diags)
 			}
+			// The unclosed file also cites a key nothing defines.
 			if tt.want == "unclosed-brace" && !hasDiag(diags, "missing-required-loc") {
 				t.Fatalf("missing loc diag: %v", diags)
 			}
@@ -83,6 +87,7 @@ func TestDiagnoseVanillaSilent(t *testing.T) {
 	modEvent := write(t, modRoot, "events/m.txt",
 		"mod.1 = {\n\ttitle = missing_key\n}\n")
 
+	// No conventions: the mod's diagnostic must come from its citation alone.
 	s := session.NewWithLoc("ws", "ck3", "english", &derived.VanillaCache{
 		InstallPath: install,
 	}, nil, []derived.ModInput{{Origin: "mod", Root: modRoot, Order: 0}})
@@ -131,8 +136,8 @@ func TestSignatureHelpAndSchemaDiags(t *testing.T) {
 			"trigger_event": {Target: "event"},
 		}},
 		FieldInfo: map[string]string{"add_gold": "gold"},
-		LocAffixes: map[string][]loc.Affix{
-			"traits": {{Pre: "trait_", Defs: 10, Of: 10}},
+		LocConventions: map[string][]loc.Convention{
+			"traits": {{Template: "trait_{id}", Coverage: 1}},
 		},
 	}
 	s, root := buildSession(t, "ck3", map[string]string{
@@ -158,14 +163,47 @@ func TestSignatureHelpAndSchemaDiags(t *testing.T) {
 	}
 }
 
+// The four templates are the whole rule: a `_tooltip` key the script cites is not one of them.
 func TestDecisionConventionLocIsNotRequired(t *testing.T) {
+	cache := &derived.VanillaCache{LocConventions: map[string][]loc.Convention{
+		"decisions": {{Template: "{id}", Coverage: 1}, {Template: "{id}_desc", Coverage: 1}},
+	}}
+	derived.PrepareCache(cache)
 	s, root := buildSession(t, "ck3", map[string]string{
-		"common/decisions/d.txt":               "foo = {\n\tselection_tooltip = foo_tooltip\n}\n",
-		"localization/english/a_l_english.yml": "\ufeffl_english:\n foo:0 \"F\"\n foo_tooltip:0 \"T\"\n",
-	}, nil, nil)
+		"common/decisions/d.txt": "foo = {\n\tselection_tooltip = foo_tooltip\n}\n",
+		"localization/english/a_l_english.yml": "l_english:\n foo:0 \"F\"\n" +
+			" foo_desc:0 \"D\"\n foo_tooltip:0 \"T\"\n",
+	}, cache, nil)
 	df := filepath.Join(root, "common", "decisions", "d.txt")
 	if hasDiag(Diagnose(s, df), "required-loc") {
-		t.Fatal("decision suffix loc must not be required-loc")
+		t.Fatal("decision with both convention keys must not be required-loc")
+	}
+}
+
+// required-loc asserts the game DEMANDS a key, so only a universal convention is worth a warning.
+func TestRequiredLocDemandsFullCoverage(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		coverage float64
+		want     bool
+	}{
+		{"a habit most of the kind shares", 0.95, false},
+		{"a shape every definition has", 1, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &derived.VanillaCache{LocConventions: map[string][]loc.Convention{
+				"decisions": {{Template: "{id}_desc", Coverage: tt.coverage}},
+			}}
+			derived.PrepareCache(cache)
+			s, root := buildSession(t, "ck3", map[string]string{
+				"common/decisions/d.txt":               "foo = { }\n",
+				"localization/english/a_l_english.yml": "l_english:\n foo:0 \"F\"\n",
+			}, cache, nil)
+			df := filepath.Join(root, "common", "decisions", "d.txt")
+			if got := hasDiag(Diagnose(s, df), "required-loc"); got != tt.want {
+				t.Fatalf("required-loc = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

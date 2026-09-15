@@ -6,7 +6,6 @@ package derived
 import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/jomini"
-	"paradox-modding-tools/services/internal/lang/loc"
 )
 
 // extractScriptNames walks assignments for ScriptName defs/refs and scope:/var: refs.
@@ -292,34 +291,6 @@ func scriptNameValue(a *jomini.Assignment, r jomini.ScriptNameRule) string {
 		}
 	}
 	return "yes"
-}
-
-func conventionLocRefs(
-	li *jomini.LineIndex, path string, defs []Def, derived *Derived,
-) []Ref {
-	if derived == nil || li == nil {
-		return nil
-	}
-	var out []Ref
-	for _, d := range defs {
-		// Only the strongest conventions are stored as references. The full set
-		// is applied in reverse by loc.ConventionOwner, which costs nothing until a
-		// key actually looks orphaned; expanding all of them forwards would add
-		// a reference per definition per convention to every install cache.
-		//
-		// loc.ConventionStored, not loc.ConventionRequired: what is worth a
-		// navigable reference and what the game demands are different questions,
-		// and sharing a constant coupled them. Raising the required floor to 100
-		// shrank this set and pushed EU5's orphan count up 143 as a side effect.
-		affixes := derived.locAffixes(d.Kind)
-		for _, key := range loc.ConventionKeys(d.Key, affixes, loc.ConventionStored) {
-			out = append(out, Ref{
-				Key: key, Kind: "loc-convention", Path: path,
-				Line: li.PositionAt(d.Start).Line, Start: d.Start, End: d.End,
-			})
-		}
-	}
-	return out
 }
 
 // dropEphemeralDefs drops flags/variables/scopes from the install cache.

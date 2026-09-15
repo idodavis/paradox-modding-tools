@@ -88,6 +88,13 @@ func extractLoc(absPath, content, origin string) (defs []Def, locd LocDelta, ref
 				Line: e.Line, Start: ip.KeyRange.Start, End: ip.KeyRange.End,
 			})
 		}
+		// Broad: a concept name reads a key, but the engine also takes names the loc files never define.
+		for _, ip := range loc.DataFnKeys(e.Value, e.ValueRange.Start) {
+			refs = append(refs, Ref{
+				Key: ip.Key, Kind: "loc-broad", Path: absPath,
+				Line: e.Line, Start: ip.KeyRange.Start, End: ip.KeyRange.End,
+			})
+		}
 	}
 	return defs, LocDelta{Lang: lang, Vals: vals}, refs
 }
@@ -117,7 +124,6 @@ func ExtractParsed(
 	derived.mergeLocal(deriveFile(gameID, rel, res, ex.Defs, schema))
 	derived.mergeLocal(&Derived{FieldValueKinds: deriveFieldValueKinds(ex.FieldRHS, newDefIndex(ex.Defs))})
 	ex.Defs = applyDerivedDefs(gameID, absPath, origin, rel, res, ex.Defs, derived, nil)
-	ex.Refs = append(ex.Refs, conventionLocRefs(res.Lines(), absPath, ex.Defs, derived)...)
 	bodyRefs, edges, cands := extractRefsAndEdges(
 		gameID, res.Root, res.Lines(), absPath, ex.Defs, derived, schema,
 	)
@@ -675,7 +681,7 @@ func extractRefsAndEdges(
 					// A list whose members are localization keys: a culture's
 					// `male_names`, its `cadet_dynasty_names`. The members are
 					// values, not assignments, so nothing else here sees them.
-					if derived.locListField(key) {
+					if derived.locField(key) {
 						if b := jomini.BlockOf(a.Value); b != nil {
 							for _, in := range b.Statements {
 								vs, ok := in.(*jomini.ValueStmt)

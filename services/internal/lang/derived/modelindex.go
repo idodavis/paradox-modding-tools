@@ -12,6 +12,7 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/declared"
 	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/lang/loc"
 )
 
 func (m *Model) DisplayRel(path string) string {
@@ -409,11 +410,20 @@ func (m *Model) ResolveMatching(key string, keep func(Def) bool) *Def {
 }
 
 func (m *Model) LocSite(key string) (file string, line, start int, origin string, ok bool) {
-	var locDefs []Def
+	// The default language's file is the site; other languages only when it has none.
+	var locDefs, other []Def
 	for _, d := range m.defsByKey[key] {
-		if d.Kind == "loc_key" {
-			locDefs = append(locDefs, d)
+		if d.Kind != "loc_key" {
+			continue
 		}
+		if loc.LanguageFromRel(d.Path) == m.DefaultLang() {
+			locDefs = append(locDefs, d)
+		} else {
+			other = append(other, d)
+		}
+	}
+	if len(locDefs) == 0 {
+		locDefs = other
 	}
 	if w := Winner(m.gameID, locDefs, m.order); w != nil {
 		return w.Path, w.Line, w.Start, w.Origin, true
@@ -682,26 +692,6 @@ func (m *Model) LocKeys(prefix string, limit int) []string {
 		}
 		return add(d.Key)
 	})
-	return out
-}
-
-// UsedLocKeys is loc / loc-broad / loc-convention keys from workspace and vanilla.
-func (m *Model) UsedLocKeys() map[string]bool {
-	out := map[string]bool{}
-	add := func(refs []Ref) {
-		for _, r := range refs {
-			switch r.Kind {
-			case "loc", "loc-broad", "loc-convention":
-				out[r.Key] = true
-			}
-		}
-	}
-	for _, rs := range m.locRefsByFile {
-		add(rs)
-	}
-	if m.cache != nil {
-		add(m.cache.LocRefs)
-	}
 	return out
 }
 

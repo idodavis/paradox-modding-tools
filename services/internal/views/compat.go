@@ -160,7 +160,7 @@ func fillSnippet(s *session.Session, site *OverrideSite) {
 
 func skipCompatRef(r derived.Ref) bool {
 	switch r.Kind {
-	case "loc", "loc-broad", "loc-convention", "namespace":
+	case "loc", "loc-broad", "namespace":
 		return true
 	}
 	return jomini.IsEphemeral(r.Kind)

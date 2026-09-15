@@ -32,158 +32,28 @@ func (m *Model) FireKind(key string) string {
 	return firstIn(m.modFireKeys, key, lower)
 }
 
-// ConventionLocKeys expands the derived loc conventions for one def, keeping
-// those that hold for at least minCoverage percent of the kind. Callers pass
-// loc.ConventionUsed to ask what the engine may read, or
-// LocConventionRequired to ask what it demands.
-func (m *Model) ConventionLocKeys(kind, id string, minCoverage int) []string {
+// LocConventionsOf is a kind's derived conventions, falling back to the canonical spelling's.
+func (m *Model) LocConventionsOf(kind string) []loc.Convention {
 	if m.cache == nil {
 		return nil
 	}
-	// A kind harvested under its plural or prefixed spelling shares the
-	// canonical kind's affixes; the exact spelling wins where it has any.
-	affixes := m.cache.LocAffixes[kind]
-	if len(affixes) == 0 {
-		affixes = m.cache.LocAffixes[jomini.CanonicalKind(kind)]
+	if cs := m.cache.LocConventions[kind]; len(cs) > 0 {
+		return cs
 	}
-	return loc.ConventionKeys(id, affixes, minCoverage)
+	return m.cache.LocConventions[jomini.CanonicalKind(kind)]
 }
 
-// Its failure mode is a genuine orphan going unreported, which is the direction
-// to fail in.
-func (m *Model) LocKeyExplained(key string) bool {
-	if _, _, ok := m.locConventionOwner(key); ok {
-		return true
-	}
-	if len(m.refsByKey[key]) > 0 || len(m.cacheRefsByKey[key]) > 0 {
-		return true
-	}
+// ConventionLocKeys is every key a kind's conventions name for one def.
+func (m *Model) ConventionLocKeys(kind, id string) []string {
+	return loc.Expand(id, m.LocConventionsOf(kind))
+}
+
+// LocKeyPrefixes are the derived prefixes that build one loc key out of another.
+func (m *Model) LocKeyPrefixes() []string {
 	if m.cache == nil {
-		return false
+		return nil
 	}
-	if _, _, ok := loc.ConventionOwner(
-		m.cache.LocAffixes, key, m.nameKinds); ok {
-		return true
-	}
-	if len(m.cache.LocKeyAffixes) == 0 {
-		return false
-	}
-	_, ok := loc.KeyAffixOwner(m.cache.LocKeyAffixes, key, m.isLocKey)
-	return ok
-}
-
-// Permissive by design and used only by LocKeyExplained. defKinds stays
-// the strict version: it backs resolution that must name a file to open, and a
-// reference is not a place to open.
-func (m *Model) nameKinds(id string, visit func(kind string) bool) {
-	stop := false
-	m.defKinds(id, func(kind string) bool {
-		if !visit(kind) {
-			stop = true
-			return false
-		}
-		return true
-	})
-	if stop {
-		return
-	}
-	seen := map[string]bool{}
-	for _, group := range [][]Ref{m.refsByKey[id], m.cacheRefsByKey[id]} {
-		for _, r := range group {
-			if r.Kind == "" || seen[r.Kind] {
-				continue
-			}
-			seen[r.Kind] = true
-			if !visit(r.Kind) {
-				return
-			}
-		}
-	}
-}
-
-// isLocKey reports whether key is defined in any language, workspace or
-// install. Any language: a derived shape is a property of the key set, and a
-// mod that ships only french still proves the stem exists.
-func (m *Model) isLocKey(key string) bool {
-	for _, m := range m.locByLang {
-		if _, ok := m[key]; ok {
-			return true
-		}
-	}
-	if m.vanillaLoc != nil {
-		_, ok := m.vanillaLoc.Sites[key]
-		return ok
-	}
-	return false
-}
-
-func (m *Model) locConventionOwner(key string) (id, kind string, ok bool) {
-	if m.cache == nil || len(m.cache.LocAffixes) == 0 {
-		return "", "", false
-	}
-	if id, kind, ok := loc.ConventionOwner(
-		m.cache.LocAffixes, key, m.defKinds); ok {
-		return id, kind, true
-	}
-	// Then the names that are members of a definition rather than definitions
-	// themselves. A CK3 game rule is a definition and gets `rule_<id>`, but its
-	// options are nested inside it and never become definitions — and vanilla
-	// writes 590 `setting_<option>` keys for its 380 options.
-	return loc.MemberConventionOwner(
-		m.cache.LocMemberAffixes, key, m.isMember)
-}
-
-// isMember reports name as a block-member key of kind, across the install
-// and the mods. Read-only: the sets are built by rebuildMemberSets.
-func (m *Model) isMember(kind, name string) bool {
-	if kind == "" || name == "" {
-		return false
-	}
-	// Member names are stored lowercased by harvestStructVocab; the stem comes
-	// off a localization key verbatim.
-	return m.memberSets[kind][strings.ToLower(name)]
-}
-
-// Built up front rather than on first use so LocConventionOwner can stay a read
-// lock. Filling a cache inside a query meant that query took the write lock,
-// which deadlocks the moment anything calls it from inside EachLoc or any other
-// read-locked walk. A lookup should not be able to do that.
-func (m *Model) rebuildMemberSets() {
-	m.memberSets = nil
-	if m.cache == nil || len(m.cache.LocMemberAffixes) == 0 {
-		return
-	}
-	m.memberSets = make(map[string]map[string]bool, len(m.cache.LocMemberAffixes))
-	for kind := range m.cache.LocMemberAffixes {
-		set := map[string]bool{}
-		for _, k := range m.cache.Structures[kind] {
-			set[k] = true
-		}
-		for _, k := range m.modMembers[kind] {
-			set[k] = true
-		}
-		m.memberSets[kind] = set
-	}
-}
-
-// defKinds visits the kinds that define id, stopping when visit returns
-// false. ConventionOwner calls it for every span of every candidate key, so it
-// reads the indexes in place — no defsOf copy, and no result slice.
-func (m *Model) defKinds(id string, visit func(kind string) bool) {
-	if id == "" {
-		return
-	}
-	for _, defs := range [2][]Def{m.defsByKey[id], m.cacheByKey[id]} {
-		for _, d := range defs {
-			k := jomini.CanonicalKind(d.Kind)
-			if !jomini.IsObjectKind(k) {
-				continue
-			}
-			if !visit(k) {
-				return
-			}
-		}
-	}
+	return m.cache.LocKeyPrefixes
 }
 
 // A macro with no parameters gets nothing here; `invoked by name` in the hint

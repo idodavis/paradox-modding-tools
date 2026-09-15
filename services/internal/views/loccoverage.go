@@ -46,7 +46,8 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 	}
 
 	referenced := map[string][]locSite{}
-	used := s.UsedLocKeys()
+	used := usedByOrigin(s)
+	prefixes := s.LocKeyPrefixes()
 	for _, r := range s.LocRefs() {
 		if r.Kind != "loc" {
 			continue
@@ -122,19 +123,6 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 		order = append(order, id)
 	}
 
-	// Memoised across languages: a key's owner does not depend on which
-	// language file it sits in, and a mod shipping a dozen translations would
-	// otherwise decompose every key a dozen times.
-	byConvention := map[string]bool{}
-	hasOwner := func(key string) bool {
-		if v, done := byConvention[key]; done {
-			return v
-		}
-		ok := s.LocKeyExplained(key)
-		byConvention[key] = ok
-		return ok
-	}
-
 	outLangs := make([]HealthLang, 0, len(langs))
 	// Once for every language, not once per language: the base key set does not
 	// depend on the language, and this ran on every drag of the load-order
@@ -156,17 +144,26 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 				addIssue(lang, "missing", site)
 			}
 		}
+		// Orphaned is mod-local: a key is dead when the mod that DEFINES it has nothing that reads it.
 		for key, site := range entries {
-			if used[key] || inherited.Has(lang, key) {
+			origin, _, _ := s.Locate(site.file)
+			o := originID(origin)
+			own := used[o]
+			if own[key] || inherited.Has(lang, key) {
 				continue
 			}
-			// A key nothing cites can still be consumed by name: the engine
-			// reads `ACHIEVEMENT_DESC_<id>` for an achievement and
-			// `notification_<id>_tooltip` for a message without either
-			// appearing in script. Asked here rather than expanded into stored
-			// references, because it is only ever asked of the few keys that
-			// got this far.
-			if hasOwner(key) {
+			// A key the engine derives from another is read whenever its stem is — in the same mod, or in vanilla.
+			if stemRead(key, prefixes, func(stem string) bool {
+				if own[stem] || inherited.Has(lang, stem) {
+					return true
+				}
+				st, ok := entries[stem]
+				if !ok {
+					return false
+				}
+				so, _, _ := s.Locate(st.file)
+				return originID(so) == o
+			}) {
 				continue
 			}
 			addIssue(lang, "orphaned", site)
@@ -225,6 +222,44 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 	}
 	slices.SortFunc(rows, healthRowLess)
 	return outLangs, rows
+}
+
+// stemRead reports key as `<prefix>_<stem>` for a derived prefix whose stem is read.
+func stemRead(key string, prefixes []string, read func(stem string) bool) bool {
+	for _, p := range prefixes {
+		if stem, ok := strings.CutPrefix(key, p+"_"); ok && stem != "" && read(stem) {
+			return true
+		}
+	}
+	return false
+}
+
+// usedByOrigin is, per mod, the loc keys that mod itself reads: its own citations and its own defs expanded.
+func usedByOrigin(s *session.Session) map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	mark := func(origin, key string) {
+		set := out[origin]
+		if set == nil {
+			set = map[string]bool{}
+			out[origin] = set
+		}
+		set[key] = true
+	}
+	// Citations from script AND from loc values: a `$key$` inside the mod's own string is a loc ref.
+	for _, r := range s.LocRefs() {
+		if r.Kind != "loc" && r.Kind != "loc-broad" {
+			continue
+		}
+		origin, _, _ := s.Locate(r.Path)
+		mark(originID(origin), r.Key)
+	}
+	s.EachDef(false, func(d derived.Def) bool {
+		for _, key := range s.ConventionLocKeys(d.Kind, d.Key) {
+			mark(originID(d.Origin), key)
+		}
+		return true
+	})
+	return out
 }
 
 func skipLocIssueFile(s *session.Session, path string) bool {

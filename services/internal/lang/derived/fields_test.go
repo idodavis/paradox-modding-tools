@@ -1,19 +1,16 @@
 // fields_test.go covers the derivations that read a convention out of the
 // corpus and the evidence floors that keep a coincidence from becoming one:
 // field typing (a field takes one def kind, or a small closed set of scalars,
-// and mods overlay vanilla) and localization naming conventions.
+// and mods overlay vanilla) and which script properties hold a localization key.
 
 package derived
 
 import (
-	"fmt"
 	"reflect"
 	"regexp"
-	"slices"
 	"testing"
 
 	"paradox-modding-tools/services/internal/lang/declared"
-	"paradox-modding-tools/services/internal/lang/loc"
 )
 
 func TestDeriveFieldValueKinds(t *testing.T) {
@@ -155,128 +152,6 @@ func TestHarvestGetSetMatchesPattern(t *testing.T) {
 	}
 }
 
-// Localization conventions are read from the corpus, not chosen from a list.
-// The predecessor voted between `id`, `id_desc` and `kind_id` and kept one
-// winner per kind, so Victoria 3's `ACHIEVEMENT_DESC_<id>` and
-// `notification_<id>_tooltip` were defined-but-never-cited and every one of
-// them reported as an orphaned key.
-func TestDeriveLocAffixes(t *testing.T) {
-	var defs []Def
-	locKeys := map[string]bool{}
-	for i := range 10 {
-		id := "achievement_" + string(rune('a'+i))
-		defs = append(defs, Def{Kind: "achievements", Key: id})
-		locKeys["ACHIEVEMENT_"+id] = true
-		if i < 9 {
-			locKeys["ACHIEVEMENT_DESC_"+id] = true
-		}
-	}
-	// One definition with a shape nobody else shares is a coincidence.
-	locKeys["SPECIAL_achievement_a_thing"] = true
-	// A key that names nothing at all must contribute no convention.
-	locKeys["some_unrelated_prose_key"] = true
-
-	got := deriveLocAffixes(newDefIndex(defs), locKeys)["achievements"]
-	want := []loc.Affix{
-		{Pre: "ACHIEVEMENT_", Defs: 10, Of: 10},
-		{Pre: "ACHIEVEMENT_DESC_", Defs: 9, Of: 10},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("affixes = %+v, want %+v", got, want)
-	}
-	for i, a := range got {
-		if a != want[i] {
-			t.Errorf("affix %d = %+v, want %+v", i, a, want[i])
-		}
-	}
-
-	// Best evidence first, so a hover reading the first hit gets the name.
-	if got[0].Coverage() != 100 || got[1].Coverage() != 90 {
-		t.Errorf("coverage = %d/%d", got[0].Coverage(), got[1].Coverage())
-	}
-}
-
-// The two questions asked of a convention are not equally demanding, so the
-// floor is the caller's to choose: suppressing a false "orphaned" row needs the
-// shape to be plausible, while warning a modder that a key is missing asserts
-// the game requires it.
-func TestConventionKeysCoverageFloor(t *testing.T) {
-	affixes := []loc.Affix{
-		{Pre: "ACHIEVEMENT_", Defs: 10, Of: 10}, // every definition: required
-		{Suf: "_btn3", Defs: 9, Of: 10},         // nine in ten: a habit
-		{Suf: "_hint", Defs: 3, Of: 10},         // plausible only
-	}
-	cases := []struct {
-		name     string
-		coverage int
-		want     []string
-	}{
-		{"used takes every plausible shape", loc.ConventionUsed,
-			[]string{"ACHIEVEMENT_x", "x_btn3", "x_hint"}},
-		// Nine in ten is the case that matters. Anything short of every
-		// definition means vanilla itself lacks the key somewhere, so demanding
-		// it warns about correct script — EU5 gives 90% of diplomatic actions a
-		// `_ACTION_BTN3` key, and an action with two buttons is not defective.
-		{"required takes only the universal one", loc.ConventionRequired,
-			[]string{"ACHIEVEMENT_x"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := loc.ConventionKeys("x", affixes, tc.coverage)
-			if !slices.Equal(got, tc.want) {
-				t.Fatalf("got %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-// loc.ConventionOwner is the reverse of loc.ConventionKeys and the reason none of this
-// is stored as references: it answers "is this key consumed?" for the few keys
-// that look orphaned, instead of expanding every convention over every
-// definition to answer it in advance.
-func TestConventionOwner(t *testing.T) {
-	affixes := map[string][]loc.Affix{
-		"achievements": {{Pre: "ACHIEVEMENT_", Defs: 10, Of: 10}},
-		"messages":     {{Pre: "notification_", Suf: "_tooltip", Defs: 9, Of: 10}},
-	}
-	kinds := map[string][]string{
-		"achievement_a": {"achievements"},
-		"war_declared":  {"messages"},
-		"long":          {"achievements"},
-	}
-	defKinds := func(id string, visit func(string) bool) {
-		for _, k := range kinds[id] {
-			if !visit(k) {
-				return
-			}
-		}
-	}
-	cases := []struct {
-		name, key, wantID, wantKind string
-	}{
-		{"prefix convention", "ACHIEVEMENT_achievement_a", "achievement_a", "achievements"},
-		{"prefix and suffix", "notification_war_declared_tooltip", "war_declared", "messages"},
-		// The span is a definition and the affix is a real convention, but of
-		// the wrong kind — the message convention says nothing about
-		// achievements.
-		{"convention belongs to another kind", "notification_achievement_a_tooltip", "", ""},
-		{"shape nothing declares", "ACHIEVEMENT_DESC_achievement_a", "", ""},
-		{"names nothing", "ACHIEVEMENT_something_else", "", ""},
-		// Longest span first: `long` is a definition, but taking it would
-		// report the wrong owner for a key that is not a convention at all.
-		{"no owner beats a short accidental span", "a_long_prose_key", "", ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			id, kind, ok := loc.ConventionOwner(affixes, tc.key, defKinds)
-			if ok != (tc.wantID != "") || id != tc.wantID || kind != tc.wantKind {
-				t.Fatalf("got (%q, %q, %v), want (%q, %q, %v)",
-					id, kind, ok, tc.wantID, tc.wantKind, tc.wantID != "")
-			}
-		})
-	}
-}
-
 // Which properties hold a localization key is partly declared (parser/loc lists
 // the engine's own — `desc`, `title`, `custom_tooltip`) and partly not. Victoria
 // 3 character templates write `last_name = Addams` against a real key, so a
@@ -333,143 +208,6 @@ func TestDeriveLocFields(t *testing.T) {
 	}
 }
 
-// loc.ConventionOwner runs over every key that survived every other orphan filter —
-// tens of thousands on a total conversion, once per key — so its cost is per
-// key, not per span of a key. Written the obvious way it built its visitor
-// inside the span loop and paid 22 allocations and 448ns to answer one key;
-// hoisting the closure and giving the token offsets a fixed buffer took that to
-// 4 and 155ns. The four are the closure and the three strings it reads.
-func BenchmarkConventionOwner(b *testing.B) {
-	affixes := map[string][]loc.Affix{
-		"achievements": {{Pre: "ACHIEVEMENT_", Defs: 141, Of: 141}},
-		"messages": {
-			{Pre: "notification_", Suf: "_tooltip", Defs: 446, Of: 469},
-			{Pre: "notification_", Suf: "_name", Defs: 460, Of: 469},
-		},
-		"state_regions": {{Pre: "HUB_NAME_", Suf: "_farm", Defs: 675, Of: 781}},
-	}
-	defs := map[string][]string{
-		"war_declared": {"messages"},
-		"maine":        {"state_regions"},
-	}
-	eachKind := func(id string, visit func(string) bool) {
-		for _, k := range defs[id] {
-			if !visit(k) {
-				return
-			}
-		}
-	}
-	// A hit, a near-miss that decomposes but matches no convention, and a key
-	// that names nothing — the three shapes the orphan pass actually sees.
-	keys := []string{
-		"notification_war_declared_tooltip",
-		"notification_maine_tooltip",
-		"some_ordinary_prose_key_nobody_owns",
-	}
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; b.Loop(); i++ {
-		loc.ConventionOwner(affixes, keys[i%len(keys)], eachKind)
-	}
-}
-
-// A CK3 game rule is a definition and gets `rule_<id>`, which the definition
-// pass covers. Its options are nested one level inside it and never become
-// definitions — yet vanilla writes 590 `setting_<option>` / `setting_<option>_desc`
-// keys for its 380 options, and every one of them read as an orphaned key.
-func TestDeriveLocMemberAffixes(t *testing.T) {
-	structures := map[string][]string{"game_rules": {}}
-	locKeys := map[string]bool{}
-	for i := range 10 {
-		opt := "opt_" + string(rune('a'+i))
-		structures["game_rules"] = append(structures["game_rules"], opt)
-		locKeys["setting_"+opt] = true
-		locKeys["setting_"+opt+"_desc"] = true
-	}
-	// Ordinary field names sit in the same set and carry no convention.
-	structures["game_rules"] = append(structures["game_rules"], "default", "categories")
-
-	got := loc.DeriveMemberAffixes(structures, locKeys)["game_rules"]
-	var shapes []string
-	for _, a := range got {
-		shapes = append(shapes, a.Key("<opt>"))
-	}
-	slices.Sort(shapes)
-	want := []string{"setting_<opt>", "setting_<opt>_desc"}
-	if !slices.Equal(shapes, want) {
-		t.Fatalf("member affixes = %v, want %v", shapes, want)
-	}
-
-	// And the reverse lookup finds the option a key names, including one the
-	// install never saw — a mod's new rule option is exactly that case.
-	isMember := func(kind, name string) bool {
-		return kind == "game_rules" &&
-			(name == "opt_a" || name == "suf_quieter")
-	}
-	cases := []struct{ key, wantName string }{
-		{"setting_opt_a", "opt_a"},
-		{"setting_suf_quieter_desc", "suf_quieter"},
-		{"setting_not_an_option", ""},
-		{"unrelated_prose_key", ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.key, func(t *testing.T) {
-			name, _, ok := loc.MemberConventionOwner(
-				map[string][]loc.Affix{"game_rules": got}, tc.key, isMember)
-			if ok != (tc.wantName != "") || name != tc.wantName {
-				t.Fatalf("got (%q, %v), want %q", name, ok, tc.wantName)
-			}
-		})
-	}
-}
-
-// A convention that covers only a slice of its kind is still a convention.
-// CK3 keys portrait modifiers `PORTRAIT_MODIFIER_custom_<group>_<accessory>`,
-// one prefix per group, so each covers about a tenth of the `accessories` kind
-// and none clears a fifth — 994 orphans on A Game of Thrones. What separates
-// these from noise is not their share but how many definitions share them.
-func TestDeriveLocAffixesAdmitsSliceConventions(t *testing.T) {
-	var defs []Def
-	locKeys := map[string]bool{}
-	// 200 accessories in two groups of 100: each prefix covers half — no, a
-	// quarter, once the two groups and the plain half are counted.
-	for i := range 200 {
-		id := fmt.Sprintf("acc_%03d", i)
-		defs = append(defs, Def{Kind: "accessories", Key: id})
-		switch {
-		case i < 60:
-			locKeys["PORTRAIT_MODIFIER_clothes_"+id] = true
-		case i < 120:
-			locKeys["PORTRAIT_MODIFIER_headgear_"+id] = true
-		}
-	}
-	// A shape only a handful share stays out; the absolute floor is not a way
-	// around the evidence requirement.
-	for i := range 12 {
-		locKeys[fmt.Sprintf("ODD_acc_%03d", i)] = true
-	}
-
-	got := deriveLocAffixes(newDefIndex(defs), locKeys)["accessories"]
-	var shapes []string
-	for _, a := range got {
-		shapes = append(shapes, a.Key("<id>"))
-	}
-	slices.Sort(shapes)
-	want := []string{
-		"PORTRAIT_MODIFIER_clothes_<id>", "PORTRAIT_MODIFIER_headgear_<id>",
-	}
-	if !slices.Equal(shapes, want) {
-		t.Fatalf("affixes = %v, want %v", shapes, want)
-	}
-	// 60 of 200 is 30%, below nothing here — the point is that it is admitted
-	// on count, and Coverage still reports the honest share.
-	for _, a := range got {
-		if a.Coverage() != 30 {
-			t.Errorf("%+v coverage = %d, want the true share", a, a.Coverage())
-		}
-	}
-}
-
 // TestMergeLocalCoversEveryDerivedField walks Derived by reflection so a field
 // added later cannot be silently left out of mergeLocal.
 //
@@ -492,9 +230,7 @@ func TestMergeLocalCoversEveryDerivedField(t *testing.T) {
 		NestedShapes:    []NestedShape{{ParentKind: "game_rules", ChildKind: "game_rule"}},
 		Wrappers:        map[string]bool{"COUNTRIES": true},
 		FieldValueKinds: map[string]string{"has_trait": "traits"},
-		LocAffixes:      map[string][]loc.Affix{"traits": {{Suf: "_desc"}}},
 		LocFields:       map[string]bool{"name": true},
-		LocListFields:   map[string]bool{"names": true},
 	}
 	dst := derivedFromCache(nil)
 	dst.mergeLocal(local)

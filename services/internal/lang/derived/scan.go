@@ -4,7 +4,6 @@
 package derived
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -44,35 +43,25 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		locLang = "english"
 	}
 	version := CacheVersion(req.Version)
-	onProgress := req.OnProgress
-	progress(onProgress, 5, "listing files")
+	step := req.OnProgress
+	if step == nil {
+		step = func(int, string) {}
+	}
+	step(5, "listing files")
 	inv := gather(scriptRoots(info, req.InstallPath))
 
-	// A game whose script root holds nothing is not an empty game — it is the
-	// wrong folder. walkClassified discards its walk error, so a missing,
-	// moved or mis-pointed install arrives here as an empty inventory rather
-	// than a failure, and without this guard Scan would return a 0-def cache
-	// with a fresh ScannedAt, SaveCache would write it over the good one, and
-	// CacheStale would then read false forever. The symptom is not silence:
-	// unresolved-ref is gated on KindHasDefs, which is satisfied by the mod's
-	// own defs, so a mod extending `traits` gets a false finding on every
-	// vanilla trait it cites.
+	// A game whose script root holds nothing is not an empty game, it is the wrong folder -- and without this guard Scan writes a 0-def cache with a fresh ScannedAt over the good one, after which CacheStale reads false forever and every mod extending `traits` gets a false unresolved-ref finding on every vanilla trait it cites.
 	if len(inv.script) == 0 {
 		return nil, nil, fmt.Errorf(
 			"no script files under %s: check the install path", req.InstallPath)
 	}
 
-	// The declared type system is read first: binding prefixes to databases
-	// needs it during the walk, not after. Live dumps win and refresh PMT's
-	// archived copy; the archive stands in when the user's have been removed.
+	// The declared type system is read first: binding prefixes to databases needs it during the walk, not after.
 	docDirs := scriptDocsDirs(req.GameID, req.InstallPath)
 	schema := declared.ReadSchema(docDirs)
 
-	// Localization is read before the script walk, not after, because
-	// deriveLocFields needs the key set to decide which script properties hold
-	// a key — and that decision has to be made between the walk's two passes,
-	// while the second one is still emitting references.
-	progress(onProgress, 15, "reading localization")
+	// Localization is read before the script walk because deriveLocFields needs the key set to decide which script properties hold a key, and that decision has to be made between the walk's two passes.
+	step(15, "reading localization")
 	vloc, locFileRefs, err := harvestLoc(ctx, inv.loc, locLang, req.InstallID, version)
 	if err != nil {
 		return nil, nil, err
@@ -80,7 +69,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	engineSlots := locEngineSlots(vloc.Sites, locFileRefs)
 	locKeys := locKeySet(vloc.Sites)
 
-	progress(onProgress, 30, "parsing script")
+	step(30, "parsing script")
 	files := append(append([]fileRef{}, inv.script...), inv.gui...)
 	acc, derived, dataFns, err := collectExtracts(
 		ctx, req.GameID, files, true, nil, schema, locKeys)
@@ -88,7 +77,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		return nil, nil, err
 	}
 
-	progress(onProgress, 80, "reading game info")
+	step(80, "reading game info")
 	fieldInfo, fieldByKind, kindInfo, docStructs, declTypes, declByKind := harvestGameInfo(req.GameID, inv.info)
 	for kind, keys := range docStructs {
 		set := acc.structures[kind]
@@ -106,21 +95,13 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	// One grouping of acc.defs for the three derivations below.
 	accIdx := newDefIndex(acc.defs)
 	structures := keysByCount(acc.structures)
-	nestedMembers := deriveNestedMembers(acc.nested)
 	// Indexed here, not at harvest: the index is ~80 MB and the parallel walk is the heap peak.
 	locIndex := loc.NewKeys(locKeys)
 	kinds := deriveFieldValueKinds(acc.fieldRHS, accIdx)
-	if derived != nil {
-		derived.FieldValueKinds = kinds
-	}
+	derived.FieldValueKinds = kinds
 	// The data rows leave here for their own file; see data.go.
 	script, data := splitData(req.GameID, dropEphemeralDefs(acc.defs))
-	// Effects and triggers are read from the game's own script_docs and live on
-	// c.Schema alone; the corpus never contributes one. Inferring them by
-	// position elected every $PARAM$ substitution site as an effect: on CK3 that
-	// turned 1,905 real effects into 10,337 completion entries, 82% of them
-	// noise like `$CHARACTER$.culture`. Data functions are harvested in the
-	// first corpus pass, where the source text is already in hand.
+	// Effects and triggers live on c.Schema alone; the corpus never contributes one, because inferring them by position elected every $PARAM$ substitution site as an effect -- on CK3, 1,905 real effects became 10,337 completion entries, 82% of them noise.
 	c := &VanillaCache{
 		FormatVersion:            CacheFormatVersion,
 		InstallID:                req.InstallID,
@@ -147,7 +128,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		DeclaredFieldTypes:       declTypes,
 		DeclaredFieldTypesByKind: declByKind,
 		Structures:               structures,
-		NestedMembers:            nestedMembers,
+		NestedMembers:            deriveNestedMembers(acc.nested),
 		UnambiguousBlocks:        unambiguousBlocks(acc.blockKinds),
 		StructureBlocks:          blockKeys(acc.structures, acc.structBlocks),
 		Vocabulary:               sortedKeys(acc.vocab),
@@ -155,17 +136,15 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		GUIProps:                 sortedKeys(acc.guiProps),
 		DataFunctions:            sortedKeys(dataFns),
 		LocEngineSlots:           engineSlots,
+		Schema:                   schema,
 		data:                     data,
 	}
 
-	progress(onProgress, 90, "reading script_docs")
-	c.Schema = schema
-	for _, dir := range docDirs {
-		enrichDataTypes(dir, c)
-	}
+	step(90, "reading script_docs")
+	enrichDataTypes(docDirs, c)
 	PrepareCache(c)
 
-	progress(onProgress, 100, "done")
+	step(100, "done")
 	return c, vloc, nil
 }
 
@@ -194,9 +173,7 @@ func scriptDocsDirs(gameID, installPath string) []string {
 	return out
 }
 
-// SchemaStatus is what the Workspace Health strip needs to know about the
-// declared type system, read without loading the model. script_docs is a couple
-// of megabytes; the model is ninety, and health is polled.
+// SchemaStatus is what the Workspace Health strip needs to know about the declared type system, read without loading the model: script_docs is a couple of megabytes, the model is ninety, and health is polled.
 type SchemaStatus struct {
 	Source     declared.SchemaSource `json:"source"`
 	Effects    int                   `json:"effects"`
@@ -275,11 +252,8 @@ func ClassifyRel(rel, name string) string {
 	case lower == game.MetadataFile:
 		return "meta"
 	case strings.HasSuffix(lower, ".txt") && !strings.HasPrefix(name, "_"):
+		// Loose .txt at the script root is engine bookkeeping, not script: parsing checksum_manifest.txt as Jomini produced fire edges for "common", "events" and "history". Real script always sits in a content folder.
 		if !strings.Contains(slash, "/") {
-			// Loose .txt at the script root is engine bookkeeping, not script:
-			// checksum_manifest.txt, credits.txt, compound_settings.txt. Parsing
-			// the manifest as Jomini produced fire edges for "common", "events"
-			// and "history". Real script always sits in a content folder.
 			return ""
 		}
 		return "script"
@@ -354,8 +328,7 @@ func gather(roots []string) inventory {
 	return inv
 }
 
-// Evidence collects FileExtract results from all workers behind one mutex. It is
-// the single merge sink for both Scan and BuildIndex.
+// Evidence collects FileExtract results from all workers behind one mutex. It is the single merge sink for both Scan and BuildIndex.
 type Evidence struct {
 	mu           sync.Mutex
 	defs         []Def
@@ -366,17 +339,15 @@ type Evidence struct {
 	locOrder     map[string]map[string]int
 	structures   map[string]map[string]int
 	structBlocks map[string]map[string]int
-	// nested is block key -> member key -> occurrences, across the whole walk.
-	// Not keyed by kind: a block named triggered_desc holds the same members
-	// wherever it appears, and merging the evidence makes the floor meaningful.
+	// nested is block key -> member key -> occurrences, across the whole walk. Not keyed by kind: a block named triggered_desc holds the same members wherever it appears, and merging the evidence makes the floor meaningful.
 	nested map[string]map[string]int
-	// blockKinds is block name -> the kinds it was seen under. A name used by
-	// one kind can be judged; a name used by several cannot.
+	// blockKinds is block name -> the kinds it was seen under. A name used by one kind can be judged; a name used by several cannot.
 	blockKinds map[string]map[string]bool
 	vocab      map[string]bool
 	guiTypes   map[string]bool
 	guiProps   map[string]bool
-	fieldRHS   map[string]map[string]bool
+	// fieldRHS is the first pass's whole-corpus field -> values map, stored rather than merged: it is a pure function of the trees, so having the second pass build it again was one extra walk of the entire install.
+	fieldRHS map[string]map[string]bool
 }
 
 func newEvidence() *Evidence {
@@ -390,7 +361,6 @@ func newEvidence() *Evidence {
 		vocab:        map[string]bool{},
 		guiTypes:     map[string]bool{},
 		guiProps:     map[string]bool{},
-		fieldRHS:     map[string]map[string]bool{},
 	}
 }
 
@@ -401,14 +371,10 @@ func (a *Evidence) merge(ex FileExtract) {
 	a.refs = append(a.refs, ex.Refs...)
 	a.edges = append(a.edges, ex.Edges...)
 	a.mergeLocOrdered(ex.LocOrder, ex.Loc)
-	if ex.MemberKind != "" {
-		addCounts(&a.structures, ex.MemberKind, ex.StructCounts)
-	}
-	if ex.StructKind != "" {
-		addCounts(&a.structBlocks, ex.StructKind, ex.StructBlocks)
-	}
+	addCounts(a.structures, ex.MemberKind, ex.StructCounts)
+	addCounts(a.structBlocks, ex.MemberKind, ex.StructBlocks)
 	for parent, members := range ex.StructNested {
-		addCounts(&a.nested, parent, members)
+		addCounts(a.nested, parent, members)
 		if ex.StructNestedKind != "" {
 			if a.blockKinds[parent] == nil {
 				a.blockKinds[parent] = map[string]bool{}
@@ -419,15 +385,31 @@ func (a *Evidence) merge(ex FileExtract) {
 	maps.Copy(a.vocab, ex.Vocab)
 	maps.Copy(a.guiTypes, ex.GUITypes)
 	maps.Copy(a.guiProps, ex.GUIProps)
-	for field, vals := range ex.FieldRHS {
-		m := a.fieldRHS[field]
-		if m == nil {
-			m = map[string]bool{}
-			a.fieldRHS[field] = m
-		}
-		maps.Copy(m, vals)
-	}
 	a.cands = append(a.cands, ex.Cands...)
+}
+
+// mergeLocOrdered merges one file's localization under LOAD order rather than completion order. The corpus walk is parallel, so when two files of one language define the same key, whichever worker finished last decided which value survived -- and the answer changed between runs of the same workspace. order is the file's index in the walk list.
+func (a *Evidence) mergeLocOrdered(order int, d LocDelta) {
+	if d.Lang == "" || len(d.Vals) == 0 {
+		return
+	}
+	m := a.loc[d.Lang]
+	if m == nil {
+		m = map[string]LocEntry{}
+		a.loc[d.Lang] = m
+	}
+	ord := a.locOrder[d.Lang]
+	if ord == nil {
+		ord = map[string]int{}
+		a.locOrder[d.Lang] = ord
+	}
+	for k, v := range d.Vals {
+		if prev, seen := ord[k]; seen && prev > order {
+			continue
+		}
+		m[k] = v
+		ord[k] = order
+	}
 }
 
 // walkN runs fn(0..n-1) with scanConcurrency, cancelling siblings on error.
@@ -454,20 +436,7 @@ func walkFiles(ctx context.Context, files []fileRef, fn func(fileRef) error) err
 	})
 }
 
-// collectExtracts parses files and derives the install-only facts. schema is the
-// game's declared type system, used to bind prefixes to databases; it comes from
-// the cache for mods and is read up front for a vanilla scan.
-// collectExtracts harvests a whole corpus in two streaming passes.
-//
-// The first pass needs no global knowledge and produces the defs; the second
-// needs the derived facts, which need every def, so it cannot be folded into the
-// first. Neither retains a parse tree: holding all 4,551 CK3 trees at once cost
-// 4.30 GB and drove a scan to an 8.06 GB peak, while re-reading and re-parsing
-// the whole install costs about half a second. Memory here is bounded by what is
-// kept — defs, refs, edges — not by the size of the install.
-// locKeys is the install's localization key set, used between the two passes to
-// derive which script properties hold a key. Nil for a mod walk, which inherits
-// the install's answer from the cache.
+// collectExtracts harvests a whole corpus in two streaming passes: the first needs no global knowledge and produces the defs, the second needs the derived facts, which need every def. Neither retains a parse tree -- holding all 4,551 CK3 trees at once cost 4.30 GB and drove a scan to an 8.06 GB peak, while re-reading and re-parsing the install costs about half a second. schema binds prefixes to databases; it comes from the cache for mods and is read up front for a vanilla scan. locKeys is the install's localization key set, nil for a mod walk, which inherits the install's answer from the cache.
 func collectExtracts(
 	ctx context.Context, gameID string, files []fileRef, bodies bool,
 	cache *VanillaCache, schema *declared.Schema, locKeys map[string]bool,
@@ -491,24 +460,8 @@ func collectExtracts(
 		cites = append(cites, c...)
 		fieldCites = append(fieldCites, fc...)
 		maps.Copy(dataFns, fns)
-		for field, vals := range ex.FieldRHS {
-			m := fieldRHS[field]
-			if m == nil {
-				m = map[string]bool{}
-				fieldRHS[field] = m
-			}
-			maps.Copy(m, vals)
-		}
-		// Only pass 1 wants list members: nothing downstream reads them, so
-		// pass 2 computing them again was 42% of its extractForms time.
-		for field, vals := range extractFieldListValues(res.Root) {
-			m := fieldListRHS[field]
-			if m == nil {
-				m = map[string]bool{}
-				fieldListRHS[field] = m
-			}
-			maps.Copy(m, vals)
-		}
+		mergeValueSets(fieldRHS, ex.FieldRHS)
+		mergeValueSets(fieldListRHS, ex.FieldListRHS)
 		return nil
 	}); err != nil {
 		return nil, nil, dataFns, err
@@ -516,8 +469,8 @@ func collectExtracts(
 
 	derived := derivedFromCache(cache)
 	baseIdx := newDefIndex(baseDefs)
-	local := deriveAll(gameID, corp, baseIdx, schema, cites, fieldCites)
-	derived.mergeLocal(local)
+	derived.mergeLocal(deriveAll(gameID, corp, baseIdx, schema, cites, fieldCites))
+	// mergeStringMap returns nil for an empty result, so mergeLocal can leave these maps nil.
 	if derived.FieldValueKinds == nil {
 		derived.FieldValueKinds = map[string]string{}
 	}
@@ -526,7 +479,7 @@ func collectExtracts(
 			derived.FieldValueKinds[k] = v
 		}
 	}
-	// The install derives its own; a mod walk keeps the cache's. Scalar and LIST sides both hold keys.
+	// The install derives its own loc fields; a mod walk keeps the cache's. Scalar and LIST sides both hold keys.
 	if len(locKeys) > 0 {
 		defKeys := baseIdx.citableKeys()
 		derived.LocFields = map[string]bool{}
@@ -535,12 +488,10 @@ func collectExtracts(
 	}
 	baseDefs = nil
 
-	// Second pass builds the model. The derived facts are complete now, so
-	// wrapper defs drop, nested defs appear, and refs and edges resolve. The
-	// citations are indexed once, corpus-wide: a nested database is routinely
-	// declared in one file and cited from another.
+	// Second pass builds the model: the derived facts are complete now, so wrapper defs drop, nested defs appear, and refs and edges resolve. The citations are indexed once, corpus-wide, because a nested database is routinely declared in one file and cited from another.
 	citedByKind := citedIDsByKind(derived.NestedShapes, cites, derived.PrefixKinds)
 	acc := newEvidence()
+	acc.fieldRHS = fieldRHS
 	if err := corp.walk(func(f fileRef, res jomini.Result) error {
 		ex := extractForms(gameID, f.abs, f.rel, f.origin, res, bodies)
 		ex.Defs = applyDerivedDefs(gameID, f.abs, f.origin, f.rel, res, ex.Defs, derived, citedByKind)
@@ -555,9 +506,7 @@ func collectExtracts(
 		return acc, derived, dataFns, err
 	}
 
-	// Nested databases (CK3 faiths under religions, sub-tier landed titles) only
-	// exist as defs after applyDerivedDefs, so the first bind could not see them.
-	// Re-bind against the complete set now that it does.
+	// Nested databases (CK3 faiths under religions) only exist as defs after applyDerivedDefs, so the first bind could not see them.
 	rebind(derived, schema, acc.defs)
 
 	if err := harvestLocFiles(ctx, gameID, files, bodies, acc); err != nil {
@@ -570,12 +519,22 @@ func collectExtracts(
 	return acc, derived, dataFns, nil
 }
 
-// harvestLocFiles merges loc YAML that loadParsed skipped (not Jomini).
+func mergeValueSets(dst, src map[string]map[string]bool) {
+	for field, vals := range src {
+		m := dst[field]
+		if m == nil {
+			m = map[string]bool{}
+			dst[field] = m
+		}
+		maps.Copy(m, vals)
+	}
+}
+
+// harvestLocFiles merges loc YAML that corpus.walk skipped (not Jomini).
 func harvestLocFiles(
 	ctx context.Context, gameID string, files []fileRef, bodies bool, acc *Evidence,
 ) error {
-	// walkN rather than walkFiles: the index is the file's load order, and the
-	// merge needs it to decide which value wins when two files define one key.
+	// walkN rather than walkFiles: the index is the file's load order, and the merge needs it to decide which value wins when two files define one key.
 	return walkN(ctx, len(files), func(i int) error {
 		f := files[i]
 		if game.MatchExtract(gameID, f.rel).Mode != game.ModeLocKey {
@@ -630,10 +589,7 @@ func (c corpus) walk(fn func(fileRef, jomini.Result) error) error {
 	})
 }
 
-// deriveAll derives the four things no dump states: fire keys, nested databases,
-// setup wrappers and loc conventions. The prefix table is not among them — it
-// comes from bindKinds, a join against declared types, so without a schema there
-// is no prefix table at all rather than a guessed one.
+// deriveAll derives the four things no dump states: fire keys, nested databases, setup wrappers and loc conventions. The prefix table is not among them -- it comes from bindKinds, a join against declared types, so without a schema there is no prefix table at all rather than a guessed one. One walk for every fact that depends on a single file: each corpus walk re-parses the whole install, so folding these together is worth more than any micro-optimisation inside them.
 func deriveAll(
 	gameID string, corp corpus, idx *defIndex, s *declared.Schema,
 	cites, fieldCites []typedCite,
@@ -642,13 +598,13 @@ func deriveAll(
 	fireCounts := map[string]*fireCount{}
 	wrappers := map[string]bool{}
 	defKeys := idx.citableKeys()
-	prefix, kindScope := bindPrefixes(s, idx)
+	var prefix, kindScope map[string]string
+	if !s.Empty() {
+		prefix, kindScope = bindKinds(s, idx)
+	}
 	idChild := nestedIDChild(gameID, defKeys, prefix, cites, fieldCites)
 	byChild := map[string]*nestedWanted{}
 	var mu sync.Mutex
-	// One walk for every fact that depends only on a single file. Each corpus
-	// walk re-parses the whole install, so folding these together is worth more
-	// than any micro-optimisation inside them.
 	_ = corp.walk(func(f fileRef, res jomini.Result) error {
 		fire := deriveFireKeys(res.Root, ev, oa)
 		wraps := deriveWrappers(gameID, f.rel, res.Root, defKeys)
@@ -663,21 +619,13 @@ func deriveAll(
 		}
 		return nil
 	})
-	shapes := nestedShapesFrom(byChild, s)
 	return &Derived{
 		PrefixKinds:  prefix,
 		KindScope:    kindScope,
 		FireKeys:     resolveFireKinds(fireCounts),
 		Wrappers:     wrappers,
-		NestedShapes: shapes,
+		NestedShapes: nestedShapesFrom(byChild, s),
 	}
-}
-
-func bindPrefixes(s *declared.Schema, idx *defIndex) (prefixKind, kindScope map[string]string) {
-	if s.Empty() {
-		return nil, nil
-	}
-	return bindKinds(s, idx)
 }
 
 // rebind re-runs the bind once nested defs (CK3 faiths under religions) exist.
@@ -710,10 +658,7 @@ func harvestLoc(
 		}
 		refs = append(refs, fileRef{abs: f})
 	}
-	// Harvest only the workspace language and english. A CK3 install ships
-	// eleven, and writing them all cost ~790 MB of sidecars and most of the loc
-	// pass. English is kept because coverage compares against it. Any other
-	// language is harvested on first use by loadVanillaLoc.
+	// Harvest only the workspace language and english. A CK3 install ships eleven, and writing them all cost ~790 MB of sidecars and most of the loc pass; english is kept because coverage compares against it.
 	want := map[string]bool{locLang: true, "english": true}
 
 	var mu sync.Mutex
@@ -797,8 +742,29 @@ func HarvestLoc(ctx context.Context, gameID, installPath, locLang string) (*Vani
 	return v, err
 }
 
-// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field
-// prose and the declared types written beside it.
+// firstWins files one documented name: the first non-empty value seen wins, globally and per kind. A nil global files per kind only; an empty kind files globally only.
+func firstWins[V comparable](global map[string]V, byKind map[string]map[string]V, kind, key string, v V) {
+	var zero V
+	if v == zero {
+		return
+	}
+	if global != nil && global[key] == zero {
+		global[key] = v
+	}
+	if kind == "" {
+		return
+	}
+	m := byKind[kind]
+	if m == nil {
+		m = map[string]V{}
+		byKind[kind] = m
+	}
+	if m[key] == zero {
+		m[key] = v
+	}
+}
+
+// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field prose and the declared types written beside it. Both are filed globally for the names that mean one thing everywhere and per kind because most do not -- `type` is a value set inside a scripted relation and something else entirely inside an event. Per-kind wins at lookup.
 func harvestGameInfo(gameID string, docs []fileRef) (
 	fieldDocs map[string]string,
 	byKind map[string]map[string]string,
@@ -822,44 +788,18 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 			}
 		}
 		harvested, typed, nested := game.ParseDocFile(string(raw))
-		// Types are filed the same way prose is: globally for the fields whose
-		// name means one thing everywhere, and per kind because it does not --
-		// `type` is a value set inside a scripted relation and something else
-		// entirely inside an event. Per-kind wins at lookup.
 		for key, t := range typed {
-			if declTypes[key] == "" {
-				declTypes[key] = t
-			}
-			if kind == "" {
-				continue
-			}
-			if declByKind[kind] == nil {
-				declByKind[kind] = map[string]string{}
-			}
-			if declByKind[kind][key] == "" {
-				declByKind[kind][key] = t
-			}
+			firstWins(declTypes, declByKind, kind, key, t)
 		}
 		for key, doc := range harvested {
-			if doc != "" && fieldDocs[key] == "" {
-				fieldDocs[key] = doc
+			// A documented name is a member of the kind whether or not it came with prose.
+			if kind != "" {
+				if structs[kind] == nil {
+					structs[kind] = map[string]bool{}
+				}
+				structs[kind][key] = true
 			}
-			if kind == "" {
-				continue
-			}
-			if structs[kind] == nil {
-				structs[kind] = map[string]bool{}
-			}
-			structs[kind][key] = true
-			if doc == "" {
-				continue
-			}
-			if byKind[kind] == nil {
-				byKind[kind] = map[string]string{}
-			}
-			if byKind[kind][key] == "" {
-				byKind[kind][key] = doc
-			}
+			firstWins(fieldDocs, byKind, kind, key, doc)
 		}
 		// A key documented inside an example block stays path-qualified and per-kind only, never bare or global.
 		if kind == "" {
@@ -872,15 +812,7 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 			if _, bare, ok := strings.Cut(path, "."); ok {
 				structs[kind][bare] = true
 			}
-			if doc == "" {
-				continue
-			}
-			if byKind[kind] == nil {
-				byKind[kind] = map[string]string{}
-			}
-			if byKind[kind][path] == "" {
-				byKind[kind][path] = doc
-			}
+			firstWins(nil, byKind, kind, path, doc)
 		}
 	}
 	return fieldDocs, byKind, kindInfo, structs, declTypes, declByKind
@@ -888,14 +820,17 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 
 var dataFnRe = regexp.MustCompile(`\b((?:Get|Set)[A-Za-z0-9_]+)\b`)
 
-func enrichDataTypes(dir string, c *VanillaCache) {
-	if dir == "" || c == nil {
+// enrichDataTypes reads the data-type dumps the game writes beside script_docs.
+func enrichDataTypes(dirs []string, c *VanillaCache) {
+	if c == nil {
 		return
 	}
 	seen := map[string]bool{}
-	walk := dir
-	for range 2 {
-		_ = filepath.WalkDir(walk, func(p string, d os.DirEntry, err error) error {
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return nil
 			}
@@ -912,13 +847,11 @@ func enrichDataTypes(dir string, c *VanillaCache) {
 			}
 			return nil
 		})
-		parent := filepath.Dir(walk)
-		if parent == walk {
-			break
-		}
-		walk = parent
 	}
-	c.DataFunctions = sortedKeys(seen)
+	// Only when the dumps named some: an install with no data-type dump keeps the corpus harvest rather than being emptied by it.
+	if len(seen) > 0 {
+		c.DataFunctions = sortedKeys(seen)
+	}
 }
 
 func sortedKeys(set map[string]bool) []string {
@@ -927,139 +860,21 @@ func sortedKeys(set map[string]bool) []string {
 	return out
 }
 
-func addCounts(dst *map[string]map[string]int, kind string, src map[string]int) {
+func addCounts(dst map[string]map[string]int, kind string, src map[string]int) {
 	if kind == "" || len(src) == 0 {
 		return
 	}
-	set := (*dst)[kind]
+	set := dst[kind]
 	if set == nil {
 		set = map[string]int{}
-		(*dst)[kind] = set
+		dst[kind] = set
 	}
 	for k, n := range src {
 		set[k] += n
 	}
 }
 
-func keysByCount(m map[string]map[string]int) map[string][]string {
-	out := make(map[string][]string, len(m))
-	for kind, counts := range m {
-		keys := slices.Collect(maps.Keys(counts))
-		slices.SortFunc(keys, func(a, b string) int {
-			if c := counts[b] - counts[a]; c != 0 {
-				return c
-			}
-			return strings.Compare(a, b)
-		})
-		out[kind] = keys
-	}
-	return out
-}
-
-func blockKeys(counts, blocks map[string]map[string]int) map[string][]string {
-	out := map[string][]string{}
-	for kind, c := range counts {
-		b := blocks[kind]
-		var keys []string
-		for k, n := range c {
-			if b[k]*2 > n {
-				keys = append(keys, k)
-			}
-		}
-		if len(keys) == 0 {
-			continue
-		}
-		slices.Sort(keys)
-		out[kind] = keys
-	}
-	return out
-}
-
-const (
-	// minNestedHits is how often a member must be seen inside a block before it
-	// is part of that block's shape. A block appears far more often than a
-	// definition does, so a single sighting is even weaker evidence here than
-	// it is for a kind.
-	minNestedHits = 3
-	// maxNestedMembers bounds one block's member list.
-	maxNestedMembers = 40
-)
-
-// deriveNestedMembers turns raw block-member counts into the member list for
-// each block, most-used first.
-//
-// This is what lets a query answer "what belongs inside triggered_desc?" rather
-// than only "what belongs inside an event?". Keyed by the block's own name: a
-// block called limit holds the same members wherever it appears, and merging the
-// evidence is what makes the floor mean anything.
-func deriveNestedMembers(nested map[string]map[string]int) map[string][]string {
-	if len(nested) == 0 {
-		return nil
-	}
-	out := make(map[string][]string, len(nested))
-	for parent, counts := range nested {
-		members := make([]string, 0, len(counts))
-		for k, n := range counts {
-			if n >= minNestedHits {
-				members = append(members, k)
-			}
-		}
-		if len(members) == 0 {
-			continue
-		}
-		slices.SortFunc(members, func(a, b string) int {
-			if c := cmp.Compare(counts[b], counts[a]); c != 0 {
-				return c
-			}
-			return strings.Compare(a, b)
-		})
-		if len(members) > maxNestedMembers {
-			members = members[:maxNestedMembers]
-		}
-		out[parent] = members
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// unambiguousBlocks names the blocks that appear under exactly one kind.
-//
-// A block name is not a position: CK3 has an `option` inside an event and
-// another inside common/accolade_names, holding nothing in common. Merging them
-// by name is right for OFFERING keys — the worst case is a suggestion that does
-// not belong — and fatal for judging an absence, which reported 18,341 findings
-// on 400 vanilla files. Only a name one kind uses can be judged.
-func unambiguousBlocks(blockKinds map[string]map[string]bool) map[string]bool {
-	if len(blockKinds) == 0 {
-		return nil
-	}
-	out := map[string]bool{}
-	for block, kinds := range blockKinds {
-		if len(kinds) == 1 {
-			out[block] = true
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func progress(fn func(pct int, msg string), pct int, msg string) {
-	if fn != nil {
-		fn(pct, msg)
-	}
-}
-
-// dropEngineSlotRefs removes loc references to interpolations the engine fills
-// in — `$EFFECT_LIST_BULLET$`, `$ACTION$` — which no mod can define.
-//
-// This is the harvest site, not the view: the decision needs the vanilla slot
-// set, which only exists once the install has been scanned, and the earliest
-// point that has it is here. Filtering the row later would leave a wrong
-// reference in the model for hover and find-references to trip over too.
+// dropEngineSlotRefs removes loc references to interpolations the engine fills in, which no mod can define. This is the harvest site, not the view: the decision needs the vanilla slot set, and filtering the row later would leave a wrong reference for hover and find-references to trip over too.
 func dropEngineSlotRefs(acc *Evidence, cache *VanillaCache) {
 	if acc == nil || cache == nil || len(cache.LocEngineSlots) == 0 {
 		return
@@ -1076,37 +891,4 @@ func dropEngineSlotRefs(acc *Evidence, cache *VanillaCache) {
 		kept = append(kept, r)
 	}
 	acc.refs = kept
-}
-
-// mergeLocOrdered merges one file's localization under LOAD order rather than
-// completion order.
-//
-// The corpus walk is parallel, so when two files of one language define the same
-// key, whichever worker happened to finish last decided which value survived.
-// That is wrong twice over: load order decides every other override, and the
-// answer changed between runs of the same workspace — Workspace Health's
-// untranslated count moved by one or two across identical sweeps, which makes it
-// useless as a threshold. order is the file's index in the walk list, which is
-// mod load order and then walk order within a mod.
-func (a *Evidence) mergeLocOrdered(order int, d LocDelta) {
-	if d.Lang == "" || len(d.Vals) == 0 {
-		return
-	}
-	m := a.loc[d.Lang]
-	if m == nil {
-		m = map[string]LocEntry{}
-		a.loc[d.Lang] = m
-	}
-	ord := a.locOrder[d.Lang]
-	if ord == nil {
-		ord = map[string]int{}
-		a.locOrder[d.Lang] = ord
-	}
-	for k, v := range d.Vals {
-		if prev, seen := ord[k]; seen && prev > order {
-			continue
-		}
-		m[k] = v
-		ord[k] = order
-	}
 }

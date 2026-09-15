@@ -1133,7 +1133,7 @@ func docsOnly(s *session.Session, word, kind string) string {
 	line := schemaSignature(s, word)
 	if line == "" {
 		// No declared type system: fall back to the raw scopes text.
-		if sc := s.TokenScopes(word); sc != "" {
+		if sc := s.Schema().ScopeText(word); sc != "" {
 			line = "Scope here: " + sc
 		}
 	}

@@ -32,8 +32,7 @@ func extractScriptNames(
 					name, start, end, found := scriptNameSpan(a, r.InnerKey)
 					if found && name != "" {
 						if r.IsDef {
-							// Ephemeral and script-name definitions live inside
-							// another definition, never at a file's top level.
+							// Ephemeral and script-name definitions live inside another definition, never at a file's top level.
 							d := makeDef(r.Kind, name, path, origin,
 								jomini.Range{Start: start, End: end}, li)
 							d.Value = scriptNameValue(a, r)
@@ -141,9 +140,7 @@ func extractScriptParams(
 	return defs, refs
 }
 
-// scriptedMacroKeys is IsCitableDef plus two exclusions of its own, and they are
-// deliberate: a `$PARAM$` site resolves against names a macro body could call,
-// and neither an event namespace nor a GUI template is callable from script.
+// scriptedMacroKeys is IsCitableDef plus two exclusions of its own, and they are deliberate: a `$PARAM$` site resolves against names a macro body could call, and neither an event namespace nor a GUI template is callable from script.
 func scriptedMacroKeys(defs []Def) map[string]bool {
 	out := map[string]bool{}
 	for _, d := range defs {
@@ -161,8 +158,7 @@ func harvestDollarParams(
 ) (defs []Def, refs []Ref, names map[string]bool) {
 	names = map[string]bool{}
 	seen := map[string]bool{}
-	var record func(name string, start, end int)
-	record = func(name string, start, end int) {
+	record := func(name string, start, end int) {
 		names[name] = true
 		if !seen[name] {
 			seen[name] = true
@@ -241,8 +237,7 @@ func dollarParamsIn(text string, base int) []dollarSpan {
 	return out
 }
 
-// scriptNameSpan returns the name token span for a ScriptName assignment.
-// Scalar RHS uses the scalar; a block uses InnerKey (flag/name) when set.
+// scriptNameSpan returns the name token span for a ScriptName assignment. Scalar RHS uses the scalar; a block uses InnerKey (flag/name) when set.
 func scriptNameSpan(a *jomini.Assignment, innerKey string) (name string, start, end int, ok bool) {
 	if sc, is := a.Value.(*jomini.Scalar); is && !sc.Quoted && sc.Text != "" {
 		return sc.Text, sc.Range.Start, sc.Range.End, true
@@ -268,8 +263,7 @@ func scriptNameSpan(a *jomini.Assignment, innerKey string) (name string, start, 
 	return "", 0, 0, false
 }
 
-// scriptNameValue is the hover RHS for a ScriptName def. Scalar saves
-// (save_scope_as) have no value; their hover body is the ancestor scope expr.
+// scriptNameValue is the hover RHS for a ScriptName def. Scalar saves (save_scope_as) have no value; their hover body is the ancestor scope expr.
 func scriptNameValue(a *jomini.Assignment, r jomini.ScriptNameRule) string {
 	if r.Kind == "saved_scope" && r.InnerKey == "" {
 		return ""
@@ -293,8 +287,7 @@ func scriptNameValue(a *jomini.Assignment, r jomini.ScriptNameRule) string {
 	return "yes"
 }
 
-// dropEphemeralDefs drops flags/variables/scopes from the install cache.
-// script_param stays so $NAME$ in vanilla scripted_* files can resolve.
+// dropEphemeralDefs drops flags/variables/scopes from the install cache. script_param stays so $NAME$ in vanilla scripted_* files can resolve.
 func dropEphemeralDefs(defs []Def) []Def {
 	out := make([]Def, 0, len(defs))
 	for _, d := range defs {

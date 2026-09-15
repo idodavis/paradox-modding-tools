@@ -126,7 +126,7 @@ func (f diagFile) unresolvedRefDiags() []Diagnostic {
 		// another title in 00_landed_titles.txt. Reporting a citation whose name
 		// something in the model does define would be a confident error about
 		// correct script, so the miss has to be total.
-		if len(f.s.FindDefs(id, 1, false, true)) > 0 {
+		if len(f.s.FindDefsOf(id, "", 1, false, true)) > 0 {
 			return true
 		}
 		// A tier that would not load is a model missing its data rows, which is no evidence that this one is absent.
@@ -192,7 +192,7 @@ func (f diagFile) wrongValueTypeDiags() []Diagnostic {
 		// nested definition is filed under a kind the binding does not name, so
 		// `has_title = title:k_austria` looked unresolved while k_austria sits
 		// inside another title in 00_landed_titles.txt.
-		if len(f.s.FindDefs(bare, 1, false, true)) > 0 {
+		if len(f.s.FindDefsOf(bare, "", 1, false, true)) > 0 {
 			return true
 		}
 		// A tier that would not load is a model missing its data rows, which is no evidence that this one is absent.
@@ -378,7 +378,7 @@ func (f diagFile) knownAnywhere(key string) bool {
 	if strings.ContainsAny(key, "$.:@") {
 		return true // a macro parameter, a scope path, or a script value
 	}
-	return len(f.s.FindDefs(key, 1, false, true)) > 0
+	return len(f.s.FindDefsOf(key, "", 1, false, true)) > 0
 }
 
 // isGraphicsData reports a file under gfx/, which is asset data rather than

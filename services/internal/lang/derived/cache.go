@@ -1,10 +1,17 @@
-// cache.go declares persisted semantic-model shapes and format-version constants.
-// A version bump invalidates on-disk files (no migration).
-
+// Package derived builds and persists VanillaCache (install scan) and harvests
+// workspace mods into session maps. It answers "what objects/refs/edges exist?"
+// by scanning the game install and indexing mods. All game knowledge is DERIVED
+// here from the install — nothing is bundled. It imports jomini, loc, declared
+// and game; it must not import session, and Wails DTOs live in views.
+//
+// cache.go declares the persisted shapes, the format versions, and the
+// projections PrepareCache builds over them. A version bump invalidates
+// on-disk files; there is no migration.
 package derived
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -13,73 +20,22 @@ import (
 	"paradox-modding-tools/services/internal/lang/loc"
 )
 
-// CacheFormatVersion is the on-disk schema of VanillaCache. Bump it when the
-// derived *content* changes too, not only the field layout: a cache written
-// before deriveNestedOptions was made order-independent has 352 CK3 defs under
-// whichever kind that scan's threads happened to pick, and nothing else would
-// invalidate it.
-//
-// 34 covers two content changes, neither of which any other check invalidates:
-//
-//   - maxOptionKeysPerParent. An older cache holds 57,652 phantom EU5 defs of
-//     kind `father` — 40% of that model — harvested from the game-setup `start`
-//     blocks. Worse than noise: knownAnywhere ends in FindDefs, so each one is a
-//     word unknown-token and unknown-key can never report.
-//   - defContainers using jomini.IsObjectKind. An older cache attributes 5,604
-//     of CK3's 17,073 non-call edges (32.8%) and 1,501 of Vic3's 3,847 (39.0%)
-//     to a saved scope rather than to the event that encloses it. The edge
-//     counts are unchanged; the Event Graph's source node was wrong.
-//
-// 35 adds Edge.Rescoped, which the fix above made necessary. Once an edge names
-// the on_action that really encloses it, eventRootScopeLocked starts reading
-// that on_action's declared scope as the event's — and a fire site nested under
-// a scope change is not in that scope at all. An older cache has the flag unset
-// everywhere, which is the pre-fix behaviour, so the bump is what turns it on.
-//
-// 36 is the smallest content change here yet and still needs the bump: the name
-// shapes now accept Unicode letters, so Victoria 3's `mon_general_petar_vukotić`
-// is harvested as the character template it is. Three or so tokens across the
-// three installs — but the rule is not about magnitude. An older cache is a
-// model missing objects the install contains, and nothing else would notice.
-//
-// 37 stops option databases harvesting declared engine names as rows: 639 CK3
-// defs and 2 EU5 ones were triggers and effects (`is_alive`, `save_scope_as`),
-// which resolveDefinition ranks above the declared token. An older cache still
-// holds them.
-//
-// 38 drops the cut projections: Snippets, MetaKeys, FieldEnumsByKind and
-// AmbiguousFields. Nothing derives them any more; an older cache still carries
-// the stale values.
-//
-// 39 replaces the four affix projections with LocConventions, one template rule per kind.
-//
-// 40 moves the data-row kinds (game.GameInfo.DataKinds) out of Defs into the vanilla-data sidecar; an older cache holds them inline, so both files would answer for the same row.
-//
-// 41 changes what a FieldInfoByKind[kind] key MEANS: a field documented inside
-// an example block is now keyed "block.field" instead of bare "field". An
-// older cache's bare keys are the pre-fix ambiguity itself (CK3's `trigger`
-// inside a portrait example answering for every `trigger` in the kind), so
-// loading one without a rescan would silently keep serving it.
-const CacheFormatVersion = 41
-
-// NestedShape is a derived parent→child harvest pattern (faiths under religion,
-// nested titles, law policies, …). GroupKey is the wrapper when every hit
-// sat under the same assignment.
-type NestedShape struct {
-	ParentKind string `json:"parentKind"`
-	ChildKind  string `json:"childKind"`
-	GroupKey   string `json:"groupKey,omitempty"`
-	// KeyPrefix is the shared `X_` first letters of discovered child keys
-	// (CK3 titles: "ekdcb"). Empty means harvest every matching block.
-	KeyPrefix string `json:"keyPrefix,omitempty"`
-}
+// CacheFormatVersion is the on-disk schema of VanillaCache, bumped when the derived CONTENT changes too and not only the field layout, since nothing else invalidates a cache harvested by a since-corrected pass -- 42 keeps the corpus-harvested Get*/Set* data functions when an install ships no data-type dump, where 41 let enrichDataTypes overwrite them with an empty set.
+const CacheFormatVersion = 42
 
 // LocFormatVersion is the on-disk schema of a vanilla loc sidecar.
 const LocFormatVersion = 3
 
-// Def is one named object: Kind/Key, absolute Path, 0-based Line, Origin ("" = vanilla).
-// OwnerKey is the enclosing scripted macro for script_param defs.
-// Value is the harvested RHS literal at a ScriptName def site (hover body).
+// NestedShape is a derived parent→child harvest pattern (faiths under religion, nested titles). GroupKey is the wrapper when every hit sat under one assignment.
+type NestedShape struct {
+	ParentKind string `json:"parentKind"`
+	ChildKind  string `json:"childKind"`
+	GroupKey   string `json:"groupKey,omitempty"`
+	// KeyPrefix is the shared `X_` first letters of discovered child keys (CK3 titles: "ekdcb"); empty harvests every matching block.
+	KeyPrefix string `json:"keyPrefix,omitempty"`
+}
+
+// Def is one named object: Kind/Key, absolute Path, 0-based Line, Origin ("" = vanilla). OwnerKey is the enclosing scripted macro for script_param defs. Value is the harvested RHS literal at a ScriptName def site (hover body).
 type Def struct {
 	Kind     string `json:"kind"`
 	Key      string `json:"key"`
@@ -90,59 +46,21 @@ type Def struct {
 	Origin   string `json:"origin,omitempty"`
 	OwnerKey string `json:"ownerKey,omitempty"`
 	Value    string `json:"value,omitempty"`
-	// Nested marks a definition harvested from inside another one rather than at
-	// a file's top level: a game rule's options, a script parameter, the members
-	// of a nested shape. They are real definitions -- they are cited, hovered and
-	// navigated to -- but they are not the file's subject, and a check that
-	// treats them as one reports every activity type's `special_guests` as a
-	// duplicate of every other's.
+	// Nested marks a definition harvested from inside another one rather than at a file's top level; it is real, but it is not the file's subject.
 	Nested bool `json:"nested,omitempty"`
-	// Local marks a definition the file DECLARES inline -- `scripted_trigger
-	// foo = { ... }`, a GUI `local_template` -- rather than one a folder gives a
-	// kind to. The engine resolves these per file, so a repeated Local key is
-	// required rather than a defect, and a call must never be navigated to a
-	// Local body in another file. game.LocalDeclPrefix names the keyword family
-	// and jomini.DeclKeywords lists them; GAME-SYNTAX 16 has the evidence.
+	// Local marks a definition the file DECLARES inline (`scripted_trigger foo = {…}`, a GUI local_template), so a repeated key is required rather than a defect and a call must never navigate to another file's body.
 	Local bool `json:"local,omitempty"`
-
-	// Doc is the comment block written immediately above the definition. For
-	// most objects it is the only description that exists: script_docs covers
-	// the engine API, not script, so no dump describes an event, a decision, a
-	// trait or a scripted macro. Authors write a comment instead.
+	// Doc is the comment block written directly above the definition -- for most objects the only description that exists, since script_docs covers the engine API and not script.
 	Doc string `json:"doc,omitempty"`
 }
 
-// IsCitableDef reports a definition whose key names a real object, so a
-// citation, a field value or a nested-shape join may bind to it.
-//
-// One question, previously asked at seven sites with four answers. The three
-// that disagreed:
-//
-//   - deriveFieldValueKinds and bindKinds admitted loc_key. Whether a field
-//     holds a localization key is deriveLocFields' question, and that pass has
-//     four guards this one does not — chiefly schema.HasName, so it refuses to
-//     retype a token the game declares. Without it, `has_policy` and
-//     `add_random_innovation` were typed loc_key on a mod that localizes them,
-//     which is a derived pass overruling a declared one. Worse, the collision
-//     made the key ambiguous and so DROPPED the field: on A Game of Thrones
-//     111 correct types (`add_innovation` -> innovations, `add_perk` ->
-//     lifestyle_perks) were suppressed by the mod's own loc file.
-//   - resolveNonLoc omitted the empty-key check, which is unreachable there
-//     (ResolveMatching buckets by a non-empty word) but not worth preserving as
-//     a difference.
-//
-// jomini.IsObjectKind is the stricter sibling for "resolve this name to a
-// thing": it also rejects `namespace`. That is right when a hover must not land
-// on an event id prefix, and wrong here — a namespace still occupies the name,
-// and a derivation that treats the name as free invents a database for it.
+// IsCitableDef reports a definition whose key names a real object, so a citation, a field value or a nested-shape join may bind to it. One question, previously asked at seven sites with four answers; jomini.IsObjectKind is the stricter sibling that also rejects `namespace`.
 func IsCitableDef(d Def) bool {
 	k := jomini.CanonicalKind(d.Kind)
 	return k != "" && k != jomini.KindLocKey && d.Key != "" && !jomini.IsEphemeral(k)
 }
 
-// Ref is a use-site. Kind is "loc", "loc-broad",
-// "event", "on_action", or an ephemeral/script kind. OwnerKey scopes
-// script_param refs to the enclosing scripted_* call.
+// Ref is a use-site. Kind is "loc", "loc-broad", "event", "on_action", or an ephemeral/script kind. OwnerKey scopes script_param refs to the enclosing scripted_* call.
 type Ref struct {
 	Key      string `json:"key"`
 	Kind     string `json:"kind"`
@@ -151,13 +69,7 @@ type Ref struct {
 	Start    int    `json:"start"`
 	End      int    `json:"end"`
 	OwnerKey string `json:"ownerKey,omitempty"`
-	// Derived marks a reference whose KIND came from an install-derived pass
-	// (FieldValueKinds, FireKeys) rather than from something the game declares.
-	// Accusing surfaces skip these: both incidents in this project's history —
-	// 859 `body_part` rows and 4,033 fire rows — were a strong derived pass
-	// reaching a surface that tells a modder their script is wrong. Not
-	// persisted in practice: only loc and call refs reach the cache, and
-	// neither is derived-marked.
+	// Derived marks a reference whose KIND came from an install-derived pass rather than from something the game declares; accusing surfaces skip these.
 	Derived bool `json:"derived,omitempty"`
 }
 
@@ -170,15 +82,7 @@ type Edge struct {
 	Line    int    `json:"line"`
 	Kind    string `json:"kind,omitempty"`
 	NameKey string `json:"nameKey,omitempty"`
-	// Rescoped marks a fire site sitting under a block that changed scope, so
-	// the event does NOT run in the scope its source declares.
-	//
-	// CK3's on_faith_monthly is faith-scoped and calls
-	// `trigger_event = global_religion.1000` fourteen blocks deep, inside
-	// character-scoped iterators. Reading the on_action's scope as the event's
-	// root accused 31 lines of vanilla CK3 of wrong-scope. The graph is
-	// unaffected — the edge is real and the arrow points the right way; only
-	// the scope inference must decline.
+	// Rescoped marks a fire site under a block that changed scope, so the event does NOT run in the scope its source declares.
 	Rescoped bool `json:"rescoped,omitempty"`
 }
 
@@ -189,22 +93,10 @@ type ModInput struct {
 	Order  int
 	Name   string
 	// Calendar is the era this mod's dates are written in, when it declares one.
-	// Empty means the dates mean what they say, which is the case for every mod
-	// that is not a total conversion.
 	Calendar ModCalendar
 }
 
-// ModCalendar is how a mod's date literals map to the era its players see.
-//
-// A total conversion offsets the year so the engine's date arithmetic still
-// works: A Game of Thrones writes start_date = 8082.1.1 for what the game shows
-// as 300 AC. Every date in that mod's script is read by a human who must
-// subtract 7,782 in their head.
-//
-// Not derivable, and deliberately not guessed. Nothing in a mod declares the
-// offset, and inferring it from bookmark dates would be a guess dressed as a
-// fact — so it is metadata a person states once, and with none stated nothing
-// anywhere changes.
+// ModCalendar is how a mod's date literals map to the era its players see: A Game of Thrones writes 8082.1.1 for what the game shows as 300 AC. Not derivable and deliberately not guessed -- it is metadata a person states once.
 type ModCalendar struct {
 	// Era is the suffix shown after a converted year, e.g. "AC".
 	Era string `json:"era,omitempty"`
@@ -212,10 +104,33 @@ type ModCalendar struct {
 	EpochOffset int `json:"epochOffset,omitempty"`
 }
 
-// Declared reports whether this calendar says anything. An undeclared calendar
-// must leave every date exactly as written.
+// Declared reports whether this calendar says anything; an undeclared one must leave every date exactly as written.
 func (c ModCalendar) Declared() bool {
 	return c.Era != "" || c.EpochOffset != 0
+}
+
+// EraDate renders a Clausewitz date in the mod's era. Empty for an undeclared calendar, a non-date, or a year the offset would push to zero or below.
+func EraDate(date string, cal ModCalendar) string {
+	if !cal.Declared() {
+		return ""
+	}
+	parts := strings.Split(date, ".")
+	if len(parts) < 3 || len(parts) > 4 {
+		return ""
+	}
+	year, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return ""
+	}
+	era := year - cal.EpochOffset
+	if era <= 0 {
+		return ""
+	}
+	out := strconv.Itoa(era) + "." + strings.Join(parts[1:], ".")
+	if cal.Era != "" {
+		out += " " + cal.Era
+	}
+	return out
 }
 
 // LocEntry is one localization value with its source file and line.
@@ -240,17 +155,14 @@ type VanillaCache struct {
 	GameVersion   string `json:"gameVersion"`
 	ScannedAt     string `json:"scannedAt"`
 
-	Defs            []Def                        `json:"defs"`
-	FieldInfo       map[string]string            `json:"fieldInfo"`
+	Defs      []Def             `json:"defs"`
+	FieldInfo map[string]string `json:"fieldInfo"`
+	// FieldInfoByKind is keyed "block.field" for a field documented inside an example block, bare otherwise.
 	FieldInfoByKind map[string]map[string]string `json:"fieldInfoByKind"`
 	Structures      map[string][]string          `json:"structures"`
-	// NestedMembers is block key -> the members that block holds, most-used
-	// first. What lets a query answer "what belongs inside triggered_desc?"
-	// rather than only "what belongs inside an event?".
+	// NestedMembers is block key -> the members that block holds, most-used first: what answers "what belongs inside triggered_desc?" rather than only "inside an event?".
 	NestedMembers map[string][]string `json:"nestedMembers,omitempty"`
-	// UnambiguousBlocks are the block names used by exactly one kind. Only those
-	// can have an absence judged: `option` is a block in a CK3 event and another
-	// in accolade_names, holding nothing in common.
+	// UnambiguousBlocks are the block names used by exactly one kind; only those can have an absence judged.
 	UnambiguousBlocks map[string]bool     `json:"unambiguousBlocks,omitempty"`
 	StructureBlocks   map[string][]string `json:"structureBlocks,omitempty"`
 	Vocabulary        []string            `json:"vocabulary"`
@@ -274,40 +186,19 @@ type VanillaCache struct {
 	LocFields      []string          `json:"locFields,omitempty"`
 	KindInfo       map[string]string `json:"kindInfo,omitempty"`
 	DataFunctions  []string          `json:"dataFunctions,omitempty"`
-
-	// LocEngineSlots are `$NAME$` interpolations the game's own localization
-	// uses but never defines as a key — `$EFFECT_LIST_BULLET$`, `$ACTION$`,
-	// `$AGE$`. The engine fills them in; they are not loc keys anyone can
-	// write, so demanding one from a mod is a false "missing localization".
-	//
-	// Derived from the install, never listed: 354 of the 1,138 distinct
-	// ALL-CAPS interpolations in CK3's english loc are of this kind, and a game
-	// update changes the set. `isLocEngineToken` guesses at the same thing from
-	// shape (a single ALL-CAPS word) and is right about 80% of the time; this
-	// is the measured version.
+	// LocEngineSlots are `$NAME$` interpolations the game's loc uses but never defines (`$ACTION$`, `$AGE$`); demanding one from a mod is a false "missing localization". 354 of CK3's 1,138 ALL-CAPS interpolations, and a game update changes the set.
 	LocEngineSlots []string `json:"locEngineSlots,omitempty"`
-
-	// declared.Schema is the type system the game declares in script_docs: scope types,
-	// scope links, and typed engine tokens. Nil when the user has not run
-	// script_docs; callers degrade rather than infer.
+	// Schema is the type system the game declares in script_docs. Nil when the user has not run it; callers degrade rather than infer.
 	Schema *declared.Schema `json:"schema,omitempty"`
-
-	// KindScope maps a harvested database kind to the scope type it holds
-	// (kind "cultures" → scope "culture"), resolved by bindKinds. This is what
-	// lets completion filter effects by the scope the cursor sits in.
+	// KindScope maps a harvested database kind to the scope type it holds (kind "cultures" -> scope "culture"), resolved by bindKinds.
 	KindScope map[string]string `json:"kindScope,omitempty"`
+	// Paths interns Def/Ref/Edge paths on disk only: saveCacheFile writes it and loadCacheFile expands it away.
+	Paths []string `json:"paths,omitempty"`
 
 	// data is the tier a scan produced, held until SaveCache writes it; nil on a loaded cache, which reads it on demand.
 	data []Def `json:"-"`
 
-	// Paths is the interning table for Def/Ref/Edge paths. It exists only on
-	// disk: saveCacheFile writes it and loadCacheFile expands it away, so code
-	// reading a cache always sees real paths.
-	Paths []string `json:"paths,omitempty"`
-
-	// Built by PrepareCache on load/scan; not persisted. The token views are
-	// projections of declared.Schema, rebuilt each load so the declared API is stored
-	// exactly once.
+	// The token views are projections of Schema, rebuilt on every load so the declared API is stored exactly once.
 	effectNames        []string                   `json:"-"`
 	triggerNames       []string                   `json:"-"`
 	vocabNames         []string                   `json:"-"`
@@ -315,14 +206,7 @@ type VanillaCache struct {
 	triggerSet         map[string]bool            `json:"-"`
 	structureSets      map[string]map[string]bool `json:"-"`
 	structureBlockSets map[string]map[string]bool `json:"-"`
-	// prepared marks the projections above as built. They are a pure function of
-	// the persisted fields, so deriving them once per cache is both correct and
-	// the only safe option: PrepareCache rebuilds maps in place, and every
-	// NewWithLoc calls it, so two sessions sharing one cache pointer raced.
-	//
-	// A plain bool rather than a sync.Once because internPaths copies the struct
-	// by value, and every guard type in sync and sync/atomic carries noCopy. The
-	// copy inherits prepared=true correctly: it shares the projection maps.
+	// prepared marks the projections built. A plain bool rather than sync.Once because internPaths copies the struct by value and every guard type carries noCopy; the copy inherits true correctly since it shares the maps.
 	prepared bool `json:"-"`
 }
 
@@ -332,15 +216,10 @@ type VanillaLoc struct {
 	Sites         map[string]LocEntry `json:"sites"`
 }
 
-// PrepareCache normalizes field docs and builds O(1) membership maps for
-// LSP/views. It is idempotent: the projections derive purely from the persisted
-// fields, and rebuilding them in place while another session reads the same
-// cache is a data race.
-// prepareMu serializes cache preparation process-wide. It is held only while
-// the projections are built — once per cache, milliseconds — so the coarseness
-// costs nothing and it keeps VanillaCache copyable.
+// prepareMu serializes cache preparation process-wide; it is held only while the projections are built, once per cache.
 var prepareMu sync.Mutex
 
+// PrepareCache normalizes field docs and builds the O(1) membership maps LSP and views read. Idempotent, and locked because rebuilding in place while another session reads the same cache is a data race.
 func PrepareCache(c *VanillaCache) {
 	if c == nil {
 		return
@@ -349,44 +228,6 @@ func PrepareCache(c *VanillaCache) {
 	defer prepareMu.Unlock()
 	if c.prepared {
 		return
-	}
-	prepareCacheOnce(c)
-	c.prepared = true
-}
-
-func prepareCacheOnce(c *VanillaCache) {
-	if c.FieldInfo == nil {
-		c.FieldInfo = map[string]string{}
-	}
-	if c.FieldInfoByKind == nil {
-		c.FieldInfoByKind = map[string]map[string]string{}
-	}
-	if c.Structures == nil {
-		c.Structures = map[string][]string{}
-	}
-	if c.StructureBlocks == nil {
-		c.StructureBlocks = map[string][]string{}
-	}
-	if c.FieldValueKinds == nil {
-		c.FieldValueKinds = map[string]string{}
-	}
-	if c.DeclaredFieldTypes == nil {
-		c.DeclaredFieldTypes = map[string]string{}
-	}
-	if c.DeclaredFieldTypesByKind == nil {
-		c.DeclaredFieldTypesByKind = map[string]map[string]string{}
-	}
-	if c.PrefixKinds == nil {
-		c.PrefixKinds = map[string]string{}
-	}
-	if c.FireKeys == nil {
-		c.FireKeys = map[string]string{}
-	}
-	if c.LocConventions == nil {
-		c.LocConventions = map[string][]loc.Convention{}
-	}
-	if c.KindInfo == nil {
-		c.KindInfo = map[string]string{}
 	}
 	c.FieldInfo = normalizeDocMap(c.FieldInfo)
 	for kind, m := range c.FieldInfoByKind {
@@ -401,11 +242,10 @@ func prepareCacheOnce(c *VanillaCache) {
 	for kind, keys := range c.StructureBlocks {
 		c.structureBlockSets[kind] = sliceSet(keys)
 	}
+	c.prepared = true
 }
 
-// projectSchema builds the completion and ranking views over the declared API.
-// Nothing here is persisted: declared.Schema is the only stored copy, so a cache written
-// without script_docs simply offers no engine tokens.
+// projectSchema builds the completion and ranking views over the declared API. Nothing here is persisted, so a cache written without script_docs simply offers no engine tokens.
 func (c *VanillaCache) projectSchema() {
 	c.effectSet, c.triggerSet = map[string]bool{}, map[string]bool{}
 	c.effectNames, c.triggerNames = nil, nil
@@ -427,41 +267,6 @@ func (c *VanillaCache) projectSchema() {
 		slices.Sort(c.triggerNames)
 	}
 	c.vocabNames = sortedKeys(vocab)
-}
-
-// TokenNames returns the declared names for a completion slot: "effect",
-// "trigger", or "vocabulary" for the walk's keys plus the whole engine API.
-func (c *VanillaCache) TokenNames(slot string) []string {
-	if c == nil {
-		return nil
-	}
-	switch slot {
-	case "effect":
-		return c.effectNames
-	case "trigger":
-		return c.triggerNames
-	case "vocabulary":
-		return c.vocabNames
-	default:
-		return nil
-	}
-}
-
-// StructureBlock reports whether key is usually a block under kind.
-func (c *VanillaCache) StructureBlock(kind, key string) bool {
-	if c == nil || key == "" {
-		return false
-	}
-	set := c.structureBlockSets[kind]
-	return set[key] || set[strings.ToLower(key)]
-}
-
-// MemberSets returns pre-built structure/effect/trigger maps for LSP rank.
-func (c *VanillaCache) MemberSets(kind string) (structKeys, effects, triggers map[string]bool) {
-	if c == nil {
-		return nil, nil, nil
-	}
-	return c.structureSets[kind], c.effectSet, c.triggerSet
 }
 
 func sliceSet(keys []string) map[string]bool {

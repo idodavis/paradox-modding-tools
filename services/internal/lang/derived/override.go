@@ -21,15 +21,7 @@ type Contest struct {
 	Defs     []Def
 }
 
-// Winner picks the effective definition. order is origin → rank; vanilla always loses.
-//
-// FIOS/LIOS is a property of the KIND, so a bucket spanning more than one kind
-// has no single rule to reduce under. Each kind is reduced under its own rule
-// and the per-kind winners are then compared by load order. Callers that need a
-// particular kind narrow first: Contests buckets by kind before it gets here,
-// and ResolveMatching takes a filter. Session.Resolve does not, so its answer
-// for a key two mods define under different kinds is best-effort — but stable,
-// which is the part that was missing.
+// Winner picks the effective definition. order is origin → rank; vanilla always loses. FIOS/LIOS is a property of the KIND, so a bucket spanning more than one kind has no single rule to reduce under: each kind is reduced under its own rule and the per-kind winners are compared by load order. Session.Resolve does not narrow first, so its answer for a key two mods define under different kinds is best-effort -- but stable, which is the part that was missing.
 func Winner(gameID string, defs []Def, order map[string]int) *Def {
 	if len(defs) == 0 {
 		return nil

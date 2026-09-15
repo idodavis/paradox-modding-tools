@@ -49,18 +49,6 @@ func (m *Model) ModDefsOf(key string) []Def {
 	return cloneIf(m.defsByKey[key])
 }
 
-// FindDefs returns non-ephemeral defs whose keys contain query (or start with it if byPrefix).
-func (m *Model) FindDefs(query string, limit int, byPrefix, includeVanilla bool) []Def {
-	return m.findDefs(query, "", limit, byPrefix, includeVanilla, false)
-}
-
-// FindDefsOf is FindDefs restricted to CanonicalKind(kind), including ephemeral.
-func (m *Model) FindDefsOf(
-	query, kind string, limit int, byPrefix, includeVanilla bool,
-) []Def {
-	return m.findDefs(query, kind, limit, byPrefix, includeVanilla, true)
-}
-
 // FindMacroDefs returns scripted_* macro defs whose keys start with query; the macro test runs before the limit.
 func (m *Model) FindMacroDefs(query string, limit int) []Def {
 	if limit <= 0 {
@@ -122,8 +110,9 @@ func (m *Model) FindParamsOf(owner string, limit int) []string {
 	return out
 }
 
-func (m *Model) findDefs(
-	query, kind string, limit int, byPrefix, includeVanilla, allowEphemeral bool,
+// FindDefsOf returns defs whose keys contain query, or start with it if byPrefix. An empty kind searches every kind and drops ephemeral defs; a named kind narrows to CanonicalKind(kind) and keeps them, because asking for `saved_scope` by name is asking for the ephemeral ones.
+func (m *Model) FindDefsOf(
+	query, kind string, limit int, byPrefix, includeVanilla bool,
 ) []Def {
 	if byPrefix && limit <= 0 {
 		return nil
@@ -139,7 +128,7 @@ func (m *Model) findDefs(
 			if jomini.CanonicalKind(d.Kind) != want {
 				return true
 			}
-		} else if !allowEphemeral && jomini.IsEphemeral(d.Kind) {
+		} else if kind == "" && jomini.IsEphemeral(d.Kind) {
 			return true
 		}
 		if q != "" {
@@ -173,20 +162,26 @@ func (m *Model) findDefs(
 	return out
 }
 
+// MemberSets returns the pre-built structure/effect/trigger maps LSP ranks with.
 func (m *Model) MemberSets(kind string) (structKeys, effects, triggers map[string]bool) {
 	if m.cache == nil {
 		return nil, nil, nil
 	}
-	return m.cache.MemberSets(kind)
+	return m.cache.structureSets[kind], m.cache.effectSet, m.cache.triggerSet
 }
 
+// Vocab is the name list for a completion slot: the declared API for effect/trigger/vocabulary, the harvested corpus for the rest.
 func (m *Model) Vocab(kind string) []string {
 	if m.cache == nil {
 		return nil
 	}
 	switch kind {
-	case "effect", "trigger", "vocabulary":
-		return m.cache.TokenNames(kind)
+	case "effect":
+		return m.cache.effectNames
+	case "trigger":
+		return m.cache.triggerNames
+	case "vocabulary":
+		return m.cache.vocabNames
 	case "gui_type":
 		return m.cache.GUITypes
 	case "gui_prop":
@@ -245,7 +240,7 @@ func (m *Model) KindFieldDoc(key, kind string, chain []string) string {
 	return byKind[lk]
 }
 
-// FieldDoc tries the block-qualified prose, then the kind's bare prose, then the global name, then the game's dump doc, then PMT's own gloss.
+// FieldDoc tries the block-qualified prose, then the kind's bare prose, then the global name, then the game's dump doc, then PMT's own gloss for the block keywords no game documents.
 func (m *Model) FieldDoc(key, kind string, chain []string) string {
 	if m.cache == nil {
 		return ""
@@ -272,10 +267,6 @@ func (m *Model) FieldDoc(key, kind string, chain []string) string {
 			return v
 		}
 	}
-	// Last resort: PMT's own gloss for the block keywords no game documents at
-	// all (`limit`, `desc`, `option`, `weight`, …). Every real source above
-	// wins — including the portrait-pair fallback — so this only fills a hover
-	// that would otherwise be empty.
 	return jomini.StructuralDoc(key)
 }
 
@@ -294,13 +285,6 @@ func (m *Model) TokenUsage(key string) string {
 		return ""
 	}
 	return m.cache.Schema.Usage(sib)
-}
-
-func (m *Model) TokenScopes(key string) string {
-	if m.cache == nil {
-		return ""
-	}
-	return m.cache.Schema.ScopeText(key)
 }
 
 func (m *Model) PrefixKind(prefix string) string {
@@ -333,25 +317,47 @@ func (m *Model) FieldValueKind(field string) string {
 	return m.fieldValueKinds[strings.ToLower(field)]
 }
 
-func (m *Model) DeclaredFieldType(kind, field string) declared.DeclaredType {
+// declaredKindType is what KIND's own docs say a field holds, with no global fallback: the global map holds whatever the first file to document a name happened to say about it, and `type` is `<diplomacy/subject/union>` inside a scripted relation and an event presentation kind inside an event.
+func (m *Model) declaredKindType(kind, field string) string {
 	if m.cache == nil {
-		return declared.DeclaredType{}
+		return ""
 	}
 	lf := strings.ToLower(field)
 	for _, k := range []string{kind, jomini.CanonicalKind(kind)} {
 		if k == "" {
 			continue
 		}
-		if m := m.cache.DeclaredFieldTypesByKind[k]; m != nil {
-			if raw := m[lf]; raw != "" {
-				return declared.ClassifyDeclaredType(raw)
+		if byKind := m.cache.DeclaredFieldTypesByKind[k]; byKind != nil {
+			if raw := byKind[lf]; raw != "" {
+				return raw
 			}
 		}
 	}
-	if raw := m.cache.DeclaredFieldTypes[lf]; raw != "" {
-		return declared.ClassifyDeclaredType(raw)
+	return ""
+}
+
+// DeclaredFieldType is the kind's declared type, else the global one. A hover can afford the global map's ambiguity.
+func (m *Model) DeclaredFieldType(kind, field string) declared.DeclaredType {
+	if m.cache == nil {
+		return declared.DeclaredType{}
 	}
-	return declared.DeclaredType{}
+	raw := m.declaredKindType(kind, field)
+	if raw == "" {
+		raw = m.cache.DeclaredFieldTypes[strings.ToLower(field)]
+	}
+	if raw == "" {
+		return declared.DeclaredType{}
+	}
+	return declared.ClassifyDeclaredType(raw)
+}
+
+// DeclaredValueSet is per-kind only: a check that accuses correct script cannot afford the global map's ambiguity.
+func (m *Model) DeclaredValueSet(kind, field string) []string {
+	raw := m.declaredKindType(kind, field)
+	if raw == "" {
+		return nil
+	}
+	return declared.ClassifyDeclaredType(raw).Values
 }
 
 func (m *Model) CacheInfo() (installPath, scannedAt, gameVersion, installID string) {
@@ -375,10 +381,7 @@ func (m *Model) CalendarFor(path string) ModCalendar {
 }
 
 func (m *Model) NestedMembers(block string) []string {
-	if block == "" {
-		return nil
-	}
-	if m.cache == nil {
+	if block == "" || m.cache == nil {
 		return nil
 	}
 	return m.cache.NestedMembers[strings.ToLower(block)]
@@ -388,8 +391,7 @@ func (m *Model) IsNestedMember(block, key string) bool {
 	if block == "" || key == "" {
 		return false
 	}
-	lk := strings.ToLower(key)
-	return slices.Contains(m.NestedMembers(block), lk)
+	return slices.Contains(m.NestedMembers(block), strings.ToLower(key))
 }
 
 func (m *Model) Resolve(key string) *Def {
@@ -558,236 +560,6 @@ func (m *Model) EdgesFrom(id string) []Edge {
 	return out
 }
 
-// callersOf lists the defs whose call edges reach macro, mods then vanilla.
-func (m *Model) callersOf(macro string) []string {
-	var out []string
-	for _, e := range append(append([]Edge{}, m.edgesByTo[macro]...), m.cacheEdgesByTo[macro]...) {
-		if e.Kind == EdgeKindCall {
-			out = append(out, e.From)
-		}
-	}
-	return out
-}
-
-// EachDef walks workspace defs, then vanilla if includeVanilla. fn false stops.
-func (m *Model) EachDef(includeVanilla bool, fn func(Def) bool) {
-	for _, defs := range m.defsByFile {
-		for _, d := range defs {
-			if !fn(d) {
-				return
-			}
-		}
-	}
-	if includeVanilla && m.cache != nil {
-		for _, d := range m.cache.Defs {
-			if !fn(d) {
-				return
-			}
-		}
-	}
-}
-
-// GraphCatalog returns fire-edge endpoints, their kinds, and macro def keys.
-func (m *Model) GraphCatalog(origins []string) (
-	picker map[string]string, kinds map[string]string, effects map[string]bool,
-) {
-	picker, kinds = map[string]string{}, map[string]string{}
-	effects = make(map[string]bool, len(m.macroKeys))
-	maps.Copy(effects, m.macroKeys)
-	endpoints := map[string]bool{}
-	addEnd := func(e Edge) {
-		if e.Kind == EdgeKindCall {
-			return
-		}
-		if e.From != "" {
-			endpoints[e.From] = true
-		}
-		if e.To != "" {
-			endpoints[e.To] = true
-		}
-	}
-	for _, edges := range m.edgesByFrom {
-		for _, e := range edges {
-			addEnd(e)
-		}
-	}
-	if m.cache != nil {
-		for _, e := range m.cache.Edges {
-			addEnd(e)
-		}
-	}
-	m.EachDef(true, func(d Def) bool {
-		if !endpoints[d.Key] {
-			return true
-		}
-		ck := jomini.CanonicalKind(d.Kind)
-		kinds[d.Key] = ck
-		want := d.Origin
-		if want == "" {
-			want = game.OriginVanilla
-		}
-		if len(origins) == 0 || slices.Contains(origins, want) {
-			if prev, ok := picker[d.Key]; !ok || prev == "" || d.Origin != "" {
-				picker[d.Key] = want
-			}
-		}
-		return true
-	})
-	return picker, kinds, effects
-}
-
-// Contests returns contested override keys for the live workspace.
-func (m *Model) Contests(order []string) []Contest {
-	var mods []Def
-	rewritesData := false
-	m.EachDef(false, func(d Def) bool {
-		mods = append(mods, d)
-		rewritesData = rewritesData || game.IsDataKind(m.gameID, d.Kind)
-		return true
-	})
-	var vanilla []Def
-	if m.cache != nil {
-		vanilla = m.cache.Defs
-	}
-	// A mod rewriting a character's history contests the install's row, so the tier belongs here once a mod has written one.
-	if rewritesData {
-		m.ensureData()
-		all := make([]Def, 0, len(vanilla))
-		all = append(all, vanilla...)
-		for _, key := range m.dataKeys {
-			all = append(all, m.dataByKey[key]...)
-		}
-		vanilla = all
-	}
-	return Contests(m.gameID, mods, vanilla, order)
-}
-
-// Structures returns vanilla structure keys for kind (frequency order).
-func (m *Model) Structures(kind string) []string {
-	if m.cache == nil {
-		return nil
-	}
-	return m.cache.Structures[kind]
-}
-
-// StructureBlock reports whether key is usually a block field under kind.
-func (m *Model) StructureBlock(kind, key string) bool {
-	if m.cache == nil {
-		return false
-	}
-	return m.cache.StructureBlock(kind, key)
-}
-
-// RefsInFile returns workspace refs sourced from path.
-func (m *Model) RefsInFile(path string) []Ref {
-	return cloneIf(m.refsByFile[CanonPath(path)])
-}
-
-// WorkspaceRefs returns harvested workspace refs (not vanilla cache refs).
-func (m *Model) WorkspaceRefs() []Ref {
-	n := 0
-	for _, refs := range m.refsByKey {
-		n += len(refs)
-	}
-	out := make([]Ref, 0, n)
-	for _, refs := range m.refsByKey {
-		out = append(out, refs...)
-	}
-	return out
-}
-
-// DefsInFile returns workspace defs declared in path.
-func (m *Model) DefsInFile(path string) []Def {
-	return cloneIf(m.defsByFile[CanonPath(path)])
-}
-
-// Per-kind only, with no global fallback, unlike DeclaredFieldType. The global
-// map holds whatever the first file to document a name happened to say about
-// it, and `type` is `<diplomacy/subject/union>` inside a scripted relation and
-// an event presentation kind inside an event -- GAME-SYNTAX 3f. A hover can
-// afford to be wrong about that; a check that accuses correct script cannot.
-func (m *Model) DeclaredValueSet(kind, field string) []string {
-	if m.cache == nil {
-		return nil
-	}
-	lf := strings.ToLower(field)
-	for _, k := range []string{kind, jomini.CanonicalKind(kind)} {
-		if k == "" {
-			continue
-		}
-		if m := m.cache.DeclaredFieldTypesByKind[k]; m != nil {
-			if raw := m[lf]; raw != "" {
-				return declared.ClassifyDeclaredType(raw).Values
-			}
-		}
-	}
-	return nil
-}
-
-// LocRefs returns workspace loc and loc-broad refs.
-func (m *Model) LocRefs() []Ref {
-	n := 0
-	for _, rs := range m.locRefsByFile {
-		n += len(rs)
-	}
-	if n == 0 {
-		return nil
-	}
-	out := make([]Ref, 0, n)
-	for _, rs := range m.locRefsByFile {
-		out = append(out, rs...)
-	}
-	return out
-}
-
-// LocKeys returns up to limit workspace and vanilla loc keys starting with
-// prefix. The filter runs here rather than in the caller because a CK3 workspace
-// holds ~10^5 loc keys and completion keeps 80 of them: materializing the whole
-// set on every keystroke was the most expensive thing hover and completion did.
-func (m *Model) LocKeys(prefix string, limit int) []string {
-	lp := strings.ToLower(prefix)
-	seen := make(map[string]bool, limit)
-	out := make([]string, 0, limit)
-	add := func(k string) bool {
-		if k == "" || seen[k] || !strings.HasPrefix(strings.ToLower(k), lp) {
-			return true
-		}
-		seen[k] = true
-		out = append(out, k)
-		return len(out) < limit
-	}
-	for _, m := range m.locByLang {
-		for k := range m {
-			if !add(k) {
-				return out
-			}
-		}
-	}
-	if m.vanillaLoc != nil {
-		for k := range m.vanillaLoc.Sites {
-			if !add(k) {
-				return out
-			}
-		}
-	}
-	m.EachDef(false, func(d Def) bool {
-		if d.Kind != "loc_key" {
-			return true
-		}
-		return add(d.Key)
-	})
-	return out
-}
-
-// fn must not call back into the session.
-func (m *Model) EachLoc(fn func(lang, key string, e LocEntry)) {
-	for lang, m := range m.locByLang {
-		for k, e := range m {
-			fn(lang, k, e)
-		}
-	}
-}
-
 // EdgesTo are the edges arriving at id, mods then vanilla, then the via hops.
 func (m *Model) EdgesTo(id string) []Edge {
 	if id == "" {
@@ -835,34 +607,211 @@ func (m *Model) EdgesTo(id string) []Edge {
 	return out
 }
 
-// KindHasDefs reports whether anything in the workspace or the install defines
-// an object of this kind. A reference to a kind with no definitions anywhere is
-// an engine concept rather than a missing object — Vic3's `relations_threshold:`
-// is a declared scope link with no database behind it.
+// callersOf lists the defs whose call edges reach macro, mods then vanilla.
+func (m *Model) callersOf(macro string) []string {
+	var out []string
+	for _, e := range append(append([]Edge{}, m.edgesByTo[macro]...), m.cacheEdgesByTo[macro]...) {
+		if e.Kind == EdgeKindCall {
+			out = append(out, e.From)
+		}
+	}
+	return out
+}
+
+// EachDef walks workspace defs, then vanilla if includeVanilla. fn false stops.
+func (m *Model) EachDef(includeVanilla bool, fn func(Def) bool) {
+	for _, defs := range m.defsByFile {
+		for _, d := range defs {
+			if !fn(d) {
+				return
+			}
+		}
+	}
+	if includeVanilla && m.cache != nil {
+		for _, d := range m.cache.Defs {
+			if !fn(d) {
+				return
+			}
+		}
+	}
+}
+
+// GraphCatalog returns the kind of every fire-edge endpoint and the macro def keys.
+func (m *Model) GraphCatalog() (kinds map[string]string, effects map[string]bool) {
+	kinds = map[string]string{}
+	effects = make(map[string]bool, len(m.macroKeys))
+	maps.Copy(effects, m.macroKeys)
+	endpoints := map[string]bool{}
+	addEnd := func(e Edge) {
+		if e.Kind == EdgeKindCall {
+			return
+		}
+		if e.From != "" {
+			endpoints[e.From] = true
+		}
+		if e.To != "" {
+			endpoints[e.To] = true
+		}
+	}
+	for _, edges := range m.edgesByFrom {
+		for _, e := range edges {
+			addEnd(e)
+		}
+	}
+	if m.cache != nil {
+		for _, e := range m.cache.Edges {
+			addEnd(e)
+		}
+	}
+	m.EachDef(true, func(d Def) bool {
+		if endpoints[d.Key] {
+			kinds[d.Key] = jomini.CanonicalKind(d.Kind)
+		}
+		return true
+	})
+	return kinds, effects
+}
+
+// Contests returns contested override keys for the live workspace.
+func (m *Model) Contests(order []string) []Contest {
+	var mods []Def
+	rewritesData := false
+	m.EachDef(false, func(d Def) bool {
+		mods = append(mods, d)
+		rewritesData = rewritesData || game.IsDataKind(m.gameID, d.Kind)
+		return true
+	})
+	var vanilla []Def
+	if m.cache != nil {
+		vanilla = m.cache.Defs
+	}
+	// A mod rewriting a character's history contests the install's row, so the tier belongs here once a mod has written one.
+	if rewritesData {
+		m.ensureData()
+		all := make([]Def, 0, len(vanilla))
+		all = append(all, vanilla...)
+		for _, key := range m.dataKeys {
+			all = append(all, m.dataByKey[key]...)
+		}
+		vanilla = all
+	}
+	return Contests(m.gameID, mods, vanilla, order)
+}
+
+// Structures returns vanilla structure keys for kind (frequency order).
+func (m *Model) Structures(kind string) []string {
+	if m.cache == nil {
+		return nil
+	}
+	return m.cache.Structures[kind]
+}
+
+// StructureBlock reports whether key is usually a block field under kind.
+func (m *Model) StructureBlock(kind, key string) bool {
+	if m.cache == nil || key == "" {
+		return false
+	}
+	set := m.cache.structureBlockSets[kind]
+	return set[key] || set[strings.ToLower(key)]
+}
+
+// RefsInFile returns workspace refs sourced from path.
+func (m *Model) RefsInFile(path string) []Ref {
+	return cloneIf(m.refsByFile[CanonPath(path)])
+}
+
+// WorkspaceRefs returns harvested workspace refs (not vanilla cache refs).
+func (m *Model) WorkspaceRefs() []Ref {
+	n := 0
+	for _, refs := range m.refsByKey {
+		n += len(refs)
+	}
+	out := make([]Ref, 0, n)
+	for _, refs := range m.refsByKey {
+		out = append(out, refs...)
+	}
+	return out
+}
+
+// DefsInFile returns workspace defs declared in path.
+func (m *Model) DefsInFile(path string) []Def {
+	return cloneIf(m.defsByFile[CanonPath(path)])
+}
+
+// LocRefs returns workspace loc and loc-broad refs.
+func (m *Model) LocRefs() []Ref {
+	n := 0
+	for _, rs := range m.locRefsByFile {
+		n += len(rs)
+	}
+	if n == 0 {
+		return nil
+	}
+	out := make([]Ref, 0, n)
+	for _, rs := range m.locRefsByFile {
+		out = append(out, rs...)
+	}
+	return out
+}
+
+// LocKeys returns up to limit workspace and vanilla loc keys starting with prefix. The filter runs here because a CK3 workspace holds ~10^5 keys and completion keeps 80: materializing the whole set per keystroke was the most expensive thing hover and completion did.
+func (m *Model) LocKeys(prefix string, limit int) []string {
+	lp := strings.ToLower(prefix)
+	seen := make(map[string]bool, limit)
+	out := make([]string, 0, limit)
+	add := func(k string) bool {
+		if k == "" || seen[k] || !strings.HasPrefix(strings.ToLower(k), lp) {
+			return true
+		}
+		seen[k] = true
+		out = append(out, k)
+		return len(out) < limit
+	}
+	for _, m := range m.locByLang {
+		for k := range m {
+			if !add(k) {
+				return out
+			}
+		}
+	}
+	if m.vanillaLoc != nil {
+		for k := range m.vanillaLoc.Sites {
+			if !add(k) {
+				return out
+			}
+		}
+	}
+	m.EachDef(false, func(d Def) bool {
+		if d.Kind != "loc_key" {
+			return true
+		}
+		return add(d.Key)
+	})
+	return out
+}
+
+// EachLoc walks every indexed workspace loc entry; fn must not call back into the session.
+func (m *Model) EachLoc(fn func(lang, key string, e LocEntry)) {
+	for lang, m := range m.locByLang {
+		for k, e := range m {
+			fn(lang, k, e)
+		}
+	}
+}
+
+// KindHasDefs reports whether anything in the workspace or the install defines an object of this kind. A reference to a kind with no definitions anywhere is an engine concept rather than a missing object.
 func (m *Model) KindHasDefs(kind string) bool {
 	return m.kindsWithDefs[jomini.CanonicalKind(kind)]
 }
 
-// BlockIsJudgeable reports a block whose members can be judged rather than
-// merely suggested: a name exactly one kind uses.
+// BlockIsJudgeable reports a block whose members can be judged rather than merely suggested: a name exactly one kind uses.
 func (m *Model) BlockIsJudgeable(block string) bool {
-	if block == "" {
-		return false
-	}
-	if m.cache == nil {
+	if block == "" || m.cache == nil {
 		return false
 	}
 	return m.cache.UnambiguousBlocks[strings.ToLower(block)]
 }
 
-// Overwriting path with CanonPath here put a lower-cased path into every
-// definition harvested from an open file, because CanonPath lower-cases on
-// Windows. That spelling then travelled all the way to the editor, which keys
-// its tabs by exact URI: go-to-definition on a symbol in the file you were
-// already looking at opened a second tab onto `file:///c:/users/...` beside the
-// original `file:///C:/Users/...`. The same mismatch made the workbench's
-// reveal-in-explorer a no-op, since it first asks whether the resource is inside
-// a workspace folder and the folders are registered with their real casing.
 func cloneIf[T any](in []T) []T {
 	if len(in) == 0 {
 		return nil
@@ -894,14 +843,4 @@ func removeByPath[T any](in []T, drop string, pathOf func(T) string) []T {
 		return nil
 	}
 	return out
-}
-
-// addLocKeys appends k once. Used by the coverage views, which genuinely need
-// every key; completion goes through LocKeys, which filters as it walks.
-func addLocKeys(seen map[string]bool, out *[]string, k string) {
-	if k == "" || seen[k] {
-		return
-	}
-	seen[k] = true
-	*out = append(*out, k)
 }

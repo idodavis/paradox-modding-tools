@@ -11,14 +11,15 @@ import (
 	"paradox-modding-tools/services/internal/lang/loc"
 )
 
+const maxMacroParams = 32
+
 // IsMacroDef reports that key is a harvested scripted-macro definition.
 func (m *Model) IsMacroDef(key string) bool {
 	_, ok := m.macroDefKinds[key]
 	return ok
 }
 
-// FireKind returns the derived fire target kind for an assignment key.
-// Loc properties (title, desc, …) never fire.
+// FireKind returns the derived fire target kind for an assignment key. Loc properties (title, desc, …) never fire.
 func (m *Model) FireKind(key string) string {
 	if loc.Classify(key) != loc.PropNone {
 		return ""
@@ -56,8 +57,7 @@ func (m *Model) LocKeyPrefixes() []string {
 	return m.cache.LocKeyPrefixes
 }
 
-// A macro with no parameters gets nothing here; `invoked by name` in the hint
-// already says all there is to say about it.
+// MacroUsage is a macro's call signature. A macro with no parameters gets nothing: `invoked by name` already says all there is to say about it.
 func (m *Model) MacroUsage(d *Def) string {
 	if d == nil || d.Key == "" || !jomini.IsMacroKind(d.Kind) {
 		return ""
@@ -89,20 +89,13 @@ func (m *Model) SchemaDoc(word string) string {
 	return ""
 }
 
-// A namespace declares an id prefix for events; nothing points at one. But it is
-// a definition like any other in the index, so load order decided the tie: a mod
-// writing `namespace = conqueror` outranked vanilla's `conqueror` trait, and
-// `add_trait = conqueror` hovered as the namespace. What kind of thing a name
-// denotes is not something override order gets to decide. A namespace still
-// resolves when nothing else of that name does, so hovering one still works.
+// ResolveNonLoc resolves a word to an object, never to a namespace unless nothing else of that name resolves. What kind of thing a name denotes is not something load order gets to decide: a mod writing `namespace = conqueror` outranked vanilla's `conqueror` trait, and `add_trait = conqueror` hovered as the namespace.
 func (m *Model) ResolveNonLoc(word string) *Def {
 	if d := m.ResolveMatching(word, func(d Def) bool {
 		return jomini.IsObjectKind(d.Kind)
 	}); d != nil {
 		return d
 	}
-	// Second pass drops only the namespace exclusion, so a namespace still
-	// resolves when nothing else of that name does.
 	return m.ResolveMatching(word, IsCitableDef)
 }
 
@@ -139,9 +132,7 @@ func (m *Model) IsStructKey(kind, key string) bool {
 	return sk[key] || sk[strings.ToLower(key)]
 }
 
-// VocabRole names an engine token's role. The declared type system wins over
-// the harvested vocabulary: it distinguishes effects, triggers and scope links,
-// which a flat name list cannot.
+// VocabRole names an engine token's role. The declared type system wins over the harvested vocabulary: it distinguishes effects, triggers and scope links, which a flat name list cannot.
 func (m *Model) VocabRole(word string) string {
 	if _, role, ok := m.Schema().Token(word); ok {
 		return role
@@ -149,9 +140,7 @@ func (m *Model) VocabRole(word string) string {
 	if l, ok := m.Schema().Link(word); ok && l.Out != "" {
 		return "scope_link"
 	}
-	// A modifier is declared too. Without this it only hovered where the install
-	// happened to also define it as a row (EU5's modifier_type_definitions), so
-	// the same token in a mod's own file produced no card at all.
+	// A modifier is declared too; without this it only hovered where the install happened to also define it as a row.
 	if _, ok := m.Schema().Modifier(word); ok {
 		return "modifier"
 	}
@@ -165,8 +154,7 @@ func (m *Model) VocabRole(word string) string {
 	return ""
 }
 
-// Schema returns the declared type system, or nil when the user has not
-// run script_docs. Callers must degrade rather than guess.
+// Schema returns the declared type system, or nil when the user has not run script_docs. Callers must degrade rather than guess.
 func (m *Model) Schema() *declared.Schema {
 	if m.cache == nil {
 		return nil
@@ -184,8 +172,7 @@ func (m *Model) ScopeOfKind(kind string) string {
 	return m.cache.KindScope[jomini.CanonicalKind(kind)]
 }
 
-// Edges come from the session, not the cache, so a mod's own on_action firing a
-// mod's own event counts the same as vanilla's.
+// EventRootScope is the scope an event runs in, read from the on_actions that fire it. Edges come from the session, not the cache, so a mod's own on_action firing a mod's own event counts the same as vanilla's.
 func (m *Model) EventRootScope(sc *declared.Schema, event string) string {
 	found := ""
 	for _, e := range m.EdgesTo(event) {
@@ -219,12 +206,7 @@ func (m *Model) IsLocalDefFile(path, extractKind string) bool {
 	return extractKind == "mod_descriptor" || m.IsMetaFile(path)
 }
 
-const maxMacroParams = 32
-
-// base is the default-language sidecar, which every language falls back to;
-// byLang holds only the extra keys a translated sidecar adds. CK3's base is
-// 287,896 keys, so materialising it twelve times for a twelve-language mod was
-// never affordable.
+// InheritedLoc is the vanilla keys a workspace inherits. base is the default-language sidecar, which every language falls back to; byLang holds only the extra keys a translated sidecar adds. CK3's base is 287,896 keys, so materialising it twelve times for a twelve-language mod was never affordable.
 type InheritedLoc struct {
 	base   map[string]bool
 	byLang map[string]map[string]bool
@@ -251,45 +233,32 @@ func (i *InheritedLoc) Each(lang string, fn func(key string)) {
 	}
 }
 
+// InheritedLocKeys reads the vanilla sidecars a workspace falls back to. The default-language one is inherited by EVERY language -- gating it on lang == defLang reported each vanilla key missing once per translation a mod ships.
 func (m *Model) InheritedLocKeys(langs []string) *InheritedLoc {
-	defLang := m.defaultLang
-	// The default-language sidecar is inherited by every language, not only its
-	// own. The games fall back to the source language for any key a translation
-	// omits, so a vanilla key present there is available in french too — and
-	// gating this on lang == defLang meant a mod that ships eight translations
-	// had every vanilla key it referenced reported missing eight times, once
-	// per language and never in english.
-	var sites map[string]LocEntry
-	if m.vanillaLoc != nil {
-		sites = m.vanillaLoc.Sites
-	}
-	installID, version := "", ""
-	if m.cache != nil {
-		installID, version = m.cache.InstallID, m.cache.GameVersion
-	}
-
 	out := &InheritedLoc{base: map[string]bool{}, byLang: map[string]map[string]bool{}}
-	var flat []string
-	for k := range sites {
-		addLocKeys(out.base, &flat, k)
+	if m.vanillaLoc != nil {
+		for k := range m.vanillaLoc.Sites {
+			if k != "" {
+				out.base[k] = true
+			}
+		}
 	}
-	if installID == "" {
+	if m.cache == nil || m.cache.InstallID == "" {
 		return out
 	}
-	version = CacheVersion(version)
+	version := CacheVersion(m.cache.GameVersion)
 	for _, lang := range langs {
-		if lang == "" || lang == defLang || out.byLang[lang] != nil {
+		if lang == "" || lang == m.defaultLang || out.byLang[lang] != nil {
 			continue
 		}
-		vl, err := LoadVanillaLoc(installID, version, lang)
+		vl, err := LoadVanillaLoc(m.cache.InstallID, version, lang)
 		if err != nil || vl == nil {
 			continue
 		}
 		extra := map[string]bool{}
-		var each []string
 		for k := range vl.Sites {
-			if !out.base[k] {
-				addLocKeys(extra, &each, k)
+			if k != "" && !out.base[k] {
+				extra[k] = true
 			}
 		}
 		out.byLang[lang] = extra

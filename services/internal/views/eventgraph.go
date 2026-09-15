@@ -25,7 +25,7 @@ const (
 
 // Graph returns the event graph for the live session. Layout is not computed.
 func Graph(s *session.Session, params EventGraphParams) EventGraph {
-	_, kinds, macroKeys := s.GraphCatalog(params.Origins)
+	kinds, macroKeys := s.GraphCatalog()
 	if params.Root == "" {
 		return EventGraph{EmptyReason: "Pick a root event."}
 	}

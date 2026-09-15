@@ -169,8 +169,8 @@ func TestQueries(t *testing.T) {
 	must(t, s.DefaultLang() == "english" && s.DefCount() >= 2 && s.Resolve("t.1") != nil, "defs")
 	must(t, s.ResolveMatching("t.1", func(d derived.Def) bool { return d.Kind == "event" }) != nil,
 		"ResolveMatching")
-	must(t, len(s.ModDefsOf("t.1")) > 0 && len(s.FindDefs("t.1", 10, true, false)) > 0 &&
-		len(s.DefsInFile(ev)) > 0, "ModDefsOf/FindDefs/DefsInFile")
+	must(t, len(s.ModDefsOf("t.1")) > 0 && len(s.FindDefsOf("t.1", "", 10, true, false)) > 0 &&
+		len(s.DefsInFile(ev)) > 0, "ModDefsOf/FindDefsOf/DefsInFile")
 	siteFile, _, _, _, locOK := s.LocSite("k.t")
 	v, locValOK := s.DefaultLoc("k.t")
 	_, locFileOK := s.LocFile("mod", "english")
@@ -194,8 +194,8 @@ func TestQueries(t *testing.T) {
 	must(t, s.OriginName("") == "Crusader Kings III" &&
 		s.OriginName("vanilla") == "Crusader Kings III", "OriginName vanilla")
 	must(t, len(s.Mods()) == 1 && s.KindFor(ev) != "", "Mods/KindFor")
-	picker, kinds, _ := s.GraphCatalog(nil)
-	must(t, kinds["t.1"] != "" || picker["t.1"] != "", "GraphCatalog")
+	kinds, _ := s.GraphCatalog()
+	must(t, kinds["t.1"] != "", "GraphCatalog")
 	must(t, len(s.Structures("event")) > 0 && len(s.Vocab("vocabulary")) > 0 &&
 		s.FieldDoc("immediate", "event", nil) != "", "Structures/Vocab/FieldDoc")
 	_, effects, _ := s.MemberSets("event")

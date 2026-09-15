@@ -119,7 +119,7 @@ func definitionSites(
 		}
 		add(d)
 	}
-	for _, d := range s.FindDefs(key, 64, false, true) {
+	for _, d := range s.FindDefsOf(key, "", 64, false, true) {
 		if d.Key == key {
 			add(d)
 		}
@@ -282,7 +282,7 @@ func DocumentSymbols(s *session.Session, path string) []SymbolInformation {
 // WorkspaceSymbols searches definitions whose keys contain query.
 func WorkspaceSymbols(s *session.Session, query string) []SymbolInformation {
 	var out []SymbolInformation
-	for _, d := range s.FindDefs(query, maxWorkspaceSymbols, false, false) {
+	for _, d := range s.FindDefsOf(query, "", maxWorkspaceSymbols, false, false) {
 		out = append(out, SymbolInformation{
 			Name: d.Key, Location: defLocation(s, d), ContainerName: d.Kind,
 		})

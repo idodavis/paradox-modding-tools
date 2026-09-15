@@ -1,10 +1,14 @@
-// persist.go saves and loads VanillaCache and vanilla loc sidecars as JSON.
+// persist.go saves and loads VanillaCache, the data tier and the loc sidecars
+// as JSON. SaveJSON/LoadJSON are the one encode/decode pair in the package;
+// sonic is measurably faster than the stdlib on the real 88 MB cache, and
+// CopyString frees the read buffer instead of pinning it behind decoded strings.
 
 package derived
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +16,10 @@ import (
 
 	"github.com/bytedance/sonic"
 )
+
+var codec = sonic.Config{CopyString: true}.Froze()
+
+var ErrFormat = errors.New("format version")
 
 // CacheDir is the user-data directory for cached vanilla models.
 func CacheDir() (string, error) {
@@ -49,11 +57,12 @@ func sanitize(s string) string {
 	return b.String()
 }
 
+// SaveJSON writes v to path via a .tmp file. Rename first: on POSIX that replaces atomically, and Go's Windows Rename does pass MOVEFILE_REPLACE_EXISTING. Remove only when it fails -- replace-existing returns ERROR_ACCESS_DENIED whenever anything holds the destination open, and a 98 MB cache being read by the app or walked by an antivirus is that case, which left every rescan writing a .tmp the engine then refused.
 func SaveJSON(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	raw, err := sonic.Marshal(v)
+	raw, err := codec.Marshal(v)
 	if err != nil {
 		return err
 	}
@@ -61,21 +70,6 @@ func SaveJSON(path string, v any) error {
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
 		return err
 	}
-	// Rename first: on POSIX that replaces atomically, and Go's Windows Rename
-	// does pass MOVEFILE_REPLACE_EXISTING. Remove only when it fails.
-	//
-	// Removing unconditionally is wrong — it opens a window where the good file
-	// is gone and the replacement is still only a .tmp. But NOT removing at all
-	// was worse, and specifically worse on Windows: replace-existing returns
-	// ERROR_ACCESS_DENIED whenever anything holds the destination open, and Go
-	// opens files with FILE_SHARE_DELETE, so unlinking the name succeeds exactly
-	// where replacing it does not. A 98 MB cache being read by the app or walked
-	// by an antivirus is that case, and it left every rescan writing a .tmp the
-	// engine then refused — a scan that ran, cost minutes, and changed nothing.
-	//
-	// So: atomic where the platform gives it, and a fallback that still lands
-	// the file where it does not. The window only opens after the safe path has
-	// already failed.
 	if err := os.Rename(tmp, path); err == nil {
 		return nil
 	}
@@ -85,41 +79,59 @@ func SaveJSON(path string, v any) error {
 	return os.Rename(tmp, path)
 }
 
-func CacheVersion(v string) string {
-	if v == "" {
-		return "latest"
+// peekWindow bounds the header read. formatVersion and scannedAt are the first and sixth fields every persisted struct declares, so an 88 MB cache is never read whole to answer either.
+const peekWindow = 64 << 10
+
+// peekHeader reads formatVersion and scannedAt out of the head of a JSON file, in one open, without decoding the body.
+func peekHeader(path string) (formatVersion int, scannedAt string, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, "", err
 	}
-	return v
+	defer f.Close()
+	head := make([]byte, peekWindow)
+	// A file shorter than the window is the normal case for a loc or wiki sidecar.
+	n, err := io.ReadFull(f, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return 0, "", err
+	}
+	head = head[:n]
+	node, gerr := sonic.Get(head, "formatVersion")
+	got, nerr := node.Int64()
+	if gerr != nil || nerr != nil {
+		return 0, "", fmt.Errorf("missing formatVersion: %w", ErrFormat)
+	}
+	if at, aerr := sonic.Get(head, "scannedAt"); aerr == nil {
+		scannedAt, _ = at.String()
+	}
+	return int(got), scannedAt, nil
 }
 
-var ErrFormat = errors.New("format version")
-
-// LoadJSON reads path and rejects a missing or mismatched formatVersion.
+// LoadJSON reads path and rejects a missing or mismatched formatVersion, without decoding the body of a file it is going to refuse.
 func LoadJSON[T any](path string, wantVersion int) (*T, error) {
+	got, _, err := peekHeader(path)
+	if err != nil {
+		return nil, err
+	}
+	if got != wantVersion {
+		return nil, fmt.Errorf("format %d != %d: %w", got, wantVersion, ErrFormat)
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	n, err := sonic.Get(raw, "formatVersion")
-	got, nerr := n.Int64()
-	if err != nil || nerr != nil {
-		return nil, fmt.Errorf("missing formatVersion: %w", ErrFormat)
-	}
-	if int(got) != wantVersion {
-		return nil, fmt.Errorf("format %d != %d: %w", got, wantVersion, ErrFormat)
-	}
 	var dst T
-	if err := sonic.Unmarshal(raw, &dst); err != nil {
+	if err := codec.Unmarshal(raw, &dst); err != nil {
 		return nil, err
 	}
 	return &dst, nil
 }
 
-func dropLegacyWorkspaceCaches(dir string) {
-	matches, _ := filepath.Glob(filepath.Join(dir, "cache-*.json"))
-	for _, p := range matches {
-		_ = os.Remove(p)
+func CacheVersion(v string) string {
+	if v == "" {
+		return "latest"
 	}
+	return v
 }
 
 // SaveCache writes c and its data tier keyed by installId + version, and drops leftover cache-*.json.
@@ -137,7 +149,11 @@ func SaveCache(c *VanillaCache) error {
 			return err
 		}
 	}
-	dropLegacyWorkspaceCaches(filepath.Dir(path))
+	// Legacy per-workspace caches, from before the vanilla-* naming.
+	legacy, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "cache-*.json"))
+	for _, p := range legacy {
+		_ = os.Remove(p)
+	}
 	return nil
 }
 
@@ -150,36 +166,17 @@ func LoadCache(installID, version string) (*VanillaCache, error) {
 	return loadCacheFile(path)
 }
 
-// PeekCacheScannedAt returns scannedAt from the vanilla JSON without loading
-// defs, and "" when the file is one LoadCache would refuse.
-//
-// The version check is the point, not an extra. Without it this answered "is
-// there a cache?" by a different rule than LoadCache — file exists, versus file
-// exists AND the format matches — so after a CacheFormatVersion bump the install
-// list went on showing the previous scan date for a model the engine had already
-// discarded. Nothing looked wrong while hover had no vanilla model at all.
+// PeekCacheScannedAt returns scannedAt from the vanilla JSON without loading defs, and "" when the file is one LoadCache would refuse -- without the version check the install list went on showing the previous scan date for a model the engine had already discarded.
 func PeekCacheScannedAt(installID, version string) string {
 	path, err := vanillaJSON("vanilla", installID, version)
 	if err != nil {
 		return ""
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
+	got, scannedAt, err := peekHeader(path)
+	if err != nil || got != CacheFormatVersion {
 		return ""
 	}
-	if n, err := sonic.Get(raw, "formatVersion"); err == nil {
-		if got, nerr := n.Int64(); nerr != nil || int(got) != CacheFormatVersion {
-			return ""
-		}
-	} else {
-		return ""
-	}
-	n, err := sonic.Get(raw, "scannedAt")
-	if err != nil {
-		return ""
-	}
-	s, _ := n.String()
-	return s
+	return scannedAt
 }
 
 // saveCacheFile marshals c to an explicit path, interning repeated file paths.
@@ -228,74 +225,39 @@ func LoadVanillaLoc(installID, version, lang string) (*VanillaLoc, error) {
 	return vloc, nil
 }
 
-// DropVanillaFiles removes vanilla-* files for installID (script + loc sidecars)
-// and the archived script_docs copies. Dropping the archive here is deliberate:
-// this is the "forget this install" path, and a stale archive would otherwise
-// outlive the install it describes.
-// DropVanillaLocFiles removes an install's localization sidecars, leaving the
-// model cache and the script_docs archive alone.
-//
-// Rescan harvests only english (Scan is called with LocLang "english"; every
-// other language is harvested on first use). With a pinned or "latest" version
-// key the other languages keep the previous patch's filename, and LoadVanillaLoc
-// accepts them because the format still matches — so a rescan after a game patch
-// left every non-english workspace reading pre-patch vanilla loc. Dropping them
-// costs one re-harvest on next demand, which loadVanillaLoc already does.
+// DropVanillaLocFiles removes an install's localization sidecars, leaving the model cache alone. A rescan harvests only english, so with a pinned or "latest" version key every other language keeps the previous patch's filename and LoadVanillaLoc accepts it.
 func DropVanillaLocFiles(installID string) error {
-	dir, err := CacheDir()
-	if err != nil {
-		return err
-	}
-	prefix := "vanilla-loc-" + sanitize(installID)
-	ents, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), prefix) {
-			_ = os.Remove(filepath.Join(dir, e.Name()))
-		}
-	}
-	return nil
+	return dropCacheFiles("vanilla-loc-" + sanitize(installID))
 }
 
+// DropVanillaFiles removes every vanilla-* file for installID plus the archived script_docs copies -- this is the "forget this install" path, and a stale archive would outlive the install it describes.
 func DropVanillaFiles(installID string) error {
+	sid := sanitize(installID)
+	return dropCacheFiles("vanilla-"+sid, "vanilla-data-"+sid,
+		"vanilla-loc-"+sid, "script-docs-"+sid)
+}
+
+func dropCacheFiles(prefixes ...string) error {
 	dir, err := CacheDir()
 	if err != nil {
 		return err
 	}
-	sid := sanitize(installID)
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 	for _, e := range ents {
-		name := e.Name()
-		switch {
-		case strings.HasPrefix(name, "vanilla-"+sid),
-			strings.HasPrefix(name, "vanilla-data-"+sid),
-			strings.HasPrefix(name, "vanilla-loc-"+sid):
-			_ = os.Remove(filepath.Join(dir, name))
-		case strings.HasPrefix(name, "script-docs-"+sid):
-			_ = os.RemoveAll(filepath.Join(dir, name))
+		for _, p := range prefixes {
+			if strings.HasPrefix(e.Name(), p) {
+				_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+				break
+			}
 		}
 	}
 	return nil
 }
 
-// Edge into one table plus indices.
-//
-// A CK3 install produces millions of records and each one carried its own copy
-// of a ~110-byte install path, which dominated the on-disk model. Interning
-// happens only at the save/load boundary: Path holds a real path everywhere
-// else, so no consumer changes.
-//
-// Loading also hands every record with the same path the one string from the
-// table, so the saving shows up in RAM as well as on disk.
-
-// internPaths returns a copy of c whose Def/Ref/Edge paths are decimal indices
-// into the returned Paths table. The receiver is left untouched: a live session
-// may be holding it while the scan writes.
+// internPaths returns a copy of c whose Def/Ref/Edge paths are decimal indices into the returned Paths table: a CK3 install produces millions of records and each one carried its own copy of a ~110-byte install path. The receiver is left untouched, since a live session may hold it while the scan writes.
 func internPaths(c *VanillaCache) *VanillaCache {
 	if c == nil {
 		return nil
@@ -344,9 +306,7 @@ func internRefs(refs []Ref, id func(string) string) []Ref {
 	return out
 }
 
-// expandPaths turns interned indices back into paths, in place. The cache has
-// just been decoded and is not shared yet. A cache written before interning has
-// no table and is left alone.
+// expandPaths turns interned indices back into paths, in place; the cache has just been decoded and is not shared yet. A file written before interning has no table and is left alone.
 func expandPaths(c *VanillaCache) {
 	if c == nil || len(c.Paths) == 0 {
 		return
@@ -357,9 +317,8 @@ func expandPaths(c *VanillaCache) {
 			return ""
 		}
 		i, err := strconv.Atoi(s)
+		// Not an index: a pre-interning file, or a corrupt one. Keep the value rather than losing the location.
 		if err != nil || i < 0 || i >= len(table) {
-			// Not an index: a pre-interning file, or a corrupt one. Keep the
-			// value rather than losing the location.
 			return s
 		}
 		return table[i]

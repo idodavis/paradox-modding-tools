@@ -30,8 +30,7 @@ func bindKinds(s *declared.Schema, idx *defIndex) (prefixKind, kindScope map[str
 	return prefixKind, kindScope
 }
 
-// nameMatchKind matches a scope type to a folder kind by name, tolerating the
-// singular/plural split (scope "culture" vs folder "cultures").
+// nameMatchKind matches a scope type to a folder kind by name, tolerating the singular/plural split (scope "culture" vs folder "cultures").
 func nameMatchKind(scope string, keysByKind map[string]map[string]bool) string {
 	if scope == "" {
 		return ""
@@ -41,8 +40,7 @@ func nameMatchKind(scope string, keysByKind map[string]map[string]bool) string {
 			return k
 		}
 	}
-	// A `_type` scope is routinely named after its stem's own folder rather than
-	// its own plural: `building_type` -> `buildings`, not `building_types`.
+	// A `_type` scope is routinely named after its stem's own folder rather than its own plural: `building_type` -> `buildings`, not `building_types`.
 	if stem := strings.TrimSuffix(scope, "_type"); stem != scope {
 		for _, cand := range []string{stem, stem + "s", strings.TrimSuffix(stem, "s")} {
 			if k := jomini.CanonicalKind(cand); k != "" && len(keysByKind[k]) > 0 {
@@ -58,9 +56,7 @@ type typedCite struct {
 	prefix, id string
 }
 
-// collectTypedCites gathers every `prefix:id` citation in one parsed file.
-// Language prefixes (scope:, var:, …) are skipped — they name locals, not
-// database rows.
+// collectTypedCites gathers every `prefix:id` citation in one parsed file. Language prefixes (scope:, var:, …) are skipped — they name locals, not database rows.
 func collectTypedCites(root *jomini.Root) []typedCite {
 	if root == nil {
 		return nil

@@ -7,8 +7,9 @@ import (
 	"cmp"
 	"context"
 	"maps"
-	"paradox-modding-tools/services/internal/lang/declared"
 	"slices"
+
+	"paradox-modding-tools/services/internal/lang/declared"
 )
 
 // Harvest is the in-memory result of indexing a workspace's mods.
@@ -20,11 +21,6 @@ type Harvest struct {
 	Order           []string
 	FieldValueKinds map[string]string
 	FireKeys        map[string]string
-	// Structures are the block-member key names the mods declare, per kind. The
-	// walk already collected these and threw them away; the orphan check needs
-	// them, because a mod's new game-rule option is a member name that exists in
-	// no install and in no definition index.
-	Structures map[string][]string
 }
 
 // BuildIndex walks every mod in load order and harvests its files.
@@ -52,16 +48,15 @@ func BuildIndex(ctx context.Context, gameID string, mods []ModInput, cache *Vani
 	if cache != nil && len(cache.Defs) > 0 {
 		defs = append(append([]Def{}, cache.Defs...), acc.defs...)
 	}
-	kinds := deriveFieldValueKinds(acc.fieldRHS, newDefIndex(defs))
 	var fireKeys map[string]string
 	if derived != nil {
 		fireKeys = derived.FireKeys
 	}
 	return Harvest{
 		Defs: acc.defs, Refs: acc.refs, Edges: acc.edges, Loc: acc.loc,
-		Order: uniqKeep(order), FieldValueKinds: kinds,
-		FireKeys:   fireKeys,
-		Structures: keysByCount(acc.structures),
+		Order:           uniqKeep(order),
+		FieldValueKinds: deriveFieldValueKinds(acc.fieldRHS, newDefIndex(defs)),
+		FireKeys:        fireKeys,
 	}, err
 }
 

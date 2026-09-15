@@ -14,10 +14,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/loc"
 )
 
-// stoplist are grammar/logic words never harvested as structure keys or vocabulary.
-// neverAKey is the subset of stoplist that is not a key anywhere: a value, an
-// operand, or a scope word. Unlike the rest of stoplist these cannot appear on
-// the left of an `=`, so they are excluded from the nested table too.
+// neverAKey is the subset of the stoplist that is not a key anywhere -- a value, an operand, or a scope word -- so it is excluded from the nested table too.
 var neverAKey = map[string]bool{
 	"this": true, "root": true, "prev": true, "from": true,
 	"yes": true, "no": true,
@@ -29,8 +26,7 @@ const EdgeKindCall = "call"
 // EdgeKindVia marks a hop synthesized through a chain of macro calls.
 const EdgeKindVia = "via"
 
-// CallCandidate is a possible scripted_* invocation; ApplyCallEdges keeps
-// effects for the graph, ApplyCallRefs keeps trigger/effect/modifier refs.
+// CallCandidate is a possible scripted_* invocation; ApplyCallEdges keeps effects for the graph, ApplyCallRefs keeps trigger/effect/modifier refs.
 type CallCandidate struct {
 	From, To, Path   string
 	Line, Start, End int
@@ -38,32 +34,26 @@ type CallCandidate struct {
 
 // FileExtract is one parsed file's catalog harvest.
 type FileExtract struct {
-	Defs       []Def
-	Refs       []Ref
-	Edges      []Edge
-	Cands      []CallCandidate
-	Loc        LocDelta
-	StructKind string
-	// MemberKind is StructKind for the member-name harvest, which unlike the
-	// rest runs for mods too. See the assignment site for why they are separate.
+	Defs  []Def
+	Refs  []Ref
+	Edges []Edge
+	Cands []CallCandidate
+	Loc   LocDelta
+	// MemberKind is the file's kind, for both member-name tables. StructBlocks and Vocab stay empty unless the caller asked for bodies, so the counter they feed simply gets nothing.
 	MemberKind   string
 	StructCounts map[string]int
-	// StructNested is block key -> member key -> occurrences, so a member is
-	// known under the block it belongs to rather than only under its file's kind.
+	// StructNested is block key -> member key -> occurrences, so a member is known under the block it belongs to rather than only under its file's kind.
 	StructNested map[string]map[string]int
-	// StructNestedKind is the kind whose files these blocks were seen in. A
-	// block name means different things under different kinds — CK3 has an
-	// `option` in an event and another in accolade_names — so a check that
-	// judges an absence needs to know whether the name is ambiguous.
+	// StructNestedKind is the kind whose files these blocks were seen in; a block name means different things under different kinds, so a check that judges an absence needs to know whether the name is ambiguous.
 	StructNestedKind string
 	StructBlocks     map[string]int
 	Vocab            map[string]bool
 	GUITypes         map[string]bool
 	GUIProps         map[string]bool
-	FieldRHS         map[string]map[string]bool
-	// LocOrder is the file's index in the walk list, i.e. its load order. It
-	// decides which value survives when two files define one key; see
-	// Evidence.mergeLocOrdered.
+	// FieldRHS and FieldListRHS are the values each field takes, for the two passes that type a field. Harvested here so they inherit the extract rule's gate: a file the game gives no kind to is not evidence about any field.
+	FieldRHS     map[string]map[string]bool
+	FieldListRHS map[string]map[string]bool
+	// LocOrder is the file's index in the walk list, i.e. its load order; it decides which value survives when two files define one key.
 	LocOrder int
 }
 
@@ -108,10 +98,18 @@ type parsedScript struct {
 	res jomini.Result
 }
 
-// ExtractParsed extracts defs, refs, edges, and call candidates from a parsed
-// script or GUI file. overlay supplies vanilla derived for live reindex; nil
-// overlay derived from this file only (tests). Callers turn Cands into edges
-// via ApplyCallEdges.
+// ExtractFile extracts one decoded (CR-free) file, choosing the loc or script path from the game's extract rule; loc files skip the script parse.
+func ExtractFile(gameID, absPath, rel, origin, text string, harvestBodies bool) FileExtract {
+	text = jomini.Normalize(text)
+	if game.MatchExtract(gameID, rel).Mode == game.ModeLocKey {
+		var ex FileExtract
+		ex.Defs, ex.Loc, ex.Refs = extractLoc(filepath.Clean(absPath), text, origin)
+		return ex
+	}
+	return ExtractParsed(gameID, absPath, rel, origin, jomini.Parse(text), harvestBodies, nil)
+}
+
+// ExtractParsed extracts defs, refs, edges, and call candidates from a parsed script or GUI file. overlay supplies vanilla derived for a live reindex; a nil overlay derives from this file alone. Callers turn Cands into edges via ApplyCallEdges.
 func ExtractParsed(
 	gameID, absPath, rel, origin string,
 	res jomini.Result,
@@ -124,8 +122,10 @@ func ExtractParsed(
 	if overlay != nil {
 		schema = overlay.Schema
 	}
-	derived.mergeLocal(deriveFile(gameID, rel, res, ex.Defs, schema))
-	derived.mergeLocal(&Derived{FieldValueKinds: deriveFieldValueKinds(ex.FieldRHS, newDefIndex(ex.Defs))})
+	// One index of this file's defs for both derivations below.
+	idx := newDefIndex(ex.Defs)
+	derived.mergeLocal(deriveFile(gameID, rel, res, ex.Defs, idx, schema))
+	derived.mergeLocal(&Derived{FieldValueKinds: deriveFieldValueKinds(ex.FieldRHS, idx)})
 	ex.Defs = applyDerivedDefs(gameID, absPath, origin, rel, res, ex.Defs, derived, nil)
 	bodyRefs, edges, cands := extractRefsAndEdges(
 		gameID, res.Root, res.Lines(), absPath, ex.Defs, derived, schema,
@@ -148,36 +148,28 @@ func extractForms(
 		ex.Defs, ex.GUITypes, ex.GUIProps = extractKeywordName(
 			res.Root, res.Lines(), absPath, origin,
 		)
-		// GUI took a branch of its own and never harvested block members, so a
-		// whole file kind had no structure model: hovering `offset` inside a
-		// texticon produced no card at all. The nested harvest is generic —
-		// key to child — so it reads GUI as readily as script.
+		// GUI took a branch of its own and never harvested block members, so a whole file kind had no structure model. The nested harvest is generic -- key to child -- so it reads GUI as readily as script.
 		_, _, _, ex.StructNested = harvestStructVocab(res.Root)
 		ex.StructNestedKind = "gui"
 	case game.ModeTopLevelKey, game.ModeEventID:
-		if rule.Mode == game.ModeEventID {
-			var nsRefs []Ref
-			ex.Defs, nsRefs = extractEventID(res.Root, res.Lines(), absPath, origin)
-			ex.Refs = nsRefs
-		} else {
-			ex.Defs = extractTopLevel(res.Root, res.Lines(), gameID, rule.Kind, absPath, origin)
-		}
-		if rule.Mode == game.ModeEventID {
-			kw, _, _ := extractKeywordName(res.Root, res.Lines(), absPath, origin)
-			ex.Defs = append(ex.Defs, kw...)
-		}
-		attachLeadingDocs(res.Src, res.Lines(), ex.Defs)
 		kind := rule.Kind
 		if rule.Mode == game.ModeEventID {
 			kind = "event"
+			var nsRefs []Ref
+			ex.Defs, nsRefs = extractEventID(res.Root, res.Lines(), absPath, origin)
+			ex.Refs = nsRefs
+			kw, _, _ := extractKeywordName(res.Root, res.Lines(), absPath, origin)
+			ex.Defs = append(ex.Defs, kw...)
+		} else {
+			ex.Defs = extractTopLevel(res.Root, res.Lines(), gameID, rule.Kind, absPath, origin)
 		}
+		attachLeadingDocs(res.Src, res.Lines(), ex.Defs)
 		ex.MemberKind = kind
 		counts, blocks, vocab, nested := harvestStructVocab(res.Root)
 		ex.StructCounts = counts
 		ex.StructNested = nested
 		ex.StructNestedKind = kind
 		if harvestBodies {
-			ex.StructKind = kind
 			ex.StructBlocks, ex.Vocab = blocks, vocab
 		}
 	default:
@@ -189,15 +181,12 @@ func extractForms(
 	paramDefs, paramRefs := extractScriptParams(res.Root, res.Lines(), absPath, origin, ex.Defs)
 	ex.Defs = append(ex.Defs, paramDefs...)
 	ex.Refs = append(ex.Refs, paramRefs...)
-	ex.FieldRHS = extractFieldRHS(res.Root)
+	ex.FieldRHS, ex.FieldListRHS = extractFieldValues(res.Root)
 	return ex
 }
 
-// deriveFile derives one file's facts for a live reindex. The prefix table stays
-// empty here: prefixes are bound against the whole install by bindKinds, and one
-// edited file is not evidence enough to rebind anything.
-func deriveFile(gameID, rel string, res jomini.Result, defs []Def, schema *declared.Schema) *Derived {
-	idx := newDefIndex(defs)
+// deriveFile derives one file's facts for a live reindex. The prefix table stays empty: prefixes are bound against the whole install by bindKinds, and one edited file is not evidence enough to rebind anything.
+func deriveFile(gameID, rel string, res jomini.Result, defs []Def, idx *defIndex, schema *declared.Schema) *Derived {
 	fire := resolveFireKinds(deriveFireKeys(
 		res.Root, idx.keysOfKind("event"), idx.keysOfKind("on_action")))
 	if fire == nil {
@@ -218,15 +207,7 @@ func deriveFile(gameID, rel string, res jomini.Result, defs []Def, schema *decla
 	return v
 }
 
-// applyDerivedDefs harvests the nested databases a file contains.
-//
-// citedByKind is the whole corpus's citations, keyed by child kind. A file-local
-// set is not enough and quietly harvested nothing: EU5 declares its
-// sub-continents in `map_data/definitions.txt` but cites them from
-// `common/advances/`, so the definitions file saw no citations and produced
-// zero defs. CK3 faiths only worked because `faith:` happens to be cited inside
-// the religion files themselves. Nil falls back to this file's own citations,
-// which is all a live single-file reindex can see.
+// applyDerivedDefs harvests the nested databases a file contains. citedByKind is the whole corpus's citations, keyed by child kind. A file-local set is not enough: EU5 declares its sub-continents in map_data/definitions.txt but cites them from common/advances/, so the definitions file saw no citations and produced zero defs. Nil falls back to this file's own citations, which is all a live single-file reindex can see.
 func applyDerivedDefs(
 	gameID, path, origin, rel string, res jomini.Result, defs []Def, derived *Derived,
 	citedByKind map[string]map[string]bool,
@@ -256,8 +237,7 @@ func applyDerivedDefs(
 	return defs
 }
 
-// citedIDsByKind indexes the corpus's citations once per nested child kind, so
-// the second pass does not re-scan them for every file.
+// citedIDsByKind indexes the corpus's citations once per nested child kind, so the second pass does not re-scan them for every file.
 func citedIDsByKind(shapes []NestedShape, cites []typedCite, prefixKinds map[string]string) map[string]map[string]bool {
 	out := make(map[string]map[string]bool, len(shapes))
 	for _, s := range shapes {
@@ -267,18 +247,6 @@ func citedIDsByKind(shapes []NestedShape, cites []typedCite, prefixKinds map[str
 		out[s.ChildKind] = citedIDsForKind(cites, prefixKinds, s.ChildKind)
 	}
 	return out
-}
-
-// ExtractFile extracts one decoded (CR-free) file, choosing the loc or script
-// path from the game's extract rule; loc files skip the script parse.
-func ExtractFile(gameID, absPath, rel, origin, text string, harvestBodies bool) FileExtract {
-	text = jomini.Normalize(text)
-	if game.MatchExtract(gameID, rel).Mode == game.ModeLocKey {
-		var ex FileExtract
-		ex.Defs, ex.Loc, ex.Refs = extractLoc(filepath.Clean(absPath), text, origin)
-		return ex
-	}
-	return ExtractParsed(gameID, absPath, rel, origin, jomini.Parse(text), harvestBodies, nil)
 }
 
 func makeDef(kind, key, path, origin string, kr jomini.Range, li *jomini.LineIndex) Def {
@@ -293,29 +261,10 @@ func makeDef(kind, key, path, origin string, kr jomini.Range, li *jomini.LineInd
 	}
 }
 
-// maxDefDocLines caps one definition's harvested comment. Four lines is what
-// the install-prose reader already keeps, and it is enough for a description
-// without pulling in a whole changelog someone parked above a macro.
+// maxDefDocLines caps one definition's harvested comment: enough for a description without pulling in a whole changelog someone parked above a macro.
 const maxDefDocLines = 4
 
-// attachLeadingDocs fills Def.Doc from the comment block written directly above
-// each definition.
-//
-// For a great many objects this is the only description that will ever exist.
-// script_docs covers the engine API, not script: 4 of CK3's 11,708 scripted
-// macros appear in it, and none of its events, decisions or traits do. Authors
-// document them in a comment instead — vanilla comments 29% of its scripted
-// effects and events are commented more often still, and mods far more than
-// vanilla.
-//
-// Ephemeral and localization defs are skipped: a saved scope or a loc key has no
-// declaration site to comment, and keeping their neighbours' comments would both
-// mislead and dominate the cache. Everything conventionally declared — a root
-// key, an event id, a nested row — is kept.
-//
-// A blank line ends the block. Without that, the banner above a section
-// ("#####  COURT EVENTS  #####") would be read as documentation of whichever
-// definition happened to follow it.
+// attachLeadingDocs fills Def.Doc from the comment block written directly above each definition. For a great many objects this is the only description that will ever exist: 4 of CK3's 11,708 scripted macros appear in script_docs, and none of its events, decisions or traits do. Ephemeral and localization defs are skipped -- a saved scope has no declaration site to comment -- and a blank line ends the block, without which a section banner reads as documentation of whatever definition follows it.
 func attachLeadingDocs(src string, li *jomini.LineIndex, defs []Def) {
 	for i := range defs {
 		if !docWorthyKind(defs[i].Kind) {
@@ -325,8 +274,7 @@ func attachLeadingDocs(src string, li *jomini.LineIndex, defs []Def) {
 	}
 }
 
-// docWorthyKind reports a definition whose declaration site is a line an author
-// can comment.
+// docWorthyKind reports a definition whose declaration site is a line an author can comment.
 func docWorthyKind(kind string) bool {
 	switch jomini.CanonicalKind(kind) {
 	case "loc_key", "loc_value", "mod_descriptor", "":
@@ -373,12 +321,7 @@ func extractTopLevel(root *jomini.Root, li *jomini.LineIndex, gameID, kind, path
 		if !jomini.IsDefName(name) || name == "namespace" {
 			continue
 		}
-		// A date is not a definition. The games key their history files by one —
-		// `history/struggles/…` opens `718.1.1 = { … }` and
-		// `history/cultures/afghan.txt` opens `867.1.1 = { … }` — so the same
-		// date was harvested as a `struggles` object and a `cultures` object,
-		// and hovering `game_start_date < 1178.1.1` produced a struggle card
-		// while go-to-definition jumped into a culture's history.
+		// A date is not a definition: the games key their history files by one, so the same date was harvested as a `struggles` object and a `cultures` object.
 		if jomini.IsDateLiteral(name) {
 			continue
 		}
@@ -424,8 +367,7 @@ func extractEventID(
 	return defs, refs
 }
 
-// extractKeywordName harvests `type X` / `template X` GUI forms and any other
-// `keyword name = { }` pair (inline scripted_*).
+// extractKeywordName harvests `type X` / `template X` GUI forms and any other `keyword name = { }` pair (inline scripted_*).
 func extractKeywordName(
 	root *jomini.Root, li *jomini.LineIndex, path, origin string,
 ) ([]Def, map[string]bool, map[string]bool) {
@@ -497,12 +439,10 @@ func extractKeywordName(
 	return defs, guiTypes, guiProps
 }
 
-// nestedDepth bounds how far below a definition members are recorded under their
-// parent. Three covers `event > first_valid > triggered_desc > trigger`, which is
-// the shape that sent readers to the portrait documentation; going deeper grows
-// the table for blocks nobody edits by hand.
+// nestedDepth bounds how far below a definition members are recorded under their parent. Three covers `event > first_valid > triggered_desc > trigger`, the shape that sent readers to the portrait documentation.
 const nestedDepth = 3
 
+// harvestStructVocab records a member under the key of the block it sits in. The grandchildren were already being walked -- into the flat vocab bag, which is why `trigger` inside triggered_desc was documented as a portrait's trigger: every name was known, and none of them knew where it belonged.
 func harvestStructVocab(root *jomini.Root) (
 	counts, blocks map[string]int, vocab map[string]bool,
 	nested map[string]map[string]int,
@@ -512,10 +452,6 @@ func harvestStructVocab(root *jomini.Root) (
 	if root == nil {
 		return counts, blocks, vocab, nested
 	}
-	// Record a member under the key of the block it sits in. The grandchildren
-	// were already being walked -- they went into the flat vocab bag, which is
-	// why `trigger` inside triggered_desc was documented as a portrait's
-	// trigger: every name was known, and none of them knew where it belonged.
 	var under func(parent string, b *jomini.Block, depth int)
 	under = func(parent string, b *jomini.Block, depth int) {
 		if b == nil || depth > nestedDepth {
@@ -582,18 +518,7 @@ type defAtLine struct {
 	key  string
 }
 
-// defContainers lists the objects a line can belong to, for containerAt.
-//
-// IsObjectKind rather than a hand-written exclusion list: this was the only one
-// of six "what counts as a definition" predicates that did not exclude ephemeral
-// kinds, and jomini's own comment names itself the canonical one — "anything
-// resolving a name to a thing wants this predicate".
-//
-// The cost of the omission was that a `saved_scope` def, created at the line of
-// a save_scope_as RHS *inside* an event body, outranked the event as a
-// container — containerAt takes the LAST container at or before a line. On the
-// real installs that made 5,604 of CK3's 17,073 non-call edges and 1,501 of
-// Vic3's 3,847 point at a source node that does not exist.
+// defContainers lists the objects a line can belong to, for containerAt. IsObjectKind rather than a hand-written exclusion list: without it a `saved_scope` def, created at the line of a save_scope_as RHS inside an event body, outranked the event as a container -- containerAt takes the LAST container at or before a line -- which pointed 5,604 of CK3's 17,073 non-call edges at a source node that does not exist.
 func defContainers(defs []Def) []defAtLine {
 	var out []defAtLine
 	for _, d := range defs {
@@ -628,9 +553,7 @@ func objectRefKey(gameID, kind, text string) (string, bool) {
 	if jomini.SkipFieldRHS(text) {
 		return "", false
 	}
-	// Grammar words are never object names. `c:FRA ?= this` recorded `this` as a
-	// reference 253 times on one Vic3 mod; the stoplist already knew better, but
-	// nothing on the reference path consulted it.
+	// Grammar words are never object names: `c:FRA ?= this` recorded `this` as a reference 253 times on one Vic3 mod.
 	if jomini.IsStop(text) {
 		return "", false
 	}
@@ -647,132 +570,117 @@ func extractRefsAndEdges(
 	gameID string, root *jomini.Root, li *jomini.LineIndex, path string, defs []Def,
 	derived *Derived, schema *declared.Schema,
 ) ([]Ref, []Edge, []CallCandidate) {
-	var refs []Ref
-	var edges []Edge
-	var cands []CallCandidate
 	if root == nil {
 		return nil, nil, nil
 	}
+	var refs []Ref
+	var edges []Edge
+	var cands []CallCandidate
 	containers := defContainers(defs)
 	var stack []edgeFrame
+	locRef := func(sc *jomini.Scalar, kind string) {
+		refs = append(refs, Ref{
+			Key: sc.Text, Kind: kind, Path: path,
+			Line:  li.PositionAt(sc.Range.Start).Line,
+			Start: sc.Range.Start, End: sc.Range.End,
+		})
+	}
 	var walk func(stmts []jomini.Statement)
 	walk = func(stmts []jomini.Statement) {
 		for _, st := range stmts {
 			a, ok := st.(*jomini.Assignment)
-			if ok {
-				if !a.Key.Quoted {
-					key := a.Key.Text
-					line := li.PositionAt(a.Key.Range.Start).Line
-					from := containerAt(containers, line)
-					prop := loc.Classify(key)
-					if prop == loc.PropNone && derived.locField(key) {
-						// Broad, never strict: that a field usually holds
-						// localization keys is not evidence that every value of
-						// it must resolve. It marks a key used; it never demands
-						// one exist.
-						prop = loc.PropBroad
+			if !ok {
+				if vs, ok := st.(*jomini.ValueStmt); ok {
+					if b := jomini.BlockOf(vs.Value); b != nil {
+						walk(b.Statements)
 					}
-					if prop != loc.PropNone {
-						if sc, ok := a.Value.(*jomini.Scalar); ok && sc.Text != "" && loc.LooksLikeKey(sc.Text) {
-							kind := "loc-broad"
-							if prop == loc.PropStrict {
-								kind = "loc"
+				}
+				continue
+			}
+			if !a.Key.Quoted {
+				key := a.Key.Text
+				line := li.PositionAt(a.Key.Range.Start).Line
+				from := containerAt(containers, line)
+				prop := loc.Classify(key)
+				// Broad, never strict: that a field usually holds localization keys is not evidence that every value of it must resolve.
+				if prop == loc.PropNone && derived.locField(key) {
+					prop = loc.PropBroad
+				}
+				if prop != loc.PropNone {
+					if sc, ok := a.Value.(*jomini.Scalar); ok && sc.Text != "" && loc.LooksLikeKey(sc.Text) {
+						kind := "loc-broad"
+						if prop == loc.PropStrict {
+							kind = "loc"
+						}
+						locRef(sc, kind)
+					}
+				}
+				// A list whose members are localization keys: a culture's `male_names`, its `cadet_dynasty_names`. The members are values, not assignments, so nothing else here sees them.
+				if derived.locField(key) {
+					if b := jomini.BlockOf(a.Value); b != nil {
+						for _, in := range b.Statements {
+							vs, ok := in.(*jomini.ValueStmt)
+							if !ok {
+								continue
 							}
-							refs = append(refs, Ref{
-								Key: sc.Text, Kind: kind, Path: path,
-								Line:  li.PositionAt(sc.Range.Start).Line,
-								Start: sc.Range.Start, End: sc.Range.End,
-							})
+							sc, ok := vs.Value.(*jomini.Scalar)
+							if !ok || sc.Text == "" || !loc.LooksLikeKey(sc.Text) {
+								continue
+							}
+							locRef(sc, "loc-broad")
 						}
 					}
-					// A list whose members are localization keys: a culture's
-					// `male_names`, its `cadet_dynasty_names`. The members are
-					// values, not assignments, so nothing else here sees them.
-					if derived.locField(key) {
-						if b := jomini.BlockOf(a.Value); b != nil {
-							for _, in := range b.Statements {
-								vs, ok := in.(*jomini.ValueStmt)
-								if !ok {
-									continue
-								}
-								sc, ok := vs.Value.(*jomini.Scalar)
-								if !ok || sc.Text == "" || !loc.LooksLikeKey(sc.Text) {
-									continue
-								}
+				}
+				if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted && sc.Text != "" && prop == loc.PropNone {
+					// A typed cite is already recorded in extractScriptNames.
+					if _, _, typed := game.ParseTyped(gameID, sc.Text); !typed {
+						if rk := derived.fieldKind(key); rk != "" && !isMacroArgKey(key) {
+							if refKey, ok := objectRefKey(gameID, rk, sc.Text); ok {
 								refs = append(refs, Ref{
-									Key: sc.Text, Kind: "loc-broad", Path: path,
+									Key: refKey, Kind: rk, Path: path,
 									Line:  li.PositionAt(sc.Range.Start).Line,
 									Start: sc.Range.Start, End: sc.Range.End,
+									Derived: true,
 								})
 							}
 						}
 					}
-					if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted && sc.Text != "" {
-						if prop == loc.PropNone {
-							if _, _, ok := game.ParseTyped(gameID, sc.Text); ok {
-								// typed cite already recorded in extractScriptNames
-							} else if rk := derived.fieldKind(key); rk != "" && !isMacroArgKey(key) {
-								if refKey, ok := objectRefKey(gameID, rk, sc.Text); ok {
-									refs = append(refs, Ref{
-										Key: refKey, Kind: rk, Path: path,
-										Line:  li.PositionAt(sc.Range.Start).Line,
-										Start: sc.Range.Start, End: sc.Range.End,
-										Derived: true,
-									})
-								}
-							}
+				}
+				if fk := derived.fireKind(key); fk != "" {
+					kind, nameKey := fireSiteKind(stack, key)
+					// A numeric key is a weight, and the only place one names an event directly is a `random_events` block, where targets are always `namespace.number`. Requiring that shape there -- and only there -- stops `1 = empty` in a Vic3 genes file reading as a fire site.
+					numericEvent := isDigitKey(key) && fk == "event"
+					walkFireTargets(a.Value, derived, func(to string, start, end int) {
+						if numericEvent && !jomini.IsEventID(to) {
+							return
 						}
-					}
-					if fk := derived.fireKind(key); fk != "" {
-						kind, nameKey := fireSiteKind(stack, key)
-						// A numeric key is a weight, and the only place one
-						// names an event directly is a `random_events` block,
-						// where targets are always `namespace.number`. Requiring
-						// that shape there — and only there — stops `1 = empty`
-						// in a Vic3 genes file reading as a fire site, without
-						// silencing a real broken target on a named key like
-						// trigger_event.
-						numericEvent := isDigitKey(key) && fk == "event"
-						walkFireTargets(a.Value, derived, func(to string, start, end int) {
-							if numericEvent && !jomini.IsEventID(to) {
-								return
-							}
-							refs = append(refs, Ref{
-								Key: to, Kind: fk, Path: path,
-								Line: li.PositionAt(start).Line, Start: start, End: end,
-								// Declared beats derived, and that cuts both ways: the
-								// game DECLARES trigger_event, so a fire ref at one is
-								// evidence even though FireKeys is how PMT learned it.
-								Derived: !schema.HasName(key),
-							})
-							edges = append(edges, Edge{
-								From: from, To: to, Via: key, Path: path,
-								Line: li.PositionAt(start).Line, Kind: kind, NameKey: nameKey,
-								Rescoped: fireSiteRescopes(stack),
-							})
+						refs = append(refs, Ref{
+							Key: to, Kind: fk, Path: path,
+							Line: li.PositionAt(start).Line, Start: start, End: end,
+							// Declared beats derived, and that cuts both ways: the game DECLARES trigger_event, so a fire ref at one is evidence even though FireKeys is how PMT learned it.
+							Derived: !schema.HasName(key),
 						})
-					} else if from != "" && from != key {
-						cands = append(cands, CallCandidate{
-							From: from, To: key, Path: path, Line: line,
-							Start: a.Key.Range.Start, End: a.Key.Range.End,
+						edges = append(edges, Edge{
+							From: from, To: to, Via: key, Path: path,
+							Line: li.PositionAt(start).Line, Kind: kind, NameKey: nameKey,
+							Rescoped: fireSiteRescopes(stack),
 						})
-					}
+					})
+				} else if from != "" && from != key {
+					cands = append(cands, CallCandidate{
+						From: from, To: key, Path: path, Line: line,
+						Start: a.Key.Range.Start, End: a.Key.Range.End,
+					})
 				}
-				if b := jomini.BlockOf(a.Value); b != nil {
-					fr := edgeFrame{key: a.Key.Text}
-					if strings.EqualFold(a.Key.Text, "option") {
-						fr.nameKey = optionNameKey(a.Value)
-					}
-					stack = append(stack, fr)
-					walk(b.Statements)
-					stack = stack[:len(stack)-1]
-				}
-				continue
 			}
-			if vs, ok := st.(*jomini.ValueStmt); ok {
-				if b := jomini.BlockOf(vs.Value); b != nil {
-					walk(b.Statements)
+			if b := jomini.BlockOf(a.Value); b != nil {
+				fr := edgeFrame{key: a.Key.Text}
+				if strings.EqualFold(a.Key.Text, "option") {
+					fr.nameKey = optionNameKey(a.Value)
 				}
+				stack = append(stack, fr)
+				walk(b.Statements)
+				stack = stack[:len(stack)-1]
 			}
 		}
 	}
@@ -780,15 +688,20 @@ func extractRefsAndEdges(
 	return refs, edges, cands
 }
 
-// extractFieldRHS collects `field = value` pairs whose RHS could name a def, so
-// deriveFieldValueKinds can later type the field. Fire keys are not excluded
-// here: this runs before any fire key is known, and the fire pass filters its
-// own keys anyway.
-func extractFieldRHS(root *jomini.Root) map[string]map[string]bool {
+// extractFieldValues collects the values a field takes, so deriveFieldValueKinds and deriveLocFields can type it: scalars from `field = value`, lists from the bare members of `field = { a b c }`. A list member is a ValueStmt, not an assignment, and localization keys hide there in quantity -- CK3 writes a culture's given names and its cadet dynasty names as lists, and nothing cited them: 6,978 of A Game of Thrones' 20,196 orphaned English keys, 35% of the whole residue. Quoted members count, since vanilla quotes one of those two lists and not the other.
+func extractFieldValues(root *jomini.Root) (scalars, lists map[string]map[string]bool) {
 	if root == nil {
-		return nil
+		return nil, nil
 	}
-	out := map[string]map[string]bool{}
+	scalars, lists = map[string]map[string]bool{}, map[string]map[string]bool{}
+	add := func(dst map[string]map[string]bool, field, val string) {
+		m := dst[field]
+		if m == nil {
+			m = map[string]bool{}
+			dst[field] = m
+		}
+		m[val] = true
+	}
 	var walk func(stmts []jomini.Statement)
 	walk = func(stmts []jomini.Statement) {
 		for _, st := range stmts {
@@ -801,55 +714,10 @@ func extractFieldRHS(root *jomini.Root) map[string]map[string]bool {
 				}
 				continue
 			}
-			if !a.Key.Quoted && loc.Classify(a.Key.Text) == loc.PropNone {
-				if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted &&
-					sc.Text != "" && loc.LooksLikeKey(sc.Text) {
-					m := out[a.Key.Text]
-					if m == nil {
-						m = map[string]bool{}
-						out[a.Key.Text] = m
-					}
-					m[sc.Text] = true
-				}
-			}
-			if b := jomini.BlockOf(a.Value); b != nil {
-				walk(b.Statements)
-			}
-		}
-	}
-	walk(root.Statements)
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// extractFieldListValues collects the bare members of a list — `male_names = {
-// Abu-Bakr Aarif … }` — keyed by the field that holds the list.
-//
-// A list member is a `ValueStmt`, not an assignment, so extractFieldRHS never
-// saw one: it reads the right-hand side of `field = value`. Localization keys
-// hide there in quantity. CK3 writes a culture's given names and its cadet
-// dynasty names as lists, both are keys (`Abbas:0 "Abbas"`,
-// `dynn_Rasulid:0 "Rasulid"`), and nothing cited them — 6,978 of A Game of
-// Thrones' 20,196 orphaned English keys, 35% of the whole residue.
-//
-// Quoted members count. Vanilla quotes its cadet dynasty names and not its
-// given names, and the quoting says nothing about whether the value is a key.
-func extractFieldListValues(root *jomini.Root) map[string]map[string]bool {
-	if root == nil {
-		return nil
-	}
-	out := map[string]map[string]bool{}
-	var walk func(stmts []jomini.Statement)
-	walk = func(stmts []jomini.Statement) {
-		for _, st := range stmts {
-			a, ok := st.(*jomini.Assignment)
-			if !ok {
-				if vs, ok := st.(*jomini.ValueStmt); ok {
-					if b := jomini.BlockOf(vs.Value); b != nil {
-						walk(b.Statements)
-					}
+			named := !a.Key.Quoted && loc.Classify(a.Key.Text) == loc.PropNone
+			if sc, ok := a.Value.(*jomini.Scalar); ok {
+				if named && !sc.Quoted && sc.Text != "" && loc.LooksLikeKey(sc.Text) {
+					add(scalars, a.Key.Text, sc.Text)
 				}
 				continue
 			}
@@ -857,7 +725,7 @@ func extractFieldListValues(root *jomini.Root) map[string]map[string]bool {
 			if b == nil {
 				continue
 			}
-			if !a.Key.Quoted && loc.Classify(a.Key.Text) == loc.PropNone {
+			if named {
 				for _, in := range b.Statements {
 					vs, ok := in.(*jomini.ValueStmt)
 					if !ok {
@@ -867,29 +735,23 @@ func extractFieldListValues(root *jomini.Root) map[string]map[string]bool {
 					if !ok || sc.Text == "" || !loc.LooksLikeKey(sc.Text) {
 						continue
 					}
-					m := out[a.Key.Text]
-					if m == nil {
-						m = map[string]bool{}
-						out[a.Key.Text] = m
-					}
-					m[sc.Text] = true
+					add(lists, a.Key.Text, sc.Text)
 				}
 			}
 			walk(b.Statements)
 		}
 	}
 	walk(root.Statements)
-	if len(out) == 0 {
-		return nil
+	if len(scalars) == 0 {
+		scalars = nil
 	}
-	return out
+	if len(lists) == 0 {
+		lists = nil
+	}
+	return scalars, lists
 }
 
-// isMacroArgKey reports the all-caps convention Paradox uses for the arguments
-// of a scripted macro: `some_effect = { ROLE = chemist }`. The value is a
-// fragment the macro pastes into a name, not a reference to an object of the
-// field's type — Morgenroete builds `character_role_mendelejew_chemist` that
-// way, and reading `chemist` as a character_roles reference reported it missing.
+// isMacroArgKey reports the all-caps convention Paradox uses for the arguments of a scripted macro: `some_effect = { ROLE = chemist }`. The value is a fragment the macro pastes into a name, not a reference to an object of the field's type.
 func isMacroArgKey(key string) bool {
 	upper := false
 	for i := range len(key) {

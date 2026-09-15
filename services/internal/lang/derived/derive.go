@@ -1,14 +1,12 @@
 // derive.go works out what the install implies but never states: fire keys,
-// nested databases, setup wrappers, field value kinds, loc conventions, and —
-// only when script_docs is absent — prefixes and engine tokens. Everything the
-// game declares outright comes from schema.go instead.
+// nested databases, setup wrappers, field value kinds, block shapes and loc
+// conventions. Everything the game declares outright is read from script_docs
+// by the declared package instead, and outranks anything here.
 //
-// These derivations resolve conflicts by dropping, so a single odd usage
-// anywhere in the corpus silently deletes a fact. That is tolerable for the
-// conventions left here and was not tolerable for the type system, which is why
-// the type system is now read rather than inferred.
-//
-// Scan persists the results; BuildIndex merges mod overlays on top.
+// These derivations resolve conflicts by dropping, so one odd usage anywhere in
+// the corpus silently deletes a fact. Tolerable for conventions, and not
+// tolerable for a type system -- which is why the type system is read, not
+// inferred. Scan persists the results; BuildIndex merges mod overlays on top.
 
 package derived
 
@@ -24,10 +22,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/loc"
 )
 
-// Derived is the in-memory overlay ExtractParsed / extractUses consume.
-// PrefixKinds and KindScope normally come from bindKinds joining the game's
-// declared types to the harvested databases; the rest is inferred from the
-// corpus. PrefixKinds falls back to inference only without script_docs.
+// Derived is the in-memory overlay ExtractParsed and the second corpus pass consume. PrefixKinds and KindScope come from bindKinds joining the game's declared types to the harvested databases; the rest is inferred from the corpus.
 type Derived struct {
 	PrefixKinds     map[string]string
 	KindScope       map[string]string
@@ -38,8 +33,7 @@ type Derived struct {
 	LocFields       map[string]bool
 }
 
-// derivedFromCache copies the persisted derived maps so a live reindex can
-// overlay one file onto them. Nil cache yields empty derived.
+// derivedFromCache copies the persisted derived maps so a live reindex can overlay one file onto them. Nil cache yields empty derived.
 func derivedFromCache(c *VanillaCache) *Derived {
 	v := &Derived{
 		PrefixKinds:     map[string]string{},
@@ -86,17 +80,20 @@ func (v *Derived) fieldKind(key string) string {
 	return v.FieldValueKinds[strings.ToLower(key)]
 }
 
+// locField reports a script property the corpus shows holds localization keys, beyond the engine property names loc lists outright. Its LIST members are keys too.
+func (v *Derived) locField(key string) bool {
+	if v == nil {
+		return false
+	}
+	return v.LocFields[key] || v.LocFields[strings.ToLower(key)]
+}
+
 func (v *Derived) mergeLocal(local *Derived) {
 	if local == nil {
 		return
 	}
 	v.PrefixKinds = mergeStringMap(v.PrefixKinds, local.PrefixKinds)
-	// KindScope travels with PrefixKinds: one bindKinds call produces both, and
-	// they are written on adjacent lines at the cache. Dropping it here left a
-	// cache with PrefixKinds populated and KindScope empty whenever `rebind`
-	// took one of its early returns — and session/scope.go treats an empty
-	// KindScope as a silent fallback, so scope checking switched itself off with
-	// no error anywhere.
+	// KindScope travels with PrefixKinds: one bindKinds call produces both, and dropping it here left a cache with PrefixKinds populated and KindScope empty, which session/scope.go reads as a silent fallback.
 	v.KindScope = mergeStringMap(v.KindScope, local.KindScope)
 	v.FireKeys = mergeStringMap(v.FireKeys, local.FireKeys)
 	v.FieldValueKinds = mergeStringMap(v.FieldValueKinds, local.FieldValueKinds)
@@ -156,45 +153,188 @@ func mergeShapes(a, b []NestedShape) []NestedShape {
 	return out
 }
 
-func collectFieldCites(root *jomini.Root) []typedCite {
-	if root == nil {
-		return nil
+// defIndex groups a def slice the ways the derivations ask for it, under IsCitableDef because that is what most of them want. IsObjectKind -- deriveLocConventions' rule -- is this filter minus `namespace`, so it narrows from here rather than needing its own walk. One index per slice, never shared across two: rebind runs after nested defs exist and the mod path prepends the cache's defs, so those hold slices this one does not describe and build their own.
+type defIndex struct {
+	// kindsByKey is key -> the distinct citable kinds defined under it.
+	kindsByKey map[string][]string
+	// keysByKind is citable kind -> its distinct keys.
+	keysByKind map[string]map[string]bool
+}
+
+func newDefIndex(defs []Def) *defIndex {
+	x := &defIndex{
+		kindsByKey: make(map[string][]string, len(defs)/2),
+		keysByKind: make(map[string]map[string]bool, 64),
 	}
-	var out []typedCite
-	jomini.Walk(root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
-		a, ok := st.(*jomini.Assignment)
-		if !ok || a.Key.Quoted {
-			return true
+	for _, d := range defs {
+		if !IsCitableDef(d) {
+			continue
 		}
-		sc, ok := a.Value.(*jomini.Scalar)
-		if !ok || sc.Quoted || sc.Text == "" || jomini.SkipObjectRHS(sc.Text) {
-			return true
+		k := jomini.CanonicalKind(d.Kind)
+		set := x.keysByKind[k]
+		if set == nil {
+			set = map[string]bool{}
+			x.keysByKind[k] = set
 		}
-		if _, _, ok := game.ParseTyped("", sc.Text); ok {
-			return true
+		// One membership test dedupes both maps: the key is new for this kind exactly when the kind is new for this key.
+		if !set[d.Key] {
+			set[d.Key] = true
+			x.kindsByKey[d.Key] = append(x.kindsByKey[d.Key], k)
 		}
-		if _, ok := jomini.ParsePrefixed(sc.Text); ok {
-			return true
-		}
-		if !jomini.IsDefName(sc.Text) || jomini.IsStop(sc.Text) {
-			return true
-		}
-		out = append(out, typedCite{prefix: a.Key.Text, id: sc.Text})
-		return true
-	})
+	}
+	return x
+}
+
+// citableKeys is every name already spoken for by a real definition; passes that invent a database from unexplained citations subtract it first.
+func (x *defIndex) citableKeys() map[string]bool {
+	out := make(map[string]bool, len(x.kindsByKey))
+	for key := range x.kindsByKey {
+		out[key] = true
+	}
 	return out
 }
 
-// fireCount is the evidence for one assignment key: how often its RHS named an
-// event or on_action, against how often it named anything at all. The
-// denominator is what stops a key being called a fire site on one coincidence.
+// keysOfKind is the distinct keys defined under one canonical kind; nil when the install has none, and callers only read it.
+func (x *defIndex) keysOfKind(kind string) map[string]bool { return x.keysByKind[kind] }
+
+const (
+	// fieldKindCoverage is the share of a field's resolving values that must agree, and minFieldHits how many must resolve at all.
+	fieldKindCoverage = 50
+	minFieldHits      = 2
+)
+
+// deriveFieldValueKinds types a field from the definitions its values name: `field = value` where enough values resolve and they agree on one kind. No dump states which field holds which type, so this is install-derived.
+func deriveFieldValueKinds(rhs map[string]map[string]bool, idx *defIndex) map[string]string {
+	kindsByKey := idx.kindsByKey
+	out := map[string]string{}
+	for field, vals := range rhs {
+		// A bare number is a weight, not a field name: typing `20` as `event` made `20 = empty` inside a Vic3 gene block read as a missing event.
+		if isDigitKey(field) {
+			continue
+		}
+		var kind string
+		ok, conflict, hits := false, false, 0
+		for v := range vals {
+			kinds := kindsByKey[v]
+			// A value naming two kinds is no evidence; as a veto it left `holder` and 116 more fields typed by nothing, since every CK3 id is a character AND a province.
+			if len(kinds) != 1 {
+				continue
+			}
+			if !ok {
+				kind, ok = kinds[0], true
+			} else if kinds[0] != kind {
+				conflict = true
+				break
+			}
+			hits++
+		}
+		if ok && !conflict && hits >= minFieldHits &&
+			hits*100 >= len(vals)*fieldKindCoverage {
+			out[field] = kind
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+const (
+	// locFieldCoverage is higher than fieldKindCoverage because the target namespace is enormous: an install defines hundreds of thousands of loc keys, so a value coinciding with one proves much less than one coinciding with a definition of some specific kind.
+	minLocFieldHits  = 8
+	locFieldCoverage = 80
+)
+
+// deriveLocFields decides which script properties hold localization keys.
+func deriveLocFields(
+	rhs map[string]map[string]bool, locKeys, defKeys map[string]bool, schema *declared.Schema,
+) map[string]bool {
+	if len(locKeys) == 0 || len(rhs) == 0 {
+		return nil
+	}
+	out := map[string]bool{}
+	for field, vals := range rhs {
+		if isDigitKey(field) || loc.Classify(field) != loc.PropNone {
+			continue // already declared by the engine property list
+		}
+		// Declared beats derived. `has_realm_law` and `unlock_law` are triggers and effects the game states outright; that their values are law ids with keys named after them is a fact about laws, not about the token.
+		if schema.HasName(field) {
+			continue
+		}
+		// A macro-parameterised key (`has_$TYPE$_law`) is a spelling of a token, not a property in its own right.
+		if strings.ContainsRune(field, '$') {
+			continue
+		}
+		hits, of := 0, 0
+		for v := range vals {
+			if defKeys[v] {
+				continue
+			}
+			of++
+			if locKeys[v] {
+				hits++
+			}
+		}
+		if hits >= minLocFieldHits && hits*100 >= of*locFieldCoverage {
+			out[field] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func locKeySet(sites map[string]LocEntry) map[string]bool {
+	out := map[string]bool{}
+	for k := range sites {
+		out[k] = true
+	}
+	return out
+}
+
+// locConventionFloor is the share of a kind's definitions a template must hold for.
+const locConventionFloor = 0.9
+
+// deriveLocConventions reads the install's own localization to work out which key templates each kind uses.
+func deriveLocConventions(
+	idx *defIndex, structures map[string][]string, keys *loc.Keys,
+) map[string][]loc.Convention {
+	if keys == nil || len(idx.keysByKind) == 0 {
+		return nil
+	}
+	out := map[string][]loc.Convention{}
+	for kind, ks := range idx.keysByKind {
+		// IsObjectKind, not IsCitableDef: a namespace is an event-id prefix with no loc of its own.
+		if !jomini.IsObjectKind(kind) {
+			continue
+		}
+		cs := loc.Learn(slices.Collect(maps.Keys(ks)),
+			structures[kind], keys, locConventionFloor)
+		if len(cs) > 0 {
+			out[kind] = cs
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// fireCount is the evidence for one assignment key: how often its RHS named an event or on_action, against how often it named anything at all.
 type fireCount struct {
 	kinds map[string]int
 	named int
 }
 
-// deriveFireKeys counts, per assignment key, how many of the names on its RHS
-// are harvested event or on_action ids (or the event-id form `ns.1`).
+const (
+	// fireKeyCoverage is the share of a key's named RHS values that must be events or on_actions before the key is treated as firing them. Unanimity alone made one coincidence a fire site, which produced 4,033 false dangling rows on one Vic3 mod.
+	fireKeyCoverage = 50
+	// minFireNames is how many names a key must carry before coverage may veto it: a mod whose trigger_event targets mostly do not exist has broken references, and silencing the key would hide exactly the defect Workspace Health is for.
+	minFireNames = 8
+)
+
+// deriveFireKeys counts, per assignment key, how many of the names on its RHS are harvested event or on_action ids (or the event-id form `ns.1`).
 func deriveFireKeys(root *jomini.Root, eventIDs, onActionIDs map[string]bool) map[string]*fireCount {
 	if root == nil {
 		return nil
@@ -236,8 +376,7 @@ func deriveFireKeys(root *jomini.Root, eventIDs, onActionIDs map[string]bool) ma
 	return out
 }
 
-// fireTargets is the assignment's own RHS: a scalar, list values, or
-// inner id=/digit keys. Nested fire sites stay on their own keys.
+// fireTargets is the assignment's own RHS: a scalar, list values, or inner id=/digit keys. Nested fire sites stay on their own keys.
 func fireTargets(v jomini.Value) []string {
 	var out []string
 	if sc, ok := v.(*jomini.Scalar); ok {
@@ -278,28 +417,6 @@ func classifyFireTarget(s string, eventIDs, onActionIDs map[string]bool) string 
 	return ""
 }
 
-const (
-	// fireKeyCoverage is the share of a key's named RHS values that must be
-	// events or on_actions before the key is treated as firing them.
-	//
-	// Unanimity alone was not enough, the same flaw the field typing had: names
-	// that matched nothing were not counted, so one coincidence made a key a
-	// fire site and every later use of it emitted a reference that could never
-	// resolve. On one real Vic3 mod that produced 4,033 false dangling rows
-	// under kind `on_action`, for keys like `alert` and `character`.
-	fireKeyCoverage = 50
-	// minFireNames is how many names a key must carry before coverage is worth
-	// consulting at all.
-	//
-	// This matters more here than elsewhere, because for fire keys a *low* hit
-	// rate is often the very thing worth reporting: a mod whose `trigger_event`
-	// targets mostly do not exist has broken references, and silencing the key
-	// would hide exactly the defect Workspace Health is for. Coverage may only
-	// veto a key once there is enough evidence that a low rate means "this is
-	// not a fire key" rather than "this mod is broken".
-	minFireNames = 8
-)
-
 func resolveFireKinds(counts map[string]*fireCount) map[string]string {
 	out := map[string]string{}
 	for key, c := range counts {
@@ -339,6 +456,36 @@ func mergeFireCounts(dst, src map[string]*fireCount) map[string]*fireCount {
 		}
 	}
 	return dst
+}
+
+// collectFieldCites gathers `field = name` pairs whose RHS could be an undefined database row, the other half of the nested-shape join.
+func collectFieldCites(root *jomini.Root) []typedCite {
+	if root == nil {
+		return nil
+	}
+	var out []typedCite
+	jomini.Walk(root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
+		a, ok := st.(*jomini.Assignment)
+		if !ok || a.Key.Quoted {
+			return true
+		}
+		sc, ok := a.Value.(*jomini.Scalar)
+		if !ok || sc.Quoted || sc.Text == "" || jomini.SkipObjectRHS(sc.Text) {
+			return true
+		}
+		if _, _, ok := game.ParseTyped("", sc.Text); ok {
+			return true
+		}
+		if _, ok := jomini.ParsePrefixed(sc.Text); ok {
+			return true
+		}
+		if !jomini.IsDefName(sc.Text) || jomini.IsStop(sc.Text) {
+			return true
+		}
+		out = append(out, typedCite{prefix: a.Key.Text, id: sc.Text})
+		return true
+	})
+	return out
 }
 
 func nestedChildKind(gameID, prefix, id string, prefixKinds map[string]string) string {
@@ -412,22 +559,7 @@ func walkNestedWanted(
 	walk(root.Statements, "", 0)
 }
 
-// deriveNestedShapes records parent→child harvest patterns from unresolved cites.
-// One CST walk per file (index unresolved ids, then visit matching nested keys).
-// The child kind must be something the game declares as a type. Without that
-// test the pass harvests any repeated inner key as a database: on CK3 it minted
-// 310,044 defs of kinds named `SKILL`, `TIER`, `NUMBER` and `$SKILL$` — script
-// *parameter* names — which was 64% of the entire model. EU5 produced 35,458
-// under `CALL_FOR_PEACE_WARSCORE_LIMIT` and `var:chinese_expedition_opinion`.
-//
-// Filtering on declared.Schema.Declares leaves CK3 6 shapes, Vic3 4, EU5 15 — including
-// `religion_types -> faith`, the case this pass exists for. Anything dropped
-// either was not an object at all, or already has its own folder and needs no
-// nested harvest (EU5 `production_methods` is `in_game/common/production_methods`).
-// defKeys is passed in rather than rebuilt: deriveAll already has it, and this
-// and deriveNestedOptions were each recomputing the same set over the same
-// slice — three passes where one will do. Callers outside deriveAll pass
-// defKeySet(defs).
+// deriveNestedShapes records parent→child harvest patterns from unresolved cites, for a corpus small enough to walk on its own (one edited file). deriveAll folds the same two halves into the walk it already makes. The child kind must be something the game DECLARES as a type. Without that test the pass harvests any repeated inner key as a database: on CK3 it minted 310,044 defs of kinds named `SKILL`, `TIER` and `$SKILL$` -- script parameter names -- which was 64% of the entire model.
 func deriveNestedShapes(
 	gameID string, corp corpus, defs []Def, defKeys map[string]bool,
 	prefixKinds map[string]string, schema *declared.Schema,
@@ -448,19 +580,14 @@ func deriveNestedShapes(
 	return nestedShapesFrom(byChild, schema)
 }
 
-// nestedWanted is where one cited-but-undefined child kind was found: the
-// parent it sits under, the group key inside that parent, and the first-letter
-// set of its keys.
+// nestedWanted is where one cited-but-undefined child kind was found: the parent it sits under, the group key inside that parent, and the first-letter set of its keys.
 type nestedWanted struct {
 	parent, group string
 	ok, clash     bool
 	letters       map[byte]bool
 }
 
-// nestedIDChild is the citation half of the join — which child kinds are cited
-// and have no definition — and it needs no walk at all. Splitting it out is
-// what let II.4 fold the placement walk into deriveAll's: with the citations
-// gathered in the first pass, this is answerable before the second one starts.
+// nestedIDChild is the citation half of the join -- which child kinds are cited and have no definition -- and it needs no walk of its own.
 func nestedIDChild(
 	gameID string, defKeys map[string]bool, prefixKinds map[string]string,
 	cites, fieldCites []typedCite,
@@ -475,9 +602,7 @@ func nestedIDChild(
 	return idChild
 }
 
-// observeNestedWanted is the per-file half. Accumulation is commutative — a
-// clash flag, a group that nulls on disagreement, a letter set — so it does not
-// care which walk it rides on or in what order files arrive.
+// observeNestedWanted is the per-file half. Accumulation is commutative -- a clash flag, a group that nulls on disagreement, a letter set -- so it does not care which walk it rides on or in what order files arrive.
 func observeNestedWanted(
 	gameID, rel string, root *jomini.Root,
 	idChild map[string][]string, byChild map[string]*nestedWanted,
@@ -506,8 +631,7 @@ func observeNestedWanted(
 		})
 }
 
-// nestedShapesFrom turns the accumulator into shapes, keeping only child kinds
-// the game declares.
+// nestedShapesFrom turns the accumulator into shapes, keeping only child kinds the game declares.
 func nestedShapesFrom(byChild map[string]*nestedWanted, schema *declared.Schema) []NestedShape {
 	var out []NestedShape
 	for child, a := range byChild {
@@ -647,22 +771,20 @@ func applyNestedShape(
 				continue
 			}
 			b := jomini.BlockOf(a.Value)
-			if b != nil && depth > 0 {
+			if b == nil {
+				continue
+			}
+			if depth > 0 {
 				name := game.KeyIdentity(gameID, a.Key.Text)
-				okKey := keyPrefixOK(name, shape.KeyPrefix)
 				if shape.KeyPrefix != "" {
-					if okKey {
+					if keyPrefixOK(name, shape.KeyPrefix) {
 						add(a)
 					}
 				} else if cited[name] || hasCitedDescendant(gameID, b, cited) {
 					add(a)
 				}
-				walk(b.Statements, depth+1)
-				continue
 			}
-			if b != nil {
-				walk(b.Statements, depth+1)
-			}
+			walk(b.Statements, depth+1)
 		}
 	}
 	walk(root.Statements, 0)
@@ -687,23 +809,12 @@ func citedIDsForKind(cites []typedCite, prefixKinds map[string]string, childKind
 	return out
 }
 
-// deriveWrappers marks top-level blocks whose inners are typed cites to existing
-// defs (Vic3 COUNTRIES = { c:USA ?= { } }). Callers drop defs with these keys,
-// so a false positive deletes a real object from the model.
-//
-// A `keyword name = { }` pair is never a wrapper, however its body is shaped.
-// CK3 declares inline macros that way — `scripted_effect foo = { culture:x = {…} }`
-// — and matching them on shape alone deleted 28 vanilla macros from the CK3
-// model, breaking go-to-definition on every one. The keyword states what the
-// block is, so the declaration wins over the shape.
+// deriveWrappers marks top-level blocks whose inners are typed cites to existing defs (Vic3 COUNTRIES = { c:USA ?= { } }). Callers drop defs with these keys, so a false positive deletes a real object from the model. A `keyword name = { }` pair is never a wrapper however its body is shaped: CK3 declares inline macros that way, and matching them on shape alone deleted 28 vanilla macros from the model.
 func deriveWrappers(gameID, rel string, root *jomini.Root, defKeys map[string]bool) []string {
 	if root == nil {
 		return nil
 	}
-	// A folder that declares named script bodies has already said what its
-	// top-level keys are, and those bodies are routinely a single typed cite
-	// (`title:h_china.holder ?= { … }`) — the wrapper shape exactly. Running the
-	// heuristic there deleted 24 CK3 and 20 EU5 vanilla macros from the model.
+	// A folder that declares named script bodies has already said what its top-level keys are, and those bodies are routinely a single typed cite -- the wrapper shape exactly.
 	if jomini.DeclaresNamedBodies(game.MatchExtract(gameID, rel).Kind) {
 		return nil
 	}
@@ -745,9 +856,7 @@ func deriveWrappers(gameID, rel string, root *jomini.Root, defKeys map[string]bo
 	return out
 }
 
-// keywordDeclared reports that stmts[i] is the named half of a `keyword name = { }`
-// pair, the form extractKeywordName harvests as a def. This is the same pairing
-// rule, read from the same statement list, so the two cannot disagree.
+// keywordDeclared reports that stmts[i] is the named half of a `keyword name = { }` pair, the form extractKeywordName harvests as a def -- the same pairing rule read from the same statement list, so the two cannot disagree.
 func keywordDeclared(stmts []jomini.Statement, i int) bool {
 	if i == 0 {
 		return false
@@ -763,74 +872,6 @@ func keywordDeclared(stmts []jomini.Statement, i int) bool {
 	return jomini.DeclKeywordKind(sc.Text) != ""
 }
 
-// defIndex groups a def slice the ways the derivations ask for it.
-//
-// Grouped under IsCitableDef because that is what most of them want:
-// defKeySet, bindKinds and deriveFieldValueKinds apply exactly this filter, and
-// IsObjectKind — deriveLocConventions' rule — is this filter minus `namespace`, so
-// it narrows from here rather than needing its own walk. deriveSnippets is the
-// one that does not: it counts definitions per RAW kind, so defsByKind is kept
-// beside the rest and counts everything.
-//
-// One index per slice, never shared across two. rebind runs after nested defs
-// exist and the mod path prepends the cache's defs, so those hold slices this
-// one does not describe and build their own.
-type defIndex struct {
-	// kindsByKey is key -> the distinct citable kinds defined under it.
-	kindsByKey map[string][]string
-	// keysByKind is citable kind -> its distinct keys.
-	keysByKind map[string]map[string]bool
-	// defsByKind counts DEFINITIONS per raw kind — not distinct keys, not
-	// canonicalised, not filtered. deriveSnippets weighs a member against how
-	// often its kind occurs, so two definitions of one key are two occurrences.
-	defsByKind map[string]int
-}
-
-func newDefIndex(defs []Def) *defIndex {
-	x := &defIndex{
-		kindsByKey: make(map[string][]string, len(defs)/2),
-		keysByKind: make(map[string]map[string]bool, 64),
-		defsByKind: make(map[string]int, 64),
-	}
-	for _, d := range defs {
-		x.defsByKind[d.Kind]++
-		if !IsCitableDef(d) {
-			continue
-		}
-		k := jomini.CanonicalKind(d.Kind)
-		set := x.keysByKind[k]
-		if set == nil {
-			set = map[string]bool{}
-			x.keysByKind[k] = set
-		}
-		// One membership test dedupes both maps: the key is new for this kind
-		// exactly when the kind is new for this key.
-		if !set[d.Key] {
-			set[d.Key] = true
-			x.kindsByKey[d.Key] = append(x.kindsByKey[d.Key], k)
-		}
-	}
-	return x
-}
-
-// citableKeys is every key a citable definition claims (was defKeySet).
-func (x *defIndex) citableKeys() map[string]bool {
-	out := make(map[string]bool, len(x.kindsByKey))
-	for key := range x.kindsByKey {
-		out[key] = true
-	}
-	return out
-}
-
-// keysOfKind is the distinct keys defined under one canonical kind. Nil when
-// the install has none; callers only read it.
-func (x *defIndex) keysOfKind(kind string) map[string]bool { return x.keysByKind[kind] }
-
-// defKeySet is the set of names already spoken for by a real definition. Passes
-// that invent a database from unexplained citations subtract it first, so a name
-// with a home is never handed a second one.
-func defKeySet(defs []Def) map[string]bool { return newDefIndex(defs).citableKeys() }
-
 func dropWrapperDefs(defs []Def, wrappers map[string]bool) []Def {
 	if len(wrappers) == 0 {
 		return defs
@@ -845,48 +886,7 @@ func dropWrapperDefs(defs []Def, wrappers map[string]bool) []Def {
 	return out
 }
 
-// locConventionFloor is the share of a kind's definitions a template must hold for.
-const locConventionFloor = 0.9
-
-// deriveLocConventions reads the install's own localization to work out which key templates each kind uses.
-func deriveLocConventions(
-	idx *defIndex, structures map[string][]string, keys *loc.Keys,
-) map[string][]loc.Convention {
-	if keys == nil || len(idx.keysByKind) == 0 {
-		return nil
-	}
-	out := map[string][]loc.Convention{}
-	for kind, ks := range idx.keysByKind {
-		// IsObjectKind, not IsCitableDef: a namespace is an event-id prefix with no loc of its own.
-		if !jomini.IsObjectKind(kind) {
-			continue
-		}
-		cs := loc.Learn(slices.Collect(maps.Keys(ks)),
-			structures[kind], keys, locConventionFloor)
-		if len(cs) > 0 {
-			out[kind] = cs
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func locKeySet(sites map[string]LocEntry) map[string]bool {
-	out := map[string]bool{}
-	for k := range sites {
-		out[k] = true
-	}
-	return out
-}
-
-// harvestGetSet collects `GetX` / `SetX` data-function names used anywhere in a
-// script file. It runs over the whole source of every file in the install —
-// 180 MB on CK3 — so it scans for the two three-byte prefixes directly instead
-// of running `\b((?:Get|Set)[A-Za-z0-9_]+)\b` over all of it, which cost 12% of
-// the entire scan. Same matches, including two names in one dotted chain
-// (`[GetPlayer.GetName]` yields both).
+// harvestGetSet collects `GetX` / `SetX` data-function names. It runs over the whole source of every file in the install -- 180 MB on CK3 -- so it scans for the two three-byte prefixes directly instead of running a regex over all of it, which cost 12% of the entire scan.
 func harvestGetSet(src string) map[string]bool {
 	var out map[string]bool
 	for i := 0; i+3 < len(src); i++ {
@@ -920,11 +920,91 @@ func isDataFnByte(c byte) bool {
 		(c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
 
-// locField reports a script property the corpus shows holds localization keys,
-// beyond the engine property names parser/loc lists outright. Its LIST members are keys too.
-func (v *Derived) locField(key string) bool {
-	if v == nil {
-		return false
+// keysByCount orders each kind's harvested member names by how often they were seen.
+func keysByCount(m map[string]map[string]int) map[string][]string {
+	out := make(map[string][]string, len(m))
+	for kind, counts := range m {
+		keys := slices.Collect(maps.Keys(counts))
+		slices.SortFunc(keys, func(a, b string) int {
+			if c := counts[b] - counts[a]; c != 0 {
+				return c
+			}
+			return strings.Compare(a, b)
+		})
+		out[kind] = keys
 	}
-	return v.LocFields[key] || v.LocFields[strings.ToLower(key)]
+	return out
+}
+
+// blockKeys names the members of each kind that are usually written as a block.
+func blockKeys(counts, blocks map[string]map[string]int) map[string][]string {
+	out := map[string][]string{}
+	for kind, c := range counts {
+		b := blocks[kind]
+		var keys []string
+		for k, n := range c {
+			if b[k]*2 > n {
+				keys = append(keys, k)
+			}
+		}
+		if len(keys) == 0 {
+			continue
+		}
+		slices.Sort(keys)
+		out[kind] = keys
+	}
+	return out
+}
+
+const (
+	// minNestedHits is how often a member must be seen inside a block before it is part of that block's shape. A block appears far more often than a definition does, so a single sighting is even weaker evidence here.
+	minNestedHits = 3
+	// maxNestedMembers bounds one block's member list.
+	maxNestedMembers = 40
+)
+
+// deriveNestedMembers turns raw block-member counts into each block's member list, most-used first -- what answers "what belongs inside triggered_desc?" rather than only "inside an event?". Keyed by the block's own name, because a block called `limit` holds the same members wherever it appears.
+func deriveNestedMembers(nested map[string]map[string]int) map[string][]string {
+	if len(nested) == 0 {
+		return nil
+	}
+	kept := make(map[string]map[string]int, len(nested))
+	for parent, counts := range nested {
+		hits := map[string]int{}
+		for k, n := range counts {
+			if n >= minNestedHits {
+				hits[k] = n
+			}
+		}
+		if len(hits) > 0 {
+			kept[parent] = hits
+		}
+	}
+	out := keysByCount(kept)
+	for parent, members := range out {
+		if len(members) > maxNestedMembers {
+			out[parent] = members[:maxNestedMembers]
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// unambiguousBlocks names the blocks that appear under exactly one kind. A block name is not a position: CK3 has an `option` inside an event and another inside common/accolade_names, holding nothing in common. Merging them by name is right for OFFERING keys and fatal for judging an absence, which reported 18,341 findings on 400 vanilla files.
+func unambiguousBlocks(blockKinds map[string]map[string]bool) map[string]bool {
+	if len(blockKinds) == 0 {
+		return nil
+	}
+	out := map[string]bool{}
+	for block, kinds := range blockKinds {
+		if len(kinds) == 1 {
+			out[block] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

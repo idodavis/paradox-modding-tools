@@ -23,11 +23,7 @@ func locKindRefs(refs []Ref) []Ref {
 	return out
 }
 
-// macroCallRefs keeps the call sites worth persisting: invocations of a
-// scripted_* macro, which the Event Graph walks. Everything else the old
-// call-kind vote elected — `subtract`, `trigger_localization`, `namespace`,
-// the GUI value `right|top` — was not an object reference at all, and together
-// they made up most of a 279 MB slice of the model.
+// macroCallRefs keeps the call sites worth persisting: invocations of a scripted_* macro, which the Event Graph walks. Everything else the old call-kind vote elected — `subtract`, `trigger_localization`, `namespace`, the GUI value `right|top` — was not an object reference at all, and together they made up most of a 279 MB slice of the model.
 func macroCallRefs(refs []Ref) []Ref {
 	var out []Ref
 	for _, r := range refs {
@@ -54,9 +50,7 @@ func fireSiteKind(stack []edgeFrame, fireKey string) (kind, nameKey string) {
 	return "effect", ""
 }
 
-// fireSiteRescopes reports whether anything between the enclosing definition and
-// the fire site changed scope. stack[0] is the definition's own key, which is
-// where its declared scope applies, so the walk starts below it.
+// fireSiteRescopes reports whether anything between the enclosing definition and the fire site changed scope. stack[0] is the definition's own key, which is where its declared scope applies, so the walk starts below it.
 func fireSiteRescopes(stack []edgeFrame) bool {
 	for _, fr := range stack[min(1, len(stack)):] {
 		if !jomini.IsScopeNeutral(fr.key) {
@@ -82,10 +76,7 @@ func optionNameKey(v jomini.Value) string {
 	return ""
 }
 
-// walkFireTargets visits every scalar under a fire assignment that could name an
-// event or on_action: the bare RHS, list values, and `id = ` / numbered inners.
-// derived supplies the fire kinds harvested from the install; nil means only the
-// structural keys (`id`, digits) count.
+// walkFireTargets visits every scalar under a fire assignment that could name an event or on_action: the bare RHS, list values, and `id = ` / numbered inners. derived supplies the fire kinds harvested from the install; nil means only the structural keys (`id`, digits) count.
 func walkFireTargets(
 	v jomini.Value, derived *Derived, fn func(name string, start, end int),
 ) {
@@ -146,19 +137,13 @@ func isDigitKey(s string) bool {
 	return err == nil
 }
 
-// macroDefKinds maps scripted-macro def keys to their CanonicalKind.
-// Only harvested defs (never script_docs vocab).
+// macroDefKinds maps scripted-macro def keys to their CanonicalKind. Only harvested defs (never script_docs vocab).
 func macroDefKinds(defs []Def, cache *VanillaCache) map[string]string {
 	out := map[string]string{}
 	add := func(ds []Def) {
 		for _, d := range ds {
 			k := jomini.CanonicalKind(d.Kind)
-			// A call is the invocation of a scripted_* macro, which the folder
-			// name states outright. Deriving this from observed usage was both
-			// too loose — CK3 elected `subtract` and the GUI value `right|top`,
-			// generating a call edge per occurrence — and too tight, since a
-			// macro that is defined but never called was not considered
-			// callable at all.
+			// A call is the invocation of a scripted_* macro, which the folder name states outright. Deriving this from observed usage was both too loose — CK3 elected `subtract` and the GUI value `right|top`, generating a call edge per occurrence — and too tight, since a macro that is defined but never called was not considered callable at all.
 			if jomini.IsMacroKind(k) {
 				out[d.Key] = k
 			}

@@ -5,6 +5,7 @@
 package game
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/bytedance/sonic"
 )
 
 // DetectedInstall is a game install found on disk.
@@ -44,7 +43,7 @@ func ReadGameVersion(installPath string) string {
 		return ""
 	}
 	var ls launcherSettings
-	if err := sonic.Unmarshal(data, &ls); err != nil {
+	if err := json.Unmarshal(data, &ls); err != nil {
 		return ""
 	}
 	if ls.RawVersion != "" {
@@ -123,7 +122,7 @@ func launcherGameDataPath(installPath string) string {
 		return ""
 	}
 	var ls launcherSettings
-	if sonic.Unmarshal(data, &ls) != nil {
+	if json.Unmarshal(data, &ls) != nil {
 		return ""
 	}
 	return expandGameDataPath(ls.GameDataPath)

@@ -17,9 +17,7 @@ import (
 
 type Model struct {
 	gameID string
-	// lastIndexed is path -> the text this index was last built from. It is the
-	// index's own dedup memo, not editor state: an editor save and a watcher
-	// event for the same bytes must Reindex once.
+	// lastIndexed is path -> the text this index was last built from: the index's own dedup memo, so an editor save and a watcher event for the same bytes Reindex once.
 	lastIndexed map[string]string
 	locByFile   map[string][]string
 
@@ -50,25 +48,69 @@ type Model struct {
 	cacheEdgesByFrom map[string][]Edge
 	macroKeys        map[string]bool
 	macroDefKinds    map[string]string
-	// kindPrefix reverses PrefixKinds (kind -> citation prefix) so hover does
-	// not scan the whole table per call.
+	// kindPrefix reverses PrefixKinds (kind -> citation prefix) so hover does not scan the whole table per call.
 	kindPrefix map[string]string
-	// scopePrefix and scopeKind answer "a token declares it takes a <scope
-	// type> — how does the user write one?": as `prefix:id`, or as a bare key
-	// of some database. Both reverse a table that is otherwise scanned whole.
+	// scopePrefix and scopeKind answer "a token takes a <scope type> -- how does the user write one?": as `prefix:id`, or as a bare key of some database.
 	scopePrefix     map[string]string
 	scopeKind       map[string]string
 	modFireKeys     map[string]string
 	fieldValueKinds map[string]string
 	modFieldKinds   map[string]string
-	// kindsWithDefs is every kind something actually defines, so a reference to a
-	// kind with no definitions anywhere can be recognised as an engine concept.
+	// kindsWithDefs is every kind something actually defines, so a reference to a kind with no definitions anywhere can be recognised as an engine concept.
 	kindsWithDefs map[string]bool
 }
 
-// CanonPath is for comparison, never for a value anything downstream displays or
-// opens. addDefs already gets this right: it keys by CanonPath(d.Path)
-// while leaving d.Path alone.
+func NewModel(
+	gameID, defaultLang string,
+	cache *VanillaCache, vloc *VanillaLoc, mods []ModInput,
+) *Model {
+	m := &Model{
+		gameID:        gameID,
+		lastIndexed:   map[string]string{},
+		locByFile:     map[string][]string{},
+		locRefsByFile: map[string][]Ref{},
+		cache:         cache,
+		vanillaLoc:    vloc,
+		defaultLang:   defaultLang,
+		mods:          mods,
+		defsByKey:     map[string][]Def{},
+		defsByFile:    map[string][]Def{},
+		refsByKey:     map[string][]Ref{},
+		refsByFile:    map[string][]Ref{},
+		edgesByFrom:   map[string][]Edge{},
+		edgesByTo:     map[string][]Edge{},
+		edgesByFile:   map[string][]Edge{},
+	}
+	idx, err := BuildIndex(context.Background(), gameID, mods, cache)
+	if err != nil {
+		idx = Harvest{}
+	}
+	if cache != nil {
+		PrepareCache(cache)
+	}
+	m.locByLang = idx.Loc
+	if m.locByLang == nil {
+		m.locByLang = map[string]map[string]LocEntry{}
+	}
+	m.order = OrderMap(idx.Order)
+	m.addDefs(idx.Defs)
+	m.addRefs(idx.Refs)
+	m.addEdges(idx.Edges)
+	m.modFieldKinds = idx.FieldValueKinds
+	m.modFireKeys = maps.Clone(idx.FireKeys)
+	// locByFile indexes the whole loc corpus by path once, at build time.
+	for _, byKey := range m.locByLang {
+		for k, v := range byKey {
+			if p := CanonPath(v.Path); p != "" {
+				m.locByFile[p] = append(m.locByFile[p], k)
+			}
+		}
+	}
+	m.rebuildProjections()
+	return m
+}
+
+// Reindex rebuilds one file's entries. The key is CanonPath, for comparison only: d.Path keeps the spelling the editor uses.
 func (m *Model) Reindex(path, rel, text string, parsed jomini.Result) {
 	key := CanonPath(path)
 	text = jomini.Normalize(text)
@@ -89,27 +131,36 @@ func (m *Model) Reindex(path, rel, text string, parsed jomini.Result) {
 	} else {
 		ex = ExtractFile(m.gameID, path, rel, origin, text, false)
 	}
-	// Install files stay out of workspace harvest, but live call/$NAME$
-	// sites must be queryable (peek/hover) without waiting on a rescan.
+	// Install files stay out of workspace harvest, but live call and $NAME$ sites must be queryable without waiting on a rescan.
 	if origin == game.OriginVanilla {
-		m.indexVanillaLive(ex)
+		m.addRefs(ApplyCallRefs(ex.Cands, m.macroDefKinds))
+		var prefs []Ref
+		for _, r := range ex.Refs {
+			if r.Kind == "script_param" {
+				prefs = append(prefs, r)
+			}
+		}
+		m.addRefs(prefs)
 		m.lastIndexed[key] = text
 		return
 	}
 	m.addDefs(ex.Defs)
 	m.addRefs(ex.Refs)
 	m.addEdges(ex.Edges)
-	m.addMacroDefs(ex.Defs, ex.Cands)
+	m.addMacroDefs(ex.Defs)
 	m.addRefs(ApplyCallRefs(ex.Cands, m.macroDefKinds))
 	m.addEdges(ApplyCallEdges(ex.Cands, m.macroKeys))
 	m.locByLang = MergeLoc(m.locByLang, ex.Loc)
-	m.recordLocFile(ex.Loc)
+	// Note which keys this loc file contributed, so DropPath finds them again without scanning the corpus.
+	for k, v := range ex.Loc.Vals {
+		if p := CanonPath(v.Path); p != "" {
+			m.locByFile[p] = append(m.locByFile[p], k)
+		}
+	}
 	m.lastIndexed[key] = text
 }
 
-// DropPath removes every index entry sourced from path.
-// File maps are keyed by CanonPath; harvest and Monaco may still disagree on
-// case until CanonPath folds them, so every SamePath alias is dropped.
+// DropPath removes every index entry sourced from path. File maps are keyed by CanonPath, and harvest and Monaco may still disagree on case, so every SamePath alias is dropped.
 func (m *Model) DropPath(path string) {
 	path = CanonPath(path)
 	m.dropFileMaps(path)
@@ -118,8 +169,7 @@ func (m *Model) DropPath(path string) {
 	if m.locByLang == nil {
 		return
 	}
-	// The path check stays: two files may define the same key, and only the one
-	// that this path actually contributed may be dropped.
+	// The path check stays: two files may define the same key, and only the one this path contributed may be dropped.
 	for _, k := range m.locByFile[path] {
 		for lang, byKey := range m.locByLang {
 			if v, ok := byKey[k]; ok && SamePath(v.Path, path) {
@@ -134,34 +184,8 @@ func (m *Model) DropPath(path string) {
 }
 
 // dropFileMaps removes defs/refs/edges stored under one file-map key.
-// recordLocFile notes which keys a loc file contributed, so DropPath can find
-// them again without scanning the corpus.
-func (m *Model) recordLocFile(locd LocDelta) {
-	for k, v := range locd.Vals {
-		p := CanonPath(v.Path)
-		if p == "" {
-			continue
-		}
-		m.locByFile[p] = append(m.locByFile[p], k)
-	}
-}
-
-// rebuildLocByFile indexes the whole loc corpus by path once, at build time.
-func (m *Model) rebuildLocByFile() {
-	m.locByFile = map[string][]string{}
-	for _, byKey := range m.locByLang {
-		for k, v := range byKey {
-			if p := CanonPath(v.Path); p != "" {
-				m.locByFile[p] = append(m.locByFile[p], k)
-			}
-		}
-	}
-}
-
 func (m *Model) dropFileMaps(path string) {
-
-	defs := m.defsByFile[path]
-	for _, d := range defs {
+	for _, d := range m.defsByFile[path] {
 		m.defsByKey[d.Key] = removeDefsPath(m.defsByKey[d.Key], path)
 		if len(m.defsByKey[d.Key]) == 0 {
 			delete(m.defsByKey, d.Key)
@@ -212,6 +236,26 @@ func (m *Model) vanillaRoots() []string {
 	return []string{inst}
 }
 
+// rebuildProjections re-derives everything computed FROM the cache and the mod index, in one place so a projection added later cannot be missed at one of the three sites that change the model.
+func (m *Model) rebuildProjections() {
+	m.rebuildCacheIndex()
+	var vanilla map[string]string
+	if m.cache != nil {
+		vanilla = m.cache.FieldValueKinds
+	}
+	m.fieldValueKinds = mergeStringMap(vanilla, m.modFieldKinds)
+	m.macroKeys = map[string]bool{}
+	m.macroDefKinds = map[string]string{}
+	m.EachDef(true, func(d Def) bool {
+		k := jomini.CanonicalKind(d.Kind)
+		if jomini.IsMacroKind(k) {
+			m.macroDefKinds[d.Key] = k
+			m.macroKeys[d.Key] = true
+		}
+		return true
+	})
+}
+
 func (m *Model) rebuildCacheIndex() {
 	m.cacheByKey = map[string][]Def{}
 	m.cacheRefsByKey = map[string][]Ref{}
@@ -243,9 +287,7 @@ func (m *Model) rebuildCacheIndex() {
 			m.kindPrefix[k] = prefix
 		}
 	}
-	// scope type -> the database holding its rows, and -> the prefix that cites
-	// one. Completion needs both to turn "Supported Targets: culture_group"
-	// into an offer of `culture_group:turkic_group`.
+	// Scope type -> the database holding its rows, and -> the prefix that cites one. Completion needs both to turn "Supported Targets: culture_group" into an offer of `culture_group:turkic_group`.
 	for kind, scope := range m.cache.KindScope {
 		if cur, ok := m.scopeKind[scope]; !ok || len(kind) < len(cur) {
 			m.scopeKind[scope] = jomini.CanonicalKind(kind)
@@ -272,14 +314,6 @@ func (m *Model) rebuildCacheIndex() {
 	}
 }
 
-func (m *Model) rebuildFieldKinds() {
-	var vanilla map[string]string
-	if m.cache != nil {
-		vanilla = m.cache.FieldValueKinds
-	}
-	m.fieldValueKinds = MergeFieldValueKinds(vanilla, m.modFieldKinds)
-}
-
 func (m *Model) addDefs(defs []Def) {
 	for _, d := range defs {
 		m.defsByKey[d.Key] = append(m.defsByKey[d.Key], d)
@@ -299,20 +333,16 @@ func (m *Model) addRefs(refs []Ref) {
 	}
 }
 
-// indexVanillaLive records macro-call and  from an open
-// install file without merging defs/edges into workspace harvest.
-func (m *Model) indexVanillaLive(ex FileExtract) {
-	m.addRefs(ApplyCallRefs(ex.Cands, m.macroDefKinds))
-	var prefs []Ref
-	for _, r := range ex.Refs {
-		if r.Kind == "script_param" {
-			prefs = append(prefs, r)
-		}
+func (m *Model) addEdges(edges []Edge) {
+	for _, e := range edges {
+		m.edgesByFrom[e.From] = append(m.edgesByFrom[e.From], e)
+		m.edgesByTo[e.To] = append(m.edgesByTo[e.To], e)
+		p := CanonPath(e.Path)
+		m.edgesByFile[p] = append(m.edgesByFile[p], e)
 	}
-	m.addRefs(prefs)
 }
 
-func (m *Model) addMacroDefs(defs []Def, _ []CallCandidate) {
+func (m *Model) addMacroDefs(defs []Def) {
 	if m.macroDefKinds == nil {
 		m.macroDefKinds = map[string]string{}
 	}
@@ -327,73 +357,6 @@ func (m *Model) addMacroDefs(defs []Def, _ []CallCandidate) {
 		m.macroDefKinds[d.Key] = k
 		m.macroKeys[d.Key] = true
 	}
-}
-
-func (m *Model) rebuildMacroSets() {
-	m.macroKeys = map[string]bool{}
-	m.macroDefKinds = map[string]string{}
-	m.EachDef(true, func(d Def) bool {
-		k := jomini.CanonicalKind(d.Kind)
-		if !jomini.IsMacroKind(k) {
-			return true
-		}
-		m.macroDefKinds[d.Key] = k
-		m.macroKeys[d.Key] = true
-		return true
-	})
-}
-
-func NewModel(
-	gameID, defaultLang string,
-	cache *VanillaCache, vloc *VanillaLoc, mods []ModInput,
-) *Model {
-	m := &Model{
-		gameID:        gameID,
-		lastIndexed:   map[string]string{},
-		locByFile:     map[string][]string{},
-		locRefsByFile: map[string][]Ref{},
-		cache:         cache,
-		vanillaLoc:    vloc,
-		defaultLang:   defaultLang,
-		mods:          mods,
-		defsByKey:     map[string][]Def{},
-		defsByFile:    map[string][]Def{},
-		refsByKey:     map[string][]Ref{},
-		refsByFile:    map[string][]Ref{},
-		edgesByFrom:   map[string][]Edge{},
-		edgesByTo:     map[string][]Edge{},
-		edgesByFile:   map[string][]Edge{},
-	}
-	idx, err := BuildIndex(context.Background(), gameID, mods, cache)
-	if err != nil {
-		idx = Harvest{}
-	}
-	if cache != nil {
-		PrepareCache(cache)
-	}
-	m.locByLang = idx.Loc
-	if m.locByLang == nil {
-		m.locByLang = map[string]map[string]LocEntry{}
-	}
-	m.order = OrderMap(idx.Order)
-	m.addDefs(idx.Defs)
-	m.addRefs(idx.Refs)
-	m.addEdges(idx.Edges)
-	m.modFieldKinds = idx.FieldValueKinds
-	m.modFireKeys = maps.Clone(idx.FireKeys)
-	m.rebuildLocByFile()
-	m.rebuildProjections()
-	return m
-}
-
-// rebuildProjections re-derives everything computed FROM the cache and the mod
-// index. Three calls in a fixed order, and they were written out at all three
-// sites that change the model — so a fourth projection added later would have
-// been missed at one of them.
-func (m *Model) rebuildProjections() {
-	m.rebuildCacheIndex()
-	m.rebuildFieldKinds()
-	m.rebuildMacroSets()
 }
 
 // ReplaceCache swaps the vanilla cache after a rescan, keeping the mod index.
@@ -428,8 +391,16 @@ func (m *Model) ModRoots() []string {
 	return roots
 }
 
-// CanonPath returns a cleaned path for index and buffer identity.
-// On Windows the result is lowercased so harvest and Monaco fsPath share a key.
+// Cache is the vanilla model this workspace sits on, or nil before a scan.
+func (m *Model) Cache() *VanillaCache { return m.cache }
+
+// KindPrefix is the shortest citation prefix for a kind, or empty.
+func (m *Model) KindPrefix(kind string) string { return m.kindPrefix[kind] }
+
+// DropLocIndex forgets the workspace loc harvest.
+func (m *Model) DropLocIndex() { m.locByLang = map[string]map[string]LocEntry{} }
+
+// CanonPath returns a cleaned path for index and buffer identity, lowercased on Windows so harvest and Monaco fsPath share a key. Never for a value anything downstream displays or opens.
 func CanonPath(p string) string {
 	if p == "" {
 		return p
@@ -441,8 +412,7 @@ func CanonPath(p string) string {
 	return p
 }
 
-// SamePath reports whether a and b name the same file. On Windows the
-// comparison is case-insensitive after Clean.
+// SamePath reports whether a and b name the same file, case-insensitively on Windows.
 func SamePath(a, b string) bool {
 	a, b = CanonPath(a), CanonPath(b)
 	if a == b {
@@ -475,9 +445,7 @@ func RelPath(root, file string) (rel string, ok bool) {
 	return file[len(root)+1:], true
 }
 
-// This makes the fourteen policies comparable; it does not merge them. Each
-// caller still states its own key order on one line, and two callers differing
-// is now a visible difference rather than a hidden one.
+// firstIn makes the fourteen lookup policies comparable without merging them: each caller still states its own key order on one line.
 func firstIn[V comparable](m map[string]V, keys ...string) V {
 	var zero V
 	for _, k := range keys {
@@ -486,14 +454,6 @@ func firstIn[V comparable](m map[string]V, keys ...string) V {
 		}
 	}
 	return zero
-}
-func (m *Model) addEdges(edges []Edge) {
-	for _, e := range edges {
-		m.edgesByFrom[e.From] = append(m.edgesByFrom[e.From], e)
-		m.edgesByTo[e.To] = append(m.edgesByTo[e.To], e)
-		p := CanonPath(e.Path)
-		m.edgesByFile[p] = append(m.edgesByFile[p], e)
-	}
 }
 
 func removeRefsPath(in []Ref, drop string) []Ref {
@@ -507,11 +467,3 @@ func removeDefsPath(in []Def, drop string) []Def {
 func removeEdgesPath(in []Edge, drop string) []Edge {
 	return removeByPath(in, drop, func(e Edge) string { return e.Path })
 }
-
-// Cache is the vanilla model this workspace sits on, or nil before a scan.
-func (m *Model) Cache() *VanillaCache { return m.cache }
-
-// GameID is the game this model was built for.
-func (m *Model) KindPrefix(kind string) string { return m.kindPrefix[kind] }
-
-func (m *Model) DropLocIndex() { m.locByLang = map[string]map[string]LocEntry{} }

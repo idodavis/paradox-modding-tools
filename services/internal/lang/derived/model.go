@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/jomini"
@@ -21,21 +23,28 @@ type Model struct {
 	lastIndexed map[string]string
 	locByFile   map[string][]string
 
-	cache            *VanillaCache
-	vanillaLoc       *VanillaLoc
-	defaultLang      string
-	mods             []ModInput
-	order            map[string]int
-	locByLang        map[string]map[string]LocEntry
-	defsByKey        map[string][]Def
-	defsByFile       map[string][]Def
-	refsByKey        map[string][]Ref
-	refsByFile       map[string][]Ref
-	locRefsByFile    map[string][]Ref
-	edgesByFrom      map[string][]Edge
-	edgesByTo        map[string][]Edge
-	edgesByFile      map[string][]Edge
-	cacheByKey       map[string][]Def
+	cache         *VanillaCache
+	vanillaLoc    *VanillaLoc
+	defaultLang   string
+	mods          []ModInput
+	order         map[string]int
+	locByLang     map[string]map[string]LocEntry
+	defsByKey     map[string][]Def
+	defsByFile    map[string][]Def
+	refsByKey     map[string][]Ref
+	refsByFile    map[string][]Ref
+	locRefsByFile map[string][]Ref
+	edgesByFrom   map[string][]Edge
+	edgesByTo     map[string][]Edge
+	edgesByFile   map[string][]Edge
+	cacheByKey    map[string][]Def
+	// dataByKey is the data-row tier, indexed on first demand. See data.go.
+	dataByKey map[string][]Def
+	// dataKeys is dataByKey's keys, sorted, so a tier walk has one order.
+	dataKeys []string
+	dataOnce *sync.Once
+	// dataErr is why the tier could not be read; atomic so the health strip reads it without waiting on the load.
+	dataErr          atomic.Pointer[string]
 	cacheRefsByKey   map[string][]Ref
 	cacheEdgesByTo   map[string][]Edge
 	cacheEdgesByFrom map[string][]Edge
@@ -184,7 +193,9 @@ func (m *Model) dropFileMaps(path string) {
 func (m *Model) defsOf(key string) []Def {
 	n := len(m.defsByKey[key]) + len(m.cacheByKey[key])
 	if n == 0 {
-		return nil
+		// A data row's id is the only name that reaches here unplaced, so the miss is what pays for the tier.
+		m.ensureData()
+		return cloneIf(m.dataByKey[key])
 	}
 	return append(append(make([]Def, 0, n), m.defsByKey[key]...), m.cacheByKey[key]...)
 }
@@ -210,6 +221,14 @@ func (m *Model) rebuildCacheIndex() {
 	m.scopePrefix = map[string]string{}
 	m.scopeKind = map[string]string{}
 	m.kindsWithDefs = map[string]bool{}
+	m.dataByKey, m.dataKeys, m.dataOnce = nil, nil, &sync.Once{}
+	m.dataErr.Store(nil)
+	if g := game.Get(m.gameID); g != nil && m.cache != nil {
+		// A tier kind is still defined by the install, only kept elsewhere.
+		for _, k := range g.DataKinds {
+			m.kindsWithDefs[jomini.CanonicalKind(k)] = true
+		}
+	}
 	for _, defs := range m.defsByFile {
 		for _, d := range defs {
 			m.kindsWithDefs[jomini.CanonicalKind(d.Kind)] = true

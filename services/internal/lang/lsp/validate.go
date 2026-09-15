@@ -129,6 +129,10 @@ func (f diagFile) unresolvedRefDiags() []Diagnostic {
 		if len(f.s.FindDefs(id, 1, false, true)) > 0 {
 			return true
 		}
+		// A tier that would not load is a model missing its data rows, which is no evidence that this one is absent.
+		if f.s.DataError() != "" && game.IsDataKind(f.s.GameID, kind) {
+			return true
+		}
 		out = append(out, diag(byteRange(f.li, rng.Start, rng.End), sevWarning,
 			"nothing named "+id+" is defined.", "unresolved-ref"))
 		return true
@@ -189,6 +193,10 @@ func (f diagFile) wrongValueTypeDiags() []Diagnostic {
 		// `has_title = title:k_austria` looked unresolved while k_austria sits
 		// inside another title in 00_landed_titles.txt.
 		if len(f.s.FindDefs(bare, 1, false, true)) > 0 {
+			return true
+		}
+		// A tier that would not load is a model missing its data rows, which is no evidence that this one is absent.
+		if f.s.DataError() != "" && game.IsDataKind(f.s.GameID, kind) {
 			return true
 		}
 		out = append(out, diag(byteRange(f.li, rng.Start, rng.End), sevWarning,

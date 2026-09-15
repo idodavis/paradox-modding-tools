@@ -134,7 +134,7 @@ func (m *Model) findDefs(
 		want = jomini.CanonicalKind(kind)
 	}
 	var out []Def
-	m.EachDef(includeVanilla, func(d Def) bool {
+	visit := func(d Def) bool {
 		if want != "" {
 			if jomini.CanonicalKind(d.Kind) != want {
 				return true
@@ -154,7 +154,22 @@ func (m *Model) findDefs(
 		}
 		out = append(out, d)
 		return limit <= 0 || len(out) < limit
-	})
+	}
+	m.EachDef(includeVanilla, visit)
+	if limit > 0 && len(out) >= limit {
+		return out
+	}
+	// The tier is out of EachDef so a kindless search never pays for it, and walked by sorted key so a limit cuts the same way twice.
+	if includeVanilla && want != "" && game.IsDataKind(m.gameID, want) {
+		m.ensureData()
+		for _, key := range m.dataKeys {
+			for _, d := range m.dataByKey[key] {
+				if !visit(d) {
+					return out
+				}
+			}
+		}
+	}
 	return out
 }
 
@@ -379,7 +394,13 @@ func (m *Model) VanillaDefs(key string) []Def {
 		}
 		out = append(out, d)
 	}
-	for _, d := range m.cacheByKey[key] {
+	vanilla := m.cacheByKey[key]
+	if len(vanilla) == 0 {
+		// As in defsOf: only a name the script cache cannot place pays for the tier.
+		m.ensureData()
+		vanilla = m.dataByKey[key]
+	}
+	for _, d := range vanilla {
 		add(d)
 	}
 	if m.vanillaLoc != nil {
@@ -596,13 +617,25 @@ func (m *Model) GraphCatalog(origins []string) (
 // Contests returns contested override keys for the live workspace.
 func (m *Model) Contests(order []string) []Contest {
 	var mods []Def
+	rewritesData := false
 	m.EachDef(false, func(d Def) bool {
 		mods = append(mods, d)
+		rewritesData = rewritesData || game.IsDataKind(m.gameID, d.Kind)
 		return true
 	})
 	var vanilla []Def
 	if m.cache != nil {
 		vanilla = m.cache.Defs
+	}
+	// A mod rewriting a character's history contests the install's row, so the tier belongs here once a mod has written one.
+	if rewritesData {
+		m.ensureData()
+		all := make([]Def, 0, len(vanilla))
+		all = append(all, vanilla...)
+		for _, key := range m.dataKeys {
+			all = append(all, m.dataByKey[key]...)
+		}
+		vanilla = all
 	}
 	return Contests(m.gameID, mods, vanilla, order)
 }

@@ -122,7 +122,7 @@ func dropLegacyWorkspaceCaches(dir string) {
 	}
 }
 
-// SaveCache writes c keyed by installId + version and drops leftover cache-*.json.
+// SaveCache writes c and its data tier keyed by installId + version, and drops leftover cache-*.json.
 func SaveCache(c *VanillaCache) error {
 	path, err := vanillaJSON("vanilla", c.InstallID, c.GameVersion)
 	if err != nil {
@@ -130,6 +130,12 @@ func SaveCache(c *VanillaCache) error {
 	}
 	if err := saveCacheFile(path, c); err != nil {
 		return err
+	}
+	// Only a scan carries a tier; a loaded cache has none and must not truncate the sidecar.
+	if c.data != nil {
+		if err := SaveData(c.InstallID, c.GameVersion, c.data); err != nil {
+			return err
+		}
 	}
 	dropLegacyWorkspaceCaches(filepath.Dir(path))
 	return nil
@@ -267,6 +273,7 @@ func DropVanillaFiles(installID string) error {
 		name := e.Name()
 		switch {
 		case strings.HasPrefix(name, "vanilla-"+sid),
+			strings.HasPrefix(name, "vanilla-data-"+sid),
 			strings.HasPrefix(name, "vanilla-loc-"+sid):
 			_ = os.Remove(filepath.Join(dir, name))
 		case strings.HasPrefix(name, "script-docs-"+sid):

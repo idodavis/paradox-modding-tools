@@ -30,12 +30,9 @@ func deriveFieldValueKinds(rhs map[string]map[string]bool, idx *defIndex) map[st
 		ok, conflict, hits := false, false, 0
 		for v := range vals {
 			kinds := kindsByKey[v]
-			if len(kinds) == 0 {
+			// A value naming two kinds is no evidence; as a veto it left `holder` and 116 more fields typed by nothing, since every CK3 id is a character AND a province.
+			if len(kinds) != 1 {
 				continue
-			}
-			if len(kinds) > 1 {
-				conflict = true
-				break
 			}
 			if !ok {
 				kind, ok = kinds[0], true

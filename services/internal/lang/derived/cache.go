@@ -1,4 +1,4 @@
-// types.go declares persisted semantic-model shapes and format-version constants.
+// cache.go declares persisted semantic-model shapes and format-version constants.
 // A version bump invalidates on-disk files (no migration).
 
 package derived
@@ -52,7 +52,9 @@ import (
 // the stale values.
 //
 // 39 replaces the four affix projections with LocConventions, one template rule per kind.
-const CacheFormatVersion = 39
+//
+// 40 moves the data-row kinds (game.GameInfo.DataKinds) out of Defs into the vanilla-data sidecar; an older cache holds them inline, so both files would answer for the same row.
+const CacheFormatVersion = 40
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -288,6 +290,9 @@ type VanillaCache struct {
 	// (kind "cultures" → scope "culture"), resolved by bindKinds. This is what
 	// lets completion filter effects by the scope the cursor sits in.
 	KindScope map[string]string `json:"kindScope,omitempty"`
+
+	// data is the tier a scan produced, held until SaveCache writes it; nil on a loaded cache, which reads it on demand.
+	data []Def `json:"-"`
 
 	// Paths is the interning table for Def/Ref/Edge paths. It exists only on
 	// disk: saveCacheFile writes it and loadCacheFile expands it away, so code

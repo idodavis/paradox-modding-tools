@@ -33,6 +33,20 @@ func TestDeriveFieldValueKinds(t *testing.T) {
 	}
 }
 
+// A value naming two kinds is no evidence and must not be a veto: 100 is a CK3 character AND a province, and that silenced `holder` and 116 more fields entirely.
+func TestDeriveFieldValueKindsIgnoresAmbiguousValues(t *testing.T) {
+	defs := []Def{
+		{Kind: "characters", Key: "100"}, {Kind: "provinces", Key: "100"},
+		{Kind: "characters", Key: "101"}, {Kind: "characters", Key: "102"},
+	}
+	got := deriveFieldValueKinds(map[string]map[string]bool{
+		"holder": {"100": true, "101": true, "102": true},
+	}, newDefIndex(defs))
+	if got["holder"] != "characters" {
+		t.Errorf("holder = %q, want characters (one shared id is not a veto)", got["holder"])
+	}
+}
+
 // A mod that localizes its own objects must not lose the field types that name
 // them, and a localization key must never BE a field type.
 //

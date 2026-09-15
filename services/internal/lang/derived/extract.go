@@ -621,6 +621,10 @@ func containerAt(containers []defAtLine, line int) string {
 
 // objectRefKey is the stored key for a typed field RHS, or false to skip.
 func objectRefKey(gameID, kind, text string) (string, bool) {
+	// A data row is named by its number, so the rule that bare numbers are quantities has to stop short of `holder = 1234`.
+	if isDigitKey(text) && game.IsDataKind(gameID, kind) {
+		return text, true
+	}
 	if jomini.SkipFieldRHS(text) {
 		return "", false
 	}

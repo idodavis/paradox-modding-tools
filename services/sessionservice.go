@@ -57,6 +57,8 @@ type LanguageHealth struct {
 	DefCount          int    `json:"defCount"`
 	// WatchError is set when the watcher lost part of a mod root; external edits may go unindexed.
 	WatchError string `json:"watchError"`
+	// DataError is set when the vanilla data-row tier could not be read; history, map and dynasty rows are then unresolvable.
+	DataError string `json:"dataError"`
 
 	// Schema is the declared type system's state. Without it PMT still resolves
 	// definitions, references, conflicts and loc coverage from the install walk;
@@ -457,6 +459,7 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 		h.DefCount = live.DefCount()
 		_, scanned, ver, _ := live.CacheInfo()
 		h.WatchError = live.WatchError()
+		h.DataError = live.DataError()
 		live.RUnlock()
 		if scanned != "" {
 			h.ScannedAt = scanned

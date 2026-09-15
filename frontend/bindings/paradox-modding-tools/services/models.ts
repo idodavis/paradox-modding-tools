@@ -111,6 +111,11 @@ export interface LanguageHealth {
     "watchError": string;
 
     /**
+     * DataError is set when the vanilla data-row tier could not be read; history, map and dynasty rows are then unresolvable.
+     */
+    "dataError": string;
+
+    /**
      * Schema is the declared type system's state. Without it PMT still resolves
      * definitions, references, conflicts and loc coverage from the install walk;
      * scope-aware completion, typed hover and the scope diagnostics need it.

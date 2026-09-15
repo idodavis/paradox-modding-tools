@@ -93,6 +93,40 @@ func TestUnresolvedRef(t *testing.T) {
 	}
 }
 
+// A data tier that would not load is a model missing its history, map and dynasty rows, so it may not accuse one of being absent.
+func TestUnresolvedRefSilentWhenTheDataTierFailed(t *testing.T) {
+	for _, tc := range []struct {
+		name, install string
+		wantDiag      bool
+	}{
+		{"tier reads", "tier-ok", true},
+		{"tier missing", "tier-gone", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", dir)
+			t.Setenv("AppData", dir)
+			if tc.wantDiag {
+				if err := derived.SaveData(tc.install, "1.0", nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cache := &derived.VanillaCache{
+				InstallID: tc.install, GameID: "ck3", GameVersion: "1.0",
+				PrefixKinds: map[string]string{"title": "titles"},
+			}
+			derived.PrepareCache(cache)
+			s, root := buildSession(t, "ck3", map[string]string{
+				"common/scripted_triggers/t.txt": "a = { x = title:k_nowhere }\n",
+			}, cache, nil)
+			got := hasCode(Diagnose(s, root+"/common/scripted_triggers/t.txt"), "unresolved-ref")
+			if got != tc.wantDiag {
+				t.Errorf("unresolved-ref = %v, want %v (dataError=%q)", got, tc.wantDiag, s.DataError())
+			}
+		})
+	}
+}
+
 // TestUnresolvedRefSilentWithoutBinding pins the floor. An unbound prefix means
 // PMT does not know that database — which is not evidence the key is missing
 // from it, and saying so would be a confident error about correct script.

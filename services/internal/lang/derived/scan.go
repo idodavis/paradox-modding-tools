@@ -113,6 +113,8 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	if derived != nil {
 		derived.FieldValueKinds = kinds
 	}
+	// The data rows leave here for their own file; see data.go.
+	script, data := splitData(req.GameID, dropEphemeralDefs(acc.defs))
 	// Effects and triggers are read from the game's own script_docs and live on
 	// c.Schema alone; the corpus never contributes one. Inferring them by
 	// position elected every $PARAM$ substitution site as an effect: on CK3 that
@@ -126,7 +128,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		InstallPath:              req.InstallPath,
 		GameVersion:              version,
 		ScannedAt:                time.Now().UTC().Format(time.RFC3339),
-		Defs:                     dropEphemeralDefs(acc.defs),
+		Defs:                     script,
 		Edges:                    acc.edges,
 		LocRefs:                  append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
 		CallRefs:                 macroCallRefs(acc.refs),
@@ -153,6 +155,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		GUIProps:                 sortedKeys(acc.guiProps),
 		DataFunctions:            sortedKeys(dataFns),
 		LocEngineSlots:           engineSlots,
+		data:                     data,
 	}
 
 	progress(onProgress, 90, "reading script_docs")
@@ -369,27 +372,25 @@ type Evidence struct {
 	nested map[string]map[string]int
 	// blockKinds is block name -> the kinds it was seen under. A name used by
 	// one kind can be judged; a name used by several cannot.
-	blockKinds     map[string]map[string]bool
-	vocab          map[string]bool
-	guiTypes       map[string]bool
-	guiProps       map[string]bool
-	fieldRHS       map[string]map[string]bool
-	fieldRHSByKind map[string]map[string]map[string]bool
+	blockKinds map[string]map[string]bool
+	vocab      map[string]bool
+	guiTypes   map[string]bool
+	guiProps   map[string]bool
+	fieldRHS   map[string]map[string]bool
 }
 
 func newEvidence() *Evidence {
 	return &Evidence{
-		loc:            map[string]map[string]LocEntry{},
-		locOrder:       map[string]map[string]int{},
-		structures:     map[string]map[string]int{},
-		structBlocks:   map[string]map[string]int{},
-		nested:         map[string]map[string]int{},
-		blockKinds:     map[string]map[string]bool{},
-		vocab:          map[string]bool{},
-		guiTypes:       map[string]bool{},
-		guiProps:       map[string]bool{},
-		fieldRHS:       map[string]map[string]bool{},
-		fieldRHSByKind: map[string]map[string]map[string]bool{},
+		loc:          map[string]map[string]LocEntry{},
+		locOrder:     map[string]map[string]int{},
+		structures:   map[string]map[string]int{},
+		structBlocks: map[string]map[string]int{},
+		nested:       map[string]map[string]int{},
+		blockKinds:   map[string]map[string]bool{},
+		vocab:        map[string]bool{},
+		guiTypes:     map[string]bool{},
+		guiProps:     map[string]bool{},
+		fieldRHS:     map[string]map[string]bool{},
 	}
 }
 
@@ -425,20 +426,6 @@ func (a *Evidence) merge(ex FileExtract) {
 			a.fieldRHS[field] = m
 		}
 		maps.Copy(m, vals)
-		if ex.StructKind == "" {
-			continue
-		}
-		kindM := a.fieldRHSByKind[ex.StructKind]
-		if kindM == nil {
-			kindM = map[string]map[string]bool{}
-			a.fieldRHSByKind[ex.StructKind] = kindM
-		}
-		km := kindM[field]
-		if km == nil {
-			km = map[string]bool{}
-			kindM[field] = km
-		}
-		maps.Copy(km, vals)
 	}
 	a.cands = append(a.cands, ex.Cands...)
 }

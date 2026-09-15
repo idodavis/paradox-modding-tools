@@ -71,6 +71,9 @@ type GameInfo struct {
 	// sentence the Conflicts and Settings pages show.
 	FIOSKinds []string `json:"-"`
 	FirstWins string   `json:"firstWins,omitempty"`
+
+	// DataKinds are the databases defined once per INSTANCE, not per rule: history, map, dynasty and portrait tables, persisted apart from the script cache and loaded on demand. Backend-only, like FIOSKinds.
+	DataKinds []string `json:"-"`
 }
 
 // GameList is the Wails payload for ListGames (consts are not exported).
@@ -93,6 +96,11 @@ var registry = map[string]*GameInfo{
 		SteamAppID:       1158310,
 		FIOSKinds:        []string{"gui_type"},
 		FirstWins:        "GUI types and templates are first-wins.",
+		// 126,208 of 204,699 defs in the 1.19.0.6 install (61.7%).
+		DataKinds: []string{
+			"characters", "province_terrain", "barony", "provinces", "dynasties",
+			"dynasty_houses", "titles", "map_data", "dna_data", "name_equivalency",
+		},
 	},
 	"vic3": {
 		ID:               "vic3",
@@ -107,6 +115,8 @@ var registry = map[string]*GameInfo{
 		SteamAppID:       529340,
 		FIOSKinds:        []string{"gui_type", "event"},
 		FirstWins:        "GUI types, templates, and events are first-wins.",
+		// 3,375 of 41,012 defs (8.2%); common/history names collide with script kinds and `c:TAG` keeps country_definitions eager.
+		DataKinds: []string{"character_templates", "state_regions", "dna_data"},
 	},
 	"eu5": {
 		ID:         "eu5",
@@ -124,6 +134,8 @@ var registry = map[string]*GameInfo{
 		SteamAppID:       3450310,
 		FIOSKinds:        []string{"event"},
 		FirstWins:        "Events are first-wins; GUI types last-wins.",
+		// 28,883 of 84,606 defs (34.1%); the definitions.txt area/region hierarchy is a named grouping, and `c:TAG` keeps countries eager.
+		DataKinds: []string{"map_data", "dynasty", "persistent_dna"},
 	},
 }
 
@@ -194,6 +206,21 @@ func IsFIOS(gameID, kind string) bool {
 		return slices.Contains(g.FIOSKinds, kind)
 	}
 	return kind == "gui_type"
+}
+
+// IsDataKind reports whether kind is one of this game's data-row databases.
+func IsDataKind(gameID, kind string) bool {
+	g := Get(gameID)
+	if g == nil || kind == "" {
+		return false
+	}
+	k := jomini.CanonicalKind(kind)
+	for _, d := range g.DataKinds {
+		if jomini.CanonicalKind(d) == k {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseTyped splits `culture:english` into a harvested kind and id, rejecting

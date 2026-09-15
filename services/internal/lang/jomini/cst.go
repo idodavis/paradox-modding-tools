@@ -1,6 +1,5 @@
 // cst.go defines the concrete syntax tree node types, the LineIndex
-// (offset<->position, UTF-8 byte columns), the walk/lookup helpers, and
-// TopAssignments (the flattened root-assignment view used by merge/scan).
+// (offset<->position, UTF-8 byte columns), and the walk/lookup helpers.
 
 package jomini
 
@@ -133,38 +132,6 @@ func (Block) isValue()          {}
 func (TaggedBlock) isValue()    {}
 func (Assignment) isStatement() {}
 func (ValueStmt) isStatement()  {}
-
-// TopAssignment is a flattened top-level assignment used by merge/scan: only the
-// key text and byte/line spans, never bare ValueStmts. GUI `template Foo { }`
-// yields one entry keyed "Foo" (the leading `template` word is a skipped ValueStmt,
-// captured by callers via gap slicing between EndByte and the next StartByte).
-type TopAssignment struct {
-	Key       string
-	StartByte int
-	EndByte   int
-	StartLine int
-	EndLine   int
-}
-
-// TopAssignments returns the root-level Assignment nodes only, in source order.
-func TopAssignments(r Result) []TopAssignment {
-	li := r.Lines()
-	out := make([]TopAssignment, 0, len(r.Root.Statements))
-	for _, st := range r.Root.Statements {
-		a, ok := st.(*Assignment)
-		if !ok {
-			continue
-		}
-		out = append(out, TopAssignment{
-			Key:       a.Key.Text,
-			StartByte: a.Range.Start,
-			EndByte:   a.Range.End,
-			StartLine: li.PositionAt(a.Range.Start).Line + 1,
-			EndLine:   li.PositionAt(a.Range.End).Line + 1,
-		})
-	}
-	return out
-}
 
 // Position is a 0-based line and UTF-8 byte column within that line.
 type Position struct {

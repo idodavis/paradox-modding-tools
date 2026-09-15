@@ -71,12 +71,6 @@ type Schema struct {
 	// …), listed under "Event Targets Saved from Code" in event_targets.log.
 	SavedScopes []string `json:"savedScopes,omitempty"`
 
-	// ScopesDerived says Scopes was recovered from the link table rather than
-	// declared: only CK3 ships event_scopes.log. Provenance is kept because a
-	// derived entry carries only ChangeScopes / EvaluateTriggers, never the
-	// ExecuteEffects / StoresVariables / SaveToken facts no other file states.
-	ScopesDerived bool `json:"scopesDerived,omitempty"`
-
 	// Source says whether the dumps came from the game's user-data folder or
 	// from PMT's archived copy, so the UI can tell the user.
 	Source SchemaSource `json:"source,omitempty"`
@@ -324,47 +318,18 @@ func ReadSchema(dirs []string) *Schema {
 			if fi, err := d.Info(); err == nil && fi.ModTime().After(newest) {
 				newest = fi.ModTime()
 			}
-			s.ingest(kind, string(raw))
+			// The one point dump text leaves the file: scrub invalid UTF-8 here.
+			s.ingest(kind, strings.ToValidUTF8(string(raw), "�"))
 			return nil
 		})
 	}
 	if s.Empty() && len(s.OnActions) == 0 && len(s.Modifiers) == 0 {
 		return nil
 	}
-	s.recoverScopesFromLinks()
 	if !newest.IsZero() {
 		s.ReadAt = newest.UTC().Format(time.RFC3339)
 	}
 	return s
-}
-
-// scopePrimitives are the scope types that hold a bare value rather than an
-// object, so script can never be "inside" one.
-var scopePrimitives = map[string]bool{
-	"value": true, "boolean": true, "flag": true, "color": true, "date": true,
-}
-
-func (s *Schema) recoverScopesFromLinks() {
-	if len(s.Scopes) > 0 || len(s.Links) == 0 {
-		return
-	}
-	add := func(name string) {
-		// A multi-output link lists its types comma-separated.
-		for part := range strings.SplitSeq(name, ",") {
-			n := strings.ToLower(strings.TrimSpace(part))
-			if n == "" || n == "none" || scopePrimitives[n] {
-				continue
-			}
-			s.Scopes[n] = ScopeType{ChangeScopes: true, EvaluateTriggers: true}
-		}
-	}
-	for _, l := range s.Links {
-		add(l.Out)
-		for _, in := range l.In {
-			add(in)
-		}
-	}
-	s.ScopesDerived = len(s.Scopes) > 0
 }
 
 // savedFromCode marks the trailing bare name list in event_targets.log.
@@ -471,26 +436,7 @@ type docFields struct {
 	prose string
 }
 
-// fields splits body lines into "Label: value" pairs, a usage signature, and
-// prose. Markdown bold around the label is stripped, so "**Supported Scopes**:
-// country" and "Supported Scopes: country" parse the same.
-//
-// The signature is the one piece these files do NOT label. All three games
-// write it as a line restating the token's own name as an assignment, directly
-// under the header:
-//
-//	if - Executes enclosed effects if limit criteria are met
-//	if = { limit = { <triggers> } <effects> }
-//	Supported Scopes: none
-//
-// Reading it as prose left EngineToken.Usage empty for every token in every
-// game — so signature help had nothing to show and every hover ran the
-// signature together with the description in one blob.
-// blockFields reads the "Label: value" body of a dump block.
-//
-// A function rather than a method: game.DocBlock is the LAYOUT -- the carving
-// of a dump into named blocks, which differs per game -- while what the labels
-// mean is the same everywhere and belongs here.
+// blockFields splits a dump block's body into "Label: value" pairs, the unlabelled usage signature line, and leftover prose.
 func blockFields(b game.DocBlock) docFields {
 	f := docFields{vals: map[string]string{}}
 	var body, usage []string
@@ -509,17 +455,7 @@ func blockFields(b game.DocBlock) docFields {
 			case !seen:
 				f.vals[label] = value
 			case scopeListLabels[label]:
-				// A block may state its scope list twice, once as prose and
-				// once as the real labelled field, and the two disagree.
-				// Victoria 3's has_modifier writes "Supported scopes: Country,
-				// …, InterestGroup" above the signature and "**Supported
-				// Scopes**: country, …, interest_group" below it. Keeping only
-				// the first left `interest_group` out of the list, and the
-				// wrong-scope check then flagged correct vanilla script.
-				//
-				// Neither line is marked as authoritative in any syntax, so
-				// both are kept. A display name that is not a real scope type
-				// ("interestgroup") matches nothing and is inert.
+				// A block may state its scope list twice and disagree, so both are kept.
 				f.vals[label] = prev + ", " + value
 			}
 			continue
@@ -573,14 +509,7 @@ func splitLabel(t string) (label, value string, ok bool) {
 	return label, strings.TrimSpace(t[i+1:]), true
 }
 
-// docPlaceholders are strings a game prints in place of documentation nobody
-// wrote. EU5 stamps "Unknown, add something in code registration" on 253 of the
-// 288 links in its event_targets.log; CK3 emits no placeholder at all. Showing
-// one on a hover card claims the engine documented something it did not, and
-// crowds out the parts of the card that are real.
-//
-// Matched exactly, not by keyword: these are literal constants in the games'
-// output, and prose that merely reads as vague is still the game's own prose.
+// docPlaceholders are literal strings a game prints in place of documentation nobody wrote, matched exactly, not by keyword.
 var docPlaceholders = map[string]bool{
 	"unknown, add something in code registration": true,
 }
@@ -652,17 +581,7 @@ func cmpFirst(a, b string) string {
 // random_trait_in_category -- so the family is read as one.
 var iterPrefixes = []string{"any_", "every_", "random_", "ordered_"}
 
-// TokenParams is the set of argument names the game declares inside a token's
-// block, read from the usage lines script_docs prints beside it:
-//
-//	any_trait_in_category = { category = fame/health/etc }
-//
-// `category` there is an argument consumed by the iterator, not a trigger
-// evaluated in the trait scope it produces -- and `category` IS a declared
-// trigger, on artifact, so judging it reported correct vanilla script.
-//
-// Declared data, not a heuristic: an iterator whose arguments the game does not
-// document contributes none, and a game update is a rescan.
+// TokenParams is the set of argument names the game declares inside a token's block, read from the usage line.
 func (s *Schema) TokenParams(key string) map[string]bool {
 	if s == nil {
 		return nil
@@ -691,16 +610,7 @@ func (s *Schema) TokenParams(key string) map[string]bool {
 	return out
 }
 
-// usageParams reads the keys assigned at the top level of a usage block.
-//
-// The whole usage is one stream, not a line at a time: the game prints
-// multi-line signatures, and looking for `{` per line saw only the first.
-// add_activity_log_entry declares eight arguments across nine lines, `tags`
-// among them, and `tags` is otherwise unknown -- 308 findings on vanilla CK3.
-//
-// Whitespace does NOT end a name: the game writes `limit = { … }` with spaces
-// around the operator and `<count=num/all>` without them, and only the second
-// form survived clearing the word on a space.
+// usageParams reads the keys assigned at the top level of a usage block, as one stream rather than a line at a time.
 func usageParams(usage string) []string {
 	var out []string
 	ident := func(c byte) bool {

@@ -1,16 +1,13 @@
-// registry.go is the one file in the backend that knows the games apart.
+// Package game is the only game-aware package in the backend: it answers what
+// a title calls things and where they live, for CK3, Vic3 and EU5. Files
+// mirror the package whose game-specific logic they hold (catalog.go ↔
+// internal/catalog, detect.go install discovery). Shared grammar with no
+// game branch belongs in parser/jomini, not here.
 //
-// Everything per-game lives in the GameInfo table below — script root, stage
-// roots, descriptor format, docs folder, entry-mode prefixes, which kinds
-// resolve first-in-order — and the handful of functions under it read that
-// table rather than switching on a game id. The shared Clausewitz/Jomini
-// grammar those functions build on is in parser/jomini, which knows nothing
-// about any game; install discovery is in detect.go, which reads this table.
-//
-// The membership test for anything added here: does its behaviour differ
-// between CK3, Victoria 3 and EU5? If not, it is language or filesystem work
-// and belongs elsewhere, whatever parameters it happens to take.
-
+// registry.go is the one file that knows the games apart: everything
+// per-game lives in the GameInfo table below, and the functions under it read
+// that table rather than switching on a game id. Membership test for
+// anything added here: does its behaviour differ between CK3, Vic3 and EU5?
 package game
 
 import (

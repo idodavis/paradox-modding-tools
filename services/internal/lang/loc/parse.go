@@ -1,10 +1,11 @@
-// parse.go implements the localization dialect parser: a line-by-line,
-// never-panicking scanner emitting entries and typed errors with UTF-8 byte
-// offsets, derives a file's language from its name or header, and lists the
-// script properties whose right-hand side is a localization key (STRICT =
-// unresolved means "missing loc", BROAD = resolved hint only). See doc.go for
-// the package overview.
-
+// Package loc parses Paradox's localization "YAML" dialect (not real YAML).
+// Game-agnostic; may import jomini only for Decode. Offsets are UTF-8 byte
+// indices into the original text (a leading BOM is skipped, not stripped).
+//
+// parse.go is a line-by-line, never-panicking scanner emitting entries and
+// typed errors, derives a file's language from its name or header, and lists
+// the script properties whose RHS is a loc key (STRICT = unresolved means
+// missing; BROAD = resolved hint only). convention.go holds loc-key templates.
 package loc
 
 import (
@@ -404,17 +405,7 @@ var broadProps = map[string]bool{
 	"reason": true, "format": true, "header": true, "opinion_text": true,
 	"what": true, "who": true, "notification": true,
 
-	// localization_key was strict, and it is the single largest source of false
-	// "missing localization" anywhere in the engine. Counted over vanilla, where
-	// by definition nothing is missing, its value fails to resolve 2,607 times
-	// on CK3, 11,597 on Victoria 3 and 46,481 on EU5 — 99.7% of every unresolved
-	// strict property on that game.
-	//
-	// The reason is visible in the values: `localization_key = CustomLoc_BR_male_`
-	// ends in an underscore because customizable localization completes the stem
-	// at runtime. No key by that name exists or should. Broad still marks a
-	// resolved key used and still shows its text on hover; it just stops
-	// asserting that a key the game builds itself is missing.
+	// Was strict; its runtime-completed stem made it the largest false "missing localization" source in the engine.
 	"localization_key": true,
 }
 
@@ -443,21 +434,7 @@ func Classify(prop string) Property {
 	return PropNone
 }
 
-// LooksLikeKey reports whether s is a plausible loc key (not yes/no/none,
-// not a `scope:` / `character:` prefix, not a built-in scope, not prose).
-//
-// The prose case is why quoting proves nothing either way. Paradox quotes real
-// keys — `war_name = "HRE_CONQUEST_WAR_NAME"` — and also writes display text
-// straight into the same properties, which the game shows verbatim:
-//
-//	desc = "Always make coronations!"
-//	desc = "The Red Keep"
-//
-// What separates them is not the quotes but the space. A localization file is
-// `key:0 "value"`, so a key is a single token and can never contain whitespace.
-// Without this check every literal string in a strict property was demanded as
-// a missing key: 537 of A Game of Thrones' 618 such diagnostics, and EU5's
-// "Wrong culture" / "Wrong religion".
+// LooksLikeKey reports whether s is a plausible loc key: not yes/no/none, no `scope:`-style prefix, and no whitespace.
 func LooksLikeKey(s string) bool {
 	if s == "" || strings.Contains(s, ":") {
 		return false
@@ -465,11 +442,7 @@ func LooksLikeKey(s string) bool {
 	if strings.ContainsFunc(s, unicode.IsSpace) {
 		return false
 	}
-	// A value carrying a macro parameter is not knowable until the macro is
-	// called: the key is whatever the caller passed, or a stem the engine
-	// completes at runtime. Reporting either as missing tells a modder that
-	// correct script is wrong — `desc = $TT$` in a scripted effect is not a key
-	// by that name, and no key by that name should exist.
+	// A macro parameter's key is not knowable until called, so it must not be reported as missing.
 	if strings.Contains(s, "$") {
 		return false
 	}

@@ -1,11 +1,7 @@
 // declared.go turns the type words a game writes beside a field in its own
 // shipped documentation into something PMT can report and complete against.
-//
-// These are DECLARED types. They outrank FieldValueKinds and FieldEnumsByKind,
-// which are inferred from how vanilla happens to use a field behind coverage
-// floors -- so a wrong answer here is expensive in the way GAME-SYNTAX 13
-// describes: it reaches hover, completion and typing at once. Refusing to
-// classify is always the safe outcome; guessing is not.
+// These are DECLARED types; they outrank FieldValueKinds/FieldEnumsByKind,
+// which are inferred from usage. Refusing to classify beats guessing.
 package declared
 
 import (
@@ -14,12 +10,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/jomini"
 )
 
-// DeclaredType is what a game's documentation says a field holds.
-//
-// Zero value means "the text did not name a type PMT understands", which is the
-// correct outcome for the prose that shares the same syntax -- EU5 writes
-// `<name of global variable list with the list of candidates in>` and Vic3
-// writes `<locator_name_1>` in the very same brackets that hold `<yes/no>`.
+// DeclaredType is what a game's documentation says a field holds; zero value means the text named no type PMT understands.
 type DeclaredType struct {
 	// Values is a closed set the field accepts, in the order declared.
 	Values []string
@@ -95,38 +86,7 @@ func declaredValueSet(s string) []string {
 	return out
 }
 
-// declaredPrim maps one normalised type word to the name PMT reports for it, or
-// "" when the words are not a type this check recognises.
-//
-// Scope is deliberately narrow: primitives and localization only. Those
-// constrain what a modder may actually type and PMT has no other source for
-// them. Everything else declines, and each refusal is a decision:
-//
-//   - Script constructs -- `trigger` (45), `effect` (22), `script value` (90
-//     across three spellings), `modifier` (12), `mtth` (7) -- are already
-//     declared in script_docs, which ranks above this and names the database
-//     rather than a word.
-//   - `database key` (14), `key` (16), `enum` (15), `identity key` (3) name no
-//     PARTICULAR database, so "accepts a database key" only restates that a
-//     value goes here.
-//   - `dynamic desc` / `dynamic description` (7) hold a localization key, but
-//     the games also accept a `first_valid` / `triggered_desc` block in that
-//     slot. Calling it a localization key understates what the slot takes, and
-//     understating it is how a modder learns a wrong rule.
-//   - Prose wears the same brackets: EU5's `name of global variable list with
-//     the list of candidates in` (7) and Vic3's `locator_name_1` (4). An
-//     allow-list rejects those for free, which is why there is no shape rule --
-//     the cost is a type lost each time a game adds a word, which a rescan
-//     cannot fix but a line here can.
-//
-// Whole and decimal numbers stay apart rather than collapsing to "number".
-// `annullment_favours_required = 2.5` is a real mistake and only a distinction
-// can ever say so; one phrase would be simpler and never wrong, which is also
-// never useful.
-//
-// The wording is a noun phrase because fieldAccepts renders it as "accepts a X"
-// and "accepts several X values", and it explains rather than names the C type:
-// this is the hover a modder reads to find out what goes here.
+// declaredPrim maps one normalised type word to the noun phrase PMT reports, or "" when unrecognised (script constructs, database keys, and `<...>` prose all decline rather than guess).
 func declaredPrim(s string) string {
 	switch s {
 	case "bool":

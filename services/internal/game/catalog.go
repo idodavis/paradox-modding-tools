@@ -7,8 +7,6 @@
 // describes: editing a row changes what PMT does.
 //
 //	DocShapes        the documentation formats  → ParseDocFile loops it
-//	DeclKeywords     the declaration keywords   → DeclKeywordKind, DeclIsLocal
-//	LocalDeclPrefix  the file-local keyword family → DeclIsLocal
 //	IsDocFile        which files are documentation at all
 //	LeadingKindProse a file's opening comment, describing its kind
 //
@@ -382,12 +380,6 @@ func appendFieldDoc(out map[string]string, key, extra string) {
 	out[key] = jomini.Prose([]string{out[key], extra})
 }
 
-// ---------------------------------------------------------------------------
-// Declaration keywords — BEHAVIOUR
-// ---------------------------------------------------------------------------
-
-// DeclKeyword is one `<keyword> <name> = { … }` form.
-//
 // ---------------------------------------------------------------------------
 // script_docs dump layouts
 // ---------------------------------------------------------------------------

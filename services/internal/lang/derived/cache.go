@@ -54,7 +54,13 @@ import (
 // 39 replaces the four affix projections with LocConventions, one template rule per kind.
 //
 // 40 moves the data-row kinds (game.GameInfo.DataKinds) out of Defs into the vanilla-data sidecar; an older cache holds them inline, so both files would answer for the same row.
-const CacheFormatVersion = 40
+//
+// 41 changes what a FieldInfoByKind[kind] key MEANS: a field documented inside
+// an example block is now keyed "block.field" instead of bare "field". An
+// older cache's bare keys are the pre-fix ambiguity itself (CK3's `trigger`
+// inside a portrait example answering for every `trigger` in the kind), so
+// loading one without a rescan would silently keep serving it.
+const CacheFormatVersion = 41
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit

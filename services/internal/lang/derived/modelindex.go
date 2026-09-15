@@ -227,26 +227,48 @@ func (m *Model) DefaultLoc(key string) (string, bool) {
 	return "", false
 }
 
-func (m *Model) KindFieldDoc(key, kind string) string {
+// KindFieldDoc is kind-only prose (chain[len-1]+"."+key, else bare key), with no global or dump fallback -- for callers gating on "does this kind document it" rather than "what does PMT know about this word everywhere".
+func (m *Model) KindFieldDoc(key, kind string, chain []string) string {
 	if m.cache == nil || kind == "" {
 		return ""
 	}
-	lk := strings.ToLower(key)
-	if m := m.cache.FieldInfoByKind[kind]; m != nil {
-		return m[lk]
+	byKind := m.cache.FieldInfoByKind[kind]
+	if byKind == nil {
+		return ""
 	}
-	return ""
+	lk := strings.ToLower(key)
+	if len(chain) > 0 {
+		if v := byKind[strings.ToLower(chain[len(chain)-1])+"."+lk]; v != "" {
+			return v
+		}
+	}
+	return byKind[lk]
 }
 
-func (m *Model) FieldDoc(key, kind string) string {
+// FieldDoc tries the block-qualified prose, then the kind's bare prose, then the global name, then the game's dump doc, then PMT's own gloss.
+func (m *Model) FieldDoc(key, kind string, chain []string) string {
 	if m.cache == nil {
 		return ""
 	}
-	if v := m.fieldDoc(key, kind); v != "" {
+	if v := m.KindFieldDoc(key, kind, chain); v != "" {
+		return v
+	}
+	lk := strings.ToLower(key)
+	if v := m.cache.FieldInfo[lk]; v != "" {
+		return v
+	}
+	if v := m.cache.Schema.Doc(lk); v != "" {
 		return v
 	}
 	if sib := portraitSibling(key); sib != "" {
-		if v := m.fieldDoc(sib, kind); v != "" {
+		if v := m.KindFieldDoc(sib, kind, chain); v != "" {
+			return v
+		}
+		slk := strings.ToLower(sib)
+		if v := m.cache.FieldInfo[slk]; v != "" {
+			return v
+		}
+		if v := m.cache.Schema.Doc(slk); v != "" {
 			return v
 		}
 	}
@@ -264,11 +286,11 @@ func (m *Model) TokenUsage(key string) string {
 	if u := m.cache.Schema.Usage(key); u != "" {
 		return u
 	}
-	if m.fieldDoc(key, "") != "" {
+	if m.cache.FieldInfo[strings.ToLower(key)] != "" {
 		return ""
 	}
 	sib := portraitSibling(key)
-	if sib == "" || m.fieldDoc(sib, "") != "" {
+	if sib == "" || m.cache.FieldInfo[strings.ToLower(sib)] != "" {
 		return ""
 	}
 	return m.cache.Schema.Usage(sib)
@@ -677,25 +699,6 @@ func (m *Model) WorkspaceRefs() []Ref {
 // DefsInFile returns workspace defs declared in path.
 func (m *Model) DefsInFile(path string) []Def {
 	return cloneIf(m.defsByFile[CanonPath(path)])
-}
-
-func (m *Model) fieldDoc(key, kind string) string {
-	lk := strings.ToLower(key)
-	if kind != "" {
-		if m := m.cache.FieldInfoByKind[kind]; m != nil && m[lk] != "" {
-			return m[lk]
-		}
-	}
-	// The global description is per field NAME, not per position. A name used
-	// inside several different blocks has several meanings, and showing one of
-	// them is a coin flip: `trigger` inside a triggered_desc was explained as
-	// controlling "visibility for this portrait". Kind-specific prose above is
-	// still trusted; this is only the catch-all.
-	if v := m.cache.FieldInfo[lk]; v != "" {
-		return v
-	}
-	// Install prose wins over the game's dump prose, so the Schema is consulted last.
-	return m.cache.Schema.Doc(lk)
 }
 
 // Per-kind only, with no global fallback, unlike DeclaredFieldType. The global

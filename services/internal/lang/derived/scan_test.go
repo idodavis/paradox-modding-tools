@@ -40,6 +40,10 @@ category = personality
 type = character_event
 # Dynamic loc key
 title = loc_key
+portrait = {
+	# Controls visibility of this portrait
+	trigger = { }
+}
 `)
 	writeMod(t, base, "game/events/test_events.txt", `namespace = test
 test.1 = {
@@ -164,6 +168,10 @@ func TestScanCorpusFixture(t *testing.T) {
 	}
 	if got := c.FieldInfoByKind["event"]["title"]; !strings.Contains(got, "Dynamic") {
 		t.Errorf("fieldDocsByKind[event][title] = %q, want events.info prose", got)
+	}
+	// A field documented inside an example block is keyed by its enclosing block, not bare.
+	if got := c.FieldInfoByKind["event"]["portrait.trigger"]; !strings.Contains(got, "visibility") {
+		t.Errorf("fieldDocsByKind[event][portrait.trigger] = %q, want events.info prose", got)
 	}
 
 	for _, k := range []string{"category", "opposites", "ai_boldness"} {

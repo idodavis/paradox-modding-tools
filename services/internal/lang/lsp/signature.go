@@ -40,7 +40,7 @@ func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHel
 	}
 	return &SignatureHelpResult{
 		Label:         usage,
-		Documentation: s.FieldDoc(key, at.Kind),
+		Documentation: s.FieldDoc(key, at.Kind, nil),
 		Parameters:    paramsFromUsage(usage),
 	}
 }

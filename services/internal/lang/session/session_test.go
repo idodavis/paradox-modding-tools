@@ -144,8 +144,8 @@ func TestQueries(t *testing.T) {
 	body := "namespace = t\n\nt.1 = {\n\ttitle = k.t\n\timmediate = { trigger_event = t.2 }\n}\n" +
 		"t.2 = { type = character_event }\n"
 	root := writeFiles(t, map[string]string{
-		"events/x.txt":                         body,
-		"localization/english/a_l_english.yml": "l_english:\n k.t:0 \"Hi\"\n",
+		"events/x.txt":                          body,
+		"localization/english/a_l_english.yml":  "l_english:\n k.t:0 \"Hi\"\n",
 		"localization/spanish/zz_l_spanish.yml": "l_spanish:\n k.t:0 \"Hola\"\n",
 	})
 	ev := filepath.Join(root, "events", "x.txt")
@@ -197,7 +197,7 @@ func TestQueries(t *testing.T) {
 	picker, kinds, _ := s.GraphCatalog(nil)
 	must(t, kinds["t.1"] != "" || picker["t.1"] != "", "GraphCatalog")
 	must(t, len(s.Structures("event")) > 0 && len(s.Vocab("vocabulary")) > 0 &&
-		s.FieldDoc("immediate", "event") != "", "Structures/Vocab/FieldDoc")
+		s.FieldDoc("immediate", "event", nil) != "", "Structures/Vocab/FieldDoc")
 	_, effects, _ := s.MemberSets("event")
 	must(t, effects != nil, "MemberSets")
 	inst, _, ver, _ := s.CacheInfo()

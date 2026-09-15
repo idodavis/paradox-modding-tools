@@ -95,6 +95,14 @@ func nestedBlock(at probe) string {
 	return ""
 }
 
+// blockChain wraps a single enclosing block name as the chain FieldDoc wants, or nil outside any block.
+func blockChain(block string) []string {
+	if block == "" {
+		return nil
+	}
+	return []string{block}
+}
+
 // transparentBlock reports a block that groups or redirects without changing
 // which keys may be written inside it.
 func transparentBlock(key string) bool {
@@ -265,8 +273,8 @@ func identify(s *session.Session, path string, line, col int) (identity, bool) {
 				}, true
 			}
 		}
-		docs := s.KindFieldDoc(a.Key.Text, at.kind)
 		block := nestedBlock(at)
+		docs := s.KindFieldDoc(a.Key.Text, at.kind, blockChain(block))
 		// A key the install writes inside this block earns a card even when the
 		// kind neither documents it nor lists it: both of those are depth-1, so
 		// `instance` inside `colored_emblem` inside a coat of arms produced
@@ -398,7 +406,7 @@ func fillCard(s *session.Session, id identity) *Inspect {
 	case id.local:
 		return localAssignCard(s, id)
 	case id.fieldKey:
-		docs := s.FieldDoc(id.name, id.extractKind)
+		docs := s.FieldDoc(id.name, id.extractKind, blockChain(id.block))
 		// Name the block the key is actually in. "event key" is true of
 		// `type` and of a `trigger` four levels down, which tells a reader
 		// nothing about where they are — and where they are is what decides
@@ -518,7 +526,7 @@ func locCard(s *session.Session, key string) *Inspect {
 }
 
 func localAssignCard(s *session.Session, id identity) *Inspect {
-	docs := s.FieldDoc(id.name, id.extractKind)
+	docs := s.FieldDoc(id.name, id.extractKind, blockChain(id.block))
 	if docs == "" && !s.IsStructKey(id.extractKind, id.name) {
 		return nil
 	}
@@ -1115,7 +1123,7 @@ func fieldAccepts(s *session.Session, kind, field string) string {
 	return ""
 }
 func docsOnly(s *session.Session, word, kind string) string {
-	doc := s.FieldDoc(word, kind)
+	doc := s.FieldDoc(word, kind, nil)
 	if doc == "" {
 		// Install prose and dump prose both land in TokenDoc during a scan, but
 		// the Schema carries its own description; use it rather than relying on

@@ -160,10 +160,11 @@ var (
 	briefHeadRe = regexp.MustCompile(`^brief:\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(([^)]*)\))?\s*$`)
 )
 
-// ParseDocFile reads one documentation file.
-func ParseDocFile(text string) (docs, types map[string]string) {
+// ParseDocFile reads one documentation file; paths holds prose keyed "parent.key" for a field documented inside an example block, docs everything at the file's own top level.
+func ParseDocFile(text string) (docs, types, paths map[string]string) {
 	out := map[string]string{}
 	types = map[string]string{}
+	paths = map[string]string{}
 	putType := func(key, raw string) {
 		key = strings.ToLower(key)
 		raw = strings.TrimSpace(raw)
@@ -175,7 +176,30 @@ func ParseDocFile(text string) (docs, types map[string]string) {
 		}
 	}
 	var pending []string // comment lines waiting for the key they describe
-	lastKey := ""        // the key a closing brace should attach prose to
+	var stack []string   // enclosing block keys the walk is currently inside
+	// A file whose one top-level statement wraps everything else (EU5's `trait_name = { category = … }`) names an example OBJECT, not a field, so that one wrapper is transparent.
+	skipOuter := topLevelStatementCount(text) == 1
+	lastFull, lastNested := "", false
+
+	// store validates key and writes doc under key, or under "parent.key" when nested.
+	store := func(key, doc string) (full string, nested, ok bool) {
+		key = strings.ToLower(key)
+		if !jomini.IsLowerName(key) || jomini.IsStop(key) {
+			return "", false, false
+		}
+		full = key
+		if len(stack) > 0 {
+			full, nested = stack[len(stack)-1]+"."+key, true
+		}
+		target := out
+		if nested {
+			target = paths
+		}
+		if _, seen := target[full]; !seen || (target[full] == "" && doc != "") {
+			target[full] = doc
+		}
+		return full, nested, true
+	}
 
 	for raw := range strings.SplitSeq(text, "\n") {
 		body, hashed := jomini.PeelComment(raw)
@@ -193,34 +217,48 @@ func ParseDocFile(text string) (docs, types map[string]string) {
 		if key, doc, typ, ok := lineShape(body); ok {
 			putType(key, typ)
 			if doc != "" {
-				putFieldDoc(out, key, doc)
+				store(key, doc)
 			}
-			pending, lastKey = pending[:0], ""
+			pending, lastFull = pending[:0], ""
 			continue
 		}
 
 		if m := docKeyRe.FindStringSubmatch(body); m != nil {
 			key := strings.ToLower(m[2])
+			rhs := m[3]
 			// A Value shape reads the right-hand side. When none answers, the
 			// prose is the comment lines above — the positional shape.
-			doc, typ := valueShape(m[3])
+			doc, typ := valueShape(rhs)
 			putType(key, typ)
-			putFieldDoc(out, key, jomini.Prose(append(pending, doc)))
-			if jomini.IsLowerName(key) && !jomini.IsStop(key) {
-				lastKey = key
+			if full, nested, ok := store(key, jomini.Prose(append(pending, doc))); ok {
+				lastFull, lastNested = full, nested
 			} else {
-				lastKey = ""
+				lastFull = ""
 			}
 			pending = pending[:0]
+			if opens, closes := strings.Count(rhs, "{"), strings.Count(rhs, "}"); opens == closes+1 {
+				if skipOuter && len(stack) == 0 {
+					skipOuter = false
+				} else {
+					stack = append(stack, key)
+				}
+			}
 			continue
 		}
 
 		if strings.HasPrefix(body, "}") {
 			// `key = { # desc }` puts the description below the brace.
-			if lastKey != "" {
-				appendFieldDoc(out, lastKey, jomini.Prose(pending))
+			if lastFull != "" {
+				target := out
+				if lastNested {
+					target = paths
+				}
+				appendFieldDoc(target, lastFull, jomini.Prose(pending))
 			}
 			pending = pending[:0]
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
 			continue
 		}
 
@@ -230,7 +268,25 @@ func ParseDocFile(text string) (docs, types map[string]string) {
 		}
 		pending = pending[:0]
 	}
-	return out, types
+	return out, types, paths
+}
+
+// topLevelStatementCount counts a doc file's `key = value` statements at brace depth 0, so ParseDocFile can tell a field list apart from one wrapping example object.
+func topLevelStatementCount(text string) int {
+	depth, n := 0, 0
+	for raw := range strings.SplitSeq(text, "\n") {
+		body, _ := jomini.PeelComment(raw)
+		if body == "" {
+			continue
+		}
+		if depth == 0 && docKeyRe.MatchString(body) {
+			n++
+		}
+		if d := depth + strings.Count(body, "{") - strings.Count(body, "}"); d >= 0 {
+			depth = d
+		}
+	}
+	return n
 }
 
 // lineShape asks each DocShapes row that owns a whole line, in table order.
@@ -312,18 +368,6 @@ func attrProse(rhs string) string {
 		return ""
 	}
 	return rhs
-}
-
-// putFieldDoc records a field's prose, first writer winning, skipping keys that
-// are script grammar rather than field names.
-func putFieldDoc(out map[string]string, key, doc string) {
-	key = strings.ToLower(key)
-	if !jomini.IsLowerName(key) || jomini.IsStop(key) {
-		return
-	}
-	if _, seen := out[key]; !seen || (out[key] == "" && doc != "") {
-		out[key] = doc
-	}
 }
 
 // appendFieldDoc adds below-the-brace prose to what a field already has.

@@ -189,7 +189,7 @@ func resolveMacroKind(s *session.Session, path string, at probe) (identity, bool
 // somewhere, which is enough to say "field" and show the documentation, but not
 // enough to say what it points at.
 func resolveFieldDoc(s *session.Session, path string, at probe) (identity, bool) {
-	if s.FieldDoc(at.word, "") == "" {
+	if s.FieldDoc(at.word, "", nil) == "" {
 		return identity{}, false
 	}
 	return identity{path: path, name: at.word, kind: "field"}, true

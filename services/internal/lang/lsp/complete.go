@@ -156,7 +156,7 @@ func documentedVal(s *session.Session, label, detail, kind string) CompletionIte
 }
 
 func completeDoc(s *session.Session, label, kind string) string {
-	doc := s.FieldDoc(label, kind)
+	doc := s.FieldDoc(label, kind, nil)
 	if u := s.TokenUsage(label); u != "" {
 		if doc != "" {
 			doc += "\n\n"

@@ -821,7 +821,7 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 				kindInfo[kind] = prose
 			}
 		}
-		harvested, typed := game.ParseDocFile(string(raw))
+		harvested, typed, nested := game.ParseDocFile(string(raw))
 		// Types are filed the same way prose is: globally for the fields whose
 		// name means one thing everywhere, and per kind because it does not --
 		// `type` is a value set inside a scripted relation and something else
@@ -859,6 +859,27 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 			}
 			if byKind[kind][key] == "" {
 				byKind[kind][key] = doc
+			}
+		}
+		// A key documented inside an example block stays path-qualified and per-kind only, never bare or global.
+		if kind == "" {
+			continue
+		}
+		for path, doc := range nested {
+			if structs[kind] == nil {
+				structs[kind] = map[string]bool{}
+			}
+			if _, bare, ok := strings.Cut(path, "."); ok {
+				structs[kind][bare] = true
+			}
+			if doc == "" {
+				continue
+			}
+			if byKind[kind] == nil {
+				byKind[kind] = map[string]string{}
+			}
+			if byKind[kind][path] == "" {
+				byKind[kind][path] = doc
 			}
 		}
 	}

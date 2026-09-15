@@ -75,7 +75,7 @@ func TestDocShapesParse(t *testing.T) {
 					t.Errorf("names game %q, which the registry does not have", id)
 				}
 			}
-			docs, _ := ParseDocFile(c.sample)
+			docs, _, _ := ParseDocFile(c.sample)
 			if !strings.Contains(docs[c.key], c.doc) {
 				t.Errorf("ParseDocFile()[%q] = %q, want substring %q",
 					c.key, docs[c.key], c.doc)
@@ -184,7 +184,7 @@ func TestParseDocFile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _ := ParseDocFile(tt.src)
+			got, _, _ := ParseDocFile(tt.src)
 			// want == "" means "no prose attaches to this key", which is a rule
 			// in its own right — Contains(s, "") is always true, so the one row
 			// asserting a negative was the one row this loop could not check.
@@ -202,7 +202,7 @@ func TestParseDocFile(t *testing.T) {
 		})
 	}
 	t.Run("prose above survives the key below it", func(t *testing.T) {
-		got, _ := ParseDocFile(
+		got, _, _ := ParseDocFile(
 			"# Event presentation type\ntype = character_event\n" +
 				"# Dynamic loc key\ntitle = loc_key\n",
 		)

@@ -5,9 +5,7 @@
 package derived
 
 import (
-	"slices"
 	"strconv"
-	"strings"
 
 	"paradox-modding-tools/services/internal/lang/jomini"
 )
@@ -32,32 +30,6 @@ func macroCallRefs(refs []Ref) []Ref {
 		}
 	}
 	return out
-}
-
-func fireSiteKind(stack []edgeFrame, fireKey string) (kind, nameKey string) {
-	for _, s := range slices.Backward(stack) {
-		k := strings.ToLower(s.key)
-		if k == "option" {
-			return "option", s.nameKey
-		}
-		if slot := jomini.ScriptSlot(s.key); slot != "" {
-			return slot, ""
-		}
-	}
-	if slot := jomini.ScriptSlot(fireKey); slot != "" {
-		return slot, ""
-	}
-	return "effect", ""
-}
-
-// fireSiteRescopes reports whether anything between the enclosing definition and the fire site changed scope. stack[0] is the definition's own key, which is where its declared scope applies, so the walk starts below it.
-func fireSiteRescopes(stack []edgeFrame) bool {
-	for _, fr := range stack[min(1, len(stack)):] {
-		if !jomini.IsScopeNeutral(fr.key) {
-			return true
-		}
-	}
-	return false
 }
 
 func fireTargetOK(s string) bool {
@@ -98,15 +70,6 @@ func macroDefKinds(defs []Def, cache *VanillaCache) map[string]string {
 	add(defs)
 	if cache != nil {
 		add(cache.Defs)
-	}
-	return out
-}
-
-// macroDefKeys is every scripted-macro def key in defs plus cache (via-hop nodes).
-func macroDefKeys(defs []Def, cache *VanillaCache) map[string]bool {
-	out := map[string]bool{}
-	for key := range macroDefKinds(defs, cache) {
-		out[key] = true
 	}
 	return out
 }

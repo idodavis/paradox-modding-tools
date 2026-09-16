@@ -313,7 +313,11 @@ real_effect = {
 `
 		rel := "common/scripted_effects/e.txt"
 		ex := extractCK3(rel, content, "modA")
-		edges := append(append([]Edge{}, ex.Edges...), ApplyCallEdges(ex.Cands, macroDefKeys(ex.Defs, nil))...)
+		macroKeys := map[string]bool{}
+		for key := range macroDefKinds(ex.Defs, nil) {
+			macroKeys[key] = true
+		}
+		edges := append(append([]Edge{}, ex.Edges...), ApplyCallEdges(ex.Cands, macroKeys)...)
 		var call, fake, fire bool
 		for _, e := range edges {
 			call = call || (e.Kind == EdgeKindCall && e.From == "test.1" && e.To == "real_effect")
@@ -850,7 +854,7 @@ func TestFactsOf(t *testing.T) {
 	if ff.Rule.Kind != "event" || ff.Rule.Mode != game.ModeEventID {
 		t.Fatalf("rule = %+v, want event/event-id", ff.Rule)
 	}
-	if ff.Path != filepath.Clean("C:/g/events/x.txt") || ff.Rel != "events/x.txt" ||
+	if ff.Path != filepath.Clean("C:/g/events/x.txt") ||
 		ff.Origin != "vanilla" || ff.GameID != "ck3" {
 		t.Fatalf("header = %+v", ff)
 	}

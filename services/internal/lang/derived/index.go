@@ -40,9 +40,12 @@ func BuildIndex(ctx context.Context, gameID string, mods []ModInput, cache *Vani
 	if cache != nil {
 		schema = cache.Schema
 	}
-	acc, derived, _, err := collectExtracts(ctx, gameID, files, cache, schema, nil)
+	acc, derived, err := collectExtracts(ctx, gameID, files, cache, schema, nil)
 	if acc == nil {
 		return Harvest{}, err
+	}
+	if cache != nil {
+		dropEngineSlotRefs(acc, cache.LocEngineSlots)
 	}
 	defs := acc.defs
 	if cache != nil && len(cache.Defs) > 0 {

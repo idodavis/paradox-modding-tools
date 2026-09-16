@@ -335,48 +335,32 @@ const (
 	minFireNames = 8
 )
 
-// deriveFireKeys counts, per assignment key, how many of the names on its RHS are harvested event or on_action ids (or the event-id form `ns.1`).
-func deriveFireKeys(ff FileFacts, eventIDs, onActionIDs map[string]bool) map[string]*fireCount {
+// fireEvidence counts, per assignment key, how many of the names on its own right-hand side are harvested event or on_action ids (or the event-id form `ns.1`). The corpus decides that, so the count waits until every file has been read.
+func fireEvidence(files []*fileSites, idx *defIndex) map[string]*fireCount {
+	eventIDs, onActionIDs := idx.keysOfKind("event"), idx.keysOfKind("on_action")
 	out := map[string]*fireCount{}
-	for i := range ff.Facts {
-		f := ff.Facts[i]
-		if f.Key == "" || f.Quoted || jomini.IsStop(f.Key) ||
-			loc.Classify(f.Key) != loc.PropNone || strings.EqualFold(f.Key, "id") {
+	for _, fs := range files {
+		if fs == nil {
 			continue
 		}
-		for _, to := range ff.fireNames(int32(i)) {
-			m := out[f.Key]
-			if m == nil {
-				m = &fireCount{kinds: map[string]int{}}
-				out[f.Key] = m
+		for _, s := range fs.fires {
+			if s.quoted {
+				continue
 			}
-			m.named++
-			if kind := classifyFireTarget(to, eventIDs, onActionIDs); kind != "" {
-				m.kinds[kind]++
+			for _, t := range s.targets {
+				if !t.vote {
+					continue
+				}
+				m := out[s.key]
+				if m == nil {
+					m = &fireCount{kinds: map[string]int{}}
+					out[s.key] = m
+				}
+				m.named++
+				if kind := classifyFireTarget(t.name, eventIDs, onActionIDs); kind != "" {
+					m.kinds[kind]++
+				}
 			}
-		}
-	}
-	return out
-}
-
-// fireNames is the assignment's own RHS: a scalar, list values, or inner id=/digit keys. Nested fire sites stay on their own keys.
-func (ff *FileFacts) fireNames(i int32) []string {
-	f := ff.Facts[i]
-	var out []string
-	if !f.Block {
-		if !f.VQuoted && fireTargetOK(f.Value) {
-			out = append(out, f.Value)
-		}
-		return out
-	}
-	for j := i + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= i; j++ {
-		c := ff.Facts[j]
-		if c.Parent != i || c.Block || c.VQuoted || !fireTargetOK(c.Value) {
-			continue
-		}
-		key := strings.ToLower(c.Key)
-		if c.Key == "" || key == "id" || isDigitKey(key) {
-			out = append(out, c.Value)
 		}
 	}
 	return out
@@ -415,24 +399,6 @@ func resolveFireKinds(counts map[string]*fireCount) map[string]string {
 	return out
 }
 
-func mergeFireCounts(dst, src map[string]*fireCount) map[string]*fireCount {
-	if dst == nil {
-		dst = map[string]*fireCount{}
-	}
-	for key, c := range src {
-		m := dst[key]
-		if m == nil {
-			m = &fireCount{kinds: map[string]int{}}
-			dst[key] = m
-		}
-		m.named += c.named
-		for k, n := range c.kinds {
-			m.kinds[k] += n
-		}
-	}
-	return dst
-}
-
 func nestedChildKind(gameID, prefix, id string, prefixKinds map[string]string) string {
 	if prefixKinds != nil {
 		if k := prefixKinds[prefix]; k != "" {
@@ -467,6 +433,70 @@ type nestedWanted struct {
 	parent, group string
 	ok, clash     bool
 	letters       map[byte]bool
+}
+
+// nestedObs is where one nested block name was seen: the kind of file it sat in, the depth-1 block above it, and whether either differed between sightings. Every field is a set fold, so files may arrive in any order.
+type nestedObs struct {
+	parent, group string
+	clash         bool
+}
+
+// observe records one nested block name. A file has one kind, so only the group can disagree with itself here.
+func (fs *fileSites) observe(name, group string) {
+	prev, seen := fs.nested[name]
+	if !seen {
+		fs.nested[name] = nestedObs{parent: fs.Rule.Kind, group: group}
+		return
+	}
+	if prev.group != group {
+		prev.group = ""
+		fs.nested[name] = prev
+	}
+}
+
+func mergeObs(dst, src map[string]nestedObs) {
+	for name, o := range src {
+		prev, seen := dst[name]
+		if !seen {
+			dst[name] = o
+			continue
+		}
+		prev.clash = prev.clash || o.clash || prev.parent != o.parent
+		if prev.group != o.group {
+			prev.group = ""
+		}
+		dst[name] = prev
+	}
+}
+
+// nestedWantedFrom is the join: every nested block name some citation wants, folded into what the corpus says about the child kind it names.
+func nestedWantedFrom(obs map[string]nestedObs, idChild map[string][]string) map[string]*nestedWanted {
+	byChild := map[string]*nestedWanted{}
+	for name, kinds := range idChild {
+		o, seen := obs[name]
+		if !seen {
+			continue
+		}
+		for _, ck := range kinds {
+			a := byChild[ck]
+			if a == nil {
+				a = &nestedWanted{parent: o.parent, ok: true, group: o.group, letters: map[byte]bool{}}
+				byChild[ck] = a
+			}
+			if a.parent != o.parent || o.clash {
+				a.clash = true
+			}
+			if a.group != o.group {
+				a.group = ""
+			}
+			if a.letters != nil && len(name) > 2 && name[1] == '_' {
+				a.letters[name[0]] = true
+			} else {
+				a.letters = nil
+			}
+		}
+	}
+	return byChild
 }
 
 // nestedIDChild is the citation half of the join -- which child kinds are cited and have no definition -- and it needs no walk of its own.
@@ -677,123 +707,215 @@ func unambiguousBlocks(blockKinds map[string]map[string]bool) map[string]bool {
 }
 
 // deriveFacts derives one file's facts for a live reindex. The prefix table stays empty: prefixes are bound against the whole install by bindKinds, and one edited file is not evidence enough to rebind anything.
-func deriveFacts(ff FileFacts, idx *defIndex, schema *declared.Schema) *Derived {
-	fire := resolveFireKinds(deriveFireKeys(
-		ff, idx.keysOfKind("event"), idx.keysOfKind("on_action")))
+func deriveFacts(fs *fileSites, idx *defIndex, schema *declared.Schema) *Derived {
+	one := []*fileSites{fs}
+	fire := resolveFireKinds(fireEvidence(one, idx))
 	if fire == nil {
 		fire = map[string]string{}
 	}
+	defKeys := idx.citableKeys()
 	v := &Derived{
 		PrefixKinds: map[string]string{},
 		FireKeys:    fire,
-		Wrappers:    map[string]bool{},
+		Wrappers:    resolveWraps(one, defKeys),
 	}
-	defKeys := idx.citableKeys()
-	for _, w := range deriveWrappers(ff, defKeys) {
-		v.Wrappers[w] = true
-	}
-	byChild := map[string]*nestedWanted{}
-	cites, fieldCites := foldCites(ff)
-	observeNestedFacts(ff, nestedIDChild(
-		ff.GameID, defKeys, v.PrefixKinds, cites, fieldCites), byChild)
-	v.NestedShapes = nestedShapesFrom(byChild, schema)
+	idChild := nestedIDChild(fs.GameID, defKeys, v.PrefixKinds, fs.cites, fs.fieldCites)
+	v.NestedShapes = nestedShapesFrom(nestedWantedFrom(fs.nested, idChild), schema)
 	return v
 }
 
-// observeNestedFacts is the per-file half of the nested join: every nested object key (depth > 0) some citation wants, filed under the parent kind and the depth-1 block it sits in. Accumulation is commutative -- a clash flag, a group that nulls on disagreement, a letter set -- so it does not care in what order files arrive.
-func observeNestedFacts(ff FileFacts, idChild map[string][]string, byChild map[string]*nestedWanted) {
-	if len(idChild) == 0 {
-		return
-	}
-	// wrap[i] is the fact naming the depth-1 block fact i sits under, which is the group key a shape records; -1 directly under a definition.
-	wrap := make([]int32, len(ff.Facts))
-	for i := range ff.Facts {
-		f := ff.Facts[i]
-		at := int32(-1)
-		if f.Parent >= 0 {
-			at = wrap[f.Parent]
-		}
-		wrap[i] = at
-		if f.Key == "" || !f.Block {
+// resolveWraps keeps the top-level blocks whose every typed member the corpus defines. Callers drop defs with these keys, so a false positive deletes a real object from the model.
+func resolveWraps(files []*fileSites, defKeys map[string]bool) map[string]bool {
+	out := map[string]bool{}
+	for _, fs := range files {
+		if fs == nil {
 			continue
 		}
-		if f.Depth == 0 {
-			wrap[i] = -1
-			continue
-		}
-		name := game.KeyIdentity(ff.GameID, f.Key)
-		if at < 0 {
-			wrap[i] = int32(i)
-		}
-		if len(idChild[name]) == 0 {
-			continue
-		}
-		w := ""
-		if at >= 0 {
-			w = game.KeyIdentity(ff.GameID, ff.Facts[at].Key)
-		}
-		for _, ck := range idChild[name] {
-			a := byChild[ck]
-			if a == nil {
-				a = &nestedWanted{
-					parent: ff.Rule.Kind, group: w, ok: true, letters: map[byte]bool{},
-				}
-				byChild[ck] = a
-			}
-			if a.parent != ff.Rule.Kind {
-				a.clash = true
-			}
-			if a.group != w {
-				a.group = ""
-			}
-			if a.letters != nil && len(name) > 2 && name[1] == '_' {
-				a.letters[name[0]] = true
-			} else if a.letters != nil {
-				a.letters = nil
-			}
-		}
-	}
-}
-
-// deriveWrappers marks top-level blocks whose inners are typed cites to existing defs (Vic3 COUNTRIES = { c:USA ?= { } }). Callers drop defs with these keys, so a false positive deletes a real object from the model.
-func deriveWrappers(ff FileFacts, defKeys map[string]bool) []string {
-	// A folder that declares named script bodies has already said what its top-level keys are, and those bodies are routinely a single typed cite -- the wrapper shape exactly.
-	if jomini.DeclaresNamedBodies(ff.Rule.Kind) {
-		return nil
-	}
-	var out []string
-	for i := range ff.Facts {
-		f := ff.Facts[i]
-		if f.Depth != 0 || f.Key == "" || f.Quoted || !f.Block {
-			continue
-		}
-		// A `keyword name = { }` pair is never a wrapper however its body is shaped: CK3 declares inline macros that way, and matching them on shape alone deleted 28 vanilla macros from the model. The keyword is a childless bare word, so the fact before this one is the statement before it.
-		if i > 0 {
-			if p := ff.Facts[i-1]; p.Parent == f.Parent && p.Key == "" && !p.Quoted &&
-				jomini.DeclKeywordKind(p.Value) != "" {
-				continue
-			}
-		}
-		any, all := false, true
-		for j := int32(i) + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= int32(i) && all; j++ {
-			c := ff.Facts[j]
-			if c.Parent != int32(i) || c.Key == "" || c.Quoted {
-				continue
-			}
-			any = true
-			kind, id, ok := game.ParseTyped(ff.GameID, c.Key)
-			if !ok {
-				if sp, sok := jomini.TypedSpanAt(c.Key, 0); sok {
-					kind, id, ok = game.ParseTyped(ff.GameID, sp.Prefix+":"+sp.ID)
+		for _, w := range fs.wraps {
+			all := true
+			for _, id := range w.ids {
+				if !defKeys[id] {
+					all = false
+					break
 				}
 			}
-			if !ok || kind == "" || !defKeys[id] {
-				all = false
+			if all {
+				out[w.key] = true
 			}
-		}
-		if any && all {
-			out = append(out, f.Key)
 		}
 	}
 	return out
+}
+
+// resolveNests drops the file's wrapper definitions and adds the nested databases it holds. cited is the whole corpus's citations, keyed by child kind. A file-local set is not enough: EU5 declares its sub-continents in map_data/definitions.txt but cites them from common/advances/, so the definitions file saw no citations and produced zero defs.
+func resolveNests(fs *fileSites, derived *Derived, cited map[string]map[string]bool) {
+	fs.defs = dropWrapperDefs(fs.defs, derived.Wrappers)
+	ck := jomini.CanonicalKind(fs.Rule.Kind)
+	for _, shape := range derived.NestedShapes {
+		if jomini.CanonicalKind(shape.ParentKind) != ck && shape.ParentKind != fs.Rule.Kind {
+			continue
+		}
+		fs.defs = append(fs.defs, fs.nestedDefs(shape, cited[shape.ChildKind])...)
+	}
+}
+
+// nestedDefs harvests the child defs one shape describes from this file.
+func (fs *fileSites) nestedDefs(shape NestedShape, cited map[string]bool) []Def {
+	var defs []Def
+	add := func(n nestSite) {
+		name := game.KeyIdentity(fs.GameID, n.key)
+		if !jomini.IsDefName(name) || jomini.IsStop(name) || !n.object {
+			return
+		}
+		d := fs.def(shape.ChildKind, name, n.line, n.start, n.end)
+		d.Nested = true
+		defs = append(defs, d)
+	}
+	if shape.GroupKey != "" {
+		for _, n := range fs.nests {
+			if n.parent < 0 || n.quoted {
+				continue
+			}
+			if p := fs.nests[n.parent]; p.block && strings.EqualFold(p.key, shape.GroupKey) {
+				add(n)
+			}
+		}
+		return defs
+	}
+	// hit[i] is a cited name at nest i or below it, through assignment keys only; desc[i] is the same for its children, which is what makes a wrapper block count as the row's site.
+	hit, desc := make([]bool, len(fs.nests)), make([]bool, len(fs.nests))
+	if shape.KeyPrefix == "" {
+		for i := len(fs.nests) - 1; i >= 0; i-- {
+			n := fs.nests[i]
+			hit[i] = desc[i] || cited[game.KeyIdentity(fs.GameID, n.key)]
+			if hit[i] && n.parent >= 0 {
+				desc[n.parent] = true
+			}
+		}
+	}
+	for i, n := range fs.nests {
+		if !n.block || n.top {
+			continue
+		}
+		if shape.KeyPrefix != "" {
+			if keyPrefixOK(game.KeyIdentity(fs.GameID, n.key), shape.KeyPrefix) {
+				add(n)
+			}
+			continue
+		}
+		if hit[i] {
+			add(n)
+		}
+	}
+	return defs
+}
+
+// resolveSites turns one file's deferred sites into the references, edges and call candidates the votes now decide. It reads no fact: the spans travelled with the sites.
+func resolveSites(fs *fileSites, derived *Derived) ([]Ref, []Edge, []CallCandidate) {
+	var refs []Ref
+	var edges []Edge
+	var cands []CallCandidate
+	for _, s := range fs.fields {
+		if r, ok := fs.fieldRef(s, derived); ok {
+			refs = append(refs, r)
+		}
+	}
+	containers := defContainers(fs.defs)
+	// Every keyed statement is a possible call, and the keyed tree already lists them all.
+	for _, n := range fs.nests {
+		if n.quoted || derived.fireKind(n.key) != "" {
+			continue
+		}
+		if from := containerAt(containers, int(n.line)); from != "" && from != n.key {
+			cands = append(cands, CallCandidate{
+				From: from, To: n.key, Path: fs.Path, Line: int(n.line),
+				Start: int(n.start), End: int(n.end),
+			})
+		}
+	}
+	// A fire key nested inside another one carries its names outward. Statements come in source order, so one walk from the innermost hands each chain along. It runs once per file: resolveSites is called once, from the corpus pass or from a single-file reindex, never twice on one fileSites.
+	byStatement := make(map[int32]int32, len(fs.fires))
+	for i, s := range fs.fires {
+		byStatement[s.at] = int32(i)
+	}
+	for i := len(fs.fires) - 1; i >= 0; i-- {
+		s := fs.fires[i]
+		if s.up < 0 {
+			continue
+		}
+		// An id-like key is already read as part of the statement around it, so only what was handed to it travels further out; any other key travels whole, and only if the corpus votes it a fire key.
+		out := s.targets
+		if inlineFireKey(s.key) {
+			out = s.targets[s.ownN:]
+		} else if derived.fireKind(s.key) == "" {
+			continue
+		}
+		if up, ok := byStatement[s.up]; ok && len(out) > 0 {
+			fs.fires[up].targets = append(fs.fires[up].targets, out...)
+		}
+	}
+	for _, s := range fs.fires {
+		fk := derived.fireKind(s.key)
+		if fk == "" || s.quoted {
+			continue
+		}
+		from := containerAt(containers, int(s.line))
+		// A numeric key is a weight, and the only place one names an event directly is a `random_events` block, where targets are always `namespace.number`. Requiring that shape there -- and only there -- stops `1 = empty` in a Vic3 genes file reading as a fire site.
+		numericEvent := isDigitKey(s.key) && fk == "event"
+		for _, t := range s.targets {
+			if numericEvent && !jomini.IsEventID(t.name) {
+				continue
+			}
+			r := fs.ref(fk, t.name, t.line, t.start, t.end)
+			r.Derived = !s.declared
+			refs = append(refs, r)
+			edges = append(edges, Edge{
+				From: from, To: t.name, Via: s.key, Path: fs.Path,
+				Line: int(t.line), Kind: s.kind, NameKey: s.nameKey, Rescoped: s.rescoped,
+			})
+		}
+	}
+	// The keyed tree is the largest of the sites, and this is the last read of it.
+	fs.nests = nil
+	return refs, edges, cands
+}
+
+// fieldRef is what one field value means once the votes are in: a localization key when the property holds one, otherwise an object of the kind the field was typed with.
+func (fs *fileSites) fieldRef(s fieldSite, derived *Derived) (Ref, bool) {
+	if s.list {
+		if !derived.locField(s.key) {
+			return Ref{}, false
+		}
+		return fs.ref("loc-broad", s.value, s.line, s.start, s.end), true
+	}
+	prop := loc.Classify(s.key)
+	// Broad, never strict: that a field usually holds localization keys is not evidence that every value of it must resolve.
+	if prop == loc.PropNone && derived.locField(s.key) {
+		prop = loc.PropBroad
+	}
+	if prop != loc.PropNone {
+		if !loc.LooksLikeKey(s.value) {
+			return Ref{}, false
+		}
+		kind := "loc-broad"
+		if prop == loc.PropStrict {
+			kind = "loc"
+		}
+		return fs.ref(kind, s.value, s.line, s.start, s.end), true
+	}
+	rk := derived.fieldKind(s.key)
+	if s.quoted || rk == "" || isMacroArgKey(s.key) {
+		return Ref{}, false
+	}
+	// A typed cite is already recorded in foldScriptNames.
+	if _, _, typed := game.ParseTyped(fs.GameID, s.value); typed {
+		return Ref{}, false
+	}
+	refKey, ok := objectRefKey(fs.GameID, rk, s.value)
+	if !ok {
+		return Ref{}, false
+	}
+	r := fs.ref(rk, refKey, s.line, s.start, s.end)
+	r.Derived = true
+	return r, true
 }

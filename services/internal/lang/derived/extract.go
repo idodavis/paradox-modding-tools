@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/declared"
@@ -50,20 +51,73 @@ type Fact struct {
 	Depth           uint8
 }
 
+// internShards is how many maps the interner is split across: one map behind one lock turned eight workers into one, and cost more time than the strings saved.
+const internShards = 64
+
+// interner hands out one shared copy of every key and value in the corpus. A fact's strings are slices of the file's text, so one definition, one counter or one site pins that whole file until the model is dropped; interning the facts as they arrive frees a file's text with its parse tree and folds the corpus's repeats into one copy each.
+type interner [internShards]struct {
+	mu   sync.RWMutex
+	seen map[string]string
+	_    [24]byte // keeps two shards' locks off one cache line
+}
+
+func (in *interner) of(s string) string {
+	if s == "" {
+		return s
+	}
+	// A sample of the string rather than all of it: the map hashes the whole thing again anyway, and these are short.
+	h := uint(len(s))*131 + uint(s[0])
+	h = h*131 + uint(s[len(s)-1])
+	sh := &in[h&(internShards-1)]
+	sh.mu.RLock()
+	c, ok := sh.seen[s]
+	sh.mu.RUnlock()
+	if ok {
+		return c
+	}
+	c = strings.Clone(s)
+	sh.mu.Lock()
+	if was, ok := sh.seen[c]; ok {
+		c = was
+	} else {
+		if sh.seen == nil {
+			sh.seen = map[string]string{}
+		}
+		sh.seen[c] = c
+	}
+	sh.mu.Unlock()
+	return c
+}
+
+// facts interns the two fields every later fold reads, which is every string a file's harvest goes on to keep.
+func (in *interner) facts(ff *FileFacts) {
+	for i := range ff.Facts {
+		ff.Facts[i].Key = in.of(ff.Facts[i].Key)
+		ff.Facts[i].Value = in.of(ff.Facts[i].Value)
+	}
+}
+
+// fileID is what a definition, a reference or a vote needs to know about the file it came from. Rule is game.MatchExtract's answer for the file: the kind members are filed under, and the form this folder's definitions take.
+type fileID struct {
+	GameID, Path, Origin string
+	Rule                 game.ExtractRule
+}
+
 // FileFacts is the one product of parsing a file. Src stays because a leading comment is not a statement and so cannot be a fold over Facts.
 type FileFacts struct {
-	GameID, Path, Rel, Origin, Src string
-	// Rule is game.MatchExtract's answer for Rel: the kind members are filed under, and the form this folder's definitions take.
-	Rule  game.ExtractRule
+	fileID
+	Src   string
 	Facts []Fact
-	Loc   LocDelta // loc files only
 }
 
 // FactsOf turns one parsed file into its facts, in one jomini.Walk.
 func FactsOf(gameID, path, rel, origin string, res jomini.Result) FileFacts {
 	ff := FileFacts{
-		GameID: gameID, Path: filepath.Clean(path), Rel: rel, Origin: origin,
-		Src: res.Src, Rule: game.MatchExtract(gameID, rel),
+		fileID: fileID{
+			GameID: gameID, Path: filepath.Clean(path), Origin: origin,
+			Rule: game.MatchExtract(gameID, rel),
+		},
+		Src: res.Src,
 	}
 	if res.Root == nil {
 		return ff
@@ -122,16 +176,16 @@ func FactsOf(gameID, path, rel, origin string, res jomini.Result) FileFacts {
 }
 
 // A fold reads the facts under i as `for j := i + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= i; j++`: a pre-order walk makes a subtree contiguous, and the first fact past it is a sibling or an uncle, whose parent is therefore older than i.
-func (ff *FileFacts) def(kind, key string, line, start, end int32) Def {
+func (id fileID) def(kind, key string, line, start, end int32) Def {
 	return Def{
-		Kind: jomini.CanonicalKind(kind), Key: key, Path: ff.Path,
-		Line: int(line), Start: int(start), End: int(end), Origin: ff.Origin,
+		Kind: jomini.CanonicalKind(kind), Key: key, Path: id.Path,
+		Line: int(line), Start: int(start), End: int(end), Origin: id.Origin,
 	}
 }
 
-func (ff *FileFacts) ref(kind, key string, line, start, end int32) Ref {
+func (id fileID) ref(kind, key string, line, start, end int32) Ref {
 	return Ref{
-		Key: key, Kind: kind, Path: ff.Path,
+		Key: key, Kind: kind, Path: id.Path,
 		Line: int(line), Start: int(start), End: int(end),
 	}
 }
@@ -227,14 +281,18 @@ func ExtractFacts(ff FileFacts, schema *declared.Schema, derived *Derived) FileE
 		derived = derivedFromCache(nil)
 	}
 	ex := foldForms(ff)
-	ex.Loc = ff.Loc
-	if derived.CitedByKind == nil {
-		idx := newDefIndex(ex.Defs)
-		derived.mergeLocal(deriveFacts(ff, idx, schema))
+	fs := foldSites(ff, schema)
+	fs.defs = ex.Defs
+	cited := derived.CitedByKind
+	if cited == nil {
+		idx := newDefIndex(fs.defs)
+		derived.mergeLocal(deriveFacts(fs, idx, schema))
 		derived.mergeLocal(&Derived{FieldValueKinds: deriveFieldValueKinds(ex.FieldRHS, idx)})
+		cited = citedIDsByKind(derived.NestedShapes, fs.cites, derived.PrefixKinds)
 	}
-	ex.Defs = applyDerivedDefs(ff, ex.Defs, derived)
-	bodyRefs, edges, cands := foldRefsAndEdges(ff, ex.Defs, derived, schema)
+	resolveNests(fs, derived, cited)
+	ex.Defs = fs.defs
+	bodyRefs, edges, cands := resolveSites(fs, derived)
 	ex.Refs = append(ex.Refs, bodyRefs...)
 	ex.Edges, ex.Cands = edges, cands
 	return ex
@@ -276,31 +334,7 @@ func foldForms(ff FileFacts) FileExtract {
 	return ex
 }
 
-// applyDerivedDefs harvests the nested databases a file contains. derived.CitedByKind is the whole corpus's citations, keyed by child kind. A file-local set is not enough: EU5 declares its sub-continents in map_data/definitions.txt but cites them from common/advances/, so the definitions file saw no citations and produced zero defs.
-func applyDerivedDefs(ff FileFacts, defs []Def, derived *Derived) []Def {
-	if derived == nil {
-		return defs
-	}
-	defs = dropWrapperDefs(defs, derived.Wrappers)
-	ck := jomini.CanonicalKind(ff.Rule.Kind)
-	var local []typedCite
-	if derived.CitedByKind == nil {
-		local, _ = foldCites(ff)
-	}
-	for _, shape := range derived.NestedShapes {
-		if jomini.CanonicalKind(shape.ParentKind) != ck && shape.ParentKind != ff.Rule.Kind {
-			continue
-		}
-		cited := derived.CitedByKind[shape.ChildKind]
-		if derived.CitedByKind == nil {
-			cited = citedIDsForKind(local, derived.PrefixKinds, shape.ChildKind)
-		}
-		defs = append(defs, foldNestedShape(ff, shape, cited)...)
-	}
-	return defs
-}
-
-// citedIDsByKind indexes the corpus's citations once per nested child kind, so the second pass does not re-scan them for every file.
+// citedIDsByKind indexes the corpus's citations once per nested child kind, so resolution does not re-scan them for every file.
 func citedIDsByKind(shapes []NestedShape, cites []typedCite, prefixKinds map[string]string) map[string]map[string]bool {
 	out := make(map[string]map[string]bool, len(shapes))
 	for _, s := range shapes {
@@ -716,10 +750,6 @@ func dropEphemeralDefs(defs []Def) []Def {
 	return out
 }
 
-type edgeFrame struct {
-	key, nameKey string
-}
-
 type defAtLine struct {
 	line int
 	key  string
@@ -773,103 +803,271 @@ func objectRefKey(gameID, kind, text string) (string, bool) {
 	return text, true
 }
 
-// foldRefsAndEdges reads the file's use sites: localization properties, typed field values, fire sites and their graph edges, and the call candidates everything else leaves behind.
-func foldRefsAndEdges(
-	ff FileFacts, defs []Def, derived *Derived, schema *declared.Schema,
-) ([]Ref, []Edge, []CallCandidate) {
-	var refs []Ref
-	var edges []Edge
-	var cands []CallCandidate
-	containers := defContainers(defs)
-	for i := range ff.Facts {
-		f := ff.Facts[i]
-		if f.Key == "" || f.Quoted {
-			continue
-		}
-		from := containerAt(containers, int(f.Line))
-		prop := loc.Classify(f.Key)
-		// Broad, never strict: that a field usually holds localization keys is not evidence that every value of it must resolve.
-		if prop == loc.PropNone && derived.locField(f.Key) {
-			prop = loc.PropBroad
-		}
-		if prop != loc.PropNone && !f.Block && f.Value != "" && loc.LooksLikeKey(f.Value) {
-			kind := "loc-broad"
-			if prop == loc.PropStrict {
-				kind = "loc"
-			}
-			refs = append(refs, ff.ref(kind, f.Value, f.VLine, f.VStart, f.VEnd))
-		}
-		// A list whose members are localization keys: a culture's `male_names`, its `cadet_dynasty_names`. The members are values, not assignments, so nothing else here sees them.
-		if f.Block && derived.locField(f.Key) {
-			for j := int32(i) + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= int32(i); j++ {
-				c := ff.Facts[j]
-				if c.Parent != int32(i) || c.Key != "" || c.Block ||
-					c.Value == "" || !loc.LooksLikeKey(c.Value) {
-					continue
-				}
-				refs = append(refs, ff.ref("loc-broad", c.Value, c.VLine, c.VStart, c.VEnd))
-			}
-		}
-		if !f.Block && !f.VQuoted && f.Value != "" && prop == loc.PropNone {
-			// A typed cite is already recorded in foldScriptNames.
-			if _, _, typed := game.ParseTyped(ff.GameID, f.Value); !typed {
-				if rk := derived.fieldKind(f.Key); rk != "" && !isMacroArgKey(f.Key) {
-					if refKey, ok := objectRefKey(ff.GameID, rk, f.Value); ok {
-						r := ff.ref(rk, refKey, f.VLine, f.VStart, f.VEnd)
-						r.Derived = true
-						refs = append(refs, r)
-					}
-				}
-			}
-		}
-		fk := derived.fireKind(f.Key)
-		if fk == "" {
-			if from != "" && from != f.Key {
-				cands = append(cands, CallCandidate{
-					From: from, To: f.Key, Path: ff.Path, Line: int(f.Line),
-					Start: int(f.Start), End: int(f.End),
-				})
-			}
-			continue
-		}
-		frames := ff.frames(int32(i))
-		kind, nameKey := fireSiteKind(frames, f.Key)
-		rescoped := fireSiteRescopes(frames)
-		// A numeric key is a weight, and the only place one names an event directly is a `random_events` block, where targets are always `namespace.number`. Requiring that shape there -- and only there -- stops `1 = empty` in a Vic3 genes file reading as a fire site.
-		numericEvent := isDigitKey(f.Key) && fk == "event"
-		ff.fireTargets(int32(i), derived, func(to string, line, start, end int32) {
-			if numericEvent && !jomini.IsEventID(to) {
-				return
-			}
-			r := ff.ref(fk, to, line, start, end)
-			// Declared beats derived, and that cuts both ways: the game DECLARES trigger_event, so a fire ref at one is evidence even though FireKeys is how PMT learned it.
-			r.Derived = !schema.HasName(f.Key)
-			refs = append(refs, r)
-			edges = append(edges, Edge{
-				From: from, To: to, Via: f.Key, Path: ff.Path,
-				Line: int(line), Kind: kind, NameKey: nameKey, Rescoped: rescoped,
-			})
-		})
-	}
-	return refs, edges, cands
+// fieldSite is one `key = value`, or one bare member of `key = { … }`. Whether it names a localization key or an object of some kind waits on the LocFields and FieldValueKinds votes.
+type fieldSite struct {
+	key, value       string
+	line, start, end int32
+	list, quoted     bool
 }
 
-// frames is the chain of enclosing block keys, outermost first -- what decides a fire site's slot and whether anything rescoped it on the way down. Bare blocks are not frames: they name nothing.
-func (ff *FileFacts) frames(i int32) []edgeFrame {
-	var out []edgeFrame
-	for p := ff.Facts[i].Parent; p >= 0; p = ff.Facts[p].Parent {
-		f := ff.Facts[p]
+// fireTarget is one name a fire site holds directly. vote marks the statement's own right-hand side, which is the evidence FireKeys is counted from.
+type fireTarget struct {
+	name             string
+	line, start, end int32
+	vote             bool
+}
+
+// fireSite is one statement naming something that could be an event or an on_action. The slot, the option name and the rescoping come from the enclosing blocks and need no vote. Each target is held once, by the innermost statement that names it: up is the statement it also reaches, and ownN splits the names this statement holds itself from the ones handed outward to it -- which is how a fire key nested inside another one carries its names out without every ancestor keeping a copy.
+type fireSite struct {
+	key, kind, nameKey         string
+	line, at, up, ownN         int32
+	targets                    []fireTarget
+	rescoped, declared, quoted bool
+}
+
+// nestSite is one keyed statement with a link to its keyed parent: a nested definition when a shape claims it, and otherwise a link in the citation chain that decides which of its ancestors are.
+type nestSite struct {
+	key                        string
+	parent                     int32
+	line, start, end           int32
+	block, object, quoted, top bool
+}
+
+// wrapSite is a top-level block whose every member is a typed cite; it is a wrapper if the corpus defines all of them.
+type wrapSite struct {
+	key string
+	ids []string
+}
+
+// fileSites is one file's deferred half: the statements whose meaning a whole-corpus vote decides, and the per-file evidence those votes are counted from. It holds no facts, and every string in it is an interned copy rather than a slice of the file, so the parse tree, the fact table and the file's text are all released as soon as the file has been read.
+type fileSites struct {
+	fileID
+	defs              []Def
+	fields            []fieldSite
+	fires             []fireSite
+	nests             []nestSite
+	wraps             []wrapSite
+	cites, fieldCites []typedCite
+	// nested is every nested block name the file holds, under the depth-1 block above it: the per-file half of the NestedShapes vote.
+	nested map[string]nestedObs
+}
+
+// frame is what the enclosing blocks decide about a statement, carried forward as the facts are read so nothing walks back up its parents. optionAt is the option block itself rather than its name key, which is a walk of that block and is only worth making for a statement that turns out to name an event.
+type frame struct {
+	kind            string
+	optionAt, depth int32
+	rescoped        bool
+}
+
+// foldSites reads every use site a corpus vote decides: field values and list members, call sites, fire targets, nested blocks and wrapper candidates. Nothing below this reads a Fact again.
+func foldSites(ff FileFacts, schema *declared.Schema) *fileSites {
+	fs := &fileSites{fileID: ff.fileID, nested: map[string]nestedObs{}}
+	// fr[i] is what the children of fact i inherit; nestAt[i] is fact i's place in nests, -1 for a bare statement, which breaks the citation chain exactly where the recursion it replaces did; wrapAt[i] is the fact naming the depth-1 block fact i sits under.
+	fr := make([]frame, len(ff.Facts))
+	nestAt := make([]int32, len(ff.Facts))
+	wrapAt := make([]int32, len(ff.Facts))
+	// recvAt[i] is the nearest enclosing statement that names something, past the bare blocks that name nothing: where fact i's fire targets are handed outward to.
+	recvAt := make([]int32, len(ff.Facts))
+	bodies := jomini.DeclaresNamedBodies(ff.Rule.Kind)
+	for i := range ff.Facts {
+		f := ff.Facts[i]
+		own, at, nestParent := frame{optionAt: -1}, int32(-1), int32(-1)
+		recvAt[i] = -1
+		if f.Parent >= 0 {
+			own, at, nestParent = fr[f.Parent], wrapAt[f.Parent], nestAt[f.Parent]
+			if ff.Facts[f.Parent].Key != "" {
+				recvAt[i] = f.Parent
+			} else {
+				recvAt[i] = recvAt[f.Parent]
+			}
+		}
+		wrapAt[i], nestAt[i], fr[i] = at, -1, own
+		if f.Key != "" {
+			// The outermost frame is the definition's own key, which is where its declared scope applies, so rescoping is only counted below it.
+			if own.depth >= 1 && !jomini.IsScopeNeutral(f.Key) {
+				fr[i].rescoped = true
+			}
+			fr[i].depth = own.depth + 1
+			if strings.EqualFold(f.Key, "option") {
+				fr[i].kind, fr[i].optionAt = "option", int32(i)
+			} else if slot := jomini.ScriptSlot(f.Key); slot != "" {
+				fr[i].kind, fr[i].optionAt = slot, -1
+			}
+		}
 		if f.Key == "" {
 			continue
 		}
-		fr := edgeFrame{key: f.Key}
-		if strings.EqualFold(f.Key, "option") {
-			fr.nameKey = ff.optionNameKey(p)
+		nestAt[i] = int32(len(fs.nests))
+		fs.nests = append(fs.nests, nestSite{
+			key: f.Key, parent: nestParent, line: f.Line, start: f.Start, end: f.End,
+			block: f.Block, object: f.Block && ff.holdsNames(int32(i)),
+			quoted: f.Quoted, top: f.Depth == 0,
+		})
+		if f.Block && f.Depth == 0 {
+			wrapAt[i] = -1
+		} else if f.Block {
+			if at < 0 {
+				wrapAt[i] = int32(i)
+			}
+			group := ""
+			if at >= 0 {
+				group = game.KeyIdentity(ff.GameID, ff.Facts[at].Key)
+			}
+			fs.observe(game.KeyIdentity(ff.GameID, f.Key), group)
 		}
-		out = append(out, fr)
+		if !jomini.IsStop(f.Key) && loc.Classify(f.Key) == loc.PropNone &&
+			!strings.EqualFold(f.Key, "id") {
+			if targets := ff.fireTargets(int32(i), true, nil); len(targets) > 0 {
+				s := ff.fireSiteAt(int32(i), fr, recvAt, schema)
+				s.targets, s.ownN = targets, int32(len(targets))
+				fs.fires = append(fs.fires, s)
+			}
+		}
+		if f.Quoted {
+			continue
+		}
+		if f.Depth == 0 && f.Block && !bodies {
+			if w, ok := ff.wrapCandidate(int32(i)); ok {
+				fs.wraps = append(fs.wraps, w)
+			}
+		}
+		fs.foldFieldSites(ff, int32(i))
 	}
-	slices.Reverse(out)
-	return out
+	fs.addFireRelays(ff, fr, recvAt, schema)
+	fs.cites, fs.fieldCites = foldCites(ff)
+	fs.clip()
+	return fs
+}
+
+// fireSiteAt describes the statement at i as a fire site, without its targets.
+func (ff *FileFacts) fireSiteAt(
+	i int32, fr []frame, recvAt []int32, schema *declared.Schema,
+) fireSite {
+	f := ff.Facts[i]
+	own := frame{optionAt: -1}
+	if f.Parent >= 0 {
+		own = fr[f.Parent]
+	}
+	kind, nameKey := own.kind, ""
+	if kind == "" {
+		if kind = jomini.ScriptSlot(f.Key); kind == "" {
+			kind = "effect"
+		}
+	} else if own.optionAt >= 0 {
+		nameKey = ff.optionNameKey(own.optionAt)
+	}
+	// Declared beats derived, and that cuts both ways: the game DECLARES trigger_event, so a fire ref at one is evidence even though FireKeys is how PMT learned it.
+	return fireSite{
+		key: f.Key, kind: kind, nameKey: nameKey, line: f.Line,
+		at: i, up: recvAt[i], rescoped: own.rescoped,
+		declared: schema.HasName(f.Key), quoted: f.Quoted,
+	}
+}
+
+// addFireRelays gives every statement that will be handed another's targets a site of its own, so the outward walk in resolveSites has somewhere to put them. A statement passes something on when it holds names of its own and is not id-like -- an id-like key is already read as part of the statement around it -- or when something was handed to it. Sites stay ordered by statement, which is what lets one walk carry a whole chain outward.
+func (fs *fileSites) addFireRelays(
+	ff FileFacts, fr []frame, recvAt []int32, schema *declared.Schema,
+) {
+	if len(fs.fires) == 0 {
+		return
+	}
+	held, passes := make([]bool, len(ff.Facts)), make([]bool, len(ff.Facts))
+	for _, s := range fs.fires {
+		held[s.at] = true
+		passes[s.at] = !inlineFireKey(s.key)
+	}
+	added := false
+	for i := len(ff.Facts) - 1; i >= 0; i-- {
+		u := recvAt[i]
+		if !passes[i] || u < 0 {
+			continue
+		}
+		passes[u] = true
+		if !held[u] {
+			held[u] = true
+			added = true
+			fs.fires = append(fs.fires, ff.fireSiteAt(u, fr, recvAt, schema))
+		}
+	}
+	if added {
+		slices.SortFunc(fs.fires, func(a, b fireSite) int { return cmp.Compare(a.at, b.at) })
+	}
+}
+
+// clip trims the slack append leaves on the three site slices big enough for it to matter: across an install that slack is hundreds of megabytes, and the sites are the pass's heap peak.
+func (fs *fileSites) clip() {
+	fs.fields = slices.Clone(fs.fields)
+	fs.fires = slices.Clone(fs.fires)
+	fs.nests = slices.Clone(fs.nests)
+}
+
+// foldFieldSites records the values fact i offers a field vote: its scalar right-hand side, or the bare members of its block. A member that is a bare number or a date is dropped here rather than carried: it is never a localization key, and keeping every one of them cost 7 to 13 million candidates per install to produce none.
+func (fs *fileSites) foldFieldSites(ff FileFacts, i int32) {
+	f := ff.Facts[i]
+	if !f.Block {
+		// A value that is neither a plausible localization key nor a plausible object name resolves to nothing whichever way the votes go, and `x = yes` alone is a third of the install.
+		if f.Value != "" && (loc.LooksLikeKey(f.Value) ||
+			!jomini.SkipFieldRHS(f.Value) && !jomini.IsStop(f.Value)) {
+			fs.fields = append(fs.fields, fieldSite{
+				key: f.Key, value: f.Value, line: f.VLine,
+				start: f.VStart, end: f.VEnd, quoted: f.VQuoted,
+			})
+		}
+		return
+	}
+	// A list whose members are localization keys: a culture's `male_names`, its `cadet_dynasty_names`. The members are values, not assignments, so nothing else here sees them.
+	for j := i + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= i; j++ {
+		c := ff.Facts[j]
+		if c.Parent != i || c.Key != "" || c.Block || c.Value == "" ||
+			!loc.LooksLikeKey(c.Value) || jomini.IsLiteralValue(c.Value) {
+			continue
+		}
+		fs.fields = append(fs.fields, fieldSite{
+			key: f.Key, value: c.Value, line: c.VLine,
+			start: c.VStart, end: c.VEnd, list: true,
+		})
+	}
+}
+
+// holdsNames reports a block that holds named members, or none at all.
+func (ff *FileFacts) holdsNames(i int32) bool {
+	empty := true
+	for j := i + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= i; j++ {
+		empty = false
+		if c := ff.Facts[j]; c.Parent == i && c.Key != "" {
+			return true
+		}
+	}
+	return empty
+}
+
+// wrapCandidate is a top-level block whose every member is a typed cite (Vic3 COUNTRIES = { c:USA ?= { } }). A `keyword name = { }` pair is never a wrapper however its body is shaped: CK3 declares inline macros that way, and matching them on shape alone deleted 28 vanilla macros from the model. The keyword is a childless bare word, so the fact before this one is the statement before it.
+func (ff *FileFacts) wrapCandidate(i int32) (wrapSite, bool) {
+	if i > 0 {
+		if p := ff.Facts[i-1]; p.Parent == ff.Facts[i].Parent && p.Key == "" &&
+			!p.Quoted && jomini.DeclKeywordKind(p.Value) != "" {
+			return wrapSite{}, false
+		}
+	}
+	w, any := wrapSite{key: ff.Facts[i].Key}, false
+	for j := i + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= i; j++ {
+		c := ff.Facts[j]
+		if c.Parent != i || c.Key == "" || c.Quoted {
+			continue
+		}
+		any = true
+		kind, id, ok := game.ParseTyped(ff.GameID, c.Key)
+		if !ok {
+			if sp, sok := jomini.TypedSpanAt(c.Key, 0); sok {
+				kind, id, ok = game.ParseTyped(ff.GameID, sp.Prefix+":"+sp.ID)
+			}
+		}
+		if !ok || kind == "" {
+			return wrapSite{}, false
+		}
+		w.ids = append(w.ids, id)
+	}
+	return w, any
 }
 
 func (ff *FileFacts) optionNameKey(i int32) string {
@@ -882,39 +1080,35 @@ func (ff *FileFacts) optionNameKey(i int32) string {
 	return ""
 }
 
-// fireTargets visits every scalar under a fire assignment that could name an event or on_action: the bare RHS, list values, and `id = ` / numbered inners. derived supplies the fire kinds harvested from the install.
-func (ff *FileFacts) fireTargets(i int32, derived *Derived, fn func(name string, line, start, end int32)) {
+// fireTargets collects every scalar this statement names itself: the bare RHS, list values, and `id =` / numbered inners, following bare and id-like blocks because those name nothing of their own. Any other keyed inner is a statement in its own right and keeps its targets; they reach this one through its up link. top marks the statement's own right-hand side, the half of this that FireKeys is voted from.
+func (ff *FileFacts) fireTargets(i int32, top bool, out []fireTarget) []fireTarget {
 	f := ff.Facts[i]
 	if !f.Block {
 		if !f.VQuoted && fireTargetOK(f.Value) {
-			fn(f.Value, f.VLine, f.VStart, f.VEnd)
+			out = append(out, fireTarget{name: f.Value, line: f.VLine,
+				start: f.VStart, end: f.VEnd, vote: top})
 		}
-		return
+		return out
 	}
 	for j := i + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= i; j++ {
 		c := ff.Facts[j]
-		if c.Parent != i {
+		if c.Parent != i || (c.Key != "" && !inlineFireKey(c.Key)) {
 			continue
 		}
-		if c.Key == "" {
-			if !c.Block && !c.VQuoted && fireTargetOK(c.Value) {
-				fn(c.Value, c.VLine, c.VStart, c.VEnd)
-			} else if c.Block {
-				ff.fireTargets(j, derived, fn)
-			}
-			continue
-		}
-		key := strings.ToLower(c.Key)
-		own := derived.fireKind(c.Key)
-		if !c.Block && !c.VQuoted && fireTargetOK(c.Value) &&
-			(key == "id" || isDigitKey(key) || own != "") {
-			fn(c.Value, c.VLine, c.VStart, c.VEnd)
-			continue
-		}
-		if own != "" || key == "id" || isDigitKey(key) {
-			ff.fireTargets(j, derived, fn)
+		if !c.Block && !c.VQuoted && fireTargetOK(c.Value) {
+			out = append(out, fireTarget{name: c.Value, line: c.VLine,
+				start: c.VStart, end: c.VEnd, vote: top})
+		} else if c.Block {
+			out = ff.fireTargets(j, false, out)
 		}
 	}
+	return out
+}
+
+// inlineFireKey reports a key that names no fire site of its own, so its targets belong to the statement around it: `id = ` and the numbered weights of a random_events block.
+func inlineFireKey(key string) bool {
+	k := strings.ToLower(key)
+	return k == "id" || isDigitKey(k)
 }
 
 // foldFieldValues collects the values a field takes, so deriveFieldValueKinds and deriveLocFields can type it: scalars from `field = value`, lists from the bare members of `field = { a b c }`. A list member is a ValueStmt, not an assignment, and localization keys hide there in quantity -- CK3 writes a culture's given names and its cadet dynasty names as lists, and nothing cited them: 6,978 of A Game of Thrones' 20,196 orphaned English keys, 35% of the whole residue. Quoted members count, since vanilla quotes one of those two lists and not the other.
@@ -991,80 +1185,6 @@ func foldCites(ff FileFacts) (typed, field []typedCite) {
 		field = append(field, typedCite{prefix: f.Key, id: f.Value})
 	}
 	return typed, field
-}
-
-// foldNestedShape harvests child defs from a parent file the shape describes.
-func foldNestedShape(ff FileFacts, shape NestedShape, cited map[string]bool) []Def {
-	var defs []Def
-	add := func(i int32) {
-		f := ff.Facts[i]
-		name := game.KeyIdentity(ff.GameID, f.Key)
-		if !jomini.IsDefName(name) || jomini.IsStop(name) || !ff.looksLikeObject(i) {
-			return
-		}
-		d := ff.def(shape.ChildKind, name, f.Line, f.Start, f.End)
-		d.Nested = true
-		defs = append(defs, d)
-	}
-	if shape.GroupKey != "" {
-		for i := range ff.Facts {
-			f := ff.Facts[i]
-			if f.Key == "" || !f.Block || !strings.EqualFold(f.Key, shape.GroupKey) {
-				continue
-			}
-			for j := int32(i) + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= int32(i); j++ {
-				if c := ff.Facts[j]; c.Parent == int32(i) && c.Key != "" && !c.Quoted {
-					add(j)
-				}
-			}
-		}
-		return defs
-	}
-	// hit[i] is a cited name at fact i or below it, through assignment keys only; desc[i] is the same for its children, which is what makes a wrapper block count as the row's site.
-	hit, desc := make([]bool, len(ff.Facts)), make([]bool, len(ff.Facts))
-	if shape.KeyPrefix == "" {
-		for i := len(ff.Facts) - 1; i >= 0; i-- {
-			f := ff.Facts[i]
-			if f.Key == "" {
-				continue
-			}
-			hit[i] = desc[i] || cited[game.KeyIdentity(ff.GameID, f.Key)]
-			if hit[i] && f.Parent >= 0 {
-				desc[f.Parent] = true
-			}
-		}
-	}
-	for i := range ff.Facts {
-		f := ff.Facts[i]
-		if f.Key == "" || !f.Block || f.Depth == 0 {
-			continue
-		}
-		if shape.KeyPrefix != "" {
-			if keyPrefixOK(game.KeyIdentity(ff.GameID, f.Key), shape.KeyPrefix) {
-				add(int32(i))
-			}
-			continue
-		}
-		if hit[i] {
-			add(int32(i))
-		}
-	}
-	return defs
-}
-
-// looksLikeObject reports a block that holds named members, or none at all.
-func (ff *FileFacts) looksLikeObject(i int32) bool {
-	if !ff.Facts[i].Block {
-		return false
-	}
-	empty := true
-	for j := i + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= i; j++ {
-		empty = false
-		if c := ff.Facts[j]; c.Parent == i && c.Key != "" {
-			return true
-		}
-	}
-	return empty
 }
 
 // isMacroArgKey reports the all-caps convention Paradox uses for the arguments of a scripted macro: `some_effect = { ROLE = chemist }`. The value is a fragment the macro pastes into a name, not a reference to an object of the field's type.

@@ -199,9 +199,11 @@ ns.2 = { title = ns.2.t }
 `
 		ff := FactsOf("ck3", "events/x.txt", "events/x.txt", "",
 			jomini.Parse(jomini.Normalize(src)))
-		got := resolveFireKinds(deriveFireKeys(ff, map[string]bool{
-			"ns.1": true, "ns.2": true,
-		}, nil))
+		idx := newDefIndex([]Def{
+			{Kind: "event", Key: "ns.1"}, {Kind: "event", Key: "ns.2"},
+		})
+		got := resolveFireKinds(
+			fireEvidence([]*fileSites{foldSites(ff, nil)}, idx))
 		if got["title"] != "" || got["desc"] != "" {
 			t.Fatalf("loc props voted as fire: %v", got)
 		}
@@ -246,17 +248,15 @@ ns.2 = { title = ns.2.t }
 		defs := []Def{{Kind: "religion_types", Key: "christianity_religion"}}
 		keys := newDefIndex(defs).citableKeys()
 		var cites []typedCite
+		obs := map[string]nestedObs{}
 		for _, ff := range files {
-			t, _ := foldCites(ff)
-			cites = append(cites, t...)
+			fs := foldSites(ff, nil)
+			cites = append(cites, fs.cites...)
+			mergeObs(obs, fs.nested)
 		}
 		shapesFor := func(s *declared.Schema) []NestedShape {
-			byChild := map[string]*nestedWanted{}
 			idChild := nestedIDChild("ck3", keys, nil, cites, nil)
-			for _, ff := range files {
-				observeNestedFacts(ff, idChild, byChild)
-			}
-			return nestedShapesFrom(byChild, s)
+			return nestedShapesFrom(nestedWantedFrom(obs, idChild), s)
 		}
 		got := shapesFor(&declared.Schema{Scopes: map[string]declared.ScopeType{"faith": {}}})
 		if len(got) != 1 || got[0].ParentKind != "religion_types" ||
@@ -297,4 +297,50 @@ ns.2 = { title = ns.2.t }
 			}
 		}
 	})
+}
+
+// A fire key nested inside another one is read twice: once on its own key, and once on the key around it. Numbered weights are the common shape (`random_list = { 200 = { trigger_event = … } }`) and the outward walk that replaced the old recursion has to reach both.
+func TestNestedFireSitesReachBothKeys(t *testing.T) {
+	for _, tt := range []struct {
+		name, body string
+		fire       map[string]string
+		want       []string
+	}{
+		{"plain fire site", "trigger_event = ns.2",
+			map[string]string{"trigger_event": "event"},
+			[]string{"ns.1 -> ns.2 via trigger_event"}},
+		{"numbered weight wraps a fire key",
+			"random_list = { 200 = { trigger_event = ns.2 } }",
+			map[string]string{"trigger_event": "event", "200": "event"},
+			[]string{"ns.1 -> ns.2 via 200", "ns.1 -> ns.2 via trigger_event"}},
+		{"fire key inside a fire key",
+			"trigger_event = { on_action = ns.2 }",
+			map[string]string{"trigger_event": "event", "on_action": "on_action"},
+			[]string{"ns.1 -> ns.2 via on_action", "ns.1 -> ns.2 via trigger_event"}},
+		{"the inner key is not a fire key",
+			"trigger_event = { on_action = ns.2 }",
+			map[string]string{"trigger_event": "event"},
+			nil},
+		{"id names the target",
+			"trigger_event = { id = ns.2 days = 5 }",
+			map[string]string{"trigger_event": "event"},
+			[]string{"ns.1 -> ns.2 via trigger_event"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "namespace = ns\nns.1 = { immediate = { " + tt.body + " } }\n"
+			ff := FactsOf("ck3", "events/x.txt", "events/x.txt", "",
+				jomini.Parse(jomini.Normalize(src)))
+			got := ExtractFacts(ff, nil, &Derived{
+				FireKeys: tt.fire, CitedByKind: map[string]map[string]bool{},
+			})
+			var lines []string
+			for _, e := range got.Edges {
+				lines = append(lines, e.From+" -> "+e.To+" via "+e.Via)
+			}
+			slices.Sort(lines)
+			if !slices.Equal(lines, tt.want) {
+				t.Errorf("edges = %v, want %v", lines, tt.want)
+			}
+		})
+	}
 }

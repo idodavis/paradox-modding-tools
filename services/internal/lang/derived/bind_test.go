@@ -82,7 +82,7 @@ func TestBindKinds(t *testing.T) {
 		})
 	}
 
-	// The real installs, through the real pipeline: nested databases (CK3 faiths, sub-tier titles) only become defs after applyDerivedDefs, and collectExtracts is what sequences that against the bind, including the rebind afterward.
+	// The real installs, through the real pipeline: nested databases (CK3 faiths, sub-tier titles) only become defs after resolveNests, and collectExtracts is what sequences that against the bind, including the rebind afterward.
 	for _, g := range []struct {
 		id, installEnv, docsEnv string
 		wantPrefix              map[string]string
@@ -129,7 +129,7 @@ func TestBindKinds(t *testing.T) {
 			if len(files) == 0 {
 				t.Fatalf("no script files under %s", install)
 			}
-			acc, derived, _, err := collectExtracts(context.Background(), g.id, files, nil, s, nil)
+			acc, derived, err := collectExtracts(context.Background(), g.id, files, nil, s, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

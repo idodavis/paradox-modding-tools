@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/declared"
 	"paradox-modding-tools/services/internal/lang/jomini"
 )
@@ -27,12 +28,12 @@ func writeMod(t *testing.T, root, rel, content string) {
 }
 
 func extractCK3(rel, content, origin string) FileExtract {
-	return ExtractFile("ck3", filepath.FromSlash(rel), rel, origin, content, false)
+	return ExtractFile("ck3", filepath.FromSlash(rel), rel, origin, content)
 }
 
 func extractCK3Overlay(rel, content, origin string, overlay *VanillaCache) FileExtract {
 	return ExtractParsed("ck3", filepath.FromSlash(rel), rel, origin,
-		jomini.Parse(jomini.Normalize(content)), false, overlay)
+		jomini.Parse(jomini.Normalize(content)), overlay)
 }
 
 // ck3Schema declares the scope types and links these tests rely on, matching what CK3's event_scopes.log / event_targets.log state. Nested databases are only harvested for a declared child kind, so a fixture without a schema harvests none.
@@ -167,9 +168,9 @@ test.1 = {
 	})
 	// ParsePrefixed stopped its name scan at the first byte above ASCII and returned ok anyway, so `scope:Linnéa` referenced `Linn` while the save_scope_as defined `Linnéa`: two objects where the script has one.
 	t.Run("a non-ASCII scope def and ref agree", func(t *testing.T) {
-		ex := extractForms("ck3", "C:/m/events/x.txt", "events/x.txt", "mod",
+		ex := foldForms(FactsOf("ck3", "C:/m/events/x.txt", "events/x.txt", "mod",
 			jomini.Parse("ns.1 = {\n\timmediate = {\n\t\tsave_scope_as = Linnéa\n"+
-				"\t\tadd_gold = scope:Linnéa\n\t}\n}\n"), true)
+				"\t\tadd_gold = scope:Linnéa\n\t}\n}\n")))
 		var defKey, refKey string
 		for _, d := range ex.Defs {
 			if d.Kind == "saved_scope" {
@@ -221,7 +222,7 @@ test.1 = {
 	})
 	t.Run("add_character_flag is not ScriptName", func(t *testing.T) {
 		src := "e = { immediate = { add_character_flag = x set_variable = y } }\n"
-		ex := ExtractFile("vic3", "events/x.txt", "events/x.txt", "m", src, false)
+		ex := ExtractFile("vic3", "events/x.txt", "events/x.txt", "m", src)
 		for _, d := range ex.Defs {
 			if d.Kind == "character_flag" || d.Kind == "flag" {
 				t.Fatalf("must not harvest flag from add_character_flag: %+v", d)
@@ -234,13 +235,13 @@ test.1 = {
 	t.Run("coa and flag_definition kinds", func(t *testing.T) {
 		coa := ExtractFile("ck3", "common/coat_of_arms/coat_of_arms/x.txt",
 			"common/coat_of_arms/coat_of_arms/x.txt", "m",
-			"b_appleby = { pattern = \"pattern_solid.dds\" }\n", false)
+			"b_appleby = { pattern = \"pattern_solid.dds\" }\n")
 		if !findDef(coa.Defs, "coat_of_arms", "b_appleby") {
 			t.Fatalf("coa defs=%v", coa.Defs)
 		}
 		fd := ExtractFile("vic3", "common/flag_definitions/00.txt",
 			"common/flag_definitions/00.txt", "m",
-			"ENG = { flag_definition = { } }\n", false)
+			"ENG = { flag_definition = { } }\n")
 		if !findDef(fd.Defs, "flag_definition", "ENG") &&
 			!findDef(fd.Defs, "flag_definitions", "ENG") {
 			t.Fatalf("flag_definitions defs=%v", fd.Defs)
@@ -286,7 +287,7 @@ b.1 = { type = character_event }
 	t.Run("a fire edge is attributed to the enclosing object", func(t *testing.T) {
 		ex := ExtractFile("ck3", `C:\mod\events\t.txt`, "events/t.txt", "mod",
 			"namespace = t\nt.1 = {\n\ttype = character_event\n\timmediate = {\n"+
-				"\t\tsave_scope_as = tgt\n\t\ttrigger_event = t.2\n\t}\n}\n", true)
+				"\t\tsave_scope_as = tgt\n\t\ttrigger_event = t.2\n\t}\n}\n")
 		if len(ex.Edges) == 0 {
 			t.Fatal("no edges harvested — the fixture stopped exercising the path")
 		}
@@ -588,10 +589,12 @@ real_effect = {
 			{"local_template Bar = {\n\tx = 1\n}\n", "gui_type", true},
 			{"type Baz = {\n\tx = 1\n}\n", "gui_type", false},
 			{"template Qux = {\n\tx = 1\n}\n", "gui_type", false},
+			// A `types` wrapper declares its members once. The walker this fold replaced scanned that block twice -- explicitly for the keyword, and again through its generic recursion -- and CK3 carried 1,675 duplicate gui_type defs.
+			{"types my_types = {\n\ttype Baz = {\n\t\tx = 1\n\t}\n}\n", "gui_type", false},
 		} {
 			t.Run(tt.kind+"/"+strconv.FormatBool(tt.local), func(t *testing.T) {
-				res := jomini.Parse(tt.src)
-				defs, _, _ := extractKeywordName(res.Root, res.Lines(), "a.txt", "")
+				defs, _, _ := foldKeywordNames(
+					FactsOf("ck3", "a.txt", "gui/a.gui", "", jomini.Parse(tt.src)))
 				if len(defs) != 1 {
 					t.Fatalf("got %d defs, want 1", len(defs))
 				}
@@ -614,7 +617,7 @@ real_effect = {
 			t.Skip(err)
 		}
 		text, _ := jomini.Decode(raw)
-		ex := ExtractParsed("ck3", p, rel, "", jomini.Parse(text), false, &VanillaCache{
+		ex := ExtractParsed("ck3", p, rel, "", jomini.Parse(text), &VanillaCache{
 			NestedShapes: []NestedShape{{
 				ParentKind: "religion_types", ChildKind: "faith", GroupKey: "faiths",
 			}},
@@ -830,4 +833,76 @@ func TestOverride(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestFactsOf is the whole fact table for one fixture: one walk, one Fact per statement, parents and subtree bounds by index -- all any fold here reads.
+func TestFactsOf(t *testing.T) {
+	src := "namespace = birth\n" +
+		"birth.0001 = {\n" +
+		"\ttitle = birth.0001.t\n" +
+		"\ttrigger = { is_adult = no }\n" +
+		"\ttraits = { brave \"craven\" }\n" +
+		"\tcolor = rgb { 255 0 0 }\n" +
+		"\t\"quoted\" ?= 1\n" +
+		"}\n"
+	ff := FactsOf("ck3", "C:/g/events/x.txt", "events/x.txt", "vanilla",
+		jomini.Parse(jomini.Normalize(src)))
+	if ff.Rule.Kind != "event" || ff.Rule.Mode != game.ModeEventID {
+		t.Fatalf("rule = %+v, want event/event-id", ff.Rule)
+	}
+	if ff.Path != filepath.Clean("C:/g/events/x.txt") || ff.Rel != "events/x.txt" ||
+		ff.Origin != "vanilla" || ff.GameID != "ck3" {
+		t.Fatalf("header = %+v", ff)
+	}
+	want := []Fact{
+		{Key: "namespace", Op: "=", Value: "birth", Parent: -1, Depth: 0, Line: 0},
+		{Key: "birth.0001", Op: "=", Block: true, Parent: -1, Depth: 0, Line: 1},
+		{Key: "title", Op: "=", Value: "birth.0001.t", Parent: 1, Depth: 1, Line: 2},
+		{Key: "trigger", Op: "=", Block: true, Parent: 1, Depth: 1, Line: 3},
+		{Key: "is_adult", Op: "=", Value: "no", Parent: 3, Depth: 2, Line: 3},
+		{Key: "traits", Op: "=", Block: true, Parent: 1, Depth: 1, Line: 4},
+		{Value: "brave", Parent: 5, Depth: 2, Line: 4},
+		{Value: "craven", Quoted: true, VQuoted: true, Parent: 5, Depth: 2, Line: 4},
+		{Key: "color", Op: "=", Block: true, Parent: 1, Depth: 1, Line: 5},
+		{Value: "255", Parent: 8, Depth: 2, Line: 5},
+		{Value: "0", Parent: 8, Depth: 2, Line: 5},
+		{Value: "0", Parent: 8, Depth: 2, Line: 5},
+		{Key: "quoted", Op: "?=", Value: "1", Quoted: true, Parent: 1, Depth: 1, Line: 6},
+	}
+	if len(ff.Facts) != len(want) {
+		for i, f := range ff.Facts {
+			t.Logf("%2d %+v", i, f)
+		}
+		t.Fatalf("%d facts, want %d", len(ff.Facts), len(want))
+	}
+	for i, w := range want {
+		g := ff.Facts[i]
+		if g.Key != w.Key || g.Op != w.Op || g.Value != w.Value ||
+			g.Block != w.Block || g.Quoted != w.Quoted || g.VQuoted != w.VQuoted ||
+			g.Parent != w.Parent || g.Depth != w.Depth || g.Line != w.Line {
+			t.Errorf("fact %d = %+v, want %+v", i, g, w)
+		}
+	}
+	// The spans address the source: the key token, then the scalar RHS.
+	f := ff.Facts[2]
+	if got := src[f.Start:f.End]; got != "title" {
+		t.Errorf("key span = %q", got)
+	}
+	if got := src[f.VStart:f.VEnd]; got != "birth.0001.t" {
+		t.Errorf("value span = %q", got)
+	}
+	// A bare value addresses itself through both spans, so a fold reading either gets the token.
+	if v := ff.Facts[6]; src[v.Start:v.End] != "brave" || src[v.VStart:v.VEnd] != "brave" {
+		t.Errorf("bare value spans = %q/%q", src[v.Start:v.End], src[v.VStart:v.VEnd])
+	}
+	// Every fold rests on the subtree bound: the facts under i run to the first one whose parent is older than i. Fact 4 (is_adult) must stop at its uncle, fact 5 (traits), not run on to the end of the file.
+	for i, want := range []int32{1, 13, 3, 5, 5, 8, 7, 8, 12, 10, 11, 12, 13} {
+		to := int32(i) + 1
+		for to < int32(len(ff.Facts)) && ff.Facts[to].Parent >= int32(i) {
+			to++
+		}
+		if to != want {
+			t.Errorf("subtree of fact %d ends at %d, want %d", i, to, want)
+		}
+	}
 }

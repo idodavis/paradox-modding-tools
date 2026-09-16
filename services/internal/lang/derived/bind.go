@@ -55,36 +55,3 @@ func nameMatchKind(scope string, keysByKind map[string]map[string]bool) string {
 type typedCite struct {
 	prefix, id string
 }
-
-// collectTypedCites gathers every `prefix:id` citation in one parsed file. Language prefixes (scope:, var:, …) are skipped — they name locals, not database rows.
-func collectTypedCites(root *jomini.Root) []typedCite {
-	if root == nil {
-		return nil
-	}
-	var out []typedCite
-	add := func(text string) {
-		for _, sp := range jomini.TypedSpans(text) {
-			if jomini.PrefixKind(sp.Prefix) != "" {
-				continue
-			}
-			out = append(out, typedCite{prefix: sp.Prefix, id: sp.ID})
-		}
-	}
-	jomini.Walk(root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
-		switch n := st.(type) {
-		case *jomini.Assignment:
-			if !n.Key.Quoted {
-				add(n.Key.Text)
-			}
-			if sc, ok := n.Value.(*jomini.Scalar); ok && !sc.Quoted {
-				add(sc.Text)
-			}
-		case *jomini.ValueStmt:
-			if sc, ok := n.Value.(*jomini.Scalar); ok && !sc.Quoted {
-				add(sc.Text)
-			}
-		}
-		return true
-	})
-	return out
-}

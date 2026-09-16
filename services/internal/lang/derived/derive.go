@@ -14,7 +14,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"sync"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/declared"
@@ -31,6 +30,8 @@ type Derived struct {
 	Wrappers        map[string]bool
 	FieldValueKinds map[string]string
 	LocFields       map[string]bool
+	// CitedByKind is the whole corpus's citations by nested child kind. The corpus pass must set it before it shares one *Derived across workers: nil means "this caller holds one file", which makes ExtractFacts derive that file's own facts and WRITE them back here.
+	CitedByKind map[string]map[string]bool
 }
 
 // derivedFromCache copies the persisted derived maps so a live reindex can overlay one file onto them. Nil cache yields empty derived.
@@ -335,73 +336,47 @@ const (
 )
 
 // deriveFireKeys counts, per assignment key, how many of the names on its RHS are harvested event or on_action ids (or the event-id form `ns.1`).
-func deriveFireKeys(root *jomini.Root, eventIDs, onActionIDs map[string]bool) map[string]*fireCount {
-	if root == nil {
-		return nil
-	}
+func deriveFireKeys(ff FileFacts, eventIDs, onActionIDs map[string]bool) map[string]*fireCount {
 	out := map[string]*fireCount{}
-	var walk func([]jomini.Statement)
-	walk = func(stmts []jomini.Statement) {
-		for _, st := range stmts {
-			a, ok := st.(*jomini.Assignment)
-			if !ok {
-				if vs, ok := st.(*jomini.ValueStmt); ok {
-					if b := jomini.BlockOf(vs.Value); b != nil {
-						walk(b.Statements)
-					}
-				}
-				continue
+	for i := range ff.Facts {
+		f := ff.Facts[i]
+		if f.Key == "" || f.Quoted || jomini.IsStop(f.Key) ||
+			loc.Classify(f.Key) != loc.PropNone || strings.EqualFold(f.Key, "id") {
+			continue
+		}
+		for _, to := range ff.fireNames(int32(i)) {
+			m := out[f.Key]
+			if m == nil {
+				m = &fireCount{kinds: map[string]int{}}
+				out[f.Key] = m
 			}
-			if !a.Key.Quoted && !jomini.IsStop(a.Key.Text) &&
-				loc.Classify(a.Key.Text) == loc.PropNone &&
-				!strings.EqualFold(a.Key.Text, "id") {
-				for _, to := range fireTargets(a.Value) {
-					m := out[a.Key.Text]
-					if m == nil {
-						m = &fireCount{kinds: map[string]int{}}
-						out[a.Key.Text] = m
-					}
-					m.named++
-					if kind := classifyFireTarget(to, eventIDs, onActionIDs); kind != "" {
-						m.kinds[kind]++
-					}
-				}
-			}
-			if b := jomini.BlockOf(a.Value); b != nil {
-				walk(b.Statements)
+			m.named++
+			if kind := classifyFireTarget(to, eventIDs, onActionIDs); kind != "" {
+				m.kinds[kind]++
 			}
 		}
 	}
-	walk(root.Statements)
 	return out
 }
 
-// fireTargets is the assignment's own RHS: a scalar, list values, or inner id=/digit keys. Nested fire sites stay on their own keys.
-func fireTargets(v jomini.Value) []string {
+// fireNames is the assignment's own RHS: a scalar, list values, or inner id=/digit keys. Nested fire sites stay on their own keys.
+func (ff *FileFacts) fireNames(i int32) []string {
+	f := ff.Facts[i]
 	var out []string
-	if sc, ok := v.(*jomini.Scalar); ok {
-		if !sc.Quoted && fireTargetOK(sc.Text) {
-			out = append(out, sc.Text)
+	if !f.Block {
+		if !f.VQuoted && fireTargetOK(f.Value) {
+			out = append(out, f.Value)
 		}
 		return out
 	}
-	b := jomini.BlockOf(v)
-	if b == nil {
-		return out
-	}
-	for _, st := range b.Statements {
-		switch n := st.(type) {
-		case *jomini.ValueStmt:
-			if sc, ok := n.Value.(*jomini.Scalar); ok && !sc.Quoted &&
-				fireTargetOK(sc.Text) {
-				out = append(out, sc.Text)
-			}
-		case *jomini.Assignment:
-			key := strings.ToLower(n.Key.Text)
-			if sc, ok := n.Value.(*jomini.Scalar); ok && !sc.Quoted &&
-				fireTargetOK(sc.Text) && (key == "id" || isDigitKey(key)) {
-				out = append(out, sc.Text)
-			}
+	for j := i + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= i; j++ {
+		c := ff.Facts[j]
+		if c.Parent != i || c.Block || c.VQuoted || !fireTargetOK(c.Value) {
+			continue
+		}
+		key := strings.ToLower(c.Key)
+		if c.Key == "" || key == "id" || isDigitKey(key) {
+			out = append(out, c.Value)
 		}
 	}
 	return out
@@ -458,36 +433,6 @@ func mergeFireCounts(dst, src map[string]*fireCount) map[string]*fireCount {
 	return dst
 }
 
-// collectFieldCites gathers `field = name` pairs whose RHS could be an undefined database row, the other half of the nested-shape join.
-func collectFieldCites(root *jomini.Root) []typedCite {
-	if root == nil {
-		return nil
-	}
-	var out []typedCite
-	jomini.Walk(root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
-		a, ok := st.(*jomini.Assignment)
-		if !ok || a.Key.Quoted {
-			return true
-		}
-		sc, ok := a.Value.(*jomini.Scalar)
-		if !ok || sc.Quoted || sc.Text == "" || jomini.SkipObjectRHS(sc.Text) {
-			return true
-		}
-		if _, _, ok := game.ParseTyped("", sc.Text); ok {
-			return true
-		}
-		if _, ok := jomini.ParsePrefixed(sc.Text); ok {
-			return true
-		}
-		if !jomini.IsDefName(sc.Text) || jomini.IsStop(sc.Text) {
-			return true
-		}
-		out = append(out, typedCite{prefix: a.Key.Text, id: sc.Text})
-		return true
-	})
-	return out
-}
-
 func nestedChildKind(gameID, prefix, id string, prefixKinds map[string]string) string {
 	if prefixKinds != nil {
 		if k := prefixKinds[prefix]; k != "" {
@@ -517,69 +462,6 @@ func addNestedCite(
 	dst[c.id] = append(dst[c.id], childKind)
 }
 
-// walkNestedWanted visits nested object keys (depth > 0) that are in want.
-func walkNestedWanted(
-	gameID, rel string, root *jomini.Root, want map[string][]string,
-	fn func(parentKind, groupKey, childKey, childKind string),
-) {
-	if root == nil || len(want) == 0 {
-		return
-	}
-	parentKind := game.MatchExtract(gameID, rel).Kind
-	var walk func(stmts []jomini.Statement, wrapper string, depth int)
-	walk = func(stmts []jomini.Statement, wrapper string, depth int) {
-		for _, st := range stmts {
-			a, ok := st.(*jomini.Assignment)
-			if !ok {
-				if vs, ok := st.(*jomini.ValueStmt); ok {
-					if b := jomini.BlockOf(vs.Value); b != nil {
-						walk(b.Statements, wrapper, depth+1)
-					}
-				}
-				continue
-			}
-			name := game.KeyIdentity(gameID, a.Key.Text)
-			b := jomini.BlockOf(a.Value)
-			if b != nil && depth > 0 {
-				for _, ck := range want[name] {
-					fn(parentKind, wrapper, name, ck)
-				}
-			}
-			if b != nil {
-				next := wrapper
-				if depth == 0 {
-					next = ""
-				} else if wrapper == "" {
-					next = name
-				}
-				walk(b.Statements, next, depth+1)
-			}
-		}
-	}
-	walk(root.Statements, "", 0)
-}
-
-// deriveNestedShapes records parent→child harvest patterns from unresolved cites, for a corpus small enough to walk on its own (one edited file). deriveAll folds the same two halves into the walk it already makes. The child kind must be something the game DECLARES as a type. Without that test the pass harvests any repeated inner key as a database: on CK3 it minted 310,044 defs of kinds named `SKILL`, `TIER` and `$SKILL$` -- script parameter names -- which was 64% of the entire model.
-func deriveNestedShapes(
-	gameID string, corp corpus, defs []Def, defKeys map[string]bool,
-	prefixKinds map[string]string, schema *declared.Schema,
-	cites, fieldCites []typedCite,
-) []NestedShape {
-	idChild := nestedIDChild(gameID, defKeys, prefixKinds, cites, fieldCites)
-	if len(idChild) == 0 {
-		return nil
-	}
-	byChild := map[string]*nestedWanted{}
-	var mu sync.Mutex
-	_ = corp.walk(func(f fileRef, res jomini.Result) error {
-		mu.Lock()
-		defer mu.Unlock()
-		observeNestedWanted(gameID, f.rel, res.Root, idChild, byChild)
-		return nil
-	})
-	return nestedShapesFrom(byChild, schema)
-}
-
 // nestedWanted is where one cited-but-undefined child kind was found: the parent it sits under, the group key inside that parent, and the first-letter set of its keys.
 type nestedWanted struct {
 	parent, group string
@@ -600,35 +482,6 @@ func nestedIDChild(
 		addNestedCite(idChild, defKeys, gameID, c, prefixKinds)
 	}
 	return idChild
-}
-
-// observeNestedWanted is the per-file half. Accumulation is commutative -- a clash flag, a group that nulls on disagreement, a letter set -- so it does not care which walk it rides on or in what order files arrive.
-func observeNestedWanted(
-	gameID, rel string, root *jomini.Root,
-	idChild map[string][]string, byChild map[string]*nestedWanted,
-) {
-	walkNestedWanted(gameID, rel, root, idChild,
-		func(parent, group, childKey, childKind string) {
-			a := byChild[childKind]
-			if a == nil {
-				a = &nestedWanted{
-					parent: parent, group: group, ok: true,
-					letters: map[byte]bool{},
-				}
-				byChild[childKind] = a
-			}
-			if a.parent != parent {
-				a.clash = true
-			}
-			if a.group != group {
-				a.group = ""
-			}
-			if a.letters != nil && len(childKey) > 2 && childKey[1] == '_' {
-				a.letters[childKey[0]] = true
-			} else if a.letters != nil {
-				a.letters = nil
-			}
-		})
 }
 
 // nestedShapesFrom turns the accumulator into shapes, keeping only child kinds the game declares.
@@ -668,129 +521,6 @@ func keyPrefixOK(key, prefixSet string) bool {
 	}
 	return strings.IndexByte(prefixSet, key[0]) >= 0
 }
-
-func looksLikeObject(v jomini.Value) bool {
-	b := jomini.BlockOf(v)
-	if b == nil {
-		return false
-	}
-	if len(b.Statements) == 0 {
-		return true
-	}
-	for _, st := range b.Statements {
-		if _, ok := st.(*jomini.Assignment); ok {
-			return true
-		}
-	}
-	return false
-}
-
-func hasCitedDescendant(gameID string, b *jomini.Block, cited map[string]bool) bool {
-	if b == nil {
-		return false
-	}
-	for _, st := range b.Statements {
-		a, ok := st.(*jomini.Assignment)
-		if !ok {
-			continue
-		}
-		name := game.KeyIdentity(gameID, a.Key.Text)
-		if cited[name] {
-			return true
-		}
-		if inner := jomini.BlockOf(a.Value); inner != nil &&
-			hasCitedDescendant(gameID, inner, cited) {
-			return true
-		}
-	}
-	return false
-}
-
-// applyNestedShape harvests child defs from an already-parsed parent file.
-func applyNestedShape(
-	gameID, path, origin string, root *jomini.Root, li *jomini.LineIndex,
-	shape NestedShape, cited map[string]bool,
-) []Def {
-	if root == nil {
-		return nil
-	}
-	var defs []Def
-	add := func(a *jomini.Assignment) {
-		name := game.KeyIdentity(gameID, a.Key.Text)
-		if !jomini.IsDefName(name) || jomini.IsStop(name) {
-			return
-		}
-		if !looksLikeObject(a.Value) {
-			return
-		}
-		d := makeDef(shape.ChildKind, name, path, origin, a.Key.Range, li)
-		d.Nested = true
-		defs = append(defs, d)
-	}
-	if shape.GroupKey != "" {
-		var walk func([]jomini.Statement)
-		walk = func(stmts []jomini.Statement) {
-			for _, st := range stmts {
-				a, ok := st.(*jomini.Assignment)
-				if !ok {
-					if vs, ok := st.(*jomini.ValueStmt); ok {
-						if b := jomini.BlockOf(vs.Value); b != nil {
-							walk(b.Statements)
-						}
-					}
-					continue
-				}
-				if strings.EqualFold(a.Key.Text, shape.GroupKey) {
-					if b := jomini.BlockOf(a.Value); b != nil {
-						for _, inner := range b.Statements {
-							ia, ok := inner.(*jomini.Assignment)
-							if ok && !ia.Key.Quoted {
-								add(ia)
-							}
-						}
-					}
-				}
-				if b := jomini.BlockOf(a.Value); b != nil {
-					walk(b.Statements)
-				}
-			}
-		}
-		walk(root.Statements)
-		return defs
-	}
-	var walk func(stmts []jomini.Statement, depth int)
-	walk = func(stmts []jomini.Statement, depth int) {
-		for _, st := range stmts {
-			a, ok := st.(*jomini.Assignment)
-			if !ok {
-				if vs, ok := st.(*jomini.ValueStmt); ok {
-					if b := jomini.BlockOf(vs.Value); b != nil {
-						walk(b.Statements, depth+1)
-					}
-				}
-				continue
-			}
-			b := jomini.BlockOf(a.Value)
-			if b == nil {
-				continue
-			}
-			if depth > 0 {
-				name := game.KeyIdentity(gameID, a.Key.Text)
-				if shape.KeyPrefix != "" {
-					if keyPrefixOK(name, shape.KeyPrefix) {
-						add(a)
-					}
-				} else if cited[name] || hasCitedDescendant(gameID, b, cited) {
-					add(a)
-				}
-			}
-			walk(b.Statements, depth+1)
-		}
-	}
-	walk(root.Statements, 0)
-	return defs
-}
-
 func citedIDsForKind(cites []typedCite, prefixKinds map[string]string, childKind string) map[string]bool {
 	out := map[string]bool{}
 	ck := jomini.CanonicalKind(childKind)
@@ -807,69 +537,6 @@ func citedIDsForKind(cites []typedCite, prefixKinds map[string]string, childKind
 		}
 	}
 	return out
-}
-
-// deriveWrappers marks top-level blocks whose inners are typed cites to existing defs (Vic3 COUNTRIES = { c:USA ?= { } }). Callers drop defs with these keys, so a false positive deletes a real object from the model. A `keyword name = { }` pair is never a wrapper however its body is shaped: CK3 declares inline macros that way, and matching them on shape alone deleted 28 vanilla macros from the model.
-func deriveWrappers(gameID, rel string, root *jomini.Root, defKeys map[string]bool) []string {
-	if root == nil {
-		return nil
-	}
-	// A folder that declares named script bodies has already said what its top-level keys are, and those bodies are routinely a single typed cite -- the wrapper shape exactly.
-	if jomini.DeclaresNamedBodies(game.MatchExtract(gameID, rel).Kind) {
-		return nil
-	}
-	var out []string
-	for i, st := range root.Statements {
-		a, ok := st.(*jomini.Assignment)
-		if !ok || a.Key.Quoted {
-			continue
-		}
-		if keywordDeclared(root.Statements, i) {
-			continue
-		}
-		b := jomini.BlockOf(a.Value)
-		if b == nil {
-			continue
-		}
-		any, all := false, true
-		for _, inner := range b.Statements {
-			ia, ok := inner.(*jomini.Assignment)
-			if !ok || ia.Key.Quoted {
-				continue
-			}
-			any = true
-			kind, id, ok := game.ParseTyped(gameID, ia.Key.Text)
-			if !ok {
-				if sp, sok := jomini.TypedSpanAt(ia.Key.Text, 0); sok {
-					kind, id, ok = game.ParseTyped(gameID, sp.Prefix+":"+sp.ID)
-				}
-			}
-			if !ok || kind == "" || !defKeys[id] {
-				all = false
-				break
-			}
-		}
-		if any && all {
-			out = append(out, a.Key.Text)
-		}
-	}
-	return out
-}
-
-// keywordDeclared reports that stmts[i] is the named half of a `keyword name = { }` pair, the form extractKeywordName harvests as a def -- the same pairing rule read from the same statement list, so the two cannot disagree.
-func keywordDeclared(stmts []jomini.Statement, i int) bool {
-	if i == 0 {
-		return false
-	}
-	mv, ok := stmts[i-1].(*jomini.ValueStmt)
-	if !ok {
-		return false
-	}
-	sc, ok := mv.Value.(*jomini.Scalar)
-	if !ok || sc.Quoted {
-		return false
-	}
-	return jomini.DeclKeywordKind(sc.Text) != ""
 }
 
 func dropWrapperDefs(defs []Def, wrappers map[string]bool) []Def {
@@ -1005,6 +672,128 @@ func unambiguousBlocks(blockKinds map[string]map[string]bool) map[string]bool {
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+// deriveFacts derives one file's facts for a live reindex. The prefix table stays empty: prefixes are bound against the whole install by bindKinds, and one edited file is not evidence enough to rebind anything.
+func deriveFacts(ff FileFacts, idx *defIndex, schema *declared.Schema) *Derived {
+	fire := resolveFireKinds(deriveFireKeys(
+		ff, idx.keysOfKind("event"), idx.keysOfKind("on_action")))
+	if fire == nil {
+		fire = map[string]string{}
+	}
+	v := &Derived{
+		PrefixKinds: map[string]string{},
+		FireKeys:    fire,
+		Wrappers:    map[string]bool{},
+	}
+	defKeys := idx.citableKeys()
+	for _, w := range deriveWrappers(ff, defKeys) {
+		v.Wrappers[w] = true
+	}
+	byChild := map[string]*nestedWanted{}
+	cites, fieldCites := foldCites(ff)
+	observeNestedFacts(ff, nestedIDChild(
+		ff.GameID, defKeys, v.PrefixKinds, cites, fieldCites), byChild)
+	v.NestedShapes = nestedShapesFrom(byChild, schema)
+	return v
+}
+
+// observeNestedFacts is the per-file half of the nested join: every nested object key (depth > 0) some citation wants, filed under the parent kind and the depth-1 block it sits in. Accumulation is commutative -- a clash flag, a group that nulls on disagreement, a letter set -- so it does not care in what order files arrive.
+func observeNestedFacts(ff FileFacts, idChild map[string][]string, byChild map[string]*nestedWanted) {
+	if len(idChild) == 0 {
+		return
+	}
+	// wrap[i] is the fact naming the depth-1 block fact i sits under, which is the group key a shape records; -1 directly under a definition.
+	wrap := make([]int32, len(ff.Facts))
+	for i := range ff.Facts {
+		f := ff.Facts[i]
+		at := int32(-1)
+		if f.Parent >= 0 {
+			at = wrap[f.Parent]
+		}
+		wrap[i] = at
+		if f.Key == "" || !f.Block {
+			continue
+		}
+		if f.Depth == 0 {
+			wrap[i] = -1
+			continue
+		}
+		name := game.KeyIdentity(ff.GameID, f.Key)
+		if at < 0 {
+			wrap[i] = int32(i)
+		}
+		if len(idChild[name]) == 0 {
+			continue
+		}
+		w := ""
+		if at >= 0 {
+			w = game.KeyIdentity(ff.GameID, ff.Facts[at].Key)
+		}
+		for _, ck := range idChild[name] {
+			a := byChild[ck]
+			if a == nil {
+				a = &nestedWanted{
+					parent: ff.Rule.Kind, group: w, ok: true, letters: map[byte]bool{},
+				}
+				byChild[ck] = a
+			}
+			if a.parent != ff.Rule.Kind {
+				a.clash = true
+			}
+			if a.group != w {
+				a.group = ""
+			}
+			if a.letters != nil && len(name) > 2 && name[1] == '_' {
+				a.letters[name[0]] = true
+			} else if a.letters != nil {
+				a.letters = nil
+			}
+		}
+	}
+}
+
+// deriveWrappers marks top-level blocks whose inners are typed cites to existing defs (Vic3 COUNTRIES = { c:USA ?= { } }). Callers drop defs with these keys, so a false positive deletes a real object from the model.
+func deriveWrappers(ff FileFacts, defKeys map[string]bool) []string {
+	// A folder that declares named script bodies has already said what its top-level keys are, and those bodies are routinely a single typed cite -- the wrapper shape exactly.
+	if jomini.DeclaresNamedBodies(ff.Rule.Kind) {
+		return nil
+	}
+	var out []string
+	for i := range ff.Facts {
+		f := ff.Facts[i]
+		if f.Depth != 0 || f.Key == "" || f.Quoted || !f.Block {
+			continue
+		}
+		// A `keyword name = { }` pair is never a wrapper however its body is shaped: CK3 declares inline macros that way, and matching them on shape alone deleted 28 vanilla macros from the model. The keyword is a childless bare word, so the fact before this one is the statement before it.
+		if i > 0 {
+			if p := ff.Facts[i-1]; p.Parent == f.Parent && p.Key == "" && !p.Quoted &&
+				jomini.DeclKeywordKind(p.Value) != "" {
+				continue
+			}
+		}
+		any, all := false, true
+		for j := int32(i) + 1; j < int32(len(ff.Facts)) && ff.Facts[j].Parent >= int32(i) && all; j++ {
+			c := ff.Facts[j]
+			if c.Parent != int32(i) || c.Key == "" || c.Quoted {
+				continue
+			}
+			any = true
+			kind, id, ok := game.ParseTyped(ff.GameID, c.Key)
+			if !ok {
+				if sp, sok := jomini.TypedSpanAt(c.Key, 0); sok {
+					kind, id, ok = game.ParseTyped(ff.GameID, sp.Prefix+":"+sp.ID)
+				}
+			}
+			if !ok || kind == "" || !defKeys[id] {
+				all = false
+			}
+		}
+		if any && all {
+			out = append(out, f.Key)
+		}
 	}
 	return out
 }

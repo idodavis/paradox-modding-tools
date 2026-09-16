@@ -197,8 +197,9 @@ ns.1 = {
 }
 ns.2 = { title = ns.2.t }
 `
-		res := jomini.Parse(jomini.Normalize(src))
-		got := resolveFireKinds(deriveFireKeys(res.Root, map[string]bool{
+		ff := FactsOf("ck3", "events/x.txt", "events/x.txt", "",
+			jomini.Parse(jomini.Normalize(src)))
+		got := resolveFireKinds(deriveFireKeys(ff, map[string]bool{
 			"ns.1": true, "ns.2": true,
 		}, nil))
 		if got["title"] != "" || got["desc"] != "" {
@@ -238,19 +239,24 @@ ns.2 = { title = ns.2.t }
 			"christianity_religion = {\n\tfaiths = {\n\t\tcatholic = { color = { 1 1 1 } }\n\t}\n}\n"))
 		cite := jomini.Parse(jomini.Normalize(
 			"e.1 = { immediate = { exists = faith:catholic } }\n"))
-		files := []parsedScript{
-			{f: fileRef{rel: "common/religion/religion_types/r.txt"}, res: tree},
-			{f: fileRef{rel: "events/x.txt"}, res: cite},
+		files := []FileFacts{
+			FactsOf("ck3", "r.txt", "common/religion/religion_types/r.txt", "", tree),
+			FactsOf("ck3", "x.txt", "events/x.txt", "", cite),
 		}
 		defs := []Def{{Kind: "religion_types", Key: "christianity_religion"}}
 		keys := newDefIndex(defs).citableKeys()
 		var cites []typedCite
-		for _, f := range files {
-			cites = append(cites, collectTypedCites(f.res.Root)...)
+		for _, ff := range files {
+			t, _ := foldCites(ff)
+			cites = append(cites, t...)
 		}
 		shapesFor := func(s *declared.Schema) []NestedShape {
-			return deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files},
-				defs, keys, nil, s, cites, nil)
+			byChild := map[string]*nestedWanted{}
+			idChild := nestedIDChild("ck3", keys, nil, cites, nil)
+			for _, ff := range files {
+				observeNestedFacts(ff, idChild, byChild)
+			}
+			return nestedShapesFrom(byChild, s)
 		}
 		got := shapesFor(&declared.Schema{Scopes: map[string]declared.ScopeType{"faith": {}}})
 		if len(got) != 1 || got[0].ParentKind != "religion_types" ||

@@ -129,7 +129,7 @@ func TestBindKinds(t *testing.T) {
 			if len(files) == 0 {
 				t.Fatalf("no script files under %s", install)
 			}
-			acc, derived, _, err := collectExtracts(context.Background(), g.id, files, true, nil, s, nil)
+			acc, derived, _, err := collectExtracts(context.Background(), g.id, files, nil, s, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

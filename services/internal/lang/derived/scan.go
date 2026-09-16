@@ -72,7 +72,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	step(30, "parsing script")
 	files := append(append([]fileRef{}, inv.script...), inv.gui...)
 	acc, derived, dataFns, err := collectExtracts(
-		ctx, req.GameID, files, true, nil, schema, locKeys)
+		ctx, req.GameID, files, nil, schema, locKeys)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -438,7 +438,7 @@ func walkFiles(ctx context.Context, files []fileRef, fn func(fileRef) error) err
 
 // collectExtracts harvests a whole corpus in two streaming passes: the first needs no global knowledge and produces the defs, the second needs the derived facts, which need every def. Neither retains a parse tree -- holding all 4,551 CK3 trees at once cost 4.30 GB and drove a scan to an 8.06 GB peak, while re-reading and re-parsing the install costs about half a second. schema binds prefixes to databases; it comes from the cache for mods and is read up front for a vanilla scan. locKeys is the install's localization key set, nil for a mod walk, which inherits the install's answer from the cache.
 func collectExtracts(
-	ctx context.Context, gameID string, files []fileRef, bodies bool,
+	ctx context.Context, gameID string, files []fileRef,
 	cache *VanillaCache, schema *declared.Schema, locKeys map[string]bool,
 ) (*Evidence, *Derived, map[string]bool, error) {
 	corp := corpus{ctx: ctx, gameID: gameID, files: files}
@@ -450,10 +450,10 @@ func collectExtracts(
 	var mu sync.Mutex
 
 	if err := corp.walk(func(f fileRef, res jomini.Result) error {
-		ex := extractForms(gameID, f.abs, f.rel, f.origin, res, bodies)
+		ff := FactsOf(gameID, f.abs, f.rel, f.origin, res)
+		ex := foldForms(ff)
 		fns := harvestGetSet(res.Src)
-		c := collectTypedCites(res.Root)
-		fc := collectFieldCites(res.Root)
+		c, fc := foldCites(ff)
 		mu.Lock()
 		defer mu.Unlock()
 		baseDefs = append(baseDefs, ex.Defs...)
@@ -489,18 +489,12 @@ func collectExtracts(
 	baseDefs = nil
 
 	// Second pass builds the model: the derived facts are complete now, so wrapper defs drop, nested defs appear, and refs and edges resolve. The citations are indexed once, corpus-wide, because a nested database is routinely declared in one file and cited from another.
-	citedByKind := citedIDsByKind(derived.NestedShapes, cites, derived.PrefixKinds)
+	derived.CitedByKind = citedIDsByKind(derived.NestedShapes, cites, derived.PrefixKinds)
 	acc := newEvidence()
 	acc.fieldRHS = fieldRHS
 	if err := corp.walk(func(f fileRef, res jomini.Result) error {
-		ex := extractForms(gameID, f.abs, f.rel, f.origin, res, bodies)
-		ex.Defs = applyDerivedDefs(gameID, f.abs, f.origin, f.rel, res, ex.Defs, derived, citedByKind)
-		bodyRefs, edges, cands := extractRefsAndEdges(
-			gameID, res.Root, res.Lines(), f.abs, ex.Defs, derived, schema,
-		)
-		ex.Refs = append(ex.Refs, bodyRefs...)
-		ex.Edges, ex.Cands = edges, cands
-		acc.merge(ex)
+		acc.merge(ExtractFacts(
+			FactsOf(gameID, f.abs, f.rel, f.origin, res), schema, derived))
 		return nil
 	}); err != nil {
 		return acc, derived, dataFns, err
@@ -509,7 +503,7 @@ func collectExtracts(
 	// Nested databases (CK3 faiths under religions) only exist as defs after applyDerivedDefs, so the first bind could not see them.
 	rebind(derived, schema, acc.defs)
 
-	if err := harvestLocFiles(ctx, gameID, files, bodies, acc); err != nil {
+	if err := harvestLocFiles(ctx, gameID, files, acc); err != nil {
 		return acc, derived, dataFns, err
 	}
 	dropEngineSlotRefs(acc, cache)
@@ -532,7 +526,7 @@ func mergeValueSets(dst, src map[string]map[string]bool) {
 
 // harvestLocFiles merges loc YAML that corpus.walk skipped (not Jomini).
 func harvestLocFiles(
-	ctx context.Context, gameID string, files []fileRef, bodies bool, acc *Evidence,
+	ctx context.Context, gameID string, files []fileRef, acc *Evidence,
 ) error {
 	// walkN rather than walkFiles: the index is the file's load order, and the merge needs it to decide which value wins when two files define one key.
 	return walkN(ctx, len(files), func(i int) error {
@@ -545,7 +539,7 @@ func harvestLocFiles(
 			return nil
 		}
 		text, _ := jomini.Decode(raw)
-		ex := ExtractFile(gameID, f.abs, f.rel, f.origin, text, bodies)
+		ex := ExtractFile(gameID, f.abs, f.rel, f.origin, text)
 		ex.LocOrder = i
 		acc.merge(ex)
 		return nil
@@ -556,26 +550,9 @@ type corpus struct {
 	ctx    context.Context
 	gameID string
 	files  []fileRef
-	inline []parsedScript
-}
-
-// oneFile is a corpus of a single already-parsed file.
-func oneFile(gameID, rel string, res jomini.Result) corpus {
-	return corpus{
-		gameID: gameID,
-		inline: []parsedScript{{f: fileRef{rel: rel}, res: res}},
-	}
 }
 
 func (c corpus) walk(fn func(fileRef, jomini.Result) error) error {
-	if c.inline != nil {
-		for _, p := range c.inline {
-			if err := fn(p.f, p.res); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
 	return walkFiles(c.ctx, c.files, func(f fileRef) error {
 		if game.MatchExtract(c.gameID, f.rel).Mode == game.ModeLocKey {
 			return nil
@@ -606,17 +583,16 @@ func deriveAll(
 	byChild := map[string]*nestedWanted{}
 	var mu sync.Mutex
 	_ = corp.walk(func(f fileRef, res jomini.Result) error {
-		fire := deriveFireKeys(res.Root, ev, oa)
-		wraps := deriveWrappers(gameID, f.rel, res.Root, defKeys)
+		ff := FactsOf(gameID, f.abs, f.rel, f.origin, res)
+		fire := deriveFireKeys(ff, ev, oa)
+		wraps := deriveWrappers(ff, defKeys)
 		mu.Lock()
 		defer mu.Unlock()
 		fireCounts = mergeFireCounts(fireCounts, fire)
 		for _, w := range wraps {
 			wrappers[w] = true
 		}
-		if len(idChild) > 0 {
-			observeNestedWanted(gameID, f.rel, res.Root, idChild, byChild)
-		}
+		observeNestedFacts(ff, idChild, byChild)
 		return nil
 	})
 	return &Derived{

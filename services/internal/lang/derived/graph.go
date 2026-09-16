@@ -60,60 +60,6 @@ func fireSiteRescopes(stack []edgeFrame) bool {
 	return false
 }
 
-func optionNameKey(v jomini.Value) string {
-	b := jomini.BlockOf(v)
-	if b == nil {
-		return ""
-	}
-	for _, st := range b.Statements {
-		a, ok := st.(*jomini.Assignment)
-		if ok && strings.EqualFold(a.Key.Text, "name") {
-			if sc, ok := a.Value.(*jomini.Scalar); ok {
-				return sc.Text
-			}
-		}
-	}
-	return ""
-}
-
-// walkFireTargets visits every scalar under a fire assignment that could name an event or on_action: the bare RHS, list values, and `id = ` / numbered inners. derived supplies the fire kinds harvested from the install; nil means only the structural keys (`id`, digits) count.
-func walkFireTargets(
-	v jomini.Value, derived *Derived, fn func(name string, start, end int),
-) {
-	switch t := v.(type) {
-	case *jomini.Scalar:
-		if !t.Quoted && fireTargetOK(t.Text) {
-			fn(t.Text, t.Range.Start, t.Range.End)
-		}
-	case *jomini.Block, *jomini.TaggedBlock:
-		b := jomini.BlockOf(v)
-		if b == nil {
-			return
-		}
-		for _, st := range b.Statements {
-			switch n := st.(type) {
-			case *jomini.ValueStmt:
-				if sc, ok := n.Value.(*jomini.Scalar); ok && !sc.Quoted && fireTargetOK(sc.Text) {
-					fn(sc.Text, sc.Range.Start, sc.Range.End)
-				} else if jomini.BlockOf(n.Value) != nil {
-					walkFireTargets(n.Value, derived, fn)
-				}
-			case *jomini.Assignment:
-				key := strings.ToLower(n.Key.Text)
-				own := derived.fireKind(n.Key.Text)
-				if sc, ok := n.Value.(*jomini.Scalar); ok && !sc.Quoted && fireTargetOK(sc.Text) &&
-					(key == "id" || isDigitKey(key) || own != "") {
-					fn(sc.Text, sc.Range.Start, sc.Range.End)
-					continue
-				}
-				if own != "" || key == "id" || isDigitKey(key) {
-					walkFireTargets(n.Value, derived, fn)
-				}
-			}
-		}
-	}
-}
-
 func fireTargetOK(s string) bool {
 	if s == "" {
 		return false

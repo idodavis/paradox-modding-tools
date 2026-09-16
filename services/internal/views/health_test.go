@@ -33,7 +33,6 @@ func TestHealthDanglingHygieneAndGroup(t *testing.T) {
 		"common/religion/religion_types/r.txt",
 		"",
 		jomini.Parse("christianity_religion = { faiths = { catholic = { color = { 1 1 1 } exists = faith:catholic } } }\n"),
-		false,
 		&derived.VanillaCache{Schema: schema})
 	s := twoModTreesWithCache(t, &derived.VanillaCache{Defs: van.Defs, Schema: schema},
 		map[string]string{

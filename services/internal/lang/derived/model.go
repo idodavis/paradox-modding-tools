@@ -127,9 +127,9 @@ func (m *Model) Reindex(path, rel, text string, parsed jomini.Result) {
 	m.DropPath(key)
 	var ex FileExtract
 	if parsed.Root != nil {
-		ex = ExtractParsed(m.gameID, path, rel, origin, parsed, false, m.cache)
+		ex = ExtractParsed(m.gameID, path, rel, origin, parsed, m.cache)
 	} else {
-		ex = ExtractFile(m.gameID, path, rel, origin, text, false)
+		ex = ExtractFile(m.gameID, path, rel, origin, text)
 	}
 	// Install files stay out of workspace harvest, but live call and $NAME$ sites must be queryable without waiting on a rescan.
 	if origin == game.OriginVanilla {

@@ -56,7 +56,7 @@ func TestDataTier(t *testing.T) {
 		t.Errorf("FieldValueKinds[holder] = %q, want characters", got)
 	}
 	src := "k_a = { 1000.1.1 = { holder = 100 } }\n"
-	ex := ExtractParsed("ck3", "t.txt", "game/history/titles/t.txt", "", jomini.Parse(src), false, c)
+	ex := ExtractParsed("ck3", "t.txt", "game/history/titles/t.txt", "", jomini.Parse(src), c)
 	cited := false
 	for _, r := range ex.Refs {
 		cited = cited || (r.Key == "100" && r.Kind == "characters")

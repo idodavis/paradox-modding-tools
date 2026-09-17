@@ -448,7 +448,7 @@ func TestVanillaTriggerCallRefs(t *testing.T) {
 		install := t.TempDir()
 		tf := write(t, install, trigRel, trig)
 		ef := write(t, install, callRel, call)
-		s := ck3VanillaSess(t, install, &derived.VanillaCache{
+		s := ck3VanillaSess(t, install, &vanillaCache{
 			Defs: []derived.Def{{
 				Kind: "scripted_trigger", Key: key, Path: tf,
 				Start: 0, End: len(key),
@@ -470,7 +470,7 @@ func TestVanillaTriggerCallRefs(t *testing.T) {
 		tf := write(t, install, trigRel, trig)
 		ef := write(t, install, callRel, call)
 		i := strings.Index(call, key)
-		s := ck3VanillaSess(t, install, &derived.VanillaCache{
+		s := ck3VanillaSess(t, install, &vanillaCache{
 			Defs: []derived.Def{{
 				Kind: "scripted_trigger", Key: key, Path: tf,
 				Start: 0, End: len(key),

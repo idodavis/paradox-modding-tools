@@ -53,8 +53,8 @@ func TestDuplicateDefinition(t *testing.T) {
 }
 
 // citeCache binds a prefix to a database so typed citations can be judged.
-func citeCache() *derived.VanillaCache {
-	c := &derived.VanillaCache{
+func citeCache() *vanillaCache {
+	c := &vanillaCache{
 		PrefixKinds: map[string]string{"culture": "cultures"},
 		// scopeKind is reversed from KindScope, and CiteFormOfScope reads it —
 		// PrefixKinds alone leaves the declared target unbound to any database.
@@ -69,7 +69,6 @@ func citeCache() *derived.VanillaCache {
 			},
 		},
 	}
-	derived.PrepareCache(c)
 	return c
 }
 
@@ -107,15 +106,17 @@ func TestUnresolvedRefSilentWhenTheDataTierFailed(t *testing.T) {
 			t.Setenv("XDG_CONFIG_HOME", dir)
 			t.Setenv("AppData", dir)
 			if tc.wantDiag {
-				if err := derived.SaveData(tc.install, "1.0", nil); err != nil {
+				main, data := derived.NewIndex("ck3"), derived.NewIndex("ck3")
+				main.InstallID, main.GameVersion = tc.install, "1.0"
+				data.InstallID, data.GameVersion = tc.install, "1.0"
+				if err := derived.SaveCache(main, data); err != nil {
 					t.Fatal(err)
 				}
 			}
-			cache := &derived.VanillaCache{
+			cache := &vanillaCache{
 				InstallID: tc.install, GameID: "ck3", GameVersion: "1.0",
 				PrefixKinds: map[string]string{"title": "titles"},
 			}
-			derived.PrepareCache(cache)
 			s, root := buildSession(t, "ck3", map[string]string{
 				"common/scripted_triggers/t.txt": "a = { x = title:k_nowhere }\n",
 			}, cache, nil)
@@ -284,7 +285,6 @@ func TestDiagnosticCodesRegistry(t *testing.T) {
 func TestUnresolvedRefIgnoresEphemeral(t *testing.T) {
 	c := citeCache()
 	c.PrefixKinds["flag"] = "flag"
-	derived.PrepareCache(c)
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/flags/f.txt": "some_flag = { }\n",
 		"common/scripted_effects/e.txt": "a = {\n" +
@@ -296,8 +296,7 @@ func TestUnresolvedRefIgnoresEphemeral(t *testing.T) {
 }
 
 func TestDuplicateDefinitionIgnoresNested(t *testing.T) {
-	c := &derived.VanillaCache{}
-	derived.PrepareCache(c)
+	c := &vanillaCache{}
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/activity_types/a.txt": "camp_party = {\n\tspecial_guests = { host }\n}\n",
 		"common/activity_types/b.txt": "chariot_race = {\n\tspecial_guests = { host }\n}\n",
@@ -316,8 +315,7 @@ func TestDuplicateDefinitionIgnoresNested(t *testing.T) {
 // one of those files carries a `mesh_list` block. They are not definitions
 // competing for a name.
 func TestDuplicateDefinitionSkipsGraphics(t *testing.T) {
-	c := &derived.VanillaCache{}
-	derived.PrepareCache(c)
+	c := &vanillaCache{}
 	s, root := buildSession(t, "eu5", map[string]string{
 		"in_game/gfx/map/city_data/one.txt": "mesh_list = {\n\ta = 1\n}\n",
 		"in_game/gfx/map/city_data/two.txt": "mesh_list = {\n\ta = 2\n}\n",
@@ -333,17 +331,14 @@ func TestDuplicateDefinitionSkipsGraphics(t *testing.T) {
 // accolade_names holding nothing in common. Only a name exactly one kind uses
 // can have an absence judged. See GAME-SYNTAX §14.
 func TestUnknownKey(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		NestedMembers: map[string][]string{
 			"triggered_desc": {"desc", "trigger", "first_valid", "random_valid",
 				"triggered_effect", "modifier"},
 			"option": {"name", "trigger", "ai_chance", "custom_tooltip",
 				"flavor", "show_as_unavailable"},
 		},
-		// `option` is a block name several kinds use; triggered_desc is not.
-		UnambiguousBlocks: map[string]bool{"triggered_desc": true},
 	}
-	derived.PrepareCache(c)
 	body := "namespace = ns\nns.1 = {\n" +
 		"\ttriggered_desc = {\n\t\tnot_a_real_key = yes\n\t}\n" +
 		"\toption = {\n\t\talso_not_real = yes\n\t}\n}\n"
@@ -354,8 +349,11 @@ func TestUnknownKey(t *testing.T) {
 			msgs = append(msgs, d.Message)
 		}
 	}
-	if len(msgs) != 1 {
-		t.Fatalf("want exactly one unknown-key, got %v", msgs)
+	// Both, because a cell is addressed by its file kind and its whole block
+	// path: `option` inside an event and `option` inside accolade_names are two
+	// cells, so the ambiguity the old block-name keying had to gate for is gone.
+	if len(msgs) != 2 {
+		t.Fatalf("want both unknown keys, got %v", msgs)
 	}
 	if !strings.Contains(msgs[0], "not_a_real_key") {
 		t.Errorf("message = %q, want the key in the judgeable block", msgs[0])
@@ -366,11 +364,9 @@ func TestUnknownKey(t *testing.T) {
 // tells you what it CAN hold, never what it cannot, and a name the model knows
 // anywhere is not evidence of a typo.
 func TestUnknownKeySilentWithoutEvidence(t *testing.T) {
-	c := &derived.VanillaCache{
-		NestedMembers:     map[string][]string{"thin_block": {"a", "b"}},
-		UnambiguousBlocks: map[string]bool{"thin_block": true},
+	c := &vanillaCache{
+		NestedMembers: map[string][]string{"thin_block": {"a", "b"}},
 	}
-	derived.PrepareCache(c)
 	body := "d = {\n\tthin_block = {\n\t\tanything = yes\n\t}\n}\n"
 	s, root := buildSession(t, "ck3",
 		map[string]string{"common/decisions/d.txt": body}, c, nil)
@@ -400,8 +396,8 @@ func TestDuplicateDefinitionAllowsInlineDeclarations(t *testing.T) {
 
 // declCache is a session cache carrying one documented value set, filed per
 // kind the way the harvest files it.
-func declCache() *derived.VanillaCache {
-	c := &derived.VanillaCache{
+func declCache() *vanillaCache {
+	c := &vanillaCache{
 		DeclaredFieldTypesByKind: map[string]map[string]string{
 			"scripted_relations": {
 				"uses_diplo_capacity": "none/mutual/giving/receiving",
@@ -413,7 +409,6 @@ func declCache() *derived.VanillaCache {
 			"type": "diplomacy/subject/union",
 		},
 	}
-	derived.PrepareCache(c)
 	return c
 }
 
@@ -542,7 +537,6 @@ func TestUnknownToken(t *testing.T) {
 		In: []string{"character"}, Target: "character",
 		Usage: "ordered_vassal = { limit = { <triggers> } order_by = <script_value> <effects> }",
 	}
-	derived.PrepareCache(c)
 
 	for _, tt := range []struct {
 		name, body string

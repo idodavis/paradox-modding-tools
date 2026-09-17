@@ -23,7 +23,7 @@ func coverageIssue(rows []HealthRow, lang, kind, key string) bool {
 }
 
 func TestCoverageStrictAndSkips(t *testing.T) {
-	s := buildSession(t, "ck3", nil, &derived.VanillaLoc{
+	s := buildSession(t, "ck3", nil, &vanillaLoc{
 		Sites: map[string]derived.LocEntry{"vanilla_key": {Value: "Hi"}},
 	}, []derived.ModInput{oneMod(t, "ck3", map[string]string{
 		"events/x.txt": `namespace = ns
@@ -73,7 +73,7 @@ ns.1 = {
 }
 
 func TestCoverageConventionLocsInGenericFile(t *testing.T) {
-	s := buildSession(t, "ck3", &derived.VanillaCache{
+	s := buildSession(t, "ck3", &vanillaCache{
 		LocConventions: map[string][]loc.Convention{
 			"decisions":  {{Template: "{id}", Coverage: 1}, {Template: "{id}_desc", Coverage: 1}},
 			"game_rules": {{Template: "game_rule_{id}", Coverage: 1}},
@@ -148,7 +148,7 @@ func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 }
 
 func TestCoverageIgnoresVanillaCacheRefs(t *testing.T) {
-	s := buildSession(t, "ck3", &derived.VanillaCache{
+	s := buildSession(t, "ck3", &vanillaCache{
 		LocRefs: []derived.Ref{{
 			Key: "vanilla_title", Kind: "loc", Path: "game/events/x.txt", Line: 1,
 		}},
@@ -177,7 +177,7 @@ ns.1 = { title = event_message_title }
 }
 
 func TestCoverageMissingNotSuppressedByDefaultLang(t *testing.T) {
-	s := session.NewWithLoc("ws", "ck3", "english", nil, nil, []derived.ModInput{
+	s := session.New("ws", "ck3", "english", nil, []derived.ModInput{
 		oneMod(t, "ck3", map[string]string{
 			"events/x.txt": `namespace = ns
 ns.1 = { type = character_event title = used_key }
@@ -236,13 +236,12 @@ ns.1 = { type = character_event title = used_key }
 
 // Orphaned is mod-local: a key is dead only when the mod that DEFINES it has nothing that reads it.
 func TestCoverageOrphanIsModLocal(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		LocKeyPrefixes: []string{"NOT"},
 		LocConventions: map[string][]loc.Convention{
 			"traits": {{Template: "{id}", Coverage: 1}},
 		},
 	}
-	derived.PrepareCache(c)
 	modA := oneMod(t, "ck3", map[string]string{
 		"common/traits/a.txt": "brave = { }\n",
 		"localization/english/a_l_english.yml": "" +
@@ -274,13 +273,12 @@ func TestCoverageOrphanIsModLocal(t *testing.T) {
 
 // The loudest orphan false positive: a key sharing its name with an object the mod defines.
 func TestCoverageCitedIdIsNotOrphaned(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		FieldValueKinds: map[string]string{"modifier": "opinion_modifiers"},
 		LocConventions: map[string][]loc.Convention{
 			"opinion_modifiers": {{Template: "{id}", Coverage: 1}},
 		},
 	}
-	derived.PrepareCache(c)
 	s := buildSession(t, "ck3", c, nil, []derived.ModInput{oneMod(t, "ck3",
 		map[string]string{
 			"common/opinion_modifiers/00_x.txt": "friend_after_subjugation = {\n\topinion = 20\n}\n",

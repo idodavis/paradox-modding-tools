@@ -1,0 +1,11 @@
+# A brave character
+brave = {
+	category = personality
+	opposites = { craven }
+	ai_boldness = 30
+	desc = trait_brave_desc
+	portrait = {
+		trigger = { always = yes }
+	}
+}
+craven = { category = personality }

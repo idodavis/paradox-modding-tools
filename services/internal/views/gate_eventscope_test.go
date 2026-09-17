@@ -37,7 +37,7 @@ func TestVanillaEventScopeClean(t *testing.T) {
 			}
 			id := "evt-" + g.id
 			t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
-			cache, vloc, err := derived.Scan(context.Background(), derived.ScanRequest{
+			cache, _, err := derived.Scan(context.Background(), derived.ScanRequest{
 				InstallID: id, GameID: g.id, InstallPath: g.root, Version: "p", LocLang: "english",
 			})
 			if err != nil {
@@ -64,7 +64,7 @@ func TestVanillaEventScopeClean(t *testing.T) {
 				_ = os.WriteFile(filepath.Join(dst, d.Name()), b, 0o644)
 				return nil
 			})
-			s := session.NewWithLoc("evt", g.id, "english", cache, vloc,
+			s := session.New("evt", g.id, "english", cache,
 				[]derived.ModInput{{Origin: "mod", Root: mod, Name: "v"}})
 			defer s.Close()
 			counts := map[string]int{}

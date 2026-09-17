@@ -7,7 +7,6 @@ import (
 
 	"paradox-modding-tools/services/internal/lang/declared"
 	"paradox-modding-tools/services/internal/lang/derived"
-	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/session"
 )
 
@@ -28,13 +27,13 @@ func TestHealthDanglingHygieneAndGroup(t *testing.T) {
 			"trigger_event": {Target: "event"},
 		},
 	}
-	van := derived.ExtractParsed("ck3",
-		"common/religion/religion_types/r.txt",
-		"common/religion/religion_types/r.txt",
-		"",
-		jomini.Parse("christianity_religion = { faiths = { catholic = { color = { 1 1 1 } exists = faith:catholic } } }\n"),
-		&derived.VanillaCache{Schema: schema})
-	s := twoModTreesWithCache(t, &derived.VanillaCache{Defs: van.Defs, Schema: schema},
+	// The install: one religion with the faith nested under it, as the shape vote harvests them.
+	const rel = "common/religion/religion_types/r.txt"
+	van := []derived.Def{
+		{Kind: "religion_types", Key: "christianity_religion", Path: rel},
+		{Kind: "faith", Key: "catholic", Path: rel, Nested: true},
+	}
+	s := twoModTreesWithCache(t, &vanillaCache{Defs: van, Schema: schema},
 		map[string]string{
 			"common/culture/cultures/c.txt": "english = { }\n",
 			"common/script_values/v.txt":    "named_sv = { value = 1 }\n",
@@ -97,7 +96,7 @@ t.1 = {
 
 func TestHealthLocEveryLanguage(t *testing.T) {
 	t.Parallel()
-	s := session.NewWithLoc("ws", "ck3", "french", nil, nil, []derived.ModInput{
+	s := session.New("ws", "ck3", "french", nil, []derived.ModInput{
 		oneMod(t, "ck3", map[string]string{
 			"events/x.txt": `namespace = ns
 ns.1 = { type = character_event title = used_key }

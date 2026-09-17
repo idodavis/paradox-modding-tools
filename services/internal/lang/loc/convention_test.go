@@ -32,7 +32,7 @@ func TestLearnAndExpand(t *testing.T) {
 		// Full coverage of too few definitions is a coincidence, not a convention.
 		{"too few defs", traits[:3], nil, nil},
 	} {
-		got := Learn(tt.ids, tt.members, idx, 0.9)
+		got := Learn(tt.ids, tt.members, idx)
 		var names []Template
 		for _, c := range got {
 			names = append(names, c.Template)
@@ -50,7 +50,7 @@ func TestLearnAndExpand(t *testing.T) {
 		stems["k"+strconv.Itoa(i)] = true
 		stems["NOT_k"+strconv.Itoa(i)] = true
 	}
-	if got := LearnKeyPrefixes(NewKeys(stems), 0.9); !slices.Equal(got, []string{"NOT"}) {
+	if got := LearnKeyPrefixes(NewKeys(stems)); !slices.Equal(got, []string{"NOT"}) {
 		t.Errorf("LearnKeyPrefixes = %v", got)
 	}
 }

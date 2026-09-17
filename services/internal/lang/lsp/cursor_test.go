@@ -16,8 +16,8 @@ import (
 	"paradox-modding-tools/services/internal/lang/session"
 )
 
-func scopedCache() *derived.VanillaCache {
-	c := &derived.VanillaCache{
+func scopedCache() *vanillaCache {
+	c := &vanillaCache{
 		Schema: &declared.Schema{
 			Scopes: map[string]declared.ScopeType{
 				"character":    {ChangeScopes: true, ExecuteEffects: true},
@@ -41,7 +41,6 @@ func scopedCache() *derived.VanillaCache {
 			OnActions: map[string]string{"on_birth": "character"},
 		},
 	}
-	derived.PrepareCache(c)
 	return c
 }
 
@@ -160,10 +159,9 @@ func TestCompleteUnfilteredWithoutSchema(t *testing.T) {
 	}
 }
 `
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		Vocabulary: []string{"add_gold", "add_title_law", "is_adult"},
 	}
-	derived.PrepareCache(c)
 	s, root := buildSession(t, "ck3", map[string]string{"common/on_action/x.txt": body}, c, nil)
 	line, col := lineCol(body, "add_")
 	items := Complete(s, root+"/common/on_action/x.txt", line, col+len("add_"))
@@ -412,9 +410,8 @@ faith_nested.1 = {
 		[]byte("name=\"t\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cache := &derived.VanillaCache{Schema: sc}
-	derived.PrepareCache(cache)
-	s := session.NewWithLoc("ws", "ck3", "english", cache, nil,
+	cache := &vanillaCache{Schema: sc}
+	s := session.New("ws", "ck3", "english", toIndex(cache, nil),
 		[]derived.ModInput{{Origin: "mod", Root: root, Order: 0}})
 	s.DidOpen(ep, eventBody)
 
@@ -582,7 +579,7 @@ func TestSchemaAbsentDisablesScopes(t *testing.T) {
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := session.NewWithLoc("ws", "ck3", "english", nil, nil,
+	s := session.New("ws", "ck3", "english", nil,
 		[]derived.ModInput{{Origin: "mod", Root: root, Order: 0}})
 	s.DidOpen(p, body)
 	if !s.Schema().Empty() {
@@ -605,10 +602,9 @@ func checkNoFalsePositives(t *testing.T, gameID, installEnv, docsEnv, scriptRoot
 		t.Fatalf("no Schema under %s", docs)
 	}
 	root := filepath.Join(install, scriptRoot)
-	cache := &derived.VanillaCache{Schema: Schema}
-	derived.PrepareCache(cache)
+	cache := &vanillaCache{Schema: Schema}
 
-	s := session.NewWithLoc("ws", gameID, "english", cache, nil,
+	s := session.New("ws", gameID, "english", toIndex(cache, nil),
 		[]derived.ModInput{{Origin: "mod", Root: root, Order: 0}})
 
 	// Walk the whole script root rather than assuming a fixed layout: EU5 nests
@@ -770,9 +766,8 @@ func scopeSessionWith(
 	if err := os.WriteFile(filepath.Join(root, "descriptor.mod"), []byte("name=\"t\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cache := &derived.VanillaCache{Schema: Schema}
-	derived.PrepareCache(cache)
-	s := session.NewWithLoc("ws", "ck3", "english", cache, nil,
+	cache := &vanillaCache{Schema: Schema}
+	s := session.New("ws", "ck3", "english", toIndex(cache, nil),
 		[]derived.ModInput{{Origin: "mod", Root: root, Order: 0}})
 	s.DidOpen(p, body)
 	return s, p

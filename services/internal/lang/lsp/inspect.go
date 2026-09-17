@@ -59,6 +59,9 @@ type Inspect struct {
 
 type identity struct {
 	path, name, kind, owner, locFilter, extractKind string
+	// cell is the folded block path the cursor sits at, which is what the
+	// learned schema files a key or a value under.
+	cell string
 	// block is the key of the enclosing block, when the cursor sits inside one.
 	// What lets a card tell `trigger` in a triggered_desc from `trigger` in a
 	// portrait, which the install documents once, by name, for both.
@@ -196,6 +199,7 @@ func identify(s *session.Session, path string, line, col int) (identity, bool) {
 	if !ok {
 		return identity{}, false
 	}
+	defer func() {}()
 	if name, ok := scopeRefAt(at.res, at.off); ok {
 		return ephemeralID(s, path, name, "saved_scope"), true
 	}
@@ -279,12 +283,14 @@ func identify(s *session.Session, path string, line, col int) (identity, bool) {
 		// kind neither documents it nor lists it: both of those are depth-1, so
 		// `instance` inside `colored_emblem` inside a coat of arms produced
 		// nothing at all — 740 of 884 unnamed hovers on one conversion.
-		if docs != "" || s.IsStructKey(at.kind, a.Key.Text) ||
-			s.IsNestedMember(block, a.Key.Text) ||
-			loc.Classify(a.Key.Text) != loc.PropNone {
+		// A key naming a scripted macro is an invocation of it, never a field
+		// of the block it sits in, whatever the cell at that position holds.
+		if !s.IsMacroDef(a.Key.Text) &&
+			(docs != "" || s.IsMember(at.fileKind, at.path, a.Key.Text) ||
+				loc.Classify(a.Key.Text) != loc.PropNone) {
 			return identity{
 				path: path, name: a.Key.Text, kind: at.kind, fieldKey: true,
-				extractKind: at.kind, block: block,
+				extractKind: at.kind, block: block, cell: at.path,
 			}, true
 		}
 	}
@@ -436,7 +442,7 @@ func fillCard(s *session.Session, id identity) *Inspect {
 		// and the signature the game states for it was being dropped on the
 		// floor — 58 of CK3's 1,201 sampled hovers that had one.
 		ins.Usage = s.TokenUsage(id.name)
-		ins.Accepts = fieldAccepts(s, id.extractKind, id.name)
+		ins.Accepts = fieldAccepts(s, id.extractKind, id.cell, id.name)
 		return vanillaSite(s, ins)
 	case id.def != nil && id.def.Kind == "loc_key":
 		return locCard(s, id.name)
@@ -445,7 +451,7 @@ func fillCard(s *session.Session, id identity) *Inspect {
 	case id.kind != "":
 		ins := inspectOf(s, id.kind, id.name, docsOnly(s, id.name, id.kind))
 		ins.Usage = s.TokenUsage(id.name)
-		ins.Accepts = fieldAccepts(s, id.kind, id.name)
+		ins.Accepts = fieldAccepts(s, id.kind, id.cell, id.name)
 		return vanillaSite(s, ins)
 	default:
 		return nil
@@ -527,7 +533,7 @@ func locCard(s *session.Session, key string) *Inspect {
 
 func localAssignCard(s *session.Session, id identity) *Inspect {
 	docs := s.FieldDoc(id.name, id.extractKind, blockChain(id.block))
-	if docs == "" && !s.IsStructKey(id.extractKind, id.name) {
+	if docs == "" && !s.IsMember(id.extractKind, id.cell, id.name) {
 		return nil
 	}
 	ins := inspectOf(s, id.extractKind, id.name, docs)
@@ -997,16 +1003,16 @@ func composeHint(s *session.Session, kind, _ string) string {
 	if scope := s.ScopeOfKind(ck); scope != "" {
 		parts = append(parts, PrettyKind(scope)+" scope")
 	}
-	if s.Cache() != nil {
-		if p := s.Cache().KindInfo[ck]; p != "" {
+	{
+		if p := s.KindInfo(ck); p != "" {
 			parts = append(parts, firstProse(p))
-		} else if p := s.Cache().KindInfo[kind]; p != "" {
+		} else if p := s.KindInfo(kind); p != "" {
 			parts = append(parts, firstProse(p))
 		}
 		if prefix := s.KindPrefix(ck); prefix != "" {
 			parts = append(parts, "cite `"+prefix+":id`")
 		}
-		for _, sh := range s.Cache().NestedShapes {
+		for _, sh := range s.NestedShapes() {
 			if jomini.CanonicalKind(sh.ChildKind) == ck {
 				msg := "nested in " + PrettyKind(sh.ParentKind)
 				if sh.GroupKey != "" {
@@ -1078,7 +1084,7 @@ func schemaSignature(s *session.Session, word string) string {
 // described by whatever PMT inferred about it. The two are separate lists
 // because one produces prose and the other produces items; they must not
 // disagree about precedence.
-func fieldAccepts(s *session.Session, kind, field string) string {
+func fieldAccepts(s *session.Session, kind, path, field string) string {
 	// Declared target: the game states the argument's scope type.
 	if target := s.TokenTarget(field); target != "" {
 		// A bound database gives the citation form as well, which is the more
@@ -1112,8 +1118,8 @@ func fieldAccepts(s *session.Session, kind, field string) string {
 		}
 		return "accepts a " + dt.Prim
 	}
-	// Derived slot: what the install walk inferred, behind its coverage floor.
-	if k := s.FieldValueKind(field); k != "" && !jomini.IsEphemeral(k) {
+	// The learned cell: the one database every resolvable value at this position named.
+	if k := s.FieldValueKind(kind, path, field); k != "" && !jomini.IsEphemeral(k) {
 		return "accepts a " + PrettyKind(k)
 	}
 	// A field holding a localization key takes any key, not one of a set.

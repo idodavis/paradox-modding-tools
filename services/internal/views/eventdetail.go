@@ -282,8 +282,8 @@ func inspectBlock(
 			lines = append(lines, EventScriptLine{Depth: depth, Text: text})
 		}
 	}
-	var walk func(b *jomini.Block, depth int, inherited string, emit bool)
-	walk = func(b *jomini.Block, depth int, inherited string, emit bool) {
+	var walk func(b *jomini.Block, depth int, path, inherited string, emit bool)
+	walk = func(b *jomini.Block, depth int, path, inherited string, emit bool) {
 		for _, st := range b.Statements {
 			if vs, ok := st.(*jomini.ValueStmt); ok {
 				if inherited != "" {
@@ -301,7 +301,7 @@ func inspectBlock(
 					if emit {
 						push(depth, "{")
 					}
-					walk(inner, depth+1, "", emit)
+					walk(inner, depth+1, path, "", emit)
 					if emit {
 						push(depth, "}")
 					}
@@ -326,7 +326,7 @@ func inspectBlock(
 					}
 				}
 			}
-			own := s.FireKind(a.Key.Text)
+			own := s.FireKind(jomini.KindEvent, path, a.Key.Text)
 			if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted {
 				if own != "" {
 					addTarget(sc.Text)
@@ -342,10 +342,14 @@ func inspectBlock(
 			if own != "" {
 				next = key
 			}
+			subPath := s.CellPath([]string{a.Key.Text})
+			if path != "" {
+				subPath = path + "." + subPath
+			}
 			skipThis := depth == 0 && skip[key]
 			if skipThis || !emit {
 				if sub != nil {
-					walk(sub, depth+1, next, false)
+					walk(sub, depth+1, subPath, next, false)
 				}
 				continue
 			}
@@ -373,11 +377,11 @@ func inspectBlock(
 				tag = tb.Tag.Text + " "
 			}
 			push(depth, head+" "+tag+"{")
-			walk(sub, depth+1, next, true)
+			walk(sub, depth+1, subPath, next, true)
 			push(depth, "}")
 		}
 	}
-	walk(block, 0, "", true)
+	walk(block, 0, "", "", true)
 	fields = make([]EventFieldInfo, 0, len(byKey))
 	for _, f := range byKey {
 		fields = append(fields, f)

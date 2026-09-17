@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/lang/derived"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
@@ -41,7 +42,7 @@ func Complete(s *session.Session, path string, line, col int) []CompletionItem {
 	}
 	scope := ScopeAt(s, path, line, col)
 	items := scriptItems(s, path, at, prefix, scope)
-	Rank(s, at.Kind, scope, items)
+	Rank(s, at, scope, items)
 	return stamp(capComplete(items))
 }
 
@@ -133,13 +134,13 @@ func valItem(label, detail string) CompletionItem {
 	return CompletionItem{Label: label, Detail: detail, Kind: "value"}
 }
 
-func documented(s *session.Session, label, detail, kind string) CompletionItem {
+func documented(s *session.Session, label, detail, kind, path string) CompletionItem {
 	it := CompletionItem{
 		Label: label, Detail: detail, Kind: "property",
 		Documentation: completeDoc(s, label, kind),
 	}
 	if kind != "" {
-		if s.StructureBlock(kind, label) {
+		if s.StructureBlock(kind, path, label) {
 			it.InsertText = label + " = { $0 }"
 		} else {
 			it.InsertText = label + " = "
@@ -227,7 +228,7 @@ func scriptItems(
 		if at.SlotKey == "" {
 			return rootItems(s, at.Kind, prefix)
 		}
-		return valueItems(s, at.Kind, at.SlotKey, prefix)
+		return valueItems(s, at, prefix)
 	}
 	// Prefer the inherited slot: inside `immediate = { capital_county = { … } }`
 	// the effect context still holds even though capital_county is not a slot.
@@ -245,7 +246,7 @@ func scriptItems(
 		// meant `current_year` was never suggested no matter how much of it was
 		// typed. Rank puts structure keys ahead of tokens, so the block's own
 		// members stay first and the rest is there when nothing else fits.
-		items := structureItems(s, path, at.Kind, at.SlotKey, prefix)
+		items := structureItems(s, path, at, prefix)
 		if len(items) > 0 {
 			return items
 		}
@@ -282,21 +283,16 @@ type valueSource struct {
 	// holds kind X and nothing of kind X matches" -- and must not fall through,
 	// or a slot whose type is declared would be offered values of some other
 	// type inferred from the install.
-	items func(s *session.Session, kind, parentKey, prefix string) ([]CompletionItem, bool)
+	items func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool)
 }
 
-// valueSources is the order, most authoritative first. Declared beats derived:
-// the game states the argument type of 1,694 CK3 / 3,834 Vic3 / 1,742 EU5
-// tokens in Supported Targets, and until that was read here
-// `has_culture_group = ` fell through to install-derived field typing and, when
-// that had too little evidence to clear its coverage floor, all the way to
-// offering `yes` and `no`.
+// valueSources is the order, most authoritative first: the game states the argument type of 1,694 CK3 tokens in Supported Targets, and reading that before the cell is what stopped `has_culture_group = ` offering yes and no.
 var valueSources = []valueSource{
 	// The text itself names the database. `this = title:k_england` says which
 	// rows it wants, whatever the field's declared type is or is not, and every
 	// other source offers bare ids that the typed `title:` can never match --
 	// so half of all value positions in a real mod completed to nothing.
-	{"cited-prefix", func(s *session.Session, _, _, prefix string) ([]CompletionItem, bool) {
+	{"cited-prefix", func(s *session.Session, _ Cursor, prefix string) ([]CompletionItem, bool) {
 		cite, _, ok := strings.Cut(prefix, ":")
 		if !ok || cite == "" {
 			return nil, false
@@ -318,21 +314,21 @@ var valueSources = []valueSource{
 		}
 		return citedDefsOfType(s, prefix, cite, kind), true
 	}},
-	{"fire-key", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
-		fk := s.FireKind(parentKey)
+	{"fire-key", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
+		fk := s.FireKind(at.FileKind, at.Path, at.SlotKey)
 		if fk == "" {
 			return nil, false
 		}
 		return defsOfType(s, prefix, fk), true
 	}},
-	{"localization", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
-		if loc.Classify(parentKey) == loc.PropNone {
+	{"localization", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
+		if loc.Classify(at.SlotKey) == loc.PropNone {
 			return nil, false
 		}
 		return locItems(s, prefix), true
 	}},
-	{"slot-declared", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
-		r, ok := jomini.ScriptName(parentKey)
+	{"slot-declared", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
+		r, ok := jomini.ScriptName(at.SlotKey)
 		if !ok {
 			return nil, false
 		}
@@ -340,26 +336,26 @@ var valueSources = []valueSource{
 	}},
 	// The only source that declines on an empty result: a token with no
 	// declared target type yields nothing here and has not answered.
-	{"target-declared", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
-		items := targetItems(s, parentKey, prefix)
+	{"target-declared", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
+		items := targetItems(s, at.SlotKey, prefix)
 		return items, len(items) > 0
 	}},
 	// A closed set the game states in its own documentation. Above slot-derived
 	// for the usual reason, and it declines on an empty set rather than on an
 	// empty result: "the docs name no type for this field" is not an answer.
-	{"slot-declared-doc", func(s *session.Session, kind, parentKey, prefix string) ([]CompletionItem, bool) {
-		dt := s.DeclaredFieldType(kind, parentKey)
+	{"slot-declared-doc", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
+		dt := s.DeclaredFieldType(at.Kind, at.SlotKey)
 		if len(dt.Values) == 0 {
 			return nil, false
 		}
 		return enumItems(dt.Values, prefix), true
 	}},
-	{"slot-derived", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
-		k := s.FieldValueKind(parentKey)
-		if k == "" {
-			return nil, false
-		}
-		return defsOfType(s, prefix, k), true
+	// The learned half of the ladder: a value position offers the cell's own
+	// members, in the order the corpus wrote them. A cell the corpus disagreed
+	// about offers nothing rather than one arbitrary database.
+	{"cell-members", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
+		items := cellItems(s, at, prefix)
+		return items, len(items) > 0
 	}},
 	// Declining on an empty result, unlike the declared sources above. "The game
 	// says this slot holds kind X and nothing of kind X matches" is a real
@@ -367,29 +363,47 @@ var valueSources = []valueSource{
 	// belongs here. A scripted trigger invoked as `x = yes` has no parameters at
 	// all, and claiming the slot swallowed the boolean it actually takes -- 17
 	// of 24 empty value positions on a real Victoria 3 mod.
-	{"macro-params", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
-		if !s.IsMacroDef(parentKey) && !jomini.IsMacroKind(parentKey) {
+	{"macro-params", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
+		if !s.IsMacroDef(at.SlotKey) && !jomini.IsMacroKind(at.SlotKey) {
 			return nil, false
 		}
-		items := scriptParamItems(s, parentKey, prefix)
+		items := scriptParamItems(s, at.SlotKey, prefix)
 		return items, len(items) > 0
 	}},
-	{"macro-call-params", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
-		if !macroCallParent(s, parentKey) {
+	{"macro-call-params", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
+		if !macroCallParent(s, at.SlotKey) {
 			return nil, false
 		}
-		items := scriptParamItems(s, parentKey, prefix)
+		items := scriptParamItems(s, at.SlotKey, prefix)
 		return items, len(items) > 0
 	}},
 }
 
-func valueItems(s *session.Session, kind, parentKey, prefix string) []CompletionItem {
+func valueItems(s *session.Session, at Cursor, prefix string) []CompletionItem {
 	for _, src := range valueSources {
-		if items, ok := src.items(s, kind, parentKey, prefix); ok {
+		if items, ok := src.items(s, at, prefix); ok {
 			return items
 		}
 	}
 	return valueFallback(prefix)
+}
+
+// cellItems offers what the cell under the cursor was seen to hold: the rows of
+// every database its values named, then localization keys when they were keys.
+func cellItems(s *session.Session, at Cursor, prefix string) []CompletionItem {
+	t := s.TypeOf(at.FileKind, at.Path, at.SlotKey)
+	if t == nil {
+		return nil
+	}
+	var out []CompletionItem
+	for _, k := range t.Kinds {
+		if k == derived.LabelLoc {
+			out = append(out, locItems(s, prefix)...)
+			continue
+		}
+		out = append(out, defsOfType(s, prefix, k)...)
+	}
+	return capComplete(out)
 }
 
 // targetItems completes the value of a token whose argument type the game
@@ -503,15 +517,9 @@ func valueFallback(prefix string) []CompletionItem {
 	return out
 }
 
-// structureItems offers the keys that belong where the cursor is.
-//
-// block is the key of the enclosing block. When the install evidenced what that
-// block holds, its members come first and the kind's top-level keys are dropped:
-// inside `triggered_desc = { … }` an event's `option` and `theme` are not
-// offered, because they cannot go there. Without evidence for the block this
-// falls back to the kind exactly as before, so nothing is lost where the model
-// is thin.
-func structureItems(s *session.Session, path, kind, block, prefix string) []CompletionItem {
+// structureItems offers the cell's own members where the cursor is, falling back to the kind's where the corpus wrote nothing at that position.
+func structureItems(s *session.Session, path string, at Cursor, prefix string) []CompletionItem {
+	kind, block := at.FileKind, at.SlotKey
 	seen := map[string]bool{}
 	var out []CompletionItem
 	add := func(label, detail string) {
@@ -519,16 +527,24 @@ func structureItems(s *session.Session, path, kind, block, prefix string) []Comp
 			return
 		}
 		seen[label] = true
-		out = append(out, documented(s, label, detail, kind))
+		out = append(out, documented(s, label, detail, kind, at.Path))
 	}
-	if members := s.NestedMembers(block); len(members) > 0 {
-		for _, k := range members {
-			add(k, block)
+	detail := kind
+	if block != "" {
+		detail = block
+	}
+	for _, k := range s.Members(kind, at.Path) {
+		add(k, detail)
+	}
+	// Without evidence for this position the kind's own keys are still the
+	// answer, so nothing is lost where the model is thin.
+	if len(out) == 0 && at.Path != "" {
+		for _, k := range s.Members(kind, "") {
+			add(k, kind)
 		}
-		return out
 	}
-	for _, k := range s.Structures(kind) {
-		add(k, kind)
+	if at.Path != "" {
+		return out
 	}
 	if s.KindFor(path) != "gui" {
 		return out
@@ -558,7 +574,7 @@ func vocabAndCallDefs(s *session.Session, prefix, vocabKind, scope string) []Com
 			return
 		}
 		seen[label] = true
-		out = append(out, documented(s, label, detail, ""))
+		out = append(out, documented(s, label, detail, "", ""))
 	}
 	tokens := s.Vocab(vocabKind)
 	if len(tokens) == 0 {
@@ -670,8 +686,12 @@ func isDeclaredElsewhere(m rankSets, k string) bool {
 
 // Rank reorders completion items in place. An empty scope means "no opinion",
 // which leaves the ordering exactly as it was before scopes were consulted.
-func Rank(s *session.Session, kind, scope string, items []CompletionItem) {
-	sk, ef, tr := s.MemberSets(kind)
+func Rank(s *session.Session, at Cursor, scope string, items []CompletionItem) {
+	ef, tr := s.MemberSets()
+	sk := map[string]bool{}
+	for _, k := range s.Members(at.FileKind, at.Path) {
+		sk[k] = true
+	}
 	m := rankSets{
 		structKeys: sk, effects: ef, triggers: tr,
 		inScope: s.Schema().ScopeTokens(scope),

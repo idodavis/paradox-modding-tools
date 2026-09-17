@@ -26,14 +26,14 @@ func write(t *testing.T, root, rel, body string) string {
 }
 
 func buildSession(
-	t *testing.T, game string, cache *derived.VanillaCache, vloc *derived.VanillaLoc,
+	t *testing.T, game string, cache *vanillaCache, vloc *vanillaLoc,
 	mods []derived.ModInput,
 ) *session.Session {
 	t.Helper()
 	if game == "" {
 		game = "ck3"
 	}
-	return session.NewWithLoc("ws", game, "english", cache, vloc, mods)
+	return session.New("ws", game, "english", toIndex(cache, vloc), mods)
 }
 
 func oneMod(t *testing.T, game string, files map[string]string) derived.ModInput {
@@ -111,9 +111,9 @@ func TestGraphViaOptionRoles(t *testing.T) {
 	vanilla := t.TempDir()
 	vfile := write(t, vanilla, "events/v.txt",
 		"birth.1 = {\n	type = character_event\n	immediate = { trigger_event = mod.1 }\n}\n")
-	s := buildSession(t, "ck3", &derived.VanillaCache{Defs: []derived.Def{
+	s := buildSession(t, "ck3", &vanillaCache{Defs: []derived.Def{
 		{Kind: "event", Key: "birth.1", Path: vfile, Line: 0},
-	}}, &derived.VanillaLoc{
+	}}, &vanillaLoc{
 		Sites: map[string]derived.LocEntry{"vanilla_key": {Path: locFile, Line: 1, Value: "Hi"}},
 	}, []derived.ModInput{oneMod(t, "ck3", map[string]string{
 		"events/ns.txt": `namespace = ns
@@ -351,7 +351,7 @@ func TestGraphVanillaFireEdge(t *testing.T) {
 	vfile := write(t, vanilla, "events/v.txt",
 		"birth.1 = {\n\ttype = character_event\n\timmediate = { trigger_event = birth.2 }\n}\n"+
 			"birth.2 = { type = character_event }\n")
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		Defs: []derived.Def{
 			{Kind: "event", Key: "birth.1", Path: vfile, Line: 1},
 			{Kind: "event", Key: "birth.2", Path: vfile, Line: 4},

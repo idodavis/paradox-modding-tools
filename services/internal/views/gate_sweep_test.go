@@ -248,7 +248,7 @@ func sweepGame(t *testing.T, game, appID, installEnv string, base baselineFile) 
 	id := "sweep-" + game
 	t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
 	scanStart := time.Now()
-	cache, vloc, err := derived.Scan(context.Background(), derived.ScanRequest{
+	cache, _, err := derived.Scan(context.Background(), derived.ScanRequest{
 		InstallID: id, GameID: game, InstallPath: install,
 		Version: "sweep", LocLang: "english",
 	})
@@ -288,7 +288,7 @@ func sweepGame(t *testing.T, game, appID, installEnv string, base baselineFile) 
 		modStart := time.Now()
 		key := appID + "/" + e.Name()
 		scores[i] = func() modScore {
-			s := session.NewWithLoc("sweep", game, "english", cache, vloc,
+			s := session.New("sweep", game, "english", cache,
 				[]derived.ModInput{{
 					Origin: "mod",
 					Root:   filepath.Join(workshopRoot, appID, e.Name()),
@@ -667,20 +667,20 @@ func TestHealthIsDeterministic(t *testing.T) {
 			}
 		}
 	}
-	scan := func(id string) (*derived.VanillaCache, *derived.VanillaLoc) {
+	scan := func(id string) *derived.Index {
 		t.Helper()
 		t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
-		c, vloc, err := derived.Scan(context.Background(), derived.ScanRequest{
+		c, _, err := derived.Scan(context.Background(), derived.ScanRequest{
 			InstallID: id, GameID: game, InstallPath: install,
 			Version: "det", LocLang: "english",
 		})
 		if err != nil {
 			t.Fatalf("scan %s: %v", id, err)
 		}
-		return c, vloc
+		return c
 	}
-	report := func(c *derived.VanillaCache, vloc *derived.VanillaLoc, mod string) HealthReport {
-		s := session.NewWithLoc("det", game, "english", c, vloc,
+	report := func(c *derived.Index, mod string) HealthReport {
+		s := session.New("det", game, "english", c,
 			[]derived.ModInput{{
 				Origin: "mod", Root: filepath.Join(workshopRoot, appID, mod), Name: "m",
 			}})
@@ -697,13 +697,13 @@ func TestHealthIsDeterministic(t *testing.T) {
 		}
 	}
 
-	c1, l1 := scan("det-1")
-	c2, l2 := scan("det-2")
+	c1 := scan("det-1")
+	c2 := scan("det-2")
 	for _, mod := range mods {
 		same("same cache, two sessions", mod,
-			report(c1, l1, mod), report(c1, l1, mod))
+			report(c1, mod), report(c1, mod))
 		same("two scans of one install", mod,
-			report(c1, l1, mod), report(c2, l2, mod))
+			report(c1, mod), report(c2, mod))
 		debug.FreeOSMemory()
 	}
 }

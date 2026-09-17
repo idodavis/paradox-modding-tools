@@ -92,7 +92,7 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 		t.Run(g.game, func(t *testing.T) {
 			id := "gate-" + g.game
 			t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
-			cache, vloc, err := derived.Scan(context.Background(), derived.ScanRequest{
+			cache, _, err := derived.Scan(context.Background(), derived.ScanRequest{
 				InstallID: id, GameID: g.game, InstallPath: install,
 				Version: "gate", LocLang: "english",
 			})
@@ -103,16 +103,16 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 			// happened: the model that decides what completion offers inside a
 			// block, and whether a field's description can be trusted, is a
 			// per-game number worth seeing next to the diagnostics.
-			t.Logf("NESTED %s: %d blocks", g.game, len(cache.NestedMembers))
+			t.Logf("CELLS %s: %d kinds", g.game, len(cache.Schema.Cells))
 			for _, b := range []string{"limit", "trigger", "modifier"} {
-				if m := cache.NestedMembers[b]; len(m) > 0 {
+				if m := cache.Schema.Members("event", b); len(m) > 0 {
 					n := min(len(m), 5)
-					t.Logf("  %s holds %v (+%d)", b, m[:n], len(m)-n)
+					t.Logf("  event.%s holds %v (+%d)", b, m[:n], len(m)-n)
 				}
 			}
 
 			root := sampleIntoMod(t, install, g.game)
-			s := session.NewWithLoc("gate", g.game, "english", cache, vloc,
+			s := session.New("gate", g.game, "english", cache,
 				[]derived.ModInput{{Origin: "mod", Root: root, Name: "vanilla-sample"}})
 			defer s.Close()
 

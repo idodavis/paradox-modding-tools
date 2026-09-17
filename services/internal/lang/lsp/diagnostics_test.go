@@ -66,7 +66,7 @@ func TestDiagnose(t *testing.T) {
 		body := "namespace = ns\nns.1 = {\n\ttitle = ns.1.t\n" +
 			"\tdesc = ns.1.councillor_liege_opening\n}\n"
 		s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body},
-			&derived.VanillaCache{FireKeys: map[string]string{
+			&vanillaCache{FireKeys: map[string]string{
 				"title": "event", "desc": "event",
 			}}, nil)
 		diags := Diagnose(s, filepath.Join(root, "events", "x.txt"))
@@ -88,9 +88,9 @@ func TestDiagnoseVanillaSilent(t *testing.T) {
 		"mod.1 = {\n\ttitle = missing_key\n}\n")
 
 	// No conventions: the mod's diagnostic must come from its citation alone.
-	s := session.NewWithLoc("ws", "ck3", "english", &derived.VanillaCache{
+	s := session.New("ws", "ck3", "english", toIndex(&vanillaCache{
 		InstallPath: install,
-	}, nil, []derived.ModInput{{Origin: "mod", Root: modRoot, Order: 0}})
+	}, nil), []derived.ModInput{{Origin: "mod", Root: modRoot, Order: 0}})
 	s.DidOpen(vEvent, "test.1 = {\n\ttitle = missing_key\n")
 	s.DidOpen(vLoc, "l_english:\n k:0 \"v\"\n")
 	s.DidOpen(modEvent, "mod.1 = {\n\ttitle = missing_key\n}\n")
@@ -128,7 +128,7 @@ func TestLocBOMDiag(t *testing.T) {
 }
 
 func TestSignatureHelpAndSchemaDiags(t *testing.T) {
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		Schema: &declared.Schema{Effects: map[string]declared.EngineToken{
 			"add_gold": {Usage: "add_gold = { $VALUE$ }"},
 			// Declared: since T-3 unknown-event fires only where the fire key
@@ -165,10 +165,9 @@ func TestSignatureHelpAndSchemaDiags(t *testing.T) {
 
 // The four templates are the whole rule: a `_tooltip` key the script cites is not one of them.
 func TestDecisionConventionLocIsNotRequired(t *testing.T) {
-	cache := &derived.VanillaCache{LocConventions: map[string][]loc.Convention{
+	cache := &vanillaCache{LocConventions: map[string][]loc.Convention{
 		"decisions": {{Template: "{id}", Coverage: 1}, {Template: "{id}_desc", Coverage: 1}},
 	}}
-	derived.PrepareCache(cache)
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/decisions/d.txt": "foo = {\n\tselection_tooltip = foo_tooltip\n}\n",
 		"localization/english/a_l_english.yml": "l_english:\n foo:0 \"F\"\n" +
@@ -191,10 +190,9 @@ func TestRequiredLocDemandsFullCoverage(t *testing.T) {
 		{"a shape every definition has", 1, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			cache := &derived.VanillaCache{LocConventions: map[string][]loc.Convention{
+			cache := &vanillaCache{LocConventions: map[string][]loc.Convention{
 				"decisions": {{Template: "{id}_desc", Coverage: tt.coverage}},
 			}}
-			derived.PrepareCache(cache)
 			s, root := buildSession(t, "ck3", map[string]string{
 				"common/decisions/d.txt":               "foo = { }\n",
 				"localization/english/a_l_english.yml": "l_english:\n foo:0 \"F\"\n",
@@ -272,8 +270,7 @@ func TestWrongScopeSilentWithoutSchema(t *testing.T) {
 	}
 }
 `
-	c := &derived.VanillaCache{Vocabulary: []string{"add_gold"}}
-	derived.PrepareCache(c)
+	c := &vanillaCache{Vocabulary: []string{"add_gold"}}
 	s, root := buildSession(t, "ck3", map[string]string{"common/on_action/x.txt": body}, c, nil)
 	if diags := Diagnose(s, root+"/common/on_action/x.txt"); hasDiag(diags, "wrong-scope") {
 		t.Errorf("claimed a scope error with no schema: %+v", diags)
@@ -431,9 +428,8 @@ func benchSession(b *testing.B) (*session.Session, string) {
 	if err := os.WriteFile(p, raw, 0o644); err != nil {
 		b.Fatal(err)
 	}
-	cache := &derived.VanillaCache{GameID: "ck3", InstallPath: install, Schema: schema}
-	derived.PrepareCache(cache)
-	s := session.NewWithLoc("ws", "ck3", "english", cache, nil,
+	cache := &vanillaCache{GameID: "ck3", InstallPath: install, Schema: schema}
+	s := session.New("ws", "ck3", "english", toIndex(cache, nil),
 		[]derived.ModInput{{Origin: "mod", Root: mod, Order: 0}})
 	s.DidOpen(p, string(raw))
 	b.Logf("file is %d bytes", len(raw))

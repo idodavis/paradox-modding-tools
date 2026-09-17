@@ -700,12 +700,11 @@ func (w *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
 	if inst == nil {
 		return nil
 	}
-	vloc, err := loadVanillaLoc(
-		context.Background(), inst.ID, inst.GameID, inst.Path, inst.Version, lang)
+	v, err := derived.HarvestLoc(context.Background(), inst.GameID, inst.Path, lang)
 	if err != nil {
 		return err
 	}
-	live.ReplaceVanillaLoc(vloc)
+	live.MergeVanillaLoc(v)
 	return nil
 }
 

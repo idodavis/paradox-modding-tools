@@ -35,10 +35,10 @@ type Session struct {
 	onFS    func(path string, deleted bool)
 }
 
-// NewWithLoc is New with loc language and an optional vanilla loc sidecar.
-func NewWithLoc(
+// New builds a session over an install index and the workspace mods.
+func New(
 	workspaceID, gameID, defaultLang string,
-	cache *derived.VanillaCache, vloc *derived.VanillaLoc, mods []derived.ModInput,
+	cache *derived.Index, mods []derived.ModInput,
 ) *Session {
 	if defaultLang == "" {
 		defaultLang = "english"
@@ -47,21 +47,21 @@ func NewWithLoc(
 		WorkspaceID: workspaceID,
 		GameID:      gameID,
 		buffers:     map[string]*buffer{},
-		Model:       derived.NewModel(gameID, defaultLang, cache, vloc, mods),
+		Model:       derived.NewModel(gameID, defaultLang, cache, mods),
 	}
 }
 
 // ReplaceCache swaps the vanilla Cache after a Rescan without dropping the session.
-func (s *Session) ReplaceCache(c *derived.VanillaCache) {
+func (s *Session) ReplaceCache(c *derived.Index) {
 	s.Lock()
 	s.Model.ReplaceCache(c)
 	s.Unlock()
 }
 
-// ReplaceVanillaLoc swaps the vanilla loc sidecar after a loc-only harvest.
-func (s *Session) ReplaceVanillaLoc(loc *derived.VanillaLoc) {
+// MergeVanillaLoc folds a freshly harvested language into the install index.
+func (s *Session) MergeVanillaLoc(x *derived.Index) {
 	s.Lock()
-	s.Model.ReplaceVanillaLoc(loc)
+	s.Model.MergeVanillaLoc(x)
 	s.Unlock()
 }
 

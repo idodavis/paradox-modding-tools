@@ -96,21 +96,21 @@ func findDef(defs []Def, kind, key string) bool {
 	return false
 }
 
-func scanCK3(t *testing.T, base string) (*VanillaCache, *VanillaLoc) {
+func scanCK3(t *testing.T, base string) *Index {
 	t.Helper()
 	t.Cleanup(func() { _ = DropVanillaFiles("inst") })
-	c, vloc, err := Scan(context.Background(), ScanRequest{
+	c, _, err := Scan(context.Background(), ScanRequest{
 		InstallID: "inst", GameID: "ck3", InstallPath: base,
 		Version: "1.0", LocLang: "english",
 	})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
-	return c, vloc
+	return c
 }
 
 // scanFiles writes files under a fresh install root and scans it.
-func scanFiles(t *testing.T, id, gameID string, files map[string]string) *VanillaCache {
+func scanFiles(t *testing.T, id, gameID string, files map[string]string) *Index {
 	t.Helper()
 	base := t.TempDir()
 	for rel, body := range files {
@@ -131,7 +131,7 @@ func scanFiles(t *testing.T, id, gameID string, files map[string]string) *Vanill
 func TestScan(t *testing.T) {
 	t.Run("ck3 corpus fixture", func(t *testing.T) {
 		base, _ := ck3Install(t)
-		c, vloc := scanCK3(t, base)
+		c := scanCK3(t, base)
 
 		for _, d := range [][2]string{
 			{"traits", "brave"}, {"event", "test.1"}, {"scripted_effect", "my_inline"},
@@ -144,68 +144,65 @@ func TestScan(t *testing.T) {
 			t.Errorf("missing fire edge test.1→test.2; edges=%v", c.Edges)
 		}
 
-		if got := vloc.Sites["test.1.t"].Value; got != "Test Event" {
+		if got := c.Loc["english"]["test.1.t"].Value; got != "Test Event" {
 			t.Errorf("loc[test.1.t] = %q, want %q", got, "Test Event")
 		}
-		if c.FieldInfo["category"] == "" {
+		if c.Docs.FieldInfo["category"] == "" {
 			t.Errorf("fieldDocs[category] empty, want prose from _traits.info")
 		}
-		if hk := vloc.Sites["header_key"]; hk.Value != "From header" || hk.Path == "" {
+		if hk, ok := c.locAt("english", "header_key"); !ok || hk.Value != "From header" || hk.Path == "" {
 			t.Errorf("header_key = %+v", hk)
 		}
-		if _, ok := vloc.Sites["french_only"]; ok {
+		if _, ok := c.Loc["english"]["french_only"]; ok {
 			t.Errorf("french loc in default sidecar")
-		}
-		// A scan writes only the workspace language and english; other languages are harvested on first use, which is what keeps the cache small.
-		if _, err := LoadVanillaLoc("inst", "1.0", "french"); err == nil {
-			t.Error("french sidecar written at scan time; only default + english should be")
 		}
 		fr, err := HarvestLoc(context.Background(), "ck3", base, "french")
 		if err != nil {
 			t.Fatalf("lazy french harvest: %v", err)
 		}
-		if got := fr.Sites["french_only"].Value; got != "Bonjour" {
+		if got := fr.Loc["french"]["french_only"].Value; got != "Bonjour" {
 			t.Errorf("french loc[french_only] = %q", got)
 		}
-		if got := c.FieldInfoByKind["event"]["type"]; !strings.Contains(got, "presentation") {
+		if got := c.Docs.FieldInfoByKind["event"]["type"]; !strings.Contains(got, "presentation") {
 			t.Errorf("fieldDocsByKind[event][type] = %q, want events.info prose", got)
 		}
-		if got := c.FieldInfoByKind["event"]["title"]; !strings.Contains(got, "Dynamic") {
+		if got := c.Docs.FieldInfoByKind["event"]["title"]; !strings.Contains(got, "Dynamic") {
 			t.Errorf("fieldDocsByKind[event][title] = %q, want events.info prose", got)
 		}
 		// A field documented inside an example block is keyed by its enclosing block, not bare.
-		if got := c.FieldInfoByKind["event"]["portrait.trigger"]; !strings.Contains(got, "visibility") {
+		if got := c.Docs.FieldInfoByKind["event"]["portrait.trigger"]; !strings.Contains(got, "visibility") {
 			t.Errorf("fieldDocsByKind[event][portrait.trigger] = %q, want events.info prose", got)
 		}
 
 		for _, k := range []string{"category", "opposites", "ai_boldness"} {
-			if !slices.Contains(c.Structures["traits"], k) {
-				t.Errorf("structures[traits] missing %q: %v", k, c.Structures["traits"])
+			if !slices.Contains(c.Schema.Members("traits", ""), k) {
+				t.Errorf("members[traits] missing %q: %v", k, c.Schema.Members("traits", ""))
 			}
 		}
 		for _, k := range []string{"immediate", "option"} {
-			if !slices.Contains(c.Structures["event"], k) {
-				t.Errorf("structures[event] missing %q: %v", k, c.Structures["event"])
+			if !slices.Contains(c.Schema.Members("event", ""), k) {
+				t.Errorf("members[event] missing %q: %v", k, c.Schema.Members("event", ""))
 			}
 		}
-		if got := c.Structures["event"]; len(got) == 0 || got[0] != "type" {
-			t.Errorf("structures[event] freq = %v, want type first", got)
+		if got := c.Schema.Members("event", ""); len(got) == 0 || got[0] != "type" {
+			t.Errorf("members[event] freq = %v, want type first", got)
 		}
-		if !slices.Contains(c.StructureBlocks["event"], "immediate") ||
-			!slices.Contains(c.StructureBlocks["event"], "option") {
-			t.Errorf("structureBlocks[event] = %v", c.StructureBlocks["event"])
+		for _, k := range []string{"immediate", "option"} {
+			if !c.Schema.TypeOf(Cell{"event", "", k}).IsBlock() {
+				t.Errorf("event.%s is not a block cell", k)
+			}
 		}
-		if slices.Contains(c.StructureBlocks["event"], "type") {
-			t.Errorf("type should be scalar: %v", c.StructureBlocks["event"])
+		if c.Schema.TypeOf(Cell{"event", "", "type"}).IsBlock() {
+			t.Errorf("event.type should be scalar")
 		}
 
 		// Corpus vocabulary must be populated with NO script_docs dump, while effects and triggers -- the game's declared API -- must stay empty: inferring them from position elected every $PARAM$ site as an effect.
-		if !slices.Contains(c.Vocabulary, "add_gold") {
-			t.Errorf("vocabulary missing corpus token add_gold: %v", c.Vocabulary)
+		if !slices.Contains(c.Schema.VocabNames, "add_gold") {
+			t.Errorf("vocabulary missing corpus token add_gold: %v", c.Schema.VocabNames)
 		}
-		if len(c.effectNames) != 0 || len(c.triggerNames) != 0 {
+		if len(c.Schema.Effects) != 0 || len(c.Schema.Triggers) != 0 {
 			t.Errorf("engine tokens claimed without dumps: effects=%v triggers=%v",
-				c.effectNames, c.triggerNames)
+				c.Schema.Effects, c.Schema.Triggers)
 		}
 		if c.FormatVersion != CacheFormatVersion {
 			t.Errorf("formatVersion = %d, want %d", c.FormatVersion, CacheFormatVersion)
@@ -220,14 +217,14 @@ func TestScan(t *testing.T) {
 				gotParam = true
 			}
 		}
-		for _, r := range c.CallRefs {
-			if r.Key == "my_trig" && jomini.CanonicalKind(r.Kind) == "scripted_triggers" {
+		for _, r := range c.Refs {
+			if r.Key == "my_trig" && jomini.CanonicalKind(c.KindOf(r.KindID)) == "scripted_triggers" {
 				gotCall = true
 			}
 		}
 		if !gotParam || !gotCall {
 			t.Errorf("vanilla $NAME$/call persist param=%v call=%v refs=%v",
-				gotParam, gotCall, c.CallRefs)
+				gotParam, gotCall, c.Refs)
 		}
 	})
 
@@ -254,16 +251,16 @@ func TestScan(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(logs, "effects.log"), []byte(tt.body), 0o644); err != nil {
 					t.Fatal(err)
 				}
-				got, _ := scanCK3(t, base)
-				if _, ok := got.Schema.Effects[tt.want]; !ok {
-					t.Errorf("effects missing %s: %v", tt.want, got.effectNames)
+				got := scanCK3(t, base)
+				if _, ok := got.Declared.Effects[tt.want]; !ok {
+					t.Errorf("effects missing %s: %v", tt.want, got.Declared.Effects)
 				}
-				if tt.name == "enrichment" && got.Schema.Doc("add_gold") == "" {
+				if tt.name == "enrichment" && got.Declared.Doc("add_gold") == "" {
 					t.Error("schema doc for add_gold empty after enrichment")
 				}
 				if tt.drop != "" {
-					if _, ok := got.Schema.Effects[tt.drop]; ok {
-						t.Fatalf("nested dump field %s leaked: %v", tt.drop, got.effectNames)
+					if _, ok := got.Declared.Effects[tt.drop]; ok {
+						t.Fatalf("nested dump field %s leaked: %v", tt.drop, got.Declared.Effects)
 					}
 				}
 			})
@@ -329,25 +326,25 @@ func TestScan(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Scan: %v", err)
 				}
-				if c.Schema == nil {
-					t.Fatal("scan produced no schema")
+				if c.Declared == nil {
+					t.Fatal("scan produced no declared schema")
 				}
-				if _, ok := c.Schema.Effects[tt.want]; !ok {
-					t.Fatalf("effects missing %s: %v", tt.want, c.effectNames)
+				if _, ok := c.Declared.Effects[tt.want]; !ok {
+					t.Fatalf("effects missing %s: %v", tt.want, c.Declared.Effects)
 				}
 				// Every fixture opens with an "Effect Documentation" style header; a splitter that reads one as a block name declares "effect" itself as an effect, which then leads the completion list.
-				if _, ok := c.Schema.Effects["effect"]; ok {
+				if _, ok := c.Declared.Effects["effect"]; ok {
 					t.Error("section header parsed as an effect")
 				}
-				if tt.doc != "" && !strings.Contains(c.Schema.Doc(tt.want), tt.doc) {
+				if tt.doc != "" && !strings.Contains(c.Declared.Doc(tt.want), tt.doc) {
 					t.Errorf("Doc(%s) = %q, want it to mention %q",
-						tt.want, c.Schema.Doc(tt.want), tt.doc)
+						tt.want, c.Declared.Doc(tt.want), tt.doc)
 				}
-				if tt.scope != "" && !strings.Contains(c.Schema.ScopeText(tt.want), tt.scope) {
+				if tt.scope != "" && !strings.Contains(c.Declared.ScopeText(tt.want), tt.scope) {
 					t.Errorf("ScopeText(%s) = %q, want %q",
-						tt.want, c.Schema.ScopeText(tt.want), tt.scope)
+						tt.want, c.Declared.ScopeText(tt.want), tt.scope)
 				}
-				if tt.modDoc != "" && c.Schema.Doc(tt.modDoc) == "" {
+				if tt.modDoc != "" && c.Declared.Doc(tt.modDoc) == "" {
 					t.Errorf("modifier doc for %s is empty", tt.modDoc)
 				}
 			})
@@ -369,13 +366,13 @@ func TestScan(t *testing.T) {
 				"# - build_time: <integer> building time in days\n" +
 				"# - allow: <trigger> can the building be built\n",
 		})
-		if got := c.FieldInfoByKind["traits"]["allow"]; !strings.Contains(got, "character need") {
+		if got := c.Docs.FieldInfoByKind["traits"]["allow"]; !strings.Contains(got, "character need") {
 			t.Fatalf("traits allow doc = %q", got)
 		}
-		if got := c.FieldInfoByKind["traits"]["category"]; !strings.Contains(got, "Which type") {
+		if got := c.Docs.FieldInfoByKind["traits"]["category"]; !strings.Contains(got, "Which type") {
 			t.Fatalf("traits category doc = %q", got)
 		}
-		if got := c.FieldInfoByKind["building_types"]["build_time"]; !strings.Contains(got, "building time") {
+		if got := c.Docs.FieldInfoByKind["building_types"]["build_time"]; !strings.Contains(got, "building time") {
 			t.Fatalf("building_types build_time = %q", got)
 		}
 	})
@@ -452,14 +449,14 @@ Output Scopes: countries
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.PrefixKinds["location"] != "map_data" {
-			t.Fatalf("location -> %q, want map_data", c.PrefixKinds["location"])
+		if c.Schema.Prefix["location"] != "map_data" {
+			t.Fatalf("location -> %q, want map_data", c.Schema.Prefix["location"])
 		}
-		if c.PrefixKinds["c"] != "countries" {
-			t.Fatalf("c -> %q, want countries", c.PrefixKinds["c"])
+		if c.Schema.Prefix["c"] != "countries" {
+			t.Fatalf("c -> %q, want countries", c.Schema.Prefix["c"])
 		}
-		if c.FireKeys["trigger_event_silently"] != "event" {
-			t.Fatalf("fire keys=%v", c.FireKeys)
+		if k := c.Schema.TypeOf(Cell{"event", "immediate", "trigger_event_silently"}).kindsOf(); !slices.Contains(k, "event") {
+			t.Fatalf("trigger_event_silently cell kinds=%v", k)
 		}
 		var silent bool
 		for _, e := range c.Edges {
@@ -544,12 +541,12 @@ Output Scopes: province
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.PrefixKinds["c"] != "country_definitions" || c.PrefixKinds["cu"] != "cultures" ||
-			c.PrefixKinds["bt"] != "buildings" || c.PrefixKinds["je"] != "journal_entries" {
-			t.Fatalf("prefix kinds=%v", c.PrefixKinds)
+		if c.Schema.Prefix["c"] != "country_definitions" || c.Schema.Prefix["cu"] != "cultures" ||
+			c.Schema.Prefix["bt"] != "buildings" || c.Schema.Prefix["je"] != "journal_entries" {
+			t.Fatalf("prefix kinds=%v", c.Schema.Prefix)
 		}
-		if c.PrefixKinds["p"] != "" {
-			t.Fatalf("p:hex must stay ephemeral: %v", c.PrefixKinds)
+		if c.Schema.Prefix["p"] != "" {
+			t.Fatalf("p:hex must stay ephemeral: %v", c.Schema.Prefix)
 		}
 		if findDef(c.Defs, "countries", "COUNTRIES") || findDef(c.Defs, "history", "COUNTRIES") {
 			t.Fatalf("wrapper harvested: %v", c.Defs)
@@ -580,18 +577,15 @@ im.1 = {
 			"hegemon_favors_advancement_trigger = {\n\ttitle:h_china ?= { is_ai = yes }\n}\n")
 		writeMod(t, base, "game/common/script_values/00_v.txt",
 			"region_counter_value = {\n\ttitle:h_china ?= { value = 1 }\n}\n")
-		c, _ := scanCK3(t, base)
+		c := scanCK3(t, base)
 		for _, want := range []struct{ kind, key string }{
 			{"scripted_effect", "copy_pillars_effect"},
 			{"scripted_triggers", "hegemon_favors_advancement_trigger"},
 			{"script_values", "region_counter_value"},
 		} {
 			if !findDef(c.Defs, want.kind, want.key) {
-				t.Errorf("%s %s dropped as a wrapper; wrappers=%v", want.kind, want.key, c.Wrappers)
+				t.Errorf("%s %s dropped as a wrapper", want.kind, want.key)
 			}
-		}
-		if len(c.Wrappers) != 0 {
-			t.Errorf("declarations elected as wrappers: %v", c.Wrappers)
 		}
 	})
 
@@ -732,5 +726,56 @@ func TestWalkTreeEntersSymlinkedDirs(t *testing.T) {
 	want := []string{"common/traits/00_a.txt"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("walk through symlink = %v, want %v", got, want)
+	}
+}
+
+// writeMod writes one file under root, creating its folders.
+func writeMod(t *testing.T, root, rel, body string) {
+	t.Helper()
+	p := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func hasEdge(edges []Edge, from, to, via string) bool {
+	for _, e := range edges {
+		if e.From == from && e.To == to && e.Via == via {
+			return true
+		}
+	}
+	return false
+}
+
+// TestWorkspaceAppliesInstallSchema is the two halves a workspace inherits: the
+// install's nested shapes survive the build, and its join marks harvest a mod's
+// own rows at a cell the install wrote.
+func TestWorkspaceAppliesInstallSchema(t *testing.T) {
+	v := NewIndex("ck3")
+	v.Declared = &declared.Schema{
+		Scopes: map[string]declared.ScopeType{"faith": {}},
+		Links:  map[string]declared.ScopeLink{"faith": {Global: true, Data: true, Out: "faith"}},
+	}
+	v.Schema.Nested = []NestedShape{{ParentKind: "religions", ChildKind: "faith", GroupKey: "faiths"}}
+	v.Schema.at("religions", "", "faiths").Names = true
+	v.Schema.at("religions", "", "faiths").Def = "faith"
+
+	root := t.TempDir()
+	writeMod(t, root, "descriptor.mod", "name = \"m\"\n")
+	writeMod(t, root, "common/religion/religions/00_mod.txt",
+		"mod_religion = {\n\tfaiths = {\n\t\tmod_faith = {\n\t\t\tcolor = { 1 2 3 }\n\t\t}\n\t}\n}\n")
+	w, err := BuildWorkspace(context.Background(), "ck3",
+		[]ModInput{{Origin: "mod", Root: root, Name: "M"}}, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Schema.Nested; len(got) != 1 || got[0].ChildKind != "faith" {
+		t.Errorf("a workspace must keep the install's shapes, got %+v", got)
+	}
+	if !findDef(w.Defs, "faith", "mod_faith") {
+		t.Errorf("the install's join mark must harvest the mod's row; defs=%v", w.Defs)
 	}
 }

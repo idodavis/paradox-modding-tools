@@ -31,6 +31,8 @@ type Cursor struct {
 	Slot                     string
 	InKey                    bool
 	Off, Start               int
+	// FileKind and Path address the learned cell the cursor sits at: the file's own extract kind, and the enclosing block keys below the definition, folded as the schema folds them.
+	FileKind, Path string
 }
 
 type probe struct {
@@ -43,6 +45,7 @@ type probe struct {
 	saveOK          bool
 	inKey           bool
 	slotKey         string
+	fileKind, path  string
 	// inNested is true when the enclosing block is deeper than the definition.
 	inNested bool
 	// blockPath is the keys of the enclosing assignments, outermost first, so a
@@ -64,6 +67,7 @@ func CursorAt(s *session.Session, path string, line, col int) (Cursor, bool) {
 	return Cursor{
 		Word: p.word, SlotKey: p.slotKey, Slot: p.slot, Kind: p.kind, Src: p.src,
 		InKey: p.inKey, Off: p.off, Start: p.start,
+		FileKind: p.fileKind, Path: p.path,
 	}, true
 }
 
@@ -87,6 +91,7 @@ func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
 		rel = r
 	}
 	at.kind = game.MatchExtract(s.GameID, rel).Kind
+	at.fileKind = at.kind
 	if res.Root == nil || s.KindFor(path) == "loc" {
 		return at, true
 	}
@@ -107,8 +112,33 @@ func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
 		}
 		at.saveName, at.saveOK = saveScopeIn(chain, off)
 		at.paramOwner = paramOwnerIn(s, chain)
+		at.path = s.CellPath(cellSegs(&at, chain, off))
 	}
 	return at, true
+}
+
+// cellSegs is the enclosing block keys below the definition's own; a bare list member sits at the cell of the block key that holds it, so that key is not a path segment.
+func cellSegs(at *probe, chain []jomini.Statement, off int) []string {
+	var segs []string
+	for _, st := range chain {
+		a, ok := st.(*jomini.Assignment)
+		if !ok {
+			continue
+		}
+		b := jomini.ChildBlock(a)
+		if b == nil || off < b.Range.Start || off > b.Range.End {
+			continue
+		}
+		segs = append(segs, a.Key.Text)
+	}
+	if len(segs) == 0 {
+		return nil
+	}
+	segs = segs[1:]
+	if n := len(segs); n > 0 && !at.inKey && segs[n-1] == at.slotKey {
+		segs = segs[:n-1]
+	}
+	return segs
 }
 
 func paramOwnerIn(s *session.Session, chain []jomini.Statement) string {

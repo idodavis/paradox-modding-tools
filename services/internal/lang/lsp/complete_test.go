@@ -58,7 +58,7 @@ func TestCompleteActionsSymbols(t *testing.T) {
 	}
 
 	imm := "test.1 = {\n\timm"
-	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": imm}, &derived.VanillaCache{
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": imm}, &vanillaCache{
 		Structures: map[string][]string{"event": {"immediate", "option"}},
 		Schema: &declared.Schema{Effects: map[string]declared.EngineToken{
 			"immortal": {}, "immune": {},
@@ -74,7 +74,7 @@ func TestCompleteActionsSymbols(t *testing.T) {
 	for i := range vocab {
 		vocab[i] = "tok_" + string(rune('a'+i%26))
 	}
-	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": "test.1 = {\n\t"}, &derived.VanillaCache{
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": "test.1 = {\n\t"}, &vanillaCache{
 		Structures: map[string][]string{"event": {"immediate", "option"}},
 		Vocabulary: vocab,
 	}, nil)
@@ -95,7 +95,7 @@ func hasComplete(items []CompletionItem, label string) bool {
 }
 
 func TestCompleteSlots(t *testing.T) {
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		Structures: map[string][]string{"event": {"immediate", "option", "title"}},
 		Schema: &declared.Schema{
 			Effects:  map[string]declared.EngineToken{"add_gold": {}},
@@ -104,7 +104,7 @@ func TestCompleteSlots(t *testing.T) {
 		FieldInfo: map[string]string{"immediate": "runs first"},
 		FireKeys:  map[string]string{"trigger_event": "event"},
 	}
-	vloc := &derived.VanillaLoc{Sites: map[string]derived.LocEntry{
+	vloc := &vanillaLoc{Sites: map[string]derived.LocEntry{
 		"test.1.t": {Value: "Hi"},
 		"other":    {},
 	}}
@@ -176,7 +176,7 @@ func TestCompleteSlots(t *testing.T) {
 	s, root = buildSession(t, "ck3", map[string]string{
 		"events/x.txt":               theme,
 		"common/event_themes/00.txt": "seduction = { }\n",
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		FieldValueKinds: map[string]string{"theme": "event_themes"},
 		Defs: []derived.Def{
 			{Kind: "event_themes", Key: "seduction", Path: "t.txt", Line: 0},
@@ -194,13 +194,13 @@ func TestCompleteSlots(t *testing.T) {
 }
 
 func TestCompleteEmptyPrefixAndFallback(t *testing.T) {
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		Structures: map[string][]string{"event": {"immediate", "option"}},
 		Defs: []derived.Def{
 			{Kind: "trait", Key: "ambitious", Path: "t.txt", Line: 0},
 		},
 	}
-	vloc := &derived.VanillaLoc{Sites: map[string]derived.LocEntry{
+	vloc := &vanillaLoc{Sites: map[string]derived.LocEntry{
 		"test.1.t": {Value: "Hi"},
 	}}
 
@@ -233,7 +233,7 @@ func TestCompleteEmptyPrefixAndFallback(t *testing.T) {
 }
 
 func TestCompleteRangeAndInsert(t *testing.T) {
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		Structures: map[string][]string{
 			"event": {"title", "immediate", "rare_flag"},
 		},
@@ -296,14 +296,14 @@ func TestCompleteRootAndUnknownField(t *testing.T) {
 	src := "script"
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/scripted_triggers/x.txt": src,
-	}, &derived.VanillaCache{}, nil)
+	}, &vanillaCache{}, nil)
 	f := filepath.Join(root, "common", "scripted_triggers", "x.txt")
 	items := Complete(s, f, 0, len("script"))
 	if !hasComplete(items, "scripted_triggers") {
 		t.Fatalf("root scripted_triggers: %v", labels(items))
 	}
 
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		Structures: map[string][]string{"event": {"type", "immediate"}},
 	}
 	unk := "test.1 = {\n\tunknown_field = \n}\n"
@@ -329,7 +329,7 @@ func TestCompleteRootAndUnknownField(t *testing.T) {
 // that, and in the form the schema says the value is written — as `prefix:id`
 // when the target type is a global link requiring data, bare otherwise.
 func TestCompleteUsesDeclaredTarget(t *testing.T) {
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		Schema: &declared.Schema{
 			Triggers: map[string]declared.EngineToken{
 				"has_culture_group": {In: []string{"culture"}, Target: "culture_group"},
@@ -375,7 +375,7 @@ func TestCompleteUsesDeclaredTarget(t *testing.T) {
 // typed the replace range covered only `tur` and accepting the citation
 // produced `culture_group:culture_group:turkic_group`.
 func TestCompleteCitationReplacesWholeCite(t *testing.T) {
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		Schema: &declared.Schema{
 			Triggers: map[string]declared.EngineToken{
 				"has_culture_group": {In: []string{"culture"}, Target: "culture_group"},
@@ -439,7 +439,7 @@ func TestCompletionFiltersKindBeforeTheLimit(t *testing.T) {
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/decisions/00.txt": noise.String(),
 		"events/x.txt":            ev,
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		FieldValueKinds: map[string]string{"add_trait": "traits"},
 		Defs: []derived.Def{
 			{Kind: "traits", Key: "zzz_brave", Path: "t.txt"},
@@ -477,7 +477,7 @@ func TestValueSourceOrder(t *testing.T) {
 		// above the derived slot and the harvested enum; below the script_docs
 		// sources, which name a database rather than a type word.
 		"slot-declared-doc",
-		"slot-derived",
+		"cell-members",
 		"macro-params",
 		"macro-call-params",
 	}
@@ -506,7 +506,7 @@ func TestValueDeclaredOutranksDerived(t *testing.T) {
 		t.Fatalf("source %q missing", name)
 		return -1
 	}
-	derived := at("slot-derived")
+	derived := at("cell-members")
 	for _, declared := range []string{"slot-declared", "target-declared"} {
 		if i := at(declared); i > derived {
 			t.Errorf("%s at %d ranks below slot-derived at %d", declared, i, derived)
@@ -515,8 +515,8 @@ func TestValueDeclaredOutranksDerived(t *testing.T) {
 }
 
 // nestedCache declares what the install would have evidenced about two blocks.
-func nestedCache() *derived.VanillaCache {
-	c := &derived.VanillaCache{
+func nestedCache() *vanillaCache {
+	c := &vanillaCache{
 		Structures: map[string][]string{
 			"event": {"type", "title", "desc", "theme", "option", "trigger"},
 		},
@@ -530,7 +530,6 @@ func nestedCache() *derived.VanillaCache {
 			"type":    "Optional, defaults to character_event",
 		},
 	}
-	derived.PrepareCache(c)
 	return c
 }
 
@@ -588,14 +587,13 @@ func TestCompleteFollowsEnclosingBlock(t *testing.T) {
 // `current_description` to someone four characters into `current_year` — and
 // stopped the caller ever reaching the vocabulary.
 func TestCompleteWidensRatherThanEmpties(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		Structures: map[string][]string{
 			"decisions": {"is_shown", "effect", "current_description"},
 		},
 		NestedMembers: map[string][]string{"is_shown": {"always", "exists", "not"}},
 		Vocabulary:    []string{"current_year", "current_description", "is_adult"},
 	}
-	derived.PrepareCache(c)
 	body := "d = {\n\tis_shown = {\n\t\talways = yes\n\t}\n}\n"
 	s, root := buildSession(t, "ck3",
 		map[string]string{"common/decisions/d.txt": body}, c, nil)
@@ -619,14 +617,13 @@ func TestCompleteWidensRatherThanEmpties(t *testing.T) {
 // typed `title:` can never match — which left half of all value positions in a
 // real mod completing to nothing.
 func TestCompleteCitedPrefix(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		PrefixKinds: map[string]string{"title": "titles"},
 		Defs: []derived.Def{
 			{Kind: "titles", Key: "k_england"}, {Kind: "titles", Key: "k_essex"},
 			{Kind: "titles", Key: "d_wessex"},
 		},
 	}
-	derived.PrepareCache(c)
 	body := "a = {\n\tthis = title:k_e\n}\n"
 	s, root := buildSession(t, "ck3",
 		map[string]string{"common/scripted_effects/e.txt": body}, c, nil)

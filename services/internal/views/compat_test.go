@@ -20,7 +20,7 @@ import (
 // know `trigger_event` is real. CK3 declares it, so the fixture says so.
 func twoModTrees(t *testing.T, aFiles, bFiles map[string]string) *session.Session {
 	t.Helper()
-	return twoModTreesWithCache(t, &derived.VanillaCache{
+	return twoModTreesWithCache(t, &vanillaCache{
 		Schema: &declared.Schema{Effects: map[string]declared.EngineToken{
 			"trigger_event": {Target: "event"},
 		}},
@@ -28,7 +28,7 @@ func twoModTrees(t *testing.T, aFiles, bFiles map[string]string) *session.Sessio
 }
 
 func twoModTreesWithCache(
-	t *testing.T, cache *derived.VanillaCache, aFiles, bFiles map[string]string,
+	t *testing.T, cache *vanillaCache, aFiles, bFiles map[string]string,
 ) *session.Session {
 	t.Helper()
 	a, b := t.TempDir(), t.TempDir()
@@ -40,7 +40,7 @@ func twoModTreesWithCache(
 	for rel, body := range bFiles {
 		write(t, b, rel, body)
 	}
-	return session.NewWithLoc("ws", "ck3", "english", cache, nil, []derived.ModInput{
+	return session.New("ws", "ck3", "english", toIndex(cache, nil), []derived.ModInput{
 		{Origin: "modA", Root: a, Order: 0, Name: "A"},
 		{Origin: "modB", Root: b, Order: 1, Name: "B"},
 	})
@@ -138,7 +138,7 @@ func twoMods(t *testing.T, game, aBody, bBody string) *session.Session {
 	write(t, b, desc, body)
 	write(t, a, "common/traits/a.txt", aBody)
 	write(t, b, "common/traits/b.txt", bBody)
-	return session.NewWithLoc("ws", game, "english", nil, nil, []derived.ModInput{
+	return session.New("ws", game, "english", nil, []derived.ModInput{
 		{Origin: "modA", Root: a, Order: 0},
 		{Origin: "modB", Root: b, Order: 1},
 	})

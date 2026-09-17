@@ -1,9 +1,13 @@
-// scan.go harvests a game install into VanillaCache: script defs, structure keys,
-// vocabulary, loc, shipped game-info prose, GUI types/props, metadata, script_docs.
+// scan.go walks a game install or a workspace's mods into one Index: gather,
+// localization, Phase A over every file in parallel, then -- with the
+// definition index complete -- Phase B, the shipped prose, the declared type
+// system and the data split. A workspace applies the install's schema instead
+// of learning one of its own.
 
 package derived
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -23,7 +27,6 @@ import (
 	"paradox-modding-tools/services/internal/lang/loc"
 )
 
-const locValueLimit = 200
 const scanConcurrency = 8
 
 // ScanRequest is the install harvest input. script_docs come from UserDataDir.
@@ -32,8 +35,8 @@ type ScanRequest struct {
 	OnProgress                                       func(pct int, msg string)
 }
 
-// Scan harvests installPath into a VanillaCache.
-func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, error) {
+// Scan harvests installPath into an Index, with the data-row tier split into a second one.
+func Scan(ctx context.Context, req ScanRequest) (*Index, *Index, error) {
 	info := game.Get(req.GameID)
 	if info == nil {
 		return nil, nil, os.ErrInvalid
@@ -42,109 +45,202 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	if locLang == "" {
 		locLang = "english"
 	}
-	version := CacheVersion(req.Version)
 	step := req.OnProgress
 	if step == nil {
 		step = func(int, string) {}
 	}
 	step(5, "listing files")
 	inv := gather(scriptRoots(info, req.InstallPath))
-
-	// A game whose script root holds nothing is not an empty game, it is the wrong folder -- and without this guard Scan writes a 0-def cache with a fresh ScannedAt over the good one, after which CacheStale reads false forever and every mod extending `traits` gets a false unresolved-ref finding on every vanilla trait it cites.
+	// A game whose script root holds nothing is not an empty game, it is the wrong folder -- and without this guard Scan writes a 0-def cache with a fresh ScannedAt over the good one.
 	if len(inv.script) == 0 {
 		return nil, nil, fmt.Errorf(
 			"no script files under %s: check the install path", req.InstallPath)
 	}
+	x := NewIndex(req.GameID)
+	x.InstallID, x.InstallPath = req.InstallID, req.InstallPath
+	x.GameVersion = CacheVersion(req.Version)
+	x.ScannedAt = time.Now().UTC().Format(time.RFC3339)
 
 	// The declared type system is read first: binding prefixes to databases needs it during the walk, not after.
 	docDirs := scriptDocsDirs(req.GameID, req.InstallPath)
-	schema := declared.ReadSchema(docDirs)
+	x.Declared = declared.ReadSchema(docDirs)
 
-	// Localization is read before the script walk because deriveLocFields needs the key set to decide which script properties hold a key, and that decision has to be made between the walk's two passes.
+	// Localization is read before the script walk because a cell's type is the union of what its values resolve to, and a localization key is one of the answers.
 	step(15, "reading localization")
-	vloc, locFileRefs, err := harvestLoc(ctx, inv.loc, locLang, req.InstallID, version)
+	locRefs, err := harvestLoc(ctx, x, inv.loc, locLang)
 	if err != nil {
 		return nil, nil, err
 	}
-	engineSlots := locEngineSlots(vloc.Sites, locFileRefs)
-	locKeys := locKeySet(vloc.Sites)
+	x.Schema.LocEngineSlots = locEngineSlots(x.Loc[locLang], locRefs)
+	for _, r := range locRefs {
+		if !isLocKind(r.Kind) {
+			continue
+		}
+		// Through the interners like every other record: harvestLoc hands these back before it adds the file, with a path string the file does not persist.
+		r.PathID, r.KindID = x.intern(r.Path, "", "", "loc"), x.internKind(r.Kind)
+		r.Path, r.Kind = "", ""
+		if r.End == r.Start+len(r.Key) {
+			r.End = 0
+		}
+		x.Refs = append(x.Refs, r)
+	}
 
 	step(30, "parsing script")
 	files := append(append([]fileRef{}, inv.script...), inv.gui...)
-	acc, derived, err := collectExtracts(ctx, req.GameID, files, nil, schema, locKeys)
+	dataFns, err := harvest(ctx, x, files, nil, locLang)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	step(80, "reading game info")
-	fieldInfo, fieldByKind, kindInfo, docStructs, declTypes, declByKind := harvestGameInfo(req.GameID, inv.info)
+	docs, docStructs := harvestGameInfo(req.GameID, inv.info)
+	x.Docs = docs
 	for kind, keys := range docStructs {
-		set := acc.structures[kind]
-		if set == nil {
-			set = map[string]int{}
-			acc.structures[kind] = set
-		}
 		for k := range keys {
-			if set[k] == 0 {
-				set[k] = 1
+			x.Schema.at(kind, "", k).N++
+		}
+	}
+	step(90, "reading script_docs")
+	x.projections(dataFunctions(docDirs, dataFns), locLang)
+
+	// The references an install cache does not keep go before the file is written, and the data rows leave for a tier of their own.
+	x.compact()
+	data := splitData(x)
+	x.SortLocKeys()
+	step(100, "done")
+	return x, data, nil
+}
+
+// projections turns the settled cells and the declared API into the lists the editor reads. Every one of them is a view of something already stored; none is a second opinion about it.
+func (x *Index) projections(dataFns []string, locLang string) {
+	s := &x.Schema
+	vocab := map[string]bool{}
+	guiProps := map[string]bool{}
+	for kind, byPath := range s.Cells {
+		for _, byKey := range byPath {
+			for key := range byKey {
+				if !jomini.IsLowerName(key) || jomini.IsStop(key) {
+					continue
+				}
+				vocab[key] = true
+				if kind == jomini.KindGUIType {
+					guiProps[key] = true
+				}
 			}
 		}
 	}
-
-	// One grouping of acc.defs for the three derivations below.
-	accIdx := newDefIndex(acc.defs)
-	structures := keysByCount(acc.structures)
-	// Indexed here, not at harvest: the index is ~80 MB and the parallel walk is the heap peak.
-	locIndex := loc.NewKeys(locKeys)
-	kinds := deriveFieldValueKinds(acc.fieldRHS, accIdx)
-	derived.FieldValueKinds = kinds
-	// The data rows leave here for their own file; see data.go.
-	script, data := splitData(req.GameID, dropEphemeralDefs(acc.defs))
-	// Effects and triggers live on c.Schema alone; the corpus never contributes one, because inferring them by position elected every $PARAM$ substitution site as an effect -- on CK3, 1,905 real effects became 10,337 completion entries, 82% of them noise.
-	c := &VanillaCache{
-		FormatVersion:            CacheFormatVersion,
-		InstallID:                req.InstallID,
-		GameID:                   req.GameID,
-		InstallPath:              req.InstallPath,
-		GameVersion:              version,
-		ScannedAt:                time.Now().UTC().Format(time.RFC3339),
-		Defs:                     script,
-		Edges:                    acc.edges,
-		LocRefs:                  append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
-		CallRefs:                 macroCallRefs(acc.refs),
-		FieldValueKinds:          kinds,
-		PrefixKinds:              derived.PrefixKinds,
-		KindScope:                derived.KindScope,
-		FireKeys:                 derived.FireKeys,
-		NestedShapes:             derived.NestedShapes,
-		Wrappers:                 sortedKeys(derived.Wrappers),
-		LocConventions:           deriveLocConventions(accIdx, structures, locIndex),
-		LocKeyPrefixes:           loc.LearnKeyPrefixes(locIndex, locConventionFloor),
-		LocFields:                sortedKeys(derived.LocFields),
-		KindInfo:                 kindInfo,
-		FieldInfo:                fieldInfo,
-		FieldInfoByKind:          fieldByKind,
-		DeclaredFieldTypes:       declTypes,
-		DeclaredFieldTypesByKind: declByKind,
-		Structures:               structures,
-		NestedMembers:            deriveNestedMembers(acc.nested),
-		UnambiguousBlocks:        unambiguousBlocks(acc.blockKinds),
-		StructureBlocks:          blockKeys(acc.structures, acc.structBlocks),
-		Vocabulary:               sortedKeys(acc.vocab),
-		GUITypes:                 sortedKeys(acc.guiTypes),
-		GUIProps:                 sortedKeys(acc.guiProps),
-		DataFunctions:            sortedKeys(acc.dataFns),
-		LocEngineSlots:           engineSlots,
-		Schema:                   schema,
-		data:                     data,
+	s.GUIProps = sortedKeys(guiProps)
+	s.GUITypes = sortedKeys(x.keysOfKind(jomini.KindGUIType))
+	s.DataFunctions = dataFns
+	// Effects and triggers come only from the declared API: inferring them by position elected every $PARAM$ substitution site as an effect, turning CK3's 1,905 real effects into 10,337 completion entries.
+	s.Effects, s.Triggers = nil, nil
+	if x.Declared != nil {
+		for name := range x.Declared.Effects {
+			s.Effects = append(s.Effects, name)
+		}
+		for name := range x.Declared.Triggers {
+			s.Triggers = append(s.Triggers, name)
+		}
+		slices.Sort(s.Effects)
+		slices.Sort(s.Triggers)
+		x.Declared.EachName(func(name string) { vocab[name] = true })
 	}
+	s.EffectSet, s.TriggerSet = sliceSet(s.Effects), sliceSet(s.Triggers)
+	s.VocabNames = sortedKeys(vocab)
+	s.KindPrefix, s.ScopePrefix, s.ScopeKind = x.citeForms()
+	keys := loc.NewKeys(keySet(x.Loc[locLang]))
+	s.LocKeyPrefixes = loc.LearnKeyPrefixes(keys)
+	_, keysByKind := x.citable()
+	s.Kinds = map[string]KindInfo{}
+	for kind, ks := range keysByKind {
+		// IsObjectKind, not IsCitableDef: a namespace is an event-id prefix with no loc of its own.
+		if !jomini.IsObjectKind(kind) {
+			continue
+		}
+		cs := loc.Learn(slices.Collect(maps.Keys(ks)), s.Members(kind, ""), keys)
+		if len(cs) == 0 {
+			continue
+		}
+		info := s.Kinds[kind]
+		info.Loc = cs
+		s.Kinds[kind] = info
+	}
+}
 
-	step(90, "reading script_docs")
-	enrichDataTypes(docDirs, c)
-	PrepareCache(c)
+func sortedKeys(set map[string]bool) []string {
+	out := slices.Collect(maps.Keys(set))
+	slices.Sort(out)
+	return out
+}
 
-	step(100, "done")
-	return c, vloc, nil
+func sliceSet(keys []string) map[string]bool {
+	if len(keys) == 0 {
+		return nil
+	}
+	m := make(map[string]bool, len(keys)*2)
+	for _, k := range keys {
+		m[k] = true
+		m[strings.ToLower(k)] = true
+	}
+	return m
+}
+
+func keySet(m map[string]LocEntry) map[string]bool {
+	out := make(map[string]bool, len(m))
+	for k := range m {
+		out[k] = true
+	}
+	return out
+}
+
+// BuildWorkspace harvests every mod in load order into the session's own Index, applying the install's schema rather than learning one: mods add members of kinds, not kinds or fields.
+func BuildWorkspace(
+	ctx context.Context, gameID string, mods []ModInput, vanilla *Index,
+) (*Index, error) {
+	ordered := slices.Clone(mods)
+	slices.SortStableFunc(ordered, func(a, b ModInput) int { return cmp.Compare(a.Order, b.Order) })
+	var files []fileRef
+	x := NewIndex(gameID)
+	if vanilla != nil {
+		x.Schema = vanilla.Schema
+		// Its own cells, not the install's: a workspace types only the positions the install never wrote at, and must not edit the table it was handed.
+		x.Schema.Cells = nil
+		x.Schema.MacroDefs = maps.Clone(vanilla.Schema.MacroDefs)
+		x.Declared, x.Docs = vanilla.Declared, vanilla.Docs
+	}
+	if x.Schema.MacroDefs == nil {
+		x.Schema.MacroDefs = map[string]string{}
+	}
+	for _, m := range ordered {
+		x.Order = append(x.Order, m.Origin)
+		for _, f := range modFiles(m.Root) {
+			f.origin = m.Origin
+			files = append(files, f)
+		}
+	}
+	_, err := harvest(ctx, x, files, vanilla, "")
+	// A reference to an interpolation the engine fills in is not a missing key, and no mod can define one.
+	x.dropEngineSlotRefs()
+	x.SortLocKeys()
+	return x, err
+}
+
+// dropEngineSlotRefs removes loc references to interpolations the engine fills in (rule 8). This is the harvest site, not the view: filtering the row later would leave a wrong reference for hover and find-references to trip over too.
+func (x *Index) dropEngineSlotRefs() {
+	slots := x.Schema.LocEngineSlots
+	if len(slots) == 0 {
+		return
+	}
+	dropped := false
+	for i := range x.Refs {
+		if r := &x.Refs[i]; x.KindOf(r.KindID) == "loc" && slots[r.Key] && r.PathID >= 0 {
+			r.PathID = -1
+			dropped = true
+		}
+	}
+	if dropped {
+		x.reindexRefs()
+	}
 }
 
 func scriptDocsDirs(gameID, installPath string) []string {
@@ -229,8 +325,7 @@ type fileRef struct{ abs, rel, origin string }
 
 // inventory buckets the walked files by role.
 type inventory struct {
-	script, gui, info []fileRef
-	loc               []string
+	script, gui, info, loc []fileRef
 }
 
 // ClassifyRel buckets a file by name/rel for the install walk and mod indexer.
@@ -251,7 +346,7 @@ func ClassifyRel(rel, name string) string {
 	case lower == game.MetadataFile:
 		return "meta"
 	case strings.HasSuffix(lower, ".txt") && !strings.HasPrefix(name, "_"):
-		// Loose .txt at the script root is engine bookkeeping, not script: parsing checksum_manifest.txt as Jomini produced fire edges for "common", "events" and "history". Real script always sits in a content folder.
+		// Loose .txt at the script root is engine bookkeeping, not script: parsing checksum_manifest.txt as Jomini produced fire edges for "common", "events" and "history".
 		if !strings.Contains(slash, "/") {
 			return ""
 		}
@@ -318,7 +413,7 @@ func gather(roots []string) inventory {
 			case "gui":
 				inv.gui = append(inv.gui, f)
 			case "loc":
-				inv.loc = append(inv.loc, f.abs)
+				inv.loc = append(inv.loc, f)
 			case "script":
 				inv.script = append(inv.script, f)
 			}
@@ -327,107 +422,15 @@ func gather(roots []string) inventory {
 	return inv
 }
 
-// Evidence collects every worker's harvest behind one mutex: what a file settles on its own, the counters the corpus votes are read from, and the sites those votes are still owed. It is the single merge sink for both Scan and BuildIndex.
-type Evidence struct {
-	mu           sync.Mutex
-	defs         []Def
-	refs         []Ref
-	edges        []Edge
-	loc          map[string]map[string]LocEntry
-	locOrder     map[string]map[string]int
-	structures   map[string]map[string]int
-	structBlocks map[string]map[string]int
-	// nested is block key -> member key -> occurrences, across the whole walk. Not keyed by kind: a block named triggered_desc holds the same members wherever it appears, and merging the evidence makes the floor meaningful.
-	nested map[string]map[string]int
-	// blockKinds is block name -> the kinds it was seen under. A name used by one kind can be judged; a name used by several cannot.
-	blockKinds map[string]map[string]bool
-	vocab      map[string]bool
-	guiTypes   map[string]bool
-	guiProps   map[string]bool
-	// fieldRHS and fieldListRHS are the whole-corpus field -> values maps the LocFields and FieldValueKinds votes are counted from.
-	fieldRHS, fieldListRHS map[string]map[string]bool
-	dataFns                map[string]bool
-	cites, fieldCites      []typedCite
-	// nestedObs is every nested block name in the corpus with the depth-1 block above it, which is what NestedShapes is voted from.
-	nestedObs map[string]nestedObs
-	// files is the deferred half, one entry per walked file and nil for a loc file, released as soon as it has resolved.
-	files []*fileSites
-}
-
-func newEvidence() *Evidence {
-	return &Evidence{
-		loc:          map[string]map[string]LocEntry{},
-		locOrder:     map[string]map[string]int{},
-		structures:   map[string]map[string]int{},
-		structBlocks: map[string]map[string]int{},
-		nested:       map[string]map[string]int{},
-		blockKinds:   map[string]map[string]bool{},
-		vocab:        map[string]bool{},
-		guiTypes:     map[string]bool{},
-		guiProps:     map[string]bool{},
-		fieldRHS:     map[string]map[string]bool{},
-		fieldListRHS: map[string]map[string]bool{},
-		dataFns:      map[string]bool{},
-		nestedObs:    map[string]nestedObs{},
-	}
-}
-
-// merge files one file's harvest. fs is nil for a loc file, which has no deferred half and whose defs therefore travel here.
-func (a *Evidence) merge(ex FileExtract, fs *fileSites, fns map[string]bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.defs = append(a.defs, ex.Defs...)
-	a.refs = append(a.refs, ex.Refs...)
-	a.edges = append(a.edges, ex.Edges...)
-	a.mergeLocOrdered(ex.LocOrder, ex.Loc)
-	addCounts(a.structures, ex.MemberKind, ex.StructCounts)
-	addCounts(a.structBlocks, ex.MemberKind, ex.StructBlocks)
-	for parent, members := range ex.StructNested {
-		addCounts(a.nested, parent, members)
-		if ex.StructNestedKind != "" {
-			if a.blockKinds[parent] == nil {
-				a.blockKinds[parent] = map[string]bool{}
-			}
-			a.blockKinds[parent][ex.StructNestedKind] = true
+func modFiles(root string) []fileRef {
+	var out []fileRef
+	walkClassified(root, func(kind string, f fileRef) {
+		switch kind {
+		case "mod", "gui", "loc", "script":
+			out = append(out, f)
 		}
-	}
-	maps.Copy(a.vocab, ex.Vocab)
-	maps.Copy(a.guiTypes, ex.GUITypes)
-	maps.Copy(a.guiProps, ex.GUIProps)
-	maps.Copy(a.dataFns, fns)
-	mergeValueSets(a.fieldRHS, ex.FieldRHS)
-	mergeValueSets(a.fieldListRHS, ex.FieldListRHS)
-	if fs == nil {
-		return
-	}
-	a.cites = append(a.cites, fs.cites...)
-	a.fieldCites = append(a.fieldCites, fs.fieldCites...)
-	mergeObs(a.nestedObs, fs.nested)
-	fs.cites, fs.fieldCites, fs.nested = nil, nil, nil
-}
-
-// mergeLocOrdered merges one file's localization under LOAD order rather than completion order. The corpus walk is parallel, so when two files of one language define the same key, whichever worker finished last decided which value survived -- and the answer changed between runs of the same workspace. order is the file's index in the walk list.
-func (a *Evidence) mergeLocOrdered(order int, d LocDelta) {
-	if d.Lang == "" || len(d.Vals) == 0 {
-		return
-	}
-	m := a.loc[d.Lang]
-	if m == nil {
-		m = map[string]LocEntry{}
-		a.loc[d.Lang] = m
-	}
-	ord := a.locOrder[d.Lang]
-	if ord == nil {
-		ord = map[string]int{}
-		a.locOrder[d.Lang] = ord
-	}
-	for k, v := range d.Vals {
-		if prev, seen := ord[k]; seen && prev > order {
-			continue
-		}
-		m[k] = v
-		ord[k] = order
-	}
+	})
+	return out
 }
 
 // walkN runs fn(0..n-1) with scanConcurrency, cancelling siblings on error.
@@ -448,20 +451,12 @@ func walkN(ctx context.Context, n int, fn func(i int) error) error {
 	return g.Wait()
 }
 
-func walkFiles(ctx context.Context, files []fileRef, fn func(fileRef) error) error {
-	return walkN(ctx, len(files), func(i int) error {
-		return fn(files[i])
-	})
-}
-
-// collectExtracts harvests a whole corpus in one streaming pass. Every file is read and parsed exactly once: what needs no global knowledge becomes defs, counters and references there and then, and what waits on a corpus vote leaves a fileSites behind -- small records carrying a key, a value and a span, never the file's facts, so no parse tree survives the worker that made it. The votes resolve once the pass is over and the sites resolve against them by map lookup. schema binds prefixes to databases; it comes from the cache for mods and is read up front for a vanilla scan. locKeys is the install's localization key set, nil for a mod walk, which inherits the install's answer from the cache.
-func collectExtracts(
-	ctx context.Context, gameID string, files []fileRef,
-	cache *VanillaCache, schema *declared.Schema, locKeys map[string]bool,
-) (*Evidence, *Derived, error) {
-	acc, names := newEvidence(), &interner{}
-	// Indexed by file, not appended: the walk is parallel, and defs assembled in file order make a scan's output the same on every run.
-	acc.files = make([]*fileSites, len(files))
+// harvest is the corpus pass: Phase A over every file in parallel, then Phase B once the definition index is complete. locLang empty means a workspace, which applies the install's schema rather than learning one.
+func harvest(ctx context.Context, x *Index, files []fileRef, base *Index, locLang string) (map[string]bool, error) {
+	names := &interner{}
+	hs := make([]*FileHarvest, len(files))
+	var mu sync.Mutex
+	dataFns := map[string]bool{}
 	if err := walkN(ctx, len(files), func(i int) error {
 		f := files[i]
 		raw, err := os.ReadFile(f.abs)
@@ -469,349 +464,115 @@ func collectExtracts(
 			return nil
 		}
 		text, _ := jomini.Decode(raw)
-		if game.MatchExtract(gameID, f.rel).Mode == game.ModeLocKey {
-			ex := ExtractFile(gameID, f.abs, f.rel, f.origin, text)
-			ex.LocOrder = i
-			acc.merge(ex, nil, nil)
+		rule := game.MatchExtract(x.GameID, f.rel)
+		id := fileID{GameID: x.GameID, Path: filepath.Clean(f.abs), Origin: f.origin,
+			Rule: rule, Order: i}
+		if rule.Mode == game.ModeLocKey {
+			hs[i] = ApplyLoc(id, jomini.Normalize(text))
 			return nil
 		}
-		ff := FactsOf(gameID, f.abs, f.rel, f.origin,
-			jomini.Parse(jomini.Normalize(text)))
+		ff := FactsOf(x.GameID, f.abs, f.rel, f.origin, jomini.Parse(jomini.Normalize(text)))
+		ff.Order = i
 		names.facts(&ff)
-		fs := foldSites(ff, schema)
-		ex := foldForms(ff)
-		// The file's definitions travel with its sites: wrappers drop and nested rows appear only after the votes, and both must land next to the rest of this file's.
-		fs.defs, ex.Defs = ex.Defs, nil
-		acc.files[i] = fs
-		acc.merge(ex, fs, harvestGetSet(ff.Src))
-		return nil
-	}); err != nil {
-		return acc, nil, err
-	}
-
-	derived := derivedFromCache(cache)
-	base := acc.baseDefs()
-	baseIdx := newDefIndex(base)
-	derived.mergeLocal(acc.vote(gameID, baseIdx, schema))
-	// mergeStringMap returns nil for an empty result, so mergeLocal can leave these maps nil.
-	if derived.FieldValueKinds == nil {
-		derived.FieldValueKinds = map[string]string{}
-	}
-	for k, v := range deriveFieldValueKinds(acc.fieldRHS, baseIdx) {
-		if derived.FieldValueKinds[k] == "" {
-			derived.FieldValueKinds[k] = v
-		}
-	}
-	// The install derives its own loc fields; a mod walk keeps the cache's. Scalar and LIST sides both hold keys.
-	if len(locKeys) > 0 {
-		defKeys := baseIdx.citableKeys()
-		derived.LocFields = map[string]bool{}
-		maps.Copy(derived.LocFields, deriveLocFields(acc.fieldRHS, locKeys, defKeys, schema))
-		maps.Copy(derived.LocFields, deriveLocFields(acc.fieldListRHS, locKeys, defKeys, schema))
-	}
-	base, baseIdx = nil, nil
-
-	// The citations are indexed once, corpus-wide, because a nested database is routinely declared in one file and cited from another.
-	derived.CitedByKind = citedIDsByKind(derived.NestedShapes, acc.cites, derived.PrefixKinds)
-	if err := walkN(ctx, len(acc.files), func(i int) error {
-		if fs := acc.files[i]; fs != nil {
-			resolveNests(fs, derived, derived.CitedByKind)
-		}
-		return nil
-	}); err != nil {
-		return acc, derived, err
-	}
-	for _, fs := range acc.files {
-		if fs != nil {
-			acc.defs = append(acc.defs, fs.defs...)
-		}
-	}
-	// Nested databases (CK3 faiths under religions) only exist as defs after resolveNests, so the first bind could not see them.
-	rebind(derived, schema, acc.defs)
-
-	return acc, derived, acc.resolve(ctx, derived, macroDefKinds(acc.defs, cache))
-}
-
-// baseDefs is every definition the pass found before any vote applies, which is what the votes are counted against.
-func (a *Evidence) baseDefs() []Def {
-	n := len(a.defs)
-	for _, fs := range a.files {
-		if fs != nil {
-			n += len(fs.defs)
-		}
-	}
-	out := make([]Def, 0, n)
-	out = append(out, a.defs...)
-	for _, fs := range a.files {
-		if fs != nil {
-			out = append(out, fs.defs...)
-		}
-	}
-	return out
-}
-
-// vote settles the four things no dump states: fire keys, nested databases, setup wrappers and the prefix binding. The prefix table is the one join against declared types, so without a schema there is no prefix table at all rather than a guessed one.
-func (a *Evidence) vote(gameID string, idx *defIndex, s *declared.Schema) *Derived {
-	defKeys := idx.citableKeys()
-	var prefix, kindScope map[string]string
-	if !s.Empty() {
-		prefix, kindScope = bindKinds(s, idx)
-	}
-	idChild := nestedIDChild(gameID, defKeys, prefix, a.cites, a.fieldCites)
-	return &Derived{
-		PrefixKinds:  prefix,
-		KindScope:    kindScope,
-		FireKeys:     resolveFireKinds(fireEvidence(a.files, idx)),
-		Wrappers:     resolveWraps(a.files, defKeys),
-		NestedShapes: nestedShapesFrom(nestedWantedFrom(a.nestedObs, idChild), s),
-	}
-}
-
-// resolve turns every file's deferred sites into references and edges, releasing each file's sites as it goes: they are the pass's heap peak, and the model is built after this. Call candidates never leave the file -- macroKinds is complete before the first one is made, so they become refs and edges here rather than piling up corpus-wide.
-func (a *Evidence) resolve(
-	ctx context.Context, derived *Derived, macroKinds map[string]string,
-) error {
-	macroKeys := make(map[string]bool, len(macroKinds))
-	for key := range macroKinds {
-		macroKeys[key] = true
-	}
-	err := walkN(ctx, len(a.files), func(i int) error {
-		fs := a.files[i]
-		if fs == nil {
-			return nil
-		}
-		refs, edges, cands := resolveSites(fs, derived)
-		a.files[i] = nil
-		refs = append(refs, ApplyCallRefs(cands, macroKinds)...)
-		edges = append(edges, ApplyCallEdges(cands, macroKeys)...)
-		a.mu.Lock()
-		defer a.mu.Unlock()
-		a.refs = append(a.refs, refs...)
-		a.edges = append(a.edges, edges...)
-		return nil
-	})
-	a.files = nil
-	return err
-}
-
-func mergeValueSets(dst, src map[string]map[string]bool) {
-	for field, vals := range src {
-		m := dst[field]
-		if m == nil {
-			m = map[string]bool{}
-			dst[field] = m
-		}
-		maps.Copy(m, vals)
-	}
-}
-
-// rebind re-runs the bind once nested defs (CK3 faiths under religions) exist.
-func rebind(v *Derived, s *declared.Schema, defs []Def) {
-	if v == nil || s.Empty() || len(defs) == 0 {
-		return
-	}
-	prefixKind, kindScope := bindKinds(s, newDefIndex(defs))
-	if len(prefixKind) == 0 {
-		return
-	}
-	if v.PrefixKinds == nil {
-		v.PrefixKinds = map[string]string{}
-	}
-	if v.KindScope == nil {
-		v.KindScope = map[string]string{}
-	}
-	maps.Copy(v.PrefixKinds, prefixKind)
-	maps.Copy(v.KindScope, kindScope)
-}
-
-func harvestLoc(
-	ctx context.Context, files []string, locLang, installID, version string,
-) (*VanillaLoc, []Ref, error) {
-	byLang := map[string]*VanillaLoc{}
-	refs := make([]fileRef, 0, len(files))
-	for _, f := range files {
-		if loc.LanguageFromRel(f) == "" {
-			continue
-		}
-		refs = append(refs, fileRef{abs: f})
-	}
-	// Harvest only the workspace language and english. A CK3 install ships eleven, and writing them all cost ~790 MB of sidecars and most of the loc pass; english is kept because coverage compares against it.
-	want := map[string]bool{locLang: true, "english": true}
-
-	var mu sync.Mutex
-	var locRefs []Ref
-	err := walkFiles(ctx, refs, func(f fileRef) error {
-		lang := loc.LanguageFromRel(f.abs)
-		if lang == "" || !want[lang] {
-			return nil
-		}
-		raw, err := os.ReadFile(f.abs)
-		if err != nil {
-			return nil
-		}
-		text, _ := jomini.Decode(raw)
-		_, locd, fileRefs := extractLoc(f.abs, text, "")
+		h := Apply(ff, x.Declared)
+		fns := harvestGetSet(ff.Src)
+		hs[i] = h
 		mu.Lock()
-		out := byLang[lang]
-		if out == nil {
-			out = &VanillaLoc{FormatVersion: LocFormatVersion, Sites: map[string]LocEntry{}}
-			byLang[lang] = out
-		}
-		for k, v := range locd.Vals {
-			out.Sites[k] = LocEntry{Path: v.Path, Line: v.Line, Value: v.Value}
-		}
-		if lang == locLang {
-			locRefs = append(locRefs, fileRefs...)
-		}
+		maps.Copy(dataFns, fns)
 		mu.Unlock()
 		return nil
-	})
-	if err != nil {
-		return nil, nil, err
+	}); err != nil {
+		return dataFns, err
 	}
-	if installID != "" {
-		for lang, vl := range byLang {
-			if err := SaveVanillaLoc(installID, version, lang, vl); err != nil {
-				return nil, nil, err
-			}
+	// Records land in file order, so two scans of one install produce the same slices.
+	recs := make([]*fileRecs, 0, len(hs))
+	for i, h := range hs {
+		if h == nil {
+			continue
 		}
+		x.Add(h.Path, files[i].rel, h.Origin,
+			ClassifyRel(files[i].rel, filepath.Base(files[i].abs)), h)
+		h.Defs, h.Refs, h.Edges = nil, nil, nil
+		if h.recs != nil {
+			recs = append(recs, h.recs)
+		}
+		hs[i] = nil
 	}
-	if out := byLang[locLang]; out != nil {
-		return out, locRefs, nil
-	}
-	return &VanillaLoc{FormatVersion: LocFormatVersion, Sites: map[string]LocEntry{}}, locRefs, nil
+	x.learn(ctx, recs, locLang, base)
+	return dataFns, nil
 }
 
-func locEngineSlots(defined map[string]LocEntry, refs []Ref) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, r := range refs {
-		if r.Kind != "loc" || r.Key == "" || seen[r.Key] {
-			continue
+// citeForms reverse the bind: kind -> the shortest prefix that cites one of its rows, and scope type -> the prefix and the database a user writes to name one.
+func (x *Index) citeForms() (kindPrefix, scopePrefix, scopeKind map[string]string) {
+	kindPrefix, scopePrefix, scopeKind = map[string]string{}, map[string]string{}, map[string]string{}
+	for prefix, kind := range x.Schema.Prefix {
+		k := jomini.CanonicalKind(kind)
+		if cur, ok := kindPrefix[k]; !ok || len(prefix) < len(cur) {
+			kindPrefix[k] = prefix
 		}
-		if _, isKey := defined[r.Key]; isKey {
-			continue
-		}
-		seen[r.Key] = true
-		out = append(out, r.Key)
 	}
-	slices.Sort(out)
+	for kind, scope := range x.Schema.KindScope {
+		if cur, ok := scopeKind[scope]; !ok || len(kind) < len(cur) {
+			scopeKind[scope] = jomini.CanonicalKind(kind)
+		}
+	}
+	for prefix, scope := range x.Declared.Prefixes() {
+		if cur, ok := scopePrefix[scope]; !ok || len(prefix) < len(cur) {
+			scopePrefix[scope] = prefix
+		}
+	}
+	return kindPrefix, scopePrefix, scopeKind
+}
+
+// dataFnRe finds the `GetX` / `SetX` names the data-type dumps declare.
+var dataFnRe = regexp.MustCompile(`\b((?:Get|Set)[A-Za-z0-9_]+)\b`)
+
+// harvestGetSet collects `GetX` / `SetX` data-function names from one file's source. It runs over 180 MB on CK3, so it scans for the two three-byte prefixes directly instead of running a regex over all of it, which cost 12% of the entire scan.
+func harvestGetSet(src string) map[string]bool {
+	var out map[string]bool
+	for i := 0; i+3 < len(src); i++ {
+		if c := src[i]; c != 'G' && c != 'S' {
+			continue
+		}
+		if src[i+1] != 'e' || src[i+2] != 't' {
+			continue
+		}
+		if i > 0 && isDataFnByte(src[i-1]) {
+			continue // mid-word: the regex's leading \b
+		}
+		j := i + 3
+		for j < len(src) && isDataFnByte(src[j]) {
+			j++
+		}
+		if j == i+3 {
+			continue // bare "Get"/"Set": the pattern needs at least one more byte
+		}
+		if out == nil {
+			out = map[string]bool{}
+		}
+		out[src[i:j]] = true
+		i = j - 1
+	}
 	return out
 }
 
-// HarvestLoc gathers install loc files for locLang without opening other languages.
-func HarvestLoc(ctx context.Context, gameID, installPath, locLang string) (*VanillaLoc, error) {
-	info := game.Get(gameID)
-	if info == nil {
-		return nil, os.ErrInvalid
-	}
-	if locLang == "" {
-		locLang = "english"
-	}
-	inv := gather(scriptRoots(info, installPath))
-	var one []string
-	for _, f := range inv.loc {
-		if loc.LanguageFromRel(f) == locLang {
-			one = append(one, f)
-		}
-	}
-	v, _, err := harvestLoc(ctx, one, locLang, "", "")
-	return v, err
+func isDataFnByte(c byte) bool {
+	return c == '_' || (c >= '0' && c <= '9') ||
+		(c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
 
-// firstWins files one documented name: the first non-empty value seen wins, globally and per kind. A nil global files per kind only; an empty kind files globally only.
-func firstWins[V comparable](global map[string]V, byKind map[string]map[string]V, kind, key string, v V) {
-	var zero V
-	if v == zero {
-		return
-	}
-	if global != nil && global[key] == zero {
-		global[key] = v
-	}
-	if kind == "" {
-		return
-	}
-	m := byKind[kind]
-	if m == nil {
-		m = map[string]V{}
-		byKind[kind] = m
-	}
-	if m[key] == zero {
-		m[key] = v
-	}
-}
-
-// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field prose and the declared types written beside it. Both are filed globally for the names that mean one thing everywhere and per kind because most do not -- `type` is a value set inside a scripted relation and something else entirely inside an event. Per-kind wins at lookup.
-func harvestGameInfo(gameID string, docs []fileRef) (
-	fieldDocs map[string]string,
-	byKind map[string]map[string]string,
-	kindInfo map[string]string,
-	structs map[string]map[string]bool,
-	declTypes map[string]string,
-	declByKind map[string]map[string]string,
-) {
-	fieldDocs, byKind, structs = map[string]string{}, map[string]map[string]string{}, map[string]map[string]bool{}
-	kindInfo = map[string]string{}
-	declTypes, declByKind = map[string]string{}, map[string]map[string]string{}
-	for _, f := range docs {
-		raw, err := os.ReadFile(f.abs)
-		if err != nil {
-			continue
-		}
-		kind := game.MatchExtract(gameID, f.rel).Kind
-		if kind != "" && kindInfo[kind] == "" {
-			if prose := game.LeadingKindProse(string(raw)); prose != "" {
-				kindInfo[kind] = prose
-			}
-		}
-		harvested, typed, nested := game.ParseDocFile(string(raw))
-		for key, t := range typed {
-			firstWins(declTypes, declByKind, kind, key, t)
-		}
-		for key, doc := range harvested {
-			// A documented name is a member of the kind whether or not it came with prose.
-			if kind != "" {
-				if structs[kind] == nil {
-					structs[kind] = map[string]bool{}
-				}
-				structs[kind][key] = true
-			}
-			firstWins(fieldDocs, byKind, kind, key, doc)
-		}
-		// A key documented inside an example block stays path-qualified and per-kind only, never bare or global.
-		if kind == "" {
-			continue
-		}
-		for path, doc := range nested {
-			if structs[kind] == nil {
-				structs[kind] = map[string]bool{}
-			}
-			if _, bare, ok := strings.Cut(path, "."); ok {
-				structs[kind][bare] = true
-			}
-			firstWins(nil, byKind, kind, path, doc)
-		}
-	}
-	return fieldDocs, byKind, kindInfo, structs, declTypes, declByKind
-}
-
-var dataFnRe = regexp.MustCompile(`\b((?:Get|Set)[A-Za-z0-9_]+)\b`)
-
-// enrichDataTypes reads the data-type dumps the game writes beside script_docs.
-func enrichDataTypes(dirs []string, c *VanillaCache) {
-	if c == nil {
-		return
-	}
+// dataFunctions reads the data-type dumps the game writes beside script_docs, falling back to the corpus harvest when an install ships none.
+func dataFunctions(dirs []string, harvested map[string]bool) []string {
 	seen := map[string]bool{}
 	for _, dir := range dirs {
 		if dir == "" {
 			continue
 		}
-		_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+		_ = filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
+			if err != nil || e.IsDir() {
 				return nil
 			}
-			name := strings.ToLower(d.Name())
+			name := strings.ToLower(e.Name())
 			if !strings.Contains(name, "data_type") && !strings.Contains(name, "datatypes") {
 				return nil
 			}
@@ -826,46 +587,177 @@ func enrichDataTypes(dirs []string, c *VanillaCache) {
 		})
 	}
 	// Only when the dumps named some: an install with no data-type dump keeps the corpus harvest rather than being emptied by it.
-	if len(seen) > 0 {
-		c.DataFunctions = sortedKeys(seen)
+	if len(seen) == 0 {
+		return sortedKeys(harvested)
 	}
+	return sortedKeys(seen)
 }
 
-func sortedKeys(set map[string]bool) []string {
-	out := slices.Collect(maps.Keys(set))
-	slices.Sort(out)
+func locEngineSlots(defined map[string]LocEntry, refs []Ref) map[string]bool {
+	out := map[string]bool{}
+	for _, r := range refs {
+		if r.Kind != "loc" || r.Key == "" {
+			continue
+		}
+		if _, isKey := defined[r.Key]; isKey {
+			continue
+		}
+		out[r.Key] = true
+	}
 	return out
 }
 
-func addCounts(dst map[string]map[string]int, kind string, src map[string]int) {
-	if kind == "" || len(src) == 0 {
+// harvestLoc reads localization into the index, keeping only the workspace language and english: a CK3 install ships eleven, and writing them all cost most of the loc pass.
+func harvestLoc(ctx context.Context, x *Index, files []fileRef, locLang string) ([]Ref, error) {
+	want := map[string]bool{locLang: true, "english": true}
+	var mu sync.Mutex
+	var refs []Ref
+	err := walkN(ctx, len(files), func(i int) error {
+		f := files[i]
+		lang := loc.LanguageFromRel(f.abs)
+		if lang == "" || !want[lang] {
+			return nil
+		}
+		raw, err := os.ReadFile(f.abs)
+		if err != nil {
+			return nil
+		}
+		text, _ := jomini.Decode(raw)
+		h := ApplyLoc(fileID{GameID: x.GameID, Path: filepath.Clean(f.abs),
+			Rule:  game.ExtractRule{Kind: jomini.KindLocKey, Mode: game.ModeLocKey},
+			Order: i}, jomini.Normalize(text))
+		mu.Lock()
+		if h.Loc.Lang == locLang {
+			refs = append(refs, h.Refs...)
+		}
+		h.Refs = nil
+		x.Add(h.Path, f.rel, h.Origin, "loc", h)
+		mu.Unlock()
+		return nil
+	})
+	return refs, err
+}
+
+// HarvestLoc gathers install loc files for locLang without opening other languages.
+func HarvestLoc(ctx context.Context, gameID, installPath, locLang string) (*Index, error) {
+	info := game.Get(gameID)
+	if info == nil {
+		return nil, os.ErrInvalid
+	}
+	if locLang == "" {
+		locLang = "english"
+	}
+	inv := gather(scriptRoots(info, installPath))
+	var one []fileRef
+	for _, f := range inv.loc {
+		if loc.LanguageFromRel(f.abs) == locLang {
+			one = append(one, f)
+		}
+	}
+	x := NewIndex(gameID)
+	_, err := harvestLoc(ctx, x, one, locLang)
+	x.SortLocKeys()
+	return x, err
+}
+
+// firstWins files one documented name: the first non-empty value seen wins, globally and per kind. A nil global files per kind only; an empty kind files globally only.
+func firstWins(global map[string]string, byKind map[string]map[string]string, kind, key, v string) {
+	if v == "" {
 		return
 	}
-	set := dst[kind]
-	if set == nil {
-		set = map[string]int{}
-		dst[kind] = set
+	if global != nil && global[key] == "" {
+		global[key] = v
 	}
-	for k, n := range src {
-		set[k] += n
+	if kind == "" {
+		return
+	}
+	m := byKind[kind]
+	if m == nil {
+		m = map[string]string{}
+		byKind[kind] = m
+	}
+	if m[key] == "" {
+		m[key] = v
 	}
 }
 
-// dropEngineSlotRefs removes loc references to interpolations the engine fills in, which no mod can define. This is the harvest site, not the view: the decision needs the vanilla slot set, and filtering the row later would leave a wrong reference for hover and find-references to trip over too.
-func dropEngineSlotRefs(acc *Evidence, engineSlots []string) {
-	if acc == nil || len(engineSlots) == 0 {
-		return
+// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field prose and the declared types written beside it. Both are filed globally for the names that mean one thing everywhere and per kind because most do not -- `type` is a value set inside a scripted relation and something else entirely inside an event.
+func harvestGameInfo(gameID string, docs []fileRef) (Docs, map[string]map[string]bool) {
+	d := Docs{
+		FieldInfo: map[string]string{}, FieldInfoByKind: map[string]map[string]string{},
+		KindInfo:                 map[string]string{},
+		DeclaredFieldTypes:       map[string]declared.DeclaredType{},
+		DeclaredFieldTypesByKind: map[string]map[string]declared.DeclaredType{},
 	}
-	slots := make(map[string]bool, len(engineSlots))
-	for _, k := range engineSlots {
-		slots[k] = true
-	}
-	kept := acc.refs[:0]
-	for _, r := range acc.refs {
-		if r.Kind == "loc" && slots[r.Key] {
+	rawTypes, rawByKind := map[string]string{}, map[string]map[string]string{}
+	structs := map[string]map[string]bool{}
+	for _, f := range docs {
+		raw, err := os.ReadFile(f.abs)
+		if err != nil {
 			continue
 		}
-		kept = append(kept, r)
+		kind := game.MatchExtract(gameID, f.rel).Kind
+		if kind != "" && d.KindInfo[kind] == "" {
+			if prose := game.LeadingKindProse(string(raw)); prose != "" {
+				d.KindInfo[kind] = prose
+			}
+		}
+		harvested, typed, nested := game.ParseDocFile(string(raw))
+		for key, t := range typed {
+			firstWins(rawTypes, rawByKind, kind, key, t)
+		}
+		for key, doc := range harvested {
+			// A documented name is a member of the kind whether or not it came with prose.
+			if kind != "" {
+				if structs[kind] == nil {
+					structs[kind] = map[string]bool{}
+				}
+				structs[kind][key] = true
+			}
+			firstWins(d.FieldInfo, d.FieldInfoByKind, kind, key, doc)
+		}
+		// A key documented inside an example block stays path-qualified and per-kind only, never bare or global.
+		if kind == "" {
+			continue
+		}
+		for path, doc := range nested {
+			if structs[kind] == nil {
+				structs[kind] = map[string]bool{}
+			}
+			if _, bare, ok := strings.Cut(path, "."); ok {
+				structs[kind][bare] = true
+			}
+			firstWins(nil, d.FieldInfoByKind, kind, path, doc)
+		}
 	}
-	acc.refs = kept
+	// The declared type is classified once, here, rather than on every hover.
+	for key, t := range rawTypes {
+		d.DeclaredFieldTypes[key] = declared.ClassifyDeclaredType(t)
+	}
+	for kind, m := range rawByKind {
+		out := make(map[string]declared.DeclaredType, len(m))
+		for key, t := range m {
+			out[key] = declared.ClassifyDeclaredType(t)
+		}
+		d.DeclaredFieldTypesByKind[kind] = out
+	}
+	d.FieldInfo = normalizeDocMap(d.FieldInfo)
+	for kind, m := range d.FieldInfoByKind {
+		d.FieldInfoByKind[kind] = normalizeDocMap(m)
+	}
+	return d, structs
+}
+
+func normalizeDocMap(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return m
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		lk := strings.ToLower(k)
+		if out[lk] == "" {
+			out[lk] = v
+		}
+	}
+	return out
 }

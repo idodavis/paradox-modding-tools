@@ -38,7 +38,7 @@ t.2 = { title = k.t }
 		"localization/english/events.yml": "l_english:\n test.1.t:0 \"Hello\"\n",
 		"common/scripted_triggers/t.txt":  "my_trig = { always = yes }\n",
 		"common/traits/00.txt":            "brave = { category = personality }\n",
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		FieldInfo: map[string]string{
 			"type": "Invite", "add_gold": "Gives gold.",
 		},
@@ -50,7 +50,7 @@ t.2 = { title = k.t }
 			Effects: map[string]declared.EngineToken{"add_gold": {}},
 		},
 		Defs: []derived.Def{{Kind: "loc_key", Key: "type", Path: vfile, Line: 1}},
-	}, &derived.VanillaLoc{
+	}, &vanillaLoc{
 		Sites: map[string]derived.LocEntry{"type": {Path: vfile, Line: 1, Value: "Type"}},
 	})
 	f := filepath.Join(root, "events", "x.txt")
@@ -115,11 +115,11 @@ func TestHoverDescriptorOrigin(t *testing.T) {
 	descB := "name = \"Beta\"\npicture = \"other.png\"\n"
 	fA := write(t, rootA, "descriptor.mod", descA)
 	fB := write(t, rootB, "descriptor.mod", descB)
-	s := session.NewWithLoc("ws", "ck3", "english", &derived.VanillaCache{
+	s := session.New("ws", "ck3", "english", toIndex(&vanillaCache{
 		FieldInfoByKind: map[string]map[string]string{
 			"mod_descriptor": {"picture": "A picture for the mod."},
 		},
-	}, nil, []derived.ModInput{
+	}, nil), []derived.ModInput{
 		{Origin: "alpha", Root: rootA, Order: 0, Name: "Alpha Mod"},
 		{Origin: "beta", Root: rootB, Order: 1, Name: "Beta Mod"},
 	})
@@ -154,7 +154,7 @@ func TestHoverVanillaOverlay(t *testing.T) {
 	vpath := write(t, vroot, "events/vanilla.txt", vbody)
 	body := "overlay.1 = {\n\ttype = character_event\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body},
-		&derived.VanillaCache{
+		&vanillaCache{
 			Defs: []derived.Def{{
 				Kind: "event", Key: "overlay.1", Path: vpath, Line: 0, Start: 0, End: 9,
 			}},
@@ -213,7 +213,7 @@ func TestHoverMacroAndPortrait(t *testing.T) {
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/scripted_triggers/x.txt": trig,
 		"events/p.txt":                   "ns.1 = {\n\tright_portrait = none\n}\n",
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		FieldInfo: map[string]string{"left_portrait": "Left side portrait."},
 	}, nil)
 	tf := filepath.Join(root, "common", "scripted_triggers", "x.txt")
@@ -229,7 +229,7 @@ func TestKindMetaAndGameInfoOverride(t *testing.T) {
 	body := "test.1 = {\n\ttype = character_event\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{
 		"events/x.txt": body,
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		FieldInfoByKind: map[string]map[string]string{
 			"event": {"type": "presentation from info"},
 		},
@@ -318,11 +318,11 @@ func TestGameRuleSettingHover(t *testing.T) {
 		"common/game_rules/x.txt":              rules,
 		"localization/english/a_l_english.yml": locYml,
 		"events/e.txt":                         use,
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		LocConventions: map[string][]loc.Convention{
 			"game_rule_setting": {{Template: "game_rule_setting_{id}", Coverage: 1}},
 		},
-	}, &derived.VanillaLoc{
+	}, &vanillaLoc{
 		Sites: map[string]derived.LocEntry{
 			"game_rule_setting_suf_quieter": {Path: "loc", Line: 1, Value: "Quieter"},
 		},
@@ -338,10 +338,10 @@ func TestGameRuleSettingHover(t *testing.T) {
 	}
 }
 
-func ck3VanillaSess(t *testing.T, install string, cache *derived.VanillaCache) *session.Session {
+func ck3VanillaSess(t *testing.T, install string, cache *vanillaCache) *session.Session {
 	t.Helper()
 	if cache == nil {
-		cache = &derived.VanillaCache{}
+		cache = &vanillaCache{}
 	}
 	cache.InstallPath = install
 	if cache.GameID == "" {
@@ -349,7 +349,7 @@ func ck3VanillaSess(t *testing.T, install string, cache *derived.VanillaCache) *
 	}
 	mod := t.TempDir()
 	write(t, mod, "descriptor.mod", "name = \"t\"\n")
-	return session.NewWithLoc("ws", "ck3", "english", cache, nil, []derived.ModInput{
+	return session.New("ws", "ck3", "english", toIndex(cache, nil), []derived.ModInput{
 		{Origin: "mod", Root: mod, Order: 0},
 	})
 }
@@ -362,7 +362,7 @@ func TestVanillaScriptParamIgnoresFieldDoc(t *testing.T) {
 	install := t.TempDir()
 	tf := write(t, install, trigRel, trig)
 	ef := write(t, install, callRel, call)
-	s := ck3VanillaSess(t, install, &derived.VanillaCache{
+	s := ck3VanillaSess(t, install, &vanillaCache{
 		Defs: []derived.Def{{
 			Kind: "scripted_trigger", Key: "can_fight", Path: tf,
 			Start: 0, End: len("can_fight"),
@@ -393,7 +393,7 @@ func TestHoverLiteralValueIsNotAName(t *testing.T) {
 		// literal has something to latch onto and the test can tell.
 		"localization/english/ui.yml": "l_english:\n yes:0 \"Yes\"\n no:0 \"No\"\n",
 		"common/traits/00.txt":        "brave = { category = personality }\n",
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		Schema: &declared.Schema{
 			Triggers: map[string]declared.EngineToken{
 				"is_ai": {In: []string{"character"}, Doc: "Is the character AI-controlled?"},
@@ -454,7 +454,7 @@ func TestHoverModifierShowsDeclaredArea(t *testing.T) {
 	body := "aga_tr = {\n\tlocal_trades_per_burgher = 0.25\n}\n"
 	s, root := buildSession(t, "eu5", map[string]string{
 		"in_game/common/town_rights/x.txt": body,
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		Schema: &declared.Schema{
 			Modifiers: map[string]declared.Modifier{
 				"local_trades_per_burgher": {Area: "location, all"},
@@ -514,7 +514,7 @@ func TestRandomListWeightIsNotAMapPosition(t *testing.T) {
 		"\t\t\t95 = { trigger_event = birth.1001 }\n" +
 		"\t\t\t5 = { trigger_event = birth.1002 }\n\t\t}\n\t}\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body},
-		&derived.VanillaCache{
+		&vanillaCache{
 			Defs: []derived.Def{{Kind: "map_data", Key: "95", Path: "positions.txt"}},
 		}, nil)
 	f := filepath.Join(root, "events", "x.txt")
@@ -561,7 +561,7 @@ func TestNamespaceDoesNotOutrankAnObject(t *testing.T) {
 	const ev = "namespace = conqueror\nconqueror.1 = {\n" +
 		"\timmediate = { add_trait = conqueror }\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{"events/conq.txt": ev},
-		&derived.VanillaCache{
+		&vanillaCache{
 			Defs: []derived.Def{{
 				Kind: "traits", Key: "conqueror", Path: "traits.txt", Line: 3,
 			}},
@@ -600,7 +600,7 @@ func TestDeclaredTokenOutranksFieldKey(t *testing.T) {
 	const body = "act = {\n\tadd_to_list = my_list\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/activity_types/a.txt": body,
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		// Both a structure key of the kind and a declared effect.
 		Structures: map[string][]string{"activity_types": {"add_to_list"}},
 		Schema: &declared.Schema{Effects: map[string]declared.EngineToken{
@@ -658,7 +658,7 @@ func TestFieldKeyCardDoesNotDescribeItsKind(t *testing.T) {
 	const body = "k_hungary = {\n\tcolor2 = \"white\"\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{
 		"common/coat_of_arms/coat_of_arms/c.txt": body,
-	}, &derived.VanillaCache{
+	}, &vanillaCache{
 		Structures: map[string][]string{"coat_of_arms": {"color2"}},
 		// The kind has a localization convention; the field does not.
 		LocConventions: map[string][]loc.Convention{
@@ -686,7 +686,7 @@ func TestFieldKeyCardDoesNotDescribeItsKind(t *testing.T) {
 // subtitle.
 func TestKindHintHasNoLocConvention(t *testing.T) {
 	const body = "my_trait = {\n\tcategory = personality\n}\n"
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		LocConventions: map[string][]loc.Convention{
 			"traits": {{Template: "{id}", Coverage: 1}, {Template: "{id}_desc", Coverage: 1}},
 		},
@@ -810,8 +810,8 @@ func TestHoverScopeStaysSilentWhenUndeclared(t *testing.T) {
 // be, which is often knowable even where nothing documents what the key means.
 // acceptsCache declares a token whose argument type the game states, alongside
 // a field PMT could only have inferred, so the precedence is observable.
-func acceptsCache() *derived.VanillaCache {
-	c := &derived.VanillaCache{
+func acceptsCache() *vanillaCache {
+	c := &vanillaCache{
 		Schema: &declared.Schema{
 			Scopes: map[string]declared.ScopeType{
 				"character":     {ChangeScopes: true, ExecuteEffects: true},
@@ -832,7 +832,6 @@ func acceptsCache() *derived.VanillaCache {
 		// token nothing recognises produces no hover, which is correct.
 		FieldInfo: map[string]string{"some_undeclared": "An undeclared field."},
 	}
-	derived.PrepareCache(c)
 	return c
 }
 
@@ -912,10 +911,9 @@ func TestHoverDateSilentWithoutCalendar(t *testing.T) {
 // forty-one unrelated event descriptions under `desc`. A field holding a
 // localization key takes ANY key, not one of a set.
 func TestHoverAcceptsLocFieldIsNotEnumerated(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		FieldInfo: map[string]string{"desc": "Dynamic Description syntax."},
 	}
-	derived.PrepareCache(c)
 	s, root := buildSession(t, "ck3", map[string]string{
 		"events/x.txt": "namespace = ns\nns.1 = {\n\ttype = character_event\n\tdesc = ns.1.desc\n}\n",
 	}, c, nil)
@@ -933,7 +931,7 @@ func TestHoverAcceptsLocFieldIsNotEnumerated(t *testing.T) {
 // read "OR key" and "scope:secondary recipient key", which name a construct
 // rather than a container.
 func TestHoverNamesRealContainer(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		Structures: map[string][]string{"event": {"trigger", "type"}},
 		NestedMembers: map[string][]string{
 			"trigger": {"or", "has_trait", "exists", "opinion"},
@@ -946,7 +944,6 @@ func TestHoverNamesRealContainer(t *testing.T) {
 			"event": {"has_trait": "Checks a trait."},
 		},
 	}
-	derived.PrepareCache(c)
 	body := "namespace = ns\n" +
 		"ns.1 = {\n" +
 		"\ttrigger = {\n" +
@@ -973,14 +970,13 @@ func TestHoverNamesRealContainer(t *testing.T) {
 }
 
 func TestHoverNamesNestedMember(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		Structures: map[string][]string{"coat_of_arms": {"pattern", "colored_emblem"}},
 		NestedMembers: map[string][]string{
 			"colored_emblem": {"texture", "color1", "instance"},
 			"instance":       {"position", "scale"},
 		},
 	}
-	derived.PrepareCache(c)
 	body := "k_test = {\n" +
 		"\tpattern = \"p.dds\"\n" +
 		"\tcolored_emblem = {\n" +
@@ -1016,14 +1012,13 @@ func TestHoverNamesNestedMember(t *testing.T) {
 // holds arguments, not keys: "set variable key" reads as though set_variable
 // were a container.
 func TestHoverLabelsEffectArguments(t *testing.T) {
-	c := &derived.VanillaCache{
+	c := &vanillaCache{
 		Structures:    map[string][]string{"event": {"immediate"}},
 		NestedMembers: map[string][]string{"set_variable": {"name", "value"}},
 		Schema: &declared.Schema{Effects: map[string]declared.EngineToken{
 			"set_variable": {Doc: "Sets a variable."},
 		}},
 	}
-	derived.PrepareCache(c)
 	body := "namespace = ns\nns.1 = {\n\timmediate = {\n\t\tset_variable = {\n" +
 		"\t\t\tname = x\n\t\t}\n\t}\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, c, nil)

@@ -158,14 +158,14 @@ func TestResolutionOrderViaEndToEnd(t *testing.T) {
 		"localization/english/a_l_english.yml": "l_english:\n k.t:0 \"Hi\"\n",
 	})
 	ev := filepath.Join(root, "events", "x.txt")
-	cache := &derived.VanillaCache{
+	cache := &vanillaCache{
 		InstallPath: "/game",
 		Vocabulary:  []string{"add_gold"},
 		Schema: &declared.Schema{
 			Effects: map[string]declared.EngineToken{"add_gold": {}},
 		},
 	}
-	s := session.NewWithLoc("ws", "ck3", "english", cache, nil, []derived.ModInput{
+	s := session.New("ws", "ck3", "english", toIndex(cache, nil), []derived.ModInput{
 		{Origin: "mod", Root: root, Name: "M", Order: 0},
 	})
 

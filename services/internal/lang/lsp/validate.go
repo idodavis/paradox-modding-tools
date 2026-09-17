@@ -78,64 +78,55 @@ func (f diagFile) duplicateDefDiags() []Diagnostic {
 // unresolvedRefDiags flags `culture:nonexistent` — a citation whose database the
 // game names in the text and whose key nothing defines.
 //
-// Deliberately narrower than Workspace Health's dangling check. A typed cite is
-// the one reference form where the game itself states both the database and the
-// key, so a miss is unambiguous; everything else relies on PMT having inferred
-// the field's type, and an inference below its coverage floor would produce a
-// confident error about correct script.
+// Deliberately narrower than Workspace Health's dangling check: a citation states its own database, and a bare name is judged only where the install's cell names one.
 func (f diagFile) unresolvedRefDiags() []Diagnostic {
-	if f.res.Root == nil {
-		return nil
-	}
 	var out []Diagnostic
-	jomini.Walk(f.res.Root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
-		a, ok := st.(*jomini.Assignment)
-		if !ok || a.Value == nil {
-			return true
-		}
+	f.eachCell(func(a *jomini.Assignment, path string) {
 		text, rng, ok := scalarValue(a)
 		if !ok {
-			return true
+			return
 		}
+		// A dotted value is a scope chain, not a name: `p:xB0D0E0.state.owner` cites a province and then walks two links off it.
 		if strings.ContainsRune(text, '.') {
-			return true
+			return
 		}
-		kind, id, ok := game.ParseTyped(f.s.GameID, text)
-		if !ok {
-			return true
-		}
-		if pk := f.s.PrefixKind(strings.SplitN(text, ":", 2)[0]); pk != "" {
-			kind = pk
-		}
-		// Only where the prefix is bound to a database PMT actually holds. An
-		// unbound prefix means PMT does not know the database, which is not
-		// evidence that the key is missing from it.
-		//
-		// And never for an ephemeral kind. `flag:private_chamber` names a value
-		// the script invents as it runs, the same as a saved scope or a
-		// variable; nothing defines it anywhere, so an absence proves nothing.
-		if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
-			return true
+		id, kind := text, ""
+		if k, rest, typed := game.ParseTyped(f.s.GameID, text); typed {
+			// A citation needs no cell: it is the one reference form where the game itself states both the database and the key.
+			id, kind = rest, k
+			if pk := f.s.PrefixKind(strings.SplitN(text, ":", 2)[0]); pk != "" {
+				kind = pk
+			}
+			// Only a prefix bound to a database PMT holds, and never an ephemeral kind: `flag:private_chamber` names a value the script invents as it runs.
+			if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
+				return
+			}
+		} else {
+			// The reporting policy, at the one value it is about: a bare name is judged only where the install's cell names a database for it and never wrote a literal or an unresolved name there itself.
+			cell := f.s.InstallTypeOf(f.fileKind, path, a.Key.Text)
+			if cell == nil || len(cell.Kinds) == 0 ||
+				cell.Has(derived.LabelUnresolved) || cell.Has(derived.LabelLiteral) ||
+				jomini.SkipObjectRHS(text) || isScopeWord(text) {
+				return
+			}
+			kind = cell.Kinds[0]
+			if jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
+				return
+			}
 		}
 		if len(f.s.FindDefsOf(id, kind, 1, false, true)) > 0 {
-			return true
+			return
 		}
-		// Nothing of that kind — but the kind PMT bound to the prefix is not
-		// always the kind the definition was harvested under, and a nested
-		// definition may be filed differently again: CK3's k_austria sits inside
-		// another title in 00_landed_titles.txt. Reporting a citation whose name
-		// something in the model does define would be a confident error about
-		// correct script, so the miss has to be total.
+		// The miss has to be total: a nested definition is filed under a kind the binding does not name, and CK3's k_austria sits inside another title.
 		if len(f.s.FindDefsOf(id, "", 1, false, true)) > 0 {
-			return true
+			return
 		}
 		// A tier that would not load is a model missing its data rows, which is no evidence that this one is absent.
 		if f.s.DataError() != "" && game.IsDataKind(f.s.GameID, kind) {
-			return true
+			return
 		}
 		out = append(out, diag(byteRange(f.li, rng.Start, rng.End), sevWarning,
 			"nothing named "+id+" is defined.", "unresolved-ref"))
-		return true
 	})
 	return out
 }
@@ -153,56 +144,55 @@ func (f diagFile) wrongValueTypeDiags() []Diagnostic {
 		return nil
 	}
 	var out []Diagnostic
-	jomini.Walk(f.res.Root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
-		a, ok := st.(*jomini.Assignment)
-		if !ok || a.Key.Quoted {
-			return true
+	f.eachCell(func(a *jomini.Assignment, path string) {
+		if a.Key.Quoted {
+			return
 		}
 		text, rng, ok := scalarValue(a)
 		if !ok || jomini.SkipObjectRHS(text) || isScopeWord(text) {
-			return true
+			return
 		}
 		target := f.s.TokenTarget(a.Key.Text)
 		if target == "" {
-			return true
+			return
+		}
+		// The same reporting policy unresolved-ref follows: a cell the install
+		// itself wrote a literal or an unresolved name at accuses nothing.
+		cell := f.s.InstallTypeOf(f.fileKind, path, a.Key.Text)
+		if cell != nil &&
+			(cell.Has(derived.LabelUnresolved) || cell.Has(derived.LabelLiteral)) {
+			return
 		}
 		cite, kind := f.s.CiteFormOfScope(target)
 		if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
-			return true
+			return
 		}
-		// A citation of the right type is correct however it is spelled, and so
-		// is a bare key of the bound database.
-		// Any citation at all is left alone. Stripping only the prefix PMT
-		// bound to this scope meant `has_title = title:k_austria` -- a correct
-		// line -- was read whole and reported, because "title" is not the
-		// prefix the binding happened to record. Judging a citation of the
-		// wrong database is a different check with a different message.
+		// Any citation at all is left alone: stripping only the bound prefix read `has_title = title:k_austria` whole and reported a correct line.
 		bare := text
 		if i := strings.IndexByte(text, ':'); i > 0 {
 			if cite != "" && text[:i] == cite {
 				bare = text[i+1:]
 			} else {
-				return true
+				return
 			}
 		}
 		if len(f.s.FindDefsOf(bare, kind, 1, false, true)) > 0 {
-			return true
+			return
 		}
 		// Same total-miss rule unresolved-ref uses, and for the same reason: a
 		// nested definition is filed under a kind the binding does not name, so
 		// `has_title = title:k_austria` looked unresolved while k_austria sits
 		// inside another title in 00_landed_titles.txt.
 		if len(f.s.FindDefsOf(bare, "", 1, false, true)) > 0 {
-			return true
+			return
 		}
 		// A tier that would not load is a model missing its data rows, which is no evidence that this one is absent.
 		if f.s.DataError() != "" && game.IsDataKind(f.s.GameID, kind) {
-			return true
+			return
 		}
 		out = append(out, diag(byteRange(f.li, rng.Start, rng.End), sevWarning,
 			a.Key.Text+" takes a "+PrettyKind(kind)+"; "+text+
 				" is not one.", "wrong-value-type"))
-		return true
 	})
 	return out
 }
@@ -307,45 +297,40 @@ func (f diagFile) declaredValueDiags() []Diagnostic {
 	return out
 }
 
-// unknownKeyDiags flags a key that is not a member of the block it sits in.
-//
-// The riskiest check here, and the only one that reports an ABSENCE: every other
-// fires on a positive contradiction of something the game declares. So it is
-// gated four ways — the block name must belong to exactly one kind, the block
-// must be well-evidenced, the key must be unknown to the model everywhere, and
-// the cursor must be inside a block rather than at a definition's top level.
-//
-// Keyed by name alone this fired 18,341 times on 400 vanilla CK3 files, because
-// `option` is a block in an event and another in accolade_names. See
-// GAME-SYNTAX §14.
+// unknownKeyDiags flags a key the install's cell at that position never holds -- the one check that reports an absence, so it judges only a well-evidenced position inside a block, and never a name the model knows anywhere.
 func (f diagFile) unknownKeyDiags() []Diagnostic {
 	if f.res.Root == nil || f.isGraphicsData() {
 		return nil
 	}
 	var out []Diagnostic
-	var walk func(block string, b *jomini.Block, depth int)
-	walk = func(block string, b *jomini.Block, depth int) {
+	var walk func(block, path string, b *jomini.Block, depth int)
+	walk = func(block, path string, b *jomini.Block, depth int) {
 		if b == nil || depth > 4 {
 			return
 		}
-		members := f.s.NestedMembers(block)
-		judge := len(members) >= minUnknownKeyEvidence && f.s.BlockIsJudgeable(block)
-		known := make(map[string]bool, len(members))
-		for _, m := range members {
-			known[m] = true
-		}
+		members := f.s.InstallMembers(f.fileKind, path)
+		// Never inside a call: the keys of a `some_effect = { … }` block are the
+		// macro's arguments, not members of anything the model has a shape for.
+		judge := block != "" && len(members) >= minUnknownKeyEvidence &&
+			!f.s.IsMacroDef(block) && !jomini.IsMacroKind(block)
 		for _, st := range b.Statements {
 			a, ok := st.(*jomini.Assignment)
 			if !ok || a.Key.Quoted {
 				continue
 			}
-			key := strings.ToLower(a.Key.Text)
-			if judge && !known[key] && !f.knownAnywhere(key) {
+			key := a.Key.Text
+			// The install's own cell, keyed as the corpus wrote it, because that is how the scan folded it: a name is never judged as a field, and a mod's own key is never its own evidence.
+			if judge && f.s.InstallTypeOf(f.fileKind, path, key) == nil &&
+				!f.knownAnywhere(strings.ToLower(key)) {
 				out = append(out, diag(
 					byteRange(f.li, a.Key.Range.Start, a.Key.Range.End), sevWarning,
-					key+" is not a key of "+block+".", "unknown-key"))
+					strings.ToLower(key)+" is not a key of "+block+".", "unknown-key"))
 			}
-			walk(key, jomini.BlockOf(a.Value), depth+1)
+			next := f.s.CellPath([]string{key})
+			if path != "" {
+				next = path + "." + next
+			}
+			walk(key, next, jomini.BlockOf(a.Value), depth+1)
 		}
 	}
 	for _, st := range f.res.Root.Statements {
@@ -361,7 +346,8 @@ func (f diagFile) unknownKeyDiags() []Diagnostic {
 				if !ok || ca.Key.Quoted {
 					continue
 				}
-				walk(strings.ToLower(ca.Key.Text), jomini.BlockOf(ca.Value), 1)
+				k := ca.Key.Text
+				walk(k, f.s.CellPath([]string{k}), jomini.BlockOf(ca.Value), 1)
 			}
 		}
 	}

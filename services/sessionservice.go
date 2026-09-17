@@ -157,21 +157,12 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 	if lang == "" {
 		lang = "english"
 	}
-	var cache *derived.VanillaCache
-	var vloc *derived.VanillaLoc
+	var cache *derived.Index
 	if inst != nil {
-		ver := derived.CacheVersion(inst.Version)
 		// Stale formatVersion discards the file (no migration). Do not fail
 		// the session — that leaves the IDE unmounted until a UI reload.
-		cache, _ = derived.LoadCache(inst.ID, ver)
-		// The harvesting wrapper, not derived.LoadVanillaLoc: Rescan writes only
-		// the english sidecar (scan.go passes LocLang "english"), and every other
-		// language is harvested on first use. Loading without that fallback left
-		// a workspace whose default language is not english with vloc == nil —
-		// no vanilla loc in hover or completion, and InheritedLocKeys empty, so
-		// Workspace Health reported every vanilla key the mod cites as missing.
-		vloc, _ = loadVanillaLoc(
-			context.Background(), inst.ID, inst.GameID, inst.Path, ver, lang)
+		cache, _ = derived.LoadCache(inst.ID, derived.CacheVersion(inst.Version))
+		mergeInstallLoc(context.Background(), cache, inst, lang)
 	}
 	inputs := make([]derived.ModInput, 0, len(ws.Mods))
 	mods := append([]WorkspaceMod(nil), ws.Mods...)
@@ -185,7 +176,7 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 			Calendar: derived.ModCalendar{Era: m.Era, EpochOffset: m.EpochOffset},
 		})
 	}
-	sess := session.NewWithLoc(id, ws.GameID, lang, cache, vloc, inputs)
+	sess := session.New(id, ws.GameID, lang, cache, inputs)
 	sess.SetFileNotify(func(path string, deleted bool) {
 		emitLang("fs:changed", map[string]any{"path": path, "deleted": deleted})
 	})
@@ -318,7 +309,7 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (err error) {
 	s.mu.Unlock()
 	defer cancel()
 
-	c, vloc, err := derived.Scan(ctx, derived.ScanRequest{
+	c, data, err := derived.Scan(ctx, derived.ScanRequest{
 		InstallID: inst.ID, GameID: inst.GameID, InstallPath: inst.Path,
 		Version: ver, LocLang: "english",
 		OnProgress: func(pct int, msg string) {
@@ -335,17 +326,7 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := derived.SaveCache(c); err != nil {
-		return err
-	}
-	// Every sidecar for this install goes, not just the one being rewritten.
-	// Scan only ever harvests english; the other languages keep the previous
-	// patch's filename under a pinned or "latest" version key and LoadVanillaLoc
-	// accepts them, so a rescan used to leave them silently pre-patch. They come
-	// back on first use through loadVanillaLoc — which is why this is safe only
-	// with that harvesting fallback in place.
-	_ = derived.DropVanillaLocFiles(inst.ID)
-	if err := derived.SaveVanillaLoc(inst.ID, ver, "english", vloc); err != nil {
+	if err := derived.SaveCache(c, data); err != nil {
 		return err
 	}
 	detected := game.ReadGameVersion(inst.Path)
@@ -403,15 +384,11 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (err error) {
 		if live == nil {
 			continue
 		}
-		live.ReplaceCache(c)
 		live.RLock()
 		lang := live.DefaultLang()
 		live.RUnlock()
-		sloc := vloc
-		if lang != "english" {
-			sloc, _ = loadVanillaLoc(ctx, inst.ID, inst.GameID, inst.Path, ver, lang)
-		}
-		live.ReplaceVanillaLoc(sloc)
+		mergeInstallLoc(ctx, c, &inst, lang)
+		live.ReplaceCache(c)
 	}
 	emitLang("lang:cache-updated", map[string]any{"installId": installID})
 	return nil
@@ -535,23 +512,14 @@ func predatesInstall(stamp, installPath string) bool {
 	return !patched.IsZero() && patched.After(wrote)
 }
 
-// loadVanillaLoc returns the loc sidecar, harvesting and saving if it is missing.
-func loadVanillaLoc(
-	ctx context.Context, installID, gameID, installPath, version, lang string,
-) (*derived.VanillaLoc, error) {
-	version = derived.CacheVersion(version)
-	if lang == "" {
-		lang = "english"
+// mergeInstallLoc folds a language the scan did not read into the install index. A scan harvests english and the language it was told, so a workspace that later picks a third one would otherwise have no vanilla loc in hover or completion, and Workspace Health would report every vanilla key the mod cites as missing.
+func mergeInstallLoc(ctx context.Context, cache *derived.Index, inst *GameInstall, lang string) {
+	if cache == nil || lang == "" || cache.HasLoc(lang) {
+		return
 	}
-	if v, e := derived.LoadVanillaLoc(installID, version, lang); e == nil {
-		return v, nil
+	if v, err := derived.HarvestLoc(ctx, inst.GameID, inst.Path, lang); err == nil {
+		cache.MergeLoc(v)
 	}
-	v, err := derived.HarvestLoc(ctx, gameID, installPath, lang)
-	if err != nil {
-		return nil, err
-	}
-	_ = derived.SaveVanillaLoc(installID, version, lang, v)
-	return v, nil
 }
 
 // StartWikiWarm runs a silent incremental wiki refresh for sidecars already on disk.

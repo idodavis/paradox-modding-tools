@@ -106,7 +106,7 @@ func resolveSlotDerived(s *session.Session, path string, at probe) (identity, bo
 	if at.slotKey == "" {
 		return identity{}, false
 	}
-	k := s.FieldValueKind(at.slotKey)
+	k := s.FieldValueKind(at.fileKind, at.path, at.slotKey)
 	if k == "" {
 		return identity{}, false
 	}

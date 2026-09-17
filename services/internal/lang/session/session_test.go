@@ -45,7 +45,7 @@ func TestReindexCoalesces(t *testing.T) {
 			"common/traits/00.txt": "brave = { category = personality }\n",
 		})
 		file := filepath.Join(root, "common", "traits", "00.txt")
-		s := NewWithLoc("ws", "ck3", "english", nil, nil, []derived.ModInput{
+		s := New("ws", "ck3", "english", nil, []derived.ModInput{
 			{Origin: "mod", Root: root, Order: 0},
 		})
 		s.DidSave(file)
@@ -72,7 +72,7 @@ func TestReindexCoalesces(t *testing.T) {
 			"common/traits/00.txt": "brave = { category = personality }\n",
 		})
 		file := filepath.Join(root, "common", "traits", "00.txt")
-		s := NewWithLoc("ws", "ck3", "english", nil, nil, []derived.ModInput{
+		s := New("ws", "ck3", "english", nil, []derived.ModInput{
 			{Origin: "mod", Root: root, Order: 0},
 		})
 		if s.Resolve("brave") == nil {
@@ -106,7 +106,7 @@ func TestDidOpenDropsDiskRefs(t *testing.T) {
 		crlf := "namespace = test\r\n\r\ntest.1 = {\r\n\ttitle = k.t\r\n}\r\n"
 		root := writeFiles(t, map[string]string{"events/x.txt": crlf})
 		ev := filepath.Join(root, "events", "x.txt")
-		s := NewWithLoc("ws", "ck3", "english", nil, nil, []derived.ModInput{
+		s := New("ws", "ck3", "english", nil, []derived.ModInput{
 			{Origin: "mod", Root: root, Order: 0},
 		})
 		s.DidOpen(ev, jomini.Normalize(crlf))
@@ -122,7 +122,7 @@ func TestDidOpenDropsDiskRefs(t *testing.T) {
 		body := "namespace = test\n\ntest.1 = {\n\ttitle = k.t\n}\n"
 		root := writeFiles(t, map[string]string{"events/x.txt": body})
 		ev := filepath.Join(root, "events", "x.txt")
-		s := NewWithLoc("ws", "ck3", "english", nil, nil, []derived.ModInput{
+		s := New("ws", "ck3", "english", nil, []derived.ModInput{
 			{Origin: "mod", Root: root, Order: 0},
 		})
 		if n := len(s.ModDefsOf("test.1")); n != 1 {
@@ -155,7 +155,7 @@ func TestPathSpelling(t *testing.T) {
 			"common/traits/Mixed_Case.txt": "brave = { }\n",
 		})
 		p := filepath.Join(root, "common", "traits", "Mixed_Case.txt")
-		s := NewWithLoc("ws", "ck3", "english", nil, nil,
+		s := New("ws", "ck3", "english", nil,
 			[]derived.ModInput{{Origin: "mod", Root: root, Order: 0}})
 		defer s.Close()
 		s.DidOpen(p, "brave = { }\n")
@@ -210,16 +210,12 @@ func TestPathSpelling(t *testing.T) {
 		ck3 := filepath.Join(install, "game", "events", "x.txt")
 		eu5 := filepath.Join(install, "game", "in_game", "events", "character", "foo.txt")
 
-		s := NewWithLoc("ws", "ck3", "english", &derived.VanillaCache{
-			InstallPath: install,
-		}, nil, nil)
+		s := New("ws", "ck3", "english", installIndex(install), nil)
 		origin, rel, ok := s.Locate(ck3)
 		must(t, ok && origin == "vanilla" && filepath.ToSlash(rel) == "events/x.txt",
 			"ck3 vanilla Locate")
 
-		s5 := NewWithLoc("ws", "eu5", "english", &derived.VanillaCache{
-			InstallPath: install,
-		}, nil, nil)
+		s5 := New("ws", "eu5", "english", installIndex(install), nil)
 		origin, rel, ok = s5.Locate(eu5)
 		must(t, ok && origin == "vanilla" &&
 			filepath.ToSlash(rel) == "in_game/events/character/foo.txt",
@@ -234,7 +230,7 @@ func TestEnsureSessionOnce(t *testing.T) {
 		var events []string
 		pool := NewPool(func(id string) (*Session, error) {
 			builds.Add(1)
-			return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+			return New(id, "ck3", "english", nil, nil), nil
 		}, func(event string, _ any) { events = append(events, event) })
 
 		const n = 20
@@ -269,7 +265,7 @@ func TestEnsureSessionOnce(t *testing.T) {
 
 	t.Run("empty_id_does_not_drop", func(t *testing.T) {
 		pool := NewPool(func(id string) (*Session, error) {
-			return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+			return New(id, "ck3", "english", nil, nil), nil
 		}, nil)
 		live, err := pool.EnsureSession("ws")
 		if err != nil {
@@ -287,7 +283,7 @@ func TestEnsureSessionOnce(t *testing.T) {
 		var builds atomic.Int32
 		pool := NewPool(func(id string) (*Session, error) {
 			builds.Add(1)
-			return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+			return New(id, "ck3", "english", nil, nil), nil
 		}, nil)
 		first, err := pool.EnsureSession("ws")
 		if err != nil {
@@ -307,7 +303,7 @@ func TestEnsureSessionOnce(t *testing.T) {
 
 	t.Run("drop_all", func(t *testing.T) {
 		pool := NewPool(func(id string) (*Session, error) {
-			return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+			return New(id, "ck3", "english", nil, nil), nil
 		}, nil)
 		if _, err := pool.EnsureSession("ws"); err != nil {
 			t.Fatal(err)
@@ -331,19 +327,22 @@ func TestLockContract(t *testing.T) {
 		})
 		ev := filepath.Join(root, "events", "x.txt")
 		loc := filepath.Join(root, "localization", "english", "a_l_english.yml")
-		cache := &derived.VanillaCache{
-			InstallPath: "/game", GameVersion: "1.16",
-			Structures: map[string][]string{"event": {"immediate"}},
-			Vocabulary: []string{"add_gold"},
-			Schema: &declared.Schema{
-				Effects: map[string]declared.EngineToken{"add_gold": {}},
-			},
-			FieldInfo: map[string]string{"immediate": "runs first"},
+		cache := installIndex("/game")
+		cache.GameVersion = "1.16"
+		cache.Declared = &declared.Schema{
+			Effects: map[string]declared.EngineToken{"add_gold": {}},
 		}
-		s := NewWithLoc("ws", "ck3", "english", cache, nil, []derived.ModInput{
+		cache.Schema.Cells = map[string]map[string]map[string]*derived.CellType{
+			"event": {"immediate": {"trigger_event": {
+				N: 3, Kinds: []string{"event"},
+			}}, "": {"immediate": {N: 3, Flags: derived.CellBlock}}},
+		}
+		cache.Schema.VocabNames = []string{"add_gold"}
+		cache.Schema.EffectSet = map[string]bool{"add_gold": true}
+		cache.Docs.FieldInfo = map[string]string{"immediate": "runs first"}
+		s := New("ws", "ck3", "english", cache, []derived.ModInput{
 			{Origin: "mod", Root: root, Name: "M", Order: 0},
 		})
-		s.DropLocIndex()
 		s.DidOpen(loc, "l_english:\n k.t:0 \"Hi\"\n")
 		s.DidOpen(filepath.Join(root, "localization", "spanish", "zz_l_spanish.yml"), "l_spanish:\n k.t:0 \"Hola\"\n")
 
@@ -378,14 +377,16 @@ func TestLockContract(t *testing.T) {
 		must(t, len(s.Mods()) == 1 && s.KindFor(ev) != "", "Mods/KindFor")
 		kinds, _ := s.GraphCatalog()
 		must(t, kinds["t.1"] != "", "GraphCatalog")
-		must(t, len(s.Structures("event")) > 0 && len(s.Vocab("vocabulary")) > 0 &&
-			s.FieldDoc("immediate", "event", nil) != "", "Structures/Vocab/FieldDoc")
-		_, effects, _ := s.MemberSets("event")
+		must(t, len(s.Members("event", "")) > 0 && len(s.Vocab("vocabulary")) > 0 &&
+			s.FieldDoc("immediate", "event", nil) != "", "Members/Vocab/FieldDoc")
+		effects, _ := s.MemberSets()
 		must(t, effects != nil, "MemberSets")
 		inst, _, ver, _ := s.CacheInfo()
 		must(t, inst == "/game" && ver == "1.16", "CacheInfo")
 		_ = s.Contests([]string{"mod"})
-		s.ReplaceCache(&derived.VanillaCache{InstallPath: "/y", GameVersion: "2"})
+		replacement := installIndex("/y")
+		replacement.GameVersion = "2"
+		s.ReplaceCache(replacement)
 		inst, _, _, _ = s.CacheInfo()
 		must(t, inst == "/y", "ReplaceCache")
 	})
@@ -394,13 +395,17 @@ func TestLockContract(t *testing.T) {
 		vroot := writeFiles(t, map[string]string{"events/v.txt": "v.1 = {}\n"})
 		vf := filepath.Join(vroot, "events", "v.txt")
 		root := writeFiles(t, map[string]string{"events/x.txt": "v.1 = {}\n"})
-		s := NewWithLoc("ws", "ck3", "english", &derived.VanillaCache{
-			Defs: []derived.Def{{Kind: "event", Key: "v.1", Path: vf, Line: 0}},
-		}, &derived.VanillaLoc{
-			Sites: map[string]derived.LocEntry{
-				"v.1.t": {Path: "loc.yml", Line: 2, Value: "Hi"},
-			},
-		}, []derived.ModInput{{Origin: "mod", Root: root, Order: 0}})
+		van := installIndex("")
+		van.Add(vf, "events/v.txt", "", "script", &derived.FileHarvest{
+			Defs: []derived.Def{{Kind: "event", Key: "v.1", Line: 0}},
+		})
+		van.Add("loc.yml", "loc.yml", "", "loc", &derived.FileHarvest{
+			Loc: derived.LocDelta{Lang: "english", Vals: map[string]derived.LocEntry{
+				"v.1.t": {Line: 2, Value: "Hi"},
+			}},
+		})
+		s := New("ws", "ck3", "english", van,
+			[]derived.ModInput{{Origin: "mod", Root: root, Order: 0}})
 		defs := s.VanillaDefs("v.1")
 		if len(defs) != 1 || defs[0].Kind != "event" || defs[0].Origin != "vanilla" {
 			t.Fatalf("script=%v", defs)
@@ -416,11 +421,12 @@ func TestLockContract(t *testing.T) {
 			"t.2 = { type = character_event }\n"
 		root := writeFiles(t, map[string]string{"events/x.txt": body})
 		ev := filepath.Join(root, "events", "x.txt")
-		cache := &derived.VanillaCache{
-			InstallPath: "/game", GameVersion: "1",
+		cache := installIndex("/game")
+		cache.GameVersion = "1"
+		cache.Add("/game/e.txt", "e.txt", "", "script", &derived.FileHarvest{
 			Edges: []derived.Edge{{From: "t.1", To: "t.2"}},
-		}
-		s := NewWithLoc("ws", "ck3", "english", cache, nil, []derived.ModInput{
+		})
+		s := New("ws", "ck3", "english", cache, []derived.ModInput{
 			{Origin: "mod", Root: root, Order: 0},
 		})
 		var wg sync.WaitGroup
@@ -446,4 +452,11 @@ func TestLockContract(t *testing.T) {
 		}
 		wg.Wait()
 	})
+}
+
+// installIndex is an install index with nothing in it but its path, which is what Locate reads for a file no walk has seen.
+func installIndex(path string) *derived.Index {
+	x := derived.NewIndex("ck3")
+	x.InstallPath = path
+	return x
 }

@@ -43,14 +43,14 @@ func TestVanillaLocResidue(t *testing.T) {
 		t.Run(g.game, func(t *testing.T) {
 			id := "residue-" + g.game
 			t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
-			cache, vloc, err := derived.Scan(context.Background(), derived.ScanRequest{
+			cache, _, err := derived.Scan(context.Background(), derived.ScanRequest{
 				InstallID: id, GameID: g.game, InstallPath: install,
 				Version: "residue", LocLang: "english",
 			})
 			if err != nil {
 				t.Fatalf("scan: %v", err)
 			}
-			s := session.NewWithLoc("residue", g.game, "english", cache, vloc, nil)
+			s := session.New("residue", g.game, "english", cache, nil)
 			defer s.Close()
 
 			// Print what the rule accepted, not just what it scored. A template
@@ -93,7 +93,7 @@ func TestVanillaLocResidue(t *testing.T) {
 				len(residue), pct(len(residue)))
 			logClusters(t, "prefix", residue, func(k string) string { return headToken(k, 2) })
 			logClusters(t, "suffix", residue, func(k string) string { return tailToken(k, 2) })
-			convResidue(t, g.game, g.appID, cache, vloc)
+			convResidue(t, g.game, g.appID, cache)
 		})
 	}
 }
@@ -103,7 +103,7 @@ func TestVanillaLocResidue(t *testing.T) {
 // count: conversions are enormous, so a rate at or below vanilla's means the
 // residue is the engine's gap applied to more keys, not cruft the mod added.
 func convResidue(
-	t *testing.T, game, appID string, cache *derived.VanillaCache, vloc *derived.VanillaLoc,
+	t *testing.T, game, appID string, cache *derived.Index,
 ) {
 	t.Helper()
 	var ids []string
@@ -114,7 +114,7 @@ func convResidue(
 	}
 	sort.Strings(ids)
 	for _, modID := range ids {
-		s := session.NewWithLoc(game, game, "english", cache, vloc,
+		s := session.New(game, game, "english", cache,
 			[]derived.ModInput{{
 				Origin: "mod",
 				Root:   filepath.Join(workshopRoot, appID, modID),

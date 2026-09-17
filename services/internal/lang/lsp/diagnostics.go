@@ -26,10 +26,42 @@ type diagFile struct {
 	s    *session.Session
 	path string
 	kind string
-	src  string
-	res  jomini.Result
-	li   *jomini.LineIndex
-	refs []derived.Ref
+	// fileKind is the extract kind the learned schema files this file's cells under, which is not the same as kind ("script", "loc", "gui").
+	fileKind string
+	src      string
+	res      jomini.Result
+	li       *jomini.LineIndex
+	refs     []derived.Ref
+}
+
+// eachCell walks the file handing every assignment the cell it sits at: the file's extract kind, the enclosing block keys below the definition, and the key itself.
+func (f diagFile) eachCell(fn func(a *jomini.Assignment, path string)) {
+	if f.res.Root == nil {
+		return
+	}
+	folded := []string{""}
+	jomini.Walk(f.res.Root, func(st jomini.Statement, depth int, _ *jomini.Block) bool {
+		for len(folded) <= depth+1 {
+			folded = append(folded, "")
+		}
+		a, ok := st.(*jomini.Assignment)
+		key := ""
+		if ok {
+			key = a.Key.Text
+		}
+		switch {
+		case depth == 0:
+			folded[1] = ""
+		case folded[depth] == "":
+			folded[depth+1] = f.s.CellPath([]string{key})
+		default:
+			folded[depth+1] = folded[depth] + "." + f.s.CellPath([]string{key})
+		}
+		if ok {
+			fn(a, folded[depth])
+		}
+		return true
+	})
 }
 
 // Diagnose runs every check. Suppressions (# pmt:ignore) are honored.
@@ -54,6 +86,9 @@ func DiagnoseEnabled(
 		return nil
 	}
 	f := diagFile{s: s, path: path, kind: s.KindFor(path), src: s.FileText(path)}
+	if _, rel, ok := s.Locate(path); ok {
+		f.fileKind = game.MatchExtract(s.GameID, rel).Kind
+	}
 	f.refs = s.RefsInFile(path)
 	if f.kind == "loc" {
 		f.li = jomini.NewLineIndex(f.src)

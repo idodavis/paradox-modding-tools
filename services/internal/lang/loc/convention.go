@@ -74,20 +74,27 @@ func Expand(id string, cs []Convention) []string {
 // minConventionDefs is how many definitions a kind needs before a shared shape is evidence, not coincidence.
 const minConventionDefs = 8
 
-// Learn keeps the templates that cover at least minCoverage of a kind's vanilla ids.
-func Learn(ids []string, members []string, keys *Keys, minCoverage float64) []Convention {
+// storageCutoff is what a template must cover to be worth keeping in the file at all. It decides nothing: `required-loc` demands coverage 1.0 and reads Convention.Coverage, and every other consumer reads the exact number too.
+const storageCutoff = 0.9
+
+// Learn keeps the templates that cover enough of a kind's vanilla ids to be worth storing, each with its exact coverage.
+func Learn(ids []string, members []string, keys *Keys) []Convention {
 	if len(ids) < minConventionDefs || keys == nil {
 		return nil
 	}
 	var out []Convention
-	for _, t := range candidates(ids, members, keys, minCoverage) {
+	// need is what a template must still reach; one that cannot is abandoned where it stands, which is exact and keeps CK3's ten million (template, id) pairs off the profile.
+	need := int(storageCutoff*float64(len(ids)) + 0.999999)
+	for _, t := range candidates(ids, members, keys, storageCutoff) {
 		hits := 0
-		for _, id := range ids {
+		for i, id := range ids {
 			if keys.Has(render(t, id)) {
 				hits++
+			} else if hits+len(ids)-i-1 < need {
+				break
 			}
 		}
-		if cov := float64(hits) / float64(len(ids)); cov >= minCoverage {
+		if cov := float64(hits) / float64(len(ids)); cov >= storageCutoff {
 			out = append(out, Convention{Template: t, Coverage: cov})
 		}
 	}
@@ -141,7 +148,7 @@ func candidates(ids, members []string, keys *Keys, minCoverage float64) []Templa
 const minKeyPrefixHits = 20
 
 // LearnKeyPrefixes finds prefixes that build one loc key out of another (EU5's NOT_<key>).
-func LearnKeyPrefixes(keys *Keys, minCoverage float64) []string {
+func LearnKeyPrefixes(keys *Keys) []string {
 	if keys == nil {
 		return nil
 	}
@@ -157,7 +164,7 @@ func LearnKeyPrefixes(keys *Keys, minCoverage float64) []string {
 	}
 	var out []string
 	for p, n := range hits {
-		if p != "" && n >= minKeyPrefixHits && float64(n) >= minCoverage*float64(total[p]) {
+		if p != "" && n >= minKeyPrefixHits && float64(n) >= storageCutoff*float64(total[p]) {
 			out = append(out, p)
 		}
 	}

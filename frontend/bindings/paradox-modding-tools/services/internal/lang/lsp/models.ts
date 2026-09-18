@@ -64,22 +64,12 @@ export interface Diagnostic {
 }
 
 /**
- * DiagnosticCode describes one check for the settings surface.
+ * DiagnosticCode describes one check for the settings surface; Default is whether it runs when the user has not chosen.
  */
 export interface DiagnosticCode {
     "code": string;
     "summary": string;
-
-    /**
-     * Group separates the semantic checks from the parse errors, which the
-     * settings surface shows apart because silencing a parse error hides a file
-     * the game cannot read at all.
-     */
     "group": string;
-
-    /**
-     * Default is whether the check runs when the user has not chosen.
-     */
     "default": boolean;
 }
 
@@ -92,8 +82,7 @@ export interface FoldingRange {
 }
 
 /**
- * InlayHint is text the editor draws inline at Range.End without editing the
- * buffer. Columns are UTF-8 bytes, like every other range PMT returns.
+ * InlayHint is text the editor draws inline at Range.End without editing the buffer; columns are UTF-8 bytes like every other range PMT returns.
  */
 export interface InlayHint {
     "range": Range;

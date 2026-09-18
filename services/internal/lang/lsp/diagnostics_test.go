@@ -324,8 +324,15 @@ func TestDiagnose(t *testing.T) {
 				} else {
 					s, root = buildSession(t, "ck3", files)
 				}
-				if ds := Diagnose(s, root+"/"+tt.rel); hasDiag(ds, "wrong-scope") != tt.want {
+				ds := Diagnose(s, root+"/"+tt.rel)
+				if hasDiag(ds, "wrong-scope") != tt.want {
 					t.Errorf("wrong-scope = %v, want %v: %+v", !tt.want, tt.want, ds)
+				}
+				// The message names the token, the scopes it runs on and the scope it sits in.
+				for _, d := range ds {
+					if d.Code == "wrong-scope" && !strings.Contains(d.Message, " runs on ") {
+						t.Errorf("wrong-scope message = %q", d.Message)
+					}
 				}
 			})
 		}

@@ -171,3 +171,18 @@ func modRootOf(s *session.Session, path string) string {
 func lowerPrefix(s, prefix string) bool {
 	return prefix == "" || strings.HasPrefix(strings.ToLower(s), strings.ToLower(prefix))
 }
+
+// SignatureHelpResult is the Monaco signature popup.
+type SignatureHelpResult struct {
+	Label           string   `json:"label"`
+	Documentation   string   `json:"documentation,omitempty"`
+	Parameters      []string `json:"parameters,omitempty"`
+	ActiveParameter int      `json:"activeParameter"`
+}
+
+// InlayHint is text the editor draws inline at Range.End without editing the buffer; columns are UTF-8 bytes like every other range PMT returns.
+type InlayHint struct {
+	Range   Range  `json:"range"`
+	Label   string `json:"label"`
+	Tooltip string `json:"tooltip,omitempty"`
+}

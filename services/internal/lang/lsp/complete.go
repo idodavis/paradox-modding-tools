@@ -1,8 +1,9 @@
 // complete.go serves completion for script, loc, and mod files. For a script
-// position the source is chosen by the block type at the cursor: a database
+// position the offer is chosen by the block type at the cursor: a database
 // offers definition names, a body offers its declared tokens and macros, a
 // structure offers its unified members, and a value position offers what the
 // cell's type resolved to.
+
 package lsp
 
 import (
@@ -16,21 +17,6 @@ import (
 
 const maxComplete = 80
 
-// source is one row of the completion table: when it applies, and the items it offers.
-type source struct {
-	when  func(s *session.Session, path string, at probe) bool
-	items func(s *session.Session, at probe, prefix string) []CompletionItem
-}
-
-// sources is the whole of completion; the first row whose when matches answers.
-var sources = []source{
-	{isMod, modCompletions},
-	{isDataFn, dataFnCompletions},
-	{isLoc, locCompletions},
-	{isContainer, containerCompletions},
-	{isValue, valueCompletions},
-}
-
 // Complete returns completion items at (line, UTF-8 column).
 func Complete(s *session.Session, path string, line, col int) CompletionList {
 	at, ok := probeAt(s, path, line, col)
@@ -41,40 +27,43 @@ func Complete(s *session.Session, path string, line, col int) CompletionList {
 	if at.word != "" && at.start < at.off {
 		prefix = at.src[at.start:at.off]
 	}
-	for _, src := range sources {
-		if src.when(s, path, at) {
-			return stampRange(at, completionList(src.items(s, at, prefix)))
+	var items []CompletionItem
+	switch kind := s.KindFor(path); {
+	case kind == "mod":
+		for _, k := range modfile.DescriptorModKeys {
+			if lowerPrefix(k, prefix) {
+				items = append(items, completionItem(k, "property", "mod descriptor", ""))
+			}
 		}
+	case (kind == "loc" || kind == "gui") && dataFnOpen(at):
+		// The bracket, not the token, is where a data-function expression starts.
+		typed := at.src[strings.LastIndex(at.src[:at.off], "[")+1 : at.off]
+		for _, k := range s.Install.Tree.DataFunctions {
+			if lowerPrefix(k, typed) {
+				items = append(items, completionItem(k, "value", "data function", ""))
+			}
+		}
+	case kind == "loc":
+		items = locCompletions(s, prefix)
+	case at.inKey || at.slotKey == "":
+		items = keyCompletions(s, at, prefix)
+	default:
+		items = valueCompletions(s, at, prefix)
 	}
-	return CompletionList{}
+	list := CompletionList{Items: items, IsIncomplete: len(items) > maxComplete}
+	if list.IsIncomplete {
+		list.Items = items[:maxComplete]
+	}
+	return stampRange(at, list)
 }
 
-func isMod(s *session.Session, path string, _ probe) bool { return s.KindFor(path) == "mod" }
-
-func isDataFn(s *session.Session, path string, at probe) bool {
-	kind := s.KindFor(path)
-	return (kind == "loc" || kind == "gui") && dataFnOpen(at)
-}
-
-func isLoc(s *session.Session, path string, _ probe) bool { return s.KindFor(path) == "loc" }
-
-// isContainer is a position choosing a KEY: a nested block member, or the bare
-// start of a new top-level definition.
-func isContainer(s *session.Session, path string, at probe) bool {
-	return scriptFile(s, path) && (at.inKey || at.slotKey == "")
-}
-
-// isValue is a position writing the scalar or list value of a known key.
-func isValue(s *session.Session, path string, at probe) bool {
-	return scriptFile(s, path) && !at.inKey && at.slotKey != ""
-}
-
-func scriptFile(s *session.Session, path string) bool {
-	switch s.KindFor(path) {
-	case "mod", "loc":
+// dataFnOpen reports the cursor sitting inside an unclosed `[` in a loc or GUI value.
+func dataFnOpen(at probe) bool {
+	if at.off < 0 || at.off > len(at.src) {
 		return false
 	}
-	return true
+	open := strings.LastIndex(at.src[:at.off], "[")
+	return open >= 0 && !strings.Contains(at.src[open:at.off], "]")
 }
 
 func stampRange(at probe, list CompletionList) CompletionList {
@@ -93,17 +82,7 @@ func stampRange(at probe, list CompletionList) CompletionList {
 	return list
 }
 
-// citeStart widens the replaced span leftwards over a `name:` the offered
-// citations already contain, so accepting one replaces the whole expression.
-//
-// The word scan behind TokenAt stops at `:` even though the lexer does not, so
-// with `culture_group:tur` typed it reports only `tur`. Replacing just that and
-// inserting `culture_group:culture_group:turkic_group` produced
-// `culture_group:culture_group:turkic_group`.
-//
-// The widening is exact rather than heuristic: it happens only when the text
-// immediately before the span is literally the label's own prefix plus a colon,
-// so the only characters ever swallowed are ones the label puts back.
+// citeStart widens the replaced span leftwards over a `name:` the offered citations already contain, so accepting one replaces the whole expression. The word scan stops at `:`, so with `culture_group:tur` typed it reports only `tur`. Exact rather than heuristic: only when the text before the span is literally the label's own prefix plus a colon.
 func citeStart(src string, start int, items []CompletionItem) int {
 	if start <= 0 || src[start-1] != ':' {
 		return start
@@ -117,24 +96,7 @@ func citeStart(src string, start int, items []CompletionItem) int {
 	return start
 }
 
-func capComplete(items []CompletionItem) []CompletionItem {
-	if len(items) > maxComplete {
-		return items[:maxComplete]
-	}
-	return items
-}
-
-// completionList caps items at maxComplete and flags IsIncomplete when the cap
-// actually cut something off, so the editor knows to ask again as the reader
-// keeps typing.
-func completionList(items []CompletionItem) CompletionList {
-	return CompletionList{Items: capComplete(items), IsIncomplete: len(items) > maxComplete}
-}
-
-// completionItem is the one constructor for every offered item: label, its LSP
-// kind, the detail shown beside it, and the SortText bucket ("0" a declared
-// token in scope, "1" a structure key, "2" a def, "3" a loc key, "" don't care).
-// Documentation is left empty; ResolveDoc fetches it lazily.
+// completionItem is the one constructor for every offered item: label, its LSP kind, the detail shown beside it, and the SortText bucket ("0" a declared token in scope, "1" a structure key, "2" a def, "3" a loc key, "" don't care). Documentation is left empty; ResolveDoc fetches it lazily.
 func completionItem(label, kind, detail, bucket string) CompletionItem {
 	it := CompletionItem{Label: label, Kind: kind, Detail: detail}
 	if bucket != "" {
@@ -143,9 +105,7 @@ func completionItem(label, kind, detail, bucket string) CompletionItem {
 	return it
 }
 
-// ResolveDoc is a completion item's documentation, fetched lazily through
-// IdeService.ResolveCompletion once the editor is about to show it rather than
-// for every item up front.
+// ResolveDoc is a completion item's documentation, fetched lazily through IdeService.ResolveCompletion once the editor is about to show it.
 func ResolveDoc(s *session.Session, label, kind string) string {
 	doc := fieldDoc(s, label, kind, "")
 	if u := clipUsage(tokenUsage(s, label)); u != "" {
@@ -157,41 +117,7 @@ func ResolveDoc(s *session.Session, label, kind string) string {
 	return doc
 }
 
-func modCompletions(_ *session.Session, _ probe, prefix string) []CompletionItem {
-	var out []CompletionItem
-	for _, k := range modfile.DescriptorModKeys {
-		if !lowerPrefix(k, prefix) {
-			continue
-		}
-		out = append(out, completionItem(k, "property", "mod descriptor", ""))
-	}
-	return out
-}
-
-// dataFnOpen reports the cursor sitting inside an unclosed `[` in a loc or GUI
-// value; the bracket, not the token, is where a data-function expression starts.
-func dataFnOpen(at probe) bool {
-	if at.off < 0 || at.off > len(at.src) {
-		return false
-	}
-	open := strings.LastIndex(at.src[:at.off], "[")
-	return open >= 0 && !strings.Contains(at.src[open:at.off], "]")
-}
-
-func dataFnCompletions(s *session.Session, at probe, _ string) []CompletionItem {
-	open := strings.LastIndex(at.src[:at.off], "[")
-	typed := at.src[open+1 : at.off]
-	var out []CompletionItem
-	for _, k := range s.Install.Tree.DataFunctions {
-		if !lowerPrefix(k, typed) {
-			continue
-		}
-		out = append(out, completionItem(k, "value", "data function", ""))
-	}
-	return out
-}
-
-func locCompletions(s *session.Session, _ probe, prefix string) []CompletionItem {
+func locCompletions(s *session.Session, prefix string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
 	for _, k := range s.LocKeys(prefix, maxComplete) {
@@ -204,19 +130,16 @@ func locCompletions(s *session.Session, _ probe, prefix string) []CompletionItem
 	return out
 }
 
-// containerCompletions offers the keys of the block at the cursor, chosen by
-// its block type: a database's rows are definition names, a body's are its
-// declared tokens and macros, a structure's are its unified members.
-func containerCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
+// keyCompletions offers the keys of the block at the cursor, chosen by its block type: a database's rows are definition names, a body's are its declared tokens and macros, a structure's are its unified members, a list's are its cell.
+func keyCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
 	// A bare word at the file's own level is a new definition's name.
 	if len(at.segs) == 0 && at.slotKey == "" {
 		return defCompletions(s, prefix, at.fileKind)
 	}
 	bt := at.hang
 	if bt == nil {
-		// A pure list holds no keys, so its own position never earns a Blocks
-		// entry; its cell is the field one level up.
-		if out := listCompletions(s, at, prefix); len(out) > 0 {
+		// A pure list holds no keys, so its own position never earns a Blocks entry; its cell is the field one level up.
+		if out := cellCompletions(s, at.cell, prefix); len(out) > 0 {
 			return out
 		}
 		return unknownBlockCompletions(s, at, prefix)
@@ -231,7 +154,7 @@ func containerCompletions(s *session.Session, at probe, prefix string) []Complet
 		}
 		return defCompletions(s, prefix, kind)
 	case index.Structure:
-		if out := structureCompletions(s, at, prefix, bt); len(out) > 0 {
+		if out := structureCompletions(s, prefix, bt); len(out) > 0 {
 			return out
 		}
 		return unknownBlockCompletions(s, at, prefix)
@@ -241,12 +164,7 @@ func containerCompletions(s *session.Session, at probe, prefix string) []Complet
 	return nil
 }
 
-// unknownBlockCompletions is asymmetric consequences applied to completion: a
-// position nothing classifies must not offer nothing, since a missing type
-// system or an unresolved scope narrows what PMT knows, never hides what it
-// does know. Offers the file kind's own top-level members, every declared
-// trigger/effect token (the harvested vocabulary when none are declared), and
-// the mod's own macros, unranked by scope.
+// unknownBlockCompletions is asymmetric consequences applied to completion: a position nothing classifies must not offer nothing. The file kind's own top-level members, every declared token (the harvested vocabulary when none are declared), and the mod's own macros, unranked by scope.
 func unknownBlockCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
@@ -273,15 +191,7 @@ func unknownBlockCompletions(s *session.Session, at probe, prefix string) []Comp
 	return out
 }
 
-// listCompletions is a bare list member's cell, one level up from its own
-// (keyless) position.
-func listCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
-	return cellCompletions(s, at.cell, prefix)
-}
-
-// bodyCompletions offers the declared trigger/effect tokens the body's class
-// carries, scope-first when the scope is known, plus the mod's own scripted
-// macros of a matching class.
+// bodyCompletions offers the declared trigger/effect tokens the body's class carries, scope-first when the scope is known, plus the mod's own scripted macros of a matching class.
 func bodyCompletions(s *session.Session, at probe, prefix string, bt *index.Node) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
@@ -318,8 +228,7 @@ func bodyCompletions(s *session.Session, at probe, prefix string, bt *index.Node
 	return out
 }
 
-// macroInClass reports a scripted_* macro's own kind matching a body's
-// declared classes, the same rule the schema unifies bodies with.
+// macroInClass reports a scripted_* macro's own kind matching a body's declared classes, the same rule the schema unifies bodies with.
 func macroInClass(defKind string, body uint8) bool {
 	switch {
 	case strings.Contains(defKind, "trigger"):
@@ -331,9 +240,8 @@ func macroInClass(defKind string, body uint8) bool {
 	}
 }
 
-// structureCompletions offers a structure's unified members: what the corpus
-// wrote at every position of this block's key, plus the game's own docs.
-func structureCompletions(s *session.Session, at probe, prefix string, bt *index.Node) []CompletionItem {
+// structureCompletions offers a structure's unified members: what the corpus wrote at every position of this block's key, plus the game's own docs.
+func structureCompletions(s *session.Session, prefix string, bt *index.Node) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
 	for _, k := range s.Install.Tree.StructMembers(bt) {
@@ -353,67 +261,21 @@ func structureCompletions(s *session.Session, at probe, prefix string, bt *index
 	return out
 }
 
-// valueCompletions offers what the cell under the cursor was seen to hold:
-// definitions of its resolved kinds, loc keys, and any closed set the game
-// declares for the field, falling back to the bare boolean.
+// valueCompletions offers what the cell under the cursor was seen to hold: the ephemeral names a script-name key takes, definitions of its resolved kinds, loc keys, and any closed set the game declares for the field, falling back to the bare boolean.
 func valueCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
-	out := scriptNameCompletions(s, at, prefix)
+	var out []CompletionItem
+	if r, ok := jomini.ScriptName(at.slotKey); ok && !r.IsDef {
+		out = defCompletions(s, prefix, r.Kind)
+	}
 	out = append(out, cellCompletions(s, at.cell, prefix)...)
-	out = append(out, enumCompletions(s, at, prefix)...)
+	for _, v := range declaredFieldType(s, at.kind, at.slotKey).Values {
+		if lowerPrefix(v, prefix) {
+			out = append(out, completionItem(v, "value", "value", "2"))
+		}
+	}
 	if len(out) > 0 {
 		return out
 	}
-	return boolCompletions(prefix)
-}
-
-// scriptNameCompletions is grammar row 4 (jomini.ScriptName): has_variable,
-// has_global_variable, exists = scope:… and their kin name an ephemeral value
-// rather than an object, keyed off the one table rather than per-entry code.
-// A use site offers the ephemeral definitions of that kind the workspace made.
-func scriptNameCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
-	r, ok := jomini.ScriptName(at.slotKey)
-	if !ok || r.IsDef {
-		return nil
-	}
-	return defCompletions(s, prefix, r.Kind)
-}
-
-// cellCompletions offers what one cell was seen to hold: definitions of every
-// database its values resolved to, and localization keys where they were keys.
-func cellCompletions(s *session.Session, t *index.Node, prefix string) []CompletionItem {
-	if t == nil {
-		return nil
-	}
-	var out []CompletionItem
-	for _, k := range t.Kinds {
-		if k == index.LabelLoc {
-			out = append(out, locCompletions(s, probe{}, prefix)...)
-			continue
-		}
-		out = append(out, defCompletions(s, prefix, k)...)
-	}
-	return out
-}
-
-// enumCompletions offers a closed set the game's own documentation declares
-// for this field, e.g. a fixed list of valid words.
-func enumCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
-	dt := declaredFieldType(s, at.kind, at.slotKey)
-	if len(dt.Values) == 0 {
-		return nil
-	}
-	var out []CompletionItem
-	for _, v := range dt.Values {
-		if !lowerPrefix(v, prefix) {
-			continue
-		}
-		out = append(out, completionItem(v, "value", "value", "2"))
-	}
-	return out
-}
-
-func boolCompletions(prefix string) []CompletionItem {
-	var out []CompletionItem
 	for _, label := range []string{"yes", "no"} {
 		if lowerPrefix(label, prefix) {
 			out = append(out, completionItem(label, "value", "bool", ""))
@@ -422,10 +284,23 @@ func boolCompletions(prefix string) []CompletionItem {
 	return out
 }
 
-// defCompletions offers definitions of one kind, in the form the corpus writes
-// them: `prefix:id` when the kind is bound to a citation prefix, bare
-// otherwise. The typed text is matched against either half, so a reader typing
-// `turkic` still finds `culture_group:turkic_group`.
+// cellCompletions offers what one cell was seen to hold: definitions of every database its values resolved to, and localization keys where they were keys.
+func cellCompletions(s *session.Session, t *index.Node, prefix string) []CompletionItem {
+	if t == nil {
+		return nil
+	}
+	var out []CompletionItem
+	for _, k := range t.Kinds {
+		if k == index.LabelLoc {
+			out = append(out, locCompletions(s, prefix)...)
+			continue
+		}
+		out = append(out, defCompletions(s, prefix, k)...)
+	}
+	return out
+}
+
+// defCompletions offers definitions of one kind, in the form the corpus writes them: `prefix:id` when the kind is bound to a citation prefix, bare otherwise. The typed text is matched against either half.
 func defCompletions(s *session.Session, prefix, kind string) []CompletionItem {
 	if kind == "" {
 		return nil
@@ -456,9 +331,7 @@ func defCompletions(s *session.Session, prefix, kind string) []CompletionItem {
 	return out
 }
 
-// scopeFirst puts the tokens the game declares usable here at the front,
-// keeping the rest behind them rather than dropping them. inScope nil means the
-// scope is unknown, which is not the same as "nothing is valid".
+// scopeFirst puts the tokens the game declares usable here at the front, keeping the rest behind them rather than dropping them; an empty inScope means the scope is unknown, not that nothing is valid.
 func scopeFirst(tokens []string, inScope map[string]bool) []string {
 	if len(inScope) == 0 {
 		return tokens

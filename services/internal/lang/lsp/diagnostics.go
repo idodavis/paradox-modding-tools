@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
@@ -31,32 +31,33 @@ type diagFile struct {
 	src      string
 	res      jomini.Result
 	li       *jomini.LineIndex
-	refs     []derived.Ref
+	refs     []index.Ref
 }
 
 // eachCell walks the file handing every assignment the cell it sits at: the file's extract kind, the enclosing block keys below the definition, and the key itself. block is that enclosing key as the author wrote it, which is what a message names; top marks the definition's own key, which sits in no block.
-func (f diagFile) eachCell(fn func(a *jomini.Assignment, path, block string, top bool)) {
+func (f diagFile) eachCell(fn func(a *jomini.Assignment, hang *index.Node, block string, top bool)) {
 	if f.res.Root == nil {
 		return
 	}
-	folded, raw := []string{""}, []string{""}
+	sc := &f.s.Install.Tree
+	hang, raw := []*index.Node{sc.Root(f.fileKind, false)}, []string{""}
 	jomini.Walk(f.res.Root, func(st jomini.Statement, depth int, _ *jomini.Block) bool {
-		for len(folded) <= depth+1 {
-			folded, raw = append(folded, ""), append(raw, "")
+		for len(hang) <= depth+1 {
+			hang, raw = append(hang, nil), append(raw, "")
 		}
 		a, ok := st.(*jomini.Assignment)
-		key := ""
+		key, quoted := "", false
 		if ok {
-			key = a.Key.Text
+			key, quoted = a.Key.Text, a.Key.Quoted
 		}
 		if depth == 0 {
-			folded[1], raw[1] = "", ""
+			hang[1], raw[1] = hang[0], ""
 		} else {
-			folded[depth+1] = f.s.CellPath(f.fileKind, folded[depth], key)
+			_, _, hang[depth+1] = sc.Step(hang[depth], key, quoted)
 			raw[depth+1] = key
 		}
 		if ok {
-			fn(a, folded[depth], raw[depth], depth == 0)
+			fn(a, hang[depth], raw[depth], depth == 0)
 		}
 		return true
 	})
@@ -213,7 +214,7 @@ func modDeclaresNamespace(s *session.Session, ns string) bool {
 	if ns == "" {
 		return false
 	}
-	return s.ResolveMatching(ns, func(d derived.Def) bool {
+	return s.ResolveMatching(ns, func(d index.Def) bool {
 		return jomini.CanonicalKind(d.Kind) == "namespace"
 	}) != nil
 }

@@ -8,7 +8,7 @@ package lsp
 import (
 	"strings"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/session"
 	"paradox-modding-tools/services/internal/modfile"
@@ -105,18 +105,16 @@ func stampRange(at probe, list CompletionList) CompletionList {
 // immediately before the span is literally the label's own prefix plus a colon,
 // so the only characters ever swallowed are ones the label puts back.
 func citeStart(src string, start int, items []CompletionItem) int {
-	if len(items) == 0 || start <= 0 || src[start-1] != ':' {
+	if start <= 0 || src[start-1] != ':' {
 		return start
 	}
-	cite, _, ok := strings.Cut(items[0].Label, ":")
-	if !ok || cite == "" {
-		return start
+	for _, it := range items {
+		cite, _, ok := strings.Cut(it.Label, ":")
+		if lead := start - 1 - len(cite); ok && cite != "" && lead >= 0 && strings.EqualFold(src[lead:start-1], cite) {
+			return lead
+		}
 	}
-	lead := start - 1 - len(cite)
-	if lead < 0 || !strings.EqualFold(src[lead:start-1], cite) {
-		return start
-	}
-	return lead
+	return start
 }
 
 func capComplete(items []CompletionItem) []CompletionItem {
@@ -149,8 +147,8 @@ func completionItem(label, kind, detail, bucket string) CompletionItem {
 // IdeService.ResolveCompletion once the editor is about to show it rather than
 // for every item up front.
 func ResolveDoc(s *session.Session, label, kind string) string {
-	doc := s.FieldDoc(label, kind, nil)
-	if u := s.TokenUsage(label); u != "" {
+	doc := fieldDoc(s, label, kind, "")
+	if u := clipUsage(tokenUsage(s, label)); u != "" {
 		if doc != "" {
 			doc += "\n\n"
 		}
@@ -184,7 +182,7 @@ func dataFnCompletions(s *session.Session, at probe, _ string) []CompletionItem 
 	open := strings.LastIndex(at.src[:at.off], "[")
 	typed := at.src[open+1 : at.off]
 	var out []CompletionItem
-	for _, k := range s.Vocab("datafunction") {
+	for _, k := range s.Install.Tree.DataFunctions {
 		if !lowerPrefix(k, typed) {
 			continue
 		}
@@ -210,11 +208,12 @@ func locCompletions(s *session.Session, _ probe, prefix string) []CompletionItem
 // its block type: a database's rows are definition names, a body's are its
 // declared tokens and macros, a structure's are its unified members.
 func containerCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
-	bt := s.BlockAt(at.fileKind, at.path)
+	// A bare word at the file's own level is a new definition's name.
+	if len(at.segs) == 0 && at.slotKey == "" {
+		return defCompletions(s, prefix, at.fileKind)
+	}
+	bt := at.hang
 	if bt == nil {
-		if at.path == "" {
-			return defCompletions(s, prefix, at.fileKind)
-		}
 		// A pure list holds no keys, so its own position never earns a Blocks
 		// entry; its cell is the field one level up.
 		if out := listCompletions(s, at, prefix); len(out) > 0 {
@@ -223,21 +222,21 @@ func containerCompletions(s *session.Session, at probe, prefix string) []Complet
 		return unknownBlockCompletions(s, at, prefix)
 	}
 	switch bt.Class {
-	case derived.BlockBody:
+	case index.Body:
 		return bodyCompletions(s, at, prefix, bt)
-	case derived.BlockDatabase:
-		kind := bt.Database
+	case index.Database:
+		kind := bt.Def
 		if kind == "" {
 			kind = at.fileKind
 		}
 		return defCompletions(s, prefix, kind)
-	case derived.BlockStructure:
+	case index.Structure:
 		if out := structureCompletions(s, at, prefix, bt); len(out) > 0 {
 			return out
 		}
 		return unknownBlockCompletions(s, at, prefix)
-	case derived.BlockList:
-		return listCompletions(s, at, prefix)
+	case index.List:
+		return cellCompletions(s, bt, prefix)
 	}
 	return nil
 }
@@ -258,17 +257,17 @@ func unknownBlockCompletions(s *session.Session, at probe, prefix string) []Comp
 		seen[label] = true
 		out = append(out, completionItem(label, "property", detail, bucket))
 	}
-	for _, k := range s.Members(at.fileKind, "") {
+	for _, k := range s.Node(at.fileKind).Members() {
 		add(k, at.fileKind, "1")
 	}
-	tokens := append(append([]string{}, s.Vocab("trigger")...), s.Vocab("effect")...)
-	if len(tokens) == 0 {
-		tokens = s.Vocab("vocabulary")
+	names := append(tokens(s, "trigger"), tokens(s, "effect")...)
+	if len(names) == 0 {
+		names = s.Install.Tree.Known
 	}
-	for _, k := range tokens {
+	for _, k := range names {
 		add(k, "engine", "2")
 	}
-	for _, d := range s.FindMacroDefs(prefix, maxComplete) {
+	for _, d := range s.Macros(prefix, maxComplete) {
 		add(d.Key, d.Kind, "2")
 	}
 	return out
@@ -277,22 +276,13 @@ func unknownBlockCompletions(s *session.Session, at probe, prefix string) []Comp
 // listCompletions is a bare list member's cell, one level up from its own
 // (keyless) position.
 func listCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
-	parent, key := splitPath(at.path)
-	return cellCompletions(s, at.fileKind, parent, key, prefix)
-}
-
-// splitPath separates a folded block path into its parent and last segment.
-func splitPath(path string) (parent, key string) {
-	if i := strings.LastIndexByte(path, '.'); i >= 0 {
-		return path[:i], path[i+1:]
-	}
-	return "", path
+	return cellCompletions(s, at.cell, prefix)
 }
 
 // bodyCompletions offers the declared trigger/effect tokens the body's class
 // carries, scope-first when the scope is known, plus the mod's own scripted
 // macros of a matching class.
-func bodyCompletions(s *session.Session, at probe, prefix string, bt *derived.BlockType) []CompletionItem {
+func bodyCompletions(s *session.Session, at probe, prefix string, bt *index.Node) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
 	inScope := map[string]bool{}
@@ -310,17 +300,17 @@ func bodyCompletions(s *session.Session, at probe, prefix string, bt *derived.Bl
 		}
 		out = append(out, completionItem(label, "property", detail, bucket))
 	}
-	if bt.Body&derived.BodyTrigger != 0 {
-		for _, k := range scopeFirst(s.Vocab("trigger"), inScope) {
+	if bt.Body&index.BodyTrigger != 0 {
+		for _, k := range scopeFirst(tokens(s, "trigger"), inScope) {
 			add(k, "trigger")
 		}
 	}
-	if bt.Body&derived.BodyEffect != 0 {
-		for _, k := range scopeFirst(s.Vocab("effect"), inScope) {
+	if bt.Body&index.BodyEffect != 0 {
+		for _, k := range scopeFirst(tokens(s, "effect"), inScope) {
 			add(k, "effect")
 		}
 	}
-	for _, d := range s.FindMacroDefs(prefix, maxComplete) {
+	for _, d := range s.Macros(prefix, maxComplete) {
 		if macroInClass(d.Kind, bt.Body) {
 			add(d.Key, d.Kind)
 		}
@@ -333,27 +323,27 @@ func bodyCompletions(s *session.Session, at probe, prefix string, bt *derived.Bl
 func macroInClass(defKind string, body uint8) bool {
 	switch {
 	case strings.Contains(defKind, "trigger"):
-		return body&derived.BodyTrigger != 0
+		return body&index.BodyTrigger != 0
 	case strings.Contains(defKind, "modifier"):
-		return body&derived.BodyModifier != 0
+		return body&index.BodyModifier != 0
 	default:
-		return body&derived.BodyEffect != 0
+		return body&index.BodyEffect != 0
 	}
 }
 
 // structureCompletions offers a structure's unified members: what the corpus
 // wrote at every position of this block's key, plus the game's own docs.
-func structureCompletions(s *session.Session, at probe, prefix string, bt *derived.BlockType) []CompletionItem {
+func structureCompletions(s *session.Session, at probe, prefix string, bt *index.Node) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
-	for _, k := range s.StructureMembers(at.fileKind, at.path) {
+	for _, k := range s.Install.Tree.StructMembers(bt) {
 		if k == "" || seen[k] || !lowerPrefix(k, prefix) {
 			continue
 		}
 		seen[k] = true
-		it := completionItem(k, "property", bt.Key, "1")
-		it.DocKind = bt.Key
-		if s.TypeOf(at.fileKind, at.path, k).IsBlock() {
+		it := completionItem(k, "property", bt.Struct, "1")
+		it.DocKind = bt.Struct
+		if c := childOf(s, bt, k); c != nil && c.Flags&index.IsBlock != 0 {
 			it.InsertText = k + " = { $0 }"
 		} else {
 			it.InsertText = k + " = "
@@ -368,7 +358,7 @@ func structureCompletions(s *session.Session, at probe, prefix string, bt *deriv
 // declares for the field, falling back to the bare boolean.
 func valueCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
 	out := scriptNameCompletions(s, at, prefix)
-	out = append(out, cellCompletions(s, at.fileKind, at.path, at.slotKey, prefix)...)
+	out = append(out, cellCompletions(s, at.cell, prefix)...)
 	out = append(out, enumCompletions(s, at, prefix)...)
 	if len(out) > 0 {
 		return out
@@ -390,14 +380,13 @@ func scriptNameCompletions(s *session.Session, at probe, prefix string) []Comple
 
 // cellCompletions offers what one cell was seen to hold: definitions of every
 // database its values resolved to, and localization keys where they were keys.
-func cellCompletions(s *session.Session, kind, path, key, prefix string) []CompletionItem {
-	t := s.TypeOf(kind, path, key)
+func cellCompletions(s *session.Session, t *index.Node, prefix string) []CompletionItem {
 	if t == nil {
 		return nil
 	}
 	var out []CompletionItem
 	for _, k := range t.Kinds {
-		if k == derived.LabelLoc {
+		if k == index.LabelLoc {
 			out = append(out, locCompletions(s, probe{}, prefix)...)
 			continue
 		}
@@ -409,7 +398,7 @@ func cellCompletions(s *session.Session, kind, path, key, prefix string) []Compl
 // enumCompletions offers a closed set the game's own documentation declares
 // for this field, e.g. a fixed list of valid words.
 func enumCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
-	dt := s.DeclaredFieldType(at.kind, at.slotKey)
+	dt := declaredFieldType(s, at.kind, at.slotKey)
 	if len(dt.Values) == 0 {
 		return nil
 	}
@@ -441,7 +430,7 @@ func defCompletions(s *session.Session, prefix, kind string) []CompletionItem {
 	if kind == "" {
 		return nil
 	}
-	pfx := s.Work.Schema.KindPrefix[kind]
+	pfx := s.Install.Tree.Prefix(kind)
 	query := prefix
 	if pfx != "" {
 		if before, after, ok := strings.Cut(prefix, ":"); ok && lowerPrefix(pfx, before) {

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"paradox-modding-tools/services/internal/game"
@@ -75,6 +76,15 @@ add_title_law = princely_elective_succession_law
 Supported Scopes: landed_title
 
 --------------------
+
+create_character - Creates a character
+save_event_target_as = flag - save the character as an event target
+faith, culture and dynasty are set from the template
+faith = faith tag OR a faith scope
+Traits: yes
+Supported Scopes: character
+
+--------------------
 `)
 		s := ReadSchema([]string{dir})
 		if s == nil {
@@ -96,6 +106,10 @@ Supported Scopes: landed_title
 		// The usage line is prose here, not a "Usage:" label; it must not be lost.
 		if law := s.Effects["add_title_law"]; law.In[0] != "landed_title" {
 			t.Errorf("add_title_law In = %v", law.In)
+		}
+		// An argument list written as script is signature, not description.
+		if cc := s.Effects["create_character"]; !strings.HasPrefix(cc.Doc, "Creates a character\n\nfaith, culture") || !strings.Contains(cc.Usage, "faith = faith tag") || strings.Contains(cc.Usage, "Traits") {
+			t.Errorf("create_character doc=%q usage=%q", cc.Doc, cc.Usage)
 		}
 	})
 

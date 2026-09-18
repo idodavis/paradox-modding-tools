@@ -1,7 +1,0 @@
-type my_window = {
-	size = { 10 20 }
-	widget = {
-		name = inner
-	}
-}
-local_template my_tpl = { blockoverride = yes }

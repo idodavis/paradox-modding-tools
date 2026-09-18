@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -86,7 +86,7 @@ func Compatibility(s *session.Session, order []string) HealthReport {
 }
 
 func contestRows(s *session.Session, order []string) []HealthRow {
-	if s.DefCount() == 0 {
+	if s.Work.Live() == 0 {
 		return nil
 	}
 	if len(order) == 0 {
@@ -115,12 +115,12 @@ func contestRows(s *session.Session, order []string) []HealthRow {
 
 // overrideSites is one OverrideSite per origin+path+line. Same-line twins from
 // a DidOpen path-key miss are dropped; distinct lines stay (two real blocks).
-func overrideSites(s *session.Session, defs []derived.Def) []OverrideSite {
+func overrideSites(s *session.Session, defs []index.Def) []OverrideSite {
 	seen := make(map[string]bool, len(defs))
 	sites := make([]OverrideSite, 0, len(defs))
 	for _, d := range defs {
 		o := originID(d.Origin)
-		id := o + "\x00" + derived.CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
+		id := o + "\x00" + index.CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
 		if seen[id] {
 			continue
 		}
@@ -158,7 +158,7 @@ func fillSnippet(s *session.Session, site *OverrideSite) {
 	site.Snippet = strings.Join(lines[start:end], "\n")
 }
 
-func skipCompatRef(r derived.Ref) bool {
+func skipCompatRef(r index.Ref) bool {
 	switch r.Kind {
 	case "loc", "loc-broad", "namespace":
 		return true
@@ -173,7 +173,7 @@ func refRows(s *session.Session) (depends, dangling []HealthRow, nDepends, nDang
 	type dangID struct{ kind, name, from string }
 	dangMap := map[dangID]*HealthRow{}
 	seenDep := map[string]bool{}
-	for _, r := range s.WorkspaceRefs() {
+	for _, r := range s.WorkRefs() {
 		if skipCompatRef(r) || r.Key == "" {
 			continue
 		}

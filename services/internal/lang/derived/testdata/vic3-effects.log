@@ -1,8 +1,0 @@
-# Effect Documentation
-## abandon_revolution
-Leaves the revolution
-**Supported Scopes**: country
-
-## add_gold
-Adds gold
-**Supported Scopes**: country

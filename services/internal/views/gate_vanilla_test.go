@@ -26,7 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/lsp"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -91,8 +91,8 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 		ran++
 		t.Run(g.game, func(t *testing.T) {
 			id := "gate-" + g.game
-			t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
-			cache, _, err := derived.Scan(context.Background(), derived.ScanRequest{
+			t.Cleanup(func() { _ = index.DropVanillaFiles(id) })
+			cache, _, err := index.Scan(context.Background(), index.ScanRequest{
 				InstallID: id, GameID: g.game, InstallPath: install,
 				Version: "gate", LocLang: "english",
 			})
@@ -103,9 +103,9 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 			// happened: the model that decides what completion offers inside a
 			// block, and whether a field's description can be trusted, is a
 			// per-game number worth seeing next to the diagnostics.
-			t.Logf("CELLS %s: %d kinds", g.game, len(cache.Schema.Cells))
+			t.Logf("CELLS %s: %d kinds", g.game, len(cache.Tree.Kinds))
 			for _, b := range []string{"limit", "trigger", "modifier"} {
-				if m := cache.Schema.Members("event", b); len(m) > 0 {
+				if m := cache.Tree.At("event", b).Members(); len(m) > 0 {
 					n := min(len(m), 5)
 					t.Logf("  event.%s holds %v (+%d)", b, m[:n], len(m)-n)
 				}
@@ -113,7 +113,7 @@ func TestVanillaDiagnosticsClean(t *testing.T) {
 
 			root := sampleIntoMod(t, install, g.game)
 			s := session.New("gate", g.game, "english", cache,
-				[]derived.ModInput{{Origin: "mod", Root: root, Name: "vanilla-sample"}})
+				[]index.ModInput{{Origin: "mod", Root: root, Name: "vanilla-sample"}})
 			defer s.Close()
 
 			counts := map[string]int{}

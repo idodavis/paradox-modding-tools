@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/modfile"
 
 	"github.com/google/uuid"
@@ -36,8 +36,8 @@ func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error
 		for _, inst := range c.Installs {
 			if inst.GameID == gameID {
 				cp := inst
-				ver := derived.CacheVersion(cp.Version)
-				cp.ScannedAt = derived.PeekCacheScannedAt(cp.ID, ver)
+				ver := index.CacheVersion(cp.Version)
+				cp.ScannedAt = index.PeekCacheScannedAt(cp.ID, ver)
 				out = append(out, cp)
 			}
 		}
@@ -57,7 +57,7 @@ func (w *WorkspaceService) AddGameInstall(gameID, name, path, version string) (*
 	if version == "" {
 		version = detected
 	}
-	version = derived.CacheVersion(version)
+	version = index.CacheVersion(version)
 	inst := GameInstall{
 		ID: uuid.New().String(), GameID: gameID, Name: name, Path: path,
 		Version: version, VersionDetected: detected, CreatedAt: nowUTC(),
@@ -612,7 +612,7 @@ func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err err
 	if len(inUse) > 0 {
 		return inUse, fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))
 	}
-	if err := derived.DropVanillaFiles(id); err != nil {
+	if err := index.DropVanillaFiles(id); err != nil {
 		return nil, err
 	}
 	return nil, w.Store.Mutate(func(c *Config) error {
@@ -629,7 +629,7 @@ func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err err
 
 // SetInstallVersion pins the cache-key version (user override; empty → latest).
 func (w *WorkspaceService) SetInstallVersion(id, version string) error {
-	version = derived.CacheVersion(version)
+	version = index.CacheVersion(version)
 	return w.Store.Mutate(func(c *Config) error {
 		inst := findInstall(c, id)
 		if inst == nil {
@@ -700,7 +700,7 @@ func (w *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
 	if inst == nil {
 		return nil
 	}
-	v, err := derived.HarvestLoc(context.Background(), inst.GameID, inst.Path, lang)
+	v, err := index.HarvestLoc(context.Background(), inst.GameID, inst.Path, lang)
 	if err != nil {
 		return err
 	}

@@ -439,7 +439,7 @@ type docFields struct {
 // blockFields splits a dump block's body into "Label: value" pairs, the unlabelled usage signature line, and leftover prose.
 func blockFields(b game.DocBlock) docFields {
 	f := docFields{vals: map[string]string{}}
-	var body, usage []string
+	var body, notes, usage []string
 	depth := 0
 	for _, raw := range b.Lines {
 		t := stripDocMarkup(strings.TrimSpace(raw))
@@ -460,12 +460,18 @@ func blockFields(b game.DocBlock) docFields {
 			}
 			continue
 		}
-		if depth > 0 || usageStart(b.Name, t) {
-			usage = append(usage, t)
+		if depth > 0 || usageStart(b.Name, t) || assignRe.MatchString(t) {
+			// The author's indentation is the block structure; the card shows it in a code block.
+			usage = append(usage, stripDocMarkup(strings.TrimRight(raw, " \t")))
 			depth += strings.Count(t, "{") - strings.Count(t, "}")
 			if depth < 0 {
 				depth = 0
 			}
+			continue
+		}
+		// Prose after the signature is a note, a second paragraph below the description.
+		if len(usage) > 0 {
+			notes = append(notes, t)
 			continue
 		}
 		body = append(body, t)
@@ -476,8 +482,14 @@ func blockFields(b game.DocBlock) docFields {
 		}
 	}
 	f.prose = jomini.Prose(body)
+	if len(notes) > 0 {
+		f.prose = strings.TrimSpace(f.prose + "\n\n" + jomini.Prose(notes))
+	}
 	return f
 }
+
+// assignRe is a body line written as script (`faith = faith tag OR a faith scope`): CK3's classic dumps list an effect's arguments this way after the one-line description, and every such line is signature, not prose.
+var assignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_./]*\s*=`)
 
 // usageStart reports a body line that restates the token's own name as an
 // assignment. A description mentioning the token mid-sentence does not match,
@@ -535,7 +547,7 @@ var docLabels = map[string]bool{
 	"save token": true, "stores variables": true,
 	"mask": true, "use areas": true, "categories": true,
 	"name": true, "description": true,
-	"scope": true, "random valid": true,
+	"scope": true, "random valid": true, "traits": true,
 }
 
 func (f docFields) str(label string) string { return f.vals[label] }

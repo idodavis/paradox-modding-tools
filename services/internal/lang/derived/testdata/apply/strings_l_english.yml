@@ -1,3 +1,0 @@
-l_english:
- test.1.t:0 "A $trait_brave_desc$ event with [GetPlayer.GetName]"
- trait_brave_desc:0 "Brave"

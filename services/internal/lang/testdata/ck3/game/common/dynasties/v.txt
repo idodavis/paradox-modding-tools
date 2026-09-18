@@ -1,0 +1,6 @@
+dynasty_1 = {
+	name = "dynn_1"
+}
+dynasty_2 = {
+	name = "dynn_2"
+}

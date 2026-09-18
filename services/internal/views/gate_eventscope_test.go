@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/lsp"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -36,8 +36,8 @@ func TestVanillaEventScopeClean(t *testing.T) {
 				t.Skip("no install")
 			}
 			id := "evt-" + g.id
-			t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
-			cache, _, err := derived.Scan(context.Background(), derived.ScanRequest{
+			t.Cleanup(func() { _ = index.DropVanillaFiles(id) })
+			cache, _, err := index.Scan(context.Background(), index.ScanRequest{
 				InstallID: id, GameID: g.id, InstallPath: g.root, Version: "p", LocLang: "english",
 			})
 			if err != nil {
@@ -65,7 +65,7 @@ func TestVanillaEventScopeClean(t *testing.T) {
 				return nil
 			})
 			s := session.New("evt", g.id, "english", cache,
-				[]derived.ModInput{{Origin: "mod", Root: mod, Name: "v"}})
+				[]index.ModInput{{Origin: "mod", Root: mod, Name: "v"}})
 			defer s.Close()
 			counts := map[string]int{}
 			ex := map[string]string{}

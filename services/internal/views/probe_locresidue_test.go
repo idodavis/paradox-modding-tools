@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/session"
 )
 
@@ -42,8 +42,8 @@ func TestVanillaLocResidue(t *testing.T) {
 		}
 		t.Run(g.game, func(t *testing.T) {
 			id := "residue-" + g.game
-			t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
-			cache, _, err := derived.Scan(context.Background(), derived.ScanRequest{
+			t.Cleanup(func() { _ = index.DropVanillaFiles(id) })
+			cache, _, err := index.Scan(context.Background(), index.ScanRequest{
 				InstallID: id, GameID: g.game, InstallPath: install,
 				Version: "residue", LocLang: "english",
 			})
@@ -55,15 +55,19 @@ func TestVanillaLocResidue(t *testing.T) {
 
 			// Print what the rule accepted, not just what it scored. A template
 			// list that reads as nonsense is a failure even if the number fell.
-			for kind, cs := range cache.LocConventions {
-				t.Logf("  convention %-32s %v", kind, cs)
+			for kind, root := range cache.Tree.Kinds {
+				if len(root.Loc) > 0 {
+					t.Logf("  convention %-32s %v", kind, root.Loc)
+				}
 			}
 			inh := s.InheritedLocKeys([]string{"english"})
 			var keys []string
 			inh.Each("english", func(k string) { keys = append(keys, k) })
 			used := map[string]bool{}
-			for _, r := range cache.LocRefs {
-				used[r.Key] = true
+			for _, r := range cache.Refs {
+				if cache.KindOf(r.KindID) == "loc" {
+					used[r.Key] = true
+				}
 			}
 			isKey := map[string]bool{}
 			for _, k := range keys {
@@ -103,7 +107,7 @@ func TestVanillaLocResidue(t *testing.T) {
 // count: conversions are enormous, so a rate at or below vanilla's means the
 // residue is the engine's gap applied to more keys, not cruft the mod added.
 func convResidue(
-	t *testing.T, game, appID string, cache *derived.Index,
+	t *testing.T, game, appID string, cache *index.Index,
 ) {
 	t.Helper()
 	var ids []string
@@ -115,7 +119,7 @@ func convResidue(
 	sort.Strings(ids)
 	for _, modID := range ids {
 		s := session.New(game, game, "english", cache,
-			[]derived.ModInput{{
+			[]index.ModInput{{
 				Origin: "mod",
 				Root:   filepath.Join(workshopRoot, appID, modID),
 				Name:   modID,
@@ -125,7 +129,7 @@ func convResidue(
 		inh.Each(locSourceLang, func(k string) { inherited[k] = true })
 		used := usedByOrigin(s)
 		own, orphan := 0, 0
-		s.EachLoc(func(lang, k string, e derived.LocEntry) {
+		s.EachLoc(func(lang, k string, e index.LocEntry) {
 			if lang != locSourceLang || inherited[k] {
 				return
 			}

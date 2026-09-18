@@ -1,5 +1,0 @@
---- Static modifier types ---
-    key: building_throughput_add
-    Mask: 1
-    Name: aut!Throughput
-    Description: More goods from buildings

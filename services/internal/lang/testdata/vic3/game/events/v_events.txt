@@ -1,0 +1,4 @@
+namespace = vv
+vv.1 = {
+	type = character_event
+}

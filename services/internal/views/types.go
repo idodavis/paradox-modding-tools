@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -151,7 +151,7 @@ func locValue(s *session.Session, key string) string {
 }
 
 // eventNamespace is the declared namespace for an event, else the id prefix.
-func eventNamespace(s *session.Session, d *derived.Def, id string) string {
+func eventNamespace(s *session.Session, d *index.Def, id string) string {
 	if d != nil {
 		var last string
 		for _, x := range s.DefsInFile(d.Path) {

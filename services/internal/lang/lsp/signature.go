@@ -29,10 +29,10 @@ func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHel
 	if key == "" {
 		key = at.word
 	}
-	usage := s.TokenUsage(key)
+	usage := tokenUsage(s, key)
 	if usage == "" {
 		if d := s.Resolve(key); d != nil && jomini.IsMacroKind(d.Kind) {
-			usage = s.TokenUsage(d.Key)
+			usage = tokenUsage(s, d.Key)
 		}
 	}
 	if usage == "" {
@@ -40,7 +40,7 @@ func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHel
 	}
 	return &SignatureHelpResult{
 		Label:         usage,
-		Documentation: s.FieldDoc(key, at.kind, nil),
+		Documentation: fieldDoc(s, key, at.kind, ""),
 		Parameters:    paramsFromUsage(usage),
 	}
 }

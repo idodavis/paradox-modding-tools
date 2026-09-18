@@ -10,7 +10,7 @@ import (
 func TestCodeActions(t *testing.T) {
 	// A loc file with no BOM offers to add one.
 	locRel := "localization/english/a_l_english.yml"
-	s, root := buildSession(t, "ck3", map[string]string{locRel: "l_english:\n k:0 \"v\"\n"}, nil, nil)
+	s, root := buildSession(t, "ck3", map[string]string{locRel: "l_english:\n k:0 \"v\"\n"})
 	lf := filepath.Join(root, filepath.FromSlash(locRel))
 	acts := CodeActions(s, lf)
 	if !hasAction(acts, "Add UTF-8 BOM") {
@@ -23,7 +23,7 @@ func TestCodeActions(t *testing.T) {
 	s2, root2 := buildSession(t, "ck3", map[string]string{
 		scriptRel: "ns.1 = {\n\ttitle = missing_key\n}\n",
 		locRel:    "l_english:\n k:0 \"v\"\n",
-	}, nil, nil)
+	})
 	sf := filepath.Join(root2, filepath.FromSlash(scriptRel))
 	acts2 := CodeActions(s2, sf)
 	var create *CodeAction
@@ -44,7 +44,7 @@ func TestCodeActions(t *testing.T) {
 	s3, root3 := buildSession(t, "ck3", map[string]string{
 		scriptRel: "ns.1 = {\n\ttitle = k\n}\n",
 		locRel:    "l_english:\n k:0 \"v\"\n",
-	}, nil, nil)
+	})
 	if acts3 := CodeActions(s3, filepath.Join(root3, filepath.FromSlash(scriptRel))); len(acts3) != 0 {
 		t.Errorf("defined key still offered a create action: %+v", acts3)
 	}

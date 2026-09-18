@@ -1,0 +1,2 @@
+category = <personality/education> # Which group the trait belongs to.
+diplomacy = <int> # Skill bonus.

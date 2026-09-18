@@ -5,7 +5,7 @@
 package lsp
 
 import (
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -37,7 +37,7 @@ func InlayHints(s *session.Session, path string) []InlayHint {
 		if sc.Quoted || !jomini.IsDateLiteral(sc.Text) {
 			return
 		}
-		era := derived.EraDate(sc.Text, cal)
+		era := index.EraDate(sc.Text, cal)
 		if era == "" {
 			return
 		}

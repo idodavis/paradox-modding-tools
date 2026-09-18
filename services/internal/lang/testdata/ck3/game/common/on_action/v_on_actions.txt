@@ -1,0 +1,14 @@
+on_birth = {
+	effect = {
+		add_gold = 1
+		every_vassal = { add_gold = 1 }
+		capital_county = { add_title_law = x }
+	}
+	weight_multiplier = {
+		base = 1
+		is_adult = yes
+		modifier = { add = 5 is_adult = yes }
+	}
+	events = { v.1 }
+	random_events = { 100 = v.2 }
+}

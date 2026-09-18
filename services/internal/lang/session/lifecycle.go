@@ -18,7 +18,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"golang.org/x/sync/singleflight"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 )
 
 // Builder constructs a Session for a workspace id (reads mods, loads the cache).
@@ -178,7 +178,7 @@ func (w *Watcher) Close() error {
 // addTree adds root and all its subdirectories to the watch set (fsnotify is not
 // recursive on its own).
 func (w *Watcher) addTree(root string) {
-	derived.WalkTree(root, func(p string, isDir bool) {
+	index.WalkTree(root, func(p string, isDir bool) {
 		if isDir {
 			w.fail(w.fsw.Add(p))
 		}

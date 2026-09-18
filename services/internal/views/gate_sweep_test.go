@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/lsp"
 	"paradox-modding-tools/services/internal/lang/session"
@@ -246,9 +246,9 @@ func sweepGame(t *testing.T, game, appID, installEnv string, base baselineFile) 
 		t.Skipf("no workshop content (%v)", err)
 	}
 	id := "sweep-" + game
-	t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
+	t.Cleanup(func() { _ = index.DropVanillaFiles(id) })
 	scanStart := time.Now()
-	cache, _, err := derived.Scan(context.Background(), derived.ScanRequest{
+	cache, _, err := index.Scan(context.Background(), index.ScanRequest{
 		InstallID: id, GameID: game, InstallPath: install,
 		Version: "sweep", LocLang: "english",
 	})
@@ -289,7 +289,7 @@ func sweepGame(t *testing.T, game, appID, installEnv string, base baselineFile) 
 		key := appID + "/" + e.Name()
 		scores[i] = func() modScore {
 			s := session.New("sweep", game, "english", cache,
-				[]derived.ModInput{{
+				[]index.ModInput{{
 					Origin: "mod",
 					Root:   filepath.Join(workshopRoot, appID, e.Name()),
 					Name:   e.Name(),
@@ -667,10 +667,10 @@ func TestHealthIsDeterministic(t *testing.T) {
 			}
 		}
 	}
-	scan := func(id string) *derived.Index {
+	scan := func(id string) *index.Index {
 		t.Helper()
-		t.Cleanup(func() { _ = derived.DropVanillaFiles(id) })
-		c, _, err := derived.Scan(context.Background(), derived.ScanRequest{
+		t.Cleanup(func() { _ = index.DropVanillaFiles(id) })
+		c, _, err := index.Scan(context.Background(), index.ScanRequest{
 			InstallID: id, GameID: game, InstallPath: install,
 			Version: "det", LocLang: "english",
 		})
@@ -679,9 +679,9 @@ func TestHealthIsDeterministic(t *testing.T) {
 		}
 		return c
 	}
-	report := func(c *derived.Index, mod string) HealthReport {
+	report := func(c *index.Index, mod string) HealthReport {
 		s := session.New("det", game, "english", c,
-			[]derived.ModInput{{
+			[]index.ModInput{{
 				Origin: "mod", Root: filepath.Join(workshopRoot, appID, mod), Name: "m",
 			}})
 		defer s.Close()

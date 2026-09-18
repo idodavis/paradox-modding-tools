@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -34,22 +34,21 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 	// copies of the whole loc corpus, which on a total conversion is most of the
 	// memory this function uses.
 	byLang := map[string]map[string]locSite{}
-	s.EachLoc(func(lang, k string, v derived.LocEntry) {
-		entries := byLang[lang]
-		if entries == nil {
-			entries = map[string]locSite{}
-			byLang[lang] = entries
+	for lang, byKey := range s.Work.Loc {
+		entries := map[string]locSite{}
+		for k, v := range byKey {
+			entries[k] = locSite{key: k, value: v.Value, file: s.Work.PathOf(v.PathID), line: v.Line}
 		}
-		entries[k] = locSite{key: k, value: v.Value, file: v.Path, line: v.Line}
-	})
+		byLang[lang] = entries
+	}
 	if len(byLang) == 0 {
 		return nil, nil
 	}
 
 	referenced := map[string][]locSite{}
 	used := usedByOrigin(s)
-	prefixes := s.Work.Schema.LocKeyPrefixes
-	for _, r := range s.LocRefs() {
+	prefixes := s.Install.Tree.LocKeyPrefixes
+	for _, r := range s.WorkRefs() {
 		if r.Kind != "loc" {
 			continue
 		}
@@ -247,15 +246,15 @@ func usedByOrigin(s *session.Session) map[string]map[string]bool {
 		set[key] = true
 	}
 	// Citations from script AND from loc values: a `$key$` inside the mod's own string is a loc ref.
-	for _, r := range s.LocRefs() {
+	for _, r := range s.WorkRefs() {
 		if r.Kind != "loc" && r.Kind != "loc-broad" {
 			continue
 		}
 		origin, _, _ := s.Locate(r.Path)
 		mark(originID(origin), r.Key)
 	}
-	s.EachDef(false, func(d derived.Def) bool {
-		for _, key := range loc.Expand(d.Key, s.LocConventionsOf(d.Kind)) {
+	s.Work.EachDef(func(d index.Def) bool {
+		for _, key := range loc.Expand(d.Key, s.LocConventions(d.Kind)) {
 			mark(originID(d.Origin), key)
 		}
 		return true

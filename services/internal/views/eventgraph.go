@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -25,7 +25,7 @@ const (
 
 // Graph returns the event graph for the live session. Layout is not computed.
 func Graph(s *session.Session, params EventGraphParams) EventGraph {
-	kinds, macroKeys := s.GraphCatalog()
+	kinds, macroKeys := graphCatalog(s)
 	if params.Root == "" {
 		return EventGraph{EmptyReason: "Pick a root event."}
 	}
@@ -44,7 +44,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 	outEdges := make([]EventGraphEdge, 0)
 	seen := map[string]bool{}
 	for _, id := range slices.Sorted(maps.Keys(selected)) {
-		for _, e := range s.EdgesFrom(id) {
+		for _, e := range s.Edges(id, true) {
 			if !selected[e.To] || !keepEdge(e, macroKeys) {
 				continue
 			}
@@ -126,10 +126,37 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 	return EventGraph{Nodes: nodes, Edges: outEdges, Truncated: truncated}
 }
 
+// graphCatalog is the kind of every fire-edge endpoint and the macro keys.
+func graphCatalog(s *session.Session) (kinds map[string]string, macros map[string]bool) {
+	kinds, macros = map[string]string{}, map[string]bool{}
+	for k := range s.Work.Tree.Macros {
+		macros[k] = true
+	}
+	for _, x := range []*index.Index{s.Work, s.Install} {
+		for _, e := range x.Edges {
+			if e.PathID < 0 || e.Kind == index.EdgeKindCall {
+				continue
+			}
+			for _, key := range []string{e.From, e.To} {
+				if key == "" || kinds[key] != "" {
+					continue
+				}
+				for _, y := range []*index.Index{s.Work, s.Install} {
+					if list := y.DefsByKey[key]; len(list) > 0 {
+						kinds[key] = jomini.CanonicalKind(y.Defs[list[0]].Kind)
+						break
+					}
+				}
+			}
+		}
+	}
+	return kinds, macros
+}
+
 // keepEdge drops call edges and a macro's own fires: a macro is a hop, not a node.
-func keepEdge(e derived.Edge, macroKeys map[string]bool) bool {
-	return e.Kind != derived.EdgeKindCall &&
-		(e.Kind == derived.EdgeKindVia || !macroKeys[e.From])
+func keepEdge(e index.Edge, macroKeys map[string]bool) bool {
+	return e.Kind != index.EdgeKindCall &&
+		(e.Kind == index.EdgeKindVia || !macroKeys[e.From])
 }
 
 // collect gathers root's outgoing neighbourhood to outDepth, then what fires it.
@@ -144,7 +171,7 @@ func collect(
 	seen := map[string]bool{root: true}
 	for q := []item{{root, 0}}; len(q) > 0; q = q[1:] {
 		cur := q[0]
-		for _, e := range s.EdgesFrom(cur.id) {
+		for _, e := range s.Edges(cur.id, true) {
 			if !keepEdge(e, macroKeys) {
 				continue
 			}
@@ -157,7 +184,7 @@ func collect(
 			q = append(q, item{e.To, cur.depth + 1})
 		}
 	}
-	for _, e := range s.EdgesTo(root) {
+	for _, e := range s.Edges(root, false) {
 		if keepEdge(e, macroKeys) {
 			out = append(out, labeledEdge(s, e))
 		}

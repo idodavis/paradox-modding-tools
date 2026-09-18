@@ -139,9 +139,9 @@ stated threshold, and the doc comment must name which — not "votes".
 
 | Concept | Canonical | Kill |
 |---|---|---|
-| Install-derived facts | `catalog/derive.go`, `Derived`, `derivedFromCache` | `votes.go`, `Votes`, "vote maps" |
-| Fire-key derivation | `deriveFireKeys`, `resolveFireKinds`, `fireTargets` | `VoteFireKeys`, `finishFireVotes`, `voteFireTargets` |
-| Other derivations | `deriveNestedShapes`, `deriveWrappers`, `deriveLocAffixes`, `deriveLocFields`, `deriveFieldValueKinds`, `deriveFieldEnums` | any `Vote*` name |
+| Install-learned facts | `index.Tree`, one `Node` per position; `KeyClass`, `classes` | `votes.go`, `Votes`, "vote maps", `Derived`, `deriveX` |
+| Fire sites | `Node.Fire`, `File.resolve`, `fireSite` | `VoteFireKeys`, `deriveFireKeys`, `FireKeys` |
+| The join and the rows | `Tree.join`, `Node.Rows`/`Def`, `Tree.Shapes`, wrappers in `learn` | any `Vote*` or `derive*` name |
 | Prefix → kind origin | "bound by `bindKinds`" | "voted" |
 
 Only the derivations above exist, because only they are unstated by every dump:
@@ -166,10 +166,10 @@ one is and why it is that number is measured in
 | `GameInfo`, `UserDataDir`, `MatchExtract`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
 | `CanonicalKind`, `ScriptSlot`, `ParseTyped`, `ScriptName`, `IsEphemeral` | `parser/jomini` — shared Jomini grammar, no game id |
 | `WriteNewMod`, `ReadListingFields`, `DescriptorModKeys` | `services/internal/modfile` |
-| `VanillaCache`, `Scan`, `BuildIndex`, `ClassifyRel` | `services/internal/catalog` |
-| `ReadSchema`, `bindKinds`, dump archive | `catalog/schema.go`, `schemaarchive.go` |
-| The four `Derive*` passes | `catalog/derive.go` |
-| `FieldDoc` and every other lookup | `derived.Model`, embedded in `session.Session`; `session.go` adds only buffers and the writers |
+| `Index`, `Scan`, `BuildWorkspace`, `IndexFile`, `ClassifyRel` | `services/internal/lang/index` |
+| `ReadSchema` (declared), `bind` (prefix ↔ database) | `lang/declared/schema.go`, `index/schema.go` |
+| The three passes | `index/passes.go` (`defs`, `fold`, `resolve`) |
+| Two-halves lookups (Resolve, Edges, LocSite, Node…) | `session.Session`; prose lookups in `lsp/docs.go` |
 | LSP tests | beside the request: `inspect_test.go`, `definition_test.go`, `complete_test.go`, `diagnostics_test.go`, `cursor_test.go`; `lsp_test.go` is fixtures only |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
 | Health `scriptDocsEffects` | `SessionService.GetLanguageHealth` |

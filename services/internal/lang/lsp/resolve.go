@@ -2,7 +2,7 @@ package lsp
 
 import (
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
@@ -67,7 +67,7 @@ func resolveLocFile(s *session.Session, path string, at probe) (identity, bool) 
 		spanStart: hit.start, spanEnd: hit.end,
 	}
 	if file, ln, _, origin, ok := s.LocSite(hit.key); ok {
-		id.def = &derived.Def{
+		id.def = &index.Def{
 			Kind: "loc_key", Key: hit.key, Path: file, Line: ln, Origin: origin,
 		}
 	}
@@ -97,10 +97,10 @@ func resolveParamSpan(s *session.Session, path string, at probe) (identity, bool
 	if !at.param {
 		return identity{}, false
 	}
-	d := s.ResolveOfKindOwner(at.word, "script_param", at.paramOwner)
+	d := s.ResolveOfKind(at.word, "script_param", at.paramOwner)
 	if d == nil {
 		origin, _, _ := s.Locate(path)
-		d = &derived.Def{
+		d = &index.Def{
 			Kind: "script_param", Key: at.word, Path: path, Origin: origin,
 			Start: at.start, End: at.end, OwnerKey: at.paramOwner,
 			Line: at.res.Lines().PositionAt(at.start).Line,
@@ -117,7 +117,7 @@ func resolveParamOfMacro(s *session.Session, path string, at probe) (identity, b
 	if at.paramOwner == "" {
 		return identity{}, false
 	}
-	d := s.ResolveOfKindOwner(at.word, "script_param", at.paramOwner)
+	d := s.ResolveOfKind(at.word, "script_param", at.paramOwner)
 	if d == nil {
 		return identity{}, false
 	}
@@ -184,7 +184,7 @@ func resolveDeclaredKey(s *session.Session, path string, at probe) (identity, bo
 	if at.assign == nil || !s.Install.Declared.HasName(at.assign.Key.Text) {
 		return identity{}, false
 	}
-	ck := s.VocabRole(at.assign.Key.Text)
+	ck := vocabRole(s, at.assign.Key.Text)
 	if ck == "" {
 		return identity{}, false
 	}
@@ -195,21 +195,21 @@ func resolveDeclaredKey(s *session.Session, path string, at probe) (identity, bo
 // A key naming a scripted macro is an invocation of it, never a field, whatever the cell at that position holds.
 func resolveFieldKey(s *session.Session, path string, at probe) (identity, bool) {
 	a := at.assign
-	if a == nil || s.Work.Schema.MacroDefs[a.Key.Text] != "" {
+	if a == nil || s.Work.Tree.Macros[a.Key.Text] != "" {
 		return identity{}, false
 	}
 	block := nestedBlock(at)
-	docs := s.KindFieldDoc(a.Key.Text, at.kind, blockChain(block))
+	docs := kindFieldDoc(s, a.Key.Text, at.kind, block)
 	// The structure's members, not this one position's: a key the game's own
 	// readme lists for `select_trigger` is a member of it wherever it is
 	// written, whether or not vanilla ever wrote one there.
-	if docs == "" && !s.IsStructureMember(at.fileKind, at.path, a.Key.Text) &&
+	if docs == "" && !isMember(s, at.hang, a.Key.Text) &&
 		loc.Classify(a.Key.Text) == loc.PropNone {
 		return identity{}, false
 	}
 	return identity{
 		path: path, name: a.Key.Text, kind: at.kind, fieldKey: true,
-		extractKind: at.kind, block: block, cell: at.path,
+		extractKind: at.kind, block: block, hang: at.hang,
 	}, true
 }
 
@@ -226,7 +226,7 @@ func resolveLiteral(s *session.Session, path string, at probe) (identity, bool) 
 	if !jomini.IsLiteralValue(at.word) {
 		return identity{}, false
 	}
-	if era := derived.EraDate(at.word, s.CalendarFor(path)); era != "" {
+	if era := index.EraDate(at.word, s.CalendarFor(path)); era != "" {
 		return identity{path: path, name: at.word, kind: "date", docs: era}, true
 	}
 	return identity{path: path}, true
@@ -257,12 +257,12 @@ func resolveTypedCite(s *session.Session, path string, at probe) (identity, bool
 	if !ok {
 		kind, id = sp.Prefix, sp.ID
 	}
-	if pk := s.PrefixKind(sp.Prefix); pk != "" {
+	if pk := s.Install.Tree.PrefixKind(sp.Prefix); pk != "" {
 		kind = pk
 	} else if kind == "" {
 		kind = sp.Prefix
 	}
-	d := s.ResolveOfKind(id, kind)
+	d := s.ResolveOfKind(id, kind, "")
 	if d == nil {
 		d = s.ResolveNonLoc(id)
 	}
@@ -281,7 +281,7 @@ func resolveSlotDeclared(s *session.Session, path string, at probe) (identity, b
 	if jomini.IsEphemeral(r.Kind) {
 		return ephemeralID(s, path, at.word, r.Kind), true
 	}
-	if d := s.ResolveOfKind(at.word, r.Kind); d != nil {
+	if d := s.ResolveOfKind(at.word, r.Kind, ""); d != nil {
 		return identity{path: path, name: at.word, kind: r.Kind, def: d}, true
 	}
 	return identity{}, false
@@ -294,7 +294,7 @@ func resolveSlotDerived(s *session.Session, path string, at probe) (identity, bo
 	if at.slotKey == "" {
 		return identity{}, false
 	}
-	k := s.FieldValueKind(at.fileKind, at.path, at.slotKey)
+	k := childOf(s, at.hang, at.slotKey).Kind()
 	if k == "" {
 		return identity{}, false
 	}
@@ -305,7 +305,7 @@ func resolveSlotDerived(s *session.Session, path string, at probe) (identity, bo
 	if loc.Classify(at.slotKey) != loc.PropNone {
 		return identity{}, false
 	}
-	if d := s.ResolveOfKind(at.word, k); d != nil {
+	if d := s.ResolveOfKind(at.word, k, ""); d != nil {
 		return identity{path: path, name: at.word, kind: k, def: d}, true
 	}
 	return identity{}, false
@@ -330,7 +330,7 @@ func resolveDefinition(s *session.Session, path string, at probe) (identity, boo
 // many ordinary words: with loc first, hovering a declared effect showed the
 // player-facing string in quotes instead of the token's own documentation.
 func resolveVocabulary(s *session.Session, _ string, at probe) (identity, bool) {
-	ck := s.VocabRole(at.word)
+	ck := vocabRole(s, at.word)
 	if ck == "" {
 		return identity{}, false
 	}
@@ -352,14 +352,14 @@ func resolveLocalization(s *session.Session, path string, at probe) (identity, b
 	if !ok {
 		return identity{}, false
 	}
-	d := &derived.Def{
+	d := &index.Def{
 		Kind: "loc_key", Key: at.word, Path: file, Line: ln, Origin: origin,
 	}
 	return identity{path: path, name: at.word, kind: "loc_key", def: d}, true
 }
 
 func resolveDataFunction(s *session.Session, path string, at probe) (identity, bool) {
-	if slices.Contains(s.Vocab("datafunction"), at.word) {
+	if slices.Contains(s.Install.Tree.DataFunctions, at.word) {
 		return identity{path: path, name: at.word, kind: "data_function"}, true
 	}
 	return identity{}, false
@@ -377,7 +377,7 @@ func resolveMacroKind(s *session.Session, path string, at probe) (identity, bool
 // somewhere, which is enough to say "field" and show the documentation, but not
 // enough to say what it points at.
 func resolveFieldDoc(s *session.Session, path string, at probe) (identity, bool) {
-	if s.FieldDoc(at.word, "", nil) == "" {
+	if fieldDoc(s, at.word, "", "") == "" {
 		return identity{}, false
 	}
 	return identity{path: path, name: at.word, kind: "field"}, true
@@ -393,7 +393,7 @@ func resolveUnresolved(_ *session.Session, path string, at probe) (identity, boo
 	}
 	id := identity{path: path, name: at.word}
 	if !at.inKey && at.slotKey != "" {
-		id.slot, id.extractKind, id.cell, id.block = at.slotKey, at.kind, at.path, nestedBlock(at)
+		id.slot, id.extractKind, id.hang, id.block = at.slotKey, at.kind, at.hang, nestedBlock(at)
 	}
 	return id, true
 }

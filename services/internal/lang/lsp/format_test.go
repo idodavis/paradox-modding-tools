@@ -8,7 +8,7 @@ import (
 
 func TestFormat(t *testing.T) {
 	body := "a = {\n b = 1\n\t\tc = {\n\td = 1\n\t}\n}\n"
-	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, nil, nil)
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body})
 	f := filepath.Join(root, "events", "x.txt")
 	edits := FormatDocument(s, f)
 	if len(edits) == 0 {
@@ -21,7 +21,7 @@ func TestFormat(t *testing.T) {
 	}
 
 	// An empty file and a metadata file format to nothing.
-	s2, root2 := buildSession(t, "vic3", map[string]string{".metadata/metadata.json": "{}"}, nil, nil)
+	s2, root2 := buildSession(t, "vic3", map[string]string{".metadata/metadata.json": "{}"})
 	if edits := FormatDocument(s2, filepath.Join(root2, ".metadata", "metadata.json")); edits != nil {
 		t.Errorf("metadata file must not be formatted: %v", edits)
 	}
@@ -30,7 +30,7 @@ func TestFormat(t *testing.T) {
 	locBody := "l_english:\n\tk:0 \"v\"\n"
 	s3, root3 := buildSession(t, "ck3", map[string]string{
 		"localization/english/a_l_english.yml": locBody,
-	}, nil, nil)
+	})
 	lf := filepath.Join(root3, "localization", "english", "a_l_english.yml")
 	if edits := FormatDocument(s3, lf); len(edits) != 1 || edits[0].NewText != " " {
 		t.Fatalf("loc format = %+v, want one edit to a single space", edits)
@@ -39,7 +39,7 @@ func TestFormat(t *testing.T) {
 
 func TestFolding(t *testing.T) {
 	body := "a = {\n\tb = {\n\t\tc = 1\n\t}\n}\nd = 1\n"
-	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, nil, nil)
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body})
 	f := filepath.Join(root, "events", "x.txt")
 	got := FoldingRanges(s, f)
 	if len(got) != 2 {

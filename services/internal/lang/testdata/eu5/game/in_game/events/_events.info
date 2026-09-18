@@ -1,0 +1,3 @@
+select_trigger = {
+	show_if = <trigger> # trigger to see if this stage is needed
+}

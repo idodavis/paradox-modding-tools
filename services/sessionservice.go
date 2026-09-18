@@ -1,5 +1,5 @@
 // sessionservice.go is the Wails RPC shell for the session pool, install scan,
-// and language health. Feature logic stays in session / derived.
+// and language health. Feature logic stays in session / index.
 
 package services
 
@@ -16,7 +16,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/session"
 	"paradox-modding-tools/services/internal/wiki"
 )
@@ -157,23 +157,23 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 	if lang == "" {
 		lang = "english"
 	}
-	var cache *derived.Index
+	var cache *index.Index
 	if inst != nil {
 		// Stale formatVersion discards the file (no migration). Do not fail
 		// the session — that leaves the IDE unmounted until a UI reload.
-		cache, _ = derived.LoadCache(inst.ID, derived.CacheVersion(inst.Version))
+		cache, _ = index.LoadCache(inst.ID, index.CacheVersion(inst.Version))
 		mergeInstallLoc(context.Background(), cache, inst, lang)
 	}
-	inputs := make([]derived.ModInput, 0, len(ws.Mods))
+	inputs := make([]index.ModInput, 0, len(ws.Mods))
 	mods := append([]WorkspaceMod(nil), ws.Mods...)
 	sortWorkspaceMods(mods)
 	for i, m := range mods {
 		if m.IsBroken {
 			continue
 		}
-		inputs = append(inputs, derived.ModInput{
+		inputs = append(inputs, index.ModInput{
 			Origin: m.ID, Root: m.Path, Order: i, Name: m.Name,
-			Calendar: derived.ModCalendar{Era: m.Era, EpochOffset: m.EpochOffset},
+			Calendar: index.ModCalendar{Era: m.Era, EpochOffset: m.EpochOffset},
 		})
 	}
 	sess := session.New(id, ws.GameID, lang, cache, inputs)
@@ -301,7 +301,7 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (err error) {
 	if !ok {
 		return fmt.Errorf("install not found")
 	}
-	ver := derived.CacheVersion(inst.Version)
+	ver := index.CacheVersion(inst.Version)
 	s.cancel()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
@@ -309,7 +309,7 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (err error) {
 	s.mu.Unlock()
 	defer cancel()
 
-	c, data, err := derived.Scan(ctx, derived.ScanRequest{
+	c, data, err := index.Scan(ctx, index.ScanRequest{
 		InstallID: inst.ID, GameID: inst.GameID, InstallPath: inst.Path,
 		Version: ver, LocLang: "english",
 		OnProgress: func(pct int, msg string) {
@@ -326,7 +326,7 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := derived.SaveCache(c, data); err != nil {
+	if err := index.SaveCache(c, data); err != nil {
 		return err
 	}
 	detected := game.ReadGameVersion(inst.Path)
@@ -433,7 +433,7 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 	if live != nil {
 		h.IndexReady = true
 		live.RLock()
-		h.DefCount = live.DefCount()
+		h.DefCount = live.Work.Live()
 		scanned, ver := live.Install.ScannedAt, live.Install.GameVersion
 		h.WatchError = live.WatchError()
 		h.DataError = live.Install.DataError()
@@ -448,10 +448,10 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 	if inst == nil {
 		return h, nil
 	}
-	ver := derived.CacheVersion(h.GameVersion)
+	ver := index.CacheVersion(h.GameVersion)
 	// The type system is read straight from script_docs rather than out of the
 	// model: a couple of megabytes instead of ninety, and health is polled.
-	st := derived.ReadSchemaStatus(inst.GameID, inst.Path)
+	st := index.ReadSchemaStatus(inst.GameID, inst.Path)
 	h.Schema = ScriptDocsHealth{
 		Source: string(st.Source), Effects: st.Effects, Triggers: st.Triggers,
 		ScopeTypes: st.ScopeTypes, Prefixes: st.Prefixes, OnActions: st.OnActions,
@@ -463,7 +463,7 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 	h.ScriptDocsEffects = st.Effects
 
 	if live == nil || h.ScannedAt == "" {
-		if c, e := derived.LoadCache(inst.ID, ver); e == nil && c != nil {
+		if c, e := index.LoadCache(inst.ID, ver); e == nil && c != nil {
 			if h.ScannedAt == "" {
 				h.ScannedAt = c.ScannedAt
 			}
@@ -513,11 +513,11 @@ func predatesInstall(stamp, installPath string) bool {
 }
 
 // mergeInstallLoc folds a language the scan did not read into the install index. A scan harvests english and the language it was told, so a workspace that later picks a third one would otherwise have no vanilla loc in hover or completion, and Workspace Health would report every vanilla key the mod cites as missing.
-func mergeInstallLoc(ctx context.Context, cache *derived.Index, inst *GameInstall, lang string) {
+func mergeInstallLoc(ctx context.Context, cache *index.Index, inst *GameInstall, lang string) {
 	if cache == nil || lang == "" || cache.HasLoc(lang) {
 		return
 	}
-	if v, err := derived.HarvestLoc(ctx, inst.GameID, inst.Path, lang); err == nil {
+	if v, err := index.HarvestLoc(ctx, inst.GameID, inst.Path, lang); err == nil {
 		cache.MergeLoc(v)
 	}
 }

@@ -1,0 +1,7 @@
+christianity_religion = {
+	faiths = {
+		catholic = {
+			icon = catholic
+		}
+	}
+}

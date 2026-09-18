@@ -1,0 +1,24 @@
+v_opinion_1 = {
+	opinion = 1
+}
+v_opinion_2 = {
+	opinion = 2
+}
+v_opinion_3 = {
+	opinion = 3
+}
+v_opinion_4 = {
+	opinion = 4
+}
+v_opinion_5 = {
+	opinion = 5
+}
+v_opinion_6 = {
+	opinion = 6
+}
+v_opinion_7 = {
+	opinion = 7
+}
+v_opinion_8 = {
+	opinion = 8
+}

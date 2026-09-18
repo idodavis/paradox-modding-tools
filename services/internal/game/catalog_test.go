@@ -40,6 +40,11 @@ var docShapeChecks = map[string]docShapeCheck{
 		key:    "build_time", doc: "building time",
 		detect: regexp.MustCompile(`(?m)^\s*#\s*-\s*[A-Za-z_][A-Za-z0-9_]*\s*:`),
 	},
+	"`# key: <type> desc` colon bullet, no dash": {
+		sample: "# custom_description: <string> key to a custom description of the disaster\n",
+		key:    "custom_description", doc: "key to a custom description",
+		detect: regexp.MustCompile(`(?m)^\s*#\s*[a-z_]+:\s+<`),
+	},
 	"`key = <type> desc`, no hash between type and prose": {
 		sample: "#<name> = {\n" +
 			"#\tbreak_on_war = <yes/no> ends the relationship on war\n#}\n",
@@ -182,6 +187,21 @@ func TestParseDocFile(t *testing.T) {
 			src:  "# File header prose about the whole format\n\nsome_key = 1\n",
 			key:  "some_key", want: "",
 		},
+		{
+			name: "a placeholder body is no prose",
+			src:  "#\timmediate = { ... }\n",
+			key:  "immediate", want: "",
+		},
+		{
+			name: "digits alone are no prose",
+			src:  "period = 55 # 55\n",
+			key:  "period", want: "",
+		},
+		{
+			name: "the type before the prose is not the prose",
+			src:  "# - god = <god key> god that this avatar is a manifestation of\n",
+			key:  "god", want: "god that",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -196,7 +216,7 @@ func TestParseDocFile(t *testing.T) {
 				}
 				return
 			}
-			if !strings.Contains(got[tt.key], tt.want) {
+			if !strings.Contains(got[tt.key], tt.want) || strings.HasPrefix(got[tt.key], "<") {
 				t.Fatalf("ParseDocFile()[%q] = %q, want substring %q (all=%v)",
 					tt.key, got[tt.key], tt.want, got)
 			}

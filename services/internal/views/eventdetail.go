@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -69,7 +69,7 @@ func Detail(s *session.Session, id string) *EventDetail {
 		}
 	}
 	block := jomini.BlockOf(stmt.Value)
-	lines, targets, fields := inspectBlock(s, block, lineOf, nil)
+	lines, targets, fields := inspectBlock(s, block, s.Node(kind), lineOf, nil)
 	detail := &EventDetail{
 		ID: id, Kind: kind, Path: d.Path, Rel: s.DisplayRel(d.Path),
 		Origin: originID(d.Origin), OriginName: s.OriginName(originID(d.Origin)),
@@ -142,7 +142,7 @@ func refGroups(s *session.Session, path string) []RefKindGroup {
 }
 
 func incomingEdges(s *session.Session, id string) []EventGraphEdge {
-	edges := s.EdgesTo(id)
+	edges := s.Edges(id, false)
 	if len(edges) == 0 {
 		return nil
 	}
@@ -164,9 +164,9 @@ func viaHopLabel(chain string) string {
 	return "via " + parts[0] + " … " + parts[len(parts)-1]
 }
 
-func labeledEdge(s *session.Session, e derived.Edge) EventGraphEdge {
+func labeledEdge(s *session.Session, e index.Edge) EventGraphEdge {
 	out := EventGraphEdge{From: e.From, To: e.To, Via: e.Via, Kind: e.Kind}
-	if e.Kind == derived.EdgeKindVia {
+	if e.Kind == index.EdgeKindVia {
 		if e.Via != "" {
 			out.Label = viaHopLabel(e.Via)
 		}
@@ -223,18 +223,18 @@ func locField(s *session.Session, a *jomini.Assignment) *EventLocField {
 }
 
 func sectionOf(s *session.Session, name string, block *jomini.Block, lineOf func(int) int) EventSectionInfo {
-	lines, targets, _ := inspectBlock(s, block, lineOf, nil)
+	lines, targets, _ := inspectBlock(s, block, s.Node(jomini.KindEvent, strings.ToLower(name)), lineOf, nil)
 	// A section gates the event when the block the corpus learned there admits conditions and no effects.
 	role := "effect"
-	if b := s.BlockAt(jomini.KindEvent, strings.ToLower(name)); b != nil &&
-		b.Body&derived.BodyEffect == 0 && b.Body&derived.BodyTrigger != 0 {
+	if b := s.Node(jomini.KindEvent, strings.ToLower(name)); b != nil &&
+		b.Body&index.BodyEffect == 0 && b.Body&index.BodyTrigger != 0 {
 		role = "gate"
 	}
 	return EventSectionInfo{Name: name, Role: role, Lines: lines, Targets: targets}
 }
 
 func optionOf(s *session.Session, block *jomini.Block, lineOf func(int) int) EventOptionInfo {
-	lines, targets, fields := inspectBlock(s, block, lineOf, optionNonEffect)
+	lines, targets, fields := inspectBlock(s, block, s.Node(jomini.KindEvent, "option"), lineOf, optionNonEffect)
 	info := EventOptionInfo{Fields: fields, Lines: lines, Targets: targets}
 	for _, st := range block.Statements {
 		a, ok := st.(*jomini.Assignment)
@@ -266,7 +266,7 @@ func sectionPtr(s *session.Session, name string, block *jomini.Block, lineOf fun
 // depth-0 scalar fields. skip keys (option name/trigger/ai) omit line emission
 // but still contribute targets.
 func inspectBlock(
-	s *session.Session, block *jomini.Block, lineOf func(int) int, skip map[string]bool,
+	s *session.Session, block *jomini.Block, at *index.Node, lineOf func(int) int, skip map[string]bool,
 ) (lines []EventScriptLine, targets []EventStepTarget, fields []EventFieldInfo) {
 	if block == nil {
 		return nil, nil, nil
@@ -285,8 +285,8 @@ func inspectBlock(
 			lines = append(lines, EventScriptLine{Depth: depth, Text: text})
 		}
 	}
-	var walk func(b *jomini.Block, depth int, path, inherited string, emit bool)
-	walk = func(b *jomini.Block, depth int, path, inherited string, emit bool) {
+	var walk func(b *jomini.Block, depth int, hang *index.Node, inherited string, emit bool)
+	walk = func(b *jomini.Block, depth int, hang *index.Node, inherited string, emit bool) {
 		for _, st := range b.Statements {
 			if vs, ok := st.(*jomini.ValueStmt); ok {
 				if inherited != "" {
@@ -304,7 +304,7 @@ func inspectBlock(
 					if emit {
 						push(depth, "{")
 					}
-					walk(inner, depth+1, path, "", emit)
+					walk(inner, depth+1, hang, "", emit)
 					if emit {
 						push(depth, "}")
 					}
@@ -329,7 +329,7 @@ func inspectBlock(
 					}
 				}
 			}
-			own := s.FireKind(jomini.KindEvent, path, a.Key.Text)
+			own := s.Install.Tree.Child(hang, a.Key.Text, a.Key.Quoted, false, false).Fire()
 			if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted {
 				if own != "" {
 					addTarget(sc.Text)
@@ -345,11 +345,11 @@ func inspectBlock(
 			if own != "" {
 				next = key
 			}
-			subPath := s.CellPath(jomini.KindEvent, path, a.Key.Text)
+			_, _, subHang := s.Install.Tree.Step(hang, a.Key.Text, a.Key.Quoted)
 			skipThis := depth == 0 && skip[key]
 			if skipThis || !emit {
 				if sub != nil {
-					walk(sub, depth+1, subPath, next, false)
+					walk(sub, depth+1, subHang, next, false)
 				}
 				continue
 			}
@@ -377,11 +377,11 @@ func inspectBlock(
 				tag = tb.Tag.Text + " "
 			}
 			push(depth, head+" "+tag+"{")
-			walk(sub, depth+1, subPath, next, true)
+			walk(sub, depth+1, subHang, next, true)
 			push(depth, "}")
 		}
 	}
-	walk(block, 0, "", "", true)
+	walk(block, 0, at, "", true)
 	fields = make([]EventFieldInfo, 0, len(byKey))
 	for _, f := range byKey {
 		fields = append(fields, f)

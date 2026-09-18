@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
@@ -21,9 +21,8 @@ const inspectValueCap = 8
 
 type identity struct {
 	path, name, kind, owner, locFilter, extractKind string
-	// cell is the folded block path the cursor sits at, which is what the
-	// learned schema files a key or a value under.
-	cell string
+	// hang is the learned position the cursor sits at, which files a key or a value under it.
+	hang *index.Node
 	// block is the key of the enclosing block, when the cursor sits inside one.
 	// What lets a card tell `trigger` in a triggered_desc from `trigger` in a
 	// portrait, which the install documents once, by name, for both.
@@ -33,7 +32,7 @@ type identity struct {
 	// docs is prose the identify step worked out itself, for the cards whose
 	// content is computed from the cursor's surroundings rather than looked up.
 	docs                               string
-	def                                *derived.Def
+	def                                *index.Def
 	fieldKey, local                    bool
 	spanStart, spanEnd                 int
 	assignStart, assignEnd, assignLine int
@@ -57,14 +56,6 @@ func nestedBlock(at probe) string {
 		}
 	}
 	return ""
-}
-
-// blockChain wraps a single enclosing block name as the chain FieldDoc wants, or nil outside any block.
-func blockChain(block string) []string {
-	if block == "" {
-		return nil
-	}
-	return []string{block}
 }
 
 // transparentBlock reports a block that groups or redirects without changing
@@ -152,7 +143,7 @@ var cards = []card{
 func inspectOf(s *session.Session, kind, key, docs string) *Inspect {
 	out := &Inspect{Kind: PrettyKind(kind), Key: key, Docs: docs}
 	if docs == "" {
-		_, _, out.Hint = declaredLines(s, kind, "", "")
+		_, _, out.Hint = declaredLines(s, kind, nil, "")
 	}
 	return out
 }
@@ -177,7 +168,7 @@ func ephemeralID(s *session.Session, path, name, kind string) identity {
 	}
 	return identity{
 		path: path, name: name, kind: kind,
-		def: s.ResolveOfKind(name, kind),
+		def: s.ResolveOfKind(name, kind, ""),
 	}
 }
 
@@ -186,11 +177,11 @@ func macroCallIdentity(s *session.Session, path string, at probe) (identity, boo
 	if !ok || name == "" {
 		return identity{}, false
 	}
-	d := s.ResolveOfKind(name, kind)
+	d := s.ResolveOfKind(name, kind, "")
 	if d != nil {
 		ck := jomini.CanonicalKind(kind)
-		for _, cand := range s.ModDefsOf(name) {
-			if jomini.CanonicalKind(cand.Kind) == ck && derived.SamePath(cand.Path, path) {
+		for _, cand := range s.ModDefs(name) {
+			if jomini.CanonicalKind(cand.Kind) == ck && index.SamePath(cand.Path, path) {
 				c := cand
 				d = &c
 				break
@@ -199,7 +190,7 @@ func macroCallIdentity(s *session.Session, path string, at probe) (identity, boo
 	}
 	if d == nil && a != nil {
 		origin, _, _ := s.Locate(path)
-		d = &derived.Def{
+		d = &index.Def{
 			Kind: kind, Key: name, Path: path, Origin: origin,
 			Start: a.Key.Range.Start, End: a.Key.Range.End,
 			Line: at.res.Lines().PositionAt(a.Key.Range.Start).Line,
@@ -250,8 +241,8 @@ func ephemeralCard(s *session.Session, id identity) *Inspect {
 }
 
 func localAssignCard(s *session.Session, id identity) *Inspect {
-	docs := s.FieldDoc(id.name, id.extractKind, blockChain(id.block))
-	if docs == "" && !s.IsStructureMember(id.extractKind, id.cell, id.name) {
+	docs := fieldDoc(s, id.name, id.extractKind, id.block)
+	if docs == "" && !isMember(s, id.hang, id.name) {
 		return nil
 	}
 	ins := inspectOf(s, id.extractKind, id.name, docs)
@@ -273,8 +264,8 @@ func blockKeyCard(s *session.Session, id identity) *Inspect {
 	structure := id.block
 	// A folded segment names a position rather than a structure a reader could
 	// type, so the written container stands in for it.
-	if b := s.BlockAt(id.extractKind, id.cell); b != nil && !strings.ContainsAny(b.Key, "<.") {
-		structure = b.Key
+	if id.hang != nil && !strings.ContainsAny(id.hang.Struct, "<.") {
+		structure = id.hang.Struct
 	}
 	label, suffix := structure, " key"
 	if label == "" {
@@ -285,7 +276,7 @@ func blockKeyCard(s *session.Session, id identity) *Inspect {
 	if s.Install.Declared.HasName(structure) {
 		suffix = " argument"
 	}
-	ins := inspectOf(s, label, id.name, s.FieldDoc(id.name, id.extractKind, blockChain(structure)))
+	ins := inspectOf(s, label, id.name, fieldDoc(s, id.name, id.extractKind, structure))
 	ins.Kind += suffix
 	// composeHint describes the KIND — its scope type, how it is cited, how its
 	// localization keys are named. None of that is about the field under the
@@ -295,8 +286,8 @@ func blockKeyCard(s *session.Session, id identity) *Inspect {
 	// A key can be a declared token as well: `add_to_list` reaches this row
 	// because it is also a structure key of the kind being edited, and the
 	// signature the game states for it was being dropped on the floor.
-	ins.Usage = s.TokenUsage(id.name)
-	_, ins.Accepts, _ = declaredLines(s, id.extractKind, id.cell, id.name)
+	ins.Usage = clipUsage(tokenUsage(s, id.name))
+	_, ins.Accepts, _ = declaredLines(s, id.extractKind, id.hang, id.name)
 	return vanillaSite(s, ins)
 }
 
@@ -314,7 +305,7 @@ func locCard(s *session.Session, id identity) *Inspect {
 		// shipped the right Line and then dropped it, opening every
 		// localization hover at line 1.
 		attachSite(s, ins, file, line, origin, start)
-		attachOverlay(s, ins, &derived.Def{
+		attachOverlay(s, ins, &index.Def{
 			Kind: "loc_key", Key: id.name, Path: file, Line: line, Origin: origin,
 		})
 	}
@@ -330,12 +321,12 @@ func defCard(s *session.Session, id identity) *Inspect {
 		docs = d.Doc
 	}
 	ins := inspectOf(s, d.Kind, d.Key, docs)
-	ins.Usage = s.TokenUsage(id.name)
+	ins.Usage = clipUsage(tokenUsage(s, id.name))
 	if ins.Usage == "" {
-		ins.Usage = s.MacroUsage(d)
+		ins.Usage = macroUsage(s, d)
 	}
 	// First hit wins: conventions are sorted by coverage, then by the plainest shape.
-	for _, key := range loc.Expand(d.Key, s.LocConventionsOf(d.Kind)) {
+	for _, key := range loc.Expand(d.Key, s.LocConventions(d.Kind)) {
 		if text, ok := s.DefaultLoc(key); ok && text != "" {
 			ins.Body = unescapeLocDisplay(text)
 			break
@@ -349,8 +340,8 @@ func defCard(s *session.Session, id identity) *Inspect {
 // tokenCard is an engine token, link or modifier the game declares.
 func tokenCard(s *session.Session, id identity) *Inspect {
 	ins := inspectOf(s, id.kind, id.name, docsOnly(s, id.name, id.kind))
-	ins.Usage = s.TokenUsage(id.name)
-	_, ins.Accepts, _ = declaredLines(s, id.kind, id.cell, id.name)
+	ins.Usage = clipUsage(tokenUsage(s, id.name))
+	_, ins.Accepts, _ = declaredLines(s, id.kind, id.hang, id.name)
 	return vanillaSite(s, ins)
 }
 
@@ -359,10 +350,10 @@ func tokenCard(s *session.Session, id identity) *Inspect {
 // born_as_taltos is even though no database defines it, and returning nothing
 // there was the commonest empty hover in the 2026-09-17 sample.
 func slotValueCard(s *session.Session, id identity) *Inspect {
-	ins := inspectOf(s, id.slot, id.name, s.FieldDoc(id.slot, id.extractKind, blockChain(id.block)))
+	ins := inspectOf(s, id.slot, id.name, fieldDoc(s, id.slot, id.extractKind, id.block))
 	ins.Kind += " value"
 	ins.Hint = ""
-	_, ins.Accepts, _ = declaredLines(s, id.extractKind, id.cell, id.slot)
+	_, ins.Accepts, _ = declaredLines(s, id.extractKind, id.hang, id.slot)
 	return ins
 }
 
@@ -374,7 +365,7 @@ func slotValueCard(s *session.Session, id identity) *Inspect {
 // of the same precedence — declared before derived, specific before general —
 // and three copies is three chances to disagree about which source outranks
 // which. One pass, one order, three lines.
-func declaredLines(s *session.Session, kind, cell, name string) (sig, accepts, hint string) {
+func declaredLines(s *session.Session, kind string, hang *index.Node, name string) (sig, accepts, hint string) {
 	// 1. The declared signature of the name itself: token, then scope link,
 	// then modifier, then the raw scopes text of a game with no type system.
 	if t, role, ok := s.Install.Declared.Token(name); ok {
@@ -414,10 +405,10 @@ func declaredLines(s *session.Session, kind, cell, name string) (sig, accepts, h
 	// documentation, then the learned cell, which is only ever a sample of how
 	// vanilla happens to use the field.
 	r, isSlot := jomini.ScriptName(name)
-	dt := s.DeclaredFieldType(kind, name)
-	cellKind := s.FieldValueKind(kind, cell, name)
-	if target := s.TokenTarget(name); target != "" {
-		cite, k := s.CiteFormOfScope(target)
+	dt := declaredFieldType(s, kind, name)
+	cellKind := childOf(s, hang, name).Kind()
+	if target := tokenTarget(s, name); target != "" {
+		cite, k := s.Install.Tree.CiteForm(target)
 		switch {
 		case k != "" && cite != "":
 			accepts = "accepts a " + PrettyKind(k) + ", cited `" + cite + ":<id>`"
@@ -454,7 +445,7 @@ func declaredLines(s *session.Session, kind, cell, name string) (sig, accepts, h
 		return sig, accepts, ""
 	}
 	var parts []string
-	if scope := s.ScopeOfKind(ck); scope != "" {
+	if scope := s.Install.Tree.ScopeOf(ck); scope != "" {
 		parts = append(parts, PrettyKind(scope)+" scope")
 	}
 	if p := s.Install.Docs.KindInfo[ck]; p != "" {
@@ -462,10 +453,10 @@ func declaredLines(s *session.Session, kind, cell, name string) (sig, accepts, h
 	} else if p := s.Install.Docs.KindInfo[kind]; p != "" {
 		parts = append(parts, firstProse(p))
 	}
-	if prefix := s.Work.Schema.KindPrefix[ck]; prefix != "" {
+	if prefix := s.Install.Tree.Prefix(ck); prefix != "" {
 		parts = append(parts, "cite `"+prefix+":id`")
 	}
-	for _, sh := range s.Work.Schema.Nested {
+	for _, sh := range s.Install.Tree.Nested {
 		if jomini.CanonicalKind(sh.ChildKind) == ck {
 			msg := "nested in " + PrettyKind(sh.ParentKind)
 			if sh.GroupKey != "" {
@@ -491,14 +482,14 @@ func declaredLines(s *session.Session, kind, cell, name string) (sig, accepts, h
 
 // docsOnly is the prose a name carries plus the signature the game declares for it.
 func docsOnly(s *session.Session, word, kind string) string {
-	doc := s.FieldDoc(word, kind, nil)
+	doc := fieldDoc(s, word, kind, "")
 	if doc == "" {
 		// Install prose and dump prose both land in TokenDoc during a scan, but
 		// the Schema carries its own description; use it rather than relying on
 		// that map having been filled.
-		doc = s.SchemaDoc(word)
+		doc = schemaDoc(s, word)
 	}
-	line, _, _ := declaredLines(s, kind, "", word)
+	line, _, _ := declaredLines(s, kind, nil, word)
 	if line == "" {
 		return doc
 	}
@@ -551,11 +542,11 @@ func scopeList(in []string) string {
 
 // ---------------------------------------------------------------- the sites
 
-func attachOverlay(s *session.Session, ins *Inspect, d *derived.Def) {
+func attachOverlay(s *session.Session, ins *Inspect, d *index.Def) {
 	if ins == nil || d == nil || isVanillaOrigin(d.Origin) || d.Kind == "mod_descriptor" {
 		return
 	}
-	var v *derived.Def
+	var v *index.Def
 	for _, cand := range s.VanillaDefs(d.Key) {
 		if cand.Kind == d.Kind {
 			c := cand
@@ -563,7 +554,7 @@ func attachOverlay(s *session.Session, ins *Inspect, d *derived.Def) {
 			break
 		}
 	}
-	if v == nil || v.Path == "" || derived.SamePath(v.Path, d.Path) {
+	if v == nil || v.Path == "" || index.SamePath(v.Path, d.Path) {
 		return
 	}
 	ins.VanillaPath = v.Path

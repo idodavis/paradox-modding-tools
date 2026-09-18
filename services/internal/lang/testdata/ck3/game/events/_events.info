@@ -1,0 +1,8 @@
+option = { # One choice offered to the player.
+	name = <loc> # The option's localization key.
+}
+cooldown = { # Time before the event can fire again.
+	days = <int> # In days.
+}
+has_trait = brave # Checks a trait.
+desc = v.1.desc # Dynamic Description syntax.

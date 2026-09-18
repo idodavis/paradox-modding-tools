@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"paradox-modding-tools/services/internal/lang/jomini"
 )
@@ -109,6 +110,20 @@ var DocShapes = []DocShape{
 		},
 	},
 	{
+		Summary: "`# key: <type> desc` colon bullet, no dash",
+		Games:   []string{"eu5"},
+		Where:   "EU5 readme.txt — disasters, diseases, holy_site_types, artist_work",
+		Line: func(body string) (key, doc, typ string, ok bool) {
+			m := colonBulletRe.FindStringSubmatch(body)
+			// Three words or a type, so `scope: character` and `root: Ruler (character)` stay prose.
+			if m == nil || !jomini.IsLowerName(m[1]) || len(strings.Fields(m[2])) < 3 && !strings.HasPrefix(m[2], "<") {
+				return "", "", "", false
+			}
+			typ, _ = splitAngle(m[2])
+			return m[1], attrProse(m[2]), typ, true
+		},
+	},
+	{
 		Summary: "comment TRAILING the key, same line",
 		Games:   []string{"ck3", "vic3", "eu5"},
 		Where:   "every doc file kind — ~61 CK3 files, 30 Vic3, 42 EU5",
@@ -155,8 +170,8 @@ var DocShapes = []DocShape{
 				return "", typ, true
 			}
 			inner = strings.TrimSpace(strings.Trim(inner, "<>"))
-			// An example body is a shape, not prose; only a brace holding one description describes the field.
-			if inner == "" || strings.ContainsAny(inner, "={<") {
+			// An example body is a shape, not prose; only a brace holding one description describes the field, and `{ ... }` holds none.
+			if inner == "" || strings.ContainsAny(inner, "={<") || !hasLetter(inner) {
 				return "", "", false
 			}
 			return inner, "", true
@@ -178,8 +193,9 @@ var DocShapes = []DocShape{
 var (
 	// `key = value`, the spine every shape hangs off.
 	docKeyRe = regexp.MustCompile(`^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$`)
-	// `- key: rest`, the attribute-bullet shape.
-	attrBulletRe = regexp.MustCompile(`^-\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::|=)\s*(.*)$`)
+	// `- key: rest`, the attribute-bullet shape, and `key: rest` without the dash.
+	attrBulletRe  = regexp.MustCompile(`^-\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::|=)\s*(.*)$`)
+	colonBulletRe = regexp.MustCompile(`^([a-z_][a-z0-9_]*):\s+(.+)$`)
 	// `<type> rest`, the angle-bracket shape.
 	angleTypeRe = regexp.MustCompile(`^<([^<>]{1,120})>\s*(.*)$`)
 	// `brief: name ( type )`, after PeelComment has taken the hashes off.
@@ -248,6 +264,13 @@ func ParseDocFile(text string) (docs, types, paths map[string]string) {
 		target := out
 		if nested {
 			target = paths
+		}
+		// A type is not prose and a shape after it is not either, whichever row read the line.
+		if strings.HasPrefix(doc, "<") {
+			doc = attrProse(doc)
+		}
+		if !hasLetter(doc) {
+			doc = ""
 		}
 		if _, seen := target[full]; !seen || (target[full] == "" && doc != "") {
 			target[full] = doc
@@ -319,7 +342,7 @@ func ParseDocFile(text string) (docs, types, paths map[string]string) {
 
 		if hashed {
 			// A heading names the section below it, not the key after it: EU5's `format:` reached looking_for_a as its whole documentation.
-			if !docHeading(body) {
+			if !docHeading(body) && !docOpenerRe.MatchString(body) {
 				pending = append(pending, body)
 			}
 			continue
@@ -392,17 +415,18 @@ func splitAngle(rhs string) (typ, rest string) {
 func LeadingKindProse(text string) string {
 	var lines []string
 	for raw := range strings.SplitSeq(text, "\n") {
-		body, hashed := jomini.PeelComment(raw)
+		body, _ := jomini.PeelComment(raw)
+		body = strings.TrimSpace(body)
 		if body == "" {
 			if len(lines) > 0 {
 				break
 			}
 			continue
 		}
-		if !hashed {
-			break
+		if docSectionRe.MatchString(body) {
+			continue
 		}
-		if docKeyRe.MatchString(body) || attrBulletRe.MatchString(body) {
+		if docKeyRe.MatchString(body) || attrBulletRe.MatchString(body) || colonBulletRe.MatchString(body) || docOpenerRe.MatchString(body) || !hasLetter(body) {
 			break
 		}
 		lines = append(lines, body)
@@ -422,11 +446,23 @@ func attrProse(rhs string) string {
 	if h := strings.IndexByte(rhs, '#'); h >= 0 {
 		return strings.TrimSpace(rhs[h+1:])
 	}
-	if strings.HasPrefix(rhs, "{") {
+	// `<god key> god that this avatar is a manifestation of`: the type is not the prose, and a shape after it (`<name> = { … }`) is not either.
+	if strings.HasPrefix(rhs, "<") {
+		_, rhs = splitAngle(rhs)
+	}
+	if strings.HasPrefix(rhs, "{") || strings.HasPrefix(rhs, "=") {
 		return ""
 	}
 	return rhs
 }
+
+func hasLetter(s string) bool { return strings.ContainsFunc(s, unicode.IsLetter) }
+
+// docSectionRe is a section rule such as `=== Notes ===`; it names the prose below it and is not prose itself.
+var docSectionRe = regexp.MustCompile(`^=+[^=]*=+$`)
+
+// docOpenerRe is a shape line, `<name> = {`, `key = {` or a lone `<placeholder>`: neither a key with prose nor prose for a key.
+var docOpenerRe = regexp.MustCompile(`^<[^>]*>\s*(=|#|$)|\{\s*$`)
 
 // appendFieldDoc adds below-the-brace prose to what a field already has.
 func appendFieldDoc(out map[string]string, key, extra string) {

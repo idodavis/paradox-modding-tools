@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 )
@@ -42,7 +42,7 @@ func (f diagFile) defDiags() []Diagnostic {
 		if d.Local {
 			continue
 		}
-		for _, other := range f.s.ModDefsOf(d.Key) {
+		for _, other := range f.s.ModDefs(d.Key) {
 			if other.Origin != origin || other.Kind != d.Kind {
 				continue
 			}
@@ -52,14 +52,14 @@ func (f diagFile) defDiags() []Diagnostic {
 			// the same. The load-order hazard this check exists for is two
 			// FILES in one mod defining the same key. Counting repetition
 			// within a file produced 1,743 findings on 398 vanilla files.
-			if derived.CanonPath(other.Path) == derived.CanonPath(d.Path) {
+			if index.CanonPath(other.Path) == index.CanonPath(d.Path) {
 				continue
 			}
 			// Report once, at the later site, so the first definition is left
 			// clean and the message can point back at it. Ordered by path then
 			// offset: line numbers are per-file, so comparing them across two
 			// files is meaningless and reported both copies.
-			op, dp := derived.CanonPath(other.Path), derived.CanonPath(d.Path)
+			op, dp := index.CanonPath(other.Path), index.CanonPath(d.Path)
 			if op > dp || (op == dp && other.Start > d.Start) {
 				continue
 			}
@@ -75,9 +75,9 @@ func (f diagFile) defDiags() []Diagnostic {
 }
 
 // requiredLoc demands the keys a kind's universal conventions name; a coverage short of 1 is a habit.
-func (f diagFile) requiredLoc(d derived.Def) []Diagnostic {
+func (f diagFile) requiredLoc(d index.Def) []Diagnostic {
 	var required []loc.Convention
-	for _, c := range f.s.LocConventionsOf(d.Kind) {
+	for _, c := range f.s.LocConventions(d.Kind) {
 		if c.Coverage >= 1 {
 			required = append(required, c)
 		}
@@ -97,7 +97,7 @@ func (f diagFile) requiredLoc(d derived.Def) []Diagnostic {
 // with the cell position it sits at and returns the span and message it reports.
 type rule struct {
 	code  string
-	judge func(f diagFile, a *jomini.Assignment, path, block string, top bool) (jomini.Range, string, bool)
+	judge func(f diagFile, a *jomini.Assignment, hang *index.Node, block string, top bool) (jomini.Range, string, bool)
 }
 
 // fileRules is every kept code that reads the tree, in one table; fileChecks is the single walk that feeds them.
@@ -112,9 +112,9 @@ func (f diagFile) fileChecks() []Diagnostic {
 		return nil
 	}
 	var out []Diagnostic
-	f.eachCell(func(a *jomini.Assignment, path, block string, top bool) {
+	f.eachCell(func(a *jomini.Assignment, hang *index.Node, block string, top bool) {
 		for _, r := range fileRules {
-			if rng, msg, ok := r.judge(f, a, path, block, top); ok {
+			if rng, msg, ok := r.judge(f, a, hang, block, top); ok {
 				out = append(out, diag(byteRange(f.li, rng.Start, rng.End),
 					sevWarning, msg, r.code))
 			}
@@ -127,21 +127,21 @@ func (f diagFile) fileChecks() []Diagnostic {
 // game names in the text and whose key nothing defines.
 //
 // Deliberately narrower than Workspace Health's dangling check: a citation states its own database, and a bare name is judged only where the install's cell names one.
-func unresolvedRefAt(f diagFile, a *jomini.Assignment, path, _ string, _ bool) (jomini.Range, string, bool) {
+func unresolvedRefAt(f diagFile, a *jomini.Assignment, hang *index.Node, _ string, _ bool) (jomini.Range, string, bool) {
 	none := jomini.Range{}
 	text, rng, ok := scalarValue(a)
 	if !ok {
 		return none, "", false
 	}
-	// A dotted value is a scope chain, not a name: `p:xB0D0E0.state.owner` cites a province and then walks two links off it.
-	if strings.ContainsRune(text, '.') {
+	// A dotted value is a scope chain, not a name: `p:xB0D0E0.state.owner` cites a province and then walks two links off it. A value at a script-name key (`save_scope_as = x`) is a name the script invents, never a reference to judge.
+	if _, named := jomini.ScriptName(a.Key.Text); named || strings.ContainsRune(text, '.') {
 		return none, "", false
 	}
 	id, kind := text, ""
 	if k, rest, typed := game.ParseTyped(f.s.GameID, text); typed {
 		// A citation needs no cell: it is the one reference form where the game itself states both the database and the key.
 		id, kind = rest, k
-		if pk := f.s.PrefixKind(strings.SplitN(text, ":", 2)[0]); pk != "" {
+		if pk := f.s.Install.Tree.PrefixKind(strings.SplitN(text, ":", 2)[0]); pk != "" {
 			kind = pk
 		}
 		// Only a prefix bound to a database PMT holds, and never an ephemeral kind: `flag:private_chamber` names a value the script invents as it runs.
@@ -150,9 +150,9 @@ func unresolvedRefAt(f diagFile, a *jomini.Assignment, path, _ string, _ bool) (
 		}
 	} else {
 		// The reporting policy, at the one value it is about: a bare name is judged only where the install's cell names a database for it and never wrote a literal or an unresolved name there itself.
-		cell := f.s.InstallTypeOf(f.fileKind, path, a.Key.Text)
+		cell := f.s.Install.Tree.Child(hang, a.Key.Text, a.Key.Quoted, false, false)
 		if cell == nil || len(cell.Kinds) == 0 ||
-			cell.Has(derived.LabelUnresolved) || cell.Has(derived.LabelLiteral) ||
+			cell.Has(index.LabelUnresolved) || cell.Has(index.LabelLiteral) ||
 			jomini.SkipObjectRHS(text) || isScopeWord(text) {
 			return none, "", false
 		}
@@ -183,7 +183,7 @@ func unresolvedRefAt(f diagFile, a *jomini.Assignment, path, _ string, _ bool) (
 // little else PMT knows. The install-derived field types are not consulted here
 // at all: they exist to offer completions and to name a hover, where being wrong
 // costs a wrong suggestion, not a false accusation.
-func wrongValueTypeAt(f diagFile, a *jomini.Assignment, path, _ string, _ bool) (jomini.Range, string, bool) {
+func wrongValueTypeAt(f diagFile, a *jomini.Assignment, hang *index.Node, _ string, _ bool) (jomini.Range, string, bool) {
 	none := jomini.Range{}
 	if a.Key.Quoted || f.s.Install.Declared.Empty() {
 		return none, "", false
@@ -192,18 +192,18 @@ func wrongValueTypeAt(f diagFile, a *jomini.Assignment, path, _ string, _ bool) 
 	if !ok || jomini.SkipObjectRHS(text) || isScopeWord(text) {
 		return none, "", false
 	}
-	target := f.s.TokenTarget(a.Key.Text)
+	target := tokenTarget(f.s, a.Key.Text)
 	if target == "" {
 		return none, "", false
 	}
 	// The same reporting policy unresolved-ref follows: a cell the install
 	// itself wrote a literal or an unresolved name at accuses nothing.
-	cell := f.s.InstallTypeOf(f.fileKind, path, a.Key.Text)
+	cell := f.s.Install.Tree.Child(hang, a.Key.Text, a.Key.Quoted, false, false)
 	if cell != nil &&
-		(cell.Has(derived.LabelUnresolved) || cell.Has(derived.LabelLiteral)) {
+		(cell.Has(index.LabelUnresolved) || cell.Has(index.LabelLiteral)) {
 		return none, "", false
 	}
-	cite, kind := f.s.CiteFormOfScope(target)
+	cite, kind := f.s.Install.Tree.CiteForm(target)
 	if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
 		return none, "", false
 	}
@@ -262,7 +262,7 @@ func isScopeWord(text string) bool {
 // unknownKeyAt flags a key the block it sits in does not hold -- the one check
 // that reports an absence, so it judges only where the schema learned a shape
 // (§9's structure or body) and never a name the game or a macro declares.
-func unknownKeyAt(f diagFile, a *jomini.Assignment, path, block string, top bool) (jomini.Range, string, bool) {
+func unknownKeyAt(f diagFile, a *jomini.Assignment, hang *index.Node, block string, top bool) (jomini.Range, string, bool) {
 	none := jomini.Range{}
 	// The definition's own key sits in no block; its fields are judged one level down, against the kind's own structure.
 	if top || a.Key.Quoted {
@@ -273,8 +273,8 @@ func unknownKeyAt(f diagFile, a *jomini.Assignment, path, block string, top bool
 	// members: a scripted effect reads whatever `$NAME$` its own body spells,
 	// and nothing about the block it is written in says which. A macro whose
 	// parameters PMT did not record answers nothing at all.
-	if block != "" && f.s.Work.Schema.MacroDefs[block] != "" {
-		params := f.s.FindParamsOf(block, maxParams)
+	if block != "" && f.s.Work.Tree.Macros[block] != "" {
+		params := f.s.Params(block)
 		if len(params) == 0 || paramNamed(params, key) {
 			return none, "", false
 		}
@@ -283,8 +283,7 @@ func unknownKeyAt(f diagFile, a *jomini.Assignment, path, block string, top bool
 	if block == "" {
 		block = f.fileKind
 	}
-	b := f.s.BlockAt(f.fileKind, path)
-	if b == nil || (b.Class != derived.BlockStructure && b.Class != derived.BlockBody) {
+	if hang == nil || (hang.Class != index.Structure && hang.Class != index.Body) {
 		return none, "", false
 	}
 	// The one classifier decides what the key IS: only a plain field name is a
@@ -300,24 +299,20 @@ func unknownKeyAt(f diagFile, a *jomini.Assignment, path, block string, top bool
 	// AT ALL: a real key in the wrong block is not this check's business, and
 	// only a name written nowhere is -- CK3's send_interface_toast writes
 	// message_filter_type 667 times, never inside send_interface_message.
-	if !f.s.KeyClass(f.fileKind, path, a.Key.Text, false).Nameable() ||
-		strings.ContainsAny(key, ".:") || isScopeWord(key) ||
-		f.s.InstallTypeOf(f.fileKind, path, a.Key.Text) != nil ||
-		f.s.IsStructureMember(f.fileKind, path, a.Key.Text) ||
-		f.s.Known(key) || jomini.IsMacroKind(key) {
+	cls, _ := f.s.Install.Tree.KeyClass(a.Key.Text, false, hang.Flags&index.Rows != 0)
+	if !cls.Nameable() || strings.ContainsAny(key, ".:") || isScopeWord(key) ||
+		f.s.Install.Tree.Child(hang, a.Key.Text, false, false, false) != nil ||
+		isMember(f.s, hang, a.Key.Text) || f.s.Install.Tree.KnownKey(key) || jomini.IsMacroKind(key) {
 		return none, "", false
 	}
 	// A definition the engine invokes by name is a call wherever it is written: `num_unaligned_vassals > 5` compares a script value the mod wrote, and no block holds it as a field.
-	if d := f.s.ResolveMatching(a.Key.Text, func(d derived.Def) bool {
+	if d := f.s.ResolveMatching(a.Key.Text, func(d index.Def) bool {
 		return jomini.DeclaresNamedBodies(d.Kind)
 	}); d != nil {
 		return none, "", false
 	}
 	return a.Key.Range, key + " is not a key of " + block + ".", true
 }
-
-// maxParams bounds the parameter lookup the way hover's own signature does; a macro with more than this many is not a call PMT can judge.
-const maxParams = 64
 
 func paramNamed(params []string, key string) bool {
 	for _, p := range params {

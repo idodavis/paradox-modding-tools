@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 )
 
 func TestStore(t *testing.T) {
@@ -105,7 +105,7 @@ func TestStoreLoadFailureDoesNotWipe(t *testing.T) {
 // covers session boot when a loc sidecar format is stale.
 func TestEnsureSession_staleLocSidecar(t *testing.T) {
 	installID := "pmt-test-stale-loc"
-	dir, err := derived.CacheDir()
+	dir, err := index.CacheDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestEnsureSession_staleLocSidecar(t *testing.T) {
 	if err := os.WriteFile(stale, []byte(`{"formatVersion":2,"sites":{}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = derived.DropVanillaFiles(installID) })
+	t.Cleanup(func() { _ = index.DropVanillaFiles(installID) })
 
 	store := newStore(filepath.Join(t.TempDir(), "config.json"))
 	if err := store.Mutate(func(c *Config) error {

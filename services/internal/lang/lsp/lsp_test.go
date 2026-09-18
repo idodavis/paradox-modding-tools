@@ -1,23 +1,54 @@
-// lsp_test.go holds the fixtures every LSP test shares: building a live session
-// over a temp mod, and the assertion helpers. The tests themselves live beside
-// the request they cover — inspect_test.go, definition_test.go, complete_test.go,
-// diagnostics_test.go, cursor_test.go.
+// lsp_test.go holds the fixtures every LSP test shares: a session over the
+// testdata install scanned for real, a temp mod, and the assertion helpers.
 
 package lsp
 
 import (
-	"maps"
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"paradox-modding-tools/services/internal/lang/declared"
-	"paradox-modding-tools/services/internal/lang/derived"
-	"paradox-modding-tools/services/internal/lang/loc"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/session"
 )
+
+var (
+	fixtures  = map[string]*index.Index{}
+	fixtureMu sync.Mutex
+)
+
+// scanFixture scans the testdata install for one game into a fresh index.
+func scanFixture(t *testing.T, game string) *index.Index {
+	t.Helper()
+	root := filepath.Join("..", "testdata", game)
+	var decl declared.Schema
+	if raw, err := os.ReadFile(filepath.Join(root, "declared.json")); err == nil {
+		if err := json.Unmarshal(raw, &decl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	x, _, err := index.Scan(context.Background(), index.ScanRequest{GameID: game, InstallPath: root, LocLang: "english", Declared: &decl})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return x
+}
+
+// fixture is the shared scan of one game's testdata install.
+func fixture(t *testing.T, game string) *index.Index {
+	t.Helper()
+	fixtureMu.Lock()
+	defer fixtureMu.Unlock()
+	if fixtures[game] == nil {
+		fixtures[game] = scanFixture(t, game)
+	}
+	return fixtures[game]
+}
 
 func write(t *testing.T, root, rel, body string) string {
 	t.Helper()
@@ -31,58 +62,51 @@ func write(t *testing.T, root, rel, body string) string {
 	return p
 }
 
-// testCalendar is applied to the mod buildSession creates; package-level so the builder keeps one signature.
-var testCalendar derived.ModCalendar
+// testCalendar is applied to the mod buildSession creates.
+var testCalendar index.ModCalendar
 
-// withCalendar declares an era for the mod the next buildSession creates, cleared when the test ends.
-func withCalendar(t *testing.T, c derived.ModCalendar) {
+func withCalendar(t *testing.T, c index.ModCalendar) {
 	t.Helper()
 	testCalendar = c
-	t.Cleanup(func() { testCalendar = derived.ModCalendar{} })
+	t.Cleanup(func() { testCalendar = index.ModCalendar{} })
 }
 
-func buildSession(
-	t *testing.T, game string, files map[string]string,
-	cache *vanillaCache, vloc *vanillaLoc,
-) (*session.Session, string) {
+// buildSession is a session over the game's fixture install and one temp mod holding files, every file opened in the editor.
+func buildSession(t *testing.T, game string, files map[string]string) (*session.Session, string) {
 	t.Helper()
 	if game == "" {
 		game = "ck3"
 	}
+	return sessionOver(t, game, fixture(t, game), files)
+}
+
+func sessionOver(t *testing.T, game string, cache *index.Index, files map[string]string) (*session.Session, string) {
+	t.Helper()
 	root := t.TempDir()
 	if game == "ck3" {
-		if _, ok := files["descriptor.mod"]; !ok {
-			write(t, root, "descriptor.mod", "name = \"t\"\n")
-		}
+		write(t, root, "descriptor.mod", "name = \"t\"\n")
+	} else {
+		write(t, root, ".metadata/metadata.json", `{"name":"t"}`)
 	}
 	for rel, body := range files {
 		write(t, root, rel, body)
 	}
-	s := session.New("ws", game, "english", toIndex(cache, vloc), []derived.ModInput{
-		{Origin: "mod", Root: root, Order: 0, Calendar: testCalendar},
-	})
+	s := session.New("ws", game, "english", cache, []index.ModInput{{Origin: "mod", Root: root, Calendar: testCalendar}})
 	for rel, body := range files {
 		s.DidOpen(filepath.Join(root, filepath.FromSlash(rel)), body)
 	}
 	return s, root
 }
 
-// ck3Typed declares the CK3 scope types and links these tests rely on; a nested database is harvested only where the game declares the child kind.
-func ck3Typed() *vanillaCache {
-	return &vanillaCache{Schema: &declared.Schema{
-		Scopes: map[string]declared.ScopeType{
-			"faith": {}, "culture": {}, "character": {}, "landed_title": {},
-		},
-		Links: map[string]declared.ScopeLink{
-			"title": {Out: "landed_title", Global: true, Data: true},
-			"faith": {Out: "faith", Global: true, Data: true},
-		},
-	}}
+// bareSession is a session over an install with no type system and nothing scanned.
+func bareSession(t *testing.T, files map[string]string) (*session.Session, string) {
+	t.Helper()
+	return sessionOver(t, "ck3", index.NewIndex("ck3", &declared.Schema{}), files)
 }
 
 func ck3Sess(t *testing.T, body string) (*session.Session, string) {
 	t.Helper()
-	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, nil, nil)
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body})
 	return s, filepath.Join(root, "events", "x.txt")
 }
 
@@ -103,26 +127,9 @@ func hasDiag(diags []Diagnostic, code string) bool {
 	return false
 }
 
-// ck3VanillaSess is a session whose files all belong to the install, for the rules that only apply to vanilla.
-func ck3VanillaSess(t *testing.T, install string, cache *vanillaCache) *session.Session {
-	t.Helper()
-	if cache == nil {
-		cache = &vanillaCache{}
-	}
-	cache.InstallPath = install
-	if cache.GameID == "" {
-		cache.GameID = "ck3"
-	}
-	mod := t.TempDir()
-	write(t, mod, "descriptor.mod", "name = \"t\"\n")
-	return session.New("ws", "ck3", "english", toIndex(cache, nil), []derived.ModInput{
-		{Origin: "mod", Root: mod, Order: 0},
-	})
-}
-
 func hasLocURI(locs []Location, path string) bool {
 	for _, l := range locs {
-		if derived.SamePath(l.URI, path) {
+		if index.SamePath(l.URI, path) {
 			return true
 		}
 	}
@@ -140,8 +147,7 @@ func TestZNilValueRequests(t *testing.T) {
 		"test.1 = {\n\thas_culture_group = culture_group:\n}\n",
 		"x = {\n\ty =",
 	} {
-		s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, nil, nil)
-		f := filepath.Join(root, "events", "x.txt")
+		s, f := ck3Sess(t, body)
 		for line := range 4 {
 			for col := range 24 {
 				func() {
@@ -159,398 +165,5 @@ func TestZNilValueRequests(t *testing.T) {
 				}()
 			}
 		}
-	}
-}
-
-// vanillaCache and vanillaLoc are the pre-index shapes these fixtures were written against; temporary, until the task that rewrites these tests.
-type vanillaCache struct {
-	InstallID, GameID, InstallPath, GameVersion, ScannedAt string
-	Defs                                                   []derived.Def
-	LocRefs, CallRefs                                      []derived.Ref
-	Edges                                                  []derived.Edge
-	Schema                                                 *declared.Schema
-	Structures, StructureBlocks, NestedMembers             map[string][]string
-	Vocabulary, GUITypes, GUIProps, DataFunctions          []string
-	LocKeyPrefixes, LocFields, LocEngineSlots              []string
-	FieldValueKinds, FireKeys, PrefixKinds, KindScope      map[string]string
-	KindInfo, FieldInfo                                    map[string]string
-	FieldInfoByKind                                        map[string]map[string]string
-	DeclaredFieldTypes                                     map[string]string
-	DeclaredFieldTypesByKind                               map[string]map[string]string
-	LocConventions                                         map[string][]loc.Convention
-	NestedShapes                                           []derived.NestedShape
-}
-
-type vanillaLoc struct{ Sites map[string]derived.LocEntry }
-
-func toIndex(c *vanillaCache, v *vanillaLoc) *derived.Index {
-	if c == nil {
-		c = &vanillaCache{}
-	}
-	x := derived.NewIndex(c.GameID)
-	x.InstallID, x.InstallPath = c.InstallID, c.InstallPath
-	x.GameVersion, x.ScannedAt, x.Declared = c.GameVersion, c.ScannedAt, c.Schema
-	x.Schema = derived.Schema{
-		GUITypes: c.GUITypes, GUIProps: c.GUIProps,
-		DataFunctions: c.DataFunctions, LocKeyPrefixes: c.LocKeyPrefixes,
-		VocabNames: c.Vocabulary, Prefix: c.PrefixKinds, KindScope: c.KindScope,
-		Nested:         c.NestedShapes,
-		LocEngineSlots: fixtureSet(c.LocEngineSlots),
-		MacroDefs:      map[string]string{},
-		Kinds:          map[string]derived.KindInfo{},
-	}
-	for kind, cs := range c.LocConventions {
-		x.Schema.Kinds[kind] = derived.KindInfo{Loc: cs}
-	}
-	fixtureCells(&x.Schema, c)
-	x.Docs = derived.Docs{
-		KindInfo: c.KindInfo, FieldInfo: fixtureLower(c.FieldInfo),
-		Fields:                   fixtureLowerByKind(c.FieldInfoByKind),
-		DeclaredFieldTypes:       fixtureTypes(c.DeclaredFieldTypes),
-		DeclaredFieldTypesByKind: map[string]map[string]declared.DeclaredType{},
-	}
-	for kind, m := range c.DeclaredFieldTypesByKind {
-		x.Docs.DeclaredFieldTypesByKind[kind] = fixtureTypes(m)
-	}
-	if c.Schema != nil {
-		names := map[string]bool{}
-		for _, n := range c.Vocabulary {
-			names[n] = true
-		}
-		for n := range c.Schema.Effects {
-			x.Schema.Effects = append(x.Schema.Effects, n)
-			names[n] = true
-		}
-		for n := range c.Schema.Triggers {
-			x.Schema.Triggers = append(x.Schema.Triggers, n)
-			names[n] = true
-		}
-		c.Schema.EachName(func(n string) { names[n] = true })
-		slices.Sort(x.Schema.Effects)
-		slices.Sort(x.Schema.Triggers)
-		x.Schema.EffectSet = fixtureSet(x.Schema.Effects)
-		x.Schema.TriggerSet = fixtureSet(x.Schema.Triggers)
-		x.Schema.VocabNames = nil
-		for n := range names {
-			x.Schema.VocabNames = append(x.Schema.VocabNames, n)
-		}
-		slices.Sort(x.Schema.VocabNames)
-	}
-	x.Schema.KindPrefix, x.Schema.ScopePrefix, x.Schema.ScopeKind =
-		map[string]string{}, map[string]string{}, map[string]string{}
-	for prefix, kind := range c.PrefixKinds {
-		if cur, ok := x.Schema.KindPrefix[kind]; !ok || len(prefix) < len(cur) {
-			x.Schema.KindPrefix[kind] = prefix
-		}
-	}
-	for kind, scope := range c.KindScope {
-		if cur, ok := x.Schema.ScopeKind[scope]; !ok || len(kind) < len(cur) {
-			x.Schema.ScopeKind[scope] = kind
-		}
-	}
-	if c.Schema != nil {
-		for prefix, scope := range c.Schema.Prefixes() {
-			if cur, ok := x.Schema.ScopePrefix[scope]; !ok || len(prefix) < len(cur) {
-				x.Schema.ScopePrefix[scope] = prefix
-			}
-		}
-	}
-	byFile := map[string]*derived.FileHarvest{}
-	at := func(p string) *derived.FileHarvest {
-		h := byFile[p]
-		if h == nil {
-			h = &derived.FileHarvest{}
-			byFile[p] = h
-		}
-		return h
-	}
-	for _, d := range c.Defs {
-		h := at(d.Path)
-		h.Defs = append(h.Defs, d)
-	}
-	for _, r := range append(append([]derived.Ref{}, c.LocRefs...), c.CallRefs...) {
-		h := at(r.Path)
-		h.Refs = append(h.Refs, r)
-	}
-	for _, e := range c.Edges {
-		h := at(e.Path)
-		h.Edges = append(h.Edges, e)
-	}
-	if v != nil {
-		for k, e := range v.Sites {
-			h := at(e.Path)
-			if h.Loc.Vals == nil {
-				h.Loc = derived.LocDelta{Lang: "english", Vals: map[string]derived.LocEntry{}}
-			}
-			h.Loc.Vals[k] = e
-		}
-	}
-	for p, h := range byFile {
-		x.Add(p, p, "", "script", h)
-	}
-	for _, d := range c.Defs {
-		if strings.HasPrefix(d.Kind, "scripted_") {
-			x.Schema.MacroDefs[d.Key] = d.Kind
-		}
-	}
-	x.SortLocKeys()
-	return x
-}
-
-func fixtureSet(in []string) map[string]bool {
-	out := map[string]bool{}
-	for _, k := range in {
-		out[k] = true
-		out[strings.ToLower(k)] = true
-	}
-	return out
-}
-
-func fixtureLower(in map[string]string) map[string]string {
-	out := map[string]string{}
-	for k, v := range in {
-		if out[strings.ToLower(k)] == "" {
-			out[strings.ToLower(k)] = v
-		}
-	}
-	return out
-}
-
-func fixtureLowerByKind(in map[string]map[string]string) map[string]map[string]string {
-	out := map[string]map[string]string{}
-	for k, v := range in {
-		out[k] = fixtureLower(v)
-	}
-	return out
-}
-
-func fixtureTypes(in map[string]string) map[string]declared.DeclaredType {
-	out := map[string]declared.DeclaredType{}
-	for k, v := range in {
-		out[strings.ToLower(k)] = declared.ClassifyDeclaredType(v)
-	}
-	return out
-}
-
-// fixtureCells writes the pre-cell fixture fields onto the learned schema, temporary with the shim above it.
-func fixtureCells(s *derived.Schema, c *vanillaCache) {
-	s.Cells = map[string]map[string]map[string]*derived.CellType{}
-	at := func(kind, path, key string) *derived.CellType {
-		byPath := s.Cells[kind]
-		if byPath == nil {
-			byPath = map[string]map[string]*derived.CellType{}
-			s.Cells[kind] = byPath
-		}
-		byKey := byPath[path]
-		if byKey == nil {
-			byKey = map[string]*derived.CellType{}
-			byPath[path] = byKey
-		}
-		t := byKey[key]
-		if t == nil {
-			t = &derived.CellType{}
-			byKey[key] = t
-		}
-		return t
-	}
-	// The kinds a fixture's files can sit under, since a cell is addressed by its file's kind.
-	kinds := map[string]bool{}
-	for _, k := range []string{
-		"event", "on_action", "scripted_effect", "scripted_effects",
-		"scripted_trigger", "scripted_triggers", "script_values", "decisions",
-		"traits", "character_interactions", "gui_type", "landed_titles",
-		"coat_of_arms", "cultures", "religions", "religion_types", "titles",
-		"activity_types", "game_rules", "modifiers", "customizable_localization",
-		"provinces", "buildings", "laws", "countries", "journal_entries",
-		"map_data", "named_colors", "council_positions", "story_cycles",
-	} {
-		kinds[k] = true
-	}
-	for kind := range c.Structures {
-		kinds[kind] = true
-	}
-	for _, d := range c.Defs {
-		kinds[d.Kind] = true
-	}
-	// The block names a fixture mentions plus the ones every fixture writes without saying so, because a cell is addressed by its whole enclosing path.
-	blocks := map[string]bool{
-		"immediate": true, "option": true, "after": true, "trigger": true,
-		"limit": true, "is_shown": true, "effect": true, "desc": true,
-		"first_valid": true, "triggered_desc": true, "modifier": true,
-		"if": true, "else": true, "random_list": true, "ai_chance": true,
-	}
-	for block, members := range c.NestedMembers {
-		blocks[block] = true
-		for _, m := range members {
-			blocks[m] = true
-		}
-	}
-	for _, keys := range c.Structures {
-		for _, k := range keys {
-			blocks[k] = true
-		}
-	}
-	for _, keys := range c.StructureBlocks {
-		for _, k := range keys {
-			blocks[k] = true
-		}
-	}
-	for k := range fixtureFireKeys(c) {
-		blocks[k] = true
-	}
-	deep := map[string]bool{}
-	for k := range blocks {
-		deep[k] = true
-	}
-	if c.Schema != nil {
-		for n := range c.Schema.Effects {
-			blocks[n] = true
-		}
-		for n := range c.Schema.Triggers {
-			blocks[n] = true
-		}
-	}
-	paths := []string{""}
-	for a := range blocks {
-		paths = append(paths, a)
-	}
-	// Two levels only for the blocks a fixture names itself; pairing the whole vocabulary is thousands of paths nothing reads.
-	for a := range deep {
-		for b := range blocks {
-			paths = append(paths, a+"."+b)
-		}
-	}
-	for kind, keys := range c.Structures {
-		for i, k := range keys {
-			t := at(kind, "", k)
-			t.N = int32(len(keys) - i)
-		}
-		for _, k := range c.StructureBlocks[kind] {
-			t := at(kind, "", k)
-			t.Flags = derived.CellBlock
-			t.Names = true
-		}
-	}
-	for kind := range kinds {
-		for block, members := range c.NestedMembers {
-			for _, prefix := range paths {
-				path := block
-				if prefix != "" {
-					path = prefix + "." + block
-				}
-				for i, m := range members {
-					at(kind, path, m).N = int32(len(members) - i)
-				}
-			}
-		}
-		for _, path := range paths {
-			for key, k := range c.FieldValueKinds {
-				at(kind, path, key).Kinds = []string{k}
-			}
-			for key, k := range fixtureFireKeys(c) {
-				for _, cellKey := range []string{key, "id", "<n>"} {
-					cellPath := path
-					if cellKey != key {
-						cellPath = key
-						if path != "" {
-							cellPath = path + "." + key
-						}
-					}
-					at(kind, cellPath, cellKey).Kinds = []string{k}
-				}
-			}
-			for _, key := range c.LocFields {
-				t := at(kind, path, key)
-				t.Kinds = append(t.Kinds, derived.LabelLoc)
-			}
-		}
-	}
-	fixtureBlocks(s, c)
-}
-
-// fixtureBlocks is §9 over the fixture's cells: a position holding a declared
-// token is a body of those classes, everything else a structure, and members
-// unify by the block's key. A cell with zero occurrences (the combinatorial
-// defaults fixtureCells writes at every path so a lookup never panics) is not
-// evidence, exactly as the real learnBlocks skips it -- otherwise every
-// position gets a phantom vanilla BlockType that shadows the workspace's own,
-// real one via Model.BlockAt's vanilla-first read.
-func fixtureBlocks(s *derived.Schema, c *vanillaCache) {
-	s.Blocks = map[string]map[string]*derived.BlockType{}
-	members := map[string]map[string]bool{}
-	for kind, byPath := range s.Cells {
-		for path, byKey := range byPath {
-			key := kind
-			if i := strings.LastIndexByte(path, '.'); i >= 0 {
-				key = path[i+1:]
-			} else if path != "" {
-				key = path
-			}
-			b, seen := &derived.BlockType{Key: key}, false
-			for m, t := range byKey {
-				if m == "" || m[0] == '<' || t == nil || t.N == 0 {
-					continue
-				}
-				seen = true
-				var eff, trig bool
-				if c.Schema != nil {
-					_, eff = c.Schema.Effects[strings.ToLower(m)]
-					_, trig = c.Schema.Triggers[strings.ToLower(m)]
-				}
-				switch {
-				case eff:
-					b.Body |= derived.BodyEffect
-				case trig:
-					b.Body |= derived.BodyTrigger
-				default:
-					if members[key] == nil {
-						members[key] = map[string]bool{}
-					}
-					members[key][m] = true
-				}
-			}
-			if !seen {
-				continue
-			}
-			// Every block key gets its entry, as learnBlocks gives one: a key the schema opens a block with anywhere is engine grammar.
-			if members[key] == nil {
-				members[key] = map[string]bool{}
-			}
-			if b.Body != 0 {
-				b.Class = derived.BlockBody
-			}
-			if s.Blocks[kind] == nil {
-				s.Blocks[kind] = map[string]*derived.BlockType{}
-			}
-			s.Blocks[kind][path] = b
-		}
-	}
-	s.Structures = map[string][]string{}
-	for k, set := range members {
-		s.Structures[k] = slices.Sorted(maps.Keys(set))
-	}
-	// KnownKeys mirrors learnBlocks': every structure name and member the fixture
-	// wrote, plus the declared engine API -- unknown-key's whole vocabulary.
-	known := map[string]bool{}
-	for key, mems := range s.Structures {
-		known[strings.ToLower(key)] = true
-		for _, m := range mems {
-			known[strings.ToLower(m)] = true
-		}
-	}
-	if c.Schema != nil {
-		c.Schema.EachName(func(n string) { known[strings.ToLower(n)] = true })
-	}
-	s.KnownKeys = known
-}
-
-// fixtureFireKeys stands in for what a scanned install teaches -- which keys hold event and on_action ids -- unless the fixture states its own.
-func fixtureFireKeys(c *vanillaCache) map[string]string {
-	if len(c.FireKeys) > 0 {
-		return c.FireKeys
-	}
-	return map[string]string{
-		"trigger_event": "event", "trigger_event_silently": "event",
-		"on_action": "on_action", "events": "event", "random_events": "event",
 	}
 }

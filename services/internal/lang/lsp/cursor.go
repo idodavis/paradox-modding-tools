@@ -1,54 +1,46 @@
 // cursor.go reads the cursor's context once: probeAt is the single probe every
-// request takes at a script position — word, cell, block chain, and the
-// scope type in force there.
-//
-// Every scope transition it applies is DECLARED by the game — scope links carry
-// Input and Output scopes, and iterators are effects whose Supported Targets
-// names the scope of each element. Nothing here is inferred from name shape.
+// request takes at a script position -- word, the learned node the position
+// hangs from, the block chain, and the scope type in force there. Every scope
+// transition it applies is DECLARED by the game; nothing is inferred from name
+// shape.
 
 package lsp
 
 import (
-	"paradox-modding-tools/services/internal/lang/session"
 	"regexp"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/declared"
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
+	"paradox-modding-tools/services/internal/lang/session"
 )
 
-// probe is the one read of a script position every request shares: complete and
-// signature take the slot fields, Inspect the identity, and all three the scope.
+// probe is the one read of a script position every request shares.
 type probe struct {
 	src, word       string
 	off, start, end int
 	res             jomini.Result
-	// param is true when word/start/end are a `$PARAM$` span rather than a token.
-	param          bool
-	kind           string
-	assign         *jomini.Assignment
-	saveName       string
-	saveOK         bool
-	inKey          bool
-	slotKey        string
-	fileKind, path string
-	// inNested is true when the enclosing block is deeper than the definition.
-	inNested bool
-	// blockPath is the keys of the enclosing assignments, outermost first, so a
-	// card can look past blocks that group without containing.
-	blockPath []string
-	// slotAssign is the assignment slotKey names, kept so a card can read the
-	// siblings of the thing under the cursor — what a weight is a share of.
-	slotAssign *jomini.Assignment
-	// scope is the scope type in force here, "" when undetermined — "do not filter", never "nothing is valid".
-	scope string
-	// chain is the statements enclosing the cursor, outermost first.
-	chain      []jomini.Statement
-	paramOwner string
+	param           bool // word/start/end are a `$PARAM$` span rather than a token
+	kind            string
+	assign          *jomini.Assignment
+	saveName        string
+	saveOK          bool
+	inKey           bool
+	slotKey         string
+	fileKind        string
+	inNested        bool     // the enclosing block is deeper than the definition
+	blockPath       []string // the keys of the enclosing assignments, outermost first
+	slotAssign      *jomini.Assignment
+	scope           string // the scope type in force, "" when undetermined
+	chain           []jomini.Statement
+	paramOwner      string
+	// segs are the enclosing block keys below the definition; hang is the learned position they address, and cell the node of slotKey below it.
+	segs       []string
+	hang, cell *index.Node
 }
 
 func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
@@ -66,10 +58,7 @@ func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
 	if param {
 		word, start, end = name, pStart, pEnd
 	}
-	at := probe{
-		src: src, off: off, res: res,
-		word: word, start: start, end: end, param: param,
-	}
+	at := probe{src: src, off: off, res: res, word: word, start: start, end: end, param: param}
 	rel := path
 	if _, r, ok := s.Locate(path); ok {
 		rel = r
@@ -82,11 +71,9 @@ func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
 	chain := jomini.NodeAtOffset(res.Root, off)
 	at.chain = chain
 	if len(chain) > 0 {
-		if a, ok := chain[0].(*jomini.Assignment); ok && !a.Key.Quoted {
-			if !s.IsLocalDefFile(path, at.kind) {
-				if d := s.Resolve(a.Key.Text); d != nil && d.Kind != "" && d.Kind != "loc_key" {
-					at.kind = d.Kind
-				}
+		if a, ok := chain[0].(*jomini.Assignment); ok && !a.Key.Quoted && !s.IsLocalDefFile(path, at.kind) {
+			if d := s.Resolve(a.Key.Text); d != nil && d.Kind != "" && d.Kind != "loc_key" {
+				at.kind = d.Kind
 			}
 		}
 		fillCompleteSlot(&at, chain, off)
@@ -97,12 +84,33 @@ func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
 		}
 		at.saveName, at.saveOK = saveScopeIn(chain, off)
 		at.paramOwner = paramOwnerIn(s, chain)
-		at.path = s.CellPath(at.fileKind, "", cellSegs(&at, chain, off)...)
+		at.segs = cellSegs(&at, chain, off)
+		at.hang = nodeAt(s, at.fileKind, at.segs)
+		if at.slotKey != "" {
+			at.cell = childOf(s, at.hang, at.slotKey)
+		}
 	}
 	return at, true
 }
 
-// cellSegs is the enclosing block keys below the definition's own; a bare list member sits at the cell of the block key that holds it, so that key is not a path segment.
+// nodeAt descends a kind's tree by the enclosing block keys: the install's tree, then the workspace's own where the install never wrote there.
+func nodeAt(s *session.Session, kind string, segs []string) *index.Node {
+	for _, sc := range []*index.Tree{&s.Install.Tree, &s.Work.Tree} {
+		n := sc.Root(kind, false)
+		for _, seg := range segs {
+			if n == nil {
+				break
+			}
+			_, _, n = sc.Step(n, seg, false)
+		}
+		if n != nil {
+			return n
+		}
+	}
+	return nil
+}
+
+// cellSegs is the enclosing block keys below the definition's own; a bare list member sits at the cell of the block key that holds it, so that key is not a segment.
 func cellSegs(at *probe, chain []jomini.Statement, off int) []string {
 	var segs []string
 	for _, st := range chain {
@@ -110,11 +118,9 @@ func cellSegs(at *probe, chain []jomini.Statement, off int) []string {
 		if !ok {
 			continue
 		}
-		b := jomini.ChildBlock(a)
-		if b == nil || off < b.Range.Start || off > b.Range.End {
-			continue
+		if b := jomini.ChildBlock(a); b != nil && off >= b.Range.Start && off <= b.Range.End {
+			segs = append(segs, a.Key.Text)
 		}
-		segs = append(segs, a.Key.Text)
 	}
 	if len(segs) == 0 {
 		return nil
@@ -133,11 +139,10 @@ func paramOwnerIn(s *session.Session, chain []jomini.Statement) string {
 			continue
 		}
 		key := a.Key.Text
-		if jomini.IsMacroKind(jomini.CanonicalKind(key)) || s.Work.Schema.MacroDefs[key] != "" {
+		if jomini.IsMacroKind(jomini.CanonicalKind(key)) || s.Work.Tree.Macros[key] != "" {
 			return key
 		}
-		d := s.Resolve(key)
-		if d != nil && jomini.IsMacroKind(d.Kind) {
+		if d := s.Resolve(key); d != nil && jomini.IsMacroKind(d.Kind) {
 			return key
 		}
 	}
@@ -173,20 +178,17 @@ func fillCompleteSlot(at *probe, chain []jomini.Statement, off int) {
 		at.slotKey = inner.Key.Text
 		if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted {
 			keyLine := at.res.Lines().PositionAt(inner.Key.Range.Start).Line
-			valLine := at.res.Lines().PositionAt(sc.Range.Start).Line
-			if valLine != keyLine {
+			if at.res.Lines().PositionAt(sc.Range.Start).Line != keyLine {
 				at.inKey = true
 			}
 		}
 		return
 	}
-	if sc, ok := inner.Value.(*jomini.Scalar); ok &&
-		off >= sc.Range.Start && off <= sc.Range.End {
+	if sc, ok := inner.Value.(*jomini.Scalar); ok && off >= sc.Range.Start && off <= sc.Range.End {
 		at.slotKey = inner.Key.Text
 		return
 	}
-	if b := jomini.BlockOf(inner.Value); b != nil &&
-		off >= b.Range.Start && off <= b.Range.End {
+	if b := jomini.BlockOf(inner.Value); b != nil && off >= b.Range.Start && off <= b.Range.End {
 		at.inKey = true
 		at.slotKey = inner.Key.Text
 		return
@@ -194,8 +196,7 @@ func fillCompleteSlot(at *probe, chain []jomini.Statement, off int) {
 	if off >= inner.Key.Range.End {
 		at.slotKey = inner.Key.Text
 		end := min(off, len(at.src))
-		from := inner.Key.Range.End
-		if from < end && !strings.Contains(at.src[from:end], "=") {
+		if from := inner.Key.Range.End; from < end && !strings.Contains(at.src[from:end], "=") {
 			at.inKey = true
 		}
 	}
@@ -207,15 +208,12 @@ func pendingAssignKey(src string, off int) string {
 	if off < 0 {
 		return ""
 	}
-	if off > len(src) {
-		off = len(src)
-	}
+	off = min(off, len(src))
 	lineStart := strings.LastIndex(src[:off], "\n") + 1
-	m := pendingAssignRe.FindStringSubmatch(src[lineStart:off])
-	if m == nil {
-		return ""
+	if m := pendingAssignRe.FindStringSubmatch(src[lineStart:off]); m != nil {
+		return m[1]
 	}
-	return m[1]
+	return ""
 }
 
 func saveScopeIn(chain []jomini.Statement, off int) (name string, ok bool) {
@@ -225,8 +223,7 @@ func saveScopeIn(chain []jomini.Statement, off int) (name string, ok bool) {
 			continue
 		}
 		if jomini.IsSaveScopeKey(a.Key.Text) {
-			sc, isS := a.Value.(*jomini.Scalar)
-			if isS && !sc.Quoted && off >= sc.Range.Start && off <= sc.Range.End {
+			if sc, isS := a.Value.(*jomini.Scalar); isS && !sc.Quoted && off >= sc.Range.Start && off <= sc.Range.End {
 				return sc.Text, true
 			}
 			return "", false
@@ -243,8 +240,7 @@ func saveScopeIn(chain []jomini.Statement, off int) (name string, ok bool) {
 			if !isC || ca.Key.Text != "name" {
 				continue
 			}
-			sc, isS := ca.Value.(*jomini.Scalar)
-			if isS && !sc.Quoted && off >= sc.Range.Start && off <= sc.Range.End {
+			if sc, isS := ca.Value.(*jomini.Scalar); isS && !sc.Quoted && off >= sc.Range.Start && off <= sc.Range.End {
 				return sc.Text, true
 			}
 		}
@@ -267,8 +263,7 @@ type locHit struct {
 	engine      bool
 }
 
-// locHitAt resolves the cursor with a single loc parse. Hover used to run two —
-// one to ask whether the cursor was on an engine value, another to find the key.
+// locHitAt resolves the cursor with a single loc parse: the key, an interpolated key inside a value, or an engine value.
 func locHitAt(src string, off int) (locHit, bool) {
 	res := loc.Parse(src)
 	for _, e := range res.Entries {
@@ -276,21 +271,16 @@ func locHitAt(src string, off int) (locHit, bool) {
 			return locHit{key: e.Key, start: e.KeyRange.Start, end: e.KeyRange.End}, true
 		}
 		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
-			if off < ip.WrapRange.Start || off >= ip.WrapRange.End {
-				continue
+			if off >= ip.WrapRange.Start && off < ip.WrapRange.End {
+				return locHit{key: ip.Key, filter: ip.Filter, start: ip.KeyRange.Start, end: ip.KeyRange.End,
+					engine: loc.IsLocEngineValue(ip.Key, ip.Filter)}, true
 			}
-			return locHit{
-				key: ip.Key, filter: ip.Filter,
-				start: ip.KeyRange.Start, end: ip.KeyRange.End,
-				engine: loc.IsLocEngineValue(ip.Key, ip.Filter),
-			}, true
 		}
 	}
 	if len(res.Entries) > 0 {
 		return locHit{}, false
 	}
-	// No parsable entry yet — mid-typing, or a file with only a header. Fall
-	// back to the raw token so hover still resolves.
+	// No parsable entry yet: mid-typing, or a file with only a header.
 	word, wStart, wEnd := jomini.Result{Src: src}.TokenAt(off)
 	if word == "" {
 		return locHit{}, false
@@ -298,8 +288,7 @@ func locHitAt(src string, off int) (locHit, bool) {
 	return locHit{key: word, start: wStart, end: wEnd}, true
 }
 
-// macroCallAt reads a `kind name = { … }` declaration at the cursor: the bare
-// scalar before the assignment in the probe's own statement list is the kind.
+// macroCallAt reads a `kind name = { … }` declaration at the cursor: the bare scalar before the assignment in the probe's own statement list is the kind.
 func macroCallAt(at probe) (kind, name string, assign *jomini.Assignment, ok bool) {
 	if len(at.chain) == 0 || at.res.Root == nil {
 		return "", "", nil, false
@@ -319,35 +308,29 @@ func macroCallAt(at probe) (kind, name string, assign *jomini.Assignment, ok boo
 		}
 		if vs, isV := st.(*jomini.ValueStmt); isV {
 			sc, isS := vs.Value.(*jomini.Scalar)
-			if !isS || sc.Quoted || jomini.IsStop(sc.Text) || i+1 >= len(stmts) ||
-				at.off < sc.Range.Start || at.off >= sc.Range.End {
+			if !isS || sc.Quoted || jomini.IsStop(sc.Text) || i+1 >= len(stmts) || at.off < sc.Range.Start || at.off >= sc.Range.End {
 				break
 			}
-			a, isA := stmts[i+1].(*jomini.Assignment)
-			if !isA || a.Key.Quoted {
-				break
+			if a, isA := stmts[i+1].(*jomini.Assignment); isA && !a.Key.Quoted {
+				return sc.Text, a.Key.Text, a, true
 			}
-			return sc.Text, a.Key.Text, a, true
+			break
 		}
 		a, isA := st.(*jomini.Assignment)
-		if !isA || a.Key.Quoted || i == 0 ||
-			at.off < a.Key.Range.Start || at.off >= a.Key.Range.End {
+		if !isA || a.Key.Quoted || i == 0 || at.off < a.Key.Range.Start || at.off >= a.Key.Range.End {
 			break
 		}
-		vs, isV := stmts[i-1].(*jomini.ValueStmt)
-		if !isV {
-			break
-		}
-		if sc, isS := vs.Value.(*jomini.Scalar); isS && !sc.Quoted && !jomini.IsStop(sc.Text) {
-			return sc.Text, a.Key.Text, a, true
+		if vs, isV := stmts[i-1].(*jomini.ValueStmt); isV {
+			if sc, isS := vs.Value.(*jomini.Scalar); isS && !sc.Quoted && !jomini.IsStop(sc.Text) {
+				return sc.Text, a.Key.Text, a, true
+			}
 		}
 		break
 	}
 	return "", "", nil, false
 }
 
-// scopeRefAt resolves `scope:name` at the cursor. The word is the probe's; only
-// the two lookaheads across a `:` need the tokenizer again.
+// scopeRefAt resolves `scope:name` at the cursor.
 func scopeRefAt(at probe) (name string, ok bool) {
 	src, word, wStart, wEnd := at.src, at.word, at.start, at.end
 	if word == "" {
@@ -355,32 +338,20 @@ func scopeRefAt(at probe) (name string, ok bool) {
 	}
 	if wEnd < len(src) && src[wEnd] == ':' && word == jomini.ScopePrefix {
 		n, _, _ := at.res.TokenAt(wEnd + 1)
-		if n == "" {
-			return "", false
-		}
-		return n, true
+		return n, n != ""
 	}
 	if wStart > 0 && src[wStart-1] == ':' {
-		pre, _, _ := at.res.TokenAt(wStart - 2)
-		if pre == jomini.ScopePrefix {
+		if pre, _, _ := at.res.TokenAt(wStart - 2); pre == jomini.ScopePrefix {
 			return word, true
 		}
 	}
-	p, pok := jomini.ParsePrefixed(word)
-	if pok && jomini.IsSavedScopePrefix(p) {
+	if p, pok := jomini.ParsePrefixed(word); pok && jomini.IsSavedScopePrefix(p) {
 		return p.Name, true
 	}
 	return "", false
 }
 
-// scopeIn walks the probe's own chain for the scope type in force at off.
-//
-// A missing root is not a dead end. Only on_action files declare their own
-// starting scope, so bailing here meant every event, decision, scripted effect
-// and modifier body reported nothing at all -- which is most of what anyone
-// hovers. A declared scope link or iterator states the scope it produces
-// regardless of what preceded it, so the walk continues and reports a scope
-// only once something declared establishes one.
+// scopeIn walks the probe's own chain for the scope type in force at off. A missing root is not a dead end: a declared link or iterator states the scope it produces regardless of what preceded it, so the walk continues and reports a scope only once something declared establishes one.
 func scopeIn(s *session.Session, kind string, chain []jomini.Statement, off int) string {
 	sc := s.Install.Declared
 	if sc.Empty() {
@@ -390,18 +361,15 @@ func scopeIn(s *session.Session, kind string, chain []jomini.Statement, off int)
 	if !ok || top.Key.Quoted {
 		return ""
 	}
-	w := defRootScopeLocked(s, sc, kind, top)
-	w.s, w.kind = s, kind
+	w := defRootScope(s, sc, kind, top)
+	w.s, w.kind, w.hang = s, kind, s.Install.Tree.Root(kind, false)
 	for _, st := range chain[1:] {
 		a, ok := st.(*jomini.Assignment)
 		if !ok || a.Key.Quoted {
 			continue
 		}
-		// Only a block the cursor is actually inside changes the scope. Sitting
-		// on `holder` itself asks what scope `holder` is used in, which is the
-		// scope outside its block.
-		b := jomini.ChildBlock(a)
-		if b == nil || off < b.Range.Start || off > b.Range.End {
+		// Only a block the cursor is actually inside changes the scope.
+		if b := jomini.ChildBlock(a); b == nil || off < b.Range.Start || off > b.Range.End {
 			continue
 		}
 		if !w.step(sc, a.Key.Text) {
@@ -411,22 +379,12 @@ func scopeIn(s *session.Session, kind string, chain []jomini.Statement, off int)
 	return w.cur()
 }
 
-// scopeWalk carries the scope stack so `prev` and `root` resolve properly, and
-// the cell position of the block it is inside, because the block's learned class
-// is what says whether entering it changes the scope.
+// scopeWalk carries the scope stack so `prev` and `root` resolve, and the learned node of the block it is inside, because the block's class says whether entering it changes the scope. rooted records that the bottom of the stack is the real root scope, which only an on_action declares.
 type scopeWalk struct {
-	s     *session.Session
-	kind  string
-	path  string
-	stack []string
-	// rooted records that the BOTTOM of the stack is the real root scope,
-	// which only an on_action declares. Without it the stack bottom is simply
-	// the first hop the walk happened to take, and `root` must not pretend
-	// otherwise: CK3's camp_party_actions.txt writes
-	// `random_attending_character = { limit = { root = { any_attending_character`,
-	// where root is the ACTIVITY the pulse action runs on. Reading it as
-	// stack[0] answered "character" and reported nine pieces of correct vanilla
-	// script as wrong-scope.
+	s      *session.Session
+	kind   string
+	hang   *index.Node
+	stack  []string
 	rooted bool
 }
 
@@ -439,44 +397,30 @@ func (w *scopeWalk) cur() string {
 
 func (w *scopeWalk) push(scope string) { w.stack = append(w.stack, scope) }
 
-// step applies one block key. It reports false when the transition is unknown,
-// which stops the walk rather than reporting a wrong scope.
-// step follows a key, which may be a dotted chain: `root.liege.primary_title`
-// hops three times. Splitting here rather than at each caller means hover and
-// wrong-scope cannot disagree about where a chain lands.
-//
-// Any segment failing fails the whole chain. Callers clone the walk and discard
-// it on false, so a partly-applied chain never leaks -- and stopping is the
-// right answer, because a chain PMT can only half-follow ends somewhere it
-// cannot name.
+// step applies one block key, which may be a dotted chain that hops several times; any segment failing fails the whole chain, and false stops the walk rather than reporting a wrong scope. A date is not a chain.
 func (w *scopeWalk) step(sc *declared.Schema, key string) bool {
-	at := w.s.CellPath(w.kind, w.path, key)
-	// A date is not a chain. History files key their blocks by one --
-	// `867.1.1 = { … }` -- and splitting that steps through "867", "1", "1".
+	name, _, next := w.s.Install.Tree.Step(w.hang, key, false)
 	if !strings.Contains(key, ".") || jomini.IsDateLiteral(key) {
-		if !w.stepOne(sc, key, at) {
+		if !w.stepOne(sc, key, name, next) {
 			return false
 		}
-		w.path = at
-		return true
-	}
-	for seg := range strings.SplitSeq(key, ".") {
-		if seg == "" || !w.stepOne(sc, seg, at) {
-			return false
+	} else {
+		for seg := range strings.SplitSeq(key, ".") {
+			if seg == "" || !w.stepOne(sc, seg, name, next) {
+				return false
+			}
 		}
 	}
-	w.path = at
+	w.hang = next
 	return true
 }
 
-func (w *scopeWalk) stepOne(sc *declared.Schema, key, at string) bool {
+func (w *scopeWalk) stepOne(sc *declared.Schema, key, name string, next *index.Node) bool {
 	k := strings.ToLower(game.KeyIdentity("", key))
 	switch k {
 	case "this":
 		return true
 	case "root":
-		// Only when the bottom of the stack really is the root. Otherwise the
-		// scope is one PMT cannot name, and the walk stops rather than guess.
 		if !w.rooted || len(w.stack) == 0 {
 			return false
 		}
@@ -489,76 +433,34 @@ func (w *scopeWalk) stepOne(sc *declared.Schema, key, at string) bool {
 		w.push(w.stack[len(w.stack)-2])
 		return true
 	}
-	// A declared scope link is a hop to its output type.
-	// An unknown current scope cannot contradict the declared input list, so the
-	// hop is taken on the game's word. Whether the link was legal where the
-	// modder used it is wrong-scope's question, not this one.
-	//
-	// A link declaring several output types names no single scope, so it is not
-	// a hop this walk can take — the same answer it gives everywhere else it
-	// cannot name a scope. EU5 declares `modifier` with "Output Scopes: value,
-	// boolean", and every weight block in all three games opens with
-	// `modifier = { … }`, so entering it put correct country-scoped script in a
-	// scope named after two primitives. Tried and rejected as the fix: also
-	// refusing links that require data. It was not needed — the comma alone
-	// clears all three installs — and it would have cost `culture = { … }`,
-	// which is both a data citation and a real hop.
-	//
-	// And only a hop INTO a scope the game says script runs in. CK3 declares
-	// `modifier` with "Output Scopes: value", and every weight block opens with
-	// `modifier = { … }`, so taking that link put correct character-scoped
-	// script in a scope named after a number -- 327 reports on 250 vanilla CK3
-	// event files. Same test the iterator branch below already applies.
-	if l, ok := sc.Links[k]; ok && l.Out != "" && !strings.Contains(l.Out, ",") &&
-		sc.Scopes[l.Out].ChangeScopes {
+	// A declared scope link is a hop to its output type, taken on the game's word when the current scope is unknown; only a link naming one output type, and only into a scope script runs in: CK3 declares `modifier` with output `value`, and every weight block opens with one.
+	if l, ok := sc.Links[k]; ok && l.Out != "" && !strings.Contains(l.Out, ",") && sc.Scopes[l.Out].ChangeScopes {
 		if len(l.In) == 0 || w.cur() == "" || slices.Contains(l.In, w.cur()) {
 			w.push(l.Out)
 			return true
 		}
 	}
-	// Iterators are effects/triggers whose Supported Targets is the element
-	// scope: every_vassal is "Supported Scopes: character, Targets: character".
+	// An iterator's Supported Targets is the element scope.
 	if t, _, ok := sc.Token(k); ok && t.Target != "" {
-		if (w.cur() == "" || declared.UsableIn(t.In, w.cur())) &&
-			sc.Scopes[t.Target].ChangeScopes {
+		if (w.cur() == "" || declared.UsableIn(t.In, w.cur())) && sc.Scopes[t.Target].ChangeScopes {
 			w.push(t.Target)
 			return true
 		}
 	}
-	// An iterator the game does not declare still changes scope, just to a type
-	// we cannot name. isIteratorKey recognises the any_/every_/random_/ordered_
-	// prefixes as slots, so without this the walk would carry the outer scope
-	// into the body and judge it against the wrong type. CK3's
-	// any_held_county is undeclared and sits inside character-scoped
-	// on_actions, which is exactly this case.
+	// An iterator the game does not declare still changes scope, to a type nothing here can name.
 	if isIteratorKey(k) {
 		return false
 	}
-	// A key the fold turns into a class is a rescope or a position, never a
-	// section of the current scope: `scope:activity = { … }` enters the activity
-	// it names, and reading it as neutral judged activity triggers against the
-	// character outside it -- 90 reports on 250 vanilla CK3 event files.
-	if at != key && !strings.HasSuffix(at, "."+key) {
+	// A key the fold turns into a class is a rescope or a position, never a section of the current scope: `scope:activity = { … }` enters the activity it names.
+	if name != key {
 		return false
 	}
-	// So is a key that names an object. The path fold no longer answers this --
-	// it files a segment by its position, not by its name -- and the scope walk
-	// still needs it: Victoria 3 ships `create_character = { … on_created = { …
-	// } }`, whose block is a body of effects by every learned measure and runs
-	// on the character it just made, so reading it as neutral judged
-	// set_character_immortal against the country around it.
+	// So is a key that names an object: Victoria 3's `create_character = { … on_created = { … } }` runs on the character it just made.
 	if w.s.Resolve(key) != nil {
 		return false
 	}
-	// A body runs in the scope around it, so entering one changes nothing: the
-	// learned class says which blocks those are, in place of a hand list of the
-	// engine's control flow and its event and on_action sections.
-	//
-	// The install's answer alone -- a block only the mod wrote would be classed
-	// from its own contents, and carrying the outer scope into a block PMT has
-	// never seen is how a walk ends up judging script against a scope it guessed.
-	b := w.s.Install.Schema.BlockAt(w.kind, at)
-	return b != nil && b.Class == derived.BlockBody
+	// A body runs in the scope around it, so entering one changes nothing; the install's answer alone, since a block only the mod wrote would be classed from its own contents.
+	return next != nil && next.Class == index.Body
 }
 
 // ScopeMisuse is one engine token used where the game does not allow it.
@@ -568,10 +470,7 @@ type ScopeMisuse struct {
 	Start, End int
 }
 
-// ScopeMisuses reports engine tokens used outside their declared scopes.
-// It stays silent unless all three are certain: a type system is loaded, the
-// token is declared by the game, and the scope at that point is known. An
-// unknown transition stops the descent rather than guessing.
+// ScopeMisuses reports engine tokens used outside their declared scopes. It stays silent unless a type system is loaded, the token is declared by the game, and the scope at that point is known.
 func ScopeMisuses(s *session.Session, path string, res jomini.Result) []ScopeMisuse {
 	if res.Root == nil {
 		return nil
@@ -595,63 +494,56 @@ func ScopeMisuses(s *session.Session, path string, res jomini.Result) []ScopeMis
 		if b == nil {
 			continue
 		}
-		// A missing root is not a dead end -- the same rule scopeIn states a few
-		// functions down, and it was fixed there and not here. Only on_action
-		// files declare a starting scope, so bailing on an empty one meant
-		// wrong-scope never looked inside an event, a decision, a scripted
-		// effect or a trait: it ran in common/on_action and nowhere else, on
-		// every game.
-		//
-		// Nothing is loosened by continuing. step() already takes a declared hop
-		// on the game's word when the current scope is unknown, and WalkMisuse
-		// reports only once w.cur() is non-empty, so a misuse is still judged
-		// against a scope something DECLARED rather than one PMT assumed.
-		w := defRootScopeLocked(s, sc, kind, a)
-		w.s, w.kind = s, kind
+		w := defRootScope(s, sc, kind, a)
+		w.s, w.kind, w.hang = s, kind, s.Install.Tree.Root(kind, false)
 		WalkMisuse(sc, b, w, bodyAt(w), nil, &out)
 	}
 	return out
 }
 
-// defRootScopeLocked seeds a walk from one top-level definition.
-//
-// Only on_actions are used, because only they declare their scope
-// (`Expected Scope` in on_actions.log). An event's `type` field names its
-// presentation window, not its scope: CK3 activity_event, letter_event and
-// court_event bodies are all character-scoped. Reading `type = activity_event`
-// as an activity scope produced 2,074 false reports over vanilla CK3 events
-// alone. Deriving event scopes from the on_actions that fire them is the
-// correct route and is not implemented yet.
-func defRootScopeLocked(
-	s *session.Session,
-	sc *declared.Schema, kind string, def *jomini.Assignment,
-) scopeWalk {
-	if kind == "on_action" {
-		if scope := sc.OnActions[strings.ToLower(def.Key.Text)]; scope != "" && scope != "none" {
-			return scopeWalk{stack: []string{scope}, rooted: true}
-		}
+// defRootScope seeds a walk from one top-level definition. Only on_actions declare their scope; an event's is read from the on_actions that fire it, since its `type` names a presentation window, not a scope.
+func defRootScope(s *session.Session, sc *declared.Schema, kind string, def *jomini.Assignment) scopeWalk {
+	scope := ""
+	switch kind {
+	case "on_action":
+		scope = sc.OnActions[strings.ToLower(def.Key.Text)]
+	case "event":
+		scope = eventRootScope(s, sc, def.Key.Text)
+	}
+	if scope == "" || scope == "none" {
 		return scopeWalk{}
 	}
-	if kind == "event" {
-		if scope := s.EventRootScope(sc, def.Key.Text); scope != "" {
-			return scopeWalk{stack: []string{scope}, rooted: true}
+	return scopeWalk{stack: []string{scope}, rooted: true}
+}
+
+// eventRootScope is the scope an event runs in, read from the on_actions that fire it; several disagreeing is no answer.
+func eventRootScope(s *session.Session, sc *declared.Schema, event string) string {
+	found := ""
+	for _, e := range s.Edges(event, false) {
+		if e.Rescoped {
+			continue
 		}
+		scope := sc.OnActions[strings.ToLower(e.From)]
+		if scope == "" || scope == "none" {
+			continue
+		}
+		if found != "" && found != scope {
+			return ""
+		}
+		found = scope
 	}
-	return scopeWalk{}
+	return found
 }
 
 // bodyAt is the declared token classes the block at the walk's position holds, 0 where the block is not a body.
 func bodyAt(w scopeWalk) uint8 {
-	if b := w.s.BlockAt(w.kind, w.path); b != nil && b.Class == derived.BlockBody {
-		return b.Body
+	if w.hang != nil && w.hang.Class == index.Body {
+		return w.hang.Body
 	}
 	return 0
 }
 
-func WalkMisuse(
-	sc *declared.Schema, b *jomini.Block, w scopeWalk, body uint8,
-	params map[string]bool, out *[]ScopeMisuse,
-) {
+func WalkMisuse(sc *declared.Schema, b *jomini.Block, w scopeWalk, body uint8, params map[string]bool, out *[]ScopeMisuse) {
 	for _, st := range b.Statements {
 		a, ok := st.(*jomini.Assignment)
 		if !ok || a.Key.Quoted {
@@ -659,40 +551,22 @@ func WalkMisuse(
 		}
 		key := a.Key.Text
 		lk := strings.ToLower(game.KeyIdentity("", key))
-		// An argument the enclosing token declares is not a statement in the
-		// scope that token produces. CK3 documents
-		// `any_trait_in_category = { category = fame/health/etc }`, and
-		// `category` is separately a declared trigger on artifact -- so judging
-		// it reported correct vanilla script as wrong-scope.
-		//
-		// Only the JUDGEMENT is skipped, never the descent: `limit` is a
-		// declared argument of every iterator, and skipping the statement whole
-		// would stop the walk entering the one block most misuses sit in.
-		if !params[lk] {
-			// A mod macro may share a name with an engine token; the macro wins.
-			if shadowed := w.s.Work.Schema.MacroDefs[key] != ""; !shadowed && body != 0 && w.cur() != "" {
-				if t, role, ok := sc.Token(lk); ok && body&roleBit(role) != 0 &&
-					!declared.UsableIn(t.In, w.cur()) {
-					*out = append(*out, ScopeMisuse{
-						Key: key, Scope: w.cur(), Allowed: t.In,
-						Start: a.Key.Range.Start, End: a.Key.Range.End,
-					})
-				}
+		// An argument the enclosing token declares is not a statement in the scope that token produces; only the judgement is skipped, never the descent. A mod macro sharing a name with an engine token wins.
+		if !params[lk] && w.s.Work.Tree.Macros[key] == "" && body != 0 && w.cur() != "" {
+			if t, role, ok := sc.Token(lk); ok && body&roleBit(role) != 0 && !declared.UsableIn(t.In, w.cur()) {
+				*out = append(*out, ScopeMisuse{Key: key, Scope: w.cur(), Allowed: t.In,
+					Start: a.Key.Range.Start, End: a.Key.Range.End})
 			}
 		}
 		child := jomini.ChildBlock(a)
 		if child == nil {
 			continue
 		}
-		next := scopeWalk{
-			s: w.s, kind: w.kind, path: w.path,
-			stack: slices.Clone(w.stack), rooted: w.rooted,
-		}
+		next := scopeWalk{s: w.s, kind: w.kind, hang: w.hang, stack: slices.Clone(w.stack), rooted: w.rooted}
 		if !next.step(sc, key) {
 			continue
 		}
-		// The body class is inherited until a block opens one of its own, so
-		// `capital_county = { … }` inside an effect is still an effect context.
+		// The body class is inherited until a block opens one of its own.
 		nextBody := body
 		if b := bodyAt(next); b != 0 {
 			nextBody = b
@@ -701,16 +575,15 @@ func WalkMisuse(
 	}
 }
 
-// isIteratorKey reports the four list-iteration prefixes: an iterator the game does not declare still changes scope, just to a type nothing here can name.
+// isIteratorKey reports the four list-iteration prefixes.
 func isIteratorKey(k string) bool {
 	return strings.HasPrefix(k, "any_") || strings.HasPrefix(k, "every_") ||
 		strings.HasPrefix(k, "random_") || strings.HasPrefix(k, "ordered_")
 }
 
-// roleBit is the body class one declared role belongs to.
 func roleBit(role string) uint8 {
 	if role == "effect" {
-		return derived.BodyEffect
+		return index.BodyEffect
 	}
-	return derived.BodyTrigger
+	return index.BodyTrigger
 }

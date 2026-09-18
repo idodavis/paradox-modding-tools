@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strconv"
 
-	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/session"
 )
@@ -35,7 +35,7 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 		if id.assignEnd <= id.assignStart {
 			return nil
 		}
-		return []Location{defLocation(c, derived.Def{
+		return []Location{defLocation(c, index.Def{
 			Kind: id.kind, Key: id.name, Path: path, Line: id.assignLine,
 			Start: id.assignStart, End: id.assignEnd,
 		})}
@@ -82,18 +82,18 @@ func ownerOf(id identity) string {
 // owner and excludes namespace/local mismatches; refs additionally adds call
 // sites and the loc-site fallback instead of the broader FindDefsOf search.
 func siteLocations(
-	c *fileCache, from, key string, winner *derived.Def, kind, owner string, refs bool,
+	c *fileCache, from, key string, winner *index.Def, kind, owner string, refs bool,
 ) []Location {
 	s := c.s
 	seen := map[string]bool{}
-	here := derived.CanonPath(from)
+	here := index.CanonPath(from)
 	var out []Location
 	addLoc := func(loc Location) {
 		// Canonicalise the path before deduping: the same definition reaches
 		// this function from several sources that do not agree on how to spell
 		// a Windows path, and two results for one place makes the editor open
 		// a peek listing the current file instead of simply jumping.
-		id := derived.CanonPath(loc.URI) + ":" +
+		id := index.CanonPath(loc.URI) + ":" +
 			strconv.Itoa(loc.Range.Start.Line) + ":" +
 			strconv.Itoa(loc.Range.Start.Character) + ":" +
 			strconv.Itoa(loc.Range.End.Line) + ":" +
@@ -118,7 +118,7 @@ func siteLocations(
 	}
 	ownerOK := func(okey string) bool { return ownerKey == "" || okey == "" || okey == ownerKey }
 	wantNamespace := winner != nil && jomini.CanonicalKind(winner.Kind) == "namespace"
-	add := func(d derived.Def) {
+	add := func(d index.Def) {
 		if d.Key != key || !kindOK(d.Kind) || !ownerOK(d.OwnerKey) {
 			return
 		}
@@ -126,7 +126,7 @@ func siteLocations(
 		// file, and does not hide the namespace line (`namespace = conqueror` is
 		// not where the `conqueror` trait is defined, but it is still a site).
 		if !refs {
-			if d.Local && derived.CanonPath(d.Path) != here {
+			if d.Local && index.CanonPath(d.Path) != here {
 				return
 			}
 			if !wantNamespace && jomini.CanonicalKind(d.Kind) == "namespace" {
@@ -139,7 +139,7 @@ func siteLocations(
 		add(*winner)
 	}
 	hasLocDef := false
-	for _, d := range s.ModDefsOf(key) {
+	for _, d := range s.ModDefs(key) {
 		add(d)
 		hasLocDef = hasLocDef || d.Kind == "loc_key"
 	}
@@ -160,7 +160,7 @@ func siteLocations(
 	}
 	if kind == "" && !hasLocDef {
 		if file, ln, _, _, ok := s.LocSite(key); ok {
-			add(derived.Def{Kind: "loc_key", Key: key, Path: file, Line: ln})
+			add(index.Def{Kind: "loc_key", Key: key, Path: file, Line: ln})
 		}
 	}
 	for _, r := range s.RefsTo(key) {
@@ -202,7 +202,7 @@ func (c *fileCache) lines(path string) *jomini.LineIndex {
 	return li
 }
 
-func defLocation(c *fileCache, d derived.Def) Location {
+func defLocation(c *fileCache, d index.Def) Location {
 	loc := Location{URI: d.Path}
 	if d.End > d.Start {
 		res := c.parsed(d.Path)
@@ -223,7 +223,7 @@ func defLocation(c *fileCache, d derived.Def) Location {
 	return loc
 }
 
-func assignmentBlock(res jomini.Result, d derived.Def) *jomini.Block {
+func assignmentBlock(res jomini.Result, d index.Def) *jomini.Block {
 	if res.Root == nil {
 		return nil
 	}

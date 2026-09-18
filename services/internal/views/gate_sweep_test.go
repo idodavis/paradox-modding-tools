@@ -195,7 +195,7 @@ func sampleAnswers(s *session.Session, root string) answerRates {
 				sc.Text != "" && !jomini.IsLiteralValue(sc.Text) {
 				vp := li.PositionAt(sc.Range.Start)
 				a.compAsked++
-				if answered(lsp.Complete(s, p, vp.Line, vp.Character)) {
+				if answered(lsp.Complete(s, p, vp.Line, vp.Character).Items) {
 					a.compAnswered++
 				}
 			}

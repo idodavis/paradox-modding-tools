@@ -7,34 +7,73 @@ import (
 	"paradox-modding-tools/services/internal/lang/declared"
 )
 
-// TestFoldSeg is the path fold of the spec's §2: a segment is kept verbatim only
-// when it is a lower-case identifier that names nothing.
-func TestFoldSeg(t *testing.T) {
-	defs := map[string]bool{"catholic": true, "e_hre": true}
-	isDef := func(n string) bool { return defs[n] }
-	for _, tt := range []struct{ raw, want string }{
-		{"immediate", "immediate"},
-		{"option", "option"},
-		{"", segBare},
-		{"100", segNumber},
-		{"1066.1.1", segDate},
-		{"culture:english", segCite},
-		{"scope:actor", segCite},
-		{"$PARAM$", segVar},
-		{"@value", segVar},
-		{"catholic", segKind},
-		{"e_hre", segKind},
-		// A name that is not a lower-case token names something unharvested; verbatim it is the cell explosion the census found.
-		{"MyWindow", segKind},
+// TestKeyClass is the one classifier and the one table: a row per class, with
+// what the fold writes for it and whether unknown-key may name it.
+func TestKeyClass(t *testing.T) {
+	s := &Schema{
+		TriggerSet: map[string]bool{"is_ruler": true},
+		MacroDefs:  map[string]string{"my_helper": "scripted_effects"},
+	}
+	for _, tt := range []struct {
+		key      string
+		quoted   bool
+		rows     bool
+		class    Class
+		seg      string
+		nameable bool
+	}{
+		{"immediate", false, false, ClassPlain, "immediate", true},
+		{"", false, false, ClassBare, segBare, false},
+		{"100", false, false, ClassNumber, segNumber, false},
+		{"1066.1.1", false, false, ClassDate, segDate, false},
+		{"culture:english", false, false, ClassCite, segCite, false},
+		{"scope:actor", false, false, ClassCite, segCite, false},
+		{"$PARAM$", false, false, ClassVar, segVar, false},
+		{"@value", false, false, ClassVar, segVar, false},
+		{"immediate", true, false, ClassVar, segVar, false},
+		// Control flow is never a row, whatever the position holds.
+		{"limit", false, true, ClassStop, "limit", false},
+		{"is_ruler", false, false, ClassDeclared, "is_ruler", false},
+		{"my_helper", false, false, ClassMacroCall, "my_helper", false},
+		// A definition key at a database position is a row; the same name under a body is the effect CK3 also named a game concept.
+		{"e_hre", false, true, ClassDefinition, segKind, false},
+		{"add_character_flag", false, false, ClassPlain, "add_character_flag", true},
 	} {
-		if got := foldSeg("ck3", tt.raw, false, isDef); got != tt.want {
-			t.Errorf("foldSeg(%q) = %q, want %q", tt.raw, got, tt.want)
+		c, _ := s.keyClass("ck3", tt.key, tt.quoted, tt.rows)
+		if c != tt.class || c.Nameable() != tt.nameable {
+			t.Errorf("keyClass(%q, quoted=%v, rows=%v) = %v/%v, want %v/%v",
+				tt.key, tt.quoted, tt.rows, c, c.Nameable(), tt.class, tt.nameable)
+		}
+		if got := s.foldSeg("ck3", tt.key, tt.quoted, tt.rows); got != tt.seg {
+			t.Errorf("foldSeg(%q) = %q, want %q", tt.key, got, tt.seg)
 		}
 	}
-	if got := foldSeg("ck3", "immediate", true, isDef); got != segVar {
-		t.Errorf("a quoted segment is not an identifier: %q", got)
+	// A name that is not a lower-case token names something unharvested; verbatim it is the cell explosion the census found -- but as a KEY it is the macro argument's own cell.
+	if got := s.foldSeg("ck3", "ROLE", false, false); got != segKind {
+		t.Errorf("foldSeg(ROLE) = %q, want %q", got, segKind)
 	}
-	// The key half folds by the same rule, so a barony id and a GUI widget name are one cell, not one each.
+	if got := s.foldKey("ck3", "ROLE", false, false); got != "ROLE" {
+		t.Errorf("foldKey(ROLE) = %q, want the name", got)
+	}
+	if got := s.foldKey("ck3", "e_hre", false, false); got != "e_hre" {
+		t.Errorf("foldKey off a database = %q, want the name", got)
+	}
+}
+
+// TestUnifyKey is §9's unification: a block key is one structure everywhere, and a class-folded position one structure under the key above it.
+func TestUnifyKey(t *testing.T) {
+	for _, tt := range []struct{ path, want string }{
+		{"", "event"},
+		{"immediate", "immediate"},
+		{"immediate.random_list", "random_list"},
+		{"immediate.random_list." + segNumber, "random_list." + segNumber},
+		{"option.random_list." + segNumber, "random_list." + segNumber},
+		{"trigger." + segCite, "trigger." + segCite},
+	} {
+		if got := unifyKey("event", tt.path); got != tt.want {
+			t.Errorf("unifyKey(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
 }
 
 // TestClassify is the value rule: a literal carries only Literal, a citation only its kind, the rest whatever the indexes hold.
@@ -152,6 +191,101 @@ func TestMembersOrder(t *testing.T) {
 	}
 	if got := s.Members("event", "nothing"); got != nil {
 		t.Errorf("unknown path = %v", got)
+	}
+}
+
+// TestBlockTypes is §9's four classes over the cells, and the two things a key unifies: its body-ness and its members.
+func TestBlockTypes(t *testing.T) {
+	s := &Schema{
+		// save_temporary_scope_as is declared in both dumps, as CK3 declares it.
+		TriggerSet: map[string]bool{"is_ruler": true, "save_temporary_scope_as": true},
+		EffectSet:  map[string]bool{"add_gold": true, "save_temporary_scope_as": true},
+		MacroDefs:  map[string]string{"my_scaling": "scripted_modifiers"},
+	}
+	cell := func(kind, path, key string, n int32, flags uint8) {
+		c := s.at(kind, path, key)
+		c.N, c.Flags = n, flags
+	}
+	// event: a definition body of fields, a trigger body under it, and a `limit` inside that body.
+	cell("event", segTop, "", 9, CellBlock)
+	cell("event", "", "desc", 9, 0)
+	cell("event", "", "trigger", 4, CellBlock)
+	cell("event", "trigger", "is_ruler", 4, 0)
+	cell("event", "trigger", "limit", 2, CellBlock)
+	cell("event", "trigger.limit", "is_ruler", 2, 0)
+	// One both-declared member does not make a trigger body an effect body too; a block with nothing else keeps both classes.
+	cell("event", "trigger", "save_temporary_scope_as", 1, 0)
+	cell("decisions", "", "on_pick", 1, CellBlock)
+	cell("decisions", "on_pick", "save_temporary_scope_as", 1, 0)
+	// decisions writes `limit` with plain fields only; it is still a trigger body, because its key is one in event.
+	cell("decisions", "", "limit", 1, CellBlock)
+	cell("decisions", "limit", "count", 1, 0)
+	// A database: the §3 join marked the cell, and every block key under it folded to <kind>.
+	s.at("religions", "", "faiths").Def, s.at("religions", "", "faiths").Rows = "faith", true
+	cell("religions", "", "faiths", 3, CellBlock)
+	cell("religions", "faiths", segKind, 3, CellBlock)
+	// A list: the block's own cell also carries a value type, because its bare members folded into it.
+	cell("religions", "", "colors", 2, CellBlock|CellLiteral)
+	cell("religions", "colors", "add", 1, 0)
+	// A macro call names its class: a scripted_modifiers call makes a modifier body.
+	cell("religions", "", "scaling", 1, CellBlock)
+	cell("religions", "scaling", "my_scaling", 1, 0)
+	// select_trigger is one structure at two kinds; show_if is written at one position only, allow_null at none.
+	cell("cabinet_actions", "", "select_trigger", 1, CellBlock)
+	cell("cabinet_actions", "select_trigger", "looking_for_a", 1, 0)
+	cell("cabinet_actions", "select_trigger", "target_flag", 1, 0)
+	cell("country_interactions", "", "select_trigger", 1, CellBlock)
+	cell("country_interactions", "select_trigger", "show_if", 1, 0)
+
+	s.learnBlocks("ck3", map[string]map[string]bool{"select_trigger": {"allow_null": true}}, nil, true)
+
+	for _, tt := range []struct {
+		kind, path  string
+		class, body uint8
+		database    string
+		members     []string
+	}{
+		{kind: "event", path: "", class: BlockStructure, members: []string{"desc", "trigger"}},
+		{kind: "event", path: "trigger", class: BlockBody, body: BodyTrigger, members: []string{"limit"}},
+		{kind: "event", path: "trigger.limit", class: BlockBody, body: BodyTrigger},
+		{kind: "decisions", path: "limit", class: BlockBody, body: BodyTrigger, members: []string{"count"}},
+		{kind: "decisions", path: "on_pick", class: BlockBody, body: BodyTrigger | BodyEffect},
+		{kind: "religions", path: "faiths", class: BlockDatabase, database: "faith"},
+		{kind: "religions", path: "colors", class: BlockList},
+		{kind: "religions", path: "scaling", class: BlockBody, body: BodyModifier},
+		{kind: "cabinet_actions", path: "select_trigger", class: BlockStructure,
+			members: []string{"allow_null", "looking_for_a", "show_if", "target_flag"}},
+		{kind: "country_interactions", path: "select_trigger", class: BlockStructure,
+			members: []string{"allow_null", "looking_for_a", "show_if", "target_flag"}},
+	} {
+		b := s.BlockAt(tt.kind, tt.path)
+		if b == nil {
+			t.Errorf("%s/%s: no block type", tt.kind, tt.path)
+			continue
+		}
+		if b.Class != tt.class || b.Body != tt.body || b.Database != tt.database {
+			t.Errorf("%s/%s = class %d body %d db %q, want %d %d %q",
+				tt.kind, tt.path, b.Class, b.Body, b.Database, tt.class, tt.body, tt.database)
+		}
+		if got := s.BlockMembers(tt.kind, tt.path); tt.members != nil && !slices.Equal(got, tt.members) {
+			t.Errorf("%s/%s members = %v, want %v", tt.kind, tt.path, got, tt.members)
+		}
+	}
+}
+
+// TestKnown is unknown-key's whole vocabulary: a corpus key, a declared name and a documented field are all known; a name written nowhere is not.
+func TestKnown(t *testing.T) {
+	s := &Schema{}
+	s.at("event", "", "desc").add([]string{LabelLiteral}, 1)
+	sc := &declared.Schema{Effects: map[string]declared.EngineToken{"add_gold": {}}}
+	s.learnBlocks("ck3", map[string]map[string]bool{"event": {"trigger": true}}, sc, true)
+	for _, key := range []string{"desc", "add_gold", "trigger"} {
+		if !s.Known(key) {
+			t.Errorf("Known(%q) = false, want true", key)
+		}
+	}
+	if s.Known("nothing_writes_this") {
+		t.Error("Known(nothing_writes_this) = true, want false")
 	}
 }
 

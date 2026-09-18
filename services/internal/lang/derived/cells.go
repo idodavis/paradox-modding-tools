@@ -8,6 +8,7 @@
 package derived
 
 import (
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -60,6 +61,8 @@ type CellType struct {
 	Names bool `json:"names,omitempty"`
 	// Def is the nested definition kind this cell's block keys declare, set by the join.
 	Def string `json:"def,omitempty"`
+	// Rows reports that the block keys under this cell are rows of a database rather than fields of a structure: the join above, or a local database -- a position whose block keys a sibling scalar cell cites, as a game rule's `default` names its own options.
+	Rows bool `json:"rows,omitempty"`
 
 	// labels, inter and seen are the fold's working state; settle turns them into Flags and Kinds.
 	labels map[string]int32
@@ -93,6 +96,30 @@ func (t *CellType) Has(l Label) bool {
 // IsBlock reports a cell usually written as a block.
 func (t *CellType) IsBlock() bool { return t != nil && t.Flags&CellBlock != 0 }
 
+// BlockType is what the block at one (kind, path) position is: §9's class, the declared token classes a body's members belong to, the database a definition cell names, and the structure whose members it holds.
+type BlockType struct {
+	Class uint8 `json:"c,omitempty"`
+	Body  uint8 `json:"b,omitempty"`
+	// Key is the structure this position is one of, and addresses its members in Schema.Structures. Writing the members here instead cost 230MB of CK3 cache: 2,015 `limit` positions are one member list, not 2,015 copies of 811 names.
+	Key      string `json:"k,omitempty"`
+	Database string `json:"d,omitempty"`
+}
+
+// The four classes of §9 in the precedence the census measured: body over database over list over structure.
+const (
+	BlockStructure uint8 = iota
+	BlockDatabase
+	BlockBody
+	BlockList
+)
+
+// The bits of BlockType.Body: the declared token classes among a body's members. A body routinely carries several, and 47-63% of them also carry plain fields.
+const (
+	BodyTrigger uint8 = 1 << iota
+	BodyEffect
+	BodyModifier
+)
+
 // KindInfo is what a whole database says about itself rather than about one of its cells.
 type KindInfo struct {
 	// Loc are the key templates this kind's definitions are localized under, each with its exact coverage.
@@ -102,9 +129,18 @@ type KindInfo struct {
 // Schema is the learned half of a game plus the projections the editor reads; the declared half stays *declared.Schema on the Index.
 type Schema struct {
 	// Cells is kind -> folded path -> key -> type. Nested rather than flat because the three levels are what every lookup walks and what keeps one copy of each kind and path string in the file.
-	Cells  map[string]map[string]map[string]*CellType `json:"cells,omitempty"`
-	Kinds  map[string]KindInfo                        `json:"kinds,omitempty"`
-	Nested []NestedShape                              `json:"nested,omitempty"`
+	Cells map[string]map[string]map[string]*CellType `json:"cells,omitempty"`
+	// Blocks is what the block at each (kind, folded path) position is, derived from the settled cells.
+	Blocks map[string]map[string]*BlockType `json:"blocks,omitempty"`
+	// Structures is each structure's members, unified over every position its key is written at: 64% of them are written at exactly one, so a per-position list is blind to the rest.
+	Structures map[string][]string `json:"structures,omitempty"`
+	// KnownKeys is every key the corpus writes anywhere, plus the declared engine
+	// API and the documented structure fields -- unknown-key's whole vocabulary:
+	// a real key in the wrong block is not that check's business, only a name
+	// written nowhere is.
+	KnownKeys map[string]bool `json:"knownKeys,omitempty"`
+	Kinds      map[string]KindInfo `json:"kinds,omitempty"`
+	Nested     []NestedShape       `json:"nested,omitempty"`
 	// Prefix is the declared citation prefix bound to a harvested database, and KindScope the scope type each database holds.
 	Prefix    map[string]string `json:"prefix,omitempty"`
 	KindScope map[string]string `json:"kindScope,omitempty"`
@@ -162,64 +198,303 @@ func (s *Schema) Members(kind, path string) []string {
 	return out
 }
 
-// ------------------------------------------------------------------ the fold
+// BlockAt is what the block at one position is, or nil.
+func (s *Schema) BlockAt(kind, path string) *BlockType {
+	if s == nil {
+		return nil
+	}
+	return s.Blocks[kind][path]
+}
 
-// foldKey folds the key half: the positional classes, and <kind> for a keyed BLOCK naming a definition -- never a scalar field, since folding `characters|name` cost 70,601 localization references.
-func foldKey(gameID, key string, block, quoted bool, isDef func(string) bool) string {
-	if key == "" || quoted {
-		return key
+// BlockMembers are the members of the structure at one position, sorted -- the union over every position of its key, plus whatever the game's documentation lists for it.
+func (s *Schema) BlockMembers(kind, path string) []string {
+	if b := s.BlockAt(kind, path); b != nil {
+		return s.Structures[b.Key]
 	}
-	switch {
-	case isDigitKey(key):
-		return segNumber
-	case jomini.IsDateLiteral(key):
-		return segDate
-	case strings.ContainsAny(key, "$@"):
-		return segVar
+	return nil
+}
+
+// Known reports a key the corpus writes anywhere for this game -- as a cell of
+// any kind at any position, as engine API the game declares, or as a field the
+// game's own documentation lists for some structure.
+func (s *Schema) Known(key string) bool {
+	return s != nil && key != "" && s.KnownKeys[strings.ToLower(key)]
+}
+
+// ----------------------------------------------------------- the block types
+
+// learnBlocks is §9 over the settled cells: one BlockType per (kind, path) position, including the third of them that no block-flagged cell sits above. Body-ness and members unify by the block's key -- a key holding declared tokens at one position holds them at all of them -- and the game's own documentation adds the fields it lists for a structure whether or not vanilla writes them.
+//
+// install settles KnownKeys, unknown-key's whole vocabulary, from THIS schema's
+// own cells: the install's alone. A workspace relearn (install false) never
+// touches it -- a key the corpus never wrote is not "known" merely because the
+// file being diagnosed just wrote it, which would silence the check on its own
+// finding the moment it fired.
+func (s *Schema) learnBlocks(gameID string, docFields map[string]map[string]bool, declaredBy *declared.Schema, install bool) {
+	s.Blocks = make(map[string]map[string]*BlockType, len(s.Cells))
+	// bodyByKey is the exclusive evidence for each block key, ambByKey the both-declared members that only count where there is none.
+	bodyByKey, ambByKey := map[string]uint8{}, map[string]uint8{}
+	members := map[string]map[string]bool{}
+	own := map[*BlockType][]string{}
+	for kind, byPath := range s.Cells {
+		at := make(map[string]*BlockType, len(byPath))
+		s.Blocks[kind] = at
+		for path, byKey := range byPath {
+			b, folded := &BlockType{Key: unifyKey(kind, path)}, false
+			for key, t := range byKey {
+				if key == "" || t.N == 0 {
+					continue
+				}
+				if key[0] == '<' {
+					folded = folded || key == segKind || key == segCite
+					continue
+				}
+				c, _ := s.bodyClass(key)
+				b.Body |= c
+				own[b] = append(own[b], key)
+				// A member the game declares in exactly one class says which class this body is; one it declares in several says only that this is a body.
+				if c&(c-1) == 0 {
+					bodyByKey[b.Key] |= c
+				} else {
+					ambByKey[b.Key] |= c
+				}
+			}
+			cell, _ := parentCell(s, kind, path)
+			switch {
+			case b.Body != 0:
+				b.Class = BlockBody
+			case cell != nil && cell.Rows:
+				b.Class, b.Database = BlockDatabase, cell.Def
+			case folded && len(own[b]) == 0:
+				b.Class = BlockDatabase
+			case cell != nil && (cell.Flags&(CellLiteral|CellUnresolved) != 0 || len(cell.Kinds) > 0):
+				b.Class = BlockList
+			}
+			at[path] = b
+		}
 	}
-	if _, _, ok := game.ParseTyped(gameID, key); ok {
-		return segCite
+	// A key that is a body anywhere is a body everywhere it is a block, so its class is known before any position's members are collected. Its classes are the exclusive evidence over all of them, and the ambiguous members only where there is none.
+	for _, at := range s.Blocks {
+		for _, b := range at {
+			if b.Body = bodyByKey[b.Key]; b.Body == 0 {
+				b.Body = ambByKey[b.Key]
+			}
+			if b.Body != 0 {
+				b.Class, b.Database = BlockBody, ""
+			}
+			// Every block key gets its entry, a database's and a list's included: a key the schema opens a block with anywhere is engine grammar, and `unknown-key` reads that from Structures.
+			if members[b.Key] == nil {
+				members[b.Key] = map[string]bool{}
+			}
+			if b.Class != BlockBody && b.Class != BlockStructure {
+				continue
+			}
+			for _, m := range own[b] {
+				// A body's tokens are the declared API, not the structure's fields; only the rest are members.
+				c, _ := s.keyClass(gameID, m, false, false)
+				if b.Class == BlockStructure || classes[c].member {
+					members[b.Key][m] = true
+				}
+			}
+		}
 	}
-	if _, ok := jomini.ParsePrefixed(key); ok {
-		return segCite
+	// Declared beats derived: a field the game's own documentation lists for a structure is a member whether or not vanilla writes it.
+	for structure, fields := range docFields {
+		if members[structure] == nil {
+			members[structure] = map[string]bool{}
+		}
+		for f := range fields {
+			members[structure][f] = true
+		}
 	}
-	if block && !jomini.IsStop(key) && isDef(game.KeyIdentity(gameID, key)) {
-		return segKind
+	s.Structures = make(map[string][]string, len(members))
+	for key, set := range members {
+		s.Structures[key] = slices.Sorted(maps.Keys(set))
+	}
+	if !install {
+		return
+	}
+	known := make(map[string]bool, len(s.Cells))
+	for _, byPath := range s.Cells {
+		for _, byKey := range byPath {
+			for key := range byKey {
+				if key != "" && key[0] != '<' {
+					known[strings.ToLower(key)] = true
+				}
+			}
+		}
+	}
+	declaredBy.EachName(func(name string) { known[strings.ToLower(name)] = true })
+	for _, fields := range docFields {
+		for f := range fields {
+			known[strings.ToLower(f)] = true
+		}
+	}
+	s.KnownKeys = known
+}
+
+// unifyKey is the name a position unifies under: the block's own key, or the kind for a definition body, whose fields the documentation addresses the same way. A class-folded segment is a position and not a name, so it unifies under the key above it plus the class -- the weight entry of a random_list is `random_list.<n>` wherever it is written, and not one structure per enclosing section.
+func unifyKey(kind, path string) string {
+	if path == "" {
+		return kind
+	}
+	head, key := "", path
+	if i := strings.LastIndexByte(path, '.'); i >= 0 {
+		head, key = path[:i], path[i+1:]
+	}
+	if key == "" || key[0] == '<' {
+		return unifyKey(kind, head) + "." + key
 	}
 	return key
 }
 
-// foldSeg is §2's path fold: a segment is kept as written only when it is a lower-case identifier that is not a definition key of any kind.
-func foldSeg(gameID, raw string, quoted bool, isDef func(string) bool) string {
-	if raw == "" {
-		return segBare
+// ------------------------------------------------------- the key classifier
+
+// Class is what one key at one position is. Exactly one answer per key, from one
+// function, because the 2026-09-17 false positives were six copies of this
+// question disagreeing about a key the fold and the judge each classified alone.
+type Class uint8
+
+const (
+	ClassPlain      Class = iota // a name written as a field of the block it sits in
+	ClassNumber                  // a weight, an index, a data-row id
+	ClassDate                    // 1066.1.1
+	ClassCite                    // prefix:id, through the declared prefixes
+	ClassVar                     // a $PARAM$ or @value interpolation, or a quoted key
+	ClassStop                    // control flow and the boolean literals
+	ClassDeclared                // a token the game's own API declares
+	ClassMacroCall               // a scripted_* definition invoked by name
+	ClassDefinition              // a row of the database the block above holds
+	ClassBare                    // a list member, which has no key at all
+)
+
+// classes is the one table every consumer of a key's class reads: what the fold
+// writes for it, whether it is a member of its block's structure, whether
+// unknown-key may name it, and whether completion offers it.
+//
+// The fifth column the design asked for -- what hover shows -- has no row here:
+// a card is chosen by what the word RESOLVES to (lsp/resolve.go's wordResolvers),
+// not by its class at a position, so a column would have had no reader.
+var classes = [...]struct {
+	// seg is the path segment and the cell key this class folds to; empty keeps the key as written.
+	seg string
+	// member is both columns the design asked for as one: a field of its block's structure is also exactly what completion offers under that block, and a body's declared tokens are neither.
+	member, nameable bool
+}{
+	ClassPlain:      {"", true, true},
+	ClassNumber:     {segNumber, false, false},
+	ClassDate:       {segDate, false, false},
+	ClassCite:       {segCite, false, false},
+	ClassVar:        {segVar, false, false},
+	ClassStop:       {"", true, false},
+	ClassDeclared:   {"", false, false},
+	ClassMacroCall:  {"", false, false},
+	ClassDefinition: {segKind, false, false},
+	ClassBare:       {segBare, false, false},
+}
+
+// Nameable reports a class `unknown-key` may name: only a plain field name, never a position the fold made, a stop word, a declared token or a macro call.
+func (c Class) Nameable() bool { return classes[c].nameable }
+
+// keyClass answers, for one key at one position, exactly one class, and the kind
+// a citation names. rows says the block above this key holds a database, which is
+// the only evidence that a name is a definition here -- CK3 names its game
+// concepts `levies`, `men_at_arms` and `change_title_holder`, so classing a key
+// as a definition because something SOMEWHERE defines that name made every
+// declared effect body one blob.
+func (s *Schema) keyClass(gameID, key string, quoted, rows bool) (Class, string) {
+	if key == "" {
+		return ClassBare, ""
 	}
 	if quoted {
-		return segVar
+		return ClassVar, ""
 	}
-	if strings.ContainsAny(raw, "$@") {
-		return segVar
+	if isDigitKey(key) {
+		return ClassNumber, ""
 	}
-	if isDigitKey(raw) {
-		return segNumber
+	if jomini.IsDateLiteral(key) {
+		return ClassDate, ""
 	}
-	if jomini.IsDateLiteral(raw) {
-		return segDate
+	if kind, _, ok := game.ParseTyped(gameID, key); ok {
+		return ClassCite, jomini.CanonicalKind(kind)
 	}
-	if _, _, ok := game.ParseTyped(gameID, raw); ok {
-		return segCite
+	if p, ok := jomini.ParsePrefixed(key); ok {
+		return ClassCite, jomini.PrefixKind(p.Prefix)
 	}
-	if _, ok := jomini.ParsePrefixed(raw); ok {
-		return segCite
+	if strings.ContainsAny(key, "$@") {
+		return ClassVar, ""
+	}
+	if jomini.IsStop(key) {
+		return ClassStop, ""
+	}
+	if rows {
+		return ClassDefinition, ""
+	}
+	if bits, macro := s.bodyClass(key); bits != 0 {
+		if macro {
+			return ClassMacroCall, ""
+		}
+		return ClassDeclared, ""
+	}
+	return ClassPlain, ""
+}
+
+// bodyClass is the declared classes one name belongs to, and whether it is a
+// macro the install declared for itself rather than a token the engine ships.
+func (s *Schema) bodyClass(key string) (bits uint8, macro bool) {
+	// Phase A classifies a value's shape before any schema exists, and a shape is settled well before the classifier reaches these two sets.
+	if s == nil {
+		return 0, false
+	}
+	if s.TriggerSet[key] {
+		bits |= BodyTrigger
+	}
+	if s.EffectSet[key] {
+		bits |= BodyEffect
+	}
+	if k := s.MacroDefs[key]; jomini.IsMacroKind(k) {
+		macro = bits == 0
+		switch {
+		case strings.Contains(k, "trigger"):
+			bits |= BodyTrigger
+		case strings.Contains(k, "modifier"):
+			bits |= BodyModifier
+		default:
+			bits |= BodyEffect
+		}
+	}
+	return bits, macro
+}
+
+// ------------------------------------------------------------------ the fold
+
+// foldKey folds one cell key by its class. rows is the position's answer, so a block key at a database folds to <kind> in the same call that folds a weight to <n>.
+func (s *Schema) foldKey(gameID, key string, quoted, rows bool) string {
+	// A quoted key is a name the author spelled out; only a PATH folds it to a class, because a path segment's job is to be one position and a key's is to be one name.
+	if key == "" || quoted {
+		return key
+	}
+	c, _ := s.keyClass(gameID, key, quoted, rows)
+	if seg := classes[c].seg; seg != "" {
+		return seg
+	}
+	return key
+}
+
+// foldSeg folds one path segment by the same classifier, with the one rule that
+// is about paths and not about keys: a segment that is not a lower-case script
+// identifier names something the corpus has not harvested, and keeping it
+// verbatim is what made CK3 898,774 cells. A KEY of that shape keeps its
+// spelling, because `ROLE = chemist` is the argument's own cell.
+func (s *Schema) foldSeg(gameID, raw string, quoted, rows bool) string {
+	c, _ := s.keyClass(gameID, raw, quoted, rows)
+	if seg := classes[c].seg; seg != "" {
+		return seg
 	}
 	name := game.KeyIdentity(gameID, raw)
-	if isDef(name) {
-		return segKind
-	}
 	if jomini.IsLowerName(name) {
 		return name
 	}
-	// A name that is neither a lower-case token nor a class above names something the corpus has not harvested; keeping it verbatim is what made CK3 898,774 cells.
 	return segKind
 }
 
@@ -241,6 +516,16 @@ func (t *lookup) cell(c Cell) *CellType {
 	for _, s := range t.cells {
 		if at := s.TypeOf(c); at != nil {
 			return at
+		}
+	}
+	return nil
+}
+
+// block is the class of the block at one position, read in the same order as a cell.
+func (t *lookup) block(kind, path string) *BlockType {
+	for _, s := range t.cells {
+		if b := s.BlockAt(kind, path); b != nil {
+			return b
 		}
 	}
 	return nil
@@ -405,7 +690,7 @@ func joinNested(s *Schema, cited map[string]string, defined func(string) bool) {
 	for kind, byPath := range s.Cells {
 		for path, byKey := range byPath {
 			parent, ok := parentCell(s, kind, path)
-			if !ok || !parent.Names || parent.Def != "" {
+			if !ok || !parent.Names || parent.Rows {
 				continue
 			}
 			child := ""
@@ -420,7 +705,7 @@ func joinNested(s *Schema, cited map[string]string, defined func(string) bool) {
 				}
 			}
 			if child != "" {
-				parent.Def = jomini.CanonicalKind(child)
+				parent.Def, parent.Rows = jomini.CanonicalKind(child), true
 			}
 		}
 	}
@@ -479,6 +764,31 @@ func parentCell(s *Schema, kind, path string) (*CellType, bool) {
 // inDefinitionBody reports a path whose innermost block is a definition rather than a named field, where the members are the definition's own fields as well as its nested rows.
 func inDefinitionBody(path string) bool {
 	return path == "" || path == segKind || strings.HasSuffix(path, "."+segKind)
+}
+
+// atDatabase reports a position whose block keys are rows of a database rather than fields of a structure, and the kind they define where the join named one; every body of a definition shares the kind's own entry (the empty path), which is how a landed title five deep stays one position. Keyed by kind first because a fold asks it once per node of one file.
+func atDatabase(byPath map[string]string, path string) (def string, ok bool) {
+	if inDefinitionBody(path) {
+		path = ""
+	}
+	def, ok = byPath[path]
+	return def, ok
+}
+
+// markRows records that the block keys at one position are rows, on the cell of the block that opens it -- the inverse of parentCell, so the mark is found where a query looks for it.
+func markRows(s *Schema, kind, path, def string) {
+	head, key := segTop, ""
+	if !inDefinitionBody(path) {
+		head, key = "", path
+		if i := strings.LastIndexByte(path, '.'); i >= 0 {
+			head, key = path[:i], path[i+1:]
+		}
+	}
+	t := s.at(kind, head, key)
+	t.Rows = true
+	if def != "" {
+		t.Def = def
+	}
 }
 
 // citedKinds is the citation half of the join, read through the DECLARED prefix table alone: admitting a contextual link harvested 153,343 CK3 legend properties as definitions.

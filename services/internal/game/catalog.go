@@ -135,6 +135,34 @@ var DocShapes = []DocShape{
 		},
 	},
 	{
+		Summary: "`key = { <prose> }`, the shape documented inside its own braces",
+		Games:   []string{"ck3", "vic3", "eu5"},
+		Where:   "EU5 readme.txt — select_trigger's show_if, visible, enabled, selected; CK3 and Vic3 write the type form, `gold = { <script value> }`",
+		Value: func(rhs string) (doc, typ string, ok bool) {
+			rhs = strings.TrimSpace(rhs)
+			if !strings.HasPrefix(rhs, "{") {
+				return "", "", false
+			}
+			inner := strings.TrimSpace(rhs[1:])
+			if i := strings.LastIndexByte(inner, '}'); i >= 0 {
+				if tail := strings.TrimSpace(inner[i+1:]); tail != "" {
+					return tail, "", true
+				}
+				inner = strings.TrimSpace(inner[:i])
+			}
+			// A closed angle short enough to be a type is one; the prose, if any, is still on the lines above.
+			if typ, _ := splitAngle(inner); typ != "" {
+				return "", typ, true
+			}
+			inner = strings.TrimSpace(strings.Trim(inner, "<>"))
+			// An example body is a shape, not prose; only a brace holding one description describes the field.
+			if inner == "" || strings.ContainsAny(inner, "={<") {
+				return "", "", false
+			}
+			return inner, "", true
+		},
+	},
+	{
 		Summary: "comment ABOVE the key",
 		Games:   []string{"ck3"},
 		Where:   "_*.info",
@@ -158,6 +186,34 @@ var (
 	briefHeadRe = regexp.MustCompile(`^brief:\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(([^)]*)\))?\s*$`)
 )
 
+// docFrame is one block the walk is inside: the key that opened it and the column that key sat at.
+type docFrame struct {
+	key    string
+	indent int
+}
+
+// docIndent is the column a line's content starts at, past its `#` markers, with a tab worth four columns -- the width the games' readmes are written to. A readme nests by indentation and closes its example braces only sometimes, so the column is the structure.
+func docIndent(raw string) int {
+	col := 0
+	for i := range len(raw) {
+		switch raw[i] {
+		case '\t':
+			col += 4 - col%4
+		case ' ', '#', '\r':
+			col++
+		default:
+			return col
+		}
+	}
+	return col
+}
+
+// docHeading reports a label line -- at most two words and a colon, with nothing after it -- which introduces the fields below rather than describing the key that follows.
+func docHeading(body string) bool {
+	rest, ok := strings.CutSuffix(strings.TrimSpace(body), ":")
+	return ok && rest != "" && len(strings.Fields(rest)) <= 2
+}
+
 // ParseDocFile reads one documentation file; paths holds prose keyed "parent.key" for a field documented inside an example block, docs everything at the file's own top level.
 func ParseDocFile(text string) (docs, types, paths map[string]string) {
 	out := map[string]string{}
@@ -174,7 +230,7 @@ func ParseDocFile(text string) (docs, types, paths map[string]string) {
 		}
 	}
 	var pending []string // comment lines waiting for the key they describe
-	var stack []string   // enclosing block keys the walk is currently inside
+	var stack []docFrame // enclosing block keys the walk is currently inside
 	// A file whose one top-level statement wraps everything else (EU5's `trait_name = { category = … }`) names an example OBJECT, not a field, so that one wrapper is transparent.
 	skipOuter := topLevelStatementCount(text) == 1
 	lastFull, lastNested := "", false
@@ -187,7 +243,7 @@ func ParseDocFile(text string) (docs, types, paths map[string]string) {
 		}
 		full = key
 		if len(stack) > 0 {
-			full, nested = stack[len(stack)-1]+"."+key, true
+			full, nested = stack[len(stack)-1].key+"."+key, true
 		}
 		target := out
 		if nested {
@@ -201,6 +257,7 @@ func ParseDocFile(text string) (docs, types, paths map[string]string) {
 
 	for raw := range strings.SplitSeq(text, "\n") {
 		body, hashed := jomini.PeelComment(raw)
+		indent := docIndent(raw)
 
 		if body == "" {
 			// A lone `#` separates paragraphs INSIDE a comment block; only a
@@ -209,6 +266,10 @@ func ParseDocFile(text string) (docs, types, paths map[string]string) {
 				pending = pending[:0]
 			}
 			continue
+		}
+		// Indentation closes what the braces do not: any line no deeper than the key that opened a block ends it, which is the only thing that shuts EU5's `ai_interaction_source_list = {` or keeps CK3's `namespace = my_events` from adopting the event template below it.
+		for len(stack) > 0 && indent <= stack[len(stack)-1].indent {
+			stack = stack[:len(stack)-1]
 		}
 
 		// A Line shape owns the whole line and names its own key.
@@ -234,12 +295,11 @@ func ParseDocFile(text string) (docs, types, paths map[string]string) {
 				lastFull = ""
 			}
 			pending = pending[:0]
-			if opens, closes := strings.Count(rhs, "{"), strings.Count(rhs, "}"); opens == closes+1 {
-				if skipOuter && len(stack) == 0 {
-					skipOuter = false
-				} else {
-					stack = append(stack, key)
-				}
+			// Every key is a candidate parent: what nests under it is whatever the file indents deeper, which is the only structure a prose readme has.
+			if skipOuter && len(stack) == 0 {
+				skipOuter = false
+			} else {
+				stack = append(stack, docFrame{key: key, indent: indent})
 			}
 			continue
 		}
@@ -254,14 +314,14 @@ func ParseDocFile(text string) (docs, types, paths map[string]string) {
 				appendFieldDoc(target, lastFull, jomini.Prose(pending))
 			}
 			pending = pending[:0]
-			if len(stack) > 0 {
-				stack = stack[:len(stack)-1]
-			}
 			continue
 		}
 
 		if hashed {
-			pending = append(pending, body)
+			// A heading names the section below it, not the key after it: EU5's `format:` reached looking_for_a as its whole documentation.
+			if !docHeading(body) {
+				pending = append(pending, body)
+			}
 			continue
 		}
 		pending = pending[:0]

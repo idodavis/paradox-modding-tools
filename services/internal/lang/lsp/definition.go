@@ -1,4 +1,4 @@
-// definition.go resolves definition, references, rename, and workspace symbols.
+// definition.go resolves definition, references, and workspace symbols.
 package lsp
 
 import (
@@ -10,92 +10,89 @@ import (
 	"paradox-modding-tools/services/internal/lang/session"
 )
 
-// Definition returns go-to-definition locations for the word at pos.
+// Definition returns go-to-definition locations for the word at pos. It reads
+// the probe's identity directly and never fills a hover card.
 func Definition(s *session.Session, path string, line, col int) []Location {
-	ins := InspectAt(s, path, line, col)
-	if ins == nil || ins.RawKind == "loc_value" || ins.FieldKey {
+	at, ok := probeAt(s, path, line, col)
+	if !ok {
 		return nil
 	}
-	if ins.RawKind == "loc_key" && ins.Def == nil {
-		if ins.SpanEnd > ins.SpanStart {
+	id, ok := identify(s, path, at)
+	if !ok || id.kind == "loc_value" || id.fieldKey {
+		return nil
+	}
+	c := newFileCache(s)
+	if id.kind == "loc_key" && id.def == nil {
+		if id.spanEnd > id.spanStart {
 			return []Location{{
 				URI:   path,
-				Range: byteRange(jomini.NewLineIndex(s.FileText(path)), ins.SpanStart, ins.SpanEnd),
+				Range: byteRange(jomini.NewLineIndex(s.FileText(path)), id.spanStart, id.spanEnd),
 			}}
 		}
 		return nil
 	}
-	if ins.Local {
-		if ins.AssignEnd <= ins.AssignStart {
+	if id.local {
+		if id.assignEnd <= id.assignStart {
 			return nil
 		}
-		return []Location{defLocation(s, derived.Def{
-			Kind: ins.RawKind, Key: ins.Name, Path: path, Line: ins.AssignLine,
-			Start: ins.AssignStart, End: ins.AssignEnd,
+		return []Location{defLocation(c, derived.Def{
+			Kind: id.kind, Key: id.name, Path: path, Line: id.assignLine,
+			Start: id.assignStart, End: id.assignEnd,
 		})}
 	}
-	if ins.Def != nil {
-		return definitionSites(s, path, ins.Name, ins.Def)
+	if id.def != nil {
+		return siteLocations(c, path, id.name, id.def, "", "", false)
 	}
 	return nil
 }
 
 // References returns every workspace site of the identifier at pos.
 func References(s *session.Session, path string, line, col int) []Location {
-	ins := InspectAt(s, path, line, col)
-	if ins == nil || ins.RawKind == "loc_value" || ins.Name == "" {
+	at, ok := probeAt(s, path, line, col)
+	if !ok {
 		return nil
 	}
-	if ins.RawKind == "script_param" {
-		return identReferencesOwned(s, ins.Name, "script_param", ins.Owner)
+	id, ok := identify(s, path, at)
+	if !ok || id.kind == "loc_value" {
+		return nil
 	}
-	if jomini.IsEphemeral(ins.RawKind) {
-		return identReferences(s, ins.Name, ins.RawKind)
+	c := newFileCache(s)
+	if id.kind == "script_param" {
+		return siteLocations(c, path, id.name, nil, "script_param", ownerOf(id), true)
 	}
-	return identReferences(s, ins.Name, "")
+	if jomini.IsEphemeral(id.kind) {
+		return siteLocations(c, path, id.name, nil, id.kind, "", true)
+	}
+	return siteLocations(c, path, id.name, nil, "", "", true)
 }
 
-// definitionSites lists every def of key, FIOS/Resolve winner first.
-func definitionSites(
-	s *session.Session, from, key string, winner *derived.Def,
+// ownerOf is the script_param owner: the identity's own, or its def's.
+func ownerOf(id identity) string {
+	if id.owner != "" {
+		return id.owner
+	}
+	if id.def != nil {
+		return id.def.OwnerKey
+	}
+	return ""
+}
+
+// siteLocations answers both Definition and References from one site walk.
+// A winner (F12 on a resolved def) confines results to its own kind and
+// owner and excludes namespace/local mismatches; refs additionally adds call
+// sites and the loc-site fallback instead of the broader FindDefsOf search.
+func siteLocations(
+	c *fileCache, from, key string, winner *derived.Def, kind, owner string, refs bool,
 ) []Location {
+	s := c.s
 	seen := map[string]bool{}
 	here := derived.CanonPath(from)
 	var out []Location
-	// An ephemeral winner (saved scope, script param) confines the sites to its
-	// own kind; a real def does not, so this is resolved once up front.
-	ephemeralKind := ""
-	if winner != nil && jomini.IsEphemeral(winner.Kind) {
-		ephemeralKind = jomini.CanonicalKind(winner.Kind)
-	}
-	// Same reasoning, one kind further: `namespace = conqueror` is not where the
-	// `conqueror` trait is defined. Left in, F12 on the trait returned two
-	// places and the editor opened a peek listing instead of jumping.
-	wantNamespace := winner != nil && jomini.CanonicalKind(winner.Kind) == "namespace"
-	add := func(d derived.Def) {
-		if d.Key != key {
-			return
-		}
-		if d.Local && derived.CanonPath(d.Path) != here {
-			return
-		}
-		if ephemeralKind != "" && jomini.CanonicalKind(d.Kind) != ephemeralKind {
-			return
-		}
-		if !wantNamespace && jomini.CanonicalKind(d.Kind) == "namespace" {
-			return
-		}
-		if winner != nil && winner.OwnerKey != "" && d.OwnerKey != "" &&
-			d.OwnerKey != winner.OwnerKey {
-			return
-		}
-		loc := defLocation(s, d)
-		// Canonicalise the path before deduping, exactly as find-references
-		// does. The same definition reaches this function from several sources
-		// and they do not agree on how to spell a Windows path, so comparing
-		// the raw string let one site through twice — and two results for one
-		// place makes the editor open a peek listing the current file instead
-		// of simply jumping.
+	addLoc := func(loc Location) {
+		// Canonicalise the path before deduping: the same definition reaches
+		// this function from several sources that do not agree on how to spell
+		// a Windows path, and two results for one place makes the editor open
+		// a peek listing the current file instead of simply jumping.
 		id := derived.CanonPath(loc.URI) + ":" +
 			strconv.Itoa(loc.Range.Start.Line) + ":" +
 			strconv.Itoa(loc.Range.Start.Character) + ":" +
@@ -107,33 +104,112 @@ func definitionSites(
 		seen[id] = true
 		out = append(out, loc)
 	}
+	// An ephemeral winner (saved scope, script param) or an explicit ephemeral
+	// kind confines the sites to its own kind; a real def does not.
+	wantKind := kind
+	if winner != nil && jomini.IsEphemeral(winner.Kind) {
+		wantKind = winner.Kind
+	}
+	ck := jomini.CanonicalKind(wantKind)
+	kindOK := func(k string) bool { return wantKind == "" || jomini.CanonicalKind(k) == ck }
+	ownerKey := owner
+	if ownerKey == "" && winner != nil {
+		ownerKey = winner.OwnerKey
+	}
+	ownerOK := func(okey string) bool { return ownerKey == "" || okey == "" || okey == ownerKey }
+	wantNamespace := winner != nil && jomini.CanonicalKind(winner.Kind) == "namespace"
+	add := func(d derived.Def) {
+		if d.Key != key || !kindOK(d.Kind) || !ownerOK(d.OwnerKey) {
+			return
+		}
+		// F12 only: References does not confine an inline declaration to its own
+		// file, and does not hide the namespace line (`namespace = conqueror` is
+		// not where the `conqueror` trait is defined, but it is still a site).
+		if !refs {
+			if d.Local && derived.CanonPath(d.Path) != here {
+				return
+			}
+			if !wantNamespace && jomini.CanonicalKind(d.Kind) == "namespace" {
+				return
+			}
+		}
+		addLoc(defLocation(c, d))
+	}
 	if winner != nil {
 		add(*winner)
 	}
+	hasLocDef := false
 	for _, d := range s.ModDefsOf(key) {
 		add(d)
+		hasLocDef = hasLocDef || d.Kind == "loc_key"
 	}
 	for _, d := range s.VanillaDefs(key) {
 		if winner != nil && d.Kind != winner.Kind {
 			continue
 		}
 		add(d)
+		hasLocDef = hasLocDef || d.Kind == "loc_key"
 	}
-	for _, d := range s.FindDefsOf(key, "", 64, false, true) {
-		if d.Key == key {
-			add(d)
+	if !refs {
+		for _, d := range s.FindDefsOf(key, "", 64, false, true) {
+			if d.Key == key {
+				add(d)
+			}
 		}
+		return out
+	}
+	if kind == "" && !hasLocDef {
+		if file, ln, _, _, ok := s.LocSite(key); ok {
+			add(derived.Def{Kind: "loc_key", Key: key, Path: file, Line: ln})
+		}
+	}
+	for _, r := range s.RefsTo(key) {
+		if r.Key != key || !kindOK(r.Kind) || !ownerOK(r.OwnerKey) {
+			continue
+		}
+		addLoc(Location{URI: r.Path, Range: byteRange(c.lines(r.Path), r.Start, r.End)})
 	}
 	return out
 }
 
-func defLocation(s *session.Session, d derived.Def) Location {
+// fileCache memoises one file's parse per Definition/References request, so
+// an answer with N results parses or indexes each backing file at most once.
+type fileCache struct {
+	s    *session.Session
+	res  map[string]jomini.Result
+	line map[string]*jomini.LineIndex
+}
+
+func newFileCache(s *session.Session) *fileCache {
+	return &fileCache{s: s, res: map[string]jomini.Result{}, line: map[string]*jomini.LineIndex{}}
+}
+
+func (c *fileCache) parsed(path string) jomini.Result {
+	if r, ok := c.res[path]; ok {
+		return r
+	}
+	r := c.s.Parsed(path)
+	c.res[path] = r
+	return r
+}
+
+func (c *fileCache) lines(path string) *jomini.LineIndex {
+	if li, ok := c.line[path]; ok {
+		return li
+	}
+	li := c.parsed(path).Lines()
+	c.line[path] = li
+	return li
+}
+
+func defLocation(c *fileCache, d derived.Def) Location {
 	loc := Location{URI: d.Path}
 	if d.End > d.Start {
-		if src := s.FileText(d.Path); src != "" {
-			li := jomini.NewLineIndex(src)
+		res := c.parsed(d.Path)
+		if res.Src != "" {
+			li := c.lines(d.Path)
 			loc.Range = byteRange(li, d.Start, d.End)
-			if b := assignmentBlock(s, d); b != nil {
+			if b := assignmentBlock(res, d); b != nil {
 				tr := byteRange(li, d.Start, b.Range.End)
 				loc.TargetRange = &tr
 			}
@@ -147,8 +223,7 @@ func defLocation(s *session.Session, d derived.Def) Location {
 	return loc
 }
 
-func assignmentBlock(s *session.Session, d derived.Def) *jomini.Block {
-	res := s.Parsed(d.Path)
+func assignmentBlock(res jomini.Result, d derived.Def) *jomini.Block {
 	if res.Root == nil {
 		return nil
 	}
@@ -167,124 +242,28 @@ func assignmentBlock(s *session.Session, d derived.Def) *jomini.Block {
 	return jomini.BlockForKey(res.Root, d.Key)
 }
 
-// identReferences lists defs and refs of word. kind "" keeps all kinds;
-// a non-empty kind filters to CanonicalKind(kind) (ephemeral F12/rename).
-func identReferences(s *session.Session, word, kind string) []Location {
-	return identReferencesOwned(s, word, kind, "")
-}
-
-func identReferencesOwned(s *session.Session, word, kind, owner string) []Location {
-	seen := map[string]bool{}
-	var out []Location
-	add := func(loc Location) {
-		k := derived.CanonPath(loc.URI) + ":" +
-			strconv.Itoa(loc.Range.Start.Line) + ":" +
-			strconv.Itoa(loc.Range.Start.Character) + ":" +
-			strconv.Itoa(loc.Range.End.Line) + ":" +
-			strconv.Itoa(loc.Range.End.Character)
-		if seen[k] {
-			return
-		}
-		seen[k] = true
-		out = append(out, loc)
-	}
-	wantKind := jomini.CanonicalKind(kind)
-	kindOK := func(k string) bool {
-		return kind == "" || jomini.CanonicalKind(k) == wantKind
-	}
-	ownerOK := func(okey string) bool {
-		return owner == "" || okey == "" || okey == owner
-	}
-	lis := map[string]*jomini.LineIndex{}
-	lineIndex := func(p string) *jomini.LineIndex {
-		if li, ok := lis[p]; ok {
-			return li
-		}
-		src := s.FileText(p)
-		if r, ok := s.Result(p); ok && r.Src == src {
-			lis[p] = r.Lines()
-			return lis[p]
-		}
-		lis[p] = jomini.NewLineIndex(src)
-		return lis[p]
-	}
-	hasLocDef := false
-	for _, d := range s.ModDefsOf(word) {
-		if !kindOK(d.Kind) || !ownerOK(d.OwnerKey) {
-			continue
-		}
-		add(defLocation(s, d))
-		if d.Kind == "loc_key" {
-			hasLocDef = true
-		}
-	}
-	for _, d := range s.VanillaDefs(word) {
-		if !kindOK(d.Kind) || !ownerOK(d.OwnerKey) {
-			continue
-		}
-		add(defLocation(s, d))
-		if d.Kind == "loc_key" {
-			hasLocDef = true
-		}
-	}
-	if kind == "" && !hasLocDef {
-		if file, ln, _, _, ok := s.LocSite(word); ok {
-			add(defLocation(s, derived.Def{
-				Kind: "loc_key", Key: word, Path: file, Line: ln,
-			}))
-		}
-	}
-	for _, r := range s.RefsTo(word) {
-		if r.Key != word || !kindOK(r.Kind) || !ownerOK(r.OwnerKey) {
-			continue
-		}
-		add(Location{URI: r.Path, Range: byteRange(lineIndex(r.Path), r.Start, r.End)})
-	}
-	return out
-}
-
-// Rename returns edits to rename the identifier at pos, or nil if none.
-func Rename(s *session.Session, path string, line, col int, newName string) *WorkspaceEdit {
-	if newName == "" {
-		return nil
-	}
-	locs := References(s, path, line, col)
-	if len(locs) == 0 {
-		return nil
-	}
-	changes := map[string][]TextEdit{}
-	for _, loc := range locs {
-		if _, _, ok := s.Locate(loc.URI); !ok {
-			continue
-		}
-		changes[loc.URI] = append(changes[loc.URI], TextEdit{Range: loc.Range, NewText: newName})
-	}
-	if len(changes) == 0 {
-		return nil
-	}
-	return &WorkspaceEdit{Changes: changes}
-}
-
 const maxWorkspaceSymbols = 200
 
 // DocumentSymbols returns definitions declared in path.
 func DocumentSymbols(s *session.Session, path string) []SymbolInformation {
+	c := newFileCache(s)
 	var out []SymbolInformation
 	for _, d := range s.DefsInFile(path) {
 		if jomini.IsEphemeral(d.Kind) {
 			continue
 		}
-		out = append(out, SymbolInformation{Name: d.Key, Location: defLocation(s, d)})
+		out = append(out, SymbolInformation{Name: d.Key, Location: defLocation(c, d)})
 	}
 	return out
 }
 
 // WorkspaceSymbols searches definitions whose keys contain query.
 func WorkspaceSymbols(s *session.Session, query string) []SymbolInformation {
+	c := newFileCache(s)
 	var out []SymbolInformation
 	for _, d := range s.FindDefsOf(query, "", maxWorkspaceSymbols, false, false) {
 		out = append(out, SymbolInformation{
-			Name: d.Key, Location: defLocation(s, d), ContainerName: d.Kind,
+			Name: d.Key, Location: defLocation(c, d), ContainerName: d.Kind,
 		})
 	}
 	return out

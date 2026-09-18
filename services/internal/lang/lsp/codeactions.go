@@ -81,7 +81,7 @@ func locTarget(s *session.Session, root, lang string) (path string, exists bool)
 		return preferred, true
 	}
 	origin := ""
-	for _, m := range s.Mods() {
+	for _, m := range s.Mods {
 		if m.Root == root {
 			origin = m.Origin
 			break

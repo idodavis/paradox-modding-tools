@@ -8,6 +8,7 @@ import {
   Diagnose,
   Hover,
   Complete,
+  ResolveCompletion,
   SignatureHelp,
   Definition,
   References,
@@ -17,7 +18,6 @@ import {
   DidChange,
   DidClose,
   DidSave,
-  Rename,
   FormatDocument,
   FoldingRanges,
   CodeActions,
@@ -26,7 +26,7 @@ import {
 import type {
   WorkspaceEdit as LspWorkspaceEdit,
   Location as LspLocation,
-  HoverResult,
+  Inspect,
 } from "@services/internal/lang/lsp/models";
 import { originHexByOriginId } from "./rootDecorations";
 
@@ -134,7 +134,7 @@ function hardBreaks(text: string): string {
 }
 
 /** One Markdown card: header, hint/docs, values/body, usage. */
-function hoverCardMarkdown(h: HoverResult): string {
+function hoverCardMarkdown(h: Inspect): string {
   const parts = [hoverCardHeader(h)];
   if (h.hint) parts.push(h.owner ? `${h.hint} of ${h.owner}` : h.hint);
   if (h.docs) parts.push(hardBreaks(h.docs));
@@ -165,7 +165,7 @@ function hoverCardMarkdown(h: HoverResult): string {
  * or trigger makes sense. Rendered as a trailing context line rather than a
  * heading, because it is orientation, not the token's own meaning.
  */
-function hoverScopeLine(h: HoverResult): string {
+function hoverScopeLine(h: Inspect): string {
   const code = (s: string) => "`" + s + "`";
   const inScope = h.scope ? `in a ${code(h.scope)} scope` : "";
   if (h.scopeOut) {
@@ -176,7 +176,7 @@ function hoverScopeLine(h: HoverResult): string {
 }
 
 /** Kind + key; overlay label is a second span so hover CSS can pin it right. */
-function hoverCardHeader(h: HoverResult): string {
+function hoverCardHeader(h: Inspect): string {
   const kindMd = h.kind ? `**${h.kind}**` : "";
   const keyMd = h.key ? ` \`${h.key}\`` : "";
   const leftMd = `${kindMd}${keyMd}`.trim();
@@ -192,7 +192,7 @@ function hoverCardHeader(h: HoverResult): string {
 }
 
 /** Unique harvested values: `text ×count`, then leftover unique names. */
-function hoverValuesText(h: HoverResult): string {
+function hoverValuesText(h: Inspect): string {
   const rows = h.values ?? [];
   if (rows.length === 0) return "";
   const lines = rows.map((v) => `${v.text} ×${v.count}`);
@@ -201,7 +201,7 @@ function hoverValuesText(h: HoverResult): string {
 }
 
 /** Location line from Go origin + rel (1-based line). */
-function hoverSiteMarkdown(h: HoverResult): string {
+function hoverSiteMarkdown(h: Inspect): string {
   const primary = hoverSiteLine(h.origin || "", h.originName || "", h.rel ?? "", h.path ?? "", h.line, h.col);
   const vanilla = h.vanillaPath
     ? hoverSiteLine(
@@ -327,6 +327,9 @@ function locationLinksFromGo(locs: LspLocation[], fallback?: vscode.TextDocument
   return out;
 }
 
+/** A completion item's ResolveCompletion kind, when it differs from Detail (vscode.CompletionItem has no field for it). */
+const pmtDocKind = new WeakMap<vscode.CompletionItem, string>();
+
 /** Register the same provider factory for every PMT language id. */
 function registerLangProviders(subs: vscode.Disposable[], factory: (lang: string) => vscode.Disposable): void {
   for (const lang of LANGS) subs.push(factory(lang));
@@ -448,24 +451,36 @@ export function registerLanguageClient(getWorkspaceId: () => string): vscode.Dis
           await DidChange(id, pathOf(doc), doc.getText());
           if (token?.isCancellationRequested) return undefined;
           const p = positionUtf8(doc, pos);
-          const items = (await Complete(id, pathOf(doc), p.line, p.character)) ?? [];
+          const result = await Complete(id, pathOf(doc), p.line, p.character);
+          const items = result?.items ?? [];
           if (token?.isCancellationRequested) return undefined;
-          return items.map((it, i) => {
+          const list = items.map((it, i) => {
             const kind = it.kind === "property" ? vscode.CompletionItemKind.Property : vscode.CompletionItemKind.Value;
             const c = new vscode.CompletionItem(it.label, kind);
             c.detail = it.detail;
-            c.sortText = String(i).padStart(4, "0");
-            if (it.documentation) {
-              c.documentation = withDoc(it.documentation);
-            }
+            // The backend's bucket (declared-in-scope, structure key, def, loc)
+            // dominates; the index keeps ties in the order the backend wrote them.
+            c.sortText = (it.sortText ?? "9") + String(i).padStart(4, "0");
             if (it.insertText) {
               c.insertText = it.insertText.includes("$") ? new vscode.SnippetString(it.insertText) : it.insertText;
             }
             if (it.range) {
               c.range = rangeToVsCode(doc, it.range);
             }
+            if (it.docKind) pmtDocKind.set(c, it.docKind);
             return c;
           });
+          return new vscode.CompletionList(list, result?.isIncomplete ?? false);
+        },
+        // Documentation is fetched only for the item the reader is looking at,
+        // not for the whole list up front.
+        async resolveCompletionItem(item, token) {
+          const id = getWorkspaceId();
+          if (!id || token?.isCancellationRequested) return item;
+          const kind = pmtDocKind.get(item) ?? (typeof item.detail === "string" ? item.detail : "");
+          const doc = await ResolveCompletion(id, String(item.label), kind);
+          if (doc) item.documentation = withDoc(doc);
+          return item;
         },
       },
       ".",
@@ -537,18 +552,6 @@ export function registerLanguageClient(getWorkspaceId: () => string): vscode.Dis
               new vscode.Location(uriToVsCode(s.location.uri), rangeToVsCode(doc, s.location.range)),
             ),
         );
-      },
-    }),
-  );
-  registerLangProviders(subs, (lang) =>
-    vscode.languages.registerRenameProvider(lang, {
-      async provideRenameEdits(doc, pos, newName) {
-        const id = getWorkspaceId();
-        if (!id) return null;
-        const p = positionUtf8(doc, pos);
-        const edit = await Rename(id, pathOf(doc), p.line, p.character, newName);
-        if (!edit?.changes) return null;
-        return applyWorkspaceEdit(doc, edit);
       },
     }),
   );

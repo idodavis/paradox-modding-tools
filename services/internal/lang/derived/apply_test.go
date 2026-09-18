@@ -95,15 +95,16 @@ func TestApplyRows(t *testing.T) {
 				}
 				return
 			}
-			h.recs.fold(func(string) bool { return false }, true)
+			h.recs.boot(nil, func(string) bool { return false })
+			h.recs.settle(nil, nil)
 			got := map[string]bool{}
 			for i := range h.recs.occs {
 				o := &h.recs.occs[i]
-				got[h.recs.kind+"|"+h.recs.cellPath(o.node, o.flags&oTop != 0)+"|"+o.key] = true
+				got[h.recs.kind+"|"+cellPathAt(h.recs.paths, o.node, o.flags&oTop != 0)+"|"+o.key] = true
 			}
 			for i := range h.recs.tallies {
 				ta := &h.recs.tallies[i]
-				got[h.recs.kind+"|"+h.recs.cellPath(ta.node, ta.top)+"|"+ta.key] = true
+				got[h.recs.kind+"|"+cellPathAt(h.recs.paths, ta.node, ta.top)+"|"+ta.key] = true
 			}
 			for _, want := range tt.cells {
 				if !got[want] {

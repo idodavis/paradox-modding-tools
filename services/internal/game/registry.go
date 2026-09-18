@@ -71,6 +71,9 @@ type GameInfo struct {
 
 	// DataKinds are the databases defined once per INSTANCE, not per rule: history, map, dynasty and portrait tables, persisted apart from the script cache and loaded on demand. Backend-only, like FIOSKinds.
 	DataKinds []string `json:"-"`
+
+	// AssetDirs are folders holding graphics data in a syntax of its own: the files parse, but their top-level keys name nothing a mod can refer to. EU5's gfx/map/city_data writes `mesh_list = { … }` 436 times over 16 files, which harvested 436 rival definitions of one name. Backend-only, like DataKinds.
+	AssetDirs []string `json:"-"`
 }
 
 // GameList is the Wails payload for ListGames (consts are not exported).
@@ -133,6 +136,7 @@ var registry = map[string]*GameInfo{
 		FirstWins:        "Events are first-wins; GUI types last-wins.",
 		// 28,883 of 84,606 defs (34.1%); the definitions.txt area/region hierarchy is a named grouping, and `c:TAG` keeps countries eager.
 		DataKinds: []string{"map_data", "dynasty", "persistent_dna"},
+		AssetDirs: []string{"gfx/map/city_data"},
 	},
 }
 
@@ -154,6 +158,7 @@ const (
 	ModeEventID     ExtractMode = "event-id"      // `namespace.1 = { ... }`
 	ModeGUIType     ExtractMode = "gui-type"      // GUI `type X = ...` / `template X { }`
 	ModeLocKey      ExtractMode = "loc-key"       // localization `key: "..."`
+	ModeNone        ExtractMode = "none"          // asset data: the file parses, its keys define nothing
 )
 
 // ExtractRule says what kind of definitions a file yields and how to read them.
@@ -175,6 +180,8 @@ func MatchExtract(gameID, relPath string) ExtractRule {
 	}
 	parent := parentFolder(segs)
 	switch {
+	case isAssetDir(gameID, segs):
+		return ExtractRule{Kind: jomini.CanonicalKind(parent), Mode: ModeNone}
 	case parent == "events" || slices.Contains(segs, "events"):
 		return ExtractRule{Kind: "event", Mode: ModeEventID}
 	case parent == "on_action" || parent == "on_actions" ||
@@ -185,6 +192,21 @@ func MatchExtract(gameID, relPath string) ExtractRule {
 	default:
 		return ExtractRule{Kind: jomini.CanonicalKind(parent), Mode: ModeTopLevelKey}
 	}
+}
+
+// isAssetDir reports a path inside one of this game's graphics-data folders, wherever the DLC layout puts it.
+func isAssetDir(gameID string, segs []string) bool {
+	g := Get(gameID)
+	if g == nil {
+		return false
+	}
+	p := "/" + strings.Join(segs, "/")
+	for _, d := range g.AssetDirs {
+		if strings.Contains(p, "/"+d+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // isModFile reports whether relPath is a Paradox .mod descriptor.

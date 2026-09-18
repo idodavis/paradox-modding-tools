@@ -205,26 +205,6 @@ func TestScriptGrammar(t *testing.T) {
 		}
 	})
 
-	t.Run("script_slot", func(t *testing.T) {
-		for _, c := range []struct{ key, want string }{
-			{"trigger", "trigger"},
-			{"limit", "trigger"},
-			{"AND", "trigger"},
-			{"any_courtier", "trigger"},
-			{"immediate", "effect"},
-			{"after", "effect"},
-			{"every_child", "effect"},
-			{"effect", "effect"},
-			{"title", ""},
-			{"type", ""},
-			{"test.1", ""},
-		} {
-			if got := ScriptSlot(c.key); got != c.want {
-				t.Errorf("ScriptSlot(%q) = %q want %q", c.key, got, c.want)
-			}
-		}
-	})
-
 	// These names are shared Jomini, not a per-game table: 17 of 18 are declared on CK3, Vic3 and EU5 alike.
 	t.Run("script_name_and_prefix_kind", func(t *testing.T) {
 		if r, ok := ScriptName("has_variable"); !ok || r.Kind != "var" {

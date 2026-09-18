@@ -1,4 +1,5 @@
-// types.go holds LSP DTOs and shared path helpers.
+// protocol.go holds the LSP-shaped DTOs the Wails services return and the path
+// helpers every request shares.
 package lsp
 
 import (
@@ -29,14 +30,15 @@ type Diagnostic struct {
 	Code     string `json:"code,omitempty"`
 }
 
-// HoverValue is one unique harvested RHS or save-site expression.
-type HoverValue struct {
+// InspectValue is one value the corpus was seen writing for the name under the cursor.
+type InspectValue struct {
 	Text  string `json:"text"`
 	Count int    `json:"count"`
 }
 
-// HoverResult is a structured hover card. The frontend templates Kind/Key/Hint/Docs.
-type HoverResult struct {
+// Inspect is the hover card, and the DTO the Hover RPC returns; the frontend
+// templates it as it stands. A nil Inspect means there is no card to show.
+type Inspect struct {
 	Kind string `json:"kind,omitempty"`
 	Key  string `json:"key,omitempty"`
 	Hint string `json:"hint,omitempty"`
@@ -48,26 +50,28 @@ type HoverResult struct {
 	ScopeOut string `json:"scopeOut,omitempty"`
 	// Accepts states what this key's value may be — often knowable even where
 	// nothing documents what the key means.
-	Accepts           string       `json:"accepts,omitempty"`
-	Body              string       `json:"body,omitempty"`
-	Values            []HoverValue `json:"values,omitempty"`
-	More              int          `json:"more,omitempty"`
-	Owner             string       `json:"owner,omitempty"`
-	Usage             string       `json:"usage,omitempty"`
-	Origin            string       `json:"origin,omitempty"`
-	OriginName        string       `json:"originName,omitempty"`
-	Rel               string       `json:"rel,omitempty"`
-	Path              string       `json:"path,omitempty"`
-	Line              int          `json:"line,omitempty"`
-	Col               int          `json:"col,omitempty"`
-	VanillaOriginName string       `json:"vanillaOriginName,omitempty"`
-	VanillaRel        string       `json:"vanillaRel,omitempty"`
-	VanillaPath       string       `json:"vanillaPath,omitempty"`
-	VanillaLine       int          `json:"vanillaLine,omitempty"`
-	VanillaCol        int          `json:"vanillaCol,omitempty"`
+	Accepts           string         `json:"accepts,omitempty"`
+	Body              string         `json:"body,omitempty"`
+	Values            []InspectValue `json:"values,omitempty"`
+	More              int            `json:"more,omitempty"`
+	Owner             string         `json:"owner,omitempty"`
+	Usage             string         `json:"usage,omitempty"`
+	Origin            string         `json:"origin,omitempty"`
+	OriginName        string         `json:"originName,omitempty"`
+	Rel               string         `json:"rel,omitempty"`
+	Path              string         `json:"path,omitempty"`
+	Line              int            `json:"line,omitempty"`
+	Col               int            `json:"col,omitempty"`
+	VanillaOriginName string         `json:"vanillaOriginName,omitempty"`
+	VanillaRel        string         `json:"vanillaRel,omitempty"`
+	VanillaPath       string         `json:"vanillaPath,omitempty"`
+	VanillaLine       int            `json:"vanillaLine,omitempty"`
+	VanillaCol        int            `json:"vanillaCol,omitempty"`
 }
 
-// CompletionItem is one completion suggestion.
+// CompletionItem is one completion suggestion. Documentation is empty here and
+// fetched lazily through IdeService.ResolveCompletion, not computed for every
+// item up front.
 type CompletionItem struct {
 	Label         string `json:"label"`
 	Detail        string `json:"detail,omitempty"`
@@ -75,6 +79,20 @@ type CompletionItem struct {
 	Kind          string `json:"kind,omitempty"` // property | value
 	Range         Range  `json:"range"`
 	InsertText    string `json:"insertText,omitempty"`
+	// SortText places the item in one of the completion buckets: "0" a declared
+	// token in scope, "1" a structure key, "2" a def, "3" a loc key.
+	SortText string `json:"sortText,omitempty"`
+	// DocKind is the kind ResolveCompletion should look documentation up under,
+	// when it differs from Detail (a structure key shows its enclosing block as
+	// Detail but its doc lives under the file's own kind).
+	DocKind string `json:"docKind,omitempty"`
+}
+
+// CompletionList is the completion response: the items, and whether the cap
+// truncated them (the editor should ask again as the reader keeps typing).
+type CompletionList struct {
+	Items        []CompletionItem `json:"items"`
+	IsIncomplete bool             `json:"isIncomplete,omitempty"`
 }
 
 // Location points at a definition or reference.
@@ -142,7 +160,7 @@ func modRootOf(s *session.Session, path string) string {
 	if !ok {
 		return ""
 	}
-	for _, m := range s.Mods() {
+	for _, m := range s.Mods {
 		if m.Origin == origin {
 			return m.Root
 		}

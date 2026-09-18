@@ -1,7 +1,7 @@
 // script.go is the Clausewitz/Jomini script grammar that every game built on
-// the engine shares: how a folder name becomes a kind, which block names open a
-// trigger or an effect slot, and the assignment keys that name an ephemeral
-// value (a saved scope, a variable, a `$PARAM$`).
+// the engine shares: how a folder name becomes a kind, and the assignment keys
+// that name an ephemeral value (a saved scope, a variable, a `$PARAM$`). Which
+// blocks open a trigger or an effect is learned per install, not listed here.
 //
 // Nothing here branches on a game. Per-game rules — folder-to-extract mapping,
 // FIOS, EU5 entry modes — live in internal/game, which imports this package.
@@ -31,81 +31,6 @@ func IsMacroKind(kind string) bool {
 func DeclaresNamedBodies(kind string) bool {
 	k := CanonicalKind(strings.ToLower(kind))
 	return strings.HasPrefix(k, "scripted_") || strings.HasPrefix(k, "script_value")
-}
-
-// eventGateKeys are event-body blocks that gate whether the event runs.
-var eventGateKeys = map[string]bool{
-	"trigger":              true,
-	"cancellation_trigger": true,
-	"on_trigger_fail":      true,
-}
-
-// EventSectionRole is "gate" for run-conditions, else "effect".
-func EventSectionRole(name string) string {
-	if eventGateKeys[strings.ToLower(name)] {
-		return "gate"
-	}
-	return "effect"
-}
-
-var triggerSlotKeys = map[string]bool{
-	// alternative_limit is the else-branch of a limit, so its body is triggers
-	// like any other limit's.
-	"limit": true, "alternative_limit": true, "potential": true,
-	"and": true, "or": true, "not": true, "nor": true, "nand": true,
-}
-
-var effectSlotKeys = map[string]bool{
-	"immediate": true, "option": true, "after": true, "else": true, "effect": true,
-}
-
-// ScriptSlot is the completion bag for a block named key: "trigger", "effect",
-// or "" (object-body structure keys). Event gates map to trigger; EventSectionRole's
-// default "effect" is not used (title/type are not effect slots).
-func ScriptSlot(key string) string {
-	k := strings.ToLower(key)
-	if EventSectionRole(k) == "gate" {
-		return "trigger"
-	}
-	if triggerSlotKeys[k] {
-		return "trigger"
-	}
-	if effectSlotKeys[k] {
-		return "effect"
-	}
-	switch {
-	case strings.HasPrefix(k, "any_"):
-		return "trigger"
-	case strings.HasPrefix(k, "every_"),
-		strings.HasPrefix(k, "random_"),
-		strings.HasPrefix(k, "ordered_"):
-		return "effect"
-	}
-	return ""
-}
-
-// IsScopeNeutral reports a block key whose body runs in the SAME scope as the
-// block around it: Clausewitz control flow, the named sections of an event, and
-// the sections of an on_action.
-//
-// This is language rather than data, so it is the one scope table that cannot
-// come from a dump. It is deliberately a list of what does NOT change scope —
-// the complement is open-ended and grows with every game patch, while this side
-// is the engine's own grammar and does not.
-func IsScopeNeutral(key string) bool {
-	switch strings.ToLower(key) {
-	case "if", "else", "else_if", "while", "switch", "limit", "trigger_if",
-		"trigger_else", "trigger_else_if", "alternative_limit",
-		"and", "or", "not", "nor", "nand", "potential",
-		"trigger", "immediate", "effect", "option", "after",
-		"cancellation_trigger", "on_trigger_fail", "random_list", "modifier",
-		// on_action sections. An on_action's declared scope is the scope its
-		// own body runs in, so an event fired from one of these runs in it too.
-		"events", "random_events", "first_valid", "on_actions", "fallback",
-		"weight_multiplier":
-		return true
-	}
-	return false
 }
 
 // ScriptNameRule describes how an assignment key harvests an ephemeral name.

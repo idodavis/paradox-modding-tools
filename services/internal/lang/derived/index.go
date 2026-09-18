@@ -20,7 +20,7 @@ import (
 )
 
 // CacheFormatVersion is the on-disk schema of an Index, bumped when the derived CONTENT changes too and not only the field layout, since nothing else invalidates a cache harvested by a since-corrected pass.
-const CacheFormatVersion = 45
+const CacheFormatVersion = 50
 
 // Def is one named object. OwnerKey is the enclosing scripted macro for script_param defs; Value is the harvested RHS literal at a ScriptName def site (hover body).
 type Def struct {
@@ -113,8 +113,8 @@ type FileMeta struct {
 // Docs is the prose and declared types the install ships beside its script.
 type Docs struct {
 	FieldInfo map[string]string `json:"fieldInfo,omitempty"`
-	// FieldInfoByKind is keyed "block.field" for a field documented inside an example block, bare otherwise.
-	FieldInfoByKind          map[string]map[string]string                `json:"fieldInfoByKind,omitempty"`
+	// Fields is prose addressed by (structure, field), which is how a game writes it: under the block key a field sits in, or under the file kind for one at the definition's own level.
+	Fields                   map[string]map[string]string                `json:"fields,omitempty"`
 	KindInfo                 map[string]string                           `json:"kindInfo,omitempty"`
 	DeclaredFieldTypes       map[string]declared.DeclaredType            `json:"declaredFieldTypes,omitempty"`
 	DeclaredFieldTypesByKind map[string]map[string]declared.DeclaredType `json:"declaredFieldTypesByKind,omitempty"`
@@ -198,6 +198,11 @@ type Index struct {
 	CellsByFile map[int32][]Cell `json:"-"`
 	// LocKeysSorted is each language's keys in order, so completion binary-searches a prefix instead of filtering 300,000 keys per keystroke.
 	LocKeysSorted map[string][]string `json:"locKeys,omitempty"`
+
+	// Values is how often the corpus wrote each value for one ephemeral name, keyed `kind\x00owner\x00name`. It is folded as each file is indexed and survives compact, which drops the ephemeral records themselves.
+	Values map[string]map[string]int32 `json:"values,omitempty"`
+	// ValuesByFile is what Drop subtracts, and only a workspace index is ever dropped from.
+	ValuesByFile map[int32]map[string]map[string]int32 `json:"-"`
 
 	Schema   Schema           `json:"schema"`
 	Declared *declared.Schema `json:"declared,omitempty"`
@@ -318,6 +323,20 @@ func (x *Index) Add(path, rel, origin, kind string, h *FileHarvest) {
 		x.EdgesTo[e.To] = append(x.EdgesTo[e.To], i)
 		x.EdgesByFile[at] = append(x.EdgesByFile[at], i)
 	}
+	for k, vals := range h.Values {
+		if x.Values == nil {
+			x.Values, x.ValuesByFile = map[string]map[string]int32{}, map[int32]map[string]map[string]int32{}
+		}
+		if x.Values[k] == nil {
+			x.Values[k] = map[string]int32{}
+		}
+		for v, n := range vals {
+			x.Values[k][v] += n
+		}
+	}
+	if len(h.Values) > 0 {
+		x.ValuesByFile[at] = h.Values
+	}
 	x.addLoc(at, h.Order, h.Loc)
 }
 
@@ -418,6 +437,17 @@ func (x *Index) Drop(at int32) {
 		}
 	}
 	delete(x.CellsByFile, at)
+	for k, vals := range x.ValuesByFile[at] {
+		for v, n := range vals {
+			if x.Values[k][v] -= n; x.Values[k][v] <= 0 {
+				delete(x.Values[k], v)
+			}
+		}
+		if len(x.Values[k]) == 0 {
+			delete(x.Values, k)
+		}
+	}
+	delete(x.ValuesByFile, at)
 	for _, k := range x.LocByFile[at] {
 		for lang, byKey := range x.Loc {
 			if v, ok := byKey[k]; ok && v.PathID == at {

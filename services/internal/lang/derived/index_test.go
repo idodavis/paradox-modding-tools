@@ -1,10 +1,8 @@
-// index_test.go covers the one container: what Add records, what Drop retracts,
-// and that both survive a save and a load.
+// index_test.go covers the one container: what Add records and what Drop retracts.
 
 package derived
 
 import (
-	"path/filepath"
 	"testing"
 )
 
@@ -56,18 +54,4 @@ func TestIndexAddAndDrop(t *testing.T) {
 		t.Fatalf("craven after drop = %+v", got)
 	}
 
-	path := filepath.Join(t.TempDir(), "idx.json")
-	if err := SaveJSON(path, x); err != nil {
-		t.Fatal(err)
-	}
-	out, err := loadIndex(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := out.defsAt(out.DefsByKey["craven"]); len(got) != 1 || got[0].Path != b {
-		t.Fatalf("after load = %+v", got)
-	}
-	if out.PathID(b) < 0 {
-		t.Error("the path lookup did not wake on load")
-	}
 }

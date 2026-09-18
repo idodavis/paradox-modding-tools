@@ -24,7 +24,7 @@ export function CodeActions(workspaceID: string, path: string): $CancellableProm
 /**
  * Complete returns completion items at a 0-based UTF-8 position.
  */
-export function Complete(workspaceID: string, path: string, line: number, character: number): $CancellablePromise<lsp$0.CompletionItem[] | null> {
+export function Complete(workspaceID: string, path: string, line: number, character: number): $CancellablePromise<lsp$0.CompletionList> {
     return $Call.ByID(155217920, workspaceID, path, line, character);
 }
 
@@ -36,16 +36,9 @@ export function Definition(workspaceID: string, path: string, line: number, char
 }
 
 /**
- * Diagnose returns diagnostics for a file, with the user's per-code severities
- * applied.
- * 
- * Severities are applied here rather than inside Diagnose so a toggle takes
- * effect on the next keystroke without a rescan, and so the checks themselves
- * stay ignorant of configuration.
- * 
- * The same settings also decide which checks run at all. That is not the checks
- * reading configuration — they are handed a yes or no, never a severity — it is
- * this layer declining to pay for a result it is about to throw away.
+ * Diagnose returns diagnostics for a file, with the user's per-code on/off
+ * choices applied. Applied here, not inside Diagnose, so a toggle takes effect
+ * on the next keystroke without a rescan and the checks stay ignorant of it.
  */
 export function Diagnose(workspaceID: string, path: string): $CancellablePromise<lsp$0.Diagnostic[] | null> {
     return $Call.ByID(2414394907, workspaceID, path);
@@ -110,7 +103,7 @@ export function FormatDocument(workspaceID: string, path: string): $CancellableP
 /**
  * Hover returns hover info at a 0-based UTF-8 position.
  */
-export function Hover(workspaceID: string, path: string, line: number, character: number): $CancellablePromise<lsp$0.HoverResult | null> {
+export function Hover(workspaceID: string, path: string, line: number, character: number): $CancellablePromise<lsp$0.Inspect | null> {
     return $Call.ByID(4183822451, workspaceID, path, line, character);
 }
 
@@ -130,10 +123,11 @@ export function References(workspaceID: string, path: string, line: number, char
 }
 
 /**
- * Rename returns a workspace edit for the identifier at pos.
+ * ResolveCompletion returns one completion item's documentation, fetched only
+ * when the editor is about to show it rather than for every item up front.
  */
-export function Rename(workspaceID: string, path: string, line: number, character: number, newName: string): $CancellablePromise<lsp$0.WorkspaceEdit | null> {
-    return $Call.ByID(732777145, workspaceID, path, line, character, newName);
+export function ResolveCompletion(workspaceID: string, label: string, kind: string): $CancellablePromise<string> {
+    return $Call.ByID(1177144527, workspaceID, label, kind);
 }
 
 /**

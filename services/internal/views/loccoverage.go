@@ -11,6 +11,7 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/derived"
+	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
 )
 
@@ -47,7 +48,7 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 
 	referenced := map[string][]locSite{}
 	used := usedByOrigin(s)
-	prefixes := s.LocKeyPrefixes()
+	prefixes := s.Work.Schema.LocKeyPrefixes
 	for _, r := range s.LocRefs() {
 		if r.Kind != "loc" {
 			continue
@@ -254,7 +255,7 @@ func usedByOrigin(s *session.Session) map[string]map[string]bool {
 		mark(originID(origin), r.Key)
 	}
 	s.EachDef(false, func(d derived.Def) bool {
-		for _, key := range s.ConventionLocKeys(d.Kind, d.Key) {
+		for _, key := range loc.Expand(d.Key, s.LocConventionsOf(d.Kind)) {
 			mark(originID(d.Origin), key)
 		}
 		return true

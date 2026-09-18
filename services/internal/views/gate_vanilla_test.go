@@ -232,8 +232,8 @@ func TestEveryShippingCheckIsGated(t *testing.T) {
 		"wrong-localization-folder": "same",
 	}
 	for _, c := range lsp.DiagnosticCodes() {
-		if c.Group != lsp.GroupCheck || c.Experimental {
-			continue // parse errors are the parser's; experimental codes are off
+		if c.Group != lsp.GroupCheck || !c.Default {
+			continue // parse errors are the parser's; off-by-default codes are exempt
 		}
 		if semanticCodes[c.Code] || exempt[c.Code] != "" {
 			continue

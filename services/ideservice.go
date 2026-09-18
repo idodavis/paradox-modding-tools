@@ -47,21 +47,12 @@ func (s *IdeService) DidSave(workspaceID, path string) error {
 	})
 }
 
-// Diagnose returns diagnostics for a file, with the user's per-code severities
-// applied.
-//
-// Severities are applied here rather than inside Diagnose so a toggle takes
-// effect on the next keystroke without a rescan, and so the checks themselves
-// stay ignorant of configuration.
-//
-// The same settings also decide which checks run at all. That is not the checks
-// reading configuration — they are handed a yes or no, never a severity — it is
-// this layer declining to pay for a result it is about to throw away.
+// Diagnose returns diagnostics for a file, with the user's per-code on/off
+// choices applied. Applied here, not inside Diagnose, so a toggle takes effect
+// on the next keystroke without a rescan and the checks stay ignorant of it.
 func (s *IdeService) Diagnose(workspaceID, path string) ([]lsp.Diagnostic, error) {
 	return withSession(s.Session, workspaceID, func(sess *session.Session) []lsp.Diagnostic {
-		sev := s.diagSeverities()
-		return lsp.ApplySeverities(
-			lsp.DiagnoseEnabled(sess, path, lsp.EnabledCodes(sev)), sev)
+		return lsp.ApplyEnabled(lsp.Diagnose(sess, path), lsp.EnabledCodes(s.diagSeverities()))
 	})
 }
 
@@ -79,7 +70,7 @@ func (s *IdeService) DiagnosticCodes() ([]lsp.DiagnosticCode, error) {
 }
 
 // diagSeverities reads the "ide" settings namespace, where each diagnostic code
-// is a key whose value is off / warning / error.
+// is a key whose value is on / off.
 func (s *IdeService) diagSeverities() map[string]string {
 	out := map[string]string{}
 	if s.Settings == nil {
@@ -99,16 +90,24 @@ func (s *IdeService) diagSeverities() map[string]string {
 }
 
 // Hover returns hover info at a 0-based UTF-8 position.
-func (s *IdeService) Hover(workspaceID, path string, line, character int) (*lsp.HoverResult, error) {
-	return withSession(s.Session, workspaceID, func(sess *session.Session) *lsp.HoverResult {
+func (s *IdeService) Hover(workspaceID, path string, line, character int) (*lsp.Inspect, error) {
+	return withSession(s.Session, workspaceID, func(sess *session.Session) *lsp.Inspect {
 		return lsp.Hover(sess, path, line, character)
 	})
 }
 
 // Complete returns completion items at a 0-based UTF-8 position.
-func (s *IdeService) Complete(workspaceID, path string, line, character int) ([]lsp.CompletionItem, error) {
-	return withSession(s.Session, workspaceID, func(sess *session.Session) []lsp.CompletionItem {
+func (s *IdeService) Complete(workspaceID, path string, line, character int) (lsp.CompletionList, error) {
+	return withSession(s.Session, workspaceID, func(sess *session.Session) lsp.CompletionList {
 		return lsp.Complete(sess, path, line, character)
+	})
+}
+
+// ResolveCompletion returns one completion item's documentation, fetched only
+// when the editor is about to show it rather than for every item up front.
+func (s *IdeService) ResolveCompletion(workspaceID, label, kind string) (string, error) {
+	return withSession(s.Session, workspaceID, func(sess *session.Session) string {
+		return lsp.ResolveDoc(sess, label, kind)
 	})
 }
 
@@ -130,13 +129,6 @@ func (s *IdeService) Definition(workspaceID, path string, line, character int) (
 func (s *IdeService) References(workspaceID, path string, line, character int) ([]lsp.Location, error) {
 	return withSession(s.Session, workspaceID, func(sess *session.Session) []lsp.Location {
 		return lsp.References(sess, path, line, character)
-	})
-}
-
-// Rename returns a workspace edit for the identifier at pos.
-func (s *IdeService) Rename(workspaceID, path string, line, character int, newName string) (*lsp.WorkspaceEdit, error) {
-	return withSession(s.Session, workspaceID, func(sess *session.Session) *lsp.WorkspaceEdit {
-		return lsp.Rename(sess, path, line, character, newName)
 	})
 }
 

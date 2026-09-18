@@ -1,478 +1,640 @@
-// diagnostics_test.go covers published diagnostics, signature help, and the
-// # pmt:ignore suppression flow.
+// diagnostics_test.go is one table test over Diagnose: one row per kept code,
+// plus a subtest per rule with nuance a single row cannot carry.
 
 package lsp
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
 	"paradox-modding-tools/services/internal/lang/declared"
 	"paradox-modding-tools/services/internal/lang/derived"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
-	"path/filepath"
-	"strings"
-	"testing"
 )
 
-func TestPmtIgnore(t *testing.T) {
-	sup := scanSuppressions(jomini.Parse(
-		"# pmt:ignore-next-line unclosed-brace\nbad = {\nok = 1 # pmt:ignore\n").Src)
-	if !sup.Covers(1, "unclosed-brace") || sup.Covers(1, "other") || !sup.Covers(2, "anything") {
-		t.Fatal(sup)
-	}
-}
-
-func TestDiagnose(t *testing.T) {
-	tests := []struct {
-		name, game, rel, body string
-		want, drop            string
-	}{
-		{"unclosed and missing loc", "ck3", "events/x.txt",
-			"test.1 = {\n	title = missing_key\n",
-			"unclosed-brace", ""},
-		{"TITLE arg is not loc", "ck3", "events/x.txt",
-			"test.1 = {\n\timmediate = { TITLE = primary_title }\n}\n",
-			"", "missing-required-loc"},
-		{"metadata skips parser", "vic3", ".metadata/metadata.json", "{\n",
-			"", "unclosed-brace"},
-		{"missing descriptor", "vic3", "notes.txt", "foo = { }\n",
-			"missing-descriptor", ""},
-		{"ORDER interp is not loc", "ck3", "localization/english/a_l_english.yml",
-			"l_english:\n war:0 \"$ORDER$ fight\"\n",
-			"", "missing-required-loc"},
-		// A definition with no learned convention is never demanded a key.
-		{"no convention, no required-loc", "ck3", "common/traits/t.txt",
-			"brave = { }\n", "", "required-loc"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s, root := buildSession(t, tt.game, map[string]string{tt.rel: tt.body}, nil, nil)
-			f := filepath.Join(root, filepath.FromSlash(tt.rel))
-			diags := Diagnose(s, f)
-			if tt.want != "" && !hasDiag(diags, tt.want) {
-				t.Fatalf("missing %s: %v", tt.want, diags)
-			}
-			// The unclosed file also cites a key nothing defines.
-			if tt.want == "unclosed-brace" && !hasDiag(diags, "missing-required-loc") {
-				t.Fatalf("missing loc diag: %v", diags)
-			}
-			if tt.drop != "" && hasDiag(diags, tt.drop) {
-				t.Fatalf("unexpected %s: %v", tt.drop, diags)
-			}
-		})
-	}
-	t.Run("title loc is not unknown event", func(t *testing.T) {
-		body := "namespace = ns\nns.1 = {\n\ttitle = ns.1.t\n" +
-			"\tdesc = ns.1.councillor_liege_opening\n}\n"
-		s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body},
-			&vanillaCache{FireKeys: map[string]string{
-				"title": "event", "desc": "event",
-			}}, nil)
-		diags := Diagnose(s, filepath.Join(root, "events", "x.txt"))
-		if hasDiag(diags, "unknown-event") {
-			t.Fatalf("title/desc loc flagged as event: %v", diags)
-		}
-	})
-}
-
-func TestDiagnoseVanillaSilent(t *testing.T) {
-	install := t.TempDir()
-	vEvent := write(t, install, "game/events/v.txt",
-		"test.1 = {\n\ttitle = missing_key\n")
-	vLoc := write(t, install, "game/localization/english/v_l_english.yml",
-		"l_english:\n k:0 \"v\"\n")
-	modRoot := t.TempDir()
-	write(t, modRoot, "descriptor.mod", "name = \"t\"\n")
-	modEvent := write(t, modRoot, "events/m.txt",
-		"mod.1 = {\n\ttitle = missing_key\n}\n")
-
-	// No conventions: the mod's diagnostic must come from its citation alone.
-	s := session.New("ws", "ck3", "english", toIndex(&vanillaCache{
-		InstallPath: install,
-	}, nil), []derived.ModInput{{Origin: "mod", Root: modRoot, Order: 0}})
-	s.DidOpen(vEvent, "test.1 = {\n\ttitle = missing_key\n")
-	s.DidOpen(vLoc, "l_english:\n k:0 \"v\"\n")
-	s.DidOpen(modEvent, "mod.1 = {\n\ttitle = missing_key\n}\n")
-
-	if diags := Diagnose(s, vEvent); len(diags) != 0 {
-		t.Fatalf("vanilla event diags=%v", diags)
-	}
-	if diags := Diagnose(s, vLoc); len(diags) != 0 {
-		t.Fatalf("vanilla loc diags=%v", diags)
-	}
-	if !hasDiag(Diagnose(s, modEvent), "missing-required-loc") {
-		t.Fatal("mod file must still get missing-required-loc")
-	}
-	if s.Resolve("test.1") != nil {
-		t.Fatal("vanilla DidOpen must not harvest defs into workspace")
-	}
-}
-
-func TestLocBOMDiag(t *testing.T) {
-	const body = "l_english:\n k:0 \"v\"\n"
-	rel := "localization/english/a_l_english.yml"
-	s, root := buildSession(t, "ck3", map[string]string{rel: body}, nil, nil)
-	f := filepath.Join(root, filepath.FromSlash(rel))
-	if !hasDiag(Diagnose(s, f), "missing-bom") {
-		t.Fatal("want missing-bom when disk has no BOM")
-	}
-	raw := append([]byte{0xEF, 0xBB, 0xBF}, []byte(body)...)
-	if err := os.WriteFile(f, raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s.DidOpen(f, body)
-	if hasDiag(Diagnose(s, f), "missing-bom") {
-		t.Fatal("disk BOM must not warn")
-	}
-}
-
-func TestSignatureHelpAndSchemaDiags(t *testing.T) {
-	cache := &vanillaCache{
-		Schema: &declared.Schema{Effects: map[string]declared.EngineToken{
-			"add_gold": {Usage: "add_gold = { $VALUE$ }"},
-			// Declared: since T-3 unknown-event fires only where the fire key
-			// is stated by the game, not merely learned from the corpus.
-			"trigger_event": {Target: "event"},
-		}},
-		FieldInfo: map[string]string{"add_gold": "gold"},
-		LocConventions: map[string][]loc.Convention{
-			"traits": {{Template: "trait_{id}", Coverage: 1}},
-		},
-	}
-	s, root := buildSession(t, "ck3", map[string]string{
-		"events/x.txt":         "namespace = ns\nns.1 = {\n\timmediate = { add_gold = {  trigger_event = ns.99 }\n}\n",
-		"common/traits/00.txt": "ambitious = { }\n",
-	}, cache, nil)
-	f := filepath.Join(root, "events", "x.txt")
-	line, col := lineCol(
-		"namespace = ns\nns.1 = {\n\timmediate = { add_gold = {  trigger_event = ns.99 }\n}\n",
-		"add_gold = {",
-	)
-	h := SignatureHelp(s, f, line, col+len("add_gold = {"))
-	if h == nil || !strings.Contains(h.Label, "add_gold") {
-		t.Fatalf("signature: %#v", h)
-	}
-
-	tf := filepath.Join(root, "common", "traits", "00.txt")
-	if !hasDiag(Diagnose(s, tf), "required-loc") {
-		t.Fatal("trait required-loc missing")
-	}
-	if !hasDiag(Diagnose(s, f), "unknown-event") {
-		t.Fatal("unknown-event missing")
-	}
-}
-
-// The four templates are the whole rule: a `_tooltip` key the script cites is not one of them.
-func TestDecisionConventionLocIsNotRequired(t *testing.T) {
-	cache := &vanillaCache{LocConventions: map[string][]loc.Convention{
-		"decisions": {{Template: "{id}", Coverage: 1}, {Template: "{id}_desc", Coverage: 1}},
-	}}
-	s, root := buildSession(t, "ck3", map[string]string{
-		"common/decisions/d.txt": "foo = {\n\tselection_tooltip = foo_tooltip\n}\n",
-		"localization/english/a_l_english.yml": "l_english:\n foo:0 \"F\"\n" +
-			" foo_desc:0 \"D\"\n foo_tooltip:0 \"T\"\n",
-	}, cache, nil)
-	df := filepath.Join(root, "common", "decisions", "d.txt")
-	if hasDiag(Diagnose(s, df), "required-loc") {
-		t.Fatal("decision with both convention keys must not be required-loc")
-	}
-}
-
-// required-loc asserts the game DEMANDS a key, so only a universal convention is worth a warning.
-func TestRequiredLocDemandsFullCoverage(t *testing.T) {
-	for _, tt := range []struct {
-		name     string
-		coverage float64
-		want     bool
-	}{
-		{"a habit most of the kind shares", 0.95, false},
-		{"a shape every definition has", 1, true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			cache := &vanillaCache{LocConventions: map[string][]loc.Convention{
-				"decisions": {{Template: "{id}_desc", Coverage: tt.coverage}},
-			}}
-			s, root := buildSession(t, "ck3", map[string]string{
-				"common/decisions/d.txt":               "foo = { }\n",
-				"localization/english/a_l_english.yml": "l_english:\n foo:0 \"F\"\n",
-			}, cache, nil)
-			df := filepath.Join(root, "common", "decisions", "d.txt")
-			if got := hasDiag(Diagnose(s, df), "required-loc"); got != tt.want {
-				t.Fatalf("required-loc = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func labels(items []CompletionItem) []string {
-	out := make([]string, len(items))
-	for i, it := range items {
-		out[i] = it.Label
+func codesOf(ds []Diagnostic) []string {
+	out := make([]string, len(ds))
+	for i, d := range ds {
+		out[i] = d.Code
 	}
 	return out
 }
 
-func TestDiagnoseMessageConventionNotMissing(t *testing.T) {
-	s, root := buildSession(t, "ck3", map[string]string{
-		"common/messages/x.txt": "quieter_events_neutral = {\n" +
-			"	title = event_message_title\n}\n",
-		"localization/english/a_l_english.yml": "l_english:\n event_message_title:0 \"T\"\n",
-	}, nil, nil)
-	f := filepath.Join(root, "common", "messages", "x.txt")
-	for _, d := range Diagnose(s, f) {
-		if strings.Contains(d.Message, "quieter_events_neutral") ||
-			strings.Contains(d.Message, "rule_quieter") ||
-			strings.Contains(d.Message, "setting_quieter") {
-			t.Fatalf("invented loc diag: %+v", d)
+func hasCode(ds []Diagnostic, code string) bool { return hasDiag(ds, code) }
+
+func TestDiagnose(t *testing.T) {
+	t.Run("pmt:ignore suppression", func(t *testing.T) {
+		sup := scanSuppressions(jomini.Parse(
+			"# pmt:ignore-next-line unclosed-brace\nbad = {\nok = 1 # pmt:ignore\n").Src)
+		if !sup.Covers(1, "unclosed-brace") || sup.Covers(1, "other") || !sup.Covers(2, "anything") {
+			t.Fatal(sup)
+		}
+		// End to end: a blanket ignore silences every code on its line.
+		s, root := buildSession(t, "ck3", map[string]string{
+			"common/scripted_triggers/t.txt": "a = {\n" +
+				"\t# pmt:ignore-next-line unresolved-ref\n" +
+				"\tx = culture:nonexistent\n}\n",
+			"common/cultures/00.txt": "english = {\n\tcolor = { 1 2 3 }\n}\n",
+		}, citeCache(), nil)
+		if hasCode(Diagnose(s, root+"/common/scripted_triggers/t.txt"), "unresolved-ref") {
+			t.Errorf("pmt:ignore-next-line did not suppress unresolved-ref")
+		}
+	})
+
+	// One row per code that a single small file can trigger; the rest have a
+	// subtest below because they need more than one row to state correctly.
+	for _, tt := range []struct {
+		name, game, rel, body, want string
+	}{
+		{"missing-value", "ck3", "common/traits/t.txt", "foo =\nbar = 1\n", "missing-value"},
+		{"stray-close", "ck3", "common/traits/t.txt", "foo = { }\n}\n", "stray-close"},
+		{"unclosed-brace", "ck3", "events/x.txt", "test.1 = {\n\ttitle = missing_key\n", "unclosed-brace"},
+		{"unterminated-string", "ck3", "common/traits/t.txt", "name = \"hello\n", "unterminated-string"},
+		{"loc-no-header", "ck3", "localization/english/a_l_english.yml", "key:0 \"value\"\n", "loc-no-header"},
+		{"loc-content-before-header", "ck3", "localization/english/a_l_english.yml",
+			"stray content\nl_english:\n key:0 \"v\"\n", "loc-content-before-header"},
+		{"loc-tab-indent", "ck3", "localization/english/a_l_english.yml",
+			"l_english:\n\tkey:0 \"v\"\n", "loc-tab-indent"},
+		{"loc-unterminated-value", "ck3", "localization/english/a_l_english.yml",
+			"l_english:\n key:0 \"unterminated\n", "loc-unterminated-value"},
+		{"loc-bad-entry", "ck3", "localization/english/a_l_english.yml",
+			"l_english:\n key no_colon\n", "loc-bad-entry"},
+		{"loc-header-mismatch", "ck3", "localization/english/a_l_english.yml",
+			"l_french:\n key:0 \"v\"\n", "loc-header-mismatch"},
+		// ClassifyRel requires "localization" (spelled correctly) somewhere in
+		// the path before a .yml even reaches locDiags, so the check that flags
+		// a misspelled folder only reaches a raw path containing both spellings.
+		{"wrong-localization-folder", "ck3", "localization/localisation/a_l_english.yml",
+			"l_english:\n key:0 \"v\"\n", "wrong-localization-folder"},
+		{"missing-descriptor", "vic3", "notes.txt", "foo = { }\n", "missing-descriptor"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s, root := buildSession(t, tt.game, map[string]string{tt.rel: tt.body}, nil, nil)
+			f := filepath.Join(root, filepath.FromSlash(tt.rel))
+			ds := Diagnose(s, f)
+			if !hasCode(ds, tt.want) {
+				t.Fatalf("missing %s: %v", tt.want, codesOf(ds))
+			}
+		})
+	}
+
+	// TITLE names an event's tooltip title, not a localization interpolation,
+	// and a definition with no learned convention is never demanded a key.
+	t.Run("missing-required-loc only where the game names a fire key", func(t *testing.T) {
+		s, root := buildSession(t, "ck3", map[string]string{
+			"events/x.txt": "test.1 = {\n\timmediate = { TITLE = primary_title }\n}\n",
+		}, nil, nil)
+		if hasCode(Diagnose(s, root+"/events/x.txt"), "missing-required-loc") {
+			t.Error("TITLE arg read as a loc citation")
+		}
+		s2, root2 := buildSession(t, "ck3", map[string]string{
+			"common/traits/t.txt": "brave = { }\n",
+		}, nil, nil)
+		if hasCode(Diagnose(s2, root2+"/common/traits/t.txt"), "required-loc") {
+			t.Error("required-loc demanded with no learned convention")
+		}
+	})
+
+	t.Run("metadata skips the parser", func(t *testing.T) {
+		s, root := buildSession(t, "vic3", map[string]string{".metadata/metadata.json": "{\n"}, nil, nil)
+		if hasCode(Diagnose(s, root+"/.metadata/metadata.json"), "unclosed-brace") {
+			t.Error("metadata.json parsed as script")
+		}
+	})
+
+	t.Run("ORDER interpolation is not a loc citation", func(t *testing.T) {
+		s, root := buildSession(t, "ck3", map[string]string{
+			"localization/english/a_l_english.yml": "l_english:\n war:0 \"$ORDER$ fight\"\n",
+		}, nil, nil)
+		if hasCode(Diagnose(s, root+"/localization/english/a_l_english.yml"), "missing-required-loc") {
+			t.Error("$ORDER$ read as a citation")
+		}
+	})
+
+	t.Run("title loc is not unknown event, and a declared fire key is", func(t *testing.T) {
+		body := "namespace = ns\nns.1 = {\n\ttitle = ns.1.t\n" +
+			"\tdesc = ns.1.councillor_liege_opening\n}\n"
+		s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body},
+			&vanillaCache{FireKeys: map[string]string{"title": "event", "desc": "event"}}, nil)
+		if hasCode(Diagnose(s, filepath.Join(root, "events", "x.txt")), "unknown-event") {
+			t.Fatal("title/desc loc flagged as event")
+		}
+
+		cache := &vanillaCache{
+			Schema: &declared.Schema{Triggers: map[string]declared.EngineToken{
+				"trigger_event": {Target: "event"},
+			}},
+			LocConventions: map[string][]loc.Convention{
+				"traits": {{Template: "trait_{id}", Coverage: 1}},
+			},
+		}
+		s2, root2 := buildSession(t, "ck3", map[string]string{
+			"events/x.txt":         "namespace = ns\nns.1 = {\n\timmediate = { trigger_event = ns.99 }\n}\n",
+			"common/traits/00.txt": "ambitious = { }\n",
+		}, cache, nil)
+		if !hasCode(Diagnose(s2, filepath.Join(root2, "common", "traits", "00.txt")), "required-loc") {
+			t.Error("trait required-loc missing")
+		}
+		if !hasCode(Diagnose(s2, filepath.Join(root2, "events", "x.txt")), "unknown-event") {
+			t.Error("unknown-event missing for a declared fire key")
+		}
+	})
+
+	// The four templates are the whole rule: a `_tooltip` key the script cites is not one of them.
+	t.Run("decision convention loc is not required", func(t *testing.T) {
+		cache := &vanillaCache{LocConventions: map[string][]loc.Convention{
+			"decisions": {{Template: "{id}", Coverage: 1}, {Template: "{id}_desc", Coverage: 1}},
+		}}
+		s, root := buildSession(t, "ck3", map[string]string{
+			"common/decisions/d.txt": "foo = {\n\tselection_tooltip = foo_tooltip\n}\n",
+			"localization/english/a_l_english.yml": "l_english:\n foo:0 \"F\"\n" +
+				" foo_desc:0 \"D\"\n foo_tooltip:0 \"T\"\n",
+		}, cache, nil)
+		df := filepath.Join(root, "common", "decisions", "d.txt")
+		if hasCode(Diagnose(s, df), "required-loc") {
+			t.Fatal("decision with both convention keys must not be required-loc")
+		}
+	})
+
+	// required-loc asserts the game DEMANDS a key, so only a universal
+	// convention (coverage 1) is worth a warning, not a mere habit.
+	t.Run("required-loc demands full coverage", func(t *testing.T) {
+		for _, tt := range []struct {
+			name     string
+			coverage float64
+			want     bool
+		}{
+			{"a habit most of the kind shares", 0.95, false},
+			{"a shape every definition has", 1, true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				cache := &vanillaCache{LocConventions: map[string][]loc.Convention{
+					"decisions": {{Template: "{id}_desc", Coverage: tt.coverage}},
+				}}
+				s, root := buildSession(t, "ck3", map[string]string{
+					"common/decisions/d.txt":               "foo = { }\n",
+					"localization/english/a_l_english.yml": "l_english:\n foo:0 \"F\"\n",
+				}, cache, nil)
+				df := filepath.Join(root, "common", "decisions", "d.txt")
+				if got := hasCode(Diagnose(s, df), "required-loc"); got != tt.want {
+					t.Fatalf("required-loc = %v, want %v", got, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("no diagnostic message invents a convention", func(t *testing.T) {
+		s, root := buildSession(t, "ck3", map[string]string{
+			"common/messages/x.txt": "quieter_events_neutral = {\n" +
+				"	title = event_message_title\n}\n",
+			"localization/english/a_l_english.yml": "l_english:\n event_message_title:0 \"T\"\n",
+		}, nil, nil)
+		f := filepath.Join(root, "common", "messages", "x.txt")
+		for _, d := range Diagnose(s, f) {
+			if strings.Contains(d.Message, "quieter_events_neutral") ||
+				strings.Contains(d.Message, "rule_quieter") ||
+				strings.Contains(d.Message, "setting_quieter") {
+				t.Fatalf("invented loc diag: %+v", d)
+			}
+		}
+	})
+
+	t.Run("missing-bom", func(t *testing.T) {
+		const body = "l_english:\n k:0 \"v\"\n"
+		rel := "localization/english/a_l_english.yml"
+		s, root := buildSession(t, "ck3", map[string]string{rel: body}, nil, nil)
+		f := filepath.Join(root, filepath.FromSlash(rel))
+		if !hasCode(Diagnose(s, f), "missing-bom") {
+			t.Fatal("want missing-bom when disk has no BOM")
+		}
+		raw := append([]byte{0xEF, 0xBB, 0xBF}, []byte(body)...)
+		if err := os.WriteFile(f, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s.DidOpen(f, body)
+		if hasCode(Diagnose(s, f), "missing-bom") {
+			t.Fatal("disk BOM must not warn")
+		}
+	})
+
+	t.Run("vanilla files are silent, but the mod they overlay is not", func(t *testing.T) {
+		install := t.TempDir()
+		vEvent := write(t, install, "game/events/v.txt", "test.1 = {\n\ttitle = missing_key\n")
+		vLoc := write(t, install, "game/localization/english/v_l_english.yml", "l_english:\n k:0 \"v\"\n")
+		modRoot := t.TempDir()
+		write(t, modRoot, "descriptor.mod", "name = \"t\"\n")
+		modEvent := write(t, modRoot, "events/m.txt", "mod.1 = {\n\ttitle = missing_key\n}\n")
+
+		s := session.New("ws", "ck3", "english", toIndex(&vanillaCache{InstallPath: install}, nil),
+			[]derived.ModInput{{Origin: "mod", Root: modRoot, Order: 0}})
+		s.DidOpen(vEvent, "test.1 = {\n\ttitle = missing_key\n")
+		s.DidOpen(vLoc, "l_english:\n k:0 \"v\"\n")
+		s.DidOpen(modEvent, "mod.1 = {\n\ttitle = missing_key\n}\n")
+
+		if diags := Diagnose(s, vEvent); len(diags) != 0 {
+			t.Fatalf("vanilla event diags=%v", diags)
+		}
+		if diags := Diagnose(s, vLoc); len(diags) != 0 {
+			t.Fatalf("vanilla loc diags=%v", diags)
+		}
+		if !hasCode(Diagnose(s, modEvent), "missing-required-loc") {
+			t.Fatal("mod file must still get missing-required-loc")
+		}
+		if s.Resolve("test.1") != nil {
+			t.Fatal("vanilla DidOpen must not harvest defs into workspace")
+		}
+	})
+
+	// A data tier that would not load is a model missing its history, map and
+	// dynasty rows, so it may not accuse one of being absent.
+	t.Run("unresolved-ref is silent when the data tier failed to load", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, install string
+			wantDiag      bool
+		}{
+			{"tier reads", "tier-ok", true},
+			{"tier missing", "tier-gone", false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				t.Setenv("XDG_CONFIG_HOME", dir)
+				t.Setenv("AppData", dir)
+				if tc.wantDiag {
+					main, data := derived.NewIndex("ck3"), derived.NewIndex("ck3")
+					main.InstallID, main.GameVersion = tc.install, "1.0"
+					data.InstallID, data.GameVersion = tc.install, "1.0"
+					if err := derived.SaveCache(main, data); err != nil {
+						t.Fatal(err)
+					}
+				}
+				cache := &vanillaCache{
+					InstallID: tc.install, GameID: "ck3", GameVersion: "1.0",
+					PrefixKinds: map[string]string{"title": "titles"},
+				}
+				s, root := buildSession(t, "ck3", map[string]string{
+					"common/scripted_triggers/t.txt": "a = { x = title:k_nowhere }\n",
+				}, cache, nil)
+				got := hasCode(Diagnose(s, root+"/common/scripted_triggers/t.txt"), "unresolved-ref")
+				if got != tc.wantDiag {
+					t.Errorf("unresolved-ref = %v, want %v (dataError=%q)", got, tc.wantDiag, s.Install.DataError())
+				}
+			})
+		}
+	})
+
+	// unresolved-ref is the citation check: a value naming a database PMT holds
+	// and a key nothing defines. Every silent row is a way of having no evidence.
+	t.Run("unresolved-ref", func(t *testing.T) {
+		for _, tt := range []struct {
+			name, body, names string
+			ephemeral, want   bool
+		}{
+			{"a citation nothing defines", "b = { x = culture:nonexistent }", "nonexistent", false, true},
+			{"a citation that resolves", "a = { x = culture:english }", "", false, false},
+			// An unbound prefix means PMT does not know that database, which is
+			// not evidence the key is missing from it.
+			{"a prefix bound to no database", "a = { x = faith:catholic }", "", false, false},
+			// Six findings on a real CK3 mod: a value the script invents as it
+			// runs is not something anything defines anywhere.
+			{"an ephemeral kind", "a = {\n\tset_variable = { name = where value = flag:private_chamber }\n}",
+				"", true, false},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				c := citeCache()
+				if tt.ephemeral {
+					c.PrefixKinds["flag"] = "flag"
+				}
+				s, root := buildSession(t, "ck3", map[string]string{
+					"common/cultures/00.txt":         "english = {\n\tcolor = { 1 2 3 }\n}\n",
+					"common/scripted_triggers/t.txt": tt.body + "\n",
+				}, c, nil)
+				var msgs []string
+				for _, d := range Diagnose(s, root+"/common/scripted_triggers/t.txt") {
+					if d.Code == "unresolved-ref" {
+						msgs = append(msgs, d.Message)
+					}
+				}
+				if got := len(msgs) > 0; got != tt.want {
+					t.Fatalf("unresolved-ref = %v, want %v: %v", got, tt.want, msgs)
+				}
+				if tt.names != "" && !strings.Contains(msgs[0], tt.names) {
+					t.Errorf("message = %q, want it to name %s", msgs[0], tt.names)
+				}
+			})
+		}
+	})
+
+	// wrong-value-type uses the declared argument type only: the install-derived
+	// field types are deliberately not consulted, because being wrong there
+	// costs a wrong suggestion, not a false accusation.
+	t.Run("wrong-value-type", func(t *testing.T) {
+		for _, tt := range []struct {
+			name, body string
+			schema     bool
+			want       bool
+		}{
+			{"a value of the wrong declared type", "b = { has_culture = not_a_culture }", true, true},
+			{"a value of the right type", "a = { has_culture = english }", true, false},
+			{"the same value with no schema", "a = { has_culture = not_a_culture }", false, false},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var c *vanillaCache
+				if tt.schema {
+					c = citeCache()
+				}
+				s, root := buildSession(t, "ck3", map[string]string{
+					"common/cultures/00.txt":         "english = {\n\tcolor = { 1 2 3 }\n}\n",
+					"common/scripted_triggers/t.txt": tt.body + "\n",
+				}, c, nil)
+				ds := Diagnose(s, root+"/common/scripted_triggers/t.txt")
+				var msgs []string
+				for _, d := range ds {
+					if d.Code == "wrong-value-type" {
+						msgs = append(msgs, d.Message)
+					}
+				}
+				if got := len(msgs) > 0; got != tt.want {
+					t.Fatalf("wrong-value-type = %v, want %v (all: %v)", got, tt.want, codesOf(ds))
+				}
+				if tt.want && !strings.Contains(msgs[0], "not_a_culture") {
+					t.Errorf("message = %q, want it to name the offending value", msgs[0])
+				}
+				if !tt.schema && hasCode(ds, "unresolved-ref") {
+					t.Errorf("no schema should mean no declared violations: %v", codesOf(ds))
+				}
+			})
+		}
+	})
+
+	// unknown-key is the one check that reports an absence: a key is judged
+	// against the structure or body §9 learned at that position, and nothing
+	// else. Each row is one of the ways a key is known.
+	t.Run("unknown-key", func(t *testing.T) {
+		c := &vanillaCache{
+			NestedMembers: map[string][]string{
+				"triggered_desc": {"desc", "trigger", "first_valid", "random_valid",
+					"triggered_effect", "modifier"},
+				"cooldown": {"days"},
+				// A field the corpus writes under a DIFFERENT block: send_interface_toast, never send_interface_message, the way CK3 writes message_filter_type 667 times.
+				"send_interface_toast": {"message_filter_type"},
+			},
+			Structures: map[string][]string{"event": {"triggered_desc", "option"}},
+			Schema:     &declared.Schema{Triggers: map[string]declared.EngineToken{"is_adult": {}}},
+		}
+		for _, tt := range []struct {
+			name, key, line string
+			want            bool
+		}{
+			{"a key the structure never holds", "not_a_real_key", "not_a_real_key = yes", true},
+			{"a member of the unified structure", "desc", "desc = x", false},
+			{"a declared trigger", "is_adult", "is_adult = yes", false},
+			{"a scripted macro", "my_trigger", "my_trigger = yes", false},
+			{"script grammar", "$param$", "$PARAM$ = yes", false},
+			{"a scope path", "root.culture", "root.culture = x", false},
+			// A class the fold files as a position, and the words that are
+			// control flow rather than names, are never members.
+			{"a weight", "30", "30 = { desc = x }", false},
+			{"a stop word", "nor", "NOR = { desc = x }", false},
+			{"a scope word", "this", "this = yes", false},
+			// A key the schema opens a block with anywhere is engine grammar,
+			// whatever structure it is written in.
+			{"a block key from elsewhere", "cooldown", "cooldown = { days = 1 }", false},
+			// A real key in the wrong block is not this check's business: the
+			// corpus writes message_filter_type under send_interface_toast, never
+			// under triggered_desc, and the ruling is unknown-key names only a key
+			// the corpus never writes anywhere.
+			{"a field the corpus writes elsewhere", "message_filter_type",
+				"message_filter_type = yes", false},
+			// A name written nowhere in the corpus is the one thing this check
+			// exists to catch.
+			{"a key written nowhere", "trigger_evnt", "trigger_evnt = yes", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				body := "namespace = ns\nns.1 = {\n\ttriggered_desc = {\n\t\t" +
+					tt.line + "\n\t}\n}\n"
+				s, root := buildSession(t, "ck3", map[string]string{
+					"events/x.txt": body,
+					"common/scripted_triggers/t.txt": "scripted_trigger my_trigger = {\n" +
+						"\talways = yes\n}\n",
+				}, c, nil)
+				ds := Diagnose(s, root+"/events/x.txt")
+				if got := unknownKeyOn(ds, tt.key); got != tt.want {
+					t.Errorf("unknown-key on %s = %v, want %v (%v)", tt.key, got, tt.want, codesOf(ds))
+				}
+			})
+		}
+		// The arguments of a call are the macro's parameters; no block holds
+		// them as fields, so the structure around the call answers nothing.
+		t.Run("a call is judged against its macro's parameters", func(t *testing.T) {
+			s, root := buildSession(t, "ck3", map[string]string{
+				"events/x.txt": "namespace = ns\nns.1 = {\n\timmediate = {\n" +
+					"\t\tmy_effect = {\n\t\t\tREASON = x\n\t\t\tNOPE = y\n\t\t}\n\t}\n}\n",
+				"common/scripted_effects/e.txt": "scripted_effect my_effect = {\n" +
+					"\tadd_gold = $REASON$\n}\n",
+			}, c, nil)
+			ds := Diagnose(s, root+"/events/x.txt")
+			for _, d := range ds {
+				if d.Code == "unknown-key" && strings.Contains(d.Message, "reason") {
+					t.Errorf("a parameter the macro spells reported: %s", d.Message)
+				}
+			}
+			found := false
+			for _, d := range ds {
+				found = found || strings.Contains(d.Message, "nope is not a parameter of my_effect")
+			}
+			if !found {
+				t.Errorf("an argument the macro never spells was not reported: %v", codesOf(ds))
+			}
+		})
+		// A structure unifies across every position its key is written at, so a
+		// member the corpus wrote only somewhere else must not be unknown here.
+		t.Run("a member written at another position is not unknown", func(t *testing.T) {
+			s, root := buildSession(t, "ck3", map[string]string{
+				"events/x.txt": "test.1 = {\n\tcooldown = {\n\t\tdays = 10\n\t}\n}\n" +
+					"test.2 = {\n\tcooldown = {\n\t\tmonths = 2\n\t}\n}\n",
+			}, nil, nil)
+			if unknownKeyOn(Diagnose(s, root+"/events/x.txt"), "months") {
+				t.Error("months reported unknown at the position where only days was written")
+			}
+		})
+		// A block the install never wrote is judged against the workspace's own
+		// shape, which here is the mod's own file: a macro call's arguments
+		// accuse nobody.
+		t.Run("silent in a mod's own block", func(t *testing.T) {
+			body := "d = {\n\tunwritten_block = {\n\t\tanything = yes\n\t}\n}\n"
+			s, root := buildSession(t, "ck3",
+				map[string]string{"common/decisions/d.txt": body}, &vanillaCache{}, nil)
+			if unknownKeyOn(Diagnose(s, root+"/common/decisions/d.txt"), "anything") {
+				t.Errorf("judged a key against a block only the mod wrote")
+			}
+		})
+	})
+
+	// wrong-scope is one row per rule the scope walk has to hold to, over the
+	// full Diagnose pipeline (suppression included); ScopeMisuses and ScopeAt
+	// pin the walk itself directly.
+	t.Run("wrong-scope", func(t *testing.T) {
+		const onAction = "common/on_action/x.txt"
+		const event = "events/x.txt"
+		for _, tt := range []struct {
+			name, rel, body string
+			noSchema, want  bool
+		}{
+			{"a character effect in a title block", onAction,
+				"on_birth = {\n\teffect = {\n\t\tcapital_county = {\n\t\t\tadd_gold = 100\n\t\t}\n\t}\n}\n",
+				false, true},
+			{"correct script in both scopes", onAction,
+				"on_birth = {\n\teffect = {\n\t\tcapital_county = {\n\t\t\tadd_title_law = x\n\t\t}\n\t\tadd_gold = 5\n\t}\n}\n",
+				false, false},
+			{"no declared schema", onAction,
+				"on_birth = {\n\teffect = {\n\t\tcapital_county = {\n\t\t\tadd_gold = 100\n\t\t}\n\t}\n}\n",
+				true, false},
+			{"under an unknown block", onAction,
+				"on_birth = {\n\teffect = {\n\t\tmystery_block = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n",
+				false, false},
+			{"suppressed by pmt:ignore", onAction,
+				"on_birth = {\n\teffect = {\n\t\tcapital_county = {\n\t\t\tadd_gold = 100 # pmt:ignore wrong-scope\n\t\t}\n\t}\n}\n",
+				false, false},
+			// every_vassal declares Targets: character outside any on_action;
+			// ScopeMisuses used to bail on an empty root, so this ran only in
+			// common/on_action and nowhere else.
+			{"inside an event body", event,
+				"namespace = test\n\ntest.1 = {\n\timmediate = {\n\t\tevery_vassal = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n",
+				false, true},
+			{"where nothing declares a scope", event,
+				"namespace = test\n\ntest.1 = {\n\timmediate = {\n\t\tadd_title_law = x\n\t}\n}\n",
+				false, false},
+			{"a dotted chain into a title", onAction,
+				"on_birth = {\n\teffect = {\n\t\troot.capital_county = {\n\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n",
+				false, true},
+			{"the same chain used correctly", onAction,
+				"on_birth = {\n\teffect = {\n\t\troot.capital_county = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n",
+				false, false},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				c := scopedCache()
+				if tt.noSchema {
+					c = &vanillaCache{Vocabulary: []string{"add_gold"}, NestedMembers: slotBodies}
+				}
+				s, root := buildSession(t, "ck3", map[string]string{tt.rel: tt.body}, c, nil)
+				ds := Diagnose(s, root+"/"+tt.rel)
+				if got := hasCode(ds, "wrong-scope"); got != tt.want {
+					t.Errorf("wrong-scope = %v, want %v: %+v", got, tt.want, ds)
+				}
+			})
+		}
+	})
+
+	// duplicate-definition fires only within one origin, once, at the later
+	// site, and never for shared members, graphics data, or a required inline
+	// redeclaration.
+	t.Run("duplicate-definition", func(t *testing.T) {
+		s, root := buildSession(t, "ck3", map[string]string{
+			"common/traits/00_a.txt": "brave = {\n\tdiplomacy = 1\n}\n",
+			"common/traits/01_b.txt": "brave = {\n\tdiplomacy = 2\n}\n",
+			"common/traits/02_c.txt": "craven = {\n\tdiplomacy = 1\n}\n",
+		}, nil, nil)
+		if hasCode(Diagnose(s, root+"/common/traits/00_a.txt"), "duplicate-definition") {
+			t.Errorf("first definition should be clean")
+		}
+		if !hasCode(Diagnose(s, root+"/common/traits/01_b.txt"), "duplicate-definition") {
+			t.Errorf("second definition of brave not reported")
+		}
+		if hasCode(Diagnose(s, root+"/common/traits/02_c.txt"), "duplicate-definition") {
+			t.Errorf("craven is defined once")
+		}
+
+		t.Run("ignores a member shared by two definitions", func(t *testing.T) {
+			s, root := buildSession(t, "ck3", map[string]string{
+				"common/activity_types/a.txt": "camp_party = {\n\tspecial_guests = { host }\n}\n",
+				"common/activity_types/b.txt": "chariot_race = {\n\tspecial_guests = { host }\n}\n",
+			}, &vanillaCache{}, nil)
+			for _, f := range []string{"a", "b"} {
+				if hasCode(Diagnose(s, root+"/common/activity_types/"+f+".txt"), "duplicate-definition") {
+					t.Errorf("%s.txt: a shared member is not a duplicate", f)
+				}
+			}
+		})
+
+		// EU5 ships map data under dlc/<pack>/in_game/gfx/map/city_data, and
+		// every file there repeats a `mesh_list` block; MatchExtract now reports
+		// no extraction mode for that path at all, so it never becomes a
+		// definition to collide in the first place.
+		t.Run("does not extract map data as a definition", func(t *testing.T) {
+			s, root := buildSession(t, "eu5", map[string]string{
+				"in_game/gfx/map/city_data/one.txt": "mesh_list = {\n\ta = 1\n}\n",
+				"in_game/gfx/map/city_data/two.txt": "mesh_list = {\n\ta = 2\n}\n",
+			}, &vanillaCache{}, nil)
+			if hasCode(Diagnose(s, root+"/in_game/gfx/map/city_data/two.txt"), "duplicate-definition") {
+				t.Errorf("map data reported as duplicate definitions")
+			}
+		})
+
+		// ck3-quieter-events carries one scripted_trigger in two event files,
+		// resolved per file by the engine, so the repeat is required.
+		t.Run("allows an inline declaration required per file", func(t *testing.T) {
+			const decl = "scripted_trigger allow_naming_trigger = {\n\tis_ai = no\n}\n"
+			s, root := buildSession(t, "ck3", map[string]string{
+				"events/birth_events.txt":   "namespace = birth\n\n" + decl,
+				"events/quieter_events.txt": "namespace = qe\n\n" + decl,
+			}, nil, nil)
+			for _, rel := range []string{"events/birth_events.txt", "events/quieter_events.txt"} {
+				if hasCode(Diagnose(s, root+"/"+rel), "duplicate-definition") {
+					t.Errorf("%s: inline declaration reported as a duplicate", rel)
+				}
+			}
+		})
+	})
+
+	// Settings turn a code off without the checks knowing anything about
+	// configuration; an unconfigured code keeps its own default.
+	t.Run("settings can turn a code off", func(t *testing.T) {
+		ds := []Diagnostic{
+			{Code: "wrong-scope", Severity: sevWarning},
+			{Code: "unresolved-ref", Severity: sevWarning},
+		}
+		got := ApplyEnabled(append([]Diagnostic(nil), ds...), EnabledCodes(map[string]string{
+			"unresolved-ref": SettingOff,
+		}))
+		if hasCode(got, "unresolved-ref") {
+			t.Errorf("code set to off still reported: %v", codesOf(got))
+		}
+		if !hasCode(got, "wrong-scope") {
+			t.Errorf("unconfigured code should keep its default: %v", codesOf(got))
+		}
+	})
+}
+
+// unknownKeyOn reports unknown-key on one key, so a row is not answered by a
+// finding somewhere else in the file.
+func unknownKeyOn(ds []Diagnostic, key string) bool {
+	for _, d := range ds {
+		if d.Code == "unknown-key" && strings.HasPrefix(d.Message, key+" is not a key of ") {
+			return true
 		}
 	}
-}
-func TestWrongScopeDiagnostic(t *testing.T) {
-	body := `on_birth = {
-	effect = {
-		capital_county = {
-			add_gold = 100
-		}
-	}
-}
-`
-	s, p := scopedSession(t, body)
-	diags := Diagnose(s, p)
-	if !hasDiag(diags, "wrong-scope") {
-		t.Fatalf("want wrong-scope for a character effect in a title block: %+v", diags)
-	}
+	return false
 }
 
-func TestWrongScopeSilentWhenCorrect(t *testing.T) {
-	body := `on_birth = {
-	effect = {
-		capital_county = {
-			add_title_law = x
-		}
-		add_gold = 5
-	}
-}
-`
-	s, p := scopedSession(t, body)
-	if diags := Diagnose(s, p); hasDiag(diags, "wrong-scope") {
-		t.Errorf("false positive on correct script: %+v", diags)
-	}
-}
-
-// No type system means no scope claims at all.
-func TestWrongScopeSilentWithoutSchema(t *testing.T) {
-	body := `on_birth = {
-	effect = {
-		capital_county = {
-			add_gold = 100
-		}
-	}
-}
-`
-	c := &vanillaCache{Vocabulary: []string{"add_gold"}}
-	s, root := buildSession(t, "ck3", map[string]string{"common/on_action/x.txt": body}, c, nil)
-	if diags := Diagnose(s, root+"/common/on_action/x.txt"); hasDiag(diags, "wrong-scope") {
-		t.Errorf("claimed a scope error with no schema: %+v", diags)
-	}
-}
-
-// An unknown block stops the walk, so nothing below it is judged.
-func TestWrongScopeSilentAfterUnknownBlock(t *testing.T) {
-	body := `on_birth = {
-	effect = {
-		mystery_block = {
-			add_title_law = x
-		}
-	}
-}
-`
-	s, p := scopedSession(t, body)
-	if diags := Diagnose(s, p); hasDiag(diags, "wrong-scope") {
-		t.Errorf("judged script under an unknown transition: %+v", diags)
-	}
-}
-
-// The suppression comment applies to the new code like any other.
-func TestWrongScopeSuppressed(t *testing.T) {
-	body := `on_birth = {
-	effect = {
-		capital_county = {
-			add_gold = 100 # pmt:ignore wrong-scope
-		}
-	}
-}
-`
-	s, p := scopedSession(t, body)
-	if diags := Diagnose(s, p); hasDiag(diags, "wrong-scope") {
-		t.Errorf("suppression ignored: %+v", diags)
-	}
-}
-
-// Scripted macros defined in the mod stay available alongside engine tokens.
-func TestWrongScopeOutsideOnActions(t *testing.T) {
-	// every_vassal declares Targets: character, so it establishes a character
-	// scope with nothing before it. add_title_law is landed_title only.
-	const body = "namespace = test\n\ntest.1 = {\n" +
-		"\timmediate = {\n\t\tevery_vassal = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n"
-	s, root := buildSession(t, "ck3",
-		map[string]string{"events/x.txt": body}, scopedCache(), nil)
-	diags := Diagnose(s, root+"/events/x.txt")
-	if !hasDiag(diags, "wrong-scope") {
-		t.Fatalf("no wrong-scope inside an event body: %+v", diags)
-	}
-}
-
-// TestWrongScopeSilentWithoutDeclaredScope: continuing past an empty root must
-// not start guessing. Where nothing declared establishes a scope there is
-// nothing to contradict, so the check stays quiet.
-func TestWrongScopeSilentWithoutDeclaredScope(t *testing.T) {
-	const body = "namespace = test\n\ntest.1 = {\n" +
-		"\timmediate = {\n\t\tadd_title_law = x\n\t}\n}\n"
-	s, root := buildSession(t, "ck3",
-		map[string]string{"events/x.txt": body}, scopedCache(), nil)
-	if diags := Diagnose(s, root+"/events/x.txt"); hasDiag(diags, "wrong-scope") {
-		t.Errorf("judged a scope nothing declared: %+v", diags)
-	}
-}
-
-// TestWrongScopeRootWithoutDeclaredRoot is nine vanilla CK3 findings, all one
-// shape. camp_party_actions.txt writes
-//
-//	effect = { random_attending_character = { limit = { root = { any_… } } } }
-//
-// where root is the ACTIVITY the pulse action runs on. Only an on_action
-// declares its root scope, so the walk's stack bottom here is just the first hop
-// it happened to take -- "character" -- and reading root as stack[0] reported
-// correct vanilla script as wrong-scope. An unrooted walk must treat root as a
-// scope it cannot name.
-func TestWrongScopeRootWithoutDeclaredRoot(t *testing.T) {
-	const body = "namespace = test\n\ntest.1 = {\n\timmediate = {\n" +
-		"\t\tevery_vassal = {\n\t\t\troot = {\n\t\t\t\tadd_title_law = x\n" +
-		"\t\t\t}\n\t\t}\n\t}\n}\n"
-	s, root := buildSession(t, "ck3",
-		map[string]string{"events/x.txt": body}, scopedCache(), nil)
-	if diags := Diagnose(s, root+"/events/x.txt"); hasDiag(diags, "wrong-scope") {
-		t.Errorf("judged `root` against a scope nothing declared: %+v", diags)
-	}
-}
-
-// And where the root IS declared, root still resolves and is still judged.
-func TestWrongScopeRootWhenDeclared(t *testing.T) {
-	const body = "on_birth = {\n\teffect = {\n\t\tcapital_county = {\n" +
-		"\t\t\troot = {\n\t\t\t\tadd_title_law = x\n\t\t\t}\n\t\t}\n\t}\n}\n"
-	s, p := scopedSession(t, body)
-	if !hasDiag(Diagnose(s, p), "wrong-scope") {
-		t.Errorf("on_birth declares a character root; add_title_law is landed_title only")
-	}
-}
-
-// TestWrongScopeFollowsDottedChain: `root.capital_county = { … }` is two hops,
-// and the walk stopped dead at the dot. ck3-tiger models these explicitly
-// (open_builder / finalize_builder); PMT was silent rather than wrong, which is
-// safe and useless -- a chain is one of the commonest ways to change scope.
-func TestWrongScopeFollowsDottedChain(t *testing.T) {
-	// on_birth roots at character; .capital_county hops to landed_title, where
-	// add_gold does not belong.
-	const bad = "on_birth = {\n\teffect = {\n\t\troot.capital_county = {\n" +
-		"\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n"
-	s, p := scopedSession(t, bad)
-	if !hasDiag(Diagnose(s, p), "wrong-scope") {
-		t.Errorf("chain not followed: add_gold is character-only, root.capital_county is a title")
-	}
-
-	// The same chain with a title effect is correct and must stay silent.
-	const good = "on_birth = {\n\teffect = {\n\t\troot.capital_county = {\n" +
-		"\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n"
-	s2, p2 := scopedSession(t, good)
-	if hasDiag(Diagnose(s2, p2), "wrong-scope") {
-		t.Errorf("false positive on a correct chain")
-	}
-
-	// Three hops, back to character: add_gold belongs again.
-	const back = "on_birth = {\n\teffect = {\n\t\troot.capital_county.holder = {\n" +
-		"\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n"
-	s3, p3 := scopedSession(t, back)
-	if hasDiag(Diagnose(s3, p3), "wrong-scope") {
-		t.Errorf("false positive after hopping back to character")
-	}
-}
-
-// TestScopeChainStopsOnUnknownSegment: half a chain is not a scope. A segment
-// PMT cannot resolve ends the walk rather than leaving the previous hop's scope
-// in place to be judged against.
-
-func benchSession(b *testing.B) (*session.Session, string) {
-	b.Helper()
-	install := os.Getenv("PMT_TEST_INSTALL_CK3")
-	docs := os.Getenv("PMT_TEST_DOCS_CK3")
-	if install == "" || docs == "" {
-		b.Skip("env")
-	}
-	schema := declared.ReadSchema([]string{docs})
-	// A real, large CK3 event file, copied into a mod so diagnostics run on it.
-	srcPath := filepath.Join(install, "game", "events", "global_religion_events.txt")
-	raw, err := os.ReadFile(srcPath)
-	if err != nil {
-		b.Skip(err)
-	}
-	mod := b.TempDir()
-	if err := os.WriteFile(filepath.Join(mod, "descriptor.mod"),
-		[]byte("name = \"t\"\n"), 0o644); err != nil {
-		b.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(mod, "events"), 0o755); err != nil {
-		b.Fatal(err)
-	}
-	p := filepath.Join(mod, "events", "big.txt")
-	if err := os.WriteFile(p, raw, 0o644); err != nil {
-		b.Fatal(err)
-	}
-	cache := &vanillaCache{GameID: "ck3", InstallPath: install, Schema: schema}
-	s := session.New("ws", "ck3", "english", toIndex(cache, nil),
-		[]derived.ModInput{{Origin: "mod", Root: mod, Order: 0}})
-	s.DidOpen(p, string(raw))
-	b.Logf("file is %d bytes", len(raw))
-	return s, p
-}
-
-func BenchmarkDiagnoseAll(b *testing.B) {
-	s, p := benchSession(b)
-	b.ResetTimer()
-	for b.Loop() {
-		_ = Diagnose(s, p)
-	}
-}
-
-func BenchmarkDiagnoseUnknownTokenOnly(b *testing.B) {
-	s, p := benchSession(b)
-	f := diagFile{s: s, path: p, kind: s.KindFor(p), src: s.FileText(p)}
-	f.refs = s.RefsInFile(p)
-	f.res = s.Parsed(p)
-	f.li = f.res.Lines()
-	b.ResetTimer()
-	for b.Loop() {
-		_ = f.unknownTokenDiags()
-	}
-}
-
-func BenchmarkDiagnoseDeclaredValueOnly(b *testing.B) {
-	s, p := benchSession(b)
-	f := diagFile{s: s, path: p, kind: s.KindFor(p), src: s.FileText(p)}
-	f.refs = s.RefsInFile(p)
-	f.res = s.Parsed(p)
-	f.li = f.res.Lines()
-	b.ResetTimer()
-	for b.Loop() {
-		_ = f.declaredValueDiags()
-	}
-}
-
-func BenchmarkDiagnoseDefaultsEnabled(b *testing.B) {
-	s, p := benchSession(b)
-	on := EnabledCodes(nil) // what a user with no settings actually gets
-	b.ResetTimer()
-	for b.Loop() {
-		_ = DiagnoseEnabled(s, p, on)
+// citeCache binds a prefix to a database so typed citations can be judged.
+func citeCache() *vanillaCache {
+	return &vanillaCache{
+		PrefixKinds: map[string]string{"culture": "cultures"},
+		// scopeKind is reversed from KindScope, and CiteFormOfScope reads it —
+		// PrefixKinds alone leaves the declared target unbound to any database.
+		KindScope: map[string]string{"cultures": "culture"},
+		Schema: &declared.Schema{
+			Scopes: map[string]declared.ScopeType{
+				"character": {ChangeScopes: true, ExecuteEffects: true},
+				"culture":   {},
+			},
+			Triggers: map[string]declared.EngineToken{
+				"has_culture": {In: []string{"character"}, Target: "culture"},
+			},
+		},
 	}
 }

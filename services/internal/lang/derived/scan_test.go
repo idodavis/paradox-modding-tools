@@ -57,6 +57,14 @@ scripted_effect my_inline = { add_prestige = 5 }
 `)
 	writeMod(t, base, "game/common/scripted_triggers/t.txt",
 		"my_trig = { exists = $TARGET$ }\n")
+	// A local database: no prefix cites a game rule's options, but `default` names one of them.
+	writeMod(t, base, "game/common/game_rules/00_rules.txt", `difficulty = {
+	categories = { ai }
+	default = normal_difficulty
+	normal_difficulty = { }
+	hard_difficulty = { flag = blocks_achievements }
+}
+`)
 	writeMod(t, base, "game/localization/english/test_l_english.yml", `l_english:
  test.1.t:0 "Test Event"
 `)
@@ -163,17 +171,26 @@ func TestScan(t *testing.T) {
 		if got := fr.Loc["french"]["french_only"].Value; got != "Bonjour" {
 			t.Errorf("french loc[french_only] = %q", got)
 		}
-		if got := c.Docs.FieldInfoByKind["event"]["type"]; !strings.Contains(got, "presentation") {
-			t.Errorf("fieldDocsByKind[event][type] = %q, want events.info prose", got)
+		if got := c.Docs.Fields["event"]["type"]; !strings.Contains(got, "presentation") {
+			t.Errorf("fields[event][type] = %q, want events.info prose", got)
 		}
-		if got := c.Docs.FieldInfoByKind["event"]["title"]; !strings.Contains(got, "Dynamic") {
-			t.Errorf("fieldDocsByKind[event][title] = %q, want events.info prose", got)
+		if got := c.Docs.Fields["event"]["title"]; !strings.Contains(got, "Dynamic") {
+			t.Errorf("fields[event][title] = %q, want events.info prose", got)
 		}
-		// A field documented inside an example block is keyed by its enclosing block, not bare.
-		if got := c.Docs.FieldInfoByKind["event"]["portrait.trigger"]; !strings.Contains(got, "visibility") {
-			t.Errorf("fieldDocsByKind[event][portrait.trigger] = %q, want events.info prose", got)
+		// A field documented inside an example block is addressed by that block, not by the kind.
+		if got := c.Docs.Fields["portrait"]["trigger"]; !strings.Contains(got, "visibility") {
+			t.Errorf("fields[portrait][trigger] = %q, want events.info prose", got)
 		}
 
+		// The local database: the options folded to <kind>, so a mod's own option is never a key of game_rules.
+		if !c.Schema.TypeOf(Cell{"game_rules", segTop, ""}).Rows {
+			t.Errorf("game_rules options are not a local database: %+v",
+				c.Schema.Cells["game_rules"][""])
+		}
+		if c.Schema.TypeOf(Cell{"game_rules", "", segKind}) == nil ||
+			c.Schema.TypeOf(Cell{"game_rules", "", "normal_difficulty"}) != nil {
+			t.Errorf("options did not fold: %+v", c.Schema.Cells["game_rules"][""])
+		}
 		for _, k := range []string{"category", "opposites", "ai_boldness"} {
 			if !slices.Contains(c.Schema.Members("traits", ""), k) {
 				t.Errorf("members[traits] missing %q: %v", k, c.Schema.Members("traits", ""))
@@ -365,15 +382,27 @@ func TestScan(t *testing.T) {
 			"game/in_game/common/building_types/readme.txt": "# ATTRIBUTES\n" +
 				"# - build_time: <integer> building time in days\n" +
 				"# - allow: <trigger> can the building be built\n",
+			// The cabinet_actions shape: fields indented under a key that never opens a brace, a heading between them, and a description written inside the field's own braces.
+			"game/in_game/common/cabinet_actions/readme.txt": "# select_trigger = can add multiple of these\n" +
+				"#\t\t\tformat:\n" +
+				"#\t\t\t\tlooking_for_a = character/location\n" +
+				"#\t\t\t\tshow_if = { <trigger to see if this stage is needed}\n",
 		})
-		if got := c.Docs.FieldInfoByKind["traits"]["allow"]; !strings.Contains(got, "character need") {
+		if got := c.Docs.Fields["traits"]["allow"]; !strings.Contains(got, "character need") {
 			t.Fatalf("traits allow doc = %q", got)
 		}
-		if got := c.Docs.FieldInfoByKind["traits"]["category"]; !strings.Contains(got, "Which type") {
+		if got := c.Docs.Fields["traits"]["category"]; !strings.Contains(got, "Which type") {
 			t.Fatalf("traits category doc = %q", got)
 		}
-		if got := c.Docs.FieldInfoByKind["building_types"]["build_time"]; !strings.Contains(got, "building time") {
+		if got := c.Docs.Fields["building_types"]["build_time"]; !strings.Contains(got, "building time") {
 			t.Fatalf("building_types build_time = %q", got)
+		}
+		// Addressed by (structure, field), with the brace prose read and the heading never a doc.
+		if got := c.Docs.Fields["select_trigger"]["show_if"]; !strings.Contains(got, "this stage is needed") {
+			t.Fatalf("select_trigger show_if = %q", got)
+		}
+		if got := c.Docs.Fields["select_trigger"]["looking_for_a"]; strings.Contains(got, "format") {
+			t.Fatalf("select_trigger looking_for_a = %q, want no heading", got)
 		}
 	})
 

@@ -11,7 +11,7 @@ import (
 
 // wordResolver is one named source that may vouch for a word.
 type wordResolver struct {
-	// name appears on the identity, so a wrong card says which step named it.
+	// name identifies this step in the fixed order tests pin below.
 	name string
 	// resolve reports the identity this source can vouch for. Returning false
 	// means "I have nothing to say", never "nothing is there" — the next step
@@ -20,6 +20,20 @@ type wordResolver struct {
 }
 
 var wordResolvers = []wordResolver{
+	{"loc-file", resolveLocFile},
+	{"scope-ref", resolveScopeRef},
+	{"save-site", resolveSaveSite},
+	{"param-span", resolveParamSpan},
+	{"param-of-macro", resolveParamOfMacro},
+	{"macro-call", macroCallIdentity},
+	{"assign-saved-scope", resolveAssignSavedScope},
+	{"local-def", resolveLocalDef},
+	{"weight", resolveWeight},
+	{"dotted-chain", resolveDottedChain},
+	{"declared-key", resolveDeclaredKey},
+	{"field-key", resolveFieldKey},
+	{"no-word", resolveNoWord},
+	{"literal", resolveLiteral},
 	{"language-prefix", resolveLanguagePrefix},
 	{"typed-cite", resolveTypedCite},
 	{"slot-declared", resolveSlotDeclared},
@@ -33,15 +47,189 @@ var wordResolvers = []wordResolver{
 	{"unresolved", resolveUnresolved},
 }
 
-// resolveWord runs the order and stamps the winner's name onto the identity.
-func resolveWord(s *session.Session, path string, at probe) (identity, bool) {
-	for _, r := range wordResolvers {
-		if id, ok := r.resolve(s, path, at); ok {
-			id.via = r.name
-			return id, true
+// resolveLocFile answers everything in a localization file: the key, an
+// interpolated key inside a value, or an engine value like `$GOLD|=+$`.
+func resolveLocFile(s *session.Session, path string, at probe) (identity, bool) {
+	if s.KindFor(path) != "loc" {
+		return identity{}, false
+	}
+	hit, ok := locHitAt(at.src, at.off)
+	if !ok {
+		return identity{path: path}, true
+	}
+	if hit.engine {
+		return identity{
+			path: path, name: hit.key, kind: "loc_value", locFilter: hit.filter,
+		}, true
+	}
+	id := identity{
+		path: path, name: hit.key, kind: "loc_key",
+		spanStart: hit.start, spanEnd: hit.end,
+	}
+	if file, ln, _, origin, ok := s.LocSite(hit.key); ok {
+		id.def = &derived.Def{
+			Kind: "loc_key", Key: hit.key, Path: file, Line: ln, Origin: origin,
 		}
 	}
-	return identity{}, false
+	return id, true
+}
+
+// resolveScopeRef claims `scope:name` written out in the text.
+func resolveScopeRef(s *session.Session, path string, at probe) (identity, bool) {
+	name, ok := scopeRefAt(at)
+	if !ok {
+		return identity{}, false
+	}
+	return ephemeralID(s, path, name, "saved_scope"), true
+}
+
+// resolveSaveSite claims the name at a `save_scope_as = x` site.
+func resolveSaveSite(s *session.Session, path string, at probe) (identity, bool) {
+	if !at.saveOK {
+		return identity{}, false
+	}
+	return ephemeralID(s, path, at.saveName, "saved_scope"), true
+}
+
+// resolveParamSpan claims `$PARAM$`; a macro's own parameter has no definition
+// outside its body, so one is synthesised at the span when the index has none.
+func resolveParamSpan(s *session.Session, path string, at probe) (identity, bool) {
+	if !at.param {
+		return identity{}, false
+	}
+	d := s.ResolveOfKindOwner(at.word, "script_param", at.paramOwner)
+	if d == nil {
+		origin, _, _ := s.Locate(path)
+		d = &derived.Def{
+			Kind: "script_param", Key: at.word, Path: path, Origin: origin,
+			Start: at.start, End: at.end, OwnerKey: at.paramOwner,
+			Line: at.res.Lines().PositionAt(at.start).Line,
+		}
+	}
+	return identity{
+		path: path, name: at.word, kind: "script_param", def: d, owner: at.paramOwner,
+	}, true
+}
+
+// resolveParamOfMacro claims a bare word that is a parameter of the macro the
+// cursor sits inside.
+func resolveParamOfMacro(s *session.Session, path string, at probe) (identity, bool) {
+	if at.paramOwner == "" {
+		return identity{}, false
+	}
+	d := s.ResolveOfKindOwner(at.word, "script_param", at.paramOwner)
+	if d == nil {
+		return identity{}, false
+	}
+	return identity{
+		path: path, name: at.word, kind: "script_param", def: d, owner: at.paramOwner,
+	}, true
+}
+
+// resolveAssignSavedScope claims `scope:x = { … }` written as a key.
+func resolveAssignSavedScope(s *session.Session, path string, at probe) (identity, bool) {
+	if at.assign == nil {
+		return identity{}, false
+	}
+	p, ok := jomini.ParsePrefixed(at.assign.Key.Text)
+	if !ok || !jomini.IsSavedScopePrefix(p) {
+		return identity{}, false
+	}
+	return ephemeralID(s, path, p.Name, "saved_scope"), true
+}
+
+// resolveLocalDef claims a key in a file whose own rows are the definitions.
+func resolveLocalDef(s *session.Session, path string, at probe) (identity, bool) {
+	a := at.assign
+	if a == nil || !s.IsLocalDefFile(path, at.kind) {
+		return identity{}, false
+	}
+	return identity{
+		path: path, name: a.Key.Text, kind: at.kind, local: true,
+		extractKind: at.kind,
+		assignStart: a.Key.Range.Start, assignEnd: a.Key.Range.End,
+		assignLine: at.res.Lines().PositionAt(a.Key.Range.Start).Line,
+	}, true
+}
+
+// resolveWeight claims a bare number on the left of an `=`: a branch of a distribution, not a name — CK3 keys map positions by province id, so `95` also resolves to a map_data row and the card offered "Amiens" for a probability.
+// Numeric but not a distribution — Vic3's `20 = empty` is an index — stops rather than answering, which is what the wrong answer was.
+func resolveWeight(_ *session.Session, path string, at probe) (identity, bool) {
+	if at.assign == nil || !isWeightKey(at.assign.Key.Text) {
+		return identity{}, false
+	}
+	key := at.assign.Key.Text
+	if share := weightShare(at.slotAssign, at.slotKey, key); share != "" {
+		return identity{path: path, name: key, kind: "weight", docs: share}, true
+	}
+	return identity{path: path}, true
+}
+
+// resolveDottedChain names the segment under the cursor of a chain key: `holder.culture = { … }` is two hops, and the whole string resolves to nothing.
+func resolveDottedChain(s *session.Session, path string, at probe) (identity, bool) {
+	a := at.assign
+	if a == nil {
+		return identity{}, false
+	}
+	seg, ok := dottedSegmentAt(a.Key.Text, at.off-a.Key.Range.Start)
+	if !ok {
+		return identity{}, false
+	}
+	return segmentIdentity(s, path, seg)
+}
+
+// resolveDeclaredKey claims a key the type system names — a declared effect or
+// trigger keeps its own card rather than becoming a field of the block.
+func resolveDeclaredKey(s *session.Session, path string, at probe) (identity, bool) {
+	if at.assign == nil || !s.Install.Declared.HasName(at.assign.Key.Text) {
+		return identity{}, false
+	}
+	ck := s.VocabRole(at.assign.Key.Text)
+	if ck == "" {
+		return identity{}, false
+	}
+	return identity{path: path, name: at.assign.Key.Text, kind: ck}, true
+}
+
+// resolveFieldKey claims a key of the object being edited: documented, a member of the cell, or a localization property.
+// A key naming a scripted macro is an invocation of it, never a field, whatever the cell at that position holds.
+func resolveFieldKey(s *session.Session, path string, at probe) (identity, bool) {
+	a := at.assign
+	if a == nil || s.Work.Schema.MacroDefs[a.Key.Text] != "" {
+		return identity{}, false
+	}
+	block := nestedBlock(at)
+	docs := s.KindFieldDoc(a.Key.Text, at.kind, blockChain(block))
+	// The structure's members, not this one position's: a key the game's own
+	// readme lists for `select_trigger` is a member of it wherever it is
+	// written, whether or not vanilla ever wrote one there.
+	if docs == "" && !s.IsStructureMember(at.fileKind, at.path, a.Key.Text) &&
+		loc.Classify(a.Key.Text) == loc.PropNone {
+		return identity{}, false
+	}
+	return identity{
+		path: path, name: a.Key.Text, kind: at.kind, fieldKey: true,
+		extractKind: at.kind, block: block, cell: at.path,
+	}, true
+}
+
+// resolveNoWord stops once the key resolvers have passed and there is no word.
+func resolveNoWord(_ *session.Session, path string, at probe) (identity, bool) {
+	if at.word != "" {
+		return identity{}, false
+	}
+	return identity{path: path}, true
+}
+
+// resolveLiteral stops on a number or a quoted string, with one exception where a person declared it: a total conversion offsets its years so the engine's arithmetic works, and 8209.2.1 is read by a human who would otherwise subtract 7,782 in their head.
+func resolveLiteral(s *session.Session, path string, at probe) (identity, bool) {
+	if !jomini.IsLiteralValue(at.word) {
+		return identity{}, false
+	}
+	if era := derived.EraDate(at.word, s.CalendarFor(path)); era != "" {
+		return identity{path: path, name: at.word, kind: "date", docs: era}, true
+	}
+	return identity{path: path}, true
 }
 
 // resolveLanguagePrefix claims `scope:x` / `var:x` — a value that lives only for
@@ -196,10 +384,16 @@ func resolveFieldDoc(s *session.Session, path string, at probe) (identity, bool)
 }
 
 // resolveUnresolved is the floor: the word is named but nothing is claimed
-// about it. Answering here is what stops a card inventing a kind.
+// about it. Answering here is what stops a card inventing a kind — the key
+// holding it is carried so the card can say what the value is FOR without
+// pretending to know what it is.
 func resolveUnresolved(_ *session.Session, path string, at probe) (identity, bool) {
 	if at.word == "" {
 		return identity{}, false
 	}
-	return identity{path: path, name: at.word}, true
+	id := identity{path: path, name: at.word}
+	if !at.inKey && at.slotKey != "" {
+		id.slot, id.extractKind, id.cell, id.block = at.slotKey, at.kind, at.path, nestedBlock(at)
+	}
+	return id, true
 }

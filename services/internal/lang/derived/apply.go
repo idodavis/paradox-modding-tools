@@ -25,8 +25,6 @@ const EdgeKindCall = "call"
 // EdgeKindVia marks a hop synthesized through a chain of macro calls.
 const EdgeKindVia = "via"
 
-var slotNames = [...]string{"effect", "trigger", "option"}
-
 // pnode is one enclosing block: its parent node and the key as written. The fold turns a chain of these into a Cell.Path, twice -- once before the nested join and once after it, when a block key that has become a definition folds to <kind>.
 type pnode struct {
 	parent int32
@@ -39,21 +37,20 @@ type occ struct {
 	key, value  string
 	node        int32 // enclosing block, index into fileRecs.nodes; -1 at the definition's own level
 	from        int32 // enclosing definition, index into fileRecs.defKeys; -1 outside one
-	name        int32 // option name, index into fileRecs.names; -1
-	kline, kat  int32
-	vline, vat  int32
-	flags, slot uint8
+	name       int32 // the option this record sits in, index into fileRecs.names; -1 outside one
+	kline, kat int32
+	vline, vat int32
+	flags      uint8
 }
 
 const (
-	oQuoted   uint8 = 1 << iota // the key is quoted
-	oVQuoted                    // the value is quoted
-	oBlock                      // the right-hand side is a block
-	oNames                      // the block holds keyed children
-	oEmpty                      // the block holds nothing
-	oRescoped                   // an ancestor key changed scope
-	oDeclared                   // the key is a name the game declares
-	oTop                        // the statement is the file's own top level
+	oQuoted  uint8 = 1 << iota // the key is quoted
+	oVQuoted                   // the value is quoted
+	oBlock                     // the right-hand side is a block
+	oNames                     // the block holds keyed children
+	oEmpty                     // the block holds nothing
+	oDeclared                  // the key is a name the game declares
+	oTop                       // the statement is the file's own top level
 )
 
 // tally is the occurrences at one cell that can never become a reference -- literals, stop words and citations already emitted -- kept as a count rather than a record.
@@ -95,13 +92,41 @@ type FileHarvest struct {
 	Edges []Edge
 	Loc   LocDelta
 	recs  *fileRecs
+	// Values is this file's slice of the ephemeral-value histogram, keyed `kind\x00owner\x00name`.
+	Values map[string]map[string]int32
 	// dataFns are the `GetX`/`SetX` names this file's source mentions, harvested only when the install ships no data-type dump.
 	dataFns map[string]bool
 }
 
+// note folds one observed value for an ephemeral name into this file's histogram.
+//
+// The fold is here, at index time, because the alternative is what hover did:
+// a saved scope re-parsed up to 256 other files to say what each site saved,
+// and an install cache keeps no ephemeral record to re-read at all. A parameter
+// is counted under its macro and again under no owner, so a value passed by a
+// call written in another file still shows.
+func (h *FileHarvest) note(kind, owner, name, value string) {
+	if name == "" || value == "" {
+		return
+	}
+	if h.Values == nil {
+		h.Values = map[string]map[string]int32{}
+	}
+	for _, at := range []string{owner, ""} {
+		k := kind + "\x00" + at + "\x00" + name
+		if h.Values[k] == nil {
+			h.Values[k] = map[string]int32{}
+		}
+		h.Values[k][value]++
+		if owner == "" {
+			return
+		}
+	}
+}
+
 // ---------------------------------------------------------------- phase A
 
-// applyCtx is the per-file state the pre-order walk supplies for free: the enclosing definition, the path node, the slot and the file's own macro set.
+// applyCtx is the per-file state the pre-order walk supplies for free: the enclosing definition, the path node, the option it sits in and the file's own macro set.
 type applyCtx struct {
 	ff    *FileFacts
 	h     *FileHarvest
@@ -114,10 +139,7 @@ type applyCtx struct {
 	nodeIdx  []int32 // the node this fact opened, -1 when it opened none
 	encl     []int32
 	preset   []bool
-	slot     []uint8
 	optionAt []int32
-	rescoped []bool
-	fdepth   []int32
 	object   []bool
 	empty    []bool
 	litList  []bool
@@ -151,8 +173,7 @@ func Apply(ff FileFacts, sc *declared.Schema) *FileHarvest {
 		ff: &ff, h: h, r: r, sc: sc, kind: kind,
 		nodeAt: make([]int32, n), nodeIdx: make([]int32, n),
 		encl: make([]int32, n), preset: make([]bool, n),
-		slot: make([]uint8, n), optionAt: make([]int32, n),
-		rescoped: make([]bool, n), fdepth: make([]int32, n),
+		optionAt: make([]int32, n),
 		defKeyID: map[string]int32{}, nameID: map[string]int32{},
 		macros: map[string]bool{}, params: map[string]map[string]bool{},
 		seenPar: map[string]bool{}, tallyID: map[tallyKey]int32{},
@@ -210,36 +231,19 @@ func (c *applyCtx) prologue(i int32, f *Fact) {
 	if !c.preset[i] {
 		c.encl[i] = -1
 	}
-	c.slot[i], c.rescoped[i], c.fdepth[i] = 0, false, 0
 	if p := f.Parent; p >= 0 {
 		if !c.preset[i] {
 			c.encl[i] = c.encl[p]
 		}
-		c.nodeAt[i] = c.nodeIdx[p]
-		c.slot[i], c.optionAt[i] = c.slot[p], c.optionAt[p]
-		c.rescoped[i], c.fdepth[i] = c.rescoped[p], c.fdepth[p]
+		c.nodeAt[i], c.optionAt[i] = c.nodeIdx[p], c.optionAt[p]
 	}
 	if f.Block && f.Depth > 0 {
 		c.nodeIdx[i] = int32(len(c.r.nodes))
 		c.r.nodes = append(c.r.nodes,
 			pnode{parent: c.nodeAt[i], key: f.Key, quoted: f.Quoted})
 	}
-	if f.Key == "" {
-		return
-	}
-	if c.fdepth[i] >= 1 && !jomini.IsScopeNeutral(f.Key) {
-		c.rescoped[i] = true
-	}
-	c.fdepth[i]++
 	if strings.EqualFold(f.Key, "option") {
-		c.slot[i], c.optionAt[i] = 2, i
-	} else if slot := jomini.ScriptSlot(f.Key); slot != "" {
-		c.optionAt[i] = -1
-		if slot == "trigger" {
-			c.slot[i] = 1
-		} else {
-			c.slot[i] = 0
-		}
+		c.optionAt[i] = i
 	}
 }
 
@@ -268,7 +272,8 @@ func (c *applyCtx) rows(i int32, f *Fact) {
 		}
 	}
 	// 3 `type NAME = { }`, `template NAME`, `local_template` and the `scripted_*` keywords name the statement that follows them.
-	if f.Key == "" && !f.Quoted && ff.Rule.Mode != game.ModeTopLevelKey {
+	if f.Key == "" && !f.Quoted &&
+		ff.Rule.Mode != game.ModeTopLevelKey && ff.Rule.Mode != game.ModeNone {
 		c.keywordName(i, f)
 	}
 	// 4 the script-name table: `set_variable` and its twenty siblings define an ephemeral name, `has_variable` and its own refer to one.
@@ -326,6 +331,7 @@ func (c *applyCtx) scriptName(i int32, f *Fact) {
 	d := c.ff.def(r.Kind, name, line, start, end)
 	d.Nested = true
 	d.Value = c.scriptNameValue(i, r)
+	c.h.note(r.Kind, "", name, d.Value)
 	c.addDef(d, -1)
 }
 
@@ -352,12 +358,38 @@ func (c *applyCtx) scriptNameSpan(i int32, innerKey string) (string, int32, int3
 	return "", 0, 0, 0, false
 }
 
-// scriptNameValue is the hover RHS for a ScriptName def. Scalar saves (save_scope_as) have no value; their hover body is the ancestor scope expr.
+// scriptNameValue is the hover RHS for a ScriptName def. A scalar save (save_scope_as) has no RHS of its own, so its value is what it was saved FROM: the innermost enclosing iterator or scope switch, read from the fact chain here because the install cache keeps no saved-scope definition for a hover to walk back to.
 func (c *applyCtx) scriptNameValue(i int32, r jomini.ScriptNameRule) string {
 	facts := c.ff.Facts
 	f := &facts[i]
 	if r.Kind == "saved_scope" && r.InnerKey == "" {
-		return ""
+		for j := f.Parent; j >= 0; j = facts[j].Parent {
+			k := facts[j].Key
+			if k == "" || facts[j].Quoted ||
+				jomini.IsSaveScopeKey(k) || jomini.IsSaveScopeValueKey(k) {
+				continue
+			}
+			low := strings.ToLower(k)
+			if strings.HasPrefix(low, "any_") || strings.HasPrefix(low, "every_") ||
+				strings.HasPrefix(low, "random_") || strings.HasPrefix(low, "ordered_") {
+				// An iterator names the set it walks; its `list` is the half a reader cannot infer from the key.
+				for n := j + 1; n < int32(len(facts)) && facts[n].Parent >= j; n++ {
+					ch := &facts[n]
+					if ch.Parent == j && !ch.Quoted && strings.EqualFold(ch.Key, "list") &&
+						!ch.Block && !ch.VQuoted && ch.Value != "" {
+						return k + " - list=" + ch.Value
+					}
+				}
+				return k
+			}
+			if low == "root" {
+				return "root"
+			}
+			if strings.Contains(k, ":") {
+				return k
+			}
+		}
+		return "root"
 	}
 	if !f.Block {
 		return "yes"
@@ -415,9 +447,6 @@ func (c *applyCtx) dollarParams(i int32, f *Fact) {
 
 // argRefs completes row 5: an argument key inside a call to macro M that is one of M's parameters. It runs after the pass because a call may be written above the macro it fills.
 func (c *applyCtx) argRefs() {
-	if len(c.params) == 0 {
-		return
-	}
 	facts := c.ff.Facts
 	call := make([]int32, len(facts))
 	for i := range facts {
@@ -432,6 +461,15 @@ func (c *applyCtx) argRefs() {
 					r := c.ff.ref(jomini.KindScriptParam, f.Key, f.Line, f.Start, f.End)
 					r.OwnerKey = owner
 					c.h.Refs = append(c.h.Refs, r)
+				}
+			}
+			// The value the call passes, for the parameter's own card. The
+			// all-caps convention as well as this file's parameter sets,
+			// because a call usually fills a macro declared in another file.
+			if !f.Block && !f.VQuoted && f.Value != "" && f.Parent >= 0 {
+				if owner := facts[f.Parent].Key; owner != "" &&
+					(c.params[owner][f.Key] || isMacroArgKey(f.Key)) {
+					c.h.note(jomini.KindScriptParam, owner, f.Key, f.Value)
 				}
 			}
 			if c.macros[f.Key] {
@@ -585,9 +623,6 @@ func (c *applyCtx) record(i int32, f *Fact) {
 	if f.VQuoted {
 		flags |= oVQuoted
 	}
-	if c.rescoped[i] {
-		flags |= oRescoped
-	}
 	if f.Block {
 		// A block is kept whole: its key may be a nested definition or a macro invocation, and its shape is the cell's label.
 		c.occs(i, key, "", node, kline, kat, f.VLine, f.VStart, flags)
@@ -612,13 +647,13 @@ func (c *applyCtx) occs(i int32, key, value string, node, kline, kat, vline, vat
 		flags |= oDeclared
 	}
 	name := int32(-1)
-	if c.optionAt[i] >= 0 && c.slot[i] == 2 {
+	if c.optionAt[i] >= 0 {
 		name = c.optionName(c.optionAt[i])
 	}
 	c.r.occs = append(c.r.occs, occ{
 		key: key, value: value, node: node, from: c.encl[i], name: name,
 		kline: kline, kat: kat, vline: vline, vat: vat,
-		flags: flags, slot: c.slot[i],
+		flags: flags,
 	})
 }
 
@@ -643,9 +678,7 @@ func (c *applyCtx) optionName(at int32) int32 {
 			break
 		}
 	}
-	if name == "" {
-		return -1
-	}
+	// An option with no name of its own is still an option, which is what the record's index says.
 	id, ok := c.nameID[name]
 	if !ok {
 		id = int32(len(c.r.names))
@@ -685,78 +718,157 @@ func valueShape(gameID, v string, quoted, dataKind bool) (label string, keep boo
 
 // ---------------------------------------------------------------- the fold
 
-// fold rebuilds one file's path strings from its node chain. isDef grows between the two folds: after the nested join a block key that has become a definition folds to <kind>.
-func (r *fileRecs) fold(isDef func(string) bool, keys bool) {
-	if cap(r.paths) < len(r.nodes) {
-		r.paths = make([]string, len(r.nodes))
-	}
-	r.paths = r.paths[:len(r.nodes)]
+// boot folds the paths the join reads. Before the join there is no evidence where a database sits but the definition index, so a segment naming one is taken for a row; these coordinates exist only so the join can generalize a cited row to the position it was written at.
+func (r *fileRecs) boot(s *Schema, isDef func(string) bool) {
+	r.paths = make([]string, len(r.nodes))
 	for i, n := range r.nodes {
-		seg := foldSeg(r.GameID, n.key, n.quoted, isDef)
+		at := ""
+		if n.parent >= 0 {
+			at = r.paths[n.parent]
+		}
+		seg := s.foldSeg(r.GameID, n.key, n.quoted, isDef(game.KeyIdentity(r.GameID, n.key)))
 		if n.parent < 0 {
 			r.paths[i] = seg
 			continue
 		}
-		r.paths[i] = r.paths[n.parent] + "." + seg
-	}
-	// The key half folds by the same rule, and only the second fold needs it: the join reads the keys as the corpus writes them.
-	if !keys {
-		return
-	}
-	if cap(r.keys) < len(r.occs) {
-		r.keys = make([]string, len(r.occs))
-	}
-	r.keys = r.keys[:len(r.occs)]
-	for i := range r.occs {
-		o := &r.occs[i]
-		r.keys[i] = foldKey(r.GameID, o.key,
-			o.flags&oBlock != 0, o.flags&oQuoted != 0, isDef)
-	}
-	if cap(r.tkeys) < len(r.tallies) {
-		r.tkeys = make([]string, len(r.tallies))
-	}
-	r.tkeys = r.tkeys[:len(r.tallies)]
-	for i := range r.tallies {
-		// A tallied record is a scalar or a list, never a keyed block.
-		r.tkeys[i] = foldKey(r.GameID, r.tallies[i].key, false, false, isDef)
+		r.paths[i] = at + "." + seg
 	}
 }
 
-func (r *fileRecs) pathOf(node int32) string {
-	if node < 0 || int(node) >= len(r.paths) {
-		return ""
-	}
-	return r.paths[node]
-}
+// rowMark is one settled position whose block keys are rows, with the database the join named for it.
+type rowMark struct{ kind, path, def string }
 
-// keyAt re-spells the keys that sit at a database position, which is known only once every file has folded.
-func (r *fileRecs) keyAt(db map[string]bool) {
-	for i := range r.occs {
-		o := &r.occs[i]
-		if o.flags&oBlock == 0 || o.flags&oQuoted != 0 || r.keys[i] != o.key {
+// settle folds the file by position, once, for every segment and every key
+// alike: each node asks the bootstrap coordinates the one question the join
+// answered -- does the block above hold a database -- and the answer is recorded
+// at the SETTLED coordinates it will be read back at. The two spellings never
+// address each other, which is what the 2026-09-17 fix round left open.
+func (r *fileRecs) settle(s *Schema, db map[string]map[string]string) []rowMark {
+	boot := r.paths
+	byPath := db[r.kind]
+	out := make([]string, len(r.nodes))
+	var marks map[string]string
+	rows := func(bootAt, at string) bool {
+		def, ok := atDatabase(byPath, bootAt)
+		if ok {
+			if marks == nil {
+				marks = map[string]string{}
+			}
+			if was, seen := marks[at]; !seen || was == "" {
+				marks[at] = def
+			}
+		}
+		return ok
+	}
+	for i, n := range r.nodes {
+		bootAt, at := "", ""
+		if n.parent >= 0 {
+			bootAt, at = boot[n.parent], out[n.parent]
+		}
+		seg := s.foldSeg(r.GameID, n.key, n.quoted, rows(bootAt, at))
+		if n.parent < 0 {
+			out[i] = seg
 			continue
 		}
-		if db[r.kind+"\x00"+r.cellPath(o.node, o.flags&oTop != 0)] &&
-			!jomini.IsStop(o.key) {
-			r.keys[i] = segKind
-		}
+		out[i] = at + "." + seg
 	}
+	r.keys = make([]string, len(r.occs))
+	for i := range r.occs {
+		o := &r.occs[i]
+		top := o.flags&oTop != 0
+		at := o.flags&oBlock != 0 &&
+			rows(cellPathAt(boot, o.node, top), cellPathAt(out, o.node, top))
+		r.keys[i] = s.foldKey(r.GameID, o.key, o.flags&oQuoted != 0, at)
+	}
+	r.tkeys = make([]string, len(r.tallies))
+	for i := range r.tallies {
+		// A tallied record is a scalar or a list, never a keyed block.
+		r.tkeys[i] = s.foldKey(r.GameID, r.tallies[i].key, false, false)
+	}
+	r.paths = out
+	if len(marks) == 0 {
+		return nil
+	}
+	out2 := make([]rowMark, 0, len(marks))
+	for path, def := range marks {
+		out2 = append(out2, rowMark{r.kind, path, def})
+	}
+	return out2
 }
 
-// cellPath is where one record's cell sits: the definition's own body, or the folded chain of blocks below it.
-func (r *fileRecs) cellPath(node int32, top bool) string {
+// cellPathAt is where one record's cell sits in one fold's coordinates: the definition's own body, or the folded chain of blocks below it.
+func cellPathAt(paths []string, node int32, top bool) string {
 	if top {
 		return segTop
 	}
-	return r.pathOf(node)
+	if node < 0 || int(node) >= len(paths) {
+		return ""
+	}
+	return paths[node]
+}
+
+// localDB counts, per field of a definition, how often its value is one of the
+// definition's own block keys. A field whose EVERY value is one -- as a game
+// rule's `default` names one of its own options -- says those block keys are
+// rows of a local database, which is the evidence no citation prefix exists for
+// and whose absence reported 68 correct mod keys as unknown.
+//
+// The definition's own body and nowhere deeper. Measured on CK3: at that level
+// the rule finds game_rules, laws, court_amenities, portrait_modifiers and
+// portrait_animations and nothing else; run at every position it also claims
+// 2,600 coincidences inside bodies (`exists = scope:x` beside `scope:x = { }`),
+// which cost 6,736 fire edges.
+func (r *fileRecs) localDB() map[string][2]int32 {
+	blocks := map[int32]map[string]bool{}
+	for i := range r.occs {
+		o := &r.occs[i]
+		if o.flags&(oBlock|oQuoted|oTop) != oBlock || o.key == "" || o.node >= 0 {
+			continue
+		}
+		if blocks[o.from] == nil {
+			blocks[o.from] = map[string]bool{}
+		}
+		blocks[o.from][o.key] = true
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
+	out := map[string][2]int32{}
+	for i := range r.occs {
+		o := &r.occs[i]
+		if o.flags&(oBlock|oTop) != 0 || o.node >= 0 || o.key == "" || o.value == "" {
+			continue
+		}
+		n := out[o.key]
+		n[1]++
+		if blocks[o.from][o.value] {
+			n[0]++
+		}
+		out[o.key] = n
+	}
+	return out
 }
 
 // ---------------------------------------------------------------- phase B
 
 // learn is Phase B: fold, join the nested databases, fold again, classify every cell, resolve the records -- and for a workspace, apply the install's schema rather than learn one.
-func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string, bases ...*Index) {
+func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string,
+	docFields map[string]map[string]bool, bases ...*Index) {
 	s := &x.Schema
 	install := locLang != ""
+	// Effects and triggers come only from the declared API, and the block classification below reads them: inferring them by position elected every $PARAM$ substitution site as an effect, turning CK3's 1,905 real effects into 10,337 completion entries.
+	s.Effects, s.Triggers = nil, nil
+	if x.Declared != nil {
+		for name := range x.Declared.Effects {
+			s.Effects = append(s.Effects, name)
+		}
+		for name := range x.Declared.Triggers {
+			s.Triggers = append(s.Triggers, name)
+		}
+		slices.Sort(s.Effects)
+		slices.Sort(s.Triggers)
+	}
+	s.EffectSet, s.TriggerSet = sliceSet(s.Effects), sliceSet(s.Triggers)
 	kindsByKey, keysByKind := citableOver(x, bases)
 	if install && !x.Declared.Empty() {
 		s.Prefix, s.KindScope = bindKinds(x.Declared, keysByKind)
@@ -768,31 +880,21 @@ func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string, ba
 		foldDefs = base
 	}
 	isDef := func(name string) bool { return len(foldDefs[name]) > 0 }
-	_ = walkN(ctx, len(files), func(i int) error { files[i].fold(isDef, false); return nil })
-	var cites []typedCite
-	for _, r := range files {
-		cites = append(cites, r.cites...)
-	}
-	// The first fold and the skeleton it builds are only what the join reads: which cells hold names, and which keys sit under them. A workspace joins too -- a mod adds members of a nested database exactly as vanilla does -- but it learns no cell types of its own.
-	shapes := &Schema{Cells: map[string]map[string]map[string]*CellType{}}
-	for _, r := range files {
-		for i := range r.occs {
-			o := &r.occs[i]
-			if o.flags&oBlock == 0 {
-				continue
-			}
-			t := shapes.at(r.kind, r.cellPath(o.node, o.flags&oTop != 0), o.key)
-			t.Names = t.Names || o.flags&oNames != 0
-		}
-	}
+	_ = walkN(ctx, len(files), func(i int) error { files[i].boot(s, isDef); return nil })
+	shapes := skeleton(files)
 	// The install's own table, where its join marks live; empty for an install scan, which is making them.
 	base := &Schema{}
 	if len(bases) > 0 && bases[0] != nil {
 		base = &bases[0].Schema
 	}
+	var cites []typedCite
+	for _, r := range files {
+		cites = append(cites, r.cites...)
+	}
 	cited := citedKinds(cites, s.Prefix, x.Declared)
 	// The join asks whether a SCRIPT definition explains the name: CK3 lists c_varanasi in history/titles and the nested title is still what a citation means.
 	joinNested(shapes, cited, isDef)
+	localDatabases(shapes, files)
 	shapes.shapes()
 	// A citation is read through the shapes: a cited block key is a row only where this kind of file has been shown to hold that database.
 	nested := map[string]bool{}
@@ -803,25 +905,11 @@ func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string, ba
 		x.addNested(shapes, base, cited, nested, r)
 	}
 	// Row 7: a wrapper key is not a definition, and a site under one belongs to no definition.
-	wrappers := map[string]bool{}
-	for _, r := range files {
-		for _, w := range r.wraps {
-			all := true
-			for _, id := range w.ids {
-				if len(kindsByKey[id]) == 0 {
-					all = false
-					break
-				}
-			}
-			if all {
-				wrappers[w.key] = true
-			}
-		}
-	}
+	wrappers := wrapperKeys(files, kindsByKey)
 	if len(wrappers) > 0 {
 		x.retract(func(d Def) bool { return wrappers[d.Key] })
 	}
-	// The second fold has to see the definitions the join just made, or a path through one stays spelled as a name.
+	// The settled fold has to see the definitions the join just made, or a path through one stays spelled as a name.
 	kindsByKey, keysByKind = citableOver(x, bases)
 	if install && !x.Declared.Empty() {
 		s.Prefix, s.KindScope = bindKinds(x.Declared, keysByKind)
@@ -840,14 +928,99 @@ func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string, ba
 		}
 	}
 	t.cells = append(t.cells, s)
-	// The second fold and the one classification: a key that became a nested definition folds to <kind> here, so paths and cells both settle.
-	fold2 := isDef
-	if install {
-		after := scriptDefs(x.GameID, kindsByKey)
-		fold2 = func(name string) bool { return len(after[name]) > 0 }
+	// The settled fold: a block key is a definition where the join put a database and nowhere else, so paths, keys and the marks that decided them settle together.
+	db := databasePositions(shapes, base)
+	marks := make([][]rowMark, len(files))
+	_ = walkN(ctx, len(files), func(i int) error { marks[i] = files[i].settle(s, db); return nil })
+	for _, per := range marks {
+		for _, m := range per {
+			markRows(s, m.kind, m.path, m.def)
+		}
 	}
-	_ = walkN(ctx, len(files), func(i int) error { files[i].fold(fold2, true); return nil })
-	db := databasePositions(ctx, files)
+	x.classify(ctx, files, t, install)
+	// Only an install rebuilds the list: a workspace was handed the install's and its own cells are the positions the install never wrote.
+	if install {
+		s.shapes()
+	}
+	for structure, keys := range docFields {
+		// A structure that is a file kind is a definition body, whose documented names are cells of it; one that is a block key is a member of the block type alone.
+		if s.Cells[structure] == nil {
+			continue
+		}
+		for k := range keys {
+			s.at(structure, "", k).N++
+		}
+	}
+	// Every block is classified before the records resolve, because a fire site's slot is the class of the body it sits in.
+	s.learnBlocks(x.GameID, docFields, x.Declared, install)
+	out := make([]*FileHarvest, len(files))
+	_ = walkN(ctx, len(files), func(i int) error {
+		out[i] = resolve(&x.Schema, files[i], t, wrappers)
+		return nil
+	})
+	for _, h := range out {
+		if h != nil {
+			x.Add(h.Path, "", h.Origin, "", h)
+		}
+	}
+}
+
+// skeleton is the table the join reads: which cells hold names, and which keys sit under them, in the bootstrap coordinates. A workspace builds one too -- a mod adds members of a nested database exactly as vanilla does -- but it learns no cell types of its own.
+func skeleton(files []*fileRecs) *Schema {
+	s := &Schema{Cells: map[string]map[string]map[string]*CellType{}}
+	for _, r := range files {
+		for i := range r.occs {
+			o := &r.occs[i]
+			if o.flags&oBlock == 0 {
+				continue
+			}
+			t := s.at(r.kind, cellPathAt(r.paths, o.node, o.flags&oTop != 0), o.key)
+			t.Names = t.Names || o.flags&oNames != 0
+		}
+	}
+	return s
+}
+
+// localDatabases is the join's second source, for the databases no citation prefix names: a position where some scalar cell's every value is a block key written beside it.
+func localDatabases(s *Schema, files []*fileRecs) {
+	hits := map[[2]string][2]int32{}
+	for _, r := range files {
+		for key, n := range r.localDB() {
+			c := [2]string{r.kind, key}
+			was := hits[c]
+			hits[c] = [2]int32{was[0] + n[0], was[1] + n[1]}
+		}
+	}
+	for c, n := range hits {
+		if n[0] > 0 && n[0] == n[1] {
+			markRows(s, c[0], "", "")
+		}
+	}
+}
+
+// wrapperKeys is row 7: a top-level block whose keyed children are all definitions is a transparent container, not a definition of its own.
+func wrapperKeys(files []*fileRecs, kindsByKey map[string][]string) map[string]bool {
+	out := map[string]bool{}
+	for _, r := range files {
+		for _, w := range r.wraps {
+			all := true
+			for _, id := range w.ids {
+				if len(kindsByKey[id]) == 0 {
+					all = false
+					break
+				}
+			}
+			if all {
+				out[w.key] = true
+			}
+		}
+	}
+	return out
+}
+
+// classify folds every settled occurrence into its cell and settles the table.
+func (x *Index) classify(ctx context.Context, files []*fileRecs, t *lookup, install bool) {
+	s := &x.Schema
 	// One shard per kind, since a file has exactly one: the writers are disjoint, the merge takes no lock, and each table folds into its shard as the file finishes.
 	byKind := map[string][]*fileRecs{}
 	for _, r := range files {
@@ -873,7 +1046,6 @@ func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string, ba
 		shard := s.Cells[kinds[k]]
 		var labels []string
 		for _, r := range byKind[kinds[k]] {
-			r.keyAt(db)
 			into := make(map[pathKey]*CellType, len(r.occs)/8+len(r.tallies)+1)
 			at := func(path, key string) *CellType {
 				c := pathKey{path, key}
@@ -886,7 +1058,7 @@ func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string, ba
 			}
 			for j := range r.occs {
 				o := &r.occs[j]
-				cell := at(r.cellPath(o.node, o.flags&oTop != 0), r.keys[j])
+				cell := at(cellPathAt(r.paths, o.node, o.flags&oTop != 0), r.keys[j])
 				if o.flags&oBlock != 0 {
 					cell.Names = cell.Names || o.flags&oNames != 0
 					cell.add([]string{blockLabel(o.flags)}, 1)
@@ -897,7 +1069,7 @@ func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string, ba
 			}
 			for j := range r.tallies {
 				ta := &r.tallies[j]
-				at(r.cellPath(ta.node, ta.top), r.tkeys[j]).add([]string{ta.label}, ta.n)
+				at(cellPathAt(r.paths, ta.node, ta.top), r.tkeys[j]).add([]string{ta.label}, ta.n)
 			}
 			if !install {
 				own := make([]Cell, 0, len(into))
@@ -938,30 +1110,6 @@ func (x *Index) learn(ctx context.Context, files []*fileRecs, locLang string, ba
 			delete(s.Cells, kind)
 		}
 	}
-	// The marks move onto the settled schema, whose keys the fold re-spelled, so a workspace applies marks that address the cells it reads.
-	for kind, byPath := range shapes.Cells {
-		for path, byKey := range byPath {
-			for key, t := range byKey {
-				if t.Def != "" {
-					s.at(kind, path, foldKey(x.GameID, key, true, false, isDef)).Def = t.Def
-				}
-			}
-		}
-	}
-	// Only an install rebuilds the list: a workspace was handed the install's and its own cells are the positions the install never wrote.
-	if install {
-		s.shapes()
-	}
-	out := make([]*FileHarvest, len(files))
-	_ = walkN(ctx, len(files), func(i int) error {
-		out[i] = resolve(&x.Schema, files[i], t, wrappers)
-		return nil
-	})
-	for _, h := range out {
-		if h != nil {
-			x.Add(h.Path, "", h.Origin, "", h)
-		}
-	}
 }
 
 // scriptDefs is the definition set a path folds against: the script tier's, because an editor that has not loaded the data tier would fold every path differently.
@@ -978,25 +1126,28 @@ func scriptDefs(gameID string, kindsByKey map[string][]string) map[string][]stri
 	return out
 }
 
-// databasePositions are the (kind, path) positions holding a definition key, where every block key is a row: CK3's 22,333 uncited titles are titles, not 22,333 fields of landed_titles.
-func databasePositions(ctx context.Context, files []*fileRecs) map[string]bool {
-	local := make([]map[string]bool, len(files))
-	_ = walkN(ctx, len(files), func(i int) error {
-		r := files[i]
-		out := map[string]bool{}
-		for j := range r.occs {
-			o := &r.occs[j]
-			if o.flags&oBlock != 0 && r.keys[j] == segKind {
-				out[r.kind+"\x00"+r.cellPath(o.node, o.flags&oTop != 0)] = true
+// databasePositions are the (kind, path) positions where every block key is a row of a database rather than a field of a structure: the join marked the cell of the block that opens one. CK3's 22,333 uncited titles are titles, not 22,333 fields of landed_titles -- and `add_character_flag` is a field of `immediate`, however many game concepts happen to be named after an effect.
+func databasePositions(schemas ...*Schema) map[string]map[string]string {
+	db := map[string]map[string]string{}
+	for _, s := range schemas {
+		for kind, byPath := range s.Cells {
+			for path := range byPath {
+				cell, ok := parentCell(s, kind, path)
+				if !ok || !cell.Rows {
+					continue
+				}
+				if inDefinitionBody(path) {
+					path = ""
+				}
+				at := db[kind]
+				if at == nil {
+					at = map[string]string{}
+					db[kind] = at
+				}
+				if was, seen := at[path]; !seen || was == "" {
+					at[path] = cell.Def
+				}
 			}
-		}
-		local[i] = out
-		return nil
-	})
-	db := map[string]bool{}
-	for _, out := range local {
-		for k := range out {
-			db[k] = true
 		}
 	}
 	return db
@@ -1109,7 +1260,7 @@ func (x *Index) addNested(skeleton, base *Schema, cited map[string]string, neste
 		if o.flags&(oBlock|oNames|oQuoted|oTop) != oBlock|oNames {
 			continue
 		}
-		path := r.pathOf(o.node)
+		path := cellPathAt(r.paths, o.node, false)
 		name := game.KeyIdentity(r.GameID, o.key)
 		if !jomini.IsDefName(name) || jomini.IsStop(name) {
 			continue
@@ -1147,8 +1298,8 @@ func resolve(s *Schema, r *fileRecs, t *lookup, wrappers map[string]bool) *FileH
 	var labels []string
 	for i := range r.occs {
 		o := &r.occs[i]
-		cell := t.cell(Cell{Kind: r.kind,
-			Path: r.cellPath(o.node, o.flags&oTop != 0), Key: r.keys[i]})
+		path := cellPathAt(r.paths, o.node, o.flags&oTop != 0)
+		cell := t.cell(Cell{Kind: r.kind, Path: path, Key: r.keys[i]})
 		from := r.defKeyOf(o.from, wrappers)
 		if o.flags&oQuoted == 0 && o.key != "" {
 			callRecord(s, h, r, o, from)
@@ -1167,16 +1318,58 @@ func resolve(s *Schema, r *fileRecs, t *lookup, wrappers map[string]bool) *FileH
 		if !isFireKind(kind) {
 			continue
 		}
+		slot, rescoped := fireSite(t, r, o, path)
 		h.Edges = append(h.Edges, Edge{
 			From: from, To: o.value, Via: r.viaOf(o), Path: r.Path,
-			Line: int(o.vline), Kind: slotNames[o.slot],
-			NameKey: r.nameOf(o.name), Rescoped: o.flags&oRescoped != 0,
+			Line: int(o.vline), Kind: slot,
+			NameKey: r.nameOf(o.name), Rescoped: rescoped,
 		})
 	}
 	if len(h.Refs) == 0 && len(h.Edges) == 0 {
 		return nil
 	}
 	return h
+}
+
+// fireSite is where one fire site sits and what it runs against: the option it belongs to or the class of the body around it, and whether an ancestor block entered a scope of its own, so the event does NOT run in the scope its source declares.
+func fireSite(t *lookup, r *fileRecs, o *occ, path string) (slot string, rescoped bool) {
+	for n := o.node; n >= 0; n = r.nodes[n].parent {
+		k := r.nodes[n].key
+		if k == "" {
+			continue
+		}
+		seg := cellPathAt(r.paths, n, false)
+		if i := strings.LastIndexByte(seg, '.'); i >= 0 {
+			seg = seg[i+1:]
+		}
+		// A key the fold turns into a class names the thing it enters -- `scope:activity = { … }`, a nested definition, a numbered branch -- and is never a section of the scope around it.
+		if seg != "" && seg[0] == '<' || changesScope(t.schema, k) {
+			rescoped = true
+			break
+		}
+	}
+	if o.name >= 0 {
+		return "option", rescoped
+	}
+	// A fire site is an effect unless the body around it admits none.
+	if b := t.block(r.kind, path); b != nil && b.Body&BodyEffect == 0 && b.Body&BodyTrigger != 0 {
+		return "trigger", rescoped
+	}
+	return "effect", rescoped
+}
+
+// changesScope reports a block key the game itself declares as a hop: a link, or an iterator whose Supported Targets is a scope script runs in. A link naming several output types names no single scope and is not one.
+func changesScope(sc *declared.Schema, key string) bool {
+	if sc == nil {
+		return false
+	}
+	if l, ok := sc.Links[strings.ToLower(key)]; ok {
+		return l.Out != "" && !strings.Contains(l.Out, ",") && sc.Scopes[l.Out].ChangeScopes
+	}
+	if tok, _, ok := sc.Token(key); ok {
+		return tok.Target != "" && sc.Scopes[tok.Target].ChangeScopes
+	}
+	return false
 }
 
 // callRecord is a keyed statement inside a definition whose key names a scripted_* macro: an invocation of it.
@@ -1244,7 +1437,7 @@ func isFireKind(kind string) bool {
 // viaOf names the edge: the statement's own key, or the block above it when the key is an inline weight or id that names no site of its own (`random_events = { 100 = ns.1 }`).
 func (r *fileRecs) viaOf(o *occ) string {
 	if k := strings.ToLower(o.key); k == "id" || isDigitKey(k) {
-		if p := r.pathOf(o.node); p != "" {
+		if p := cellPathAt(r.paths, o.node, false); p != "" {
 			if i := strings.LastIndexByte(p, '.'); i >= 0 {
 				return p[i+1:]
 			}

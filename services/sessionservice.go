@@ -434,9 +434,9 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 		h.IndexReady = true
 		live.RLock()
 		h.DefCount = live.DefCount()
-		_, scanned, ver, _ := live.CacheInfo()
+		scanned, ver := live.Install.ScannedAt, live.Install.GameVersion
 		h.WatchError = live.WatchError()
-		h.DataError = live.DataError()
+		h.DataError = live.Install.DataError()
 		live.RUnlock()
 		if scanned != "" {
 			h.ScannedAt = scanned

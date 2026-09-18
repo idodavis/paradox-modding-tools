@@ -34,54 +34,39 @@ type diagFile struct {
 	refs     []derived.Ref
 }
 
-// eachCell walks the file handing every assignment the cell it sits at: the file's extract kind, the enclosing block keys below the definition, and the key itself.
-func (f diagFile) eachCell(fn func(a *jomini.Assignment, path string)) {
+// eachCell walks the file handing every assignment the cell it sits at: the file's extract kind, the enclosing block keys below the definition, and the key itself. block is that enclosing key as the author wrote it, which is what a message names; top marks the definition's own key, which sits in no block.
+func (f diagFile) eachCell(fn func(a *jomini.Assignment, path, block string, top bool)) {
 	if f.res.Root == nil {
 		return
 	}
-	folded := []string{""}
+	folded, raw := []string{""}, []string{""}
 	jomini.Walk(f.res.Root, func(st jomini.Statement, depth int, _ *jomini.Block) bool {
 		for len(folded) <= depth+1 {
-			folded = append(folded, "")
+			folded, raw = append(folded, ""), append(raw, "")
 		}
 		a, ok := st.(*jomini.Assignment)
 		key := ""
 		if ok {
 			key = a.Key.Text
 		}
-		switch {
-		case depth == 0:
-			folded[1] = ""
-		case folded[depth] == "":
-			folded[depth+1] = f.s.CellPath([]string{key})
-		default:
-			folded[depth+1] = folded[depth] + "." + f.s.CellPath([]string{key})
+		if depth == 0 {
+			folded[1], raw[1] = "", ""
+		} else {
+			folded[depth+1] = f.s.CellPath(f.fileKind, folded[depth], key)
+			raw[depth+1] = key
 		}
 		if ok {
-			fn(a, folded[depth])
+			fn(a, folded[depth], raw[depth], depth == 0)
 		}
 		return true
 	})
 }
 
 // Diagnose runs every check. Suppressions (# pmt:ignore) are honored.
-// Install (vanilla) files are silent — harvest stays in the scan cache, not IDE lint.
+// Install (vanilla) files are silent — harvest stays in the scan cache, not IDE
+// lint. The caller applies the user's per-code on/off choices afterward, so the
+// vanilla gate and the sweep always see the full surface.
 func Diagnose(s *session.Session, path string) []Diagnostic {
-	return DiagnoseEnabled(s, path, nil)
-}
-
-// DiagnoseEnabled is Diagnose with the checks the user has switched off skipped
-// rather than run and discarded.
-//
-// A nil or empty set means run everything, so the vanilla gate and the sweep get
-// the full surface whatever a user has configured — a gate that only checks what
-// happens to be enabled is not a gate.
-func DiagnoseEnabled(
-	s *session.Session, path string, enabled map[string]bool,
-) []Diagnostic {
-	if len(enabled) == 0 {
-		enabled = nil
-	}
 	if origin, _, ok := s.Locate(path); ok && origin == game.OriginVanilla {
 		return nil
 	}
@@ -103,20 +88,10 @@ func DiagnoseEnabled(
 	} else if !s.IsMetaFile(path) {
 		out = append(out, f.scriptDiags()...)
 	}
-	out = append(out, f.missingLocDiags()...)
-	out = append(out, f.requiredLocDiags()...)
-	out = append(out, f.unknownEventDiags()...)
+	out = append(out, f.refDiags()...)
 	out = append(out, f.wrongScopeDiags()...)
-	out = append(out, f.duplicateDefDiags()...)
-	out = append(out, f.unresolvedRefDiags()...)
-	out = append(out, f.wrongValueTypeDiags()...)
-	out = append(out, f.unknownKeyDiags()...)
-	if enabled == nil || enabled["wrong-declared-value"] {
-		out = append(out, f.declaredValueDiags()...)
-	}
-	if enabled == nil || enabled["unknown-token"] {
-		out = append(out, f.unknownTokenDiags()...)
-	}
+	out = append(out, f.defDiags()...)
+	out = append(out, f.fileChecks()...)
 	out = append(out, descriptorDiags(s, path)...)
 
 	sup := scanSuppressions(f.src)
@@ -135,7 +110,7 @@ func DiagnoseEnabled(
 // reports only where the game declares both the token and the scope, so a
 // missing or partial script_docs dump produces silence rather than noise.
 func (f diagFile) wrongScopeDiags() []Diagnostic {
-	misuses := ScopeMisuses(f.s, f.path)
+	misuses := ScopeMisuses(f.s, f.path, f.res)
 	if len(misuses) == 0 {
 		return nil
 	}
@@ -207,58 +182,29 @@ func locSeverity(code loc.ErrorCode) int {
 	}
 }
 
-// missingLocDiags reports a script field citing a loc key nothing defines.
-func (f diagFile) missingLocDiags() []Diagnostic {
+// refDiags is the one pass over the file's harvested references: a loc key
+// nothing defines, and an event fired that no file defines.
+func (f diagFile) refDiags() []Diagnostic {
 	var out []Diagnostic
 	for _, r := range f.refs {
-		if r.Kind != "loc" || f.s.LocDefined(r.Key) {
-			continue
-		}
-		out = append(out, diag(byteRange(f.li, r.Start, r.End), sevWarning,
-			"Missing localization key \""+r.Key+"\".", "missing-required-loc"))
-	}
-	return out
-}
-
-// requiredLocDiags demands the keys a kind's universal conventions name; a coverage short of 1 is a habit.
-func (f diagFile) requiredLocDiags() []Diagnostic {
-	if f.src == "" {
-		return nil
-	}
-	var out []Diagnostic
-	for _, d := range f.s.DefsInFile(f.path) {
-		var required []loc.Convention
-		for _, c := range f.s.LocConventionsOf(d.Kind) {
-			if c.Coverage >= 1 {
-				required = append(required, c)
-			}
-		}
-		for _, key := range loc.Expand(d.Key, required) {
-			if f.s.LocDefined(key) {
+		switch {
+		case r.Kind == "loc":
+			if f.s.LocDefined(r.Key) {
 				continue
 			}
-			out = append(out, diag(byteRange(f.li, d.Start, d.End), sevWarning,
-				"Missing localization key \""+key+"\".", "required-loc"))
+			out = append(out, diag(byteRange(f.li, r.Start, r.End), sevWarning,
+				"Missing localization key \""+r.Key+"\".", "missing-required-loc"))
+		case r.Kind == "event" && !r.Derived && f.src != "":
+			if f.s.Resolve(r.Key) != nil {
+				continue
+			}
+			ns, rest, ok := strings.Cut(r.Key, ".")
+			if !ok || rest == "" || !modDeclaresNamespace(f.s, ns) {
+				continue
+			}
+			out = append(out, diag(byteRange(f.li, r.Start, r.End), sevWarning,
+				"Unknown event \""+r.Key+"\".", "unknown-event"))
 		}
-	}
-	return out
-}
-
-func (f diagFile) unknownEventDiags() []Diagnostic {
-	if f.src == "" {
-		return nil
-	}
-	var out []Diagnostic
-	for _, r := range f.refs {
-		if r.Derived || r.Kind != "event" || f.s.Resolve(r.Key) != nil {
-			continue
-		}
-		ns, rest, ok := strings.Cut(r.Key, ".")
-		if !ok || rest == "" || !modDeclaresNamespace(f.s, ns) {
-			continue
-		}
-		out = append(out, diag(byteRange(f.li, r.Start, r.End), sevWarning,
-			"Unknown event \""+r.Key+"\".", "unknown-event"))
 	}
 	return out
 }

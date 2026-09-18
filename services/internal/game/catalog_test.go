@@ -46,6 +46,11 @@ var docShapeChecks = map[string]docShapeCheck{
 		key: "break_on_war", doc: "ends the relationship on war",
 		detect: regexp.MustCompile(`=\s*<[^<>]+>\s*\S`),
 	},
+	"`key = { <prose> }`, the shape documented inside its own braces": {
+		sample: "#\tshow_if = { <trigger to see if this stage is needed}\n",
+		key:    "show_if", doc: "trigger to see if this stage is needed",
+		detect: regexp.MustCompile(`(?m)=\s*\{\s*<[^=\n]*$`),
+	},
 	"`### brief: name ( type )` header, prose, then a lone `#`": {
 		sample: "### brief: create_cadet_branches ( bool )\n" +
 			"# Should rulers be able to create cadet branches\n" +

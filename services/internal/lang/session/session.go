@@ -61,7 +61,7 @@ func (s *Session) ReplaceCache(c *derived.Index) {
 // MergeVanillaLoc folds a freshly harvested language into the install index.
 func (s *Session) MergeVanillaLoc(x *derived.Index) {
 	s.Lock()
-	s.Model.MergeVanillaLoc(x)
+	s.Model.Install.MergeLoc(x)
 	s.Unlock()
 }
 

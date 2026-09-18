@@ -6,6 +6,7 @@
 package lsp
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -102,22 +103,30 @@ func hasDiag(diags []Diagnostic, code string) bool {
 	return false
 }
 
-func wantHover(t *testing.T, s *session.Session, f string, line, col int, subs ...string) {
+// ck3VanillaSess is a session whose files all belong to the install, for the rules that only apply to vanilla.
+func ck3VanillaSess(t *testing.T, install string, cache *vanillaCache) *session.Session {
 	t.Helper()
-	h := Hover(s, f, line, col)
-	if h == nil {
-		t.Fatalf("hover nil at %d:%d want %v", line, col, subs)
+	if cache == nil {
+		cache = &vanillaCache{}
 	}
-	blob := h.Kind + "\n" + h.Key + "\n" + h.Hint + "\n" + h.Docs + "\n" + h.Body + "\n" + h.Usage + "\n" + h.Owner
-	for _, v := range h.Values {
-		blob += "\n" + v.Text
+	cache.InstallPath = install
+	if cache.GameID == "" {
+		cache.GameID = "ck3"
 	}
-	for _, sub := range subs {
-		if !strings.Contains(blob, sub) {
-			t.Fatalf("hover kind=%#v key=%#v hint=%#v docs=%#v body=%#v usage=%#v missing %q",
-				h.Kind, h.Key, h.Hint, h.Docs, h.Body, h.Usage, sub)
+	mod := t.TempDir()
+	write(t, mod, "descriptor.mod", "name = \"t\"\n")
+	return session.New("ws", "ck3", "english", toIndex(cache, nil), []derived.ModInput{
+		{Origin: "mod", Root: mod, Order: 0},
+	})
+}
+
+func hasLocURI(locs []Location, path string) bool {
+	for _, l := range locs {
+		if derived.SamePath(l.URI, path) {
+			return true
 		}
 	}
+	return false
 }
 
 // `key = ` parses to an Assignment with a nil Value, which is the buffer's state on every keystroke while typing one.
@@ -142,7 +151,7 @@ func TestZNilValueRequests(t *testing.T) {
 						}
 					}()
 					_ = Hover(s, f, line, col)
-					_ = Complete(s, f, line, col)
+					_ = Complete(s, f, line, col).Items
 					_ = Definition(s, f, line, col)
 					_ = References(s, f, line, col)
 					_ = Diagnose(s, f)
@@ -162,7 +171,7 @@ type vanillaCache struct {
 	Schema                                                 *declared.Schema
 	Structures, StructureBlocks, NestedMembers             map[string][]string
 	Vocabulary, GUITypes, GUIProps, DataFunctions          []string
-	LocKeyPrefixes, LocFields, Wrappers, LocEngineSlots    []string
+	LocKeyPrefixes, LocFields, LocEngineSlots              []string
 	FieldValueKinds, FireKeys, PrefixKinds, KindScope      map[string]string
 	KindInfo, FieldInfo                                    map[string]string
 	FieldInfoByKind                                        map[string]map[string]string
@@ -196,7 +205,7 @@ func toIndex(c *vanillaCache, v *vanillaLoc) *derived.Index {
 	fixtureCells(&x.Schema, c)
 	x.Docs = derived.Docs{
 		KindInfo: c.KindInfo, FieldInfo: fixtureLower(c.FieldInfo),
-		FieldInfoByKind:          fixtureLowerByKind(c.FieldInfoByKind),
+		Fields:                   fixtureLowerByKind(c.FieldInfoByKind),
 		DeclaredFieldTypes:       fixtureTypes(c.DeclaredFieldTypes),
 		DeclaredFieldTypesByKind: map[string]map[string]declared.DeclaredType{},
 	}
@@ -293,14 +302,6 @@ func fixtureSet(in []string) map[string]bool {
 	for _, k := range in {
 		out[k] = true
 		out[strings.ToLower(k)] = true
-	}
-	return out
-}
-
-func fixtureSets(in map[string][]string) map[string]map[string]bool {
-	out := map[string]map[string]bool{}
-	for k, v := range in {
-		out[k] = fixtureSet(v)
 	}
 	return out
 }
@@ -464,6 +465,83 @@ func fixtureCells(s *derived.Schema, c *vanillaCache) {
 			}
 		}
 	}
+	fixtureBlocks(s, c)
+}
+
+// fixtureBlocks is §9 over the fixture's cells: a position holding a declared
+// token is a body of those classes, everything else a structure, and members
+// unify by the block's key. A cell with zero occurrences (the combinatorial
+// defaults fixtureCells writes at every path so a lookup never panics) is not
+// evidence, exactly as the real learnBlocks skips it -- otherwise every
+// position gets a phantom vanilla BlockType that shadows the workspace's own,
+// real one via Model.BlockAt's vanilla-first read.
+func fixtureBlocks(s *derived.Schema, c *vanillaCache) {
+	s.Blocks = map[string]map[string]*derived.BlockType{}
+	members := map[string]map[string]bool{}
+	for kind, byPath := range s.Cells {
+		for path, byKey := range byPath {
+			key := kind
+			if i := strings.LastIndexByte(path, '.'); i >= 0 {
+				key = path[i+1:]
+			} else if path != "" {
+				key = path
+			}
+			b, seen := &derived.BlockType{Key: key}, false
+			for m, t := range byKey {
+				if m == "" || m[0] == '<' || t == nil || t.N == 0 {
+					continue
+				}
+				seen = true
+				var eff, trig bool
+				if c.Schema != nil {
+					_, eff = c.Schema.Effects[strings.ToLower(m)]
+					_, trig = c.Schema.Triggers[strings.ToLower(m)]
+				}
+				switch {
+				case eff:
+					b.Body |= derived.BodyEffect
+				case trig:
+					b.Body |= derived.BodyTrigger
+				default:
+					if members[key] == nil {
+						members[key] = map[string]bool{}
+					}
+					members[key][m] = true
+				}
+			}
+			if !seen {
+				continue
+			}
+			// Every block key gets its entry, as learnBlocks gives one: a key the schema opens a block with anywhere is engine grammar.
+			if members[key] == nil {
+				members[key] = map[string]bool{}
+			}
+			if b.Body != 0 {
+				b.Class = derived.BlockBody
+			}
+			if s.Blocks[kind] == nil {
+				s.Blocks[kind] = map[string]*derived.BlockType{}
+			}
+			s.Blocks[kind][path] = b
+		}
+	}
+	s.Structures = map[string][]string{}
+	for k, set := range members {
+		s.Structures[k] = slices.Sorted(maps.Keys(set))
+	}
+	// KnownKeys mirrors learnBlocks': every structure name and member the fixture
+	// wrote, plus the declared engine API -- unknown-key's whole vocabulary.
+	known := map[string]bool{}
+	for key, mems := range s.Structures {
+		known[strings.ToLower(key)] = true
+		for _, m := range mems {
+			known[strings.ToLower(m)] = true
+		}
+	}
+	if c.Schema != nil {
+		c.Schema.EachName(func(n string) { known[strings.ToLower(n)] = true })
+	}
+	s.KnownKeys = known
 }
 
 // fixtureFireKeys stands in for what a scanned install teaches -- which keys hold event and on_action ids -- unless the fixture states its own.

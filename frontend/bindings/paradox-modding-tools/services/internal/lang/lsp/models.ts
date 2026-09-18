@@ -10,7 +10,9 @@ export interface CodeAction {
 }
 
 /**
- * CompletionItem is one completion suggestion.
+ * CompletionItem is one completion suggestion. Documentation is empty here and
+ * fetched lazily through IdeService.ResolveCompletion, not computed for every
+ * item up front.
  */
 export interface CompletionItem {
     "label": string;
@@ -23,6 +25,28 @@ export interface CompletionItem {
     "kind"?: string;
     "range": Range;
     "insertText"?: string;
+
+    /**
+     * SortText places the item in one of the completion buckets: "0" a declared
+     * token in scope, "1" a structure key, "2" a def, "3" a loc key.
+     */
+    "sortText"?: string;
+
+    /**
+     * DocKind is the kind ResolveCompletion should look documentation up under,
+     * when it differs from Detail (a structure key shows its enclosing block as
+     * Detail but its doc lives under the file's own kind).
+     */
+    "docKind"?: string;
+}
+
+/**
+ * CompletionList is the completion response: the items, and whether the cap
+ * truncated them (the editor should ask again as the reader keeps typing).
+ */
+export interface CompletionList {
+    "items": CompletionItem[] | null;
+    "isIncomplete"?: boolean;
 }
 
 /**
@@ -54,10 +78,9 @@ export interface DiagnosticCode {
     "group": string;
 
     /**
-     * Default is the severity when the user has not chosen one.
+     * Default is whether the check runs when the user has not chosen.
      */
-    "default": string;
-    "experimental"?: boolean;
+    "default": boolean;
 }
 
 /**
@@ -69,9 +92,20 @@ export interface FoldingRange {
 }
 
 /**
- * HoverResult is a structured hover card. The frontend templates Kind/Key/Hint/Docs.
+ * InlayHint is text the editor draws inline at Range.End without editing the
+ * buffer. Columns are UTF-8 bytes, like every other range PMT returns.
  */
-export interface HoverResult {
+export interface InlayHint {
+    "range": Range;
+    "label": string;
+    "tooltip"?: string;
+}
+
+/**
+ * Inspect is the hover card, and the DTO the Hover RPC returns; the frontend
+ * templates it as it stands. A nil Inspect means there is no card to show.
+ */
+export interface Inspect {
     "kind"?: string;
     "key"?: string;
     "hint"?: string;
@@ -91,7 +125,7 @@ export interface HoverResult {
      */
     "accepts"?: string;
     "body"?: string;
-    "values"?: HoverValue[] | null;
+    "values"?: InspectValue[] | null;
     "more"?: number;
     "owner"?: string;
     "usage"?: string;
@@ -109,21 +143,11 @@ export interface HoverResult {
 }
 
 /**
- * HoverValue is one unique harvested RHS or save-site expression.
+ * InspectValue is one value the corpus was seen writing for the name under the cursor.
  */
-export interface HoverValue {
+export interface InspectValue {
     "text": string;
     "count": number;
-}
-
-/**
- * InlayHint is text the editor draws inline at Range.End without editing the
- * buffer. Columns are UTF-8 bytes, like every other range PMT returns.
- */
-export interface InlayHint {
-    "range": Range;
-    "label": string;
-    "tooltip"?: string;
 }
 
 /**

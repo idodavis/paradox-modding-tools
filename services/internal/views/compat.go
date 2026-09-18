@@ -90,8 +90,8 @@ func contestRows(s *session.Session, order []string) []HealthRow {
 		return nil
 	}
 	if len(order) == 0 {
-		order = make([]string, 0, len(s.Mods()))
-		for _, m := range s.Mods() {
+		order = make([]string, 0, len(s.Mods))
+		for _, m := range s.Mods {
 			order = append(order, m.Origin)
 		}
 	}
@@ -193,7 +193,7 @@ func refRows(s *session.Session) (depends, dangling []HealthRow, nDepends, nDang
 			if r.Derived {
 				continue
 			}
-			if s.Schema().HasName(r.Key) {
+			if s.Install.Declared.HasName(r.Key) {
 				// The game's own API, not a missing object.
 				continue
 			}

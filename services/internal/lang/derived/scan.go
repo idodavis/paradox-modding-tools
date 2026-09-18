@@ -85,21 +85,18 @@ func Scan(ctx context.Context, req ScanRequest) (*Index, *Index, error) {
 		x.Refs = append(x.Refs, r)
 	}
 
+	// The install's prose is read before the script walk because Phase B classifies every block before it resolves a fire site, and a documented field is a member of the structure it is written for.
+	step(25, "reading game info")
+	docs, docFields := harvestGameInfo(req.GameID, inv.info)
+	x.Docs = docs
+
 	step(30, "parsing script")
 	files := append(append([]fileRef{}, inv.script...), inv.gui...)
-	dataFns, err := harvest(ctx, x, files, nil, locLang)
+	dataFns, err := harvest(ctx, x, files, nil, locLang, docFields)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	step(80, "reading game info")
-	docs, docStructs := harvestGameInfo(req.GameID, inv.info)
-	x.Docs = docs
-	for kind, keys := range docStructs {
-		for k := range keys {
-			x.Schema.at(kind, "", k).N++
-		}
-	}
 	step(90, "reading script_docs")
 	x.projections(dataFunctions(docDirs, dataFns), locLang)
 
@@ -132,20 +129,9 @@ func (x *Index) projections(dataFns []string, locLang string) {
 	s.GUIProps = sortedKeys(guiProps)
 	s.GUITypes = sortedKeys(x.keysOfKind(jomini.KindGUIType))
 	s.DataFunctions = dataFns
-	// Effects and triggers come only from the declared API: inferring them by position elected every $PARAM$ substitution site as an effect, turning CK3's 1,905 real effects into 10,337 completion entries.
-	s.Effects, s.Triggers = nil, nil
 	if x.Declared != nil {
-		for name := range x.Declared.Effects {
-			s.Effects = append(s.Effects, name)
-		}
-		for name := range x.Declared.Triggers {
-			s.Triggers = append(s.Triggers, name)
-		}
-		slices.Sort(s.Effects)
-		slices.Sort(s.Triggers)
 		x.Declared.EachName(func(name string) { vocab[name] = true })
 	}
-	s.EffectSet, s.TriggerSet = sliceSet(s.Effects), sliceSet(s.Triggers)
 	s.VocabNames = sortedKeys(vocab)
 	s.KindPrefix, s.ScopePrefix, s.ScopeKind = x.citeForms()
 	keys := loc.NewKeys(keySet(x.Loc[locLang]))
@@ -204,7 +190,7 @@ func BuildWorkspace(
 	if vanilla != nil {
 		x.Schema = vanilla.Schema
 		// Its own cells, not the install's: a workspace types only the positions the install never wrote at, and must not edit the table it was handed.
-		x.Schema.Cells = nil
+		x.Schema.Cells, x.Schema.Blocks, x.Schema.Structures = nil, nil, nil
 		x.Schema.MacroDefs = maps.Clone(vanilla.Schema.MacroDefs)
 		x.Declared, x.Docs = vanilla.Declared, vanilla.Docs
 	}
@@ -218,7 +204,7 @@ func BuildWorkspace(
 			files = append(files, f)
 		}
 	}
-	_, err := harvest(ctx, x, files, vanilla, "")
+	_, err := harvest(ctx, x, files, vanilla, "", nil)
 	// A reference to an interpolation the engine fills in is not a missing key, and no mod can define one.
 	x.dropEngineSlotRefs()
 	x.SortLocKeys()
@@ -452,7 +438,7 @@ func walkN(ctx context.Context, n int, fn func(i int) error) error {
 }
 
 // harvest is the corpus pass: Phase A over every file in parallel, then Phase B once the definition index is complete. locLang empty means a workspace, which applies the install's schema rather than learning one.
-func harvest(ctx context.Context, x *Index, files []fileRef, base *Index, locLang string) (map[string]bool, error) {
+func harvest(ctx context.Context, x *Index, files []fileRef, base *Index, locLang string, docFields map[string]map[string]bool) (map[string]bool, error) {
 	names := &interner{}
 	hs := make([]*FileHarvest, len(files))
 	var mu sync.Mutex
@@ -498,7 +484,7 @@ func harvest(ctx context.Context, x *Index, files []fileRef, base *Index, locLan
 		}
 		hs[i] = nil
 	}
-	x.learn(ctx, recs, locLang, base)
+	x.learn(ctx, recs, locLang, docFields, base)
 	return dataFns, nil
 }
 
@@ -660,31 +646,31 @@ func HarvestLoc(ctx context.Context, gameID, installPath, locLang string) (*Inde
 	return x, err
 }
 
-// firstWins files one documented name: the first non-empty value seen wins, globally and per kind. A nil global files per kind only; an empty kind files globally only.
-func firstWins(global map[string]string, byKind map[string]map[string]string, kind, key, v string) {
+// firstWins files one documented name: the first non-empty value seen wins, globally and under its structure. A nil global files per structure only; an empty structure files globally only.
+func firstWins(global map[string]string, by map[string]map[string]string, structure, key, v string) {
 	if v == "" {
 		return
 	}
 	if global != nil && global[key] == "" {
 		global[key] = v
 	}
-	if kind == "" {
+	if structure == "" {
 		return
 	}
-	m := byKind[kind]
+	m := by[structure]
 	if m == nil {
 		m = map[string]string{}
-		byKind[kind] = m
+		by[structure] = m
 	}
 	if m[key] == "" {
 		m[key] = v
 	}
 }
 
-// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field prose and the declared types written beside it. Both are filed globally for the names that mean one thing everywhere and per kind because most do not -- `type` is a value set inside a scripted relation and something else entirely inside an event.
+// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field prose addressed by (structure, field) and the declared types written beside it, and returns the fields each structure is documented to hold. Prose is also filed globally for the names that mean one thing everywhere; most do not -- `type` is a value set inside a scripted relation and something else entirely inside an event.
 func harvestGameInfo(gameID string, docs []fileRef) (Docs, map[string]map[string]bool) {
 	d := Docs{
-		FieldInfo: map[string]string{}, FieldInfoByKind: map[string]map[string]string{},
+		FieldInfo: map[string]string{}, Fields: map[string]map[string]string{},
 		KindInfo:                 map[string]string{},
 		DeclaredFieldTypes:       map[string]declared.DeclaredType{},
 		DeclaredFieldTypesByKind: map[string]map[string]declared.DeclaredType{},
@@ -707,27 +693,26 @@ func harvestGameInfo(gameID string, docs []fileRef) (Docs, map[string]map[string
 			firstWins(rawTypes, rawByKind, kind, key, t)
 		}
 		for key, doc := range harvested {
-			// A documented name is a member of the kind whether or not it came with prose.
+			// A documented name is a member of the structure whether or not it came with prose; at the file's own level the structure is the kind.
 			if kind != "" {
 				if structs[kind] == nil {
 					structs[kind] = map[string]bool{}
 				}
 				structs[kind][key] = true
 			}
-			firstWins(d.FieldInfo, d.FieldInfoByKind, kind, key, doc)
+			firstWins(d.FieldInfo, d.Fields, kind, key, doc)
 		}
-		// A key documented inside an example block stays path-qualified and per-kind only, never bare or global.
-		if kind == "" {
-			continue
-		}
+		// A key documented inside an example block is addressed by that block, which is one structure wherever it is written, and never globally.
 		for path, doc := range nested {
-			if structs[kind] == nil {
-				structs[kind] = map[string]bool{}
+			block, bare, ok := strings.Cut(path, ".")
+			if !ok {
+				continue
 			}
-			if _, bare, ok := strings.Cut(path, "."); ok {
-				structs[kind][bare] = true
+			if structs[block] == nil {
+				structs[block] = map[string]bool{}
 			}
-			firstWins(nil, d.FieldInfoByKind, kind, path, doc)
+			structs[block][bare] = true
+			firstWins(nil, d.Fields, block, bare, doc)
 		}
 	}
 	// The declared type is classified once, here, rather than on every hover.
@@ -742,8 +727,8 @@ func harvestGameInfo(gameID string, docs []fileRef) (Docs, map[string]map[string
 		d.DeclaredFieldTypesByKind[kind] = out
 	}
 	d.FieldInfo = normalizeDocMap(d.FieldInfo)
-	for kind, m := range d.FieldInfoByKind {
-		d.FieldInfoByKind[kind] = normalizeDocMap(m)
+	for structure, m := range d.Fields {
+		d.Fields[structure] = normalizeDocMap(m)
 	}
 	return d, structs
 }

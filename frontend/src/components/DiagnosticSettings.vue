@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * Per-diagnostic severity control.
+ * Per-diagnostic on/off control.
  *
  * The registry is the backend's (lsp/codes.go), never a copy: a code listed here
  * but not there is a toggle that does nothing, and a code there but not here is
- * a check nobody can turn off. Severities persist under `ide.diag.<code>`, which
- * IdeService.Diagnose reads on every call — so a change takes effect on the next
- * keystroke with no rescan.
+ * a check nobody can turn off. Choices persist under `ide.diag.<code>` as "on" or
+ * "off", which IdeService.Diagnose reads on every call — so a change takes
+ * effect on the next keystroke with no rescan.
  */
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -16,12 +16,6 @@ import { useSettingsStore } from "../stores/settings";
 defineOptions({ name: "DiagnosticSettings" });
 
 const settings = useSettingsStore();
-
-const SEVERITIES = [
-  { label: "Off", value: "off" },
-  { label: "Warning", value: "warning" },
-  { label: "Error", value: "error" },
-];
 
 const { data, isLoading, error } = useQuery({
   key: ["diagnostic-codes"],
@@ -56,16 +50,16 @@ const ungrouped = computed(() =>
   codes.value.filter((c) => !GROUPS.some((g) => g.id === c.group)),
 );
 
-/** The stored severity, or the code's own default when the user has not chosen.
- *
- * An empty stored value counts as "not chosen": SaveSettings can only write
- * keys, never remove them, so clearing a choice means writing "". */
-function severityOf(code: string, fallback: string): string {
-  return settings.values[`ide.diag.${code}`] || fallback;
+/** The stored on/off choice, or the code's own default when the user has not
+ * chosen. An empty stored value counts as "not chosen": SaveSettings can only
+ * write keys, never remove them, so clearing a choice means writing "". */
+function enabledOf(code: string, fallback: boolean): boolean {
+  const stored = settings.values[`ide.diag.${code}`];
+  return stored ? stored === "on" : fallback;
 }
 
-async function setSeverity(code: string, value: string): Promise<void> {
-  await settings.set(`ide.diag.${code}`, value);
+async function setEnabled(code: string, on: boolean): Promise<void> {
+  await settings.set(`ide.diag.${code}`, on ? "on" : "off");
 }
 
 /** Restore every code to its default.
@@ -73,9 +67,9 @@ async function setSeverity(code: string, value: string): Promise<void> {
  * Writes "" rather than the default value, and rather than deleting the key:
  * deleting does nothing (SaveSettings merges, so a removed key keeps its old
  * stored value and the UI silently disagrees with the engine), while writing
- * the default in would pin it -- a code that later graduates from off to
- * warning should follow, and a user who once pressed this should not be stuck
- * on the old default forever. ApplySeverities resolves "" as unset. */
+ * the default in would pin it -- a code that later graduates from off to on
+ * should follow, and a user who once pressed this should not be stuck on the
+ * old default forever. EnabledCodes resolves "" as unset. */
 async function resetAll(): Promise<void> {
   const next = { ...settings.values };
   let touched = false;
@@ -125,23 +119,14 @@ const changed = computed(() =>
         <ul class="divide-y divide-default rounded-md border border-default">
           <li v-for="c in g.rows" :key="c.code" class="flex items-start gap-4 px-4 py-3">
             <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <code class="text-sm font-medium">{{ c.code }}</code>
-                <UBadge v-if="c.experimental" color="warning" variant="subtle" size="sm" label="Experimental" />
-              </div>
+              <code class="text-sm font-medium">{{ c.code }}</code>
               <p class="mt-0.5 text-sm text-muted">{{ c.summary }}</p>
-              <p v-if="c.experimental" class="mt-0.5 text-xs text-muted">
-                Off by default: this check has not been shown to stay silent on every
-                vanilla install, so it may report correct script.
-              </p>
             </div>
-            <USelect
-              :model-value="severityOf(c.code, c.default)"
-              :items="SEVERITIES"
-              value-key="value"
+            <USwitch
+              :model-value="enabledOf(c.code, c.default)"
               size="sm"
-              class="w-32 shrink-0"
-              @update:model-value="setSeverity(c.code, String($event))"
+              class="shrink-0"
+              @update:model-value="setEnabled(c.code, $event)"
             />
           </li>
         </ul>

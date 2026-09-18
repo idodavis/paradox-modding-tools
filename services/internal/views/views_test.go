@@ -23,7 +23,7 @@ type vanillaCache struct {
 	LocKeyPrefixes, LocFields, Wrappers, LocEngineSlots    []string
 	FieldValueKinds, FireKeys, PrefixKinds, KindScope      map[string]string
 	KindInfo, FieldInfo                                    map[string]string
-	FieldInfoByKind                                        map[string]map[string]string
+	Fields                                                 map[string]map[string]string
 	DeclaredFieldTypes                                     map[string]string
 	DeclaredFieldTypesByKind                               map[string]map[string]string
 	LocConventions                                         map[string][]loc.Convention
@@ -54,7 +54,7 @@ func toIndex(c *vanillaCache, v *vanillaLoc) *derived.Index {
 	fixtureCells(&x.Schema, c)
 	x.Docs = derived.Docs{
 		KindInfo: c.KindInfo, FieldInfo: fixtureLower(c.FieldInfo),
-		FieldInfoByKind:          fixtureLowerByKind(c.FieldInfoByKind),
+		Fields:                   fixtureLowerByKind(c.Fields),
 		DeclaredFieldTypes:       fixtureTypes(c.DeclaredFieldTypes),
 		DeclaredFieldTypesByKind: map[string]map[string]declared.DeclaredType{},
 	}

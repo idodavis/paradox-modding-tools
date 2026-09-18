@@ -374,20 +374,18 @@ func TestLockContract(t *testing.T) {
 			"Locate")
 		must(t, s.OriginName("") == "Crusader Kings III" &&
 			s.OriginName("vanilla") == "Crusader Kings III", "OriginName vanilla")
-		must(t, len(s.Mods()) == 1 && s.KindFor(ev) != "", "Mods/KindFor")
+		must(t, len(s.Mods) == 1 && s.KindFor(ev) != "", "Mods/KindFor")
 		kinds, _ := s.GraphCatalog()
 		must(t, kinds["t.1"] != "", "GraphCatalog")
 		must(t, len(s.Members("event", "")) > 0 && len(s.Vocab("vocabulary")) > 0 &&
 			s.FieldDoc("immediate", "event", nil) != "", "Members/Vocab/FieldDoc")
-		effects, _ := s.MemberSets()
-		must(t, effects != nil, "MemberSets")
-		inst, _, ver, _ := s.CacheInfo()
+		inst, ver := s.Install.InstallPath, s.Install.GameVersion
 		must(t, inst == "/game" && ver == "1.16", "CacheInfo")
 		_ = s.Contests([]string{"mod"})
 		replacement := installIndex("/y")
 		replacement.GameVersion = "2"
 		s.ReplaceCache(replacement)
-		inst, _, _, _ = s.CacheInfo()
+		inst = s.Install.InstallPath
 		must(t, inst == "/y", "ReplaceCache")
 	})
 

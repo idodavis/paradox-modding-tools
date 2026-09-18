@@ -224,10 +224,13 @@ func locField(s *session.Session, a *jomini.Assignment) *EventLocField {
 
 func sectionOf(s *session.Session, name string, block *jomini.Block, lineOf func(int) int) EventSectionInfo {
 	lines, targets, _ := inspectBlock(s, block, lineOf, nil)
-	return EventSectionInfo{
-		Name: name, Role: jomini.EventSectionRole(name),
-		Lines: lines, Targets: targets,
+	// A section gates the event when the block the corpus learned there admits conditions and no effects.
+	role := "effect"
+	if b := s.BlockAt(jomini.KindEvent, strings.ToLower(name)); b != nil &&
+		b.Body&derived.BodyEffect == 0 && b.Body&derived.BodyTrigger != 0 {
+		role = "gate"
 	}
+	return EventSectionInfo{Name: name, Role: role, Lines: lines, Targets: targets}
 }
 
 func optionOf(s *session.Session, block *jomini.Block, lineOf func(int) int) EventOptionInfo {
@@ -342,10 +345,7 @@ func inspectBlock(
 			if own != "" {
 				next = key
 			}
-			subPath := s.CellPath([]string{a.Key.Text})
-			if path != "" {
-				subPath = path + "." + subPath
-			}
+			subPath := s.CellPath(jomini.KindEvent, path, a.Key.Text)
 			skipThis := depth == 0 && skip[key]
 			if skipThis || !emit {
 				if sub != nil {

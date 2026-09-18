@@ -21,13 +21,13 @@ var usageParamRe = regexp.MustCompile(`\$([A-Za-z0-9_]+)\$|\{([A-Za-z0-9_]+)\}`)
 
 // SignatureHelp returns usage-based signature help at (line, UTF-8 column).
 func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHelpResult {
-	at, ok := CursorAt(s, path, line, col)
+	at, ok := probeAt(s, path, line, col)
 	if !ok {
 		return nil
 	}
-	key := at.SlotKey
+	key := at.slotKey
 	if key == "" {
-		key = at.Word
+		key = at.word
 	}
 	usage := s.TokenUsage(key)
 	if usage == "" {
@@ -40,7 +40,7 @@ func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHel
 	}
 	return &SignatureHelpResult{
 		Label:         usage,
-		Documentation: s.FieldDoc(key, at.Kind, nil),
+		Documentation: s.FieldDoc(key, at.kind, nil),
 		Parameters:    paramsFromUsage(usage),
 	}
 }

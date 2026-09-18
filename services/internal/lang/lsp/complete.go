@@ -1,67 +1,96 @@
-// complete.go serves completion for script, loc, and mod files.
+// complete.go serves completion for script, loc, and mod files. For a script
+// position the source is chosen by the block type at the cursor: a database
+// offers definition names, a body offers its declared tokens and macros, a
+// structure offers its unified members, and a value position offers what the
+// cell's type resolved to.
 package lsp
 
 import (
-	"cmp"
-	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/lang/derived"
 	"paradox-modding-tools/services/internal/lang/jomini"
-	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/session"
 	"paradox-modding-tools/services/internal/modfile"
 )
 
 const maxComplete = 80
 
-// Complete returns completion items at (line, UTF-8 column).
-func Complete(s *session.Session, path string, line, col int) []CompletionItem {
-	src := s.FileText(path)
-	stamp := func(items []CompletionItem) []CompletionItem {
-		return stampRange(src, line, col, items)
-	}
-	if s.KindFor(path) == "mod" {
-		return stamp(prefixFilter(modItems(), completePrefix(s, path, line, col)))
-	}
-	if s.KindFor(path) == "loc" || s.KindFor(path) == "gui" {
-		if items := dataFnItems(s, path, line, col); len(items) > 0 {
-			return stamp(items)
-		}
-		if s.KindFor(path) == "loc" {
-			return stamp(capComplete(locItems(s, completePrefix(s, path, line, col))))
-		}
-	}
-	at, ok := CursorAt(s, path, line, col)
-	if !ok {
-		return nil
-	}
-	prefix := ""
-	if at.Word != "" && at.Start < at.Off {
-		prefix = at.Src[at.Start:at.Off]
-	}
-	scope := ScopeAt(s, path, line, col)
-	items := scriptItems(s, path, at, prefix, scope)
-	Rank(s, at, scope, items)
-	return stamp(capComplete(items))
+// source is one row of the completion table: when it applies, and the items it offers.
+type source struct {
+	when  func(s *session.Session, path string, at probe) bool
+	items func(s *session.Session, at probe, prefix string) []CompletionItem
 }
 
-func stampRange(src string, line, col int, items []CompletionItem) []CompletionItem {
-	if len(items) == 0 || src == "" {
-		return items
+// sources is the whole of completion; the first row whose when matches answers.
+var sources = []source{
+	{isMod, modCompletions},
+	{isDataFn, dataFnCompletions},
+	{isLoc, locCompletions},
+	{isContainer, containerCompletions},
+	{isValue, valueCompletions},
+}
+
+// Complete returns completion items at (line, UTF-8 column).
+func Complete(s *session.Session, path string, line, col int) CompletionList {
+	at, ok := probeAt(s, path, line, col)
+	if !ok {
+		return CompletionList{}
 	}
-	li := jomini.NewLineIndex(src)
-	off := li.OffsetAt(line, col)
-	_, start, end := jomini.Result{Src: src}.TokenAt(off)
+	prefix := ""
+	if at.word != "" && at.start < at.off {
+		prefix = at.src[at.start:at.off]
+	}
+	for _, src := range sources {
+		if src.when(s, path, at) {
+			return stampRange(at, completionList(src.items(s, at, prefix)))
+		}
+	}
+	return CompletionList{}
+}
+
+func isMod(s *session.Session, path string, _ probe) bool { return s.KindFor(path) == "mod" }
+
+func isDataFn(s *session.Session, path string, at probe) bool {
+	kind := s.KindFor(path)
+	return (kind == "loc" || kind == "gui") && dataFnOpen(at)
+}
+
+func isLoc(s *session.Session, path string, _ probe) bool { return s.KindFor(path) == "loc" }
+
+// isContainer is a position choosing a KEY: a nested block member, or the bare
+// start of a new top-level definition.
+func isContainer(s *session.Session, path string, at probe) bool {
+	return scriptFile(s, path) && (at.inKey || at.slotKey == "")
+}
+
+// isValue is a position writing the scalar or list value of a known key.
+func isValue(s *session.Session, path string, at probe) bool {
+	return scriptFile(s, path) && !at.inKey && at.slotKey != ""
+}
+
+func scriptFile(s *session.Session, path string) bool {
+	switch s.KindFor(path) {
+	case "mod", "loc":
+		return false
+	}
+	return true
+}
+
+func stampRange(at probe, list CompletionList) CompletionList {
+	if len(list.Items) == 0 || at.src == "" {
+		return list
+	}
+	start, end := at.start, at.end
 	if start == end {
-		start, end = off, off
+		start, end = at.off, at.off
 	}
-	start = citeStart(src, start, items)
-	rg := byteRange(li, start, end)
-	for i := range items {
-		items[i].Range = rg
+	start = citeStart(at.src, start, list.Items)
+	rg := byteRange(at.res.Lines(), start, end)
+	for i := range list.Items {
+		list.Items[i].Range = rg
 	}
-	return items
+	return list
 }
 
 // citeStart widens the replaced span leftwards over a `name:` the offered
@@ -69,7 +98,7 @@ func stampRange(src string, line, col int, items []CompletionItem) []CompletionI
 //
 // The word scan behind TokenAt stops at `:` even though the lexer does not, so
 // with `culture_group:tur` typed it reports only `tur`. Replacing just that and
-// inserting `culture_group:turkic_group` produced
+// inserting `culture_group:culture_group:turkic_group` produced
 // `culture_group:culture_group:turkic_group`.
 //
 // The widening is exact rather than heuristic: it happens only when the text
@@ -90,35 +119,6 @@ func citeStart(src string, start int, items []CompletionItem) int {
 	return lead
 }
 
-func completePrefix(s *session.Session, path string, line, col int) string {
-	src := s.FileText(path)
-	if src == "" {
-		return ""
-	}
-	off := jomini.NewLineIndex(src).OffsetAt(line, col)
-	word, start, _ := jomini.Result{Src: src}.TokenAt(off)
-	if word != "" && start < off {
-		return src[start:off]
-	}
-	return ""
-}
-
-func prefixFilter(items []CompletionItem, prefix string) []CompletionItem {
-	if prefix == "" {
-		return capComplete(items)
-	}
-	out := make([]CompletionItem, 0, min(len(items), maxComplete))
-	for _, it := range items {
-		if lowerPrefix(it.Label, prefix) {
-			out = append(out, it)
-			if len(out) >= maxComplete {
-				break
-			}
-		}
-	}
-	return out
-}
-
 func capComplete(items []CompletionItem) []CompletionItem {
 	if len(items) > maxComplete {
 		return items[:maxComplete]
@@ -126,37 +126,29 @@ func capComplete(items []CompletionItem) []CompletionItem {
 	return items
 }
 
-func item(label, detail string) CompletionItem {
-	return CompletionItem{Label: label, Detail: detail, Kind: "property"}
+// completionList caps items at maxComplete and flags IsIncomplete when the cap
+// actually cut something off, so the editor knows to ask again as the reader
+// keeps typing.
+func completionList(items []CompletionItem) CompletionList {
+	return CompletionList{Items: capComplete(items), IsIncomplete: len(items) > maxComplete}
 }
 
-func valItem(label, detail string) CompletionItem {
-	return CompletionItem{Label: label, Detail: detail, Kind: "value"}
-}
-
-func documented(s *session.Session, label, detail, kind, path string) CompletionItem {
-	it := CompletionItem{
-		Label: label, Detail: detail, Kind: "property",
-		Documentation: completeDoc(s, label, kind),
-	}
-	if kind != "" {
-		if s.StructureBlock(kind, path, label) {
-			it.InsertText = label + " = { $0 }"
-		} else {
-			it.InsertText = label + " = "
-		}
+// completionItem is the one constructor for every offered item: label, its LSP
+// kind, the detail shown beside it, and the SortText bucket ("0" a declared
+// token in scope, "1" a structure key, "2" a def, "3" a loc key, "" don't care).
+// Documentation is left empty; ResolveDoc fetches it lazily.
+func completionItem(label, kind, detail, bucket string) CompletionItem {
+	it := CompletionItem{Label: label, Kind: kind, Detail: detail}
+	if bucket != "" {
+		it.SortText = bucket + label
 	}
 	return it
 }
 
-func documentedVal(s *session.Session, label, detail, kind string) CompletionItem {
-	return CompletionItem{
-		Label: label, Detail: detail, Kind: "value",
-		Documentation: completeDoc(s, label, kind),
-	}
-}
-
-func completeDoc(s *session.Session, label, kind string) string {
+// ResolveDoc is a completion item's documentation, fetched lazily through
+// IdeService.ResolveCompletion once the editor is about to show it rather than
+// for every item up front.
+func ResolveDoc(s *session.Session, label, kind string) string {
 	doc := s.FieldDoc(label, kind, nil)
 	if u := s.TokenUsage(label); u != "" {
 		if doc != "" {
@@ -167,466 +159,310 @@ func completeDoc(s *session.Session, label, kind string) string {
 	return doc
 }
 
-func modItems() []CompletionItem {
-	out := make([]CompletionItem, 0, len(modfile.DescriptorModKeys))
-	for _, k := range modfile.DescriptorModKeys {
-		out = append(out, item(k, "mod descriptor"))
-	}
-	return out
-}
-
-func dataFnItems(s *session.Session, path string, line, col int) []CompletionItem {
-	src := s.FileText(path)
-	if src == "" {
-		return nil
-	}
-	off := jomini.NewLineIndex(src).OffsetAt(line, col)
-	if off < 0 || off > len(src) {
-		return nil
-	}
-	open := strings.LastIndex(src[:off], "[")
-	if open < 0 {
-		return nil
-	}
-	if strings.Contains(src[open:off], "]") {
-		return nil
-	}
-	prefix := src[open+1 : off]
+func modCompletions(_ *session.Session, _ probe, prefix string) []CompletionItem {
 	var out []CompletionItem
-	for _, k := range s.Vocab("datafunction") {
+	for _, k := range modfile.DescriptorModKeys {
 		if !lowerPrefix(k, prefix) {
 			continue
 		}
-		out = append(out, documentedVal(s, k, "data function", ""))
-		if len(out) >= maxComplete {
-			break
-		}
+		out = append(out, completionItem(k, "property", "mod descriptor", ""))
 	}
 	return out
 }
 
-func locItems(s *session.Session, prefix string) []CompletionItem {
+// dataFnOpen reports the cursor sitting inside an unclosed `[` in a loc or GUI
+// value; the bracket, not the token, is where a data-function expression starts.
+func dataFnOpen(at probe) bool {
+	if at.off < 0 || at.off > len(at.src) {
+		return false
+	}
+	open := strings.LastIndex(at.src[:at.off], "[")
+	return open >= 0 && !strings.Contains(at.src[open:at.off], "]")
+}
+
+func dataFnCompletions(s *session.Session, at probe, _ string) []CompletionItem {
+	open := strings.LastIndex(at.src[:at.off], "[")
+	typed := at.src[open+1 : at.off]
+	var out []CompletionItem
+	for _, k := range s.Vocab("datafunction") {
+		if !lowerPrefix(k, typed) {
+			continue
+		}
+		out = append(out, completionItem(k, "value", "data function", ""))
+	}
+	return out
+}
+
+func locCompletions(s *session.Session, _ probe, prefix string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
-	add := func(k string) {
-		if len(out) >= maxComplete || k == "" || seen[k] || !lowerPrefix(k, prefix) {
-			return
+	for _, k := range s.LocKeys(prefix, maxComplete) {
+		if k == "" || seen[k] || !lowerPrefix(k, prefix) {
+			continue
 		}
 		seen[k] = true
-		out = append(out, documentedVal(s, k, "loc key", ""))
-	}
-	for _, k := range s.LocKeys(prefix, maxComplete) {
-		add(k)
+		out = append(out, completionItem(k, "value", "loc key", "3"))
 	}
 	return out
 }
 
-func scriptItems(
-	s *session.Session, path string, at Cursor, prefix, scope string,
-) []CompletionItem {
-	if !at.InKey {
-		if at.SlotKey == "" {
-			return rootItems(s, at.Kind, prefix)
+// containerCompletions offers the keys of the block at the cursor, chosen by
+// its block type: a database's rows are definition names, a body's are its
+// declared tokens and macros, a structure's are its unified members.
+func containerCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
+	bt := s.BlockAt(at.fileKind, at.path)
+	if bt == nil {
+		if at.path == "" {
+			return defCompletions(s, prefix, at.fileKind)
 		}
-		return valueItems(s, at, prefix)
-	}
-	// Prefer the inherited slot: inside `immediate = { capital_county = { … } }`
-	// the effect context still holds even though capital_county is not a slot.
-	slot := at.Slot
-	if slot == "" {
-		slot = jomini.ScriptSlot(at.SlotKey)
-	}
-	switch slot {
-	case "trigger", "effect":
-		return vocabAndCallDefs(s, prefix, slot, scope)
-	default:
-		// Structure first, vocabulary behind it. A block PMT cannot name a slot
-		// for is still usually a trigger or effect context: a decision's
-		// `is_shown` holds triggers, and offering only the decision's own keys
-		// meant `current_year` was never suggested no matter how much of it was
-		// typed. Rank puts structure keys ahead of tokens, so the block's own
-		// members stay first and the rest is there when nothing else fits.
-		items := structureItems(s, path, at, prefix)
-		if len(items) > 0 {
-			return items
+		// A pure list holds no keys, so its own position never earns a Blocks
+		// entry; its cell is the field one level up.
+		if out := listCompletions(s, at, prefix); len(out) > 0 {
+			return out
 		}
-		// Only when structure has nothing to say. With an empty prefix the
-		// block's own members ARE the answer -- inside `triggered_desc = { … }`
-		// that is `desc` and `trigger`, and appending the whole vocabulary
-		// there is the noise this nesting work removed. But a reader four
-		// characters into `current_year` inside a decision's is_shown matched
-		// none of them and got nothing at all, and nothing is always worse.
-		return vocabAndCallDefs(s, prefix, "", scope)
+		return unknownBlockCompletions(s, at, prefix)
 	}
-}
-
-func rootItems(s *session.Session, kind, prefix string) []CompletionItem {
-	var out []CompletionItem
-	ck := jomini.CanonicalKind(kind)
-	if jomini.IsMacroKind(ck) && lowerPrefix(ck, prefix) {
-		out = append(out, item(ck, kind))
-	}
-	out = append(out, defsOfType(s, prefix, ck)...)
-	return out
-}
-
-// valueSource is one named source that may know what a slot holds.
-//
-// The order is the same invariant identify follows and is written out for the
-// same reason: this is the second place it lives, and the two drifting apart is
-// how a slot would come to complete differently from the way it hovers. See
-// session/resolve.go.
-type valueSource struct {
-	name string
-	// items returns ok=false to decline, which passes the slot to the next
-	// source. ok=true with no items is a real answer -- "the game says this slot
-	// holds kind X and nothing of kind X matches" -- and must not fall through,
-	// or a slot whose type is declared would be offered values of some other
-	// type inferred from the install.
-	items func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool)
-}
-
-// valueSources is the order, most authoritative first: the game states the argument type of 1,694 CK3 tokens in Supported Targets, and reading that before the cell is what stopped `has_culture_group = ` offering yes and no.
-var valueSources = []valueSource{
-	// The text itself names the database. `this = title:k_england` says which
-	// rows it wants, whatever the field's declared type is or is not, and every
-	// other source offers bare ids that the typed `title:` can never match --
-	// so half of all value positions in a real mod completed to nothing.
-	{"cited-prefix", func(s *session.Session, _ Cursor, prefix string) ([]CompletionItem, bool) {
-		cite, _, ok := strings.Cut(prefix, ":")
-		if !ok || cite == "" {
-			return nil, false
-		}
-		// Ephemeral kinds included, unlike the diagnostics. A saved scope cannot
-		// be JUDGED -- the script invents it -- but the ones already saved in
-		// this workspace are exactly what a reader typing `scope:` wants, and
-		// they are harvested as definitions like anything else.
-		// A bound database first, then the language prefixes. `scope:` is not a
-		// database PMT bound to anything -- it is Clausewitz grammar -- so the
-		// session's table says nothing about it while jomini's does, and every
-		// `scope:` a reader typed completed to nothing.
-		kind := s.PrefixKind(cite)
+	switch bt.Class {
+	case derived.BlockBody:
+		return bodyCompletions(s, at, prefix, bt)
+	case derived.BlockDatabase:
+		kind := bt.Database
 		if kind == "" {
-			kind = jomini.PrefixKind(cite)
+			kind = at.fileKind
 		}
-		if kind == "" || !s.KindHasDefs(kind) {
-			return nil, false
+		return defCompletions(s, prefix, kind)
+	case derived.BlockStructure:
+		if out := structureCompletions(s, at, prefix, bt); len(out) > 0 {
+			return out
 		}
-		return citedDefsOfType(s, prefix, cite, kind), true
-	}},
-	{"fire-key", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
-		fk := s.FireKind(at.FileKind, at.Path, at.SlotKey)
-		if fk == "" {
-			return nil, false
-		}
-		return defsOfType(s, prefix, fk), true
-	}},
-	{"localization", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
-		if loc.Classify(at.SlotKey) == loc.PropNone {
-			return nil, false
-		}
-		return locItems(s, prefix), true
-	}},
-	{"slot-declared", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
-		r, ok := jomini.ScriptName(at.SlotKey)
-		if !ok {
-			return nil, false
-		}
-		return defsOfType(s, prefix, r.Kind), true
-	}},
-	// The only source that declines on an empty result: a token with no
-	// declared target type yields nothing here and has not answered.
-	{"target-declared", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
-		items := targetItems(s, at.SlotKey, prefix)
-		return items, len(items) > 0
-	}},
-	// A closed set the game states in its own documentation. Above slot-derived
-	// for the usual reason, and it declines on an empty set rather than on an
-	// empty result: "the docs name no type for this field" is not an answer.
-	{"slot-declared-doc", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
-		dt := s.DeclaredFieldType(at.Kind, at.SlotKey)
-		if len(dt.Values) == 0 {
-			return nil, false
-		}
-		return enumItems(dt.Values, prefix), true
-	}},
-	// The learned half of the ladder: a value position offers the cell's own
-	// members, in the order the corpus wrote them. A cell the corpus disagreed
-	// about offers nothing rather than one arbitrary database.
-	{"cell-members", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
-		items := cellItems(s, at, prefix)
-		return items, len(items) > 0
-	}},
-	// Declining on an empty result, unlike the declared sources above. "The game
-	// says this slot holds kind X and nothing of kind X matches" is a real
-	// answer; "this macro declares no parameters" is not an answer to what value
-	// belongs here. A scripted trigger invoked as `x = yes` has no parameters at
-	// all, and claiming the slot swallowed the boolean it actually takes -- 17
-	// of 24 empty value positions on a real Victoria 3 mod.
-	{"macro-params", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
-		if !s.IsMacroDef(at.SlotKey) && !jomini.IsMacroKind(at.SlotKey) {
-			return nil, false
-		}
-		items := scriptParamItems(s, at.SlotKey, prefix)
-		return items, len(items) > 0
-	}},
-	{"macro-call-params", func(s *session.Session, at Cursor, prefix string) ([]CompletionItem, bool) {
-		if !macroCallParent(s, at.SlotKey) {
-			return nil, false
-		}
-		items := scriptParamItems(s, at.SlotKey, prefix)
-		return items, len(items) > 0
-	}},
+		return unknownBlockCompletions(s, at, prefix)
+	case derived.BlockList:
+		return listCompletions(s, at, prefix)
+	}
+	return nil
 }
 
-func valueItems(s *session.Session, at Cursor, prefix string) []CompletionItem {
-	for _, src := range valueSources {
-		if items, ok := src.items(s, at, prefix); ok {
-			return items
+// unknownBlockCompletions is asymmetric consequences applied to completion: a
+// position nothing classifies must not offer nothing, since a missing type
+// system or an unresolved scope narrows what PMT knows, never hides what it
+// does know. Offers the file kind's own top-level members, every declared
+// trigger/effect token (the harvested vocabulary when none are declared), and
+// the mod's own macros, unranked by scope.
+func unknownBlockCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
+	seen := map[string]bool{}
+	var out []CompletionItem
+	add := func(label, detail, bucket string) {
+		if label == "" || seen[label] || !lowerPrefix(label, prefix) {
+			return
+		}
+		seen[label] = true
+		out = append(out, completionItem(label, "property", detail, bucket))
+	}
+	for _, k := range s.Members(at.fileKind, "") {
+		add(k, at.fileKind, "1")
+	}
+	tokens := append(append([]string{}, s.Vocab("trigger")...), s.Vocab("effect")...)
+	if len(tokens) == 0 {
+		tokens = s.Vocab("vocabulary")
+	}
+	for _, k := range tokens {
+		add(k, "engine", "2")
+	}
+	for _, d := range s.FindMacroDefs(prefix, maxComplete) {
+		add(d.Key, d.Kind, "2")
+	}
+	return out
+}
+
+// listCompletions is a bare list member's cell, one level up from its own
+// (keyless) position.
+func listCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
+	parent, key := splitPath(at.path)
+	return cellCompletions(s, at.fileKind, parent, key, prefix)
+}
+
+// splitPath separates a folded block path into its parent and last segment.
+func splitPath(path string) (parent, key string) {
+	if i := strings.LastIndexByte(path, '.'); i >= 0 {
+		return path[:i], path[i+1:]
+	}
+	return "", path
+}
+
+// bodyCompletions offers the declared trigger/effect tokens the body's class
+// carries, scope-first when the scope is known, plus the mod's own scripted
+// macros of a matching class.
+func bodyCompletions(s *session.Session, at probe, prefix string, bt *derived.BlockType) []CompletionItem {
+	seen := map[string]bool{}
+	var out []CompletionItem
+	inScope := map[string]bool{}
+	if at.scope != "" && !s.Install.Declared.Empty() {
+		inScope = s.Install.Declared.ScopeTokens(at.scope)
+	}
+	add := func(label, detail string) {
+		if label == "" || seen[label] || !lowerPrefix(label, prefix) {
+			return
+		}
+		seen[label] = true
+		bucket := "2"
+		if inScope[strings.ToLower(label)] {
+			bucket = "0"
+		}
+		out = append(out, completionItem(label, "property", detail, bucket))
+	}
+	if bt.Body&derived.BodyTrigger != 0 {
+		for _, k := range scopeFirst(s.Vocab("trigger"), inScope) {
+			add(k, "trigger")
 		}
 	}
-	return valueFallback(prefix)
+	if bt.Body&derived.BodyEffect != 0 {
+		for _, k := range scopeFirst(s.Vocab("effect"), inScope) {
+			add(k, "effect")
+		}
+	}
+	for _, d := range s.FindMacroDefs(prefix, maxComplete) {
+		if macroInClass(d.Kind, bt.Body) {
+			add(d.Key, d.Kind)
+		}
+	}
+	return out
 }
 
-// cellItems offers what the cell under the cursor was seen to hold: the rows of
-// every database its values named, then localization keys when they were keys.
-func cellItems(s *session.Session, at Cursor, prefix string) []CompletionItem {
-	t := s.TypeOf(at.FileKind, at.Path, at.SlotKey)
+// macroInClass reports a scripted_* macro's own kind matching a body's
+// declared classes, the same rule the schema unifies bodies with.
+func macroInClass(defKind string, body uint8) bool {
+	switch {
+	case strings.Contains(defKind, "trigger"):
+		return body&derived.BodyTrigger != 0
+	case strings.Contains(defKind, "modifier"):
+		return body&derived.BodyModifier != 0
+	default:
+		return body&derived.BodyEffect != 0
+	}
+}
+
+// structureCompletions offers a structure's unified members: what the corpus
+// wrote at every position of this block's key, plus the game's own docs.
+func structureCompletions(s *session.Session, at probe, prefix string, bt *derived.BlockType) []CompletionItem {
+	seen := map[string]bool{}
+	var out []CompletionItem
+	for _, k := range s.StructureMembers(at.fileKind, at.path) {
+		if k == "" || seen[k] || !lowerPrefix(k, prefix) {
+			continue
+		}
+		seen[k] = true
+		it := completionItem(k, "property", bt.Key, "1")
+		it.DocKind = bt.Key
+		if s.TypeOf(at.fileKind, at.path, k).IsBlock() {
+			it.InsertText = k + " = { $0 }"
+		} else {
+			it.InsertText = k + " = "
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// valueCompletions offers what the cell under the cursor was seen to hold:
+// definitions of its resolved kinds, loc keys, and any closed set the game
+// declares for the field, falling back to the bare boolean.
+func valueCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
+	out := scriptNameCompletions(s, at, prefix)
+	out = append(out, cellCompletions(s, at.fileKind, at.path, at.slotKey, prefix)...)
+	out = append(out, enumCompletions(s, at, prefix)...)
+	if len(out) > 0 {
+		return out
+	}
+	return boolCompletions(prefix)
+}
+
+// scriptNameCompletions is grammar row 4 (jomini.ScriptName): has_variable,
+// has_global_variable, exists = scope:… and their kin name an ephemeral value
+// rather than an object, keyed off the one table rather than per-entry code.
+// A use site offers the ephemeral definitions of that kind the workspace made.
+func scriptNameCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
+	r, ok := jomini.ScriptName(at.slotKey)
+	if !ok || r.IsDef {
+		return nil
+	}
+	return defCompletions(s, prefix, r.Kind)
+}
+
+// cellCompletions offers what one cell was seen to hold: definitions of every
+// database its values resolved to, and localization keys where they were keys.
+func cellCompletions(s *session.Session, kind, path, key, prefix string) []CompletionItem {
+	t := s.TypeOf(kind, path, key)
 	if t == nil {
 		return nil
 	}
 	var out []CompletionItem
 	for _, k := range t.Kinds {
 		if k == derived.LabelLoc {
-			out = append(out, locItems(s, prefix)...)
+			out = append(out, locCompletions(s, probe{}, prefix)...)
 			continue
 		}
-		out = append(out, defsOfType(s, prefix, k)...)
-	}
-	return capComplete(out)
-}
-
-// targetItems completes the value of a token whose argument type the game
-// declares, e.g. `has_culture_group = ` where EU5 states
-// "Supported Targets: culture_group".
-//
-// Which form to offer is itself declared, not guessed. A scope type that is a
-// global link requiring data is written `prefix:id`, so the whole citation is
-// offered and one accept produces a valid value. A type with no such link is
-// written as a bare key of the database bound to it. A type with neither — a
-// value, a boolean — yields nothing and the caller falls through.
-func targetItems(s *session.Session, parentKey, prefix string) []CompletionItem {
-	target := s.TokenTarget(parentKey)
-	if target == "" {
-		return nil
-	}
-	cite, kind := s.CiteFormOfScope(target)
-	if kind == "" {
-		return nil
-	}
-	if cite == "" {
-		return defsOfType(s, prefix, kind)
-	}
-	return citedDefsOfType(s, prefix, cite, kind)
-}
-
-// citedDefsOfType offers `prefix:id` values. The user may be part-way through
-// either half, so the typed text is matched against the whole citation and
-// against the bare id — typing `turkic` still finds
-// `culture_group:turkic_group`.
-func citedDefsOfType(s *session.Session, typed, cite, kind string) []CompletionItem {
-	idPrefix := typed
-	if before, after, ok := strings.Cut(typed, ":"); ok {
-		if !lowerPrefix(cite, before) {
-			return nil
-		}
-		idPrefix = after
-	}
-	seen := map[string]bool{}
-	var out []CompletionItem
-	// The same filter-before-the-limit rule as defsOfType, and the same symptom
-	// when it was broken: `has_culture_group = ` on EU5 declares its target,
-	// binds it to `culture_groups`, and still offered nothing, because the first
-	// maxComplete definitions of any kind held none of them.
-	for _, d := range s.FindDefsOf(idPrefix, kind, maxComplete, true, true) {
-		if d.Key == "" {
-			continue
-		}
-		label := cite + ":" + d.Key
-		if seen[label] || !lowerPrefix(label, typed) && !lowerPrefix(d.Key, idPrefix) {
-			continue
-		}
-		seen[label] = true
-		out = append(out, documentedVal(s, label, d.Kind, d.Kind))
-		if len(out) >= maxComplete {
-			break
-		}
+		out = append(out, defCompletions(s, prefix, k)...)
 	}
 	return out
 }
 
-func scriptParamItems(s *session.Session, macroKey, prefix string) []CompletionItem {
-	var out []CompletionItem
-	for _, name := range s.FindParamsOf(macroKey, maxComplete) {
-		if !lowerPrefix(name, prefix) {
-			continue
-		}
-		out = append(out, valItem(name, "script parameter"))
-		if len(out) >= maxComplete {
-			break
-		}
+// enumCompletions offers a closed set the game's own documentation declares
+// for this field, e.g. a fixed list of valid words.
+func enumCompletions(s *session.Session, at probe, prefix string) []CompletionItem {
+	dt := s.DeclaredFieldType(at.kind, at.slotKey)
+	if len(dt.Values) == 0 {
+		return nil
 	}
-	return out
-}
-
-func macroCallParent(s *session.Session, key string) bool {
-	d := s.Resolve(key)
-	if d == nil {
-		return false
-	}
-	return jomini.IsMacroKind(d.Kind)
-}
-
-func enumItems(vals []string, prefix string) []CompletionItem {
 	var out []CompletionItem
-	for _, v := range vals {
+	for _, v := range dt.Values {
 		if !lowerPrefix(v, prefix) {
 			continue
 		}
-		out = append(out, valItem(v, "value"))
-		if len(out) >= maxComplete {
-			break
+		out = append(out, completionItem(v, "value", "value", "2"))
+	}
+	return out
+}
+
+func boolCompletions(prefix string) []CompletionItem {
+	var out []CompletionItem
+	for _, label := range []string{"yes", "no"} {
+		if lowerPrefix(label, prefix) {
+			out = append(out, completionItem(label, "value", "bool", ""))
 		}
 	}
 	return out
 }
 
-func valueFallback(prefix string) []CompletionItem {
+// defCompletions offers definitions of one kind, in the form the corpus writes
+// them: `prefix:id` when the kind is bound to a citation prefix, bare
+// otherwise. The typed text is matched against either half, so a reader typing
+// `turkic` still finds `culture_group:turkic_group`.
+func defCompletions(s *session.Session, prefix, kind string) []CompletionItem {
+	if kind == "" {
+		return nil
+	}
+	pfx := s.Work.Schema.KindPrefix[kind]
+	query := prefix
+	if pfx != "" {
+		if before, after, ok := strings.Cut(prefix, ":"); ok && lowerPrefix(pfx, before) {
+			query = after
+		}
+	}
 	seen := map[string]bool{}
 	var out []CompletionItem
-	add := func(label, detail string) {
-		if len(out) >= maxComplete || label == "" || seen[label] ||
-			!lowerPrefix(label, prefix) {
-			return
+	for _, d := range s.FindDefsOf(query, kind, maxComplete, true, true) {
+		if d.Key == "" {
+			continue
+		}
+		label := d.Key
+		if pfx != "" {
+			label = pfx + ":" + d.Key
+		}
+		if seen[label] || (!lowerPrefix(label, prefix) && !lowerPrefix(d.Key, query)) {
+			continue
 		}
 		seen[label] = true
-		out = append(out, valItem(label, detail))
-	}
-	add("yes", "bool")
-	add("no", "bool")
-	return out
-}
-
-// structureItems offers the cell's own members where the cursor is, falling back to the kind's where the corpus wrote nothing at that position.
-func structureItems(s *session.Session, path string, at Cursor, prefix string) []CompletionItem {
-	kind, block := at.FileKind, at.SlotKey
-	seen := map[string]bool{}
-	var out []CompletionItem
-	add := func(label, detail string) {
-		if len(out) >= maxComplete || label == "" || seen[label] || !lowerPrefix(label, prefix) {
-			return
-		}
-		seen[label] = true
-		out = append(out, documented(s, label, detail, kind, at.Path))
-	}
-	detail := kind
-	if block != "" {
-		detail = block
-	}
-	for _, k := range s.Members(kind, at.Path) {
-		add(k, detail)
-	}
-	// Without evidence for this position the kind's own keys are still the
-	// answer, so nothing is lost where the model is thin.
-	if len(out) == 0 && at.Path != "" {
-		for _, k := range s.Members(kind, "") {
-			add(k, kind)
-		}
-	}
-	if at.Path != "" {
-		return out
-	}
-	if s.KindFor(path) != "gui" {
-		return out
-	}
-	for _, k := range s.Vocab("gui_type") {
-		add(k, "gui type")
-	}
-	for _, k := range s.Vocab("gui_prop") {
-		add(k, "gui")
-		if len(out) >= maxComplete {
-			break
-		}
-	}
-	return out
-}
-
-// vocabAndCallDefs offers the engine tokens legal in the current block, then
-// the mod's own scripted_* macros. When the game's schema is loaded and the
-// scope is known, tokens are filtered to those the game declares usable there:
-// inside a landed_title block, character-only effects are not offered. An
-// unknown scope falls back to the whole vocabulary rather than hiding anything.
-func vocabAndCallDefs(s *session.Session, prefix, vocabKind, scope string) []CompletionItem {
-	seen := map[string]bool{}
-	var out []CompletionItem
-	add := func(label, detail string) {
-		if len(out) >= maxComplete || label == "" || seen[label] || !lowerPrefix(label, prefix) {
-			return
-		}
-		seen[label] = true
-		out = append(out, documented(s, label, detail, "", ""))
-	}
-	tokens := s.Vocab(vocabKind)
-	if len(tokens) == 0 {
-		// The effect and trigger lists come from script_docs. Without it there
-		// is no engine API to narrow to, so offer what the walk harvested from
-		// the corpus instead of nothing at all.
-		tokens = s.Vocab("vocabulary")
-	}
-	if scope != "" && !s.Schema().Empty() {
-		tokens = scopeFirst(tokens, s.Schema().ScopeTokens(scope))
-	}
-	for _, k := range tokens {
-		add(k, vocabKind)
-		if len(out) >= maxComplete {
-			return out
-		}
-	}
-	for _, d := range s.FindMacroDefs(prefix, maxComplete) {
-		add(d.Key, d.Kind)
-		if len(out) >= maxComplete {
-			break
-		}
-	}
-	return out
-}
-
-func defsOfType(s *session.Session, prefix, defType string) []CompletionItem {
-	seen := map[string]bool{}
-	var out []CompletionItem
-	add := func(key, kind string) {
-		if key == "" || seen[key] || !lowerPrefix(key, prefix) {
-			return
-		}
-		seen[key] = true
-		out = append(out, documentedVal(s, key, kind, kind))
-	}
-	// FindDefsOf, which applies the kind before the limit. The ephemeral branch
-	// always did; everything else took the first maxComplete definitions of any
-	// kind and then discarded the ones that did not match, so on a workspace
-	// with two hundred thousand definitions the answer was whatever the index
-	// reached first — almost never the kind asked for.
-	//
-	// This is why completion fell through to `yes`/`no` even when the type was
-	// perfectly well known: on Victoria 3 the field kind was right for 203 of
-	// 496 unanswered value positions — `interest_groups`, `cultures`,
-	// `religions`, `ideologies` — and the lookup returned nothing anyway.
-	// Cheap discriminator first: filter before the limit.
-	for _, d := range s.FindDefsOf(prefix, defType, maxComplete, true, true) {
-		add(d.Key, d.Kind)
-		if len(out) >= maxComplete {
-			break
-		}
+		out = append(out, completionItem(label, "value", d.Kind, "2"))
 	}
 	return out
 }
@@ -648,55 +484,4 @@ func scopeFirst(tokens []string, inScope map[string]bool) []string {
 		}
 	}
 	return append(valid, rest...)
-}
-
-// rankSets orders completion items: the kind's own structure keys first, then
-// the engine tokens the game declares usable in this scope, then everything
-// else, and last the tokens the game says do not belong here.
-//
-// Last, not absent. A token ranked bottom is still one keystroke away if the
-// scope walk got it wrong; a token filtered out is simply gone, and the modder
-// has no way to tell the difference between "not valid here" and "PMT does not
-// know about it".
-type rankSets struct {
-	structKeys, effects, triggers, inScope map[string]bool
-}
-
-func (m rankSets) rank(label string) int {
-	k := strings.ToLower(label)
-	isToken := m.effects[k] || m.effects[label] || m.triggers[k] || m.triggers[label]
-	switch {
-	case m.structKeys[k] || m.structKeys[label]:
-		return 0
-	case len(m.inScope) > 0 && m.inScope[k]:
-		return 1
-	case isToken:
-		return 2
-	case len(m.inScope) > 0 && isDeclaredElsewhere(m, k):
-		return 4
-	default:
-		return 3
-	}
-}
-
-// isDeclaredElsewhere reports a token the game declares but not for this scope.
-func isDeclaredElsewhere(m rankSets, k string) bool {
-	return m.effects[k] || m.triggers[k]
-}
-
-// Rank reorders completion items in place. An empty scope means "no opinion",
-// which leaves the ordering exactly as it was before scopes were consulted.
-func Rank(s *session.Session, at Cursor, scope string, items []CompletionItem) {
-	ef, tr := s.MemberSets()
-	sk := map[string]bool{}
-	for _, k := range s.Members(at.FileKind, at.Path) {
-		sk[k] = true
-	}
-	m := rankSets{
-		structKeys: sk, effects: ef, triggers: tr,
-		inScope: s.Schema().ScopeTokens(scope),
-	}
-	slices.SortStableFunc(items, func(a, b CompletionItem) int {
-		return cmp.Compare(m.rank(a.Label), m.rank(b.Label))
-	})
 }

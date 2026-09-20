@@ -134,10 +134,10 @@ func TestScan(t *testing.T) {
 		if n := s.At("event", "option", "name"); n == nil || !slices.Equal(n.Kinds, []string{LabelLoc}) {
 			t.Errorf("event.option.name = %+v", n)
 		}
-		if n := s.At("event", "immediate", "trigger_event"); n.Kind() != "event" {
+		if n := s.At("event", "immediate", "trigger_event"); n.Database() != "event" {
 			t.Errorf("trigger_event kinds = %+v", n)
 		}
-		if n := s.At("event", "theme"); n.Kind() != "event_themes" {
+		if n := s.At("event", "theme"); n.Database() != "event_themes" {
 			t.Errorf("theme = %+v", n)
 		}
 		if n := s.At("religions", "faiths"); n == nil || n.Flags&Rows == 0 || n.Def != "faith" || n.Class != Database {
@@ -183,7 +183,7 @@ func TestScan(t *testing.T) {
 	})
 }
 
-func TestKeyClass(t *testing.T) {
+func TestClassify(t *testing.T) {
 	s := &fixture(t, "ck3").Tree
 	for _, tt := range []struct {
 		key          string
@@ -191,13 +191,13 @@ func TestKeyClass(t *testing.T) {
 		want         Class
 	}{
 		{"", false, false, ClassBare}, {"x", true, false, ClassVar}, {"30", false, false, ClassNumber},
-		{"1066.1.1", false, false, ClassDate}, {"title:k_x", false, false, ClassCite}, {"scope:x", false, false, ClassCite},
+		{"1066.1.1", false, false, ClassDate}, {"title:k_x", false, false, ClassCite}, {"scope:x", false, false, ClassEphemeral},
 		{"$X$", false, false, ClassVar}, {"limit", false, false, ClassStop}, {"add_gold", false, false, ClassDeclared},
 		{"v_effect", false, false, ClassMacroCall}, {"anything", false, true, ClassDefinition}, {"plain", false, false, ClassPlain},
 		{"limit", false, true, ClassStop},
 	} {
-		if got, _ := s.KeyClass(tt.key, tt.quoted, tt.rows); got != tt.want {
-			t.Errorf("KeyClass(%q, %v, %v) = %d, want %d", tt.key, tt.quoted, tt.rows, got, tt.want)
+		if got := s.Classify(tt.key, tt.quoted, tt.rows, nil).Class; got != tt.want {
+			t.Errorf("Classify(%q, %v, %v) = %d, want %d", tt.key, tt.quoted, tt.rows, got, tt.want)
 		}
 	}
 	if !ClassPlain.Nameable() || ClassStop.Nameable() || ClassDeclared.Nameable() {
@@ -219,7 +219,7 @@ func TestCacheRoundTrip(t *testing.T) {
 	if len(y.Defs) != len(x.Defs) || len(y.Refs) != len(x.Refs) || len(y.Edges) != len(x.Edges) {
 		t.Fatalf("counts %d/%d/%d vs %d/%d/%d", len(y.Defs), len(y.Refs), len(y.Edges), len(x.Defs), len(x.Refs), len(x.Edges))
 	}
-	if n := y.Tree.At("event", "immediate", "trigger_event"); n.Kind() != "event" || !y.Tree.KnownKey("cooldown") {
+	if n := y.Tree.At("event", "immediate", "trigger_event"); n.Database() != "event" || !y.Tree.KnownKey("cooldown") {
 		t.Errorf("schema after load: %+v", n)
 	}
 	if _, err := LoadJSON[Index](path, CacheFormatVersion+1); err == nil {

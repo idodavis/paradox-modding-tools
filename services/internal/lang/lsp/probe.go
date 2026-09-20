@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/declared"
@@ -67,7 +68,9 @@ func (w walk) cur() string {
 // rootWalk seeds a walk at one top-level definition. Only on_actions declare their scope; an event's is read from the on_actions that fire it, since its `type` names a presentation window, not a scope.
 func rootWalk(s *session.Session, kind string, def jomini.Statement) walk {
 	w := walk{s: s, sc: s.Install.Declared, hang: s.Install.Tree.Root(kind, false)}
-	w.body = bodyOf(w.hang)
+	if w.hang != nil && w.hang.Class == index.Body {
+		w.body = w.hang.Body
+	}
 	a, ok := def.(*jomini.Assignment)
 	if !ok || a.Key.Quoted {
 		w.dead = true
@@ -105,27 +108,19 @@ func eventRootScope(s *session.Session, sc *declared.Schema, event string) strin
 	return found
 }
 
-// bodyOf is the declared token classes a block holds, 0 where it is not a body.
-func bodyOf(n *index.Node) uint8 {
-	if n != nil && n.Class == index.Body {
-		return n.Body
-	}
-	return 0
-}
-
 // into is the walk one block key deeper. The position steps whatever happens; the body class is inherited until a block opens its own; the scope follows the key, which may be a dotted chain hopping once per segment, and any segment nothing explains kills the scope rather than reporting a wrong one. A date is not a chain.
 func (w walk) into(key string, quoted bool) walk {
 	name, _, next := w.s.Install.Tree.Step(w.hang, key, quoted)
 	n := walk{s: w.s, sc: w.sc, hang: next, stack: slices.Clone(w.stack), rooted: w.rooted, body: w.body, dead: w.dead}
-	if b := bodyOf(next); b != 0 {
-		n.body = b
+	if next != nil && next.Class == index.Body && next.Body != 0 {
+		n.body = next.Body
 	}
 	n.params = w.sc.TokenParams(strings.ToLower(game.KeyIdentity("", key)))
 	if n.dead || quoted {
 		return n
 	}
 	segs := []string{key}
-	if strings.Contains(key, ".") && !jomini.IsDateLiteral(key) {
+	if strings.Contains(key, ".") && jomini.Literal(key) != jomini.LitDate {
 		segs = strings.Split(key, ".")
 	}
 	for _, seg := range segs {
@@ -156,6 +151,7 @@ func (w *walk) hop(key, name string, next *index.Node) bool {
 		w.stack = append(w.stack, w.stack[len(w.stack)-2])
 		return true
 	}
+
 	// A declared scope link is a hop to its output type, taken on the game's word when the current scope is unknown; only a link naming one output type, and only into a scope script runs in: CK3 declares `modifier` with output `value`, and every weight block opens with one.
 	if l, ok := w.sc.Links[k]; ok && l.Out != "" && !strings.Contains(l.Out, ",") && w.sc.Scopes[l.Out].ChangeScopes {
 		if len(l.In) == 0 || w.cur() == "" || slices.Contains(l.In, w.cur()) {
@@ -163,6 +159,7 @@ func (w *walk) hop(key, name string, next *index.Node) bool {
 			return true
 		}
 	}
+
 	// An iterator's Supported Targets is the element scope.
 	if t, _, ok := w.sc.Token(k); ok && t.Target != "" {
 		if (w.cur() == "" || declared.UsableIn(t.In, w.cur())) && w.sc.Scopes[t.Target].ChangeScopes {
@@ -170,33 +167,24 @@ func (w *walk) hop(key, name string, next *index.Node) bool {
 			return true
 		}
 	}
+
 	// An iterator the game does not declare still changes scope, to a type nothing here can name.
-	if isIteratorKey(k) {
+	if strings.HasPrefix(k, "any_") || strings.HasPrefix(k, "every_") || strings.HasPrefix(k, "random_") || strings.HasPrefix(k, "ordered_") {
 		return false
 	}
+
 	// A key the fold turns into a class is a rescope or a position, never a section of the current scope: `scope:activity = { … }` enters the activity it names.
 	if name != key {
 		return false
 	}
+
 	// So is a key that names an object: Victoria 3's `create_character = { … on_created = { … } }` runs on the character it just made.
 	if w.s.Resolve(key) != nil {
 		return false
 	}
+
 	// A body runs in the scope around it, so entering one changes nothing; the install's answer alone, since a block only the mod wrote would be classed from its own contents.
 	return next != nil && next.Class == index.Body
-}
-
-// isIteratorKey reports the four list-iteration prefixes.
-func isIteratorKey(k string) bool {
-	return strings.HasPrefix(k, "any_") || strings.HasPrefix(k, "every_") ||
-		strings.HasPrefix(k, "random_") || strings.HasPrefix(k, "ordered_")
-}
-
-func roleBit(role string) uint8 {
-	if role == "effect" {
-		return index.BodyEffect
-	}
-	return index.BodyTrigger
 }
 
 func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
@@ -241,6 +229,7 @@ func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
 	}
 	at.saveName, at.saveOK = saveScopeIn(chain, off)
 	at.paramOwner = paramOwnerIn(s, chain)
+
 	// The descent: every block below the definition the cursor is actually inside.
 	w := rootWalk(s, at.fileKind, chain[0])
 	prev := w.hang
@@ -257,10 +246,12 @@ func probeAt(s *session.Session, path string, line, col int) (probe, bool) {
 		w = w.into(a.Key.Text, a.Key.Quoted)
 	}
 	at.scope, at.hang = w.cur(), w.hang
+
 	// A bare list member sits at the cell of the block key that holds it, so that key is not a segment.
 	if n := len(at.segs); n > 0 && !at.inKey && at.segs[n-1] == at.slotKey {
 		at.hang, at.segs = prev, at.segs[:n-1]
 	}
+
 	// The workspace's own tree where the install never wrote there.
 	if at.hang == nil {
 		at.hang = s.Work.Tree.At(at.fileKind, at.segs...)
@@ -419,6 +410,7 @@ func locHitAt(src string, off int) (locHit, bool) {
 	if len(res.Entries) > 0 {
 		return locHit{}, false
 	}
+
 	// No parsable entry yet: mid-typing, or a file with only a header.
 	word, wStart, wEnd := jomini.Result{Src: src}.TokenAt(off)
 	if word == "" {
@@ -467,27 +459,6 @@ func macroCallAt(at probe) (kind, name string, assign *jomini.Assignment, ok boo
 		break
 	}
 	return "", "", nil, false
-}
-
-// scopeRefAt resolves `scope:name` at the cursor.
-func scopeRefAt(at probe) (name string, ok bool) {
-	src, word, wStart, wEnd := at.src, at.word, at.start, at.end
-	if word == "" {
-		return "", false
-	}
-	if wEnd < len(src) && src[wEnd] == ':' && word == jomini.ScopePrefix {
-		n, _, _ := at.res.TokenAt(wEnd + 1)
-		return n, n != ""
-	}
-	if wStart > 0 && src[wStart-1] == ':' {
-		if pre, _, _ := at.res.TokenAt(wStart - 2); pre == jomini.ScopePrefix {
-			return word, true
-		}
-	}
-	if p, pok := jomini.ParsePrefixed(word); pok && jomini.IsSavedScopePrefix(p) {
-		return p.Name, true
-	}
-	return "", false
 }
 
 // ------------------------------------------------------------- the identity
@@ -582,13 +553,12 @@ func identifyAt(s *session.Session, path string, at probe) (identity, bool) {
 		}
 		return id, true
 	}
-	// `scope:name` written out in the text, and the name at a `save_scope_as = x` site.
-	if name, ok := scopeRefAt(at); ok {
-		return ephemeralID(s, path, name, "saved_scope"), true
-	}
+
+	// The name at a `save_scope_as = x` site.
 	if at.saveOK {
 		return ephemeralID(s, path, at.saveName, "saved_scope"), true
 	}
+
 	// `$PARAM$`: a macro's own parameter has no definition outside its body, so one is synthesised at the span when the index has none.
 	if at.param {
 		d := s.ResolveOfKind(at.word, "script_param", at.paramOwner)
@@ -599,12 +569,14 @@ func identifyAt(s *session.Session, path string, at probe) (identity, bool) {
 		}
 		return identity{path: path, name: at.word, kind: "script_param", def: d, owner: at.paramOwner}, true
 	}
+
 	// A bare word that is a parameter of the macro the cursor sits inside.
 	if at.paramOwner != "" {
 		if d := s.ResolveOfKind(at.word, "script_param", at.paramOwner); d != nil {
 			return identity{path: path, name: at.word, kind: "script_param", def: d, owner: at.paramOwner}, true
 		}
 	}
+
 	// `kind name = { … }`: the name of a declaration, with the file's own body as its site.
 	if kind, name, a, ok := macroCallAt(at); ok && name != "" {
 		d := s.ResolveOfKind(name, kind, "")
@@ -634,132 +606,148 @@ func identifyAt(s *session.Session, path string, at probe) (identity, bool) {
 	return valueIdentity(s, path, at)
 }
 
-// keyIdentity names the key of the assignment the cursor is on.
+// keyIdentity names the key of the assignment the cursor is on, by the one classifier; the position adds what the text cannot say: a file whose rows are its own definitions, a numeric row in a data file, a weight's share.
 func keyIdentity(s *session.Session, path string, at probe) (identity, bool) {
 	a := at.assign
 	if a == nil {
 		return identity{}, false
 	}
-	// `scope:x = { … }` written as a key.
-	if p, ok := jomini.ParsePrefixed(a.Key.Text); ok && jomini.IsSavedScopePrefix(p) {
-		return ephemeralID(s, path, p.Name, "saved_scope"), true
+	key := a.Key.Text
+	tree := &s.Install.Tree
+	tok := tree.Classify(key, a.Key.Quoted, at.hang != nil && at.hang.Flags&index.Rows != 0, nil)
+
+	// A cite, a date or an ephemeral on the left of an `=` reads as the same word on the right.
+	switch tok.Class {
+	case index.ClassEphemeral, index.ClassDate, index.ClassCite:
+		return identity{}, false
 	}
+
 	// A key in a file whose own rows are the definitions.
 	if s.IsLocalDefFile(path, at.kind) {
-		return identity{path: path, name: a.Key.Text, kind: at.kind, local: true, extractKind: at.kind,
+		return identity{path: path, name: key, kind: at.kind, local: true, extractKind: at.kind,
 			assignStart: a.Key.Range.Start, assignEnd: a.Key.Range.End, assignLine: at.res.Lines().PositionAt(a.Key.Range.Start).Line}, true
 	}
-	// A bare number on the left of an `=` is a branch of a distribution, not a name: CK3 keys map positions by province id, so `95` also resolves to a map_data row and the card offered "Amiens" for a probability. Numeric but not a distribution (Vic3's `20 = empty` is an index) stops rather than answering.
-	if isWeightKey(a.Key.Text) {
-		if share := weightShare(at.slotAssign, at.slotKey, a.Key.Text); share != "" {
-			return identity{path: path, name: a.Key.Text, kind: "weight", docs: share}, true
+	switch tok.Class {
+	case index.ClassNumber:
+		// A number at a data file's own level is a row's id; elsewhere on the left of an `=` it is a branch of a distribution, not a name, and a numeric index (Vic3's `20 = empty`) stops rather than answering.
+		if at.slotAssign == nil && tree.IsData(at.fileKind) {
+			if d := s.ResolveOfKind(key, at.fileKind, ""); d != nil {
+				return identity{path: path, name: key, kind: d.Kind, def: d}, true
+			}
+		}
+		if share := weightShare(at.slotAssign, at.slotKey, key); share != "" {
+			return identity{path: path, name: key, kind: "weight", docs: share}, true
 		}
 		return identity{path: path}, true
-	}
-	// `holder.culture = { … }` is two hops, and the whole string resolves to nothing; the segment under the cursor is the subject.
-	if seg, ok := dottedSegmentAt(a.Key.Text, at.off-a.Key.Range.Start); ok {
-		return segmentIdentity(s, path, seg)
-	}
-	// A key the type system names keeps its own card rather than becoming a field of the block.
-	if s.Install.Declared.HasName(a.Key.Text) {
-		if ck := vocabRole(s, a.Key.Text); ck != "" {
-			return identity{path: path, name: a.Key.Text, kind: ck}, true
+	case index.ClassPath:
+		// `holder.culture = { … }` is two hops, and the whole string resolves to nothing; the segment under the cursor is the subject.
+		if seg, ok := dottedSegmentAt(key, at.off-a.Key.Range.Start); ok {
+			return segmentIdentity(s, path, seg)
 		}
-	}
-	// A key of the object being edited: documented, a member of the cell, or a localization property. A key naming a scripted macro is an invocation of it, never a field, whatever the cell at that position holds.
-	if s.Work.Tree.Macros[a.Key.Text] != "" {
+		return identity{}, false
+	case index.ClassDeclared:
+		if ck := vocabRole(s, key); ck != "" {
+			return identity{path: path, name: key, kind: ck}, true
+		}
+	case index.ClassMacroCall, index.ClassDefinition, index.ClassStop, index.ClassVar:
 		return identity{}, false
 	}
+
+	// A key of the object being edited: documented, a member of the cell, or a localization property.
 	block := nestedBlock(at)
-	if kindFieldDoc(s, a.Key.Text, at.kind, block) == "" && !isMember(s, at.hang, a.Key.Text) && loc.Classify(a.Key.Text) == loc.PropNone {
+	if kindFieldDoc(s, key, at.kind, block) == "" && !isMember(s, at.hang, key) && loc.Classify(key) == loc.PropNone {
 		return identity{}, false
 	}
-	return identity{path: path, name: a.Key.Text, kind: at.kind, fieldKey: true, extractKind: at.kind, block: block, hang: at.hang}, true
+	return identity{path: path, name: key, kind: at.kind, fieldKey: true, extractKind: at.kind, block: block, hang: at.hang}, true
 }
 
-// valueIdentity names a word that is not a key: what the game states it is (a literal, a language prefix, a citation, the slot's declared or learned type), then what the model defines, then the floor.
+// valueIdentity names a word that is not a key: the classifier says what it is written as, the cell says which database it belongs to, and the slot's own declared type takes an ephemeral name before any database does.
 func valueIdentity(s *session.Session, path string, at probe) (identity, bool) {
-	// A literal is not a name, with one exception where a person declared it: a total conversion offsets its years so the engine's arithmetic works, and 8209.2.1 is read by a human who would otherwise subtract 7,782 in their head.
-	if jomini.IsLiteralValue(at.word) {
-		if era := index.EraDate(at.word, s.CalendarFor(path)); era != "" {
-			return identity{path: path, name: at.word, kind: "date", docs: era}, true
+	word := at.word
+	tok := s.Install.Tree.Classify(word, false, false, s)
+	switch tok.Class {
+	case index.ClassDate:
+		return dateID(s, path, word), true
+	case index.ClassNumber:
+		// A number is an id only where the cell holds rows of a database that has it: `add_spouse = 186004`.
+		if k := tok.At(at.cell); k != "" && at.cell != nil && slices.Contains(at.cell.Kinds, k) {
+			if d := s.ResolveOfKind(word, k, ""); d != nil {
+				return identity{path: path, name: word, kind: k, def: d}, true
+			}
 		}
 		return identity{path: path}, true
-	}
-	// `scope:x` / `var:x`: a value that lives only for the duration of a script run, never a row in a database.
-	if p, ok := jomini.ParsePrefixed(at.word); ok {
-		kind := jomini.PrefixKind(p.Prefix)
-		if kind == "" {
-			kind = p.Prefix
-		}
-		return ephemeralID(s, path, p.Name, kind), true
-	}
-	// `culture:english`: the game naming its own database in the text, which is as declared as a reference gets.
-	if sp, ok := jomini.TypedSpanAt(at.word, at.off-at.start); ok {
-		kind, id, ok := game.ParseTyped(s.GameID, sp.Prefix+":"+sp.ID)
-		if !ok {
-			kind, id = sp.Prefix, sp.ID
-		}
-		if pk := s.Install.Tree.PrefixKind(sp.Prefix); pk != "" {
-			kind = pk
-		} else if kind == "" {
-			kind = sp.Prefix
-		}
-		d := s.ResolveOfKind(id, kind, "")
+	case index.ClassEphemeral:
+		return ephemeralID(s, path, tok.ID, tok.Kinds[0]), true
+	case index.ClassCite:
+		d := s.ResolveOfKind(tok.ID, tok.Kinds[0], "")
 		if d == nil {
-			d = s.ResolveNonLoc(id)
+			d = s.ResolveNonLoc(tok.ID)
 		}
-		return identity{path: path, name: id, kind: kind, def: d}, true
+		return identity{path: path, name: tok.ID, kind: tok.Kinds[0], def: d}, true
+	case index.ClassVar, index.ClassStop:
+		return identity{path: path}, true
 	}
-	// The slot's type: what script_docs say it holds, then what the install was seen writing there, which is evidence, not a declaration.
-	if at.slotKey != "" {
-		if r, ok := jomini.ScriptName(at.slotKey); ok {
-			if jomini.IsEphemeral(r.Kind) {
-				return ephemeralID(s, path, at.word, r.Kind), true
-			}
-			if d := s.ResolveOfKind(at.word, r.Kind, ""); d != nil {
-				return identity{path: path, name: at.word, kind: r.Kind, def: d}, true
-			}
-		}
-		if k := childOf(s, at.hang, at.slotKey).Kind(); k != "" {
-			if jomini.IsEphemeral(k) {
-				return ephemeralID(s, path, at.word, k), true
-			}
-			// A localization slot holds a key, not an object of the field's type.
-			if loc.Classify(at.slotKey) == loc.PropNone {
-				if d := s.ResolveOfKind(at.word, k, ""); d != nil {
-					return identity{path: path, name: at.word, kind: k, def: d}, true
-				}
+
+	// The slot's declared type: `has_variable = foo` names a variable whatever else is called foo.
+	r, isSlot := jomini.ScriptName(at.slotKey)
+	if isSlot && jomini.IsEphemeral(r.Kind) {
+		return ephemeralID(s, path, word, r.Kind), true
+	}
+	if tok.Class == index.ClassName {
+		if k := tok.At(at.cell); k != "" && (!isSlot || r.Kind == "" || jomini.CanonicalKind(r.Kind) == k) {
+			if d := s.ResolveOfKind(word, k, ""); d != nil {
+				return identity{path: path, name: word, kind: k, def: d}, true
 			}
 		}
 	}
-	// A definition somewhere in the model. ResolveNonLoc, not Resolve: every object in these games has a loc key named after it, and load order was deciding which came back.
-	if d := s.ResolveNonLoc(at.word); d != nil {
+	if isSlot {
+		if d := s.ResolveOfKind(word, r.Kind, ""); d != nil {
+			return identity{path: path, name: word, kind: r.Kind, def: d}, true
+		}
+	}
+
+	// What the install was seen writing at the slot, which is evidence, not a declaration; a localization slot holds a key, not an object of the field's type.
+	if k := childOf(s, at.hang, at.slotKey).Database(); k != "" {
+		if jomini.IsEphemeral(k) {
+			return ephemeralID(s, path, word, k), true
+		}
+		if loc.Classify(at.slotKey) == loc.PropNone {
+			if d := s.ResolveOfKind(word, k, ""); d != nil {
+				return identity{path: path, name: word, kind: k, def: d}, true
+			}
+		}
+	}
+
+	// A definition somewhere in the model, never a loc key: every object has a loc key of its own name.
+	if d := s.ResolveNonLoc(word); d != nil {
 		return identity{path: path, name: d.Key, kind: d.Kind, def: d}, true
 	}
+
 	// A word the type system declares, above localization because Paradox localizes a great many ordinary words.
-	if ck := vocabRole(s, at.word); ck != "" {
-		return identity{path: path, name: at.word, kind: ck}, true
+	if ck := vocabRole(s, word); ck != "" {
+		return identity{path: path, name: word, kind: ck}, true
 	}
-	// A loc key, never on the left of an `=`: a key is a property name, and claiming one is loc is not the honest answer.
-	if !at.inKey && s.LocDefined(at.word) {
-		if file, ln, _, origin, ok := s.LocSite(at.word); ok {
-			return identity{path: path, name: at.word, kind: "loc_key",
-				def: &index.Def{Kind: "loc_key", Key: at.word, Path: file, Line: ln, Origin: origin}}, true
+
+	// A loc key, never on the left of an `=`.
+	if !at.inKey && tok.Class == index.ClassLoc {
+		if file, ln, _, origin, ok := s.LocSite(word); ok {
+			return identity{path: path, name: word, kind: "loc_key", def: &index.Def{Kind: "loc_key", Key: word, Path: file, Line: ln, Origin: origin}}, true
 		}
 	}
-	if slices.Contains(s.Install.Tree.DataFunctions, at.word) {
-		return identity{path: path, name: at.word, kind: "data_function"}, true
+	if slices.Contains(s.Install.Tree.DataFunctions, word) {
+		return identity{path: path, name: word, kind: "data_function"}, true
 	}
-	if ck := jomini.CanonicalKind(at.word); jomini.IsMacroKind(ck) {
-		return identity{path: path, name: at.word, kind: ck}, true
+	if ck := jomini.CanonicalKind(word); jomini.IsMacroKind(ck) {
+		return identity{path: path, name: word, kind: ck}, true
 	}
+
 	// Documented as a field somewhere: enough to say "field" and show the prose, not enough to say what it points at.
-	if fieldDoc(s, at.word, "", "") != "" {
-		return identity{path: path, name: at.word, kind: "field"}, true
+	if fieldDoc(s, word, "", "") != "" {
+		return identity{path: path, name: word, kind: "field"}, true
 	}
+
 	// The floor: the word is named and nothing is claimed about it; the key holding it lets the card say what the value is FOR.
-	id := identity{path: path, name: at.word}
+	id := identity{path: path, name: word}
 	if !at.inKey && at.slotKey != "" {
 		id.slot, id.extractKind, id.hang, id.block = at.slotKey, at.kind, at.hang, nestedBlock(at)
 	}
@@ -803,7 +791,7 @@ func nestedBlock(at probe) string {
 
 // transparentBlock reports a block that groups or redirects without changing which keys may be written inside it.
 func transparentBlock(key string) bool {
-	if strings.ContainsRune(key, ':') || isWeightKey(key) {
+	if strings.ContainsRune(key, ':') || jomini.IsDigits(key) {
 		return true
 	}
 	switch strings.ToLower(key) {
@@ -812,19 +800,6 @@ func transparentBlock(key string) bool {
 		return true
 	}
 	return false
-}
-
-// isWeightKey reports a bare non-negative number used as an assignment key; dates and event ids are not bare numbers.
-func isWeightKey(key string) bool {
-	if key == "" {
-		return false
-	}
-	for i := 0; i < len(key); i++ {
-		if key[i] < '0' || key[i] > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 // weightShare explains a weight as its share of the list it sits in. The denominator is the sum of the sibling weights, which is not always 100, so it is computed rather than assumed; each branch must be a body, which separates a distribution from a numeric lookup table.
@@ -840,7 +815,7 @@ func weightShare(parent *jomini.Assignment, listName, weight string) string {
 	n := 0
 	for _, st := range b.Statements {
 		a, ok := st.(*jomini.Assignment)
-		if !ok || a.Key.Quoted || !isWeightKey(a.Key.Text) || jomini.ChildBlock(a) == nil {
+		if !ok || a.Key.Quoted || !jomini.IsDigits(a.Key.Text) || jomini.ChildBlock(a) == nil {
 			continue
 		}
 		v, err := strconv.ParseFloat(a.Key.Text, 64)
@@ -865,6 +840,28 @@ func weightShare(parent *jomini.Assignment, listName, weight string) string {
 
 func trimFloat(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+// dateID is a date's card: `918.1.1` in words as "January 1st, 918 AD" (the hour a four-part date carries is dropped), and the mod's own era below it when the mod declares one, since 8209.2.1 is read by a human who would otherwise subtract 7,782 in their head.
+func dateID(s *session.Session, path, text string) identity {
+	docs := ""
+	if y, m, d, _, ok := jomini.ParseDate(text); ok && m >= 1 && m <= 12 && d >= 1 && d <= 31 {
+		suffix := "th"
+		switch {
+		case d%100 >= 11 && d%100 <= 13:
+		case d%10 == 1:
+			suffix = "st"
+		case d%10 == 2:
+			suffix = "nd"
+		case d%10 == 3:
+			suffix = "rd"
+		}
+		docs = time.Month(m).String() + " " + strconv.Itoa(d) + suffix + ", " + strconv.Itoa(y) + " AD"
+	}
+	if era := index.EraDate(text, s.CalendarFor(path)); era != "" {
+		docs += "\n\n" + era + " in this mod's calendar"
+	}
+	return identity{path: path, name: text, kind: "date", docs: docs}
 }
 
 // dottedSegmentAt returns the segment of a dotted chain containing off, or false when the text is not a chain.

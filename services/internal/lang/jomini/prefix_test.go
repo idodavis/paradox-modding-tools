@@ -84,63 +84,14 @@ func TestParsePrefixedAndTyped(t *testing.T) {
 }
 
 func TestSkipRHSAndSpans(t *testing.T) {
-	t.Run("skip_object_rhs", func(t *testing.T) {
-		if !SkipObjectRHS("$COA$") || !SkipObjectRHS("capital_province.culture") {
-			t.Fatal("expected skip")
-		}
-		if SkipObjectRHS("english") || SkipObjectRHS("culture:english") {
-			t.Fatal("ids must not skip")
-		}
-		// A bare number or boolean is a quantity, never an object name.
-		for _, s := range []string{
-			"0", "-10", "-20.5", "+3", "1836", "2.75", "yes", "no", "YES", "No",
-			"", "$PARAM$", "ns.1",
-		} {
-			if !SkipObjectRHS(s) {
-				t.Errorf("SkipObjectRHS(%q) = false, want skipped", s)
-			}
-		}
-		for _, s := range []string{
-			"english", "k_france", "my_effect", "_hidden", "a1", "west_africa",
-		} {
-			if SkipObjectRHS(s) {
-				t.Errorf("SkipObjectRHS(%q) = true, want kept", s)
-			}
-		}
-		// An engine define path and a GUI id with a trailing lexer-attached `;` both reached Workspace Health as dangling.
-		for _, s := range []string{
-			"define:NTaskContract|HIGH_TASK_CONTRACT_TIER",
-			"define:NTaskContract|MEDIUM_TASK_CONTRACT_TIER",
-			"struggle_tooltip;",
-		} {
-			if !SkipObjectRHS(s) {
-				t.Errorf("SkipObjectRHS(%q) = false, want true", s)
-			}
-		}
-		// The guard must stay narrow: an ordinary id still has to be harvested.
-		for _, s := range []string{"english", "castle_holding", "k_magyar"} {
-			if SkipObjectRHS(s) {
-				t.Errorf("SkipObjectRHS(%q) = true, want false", s)
-			}
-		}
-	})
-
-	t.Run("skip_field_rhs", func(t *testing.T) {
-		if !SkipFieldRHS("target_titles") || !SkipFieldRHS("none") {
-			t.Fatal("CB target selectors must skip")
-		}
-		if SkipFieldRHS("e_hre") || SkipFieldRHS("catholic") {
-			t.Fatal("real ids must not skip")
-		}
-	})
-
 	t.Run("typed_spans", func(t *testing.T) {
 		spans := TypedSpans("situation:foo.var:x")
 		if len(spans) != 2 || spans[0].Prefix != "situation" || spans[0].ID != "foo" ||
 			spans[1].Prefix != "var" || spans[1].ID != "x" {
 			t.Fatalf("spans=%+v", spans)
 		}
-		sp, ok := TypedSpanAt("s:STATE_KENYA.region_state:OMA", len("s:STATE_KENYA."))
+		sps := TypedSpans("s:STATE_KENYA.region_state:OMA")
+		sp, ok := sps[len(sps)-1], len(sps) == 2
 		if !ok || sp.Prefix != "region_state" || sp.ID != "OMA" {
 			t.Fatalf("cursor pick=%+v ok=%v", sp, ok)
 		}

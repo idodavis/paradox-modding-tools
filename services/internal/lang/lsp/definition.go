@@ -77,6 +77,7 @@ func siteLocations(s *session.Session, from, key string, winner *index.Def, kind
 		seen[id] = true
 		out = append(out, loc)
 	}
+
 	// An ephemeral winner (saved scope, script param) or an explicit ephemeral kind confines the sites to its own kind; a real def does not.
 	wantKind := kind
 	if winner != nil && jomini.IsEphemeral(winner.Kind) {
@@ -94,6 +95,7 @@ func siteLocations(s *session.Session, from, key string, winner *index.Def, kind
 		if d.Key != key || !kindOK(d.Kind) || !ownerOK(d.OwnerKey) {
 			return
 		}
+
 		// F12 only: References does not confine an inline declaration to its own file, and does not hide the namespace line.
 		if !refs {
 			if d.Local && index.CanonPath(d.Path) != here {
@@ -133,6 +135,7 @@ func siteLocations(s *session.Session, from, key string, winner *index.Def, kind
 			add(index.Def{Kind: "loc_key", Key: key, Path: file, Line: ln})
 		}
 	}
+
 	// One line index per file the references sit in.
 	lines := map[string]*jomini.LineIndex{}
 	for _, r := range s.RefsTo(key) {

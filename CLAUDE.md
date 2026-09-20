@@ -9,6 +9,9 @@ descriptor, parser, LSP, or semantics code.
 
 - Comments: a file header may be a paragraph. Everything else is one line.
   Do not write essays above functions, fields, or tests.
+- Blank lines separate the steps inside a function and stay; a step comment
+  has one above it. Counts are code lines (no blank, no comment-only lines),
+  so removing spacing or comments never moves a number and is never done for one.
 - No wrappers, forwarding layers, or helpers that only re-express an existing
   call. A pass that adds a layer has failed.
 - No meta tests (tests that scan source, docs, or file counts). Enforce layout
@@ -18,6 +21,13 @@ descriptor, parser, LSP, or semantics code.
   line-count number; `wc` is a consequence, not a reason.
 - Smallest change. No new helpers, layers, or branches that a skill, MCP, or
   existing function already covers.
+- Never create adapters, shims, converters, backwards compatibility, or
+  helpers to pass tests or to match previous behavior. When a representation
+  is replaced, the old one is deleted in the same change; a step is not done
+  while it still exists.
+- A change whose goal is simplicity, less complexity, less verbosity, or more
+  efficiency must never end with more lines, files, or functions. Ever. If
+  the measurement rises, the change is wrong, not the measurement.
 
 ## Planning
 
@@ -35,6 +45,12 @@ descriptor, parser, LSP, or semantics code.
   names the skills to read and MCP tools to use first.
 - When implementing, do not run the consultative loop. Implement; ask only
   when a required decision is still missing.
+- Stop and ask. When an assumption in a plan or work order proves false, a
+  step cannot be done as written, or a test cannot pass without changing the
+  design, stop the phase or task, state what was found with the evidence, and present
+  options with a recommendation (AskUserQuestion). Never go off script and
+  never decide alone. If the owner is away, record the blocker and the options
+  in the ledger and the final message and do nothing further on it.
 
 ## Payloads and bindings
 

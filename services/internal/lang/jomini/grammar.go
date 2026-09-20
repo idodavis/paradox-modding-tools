@@ -9,6 +9,7 @@
 package jomini
 
 import (
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -21,7 +22,7 @@ import (
 var stopWords = map[string]bool{
 	"if": true, "else": true, "else_if": true, "limit": true, "and": true,
 	"or": true, "not": true, "nor": true, "nand": true, "this": true,
-	"root": true, "prev": true, "from": true, "yes": true, "no": true,
+	"root": true, "prev": true, "from": true, "fromfrom": true, "prevprev": true, "yes": true, "no": true,
 	"value": true, "add": true, "multiply": true, "divide": true,
 	"subtract": true, "min": true, "max": true, "factor": true, "base": true,
 	"first_valid": true, "triggered_desc": true, "random_list": true,
@@ -156,4 +157,52 @@ func PeelComment(raw string) (body string, hashed bool) {
 		t = strings.TrimSpace(t[1:])
 	}
 	return t, hashed
+}
+
+// LiteralKind is what a scalar is when it is not a name.
+type LiteralKind uint8
+
+const (
+	NotLiteral LiteralKind = iota
+	LitNumber              // an integer or decimal, signed or not
+	LitDate                // Y.M.D, optionally Y.M.D.H
+)
+
+// Literal reads a scalar: a number through strconv, a date through ParseDate, else a name.
+func Literal(text string) LiteralKind {
+	if _, _, _, _, ok := ParseDate(text); ok {
+		return LitDate
+	}
+	if text != "" && !strings.ContainsAny(text, "eE_ ") {
+		if _, err := strconv.ParseFloat(text, 64); err == nil {
+			return LitNumber
+		}
+	}
+	return NotLiteral
+}
+
+// ParseDate reads a Clausewitz date, `Y.M.D` or `Y.M.D.H`, every part digits. Two parts is an event id (`ns.1`), never a date; history files key their blocks by a date, so a date is never a definition name.
+func ParseDate(text string) (y, m, d, h int, ok bool) {
+	parts := strings.Split(text, ".")
+	if len(parts) != 3 && len(parts) != 4 {
+		return 0, 0, 0, 0, false
+	}
+	out := [4]int{}
+	for i, p := range parts {
+		if p == "" || len(p) > 5 || !IsDigits(p) {
+			return 0, 0, 0, 0, false
+		}
+		out[i], _ = strconv.Atoi(p)
+	}
+	return out[0], out[1], out[2], out[3], true
+}
+
+// IsDigits reports a non-empty run of ASCII digits.
+func IsDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return s != ""
 }

@@ -193,6 +193,21 @@ func TestDefinitionAndReferences(t *testing.T) {
 		}
 	})
 
+	// A character is a data row keyed by number; F12 reaches the history file and the history file's references reach the cite.
+	t.Run("numeric character cite", func(t *testing.T) {
+		body := "e.1 = {\n\timmediate = {\n\t\tcharacter:186004 = { save_scope_as = x }\n\t}\n}\n"
+		s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body})
+		f := filepath.Join(root, "events", "x.txt")
+		line, col := lineCol(body, "character:186004")
+		locs := Definition(s, f, line, col+len("character:"))
+		if len(locs) != 1 || !hasURI(locs, "v_characters.txt") {
+			t.Fatalf("character F12=%v", locs)
+		}
+		if refs := References(s, locs[0].URI, locs[0].Range.Start.Line, locs[0].Range.Start.Character); !hasLocURI(refs, f) {
+			t.Fatalf("character refs=%v want %s", refs, f)
+		}
+	})
+
 	t.Run("script param F12 and owner", func(t *testing.T) {
 		a := "trig_a = { exists = $TARGET$ }\n"
 		call := "ev.1 = { trig_a = { TARGET = title:k_france.holder } }\n"

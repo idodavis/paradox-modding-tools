@@ -192,7 +192,7 @@ func sampleAnswers(s *session.Session, root string) answerRates {
 			// fallback IS the right answer, and counting those as unanswered
 			// would understate the engine and inflate every later improvement.
 			if sc, ok := asn.Value.(*jomini.Scalar); ok && !sc.Quoted &&
-				sc.Text != "" && !jomini.IsLiteralValue(sc.Text) {
+				sc.Text != "" && !(jomini.Literal(sc.Text) != jomini.NotLiteral || jomini.IsStop(sc.Text)) {
 				vp := li.PositionAt(sc.Range.Start)
 				a.compAsked++
 				if answered(lsp.Complete(s, p, vp.Line, vp.Character).Items) {

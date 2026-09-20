@@ -168,17 +168,6 @@ func NewLineIndex(text string) *LineIndex {
 // LineCount returns the number of lines.
 func (li *LineIndex) LineCount() int { return len(li.lineStarts) }
 
-// LineStart returns the byte offset of the first character of 0-based line.
-func (li *LineIndex) LineStart(line int) int {
-	if line < 0 {
-		return 0
-	}
-	if line >= len(li.lineStarts) {
-		return li.length
-	}
-	return li.lineStarts[line]
-}
-
 // PositionAt converts a byte offset to a 0-based (line, byte-column) position.
 func (li *LineIndex) PositionAt(offset int) Position {
 	if offset < 0 {

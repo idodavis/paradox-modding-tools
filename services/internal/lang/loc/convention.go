@@ -43,9 +43,6 @@ func NewKeys(keys map[string]bool) *Keys {
 	return k
 }
 
-// Has reports an exact key.
-func (k *Keys) Has(key string) bool { return k != nil && k.has[key] }
-
 // PrefixesOf is every P for which `P_<id>` is a key.
 func (k *Keys) PrefixesOf(id string) []string {
 	if k == nil {
@@ -53,6 +50,9 @@ func (k *Keys) PrefixesOf(id string) []string {
 	}
 	return k.prefixes[id]
 }
+
+// Has reports an exact key.
+func (k *Keys) Has(key string) bool { return k != nil && k.has[key] }
 
 // render fills a template's {id} with the def id.
 func render(t Template, id string) string {

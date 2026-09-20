@@ -157,6 +157,7 @@ func (f diagFile) defDiags() []Diagnostic {
 	var out []Diagnostic
 	for _, d := range f.s.DefsInFile(f.path) {
 		out = append(out, f.requiredLoc(d)...)
+
 		// Only a file's own subject: a definition harvested from inside another one is real but not the file's subject, and an inline declaration is resolved per file by the engine, so a repeat is required, not a collision.
 		if !jomini.IsObjectKind(d.Kind) || d.Nested || d.Local {
 			continue
@@ -165,6 +166,7 @@ func (f diagFile) defDiags() []Diagnostic {
 			if other.Origin != origin || other.Kind != d.Kind {
 				continue
 			}
+
 			// Different files only: a key repeated inside ONE file is an authoring idiom. Report once, at the later site by path then offset, so the first definition is left clean.
 			op, dp := index.CanonPath(other.Path), index.CanonPath(d.Path)
 			if op == dp || op > dp || (op == dp && other.Start > d.Start) {
@@ -285,50 +287,14 @@ func wrongScopeAt(f diagFile, a *jomini.Assignment, w walk, _ string, top bool) 
 		return none, "", false
 	}
 	t, role, ok := f.s.Install.Declared.Token(lk)
-	if !ok || w.body&roleBit(role) == 0 || declared.UsableIn(t.In, w.cur()) {
+	bit := index.BodyTrigger
+	if role == "effect" {
+		bit = index.BodyEffect
+	}
+	if !ok || w.body&bit == 0 || declared.UsableIn(t.In, w.cur()) {
 		return none, "", false
 	}
 	return a.Key.Range, key + " runs on " + strings.Join(t.In, " or ") + ", but this block is " + w.cur() + " scope.", true
-}
-
-// unresolvedRefAt flags `culture:nonexistent`: a citation whose database the game names in the text and whose key nothing defines. Narrower than Workspace Health's dangling check: a citation states its own database, and a bare name is judged only where the install's cell names one.
-func unresolvedRefAt(f diagFile, a *jomini.Assignment, w walk, _ string, _ bool) (jomini.Range, string, bool) {
-	none := jomini.Range{}
-	text, rng, ok := scalarValue(a)
-	if !ok {
-		return none, "", false
-	}
-	// A dotted value is a scope chain, not a name. A value at a script-name key (`save_scope_as = x`) is a name the script invents, never a reference to judge.
-	if _, named := jomini.ScriptName(a.Key.Text); named || strings.ContainsRune(text, '.') {
-		return none, "", false
-	}
-	id, kind := text, ""
-	if k, rest, typed := game.ParseTyped(f.s.GameID, text); typed {
-		// A citation needs no cell: it is the one reference form where the game itself states both the database and the key.
-		id, kind = rest, k
-		if pk := f.s.Install.Tree.PrefixKind(strings.SplitN(text, ":", 2)[0]); pk != "" {
-			kind = pk
-		}
-		// Only a prefix bound to a database PMT holds, and never an ephemeral kind: `flag:private_chamber` names a value the script invents as it runs.
-		if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
-			return none, "", false
-		}
-	} else {
-		// The reporting policy, at the one value it is about: a bare name is judged only where the install's cell names a database for it and never wrote a literal or an unresolved name there itself.
-		cell := f.s.Install.Tree.Child(w.hang, a.Key.Text, a.Key.Quoted, false, false)
-		if cell == nil || len(cell.Kinds) == 0 || cell.Has(index.LabelUnresolved) || cell.Has(index.LabelLiteral) ||
-			jomini.SkipObjectRHS(text) || isScopeWord(text) {
-			return none, "", false
-		}
-		kind = cell.Kinds[0]
-		if jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
-			return none, "", false
-		}
-	}
-	if f.defined(id, kind) {
-		return none, "", false
-	}
-	return rng, "nothing named " + id + " is defined.", true
 }
 
 // defined reports a name the model holds under a kind. The miss has to be total: a nested definition is filed under a kind the binding does not name, and CK3's k_austria sits inside another title. A data tier that would not load is a model missing its rows, which is no evidence that this one is absent.
@@ -336,7 +302,43 @@ func (f diagFile) defined(id, kind string) bool {
 	if len(f.s.FindDefsOf(id, kind, 1, false, true)) > 0 || len(f.s.FindDefsOf(id, "", 1, false, true)) > 0 {
 		return true
 	}
-	return f.s.Install.DataError() != "" && game.IsDataKind(f.s.GameID, kind)
+	return f.s.Install.DataError() != "" && f.s.Install.Tree.IsData(kind)
+}
+
+// unresolvedRefAt flags `culture:nonexistent`: a citation whose database the game names in the text and whose key nothing defines. Narrower than Workspace Health's dangling check: a citation states its own database, and a bare name is judged only where the install's cell names one and never wrote a literal or an unresolved name there itself.
+func unresolvedRefAt(f diagFile, a *jomini.Assignment, w walk, _ string, _ bool) (jomini.Range, string, bool) {
+	none := jomini.Range{}
+	text, rng, ok := scalarValue(a)
+	if !ok {
+		return none, "", false
+	}
+
+	// A value at a script-name key (`save_scope_as = x`) is a name the script invents, never a reference to judge.
+	if _, named := jomini.ScriptName(a.Key.Text); named {
+		return none, "", false
+	}
+	tok := f.s.Install.Tree.Classify(text, false, false, f.s)
+	id, kind := text, ""
+	switch tok.Class {
+	case index.ClassCite:
+		// A citation needs no cell: it is the one reference form where the game itself states both the database and the key. A chain after it (`p:xB0D0E0.state.owner`) walks off the row and is not judged.
+		if strings.ContainsRune(text, '.') {
+			return none, "", false
+		}
+		id, kind = tok.ID, tok.Kinds[0]
+	case index.ClassName, index.ClassUnresolved, index.ClassPlain:
+		cell := f.s.Install.Tree.Child(w.hang, a.Key.Text, a.Key.Quoted, false, false)
+		if cell == nil || len(cell.Kinds) == 0 || cell.Flags&(index.Unresolved|index.Literal) != 0 {
+			return none, "", false
+		}
+		kind = cell.Kinds[0]
+	default:
+		return none, "", false
+	}
+	if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) || f.defined(id, kind) {
+		return none, "", false
+	}
+	return rng, "nothing named " + id + " is defined.", true
 }
 
 // wrongValueTypeAt flags a field value that is not of the type the game declares for that field. Declared only: a value contradicting `Supported Targets` is wrong however little else PMT knows, and the learned field types exist to offer completions and to name a hover, where being wrong costs a suggestion, not a false accusation.
@@ -346,28 +348,36 @@ func wrongValueTypeAt(f diagFile, a *jomini.Assignment, w walk, _ string, _ bool
 		return none, "", false
 	}
 	text, rng, ok := scalarValue(a)
-	if !ok || jomini.SkipObjectRHS(text) || isScopeWord(text) {
+	if !ok {
 		return none, "", false
 	}
 	target := tokenTarget(f.s, a.Key.Text)
 	if target == "" {
 		return none, "", false
 	}
-	// The same reporting policy unresolved-ref follows: a cell the install itself wrote a literal or an unresolved name at accuses nothing.
-	if cell := f.s.Install.Tree.Child(w.hang, a.Key.Text, a.Key.Quoted, false, false); cell != nil && (cell.Has(index.LabelUnresolved) || cell.Has(index.LabelLiteral)) {
+	tok := f.s.Install.Tree.Classify(text, false, false, f.s)
+	switch tok.Class {
+	case index.ClassCite, index.ClassName, index.ClassUnresolved, index.ClassPlain:
+	default:
 		return none, "", false
 	}
-	cite, kind := f.s.Install.Tree.CiteForm(target)
+
+	// The same reporting policy unresolved-ref follows: a cell the install itself wrote a literal or an unresolved name at accuses nothing.
+	if cell := f.s.Install.Tree.Child(w.hang, a.Key.Text, a.Key.Quoted, false, false); cell != nil && cell.Flags&(index.Unresolved|index.Literal) != 0 {
+		return none, "", false
+	}
+	_, kind := f.s.Install.Tree.CiteForm(target)
 	if kind == "" || jomini.IsEphemeral(kind) || !f.s.KindHasDefs(kind) {
 		return none, "", false
 	}
-	// Any citation at all is left alone: stripping only the bound prefix read `has_title = title:k_austria` whole and reported a correct line.
+
+	// A citation of another database is left alone: `has_title = title:k_austria` read whole reported a correct line.
 	bare := text
-	if i := strings.IndexByte(text, ':'); i > 0 {
-		if cite == "" || text[:i] != cite {
+	if tok.Class == index.ClassCite {
+		if tok.Kinds[0] != kind {
 			return none, "", false
 		}
-		bare = text[i+1:]
+		bare = tok.ID
 	}
 	if f.defined(bare, kind) {
 		return none, "", false
@@ -384,26 +394,16 @@ func scalarValue(a *jomini.Assignment) (string, jomini.Range, bool) {
 	return tok.Text, tok.Range, true
 }
 
-// isScopeWord reports a value that names the current scope rather than a row in a database: the built-in keywords, and anything carrying a language prefix. `has_same_court_language = root` takes a character, and root IS a character; it just is not the id of one.
-func isScopeWord(text string) bool {
-	if _, ok := jomini.ParsePrefixed(text); ok {
-		return true
-	}
-	switch strings.ToLower(text) {
-	case "root", "prev", "this", "from", "fromfrom", "prevprev":
-		return true
-	}
-	return false
-}
-
 // unknownKeyAt flags a key the block it sits in does not hold, the one check that reports an absence, so it judges only where the tree learned a shape and never a name the game or a macro declares. The one classifier decides what the key IS: only a plain field name may be named; a weight, a date or a citation is a position, a stop word is control flow, a declared token or a macro call is the engine's API, a row of a database is a name the author may invent, and a dot or an unbound colon is a scope path. Known asks whether the key exists AT ALL: a real key in the wrong block is not this check's business.
 func unknownKeyAt(f diagFile, a *jomini.Assignment, w walk, block string, top bool) (jomini.Range, string, bool) {
 	none := jomini.Range{}
+
 	// The definition's own key sits in no block; its fields are judged one level down, against the kind's own structure.
 	if top || a.Key.Quoted {
 		return none, "", false
 	}
 	key := strings.ToLower(a.Key.Text)
+
 	// The arguments of a call are the macro's parameters, not a structure's members; a macro whose parameters PMT did not record answers nothing at all.
 	if block != "" && f.s.Work.Tree.Macros[block] != "" {
 		params := f.s.Params(block)
@@ -419,12 +419,13 @@ func unknownKeyAt(f diagFile, a *jomini.Assignment, w walk, block string, top bo
 	if hang == nil || (hang.Class != index.Structure && hang.Class != index.Body) {
 		return none, "", false
 	}
-	cls, _ := f.s.Install.Tree.KeyClass(a.Key.Text, false, hang.Flags&index.Rows != 0)
-	if !cls.Nameable() || strings.ContainsAny(key, ".:") || isScopeWord(key) ||
+	cls := f.s.Install.Tree.Classify(a.Key.Text, false, hang.Flags&index.Rows != 0, nil).Class
+	if !cls.Nameable() || strings.ContainsAny(key, ".:") ||
 		f.s.Install.Tree.Child(hang, a.Key.Text, false, false, false) != nil ||
 		isMember(f.s, hang, a.Key.Text) || f.s.Install.Tree.KnownKey(key) || jomini.IsMacroKind(key) {
 		return none, "", false
 	}
+
 	// A definition the engine invokes by name is a call wherever it is written: `num_unaligned_vassals > 5` compares a script value the mod wrote, and no block holds it as a field.
 	if f.s.ResolveMatching(a.Key.Text, func(d index.Def) bool { return jomini.DeclaresNamedBodies(d.Kind) }) != nil {
 		return none, "", false

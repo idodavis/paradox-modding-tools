@@ -126,7 +126,7 @@ func (f *File) shapes() {
 		any[p] = true
 		if f.Facts[i].Key != "" {
 			f.names[p], nonNum[p] = true, true
-		} else if v := f.Facts[i].Value; !(v != "" && jomini.IsLiteralValue(v) && !jomini.IsDateLiteral(v)) {
+		} else if jomini.Literal(f.Facts[i].Value) != jomini.LitNumber {
 			nonNum[p] = true
 		}
 	}
@@ -186,7 +186,7 @@ func (f *File) topDef(i int32) string {
 		if k.Key == "namespace" {
 			return ""
 		}
-		if name := game.KeyIdentity(f.GameID, k.Key); jomini.IsDefName(name) && !jomini.IsDateLiteral(name) {
+		if name := game.KeyIdentity(f.GameID, k.Key); jomini.IsDefName(name) && jomini.Literal(name) != jomini.LitDate {
 			return name
 		}
 	case game.ModeEventID:
@@ -226,6 +226,7 @@ func (f *File) defs(decl *declared.Schema) (*Harvest, *skel) {
 	params := map[string]map[string]bool{} // macro → its parameters
 	seen := map[string]bool{}              // macro\x00param, so the first sighting alone is the definition
 	blocks := map[int32]map[string]bool{}  // top-level definition → its block keys, for the local-database rule
+	defAt := map[int32]int{}               // top-level definition → its index in h.Defs, for the name it carries
 	nsKey := ""
 	addDef := func(d Def) {
 		h.Defs = append(h.Defs, d)
@@ -245,6 +246,7 @@ func (f *File) defs(decl *declared.Schema) (*Harvest, *skel) {
 			sk.blks = append(sk.blks, blk{parent: p, key: k.Key, quoted: k.Quoted, names: f.names[i],
 				line: k.Line, at: k.Start, to: k.End})
 		}
+
 		// 1, 2: a top-level `name = { }` in a kind's folder, `namespace = x` and `ns.1 = { }`.
 		if name := f.topDef(i); name != "" {
 			kind := f.Kind
@@ -252,6 +254,7 @@ func (f *File) defs(decl *declared.Schema) (*Harvest, *skel) {
 			if docWorthyKind(kind) {
 				d.Doc = leadingComment(f.Src, int(k.Start))
 			}
+			defAt[i] = len(h.Defs)
 			addDef(d)
 			if f.Rule.Mode == game.ModeEventID && nsKey != "" {
 				h.Refs = append(h.Refs, f.ref(jomini.KindNamespace, nsKey, k.Line, k.Start, k.End))
@@ -262,6 +265,7 @@ func (f *File) defs(decl *declared.Schema) (*Harvest, *skel) {
 			addDef(f.def(jomini.KindNamespace, k.Value, k.VLine, k.VStart, k.VEnd))
 			nsKey = k.Value
 		}
+
 		// 3: `type NAME = { }`, `template NAME`, `scripted_trigger NAME` name the statement after them.
 		if k.Key == "" && !k.Quoted && f.Rule.Mode != game.ModeTopLevelKey && f.Rule.Mode != game.ModeNone {
 			if kind := jomini.DeclKeywordKind(k.Value); kind != "" && kind != "types" && i+1 < n {
@@ -275,6 +279,7 @@ func (f *File) defs(decl *declared.Schema) (*Harvest, *skel) {
 				}
 			}
 		}
+
 		// 4: the script-name table: `set_variable` and its siblings define an ephemeral name, `has_variable` and its own refer to one.
 		if k.Key != "" && !k.Quoted {
 			if r, ok := jomini.ScriptName(k.Key); ok {
@@ -290,6 +295,7 @@ func (f *File) defs(decl *declared.Schema) (*Harvest, *skel) {
 				}
 			}
 		}
+
 		// 5: `$PARAM$` inside a macro body: the first sighting is the parameter, the rest use it.
 		if k.Key != "" && !k.Quoted && len(macros) > 0 {
 			owner := i
@@ -322,6 +328,7 @@ func (f *File) defs(decl *declared.Schema) (*Harvest, *skel) {
 				}
 			}
 		}
+
 		// 6: every `prefix:id` in a key or an unquoted value resolves through the declared prefixes.
 		if k.Key != "" && !k.Quoted {
 			f.cites(h, sk, k.Key, k.Start, k.Line)
@@ -329,16 +336,21 @@ func (f *File) defs(decl *declared.Schema) (*Harvest, *skel) {
 		if !k.Block && !k.VQuoted && k.Value != "" {
 			f.cites(h, sk, k.Value, k.VStart, k.VLine)
 		}
+
 		// 7: a top-level block whose keyed children are all cites is a container, not a definition.
 		if k.Depth == 0 && k.Block && k.Key != "" && !k.Quoted && !jomini.DeclaresNamedBodies(f.Kind) && !f.afterKeyword(i) {
 			if ids, all := f.citedMembers(i); all {
 				sk.wraps[k.Key] = ids
 			}
 		}
-		// The local-database rule's evidence: a definition's own block keys, and which of its fields name one.
+
+		// The local-database rule's evidence: a definition's own block keys, and which of its fields name one; and the name a row carries, which is what a card shows for a character.
 		if k.Depth == 1 && k.Parent >= 0 {
 			if set := blocks[k.Parent]; set != nil && k.Block && k.Key != "" && !k.Quoted {
 				set[k.Key] = true
+			}
+			if di, ok := defAt[k.Parent]; ok && !k.Block && k.Value != "" && strings.EqualFold(k.Key, "name") {
+				h.Defs[di].Value = k.Value
 			}
 		}
 	}
@@ -493,10 +505,8 @@ func (f *File) citedMembers(i int32) (ids []string, all bool) {
 			return true
 		}
 		kind, id, ok := game.ParseTyped(f.GameID, c.Key)
-		if !ok {
-			if sp, sok := jomini.TypedSpanAt(c.Key, 0); sok {
-				kind, id, ok = game.ParseTyped(f.GameID, sp.Prefix+":"+sp.ID)
-			}
+		if sp := jomini.TypedSpans(c.Key); !ok && len(sp) > 0 {
+			kind, id, ok = game.ParseTyped(f.GameID, sp[0].Prefix+":"+sp[0].ID)
 		}
 		if !ok || kind == "" {
 			all = false
@@ -637,7 +647,6 @@ func (f *File) fold(guide *Tree, r *resolver, install bool) *Tree {
 	trees := []*Tree{guide, target}
 	d := newDescent(f, trees, true)
 	last := len(trees) - 1
-	var labels []string
 	for i := range f.Facts {
 		i := int32(i)
 		d.step(i)
@@ -649,7 +658,7 @@ func (f *File) fold(guide *Tree, r *resolver, install bool) *Tree {
 		if k.Depth == 0 {
 			if k.Block && f.names[i] {
 				n.Flags |= Names
-				n.add([]string{LabelBlock}, 1)
+				n.add(Token{Class: ClassBlockNames}, false, 1)
 			}
 			continue
 		}
@@ -660,27 +669,22 @@ func (f *File) fold(guide *Tree, r *resolver, install bool) *Tree {
 			if f.names[i] {
 				n.Flags |= Names
 			}
-			n.add([]string{blockLabel(f.names[i], f.empty[i])}, 1)
+			c := ClassBlockList
+			if f.names[i] {
+				c = ClassBlockNames
+			} else if f.empty[i] {
+				c = ClassBlockEmpty
+			}
+			n.add(Token{Class: c}, false, 1)
 			continue
 		}
 		v, q := k.Value, k.VQuoted
 		if k.Key == "" {
 			q = k.Quoted
 		}
-		labels = r.classify(v, q, f.Data, labels)
-		n.add(labels, 1)
+		n.add(r.tree.Classify(v, q, false, r), f.Data, 1)
 	}
 	return target
-}
-
-func blockLabel(names, empty bool) string {
-	switch {
-	case names:
-		return LabelBlock
-	case empty:
-		return LabelEmpty
-	}
-	return LabelList
 }
 
 // nested emits the definitions the join found in one file: a keyed block whose key is cited under a nested kind, or that sits under a database the guide marked.
@@ -740,7 +744,6 @@ func (f *File) resolve(trees []*Tree, r *resolver, decl *declared.Schema, wrappe
 	n := len(f.Facts)
 	from := make([]string, n)  // the enclosing top-level definition
 	option := make([]int32, n) // the enclosing option block
-	var labels []string
 	for i := range f.Facts {
 		i := int32(i)
 		d.step(i)
@@ -766,9 +769,10 @@ func (f *File) resolve(trees []*Tree, r *resolver, decl *declared.Schema, wrappe
 			}
 			key, kline, kat = f.Facts[p].Key, f.Facts[p].Line, f.Facts[p].Start
 		}
+
 		// A keyed statement inside a definition whose key names a scripted_* macro is an invocation of it.
 		if k.Key != "" && !k.Quoted && from[i] != "" && from[i] != k.Key {
-			if kind := r.macros[k.Key]; kind != "" {
+			if kind := r.tree.Macros[k.Key]; kind != "" {
 				h.Refs = append(h.Refs, f.ref(kind, k.Key, kline, kat, kat+int32(len(k.Key))))
 				h.Edges = append(h.Edges, Edge{From: from[i], To: strings.Clone(k.Key), Path: f.Path, Line: int(kline), Kind: EdgeKindCall})
 			}
@@ -780,8 +784,8 @@ func (f *File) resolve(trees []*Tree, r *resolver, decl *declared.Schema, wrappe
 		if k.Key == "" {
 			q = k.Quoted
 		}
-		labels = r.classify(v, q, f.Data, labels)
-		kind := refKind(d.first(i), labels, key, v)
+		tok := r.tree.Classify(v, q, false, r)
+		kind := refKind(d.first(i), tok, key, v)
 		if kind == "" {
 			continue
 		}
@@ -793,7 +797,7 @@ func (f *File) resolve(trees []*Tree, r *resolver, decl *declared.Schema, wrappe
 		}
 		slot, rescoped := f.fireSite(d, decl, i, option[i])
 		via := key
-		if lk := strings.ToLower(key); lk == "id" || isDigits(lk) {
+		if lk := strings.ToLower(key); lk == "id" || jomini.IsDigits(lk) {
 			if pk := f.Facts[p].Key; k.Key != "" && pk != "" {
 				via = pk
 			}
@@ -818,8 +822,9 @@ func (f *File) fireSite(d *descent, decl *declared.Schema, i, option int32) (slo
 		if k.Key == "" {
 			continue
 		}
+
 		// A key the fold turns into a class names the thing it enters -- `scope:activity = { … }`, a nested definition, a numbered branch -- and is never a section of the scope around it.
-		if c, _ := d.trees[0].KeyClass(k.Key, k.Quoted, d.row[a]); classes[c].seg != "" || changesScope(decl, k.Key) {
+		if classes[d.trees[0].Classify(k.Key, k.Quoted, d.row[a], nil).Class].seg != "" || changesScope(decl, k.Key) {
 			rescoped = true
 			break
 		}
@@ -847,8 +852,8 @@ func changesScope(decl *declared.Schema, key string) bool {
 	return false
 }
 
-// refKind is the reporting policy's first clause: a value resolves to a member of its node's type, or to nothing. Declared beats derived: the engine's own localization properties hold a key wherever they are written.
-func refKind(cell *Node, labels []string, key, value string) string {
+// refKind is the reporting policy's first clause: a value resolves to a member of its node's type, or to nothing. Declared beats derived: the engine's own localization properties hold a key wherever they are written. A cite is not judged here; pass 1 recorded it.
+func refKind(cell *Node, tok Token, key, value string) string {
 	switch loc.Classify(key) {
 	case loc.PropStrict:
 		if loc.LooksLikeKey(value) {
@@ -861,21 +866,24 @@ func refKind(cell *Node, labels []string, key, value string) string {
 		}
 		return ""
 	}
+
 	// An all-caps argument key holds a fragment the macro pastes into a name, not an object of the field's type.
 	if cell == nil || isMacroArgKey(key) {
 		return ""
 	}
+
 	// A database before localization: every culture has a loc key of its own name, so `culture = english` is a culture.
-	for _, k := range cell.Kinds {
-		if k != LabelLoc && slices.Contains(labels, LabelDef+k) {
+	if tok.Class == ClassName || tok.Class == ClassNumber {
+		if k := tok.At(cell); k != "" && slices.Contains(cell.Kinds, k) {
 			return k
 		}
 	}
-	if slices.Contains(cell.Kinds, LabelLoc) && slices.Contains(labels, LabelLoc) {
+	if slices.Contains(cell.Kinds, LabelLoc) && slices.Contains(tok.Kinds, LabelLoc) {
 		return "loc-broad"
 	}
+
 	// At a node that names a database and never held a literal, a name-shaped value is a reference whether or not anything defines it: the dangling report is made of these.
-	if !cell.Has(LabelLiteral) && jomini.IsDefName(value) {
+	if cell.Flags&Literal == 0 && jomini.IsDefName(value) {
 		for _, k := range cell.Kinds {
 			if k != LabelLoc {
 				return k

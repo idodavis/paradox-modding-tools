@@ -154,14 +154,20 @@ func TestDiagnose(t *testing.T) {
 				dir := t.TempDir()
 				t.Setenv("XDG_CONFIG_HOME", dir)
 				t.Setenv("AppData", dir)
-				cache := scanFixture(t, "ck3")
-				cache.InstallID, cache.GameVersion = tc.install, "1.0"
+				// A loaded cache reads its tier from disk, which is where a tier goes missing; a fresh scan carries its own.
+				scanned := scanFixture(t, "ck3")
+				scanned.InstallID, scanned.GameVersion = tc.install, "1.0"
+				var data *index.Index
 				if tc.wantDiag {
-					data := index.NewIndex("ck3", nil)
+					data = index.NewIndex("ck3", nil)
 					data.InstallID, data.GameVersion = tc.install, "1.0"
-					if err := index.SaveCache(cache, data); err != nil {
-						t.Fatal(err)
-					}
+				}
+				if err := index.SaveCache(scanned, data); err != nil {
+					t.Fatal(err)
+				}
+				cache, err := index.LoadCache(tc.install, "1.0")
+				if err != nil {
+					t.Fatal(err)
 				}
 				s, root := sessionOver(t, "ck3", cache, map[string]string{"common/scripted_triggers/t.txt": "a = { x = dynasty:nowhere }\n"})
 				if got := hasDiag(Diagnose(s, root+"/common/scripted_triggers/t.txt"), "unresolved-ref"); got != tc.wantDiag {
@@ -179,6 +185,8 @@ func TestDiagnose(t *testing.T) {
 		}{
 			{"a citation nothing defines", "b = { x = culture:nonexistent }", "nonexistent", true},
 			{"a citation that resolves", "a = { x = culture:english }", "", false},
+			{"a numeric citation nothing defines", "b = { x = character:999999 }", "999999", true},
+			{"a numeric citation that resolves", "a = { x = character:186004 }", "", false},
 			// An unbound prefix means PMT does not know that database.
 			{"a prefix bound to no database", "a = { x = province:9 }", "", false},
 			// A value the script invents as it runs is not something anything defines.

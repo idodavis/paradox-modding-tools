@@ -166,7 +166,7 @@ func InlayHints(s *session.Session, path string) []InlayHint {
 	li := res.Lines()
 	var out []InlayHint
 	add := func(sc jomini.Scalar) {
-		if sc.Quoted || !jomini.IsDateLiteral(sc.Text) {
+		if sc.Quoted || jomini.Literal(sc.Text) != jomini.LitDate {
 			return
 		}
 		era := index.EraDate(sc.Text, cal)

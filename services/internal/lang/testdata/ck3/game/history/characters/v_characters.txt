@@ -1,0 +1,16 @@
+186004 = {
+	name = "Rognvald"
+	dynasty = 1012
+	religion = "catholic"
+	culture = "norse"
+	830.1.1 = {
+		birth = yes
+	}
+}
+186009 = {
+	name = "Einarr"
+	culture = "norse"
+	861.1.1 = {
+		birth = yes
+	}
+}

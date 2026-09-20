@@ -33,6 +33,7 @@ func Hover(s *session.Session, path string, line, col int) *Inspect {
 		return nil
 	}
 	ins.Scope = at.scope
+
 	// A scope link is the one token whose whole purpose is to move somewhere else, so the transition is the useful thing to show.
 	if l, ok := s.Install.Declared.Link(id.name); ok && l.Out != "" {
 		ins.ScopeOut = l.Out
@@ -58,7 +59,10 @@ func card(s *session.Session, id identity) *Inspect {
 		}
 		ins.Owner = owner
 		ins.Values, ins.More = rankInspectValues(s.ValuesOf(jomini.KindScriptParam, owner, id.name))
-		return withSite(s, ins, id.def)
+		if id.def != nil {
+			attachSite(s, ins, id.def.Path, id.def.Line, id.def.Origin, id.def.Start)
+		}
+		return ins
 	case idProse:
 		return &Inspect{Kind: id.kind, Key: id.name, Docs: id.docs}
 	case idEphemeral:
@@ -69,7 +73,10 @@ func card(s *session.Session, id identity) *Inspect {
 		}
 		ins := inspectOf(s, id.kind, key, "")
 		ins.Values, ins.More = rankInspectValues(s.ValuesOf(id.kind, "", id.name))
-		return withSite(s, ins, id.def)
+		if id.def != nil {
+			attachSite(s, ins, id.def.Path, id.def.Line, id.def.Origin, id.def.Start)
+		}
+		return ins
 	case idLocalDef:
 		docs := fieldDoc(s, id.name, id.extractKind, id.block)
 		if docs == "" && !isMember(s, id.hang, id.name) {
@@ -99,6 +106,7 @@ func card(s *session.Session, id identity) *Inspect {
 	case idDef:
 		d := id.def
 		docs := docsOnly(s, id.name, d.Kind)
+
 		// A named script body has no other description: the author's comment above it is the only one there will ever be.
 		if docs == "" && d.Doc != "" {
 			docs = d.Doc
@@ -108,8 +116,18 @@ func card(s *session.Session, id identity) *Inspect {
 		if ins.Usage == "" {
 			ins.Usage = macroUsage(s, d)
 		}
-		// First hit wins: conventions are sorted by coverage, then by the plainest shape.
+
+		// The name a row carries shows first (a character's), then the localization the kind's convention names; conventions are sorted by coverage, then by the plainest shape.
+		if !jomini.IsEphemeral(d.Kind) && d.Value != "" {
+			ins.Body = d.Value
+			if text, ok := s.DefaultLoc(d.Value); ok && text != "" {
+				ins.Body = unescapeLocDisplay(text)
+			}
+		}
 		for _, key := range loc.Expand(d.Key, s.LocConventions(d.Kind)) {
+			if ins.Body != "" {
+				break
+			}
 			if text, ok := s.DefaultLoc(key); ok && text != "" {
 				ins.Body = unescapeLocDisplay(text)
 				break
@@ -137,6 +155,7 @@ func card(s *session.Session, id identity) *Inspect {
 // fieldCard is a key written inside a block, named by the block type at that position: a structure shows its own (structure, field) prose, and a body holds the arguments of the token that opens it rather than keys of a container. The structure is the unit the game documents and the unit the schema unifies, so it is also the label.
 func fieldCard(s *session.Session, id identity) *Inspect {
 	structure := id.block
+
 	// A folded segment names a position rather than a structure a reader could type, so the written container stands in for it.
 	if id.hang != nil && !strings.ContainsAny(id.hang.Struct, "<.") {
 		structure = id.hang.Struct
@@ -145,14 +164,17 @@ func fieldCard(s *session.Session, id identity) *Inspect {
 	if label == "" {
 		label = id.extractKind
 	}
+
 	// A block that is itself a declared token holds that token's arguments: "set variable key" reads as though set_variable were a container.
 	if s.Install.Declared.HasName(structure) {
 		suffix = " argument"
 	}
 	ins := inspectOf(s, label, id.name, fieldDoc(s, id.name, id.extractKind, structure))
 	ins.Kind += suffix
+
 	// The hint describes the KIND, none of which is about the field under the cursor.
 	ins.Hint = ""
+
 	// A key can be a declared token as well: `add_to_list` is also a structure key of the kind being edited, and the signature the game states for it was being dropped.
 	ins.Usage = clipUsage(tokenUsage(s, id.name))
 	_, ins.Accepts, _ = declaredLines(s, id.extractKind, id.hang, id.name)
@@ -169,13 +191,6 @@ func inspectOf(s *session.Session, kind, key, docs string) *Inspect {
 }
 
 // ---------------------------------------------------------------- the sites
-
-func withSite(s *session.Session, ins *Inspect, d *index.Def) *Inspect {
-	if d != nil {
-		attachSite(s, ins, d.Path, d.Line, d.Origin, d.Start)
-	}
-	return ins
-}
 
 func attachSite(s *session.Session, ins *Inspect, path string, line int, origin string, start int) {
 	if ins == nil || path == "" {

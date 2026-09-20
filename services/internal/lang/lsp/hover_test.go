@@ -241,11 +241,44 @@ var hoverCases = []hoverCase{{
 	cal:   index.ModCalendar{Era: "AC", EpochOffset: 7782},
 	files: map[string]string{"common/bookmarks/bookmarks/00.txt": "bm = {\n\tstart_date = 8082.1.1\n}\n"},
 	rel:   "common/bookmarks/bookmarks/00.txt", at: "8082.1.1",
-	want: []string{"300.1.1 AC"},
+	want: []string{"January 1st, 8082 AD", "300.1.1 AC in this mod's calendar"},
 }, {
+	// A date reads in words wherever it is written: a value, a quoted value, the key of a history block.
 	name:  "date without a calendar",
 	files: map[string]string{"common/bookmarks/bookmarks/00.txt": "bm = {\n\tstart_date = 8082.1.1\n}\n"},
-	rel:   "common/bookmarks/bookmarks/00.txt", at: "8082.1.1", none: true,
+	rel:   "common/bookmarks/bookmarks/00.txt", at: "8082.1.1",
+	want: []string{"date", "January 1st, 8082 AD"},
+	check: func(t *testing.T, h *Inspect) {
+		if strings.Contains(h.Docs, "calendar") {
+			t.Fatalf("no calendar declared, docs = %q", h.Docs)
+		}
+	},
+}, {
+	name:  "quoted date",
+	files: map[string]string{"common/bookmarks/bookmarks/00.txt": "bm = {\n\tstart_date = \"1066.9.15\"\n}\n"},
+	rel:   "common/bookmarks/bookmarks/00.txt", at: "1066.9.15",
+	want: []string{"September 15th, 1066 AD"},
+}, {
+	name:  "date as a history key",
+	files: map[string]string{"history/characters/m.txt": "1000 = {\n\t830.3.22 = {\n\t\tbirth = yes\n\t}\n}\n"},
+	rel:   "history/characters/m.txt", at: "830.3.22",
+	want: []string{"March 22nd, 830 AD"},
+}, {
+	// A data row cited by number: the install's history defines it, and the prefix the game declares binds to that database.
+	name:  "character cite as a key",
+	files: map[string]string{"events/x.txt": "ns.1 = {\n\timmediate = {\n\t\tcharacter:186004 = { save_scope_as = x }\n\t}\n}\n"},
+	rel:   "events/x.txt", at: "character:186004", skip: len("character:"),
+	want: []string{"characters", "186004", "Rognvald"},
+	check: func(t *testing.T, h *Inspect) {
+		if !strings.Contains(h.Path, "v_characters.txt") || h.Body != "Rognvald" {
+			t.Fatalf("character site = %q body = %q", h.Path, h.Body)
+		}
+	},
+}, {
+	name:  "character cite as a value",
+	files: map[string]string{"events/x.txt": "ns.1 = {\n\ttrigger = {\n\t\texists = character:186009\n\t}\n}\n"},
+	rel:   "events/x.txt", at: "character:186009",
+	want: []string{"characters", "186009"},
 }, {
 	// A literal is not a name, even where vanilla localizes the word.
 	name:  "literal value",

@@ -7,9 +7,9 @@
 package index
 
 import (
+	"cmp"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
@@ -30,8 +30,10 @@ type Node struct {
 	Struct string           `json:"s,omitempty"`
 	Loc    []loc.Convention `json:"l,omitempty"` // at a root: the loc key templates this kind's definitions carry
 	Kids   map[string]*Node `json:"m,omitempty"`
+	// Kind is set at a root: the type the tree below describes.
+	Kind *Kind `json:"K,omitempty"`
 
-	labels map[string]int32
+	counts map[Class]int32
 	inter  []string
 	seen   bool
 }
@@ -60,18 +62,8 @@ const (
 	BodyModifier
 )
 
-// Labels are what one value at a node turned out to be; Def and Cite carry the kind after the colon.
-const (
-	LabelBlock      = "block:names"
-	LabelList       = "block:list"
-	LabelEmpty      = "block:empty"
-	LabelLiteral    = "literal"
-	LabelLoc        = "loc"
-	LabelStop       = "stop"
-	LabelUnresolved = "unresolved"
-	LabelDef        = "def:"
-	LabelCite       = "cite:"
-)
+// LabelLoc marks, among a node's Kinds, that its values were localization keys.
+const LabelLoc = "loc"
 
 // Segments a class is filed under.
 const (
@@ -83,11 +75,11 @@ const (
 	SegVar    = "<var>"
 )
 
-// Bind ties a declared citation prefix to the database it cites and the scope type it holds.
-type Bind struct {
-	Prefix string `json:"p"`
-	Kind   string `json:"k"`
-	Scope  string `json:"s"`
+// Kind is one type the install defines, kept on the root node of its tree: where its rows live, the declared prefixes that cite it, and the scope type a row holds.
+type Kind struct {
+	Data     bool     `json:"data,omitempty"`
+	Prefixes []string `json:"prefixes,omitempty"`
+	Scope    string   `json:"scope,omitempty"`
 }
 
 // Tree is the learned half of a game; the declared half stays *declared.Schema.
@@ -97,7 +89,6 @@ type Tree struct {
 	Structs map[string][]string `json:"structs,omitempty"`
 	// Known is every key the install writes anywhere, the declared API and the documented fields, sorted: unknown-key's whole vocabulary and completion's word list. Install-only, so a mod's own typo cannot vouch for itself.
 	Known []string `json:"known,omitempty"`
-	Binds []Bind   `json:"binds,omitempty"`
 	// Macros is every scripted_* definition with its kind, which is what makes a keyed statement a call.
 	Macros        map[string]string `json:"macros,omitempty"`
 	DataFunctions []string          `json:"dataFunctions,omitempty"`
@@ -109,8 +100,44 @@ type Tree struct {
 
 	gameID string
 	decl   *declared.Schema
+	base   *Tree // the install's tree under a workspace's: a kind the workspace never learned is read there
 	// byName makes a bootstrap tree: any definition name files as a row, so the join can generalise a cited row to the position it was written at.
 	byName func(string) bool
+}
+
+// kind is the entry on a root, made on first use.
+func (n *Node) kind() *Kind {
+	if n.Kind == nil {
+		n.Kind = &Kind{}
+	}
+	return n.Kind
+}
+
+// eachKind visits every kind entry, the workspace's own then the install's beneath it.
+func (s *Tree) eachKind(fn func(kind string, k *Kind) bool) {
+	for t := s; t != nil; t = t.base {
+		for kind, root := range t.Kinds {
+			if root.Kind != nil && !fn(kind, root.Kind) {
+				return
+			}
+		}
+	}
+}
+
+// Of is the kind entry of a type, nil where nothing learned it.
+func (s *Tree) Of(kind string) *Kind {
+	for t := s; t != nil; t = t.base {
+		if r := t.Kinds[kind]; r != nil && r.Kind != nil {
+			return r.Kind
+		}
+	}
+	return nil
+}
+
+// IsData reports a kind whose rows live in the data tier.
+func (s *Tree) IsData(kind string) bool {
+	k := s.Of(kind)
+	return k != nil && k.Data
 }
 
 // Root is a kind's own body, made when learning.
@@ -192,24 +219,8 @@ func (n *Node) Members() []string {
 	return out
 }
 
-// Has reports one of the labels a settled node keeps.
-func (n *Node) Has(label string) bool {
-	if n == nil {
-		return false
-	}
-	switch label {
-	case LabelLiteral:
-		return n.Flags&Literal != 0
-	case LabelUnresolved:
-		return n.Flags&Unresolved != 0
-	case LabelLoc:
-		return slices.Contains(n.Kinds, LabelLoc)
-	}
-	return false
-}
-
-// Kind is the one database a node's values all named, or empty where the corpus disagreed; a localization key of the same name beside it is noise, since every culture has one.
-func (n *Node) Kind() string {
+// Database is the one database a node's values all named, or empty where the corpus disagreed; a localization key of the same name beside it is noise, since every culture has one.
+func (n *Node) Database() string {
 	out := ""
 	if n == nil {
 		return out
@@ -240,68 +251,83 @@ func (n *Node) Fire() string {
 }
 
 // Prefix is the declared prefix bound to a database, the shortest when several are.
-func (s *Tree) Prefix(kind string) string {
-	out := ""
-	for _, b := range s.Binds {
-		if b.Kind == kind && (out == "" || len(b.Prefix) < len(out)) {
-			out = b.Prefix
+func (s *Tree) Prefix(kind string) (out string) {
+	if k := s.Of(kind); k != nil {
+		for _, p := range k.Prefixes {
+			if out == "" || len(p) < len(out) {
+				out = p
+			}
 		}
 	}
 	return out
 }
 
 // PrefixKind is the database a declared prefix cites.
-func (s *Tree) PrefixKind(prefix string) string {
-	for _, b := range s.Binds {
-		if strings.EqualFold(b.Prefix, prefix) {
-			return b.Kind
+func (s *Tree) PrefixKind(prefix string) (out string) {
+	s.eachKind(func(kind string, k *Kind) bool {
+		if slices.ContainsFunc(k.Prefixes, func(p string) bool { return strings.EqualFold(p, prefix) }) {
+			out = kind
 		}
-	}
-	return ""
+		return out == ""
+	})
+	return out
 }
 
 // ScopeOf is the scope type a database holds.
 func (s *Tree) ScopeOf(kind string) string {
-	for _, b := range s.Binds {
-		if b.Kind == kind || b.Kind == jomini.CanonicalKind(kind) {
-			return b.Scope
-		}
+	k := s.Of(kind)
+	if k == nil {
+		k = s.Of(jomini.CanonicalKind(kind))
 	}
-	return ""
+	if k == nil {
+		return ""
+	}
+	return k.Scope
 }
 
 // CiteForm is how a user writes a member of a scope type: the shortest prefix and the database.
 func (s *Tree) CiteForm(scope string) (prefix, kind string) {
-	for _, b := range s.Binds {
-		if !strings.EqualFold(b.Scope, scope) {
-			continue
+	s.eachKind(func(k string, e *Kind) bool {
+		if !strings.EqualFold(e.Scope, scope) {
+			return true
 		}
-		if prefix == "" || len(b.Prefix) < len(prefix) {
-			prefix = b.Prefix
+		if kind == "" || len(k) < len(kind) {
+			kind = k
 		}
-		if kind == "" || len(b.Kind) < len(kind) {
-			kind = b.Kind
+		for _, p := range e.Prefixes {
+			if prefix == "" || len(p) < len(prefix) {
+				prefix = p
+			}
 		}
-	}
+		return true
+	})
 	return prefix, kind
 }
 
 // ------------------------------------------------------------- the classifier
 
-// Class is what one key at one position is: exactly one answer from one function.
+// Class is what one written word is, at one position: exactly one answer from one function, for a key and for a value alike.
 type Class uint8
 
 const (
-	ClassPlain      Class = iota // a name written as a field of the block it sits in
+	ClassPlain      Class = iota // a field name, or a value that is neither a name nor a literal
 	ClassNumber                  // a weight, an index, a data-row id
 	ClassDate                    // 1066.1.1
 	ClassCite                    // prefix:id, through the declared prefixes
-	ClassVar                     // a $PARAM$ or @value interpolation, or a quoted key
-	ClassStop                    // control flow and the boolean literals
+	ClassEphemeral               // scope:x, var:x, flag:x: a value that lives for one script run
+	ClassVar                     // a $PARAM$ or @value interpolation, or a quoted word
+	ClassStop                    // control flow, the scope words and the boolean literals
 	ClassDeclared                // a token the game's own API declares
 	ClassMacroCall               // a scripted_* definition invoked by name
 	ClassDefinition              // a row of the database the block above holds
 	ClassBare                    // a list member, which has no key at all
+	ClassPath                    // a dotted scope chain, `root.culture`
+	ClassName                    // a name the corpus defines, in Kinds
+	ClassLoc                     // a localization key and nothing else
+	ClassUnresolved              // name-shaped, and nothing explains it
+	ClassBlockNames              // a block holding keyed children
+	ClassBlockList               // a block holding bare members
+	ClassBlockEmpty              // `{ }`
 )
 
 // classes is the one table: what a class is filed under (empty keeps the key), whether it is a member of its block's structure (which is also what completion offers), and whether unknown-key may name it.
@@ -313,50 +339,139 @@ var classes = [...]struct {
 	ClassNumber:     {SegNumber, false, false},
 	ClassDate:       {SegDate, false, false},
 	ClassCite:       {SegCite, false, false},
+	ClassEphemeral:  {SegCite, false, false},
 	ClassVar:        {SegVar, false, false},
 	ClassStop:       {"", true, false},
 	ClassDeclared:   {"", false, false},
 	ClassMacroCall:  {"", false, false},
 	ClassDefinition: {SegKind, false, false},
 	ClassBare:       {SegBare, false, false},
+	ClassPath:       {"", false, false},
+	ClassName:       {"", false, false},
+	ClassLoc:        {"", false, false},
+	ClassUnresolved: {"", false, false},
+	ClassBlockNames: {"", false, false},
+	ClassBlockList:  {"", false, false},
+	ClassBlockEmpty: {"", false, false},
 }
 
 // Nameable reports a class unknown-key may name.
 func (c Class) Nameable() bool { return classes[c].nameable }
 
-// KeyClass is what one key is at a position; rows says the block above holds a database, the only evidence that a name is a definition here.
-func (s *Tree) KeyClass(key string, quoted, rows bool) (Class, string) {
-	switch {
-	case key == "":
-		return ClassBare, ""
-	case quoted:
-		return ClassVar, ""
-	case isDigits(key):
-		return ClassNumber, ""
-	case jomini.IsDateLiteral(key):
-		return ClassDate, ""
-	}
-	if kind, _, ok := game.ParseTyped(s.gameID, key); ok {
-		return ClassCite, jomini.CanonicalKind(kind)
-	}
-	if p, ok := jomini.ParsePrefixed(key); ok {
-		return ClassCite, jomini.PrefixKind(p.Prefix)
-	}
-	switch {
-	case strings.ContainsAny(key, "$@"):
-		return ClassVar, ""
-	case jomini.IsStop(key):
-		return ClassStop, ""
-	case rows:
-		return ClassDefinition, ""
-	}
-	if bits, macro := s.bodyClass(key); bits != 0 {
-		if macro {
-			return ClassMacroCall, ""
+// Token is one written word as the classifier read it: its class, the databases a name or cite may belong to (LabelLoc among them when the word is also a localization key), and the id inside a cite.
+type Token struct {
+	Class Class
+	Kinds []string
+	ID    string
+}
+
+// At is the one kind a token has at a cell: what the cell agrees on, a cite's own, or the single database a name belongs to.
+func (t Token) At(cell *Node) string {
+	if cell != nil {
+		for _, k := range cell.Kinds {
+			if k != LabelLoc && slices.Contains(t.Kinds, k) {
+				return k
+			}
 		}
-		return ClassDeclared, ""
 	}
-	return ClassPlain, ""
+	if t.Class == ClassCite || t.Class == ClassEphemeral {
+		return t.Kinds[0]
+	}
+	if len(t.Kinds) == 1 && t.Kinds[0] != LabelLoc || len(t.Kinds) == 2 && t.Kinds[1] == LabelLoc {
+		return t.Kinds[0]
+	}
+	return ""
+}
+
+// Defined answers what the corpus defines, for the value half of the classifier: the databases a name is a row of, and whether it is a localization key.
+type Defined interface {
+	Kinds(name string) []string
+	IsLoc(name string) bool
+}
+
+// Classify is the one reading of a word. A key passes rows, which says the block above holds a database, and no names; a value passes the names it may resolve against. The cell it sits at is not consulted here: Token.At applies it.
+func (s *Tree) Classify(text string, quoted, rows bool, names Defined) Token {
+	switch {
+	case text == "":
+		return Token{Class: ClassBare}
+	case quoted:
+		return Token{Class: ClassVar, Kinds: s.locOnly(text, names)}
+	case jomini.IsDigits(text):
+		return Token{Class: ClassNumber, ID: text, Kinds: s.named(text, names)}
+	}
+	switch jomini.Literal(text) {
+	case jomini.LitDate:
+		return Token{Class: ClassDate}
+	case jomini.LitNumber:
+		return Token{Class: ClassNumber, Kinds: s.locOnly(text, names)}
+	}
+	if kind, id, ok := game.ParseTyped(s.gameID, text); ok {
+		if k := s.PrefixKind(strings.SplitN(text, ":", 2)[0]); k != "" {
+			kind = k
+		}
+		return Token{Class: ClassCite, Kinds: []string{jomini.CanonicalKind(kind)}, ID: id}
+	}
+	if p, ok := jomini.ParsePrefixed(text); ok {
+		return Token{Class: ClassEphemeral, Kinds: []string{cmp.Or(jomini.PrefixKind(p.Prefix), p.Prefix)}, ID: p.Name}
+	}
+	switch {
+	case strings.ContainsAny(text, "$@"):
+		return Token{Class: ClassVar}
+	case jomini.IsStop(text):
+		return Token{Class: ClassStop}
+	}
+	if names == nil {
+		// A key: a row where the block above holds a database, else the engine's API, else a field.
+		if rows {
+			return Token{Class: ClassDefinition}
+		}
+		if bits, macro := s.bodyClass(text); bits != 0 {
+			if macro {
+				return Token{Class: ClassMacroCall}
+			}
+			return Token{Class: ClassDeclared}
+		}
+
+		// A link or a modifier the game declares keeps its own card rather than becoming a field of the block.
+		if s.decl != nil && s.decl.HasName(text) {
+			return Token{Class: ClassDeclared}
+		}
+		return Token{Class: ClassPlain}
+	}
+
+	// A value: an interpolation or a chain is grammar; a name is what the corpus defines it as; a localization key; a name nothing explains.
+	if strings.ContainsAny(text, "|;") || strings.ContainsRune(text, '.') && !jomini.IsEventID(text) {
+		return Token{Class: ClassPath, Kinds: s.locOnly(text, names)}
+	}
+	kinds := s.named(text, names)
+	switch {
+	case len(kinds) > 1 || len(kinds) == 1 && kinds[0] != LabelLoc:
+		return Token{Class: ClassName, Kinds: kinds, ID: text}
+	case len(kinds) == 1:
+		return Token{Class: ClassLoc, Kinds: kinds}
+	case loc.LooksLikeKey(text) || jomini.IsDefName(text):
+		return Token{Class: ClassUnresolved}
+	}
+	return Token{Class: ClassPlain}
+}
+
+// named is the databases defining a name, the loc label last.
+func (s *Tree) named(text string, names Defined) []string {
+	if names == nil {
+		return nil
+	}
+	out := slices.Clone(names.Kinds(text))
+	if names.IsLoc(text) {
+		out = append(out, LabelLoc)
+	}
+	return out
+}
+
+func (s *Tree) locOnly(text string, names Defined) []string {
+	if names != nil && names.IsLoc(text) {
+		return []string{LabelLoc}
+	}
+	return nil
 }
 
 // bodyClass is the declared classes one name belongs to, and whether it is a macro the install declared for itself rather than a token the engine ships.
@@ -389,101 +504,46 @@ func (s *Tree) bodyClass(key string) (bits uint8, macro bool) {
 
 // fold is the name a key is filed under at a position.
 func (s *Tree) fold(key string, quoted, rows bool) string {
-	c, _ := s.KeyClass(key, quoted, rows)
-	if seg := classes[c].seg; seg != "" {
+	if seg := classes[s.Classify(key, quoted, rows, nil).Class].seg; seg != "" {
 		return seg
 	}
 	return key
 }
 
-func isDigits(s string) bool {
-	_, err := strconv.ParseUint(s, 10, 64)
-	return err == nil
-}
-
 // ---------------------------------------------------------------- the values
 
-// resolver is everything outside a file that typing one value consults: the definitions, the localization, the prefixes and the game.
+// resolver is everything outside a file that typing one value consults: the tree, the definitions and the localization.
 type resolver struct {
-	gameID     string
+	tree       *Tree
 	kindsByKey map[string][]string
 	locKeys    map[string]bool
-	prefix     map[string]string
-	macros     map[string]string
 }
 
-// classify is one value, one label set, by lookup. A literal carries only Literal, except a number in a data kind, which may also name a row.
-func (r *resolver) classify(v string, quoted, dataKind bool, out []string) []string {
-	out = out[:0]
-	if v == "" {
-		return append(out, LabelLiteral)
-	}
-	if !quoted {
-		if jomini.IsStop(v) {
-			return append(out, LabelStop)
-		}
-		if kind, _, ok := game.ParseTyped(r.gameID, v); ok {
-			if k := r.prefix[strings.ToLower(strings.SplitN(v, ":", 2)[0])]; k != "" {
-				kind = k
-			}
-			return append(out, LabelCite+jomini.CanonicalKind(kind))
-		}
-		if _, ok := jomini.ParsePrefixed(v); ok {
-			return append(out, LabelCite+jomini.PrefixKind(strings.SplitN(v, ":", 2)[0]))
-		}
-	}
-	if literalShape(v, quoted) {
-		if r.locKeys[v] {
-			out = append(out, LabelLoc)
-		}
-		if dataKind && isDigits(v) {
-			for _, k := range r.kindsByKey[v] {
-				out = append(out, LabelDef+k)
-			}
-		}
-		return append(out, LabelLiteral)
-	}
-	for _, k := range r.kindsByKey[v] {
-		out = append(out, LabelDef+k)
-	}
-	if r.locKeys[v] {
-		out = append(out, LabelLoc)
-	}
-	if len(out) > 0 {
-		return out
-	}
-	if loc.LooksLikeKey(v) || jomini.IsDefName(v) {
-		return append(out, LabelUnresolved)
-	}
-	return append(out, LabelLiteral)
-}
+func (r *resolver) Kinds(name string) []string { return r.kindsByKey[name] }
+func (r *resolver) IsLoc(name string) bool     { return r.locKeys[name] }
 
-// literalShape is a value written as a quantity, a flag, a date, an interpolation or a dotted chain, which is never looked up: `add_gold = 100` otherwise resolves against CK3's 10,887 numeric province keys.
-func literalShape(v string, quoted bool) bool {
-	if quoted || jomini.IsLiteralValue(v) || strings.ContainsAny(v, "$@|;") {
-		return true
-	}
-	return strings.ContainsRune(v, '.') && !jomini.IsEventID(v)
-}
-
-// add folds one occurrence's labels into a node. Loc takes part in the intersection like a database: one value in three hundred also being a key made 747,513 CK3 loc references out of 451,232.
-func (n *Node) add(labels []string, count int32) {
+// add folds one occurrence into a node: its class counted, and the databases it named intersected with what came before. A cite names its own database and says nothing about the position; a number names rows only in a data file. Loc takes part in the intersection like a database: one value in three hundred also being a key made 747,513 CK3 loc references out of 451,232.
+func (n *Node) add(t Token, data bool, count int32) {
 	n.N += count
-	if n.labels == nil {
-		n.labels = map[string]int32{}
+	if n.counts == nil {
+		n.counts = map[Class]int32{}
 	}
-	var kinds []string
-	for _, l := range labels {
-		n.labels[l] += count
-		if l == LabelLoc {
-			kinds = append(kinds, LabelLoc)
-		} else if k, ok := strings.CutPrefix(l, LabelDef); ok {
-			kinds = append(kinds, k)
+	n.counts[t.Class] += count
+	kinds := t.Kinds
+	switch t.Class {
+	case ClassCite, ClassEphemeral, ClassStop, ClassUnresolved, ClassBlockNames, ClassBlockList, ClassBlockEmpty:
+		return
+	case ClassNumber:
+		if !data && slices.Contains(kinds, LabelLoc) {
+			kinds = []string{LabelLoc}
+		} else if !data {
+			return
 		}
 	}
 	if len(kinds) == 0 {
 		return
 	}
+	kinds = slices.Clone(kinds)
 	slices.Sort(kinds)
 	if !n.seen {
 		n.inter, n.seen = kinds, true
@@ -491,6 +551,34 @@ func (n *Node) add(labels []string, count int32) {
 	}
 	n.inter = intersect(n.inter, kinds)
 }
+
+// settle publishes what the fold accumulated and drops its working state, over the whole tree: the kinds, whether a literal or an unexplained name was ever written here, and whether the position is a block more often than a value.
+func (n *Node) settle() {
+	if n.seen || len(n.counts) > 0 {
+		n.Kinds, n.inter = n.inter, nil
+		best, at := int32(-1), ClassPlain
+		for c, k := range n.counts {
+			switch c {
+			case ClassNumber, ClassDate, ClassVar, ClassPath, ClassPlain:
+				n.Flags |= Literal
+			case ClassUnresolved:
+				n.Flags |= Unresolved
+			}
+			if k > best || k == best && c.block() && !at.block() {
+				best, at = k, c
+			}
+		}
+		if at.block() {
+			n.Flags |= IsBlock
+		}
+		n.counts, n.seen = nil, false
+	}
+	for _, c := range n.Kids {
+		c.settle()
+	}
+}
+
+func (c Class) block() bool { return c >= ClassBlockNames }
 
 // merge folds one file's tree into the corpus's, and reports the members it added or wrote to, which is what a workspace retracts with the file.
 func (s *Tree) merge(src *Tree, into []kid) []kid {
@@ -506,11 +594,11 @@ func (n *Node) merge(src *Node, into []kid) []kid {
 	if src.Def != "" {
 		n.Def = src.Def
 	}
-	if len(src.labels) > 0 && n.labels == nil {
-		n.labels = make(map[string]int32, len(src.labels))
+	if len(src.counts) > 0 && n.counts == nil {
+		n.counts = make(map[Class]int32, len(src.counts))
 	}
-	for l, c := range src.labels {
-		n.labels[l] += c
+	for c, k := range src.counts {
+		n.counts[c] += k
 	}
 	if src.seen {
 		if !n.seen {
@@ -531,32 +619,6 @@ func (n *Node) merge(src *Node, into []kid) []kid {
 		into = append(into, kid{n, k})
 	}
 	return into
-}
-
-// settle publishes what the fold accumulated and drops its working state, over the whole tree.
-func (n *Node) settle() {
-	if n.seen || len(n.labels) > 0 {
-		n.Kinds, n.inter = n.inter, nil
-		best, at := int32(-1), ""
-		for l, c := range n.labels {
-			switch l {
-			case LabelLiteral:
-				n.Flags |= Literal
-			case LabelUnresolved:
-				n.Flags |= Unresolved
-			}
-			if c > best || (c == best && l < at) {
-				best, at = c, l
-			}
-		}
-		if strings.HasPrefix(at, "block:") {
-			n.Flags |= IsBlock
-		}
-		n.labels, n.seen = nil, false
-	}
-	for _, c := range n.Kids {
-		c.settle()
-	}
 }
 
 func intersect(a, b []string) []string {
@@ -662,18 +724,17 @@ func citedKinds(cites map[string]string, prefix map[string]string, decl *declare
 }
 
 // bind ties each declared prefix to the harvested database of the same name, tolerating the singular/plural split and the `_type` stem.
-func bind(decl *declared.Schema, keysByKind map[string]map[string]bool) []Bind {
-	if decl == nil {
-		return nil
-	}
-	var out []Bind
+func (s *Tree) bind(decl *declared.Schema, keysByKind map[string]map[string]bool) {
 	for prefix, scope := range decl.Prefixes() {
 		if kind := nameMatchKind(scope, keysByKind); kind != "" {
-			out = append(out, Bind{Prefix: prefix, Kind: kind, Scope: scope})
+			k := s.Root(kind, true).kind()
+			k.Scope = scope
+			if !slices.Contains(k.Prefixes, prefix) {
+				k.Prefixes = append(k.Prefixes, prefix)
+				slices.Sort(k.Prefixes)
+			}
 		}
 	}
-	slices.SortFunc(out, func(a, b Bind) int { return strings.Compare(a.Prefix, b.Prefix) })
-	return out
 }
 
 func nameMatchKind(scope string, keysByKind map[string]map[string]bool) string {
@@ -689,10 +750,13 @@ func nameMatchKind(scope string, keysByKind map[string]map[string]bool) string {
 }
 
 func (s *Tree) prefixMap() map[string]string {
-	out := make(map[string]string, len(s.Binds))
-	for _, b := range s.Binds {
-		out[strings.ToLower(b.Prefix)] = b.Kind
-	}
+	out := map[string]string{}
+	s.eachKind(func(kind string, k *Kind) bool {
+		for _, p := range k.Prefixes {
+			out[strings.ToLower(p)] = kind
+		}
+		return true
+	})
 	return out
 }
 
@@ -722,6 +786,7 @@ func (s *Tree) blocks(docFields map[string]map[string]bool, install bool) {
 				bits, _ := s.bodyClass(key)
 				n.Body |= bits
 				p.own = append(p.own, key)
+
 				// A member the game declares in exactly one class says which class this body is; one it declares in several says only that this is a body.
 				if bits&(bits-1) == 0 {
 					bodyByKey[name] |= bits
@@ -767,8 +832,7 @@ func (s *Tree) blocks(docFields map[string]map[string]bool, install bool) {
 			continue
 		}
 		for _, m := range p.own {
-			c, _ := s.KeyClass(m, false, false)
-			if n.Class == Structure || classes[c].member {
+			if n.Class == Structure || classes[s.Classify(m, false, false, nil).Class].member {
 				members[n.Struct][m] = true
 			}
 		}

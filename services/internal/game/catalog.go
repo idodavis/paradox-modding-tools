@@ -19,7 +19,6 @@ package game
 import (
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -618,22 +617,6 @@ func splitClassicDump(text string) []DocBlock {
 		}
 	}
 	return out
-}
-
-// ModifierAreaLabels are the headers a game uses for the list of areas a
-// modifier applies in. The same field, two spellings.
-//
-//	ck3   "Use areas"
-//	vic3  "Mask"
-//
-// EU5 states no areas at all, so it contributes no label.
-var ModifierAreaLabels = []string{"use areas", "mask"}
-
-// IsModifierAreaLabel reports a header naming a modifier's areas, in any game's
-// spelling. Case-insensitive; the dumps are not consistent about it.
-func IsModifierAreaLabel(header string) bool {
-	h := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(header), ":")))
-	return slices.Contains(ModifierAreaLabels, h)
 }
 
 // splitBareDump reads files whose headers are a bare "name:" at column 0

@@ -32,6 +32,11 @@
     }
   },
   "links": {
+    "character": {
+      "out": "character",
+      "global": true,
+      "data": true
+    },
     "capital_county": {
       "in": [
         "character"

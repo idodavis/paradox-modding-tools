@@ -22,7 +22,7 @@ import (
 )
 
 // CacheFormatVersion is the on-disk schema of an Index; a mismatch means rescan.
-const CacheFormatVersion = 53
+const CacheFormatVersion = 56
 
 // Def is one named object. OwnerKey is the enclosing scripted macro for script_param defs; Value is the harvested RHS at a script-name def site.
 type Def struct {
@@ -270,6 +270,11 @@ func (x *Index) wake() {
 	}
 	if x.LocKeysSorted == nil {
 		x.LocKeysSorted = map[string][]string{}
+	}
+
+	// A loaded index without a dump still answers every declared question: empty maps, never a nil pointer.
+	if x.Declared == nil {
+		x.Declared = &declared.Schema{}
 	}
 	x.Tree.gameID, x.Tree.decl = x.GameID, x.Declared
 	x.SortLocKeys()
@@ -724,7 +729,7 @@ func splitData(x *Index) *Index {
 			kept = append(kept, d)
 			continue
 		}
-		d.Doc, d.Value, d.OwnerKey, d.Nested = "", "", "", false
+		d.Doc, d.OwnerKey, d.Nested = "", "", false
 		data.Defs = append(data.Defs, d)
 	}
 	x.Defs = kept
@@ -789,6 +794,7 @@ func RelPath(root, file string) (rel string, ok bool) {
 	if r == "." {
 		return r, true
 	}
+
 	// The caller's spelling, not the canonical one: the relative path is displayed.
 	return filepath.Clean(file)[len(filepath.Clean(root))+1:], true
 }

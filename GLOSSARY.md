@@ -139,7 +139,7 @@ stated threshold, and the doc comment must name which — not "votes".
 
 | Concept | Canonical | Kill |
 |---|---|---|
-| Install-learned facts | `index.Tree`, one `Node` per position; `KeyClass`, `classes` | `votes.go`, `Votes`, "vote maps", `Derived`, `deriveX` |
+| Install-learned facts | `index.Tree`, one `Node` per position; `Tree.Classify` returning a `Token`, `classes`; a kind's facts on its root's `Node.Kind` | `votes.go`, `Votes`, "vote maps", `Derived`, `deriveX` |
 | Fire sites | `Node.Fire`, `File.resolve`, `fireSite` | `VoteFireKeys`, `deriveFireKeys`, `FireKeys` |
 | The join and the rows | `Tree.join`, `Node.Rows`/`Def`, `Tree.Shapes`, wrappers in `learn` | any `Vote*` or `derive*` name |
 | Prefix → kind origin | "bound by `bindKinds`" | "voted" |

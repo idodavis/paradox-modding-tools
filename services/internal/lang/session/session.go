@@ -487,10 +487,24 @@ func (s *Session) WorkRefs() []index.Ref {
 	return out
 }
 
+// Kinds is every database a name is a row of, which is what the classifier asks of a session.
+func (s *Session) Kinds(name string) []string {
+	var out []string
+	for _, d := range s.Defs(name) {
+		if k := jomini.CanonicalKind(d.Kind); index.IsCitableDef(d) && !slices.Contains(out, k) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// IsLoc reports a localization key, for the classifier.
+func (s *Session) IsLoc(name string) bool { return s.LocDefined(name) }
+
 // KindHasDefs reports whether anything defines an object of this kind; a reference to a kind with no definitions anywhere names an engine concept.
 func (s *Session) KindHasDefs(kind string) bool {
 	ck := jomini.CanonicalKind(kind)
-	return len(s.Work.DefsByKind[ck]) > 0 || len(s.Install.DefsByKind[ck]) > 0 || game.IsDataKind(s.GameID, ck)
+	return len(s.Work.DefsByKind[ck]) > 0 || len(s.Install.DefsByKind[ck]) > 0 || s.Install.Tree.IsData(ck)
 }
 
 // FindDefsOf returns defs whose keys contain query, or start with it if byPrefix. An empty kind searches every kind and drops ephemerals.
@@ -514,7 +528,7 @@ func (s *Session) FindDefsOf(query, kind string, limit int, byPrefix, includeVan
 	indexes := []*index.Index{s.Work}
 	if includeVanilla {
 		indexes = append(indexes, s.Install)
-		if want != "" && game.IsDataKind(s.GameID, want) {
+		if want != "" && s.Install.Tree.IsData(want) {
 			if d := s.Install.DataTier(); d != nil {
 				indexes = append(indexes, d)
 			}
@@ -599,7 +613,7 @@ func (s *Session) Contests(order []string) []index.Contest {
 	rewritesData := false
 	s.Work.EachDef(func(d index.Def) bool {
 		mods = append(mods, d)
-		rewritesData = rewritesData || game.IsDataKind(s.GameID, d.Kind)
+		rewritesData = rewritesData || s.Install.Tree.IsData(d.Kind)
 		return true
 	})
 	s.Install.EachDef(func(d index.Def) bool { vanilla = append(vanilla, d); return true })

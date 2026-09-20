@@ -49,6 +49,7 @@ func Scan(ctx context.Context, req ScanRequest) (*Index, *Index, error) {
 	}
 	step(5, "listing files")
 	inv := gather(scriptRoots(info, req.InstallPath))
+
 	// A game whose script root holds nothing is the wrong folder, not an empty game.
 	if len(inv.script) == 0 {
 		return nil, nil, fmt.Errorf("no script files under %s: check the install path", req.InstallPath)
@@ -100,6 +101,9 @@ func Scan(ctx context.Context, req ScanRequest) (*Index, *Index, error) {
 	x.Tree.Nested = x.Tree.Shapes()
 	x.compact()
 	data := splitData(x)
+
+	// The scanning process reads its own rows without a round trip through the cache.
+	x.data = data
 	x.SortLocKeys()
 	step(100, "done")
 	return x, data, nil
@@ -111,7 +115,7 @@ func BuildWorkspace(ctx context.Context, gameID string, mods []ModInput, base *I
 	slices.SortStableFunc(ordered, func(a, b ModInput) int { return cmp.Compare(a.Order, b.Order) })
 	x := NewIndex(gameID, base.Declared)
 	x.Docs = base.Docs
-	x.Tree.Binds, x.Tree.LocEngineSlots = base.Tree.Binds, base.Tree.LocEngineSlots
+	x.Tree.base, x.Tree.LocEngineSlots = &base.Tree, base.Tree.LocEngineSlots
 	x.Tree.Macros = maps.Clone(base.Tree.Macros)
 	var files []fileRef
 	for _, m := range ordered {
@@ -136,6 +140,7 @@ func (x *Index) learn(ctx context.Context, files []fileRef, base *Index, locLang
 	sks := make([]*skel, len(files))
 	dataFns := map[string]bool{}
 	var mu sync.Mutex
+
 	// Pass 1: definitions and the rows that need no global knowledge.
 	err := walkN(ctx, len(files), func(i int) error {
 		f, text, ok := x.open(files[i], i)
@@ -167,13 +172,14 @@ func (x *Index) learn(ctx context.Context, files []fileRef, base *Index, locLang
 		}
 	}
 	kindsByKey, keysByKind := x.citableWith(base)
-	if install && !decl.Empty() {
-		x.Tree.Binds = bind(decl, keysByKind)
+	if install {
+		x.Tree.bind(decl, keysByKind)
 	}
 	if x.Tree.Macros == nil {
 		x.Tree.Macros = map[string]string{}
 	}
 	x.macros(x.Tree.Macros)
+
 	// The guide the fold reads database marks from: a bootstrap tree the join marks for an install, the install's own tree for a workspace.
 	var guide *Tree
 	shapes := map[[2]string]bool{}
@@ -202,6 +208,7 @@ func (x *Index) learn(ctx context.Context, files []fileRef, base *Index, locLang
 			x.Add(&Harvest{Path: fs[i].Path, Rel: fs[i].Rel, Origin: fs[i].Origin, Kind: fs[i].Kind, Defs: defs})
 		}
 	}
+
 	// Row 7: a wrapper key is not a definition, and a site under one belongs to no definition.
 	wrappers := map[string]bool{}
 	for _, sk := range sks {
@@ -217,13 +224,14 @@ func (x *Index) learn(ctx context.Context, files []fileRef, base *Index, locLang
 	if len(wrappers) > 0 {
 		x.retract(func(d Def) bool { return wrappers[d.Key] })
 	}
+
 	// The nested definitions joined; the fold and the resolution see them.
 	kindsByKey, keysByKind = x.citableWith(base)
-	if install && !decl.Empty() {
-		x.Tree.Binds = bind(decl, keysByKind)
+	if install {
+		x.Tree.bind(decl, keysByKind)
 	}
-	r := &resolver{gameID: x.GameID, kindsByKey: kindsByKey, locKeys: locKeys(x, base, locLang),
-		prefix: x.Tree.prefixMap(), macros: x.Tree.Macros}
+	r := &resolver{tree: &x.Tree, kindsByKey: kindsByKey, locKeys: locKeys(x, base, locLang)}
+
 	// Pass 2: each file into a tree of its own, merged in file order so two scans of one install agree.
 	trees := make([]*Tree, len(files))
 	err = walkN(ctx, len(files), func(i int) error {
@@ -250,6 +258,7 @@ func (x *Index) learn(ctx context.Context, files []fileRef, base *Index, locLang
 	for _, root := range x.Tree.Kinds {
 		root.settle()
 	}
+
 	// A documented field is a member of the structure it is written for, whether or not vanilla writes it.
 	for structure, keys := range docFields {
 		if root := x.Tree.Root(structure, false); root != nil {
@@ -259,6 +268,14 @@ func (x *Index) learn(ctx context.Context, files []fileRef, base *Index, locLang
 		}
 	}
 	x.Tree.blocks(docFields, install)
+	if install {
+		for _, kind := range game.Get(x.GameID).DataKinds {
+			if r := x.Tree.Root(kind, false); r != nil {
+				r.kind().Data = true
+			}
+		}
+	}
+
 	// Pass 3: references and edges, against the settled tree.
 	settled := []*Tree{&x.Tree}
 	if !install {
@@ -324,6 +341,7 @@ func (x *Index) boot(fs []*File, sks []*skel, kindsByKey map[string][]string, ci
 			local[at] = [2]int32{local[at][0] + c[0], local[at][1] + c[1]}
 		}
 	}
+
 	// A definition-body field whose every value names one of the definition's own block keys says those keys are rows of a local database: a game rule's `default` names one of its options.
 	for at, c := range local {
 		if c[0] > 0 && c[0] == c[1] {
@@ -379,8 +397,7 @@ func (x *Index) IndexFile(f *File, base *Index) {
 		x.Add(&Harvest{Path: f.Path, Rel: f.Rel, Origin: f.Origin, Kind: f.Kind, Defs: defs})
 	}
 	kindsByKey, _ := x.citableWith(base)
-	r := &resolver{gameID: x.GameID, kindsByKey: kindsByKey, locKeys: locKeys(x, base, ""),
-		prefix: base.Tree.prefixMap(), macros: x.Tree.Macros}
+	r := &resolver{tree: &x.Tree, kindsByKey: kindsByKey, locKeys: locKeys(x, base, "")}
 	tree := f.fold(&base.Tree, r, false)
 	for _, root := range tree.Kinds {
 		root.settle()
@@ -828,6 +845,7 @@ func harvestGameInfo(gameID string, docs []fileRef) (Docs, map[string]map[string
 			}
 			firstWins(d.FieldInfo, d.Fields, kind, key, doc)
 		}
+
 		// A key documented inside an example block is addressed by that block, one structure wherever it is written.
 		for path, doc := range nested {
 			if block, bare, ok := strings.Cut(path, "."); ok {

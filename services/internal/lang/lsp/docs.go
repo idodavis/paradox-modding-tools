@@ -260,7 +260,7 @@ func declaredLines(s *session.Session, kind string, hang *index.Node, name strin
 	// 2. What the value may be: the declared target and, when a database is bound to it, the citation form; below it script_docs' own slot, then the game's written documentation, then the learned cell, which is only ever a sample of how vanilla happens to use the field.
 	r, isSlot := jomini.ScriptName(name)
 	dt := declaredFieldType(s, kind, name)
-	cellKind := childOf(s, hang, name).Kind()
+	cellKind := childOf(s, hang, name).Database()
 	if target := tokenTarget(s, name); target != "" {
 		cite, k := s.Install.Tree.CiteForm(target)
 		switch {
@@ -319,6 +319,7 @@ func declaredLines(s *session.Session, kind string, hang *index.Node, name strin
 			break
 		}
 	}
+
 	// The real signature of a macro with parameters is macroUsage, shown as a code block; this is the shape note for one that takes none.
 	if jomini.IsMacroKind(ck) {
 		parts = append(parts, "invoked by name")

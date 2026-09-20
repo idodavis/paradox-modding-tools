@@ -23,47 +23,28 @@ These are different pipelines. Never collapse them into one word.
 | What | Canonical | Where | What it is |
 |---|---|---|---|
 | Community wiki | wiki, Guide | `package wiki` | Sanitized MediaWiki HTML. Guide is wiki-only. |
-| Console dumps | script_docs | OS user-data `logs/` (CK3) or `docs/` (Vic3/EU5), archived to `cache/script-docs-*` | **The type system**, not an overlay. In-game `script_docs` output, parsed by `catalog/schema.go` into `Schema`. Source is `live` / `archive` / `missing`. |
-| Install prose | game info | Shipped `_*.info`, readmes, `*.md` **inside the game install** | Harvested into `fieldInfo` / `fieldInfoByKind`. Never call this script_docs or wiki. Never name the cache field `GameInfo` (collides with `game.GameInfo`). |
+| Console dumps | vocabulary (script_docs, dump_data_types) | OS user-data `logs/` (CK3) or `docs/` (Vic3/EU5), data types under `logs/data_types` | **What the game declares about its own language**, not an overlay: effects, triggers, links, scope types, modifiers, data types. |
+| Install prose | game info | Shipped `_*.info`, readmes, `*.md` **inside the game install** | The prose and the `<type>` a game writes beside its script. Never call this script_docs or wiki. Never name a field `GameInfo` (collides with `game.GameInfo`). |
 
-Hover one-liners are `session.FieldDoc`: kind `fieldInfo` → global `fieldInfo` →
-`Schema` token doc. Signatures come from `EngineToken.Usage`. There is no flat
-`TokenDoc` / `TokenUsage` / `TokenScopes` map and no `VanillaCache.Effects` /
-`.Triggers` — `Schema` is the single representation, read through the session
-accessors. Never persist a rendered hover string; `TokenScopes` used to hold
-`"character; targets: culture"` and that display-flattening is the bug this
-engine was rebuilt to remove.
+Never persist a rendered hover string: a cache that held `"character; targets: culture"` as display text is the bug the type system was rebuilt to remove.
 
 ## Install, user data, workshop
 
 | Tree | What |
 |---|---|
-| **Install** | Steam/Paradox game folder. Vanilla script, GUI, loc, game info. `VanillaCache` is keyed by install id + version. |
-| **User data** | `game.UserDataDir`: first existing of launcher `gameDataPath`; Win/mac `~/Documents/Paradox Interactive/<DocsFolderName>`; Linux `$XDG_DATA_HOME` or `~/.local/share/Paradox Interactive/<DocsFolderName>`; Proton `compatdata/<SteamAppID>/pfx/drive_c/users/steamuser/Documents/Paradox Interactive/<DocsFolderName>` (also Flatpak Steam). script_docs and the default `mod/` parent live here. |
-| **Workshop / mods** | User-specified mod roots on the workspace. Harvest is RAM-only (`BuildIndex`). |
+| **Install** | Steam/Paradox game folder. Vanilla script, GUI, loc, game info. An install's cache is keyed by install id + version. |
+| **User data** | `game.UserDataDir`: first existing of launcher `gameDataPath`; Win/mac `~/Documents/Paradox Interactive/<DocsFolderName>`; Linux `$XDG_DATA_HOME` or `~/.local/share/Paradox Interactive/<DocsFolderName>`; Proton `compatdata/<SteamAppID>/pfx/drive_c/users/steamuser/Documents/Paradox Interactive/<DocsFolderName>` (also Flatpak Steam). The dumps and the default `mod/` parent live here. |
+| **Workshop / mods** | User-specified mod roots on the workspace. A workspace's index is RAM-only. |
 
 ## Script
 
-Clausewitz/Jomini text (`.txt`, `.gui`). One CST in `parser/jomini`. Loc YAML is
-`parser/loc`. No third GUI parser. `MatchExtract` is **def kind**. `ClassifyRel`
-is **file bucket** (`script` / `gui` / `loc` / `info` / `meta`).
+Clausewitz/Jomini text (`.txt`, `.gui`, `.asset`, `.gfx`, `.font` and more: plan §4). One CST in `lang/jomini`. Loc YAML is `lang/loc`. No third GUI parser.
 
-**Game-aware vs shared.** `internal/game` is the only package that knows the
-titles apart; everything per-game is a field on `GameInfo` rather than a `switch`
-on a game id. The shared language — `CanonicalKind`, `ScriptSlot`,
-`ParseTyped`, `TypedSpans`, `ScriptName`, `IsEphemeral`, `ScriptParamSpan` —
-lives in `parser/jomini`, which is a leaf and must never import `game`. The test
-for membership is behavioural: a function belongs in `game` only if it acts
-differently on CK3, Victoria 3 and EU5. Taking a `gameID` parameter is not
-evidence — `ScriptName` and `SkipFieldRHS` both took one and never read it.
-Where a title reserves part of the shared grammar (EU5 spends `INJECT:` on entry
-modes), `game.ParseTyped` wraps `jomini.ParseTyped`; the leaf stays ignorant.
+**Game-aware vs shared.** `internal/game` is the only package that knows the titles apart; everything per-game is a field on `GameInfo` rather than a `switch` on a game id. The shared language lives in `lang/jomini`, which is a leaf and must never import `game`. The test for membership is behavioural: a function belongs in `game` only if it acts differently on CK3, Victoria 3 and EU5. Taking a `gameID` parameter is not evidence.
 
 ## Modding practice
 
-Load-order is **LIOS** (last in, only saved / last listed wins). CK3/Vic3 path
-overwrite; EU5 also `INJECT:` / `REPLACE:` entry modes. Patch = retarget a mod
-onto a new game version.
+Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins kinds per game in the registry. CK3 overrides by path and by key; Victoria 3 and EU5 also write entry modes before a definition's name (`INJECT:`, `REPLACE:`, `TRY_INJECT:`, `TRY_REPLACE:`, `INJECT_OR_CREATE:`, `REPLACE_OR_CREATE:`). Patch = retarget a mod onto a new game version.
 
 ## Canonical names
 
@@ -74,8 +55,6 @@ onto a new game version.
 | Events | `wiki:first`, `wiki:updated` | `docs:wiki-*` |
 | Package / load | `package wiki`, `LoadGuides`, `guidesPath()` | `package docs`, `LoadDocs`, persist `docsPath()` |
 | script_docs health | `scriptDocsEffects` (declared effect count) | `docsPresent`, UI “dumps required” |
-| Install prose maps | `fieldInfo` / `fieldInfoByKind` | `fieldDocs*`; never `VanillaCache.GameInfo` |
-| One hover sentence | `session.FieldDoc` | `FieldDocsForKind`, `Guide.FieldDocs` |
 | Dump signature | `EngineToken.Usage` | prose in the usage field; a flat `TokenUsage` map |
 | Dump effect text | `EngineToken.Doc` | stuffing into FieldInfo; a flat `TokenDoc` map |
 | Token input scope | `EngineToken.In` (`[]string`) | a rendered `TokenScopes` string |
@@ -83,96 +62,77 @@ onto a new game version.
 | Origin display | `originName` | showing the uuid |
 | Same origin field | JSON `origin` | `IdeRoot.originId` |
 | Def kind | `Def.Kind`, JSON `kind` | `Def.Type` / JSON `type` |
-| File bucket | `ClassifyRel` → `script`/`gui`/`loc`/`info`/`meta` | `FileKind`; bucket `"docs"` |
 | Absolute path | `path` | `LocEntry.File`, override `file` when absolute |
-| Display relative | `rel` | using `path` as the label; `DisplayRel` **fills** `rel` |
+| Display relative | `rel` | using `path` as the label |
 | Live session | `LanguageHealth.indexReady` | `ModelStatus.live` |
 | Query gate file | `useLiveEnabled.ts` | `useSessionQuery.ts` |
 | Load-order rule | LIOS | **LISO** |
 | Graph layout | dagre | AGENTS elkjs (do not add elkjs) |
 
-## Type system words
+## Engine terms
 
-| Term | Means |
-|---|---|
-| **Scope type** | A class an effect or trigger runs against (`character`, `country`). Declared in `event_scopes.log`. Not a "kind". |
-| **Kind** | A harvested database, named after its folder (`cultures`). `Def.Kind`. Not a scope type. |
-| **Scope link** | A named hop between scope types (`ruler`, `capital_county`), from `event_targets.log`. |
-| **Prefix** | A scope link citable as `name:key` (`culture:english`, `cu:`). Global + Requires Data. |
-| **Binding** | The join from a scope type to the kind(s) holding its rows. `catalog.bindKinds`. |
-| **Schema** | The whole declared type system for one install. `VanillaCache.Schema`. |
+The language engine is being rebuilt by `.claude/plans/language-engine.md`. These are its terms, copied from the plan's §5.0, and they win over older code, comments and documents. One word per thing.
 
-`KindScope` maps kind → scope type. `PrefixKinds` maps prefix → kind. Do not
-swap those two.
+| term | means | in a game file |
+|---|---|---|
+| install | one game folder at one version | `Crusader Kings III/game` |
+| root | a folder that mirrors the game layout: the game folder, each DLC folder, each mod | `dlc/dlc001`, a mod's folder |
+| origin | which root a file came from: `vanilla` or a mod's id | |
+| kind | one database of the game: all definitions of one type | traits; characters; GUI types |
+| definition | one entry of a kind, with a name | `brave = { … }` |
+| nested kind | a kind whose definitions are written inside another kind's definition | faiths inside a religion; settings inside a game rule |
+| subject kind | a kind whose entries are named after definitions made elsewhere and add facts to them; it defines nothing. History is the main case | `history/titles`: `k_france = { 867.1.1 = { holder = 168673 } }`; EU5 `location_templates`; GUI `blockoverride "text"` |
+| file template | a file the game finds by a definition's name in a fixed folder, never named in script | `gfx/interface/icons/traits/brave.dds` for the trait `brave` |
+| script-made kind | a kind with no folder, whose definitions script creates while it runs | saved scopes, variables, lists, flags |
+| field | one position below a definition: a key, learned from every place the install writes it under the same parent | `trigger` inside an event; `texture` inside a widget |
+| member | a field with a fixed key, as seen from its parent block | `title`, `desc`, `option` are members of an event |
+| position | a field whose key is not a fixed word (§5.3) | a date key, a numeric key, a bare word in a list |
+| body | a block of statements from the vocabulary | `trigger = { … }`, `immediate = { … }` |
+| value | one written word, and what it turned out to be | `brave`, `character:186004`, `"gfx/x.dds"`, `1066.9.15` |
+| reference | a word that names a definition, however it is spelled | `trait = brave`, `culture = "norse"`, `holder = 168673` |
+| cite | a reference spelled `prefix:name` | `title:k_france`, `scope:target` |
+| prefix | the word before the colon of a cite | `character`, `title`, `scope`, `var` |
+| scope type | the class of object a statement runs against | `character`, `landed_title`, `country` |
+| link | a declared hop between scope types | `liege`, `primary_title`, `root` |
+| engine token | an effect or trigger the game declares | `add_gold`, `has_trait`, `if`, `every_vassal` |
+| macro | a definition invoked by writing its name as a key | a scripted effect, a scripted trigger |
+| vocabulary | everything the game declares about its language, from `script_docs` and `dump_data_types` | the `logs` and `docs` dumps |
+| game info | the prose the install ships beside its script | `_traits.info`, `readme.txt`, `*.md` |
+| declared / learned | stated by the game (vocabulary, game info) / seen in the install's files. A name says which; only a declared fact lets a diagnostic accuse (§6a) | |
+| entry mode | a word before a definition's name that says how it combines with an earlier one | EU5 `REPLACE:name`, `INJECT:name` |
+| data call | a `[…]` expression in GUI or loc | `[Character.GetName]` |
+
+A **scope type** is not a kind, and a kind is not a scope type: `character` is what a statement runs against, `characters` is the database that defines them, and `Kind.ScopeType` is the one place the two are tied together.
 
 ## Macro, not "call kind"
 
-A **macro** is a `scripted_*` definition invoked by name. `jomini.IsMacroKind`
-settles it from the folder name. The old "call kind" vote is gone.
+A **macro** is a definition invoked by writing its name as a key: a scripted effect, a scripted trigger, a scripted list. `Effects` / `Triggers` mean the game's **declared** engine API from the vocabulary. Never reuse those words for macro names.
 
-| Concept | Canonical | Kill |
-|---|---|---|
-| Macro def keys → kind | `catalog.macroDefKinds` | `CallKindSet` |
-| Macro def key set | `catalog.macroDefKeys` | `EffectSet` (means engine effects) |
-| Persisted macro call sites | `macroCallRefs` | `callKindRefs` |
-| Session macro maps | `s.macroDefKinds`, `s.macroKeys` | `callKindSet`, `effectSet` |
-| Session predicates | `IsMacroKind`, `IsMacroDef` | `IsCallKind`, `IsCallKey` |
-| Session macro lookups | `FindMacroDefs`, `addMacroDefsLocked`, `rebuildMacroSetsLocked` | `FindDefsOfCallKind`, `addCallKindsLocked`, `rebuildCallSetsLocked` |
-| Macro call at a cursor | `macroCallAt`, `macroCallIdentity` | `callKindDefAt`, `callKindID` |
+## Declared and learned
 
-`Effects` / `Triggers` mean the game's **declared** engine API from `Schema`.
-Never reuse those words for macro keys.
+Two sources, and a name must say which one it came from. Getting this wrong is what produced hovers showing the wrong kind.
 
-## Declared, derived, inferred
+| Word | Source |
+|---|---|
+| **Declared** | The game states it: the vocabulary (the dumps) and the game info (the install's prose). Read verbatim. |
+| **Learned** | Seen in the install's own files by the learner, and written to the schema file. Never hand-written, never voted. |
 
-Three sources, and a name must say which one it came from. Getting this wrong is
-what produced hovers showing the wrong kind.
+Only a declared fact lets a diagnostic accuse; a learned fact offers a completion and names a hover, where being wrong costs a wrong suggestion (plan §6a). Do not say "derived", "voted" or "inferred" for either.
 
-| Word | Source | Where |
-|---|---|---|
-| **Declared** | The game states it in `script_docs` | `Schema`. Read verbatim. |
-| **Bound** | Deterministic join of declared types against harvested def keys | `bindKinds` → `KindScope`, `PrefixKinds` |
-| **Derived** | Install evidence, for the four things no dump states | `catalog/derive.go`, `Derived` |
-
-Nothing is **voted** any more. `Derive*` functions resolve by unanimity or a
-stated threshold, and the doc comment must name which — not "votes".
-
-| Concept | Canonical | Kill |
-|---|---|---|
-| Install-learned facts | `index.Tree`, one `Node` per position; `Tree.Classify` returning a `Token`, `classes`; a kind's facts on its root's `Node.Kind` | `votes.go`, `Votes`, "vote maps", `Derived`, `deriveX` |
-| Fire sites | `Node.Fire`, `File.resolve`, `fireSite` | `VoteFireKeys`, `deriveFireKeys`, `FireKeys` |
-| The join and the rows | `Tree.join`, `Node.Rows`/`Def`, `Tree.Shapes`, wrappers in `learn` | any `Vote*` or `derive*` name |
-| Prefix → kind origin | "bound by `bindKinds`" | "voted" |
-
-Only the derivations above exist, because only they are unstated by every dump:
-fire keys (`event` is not a scope type in any game), nested databases (CK3
-faiths under religions), setup wrappers, and the two localization conventions —
-how a kind names its keys (`deriveLocAffixes`) and which script properties hold
-one (`deriveLocFields`). Adding another means first proving no dump declares it.
-
-Every one carries an **evidence floor** as well as a coverage ratio —
-`minFieldHits`, `minOptionRefs`, `minAffixDefs`, `minLocFieldHits`. What each
-one is and why it is that number is measured in
-[GAME-SYNTAX.md §3e](GAME-SYNTAX.md).
-
-**Keep as different words:** `lsp.Position.character` vs `HoverResult.col`.
-`EventFieldInfo` vs cache `fieldInfo`. `Ref.Kind` vs `Def.Kind`. Disk
-`DocsFolderName` / `ScriptDocsSubdir`.
+**Keep as different words:** `lsp.Position.character` vs a card's `col`. `Ref.Kind` vs `Def.Kind`. Disk `DocsFolderName` / `ScriptDocsSubdir`.
 
 ## Code map
+
+The rows for the language engine return as each phase of the plan writes them.
 
 | Name | Lives in |
 |---|---|
 | `GameInfo`, `UserDataDir`, `MatchExtract`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
-| `CanonicalKind`, `ScriptSlot`, `ParseTyped`, `ScriptName`, `IsEphemeral` | `parser/jomini` — shared Jomini grammar, no game id |
+| The CST, the lexer, the name and literal shapes, encodings | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
+| Loc files, loc key conventions | `services/internal/lang/loc` |
+| `CacheDir`, `SaveJSON`, `LoadJSON`, `ErrFormat` | `services/internal/persist` |
 | `WriteNewMod`, `ReadListingFields`, `DescriptorModKeys` | `services/internal/modfile` |
-| `Index`, `Scan`, `BuildWorkspace`, `IndexFile`, `ClassifyRel` | `services/internal/lang/index` |
-| `ReadSchema` (declared), `bind` (prefix ↔ database) | `lang/declared/schema.go`, `index/schema.go` |
-| The three passes | `index/passes.go` (`defs`, `fold`, `resolve`) |
-| Two-halves lookups (Resolve, Edges, LocSite, Node…) | `session.Session`; prose lookups in `lsp/docs.go` |
-| LSP tests | beside the request: `inspect_test.go`, `definition_test.go`, `complete_test.go`, `diagnostics_test.go`, `cursor_test.go`; `lsp_test.go` is fixtures only |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
-| Health `scriptDocsEffects` | `SessionService.GetLanguageHealth` |
 | Guide UI | `GuidePane.vue` + monaco aux bar (`pmt.guide`) |
 | Graph layout | frontend `useGraphLayout` + `@dagrejs/dagre` |
 
@@ -208,29 +168,4 @@ They are in the registry too, under the `parse` group rather than `check`: they
 reach `ApplySeverities` like any other code, so leaving them out made them
 settable and not un-settable.
 
-**A derived pass never accuses. That is enforced, not asserted.** The derived
-passes — install-inferred field types, coverage-floored conventions — exist to
-offer a completion and to name a hover, where being wrong costs a wrong
-suggestion; a diagnostic that is wrong tells a modder their correct script is
-broken. See GAME-SYNTAX §13.
-
-The enforcement is `catalog.Ref.Derived`, set where a reference's KIND came from
-an install-derived pass rather than from a declaration. `refRows` drops those
-before emitting a **dangling** row, and `unknownEventDiags` skips them. Both
-incidents in this project's history were a strong derived pass reaching an
-accusing surface — 859 `body_part` rows from `FieldValueKinds`, 4,033 fire rows
-from `FireKeys` — and this is the mechanism that stops it.
-
-**Two codes are derived-fed with a calibration, and saying otherwise was the
-bug.** `required-loc` rests on `LocAffixes` at floor 100 and `unknown-key` on
-`NestedMembers` + `UnambiguousBlocks`; both are kept, because each has a
-published zero-findings-on-vanilla calibration. The honest claim is *"derived
-where the floor is calibrated against vanilla, declared everywhere else"* — the
-previous wording, that no diagnostic consults a derived pass, was false for
-three of the twelve.
-
-**Declared beats derived cuts both ways.** A fire reference is NOT derived when
-the game declares the fire key: CK3 states `trigger_event`, so `unknown-event`
-still reports a mod firing an event nobody defines. Only a fire key PMT inferred
-from the corpus is silenced. With no `script_docs` at all nothing is declared,
-so these checks correctly go quiet rather than guess.
+**A learned fact never accuses.** The rule, and the two findings that rest on a learned convention with a calibration against vanilla, are the plan's §6a. With no dumps at all nothing is declared, so the checks that need a declaration correctly go quiet rather than guess.

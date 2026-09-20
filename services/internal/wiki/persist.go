@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/persist"
 )
 
 type sidecarKind string
@@ -18,7 +18,7 @@ const (
 var sidecarKinds = []sidecarKind{kindGuides, kindPatches}
 
 var (
-	cacheDirFn = index.CacheDir
+	cacheDirFn = persist.CacheDir
 	memMu      sync.Mutex
 	mem        = map[sidecarKind]map[string]*Sidecar{
 		kindGuides:  {},
@@ -43,7 +43,7 @@ func forget(gameID string) {
 }
 
 // ForgetAll drops every in-memory wiki sidecar. Disk files are not touched.
-// Call after wiping index.CacheDir so Needed/HasSidecar do not reuse RAM.
+// Call after wiping persist.CacheDir so Needed/HasSidecar do not reuse RAM.
 func ForgetAll() {
 	memMu.Lock()
 	defer memMu.Unlock()
@@ -59,12 +59,12 @@ func remember(k sidecarKind, gameID string, f *Sidecar) {
 }
 
 func loadJSON(path string) (*Sidecar, error) {
-	return index.LoadJSON[Sidecar](path, FormatVersion)
+	return persist.LoadJSON[Sidecar](path, FormatVersion)
 }
 
 func saveJSON(path string, f *Sidecar) error {
 	f.FormatVersion = FormatVersion
-	return index.SaveJSON(path, f)
+	return persist.SaveJSON(path, f)
 }
 
 func loadMem(k sidecarKind, gameID string) (*Sidecar, error) {

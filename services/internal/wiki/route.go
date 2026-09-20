@@ -5,13 +5,12 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/jomini"
 )
 
 const guideTabCap = 6
 
 func isScriptKind(kind string) bool {
-	switch jomini.CanonicalKind(kind) {
+	switch strings.ReplaceAll(kind, " ", "_") {
 	case "loc_key", "loc", "gui_type", "gui", "mod_descriptor", "mod", "meta":
 		return false
 	default:
@@ -98,7 +97,7 @@ type fileMatch struct {
 }
 
 func fileTokens(kind, rel string) fileMatch {
-	ck := jomini.CanonicalKind(kind)
+	ck := strings.ReplaceAll(kind, " ", "_")
 	m := fileMatch{
 		tokens:     map[string]bool{},
 		kindFold:   fold(spaced(ck)),

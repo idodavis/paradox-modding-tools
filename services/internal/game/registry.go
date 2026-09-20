@@ -1,8 +1,7 @@
 // Package game is the only game-aware package in the backend: it answers what
-// a title calls things and where they live, for CK3, Vic3 and EU5. Files
-// mirror the package whose game-specific logic they hold (catalog.go ↔
-// internal/catalog, detect.go install discovery). Shared grammar with no
-// game branch belongs in parser/jomini, not here.
+// a title calls things and where they live, for CK3, Vic3 and EU5. detect.go
+// is install discovery. Shared grammar with no game branch belongs in
+// lang/jomini, not here.
 //
 // registry.go is the one file that knows the games apart: everything
 // per-game lives in the GameInfo table below, and the functions under it read
@@ -13,8 +12,6 @@ package game
 import (
 	"slices"
 	"strings"
-
-	"paradox-modding-tools/services/internal/lang/jomini"
 )
 
 // OriginVanilla is the session/IDE origin id for game files (not a cache filename).
@@ -181,7 +178,7 @@ func MatchExtract(gameID, relPath string) ExtractRule {
 	parent := parentFolder(segs)
 	switch {
 	case isAssetDir(gameID, segs):
-		return ExtractRule{Kind: jomini.CanonicalKind(parent), Mode: ModeNone}
+		return ExtractRule{Kind: strings.ReplaceAll(parent, " ", "_"), Mode: ModeNone}
 	case parent == "events" || slices.Contains(segs, "events"):
 		return ExtractRule{Kind: "event", Mode: ModeEventID}
 	case parent == "on_action" || parent == "on_actions" ||
@@ -190,7 +187,7 @@ func MatchExtract(gameID, relPath string) ExtractRule {
 	case parent == "gui" || strings.HasSuffix(strings.ToLower(relPath), ".gui"):
 		return ExtractRule{Kind: "gui_type", Mode: ModeGUIType}
 	default:
-		return ExtractRule{Kind: jomini.CanonicalKind(parent), Mode: ModeTopLevelKey}
+		return ExtractRule{Kind: strings.ReplaceAll(parent, " ", "_"), Mode: ModeTopLevelKey}
 	}
 }
 
@@ -233,24 +230,13 @@ func IsDataKind(gameID, kind string) bool {
 	if g == nil || kind == "" {
 		return false
 	}
-	k := jomini.CanonicalKind(kind)
+	k := strings.ReplaceAll(kind, " ", "_")
 	for _, d := range g.DataKinds {
-		if jomini.CanonicalKind(d) == k {
+		if strings.ReplaceAll(d, " ", "_") == k {
 			return true
 		}
 	}
 	return false
-}
-
-// ParseTyped splits `culture:english` into a harvested kind and id, rejecting
-// the prefixes this game spends on entry modes. Callers with a game id should
-// use this rather than jomini.ParseTyped, or EU5's `INJECT:foo` harvests a
-// database named "inject".
-func ParseTyped(gameID, text string) (kind, id string, ok bool) {
-	if i := strings.IndexByte(text, ':'); i > 0 && isEntryMode(gameID, text[:i]) {
-		return "", "", false
-	}
-	return jomini.ParseTyped(text)
 }
 
 // KeyIdentity canonicalizes a raw key for matching/merge: trims whitespace and

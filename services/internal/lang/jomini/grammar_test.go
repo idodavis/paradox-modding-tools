@@ -129,7 +129,7 @@ func FuzzNameShapes(f *testing.F) {
 
 // These run on every key of every file, four walks per scan, so they are kept
 // off the profile deliberately. Widening them to Unicode cost ~16% here
-// (232 -> 270 ns for 44 calls), which is ~0.7% of a scan against the 4.5% these
+// (232 -> 270 ns for 44 calls, measured when this loop also parsed a cite), which is ~0.7% of a scan against the 4.5% these
 // checks account for. Measure before assuming a decode per rune is free.
 func BenchmarkNameShapes(b *testing.B) {
 	keys := []string{
@@ -147,9 +147,6 @@ func BenchmarkNameShapes(b *testing.B) {
 				n++
 			}
 			if IsLowerName(k) {
-				n++
-			}
-			if _, ok := ParsePrefixed(k); ok {
 				n++
 			}
 		}

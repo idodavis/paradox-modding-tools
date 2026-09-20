@@ -1,7 +1,6 @@
-// grammar.go holds the Clausewitz words that are script structure rather than
-// names, and the name shapes the games key their objects by. Both are shared by
-// all three titles: a `limit` block is a limit in Crusader Kings III, Victoria 3
-// and EU5 alike, and nothing here asks which game it is reading.
+// grammar.go holds the name shapes the games key their objects by, and the
+// literal shapes. They are shared by all three titles, and nothing here asks
+// which game it is reading.
 //
 // Anything that DOES differ between the games lives in internal/game, in the
 // file mirroring the package that needs it.
@@ -14,22 +13,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 )
-
-// stopWords are keys that structure a script rather than name anything: control
-// flow, boolean literals, arithmetic in a script value, and the description
-// wrappers. A harvest that mints definitions from them fills the model with
-// `if`, `yes` and `factor`.
-var stopWords = map[string]bool{
-	"if": true, "else": true, "else_if": true, "limit": true, "and": true,
-	"or": true, "not": true, "nor": true, "nand": true, "this": true,
-	"root": true, "prev": true, "from": true, "fromfrom": true, "prevprev": true, "yes": true, "no": true,
-	"value": true, "add": true, "multiply": true, "divide": true,
-	"subtract": true, "min": true, "max": true, "factor": true, "base": true,
-	"first_valid": true, "triggered_desc": true, "random_list": true,
-}
-
-// IsStop reports a structural keyword rather than a name.
-func IsStop(key string) bool { return stopWords[strings.ToLower(key)] }
 
 // The three name shapes below are tested on every key of every file, and a scan
 // walks an install several times over, so they were the hottest regexes in the

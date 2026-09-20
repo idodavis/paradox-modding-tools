@@ -39,27 +39,6 @@ func TestKeyIdentityStripsEntryModePrefix(t *testing.T) {
 	}
 }
 
-// An entry mode is a prefix the game spends on merge semantics, so it never
-// names a database. Without this rejection EU5's `INJECT:foo` harvests a kind
-// literally called "inject".
-func TestParseTypedRejectsEntryModes(t *testing.T) {
-	for _, c := range []struct{ gameID, text string }{
-		{"eu5", "INJECT:foo"},
-		{"eu5", "REPLACE_OR_CREATE:foo"},
-		{"vic3", "REPLACE:foo"},
-		{"", "INJECT:foo"},
-	} {
-		if kind, _, ok := ParseTyped(c.gameID, c.text); ok {
-			t.Errorf("ParseTyped(%q, %q) = kind %q, want rejected", c.gameID, c.text, kind)
-		}
-	}
-	// CK3 declares no entry modes, so the same prefix stays a plain cite there,
-	// and an ordinary typed cite is untouched in every game.
-	if kind, id, ok := ParseTyped("ck3", "culture:english"); !ok || kind != "culture" || id != "english" {
-		t.Errorf("plain cite broke: kind=%q id=%q ok=%v", kind, id, ok)
-	}
-}
-
 func TestMatchExtract(t *testing.T) {
 	cases := []struct {
 		gameID, path string

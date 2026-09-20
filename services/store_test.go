@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"paradox-modding-tools/services/internal/lang/index"
 )
 
 func TestStore(t *testing.T) {
@@ -100,42 +98,6 @@ func TestStoreLoadFailureDoesNotWipe(t *testing.T) {
 			t.Fatalf("Mutate on first run: %v", err)
 		}
 	})
-}
-
-// covers session boot when a loc sidecar format is stale.
-func TestEnsureSession_staleLocSidecar(t *testing.T) {
-	installID := "pmt-test-stale-loc"
-	dir, err := index.CacheDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stale := filepath.Join(dir, "vanilla-loc-"+installID+"-latest-english.json")
-	if err := os.WriteFile(stale, []byte(`{"formatVersion":2,"sites":{}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = index.DropVanillaFiles(installID) })
-
-	store := newStore(filepath.Join(t.TempDir(), "config.json"))
-	if err := store.Mutate(func(c *Config) error {
-		c.Installs = append(c.Installs, GameInstall{
-			ID: installID, GameID: "ck3", Path: t.TempDir(), Version: "latest",
-		})
-		c.Workspaces = append(c.Workspaces, Workspace{
-			ID: "ws", GameID: "ck3", Name: "Test", InstallID: installID,
-		})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	svc := &SessionService{Store: store}
-	h, err := svc.EnsureSession("ws")
-	if err != nil {
-		t.Fatalf("stale loc sidecar must not fail session: %v", err)
-	}
-	if h == nil || !h.IndexReady {
-		t.Fatalf("want live session, got %+v", h)
-	}
 }
 
 func TestConvertMarkdown(t *testing.T) {

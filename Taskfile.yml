@@ -87,7 +87,9 @@ tasks:
       # than a minute belongs behind an opt-in task, not in the loop a developer
       # runs on every change. If this starts failing, move the test — do not
       # raise the number.
-      - go test -short -timeout 60s ./...
+      # The packages that compile while the language engine is rebuilt (.claude/plans/language-engine.md §15).
+      # Each phase adds the packages it writes; Phase 7 restores ./...
+      - go test -short -timeout 60s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/loc/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/steamugc/... ./internal/wiki/...
 
   test:race:
     summary: >
@@ -96,7 +98,7 @@ tasks:
       every consolidation. Keep this identical to .github/workflows/test.yml.
     dir: services
     cmds:
-      - go test -short -race -timeout 60s ./...
+      - go test -short -race -timeout 60s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/loc/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/steamugc/... ./internal/wiki/...
 
   check:
     summary: >
@@ -122,32 +124,6 @@ tasks:
       # Not 60s. That contract governs `task test`, the loop run on every change;
       # this tier scans three real installs and measured 126s for catalog alone.
       # The sweep is excluded by PMT_TEST_SWEEP, not by this number.
-      - go test -timeout 600s ./...
+      - go test -timeout 600s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/loc/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/steamugc/... ./internal/wiki/...
       - task: check
 
-  test:gate:
-    summary: >
-      The ship condition for every semantic diagnostic: zero findings on the
-      game's own script (~20s per game). A check that fires on vanilla is telling
-      a modder correct script is wrong. Needs PMT_TEST_INSTALL_{CK3,VIC3,EU5}.
-    dir: services
-    env:
-      PMT_VANILLA_GATE: "1"
-    cmds:
-      # Both gates. TestVanillaEventScopeClean was unreachable by any task in the
-      # repo — -short skipped it, PMT_VANILLA_GATE gated it, and this -run
-      # pattern did not match its name — so 104 lines never executed.
-      - go test ./internal/views/ -run 'TestVanilla(DiagnosticsClean|EventScopeClean)' -v -timeout 30m
-
-  test:sweep:
-    summary: >
-      Engine scoreboard: every Workspace Health check against every workshop mod
-      (~9min). Not part of test or test:full. Needs PMT_TEST_INSTALL_{CK3,VIC3,EU5}.
-      Counts are for investigation, not targets — see the baseline file. Runs the
-      determinism guard alongside, because a count that moves between runs cannot
-      be read as a regression either way.
-    dir: services
-    env:
-      PMT_TEST_SWEEP: "1"
-    cmds:
-      - go test ./internal/views/ -run 'TestSweep|TestHealthIsDeterministic' -v -timeout 3600s

@@ -1,0 +1,18 @@
+namespace = vsub
+
+vsub.1 = {
+	type = character_event
+	title = v.1.t
+	option = {
+		name = v.1.a
+		add_gold = 1
+	}
+}
+vsub.2 = {
+	type = character_event
+	title = v.2.t
+	option = {
+		name = v.2.a
+		add_gold = 2
+	}
+}

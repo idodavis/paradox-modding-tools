@@ -4,7 +4,6 @@ package loc
 
 import (
 	"slices"
-	"strconv"
 	"testing"
 )
 
@@ -29,8 +28,9 @@ func TestLearnAndExpand(t *testing.T) {
 		{"traits", traits, nil, []Template{"{id}", "{id}_desc"}},
 		{"titles", titles, []string{"adj"}, []Template{"{id}", "{id}_adj"}},
 		{"game_rules", rules, nil, []Template{"rule_{id}"}},
-		// Full coverage of too few definitions is a coincidence, not a convention.
-		{"too few defs", traits[:3], nil, nil},
+		// A shape one definition has is a coincidence, not a convention: it has to repeat.
+		{"one def", traits[:1], nil, nil},
+		{"two defs", traits[:2], nil, []Template{"{id}", "{id}_desc"}},
 	} {
 		got := Learn(tt.ids, tt.members, idx)
 		var names []Template
@@ -43,14 +43,5 @@ func TestLearnAndExpand(t *testing.T) {
 	}
 	if got := Expand("bold", []Convention{{"{id}", 1}, {"{id}_desc", 1}}); !slices.Equal(got, []string{"bold", "bold_desc"}) {
 		t.Errorf("Expand = %v", got)
-	}
-	// A key-building prefix needs minKeyPrefixHits resolving keys, not a ratio alone.
-	stems := map[string]bool{"x": true, "ONCE_x": true}
-	for i := range minKeyPrefixHits {
-		stems["k"+strconv.Itoa(i)] = true
-		stems["NOT_k"+strconv.Itoa(i)] = true
-	}
-	if got := LearnKeyPrefixes(NewKeys(stems)); !slices.Equal(got, []string{"NOT"}) {
-		t.Errorf("LearnKeyPrefixes = %v", got)
 	}
 }

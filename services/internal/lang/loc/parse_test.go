@@ -101,7 +101,7 @@ func TestParse(t *testing.T) {
 	})
 }
 
-func TestClassifyAndLooksLikeKey(t *testing.T) {
+func TestLooksLikeKey(t *testing.T) {
 	t.Run("language_from_filename", func(t *testing.T) {
 		cases := map[string]string{
 			"events_l_english.yml":   "english",
@@ -145,40 +145,7 @@ func TestClassifyAndLooksLikeKey(t *testing.T) {
 		}
 	})
 
-	t.Run("classify", func(t *testing.T) {
-		cases := map[string]Property{
-			"title":             PropStrict,
-			"desc":              PropStrict,
-			"first":             PropStrict,
-			"third":             PropStrict,
-			"global":            PropStrict,
-			"first_not":         PropStrict,
-			"first_past":        PropStrict,
-			"global_past_neg":   PropStrict,
-			"localization_key":  PropBroad, // customizable loc completes the stem at runtime
-			"selection_tooltip": PropStrict,
-			"war_name":          PropStrict,
-			"cb_name":           PropStrict,
-			"notification_text": PropStrict,
-			"notification":      PropBroad,
-			"TITLE":             PropNone, // trigger/effect arg, not event loc
-			"DESC":              PropNone,
-			"name":              PropBroad,
-			"tooltip":           PropBroad,
-			"id":                PropNone,
-			"color":             PropNone,
-		}
-		for prop, want := range cases {
-			if got := Classify(prop); got != want {
-				t.Errorf("Classify(%q) = %q want %q", prop, got, want)
-			}
-		}
-		// localization_key is BROAD, not STRICT; the properties that really demand a key stay strict.
-		for _, p := range []string{"desc", "title", "custom_tooltip", "war_name"} {
-			if got := Classify(p); got != PropStrict {
-				t.Errorf("Classify(%s) = %v, want %v", p, got, PropStrict)
-			}
-		}
+	t.Run("key_shape", func(t *testing.T) {
 		if LooksLikeKey("yes") || LooksLikeKey("NONE") || !LooksLikeKey("evt.1.t") {
 			t.Errorf("LooksLikeKey yes/none/evt.1.t")
 		}

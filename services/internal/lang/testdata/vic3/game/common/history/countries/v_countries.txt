@@ -1,0 +1,8 @@
+COUNTRIES = {
+	c:GBR = {
+		set_tax_level = medium
+	}
+	c:FRA = {
+		set_tax_level = high
+	}
+}

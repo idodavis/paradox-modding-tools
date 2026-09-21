@@ -1,0 +1,10 @@
+namespace = vw
+
+vw.1 = {
+	type = country_event
+	trigger = { is_player = yes }
+}
+vw.2 = {
+	type = country_event
+	trigger = { is_player = no }
+}

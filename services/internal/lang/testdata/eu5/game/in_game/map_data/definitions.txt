@@ -1,0 +1,18 @@
+europe = {
+	western_europe = {
+		france_region = {
+			paris_area = { paris lutetia }
+			loire_area = { orleans tours }
+		}
+		britain_region = {
+			thames_area = { london oxford }
+		}
+	}
+}
+asia = {
+	east_asia = {
+		china_region = {
+			beijing_area = { beijing tianjin }
+		}
+	}
+}

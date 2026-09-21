@@ -1,0 +1,35 @@
+namespace = vmore
+
+scripted_trigger v_inline_trigger = {
+	is_adult = yes
+}
+
+vmore.1 = {
+	type = character_event
+	title = v.1.t
+	trigger = {
+		v_inline_trigger = yes
+		NOT = { v_rule_trigger = yes }
+		gold >= define:NWar|WAR_COST
+		has_trait = trait:brave
+	}
+	immediate = {
+		v_gift_effect = yes
+		character:186004 = { add_trait = craven }
+		culture:norse = { save_scope_as = old_culture }
+		title:e_y = { save_scope_as = far_title }
+		title:k_y = { save_scope_as = near_title }
+	}
+	option = {
+		name = v.1.a
+		add_gold = 1
+	}
+}
+vmore.2 = {
+	type = character_event
+	title = v.2.t
+	option = {
+		name = v.2.a
+		add_gold = 2
+	}
+}

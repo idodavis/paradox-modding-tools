@@ -1,0 +1,8 @@
+POPS = {
+	s:STATE_HOME = {
+		create_pop = { culture = british size = 100 }
+	}
+	s:STATE_AWAY = {
+		create_pop = { culture = french size = 50 }
+	}
+}

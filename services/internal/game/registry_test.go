@@ -39,31 +39,6 @@ func TestKeyIdentityStripsEntryModePrefix(t *testing.T) {
 	}
 }
 
-func TestMatchExtract(t *testing.T) {
-	cases := []struct {
-		gameID, path string
-		kind         string
-		mode         ExtractMode
-	}{
-		{"ck3", "events/my_events.txt", "event", ModeEventID},
-		{"ck3", "common/traits/00_traits.txt", "traits", ModeTopLevelKey},
-		{"ck3", "gui/window.gui", "gui_type", ModeGUIType},
-		{"ck3", "localization/english/foo_l_english.yml", "loc_key", ModeLocKey},
-		{"ck3", "descriptor.mod", "mod_descriptor", ModeTopLevelKey},
-		{"ck3", "my_mod.mod", "mod_descriptor", ModeTopLevelKey},
-		{"ck3", "common/religion/religion_types/00_islam.txt", "religion_types", ModeTopLevelKey},
-		{"ck3", "common/on_action/activities/x.txt", "on_action", ModeTopLevelKey},
-		{"eu5", "in_game/events/foo.txt", "event", ModeEventID},
-		{"eu5", "in_game/common/religions/x.txt", "religions", ModeTopLevelKey},
-	}
-	for _, c := range cases {
-		r := MatchExtract(c.gameID, c.path)
-		if r.Kind != c.kind || r.Mode != c.mode {
-			t.Errorf("MatchExtract(%q, %q) = %+v want {%s %s}", c.gameID, c.path, r, c.kind, c.mode)
-		}
-	}
-}
-
 func TestIsFIOS(t *testing.T) {
 	cases := []struct {
 		gameID, kind string

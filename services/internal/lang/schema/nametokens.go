@@ -6,13 +6,13 @@ import "strings"
 // NameToken is one token and one place in it that holds a name. A token written with one word takes that word as the name; Member says where the name is when the token takes a block.
 type NameToken struct {
 	Token   string // set_variable, has_variable, save_scope_as, add_to_list, every_in_list
-	Kind    string // the script-made kind the name belongs to, one of scriptKinds
+	Kind    string // the script-made kind the name belongs to, one of ScriptKinds
 	Defines bool   // the token creates the name. false: it reads, changes or removes one
 	Member  string // the member that holds the name when the token takes a block: name, list, variable, flag. "" when it never takes one
 }
 
-// scriptKinds is the script-made kinds, each with the declared prefix that cites its names, "" when none does.
-var scriptKinds = map[string]string{
+// ScriptKinds is the script-made kinds, each with the declared prefix that cites its names, "" when none does. The learner makes a kind of each.
+var ScriptKinds = map[string]string{
 	"saved_scopes": "scope", "variables": "var", "local_variables": "local_var", "global_variables": "global_var", "lists": "", "flags": "",
 }
 

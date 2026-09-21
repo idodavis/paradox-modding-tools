@@ -1,0 +1,16 @@
+pdxmesh = {
+	name = "v_shared_mesh"
+	file = "v_shared.mesh"
+}
+pdxmesh = {
+	name = "v_shared_low_mesh"
+	file = "v_shared.mesh"
+}
+entity = {
+	name = "v_shared_entity"
+	pdxmesh = "v_shared_mesh"
+}
+entity = {
+	name = "v_shared_low_entity"
+	pdxmesh = "v_shared_low_mesh"
+}

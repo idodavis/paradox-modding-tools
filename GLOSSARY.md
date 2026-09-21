@@ -127,11 +127,12 @@ The rows for the language engine return as each phase of the plan writes them.
 
 | Name | Lives in |
 |---|---|
-| `GameInfo`, `UserDataDir`, `MatchExtract`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
+| `GameInfo` (with `SubjectDirs`, the folders whose definitions are named after other kinds': history, coats of arms, flags), `UserDataDir`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
 | The CST, the lexer, the name and literal shapes, encodings; `Cite`, `Mode`, `Constant`, `Interpolations` (the spellings inside one word) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install or a mod, its format, an image's header | `services/internal/source` — one format table for every game |
 | Loc files, loc key conventions | `services/internal/lang/loc` |
 | `Schema`, `Kind`, `Field`, `Accept`, `Value`, and the schema file (`Read`, `Write`); `Reader` (`Value`, `Key`), the one place that decides what a written word is; `Vocab` and `ReadVocab` (the script_docs dumps), `TokenParams`, `UsableIn`; `Info` and `ReadInfo` (the game info); `NameTokensOf` (the one hand table) | `services/internal/lang/schema` — what the game declares, what a scan learned, no game id |
+| `Learn`, `Relearn`, `Input`: an install's files in, its schema out | `services/internal/lang/learn` — the one place that infers, and never by a tuned number: a declared fact, then a registry row, then once, most or every |
 | `CacheDir`, `SaveJSON`, `LoadJSON`, `ErrFormat` | `services/internal/persist` |
 | `WriteNewMod`, `ReadListingFields`, `DescriptorModKeys` | `services/internal/modfile` |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |

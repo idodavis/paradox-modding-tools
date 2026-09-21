@@ -66,11 +66,8 @@ type GameInfo struct {
 	FIOSKinds []string `json:"-"`
 	FirstWins string   `json:"firstWins,omitempty"`
 
-	// DataKinds are the databases defined once per INSTANCE, not per rule: history, map, dynasty and portrait tables, persisted apart from the script cache and loaded on demand. Backend-only, like FIOSKinds.
-	DataKinds []string `json:"-"`
-
-	// AssetDirs are folders holding graphics data in a syntax of its own: the files parse, but their top-level keys name nothing a mod can refer to. EU5's gfx/map/city_data writes `mesh_list = { … }` 436 times over 16 files, which harvested 436 rival definitions of one name. Backend-only, like DataKinds.
-	AssetDirs []string `json:"-"`
+	// SubjectDirs are the folders whose definitions are named after other kinds' definitions: history, coats of arms, flags. The learner makes a kind under one a subject kind of the kind that defines its names, and gives it no prefix. They are parent folders, so a folder the game adds below one needs no row. Backend-only, like FIOSKinds.
+	SubjectDirs []string `json:"-"`
 }
 
 // GameList is the Wails payload for ListGames (consts are not exported).
@@ -93,11 +90,7 @@ var registry = map[string]*GameInfo{
 		SteamAppID:       1158310,
 		FIOSKinds:        []string{"gui_type"},
 		FirstWins:        "GUI types and templates are first-wins.",
-		// 126,208 of 204,699 defs in the 1.19.0.6 install (61.7%).
-		DataKinds: []string{
-			"characters", "province_terrain", "barony", "provinces", "dynasties",
-			"dynasty_houses", "titles", "map_data", "dna_data", "name_equivalency",
-		},
+		SubjectDirs:      []string{"history", "common/coat_of_arms"},
 	},
 	"vic3": {
 		ID:               "vic3",
@@ -112,8 +105,7 @@ var registry = map[string]*GameInfo{
 		SteamAppID:       529340,
 		FIOSKinds:        []string{"gui_type", "event"},
 		FirstWins:        "GUI types, templates, and events are first-wins.",
-		// 3,375 of 41,012 defs (8.2%); common/history names collide with script kinds and `c:TAG` keeps country_definitions eager.
-		DataKinds: []string{"character_templates", "state_regions", "dna_data"},
+		SubjectDirs:      []string{"common/history", "common/coat_of_arms", "common/flag_definitions"},
 	},
 	"eu5": {
 		ID:         "eu5",
@@ -131,9 +123,7 @@ var registry = map[string]*GameInfo{
 		SteamAppID:       3450310,
 		FIOSKinds:        []string{"event"},
 		FirstWins:        "Events are first-wins; GUI types last-wins.",
-		// 28,883 of 84,606 defs (34.1%); the definitions.txt area/region hierarchy is a named grouping, and `c:TAG` keeps countries eager.
-		DataKinds: []string{"map_data", "dynasty", "persistent_dna"},
-		AssetDirs: []string{"gfx/map/city_data"},
+		SubjectDirs:      []string{"setup/start", "common/coat_of_arms", "common/flag_definitions"},
 	},
 }
 
@@ -147,74 +137,6 @@ func All() []*GameInfo {
 	return []*GameInfo{registry["ck3"], registry["eu5"], registry["vic3"]}
 }
 
-// ExtractMode names how definition keys are read out of a file.
-type ExtractMode string
-
-const (
-	ModeTopLevelKey ExtractMode = "top-level-key" // root `key = { ... }`
-	ModeEventID     ExtractMode = "event-id"      // `namespace.1 = { ... }`
-	ModeGUIType     ExtractMode = "gui-type"      // GUI `type X = ...` / `template X { }`
-	ModeLocKey      ExtractMode = "loc-key"       // localization `key: "..."`
-	ModeNone        ExtractMode = "none"          // asset data: the file parses, its keys define nothing
-)
-
-// ExtractRule says what kind of definitions a file yields and how to read them.
-type ExtractRule struct {
-	Kind string
-	Mode ExtractMode
-}
-
-// MatchExtract maps a file path (relative to the game/mod script root) to its
-// extract rule. The default is "parent folder name => kind, top-level-key";
-// events/gui/localization override that. EU5 stage-root prefixes are ignored.
-func MatchExtract(gameID, relPath string) ExtractRule {
-	segs := stripStageRoot(gameID, pathSegments(relPath))
-	if slices.Contains(segs, "localization") {
-		return ExtractRule{Kind: "loc_key", Mode: ModeLocKey}
-	}
-	if isModFile(relPath) {
-		return ExtractRule{Kind: "mod_descriptor", Mode: ModeTopLevelKey}
-	}
-	parent := parentFolder(segs)
-	switch {
-	case isAssetDir(gameID, segs):
-		return ExtractRule{Kind: strings.ReplaceAll(parent, " ", "_"), Mode: ModeNone}
-	case parent == "events" || slices.Contains(segs, "events"):
-		return ExtractRule{Kind: "event", Mode: ModeEventID}
-	case parent == "on_action" || parent == "on_actions" ||
-		slices.Contains(segs, "on_action") || slices.Contains(segs, "on_actions"):
-		return ExtractRule{Kind: "on_action", Mode: ModeTopLevelKey}
-	case parent == "gui" || strings.HasSuffix(strings.ToLower(relPath), ".gui"):
-		return ExtractRule{Kind: "gui_type", Mode: ModeGUIType}
-	default:
-		return ExtractRule{Kind: strings.ReplaceAll(parent, " ", "_"), Mode: ModeTopLevelKey}
-	}
-}
-
-// isAssetDir reports a path inside one of this game's graphics-data folders, wherever the DLC layout puts it.
-func isAssetDir(gameID string, segs []string) bool {
-	g := Get(gameID)
-	if g == nil {
-		return false
-	}
-	p := "/" + strings.Join(segs, "/")
-	for _, d := range g.AssetDirs {
-		if strings.Contains(p, "/"+d+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-// isModFile reports whether relPath is a Paradox .mod descriptor.
-func isModFile(relPath string) bool {
-	p := strings.ReplaceAll(relPath, "\\", "/")
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		p = p[i+1:]
-	}
-	return strings.HasSuffix(strings.ToLower(p), ".mod")
-}
-
 // IsFIOS reports whether kind resolves first-in-order for this game.
 // Empty/unknown gameID keeps the historical gui_type-only default.
 func IsFIOS(gameID, kind string) bool {
@@ -222,21 +144,6 @@ func IsFIOS(gameID, kind string) bool {
 		return slices.Contains(g.FIOSKinds, kind)
 	}
 	return kind == "gui_type"
-}
-
-// IsDataKind reports whether kind is one of this game's data-row databases.
-func IsDataKind(gameID, kind string) bool {
-	g := Get(gameID)
-	if g == nil || kind == "" {
-		return false
-	}
-	k := strings.ReplaceAll(kind, " ", "_")
-	for _, d := range g.DataKinds {
-		if strings.ReplaceAll(d, " ", "_") == k {
-			return true
-		}
-	}
-	return false
 }
 
 // KeyIdentity canonicalizes a raw key for matching/merge: trims whitespace and
@@ -277,37 +184,4 @@ func trimQuotes(s string) string {
 		}
 	}
 	return s
-}
-
-// pathSegments splits a slash- or backslash-separated path into non-empty segments.
-func pathSegments(p string) []string {
-	raw := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
-	out := make([]string, 0, len(raw))
-	for _, s := range raw {
-		if s != "" && s != "." {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// parentFolder returns the directory segment immediately containing the file.
-func parentFolder(segs []string) string {
-	if len(segs) >= 2 {
-		return segs[len(segs)-2]
-	}
-	return ""
-}
-
-// stripStageRoot drops a leading EU5 stage-root segment (in_game, etc.) so extract
-// rules see the same folder layout across games.
-func stripStageRoot(gameID string, segs []string) []string {
-	g := Get(gameID)
-	if g == nil || len(segs) == 0 {
-		return segs
-	}
-	if slices.Contains(g.StageRoots, segs[0]) {
-		return segs[1:]
-	}
-	return segs
 }

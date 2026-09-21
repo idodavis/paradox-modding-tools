@@ -3,14 +3,28 @@
 	dynasty = 1012
 	religion = "catholic"
 	culture = "norse"
+	trait = brave
 	830.1.1 = {
 		birth = yes
+	}
+	850.1.1 = {
+		add_spouse = 186010
 	}
 }
 186009 = {
 	name = "Einarr"
 	culture = "norse"
+	father = 186004
+	trait = craven
 	861.1.1 = {
+		birth = yes
+	}
+}
+186010 = {
+	name = "Ragnhild"
+	female = yes
+	culture = "english"
+	835.1.1 = {
 		birth = yes
 	}
 }

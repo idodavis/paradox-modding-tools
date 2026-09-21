@@ -1,3 +1,21 @@
 v_trigger = {
 	exists = $TARGET$
 }
+v_rich_trigger = {
+	OR = {
+		gold > big_value
+		trigger_if = {
+			limit = { is_adult = yes }
+			v_inline_trigger = yes
+		}
+	}
+	big_value > 3
+	any_rich_vassal = { is_adult = yes }
+}
+v_rule_trigger = {
+	NOT = { any_child = { v_rich_trigger = yes } }
+	has_game_rule = opt_b
+	has_game_rule = opt_hard
+	has_game_rule = opt_fast
+	has_game_rule = opt_a
+}

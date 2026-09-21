@@ -36,7 +36,7 @@ func TestNameTokensOf(t *testing.T) {
 func TestNameTokenTable(t *testing.T) {
 	seen := map[[2]string]bool{}
 	for _, row := range nameTokens {
-		if _, ok := scriptKinds[row.Kind]; !ok {
+		if _, ok := ScriptKinds[row.Kind]; !ok {
 			t.Errorf("%s names the kind %q, which is no script-made kind", row.Token, row.Kind)
 		}
 		if at := [2]string{row.Token, row.Member}; seen[at] {
@@ -45,7 +45,7 @@ func TestNameTokenTable(t *testing.T) {
 			seen[at] = true
 		}
 	}
-	if len(scriptKinds) != 6 || scriptKinds["saved_scopes"] != "scope" || scriptKinds["variables"] != "var" || scriptKinds["flags"] != "" {
-		t.Errorf("scriptKinds = %v", scriptKinds)
+	if len(ScriptKinds) != 6 || ScriptKinds["saved_scopes"] != "scope" || ScriptKinds["variables"] != "var" || ScriptKinds["flags"] != "" {
+		t.Errorf("ScriptKinds = %v", ScriptKinds)
 	}
 }

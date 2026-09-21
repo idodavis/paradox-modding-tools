@@ -1,0 +1,62 @@
+Event Target Documentation:
+
+--------------------
+
+root - the root scope
+Global Link: yes
+Output Scopes: none
+
+--------------------
+
+scope - a saved scope
+Requires Data: yes
+Global Link: yes
+Output Scopes: none
+
+--------------------
+
+define - a define
+Requires Data: yes
+Global Link: yes
+Output Scopes: value
+
+--------------------
+
+value - A numeric literal value
+Wild Card: yes
+Global Link: yes
+Output Scopes: value
+
+--------------------
+
+c - Get the country with the specified tag
+Requires Data: yes
+Global Link: yes
+Output Scopes: country
+
+--------------------
+
+s - Get the state region with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: state_region
+
+--------------------
+
+p - Get the province with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: province
+
+--------------------
+
+owner - the owner of the state
+Input Scopes: state
+Output Scopes: country
+
+--------------------
+
+Event Targets Saved from Code:
+
+actor
+recipient

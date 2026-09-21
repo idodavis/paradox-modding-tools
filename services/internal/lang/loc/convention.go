@@ -54,6 +54,18 @@ func (k *Keys) PrefixesOf(id string) []string {
 // Has reports an exact key.
 func (k *Keys) Has(key string) bool { return k != nil && k.has[key] }
 
+// Count is how many keys a template matches, whatever stands for {id}.
+func (k *Keys) Count(t Template) int {
+	before, after, _ := strings.Cut(string(t), "{id}")
+	n := 0
+	for key := range k.has {
+		if len(key) > len(before)+len(after) && strings.HasPrefix(key, before) && strings.HasSuffix(key, after) {
+			n++
+		}
+	}
+	return n
+}
+
 // render fills a template's {id} with the def id.
 func render(t Template, id string) string {
 	return strings.ReplaceAll(string(t), "{id}", id)
@@ -71,31 +83,24 @@ func Expand(id string, cs []Convention) []string {
 	return out
 }
 
-// minConventionDefs is how many definitions a kind needs before a shared shape is evidence, not coincidence.
-const minConventionDefs = 8
-
-// storageCutoff is what a template must cover to be worth keeping in the file at all. It decides nothing: `required-loc` demands coverage 1.0 and reads Convention.Coverage, and every other consumer reads the exact number too.
-const storageCutoff = 0.9
-
-// Learn keeps the templates that cover enough of a kind's vanilla ids to be worth storing, each with its exact coverage.
+// Learn keeps the templates under which most of a kind's vanilla ids have a key, each with its exact coverage: `required-loc` demands coverage 1.0 and every other consumer reads the number too. A shape only one definition has is no convention, because a convention is what repeats.
 func Learn(ids []string, members []string, keys *Keys) []Convention {
-	if len(ids) < minConventionDefs || keys == nil {
+	if keys == nil {
 		return nil
 	}
 	var out []Convention
-	// need is what a template must still reach; one that cannot is abandoned where it stands, which is exact and keeps CK3's ten million (template, id) pairs off the profile.
-	need := int(storageCutoff*float64(len(ids)) + 0.999999)
-	for _, t := range candidates(ids, members, keys, storageCutoff) {
+	for _, t := range candidates(ids, members, keys) {
+		// a template that can no longer reach most ids is abandoned where it stands, which is exact and keeps CK3's ten million (template, id) pairs off the profile
 		hits := 0
 		for i, id := range ids {
 			if keys.Has(render(t, id)) {
 				hits++
-			} else if hits+len(ids)-i-1 < need {
+			} else if (hits+len(ids)-i-1)*2 <= len(ids) {
 				break
 			}
 		}
-		if cov := float64(hits) / float64(len(ids)); cov >= storageCutoff {
-			out = append(out, Convention{Template: t, Coverage: cov})
+		if hits > 1 && hits*2 > len(ids) {
+			out = append(out, Convention{Template: t, Coverage: float64(hits) / float64(len(ids))})
 		}
 	}
 	// Best evidence first, then the plainest shape, so the first hit is the def's own name.
@@ -111,8 +116,8 @@ func Learn(ids []string, members []string, keys *Keys) []Convention {
 	return out
 }
 
-// candidates is the base shapes, one literal template per block member, and one per qualifying prefix.
-func candidates(ids, members []string, keys *Keys, minCoverage float64) []Template {
+// candidates is the base shapes, one literal template per block member, and one per prefix that precedes most ids.
+func candidates(ids, members []string, keys *Keys) []Template {
 	out := slices.Clone(baseTemplates)
 	add := func(t Template) {
 		if !slices.Contains(out, t) {
@@ -133,7 +138,7 @@ func candidates(ids, members []string, keys *Keys, minCoverage float64) []Templa
 	}
 	prefixes := make([]string, 0, len(counts))
 	for p, n := range counts {
-		if p != "" && float64(n) >= minCoverage*float64(len(ids)) {
+		if p != "" && n*2 > len(ids) {
 			prefixes = append(prefixes, p)
 		}
 	}
@@ -141,33 +146,5 @@ func candidates(ids, members []string, keys *Keys, minCoverage float64) []Templa
 	for _, p := range prefixes {
 		add(Template(p + "_{id}"))
 	}
-	return out
-}
-
-// minKeyPrefixHits is how many keys must resolve through a prefix before it is a convention.
-const minKeyPrefixHits = 20
-
-// LearnKeyPrefixes finds prefixes that build one loc key out of another (EU5's NOT_<key>).
-func LearnKeyPrefixes(keys *Keys) []string {
-	if keys == nil {
-		return nil
-	}
-	hits, total := map[string]int{}, map[string]int{}
-	for suffix, prefixes := range keys.prefixes {
-		stem := keys.has[suffix]
-		for _, p := range prefixes {
-			total[p]++
-			if stem {
-				hits[p]++
-			}
-		}
-	}
-	var out []string
-	for p, n := range hits {
-		if p != "" && n >= minKeyPrefixHits && float64(n) >= storageCutoff*float64(total[p]) {
-			out = append(out, p)
-		}
-	}
-	slices.Sort(out)
 	return out
 }

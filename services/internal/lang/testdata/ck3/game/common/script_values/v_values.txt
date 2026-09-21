@@ -1,0 +1,11 @@
+small_value = 5
+big_value = {
+	value = 10
+	add = small_value
+	if = {
+		limit = { is_adult = yes }
+		multiply = 2
+	}
+	min = 1
+}
+age_limit_value = define:NGame|MAX_AGE

@@ -306,7 +306,7 @@ func TestDumpsAreRead(t *testing.T) {
 		count("Modifier.Categories", modCategories)
 
 		// the prefix of every script-made kind is one the game declares
-		for kind, prefix := range scriptKinds {
+		for kind, prefix := range ScriptKinds {
 			if prefix != "" && !v.Links[prefix].Prefix {
 				t.Errorf("%s: %s are cited by %s:, which the game does not declare as a prefix", g.id, kind, prefix)
 			}

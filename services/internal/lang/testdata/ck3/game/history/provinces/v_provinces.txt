@@ -1,0 +1,8 @@
+1 = {
+	culture = norse
+	holding = castle_holding
+}
+2 = {
+	culture = english
+	holding = city_holding
+}

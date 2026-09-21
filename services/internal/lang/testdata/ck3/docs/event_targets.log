@@ -1,0 +1,94 @@
+Event Target Documentation:
+
+--------------------
+
+root - the root scope
+Global Link: yes
+Output Scopes: none
+
+--------------------
+
+scope - a saved scope
+Requires Data: yes
+Global Link: yes
+Output Scopes: none
+
+--------------------
+
+define - a define
+Requires Data: yes
+Global Link: yes
+Output Scopes: value
+
+--------------------
+
+value - A numeric literal value
+Wild Card: yes
+Global Link: yes
+Output Scopes: value
+
+--------------------
+
+title - Get the landed title with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: landed_title
+
+--------------------
+
+character - Get the character with the specified id
+Requires Data: yes
+Global Link: yes
+Output Scopes: character
+
+--------------------
+
+culture - Get the culture with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: culture
+
+--------------------
+
+faith - Get the faith with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: faith
+
+--------------------
+
+trait - Get the trait with the specified key
+Requires Data: yes
+Global Link: yes
+Output Scopes: trait
+
+--------------------
+
+father - the father of the character
+Input Scopes: character
+Output Scopes: character
+
+--------------------
+
+holder - the holder of the title
+Input Scopes: landed_title
+Output Scopes: character
+
+--------------------
+
+liege - the liege of the character
+Input Scopes: character
+Output Scopes: character
+
+--------------------
+
+capital_county - the capital county
+Input Scopes: character
+Output Scopes: landed_title
+
+--------------------
+
+Event Targets Saved from Code:
+
+actor
+recipient

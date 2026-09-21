@@ -1,0 +1,28 @@
+msg_birth = {
+	display = feed
+	style = good
+	title = msg_birth_title
+}
+msg_death = {
+	display = popup
+	style = bad
+	title = msg_death_title
+}
+msg_war = {
+	display = toast
+	style = bad
+	title = msg_war_title
+}
+msg_peace = {
+	display = toast
+	style = good
+	title = msg_peace_title
+}
+msg_feast = {
+	display = feed
+	style = good
+}
+msg_duel = {
+	display = popup
+	style = bad
+}

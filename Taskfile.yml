@@ -89,7 +89,7 @@ tasks:
       # raise the number.
       # The packages that compile while the language engine is rebuilt (.claude/plans/language-engine.md §15).
       # Each phase adds the packages it writes; Phase 7 restores ./...
-      - go test -short -timeout 60s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/loc/... ./internal/lang/schema/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+      - go test -short -timeout 60s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/schema/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
 
   test:race:
     summary: >
@@ -98,7 +98,7 @@ tasks:
       every consolidation. Keep this identical to .github/workflows/test.yml.
     dir: services
     cmds:
-      - go test -short -race -timeout 60s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/loc/... ./internal/lang/schema/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+      - go test -short -race -timeout 60s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/schema/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
 
   check:
     summary: >
@@ -124,6 +124,6 @@ tasks:
       # Not 60s. That contract governs `task test`, the loop run on every change;
       # this tier scans three real installs and measured 126s for catalog alone.
       # The sweep is excluded by PMT_TEST_SWEEP, not by this number.
-      - go test -timeout 600s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/loc/... ./internal/lang/schema/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+      - go test -timeout 600s ./internal/game/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/schema/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
       - task: check
 

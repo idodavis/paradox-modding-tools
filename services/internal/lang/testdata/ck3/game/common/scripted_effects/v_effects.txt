@@ -1,3 +1,27 @@
 v_effect = {
 	add_gold = $AMOUNT$
 }
+v_list_effect = {
+	every_adult_child = { add_gold = 1 }
+	add_to_variable_list = { name = seen_list target = root }
+	every_in_list = {
+		variable = seen_list
+		add_gold = 1
+	}
+	hidden_effect = {
+		if = {
+			limit = { v_trigger = { TARGET = root } }
+			v_effect = { AMOUNT = 1 }
+		}
+	}
+}
+v_gift_effect = {
+	if = {
+		limit = { NOT = { any_child = { is_adult = yes } } }
+		add_gold = small_value
+	}
+	else = {
+		v_effect = { AMOUNT = 2 }
+		v_list_effect = yes
+	}
+}

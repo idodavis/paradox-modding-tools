@@ -1,0 +1,2 @@
+catalyst_situation_flood = { }
+catalyst_situation_drought = { }

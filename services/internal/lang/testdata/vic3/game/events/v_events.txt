@@ -1,4 +1,17 @@
 namespace = vv
+
 vv.1 = {
-	type = character_event
+	type = country_event
+	trigger = {
+		NOT = { any_scope_state = { owner = c:FRA } }
+	}
+	immediate = {
+		every_scope_state = { create_pop = { culture = british size = 1 } }
+		p:x0974E5 = { save_scope_as = home_province }
+		p:x4A0B1C = { save_scope_as = away_province }
+	}
+}
+vv.2 = {
+	type = country_event
+	trigger = { is_player = yes }
 }

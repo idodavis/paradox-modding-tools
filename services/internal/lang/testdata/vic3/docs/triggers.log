@@ -1,0 +1,48 @@
+Trigger Documentation:
+
+--------------------
+
+always - checks if the assigned yes/no value is true
+Traits: yes/no
+Supported Scopes: none
+
+--------------------
+
+and - all inside trigger must be true
+Supported Scopes: none
+
+--------------------
+
+or - at least one entry inside trigger must be true
+Supported Scopes: none
+
+--------------------
+
+not - negates content of trigger
+Supported Scopes: none
+
+--------------------
+
+trigger_if - Evaluates the triggers if the display_triggers of the limit are met
+trigger_if = { limit = { <display_triggers> } <triggers> }
+Supported Scopes: none
+
+--------------------
+
+exists - checks whether the target exists
+Supported Scopes: none
+
+--------------------
+
+any_scope_state - Iterate through all states
+any_scope_state = { <count=num/all> / <percent=fixed_point> <triggers> }
+Supported Scopes: country
+Supported Targets: state
+
+--------------------
+
+is_player - is the country a player
+Traits: yes/no
+Supported Scopes: country
+
+--------------------

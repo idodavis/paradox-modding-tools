@@ -1,0 +1,205 @@
+schema = {
+	game = eu5
+	version = test
+}
+drift = {
+}
+countries = {
+	folders = { setup/countries }
+	naming = {
+		form = key
+	}
+	prefixes = { c }
+	scope_type = country
+	shape = {
+		count = 2
+		class = structure
+		members = {
+			color = {
+				count = 2
+				class = list
+				accepts = {
+					color = 2
+				}
+			}
+		}
+	}
+}
+events = {
+	folders = { events }
+	naming = {
+		form = event_id
+	}
+	shape = {
+		count = 3
+		class = structure
+		members = {
+			immediate = {
+				count = 1
+				class = body
+				body = { effect }
+				body_scope = country
+			}
+			select_trigger = {
+				count = 1
+				class = structure
+				members = {
+					show_if = {
+						count = 1
+						class = structure
+					}
+				}
+			}
+			trigger = {
+				count = 2
+				class = body
+				body = { trigger }
+				body_scope = country
+			}
+			type = {
+				count = 3
+				class = value
+				accepts = {
+					enum = {
+						count = 3
+						words = { country_event }
+					}
+				}
+			}
+		}
+	}
+}
+flags = {
+	naming = {
+		form = token
+	}
+}
+global_variables = {
+	naming = {
+		form = token
+	}
+	prefixes = { global_var }
+}
+lists = {
+	naming = {
+		form = token
+	}
+}
+local_variables = {
+	naming = {
+		form = token
+	}
+	prefixes = { local_var }
+}
+map_data = {
+	folders = { map_data }
+	naming = {
+		form = key
+	}
+	prefixes = { continent }
+	scope_type = continent
+	shape = {
+		count = 2
+		class = database
+		defines = map_data.sub_continent
+	}
+}
+map_data.sub_continent = {
+	naming = {
+		form = key
+	}
+	parent = map_data
+	prefixes = { sub_continent }
+	scope_type = sub_continent
+	shape = {
+		count = 2
+		class = database
+		defines = map_data.sub_continent.area
+	}
+}
+map_data.sub_continent.area = {
+	naming = {
+		form = key
+	}
+	parent = map_data.sub_continent
+	prefixes = { area region }
+	scope_type = area
+	shape = {
+		count = 7
+		class = list
+		accepts = {
+			string = 8
+		}
+		defines = map_data.sub_continent.area
+	}
+}
+saved_scopes = {
+	naming = {
+		form = token
+	}
+	prefixes = { scope }
+}
+town_rights = {
+	folders = { common/town_rights }
+	naming = {
+		form = key
+	}
+	shape = {
+		count = 1
+		class = structure
+		members = {
+			local_trades_per_burgher = {
+				count = 1
+				class = value
+				accepts = {
+					number = 1
+				}
+			}
+		}
+	}
+}
+variables = {
+	naming = {
+		form = token
+	}
+	prefixes = { var }
+}
+arguments = {
+	add_prestige = {
+		count = 2
+		class = value
+		accepts = {
+			number = 2
+		}
+	}
+	any_owned_location = {
+		count = 1
+		class = body
+		body = { trigger }
+	}
+	every_owned_location = {
+		count = 1
+		class = body
+		body = { effect }
+	}
+	exists = {
+		count = 11
+		class = value
+		accepts = {
+			ref:map_data.sub_continent.area = 6
+			string = 5
+		}
+	}
+	is_ai = {
+		count = 1
+		class = value
+		accepts = {
+			bool = 1
+		}
+	}
+	not = {
+		count = 1
+		class = body
+		body = { trigger }
+	}
+}

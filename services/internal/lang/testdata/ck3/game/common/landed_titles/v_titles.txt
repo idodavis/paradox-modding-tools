@@ -5,5 +5,14 @@ e_x = {
 		c_x = {
 			color = { 3 3 3 }
 		}
+		c_y = {
+			color = { 4 4 4 }
+		}
+	}
+}
+e_y = {
+	color = { 5 5 5 }
+	k_y = {
+		color = { 6 6 6 }
 	}
 }

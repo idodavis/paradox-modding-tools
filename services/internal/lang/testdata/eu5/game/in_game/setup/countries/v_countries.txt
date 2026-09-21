@@ -1,0 +1,6 @@
+FRA = {
+	color = rgb { 30 30 200 }
+}
+ENG = {
+	color = rgb { 200 30 30 }
+}

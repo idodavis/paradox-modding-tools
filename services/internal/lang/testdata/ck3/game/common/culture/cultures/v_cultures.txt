@@ -4,3 +4,6 @@ english = {
 french = {
 	color = { 3 2 1 }
 }
+norse = {
+	color = hsv { 0.1 0.2 0.3 }
+}

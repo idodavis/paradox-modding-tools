@@ -1,0 +1,8 @@
+GBR = {
+	color = { 200 30 30 }
+	capital = STATE_HOME
+}
+FRA = {
+	color = { 30 30 200 }
+	capital = STATE_AWAY
+}

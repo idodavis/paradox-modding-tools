@@ -131,6 +131,7 @@ The rows for the language engine return as each phase of the plan writes them.
 | The CST, the lexer, the name and literal shapes, encodings; `Cite`, `Mode`, `Constant`, `Interpolations` (the spellings inside one word) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install or a mod, its format, an image's header | `services/internal/source` — one format table for every game |
 | Loc files, loc key conventions | `services/internal/lang/loc` |
+| `Schema`, `Kind`, `Field`, `Accept`, `Value`, and the schema file (`Read`, `Write`); `Reader` (`Value`, `Key`), the one place that decides what a written word is; `Vocab` and `ReadVocab` (the script_docs dumps), `TokenParams`, `UsableIn`; `Info` and `ReadInfo` (the game info); `NameTokensOf` (the one hand table) | `services/internal/lang/schema` — what the game declares, what a scan learned, no game id |
 | `CacheDir`, `SaveJSON`, `LoadJSON`, `ErrFormat` | `services/internal/persist` |
 | `WriteNewMod`, `ReadListingFields`, `DescriptorModKeys` | `services/internal/modfile` |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |

@@ -68,5 +68,7 @@ descriptor, parser, LSP, or semantics code.
 
 - `task test` (fast, `-short`), `task test:race` before any consolidation,
   `task test:full` with `PMT_TEST_INSTALL_*` set for the real-install tier.
-- Test layout: `X_test.go` beside `X.go`; the only other names are
-  `gate_*`, `bench_*`, `probe_*`, and `<pkg>_test.go` for shared fixtures.
+- Test layout: one `X_test.go` beside each `X.go`, and a gate over a real
+  install lives in the `X_test.go` of the code it tests. The only other names
+  are `gate_*` for a gate that crosses packages, `bench_*`, `probe_*`, and
+  `<pkg>_test.go` for shared fixtures.

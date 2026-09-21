@@ -1,14 +1,11 @@
-// grammar.go holds the name shapes the games key their objects by, and the
-// literal shapes. They are shared by all three titles, and nothing here asks
-// which game it is reading.
+// names.go holds the name shapes the games key their objects by. They are shared
+// by all three titles, and nothing here asks which game it is reading.
 //
-// Anything that DOES differ between the games lives in internal/game, in the
-// file mirroring the package that needs it.
+// Anything that DOES differ between the games lives in internal/game.
 
 package jomini
 
 import (
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -19,7 +16,7 @@ import (
 // profile -- 4.5% of scan time for what are character-class checks. Written out
 // they allocate nothing and never enter the regexp engine.
 //
-// grammar_test.go pins each against the pattern it replaced, and fuzzes the
+// names_test.go pins each against the pattern it replaced, and fuzzes the
 // equivalence, because a silent difference changes what the whole model harvests.
 
 // The games ship non-ASCII identifiers and PMT has to read them. Victoria 3's
@@ -140,52 +137,4 @@ func PeelComment(raw string) (body string, hashed bool) {
 		t = strings.TrimSpace(t[1:])
 	}
 	return t, hashed
-}
-
-// LiteralKind is what a scalar is when it is not a name.
-type LiteralKind uint8
-
-const (
-	NotLiteral LiteralKind = iota
-	LitNumber              // an integer or decimal, signed or not
-	LitDate                // Y.M.D, optionally Y.M.D.H
-)
-
-// Literal reads a scalar: a number through strconv, a date through ParseDate, else a name.
-func Literal(text string) LiteralKind {
-	if _, _, _, _, ok := ParseDate(text); ok {
-		return LitDate
-	}
-	if text != "" && !strings.ContainsAny(text, "eE_ ") {
-		if _, err := strconv.ParseFloat(text, 64); err == nil {
-			return LitNumber
-		}
-	}
-	return NotLiteral
-}
-
-// ParseDate reads a Clausewitz date, `Y.M.D` or `Y.M.D.H`, every part digits. Two parts is an event id (`ns.1`), never a date; history files key their blocks by a date, so a date is never a definition name.
-func ParseDate(text string) (y, m, d, h int, ok bool) {
-	parts := strings.Split(text, ".")
-	if len(parts) != 3 && len(parts) != 4 {
-		return 0, 0, 0, 0, false
-	}
-	out := [4]int{}
-	for i, p := range parts {
-		if p == "" || len(p) > 5 || !IsDigits(p) {
-			return 0, 0, 0, 0, false
-		}
-		out[i], _ = strconv.Atoi(p)
-	}
-	return out[0], out[1], out[2], out[3], true
-}
-
-// IsDigits reports a non-empty run of ASCII digits.
-func IsDigits(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return s != ""
 }

@@ -128,7 +128,8 @@ The rows for the language engine return as each phase of the plan writes them.
 | Name | Lives in |
 |---|---|
 | `GameInfo`, `UserDataDir`, `MatchExtract`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
-| The CST, the lexer, the name and literal shapes, encodings | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
+| The CST, the lexer, the name and literal shapes, encodings; `Cite`, `Mode`, `Constant`, `Interpolations` (the spellings inside one word) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
+| `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install or a mod, its format, an image's header | `services/internal/source` — one format table for every game |
 | Loc files, loc key conventions | `services/internal/lang/loc` |
 | `CacheDir`, `SaveJSON`, `LoadJSON`, `ErrFormat` | `services/internal/persist` |
 | `WriteNewMod`, `ReadListingFields`, `DescriptorModKeys` | `services/internal/modfile` |

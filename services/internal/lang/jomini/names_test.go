@@ -1,4 +1,4 @@
-// grammar_test.go pins the hand-written name checks against the regular
+// names_test.go pins the hand-written name checks against the regular
 // expressions they stand in for. They are tested on every key of every file and
 // a scan walks the install four times, so they were the hottest regexes in the
 // profile -- but a silent difference would change what the whole model harvests.

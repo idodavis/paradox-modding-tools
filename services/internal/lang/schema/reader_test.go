@@ -177,3 +177,43 @@ func TestReaderKey(t *testing.T) {
 		}
 	}
 }
+
+func TestReaderBelow(t *testing.T) {
+	r := reader()
+	limit := &Field{Name: "limit", Class: ClassBody, Body: BodyTrigger}
+	r.Schema.Arguments = map[string]*Field{"if": {Name: "if", Class: ClassBody, Body: BodyEffect, Members: map[string]*Field{"limit": limit}}}
+	setting := &Kind{Name: "game_rules.setting", Shape: &Field{Name: "setting"}}
+	r.Schema.Kinds["game_rules.setting"] = setting
+	vbox := &Field{Name: "vbox"}
+	window := &Kind{Name: "gui.window", Shape: &Field{Members: map[string]*Field{"vbox": vbox}}}
+	body := &Field{Name: "immediate", Class: ClassBody, Body: BodyEffect, Members: map[string]*Field{"limit": limit}}
+	dated, numbered, names, cites := &Field{Name: "<date>"}, &Field{Name: "<number>"}, &Field{Name: "<name>"}, &Field{Name: "<cite>"}
+	entry := &Field{Name: "entry", Class: ClassStructure, Members: map[string]*Field{"<date>": dated, "<number>": numbered, "<name>": names, "<cite>": cites, "hbox": {Name: "hbox"}}}
+	rule := &Field{Name: "rule", Class: ClassStructure, Defines: "game_rules.setting", Members: map[string]*Field{"default": {Name: "default"}}}
+
+	for _, tt := range []struct {
+		what   string
+		kind   *Kind
+		parent *Field
+		key    string
+		want   *Field
+	}{
+		{"a member", nil, body, "limit", limit},
+		{"a token takes what the game's tokens take", nil, body, "if", r.Schema.Arguments["if"]},
+		{"a scope change in a body stays in the body", nil, body, "liege", body},
+		{"a cite in a body stays in the body", nil, body, "title:k_france", body},
+		{"a parameter in a body stays in the body", nil, body, "$ACTOR$", body},
+		{"a date selects its position", nil, entry, "867.1.1", dated},
+		{"a number selects its position", nil, entry, "12", numbered},
+		{"a cite in a structure selects its position", nil, entry, "title:k_france", cites},
+		{"a name selects the position of names", nil, entry, "anything_else", names},
+		{"a nested kind's name leads to that kind's shape", nil, rule, "on", setting.Shape},
+		{"and so does one nothing has defined yet", nil, rule, "brand_new", setting.Shape},
+		{"a key that can hold itself is found at the top of its kind", window, entry.Members["hbox"], "vbox", vbox},
+		{"nothing learned", nil, nil, "limit", nil},
+	} {
+		if got := r.Below(tt.kind, tt.parent, tt.key, r.Key(tt.parent, tt.key)); got != tt.want {
+			t.Errorf("%s: %+v, want %+v", tt.what, got, tt.want)
+		}
+	}
+}

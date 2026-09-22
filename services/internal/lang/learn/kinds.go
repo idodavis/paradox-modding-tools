@@ -20,6 +20,7 @@ type draft struct {
 	shape   *node
 	parent  *draft // a nested kind: the kind whose definitions hold this one's
 	subject *draft // a subject kind: the kind its names are definitions of
+	params  bool   // its definitions' text holds $NAME$ somewhere
 }
 
 // merge adds the counts of one position into another, members and all.

@@ -44,15 +44,15 @@ func TestIsFIOS(t *testing.T) {
 		gameID, kind string
 		want         bool
 	}{
-		{"ck3", "gui_type", true},
-		{"ck3", "event", false},
-		{"vic3", "gui_type", true},
-		{"vic3", "event", true},
-		{"eu5", "event", true},
-		{"eu5", "gui_type", false},
-		{"", "gui_type", true},
-		{"", "event", false},
-		{"unknown", "gui_type", true},
+		{"ck3", "gui.type", true},
+		{"ck3", "events", false},
+		{"vic3", "gui.type", true},
+		{"vic3", "events", true},
+		{"eu5", "events", true},
+		{"eu5", "gui.type", false},
+		{"", "gui.type", true},
+		{"", "events", false},
+		{"unknown", "gui.type", true},
 	}
 	for _, c := range cases {
 		if got := IsFIOS(c.gameID, c.kind); got != c.want {

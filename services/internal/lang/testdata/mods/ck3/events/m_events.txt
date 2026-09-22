@@ -1,0 +1,27 @@
+namespace = m
+
+m.1 = {
+	type = character_event
+	title = v.1.t
+	trigger = {
+		NOT = { any_child = { has_trait = bold } }
+		v_rich_trigger = yes
+	}
+	immediate = {
+		trigger_event = v.2
+		v_effect = { AMOUNT = 3 }
+		save_scope_as = mod_target
+	}
+	option = {
+		name = v.1.a
+		add_gold = 1
+	}
+}
+m.2 = {
+	type = character_event
+	title = v.2.t
+	option = {
+		name = v.2.a
+		trigger_event = m.1
+	}
+}

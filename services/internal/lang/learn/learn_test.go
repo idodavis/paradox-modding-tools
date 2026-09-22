@@ -111,7 +111,7 @@ func learned(t *testing.T, files map[string]string, subjects []string, keys ...s
 func names(s *schema.Schema) []string {
 	var out []string
 	for name, k := range s.Kinds {
-		if k.Naming.Form != "token" && k.Naming.Form != "constant" {
+		if k.Naming.Form != "token" && k.Naming.Form != "constant" && k.Naming.Form != "param" {
 			out = append(out, name)
 		}
 	}
@@ -215,14 +215,18 @@ func scanned(t *testing.T, id, install string, docs ...string) *schema.Schema {
 	t.Helper()
 	files, keys := source.Inventory("vanilla", source.Roots(install)), map[string]bool{}
 	for _, f := range files {
-		if f.Format == source.Loc && strings.Contains(strings.ToLower(f.Rel), "english") {
+		if f.Format == source.Loc && loc.LanguageFromRel(f.Rel) == "english" {
 			text, _ := f.Text()
 			for _, e := range loc.Parse(text).Entries {
 				keys[e.Key] = true
 			}
 		}
 	}
-	s, err := Learn(context.Background(), Input{Game: id, Version: "test", Files: files, Vocab: schema.ReadVocab(docs), Info: schema.ReadInfo(files), Loc: loc.NewKeys(keys), EntryModes: game.Get(id).EntryModes, Subjects: game.Get(id).SubjectDirs})
+	var modes []string
+	for _, m := range game.Get(id).EntryModes {
+		modes = append(modes, m.Word)
+	}
+	s, err := Learn(context.Background(), Input{Game: id, Version: "test", Files: files, Vocab: schema.ReadVocab(docs), Info: schema.ReadInfo(files), Loc: loc.NewKeys(keys), EntryModes: modes, Subjects: game.Get(id).SubjectDirs})
 	if err != nil {
 		t.Fatal(err)
 	}

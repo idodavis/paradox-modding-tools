@@ -1,0 +1,8 @@
+first_thing = {
+	weight = 1
+	trait = bold
+}
+second_thing = {
+	weight = 2
+	trait = brave
+}

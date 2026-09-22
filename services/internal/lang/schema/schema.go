@@ -55,8 +55,8 @@ type Naming struct {
 	Column  int    // column: the column that holds the name
 }
 
-// namingForms is every way a definition is named: brave = { } is key, 186004 = { } number, birth.1001 = { } event_id, @x = 5 constant, pdxmesh = { name = "x" } member, type x = button { } declaration, history/cultures/afghan.txt file, a table's column, a list file's line, a loc key matching the kind's template, a bare word of a list, a name token's argument, and none where the files define nothing.
-var namingForms = []string{"key", "number", "event_id", "constant", "member", "declaration", "file", "column", "line", "loc_key", "word", "token", "none"}
+// namingForms is every way a definition is named: brave = { } is key, 186004 = { } number, birth.1001 = { } event_id, @x = 5 constant, pdxmesh = { name = "x" } member, type x = button { } declaration, history/cultures/afghan.txt file, a table's column, a list file's line, a loc key matching the kind's template, $NAME$ in a macro's text param, a name token's argument, and none where the files define nothing.
+var namingForms = []string{"key", "number", "event_id", "constant", "member", "declaration", "file", "column", "line", "loc_key", "param", "token", "none"}
 
 // Field is one position below a definition, learned from every place the install writes it under the same parent.
 type Field struct {

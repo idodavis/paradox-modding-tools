@@ -531,7 +531,7 @@ gui.window = {
 						count = 1
 						class = value
 						accepts = {
-							string = 1
+							file = 1
 						}
 					}
 				}
@@ -964,6 +964,11 @@ opinion_modifiers = {
 		}
 	}
 }
+params = {
+	naming = {
+		form = param
+	}
+}
 religions = {
 	folders = { common/religion/religions }
 	naming = {
@@ -1072,6 +1077,7 @@ scripted_effects = {
 		form = key
 	}
 	macro = { effect }
+	params = yes
 	shape = {
 		count = 3
 		class = body
@@ -1127,6 +1133,7 @@ scripted_triggers = {
 		keyword = scripted_trigger
 	}
 	macro = { trigger }
+	params = yes
 	shape = {
 		count = 4
 		class = body

@@ -66,7 +66,7 @@ type census struct {
 	tokens    map[string]*node           // what is written after a declared token, past a position's maxMembers
 	cites     map[string]map[string]int  // prefix to the names cited under it
 	constants map[string]int             // @name = value, at the top of any file
-	files     map[string]bool            // the inventory: every file by its lower-cased path from a root, and by its lower-cased name
+	files     map[string]bool            // the inventory: every file by its lower-cased path from a root, by its lower-cased name, and by that name with .* for its extension (.tga is written where .dds ships)
 	modes     map[string]int             // the entry modes written before top-level names: REPLACE, INJECT
 	written   map[string]int             // every declared token written as a key, wherever
 	holds     map[string]map[string]bool // a declared token to the declared tokens written directly inside its blocks

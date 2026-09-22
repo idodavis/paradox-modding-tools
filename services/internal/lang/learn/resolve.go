@@ -4,6 +4,7 @@ package learn
 import (
 	"cmp"
 	"maps"
+	"path"
 	"slices"
 	"strings"
 
@@ -424,7 +425,7 @@ func (c *census) accepts(key string, at *node, class schema.Class) []schema.Acce
 		if c.keys.Has(w) {
 			by = append(by, "<loc>")
 		}
-		if base := strings.ToLower(w[strings.LastIndexByte(w, '/')+1:]); c.files[strings.ToLower(w)] || (strings.Contains(base, ".") && c.files[base]) {
+		if base := strings.ToLower(w[strings.LastIndexByte(w, '/')+1:]); c.files[strings.ToLower(w)] || (strings.Contains(base, ".") && (c.files[base] || c.files[strings.TrimSuffix(base, path.Ext(base))+".*"])) {
 			by = append(by, "<file>")
 		}
 		for _, kind := range by {

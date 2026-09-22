@@ -164,6 +164,34 @@ func (r Reader) Key(parent *Field, text string) Value {
 	return Value{Type: TypeUnresolved, Name: text}
 }
 
+// Below is the field under a key that Key read as v, inside a definition of kind: the member; the position a number, a date or a cite selects; for a token, what the game's tokens take wherever they stand; under a field whose keys are a nested kind's names, that kind's shape; else the position of names. In a body a scope change (a link, a cite, a $PARAM$) changes the scope and not the field, so the field below it is the body itself. A key that can hold itself is learned once, at the top of its kind (a GUI vbox inside an hbox inside a vbox), and is looked for there last. nil where nothing was learned.
+func (r Reader) Below(kind *Kind, parent *Field, key string, v Value) *Field {
+	if v.Type == TypeToken {
+		return r.Schema.Arguments[v.Name]
+	}
+	if parent == nil {
+		return nil
+	}
+	_, cited := jomini.Cite(key)
+	position := map[ValueType]string{TypeNumber: "<number>", TypeDate: "<date>"}[v.Type]
+	switch {
+	case v.Type == TypeMember:
+		return parent.Members[key]
+	case parent.Class == ClassBody && (v.Type == TypeScopePath || cited || len(jomini.Interpolations(key)) > 0):
+		return parent
+	case cited:
+		position = "<cite>"
+	case position == "" && parent.Defines != "" && r.Schema.Kinds[parent.Defines] != nil:
+		return r.Schema.Kinds[parent.Defines].Shape
+	case position == "":
+		position = "<name>"
+	}
+	if f := parent.Members[position]; f != nil || kind == nil || kind.Shape == nil {
+		return f
+	}
+	return kind.Shape.Members[key]
+}
+
 // cite reads a word written prefix:name with no chain after it, when the prefix is one the vocabulary declares or one that belongs to a kind. Where several kinds share the prefix, the one that has the definition is named, else the first. define:NGame|START_DATE names START_DATE, inside NGame. A declared prefix that belongs to no kind gives a reference with no kind, which nothing judges: flag:some_flag is a plain value.
 func (r Reader) cite(text string) (Value, bool) {
 	c, ok := jomini.Cite(text)

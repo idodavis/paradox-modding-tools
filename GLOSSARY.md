@@ -99,7 +99,7 @@ The language engine is being rebuilt by `.claude/plans/language-engine.md`. Thes
 | vocabulary | everything the game declares about its language, from `script_docs` and `dump_data_types` | the `logs` and `docs` dumps |
 | game info | the prose the install ships beside its script | `_traits.info`, `readme.txt`, `*.md` |
 | declared / learned | stated by the game (vocabulary, game info) / seen in the install's files. A name says which; only a declared fact lets a diagnostic accuse (§6a) | |
-| entry mode | a word before a definition's name that says how it combines with an earlier one | EU5 `REPLACE:name`, `INJECT:name` |
+| entry mode | a word before a definition's name that says how it combines with an earlier one | Victoria 3 and EU5 `REPLACE:name`, `INJECT:name` |
 | data call | a `[…]` expression in GUI or loc | `[Character.GetName]` |
 
 A **scope type** is not a kind, and a kind is not a scope type: `character` is what a statement runs against, `characters` is the database that defines them, and `Kind.ScopeType` is the one place the two are tied together.
@@ -127,12 +127,13 @@ The rows for the language engine return as each phase of the plan writes them.
 
 | Name | Lives in |
 |---|---|
-| `GameInfo` (with `SubjectDirs`, the folders whose definitions are named after other kinds': history, coats of arms, flags), `UserDataDir`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
+| `GameInfo` (with `SubjectDirs`, the folders whose definitions are named after other kinds': history, coats of arms, flags; and `EntryModes`, the six entry-mode words of Victoria 3 and EU5 with what each does, in the order the game processes them), `UserDataDir`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
 | The CST, the lexer, the name and literal shapes, encodings; `Cite`, `Mode`, `Constant`, `Interpolations` (the spellings inside one word) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install or a mod, its format, an image's header | `services/internal/source` — one format table for every game |
 | Loc files, loc key conventions | `services/internal/lang/loc` |
 | `Schema`, `Kind`, `Field`, `Accept`, `Value`, and the schema file (`Read`, `Write`); `Reader` (`Value`, `Key`), the one place that decides what a written word is; `Vocab` and `ReadVocab` (the script_docs dumps), `TokenParams`, `UsableIn`; `Info` and `ReadInfo` (the game info); `NameTokensOf` (the one hand table) | `services/internal/lang/schema` — what the game declares, what a scan learned, no game id |
 | `Learn`, `Relearn`, `Input`: an install's files in, its schema out | `services/internal/lang/learn` — the one place that infers, and never by a tuned number: a declared fact, then a registry row, then once, most or every |
+| `Index` with `Def`, `Ref`, `Edge`, `Loc`; `Harvest` and its `Records`; `Scan`, `BuildWorkspace`, `IndexFile`; `All`, `Found`, `Winner`, `Contests`; `Save`, `Load`, `CachePath` | `services/internal/lang/index` — what a scan found and where, load order, and the cache. It infers nothing |
 | `CacheDir`, `SaveJSON`, `LoadJSON`, `ErrFormat` | `services/internal/persist` |
 | `WriteNewMod`, `ReadListingFields`, `DescriptorModKeys` | `services/internal/modfile` |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |

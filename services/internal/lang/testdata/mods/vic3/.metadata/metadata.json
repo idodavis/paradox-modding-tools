@@ -6,5 +6,5 @@
 	"short_description": "",
 	"tags": [],
 	"relationships": [],
-	"game_custom_data": { "multiplayer_synchronized": true }
+	"game_custom_data": { "multiplayer_synchronized": true, "replace_paths": [ "common/genes" ] }
 }

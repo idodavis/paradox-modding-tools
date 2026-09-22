@@ -35,7 +35,7 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 	images := map[string][]string{}
 	for _, f := range in.Files {
 		rel := strings.ToLower(f.Rel)
-		c.files[rel], c.files[path.Base(rel)] = true, true
+		c.files[rel], c.files[path.Base(rel)], c.files[strings.TrimSuffix(path.Base(rel), path.Ext(rel))+".*"] = true, true, true
 		if f.Format == source.Image {
 			base := strings.TrimSuffix(path.Base(rel), path.Ext(rel))
 			images[base] = append(images[base], path.Dir(f.Rel)+"/{id}"+path.Ext(rel))
@@ -55,6 +55,8 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 	c.settle(drafts)
 	c.index(drafts)
 	for _, d := range drafts {
+		// read before the lift: a parameter written under a token leaves the shape with it
+		d.params = d.shape.holdsParams()
 		c.lift(d.shape)
 		c.hoist(d.shape)
 	}
@@ -94,11 +96,11 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 		k.LocTemplates = loc.Learn(slices.Sorted(maps.Keys(d.names)), slices.Sorted(maps.Keys(d.shape.members)), in.Loc)
 		k.FileTemplates = fileTemplates(d.names, images)
 		k.LabelMember = c.label(d)
-		k.Params = k.Macro != 0 && d.shape.holdsParams()
+		k.Params = k.Macro != 0 && d.params
 		s.Kinds[k.Name] = k
 	}
 
-	// the kinds script makes while it runs, and the constants of any file
+	// the kinds script makes while it runs, the constants of any file, and the parameters of any macro
 	for kind, prefix := range schema.ScriptKinds {
 		k := &schema.Kind{Name: kind, Format: source.Script, Naming: schema.Naming{Form: "token"}}
 		if prefix != "" {
@@ -108,6 +110,12 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 	}
 	if len(c.constants) > 0 {
 		s.Kinds["constants"] = &schema.Kind{Name: "constants", Format: source.Script, Naming: schema.Naming{Form: "constant"}}
+	}
+	for _, k := range s.Kinds {
+		if k.Params {
+			s.Kinds["params"] = &schema.Kind{Name: "params", Format: source.Script, Naming: schema.Naming{Form: "param"}}
+			break
+		}
 	}
 	for _, token := range slices.Sorted(maps.Keys(c.tokens)) {
 		s.Arguments[token] = c.field(token, c.tokens[token], nil, "")

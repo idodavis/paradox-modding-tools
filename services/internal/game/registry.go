@@ -55,8 +55,8 @@ type GameInfo struct {
 	// ScriptDocsSubdir is where in-game console dumps land ("logs" or "docs").
 	ScriptDocsSubdir string `json:"scriptDocsSubdir,omitempty"`
 
-	// EntryModes are EU5 database entry-mode prefixes (INJECT:, REPLACE:, ...).
-	EntryModes []string `json:"entryModes,omitempty"`
+	// EntryModes are the words a mod may write before a definition's name (REPLACE:name), in the order the game processes them; file order decides only between entries of one mode. Victoria 3's and EU5's executables hold all six words and CK3's none (2026-09-21). Backend-only, like FIOSKinds.
+	EntryModes []EntryMode `json:"-"`
 
 	SteamAppID int `json:"steamAppId,omitempty"`
 
@@ -68,6 +68,21 @@ type GameInfo struct {
 
 	// SubjectDirs are the folders whose definitions are named after other kinds' definitions: history, coats of arms, flags. The learner makes a kind under one a subject kind of the kind that defines its names, and gives it no prefix. They are parent folders, so a folder the game adds below one needs no row. Backend-only, like FIOSKinds.
 	SubjectDirs []string `json:"-"`
+}
+
+// EntryMode is one word written before a definition's name, and what it does to the definition of that name already loaded.
+type EntryMode struct {
+	Word     string
+	Replaces bool // takes the earlier definition's place; an inject adds to it and never displaces it
+	Optional bool // TRY_: does nothing where there is none
+	Creates  bool // _OR_CREATE: defines it where there is none
+}
+
+// entryModes is the six words Victoria 3 and EU5 share, in processing order (both wikis, Mod compatibility).
+var entryModes = []EntryMode{
+	{Word: "INJECT_OR_CREATE", Creates: true}, {Word: "REPLACE_OR_CREATE", Replaces: true, Creates: true},
+	{Word: "TRY_INJECT", Optional: true}, {Word: "TRY_REPLACE", Replaces: true, Optional: true},
+	{Word: "INJECT"}, {Word: "REPLACE", Replaces: true},
 }
 
 // GameList is the Wails payload for ListGames (consts are not exported).
@@ -88,7 +103,7 @@ var registry = map[string]*GameInfo{
 		DocsFolderName:   "Crusader Kings III",
 		ScriptDocsSubdir: "logs",
 		SteamAppID:       1158310,
-		FIOSKinds:        []string{"gui_type"},
+		FIOSKinds:        []string{"gui.type", "gui.template"},
 		FirstWins:        "GUI types and templates are first-wins.",
 		SubjectDirs:      []string{"history", "common/coat_of_arms"},
 	},
@@ -101,9 +116,9 @@ var registry = map[string]*GameInfo{
 		Descriptor:       "metadata",
 		DocsFolderName:   "Victoria 3",
 		ScriptDocsSubdir: "docs",
-		EntryModes:       []string{"INJECT", "REPLACE"},
+		EntryModes:       entryModes,
 		SteamAppID:       529340,
-		FIOSKinds:        []string{"gui_type", "event"},
+		FIOSKinds:        []string{"gui.type", "gui.template", "events"},
 		FirstWins:        "GUI types, templates, and events are first-wins.",
 		SubjectDirs:      []string{"common/history", "common/coat_of_arms", "common/flag_definitions"},
 	},
@@ -119,9 +134,9 @@ var registry = map[string]*GameInfo{
 		ThumbnailDir:     ".metadata",
 		DocsFolderName:   "Europa Universalis V",
 		ScriptDocsSubdir: "docs",
-		EntryModes:       []string{"INJECT", "REPLACE", "TRY_INJECT", "TRY_REPLACE", "INJECT_OR_CREATE", "REPLACE_OR_CREATE"},
+		EntryModes:       entryModes,
 		SteamAppID:       3450310,
-		FIOSKinds:        []string{"event"},
+		FIOSKinds:        []string{"events"},
 		FirstWins:        "Events are first-wins; GUI types last-wins.",
 		SubjectDirs:      []string{"setup/start", "common/coat_of_arms", "common/flag_definitions"},
 	},
@@ -138,12 +153,12 @@ func All() []*GameInfo {
 }
 
 // IsFIOS reports whether kind resolves first-in-order for this game.
-// Empty/unknown gameID keeps the historical gui_type-only default.
+// For an empty or unknown gameID only GUI types are.
 func IsFIOS(gameID, kind string) bool {
 	if g := Get(gameID); g != nil {
 		return slices.Contains(g.FIOSKinds, kind)
 	}
-	return kind == "gui_type"
+	return kind == "gui.type"
 }
 
 // KeyIdentity canonicalizes a raw key for matching/merge: trims whitespace and
@@ -163,7 +178,7 @@ var anyEntryMode = func() map[string]bool {
 	m := map[string]bool{}
 	for _, g := range registry {
 		for _, mode := range g.EntryModes {
-			m[mode] = true
+			m[mode.Word] = true
 		}
 	}
 	return m
@@ -171,7 +186,7 @@ var anyEntryMode = func() map[string]bool {
 
 func isEntryMode(gameID, tok string) bool {
 	if g := Get(gameID); g != nil {
-		return slices.Contains(g.EntryModes, tok)
+		return slices.ContainsFunc(g.EntryModes, func(m EntryMode) bool { return m.Word == tok })
 	}
 	return anyEntryMode[tok]
 }

@@ -1,0 +1,9 @@
+bold = {
+	category = personality
+	diplomacy = 9
+	typo_membr = yes
+}
+brave = {
+	category = personality
+	diplomacy = 10
+}

@@ -114,20 +114,23 @@ func Harvest(f source.File, text string, r schema.Reader) *Records {
 	return newWalk(f, r, -1).read(text).h
 }
 
-// Probe makes the same descent as Harvest, along the one chain of statements that holds the offset, and gives what it passed.
-func Probe(f source.File, text string, r schema.Reader, offset int) *Descent {
+// Probe makes the same descent as Harvest, along the one chain of statements that holds the offset, and gives what it passed. It takes the parse the session already holds, so an editor request parses nothing.
+func Probe(f source.File, parsed *jomini.Result, r schema.Reader, offset int) *Descent {
 	w := newWalk(f, r, offset)
 	w.probe = &Descent{}
-	w.read(text)
+	w.lines = parsed.Lines()
+	w.file(parsed.Root)
 	w.probe.Kind, w.probe.Top = w.kind, w.top
 	return w.probe
 }
 
-// Visit makes the same descent as Harvest over a whole file and hands every statement to visit with the field it stands at, then gives the file's records.
-func Visit(f source.File, text string, r schema.Reader, visit func(Level)) *Records {
+// Visit makes the same descent as Harvest over a whole file and hands every statement to visit with the field it stands at, then gives the file's records. It takes the session's parse too.
+func Visit(f source.File, parsed *jomini.Result, r schema.Reader, visit func(Level)) *Records {
 	w := newWalk(f, r, -1)
 	w.visit = visit
-	return w.read(text).h
+	w.lines = parsed.Lines()
+	w.file(parsed.Root)
+	return w.h
 }
 
 // newWalk is a walk of one file, whole or to one offset.
@@ -165,7 +168,9 @@ func (w *walk) read(text string) *walk {
 	case source.Table, source.List:
 		w.rows(text)
 	case source.Script:
-		w.file(jomini.Parse(text).Root)
+		parsed := jomini.Parse(text)
+		w.lines = parsed.Lines()
+		w.file(parsed.Root)
 	}
 	return w
 }
@@ -309,7 +314,7 @@ func (w *walk) define(k *schema.Kind, name, mode string, st *jomini.Assignment, 
 	w.def(Def{Kind: k.Name, Name: name, Mode: mode, Label: w.member(block, k.LabelMember)}, st.Key.Range.Start)
 	scope := ""
 	if k.Shape != nil {
-		scope = k.Shape.BodyScope
+		scope = w.scoped(k.Shape.BodyScope)
 	}
 	w.level(st, k, nil, k.Shape, schema.Value{Type: schema.TypeRef, Kind: k.Name, Name: name}, scope, "")
 	w.inside(k, k.Shape, block, scope, "")
@@ -381,17 +386,34 @@ func (w *walk) statement(k *schema.Kind, field *schema.Field, st *jomini.Assignm
 		return
 	}
 
+	moved := false
 	switch v.Type {
 	case schema.TypeToken:
-		via = v.Name
+		// a token with no declared output is transparent: its block runs where it stands, and no learned body scope says otherwise (§5.4)
+		via, moved = v.Name, true
 		w.names(v.Name, st, scope)
 		if token, ok := w.r.Vocab.Effects[v.Name]; ok && token.Out != "" {
-			scope = token.Out
+			scope, moved = w.scoped(token.Out), true
 		} else if token, ok := w.r.Vocab.Triggers[v.Name]; ok && token.Out != "" {
-			scope = token.Out
+			scope, moved = w.scoped(token.Out), true
+		} else if block != nil && slices.ContainsFunc(schema.NameTokensOf(v.Name), func(row schema.NameToken) bool { return row.Member != "" && !row.Defines }) {
+			// an iterator over a list the script filled runs in whatever scope the list holds, which nothing declares
+			scope, moved = "", true
 		}
 	case schema.TypeScopePath:
-		scope = w.r.Vocab.Links[key].Out
+		scope, moved = w.leads(key), true
+	case schema.TypeUnresolved:
+		// a key nothing reads leads to a block whose scope nothing knows
+		scope, moved = "", block != nil
+	case schema.TypeMember:
+		// a learned member written with a block under a name the dump declares (root, any_neighboring_county in a weight's modifier) moves the scope as the declaration says; a wild card (value) is no hop
+		if link, isLink := w.r.Vocab.Links[strings.ToLower(key)]; block != nil && isLink && !link.Wild {
+			scope, moved = w.scoped(link.Out), true
+		} else if _, effect := w.r.Vocab.Effects[strings.ToLower(key)]; block != nil && effect {
+			scope, moved = w.scoped(w.r.Vocab.Effects[strings.ToLower(key)].Out), true
+		} else if _, trigger := w.r.Vocab.Triggers[strings.ToLower(key)]; block != nil && trigger {
+			scope, moved = w.scoped(w.r.Vocab.Triggers[strings.ToLower(key)].Out), true
+		}
 	case schema.TypeRef:
 		called := w.r.Schema.Kinds[v.Kind]
 		w.call = called != nil && called.Macro != 0
@@ -405,11 +427,14 @@ func (w *walk) statement(k *schema.Kind, field *schema.Field, st *jomini.Assignm
 			// a macro that takes no parameters is followed by more of the body it is written in: every_adult_child = { add_gold = 1 }
 			w.call, below = false, field
 		}
-		if cited := w.r.Schema.Kinds[v.Kind]; cited != nil {
-			scope = cited.ScopeType
+		if c, isCite := jomini.Cite(key); isCite {
+			scope, moved = w.scoped(w.r.Vocab.Links[c.Prefix].Out), true
+		} else if cited := w.r.Schema.Kinds[v.Kind]; cited != nil {
+			scope, moved = w.scoped(cited.ScopeType), true
 		}
 	}
-	if below != nil && below != field && below.BodyScope != "" {
+	// a learned body scope fills in only where nothing declared moved the scope (§5.8), and only a declared scope type
+	if !moved && below != nil && below != field && w.r.Vocab.IsScopeType(below.BodyScope) {
 		scope = below.BodyScope
 	}
 	if _, effect := w.r.Vocab.Effects[via]; !effect && v.Type != schema.TypeToken && v.Type != schema.TypeNumber {
@@ -426,6 +451,27 @@ func (w *walk) statement(k *schema.Kind, field *schema.Field, st *jomini.Assignm
 	w.body = body || (below != nil && below.Class == schema.ClassBody)
 	w.inside(k, below, block, scope, via)
 	w.body = body
+}
+
+// scoped is a scope type the dump declares, or "": a link or a token whose output is a value, a boolean or a name the dump does not list leads to a block whose scope nothing knows, and nothing accuses there.
+func (w *walk) scoped(out string) string {
+	if w.r.Vocab.IsScopeType(out) {
+		return out
+	}
+	return ""
+}
+
+// leads is the scope type a scope path leads to: the declared output of its last step, a link or a cite's prefix; "" where the last step is a saved scope or a word the dump does not declare.
+func (w *walk) leads(path string) string {
+	last := path[strings.LastIndexByte(path, '.')+1:]
+	if c, isCite := jomini.Cite(last); isCite {
+		last = c.Prefix
+	}
+	link := w.r.Vocab.Links[strings.ToLower(last)]
+	if link.Wild {
+		return ""
+	}
+	return w.scoped(link.Out)
 }
 
 // value reads the word written as a statement's value at its field.

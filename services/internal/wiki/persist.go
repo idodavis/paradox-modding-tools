@@ -34,14 +34,6 @@ func sidecarPath(k sidecarKind, gameID string) (string, error) {
 	return filepath.Join(dir, string(k)+"-"+gameID+".json"), nil
 }
 
-func forget(gameID string) {
-	memMu.Lock()
-	defer memMu.Unlock()
-	for _, k := range sidecarKinds {
-		delete(mem[k], gameID)
-	}
-}
-
 // ForgetAll drops every in-memory wiki sidecar. Disk files are not touched.
 // Call after wiping persist.CacheDir so Needed/HasSidecar do not reuse RAM.
 func ForgetAll() {

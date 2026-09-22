@@ -264,12 +264,6 @@ func lexWord(text string, i *int) token {
 	return token{kind: tokWord, start: start, end: p}
 }
 
-// LineIndents returns the target tab-indent for each line of src, computed from
-// brace depth so strings and comments cannot fool it.
-func LineIndents(src string) []int {
-	return lineIndentsFrom(src, tokenize(src))
-}
-
 func lineIndentsFrom(src string, toks []token) []int {
 	li := NewLineIndex(src)
 	n := li.LineCount()

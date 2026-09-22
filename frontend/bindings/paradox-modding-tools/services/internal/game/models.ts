@@ -49,11 +49,6 @@ export interface GameInfo {
      * ScriptDocsSubdir is where in-game console dumps land ("logs" or "docs").
      */
     "scriptDocsSubdir"?: string;
-
-    /**
-     * EntryModes are EU5 database entry-mode prefixes (INJECT:, REPLACE:, ...).
-     */
-    "entryModes"?: string[] | null;
     "steamAppId"?: number;
     "firstWins"?: string;
 }

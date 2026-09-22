@@ -115,34 +115,6 @@ func TestLooksLikeKey(t *testing.T) {
 				t.Errorf("LanguageFromFilename(%q) = %q want %q", name, got, want)
 			}
 		}
-		if got := LanguageOf("events.yml", "english"); got != "english" {
-			t.Errorf("LanguageOf header fallback = %q", got)
-		}
-		if got := LanguageOf("foo_l_french.yml", "english"); got != "french" {
-			t.Errorf("LanguageOf filename wins = %q", got)
-		}
-	})
-
-	// The $KEY$ engine-substitution rule.
-	t.Run("is_loc_engine_value", func(t *testing.T) {
-		if !IsLocEngineValue("ORDER", "") {
-			t.Fatal("$ORDER$ is engine data")
-		}
-		if !IsLocEngineValue("VALUE", "=+0") {
-			t.Fatal("$VALUE|=+0$ is engine data")
-		}
-		if !IsLocEngineValue("value", "=+0") {
-			t.Fatal("$value|=+0$ is engine data")
-		}
-		if IsLocEngineValue("used_key", "") {
-			t.Fatal("$used_key$ is loc reuse")
-		}
-		if IsLocEngineValue("INDEPENDENCE_WAR_NAME", "") {
-			t.Fatal("$INDEPENDENCE_WAR_NAME$ is loc reuse")
-		}
-		if IsLocEngineValue("used", "U") {
-			t.Fatal("$used|U$ is loc reuse")
-		}
 	})
 
 	t.Run("key_shape", func(t *testing.T) {

@@ -138,6 +138,9 @@ func (r Reader) Key(parent *Field, text string) Value {
 		if _, isLink := r.Vocab.Links[first]; isLink {
 			return Value{Type: TypeScopePath, Declared: true}
 		}
+		if c, ok := jomini.Cite(text); ok && c.Chain != "" && (r.Vocab.Links[c.Prefix].Prefix || len(r.Schema.ByPrefix(c.Prefix)) > 0) {
+			return Value{Type: TypeScopePath, Declared: r.Vocab.Links[c.Prefix].Prefix}
+		}
 
 		r.Schema.lookups()
 		for _, name := range append([]string{text}, stems(text)...) {

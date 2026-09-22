@@ -80,25 +80,23 @@ tasks:
       - task: common:run:docker
 
   test:
-    summary: Fast backend tests (~3s). Skips the real-install tier.
+    summary: Fast backend tests. Skips the real-install tier.
     dir: services
     cmds:
       # -timeout 60s is the contract, not a safety net: a test that needs longer
       # than a minute belongs behind an opt-in task, not in the loop a developer
       # runs on every change. If this starts failing, move the test — do not
       # raise the number.
-      # The packages that compile while the language engine is rebuilt (.claude/plans/language-engine.md §15).
-      # Each phase adds the packages it writes; Phase 7 restores ./...
-      - go test -short -timeout 60s ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/lsp/... ./internal/lang/schema/... ./internal/lang/session/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+      - go test -short -timeout 60s ./...
 
   test:race:
     summary: >
-      What CI runs (~9s). The race detector is the only thing that can catch a
+      What CI runs. The race detector is the only thing that can catch a
       lock-discipline regression, and GLOSSARY makes that discipline binding on
       every consolidation. Keep this identical to .github/workflows/test.yml.
     dir: services
     cmds:
-      - go test -short -race -timeout 60s ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/lsp/... ./internal/lang/schema/... ./internal/lang/session/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+      - go test -short -race -timeout 60s ./...
 
   check:
     summary: >
@@ -109,21 +107,42 @@ tasks:
     cmds:
       - npm run check
 
-  test:full:
+  test:gate:
     summary: >
-      Backend tests including the real-install tier (~30s). Needs
-      PMT_TEST_INSTALL_{CK3,VIC3,EU5} and PMT_TEST_DOCS_{CK3,VIC3,EU5}. Unlike
-      `task test`, these now FAIL rather than skip when those are unset —
-      PMT_TEST_TIER=full says the corpus tier was asked for, and a tier that can
-      silently be empty is not a tier. Use `task test` if you do not have the
-      installs.
+      The real-install tier: the source, schema, learner, index and vanilla
+      diagnostics gates over CK3, Victoria 3 and EU5. Each of them skips under
+      -short and again when its own variable is unset, so dropping -short is
+      not what turns the tier on — these variables are. Set
+      PMT_TEST_INSTALL_{CK3,VIC3,EU5} to the three game roots; the console
+      dumps are read from each game's Documents folder.
     dir: services
     env:
-      PMT_TEST_TIER: full
+      PMT_SOURCE_GATE: 1
+      PMT_SCHEMA_GATE: 1
+      PMT_LEARN_GATE: 1
+      PMT_INDEX_GATE: 1
+      PMT_VANILLA_GATE: 1
     cmds:
-      # Not 60s. That contract governs `task test`, the loop run on every change;
-      # this tier scans three real installs and measured 126s for catalog alone.
-      # The sweep is excluded by PMT_TEST_SWEEP, not by this number.
-      - go test -timeout 600s ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/lsp/... ./internal/lang/schema/... ./internal/lang/session/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+      # Not 60s. That contract governs `task test`, the loop run on every
+      # change; each gate here scans three real installs.
+      - go test -count=1 -timeout 1800s ./...
+
+  test:full:
+    summary: The real-install gates and then the frontend typecheck. What to run before a commit that touches the engine.
+    cmds:
+      - task: test:gate
       - task: check
 
+  test:sweep:
+    summary: >
+      The engine's scoreboard, not a gate: every mod a game's Documents mod
+      folder lists is opened over that install, and the health report, the
+      findings and the hover answer rate are printed. It asserts nothing, so a
+      count that moves is news and never a failure. Needs
+      PMT_TEST_INSTALL_<GAME> and PMT_TEST_MODS_<GAME>, and takes minutes per
+      game; the probe build tag keeps it out of every other task.
+    dir: services
+    env:
+      PMT_TEST_SWEEP: 1
+    cmds:
+      - go test -tags probe -count=1 -v -run TestSweep -timeout 60m ./internal/views/

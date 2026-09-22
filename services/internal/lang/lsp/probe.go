@@ -56,7 +56,7 @@ func (f *file) at(offset int) *site {
 		return nil
 	}
 	found, _, _ := f.s.Located(f.path)
-	d := index.Probe(found, f.text, f.s.Reader(), offset)
+	d := index.Probe(found, f.parsed, f.s.Reader(), offset)
 	if len(d.Chain) == 0 {
 		return nil
 	}

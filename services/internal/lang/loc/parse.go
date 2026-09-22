@@ -367,14 +367,6 @@ func LanguageFromRel(path string) string {
 	return strings.ToLower(lang)
 }
 
-// LanguageOf returns the loc language from the filename, else the parsed header.
-func LanguageOf(path, parsedLang string) string {
-	if l := LanguageFromFilename(path); l != "" {
-		return l
-	}
-	return strings.ToLower(parsedLang)
-}
-
 // LooksLikeKey reports whether s is a plausible loc key: not yes/no/none, no `scope:`-style prefix, and no whitespace.
 func LooksLikeKey(s string) bool {
 	if s == "" || strings.Contains(s, ":") {
@@ -392,78 +384,4 @@ func LooksLikeKey(s string) bool {
 		return false
 	}
 	return true
-}
-
-// IsLocEngineValue reports a loc $key$ / $key|filter$ that is engine data,
-// not a loc-key reuse ($other_key$ / $INDEPENDENCE_WAR_NAME$ / $key|U$).
-func IsLocEngineValue(key, filter string) bool {
-	if isLocEngineToken(key) {
-		return true
-	}
-	return strings.EqualFold(key, "VALUE") && isNumericLocFilter(filter)
-}
-
-// isLocEngineToken reports a single ALL_CAPS token ($ORDER$, $VALUE$, $NAME$).
-// SNAKE_CASE ($INDEPENDENCE_WAR_NAME$) is loc-key reuse.
-func isLocEngineToken(key string) bool {
-	if key == "" || strings.Contains(key, "_") {
-		return false
-	}
-	for i := 0; i < len(key); i++ {
-		if c := key[i]; c < 'A' || c > 'Z' {
-			return false
-		}
-	}
-	return true
-}
-
-func isNumericLocFilter(filter string) bool {
-	if filter == "" {
-		return false
-	}
-	for _, r := range filter {
-		switch r {
-		case '=', '+', '-', '%', '.':
-		default:
-			if !unicode.IsDigit(r) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// DataFnKeys finds single-quoted identifiers in a `[...]` data-function call: `[Concept('faith')]`.
-func DataFnKeys(value string, valueStart int) []Interp {
-	var out []Interp
-	for i := 0; i < len(value); i++ {
-		if value[i] != '[' {
-			continue
-		}
-		end := strings.IndexByte(value[i:], ']')
-		if end < 0 {
-			break
-		}
-		end += i
-		for j := i; j < end; j++ {
-			if value[j] != '\'' {
-				continue
-			}
-			k := strings.IndexByte(value[j+1:end], '\'')
-			if k < 0 {
-				break
-			}
-			k += j + 1
-			if key := value[j+1 : k]; LooksLikeKey(key) {
-				out = append(out, Interp{
-					Key:       key,
-					KeyRange:  Range{Start: valueStart + j + 1, End: valueStart + k},
-					WrapRange: Range{Start: valueStart + j, End: valueStart + k + 1},
-				})
-			}
-			j = k
-		}
-		i = end
-	}
-	return out
 }

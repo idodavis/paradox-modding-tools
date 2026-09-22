@@ -77,7 +77,7 @@ func (s *Session) build(ctx context.Context) error {
 	for _, m := range s.Mods {
 		mods = append(mods, index.Mod{ID: m.ID, Dir: m.Dir})
 	}
-	x, sc, err := index.BuildWorkspace(ctx, mods, s.Install, s.Language)
+	x, sc, err := index.BuildWorkspace(ctx, mods, s.Install)
 	if err != nil {
 		return err
 	}

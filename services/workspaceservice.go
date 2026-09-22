@@ -2,7 +2,6 @@
 package services
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,8 +35,9 @@ func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error
 		for _, inst := range c.Installs {
 			if inst.GameID == gameID {
 				cp := inst
-				ver := index.CacheVersion(cp.Version)
-				cp.ScannedAt = index.PeekCacheScannedAt(cp.ID, ver)
+				if base, err := index.CachePath(cp.ID, cp.Version); err == nil {
+					cp.ScannedAt = index.ScannedAt(base)
+				}
 				out = append(out, cp)
 			}
 		}
@@ -57,7 +57,6 @@ func (w *WorkspaceService) AddGameInstall(gameID, name, path, version string) (*
 	if version == "" {
 		version = detected
 	}
-	version = index.CacheVersion(version)
 	inst := GameInstall{
 		ID: uuid.New().String(), GameID: gameID, Name: name, Path: path,
 		Version: version, VersionDetected: detected, CreatedAt: nowUTC(),
@@ -612,7 +611,7 @@ func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err err
 	if len(inUse) > 0 {
 		return inUse, fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))
 	}
-	if err := index.DropVanillaFiles(id); err != nil {
+	if err := index.Drop(id); err != nil {
 		return nil, err
 	}
 	return nil, w.Store.Mutate(func(c *Config) error {
@@ -629,7 +628,6 @@ func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err err
 
 // SetInstallVersion pins the cache-key version (user override; empty → latest).
 func (w *WorkspaceService) SetInstallVersion(id, version string) error {
-	version = index.CacheVersion(version)
 	return w.Store.Mutate(func(c *Config) error {
 		inst := findInstall(c, id)
 		if inst == nil {
@@ -669,42 +667,21 @@ func (w *WorkspaceService) SetWorkspaceModCalendar(
 	// re-requests them only when a provider says they changed, so without this a
 	// modder sets a calendar and sees nothing until they edit the file -- or
 	// clears one and keeps seeing eras that no longer apply.
-	emitLang("lang:calendar-changed", map[string]any{"workspaceId": workspaceID})
+	emitLang(EventLangCalendarChanged, workspaceID)
 	return nil
 }
 
-// SetWorkspaceLocLang sets default loc language and loc-harvests if a session is live.
+// SetWorkspaceLocLang sets the default loc language; a live session is built again with it.
 func (w *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
-	var inst *GameInstall
-	// Not mutateWorkspace: this one needs the Config too, for findInstall.
-	err := w.Store.Mutate(func(c *Config) error {
-		ws := findWorkspace(c, id)
-		if ws == nil {
-			return fmt.Errorf("workspace not found")
-		}
+	err := w.mutateWorkspace(id, func(ws *Workspace) error {
 		ws.DefaultLocLang = lang
-		if found := findInstall(c, ws.InstallID); found != nil {
-			cp := *found
-			inst = &cp
-		}
 		return nil
 	})
 	if err != nil || w.Session == nil {
 		return err
 	}
-	live := w.Session.pool().Get(id)
-	if live == nil {
-		return nil
-	}
-	live.SetDefaultLang(lang)
-	if inst == nil {
-		return nil
-	}
-	v, err := index.HarvestLoc(context.Background(), inst.GameID, inst.Path, lang)
-	if err != nil {
-		return err
-	}
-	live.MergeVanillaLoc(v)
+	// the session holds the language, so it is built again on the next request
+	w.Session.pool().Drop(id)
 	return nil
 }
 

@@ -21,6 +21,14 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func forget(gameID string) {
+	memMu.Lock()
+	defer memMu.Unlock()
+	for _, k := range sidecarKinds {
+		delete(mem[k], gameID)
+	}
+}
+
 func useTempCache(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()

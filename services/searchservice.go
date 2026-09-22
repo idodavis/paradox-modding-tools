@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"paradox-modding-tools/services/internal/source"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -292,6 +293,9 @@ func textSearchFolder(
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil || !pathMatchesGlobs(rel, gs) {
+			return nil
+		}
+		if f := source.Classify(filepath.ToSlash(rel)); f == source.Image || f == source.Opaque {
 			return nil
 		}
 		g.Go(func() error {

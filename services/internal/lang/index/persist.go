@@ -35,6 +35,15 @@ func CachePath(installID, version string) (string, error) {
 	return filepath.Join(dir, "vanilla-"+unsafeInName.ReplaceAllString(installID, "_")+"-"+unsafeInName.ReplaceAllString(version, "_")), err
 }
 
+// ScannedAt is when the cache at base was written, "" where there is none or it is of another format.
+func ScannedAt(base string) string {
+	version, scannedAt, err := persist.Peek(base + ".json")
+	if err != nil || version != FormatVersion {
+		return ""
+	}
+	return scannedAt
+}
+
 // Save writes an install to base.json and base.schema.txt.
 func Save(base, scannedAt string, in *Install) error {
 	if err := os.WriteFile(base+".schema.txt", []byte(schema.Write(in.Schema)), 0o644); err != nil {
@@ -43,7 +52,7 @@ func Save(base, scannedAt string, in *Install) error {
 	return persist.SaveJSON(base+".json", stored{FormatVersion: FormatVersion, ScannedAt: scannedAt, Index: in.Index, Vocab: in.Vocab, Info: in.Info})
 }
 
-// Load reads an install back. Its slices are cut to their length, because a decoder grows them by doubling, and its words are shared again.
+// Load reads an install back, its lookups built before it is shared. Its slices are cut to their length, because a decoder grows them by doubling, and its words are shared again.
 func Load(base string) (*Install, error) {
 	text, err := os.ReadFile(base + ".schema.txt")
 	if err != nil {
@@ -77,6 +86,7 @@ func Load(base string) (*Install, error) {
 		x.Loc[i].Key = x.own(x.Loc[i].Key)
 	}
 	x.shared = nil
+	x.Ready()
 	return &Install{Index: x, Schema: s, Vocab: kept.Vocab, Info: kept.Info}, nil
 }
 

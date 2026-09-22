@@ -88,7 +88,7 @@ func main() {
 		log.Fatalf("updater.Init: %v", err)
 	}
 
-	sessSvc.StartWikiWarm(version)
+	wikiSvc.StartWikiWarm()
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Paradox Modding Tools",

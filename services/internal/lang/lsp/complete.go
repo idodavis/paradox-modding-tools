@@ -52,7 +52,7 @@ func Complete(s *session.Session, path string, line, col int) (*Completion, erro
 	c := &completer{f: f, prefix: strings.ToLower(f.text[start:offset]), at: f.span(jomini.Range{Start: start, End: end}), seen: map[string]bool{}}
 
 	found, _, _ := s.Located(path)
-	d := index.Probe(found, f.text, s.Reader(), start)
+	d := index.Probe(found, f.parsed, s.Reader(), start)
 	before := strings.TrimRight(f.text[:start], " \t")
 	if len(before) > 0 && strings.ContainsRune("=<>!?", rune(before[len(before)-1])) {
 		c.values(d, strings.TrimRight(before, "=<>!?"))
@@ -94,20 +94,38 @@ func (c *completer) enclosing(d *index.Descent) (*index.Level, *schema.Field, st
 		if !ok || jomini.BlockOf(a.Value) == nil {
 			continue
 		}
-		scope := level.Scope
+		scope, v, moved := level.Scope, s.Install.Vocab, false
 		switch level.Key.Type {
 		case schema.TypeToken:
-			if _, _, _, out := tokenDocs(s.Install.Vocab, level.Key.Name); out != "" {
+			moved = true
+			if _, _, _, out := tokenDocs(v, level.Key.Name); out != "" {
 				scope = out
+			} else if slices.ContainsFunc(schema.NameTokensOf(level.Key.Name), func(row schema.NameToken) bool { return row.Member != "" && !row.Defines }) {
+				scope = ""
 			}
 		case schema.TypeScopePath:
-			scope = s.Install.Vocab.Links[strings.ToLower(a.Key.Text)].Out
+			last := a.Key.Text[strings.LastIndexByte(a.Key.Text, '.')+1:]
+			if c, isCite := jomini.Cite(last); isCite {
+				last = c.Prefix
+			}
+			scope, moved = v.Links[strings.ToLower(last)].Out, true
 		case schema.TypeRef:
-			if k := s.Schema.Kinds[level.Key.Kind]; k != nil && k.ScopeType != "" {
-				scope = k.ScopeType
+			if c, isCite := jomini.Cite(a.Key.Text); isCite {
+				scope, moved = v.Links[c.Prefix].Out, true
+			} else if k := s.Schema.Kinds[level.Key.Kind]; k != nil {
+				scope, moved = k.ScopeType, true
+			}
+		case schema.TypeMember, schema.TypeUnresolved:
+			if link, isLink := v.Links[strings.ToLower(a.Key.Text)]; isLink && !link.Wild {
+				scope, moved = link.Out, true
+			} else if _, _, _, out := tokenDocs(v, strings.ToLower(a.Key.Text)); out != "" || level.Key.Type == schema.TypeUnresolved {
+				scope, moved = out, true
 			}
 		}
-		if level.Below != nil && level.Below.BodyScope != "" {
+		if moved && !v.IsScopeType(scope) {
+			scope = ""
+		}
+		if !moved && level.Below != nil && v.IsScopeType(level.Below.BodyScope) {
 			scope = level.Below.BodyScope
 		}
 		return &level, level.Below, scope

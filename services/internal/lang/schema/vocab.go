@@ -22,6 +22,11 @@ type Vocab struct {
 	Unknown     []Tally           // labels the reader did not know, for the drift report
 }
 
+// IsScopeType reports a name the dump lists as a scope type; a link or a token whose output is anything else (value, boolean, a name of the game's own) leads to no scope.
+func (v *Vocab) IsScopeType(name string) bool {
+	return slices.Contains(v.ScopeTypes, name)
+}
+
 // EngineToken is one effect or trigger the game declares.
 type EngineToken struct {
 	Name  string
@@ -38,6 +43,7 @@ type Link struct {
 	In     []string // the scope types it may be written in; none for a global link
 	Out    string   // the scope type it leads to, as the dump writes it; a few links list several (modifier: value, boolean), and none of those is a hop
 	Prefix bool     // written as name:key (the dump says it requires data)
+	Wild   bool     // a pattern the dump says is a wild card (value: any numeric literal), which is no hop between scopes
 }
 
 // Modifier is one modifier the game declares.
@@ -93,9 +99,9 @@ func ReadVocab(dirs []string) *Vocab {
 					v.Triggers[b.name] = EngineToken{Name: b.name, Doc: doc, Usage: usage, In: commaList(labels["supported scopes"]), Out: labels["supported targets"]}
 				case "event_targets.log":
 					// a link may be declared twice, once global and once for a scope: the two are one link
-					l := Link{Name: b.name, Doc: doc, In: commaList(labels["input scopes"]), Out: labels["output scopes"], Prefix: labels["requires data"] == "yes"}
+					l := Link{Name: b.name, Doc: doc, In: commaList(labels["input scopes"]), Out: labels["output scopes"], Prefix: labels["requires data"] == "yes", Wild: labels["wild card"] == "yes"}
 					if first, ok := v.Links[b.name]; ok {
-						l.In, l.Prefix = append(first.In, l.In...), l.Prefix || first.Prefix
+						l.In, l.Prefix, l.Wild = append(first.In, l.In...), l.Prefix || first.Prefix, l.Wild || first.Wild
 						if l.Doc == "" {
 							l.Doc = first.Doc
 						}
@@ -105,7 +111,10 @@ func ReadVocab(dirs []string) *Vocab {
 					}
 					v.Links[b.name] = l
 				case "event_scopes.log":
-					v.ScopeTypes = append(v.ScopeTypes, b.name)
+					// a scope in which nothing is evaluated or run (value, boolean) is no scope a block runs in
+					if labels["evaluate triggers"] == "yes" || labels["execute effects"] == "yes" {
+						v.ScopeTypes = append(v.ScopeTypes, b.name)
+					}
 				case "modifiers.log":
 					areas := labels["mask"] + "," + labels["use areas"] + "," + labels["categories"]
 					v.Modifiers[b.name] = Modifier{Name: b.name, Doc: labels["description"], Categories: commaList(strings.ToLower(areas))}

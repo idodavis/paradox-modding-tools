@@ -15,7 +15,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as wiki$0 from "./internal/wiki/models.js";
 
 /**
- * Guide returns Guide pane pages for the active file. Locate fail → empty, not an error.
+ * Guide returns Guide pane pages for the active file. A path under no root gives an empty guide, not an error.
  */
 export function Guide(workspaceID: string, path: string): $CancellablePromise<wiki$0.Guide | null> {
     return $Call.ByID(941746565, workspaceID, path);
@@ -33,6 +33,13 @@ export function PatchPage(gameID: string, version: string): $CancellablePromise<
  */
 export function Patches(gameID: string): $CancellablePromise<wiki$0.PatchList | null> {
     return $Call.ByID(681892155, gameID);
+}
+
+/**
+ * StartWikiWarm fetches, in the background, the sidecar of every install's game where it is missing or older than the game's version, then refreshes the ones the app already has, so the guides are current without a click.
+ */
+export function StartWikiWarm(): $CancellablePromise<void> {
+    return $Call.ByID(2663403356);
 }
 
 /**

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/persist"
 	"paradox-modding-tools/services/internal/wiki"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -90,7 +90,7 @@ func (s *SettingsService) ResetData() error {
 	}); err != nil {
 		return err
 	}
-	dir, err := index.CacheDir()
+	dir, err := persist.CacheDir()
 	if err != nil {
 		return fmt.Errorf("cache dir: %w", err)
 	}

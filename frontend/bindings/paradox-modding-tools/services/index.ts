@@ -25,6 +25,7 @@ export {
 export type {
     ConvertResult,
     DirEntry,
+    DumpHealth,
     FileBytes,
     FileSearchHit,
     FileSearchQuery,
@@ -36,7 +37,6 @@ export type {
     Listing,
     PathStat,
     PublishResult,
-    ScriptDocsHealth,
     TextSearchFolder,
     TextSearchHit,
     TextSearchQuery,

@@ -1,12 +1,19 @@
-// diagnostics_test.go covers every code, the guards that keep a rule quiet (§6a), suppression by comment and by settings, and the install's silence.
+// diagnostics_test.go covers every code, the guards that keep a rule quiet (§6a), suppression by comment and by settings, the install's silence, and the gate over the real installs.
 package lsp
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/lang/session"
+	"paradox-modding-tools/services/internal/source"
 )
 
 func TestDiagnose(t *testing.T) {
@@ -39,20 +46,18 @@ func TestDiagnose(t *testing.T) {
 		{"a bare word nothing declares is never accused", "events/x.txt", "namespace = m\nm.1 = {\n\ttheme = no_such_theme\n}\n", nil},
 		{"a value of another type than the game declares", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { days = soon }\n}\n", []string{"wrong-value-type"}},
 		{"a value of the declared type", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { days = 10 }\n}\n", nil},
-		{"a key the structure never holds", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { fortnights = 2 }\n}\n", []string{"unknown-key"}},
-		{"a member written at another position of the structure", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { months = 2 }\n}\n", nil},
-		{"a key the install writes somewhere", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { base = 2 }\n}\n", nil},
+		{"a key a learned structure never holds is not judged (§6a)", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { fortnights = 2 }\n}\n", nil},
 		{"a declared token, a macro, a scope path and a weight in a body", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tadd_gold = 1\n\t\tv_effect = { AMOUNT = 1 }\n\t\tcapital_county = { add_title_law = x }\n\t\trandom_list = { 10 = { add_gold = 1 } }\n\t}\n}\n", nil},
-		{"a call's argument the macro never spells", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { v_effect = { AMOUNTS = 1 } }\n}\n", []string{"unknown-key"}},
+		{"a call's argument the macro never spells is not judged: the game writes such calls", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { v_effect = { AMOUNTS = 1 } }\n}\n", nil},
 		{"silent in a kind only the mod has", "common/mod_things/m.txt", "thing = {\n\twhatever = 1\n}\n", nil},
 		{"a character effect in a title block", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { capital_county = { add_gold = 1 } }\n}\n", []string{"wrong-scope"}},
 		{"the same chain used correctly", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { capital_county = { add_title_law = x } }\n}\n", nil},
 		{"under a block nothing declares a scope for, silence", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { weird = { add_gold = 1 } }\n}\n", nil},
 		{"a definition without the loc key every vanilla one has", "common/traits/m.txt", "unnamed = {\n\tname = x\n}\n", []string{"required-loc"}},
 		{"a definition with its key", "common/traits/m.txt", "brave = {\n\tname = x\n}\n", nil},
-		{"a suppressed finding, by the comment above", "events/x.txt", "namespace = m\nm.1 = {\n\t# pmt:ignore unknown-key\n\tcooldown = { fortnights = 2 }\n}\n", nil},
-		{"a suppressed finding, on the line", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { fortnights = 2 } # pmt:ignore\n}\n", nil},
-		{"a comment that suppresses another code leaves this one", "events/x.txt", "namespace = m\nm.1 = {\n\t# pmt:ignore wrong-scope\n\tcooldown = { fortnights = 2 }\n}\n", []string{"unknown-key"}},
+		{"a suppressed finding, by the comment above", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { capital_county = {\n\t\t# pmt:ignore wrong-scope\n\t\tadd_gold = 1\n\t} }\n}\n", nil},
+		{"a suppressed finding, on the line", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { capital_county = { add_gold = 1 } } # pmt:ignore\n}\n", nil},
+		{"a comment that suppresses another code leaves this one", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { capital_county = {\n\t\t# pmt:ignore unresolved-ref\n\t\tadd_gold = 1\n\t} }\n}\n", []string{"wrong-scope"}},
 		{"a path that exists nowhere is off by default", "gui/m.gui", "types m = {\n\ttype m_icon = icon {\n\t\ttexture = \"gfx/nowhere/absent.dds\"\n\t}\n}\n", nil},
 	} {
 		path := opened(s, dir, tt.rel, tt.text)
@@ -62,8 +67,8 @@ func TestDiagnose(t *testing.T) {
 	}
 
 	// the settings turn a code off and on
-	path := opened(s, dir, "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { fortnights = 2 }\n}\n")
-	if got := codes(path, map[string]bool{"unknown-key": false}); len(got) != 0 {
+	path := opened(s, dir, "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { capital_county = { add_gold = 1 } }\n}\n")
+	if got := codes(path, map[string]bool{"wrong-scope": false}); len(got) != 0 {
 		t.Errorf("a code turned off: %v", got)
 	}
 	gui := opened(s, dir, "gui/m.gui", "types m = {\n\ttype m_icon = icon {\n\t\ttexture = \"gfx/nowhere/absent.dds\"\n\t}\n}\n")
@@ -88,7 +93,7 @@ func TestDiagnose(t *testing.T) {
 	// the install's own files are silent, and never harvested from the editor
 	for _, f := range s.Install.Index.Files {
 		if strings.HasSuffix(f.Rel, "v_events.txt") {
-			s.DidOpen(f.Path, "namespace = v\nv.1 = {\n\tcooldown = { fortnights = 2 }\n}\n")
+			s.DidOpen(f.Path, "namespace = v\nv.1 = {\n\timmediate = { capital_county = { add_gold = 1 } }\n}\n")
 			if got := codes(f.Path, nil); len(got) != 0 {
 				t.Errorf("an install file: %v", got)
 			}
@@ -144,5 +149,95 @@ func TestDiagnoseLoc(t *testing.T) {
 	s.DidOpen(path, "l_english:\n d:0 \"Hi\"\n")
 	if got, _ := Diagnose(s, path, nil); len(got) != 0 {
 		t.Errorf("a BOM on disk: %+v", got)
+	}
+}
+
+// TestInstallsDiagnoseClean is the gate over the real installs: the game's own script, judged as a mod's, must be clean, because every rule accuses only on what the game declares (§6a). Each game is scanned, a fixed sample of its files (the first 400 under common and the first 250 events files, in name order, so two runs see the same) is copied into a temporary mod over it, and every one is diagnosed with every code on. A finding is a rule that is wrong, not a game that is; a parser error is a parser bug, counted apart. It runs only when asked: PMT_VANILLA_GATE=1 and the three PMT_TEST_INSTALL_ variables.
+func TestInstallsDiagnoseClean(t *testing.T) {
+	if testing.Short() || os.Getenv("PMT_VANILLA_GATE") == "" {
+		t.Skip("diagnoses the three installs; set PMT_VANILLA_GATE=1")
+	}
+	on := map[string]bool{}
+	for _, c := range Codes {
+		on[c.Code] = c.Default
+	}
+	// a ceiling is a finding traced to the game's own files, never a filter: one more than recorded fails
+	ceilings := map[string]int{
+		"ck3/unresolved-ref":        1,   // coronation.txt: province:b_constantinople, a barony under the province prefix, which the game maps to the barony's province
+		"ck3/wrong-scope":           2,   // legend_spread_events_8.txt: any_trait_in_category takes an argument named category, and the dump declares category as an artifact trigger; the reader takes the trigger
+		"vic3/duplicate-definition": 39,  // coat_of_arms/01_subs.txt defines coats of arms twice in one file; the game keeps the last
+		"eu5/unresolved-ref":        218, // a LEARNER gap, not the game's: setup/start wraps dynasties, country tags and characters under wrapper words the learner reads as one kind's names, so dynasty: and c: cites resolve against nothing (§19). This ceiling goes when the learner reads the wrappers
+	}
+	for _, g := range []struct{ id, env string }{{"ck3", "PMT_TEST_INSTALL_CK3"}, {"vic3", "PMT_TEST_INSTALL_VIC3"}, {"eu5", "PMT_TEST_INSTALL_EU5"}} {
+		dir := os.Getenv(g.env)
+		if dir == "" {
+			t.Errorf("%s: %s is not set", g.id, g.env)
+			continue
+		}
+		user := game.UserDataDir(g.id, dir)
+		install, err := index.Scan(context.Background(), index.Request{Game: g.id, Dir: dir, Version: "gate", Docs: []string{filepath.Join(user, "logs"), filepath.Join(user, "docs")}})
+		if err != nil {
+			t.Fatalf("%s: %v", g.id, err)
+		}
+
+		// the sample, copied into a mod
+		var common, events []source.File
+		for _, f := range install.Index.Files {
+			switch {
+			case f.Format != source.Script || !strings.HasSuffix(f.Rel, ".txt"):
+			case strings.HasPrefix(f.Rel, "events/") || strings.Contains(f.Rel, "/events/"):
+				events = append(events, f)
+			case strings.Contains(f.Rel, "common/"):
+				common = append(common, f)
+			}
+		}
+		slices.SortFunc(common, func(a, b source.File) int { return strings.Compare(a.Rel, b.Rel) })
+		slices.SortFunc(events, func(a, b source.File) int { return strings.Compare(a.Rel, b.Rel) })
+		sample := append(common[:min(400, len(common))], events[:min(250, len(events))]...)
+		mod := t.TempDir()
+		for _, f := range sample {
+			raw, err := os.ReadFile(f.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(mod, filepath.FromSlash(f.Rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, raw, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		s, err := session.New(context.Background(), game.Get(g.id), install, []session.Mod{{ID: "sample", Name: "Sample", Dir: mod}}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// every file judged; a finding is shown with its first site
+		counts, first := map[string]int{}, map[string]string{}
+		parse := 0
+		for _, f := range sample {
+			path := filepath.Join(mod, filepath.FromSlash(f.Rel))
+			found, err := Diagnose(s, path, on)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range found {
+				if !on[d.Code] && !slices.ContainsFunc(Codes, func(c Code) bool { return c.Code == d.Code }) {
+					parse++
+					continue
+				}
+				counts[d.Code]++
+				if _, seen := first[d.Code]; !seen {
+					first[d.Code] = fmt.Sprintf("%s:%d %s", f.Rel, d.Range.Start.Line+1, d.Message)
+				}
+			}
+		}
+		t.Logf("DIAGNOSE %s: %d files, %d parse errors, findings %v", g.id, len(sample), parse, counts)
+		for code, n := range counts {
+			if n > ceilings[g.id+"/"+code] {
+				t.Errorf("%s: %s fires %d times on the game's own files; first at %s", g.id, code, n, first[code])
+			}
+		}
 	}
 }

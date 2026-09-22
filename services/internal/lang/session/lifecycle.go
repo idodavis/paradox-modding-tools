@@ -140,6 +140,14 @@ func (s *Session) Watch() error {
 	return err
 }
 
+// WatchError is the first error the session's watcher hit, nil while it is live or there is none.
+func (s *Session) WatchError() error {
+	if s.watcher == nil {
+		return nil
+	}
+	return s.watcher.Err()
+}
+
 // Close stops the session's watcher, if it has one.
 func (s *Session) Close() {
 	if s.watcher != nil {

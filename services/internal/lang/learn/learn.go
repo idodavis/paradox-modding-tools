@@ -334,6 +334,13 @@ func (c *census) prefixes(drafts []*draft) {
 				best.kind.ScopeType = link.Out
 			}
 		}
+		// a nested kind named by the prefix holds it too: EU5 spreads its defines over three folders, three kinds, one prefix
+		for _, d := range drafts {
+			if d != best && strings.HasSuffix(d.kind.Name, "."+prefix) && !slices.Contains(d.kind.Prefixes, prefix) {
+				d.kind.Prefixes = append(d.kind.Prefixes, prefix)
+				c.prefixed[prefix] = append(c.prefixed[prefix], d)
+			}
+		}
 	}
 }
 

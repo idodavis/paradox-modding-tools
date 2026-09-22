@@ -51,8 +51,8 @@ func SaveJSON(path string, v any) error {
 // peekWindow bounds the header read. formatVersion and scannedAt are the first and sixth fields every persisted struct declares, so a large cache is never read whole to answer either.
 const peekWindow = 64 << 10
 
-// peekHeader reads formatVersion and scannedAt out of the head of a JSON file, in one open, without decoding the body.
-func peekHeader(path string) (formatVersion int, scannedAt string, err error) {
+// Peek reads formatVersion and scannedAt out of the head of a JSON file, in one open, without decoding the body.
+func Peek(path string) (formatVersion int, scannedAt string, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, "", err
@@ -78,7 +78,7 @@ func peekHeader(path string) (formatVersion int, scannedAt string, err error) {
 
 // LoadJSON reads path and rejects a missing or mismatched formatVersion, without decoding the body of a file it is going to refuse.
 func LoadJSON[T any](path string, wantVersion int) (*T, error) {
-	got, _, err := peekHeader(path)
+	got, _, err := Peek(path)
 	if err != nil {
 		return nil, err
 	}

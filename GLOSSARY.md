@@ -127,7 +127,7 @@ The rows for the language engine return as each phase of the plan writes them.
 
 | Name | Lives in |
 |---|---|
-| `GameInfo` (with `SubjectDirs`, the folders whose definitions are named after other kinds': history, coats of arms, flags; and `EntryModes`, the six entry-mode words of Victoria 3 and EU5 with what each does, in the order the game processes them), `UserDataDir`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
+| `GameInfo` (with `SubjectDirs`, the folders whose definitions are named after other kinds': history, coats of arms, flags; and `EntryModes`, the six entry-mode words of Victoria 3 and EU5 with what each does, in the order the game processes them), `UserDataDir`, `IsFIOS` | `services/internal/game` — **the only game-aware package** |
 | The CST, the lexer, the name and literal shapes, encodings; `Cite`, `Mode`, `Constant`, `Interpolations` (the spellings inside one word) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install or a mod, its format, an image's header | `services/internal/source` — one format table for every game |
 | Loc files, loc key conventions | `services/internal/lang/loc` |
@@ -136,6 +136,8 @@ The rows for the language engine return as each phase of the plan writes them.
 | `Index` with `Def`, `Ref`, `Edge`, `Loc`; `Harvest` and its `Records`; `Scan`, `BuildWorkspace`, `IndexFile`; `All`, `Found`, `Winner`, `Contests`; `Save`, `Load`, `CachePath` | `services/internal/lang/index` — what a scan found and where, load order, and the cache. It infers nothing |
 | `Session` with `New`, `Replace`, `Defs`, `Winner`, `Loc`, `LocKeys`, `Where` (`Place`), `Text`, `Parsed`, `Did*`, `Changed`, `Watch`; `Pool`, `Watcher` | `services/internal/lang/session` — one workspace open in the editor, and its lock |
 | `Hover` (`Inspect`), `SignatureHelp`, `Complete` (`Item`, `Resolve`), `Definition`, `References`, `DocumentSymbols`, `WorkspaceSymbols`, `Diagnose` (`Codes`), `Format`, `Folding`, `CodeActions`, `InlayHints` | `services/internal/lang/lsp` — the editor's requests, each from one descent and one reading; payloads carry `schema.Value` |
+| `Graph` (`Params`, `EventGraph`, `Node`, `Edge`), `EventDetail` (`Detail`, `Section`, `Option`), `WorkspaceHealth` (`HealthParams`, `Health`, `Contest`, `Dependency`, `Dangling`, `Language`, `FileRow`), `Lookup` | `services/internal/views` — a page's question answered from the index's records; every number in a payload is the page's |
+| `SessionService` (`EnsureSession`, `RebuildInstallSemantics`, `QueueScan`, `GetLanguageHealth`), `IdeService` (the editor's requests), `ViewsService` (`GetEventGraph`, `GetEventDetail`, `GetHealth`, `LookupLoc`), the `lang:*` events | `services/` — the Wails layer: resolve, call the package, return its type |
 | `CacheDir`, `SaveJSON`, `LoadJSON`, `ErrFormat` | `services/internal/persist` |
 | `WriteNewMod`, `ReadListingFields`, `DescriptorModKeys` | `services/internal/modfile` |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
@@ -153,25 +155,23 @@ IDE lint — so every code below describes something in a mod.
 
 | Code | Says |
 |---|---|
-| `duplicate-definition` | one key defined twice inside a single origin, at a file's top level; load order decides which survives |
-| `loc-header-mismatch` | a localization file's `l_<lang>:` header disagrees with its folder |
-| `missing-bom` | a localization file without the UTF-8 BOM the games require |
-| `missing-descriptor` | a mod with no `descriptor.mod` |
-| `missing-required-loc` | a key the game will look for that nothing defines |
-| `required-loc` | a definition missing localization its kind conventionally has |
-| `unknown-event` | an event id fired or called that no file defines |
-| `unknown-token` | an effect or trigger neither declared by the game nor defined as a scripted macro. **Experimental, default off**: 442 findings on vanilla fell to 3 by reading declared argument lists, and the last 3 are EU5 `attribute_columns`, where `effect` names a column rather than opening a script slot |
-| `unknown-key` | a key that is not a member of the block it sits in, where that block name belongs to exactly one kind |
-| `unresolved-ref` | `culture:nonexistent` — a citation naming a database PMT holds, and a key nothing defines |
-| `wrong-declared-value` | a value outside the closed set the game documents for that field — EU5 writing `# uses_diplo_capacity = <none/mutual/giving/receiving>`. **Experimental, default off**: it fires once on vanilla Victoria 3, where the game documents `type = <investment/monopoly/new_industry/trade/colonization>` and its own `00_company_charter_types.txt` writes `type = industry`. The check is right and the documentation is stale — see GAME-SYNTAX 22 |
-| `wrong-localization-folder` | a localization file under the wrong language folder |
-| `wrong-scope` | an effect or trigger used in a scope the game does not allow |
-| `wrong-value-type` | a value contradicting the argument type the game declares for that key |
+| `unresolved-ref` | a declared cite names a definition nothing has (`culture:nonexistent`). Silent for a member of a group the learner may not have read whole, and for a kind whose names another kind defines (a subject) |
+| `wrong-value-type` | a value of another type than the game declares for the field |
+| `wrong-scope` | a token written in a scope it does not run in, judged on the scopes the game declares for that token |
+| `duplicate-definition` | a name the workspace defines twice, the earlier one in load order named |
+| `required-loc` | a definition without the localization key every vanilla one of its kind has |
+| `missing-bom` | a localization file without the UTF-8 byte order mark the games require |
+| `loc-header-mismatch` | a localization file whose `l_<lang>:` header names another language than its name does |
+| `wrong-localization-folder` | a localization folder spelled `localisation`, which the game never reads |
+| `missing-file` | a path that exists nowhere in the install or the mods. **Off unless the user turns it on** |
 
-Parse errors carry their own codes from the parser (`unclosed-brace`, `stray-close`,
-`unterminated-string`, `missing-value`, and the localization ones prefixed `loc-`).
-They are in the registry too, under the `parse` group rather than `check`: they
-reach `ApplySeverities` like any other code, so leaving them out made them
-settable and not un-settable.
+Parse errors carry their own codes from the parser (`unclosed-brace`,
+`stray-close`, `unterminated-string`, `missing-value`, and a localization
+file's prefixed `loc-`). They are not in the list above and cannot be turned
+off: a file that does not parse is wrong.
 
-**A learned fact never accuses.** The rule, and the two findings that rest on a learned convention with a calibration against vanilla, are the plan's §6a. With no dumps at all nothing is declared, so the checks that need a declaration correctly go quiet rather than guess.
+**A learned fact never accuses.** The rule is the plan's §6a: every code above
+accuses on something the game declares, except `required-loc`, which rests on a
+convention learned from the install and is held to the gate over the games' own
+files. With no dumps at all nothing is declared, so the checks that need a
+declaration correctly go quiet rather than guess.

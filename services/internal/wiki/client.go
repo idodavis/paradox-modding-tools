@@ -43,15 +43,6 @@ func wikiHTTP() *http.Client {
 	}
 }
 
-// SetUserAgent sets the MediaWiki User-Agent (required; no browser spoofing).
-func SetUserAgent(version string) {
-	if version == "" {
-		version = "dev"
-	}
-	userAgent = "ParadoxModdingTools/" + version +
-		" (https://github.com/idodavis/paradox-modding-tools; wiki-sidecar)"
-}
-
 func wikiAPI(gameID string) string {
 	if apiOverride != "" {
 		return apiOverride

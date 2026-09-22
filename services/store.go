@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/persist"
 )
 
 const (
@@ -140,9 +140,9 @@ func newStore(path string) *Store {
 }
 
 func loadConfig(path string) (Config, error) {
-	cfg, err := index.LoadJSON[Config](path, configFormatVersion)
+	cfg, err := persist.LoadJSON[Config](path, configFormatVersion)
 	if err != nil {
-		if errors.Is(err, index.ErrFormat) {
+		if errors.Is(err, persist.ErrFormat) {
 			return Config{}, fmt.Errorf("%w: %w", err, errConfigReset)
 		}
 		return Config{}, err
@@ -151,7 +151,7 @@ func loadConfig(path string) (Config, error) {
 }
 
 func saveConfig(path string, cfg *Config) error {
-	return index.SaveJSON(path, cfg)
+	return persist.SaveJSON(path, cfg)
 }
 
 // OpenStore loads config.json and drops the legacy SQLite files. Missing or a

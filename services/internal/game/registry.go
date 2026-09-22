@@ -11,7 +11,6 @@ package game
 
 import (
 	"slices"
-	"strings"
 )
 
 // OriginVanilla is the session/IDE origin id for game files (not a cache filename).
@@ -159,44 +158,4 @@ func IsFIOS(gameID, kind string) bool {
 		return slices.Contains(g.FIOSKinds, kind)
 	}
 	return kind == "gui.type"
-}
-
-// KeyIdentity canonicalizes a raw key for matching/merge: trims whitespace and
-// surrounding quotes, and strips an EU5 entry-mode prefix (INJECT:foo -> foo).
-// gameID "" (e.g. merge, which is game-agnostic) strips any known EU5 mode.
-func KeyIdentity(gameID, key string) string {
-	key = trimQuotes(strings.TrimSpace(key))
-	if i := strings.IndexByte(key, ':'); i > 0 && isEntryMode(gameID, key[:i]) {
-		return key[i+1:]
-	}
-	return key
-}
-
-// anyEntryMode is the union of entry-mode prefixes across the registry, used
-// when the game is unknown (merge passes gameID "").
-var anyEntryMode = func() map[string]bool {
-	m := map[string]bool{}
-	for _, g := range registry {
-		for _, mode := range g.EntryModes {
-			m[mode.Word] = true
-		}
-	}
-	return m
-}()
-
-func isEntryMode(gameID, tok string) bool {
-	if g := Get(gameID); g != nil {
-		return slices.ContainsFunc(g.EntryModes, func(m EntryMode) bool { return m.Word == tok })
-	}
-	return anyEntryMode[tok]
-}
-
-// trimQuotes removes a single pair of surrounding single or double quotes.
-func trimQuotes(s string) string {
-	if len(s) >= 2 {
-		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
 }

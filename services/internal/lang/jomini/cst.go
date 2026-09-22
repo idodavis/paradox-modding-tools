@@ -100,21 +100,6 @@ func (t TaggedBlock) NodeRange() Range { return t.Range }
 func (a Assignment) NodeRange() Range  { return a.Range }
 func (v ValueStmt) NodeRange() Range   { return v.Range }
 
-// BlockForKey returns the body of the first top-level assignment named key.
-func BlockForKey(root *Root, key string) *Block {
-	if root == nil || key == "" {
-		return nil
-	}
-	for _, st := range root.Statements {
-		a, ok := st.(*Assignment)
-		if !ok || a.Key.Quoted || a.Key.Text != key {
-			continue
-		}
-		return BlockOf(a.Value)
-	}
-	return nil
-}
-
 // BlockOf returns the Block a value owns (plain or tagged), or nil.
 func BlockOf(v Value) *Block {
 	switch b := v.(type) {
@@ -235,26 +220,4 @@ func Walk(root *Root, fn func(st Statement, depth int, parent *Block) bool) {
 		}
 	}
 	visit(root.Statements, 0, nil)
-}
-
-// NodeAtOffset returns the innermost-first chain of statements whose ranges
-// contain offset (outermost first in the slice), or nil if offset is outside all.
-func NodeAtOffset(root *Root, offset int) []Statement {
-	var path []Statement
-	var search func(stmts []Statement)
-	search = func(stmts []Statement) {
-		for _, st := range stmts {
-			r := st.NodeRange()
-			if offset < r.Start || offset > r.End {
-				continue
-			}
-			path = append(path, st)
-			if b := ChildBlock(st); b != nil && offset >= b.Range.Start && offset <= b.Range.End {
-				search(b.Statements)
-			}
-			return
-		}
-	}
-	search(root.Statements)
-	return path
 }

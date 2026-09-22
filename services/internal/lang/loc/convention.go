@@ -54,18 +54,6 @@ func (k *Keys) PrefixesOf(id string) []string {
 // Has reports an exact key.
 func (k *Keys) Has(key string) bool { return k != nil && k.has[key] }
 
-// Count is how many keys a template matches, whatever stands for {id}.
-func (k *Keys) Count(t Template) int {
-	before, after, _ := strings.Cut(string(t), "{id}")
-	n := 0
-	for key := range k.has {
-		if len(key) > len(before)+len(after) && strings.HasPrefix(key, before) && strings.HasSuffix(key, after) {
-			n++
-		}
-	}
-	return n
-}
-
 // render fills a template's {id} with the def id.
 func render(t Template, id string) string {
 	return strings.ReplaceAll(string(t), "{id}", id)

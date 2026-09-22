@@ -1,4 +1,4 @@
-// diagnostics.go is what is wrong with a file, judged by the plan's §6a: a diagnostic accuses only on a fact the game declares (a token's scopes, a declared prefix bound to a kind, a declared field type) or where the install's own structure never holds the key; a learned convention (required-loc) is held to zero findings on vanilla. The install's own files are never judged. A code is turned off in the settings, or on one line by `# pmt:ignore code`.
+// diagnostics.go is what is wrong with a file, judged by the plan's §6a: a diagnostic accuses only on a fact the game declares (a token's scopes, a declared prefix bound to a kind, a declared field type, a macro's own parameters); a learned convention (required-loc) is held to the gate over the games' own files. The install's own files are never judged. A code is turned off in the settings, or on one line by `# pmt:ignore code`.
 package lsp
 
 import (
@@ -6,7 +6,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
@@ -36,7 +35,6 @@ type Code struct {
 var Codes = []Code{
 	{"unresolved-ref", "a declared cite names a definition nothing has", true},
 	{"wrong-value-type", "a value of another type than the game declares for the field", true},
-	{"unknown-key", "a key the install's structure never holds", true},
 	{"wrong-scope", "a token written in a scope it does not run in", true},
 	{"duplicate-definition", "a name the workspace defines twice", true},
 	{"required-loc", "a definition without the localization key every vanilla one has", true},
@@ -118,8 +116,7 @@ func (d *judge) script() {
 	}
 	found, _, _ := s.Located(d.f.path)
 	r := s.Reader()
-	written := writtenKeys(s.Install.Schema)
-	records := index.Visit(found, d.f.text, r, func(level index.Level) {
+	records := index.Visit(found, d.f.parsed, r, func(level index.Level) {
 		a, ok := level.Statement.(*jomini.Assignment)
 		if !ok {
 			if v, ok := level.Statement.(*jomini.ValueStmt); ok {
@@ -129,7 +126,7 @@ func (d *judge) script() {
 			}
 			return
 		}
-		d.key(level, a, written)
+		d.key(level, a)
 		if scalar, ok := a.Value.(*jomini.Scalar); ok {
 			d.value(r.Value(level.Below, scalar.Text, scalar.Quoted), level.Below, scalar)
 		}
@@ -137,45 +134,25 @@ func (d *judge) script() {
 	d.definitions(records.Defs)
 }
 
-// key judges a key: a token in a scope it does not run in; a key a learned structure never holds; a macro's argument the macro never spells.
-func (d *judge) key(level index.Level, a *jomini.Assignment, written map[string]bool) {
+// key judges a key: a token in a scope it does not run in. No key is judged against a structure or a macro's parameters: the schema keeps a structure's members and not every key the install wrote (3,841 findings on CK3's own files), and a macro's parameters are not every argument the game writes (`$SUCCESS_%$`, effects among an EU5 call's arguments).
+func (d *judge) key(level index.Level, a *jomini.Assignment) {
 	s := d.f.s
 	key, v := a.Key.Text, level.Key
-	switch v.Type {
-	case schema.TypeToken:
+	if v.Type == schema.TypeToken {
 		_, _, in, _ := tokenDocs(s.Install.Vocab, v.Name)
 		if level.Scope != "" && len(in) > 0 && !schema.UsableIn(in, level.Scope) {
 			d.report(a.Key.Range, 2, "wrong-scope", fmt.Sprintf("%s runs on %s, but this block is %s scope", key, strings.Join(in, " or "), level.Scope))
 		}
-	case schema.TypeRef:
-		if v.Kind == "params" && !s.All().Def("params", v.Name) {
-			d.report(a.Key.Range, 2, "unknown-key", fmt.Sprintf("%s spells no parameter %s", v.Parent, key))
-		}
-	case schema.TypeUnresolved:
-		field := level.Field
-		if field == nil || field.Class != schema.ClassStructure || level.Kind == nil || s.Install.Schema.Kinds[level.Kind.Name] == nil || written[key] || a.Key.Quoted || strings.Contains(key, "$") {
-			return
-		}
-		if !jomini.IsDefName(key) {
-			return
-		}
-		d.report(a.Key.Range, 2, "unknown-key", fmt.Sprintf("%s is not a key of %s in any file of the game", key, fieldName(field)))
 	}
-}
-
-// fieldName is a field's name for a message, the kind's own shape being "the definition".
-func fieldName(f *schema.Field) string {
-	if f.Name == "" {
-		return "the definition"
-	}
-	return f.Name
 }
 
 // value judges a word: a declared cite nothing defines; a literal of another type than the field's declared one; a path that exists nowhere.
 func (d *judge) value(v schema.Value, field *schema.Field, scalar *jomini.Scalar) {
 	switch {
 	case v.Type == schema.TypeRef && v.Declared && v.Kind != "" && !d.f.s.All().Def(v.Kind, v.Name):
-		if _, scriptMade := schema.ScriptKinds[v.Kind]; !scriptMade {
+		// a member cite (define:NGroup|KEY) whose group exists names a member the learner may not have read, and a prefix bound to a subject kind names what is defined elsewhere by design: neither is accused
+		k := d.f.s.Schema.Kinds[v.Kind]
+		if _, scriptMade := schema.ScriptKinds[v.Kind]; !scriptMade && (v.Parent == "" || len(d.f.s.Defs(v.Parent)) == 0) && (k == nil || k.Subject == "") {
 			d.report(scalar.Range, 2, "unresolved-ref", fmt.Sprintf("no %s named %s", v.Kind, v.Name))
 		}
 	case field != nil && (v.Type == schema.TypeString || v.Type == schema.TypeUnresolved || v.Type == schema.TypeNumber || v.Type == schema.TypeBool || v.Type == schema.TypeDate):
@@ -242,31 +219,4 @@ func (d *judge) locFile() {
 			d.report(whole, 2, "missing-bom", "the game reads a localization file only with a UTF-8 byte order mark")
 		}
 	}
-}
-
-var known sync.Map
-
-// writtenKeys is every key the install writes anywhere, as a member of any kind's shape or of any token's arguments, computed once per schema.
-func writtenKeys(s *schema.Schema) map[string]bool {
-	if keys, ok := known.Load(s); ok {
-		return keys.(map[string]bool)
-	}
-	keys := map[string]bool{}
-	var walk func(f *schema.Field)
-	walk = func(f *schema.Field) {
-		for name, m := range f.Members {
-			keys[name] = true
-			walk(m)
-		}
-	}
-	for _, k := range s.Kinds {
-		if k.Shape != nil {
-			walk(k.Shape)
-		}
-	}
-	for _, f := range s.Arguments {
-		walk(f)
-	}
-	known.Store(s, keys)
-	return keys
 }

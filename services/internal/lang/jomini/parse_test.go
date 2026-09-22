@@ -113,10 +113,6 @@ func TestParse(t *testing.T) {
 		if had2 || text2 != "xéy" {
 			t.Fatalf("latin1 fallback: had=%v text=%q", had2, text2)
 		}
-		got := LineIndents("a = {\n\tb = 1\n}\n")
-		if len(got) < 3 || got[0] != 0 || got[1] != 1 || got[2] != 0 {
-			t.Fatalf("LineIndents = %v, want [0 1 0 ...]", got)
-		}
 	})
 
 	// LineIndex offset<->position math, including UTF-8 byte columns.
@@ -172,20 +168,4 @@ func TestParse(t *testing.T) {
 		}
 	})
 
-	t.Run("node_at_offset_chain", func(t *testing.T) {
-		src := "a = { b = 1 }\n"
-		r := Parse(src)
-		path := NodeAtOffset(r.Root, 6)
-		if len(path) != 2 {
-			t.Fatalf("path len = %d want 2 (%v)", len(path), path)
-		}
-		outer, ok := path[0].(*Assignment)
-		if !ok || outer.Key.Text != "a" {
-			t.Fatalf("outer = %+v", path[0])
-		}
-		inner, ok := path[1].(*Assignment)
-		if !ok || inner.Key.Text != "b" {
-			t.Fatalf("inner = %+v", path[1])
-		}
-	})
 }

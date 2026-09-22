@@ -6,9 +6,9 @@
 # the full suite. It is the only mechanism that can catch a lock-discipline
 # regression, which GLOSSARY declares binding on every consolidation.
 #
-# The real-install tier (PMT_TEST_INSTALL_*) and the vanilla gate cannot run
-# here — they need the three games. Those stay manual, per the plan's
-# harvest-changing-items rule.
+# The real-install tier cannot run here — the five gates behind PMT_*_GATE need
+# the three games installed. Those stay manual (`task test:gate`), per the
+# plan's harvest-changing-items rule, and so does the sweep (`task test:sweep`).
 name: Test
 
 on:
@@ -46,14 +46,14 @@ jobs:
 
       - name: go vet
         working-directory: services
-        run: go vet ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/lsp/... ./internal/lang/schema/... ./internal/lang/session/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+        run: go vet ./...
 
       # -timeout 60s is the contract, not a safety net. A test that needs longer
       # belongs behind an opt-in task; if this starts failing, move the test
       # rather than raising the number.
       - name: go test -race
         working-directory: services
-        run: go test -short -race -timeout 60s ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/lsp/... ./internal/lang/schema/... ./internal/lang/session/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+        run: go test -short -race -timeout 60s ./...
 
   frontend:
     name: Frontend typecheck

@@ -28,6 +28,7 @@ type Index struct {
 
 	Replaced         []string           `json:"replaced,omitempty"` // a workspace only: the folders its mods replace (replace_path), lower-cased. The game loads no install file that sits in one, subfolders apart
 	defs, refs, locs map[string][]int32 // definitions by name, references by name, loc entries by key
+	from, to         map[string][]int32 // edges by either end
 	bases            map[string][]int32 // files by lower-cased base name
 	stems            map[string]int32   // a file by its lower-cased base name without the extension
 	rels, paths      map[string]int32   // a file by its lower-cased rel (of several roots' the last, which the game loads last), and by PathKey
@@ -101,6 +102,12 @@ type Cited struct {
 	At source.File
 }
 
+// Firing is one edge with the file it is written in.
+type Firing struct {
+	Edge
+	At source.File
+}
+
 // Said is one localization entry with the file it is written in.
 type Said struct {
 	loc.Entry
@@ -138,13 +145,14 @@ func (x *Index) At(p string) (source.File, bool) {
 func (x *Index) Ready() {
 	if x.defs == nil {
 		x.defs, x.refs, x.locs, x.bases = map[string][]int32{}, map[string][]int32{}, map[string][]int32{}, map[string][]int32{}
+		x.from, x.to = map[string][]int32{}, map[string][]int32{}
 		x.rels, x.paths, x.stems, x.shared = map[string]int32{}, map[string]int32{}, map[string]int32{}, map[string]string{}
-		x.post(0, 0, 0, 0)
+		x.post(0, 0, 0, 0, 0)
 	}
 }
 
-// post files the definitions from position d on, the references from r on and the loc entries from l on in the lookups, and every file from f on.
-func (x *Index) post(f, d, r, l int) {
+// post files the definitions from position d on, the references from r on, the edges from e on and the loc entries from l on in the lookups, and every file from f on.
+func (x *Index) post(f, d, r, e, l int) {
 	for i := f; i < len(x.Files); i++ {
 		rel := strings.ToLower(x.Files[i].Rel)
 		base := path.Base(rel)
@@ -155,6 +163,9 @@ func (x *Index) post(f, d, r, l int) {
 	}
 	for i := r; i < len(x.Refs); i++ {
 		x.refs[x.Refs[i].Name] = append(x.refs[x.Refs[i].Name], int32(i))
+	}
+	for i := e; i < len(x.Edges); i++ {
+		x.from[x.Edges[i].From], x.to[x.Edges[i].To] = append(x.from[x.Edges[i].From], int32(i)), append(x.to[x.Edges[i].To], int32(i))
 	}
 	for i := l; i < len(x.Loc); i++ {
 		x.locs[x.Loc[i].Key] = append(x.locs[x.Loc[i].Key], int32(i))
@@ -176,7 +187,7 @@ func (x *Index) own(word string) string {
 // Add gives a file's harvest its place: the file joins the inventory if it is new to it, and every record is filed under its name.
 func (x *Index) Add(h *Records) {
 	x.Ready()
-	f, d, r, l := len(x.Files), len(x.Defs), len(x.Refs), len(x.Loc)
+	f, d, r, e, l := len(x.Files), len(x.Defs), len(x.Refs), len(x.Edges), len(x.Loc)
 	at, known := x.paths[PathKey(h.File.Path)]
 	if !known {
 		at, x.Files = int32(len(x.Files)), append(x.Files, h.File)
@@ -210,7 +221,7 @@ func (x *Index) Add(h *Records) {
 	if x.owned != nil {
 		x.owned[at] = mine
 	}
-	x.post(f, d, r, l)
+	x.post(f, d, r, e, l)
 }
 
 // Drop takes back everything the file at path added. A record keeps its slot with File -1, so the slices never move under a reader, and leaves the lookups. Only a live index can drop.
@@ -235,6 +246,8 @@ func (x *Index) Drop(filePath string) {
 		x.Refs[i].File = -1
 	}
 	for _, i := range mine.edges {
+		without(x.from, x.Edges[i].From, i)
+		without(x.to, x.Edges[i].To, i)
 		x.Edges[i].File = -1
 	}
 	for _, i := range mine.loc {
@@ -260,6 +273,20 @@ func (x *Index) Referring(name string) []Cited {
 	var out []Cited
 	for _, i := range x.refs[name] {
 		out = append(out, Cited{Ref: x.Refs[i], At: x.Files[x.Refs[i].File]})
+	}
+	return out
+}
+
+// Fires is every edge out of a definition, and FiredBy every edge into one, each with its file.
+func (x *Index) Fires(name string) []Firing   { return x.edges(x.from, name) }
+func (x *Index) FiredBy(name string) []Firing { return x.edges(x.to, name) }
+
+// edges is the edges a posting lists for a name.
+func (x *Index) edges(posting map[string][]int32, name string) []Firing {
+	x.Ready()
+	var out []Firing
+	for _, i := range posting[name] {
+		out = append(out, Firing{Edge: x.Edges[i], At: x.Files[x.Edges[i].File]})
 	}
 	return out
 }

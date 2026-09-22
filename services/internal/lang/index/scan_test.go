@@ -46,7 +46,7 @@ func workspace(t *testing.T, id string) (*Index, *schema.Schema, string) {
 	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "testdata", "mods", id))); err != nil {
 		t.Fatal(err)
 	}
-	x, s, err := BuildWorkspace(context.Background(), []Mod{{ID: "mod", Dir: dir}}, fixture(t, id), "")
+	x, s, err := BuildWorkspace(context.Background(), []Mod{{ID: "mod", Dir: dir}}, fixture(t, id))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,9 +3,9 @@
 package services
 
 import (
-	"path/filepath"
+	"context"
+	"slices"
 
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/session"
 	"paradox-modding-tools/services/internal/wiki"
 )
@@ -15,24 +15,45 @@ type WikiService struct {
 	Session *SessionService
 }
 
-// Guide returns Guide pane pages for the active file. Locate fail → empty, not an error.
+// Guide returns Guide pane pages for the active file. A path under no root gives an empty guide, not an error.
 func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
-	return withSession(s.Session, workspaceID, func(sess *session.Session) *wiki.Guide {
-		origin, rel, ok := sess.Locate(path)
-		if !ok {
-			return &wiki.Guide{}
+	sess, err := s.Session.live(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	sess.RLock()
+	defer sess.RUnlock()
+	place := sess.Where(path)
+	if place.Origin == "" {
+		return &wiki.Guide{}, nil
+	}
+	kind, name := "", sess.Game.Name
+	if len(place.Kinds) > 0 {
+		kind = place.Kinds[0].Name
+	}
+	if at := slices.IndexFunc(sess.Mods, func(m session.Mod) bool { return m.ID == place.Origin }); at >= 0 {
+		name = sess.Mods[at].Name
+	}
+	return &wiki.Guide{
+		Rel:         place.Rel,
+		Origin:      place.Origin,
+		OriginName:  name,
+		Kind:        kind,
+		Pages:       wiki.PagesFor(sess.Game.ID, kind, place.Rel),
+		Attribution: wiki.Attribution(sess.Game.ID),
+	}, nil
+}
+
+// StartWikiWarm fetches, in the background, the sidecar of every install's game where it is missing or older than the game's version, then refreshes the ones the app already has, so the guides are current without a click.
+func (s *WikiService) StartWikiWarm() {
+	var installs []GameInstall
+	s.Session.Store.Read(func(c *Config) { installs = append(installs, c.Installs...) })
+	go func() {
+		for _, inst := range installs {
+			wiki.RefreshIfNeeded(context.Background(), inst.GameID, inst.Version, nil)
 		}
-		slash := filepath.ToSlash(rel)
-		kind := game.MatchExtract(sess.GameID, slash).Kind
-		return &wiki.Guide{
-			Rel:         slash,
-			Origin:      origin,
-			OriginName:  sess.OriginName(origin),
-			Kind:        kind,
-			Pages:       wiki.PagesFor(sess.GameID, kind, slash),
-			Attribution: wiki.Attribution(sess.GameID),
-		}
-	})
+		wiki.RefreshExisting(context.Background(), nil)
+	}()
 }
 
 // Status returns sidecar presence and counts for a game.

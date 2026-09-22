@@ -173,7 +173,7 @@ export function SetInstallVersion(id: string, version: string): $CancellableProm
 }
 
 /**
- * SetWorkspaceLocLang sets default loc language and loc-harvests if a session is live.
+ * SetWorkspaceLocLang sets the default loc language; a live session is built again with it.
  */
 export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromise<void> {
     return $Call.ByID(3609504639, id, lang);

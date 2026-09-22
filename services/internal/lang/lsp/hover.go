@@ -63,7 +63,10 @@ func (f *file) card(w *site) *Inspect {
 			card.Docs, card.ScopeOut = link.Doc, link.Out
 		}
 	case schema.TypeMember, schema.TypeEnum:
-		card.Class, card.Accepts, card.Docs = w.Level.Below.Class.String(), spell(w.Level.Below), fieldDocs(s, w.Level, w.Text)
+		card.Accepts, card.Docs = spell(w.Level.Below), fieldDocs(s, w.Level, w.Text)
+		if w.Level.Below != nil {
+			card.Class = w.Level.Below.Class.String()
+		}
 	case schema.TypeRef:
 		f.defined(card, v)
 	case schema.TypeLoc:
@@ -311,7 +314,7 @@ func SignatureHelp(s *session.Session, path string, line, col int) (*Signature, 
 		return nil, err
 	}
 	found, _, _ := s.Located(path)
-	d := index.Probe(found, f.text, s.Reader(), f.offset(line, col))
+	d := index.Probe(found, f.parsed, s.Reader(), f.offset(line, col))
 	for i := len(d.Chain) - 1; i >= 0; i-- {
 		if d.Chain[i].Key.Type != schema.TypeToken {
 			continue

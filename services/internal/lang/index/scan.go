@@ -189,8 +189,8 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	return in, err
 }
 
-// BuildWorkspace reads a workspace's mods over an install: what the mods' files add to the install's schema, and the mods' own records, whose references may name anything of the install.
-func BuildWorkspace(ctx context.Context, mods []Mod, install *Install, language string) (*Index, *schema.Schema, error) {
+// BuildWorkspace reads a workspace's mods over an install: what the mods' files add to the install's schema, and the mods' own records, whose references may name anything of the install. Every localization file of a mod is read, whatever its language: health reports each language's gaps.
+func BuildWorkspace(ctx context.Context, mods []Mod, install *Install) (*Index, *schema.Schema, error) {
 	x := &Index{owned: map[int32]*owns{}}
 	for _, m := range mods {
 		roots := source.Roots(m.Dir)
@@ -206,7 +206,7 @@ func BuildWorkspace(ctx context.Context, mods []Mod, install *Install, language 
 	if err != nil {
 		return nil, nil, err
 	}
-	read := append(wanted(files, language, true), wanted(files, "", false)...)
+	read := slices.Clone(files)
 	return x, s, harvested(ctx, x, read, schema.Reader{Schema: s, Vocab: install.Vocab}, All{x, install.Index})
 }
 

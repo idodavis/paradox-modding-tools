@@ -120,7 +120,6 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 	for _, token := range slices.Sorted(maps.Keys(c.tokens)) {
 		s.Arguments[token] = c.field(token, c.tokens[token], nil, "")
 	}
-	maps.Copy(s.Kinds, c.locKinds)
 	s.Drift = c.drift(in, parseErrors, s)
 	return s, nil
 }

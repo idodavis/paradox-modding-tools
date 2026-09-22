@@ -92,12 +92,11 @@ type census struct {
 	called        map[schema.BodyClass]map[string]int // the keys written in bodies of each class that no vocabulary declares
 	macro         map[string]bool                     // the names of every macro kind's definitions
 	moved         bool                                // a lift took a token or a scope change out of a position: the tokens are lifted again until none does
-	locKinds      map[string]*schema.Kind             // the kinds whose definitions are loc keys, by name, made where a field is found to hold them
 }
 
 func newCensus(vocab *schema.Vocab) *census {
 	return &census{vocab: vocab, folders: map[string]*folder{}, tokens: map[string]*node{}, cites: map[string]map[string]int{}, constants: map[string]int{},
-		called: map[schema.BodyClass]map[string]int{}, macro: map[string]bool{}, locKinds: map[string]*schema.Kind{}, files: map[string]bool{}, modes: map[string]int{}, written: map[string]int{}, holds: map[string]map[string]bool{}, blocked: map[string]int{}}
+		called: map[schema.BodyClass]map[string]int{}, macro: map[string]bool{}, files: map[string]bool{}, modes: map[string]int{}, written: map[string]int{}, holds: map[string]map[string]bool{}, blocked: map[string]int{}}
 }
 
 // file counts one parsed script file.

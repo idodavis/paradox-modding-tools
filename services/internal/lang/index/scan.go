@@ -92,7 +92,11 @@ func each(ctx context.Context, files []source.File, r schema.Reader, keep func(*
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				out <- read{i, Harvest(files[i], r)}
+				text := ""
+				if Readable(files[i].Format) {
+					text, _ = files[i].Text()
+				}
+				out <- read{i, Harvest(files[i], text, r)}
 			}
 		}()
 	}
@@ -127,7 +131,7 @@ func wanted(files []source.File, language string, locs bool) []source.File {
 	return out
 }
 
-// harvested fills an index from files in the two walks the harvest needs: definitions and localization for all, then, with those behind Found, references and edges.
+// harvested fills an index from files in the two walks the harvest needs: definitions and localization for all, then, with those behind Found, references and edges, in script and in localization (a $key$ a value interpolates).
 func harvested(ctx context.Context, x *Index, files []source.File, r schema.Reader, found schema.Defined) error {
 	r.Found = nil
 	if err := each(ctx, files, r, x.Add); err != nil {
@@ -136,7 +140,7 @@ func harvested(ctx context.Context, x *Index, files []source.File, r schema.Read
 
 	x.Ready()
 	r.Found = found
-	scripts := slices.DeleteFunc(slices.Clone(files), func(f source.File) bool { return f.Format != source.Script })
+	scripts := slices.DeleteFunc(slices.Clone(files), func(f source.File) bool { return f.Format != source.Script && f.Format != source.Loc })
 	return each(ctx, scripts, r, func(h *Records) {
 		h.Defs, h.Loc = nil, nil
 		x.Add(h)
@@ -158,9 +162,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	// localization first: the learner asks which words are loc keys
 	keys := map[string]bool{}
 	locs := wanted(files, req.Language, true)
-	var spoken []*Records
 	if err := each(ctx, locs, schema.Reader{Schema: &schema.Schema{}, Vocab: &schema.Vocab{}}, func(h *Records) {
-		spoken = append(spoken, h)
 		for _, entry := range h.Loc {
 			keys[entry.Key] = true
 		}
@@ -182,11 +184,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 
 	// every file has its place in the inventory, in load order, whether or not anything is read from it
 	x.Files = files
-	for _, h := range spoken {
-		localized(h, s)
-		x.Add(h)
-	}
-	err = harvested(ctx, x, wanted(files, "", false), schema.Reader{Schema: s, Vocab: in.Vocab}, All{x})
+	err = harvested(ctx, x, append(locs, wanted(files, "", false)...), schema.Reader{Schema: s, Vocab: in.Vocab}, All{x})
 	x.shared = nil
 	return in, err
 }
@@ -213,13 +211,13 @@ func BuildWorkspace(ctx context.Context, mods []Mod, install *Install, language 
 }
 
 // IndexFile reads one file of a live index again: what it added is taken back, and it is harvested as a scan would, its own definitions first.
-func (x *Index) IndexFile(f source.File, r schema.Reader) {
+func (x *Index) IndexFile(f source.File, text string, r schema.Reader) {
 	x.Drop(f.Path)
 	found := r.Found
 	r.Found = nil
-	x.Add(Harvest(f, r))
+	x.Add(Harvest(f, text, r))
 	r.Found = found
-	refs := Harvest(f, r)
+	refs := Harvest(f, text, r)
 	refs.Defs, refs.Loc = nil, nil
 	x.Add(refs)
 }

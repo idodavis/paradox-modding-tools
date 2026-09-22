@@ -6,6 +6,8 @@ package index
 import (
 	"cmp"
 	"path"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -24,12 +26,13 @@ type Index struct {
 	Edges []Edge        `json:"edges"`
 	Loc   []Loc         `json:"loc"`
 
-	Replaced          []string           `json:"replaced,omitempty"` // a workspace only: the folders its mods replace (replace_path), lower-cased. The game loads no install file that sits in one, subfolders apart
-	defs, locs, bases map[string][]int32 // definitions by name, loc entries by key, files by lower-cased base name
-	stems             map[string]bool    // the lower-cased base names without their extension
-	rels, paths       map[string]int32   // a file by its lower-cased rel (of several roots' the last, which the game loads last), and by its path
-	owned             map[int32]*owns    // a live index only: what each file added, so an edit can take it back
-	shared            map[string]string  // every word kept, once: a word read from a file is a piece of that file's text, and keeping it would keep the whole file
+	Replaced         []string           `json:"replaced,omitempty"` // a workspace only: the folders its mods replace (replace_path), lower-cased. The game loads no install file that sits in one, subfolders apart
+	defs, refs, locs map[string][]int32 // definitions by name, references by name, loc entries by key
+	bases            map[string][]int32 // files by lower-cased base name
+	stems            map[string]int32   // a file by its lower-cased base name without the extension
+	rels, paths      map[string]int32   // a file by its lower-cased rel (of several roots' the last, which the game loads last), and by PathKey
+	owned            map[int32]*owns    // a live index only: what each file added, so an edit can take it back
+	shared           map[string]string  // every word kept, once: a word read from a file is a piece of that file's text, and keeping it would keep the whole file
 }
 
 // Def is one definition found in a file.
@@ -92,6 +95,18 @@ type Found struct {
 	At source.File
 }
 
+// Cited is one reference with the file it is written in.
+type Cited struct {
+	Ref
+	At source.File
+}
+
+// Said is one localization entry with the file it is written in.
+type Said struct {
+	loc.Entry
+	At source.File
+}
+
 // Contest is one name that more than one origin defines, in load order, and which of them the game keeps.
 type Contest struct {
 	Kind, Name string
@@ -100,24 +115,46 @@ type Contest struct {
 	FirstWins  bool // the kind's rule in this game
 }
 
+// PathKey is the one spelling two paths of one file share: cleaned, and on Windows, where the file system folds case, lower-cased. The editor keys its tabs by the caller's spelling, which every record keeps; only the lookup folds.
+func PathKey(p string) string {
+	p = filepath.Clean(p)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(p)
+	}
+	return p
+}
+
+// At is the inventory's file at a path.
+func (x *Index) At(p string) (source.File, bool) {
+	x.Ready()
+	at, ok := x.paths[PathKey(p)]
+	if !ok {
+		return source.File{}, false
+	}
+	return x.Files[at], true
+}
+
 // Ready builds the lookups of an index that was loaded or filled without them. Every lookup calls it; a scan calls it once before its readers share the index, because building is the one write a lookup makes.
 func (x *Index) Ready() {
 	if x.defs == nil {
-		x.defs, x.locs, x.bases = map[string][]int32{}, map[string][]int32{}, map[string][]int32{}
-		x.rels, x.paths, x.stems, x.shared = map[string]int32{}, map[string]int32{}, map[string]bool{}, map[string]string{}
-		x.post(0, 0, 0)
+		x.defs, x.refs, x.locs, x.bases = map[string][]int32{}, map[string][]int32{}, map[string][]int32{}, map[string][]int32{}
+		x.rels, x.paths, x.stems, x.shared = map[string]int32{}, map[string]int32{}, map[string]int32{}, map[string]string{}
+		x.post(0, 0, 0, 0)
 	}
 }
 
-// post files the definitions from position d on and the loc entries from l on in the lookups, and every file from f on.
-func (x *Index) post(f, d, l int) {
+// post files the definitions from position d on, the references from r on and the loc entries from l on in the lookups, and every file from f on.
+func (x *Index) post(f, d, r, l int) {
 	for i := f; i < len(x.Files); i++ {
 		rel := strings.ToLower(x.Files[i].Rel)
 		base := path.Base(rel)
-		x.rels[rel], x.paths[x.Files[i].Path], x.bases[base], x.stems[strings.TrimSuffix(base, path.Ext(base))] = int32(i), int32(i), append(x.bases[base], int32(i)), true
+		x.rels[rel], x.paths[PathKey(x.Files[i].Path)], x.bases[base], x.stems[strings.TrimSuffix(base, path.Ext(base))] = int32(i), int32(i), append(x.bases[base], int32(i)), int32(i)
 	}
 	for i := d; i < len(x.Defs); i++ {
 		x.defs[x.Defs[i].Name] = append(x.defs[x.Defs[i].Name], int32(i))
+	}
+	for i := r; i < len(x.Refs); i++ {
+		x.refs[x.Refs[i].Name] = append(x.refs[x.Refs[i].Name], int32(i))
 	}
 	for i := l; i < len(x.Loc); i++ {
 		x.locs[x.Loc[i].Key] = append(x.locs[x.Loc[i].Key], int32(i))
@@ -139,10 +176,12 @@ func (x *Index) own(word string) string {
 // Add gives a file's harvest its place: the file joins the inventory if it is new to it, and every record is filed under its name.
 func (x *Index) Add(h *Records) {
 	x.Ready()
-	f, d, l := len(x.Files), len(x.Defs), len(x.Loc)
-	at, known := x.paths[h.File.Path]
+	f, d, r, l := len(x.Files), len(x.Defs), len(x.Refs), len(x.Loc)
+	at, known := x.paths[PathKey(h.File.Path)]
 	if !known {
 		at, x.Files = int32(len(x.Files)), append(x.Files, h.File)
+	} else if x.Files[at] != h.File {
+		x.Files[at] = h.File
 	}
 
 	mine := x.owned[at]
@@ -171,13 +210,13 @@ func (x *Index) Add(h *Records) {
 	if x.owned != nil {
 		x.owned[at] = mine
 	}
-	x.post(f, d, l)
+	x.post(f, d, r, l)
 }
 
 // Drop takes back everything the file at path added. A record keeps its slot with File -1, so the slices never move under a reader, and leaves the lookups. Only a live index can drop.
 func (x *Index) Drop(filePath string) {
 	x.Ready()
-	at, known := x.paths[filePath]
+	at, known := x.paths[PathKey(filePath)]
 	mine := x.owned[at]
 	if !known || mine == nil {
 		return
@@ -192,6 +231,7 @@ func (x *Index) Drop(filePath string) {
 		x.Defs[i].File = -1
 	}
 	for _, i := range mine.refs {
+		without(x.refs, x.Refs[i].Name, i)
 		x.Refs[i].File = -1
 	}
 	for _, i := range mine.edges {
@@ -214,6 +254,16 @@ func (x *Index) Named(name string) []Found {
 	return out
 }
 
+// Referring is every reference to a name, of any kind, with its file.
+func (x *Index) Referring(name string) []Cited {
+	x.Ready()
+	var out []Cited
+	for _, i := range x.refs[name] {
+		out = append(out, Cited{Ref: x.Refs[i], At: x.Files[x.Refs[i].File]})
+	}
+	return out
+}
+
 // Def reports a definition of that kind with that name.
 func (x *Index) Def(kind, name string) bool {
 	x.Ready()
@@ -226,15 +276,37 @@ func (x *Index) HasLoc(key string) bool {
 	return len(x.locs[key]) > 0
 }
 
-// File reports a file by the three lookups measured in the plan's §10: the path from a root, the file name anywhere in the inventory, the same name under another extension (.tga written, .dds shipped).
-func (x *Index) File(name string) bool {
+// Entries is every localization entry of a key, with its file, in the order found; the file's path says the language.
+func (x *Index) Entries(key string) []Said {
+	x.Ready()
+	var out []Said
+	for _, i := range x.locs[key] {
+		out = append(out, Said{Entry: x.Loc[i].Entry, At: x.Files[x.Loc[i].File]})
+	}
+	return out
+}
+
+// Find is the file a written word names, by the three lookups measured in the plan's §10: the path from a root, the file name anywhere in the inventory, the same name under another extension (.tga written, .dds shipped).
+func (x *Index) Find(name string) (source.File, bool) {
 	x.Ready()
 	name = strings.ToLower(strings.ReplaceAll(name, "\\", "/"))
 	base := path.Base(name)
-	if _, ok := x.rels[name]; ok || len(x.bases[base]) > 0 {
-		return true
+	if at, ok := x.rels[name]; ok {
+		return x.Files[at], true
 	}
-	return path.Ext(base) != "" && x.stems[strings.TrimSuffix(base, path.Ext(base))]
+	if len(x.bases[base]) > 0 {
+		return x.Files[x.bases[base][0]], true
+	}
+	if at, ok := x.stems[strings.TrimSuffix(base, path.Ext(base))]; ok && path.Ext(base) != "" {
+		return x.Files[at], true
+	}
+	return source.File{}, false
+}
+
+// File reports a file by Find, for schema.Defined.
+func (x *Index) File(name string) bool {
+	_, ok := x.Find(name)
+	return ok
 }
 
 // All answers from several indexes together (schema.Defined): a workspace's mods and the install beneath them. A file of one index that sits in a folder another index replaces is not loaded by the game, and what it holds does not exist.
@@ -261,16 +333,37 @@ func (a All) Def(kind, name string) bool {
 func (a All) Loc(key string) bool {
 	return slices.ContainsFunc(a, func(x *Index) bool { return x.HasLoc(key) })
 }
-func (a All) File(name string) bool {
-	return slices.ContainsFunc(a, func(x *Index) bool {
+
+// Entries is every entry of a key the game loads, in the indexes' order.
+func (a All) Entries(key string) []Said {
+	var out []Said
+	for _, x := range a {
 		x.Ready()
-		at, isRel := x.rels[strings.ToLower(strings.ReplaceAll(name, "\\", "/"))]
-		return x.File(name) && (!isRel || a.loaded(x, at))
-	})
+		for _, i := range x.locs[key] {
+			if a.loaded(x, x.Loc[i].File) {
+				out = append(out, Said{Entry: x.Loc[i].Entry, At: x.Files[x.Loc[i].File]})
+			}
+		}
+	}
+	return out
+}
+func (a All) File(name string) bool {
+	_, ok := a.Find(name)
+	return ok
 }
 
-// before reports that a loads before b: by its origin's place in the playset's order, then by file name in ASCII order with a folder's own files before its subfolders' (the Victoria 3 and EU5 wikis, Mod compatibility), then by line.
-func before(a, b Found, order []string) int {
+// Find is the file a written word names, the last index's first, leaving out a file in a folder another index replaces.
+func (a All) Find(name string) (source.File, bool) {
+	for i := len(a) - 1; i >= 0; i-- {
+		if f, ok := a[i].Find(name); ok && a.loaded(a[i], a[i].paths[PathKey(f.Path)]) {
+			return f, true
+		}
+	}
+	return source.File{}, false
+}
+
+// Before reports that a loads before b: by its origin's place in the playset's order, then by file name in ASCII order with a folder's own files before its subfolders' (the Victoria 3 and EU5 wikis, Mod compatibility), then by line.
+func Before(a, b Found, order []string) int {
 	folderA, folderB := path.Dir(strings.ToLower(a.At.Rel)), path.Dir(strings.ToLower(b.At.Rel))
 	return cmp.Or(
 		cmp.Compare(slices.Index(order, a.At.Origin), slices.Index(order, b.At.Origin)),
@@ -286,7 +379,7 @@ func Winner(found []Found, firstWins bool, modes []game.EntryMode, order []strin
 	rank := func(f Found) int {
 		return 1 + slices.IndexFunc(modes, func(m game.EntryMode) bool { return m.Word == f.Mode })
 	}
-	slices.SortStableFunc(found, func(a, b Found) int { return cmp.Or(cmp.Compare(rank(a), rank(b)), before(a, b, order)) })
+	slices.SortStableFunc(found, func(a, b Found) int { return cmp.Or(cmp.Compare(rank(a), rank(b)), Before(a, b, order)) })
 
 	kept := -1
 	for i, f := range found {

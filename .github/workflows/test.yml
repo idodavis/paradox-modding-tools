@@ -46,14 +46,14 @@ jobs:
 
       - name: go vet
         working-directory: services
-        run: go vet ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/schema/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+        run: go vet ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/lsp/... ./internal/lang/schema/... ./internal/lang/session/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
 
       # -timeout 60s is the contract, not a safety net. A test that needs longer
       # belongs behind an opt-in task; if this starts failing, move the test
       # rather than raising the number.
       - name: go test -race
         working-directory: services
-        run: go test -short -race -timeout 60s ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/schema/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
+        run: go test -short -race -timeout 60s ./internal/game/... ./internal/lang/index/... ./internal/lang/jomini/... ./internal/lang/learn/... ./internal/lang/loc/... ./internal/lang/lsp/... ./internal/lang/schema/... ./internal/lang/session/... ./internal/modfile/... ./internal/persist/... ./internal/release/... ./internal/source/... ./internal/steamugc/... ./internal/wiki/...
 
   frontend:
     name: Frontend typecheck

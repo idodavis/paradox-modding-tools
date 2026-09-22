@@ -153,7 +153,7 @@ func TestIndexFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "events", "m_events.txt"), []byte(edited), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	x.IndexFile(file, schema.Reader{Schema: s, Vocab: install.Vocab, Found: All{x, install.Index}})
+	x.IndexFile(file, edited, schema.Reader{Schema: s, Vocab: install.Vocab, Found: All{x, install.Index}})
 
 	if x.Def("events", "m.2") || x.Def("saved_scopes", "mod_target") || !x.Def("events", "m.3") || len(x.Named("m.1")) != 1 || len(x.Files) != files {
 		t.Errorf("an edit takes back what the file held and reads it again: m.1 %+v", x.Named("m.1"))

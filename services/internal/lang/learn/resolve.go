@@ -9,9 +9,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/lang/jomini"
-	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/source"
 )
 
 // witnesses works out, once the install is read, what the vocabulary says of blocks. A token whose usage holds <effects> or <triggers> takes a block of them (if, every_vassal, any_child, trigger_if), and a token the dump gives no usage, which the install always writes with a block, takes what the tokens written inside it take (not = { any_child = { } }, hidden_effect = { if = { } }; martial is written with a number). Such a token written at a position is the witness that the position is a body: a structure never writes one, however many of its members are named like triggers (a cost block's gold and prestige, a character's culture and faith). Arithmetic is found the same way: a position with a key of its own (no scope change, which stands in every kind of body) written as a number whose blocks hold if computes a number, and the undeclared keys written there are the words of arithmetic (value, add, multiply).
@@ -507,11 +505,7 @@ func (c *census) accepts(key string, at *node, class schema.Class) []schema.Acce
 	}
 	if len(n.words) < maxWords && again*2 > len(words) {
 		slices.Sort(words)
-		if kind := c.localized(words); kind != "" {
-			add(schema.Accept{Type: schema.TypeRef, Kind: kind, Count: names})
-		} else {
-			add(schema.Accept{Type: schema.TypeEnum, Enum: words, Count: names})
-		}
+		add(schema.Accept{Type: schema.TypeEnum, Enum: words, Count: names})
 	} else {
 		text += names
 	}
@@ -519,18 +513,6 @@ func (c *census) accepts(key string, at *node, class schema.Class) []schema.Acce
 
 	slices.SortStableFunc(out, func(a, b schema.Accept) int { return b.Count - a.Count })
 	return out
-}
-
-// localized is the kind a closed set of words belongs to where no file defines them and the loc does: every word has a key under one template with a stem of its own (game_rule_category_{id}), and the words are most of the keys the template matches, so they are the definitions of a kind named by that stem, whose definitions are the loc keys that match (§5.8). Three words with a key under war_{id} are not what war_ names: hundreds of keys start so. The kind is made on first sight.
-func (c *census) localized(words []string) string {
-	for _, t := range loc.Learn(words, nil, c.keys) {
-		stem := strings.Trim(strings.ReplaceAll(string(t.Template), "{id}", ""), "_")
-		if t.Coverage == 1 && stem != "" && c.byName[stem] == nil && len(words)*2 > c.keys.Count(t.Template) {
-			c.locKinds[stem] = &schema.Kind{Name: stem, Format: source.Loc, Naming: schema.Naming{Form: "loc_key"}, LocTemplates: []loc.Convention{t}}
-			return stem
-		}
-	}
-	return ""
 }
 
 // size is how many names a kind has; the loc keys and the files are larger than any kind.

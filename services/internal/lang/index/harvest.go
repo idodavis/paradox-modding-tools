@@ -56,33 +56,118 @@ type walk struct {
 	call    bool            // the word being written down is a macro written as a key
 	body    bool            // the block being walked is a body, or inside one
 	listed  bool            // the word being written down is an entry of a list: a bare word, or the value of a number (100 = some_event)
+	at      int             // a probe: the offset the walk descends to, taking only the statements around it; -1 for a whole file
+	probe   *Descent
+	visit   func(Level) // a visit: called at every statement of the whole file
 }
 
-// Harvest reads one file. With r.Found nil it keeps definitions alone.
-func Harvest(f source.File, r schema.Reader) *Records {
-	w := &walk{r: r, h: &Records{File: f}, refs: r.Found != nil, fired: firedKinds(r.Schema)}
+// Descent is what the one descent found on its way to an offset of a file: the definition the offset is inside, and every statement around it with the field it stands at.
+type Descent struct {
+	Kind  string // the kind of the definition the offset is inside; "" outside one
+	Top   string // that definition's name
+	Chain []Level
+}
+
+// Level is one statement around the offset: what its key is, the field it is written at and the field below it, and the scope its block runs in.
+type Level struct {
+	Statement jomini.Statement
+	Kind      *schema.Kind  // the kind whose shape Field belongs to; a nested kind's inside its parent's
+	Field     *schema.Field // the field the statement is written at
+	Below     *schema.Field // the field under its key
+	Key       schema.Value  // what the key is; TypeNone for a bare word
+	Scope     string        // the scope type the statement runs in
+	Via       string        // the nearest token around it
+}
+
+// contains reports whether a statement, or a bare word that declares the statement after it, holds the offset.
+func (w *walk) contains(stmts []jomini.Statement, i int) bool {
+	if w.at < 0 {
+		return true
+	}
+	r := stmts[i].NodeRange()
+	if r.Start <= w.at && w.at <= r.End {
+		return true
+	}
+	_, word := stmts[i].(*jomini.ValueStmt)
+	if next := i + 1; word && next < len(stmts) {
+		r = stmts[next].NodeRange()
+		return r.Start <= w.at && w.at <= r.End
+	}
+	return false
+}
+
+// level records a statement around the probe's offset, or hands every statement to the visit.
+func (w *walk) level(st jomini.Statement, k *schema.Kind, field, below *schema.Field, v schema.Value, scope, via string) {
+	if w.visit != nil {
+		w.visit(Level{Statement: st, Kind: k, Field: field, Below: below, Key: v, Scope: scope, Via: via})
+	}
+	if w.probe != nil && w.at >= 0 {
+		r := st.NodeRange()
+		if r.Start <= w.at && w.at <= r.End {
+			w.probe.Chain = append(w.probe.Chain, Level{Statement: st, Kind: k, Field: field, Below: below, Key: v, Scope: scope, Via: via})
+		}
+	}
+}
+
+// Harvest reads one file from its text, which an open buffer has and the disk may not. With r.Found nil it keeps definitions alone.
+func Harvest(f source.File, text string, r schema.Reader) *Records {
+	return newWalk(f, r, -1).read(text).h
+}
+
+// Probe makes the same descent as Harvest, along the one chain of statements that holds the offset, and gives what it passed.
+func Probe(f source.File, text string, r schema.Reader, offset int) *Descent {
+	w := newWalk(f, r, offset)
+	w.probe = &Descent{}
+	w.read(text)
+	w.probe.Kind, w.probe.Top = w.kind, w.top
+	return w.probe
+}
+
+// Visit makes the same descent as Harvest over a whole file and hands every statement to visit with the field it stands at, then gives the file's records.
+func Visit(f source.File, text string, r schema.Reader, visit func(Level)) *Records {
+	w := newWalk(f, r, -1)
+	w.visit = visit
+	return w.read(text).h
+}
+
+// newWalk is a walk of one file, whole or to one offset.
+func newWalk(f source.File, r schema.Reader, at int) *walk {
+	w := &walk{r: r, h: &Records{File: f}, refs: r.Found != nil, fired: firedKinds(r.Schema), at: at}
 	if !w.refs {
 		w.r.Found = nothing{}
 	}
-	if f.Format != source.Script && f.Format != source.Loc && f.Format != source.Table && f.Format != source.List {
-		return w.h
-	}
-	text, err := f.Text()
-	if err != nil {
-		return w.h
+	return w
+}
+
+// Readable reports a format the harvest opens; an image, a mesh or a sound is in the inventory and never read.
+func Readable(format source.Format) bool {
+	return format == source.Script || format == source.Loc || format == source.Table || format == source.List
+}
+
+// read walks the file's text by its format.
+func (w *walk) read(text string) *walk {
+	f := w.h.File
+	if !Readable(f.Format) {
+		return w
 	}
 	w.lines = jomini.NewLineIndex(text)
 
 	switch f.Format {
 	case source.Loc:
 		w.h.Loc = loc.Parse(text).Entries
-		localized(w.h, r.Schema)
+		for _, entry := range w.h.Loc {
+			for _, in := range loc.Interps(entry.Value, entry.ValueRange.Start) {
+				if w.r.Found.Loc(in.Key) {
+					w.ref(schema.Value{Type: schema.TypeLoc, Name: in.Key}, in.KeyRange.Start, "")
+				}
+			}
+		}
 	case source.Table, source.List:
 		w.rows(text)
 	case source.Script:
 		w.file(jomini.Parse(text).Root)
 	}
-	return w.h
+	return w
 }
 
 // def writes one definition down at a byte offset.
@@ -102,21 +187,6 @@ func (w *walk) ref(v schema.Value, offset int, via string) {
 	_, effect := w.r.Vocab.Effects[via]
 	if v.Type == schema.TypeRef && w.top != "" && (w.call || (w.fired[v.Kind] && (effect || (w.listed && !w.body)))) {
 		w.h.Edges = append(w.h.Edges, Edge{FromKind: w.kind, From: w.top, ToKind: v.Kind, To: v.Name, Via: via, Line: int32(at.Line)})
-	}
-}
-
-// localized reads the definitions of the kinds that loc keys name: every key that matches such a kind's template defines the name in the template's {id} (game_rule_category_{id}).
-func localized(h *Records, s *schema.Schema) {
-	for _, k := range s.Kinds {
-		if k.Naming.Form != "loc_key" || len(k.LocTemplates) == 0 {
-			continue
-		}
-		before, after, _ := strings.Cut(string(k.LocTemplates[0].Template), "{id}")
-		for _, entry := range h.Loc {
-			if len(entry.Key) > len(before)+len(after) && strings.HasPrefix(entry.Key, before) && strings.HasSuffix(entry.Key, after) {
-				h.Defs = append(h.Defs, Def{Kind: k.Name, Name: entry.Key[len(before) : len(entry.Key)-len(after)], Line: int32(entry.Line), Col: 1})
-			}
-		}
 	}
 }
 
@@ -161,6 +231,9 @@ func (w *walk) file(root *jomini.Root) {
 
 	stmts := root.Statements
 	for i := 0; i < len(stmts); i++ {
+		if !w.contains(stmts, i) {
+			continue
+		}
 		for next := w.declared(true, stmts, i); next != i; next = w.declared(true, stmts, i) {
 			i = next
 		}
@@ -175,6 +248,7 @@ func (w *walk) file(root *jomini.Root) {
 		block := jomini.BlockOf(st.Value)
 		if name, isConstant := jomini.Constant(key); isConstant {
 			w.def(Def{Kind: "constants", Name: name}, st.Key.Range.Start)
+			w.level(st, nil, nil, nil, schema.Value{Type: schema.TypeConstant, Name: name}, "", "")
 			continue
 		}
 
@@ -183,7 +257,9 @@ func (w *walk) file(root *jomini.Root) {
 			w.define(k, w.member(block, k.Naming.Member), mode, st, block)
 		case about != nil && about.Naming.Form != "file":
 			w.kind, w.top = about.Name, key
-			w.ref(schema.Value{Type: schema.TypeRef, Kind: about.Subject, Name: key}, st.Key.Range.Start, "")
+			cited := schema.Value{Type: schema.TypeRef, Kind: about.Subject, Name: key}
+			w.ref(cited, st.Key.Range.Start, "")
+			w.level(st, about, nil, about.Shape, cited, "", "")
 			w.inside(about, about.Shape, block, "", "")
 		case named != nil && !st.Key.Quoted && (named.Naming.Form != "event_id" || jomini.IsEventID(key)) && (named.Naming.Form != "number" || jomini.Literal(key) == jomini.LitNumber):
 			w.define(named, key, mode, st, block)
@@ -192,6 +268,7 @@ func (w *walk) file(root *jomini.Root) {
 			}
 		default:
 			w.kind, w.top = "", ""
+			w.level(st, nil, nil, nil, schema.Value{Type: schema.TypeUnresolved, Name: key}, "", "")
 			w.inside(nil, nil, block, "", "")
 		}
 	}
@@ -234,6 +311,7 @@ func (w *walk) define(k *schema.Kind, name, mode string, st *jomini.Assignment, 
 	if k.Shape != nil {
 		scope = k.Shape.BodyScope
 	}
+	w.level(st, k, nil, k.Shape, schema.Value{Type: schema.TypeRef, Kind: k.Name, Name: name}, scope, "")
 	w.inside(k, k.Shape, block, scope, "")
 }
 
@@ -259,6 +337,9 @@ func (w *walk) inside(k *schema.Kind, field *schema.Field, block *jomini.Block, 
 	}
 	stmts := block.Statements
 	for i := 0; i < len(stmts); i++ {
+		if !w.contains(stmts, i) {
+			continue
+		}
 		for next := w.declared(false, stmts, i); next != i; next = w.declared(false, stmts, i) {
 			i = next
 		}
@@ -273,6 +354,7 @@ func (w *walk) inside(k *schema.Kind, field *schema.Field, block *jomini.Block, 
 				w.ref(w.r.Value(field, scalar.Text, scalar.Quoted), scalar.Range.Start, via)
 				w.listed = false
 			}
+			w.level(st, k, field, nil, schema.Value{}, scope, via)
 			w.inside(k, nil, jomini.BlockOf(st.Value), scope, via)
 		case *jomini.Assignment:
 			w.statement(k, field, st, scope, via)
@@ -286,10 +368,15 @@ func (w *walk) statement(k *schema.Kind, field *schema.Field, st *jomini.Assignm
 	v := w.r.Key(field, key)
 	below := w.r.Below(k, field, key, v)
 	w.parameters(key, st.Key.Range.Start)
+	w.level(st, k, field, below, v, scope, via)
 
 	// a name of the nested kind this position defines: a faith inside a religion, a setting inside a game rule
 	if field != nil && field.Defines != "" && !st.Key.Quoted && (v.Type == schema.TypeUnresolved || (v.Type == schema.TypeRef && v.Kind == field.Defines)) && jomini.IsDefName(key) {
 		w.def(Def{Kind: field.Defines, Name: key, Parent: w.top}, st.Key.Range.Start)
+		if w.probe != nil && len(w.probe.Chain) > 0 && w.probe.Chain[len(w.probe.Chain)-1].Statement == st {
+			last := &w.probe.Chain[len(w.probe.Chain)-1]
+			last.Key, last.Kind = schema.Value{Type: schema.TypeRef, Kind: field.Defines, Name: key, Parent: w.top}, w.r.Schema.Kinds[field.Defines]
+		}
 		w.inside(w.r.Schema.Kinds[field.Defines], below, block, scope, via)
 		return
 	}
@@ -388,7 +475,9 @@ func (w *walk) arguments(macro string, block *jomini.Block) {
 	}
 	for _, st := range block.Statements {
 		if a, ok := st.(*jomini.Assignment); ok {
-			w.ref(schema.Value{Type: schema.TypeRef, Kind: "params", Name: a.Key.Text, Parent: macro}, a.Key.Range.Start, macro)
+			argument := schema.Value{Type: schema.TypeRef, Kind: "params", Name: a.Key.Text, Parent: macro}
+			w.ref(argument, a.Key.Range.Start, macro)
+			w.level(a, nil, nil, nil, argument, "", macro)
 			w.inside(nil, nil, jomini.BlockOf(a.Value), "", macro)
 		}
 	}

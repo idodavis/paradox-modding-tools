@@ -11,14 +11,14 @@ package session
 import (
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"golang.org/x/sync/singleflight"
 
-	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/source"
 )
 
 // Builder constructs a Session for a workspace id (reads mods, loads the cache).
@@ -129,6 +129,24 @@ func (p *Pool) fire(event, id string) {
 	}
 }
 
+// Watch reports every change under the mods' folders to the session until Close.
+func (s *Session) Watch() error {
+	var dirs []string
+	for _, m := range s.Mods {
+		dirs = append(dirs, m.Dir)
+	}
+	w, err := NewWatcher(dirs, s.Changed)
+	s.watcher = w
+	return err
+}
+
+// Close stops the session's watcher, if it has one.
+func (s *Session) Close() {
+	if s.watcher != nil {
+		s.watcher.Close()
+	}
+}
+
 // watchDebounce is how long a path must be quiet before its change is reported;
 // editors and git often emit several events per logical write.
 const watchDebounce = 150 * time.Millisecond
@@ -175,12 +193,14 @@ func (w *Watcher) Close() error {
 	return w.fsw.Close()
 }
 
-// addTree adds root and all its subdirectories to the watch set (fsnotify is not
-// recursive on its own).
+// addTree adds root and every folder under it that holds a file to the watch set (fsnotify is not recursive on its own).
 func (w *Watcher) addTree(root string) {
-	index.WalkTree(root, func(p string, isDir bool) {
-		if isDir {
-			w.fail(w.fsw.Add(p))
+	seen := map[string]bool{}
+	w.fail(w.fsw.Add(root))
+	source.Walk(root, func(p string) {
+		if dir := filepath.Dir(p); !seen[dir] {
+			seen[dir] = true
+			w.fail(w.fsw.Add(dir))
 		}
 	})
 }
@@ -253,9 +273,11 @@ func (w *Watcher) handle(ev fsnotify.Event) {
 	w.mu.Unlock()
 }
 
-// indexable reports whether a path is a file kind the index tracks.
+// indexable reports whether a path is a file the index reads.
 func indexable(path string) bool {
-	lower := strings.ToLower(path)
-	return strings.HasSuffix(lower, ".txt") || strings.HasSuffix(lower, ".gui") ||
-		strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml")
+	switch source.Classify(filepath.ToSlash(path)) {
+	case source.Script, source.Loc, source.Table, source.List:
+		return true
+	}
+	return false
 }

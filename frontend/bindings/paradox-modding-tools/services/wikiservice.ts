@@ -36,15 +36,9 @@ export function Patches(gameID: string): $CancellablePromise<wiki$0.PatchList | 
 }
 
 /**
- * StartWikiWarm fetches, in the background, the sidecar of every install's game where it is missing or older than the game's version, then refreshes the ones the app already has, so the guides are current without a click.
+ * StartWikiWarm refreshes, in the background, the wiki pages of every installed game, so the
+ * guides are current without a click.
  */
 export function StartWikiWarm(): $CancellablePromise<void> {
     return $Call.ByID(2663403356);
-}
-
-/**
- * Status returns sidecar presence and counts for a game.
- */
-export function Status(gameID: string): $CancellablePromise<wiki$0.Status | null> {
-    return $Call.ByID(3464137233, gameID);
 }

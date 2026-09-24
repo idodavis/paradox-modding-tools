@@ -9,7 +9,7 @@ import * as loc$0 from "../loc/models.js";
 import * as schema$0 from "../schema/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as source$0 from "../../source/models.js";
+import * as source$0 from "../source/models.js";
 
 /**
  * Cited is one reference with the file it is written in.

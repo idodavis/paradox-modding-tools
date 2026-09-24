@@ -117,7 +117,7 @@ export function ImportWorkshopIgnore(workspaceID: string, modID: string): $Cance
 }
 
 /**
- * ListGameInstalls returns all installs for a game, with VanillaCache scannedAt.
+ * ListGameInstalls returns a game's installs, each with its cache timestamp and whether its folder is still there.
  */
 export function ListGameInstalls(gameID: string): $CancellablePromise<$models.GameInstall[] | null> {
     return $Call.ByID(3468235284, gameID);
@@ -135,13 +135,6 @@ export function ListGames(): $CancellablePromise<game$0.GameList> {
  */
 export function ListWorkspaces(gameID: string): $CancellablePromise<$models.Workspace[] | null> {
     return $Call.ByID(1786820820, gameID);
-}
-
-/**
- * MarkBrokenPaths checks all installs and mods, marks missing paths as broken.
- */
-export function MarkBrokenPaths(): $CancellablePromise<void> {
-    return $Call.ByID(2434148990);
 }
 
 /**
@@ -202,7 +195,7 @@ export function UpdateGameInstall(id: string, path: string): $CancellablePromise
 }
 
 /**
- * UpdateWorkspace updates workspace fields.
+ * UpdateWorkspace updates workspace fields. A different install retires the session.
  */
 export function UpdateWorkspace(id: string, name: string, installID: string): $CancellablePromise<void> {
     return $Call.ByID(2311242704, id, name, installID);

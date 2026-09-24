@@ -1,10 +1,13 @@
-// lexer.go is the single-pass, allocation-light tokenizer for Paradox script.
-// All significant characters are ASCII, so it scans by byte; non-ASCII bytes are
-// only ever part of words/strings/comments.
-
+// lexer.go turns a file's bytes into tokens: first the decode, which strips a UTF-8 byte order
+// mark, reads UTF-8 where the bytes are valid UTF-8 and latin1 where they are not, and
+// normalises line endings; then the single-pass, allocation-light tokenizer for Paradox script.
 package jomini
 
-import "sync"
+import (
+	"strings"
+	"sync"
+	"unicode/utf8"
+)
 
 // tokenKind enumerates the lexical token classes of Paradox script.
 type tokenKind uint8
@@ -35,34 +38,32 @@ type token struct {
 const maxStringSpan = 32
 
 // isWhitespace reports the space/tab/newline/CR/FF/VT bytes that separate tokens.
-func isWhitespace(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
+func isWhitespace(char byte) bool {
+	return char == ' ' || char == '\t' || char == '\n' || char == '\r' || char == '\f' || char == '\v'
 }
 
 // isWordTerminator reports bytes that end a bare word. `?` is deliberately absent:
 // it only starts an operator when immediately followed by `=`.
-func isWordTerminator(c byte) bool {
-	switch c {
+func isWordTerminator(char byte) bool {
+	switch char {
 	case '{', '}', '#', '"', '=', '<', '>', '!':
 		return true
 	default:
-		return isWhitespace(c)
+		return isWhitespace(char)
 	}
 }
 
-// tokenize lexes the entire source into tokens (with a trailing EOF). Never panics.
-// tokenPool reuses token buffers across parses. A scan walks the install four
-// times over and tokenize was 27.9% of everything it allocated, all of it thrown
-// away a moment later -- the CST slices its strings out of the source, so no
-// token outlives the parse that produced it.
+// tokenPool reuses token buffers across parses: a scan parses the install several times over,
+// and the CST slices its strings out of the source, so no token outlives its parse.
 var tokenPool sync.Pool
 
-// getTokens takes a buffer sized for text, from the pool where one fits.
+// getTokens takes a buffer sized for text, from the pool where one fits. Script averages about
+// 9 bytes a token; under-guessing costs one doubling, over-guessing costs memory on every file.
 func getTokens(text string) []token {
 	want := len(text)/8 + 16
-	if v := tokenPool.Get(); v != nil {
-		if b, ok := v.([]token); ok && cap(b) >= want {
-			return b[:0]
+	if pooled := tokenPool.Get(); pooled != nil {
+		if tokens, ok := pooled.([]token); ok && cap(tokens) >= want {
+			return tokens[:0]
 		}
 	}
 	return make([]token, 0, want)
@@ -70,31 +71,28 @@ func getTokens(text string) []token {
 
 // putTokens returns a buffer. Very large ones are dropped rather than pinned:
 // one 5 MB file would otherwise keep its buffer alive for the whole run.
-func putTokens(b []token) {
-	if cap(b) > 1<<20 {
+func putTokens(tokens []token) {
+	if cap(tokens) > 1<<20 {
 		return
 	}
-	tokenPool.Put(b[:0]) //nolint:staticcheck // slices are the point here
+	tokenPool.Put(tokens[:0]) //nolint:staticcheck // slices are the point here
 }
 
+// tokenize lexes the entire source into tokens (with a trailing EOF). Never panics.
 func tokenize(text string) []token {
-	// Measured across 900 CK3 vanilla files: 8.84 bytes per token. The buffer
-	// assumed 4, so every parse over-allocated the token slice 2.2×, and a scan
-	// parses the whole install several times over. Slightly under-guessing costs
-	// at most one doubling; over-guessing costs the difference on every file.
 	tokens := getTokens(text)
 	length := len(text)
 	i := 0
 
 	for i < length {
-		c := text[i]
+		char := text[i]
 
-		if isWhitespace(c) {
+		if isWhitespace(char) {
 			i++
 			continue
 		}
 
-		if c == '#' {
+		if char == '#' {
 			start := i
 			i++
 			for i < length && text[i] != '\n' && text[i] != '\r' {
@@ -104,18 +102,18 @@ func tokenize(text string) []token {
 			continue
 		}
 
-		if c == '{' {
+		if char == '{' {
 			tokens = append(tokens, token{kind: tokLBrace, start: i, end: i + 1})
 			i++
 			continue
 		}
-		if c == '}' {
+		if char == '}' {
 			tokens = append(tokens, token{kind: tokRBrace, start: i, end: i + 1})
 			i++
 			continue
 		}
 
-		if c == '"' {
+		if char == '"' {
 			tokens = append(tokens, lexString(text, &i))
 			continue
 		}
@@ -132,27 +130,27 @@ func tokenize(text string) []token {
 	return tokens
 }
 
-// lexString consumes a quoted string starting at *i (on the opening quote). A
+// lexString consumes a quoted string starting at *cursor (on the opening quote). A
 // newline continues the string only while a `[` data-function bracket is open.
-func lexString(text string, i *int) token {
+func lexString(text string, cursor *int) token {
 	length := len(text)
-	start := *i
-	p := *i + 1
+	start := *cursor
+	pos := *cursor + 1
 	unterminated := false
 	brackets := 0
 	spanned := 0
 	for {
-		if p >= length {
+		if pos >= length {
 			unterminated = true
 			break
 		}
-		cc := text[p]
+		cc := text[pos]
 		if cc == '\\' {
-			p += 2
+			pos += 2
 			continue
 		}
 		if cc == '"' {
-			p++
+			pos++
 			break
 		}
 		if cc == '\n' || cc == '\r' {
@@ -163,7 +161,7 @@ func lexString(text string, i *int) token {
 			if cc == '\n' {
 				spanned++
 			}
-			p++
+			pos++
 			continue
 		}
 		if cc == '[' {
@@ -171,28 +169,28 @@ func lexString(text string, i *int) token {
 		} else if cc == ']' && brackets > 0 {
 			brackets--
 		}
-		p++
+		pos++
 	}
-	*i = p
-	return token{kind: tokString, start: start, end: p, unterminated: unterminated}
+	*cursor = pos
+	return token{kind: tokString, start: start, end: pos, unterminated: unterminated}
 }
 
-// lexOperator consumes an operator token at *i, or reports ok=false to fall
+// lexOperator consumes an operator token at *cursor, or reports ok=false to fall
 // through to word lexing (lone `?`, or `!`/`?` not forming an operator).
-func lexOperator(text string, i *int) (token, bool) {
+func lexOperator(text string, cursor *int) (token, bool) {
 	length := len(text)
-	p := *i
-	c := text[p]
+	pos := *cursor
+	char := text[pos]
 	twoChar := func(op string) token {
-		*i = p + 2
-		return token{kind: tokOp, start: p, end: p + 2, value: op}
+		*cursor = pos + 2
+		return token{kind: tokOp, start: pos, end: pos + 2, value: op}
 	}
 	oneChar := func(op string) token {
-		*i = p + 1
-		return token{kind: tokOp, start: p, end: p + 1, value: op}
+		*cursor = pos + 1
+		return token{kind: tokOp, start: pos, end: pos + 1, value: op}
 	}
-	hasEq := p+1 < length && text[p+1] == '='
-	switch c {
+	hasEq := pos+1 < length && text[pos+1] == '='
+	switch char {
 	case '=':
 		if hasEq {
 			return twoChar("=="), true
@@ -203,8 +201,8 @@ func lexOperator(text string, i *int) (token, bool) {
 			return twoChar("!="), true
 		}
 		// Lone `!`: tolerate as a one-char word.
-		*i = p + 1
-		return token{kind: tokWord, start: p, end: p + 1}, true
+		*cursor = pos + 1
+		return token{kind: tokWord, start: pos, end: pos + 1}, true
 	case '<':
 		if hasEq {
 			return twoChar("<="), true
@@ -226,42 +224,42 @@ func lexOperator(text string, i *int) (token, bool) {
 	}
 }
 
-// lexWord consumes a scalar run at *i, including inline-math `@[ ... ]` (spaces
+// lexWord consumes a scalar run at *cursor, including inline-math `@[ ... ]` (spaces
 // allowed inside) and a lone `?` that does not begin `?=`.
-func lexWord(text string, i *int) token {
+func lexWord(text string, cursor *int) token {
 	length := len(text)
-	start := *i
-	p := *i
-	for p < length {
-		cc := text[p]
-		if cc == '@' && p+1 < length && text[p+1] == '[' {
-			p += 2
-			for p < length && text[p] != ']' && text[p] != '\n' && text[p] != '\r' {
-				p++
+	start := *cursor
+	pos := *cursor
+	for pos < length {
+		cc := text[pos]
+		if cc == '@' && pos+1 < length && text[pos+1] == '[' {
+			pos += 2
+			for pos < length && text[pos] != ']' && text[pos] != '\n' && text[pos] != '\r' {
+				pos++
 			}
-			if p < length && text[p] == ']' {
-				p++
+			if pos < length && text[pos] == ']' {
+				pos++
 			}
 			continue
 		}
 		if cc == '?' {
-			if p+1 < length && text[p+1] == '=' {
+			if pos+1 < length && text[pos+1] == '=' {
 				break
 			}
-			p++
+			pos++
 			continue
 		}
 		if isWordTerminator(cc) {
 			break
 		}
-		p++
+		pos++
 	}
-	if p == start {
+	if pos == start {
 		// Defensive: never fail to advance on pathological input.
-		p++
+		pos++
 	}
-	*i = p
-	return token{kind: tokWord, start: start, end: p}
+	*cursor = pos
+	return token{kind: tokWord, start: start, end: pos}
 }
 
 func lineIndentsFrom(src string, toks []token) []int {
@@ -300,8 +298,47 @@ func lineIndentsFrom(src string, toks []token) []int {
 	}
 	out := make([]int, n)
 	for i := range out {
-		d := max(openBefore[i]-closers[i], 0)
-		out[i] = d
+		depth := max(openBefore[i]-closers[i], 0)
+		out[i] = depth
 	}
 	return out
+}
+
+// UTF-8 byte-order-mark bytes. Paradox files are UTF-8, frequently with a BOM.
+var utf8BOM = [3]byte{0xEF, 0xBB, 0xBF}
+
+// HasUTF8BOM reports whether raw begins with a UTF-8 byte-order mark.
+func HasUTF8BOM(raw []byte) bool {
+	return len(raw) >= 3 && raw[0] == utf8BOM[0] && raw[1] == utf8BOM[1] && raw[2] == utf8BOM[2]
+}
+
+// Normalize drops CR so Windows CRLF files share offsets with LF editor buffers.
+func Normalize(text string) string {
+	return strings.ReplaceAll(text, "\r", "")
+}
+
+// Decode turns raw file bytes into text for parsing. It strips a leading UTF-8
+// BOM and CR, and returns hadBOM. If the bytes are not valid UTF-8 (typically
+// hand-edited Latin-1/Windows-1252 files) it falls back to a latin1 decode so
+// callers get usable text rather than U+FFFD replacement characters.
+func Decode(raw []byte) (text string, hadBOM bool) {
+	hadBOM = HasUTF8BOM(raw)
+	body := raw
+	if hadBOM {
+		body = raw[3:]
+	}
+	if utf8.Valid(body) {
+		return Normalize(string(body)), hadBOM
+	}
+	return Normalize(latin1Decode(raw)), false
+}
+
+// latin1Decode maps each byte 1:1 to U+00xx. Used only when raw is not valid UTF-8.
+func latin1Decode(raw []byte) string {
+	var out strings.Builder
+	out.Grow(len(raw))
+	for _, char := range raw {
+		out.WriteRune(rune(char))
+	}
+	return out.String()
 }

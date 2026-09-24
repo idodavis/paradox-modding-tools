@@ -1,9 +1,8 @@
-# This file contains the configuration for this project.
-# When you update `info` or `fileAssociations`, run `wails3 task common:update:build-assets` to update the assets.
-# Note that this will overwrite any changes you have made to the assets.
+# The project's Wails configuration. After changing `info` or `fileAssociations`, run
+# `wails3 task common:update:build-assets`; it overwrites any hand edits to the assets.
 version: "3"
 
-# This information is used to generate the build assets.
+# The build assets are generated from this information.
 info:
   companyName: "idavis.io"
   productName: "Paradox Modding Tools"
@@ -60,7 +59,6 @@ dev_mode:
       type: primary
 
 # File Associations
-# More information at: https://v3.wails.io/noit/done/yet
 fileAssociations:
 #  - ext: wails
 #    name: Wails

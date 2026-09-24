@@ -1,156 +1,96 @@
+// refresh.go fetches a game's wiki pages again and keeps them in one sidecar file per game under
+// local.CacheDir, reusing every page whose revision has not changed.
 package wiki
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
-	"time"
 
-	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/local"
 )
 
-var gameLocks sync.Map // gameID -> *sync.Mutex
-
-func lockGame(id string) func() {
-	v, _ := gameLocks.LoadOrStore(id, &sync.Mutex{})
-	m := v.(*sync.Mutex)
-	m.Lock()
-	return m.Unlock
-}
-
-func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
-
-func existingByTitle(pages []Page) map[string]Page {
-	out := make(map[string]Page, len(pages))
-	for _, p := range pages {
-		out[normTitle(p.Title)] = p
-	}
-	return out
-}
+var (
+	cacheDirFn = local.CacheDir
+	refreshMu  sync.Mutex // one refresh at a time
+	memMu      sync.Mutex
+	mem        = map[string]*Sidecar{}
+)
 
 func filterMembers(members []mwMember, mods map[string]bool) []mwMember {
 	var out []mwMember
 	seen := map[string]bool{}
-	for _, m := range members {
-		if !keepMember(m.Title, m.Ns, mods) {
+	for _, member := range members {
+		if !keepMember(member.Title, mods) {
 			continue
 		}
-		k := normTitle(m.Title)
-		if seen[k] {
+		key := normTitle(member.Title)
+		if seen[key] {
 			continue
 		}
-		seen[k] = true
-		out = append(out, m)
+		seen[key] = true
+		out = append(out, member)
 	}
 	return out
 }
 
 func modsSet(members []mwMember) map[string]bool {
 	out := map[string]bool{}
-	for _, m := range members {
-		if m.Ns == 0 {
-			out[normTitle(m.Title)] = true
-		}
+	for _, member := range members {
+		out[normTitle(member.Title)] = true
 	}
 	return out
 }
 
-func fetchPages(
-	ctx context.Context, gameID, api, wikiBase, kind string,
-	want []mwMember, prev []Page, progress Progress,
-) ([]Page, error) {
-	old := existingByTitle(prev)
-	titles := make([]string, len(want))
-	for i, m := range want {
-		titles[i] = m.Title
+// fetchPages parses each wanted page whose revision differs from the one kept before; a page
+// that fails to fetch or clean keeps its previous copy.
+func fetchPages(ctx context.Context, gameID, api, wikiBase string, patches bool, wanted []mwMember, prev []Page) ([]Page, error) {
+	old := make(map[string]Page, len(prev))
+	for _, page := range prev {
+		old[normTitle(page.Title)] = page
 	}
-	info, err := pageInfo(ctx, api, titles)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Page, 0, len(want))
-	done := 0
-	total := len(want)
-	if progress != nil {
-		progress(0, total, kind)
-	}
-	for _, m := range want {
+	out := make([]Page, 0, len(wanted))
+	for _, want := range wanted {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		// The progress epilogue runs once per item however the body exits.
-		func() {
-			defer func() {
-				done++
-				if progress != nil {
-					progress(done, total, kind)
-				}
-			}()
-			inf := info[normTitle(m.Title)]
-			revid := inf.LastRevid
-			if p, ok := old[normTitle(m.Title)]; ok && p.Revid != 0 && p.Revid == revid && p.HTML != "" {
-				out = append(out, p)
-				return
+		prior, known := old[normTitle(want.Title)]
+		if known && prior.Revid != 0 && prior.Revid == want.LastRevid && prior.HTML != "" {
+			out = append(out, prior)
+			continue
+		}
+		raw, revid, err := parsePage(ctx, api, want.Title)
+		var page Page
+		if err == nil {
+			page.HTML, page.Sections, page.ModdingHTML, page.ModdingSections = clean(raw, wikiBase)
+		}
+		if page.HTML == "" || len(page.HTML) > htmlCap {
+			if known {
+				out = append(out, prior)
 			}
-			raw, parsedRevid, sections, err := parsePage(ctx, api, m.Title)
-			keepOld := func() {
-				if p, ok := old[normTitle(m.Title)]; ok {
-					out = append(out, p)
-				}
-			}
-			if err != nil {
-				keepOld()
-				return
-			}
-			if parsedRevid != 0 {
-				revid = parsedRevid
-			}
-			clean, snippets := sanitize(raw, wikiBase)
-			if clean == "" || len(clean) > htmlCap {
-				keepOld()
-				return
-			}
-			pageID := m.PageID
-			if inf.PageID != 0 {
-				pageID = inf.PageID
-			}
-			p := Page{
-				PageID:    pageID,
-				Title:     m.Title,
-				URL:       pageURL(gameID, m.Title),
-				Revid:     revid,
-				FetchedAt: nowUTC(),
-				License:   License,
-				Sections:  sections,
-				HTML:      clean,
-				Snippets:  snippets,
-			}
-			if kind == "patches" {
-				p.ModdingHTML = extractModding(clean)
-			}
-			out = append(out, p)
-		}()
+			continue
+		}
+		page.Title, page.URL, page.Revid = want.Title, pageURL(gameID, want.Title), cmp.Or(revid, want.LastRevid)
+		if !patches {
+			page.ModdingHTML, page.ModdingSections = "", nil
+		}
+		out = append(out, page)
 	}
 	return out, nil
 }
 
-func applyHeader(h *header, gameID, version string, stampMajorMinor bool) {
-	h.FormatVersion = FormatVersion
-	h.GameID = gameID
-	h.FetchedAt = nowUTC()
-	if stampMajorMinor {
-		h.FetchedVersion = version
-		if maj, min, ok := ParseMajorMinor(version); ok {
-			h.FetchedMajor = maj
-			h.FetchedMinor = min
-		}
-	}
-}
-
-func refresh(ctx context.Context, gameID, version string, stamp bool, progress Progress) error {
-	unlock := lockGame(gameID)
-	defer unlock()
+// Refresh fetches gameID's guides and patch notes again and saves them.
+func Refresh(ctx context.Context, gameID string) error {
+	refreshMu.Lock()
+	defer refreshMu.Unlock()
 	api := wikiAPI(gameID)
 	if api == "" {
 		return fmt.Errorf("no wiki api for %s", gameID)
@@ -164,79 +104,130 @@ func refresh(ctx context.Context, gameID, version string, stamp bool, progress P
 	if err != nil {
 		return fmt.Errorf("category mods: %w", err)
 	}
-	modSet := modsSet(mods)
-
-	guideMem, err := categoryMembers(ctx, api, "Category:Modding")
+	guideMembers, err := categoryMembers(ctx, api, "Category:Modding")
 	if err != nil {
 		return fmt.Errorf("category modding: %w", err)
 	}
-	patchMem, err := categoryMembers(ctx, api, "Category:Patches")
+	patchMembers, err := categoryMembers(ctx, api, "Category:Patches")
 	if err != nil {
 		return fmt.Errorf("category patches: %w", err)
 	}
 
-	var prevDocs []Page
-	if old, e := LoadGuides(gameID); e == nil && old != nil {
-		prevDocs = old.Pages
+	prev, err := load(gameID)
+	if err != nil {
+		prev = &Sidecar{}
 	}
-	var prevPatches []Page
-	if old, e := LoadPatches(gameID); e == nil && old != nil {
-		prevPatches = old.Pages
-		if !stamp {
-			version = old.FetchedVersion
-		}
-	}
-
-	guides, err := fetchPages(ctx, gameID, api, wikiBase, "guides",
-		filterMembers(guideMem, modSet), prevDocs, progress)
+	guides, err := fetchPages(ctx, gameID, api, wikiBase, false, filterMembers(guideMembers, modsSet(mods)), prev.Guides)
 	if err != nil {
 		return err
 	}
-	if len(guides) == 0 && len(prevDocs) == 0 {
+	if len(guides) == 0 && len(prev.Guides) == 0 {
 		return fmt.Errorf("wiki guides empty")
 	}
-	df := &Sidecar{Pages: guides}
-	if old, e := LoadGuides(gameID); e == nil && old != nil && !stamp {
-		df.header = old.header
-	}
-	applyHeader(&df.header, gameID, version, stamp || df.FetchedMajor == 0)
-	if err := saveGuides(df); err != nil {
-		return err
-	}
-
-	patches, err := fetchPages(ctx, gameID, api, wikiBase, "patches",
-		filterMembers(patchMem, nil), prevPatches, progress)
+	patches, err := fetchPages(ctx, gameID, api, wikiBase, true, filterMembers(patchMembers, nil), prev.Patches)
 	if err != nil {
 		return err
 	}
-	pf := &Sidecar{Pages: patches}
-	if old, e := LoadPatches(gameID); e == nil && old != nil && !stamp {
-		pf.header = old.header
-	}
-	applyHeader(&pf.header, gameID, version, stamp || pf.FetchedMajor == 0)
-	return savePatches(pf)
+	return save(gameID, &Sidecar{Guides: guides, Patches: patches})
 }
 
-// RefreshIfNeeded fetches when the sidecar is missing or major/minor-stale.
-func RefreshIfNeeded(ctx context.Context, gameID, version string, progress Progress) error {
-	if !Needed(gameID, version) {
-		return nil
+func sidecarPath(gameID string) (string, error) {
+	dir, err := cacheDirFn()
+	if err != nil {
+		return "", err
 	}
-	return refresh(ctx, gameID, version, true, progress)
+	return filepath.Join(dir, "wiki-"+gameID+".json"), nil
 }
 
-// RefreshExisting incrementally updates every game that already has a sidecar.
-func RefreshExisting(ctx context.Context, onDone func(gameID string, err error)) {
-	for _, g := range game.All() {
-		if ctx.Err() != nil {
-			return
-		}
-		if !HasSidecar(g.ID) {
-			continue
-		}
-		err := refresh(ctx, g.ID, "", false, nil)
-		if onDone != nil {
-			onDone(g.ID, err)
+// ForgetAll drops every sidecar held in memory; Reset data calls it after deleting the cache.
+func ForgetAll() {
+	memMu.Lock()
+	defer memMu.Unlock()
+	mem = map[string]*Sidecar{}
+}
+
+// load reads gameID's sidecar, from memory once read; a missing or unreadable file is an error.
+func load(gameID string) (*Sidecar, error) {
+	memMu.Lock()
+	cached := mem[gameID]
+	memMu.Unlock()
+	if cached != nil {
+		return cached, nil
+	}
+	path, err := sidecarPath(gameID)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var sidecar Sidecar
+	if err := json.Unmarshal(raw, &sidecar); err != nil {
+		return nil, err
+	}
+	memMu.Lock()
+	mem[gameID] = &sidecar
+	memMu.Unlock()
+	return &sidecar, nil
+}
+
+func save(gameID string, sidecar *Sidecar) error {
+	path, err := sidecarPath(gameID)
+	if err != nil {
+		return err
+	}
+	if err := local.Write(path, func(out io.Writer) error { return json.NewEncoder(out).Encode(sidecar) }); err != nil {
+		return err
+	}
+	memMu.Lock()
+	mem[gameID] = sidecar
+	memMu.Unlock()
+	return nil
+}
+
+var patchTitleRe = regexp.MustCompile(`(?i)^Patch\s+(\d+\.\d+(?:\.(?:\d+|[Xx]))?)`)
+
+// patchVer is a parsed "Patch 1.16.2" / "Patch 1.16.X" title.
+type patchVer struct {
+	Major, Minor, Patch int
+	Wildcard            bool
+	Label               string
+}
+
+func parsePatchTitle(title string) (patchVer, bool) {
+	match := patchTitleRe.FindStringSubmatch(strings.TrimSpace(title))
+	if match == nil {
+		return patchVer{}, false
+	}
+	label := match[1]
+	parts := strings.Split(label, ".")
+	if len(parts) < 2 {
+		return patchVer{}, false
+	}
+	major, err1 := strconv.Atoi(parts[0])
+	minor, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return patchVer{}, false
+	}
+	pv := patchVer{Major: major, Minor: minor, Label: label}
+	if len(parts) >= 3 {
+		if strings.EqualFold(parts[2], "x") {
+			pv.Wildcard = true
+			pv.Patch = 0
+		} else if n, err := strconv.Atoi(parts[2]); err == nil {
+			pv.Patch = n
 		}
 	}
+	return pv, true
+}
+
+func cmpPatch(first, second patchVer) int {
+	if first.Major != second.Major {
+		return first.Major - second.Major
+	}
+	if first.Minor != second.Minor {
+		return first.Minor - second.Minor
+	}
+	return first.Patch - second.Patch
 }

@@ -45,4 +45,4 @@ Harvest of those folders is **RAM-only**. It is rebuilt when the workspace opens
 
 ## PMT’s own config
 
-App settings live under your OS user-config directory, folder **Paradox Modding Tools/** (`config.json`). First launch may delete a leftover `pmt-workspace.db` from an older experiment. A `FormatVersion` mismatch wipes that JSON (themes can survive in other keys). The Steam helper is extracted at runtime into that tree’s `bin/`.
+App settings live under your OS user-config directory, folder **Paradox Modding Tools/** (`config.json`). If that file exists but cannot be read, PMT starts without it and will not write over it.

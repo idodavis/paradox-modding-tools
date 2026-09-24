@@ -1,6 +1,10 @@
-// Package schema is what the engine knows about a game's language: the vocabulary the game declares in its console dumps (vocab.go), the prose it ships beside its script (info.go), the hand table of name tokens (nametokens.go), the schema a scan learned from the install (this file, read and written as text by file.go), and the one reader that decides what a written word is (reader.go). Nothing here parses a game file or walks an install: the learner fills a Schema, and everything above looks things up in it.
-//
-// schema.go holds the learned types. A Schema is never edited by hand: a wrong one is a learner bug. A fact has one field; the lookups in the other direction (prefix to kinds, keyword to kind, folder to kinds) are built on first use and never stored or written.
+// Package schema is what the engine knows about a game's language: the vocabulary the game
+// declares in its console dumps (vocab.go), the prose it ships beside its script (info.go), the
+// schema a scan learns and the text file it is written to (file.go), and Reader, the one place
+// that decides what a written word is (reader.go). This file holds the model's types and the
+// engine's one hand table, shared by the three games: the effects and triggers that make or read
+// a name while script runs. A saved scope, a variable, a list and a character flag have no folder
+// and no definition, so nothing can learn them; every row is a token some game declares.
 package schema
 
 import (
@@ -11,10 +15,10 @@ import (
 	"sync"
 
 	"paradox-modding-tools/services/internal/lang/loc"
-	"paradox-modding-tools/services/internal/source"
+	"paradox-modding-tools/services/internal/lang/source"
 )
 
-// Schema is what one install at one version was seen to contain: every database and what is written inside it.
+// Schema is what one install at one version contains: every database and what is written in it.
 type Schema struct {
 	Game      string            // ck3 | vic3 | eu5
 	Version   string            // the install's version
@@ -29,11 +33,11 @@ type Schema struct {
 	macros    []*Kind
 }
 
-// Kind is one database of the game: all the definitions of one type. brave, cynical and lustful are definitions of the kind traits.
+// Kind is one database of the game: every definition of one type, as brave is one of traits.
 type Kind struct {
 	Name          string           // traits, gui.type, models.pdxmesh, religions.faiths, history/titles
 	Format        source.Format    // the format of the files its definitions are read from
-	Folders       []string         // where its definitions are, from a root: a folder (common/traits), or one file where a folder's files each hold a different kind (map_data/definition.csv). None for a nested or script-made kind
+	Folders       []string         // folders or files from a root with its definitions; none when nested or script-made
 	Naming        Naming           // where a definition's name is written
 	Parent        string           // nested kind: the kind whose definitions contain this kind's
 	Subject       string           // subject kind: the kind its entries are about; it defines nothing
@@ -44,31 +48,34 @@ type Kind struct {
 	FileTemplates []FileTemplate   // the files the game finds by a definition's name, each with its coverage
 	Macro         BodyClass        // the classes of body in which a definition is invoked by writing its name as a key
 	Params        bool             // a definition's text holds $NAME$ parameters that the invoking site fills
-	Shape         *Field           // what a definition holds: its members when it is a block, its accepts when it is one value
+	Shape         *Field           // what a definition holds: its members for a block, its accepts for one value
 }
 
 // Naming is where the name of a definition is written. Form is one of namingForms.
 type Naming struct {
 	Form    string
-	Keyword string // member, declaration: the word that opens a definition. key: a word that also declares one inline in any script file
+	Keyword string // member, declaration: the word opening a definition; key: a word declaring one inline anywhere
 	Member  string // member: the member whose value is the name
 	Column  int    // column: the column that holds the name
 }
 
-// namingForms is every way a definition is named: brave = { } is key, 186004 = { } number, birth.1001 = { } event_id, @x = 5 constant, pdxmesh = { name = "x" } member, type x = button { } declaration, history/cultures/afghan.txt file, a table's column, a list file's line, a loc key matching the kind's template, $NAME$ in a macro's text param, a name token's argument, and none where the files define nothing.
+// namingForms is every way a definition is named: key (brave = { }), number (186004 = { }),
+// event_id (birth.1001 = { }), constant (@x = 5), member (pdxmesh = { name = "x" }), declaration
+// (type x = button { }), file (history/cultures/afghan.txt), a table's column, a list file's
+// line, param ($NAME$ in a macro's text), token (a name token's argument), and none.
 var namingForms = []string{"key", "number", "event_id", "constant", "member", "declaration", "file", "column", "line", "param", "token", "none"}
 
-// Field is one position below a definition, learned from every place the install writes it under the same parent.
+// Field is one position below a definition, learned from every use of it under the same parent.
 type Field struct {
-	Name      string            // the key as written (trigger, on_accept, texture), or a position: <number> <date> <cite> <name> <word> <0> <1>
+	Name      string            // the key as written, or a position: <number> <date> <cite> <name> <word> <0> <1>
 	Count     int               // how many times the install writes it
 	Class     Class             // what is written at it
 	Body      BodyClass         // ClassBody: which vocabularies its statements come from
-	BodyScope string            // ClassBody: the scope type its statements run in; "" where the install's tokens disagree or state none
-	Accepts   []Accept          // ClassValue, ClassList: every type of value seen or declared, at most one per type and kind; declared first, then most frequent first
+	BodyScope string            // ClassBody: the scope type its statements run in; "" where tokens disagree or state none
+	Accepts   []Accept          // ClassValue, ClassList: each type and kind seen or declared; declared first, then by use
 	Ops       []string          // the operators written after this key other than =
 	Defines   string            // the nested kind whose definitions are this block's name keys, or a list's bare words
-	KeyedBy   string            // the kind this block's name keys cite, when the definitions are made elsewhere: goods = { wheat = 0.5 }
+	KeyedBy   string            // the kind this block's name keys cite when defined elsewhere: goods = { wheat = 0.5 }
 	Members   map[string]*Field // the fields below, by Field.Name
 }
 
@@ -86,7 +93,7 @@ const (
 
 var classNames = [...]string{"", "value", "list", "structure", "database", "body"}
 
-func (c Class) String() string { return classNames[c] }
+func (class Class) String() string { return classNames[class] }
 
 // BodyClass says which vocabularies a body's statements come from, as bits.
 type BodyClass uint8
@@ -102,7 +109,7 @@ var bodyNames = [...]string{"trigger", "effect", "modifier", "math"}
 
 // FileTemplate is a file the game finds by a definition's name, never named in script.
 type FileTemplate struct {
-	Pattern  string  // a path from a root, with {id} where the definition's name goes: gfx/interface/icons/traits/{id}.dds
+	Pattern  string  // a path from a root with {id} for the definition's name: gfx/interface/icons/traits/{id}.dds
 	Coverage float64 // the share of the install's definitions that have the file
 }
 
@@ -140,18 +147,18 @@ const (
 
 var typeNames = [...]string{"none", "number", "bool", "date", "string", "color", "loc", "ref", "enum", "file", "scope_path", "constant", "param", "call", "member", "token", "unresolved"}
 
-func (t ValueType) String() string { return typeNames[t] }
+func (valueType ValueType) String() string { return typeNames[valueType] }
 
 // Value is what one written word turned out to be.
 type Value struct {
 	Type     ValueType
-	Kind     string // TypeRef: the kind of the definition named; "" when the prefix is declared and no kind holds its definitions
-	Name     string // TypeRef, TypeLoc, TypeFile, TypeConstant, TypeParam: the name looked up, with quotes, prefix and parent removed
+	Kind     string // TypeRef: the kind of the definition named; "" for a declared prefix no kind holds
+	Name     string // TypeRef/Loc/File/Constant/Param: the name looked up, without quotes, prefix or parent
 	Parent   string // TypeRef: the enclosing definition, when the word names it too: define:NGame|START_DATE gives NGame
 	Declared bool   // the type rests on something the game declares; only then may a diagnostic accuse on it
 }
 
-// Drift is what a scan saw and nothing explained. It is the alarm for a game update that changes the language.
+// Drift is what a scan saw and nothing explained: the sign a game update changed the language.
 type Drift struct {
 	ParseErrors  []Tally // vanilla files that did not parse cleanly, by relative path
 	Extensions   []Tally // file extensions with no format
@@ -159,7 +166,7 @@ type Drift struct {
 	EntryModes   []Tally // MODE: words on a definition's name with no meaning in the registry
 	Prefixes     []Tally // prefix spellings neither declared by the vocabulary nor belonging to a kind
 	DumpLabels   []Tally // labels in a dump the vocabulary reader does not know
-	NameTokens   []Tally // tokens whose values are the names cited under a script-made kind's prefix, and are not in the hand table
+	NameTokens   []Tally // tokens not in the hand table whose values are names cited under a script-made kind's prefix
 	Unclassified []Tally // engine tokens the install writes that learned no entry in Arguments
 }
 
@@ -169,45 +176,36 @@ type Tally struct {
 	Count int
 }
 
-// Field is the field at a path of member names below a definition of the kind, or nil where the install never wrote it.
-func (k *Kind) Field(path ...string) *Field {
-	f := k.Shape
-	for _, name := range path {
-		if f == nil {
-			return nil
-		}
-		f = f.Members[name]
-	}
-	return f
-}
-
-// lookups builds the reverse lookups once (prefix to kinds, keyword to kind, folder to kinds, and the kinds that are macros), in kind name order so a shared prefix or keyword always answers the same way.
-func (s *Schema) lookups() {
-	s.once.Do(func() {
-		s.byPrefix, s.byKeyword, s.byFolder = map[string][]*Kind{}, map[string]*Kind{}, map[string][]*Kind{}
-		for _, name := range slices.Sorted(maps.Keys(s.Kinds)) {
-			k := s.Kinds[name]
-			for _, p := range k.Prefixes {
-				s.byPrefix[p] = append(s.byPrefix[p], k)
+// lookups builds the reverse lookups once: prefix, keyword and folder to kinds, and the macros.
+// Kinds go in name order, so a shared prefix or keyword always answers the same way.
+func (schema *Schema) lookups() {
+	schema.once.Do(func() {
+		schema.byPrefix, schema.byKeyword, schema.byFolder = map[string][]*Kind{}, map[string]*Kind{}, map[string][]*Kind{}
+		for _, name := range slices.Sorted(maps.Keys(schema.Kinds)) {
+			kind := schema.Kinds[name]
+			for _, prefixe := range kind.Prefixes {
+				schema.byPrefix[prefixe] = append(schema.byPrefix[prefixe], kind)
 			}
-			if k.Naming.Keyword != "" && s.byKeyword[k.Naming.Keyword] == nil {
-				s.byKeyword[k.Naming.Keyword] = k
+			if kind.Naming.Keyword != "" && schema.byKeyword[kind.Naming.Keyword] == nil {
+				schema.byKeyword[kind.Naming.Keyword] = kind
 			}
-			for _, f := range k.Folders {
-				s.byFolder[strings.ToLower(f)] = append(s.byFolder[strings.ToLower(f)], k)
+			for _, folder := range kind.Folders {
+				schema.byFolder[strings.ToLower(folder)] = append(schema.byFolder[strings.ToLower(folder)], kind)
 			}
-			if k.Macro != 0 {
-				s.macros = append(s.macros, k)
+			if kind.Macro != 0 {
+				schema.macros = append(schema.macros, kind)
 			}
 		}
 	})
 }
 
-// KindsAt is the kinds a file at rel, a path from a root, may define: the kinds that list the file itself, else those of its nearest listed folder, so a mod's new subfolder belongs to the database above it. Several where a folder holds several.
-func (s *Schema) KindsAt(rel string) []*Kind {
-	s.lookups()
+// KindsAt is the kinds a file at rel, a path from a root, may define: those listing the file
+// itself, else those of its nearest listed folder, so a mod's new subfolder belongs to the
+// database above it.
+func (schema *Schema) KindsAt(rel string) []*Kind {
+	schema.lookups()
 	for at := strings.ToLower(rel); at != "." && at != "/" && at != ""; at = path.Dir(at) {
-		if kinds := s.byFolder[at]; kinds != nil {
+		if kinds := schema.byFolder[at]; kinds != nil {
 			return kinds
 		}
 	}
@@ -215,13 +213,89 @@ func (s *Schema) KindsAt(rel string) []*Kind {
 }
 
 // ByPrefix is the kinds a prefix cites, in name order; none when the prefix belongs to no kind.
-func (s *Schema) ByPrefix(prefix string) []*Kind {
-	s.lookups()
-	return s.byPrefix[prefix]
+func (schema *Schema) ByPrefix(prefix string) []*Kind {
+	schema.lookups()
+	return schema.byPrefix[prefix]
 }
 
-// ByKeyword is the kind a declaration keyword opens a definition of: scripted_trigger, type, pdxmesh.
-func (s *Schema) ByKeyword(word string) *Kind {
-	s.lookups()
-	return s.byKeyword[word]
+// ByKeyword is the kind whose definitions a keyword opens: scripted_trigger, type, pdxmesh.
+func (schema *Schema) ByKeyword(word string) *Kind {
+	schema.lookups()
+	return schema.byKeyword[word]
+}
+
+// NameToken is one token and one place in it that holds a name. A token written with one word
+// takes that word as the name; Member says where the name is when the token takes a block.
+type NameToken struct {
+	Token   string // set_variable, has_variable, save_scope_as, add_to_list, every_in_list
+	Kind    string // the script-made kind the name belongs to, one of ScriptKinds
+	Defines bool   // the token creates the name. false: it reads, changes or removes one
+	Member  string // the member holding the name in a block: name, list, variable, flag; "" when it takes no block
+}
+
+// ScriptKinds is the script-made kinds the learner makes, each with the declared prefix that
+// cites its names, or "" when none does.
+var ScriptKinds = map[string]string{
+	"saved_scopes": "scope", "variables": "var", "local_variables": "local_var", "global_variables": "global_var", "lists": "", "flags": "",
+}
+
+// variableTokens is the tokens of a variable scope, spelled for the plain one; the local and
+// global scopes put their word before "variable": set_local_variable. A variable list or map
+// holds several targets, but its name is a variable too.
+var variableTokens = []NameToken{
+	{Token: "set_variable", Defines: true, Member: "name"}, {Token: "change_variable", Member: "name"}, {Token: "clamp_variable", Member: "name"}, {Token: "round_variable", Member: "name"},
+	{Token: "has_variable"}, {Token: "remove_variable"},
+
+	{Token: "add_to_variable_list", Defines: true, Member: "name"}, {Token: "remove_list_variable", Member: "name"}, {Token: "clear_variable_list"}, {Token: "has_variable_list"},
+	{Token: "variable_list_size", Member: "name"}, {Token: "is_target_in_variable_list", Member: "name"}, {Token: "sort_variable_list", Member: "name"},
+
+	{Token: "add_to_variable_map", Defines: true, Member: "name"}, {Token: "remove_from_variable_map", Member: "name"}, {Token: "clear_variable_map"}, {Token: "has_variable_map"},
+	{Token: "variable_map_size", Member: "name"}, {Token: "is_key_in_variable_map", Member: "name"}, {Token: "is_value_in_variable_map", Member: "name"},
+	{Token: "any_key_in_variable_map", Member: "variable"}, {Token: "every_key_in_variable_map", Member: "variable"}, {Token: "ordered_key_in_variable_map", Member: "variable"}, {Token: "random_key_in_variable_map", Member: "variable"},
+}
+
+// nameTokens is the whole table, and nameTokensByToken the same rows by token.
+var nameTokens, nameTokensByToken = func() ([]NameToken, map[string][]NameToken) {
+	rows := []NameToken{
+		{Token: "save_scope_as", Kind: "saved_scopes", Defines: true}, {Token: "save_temporary_scope_as", Kind: "saved_scopes", Defines: true},
+		{Token: "save_scope_value_as", Kind: "saved_scopes", Defines: true, Member: "name"}, {Token: "save_temporary_scope_value_as", Kind: "saved_scopes", Defines: true, Member: "name"},
+		{Token: "save_opinion_value_as", Kind: "saved_scopes", Defines: true, Member: "name"}, {Token: "save_temporary_opinion_value_as", Kind: "saved_scopes", Defines: true, Member: "name"},
+		{Token: "clear_saved_scope", Kind: "saved_scopes"},
+
+		{Token: "add_to_list", Kind: "lists", Defines: true}, {Token: "add_to_temporary_list", Kind: "lists", Defines: true, Member: "name"},
+		{Token: "remove_from_list", Kind: "lists"}, {Token: "is_in_list", Kind: "lists"},
+
+		// CK3 alone: the variables of the dead, several names under one token, and character flags
+		{Token: "set_dead_character_variable", Kind: "variables", Defines: true, Member: "name"}, {Token: "has_dead_character_variable", Kind: "variables"}, {Token: "remove_dead_character_variable", Kind: "variables"},
+		{Token: "has_all_variables", Kind: "variables", Member: "name"}, {Token: "has_none_of_variables", Kind: "variables", Member: "name"},
+		{Token: "add_character_flag", Kind: "flags", Defines: true, Member: "flag"}, {Token: "has_character_flag", Kind: "flags"}, {Token: "remove_character_flag", Kind: "flags"},
+		{Token: "add_dead_character_flag", Kind: "flags", Defines: true, Member: "flag"}, {Token: "has_dead_character_flag", Kind: "flags"},
+	}
+
+	// every variable token, in its three scopes
+	for _, scope := range []string{"variable", "local_variable", "global_variable"} {
+		for _, row := range variableTokens {
+			row.Token, row.Kind = strings.Replace(row.Token, "variable", scope, 1), scope+"s"
+			rows = append(rows, row)
+		}
+	}
+
+	// a list iterator reads a list at list = name and a variable list at variable = name; the
+	// local and global ones read only variable lists
+	for _, prefix := range iteratorPrefixes {
+		rows = append(rows,
+			NameToken{Token: prefix + "in_list", Kind: "lists", Member: "list"}, NameToken{Token: prefix + "in_list", Kind: "variables", Member: "variable"},
+			NameToken{Token: prefix + "in_local_list", Kind: "local_variables", Member: "variable"}, NameToken{Token: prefix + "in_global_list", Kind: "global_variables", Member: "variable"})
+	}
+
+	byToken := map[string][]NameToken{}
+	for _, row := range rows {
+		byToken[row.Token] = append(byToken[row.Token], row)
+	}
+	return rows, byToken
+}()
+
+// NameTokensOf is a token's rows, one per member holding a name; none when it makes or reads none.
+func NameTokensOf(token string) []NameToken {
+	return nameTokensByToken[token]
 }

@@ -93,20 +93,20 @@ type Comment struct {
 	Range Range
 }
 
-func (r Root) NodeRange() Range        { return r.Range }
-func (s Scalar) NodeRange() Range      { return s.Range }
-func (b Block) NodeRange() Range       { return b.Range }
-func (t TaggedBlock) NodeRange() Range { return t.Range }
-func (a Assignment) NodeRange() Range  { return a.Range }
-func (v ValueStmt) NodeRange() Range   { return v.Range }
+func (root Root) NodeRange() Range               { return root.Range }
+func (scalar Scalar) NodeRange() Range           { return scalar.Range }
+func (block Block) NodeRange() Range             { return block.Range }
+func (taggedBlock TaggedBlock) NodeRange() Range { return taggedBlock.Range }
+func (assign Assignment) NodeRange() Range       { return assign.Range }
+func (valueStmt ValueStmt) NodeRange() Range     { return valueStmt.Range }
 
 // BlockOf returns the Block a value owns (plain or tagged), or nil.
-func BlockOf(v Value) *Block {
-	switch b := v.(type) {
+func BlockOf(value Value) *Block {
+	switch block := value.(type) {
 	case *Block:
-		return b
+		return block
 	case *TaggedBlock:
-		return &b.Block
+		return &block.Block
 	default:
 		return nil
 	}
@@ -185,24 +185,21 @@ func (li *LineIndex) OffsetAt(line, col int) int {
 	if col < 0 {
 		col = 0
 	}
-	offset := min(start+col, nextStart)
-	if offset > li.length {
-		offset = li.length
-	}
+	offset := min(min(start+col, nextStart), li.length)
 	return offset
 }
 
 // ChildBlock returns the Block a statement owns (via block or tagged-block value),
 // or nil.
 func ChildBlock(st Statement) *Block {
-	var v Value
-	switch s := st.(type) {
+	var value Value
+	switch statement := st.(type) {
 	case *Assignment:
-		v = s.Value
+		value = statement.Value
 	case *ValueStmt:
-		v = s.Value
+		value = statement.Value
 	}
-	return BlockOf(v)
+	return BlockOf(value)
 }
 
 // Walk visits every statement depth-first. depth is 0 at root; parent is the
@@ -214,8 +211,8 @@ func Walk(root *Root, fn func(st Statement, depth int, parent *Block) bool) {
 			if !fn(st, depth, parent) {
 				continue
 			}
-			if b := ChildBlock(st); b != nil {
-				visit(b.Statements, depth+1, b)
+			if block := ChildBlock(st); block != nil {
+				visit(block.Statements, depth+1, block)
 			}
 		}
 	}

@@ -27,12 +27,11 @@ Description is Markdown in a rich editor. **Save** writes the Markdown file and 
 {{< shot caption="Steam publish pane." >}}
 
 - The Steam **client** must be running and signed in as the Workshop **owner**.
-- The helper (`pmt-steamugc` + `steam_api*`) is **embedded** in the app and extracted to PMT’s user-config `bin/` at runtime.
+- Publishing loads the game's own copy of Steam's library from its install; nothing of Steam's ships with PMT. EU5 has no Linux build, so publish EU5 mods from Windows.
 - Staging skips dotfiles (except `.metadata/`), `.gitignore`, patterns in `.gitignore`, and Workshop ignore patterns from [Settings]({{< relref "/pages/settings" >}}).
 - **New items stay private** until you set them Public on Workshop yourself.
 - Do not run a local copy and a Workshop subscribe of the **same** mod together — the game will see both.
 
-Linux Workshop builds are **amd64** only (Steamworks ships `linux64`). Windows ARM still embeds the **amd64** helper and runs it under x64 emulation.
 
 ## Paradox Mods
 

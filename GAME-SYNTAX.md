@@ -695,7 +695,7 @@ EU5 also carries a dotted family — `caux.elysian_language`,
 location or an event namespace. §3g recorded 592 of these on AGoT as not worth a
 tokeniser change; at EU5's 75% mod rate that judgement no longer holds.
 
-Reproduce with `PMT_LOC_RESIDUE=1` and `internal/views/locresidue_test.go`.
+The probe that reproduced this (`probe_locresidue_test.go`) went with the old views package; its procedure is in `.claude/plans/language-engine/carryover.md`.
 
 ## 13. Where permissiveness is allowed, and where it is not
 

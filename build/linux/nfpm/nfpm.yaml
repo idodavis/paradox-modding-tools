@@ -1,7 +1,4 @@
-# Feel free to remove those if you don't want/need to use them.
-# Make sure to check the documentation at https://nfpm.goreleaser.com
-#
-# The lines below are called `modelines`. See `:help modeline`
+# The Linux package spec; see https://nfpm.goreleaser.com
 
 name: "paradox-modding-tools.exe"
 arch: ${GOARCH}
@@ -49,8 +46,8 @@ scripts:
   # preremove: "./build/linux/nfpm/scripts/preremove.sh"
   # postremove: "./build/linux/nfpm/scripts/postremove.sh"
 
-# If you build your app with -tags gtk3 (legacy WebKit2GTK 4.1 stack — supported through v3.0.x, removed in v3.1),
-# replace the depends/overrides above with these:
+# A build with -tags gtk3 (the legacy WebKit2GTK 4.1 stack, supported through Wails v3.0.x,
+# removed in v3.1) replaces the depends/overrides above with these:
 #
 # depends:
 #   - libgtk-3-0

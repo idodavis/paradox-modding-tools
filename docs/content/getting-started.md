@@ -17,11 +17,10 @@ From [Releases](https://github.com/idodavis/paradox-modding-tools/releases) pick
 
 | File | Who it is for |
 |------|----------------|
-| `paradox-modding-tools-windows-amd64.zip` | Most Windows PCs |
-| `paradox-modding-tools-windows-arm64.zip` | Windows on ARM (Snapdragon, etc.) |
+| `paradox-modding-tools-windows-amd64.zip` | Windows PCs, including Windows on ARM (Snapdragon, etc.), which runs it under x64 emulation |
 | `paradox-modding-tools-linux-amd64.zip` | Linux desktops (x86_64) |
 
-Extract anywhere you can write and run the binary. The Steam Workshop helper is **inside** the app.
+Extract anywhere you can write and run the binary. Steam Workshop publish uses the game's own copy of Steam's library.
 
 ## 2. Runtime on Windows
 

@@ -7,8 +7,18 @@ descriptor, parser, LSP, or semantics code.
 
 ## Verbosity
 
-- Comments: a file header may be a paragraph. Everything else is one line.
-  Do not write essays above functions, fields, or tests.
+- Comments: short, one or two lines. A handful may run longer where they
+  explain something important, and a package or file header may be longer.
+  A full-line comment fits in 100 columns and wraps onto more lines; a line
+  that ends in a comment fits in 120. A tab counts as 2 columns. A comment
+  says what code is and why, never where it came from or which plan changed
+  it. No comment bloat.
+- Names: no single-letter variables. A receiver, parameter, local, range
+  variable or struct field is named for what it holds — `sess *session.Session`,
+  `idx *Index`, `for _, def := range idx.Defs`. Three exceptions, and no others:
+  a service's own receiver (`s *SessionService`), a loop counter (`i`, `j`, `k`,
+  `n`), and `t *testing.T`. Each name is chosen by reading what the thing is,
+  never by a mapping from letters to words; `gopls rename` applies it safely.
 - Blank lines separate the steps inside a function and stay; a step comment
   has one above it. Counts are code lines (no blank, no comment-only lines),
   so removing spacing or comments never moves a number and is never done for one.
@@ -68,7 +78,5 @@ descriptor, parser, LSP, or semantics code.
 
 - `task test` (fast, `-short`), `task test:race` before any consolidation,
   `task test:full` with `PMT_TEST_INSTALL_*` set for the real-install tier.
-- Test layout: one `X_test.go` beside each `X.go`, and a gate over a real
-  install lives in the `X_test.go` of the code it tests. The only other names
-  are `gate_*` for a gate that crosses packages, `bench_*`, `probe_*`, and
-  `<pkg>_test.go` for shared fixtures.
+- Test layout: each package has one test file, `<pkg>_test.go`, and a gate over
+  a real install lives in it.

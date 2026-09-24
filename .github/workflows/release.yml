@@ -74,24 +74,11 @@ jobs:
             task: windows:build
             binary: paradox-modding-tools.exe
             zip: paradox-modding-tools-windows-amd64.zip
-            steam_helper: pmt-steamugc.exe
-            steam_lib: steam_api64.dll
-          - goos: windows
-            goarch: arm64
-            task: windows:build
-            binary: paradox-modding-tools.exe
-            zip: paradox-modding-tools-windows-arm64.zip
-            steam_helper: pmt-steamugc.exe
-            steam_lib: steam_api64.dll
           - goos: linux
             goarch: amd64
             task: linux:build
             binary: paradox-modding-tools
             zip: paradox-modding-tools-linux-amd64.zip
-            steam_helper: pmt-steamugc
-            steam_lib: libsteam_api.so
-    env:
-      STEAMWORKS_GPG_PASSPHRASE: ${{ secrets.STEAMWORKS_GPG_PASSPHRASE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -116,14 +103,6 @@ jobs:
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - name: Embed Steam helper for ${{ matrix.goos }}
-        run: |
-          set -euo pipefail
-          wails3 task common:build:steamugc GOOS="${{ matrix.goos }}" ARCH="${{ matrix.goarch }}"
-          EMBED="services/internal/steamugc/binembed/bin"
-          test -f "${EMBED}/${{ matrix.steam_helper }}"
-          test -f "${EMBED}/${{ matrix.steam_lib }}"
-
       - name: Build ${{ matrix.zip }}
         run: |
           set -euo pipefail
@@ -147,7 +126,7 @@ jobs:
             'Linux needs GTK 4 and WebKitGTK 6 runtime libraries.' \
             '' \
             'Steam Workshop publish requires the Steam client, signed in as' \
-            'the Workshop owner. The Steam helper is embedded in the app.' \
+            'the Workshop owner, with the game installed.' \
             '' \
             'License: GPL-3.0-or-later (see LICENSE).' \
             > "${stage}/README.txt"

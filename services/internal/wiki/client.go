@@ -1,9 +1,14 @@
+// Package wiki fetches, sanitizes, and looks up Paradox wiki guides and patch
+// notes. It persists game-keyed sidecars under local.CacheDir.
+// WikiService owns Wails RPCs; this package must not import session or lsp.
+
 package wiki
 
 import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,8 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/bytedance/sonic"
 
 	"paradox-modding-tools/services/internal/game"
 )
@@ -47,11 +50,11 @@ func wikiAPI(gameID string) string {
 	if apiOverride != "" {
 		return apiOverride
 	}
-	g := game.Get(gameID)
-	if g == nil {
+	info := game.Get(gameID)
+	if info == nil {
 		return ""
 	}
-	return g.WikiAPI
+	return info.WikiAPI
 }
 
 func throttle(ctx context.Context) error {
@@ -79,36 +82,22 @@ func throttle(ctx context.Context) error {
 	}
 }
 
-func clipBody(b []byte) string {
-	s := strings.Join(strings.Fields(string(b)), " ")
-	if len(s) > 120 {
-		return s[:120]
+func clipBody(body []byte) string {
+	text := strings.Join(strings.Fields(string(body)), " ")
+	if len(text) > 120 {
+		return text[:120]
 	}
-	return s
+	return text
 }
 
-func looksJSON(b []byte) bool {
-	t := bytes.TrimSpace(b)
-	return len(t) > 0 && (t[0] == '{' || t[0] == '[')
+func looksJSON(body []byte) bool {
+	text := bytes.TrimSpace(body)
+	return len(text) > 0 && (text[0] == '{' || text[0] == '[')
 }
 
 type mwMember struct {
-	PageID int    `json:"pageid"`
-	Ns     int    `json:"ns"`
-	Title  string `json:"title"`
-}
-
-type mwPageInfo struct {
-	PageID    int    `json:"pageid"`
 	Title     string `json:"title"`
 	LastRevid int    `json:"lastrevid"`
-	Missing   bool   `json:"missing"`
-}
-
-type mwSection struct {
-	TocLevel int    `json:"toclevel"`
-	Line     string `json:"line"`
-	Anchor   string `json:"anchor"`
 }
 
 func apiGet(ctx context.Context, api string, vals url.Values) ([]byte, error) {
@@ -138,113 +127,78 @@ func apiGet(ctx context.Context, api string, vals url.Values) ([]byte, error) {
 	return body, nil
 }
 
+// categoryMembers lists a category's articles with each one's latest revision, following the
+// API's continue values until the list ends or reaches memberCap.
 func categoryMembers(ctx context.Context, api, category string) ([]mwMember, error) {
 	var out []mwMember
-	cont := ""
+	vals := url.Values{
+		"action":       {"query"},
+		"generator":    {"categorymembers"},
+		"gcmtitle":     {category},
+		"gcmnamespace": {"0"},
+		"gcmlimit":     {"500"},
+		"prop":         {"info"},
+	}
 	for {
-		vals := url.Values{
-			"action":      {"query"},
-			"list":        {"categorymembers"},
-			"cmtitle":     {category},
-			"cmnamespace": {"0"},
-			"cmlimit":     {"500"},
-		}
-		if cont != "" {
-			vals.Set("cmcontinue", cont)
-		}
 		raw, err := apiGet(ctx, api, vals)
 		if err != nil {
 			return nil, err
 		}
 		var parsed struct {
-			Continue struct {
-				CmContinue string `json:"cmcontinue"`
-			} `json:"continue"`
-			Query struct {
-				Categorymembers []mwMember `json:"categorymembers"`
+			Continue map[string]string `json:"continue"`
+			Query    struct {
+				Pages []mwMember `json:"pages"`
 			} `json:"query"`
 			Error *struct {
 				Code string `json:"code"`
 				Info string `json:"info"`
 			} `json:"error"`
 		}
-		if err := sonic.Unmarshal(raw, &parsed); err != nil {
+		if err := json.Unmarshal(raw, &parsed); err != nil {
 			return nil, fmt.Errorf("categorymembers: %w", err)
 		}
 		if parsed.Error != nil {
 			return nil, fmt.Errorf("wiki %s: %s", parsed.Error.Code, parsed.Error.Info)
 		}
-		out = append(out, parsed.Query.Categorymembers...)
-		if len(out) >= memberCap || parsed.Continue.CmContinue == "" {
-			if len(out) > memberCap {
-				out = out[:memberCap]
-			}
-			return out, nil
+		out = append(out, parsed.Query.Pages...)
+		if len(out) >= memberCap || len(parsed.Continue) == 0 {
+			return out[:min(len(out), memberCap)], nil
 		}
-		cont = parsed.Continue.CmContinue
+		for key, value := range parsed.Continue {
+			vals.Set(key, value)
+		}
 	}
 }
 
-func pageInfo(ctx context.Context, api string, titles []string) (map[string]mwPageInfo, error) {
-	out := map[string]mwPageInfo{}
-	for i := 0; i < len(titles); i += infoBatch {
-		end := min(i+infoBatch, len(titles))
-		vals := url.Values{
-			"action": {"query"},
-			"prop":   {"info"},
-			"titles": {strings.Join(titles[i:end], "|")},
-		}
-		raw, err := apiGet(ctx, api, vals)
-		if err != nil {
-			return nil, err
-		}
-		var parsed struct {
-			Query struct {
-				Pages []mwPageInfo `json:"pages"`
-			} `json:"query"`
-		}
-		if err := sonic.Unmarshal(raw, &parsed); err != nil {
-			return nil, fmt.Errorf("pageinfo: %w", err)
-		}
-		for _, p := range parsed.Query.Pages {
-			out[normTitle(p.Title)] = p
-		}
-	}
-	return out, nil
-}
-
-func parsePage(ctx context.Context, api, title string) (html string, revid int, sections []Section, err error) {
+// parsePage fetches a page's HTML without its edit links and contents box.
+func parsePage(ctx context.Context, api, title string) (html string, revid int, err error) {
 	vals := url.Values{
 		"action":             {"parse"},
 		"page":               {title},
-		"prop":               {"text|sections|revid"},
+		"prop":               {"text|revid"},
 		"disablelimitreport": {"1"},
+		"disableeditsection": {"1"},
+		"disabletoc":         {"1"},
 	}
 	raw, err := apiGet(ctx, api, vals)
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, err
 	}
 	var parsed struct {
 		Parse struct {
-			Title    string      `json:"title"`
-			Revid    int         `json:"revid"`
-			Text     string      `json:"text"`
-			Sections []mwSection `json:"sections"`
+			Revid int    `json:"revid"`
+			Text  string `json:"text"`
 		} `json:"parse"`
 		Error *struct {
 			Code string `json:"code"`
 			Info string `json:"info"`
 		} `json:"error"`
 	}
-	if err := sonic.Unmarshal(raw, &parsed); err != nil {
-		return "", 0, nil, fmt.Errorf("parse: %w", err)
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return "", 0, fmt.Errorf("parse: %w", err)
 	}
 	if parsed.Error != nil {
-		return "", 0, nil, fmt.Errorf("wiki parse %s: %s", parsed.Error.Code, parsed.Error.Info)
+		return "", 0, fmt.Errorf("wiki parse %s: %s", parsed.Error.Code, parsed.Error.Info)
 	}
-	secs := make([]Section, 0, len(parsed.Parse.Sections))
-	for _, s := range parsed.Parse.Sections {
-		secs = append(secs, Section(s))
-	}
-	return parsed.Parse.Text, parsed.Parse.Revid, secs, nil
+	return parsed.Parse.Text, parsed.Parse.Revid, nil
 }

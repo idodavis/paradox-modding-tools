@@ -1,14 +1,6 @@
-# Gate every push and PR on the backend tests. Before this existed, release.yml
-# built and tagged without ever invoking `go test`, so the 60s test contract, the
-# vanilla gate and the sweep were developer discipline rather than enforcement.
-#
-# -race is affordable and was never wired up: measured green in 8.2s uncached on
-# the full suite. It is the only mechanism that can catch a lock-discipline
-# regression, which GLOSSARY declares binding on every consolidation.
-#
-# The real-install tier cannot run here — the five gates behind PMT_*_GATE need
-# the three games installed. Those stay manual (`task test:gate`), per the
-# plan's harvest-changing-items rule, and so does the sweep (`task test:sweep`).
+# Gate every PR to main on the backend tests and the frontend typecheck. -race is the only thing
+# that catches a lock-discipline regression. The real-install tier needs the three games
+# installed, so the PMT_*_GATE gates and the sweep stay manual: `task test:gate`, `task test:sweep`.
 name: Test
 
 on:
@@ -48,9 +40,7 @@ jobs:
         working-directory: services
         run: go vet ./...
 
-      # -timeout 60s is the contract, not a safety net. A test that needs longer
-      # belongs behind an opt-in task; if this starts failing, move the test
-      # rather than raising the number.
+      # -timeout 60s is the contract: move a test that needs longer, do not raise the number
       - name: go test -race
         working-directory: services
         run: go test -short -race -timeout 60s ./...

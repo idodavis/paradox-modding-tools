@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"paradox-modding-tools/services/internal/local"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -86,32 +87,23 @@ func (f *FileService) StatPath(fullPath string) (PathStat, error) {
 	}, nil
 }
 
-// FileBytes is a binary file payload for the IDE FS bridge. Missing files are
-// Exists=false with no error so the workbench can skip optional paths quietly.
-// Reject is set when the file exists but must not be opened (binary / too large);
-// that is not a Go error so Wails does not log a binding failure.
+// FileBytes is a binary file payload for the IDE FS bridge. A missing file is Exists=false with no
+// error, so optional paths are skipped quietly. Reject says why an existing file must not be
+// opened; it is not a Go error, so Wails does not log a binding failure.
 type FileBytes struct {
 	Exists bool   `json:"exists"`
 	B64    string `json:"b64,omitempty"`
 	Reject string `json:"reject,omitempty"`
 }
 
-// ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if
-// missing. Binary content is expected: this is how mod thumbnails and workshop
-// previews reach the webview. Oversized files are still refused so a gfx read
-// cannot pull the whole file into RAM.
+// ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if missing. Binary is
+// expected (thumbnails and workshop previews); oversized files are refused.
 func (f *FileService) ReadFileBase64(fullPath string) (FileBytes, error) {
 	return f.readBase64(fullPath, false)
 }
 
-// ReadEditableBase64 is ReadFileBase64 for the IDE file bridge, which hands the
-// bytes to an editor: it refuses binary the workbench has no viewer for, and
-// allows the image formats it does.
-//
-// The two are separate because one function cannot serve both. The binary guard
-// keys on a NUL byte in the first 512, and a PNG carries its IHDR chunk length
-// (00 00 00 0D) at byte 8. Sharing the guard rejected every thumbnail, and the
-// explorer's per-mod icons quietly disappeared.
+// ReadEditableBase64 is ReadFileBase64 for the IDE bridge, which hands the bytes to an editor, so
+// it refuses binary too. It stays apart because every PNG has a NUL in its first 512 bytes.
 func (f *FileService) ReadEditableBase64(fullPath string) (FileBytes, error) {
 	return f.readBase64(fullPath, true)
 }
@@ -165,8 +157,7 @@ func (f *FileService) readBase64(fullPath string, textOnly bool) (FileBytes, err
 	return FileBytes{Exists: true, B64: base64.StdEncoding.EncodeToString(data)}, nil
 }
 
-// rejectOpen refuses a file too large to hold in memory. It applies to every
-// read, image or not.
+// rejectOpen refuses a file too large to hold in memory, on every read, image or not.
 func rejectOpen(_ []byte, size int64) string {
 	if size > maxOpenBytes {
 		return fmt.Sprintf("file too large to open (%d bytes, max %d)",
@@ -179,15 +170,9 @@ func rejectOpen(_ []byte, size int64) string {
 // can display: the frontend keys on it to offer a preview instead of an error.
 const RejectImage = "image file"
 
-// rejectBinary refuses content no editor here can show. Only the editor bridge
-// applies it; images fetched for display go through ReadFileBase64, which does
-// not.
-//
-// Images are refused too, but named rather than lumped in with binary. VS Code
-// shows images through a webview custom editor, and monaco-vscode stubs the
-// whole webview stack as unsupported — createWebviewElement throws — so an
-// image handed to the editor renders as mojibake. Distinguishing the two lets
-// the caller offer something useful for the one case it can actually display.
+// rejectBinary refuses content no editor here can show; only the editor bridge applies it. Images
+// are refused as RejectImage rather than as binary: monaco-vscode has no webviews, so an image in
+// the editor renders as mojibake, but the caller can still offer a preview.
 func rejectBinary(head []byte) string {
 	if bytes.IndexByte(head, 0) < 0 {
 		return "" // text
@@ -198,15 +183,8 @@ func rejectBinary(head []byte) string {
 	return fmt.Sprintf("binary file (NUL in first %d bytes)", len(head))
 }
 
-// viewableImage reports a raster format the workbench's media preview can show.
-//
-// Detection is by content, not by extension: the extension is a claim the file
-// makes about itself, and honouring it would let anything named .png through to
-// an editor that then renders it as mojibake.
-//
-// DDS and TGA are deliberately absent even though Paradox ships a great many of
-// both. No browser decodes them, so admitting them would trade a clear "binary
-// file" message for a silently broken image.
+// viewableImage reports a raster format the workbench's media preview can show, by content, not by
+// extension. DDS and TGA are absent though Paradox ships many: no browser decodes them.
 func viewableImage(head []byte) bool {
 	switch {
 	case bytes.HasPrefix(head, []byte("\x89PNG\r\n\x1a\n")):
@@ -226,56 +204,19 @@ func viewableImage(head []byte) bool {
 	return false
 }
 
-// WriteFileBase64 writes raw bytes from standard base64.
-//
-// Temp-then-rename, because this is the editor's save path and the only file
-// PMT writes that it cannot regenerate. A failed in-place write — disk full,
-// permission lost mid-save, the process dying — truncates the modder's script.
-// Every derived cache already writes this way; the irreplaceable file did not.
+// WriteFileBase64 writes raw bytes from standard base64. It is the editor's save path, the only
+// file PMT writes that it cannot regenerate, so it goes through local.Write: a failed save leaves
+// the modder's script as it was.
 func (f *FileService) WriteFileBase64(fullPath, b64 string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return fmt.Errorf("decode: %w", err)
 	}
-	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir: %w", err)
-	}
-	// Same directory, so the rename stays on one filesystem and stays atomic.
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(fullPath)+".pmt*")
-	if err != nil {
-		return fmt.Errorf("temp: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename succeeds
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write: %w", err)
-	}
-	// Sync before rename: a rename can be durable while the bytes are not,
-	// which would leave a file that exists and is empty.
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close: %w", err)
-	}
-	if err := os.Chmod(tmpName, 0o644); err != nil {
-		return fmt.Errorf("chmod: %w", err)
-	}
-	// Rename first; remove only if it fails. A Windows replace-rename returns
-	// ERROR_ACCESS_DENIED when anything holds the destination open — the game,
-	// another editor, an antivirus — while unlinking the name succeeds. Without
-	// the fallback the save is simply refused. See services/store.go.
-	if err := os.Rename(tmpName, fullPath); err == nil {
-		return nil
-	}
-	if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	return local.Write(fullPath, func(out io.Writer) error {
+		_, err := out.Write(data)
 		return err
-	}
-	return os.Rename(tmpName, fullPath)
+	})
 }
 
 // ListDirectory lists immediate children of dirPath (non-recursive).
@@ -287,8 +228,8 @@ func (f *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry, e
 		return nil, fmt.Errorf("list directory: %w", err)
 	}
 	out := make([]DirEntry, 0, len(entries))
-	for _, e := range entries {
-		name := e.Name()
+	for _, entry := range entries {
+		name := entry.Name()
 		if name == "." || name == ".." {
 			continue
 		}
@@ -296,17 +237,17 @@ func (f *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry, e
 			continue
 		}
 		out = append(out, DirEntry{
-			Name: name, IsDir: e.IsDir(),
+			Name: name, IsDir: entry.IsDir(),
 		})
 	}
-	slices.SortFunc(out, func(a, b DirEntry) int {
-		if a.IsDir != b.IsDir {
-			if a.IsDir {
+	slices.SortFunc(out, func(first, second DirEntry) int {
+		if first.IsDir != second.IsDir {
+			if first.IsDir {
 				return -1
 			}
 			return 1
 		}
-		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+		return strings.Compare(strings.ToLower(first.Name), strings.ToLower(second.Name))
 	})
 	return out, nil
 }

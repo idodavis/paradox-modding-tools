@@ -1,188 +1,128 @@
-// lookup.go scores persisted wiki pages for Guide and Patch Center queries.
+// lookup.go answers the Guide and Patch Notes queries from a game's sidecar, and holds the
+// sidecar's shape on disk and the payloads the RPCs hand back.
 package wiki
 
 import (
+	"cmp"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 )
 
-// rankedPage is one sidecar page with its lookup score and language-tab flag.
-type rankedPage struct {
-	page  Page
-	score int
-	lang  bool
-}
-
-func pagesFor(gameID, kind, rel string) []GuidePage {
-	f, err := LoadGuides(gameID)
-	if err != nil || f == nil {
+// PagesFor returns the Guide tabs for a file of an extract kind at a relative path: the best
+// page named for the kind or the folder, the scripting-language pages for a script file, then
+// the other named pages. A missing sidecar or an unmatched file gives none.
+func PagesFor(gameID, kind, rel string) []GuidePage {
+	sidecar, err := load(gameID)
+	if err != nil {
 		return nil
 	}
-	m := fileTokens(kind, rel)
-	script := isScriptKind(kind)
-	cands := make([]rankedPage, 0, len(f.Pages))
-	for _, p := range f.Pages {
-		sc := scoreTitle(p.Title, m)
-		lang := script && isLangStem(stemTitle(p.Title))
-		if sc == 0 && !lang {
-			continue
-		}
-		cands = append(cands, rankedPage{page: p, score: sc, lang: lang})
+	wanted := map[string]bool{}
+	for _, name := range append([]string{kind, path.Base(path.Dir(strings.ReplaceAll(rel, "\\", "/")))}, synonyms[kind]...) {
+		wanted[stem(name)] = true
 	}
-	if len(cands) == 0 {
-		return nil
-	}
-	prim := -1
-	for i, c := range cands {
-		if c.score <= 0 {
-			continue
-		}
-		if prim < 0 || betterPage(c.page.Title, c.score, cands[prim].page.Title, cands[prim].score) {
-			prim = i
+	delete(wanted, "")
+	var matches, language []Page
+	for _, page := range sidecar.Guides {
+		switch title := stem(page.Title); {
+		case wanted[title]:
+			matches = append(matches, page)
+		case synonyms[kind] == nil && languageStems[title]:
+			language = append(language, page)
 		}
 	}
-	var primary Page
-	hasPrimary := prim >= 0
-	if hasPrimary {
-		primary = cands[prim].page
+	notModding := func(page Page) int {
+		if strings.Contains(strings.ToLower(page.Title), "modding") {
+			return 0
+		}
+		return 1
 	}
-	slices.SortFunc(cands, func(a, b rankedPage) int {
-		if a.lang != b.lang {
-			if a.lang {
-				return -1
-			}
-			return 1
-		}
-		if a.score != b.score {
-			return b.score - a.score
-		}
-		return strings.Compare(a.page.Title, b.page.Title)
+	slices.SortFunc(matches, func(first, second Page) int {
+		return cmp.Or(cmp.Compare(notModding(first), notModding(second)),
+			cmp.Compare(len(first.Title), len(second.Title)), strings.Compare(first.Title, second.Title))
 	})
-	seen := map[string]bool{}
+	slices.SortFunc(language, func(first, second Page) int { return strings.Compare(first.Title, second.Title) })
+	best := min(1, len(matches))
 	var out []GuidePage
-	add := func(p Page) {
-		k := normTitle(p.Title)
-		if seen[k] || len(out) >= guideTabCap {
-			return
+	for _, page := range slices.Concat(matches[:best], language, matches[best:]) {
+		if len(out) < guideTabCap {
+			out = append(out, GuidePage{Title: page.Title, HTML: page.HTML, URL: page.URL, Sections: page.Sections})
 		}
-		seen[k] = true
-		html, secs := reshape(p.HTML)
-		out = append(out, GuidePage{
-			Title:    p.Title,
-			HTML:     html,
-			URL:      p.URL,
-			Snippets: slices.Clone(p.Snippets),
-			Sections: secs,
-		})
-	}
-	if hasPrimary {
-		add(primary)
-	}
-	for _, c := range cands {
-		add(c.page)
 	}
 	return out
 }
 
-// PagesFor returns Guide tabs for an extract kind + relative path.
-// Missing sidecar or unmatched file → empty pages, no error.
-func PagesFor(gameID, kind, rel string) []GuidePage {
-	return pagesFor(gameID, kind, rel)
-}
-
-// StatusOf returns sidecar presence and counts.
-func StatusOf(gameID string) Status {
-	st := Status{GameID: gameID, Present: HasSidecar(gameID)}
-	if d, err := LoadGuides(gameID); err == nil && d != nil {
-		st.FetchedAt = d.FetchedAt
-		st.FetchedVersion = d.FetchedVersion
-		st.FetchedMajor = d.FetchedMajor
-		st.FetchedMinor = d.FetchedMinor
-		st.GuideCount = len(d.Pages)
-	}
-	if p, err := LoadPatches(gameID); err == nil && p != nil {
-		st.PatchCount = len(p.Pages)
-		if st.FetchedAt == "" {
-			st.FetchedAt = p.FetchedAt
-			st.FetchedVersion = p.FetchedVersion
-			st.FetchedMajor = p.FetchedMajor
-			st.FetchedMinor = p.FetchedMinor
+func patchEntry(page Page) PatchEntry {
+	entry := PatchEntry{Title: page.Title, URL: page.URL, HasModding: page.ModdingHTML != ""}
+	if pv, ok := parsePatchTitle(page.Title); ok {
+		entry.Version = pv.Label
+		if pv.Patch > 0 || pv.Wildcard {
+			entry.Parent = itoa2(pv.Major, pv.Minor)
 		}
 	}
-	return st
+	return entry
 }
 
-func patchEntry(p Page) PatchEntry {
-	e := PatchEntry{Title: p.Title, URL: p.URL, HasModding: p.ModdingHTML != ""}
-	if pv, ok := parsePatchTitle(p.Title); ok {
-		e.Version = pv.Label
-		if pv.Patch > 0 || pv.X {
-			e.Parent = itoa2(pv.Major, pv.Minor)
-		}
-	}
-	return e
-}
-
-func itoa2(maj, min int) string {
-	return fmt.Sprintf("%d.%d", maj, min)
+func itoa2(major, minor int) string {
+	return fmt.Sprintf("%d.%d", major, minor)
 }
 
 // Patches returns patch notes entries, newest first.
 func Patches(gameID string) PatchList {
 	out := PatchList{GameID: gameID}
-	f, err := LoadPatches(gameID)
-	if err != nil || f == nil {
+	sidecar, err := load(gameID)
+	if err != nil {
 		return out
 	}
 	type row struct {
-		e  PatchEntry
-		pv patchVer
-		ok bool
+		entry PatchEntry
+		pv    patchVer
+		ok    bool
 	}
-	rows := make([]row, 0, len(f.Pages))
-	for _, p := range f.Pages {
-		pv, ok := parsePatchTitle(p.Title)
-		rows = append(rows, row{e: patchEntry(p), pv: pv, ok: ok})
+	rows := make([]row, 0, len(sidecar.Patches))
+	for _, page := range sidecar.Patches {
+		pv, ok := parsePatchTitle(page.Title)
+		rows = append(rows, row{entry: patchEntry(page), pv: pv, ok: ok})
 	}
-	slices.SortFunc(rows, func(a, b row) int {
-		if a.ok && b.ok {
-			return -cmpPatch(a.pv, b.pv)
+	slices.SortFunc(rows, func(first, second row) int {
+		if first.ok && second.ok {
+			return -cmpPatch(first.pv, second.pv)
 		}
-		if a.ok != b.ok {
-			if a.ok {
+		if first.ok != second.ok {
+			if first.ok {
 				return -1
 			}
 			return 1
 		}
-		return strings.Compare(b.e.Title, a.e.Title)
+		return strings.Compare(second.entry.Title, first.entry.Title)
 	})
-	for _, r := range rows {
-		out.Pages = append(out.Pages, r.e)
+	for _, row := range rows {
+		out.Pages = append(out.Pages, row.entry)
 	}
 	return out
 }
 
 // PatchByVersion finds a patch page by title or version label (e.g. "1.16").
 func PatchByVersion(gameID, want string) *PatchPage {
-	f, err := LoadPatches(gameID)
-	if err != nil || f == nil {
+	sidecar, err := load(gameID)
+	if err != nil {
 		return nil
 	}
 	wantN := normTitle(want)
 	wantN = strings.TrimPrefix(wantN, "patch ")
 	var fallback *Page
-	for i := range f.Pages {
-		p := &f.Pages[i]
-		n := normTitle(p.Title)
+	for i := range sidecar.Patches {
+		page := &sidecar.Patches[i]
+		n := normTitle(page.Title)
 		if n == wantN || n == "patch "+wantN {
-			return patchPageOf(p)
+			return patchPageOf(page)
 		}
-		if pv, ok := parsePatchTitle(p.Title); ok && pv.Label == want {
-			return patchPageOf(p)
+		if pv, ok := parsePatchTitle(page.Title); ok && pv.Label == want {
+			return patchPageOf(page)
 		}
 		if fallback == nil && strings.Contains(n, wantN) {
-			fallback = p
+			fallback = page
 		}
 	}
 	if fallback != nil {
@@ -191,19 +131,92 @@ func PatchByVersion(gameID, want string) *PatchPage {
 	return nil
 }
 
-func patchPageOf(p *Page) *PatchPage {
-	pv, _ := parsePatchTitle(p.Title)
-	html, secs := reshape(p.HTML)
-	mod := extractModding(html)
-	_, modSecs := reshape(mod)
+func patchPageOf(page *Page) *PatchPage {
+	pv, _ := parsePatchTitle(page.Title)
 	return &PatchPage{
-		Title:           p.Title,
+		Title:           page.Title,
 		Version:         pv.Label,
-		HTML:            html,
-		ModdingHTML:     mod,
-		URL:             p.URL,
-		HasModding:      mod != "",
-		Sections:        secs,
-		ModdingSections: modSecs,
+		HTML:            page.HTML,
+		ModdingHTML:     page.ModdingHTML,
+		URL:             page.URL,
+		HasModding:      page.ModdingHTML != "",
+		Sections:        page.Sections,
+		ModdingSections: page.ModdingSections,
 	}
+}
+
+const (
+	// License is the Paradox wiki editorial-text license shown in the UI.
+	License   = "CC-BY-SA 3.0"
+	htmlCap   = 1_500_000
+	memberCap = 500
+)
+
+// Section is one heading of a page, for the TOC.
+type Section struct {
+	TocLevel int    `json:"tocLevel"`
+	Line     string `json:"line"`
+	Anchor   string `json:"anchor"`
+}
+
+// Page is one sanitized wiki page in a sidecar; a patch page also keeps its Modding section.
+type Page struct {
+	Title           string    `json:"title"`
+	URL             string    `json:"url"`
+	Revid           int       `json:"revid"`
+	HTML            string    `json:"html"`
+	Sections        []Section `json:"sections,omitempty"`
+	ModdingHTML     string    `json:"moddingHtml,omitempty"`
+	ModdingSections []Section `json:"moddingSections,omitempty"`
+}
+
+// Sidecar is wiki-<gameID>.json: a game's guide pages and patch notes.
+type Sidecar struct {
+	Guides  []Page `json:"guides"`
+	Patches []Page `json:"patches"`
+}
+
+// GuidePage is one tab in the Guide pane.
+type GuidePage struct {
+	Title    string    `json:"title"`
+	HTML     string    `json:"html"`
+	URL      string    `json:"url"`
+	Sections []Section `json:"sections"`
+}
+
+// Guide is the WikiService.Guide payload. Rel/origin/kind come from Locate.
+type Guide struct {
+	Rel         string      `json:"rel"`
+	Origin      string      `json:"origin"`
+	OriginName  string      `json:"originName"`
+	Kind        string      `json:"kind"`
+	Pages       []GuidePage `json:"pages"`
+	Attribution string      `json:"attribution"`
+}
+
+// PatchEntry is one row in the Patch Notes version tree.
+type PatchEntry struct {
+	Title      string `json:"title"`
+	Version    string `json:"version"`
+	Parent     string `json:"parent"`
+	URL        string `json:"url"`
+	HasModding bool   `json:"hasModding"`
+}
+
+// PatchList is the WikiService.Patches payload.
+type PatchList struct {
+	GameID string       `json:"gameId"`
+	Pages  []PatchEntry `json:"pages"`
+}
+
+// PatchPage is one patch notes body (All + optional Modding HTML).
+type PatchPage struct {
+	Title           string    `json:"title"`
+	Version         string    `json:"version"`
+	HTML            string    `json:"html"`
+	ModdingHTML     string    `json:"moddingHtml"`
+	URL             string    `json:"url"`
+	HasModding      bool      `json:"hasModding"`
+	Sections        []Section `json:"sections"`
+	ModdingSections []Section `json:"moddingSections"`
 }

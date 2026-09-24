@@ -21,7 +21,7 @@ This is **alpha** software. Expect bugs and incomplete game coverage. Back up yo
 
 | OS | Status |
 |----|--------|
-| **Windows** 10 / 11 (amd64 and ARM64) | Supported. ARM64 uses the amd64 Steam helper under x64 emulation. |
+| **Windows** 10 / 11 | Supported. Windows on ARM runs the amd64 zip under x64 emulation. |
 | **Linux** amd64 | Supported on traditional desktop distros Wails v3 supports: Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE, Gentoo (GTK4 + WebKitGTK 6). |
 | **macOS** | **Not supported.** No downloads, no “build from source on Mac” path. |
 

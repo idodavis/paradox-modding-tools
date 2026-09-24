@@ -1,7 +1,15 @@
-// info.go reads the prose a game ships beside its script: CK3's _traits.info, EU5's readme.txt, Vic3's buildings.md. Measured over the three installs on 2026-09-20 (372 files), they document a field the same way, as a line of script: key = <type or example> # prose. The line is live in CK3 and in Vic3's indented markdown, commented out in EU5, and EU5 also writes it as a bullet, # key: <type> prose. So there is one line reader: a key line gives the field its type and the prose behind it, the comment lines directly above it are its prose too, and so are the comments directly inside the block it opens when no key follows them. A markdown heading that names a key gives that key the paragraphs below it. What the file says before its first key is about the whole kind. Nesting is read from indentation, because a readme closes its example braces only sometimes. The result is declared, like the vocabulary: the learner merges a field's type into its accepts, and a card quotes the prose.
+// info.go reads the prose a game ships beside its script: CK3's _traits.info, EU5's readme.txt,
+// Vic3's buildings.md. All three document a field as a line of script, key = <type or example>
+// # prose, live or commented out, or as an EU5 bullet, # key: <type> prose. The comment lines
+// directly above a key line are its prose too, as are those directly inside the block it opens
+// when no key follows them; a markdown heading naming a key gives it the paragraphs below. What
+// a file says before its first key is about the whole kind. Nesting is read from indentation,
+// because a readme closes its example braces only sometimes. The result is declared: the learner
+// merges a field's type into its accepts, and a card quotes the prose.
 package schema
 
 import (
+	"cmp"
 	"os"
 	"path"
 	"slices"
@@ -9,16 +17,16 @@ import (
 	"unicode"
 
 	"paradox-modding-tools/services/internal/lang/jomini"
-	"paradox-modding-tools/services/internal/source"
+	"paradox-modding-tools/services/internal/lang/source"
 )
 
-// Info is the prose an install ships beside its script, by the folder the info file sits in: from a root, lower-cased, common/traits.
+// Info is an install's prose beside its script, by folder from a root, lower-cased: common/traits.
 type Info map[string]*FolderInfo
 
 // FolderInfo is what the info files of one folder say.
 type FolderInfo struct {
 	Prose  string               // about the whole kind: what a file says before its first key, four lines at most
-	Fields map[string]InfoField // by key, and by parent.key for a key written inside a parent's block; the first to document one wins
+	Fields map[string]InfoField // by key, and by parent.key inside a parent's block; the first file to document one wins
 }
 
 // InfoField is what the game says about one field.
@@ -31,52 +39,53 @@ type InfoField struct {
 type infoLine struct {
 	parent, key, prose, typ string
 	indent, depth           int  // the column it was written at, and how many blocks it is inside
-	section, brief          bool // a markdown heading, whose every paragraph below is the key's; a brief header, whose comment lines below are
+	section, brief          bool // a markdown heading owns the paragraphs below; a brief header, the comment lines below
 }
 
-// infoMaxBytes keeps data out: EU5's terrain cache is four .info files of 5 to 6 MB, and the largest file of prose in the three installs is 24 KB.
+// infoMaxBytes keeps data out: EU5 ships 5 MB .info terrain caches; real prose stays under 25 KB.
 const infoMaxBytes = 1 << 20
 
 // ReadInfo reads every info file of an inventory.
 func ReadInfo(files []source.File) Info {
 	info := Info{}
-	for _, f := range files {
-		if stat, err := os.Stat(f.Path); f.Format != source.Info || err != nil || stat.Size() > infoMaxBytes {
+	for _, file := range files {
+		if stat, err := os.Stat(file.Path); file.Format != source.Info || err != nil || stat.Size() > infoMaxBytes {
 			continue
 		}
-		text, err := f.Text()
+		text, err := file.Text()
 		if err != nil {
 			continue
 		}
 
-		folder := strings.ToLower(path.Dir(f.Rel))
+		folder := strings.ToLower(path.Dir(file.Rel))
 		if info[folder] == nil {
 			info[folder] = &FolderInfo{Fields: map[string]InfoField{}}
 		}
-		info[folder].read(text, strings.HasSuffix(strings.ToLower(f.Rel), ".md"))
+		info[folder].read(text, strings.HasSuffix(strings.ToLower(file.Rel), ".md"))
 	}
 	return info
 }
 
 // Kind is what the game says about the kind whose definitions are in folders.
-func (i Info) Kind(folders []string) string {
+func (info Info) Kind(folders []string) string {
 	for _, folder := range folders {
-		if fi := i[strings.ToLower(folder)]; fi != nil && fi.Prose != "" {
+		if fi := info[strings.ToLower(folder)]; fi != nil && fi.Prose != "" {
 			return fi.Prose
 		}
 	}
 	return ""
 }
 
-// Field is what the game says about a key written inside parent's block, else about the key wherever it is written. parent is "" for a definition's own member.
-func (i Info) Field(folders []string, parent, key string) InfoField {
+// Field is what the game says about key inside parent's block, else about key anywhere. parent is
+// "" for a definition's own member.
+func (info Info) Field(folders []string, parent, key string) InfoField {
 	for _, folder := range folders {
-		if fi := i[strings.ToLower(folder)]; fi != nil {
-			if f, ok := fi.Fields[parent+"."+key]; ok && parent != "" {
-				return f
+		if fi := info[strings.ToLower(folder)]; fi != nil {
+			if field, ok := fi.Fields[parent+"."+key]; ok && parent != "" {
+				return field
 			}
-			if f, ok := fi.Fields[key]; ok {
-				return f
+			if field, ok := fi.Fields[key]; ok {
+				return field
 			}
 		}
 	}
@@ -87,11 +96,11 @@ func (i Info) Field(folders []string, parent, key string) InfoField {
 func (fi *FolderInfo) read(text string, markdown bool) {
 	var pending []string   // prose waiting for the key below it
 	var parents []infoLine // the blocks the line is inside, by indentation
-	var open *infoLine     // a line whose own prose may still follow it: a block's opener, a brief header, a markdown heading
+	var open *infoLine     // a line whose prose may still follow: a block's opener, a brief header, a markdown heading
 	var kindProse []string
 	kindDone, own := fi.Prose != "", map[string]int{}
 
-	// settle records the open line. The waiting prose is its own, unless a key line has come to claim it
+	// settle records the open line; the waiting prose is its own unless a key line claims it
 	settle := func(claimed bool) {
 		if open != nil && !claimed {
 			open.prose = joinProse([]string{open.prose, joinProse(pending)})
@@ -104,13 +113,13 @@ func (fi *FolderInfo) read(text string, markdown bool) {
 		}
 	}
 
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		body, hashed := jomini.PeelComment(raw)
 		indent := 0
-		for _, r := range raw {
-			if r == '\t' {
+		for _, char := range raw {
+			if char == '\t' {
 				indent += 4
-			} else if r == ' ' || r == '#' {
+			} else if char == ' ' || char == '#' {
 				indent++
 			} else {
 				break
@@ -139,7 +148,7 @@ func (fi *FolderInfo) read(text string, markdown bool) {
 			continue
 		}
 
-		// a rule (=== Notes ===), a fence, a closing brace and a placeholder opener (<name> = {) are neither key nor prose
+		// rules (=== x ===), fences, closing braces and <name> = { openers are neither key nor prose
 		if strings.HasPrefix(body, "```") || strings.HasPrefix(body, "}") || strings.HasPrefix(body, "<") || strings.HasPrefix(body, "==") || strings.HasSuffix(body, "==") {
 			if !inSection {
 				settle(false)
@@ -147,7 +156,7 @@ func (fi *FolderInfo) read(text string, markdown bool) {
 			continue
 		}
 
-		// a heading (ATTRIBUTES, Valid categories:) is about the lines below it as a whole, and is no key's prose
+		// a heading (ATTRIBUTES, Valid categories:) covers the lines below as a whole: no key's prose
 		line, opens, isKey := infoKeyLine(body, hashed)
 		if !isKey && (strings.HasSuffix(body, ":") || !strings.ContainsFunc(body, unicode.IsLower)) {
 			if !inSection {
@@ -156,7 +165,8 @@ func (fi *FolderInfo) read(text string, markdown bool) {
 			continue
 		}
 		if !isKey {
-			// prose: about the kind before the first key, and waiting for the key below; under a heading only what is written at column 0
+			// prose: about the kind before the first key, and waiting for the key below; under a
+			// heading only what is written at column 0
 			if !kindDone && len(kindProse) < 4 && !strings.HasPrefix(body, "- ") {
 				kindProse = append(kindProse, body)
 			}
@@ -191,55 +201,58 @@ func (fi *FolderInfo) read(text string, markdown bool) {
 	}
 }
 
-// add records what a line says about a key, under its parent and on its own. What is already recorded stays, and only its empty parts are filled; but on its own a key is its shallowest mention in the file, so an event's type is not the type of a widget inside it. own is the depth at which this file first recorded each key.
-func (fi *FolderInfo) add(l infoLine, own map[string]int) {
-	if depth, mine := own[l.key]; mine && l.depth < depth {
-		delete(fi.Fields, l.key)
+// add records what a line says about a key, under its parent and on its own, filling only the
+// empty parts of what is recorded. On its own a key is its shallowest mention in the file, so an
+// event's type is not the type of a widget inside it. own is the depth at which this file first
+// recorded each key.
+func (fi *FolderInfo) add(line infoLine, own map[string]int) {
+	if depth, mine := own[line.key]; mine && line.depth < depth {
+		delete(fi.Fields, line.key)
 	}
-	if _, seen := fi.Fields[l.key]; !seen {
-		own[l.key] = l.depth
+	if _, seen := fi.Fields[line.key]; !seen {
+		own[line.key] = line.depth
 	}
 
-	names := []string{l.key}
-	if l.parent != "" {
-		names = []string{l.parent + "." + l.key, l.key}
+	names := []string{line.key}
+	if line.parent != "" {
+		names = []string{line.parent + "." + line.key, line.key}
 	}
 	for _, name := range names {
-		f := fi.Fields[name]
-		if f.Prose == "" {
-			f.Prose = l.prose
-		}
-		if f.Type == "" {
-			f.Type = l.typ
-		}
-		fi.Fields[name] = f
+		field := fi.Fields[name]
+		field.Prose = cmp.Or(field.Prose, line.prose)
+		field.Type = cmp.Or(field.Type, line.typ)
+		fi.Fields[name] = field
 	}
 }
 
-// infoKeyLine reads one line with its comment marks peeled, when it documents a key: key = value # prose, key = <type> prose, key = { <prose> }, - key: prose, key: <type> prose (only in a comment, and only with a type or three words, so "scope: character" stays prose), and CK3's brief: key ( type ). opens reports a block left open on the line.
-func infoKeyLine(body string, hashed bool) (l infoLine, opens, ok bool) {
+// infoKeyLine reads a line, comment marks peeled, when it documents a key: key = value # prose,
+// key = <type> prose, key = { <prose> }, - key: prose, key: <type> prose (in a comment, with a
+// type or three words, so "scope: character" stays prose), and CK3's brief: key ( type ). opens
+// reports a block left open on the line.
+func infoKeyLine(body string, hashed bool) (line infoLine, opens, ok bool) {
 	if len(body) > 6 && strings.EqualFold(body[:6], "brief:") {
 		key, typ, _ := strings.Cut(body[6:], "(")
-		l.key, l.typ, l.brief = strings.TrimSpace(key), strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(typ), ")")), true
-		return l, false, jomini.IsDefName(l.key)
+		line.key, line.typ, line.brief = strings.TrimSpace(key), strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(typ), ")")), true
+		return line, false, jomini.IsDefName(line.key)
 	}
 
 	// the key, then = or :
 	text, bullet := strings.CutPrefix(body, "- ")
 	text = strings.TrimSpace(text)
-	end := strings.IndexFunc(text+" ", func(r rune) bool {
-		return !(r == '_' || r == '.' || r == '-' || unicode.IsLetter(r) || unicode.IsDigit(r))
+	end := strings.IndexFunc(text+" ", func(char rune) bool {
+		return !(char == '_' || char == '.' || char == '-' || unicode.IsLetter(char) || unicode.IsDigit(char))
 	})
 	key, rest := strings.TrimRight(text[:end], ".-"), strings.TrimSpace(text[end:])
 	if !jomini.IsDefName(key) || unicode.IsDigit(rune(key[0])) || rest == "" || (rest[0] != '=' && rest[0] != ':') || strings.HasPrefix(rest, "==") {
-		return l, false, false
+		return line, false, false
 	}
 
-	// a colon makes a key only of a lower-case word, and outside a bullet only in a comment, with a type or three words behind it
+	// a colon makes a key only of a lower-case word, and outside a bullet only in a comment with
+	// a type or three words behind it
 	colon := rest[0] == ':'
 	rest = strings.TrimSpace(rest[1:])
 	if colon && (!jomini.IsLowerName(key) || (!bullet && (!hashed || (len(strings.Fields(rest)) < 3 && !strings.HasPrefix(rest, "<"))))) {
-		return l, false, false
+		return line, false, false
 	}
 
 	// the value, and the comment behind it
@@ -249,8 +262,8 @@ func infoKeyLine(body string, hashed bool) (l infoLine, opens, ok bool) {
 	switch {
 	case strings.HasPrefix(value, "<"):
 		// <type> prose
-		if t, p, closed := strings.Cut(value[1:], ">"); closed && len(t) <= 120 {
-			typ, prose = t, p
+		if declared, rest, closed := strings.Cut(value[1:], ">"); closed && len(declared) <= 120 {
+			typ, prose = declared, rest
 		}
 	case strings.HasPrefix(value, "{"):
 		// { <type> }, { <prose }, or prose behind the closing brace
@@ -258,8 +271,8 @@ func infoKeyLine(body string, hashed bool) (l infoLine, opens, ok bool) {
 		if i := strings.LastIndexByte(inner, '}'); i >= 0 {
 			inner, prose = strings.TrimSpace(inner[:i]), inner[i+1:]
 		}
-		if t, _, closed := strings.Cut(strings.TrimPrefix(inner, "<"), ">"); closed && strings.HasPrefix(inner, "<") && len(t) <= 120 {
-			typ = t
+		if declared, _, closed := strings.Cut(strings.TrimPrefix(inner, "<"), ">"); closed && strings.HasPrefix(inner, "<") && len(declared) <= 120 {
+			typ = declared
 		} else if said := strings.TrimSpace(strings.Trim(inner, "<>")); strings.TrimSpace(prose) == "" && !strings.ContainsAny(said, "={<") {
 			prose = said
 		}
@@ -276,30 +289,34 @@ func infoKeyLine(body string, hashed bool) (l infoLine, opens, ok bool) {
 	if !strings.ContainsFunc(prose, unicode.IsLetter) {
 		prose = ""
 	}
-	l.key, l.typ, l.prose = key, strings.TrimSpace(typ), prose
-	return l, strings.Count(value, "{") > strings.Count(value, "}"), true
+	line.key, line.typ, line.prose = key, strings.TrimSpace(typ), prose
+	return line, strings.Count(value, "{") > strings.Count(value, "}"), true
 }
 
 // joinProse joins lines with a space and paragraphs, marked by an empty line, with a blank line.
 func joinProse(lines []string) string {
-	var b strings.Builder
+	var out strings.Builder
 	for _, line := range lines {
 		switch {
 		case line == "":
-			b.WriteString("\n\n")
-		case b.Len() > 0 && !strings.HasSuffix(b.String(), "\n"):
-			b.WriteString(" " + line)
+			out.WriteString("\n\n")
+		case out.Len() > 0 && !strings.HasSuffix(out.String(), "\n"):
+			out.WriteString(" " + line)
 		default:
-			b.WriteString(line)
+			out.WriteString(line)
 		}
 	}
-	return strings.TrimSpace(b.String())
+	return strings.TrimSpace(out.String())
 }
 
-// Declared is the field's type as an accept, when it is one of the few the games write that say what a value is: bool and yes/no; int, integer, num, number, float, double and fixed_point; string; localization_key and loc key; and a/b/c, a closed set of bare words. "optional" and its like are dropped first, and "list of" names the same type, because how many values a field takes is its class. Everything else declines: a trigger, a database key and a sentence in brackets say nothing a value can be checked against, and refusing beats guessing.
-func (f InfoField) Declared() (Accept, bool) {
+// Declared is the field's type as an accept, when it is one of the few that say what a value is:
+// bool, yes/no; int, integer, num, number, float, double, fixed_point; string; localization_key,
+// loc key; and a/b/c, a closed set of bare words. "optional" and the like are dropped and "list
+// of" names the same type, since how many values a field takes is its class. Anything else (a
+// trigger, a database key, a sentence) says nothing a value can be checked against: it declines.
+func (infoField InfoField) Declared() (Accept, bool) {
 	var parts []string
-	for _, part := range strings.Split(strings.ToLower(f.Type), ",") {
+	for part := range strings.SplitSeq(strings.ToLower(infoField.Type), ",") {
 		if part = strings.TrimSpace(part); !slices.Contains([]string{"optional", "situational", "required", "opt"}, part) {
 			parts = append(parts, part)
 		}
@@ -321,10 +338,10 @@ func (f InfoField) Declared() (Accept, bool) {
 	}
 
 	// a closed set, a/b/c or a|b|c: two to twelve bare lower-case words, none longer than 24
-	words := strings.FieldsFunc(word, func(r rune) bool { return r == '/' || r == '|' })
+	words := strings.FieldsFunc(word, func(char rune) bool { return char == '/' || char == '|' })
 	ok := len(words) >= 2 && len(words) <= 12
-	for _, w := range words {
-		ok = ok && len(w) <= 24 && jomini.IsLowerName(w)
+	for _, word := range words {
+		ok = ok && len(word) <= 24 && jomini.IsLowerName(word)
 	}
 	if !ok {
 		return Accept{}, false

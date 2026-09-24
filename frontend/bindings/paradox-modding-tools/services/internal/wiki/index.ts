@@ -7,6 +7,5 @@ export type {
     PatchEntry,
     PatchList,
     PatchPage,
-    Section,
-    Status
+    Section
 } from "./models.js";

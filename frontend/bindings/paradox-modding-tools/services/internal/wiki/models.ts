@@ -20,7 +20,6 @@ export interface GuidePage {
     "title": string;
     "html": string;
     "url": string;
-    "snippets": string[] | null;
     "sections": Section[] | null;
 }
 
@@ -58,24 +57,10 @@ export interface PatchPage {
 }
 
 /**
- * Section is one MediaWiki TOC entry kept for heading extraction.
+ * Section is one heading of a page, for the TOC.
  */
 export interface Section {
     "tocLevel": number;
     "line": string;
     "anchor": string;
-}
-
-/**
- * Status is the WikiService.Status payload.
- */
-export interface Status {
-    "gameId": string;
-    "present": boolean;
-    "fetchedAt": string;
-    "fetchedVersion": string;
-    "fetchedMajor": number;
-    "fetchedMinor": number;
-    "guideCount": number;
-    "patchCount": number;
 }

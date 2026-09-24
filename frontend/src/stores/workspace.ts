@@ -7,7 +7,6 @@ import { useLocalStorage } from "@vueuse/core";
 import {
   ListWorkspaces,
   GetWorkspace,
-  MarkBrokenPaths,
   ListGames,
 } from "@services/workspaceservice";
 import { EnsureSession } from "@services/sessionservice";
@@ -121,7 +120,6 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     error.value = null;
     try {
       applyGameList(await ListGames());
-      await MarkBrokenPaths();
       workspaces.value = (await ListWorkspaces("")) ?? [];
       const id = activeWorkspaceId.value;
       const listed = id

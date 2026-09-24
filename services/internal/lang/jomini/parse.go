@@ -18,26 +18,26 @@ type Result struct {
 }
 
 // Lines returns the LineIndex for Src (built at parse time).
-func (r Result) Lines() *LineIndex {
-	if r.lines != nil {
-		return r.lines
+func (result Result) Lines() *LineIndex {
+	if result.lines != nil {
+		return result.lines
 	}
-	return NewLineIndex(r.Src)
+	return NewLineIndex(result.Src)
 }
 
 // LineIndents is brace-depth indent per line. It tokenizes Src: a Result does
 // not keep its tokens, because only the two editor-time readers here ever want
 // them and a scan would otherwise carry one buffer per open file.
-func (r Result) LineIndents() []int {
-	toks := tokenize(r.Src)
+func (result Result) LineIndents() []int {
+	toks := tokenize(result.Src)
 	defer putTokens(toks)
-	return lineIndentsFrom(r.Src, toks)
+	return lineIndentsFrom(result.Src, toks)
 }
 
 // TokenAt returns the identifier covering off (UTF-8 bytes). Comments yield
 // an empty word. Src is tokenized on the fly; see LineIndents.
-func (r Result) TokenAt(off int) (word string, start, end int) {
-	src := r.Src
+func (result Result) TokenAt(off int) (word string, start, end int) {
+	src := result.Src
 	if off < 0 {
 		off = 0
 	}
@@ -50,21 +50,21 @@ func (r Result) TokenAt(off int) (word string, start, end int) {
 		toks = tokenize(src)
 		defer putTokens(toks)
 	}
-	for _, t := range toks {
-		if t.kind == tokEOF || off < t.start || off > t.end {
+	for _, tok := range toks {
+		if tok.kind == tokEOF || off < tok.start || off > tok.end {
 			continue
 		}
-		if t.kind == tokComment {
+		if tok.kind == tokComment {
 			return "", off, off
 		}
-		if off == t.end && t.start != t.end {
+		if off == tok.end && tok.start != tok.end {
 			continue
 		}
-		switch t.kind {
+		switch tok.kind {
 		case tokWord:
-			return src[t.start:t.end], t.start, t.end
+			return src[tok.start:tok.end], tok.start, tok.end
 		case tokString:
-			return identAt(src, off, t.start, t.end)
+			return identAt(src, off, tok.start, tok.end)
 		}
 	}
 	return identAt(src, off, 0, len(src))
@@ -90,9 +90,9 @@ func identAt(src string, off, lo, hi int) (string, int, int) {
 	return src[start:end], start, end
 }
 
-func isIdentByte(c byte) bool {
-	return c == '_' || c == '.' || c == '-' ||
-		(c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+func isIdentByte(char byte) bool {
+	return char == '_' || char == '.' || char == '-' ||
+		(char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')
 }
 
 // Parse parses script text into a CST. It never panics and always returns a
@@ -100,17 +100,14 @@ func isIdentByte(c byte) bool {
 func Parse(src string) Result {
 	li := NewLineIndex(src)
 	toks := tokenize(src)
-	p := &parser{text: src, tokens: toks}
-	root := p.parse()
-	// The tokens are not kept. Both readers -- LineIndents and TokenAt --
-	// re-tokenize when the field is nil, and every editor caller already builds
-	// a bare Result{Src: src} that has none, so retention only kept a buffer per
-	// open Result alive for the GC to scan.
+	parser := &parser{text: src, tokens: toks}
+	root := parser.parse()
+	// the tokens are not kept: LineIndents and TokenAt tokenize again
 	putTokens(toks)
 	return Result{
 		Root:     root,
-		Errors:   p.errors,
-		Comments: p.comments,
+		Errors:   parser.errors,
+		Comments: parser.comments,
 		Src:      src,
 		lines:    li,
 	}
@@ -125,12 +122,9 @@ type parser struct {
 	errors   []ParseError
 	comments []Comment
 
-	// Node slabs. A CK3 scan allocated 109M objects, 90% of them one AST node
-	// at a time here, and the GC cost of scanning them was ~20% of scan CPU.
-	//
-	// A full slab is REPLACED, never grown: append would copy to a new array
-	// and every pointer already handed out would address the stale copy. Full
-	// slabs stay alive through those pointers, which is exactly what is wanted.
+	// Node slabs, so a parse does not allocate its nodes one at a time. A full slab is
+	// REPLACED, never grown: append would copy to a new array and every pointer already
+	// handed out would address the stale copy. Full slabs stay alive through those pointers.
 	scalars []Scalar
 	assigns []Assignment
 	values  []ValueStmt
@@ -143,99 +137,99 @@ type parser struct {
 // one-statement file does not hold a big buffer alive.
 const nodeSlab = 512
 
-func slabAlloc[T any](slab *[]T, v T) *T {
+func slabAlloc[T any](slab *[]T, value T) *T {
 	if len(*slab) == cap(*slab) {
 		*slab = make([]T, 0, nodeSlab)
 	}
-	*slab = append(*slab, v)
+	*slab = append(*slab, value)
 	return &(*slab)[len(*slab)-1]
 }
 
-func (p *parser) parse() *Root {
+func (parser *parser) parse() *Root {
 	var statements []Statement
-	for !p.atEOF() {
-		tok := p.peek()
+	for !parser.atEOF() {
+		tok := parser.peek()
 		if tok.kind == tokRBrace {
-			p.errors = append(p.errors, ParseError{
+			parser.errors = append(parser.errors, ParseError{
 				Code:    ErrStrayClose,
 				Message: "Unexpected '}' with no matching open brace.",
 				Range:   Range{Start: tok.start, End: tok.end},
 			})
-			p.advance()
+			parser.advance()
 			continue
 		}
-		if st := p.parseStatement(); st != nil {
+		if st := parser.parseStatement(); st != nil {
 			statements = append(statements, st)
-		} else if !p.atEOF() {
-			p.advance()
+		} else if !parser.atEOF() {
+			parser.advance()
 		}
 	}
-	return &Root{Statements: statements, Range: Range{Start: 0, End: len(p.text)}}
+	return &Root{Statements: statements, Range: Range{Start: 0, End: len(parser.text)}}
 }
 
-func (p *parser) skipComments() {
-	for p.pos < len(p.tokens) && p.tokens[p.pos].kind == tokComment {
-		c := p.tokens[p.pos]
-		p.comments = append(p.comments, Comment{
-			Range: Range{Start: c.start, End: c.end},
+func (parser *parser) skipComments() {
+	for parser.pos < len(parser.tokens) && parser.tokens[parser.pos].kind == tokComment {
+		comment := parser.tokens[parser.pos]
+		parser.comments = append(parser.comments, Comment{
+			Range: Range{Start: comment.start, End: comment.end},
 		})
-		p.pos++
+		parser.pos++
 	}
 }
 
-func (p *parser) peek() token {
-	p.skipComments()
-	return p.tokens[p.pos]
+func (parser *parser) peek() token {
+	parser.skipComments()
+	return parser.tokens[parser.pos]
 }
 
-func (p *parser) peekAhead() token {
-	p.skipComments()
-	j := p.pos + 1
-	for j < len(p.tokens) && p.tokens[j].kind == tokComment {
+func (parser *parser) peekAhead() token {
+	parser.skipComments()
+	j := parser.pos + 1
+	for j < len(parser.tokens) && parser.tokens[j].kind == tokComment {
 		j++
 	}
-	if j >= len(p.tokens) {
-		return p.tokens[len(p.tokens)-1]
+	if j >= len(parser.tokens) {
+		return parser.tokens[len(parser.tokens)-1]
 	}
-	return p.tokens[j]
+	return parser.tokens[j]
 }
 
-func (p *parser) advance() token {
-	p.skipComments()
-	t := p.tokens[p.pos]
-	if p.pos < len(p.tokens)-1 {
-		p.pos++
+func (parser *parser) advance() token {
+	parser.skipComments()
+	text := parser.tokens[parser.pos]
+	if parser.pos < len(parser.tokens)-1 {
+		parser.pos++
 	}
-	return t
+	return text
 }
 
-func (p *parser) atEOF() bool {
-	p.skipComments()
-	return p.tokens[p.pos].kind == tokEOF
+func (parser *parser) atEOF() bool {
+	parser.skipComments()
+	return parser.tokens[parser.pos].kind == tokEOF
 }
 
 // parseStatement := key (op value | block)? | value
-func (p *parser) parseStatement() Statement {
-	tok := p.peek()
+func (parser *parser) parseStatement() Statement {
+	tok := parser.peek()
 	if tok.kind == tokEOF || tok.kind == tokRBrace {
 		return nil
 	}
 
 	// A block starting here is an anonymous list element.
 	if tok.kind == tokLBrace {
-		block := p.parseBlock()
-		return slabAlloc(&p.values, ValueStmt{Value: block, Range: block.Range})
+		block := parser.parseBlock()
+		return slabAlloc(&parser.values, ValueStmt{Value: block, Range: block.Range})
 	}
 
 	if tok.kind == tokWord || tok.kind == tokString {
-		key := p.makeScalar(p.advance())
-		next := p.peek()
+		key := parser.makeScalar(parser.advance())
+		next := parser.peek()
 
 		if next.kind == tokOp {
-			opTok := p.advance()
-			value := p.parseValueAfterOperator()
+			opTok := parser.advance()
+			value := parser.parseValueAfterOperator()
 			if value == nil {
-				p.errors = append(p.errors, ParseError{
+				parser.errors = append(parser.errors, ParseError{
 					Code:    ErrMissingValue,
 					Message: "Missing value after '" + opTok.value + "'.",
 					Range:   Range{Start: opTok.start, End: opTok.end},
@@ -245,48 +239,48 @@ func (p *parser) parseStatement() Statement {
 			if value != nil {
 				end = value.NodeRange().End
 			}
-			return slabAlloc(&p.assigns, Assignment{Key: *key, Op: opTok.value, Value: value, Range: Range{Start: key.Range.Start, End: end}})
+			return slabAlloc(&parser.assigns, Assignment{Key: *key, Op: opTok.value, Value: value, Range: Range{Start: key.Range.Start, End: end}})
 		}
 
 		// GUI-style `key { ... }` with no operator.
 		if next.kind == tokLBrace {
-			block := p.parseBlock()
-			return slabAlloc(&p.assigns, Assignment{Key: *key, Op: "", Value: block, Range: Range{Start: key.Range.Start, End: block.Range.End}})
+			block := parser.parseBlock()
+			return slabAlloc(&parser.assigns, Assignment{Key: *key, Op: "", Value: block, Range: Range{Start: key.Range.Start, End: block.Range.End}})
 		}
 
 		// Bare scalar — list element.
-		return slabAlloc(&p.values, ValueStmt{Value: key, Range: key.Range})
+		return slabAlloc(&parser.values, ValueStmt{Value: key, Range: key.Range})
 	}
 
-	p.advance()
+	parser.advance()
 	return nil
 }
 
 // parseValueAfterOperator := scalar | block | tagged-block | operator-as-scalar.
 // Returns nil if no value is parseable.
-func (p *parser) parseValueAfterOperator() Value {
-	tok := p.peek()
+func (parser *parser) parseValueAfterOperator() Value {
+	tok := parser.peek()
 
 	if tok.kind == tokLBrace {
-		return p.parseBlock()
+		return parser.parseBlock()
 	}
 
 	// A comparison operator used as a value (list/any triggers).
 	if tok.kind == tokOp {
-		opTok := p.advance()
-		return slabAlloc(&p.scalars, Scalar{Text: p.text[opTok.start:opTok.end], Quoted: false, Range: Range{Start: opTok.start, End: opTok.end}})
+		opTok := parser.advance()
+		return slabAlloc(&parser.scalars, Scalar{Text: parser.text[opTok.start:opTok.end], Quoted: false, Range: Range{Start: opTok.start, End: opTok.end}})
 	}
 
 	if tok.kind == tokWord || tok.kind == tokString {
 		// `key =\n nextKey = ...`: if this scalar is immediately followed by an
 		// operator, it is the next statement's key, not this value.
-		if p.peekAhead().kind == tokOp {
+		if parser.peekAhead().kind == tokOp {
 			return nil
 		}
-		scalar := p.makeScalar(p.advance())
-		if p.peek().kind == tokLBrace {
-			block := p.parseBlock()
-			return slabAlloc(&p.tagged, TaggedBlock{Tag: *scalar, Block: *block, Range: Range{Start: scalar.Range.Start, End: block.Range.End}})
+		scalar := parser.makeScalar(parser.advance())
+		if parser.peek().kind == tokLBrace {
+			block := parser.parseBlock()
+			return slabAlloc(&parser.tagged, TaggedBlock{Tag: *scalar, Block: *block, Range: Range{Start: scalar.Range.Start, End: block.Range.End}})
 		}
 		return scalar
 	}
@@ -296,17 +290,17 @@ func (p *parser) parseValueAfterOperator() Value {
 
 // parseBlock := `{` statement* `}`. On EOF before `}`, records unclosed-brace at
 // the opening brace and swallows the rest of the input.
-func (p *parser) parseBlock() *Block {
-	open := p.advance()
+func (parser *parser) parseBlock() *Block {
+	open := parser.advance()
 	openBrace := open.start
 	var statements []Statement
 	closeBrace := -1
 	end := open.end
 
 	for {
-		tok := p.peek()
+		tok := parser.peek()
 		if tok.kind == tokEOF {
-			p.errors = append(p.errors, ParseError{
+			parser.errors = append(parser.errors, ParseError{
 				Code:    ErrUnclosedBrace,
 				Message: "Unclosed '{': the rest of the file is swallowed by this block.",
 				Range:   Range{Start: openBrace, End: openBrace + 1},
@@ -317,17 +311,17 @@ func (p *parser) parseBlock() *Block {
 		if tok.kind == tokRBrace {
 			closeBrace = tok.start
 			end = tok.end
-			p.advance()
+			parser.advance()
 			break
 		}
-		if st := p.parseStatement(); st != nil {
+		if st := parser.parseStatement(); st != nil {
 			statements = append(statements, st)
-		} else if k := p.peek().kind; k != tokRBrace && k != tokEOF {
-			p.advance()
+		} else if next := parser.peek().kind; next != tokRBrace && next != tokEOF {
+			parser.advance()
 		}
 	}
 
-	return slabAlloc(&p.blocks, Block{
+	return slabAlloc(&parser.blocks, Block{
 		Statements: statements,
 		Range:      Range{Start: openBrace, End: end},
 		OpenBrace:  openBrace,
@@ -338,20 +332,20 @@ func (p *parser) parseBlock() *Block {
 // makeScalar builds a Scalar from a word/string token, stripping quotes from
 // strings (Text) while keeping the range over the quotes. Unterminated strings
 // record a diagnostic and take everything after the opening quote.
-func (p *parser) makeScalar(tok token) *Scalar {
+func (parser *parser) makeScalar(tok token) *Scalar {
 	if tok.kind == tokString {
 		var inner string
 		if tok.unterminated {
-			p.errors = append(p.errors, ParseError{
+			parser.errors = append(parser.errors, ParseError{
 				Code:    ErrUnterminatedString,
 				Message: "Unterminated string; recovered at end of line.",
 				Range:   Range{Start: tok.start, End: tok.end},
 			})
-			inner = p.text[tok.start+1 : tok.end]
+			inner = parser.text[tok.start+1 : tok.end]
 		} else {
-			inner = p.text[tok.start+1 : tok.end-1]
+			inner = parser.text[tok.start+1 : tok.end-1]
 		}
-		return slabAlloc(&p.scalars, Scalar{Text: inner, Quoted: true, Range: Range{Start: tok.start, End: tok.end}})
+		return slabAlloc(&parser.scalars, Scalar{Text: inner, Quoted: true, Range: Range{Start: tok.start, End: tok.end}})
 	}
-	return slabAlloc(&p.scalars, Scalar{Text: p.text[tok.start:tok.end], Quoted: false, Range: Range{Start: tok.start, End: tok.end}})
+	return slabAlloc(&parser.scalars, Scalar{Text: parser.text[tok.start:tok.end], Quoted: false, Range: Range{Start: tok.start, End: tok.end}})
 }

@@ -17,13 +17,13 @@ import * as $models from "./models.js";
 /**
  * FileSearch lists files whose path contains FilePattern under workspace folders.
  */
-export function FileSearch(q: $models.FileSearchQuery): $CancellablePromise<$models.FileSearchResult> {
-    return $Call.ByID(3021161365, q);
+export function FileSearch(query: $models.FileSearchQuery): $CancellablePromise<$models.FileSearchResult> {
+    return $Call.ByID(3021161365, query);
 }
 
 /**
  * TextSearch walks workspace folders and greps file bodies in-process.
  */
-export function TextSearch(q: $models.TextSearchQuery): $CancellablePromise<$models.TextSearchResult> {
-    return $Call.ByID(1024315628, q);
+export function TextSearch(query: $models.TextSearchQuery): $CancellablePromise<$models.TextSearchResult> {
+    return $Call.ByID(1024315628, query);
 }

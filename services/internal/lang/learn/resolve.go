@@ -1,4 +1,5 @@
-// resolve.go turns counts into what a field is: its class, the vocabularies a body draws on, the names hidden among its keys, and the types of value it accepts.
+// resolve.go turns counts into what a field is: its class, the vocabularies a body draws on,
+// the names hidden among its keys, and the types of value it accepts.
 package learn
 
 import (
@@ -12,244 +13,268 @@ import (
 	"paradox-modding-tools/services/internal/lang/schema"
 )
 
-// witnesses works out, once the install is read, what the vocabulary says of blocks. A token whose usage holds <effects> or <triggers> takes a block of them (if, every_vassal, any_child, trigger_if), and a token the dump gives no usage, which the install always writes with a block, takes what the tokens written inside it take (not = { any_child = { } }, hidden_effect = { if = { } }; martial is written with a number). Such a token written at a position is the witness that the position is a body: a structure never writes one, however many of its members are named like triggers (a cost block's gold and prestige, a character's culture and faith). Arithmetic is found the same way: a position with a key of its own (no scope change, which stands in every kind of body) written as a number whose blocks hold if computes a number, and the undeclared keys written there are the words of arithmetic (value, add, multiply).
-func (c *census) witnesses() {
-	c.effectBlocks, c.triggerBlocks, c.math, c.valued, c.keyedAt = map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]int{}
-	for name, t := range c.vocab.Effects {
-		c.effectBlocks[name] = strings.Contains(t.Usage, "effects>") || strings.Contains(t.Usage, "effect>")
+// witnesses works out, once the install is read, what the vocabulary says of blocks. A token
+// whose usage holds <effects> or <triggers> takes a block of them (if, any_child); a token with
+// no usage that the install always writes with a block takes what the tokens inside it take
+// (not = { any_child = { } }). Such a token at a position witnesses that it is a body: a
+// structure never writes one, however many members are named like triggers (a cost's gold).
+// Likewise a position with a key of its own (no scope change) written as a number whose blocks
+// hold if computes a number, and the undeclared keys there are the words of arithmetic.
+func (census *census) witnesses() {
+	census.effectBlocks, census.triggerBlocks, census.math, census.valued, census.keyedAt = map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]int{}
+	for name, effect := range census.vocab.Effects {
+		census.effectBlocks[name] = strings.Contains(effect.Usage, "effects>") || strings.Contains(effect.Usage, "effect>")
 	}
-	for name, t := range c.vocab.Triggers {
-		c.triggerBlocks[name] = strings.Contains(t.Usage, "triggers>") || strings.Contains(t.Usage, "trigger>")
+	for name, trigger := range census.vocab.Triggers {
+		census.triggerBlocks[name] = strings.Contains(trigger.Usage, "triggers>") || strings.Contains(trigger.Usage, "trigger>")
 	}
 	for grew := true; grew; {
 		grew = false
-		for token, inside := range c.holds {
-			if c.blocked[token] != c.written[token] {
+		for token, inside := range census.holds {
+			if census.blocked[token] != census.written[token] {
 				continue
 			}
 			for child := range inside {
-				if e, ok := c.vocab.Effects[token]; ok && e.Usage == "" && c.effectBlocks[child] && !c.effectBlocks[token] {
-					c.effectBlocks[token], grew = true, true
+				if effect, ok := census.vocab.Effects[token]; ok && effect.Usage == "" && census.effectBlocks[child] && !census.effectBlocks[token] {
+					census.effectBlocks[token], grew = true, true
 				}
-				if t, ok := c.vocab.Triggers[token]; ok && t.Usage == "" && c.triggerBlocks[child] && !c.triggerBlocks[token] {
-					c.triggerBlocks[token], grew = true, true
+				if trigger, ok := census.vocab.Triggers[token]; ok && trigger.Usage == "" && census.triggerBlocks[child] && !census.triggerBlocks[token] {
+					census.triggerBlocks[token], grew = true, true
 				}
 			}
 		}
 	}
 
-	// the words of arithmetic, every word the install writes as a value or after a prefix, and at how many positions each key is written
-	tally := true
-	var walk func(n *node, named bool)
-	walk = func(n *node, named bool) {
-		for w := range n.words {
-			c.valued[w] = true
+	// the words of arithmetic, every word the install writes as a value or after a prefix, and
+	// at how many positions each key is written
+	var walk func(pos *node, named, tally bool)
+	walk = func(pos *node, named, tally bool) {
+		for word := range pos.words {
+			census.valued[word] = true
 		}
 		sums := false
-		for key, m := range n.members {
-			sums = sums || (named && n.numbers > 0 && m.blocks > 0 && c.effectBlocks[strings.ToLower(key)])
+		for key, member := range pos.members {
+			sums = sums || (named && pos.numbers > 0 && member.blocks > 0 && census.effectBlocks[strings.ToLower(key)])
 			if tally {
-				c.keyedAt[key]++
+				census.keyedAt[key]++
 			}
-			walk(m, !c.hops(key) && !strings.HasPrefix(key, "<"))
+			walk(member, !census.hops(key) && !strings.HasPrefix(key, "<"), tally)
 		}
-		for key := range n.members {
-			if _, isToken := c.token(key); sums && !isToken && !c.hops(key) && !strings.HasPrefix(key, "<") {
-				c.math[key] = true
+		for key := range pos.members {
+			if _, isToken := census.token(key); sums && !isToken && !census.hops(key) && !strings.HasPrefix(key, "<") {
+				census.math[key] = true
 			}
 		}
 	}
-	for _, fo := range c.folders {
-		// the entries at the top of a folder are one position, and so is each member of theirs: a script value is written as a number in one entry and as a block in the next
+	for _, fo := range census.folders {
+		// the entries at the top of a folder are one position, and so is each member of theirs:
+		// a script value is written as a number in one entry and as a block in the next
 		top, below := &node{}, map[string]*node{}
-		for _, m := range fo.root.members {
-			top.merge(m.shallow())
-			for key, mm := range m.members {
+		for _, member := range fo.root.members {
+			top.merge(member.shallow())
+			for key, mm := range member.members {
 				if below[key] == nil {
 					below[key] = &node{}
 				}
 				below[key].merge(mm.shallow())
 			}
 		}
-		walk(fo.root, false)
-		tally = false
-		walk(top, true)
-		for key, m := range below {
-			walk(m, !c.hops(key) && !strings.HasPrefix(key, "<"))
+		walk(fo.root, false, true)
+
+		// the merged positions are counted for what they hold, not for where a key stands: that
+		// was counted in the folder's own tree
+		walk(top, true, false)
+		for key, shape := range below {
+			walk(shape, !census.hops(key) && !strings.HasPrefix(key, "<"), false)
 		}
-		tally = true
 		for _, shape := range fo.declared {
-			walk(shape, true)
+			walk(shape, true, true)
 		}
 	}
-	for _, n := range c.tokens {
-		walk(n, true)
+	for _, pos := range census.tokens {
+		walk(pos, true, true)
 	}
-	c.citing = map[string][]string{}
-	for prefix, names := range c.cites {
+	census.citing = map[string][]string{}
+	for prefix, names := range census.cites {
 		for name := range names {
-			c.valued[name] = true
-			if c.vocab.Links[prefix].Prefix {
-				c.citing[name] = append(c.citing[name], prefix)
+			census.valued[name] = true
+			if census.vocab.Links[prefix].Prefix {
+				census.citing[name] = append(census.citing[name], prefix)
 			}
 		}
 	}
 }
 
-// keys is what the keys written directly inside one position are, by the vocabulary and by how often they recur.
+// keys is what the keys written directly inside one position are, by the vocabulary and by how
+// often they recur.
 type keys struct {
 	distinct          int      // keyed members that are no position
-	effects, triggers int      // distinct tokens written with a block that only the effects, or only the triggers, declare to hold their own
-	sums              bool     // it computes a number: written as a number and holding if, or every key a word of arithmetic or a branch around one
-	once              []string // keys the vocabulary does not declare, written in one block of several: a name is written once
+	effects, triggers int      // distinct block-taking tokens declared only as effects, or only as triggers
+	sums              bool     // it computes a number: a number holding if, or all arithmetic and branches
+	once              []string // undeclared keys written in one block of several: a name is written once
 	words             int      // bare words written among them
 }
 
 // keysOf counts the keys of a position.
-func (c *census) keysOf(n *node) keys {
-	k := keys{sums: true}
+func (census *census) keysOf(pos *node) keys {
+	counted := keys{sums: true}
 	branches, summed := false, false
 	count := func(key string, in, blocks int) {
 		low := strings.ToLower(key)
-		_, effect := c.vocab.Effects[low]
-		_, trigger := c.vocab.Triggers[low]
-		_, modifier := c.vocab.Modifiers[low]
-		k.distinct++
-		branch := effect && !trigger && blocks > 0 && c.effectBlocks[low] && !c.hops(key)
+		_, effect := census.vocab.Effects[low]
+		_, trigger := census.vocab.Triggers[low]
+		_, modifier := census.vocab.Modifiers[low]
+		counted.distinct++
+		branch := effect && !trigger && blocks > 0 && census.effectBlocks[low] && !census.hops(key)
 		switch {
 		case branch:
-			k.effects, branches = k.effects+1, true
-		case trigger && !effect && blocks > 0 && c.triggerBlocks[low] && !c.hops(key):
-			k.triggers++
-		case !effect && !trigger && !modifier && !c.hops(key) && in == 1 && n.blocks > 1:
-			k.once = append(k.once, key)
+			counted.effects, branches = counted.effects+1, true
+		case trigger && !effect && blocks > 0 && census.triggerBlocks[low] && !census.hops(key):
+			counted.triggers++
+		case !effect && !trigger && !modifier && !census.hops(key) && in == 1 && pos.blocks > 1:
+			counted.once = append(counted.once, key)
 		}
-		summed = summed || c.math[key]
-		k.sums = k.sums && (branch || c.math[key] || c.hops(key))
+		summed = summed || census.math[key]
+		counted.sums = counted.sums && (branch || census.math[key] || census.hops(key))
 	}
-	for key, m := range n.members {
+	for key, member := range pos.members {
 		switch {
 		case key == "<word>":
-			k.words += m.count
+			counted.words += member.count
 		case !strings.HasPrefix(key, "<"):
-			count(key, m.in, m.blocks)
+			count(key, member.in, member.blocks)
 		}
 	}
-	for key := range n.names {
+	for key := range pos.names {
 		count(key, 1, 0)
 	}
-	k.sums = (k.sums && summed) || (n.numbers > 0 && branches)
-	slices.Sort(k.once)
-	return k
+	counted.sums = (counted.sums && summed) || (pos.numbers > 0 && branches)
+	slices.Sort(counted.once)
+	return counted
 }
 
-// named reports a position whose keys are mostly names: written once each, and most of those either definitions made elsewhere, which the position cites, or names of its own: something the game refers to, by citing, localizing or writing it as a value, that is a key nowhere else. The optional members of a kind with three definitions are written once each too, but nothing refers to them, and a field word (id, years, margin) is a key at hundreds of positions. Where only the engine reads the names (defines), the declared prefix that mostly cites names written here says so.
-func (c *census) named(k keys) bool {
+// named reports a position whose keys are mostly names: written once each, and most of those
+// either definitions made elsewhere, which the position cites, or names of its own: something
+// the game refers to, by citing, localizing or writing it as a value, that is a key nowhere
+// else. The optional members of a kind with three definitions are written once each too, but
+// nothing refers to them, and a field word (id, years) is a key at many positions. Where only
+// the engine reads the names (defines), the declared prefix that mostly cites them says so.
+func (census *census) named(counted keys) bool {
 	names, cited := 0, map[string]int{}
-	for _, key := range k.once {
-		if len(c.defined[key]) > 0 || ((c.valued[key] || c.keys.Has(key)) && c.keyedAt[key] < 2) {
+	for _, key := range counted.once {
+		if len(census.defined[key]) > 0 || ((census.valued[key] || census.keys.Has(key)) && census.keyedAt[key] < 2) {
 			names++
 		}
-		for _, prefix := range c.citing[key] {
+		for _, prefix := range census.citing[key] {
 			cited[prefix]++
 		}
 	}
 	for prefix, here := range cited {
-		if here*2 > len(c.cites[prefix]) {
-			names = len(k.once)
+		if here*2 > len(census.cites[prefix]) {
+			names = len(counted.once)
 		}
 	}
-	return len(k.once)*2 > k.distinct && names*2 > len(k.once)
+	return len(counted.once)*2 > counted.distinct && names*2 > len(counted.once)
 }
 
-// class is what is written at a position, and for a body the vocabularies it draws on: those whose block-taking tokens are written directly inside it. Arithmetic is told before effects, because it branches with the effects' if; a body before a value, because a trigger written as yes in most places is still a trigger.
-func (c *census) class(n *node) (schema.Class, schema.BodyClass) {
-	if n.classed {
-		return n.class, n.body
+// class is what is written at a position, and for a body the vocabularies it draws on: those
+// whose block-taking tokens are written directly inside it. Arithmetic is told before effects,
+// because it branches with the effects' if; a body before a value, because a trigger written as
+// yes in most places is still a trigger.
+func (census *census) class(pos *node) (schema.Class, schema.BodyClass) {
+	if pos.classed {
+		return pos.class, pos.body
 	}
-	k := c.keysOf(n)
+	counted := census.keysOf(pos)
 	switch {
-	case k.triggers > 0 && k.effects > 0 && !k.sums:
+	case counted.triggers > 0 && counted.effects > 0 && !counted.sums:
 		return schema.ClassBody, schema.BodyTrigger | schema.BodyEffect
-	case k.triggers > 0:
+	case counted.triggers > 0:
 		return schema.ClassBody, schema.BodyTrigger
-	case k.sums:
+	case counted.sums:
 		return schema.ClassBody, schema.BodyMath
-	case k.effects > 0:
+	case counted.effects > 0:
 		return schema.ClassBody, schema.BodyEffect
-	case n.blocks*2 < n.count:
+	case pos.blocks*2 < pos.count:
 		return schema.ClassValue, 0
-	case k.distinct == 0 && k.words > 0:
+	case counted.distinct == 0 && counted.words > 0:
 		return schema.ClassList, 0
-	case k.distinct == 0 && (n.defines != nil || n.keyedBy != nil):
+	case counted.distinct == 0 && (pos.defines != nil || pos.keyedBy != nil):
 		return schema.ClassDatabase, 0
 	}
 	return schema.ClassStructure, 0
 }
 
-// lift moves what stands under each declared token of a body into the census of that token, because the engine declares a token once and what it takes is the same wherever it is written. A scope change is the same body in another scope, so what stands under it is lifted too. The other keys written in the body are counted by its class, for the join that finds which kinds are macros.
-func (c *census) lift(n *node) {
-	class, body := c.class(n)
-	n.classed, n.class, n.body = true, class, body
-	for _, key := range slices.Sorted(maps.Keys(n.members)) {
-		m := n.members[key]
-		_, isToken := c.token(key)
+// lift moves what stands under each declared token of a body into the census of that token,
+// because the engine declares a token once and what it takes is the same wherever it is
+// written. A scope change is the same body in another scope, so what stands under it is lifted
+// too. The other keys written in the body are counted by its class, for the join that finds
+// which kinds are macros.
+func (census *census) lift(pos *node) {
+	class, body := census.class(pos)
+	pos.classed, pos.class, pos.body = true, class, body
+	for _, key := range slices.Sorted(maps.Keys(pos.members)) {
+		member := pos.members[key]
+		_, isToken := census.token(key)
 		switch {
 		case class != schema.ClassBody:
-			c.lift(m)
+			census.lift(member)
 		case isToken:
 			low := strings.ToLower(key)
-			if c.tokens[low] == nil {
-				c.tokens[low] = &node{}
+			if census.tokens[low] == nil {
+				census.tokens[low] = &node{}
 			}
 			// taken out first: an if inside an if is merged into the position it stood in
-			delete(n.members, key)
-			c.tokens[low].merge(m)
-			c.moved = true
-		case c.hops(key) || key == "<cite>":
-			delete(n.members, key)
-			c.moved = true
-			n.merge(&node{members: m.members, names: m.names})
-			c.lift(n)
+			delete(pos.members, key)
+			census.tokens[low].merge(member)
+			census.moved[low] = true
+		case census.hops(key) || key == "<cite>":
+			delete(pos.members, key)
+			pos.merge(&node{members: member.members, names: member.names})
+			census.lift(pos)
 			return
 		case !strings.HasPrefix(key, "<"):
-			if c.called[body] == nil {
-				c.called[body] = map[string]int{}
+			if census.called[body] == nil {
+				census.called[body] = map[string]int{}
 			}
-			c.called[body][key] += m.count
-			c.lift(m)
+			census.called[body][key] += member.count
+			census.lift(member)
 		}
 	}
 	if class == schema.ClassBody {
-		for key, written := range n.names {
-			if _, isToken := c.token(key); !isToken {
-				if c.called[body] == nil {
-					c.called[body] = map[string]int{}
+		for key, written := range pos.names {
+			if _, isToken := census.token(key); !isToken {
+				if census.called[body] == nil {
+					census.called[body] = map[string]int{}
 				}
-				c.called[body][key] += written
+				census.called[body][key] += written
 			}
 		}
 	}
 }
 
-// hoist gives a kind one field for each key that can hold itself. A GUI widget holds widgets that hold widgets (vbox, item, vbox, dynamicgridbox ...), and a dynamic description holds descriptions; read position by position each path would be a field tree of its own, thirty levels deep and all alike. So a block-valued key that lies on a cycle of what-holds-what is merged from every place it stands into one member at the top of the kind's shape, and removed everywhere else; a descent that meets the key below a parent that does not list it finds it there. A key that holds itself nowhere stays where it is, because the same word at two positions is often two things (desc).
-func (c *census) hoist(shape *node) {
+// hoist gives a kind one field for each key that can hold itself (a GUI vbox holds vboxes, a
+// dynamic description holds descriptions), where read position by position each path would be
+// a field tree thirty levels deep. A block-valued key on a cycle of what-holds-what is merged
+// from every place into one member at the top of the shape, where any descent finds it. A key
+// that holds itself nowhere stays put: one word at two positions is often two things.
+func (census *census) hoist(shape *node) {
 	holds := map[string]map[string]bool{}
-	var walk func(n *node)
-	walk = func(n *node) {
-		for key, m := range n.members {
-			if m.blocks == 0 || strings.HasPrefix(key, "<") {
+	var walk func(pos *node)
+	walk = func(pos *node) {
+		for key, member := range pos.members {
+			if member.blocks == 0 || strings.HasPrefix(key, "<") {
 				continue
 			}
 			if holds[key] == nil {
 				holds[key] = map[string]bool{}
 			}
-			for child, cm := range m.members {
+			for child, cm := range member.members {
 				if cm.blocks > 0 && !strings.HasPrefix(child, "<") {
 					holds[key][child] = true
 				}
 			}
-			walk(m)
+			walk(member)
 		}
 	}
 	walk(shape)
@@ -276,187 +301,199 @@ func (c *census) hoist(shape *node) {
 
 	// every occurrence leaves its parent and joins the one at the top
 	top := map[string]*node{}
-	var lift func(n *node, isTop bool)
-	lift = func(n *node, isTop bool) {
-		for _, key := range slices.Sorted(maps.Keys(n.members)) {
-			m := n.members[key]
-			lift(m, false)
-			if cyclic[key] && m.blocks > 0 {
+	var lift func(pos *node)
+	lift = func(pos *node) {
+		for _, key := range slices.Sorted(maps.Keys(pos.members)) {
+			member := pos.members[key]
+			lift(member)
+			if cyclic[key] && member.blocks > 0 {
 				if top[key] == nil {
 					top[key] = &node{}
 				}
-				top[key].merge(m)
-				delete(n.members, key)
+				top[key].merge(member)
+				delete(pos.members, key)
 			}
 		}
 	}
-	lift(shape, true)
-	for key, m := range top {
-		shape.members[key] = m
-	}
+	lift(shape)
+	maps.Copy(shape.members, top)
 }
 
-// fold gathers a position's one-off keys into the position <name> (§5.3), and says which kind they cite when most of them are its definitions: the cases of a switch are traits, the keys of a goods block are goods. A position whose names are a nested kind's has given them up already.
-func (c *census) fold(n *node) {
-	k := c.keysOf(n)
-	if !c.named(k) || n.defines != nil {
+// fold gathers a position's one-off keys into the position <name>, and says which kind they
+// cite when most of them are its definitions: the cases of a switch are traits, the keys of a
+// goods block are goods. A position whose names are a nested kind's has given them up already.
+func (census *census) fold(pos *node) {
+	counted := census.keysOf(pos)
+	if !census.named(counted) || pos.defines != nil {
 		return
 	}
 	cited := map[*draft]int{}
-	for _, key := range k.once {
-		for _, d := range c.defined[key] {
-			cited[d]++
+	for _, key := range counted.once {
+		for _, definer := range census.defined[key] {
+			cited[definer]++
 		}
-		if m := n.members[key]; m != nil {
-			if n.members["<name>"] == nil {
-				n.members["<name>"] = &node{}
+		if member := pos.members[key]; member != nil {
+			if pos.members["<name>"] == nil {
+				pos.members["<name>"] = &node{}
 			}
-			n.members["<name>"].merge(m)
-			delete(n.members, key)
+			pos.members["<name>"].merge(member)
+			delete(pos.members, key)
 		}
 	}
-	for _, d := range slices.SortedFunc(maps.Keys(cited), func(a, b *draft) int {
-		return cmp.Or(len(b.names)-len(a.names), strings.Compare(a.kind.Name, b.kind.Name))
+	for _, candidate := range slices.SortedFunc(maps.Keys(cited), func(first, second *draft) int {
+		return cmp.Or(len(second.names)-len(first.names), strings.Compare(first.kind.Name, second.kind.Name))
 	}) {
-		if n.keyedBy == nil && cited[d]*2 > len(k.once) {
-			n.keyedBy = d
+		if pos.keyedBy == nil && cited[candidate]*2 > len(counted.once) {
+			pos.keyedBy = candidate
 		}
 	}
 }
 
-// field is the schema's field for a position: its class, what it accepts, and the fields below it. In a body the members are what is left once tokens, scope changes, macros and one-off keys are gone: limit under if, name under an option. folders and parent find what the game's own info says of the field, whose declared type comes first among the accepts.
-func (c *census) field(name string, n *node, folders []string, parent string) *schema.Field {
-	f := &schema.Field{Name: name, Count: n.count}
-	f.Class, f.Body = c.class(n)
-	if name != "" && f.Class != schema.ClassBody {
-		c.fold(n)
+// field is the schema's field for a position: its class, what it accepts, and the fields below
+// it. In a body the members are what is left once tokens, scope changes, macros and one-off
+// keys are gone: limit under if, name under an option. folders and parent find what the game's
+// own info says of the field, whose declared type comes first among the accepts.
+func (census *census) field(name string, pos *node, folders []string, parent string) *schema.Field {
+	field := &schema.Field{Name: name, Count: pos.count}
+	field.Class, field.Body = census.class(pos)
+	if name != "" && field.Class != schema.ClassBody {
+		census.fold(pos)
 	}
-	for _, op := range slices.SortedFunc(maps.Keys(n.ops), func(a, b string) int { return cmp.Or(n.ops[b]-n.ops[a], strings.Compare(a, b)) }) {
-		f.Ops = append(f.Ops, op)
+	for _, op := range slices.SortedFunc(maps.Keys(pos.ops), func(first, second string) int {
+		return cmp.Or(pos.ops[second]-pos.ops[first], strings.Compare(first, second))
+	}) {
+		field.Ops = append(field.Ops, op)
 	}
-	if n.defines != nil {
-		f.Defines = n.defines.kind.Name
+	if pos.defines != nil {
+		field.Defines = pos.defines.kind.Name
 	}
-	if n.keyedBy != nil {
-		f.KeyedBy = n.keyedBy.kind.Name
+	if pos.keyedBy != nil {
+		field.KeyedBy = pos.keyedBy.kind.Name
 	}
 
 	// the scope a body runs in: the one scope type every token written directly inside may run in
-	if f.Class == schema.ClassBody {
+	if field.Class == schema.ClassBody {
 		var held []string
-		for scope, tokens := range n.scopes {
-			if tokens == n.scoped {
+		for scope, tokens := range pos.scopes {
+			if tokens == pos.scoped {
 				held = append(held, scope)
 			}
 		}
 		if len(held) == 1 {
-			f.BodyScope = held[0]
+			field.BodyScope = held[0]
 		}
 	}
 
-	f.Accepts = c.accepts(name, n, f.Class)
-	if declared, ok := c.info.Field(folders, parent, name).Declared(); ok {
-		if at := slices.IndexFunc(f.Accepts, func(a schema.Accept) bool { return a.Type == declared.Type && a.Kind == declared.Kind }); at >= 0 {
-			declared.Count = f.Accepts[at].Count
+	field.Accepts = census.accepts(name, pos, field.Class)
+	if declared, ok := census.info.Field(folders, parent, name).Declared(); ok {
+		if at := slices.IndexFunc(field.Accepts, func(accept schema.Accept) bool { return accept.Type == declared.Type && accept.Kind == declared.Kind }); at >= 0 {
+			declared.Count = field.Accepts[at].Count
 		}
-		f.Accepts = slices.DeleteFunc(f.Accepts, func(a schema.Accept) bool { return a.Type == declared.Type && a.Kind == declared.Kind })
-		f.Accepts = append([]schema.Accept{declared}, f.Accepts...)
+		field.Accepts = slices.DeleteFunc(field.Accepts, func(accept schema.Accept) bool { return accept.Type == declared.Type && accept.Kind == declared.Kind })
+		field.Accepts = append([]schema.Accept{declared}, field.Accepts...)
 	}
 
-	for _, key := range slices.Sorted(maps.Keys(n.members)) {
-		m := n.members[key]
-		if key == "<word>" || (f.Class == schema.ClassBody && ((m.in == 1 && n.blocks > 1) || c.macro[key])) {
+	for _, key := range slices.Sorted(maps.Keys(pos.members)) {
+		member := pos.members[key]
+		if key == "<word>" || (field.Class == schema.ClassBody && ((member.in == 1 && pos.blocks > 1) || census.macro[key])) {
 			continue
 		}
-		if f.Members == nil {
-			f.Members = map[string]*schema.Field{}
+		if field.Members == nil {
+			field.Members = map[string]*schema.Field{}
 		}
-		f.Members[key] = c.field(key, m, folders, name)
+		field.Members[key] = census.field(key, member, folders, name)
 	}
-	return f
+	return field
 }
 
-// accepts is the types of value written at a position, most frequent first. A word is joined against every kind's names, with the loc keys and the files of the inventory as two more. The kind that explains the most words is tried first, and a kind is accepted when it defines most of the words no kind before it explains: a message's display is feed, toast or popup, and one of those being an animation's name makes none of them animations. Of two kinds that explain the same words the one with fewer names is the closer fit (goods, not the text icons named after them). A number is the name of a number-named kind only where the game says so: the field is a link or a token whose declared output is that kind's scope type (holder, father), or a cite at the same field names the kind.
-func (c *census) accepts(key string, at *node, class schema.Class) []schema.Accept {
-	// a list's values are its words; a block tagged as a colour is a colour, and its words are the colour's parts
-	n, colours := at, at.tags["rgb"]+at.tags["hsv"]+at.tags["hsv360"]+at.tags["hex"]
+// accepts is the types of value written at a position, most frequent first. Words are joined
+// against every kind's names, the loc keys and the inventory's files. The kind that explains
+// the most words is tried first, and is accepted when it defines most of the words no kind
+// before it explains (one of feed, toast, popup being an animation makes none of them one); of
+// two that explain the same words the one with fewer names fits closer. A number names a
+// number-named kind only where the game says so: the field is a link or token whose declared
+// output is that kind's scope type (holder, father), or a cite at the same field names the kind.
+func (census *census) accepts(key string, at *node, class schema.Class) []schema.Accept {
+	// a list's values are its words; a block tagged as a colour is a colour, and its words are
+	// the colour's parts
+	values, colours := at, at.tags["rgb"]+at.tags["hsv"]+at.tags["hsv360"]+at.tags["hex"]
 	if words := at.members["<word>"]; words != nil && class == schema.ClassList {
-		n = words
+		values = words
 	}
 	if colours > 0 && colours == at.blocks {
 		return []schema.Accept{{Type: schema.TypeColor, Count: colours}}
 	}
 	var out []schema.Accept
-	add := func(a schema.Accept) {
-		if a.Count > 0 {
-			out = append(out, a)
+	add := func(accept schema.Accept) {
+		if accept.Count > 0 {
+			out = append(out, accept)
 		}
 	}
-	add(schema.Accept{Type: schema.TypeBool, Count: n.bools})
-	add(schema.Accept{Type: schema.TypeDate, Count: n.dates})
+	add(schema.Accept{Type: schema.TypeBool, Count: values.bools})
+	add(schema.Accept{Type: schema.TypeDate, Count: values.dates})
 	add(schema.Accept{Type: schema.TypeColor, Count: colours})
 
 	// every word that is no literal, by what could define it
 	hits, open, cited := map[string]map[string]int{}, map[string]bool{}, map[string]bool{}
 	var numbers []string
 	paths := 0
-	for w, times := range n.words {
-		name := w
-		if ref, ok := jomini.Cite(w); ok && ref.Chain == "" {
+	for word, times := range values.words {
+		name := word
+		if ref, ok := jomini.Cite(word); ok && ref.Chain == "" {
 			name = ref.Name
-			for _, k := range c.prefixed[ref.Prefix] {
-				cited[k.kind.Name] = true
+			for _, definer := range census.prefixed[ref.Prefix] {
+				cited[definer.kind.Name] = true
 			}
 		}
-		switch kind := jomini.Literal(w); {
-		case kind == jomini.LitDate || w == "yes" || w == "no" || len(jomini.Interpolations(w)) > 0 || strings.HasPrefix(w, "@") || strings.HasPrefix(w, "["):
+		switch kind := jomini.Literal(word); {
+		case kind == jomini.LitDate || word == "yes" || word == "no" || len(jomini.Interpolations(word)) > 0 || strings.HasPrefix(word, "@") || strings.HasPrefix(word, "["):
 			continue
 		case kind == jomini.LitNumber:
-			numbers = append(numbers, w)
+			numbers = append(numbers, word)
 			continue
 		}
 
 		var by []string
-		for _, d := range c.defined[name] {
-			by = append(by, d.kind.Name)
+		for _, definer := range census.defined[name] {
+			by = append(by, definer.kind.Name)
 		}
-		if c.keys.Has(w) {
+		if census.keys.Has(word) {
 			by = append(by, "<loc>")
 		}
-		if base := strings.ToLower(w[strings.LastIndexByte(w, '/')+1:]); c.files[strings.ToLower(w)] || (strings.Contains(base, ".") && (c.files[base] || c.files[strings.TrimSuffix(base, path.Ext(base))+".*"])) {
+		if base := strings.ToLower(word[strings.LastIndexByte(word, '/')+1:]); census.files[strings.ToLower(word)] || (strings.Contains(base, ".") && (census.files[base] || census.files[strings.TrimSuffix(base, path.Ext(base))+".*"])) {
 			by = append(by, "<file>")
 		}
 		for _, kind := range by {
 			if hits[kind] == nil {
 				hits[kind] = map[string]int{}
 			}
-			hits[kind][w] = times
+			hits[kind][word] = times
 		}
 
-		first, _, _ := strings.Cut(w, ".")
-		if _, isLink := c.vocab.Links[first]; len(by) == 0 && (isLink || (strings.Contains(w, ":") && strings.Contains(w, "."))) {
+		first, _, _ := strings.Cut(word, ".")
+		if _, isLink := census.vocab.Links[first]; len(by) == 0 && (isLink || (strings.Contains(word, ":") && strings.Contains(word, "."))) {
 			paths += times
 		} else {
-			open[w] = true
+			open[word] = true
 		}
 	}
 
 	// the kinds, best first: most words explained, then fewest names
-	for _, kind := range slices.SortedFunc(maps.Keys(hits), func(a, b string) int {
-		return cmp.Or(len(hits[b])-len(hits[a]), c.size(a)-c.size(b), strings.Compare(a, b))
+	for _, kind := range slices.SortedFunc(maps.Keys(hits), func(first, second string) int {
+		return cmp.Or(len(hits[second])-len(hits[first]), census.size(first)-census.size(second), strings.Compare(first, second))
 	}) {
 		fresh, total := 0, 0
-		for w, times := range hits[kind] {
+		for word, times := range hits[kind] {
 			total += times
-			if open[w] {
+			if open[word] {
 				fresh++
 			}
 		}
 		if fresh*2 <= len(open) {
 			continue
 		}
-		for w := range hits[kind] {
-			delete(open, w)
+		for word := range hits[kind] {
+			delete(open, word)
 		}
 		switch kind {
 		case "<loc>":
@@ -469,41 +506,43 @@ func (c *census) accepts(key string, at *node, class schema.Class) []schema.Acce
 	}
 	add(schema.Accept{Type: schema.TypeScopePath, Count: paths})
 
-	// numbers: the names of a number-named kind where a cite at the same field says so, or the field's own declared output does
-	leads := c.vocab.Links[strings.ToLower(key)].Out
-	if token, ok := c.token(key); ok && leads == "" {
+	// numbers: the names of a number-named kind where a cite at the same field says so, or the
+	// field's own declared output does
+	leads := census.vocab.Links[strings.ToLower(key)].Out
+	if token, ok := census.token(key); ok && leads == "" {
 		leads = token.Out
 	}
-	plain := n.numbers
-	for _, d := range c.numbered {
+	plain := values.numbers
+	for _, candidate := range census.numbered {
 		total := 0
-		for _, w := range numbers {
-			if d.names[w] > 0 {
-				total += n.words[w]
+		for _, number := range numbers {
+			if candidate.names[number] > 0 {
+				total += values.words[number]
 			}
 		}
-		if total > 0 && (cited[d.kind.Name] || (leads != "" && d.kind.ScopeType == leads)) {
-			add(schema.Accept{Type: schema.TypeRef, Kind: d.kind.Name, Count: total})
+		if total > 0 && (cited[candidate.kind.Name] || (leads != "" && candidate.kind.ScopeType == leads)) {
+			add(schema.Accept{Type: schema.TypeRef, Kind: candidate.kind.Name, Count: total})
 			plain -= total
 			break
 		}
 	}
 	add(schema.Accept{Type: schema.TypeNumber, Count: plain})
 
-	// what nothing explains: a closed set of words when the whole set was kept and most of its words are written again, else text
+	// what nothing explains: a closed set of words when the whole set was kept and most of its
+	// words are written again, else text
 	names, text, again := 0, 0, 0
 	var words []string
-	for w := range open {
-		if jomini.IsDefName(w) {
-			names, words = names+n.words[w], append(words, w)
-			if n.words[w] > 1 {
+	for word := range open {
+		if jomini.IsDefName(word) {
+			names, words = names+values.words[word], append(words, word)
+			if values.words[word] > 1 {
 				again++
 			}
 		} else {
-			text += n.words[w]
+			text += values.words[word]
 		}
 	}
-	if len(n.words) < maxWords && again*2 > len(words) {
+	if len(values.words) < maxWords && again*2 > len(words) {
 		slices.Sort(words)
 		add(schema.Accept{Type: schema.TypeEnum, Enum: words, Count: names})
 	} else {
@@ -511,14 +550,14 @@ func (c *census) accepts(key string, at *node, class schema.Class) []schema.Acce
 	}
 	add(schema.Accept{Type: schema.TypeString, Count: text})
 
-	slices.SortStableFunc(out, func(a, b schema.Accept) int { return b.Count - a.Count })
+	slices.SortStableFunc(out, func(first, second schema.Accept) int { return second.Count - first.Count })
 	return out
 }
 
 // size is how many names a kind has; the loc keys and the files are larger than any kind.
-func (c *census) size(kind string) int {
-	if d := c.byName[kind]; d != nil {
-		return len(d.names)
+func (census *census) size(kind string) int {
+	if draft := census.byName[kind]; draft != nil {
+		return len(draft.names)
 	}
 	return 1 << 30
 }

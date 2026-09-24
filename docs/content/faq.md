@@ -28,7 +28,7 @@ Almost always one of: missing **UTF-8 BOM**, filename not `*_l_<lang>.yml`, firs
 
 ## Workshop item stays private / upload fails
 
-New Steam items stay **private** until you set them Public on the Workshop website. Steam client must be running and signed in as the owner. Linux Workshop is amd64 only. Windows ARM uses the amd64 helper under emulation. See [Publish]({{< relref "/pages/publish" >}}).
+New Steam items stay **private** until you set them Public on the Workshop website. Steam client must be running and signed in as the owner, with the game installed. EU5 has no Linux build, so publish EU5 mods from Windows. See [Publish]({{< relref "/pages/publish" >}}).
 
 ## Why did the other workspace’s graph go blank?
 

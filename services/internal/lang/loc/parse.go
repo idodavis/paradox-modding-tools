@@ -1,11 +1,9 @@
-// Package loc parses Paradox's localization "YAML" dialect (not real YAML).
-// Game-agnostic; may import jomini only for Decode. Offsets are UTF-8 byte
-// indices into the original text (a leading BOM is skipped, not stripped).
+// Package loc parses Paradox's localization "YAML" dialect (not real YAML) and learns the
+// loc-key templates a kind's definitions use (convention.go). It is game-agnostic. Offsets are
+// UTF-8 byte indices into the original text (a leading BOM is skipped, not stripped).
 //
-// parse.go is a line-by-line, never-panicking scanner emitting entries and
-// typed errors, derives a file's language from its name or header, and lists
-// the script properties whose RHS is a loc key (STRICT = unresolved means
-// missing; BROAD = resolved hint only). convention.go holds loc-key templates.
+// parse.go is a line-by-line, never-panicking scanner emitting entries and typed errors; it
+// also derives a file's language from its name, path or header.
 package loc
 
 import (
@@ -40,8 +38,11 @@ type Interp struct {
 	WrapRange Range  // opening `$` through closing `$` (exclusive end)
 }
 
-// ErrorCode classifies a localization parse error.
-type ErrorCode string
+// A parse error is the same as in script (code, message, range); the codes below are loc's own.
+type (
+	ErrorCode = jomini.ErrorCode
+	Error     = jomini.ParseError
+)
 
 const (
 	ErrNoHeader            ErrorCode = "no-header"
@@ -50,13 +51,6 @@ const (
 	ErrUnterminatedValue   ErrorCode = "unterminated-value"
 	ErrContentBeforeHeader ErrorCode = "content-before-header"
 )
-
-// Error is a recovered localization parse error.
-type Error struct {
-	Code    ErrorCode
-	Message string
-	Range   Range
-}
 
 // Result is the parsed localization file.
 type Result struct {
@@ -72,11 +66,11 @@ type Result struct {
 var headerRe = regexp.MustCompile(`^[ \t]*l_([A-Za-z_]+):[ \t]*(#.*)?$`)
 
 // isKeyChar reports the byte classes allowed in a loc key: letters, digits, `_ . - '`.
-func isKeyChar(c byte) bool {
+func isKeyChar(char byte) bool {
 	switch {
-	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+	case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char >= '0' && char <= '9':
 		return true
-	case c == '_' || c == '.' || c == '-' || c == '\'':
+	case char == '_' || char == '.' || char == '-' || char == '\'':
 		return true
 	default:
 		return false
@@ -86,7 +80,7 @@ func isKeyChar(c byte) bool {
 // Parse parses localization text. A leading UTF-8 BOM is skipped; ranges stay
 // in the original string. Never panics.
 func Parse(text string) Result {
-	s := &scanner{}
+	scanner := &scanner{}
 	length := len(text)
 	lineStart := 0
 	for lineStart <= length {
@@ -104,16 +98,16 @@ func Parse(text string) Result {
 		} else {
 			nextStart = length + 1
 		}
-		s.processLine(text[lineStart:lineEnd], lineStart)
+		scanner.processLine(text[lineStart:lineEnd], lineStart)
 		lineStart = nextStart
-		s.lineNo++
+		scanner.lineNo++
 		if lineStart > length {
 			break
 		}
 	}
 
-	if !s.headerFound {
-		s.errs = append(s.errs, Error{
+	if !scanner.headerFound {
+		scanner.errs = append(scanner.errs, Error{
 			Code:    ErrNoHeader,
 			Message: "No localization header line (e.g. `l_english:`) found.",
 			Range:   Range{Start: 0, End: 0},
@@ -121,11 +115,11 @@ func Parse(text string) Result {
 	}
 
 	return Result{
-		Language:    s.language,
-		HeaderRange: s.headerRange,
-		Entries:     s.entries,
-		Errors:      s.errs,
-		HadBOM:      s.hadBOM,
+		Language:    scanner.language,
+		HeaderRange: scanner.headerRange,
+		Entries:     scanner.entries,
+		Errors:      scanner.errs,
+		HadBOM:      scanner.hadBOM,
 	}
 }
 
@@ -188,9 +182,9 @@ type scanner struct {
 }
 
 // processLine handles one line; base is the byte offset in text of line[0].
-func (s *scanner) processLine(line string, base int) {
-	if s.lineNo == 0 && strings.HasPrefix(line, "\ufeff") {
-		s.hadBOM = true
+func (scanner *scanner) processLine(line string, base int) {
+	if scanner.lineNo == 0 && strings.HasPrefix(line, "\ufeff") {
+		scanner.hadBOM = true
 		line = line[len("\ufeff"):]
 		base += len("\ufeff")
 	}
@@ -211,31 +205,31 @@ func (s *scanner) processLine(line string, base int) {
 		return // blank or comment-only
 	}
 
-	if !s.headerFound {
+	if !scanner.headerFound {
 		if !strings.Contains(line, "l_") {
-			s.errs = append(s.errs, Error{
+			scanner.errs = append(scanner.errs, Error{
 				Code:    ErrContentBeforeHeader,
 				Message: "Content appears before the localization header (e.g. `l_english:`).",
 				Range:   Range{Start: base + contentStart, End: base + len(line)},
 			})
 			return
 		}
-		if m := headerRe.FindStringSubmatch(line); m != nil {
-			s.headerFound = true
-			s.language = m[1]
-			idx := strings.Index(line, "l_")
-			colon := strings.Index(line[max(idx, 0):], ":")
+		if match := headerRe.FindStringSubmatch(line); match != nil {
+			scanner.headerFound = true
+			scanner.language = match[1]
+			at := strings.Index(line, "l_")
+			colon := strings.Index(line[max(at, 0):], ":")
 			if colon >= 0 {
-				colon += max(idx, 0)
+				colon += max(at, 0)
 			}
 			end := base + len(line)
 			if colon >= 0 {
 				end = base + colon + 1
 			}
-			s.headerRange = &Range{Start: base + idx, End: end}
+			scanner.headerRange = &Range{Start: base + at, End: end}
 			return
 		}
-		s.errs = append(s.errs, Error{
+		scanner.errs = append(scanner.errs, Error{
 			Code:    ErrContentBeforeHeader,
 			Message: "Content appears before the localization header (e.g. `l_english:`).",
 			Range:   Range{Start: base + contentStart, End: base + len(line)},
@@ -249,7 +243,7 @@ func (s *scanner) processLine(line string, base int) {
 	}
 
 	if sawTab {
-		s.errs = append(s.errs, Error{
+		scanner.errs = append(scanner.errs, Error{
 			Code:    ErrTabIndent,
 			Message: "Tabs are not allowed for indentation in localization files.",
 			Range:   Range{Start: base, End: base + contentStart},
@@ -257,24 +251,24 @@ func (s *scanner) processLine(line string, base int) {
 		// Best-effort: keep parsing the entry.
 	}
 
-	s.parseEntry(line[contentStart:], base+contentStart, line, base)
+	scanner.parseEntry(line[contentStart:], base+contentStart, line, base)
 }
 
 // parseEntry parses `key(:version)? "value"`; entryBase is the offset of entry[0].
-func (s *scanner) parseEntry(entry string, entryBase int, fullLine string, lineBase int) {
+func (scanner *scanner) parseEntry(entry string, entryBase int, fullLine string, lineBase int) {
 	j := 0
 	for j < len(entry) && isKeyChar(entry[j]) {
 		j++
 	}
 	if j == 0 {
-		s.badEntry(fullLine, lineBase)
+		scanner.badEntry(fullLine, lineBase)
 		return
 	}
 	key := entry[:j]
 	keyRange := Range{Start: entryBase, End: entryBase + j}
 
 	if j >= len(entry) || entry[j] != ':' {
-		s.badEntry(fullLine, lineBase)
+		scanner.badEntry(fullLine, lineBase)
 		return
 	}
 	j++ // consume ':'
@@ -293,7 +287,7 @@ func (s *scanner) parseEntry(entry string, entryBase int, fullLine string, lineB
 	}
 
 	if j >= len(entry) || entry[j] != '"' {
-		s.badEntry(fullLine, lineBase)
+		scanner.badEntry(fullLine, lineBase)
 		return
 	}
 	quoteOpen := j
@@ -301,34 +295,34 @@ func (s *scanner) parseEntry(entry string, entryBase int, fullLine string, lineB
 
 	quoteClose := strings.LastIndexByte(entry, '"')
 	if quoteClose == quoteOpen {
-		s.errs = append(s.errs, Error{
+		scanner.errs = append(scanner.errs, Error{
 			Code:    ErrUnterminatedValue,
 			Message: "Unterminated localization value (missing closing quote).",
 			Range:   Range{Start: entryBase + quoteOpen, End: lineBase + len(fullLine)},
 		})
-		s.entries = append(s.entries, Entry{
+		scanner.entries = append(scanner.entries, Entry{
 			Key:        key,
 			KeyRange:   keyRange,
 			Version:    version,
 			Value:      entry[quoteOpen+1:],
 			ValueRange: Range{Start: valueInnerStart, End: entryBase + len(entry)},
-			Line:       s.lineNo,
+			Line:       scanner.lineNo,
 		})
 		return
 	}
 
-	s.entries = append(s.entries, Entry{
+	scanner.entries = append(scanner.entries, Entry{
 		Key:        key,
 		KeyRange:   keyRange,
 		Version:    version,
 		Value:      entry[quoteOpen+1 : quoteClose],
 		ValueRange: Range{Start: valueInnerStart, End: entryBase + quoteClose},
-		Line:       s.lineNo,
+		Line:       scanner.lineNo,
 	})
 }
 
-func (s *scanner) badEntry(fullLine string, lineBase int) {
-	s.errs = append(s.errs, Error{
+func (scanner *scanner) badEntry(fullLine string, lineBase int) {
+	scanner.errs = append(scanner.errs, Error{
 		Code:    ErrBadEntry,
 		Message: `Malformed localization entry; expected ` + "`key: \"value\"`" + `.`,
 		Range:   Range{Start: lineBase, End: lineBase + len(fullLine)},
@@ -343,8 +337,8 @@ var filenameLangRe = regexp.MustCompile(`(?i)l_([a-z]+)\.(yml|yaml)$`)
 // if the name does not follow the `..._l_<language>.yml` convention.
 func LanguageFromFilename(path string) string {
 	base := filepath.Base(path)
-	if m := filenameLangRe.FindStringSubmatch(base); m != nil {
-		return strings.ToLower(m[1])
+	if match := filenameLangRe.FindStringSubmatch(base); match != nil {
+		return strings.ToLower(match[1])
 	}
 	return ""
 }
@@ -352,8 +346,8 @@ func LanguageFromFilename(path string) string {
 // LanguageFromRel returns the loc language from the filename, else from a
 // `localization/<lang>/` path segment, or "".
 func LanguageFromRel(path string) string {
-	if l := LanguageFromFilename(path); l != "" {
-		return l
+	if language := LanguageFromFilename(path); language != "" {
+		return language
 	}
 	slash := strings.ReplaceAll(path, "\\", "/")
 	lower := strings.ToLower(slash)
@@ -367,19 +361,19 @@ func LanguageFromRel(path string) string {
 	return strings.ToLower(lang)
 }
 
-// LooksLikeKey reports whether s is a plausible loc key: not yes/no/none, no `scope:`-style prefix, and no whitespace.
-func LooksLikeKey(s string) bool {
-	if s == "" || strings.Contains(s, ":") {
+// LooksLikeKey reports whether name is a plausible loc key: no colon, no whitespace, no keyword.
+func LooksLikeKey(name string) bool {
+	if name == "" || strings.Contains(name, ":") {
 		return false
 	}
-	if strings.ContainsFunc(s, unicode.IsSpace) {
+	if strings.ContainsFunc(name, unicode.IsSpace) {
 		return false
 	}
 	// A macro parameter's key is not knowable until called, so it must not be reported as missing.
-	if strings.Contains(s, "$") {
+	if strings.Contains(name, "$") {
 		return false
 	}
-	switch strings.ToLower(s) {
+	switch strings.ToLower(name) {
 	case "yes", "no", "none", "root", "prev", "this", "from":
 		return false
 	}

@@ -12,7 +12,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as lsp$0 from "./internal/lang/lsp/models.js";
+import * as lsp$0 from "./internal/lsp/models.js";
 
 export function CodeActions(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.CodeAction[] | null> {
     return $Call.ByID(1850891185, workspaceID, path, line, col);

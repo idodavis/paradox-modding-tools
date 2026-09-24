@@ -3,14 +3,118 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as index$0 from "./internal/lang/index/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as schema$0 from "./internal/lang/schema/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as source$0 from "./internal/lang/source/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as steam$0 from "./internal/steam/models.js";
 
 /**
- * ConvertResult is Markdown → Workshop BBCode (or the inverse for empty MD).
+ * Contest is one name two origins define, with the game's rule for its kind.
  */
-export interface ConvertResult {
-    "text": string;
-    "notes"?: string[] | null;
+export interface Contest {
+    "Kind": string;
+    "Name": string;
+    "Found": index$0.Found[] | null;
+
+    /**
+     * the position in Found of the definition the game keeps
+     */
+    "Winner": number;
+
+    /**
+     * the kind's rule in this game
+     */
+    "FirstWins": boolean;
+
+    /**
+     * FIOS or LIOS
+     */
+    "rule": string;
+}
+
+/**
+ * Dangling is one name a mod writes that nothing defines, and where.
+ */
+export interface Dangling {
+    "Kind": string;
+    "Name": string;
+
+    /**
+     * a declared cite: the game itself would reject it
+     */
+    "declared": boolean;
+    "count": number;
+    "sites": index$0.Cited[] | null;
+}
+
+/**
+ * Dependency is one mod naming what only another mod defines.
+ */
+export interface Dependency {
+    "from": string;
+    "to": string;
+    "count": number;
+}
+
+/**
+ * Detail is one definition, opened.
+ */
+export interface Detail {
+    /**
+     * the kind it belongs to
+     */
+    "kind": string;
+
+    /**
+     * its name, found the way Kind.Naming says
+     */
+    "name": string;
+
+    /**
+     * nested kind: the name of the definition it sits inside; a parameter: its macro
+     */
+    "parent"?: string;
+
+    /**
+     * the value of the kind's LabelMember. "" if none
+     */
+    "label"?: string;
+
+    /**
+     * the entry mode written before the name: REPLACE, INJECT. "" if none
+     */
+    "mode"?: string;
+
+    /**
+     * saved_scopes only: the scope type at the save site
+     */
+    "scopeType"?: string;
+
+    /**
+     * index into Index.Files; -1 once the file that held it was dropped
+     */
+    "file": number;
+    "line": number;
+    "col": number;
+    "At": source$0.File;
+    "namespace"?: string;
+    "title"?: string;
+    "sections": Section[] | null;
+    "options": Option[] | null;
+    "fires": index$0.Firing[] | null;
+    "firedBy": index$0.Firing[] | null;
+
+    /**
+     * every definition of the name, in load order
+     */
+    "sites": index$0.Found[] | null;
+    "reason"?: string;
 }
 
 /**
@@ -37,6 +141,25 @@ export interface DumpHealth {
 }
 
 /**
+ * Edge is one fire drawn; Via names the tokens and macros between.
+ */
+export interface Edge {
+    "from": string;
+    "to": string;
+    "via": string;
+}
+
+/**
+ * EventGraph is the page's graph; Reason says why it is empty.
+ */
+export interface EventGraph {
+    "nodes": Node[] | null;
+    "edges": Edge[] | null;
+    "truncated": boolean;
+    "reason"?: string;
+}
+
+/**
  * FileBytes is a binary file payload for the IDE FS bridge. Missing files are
  * Exists=false with no error so the workbench can skip optional paths quietly.
  * Reject is set when the file exists but must not be opened (binary / too large);
@@ -46,6 +169,50 @@ export interface FileBytes {
     "exists": boolean;
     "b64"?: string;
     "reject"?: string;
+}
+
+/**
+ * FileRow is one definition without the file the game finds for it.
+ */
+export interface FileRow {
+    /**
+     * the kind it belongs to
+     */
+    "kind": string;
+
+    /**
+     * its name, found the way Kind.Naming says
+     */
+    "name": string;
+
+    /**
+     * nested kind: the name of the definition it sits inside; a parameter: its macro
+     */
+    "parent"?: string;
+
+    /**
+     * the value of the kind's LabelMember. "" if none
+     */
+    "label"?: string;
+
+    /**
+     * the entry mode written before the name: REPLACE, INJECT. "" if none
+     */
+    "mode"?: string;
+
+    /**
+     * saved_scopes only: the scope type at the save site
+     */
+    "scopeType"?: string;
+
+    /**
+     * index into Index.Files; -1 once the file that held it was dropped
+     */
+    "file": number;
+    "line": number;
+    "col": number;
+    "At": source$0.File;
+    "template": string;
 }
 
 /**
@@ -82,9 +249,41 @@ export interface GameInstall {
     "path": string;
     "version": string;
     "versionDetected": string;
+
+    /**
+     * derived by ListGameInstalls; whatever is on disk is ignored
+     */
     "isBroken": boolean;
     "createdAt": string;
     "scannedAt"?: string;
+}
+
+/**
+ * Health is the report.
+ */
+export interface Health {
+    "contests": Contest[] | null;
+    "depends": Dependency[] | null;
+    "dangling": Dangling[] | null;
+    "danglingCount": number;
+    "loc": Language[] | null;
+    "files": FileRow[] | null;
+    "filesCount": number;
+}
+
+/**
+ * HealthParams is what the page asks for: the load order to preview, and how many rows of each list it draws.
+ */
+export interface HealthParams {
+    /**
+     * mod ids in the order to judge; empty for the workspace's own
+     */
+    "order": string[] | null;
+
+    /**
+     * rows per list; 0 for all
+     */
+    "limit": number;
 }
 
 /**
@@ -112,6 +311,31 @@ export interface IdeRoots {
 }
 
 /**
+ * Language is one language's localization gaps.
+ */
+export interface Language {
+    "language": string;
+
+    /**
+     * a definition's conventional key, absent
+     */
+    "missing": LocRow[] | null;
+
+    /**
+     * a mod key english has and this language lacks
+     */
+    "untranslated": LocRow[] | null;
+
+    /**
+     * a mod key nothing of its mod reads
+     */
+    "orphaned": LocRow[] | null;
+    "missingCount": number;
+    "untranslatedCount": number;
+    "orphanedCount": number;
+}
+
+/**
  * LanguageHealth is what the health strip shows: whether the session is live, what the install's cache holds, and whether the dumps are there.
  */
 export interface LanguageHealth {
@@ -122,7 +346,7 @@ export interface LanguageHealth {
     "gameVersion": string;
 
     /**
-     * no cache for the install, or one of another format
+     * no cache for the install, or one older than the game
      */
     "cacheStale": boolean;
     "scannedAt": string;
@@ -153,7 +377,7 @@ export interface Listing {
     "tags": string[] | null;
     "thumbnailRel": string;
     "thumbnailAbs": string;
-    "previews": WorkshopPreview[] | null;
+    "previews": steam$0.Preview[] | null;
     "remoteFileId": string;
     "shortDescription": string;
     "readmeMd": string;
@@ -164,6 +388,86 @@ export interface Listing {
     "descBbRel": string;
     "workshopIgnore": string;
     "workshopUrl": string;
+}
+
+/**
+ * LocRow is one key and, where it has one, the definition or the file it belongs to.
+ */
+export interface LocRow {
+    "key": string;
+    "kind"?: string;
+    "name"?: string;
+    "origin": string;
+    "at": source$0.File;
+    "line": number;
+}
+
+/**
+ * Lookup is one localization key: every entry of it the workspace loads, and everything that reads it.
+ */
+export interface Lookup {
+    "key": string;
+    "entries": index$0.Said[] | null;
+    "readers": index$0.Cited[] | null;
+}
+
+/**
+ * Node is one definition drawn, or a stub standing for what is hidden.
+ */
+export interface Node {
+    "id": string;
+    "kind": string;
+    "namespace"?: string;
+    "title"?: string;
+    "origin"?: string;
+    "rel"?: string;
+    "line": number;
+    "root"?: boolean;
+
+    /**
+     * "more": hidden fires out of Hidden's node; "fired-by": hidden callers
+     */
+    "stub"?: string;
+    "hidden"?: number;
+}
+
+/**
+ * Option is one option block of an event: its name key and the text that key has.
+ */
+export interface Option {
+    "name": string;
+    "text"?: string;
+    "line": number;
+}
+
+/**
+ * Params is what the page asks for. Every number is the page's.
+ */
+export interface Params {
+    /**
+     * the definition to draw around
+     */
+    "root": string;
+
+    /**
+     * hops out of the root
+     */
+    "depth": number;
+
+    /**
+     * edges drawn out of one node before the rest are a stub
+     */
+    "fanout": number;
+
+    /**
+     * nodes drawn before the graph is marked truncated
+     */
+    "maxNodes": number;
+
+    /**
+     * stubs the page opened: more:<id>, more-in:<id>
+     */
+    "expand": string[] | null;
 }
 
 /**
@@ -178,13 +482,22 @@ export interface PathStat {
 }
 
 /**
- * PublishResult is the Steam helper outcome plus the saved listing on success.
+ * PublishResult is Steam's answer plus the listing saved with the item's id.
  */
 export interface PublishResult {
     "publishedFileId": string;
     "needsLegalAgreement": boolean;
     "legalUrl"?: string;
     "listing"?: Listing | null;
+}
+
+/**
+ * Section is one key at the top of the definition's block, with its value where that is one word.
+ */
+export interface Section {
+    "key": string;
+    "value"?: string;
+    "line": number;
 }
 
 /**
@@ -229,16 +542,6 @@ export interface TextSearchResult {
 }
 
 /**
- * WorkshopPreview is one extra Workshop image or YouTube id on the listing.
- */
-export interface WorkshopPreview {
-    "rel": string;
-    "abs": string;
-    "kind": string;
-    "id": string;
-}
-
-/**
  * Workspace is a user-defined mod working environment tied to a game.
  */
 export interface Workspace {
@@ -270,14 +573,20 @@ export interface WorkspaceMod {
     "descMdRel"?: string;
     "descBbRel"?: string;
     "workshopIgnore"?: string;
+
+    /**
+     * derived by markBroken; whatever is on disk is ignored
+     */
     "isBroken": boolean;
     "createdAt": string;
 
     /**
-     * Era and EpochOffset declare the calendar this mod's dates are written in.
-     * Not derivable — nothing in a mod states the offset — so a person sets it
-     * once, and with nothing set every date reads exactly as written.
+     * the calendar this mod's dates are written in: nothing in a mod states it, so a person sets it once
      */
     "era"?: string;
+
+    /**
+     * with Era; nothing set leaves every date exactly as written
+     */
     "epochOffset"?: number;
 }

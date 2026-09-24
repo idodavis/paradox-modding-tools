@@ -5,9 +5,8 @@ vars:
   BIN_DIR: "bin"
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
   VITE_PORT: "{{.WAILS_VITE_PORT | default 9245}}"
-  # Target OS for build/package/run. Defaults to the host OS, and is overridden
-  # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
-  # tasks below dispatch to the matching platform Taskfile via this variable.
+  # Target OS for build/package/run, and the platform Taskfile the tasks below dispatch to: the
+  # host OS unless `wails3 build GOOS=...` or the GOOS env var sets it for cross-compilation.
   GOOS: "{{.GOOS | default OS}}"
 
 includes:
@@ -49,8 +48,6 @@ tasks:
 
   dev:
     summary: Runs the application in development mode
-    deps:
-      - task: common:build:steamugc
     cmds:
       - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
 
@@ -83,10 +80,8 @@ tasks:
     summary: Fast backend tests. Skips the real-install tier.
     dir: services
     cmds:
-      # -timeout 60s is the contract, not a safety net: a test that needs longer
-      # than a minute belongs behind an opt-in task, not in the loop a developer
-      # runs on every change. If this starts failing, move the test — do not
-      # raise the number.
+      # -timeout 60s is the contract: a test that needs longer belongs behind an opt-in task, so
+      # move the test, do not raise the number
       - go test -short -timeout 60s ./...
 
   test:race:
@@ -123,8 +118,7 @@ tasks:
       PMT_INDEX_GATE: 1
       PMT_VANILLA_GATE: 1
     cmds:
-      # Not 60s. That contract governs `task test`, the loop run on every
-      # change; each gate here scans three real installs.
+      # not 60s: each gate here scans three real installs
       - go test -count=1 -timeout 1800s ./...
 
   test:full:
@@ -145,4 +139,4 @@ tasks:
     env:
       PMT_TEST_SWEEP: 1
     cmds:
-      - go test -tags probe -count=1 -v -run TestSweep -timeout 60m ./internal/views/
+      - go test -tags sweep -count=1 -v -run TestSweep -timeout 60m .

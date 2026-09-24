@@ -15,7 +15,7 @@ import (
 // Template is one loc-key shape a kind uses: "{id}", "{id}_desc", "rule_{id}", "{id}_adj".
 type Template string
 
-// baseTemplates are tried for every kind; its block members and the install's own prefixes add more.
+// baseTemplates are tried for every kind; its block members and the install's prefixes add more.
 var baseTemplates = []Template{"{id}", "{id}_desc"}
 
 // Convention is one template a kind's defs are localized with, and how often.
@@ -24,7 +24,7 @@ type Convention struct {
 	Coverage float64  `json:"coverage"` // share of vanilla defs of the kind that have this key
 }
 
-// Keys is the vanilla key set indexed once: exact lookup, and per suffix the prefixes seen before it.
+// Keys is the vanilla key set, indexed once: exact lookup, and per suffix the prefixes before it.
 type Keys struct {
 	has      map[string]bool
 	prefixes map[string][]string // suffix after an underscore -> prefixes that precede it
@@ -32,31 +32,40 @@ type Keys struct {
 
 // NewKeys indexes the key set in one pass.
 func NewKeys(keys map[string]bool) *Keys {
-	k := &Keys{has: keys, prefixes: make(map[string][]string, len(keys))}
+	built := &Keys{has: keys, prefixes: make(map[string][]string, len(keys))}
 	for key := range keys {
 		for i := range len(key) {
 			if key[i] == '_' {
-				k.prefixes[key[i+1:]] = append(k.prefixes[key[i+1:]], key[:i])
+				built.prefixes[key[i+1:]] = append(built.prefixes[key[i+1:]], key[:i])
 			}
 		}
 	}
-	return k
+	return built
 }
 
 // PrefixesOf is every P for which `P_<id>` is a key.
-func (k *Keys) PrefixesOf(id string) []string {
-	if k == nil {
+func (keys *Keys) PrefixesOf(id string) []string {
+	if keys == nil {
 		return nil
 	}
-	return k.prefixes[id]
+	return keys.prefixes[id]
 }
 
 // Has reports an exact key.
-func (k *Keys) Has(key string) bool { return k != nil && k.has[key] }
+func (keys *Keys) Has(key string) bool { return keys != nil && keys.has[key] }
 
-// render fills a template's {id} with the def id.
-func render(t Template, id string) string {
-	return strings.ReplaceAll(string(t), "{id}", id)
+// render fills a template's {id} with the def id into buf, which the caller reuses: Learn tests
+// every template against every id, and a string built per pair would be the whole cost.
+func render(buf []byte, template Template, id string) []byte {
+	buf, rest := buf[:0], string(template)
+	for {
+		at := strings.Index(rest, "{id}")
+		if at < 0 {
+			return append(buf, rest...)
+		}
+		buf = append(append(buf, rest[:at]...), id...)
+		rest = rest[at+len("{id}"):]
+	}
 }
 
 // Expand renders every template for one def id.
@@ -64,75 +73,78 @@ func Expand(id string, cs []Convention) []string {
 	if id == "" || len(cs) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(cs))
-	for _, c := range cs {
-		out = append(out, render(c.Template, id))
+	out, buf := make([]string, 0, len(cs)), []byte{}
+	for _, convention := range cs {
+		buf = render(buf, convention.Template, id)
+		out = append(out, string(buf))
 	}
 	return out
 }
 
-// Learn keeps the templates under which most of a kind's vanilla ids have a key, each with its exact coverage: `required-loc` demands coverage 1.0 and every other consumer reads the number too. A shape only one definition has is no convention, because a convention is what repeats.
+// Learn keeps the templates under which most of a kind's vanilla ids have a key, each with its
+// exact coverage (required-loc demands 1.0). A shape only one definition has is no convention.
 func Learn(ids []string, members []string, keys *Keys) []Convention {
 	if keys == nil {
 		return nil
 	}
 	var out []Convention
-	for _, t := range candidates(ids, members, keys) {
-		// a template that can no longer reach most ids is abandoned where it stands, which is exact and keeps CK3's ten million (template, id) pairs off the profile
+	buf := make([]byte, 0, 64)
+	for _, template := range candidates(ids, members, keys) {
+		// stop once the template cannot reach most ids: still exact, and most pairs go untested
 		hits := 0
 		for i, id := range ids {
-			if keys.Has(render(t, id)) {
+			if buf = render(buf, template, id); keys.has[string(buf)] {
 				hits++
 			} else if (hits+len(ids)-i-1)*2 <= len(ids) {
 				break
 			}
 		}
 		if hits > 1 && hits*2 > len(ids) {
-			out = append(out, Convention{Template: t, Coverage: float64(hits) / float64(len(ids))})
+			out = append(out, Convention{Template: template, Coverage: float64(hits) / float64(len(ids))})
 		}
 	}
 	// Best evidence first, then the plainest shape, so the first hit is the def's own name.
-	slices.SortFunc(out, func(a, b Convention) int {
-		if c := cmp.Compare(b.Coverage, a.Coverage); c != 0 {
-			return c
+	slices.SortFunc(out, func(first, second Convention) int {
+		if order := cmp.Compare(second.Coverage, first.Coverage); order != 0 {
+			return order
 		}
-		if c := cmp.Compare(len(a.Template), len(b.Template)); c != 0 {
-			return c
+		if order := cmp.Compare(len(first.Template), len(second.Template)); order != 0 {
+			return order
 		}
-		return strings.Compare(string(a.Template), string(b.Template))
+		return strings.Compare(string(first.Template), string(second.Template))
 	})
 	return out
 }
 
-// candidates is the base shapes, one literal template per block member, and one per prefix that precedes most ids.
+// candidates is the base shapes, one per block member, and one per prefix that precedes most ids.
 func candidates(ids, members []string, keys *Keys) []Template {
 	out := slices.Clone(baseTemplates)
-	add := func(t Template) {
-		if !slices.Contains(out, t) {
-			out = append(out, t)
+	add := func(template Template) {
+		if !slices.Contains(out, template) {
+			out = append(out, template)
 		}
 	}
-	for _, m := range members {
-		if m != "" {
-			add(Template("{id}_" + m))
+	for _, member := range members {
+		if member != "" {
+			add(Template("{id}_" + member))
 		}
 	}
 	// `P_<id>` reconstructs the key, so one id cannot be counted twice under one prefix.
 	counts := map[string]int{}
 	for _, id := range ids {
-		for _, p := range keys.PrefixesOf(id) {
-			counts[p]++
+		for _, prefix := range keys.PrefixesOf(id) {
+			counts[prefix]++
 		}
 	}
 	prefixes := make([]string, 0, len(counts))
-	for p, n := range counts {
-		if p != "" && n*2 > len(ids) {
-			prefixes = append(prefixes, p)
+	for prefix, count := range counts {
+		if prefix != "" && count*2 > len(ids) {
+			prefixes = append(prefixes, prefix)
 		}
 	}
 	slices.Sort(prefixes)
-	for _, p := range prefixes {
-		add(Template(p + "_{id}"))
+	for _, prefixe := range prefixes {
+		add(Template(prefixe + "_{id}"))
 	}
 	return out
 }

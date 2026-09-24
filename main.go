@@ -4,6 +4,7 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
 
 	"paradox-modding-tools/services"
 
@@ -18,31 +19,38 @@ var assets embed.FS
 var version = "dev"
 
 func main() {
-	store, err := services.OpenStore()
-	if err != nil {
-		log.Fatalf("store: %v", err)
+	if exitCode, served := services.ServeSteamPublish(); served {
+		os.Exit(exitCode)
 	}
 
+	configSvc, err := services.OpenConfig()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+	configSvc.Version = version
+
 	fileSvc := &services.FileService{}
-	sessSvc := &services.SessionService{Store: store}
-	settingsSvc := &services.SettingsService{Store: store, Session: sessSvc, Version: version}
-	workspaceSvc := &services.WorkspaceService{Store: store, Session: sessSvc}
-	ideSvc := &services.IdeService{Session: sessSvc, Settings: settingsSvc}
-	viewsSvc := &services.ViewsService{Session: sessSvc}
+	sessSvc := &services.SessionService{Config: configSvc}
+	configSvc.Session = sessSvc
+	workspaceSvc := &services.WorkspaceService{Config: configSvc, Session: sessSvc}
+	ideSvc := &services.IdeService{Session: sessSvc, Config: configSvc}
+	graphSvc := &services.EventGraphService{Session: sessSvc}
+	healthSvc := &services.HealthService{Session: sessSvc}
 	wikiSvc := &services.WikiService{Session: sessSvc}
 	searchSvc := &services.SearchService{}
-	releaseSvc := &services.ReleaseService{Store: store}
+	releaseSvc := &services.ReleaseService{Config: configSvc}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
 		Description: "Desktop tools for Paradox Interactive game modding",
 		Services: []application.Service{
-			application.NewService(settingsSvc),
+			application.NewService(configSvc),
 			application.NewService(fileSvc),
 			application.NewService(workspaceSvc),
 			application.NewService(sessSvc),
 			application.NewService(ideSvc),
-			application.NewService(viewsSvc),
+			application.NewService(graphSvc),
+			application.NewService(healthSvc),
 			application.NewService(wikiSvc),
 			application.NewService(searchSvc),
 			application.NewService(releaseSvc),
@@ -50,21 +58,15 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
 		},
-		// One instance per user. The config store reads config.json once at
-		// launch and every Mutate rewrites the whole file from that snapshot,
-		// with no mtime re-check and no lock — so two instances silently erase
-		// each other's installs, workspaces and settings. They also share one
-		// cache directory and one `config.json.tmp`. Double-clicking the icon
-		// twice is not an exotic path, so the fix belongs here rather than in
-		// per-write locking.
+		// one instance per user: each reads config.json once and rewrites it whole on every change,
+		// so two would erase each other's installs and workspaces
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.idodavis.paradox-modding-tools",
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
-				// Raise the window the user already has instead of exiting
-				// silently, which reads as "the app failed to start".
-				if w := application.Get().Window.Current(); w != nil {
-					w.Restore()
-					w.Focus()
+				// raise the existing window; exiting silently reads as a failed start
+				if window := application.Get().Window.Current(); window != nil {
+					window.Restore()
+					window.Focus()
 				}
 			},
 		},

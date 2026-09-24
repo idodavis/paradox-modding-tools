@@ -1,32 +1,28 @@
 package wiki
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestMain(m *testing.M) {
+func TestMain(tests *testing.M) {
 	minInterval = 0
-	os.Exit(m.Run())
+	os.Exit(tests.Run())
 }
 
 func forget(gameID string) {
 	memMu.Lock()
 	defer memMu.Unlock()
-	for _, k := range sidecarKinds {
-		delete(mem[k], gameID)
-	}
+	delete(mem, gameID)
 }
 
 func useTempCache(t *testing.T) {
@@ -43,210 +39,6 @@ func useTempCache(t *testing.T) {
 	})
 }
 
-func TestDenied(t *testing.T) {
-	t.Parallel()
-	mods := map[string]bool{"way of kings": true}
-	cases := []struct {
-		title string
-		ns    int
-		keep  bool
-	}{
-		{"Event modding", 0, true},
-		{"Way of Kings", 0, false},
-		{"Effects list", 0, false},
-		{"List of baronies", 0, false},
-		{"GUI script functions list", 0, false},
-		{"PDX DeepL", 0, false},
-		{"User:Foo", 0, false},
-		{"Talk:Event modding", 1, false},
-		{"Triggers", 0, true},
-	}
-	for _, c := range cases {
-		t.Run(c.title, func(t *testing.T) {
-			if got := keepMember(c.title, c.ns, mods); got != c.keep {
-				t.Fatalf("keepMember(%q ns=%d) = %v want %v", c.title, c.ns, got, c.keep)
-			}
-		})
-	}
-}
-
-func TestParseMajorMinor(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in       string
-		maj, min int
-		ok       bool
-	}{
-		{"1.19.6", 1, 19, true},
-		{"1.20", 1, 20, true},
-		{"latest", 0, 0, false},
-		{"", 0, 0, false},
-		{"dev", 0, 0, false},
-	}
-	for _, c := range cases {
-		maj, min, ok := ParseMajorMinor(c.in)
-		if maj != c.maj || min != c.min || ok != c.ok {
-			t.Errorf("ParseMajorMinor(%q) = %d %d %v want %d %d %v",
-				c.in, maj, min, ok, c.maj, c.min, c.ok)
-		}
-	}
-}
-
-func TestNeededHotfixVsMinor(t *testing.T) {
-	useTempCache(t)
-	h := header{GameID: "ck3", FetchedVersion: "1.19.6", FetchedMajor: 1, FetchedMinor: 19}
-	if err := saveGuides(&Sidecar{
-		header: h,
-		Pages:  []Page{{Title: "Event modding", HTML: "<p>x</p>", Revid: 1}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := savePatches(&Sidecar{header: h}); err != nil {
-		t.Fatal(err)
-	}
-	if Needed("ck3", "1.19.7") {
-		t.Fatal("hotfix should not recache")
-	}
-	if Needed("ck3", "1.19.6") {
-		t.Fatal("same version should not recache")
-	}
-	if !Needed("ck3", "1.20.0") {
-		t.Fatal("minor bump should recache")
-	}
-	if !Needed("ck3", "2.0") {
-		t.Fatal("major bump should recache")
-	}
-	if Needed("ck3", "latest") {
-		t.Fatal("unparseable should not be stale")
-	}
-	if Needed("ck3", "1.18.0") {
-		t.Fatal("older install should keep dump")
-	}
-}
-
-func TestNeededMissingPatches(t *testing.T) {
-	useTempCache(t)
-	if err := saveGuides(&Sidecar{
-		GameID: "ck3", FetchedVersion: "1.19.6", FetchedMajor: 1, FetchedMinor: 19,
-		Pages: []Page{{Title: "Event modding", HTML: "<p>x</p>", Revid: 1}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if !Needed("ck3", "1.19.6") {
-		t.Fatal("missing patches sidecar should refetch")
-	}
-}
-
-func TestForgetAllForcesNeeded(t *testing.T) {
-	useTempCache(t)
-	h := header{GameID: "ck3", FetchedVersion: "1.19.6", FetchedMajor: 1, FetchedMinor: 19}
-	if err := saveGuides(&Sidecar{
-		header: h,
-		Pages:  []Page{{Title: "Event modding", HTML: "<p>x</p>", Revid: 1}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := savePatches(&Sidecar{header: h}); err != nil {
-		t.Fatal(err)
-	}
-	if !HasSidecar("ck3") {
-		t.Fatal("want sidecar after save")
-	}
-	if Needed("ck3", "1.19.6") {
-		t.Fatal("same version should not recache")
-	}
-	dir, err := cacheDirFn()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatal(err)
-	}
-	if !HasSidecar("ck3") {
-		t.Fatal("RAM should still report sidecar before ForgetAll")
-	}
-	ForgetAll()
-	if HasSidecar("ck3") {
-		t.Fatal("want no sidecar after ForgetAll")
-	}
-	if !Needed("ck3", "1.19.6") {
-		t.Fatal("reset must force wiki fetch")
-	}
-}
-
-func TestSanitizeStripsJunk(t *testing.T) {
-	t.Parallel()
-	raw := `<div class="mw-parser-output">
-<div class="navbox">nav</div>
-<div class="thumb">pic</div>
-<span class="mw-editsection">[edit]</span>
-<img src="x.png"/>
-<p>Hello <a href="/wiki/Events">Events</a> <a href="#Location">here</a></p>
-<pre>namespace = foo</pre>
-</div>`
-	clean, snippets := sanitize(raw, "https://ck3.paradoxwikis.com/")
-	if strings.Contains(clean, "nav") || strings.Contains(clean, "pic") ||
-		strings.Contains(clean, "[edit]") || strings.Contains(clean, "<img") {
-		t.Fatalf("junk left: %s", clean)
-	}
-	if !strings.Contains(clean, "Hello") || !strings.Contains(clean, "https://ck3.paradoxwikis.com/Events") {
-		t.Fatalf("kept content missing: %s", clean)
-	}
-	if !strings.Contains(clean, `href="#Location"`) {
-		t.Fatalf("hash href stripped: %s", clean)
-	}
-	if len(snippets) != 1 || snippets[0] != "namespace = foo" {
-		t.Fatalf("snippets = %#v", snippets)
-	}
-}
-
-func TestExtractModding(t *testing.T) {
-	t.Parallel()
-	html := `<h2>Balance</h2><p>nerf</p><h2>User modding</h2><ul><li>renamed x to y</li></ul><h3>Script</h3><p>deeper</p><h2>Bugfixes</h2><p>crash</p>`
-	got := extractModding(html)
-	if !strings.Contains(got, "renamed") || !strings.Contains(got, "deeper") {
-		t.Fatalf("modding slice missing content: %s", got)
-	}
-	if strings.Contains(got, "nerf") || strings.Contains(got, "crash") {
-		t.Fatalf("modding slice leaked siblings: %s", got)
-	}
-}
-
-func TestLookupEventFile(t *testing.T) {
-	useTempCache(t)
-	if err := saveGuides(&Sidecar{
-		GameID: "ck3", FetchedMajor: 1, FetchedMinor: 16,
-		Pages: []Page{
-			{Title: "Event modding", HTML: `<h2 id="Effects">Effects</h2><p>events</p>`,
-				Snippets: []string{"namespace = x"}},
-			{Title: "Triggers", HTML: "<p>trig</p>"},
-			{Title: "Effects", HTML: "<p>eff</p>"},
-			{Title: "Scopes", HTML: "<p>sc</p>"},
-			{Title: "On actions", HTML: "<p>oa</p>"},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	pages := PagesFor("ck3", "event", "events/foo.txt")
-	if len(pages) < 3 {
-		t.Fatalf("pages = %#v want Event + related", pages)
-	}
-	if pages[0].Title != "Event modding" {
-		t.Fatalf("primary = %#v", pages[0])
-	}
-	if len(pages[0].Sections) != 1 || pages[0].Sections[0].Line != "Effects" {
-		t.Fatalf("sections = %#v", pages[0].Sections)
-	}
-	var titles []string
-	for _, p := range pages {
-		titles = append(titles, p.Title)
-	}
-	joined := strings.Join(titles, ",")
-	if !strings.Contains(joined, "Triggers") || !strings.Contains(joined, "Effects") {
-		t.Fatalf("related missing: %s", joined)
-	}
-}
-
 func TestLookupRouting(t *testing.T) {
 	lang := []Page{
 		{Title: "Triggers", HTML: "<p>trig</p>"},
@@ -257,7 +49,7 @@ func TestLookupRouting(t *testing.T) {
 	cases := []struct {
 		name, game, kind, rel, primary string
 		pages                          []Page
-		want, not                      []string
+		want, not, sections            []string
 	}{
 		{
 			name:    "events ignore Event targets",
@@ -266,12 +58,14 @@ func TestLookupRouting(t *testing.T) {
 			rel:     "events/foo.txt",
 			primary: "Event modding",
 			pages: append([]Page{
-				{Title: "Event modding", HTML: "<p>e</p>"},
+				{Title: "Event modding", HTML: `<h2 id="Effects">Effects</h2><p>events</p>`,
+					Sections: []Section{{TocLevel: 2, Line: "Effects", Anchor: "Effects"}}},
 				{Title: "Event targets", HTML: "<p>t</p>"},
 				{Title: "Modding", HTML: "<p>hub</p>"},
 			}, lang...),
-			want: []string{"Triggers", "Effects"},
-			not:  []string{"Event targets", "Modding"},
+			want:     []string{"Triggers", "Effects"},
+			not:      []string{"Event targets", "Modding"},
+			sections: []string{"Effects"},
 		},
 		{
 			name:    "eu5 vanilla events under in_game",
@@ -365,130 +159,170 @@ func TestLookupRouting(t *testing.T) {
 			},
 		},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
 			useTempCache(t)
-			if err := saveGuides(&Sidecar{
-				GameID: c.game, FetchedMajor: 1, FetchedMinor: 1,
-				Pages: c.pages,
-			}); err != nil {
+			if err := save(testCase.game, &Sidecar{Guides: testCase.pages}); err != nil {
 				t.Fatal(err)
 			}
-			got := PagesFor(c.game, c.kind, c.rel)
-			if c.primary == "" {
+			got := PagesFor(testCase.game, testCase.kind, testCase.rel)
+			if testCase.primary == "" {
 				if len(got) != 0 {
 					t.Fatalf("pages = %#v want empty", got)
 				}
 				return
 			}
-			if len(got) == 0 || got[0].Title != c.primary {
-				t.Fatalf("primary = %#v want %q", got, c.primary)
+			if len(got) == 0 || got[0].Title != testCase.primary {
+				t.Fatalf("primary = %#v want %q", got, testCase.primary)
+			}
+			if lines := sectionLines(got[0].Sections); !slices.Equal(lines, testCase.sections) {
+				t.Fatalf("sections = %v, want %v", lines, testCase.sections)
 			}
 			joined := ""
-			for _, p := range got {
-				joined += p.Title + ","
+			for _, page := range got {
+				joined += page.Title + ","
 			}
-			for _, w := range c.want {
-				if !strings.Contains(joined, w) {
-					t.Fatalf("missing %q in %s", w, joined)
+			for _, title := range testCase.want {
+				if !strings.Contains(joined, title) {
+					t.Fatalf("missing %q in %s", title, joined)
 				}
 			}
-			for _, n := range c.not {
-				if strings.Contains(joined, n) {
-					t.Fatalf("unexpected %q in %s", n, joined)
+			for _, unwanted := range testCase.not {
+				if strings.Contains(joined, unwanted) {
+					t.Fatalf("unexpected %q in %s", unwanted, joined)
 				}
 			}
 		})
 	}
 }
 
-func TestSanitizeDropsDumpTables(t *testing.T) {
+func TestClean(t *testing.T) {
 	t.Parallel()
 	var dump strings.Builder
-	dump.WriteString(`<div class="mw-parser-output"><p>intro</p><table>`)
+	dump.WriteString(`<p>intro</p><table>`)
 	for i := range 25 {
 		fmt.Fprintf(&dump, "<tr><td>dump%d</td></tr>", i)
 	}
-	dump.WriteString(`</table><table><tr><td>keep0</td></tr><tr><td>keep1</td></tr>` +
-		`<tr><td>keep2</td></tr></table></div>`)
-	clean, _ := sanitize(dump.String(), "https://example.com/")
-	if strings.Contains(clean, "dump0") || strings.Contains(clean, "dump24") {
-		t.Fatalf("dump table kept: %s", clean)
+	dump.WriteString(`</table><table><tr><td>keep0</td></tr><tr><td>keep1</td></tr><tr><td>keep2</td></tr></table>`)
+	cases := []struct {
+		name, body          string
+		want, not, sections []string
+		modding             []string
+	}{
+		{
+			name: "chrome",
+			body: `<div class="navbox">nav</div><div class="thumb">pic</div><img src="x.png"/>
+<p>Hello <a href="/Events">Events</a> <a href="#Location">here</a></p><pre>namespace = foo</pre>`,
+			want: []string{"Hello", `href="https://ck3.paradoxwikis.com/Events"`, `href="#Location"`, "namespace = foo"},
+			not:  []string{"nav", "pic", "<img"},
+		},
+		{name: "dump tables", body: dump.String(), want: []string{"intro", "keep0", "keep2"}, not: []string{"dump0", "dump24"}},
+		{
+			name:     "heading id",
+			body:     `<h2><span class="mw-headline" id="Effects">Effects</span></h2><p>body</p>`,
+			want:     []string{`id="Effects"`},
+			sections: []string{"Effects"},
+		},
+		{name: "sup", body: `<p>x<sup>2</sup></p>`, want: []string{"<sup>2</sup>"}},
+		{
+			name: "citations",
+			body: `<p>released<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+<h2>References</h2><ol class="references"><li id="cite_note-1">forum post</li></ol>`,
+			want: []string{"released"},
+			not:  []string{"[1]", "forum post", "cite_note", "References"},
+		},
+		{
+			name:     "top links",
+			body:     `<h2 id="Loc">Location</h2><a href="#top">[top]</a><p>here</p><a href="#Top_folders">Top folders</a>`,
+			want:     []string{"here", "Top folders"},
+			not:      []string{"[top]"},
+			sections: []string{"Location"},
+		},
+		{
+			name: "sections dropped and moved",
+			body: `<h2 id="Loc">Location</h2><p>a</p><h2 id="Tools">Scripting Tools</h2><p>vscode</p>
+<h2 id="See_also">See also</h2><ul><li>x</li></ul><h2 id="Refs">References</h2><ol><li>n</li></ol>
+<h2 id="Ext">External links</h2><ul><li>y</li></ul>`,
+			not:      []string{"See also", "References", "External links"},
+			sections: []string{"Location", "Scripting Tools"},
+		},
+		{
+			name: "modding",
+			body: `<h2>Balance</h2><p>nerf</p><h2>User modding</h2><ul><li>renamed x to y</li></ul>
+<h3>Script</h3><p>deeper</p><h2>Bugfixes</h2><p>crash</p>`,
+			sections: []string{"Balance", "User modding", "Script", "Bugfixes"},
+			modding:  []string{"User modding", "Script"},
+		},
 	}
-	if !strings.Contains(clean, "intro") || !strings.Contains(clean, "keep0") ||
-		!strings.Contains(clean, "keep2") {
-		t.Fatalf("kept content missing: %s", clean)
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			page, sections, modding, moddingSections := clean(`<div class="mw-parser-output">`+testCase.body+`</div>`, "https://ck3.paradoxwikis.com/")
+			for _, text := range testCase.want {
+				if !strings.Contains(page, text) {
+					t.Errorf("%q missing: %s", text, page)
+				}
+			}
+			for _, text := range testCase.not {
+				if strings.Contains(page, text) {
+					t.Errorf("%q left: %s", text, page)
+				}
+			}
+			if lines := sectionLines(sections); !slices.Equal(lines, testCase.sections) {
+				t.Errorf("sections = %v, want %v", lines, testCase.sections)
+			}
+			if lines := sectionLines(moddingSections); !slices.Equal(lines, testCase.modding) {
+				t.Errorf("modding sections = %v, want %v", lines, testCase.modding)
+			}
+			if testCase.modding != nil && (!strings.Contains(modding, "deeper") || strings.Contains(modding, "nerf") || strings.Contains(modding, "crash")) {
+				t.Errorf("modding = %s", modding)
+			}
+		})
 	}
 }
 
-func TestFormatMismatchEmpty(t *testing.T) {
-	useTempCache(t)
-	path, err := sidecarPath(kindGuides, "ck3")
-	if err != nil {
-		t.Fatal(err)
+func sectionLines(sections []Section) []string {
+	var lines []string
+	for _, section := range sections {
+		lines = append(lines, section.Line)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{"formatVersion":99,"gameId":"ck3"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if HasSidecar("ck3") {
-		t.Fatal("mismatch should not count as present")
-	}
-	if PagesFor("ck3", "event", "events/foo.txt") != nil {
-		t.Fatal("mismatch lookup should be empty")
-	}
+	return lines
 }
 
 type wikiMock struct {
-	parses atomic.Int32
-	revid  int
+	parses    atomic.Int32
+	revid     int
+	challenge bool // answer every request with an HTML challenge page
 }
 
-func (m *wikiMock) handler() http.Handler {
-	if m.revid == 0 {
-		m.revid = 10
+func (wikiMock *wikiMock) handler() http.Handler {
+	if wikiMock.revid == 0 {
+		wikiMock.revid = 10
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		w.Header().Set("Content-Type", "application/json")
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		query := request.URL.Query()
+		writer.Header().Set("Content-Type", "application/json")
 		switch {
-		case q.Get("list") == "categorymembers":
-			cat := q.Get("cmtitle")
-			var members []map[string]any
-			switch cat {
-			case "Category:Mods":
-				members = []map[string]any{{"pageid": 9, "ns": 0, "title": "Way of Kings"}}
-			case "Category:Modding":
-				members = []map[string]any{
-					{"pageid": 1, "ns": 0, "title": "Event modding"},
-					{"pageid": 2, "ns": 0, "title": "Triggers"},
-					{"pageid": 3, "ns": 0, "title": "Effects list"},
-					{"pageid": 9, "ns": 0, "title": "Way of Kings"},
-				}
-			case "Category:Patches":
-				members = []map[string]any{
-					{"pageid": 4, "ns": 0, "title": "Patch 1.16"},
-				}
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"query": map[string]any{"categorymembers": members},
-			})
-		case q.Get("prop") == "info":
-			titles := strings.Split(q.Get("titles"), "|")
+		case wikiMock.challenge:
+			writer.Header().Set("Content-Type", "text/html")
+			writer.WriteHeader(http.StatusOK)
+			_, _ = writer.Write([]byte("<!DOCTYPE html><html><body>Just a moment...</body></html>"))
+		case query.Get("generator") == "categorymembers":
+			titles := map[string][]string{
+				"Category:Mods": {"Way of Kings"},
+				"Category:Modding": {"Event modding", "Triggers", "Effects list", "Way of Kings",
+					"List of baronies", "GUI script functions list", "PDX DeepL", "User:Foo"},
+				"Category:Patches": {"Patch 1.16"},
+			}[query.Get("gcmtitle")]
 			var pages []map[string]any
-			for i, title := range titles {
-				pages = append(pages, map[string]any{
-					"pageid": i + 1, "title": title, "lastrevid": m.revid,
-				})
+			for _, title := range titles {
+				pages = append(pages, map[string]any{"title": title, "lastrevid": wikiMock.revid})
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(writer).Encode(map[string]any{
 				"query": map[string]any{"pages": pages},
 			})
-		case q.Get("action") == "parse":
-			m.parses.Add(1)
-			title := q.Get("page")
+		case query.Get("action") == "parse":
+			wikiMock.parses.Add(1)
+			title := query.Get("page")
 			html := fmt.Sprintf(
 				`<div class="mw-parser-output"><p>%s body</p><pre>foo_bar = {}</pre></div>`,
 				title,
@@ -498,14 +332,13 @@ func (m *wikiMock) handler() http.Handler {
 					`<h2>User modding</h2><ul><li>renamed ` + "`ai_war_chest`" + ` to ` + "`ai_war_gold`" + `</li></ul>` +
 					`<h2>Bugfixes</h2><p>crash</p></div>`
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(writer).Encode(map[string]any{
 				"parse": map[string]any{
-					"title": title, "revid": m.revid, "text": html,
-					"sections": []map[string]any{},
+					"title": title, "revid": wikiMock.revid, "text": html,
 				},
 			})
 		default:
-			http.Error(w, "unexpected "+r.URL.RawQuery, 400)
+			http.Error(writer, "unexpected "+request.URL.RawQuery, 400)
 		}
 	})
 }
@@ -517,7 +350,7 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 	t.Cleanup(srv.Close)
 	apiOverride = srv.URL
 
-	if err := RefreshIfNeeded(context.Background(), "ck3", "1.16.0", nil); err != nil {
+	if err := Refresh(t.Context(), "ck3"); err != nil {
 		t.Fatal(err)
 	}
 	first := mock.parses.Load()
@@ -528,11 +361,39 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 	if len(pages) == 0 || pages[0].Title != "Event modding" {
 		t.Fatalf("lookup after refresh: %#v", pages)
 	}
-	for _, p := range pages {
-		if p.Title == "Effects list" || p.Title == "Way of Kings" {
-			t.Fatalf("denied page kept: %s", p.Title)
+	for _, page := range pages {
+		if page.Title == "Effects list" || page.Title == "Way of Kings" {
+			t.Fatalf("denied page kept: %s", page.Title)
 		}
 	}
+
+	// the title filter: saved guides keep the modding pages and drop mods, lists, tools, user pages
+	sidecar, err := load("ck3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved []string
+	for _, page := range sidecar.Guides {
+		saved = append(saved, page.Title)
+	}
+	for _, testCase := range []struct {
+		title string
+		keep  bool
+	}{
+		{"Event modding", true},
+		{"Way of Kings", false},
+		{"Effects list", false},
+		{"List of baronies", false},
+		{"GUI script functions list", false},
+		{"PDX DeepL", false},
+		{"User:Foo", false},
+		{"Triggers", true},
+	} {
+		if slices.Contains(saved, testCase.title) != testCase.keep {
+			t.Errorf("%q saved = %v want %v", testCase.title, !testCase.keep, testCase.keep)
+		}
+	}
+
 	patch := PatchByVersion("ck3", "1.16")
 	if patch == nil || !patch.HasModding || !strings.Contains(patch.ModdingHTML, "ai_war_chest") {
 		t.Fatalf("patch modding: %#v", patch)
@@ -541,37 +402,39 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 		t.Fatalf("modding leaked bugfixes: %s", patch.ModdingHTML)
 	}
 
-	if Needed("ck3", "1.16.1") {
-		t.Fatal("hotfix must not need fetch")
-	}
-	if err := RefreshIfNeeded(context.Background(), "ck3", "1.16.1", nil); err != nil {
+	if err := Refresh(t.Context(), "ck3"); err != nil {
 		t.Fatal(err)
 	}
-	if mock.parses.Load() != first {
-		t.Fatalf("hotfix scan issued parse calls: %d -> %d", first, mock.parses.Load())
-	}
-
-	RefreshExisting(context.Background(), nil)
 	if mock.parses.Load() != first {
 		t.Fatalf("unchanged revid issued parse: %d -> %d", first, mock.parses.Load())
 	}
 
 	mock.revid = 99
-	RefreshExisting(context.Background(), nil)
+	if err := Refresh(t.Context(), "ck3"); err != nil {
+		t.Fatal(err)
+	}
 	if mock.parses.Load() <= first {
 		t.Fatal("revid change should re-parse")
 	}
-}
 
-func TestRefreshOfflineDoesNotSaveEmpty(t *testing.T) {
-	useTempCache(t)
-	apiOverride = "http://127.0.0.1:1"
-	err := RefreshIfNeeded(context.Background(), "ck3", "1.16", nil)
-	if err == nil {
+	// an HTML challenge page answered with 200 is an error that carries its text
+	mock.challenge = true
+	_, err = apiGet(t.Context(), srv.URL, url.Values{"action": {"query"}})
+	if err == nil || !strings.Contains(err.Error(), "wiki http 200") {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "Just a moment") {
+		t.Fatalf("want body snippet: %v", err)
+	}
+
+	// a dead server is an error, and the failed fetch saves nothing over the pages already kept
+	srv.Close()
+	if err := Refresh(t.Context(), "ck3"); err == nil {
 		t.Fatal("expected error")
 	}
-	if HasSidecar("ck3") {
-		t.Fatal("failed fetch must not write sidecar")
+	forget("ck3")
+	if pages := PagesFor("ck3", "event", "events/foo.txt"); len(pages) == 0 || pages[0].Title != "Event modding" {
+		t.Fatalf("failed fetch must not write sidecar: %#v", pages)
 	}
 }
 
@@ -579,20 +442,18 @@ func TestLiveCK3Refresh(t *testing.T) {
 	if os.Getenv("PMT_LIVE_WIKI") == "" {
 		t.Skip("set PMT_LIVE_WIKI=1")
 	}
+	useTempCache(t)
 	prev := minInterval
-	minInterval = 0
+	minInterval = time.Second
 	t.Cleanup(func() { minInterval = prev })
-	err := RefreshIfNeeded(context.Background(), "ck3", "1.19.0.6", func(done, total int, kind string) {
-		if done == 0 || done == total || done%20 == 0 {
-			t.Logf("%s %d/%d", kind, done, total)
-		}
-	})
-	if err != nil {
+	if err := Refresh(t.Context(), "ck3"); err != nil {
 		t.Fatal(err)
 	}
-	if !HasSidecar("ck3") {
-		t.Fatal("expected ck3 sidecar after live refresh")
+	sidecar, err := load("ck3")
+	if err != nil || len(sidecar.Guides) == 0 || len(sidecar.Patches) == 0 {
+		t.Fatalf("live refresh saved %v, %v", sidecar, err)
 	}
+	t.Logf("%d guides, %d patch notes", len(sidecar.Guides), len(sidecar.Patches))
 }
 
 func TestWikiClientDisablesHTTP2(t *testing.T) {
@@ -609,201 +470,5 @@ func TestWikiClientDisablesHTTP2(t *testing.T) {
 	if tr.TLSClientConfig == nil || len(tr.TLSClientConfig.NextProtos) != 1 ||
 		tr.TLSClientConfig.NextProtos[0] != "http/1.1" {
 		t.Fatalf("TLS NextProtos = %v", tr.TLSClientConfig)
-	}
-}
-
-func TestAPIGetHTML200(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("<!DOCTYPE html><html><body>Just a moment...</body></html>"))
-	}))
-	t.Cleanup(srv.Close)
-	_, err := apiGet(context.Background(), srv.URL, url.Values{"action": {"query"}})
-	if err == nil || !strings.Contains(err.Error(), "wiki http 200") {
-		t.Fatalf("err = %v", err)
-	}
-	if !strings.Contains(err.Error(), "Just a moment") {
-		t.Fatalf("want body snippet: %v", err)
-	}
-}
-
-func TestThrottleCancel(t *testing.T) {
-	prevI := minInterval
-	minInterval = time.Hour
-	lastMu.Lock()
-	lastCall = time.Now()
-	lastMu.Unlock()
-	t.Cleanup(func() {
-		minInterval = prevI
-		lastMu.Lock()
-		lastCall = time.Time{}
-		lastMu.Unlock()
-	})
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		cancel()
-	}()
-	start := time.Now()
-	err := throttle(ctx)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v", err)
-	}
-	if time.Since(start) > 2*time.Second {
-		t.Fatal("throttle did not cancel promptly")
-	}
-}
-
-func TestSanitizeHeadingID(t *testing.T) {
-	t.Parallel()
-	raw := `<div class="mw-parser-output">
-<h2><span class="mw-headline" id="Effects">Effects</span></h2>
-<p>body</p>
-</div>`
-	clean, _ := sanitize(raw, "https://ck3.paradoxwikis.com/")
-	if !strings.Contains(clean, `id="Effects"`) {
-		t.Fatalf("heading lost id: %s", clean)
-	}
-}
-
-func TestSanitizeDropsTocTree(t *testing.T) {
-	t.Parallel()
-	raw := `<div class="mw-parser-output">
-<div id="toc" class="toc"><h2>Contents</h2><ol><li>1 Location</li></ol></div>
-<h2 id="Location">Location</h2><p>here</p>
-</div>`
-	clean, _ := sanitize(raw, "https://ck3.paradoxwikis.com/")
-	if strings.Contains(clean, "Contents") || strings.Contains(clean, "1 Location") {
-		t.Fatalf("toc left: %s", clean)
-	}
-	if !strings.Contains(clean, "Location") || !strings.Contains(clean, "here") {
-		t.Fatalf("body missing: %s", clean)
-	}
-}
-
-func TestSanitizeKeepsSup(t *testing.T) {
-	t.Parallel()
-	raw := `<div class="mw-parser-output"><p>x<sup>2</sup></p></div>`
-	clean, _ := sanitize(raw, "https://ck3.paradoxwikis.com/")
-	if !strings.Contains(clean, "<sup>") || !strings.Contains(clean, "2") {
-		t.Fatalf("sup lost: %s", clean)
-	}
-}
-
-func TestSanitizeDropsCitations(t *testing.T) {
-	t.Parallel()
-	raw := `<div class="mw-parser-output">
-<p>released<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
-<h2>References</h2>
-<ol class="references"><li id="cite_note-1">forum post</li></ol>
-</div>`
-	clean, _ := sanitize(raw, "https://ck3.paradoxwikis.com/")
-	for _, junk := range []string{"[1]", "forum post", "cite_note", "References"} {
-		if strings.Contains(clean, junk) {
-			t.Fatalf("%s left: %s", junk, clean)
-		}
-	}
-	if !strings.Contains(clean, "released") {
-		t.Fatalf("body missing: %s", clean)
-	}
-}
-
-func TestReshapeDropsCiteAnchors(t *testing.T) {
-	t.Parallel()
-	html := `<p>released<sup><a href="https://ck3.paradoxwikis.com/Patch#cite_note-1">[1]</a></sup></p>`
-	got, _ := reshape(html)
-	if strings.Contains(got, "[1]") || strings.Contains(got, "cite_note") {
-		t.Fatalf("cite left: %s", got)
-	}
-	if !strings.Contains(got, "released") {
-		t.Fatalf("body missing: %s", got)
-	}
-}
-
-func TestSanitizeDropsTopLinks(t *testing.T) {
-	t.Parallel()
-	raw := `<div class="mw-parser-output">
-<h2 id="Loc">Location</h2><a href="#top">[top]</a><p>here</p>
-<a href="#Top_folders">Top folders</a>
-</div>`
-	clean, _ := sanitize(raw, "https://ck3.paradoxwikis.com/")
-	if strings.Contains(clean, "[top]") {
-		t.Fatalf("top left: %s", clean)
-	}
-	if !strings.Contains(clean, "here") || !strings.Contains(clean, "Top folders") {
-		t.Fatalf("body missing: %s", clean)
-	}
-}
-
-func TestReshapeDropsTopLinks(t *testing.T) {
-	t.Parallel()
-	html := `<h2 id="Loc">Location</h2><a>[top]</a><p>here</p><a href="#top">Return to top</a>`
-	got, _ := reshape(html)
-	if strings.Contains(got, "[top]") || strings.Contains(got, "Return to top") {
-		t.Fatalf("top left: %s", got)
-	}
-	if !strings.Contains(got, "here") {
-		t.Fatalf("body missing: %s", got)
-	}
-}
-
-func TestReshapeDropsBareCiteMarks(t *testing.T) {
-	t.Parallel()
-	html := `<p>released on 2026-04-23<a>[1]</a>.</p>`
-	got, _ := reshape(html)
-	if strings.Contains(got, "[1]") || strings.Contains(got, "<a>") {
-		t.Fatalf("cite left: %s", got)
-	}
-	if !strings.Contains(got, "released") {
-		t.Fatalf("body missing: %s", got)
-	}
-}
-
-func TestReshapeMovesAndDrops(t *testing.T) {
-	t.Parallel()
-	html := `<h2 id="Loc">Location</h2><p>a</p>
-<h2 id="Tools">Scripting Tools</h2><p>vscode</p>
-<h2 id="See_also">See also</h2><ul><li>x</li></ul>
-<h2 id="Refs">References</h2><ol><li>n</li></ol>
-<h2 id="Ext">External links</h2><ul><li>y</li></ul>`
-	got, secs := reshape(html)
-	for _, junk := range []string{"See also", "References", "External links"} {
-		if strings.Contains(got, junk) {
-			t.Fatalf("%s left: %s", junk, got)
-		}
-	}
-	loc := strings.Index(got, "Location")
-	tools := strings.Index(got, "Scripting Tools")
-	if loc < 0 || tools < 0 || tools < loc {
-		t.Fatalf("order: %s", got)
-	}
-	if len(secs) != 2 || secs[0].Line != "Location" || secs[1].Line != "Scripting Tools" {
-		t.Fatalf("sections = %#v", secs)
-	}
-}
-
-func TestServeTimeReshape(t *testing.T) {
-	useTempCache(t)
-	if err := saveGuides(&Sidecar{
-		GameID: "ck3", FetchedMajor: 1, FetchedMinor: 16,
-		Pages: []Page{{
-			Title: "Event modding",
-			HTML: `<h2>Contents</h2><ol><li>1 Location</li></ol>
-<h2 id="Location">Location</h2><p>here</p>
-<h2 id="See_also">See also</h2><ul><li>x</li></ul>`,
-		}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	pages := PagesFor("ck3", "event", "events/foo.txt")
-	if len(pages) == 0 {
-		t.Fatal("no pages")
-	}
-	if strings.Contains(pages[0].HTML, "Contents") || strings.Contains(pages[0].HTML, "See also") {
-		t.Fatalf("stale chrome left: %s", pages[0].HTML)
-	}
-	if len(pages[0].Sections) != 1 || pages[0].Sections[0].Line != "Location" {
-		t.Fatalf("sections = %#v", pages[0].Sections)
 	}
 }

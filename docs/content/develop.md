@@ -52,14 +52,9 @@ sudo apt-get install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-de
 
 `task build` on Linux uses `CGO_ENABLED=1`. If `gcc`/`clang` is missing, the Linux Taskfile tries Docker (`wails-cross`), which this repo does not pre-build in CI.
 
-## Steam SDK (Workshop in dev)
+## Steam Workshop in dev
 
-`task dev` and desktop builds run `common:build:steamugc`, which needs the Steamworks redistributable (decrypt or a local SDK zip):
-
-- CI uses `STEAMWORKS_GPG_PASSPHRASE` against `services/internal/steamugc/steamworks-165.tar.gpg`.
-- Locally you can set that env var, or place `steamworks_sdk_165.zip` where `scripts/fetch-steamapi.sh` looks (`STEAMWORKS_SDK_ZIP` / Downloads).
-
-Without the SDK, the app still runs; **Publish → Steam** will not have an embedded helper.
+Nothing to fetch: **Publish → Steam** runs a second copy of the app, which loads the game's own copy of Steam's library from its install (`binaries/steam_api64.dll`, or `binaries/libsteam_api.so` on Linux).
 
 ## Develop (hot reload)
 
@@ -130,7 +125,7 @@ cd frontend && npm run check
 | Path | Role |
 |------|------|
 | `main.go` | Wails entry, updater (`SHA256SUMS`), single window |
-| `services/` | Wails services + `internal/` (parser, catalog, session, lsp, views, wiki, release, steamugc) |
+| `services/` | Wails services only, + `internal/` (game, lang, local, lsp, session, steam, wiki) |
 | `frontend/` | Vue 3 + Nuxt UI + Pinia + monaco-vscode-api |
 | `docs/` | This site (Hugo). Content in `docs/content/` |
 | `build/` | Wails Taskfiles, icons, Windows `info.json` |

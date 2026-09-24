@@ -38,7 +38,7 @@ Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later
 
 | OS | Notes |
 |----|--------|
-| **Windows** 10 / 11 | amd64 zip; ARM64 zip (Steam helper is still amd64 under emulation). Needs WebView2. |
+| **Windows** 10 / 11 | amd64 zip; Windows on ARM runs it under x64 emulation. Needs WebView2. |
 | **Linux** amd64 | Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE, Gentoo — GTK4 + WebKitGTK 6. |
 | **macOS** | **Not supported.** |
 
@@ -49,10 +49,9 @@ Steam Deck, Flatpak, and AppImage are unsupported. See [limitations](https://ido
 [GitHub Releases](https://github.com/idodavis/paradox-modding-tools/releases) publish zips:
 
 - `paradox-modding-tools-windows-amd64.zip`
-- `paradox-modding-tools-windows-arm64.zip`
 - `paradox-modding-tools-linux-amd64.zip`
 
-plus a `SHA256SUMS` sidecar. Extract and run. Steam Workshop support is **embedded** and extracted at runtime.
+plus a `SHA256SUMS` sidecar. Extract and run. Steam Workshop publish uses the game's own copy of Steam's library, so nothing extra ships.
 
 In the app, the **footer version button** checks for updates against those zips. Steam client must be running to publish to Workshop.
 
@@ -75,7 +74,7 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
 
 Windows builds use `CGO_ENABLED=0`. Linux needs GTK4 + WebKitGTK 6 **dev** packages (e.g. Debian/Ubuntu: `build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev`).
 
-Workshop in `task dev` needs the Steamworks redistributable (`STEAMWORKS_GPG_PASSPHRASE` or a local SDK zip — see `scripts/fetch-steamapi.sh`).
+Workshop publish in `task dev` needs nothing extra: it loads the game's own copy of Steam's library.
 
 ### Commands
 

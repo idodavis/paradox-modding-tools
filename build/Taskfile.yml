@@ -72,11 +72,8 @@ tasks:
   build:frontend:
     label: build:frontend (DEV={{.DEV}} RUNNER={{.PACKAGE_MANAGER}})
     summary: Build the frontend project
-    # darwin:build:universal runs its per-arch builds as parallel deps, each of
-    # which depends on this task. Without run:once the two executions race:
-    # one regenerates frontend/bindings (-clean deletes it first) while the
-    # other's bundler is reading it, failing intermittently with
-    # 'Could not resolve "./bindings/<pkg>"' (#4637).
+    # darwin:build:universal runs its per-arch builds as parallel deps of this task; without
+    # run:once one regenerates frontend/bindings while the other's bundler reads it (#4637).
     run: once
     dir: frontend
     sources:
@@ -146,7 +143,7 @@ tasks:
       - |
         set -euo pipefail
         mkdir -p frontend/public/puppertino
-        # If bundled Puppertino exists, prefer it. Otherwise, try to fetch, but don't fail build on error.
+        # Prefer the bundled Puppertino; else fetch it, and never fail the build on a fetch error.
         if [ ! -f frontend/public/puppertino/puppertino.css ]; then
           echo "No bundled Puppertino found. Attempting to fetch from GitHub..."
           if curl -fsSL https://raw.githubusercontent.com/codedgar/Puppertino/main/dist/css/full.css -o frontend/public/puppertino/puppertino.css; then
@@ -187,26 +184,6 @@ tasks:
       - frontend/bindings/**/*
     cmds:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts -i
-
-  fetch:steamapi:
-    summary: Fills steamugc/sdk from the SDK zip or steamworks-165.tar.gpg
-    dir: '{{.ROOT_DIR}}'
-    cmds:
-      - bash ./scripts/fetch-steamapi.sh
-
-  build:steamugc:
-    summary: Builds pmt-steamugc and copies the GOOS Steam API lib into the embed dir
-    dir: '{{.ROOT_DIR}}'
-    deps:
-      - task: fetch:steamapi
-    vars:
-      TARGET_OS: '{{.GOOS | default OS}}'
-      TARGET_ARCH: '{{.ARCH | default .GOARCH | default ARCH}}'
-    env:
-      GOOS: '{{.TARGET_OS}}'
-      GOARCH: '{{.TARGET_ARCH}}'
-    cmds:
-      - bash ./scripts/build-steamugc.sh
 
   generate:icons:
     summary: Generates Windows `.ico` and Mac `.icns` from an image; on macOS, `-iconcomposerinput appicon.icon -macassetdir darwin` also produces `Assets.car` from a `.icon` file (skipped on other platforms).
@@ -303,10 +280,8 @@ tasks:
       For CGO apps, set CGO_ENABLED=1 with libc-compatible builder/runtime images, e.g.:
         task build:docker CGO_ENABLED=1 GO_IMAGE=golang:bookworm RUNTIME_IMAGE=gcr.io/distroless/base-debian12
     deps:
-      # Build the production frontend so frontend/dist (embedded by the Go build
-      # inside the image) is present and current in the Docker build context.
-      # Pass the server,production tags so binding generation analyses the same
-      # build the Docker image compiles, not the default-tag build.
+      # build the production frontend so the image embeds a current frontend/dist, with the
+      # server,production tags so the bindings match the build the image compiles
       - task: build:frontend
         vars:
           BUILD_FLAGS: "-tags server,production"

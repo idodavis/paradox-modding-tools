@@ -6,16 +6,17 @@ import (
 	"context"
 	"slices"
 
-	"paradox-modding-tools/services/internal/lang/session"
+	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/wiki"
 )
 
-// WikiService exposes wiki sidecars over Wails. Scan still refreshes in-process.
+// WikiService serves the wiki guides and patch notes.
 type WikiService struct {
 	Session *SessionService
 }
 
-// Guide returns Guide pane pages for the active file. A path under no root gives an empty guide, not an error.
+// Guide returns Guide pane pages for the active file. A path under no root gives an empty guide,
+// not an error.
 func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	sess, err := s.Session.live(workspaceID)
 	if err != nil {
@@ -31,7 +32,7 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	if len(place.Kinds) > 0 {
 		kind = place.Kinds[0].Name
 	}
-	if at := slices.IndexFunc(sess.Mods, func(m session.Mod) bool { return m.ID == place.Origin }); at >= 0 {
+	if at := slices.IndexFunc(sess.Mods, func(mod session.Mod) bool { return mod.ID == place.Origin }); at >= 0 {
 		name = sess.Mods[at].Name
 	}
 	return &wiki.Guide{
@@ -44,28 +45,26 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	}, nil
 }
 
-// StartWikiWarm fetches, in the background, the sidecar of every install's game where it is missing or older than the game's version, then refreshes the ones the app already has, so the guides are current without a click.
+// StartWikiWarm refreshes, in the background, the wiki pages of every installed game, so the
+// guides are current without a click.
 func (s *WikiService) StartWikiWarm() {
-	var installs []GameInstall
-	s.Session.Store.Read(func(c *Config) { installs = append(installs, c.Installs...) })
-	go func() {
-		for _, inst := range installs {
-			wiki.RefreshIfNeeded(context.Background(), inst.GameID, inst.Version, nil)
+	games := map[string]bool{}
+	s.Session.Config.read(func(cfg *Config) {
+		for _, inst := range cfg.Installs {
+			games[inst.GameID] = true
 		}
-		wiki.RefreshExisting(context.Background(), nil)
+	})
+	go func() {
+		for gameID := range games {
+			wiki.Refresh(context.Background(), gameID)
+		}
 	}()
-}
-
-// Status returns sidecar presence and counts for a game.
-func (s *WikiService) Status(gameID string) (*wiki.Status, error) {
-	st := wiki.StatusOf(gameID)
-	return &st, nil
 }
 
 // Patches returns the Patch Notes version list, newest first.
 func (s *WikiService) Patches(gameID string) (*wiki.PatchList, error) {
-	list := wiki.Patches(gameID)
-	return &list, nil
+	patches := wiki.Patches(gameID)
+	return &patches, nil
 }
 
 // PatchPage returns one patch notes body by title or version label.

@@ -1,16 +1,18 @@
-// ideservice.go is the Wails RPC shell for the editor: each request resolves the workspace's session and calls package lsp. The per-code diagnostic settings live in the ide settings namespace and are applied here, so a toggle takes effect on the next keystroke and the checks stay ignorant of it.
+// ideservice.go is the Wails RPC shell for the editor: each request resolves the workspace's
+// session and calls package lsp. The per-code diagnostic settings (ide.diag.<code>) are applied
+// here, so a toggle takes effect on the next keystroke and the checks stay ignorant of it.
 package services
 
 import (
 	"strings"
 
-	"paradox-modding-tools/services/internal/lang/lsp"
+	"paradox-modding-tools/services/internal/lsp"
 )
 
 // IdeService is the editor's RPCs.
 type IdeService struct {
-	Session  *SessionService
-	Settings *SettingsService
+	Session *SessionService
+	Config  *ConfigService
 }
 
 // DiagnosticCodes is every check a user may turn off, with its default.
@@ -21,13 +23,13 @@ func (s *IdeService) DiagnosticCodes() []lsp.Code {
 // enabled is the codes on for this user: the defaults, then the settings under ide.diag.<code>.
 func (s *IdeService) enabled() map[string]bool {
 	on := map[string]bool{}
-	for _, c := range lsp.Codes {
-		on[c.Code] = c.Default
+	for _, code := range lsp.Codes {
+		on[code.Code] = code.Default
 	}
-	if s.Settings == nil {
+	if s.Config == nil {
 		return on
 	}
-	settings, err := s.Settings.GetSettings()
+	settings, err := s.Config.GetSettings()
 	if err != nil {
 		return on
 	}

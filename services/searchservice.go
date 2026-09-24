@@ -6,11 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
-	"paradox-modding-tools/services/internal/source"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -19,14 +20,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// SearchService is the Wails RPC shell for Find in Files. FileService stays FS CRUD.
+// SearchService is the Wails RPC shell for Find in Files.
 type SearchService struct{}
 
 const (
 	searchMaxResults   = 10000
 	searchMaxFileBytes = 8 * 1024 * 1024
 	searchNulProbe     = 8 * 1024
-	searchConcurrency  = 4
 )
 
 // TextSearchFolder is one workspace folder plus optional glob filters.
@@ -92,56 +92,56 @@ func capResults(n int) int {
 	return n
 }
 
-func rgGlob(g string) string {
-	g = strings.TrimSpace(g)
-	if g == "" {
+func rgGlob(glob string) string {
+	glob = strings.TrimSpace(glob)
+	if glob == "" {
 		return ""
 	}
-	neg := strings.HasPrefix(g, "!")
+	neg := strings.HasPrefix(glob, "!")
 	if neg {
-		g = strings.TrimSpace(g[1:])
+		glob = strings.TrimSpace(glob[1:])
 	}
-	if g != "" && !strings.Contains(g, "**") {
-		g = "**/" + strings.TrimPrefix(g, "/")
+	if glob != "" && !strings.Contains(glob, "**") {
+		glob = "**/" + strings.TrimPrefix(glob, "/")
 	}
 	if neg {
-		return "!" + g
+		return "!" + glob
 	}
-	return g
+	return glob
 }
 
-func folderGlobs(f TextSearchFolder) []string {
+func folderGlobs(folder TextSearchFolder) []string {
 	seen := map[string]bool{}
 	var out []string
-	add := func(g string) {
-		g = rgGlob(g)
-		if g == "" || seen[g] {
+	add := func(glob string) {
+		glob = rgGlob(glob)
+		if glob == "" || seen[glob] {
 			return
 		}
-		seen[g] = true
-		out = append(out, g)
+		seen[glob] = true
+		out = append(out, glob)
 	}
-	for _, g := range f.Includes {
-		add(g)
+	for _, include := range folder.Includes {
+		add(include)
 	}
-	for _, g := range f.Excludes {
-		if strings.HasPrefix(g, "!") {
-			add(g)
+	for _, exclude := range folder.Excludes {
+		if strings.HasPrefix(exclude, "!") {
+			add(exclude)
 			continue
 		}
-		add("!" + g)
+		add("!" + exclude)
 	}
 	return out
 }
 
-func splitGlobs(all []string) globSet {
+func splitGlobs(globs []string) globSet {
 	var gs globSet
-	for _, g := range all {
-		if after, ok := strings.CutPrefix(g, "!"); ok {
+	for _, glob := range globs {
+		if after, ok := strings.CutPrefix(glob, "!"); ok {
 			gs.excludes = append(gs.excludes, after)
 			continue
 		}
-		gs.includes = append(gs.includes, g)
+		gs.includes = append(gs.includes, glob)
 	}
 	return gs
 }
@@ -189,33 +189,33 @@ func pathMatchesGlobs(rel string, gs globSet) bool {
 	return false
 }
 
-func byteToRune(s string, byteOff int) int {
+func byteToRune(text string, byteOff int) int {
 	if byteOff <= 0 {
 		return 0
 	}
-	if byteOff >= len(s) {
-		return utf8.RuneCountInString(s)
+	if byteOff >= len(text) {
+		return utf8.RuneCountInString(text)
 	}
-	return utf8.RuneCountInString(s[:byteOff])
+	return utf8.RuneCountInString(text[:byteOff])
 }
 
-func folderPath(f TextSearchFolder) string {
-	p := filepath.Clean(filepath.FromSlash(f.Path))
-	if p == "" || p == "." {
+func folderPath(folder TextSearchFolder) string {
+	path := filepath.Clean(filepath.FromSlash(folder.Path))
+	if path == "" || path == "." {
 		return ""
 	}
-	return p
+	return path
 }
 
-func compileSearchRegex(q TextSearchQuery) (*regexp.Regexp, error) {
-	pattern := q.Pattern
-	if !q.IsRegexp {
+func compileSearchRegex(query TextSearchQuery) (*regexp.Regexp, error) {
+	pattern := query.Pattern
+	if !query.IsRegexp {
 		pattern = regexp.QuoteMeta(pattern)
 	}
-	if q.IsWordMatch {
+	if query.IsWordMatch {
 		pattern = `\b(?:` + pattern + `)\b`
 	}
-	if !q.IsCaseSensitive {
+	if !query.IsCaseSensitive {
 		pattern = `(?i)` + pattern
 	}
 	return regexp.Compile(pattern)
@@ -231,17 +231,32 @@ func fileHasNUL(data []byte) bool {
 }
 
 func grepFile(path string, re *regexp.Regexp) ([]TextSearchHit, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > searchMaxFileBytes || fileHasNUL(data) {
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() == 0 || info.Size() > searchMaxFileBytes {
 		return nil, nil
 	}
-	text := string(data)
-	if len(text) == 0 {
+	// a NUL in the head marks the file binary and the rest is never read, which keeps a mod's meshes
+	// and images out of the search without listing extensions
+	head := make([]byte, min(int64(searchNulProbe), info.Size()))
+	if _, err := io.ReadFull(file, head); err != nil {
+		return nil, err
+	}
+	if fileHasNUL(head) {
 		return nil, nil
 	}
+	rest, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	text := string(append(head, rest...))
 	var hits []TextSearchHit
 	lineNo := 0
 	for len(text) > 0 {
@@ -266,27 +281,27 @@ func grepFile(path string, re *regexp.Regexp) ([]TextSearchHit, error) {
 }
 
 func textSearchFolder(
-	ctx context.Context, root string, gs globSet, re *regexp.Regexp, max int,
+	ctx context.Context, root string, gs globSet, re *regexp.Regexp, maxHits int,
 ) ([]TextSearchHit, bool, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var mu sync.Mutex
-	hits := make([]TextSearchHit, 0, min(max, 32))
+	hits := make([]TextSearchHit, 0, min(maxHits, 32))
 	limitHit := false
 
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(searchConcurrency)
+	group, gctx := errgroup.WithContext(ctx)
+	group.SetLimit(runtime.NumCPU())
 
-	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if gctx.Err() != nil {
 			return gctx.Err()
 		}
-		if d.IsDir() {
-			if skipSearchDir(d.Name(), true) {
+		if entry.IsDir() {
+			if skipSearchDir(entry.Name(), true) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -295,10 +310,7 @@ func textSearchFolder(
 		if err != nil || !pathMatchesGlobs(rel, gs) {
 			return nil
 		}
-		if f := source.Classify(filepath.ToSlash(rel)); f == source.Image || f == source.Opaque {
-			return nil
-		}
-		g.Go(func() error {
+		group.Go(func() error {
 			if gctx.Err() != nil {
 				return nil
 			}
@@ -308,19 +320,19 @@ func textSearchFolder(
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			for _, h := range fileHits {
-				if len(hits) >= max {
+			for _, fileHit := range fileHits {
+				if len(hits) >= maxHits {
 					limitHit = true
 					cancel()
 					return nil
 				}
-				hits = append(hits, h)
+				hits = append(hits, fileHit)
 			}
 			return nil
 		})
 		return nil
 	})
-	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+	if err := group.Wait(); err != nil && !errors.Is(err, context.Canceled) {
 		return hits, limitHit, err
 	}
 	if walkErr != nil && !errors.Is(walkErr, context.Canceled) {
@@ -330,28 +342,28 @@ func textSearchFolder(
 }
 
 // TextSearch walks workspace folders and greps file bodies in-process.
-func (s *SearchService) TextSearch(ctx context.Context, q TextSearchQuery) (TextSearchResult, error) {
-	if strings.TrimSpace(q.Pattern) == "" {
+func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (TextSearchResult, error) {
+	if strings.TrimSpace(query.Pattern) == "" {
 		return TextSearchResult{Hits: []TextSearchHit{}}, nil
 	}
-	re, err := compileSearchRegex(q)
+	re, err := compileSearchRegex(query)
 	if err != nil {
 		return TextSearchResult{}, fmt.Errorf("invalid pattern: %w", err)
 	}
-	max := capResults(q.MaxResults)
+	maxHits := capResults(query.MaxResults)
 	out := TextSearchResult{Hits: []TextSearchHit{}}
-	for _, folder := range q.Folders {
-		p := folderPath(folder)
-		if p == "" {
+	for _, folder := range query.Folders {
+		path := folderPath(folder)
+		if path == "" {
 			continue
 		}
-		remain := max - len(out.Hits)
+		remain := maxHits - len(out.Hits)
 		if remain <= 0 {
 			out.LimitHit = true
 			break
 		}
 		gs := splitGlobs(folderGlobs(folder))
-		hits, limit, err := textSearchFolder(ctx, p, gs, re, remain)
+		hits, limit, err := textSearchFolder(ctx, path, gs, re, remain)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return TextSearchResult{}, err
 		}
@@ -365,38 +377,38 @@ func (s *SearchService) TextSearch(ctx context.Context, q TextSearchQuery) (Text
 }
 
 // FileSearch lists files whose path contains FilePattern under workspace folders.
-func (s *SearchService) FileSearch(ctx context.Context, q FileSearchQuery) (FileSearchResult, error) {
-	max := capResults(q.MaxResults)
-	needle := strings.ToLower(strings.TrimSpace(q.FilePattern))
+func (s *SearchService) FileSearch(ctx context.Context, query FileSearchQuery) (FileSearchResult, error) {
+	maxHits := capResults(query.MaxResults)
+	needle := strings.ToLower(strings.TrimSpace(query.FilePattern))
 	out := FileSearchResult{Hits: []FileSearchHit{}}
-	for _, folder := range q.Folders {
-		p := folderPath(folder)
-		if p == "" {
+	for _, folder := range query.Folders {
+		root := folderPath(folder)
+		if root == "" {
 			continue
 		}
-		if len(out.Hits) >= max {
+		if len(out.Hits) >= maxHits {
 			out.LimitHit = true
 			break
 		}
 		gs := splitGlobs(folderGlobs(folder))
-		err := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
+		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if d.IsDir() {
-				if skipSearchDir(d.Name(), true) {
+			if entry.IsDir() {
+				if skipSearchDir(entry.Name(), true) {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			if len(out.Hits) >= max {
+			if len(out.Hits) >= maxHits {
 				out.LimitHit = true
 				return filepath.SkipAll
 			}
-			rel, err := filepath.Rel(p, path)
+			rel, err := filepath.Rel(root, path)
 			if err != nil || !pathMatchesGlobs(rel, gs) {
 				return nil
 			}

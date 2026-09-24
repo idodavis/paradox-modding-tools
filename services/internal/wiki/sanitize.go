@@ -15,7 +15,7 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-const dumpTableRows = 20
+const openTableRows = 2 // a table of more rows is kept folded
 
 var (
 	dropHead    = map[string]bool{"see also": true, "references": true, "external links": true, "further reading": true}
@@ -30,7 +30,7 @@ func init() {
 	for _, tag := range []atom.Atom{atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6, atom.P, atom.Br, atom.Hr,
 		atom.Blockquote, atom.Ul, atom.Ol, atom.Li, atom.Dl, atom.Dt, atom.Dd, atom.Table, atom.Thead, atom.Tbody,
 		atom.Tfoot, atom.Tr, atom.Th, atom.Td, atom.Caption, atom.Pre, atom.Code, atom.A, atom.Strong, atom.Em,
-		atom.B, atom.I, atom.Sup, atom.Sub, atom.Small} {
+		atom.B, atom.I, atom.Sup, atom.Sub, atom.Small, atom.Details, atom.Summary} {
 		allowed[tag] = true
 	}
 }
@@ -96,8 +96,8 @@ func clean(raw, base string) (page string, sections []Section, modding string, m
 }
 
 // copyAllowed appends a copy of in's children to out that keeps the allowed tags and attributes,
-// unwraps every other tag, and leaves out the wiki's chrome, dump-sized tables and empty
-// superscripts.
+// unwraps every other tag, and leaves out the wiki's chrome and empty superscripts. A table of more
+// than two rows is kept folded, closed, under a line that says how long it is.
 func copyAllowed(out, in *html.Node, wiki *url.URL) {
 	for child := range in.ChildNodes() {
 		switch {
@@ -113,25 +113,34 @@ func copyAllowed(out, in *html.Node, wiki *url.URL) {
 				continue
 			}
 			copyAllowed(kept, child, wiki)
-			if kept.DataAtom != atom.Sup || strings.TrimSpace(text(kept)) != "" {
+			rows := 0
+			if kept.DataAtom == atom.Table {
+				for descendant := range kept.Descendants() {
+					if descendant.DataAtom == atom.Tr {
+						rows++
+					}
+				}
+			}
+			switch {
+			case rows > openTableRows:
+				fold := &html.Node{Type: html.ElementNode, Data: "details", DataAtom: atom.Details}
+				summary := &html.Node{Type: html.ElementNode, Data: "summary", DataAtom: atom.Summary}
+				summary.AppendChild(&html.Node{Type: html.TextNode, Data: "Table, " + strconv.Itoa(rows) + " rows"})
+				fold.AppendChild(summary)
+				fold.AppendChild(kept)
+				out.AppendChild(fold)
+			case kept.DataAtom != atom.Sup || strings.TrimSpace(text(kept)) != "":
 				out.AppendChild(kept)
 			}
 		}
 	}
 }
 
-// chrome reports what a page keeps nowhere: the wiki's navigation, images, citations, the links
-// back to the top, and tables long enough to be data dumps.
+// chrome reports what a page keeps nowhere: the wiki's navigation, images, citations and the links
+// back to the top.
 func chrome(node *html.Node) bool {
-	id, rows := attr(node, "id"), 0
-	if node.DataAtom == atom.Table {
-		for descendant := range node.Descendants() {
-			if descendant.DataAtom == atom.Tr {
-				rows++
-			}
-		}
-	}
-	return dropTag[node.DataAtom] || rows >= dumpTableRows ||
+	id := attr(node, "id")
+	return dropTag[node.DataAtom] ||
 		slices.ContainsFunc(strings.Fields(attr(node, "class")), func(class string) bool { return dropClass[class] }) ||
 		strings.HasPrefix(id, "cite_note") || strings.HasPrefix(id, "cite_ref") ||
 		node.DataAtom == atom.A && strings.HasSuffix(attr(node, "href"), "#top")

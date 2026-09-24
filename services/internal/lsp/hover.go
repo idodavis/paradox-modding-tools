@@ -70,8 +70,13 @@ func (file *file) card(site *site) *Inspect {
 		if site.Level.Below != nil {
 			card.Class = site.Level.Below.Class.String()
 		}
+		// a body's field named like a link is the link where the dump lets it stand in this scope
+		// (owner = c:FRA in a state), and a field elsewhere (a message's title = some_key)
+		if link, ok := sess.Install.Vocab.Links[site.Text]; ok && site.Level.Field != nil && site.Level.Field.Class == schema.ClassBody && slices.Contains(link.In, site.Level.Scope) {
+			card.Docs, card.ScopeOut = link.Doc, link.Out
+		}
 	case schema.TypeRef:
-		file.defined(card, value)
+		file.defined(card, value, site.Path.Top)
 	case schema.TypeLoc:
 		if said, ok := sess.Loc(value.Name, ""); ok {
 			card.Label, card.Sites, card.Winner = said.Value, []Location{locate(said.At, said.Line, 0)}, 0
@@ -107,16 +112,32 @@ func (file *file) card(site *site) *Inspect {
 	if tagged, ok := file.colour(site); ok {
 		card.Color = tagged
 	}
+	if value.Type == schema.TypeUnresolved && card.Docs == "" && card.Color == "" {
+		return nil // a word nothing claims, with nothing known about it, has no card
+	}
 	return card
 }
 
 // defined fills a definition's sites in load order, the kept one, its label and the comment above.
-func (file *file) defined(card *Inspect, value schema.Value) {
+// A name a script makes is saved, not defined: its sites are the saves in top, the definition the
+// cursor is in, else in this file, else anywhere, and none of them replaces another.
+func (file *file) defined(card *Inspect, value schema.Value, top string) {
 	sess := file.sess
 	var found []index.Found
 	for _, name := range sess.Defs(value.Name) {
 		if name.Kind == value.Kind && (value.Parent == "" || name.Parent == value.Parent) {
 			found = append(found, name)
+		}
+	}
+	_, scriptMade := schema.ScriptKinds[value.Kind]
+	nearest := []func(index.Found) bool{
+		func(name index.Found) bool { return name.Parent == top },
+		func(name index.Found) bool { return index.PathKey(name.At.Path) == index.PathKey(file.path) },
+	}
+	for i := 0; scriptMade && i < len(nearest); i++ {
+		if local := slices.DeleteFunc(slices.Clone(found), func(name index.Found) bool { return !nearest[i](name) }); len(local) > 0 {
+			found = local
+			break
 		}
 	}
 	if len(found) == 0 {
@@ -127,6 +148,12 @@ func (file *file) defined(card *Inspect, value schema.Value) {
 		card.Sites = append(card.Sites, locate(definition.At, int(definition.Line), int(definition.Col)))
 	}
 	card.Winner, card.Label, card.ScopeOut = at, kept.Label, kept.ScopeType
+	if scriptMade {
+		card.Winner = -1
+	}
+	if kind := sess.Schema.Kinds[value.Kind]; kind == nil || kind.Macro == 0 {
+		card.Graphed = sess.Fired(value.Kind) || len(sess.Fires(value.Name, map[string]bool{})) > 0
+	}
 	if kind := sess.Schema.Kinds[value.Kind]; card.Label == "" && kind != nil && len(kind.LocTemplates) > 0 {
 		if said, ok := sess.Loc(loc.Expand(value.Name, kind.LocTemplates[:1])[0], ""); ok {
 			card.Label = said.Value
@@ -321,10 +348,20 @@ func SignatureHelp(sess *session.Session, path string, line, col int) (*Signatur
 		return nil, err
 	}
 	found, _, _ := sess.Located(path)
-	reader := index.Probe(found, file.parsed, sess.Reader(), file.offset(line, col))
+	offset := file.offset(line, col)
+	reader := index.Probe(found, file.parsed, sess.Reader(), offset)
+	// only the block the cursor is directly in, past the statement it is on: a scope or a member
+	// written inside a token's block is no argument of it
 	for _, level := range slices.Backward(reader.Chain) {
-		if level.Key.Type != schema.TypeToken {
+		assignment, ok := level.Statement.(*jomini.Assignment)
+		if !ok {
 			continue
+		}
+		if block := jomini.BlockOf(assignment.Value); block == nil || offset <= block.OpenBrace || offset > block.CloseBrace {
+			continue
+		}
+		if level.Key.Type != schema.TypeToken {
+			return nil, nil
 		}
 		docs, usage, _, _ := tokenDocs(sess.Install.Vocab, level.Key.Name)
 		if usage == "" {

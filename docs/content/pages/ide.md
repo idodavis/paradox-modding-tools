@@ -28,13 +28,14 @@ On Paradox script, loc, and descriptors in **mod** folders:
 
 | Feature | Notes |
 |---------|--------|
-| Hover | Kind, origin, field info / wiki-backed one-liners, loc text |
-| Complete / signature | Session vocab + dump signatures when `script_docs` is present |
+| Hover | Kind, where it is defined (the kept definition and those it replaced; a saved scope, where its own script saves it), its label, its comment or the game's description, the scopes it runs in and hands on, what a field accepts; loc text; dates, colours and random-list weights |
+| Complete / signature | The keys and names the session knows; an effect's or trigger's usage from `script_docs`, inside its own block |
 | Go to definition / references | Across attached mods + vanilla |
-| Symbols / rename | Workspace-aware |
+| Symbols | The file's definitions, and a search over the workspace |
 | Format / folding | Jomini CST |
-| Diagnostics | Parse errors, loc BOM/header, missing loc, unknown events, missing descriptor |
-| Code actions | Including suppressions |
+| Diagnostics | Unresolved references, wrong value types, wrong scopes, duplicate definitions, required loc, loc BOM, header and folder, and missing files (off by default); each can be turned off in [Workspace Settings]({{< relref "/pages/settings" >}}) → Editor |
+| Code actions | Add a missing UTF-8 BOM; create a missing localization key |
+| Inlay hints | A date in the mod's own calendar era, where the mod has one |
 
 Game files stay read-only, so diagnostics run on mods.
 
@@ -44,11 +45,10 @@ In a script comment:
 
 ```
 # pmt:ignore
-# pmt:ignore-next-line
-# pmt:ignore missing-loc
+# pmt:ignore required-loc, missing-bom
 ```
 
-That suppresses diagnostics on the same line or the next line. Optional codes limit what is ignored.
+That turns diagnostics off on the comment's own line and the next one. With codes, only those.
 
 ## Guide
 
@@ -62,4 +62,4 @@ Snooze or turn off the Guide toast under [Display]({{< relref "/pages/display" >
 
 ## Event Graph from hover
 
-Hover an event id (the definition or a `trigger_event`) for **Open in Event Graph**.
+Hover a definition the Event Graph can draw (an event, an on_action, or a definition that fires one) for **Open in Event Graph**.

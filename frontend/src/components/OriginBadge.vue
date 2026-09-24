@@ -1,7 +1,6 @@
 <script lang="ts">
 /**
- * Origin identity chip painted with the workspace origin hex.
- * PILL_UI matches this density on view-page UBadge tags.
+ * Origin identity chip painted with the workspace origin hex. PILL_UI gives a UBadge its density.
  */
 export const PILL_DENSITY =
   "rounded-sm px-1.5 py-0.5 text-xs leading-none";

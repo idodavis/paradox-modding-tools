@@ -29,8 +29,12 @@ v.1 = {
 		add_character_flag = seen_one
 		send_interface_toast = {
 			type = event_toast
+			title = v.1.toast
 			message_filter_type = custom
+			add_gold = 1
 		}
+		send_interface_toast = { title = { first_valid = { triggered_desc = { trigger = { is_adult = yes } desc = v.1.toast_first } } } }
+		send_interface_toast = { title = { first_valid = { desc = v.1.toast_first } } }
 		add_opinion = {
 			modifier = v_opinion_1
 			target = root

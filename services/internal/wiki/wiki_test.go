@@ -203,7 +203,7 @@ func TestClean(t *testing.T) {
 	for i := range 25 {
 		fmt.Fprintf(&dump, "<tr><td>dump%d</td></tr>", i)
 	}
-	dump.WriteString(`</table><table><tr><td>keep0</td></tr><tr><td>keep1</td></tr><tr><td>keep2</td></tr></table>`)
+	dump.WriteString(`</table><table><tr><td>keep0</td></tr><tr><td>keep1</td></tr></table>`)
 	cases := []struct {
 		name, body          string
 		want, not, sections []string
@@ -216,7 +216,12 @@ func TestClean(t *testing.T) {
 			want: []string{"Hello", `href="https://ck3.paradoxwikis.com/Events"`, `href="#Location"`, "namespace = foo"},
 			not:  []string{"nav", "pic", "<img"},
 		},
-		{name: "dump tables", body: dump.String(), want: []string{"intro", "keep0", "keep2"}, not: []string{"dump0", "dump24"}},
+		{
+			name: "a table of more than two rows kept folded, closed; a two-row one as it is",
+			body: dump.String(),
+			want: []string{"intro", "<details><summary>Table, 25 rows</summary><table>", "dump0", "dump24", "</table></details><table>", "keep0", "keep1"},
+			not:  []string{"Table, 2 rows"},
+		},
 		{
 			name:     "heading id",
 			body:     `<h2><span class="mw-headline" id="Effects">Effects</span></h2><p>body</p>`,

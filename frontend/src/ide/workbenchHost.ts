@@ -93,7 +93,7 @@ import { useColorMode } from "@vueuse/core";
 import { registerParadoxLanguages } from "./paradoxLanguages";
 import { registerLanguageClient } from "./languageClient";
 import { setIdeActiveFile } from "../composables/useIdeActiveFile";
-import { registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
+import { originHexByOriginId, registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
 import {
   GetIdeRoots,
@@ -653,21 +653,10 @@ function syncEditorReadOnly(ed: monaco.editor.ICodeEditor): void {
 }
 
 /**
- * Stop the workbench treating `C:/x` and `c:/x` as two different files.
- *
- * IUriIdentityService decides whether to compare `file:` URIs case-sensitively
- * by asking IFileService for the provider's PathCaseSensitive capability. The
- * registered `file:` provider is monaco-vscode's OverlayFileSystemProvider,
- * which hardcodes that flag in its constructor and never consults the delegates
- * we register -- so WailsFileSystemProvider cannot answer for itself.
- *
- * The cost is silent: ExplorerService.select() gives up when findClosestRoot()
- * matches no workspace folder, and go-to-definition hands back paths spelled by
- * Go's lowercasing CanonPath while the roots come from Windows with the drive
- * letter as the OS gave it. Nothing logs; the reveal just never happens.
- *
- * Called before any workspace folder is registered, because the service caches
- * the answer per scheme the first time a file URI is compared.
+ * Make the workbench compare file: URIs without case, so C:/x and c:/x are one file. The URI
+ * service asks the file: provider, monaco-vscode's overlay, which hardcodes the flag and never asks
+ * WailsFileSystemProvider; with it wrong, the explorer cannot reveal a path Go spelled in lower
+ * case. Called before any folder is registered: the service caches the answer per scheme.
  */
 async function alignFsCaseSensitivity(): Promise<void> {
   if (caseSensitiveFs()) return;
@@ -683,15 +672,11 @@ async function alignFsCaseSensitivity(): Promise<void> {
   }
 }
 
-// Selecting the active file in the tree is explorer.autoReveal's job, and it
-// does it without stealing focus. revealInExplorer would also focus the tree,
-// so it is deliberately not called here.
+// explorer.autoReveal selects the file without taking focus; revealInExplorer would take it
 function syncActiveFile(): void {
   const ed = vscode.window.activeTextEditor;
   setIdeActiveFile(ed?.document.uri.fsPath ?? "");
-  // The one gate that decides whether the tree can reveal this file. If it is
-  // null the URI does not match any root and no amount of reveal will work, so
-  // say so instead of failing the way the workbench does -- silently.
+  // a URI under no root cannot be revealed; say so, where the workbench says nothing
   if (ed && !warnedOutsideRoots && !vscode.workspace.getWorkspaceFolder(ed.document.uri)) {
     warnedOutsideRoots = true;
     console.warn(
@@ -854,6 +839,7 @@ async function runInitialize(theme: string): Promise<void> {
     langClient?.dispose();
     langClient = registerLanguageClient(
       () => useWorkspaceStore().activeWorkspaceId ?? "",
+      (id) => ({ name: useWorkspaceStore().originName(id), hex: originHexByOriginId(id) }),
     );
     themeLock?.dispose();
     themeLock = lockWorkbenchTheme(() => chromeTheme());

@@ -24,7 +24,8 @@ import {
   AddWorkshopVideo,
   RemoveWorkshopVideo,
 } from "@services/releaseservice";
-import type { Listing, PublishResult, WorkshopPreview } from "@services/models";
+import type { Listing, PublishResult } from "@services/models";
+import type { Preview } from "@services/internal/steam";
 import { ReadFileBase64 } from "@services/fileservice";
 import { thumbMime, useWorkspaceStore } from "../stores/workspace";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
@@ -131,11 +132,7 @@ watch(loaded, async (next) => {
 
 const isCk3 = computed(() => listing.value?.gameId === "ck3");
 
-// The label on a button has to be what the button does. These came from a local
-// bumpHint(), a second copy of Go's bumpAt that had already drifted: on an empty
-// version Go returns 1.0.0 while the hint said 0.0.1, so the button read
-// "patch → 0.0.1" and wrote 1.0.0. Asking the same RPC the click uses deletes
-// the second rule rather than re-synchronising it.
+// the button's label comes from the BumpVersion RPC its click calls, so it names what it writes
 const patchNext = ref("");
 const minorNext = ref("");
 watch(
@@ -402,7 +399,6 @@ const ignoreSummary = computed(() => {
 
 const error = computed(() => loadError.value?.message ?? publishError.value?.message ?? "");
 
-/** Match Go bumpAt for patch/minor button labels. */
 /** ReadFileBase64 → blob URL (same as workspace thumbs; never file://). */
 async function blobUrl(abs: string): Promise<string> {
   try {
@@ -419,7 +415,7 @@ function revokeAll(urls: Record<string, string>): void {
   for (const u of Object.values(urls)) URL.revokeObjectURL(u);
 }
 
-function previewSlide(p: WorkshopPreview, urls: Record<string, string>): MediaSlide {
+function previewSlide(p: Preview, urls: Record<string, string>): MediaSlide {
   const kind = p.kind === "youtube" ? "youtube" : "image";
   const src = kind === "youtube" ? `https://img.youtube.com/vi/${p.id}/mqdefault.jpg` : (urls[p.abs] ?? "");
   return { src, kind, rel: p.rel ?? "", abs: p.abs ?? "", id: p.id ?? "" };

@@ -125,6 +125,20 @@ events = {
 				body = { effect }
 				body_scope = country
 			}
+			option = {
+				count = 1
+				class = body
+				body = { effect }
+				members = {
+					name = {
+						count = 1
+						class = value
+						accepts = {
+							loc = 1
+						}
+					}
+				}
+			}
 			trigger = {
 				count = 4
 				class = body
@@ -252,6 +266,15 @@ arguments = {
 		count = 1
 		class = body
 		body = { trigger }
+		members = {
+			owner = {
+				count = 1
+				class = value
+				accepts = {
+					ref:country_definitions = 1
+				}
+			}
+		}
 	}
 	create_pop = {
 		count = 1
@@ -278,11 +301,24 @@ arguments = {
 		class = body
 		body = { effect }
 	}
+	if = {
+		count = 1
+		class = body
+		body = { effect }
+		members = {
+			limit = {
+				count = 1
+				class = body
+				body = { trigger }
+				body_scope = country
+			}
+		}
+	}
 	is_player = {
-		count = 3
+		count = 4
 		class = value
 		accepts = {
-			bool = 3
+			bool = 4
 		}
 	}
 	not = {
@@ -295,6 +331,13 @@ arguments = {
 		class = value
 		accepts = {
 			string = 2
+		}
+	}
+	trigger_event = {
+		count = 1
+		class = value
+		accepts = {
+			ref:events = 1
 		}
 	}
 }

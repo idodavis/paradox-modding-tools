@@ -18,14 +18,8 @@ const emit = defineEmits<{
 }>();
 
 /**
- * Already sorted by sortOrder then name — cloneWorkspace runs
- * sortWorkspaceMods before ListWorkspaces returns, so every consumer gets one
- * order from one place.
- *
- * This used to re-sort with localeCompare against Go's strings.Compare, which
- * is byte order: the two disagree on case, so a mixed-case workspace was shown
- * in a different order than the one Go persisted. Re-sorting a sorted array by
- * a second rule is how they drifted; not re-sorting is the fix.
+ * Already in load order: Go sorts the mods before ListWorkspaces returns them. Sorting again here
+ * by another rule would disagree with Go's byte order on case.
  */
 const ordered = computed(() => props.mods);
 </script>

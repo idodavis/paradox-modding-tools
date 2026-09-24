@@ -98,25 +98,25 @@ type Records struct {
 // outside its own index.
 type Found struct {
 	Def
-	At source.File
+	At source.File `json:"at"`
 }
 
 // Cited is one reference with the file it is written in.
 type Cited struct {
 	Ref
-	At source.File
+	At source.File `json:"at"`
 }
 
 // Firing is one edge with the file it is written in.
 type Firing struct {
 	Edge
-	At source.File
+	At source.File `json:"at"`
 }
 
 // Said is one localization entry with the file it is written in.
 type Said struct {
 	loc.Entry
-	At source.File
+	At source.File `json:"at"`
 }
 
 // Contest is a name more than one origin defines, in load order, and which one the game keeps.

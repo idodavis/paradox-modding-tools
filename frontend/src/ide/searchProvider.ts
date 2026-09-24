@@ -1,7 +1,7 @@
 /**
- * Workbench Find-in-Files via in-process Go search (replaces the JS URI indexer).
+ * Workbench Find-in-Files through Go's search.
  */
-import { CancelError, type CancellablePromise } from "@wailsio/runtime";
+import { CancelError, Events, type CancellablePromise } from "@wailsio/runtime";
 import { getService } from "@codingame/monaco-vscode-api";
 import { Schemas } from "@codingame/monaco-vscode-api/vscode/vs/base/common/network";
 import { URI } from "@codingame/monaco-vscode-api/vscode/vs/base/common/uri";
@@ -117,6 +117,9 @@ async function awaitCancellable<T>(
   }
 }
 
+/** Each text search's id, which its hits come back under. */
+let searches = 0;
+
 const provider: ISearchResultProvider = {
   async getAIName() {
     return undefined;
@@ -128,33 +131,47 @@ const provider: ISearchResultProvider = {
     if (token?.isCancellationRequested) return emptyComplete();
     const pattern = query.contentPattern?.pattern ?? "";
     if (!pattern) return emptyComplete();
+    // each file's hits arrive as Go finds them and show at once; the reply says how many were sent,
+    // and since events can land after it, the search ends when that many are in. A replaced
+    // search's late hits are dropped: the view adds progress to whichever search is current
+    const id = String(++searches);
     const results: FileMatch[] = [];
-    let limitHit = false;
-    for (const folder of foldersFrom(query)) {
-      if (token?.isCancellationRequested) return emptyComplete();
+    let received = 0;
+    let expected = Infinity;
+    let arrived = () => {};
+    const off = Events.On("search:hits", (event) => {
+      if (event.data.id !== id || token?.isCancellationRequested) return;
+      const part = fileMatchesFromHits(event.data.hits ?? []);
+      for (const fm of part) onProgress?.(fm as ISearchProgressItem);
+      results.push(...part);
+      received += event.data.hits?.length ?? 0;
+      if (received >= expected) arrived();
+    });
+    try {
       const res = await awaitCancellable(
         TextSearch({
+          id,
           pattern,
           isRegexp: !!query.contentPattern.isRegExp,
           isCaseSensitive: !!query.contentPattern.isCaseSensitive,
           isWordMatch: !!query.contentPattern.isWordMatch,
           maxResults: query.maxResults ?? 0,
-          folders: [folder],
+          folders: foldersFrom(query),
         }),
         token,
       );
       if (!res || token?.isCancellationRequested) return emptyComplete();
-      const part = fileMatchesFromHits(res.hits ?? []);
-      if (onProgress) {
-        for (const fm of part) onProgress(fm as ISearchProgressItem);
+      if (received < res.found) {
+        await new Promise<void>((resolve) => {
+          expected = res.found;
+          arrived = resolve;
+          token?.onCancellationRequested(() => resolve());
+        });
       }
-      results.push(...part);
-      if (res.limitHit) {
-        limitHit = true;
-        break;
-      }
+      return { ...emptyComplete(), results, limitHit: res.limitHit };
+    } finally {
+      off();
     }
-    return { ...emptyComplete(), results, limitHit };
   },
   async fileSearch(query: IFileQuery, token?: CancellationToken) {
     if (token?.isCancellationRequested) return emptyComplete();

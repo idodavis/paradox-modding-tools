@@ -89,7 +89,7 @@ func counted(t *testing.T, files map[string]string, keys ...string) *census {
 		rel := strings.ToLower(file.Rel)
 		census.files[rel], census.files[filepath.Base(rel)] = true, true
 	}
-	if _, err := census.read(t.Context(), inventory); err != nil {
+	if _, err := census.read(t.Context(), inventory, nil); err != nil {
 		t.Fatal(err)
 	}
 	census.tables(inventory)

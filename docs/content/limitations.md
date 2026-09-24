@@ -34,4 +34,4 @@ Opening a workspace drops every other live session. [Roadmap]({{< relref "/roadm
 
 ## Steam Workshop
 
-The helper is embedded and extracted to user-config `bin/`. Steam client must be running. New items stay private. See [Publish]({{< relref "/pages/publish" >}}).
+Publish runs a second copy of PMT, which loads the game's own copy of Steam's library from its install; the Steam client must be running. New items stay private. See [Publish]({{< relref "/pages/publish" >}}).

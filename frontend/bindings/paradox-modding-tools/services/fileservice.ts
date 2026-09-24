@@ -37,24 +37,16 @@ export function ListDirectory(dirPath: string, showAll: boolean): $CancellablePr
 }
 
 /**
- * ReadEditableBase64 is ReadFileBase64 for the IDE file bridge, which hands the
- * bytes to an editor: it refuses binary the workbench has no viewer for, and
- * allows the image formats it does.
- * 
- * The two are separate because one function cannot serve both. The binary guard
- * keys on a NUL byte in the first 512, and a PNG carries its IHDR chunk length
- * (00 00 00 0D) at byte 8. Sharing the guard rejected every thumbnail, and the
- * explorer's per-mod icons quietly disappeared.
+ * ReadEditableBase64 is ReadFileBase64 for the IDE bridge, which hands the bytes to an editor, so
+ * it refuses binary too. It stays apart because every PNG has a NUL in its first 512 bytes.
  */
 export function ReadEditableBase64(fullPath: string): $CancellablePromise<$models.FileBytes> {
     return $Call.ByID(4002040534, fullPath);
 }
 
 /**
- * ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if
- * missing. Binary content is expected: this is how mod thumbnails and workshop
- * previews reach the webview. Oversized files are still refused so a gfx read
- * cannot pull the whole file into RAM.
+ * ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if missing. Binary is
+ * expected (thumbnails and workshop previews); oversized files are refused.
  */
 export function ReadFileBase64(fullPath: string): $CancellablePromise<$models.FileBytes> {
     return $Call.ByID(2750173100, fullPath);
@@ -75,7 +67,9 @@ export function StatPath(fullPath: string): $CancellablePromise<$models.PathStat
 }
 
 /**
- * WriteFileBase64 writes raw bytes from standard base64. This is the editor's save path and the only file PMT writes that it cannot regenerate, so it goes out through local.Write: a save that fails leaves the modder's script exactly as it was.
+ * WriteFileBase64 writes raw bytes from standard base64. It is the editor's save path, the only
+ * file PMT writes that it cannot regenerate, so it goes through local.Write: a failed save leaves
+ * the modder's script as it was.
  */
 export function WriteFileBase64(fullPath: string, b64: string): $CancellablePromise<void> {
     return $Call.ByID(256026061, fullPath, b64);

@@ -3,9 +3,6 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as loc$0 from "../loc/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as schema$0 from "../schema/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -34,90 +31,5 @@ export interface Cited {
     "file": number;
     "line": number;
     "col": number;
-    "At": source$0.File;
-}
-
-/**
- * Firing is one edge with the file it is written in.
- */
-export interface Firing {
-    /**
-     * the definition the site is written in
-     */
-    "fromKind": string;
-    "from": string;
-
-    /**
-     * the definition fired or invoked
-     */
-    "toKind": string;
-    "to": string;
-
-    /**
-     * the token at the site: trigger_event, on_actions, the macro's own name
-     */
-    "via": string;
-    "file": number;
-    "line": number;
-    "At": source$0.File;
-}
-
-/**
- * Found is one definition with the file it was found in, which is what load order is decided on: a Def's File means nothing outside its own index.
- */
-export interface Found {
-    /**
-     * the kind it belongs to
-     */
-    "kind": string;
-
-    /**
-     * its name, found the way Kind.Naming says
-     */
-    "name": string;
-
-    /**
-     * nested kind: the name of the definition it sits inside; a parameter: its macro
-     */
-    "parent"?: string;
-
-    /**
-     * the value of the kind's LabelMember. "" if none
-     */
-    "label"?: string;
-
-    /**
-     * the entry mode written before the name: REPLACE, INJECT. "" if none
-     */
-    "mode"?: string;
-
-    /**
-     * saved_scopes only: the scope type at the save site
-     */
-    "scopeType"?: string;
-
-    /**
-     * index into Index.Files; -1 once the file that held it was dropped
-     */
-    "file": number;
-    "line": number;
-    "col": number;
-    "At": source$0.File;
-}
-
-/**
- * Said is one localization entry with the file it is written in.
- */
-export interface Said {
-    "Key": string;
-    "KeyRange": loc$0.Range;
-    "Version": number;
-    "Value": string;
-    "ValueRange": loc$0.Range;
-
-    /**
-     * 0-based
-     */
-    "Line": number;
-    "At": source$0.File;
+    "at": source$0.File;
 }

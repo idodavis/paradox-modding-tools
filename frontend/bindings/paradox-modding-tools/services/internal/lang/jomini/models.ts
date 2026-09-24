@@ -5,14 +5,14 @@
  * Position is a 0-based line and UTF-8 byte column within that line.
  */
 export interface Position {
-    "Line": number;
-    "Character": number;
+    "line": number;
+    "character": number;
 }
 
 /**
  * Range is a half-open span of UTF-8 byte offsets into the source (Start..End).
  */
 export interface Range {
-    "Start": number;
-    "End": number;
+    "start": number;
+    "end": number;
 }

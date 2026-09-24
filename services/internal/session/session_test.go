@@ -208,7 +208,7 @@ func TestQueries(t *testing.T) {
 
 func TestLockContract(t *testing.T) {
 	sess, dir := workspace(t)
-	if err := sess.Watch(); err != nil {
+	if err := sess.Watch(func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	defer sess.Close()

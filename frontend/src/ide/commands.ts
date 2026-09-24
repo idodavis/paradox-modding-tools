@@ -23,17 +23,15 @@ export async function openFile(path: string, line?: number): Promise<void> {
   }
 }
 
-/** Route to Event Graph with this event as root, namespace, and selection. */
+/** Route to Event Graph with this definition as its root. */
 export async function openEventGraph(
   workspaceId: string,
   eventId: string,
 ): Promise<void> {
   if (!workspaceId || !eventId) return;
-  const dot = eventId.indexOf(".");
-  const ns = dot > 0 ? eventId.slice(0, dot) : undefined;
   await router.push({
     name: "event-graph",
     params: { id: workspaceId },
-    query: { root: eventId, ...(ns ? { namespace: ns } : {}) },
+    query: { root: eventId },
   });
 }

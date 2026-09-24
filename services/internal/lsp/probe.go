@@ -138,7 +138,8 @@ type Position = jomini.Position
 
 // Range is a span of the file.
 type Range struct {
-	Start, End Position
+	Start Position `json:"start"`
+	End   Position `json:"end"`
 }
 
 // Location is a place in a file of the workspace or the install.
@@ -166,6 +167,7 @@ type Inspect struct {
 	Image    *source.ImageInfo `json:"image,omitempty"`    // a file that is an image: its header
 	Sites    []Location        `json:"sites,omitempty"`    // where it is defined, in load order
 	Winner   int               `json:"winner"`             // the site the game keeps; -1 for none
+	Graphed  bool              `json:"graphed,omitempty"`  // the event graph draws it: an event or on_action, or it fires one
 	Values   []Seen            `json:"values,omitempty"`   // a parameter: the words its macro's callers pass for it
 	Range    Range             `json:"range"`
 }

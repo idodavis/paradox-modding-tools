@@ -6,60 +6,61 @@
 import * as index$0 from "./internal/lang/index/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as loc$0 from "./internal/lang/loc/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as schema$0 from "./internal/lang/schema/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as source$0 from "./internal/lang/source/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as session$0 from "./internal/session/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as steam$0 from "./internal/steam/models.js";
 
 /**
- * Contest is one name two origins define, with the game's rule for its kind.
+ * Contest is one name two origins define, its definitions in load order, with the game's rule.
  */
 export interface Contest {
-    "Kind": string;
-    "Name": string;
-    "Found": index$0.Found[] | null;
+    "kind": string;
+    "name": string;
 
     /**
-     * the position in Found of the definition the game keeps
+     * the position in Sites of the definition the game keeps
      */
-    "Winner": number;
+    "winner": number;
+    "firstWins": boolean;
 
     /**
-     * the kind's rule in this game
-     */
-    "FirstWins": boolean;
-
-    /**
-     * FIOS or LIOS
+     * FIOS or LIOS, or the entry mode that decided it (REPLACE, INJECT)
      */
     "rule": string;
+    "sites": Site[] | null;
 }
 
 /**
  * Dangling is one name a mod writes that nothing defines, and where.
  */
 export interface Dangling {
-    "Kind": string;
-    "Name": string;
+    "kind": string;
+    "name": string;
 
     /**
      * a declared cite: the game itself would reject it
      */
     "declared": boolean;
-    "count": number;
-    "sites": index$0.Cited[] | null;
+    "sites": Site[] | null;
 }
 
 /**
- * Dependency is one mod naming what only another mod defines.
+ * Dependency is one mod naming what only another mod defines, and each place it does.
  */
 export interface Dependency {
     "from": string;
     "to": string;
-    "count": number;
+    "sites": Site[] | null;
 }
 
 /**
@@ -77,7 +78,7 @@ export interface Detail {
     "name": string;
 
     /**
-     * nested kind: the name of the definition it sits inside; a parameter: its macro
+     * nested kind: the definition it sits inside; a parameter: its macro
      */
     "parent"?: string;
 
@@ -102,18 +103,30 @@ export interface Detail {
     "file": number;
     "line": number;
     "col": number;
-    "At": source$0.File;
-    "namespace"?: string;
+    "at": source$0.File;
     "title"?: string;
-    "sections": Section[] | null;
-    "options": Option[] | null;
-    "fires": index$0.Firing[] | null;
-    "firedBy": index$0.Firing[] | null;
 
     /**
-     * every definition of the name, in load order
+     * the definition as its file writes it
      */
-    "sites": index$0.Found[] | null;
+    "lines": string[] | null;
+    "sections": Section[] | null;
+    "options": Option[] | null;
+
+    /**
+     * as the graph draws them: events and on_actions, through macros
+     */
+    "fires": session$0.Fire[] | null;
+
+    /**
+     * the same, into it
+     */
+    "firedBy": session$0.Fire[] | null;
+
+    /**
+     * what the block names, by kind in the order first written
+     */
+    "refs": RefGroup[] | null;
     "reason"?: string;
 }
 
@@ -126,7 +139,7 @@ export interface DirEntry {
 }
 
 /**
- * DumpHealth is one folder the game's script_docs dumps may be in, and what the reader found there.
+ * DumpHealth is one folder the game's script_docs dumps may be in, and what was read there.
  */
 export interface DumpHealth {
     "folder": string;
@@ -135,7 +148,7 @@ export interface DumpHealth {
     "links": number;
 
     /**
-     * the scope types: in Vic3 and EU5 event_scopes.log is written to logs/ while the other five dumps go to docs/
+     * scope types; Vic3 and EU5 write event_scopes.log to logs/, other dumps to docs/
      */
     "scopes": number;
 }
@@ -156,14 +169,18 @@ export interface EventGraph {
     "nodes": Node[] | null;
     "edges": Edge[] | null;
     "truncated": boolean;
+
+    /**
+     * truncated: the hop the node cap cut
+     */
+    "reached"?: number;
     "reason"?: string;
 }
 
 /**
- * FileBytes is a binary file payload for the IDE FS bridge. Missing files are
- * Exists=false with no error so the workbench can skip optional paths quietly.
- * Reject is set when the file exists but must not be opened (binary / too large);
- * that is not a Go error so Wails does not log a binding failure.
+ * FileBytes is a binary file payload for the IDE FS bridge. A missing file is Exists=false with no
+ * error, so optional paths are skipped quietly. Reject says why an existing file must not be
+ * opened; it is not a Go error, so Wails does not log a binding failure.
  */
 export interface FileBytes {
     "exists": boolean;
@@ -172,47 +189,28 @@ export interface FileBytes {
 }
 
 /**
- * FileRow is one definition without the file the game finds for it.
+ * FileRow is one definition without images every definition of its kind in the game has, which the
+ * game finds by the name.
  */
 export interface FileRow {
-    /**
-     * the kind it belongs to
-     */
     "kind": string;
-
-    /**
-     * its name, found the way Kind.Naming says
-     */
     "name": string;
 
     /**
-     * nested kind: the name of the definition it sits inside; a parameter: its macro
-     */
-    "parent"?: string;
-
-    /**
-     * the value of the kind's LabelMember. "" if none
-     */
-    "label"?: string;
-
-    /**
-     * the entry mode written before the name: REPLACE, INJECT. "" if none
-     */
-    "mode"?: string;
-
-    /**
-     * saved_scopes only: the scope type at the save site
-     */
-    "scopeType"?: string;
-
-    /**
-     * index into Index.Files; -1 once the file that held it was dropped
+     * its number in Sources
      */
     "file": number;
     "line": number;
-    "col": number;
-    "At": source$0.File;
-    "template": string;
+
+    /**
+     * each image it lacks, as the path the game looks for
+     */
+    "missing": string[] | null;
+
+    /**
+     * how many such images its kind has
+     */
+    "of": number;
 }
 
 /**
@@ -262,28 +260,34 @@ export interface GameInstall {
  * Health is the report.
  */
 export interface Health {
+    /**
+     * every file a row names, at the number it names it by
+     */
+    "sources": source$0.File[] | null;
+
+    /**
+     * names two or more mods define
+     */
     "contests": Contest[] | null;
+
+    /**
+     * names one mod defines over the install's
+     */
+    "overrides": Contest[] | null;
     "depends": Dependency[] | null;
     "dangling": Dangling[] | null;
-    "danglingCount": number;
     "loc": Language[] | null;
     "files": FileRow[] | null;
-    "filesCount": number;
 }
 
 /**
- * HealthParams is what the page asks for: the load order to preview, and how many rows of each list it draws.
+ * HealthParams is what the page asks for: the load order to preview.
  */
 export interface HealthParams {
     /**
      * mod ids in the order to judge; empty for the workspace's own
      */
     "order": string[] | null;
-
-    /**
-     * rows per list; 0 for all
-     */
-    "limit": number;
 }
 
 /**
@@ -311,18 +315,26 @@ export interface IdeRoots {
 }
 
 /**
+ * KindCount is one kind and how many roots of it a search holds.
+ */
+export interface KindCount {
+    "kind": string;
+    "count": number;
+}
+
+/**
  * Language is one language's localization gaps.
  */
 export interface Language {
     "language": string;
 
     /**
-     * a definition's conventional key, absent
+     * the workspace's language: a definition's key, absent
      */
     "missing": LocRow[] | null;
 
     /**
-     * a mod key english has and this language lacks
+     * another: a mod key the workspace's language has and it lacks
      */
     "untranslated": LocRow[] | null;
 
@@ -330,13 +342,11 @@ export interface Language {
      * a mod key nothing of its mod reads
      */
     "orphaned": LocRow[] | null;
-    "missingCount": number;
-    "untranslatedCount": number;
-    "orphanedCount": number;
 }
 
 /**
- * LanguageHealth is what the health strip shows: whether the session is live, what the install's cache holds, and whether the dumps are there.
+ * LanguageHealth is what the health strip shows: whether the session is live, what the install's
+ * cache holds, and whether the dumps are there.
  */
 export interface LanguageHealth {
     "workspaceId": string;
@@ -352,16 +362,13 @@ export interface LanguageHealth {
     "scannedAt": string;
     "scanning": boolean;
     "ready": boolean;
-    "defs": number;
-    "refs": number;
-    "kinds": number;
     "dumps": DumpHealth[] | null;
     "drift": schema$0.Drift;
     "watchError"?: string;
 }
 
 /**
- * Listing is the Release page payload. Display fields are on the DTO.
+ * Listing is the Release page payload.
  */
 export interface Listing {
     "workspaceId": string;
@@ -391,23 +398,44 @@ export interface Listing {
 }
 
 /**
+ * LocEntry is one of a key's entries, with the language its file is written in.
+ */
+export interface LocEntry {
+    "key": string;
+    "keyRange": loc$0.Range;
+    "version": number;
+    "value": string;
+    "valueRange": loc$0.Range;
+
+    /**
+     * 0-based
+     */
+    "line": number;
+    "at": source$0.File;
+    "language": string;
+}
+
+/**
  * LocRow is one key and, where it has one, the definition or the file it belongs to.
  */
 export interface LocRow {
     "key": string;
     "kind"?: string;
     "name"?: string;
-    "origin": string;
-    "at": source$0.File;
+
+    /**
+     * its number in Sources
+     */
+    "file": number;
     "line": number;
 }
 
 /**
- * Lookup is one localization key: every entry of it the workspace loads, and everything that reads it.
+ * Lookup is one localization key: its entries in the workspace and everything that reads it.
  */
 export interface Lookup {
     "key": string;
-    "entries": index$0.Said[] | null;
+    "entries": LocEntry[] | null;
     "readers": index$0.Cited[] | null;
 }
 
@@ -417,7 +445,6 @@ export interface Lookup {
 export interface Node {
     "id": string;
     "kind": string;
-    "namespace"?: string;
     "title"?: string;
     "origin"?: string;
     "rel"?: string;
@@ -468,6 +495,16 @@ export interface Params {
      * stubs the page opened: more:<id>, more-in:<id>
      */
     "expand": string[] | null;
+
+    /**
+     * the origins drawn, with the root and its stubs; empty for all
+     */
+    "origins": string[] | null;
+
+    /**
+     * each macro on a chain drawn as a node between the two it joins
+     */
+    "macros": boolean;
 }
 
 /**
@@ -492,12 +529,64 @@ export interface PublishResult {
 }
 
 /**
- * Section is one key at the top of the definition's block, with its value where that is one word.
+ * RefGroup is the references of one kind written in a block; loc keys are kind loc, files file.
+ */
+export interface RefGroup {
+    "kind": string;
+    "refs": index$0.Cited[] | null;
+}
+
+/**
+ * Roots is a root search's hits, grouped by kind, and how many of each kind the query holds.
+ */
+export interface Roots {
+    "hits": Node[] | null;
+    "kinds": KindCount[] | null;
+}
+
+/**
+ * Section is one key at the top of the definition's block: its value where that is one word, and
+ * the text that word has as a loc key.
  */
 export interface Section {
     "key": string;
     "value"?: string;
+    "text"?: string;
     "line": number;
+}
+
+/**
+ * Site is where a definition or a reference is written.
+ */
+export interface Site {
+    /**
+     * its number in Sources
+     */
+    "file": number;
+    "line": number;
+    "col": number;
+
+    /**
+     * a dependency's use: the kind and name written there
+     */
+    "kind"?: string;
+    "name"?: string;
+
+    /**
+     * a definition added to the kept one (INJECT), not replaced
+     */
+    "injected"?: boolean;
+}
+
+/**
+ * SourceAt is one place a pane shows the source of: a definition's statement, or a reference's
+ * line.
+ */
+export interface SourceAt {
+    "path": string;
+    "line": number;
+    "col": number;
+    "definition": boolean;
 }
 
 /**
@@ -522,9 +611,21 @@ export interface TextSearchHit {
 }
 
 /**
+ * TextSearchHits is one file's hits, sent under their search's ID as it finds them.
+ */
+export interface TextSearchHits {
+    "id": string;
+    "hits": TextSearchHit[] | null;
+}
+
+/**
  * TextSearchQuery is a Find-in-Files request from the workbench.
  */
 export interface TextSearchQuery {
+    /**
+     * the search its hits are sent under
+     */
+    "id": string;
     "pattern": string;
     "isRegexp": boolean;
     "isCaseSensitive": boolean;
@@ -534,10 +635,11 @@ export interface TextSearchQuery {
 }
 
 /**
- * TextSearchResult is the capped hit list from TextSearch.
+ * TextSearchResult is how a text search ended: how many hits it sent, and whether it stopped at
+ * the cap.
  */
 export interface TextSearchResult {
-    "hits": TextSearchHit[] | null;
+    "found": number;
     "limitHit": boolean;
 }
 
@@ -581,7 +683,7 @@ export interface WorkspaceMod {
     "createdAt": string;
 
     /**
-     * the calendar this mod's dates are written in: nothing in a mod states it, so a person sets it once
+     * calendar of the mod's dates; set by hand, as no mod states it
      */
     "era"?: string;
 

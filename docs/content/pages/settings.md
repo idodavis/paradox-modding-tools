@@ -21,12 +21,18 @@ Configure **this** workspace. Appearance is [Display]({{< relref "/pages/display
 
 Pick or add an install and pin a version (`latest` or a `launcher-settings.json` version). Changing install rebuilds language intelligence.
 
+**Scripting documentation** shows where the game's `script_docs` output was read and how many effects, triggers and scope types it declares, with how to generate it. See [three kinds of docs]({{< relref "/concepts/docs" >}}).
+
 ## Mods
 
 Attach an existing folder or create a new skeleton, then **color**, **reorder**, or **detach**. Detach does not delete the folder on disk.
 
 Per-mod **description file paths** and **Workshop ignore** patterns live here.
 
-## Remove this workspace
+## Editor
 
-Deletes the PMT record only. **Reset all data** lives on the [Library]({{< relref "/pages/library" >}}).
+**Diagnostics** turns each check on or off, with **Reset to defaults**. These are IDE settings: they apply to every workspace.
+
+## Danger
+
+**Remove workspace** deletes the PMT record only. **Reset all data** lives on the [Library]({{< relref "/pages/library" >}}).

@@ -11,8 +11,8 @@ People say “docs” for three different things. PMT keeps them separate on pur
 | What | In PMT | Where it comes from | What it is |
 |------|--------|---------------------|------------|
 | Community wiki | **Guide** | Cached MediaWiki HTML | The pane beside the IDE. Search, contents, related pages. |
-| Console dumps | `script_docs` | User-data `logs/` (CK3) or `docs/` (Vic3/EU5) | Optional overlay. In-game `script_docs` / `dump_data_types`. Health’s effect chip is **voted** install uses, not “folder exists.” `DumpHint` appears only when dump signatures (`TokenDoc`) are missing. |
-| Install prose | game info | `_*.info`, readmes, `*.md` **inside the game install** | Harvested into field info for hover. |
+| Console dumps | `script_docs` | User-data `logs/` (CK3) or `docs/` (Vic3/EU5) | Optional overlay. In-game `script_docs` / `dump_data_types`. The health strip counts the effects the dumps declare, shows **No script_docs** when none were read, and **N unexplained** when the learned schema and the dumps disagree (click either for the guide). |
+| Install prose | game info | `_*.info`, readmes, `*.md` **inside the game install** | Read for the hover's description of a field. |
 
 ## Guide (wiki)
 
@@ -27,13 +27,13 @@ From the game’s debug console (`~` with `-debug_mode`):
 - CK3: writes under Documents `Crusader Kings III/logs/`
 - Vic3 / EU5: Documents `<Game>/docs/` (Vic3 also `DumpDataTypes`; EU5 `dump_data_types` under `logs/data_types`)
 
-Dumps are optional. Hover and complete work from the install walk (voted effect/trigger names). Dumps add signatures, unused tokens, and Vic3 dynamic modifier types. If Health shows the optional hint, run `script_docs` in-game once, then Rescan.
+Dumps are optional: definitions, references, conflicts and localization work without them. Dumps add each effect's and trigger's description, its usage (the signature help) and the scopes it runs in and hands on, so scope-aware completion, typed hover and scope diagnostics need them. If the health strip shows **No script_docs**, run `script_docs` in-game once, then Rescan.
 
 ## Install `_*.info`
 
-Paradox ships short field descriptions next to script in the install. PMT harvests them for hover one-liners (`fieldInfo`).
+Paradox ships short field descriptions next to script in the install. PMT reads them for the hover's description of a field, by the kind's folders and the field it sits under; not every folder has one, and not every field is described.
 
-Hover in the IDE prefers: kind-specific field info → global field info → dump `TokenDoc`. Signatures stay on the dump side.
+A token's description and signature come from the dumps.
 
 ## Why this split exists
 

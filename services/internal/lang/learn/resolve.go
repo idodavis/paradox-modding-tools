@@ -208,14 +208,16 @@ func (census *census) class(pos *node) (schema.Class, schema.BodyClass) {
 // lift moves what stands under each declared token of a body into the census of that token,
 // because the engine declares a token once and what it takes is the same wherever it is
 // written. A scope change is the same body in another scope, so what stands under it is lifted
-// too. The other keys written in the body are counted by its class, for the join that finds
-// which kinds are macros.
+// too. A link written with a word is no scope change: it is a field of the body (a message's
+// title = some_key), and any other path written with a word compares scopes. The other keys
+// written in the body are counted by its class, for the join that finds which kinds are macros.
 func (census *census) lift(pos *node) {
 	class, body := census.class(pos)
 	pos.classed, pos.class, pos.body = true, class, body
 	for _, key := range slices.Sorted(maps.Keys(pos.members)) {
 		member := pos.members[key]
 		_, isToken := census.token(key)
+		_, isLink := census.vocab.Links[key]
 		switch {
 		case class != schema.ClassBody:
 			census.lift(member)
@@ -228,8 +230,11 @@ func (census *census) lift(pos *node) {
 			delete(pos.members, key)
 			census.tokens[low].merge(member)
 			census.moved[low] = true
-		case census.hops(key) || key == "<cite>":
+		case key == "<cite>" || (census.hops(key) && (member.blocks > 0 || !isLink)):
 			delete(pos.members, key)
+			if isLink && member.count > member.blocks {
+				pos.members[key] = &node{count: member.count - member.blocks, in: member.in, quoted: member.quoted, numbers: member.numbers, dates: member.dates, bools: member.bools, params: member.params, ops: member.ops, words: member.words}
+			}
 			pos.merge(&node{members: member.members, names: member.names})
 			census.lift(pos)
 			return

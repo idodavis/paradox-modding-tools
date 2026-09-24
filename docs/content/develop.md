@@ -14,20 +14,20 @@ Human-facing product docs start at the [home page]({{< relref "/" >}}). This pag
 
 | Tool | Version / notes |
 |------|-----------------|
-| [Go](https://go.dev/dl/) | **1.26.5** (see `go.mod`) |
+| [Go](https://go.dev/dl/) | **1.27.1** (see `go.mod`) |
 | [Node.js](https://nodejs.org/) + npm | Current LTS (18+). Frontend is Vue 3 + Vite |
 | [Task](https://taskfile.dev/installation/) | Taskfile v3 (`task` on your `PATH`) |
-| [Wails v3 CLI](https://v3.wails.io/) | Pin to the module: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16` |
+| [Wails v3 CLI](https://v3.wails.io/) | Pin to the module: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.21` |
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.21
 ```
 
 Confirm `wails3` is on your `PATH` (`$(go env GOPATH)/bin`).
 
 ## Windows extra
 
-The parser is **pure Go**. Production and `task build` use `CGO_ENABLED=0`. You do not need GCC for a normal Windows desktop build.
+The script parser (`services/internal/lang/jomini`) is **pure Go**. Production and `task build` use `CGO_ENABLED=0`. You do not need GCC for a normal Windows desktop build.
 
 WebView2 must be installed to **run** the app (Win11 usually has it).
 
@@ -104,21 +104,16 @@ task common:generate:bindings
 
 ## Tests
 
-```bash
-go test ./...
-```
+Each Go package keeps its tests in one file, `<pkg>_test.go`.
 
-On Windows, parser race tests should work (`CGO_ENABLED=0`):
-
-```bash
-go test -race ./services/internal/parser/...
-```
-
-Frontend typecheck:
-
-```bash
-cd frontend && npm run check
-```
+| Task | What it runs |
+|------|--------------|
+| `task test` | The fast tests (`go test -short -timeout 60s ./...` in `services/`) |
+| `task test:race` | The same under the race detector; what CI runs. It works on Windows (`CGO_ENABLED=0`) |
+| `task check` | The frontend typecheck, `.vue` files included (`npm run check` in `frontend/`) |
+| `task test:gate` | The real-install tier: the source, schema, learner, index and vanilla-diagnostics gates over CK3, Victoria 3 and EU5. Set `PMT_TEST_INSTALL_CK3`, `PMT_TEST_INSTALL_VIC3` and `PMT_TEST_INSTALL_EU5` to each game's root folder (the one that holds `game/`); a game whose variable is unset is skipped |
+| `task test:full` | `test:gate`, then `check`: before a commit that touches the engine |
+| `task test:sweep` | The engine's scoreboard, not a gate: every mod in a game's Documents mod folder opened over its install, with the health report and hover answer rate printed. Needs `PMT_TEST_INSTALL_<GAME>` and `PMT_TEST_MODS_<GAME>`; `services/sweep_test.go` builds only with the `sweep` tag |
 
 ## Layout (high level)
 

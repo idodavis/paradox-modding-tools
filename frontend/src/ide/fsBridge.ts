@@ -123,10 +123,7 @@ export function caseSensitiveFs(): boolean {
 export class WailsFileSystemProvider
   implements IFileSystemProviderWithFileReadWriteCapability
 {
-  // Only Linux has a case-sensitive filesystem; Windows and macOS do not.
-  // Note this alone does not reach IUriIdentityService: the `file:` provider it
-  // queries is monaco-vscode's OverlayFileSystemProvider, which hardcodes its
-  // own capabilities and never asks its delegates. See alignFsCaseSensitivity.
+  // only Linux folds no case; the URI service never asks (see alignFsCaseSensitivity)
   readonly capabilities =
     FileSystemProviderCapabilities.FileReadWrite |
     (caseSensitiveFs() ? FileSystemProviderCapabilities.PathCaseSensitive : 0);
@@ -145,7 +142,11 @@ export class WailsFileSystemProvider
     });
   }
 
-  /** Apply a session-watcher event to the workbench file tree. */
+  /**
+   * Apply a session-watcher event to the workbench file tree. A path still there is told as
+   * ADDED: the explorer lists a new file only for ADDED, and an open editor reloads on ADDED as
+   * on UPDATED.
+   */
   private onExternalChange(data: unknown): void {
     if (!data || typeof data !== "object") return;
     const row = data as { path?: string; deleted?: boolean };
@@ -153,7 +154,7 @@ export class WailsFileSystemProvider
     this._onDidChangeFile.fire([
       {
         resource: monaco.Uri.file(row.path),
-        type: row.deleted ? FileChangeType.DELETED : FileChangeType.UPDATED,
+        type: row.deleted ? FileChangeType.DELETED : FileChangeType.ADDED,
       },
     ]);
   }

@@ -59,7 +59,7 @@ export function explorerExcludeSettings(
   };
 }
 
-/** Persist hide-binaries and rewrite workbench settings when the IDE is up. */
+/** Save hide-binaries and update the workbench settings when the IDE is up. */
 export function setHideExplorerBinaries(hide: boolean): void {
   hideExplorerBinaries = hide;
   if (lastThemeName) void applyWorkbenchTheme(lastThemeName);

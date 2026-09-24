@@ -46,7 +46,7 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 }
 
 // StartWikiWarm refreshes, in the background, the wiki pages of every installed game, so the
-// guides are current without a click.
+// guides are current without a click, and tells the frontend as each game is done.
 func (s *WikiService) StartWikiWarm() {
 	games := map[string]bool{}
 	s.Session.Config.read(func(cfg *Config) {
@@ -56,7 +56,11 @@ func (s *WikiService) StartWikiWarm() {
 	})
 	go func() {
 		for gameID := range games {
-			wiki.Refresh(context.Background(), gameID)
+			done := WikiUpdated{GameID: gameID}
+			if err := wiki.Refresh(context.Background(), gameID); err != nil {
+				done.Error = err.Error()
+			}
+			emit(EventWikiUpdated, done)
 		}
 	}()
 }

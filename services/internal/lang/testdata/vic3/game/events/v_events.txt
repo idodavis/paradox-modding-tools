@@ -10,6 +10,10 @@ vv.1 = {
 		p:x0974E5 = { save_scope_as = home_province }
 		p:x4A0B1C = { save_scope_as = away_province }
 	}
+	option = {
+		name = vv.1.a
+		if = { limit = { is_player = yes } trigger_event = vv.2 }
+	}
 }
 vv.2 = {
 	type = country_event

@@ -17,8 +17,8 @@ type ScanState = {
 const scanByInstall = new Map<string, ScanState>();
 /** Installs already toasted for CacheStale this process (no per-navigation spam). */
 const staleToasted = new Set<string>();
-/** Same, for the script_docs state: told once, not on every navigation. */
-const schemaToasted = new Set<string>();
+/** Same, for an install with no script_docs: told once, not on every navigation. */
+const docsToasted = new Set<string>();
 let scanListening = false;
 let sessionQueryCache: ReturnType<typeof useQueryCache> | null = null;
 
@@ -43,32 +43,19 @@ function ensureScanListener(): void {
   Events.On("lang:scan-progress", (ev: { data?: unknown }) => {
     const data = ev.data;
     if (!data || typeof data !== "object") return;
-    const row = data as { installId?: string; pct?: number; msg?: string };
+    const row = data as { installId?: string; percent?: number; stage?: string };
     if (!row.installId) return;
     const s = scanState(row.installId);
-    if (typeof row.pct === "number") s.pct = row.pct;
-    if (typeof row.msg === "string") s.msg = row.msg;
+    if (typeof row.percent === "number") s.pct = row.percent;
+    if (typeof row.stage === "string") s.msg = row.stage;
   });
   Events.On("lang:ready", () => {
     void bustSessionQueries(sessionQueryCache);
   });
-  Events.On("wiki:first", () => {
-    useToast().add({
-      title: "Downloading wiki guides",
-      description: "The first cache can take a few minutes because of MediaWiki rate limits.",
-      duration: 8000,
-    });
-  });
-  Events.On("wiki:updated", (ev: { data?: unknown }) => {
-    const data = ev.data;
-    if (!data || typeof data !== "object") return;
-    const row = data as { ok?: boolean; err?: string };
-    if (row.ok !== false || !row.err) return;
-    useToast().add({
-      title: "Wiki fetch failed",
-      description: row.err,
-      color: "error",
-    });
+  // a game's wiki pages were refreshed: the Guide pane reads them again, and a failure is told
+  Events.On("wiki:updated", (ev: { data?: { gameId?: string; error?: string } }) => {
+    void sessionQueryCache?.invalidateQueries({ key: ["guide"] });
+    if (ev.data?.error) useToast().add({ title: "Wiki fetch failed", description: ev.data.error, color: "error" });
   });
 }
 
@@ -156,29 +143,15 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     { immediate: true },
   );
 
-  // The type system is the one part of the engine the user has to produce by
-  // hand, so its two failure states are worth interrupting for — once each.
+  // the type system is the one part of the engine the user makes, so its absence is told once
   watch(
     () => ({
       installId: health.value?.installId,
-      source: health.value?.schema?.source,
-      archived: health.value?.schema?.archived,
+      dumped: (health.value?.dumps ?? []).some((dump) => dump.effects > 0),
     }),
     (s) => {
-      if (!s.installId || !s.source || s.source === "live") return;
-      const seen = `${s.installId}:${s.source}`;
-      if (schemaToasted.has(seen)) return;
-      schemaToasted.add(seen);
-      if (s.source === "archive") {
-        useToast().add({
-          title: "Using PMT's archived script_docs",
-          description:
-            "The game's own files are gone, so PMT is reading the copy it kept. Everything still works; regenerate after a game update.",
-          icon: "i-lucide-archive",
-          duration: 6000,
-        });
-        return;
-      }
+      if (!s.installId || s.dumped || docsToasted.has(s.installId)) return;
+      docsToasted.add(s.installId);
       useToast().add({
         title: "No script_docs for this game",
         description:

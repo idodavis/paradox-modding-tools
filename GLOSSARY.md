@@ -52,7 +52,7 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 |---|---|---|
 | Product pane | Guide, `GuidePane`, `pmt.guide`, `ui.guide.*` | Helper, HelperPane, `pmt.helper`, `ui.helper`, `ide.helperWidth`, `WikiGuide` |
 | Guide RPC | `WikiService.Guide` | `SessionService.WikiGuide`; query key `wiki-guide` → `guide` |
-| Events | `wiki:first`, `wiki:updated` | `docs:wiki-*` |
+| Events | `lang:ready`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`, `wiki:updated` | `docs:wiki-*` |
 | Package / load | `package wiki`, `LoadGuides`, `guidesPath()` | `package docs`, `LoadDocs`, persist `docsPath()` |
 | script_docs health | `scriptDocsEffects` (declared effect count) | `docsPresent`, UI “dumps required” |
 | Dump signature | `EngineToken.Usage` | prose in the usage field; a flat `TokenUsage` map |
@@ -64,7 +64,7 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 | Def kind | `Def.Kind`, JSON `kind` | `Def.Type` / JSON `type` |
 | Absolute path | `path` | `LocEntry.File`, override `file` when absolute |
 | Display relative | `rel` | using `path` as the label |
-| Live session | `LanguageHealth.indexReady` | `ModelStatus.live` |
+| Live session | `LanguageHealth.ready` | `ModelStatus.live` |
 | Query gate file | `useLiveEnabled.ts` | `useSessionQuery.ts` |
 | Load-order rule | LIOS | **LISO** |
 | Graph layout | dagre | AGENTS elkjs (do not add elkjs) |
@@ -134,15 +134,16 @@ The rows for the language engine return as each phase of the plan writes them.
 | `Schema`, `Kind`, `Field`, `Accept`, `Value`, and the schema file (`Read`, `Write`); `Reader` (`Value`, `Key`), the one place that decides what a written word is; `Vocab` and `ReadVocab` (the script_docs dumps), `UsableIn`; `Info` and `ReadInfo` (the game info); `NameTokensOf` (the one hand table) | `services/internal/lang/schema` — what the game declares, what a scan learned, no game id |
 | `Learn`, `Relearn`, `Input`: an install's files in, its schema out | `services/internal/lang/learn` — the one place that infers, and never by a tuned number: a declared fact, then a registry row, then once, most or every |
 | `Index` with `Def`, `Ref`, `Edge`, `Loc`; `Harvest` and its `Records`; `Scan`, `BuildWorkspace`, `IndexFile`; `All`, `Found`, `Winner`, `Contests`; `Body` and `Restore` (what the install's cache holds) | `services/internal/lang/index` — what a scan found and where, and load order. It infers nothing |
-| `Session` with `New`, `Replace`, `Defs`, `Winner`, `Loc`, `LocKeys`, `Where` (`Place`), `Text`, `Parsed`, `Did*`, `Changed`, `Watch`; `Watcher` | `services/internal/session` — one workspace open in the editor, and its lock |
+| `Session` with `New`, `Replace`, `Defs`, `Winner`, `Loc`, `LocKeys`, `Where` (`Place`), `Text`, `Parsed`, `Did*`, `Changed`, `Watch`; `Watcher`; `Fired`, `Fires` (`Fire`: what a definition fires, through macros) | `services/internal/session` — one workspace open in the editor, and its lock |
 | `Hover` (`Inspect`), `SignatureHelp`, `Complete` (`Item`, `Resolve`), `Definition`, `References`, `DocumentSymbols`, `WorkspaceSymbols`, `Diagnose` (`Codes`), `Format`, `Folding`, `CodeActions`, `InlayHints` | `services/internal/lsp` — the editor's requests, each from one descent and one reading; payloads carry `schema.Value` |
-| `EventGraphService` (`GetEventGraph`: `Params`, `EventGraph`, `Node`, `Edge`; `GetEventDetail`: `Detail`, `Section`, `Option`), `HealthService` (`GetHealth`: `HealthParams`, `Health`, `Contest`, `Dependency`, `Dangling`, `Language`, `FileRow`; `LookupLoc`: `Lookup`) | `services/` — a page's question answered from the index's records; every number in a payload is the page's |
+| `EventGraphService` (`GetEventGraph`: `Params`, `EventGraph`, `Node`, `Edge`; `GetEventDetail`: `Detail`, `Section`, `Option`; `SearchRoots`: `Roots`, `KindCount`), `HealthService` (`GetHealth`: `HealthParams`, `Health`, `Contest`, `Site`, `Dependency`, `Dangling`, `Language`, `LocRow`, `FileRow`; `LookupLoc`: `Lookup`, `LocEntry`) | `services/` — a page's question answered from the index's records; every number in a payload is the page's |
 | `ConfigService` (`config.json`, the settings, version, updates, `ResetData`), `SessionService` (`EnsureSession`, `RebuildInstallSemantics`, `QueueScan`, `GetLanguageHealth`), `IdeService` (the editor's requests), `ReleaseService`, `WorkspaceService`, the `lang:*` events | `services/` — the Wails layer, services only |
 | `AppDir`, `CacheDir`, `Write`, `CopyFile`; `SaveInstall`, `LoadInstall`, `ScannedAt`, `DropInstall`; `ReadListingFields`, `WriteListingFields`, `FindThumbnail`, `CopyThumbnail`, `WriteNewMod` | `services/internal/local` — this machine's files: the app's own, the install cache, a mod's Paradox files |
 | `Library`, `Publish`, `Serve` (a publish run as a second copy of the app); `MarkdownToBBCode`, `BBCodeToMarkdown`; `EnsureDescriptions`, `DescriptionFiles`; `ScanPreviews`, `AddPreview`, `AddVideo`; `CopyMod` | `services/internal/steam` — everything the Steam Workshop reads |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
-| Guide UI | `GuidePane.vue` + monaco aux bar (`pmt.guide`) |
-| Graph layout | frontend `useGraphLayout` + `@dagrejs/dagre` |
+| Guide UI | `GuidePane.vue`, a Nuxt column beside the workbench (`pmt.guide`) |
+| Editor client | `frontend/src/ide/editorCore.ts` (payload → display, no framework) + `ide/languageClient.ts` (the one adapter to the workbench) |
+| Graph layout | frontend `useEventGraph` + `@dagrejs/dagre` |
 
 ## Diagnostic codes
 

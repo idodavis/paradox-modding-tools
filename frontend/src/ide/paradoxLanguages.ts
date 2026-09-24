@@ -13,12 +13,7 @@ import paradoxInfoGrammar from "../syntaxes/paradox-info.tmLanguage.json";
 import { registerPmtColorThemes } from "./colorThemes";
 import { registerPmtFileIcons } from "./fileIcons";
 
-/**
- * TM scopes the bracket-pair overlay must treat as comment/string.
- *
- * `as const` because the consumer types these as the union "string" | "comment"
- * | "other"; without it the values widen to string and no overload matches.
- */
+/** TM scopes the bracket overlay treats as comment or string; `as const` keeps them literal. */
 const GRAMMAR_TOKEN_TYPES = { comment: "comment", string: "string" } as const;
 
 /** Language ids that share Clausewitz/Jomini `#` line comments. */

@@ -125,6 +125,8 @@ func TestHarvest(t *testing.T) {
 		{"a subject kind's key names the subject's definition", "landed_titles", "k_x", "", "v_titles.txt", schema.TypeRef, false},
 		{"a file of a file-named subject kind names it by its base name", "cultures", "norse", "", "norse.txt", schema.TypeRef, false},
 		{"a loc key", "", "v.1.t", "", "v_events.txt", schema.TypeLoc, false},
+		{"a loc key at a body's field named like a link: a message's title", "", "v.1.toast", "", "v_events.txt", schema.TypeLoc, false},
+		{"a loc key under that field written with a block", "", "v.1.toast_first", "", "v_events.txt", schema.TypeLoc, false},
 		{"a file named by its name alone, from another folder", "", "v_frame.dds", "", "v_window.gui", schema.TypeFile, false},
 		{"a file written under another extension", "", "gfx/interface/v_bg.tga", "", "v_window.gui", schema.TypeFile, false},
 	} {
@@ -169,6 +171,9 @@ func TestHarvest(t *testing.T) {
 	vic3, eu5 := fixture(t, "vic3").Index, fixture(t, "eu5").Index
 	if !vic3.Def("country_definitions", "GBR") || !slices.ContainsFunc(vic3.Refs, func(ref Ref) bool { return ref.Kind == "country_definitions" && ref.Name == "GBR" && ref.Declared }) {
 		t.Error("vic3: a country, and c:GBR written as a key of a history file's wrapper")
+	}
+	if !slices.ContainsFunc(vic3.Refs, func(ref Ref) bool { return ref.Type == schema.TypeLoc && ref.Name == "vv.1.a" }) {
+		t.Error("vic3: an option's name is a loc key, though the dump declares a link named name")
 	}
 	if slices.ContainsFunc(vic3.Defs, func(def Def) bool { return def.Name == "COUNTRIES" || def.Name == "POPS" }) {
 		t.Error("vic3: a history file's wrapper word defines nothing")
@@ -311,6 +316,20 @@ func TestScan(t *testing.T) {
 	}
 	if at := slices.IndexFunc(idx.Loc, func(entry Loc) bool { return entry.Key == "v.1.t" }); at < 0 || !strings.HasSuffix(idx.Files[idx.Loc[at].File].Rel, "v_l_english.yml") {
 		t.Error("a loc entry knows its file")
+	}
+
+	var stages []string
+	dir := filepath.Join("..", "testdata", "ck3")
+	progress := func(stage string, done, total int) {
+		if done == total {
+			stages = append(stages, stage)
+		}
+	}
+	if _, err := Scan(t.Context(), Request{Game: "ck3", Dir: dir, Docs: []string{filepath.Join(dir, "docs")}, Progress: progress}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"reading localization", "reading the install", "learning the schema", "reading definitions", "reading references"}; !slices.Equal(stages, want) {
+		t.Errorf("progress runs each stage to its end, in order: %v", stages)
 	}
 }
 

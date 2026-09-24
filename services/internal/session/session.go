@@ -134,6 +134,45 @@ func (sess *Session) Winner(found []index.Found) (index.Found, int) {
 	return index.Winner(found, game.IsFIOS(sess.Game.ID, found[0].Kind), sess.Game.EntryModes, sess.Order())
 }
 
+// Fired reports a kind the game fires: events, the kind whose names are event ids, and on_actions.
+func (sess *Session) Fired(kind string) bool {
+	named := sess.Schema.Kinds[kind]
+	return kind == "on_action" || (named != nil && named.Naming.Form == "event_id")
+}
+
+// Fire is the definition at the far end of a fire, with the tokens and macros between.
+type Fire struct {
+	Name string `json:"name"`
+	Via  string `json:"via"`
+}
+
+// Fires is what a definition fires, in name order: events and on_actions only. A fire through a
+// macro is followed to what the macro fires, and a macro already met on the way is not entered again.
+func (sess *Session) Fires(from string, seen map[string]bool) []Fire {
+	var out []Fire
+	for _, idx := range sess.All() {
+		for _, fired := range idx.Fires(from) {
+			if fired.File < 0 {
+				continue
+			}
+			if kind := sess.Schema.Kinds[fired.ToKind]; kind != nil && kind.Macro != 0 {
+				if !seen[fired.To] {
+					seen[fired.To] = true
+					for _, through := range sess.Fires(fired.To, seen) {
+						out = append(out, Fire{Name: through.Name, Via: fired.To + " → " + through.Via})
+					}
+				}
+				continue
+			}
+			if sess.Fired(fired.ToKind) {
+				out = append(out, Fire{Name: fired.To, Via: fired.Via})
+			}
+		}
+	}
+	slices.SortStableFunc(out, func(first, second Fire) int { return strings.Compare(first.Name, second.Name) })
+	return slices.CompactFunc(out, func(first, second Fire) bool { return first.Name == second.Name })
+}
+
 // Loc is a key's entry in a language, the last loaded (a mod's over the install's). With none in
 // that language it is an entry of any language: a key that exists is not a missing key.
 func (sess *Session) Loc(key, language string) (index.Said, bool) {
@@ -343,13 +382,16 @@ func (sess *Session) harvest(file source.File, text string) {
 func (sess *Session) RLock()   { sess.mu.RLock() }
 func (sess *Session) RUnlock() { sess.mu.RUnlock() }
 
-// Watch reports every change under the mods' folders to the session until Close.
-func (sess *Session) Watch() error {
+// Watch reports every change under the mods' folders to the session, then to after, until Close.
+func (sess *Session) Watch(after func(path string)) error {
 	var dirs []string
 	for _, mod := range sess.Mods {
 		dirs = append(dirs, mod.Dir)
 	}
-	word, err := NewWatcher(dirs, sess.Changed)
+	word, err := NewWatcher(dirs, func(path string) {
+		sess.Changed(path)
+		after(path)
+	})
 	sess.watcher = word
 	return err
 }

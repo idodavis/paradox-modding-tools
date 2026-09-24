@@ -17,11 +17,20 @@ import (
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/errgroup"
+
+	"paradox-modding-tools/services/internal/lang/source"
 )
 
-// SearchService is the Wails RPC shell for Find in Files.
-type SearchService struct{}
+// SearchService is the Wails RPC shell for Find in Files. A text search sends each file's hits as
+// it finds them: to found, or where it is nil to the frontend as search:hits.
+type SearchService struct {
+	found func(TextSearchHits)
+}
+
+// the generator types the hits a text search sends
+func init() { application.RegisterEvent[TextSearchHits](EventSearchHits) }
 
 const (
 	searchMaxResults   = 10000
@@ -39,6 +48,7 @@ type TextSearchFolder struct {
 
 // TextSearchQuery is a Find-in-Files request from the workbench.
 type TextSearchQuery struct {
+	ID              string             `json:"id"` // the search its hits are sent under
 	Pattern         string             `json:"pattern"`
 	IsRegexp        bool               `json:"isRegexp"`
 	IsCaseSensitive bool               `json:"isCaseSensitive"`
@@ -56,10 +66,17 @@ type TextSearchHit struct {
 	Preview string `json:"preview"`
 }
 
-// TextSearchResult is the capped hit list from TextSearch.
+// TextSearchHits is one file's hits, sent under their search's ID as it finds them.
+type TextSearchHits struct {
+	ID   string          `json:"id"`
+	Hits []TextSearchHit `json:"hits"`
+}
+
+// TextSearchResult is how a text search ended: how many hits it sent, and whether it stopped at
+// the cap.
 type TextSearchResult struct {
-	Hits     []TextSearchHit `json:"hits"`
-	LimitHit bool            `json:"limitHit"`
+	Found    int  `json:"found"`
+	LimitHit bool `json:"limitHit"`
 }
 
 // FileSearchQuery is a filename search across workspace folders.
@@ -230,7 +247,7 @@ func fileHasNUL(data []byte) bool {
 	return bytes.Contains(data[:n], []byte{0})
 }
 
-func grepFile(path string, re *regexp.Regexp) ([]TextSearchHit, error) {
+func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) ([]TextSearchHit, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -256,7 +273,11 @@ func grepFile(path string, re *regexp.Regexp) ([]TextSearchHit, error) {
 	if err != nil {
 		return nil, err
 	}
-	text := string(append(head, rest...))
+	data := append(head, rest...)
+	if !holds(data) {
+		return nil, nil
+	}
+	text := string(data)
 	var hits []TextSearchHit
 	lineNo := 0
 	for len(text) > 0 {
@@ -281,14 +302,14 @@ func grepFile(path string, re *regexp.Regexp) ([]TextSearchHit, error) {
 }
 
 func textSearchFolder(
-	ctx context.Context, root string, gs globSet, re *regexp.Regexp, maxHits int,
-) ([]TextSearchHit, bool, error) {
+	ctx context.Context, root string, gs globSet, re *regexp.Regexp, holds func(data []byte) bool, maxHits int,
+	send func(hits []TextSearchHit),
+) (int, bool, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var mu sync.Mutex
-	hits := make([]TextSearchHit, 0, min(maxHits, 32))
-	limitHit := false
+	found, limitHit := 0, false
 
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(runtime.NumCPU())
@@ -307,67 +328,94 @@ func textSearchFolder(
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)
-		if err != nil || !pathMatchesGlobs(rel, gs) {
+		// an image the format table names is never opened: two in five of an install's files
+		if err != nil || !pathMatchesGlobs(rel, gs) || source.Classify(filepath.ToSlash(rel)) == source.Image {
 			return nil
 		}
 		group.Go(func() error {
 			if gctx.Err() != nil {
 				return nil
 			}
-			fileHits, err := grepFile(path, re)
+			fileHits, err := grepFile(path, re, holds)
 			if err != nil {
 				return nil
 			}
+			// a file's hits are sent as it is done, as many as the cap leaves
 			mu.Lock()
 			defer mu.Unlock()
-			for _, fileHit := range fileHits {
-				if len(hits) >= maxHits {
-					limitHit = true
-					cancel()
-					return nil
-				}
-				hits = append(hits, fileHit)
+			kept := fileHits[:min(len(fileHits), maxHits-found)]
+			found += len(kept)
+			if len(kept) > 0 {
+				send(kept)
+			}
+			if len(kept) < len(fileHits) {
+				limitHit = true
+				cancel()
 			}
 			return nil
 		})
 		return nil
 	})
 	if err := group.Wait(); err != nil && !errors.Is(err, context.Canceled) {
-		return hits, limitHit, err
+		return found, limitHit, err
 	}
 	if walkErr != nil && !errors.Is(walkErr, context.Canceled) {
-		return hits, limitHit, walkErr
+		return found, limitHit, walkErr
 	}
-	return hits, limitHit, nil
+	return found, limitHit, nil
 }
 
-// TextSearch walks workspace folders and greps file bodies in-process.
+// TextSearch walks workspace folders and greps file bodies in-process, sending each file's hits
+// as it finds them.
 func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (TextSearchResult, error) {
 	if strings.TrimSpace(query.Pattern) == "" {
-		return TextSearchResult{Hits: []TextSearchHit{}}, nil
+		return TextSearchResult{}, nil
 	}
 	re, err := compileSearchRegex(query)
 	if err != nil {
 		return TextSearchResult{}, fmt.Errorf("invalid pattern: %w", err)
 	}
+	// a plain query is first looked for in the whole of a file, lower-cased where case is ignored;
+	// most files fail that, and only one that holds it is matched line by line
+	holds := func(data []byte) bool { return true }
+	if !query.IsRegexp {
+		literal := []byte(query.Pattern)
+		if !query.IsCaseSensitive {
+			literal = bytes.ToLower(literal)
+		}
+		holds = func(data []byte) bool {
+			if !query.IsCaseSensitive {
+				data = bytes.ToLower(data)
+			}
+			return bytes.Contains(data, literal)
+		}
+	}
+	send := func(hits []TextSearchHit) {
+		sent := TextSearchHits{ID: query.ID, Hits: hits}
+		if s.found != nil {
+			s.found(sent)
+		} else {
+			emit(EventSearchHits, sent)
+		}
+	}
 	maxHits := capResults(query.MaxResults)
-	out := TextSearchResult{Hits: []TextSearchHit{}}
+	out := TextSearchResult{}
 	for _, folder := range query.Folders {
 		path := folderPath(folder)
 		if path == "" {
 			continue
 		}
-		remain := maxHits - len(out.Hits)
+		remain := maxHits - out.Found
 		if remain <= 0 {
 			out.LimitHit = true
 			break
 		}
 		gs := splitGlobs(folderGlobs(folder))
-		hits, limit, err := textSearchFolder(ctx, path, gs, re, remain)
+		found, limit, err := textSearchFolder(ctx, path, gs, re, holds, remain, send)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return TextSearchResult{}, err
 		}
-		out.Hits = append(out.Hits, hits...)
+		out.Found += found
 		if limit || errors.Is(err, context.Canceled) {
 			out.LimitHit = true
 			break

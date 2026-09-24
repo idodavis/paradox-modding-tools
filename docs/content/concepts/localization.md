@@ -21,7 +21,7 @@ l_english:
  my_event.1.d: "Body text with a $other_key$."
 ```
 
-Copy English files to other language folders (rename the suffix **and** the header) or other-language players see raw keys. PMT Health lists **untranslated** keys per language you pick in the heading.
+Copy English files to other language folders (rename the suffix **and** the header) or other-language players see raw keys. PMT Health's **Loc gaps** list the **untranslated** keys of each language (filter the Language column).
 
 ## Override a vanilla key
 
@@ -46,7 +46,7 @@ Every string shown to the player should be a **loc key**. Bare quoted text in sc
 ## What PMT does with loc
 
 - The workspace **default loc language** is an IDE / hover setting (which language you read in tooltips).
-- Health coverage lists **every language the mods ship**, not only the default: missing keys, orphans (loc with no script ref), untranslated.
+- Health coverage lists **every language the mods ship**, not only the default: missing keys, orphaned keys (a mod's key nothing of that mod reads), untranslated keys.
 - New Mod writes a stub file **with** the UTF-8 BOM.
 
 See [Workspace Health]({{< relref "/pages/health" >}}) and the [FAQ]({{< relref "/faq" >}}) if loc is “ignored.”

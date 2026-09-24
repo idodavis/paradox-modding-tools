@@ -392,6 +392,11 @@ func (walk *walk) inside(kind *schema.Kind, field *schema.Field, block *jomini.B
 func (walk *walk) statement(kind *schema.Kind, field *schema.Field, st *jomini.Assignment, scope, via string) {
 	key, block := st.Key.Text, jomini.BlockOf(st.Value)
 	value := walk.reader.Key(field, key)
+	// a body's field named like a link (a message's title = some_key) is a walk between scopes where
+	// a block is written under it
+	if _, isLink := walk.reader.Vocab.Links[key]; isLink && block != nil && value.Type == schema.TypeMember && field.Class == schema.ClassBody {
+		value = schema.Value{Type: schema.TypeScopePath, Declared: true}
+	}
 	below := walk.reader.Below(kind, field, key, value)
 	walk.parameters(key, st.Key.Range.Start)
 	walk.level(st, kind, field, below, value, scope, via)

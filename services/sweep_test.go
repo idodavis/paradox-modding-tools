@@ -80,10 +80,10 @@ func TestSweep(t *testing.T) {
 // the hover answer rate over a sample of the words in a sample of those files.
 func sweep(t *testing.T, id, name string, sess *session.Session) {
 	started := time.Now()
-	health := workspaceHealth(sess, HealthParams{})
+	health, _ := (&HealthService{Session: serving(sess)}).GetHealth("ws", HealthParams{})
 	missing, orphaned := 0, 0
 	for _, language := range health.Loc {
-		missing, orphaned = missing+language.MissingCount, orphaned+language.OrphanedCount
+		missing, orphaned = missing+len(language.Missing), orphaned+len(language.Orphaned)
 	}
 	var files []source.File
 	for _, file := range sess.Workspace.Files {
@@ -130,7 +130,7 @@ func sweep(t *testing.T, id, name string, sess *session.Session) {
 		}
 	}
 	fmt.Printf("SWEEP %s %s: %d files, %d defs; contests %d, depends %d, dangling %d, loc missing %d orphaned %d, files %d; findings %v; hover answered %d of %d; %.1fs\n",
-		id, name, len(sess.Workspace.Files), len(sess.Workspace.Defs), len(health.Contests), len(health.Depends), health.DanglingCount, missing, orphaned, health.FilesCount, findings, answered, hovers, time.Since(started).Seconds())
+		id, name, len(sess.Workspace.Files), len(sess.Workspace.Defs), len(health.Contests), len(health.Depends), len(health.Dangling), missing, orphaned, len(health.Files), findings, answered, hovers, time.Since(started).Seconds())
 }
 
 // spread takes at most n files evenly across the list, so a big mod's sample reaches every corner.

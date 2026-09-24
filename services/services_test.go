@@ -27,8 +27,9 @@ var scanned = sync.OnceValues(func() (*index.Install, error) {
 	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test", Docs: []string{filepath.Join(dir, "docs")}})
 })
 
-// workspace is a session over the fixture install with the given mods, each a map of rel to text.
-func workspace(t *testing.T, mods ...map[string]string) *session.Session {
+// workspace is a session service holding, as workspace "ws", a session over the fixture install
+// with the given mods, each a map of rel to text.
+func workspace(t *testing.T, mods ...map[string]string) *SessionService {
 	t.Helper()
 	install, err := scanned()
 	if err != nil {
@@ -45,7 +46,15 @@ func workspace(t *testing.T, mods ...map[string]string) *session.Session {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return sess
+	return serving(sess)
+}
+
+// serving is a session service holding sess as workspace "ws".
+func serving(sess *session.Session) *SessionService {
+	served := &SessionService{}
+	served.start()
+	served.sessions["ws"] = sess
+	return served
 }
 
 // tempConfig sends APPDATA, XDG_CONFIG_HOME and HOME to a temporary folder and opens a config.json
@@ -89,7 +98,7 @@ var searchTree = map[string]string{
 	"a.txt":                   "TOK only\npartialtoken\nanother TOK\n",
 }
 
-func ids(graph EventGraph) []string {
+func ids(graph *EventGraph) []string {
 	var out []string
 	for _, node := range graph.Nodes {
 		out = append(out, node.ID)
@@ -97,7 +106,7 @@ func ids(graph EventGraph) []string {
 	return out
 }
 
-func edge(graph EventGraph, from, to string) (Edge, bool) {
+func edge(graph *EventGraph, from, to string) (Edge, bool) {
 	at := slices.IndexFunc(graph.Edges, func(edge Edge) bool { return edge.From == from && edge.To == to })
 	if at < 0 {
 		return Edge{}, false
@@ -191,26 +200,26 @@ func TestEventGraph(t *testing.T) {
 	for i := range 15 {
 		wide += fmt.Sprintf("w.%d = { type = character_event }\n", i+1)
 	}
-	sess := workspace(t, map[string]string{
+	graphs := &EventGraphService{Session: workspace(t, map[string]string{
 		"events/chain.txt":              chain,
 		"events/wide.txt":               wide,
 		"events/macro.txt":              "namespace = m\nm.1 = {\n\ttype = character_event\n\timmediate = { m_fire = yes }\n}\nm.2 = { type = character_event }\n",
 		"common/scripted_effects/m.txt": "m_fire = {\n\ttrigger_event = m.2\n}\n",
 		"common/on_action/m.txt":        "on_birth = {\n\tevents = { g.3 }\n}\n",
-	})
+	})}
 	params := Params{Depth: 3, Fanout: 12, MaxNodes: 40}
 
-	drawn := graph(sess, Params{})
+	drawn, _ := graphs.GetEventGraph("ws", Params{})
 	if len(drawn.Nodes) != 0 || drawn.Reason == "" {
 		t.Errorf("an empty root is answered with a reason: %+v", drawn)
 	}
-	if got := graph(sess, Params{Root: "nothing.1"}); len(got.Nodes) != 0 || got.Reason == "" {
+	if got, _ := graphs.GetEventGraph("ws", Params{Root: "nothing.1"}); len(got.Nodes) != 0 || got.Reason == "" {
 		t.Errorf("a root nothing defines: %+v", got)
 	}
 
 	// three hops out, the caller as a stub, the fourth hop not drawn
 	params.Root = "g.1"
-	drawn = graph(sess, params)
+	drawn, _ = graphs.GetEventGraph("ws", params)
 	for _, want := range []string{"g.1", "g.2", "g.3", "g.4"} {
 		if !slices.Contains(ids(drawn), want) {
 			t.Errorf("three hops out: no %s in %v", want, ids(drawn))
@@ -219,8 +228,8 @@ func TestEventGraph(t *testing.T) {
 	if slices.Contains(ids(drawn), "g.5") || slices.Contains(ids(drawn), "g.9") || slices.Contains(ids(drawn), "g.0") || drawn.Truncated {
 		t.Errorf("a fourth hop, an unconnected event and the caller are not drawn: %v", ids(drawn))
 	}
-	if drawn.Nodes[0].ID != "g.1" || !drawn.Nodes[0].Root || drawn.Nodes[0].Origin != "moda" || drawn.Nodes[0].Namespace != "g" || drawn.Nodes[0].Hidden != 1 {
-		t.Errorf("the root, its origin, its namespace, and its hidden caller: %+v", drawn.Nodes[0])
+	if drawn.Nodes[0].ID != "g.1" || !drawn.Nodes[0].Root || drawn.Nodes[0].Origin != "moda" || drawn.Nodes[0].Hidden != 1 {
+		t.Errorf("the root, its origin, and its hidden caller: %+v", drawn.Nodes[0])
 	}
 	if at := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more-in:g.1" }); at < 0 || drawn.Nodes[at].Stub != "fired-by" || drawn.Nodes[at].Title != "+1 fired by" {
 		t.Errorf("the fired-by stub: %+v", drawn.Nodes)
@@ -231,67 +240,123 @@ func TestEventGraph(t *testing.T) {
 
 	// opening the stub draws the caller, and the on_action that fires g.3 is one hop in from g.3 only
 	params.Expand = []string{"more-in:g.1"}
-	drawn = graph(sess, params)
+	drawn, _ = graphs.GetEventGraph("ws", params)
 	if !slices.Contains(ids(drawn), "g.0") || slices.ContainsFunc(drawn.Nodes, func(node Node) bool { return node.Stub == "fired-by" }) {
 		t.Errorf("opening the stub: %v", ids(drawn))
 	}
-	if got := graph(sess, Params{Root: "g.3", Depth: 1, Expand: []string{"more-in:g.3"}}); !slices.Contains(ids(got), "on_birth") || slices.Contains(ids(got), "g.1") {
+	if got, _ := graphs.GetEventGraph("ws", Params{Root: "g.3", Depth: 1, Expand: []string{"more-in:g.3"}}); !slices.Contains(ids(got), "on_birth") || slices.Contains(ids(got), "g.1") {
 		t.Errorf("one hop in stops at the caller: %v", ids(got))
 	}
 
-	// a macro is a hop: the edge goes through it, labelled
-	drawn = graph(sess, Params{Root: "m.1", Depth: 2})
-	if found, ok := edge(drawn, "m.1", "m.2"); !ok || !strings.Contains(found.Via, "m_fire") || slices.Contains(ids(drawn), "m_fire") {
+	// a macro is a hop: the edge goes through it, labelled by its chain, the same either way round;
+	// with the page's macros shown it is a node between the two
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2})
+	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire → trigger_event" || slices.Contains(ids(drawn), "m_fire") {
 		t.Errorf("a fire through a scripted effect: %+v %v", drawn.Edges, ids(drawn))
+	}
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.2", Depth: 1, Expand: []string{"more-in:m.2"}})
+	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire → trigger_event" {
+		t.Errorf("the same chain into it: %+v", drawn.Edges)
+	}
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Macros: true})
+	into, _ := edge(drawn, "m_fire", "m.2")
+	if _, ok := edge(drawn, "m.1", "m_fire"); !ok || into.Via != "trigger_event" || !slices.Contains(ids(drawn), "m_fire") {
+		t.Errorf("the macro drawn: %+v %v", drawn.Edges, ids(drawn))
+	}
+	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0] != (session.Fire{Name: "m.1", Via: "m_fire → trigger_event"}) {
+		t.Errorf("the detail's fired-by, as the graph draws it: %+v", detail.FiredBy)
 	}
 
 	// a wide fan-out: the page's number of targets, then a stub; opened, all; a node cap truncates
-	drawn = graph(sess, Params{Root: "w.0", Depth: 1, Fanout: 12, MaxNodes: 40})
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "w.0", Depth: 1, Fanout: 12, MaxNodes: 40})
 	if at := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more:w.0" }); at < 0 || drawn.Nodes[at].Title != "+3 more" || len(drawn.Nodes) != 14 {
 		t.Errorf("the more stub: %d nodes, %+v", len(drawn.Nodes), drawn.Nodes)
 	}
-	if got := graph(sess, Params{Root: "w.0", Depth: 1, Fanout: 12, MaxNodes: 40, Expand: []string{"more:w.0"}}); len(got.Nodes) != 16 {
+	if got, _ := graphs.GetEventGraph("ws", Params{Root: "w.0", Depth: 1, Fanout: 12, MaxNodes: 40, Expand: []string{"more:w.0"}}); len(got.Nodes) != 16 {
 		t.Errorf("opening the fan-out: %d nodes", len(got.Nodes))
 	}
-	if got := graph(sess, Params{Root: "w.0", Depth: 1, MaxNodes: 5}); !got.Truncated || len(got.Nodes) != 5 {
-		t.Errorf("the node cap: %d nodes, truncated %v", len(got.Nodes), got.Truncated)
+	if got, _ := graphs.GetEventGraph("ws", Params{Root: "w.0", Depth: 1, MaxNodes: 5}); !got.Truncated || got.Reached != 1 || len(got.Nodes) != 5 {
+		t.Errorf("the node cap, at the hop it cut: %d nodes, truncated %v at %d", len(got.Nodes), got.Truncated, got.Reached)
 	}
 
 	// the install's own fires are drawn with or without a mod
-	drawn = graph(sess, Params{Root: "v.1", Depth: 1})
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "v.1", Depth: 1})
 	if _, ok := edge(drawn, "v.1", "v.2"); !ok {
 		t.Errorf("the install's fire: %+v", drawn.Edges)
 	}
-	if got := graph(workspace(t), Params{Root: "v.1", Depth: 1}); len(got.Nodes) == 0 {
+	if got, _ := (&EventGraphService{Session: workspace(t)}).GetEventGraph("ws", Params{Root: "v.1", Depth: 1}); len(got.Nodes) == 0 {
 		t.Error("with no mod at all")
+	}
+
+	// the page's origins: the root and its stub stay, a node of another origin goes with its edges
+	if got, _ := graphs.GetEventGraph("ws", Params{Root: "g.1", Depth: 3, Origins: []string{game.OriginVanilla}}); !slices.Equal(ids(got), []string{"g.1", "more-in:g.1"}) || len(got.Edges) != 1 {
+		t.Errorf("one origin: %v %+v", ids(got), got.Edges)
+	}
+
+	// the root search: an install event by its number and by its namespace, the ids that start with
+	// the query first; never a name no edge has, nor a macro; one kind, and the count of each
+	if got, _ := graphs.SearchRoots("ws", ".2", ""); !slices.Contains(ids(&EventGraph{Nodes: got.Hits}), "v.2") {
+		t.Errorf("by number: %+v", got)
+	}
+	if got, _ := graphs.SearchRoots("ws", "V.", ""); len(got.Hits) < 2 || got.Hits[0].ID != "v.1" || got.Hits[1].ID != "v.2" || got.Hits[0].Origin != game.OriginVanilla {
+		t.Errorf("by namespace: %+v", got)
+	}
+	if got, _ := graphs.SearchRoots("ws", "vsub", ""); len(got.Hits) != 0 {
+		t.Errorf("an event nothing fires and that fires nothing: %+v", got)
+	}
+	if got, _ := graphs.SearchRoots("ws", "m_fire", ""); len(got.Hits) != 0 {
+		t.Errorf("a macro is a hop, not a root: %+v", got)
+	}
+	actions, _ := graphs.SearchRoots("ws", "", "on_action")
+	if !slices.Equal(ids(&EventGraph{Nodes: actions.Hits}), []string{"on_birth"}) || !slices.ContainsFunc(actions.Kinds, func(count KindCount) bool { return count.Kind == "events" && count.Count > 10 }) {
+		t.Errorf("one kind's hits, every kind's count: %+v", actions)
 	}
 }
 
 func TestDetail(t *testing.T) {
-	sess := workspace(t, map[string]string{
-		"events/m.txt":                         "namespace = m\nm.1 = {\n\ttype = character_event\n\ttitle = v.1.t\n\timmediate = { trigger_event = v.2 }\n\toption = {\n\t\tname = v.1.a\n\t}\n}\n",
+	graphs := &EventGraphService{Session: workspace(t, map[string]string{
+		"events/m.txt":                         "namespace = m\nm.1 = {\n\ttype = character_event\n\ttitle = v.1.t\n\tdesc = v.1.desc\n\timmediate = { trigger_event = v.2 }\n\toption = {\n\t\tname = v.1.a\n\t}\n}\nm.2 = {\n\toption = {\n\t\tname = {\n\t\t\ttrigger = { always = yes }\n\t\t\ttext = v.1.a\n\t\t}\n\t}\n}\n",
 		"localization/english/m_l_english.yml": "\xEF\xBB\xBFl_english:\n v.1.a:0 \"Go\"\n",
-	})
-	detail := eventDetail(sess, "m.1")
-	if detail.Reason != "" || detail.Kind != "events" || detail.Namespace != "m" || detail.At.Origin != "moda" || len(detail.Sites) != 1 {
-		t.Fatalf("the header: %+v", detail)
+	})}
+	detail, _ := graphs.GetEventDetail("ws", "m.1")
+	if detail.Reason != "" || detail.Kind != "events" || detail.At.Origin != "moda" || detail.Title != "Hello" {
+		t.Fatalf("the header, its title from the title member's key: %+v", detail)
 	}
-	if at := slices.IndexFunc(detail.Sections, func(section Section) bool { return section.Key == "type" }); at < 0 || detail.Sections[at].Value != "character_event" || len(detail.Sections) != 4 {
+	if drawn, _ := graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 1, Fanout: 5, MaxNodes: 10}); len(drawn.Nodes) == 0 || drawn.Nodes[0].Title != "Hello" {
+		t.Errorf("a node's title: %+v", drawn)
+	}
+	if named, _ := graphs.GetEventDetail("ws", "m.2"); len(named.Options) != 1 || named.Options[0].Name != "v.1.a" || named.Options[0].Text != "Go" {
+		t.Errorf("an option named by a block: %+v", named.Options)
+	}
+	sections := map[string]Section{}
+	for _, section := range detail.Sections {
+		sections[section.Key] = section
+	}
+	if sections["type"].Value != "character_event" || len(detail.Sections) != 5 {
 		t.Errorf("the sections: %+v", detail.Sections)
+	}
+	if sections["desc"].Text != "Desc" {
+		t.Errorf("a one-word section's loc text: %+v", sections["desc"])
+	}
+	if len(detail.Lines) != 9 || detail.Lines[0] != "m.1 = {" || detail.Lines[5] != "\toption = {" || detail.Lines[8] != "}" {
+		t.Errorf("the definition as its file writes it: %q", detail.Lines)
 	}
 	if len(detail.Options) != 1 || detail.Options[0].Name != "v.1.a" || detail.Options[0].Text != "Go" {
 		t.Errorf("the options: %+v", detail.Options)
 	}
-	if len(detail.Fires) != 1 || detail.Fires[0].To != "v.2" {
+	if len(detail.Refs) == 0 || detail.Refs[0].Kind != "loc" || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
+		t.Errorf("the block's references, by kind in the order written: %+v", detail.Refs)
+	}
+	if len(detail.Fires) != 1 || detail.Fires[0].Name != "v.2" {
 		t.Errorf("what it fires: %+v", detail.Fires)
 	}
-	if detail := eventDetail(sess, "v.2"); len(detail.FiredBy) == 0 {
+	if detail, _ := graphs.GetEventDetail("ws", "v.2"); len(detail.FiredBy) == 0 {
 		t.Errorf("what fires it: %+v", detail.FiredBy)
 	}
-	if on := eventDetail(sess, "on_birth"); on.Kind != "on_action" || on.Namespace != "" || len(on.Sections) == 0 {
+	if on, _ := graphs.GetEventDetail("ws", "on_birth"); on.Kind != "on_action" || len(on.Sections) == 0 {
 		t.Errorf("an on_action's detail: %+v", on)
 	}
-	if none := eventDetail(sess, "nothing.1"); none.Reason == "" {
+	if none, _ := graphs.GetEventDetail("ws", "nothing.1"); none.Reason == "" {
 		t.Error("a name nothing defines")
 	}
 }
@@ -405,37 +470,73 @@ func TestReadBase64(t *testing.T) {
 
 // TestWorkspaceHealth covers the report over two mods: contests and dependencies in a chosen order,
 // dangling references and what must never be one, each language's missing, untranslated and
-// orphaned keys, the files a definition lacks, the caps, and the lookup of one key.
+// orphaned keys, the files a definition lacks, a site's lines, and the lookup of one key.
 func TestWorkspaceHealth(t *testing.T) {
-	sess := workspace(t,
+	reports := &HealthService{Session: workspace(t,
 		map[string]string{
-			"common/traits/a.txt":                  "brave = { name = x }\nshared_a = { name = x }\nbold = { name = x }\n",
+			"common/traits/a.txt":                  "brave = { name = x }\nshared_a = { name = x }\nbold = { name = x }\ncraven = { name = x }\n",
 			"events/a.txt":                         "namespace = a\na.1 = {\n\ttype = character_event\n\ttitle = a.1.t\n\ttrigger = {\n\t\thas_trait = brave\n\t\thas_trait = bold_b\n\t\texists = title:k_nowhere\n\t\texists = title:k_x\n\t\tfaith = faith:catholic\n\t\texists = scope:whatever\n\t}\n\timmediate = { add_gold = small_value }\n}\n",
-			"localization/english/a_l_english.yml": "\xEF\xBB\xBFl_english:\n a.1.t:0 \"Hi $VALUE|=+0$\"\n a_dead:0 \"Nothing reads me\"\n a_reader:0 \"$a_read$\"\n a_read:0 \"Read by a key\"\n bold:0 \"Bold\"\n",
+			"localization/english/a_l_english.yml": "\xEF\xBB\xBFl_english:\n a.1.t:0 \"Hi $VALUE|=+0$\"\n a_dead:0 \"Nothing reads me\"\n a_reader:0 \"$a_read$\"\n a_read:0 \"Read by a key\"\n bold:0 \"Bold\"\n bold_extra:0 \"More\"\n",
 			"localization/french/a_l_french.yml":   "\xEF\xBB\xBFl_french:\n a.1.t:0 \"Salut\"\n",
 		},
 		map[string]string{
-			"common/traits/b.txt":                  "brave = { name = x }\nshared_a = { name = x }\nbold_b = { name = x }\n",
+			"common/traits/b.txt":                  "brave = {\n" + strings.Repeat("\tname = x\n", 11) + "}\nshared_a = { name = x }\nbold_b = { name = x }\n",
 			"localization/english/b_l_english.yml": "\xEF\xBB\xBFl_english:\n b_only:0 \"B\"\n",
-		})
-	health := workspaceHealth(sess, HealthParams{})
+		})}
+	health, _ := reports.GetHealth("ws", HealthParams{})
 
 	// contests: brave is defined three times, the last wins under LIOS; a reversed order flips it
 	brave := slices.IndexFunc(health.Contests, func(contest Contest) bool { return contest.Name == "brave" })
-	if brave < 0 || health.Contests[brave].Rule != "LIOS" || health.Contests[brave].Found[health.Contests[brave].Winner].At.Origin != "modb" || len(health.Contests[brave].Found) != 3 {
+	origin := func(report *Health, site Site) string { return report.Sources[site.File].Origin }
+	if brave < 0 || health.Contests[brave].Rule != "LIOS" || origin(health, health.Contests[brave].Sites[health.Contests[brave].Winner]) != "modb" || len(health.Contests[brave].Sites) != 3 {
 		t.Fatalf("brave contested by three, won by the last: %+v", health.Contests)
 	}
-	reversed := workspaceHealth(sess, HealthParams{Order: []string{"modb", "moda"}})
-	if at := slices.IndexFunc(reversed.Contests, func(contest Contest) bool { return contest.Name == "brave" }); at < 0 || reversed.Contests[at].Found[reversed.Contests[at].Winner].At.Origin != "moda" {
+	reversed, _ := reports.GetHealth("ws", HealthParams{Order: []string{"modb", "moda"}})
+	if at := slices.IndexFunc(reversed.Contests, func(contest Contest) bool { return contest.Name == "brave" }); at < 0 || origin(reversed, reversed.Contests[at].Sites[reversed.Contests[at].Winner]) != "moda" {
 		t.Errorf("the reversed order: %+v", reversed.Contests)
 	}
-	if !slices.ContainsFunc(health.Depends, func(dep Dependency) bool { return dep.From == "moda" && dep.To == "modb" }) {
+
+	// one mod over the install's name is an override; two mods on a name, with or without the
+	// install's, are a contest
+	named := func(name string) func(Contest) bool {
+		return func(contest Contest) bool { return contest.Name == name }
+	}
+	if slices.ContainsFunc(health.Contests, named("craven")) || !slices.ContainsFunc(health.Overrides, named("craven")) {
+		t.Errorf("mod a's craven is an override: %+v %+v", health.Contests, health.Overrides)
+	}
+	if !slices.ContainsFunc(health.Contests, named("shared_a")) {
+		t.Errorf("two mods on a name the install lacks: %+v", health.Contests)
+	}
+
+	// a site's lines, read when its row opens: a definition's short block whole, a long one cut at
+	// ten lines and a "…"; a reference's one line
+	lines := func(sites []Site, definition bool) [][]string {
+		var places []SourceAt
+		for _, site := range sites {
+			places = append(places, SourceAt{Path: health.Sources[site.File].Path, Line: site.Line, Col: site.Col, Definition: definition})
+		}
+		got, _ := reports.GetLines("ws", places)
+		return got
+	}
+	braves := lines(health.Contests[brave].Sites, true)
+	if !slices.Equal(braves[0], []string{"brave = {", "\tcategory = personality", "\tdiplomacy = 0", "}"}) {
+		t.Errorf("the install's brave, whole: %q", braves[0])
+	}
+	if cut := braves[2]; len(cut) != 11 || cut[0] != "brave = {" || cut[10] != "…" {
+		t.Errorf("mod b's brave, cut: %q", cut)
+	}
+	if at := slices.IndexFunc(health.Depends, func(dep Dependency) bool { return dep.From == "moda" && dep.To == "modb" }); at < 0 {
 		t.Errorf("mod a names bold_b, which only mod b defines: %+v", health.Depends)
+	} else if uses := health.Depends[at].Sites; len(uses) != 1 || uses[0].Kind != "traits" || uses[0].Name != "bold_b" || !slices.Equal(lines(uses, false)[0], []string{"\t\thas_trait = bold_b"}) {
+		t.Errorf("each use, with its kind, name and line: %+v", uses)
 	}
 
 	// dangling: a declared cite nothing defines, with its sites; never what resolves or is unclaimed
-	if len(health.Dangling) != 1 || health.Dangling[0].Name != "k_nowhere" || !health.Dangling[0].Declared || health.Dangling[0].Count != 1 || len(health.Dangling[0].Sites) != 1 || health.DanglingCount != 1 {
-		t.Errorf("one dangling reference: %+v", health.Dangling)
+	if len(health.Dangling) != 1 || health.Dangling[0].Name != "k_nowhere" || !health.Dangling[0].Declared || len(health.Dangling[0].Sites) != 1 {
+		t.Fatalf("one dangling reference: %+v", health.Dangling)
+	}
+	if got := lines(health.Dangling[0].Sites, false)[0]; !slices.Equal(got, []string{"\t\texists = title:k_nowhere"}) {
+		t.Errorf("a dangling site's line: %q", got)
 	}
 
 	// localization: both languages; conventional keys missing; untranslated; orphaned within the mod
@@ -457,38 +558,30 @@ func TestWorkspaceHealth(t *testing.T) {
 	if got := keys(langs["english"].Missing); !slices.Equal(got, []string{"bold_b", "shared_a", "shared_a"}) {
 		t.Errorf("english: a trait's own key is what every vanilla trait has; bold and brave have theirs; a name two mods define is two rows: %v", got)
 	}
-	if got := keys(langs["french"].Missing); !slices.Contains(got, "bold") || !slices.Contains(got, "shared_a") {
-		t.Errorf("french: the keys english has are missing too: %v", got)
+	if got := keys(langs["french"].Missing); len(got) != 0 {
+		t.Errorf("french: missing is the workspace's language's alone, so no key is listed twice: %v", got)
 	}
 	if got := keys(langs["french"].Untranslated); !slices.Contains(got, "bold") || slices.Contains(got, "a.1.t") {
 		t.Errorf("french: an english key with no french entry is untranslated; one with an entry is not: %v", got)
 	}
 	if got := keys(langs["english"].Orphaned); !slices.Equal(got, []string{"a_dead", "a_reader", "b_only"}) {
-		t.Errorf("orphaned: a key nothing reads, one that only reads; not one a definition names, one script reads, or one another key reads: %v", got)
+		t.Errorf("orphaned: a key nothing reads, one that only reads; not one a definition names, one that goes on from it, one script reads, or one another key reads: %v", got)
 	}
-	if langs["english"].OrphanedCount != 3 || langs["english"].MissingCount != 3 {
-		t.Errorf("the counts are whole: %+v", langs["english"])
+	if row := langs["english"].Orphaned[0]; !strings.HasSuffix(health.Sources[row.File].Rel, "a_l_english.yml") {
+		t.Errorf("a row names its file by its number in Sources: %+v in %+v", row, health.Sources[row.File])
 	}
 
 	// files: the icon template covers 5 of 8 vanilla traits, so a trait lacking an icon is fine
-	if health.FilesCount != 0 || len(health.Files) != 0 {
+	if len(health.Files) != 0 {
 		t.Errorf("a template short of full coverage accuses nothing: %+v", health.Files)
 	}
 
-	// the page's cap cuts rows, not counts
-	capped := workspaceHealth(sess, HealthParams{Limit: 1})
-	for _, loc := range capped.Loc {
-		if loc.Language == "english" && (len(loc.Orphaned) != 1 || loc.OrphanedCount != 3) {
-			t.Errorf("capped rows, whole count: %+v", loc)
-		}
-	}
-
 	// looking one key up: its entries in every language, and its readers
-	look := lookupLoc(sess, "a.1.t")
+	look, _ := reports.LookupLoc("ws", "a.1.t")
 	if len(look.Entries) != 2 || len(look.Readers) != 1 || look.Readers[0].At.Origin != "moda" {
 		t.Errorf("a key's entries and readers: %+v", look)
 	}
-	if look := lookupLoc(sess, "v.1.t"); len(look.Entries) != 1 || look.Entries[0].At.Origin != "vanilla" {
+	if look, _ := reports.LookupLoc("ws", "v.1.t"); len(look.Entries) != 1 || look.Entries[0].At.Origin != "vanilla" || look.Entries[0].Language != "english" {
 		t.Errorf("an install key: %+v", look)
 	}
 }
@@ -512,7 +605,8 @@ func TestTextSearch(t *testing.T) {
 	writeTree(t, root, searchTree)
 	writeTree(t, other, searchTree)
 	whole := []TextSearchFolder{{Path: root}}
-	svc := &SearchService{}
+	var hits []TextSearchHit
+	svc := &SearchService{found: func(sent TextSearchHits) { hits = append(hits, sent.Hits...) }}
 	for _, row := range []struct {
 		name  string
 		query TextSearchQuery
@@ -561,6 +655,7 @@ func TestTextSearch(t *testing.T) {
 		{name: "regex", query: TextSearchQuery{Pattern: `tok.+only`, IsRegexp: true, Folders: whole}, hits: 1},
 		{name: "an invalid regex is an error", query: TextSearchQuery{Pattern: "[", IsRegexp: true, Folders: whole}, fails: true},
 	} {
+		hits = nil
 		result, err := svc.TextSearch(t.Context(), row.query)
 		if (err != nil) != row.fails {
 			t.Errorf("%s: error %v, want one %v", row.name, err, row.fails)
@@ -568,10 +663,10 @@ func TestTextSearch(t *testing.T) {
 		if err != nil || row.fails {
 			continue
 		}
-		if row.hits < 0 && len(result.Hits) == 0 || row.hits >= 0 && len(result.Hits) != row.hits {
-			t.Errorf("%s: hits = %+v", row.name, result.Hits)
+		if row.hits < 0 && len(hits) == 0 || row.hits >= 0 && len(hits) != row.hits || result.Found != len(hits) {
+			t.Errorf("%s: %d found, hits sent = %+v", row.name, result.Found, hits)
 		}
-		for _, hit := range result.Hits {
+		for _, hit := range hits {
 			if row.where != nil && !row.where(filepath.ToSlash(hit.Path)) {
 				t.Errorf("%s: leaked %s", row.name, hit.Path)
 			}
@@ -623,7 +718,7 @@ func TestTextSearchCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("uncancelled search: %v", err)
 	}
-	if len(full.Hits) == 0 {
+	if full.Found == 0 {
 		t.Fatal("fixture produced no hits; the test would prove nothing")
 	}
 
@@ -634,9 +729,8 @@ func TestTextSearchCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cancellation must not surface as an error: %v", err)
 	}
-	if len(res.Hits) >= len(full.Hits) {
-		t.Fatalf("cancel did not stop the search: got %d hits, full run is %d",
-			len(res.Hits), len(full.Hits))
+	if res.Found >= full.Found {
+		t.Fatalf("cancel did not stop the search: got %d hits, full run is %d", res.Found, full.Found)
 	}
 }
 
@@ -655,7 +749,7 @@ func TestEnsureSession(t *testing.T) {
 	}
 
 	health, err := svc.EnsureSession("ws")
-	if err != nil || !health.Ready || health.Defs == 0 || health.Kinds == 0 || health.CacheStale || health.ScannedAt == "" || health.Scanning {
+	if err != nil || !health.Ready || health.CacheStale || health.ScannedAt == "" || health.Scanning {
 		t.Fatalf("a session built from a scan, its cache written: %+v (%v)", health, err)
 	}
 	live := svc.get("ws")
@@ -796,6 +890,15 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	config := tempConfig(t, nil, Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
 	svc := &WorkspaceService{Config: config, Session: &SessionService{Config: config}}
 	modDir := t.TempDir()
+	writeTree(t, modDir, map[string]string{"a/descriptor.mod": "", "b/descriptor.mod": ""})
+
+	// a folder with no descriptor, or no folder at all, is no mod
+	if _, err := svc.AddWorkspaceMod("ws1", "None", modDir, ""); err == nil || !strings.Contains(err.Error(), "descriptor.mod") {
+		t.Fatalf("a folder with no descriptor: %v", err)
+	}
+	if _, err := svc.AddWorkspaceMod("ws1", "Gone", filepath.Join(modDir, "gone"), ""); err == nil {
+		t.Fatal("a path that is not there")
+	}
 
 	alpha, err := svc.AddWorkspaceMod("ws1", "Alpha", filepath.Join(modDir, "a"), "")
 	if err != nil {
@@ -877,6 +980,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 		[]GameInstall{{ID: "inst1", GameID: "ck3", Name: "My CK3 nickname", Path: install}},
 		Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
 	svc := &WorkspaceService{Config: config, Session: &SessionService{Config: config}}
+	writeTree(t, modDir, map[string]string{"descriptor.mod": ""})
 	if _, err := svc.AddWorkspaceMod("ws1", "Alpha", modDir, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -937,6 +1041,7 @@ func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 			config := tempConfig(t, nil, Workspace{ID: "ws", GameID: testCase.game, Name: "T"})
 			svc := &WorkspaceService{Config: config, Session: &SessionService{Config: config}}
 			root, want := t.TempDir(), ""
+			writeTree(t, root, map[string]string{game.DescriptorFile(testCase.game): ""})
 			if testCase.rel != "" {
 				want = filepath.Join(root, filepath.FromSlash(testCase.rel))
 				writeTree(t, root, map[string]string{testCase.rel: "img"})

@@ -8,18 +8,18 @@ export interface File {
     /**
      * absolute, as the walk spelled it
      */
-    "Path": string;
+    "path": string;
 
     /**
      * relative to its root, slash separated: common/traits/00_traits.txt
      */
-    "Rel": string;
+    "rel": string;
 
     /**
      * "vanilla", or a mod's id
      */
-    "Origin": string;
-    "Format": Format;
+    "origin": string;
+    "format": Format;
 }
 
 /**
@@ -81,16 +81,16 @@ export enum Format {
  * ImageInfo is an image file's header facts.
  */
 export interface ImageInfo {
-    "Width": number;
-    "Height": number;
+    "width": number;
+    "height": number;
 
     /**
      * DXT5, BC7, RGBA8, png, jpeg, TGA 32-bit
      */
-    "Format": string;
+    "format": string;
 
     /**
      * mip levels a DDS holds; 0 for the others
      */
-    "Mips": number;
+    "mips": number;
 }

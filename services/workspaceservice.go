@@ -353,18 +353,25 @@ func (w *WorkspaceService) CreateMod(
 	return root, steam.EnsureDescriptions(root, name, description)
 }
 
-// AddWorkspaceMod adds a mod to a workspace.
+// AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor.
 func (w *WorkspaceService) AddWorkspaceMod(
 	workspaceID, name, path, thumbnail string,
 ) (*WorkspaceMod, error) {
+	var gameID string
+	w.Config.read(func(cfg *Config) {
+		if ws := findWorkspace(cfg, workspaceID); ws != nil {
+			gameID = ws.GameID
+		}
+	})
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a folder", path)
+	}
+	if _, err := os.Stat(game.DescriptorPath(gameID, path)); err != nil {
+		return nil, fmt.Errorf("%s has no %s, so it is not a mod", path, game.DescriptorFile(gameID))
+	}
+
 	// an empty thumbnail is found here, as for the Release page: only Go knows each game's folder
 	if thumbnail == "" {
-		var gameID string
-		w.Config.read(func(cfg *Config) {
-			if ws := findWorkspace(cfg, workspaceID); ws != nil {
-				gameID = ws.GameID
-			}
-		})
 		if rel, found := local.FindThumbnail(gameID, path, ""); found {
 			thumbnail = filepath.Join(path, filepath.FromSlash(rel))
 		}
@@ -433,7 +440,7 @@ func (w *WorkspaceService) SetWorkspaceModCalendar(
 	// the session holds the calendar, so it is built again on the next request
 	w.Session.drop(workspaceID)
 	// VS Code re-requests a document's inlay hints only when told they changed
-	emitLang(EventLangCalendarChanged, workspaceID)
+	emit(EventLangCalendarChanged, workspaceID)
 	return nil
 }
 

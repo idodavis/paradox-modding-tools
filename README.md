@@ -63,13 +63,13 @@ Windows zips are **unsigned** (SmartScreen will warn).
 
 ### Prerequisites
 
-- **[Go](https://go.dev/dl/) 1.26.5** (`go.mod`)
+- **[Go](https://go.dev/dl/) 1.27.1** (`go.mod`)
 - **[Node.js](https://nodejs.org/)** + npm
 - **[Task](https://taskfile.dev/installation/)** (Taskfile v3)
 - **Wails v3 CLI** pinned to the module:
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.21
 ```
 
 Windows builds use `CGO_ENABLED=0`. Linux needs GTK4 + WebKitGTK 6 **dev** packages (e.g. Debian/Ubuntu: `build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev`).
@@ -91,7 +91,7 @@ go test ./...
 | Path | Role |
 |------|------|
 | `main.go` | Wails entry, updater, single window |
-| `services/` | Go services + parser / catalog / session / lsp / views |
+| `services/` | Wails services; `services/internal/` holds the language engine (`lang/*`, `session`, `lsp`) and `game`, `local`, `steam`, `wiki` |
 | `frontend/` | Vue 3 + Nuxt UI + Pinia + monaco-vscode-api |
 | `docs/` | User guide (GitHub Pages) |
 | `build/` | Wails Taskfiles and icons |

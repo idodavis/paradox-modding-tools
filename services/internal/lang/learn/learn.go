@@ -29,6 +29,9 @@ type Input struct {
 	Loc           *loc.Keys
 	EntryModes    []string // the words the game's registry gives a meaning, for the drift report
 	Subjects      []string // the registry's folders whose definitions are named after other kinds' (history, flags)
+
+	// Progress hears each script file read, then each step after; nil for none
+	Progress func(stage string, done, total int)
 }
 
 // Learn reads an install's files once and gives the schema of what they hold.
@@ -44,12 +47,20 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 			images[base] = append(images[base], path.Dir(file.Rel)+"/{id}"+path.Ext(rel))
 		}
 	}
-	parseErrors, err := census.read(ctx, in.Files)
+	parseErrors, err := census.read(ctx, in.Files, in.Progress)
 	if err != nil {
 		return nil, err
 	}
+
+	// each step after the read is one move of the bar
+	step := func(done int) {
+		if in.Progress != nil {
+			in.Progress("learning the schema", done, 5)
+		}
+	}
 	census.tables(in.Files)
 	census.witnesses()
+	step(1)
 
 	// kinds, then what needs every kind's names
 	drafts := census.kinds()
@@ -57,12 +68,14 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 	census.prefixes(drafts)
 	census.settle(drafts)
 	census.index(drafts)
+	step(2)
 	for _, draft := range drafts {
 		// read before the lift: a parameter written under a token leaves the shape with it
 		draft.params = draft.shape.holdsParams()
 		census.lift(draft.shape)
 		census.hoist(draft.shape)
 	}
+	step(3)
 	for next := slices.Sorted(maps.Keys(census.tokens)); len(next) > 0; next = slices.Sorted(maps.Keys(census.moved)) {
 		clear(census.moved)
 		for _, token := range next {
@@ -92,6 +105,7 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 		}
 	}
 	census.macros(drafts)
+	step(4)
 	sch := &schema.Schema{Game: in.Game, Version: in.Version, Kinds: map[string]*schema.Kind{}, Arguments: map[string]*schema.Field{}}
 	for _, draft := range drafts {
 		kind := draft.kind
@@ -103,6 +117,7 @@ func Learn(ctx context.Context, in Input) (*schema.Schema, error) {
 		kind.Params = kind.Macro != 0 && draft.params
 		sch.Kinds[kind.Name] = kind
 	}
+	step(5)
 
 	// the kinds script makes as it runs, the constants of any file, and the parameters of any macro
 	for kind, prefix := range schema.ScriptKinds {
@@ -155,7 +170,7 @@ func Relearn(ctx context.Context, in Input, install *schema.Schema) (*schema.Sch
 // read parses every script file with one reader per CPU and counts them in the inventory's
 // order, so two scans of one install agree. A first read of a file costs milliseconds of
 // waiting whatever its size, and that wait divides among readers.
-func (census *census) read(ctx context.Context, files []source.File) (parseErrors []schema.Tally, err error) {
+func (census *census) read(ctx context.Context, files []source.File, progress func(stage string, done, total int)) (parseErrors []schema.Tally, err error) {
 	type parsed struct {
 		i   int
 		res jomini.Result
@@ -212,6 +227,9 @@ func (census *census) read(ctx context.Context, files []source.File) (parseError
 			delete(waiting, scripts[turn])
 			turn++
 			<-window
+			if progress != nil {
+				progress("reading the install", turn, len(scripts))
+			}
 		}
 	}
 	return parseErrors, ctx.Err()

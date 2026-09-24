@@ -50,6 +50,12 @@ Output Scopes: province
 
 --------------------
 
+name - Scope to the name (as a flag) of a script container
+Input Scopes: container
+Output Scopes: flag
+
+--------------------
+
 owner - the owner of the state
 Input Scopes: state
 Output Scopes: country

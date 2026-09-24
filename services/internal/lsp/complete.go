@@ -311,7 +311,7 @@ func Resolve(sess *session.Session, path string, item Item) (string, error) {
 			return "", err
 		}
 		card := &Inspect{}
-		file.defined(card, value)
+		file.defined(card, value, "")
 		return strings.TrimSpace(card.Label + "\n" + card.Docs), nil
 	}
 	return "", nil

@@ -95,6 +95,12 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return games.value.find((g) => g.id === id)?.name ?? "Game";
   }
 
+  /** An origin's name: the game's for vanilla, else its mod's; the id when neither. */
+  function originName(id: string): string {
+    if (!id || id === originVanilla.value) return gameName(activeWorkspace.value?.gameId ?? "");
+    return workspaceMods.value.find((mod) => mod.id === id)?.name ?? id;
+  }
+
   /** FIOS sentence from GameInfo.firstWins. */
   function firstWins(id: string): string {
     return games.value.find((g) => g.id === id)?.firstWins ?? "";
@@ -204,7 +210,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     if (!id) return false;
     try {
       const health = await EnsureSession(id);
-      return Boolean(health?.indexReady);
+      return Boolean(health?.ready);
     } catch {
       return false;
     }
@@ -258,6 +264,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     workspacesByGame,
     shortName,
     gameName,
+    originName,
     firstWins,
     refresh,
     loadActiveWorkspace,

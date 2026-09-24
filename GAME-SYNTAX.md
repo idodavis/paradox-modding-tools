@@ -4,12 +4,13 @@ What CK3, Vic3 and EU5 actually do, as measured against real installs — not wh
 the engine assumes. **When a game update breaks PMT, start here:** re-run the
 measurement in the row that broke and compare it against the recorded value.
 
-Every claim below has a reproduction. Run them with the install env vars set:
+Every claim below has a reproduction. Run them with `task test:gate` and each
+game's root folder set; the dumps are read from the game's Documents folder:
 
 ```
-PMT_TEST_INSTALL_CK3   PMT_TEST_DOCS_CK3     (…/Documents/Paradox Interactive/Crusader Kings III/logs)
-PMT_TEST_INSTALL_VIC3  PMT_TEST_DOCS_VIC3    (…/Victoria 3/docs)
-PMT_TEST_INSTALL_EU5   PMT_TEST_DOCS_EU5     (…/Europa Universalis V/docs)
+PMT_TEST_INSTALL_CK3   (dumps in …/Documents/Paradox Interactive/Crusader Kings III/logs)
+PMT_TEST_INSTALL_VIC3  (dumps in …/Victoria 3/docs)
+PMT_TEST_INSTALL_EU5   (dumps in …/Europa Universalis V/docs)
 ```
 
 Measured 2026-09 against CK3 1.19.x, Vic3 and EU5 current on Steam.
@@ -30,7 +31,7 @@ block syntax differs.
 | `on_actions.log` | `Expected Scope` per on_action | 902 | yes | yes |
 | `modifiers.log` | modifier tokens, use area / mask | 742 | yes | yes |
 
-**Block syntax per game** — three splitters in `catalog/schema.go`:
+**Block syntax per game** — `dumpBlocks` (`lang/schema/vocab.go`) picks the form per file:
 
 | Form | Used by | Looks like |
 |---|---|---|
@@ -46,7 +47,10 @@ disagree.
 **Vic3 `s:` scopes to a state _region_,** not a state. The game says so.
 
 **`event` is not a scope type in any game.** So `trigger_event` has no declared
-target type; CK3 documents it in prose only. This is why fire keys stay derived.
+target type; CK3 documents it in prose only. So nothing declares what is fired:
+an edge is written where a definition of a kind whose shape is, or holds, an
+effect body is named at a declared effect or as a list entry outside a body, and
+where a macro is written as a key (`lang/index/harvest.go`).
 
 ---
 
@@ -54,7 +58,7 @@ target type; CK3 documents it in prose only. This is why fire keys stay derived.
 
 | Fact | Detail |
 |---|---|
-| Kind comes from the parent folder | `common/cultures/` → kind `cultures`. `game.MatchExtract`. |
+| Kind comes from the parent folder | `common/cultures/` → kind `cultures`: `lang/learn/kinds.go` `drafts()`. |
 | EU5 nests under a stage root | Script lives in `game/in_game/...`, not `game/...`. Walking `game/events` finds nothing on EU5. |
 | script_docs land in different folders | CK3 `logs/`, Vic3 and EU5 `docs/`, all under user data. |
 | The console command and launch option are the **same** in all three | `-debug_mode` and `script_docs`. Verified by grepping each game binary (`ck3.exe`, `victoria3.exe`, `eu5.exe`); all three also carry the longer alias `script_documentation`. Only the output folder differs, which `ScriptDocsSubdir` already encodes — so the walkthrough needs no new per-game data. |
@@ -110,19 +114,22 @@ hegemon_favors_advancement_trigger = { title:h_china.holder ?= { ... } }
 Character for character the same shape, `?=` included. **No body-shape rule can
 separate them.** The discriminators:
 
-- `game.DeclaresNamedBodies(kind)` — a `scripted_*` / `script_value*` folder has
-  already declared that its top-level keys are definitions.
-- `keywordDeclared` — `scripted_effect foo = { }` inside an events file is a
-  declaration; the keyword states it.
+- Recurrence. A wrapper word is written again and again: in most of its
+  folder's files, again in most folders, or twice where most keys recur
+  (`lang/learn/kinds.go` `isWord()`). A definition's name is written once.
+- The keyword. `scripted_effect foo = { }` inside an events file is a
+  declaration; the keyword states it. A bare lower-case word before a named
+  block at a file's top declares the kind named after the word plus "s", when
+  their shapes are alike (`lang/learn/census.go`, `kinds.go`).
 
 Cost of getting this wrong: 33 CK3, 30 EU5 and 20 Vic3 vanilla macros deleted
 from the model, breaking go-to-definition on every one.
 
 ### 3b. Nested database vs. repeated inner key
 
-`deriveNestedShapes` looks for `prefix:id` citations whose id turns up as a
-block child of some other def. Without a filter it treats **any** repeated inner
-key as a database:
+The first nested-database pass looked for `prefix:id` citations whose id turned
+up as a block child of some other def. Without a filter it treated **any**
+repeated inner key as a database:
 
 | Game | Shapes before filter | Phantom defs minted |
 |---|---|---|
@@ -130,14 +137,21 @@ key as a database:
 | EU5 | 183 | 35,458 under `CALL_FOR_PEACE_WARSCORE_LIMIT`, `var:chinese_expedition_opinion` |
 | Vic3 | 134 | 5,231 under scripted constants like `@portrait_box_height` |
 
-On CK3 that was **64% of the entire model**. The discriminator is
-`Schema.Declares(childKind)` — the child must be a scope type or scope link the
-game names. That leaves CK3 6 shapes, Vic3 4, EU5 15, including
-`religion_types -> faith`.
+On CK3 that was **64% of the entire model**. The first fix required the child
+to be a scope type or scope link the game names, which left CK3 6 shapes, Vic3
+4, EU5 15, including `religion_types -> faith`.
 
-Root cause worth remembering: `game.typedKindOK` accepts **any** `word:word` as
-a typed cite, with only a small denylist. The lexer is deliberately permissive;
-everything downstream must therefore re-check against the schema.
+Nested kinds now come from each position of a kind's shape instead, not from
+cites: a position is a database when it holds no body, its keys are mostly
+written once, and most of them are defined elsewhere or referred to by the game
+(`lang/learn/kinds.go` `nested()`). A kind nested in itself needs one declared
+prefix that cites both levels (`citedTogether`).
+
+Root cause worth remembering: `jomini.Cite` (`lang/jomini/names.go`) accepts
+any word shaped like a cite — a one-identifier prefix with a lower-case letter,
+then a well-formed name, member or chain. The lexer is deliberately permissive,
+so `schema.Reader` re-checks it: a cite needs a declared prefix or a kind that
+owns it.
 
 ### 3c. `random_list` weight vs. fire key — *not* a bug
 
@@ -166,13 +180,15 @@ citation says nothing about whether an object is real.
 This is the reason IDE diagnostics are suppressed in install files, and it is
 easy to violate somewhere else by accident. It has already cost twice:
 
-- **Option databases.** `NestedShape.SkipKeys` was first computed as *"every
-  inner key the field never referenced"*. That swept in every genuine row
+- **Option databases.** An option database's ordinary fields were first taken
+  to be *"every inner key the field never referenced"*. That swept in every genuine row
   vanilla happens not to cite — CK3's `feudal_elective_succession_law` among
   them, which then showed up as a dangling reference on a real mod. The
   discriminator is not citation but **repetition**: an ordinary field appears in
   most instances of the parent (`categories` in 81 of 81 game rules, `flag` in
-  24 of 27 law groups), a row appears in one.
+  24 of 27 law groups), a row appears in one. Whether a position is a database
+  at all also asks that most of its once-written keys are defined elsewhere or
+  referred to by the game — a question about the whole position, never one row.
 - **Field typing** and **fire keys** both counted only the values that resolved,
   so a single coincidental match typed the whole field or key. See §3e.
 
@@ -188,18 +204,18 @@ resolve. Measured on vanilla:
 
 | Pass | Worst case | Floor added |
 |---|---|---|
-| `deriveFieldValueKinds` | `has_cultural_parameter` typed `ep_3` on **1 of 432** values; `remove_variable` typed `achievements` on 2 of 392 | `fieldKindCoverage` 50% |
-| `resolveFireKinds` | Vic3 `alert`, `character` became on_action fire sites — **4,033** false rows on one mod | `fireKeyCoverage` 50%, but only once a key carries `minFireNames` (8) names |
-| `deriveNestedShapes` | 342,138 phantom defs (§3b) | `Schema.Declares` |
+| field typing | `has_cultural_parameter` typed `ep_3` on **1 of 432** values; `remove_variable` typed `achievements` on 2 of 392 | 50% coverage |
+| fire keys | Vic3 `alert`, `character` became on_action fire sites — **4,033** false rows on one mod | 50% coverage, once a key carried 8 names |
+| nested databases | 342,138 phantom defs (§3b) | a declared child |
 
-`minAffixDefs` (8 definitions must share a localization naming shape) and
-`minLocFieldHits` (8 values of a property must be keys, at 80% coverage) are the
-same rule applied to the two localization derivations.
+The two localization derivations carried the same rule: 8 definitions sharing a
+naming shape, and 8 values of a property being keys at 80% coverage.
 
-The fire-key floor needs the extra minimum because there a *low* hit rate is
-often the defect worth reporting: a mod whose `trigger_event` targets mostly do
-not exist has broken references, and vetoing the key would hide exactly what
-Workspace Health is for.
+None of these is a counted floor now. A kind, loc or file is accepted for a
+field when it explains more than half of the words still open
+(`lang/learn/resolve.go` `accepts()`); a loc template is kept when more than one
+and more than half of a kind's ids have it (`lang/loc/convention.go` `Learn`).
+Fire keys are not learned at all: an edge is decided at each site (§1).
 
 Effect on real mods, dangling references reported:
 
@@ -220,10 +236,10 @@ Measured 2026-09-06, all four found as wrong hover/peek cards:
 
 | Written | Also spelled the same | Wrong card | What actually decides |
 |---|---|---|---|
-| `has_realm_law = x` | the loc key `has_realm_law` | the caption "Realm Law" | it is **left of an `=`** — `probe.inKey` |
-| `culture = french` | the culture's own loc key | the caption | a value naming an object is the object — `resolveNonLoc` |
-| `add_trait = conqueror` | `namespace = conqueror` in the mod | the namespace, because mod beats vanilla | a namespace is not an object — `jomini.IsObjectKind` |
-| `random_list = { 95 = … }` | province `95` in `map_data/positions.txt` | the town Amiens | the **file** that defines numeric rows — `isLocalDefFile` |
+| `has_realm_law = x` | the loc key `has_realm_law` | the caption "Realm Law" | it is **left of an `=`** — `lsp/probe.go` `at()` |
+| `culture = french` | the culture's own loc key | the caption | a value naming an object is the object — `schema.Reader.Value` tries the field's accepts before loc |
+| `add_trait = conqueror` | `namespace = conqueror` in the mod | the namespace, because mod beats vanilla | a namespace is a word of its file, not an object — `TestHarvest` row "namespace is a word of the file" |
+| `random_list = { 95 = … }` | province `95` in `map_data/positions.txt` | the town Amiens | the **file's kind**: a number key is a number (`schema.Reader.Key`), and only a kind named for numbers defines by number (`lang/index/harvest.go`) |
 
 The last one is worth stating plainly because it is a whole class: **a bare
 number on the left of an `=` is a weight** (§3c says the same of fire tables),
@@ -231,25 +247,24 @@ and vanilla CK3 keys map positions the same way. Nothing distinguishes the two
 by name; the file does.
 
 A weight's share is computed from its siblings, never assumed to be out of 100 —
-`{ 10 = {…} 30 = {…} }` is a quarter and three quarters. It is only claimed
-where the branches are **bodies**: `random_events = { 100 = some.event }` (§3c)
-and a Vic3 gene block's `20 = empty` both key scalars, and nothing separates a
-weight from a lookup index there, so the card says nothing rather than guessing.
+`{ 10 = {…} 30 = {…} }` is a quarter and three quarters. It is claimed for a
+number key under a declared token, whatever the branches hold (`lsp/probe.go`);
+`random_events = { 100 = some.event }` (§3c) and a Vic3 gene block's
+`20 = empty` sit under no token, so their cards say nothing rather than guess.
 
 **The rule:** load order decides which *definition of the same kind* wins,
 nothing else. Every discriminator above is a structural fact from the parse tree
-— left of `=`, which file, whether the branch is a body — so none of them is a
-list of names that a game update can invalidate.
+— left of `=`, which kind, whether the parent is a declared token — so none of
+them is a list of names that a game update can invalidate.
 
-`jomini.IsObjectKind` is the predicate for "a thing script can point at". Its
-complement is three kinds, one per bug above: ephemerals, `loc_key`, and
-`namespace`. Use it when resolving a name to a thing; not when asking whether a
-name is declared at all, because a namespace genuinely is.
+None of the three is an object a name resolves to by lookup alone: a loc key is
+tried only after the field's accepts (`TestHover` check "loc never wins over
+script"), and a namespace is a word of its file, never a definition.
 
 ## 3g. A property holds a loc key — but a value is not always one
 
-`parser/loc` splits loc-key properties into **strict** (an unresolved value is a
-defect worth a diagnostic) and **broad** (a resolved value gets a hint, an
+The engine once split loc-key properties into **strict** (an unresolved value
+is a defect worth a diagnostic) and **broad** (a resolved value gets a hint, an
 unresolved one is silent). Measured over vanilla, where nothing is missing by
 definition, the split was wrong in two ways.
 
@@ -264,8 +279,10 @@ vanilla:
 | Vic3 | 11,597 | 271 | 98% |
 | EU5 | **46,481** | 139 | **99.7%** |
 
-Now broad: still harvested, so the key counts as used and hovers with its text;
-it just no longer asserts a key the game builds itself is missing.
+There is no split now. A value is a loc key only when that key exists
+(`schema.Reader.Value`), so a stem such as `CustomLoc_BR_male_` records no
+reference and nothing reports it; only `required-loc` looks for missing keys,
+and only a definition's own.
 
 **Quoting does not tell you anything.** The obvious guess — quoted means display
 text, bare means a key reference — is wrong. Of quoted strict-property values on
@@ -276,7 +293,7 @@ a discriminator.
 **Whitespace does.** A localization file is `key:0 "value"`, so a key is a
 single token and can never contain a space. `desc = "Always make coronations!"`
 is display text the game shows verbatim, and demanding a key by that name was
-537 of A Game of Thrones' 618 `missing-required-loc` findings. `LooksLikeKey`
+537 of A Game of Thrones' 618 `required-loc` findings. `LooksLikeKey`
 now rejects any value containing whitespace.
 
 **Keys hide in lists, not only on the right of an `=`.** A list member is a
@@ -289,9 +306,9 @@ cadet_dynasty_names = { "dynn_Rasulid" … }      →  dynn_Rasulid:0 "Rasulid"
 ```
 
 Quoting is again no signal: vanilla quotes its cadet dynasty names and not its
-given names. Which list-valued properties hold keys is derived exactly as for
-assignment values — same floors, same declared-token exclusion, different value
-source — giving **11 fields on Victoria 3, 19 on EU5, 168 on CK3** (mostly name
+given names. Which list-valued properties hold keys is learned exactly as for
+assignment values, from a different value source — measured at **11 fields on
+Victoria 3, 19 on EU5, 168 on CK3** (mostly name
 *equivalency* blocks, `alexander_male = { Alexander Alexandros … }`, which are
 genuinely lists of keys).
 
@@ -318,11 +335,11 @@ of its diplomatic actions a `WE_PERFORM_<id>_ACTION_BTN3` key, and an action wit
 two buttons is not defective. On the workshop corpus this took `required-loc`
 from 12/185/401 to **5/103/61**.
 
-Three floors, three questions, deliberately not one constant: `LocConventionUsed`
-(20 — might the engine read this key?), `LocConventionStored` (90 — is it worth a
-stored, navigable reference?), `LocConventionRequired` (100 — does the game demand
-it?). While the last two shared a value, tightening the diagnostic silently
-shrank the set of keys counted as used and pushed EU5's orphan count up 143.
+Two levels, deliberately apart: a template more than half of a kind's ids have
+counts its keys as read (`lang/loc/convention.go` `Learn`), and only a template
+every id has (`Coverage == 1`) is required by `required-loc`. While reading and
+requiring once shared a value, tightening the diagnostic silently shrank the set
+of keys counted as used and pushed EU5's orphan count up 143.
 
 What remains after both fixes is genuinely ambiguous and vanilla shares it:
 `desc = "base"`, `desc = "Pyke"`, `desc = "Cowardly"` are single tokens
@@ -336,20 +353,20 @@ cites will miss these.
 
 | Form | Example | Where it appears |
 |---|---|---|
-| Typed cite | `culture:english`, `title:k_x` | everywhere; drives `bindKinds` and nested shapes |
+| Typed cite | `culture:english`, `title:k_x` | everywhere; binds each declared prefix to the kind defining most of the cited names (`lang/learn/learn.go` `prefixes()`) |
 | Dotted chain | `character.culture`, `title:h_china.holder` | scope walks |
-| Field RHS | `has_game_rule = suf_quieter` | **not a typed cite** — handled by `deriveFieldValueKinds` |
+| Field RHS | `has_game_rule = suf_quieter` | **not a typed cite** — typed by the field's learned accepts (`lang/learn/resolve.go` `accepts()`) |
 | Keyword pair | `scripted_effect foo = { }` | inline macros, GUI `type`/`template` |
-| Saved scope | `save_scope_as = x` then `scope:x` | per-file, ephemeral |
+| Saved scope | `save_scope_as = x` then `scope:x` | a definition of a script-made kind, under the one that saves it; hover looks there, then in the file, then anywhere |
 | Script param | `$SKILL$` inside a `scripted_*` body | ephemeral, owner-scoped |
 
 ---
 
-## 5. Field-referenced nested options — an unindexed class
+## 5. Field-referenced nested options
 
 A recurring shape: a database whose rows live **inside** another def's block, and
-which is referenced by a **field RHS** rather than a `prefix:id` cite. The
-nested-database pass is cite-driven, so it is structurally blind to all of them.
+which is referenced by a **field RHS** rather than a `prefix:id` cite. A
+cite-driven nested pass is structurally blind to all of them.
 
 | Case | Defined in | Referenced as |
 |---|---|---|
@@ -361,11 +378,17 @@ Measured on real mods, these are the largest remaining source of false
 ×17 and `has_access_to_shieldmaidens` ×10 on *More Historicity - CK3*, both of
 which are defined, just not indexed.
 
-**Solved by `catalog/options.go`.** `deriveNestedOptions` joins each field
-against the nested blocks of the install: when nearly every value a field takes
-is a child of one particular block, that block holds the database. It is a
-deterministic join over many citations, like `bindKinds` — not a shape guess.
-Three filters, tuned against all three games:
+**Solved by the ordinary nested-kind pass** (`lang/learn/kinds.go` `nested()`,
+§3b): the rows are the names written once inside a definition that the install
+refers to, and they become a kind nested in it, named by its loc stem — CK3's
+game-rule options are `game_rules.setting`. A field that takes those names
+learns a `ref:` accept for that kind, so `has_game_rule = suf_quieter` resolves
+to the option (`TestKinds` check "names written once inside a definition, which
+the install refers to, are a kind nested in it, named by its loc stem";
+`TestHarvest` row "a nested kind's name: a game rule's setting").
+
+The first version joined each field against the nested blocks of the install,
+with three filters tuned against all three games:
 
 | Filter | Value | Why |
 |---|---|---|
@@ -381,14 +404,12 @@ What it finds, per game:
 | EU5 (4) | `game_rule`, `language` (dialects), `country_color`, `target` |
 | Vic3 (3) | `game_rule`, `secret_goal`, `target` |
 
-**The shape stores the complement.** `NestedShape.SkipKeys` lists the block's
-*ordinary fields* (`categories`, `default`), not its rows — so anything else
-under the parent is a row, and a mod's own new option is picked up without
-re-deriving. Storing the row names instead froze mods out, which is what left
+**The kind stores the complement.** The rule's *ordinary fields*
+(`categories`, `default`) stay its members, and the position that holds the rows
+names the nested kind (`Field.Defines`) — so any other name written there is a
+row, and a mod's own new option is picked up without re-learning. Storing the
+row names instead froze mods out, which is what left
 `events_karling_decline_rule` dangling on *More Historicity - CK3*.
-
-`applyOptionShape` also ignores the value's shape: a game-rule option is a
-block, a cultural parameter is `name = yes`, and both are equally real.
 
 ### Game rules (CK3), worked through
 
@@ -404,30 +425,21 @@ secret_unbeliever_found_rule = {
 
 - The **rule** is a def (folder kind `game_rules`). PMT indexes it.
 - The **options** (`suf_vanilla`, `suf_quieter`) are real named objects. PMT
-  does **not** index them — 7 rules, 0 options on a real mod.
+  indexes them as `game_rules.setting` definitions whose parent is the rule.
 - They are referenced as `has_game_rule = suf_quieter` — a field RHS, never
   `game_rule_setting:suf_quieter`. Nothing in vanilla CK3 or in any mod checked
-  writes that prefix, which is why the cite-driven nested pass cannot see them.
+  writes that prefix, which is why a cite-driven nested pass could not see them.
 - Localization convention: `rule_<rule_id>` for the rule, `setting_<option_id>`
   and `setting_<option_id>_desc` for each option.
 
 Counted on vanilla CK3: **78 rules, 77 with a `rule_<id>` key** (99%), and **380
 options with 590 `setting_*` keys**.
 
-The loc side is **done**, and it did not need the options to be definitions.
-`deriveLocAffixes` covers `rule_<id>`, because a rule is a def. `setting_<id>`
-is covered by `deriveLocMemberAffixes`, which runs the same derivation over
-**block-member key names** instead of def keys — the option names were already
-harvested into `Structures` and then discarded. `BuildIndex` now carries them
-too, so a mod's *new* option is recognised even though it exists in no install.
-
-The two maps are kept apart on purpose. Member names include ordinary field
-names (`default`, `categories`), and letting a def-keyed convention such as
-`<id>_desc` match one of those would explain away real orphans.
-
-Still open, and unaffected by the above: harvest the options as **defs**, and
-let `has_game_rule` resolve to them via field-value kinds. That is what
-go-to-definition and completion on an option need. Tracked in the plan.
+The loc side is one mechanism: each kind learns its own templates
+(`lang/loc/convention.go` `Learn`), `rule_<id>` for `game_rules` and
+`setting_<id>` / `setting_<id>_desc` for `game_rules.setting`, whose name comes
+from that template's stem. A mod's *new* option is a definition like any other,
+so its keys are expected and read even though it exists in no install.
 
 ---
 
@@ -442,63 +454,67 @@ that is a bug waiting for a big enough mod. Five instances so far, one shape:
 
 | Where | What it did | Cost at total-conversion scale |
 |---|---|---|
-| `scriptParamItems` | took the first 80 script params, then kept this macro's | returned nothing, across 2,536 CK3 macros |
-| `defsOfType` | `FindDefs` with no kind, then filtered by kind | returned nothing with an empty prefix |
-| `views.refRows` | built a site (file read + line split) per reference, then called `Resolve` | hundreds of thousands of discarded reads |
-| `views.Coverage` | built a site per loc issue per language, then applied `healthLocCap` | ~99% of the work discarded |
-| `catalog.ConventionOwner` | built its visitor closure per *span* of a key rather than per key | 22 allocations and 448ns to answer one key; 4 and 155ns after |
+| script-parameter completion | took the first 80 script params, then kept this macro's | returned nothing, across 2,536 CK3 macros |
+| completion of a kind's names | listed names of every kind, then filtered by kind | returned nothing with an empty prefix |
+| Health's reference rows | built a site (file read + line split) per reference, then resolved it | hundreds of thousands of discarded reads |
+| Health's loc rows | built a site per loc issue per language, then applied the row limit | ~99% of the work discarded |
+| the loc convention owner lookup | built its visitor closure per *span* of a key rather than per key | 22 allocations and 448ns to answer one key; 4 and 155ns after |
 
 **The rule:** filter before the limit, and decide before you materialise. Where a
 budget exists, spend it on the *expensive* half — count cheaply and uncapped so
-KPIs stay honest, materialise only what is kept. `FindMacroDefs` and
-`Session.FindParamsOf` document the filter-before-limit half; `views.Coverage`
-documents the count-then-materialise half.
+KPIs stay honest, materialise only what is kept. `Session.LocKeys` and
+completion's `add()` under `maxComplete` keep the filter-before-limit half;
+Health's `localization()` and `GetHealth` keep the count-then-materialise half.
 
 The same rule decides where a derived fact is *stored*. A localization naming
-convention could be expanded forwards — one reference per definition per
-convention, hundreds of thousands of rows on CK3 — or applied backwards by
-`ConventionOwner` only to the few keys that still look orphaned. It is applied
-backwards.
+convention stored as references would be one reference per definition per
+convention, hundreds of thousands of rows on CK3. Nothing is stored: Health
+expands the templates of the workspace's own definitions on each request
+(`services/healthservice.go` `localization()`), and `required-loc` expands one
+definition's.
 
 ### Scheduling must not decide anything
 
 The corpus walk is parallel, and twice that let worker completion order decide a
 fact about the game. Both were found by scanning one install twice and diffing
-the caches, which is now `TestHealthIsDeterministic`:
+the caches, which is now the check in `TestInstallsAreLearned` that two scans
+of one install write one schema:
 
 | Where | What order decided | Symptom |
 |---|---|---|
-| `accum.merge` → `MergeLoc` | which value survives when two files of one language define the same key | `untranslated` moved by 1–2 between identical runs |
-| `deriveNestedOptions` | which field names an option database, because the greedy loop consumes values as it assigns owners | two scans disagreed on whether CK3's `genes` database was `template` or `positive_mirror` — **352 defs under a different kind**, and `orphaned` differed by 30 |
+| the loc merge | which value survives when two files of one language define the same key | `untranslated` moved by 1–2 between identical runs |
+| the option-database pass | which field names an option database, because the greedy loop consumes values as it assigns owners | two scans disagreed on whether CK3's `genes` database was `template` or `positive_mirror` — **352 defs under a different kind**, and `orphaned` differed by 30 |
 
-Both are now ordered: localization merges under **load order** (the file's index
-in the walk list, which is mod order then walk order — the same rule that
-decides every other override), and the option pass iterates fields, owners and
-values sorted.
+Both are now ordered: every file's records are added in **load order**
+(`lang/index/scan.go` `each()`, mod order then inventory order — the same rule
+that decides every other override), and the learner's output is held to the
+determinism check above.
 
 The second one is the one to remember. It was not a display bug: the *kind* of
-352 definitions depended on thread scheduling, so `FieldValueKinds`,
+352 definitions depended on thread scheduling, so the fields' accepts,
 go-to-definition and every reference to them changed between runs of the same
 workspace. Parallelism may decide when work happens, never what anything is.
 
-**Reproduction:** `task test:sweep`. Every Workspace Health check against every
-workshop mod on the machine, reported per game with hover and completion answer
-rates, diagnostics per code, and live heap. A Game of Thrones (21,499 files) is
-the acceptance case, and the run includes the determinism guard — a count that
+**Reproduction:** `task test:sweep`, over the mods the `.mod` files in
+`PMT_TEST_MODS_<GAME>` list: Workspace Health's counts, findings per code, a
+hover rate and the time, per game. A Game of Thrones (21,499 files) is the
+acceptance case. Determinism is the learner gate's check above — a count that
 moves between runs cannot be read as a regression either way.
 
 ## 7. Where these are asserted
 
-Real-install tests, skipped when the env var is absent:
+The `TestInstalls*` gates run on the real installs through `task test:gate`;
+each skips under `-short` and when its `PMT_*_GATE` switch or install variable
+is unset. The rest run on the fixtures.
 
 | Fact | Test |
 |---|---|
-| Schema counts, prefix binding coverage | `derived/bind_test.go`, `declared/schema_test.go` |
-| Keyword pair is not a wrapper | `TestKeywordDeclaredBlockIsNotAWrapper` |
-| Named-body folder is not a wrapper | `TestNamedBodyFolderIsNeverAWrapper` |
-| Nested child must be declared | `TestDeriveNestedShapesNeedsDeclaredChild` |
-| Cache size ceiling | `derived/bench_scan_test.go` |
-| Scope walk, zero false positives on vanilla | `lsp/cursor_test.go` |
+| Schema counts, prefix binding coverage | `lang/learn/learn_test.go` `TestInstallsAreLearned`, `lang/schema/schema_test.go` `TestDumpsAreRead` |
+| Keyword pair is not a wrapper | `TestKinds` row "a keyword that is a kind's name in the singular declares that kind inline"; `TestHarvest` row "a kind declared inline by its keyword, in a file of another kind" |
+| Named-body folder is not a wrapper | `TestInstallsAreLearned` check "macro kinds"; `TestHarvest` check "vic3: a history file's wrapper word defines nothing" |
+| A nested kind is names written once that the game refers to | `TestKinds` checks "names written once inside a definition…" and "optional members written once are no nested kind" |
+| Cache size ceiling | `lang/index/index_test.go` `TestInstallsAreScanned` |
+| Vanilla diagnostics under per-code ceilings (CK3 `wrong-scope` 2, `unresolved-ref` 1; Vic3 `duplicate-definition` 39; EU5 `unresolved-ref` 218) | `lsp/lsp_test.go` `TestInstallsDiagnoseClean` |
 
 **Rule for adding to this file:** record the measurement and the reproduction,
 not the conclusion alone. Every wrong turn in this engine came from reasoning
@@ -506,11 +522,11 @@ about what the games *should* do instead of sampling what they *do*.
 
 ---
 
-## 8. Structure keys are recorded one level deep, on purpose
+## 8. Structure keys, and how deep they go
 
-`harvestStructVocab` records the direct children of a definition, not its
-grandchildren. That is why hovering Victoria 3's `instance` — nested inside
-`colored_emblem = { … }` inside a coat of arms — produces no card, and it is
+The first structure harvest recorded the direct children of a definition, not
+its grandchildren. That is why hovering Victoria 3's `instance` — nested inside
+`colored_emblem = { … }` inside a coat of arms — produced no card, and it was
 **740 of the 884 unnamed hovers** on the Hail conversion, which is the whole of
 that game's 77%-vs-96% hover-naming gap.
 
@@ -522,11 +538,16 @@ Recording depth 2 was measured and rejected:
 | Vic3 | 10,993 | 6,183 | +6,004 (+54%) |
 | EU5 | 4,321 | 6,775 | **+6,606 (+152%)** |
 
-`Structures` is not only a hover lookup: it feeds the structure keys completion
+A kind's shape (`Kind.Shape`, `Field.Members`) is not only a hover lookup: it feeds the structure keys completion
 offers inside a block, and it is what a future `unknown-key` diagnostic would
 judge against. Trebling it with names that are only valid two levels down would
 offer them where they are wrong and blunt that check — a bad trade for naming one
 key.
+
+What shipped instead keys every member by its path (`lang/learn/census.go`
+`block()`, `resolve.go` `field()`): a field tree at every depth, where only a key
+that contains itself is hoisted, so completion offers the members of the field
+at the cursor and nothing from two levels down.
 
 The number is also a sampling artifact worth remembering when reading the
 scoreboard: one mod's coat-of-arms files repeat `instance` hundreds of times, and
@@ -535,11 +556,11 @@ single file family moved a whole-game metric by nineteen points.
 
 ---
 
-## 9. A key belonging to several kinds is normal, and typing on it is not solved
+## 9. A key belonging to several kinds is normal
 
-`deriveFieldValueKinds` refuses to type a field whose values disagree about their
-kind. That veto also fires on a value that is merely *ambiguous* — one key that
-several databases share — and the games do that constantly:
+The first field typing refused to type a field whose values disagreed about
+their kind. That veto also fired on a value that is merely *ambiguous* — one key
+that several databases share — and the games do that constantly:
 
 | Game | distinct definition keys | belonging to more than one kind |
 |---|---|---|
@@ -549,8 +570,8 @@ several databases share — and the games do that constantly:
 
 An EU5 country tag such as `BYZ` is at once a `countries`, a `coat_of_arms`, a
 `flag_definitions` and a `customizable_localization` key. So `has_or_had_tag`
-types as nothing, completion offers `yes`/`no` for a field whose values are
-perfectly well known, and it looks like an EU5-specific weakness when it is a
+typed as nothing, completion offered `yes`/`no` for a field whose values are
+perfectly well known, and it looked like an EU5-specific weakness when it was a
 general rule meeting an unusual corpus.
 
 **Two replacements were measured and both rejected.** The guard is `dangling`,
@@ -558,7 +579,7 @@ which sits at 82 / 97 / 7 and had not moved for any other change:
 
 | Rule | CK3 dangling | Vic3 | EU5 | completion won |
 |---|---|---|---|---|
-| veto (shipped) | 82 | 97 | 7 | — |
+| veto (then shipped) | 82 | 97 | 7 | — |
 | vote per kind, 80% winner | **1,031** | 174 | 51 | CK3 +7, EU5 +17 |
 | intersect the kind sets | **679** | 111 | 20 | EU5 +20 only |
 
@@ -575,6 +596,11 @@ What a future attempt needs is not another rule but a far higher evidence floor
 on this path specifically. And note what the table says about value: on CK3 and
 Victoria 3 both replacements bought **no completion at all** and cost 597 and 14
 false dangling rows. Only EU5 gained, because only EU5 has the 42%.
+
+What shipped instead ranks the candidate kinds by the words each explains, then
+by fewest names, and accepts each in turn while it explains more than half of
+the words still open (`lang/learn/resolve.go` `accepts()`); a subject kind's
+names are not counted as definitions.
 
 ---
 
@@ -623,7 +649,7 @@ Left alone, `value = 5` resolves to a province. Measured on A Game of Thrones,
 one a `provinces` hit on an arithmetic operand: `value`, `add`, `weight`, `days`,
 `MIN`, `MAX`, `divide`, `count`.
 
-**The defence is not context-tracking, it is a complete primitive set.** A
+**The first defence is a complete primitive set.** A
 literal in a value position is a value, and the set of things that look like
 literals is small and closed: **number, date, boolean**. Every bug of this shape
 so far was a hole in that set rather than a flaw in the rule — dates were
@@ -636,13 +662,12 @@ Two measurements say the rule is not too blunt:
 - assignment keys never reach the rule, so a `random_list` weight and a numeric
   key in the file that defines it keep their own handling (§3f).
 
-If a future game does put a literal in a typed slot, the fix is already designed
-and should not be built before then: resolve it through the slot's declared type
-using the same chain completion uses in `valueItems` — fire key, script name,
-`Supported Targets`, then field value kind. Hover and completion would then
-answer "what is this" and "what can go here" from one source. Today that would
-change nothing, and speculative machinery here is how an engine accumulates the
-hardcoded edge cases this one was rebuilt to remove.
+The slot now decides next. After a word's fixed spelling (`@name`, `$NAME$`,
+`[ … ]`, a cite), `schema.Reader.Value` tries the field's learned accepts in
+order, so a number names a number-keyed kind only where the learner typed the
+field `ref:<kind>` — which it does only on a cite or a declared link or token
+output (`TestReaderValue` row "a number that is a reference"). Hover and
+completion answer "what is this" and "what can go here" from the same accepts.
 
 ## 12. Loc keys are built out of other loc keys, not only out of definitions
 
@@ -677,9 +702,11 @@ The largest unmodelled mechanism is a key derived from **another key** rather
 than from a definition. EU5 writes the negated form of a trigger tooltip as
 `NOT_<key>`: `NOT_THIRD_*` (1,259), `NOT_FIRST_*` (490), `NOT_HAS_*`, `NOT_IS_*`,
 `NOT_any_*`, and diplomatic actions as `OTHER_PERFORMS_<key>` (1,349) and
-`WE_PERFORM_<key>` (708). `ConventionOwner` only resolves affixes around a
-**definition id**, so none of these have an owner and all of them read as
-orphaned.
+`WE_PERFORM_<key>` (708). A convention is a template around a **definition
+id** (`Kind.LocTemplates`), so none of these has an owner. Health also counts a
+key that continues a conventional key after `_` as read, which gives
+suffix-built keys an owner; prefix-built `NOT_<key>` still has none. Health
+runs over the mods only; nothing measures a vanilla orphan rate now.
 
 CK3's residue is the same rule failing on shapes it should already reach —
 `game_concept_*` (921, and concepts are *declared*, so this is declared-beats-
@@ -695,7 +722,7 @@ EU5 also carries a dotted family — `caux.elysian_language`,
 location or an event namespace. §3g recorded 592 of these on AGoT as not worth a
 tokeniser change; at EU5's 75% mod rate that judgement no longer holds.
 
-The probe that reproduced this (`probe_locresidue_test.go`) went with the old views package; its procedure is in `.claude/plans/language-engine/carryover.md`.
+The probe that reproduced this went with the old views package; its procedure is in `.claude/plans/language-engine/carryover.md`.
 
 ## 13. Where permissiveness is allowed, and where it is not
 
@@ -712,37 +739,35 @@ exists to avoid.
 So the reporting side may be permissive and the derivation side may not. Two
 rules keep that from collapsing back into one loose predicate:
 
-1. **The permissive side returns a boolean and nothing else.** `LocKeyExplained`
-   answers "does anything account for this key?" and cannot answer "what?". A
-   predicate that yields no identity cannot produce a wrong link, so widening it
-   has no reachable effect on hover, definition or typing. `LocConventionOwner`
-   keeps the `(id, kind, ok)` signature and its floors, and stays the only thing
-   the LSP asks.
-2. **The permissive side is reverse-only.** `ConventionOwner` runs backwards,
-   from a key to whatever explains it. `ConventionLocKeys` runs forwards, from a
-   definition to the keys it is expected to have, and feeds both the
-   `required-loc` diagnostics and the stored loc references that `UsedLocKeys`
-   reads. A permissive shape in the forward direction would *demand* keys that
-   were never meant to exist and fabricate references to them — false positives
-   in the other direction, and in a diagnostic. `LocKeyAffixes` must never be
-   wired into it.
+1. **The permissive side returns a boolean and nothing else.** Health's orphan
+   test (`services/healthservice.go` `localization()`) answers "does anything
+   account for this key?" and cannot answer "what?". A predicate that yields no
+   identity cannot produce a wrong link, so widening it — as the `_`
+   continuation does (§12) — has no reachable effect on hover, definition or
+   typing. The LSP reads only a kind's learned templates (`Kind.LocTemplates`):
+   the hover label uses the first, and `required-loc` only those every id has.
+2. **Nothing permissive runs where keys are demanded.** Both sides expand
+   forwards, from a definition to its template keys, and nothing is stored. A
+   permissive shape in `required-loc` would *demand* keys that were never meant
+   to exist — false positives in a diagnostic. Widenings such as the `_`
+   continuation belong to Health's read set alone.
 
-`deriveLocFields` is the neighbour to keep honest for the same reason: it decides
-which script fields hold a localization key, so it changes typing, hover and
-go-to-definition directly. It keeps strict floors (`minLocFieldHits = 8`,
-`locFieldCoverage = 80`) and skips values that name a definition or a schema
-token. Electing 323 CK3 fields there put `has_trait` and `capital` on the
-loc_key path; 179 is the honest number.
+Which fields hold a localization key is the neighbour to keep honest for the
+same reason: it changes typing, hover and go-to-definition directly. Loc is one
+candidate among a field's accepts (`lang/learn/resolve.go` `accepts()`), the
+largest, so a kind wins a tie, and it is accepted when it explains more than
+half of the words still open. Electing 323 CK3 fields there once put `has_trait`
+and `capital` on the loc_key path; 179 was the honest number.
 
 ---
 
 ## 14. A block name is not a position
 
-`NestedMembers` keys block members by the block's own name — `triggered_desc`
-holds `trigger` and `desc`, `limit` holds `exists`, `not`, `has_trait`. Merging
-the evidence by name is what makes an occurrence floor mean anything, and it is
-right for **offering** keys: the worst case is a suggestion that does not belong,
-which costs a keystroke.
+The first member table keyed block members by the block's own name —
+`triggered_desc` holds `trigger` and `desc`, `limit` holds `exists`, `not`,
+`has_trait`. Merging the evidence by name is what made an occurrence floor mean
+anything, and it is right for **offering** keys: the worst case is a suggestion
+that does not belong, which costs a keystroke.
 
 It is not enough for **judging** them. `option` is a block in a CK3 event and a
 block in `common/accolade_names`, and they hold nothing in common. Measured:
@@ -766,7 +791,9 @@ against it.
 
 Recording this so the next attempt starts from the number rather than from the
 idea: the pathed model made completion correct at every depth, and that was not
-sufficient to make the diagnostic safe.
+sufficient to make the diagnostic safe. Members are now keyed by path per kind
+(`lang/learn/resolve.go`), so `event > option` and `accolade_names > option` are
+separate fields; a declared token's block is one shared field.
 
 ## 15. LSP quality, measured against real mods
 
@@ -818,12 +845,12 @@ Re-measure with the MCP (`WAILS_MCP=1 wails3 dev`) rather than by reasoning:
 five of the bugs behind these numbers were invisible in the source and obvious
 in one call.
 
-### §14 resolved: `unknown-key` ships
+### §14 measured again: `unknown-key` by owning kind
 
 The measurement stands — keyed by block name alone the check fired 18,341 times
-on 400 vanilla CK3 files — but the fix was smaller than "key the member table by
-kind plus path". It was enough to record, per block name, **which kinds it was
-seen under**, and judge only the names exactly one kind uses.
+on 400 vanilla CK3 files — and a smaller fix than "key the member table by kind
+plus path" was measured: record, per block name, **which kinds it was seen
+under**, and judge only the names exactly one kind uses.
 
 `option` is a block in a CK3 event and another in `common/accolade_names`, so it
 is excluded. `triggered_desc` belongs to events alone, so it is judged.
@@ -833,15 +860,18 @@ is excluded. `triggered_desc` belongs to events alone, so it is judged.
 | by block name | 18,341 | 6 | 4 |
 | unambiguous names only | **0** | **0** | **0** |
 
-Two other gates were needed alongside it: a block must carry at least six
-recorded members before an absence means anything, and files under `gfx/` are
-excluded because they are asset data in a different syntax rather than script.
+It needed two more gates: a block must carry at least six recorded members
+before an absence means anything, and files under `gfx/` are excluded because
+they are asset data in a different syntax rather than script. `unknown-key` is
+not in the engine now (`lsp.Codes` has no such code); with members keyed by path
+(§14), the next attempt starts there.
 
 `duplicate-definition` reached zero on CK3 and EU5 by the same kind of
-distinction — `Def.Nested` records whether a definition was harvested at a file's
-top level or from inside another one, which took CK3 from 1,614 to 0. Its
-remaining 10 on Victoria 3 are **genuine**: vanilla defines 14 coat-of-arms keys
-twice, verified by scanning the files directly rather than by trusting PMT.
+distinction — whether a definition was harvested at a file's top level or from
+inside another one, which took CK3 from 1,614 to 0. A definition now records the
+one it sits in (`Def.Parent`). The remaining 10 on Victoria 3 were **genuine**:
+vanilla defines 14 coat-of-arms keys twice, verified by scanning the files
+directly rather than by trusting PMT. The vanilla gate's ceiling there is now 39.
 
 ## 16. A declaration keyword makes a definition file-local
 
@@ -850,8 +880,7 @@ twice, verified by scanning the files directly rather than by trusting PMT.
 form within its own file.
 
 The parser sees `scripted_trigger` as a stray bare word and `foo = {…}` as an
-ordinary assignment, so nothing about the shape says "local" — the keyword does,
-and `extractKeywordName` is where it is recorded (`Def.Local`).
+ordinary assignment, so nothing about the shape says "local" — the keyword does.
 
 Measured, CK3 vanilla: **3,809 inline declarations** (2,432 `scripted_trigger`,
 1,377 `scripted_effect`), and **every one sits under `events/`**, beside the
@@ -865,13 +894,17 @@ Two consequences, and they pull in opposite directions from the obvious fix:
   carries one `allow_naming_on_birth_of_dynasty_child_trigger` in both
   `birth_events.txt` and `quieter_events_events.txt`, commented *"Duplicating
   because CK3 is dumb and can't find it in the birth_events.txt file"*. The mod
-  author found this by running the game. `duplicate-definition` skips `Local`.
+  author found this by running the game. `duplicate-definition` must not report
+  it.
 - **Do not merge the kinds.** The obvious tidy-up is to canonicalise the inline
   `scripted_trigger` onto the folder's `scripted_triggers`. That would let
   go-to-definition jump from a call in one file to an inline body in another —
   a body the engine cannot see from there. The accidental singular/plural split
-  encodes a real distinction; `Definition` confines `Local` defs to their own
-  file instead.
+  encodes a real distinction; go-to-definition must keep an inline definition
+  to its own file instead.
+
+PMT does not do this yet: the learner merges the inline kind into the folder
+kind, so both of the above happen (listed as a bug in phase 7b).
 
 ## 17. Each game documents itself in a different shape, and one of them is not prose
 
@@ -890,12 +923,16 @@ The last two were being read and thrown away, and they are why EU5 looked
 undocumented next to CK3:
 
 - The angle-bracket form documents **297 EU5 keys** and almost nothing else
-  (CK3 1, Vic3 2). `docKeyRe` matched the key and `inlineHashDoc` looked for a
-  `#` that is not there, so the key was recorded with an *empty* doc.
+  (CK3 1, Vic3 2). The key-line reader matched the key and looked for a `#`
+  that is not there, so the key was recorded with an *empty* doc. It is now
+  `infoKeyLine` (`lang/schema/info.go`, `TestReadInfo` row "type, then prose,
+  no hash").
 - The `brief` form's convention is to close the prose with a lone `#` before the
   key it describes. Treating that `#` as the end of the comment block dropped the
   description from nearly every one: `_governments.info` documents ~100 keys and
-  yielded **6**. A genuinely blank line still ends a block; a bare `#` does not.
+  yielded **6**. A lone `#` now ends a block as a blank line does; the brief form
+  keeps its prose because its header is still open when the `#` closes it
+  (`TestReadInfo` rows "a lone # ends it too", "brief header, prose, a lone #").
 
 Discovery had one gap too: `.info` files were required to start with `_`, which
 is a CK3 convention (162 of its 166). EU5 writes **23 of its 32** without it.
@@ -913,14 +950,15 @@ are *narrative*, not field annotation: `treaty_articles.md` is 468 lines
 explaining what source and target mean for directed versus mutual articles, and
 yields 15 field docs because only 15 lines are about a field.
 `ship_name_definitions.md` is 198 lines of ship names and correctly yields none.
-That prose is the best teaching material in the install and PMT surfaces none of
-it — a presentation gap, not a parsing one, and not the same problem as the two
-fixed above.
+That prose is the best teaching material in the install. PMT shows a markdown
+`## key` section's paragraphs as that field's hover prose; a kind's own prose is
+read (`Info.Kind`) and shown nowhere — a presentation gap, not a parsing one,
+and not the same problem as the two fixed above.
 
 Those brackets and parentheses also carry a **declared type**, and all three
 games write them — the angle form is not EU5-only as the doc-yield work first
-suggested. Harvested into `DeclaredFieldTypes`, classified once in
-`catalog/declared.go`:
+suggested. Read into `InfoField.Type` and classified once by
+`InfoField.Declared` (`lang/schema/info.go`):
 
 | | declarations | closed value sets | primitive / loc | declined |
 |---|---|---|---|---|
@@ -930,8 +968,9 @@ suggested. Harvested into `DeclaredFieldTypes`, classified once in
 
 A **closed value set** (`yes/no`, `none/mutual/giving/receiving`) is the only
 half a diagnostic can judge, and EU5 carries 91 of them — the game states the
-set, so a value outside it is wrong without any inference. That is
-`wrong-declared-value`, experimental and default off.
+set, so a value outside it is wrong without any inference. PMT has no check for
+it: a declared set becomes a declared `enum` accept, and `wrong-value-type`
+counts any declared enum as a fit (§22 says why).
 
 The **declined** column is the design, not a shortfall. Three families refuse:
 script constructs (`trigger`, `effect`, `script value`, `mtth`) because
@@ -940,7 +979,8 @@ script_docs already declares them and names the database rather than a word;
 reporting them restates that a value goes here; and `dynamic desc` because the
 slot also accepts a `first_valid` block, so "localization key" would teach a rule
 that is too narrow. Whole and decimal numbers stay apart — `= 2.5` in an integer
-field is a real mistake and only a distinction can say so.
+field is a real mistake and only a distinction can say so. PMT maps both to one
+`number` accept today (listed as a bug in phase 7b).
 
 Prose wears the same brackets — EU5's `<name of global variable list with the
 list of candidates in>`, Vic3's `<locator_name_1>` — so recognition is an
@@ -959,8 +999,7 @@ scope: CK3's `activity_event` and `letter_event` bodies are *both*
 character-scoped. Reading the prefix as a scope reported thousands of correct
 vanilla lines as `wrong-scope`, and the schema cannot save it — `activity` is a
 real declared scope type, so a "the name proposes, the schema disposes" check
-confirms the wrong answer confidently. `TestScopeAtEventTypeIsNotAScope` exists
-to stop this being re-derived; it has now stopped it twice.
+confirms the wrong answer confidently. It has been re-derived twice before.
 
 **The on_action does.** `on_actions.log` states the scope each on_action runs in,
 and an event it fires runs in that same scope. Measured over the fire graph:
@@ -976,17 +1015,20 @@ different scopes. That is what made **scope sets unnecessary** for this: the
 obvious next step after tiger's bitflag `Scopes` was to make the walk carry a set
 so an event could be "character or country", and the corpus says no such event
 exists. A disagreement therefore means something PMT does not understand, and
-`eventRootScopeLocked` returns no root rather than picking one.
+the walk must give no root rather than pick one.
+
+PMT does not read this yet: `on_actions.log`'s scopes are read and used by
+nothing, and an event body runs in the scope learned for its kind (listed as a bug in phase 7b).
 
 Edges are read from the session rather than the cache, so a mod's own on_action
 firing a mod's own event counts exactly as vanilla's does.
 
 ## 19. `root` is only meaningful where a root was declared
 
-Only an on_action declares its own starting scope. Everywhere else the scope walk
-begins empty and builds up from declared links and iterators — which is fine for
-judging a token, because a token is judged against the current scope and there
-simply is none until something declares one.
+Only an on_action declares its own starting scope. Everywhere else nothing
+declares one: PMT starts a definition's body in the scope learned for its kind,
+and a member body in its learned scope where nothing declared moved it
+(`lang/index/harvest.go`); declared links and iterators move it from there.
 
 `root` is the exception. It means "the bottom of the stack", and with no declared
 root the bottom is merely the first hop the walk happened to take. CK3's
@@ -997,9 +1039,10 @@ effect = { random_attending_character = { limit = { root = { any_attending_chara
 ```
 
 where `root` is the *activity* the pulse action runs on. Reading it as `stack[0]`
-answered `character` and reported nine pieces of correct vanilla script.
-`scopeWalk.rooted` records whether the bottom is real; an unrooted walk refuses
-`root` instead. ck3-tiger reaches the same conclusion independently, with
+answered `character` and reported nine pieces of correct vanilla script. PMT now
+follows `root` as an ordinary link to its declared output; CK3's dump declares
+none, so the scope under `root = { }` is unknown and `wrong-scope` stays silent
+there. ck3-tiger reaches the same conclusion independently, with
 `is_unrooted` / `new_unrooted()` for contexts where "the relationship to root is
 not known".
 
@@ -1011,23 +1054,29 @@ and useless: **5,135 dotted block keys in vanilla CK3 alone** were dead ends
 (`domicile_location.culture` 437, `root.faith` 355, `root.location` 277,
 `root.culture` 230).
 
-Splitting happens inside `step`, not at the callers, so hover and `wrong-scope`
-cannot disagree about where a chain lands. Any segment failing fails the whole
-chain: callers clone the walk and discard it on failure, so a half-followed chain
-never leaves a scope behind to be judged against. A date is not a chain —
-`867.1.1` would otherwise step through "867", "1", "1".
+Splitting must happen in one place, not at the callers, so hover and
+`wrong-scope` cannot disagree about where a chain lands, and any segment failing
+must fail the whole chain, so a half-followed chain never leaves a scope behind
+to be judged against. A date is not a chain — `867.1.1` would otherwise step
+through "867", "1", "1".
 
-Still not followed, and silent rather than wrong: saved scopes (`scope:foo`),
-prefix cites (`title:k_england`). tiger models both.
+PMT does not do this yet: the walk and completion land on the last segment's
+output while hover shows the first's, and middle segments are not checked
+(listed as a bug in phase 7b).
+
+Saved scopes (`scope:foo`) and prefix cites (`title:k_england`) are followed: a
+cite's block runs in its prefix link's output, and `scope:x = { }` is entered
+the same way (`TestHarvest` row "a saved scope under a cite, with the cited
+kind's scope type"). tiger models both.
 
 ### Where `wrong-scope` actually ran before this
 
-Nowhere except `common/on_action/`. `ScopeMisuses` bailed on an empty root, and
+Nowhere except `common/on_action/`. The check bailed on an empty root, and
 only on_actions declare one — so events, decisions, scripted effects, traits and
-modifier bodies were never checked, on any of the three games. `ScopeAt` had been
-fixed for exactly this and says so in a comment twenty lines away; `ScopeMisuses`
-had not. Every test in `lsp/cursor_test.go` built a `common/on_action/` fixture,
-so the suite passed while the check was inert everywhere a modder writes script.
+modifier bodies were never checked, on any of the three games. The scope lookup
+had been fixed for exactly this and said so in a comment twenty lines away; the
+check had not. Every test of it built a `common/on_action/` fixture, so the suite
+passed while the check was inert everywhere a modder writes script.
 **A suite that only exercises the case that works cannot report the feature dead.**
 
 ## 21. The engine coerces scopes, and nothing declares which
@@ -1070,18 +1119,20 @@ regression.
 
 The one PMT-native path left is to harvest the (token, scope) pairs vanilla
 actually uses and treat them as legal — vanilla being correct by definition, the
-same reasoning `knownVanillaFindings` rests on. It is permissive in the right
+same reasoning the vanilla gate's ceilings (`lsp/lsp_test.go`
+`TestInstallsDiagnoseClean`) rest on. It is permissive in the right
 direction for an accusing check. It needs a scope walk over the whole install
 during a scan, whose cost is not yet measured.
 
-### What this blocks
+### What this blocked
 
 Saved scopes (`scope:x = { … }`) — **69,823 block keys in vanilla CK3 alone**,
 fourteen times the dotted chains — and prefix cites (`title:k_england = { … }`,
 ~4,300). Resolving saved scopes was built and measured at eight false positives
 over 750 vanilla files, every one a coercion case and none a resolution error: a
 stricter re-save rule changed nothing. It was reverted. Entering these blocks
-without a coercion model turns correct script into an accusation.
+without a coercion model turns correct script into an accusation. Both are
+entered now (§20); the vanilla gate holds CK3's `wrong-scope` to a ceiling of 2.
 
 ## 22. script_docs is not always right either
 
@@ -1099,9 +1150,9 @@ and `00_company_charter_types.txt:122` writes `type = industry`. All five other
 charter types use a documented value; this one does not, and the game ships it,
 so the script is right and the doc is stale.
 
-That is one finding in one file, and it is the reason `wrong-declared-value`
-stays experimental and off. The check is correct — a value outside the set the
-game states — and the set is wrong. Nothing in the install says which of the two
+That is one finding in one file, and it is the reason PMT has no check for a
+value outside a declared set. Such a check would be correct — a value outside
+the set the game states — and the set is wrong. Nothing in the install says which of the two
 to believe.
 
 **What this costs.** A closed value set is the strongest evidence PMT has for an

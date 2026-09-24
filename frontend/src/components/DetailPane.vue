@@ -1,20 +1,19 @@
 <script setup lang="ts">
 /**
- * Selected-item chrome for Views pages: empty state, header, body slot.
+ * A selected row's pane: its title, the page's badges, its file with Open in IDE, then the page's
+ * own body.
  */
 import { useOpenInIde } from "../composables/useOpenInIde";
 
 const props = defineProps<{
   workspaceId: string;
   title?: string;
-  subtitle?: string;
   file?: string;
   rel?: string;
   line?: number;
 }>();
 
 defineSlots<{
-  origin(): unknown;
   badges(): unknown;
   default(): unknown;
   empty(): unknown;
@@ -22,9 +21,9 @@ defineSlots<{
 
 const { openInIde } = useOpenInIde();
 
-/** Open the header file in the workspace IDE. */
+/** Open the header file in the workspace IDE, at its line (0-based here, 1-based in the editor). */
 function open(): void {
-  if (props.file) void openInIde(props.workspaceId, props.file, props.line);
+  if (props.file) void openInIde(props.workspaceId, props.file, (props.line ?? 0) + 1);
 }
 </script>
 
@@ -34,43 +33,33 @@ function open(): void {
   >
     <div
       v-if="!title"
-      class="m-2 rounded-md border border-dashed border-muted px-3 py-4 text-xs text-muted"
+      class="m-3 rounded-md border border-dashed border-muted px-3 py-4 text-sm text-muted"
     >
       <slot name="empty">Select a row.</slot>
     </div>
     <template v-else>
-      <div class="shrink-0 space-y-1.5 border-b border-default px-2 py-1.5">
-        <div class="truncate text-sm font-semibold text-default">
+      <div class="shrink-0 space-y-2 border-b border-default px-4 py-3">
+        <div class="truncate text-lg font-semibold text-highlighted">
           {{ title }}
         </div>
-        <div v-if="subtitle" class="truncate text-xs text-muted">
-          {{ subtitle }}
-        </div>
-        <div
-          v-if="$slots.origin || $slots.badges"
-          class="flex flex-wrap items-center gap-1"
-        >
-          <slot name="origin" />
+        <div v-if="$slots.badges" class="flex flex-wrap items-center gap-1.5">
           <slot name="badges" />
         </div>
-        <div
-          v-if="file"
-          class="truncate text-xs text-muted"
-          :title="file"
-        >
-          {{ rel || file }}:{{ (line ?? 0) + 1 }}
+        <div v-if="file" class="flex items-center gap-2">
+          <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted" :title="file">
+            {{ rel || file }}:{{ (line ?? 0) + 1 }}
+          </span>
+          <UButton
+            label="Open in IDE"
+            icon="i-lucide-file-code"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            @click="open"
+          />
         </div>
-        <UButton
-          label="Open in IDE"
-          icon="i-lucide-file-code"
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          :disabled="!file"
-          @click="open"
-        />
       </div>
-      <div v-if="$slots.default" class="min-h-0 flex-1 overflow-auto p-2">
+      <div v-if="$slots.default" class="min-h-0 flex-1 overflow-auto p-4">
         <slot />
       </div>
     </template>

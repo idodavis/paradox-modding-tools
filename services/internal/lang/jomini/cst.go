@@ -7,8 +7,8 @@ import "sort"
 
 // Range is a half-open span of UTF-8 byte offsets into the source (Start..End).
 type Range struct {
-	Start int
-	End   int
+	Start int `json:"start"`
+	End   int `json:"end"`
 }
 
 // ErrorCode classifies a structural parse error.
@@ -120,8 +120,8 @@ func (ValueStmt) isStatement()  {}
 
 // Position is a 0-based line and UTF-8 byte column within that line.
 type Position struct {
-	Line      int
-	Character int
+	Line      int `json:"line"`
+	Character int `json:"character"`
 }
 
 // LineIndex maps between byte offsets and (line, byte-column) positions.

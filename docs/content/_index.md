@@ -49,7 +49,7 @@ Inside the app, the **version button in the footer** runs Check for updates agai
 | [Create Workspace]({{< relref "/pages/wizard" >}}) | Game → install → mods + load order → name |
 | [Workspace IDE]({{< relref "/pages/ide" >}}) | monaco-vscode workbench; PMT-owned roots; game files read-only; Guide wiki pane |
 | [Event Graph]({{< relref "/pages/event-graph" >}}) | Event / on_action neighborhood from the live session |
-| [Workspace Health]({{< relref "/pages/health" >}}) | FIOS/LIOS contests, overlays, depends, dangling refs, loc coverage |
+| [Workspace Health]({{< relref "/pages/health" >}}) | Contests, overrides, dependencies, dangling refs, loc gaps and missing files |
 | [Patch Center]({{< relref "/pages/patch-center" >}}) | Cached wiki patch notes |
 | [Publish]({{< relref "/pages/publish" >}}) | Descriptor + Markdown/BBCode, Steam Workshop, Paradox Mods copy-paste |
 | [Workspace Settings]({{< relref "/pages/settings" >}}) | Name, loc language, install, mods, Workshop ignore |

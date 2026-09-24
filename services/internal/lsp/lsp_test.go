@@ -602,11 +602,11 @@ func TestHover(t *testing.T) {
 	}{
 		{"a definition: its kind, its name, its loc label and its site", "common/traits/m.txt", "bold = {\n\tname = x\n}\n", "bold", 0, schema.TypeRef,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "traits" && insp.Value.Name == "bold" && len(insp.Sites) == 1 && insp.Sites[0].Origin == "mod" && insp.Sites[0].Path != ""
+				return insp.Value.Kind == "traits" && insp.Value.Name == "bold" && len(insp.Sites) == 1 && insp.Sites[0].Origin == "mod" && insp.Sites[0].Path != "" && !insp.Graphed
 			}},
 		{"a mod's twin of an install definition carries both sites, the mod's winning", "events/x.txt", "namespace = v\nv.1 = {\n\ttype = character_event\n}\n", "v.1 =", 0, schema.TypeRef,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "events" && len(insp.Sites) == 2 && insp.Sites[0].Origin == "vanilla" && insp.Sites[1].Origin == "mod" && insp.Winner == 1
+				return insp.Value.Kind == "events" && len(insp.Sites) == 2 && insp.Sites[0].Origin == "vanilla" && insp.Sites[1].Origin == "mod" && insp.Winner == 1 && insp.Graphed
 			}},
 		{"a definition's label is its loc text", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { has_trait = brave }\n}\n", "brave", 0, schema.TypeRef,
 			func(insp *Inspect) bool {
@@ -656,9 +656,9 @@ func TestHover(t *testing.T) {
 			}},
 		{"a character cite as a value", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = {\n\t\texists = character:186004\n\t}\n}\n", "character:186004", 0, schema.TypeRef,
 			func(insp *Inspect) bool { return insp.Value.Kind == "characters" && insp.Value.Declared }},
-		{"a saved scope: where it was saved, and the scope type there", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tsave_scope_as = mine\n\t\ttitle:c_x = { save_scope_as = near }\n\t}\n\ttrigger = { exists = scope:near }\n}\n", "scope:near", 6, schema.TypeRef,
+		{"a saved scope: where its own definition saves it, not another's, none replacing another, and the scope type there", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tsave_scope_as = mine\n\t\ttitle:c_x = { save_scope_as = near }\n\t}\n\ttrigger = { exists = scope:near }\n}\nm.2 = {\n\timmediate = { save_scope_as = near }\n}\n", "scope:near", 6, schema.TypeRef,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "saved_scopes" && len(insp.Sites) == 1 && insp.ScopeOut == "landed_title"
+				return insp.Value.Kind == "saved_scopes" && len(insp.Sites) == 1 && insp.Sites[0].Range.Start.Line == 4 && insp.Winner == -1 && insp.ScopeOut == "landed_title"
 			}},
 		{"a variable: its site", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tset_variable = { name = foo value = 3 }\n\t}\n\ttrigger = { exists = var:foo }\n}\n", "var:foo", 4, schema.TypeRef,
 			func(insp *Inspect) bool {
@@ -733,5 +733,11 @@ func TestSignatureHelp(t *testing.T) {
 	line, col = aim(t, text, "add_gold = 1", 0)
 	if help, _ := SignatureHelp(install, path, line, col); help != nil {
 		t.Errorf("a token with no usage: %+v", help)
+	}
+	nested := "namespace = m\nm.1 = {\n\timmediate = {\n\t\ttrigger_event = { id = v.2 scope:mine = { v_effect = yes } }\n\t}\n}\n"
+	path = opened(install, dir, "events/y.txt", nested)
+	line, col = aim(t, nested, "v_effect", 0)
+	if help, _ := SignatureHelp(install, path, line, col); help != nil {
+		t.Errorf("a scope block inside a token's block is no argument of it: %+v", help)
 	}
 }

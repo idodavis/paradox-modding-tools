@@ -1,84 +1,110 @@
 // healthservice.go is the health page: the names two origins define, the mods' references nothing
 // defines, the localization each language lacks, the definitions without the file the game finds
-// for them, and one localization key looked up. Every count is whole; the rows are cut where the
-// page says. A declared fact accuses; a learned one is only listed.
+// for them, and one localization key looked up. Every row is sent, naming its file by its number in
+// Sources; a site's lines are read when the page opens its row. A declared fact accuses; a learned
+// one is only listed.
 package services
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/session"
 )
 
-// HealthParams is what the page asks for: the load order to preview and the rows per list.
+// HealthParams is what the page asks for: the load order to preview.
 type HealthParams struct {
 	Order []string `json:"order"` // mod ids in the order to judge; empty for the workspace's own
-	Limit int      `json:"limit"` // rows per list; 0 for all
 }
 
 // Health is the report.
 type Health struct {
-	Contests      []Contest    `json:"contests"`
-	Depends       []Dependency `json:"depends"`
-	Dangling      []Dangling   `json:"dangling"`
-	DanglingCount int          `json:"danglingCount"`
-	Loc           []Language   `json:"loc"`
-	Files         []FileRow    `json:"files"`
-	FilesCount    int          `json:"filesCount"`
+	Sources   []source.File `json:"sources"`   // every file a row names, at the number it names it by
+	Contests  []Contest     `json:"contests"`  // names two or more mods define
+	Overrides []Contest     `json:"overrides"` // names one mod defines over the install's
+	Depends   []Dependency  `json:"depends"`
+	Dangling  []Dangling    `json:"dangling"`
+	Loc       []Language    `json:"loc"`
+	Files     []FileRow     `json:"files"`
 }
 
-// Contest is one name two origins define, with the game's rule for its kind.
+// Contest is one name two origins define, its definitions in load order, with the game's rule.
 type Contest struct {
-	index.Contest
-	Rule string `json:"rule"` // FIOS or LIOS
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Winner    int    `json:"winner"` // the position in Sites of the definition the game keeps
+	FirstWins bool   `json:"firstWins"`
+	Rule      string `json:"rule"` // FIOS or LIOS, or the entry mode that decided it (REPLACE, INJECT)
+	Sites     []Site `json:"sites"`
 }
 
-// Dependency is one mod naming what only another mod defines.
+// Site is where a definition or a reference is written.
+type Site struct {
+	File     int    `json:"file"` // its number in Sources
+	Line     int    `json:"line"`
+	Col      int    `json:"col"`
+	Kind     string `json:"kind,omitempty"` // a dependency's use: the kind and name written there
+	Name     string `json:"name,omitempty"`
+	Injected bool   `json:"injected,omitempty"` // a definition added to the kept one (INJECT), not replaced
+}
+
+// Dependency is one mod naming what only another mod defines, and each place it does.
 type Dependency struct {
 	From  string `json:"from"`
 	To    string `json:"to"`
-	Count int    `json:"count"`
+	Sites []Site `json:"sites"`
 }
 
 // Dangling is one name a mod writes that nothing defines, and where.
 type Dangling struct {
-	Kind, Name string
-	Declared   bool          `json:"declared"` // a declared cite: the game itself would reject it
-	Count      int           `json:"count"`
-	Sites      []index.Cited `json:"sites"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	Declared bool   `json:"declared"` // a declared cite: the game itself would reject it
+	Sites    []Site `json:"sites"`
 }
 
 // Language is one language's localization gaps.
 type Language struct {
-	Language          string   `json:"language"`
-	Missing           []LocRow `json:"missing"`      // a definition's conventional key, absent
-	Untranslated      []LocRow `json:"untranslated"` // a mod key english has and this language lacks
-	Orphaned          []LocRow `json:"orphaned"`     // a mod key nothing of its mod reads
-	MissingCount      int      `json:"missingCount"`
-	UntranslatedCount int      `json:"untranslatedCount"`
-	OrphanedCount     int      `json:"orphanedCount"`
+	Language     string   `json:"language"`
+	Missing      []LocRow `json:"missing"`      // the workspace's language: a definition's key, absent
+	Untranslated []LocRow `json:"untranslated"` // another: a mod key the workspace's language has and it lacks
+	Orphaned     []LocRow `json:"orphaned"`     // a mod key nothing of its mod reads
 }
 
 // LocRow is one key and, where it has one, the definition or the file it belongs to.
 type LocRow struct {
-	Key    string      `json:"key"`
-	Kind   string      `json:"kind,omitempty"`
-	Name   string      `json:"name,omitempty"`
-	Origin string      `json:"origin"`
-	At     source.File `json:"at"`
-	Line   int         `json:"line"`
+	Key  string `json:"key"`
+	Kind string `json:"kind,omitempty"`
+	Name string `json:"name,omitempty"`
+	File int    `json:"file"` // its number in Sources
+	Line int    `json:"line"`
 }
 
-// FileRow is one definition without the file the game finds for it.
+// FileRow is one definition without images every definition of its kind in the game has, which the
+// game finds by the name.
 type FileRow struct {
-	index.Found
-	Template string `json:"template"`
+	Kind    string   `json:"kind"`
+	Name    string   `json:"name"`
+	File    int      `json:"file"` // its number in Sources
+	Line    int      `json:"line"`
+	Missing []string `json:"missing"` // each image it lacks, as the path the game looks for
+	Of      int      `json:"of"`      // how many such images its kind has
+}
+
+// SourceAt is one place a pane shows the source of: a definition's statement, or a reference's
+// line.
+type SourceAt struct {
+	Path       string `json:"path"`
+	Line       int    `json:"line"`
+	Col        int    `json:"col"`
+	Definition bool   `json:"definition"`
 }
 
 // HealthService answers the health page.
@@ -92,44 +118,58 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	if err != nil {
 		return nil, err
 	}
-	health := workspaceHealth(sess, params)
-	return &health, nil
-}
-
-// LookupLoc looks one localization key up: its entries in the workspace and everything reading it.
-func (v *HealthService) LookupLoc(workspaceID, key string) (*Lookup, error) {
-	sess, err := v.Session.live(workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	lookup := lookupLoc(sess, key)
-	return &lookup, nil
-}
-
-func workspaceHealth(sess *session.Session, params HealthParams) Health {
 	sess.RLock()
 	defer sess.RUnlock()
 	order := sess.Order()
 	if len(params.Order) > 0 {
 		order = append([]string{game.OriginVanilla}, params.Order...)
 	}
-	cut := func(n int) int {
-		if params.Limit > 0 && n > params.Limit {
-			return params.Limit
+	health := &Health{}
+	numbers := map[string]int{}
+	number := func(file source.File) int {
+		if _, ok := numbers[file.Path]; !ok {
+			numbers[file.Path] = len(health.Sources)
+			health.Sources = append(health.Sources, file)
 		}
-		return n
+		return numbers[file.Path]
 	}
-	health := Health{}
 
-	// contests, and what each mod needs from another
+	// each name two origins define: a contest where two mods define it, else one mod's override of the
+	// install's
 	for _, contest := range index.Contests(sess.All(), sess.Schema, func(kind string) bool { return game.IsFIOS(sess.Game.ID, kind) }, sess.Game.EntryModes, order) {
-		rule := "LIOS"
-		if contest.FirstWins {
-			rule = "FIOS"
+		mods := map[string]bool{}
+		for _, found := range contest.Found {
+			if found.At.Origin != game.OriginVanilla {
+				mods[found.At.Origin] = true
+			}
 		}
-		health.Contests = append(health.Contests, Contest{Contest: contest, Rule: rule})
+		row := Contest{Kind: contest.Kind, Name: contest.Name, Winner: contest.Winner, FirstWins: contest.FirstWins, Rule: "LIOS"}
+		if contest.FirstWins {
+			row.Rule = "FIOS"
+		}
+		// the sites are in the order the game takes them: one after the kept one, written with a mode
+		// that adds rather than replaces (INJECT), is part of what is kept; a mode the kept one was
+		// written with, or else an inject's, is the row's rule
+		for i, found := range contest.Found {
+			site := Site{File: number(found.At), Line: int(found.Line), Col: int(found.Col)}
+			mode := slices.IndexFunc(sess.Game.EntryModes, func(mode game.EntryMode) bool { return mode.Word == found.Mode })
+			if site.Injected = mode >= 0 && !sess.Game.EntryModes[mode].Replaces && i > contest.Winner; site.Injected {
+				row.Rule = found.Mode
+			}
+			row.Sites = append(row.Sites, site)
+		}
+		if contest.Winner >= 0 && contest.Found[contest.Winner].Mode != "" {
+			row.Rule = contest.Found[contest.Winner].Mode
+		}
+		if len(mods) < 2 {
+			health.Overrides = append(health.Overrides, row)
+		} else {
+			health.Contests = append(health.Contests, row)
+		}
 	}
-	needs := map[[2]string]int{}
+
+	// what each mod needs from another
+	needs := map[[2]string]*Dependency{}
 	dangling := map[[2]string]*Dangling{}
 	idx := sess.Workspace
 	for _, ref := range idx.Refs {
@@ -146,43 +186,77 @@ func workspaceHealth(sess *session.Session, params HealthParams) Health {
 				definers = append(definers, name.At.Origin)
 			}
 		}
+		site := Site{File: number(idx.Files[ref.File]), Line: int(ref.Line), Col: int(ref.Col)}
 		if len(definers) == 0 {
 			key := [2]string{ref.Kind, ref.Name}
 			if dangling[key] == nil {
 				dangling[key] = &Dangling{Kind: ref.Kind, Name: ref.Name, Declared: ref.Declared}
 			}
-			dangling[key].Count++
-			dangling[key].Sites = append(dangling[key].Sites, index.Cited{Ref: ref, At: idx.Files[ref.File]})
+			dangling[key].Sites = append(dangling[key].Sites, site)
 			continue
 		}
 		if !slices.Contains(definers, from) && !slices.Contains(definers, game.OriginVanilla) {
-			needs[[2]string{from, definers[0]}]++
+			key := [2]string{from, definers[0]}
+			if needs[key] == nil {
+				needs[key] = &Dependency{From: from, To: definers[0]}
+			}
+			site.Kind, site.Name = ref.Kind, ref.Name
+			needs[key].Sites = append(needs[key].Sites, site)
 		}
 	}
-	for pair, count := range needs {
-		health.Depends = append(health.Depends, Dependency{From: pair[0], To: pair[1], Count: count})
+	for _, row := range needs {
+		health.Depends = append(health.Depends, *row)
 	}
 	slices.SortFunc(health.Depends, func(first, second Dependency) int { return strings.Compare(first.From+first.To, second.From+second.To) })
 	for _, row := range dangling {
-		health.DanglingCount++
-		row.Sites = row.Sites[:cut(len(row.Sites))]
 		health.Dangling = append(health.Dangling, *row)
 	}
 	slices.SortFunc(health.Dangling, func(first, second Dangling) int {
 		return strings.Compare(first.Kind+first.Name, second.Kind+second.Name)
 	})
-	health.Dangling = health.Dangling[:cut(len(health.Dangling))]
 
-	health.Loc = localization(sess, cut)
-	health.Files, health.FilesCount = files(sess, cut)
-	return health
+	health.Loc = localization(sess, number)
+	health.Files = files(sess, number)
+	return health, nil
 }
 
-// localization is each language's gaps: a mod definition's conventional key absent (missing), a
-// mod's english key the language lacks (untranslated), a key its own mod never reads (orphaned).
-func localization(sess *session.Session, cut func(int) int) []Language {
+// GetLines is the source a pane shows at each place: a definition's statement, its first ten lines
+// and a "�" where it runs on, or a reference's line.
+func (v *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]string, error) {
+	sess, err := v.Session.live(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	sess.RLock()
+	defer sess.RUnlock()
+	out := make([][]string, len(places))
+	for i, place := range places {
+		parsed, _, err := sess.Parsed(place.Path)
+		if err != nil || parsed == nil {
+			continue
+		}
+		if !place.Definition {
+			offset := parsed.Lines().OffsetAt(place.Line, 0)
+			out[i] = spanLines(parsed, jomini.Range{Start: offset, End: offset}, 0)
+			continue
+		}
+		span := jomini.Range{Start: parsed.Lines().OffsetAt(place.Line, place.Col)}
+		span.End = span.Start
+		if keyed := keyedAt(parsed, place.Line, place.Col); keyed != nil {
+			span = keyed.Range
+		}
+		out[i] = spanLines(parsed, span, 10)
+	}
+	return out, nil
+}
+
+// localization is each language's gaps: in the workspace's language, a mod definition's
+// conventional key absent (missing); in another, a mod key the workspace's language has and it
+// lacks (untranslated); in any, a key its own mod never reads (orphaned). A key is listed once.
+func localization(sess *session.Session, number func(source.File) int) []Language {
 	idx := sess.Workspace
-	languages := map[string]bool{"english": true, sess.Language: true}
+	base := cmp.Or(sess.Language, "english")
+	languages := map[string]bool{base: true}
 	read := map[string]map[string]bool{} // by origin: the keys something of that origin reads
 	has := map[string]map[string]bool{}  // by language: the keys the workspace has
 	for _, entry := range idx.Loc {
@@ -205,7 +279,13 @@ func localization(sess *session.Session, cut func(int) int) []Language {
 			read[origin][ref.Name] = true
 		}
 	}
-	var wanted []LocRow
+	// each definition's key every vanilla one of its kind has
+	type want struct {
+		key string
+		def index.Def
+	}
+	var wanted []want
+	conventional := map[string]map[string]bool{} // by origin: its definitions' conventional keys
 	for _, def := range idx.Defs {
 		if def.File < 0 {
 			continue
@@ -218,13 +298,27 @@ func localization(sess *session.Session, cut func(int) int) []Language {
 		if read[origin] == nil {
 			read[origin] = map[string]bool{}
 		}
+		if conventional[origin] == nil {
+			conventional[origin] = map[string]bool{}
+		}
 		for _, locTemplate := range kind.LocTemplates {
 			key := loc.Expand(def.Name, []loc.Convention{locTemplate})[0]
-			read[origin][key] = true
+			read[origin][key], conventional[origin][key] = true, true
 			if locTemplate.Coverage == 1 {
-				wanted = append(wanted, LocRow{Key: key, Kind: def.Kind, Name: def.Name, Origin: origin, At: idx.Files[def.File], Line: int(def.Line)})
+				wanted = append(wanted, want{key, def})
 			}
 		}
+	}
+
+	// a key that goes on from one of its mod's conventional keys (setting_x to setting_x_desc) is that
+	// definition's, though too few vanilla ones have it for the engine to learn it
+	extends := func(origin, key string) bool {
+		for i, char := range key {
+			if char == '_' && conventional[origin][key[:i]] {
+				return true
+			}
+		}
+		return false
 	}
 
 	var out []Language
@@ -237,9 +331,8 @@ func localization(sess *session.Session, cut func(int) int) []Language {
 	}) {
 		coverage := Language{Language: lang}
 		for _, want := range wanted {
-			if !has[lang][want.Key] && !slices.ContainsFunc(index.All(sess.All()).Entries(want.Key), func(said index.Said) bool { return loc.LanguageFromRel(said.At.Rel) == lang }) {
-				coverage.MissingCount++
-				coverage.Missing = append(coverage.Missing, want)
+			if lang == base && !has[lang][want.key] && !slices.ContainsFunc(index.All(sess.All()).Entries(want.key), func(said index.Said) bool { return loc.LanguageFromRel(said.At.Rel) == lang }) {
+				coverage.Missing = append(coverage.Missing, LocRow{Key: want.key, Kind: want.def.Kind, Name: want.def.Name, File: number(idx.Files[want.def.File]), Line: int(want.def.Line)})
 			}
 		}
 		for _, entry := range idx.Loc {
@@ -248,24 +341,21 @@ func localization(sess *session.Session, cut func(int) int) []Language {
 			}
 			at := idx.Files[entry.File]
 			from := loc.LanguageFromRel(at.Rel)
-			row := LocRow{Key: entry.Key, Origin: at.Origin, At: at, Line: entry.Line}
-			if from == "english" && lang != "english" && !has[lang][entry.Key] {
-				coverage.UntranslatedCount++
-				coverage.Untranslated = append(coverage.Untranslated, row)
+			if from == base && lang != base && !has[lang][entry.Key] {
+				coverage.Untranslated = append(coverage.Untranslated, LocRow{Key: entry.Key, File: number(at), Line: entry.Line})
 			}
-			if from == lang && !read[at.Origin][entry.Key] {
-				coverage.OrphanedCount++
-				coverage.Orphaned = append(coverage.Orphaned, row)
+			if from == lang && !read[at.Origin][entry.Key] && !extends(at.Origin, entry.Key) {
+				coverage.Orphaned = append(coverage.Orphaned, LocRow{Key: entry.Key, File: number(at), Line: entry.Line})
 			}
 		}
-		coverage.Missing, coverage.Untranslated, coverage.Orphaned = coverage.Missing[:cut(len(coverage.Missing))], coverage.Untranslated[:cut(len(coverage.Untranslated))], coverage.Orphaned[:cut(len(coverage.Orphaned))]
 		out = append(out, coverage)
 	}
 	return out
 }
 
-// files is each mod definition missing the templated file every vanilla one of its kind has.
-func files(sess *session.Session, cut func(int) int) ([]FileRow, int) {
+// files is each mod definition missing an image every vanilla one of its kind has, one row with
+// every such image it lacks.
+func files(sess *session.Session, number func(source.File) int) []FileRow {
 	var out []FileRow
 	for _, def := range sess.Workspace.Defs {
 		if def.File < 0 {
@@ -275,29 +365,52 @@ func files(sess *session.Session, cut func(int) int) ([]FileRow, int) {
 		if kind == nil {
 			continue
 		}
+		row := FileRow{Kind: def.Kind, Name: def.Name, Line: int(def.Line)}
 		for _, fileTemplate := range kind.FileTemplates {
-			if path := strings.ReplaceAll(fileTemplate.Pattern, "{id}", def.Name); fileTemplate.Coverage == 1 && !sess.All().File(path) {
-				out = append(out, FileRow{Def: def, At: sess.Workspace.Files[def.File], Template: fileTemplate.Pattern})
+			if fileTemplate.Coverage != 1 {
+				continue
+			}
+			row.Of++
+			if path := strings.ReplaceAll(fileTemplate.Pattern, "{id}", def.Name); !sess.All().File(path) {
+				row.Missing = append(row.Missing, path)
 			}
 		}
+		if len(row.Missing) > 0 {
+			row.File = number(sess.Workspace.Files[def.File])
+			out = append(out, row)
+		}
 	}
-	return out[:cut(len(out))], len(out)
+	return out
 }
 
 // Lookup is one localization key: its entries in the workspace and everything that reads it.
 type Lookup struct {
 	Key     string        `json:"key"`
-	Entries []index.Said  `json:"entries"`
+	Entries []LocEntry    `json:"entries"`
 	Readers []index.Cited `json:"readers"`
 }
 
-func lookupLoc(sess *session.Session, key string) Lookup {
+// LocEntry is one of a key's entries, with the language its file is written in.
+type LocEntry struct {
+	index.Said
+	Language string `json:"language"`
+}
+
+// LookupLoc looks one localization key up: its entries in the workspace and everything reading it.
+func (v *HealthService) LookupLoc(workspaceID, key string) (*Lookup, error) {
+	sess, err := v.Session.live(workspaceID)
+	if err != nil {
+		return nil, err
+	}
 	sess.RLock()
 	defer sess.RUnlock()
-	lookup := Lookup{Key: key, Entries: index.All(sess.All()).Entries(key)}
+	lookup := &Lookup{Key: key}
+	for _, said := range index.All(sess.All()).Entries(key) {
+		lookup.Entries = append(lookup.Entries, LocEntry{Said: said, Language: loc.LanguageFromRel(said.At.Rel)})
+	}
 	for _, idx := range sess.All() {
 		lookup.Readers = append(lookup.Readers, idx.Referring(key)...)
 	}
 	lookup.Readers = slices.DeleteFunc(lookup.Readers, func(cited index.Cited) bool { return cited.Type != schema.TypeLoc })
-	return lookup
+	return lookup, nil
 }

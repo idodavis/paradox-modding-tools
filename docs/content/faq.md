@@ -40,7 +40,7 @@ It suppresses IDE diagnostics on that line or the next (`# pmt:ignore-next-line`
 
 ## How do I check a game update?
 
-Pin or keep `latest`, rescan the install, reopen the workspace, and read [Workspace Health]({{< relref "/pages/health" >}}) (dangling + overlays). [Patch Center]({{< relref "/pages/patch-center" >}}) has the wiki notes for that version. Suggested file-level retarget is on the [roadmap]({{< relref "/roadmap" >}}).
+Pin or keep `latest`, rescan the install, reopen the workspace, and read [Workspace Health]({{< relref "/pages/health" >}}) (Dangling refs and Overrides). [Patch Center]({{< relref "/pages/patch-center" >}}) has the wiki notes for that version. Suggested file-level retarget is on the [roadmap]({{< relref "/roadmap" >}}).
 
 ## SmartScreen / my antivirus blocked the zip
 

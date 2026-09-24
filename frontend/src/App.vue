@@ -21,7 +21,7 @@ import {
   type ThemeMenuItem,
   type ThemeSwatchColors,
 } from "./ide/colorThemes";
-import { CheckForUpdates, GetVersion } from "@services/settingsservice";
+import { CheckForUpdates, GetVersion } from "@services/configservice";
 import { isWorkbenchReady } from "./ide/workbenchHost";
 import IdeWorkbenchLayout from "./components/IdeWorkbenchLayout.vue";
 import IdeStatusStrip from "./components/IdeStatusStrip.vue";

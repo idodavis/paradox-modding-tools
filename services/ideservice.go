@@ -20,7 +20,8 @@ func (s *IdeService) DiagnosticCodes() []lsp.Code {
 	return lsp.Codes
 }
 
-// enabled is the codes on for this user: the defaults, then the settings under ide.diag.<code>.
+// enabled is the codes on for this user: the defaults, then each ide.diag.<code> set to on or off;
+// "" is no choice, as a setting cannot be removed.
 func (s *IdeService) enabled() map[string]bool {
 	on := map[string]bool{}
 	for _, code := range lsp.Codes {
@@ -34,7 +35,7 @@ func (s *IdeService) enabled() map[string]bool {
 		return on
 	}
 	for key, value := range settings {
-		if code, ok := strings.CutPrefix(key, "ide.diag."); ok {
+		if code, ok := strings.CutPrefix(key, "ide.diag."); ok && value != "" {
 			on[code] = value == "on"
 		}
 	}

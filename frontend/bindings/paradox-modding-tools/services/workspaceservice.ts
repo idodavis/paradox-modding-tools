@@ -26,7 +26,7 @@ export function AddGameInstall(gameID: string, name: string, path: string, versi
 }
 
 /**
- * AddWorkspaceMod adds a mod to a workspace.
+ * AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor.
  */
 export function AddWorkspaceMod(workspaceID: string, name: string, path: string, thumbnail: string): $CancellablePromise<$models.WorkspaceMod | null> {
     return $Call.ByID(123649806, workspaceID, name, path, thumbnail);
@@ -117,7 +117,7 @@ export function ImportWorkshopIgnore(workspaceID: string, modID: string): $Cance
 }
 
 /**
- * ListGameInstalls returns a game's installs, each with its cache timestamp and whether its folder is still there.
+ * ListGameInstalls returns a game's installs, each with its cache time and whether it exists.
  */
 export function ListGameInstalls(gameID: string): $CancellablePromise<$models.GameInstall[] | null> {
     return $Call.ByID(3468235284, gameID);
@@ -173,15 +173,9 @@ export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromi
 }
 
 /**
- * SetWorkspaceModCalendar declares the era a mod's date literals are written in.
- * 
- * A setter of its own rather than two more parameters on UpdateWorkspaceMod,
- * which already takes eight positional strings: a calendar is set once and
- * rarely, by someone who knows their mod offsets the year, and it has nothing to
- * do with the name-and-colour edits that method carries.
- * 
- * era "" with offset 0 clears it, and a cleared calendar has to leave every date
- * exactly as written -- that guardrail is the whole reason the feature is opt-in.
+ * SetWorkspaceModCalendar declares the era a mod's date literals are written in, apart from
+ * UpdateWorkspaceMod because a calendar is set once and rarely. era "" with offset 0 clears it, and
+ * a cleared calendar leaves every date exactly as written.
  */
 export function SetWorkspaceModCalendar(workspaceID: string, modID: string, era: string, epochOffset: number): $CancellablePromise<void> {
     return $Call.ByID(2457080507, workspaceID, modID, era, epochOffset);
@@ -209,7 +203,7 @@ export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: str
 }
 
 /**
- * UpdateWorkspacePrefs sets IDE persist, default landing page, explorer hide, and game origin color.
+ * UpdateWorkspacePrefs sets the IDE reset, default landing page, explorer hiding, and game color.
  */
 export function UpdateWorkspacePrefs(workspaceID: string, resetIdeOnOpen: boolean, defaultTool: string, gameColor: string, hideExplorerBinaries: boolean): $CancellablePromise<void> {
     return $Call.ByID(3501301930, workspaceID, resetIdeOnOpen, defaultTool, gameColor, hideExplorerBinaries);

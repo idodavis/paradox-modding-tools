@@ -19,10 +19,13 @@ const htmlLines = ref<string[]>([]);
 const sourceLines = computed(() => (props.text ?? "").split("\n"));
 const from = computed(() => props.fromLine ?? 0);
 
+// the plain lines show until the workbench can colour them; a colouring for older text is dropped
 watch(
   () => [props.text, props.language] as const,
   async ([text, language]) => {
-    htmlLines.value = await colorizeLines((text ?? "").split("\n"), language);
+    htmlLines.value = [];
+    const coloured = await colorizeLines((text ?? "").split("\n"), language);
+    if (text === props.text) htmlLines.value = coloured;
   },
   { immediate: true },
 );
@@ -37,7 +40,7 @@ function isHit(i: number): boolean {
   <pre
     class="my-0 overflow-x-auto rounded-md border border-accented bg-elevated px-2 py-1.5 text-xs leading-relaxed"
   ><div
-      v-for="(html, i) in htmlLines"
+      v-for="(line, i) in sourceLines"
       :key="i"
       class="flex gap-2"
       :class="isHit(i) ? 'rounded-sm bg-error/20' : ''"
@@ -46,6 +49,7 @@ function isHit(i: number): boolean {
         v-if="gutter"
         class="w-8 shrink-0 select-none text-right tabular-nums text-muted"
       >{{ from + i + 1 }}</span>
-      <span class="min-w-0 flex-1" v-html="html || sourceLines[i] || ' '" />
+      <span v-if="htmlLines[i]" class="min-w-0 flex-1" v-html="htmlLines[i]" />
+      <span v-else class="min-w-0 flex-1">{{ line || " " }}</span>
     </div></pre>
 </template>

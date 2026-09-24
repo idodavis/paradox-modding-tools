@@ -78,27 +78,9 @@ const exSeen = shallowRef("");
 const SAMPLE_DATE = "8082.1.1";
 
 /**
- * Work out the epoch offset from an example: a date as the mod's script writes
- * it, and the year a player actually sees for it.
- *
- * AGoT writes `8082.1.1` for what the game shows as year 300, so the offset is
- * 7782 and the hover subtracts it from every date in the mod.
- *
- * Deliberately permissive, and that is the opposite of how the engine's derived
- * types are treated. A calendar is a READING AID -- it never changes what is
- * written to disk -- so a bad offset costs a misleading hover, not a wrong type
- * or a false accusation. Refusing a shape a mod already uses would be the more
- * expensive mistake, so:
- *
- *   - a bare year works as well as a full date ("8082" and "8082.1.1" both give
- *     8082), on either side;
- *   - a negative result is kept, for a mod whose script years run BELOW the ones
- *     it displays;
- *   - only genuinely unparseable input returns null, which is what leaves the
- *     button disabled.
- *
- * @param written a date literal as it appears in script, e.g. "8082.1.1"
- * @param seen the year a player sees for that date, e.g. "300"
+ * The epoch offset from an example: a year the mod's script writes and the year a player sees
+ * (AGoT writes 8082 for year 300, so 7782). Permissive, since a calendar only changes what a
+ * hover reads: a bare year serves, a negative offset is kept, and only unparseable input is null.
  */
 function offsetFromExample(written: string, seen: string): number | null {
   const yearOf = (raw: string): number | null => {
@@ -118,17 +100,8 @@ function emitCalendar(era: string, epochOffset: number): void {
 }
 
 /**
- * What SAMPLE_DATE reads as under the current setting — and it must agree with
- * catalog.EraDate, which is what the editor's hover and inlay hint actually use.
- *
- * EraDate has two guards. The shape check (3 or 4 dotted parts) cannot fire
- * here, because SAMPLE_DATE is a constant. The `era <= 0` one can, and without
- * it this card showed a negative year for an offset larger than the sample
- * while the editor correctly rendered nothing — the settings screen promising a
- * conversion the editor then declined to make.
- *
- * Go is not asked directly because EraDate is not bound; if it is ever exposed,
- * this should call it instead of matching it.
+ * SAMPLE_DATE under the current setting, by the rule the editor's hover and inlay hints use
+ * (lsp's date): no era year at or below 0.
  */
 const preview = computed(() => {
   const era = props.mod.era ?? "";

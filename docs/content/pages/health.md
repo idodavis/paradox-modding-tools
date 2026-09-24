@@ -1,38 +1,41 @@
 ---
 title: Workspace Health
-description: FIOS/LIOS contests, overlays, depends, dangling refs, and loc coverage.
+description: Contests, overrides, dependencies, dangling refs, loc gaps and missing files.
 weight: 5
 ---
 
 # Workspace Health
 
-Compatibility and localization for **this** workspace.
+What this workspace's load order decides, and what it lacks.
 
-{{< shot caption="KPI cards + table + load-order chips." >}}
+{{< shot caption="The cards, the table, and a row's definitions beside it." >}}
 
-## Compatibility cards
+## The cards
+
+Six cards count what the report found. A card picks the table below it.
 
 | Card | Meaning |
 |------|---------|
-| **Contests** | Two origins define the same key. Winner follows [FIOS / LIOS]({{< relref "/concepts/load-order" >}}). |
-| **Overlays** | A mod file covers a game file at the same relative path. |
-| **Depends** | A mod refers to a key that lives in another attached mod. |
-| **Dangling** | A ref with no definition in the live session (typo, missing dependency, or a game patch that removed the key). |
+| **Contests** | A name two or more mods define, with or without the game's own. The one kept follows [FIOS / LIOS]({{< relref "/concepts/load-order" >}}); a contest the game has no part in is marked as a mod overriding another mod's own. |
+| **Overrides** | One mod's definition over the game's own of the same name. |
+| **Dependencies** | A mod naming something only another mod defines. |
+| **Dangling refs** | A name written that nothing defines: a typo, a missing dependency, or a game patch that removed it. The ones the game itself would reject are marked. |
+| **Loc gaps** | For each language the mods ship: **missing** (a definition's conventional key is absent), **untranslated** (English has the key, this language does not), **orphaned** (a mod's key that nothing of that mod reads). |
+| **Missing files** | A definition without the file its kind always has, such as an icon. |
 
-Row detail shows a colorized snippet around the hit.
+## The table and the pane
 
-## Localization cards
+Each column head sorts the table and, where a column's values are few (kind, rule, language, gap, origin), ticks the ones to keep. The filter box searches every column. Pick a row to open it beside the table:
 
-For the language in the heading select:
+- a contest or override: every definition in load order, each with its first lines, the kept one marked;
+- a dependency: each place the mod names what the other defines, with its line;
+- a dangling reference: each place it is written;
+- a loc gap: the key's text in each language, quoted, and what reads it.
 
-- **Missing** — script wants a key the loc files do not have.
-- **Orphans** — loc key with no script ref we know.
-- **Untranslated** — English (or source) exists; this language does not.
-
-Coverage lists **every language the mods ship**. The workspace default loc language is an IDE/hover setting.
+The workspace default loc language is an IDE and hover setting; the report covers every language.
 
 ## Load-order preview
 
-Drag the load-order chips to preview winners **without** writing the workspace. **Save as workspace order** persists the same `SortOrder` as Settings.
+Drag the load-order chips to preview the kept definitions **without** writing the workspace. **Save as workspace order** persists the same `SortOrder` as Settings.
 
-After a game patch: pin/rescan the install, then use dangling + overlays here. See [roadmap]({{< relref "/roadmap" >}}).
+After a game patch: pin or rescan the install, then use Dangling refs and Overrides here. See [roadmap]({{< relref "/roadmap" >}}).

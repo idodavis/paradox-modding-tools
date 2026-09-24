@@ -2,6 +2,7 @@
  * Readonly monaco.editor.colorize for Paradox script and loc snippets.
  */
 import * as monaco from "monaco-editor";
+import { waitServicesReady } from "@codingame/monaco-vscode-api/lifecycle";
 
 /** Language ids registered in paradoxLanguages.ts. */
 export type ColorizeLang = "paradox" | "paradox-loc" | "paradox-gui";
@@ -14,12 +15,16 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
-/** Colorize one string. Falls back to escaped plain text. */
+/**
+ * Colorize one string once the workbench has started Monaco: a colorize call before that starts
+ * it with services the workbench cannot replace. Falls back to escaped plain text.
+ */
 export async function colorizeText(
   text: string,
   language: ColorizeLang,
 ): Promise<string> {
   if (!text) return "";
+  await waitServicesReady();
   try {
     return await monaco.editor.colorize(text, language, {});
   } catch {

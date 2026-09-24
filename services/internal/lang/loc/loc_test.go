@@ -106,6 +106,9 @@ func TestParse(t *testing.T) {
 			"events_l_english.yml":   "english",
 			"foo_l_french.yml":       "french",
 			"bar_l_SimpChinese.yaml": "simpchinese",
+			"x_l_simp_chinese.yml":   "simp_chinese",
+			"x_l_braz_por.yml":       "braz_por",
+			"tool_l_english.yml":     "english",
 			"descriptor.mod":         "",
 			"noconvention.yml":       "",
 		}
@@ -113,6 +116,12 @@ func TestParse(t *testing.T) {
 			if got := LanguageFromFilename(name); got != want {
 				t.Errorf("LanguageFromFilename(%q) = %q want %q", name, got, want)
 			}
+		}
+		if got := LanguageFromRel("localization/german/notes.yml"); got != "german" {
+			t.Errorf("a rel's folder names the language where the filename does not: %q", got)
+		}
+		if got := LanguageFromRel("localization/languages.yml"); got != "" {
+			t.Errorf("a file straight under localization is in no language: %q", got)
 		}
 	})
 }

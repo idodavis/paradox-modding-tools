@@ -1035,6 +1035,13 @@ script_values = {
 					number = 1
 				}
 			}
+			value = {
+				count = 1
+				class = value
+				accepts = {
+					number = 1
+				}
+			}
 		}
 	}
 }
@@ -1226,10 +1233,10 @@ arguments = {
 		}
 	}
 	add_gold = {
-		count = 7
+		count = 8
 		class = value
 		accepts = {
-			number = 5
+			number = 6
 			ref:script_values = 1
 		}
 	}
@@ -1425,22 +1432,54 @@ arguments = {
 		}
 	}
 	send_interface_toast = {
-		count = 1
+		count = 3
 		class = body
 		body = { effect }
 		members = {
-			message_filter_type = {
-				count = 1
-				class = value
-				accepts = {
-					string = 1
+			first_valid = {
+				count = 2
+				class = structure
+				members = {
+					desc = {
+						count = 1
+						class = value
+						accepts = {
+							loc = 1
+						}
+					}
+					triggered_desc = {
+						count = 1
+						class = structure
+						members = {
+							desc = {
+								count = 1
+								class = value
+								accepts = {
+									loc = 1
+								}
+							}
+							trigger = {
+								count = 1
+								class = structure
+								members = {
+									is_adult = {
+										count = 1
+										class = value
+										accepts = {
+											bool = 1
+										}
+									}
+								}
+							}
+						}
+					}
 				}
 			}
-			type = {
+			title = {
 				count = 1
 				class = value
 				accepts = {
-					string = 1
+					loc = 1
 				}
 			}
 		}

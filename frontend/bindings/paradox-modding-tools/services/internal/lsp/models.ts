@@ -12,7 +12,7 @@ import * as schema$0 from "../lang/schema/models.js";
 import * as source$0 from "../lang/source/models.js";
 
 /**
- * Code is one check, for the settings: what it finds, and whether it runs when the user has not chosen.
+ * Code is one check, for the settings: what it finds, and whether it runs by default.
  */
 export interface Code {
     "code": string;
@@ -54,8 +54,8 @@ export interface Diagnostic {
  * FoldingRange is one block's lines.
  */
 export interface FoldingRange {
-    "StartLine": number;
-    "EndLine": number;
+    "startLine": number;
+    "endLine": number;
 }
 
 /**
@@ -67,7 +67,7 @@ export interface InlayHint {
 }
 
 /**
- * Inspect is the hover card: what the word is, as the reader read it, and what the workspace knows about that.
+ * Inspect is the hover card: the reader's reading of the word and what the workspace knows of it.
  */
 export interface Inspect {
     "value": schema$0.Value;
@@ -78,12 +78,12 @@ export interface Inspect {
     "key"?: string;
 
     /**
-     * a key: what is written at it (value, list, structure, database, body)
+     * a key's shape: value, list, structure, database, body
      */
     "class"?: string;
 
     /**
-     * a key: the types of value it accepts, as the schema file spells them
+     * a key: the value types it accepts, as the schema spells them
      */
     "accepts"?: string[] | null;
 
@@ -98,7 +98,7 @@ export interface Inspect {
     "scopeOut"?: string;
 
     /**
-     * prose: a token's, a field's from the game info, a definition's comment
+     * prose: a token's or field's docs, or a definition's comment
      */
     "docs"?: string;
 
@@ -108,7 +108,7 @@ export interface Inspect {
     "usage"?: string;
 
     /**
-     * a definition's label (a character's name), a loc key's text, a constant's value
+     * a definition's label, a loc key's text, a constant's value
      */
     "label"?: string;
 
@@ -118,7 +118,7 @@ export interface Inspect {
     "weight"?: number;
 
     /**
-     * a date, written out; with the mod's calendar, the era's date too
+     * a date written out; with a mod calendar, the era's date too
      */
     "date"?: string;
 
@@ -143,14 +143,20 @@ export interface Inspect {
     "winner": number;
 
     /**
-     * a parameter: the words written for it where its macro is called
+     * the event graph draws it: an event or on_action, or it fires one
+     */
+    "graphed"?: boolean;
+
+    /**
+     * a parameter: the words its macro's callers pass for it
      */
     "values"?: Seen[] | null;
     "range": Range;
 }
 
 /**
- * Item is one completion: the text it writes, what that text is, and its rank (0 a token in scope, 1 a member, 2 a definition or a token out of scope, 3 a loc key).
+ * Item is one completion: the text it writes, what that text is, and its rank (0 a token in scope,
+ * 1 a member, 2 a definition or a token out of scope, 3 a loc key).
  */
 export interface Item {
     "label": string;
@@ -182,8 +188,8 @@ export type Position = jomini$0.Position;
  * Range is a span of the file.
  */
 export interface Range {
-    "Start": Position;
-    "End": Position;
+    "start": Position;
+    "end": Position;
 }
 
 /**

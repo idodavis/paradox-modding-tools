@@ -33,7 +33,8 @@ export function AddWorkshopVideo(workspaceID: string, modID: string, urlOrID: st
 }
 
 /**
- * BumpVersion returns current with its patch number, or with kind "minor" its minor number, one higher and every number after it zeroed.
+ * BumpVersion returns current with its patch number, or with kind "minor" its minor number, one
+ * higher and every number after it zeroed.
  */
 export function BumpVersion(current: string, kind: string): $CancellablePromise<string> {
     return $Call.ByID(3779889750, current, kind);
@@ -47,7 +48,7 @@ export function Convert(src: string, to: string): $CancellablePromise<steam$0.Co
 }
 
 /**
- * CopyThumbnail replaces the mod's listing image with src, in the place of the one it has, and returns the path written relative to the mod root.
+ * CopyThumbnail replaces the mod's listing image with src and returns its mod-relative path.
  */
 export function CopyThumbnail(workspaceID: string, modID: string, src: string): $CancellablePromise<string> {
     return $Call.ByID(909999901, workspaceID, modID, src);
@@ -68,7 +69,7 @@ export function LoadListing(workspaceID: string, modID: string): $CancellablePro
 }
 
 /**
- * PublishSteam saves the listing, publishes the mod to the Steam Workshop, then saves the listing again with the item's id.
+ * PublishSteam saves the listing, publishes to the Workshop, then saves the listing with its id.
  */
 export function PublishSteam($in: $models.Listing): $CancellablePromise<$models.PublishResult | null> {
     return $Call.ByID(2912840271, $in);

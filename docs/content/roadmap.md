@@ -1,6 +1,6 @@
 ---
 title: Roadmap
-description: Loose direction — Health-first patching, GUI preview, CK3 map editor, IDE undock.
+description: Loose direction — Health-first patching, GUI preview, Event Graph pictures, CK3 map editor, IDE undock.
 weight: 7
 ---
 
@@ -8,19 +8,34 @@ weight: 7
 
 This is **direction**, not a calendar. Order can change. File issues against a [roadmap bucket](https://github.com/idodavis/paradox-modding-tools/issues/new/choose) if you want to push on one of these.
 
+## Done
+
+- The language engine is rebuilt: each install's schema is learned from its own files and the game's `script_docs`, and the IDE, the Event Graph and Workspace Health all read one index.
+- The [Event Graph]({{< relref "/pages/event-graph" >}}) and [Workspace Health]({{< relref "/pages/health" >}}) are redesigned: a graph with its detail beside or below it, macros shown on request; six cards over a sortable, filterable table with each row's definitions beside it.
+
 ## Automatic game-update patching
 
 After a game patch today:
 
 1. Pin or keep `latest`, rescan the install.
 2. Reopen the workspace.
-3. Read [Workspace Health]({{< relref "/pages/health" >}}) — dangling refs and game-file overlays.
+3. Read [Workspace Health]({{< relref "/pages/health" >}}) — dangling refs and overrides.
 
-Later: suggested **file-level retarget in the IDE** (open the overlay, copy forward what you still own).
+Later: suggested **file-level retarget in the IDE** (open the mod's copy of a changed game file, copy forward what you still own).
 
 ## GUI preview
 
-A future **views** feature using the same Jomini CST already used for `.gui`. Goal is a **structural** HTML/CSS widget tree (`hbox` / `vbox` / `button`) so you can see nesting — not a pixel-perfect launcher clone.
+A future preview using the same Jomini CST already used for `.gui`. Goal is a **structural** HTML/CSS widget tree (`hbox` / `vbox` / `button`) so you can see nesting — not a pixel-perfect launcher clone.
+
+## Event Graph pictures
+
+An event node shows its background picture behind its kind bar. Where the picture comes from differs by game:
+
+- CK3: `override_background`, or `theme` mapped to that background's variant with no trigger.
+- EU5: `image`; `illustration_tags` is picked at runtime, so it has no picture to show.
+- Vic3: none — its event pictures are Bink videos.
+
+It needs a DDS decoder, which comes with this first use; its formats are surveyed then (CK3's scenes are DXT1 and DXT5).
 
 ## Map / title editor
 

@@ -85,10 +85,10 @@ var layout = []string{"common", "events", "gfx", "gui", "history", "localization
 
 // File is one file of an install or a mod.
 type File struct {
-	Path   string // absolute, as the walk spelled it
-	Rel    string // relative to its root, slash separated: common/traits/00_traits.txt
-	Origin string // "vanilla", or a mod's id
-	Format Format
+	Path   string `json:"path"`   // absolute, as the walk spelled it
+	Rel    string `json:"rel"`    // relative to its root, slash separated: common/traits/00_traits.txt
+	Origin string `json:"origin"` // "vanilla", or a mod's id
+	Format Format `json:"format"`
 }
 
 // Text reads the file as text: BOM stripped, CRLF folded, Latin-1 where it is not UTF-8.
@@ -228,9 +228,10 @@ func walk(dir string, ancestors []os.FileInfo, fn func(path string)) {
 
 // ImageInfo is an image file's header facts.
 type ImageInfo struct {
-	Width, Height int
-	Format        string // DXT5, BC7, RGBA8, png, jpeg, TGA 32-bit
-	Mips          int    // mip levels a DDS holds; 0 for the others
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+	Format string `json:"format"` // DXT5, BC7, RGBA8, png, jpeg, TGA 32-bit
+	Mips   int    `json:"mips"`   // mip levels a DDS holds; 0 for the others
 }
 
 // d3d names the pre-DX10 formats a DDS writes as a number in place of a FourCC's letters.

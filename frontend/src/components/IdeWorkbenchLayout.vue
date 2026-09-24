@@ -142,8 +142,10 @@ onMounted(async () => {
 </script>
 
 <template>
+  <!-- nokey: the Event Graph's Vue Flow, kept alive, listens for keys on the whole document and
+    cancels Space (its pan key) where it does not see an input; Monaco types into a plain div -->
   <div
-    class="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-default"
+    class="nokey absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-default"
     :class="visible ? 'z-10' : 'z-0 pointer-events-none'"
   >
     <slot name="toolbar" />

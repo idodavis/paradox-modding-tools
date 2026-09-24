@@ -62,13 +62,8 @@ watch(thumbnailSrc, async (src) => {
 });
 
 /**
- * Where the mod will be created — the folder name as Go's ModSlug makes it, not
- * as typed. It lowercases, turns every run of non-alphanumerics into one
- * underscore, trims those from the ends, and falls back to "mod".
- *
- * This is a second copy of a Go rule and it is kept deliberately: previewing
- * `… / My Great Mod!` for something created at `…\my_great_mod` is a promise the
- * app does not keep, and ModSlug is not bound. Bind it and delete this.
+ * The folder the mod is made in, named as Go's ModSlug names it: lower case, each run of other
+ * characters one underscore, "mod" when empty. ModSlug is not bound, so its rule is copied here.
  */
 function modSlug(name: string): string {
   const out = name
@@ -102,9 +97,8 @@ async function submit(): Promise<void> {
       thumbnailSrc.value,
     );
     if (!path) throw new Error("Failed to create mod");
-    // Where the thumbnail landed is Go's answer, not one to recompute here:
-    // it is per-game (EU5 keeps it in .metadata) and GameInfo.ThumbnailDir is
-    // backend-only. AddWorkspaceMod discovers it when this is empty.
+    // where the thumbnail lands is Go's to say (EU5 keeps it in .metadata); AddWorkspaceMod
+    // finds it when this is empty
     emit("created", path, "");
     name.value = "";
     description.value = "";

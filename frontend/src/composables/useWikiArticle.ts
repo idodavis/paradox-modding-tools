@@ -17,7 +17,7 @@ import {
   type WikiLinkHit,
 } from "../wikiArticle";
 
-/** Page identity used to resolve in-pane wiki links. */
+/** The page an article belongs to, for resolving its in-pane wiki links. */
 export type WikiArticlePage = { title: string; url: string };
 
 /** Stamp, highlight, and click-navigate one sanitized wiki article. */

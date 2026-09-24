@@ -1,23 +1,24 @@
 <script setup lang="ts">
 /**
- * Walkthrough for generating script_docs, plus what PMT can and cannot do
- * without it. The game writes these files only from its own console, so this is
- * the one part of the language engine the user has to do by hand — once per
- * game version, since PMT archives its own copy afterwards.
+ * How to make the game print its scripting documentation, what it gives PMT, what the last scan
+ * read of it, and what the scan saw that nothing explained. The game writes these files only from
+ * its own console, so this is the one part of the language engine the user does by hand.
  */
 import { computed } from "vue";
-import type { ScriptDocsHealth } from "@services/models";
+import type { DumpHealth } from "@services/models";
+import type { Drift } from "@services/internal/lang/schema";
 
 const open = defineModel<boolean>("open", { required: true });
 
 const props = defineProps<{
-  schema: ScriptDocsHealth;
+  dumps: DumpHealth[];
+  drift: Drift | undefined;
   gameName?: string;
 }>();
 
 const steps = computed(() => [
   {
-    title: `Add the ${props.schema.launchOption} launch option`,
+    title: "Add the -debug_mode launch option",
     body: "In Steam: right-click the game, Properties, Launch Options. In the Paradox launcher there is no equivalent, so use Steam.",
   },
   {
@@ -29,14 +30,14 @@ const steps = computed(() => [
     body: "The key depends on your keyboard layout; both are worth trying.",
   },
   {
-    title: `Run ${props.schema.command}`,
+    title: "Run script_docs",
     body: "It runs instantly and prints nothing. That is expected.",
   },
   {
     title: "Come back and rescan",
-    body: props.schema.folder
-      ? `The files land in ${props.schema.folder}. PMT copies them into its own cache, so you can delete them afterwards.`
-      : "PMT copies the files into its own cache, so you can delete them afterwards.",
+    body: props.dumps[0]?.folder
+      ? `The files land in ${props.dumps[0].folder}; the rescan reads them from there.`
+      : "The rescan reads the files from the game's logs or docs folder.",
   },
 ]);
 
@@ -53,6 +54,13 @@ const kept = [
   "Localization coverage",
   "The Event Graph",
 ];
+
+// what the scan saw and nothing explained, by what it was: a game update changing the language
+const unexplained = computed(() =>
+  Object.entries(props.drift ?? {})
+    .filter(([, tallies]) => tallies?.length)
+    .map(([what, tallies]) => ({ what: what.replace(/[A-Z]/g, " $&").toLowerCase(), tallies: tallies!.slice(0, 5) })),
+);
 </script>
 
 <template>
@@ -64,23 +72,6 @@ const kept = [
   >
     <template #body>
       <div class="space-y-5 text-sm">
-        <UAlert
-          v-if="schema.source === 'archive'"
-          color="info"
-          variant="subtle"
-          icon="i-lucide-archive"
-          title="Using PMT's archived copy"
-          description="Your generated files are gone, but PMT kept a copy, so everything still works. Regenerate only after a game update."
-        />
-        <UAlert
-          v-else-if="schema.stale"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-clock"
-          title="These files predate the last game update"
-          :description="`Written ${new Date(schema.readAt || '').toLocaleDateString()}. The engine API may have changed since; regenerating takes a minute.`"
-        />
-
         <ol class="space-y-3">
           <li v-for="(s, i) in steps" :key="s.title" class="flex gap-3">
             <span
@@ -116,11 +107,20 @@ const kept = [
           </div>
         </div>
 
-        <p v-if="schema.source !== 'missing'" class="text-xs text-muted">
-          Currently loaded: {{ schema.effects.toLocaleString() }} effects,
-          {{ schema.triggers.toLocaleString() }} triggers, {{ schema.scopeTypes }} scope types,
-          {{ schema.prefixes }} prefixes.
+        <p v-for="dump in dumps" :key="dump.folder" class="break-all text-xs text-muted">
+          {{ dump.folder }}: {{ dump.effects.toLocaleString() }} effects, {{ dump.triggers.toLocaleString() }}
+          triggers, {{ dump.links }} links, {{ dump.scopes }} scope types.
         </p>
+
+        <div v-if="unexplained.length" class="space-y-1">
+          <p class="font-medium text-highlighted">What the last scan could not explain</p>
+          <p v-for="group in unexplained" :key="group.what" class="text-xs text-muted">
+            {{ group.what }}:
+            <span v-for="tally in group.tallies" :key="tally.name" class="mr-2 font-mono">
+              {{ tally.name }} ×{{ tally.count }}
+            </span>
+          </p>
+        </div>
       </div>
     </template>
     <template #footer="{ close }">

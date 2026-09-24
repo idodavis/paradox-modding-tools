@@ -195,7 +195,10 @@ function openUrl(url: string): void {
         :active="tocActive"
         @jump="jumpTo"
       />
-      <div class="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 wrap-break-word">
+      <div
+        class="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 wrap-break-word
+          [&_details]:my-2 [&_summary]:cursor-pointer [&_summary]:text-sm [&_summary]:text-muted"
+      >
         <p v-if="isPending" class="text-xs text-muted">Loading guide…</p>
         <p v-else-if="error" class="text-xs text-error">{{ error.message }}</p>
         <div

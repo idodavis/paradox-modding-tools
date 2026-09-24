@@ -151,29 +151,33 @@ func (valueType ValueType) String() string { return typeNames[valueType] }
 
 // Value is what one written word turned out to be.
 type Value struct {
-	Type     ValueType
-	Kind     string // TypeRef: the kind of the definition named; "" for a declared prefix no kind holds
-	Name     string // TypeRef/Loc/File/Constant/Param: the name looked up, without quotes, prefix or parent
-	Parent   string // TypeRef: the enclosing definition, when the word names it too: define:NGame|START_DATE gives NGame
-	Declared bool   // the type rests on something the game declares; only then may a diagnostic accuse on it
+	Type ValueType `json:"type"`
+	// TypeRef: the kind of the definition named; "" for a declared prefix no kind holds
+	Kind string `json:"kind"`
+	// TypeRef/Loc/File/Constant/Param: the name looked up, without quotes, prefix or parent
+	Name string `json:"name"`
+	// TypeRef: the enclosing definition the word also names; define:NGame|START_DATE gives NGame
+	Parent string `json:"parent"`
+	// the type rests on something the game declares; only then may a diagnostic accuse on it
+	Declared bool `json:"declared"`
 }
 
 // Drift is what a scan saw and nothing explained: the sign a game update changed the language.
 type Drift struct {
-	ParseErrors  []Tally // vanilla files that did not parse cleanly, by relative path
-	Extensions   []Tally // file extensions with no format
-	Folders      []Tally // top-level folders with no rule
-	EntryModes   []Tally // MODE: words on a definition's name with no meaning in the registry
-	Prefixes     []Tally // prefix spellings neither declared by the vocabulary nor belonging to a kind
-	DumpLabels   []Tally // labels in a dump the vocabulary reader does not know
-	NameTokens   []Tally // tokens not in the hand table whose values are names cited under a script-made kind's prefix
-	Unclassified []Tally // engine tokens the install writes that learned no entry in Arguments
+	ParseErrors  []Tally `json:"parseErrors"`  // vanilla files that did not parse cleanly, by relative path
+	Extensions   []Tally `json:"extensions"`   // file extensions with no format
+	Folders      []Tally `json:"folders"`      // top-level folders with no rule
+	EntryModes   []Tally `json:"entryModes"`   // MODE: words on a name that the registry gives no meaning
+	Prefixes     []Tally `json:"prefixes"`     // prefix spellings the vocabulary does not declare and no kind holds
+	DumpLabels   []Tally `json:"dumpLabels"`   // labels in a dump the vocabulary reader does not know
+	NameTokens   []Tally `json:"nameTokens"`   // tokens outside the hand table valued with a script-made kind's cites
+	Unclassified []Tally `json:"unclassified"` // engine tokens the install writes that learned no entry in Arguments
 }
 
 // Tally is one unexplained thing and how often it was seen.
 type Tally struct {
-	Name  string
-	Count int
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }
 
 // lookups builds the reverse lookups once: prefix, keyword and folder to kinds, and the macros.

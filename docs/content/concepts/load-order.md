@@ -51,7 +51,7 @@ On all three games: **append** your `on_actions` / `events` / `random_events`. D
 
 [Workspace Health]({{< relref "/pages/health" >}}) turns these rules into cards:
 
-- **Contests** — two origins claim the same key; winner follows FIOS/LIOS.
-- **Overlays** — a mod file covers a game file at the same path.
-- **Depends** — a mod refers to another mod’s key.
-- **Dangling** — a ref with no definition in the live session.
+- **Contests** — two or more mods define the same name; the one kept follows FIOS/LIOS.
+- **Overrides** — one mod's definition over the game's own of the same name.
+- **Dependencies** — a mod names something only another mod defines.
+- **Dangling refs** — a name written that nothing defines in the live session.

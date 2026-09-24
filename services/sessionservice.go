@@ -1,7 +1,7 @@
 // sessionservice.go owns the workspaces the editor has open: the pool of live sessions, the scan of
 // an install and the one slot that lets only one run at a time, and the health strip a page shows.
-// The events the frontend listens for are declared here too, because this is what emits them: a
-// session became ready, a scan moved, a cache was replaced, a mod's calendar changed.
+// The events the frontend listens for are declared here too: a session became ready, a scan moved,
+// a cache was replaced, a mod's calendar or file changed, a wiki was refreshed.
 package services
 
 import (
@@ -28,7 +28,7 @@ type SessionService struct {
 	Config *ConfigService
 	Scan   func(ctx context.Context, req index.Request) (*index.Install, error) // index.Scan, or a stand-in under test
 
-	emit func(event string, data any) // emitLang, or a recorder under test
+	emit func(event string, data any) // emit, or a recorder under test
 
 	once     sync.Once
 	smu      sync.RWMutex
@@ -51,9 +51,6 @@ type LanguageHealth struct {
 	ScannedAt   string       `json:"scannedAt"`
 	Scanning    bool         `json:"scanning"`
 	Ready       bool         `json:"ready"`
-	Defs        int          `json:"defs"`
-	Refs        int          `json:"refs"`
-	Kinds       int          `json:"kinds"`
 	Dumps       []DumpHealth `json:"dumps"`
 	Drift       schema.Drift `json:"drift"`
 	WatchError  string       `json:"watchError,omitempty"`
@@ -75,7 +72,7 @@ func (s *SessionService) start() {
 			s.Scan = index.Scan
 		}
 		if s.emit == nil {
-			s.emit = emitLang
+			s.emit = emit
 		}
 		s.sessions = map[string]*session.Session{}
 		s.slot = make(chan struct{}, 1)
@@ -188,23 +185,37 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	sess.Watch()
+	sess.Watch(func(path string) {
+		_, err := os.Stat(path)
+		emit(EventFSChanged, FSChanged{Path: path, Deleted: err != nil})
+	})
 	return sess, nil
 }
 
 // scan reads an install, saves its cache, and tells the frontend as it goes.
 func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
-	emitLang(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 0, Stage: "scanning"})
-	install, err := s.Scan(context.Background(), index.Request{Game: inst.GameID, Dir: inst.Path, Version: inst.Version, Docs: dumpFolders(inst)})
+	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 0, Stage: "scanning"})
+
+	// each stage has the part of the bar its share of a CK3 scan's time earns; a move is told once
+	spans := map[string][2]int{"reading localization": {0, 12}, "reading the install": {12, 30}, "learning the schema": {30, 74}, "reading definitions": {74, 81}, "reading references": {81, 95}}
+	told := -1
+	progress := func(stage string, done, total int) {
+		span := spans[stage]
+		if percent := span[0] + (span[1]-span[0])*done/max(total, 1); percent != told {
+			told = percent
+			emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: percent, Stage: stage})
+		}
+	}
+	install, err := s.Scan(context.Background(), index.Request{Game: inst.GameID, Dir: inst.Path, Version: inst.Version, Docs: dumpFolders(inst), Progress: progress})
 	if err != nil {
 		return nil, err
 	}
-	emitLang(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 80, Stage: "saving"})
+	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 95, Stage: "saving"})
 	if err := local.SaveInstall(inst.ID, inst.Version, install); err != nil {
 		return nil, err
 	}
-	emitLang(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 100, Stage: "done"})
-	emitLang(EventLangCacheUpdated, inst.ID)
+	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 100, Stage: "done"})
+	emit(EventLangCacheUpdated, inst.ID)
 	return install, nil
 }
 
@@ -327,7 +338,7 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth,
 	}
 	if live := s.get(workspaceID); live != nil {
 		live.RLock()
-		health.Ready, health.Defs, health.Refs, health.Kinds, health.Drift = true, len(live.Install.Index.Defs), len(live.Install.Index.Refs), len(live.Schema.Kinds), live.Schema.Drift
+		health.Ready, health.Drift = true, live.Schema.Drift
 		if err := live.WatchError(); err != nil {
 			health.WatchError = err.Error()
 		}
@@ -341,7 +352,22 @@ const (
 	EventLangScanProgress    = "lang:scan-progress"    // an install scan moved: data is ScanProgress
 	EventLangCacheUpdated    = "lang:cache-updated"    // an install's cache was written: data is the install id
 	EventLangCalendarChanged = "lang:calendar-changed" // a mod's calendar changed: data is the workspace id
+	EventFSChanged           = "fs:changed"            // a file under a mod changed on disk: data is FSChanged
+	EventWikiUpdated         = "wiki:updated"          // a game's wiki pages were refreshed: data is WikiUpdated
+	EventSearchHits          = "search:hits"           // a text search is done with a file: data is TextSearchHits
 )
+
+// FSChanged is one path under a mod that changed on disk; Deleted when it is gone.
+type FSChanged struct {
+	Path    string `json:"path"`
+	Deleted bool   `json:"deleted"`
+}
+
+// WikiUpdated is one game's wiki refresh, done; Error says why it failed.
+type WikiUpdated struct {
+	GameID string `json:"gameId"`
+	Error  string `json:"error,omitempty"`
+}
 
 // ScanProgress is one step of an install scan.
 type ScanProgress struct {
@@ -350,8 +376,8 @@ type ScanProgress struct {
 	Stage     string `json:"stage"`
 }
 
-// emitLang sends an event to the frontend when the app is running; the tests run with no app.
-func emitLang(event string, data any) {
+// emit sends an event to the frontend when the app is running; the tests run with no app.
+func emit(event string, data any) {
 	if app := application.Get(); app != nil {
 		app.Event.Emit(event, data)
 	}

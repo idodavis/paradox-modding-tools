@@ -14,7 +14,7 @@ export interface DetectedInstall {
 
 /**
  * GameInfo is the static identity and convention set for one game. It carries no
- * derived data — the model package scans the install for objects, vocabulary, etc.
+ * derived data; the engine under lang/ scans the install for that.
  */
 export interface GameInfo {
     "id": string;
@@ -27,8 +27,8 @@ export interface GameInfo {
     "wikiApi"?: string;
 
     /**
-     * ScriptRoot is the install-relative folder holding script (e.g. "game").
-     * EU5 still uses this: stages live under game/{in_game,main_menu,loading_screen}.
+     * ScriptRoot is the install-relative folder holding script (e.g. "game"). EU5's
+     * StageRoots sit under it: game/{in_game,main_menu,loading_screen}.
      * Mods omit game/ and put StageRoots at the mod root.
      */
     "scriptRoot"?: string;

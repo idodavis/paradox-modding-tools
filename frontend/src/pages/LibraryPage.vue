@@ -9,7 +9,7 @@ import { useWorkspaceStore } from "../stores/workspace";
 import { Workspace, WorkspaceMod } from "@services/models";
 import { AddWorkspaceMod, DeleteWorkspace } from "@services/workspaceservice";
 import CreateModForm from "../components/CreateModForm.vue";
-import { ResetData } from "@services/settingsservice";
+import { ResetData } from "@services/configservice";
 import GameIcon from "../components/GameIcon.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
@@ -155,11 +155,8 @@ function modHex(mod: WorkspaceMod, index: number): string {
     </div>
 
     <div v-else-if="showWizardPrompt" class="flex flex-1 items-center justify-center">
-      <UEmpty
-        icon="i-lucide-folder-plus"
-        title="No workspaces yet"
-        description="Create your first workspace or a new mod to get started."
-      >
+      <UEmpty icon="i-lucide-folder-plus" title="No workspaces yet"
+        description="Create your first workspace or a new mod to get started.">
         <template #actions>
           <UButton label="Create Workspace" icon="i-lucide-plus" @click="createWorkspace" />
           <UButton label="New Mod" icon="i-lucide-package-plus" color="neutral" variant="outline" @click="createMod" />
@@ -177,20 +174,10 @@ function modHex(mod: WorkspaceMod, index: number): string {
                 <span class="font-semibold">{{ ctx.activeWorkspace.name }}</span>
               </div>
               <div class="flex items-center gap-2">
-                <UButton
-                  label="Edit"
-                  size="xs"
-                  color="neutral"
-                  variant="outline"
-                  @click.stop="editWorkspace(ctx.activeWorkspace, $event)"
-                />
-                <UButton
-                  label="Delete"
-                  size="xs"
-                  color="error"
-                  variant="ghost"
-                  @click.stop="askDelete(ctx.activeWorkspace, $event)"
-                />
+                <UButton label="Edit" size="xs" color="neutral" variant="outline"
+                  @click.stop="editWorkspace(ctx.activeWorkspace, $event)" />
+                <UButton label="Delete" size="xs" color="error" variant="ghost"
+                  @click.stop="askDelete(ctx.activeWorkspace, $event)" />
                 <UBadge color="neutral" variant="outline" class="inline-flex items-center gap-1">
                   <GameIcon :game-id="ctx.activeWorkspace.gameId" />
                   {{ ctx.shortName(ctx.activeWorkspace.gameId) }}
@@ -200,19 +187,9 @@ function modHex(mod: WorkspaceMod, index: number): string {
           </template>
           <div class="text-sm text-muted">
             <p>{{ ctx.workspaceMods.length }} mod(s) attached</p>
-            <UAvatarGroup
-              v-if="ctx.workspaceMods.length"
-              :max="5"
-              size="sm"
-              class="mt-2"
-            >
-              <UAvatar
-                v-for="(mod, i) in ctx.workspaceMods"
-                :key="mod.id"
-                :src="ctx.thumbUrls[mod.id]"
-                :alt="mod.name"
-                :style="{ boxShadow: `0 0 0 2px ${modHex(mod, i)}` }"
-              />
+            <UAvatarGroup v-if="ctx.workspaceMods.length" :max="5" size="sm" class="mt-2">
+              <UAvatar v-for="(mod, i) in ctx.workspaceMods" :key="mod.id" :src="ctx.thumbUrls[mod.id]" :alt="mod.name"
+                :style="{ boxShadow: `0 0 0 2px ${modHex(mod, i)}` }" />
             </UAvatarGroup>
             <LanguageHealthStrip class="mt-2" :workspace-id="ctx.activeWorkspace.id" />
           </div>
@@ -226,28 +203,16 @@ function modHex(mod: WorkspaceMod, index: number): string {
         </h2>
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <div v-for="ws in section.workspaces" :key="ws.id" class="cursor-pointer" @click="openWorkspace(ws)">
-            <UCard
-              class="h-full transition-shadow hover:shadow-md"
-              :class="{ 'ring-2 ring-primary': ws.id === ctx.activeWorkspaceId }"
-            >
+            <UCard class="h-full transition-shadow hover:shadow-md"
+              :class="{ 'ring-2 ring-primary': ws.id === ctx.activeWorkspaceId }">
               <template #header>
                 <div class="flex items-center justify-between gap-2">
                   <span class="truncate font-medium">{{ ws.name }}</span>
                   <div class="flex shrink-0 items-center gap-1">
-                    <UButton
-                      label="Edit"
-                      size="xs"
-                      color="neutral"
-                      variant="outline"
-                      @click.stop="editWorkspace(ws, $event)"
-                    />
-                    <UButton
-                      label="Delete"
-                      size="xs"
-                      color="error"
-                      variant="ghost"
-                      @click.stop="askDelete(ws, $event)"
-                    />
+                    <UButton label="Edit" size="xs" color="neutral" variant="outline"
+                      @click.stop="editWorkspace(ws, $event)" />
+                    <UButton label="Delete" size="xs" color="error" variant="ghost"
+                      @click.stop="askDelete(ws, $event)" />
                     <UBadge color="neutral" variant="outline" size="xs" class="inline-flex items-center gap-1">
                       <GameIcon :game-id="ws.gameId" />
                       {{ ctx.shortName(ws.gameId) }}
@@ -256,16 +221,11 @@ function modHex(mod: WorkspaceMod, index: number): string {
                 </div>
               </template>
               <div class="space-y-2 text-xs text-muted">
-                <p v-if="ws.installId">Install configured</p>
+                <p v-if="ws.installId">Game Install Configured</p>
                 <p v-else class="text-warning">No install set</p>
                 <UAvatarGroup v-if="ws.mods?.length" :max="5" size="sm">
-                  <UAvatar
-                    v-for="(mod, i) in ws.mods"
-                    :key="mod.id"
-                    :src="ctx.thumbUrls[mod.id]"
-                    :alt="mod.name"
-                    :style="{ boxShadow: `0 0 0 2px ${modHex(mod, i)}` }"
-                  />
+                  <UAvatar v-for="(mod, i) in ws.mods" :key="mod.id" :src="ctx.thumbUrls[mod.id]" :alt="mod.name"
+                    :style="{ boxShadow: `0 0 0 2px ${modHex(mod, i)}` }" />
                 </UAvatarGroup>
               </div>
             </UCard>
@@ -283,18 +243,11 @@ function modHex(mod: WorkspaceMod, index: number): string {
       <UButton label="Reset all data" color="error" variant="outline" size="sm" @click="resetOpen = true" />
     </div>
 
-    <RemoveWorkspaceModal
-      v-model:open="pendingOpen"
-      :name="pending?.name ?? ''"
-      :loading="removing"
-      @confirm="removeWorkspace()"
-    />
+    <RemoveWorkspaceModal v-model:open="pendingOpen" :name="pending?.name ?? ''" :loading="removing"
+      @confirm="removeWorkspace()" />
 
-    <UModal
-      v-model:open="newModOpen"
-      title="New mod"
-      description="Create a skeleton and attach it, or start a new workspace."
-    >
+    <UModal v-model:open="newModOpen" title="New mod"
+      description="Create a skeleton and attach it, or start a new workspace.">
       <template #body>
         <div class="space-y-3">
           <UFormField v-if="attachItems.length > 1" label="Add to workspace">
@@ -304,15 +257,10 @@ function modHex(mod: WorkspaceMod, index: number): string {
         </div>
       </template>
       <template #footer>
-        <UButton
-          label="New workspace…"
-          color="neutral"
-          variant="outline"
-          @click="
-            newModOpen = false;
-            void router.push({ name: 'wizard', query: { newMod: '1' } });
-          "
-        />
+        <UButton label="New workspace…" color="neutral" variant="outline" @click="
+          newModOpen = false;
+        void router.push({ name: 'wizard', query: { newMod: '1' } });
+        " />
       </template>
     </UModal>
 

@@ -57,15 +57,13 @@ const removeOpen = ref(false);
 // Shared with the health strip, so the Game tab and the IDE agree on whether a
 // type system is loaded.
 const { health: langHealth } = useLanguageHealth(id);
-const schemaHealth = computed(() => langHealth.value?.schema ?? null);
+const dumps = computed(() => langHealth.value?.dumps ?? []);
 const scriptDocsOpen = ref(false);
-const schemaBadge = computed(() => {
-  const s = schemaHealth.value;
-  if (!s || s.source === "missing") return { color: "warning" as const, label: "Not generated" };
-  if (s.stale) return { color: "warning" as const, label: "Older than the install" };
-  if (s.source === "archive") return { color: "info" as const, label: "From PMT's archive" };
-  return { color: "success" as const, label: "Loaded" };
-});
+const schemaBadge = computed(() =>
+  dumps.value.some((dump) => dump.effects > 0)
+    ? { color: "success" as const, label: "Loaded" }
+    : { color: "warning" as const, label: "Not generated" },
+);
 
 const name = ref("");
 const locLang = ref("english");
@@ -326,7 +324,13 @@ async function addMod(): Promise<void> {
   const path = await pickDirectory("Select mod folder");
   if (!path) return;
   const label = path.split(/[/\\]/).pop() || "Mod";
-  await AddWorkspaceMod(id.value, label, path, "");
+  try {
+    await AddWorkspaceMod(id.value, label, path, "");
+  } catch (e) {
+    // a folder with no descriptor, or no folder: Go says which
+    toast.add({ title: e instanceof Error ? e.message : String(e), color: "error" });
+    return;
+  }
   toastOk("Mod added.");
   await refetch();
 }
@@ -536,12 +540,7 @@ function patchMod(mod: WorkspaceMod, patch: ModPatch): void {
   void persistMod(mod);
 }
 
-/** The calendar has its own setter, so it does not go through persistMod.
- *
- * Debounced, and not only to spare the round trip: setting a calendar DROPS the
- * session, because the era is read when a hover formats a date and the session
- * holds the mod records it was built from. Typing "AC" into the era box would
- * otherwise rebuild the whole language model once per letter. */
+/** The calendar's own setter, debounced: setting one drops the session, which is rebuilt. */
 const persistCalendar = useDebounceFn(
   async (mod: WorkspaceMod, era: string, epochOffset: number) => {
     try {
@@ -717,21 +716,17 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
               />
             </div>
             <UCard
-              v-if="schemaHealth"
+              v-if="langHealth"
               title="Scripting documentation"
               description="The game prints its own type system. PMT reads it rather than guessing, and keeps its own copy so you only do this once per game version."
             >
               <div class="space-y-3">
                 <div class="flex flex-wrap items-center gap-2 text-sm">
                   <UBadge :color="schemaBadge.color" variant="subtle" :label="schemaBadge.label" />
-                  <span v-if="schemaHealth.source !== 'missing'" class="text-muted">
-                    {{ schemaHealth.effects.toLocaleString() }} effects ·
-                    {{ schemaHealth.triggers.toLocaleString() }} triggers · {{ schemaHealth.scopeTypes }} scope types ·
-                    {{ schemaHealth.prefixes }} prefixes
-                  </span>
                 </div>
-                <p v-if="schemaHealth.folder" class="break-all text-xs text-muted">
-                  {{ schemaHealth.folder }}
+                <p v-for="dump in dumps" :key="dump.folder" class="break-all text-xs text-muted">
+                  {{ dump.folder }}: {{ dump.effects.toLocaleString() }} effects ·
+                  {{ dump.triggers.toLocaleString() }} triggers · {{ dump.scopes }} scope types
                 </p>
                 <UButton
                   label="How to generate it"
@@ -742,7 +737,12 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                 />
               </div>
             </UCard>
-            <ScriptDocsGuide v-if="schemaHealth" v-model:open="scriptDocsOpen" :schema="schemaHealth" />
+            <ScriptDocsGuide
+              v-if="langHealth"
+              v-model:open="scriptDocsOpen"
+              :dumps="dumps"
+              :drift="langHealth.drift"
+            />
           </div>
 
           <div v-else-if="section === 'mods'" class="space-y-3">

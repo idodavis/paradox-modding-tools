@@ -22,12 +22,12 @@ type Range = jomini.Range
 // Entry is one `key:version "value"` localization entry. Version is -1 when absent.
 // Value is the verbatim text between the opening quote and the LAST quote on the line.
 type Entry struct {
-	Key        string
-	KeyRange   Range
-	Version    int
-	Value      string
-	ValueRange Range
-	Line       int // 0-based
+	Key        string `json:"key"`
+	KeyRange   Range  `json:"keyRange"`
+	Version    int    `json:"version"`
+	Value      string `json:"value"`
+	ValueRange Range  `json:"valueRange"`
+	Line       int    `json:"line"` // 0-based
 }
 
 // Interp is a `$key$` (optional `|filter`) reuse inside a loc value.
@@ -329,9 +329,9 @@ func (scanner *scanner) badEntry(fullLine string, lineBase int) {
 	})
 }
 
-// filenameLangRe matches the `l_<language>` token that precedes the extension in
-// a loc filename, e.g. `events_l_english.yml` -> "english".
-var filenameLangRe = regexp.MustCompile(`(?i)l_([a-z]+)\.(yml|yaml)$`)
+// filenameLangRe matches the language between a loc filename's last `l_` token and its extension:
+// `events_l_english.yml` -> "english", `events_l_simp_chinese.yml` -> "simp_chinese".
+var filenameLangRe = regexp.MustCompile(`(?i)^(?:.*_)?l_([a-z_]+)\.(yml|yaml)$`)
 
 // LanguageFromFilename returns the language id encoded in a loc filename, or ""
 // if the name does not follow the `..._l_<language>.yml` convention.
@@ -349,7 +349,8 @@ func LanguageFromRel(path string) string {
 	if language := LanguageFromFilename(path); language != "" {
 		return language
 	}
-	slash := strings.ReplaceAll(path, "\\", "/")
+	// a rel starts with the folder, so a slash is put before it
+	slash := "/" + strings.ReplaceAll(path, "\\", "/")
 	lower := strings.ToLower(slash)
 	const marker = "/localization/"
 	i := strings.Index(lower, marker)
@@ -357,7 +358,11 @@ func LanguageFromRel(path string) string {
 		return ""
 	}
 	rest := slash[i+len(marker):]
-	lang, _, _ := strings.Cut(rest, "/")
+	// a file straight under localization (languages.yml) is in no language's folder
+	lang, _, inFolder := strings.Cut(rest, "/")
+	if !inFolder {
+		return ""
+	}
 	return strings.ToLower(lang)
 }
 

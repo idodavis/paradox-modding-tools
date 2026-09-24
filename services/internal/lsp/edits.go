@@ -38,7 +38,8 @@ type CodeAction struct {
 
 // FoldingRange is one block's lines.
 type FoldingRange struct {
-	StartLine, EndLine int
+	StartLine int `json:"startLine"`
+	EndLine   int `json:"endLine"`
 }
 
 // InlayHint is text the editor draws after a position.

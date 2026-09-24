@@ -29,7 +29,8 @@ export function GetLanguageHealth(workspaceID: string): $CancellablePromise<$mod
 }
 
 /**
- * QueueScan asks for a scan that nobody is waiting for: it runs now, or after the one running, once per install; its error is swallowed, because it was not asked for and the health strip already says the cache is stale.
+ * QueueScan asks for a scan nobody waits for: it runs now, or after the one running, once per
+ * install. Its error is swallowed; the health strip already says the cache is stale.
  */
 export function QueueScan(installID: string): $CancellablePromise<void> {
     return $Call.ByID(1631773507, installID);
@@ -43,7 +44,8 @@ export function Queued(): $CancellablePromise<[string[] | null, boolean]> {
 }
 
 /**
- * RebuildInstallSemantics scans an install now, then drops every session over it so each is built again from the new cache. A scan already running is waited for.
+ * RebuildInstallSemantics scans an install now, then drops every session so each is built again
+ * from the new cache. A scan already running is waited for.
  */
 export function RebuildInstallSemantics(installID: string): $CancellablePromise<void> {
     return $Call.ByID(521221046, installID);

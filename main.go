@@ -23,11 +23,17 @@ func main() {
 		os.Exit(exitCode)
 	}
 
+	// the log first, so every later failure, the standard log's and Wails' own, is written into it
+	logSvc, err := services.OpenLog(version)
+	if err != nil {
+		log.Fatalf("log: %v", err)
+	}
 	configSvc, err := services.OpenConfig()
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
 	configSvc.Version = version
+	logSvc.Config = configSvc
 
 	fileSvc := &services.FileService{}
 	sessSvc := &services.SessionService{Config: configSvc}
@@ -43,7 +49,10 @@ func main() {
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
 		Description: "Desktop tools for Paradox Interactive game modding",
+		Logger:      logSvc.Logger,
+		// registered first, so Wails shuts it down last and the others' shutdowns are logged
 		Services: []application.Service{
+			application.NewService(logSvc),
 			application.NewService(configSvc),
 			application.NewService(fileSvc),
 			application.NewService(workspaceSvc),
@@ -57,6 +66,8 @@ func main() {
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
+			// a line per file the page loads would push everything else out of pmt.log's tail
+			DisableLogging: true,
 		},
 		// one instance per user: each reads config.json once and rewrites it whole on every change,
 		// so two would erase each other's installs and workspaces

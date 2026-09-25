@@ -163,7 +163,6 @@ export function registerLanguageClient(getWorkspaceId: () => string, origin: Car
       ".",
       "[",
       ":",
-      "{",
     ),
   );
   provide((lang) =>

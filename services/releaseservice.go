@@ -7,6 +7,7 @@ package services
 import (
 	"cmp"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -209,7 +210,15 @@ func (r *ReleaseService) CopyThumbnail(workspaceID, modID, src string) (string, 
 }
 
 // PublishSteam saves the listing, publishes to the Workshop, then saves the listing with its id.
-func (r *ReleaseService) PublishSteam(in Listing) (*PublishResult, error) {
+func (r *ReleaseService) PublishSteam(in Listing) (result *PublishResult, err error) {
+	slog.Info("workshop publish start", "mod", in.Name, "id", in.RemoteFileID)
+	defer func() {
+		if err != nil {
+			slog.Error("workshop publish failed", "mod", in.Name, "error", err)
+			return
+		}
+		slog.Info("workshop publish done", "mod", in.Name, "id", result.PublishedFileID, "legalAgreement", result.NeedsLegalAgreement)
+	}()
 	listing, err := r.SaveListing(in)
 	if err != nil {
 		return nil, fmt.Errorf("save listing: %w", err)
@@ -264,7 +273,7 @@ func (r *ReleaseService) PublishSteam(in Listing) (*PublishResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("save listing after publish: %w", err)
 	}
-	result := &PublishResult{PublishedFileID: resp.PublishedFileID, NeedsLegalAgreement: resp.NeedsLegalAgreement, Listing: saved}
+	result = &PublishResult{PublishedFileID: resp.PublishedFileID, NeedsLegalAgreement: resp.NeedsLegalAgreement, Listing: saved}
 	if resp.NeedsLegalAgreement {
 		result.LegalURL = steamLegalURL
 	}

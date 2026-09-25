@@ -7,6 +7,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -195,11 +196,23 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 // scan reads an install, saves its cache, and tells the frontend as it goes.
 func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 0, Stage: "scanning"})
+	slog.Info("scan start", "game", inst.GameID, "install", inst.Name, "version", inst.Version)
+	started := time.Now()
 
-	// each stage has the part of the bar its share of a CK3 scan's time earns; a move is told once
+	// each stage has the part of the bar its share of a CK3 scan's time earns; a move is told once,
+	// and a stage's time is logged when the next begins
 	spans := map[string][2]int{"reading localization": {0, 12}, "reading the install": {12, 30}, "learning the schema": {30, 74}, "reading definitions": {74, 81}, "reading references": {81, 95}}
-	told := -1
+	told, running, since := -1, "", started
+	lap := func(next string) {
+		if running != "" {
+			slog.Info("scan stage", "stage", running, "took", time.Since(since).Round(time.Millisecond))
+		}
+		running, since = next, time.Now()
+	}
 	progress := func(stage string, done, total int) {
+		if stage != running {
+			lap(stage)
+		}
 		span := spans[stage]
 		if percent := span[0] + (span[1]-span[0])*done/max(total, 1); percent != told {
 			told = percent
@@ -208,12 +221,17 @@ func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
 	}
 	install, err := s.Scan(context.Background(), index.Request{Game: inst.GameID, Dir: inst.Path, Version: inst.Version, Docs: dumpFolders(inst), Progress: progress})
 	if err != nil {
+		slog.Error("scan failed", "game", inst.GameID, "stage", running, "error", err)
 		return nil, err
 	}
+	lap("saving")
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 95, Stage: "saving"})
 	if err := local.SaveInstall(inst.ID, inst.Version, install); err != nil {
+		slog.Error("scan failed", "game", inst.GameID, "stage", running, "error", err)
 		return nil, err
 	}
+	lap("")
+	slog.Info("scan end", "game", inst.GameID, "took", time.Since(started).Round(time.Millisecond))
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 100, Stage: "done"})
 	emit(EventLangCacheUpdated, inst.ID)
 	return install, nil

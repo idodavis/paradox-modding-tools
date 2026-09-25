@@ -22,6 +22,7 @@ import {
   type ThemeSwatchColors,
 } from "./ide/colorThemes";
 import { CheckForUpdates, GetVersion } from "@services/configservice";
+import { CopyDiagnostics, LastRunCrashed } from "@services/logservice";
 import { isWorkbenchReady } from "./ide/workbenchHost";
 import IdeWorkbenchLayout from "./components/IdeWorkbenchLayout.vue";
 import IdeStatusStrip from "./components/IdeStatusStrip.vue";
@@ -177,6 +178,40 @@ async function checkForUpdates(): Promise<void> {
   await CheckForUpdates();
 }
 
+const toast = useToast();
+
+/** Put the report for a bug report on the clipboard. */
+async function copyDiagnostics(): Promise<void> {
+  try {
+    await CopyDiagnostics();
+    toast.add({ title: "Diagnostics copied", color: "success" });
+  } catch (e) {
+    toast.add({ title: e instanceof Error ? e.message : String(e), color: "error" });
+  }
+}
+
+/** Tell of a last run that ended without closing: a crash, or the app ended from outside. */
+async function noticeCrash(): Promise<void> {
+  if (!(await LastRunCrashed())) return;
+  toast.add({
+    title: "PMT closed unexpectedly",
+    description: "The last session ended without closing. Copy diagnostics and paste them into a bug report on GitHub.",
+    color: "warning",
+    icon: "i-lucide-triangle-alert",
+    duration: 0,
+    actions: [
+      {
+        label: "Copy diagnostics",
+        color: "warning",
+        onClick: (e?: Event) => {
+          e?.stopPropagation();
+          void copyDiagnostics();
+        },
+      },
+    ],
+  });
+}
+
 watch(
   [currentFamily, () => colorMode.value],
   async () => {
@@ -201,6 +236,7 @@ onMounted(async () => {
   setFamily(family);
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (link) link.href = appIcon;
+  void noticeCrash();
 });
 </script>
 

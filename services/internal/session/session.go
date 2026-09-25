@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"github.com/fsnotify/fsnotify"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -477,6 +478,7 @@ func (watcher *Watcher) fail(err error) {
 	watcher.mu.Lock()
 	if watcher.err == nil {
 		watcher.err = err
+		slog.Warn("watcher failed", "error", err)
 	}
 	watcher.mu.Unlock()
 }

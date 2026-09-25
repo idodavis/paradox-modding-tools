@@ -50,31 +50,6 @@ body:
       required: true
 
   - type: dropdown
-    id: os
-    attributes:
-      label: Operating system
-      description: macOS is not supported. On Linux, name the distro below.
-      options:
-        - Windows 10
-        - Windows 11
-        - Linux (name the distro)
-    validations:
-      required: true
-
-  - type: input
-    id: linux-distro
-    attributes:
-      label: Linux distro (if Linux)
-      placeholder: e.g. Ubuntu 24.04, Fedora 41, Arch
-
-  - type: input
-    id: app-version
-    attributes:
-      label: App version
-      description: Shown in the app header.
-      placeholder: e.g. 0.4.0
-
-  - type: dropdown
     id: build-source
     attributes:
       label: Build source
@@ -106,8 +81,24 @@ body:
       required: true
 
   - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: In the app, click Copy diagnostics (on a workspace's settings page, or on the notice after a crash) and paste it here.
+      render: text
+
+  - type: textarea
+    id: log-file
+    attributes:
+      label: Log file
+      description: |
+        If the app won't open, drag pmt.log here.
+        Windows: `%APPDATA%\Paradox Modding Tools\pmt.log`
+        Linux: `~/.config/Paradox Modding Tools/pmt.log`
+
+  - type: textarea
     id: additional-context
     attributes:
       label: Additional context
-      description: Paths (relative is fine), logs, and anything else. Do not paste secrets.
+      description: Paths (relative is fine) and anything else. Do not paste secrets.
       placeholder: Workspace game, install pin, whether the session was live…

@@ -251,24 +251,31 @@ func (v *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]str
 }
 
 // localization is each language's gaps: in the workspace's language, a mod definition's
-// conventional key absent (missing); in another, a mod key the workspace's language has and it
-// lacks (untranslated); in any, a key its own mod never reads (orphaned). A key is listed once.
+// conventional key absent (missing); in another its mod ships, a mod key the workspace's language
+// has and it lacks (untranslated); in any, a key its own mod never reads (orphaned). A key is
+// listed once.
 func localization(sess *session.Session, number func(source.File) int) []Language {
 	idx := sess.Workspace
 	base := cmp.Or(sess.Language, "english")
 	languages := map[string]bool{base: true}
-	read := map[string]map[string]bool{} // by origin: the keys something of that origin reads
-	has := map[string]map[string]bool{}  // by language: the keys the workspace has
+	read := map[string]map[string]bool{}  // by origin: the keys something of that origin reads
+	has := map[string]map[string]bool{}   // by language: the keys the workspace has
+	ships := map[string]map[string]bool{} // by origin: the languages its loc files are in
 	for _, entry := range idx.Loc {
 		if entry.File < 0 {
 			continue
 		}
-		lang := loc.LanguageFromRel(idx.Files[entry.File].Rel)
+		at := idx.Files[entry.File]
+		lang := loc.LanguageFromRel(at.Rel)
 		languages[lang] = true
 		if has[lang] == nil {
 			has[lang] = map[string]bool{}
 		}
 		has[lang][entry.Key] = true
+		if ships[at.Origin] == nil {
+			ships[at.Origin] = map[string]bool{}
+		}
+		ships[at.Origin][lang] = true
 	}
 	for _, ref := range idx.Refs {
 		if ref.File >= 0 && ref.Type == schema.TypeLoc {
@@ -341,7 +348,7 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 			}
 			at := idx.Files[entry.File]
 			from := loc.LanguageFromRel(at.Rel)
-			if from == base && lang != base && !has[lang][entry.Key] {
+			if from == base && lang != base && ships[at.Origin][lang] && !has[lang][entry.Key] {
 				coverage.Untranslated = append(coverage.Untranslated, LocRow{Key: entry.Key, File: number(at), Line: entry.Line})
 			}
 			if from == lang && !read[at.Origin][entry.Key] && !extends(at.Origin, entry.Key) {

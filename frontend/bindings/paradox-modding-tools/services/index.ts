@@ -6,6 +6,7 @@ import * as EventGraphService from "./eventgraphservice.js";
 import * as FileService from "./fileservice.js";
 import * as HealthService from "./healthservice.js";
 import * as IdeService from "./ideservice.js";
+import * as LogService from "./logservice.js";
 import * as ReleaseService from "./releaseservice.js";
 import * as SearchService from "./searchservice.js";
 import * as SessionService from "./sessionservice.js";
@@ -17,6 +18,7 @@ export {
     FileService,
     HealthService,
     IdeService,
+    LogService,
     ReleaseService,
     SearchService,
     SessionService,

@@ -8,8 +8,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -19,6 +22,7 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -561,8 +565,8 @@ func TestWorkspaceHealth(t *testing.T) {
 	if got := keys(langs["french"].Missing); len(got) != 0 {
 		t.Errorf("french: missing is the workspace's language's alone, so no key is listed twice: %v", got)
 	}
-	if got := keys(langs["french"].Untranslated); !slices.Contains(got, "bold") || slices.Contains(got, "a.1.t") {
-		t.Errorf("french: an english key with no french entry is untranslated; one with an entry is not: %v", got)
+	if got := keys(langs["french"].Untranslated); !slices.Contains(got, "bold") || slices.Contains(got, "a.1.t") || slices.Contains(got, "b_only") {
+		t.Errorf("french: an english key with no french entry is untranslated where its mod ships french; one with an entry is not, nor a key of a mod that ships none: %v", got)
 	}
 	if got := keys(langs["english"].Orphaned); !slices.Equal(got, []string{"a_dead", "a_reader", "b_only"}) {
 		t.Errorf("orphaned: a key nothing reads, one that only reads; not one a definition names, one that goes on from it, one script reads, or one another key reads: %v", got)
@@ -584,6 +588,79 @@ func TestWorkspaceHealth(t *testing.T) {
 	if look, _ := reports.LookupLoc("ws", "v.1.t"); len(look.Entries) != 1 || look.Entries[0].At.Origin != "vanilla" || look.Entries[0].Language != "english" {
 		t.Errorf("an install key: %+v", look)
 	}
+}
+
+func TestLog(t *testing.T) {
+	// the child: this test binary run again as the app, which panics in a goroutine of its own
+	if os.Getenv("PMT_LOG_PANIC") == "1" {
+		if _, err := OpenLog("child"); err != nil {
+			t.Fatal(err)
+		}
+		go func() { panic("pmt test panic") }()
+		select {}
+	}
+	home := t.TempDir()
+	t.Setenv("APPDATA", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("HOME", home)
+	previous := slog.Default()
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		debug.SetCrashOutput(nil, debug.CrashOptions{}) // lets the temporary folder go
+	})
+	dir, err := local.AppDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "pmt.log")
+	big := strings.Repeat("x", logRotateAt) + "\n"
+
+	// a run that wrote its end is closed, and its log past 2 MB is moved aside
+	if err := os.WriteFile(path, []byte("msg=\"session start\"\n"+big+"msg=\"session end\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logs, err := OpenLog("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, moved := os.Stat(path + ".1"); logs.LastRunCrashed() || moved != nil {
+		t.Errorf("a closed run: crashed %v, moved aside %v", logs.LastRunCrashed(), moved == nil)
+	}
+
+	// the report holds the last scan's lines and the log's tail
+	logs.Logger.Info("scan start", "game", "ck3")
+	logs.Logger.Info("scan end", "took", "1s")
+	if report := logs.diagnostics(); !strings.Contains(report, "Last scan:\n") || !strings.HasSuffix(strings.TrimSpace(report), `msg="scan end" took=1s`) {
+		t.Errorf("the report: %s", report)
+	}
+	logs.ServiceShutdown()
+
+	// a run with no end crashed, and its log stays whole however long it is
+	if err := os.WriteFile(path, []byte("msg=\"session start\"\n"+big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(path + ".1")
+	if logs, err = OpenLog("test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, moved := os.Stat(path + ".1"); !logs.LastRunCrashed() || moved == nil {
+		t.Errorf("a run with no end: crashed %v, moved aside %v", logs.LastRunCrashed(), moved == nil)
+	}
+	logs.ServiceShutdown()
+
+	// a panic in a goroutine of the app's own lands in pmt.log, and the next run reads a crash
+	child := exec.Command(os.Args[0], "-test.run=^TestLog$")
+	child.Env = append(os.Environ(), "PMT_LOG_PANIC=1")
+	if err := child.Run(); err == nil {
+		t.Fatal("the child lived through its panic")
+	}
+	if raw, _ := os.ReadFile(path); !strings.Contains(string(raw), "panic: pmt test panic") {
+		t.Errorf("the child's panic is not in pmt.log: %s", raw[max(0, len(raw)-400):])
+	}
+	if logs, err = OpenLog("test"); err != nil || !logs.LastRunCrashed() {
+		t.Errorf("after the child's panic the last run crashed: %v", err)
+	}
+	logs.ServiceShutdown()
 }
 
 func TestBumpVersion(t *testing.T) {

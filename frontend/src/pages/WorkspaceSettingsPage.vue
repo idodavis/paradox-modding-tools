@@ -30,6 +30,7 @@ import {
   ImportWorkshopIgnore,
 } from "@services/workspaceservice";
 import type { WorkspaceMod } from "@services/models";
+import { CopyDiagnostics } from "@services/logservice";
 import FileSelector, { pickDirectory } from "../components/FileSelector.vue";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import CreateModForm from "../components/CreateModForm.vue";
@@ -222,6 +223,16 @@ function onExplorerPick(v: unknown): void {
 
 function toastOk(title: string): void {
   toast.add({ title, color: "success" });
+}
+
+/** Put the report for a bug report on the clipboard. */
+async function copyDiagnostics(): Promise<void> {
+  try {
+    await CopyDiagnostics();
+    toastOk("Diagnostics copied");
+  } catch (e) {
+    toast.add({ title: e instanceof Error ? e.message : String(e), color: "error" });
+  }
 }
 
 const { mutateAsync: saveOverview, isLoading: savingOverview } = useMutation({
@@ -743,6 +754,18 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
               :dumps="dumps"
               :drift="langHealth.drift"
             />
+            <UCard
+              title="Diagnostics"
+              description="PMT writes what it does to pmt.log in its settings folder. Copy a report to paste into a bug report."
+            >
+              <UButton
+                label="Copy diagnostics"
+                icon="i-lucide-clipboard-copy"
+                size="xs"
+                variant="outline"
+                @click="copyDiagnostics()"
+              />
+            </UCard>
           </div>
 
           <div v-else-if="section === 'mods'" class="space-y-3">

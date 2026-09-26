@@ -88,6 +88,18 @@ Output Scopes: landed_title
 
 --------------------
 
+dynasty - Link to dynasty scope of the given dynasty string
+Requires Data: yes
+Output Scopes: dynasty
+
+--------------------
+
+dynasty - Get dynasty of scoped character
+Input Scopes: character
+Output Scopes: dynasty
+
+--------------------
+
 Event Targets Saved from Code:
 
 actor

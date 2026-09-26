@@ -570,7 +570,7 @@ func (census *census) citedTogether(outer, inner map[string]int) bool {
 		for name := range names {
 			above, below = above || outer[name] > 0, below || inner[name] > 0
 		}
-		if above && below && census.vocab.Links[prefix].Prefix {
+		if _, declared := census.vocab.Prefixes[prefix]; above && below && declared {
 			return true
 		}
 	}

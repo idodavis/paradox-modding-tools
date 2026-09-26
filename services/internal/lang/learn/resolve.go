@@ -98,7 +98,7 @@ func (census *census) witnesses() {
 	for prefix, names := range census.cites {
 		for name := range names {
 			census.valued[name] = true
-			if census.vocab.Links[prefix].Prefix {
+			if _, declared := census.vocab.Prefixes[prefix]; declared {
 				census.citing[name] = append(census.citing[name], prefix)
 			}
 		}

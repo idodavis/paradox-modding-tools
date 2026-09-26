@@ -398,7 +398,7 @@ func (census *census) drift(in Input, parseErrors []schema.Tally, sch *schema.Sc
 		for _, count := range names {
 			written += count
 		}
-		if !in.Vocab.Links[prefix].Prefix && len(census.prefixed[prefix]) == 0 && !slices.Contains(made, prefix) {
+		if _, declared := in.Vocab.Prefixes[prefix]; !declared && len(census.prefixed[prefix]) == 0 && !slices.Contains(made, prefix) {
 			prefixes[prefix] = written
 		}
 	}

@@ -458,7 +458,7 @@ func (walk *walk) statement(kind *schema.Kind, field *schema.Field, st *jomini.A
 			walk.call, below = false, field
 		}
 		if cite, isCite := jomini.Cite(key); isCite {
-			scope, moved = walk.scoped(walk.reader.Vocab.Links[cite.Prefix].Out), true
+			scope, moved = walk.scoped(walk.reader.Vocab.Prefixes[cite.Prefix].Out), true
 		} else if cited := walk.reader.Schema.Kinds[value.Kind]; cited != nil {
 			scope, moved = walk.scoped(cited.ScopeType), true
 		}
@@ -497,11 +497,11 @@ func (walk *walk) scoped(out string) string {
 // leads is the scope type a scope path leads to: the declared output of its last step, a link or a
 // cite's prefix; "" where the last step is a saved scope or a word the dump does not declare.
 func (walk *walk) leads(path string) string {
-	last := path[strings.LastIndexByte(path, '.')+1:]
+	last, links := path[strings.LastIndexByte(path, '.')+1:], walk.reader.Vocab.Links
 	if cite, isCite := jomini.Cite(last); isCite {
-		last = cite.Prefix
+		last, links = cite.Prefix, walk.reader.Vocab.Prefixes
 	}
-	link := walk.reader.Vocab.Links[strings.ToLower(last)]
+	link := links[strings.ToLower(last)]
 	if link.Wild {
 		return ""
 	}

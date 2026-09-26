@@ -88,8 +88,10 @@ func (reader Reader) Value(field *Field, text string, quoted bool) Value {
 		if _, isLink := reader.Vocab.Links[first]; isLink {
 			return Value{Type: TypeScopePath, Declared: true}
 		}
-		if cite, ok := jomini.Cite(text); ok && cite.Chain != "" && (reader.Vocab.Links[cite.Prefix].Prefix || len(reader.Schema.ByPrefix(cite.Prefix)) > 0) {
-			return Value{Type: TypeScopePath, Declared: reader.Vocab.Links[cite.Prefix].Prefix}
+		if cite, ok := jomini.Cite(text); ok && cite.Chain != "" {
+			if _, declared := reader.Vocab.Prefixes[cite.Prefix]; declared || len(reader.Schema.ByPrefix(cite.Prefix)) > 0 {
+				return Value{Type: TypeScopePath, Declared: declared}
+			}
 		}
 	}
 
@@ -148,8 +150,10 @@ func (reader Reader) Key(parent *Field, text string) Value {
 		if _, isLink := reader.Vocab.Links[first]; isLink {
 			return Value{Type: TypeScopePath, Declared: true}
 		}
-		if cite, ok := jomini.Cite(text); ok && cite.Chain != "" && (reader.Vocab.Links[cite.Prefix].Prefix || len(reader.Schema.ByPrefix(cite.Prefix)) > 0) {
-			return Value{Type: TypeScopePath, Declared: reader.Vocab.Links[cite.Prefix].Prefix}
+		if cite, ok := jomini.Cite(text); ok && cite.Chain != "" {
+			if _, declared := reader.Vocab.Prefixes[cite.Prefix]; declared || len(reader.Schema.ByPrefix(cite.Prefix)) > 0 {
+				return Value{Type: TypeScopePath, Declared: declared}
+			}
 		}
 
 		reader.Schema.lookups()
@@ -214,7 +218,8 @@ func (reader Reader) Below(kind *Kind, parent *Field, key string, value Value) *
 // reference with no kind, which nothing judges: flag:some_flag is a plain value.
 func (reader Reader) cite(text string) (Value, bool) {
 	cited, ok := jomini.Cite(text)
-	kinds, declared := reader.Schema.ByPrefix(cited.Prefix), reader.Vocab.Links[cited.Prefix].Prefix
+	kinds := reader.Schema.ByPrefix(cited.Prefix)
+	_, declared := reader.Vocab.Prefixes[cited.Prefix]
 	if !ok || cited.Chain != "" || (len(kinds) == 0 && !declared) {
 		return Value{}, false
 	}

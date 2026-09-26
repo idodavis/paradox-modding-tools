@@ -416,8 +416,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 			t.Errorf("%s: %s is not set", testCase.id, testCase.env)
 			continue
 		}
-		user := game.UserDataDir(testCase.id, dir)
-		install, err := index.Scan(t.Context(), index.Request{Game: testCase.id, Dir: dir, Version: "gate", Docs: []string{filepath.Join(user, "logs"), filepath.Join(user, "docs")}})
+		install, err := index.Scan(t.Context(), index.Request{Game: testCase.id, Dir: dir, Version: "gate", Docs: game.DumpDirs(testCase.id, dir)})
 		if err != nil {
 			t.Fatalf("%s: %v", testCase.id, err)
 		}

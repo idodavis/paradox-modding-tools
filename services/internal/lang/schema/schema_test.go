@@ -131,9 +131,8 @@ func reader() Reader {
 			Effects:   map[string]EngineToken{"add_gold": {}, "if": {}, "every_vassal": {}},
 			Triggers:  map[string]EngineToken{"has_trait": {}, "and": {}, "not": {}, "any_vassal": {}},
 			Modifiers: map[string]Modifier{"monthly_income": {}},
-			Links: map[string]Link{
-				"root": {}, "liege": {Out: "character"}, "culture": {Out: "culture", Prefix: true}, "character": {Prefix: true}, "title": {Prefix: true}, "scope": {Prefix: true}, "flag": {Prefix: true},
-			},
+			Links:     map[string]Link{"root": {}, "liege": {Out: "character"}, "culture": {Out: "culture"}},
+			Prefixes:  map[string]Link{"culture": {Out: "culture"}, "character": {}, "title": {}, "scope": {}, "flag": {}},
 		},
 		Found: found{
 			defs: map[string]bool{
@@ -166,8 +165,7 @@ func realVocab(t *testing.T, id, env string) *Vocab {
 		t.Errorf("%s is not set: the gate cannot clear a game it never read", env)
 		return nil
 	}
-	user := game.UserDataDir(id, install)
-	return ReadVocab([]string{filepath.Join(user, "logs"), filepath.Join(user, "docs")})
+	return ReadVocab(game.DumpDirs(id, install))
 }
 
 func TestWriteReadRoundTrip(t *testing.T) {
@@ -776,21 +774,123 @@ func TestReadVocab(t *testing.T) {
 		t.Errorf("Unknown = %+v", vocab.Unknown)
 	}
 
-	if link := vocab.Links["culture"]; !link.Prefix || link.Out != "culture" || len(link.In) != 0 || link.Doc != "Get the culture with the specified key" {
+	if link := vocab.Prefixes["culture"]; !link.Global || link.Out != "culture" || len(link.In) != 0 || link.Doc != "Get the culture with the specified key" {
 		t.Errorf("culture = %+v", link)
 	}
-	if link := vocab.Links["betrothed"]; link.Prefix || link.Out != "character" || !slices.Equal(link.In, []string{"character"}) {
+	if link := vocab.Links["betrothed"]; link.Global || link.Out != "character" || !slices.Equal(link.In, []string{"character"}) {
 		t.Errorf("betrothed = %+v", link)
 	}
-	if link := vocab.Links["faith"]; !link.Prefix || link.Out != "faith" || !slices.Equal(link.In, []string{"character", "province"}) {
-		t.Errorf("a link declared twice is not one link: %+v", link)
+	if bare, prefix := vocab.Links["faith"], vocab.Prefixes["faith"]; bare.Doc != "Get the faith of the scoped object" || !slices.Equal(bare.In, []string{"character", "province"}) || prefix.Doc != "Get the faith with the specified key" || len(prefix.In) != 0 {
+		t.Errorf("a word declared twice is not its two readings: %+v, %+v", bare, prefix)
 	}
-	if !slices.Equal(vocab.SavedScopes, []string{"context", "actor", "recipient"}) || len(vocab.Links) != 3 {
-		t.Errorf("SavedScopes = %v, %d links", vocab.SavedScopes, len(vocab.Links))
+	if !slices.Equal(vocab.SavedScopes, []string{"context", "actor", "recipient"}) || len(vocab.Links) != 2 || len(vocab.Prefixes) != 2 {
+		t.Errorf("SavedScopes = %v, %d links, %d prefixes", vocab.SavedScopes, len(vocab.Links), len(vocab.Prefixes))
 	}
 
-	if vocab.OnActions["stress_loss_confider"] != "character" || vocab.OnActions["on_tradition_removed"] != "none" || len(vocab.OnActions) != 2 {
+	if vocab.OnActions["stress_loss_confider"] != (OnAction{Scope: "character"}) || vocab.OnActions["on_tradition_removed"] != (OnAction{Scope: "none", FromCode: true}) || len(vocab.OnActions) != 2 {
 		t.Errorf("OnActions = %v", vocab.OnActions)
+	}
+
+	// what a trigger's value may be, the members a usage declares, custom localization and data types
+	rule := "\n--------------------\n\n"
+	vocab = dumps(t, map[string]string{
+		"triggers.log": "Trigger Documentation:" + rule + "is_adult - Is the character adult?\nTraits: yes/no \nSupported Scopes: character" + rule +
+			"birth_date - Compares the birth date\nTraits: <, <=, =, >, >= valid date\nSupported Scopes: character" + rule +
+			"trait_is_sin - Does the faith consider the trait a sin?\ntrait_is_sin = lustful\nTraits: class CTraitDatabase key\nSupported Scopes: faith\nSupported Targets: trait" + rule +
+			"is_at_location - Is the character in the province?\nTraits: province target province scope\nSupported Scopes: character" + rule +
+			"adjacent_to_owned_by - Is the location next to the country's?\nTraits: country tag/country scope\nSupported Scopes: location" + rule +
+			"has_dlc - Does the host have this DLC\nTraits: Valid DLCs: The Royal Court, Legacy of Persia, and Arctic Attire\nSupported Scopes: none" + rule +
+			"outbreak_intensity - The outbreak's intensity\nTraits: minor, major, apocalyptic\nSupported Scopes: epidemic" + rule +
+			"odd_trigger - A form no game writes\nTraits: something new\nSupported Scopes: none" + rule +
+			"any_active_accolade - Iterates the accolades\nany_active_accolade = { accolade_parameter = accolade_organize_army_bonus }\nany_active_accolade = { <count=num/all> / <percent=fixed_point> <triggers> }\nSupported Scopes: character" + rule,
+		"effects.log": "Effect Documentation:" + rule + "add_gold - Adds gold\nSupported Scopes: character" + rule +
+			"every_active_accolade - Iterates the accolades\nany_active_accolade = { accolade_parameter = accolade_organize_army_bonus }\nevery_active_accolade = { limit = { <triggers> } <effects> }\nSupported Scopes: character" + rule +
+			"send_interface_message - Sends a message\nsend_interface_message = {\n\ttype = message_type # default: send_interface_message\n\t# optional effects...\n\tadd_gold = 5\n}\nSupported Scopes: character" + rule +
+			"add_to_variable_list - Adds to a list\nadd_to_variable_list = { name = X target = Y days/weeks/months/years = Z }\nSupported Scopes: none" + rule +
+			"add_to_global_variable_list - Adds to a global list\nadd_to_variable_list = { name = X target = Y days/weeks/months/years = Z }\nSupported Scopes: none" + rule +
+			"clear_variable_list - Empties a list\nclear_variable_list = X\nSupported Scopes: none" + rule +
+			"clear_global_variable_list - Empties a global list\nclear_variable_list = X\nSupported Scopes: none" + rule +
+			"try_start_diarchy - Starts a diarchy\nstart_diarchy = regency\nSupported Scopes: character" + rule +
+			"create_character - Creates a character\nsave_event_target_as = flag - save the character as an event target\n" +
+			"random_faith = { catholic = { some triggers } cathar = { some triggers }. Random one where the triggers are met will be picked\n" +
+			"real_father = (should only be set if the real father is not the same as father=)\nafter_creation = { some effects } run after character is created\nSupported Scopes: none" + rule,
+		"custom_localization.log": "Custom Localization Documentation:" + rule + "GetAnimalType:\n\nScope: all\nRandom Valid: yes\n\nEntries:\nanimal_type_bear\nanimal_type_wolf" + rule +
+			"GetAnimalPlural:\n\nScope: all\nRandom Valid: no\nParent: GetAnimalType\nSuffix: _plural\n\nEntries:" + rule,
+		"data_types_common.txt": strings.ReplaceAll("Application\nDefinition type: Global promote\nReturn type: Application|GetVariableSystem\nDescription: Access the global variable system\nDefinition type: Global promote\nReturn type: VariableSystem|"+
+			"Character\nDefinition type: Type|Character.GetName\nDefinition type: Function\nReturn type: CString|Character.GetTrait( Arg0 )\nDefinition type: Promote\nReturn type: Trait|"+
+			"CourtPosition.GetMaxAvailableHires,\nDefinition type: Function\nReturn type: int32|brave\nDefinition type: Global function\nReturn type: [unregistered]|brave\nDefinition type: Global promote\nReturn type: Trait|"+
+			"AddTextIf( Arg0, Arg1 )\nDefinition type: Global function\nReturn type: CString|EmptyIf( Arg0 )\nDefinition type: Global macro\nMacro replacement: AddTextIf(Arg0, '')|Odd\nDefinition type: Something new\n", "|", "\n\n-----------------------\n\n"),
+	})
+
+	for name, want := range map[string]Traits{
+		"is_adult": {Bool: true}, "birth_date": {Compare: []string{"<", "<=", "=", ">", ">="}, Date: true}, "trait_is_sin": {Keys: []string{"CTraitDatabase"}},
+		"is_at_location": {Scopes: []string{"province"}}, "adjacent_to_owned_by": {Scopes: []string{"country"}, Keys: []string{"country tag"}},
+		"has_dlc": {Words: []string{"The Royal Court", "Legacy of Persia", "Arctic Attire"}}, "outbreak_intensity": {Words: []string{"minor", "major", "apocalyptic"}}, "odd_trigger": {},
+	} {
+		if got := vocab.Triggers[name].Traits; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s traits = %+v, want %+v", name, got, want)
+		}
+	}
+	if !slices.Equal(vocab.Unknown, []Tally{{Name: "definition type: Something new", Count: 1}, {Name: "traits: something new", Count: 1}}) {
+		t.Errorf("a form the reader does not know is drift: %+v", vocab.Unknown)
+	}
+
+	// members, each with the dump's words for it, and what a block holds
+	docs := func(members map[string]*Member) map[string]string {
+		out := map[string]string{}
+		for name, member := range members {
+			out[name] = member.Doc
+		}
+		return out
+	}
+	for name, want := range map[string]struct {
+		body    BodyClass
+		members map[string]string
+	}{
+		"any_active_accolade":         {BodyTrigger, map[string]string{"accolade_parameter": "accolade_organize_army_bonus", "count": "num/all", "percent": "fixed_point"}},
+		"every_active_accolade":       {BodyEffect, map[string]string{"accolade_parameter": "accolade_organize_army_bonus", "limit": ""}},
+		"send_interface_message":      {BodyEffect, map[string]string{"type": "message_type # default: send_interface_message"}},
+		"add_to_global_variable_list": {0, map[string]string{"name": "X", "target": "Y", "days": "Z", "weeks": "Z", "months": "Z", "years": "Z"}},
+		"clear_global_variable_list":  {0, map[string]string{}},
+		"try_start_diarchy":           {0, map[string]string{}},
+		"create_character": {0, map[string]string{"save_event_target_as": "flag - save the character as an event target", "random_faith": "",
+			"real_father": "(should only be set if the real father is not the same as father=)", "after_creation": "run after character is created"}},
+	} {
+		token, ok := vocab.Effects[name]
+		if !ok {
+			token = vocab.Triggers[name]
+		}
+		if got := docs(token.Block.Members); token.Block.Body != want.body || !maps.Equal(got, want.members) {
+			t.Errorf("%s = body %d, members %v; want body %d, members %v", name, token.Block.Body, got, want.body, want.members)
+		}
+	}
+	if limit := vocab.Effects["every_active_accolade"].Block.Members["limit"]; limit == nil || limit.Body != BodyTrigger {
+		t.Errorf("limit = { <triggers> } holds triggers: %+v", limit)
+	}
+	members := vocab.Effects["create_character"].Block.Members
+	if faith := members["random_faith"]; faith == nil || len(faith.Members) != 2 || faith.Members["cathar"].Body != BodyTrigger || members["after_creation"].Body != BodyEffect {
+		t.Errorf("a prose brace left open does not run on, and { some triggers } says what a block holds: %+v", members)
+	}
+
+	if loc := vocab.CustomLoc["GetAnimalType"]; loc.Scope != "all" || !loc.Random || !slices.Equal(loc.Entries, []string{"animal_type_bear", "animal_type_wolf"}) {
+		t.Errorf("GetAnimalType = %+v", loc)
+	}
+	if loc := vocab.CustomLoc["GetAnimalPlural"]; loc.Parent != "GetAnimalType" || loc.Suffix != "_plural" || loc.Random || len(loc.Entries) != 0 {
+		t.Errorf("GetAnimalPlural = %+v", loc)
+	}
+
+	// the data-type dump: no rule before its first entry, and a promote outranks its function twin
+	character := vocab.DataTypes["Character"]
+	if name, trait := character["GetName"], character["GetTrait"]; len(character) != 2 || name.Returns != "CString" || name.Promote || !trait.Promote || !slices.Equal(trait.Args, []string{"Arg0"}) || trait.Returns != "Trait" {
+		t.Errorf("Character = %+v", character)
+	}
+	if _, ok := vocab.DataTypes["CourtPosition"]["GetMaxAvailableHires"]; !ok || len(vocab.DataTypes) != 2 {
+		t.Errorf("a header with a stray comma is read: %+v", vocab.DataTypes)
+	}
+	globals := vocab.Globals
+	if !globals["Application"].Promote || globals["GetVariableSystem"].Doc != "Access the global variable system" || !globals["brave"].Promote || globals["brave"].Returns != "Trait" ||
+		!slices.Equal(globals["AddTextIf"].Args, []string{"Arg0", "Arg1"}) || globals["EmptyIf"].Macro != "AddTextIf(Arg0, '')" || len(globals) != 5 {
+		t.Errorf("Globals = %+v", globals)
 	}
 
 	// the markdown layout of Vic3 and EU5, with a BOM and CRLF, and files that are no dumps
@@ -824,17 +924,17 @@ func TestReadVocab(t *testing.T) {
 		t.Errorf("has_region_stance = %+v", trigger)
 	}
 
-	if link := vocab.Links["combat_width"]; link.Out != "value" || link.Prefix || !slices.Equal(link.In, []string{"province"}) {
+	if link := vocab.Links["combat_width"]; link.Out != "value" || !slices.Equal(link.In, []string{"province"}) {
 		t.Errorf("combat_width = %+v", link)
 	}
-	if link := vocab.Links["cu"]; link.Out != "culture" || !link.Prefix {
+	if link := vocab.Prefixes["cu"]; link.Out != "culture" || !link.Global {
 		t.Errorf("cu = %+v", link)
 	}
-	if link := vocab.Links["area"]; link.Doc != "" || link.Out != "area" {
+	if link := vocab.Prefixes["area"]; link.Doc != "" || link.Out != "area" {
 		t.Errorf("the placeholder is no description: %+v", link)
 	}
-	if !slices.Equal(vocab.SavedScopes, []string{"context", "attacker"}) || len(vocab.Links) != 3 {
-		t.Errorf("SavedScopes = %v, %d links", vocab.SavedScopes, len(vocab.Links))
+	if !slices.Equal(vocab.SavedScopes, []string{"context", "attacker"}) || len(vocab.Links) != 1 || len(vocab.Prefixes) != 2 {
+		t.Errorf("SavedScopes = %v, %d links, %d prefixes", vocab.SavedScopes, len(vocab.Links), len(vocab.Prefixes))
 	}
 
 	// the bare layout: scope types, and modifiers in both of their formats
@@ -843,8 +943,8 @@ func TestReadVocab(t *testing.T) {
 		"modifiers.log": "Printing Modifier Definitions:\nTag: dynasty_opinion\nUse areas: character\n\nTag: $CULTURE$_opinion\nUse areas: character\n\n" +
 			"Tag: ai_opinion_bias, Categories: Country, , All, \nTag: army_logistics_distance, Categories: Unit, , All, \n",
 	})
-	if !slices.Equal(vocab.ScopeTypes, []string{"none", "character"}) {
-		t.Errorf("ScopeTypes = %v: a labelled body line opened an entry", vocab.ScopeTypes)
+	if character := vocab.ScopeTypes["character"]; len(vocab.ScopeTypes) != 2 || character != (ScopeType{Triggers: true, Effects: true, Hops: true, SaveToken: "char", Variables: true}) || vocab.ScopeTypes["none"].Variables {
+		t.Errorf("ScopeTypes = %+v: a labelled body line opened an entry", vocab.ScopeTypes)
 	}
 	for name, want := range map[string][]string{"dynasty_opinion": {"character"}, "$CULTURE$_opinion": {"character"}, "ai_opinion_bias": {"country", "all"}, "army_logistics_distance": {"unit", "all"}} {
 		if modifier := vocab.Modifiers[name]; !slices.Equal(modifier.Categories, want) || modifier.Name != name {
@@ -853,7 +953,7 @@ func TestReadVocab(t *testing.T) {
 	}
 
 	vocab = dumps(t, map[string]string{"modifiers.log": "--- Static modifier types ---\nbattle_casualties_mult:\n  Mask: battle\n  Name: aut!Casualties Taken\n  Description: A bonus or penalty to Casualties\nunit_offense_add:\n  Mask: unit\n  Name: Offense\n  Description: A Military Unit's Offense\n"})
-	if modifier := vocab.Modifiers["battle_casualties_mult"]; !slices.Equal(modifier.Categories, []string{"battle"}) || modifier.Doc != "A bonus or penalty to Casualties" || len(vocab.Modifiers) != 2 {
+	if modifier := vocab.Modifiers["battle_casualties_mult"]; !slices.Equal(modifier.Categories, []string{"battle"}) || modifier.Doc != "A bonus or penalty to Casualties" || modifier.Label != "aut!Casualties Taken" || modifier.Section != "static" || len(vocab.Modifiers) != 2 {
 		t.Errorf("battle_casualties_mult = %+v of %d", modifier, len(vocab.Modifiers))
 	}
 
@@ -864,10 +964,11 @@ func TestReadVocab(t *testing.T) {
 	}
 }
 
-// TestDumpsAreRead is the gate over the real script_docs dumps of all three games: every field of
-// the vocabulary types is filled by one of them, the declared prefixes are there, and every token
-// of the name-token table is one some game declares. It needs each game's dumps (run script_docs
-// in the console once); set PMT_SCHEMA_GATE=1 and the three PMT_TEST_INSTALL_ variables.
+// TestDumpsAreRead is the gate over the real dumps of all three games: every field of the
+// vocabulary types is filled by one of them, every trigger with a Traits line carries its traits,
+// the declared prefixes are there, and every token of the name-token table is one some game
+// declares. It needs each game's dumps (run script_docs and dump_data_types in the console once);
+// set PMT_SCHEMA_GATE=1 and the three PMT_TEST_INSTALL_ variables.
 func TestDumpsAreRead(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_SCHEMA_GATE") == "" {
 		t.Skip("reads the three games' dumps; set PMT_SCHEMA_GATE=1")
@@ -875,21 +976,29 @@ func TestDumpsAreRead(t *testing.T) {
 
 	filled := map[string]int{}
 	for _, testCase := range []struct {
-		id, env                                          string
-		effects, triggers, links, scopes, onActions, mod int
-		prefixes                                         map[string]string
+		id, env                                                  string
+		effects, triggers, links, scopes, onActions, mod, traits int
+		customLoc, dataTypes, globals                            int
+		prefixes                                                 map[string]string
 	}{
-		{"ck3", "PMT_TEST_INSTALL_CK3", 1800, 1700, 250, 60, 800, 1, map[string]string{"culture": "culture", "faith": "faith", "title": "landed_title", "character": "character", "trait": "trait", "province": "province"}},
-		{"vic3", "PMT_TEST_INSTALL_VIC3", 3000, 1500, 320, 60, 100, 1, map[string]string{"c": "country", "cu": "culture", "s": "state_region", "p": "province"}},
-		{"eu5", "PMT_TEST_INSTALL_EU5", 1400, 1700, 280, 60, 100, 1, map[string]string{"c": "country", "culture": "culture", "location": "location"}},
+		{"ck3", "PMT_TEST_INSTALL_CK3", 1800, 1700, 250, 60, 800, 1, 1134, 2000, 1200, 3000, map[string]string{"culture": "culture", "faith": "faith", "title": "landed_title", "character": "character", "trait": "trait", "province": "province"}},
+		{"vic3", "PMT_TEST_INSTALL_VIC3", 3000, 1500, 320, 60, 100, 1, 692, 400, 850, 2000, map[string]string{"c": "country", "cu": "culture", "s": "state_region", "p": "province"}},
+		{"eu5", "PMT_TEST_INSTALL_EU5", 1400, 1700, 280, 60, 100, 1, 1300, 400, 1400, 5000, map[string]string{"c": "country", "culture": "culture", "location": "location"}},
 	} {
 		vocab := realVocab(t, testCase.id, testCase.env)
 		if vocab == nil {
 			continue
 		}
-		t.Logf("VOCAB %s: %d effects, %d triggers, %d links, %d scope types, %d on_actions, %d modifiers, %d engine-saved scopes, unknown labels %v",
-			testCase.id, len(vocab.Effects), len(vocab.Triggers), len(vocab.Links), len(vocab.ScopeTypes), len(vocab.OnActions), len(vocab.Modifiers), len(vocab.SavedScopes), vocab.Unknown)
-		if len(vocab.Effects) < testCase.effects || len(vocab.Triggers) < testCase.triggers || len(vocab.Links) < testCase.links || len(vocab.ScopeTypes) < testCase.scopes || len(vocab.OnActions) < testCase.onActions || len(vocab.Modifiers) < testCase.mod || len(vocab.SavedScopes) == 0 {
+		traits := 0
+		for _, trigger := range vocab.Triggers {
+			if !reflect.DeepEqual(trigger.Traits, Traits{}) {
+				traits++
+			}
+		}
+		t.Logf("VOCAB %s: %d effects, %d triggers (%d with traits), %d links, %d prefixes, %d scope types, %d on_actions, %d modifiers, %d custom localizations, %d data types, %d globals, %d engine-saved scopes, unknown %v",
+			testCase.id, len(vocab.Effects), len(vocab.Triggers), traits, len(vocab.Links), len(vocab.Prefixes), len(vocab.ScopeTypes), len(vocab.OnActions), len(vocab.Modifiers), len(vocab.CustomLoc), len(vocab.DataTypes), len(vocab.Globals), len(vocab.SavedScopes), vocab.Unknown)
+		if len(vocab.Effects) < testCase.effects || len(vocab.Triggers) < testCase.triggers || len(vocab.Links)+len(vocab.Prefixes) < testCase.links || len(vocab.ScopeTypes) < testCase.scopes || len(vocab.OnActions) < testCase.onActions ||
+			len(vocab.Modifiers) < testCase.mod || traits < testCase.traits || len(vocab.CustomLoc) < testCase.customLoc || len(vocab.DataTypes) < testCase.dataTypes || len(vocab.Globals) < testCase.globals || len(vocab.SavedScopes) == 0 {
 			t.Errorf("%s: fewer entries than the game is known to declare", testCase.id)
 		}
 		if len(vocab.Unknown) > 0 {
@@ -898,7 +1007,7 @@ func TestDumpsAreRead(t *testing.T) {
 
 		// the prefixes the game declares, and what each leads to
 		for prefix, out := range testCase.prefixes {
-			if link := vocab.Links[prefix]; !link.Prefix || link.Out != out {
+			if link := vocab.Prefixes[prefix]; link.Out != out {
 				t.Errorf("%s: link %s = %+v, want a prefix that leads to %s", testCase.id, prefix, link, out)
 			}
 		}
@@ -918,26 +1027,37 @@ func TestDumpsAreRead(t *testing.T) {
 				}
 			}
 		}
+		var members, bodies int
+		for _, bag := range []map[string]EngineToken{vocab.Effects, vocab.Triggers} {
+			for _, tok := range bag {
+				members, bodies = members+min(len(tok.Block.Members), 1), bodies+min(int(tok.Block.Body), 1)
+			}
+		}
 		count("EngineToken.Doc", doc)
 		count("EngineToken.Usage", usage)
 		count("EngineToken.In", in)
 		count("EngineToken.Out", out)
+		count("EngineToken.Traits", traits)
+		count("EngineToken.Block.Members", members)
+		count("EngineToken.Block.Body", bodies)
 		t.Logf("  %s tokens with several targets: %d", testCase.id, several)
 
-		var linkDoc, linkIn, linkOut, linkPrefix, linkSeveral int
-		for _, link := range vocab.Links {
-			linkDoc, linkIn, linkOut = linkDoc+min(len(link.Doc), 1), linkIn+min(len(link.In), 1), linkOut+min(len(link.Out), 1)
-			if link.Prefix {
-				linkPrefix++
-			}
-			if len(commaList(link.Out)) > 1 {
-				linkSeveral++
+		var linkDoc, linkIn, linkOut, linkGlobal, linkSeveral int
+		for _, links := range []map[string]Link{vocab.Links, vocab.Prefixes} {
+			for _, link := range links {
+				linkDoc, linkIn, linkOut = linkDoc+min(len(link.Doc), 1), linkIn+min(len(link.In), 1), linkOut+min(len(link.Out), 1)
+				if link.Global {
+					linkGlobal++
+				}
+				if len(commaList(link.Out)) > 1 {
+					linkSeveral++
+				}
 			}
 		}
 		count("Link.Doc", linkDoc)
 		count("Link.In", linkIn)
 		count("Link.Out", linkOut)
-		count("Link.Prefix", linkPrefix)
+		count("Link.Global", linkGlobal)
 		t.Logf("  %s links with several outputs: %d", testCase.id, linkSeveral)
 
 		var modDoc, modCategories int
@@ -946,10 +1066,39 @@ func TestDumpsAreRead(t *testing.T) {
 		}
 		count("Modifier.Doc", modDoc)
 		count("Modifier.Categories", modCategories)
+		var modLabel, modSection, variables, fromCode, entries int
+		for _, modifier := range vocab.Modifiers {
+			modLabel, modSection = modLabel+min(len(modifier.Label), 1), modSection+min(len(modifier.Section), 1)
+		}
+		for _, scope := range vocab.ScopeTypes {
+			if scope.Variables {
+				variables++
+			}
+		}
+		for _, action := range vocab.OnActions {
+			if action.FromCode {
+				fromCode++
+			}
+		}
+		for _, loc := range vocab.CustomLoc {
+			entries += min(len(loc.Entries), 1)
+		}
+		count("Modifier.Label", modLabel)
+		count("Modifier.Section", modSection)
+		count("ScopeType.Variables", variables)
+		count("OnAction.FromCode", fromCode)
+		count("CustomLoc.Entries", entries)
+		count("DataTypes", len(vocab.DataTypes))
+		count("Globals", len(vocab.Globals))
+
+		// CK3's create_character declares its members as a bare list, each with the dump's words
+		if create := vocab.Effects["create_character"]; testCase.id == "ck3" && (create.Block.Members["employer"] == nil || create.Block.Members["mother"] == nil || create.Block.Members["random_traits_list"] == nil) {
+			t.Errorf("ck3: create_character's members are not declared: %v", slices.Sorted(maps.Keys(create.Block.Members)))
+		}
 
 		// the prefix of every script-made kind is one the game declares
 		for kind, prefix := range ScriptKinds {
-			if prefix != "" && !vocab.Links[prefix].Prefix {
+			if _, declared := vocab.Prefixes[prefix]; prefix != "" && !declared {
 				t.Errorf("%s: %s are cited by %s:, which the game does not declare as a prefix", testCase.id, kind, prefix)
 			}
 		}
@@ -964,7 +1113,8 @@ func TestDumpsAreRead(t *testing.T) {
 		}
 	}
 
-	for _, field := range []string{"EngineToken.Doc", "EngineToken.Usage", "EngineToken.In", "EngineToken.Out", "Link.Doc", "Link.In", "Link.Out", "Link.Prefix", "Modifier.Doc", "Modifier.Categories"} {
+	for _, field := range []string{"EngineToken.Doc", "EngineToken.Usage", "EngineToken.In", "EngineToken.Out", "EngineToken.Traits", "EngineToken.Block.Members", "EngineToken.Block.Body", "Link.Doc", "Link.In", "Link.Out", "Link.Global",
+		"Modifier.Doc", "Modifier.Categories", "Modifier.Label", "Modifier.Section", "ScopeType.Variables", "OnAction.FromCode", "CustomLoc.Entries", "DataTypes", "Globals"} {
 		if filled[field] == 0 {
 			t.Errorf("no dump of any game fills %s", field)
 		}

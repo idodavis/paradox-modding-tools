@@ -80,6 +80,8 @@ func TestHarvest(t *testing.T) {
 		{"a macro's parameter, inside its macro", "params", "AMOUNT", "v_effect", "v_effects.txt", "", ""},
 		{"a saved scope, with the scope type its body runs in", "saved_scopes", "target", "v.1", "v_events.txt", "", "character"},
 		{"a saved scope under a cite, with the cited kind's scope type", "saved_scopes", "far_title", "vmore.1", "v_more_events.txt", "", "landed_title"},
+		{"a saved scope under a word the dump declares alone, as a hop", "saved_scopes", "own_dynasty", "v.1", "v_events.txt", "", "dynasty"},
+		{"a saved scope under the same word written as a prefix", "saved_scopes", "named_dynasty", "v.1", "v_events.txt", "", "dynasty"},
 		{"a variable made by a token that takes a block", "variables", "seen", "v.1", "v_events.txt", "", ""},
 		{"a variable list is a variable", "variables", "seen_list", "v_list_effect", "v_effects.txt", "", ""},
 		{"a character flag", "flags", "seen_one", "v.1", "v_events.txt", "", ""},
@@ -117,6 +119,7 @@ func TestHarvest(t *testing.T) {
 		{"a quoted value is read as a bare one", "cultures", "norse", "", "v_characters.txt", schema.TypeRef, false},
 		{"a number that names a character, by the link's declared output", "characters", "186004", "", "v_characters.txt", schema.TypeRef, false},
 		{"a cite, declared by the vocabulary", "landed_titles", "k_x", "", "v_events.txt", schema.TypeRef, true},
+		{"a word the dump declares both alone and as a prefix cites as a prefix", "dynasties", "dynasty_1", "", "v_events.txt", schema.TypeRef, true},
 		{"a cite with a member names the member inside its parent", "defines.define", "WAR_COST", "NWar", "v_more_events.txt", schema.TypeRef, true},
 		{"a macro written as a key", "scripted_effects", "v_effect", "", "v_events.txt", schema.TypeRef, false},
 		{"an argument key names the parameter of the macro called", "params", "AMOUNT", "v_effect", "v_events.txt", schema.TypeRef, false},
@@ -443,8 +446,7 @@ func TestInstallsAreScanned(t *testing.T) {
 			t.Errorf("%s: %s is not set", testCase.id, testCase.env)
 			continue
 		}
-		user := game.UserDataDir(testCase.id, dir)
-		install, err := Scan(t.Context(), Request{Game: testCase.id, Dir: dir, Version: "gate", Docs: []string{filepath.Join(user, "logs"), filepath.Join(user, "docs")}})
+		install, err := Scan(t.Context(), Request{Game: testCase.id, Dir: dir, Version: "gate", Docs: game.DumpDirs(testCase.id, dir)})
 		if err != nil {
 			t.Fatalf("%s: %v", testCase.id, err)
 		}

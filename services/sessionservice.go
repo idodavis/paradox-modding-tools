@@ -219,7 +219,7 @@ func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
 			emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: percent, Stage: stage})
 		}
 	}
-	install, err := s.Scan(context.Background(), index.Request{Game: inst.GameID, Dir: inst.Path, Version: inst.Version, Docs: dumpFolders(inst), Progress: progress})
+	install, err := s.Scan(context.Background(), index.Request{Game: inst.GameID, Dir: inst.Path, Version: inst.Version, Docs: game.DumpDirs(inst.GameID, inst.Path), Progress: progress})
 	if err != nil {
 		slog.Error("scan failed", "game", inst.GameID, "stage", running, "error", err)
 		return nil, err
@@ -247,12 +247,6 @@ func predatesInstall(scannedAt, installPath string) bool {
 	}
 	updated := game.InstallUpdatedAt(installPath)
 	return !updated.IsZero() && updated.After(scanned)
-}
-
-// dumpFolders is where a game's script_docs dumps land.
-func dumpFolders(inst *GameInstall) []string {
-	user := game.UserDataDir(inst.GameID, inst.Path)
-	return []string{filepath.Join(user, "logs"), filepath.Join(user, "docs")}
 }
 
 // RebuildInstallSemantics scans an install now, then drops every session so each is built again
@@ -350,9 +344,11 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth,
 	health.ScannedAt = local.ScannedAt(inst.ID, inst.Version)
 	health.CacheStale = health.ScannedAt == "" || predatesInstall(health.ScannedAt, inst.Path)
 	_, health.Scanning = s.Queued()
-	for _, folder := range dumpFolders(inst) {
+	user := game.UserDataDir(inst.GameID, inst.Path)
+	for _, dir := range game.Get(inst.GameID).ScriptDocsDirs {
+		folder := filepath.Join(user, dir)
 		vocab := schema.ReadVocab([]string{folder})
-		health.Dumps = append(health.Dumps, DumpHealth{Folder: folder, Effects: len(vocab.Effects), Triggers: len(vocab.Triggers), Links: len(vocab.Links), Scopes: len(vocab.ScopeTypes)})
+		health.Dumps = append(health.Dumps, DumpHealth{Folder: folder, Effects: len(vocab.Effects), Triggers: len(vocab.Triggers), Links: len(vocab.Links) + len(vocab.Prefixes), Scopes: len(vocab.ScopeTypes)})
 	}
 	if live := s.get(workspaceID); live != nil {
 		live.RLock()

@@ -21,6 +21,8 @@ v.1 = {
 		trigger_event = v.2
 		every_vassal = { add_gold = 1 }
 		capital_county = { add_title_law = x }
+		dynasty = { save_scope_as = own_dynasty }
+		dynasty:dynasty_1 = { save_scope_as = named_dynasty }
 		random_list = {
 			90 = { trigger_event = v.2 }
 			10 = { add_gold = 1 }

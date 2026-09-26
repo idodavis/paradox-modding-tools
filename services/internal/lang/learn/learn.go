@@ -345,8 +345,9 @@ func (census *census) prefixes(drafts []*draft) {
 	census.prefixed = map[string][]*draft{}
 	made := slices.Collect(maps.Values(schema.ScriptKinds))
 	for _, prefix := range slices.Sorted(maps.Keys(census.cites)) {
-		names, link := census.cites[prefix], census.vocab.Links[prefix]
-		if !link.Prefix || slices.Contains(made, prefix) {
+		names := census.cites[prefix]
+		link, declared := census.vocab.Prefixes[prefix]
+		if !declared || slices.Contains(made, prefix) {
 			continue
 		}
 		hits := map[*draft]int{}

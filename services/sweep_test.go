@@ -46,7 +46,7 @@ func TestSweep(t *testing.T) {
 		}
 		user := game.UserDataDir(id, install)
 		started := time.Now()
-		scanned, err := index.Scan(t.Context(), index.Request{Game: id, Dir: install, Version: "sweep", Docs: []string{filepath.Join(user, "logs"), filepath.Join(user, "docs")}})
+		scanned, err := index.Scan(t.Context(), index.Request{Game: id, Dir: install, Version: "sweep", Docs: game.DumpDirs(id, install)})
 		if err != nil {
 			t.Fatal(err)
 		}

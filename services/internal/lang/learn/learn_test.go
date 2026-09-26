@@ -45,16 +45,18 @@ func vocab() *schema.Vocab {
 			"martial":    {Name: "martial", In: []string{"character"}},
 		},
 		Modifiers: map[string]schema.Modifier{"monthly_prestige": {Name: "monthly_prestige"}},
+		Prefixes: map[string]schema.Link{
+			"title":     {Name: "title", Out: "landed_title"},
+			"character": {Name: "character", Out: "character"},
+			"trait":     {Name: "trait", Out: "trait"},
+			"define":    {Name: "define", Out: "value"},
+			"scope":     {Name: "scope"},
+		},
 		Links: map[string]schema.Link{
-			"title":     {Name: "title", Prefix: true, Out: "landed_title"},
-			"character": {Name: "character", Prefix: true, Out: "character"},
-			"trait":     {Name: "trait", Prefix: true, Out: "trait"},
-			"define":    {Name: "define", Prefix: true, Out: "value"},
-			"scope":     {Name: "scope", Prefix: true},
-			"father":    {Name: "father", Out: "character"},
-			"liege":     {Name: "liege", Out: "character"},
-			"value":     {Name: "value", Out: "value"},
-			"root":      {Name: "root"},
+			"father": {Name: "father", Out: "character"},
+			"liege":  {Name: "liege", Out: "character"},
+			"value":  {Name: "value", Out: "value"},
+			"root":   {Name: "root"},
 		},
 	}
 }
@@ -568,8 +570,7 @@ func TestInstallsAreLearned(t *testing.T) {
 			t.Errorf("%s: %s is not set", testCase.id, testCase.env)
 			continue
 		}
-		user := game.UserDataDir(testCase.id, install)
-		sch := scanned(t, testCase.id, install, filepath.Join(user, "logs"), filepath.Join(user, "docs"))
+		sch := scanned(t, testCase.id, install, game.DumpDirs(testCase.id, install)...)
 		text := schema.Write(sch)
 		written[testCase.id] = text
 		if back, err := schema.Read(text); err != nil || len(back.Kinds) != len(sch.Kinds) {
@@ -615,8 +616,7 @@ func TestInstallsAreLearned(t *testing.T) {
 	if install == "" {
 		t.Fatal("ck3: PMT_TEST_INSTALL_CK3 is not set")
 	}
-	user := game.UserDataDir("ck3", install)
-	sch := scanned(t, "ck3", install, filepath.Join(user, "logs"), filepath.Join(user, "docs"))
+	sch := scanned(t, "ck3", install, game.DumpDirs("ck3", install)...)
 	if schema.Write(sch) != written["ck3"] {
 		t.Error("ck3: two scans of one install wrote different schemas")
 	}

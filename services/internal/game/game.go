@@ -47,8 +47,11 @@ type GameInfo struct {
 
 	// DocsFolderName is the per-game Documents subfolder (e.g. "Crusader Kings III").
 	DocsFolderName string `json:"docsFolderName,omitempty"`
-	// ScriptDocsSubdir is where in-game console dumps land ("logs" or "docs").
-	ScriptDocsSubdir string `json:"scriptDocsSubdir,omitempty"`
+	// ScriptDocsDirs are where the console's script_docs writes its dumps, and DataTypesDir where
+	// dump_data_types does, from the user-data folder, alike on Windows and Linux: CK3 writes every
+	// dump to logs, Vic3 and EU5 event_scopes.log to logs and the rest to docs. Backend-only.
+	ScriptDocsDirs []string `json:"-"`
+	DataTypesDir   string   `json:"-"`
 
 	// EntryModes are the words a mod may write before a definition's name (REPLACE:name), in
 	// the order the game processes them; file order decides only between entries of one mode.
@@ -98,35 +101,37 @@ type GameList struct {
 // registry is the supported-game table, keyed by id.
 var registry = map[string]*GameInfo{
 	"ck3": {
-		ID:               "ck3",
-		Name:             "Crusader Kings III",
-		ShortName:        "CK3",
-		WikiAPI:          "https://ck3.paradoxwikis.com/api.php",
-		ScriptRoot:       "game",
-		Descriptor:       "mod",
-		DocsFolderName:   "Crusader Kings III",
-		ScriptDocsSubdir: "logs",
-		SteamAppID:       1158310,
-		SteamLibrary:     map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
-		FIOSKinds:        []string{"gui.type", "gui.template"},
-		FirstWins:        "GUI types and templates are first-wins.",
-		SubjectDirs:      []string{"history", "common/coat_of_arms"},
+		ID:             "ck3",
+		Name:           "Crusader Kings III",
+		ShortName:      "CK3",
+		WikiAPI:        "https://ck3.paradoxwikis.com/api.php",
+		ScriptRoot:     "game",
+		Descriptor:     "mod",
+		DocsFolderName: "Crusader Kings III",
+		ScriptDocsDirs: []string{"logs", "docs"},
+		DataTypesDir:   "logs/data_types",
+		SteamAppID:     1158310,
+		SteamLibrary:   map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
+		FIOSKinds:      []string{"gui.type", "gui.template"},
+		FirstWins:      "GUI types and templates are first-wins.",
+		SubjectDirs:    []string{"history", "common/coat_of_arms"},
 	},
 	"vic3": {
-		ID:               "vic3",
-		Name:             "Victoria 3",
-		ShortName:        "Vic3",
-		WikiAPI:          "https://vic3.paradoxwikis.com/api.php",
-		ScriptRoot:       "game",
-		Descriptor:       "metadata",
-		DocsFolderName:   "Victoria 3",
-		ScriptDocsSubdir: "docs",
-		EntryModes:       entryModes,
-		SteamAppID:       529340,
-		SteamLibrary:     map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
-		FIOSKinds:        []string{"gui.type", "gui.template", "events"},
-		FirstWins:        "GUI types, templates, and events are first-wins.",
-		SubjectDirs:      []string{"common/history", "common/coat_of_arms", "common/flag_definitions"},
+		ID:             "vic3",
+		Name:           "Victoria 3",
+		ShortName:      "Vic3",
+		WikiAPI:        "https://vic3.paradoxwikis.com/api.php",
+		ScriptRoot:     "game",
+		Descriptor:     "metadata",
+		DocsFolderName: "Victoria 3",
+		ScriptDocsDirs: []string{"logs", "docs"},
+		DataTypesDir:   "logs/data_types",
+		EntryModes:     entryModes,
+		SteamAppID:     529340,
+		SteamLibrary:   map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
+		FIOSKinds:      []string{"gui.type", "gui.template", "events"},
+		FirstWins:      "GUI types, templates, and events are first-wins.",
+		SubjectDirs:    []string{"common/history", "common/coat_of_arms", "common/flag_definitions"},
 	},
 	"eu5": {
 		ID:         "eu5",
@@ -137,15 +142,16 @@ var registry = map[string]*GameInfo{
 		StageRoots: []string{"in_game", "main_menu", "loading_screen"},
 		Descriptor: "metadata",
 		// where EU5 mods keep it; GAME-SYNTAX.md has the counts
-		ThumbnailDir:     ".metadata",
-		DocsFolderName:   "Europa Universalis V",
-		ScriptDocsSubdir: "docs",
-		EntryModes:       entryModes,
-		SteamAppID:       3450310,
-		SteamLibrary:     map[string]string{"windows": "binaries/steam_api64.dll"}, // no Linux build; it runs under Proton
-		FIOSKinds:        []string{"events"},
-		FirstWins:        "Events are first-wins; GUI types last-wins.",
-		SubjectDirs:      []string{"setup/start", "common/coat_of_arms", "common/flag_definitions"},
+		ThumbnailDir:   ".metadata",
+		DocsFolderName: "Europa Universalis V",
+		ScriptDocsDirs: []string{"logs", "docs"},
+		DataTypesDir:   "logs/data_types",
+		EntryModes:     entryModes,
+		SteamAppID:     3450310,
+		SteamLibrary:   map[string]string{"windows": "binaries/steam_api64.dll"}, // no Linux build; it runs under Proton
+		FIOSKinds:      []string{"events"},
+		FirstWins:      "Events are first-wins; GUI types last-wins.",
+		SubjectDirs:    []string{"setup/start", "common/coat_of_arms", "common/flag_definitions"},
 	},
 }
 
@@ -207,6 +213,21 @@ func ReadGameVersion(installPath string) string {
 		value = value[:i]
 	}
 	return strings.TrimSpace(value)
+}
+
+// DumpDirs is every folder the game's console dumps land in, for the install at installPath:
+// script_docs's, then dump_data_types's; none where the game has no user-data folder.
+func DumpDirs(gameID, installPath string) []string {
+	user := UserDataDir(gameID, installPath)
+	if user == "" {
+		return nil
+	}
+	info := Get(gameID)
+	var dirs []string
+	for _, dir := range append(slices.Clone(info.ScriptDocsDirs), info.DataTypesDir) {
+		dirs = append(dirs, filepath.Join(user, filepath.FromSlash(dir)))
+	}
+	return dirs
 }
 
 // UserDataDir is the OS user-data folder for gameID (script_docs, default mod/).

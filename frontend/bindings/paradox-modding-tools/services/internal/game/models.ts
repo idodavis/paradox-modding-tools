@@ -44,11 +44,6 @@ export interface GameInfo {
      * DocsFolderName is the per-game Documents subfolder (e.g. "Crusader Kings III").
      */
     "docsFolderName"?: string;
-
-    /**
-     * ScriptDocsSubdir is where in-game console dumps land ("logs" or "docs").
-     */
-    "scriptDocsSubdir"?: string;
     "steamAppId"?: number;
     "firstWins"?: string;
 }

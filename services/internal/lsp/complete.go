@@ -109,14 +109,14 @@ func (completer *completer) enclosing(descent *index.Descent) (*index.Level, *sc
 				scope = ""
 			}
 		case schema.TypeScopePath:
-			last := assignment.Key.Text[strings.LastIndexByte(assignment.Key.Text, '.')+1:]
+			last, links := assignment.Key.Text[strings.LastIndexByte(assignment.Key.Text, '.')+1:], vocab.Links
 			if cite, isCite := jomini.Cite(last); isCite {
-				last = cite.Prefix
+				last, links = cite.Prefix, vocab.Prefixes
 			}
-			scope, moved = vocab.Links[strings.ToLower(last)].Out, true
+			scope, moved = links[strings.ToLower(last)].Out, true
 		case schema.TypeRef:
 			if cite, isCite := jomini.Cite(assignment.Key.Text); isCite {
-				scope, moved = vocab.Links[cite.Prefix].Out, true
+				scope, moved = vocab.Prefixes[cite.Prefix].Out, true
 			} else if kind := sess.Schema.Kinds[level.Key.Kind]; kind != nil {
 				scope, moved = kind.ScopeType, true
 			}
@@ -183,7 +183,7 @@ func (completer *completer) keys(descent *index.Descent) {
 		completer.tokens(sess.Install.Vocab.Triggers, scope)
 	}
 	for name, link := range sess.Install.Vocab.Links {
-		if !link.Prefix && (len(link.In) == 0 || scope == "" || slices.Contains(link.In, scope)) {
+		if !link.Wild && (len(link.In) == 0 || scope == "" || slices.Contains(link.In, scope)) {
 			completer.add(name, schema.Value{Type: schema.TypeScopePath, Declared: true}, 2)
 		}
 	}

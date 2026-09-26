@@ -97,6 +97,12 @@ func TestInventory(t *testing.T) {
 		"game/common/town_rights/readme.txt": "",
 		"game/common/README.txt":             "",
 		"game/gfx/interface/x.PNG":           "",
+
+		// a .txt named as documentation is documentation only when its comments outnumber its script
+		"game/common/missions/____Info.txt":            "# Missions\n# - potential: <trigger>\n",
+		"game/common/advances/_advances_template.txt":  "#\tage = <age>\t# the age it is in\n#\ticon = <icon>\n",
+		"game/events/my_example_events.txt":            "namespace = x\nx.1 = { type = character_event }\n",
+		"game/common/artifacts/00_event_templates.txt": "# a list\nx = { }\ny = { }\n",
 	})
 	files := Inventory("vanilla", Roots(dir))
 
@@ -108,8 +114,12 @@ func TestInventory(t *testing.T) {
 	want := []string{
 		"game | common/GUIDs.txt | script | vanilla",
 		"game | common/README.txt | info | vanilla",
+		"game | common/advances/_advances_template.txt | info | vanilla",
+		"game | common/artifacts/00_event_templates.txt | script | vanilla",
+		"game | common/missions/____Info.txt | info | vanilla",
 		"game | common/town_rights/readme.txt | info | vanilla",
 		"game | common/traits/00_traits.txt | script | vanilla",
+		"game | events/my_example_events.txt | script | vanilla",
 		"game | gfx/interface/x.PNG | image | vanilla",
 		"game | gfx/new_thing.voxel | unknown | vanilla",
 		"game | gfx/x.dds | image | vanilla",

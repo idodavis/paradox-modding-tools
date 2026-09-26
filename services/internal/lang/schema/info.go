@@ -9,11 +9,15 @@
 package schema
 
 import (
+	"bytes"
 	"cmp"
+	"io"
 	"os"
 	"path"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"unicode"
 
 	"paradox-modding-tools/services/internal/lang/jomini"
@@ -25,8 +29,9 @@ type Info map[string]*FolderInfo
 
 // FolderInfo is what the info files of one folder say.
 type FolderInfo struct {
-	Prose  string               // about the whole kind: what a file says before its first key, four lines at most
-	Fields map[string]InfoField // by key, and by parent.key inside a parent's block; the first file to document one wins
+	Prose       string               // about the whole kind: what a file says before its first key, four lines at most
+	Fields      map[string]InfoField // by key, and by parent.key inside a parent's block; the first file to document one wins
+	Definitions map[string]string    // a definition's blurb from its own file's header list (# name - text), by name
 }
 
 // InfoField is what the game says about one field.
@@ -45,9 +50,17 @@ type infoLine struct {
 // infoMaxBytes keeps data out: EU5 ships 5 MB .info terrain caches; real prose stays under 25 KB.
 const infoMaxBytes = 1 << 20
 
-// ReadInfo reads every info file of an inventory.
+// ReadInfo reads every info file of an inventory, then the comment header of every script file
+// (header): its template lines document the folder, after the info files, which win.
 func ReadInfo(files []source.File) Info {
 	info := Info{}
+	folderOf := func(file source.File) *FolderInfo {
+		folder := strings.ToLower(path.Dir(file.Rel))
+		if info[folder] == nil {
+			info[folder] = &FolderInfo{Fields: map[string]InfoField{}, Definitions: map[string]string{}}
+		}
+		return info[folder]
+	}
 	for _, file := range files {
 		if stat, err := os.Stat(file.Path); file.Format != source.Info || err != nil || stat.Size() > infoMaxBytes {
 			continue
@@ -56,14 +69,139 @@ func ReadInfo(files []source.File) Info {
 		if err != nil {
 			continue
 		}
+		folderOf(file).read(text, strings.HasSuffix(strings.ToLower(file.Rel), ".md"))
+	}
 
-		folder := strings.ToLower(path.Dir(file.Rel))
-		if info[folder] == nil {
-			info[folder] = &FolderInfo{Fields: map[string]InfoField{}}
+	// the headers, a reader per CPU, merged in file order so the first file to speak wins
+	type head struct {
+		templates string
+		blurbs    map[string]string
+	}
+	heads, gate := make([]head, len(files)), make(chan struct{}, runtime.NumCPU())
+	var wg sync.WaitGroup
+	for i, file := range files {
+		if file.Format == source.Script && strings.HasSuffix(strings.ToLower(file.Rel), ".txt") {
+			gate <- struct{}{}
+			wg.Go(func() {
+				heads[i].templates, heads[i].blurbs = header(file.Path)
+				<-gate
+			})
 		}
-		info[folder].read(text, strings.HasSuffix(strings.ToLower(file.Rel), ".md"))
+	}
+	wg.Wait()
+	for i, got := range heads {
+		if got.templates == "" && len(got.blurbs) == 0 {
+			continue
+		}
+		fi := folderOf(files[i])
+		fi.read(got.templates, false)
+		for name, blurb := range got.blurbs {
+			fi.Definitions[name] = cmp.Or(fi.Definitions[name], blurb)
+		}
 	}
 	return info
+}
+
+// headerBytes is how much of a script file's top is read for its header: the longest vanilla
+// header is under 8 KB.
+const headerBytes = 64 << 10
+
+// header reads the comments at the top of a script file, before its first line of script. Of
+// them, a key line whose value is a template (<path>, <trigger>, yes/no, a | b | c) documents the
+// folder, as Vic3's alert_types does; a commented-out line of real script documents nothing. A
+// line name - text is a blurb for a definition this file makes (CK3's scripted effects list
+// theirs so); a name the file does not define is a remark, and skipped.
+func header(abs string) (templates string, blurbs map[string]string) {
+	file, err := os.Open(abs)
+	if err != nil {
+		return "", nil
+	}
+	head := make([]byte, headerBytes)
+	n, _ := io.ReadFull(file, head[:4<<10])
+	if bytesHeader(head[:n]) {
+		more, _ := io.ReadFull(file, head[n:])
+		n += more
+	}
+	file.Close()
+	text, _ := jomini.Decode(head[:n])
+
+	var lines []string
+	listed := map[string]string{}
+	for raw := range strings.SplitSeq(text, "\n") {
+		body, hashed := jomini.PeelComment(raw)
+		if !hashed && strings.TrimSpace(raw) != "" {
+			break
+		}
+		if name, blurb, ok := listLine(body); ok {
+			listed[name] = blurb
+			continue
+		}
+		if line, _, ok := infoKeyLine(body, true); ok && template(line, body) {
+			lines = append(lines, body)
+		}
+	}
+	if len(listed) == 0 {
+		return strings.Join(lines, "\n"), nil
+	}
+
+	// a listed name counts only when this file defines it
+	raw, err := os.ReadFile(abs)
+	if err != nil || len(raw) > infoMaxBytes {
+		return strings.Join(lines, "\n"), nil
+	}
+	whole, _ := jomini.Decode(raw)
+	blurbs = map[string]string{}
+	for _, statement := range jomini.Parse(whole).Root.Statements {
+		if assignment, ok := statement.(*jomini.Assignment); ok {
+			_, name := jomini.Mode(assignment.Key.Text)
+			if blurb, listed := listed[strings.ToLower(name)]; listed {
+				blurbs[strings.ToLower(name)] = blurb
+			}
+		}
+	}
+	return strings.Join(lines, "\n"), blurbs
+}
+
+// bytesHeader reports the first bytes of a file holding no line of script yet, so its header may
+// run on past them.
+func bytesHeader(raw []byte) bool {
+	for line := range strings.SplitSeq(string(bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})), "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			return false
+		}
+	}
+	return true
+}
+
+// listLine reads name - text, or name – text, from a header: a definition's name, a spaced dash,
+// and a few words.
+func listLine(body string) (name, blurb string, ok bool) {
+	body = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(body), "- "))
+	for _, dash := range []string{" - ", " – "} {
+		if before, after, found := strings.Cut(body, dash); found && jomini.IsDefName(before) && len(strings.Fields(after)) >= 2 {
+			return strings.ToLower(before), strings.TrimSpace(after), true
+		}
+	}
+	return "", "", false
+}
+
+// template reports a documented key line whose value stands for any value of a type: <type>, a
+// type word, yes/no, or a closed set a/b/c or a | b | c. A concrete value is script, commented out.
+func template(line infoLine, body string) bool {
+	if line.typ != "" {
+		return true
+	}
+	_, rest, found := strings.Cut(body, "=")
+	if !found {
+		_, rest, _ = strings.Cut(body, ":")
+	}
+	value, _, _ := strings.Cut(rest, "#")
+	value = strings.ReplaceAll(strings.TrimSpace(value), " ", "")
+	if strings.HasPrefix(value, "<") {
+		return true
+	}
+	_, closed := (InfoField{Type: value}).Declared()
+	return closed
 }
 
 // Kind is what the game says about the kind whose definitions are in folders.

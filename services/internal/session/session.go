@@ -211,7 +211,7 @@ func (sess *Session) LocKeys(prefix string, limit int) []string {
 func (sess *Session) Where(path string) Place {
 	file, mod, ok := sess.Located(path)
 	if !ok {
-		return Place{Format: source.Classify(filepath.ToSlash(path))}
+		return Place{Format: source.Classify(path, filepath.ToSlash(path))}
 	}
 	place := Place{Origin: file.Origin, Rel: file.Rel, Kinds: sess.Schema.KindsAt(file.Rel), Format: file.Format}
 	if mod != nil {
@@ -239,7 +239,7 @@ func (sess *Session) Located(path string) (source.File, *Mod, bool) {
 		for _, root := range roots {
 			if rel, err := filepath.Rel(root, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 				rel = filepath.ToSlash(rel)
-				return source.File{Path: path, Rel: rel, Origin: origin, Format: source.Classify(rel)}, true
+				return source.File{Path: path, Rel: rel, Origin: origin, Format: source.Classify(path, rel)}, true
 			}
 		}
 		return source.File{}, false
@@ -287,7 +287,7 @@ func (sess *Session) DidChange(path, text string) {
 	if buf == nil {
 		file, _, ok := sess.Located(path)
 		if !ok {
-			file = source.File{Path: path, Format: source.Classify(filepath.ToSlash(path))}
+			file = source.File{Path: path, Format: source.Classify(path, filepath.ToSlash(path))}
 		}
 		file.Path = filepath.Clean(path)
 		buf = &buffer{file: file}
@@ -541,7 +541,7 @@ func (watcher *Watcher) handle(ev fsnotify.Event) {
 
 // indexable reports whether a path is a file the index reads.
 func indexable(path string) bool {
-	switch source.Classify(filepath.ToSlash(path)) {
+	switch source.Classify(path, filepath.ToSlash(path)) {
 	case source.Script, source.Loc, source.Table, source.List:
 		return true
 	}

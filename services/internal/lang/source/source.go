@@ -102,8 +102,14 @@ func (file File) Text() (string, error) {
 	return text, nil
 }
 
-// Classify is the format of a file, from its path relative to a root.
-func Classify(rel string) Format {
+// documentation is the words a .txt is named by when it is prose the games ship beside their
+// script: EU5's ____Info.txt and _advances_template.txt, Vic3's 00_example.txt. A whole word of
+// the name, never part of one: rainforest is no info file, 00_event_templates.txt is script.
+var documentation = map[string]bool{"readme": true, "info": true, "example": true, "examples": true, "template": true, "help": true, "documentation": true}
+
+// Classify is the format of a file, from its path relative to a root. A .txt named as
+// documentation is read to see whether it is: its comment lines outnumber its script lines.
+func Classify(abs, rel string) Format {
 	name := strings.ToLower(path.Base(rel))
 
 	// two files are what they are by name, not by extension
@@ -113,7 +119,34 @@ func Classify(rel string) Format {
 	if strings.HasPrefix(name, "readme") {
 		return Info
 	}
-	return formats[path.Ext(name)]
+	format := formats[path.Ext(name)]
+	if format == Script && path.Ext(name) == ".txt" {
+		words := strings.FieldsFunc(strings.TrimSuffix(name, ".txt"), func(char rune) bool { return char == '_' || char == '-' || char == ' ' || char == '.' })
+		if slices.ContainsFunc(words, func(word string) bool { return documentation[word] }) && prose(abs) {
+			return Info
+		}
+	}
+	return format
+}
+
+// prose reports a text file whose comment lines outnumber its script lines, up to a megabyte.
+func prose(abs string) bool {
+	raw, err := os.ReadFile(abs)
+	if err != nil || len(raw) > 1<<20 {
+		return false
+	}
+	text, _ := jomini.Decode(raw)
+	script, comment := 0, 0
+	for line := range strings.SplitSeq(text, "\n") {
+		switch trimmed := strings.TrimSpace(line); {
+		case trimmed == "":
+		case strings.HasPrefix(trimmed, "#"):
+			comment++
+		default:
+			script++
+		}
+	}
+	return comment >= script
 }
 
 // Roots is the folders under dir that mirror the game layout, in the game's load order: the
@@ -181,7 +214,7 @@ func Inventory(origin string, roots []string) []File {
 			if _, skip := ignored[strings.ToLower(path.Ext(rel))]; skip {
 				return
 			}
-			files = append(files, File{Path: abs, Rel: rel, Origin: origin, Format: Classify(rel)})
+			files = append(files, File{Path: abs, Rel: rel, Origin: origin, Format: Classify(abs, rel)})
 		})
 	}
 	return files

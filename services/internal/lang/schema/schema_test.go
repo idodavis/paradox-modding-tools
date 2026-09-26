@@ -103,7 +103,7 @@ func infoOf(t *testing.T, files map[string]string) Info {
 		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		inventory = append(inventory, source.File{Path: path, Rel: rel, Origin: "vanilla", Format: source.Classify(rel)})
+		inventory = append(inventory, source.File{Path: path, Rel: rel, Origin: "vanilla", Format: source.Classify(path, rel)})
 	}
 	return ReadInfo(inventory)
 }
@@ -330,6 +330,31 @@ func TestReadInfo(t *testing.T) {
 	}
 	if len(info["common/traits"].Fields) == 0 || info["common/traits"].Fields["brave"] != (InfoField{}) {
 		t.Errorf("a script file was read as info: %+v", info["common/traits"].Fields)
+	}
+
+	// a script file's header: template lines document the folder, commented-out script and notes
+	// beside script do not, and a name list gives blurbs only to the names the file defines
+	headers := infoOf(t, map[string]string{
+		"common/alert_types/00_alerts.txt": "# texture = <path>\t# relative to the game folder\n# type = alert | important_action\t# how it shows\n" +
+			"# old_alert = {\n#\tscript_context = character\n# }\n\nreal_alert = {\n\tcount = 5 # use all for dynamic\n}\n",
+		"common/scripted_effects/00_marriage_effects.txt": "#####\n# EFFECT LIST\n# marry_on_realm_law - Marry two characters based on the realm law\n" +
+			"# positive - raises the scale by half\n#####\n\nmarry_on_realm_law = { }\n",
+	})
+	for _, testCase := range []struct {
+		key  string
+		want InfoField
+	}{
+		{"texture", InfoField{Prose: "relative to the game folder", Type: "path"}},
+		{"type", InfoField{Prose: "how it shows"}},
+		{"script_context", InfoField{}},
+		{"count", InfoField{}},
+	} {
+		if got := headers.Field([]string{"common/alert_types"}, "", testCase.key); got != testCase.want {
+			t.Errorf("header Field(%s) = %+v, want %+v", testCase.key, got, testCase.want)
+		}
+	}
+	if got := headers["common/scripted_effects"].Definitions; !reflect.DeepEqual(got, map[string]string{"marry_on_realm_law": "Marry two characters based on the realm law"}) {
+		t.Errorf("header list = %v, want only the name the file defines", got)
 	}
 }
 

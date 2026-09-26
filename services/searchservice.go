@@ -329,7 +329,7 @@ func textSearchFolder(
 		}
 		rel, err := filepath.Rel(root, path)
 		// an image the format table names is never opened: two in five of an install's files
-		if err != nil || !pathMatchesGlobs(rel, gs) || source.Classify(filepath.ToSlash(rel)) == source.Image {
+		if err != nil || !pathMatchesGlobs(rel, gs) || source.Classify(path, filepath.ToSlash(rel)) == source.Image {
 			return nil
 		}
 		group.Go(func() error {

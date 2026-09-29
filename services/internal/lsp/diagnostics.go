@@ -169,12 +169,12 @@ func (judge *judge) value(value schema.Value, field *schema.Field, scalar *jomin
 	case field != nil && (value.Type == schema.TypeString || value.Type == schema.TypeUnresolved || value.Type == schema.TypeNumber || value.Type == schema.TypeBool || value.Type == schema.TypeDate):
 		var declared []string
 		for _, accept := range field.Accepts {
-			if accept.Origin == schema.Declared {
+			if accept.Evidence == schema.Declared {
 				declared = append(declared, accept.Type.String())
 			}
 		}
 		fits := len(declared) == 0 || slices.ContainsFunc(field.Accepts, func(accept schema.Accept) bool {
-			return accept.Origin == schema.Declared && (accept.Type == value.Type || accept.Type == schema.TypeRef || accept.Type == schema.TypeLoc || accept.Type == schema.TypeEnum || accept.Type == schema.TypeString)
+			return accept.Evidence == schema.Declared && (accept.Type == value.Type || accept.Type == schema.TypeRef || accept.Type == schema.TypeLoc || accept.Type == schema.TypeEnum || accept.Type == schema.TypeString)
 		})
 		if !fits {
 			judge.report(scalar.Range, 2, "wrong-value-type", fmt.Sprintf("%s is written as %s; the game declares %s", scalar.Text, value.Type, strings.Join(declared, " or ")))

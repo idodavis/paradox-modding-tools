@@ -4,6 +4,7 @@
 // what the prose says of whether it may be left out, its default and the scope its block runs in.
 // The code lines make a skeleton that jomini parses for the nesting; each statement takes the
 // comment on its line, else the notes above it. A form the reader does not know is drift.
+
 package schema
 
 import (
@@ -23,6 +24,13 @@ import (
 	"paradox-modding-tools/services/internal/lang/source"
 )
 
+// infoMaxBytes keeps data out: EU5 ships 5 MB .info terrain caches; real prose stays under 25 KB.
+// scriptMaxBytes is the largest script file read for its header and names.
+const (
+	infoMaxBytes   = 1 << 20
+	scriptMaxBytes = 8 << 20
+)
+
 // Info is an install's documentation, by folder from a root, lower-cased: common/traits.
 type Info map[string]*FolderInfo
 
@@ -32,13 +40,6 @@ type FolderInfo struct {
 	Entry       *Field            // one definition as the docs write it; a kind in it is named by its folder
 	Definitions map[string]string // a definition's blurb from its own file's header list (# name - text), by name
 }
-
-// infoMaxBytes keeps data out: EU5 ships 5 MB .info terrain caches; real prose stays under 25 KB.
-// scriptMaxBytes is the largest script file read for its header and names.
-const (
-	infoMaxBytes   = 1 << 20
-	scriptMaxBytes = 8 << 20
-)
 
 // script is what one vanilla script file tells the documentation reader: its header's template
 // lines, its header's blurbs for names it defines, the names at its top and the keys inside them.
@@ -58,6 +59,166 @@ type known struct {
 	roots     map[string]bool
 }
 
+// lineKind is what one doc line is, whatever style wrote it.
+type lineKind uint8
+
+const (
+	lineNote    lineKind = iota // a sentence, a label (Default: 0), a bullet of prose
+	lineBreak                   // a lone #: parts the paragraphs of the notes around it
+	lineBlank                   // nothing: gives the notes above to what is open
+	lineRule                    // ======, #####, a fence
+	lineTitle                   // === Structure ===, TITLE, Valid values:, a markdown heading
+	lineSection                 // a markdown heading naming a key: ## key (default: x)
+	lineBrief                   // ### Brief: key ( type ), ### key (type), ### a/b effects
+	lineCode                    // key = value, - key: <type> prose, <key> = {, 1.1.1 = {
+	lineClose                   // } and nothing else
+	lineItem                    // a placeholder alone: <effects>
+	lineSkip                    // a word alone, an example comparison: nothing to read
+	lineUnread                  // a table row, a form no rule reads: drift
+)
+
+// docLine is one line of a doc as a record, the same whatever style wrote it.
+type docLine struct {
+	kind      lineKind
+	number    int      // its line in the file
+	col       int      // its indentation with comment marks left out: tab 4, space 1
+	commented bool     // written behind #
+	keys      []string // a code line's key; a brief's keys, several where the doc joins them with /
+	op        string   // = or :
+	rest      string   // what a code line writes after its operator, its comment cut off; an item
+	typ       string   // a type the line names: <type>, ( type ), a type word before its prose
+	note      string   // its prose: a sentence, a label, a code line's comment or the words after its type
+	opens     int      // blocks a code line opens less those it closes; a close line's count, negative
+}
+
+// docReader reads one documentation file into its folder's template.
+type docReader struct {
+	info      *FolderInfo
+	folder    string
+	file      string // its path from a root, for the drift report
+	known     *known
+	vocab     *Vocab
+	unread    map[string]int
+	every     map[*Field]NeedLevel // the blocks whose prose gives every member a need: "All tiers are required"
+	lines     []docLine
+	at        *jomini.LineIndex
+	pending   []string // notes waiting for the statement below them
+	open      []opened // positions whose notes may still follow them
+	section   bool     // open is a markdown heading, whose paragraphs are its notes
+	kindProse []string // what the doc says of the whole kind, before its first key
+	kindDone  bool
+	wrap      bool // the doc writes one definition's template
+}
+
+// opened is a position whose notes may still follow: a block's opener, a brief, a markdown heading.
+type opened struct {
+	field *Field
+	prose string
+}
+
+// stated is what a doc's words for a type say: what a body holds, or what a value is.
+type stated struct {
+	body   BodyClass
+	accept Accept
+	stated bool
+}
+
+// aliases are the misspellings the games' docs write for the words the reader reads, each found in
+// a shipped doc (CK3 _bookmark_groups.info: Breif); a line is read with them corrected.
+var aliases = strings.NewReplacer(
+	"Breif", "Brief", "breif", "brief", "Brienf", "Brief", "brienf", "brief",
+	"Defualt", "Default", "defualt", "default", "Defult", "Default", "defult", "default",
+	"Defaut", "Default", "defaut", "default",
+	"Sctipted", "Scripted", "sctipted", "scripted", "Scipted", "Scripted", "scipted", "scripted",
+	"effets", "effects", "descriotion", "description", "descriptopn", "description",
+	"Exmaple", "Example", "exmaple", "example", "casus belly", "casus belli", "procuction", "production",
+)
+
+// docLabels is the words a doc writes before a colon to say what a line is, not naming a key.
+var docLabels = []string{
+	"default", "defaults", "scope", "scopes", "root", "note", "notes", "optional", "example", "examples", "warning",
+	"important", "syntax", "format", "values", "options", "usage", "localization", "errors", "targets", "enums",
+	"fallback", "ex", "eg",
+}
+
+// The forms of a doc line: a key line, a brief, a rule, a title between rules, a type word leading
+// its prose, and a need written before a type.
+var (
+	keyPattern = `[A-Za-z_$@][\w.@$\-|]*(?::[\w.@$\-|]+)*`
+	keyLineRe  = regexp.MustCompile("^(?P<bullet>(?:[-*+•]|\\d+[.)])[ \\t]+)?(?P<tick>`?)(?P<key>" + keyPattern +
+		")`?[ \\t]*(?P<op>\\?=|<=|>=|==|!=|=|:|<|>)(?P<rest>.*)$")
+	briefRe   = regexp.MustCompile(`(?i)^(?:[-*+][ \t]+)?brief[ \t]*:[ \t]*(` + keyPattern + `|[\w/]+)?\s*(.*)$`)
+	bareBrief = regexp.MustCompile(`^(` + keyPattern + `)\s*\(([^()]*)\)\s*$`)
+	ruleRe    = regexp.MustCompile(`^[=\-*_~+#. ]{3,}$`)
+	titleRule = regexp.MustCompile(`^[=\-*~#]{2,}[ \t]*(.+?)[ \t]*[=\-*~#]{2,}$`)
+	typeFirst = regexp.MustCompile(`(?i)^(\[?[\w.\-]+(?:\s*[/|]\s*[\w.\-]+)+\]?|bool(?:ean)?|int(?:eger|32|64)?|` +
+		`float|number|fixed[ _]?point|script ?value|scripted value|string|text|loc(?:alization)?[ _]?key|date|` +
+		`triggers?|effects?|modifiers?)\s*[:;,\-–(]?\s+\S`)
+	needLead = regexp.MustCompile(`(?i)^(?:[(\[<]\s*(?:optional|required)\s*[)\]>]|optional\b)\s*`)
+)
+
+// placeholder is a word a doc writes for a name of its own choosing: <key>, trait_key, my_event,
+// option_1. marker also asks that vanilla never writes it as a key in the folder.
+var placeholder = regexp.MustCompile(`(?i)^(<[^<>]+>|[a-z0-9_]*_(key|id|name|tag|type)|` +
+	`(example|my|some|another|name_of|your|unique|new)_[a-z0-9_]*|[a-z_]+_\d)$`)
+
+// needWord, needIf, needAll and needOmitted find whether prose lets its position be left out:
+// "Optional; will cause", "This field is required.", "must be set", "required for letter events",
+// "If the type is lifestyle this is required", "All tiers are required", "if not set".
+var (
+	needWord = regexp.MustCompile(`^(?:(?:this|the) (?:field|parameter|key|value) is |it is |it's |this is )?` +
+		`(optional|required|mandatory|must be (?:set|specified|defined|present))\b\s*(\S*)\s*(.*)$`)
+	needIf      = regexp.MustCompile(`^(if .+?),? (?:this|it) is (?:required|mandatory)$`)
+	needAll     = regexp.MustCompile(`^all [a-z_ ]{1,30}? are (optional|required|mandatory)\b`)
+	needOmitted = regexp.MustCompile(`\bif (?:omitted|not (?:set|specified|defined|present)|left (?:empty|out|blank))\b|` +
+		`\b(?:can|may) be (?:omitted|left out)\b`)
+)
+
+// defaultSaid and rootSaid find a default and a root scope in prose: "Defaults to all", "(default
+// 0)", "Default: 0", "root = the character", "Scopes: root ( Province )".
+var (
+	defaultSaid = regexp.MustCompile(`(?i)\bdefaults?\b(?:\s*(?:to|is|=|:)\s*|\s+)("?[a-z0-9_.\-]+"?)`)
+	rootSaid    = regexp.MustCompile(`(?i)\b(?:root|scope)(?:\s+scope)?\s*(?:is|[:=(])\s*(?:the |a |an )?` +
+		`([a-z_]+(?: [a-z_]+){0,2})`)
+)
+
+// typeSpellings are the words the docs write for a type, each with what it says.
+var (
+	statedTrigger  = stated{body: BodyTrigger, stated: true}
+	statedEffect   = stated{body: BodyEffect, stated: true}
+	statedModifier = stated{body: BodyModifier, stated: true}
+	statedMath     = stated{body: BodyMath, accept: Accept{Type: TypeNumber, Evidence: Declared}, stated: true}
+	statedBool     = stated{accept: Accept{Type: TypeBool, Evidence: Declared}, stated: true}
+	statedNumber   = stated{accept: Accept{Type: TypeNumber, Evidence: Declared}, stated: true}
+	statedString   = stated{accept: Accept{Type: TypeString, Evidence: Declared}, stated: true}
+	statedLoc      = stated{accept: Accept{Type: TypeLoc, Evidence: Declared}, stated: true}
+	statedDate     = stated{accept: Accept{Type: TypeDate, Evidence: Declared}, stated: true}
+	statedFile     = stated{accept: Accept{Type: TypeFile, Evidence: Declared}, stated: true}
+	statedEnum     = stated{accept: Accept{Type: TypeEnum, Evidence: Declared}, stated: true}
+	typeSpellings  = map[string]stated{
+		"trigger": statedTrigger, "triggers": statedTrigger, "jomini trigger": statedTrigger,
+		"trigger definition": statedTrigger, "condition": statedTrigger, "conditions": statedTrigger,
+		"effect": statedEffect, "effects": statedEffect, "jomini effect": statedEffect, "effect definition": statedEffect,
+		"modifier": statedModifier, "modifiers": statedModifier, "modifier definition": statedModifier,
+		"script value": statedMath, "scripted value": statedMath, "script_value": statedMath, "scriptvalue": statedMath,
+		"scripted_value": statedMath, "scripted math": statedMath, "scripted maths": statedMath, "script math": statedMath,
+		"mtth": statedMath, "math": statedMath, "scripted value int32": statedMath, "script value int": statedMath,
+		"int/script value": statedMath, "int/scripted value": statedMath, "float/scripted value": statedMath,
+		"float script value": statedMath, "script value fixed point": statedMath, "days/scripted value": statedMath,
+		"bool": statedBool, "boolean": statedBool, "yes/no": statedBool, "yes|no": statedBool,
+		"int": statedNumber, "int32": statedNumber, "int64": statedNumber, "integer": statedNumber,
+		"float": statedNumber, "double": statedNumber, "num": statedNumber, "number": statedNumber,
+		"fixed_point": statedNumber, "fixed point": statedNumber, "fixedpoint": statedNumber, "cfixedpoint": statedNumber,
+		"decimal": statedNumber, "percentage": statedNumber, "value": statedNumber,
+		"string": statedString, "text": statedString,
+		"loc key": statedLoc, "localization key": statedLoc, "localisation key": statedLoc, "loc_key": statedLoc,
+		"localization_key": statedLoc, "localisation_key": statedLoc, "dynamic description": statedLoc,
+		"dynamic_description": statedLoc, "dynamic desc": statedLoc,
+		"date": statedDate, "path": statedFile, "file": statedFile, "file path": statedFile, "texture path": statedFile,
+		"enum": statedEnum,
+	}
+)
+
 // ReadInfo reads the documentation of an inventory: every script file once, for its header and what
 // vanilla writes, then every doc and header template. The lines no form reads come back as drift.
 func ReadInfo(files []source.File, vocab *Vocab) (Info, []Tally) {
@@ -65,14 +226,19 @@ func ReadInfo(files []source.File, vocab *Vocab) (Info, []Tally) {
 	folderOf := func(file source.File) *FolderInfo {
 		folder := strings.ToLower(path.Dir(file.Rel))
 		if info[folder] == nil {
-			info[folder] = &FolderInfo{Entry: &Field{Origin: Declared}, Definitions: map[string]string{}}
+			info[folder] = &FolderInfo{Entry: &Field{Evidence: Declared}, Definitions: map[string]string{}}
 		}
 		return info[folder]
 	}
 
 	// the folders a doc documents, whose script says which of a doc's openers are entries
 	docFolders := map[string]bool{}
-	knew := &known{tops: map[string]map[string]bool{}, inner: map[string]map[string]bool{}, bySegment: map[string][]string{}, roots: map[string]bool{}}
+	knew := &known{
+		tops:      map[string]map[string]bool{},
+		inner:     map[string]map[string]bool{},
+		bySegment: map[string][]string{},
+		roots:     map[string]bool{},
+	}
 	for _, file := range files {
 		if file.Format == source.Info {
 			docFolders[strings.ToLower(path.Dir(file.Rel))] = true
@@ -118,8 +284,10 @@ func ReadInfo(files []source.File, vocab *Vocab) (Info, []Tally) {
 	// the docs, then the headers' templates where no doc file covers the folder; the blurbs always
 	unread := map[string]int{}
 	reader := func(file source.File) *docReader {
-		return &docReader{info: folderOf(file), folder: strings.ToLower(path.Dir(file.Rel)), file: file.Rel, known: knew, vocab: vocab, unread: unread,
-			every: map[*Field]Need{}}
+		return &docReader{
+			info: folderOf(file), folder: strings.ToLower(path.Dir(file.Rel)), file: file.Rel, known: knew, vocab: vocab,
+			unread: unread, every: map[*Field]NeedLevel{},
+		}
 	}
 	for _, file := range files {
 		if stat, err := os.Stat(file.Path); file.Format != source.Info || err != nil || stat.Size() > infoMaxBytes {
@@ -163,7 +331,7 @@ func readScript(abs string) script {
 	var got script
 	// the other header lines are kept blank, so a template line keeps its number for the drift report
 	var templates []string
-	found := false
+	var found bool
 	listed := map[string]string{}
 	for line := range strings.SplitSeq(text, "\n") {
 		body, hashed := jomini.PeelComment(line)
@@ -223,24 +391,24 @@ func readScript(abs string) script {
 // Kind is what the game says about the kind whose definitions are in folders.
 func (info Info) Kind(folders []string) string {
 	for _, folder := range folders {
-		if fi := info[strings.ToLower(folder)]; fi != nil && fi.Prose != "" {
-			return fi.Prose
+		if folderInfo := info[strings.ToLower(folder)]; folderInfo != nil && folderInfo.Prose != "" {
+			return folderInfo.Prose
 		}
 	}
 	return ""
 }
 
-// Field is what the documentation writes at key inside a block named parent, its shallowest
-// mention, else, where anywhere, at key under any parent; parent is "" for a definition's own
-// member. The zero Field where none does.
+// Field is what the documentation writes at key inside a block named parent ("" for a definition's
+// own member), its shallowest mention; where anywhere, else at key under any parent. The zero
+// Field where none does.
 func (info Info) Field(folders []string, parent, key string, anywhere bool) Field {
 	for _, folder := range folders {
-		fi := info[strings.ToLower(folder)]
-		if fi == nil {
+		folderInfo := info[strings.ToLower(folder)]
+		if folderInfo == nil {
 			continue
 		}
 		for _, anyParent := range []bool{false, anywhere} {
-			for level := []*Field{fi.Entry}; len(level) > 0; {
+			for level := []*Field{folderInfo.Entry}; len(level) > 0; {
 				var next []*Field
 				for _, field := range level {
 					if member := field.Members[key]; member != nil && (anyParent || field.Name == parent) {
@@ -256,60 +424,6 @@ func (info Info) Field(folders []string, parent, key string, anywhere bool) Fiel
 	}
 	return Field{}
 }
-
-// aliases are the misspellings the games' docs write for the words the reader reads, each found in
-// a shipped doc (CK3 _bookmark_groups.info: Breif); a line is read with them corrected.
-var aliases = strings.NewReplacer("Breif", "Brief", "breif", "brief", "Brienf", "Brief", "brienf", "brief", "Defualt", "Default", "defualt", "default",
-	"Defult", "Default", "defult", "default", "Defaut", "Default", "defaut", "default", "Sctipted", "Scripted", "sctipted", "scripted",
-	"Scipted", "Scripted", "scipted", "scripted", "effets", "effects", "descriotion", "description", "descriptopn", "description",
-	"Exmaple", "Example", "exmaple", "example", "casus belly", "casus belli", "procuction", "production")
-
-// docLabels is the words a doc writes before a colon to say what a line is, not naming a key.
-var docLabels = []string{"default", "defaults", "scope", "scopes", "root", "note", "notes", "optional", "example", "examples", "warning",
-	"important", "syntax", "format", "values", "options", "usage", "localization", "errors", "targets", "enums", "fallback", "ex", "eg"}
-
-// lineKind is what one doc line is, whatever style wrote it.
-type lineKind uint8
-
-const (
-	lineNote    lineKind = iota // a sentence, a label (Default: 0), a bullet of prose
-	lineBreak                   // a lone #: parts the paragraphs of the notes around it
-	lineBlank                   // nothing: gives the notes above to what is open
-	lineRule                    // ======, #####, a fence
-	lineTitle                   // === Structure ===, TITLE, Valid values:, a markdown heading
-	lineSection                 // a markdown heading naming a key: ## key (default: x)
-	lineBrief                   // ### Brief: key ( type ), ### key (type), ### a/b effects
-	lineCode                    // key = value, - key: <type> prose, <key> = {, 1.1.1 = {
-	lineClose                   // } and nothing else
-	lineItem                    // a placeholder alone: <effects>
-	lineSkip                    // a word alone, an example comparison: nothing to read
-	lineUnread                  // a table row, a form no rule reads: drift
-)
-
-// docLine is one line of a doc as a record, the same whatever style wrote it.
-type docLine struct {
-	kind      lineKind
-	number    int      // its line in the file
-	col       int      // its indentation with comment marks left out: tab 4, space 1
-	commented bool     // written behind #
-	keys      []string // a code line's key; a brief's keys, several where the doc joins them with /
-	op        string   // = or :
-	rest      string   // what a code line writes after its operator, its comment cut off; an item
-	typ       string   // a type the line names: <type>, ( type ), a type word before its prose
-	note      string   // its prose: a sentence, a label, a code line's comment or the words after its type
-	opens     int      // blocks a code line opens less those it closes; a close line's count, negative
-}
-
-var (
-	keyPattern = `[A-Za-z_$@][\w.@$\-|]*(?::[\w.@$\-|]+)*`
-	keyLineRe  = regexp.MustCompile("^(?P<bullet>(?:[-*+•]|\\d+[.)])[ \\t]+)?(?P<tick>`?)(?P<key>" + keyPattern + ")`?[ \\t]*(?P<op>\\?=|<=|>=|==|!=|=|:|<|>)(?P<rest>.*)$")
-	briefRe    = regexp.MustCompile(`(?i)^(?:[-*+][ \t]+)?brief[ \t]*:[ \t]*(` + keyPattern + `|[\w/]+)?\s*(.*)$`)
-	bareBrief  = regexp.MustCompile(`^(` + keyPattern + `)\s*\(([^()]*)\)\s*$`)
-	ruleRe     = regexp.MustCompile(`^[=\-*_~+#. ]{3,}$`)
-	titleRule  = regexp.MustCompile(`^[=\-*~#]{2,}[ \t]*(.+?)[ \t]*[=\-*~#]{2,}$`)
-	typeFirst  = regexp.MustCompile(`(?i)^(\[?[\w.\-]+(?:\s*[/|]\s*[\w.\-]+)+\]?|bool(?:ean)?|int(?:eger|32|64)?|float|number|fixed[ _]?point|script ?value|scripted value|string|text|loc(?:alization)?[ _]?key|date|triggers?|effects?|modifiers?)\s*[:;,\-–(]?\s+\S`)
-	needLead   = regexp.MustCompile(`(?i)^(?:[(\[<]\s*(?:optional|required)\s*[)\]>]|optional\b)\s*`)
-)
 
 // readLine reads one doc line into its record, its typos read as their words. markdown makes a # at
 // column 0 a heading.
@@ -348,7 +462,8 @@ func readLine(raw string, markdown bool) docLine {
 		line.typ = strings.TrimSpace(strings.Trim(strings.TrimSpace(labeled[2]), "()-– "))
 	case brief != nil && marks >= 2:
 		line.kind, line.keys, line.typ = lineBrief, []string{brief[1]}, strings.TrimSpace(brief[2])
-	case marks >= 2 && len(fields) >= 2 && strings.Contains(fields[0], "/") && typeWords(strings.Join(fields[1:], " ")).stated:
+	case marks >= 2 && len(fields) >= 2 && strings.Contains(fields[0], "/") &&
+		typeWords(strings.Join(fields[1:], " ")).stated:
 		line.kind, line.keys, line.typ = lineBrief, strings.Split(fields[0], "/"), strings.Join(fields[1:], " ")
 	case strings.HasPrefix(body, "|"):
 		line.kind = lineUnread
@@ -367,8 +482,10 @@ func readLine(raw string, markdown bool) docLine {
 			key, op, rest = body[:closed+1], "=", value
 		}
 	}
-	if left, value, ok := strings.Cut(body, "="); key == "" && ok && slices.Contains([]jomini.LiteralKind{jomini.LitNumber, jomini.LitDate}, jomini.Literal(strings.TrimSpace(left))) {
-		key, op, rest = strings.TrimSpace(left), "=", value
+	if left, value, ok := strings.Cut(body, "="); key == "" && ok {
+		if literal := jomini.Literal(strings.TrimSpace(left)); literal == jomini.LitNumber || literal == jomini.LitDate {
+			key, op, rest = strings.TrimSpace(left), "=", value
+		}
 	}
 	if match := keyLineRe.FindStringSubmatch(body); key == "" && match != nil {
 		bullet, tick, key, op, rest = match[1], match[2], strings.TrimRight(match[3], ".-"), match[4], match[5]
@@ -397,7 +514,8 @@ func readLine(raw string, markdown bool) docLine {
 			switch {
 			case label && text == "":
 				line.kind, line.keys, line.op, line.note = lineTitle, nil, "", key
-			case label || line.typ == "" && (!jomini.IsLowerName(key) || bullet == "" && tick == "" && (!line.commented && !markdown || len(strings.Fields(text)) < 3)):
+			case label || line.typ == "" && (!jomini.IsLowerName(key) ||
+				bullet == "" && tick == "" && (!line.commented && !markdown || len(strings.Fields(text)) < 3)):
 				line.kind, line.keys, line.op, line.note = lineNote, nil, "", strings.TrimPrefix(body, bullet)
 			}
 		default:
@@ -465,8 +583,9 @@ func typeOf(value string) (typ, prose string) {
 			continue
 		}
 		inner = strings.TrimSpace(inner)
-		if placeholder, rest, closed := strings.Cut(strings.TrimPrefix(inner, "<"), ">"); closed && strings.HasPrefix(inner, "<") || open == "<" && closed {
-			return strings.TrimSpace(placeholder), strings.TrimSpace(strings.TrimLeft(rest, "} "))
+		name, rest, closed := strings.Cut(strings.TrimPrefix(inner, "<"), ">")
+		if closed && (strings.HasPrefix(inner, "<") || open == "<") {
+			return strings.TrimSpace(name), strings.TrimSpace(strings.TrimLeft(rest, "} "))
 		}
 	}
 	if inner, ok := strings.CutPrefix(value, "("); ok {
@@ -481,31 +600,6 @@ func typeOf(value string) (typ, prose string) {
 		return first[1], strings.TrimSpace(strings.TrimLeft(value[len(first[1]):], " :;,-–"))
 	}
 	return "", ""
-}
-
-// docReader reads one documentation file into its folder's template.
-type docReader struct {
-	info      *FolderInfo
-	folder    string
-	file      string // its path from a root, for the drift report
-	known     *known
-	vocab     *Vocab
-	unread    map[string]int
-	every     map[*Field]Need // the blocks whose prose gives every member a need: "All tiers are required"
-	lines     []docLine
-	at        *jomini.LineIndex
-	pending   []string // notes waiting for the statement below them
-	open      []opened // positions whose notes may still follow them
-	section   bool     // open is a markdown heading, whose paragraphs are its notes
-	kindProse []string // what the doc says of the whole kind, before its first key
-	kindDone  bool
-	wrap      bool // the doc writes one definition's template
-}
-
-// opened is a position whose notes may still follow: a block's opener, a brief, a markdown heading.
-type opened struct {
-	field *Field
-	prose string
 }
 
 // read adds what one doc says. markdown makes a # at column 0 a heading.
@@ -543,9 +637,9 @@ func (doc *docReader) read(text string, markdown bool) {
 	// "All fields are optional" about the kind, "All tiers are required" about a block, once the
 	// doc has written the members
 	doc.need(doc.info.Entry, joinProse(doc.kindProse))
-	for field, need := range doc.every {
+	for field, level := range doc.every {
 		for _, member := range field.Members {
-			setNeed(member, need, "", Declared)
+			setNeed(member, Need{Level: level, Evidence: Declared})
 		}
 	}
 
@@ -601,7 +695,9 @@ func skeleton(lines []docLine, markdown bool) string {
 			out.WriteString("v")
 		}
 	}
-	out.WriteString(strings.Repeat(" }", len(open)*map[bool]int{false: 1}[balanced]))
+	if !balanced {
+		out.WriteString(strings.Repeat(" }", len(open)))
+	}
 	return out.String()
 }
 
@@ -641,7 +737,8 @@ func (doc *docReader) walk(stmts []jomini.Statement, parent *Field, from, to int
 		// root = character and scope:actor = the actor are notes about the position below
 		key := line.keys[0]
 		lower := strings.ToLower(key)
-		if (lower == "root" || strings.HasPrefix(lower, "scope:") || lower == "scope" && !doc.known.inner[doc.folder][lower]) && block == nil {
+		scoped := lower == "root" || strings.HasPrefix(lower, "scope:") || lower == "scope" && !doc.known.inner[doc.folder][lower]
+		if scoped && block == nil {
 			doc.pending = append(doc.pending, joinProse([]string{key + " " + line.op + " " + line.rest, line.note}))
 			continue
 		}
@@ -652,7 +749,8 @@ func (doc *docReader) walk(stmts []jomini.Statement, parent *Field, from, to int
 
 		// a top-level opener is the definition itself where the doc wraps one, or where vanilla
 		// writes the word as a name or not at all; otherwise it is a field
-		if block != nil && top && (doc.wrap || doc.marker(key) || !doc.known.inner[doc.folder][lower] || doc.known.tops[doc.folder][lower]) {
+		if block != nil && top &&
+			(doc.wrap || doc.marker(key) || !doc.known.inner[doc.folder][lower] || doc.known.tops[doc.folder][lower]) {
 			doc.open = []opened{{field: doc.info.Entry, prose: joinProse([]string{above, line.note})}}
 			doc.walk(block.Statements, doc.info.Entry, first+1, last, false)
 			continue
@@ -751,12 +849,10 @@ func (doc *docReader) settle(claimed bool) {
 	doc.open, doc.section = nil, false
 }
 
-// placeholder is a word a doc writes for a name of its own choosing: <key>, trait_key, my_event,
-// option_1. marker also asks that vanilla never writes it as a key in the folder.
-var placeholder = regexp.MustCompile(`(?i)^(<[^<>]+>|[a-z0-9_]*_(key|id|name|tag|type)|(example|my|some|another|name_of|your|unique|new)_[a-z0-9_]*|[a-z_]+_\d)$`)
-
+// marker reports a placeholder vanilla never writes as a key in the folder.
 func (doc *docReader) marker(key string) bool {
-	return placeholder.MatchString(key) && (strings.HasPrefix(key, "<") || !doc.known.inner[doc.folder][strings.ToLower(key)])
+	written := doc.known.inner[doc.folder][strings.ToLower(key)]
+	return placeholder.MatchString(key) && (strings.HasPrefix(key, "<") || !written)
 }
 
 // member is the position key below parent, made where the doc first writes it.
@@ -765,7 +861,7 @@ func (doc *docReader) member(parent *Field, key string) *Field {
 		parent.Members = map[string]*Field{}
 	}
 	if parent.Members[key] == nil {
-		parent.Members[key] = &Field{Name: key, Origin: Declared}
+		parent.Members[key] = &Field{Name: key, Evidence: Declared}
 	}
 	return parent.Members[key]
 }
@@ -781,16 +877,6 @@ func (doc *docReader) note(field *Field, prose string) {
 	doc.root(field, prose)
 }
 
-// needWord, needIf, needAll and needOmitted find whether prose lets its position be left out:
-// "Optional; will cause", "This field is required.", "must be set", "required for letter events",
-// "If the type is lifestyle this is required", "All tiers are required", "if not set".
-var (
-	needWord    = regexp.MustCompile(`^(?:(?:this|the) (?:field|parameter|key|value) is |it is |it's |this is )?(optional|required|mandatory|must be (?:set|specified|defined|present))\b\s*(\S*)\s*(.*)$`)
-	needIf      = regexp.MustCompile(`^(if .+?),? (?:this|it) is (?:required|mandatory)$`)
-	needAll     = regexp.MustCompile(`^all [a-z_ ]{1,30}? are (optional|required|mandatory)\b`)
-	needOmitted = regexp.MustCompile(`\bif (?:omitted|not (?:set|specified|defined|present)|left (?:empty|out|blank))\b|\b(?:can|may) be (?:omitted|left out)\b`)
-)
-
 // need reads whether prose lets its position be left out, and the default it takes then, clause by
 // clause. Optional is any clause opening with the word, the doc's own adjective (optional list of,
 // [Optional]); required only where it cannot be one (Required technologies to), with the condition
@@ -800,46 +886,45 @@ func (doc *docReader) need(field *Field, prose string) {
 		field.Default = strings.Trim(said[1], `".`)
 	}
 	low := strings.ToLower(prose)
-	for clause := range strings.FieldsFuncSeq(low, func(char rune) bool { return strings.ContainsRune(".;!?,()[]<>", char) }) {
+	parts := func(char rune) bool { return strings.ContainsRune(".;!?,()[]<>", char) }
+	for clause := range strings.FieldsFuncSeq(low, parts) {
 		clause = strings.TrimSpace(clause)
 		if all := needAll.FindStringSubmatch(clause); all != nil {
-			doc.every[field] = map[bool]Need{true: NeedOptional, false: NeedRequired}[all[1] == "optional"]
+			doc.every[field] = NeedRequired
+			if all[1] == "optional" {
+				doc.every[field] = NeedOptional
+			}
 			continue
 		}
 		if cond := needIf.FindStringSubmatch(clause); cond != nil {
-			setNeed(field, NeedWhen, cond[1], Declared)
+			setNeed(field, Need{Level: NeedRequiredWhen, When: cond[1], Evidence: Declared})
 			continue
 		}
 		word := needWord.FindStringSubmatch(clause)
 		switch {
 		case word == nil:
 		case word[1] == "optional":
-			setNeed(field, NeedOptional, "", Declared)
-		case word[2] == "" || slices.Contains([]string{"and", "but", "here", "always"}, word[2]) || word[2] == "to" && strings.HasPrefix(word[3], "be "):
-			setNeed(field, NeedRequired, "", Declared)
+			setNeed(field, Need{Level: NeedOptional, Evidence: Declared})
+		case word[2] == "" || slices.Contains([]string{"and", "but", "here", "always"}, word[2]) ||
+			word[2] == "to" && strings.HasPrefix(word[3], "be "):
+			setNeed(field, Need{Level: NeedRequired, Evidence: Declared})
 		case slices.Contains([]string{"for", "if", "when", "in", "on", "only", "unless", "with"}, word[2]):
-			setNeed(field, NeedWhen, word[2]+" "+word[3], Declared)
+			setNeed(field, Need{Level: NeedRequiredWhen, When: word[2] + " " + word[3], Evidence: Declared})
 		}
 	}
 	if field.Default != "" || needOmitted.MatchString(low) {
-		setNeed(field, NeedOptional, "", Inferred)
+		setNeed(field, Need{Level: NeedOptional, Evidence: Inferred})
 	}
 }
 
 // setNeed gives a position a need: a declared one replaces an inferred one, and the stronger of two
 // declared ones stays; an inferred optional only fills a silence.
-func setNeed(field *Field, need Need, when string, from Origin) {
-	if from == Declared && (field.NeedFrom != Declared || need > field.Need) || field.Need == NeedUnstated {
-		field.Need, field.NeedWhen, field.NeedFrom = need, when, from
+func setNeed(field *Field, need Need) {
+	stronger := need.Evidence == Declared && (field.Need.Evidence != Declared || need.Level > field.Need.Level)
+	if stronger || field.Need.Level == NeedUnstated {
+		field.Need = need
 	}
 }
-
-// defaultSaid and rootSaid find a default and a root scope in prose: "Defaults to all", "(default
-// 0)", "Default: 0", "root = the character", "Scopes: root ( Province )".
-var (
-	defaultSaid = regexp.MustCompile(`(?i)\bdefaults?\b(?:\s*(?:to|is|=|:)\s*|\s+)("?[a-z0-9_.\-]+"?)`)
-	rootSaid    = regexp.MustCompile(`(?i)\b(?:root|scope)(?:\s+scope)?\s*(?:is|[:=(])\s*(?:the |a |an )?([a-z_]+(?: [a-z_]+){0,2})`)
-)
 
 // root sets where a block's statements run from what a line says, when it names a scope type the
 // dumps declare.
@@ -876,13 +961,14 @@ func (doc *docReader) value(field *Field, line docLine) string {
 // typed reads a type the doc names into the position, and reports whether it named one: a type
 // word, or a kind named by its folder (<trait>, trait_key, geographical region). A path is none.
 func (doc *docReader) typed(field *Field, text string) bool {
-	if first, _, found := strings.Cut(strings.TrimPrefix(strings.ToLower(text), "/"), "/"); found && doc.known.roots[first] {
+	trimmed := strings.TrimPrefix(strings.ToLower(text), "/")
+	if first, _, found := strings.Cut(trimmed, "/"); found && doc.known.roots[first] {
 		return false
 	}
 	stated := typeWords(text)
 	if !stated.stated {
 		if kind := doc.kindOf(text); kind != "" {
-			stated.accept, stated.stated = Accept{Type: TypeRef, Kind: kind, Origin: Declared}, true
+			stated.accept, stated.stated = Accept{Type: TypeRef, Kind: kind, Evidence: Declared}, true
 		}
 	}
 	if stated.body != 0 {
@@ -918,42 +1004,6 @@ func (doc *docReader) kindOf(text string) string {
 	return ""
 }
 
-// stated is what a doc's words for a type say: what a body holds, or what a value is.
-type stated struct {
-	body   BodyClass
-	accept Accept
-	stated bool
-}
-
-// typeSpellings are the words the docs write for a type, each with what it says.
-var (
-	statedTrigger, statedEffect, statedModifier = stated{body: BodyTrigger, stated: true}, stated{body: BodyEffect, stated: true}, stated{body: BodyModifier, stated: true}
-	statedMath                                  = stated{body: BodyMath, accept: Accept{Type: TypeNumber, Origin: Declared}, stated: true}
-	statedBool, statedNumber, statedString      = stated{accept: Accept{Type: TypeBool, Origin: Declared}, stated: true},
-		stated{accept: Accept{Type: TypeNumber, Origin: Declared}, stated: true}, stated{accept: Accept{Type: TypeString, Origin: Declared}, stated: true}
-	statedLoc, statedDate, statedFile = stated{accept: Accept{Type: TypeLoc, Origin: Declared}, stated: true},
-		stated{accept: Accept{Type: TypeDate, Origin: Declared}, stated: true}, stated{accept: Accept{Type: TypeFile, Origin: Declared}, stated: true}
-	statedEnum    = stated{accept: Accept{Type: TypeEnum, Origin: Declared}, stated: true}
-	typeSpellings = map[string]stated{
-		"trigger": statedTrigger, "triggers": statedTrigger, "jomini trigger": statedTrigger, "trigger definition": statedTrigger,
-		"condition": statedTrigger, "conditions": statedTrigger,
-		"effect": statedEffect, "effects": statedEffect, "jomini effect": statedEffect, "effect definition": statedEffect,
-		"modifier": statedModifier, "modifiers": statedModifier, "modifier definition": statedModifier,
-		"script value": statedMath, "scripted value": statedMath, "script_value": statedMath, "scriptvalue": statedMath, "scripted_value": statedMath,
-		"scripted math": statedMath, "scripted maths": statedMath, "script math": statedMath, "mtth": statedMath, "math": statedMath,
-		"scripted value int32": statedMath, "script value int": statedMath, "int/script value": statedMath, "int/scripted value": statedMath,
-		"float/scripted value": statedMath, "float script value": statedMath, "script value fixed point": statedMath, "days/scripted value": statedMath,
-		"bool": statedBool, "boolean": statedBool, "yes/no": statedBool, "yes|no": statedBool,
-		"int": statedNumber, "int32": statedNumber, "int64": statedNumber, "integer": statedNumber, "float": statedNumber, "double": statedNumber,
-		"num": statedNumber, "number": statedNumber, "fixed_point": statedNumber, "fixed point": statedNumber, "fixedpoint": statedNumber,
-		"cfixedpoint": statedNumber, "decimal": statedNumber, "percentage": statedNumber, "value": statedNumber,
-		"string": statedString, "text": statedString,
-		"loc key": statedLoc, "localization key": statedLoc, "localisation key": statedLoc, "loc_key": statedLoc, "localization_key": statedLoc,
-		"localisation_key": statedLoc, "dynamic description": statedLoc, "dynamic_description": statedLoc, "dynamic desc": statedLoc,
-		"date": statedDate, "path": statedFile, "file": statedFile, "file path": statedFile, "texture path": statedFile, "enum": statedEnum,
-	}
-)
-
 // typeWords reads the words a doc writes for a type: a spelling of the table, a/b/c or a|b|c (open
 // where it ends in etc), list of X. "optional" and the like are no part of it.
 func typeWords(text string) stated {
@@ -983,12 +1033,13 @@ func typeWords(text string) stated {
 	if open {
 		words = words[:len(words)-1]
 	}
-	if len(words) < 2 && !(open && len(words) == 1) || slices.ContainsFunc(words, func(word string) bool { return !jomini.IsLowerName(word) }) {
+	tooFew := len(words) < 2 && !(open && len(words) == 1)
+	if tooFew || slices.ContainsFunc(words, func(word string) bool { return !jomini.IsLowerName(word) }) {
 		return stated{}
 	}
-	enum := stated{accept: Accept{Type: TypeEnum, Enum: words, Origin: Declared}, stated: true}
+	enum := stated{accept: Accept{Type: TypeEnum, Enum: words, Evidence: Declared}, stated: true}
 	if open {
-		enum.accept.Origin = Inferred
+		enum.accept.Evidence = Inferred
 	}
 	return enum
 }
@@ -1003,7 +1054,8 @@ func joinProse(lines []string) string {
 			out.WriteString("\n\n")
 		case line == "":
 		case out.Len() > 0 && !strings.HasSuffix(out.String(), "\n"):
-			out.WriteString(" " + line)
+			out.WriteByte(' ')
+			out.WriteString(line)
 		default:
 			out.WriteString(line)
 		}

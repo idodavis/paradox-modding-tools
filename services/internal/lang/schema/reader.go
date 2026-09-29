@@ -2,6 +2,7 @@
 // alike. It holds no rule of its own about a game: it looks the word up, in a fixed order, in
 // what its spelling tells, what the vocabulary declares, what the schema learned for its field,
 // and what exists. A Value says which it rested on, because only a declared fact may accuse.
+
 package schema
 
 import (
@@ -58,12 +59,14 @@ func (reader Reader) Value(field *Field, text string, quoted bool) Value {
 	// field also takes is that link (a barony's province = 2333)
 	if field != nil {
 		for _, accept := range field.Accepts {
-			value, ok := Value{Type: accept.Type, Declared: accept.Origin == Declared}, false
+			value, ok := Value{Type: accept.Type, Declared: accept.Evidence == Declared}, false
 			switch accept.Type {
 			case TypeNumber:
 				ok = !quoted && jomini.Literal(text) == jomini.LitNumber
-				if at := slices.IndexFunc(field.Accepts, func(ref Accept) bool { return ref.Type == TypeRef && reader.Found.Def(ref.Kind, text) }); ok && at >= 0 {
-					return Value{Type: TypeRef, Kind: field.Accepts[at].Kind, Name: text, Declared: field.Accepts[at].Origin == Declared}
+				names := func(ref Accept) bool { return ref.Type == TypeRef && reader.Found.Def(ref.Kind, text) }
+				if at := slices.IndexFunc(field.Accepts, names); ok && at >= 0 {
+					named := field.Accepts[at]
+					return Value{Type: TypeRef, Kind: named.Kind, Name: text, Declared: named.Evidence == Declared}
 				}
 			case TypeBool:
 				ok = !quoted && (text == "yes" || text == "no")
@@ -86,16 +89,10 @@ func (reader Reader) Value(field *Field, text string, quoted bool) Value {
 		}
 	}
 
-	// 5. a walk between scopes: a declared link first, or a cite with a chain after it; the editor
-	// walks the steps
-	if first, _, _ := strings.Cut(text, "."); !quoted {
-		if _, isLink := reader.Vocab.Links[first]; isLink {
-			return Value{Type: TypeScopePath, Declared: true}
-		}
-		if cite, ok := jomini.Cite(text); ok && cite.Chain != "" {
-			if _, declared := reader.Vocab.Prefixes[cite.Prefix]; declared || len(reader.Schema.ByPrefix(cite.Prefix)) > 0 {
-				return Value{Type: TypeScopePath, Declared: declared}
-			}
+	// 5. a walk between scopes; the editor walks the steps
+	if !quoted {
+		if walked, ok := reader.scopePath(text); ok {
+			return walked
 		}
 	}
 
@@ -146,18 +143,12 @@ func (reader Reader) Key(parent *Field, text string) Value {
 		_, effect := reader.Vocab.Effects[token]
 		_, trigger := reader.Vocab.Triggers[token]
 		_, modifier := reader.Vocab.Modifiers[token]
-		if (effect && parent.Body&BodyEffect != 0) || (trigger && parent.Body&BodyTrigger != 0) || (modifier && parent.Body&BodyModifier != 0) {
+		if (effect && parent.Body&BodyEffect != 0) || (trigger && parent.Body&BodyTrigger != 0) ||
+			(modifier && parent.Body&BodyModifier != 0) {
 			return Value{Type: TypeToken, Name: token, Declared: true}
 		}
-
-		first, _, _ := strings.Cut(text, ".")
-		if _, isLink := reader.Vocab.Links[first]; isLink {
-			return Value{Type: TypeScopePath, Declared: true}
-		}
-		if cite, ok := jomini.Cite(text); ok && cite.Chain != "" {
-			if _, declared := reader.Vocab.Prefixes[cite.Prefix]; declared || len(reader.Schema.ByPrefix(cite.Prefix)) > 0 {
-				return Value{Type: TypeScopePath, Declared: declared}
-			}
+		if walked, ok := reader.scopePath(text); ok {
+			return walked
 		}
 
 		reader.Schema.lookups()
@@ -172,8 +163,7 @@ func (reader Reader) Key(parent *Field, text string) Value {
 
 	// 4. a name of the kind the parent's keys define or cite
 	if parent != nil {
-		kind := parent.Defines
-		kind = cmp.Or(kind, parent.KeyedBy)
+		kind := cmp.Or(parent.Defines, parent.KeyedBy)
 		if kind != "" && reader.Found.Def(kind, text) {
 			return Value{Type: TypeRef, Kind: kind, Name: text}
 		}
@@ -197,7 +187,13 @@ func (reader Reader) Below(kind *Kind, parent *Field, key string, value Value) *
 		return nil
 	}
 	_, cited := jomini.Cite(key)
-	position := map[ValueType]string{TypeNumber: "<number>", TypeDate: "<date>"}[value.Type]
+	position := ""
+	switch value.Type {
+	case TypeNumber:
+		position = "<number>"
+	case TypeDate:
+		position = "<date>"
+	}
 	switch {
 	case value.Type == TypeMember:
 		return parent.Members[key]
@@ -242,6 +238,21 @@ func (reader Reader) cite(text string) (Value, bool) {
 		}
 	}
 	return value, true
+}
+
+// scopePath reads a walk between scopes: a declared link first, or a cite with a chain after it,
+// declared where the vocabulary declares its prefix.
+func (reader Reader) scopePath(text string) (Value, bool) {
+	first, _, _ := strings.Cut(text, ".")
+	if _, isLink := reader.Vocab.Links[first]; isLink {
+		return Value{Type: TypeScopePath, Declared: true}, true
+	}
+	if cite, ok := jomini.Cite(text); ok && cite.Chain != "" {
+		if _, declared := reader.Vocab.Prefixes[cite.Prefix]; declared || len(reader.Schema.ByPrefix(cite.Prefix)) > 0 {
+			return Value{Type: TypeScopePath, Declared: declared}, true
+		}
+	}
+	return Value{}, false
 }
 
 // stems is a word with each iterator prefix it carries removed: every_x gives x.

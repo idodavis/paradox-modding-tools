@@ -2,6 +2,7 @@
 // schema; the build of a workspace's mods over an install; and one file read again after an edit.
 // Each reads files with a reader per CPU and adds their records in inventory order, because load
 // order decides winners.
+
 package index
 
 import (
@@ -66,7 +67,8 @@ func replaced(dir string) []string {
 			ReplacePaths []string `json:"replace_paths"`
 		} `json:"game_custom_data"`
 	}
-	if raw, err := os.ReadFile(filepath.Join(dir, ".metadata", "metadata.json")); err == nil && json.Unmarshal(raw, &metadata) == nil {
+	metadataPath := filepath.Join(dir, ".metadata", "metadata.json")
+	if raw, err := os.ReadFile(metadataPath); err == nil && json.Unmarshal(raw, &metadata) == nil {
 		out = append(out, metadata.Custom.ReplacePaths...)
 	}
 	for i, folder := range out {
@@ -77,7 +79,14 @@ func replaced(dir string) []string {
 
 // each harvests the files with a reader per CPU and hands the results to keep in file order,
 // telling progress, where there is one, of each under stage.
-func each(ctx context.Context, files []source.File, reader schema.Reader, keep func(*Records), progress func(stage string, done, total int), stage string) error {
+func each(
+	ctx context.Context,
+	files []source.File,
+	reader schema.Reader,
+	keep func(*Records),
+	progress func(stage string, done, total int),
+	stage string,
+) error {
 	type read struct {
 		i       int
 		records *Records
@@ -134,7 +143,9 @@ func wanted(files []source.File, language string, locs bool) []source.File {
 	var out []source.File
 	for _, file := range files {
 		spoken := loc.LanguageFromRel(file.Rel)
-		if isLoc := file.Format == source.Loc; isLoc == locs && (!isLoc || spoken == "english" || (language != "" && spoken == language)) {
+		isLoc := file.Format == source.Loc
+		inLanguage := !isLoc || spoken == "english" || (language != "" && spoken == language)
+		if isLoc == locs && inLanguage {
 			out = append(out, file)
 		}
 	}
@@ -144,7 +155,14 @@ func wanted(files []source.File, language string, locs bool) []source.File {
 // harvested fills an index from files in the two walks the harvest needs: definitions and
 // localization for all, then, with those behind Found, references and edges, in script and in
 // localization (a $key$ a value interpolates).
-func harvested(ctx context.Context, idx *Index, files []source.File, reader schema.Reader, found schema.Defined, progress func(stage string, done, total int)) error {
+func harvested(
+	ctx context.Context,
+	idx *Index,
+	files []source.File,
+	reader schema.Reader,
+	found schema.Defined,
+	progress func(stage string, done, total int),
+) error {
 	reader.Found = nil
 	if err := each(ctx, files, reader, idx.Add, progress, "reading definitions"); err != nil {
 		return err
@@ -152,7 +170,9 @@ func harvested(ctx context.Context, idx *Index, files []source.File, reader sche
 
 	idx.Ready()
 	reader.Found = found
-	scripts := slices.DeleteFunc(slices.Clone(files), func(file source.File) bool { return file.Format != source.Script && file.Format != source.Loc })
+	scripts := slices.DeleteFunc(slices.Clone(files), func(file source.File) bool {
+		return file.Format != source.Script && file.Format != source.Loc
+	})
 	return each(ctx, scripts, reader, func(records *Records) {
 		records.Defs, records.Loc = nil, nil
 		idx.Add(records)
@@ -162,8 +182,8 @@ func harvested(ctx context.Context, idx *Index, files []source.File, reader sche
 // Scan reads a game install: its files, its localization, what the game says of itself, the schema
 // learned from all of it, and then every definition, reference and edge.
 func Scan(ctx context.Context, req Request) (*Install, error) {
-	info := game.Get(req.Game)
-	if info == nil {
+	gameInfo := game.Get(req.Game)
+	if gameInfo == nil {
 		return nil, fmt.Errorf("unknown game %q", req.Game)
 	}
 	idx := &Index{Roots: source.Roots(req.Dir)}
@@ -186,23 +206,25 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	// what the game says of itself, and the schema learned from its files
 	vocab := schema.ReadVocab(req.Docs)
 	docs, unread := schema.ReadInfo(files, vocab)
-	in := &Install{Index: idx, Vocab: vocab, Info: docs}
 	var modes []string
-	for _, entryMode := range info.EntryModes {
+	for _, entryMode := range gameInfo.EntryModes {
 		modes = append(modes, entryMode.Word)
 	}
-	sch, err := learn.Learn(ctx, learn.Input{Game: req.Game, Version: req.Version, Files: files, Vocab: in.Vocab, Info: in.Info, Loc: loc.NewKeys(keys), EntryModes: modes, Subjects: info.SubjectDirs, Progress: req.Progress})
+	sch, err := learn.Learn(ctx, learn.Input{
+		Game: req.Game, Version: req.Version, Files: files, Vocab: vocab, Info: docs, Loc: loc.NewKeys(keys),
+		EntryModes: modes, Subjects: gameInfo.SubjectDirs, Progress: req.Progress,
+	})
 	if err != nil {
 		return nil, err
 	}
-	in.Schema = sch
 	sch.Drift.DocLines = unread
 
 	// every file has its place in the inventory, in load order, whether or not it is read
 	idx.Files = files
-	err = harvested(ctx, idx, append(locs, wanted(files, "", false)...), schema.Reader{Schema: sch, Vocab: in.Vocab}, All{idx}, req.Progress)
+	reader := schema.Reader{Schema: sch, Vocab: vocab}
+	err = harvested(ctx, idx, append(locs, wanted(files, "", false)...), reader, All{idx}, req.Progress)
 	idx.shared = nil
-	return in, err
+	return &Install{Index: idx, Schema: sch, Vocab: vocab, Info: docs}, err
 }
 
 // BuildWorkspace reads a workspace's mods over an install: what their files add to the install's
@@ -212,7 +234,9 @@ func BuildWorkspace(ctx context.Context, mods []Mod, install *Install) (*Index, 
 	idx := &Index{owned: map[int32]*owns{}}
 	for _, mod := range mods {
 		roots := source.Roots(mod.Dir)
-		idx.Roots, idx.Files, idx.Replaced = append(idx.Roots, roots...), append(idx.Files, source.Inventory(mod.ID, roots)...), append(idx.Replaced, replaced(mod.Dir)...)
+		idx.Roots = append(idx.Roots, roots...)
+		idx.Files = append(idx.Files, source.Inventory(mod.ID, roots)...)
+		idx.Replaced = append(idx.Replaced, replaced(mod.Dir)...)
 	}
 	files := idx.Files
 
@@ -220,12 +244,18 @@ func BuildWorkspace(ctx context.Context, mods []Mod, install *Install) (*Index, 
 	for _, entry := range install.Index.Loc {
 		keys[entry.Key] = true
 	}
-	sch, err := learn.Relearn(ctx, learn.Input{Game: install.Schema.Game, Version: install.Schema.Version, Files: files, Vocab: install.Vocab, Info: install.Info, Loc: loc.NewKeys(keys)}, install.Schema)
+	input := learn.Input{
+		Game: install.Schema.Game, Version: install.Schema.Version, Files: files, Vocab: install.Vocab,
+		Info: install.Info, Loc: loc.NewKeys(keys),
+	}
+	sch, err := learn.Relearn(ctx, input, install.Schema)
 	if err != nil {
 		return nil, nil, err
 	}
-	read := slices.Clone(files)
-	return idx, sch, harvested(ctx, idx, read, schema.Reader{Schema: sch, Vocab: install.Vocab}, All{idx, install.Index}, nil)
+
+	// the harvest reads a copy: adding a file's records writes back into idx.Files
+	reader := schema.Reader{Schema: sch, Vocab: install.Vocab}
+	return idx, sch, harvested(ctx, idx, slices.Clone(files), reader, All{idx, install.Index}, nil)
 }
 
 // IndexFile reads one file of a live index again: what it added is taken back, and it is harvested

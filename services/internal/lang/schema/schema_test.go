@@ -31,8 +31,8 @@ func sample() *Schema {
 				Shape: &Field{Count: 81, Class: ClassStructure, Defines: "game_rules.setting", Members: map[string]*Field{
 					"categories": {Name: "categories", Count: 81, Class: ClassList, Accepts: []Accept{{Type: TypeRef, Kind: "game_rule_categories", Count: 243}}},
 					"default":    {Name: "default", Count: 81, Class: ClassValue, Accepts: []Accept{{Type: TypeRef, Kind: "game_rules.setting", Count: 81}}},
-					"flag": {Name: "flag", Origin: Declared, Doc: "Says \"which\" rule;\n\na back\\slash", Default: "none", Need: NeedWhen, NeedWhen: "for \"letter\" events", NeedFrom: Declared, Class: ClassValue,
-						Accepts: []Accept{{Type: TypeRef, Kind: "common/game_rules", Origin: Inferred}}},
+					"flag": {Name: "flag", Evidence: Declared, Doc: "Says \"which\" rule;\n\na back\\slash", Default: "none", Need: Need{Level: NeedRequiredWhen, When: "for \"letter\" events", Evidence: Declared}, Class: ClassValue,
+						Accepts: []Accept{{Type: TypeRef, Kind: "common/game_rules", Evidence: Inferred}}},
 				}},
 			},
 			"game_rules.setting": {
@@ -43,8 +43,8 @@ func sample() *Schema {
 						{Type: TypeEnum, Enum: []string{
 							"blocks_achievements", "two words", "traits", "game_rules.setting", "history/titles", "ref:characters", "define:NGame|START", "1.19.0.6", "x-y", "Linnéa",
 							"", "<date>", ">=", "?=", "trait_{id}", "a#b", "a=b", "@x", "$X$",
-						}, Count: 0, Origin: Declared},
-						{Type: TypeBool, Count: 4, Origin: Declared},
+						}, Count: 0, Evidence: Declared},
+						{Type: TypeBool, Count: 4, Evidence: Declared},
 						{Type: TypeNumber, Count: 2},
 					}},
 				}},
@@ -244,7 +244,7 @@ func TestReadRefuses(t *testing.T) {
 // TestReadInfo reads one real doc line, or a few, per form into the position it documents: its
 // prose, class, the types it takes with their origin, default, root scope and need.
 func TestReadInfo(t *testing.T) {
-	declared := func(valueType ValueType) Accept { return Accept{Type: valueType, Origin: Declared} }
+	declared := func(valueType ValueType) Accept { return Accept{Type: valueType, Evidence: Declared} }
 	script := map[string]string{"common/traits/00_traits.txt": "brave = { }\n", "common/laws/00_laws.txt": "crown_authority = { }\n", "common/government_types/00_types.txt": "monarchy = { }\n"}
 	for name, entry := range map[string]struct {
 		text, file, parent, key string
@@ -252,7 +252,7 @@ func TestReadInfo(t *testing.T) {
 		absent                  bool
 	}{
 		"a brief's paragraphs across lone #s": {text: "### brief: lifestyle ( database key )\n# What lifestyle the focus belongs to.\n#\n# If the type is lifestyle this is required.\n#\nlifestyle = lifestyle_key\n",
-			key: "lifestyle", want: Field{Doc: "What lifestyle the focus belongs to.\n\nIf the type is lifestyle this is required.", Need: NeedWhen, NeedWhen: "if the type is lifestyle", NeedFrom: Declared}},
+			key: "lifestyle", want: Field{Doc: "What lifestyle the focus belongs to.\n\nIf the type is lifestyle this is required.", Need: Need{Level: NeedRequiredWhen, When: "if the type is lifestyle", Evidence: Declared}}},
 		"a brief of a jomini trigger": {text: "\t\t### Brief: trigger ( jomini trigger )\n", key: "trigger", want: Field{Class: ClassBody, Body: BodyTrigger}},
 		"<effects> alone in a block":  {text: "my_activity = {\n\ton_complete = {\n\t\t<effects>\n\t}\n}\n", key: "on_complete", want: Field{Class: ClassBody, Body: BodyEffect}},
 		"prose above an inline block": {text: "my_building = {\n\t# Effects that happen when construction of the building starts/cancels/finishes\n\ton_start = { }\n}\n",
@@ -261,34 +261,34 @@ func TestReadInfo(t *testing.T) {
 		"int":                  {text: "\ttruce_days = int\n", key: "truce_days", want: Field{Accepts: []Accept{declared(TypeNumber)}}},
 		"string":               {text: "category = string\n", key: "category", want: Field{Accepts: []Accept{declared(TypeString)}}},
 		"loc_key":              {text: "name = loc_key\t\t\t# effect display name\n", key: "name", want: Field{Doc: "effect display name", Accepts: []Accept{declared(TypeLoc)}}},
-		"a/b/c":                {text: "\t### Brief: type (minor|medium|major)\n\t# How big the DLC is\n\ttype = major\n", key: "type", want: Field{Doc: "How big the DLC is", Accepts: []Accept{{Type: TypeEnum, Enum: []string{"minor", "medium", "major"}, Origin: Declared}}}},
-		"a/b/etc":              {text: "\tskill = diplomacy/martial/etc\n", key: "skill", want: Field{Accepts: []Accept{{Type: TypeEnum, Enum: []string{"diplomacy", "martial"}, Origin: Inferred}}}},
-		"law_key":              {text: "\tparent = law_key                                        # optional reference to a law\n", key: "parent", want: Field{Doc: "optional reference to a law", Need: NeedOptional, NeedFrom: Declared, Accepts: []Accept{{Type: TypeRef, Kind: "common/laws", Origin: Declared}}}},
-		"<kind key>":           {text: "# - government: <government type key> optional government type that supports the reform\n", key: "government", want: Field{Doc: "optional government type that supports the reform", Need: NeedOptional, NeedFrom: Declared, Accepts: []Accept{{Type: TypeRef, Kind: "common/government_types", Origin: Declared}}}},
-		"defaults":             {text: "valid_sex = all/male/female # Defaults to all\n", key: "valid_sex", want: Field{Doc: "Defaults to all", Default: "all", Need: NeedOptional, NeedFrom: Inferred, Accepts: []Accept{{Type: TypeEnum, Enum: []string{"all", "male", "female"}, Origin: Declared}}}},
+		"a/b/c":                {text: "\t### Brief: type (minor|medium|major)\n\t# How big the DLC is\n\ttype = major\n", key: "type", want: Field{Doc: "How big the DLC is", Accepts: []Accept{{Type: TypeEnum, Enum: []string{"minor", "medium", "major"}, Evidence: Declared}}}},
+		"a/b/etc":              {text: "\tskill = diplomacy/martial/etc\n", key: "skill", want: Field{Accepts: []Accept{{Type: TypeEnum, Enum: []string{"diplomacy", "martial"}, Evidence: Inferred}}}},
+		"law_key":              {text: "\tparent = law_key                                        # optional reference to a law\n", key: "parent", want: Field{Doc: "optional reference to a law", Need: Need{Level: NeedOptional, Evidence: Declared}, Accepts: []Accept{{Type: TypeRef, Kind: "common/laws", Evidence: Declared}}}},
+		"<kind key>":           {text: "# - government: <government type key> optional government type that supports the reform\n", key: "government", want: Field{Doc: "optional government type that supports the reform", Need: Need{Level: NeedOptional, Evidence: Declared}, Accepts: []Accept{{Type: TypeRef, Kind: "common/government_types", Evidence: Declared}}}},
+		"defaults":             {text: "valid_sex = all/male/female # Defaults to all\n", key: "valid_sex", want: Field{Doc: "Defaults to all", Default: "all", Need: Need{Level: NeedOptional, Evidence: Inferred}, Accepts: []Accept{{Type: TypeEnum, Enum: []string{"all", "male", "female"}, Evidence: Declared}}}},
 		"root = above a block": {text: "my_decision = {\n\t# root = character\n\tis_shown = {\n\t}\n}\n", key: "is_shown", want: Field{Doc: "root = character", BodyScope: "character"}},
 		"(root = x) on a bullet": {text: "# - potential: trigger for whether the action is possible (root = country)\n",
 			key: "potential", want: Field{Doc: "for whether the action is possible (root = country)", Class: ClassBody, Body: BodyTrigger, BodyScope: "country"}},
-		"required":            {text: "my_theme = {\n\t# This field is required.\n\tbackground = {\n\t}\n}\n", key: "background", want: Field{Doc: "This field is required.", Need: NeedRequired, NeedFrom: Declared}},
-		"required when":       {text: "\tsender = X # required for letter events\n", key: "sender", want: Field{Doc: "required for letter events", Need: NeedWhen, NeedWhen: "for letter events", NeedFrom: Declared}},
-		"optional in a brief": {text: "brief: cumulative ( bool, optional )\n", key: "cumulative", want: Field{Need: NeedOptional, NeedFrom: Declared, Accepts: []Accept{declared(TypeBool)}}},
+		"required":            {text: "my_theme = {\n\t# This field is required.\n\tbackground = {\n\t}\n}\n", key: "background", want: Field{Doc: "This field is required.", Need: Need{Level: NeedRequired, Evidence: Declared}}},
+		"required when":       {text: "\tsender = X # required for letter events\n", key: "sender", want: Field{Doc: "required for letter events", Need: Need{Level: NeedRequiredWhen, When: "for letter events", Evidence: Declared}}},
+		"optional in a brief": {text: "brief: cumulative ( bool, optional )\n", key: "cumulative", want: Field{Need: Need{Level: NeedOptional, Evidence: Declared}, Accepts: []Accept{declared(TypeBool)}}},
 		"all members required": {text: "my_decision = {\n\t### Brief: ai_check_interval_by_tier (int31 per tier)\n\t# '0' means it is never considered. All tiers are required to be defined\n\tai_check_interval_by_tier = {\n\t\tbarony = 0\n\t\tcounty = 0\n\t}\n}\n",
-			parent: "ai_check_interval_by_tier", key: "county", want: Field{Need: NeedRequired, NeedFrom: Declared}},
+			parent: "ai_check_interval_by_tier", key: "county", want: Field{Need: Need{Level: NeedRequired, Evidence: Declared}}},
 		"optional by what happens without it": {text: "\towners = pop_type_key\t# dividends and investment pool, if not set determined by building group\n",
-			key: "owners", want: Field{Doc: "dividends and investment pool, if not set determined by building group", Need: NeedOptional, NeedFrom: Inferred}},
+			key: "owners", want: Field{Doc: "dividends and investment pool, if not set determined by building group", Need: Need{Level: NeedOptional, Evidence: Inferred}}},
 		"## key (default: x)": {text: "## maintenance_paid_by (default: empty)\nMust be specified for directed article types, must be unspecified for mutual article types.\n", file: "common/things/things.md",
-			key: "maintenance_paid_by", want: Field{Doc: "Must be specified for directed article types, must be unspecified for mutual article types.", Default: "empty", Need: NeedWhen, NeedWhen: "for directed article types", NeedFrom: Declared}},
+			key: "maintenance_paid_by", want: Field{Doc: "Must be specified for directed article types, must be unspecified for mutual article types.", Default: "empty", Need: Need{Level: NeedRequiredWhen, When: "for directed article types", Evidence: Declared}}},
 		"(type)": {text: "\tpriority = (number) \t\t#Static number, the higher it is the higher it will appear in the list. Default is -1.\n",
-			key: "priority", want: Field{Doc: "Static number, the higher it is the higher it will appear in the list. Default is -1.", Default: "-1", Need: NeedOptional, NeedFrom: Inferred, Accepts: []Accept{declared(TypeNumber)}}},
-		"...":    {text: "\ttrigger = ... # Optional, as for portraits\n", key: "trigger", want: Field{Doc: "Optional, as for portraits", Need: NeedOptional, NeedFrom: Declared}},
+			key: "priority", want: Field{Doc: "Static number, the higher it is the higher it will appear in the list. Default is -1.", Default: "-1", Need: Need{Level: NeedOptional, Evidence: Inferred}, Accepts: []Accept{declared(TypeNumber)}}},
+		"...":    {text: "\ttrigger = ... # Optional, as for portraits\n", key: "trigger", want: Field{Doc: "Optional, as for portraits", Need: Need{Level: NeedOptional, Evidence: Declared}}},
 		"a date": {text: "my_situation = {\n\t1.1.1 = {\n\t}\n}\n", key: "<date>"},
 		"[tags] before prose": {text: "\t\t\t# [Default = always yes] Trigger to determine if entities with this tag can spawn\n\t\t\ttrigger = {}\n",
-			key: "trigger", want: Field{Doc: "[Default = always yes] Trigger to determine if entities with this tag can spawn", Default: "always", Need: NeedOptional, NeedFrom: Inferred}},
+			key: "trigger", want: Field{Doc: "[Default = always yes] Trigger to determine if entities with this tag can spawn", Default: "always", Need: Need{Level: NeedOptional, Evidence: Inferred}}},
 		"prose above the key":          {text: "# The trait category\ncategory = personality\n", key: "category", want: Field{Doc: "The trait category"}},
 		"below does not steal above":   {text: "# Event presentation type\ntype = character_event\n# Dynamic loc key\ntitle = loc_key\n", key: "title", want: Field{Doc: "Dynamic loc key", Accepts: []Accept{declared(TypeLoc)}}},
 		"a block's first key claims":   {text: "option = {\n\t# the name shown\n\tname = loc_key\n}\n", key: "name", want: Field{Doc: "the name shown", Accepts: []Accept{declared(TypeLoc)}}},
 		"digits alone are no prose":    {text: "period = 55 # 55\n", key: "period"},
-		"a prose bullet reaches below": {text: "# - Optional: picks random entries from that set\nfallback = yes\n", key: "fallback", want: Field{Doc: "Optional: picks random entries from that set", Need: NeedOptional, NeedFrom: Declared}},
+		"a prose bullet reaches below": {text: "# - Optional: picks random entries from that set\nfallback = yes\n", key: "fallback", want: Field{Doc: "Optional: picks random entries from that set", Need: Need{Level: NeedOptional, Evidence: Declared}}},
 		"a label is no key":            {text: "# scope: character\n# root: Ruler (character)\n", key: "scope", absent: true},
 		"a live colon is no key":       {text: "Valid categories: the ones listed below here\n", key: "categories", absent: true},
 	} {
@@ -298,7 +298,7 @@ func TestReadInfo(t *testing.T) {
 		got := info.Field([]string{"common/things"}, entry.parent, entry.key, true)
 		got.Members = nil
 		if !entry.absent {
-			entry.want.Name, entry.want.Origin = entry.key, Declared
+			entry.want.Name, entry.want.Evidence = entry.key, Declared
 		}
 		if !reflect.DeepEqual(got, entry.want) {
 			t.Errorf("%s: %s = %+v\nwant %+v", name, entry.key, got, entry.want)
@@ -338,7 +338,7 @@ func TestReadInfo(t *testing.T) {
 	if got := info.Kind([]string{"common/laws"}); got != "Laws are grouped." {
 		t.Errorf("Kind(laws) = %q", got)
 	}
-	enum := Accept{Type: TypeEnum, Enum: []string{"character_event", "letter_event"}, Origin: Declared}
+	enum := Accept{Type: TypeEnum, Enum: []string{"character_event", "letter_event"}, Evidence: Declared}
 	for _, testCase := range []struct {
 		folder, parent, key string
 		want                Field
@@ -350,13 +350,13 @@ func TestReadInfo(t *testing.T) {
 		{"common/traits", "potential", "trigger", Field{Doc: "a nested trigger"}},
 		{"common/traits", "option", "trigger", Field{Doc: "the trait's own trigger"}},
 		{"common/events", "", "type", Field{Doc: "what it looks like", Accepts: []Accept{enum}}},
-		{"common/events", "option", "name", Field{Doc: "the text on the button", Accepts: []Accept{{Type: TypeLoc, Origin: Declared}}}},
-		{"COMMON/EVENTS", "", "name", Field{Doc: "the text on the button", Accepts: []Accept{{Type: TypeLoc, Origin: Declared}}}},
+		{"common/events", "option", "name", Field{Doc: "the text on the button", Accepts: []Accept{{Type: TypeLoc, Evidence: Declared}}}},
+		{"COMMON/EVENTS", "", "name", Field{Doc: "the text on the button", Accepts: []Accept{{Type: TypeLoc, Evidence: Declared}}}},
 		{"common/laws", "", "progressiveness", Field{Doc: "How progressive the law is. It runs from 0 to 100.\n\nA second paragraph."}},
 		{"common/laws", "law_key", "group", Field{Doc: "the group it belongs to"}},
 	} {
 		got := info.Field([]string{testCase.folder}, testCase.parent, testCase.key, true)
-		got.Members, testCase.want.Name, testCase.want.Origin = nil, testCase.key, Declared
+		got.Members, testCase.want.Name, testCase.want.Evidence = nil, testCase.key, Declared
 		if !reflect.DeepEqual(got, testCase.want) {
 			t.Errorf("Field(%s, %q, %s) = %+v\nwant %+v", testCase.folder, testCase.parent, testCase.key, got, testCase.want)
 		}
@@ -383,8 +383,8 @@ func TestReadInfo(t *testing.T) {
 		key  string
 		want Field
 	}{
-		{"texture", Field{Name: "texture", Origin: Declared, Doc: "relative to the game folder", Accepts: []Accept{declared(TypeFile)}}},
-		{"type", Field{Name: "type", Origin: Declared, Doc: "how it shows", Accepts: []Accept{{Type: TypeEnum, Enum: []string{"alert", "important_action"}, Origin: Declared}}}},
+		{"texture", Field{Name: "texture", Evidence: Declared, Doc: "relative to the game folder", Accepts: []Accept{declared(TypeFile)}}},
+		{"type", Field{Name: "type", Evidence: Declared, Doc: "how it shows", Accepts: []Accept{{Type: TypeEnum, Enum: []string{"alert", "important_action"}, Evidence: Declared}}}},
 		{"script_context", Field{}},
 		{"count", Field{}},
 	} {
@@ -452,9 +452,9 @@ func TestInfoIsRead(t *testing.T) {
 				counts["positions"]++
 				counts["with prose"] += min(len(member.Doc), 1)
 				counts["with a class"] += min(int(member.Class), 1)
-				counts["with a declared type"] += min(len(slices.DeleteFunc(slices.Clone(member.Accepts), func(accept Accept) bool { return accept.Origin != Declared })), 1)
-				if member.Need != NeedUnstated {
-					counts["need "+member.Need.String()+" "+member.NeedFrom.String()]++
+				counts["with a declared type"] += min(len(slices.DeleteFunc(slices.Clone(member.Accepts), func(accept Accept) bool { return accept.Evidence != Declared })), 1)
+				if member.Need.Level != NeedUnstated {
+					counts["need "+member.Need.Level.String()+" "+member.Need.Evidence.String()]++
 				}
 				walk(member)
 			}
@@ -478,13 +478,13 @@ func TestInfoIsRead(t *testing.T) {
 func TestReaderValue(t *testing.T) {
 	holder := &Field{Accepts: []Accept{{Type: TypeRef, Kind: "characters"}, {Type: TypeNumber}}}
 	culture := &Field{Accepts: []Accept{{Type: TypeRef, Kind: "cultures"}}}
-	shown := &Field{Accepts: []Accept{{Type: TypeBool, Origin: Declared}}}
+	shown := &Field{Accepts: []Accept{{Type: TypeBool, Evidence: Declared}}}
 	style := &Field{Accepts: []Accept{{Type: TypeEnum, Enum: []string{"good", "bad"}}}}
 	title := &Field{Accepts: []Accept{{Type: TypeLoc}, {Type: TypeString}}}
 	texture := &Field{Accepts: []Accept{{Type: TypeFile}}}
 	born := &Field{Accepts: []Accept{{Type: TypeDate}}}
-	trait := &Field{Accepts: []Accept{{Type: TypeRef, Kind: "traits", Origin: Declared}}}
-	province := &Field{Accepts: []Accept{{Type: TypeNumber, Origin: Declared}, {Type: TypeRef, Kind: "characters"}}}
+	trait := &Field{Accepts: []Accept{{Type: TypeRef, Kind: "traits", Evidence: Declared}}}
+	province := &Field{Accepts: []Accept{{Type: TypeNumber, Evidence: Declared}, {Type: TypeRef, Kind: "characters"}}}
 
 	for _, testCase := range []struct {
 		name   string

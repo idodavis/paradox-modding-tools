@@ -1,5 +1,6 @@
 // resolve.go turns counts into what a field is: its class, the vocabularies a body draws on,
 // the names hidden among its keys, and the types of value it accepts.
+
 package learn
 
 import (
@@ -13,6 +14,16 @@ import (
 	"paradox-modding-tools/services/internal/lang/schema"
 )
 
+// keys is what the keys written directly inside one position are, by the vocabulary and by how
+// often they recur.
+type keys struct {
+	distinct          int      // keyed members that are no position
+	effects, triggers int      // distinct block-taking tokens declared only as effects, or only as triggers
+	sums              bool     // it computes a number: a number holding if, or all arithmetic and branches
+	once              []string // undeclared keys written in one block of several: a name is written once
+	words             int      // bare words written among them
+}
+
 // witnesses works out, once the install is read, what the vocabulary says of blocks. A token
 // whose usage holds <effects> or <triggers> takes a block of them (if, any_child); a token with
 // no usage that the install always writes with a block takes what the tokens inside it take
@@ -21,12 +32,14 @@ import (
 // Likewise a position with a key of its own (no scope change) written as a number whose blocks
 // hold if computes a number, and the undeclared keys there are the words of arithmetic.
 func (census *census) witnesses() {
-	census.effectBlocks, census.triggerBlocks, census.math, census.valued, census.keyedAt = map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]int{}
+	census.effectBlocks, census.triggerBlocks = map[string]bool{}, map[string]bool{}
+	census.math, census.valued, census.keyedAt = map[string]bool{}, map[string]bool{}, map[string]int{}
 	for name, effect := range census.vocab.Effects {
 		census.effectBlocks[name] = strings.Contains(effect.Usage, "effects>") || strings.Contains(effect.Usage, "effect>")
 	}
 	for name, trigger := range census.vocab.Triggers {
-		census.triggerBlocks[name] = strings.Contains(trigger.Usage, "triggers>") || strings.Contains(trigger.Usage, "trigger>")
+		census.triggerBlocks[name] = strings.Contains(trigger.Usage, "triggers>") ||
+			strings.Contains(trigger.Usage, "trigger>")
 	}
 	for grew := true; grew; {
 		grew = false
@@ -35,10 +48,12 @@ func (census *census) witnesses() {
 				continue
 			}
 			for child := range inside {
-				if effect, ok := census.vocab.Effects[token]; ok && effect.Usage == "" && census.effectBlocks[child] && !census.effectBlocks[token] {
+				if effect, ok := census.vocab.Effects[token]; ok && effect.Usage == "" &&
+					census.effectBlocks[child] && !census.effectBlocks[token] {
 					census.effectBlocks[token], grew = true, true
 				}
-				if trigger, ok := census.vocab.Triggers[token]; ok && trigger.Usage == "" && census.triggerBlocks[child] && !census.triggerBlocks[token] {
+				if trigger, ok := census.vocab.Triggers[token]; ok && trigger.Usage == "" &&
+					census.triggerBlocks[child] && !census.triggerBlocks[token] {
 					census.triggerBlocks[token], grew = true, true
 				}
 			}
@@ -66,20 +81,20 @@ func (census *census) witnesses() {
 			}
 		}
 	}
-	for _, fo := range census.folders {
+	for _, folder := range census.folders {
 		// the entries at the top of a folder are one position, and so is each member of theirs:
 		// a script value is written as a number in one entry and as a block in the next
 		top, below := &node{}, map[string]*node{}
-		for _, member := range fo.root.members {
+		for _, member := range folder.root.members {
 			top.merge(member.shallow())
-			for key, mm := range member.members {
+			for key, inner := range member.members {
 				if below[key] == nil {
 					below[key] = &node{}
 				}
-				below[key].merge(mm.shallow())
+				below[key].merge(inner.shallow())
 			}
 		}
-		walk(fo.root, false, true)
+		walk(folder.root, false, true)
 
 		// the merged positions are counted for what they hold, not for where a key stands: that
 		// was counted in the folder's own tree
@@ -87,7 +102,7 @@ func (census *census) witnesses() {
 		for key, shape := range below {
 			walk(shape, !census.hops(key) && !strings.HasPrefix(key, "<"), false)
 		}
-		for _, shape := range fo.declared {
+		for _, shape := range folder.declared {
 			walk(shape, true, true)
 		}
 	}
@@ -103,16 +118,6 @@ func (census *census) witnesses() {
 			}
 		}
 	}
-}
-
-// keys is what the keys written directly inside one position are, by the vocabulary and by how
-// often they recur.
-type keys struct {
-	distinct          int      // keyed members that are no position
-	effects, triggers int      // distinct block-taking tokens declared only as effects, or only as triggers
-	sums              bool     // it computes a number: a number holding if, or all arithmetic and branches
-	once              []string // undeclared keys written in one block of several: a name is written once
-	words             int      // bare words written among them
 }
 
 // keysOf counts the keys of a position.
@@ -233,7 +238,10 @@ func (census *census) lift(pos *node) {
 		case key == "<cite>" || (census.hops(key) && (member.blocks > 0 || !isLink)):
 			delete(pos.members, key)
 			if isLink && member.count > member.blocks {
-				pos.members[key] = &node{count: member.count - member.blocks, in: member.in, quoted: member.quoted, numbers: member.numbers, dates: member.dates, bools: member.bools, params: member.params, ops: member.ops, words: member.words}
+				pos.members[key] = &node{
+					count: member.count - member.blocks, in: member.in, quoted: member.quoted, numbers: member.numbers,
+					dates: member.dates, bools: member.bools, params: member.params, ops: member.ops, words: member.words,
+				}
 			}
 			pos.merge(&node{members: member.members, names: member.names})
 			census.lift(pos)
@@ -274,8 +282,8 @@ func (census *census) hoist(shape *node) {
 			if holds[key] == nil {
 				holds[key] = map[string]bool{}
 			}
-			for child, cm := range member.members {
-				if cm.blocks > 0 && !strings.HasPrefix(child, "<") {
+			for child, grandchild := range member.members {
+				if grandchild.blocks > 0 && !strings.HasPrefix(child, "<") {
 					holds[key][child] = true
 				}
 			}
@@ -389,20 +397,19 @@ func (census *census) field(name string, pos *node, folders []string, parent str
 		}
 	}
 
-	// the types the documentation declares at the position itself come first; a kind it names is
-	// named by its folder, as the learner does not name kinds, and is left for the declared reading.
-	// A type vanilla never writes where it writes something else is out of date and accuses nothing
+	// the doc's declared types at the position come first, except a kind (it names kinds by folder);
+	// one vanilla never writes, where it writes something else, is out of date and accuses nothing
 	field.Accepts = census.accepts(name, pos, field.Class)
 	var declared []schema.Accept
 	for _, stated := range census.info.Field(folders, parent, name, false).Accepts {
-		same := func(accept schema.Accept) bool { return accept.Type == stated.Type && accept.Kind == stated.Kind }
-		if stated.Origin != schema.Declared || stated.Type == schema.TypeRef {
+		if stated.Evidence != schema.Declared || stated.Type == schema.TypeRef {
 			continue
 		}
+		same := func(accept schema.Accept) bool { return accept.Type == stated.Type && accept.Kind == stated.Kind }
 		if at := slices.IndexFunc(field.Accepts, same); at >= 0 {
 			stated.Count = field.Accepts[at].Count
 		} else if len(field.Accepts) > 0 {
-			stated.Origin = schema.Inferred
+			stated.Evidence = schema.Inferred
 		}
 		field.Accepts, declared = slices.DeleteFunc(field.Accepts, same), append(declared, stated)
 	}
@@ -410,7 +417,8 @@ func (census *census) field(name string, pos *node, folders []string, parent str
 
 	for _, key := range slices.Sorted(maps.Keys(pos.members)) {
 		member := pos.members[key]
-		if key == "<word>" || (field.Class == schema.ClassBody && ((member.in == 1 && pos.blocks > 1) || census.macro[key])) {
+		if key == "<word>" ||
+			(field.Class == schema.ClassBody && ((member.in == 1 && pos.blocks > 1) || census.macro[key])) {
 			continue
 		}
 		if field.Members == nil {
@@ -461,7 +469,8 @@ func (census *census) accepts(key string, at *node, class schema.Class) []schema
 			}
 		}
 		switch kind := jomini.Literal(word); {
-		case kind == jomini.LitDate || word == "yes" || word == "no" || len(jomini.Interpolations(word)) > 0 || strings.HasPrefix(word, "@") || strings.HasPrefix(word, "["):
+		case kind == jomini.LitDate || word == "yes" || word == "no" || len(jomini.Interpolations(word)) > 0 ||
+			strings.HasPrefix(word, "@") || strings.HasPrefix(word, "["):
 			continue
 		case kind == jomini.LitNumber:
 			numbers = append(numbers, word)
@@ -475,7 +484,10 @@ func (census *census) accepts(key string, at *node, class schema.Class) []schema
 		if census.keys.Has(word) {
 			by = append(by, "<loc>")
 		}
-		if base := strings.ToLower(word[strings.LastIndexByte(word, '/')+1:]); census.files[strings.ToLower(word)] || (strings.Contains(base, ".") && (census.files[base] || census.files[strings.TrimSuffix(base, path.Ext(base))+".*"])) {
+		base := strings.ToLower(word[strings.LastIndexByte(word, '/')+1:])
+		stem := strings.TrimSuffix(base, path.Ext(base)) + ".*"
+		byName := strings.Contains(base, ".") && (census.files[base] || census.files[stem])
+		if census.files[strings.ToLower(word)] || byName {
 			by = append(by, "<file>")
 		}
 		for _, kind := range by {
@@ -486,7 +498,8 @@ func (census *census) accepts(key string, at *node, class schema.Class) []schema
 		}
 
 		first, _, _ := strings.Cut(word, ".")
-		if _, isLink := census.vocab.Links[first]; len(by) == 0 && (isLink || (strings.Contains(word, ":") && strings.Contains(word, "."))) {
+		_, isLink := census.vocab.Links[first]
+		if len(by) == 0 && (isLink || strings.Contains(word, ":") && strings.Contains(word, ".")) {
 			paths += times
 		} else {
 			open[word] = true
@@ -495,7 +508,8 @@ func (census *census) accepts(key string, at *node, class schema.Class) []schema
 
 	// the kinds, best first: most words explained, then fewest names
 	for _, kind := range slices.SortedFunc(maps.Keys(hits), func(first, second string) int {
-		return cmp.Or(len(hits[second])-len(hits[first]), census.size(first)-census.size(second), strings.Compare(first, second))
+		return cmp.Or(len(hits[second])-len(hits[first]), census.size(first)-census.size(second),
+			strings.Compare(first, second))
 	}) {
 		fresh, total := 0, 0
 		for word, times := range hits[kind] {

@@ -99,6 +99,7 @@ The language engine is being rebuilt by `.claude/plans/language-engine.md`. Thes
 | vocabulary | everything the game declares about its language, from `script_docs` and `dump_data_types` | the `logs` and `docs` dumps |
 | game info | the prose the install ships beside its script | `_traits.info`, `readme.txt`, `*.md` |
 | declared / learned | stated by the game (vocabulary, game info) / seen in the install's files. A name says which; only a declared fact lets a diagnostic accuse (§6a) | |
+| evidence | how the schema knows a fact (`schema.Evidence`): observed in the install's files, declared by the game, or inferred from one word; an inferred fact never accuses | `evidence = declared` in a schema file |
 | entry mode | a word before a definition's name that says how it combines with an earlier one | Victoria 3 and EU5 `REPLACE:name`, `INJECT:name` |
 | data call | a `[…]` expression in GUI or loc | `[Character.GetName]` |
 

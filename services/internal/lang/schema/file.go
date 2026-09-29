@@ -20,11 +20,11 @@ import (
 )
 
 // driftLabels names the sections of the drift block, in the order of Drift's fields.
-var driftLabels = []string{"parse_errors", "extensions", "folders", "entry_modes", "prefixes", "dump_labels", "name_tokens", "unclassified"}
+var driftLabels = []string{"parse_errors", "extensions", "folders", "entry_modes", "prefixes", "dump_labels", "doc_lines", "name_tokens", "unclassified"}
 
 // sections is the tallies of a drift report, in the order of driftLabels.
 func (drift *Drift) sections() []*[]Tally {
-	return []*[]Tally{&drift.ParseErrors, &drift.Extensions, &drift.Folders, &drift.EntryModes, &drift.Prefixes, &drift.DumpLabels, &drift.NameTokens, &drift.Unclassified}
+	return []*[]Tally{&drift.ParseErrors, &drift.Extensions, &drift.Folders, &drift.EntryModes, &drift.Prefixes, &drift.DumpLabels, &drift.DocLines, &drift.NameTokens, &drift.Unclassified}
 }
 
 // Write is the schema as text.
@@ -130,6 +130,21 @@ func writeKind(out *strings.Builder, kind *Kind) {
 func writeField(out *strings.Builder, depth int, field *Field) {
 	tabs := strings.Repeat("\t", depth)
 	fmt.Fprintf(out, "%scount = %d\n", tabs, field.Count)
+	if field.Origin != Observed {
+		fmt.Fprintf(out, "%sorigin = %s\n", tabs, field.Origin)
+	}
+	if field.Doc != "" {
+		fmt.Fprintf(out, "%sdoc = %s\n", tabs, text(field.Doc))
+	}
+	if field.Default != "" {
+		fmt.Fprintf(out, "%sdefault = %s\n", tabs, text(field.Default))
+	}
+	if field.Need != NeedUnstated {
+		fmt.Fprintf(out, "%sneed = %s\n%sneed_from = %s\n", tabs, field.Need, tabs, field.NeedFrom)
+	}
+	if field.NeedWhen != "" {
+		fmt.Fprintf(out, "%sneed_when = %s\n", tabs, text(field.NeedWhen))
+	}
 	if field.Class != ClassNone {
 		fmt.Fprintf(out, "%sclass = %s\n", tabs, field.Class)
 	}
@@ -140,18 +155,17 @@ func writeField(out *strings.Builder, depth int, field *Field) {
 		fmt.Fprintf(out, "%sbody_scope = %s\n", tabs, word(field.BodyScope))
 	}
 
-	// every accept with its count, in order; the declared ones are named again in one list
+	// every accept with its count, in order; the declared and the inferred ones are named again,
+	// each in one list by origin
 	if len(field.Accepts) > 0 {
-		var declared []string
+		origins := map[Origin][]string{}
 		fmt.Fprintf(out, "%saccepts = {\n", tabs)
 		for _, accept := range field.Accepts {
 			name := accept.Type.String()
 			if accept.Type == TypeRef {
 				name = "ref:" + accept.Kind
 			}
-			if accept.Declared {
-				declared = append(declared, name)
-			}
+			origins[accept.Origin] = append(origins[accept.Origin], name)
 			if accept.Type == TypeEnum {
 				fmt.Fprintf(out, "%s\tenum = {\n%s\t\tcount = %d\n%s\t\twords = %s\n%s\t}\n", tabs, tabs, accept.Count, tabs, list(accept.Enum), tabs)
 				continue
@@ -159,8 +173,10 @@ func writeField(out *strings.Builder, depth int, field *Field) {
 			fmt.Fprintf(out, "%s\t%s = %d\n", tabs, word(name), accept.Count)
 		}
 		fmt.Fprintf(out, "%s}\n", tabs)
-		if len(declared) > 0 {
-			fmt.Fprintf(out, "%sdeclared = %s\n", tabs, list(declared))
+		for _, origin := range []Origin{Declared, Inferred} {
+			if len(origins[origin]) > 0 {
+				fmt.Fprintf(out, "%s%s = %s\n", tabs, origin, list(origins[origin]))
+			}
 		}
 	}
 
@@ -208,6 +224,12 @@ func word(text string) string {
 		return text
 	}
 	return `"` + text + `"`
+}
+
+// text writes prose so the lexer reads it back whole: quoted, its quotes, backslashes and line
+// breaks escaped.
+func text(prose string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(prose) + `"`
 }
 
 // list writes words as one line: { a b "c d" }.
@@ -342,11 +364,35 @@ func (fileReader *fileReader) kind(name string, block jomini.Value) *Kind {
 // field reads the body of one field, and its members below it.
 func (fileReader *fileReader) field(name string, block jomini.Value) *Field {
 	field := &Field{Name: name}
-	var declared []string
+	origins := map[Origin][]string{}
 	fileReader.each(block, func(key string, value jomini.Value) {
 		switch key {
 		case "count":
 			field.Count = fileReader.int(value)
+		case "origin":
+			if i := slices.Index(originNames[:], fileReader.scalar(value)); i > 0 {
+				field.Origin = Origin(i)
+			} else {
+				fileReader.fail(value, "unknown origin %q", fileReader.scalar(value))
+			}
+		case "doc":
+			field.Doc = fileReader.text(value)
+		case "default":
+			field.Default = fileReader.text(value)
+		case "need":
+			if i := slices.Index(needNames[:], fileReader.scalar(value)); i > 0 {
+				field.Need = Need(i)
+			} else {
+				fileReader.fail(value, "unknown need %q", fileReader.scalar(value))
+			}
+		case "need_from":
+			if i := slices.Index(originNames[:], fileReader.scalar(value)); i >= 0 {
+				field.NeedFrom = Origin(i)
+			} else {
+				fileReader.fail(value, "unknown origin %q", fileReader.scalar(value))
+			}
+		case "need_when":
+			field.NeedWhen = fileReader.text(value)
 		case "class":
 			if i := slices.Index(classNames[:], fileReader.scalar(value)); i > 0 {
 				field.Class = Class(i)
@@ -384,7 +430,9 @@ func (fileReader *fileReader) field(name string, block jomini.Value) *Field {
 				field.Accepts = append(field.Accepts, accept)
 			})
 		case "declared":
-			declared = fileReader.words(value)
+			origins[Declared] = fileReader.words(value)
+		case "inferred":
+			origins[Inferred] = fileReader.words(value)
 		case "ops":
 			field.Ops = fileReader.words(value)
 		case "defines":
@@ -401,13 +449,17 @@ func (fileReader *fileReader) field(name string, block jomini.Value) *Field {
 		}
 	})
 
-	// the declared list names accepts written above it
+	// the lists by origin name accepts written above them
 	for i, accept := range field.Accepts {
 		name := accept.Type.String()
 		if accept.Type == TypeRef {
 			name = "ref:" + accept.Kind
 		}
-		field.Accepts[i].Declared = slices.Contains(declared, name)
+		for origin, names := range origins {
+			if slices.Contains(names, name) {
+				field.Accepts[i].Origin = origin
+			}
+		}
 	}
 	return field
 }
@@ -469,6 +521,11 @@ func (fileReader *fileReader) bodyClass(block jomini.Value) BodyClass {
 		}
 	}
 	return class
+}
+
+// text is prose written by text, its escapes undone.
+func (fileReader *fileReader) text(value jomini.Value) string {
+	return strings.NewReplacer(`\\`, `\`, `\"`, `"`, `\n`, "\n").Replace(fileReader.scalar(value))
 }
 
 // scalar is the text of one written word.

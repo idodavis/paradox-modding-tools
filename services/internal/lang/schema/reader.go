@@ -54,13 +54,17 @@ func (reader Reader) Value(field *Field, text string, quoted bool) Value {
 		return cited
 	}
 
-	// 4. the field's accepts, in their order, each confirmed
+	// 4. the field's accepts, in their order, each confirmed; a number that names a definition the
+	// field also takes is that link (a barony's province = 2333)
 	if field != nil {
 		for _, accept := range field.Accepts {
-			value, ok := Value{Type: accept.Type, Declared: accept.Declared}, false
+			value, ok := Value{Type: accept.Type, Declared: accept.Origin == Declared}, false
 			switch accept.Type {
 			case TypeNumber:
 				ok = !quoted && jomini.Literal(text) == jomini.LitNumber
+				if at := slices.IndexFunc(field.Accepts, func(ref Accept) bool { return ref.Type == TypeRef && reader.Found.Def(ref.Kind, text) }); ok && at >= 0 {
+					return Value{Type: TypeRef, Kind: field.Accepts[at].Kind, Name: text, Declared: field.Accepts[at].Origin == Declared}
+				}
 			case TypeBool:
 				ok = !quoted && (text == "yes" || text == "no")
 			case TypeDate:

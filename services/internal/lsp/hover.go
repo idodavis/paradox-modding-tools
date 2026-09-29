@@ -404,7 +404,7 @@ func fieldDocs(sess *session.Session, level index.Level, key string) string {
 	if level.Field != nil {
 		parent = level.Field.Name
 	}
-	return sess.Install.Info.Field(level.Kind.Folders, parent, key).Prose
+	return sess.Install.Info.Field(level.Kind.Folders, parent, key, true).Doc
 }
 
 // comment is the comment on the lines just above a line of a text, joined; "" where there is none.

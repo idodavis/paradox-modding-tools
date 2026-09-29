@@ -389,14 +389,24 @@ func (census *census) field(name string, pos *node, folders []string, parent str
 		}
 	}
 
+	// the types the documentation declares at the position itself come first; a kind it names is
+	// named by its folder, as the learner does not name kinds, and is left for the declared reading.
+	// A type vanilla never writes where it writes something else is out of date and accuses nothing
 	field.Accepts = census.accepts(name, pos, field.Class)
-	if declared, ok := census.info.Field(folders, parent, name).Declared(); ok {
-		if at := slices.IndexFunc(field.Accepts, func(accept schema.Accept) bool { return accept.Type == declared.Type && accept.Kind == declared.Kind }); at >= 0 {
-			declared.Count = field.Accepts[at].Count
+	var declared []schema.Accept
+	for _, stated := range census.info.Field(folders, parent, name, false).Accepts {
+		same := func(accept schema.Accept) bool { return accept.Type == stated.Type && accept.Kind == stated.Kind }
+		if stated.Origin != schema.Declared || stated.Type == schema.TypeRef {
+			continue
 		}
-		field.Accepts = slices.DeleteFunc(field.Accepts, func(accept schema.Accept) bool { return accept.Type == declared.Type && accept.Kind == declared.Kind })
-		field.Accepts = append([]schema.Accept{declared}, field.Accepts...)
+		if at := slices.IndexFunc(field.Accepts, same); at >= 0 {
+			stated.Count = field.Accepts[at].Count
+		} else if len(field.Accepts) > 0 {
+			stated.Origin = schema.Inferred
+		}
+		field.Accepts, declared = slices.DeleteFunc(field.Accepts, same), append(declared, stated)
 	}
+	field.Accepts = append(declared, field.Accepts...)
 
 	for _, key := range slices.Sorted(maps.Keys(pos.members)) {
 		member := pos.members[key]

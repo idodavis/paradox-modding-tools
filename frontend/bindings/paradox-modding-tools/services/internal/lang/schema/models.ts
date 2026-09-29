@@ -36,6 +36,11 @@ export interface Drift {
     "dumpLabels": Tally[] | null;
 
     /**
+     * lines of the documentation no form reads, by file:line
+     */
+    "docLines": Tally[] | null;
+
+    /**
      * tokens outside the hand table valued with a script-made kind's cites
      */
     "nameTokens": Tally[] | null;

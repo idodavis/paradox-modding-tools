@@ -65,10 +65,17 @@ type Naming struct {
 // line, param ($NAME$ in a macro's text), token (a name token's argument), and none.
 var namingForms = []string{"key", "number", "event_id", "constant", "member", "declaration", "file", "column", "line", "param", "token", "none"}
 
-// Field is one position below a definition, learned from every use of it under the same parent.
+// Field is one position below a definition, declared by the game's documentation or learned from
+// every use of it under the same parent.
 type Field struct {
 	Name      string            // the key as written, or a position: <number> <date> <cite> <name> <word> <0> <1>
 	Count     int               // how many times the install writes it
+	Origin    Origin            // declared where the documentation writes the position, else observed
+	Doc       string            // what the documentation says of it
+	Default   string            // the value it takes when none is written, where the documentation says
+	Need      Need              // whether it may be left out, where the documentation says
+	NeedWhen  string            // NeedWhen: the condition the documentation gives, "for letter events"
+	NeedFrom  Origin            // declared where the documentation says it, inferred where a default implies it
 	Class     Class             // what is written at it
 	Body      BodyClass         // ClassBody: which vocabularies its statements come from
 	BodyScope string            // ClassBody: the scope type its statements run in; "" where tokens disagree or state none
@@ -113,14 +120,42 @@ type FileTemplate struct {
 	Coverage float64 // the share of the install's definitions that have the file
 }
 
-// Accept is one type of value seen at a field, or declared for it by the game's own info file.
+// Accept is one type of value seen at a field, or declared for it by the game's documentation.
 type Accept struct {
-	Type     ValueType
-	Kind     string   // TypeRef: the kind the word names
-	Enum     []string // TypeEnum: the closed set of words
-	Count    int      // how many times the install wrote this type here; 0 when only declared
-	Declared bool     // the game's info file states this type for the field; it outranks what was seen
+	Type   ValueType
+	Kind   string   // TypeRef: the kind the word names; in a documentation template, the kind's folder
+	Enum   []string // TypeEnum: the set of words
+	Count  int      // how many times the install wrote this type here; 0 when only declared
+	Origin Origin   // a declared type outranks what was seen; an inferred one never accuses
 }
+
+// Origin is where a fact of the schema comes from. Only a declared fact may accuse; an inferred one
+// is shown with a label that says so.
+type Origin uint8
+
+const (
+	Observed Origin = iota // seen in the install's files
+	Declared               // stated by the game: its dumps or its documentation
+	Inferred               // guessed from one word: an example's kind, the words of an open list
+)
+
+var originNames = [...]string{"observed", "declared", "inferred"}
+
+func (origin Origin) String() string { return originNames[origin] }
+
+// Need is whether a definition may leave a field out.
+type Need uint8
+
+const (
+	NeedUnstated Need = iota
+	NeedOptional      // "optional", [Optional], or a default the documentation gives
+	NeedWhen          // required under a condition: "required for letter events"
+	NeedRequired      // "This field is required.", "Must be set."
+)
+
+var needNames = [...]string{"", "optional", "required_when", "required"}
+
+func (need Need) String() string { return needNames[need] }
 
 // ValueType is what one written word is.
 type ValueType uint8
@@ -170,6 +205,7 @@ type Drift struct {
 	EntryModes   []Tally `json:"entryModes"`   // MODE: words on a name that the registry gives no meaning
 	Prefixes     []Tally `json:"prefixes"`     // prefix spellings the vocabulary does not declare and no kind holds
 	DumpLabels   []Tally `json:"dumpLabels"`   // labels in a dump the vocabulary reader does not know
+	DocLines     []Tally `json:"docLines"`     // lines of the documentation no form reads, by file:line
 	NameTokens   []Tally `json:"nameTokens"`   // tokens outside the hand table valued with a script-made kind's cites
 	Unclassified []Tally `json:"unclassified"` // engine tokens the install writes that learned no entry in Arguments
 }

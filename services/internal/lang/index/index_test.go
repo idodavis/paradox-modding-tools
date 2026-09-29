@@ -68,7 +68,8 @@ func TestHarvest(t *testing.T) {
 		{"an event id; namespace is no event", "events", "v.1", "", "v_events.txt", "", ""},
 		{"an event in a subfolder is of the same kind", "events", "vsub.1", "", "v_sub_events.txt", "", ""},
 		{"a number, labelled by the kind's label member", "characters", "186004", "", "v_characters.txt", "Rognvald", ""},
-		{"a name nested by depth, inside its top definition", "landed_titles", "c_x", "e_x", "v_titles.txt", "", ""},
+		{"a name nested by depth, inside the definition around it", "landed_titles", "c_x", "k_x", "v_titles.txt", "", ""},
+		{"and that one inside its own", "landed_titles", "k_x", "e_x", "v_titles.txt", "", ""},
 		{"a nested kind's name: a game rule's setting", "game_rules.setting", "opt_b", "my_rule", "v_rules.txt", "", ""},
 		{"a define inside its group", "defines.define", "MAX_AGE", "NGame", "v_defines.txt", "", ""},
 		{"a member of an opened block", "models.pdxmesh", "v_temple_mesh", "", "v_temple.asset", "", ""},
@@ -186,8 +187,8 @@ func TestHarvest(t *testing.T) {
 			t.Errorf("eu5: %s, nested by depth in definitions.txt, is one definition: %+v", name, eu5.Named(name))
 		}
 	}
-	if found := eu5.Named("paris_area"); len(found) == 1 && found[0].Parent != "europe" {
-		t.Errorf("eu5: a nested name's parent is its top definition: %+v", found[0])
+	if found := eu5.Named("paris_area"); len(found) == 1 && found[0].Parent != "france_region" {
+		t.Errorf("eu5: a nested name's parent is the definition it sits in: %+v", found[0])
 	}
 }
 
@@ -405,6 +406,10 @@ func TestBuildWorkspace(t *testing.T) {
 		if len(found) != 2 || found[1].Mode != testCase.mode {
 			t.Fatalf("%s: the word before a name is its entry mode, and no part of the name: %+v", testCase.name, found)
 		}
+	}
+	eu5, _ := workspace(t, "eu5")
+	if found := eu5.Named("western_europe"); len(found) != 1 || found[0].Mode != "INJECT_OR_CREATE" || found[0].Kind != "map_data.sub_continent" {
+		t.Errorf("a nested name keeps its entry mode apart from the name: %+v", found)
 	}
 
 	// re-indexing an edited file

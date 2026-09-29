@@ -31,6 +31,8 @@ func sample() *Schema {
 				Shape: &Field{Count: 81, Class: ClassStructure, Defines: "game_rules.setting", Members: map[string]*Field{
 					"categories": {Name: "categories", Count: 81, Class: ClassList, Accepts: []Accept{{Type: TypeRef, Kind: "game_rule_categories", Count: 243}}},
 					"default":    {Name: "default", Count: 81, Class: ClassValue, Accepts: []Accept{{Type: TypeRef, Kind: "game_rules.setting", Count: 81}}},
+					"flag": {Name: "flag", Origin: Declared, Doc: "Says \"which\" rule;\n\na back\\slash", Default: "none", Need: NeedWhen, NeedWhen: "for \"letter\" events", NeedFrom: Declared, Class: ClassValue,
+						Accepts: []Accept{{Type: TypeRef, Kind: "common/game_rules", Origin: Inferred}}},
 				}},
 			},
 			"game_rules.setting": {
@@ -41,8 +43,8 @@ func sample() *Schema {
 						{Type: TypeEnum, Enum: []string{
 							"blocks_achievements", "two words", "traits", "game_rules.setting", "history/titles", "ref:characters", "define:NGame|START", "1.19.0.6", "x-y", "Linnéa",
 							"", "<date>", ">=", "?=", "trait_{id}", "a#b", "a=b", "@x", "$X$",
-						}, Count: 0, Declared: true},
-						{Type: TypeBool, Count: 4, Declared: true},
+						}, Count: 0, Origin: Declared},
+						{Type: TypeBool, Count: 4, Origin: Declared},
 						{Type: TypeNumber, Count: 2},
 					}},
 				}},
@@ -89,8 +91,9 @@ func sample() *Schema {
 	}
 }
 
-// infoOf writes files, by path from a root, into a fresh folder and reads them as an inventory.
-func infoOf(t *testing.T, files map[string]string) Info {
+// infoOf writes files, by path from a root, into a fresh folder and reads them as an inventory,
+// against a vocabulary of three scope types and one link prefix.
+func infoOf(t *testing.T, files map[string]string) (Info, []Tally) {
 	t.Helper()
 	root := t.TempDir()
 	var inventory []source.File
@@ -105,7 +108,8 @@ func infoOf(t *testing.T, files map[string]string) Info {
 		}
 		inventory = append(inventory, source.File{Path: path, Rel: rel, Origin: "vanilla", Format: source.Classify(path, rel)})
 	}
-	return ReadInfo(inventory)
+	scope := ScopeType{Triggers: true, Effects: true}
+	return ReadInfo(inventory, &Vocab{ScopeTypes: map[string]ScopeType{"character": scope, "country": scope, "location": scope}, Prefixes: map[string]Link{"s": {}}})
 }
 
 // found is a Defined over three sets: definitions as kind/name, loc keys, and files.
@@ -237,50 +241,85 @@ func TestReadRefuses(t *testing.T) {
 	}
 }
 
+// TestReadInfo reads one real doc line, or a few, per form into the position it documents: its
+// prose, class, the types it takes with their origin, default, root scope and need.
 func TestReadInfo(t *testing.T) {
+	declared := func(valueType ValueType) Accept { return Accept{Type: valueType, Origin: Declared} }
+	script := map[string]string{"common/traits/00_traits.txt": "brave = { }\n", "common/laws/00_laws.txt": "crown_authority = { }\n", "common/government_types/00_types.txt": "monarchy = { }\n"}
 	for name, entry := range map[string]struct {
-		text, key, prose, typ string
+		text, file, parent, key string
+		want                    Field
+		absent                  bool
 	}{
-		"brief header, prose, a lone #": {"### brief: create_cadet_branches ( bool )\n# Should rulers be able to create cadet branches\n#\ncreate_cadet_branches = no\n", "create_cadet_branches", "Should rulers be able to create cadet branches", "bool"},
-		"attribute bullet":              {"# ATTRIBUTES\n# - build_time: <integer> building time in days\n", "build_time", "building time in days", "integer"},
-		"colon bullet, no dash":         {"# custom_description: <string> key to a custom description of the disaster\n", "custom_description", "key to a custom description of the disaster", "string"},
-		"colon bullet, no type":         {"# monthly_spawn_chance: script value for how likely the disease is to spawn\n", "monthly_spawn_chance", "script value for how likely the disease is to spawn", ""},
-		"comment trailing the key":      {"#\ttype = country_event\t\t# Defines the scope\n", "type", "Defines the scope", ""},
-		"type, then prose, no hash":     {"#<name> = {\n#\tbreak_on_war = <yes/no> ends the relationship on war\n#}\n", "break_on_war", "ends the relationship on war", "yes/no"},
-		"type, then a comment":          {"x = <yes/no> # why it matters\n", "x", "why it matters", "yes/no"},
-		"prose inside its own braces":   {"#\tshow_if = { <trigger to see if this stage is needed}\n", "show_if", "trigger to see if this stage is needed", ""},
-		"a type inside braces":          {"gold = { <script value> }\n", "gold", "", "script value"},
-		"comment above the key":         {"# The trait category\ncategory = personality\n", "category", "The trait category", ""},
-		"below block comment":           {"allow = {\n\t# must also pass category\n}\n", "allow", "must also pass category", ""},
-		"below does not steal above":    {"# Event presentation type\ntype = character_event\n# Dynamic loc key\ntitle = loc_key\n", "title", "Dynamic loc key", ""},
-		"prose above survives":          {"# Event presentation type\ntype = character_event\n# Dynamic loc key\ntitle = loc_key\n", "type", "Event presentation type", ""},
-		"inline plus below block":       {"chance = { # weight\n\t# extra lines\n}\n", "chance", "weight extra lines", ""},
-		"a block's first key claims":    {"option = {\n\t# the name shown\n\tname = loc_key\n}\n", "name", "the name shown", ""},
-		"and its block gets none":       {"option = {\n\t# the name shown\n\tname = loc_key\n}\n", "option", "", ""},
-		"a blank line ends the block":   {"# File header prose about the whole format\n\nsome_key = 1\n", "some_key", "", ""},
-		"a lone # ends it too":          {"# Disasters\n#\n# can_start: trigger to see if the disaster can start\n", "can_start", "trigger to see if the disaster can start", ""},
-		"a placeholder body":            {"#\timmediate = { ... }\n", "immediate", "", ""},
-		"digits alone are no prose":     {"period = 55 # 55\n", "period", "", ""},
-		"the type is not the prose":     {"# - god = <god key> god that this avatar is a manifestation of\n", "god", "god that this avatar is a manifestation of", "god key"},
-		"a bare type word":              {"    construction_points = int\t\t# points required\n", "construction_points", "points required", "int"},
-		"bare yes/no":                   {"    buildable = yes/no\t# can this be built?\n", "buildable", "can this be built?", "yes/no"},
-		"a bare example is no type":     {"valid_sex = all/male/female # Defaults to all\n", "valid_sex", "Defaults to all", ""},
-		"a bare path is no type":        {"icon = gfx/interface/icons # the icon\n", "icon", "the icon", ""},
-		"a capitalised brief header":    {"\t### Brief: type (minor|medium|major)\n\t# How big the DLC is\n\ttype = major\n", "type", "How big the DLC is", "minor|medium|major"},
-		"a rule is no prose":            {"=== Structure ===\nprovince_id = { # the province\n}\n", "province_id", "the province", ""},
-		"a dotted key":                  {"# an example event\nmy_events.1001 = {\n\ttype = character_event # Optional\n}\n", "my_events.1001", "an example event", ""},
-		"a prose bullet is no key":      {"# - Optional: picks random entries from that set\nfallback = yes\n", "Optional", "", ""},
-		"a label is no key":             {"# scope: character\n# root: Ruler (character)\n", "scope", "", ""},
-		"a live colon is no key":        {"Valid categories: the ones listed below here\n", "categories", "", ""},
+		"a brief's paragraphs across lone #s": {text: "### brief: lifestyle ( database key )\n# What lifestyle the focus belongs to.\n#\n# If the type is lifestyle this is required.\n#\nlifestyle = lifestyle_key\n",
+			key: "lifestyle", want: Field{Doc: "What lifestyle the focus belongs to.\n\nIf the type is lifestyle this is required.", Need: NeedWhen, NeedWhen: "if the type is lifestyle", NeedFrom: Declared}},
+		"a brief of a jomini trigger": {text: "\t\t### Brief: trigger ( jomini trigger )\n", key: "trigger", want: Field{Class: ClassBody, Body: BodyTrigger}},
+		"<effects> alone in a block":  {text: "my_activity = {\n\ton_complete = {\n\t\t<effects>\n\t}\n}\n", key: "on_complete", want: Field{Class: ClassBody, Body: BodyEffect}},
+		"prose above an inline block": {text: "my_building = {\n\t# Effects that happen when construction of the building starts/cancels/finishes\n\ton_start = { }\n}\n",
+			key: "on_start", want: Field{Doc: "Effects that happen when construction of the building starts/cancels/finishes"}},
+		"yes/no":               {text: "    buildable = yes/no\t# can this be built?\n", key: "buildable", want: Field{Doc: "can this be built?", Accepts: []Accept{declared(TypeBool)}}},
+		"int":                  {text: "\ttruce_days = int\n", key: "truce_days", want: Field{Accepts: []Accept{declared(TypeNumber)}}},
+		"string":               {text: "category = string\n", key: "category", want: Field{Accepts: []Accept{declared(TypeString)}}},
+		"loc_key":              {text: "name = loc_key\t\t\t# effect display name\n", key: "name", want: Field{Doc: "effect display name", Accepts: []Accept{declared(TypeLoc)}}},
+		"a/b/c":                {text: "\t### Brief: type (minor|medium|major)\n\t# How big the DLC is\n\ttype = major\n", key: "type", want: Field{Doc: "How big the DLC is", Accepts: []Accept{{Type: TypeEnum, Enum: []string{"minor", "medium", "major"}, Origin: Declared}}}},
+		"a/b/etc":              {text: "\tskill = diplomacy/martial/etc\n", key: "skill", want: Field{Accepts: []Accept{{Type: TypeEnum, Enum: []string{"diplomacy", "martial"}, Origin: Inferred}}}},
+		"law_key":              {text: "\tparent = law_key                                        # optional reference to a law\n", key: "parent", want: Field{Doc: "optional reference to a law", Need: NeedOptional, NeedFrom: Declared, Accepts: []Accept{{Type: TypeRef, Kind: "common/laws", Origin: Declared}}}},
+		"<kind key>":           {text: "# - government: <government type key> optional government type that supports the reform\n", key: "government", want: Field{Doc: "optional government type that supports the reform", Need: NeedOptional, NeedFrom: Declared, Accepts: []Accept{{Type: TypeRef, Kind: "common/government_types", Origin: Declared}}}},
+		"defaults":             {text: "valid_sex = all/male/female # Defaults to all\n", key: "valid_sex", want: Field{Doc: "Defaults to all", Default: "all", Need: NeedOptional, NeedFrom: Inferred, Accepts: []Accept{{Type: TypeEnum, Enum: []string{"all", "male", "female"}, Origin: Declared}}}},
+		"root = above a block": {text: "my_decision = {\n\t# root = character\n\tis_shown = {\n\t}\n}\n", key: "is_shown", want: Field{Doc: "root = character", BodyScope: "character"}},
+		"(root = x) on a bullet": {text: "# - potential: trigger for whether the action is possible (root = country)\n",
+			key: "potential", want: Field{Doc: "for whether the action is possible (root = country)", Class: ClassBody, Body: BodyTrigger, BodyScope: "country"}},
+		"required":            {text: "my_theme = {\n\t# This field is required.\n\tbackground = {\n\t}\n}\n", key: "background", want: Field{Doc: "This field is required.", Need: NeedRequired, NeedFrom: Declared}},
+		"required when":       {text: "\tsender = X # required for letter events\n", key: "sender", want: Field{Doc: "required for letter events", Need: NeedWhen, NeedWhen: "for letter events", NeedFrom: Declared}},
+		"optional in a brief": {text: "brief: cumulative ( bool, optional )\n", key: "cumulative", want: Field{Need: NeedOptional, NeedFrom: Declared, Accepts: []Accept{declared(TypeBool)}}},
+		"all members required": {text: "my_decision = {\n\t### Brief: ai_check_interval_by_tier (int31 per tier)\n\t# '0' means it is never considered. All tiers are required to be defined\n\tai_check_interval_by_tier = {\n\t\tbarony = 0\n\t\tcounty = 0\n\t}\n}\n",
+			parent: "ai_check_interval_by_tier", key: "county", want: Field{Need: NeedRequired, NeedFrom: Declared}},
+		"optional by what happens without it": {text: "\towners = pop_type_key\t# dividends and investment pool, if not set determined by building group\n",
+			key: "owners", want: Field{Doc: "dividends and investment pool, if not set determined by building group", Need: NeedOptional, NeedFrom: Inferred}},
+		"## key (default: x)": {text: "## maintenance_paid_by (default: empty)\nMust be specified for directed article types, must be unspecified for mutual article types.\n", file: "common/things/things.md",
+			key: "maintenance_paid_by", want: Field{Doc: "Must be specified for directed article types, must be unspecified for mutual article types.", Default: "empty", Need: NeedWhen, NeedWhen: "for directed article types", NeedFrom: Declared}},
+		"(type)": {text: "\tpriority = (number) \t\t#Static number, the higher it is the higher it will appear in the list. Default is -1.\n",
+			key: "priority", want: Field{Doc: "Static number, the higher it is the higher it will appear in the list. Default is -1.", Default: "-1", Need: NeedOptional, NeedFrom: Inferred, Accepts: []Accept{declared(TypeNumber)}}},
+		"...":    {text: "\ttrigger = ... # Optional, as for portraits\n", key: "trigger", want: Field{Doc: "Optional, as for portraits", Need: NeedOptional, NeedFrom: Declared}},
+		"a date": {text: "my_situation = {\n\t1.1.1 = {\n\t}\n}\n", key: "<date>"},
+		"[tags] before prose": {text: "\t\t\t# [Default = always yes] Trigger to determine if entities with this tag can spawn\n\t\t\ttrigger = {}\n",
+			key: "trigger", want: Field{Doc: "[Default = always yes] Trigger to determine if entities with this tag can spawn", Default: "always", Need: NeedOptional, NeedFrom: Inferred}},
+		"prose above the key":          {text: "# The trait category\ncategory = personality\n", key: "category", want: Field{Doc: "The trait category"}},
+		"below does not steal above":   {text: "# Event presentation type\ntype = character_event\n# Dynamic loc key\ntitle = loc_key\n", key: "title", want: Field{Doc: "Dynamic loc key", Accepts: []Accept{declared(TypeLoc)}}},
+		"a block's first key claims":   {text: "option = {\n\t# the name shown\n\tname = loc_key\n}\n", key: "name", want: Field{Doc: "the name shown", Accepts: []Accept{declared(TypeLoc)}}},
+		"digits alone are no prose":    {text: "period = 55 # 55\n", key: "period"},
+		"a prose bullet reaches below": {text: "# - Optional: picks random entries from that set\nfallback = yes\n", key: "fallback", want: Field{Doc: "Optional: picks random entries from that set", Need: NeedOptional, NeedFrom: Declared}},
+		"a label is no key":            {text: "# scope: character\n# root: Ruler (character)\n", key: "scope", absent: true},
+		"a live colon is no key":       {text: "Valid categories: the ones listed below here\n", key: "categories", absent: true},
 	} {
-		info := infoOf(t, map[string]string{"common/things/_things.info": entry.text})
-		if got := info.Field([]string{"common/things"}, "", entry.key); got.Prose != entry.prose || got.Type != entry.typ {
-			t.Errorf("%s: %s = %+v, want prose %q type %q", name, entry.key, got, entry.prose, entry.typ)
+		files := maps.Clone(script)
+		files[cmp.Or(entry.file, "common/things/_things.info")] = entry.text
+		info, _ := infoOf(t, files)
+		got := info.Field([]string{"common/things"}, entry.parent, entry.key, true)
+		got.Members = nil
+		if !entry.absent {
+			entry.want.Name, entry.want.Origin = entry.key, Declared
+		}
+		if !reflect.DeepEqual(got, entry.want) {
+			t.Errorf("%s: %s = %+v\nwant %+v", name, entry.key, got, entry.want)
 		}
 	}
 
+	// the events doc's scope default is where its definitions run; a table is drift, a parameter not
+	info, drift := infoOf(t, map[string]string{
+		"events/_events.info":        "\tscope = scope_type # Overrides the events root scope. Optional, defaults to character scope.\n",
+		"events/00_events.txt":       "my_events.1 = { scope = character }\n",
+		"common/things/_things.info": "| Flag | what it does |\nmultiplier = $SCALE$\n",
+	})
+	if got := info["events"].Entry.BodyScope; got != "character" {
+		t.Errorf("events root = %q, want character", got)
+	}
+	if !reflect.DeepEqual(drift, []Tally{{Name: "common/things/_things.info:1", Count: 1}}) {
+		t.Errorf("drift = %v, want the table row alone", drift)
+	}
+
 	// several files of one folder, nesting, precedence between files, and the size cap
-	info := infoOf(t, map[string]string{
+	info, _ = infoOf(t, map[string]string{
 		"common/traits/_traits.info": "\n== Loc/icon ==\nBy default, the name key is trait_<key>.\nThe default icon path is in gfx.\n\nThese can be overridden.\n\n=== Trait Properties ===\n\n" +
 			"category = X # What unique category this trait is in\nValid categories:\n\t- personality: The core personality of a character\n\n" +
 			"potential = { # Triggers that must be met\n\ttrigger = { # a nested trigger\n\t}\n}\ntrigger = yes # the trait's own trigger\n",
@@ -288,51 +327,53 @@ func TestReadInfo(t *testing.T) {
 		"Common/Events/readme.txt":    "# Events\n# What an event file holds\n#\n#<name> = {\n#\ttype = <character_event/letter_event> what it looks like\n#   option = {\n#      name = <loc key> the text on the button\n#   }\n#}\n",
 		"common/laws/laws.md":         "# Reference\n\nLaws are grouped.\n\n## progressiveness\n\nHow progressive the law is.\nIt runs from 0 to 100.\n\nA second paragraph.\n\n    law_key = {\n        group = lawgroup_key    # the group it belongs to\n    }\n\n## Not A Key\nSomething else.\n",
 		"gfx/cache/heightmap.info":    strings.Repeat("tile_size=128 # data, not prose\n", 40000),
-		"common/traits/00_traits.txt": "# not an info file\nbrave = { }\n",
+		"common/traits/00_traits.txt": "# not an info file\nbrave = { potential = { } }\n",
 	})
-
 	if got := info.Kind([]string{"common/traits"}); got != "By default, the name key is trait_<key>. The default icon path is in gfx." {
 		t.Errorf("Kind(traits) = %q", got)
 	}
-	if got := info.Kind([]string{"common/nothing", "common/events"}); got != "Events What an event file holds" {
+	if got := info.Kind([]string{"common/nothing", "common/events"}); got != "What an event file holds" {
 		t.Errorf("Kind(events) = %q", got)
 	}
 	if got := info.Kind([]string{"common/laws"}); got != "Laws are grouped." {
 		t.Errorf("Kind(laws) = %q", got)
 	}
-
+	enum := Accept{Type: TypeEnum, Enum: []string{"character_event", "letter_event"}, Origin: Declared}
 	for _, testCase := range []struct {
 		folder, parent, key string
-		want                InfoField
+		want                Field
 	}{
-		{"common/traits", "", "category", InfoField{Prose: "What unique category this trait is in"}},
-		{"common/traits", "", "extra", InfoField{Prose: "only here"}},
-		{"common/traits", "", "personality", InfoField{Prose: "The core personality of a character"}},
-		{"common/traits", "", "trigger", InfoField{Prose: "the trait's own trigger"}},
-		{"common/traits", "potential", "trigger", InfoField{Prose: "a nested trigger"}},
-		{"common/traits", "option", "trigger", InfoField{Prose: "the trait's own trigger"}},
-		{"common/events", "", "type", InfoField{Prose: "what it looks like", Type: "character_event/letter_event"}},
-		{"common/events", "option", "name", InfoField{Prose: "the text on the button", Type: "loc key"}},
-		{"COMMON/EVENTS", "", "name", InfoField{Prose: "the text on the button", Type: "loc key"}},
-		{"common/laws", "", "progressiveness", InfoField{Prose: "How progressive the law is. It runs from 0 to 100.\n\nA second paragraph."}},
-		{"common/laws", "law_key", "group", InfoField{Prose: "the group it belongs to"}},
-		{"common/laws", "", "missing", InfoField{}},
-		{"gfx/cache", "", "tile_size", InfoField{}},
+		{"common/traits", "", "category", Field{Doc: "What unique category this trait is in"}},
+		{"common/traits", "", "extra", Field{Doc: "only here"}},
+		{"common/traits", "", "personality", Field{Doc: "The core personality of a character"}},
+		{"common/traits", "", "trigger", Field{Doc: "the trait's own trigger"}},
+		{"common/traits", "potential", "trigger", Field{Doc: "a nested trigger"}},
+		{"common/traits", "option", "trigger", Field{Doc: "the trait's own trigger"}},
+		{"common/events", "", "type", Field{Doc: "what it looks like", Accepts: []Accept{enum}}},
+		{"common/events", "option", "name", Field{Doc: "the text on the button", Accepts: []Accept{{Type: TypeLoc, Origin: Declared}}}},
+		{"COMMON/EVENTS", "", "name", Field{Doc: "the text on the button", Accepts: []Accept{{Type: TypeLoc, Origin: Declared}}}},
+		{"common/laws", "", "progressiveness", Field{Doc: "How progressive the law is. It runs from 0 to 100.\n\nA second paragraph."}},
+		{"common/laws", "law_key", "group", Field{Doc: "the group it belongs to"}},
 	} {
-		if got := info.Field([]string{testCase.folder}, testCase.parent, testCase.key); got != testCase.want {
-			t.Errorf("Field(%s, %q, %s) = %+v, want %+v", testCase.folder, testCase.parent, testCase.key, got, testCase.want)
+		got := info.Field([]string{testCase.folder}, testCase.parent, testCase.key, true)
+		got.Members, testCase.want.Name, testCase.want.Origin = nil, testCase.key, Declared
+		if !reflect.DeepEqual(got, testCase.want) {
+			t.Errorf("Field(%s, %q, %s) = %+v\nwant %+v", testCase.folder, testCase.parent, testCase.key, got, testCase.want)
 		}
+	}
+	if got := info.Field([]string{"common/laws"}, "", "missing", true); !reflect.DeepEqual(got, Field{}) {
+		t.Errorf("Field(missing) = %+v", got)
 	}
 	if _, ok := info["gfx/cache"]; ok {
 		t.Error("a megabyte of data was read as prose")
 	}
-	if len(info["common/traits"].Fields) == 0 || info["common/traits"].Fields["brave"] != (InfoField{}) {
-		t.Errorf("a script file was read as info: %+v", info["common/traits"].Fields)
+	if info["common/traits"].Entry.Members["brave"] != nil {
+		t.Error("a script file was read as info")
 	}
 
 	// a script file's header: template lines document the folder, commented-out script and notes
 	// beside script do not, and a name list gives blurbs only to the names the file defines
-	headers := infoOf(t, map[string]string{
+	headers, _ := infoOf(t, map[string]string{
 		"common/alert_types/00_alerts.txt": "# texture = <path>\t# relative to the game folder\n# type = alert | important_action\t# how it shows\n" +
 			"# old_alert = {\n#\tscript_context = character\n# }\n\nreal_alert = {\n\tcount = 5 # use all for dynamic\n}\n",
 		"common/scripted_effects/00_marriage_effects.txt": "#####\n# EFFECT LIST\n# marry_on_realm_law - Marry two characters based on the realm law\n" +
@@ -340,15 +381,15 @@ func TestReadInfo(t *testing.T) {
 	})
 	for _, testCase := range []struct {
 		key  string
-		want InfoField
+		want Field
 	}{
-		{"texture", InfoField{Prose: "relative to the game folder", Type: "path"}},
-		{"type", InfoField{Prose: "how it shows"}},
-		{"script_context", InfoField{}},
-		{"count", InfoField{}},
+		{"texture", Field{Name: "texture", Origin: Declared, Doc: "relative to the game folder", Accepts: []Accept{declared(TypeFile)}}},
+		{"type", Field{Name: "type", Origin: Declared, Doc: "how it shows", Accepts: []Accept{{Type: TypeEnum, Enum: []string{"alert", "important_action"}, Origin: Declared}}}},
+		{"script_context", Field{}},
+		{"count", Field{}},
 	} {
-		if got := headers.Field([]string{"common/alert_types"}, "", testCase.key); got != testCase.want {
-			t.Errorf("header Field(%s) = %+v, want %+v", testCase.key, got, testCase.want)
+		if got := headers.Field([]string{"common/alert_types"}, "", testCase.key, true); !reflect.DeepEqual(got, testCase.want) {
+			t.Errorf("header Field(%s) = %+v\nwant %+v", testCase.key, got, testCase.want)
 		}
 	}
 	if got := headers["common/scripted_effects"].Definitions; !reflect.DeepEqual(got, map[string]string{"marry_on_realm_law": "Marry two characters based on the realm law"}) {
@@ -356,46 +397,10 @@ func TestReadInfo(t *testing.T) {
 	}
 }
 
-func TestDeclared(t *testing.T) {
-	for raw, want := range map[string]Accept{
-		"yes/no":                       {Type: TypeBool},
-		"none/mutual/giving/receiving": {Type: TypeEnum, Enum: []string{"none", "mutual", "giving", "receiving"}},
-		"diplomacy/subject/union":      {Type: TypeEnum, Enum: []string{"diplomacy", "subject", "union"}},
-		"minor|medium|major":           {Type: TypeEnum, Enum: []string{"minor", "medium", "major"}},
-		"bool":                         {Type: TypeBool},
-		"bool, optional":               {Type: TypeBool},
-		"float":                        {Type: TypeNumber},
-		"int":                          {Type: TypeNumber},
-		"integer":                      {Type: TypeNumber},
-		"num":                          {Type: TypeNumber},
-		"double":                       {Type: TypeNumber},
-		"fixed_point":                  {Type: TypeNumber},
-		"Integer":                      {Type: TypeNumber},
-		"string":                       {Type: TypeString},
-		"localization_key":             {Type: TypeLoc},
-		"loc key":                      {Type: TypeLoc},
-		"list of int":                  {Type: TypeNumber},
-	} {
-		want.Declared = true
-		if got, ok := (InfoField{Type: raw}).Declared(); !ok || !reflect.DeepEqual(got, want) {
-			t.Errorf("Declared(%q) = %+v, %v; want %+v", raw, got, ok, want)
-		}
-	}
-
-	for _, raw := range []string{
-		"trigger", "effect", "script value", "mtth", "database key", "database key, optional", "enum", "dynamic desc", "dynamic description, optional",
-		"name of global variable list with the list of candidates in", "locator_name_1", "the giver/receiver of the relation", "array of database keys", "a/b/c/d/e/f/g/h/i/j/k/l/m", "",
-	} {
-		if got, ok := (InfoField{Type: raw}).Declared(); ok {
-			t.Errorf("Declared(%q) = %+v, want it declined", raw, got)
-		}
-	}
-}
-
-// TestInfoIsRead is the gate over the prose the three games ship: every info, readme and markdown
-// file is read, a file that documents a key gives it up, and the declared types are counted by
-// whether they say what a value is. Set PMT_SCHEMA_GATE=1 and the three PMT_TEST_INSTALL_
-// variables, each a game's root folder.
+// TestInfoIsRead is the gate over the documentation the three games ship: every info, readme and
+// markdown file is read, a file with a key line gives a position, and the positions are counted by
+// what they say. The lines no form reads are logged. Set PMT_SCHEMA_GATE=1 and the three
+// PMT_TEST_INSTALL_ variables, each a game's root folder.
 func TestInfoIsRead(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_SCHEMA_GATE") == "" {
 		t.Skip("walks three installs; set PMT_SCHEMA_GATE=1")
@@ -406,15 +411,13 @@ func TestInfoIsRead(t *testing.T) {
 	for _, testCase := range []struct{ game, env string }{
 		{"ck3", "PMT_TEST_INSTALL_CK3"}, {"vic3", "PMT_TEST_INSTALL_VIC3"}, {"eu5", "PMT_TEST_INSTALL_EU5"},
 	} {
-		install := os.Getenv(testCase.env)
-		if install == "" {
-			t.Errorf("%s is not set: the gate cannot clear a game it never walked", testCase.env)
+		vocab := realVocab(t, testCase.game, testCase.env)
+		if vocab == nil {
 			continue
 		}
-
 		var files, data, silent int
 		var missed []string
-		inventory := source.Inventory("vanilla", source.Roots(install))
+		inventory := source.Inventory("vanilla", source.Roots(os.Getenv(testCase.env)))
 		for _, file := range inventory {
 			if file.Format != source.Info {
 				continue
@@ -425,54 +428,49 @@ func TestInfoIsRead(t *testing.T) {
 				continue
 			}
 
-			// a file with a key line gives at least one field
+			// a file with a key line gives at least one position, a member or the definition's own
+			// prose, or reports the lines no form reads
 			text, _ := file.Text()
-			fields := 0
-			for _, folder := range ReadInfo([]source.File{file}) {
-				fields += len(folder.Fields)
+			positions := 0
+			docs, unread := ReadInfo([]source.File{file}, vocab)
+			for _, folder := range docs {
+				positions += len(folder.Entry.Members) + min(len(folder.Entry.Doc), 1)
 			}
-			if fields == 0 && keyLine.MatchString(text) {
+			if positions == 0 && len(unread) == 0 && keyLine.MatchString(text) {
 				missed = append(missed, file.Rel)
-			} else if fields == 0 {
+			} else if positions == 0 {
 				silent++
 			}
 		}
 
-		// all of them together: what the game documents, and how much of it says what a value is
-		info := ReadInfo(inventory)
-		var fields, prose, typed, declared int
-		declined := map[string]int{}
-		for _, folder := range info {
-			for name, field := range folder.Fields {
-				if strings.Contains(name, ".") {
-					continue
+		// all of them together: the positions, and what they say
+		info, drift := ReadInfo(inventory, vocab)
+		counts := map[string]int{}
+		var walk func(field *Field)
+		walk = func(field *Field) {
+			for _, member := range field.Members {
+				counts["positions"]++
+				counts["with prose"] += min(len(member.Doc), 1)
+				counts["with a class"] += min(int(member.Class), 1)
+				counts["with a declared type"] += min(len(slices.DeleteFunc(slices.Clone(member.Accepts), func(accept Accept) bool { return accept.Origin != Declared })), 1)
+				if member.Need != NeedUnstated {
+					counts["need "+member.Need.String()+" "+member.NeedFrom.String()]++
 				}
-				fields, prose = fields+1, prose+min(len(field.Prose), 1)
-				if field.Type == "" {
-					continue
-				}
-				typed++
-				if _, ok := field.Declared(); ok {
-					declared++
-				} else {
-					declined[strings.ToLower(field.Type)]++
-				}
+				walk(member)
 			}
 		}
-		words := make([]string, 0, len(declined))
-		for word := range declined {
-			words = append(words, word)
+		for _, folder := range info {
+			walk(folder.Entry)
 		}
-		slices.SortFunc(words, func(first, second string) int { return cmp.Compare(declined[second], declined[first]) })
-		t.Logf("INFO %s: %d files (%d data files over the size limit, %d with no key line), %d folders, %d fields, %d with prose, %d with a type, %d of those say what a value is; most declined: %v",
-			testCase.game, files, data, silent, len(info), fields, prose, typed, declared, words[:min(len(words), 12)])
+		t.Logf("INFO %s: %d files (%d data files over the size limit, %d with no key line), %d folders, %v; %d lines no form reads: %v",
+			testCase.game, files, data, silent, len(info), counts, len(drift), drift)
 
-		if files < 50 || fields < 500 {
-			t.Errorf("%s: %d info files and %d fields under %s: wrong folder", testCase.game, files, fields, install)
+		if files < 50 || counts["positions"] < 500 {
+			t.Errorf("%s: %d info files and %d positions: wrong folder", testCase.game, files, counts["positions"])
 		}
 		if len(missed) > 0 {
 			slices.Sort(missed)
-			t.Errorf("%s: %d files hold a key line and gave no field: %v", testCase.game, len(missed), missed)
+			t.Errorf("%s: %d files hold a key line and gave no position: %v", testCase.game, len(missed), missed)
 		}
 	}
 }
@@ -480,12 +478,13 @@ func TestInfoIsRead(t *testing.T) {
 func TestReaderValue(t *testing.T) {
 	holder := &Field{Accepts: []Accept{{Type: TypeRef, Kind: "characters"}, {Type: TypeNumber}}}
 	culture := &Field{Accepts: []Accept{{Type: TypeRef, Kind: "cultures"}}}
-	shown := &Field{Accepts: []Accept{{Type: TypeBool, Declared: true}}}
+	shown := &Field{Accepts: []Accept{{Type: TypeBool, Origin: Declared}}}
 	style := &Field{Accepts: []Accept{{Type: TypeEnum, Enum: []string{"good", "bad"}}}}
 	title := &Field{Accepts: []Accept{{Type: TypeLoc}, {Type: TypeString}}}
 	texture := &Field{Accepts: []Accept{{Type: TypeFile}}}
 	born := &Field{Accepts: []Accept{{Type: TypeDate}}}
-	trait := &Field{Accepts: []Accept{{Type: TypeRef, Kind: "traits", Declared: true}}}
+	trait := &Field{Accepts: []Accept{{Type: TypeRef, Kind: "traits", Origin: Declared}}}
+	province := &Field{Accepts: []Accept{{Type: TypeNumber, Origin: Declared}, {Type: TypeRef, Kind: "characters"}}}
 
 	for _, testCase := range []struct {
 		name   string
@@ -524,6 +523,8 @@ func TestReaderValue(t *testing.T) {
 		{"a quoted word read as a bare one", culture, "norse", true, Value{Type: TypeRef, Kind: "cultures", Name: "norse"}},
 		{"a declared type", shown, "yes", false, Value{Type: TypeBool, Declared: true}},
 		{"a declared reference", trait, "brave", false, Value{Type: TypeRef, Kind: "traits", Name: "brave", Declared: true}},
+		{"a number that names a definition is its link, though a number is declared", province, "186004", false, Value{Type: TypeRef, Kind: "characters", Name: "186004"}},
+		{"a number that names nothing stays the declared number", province, "5", false, Value{Type: TypeNumber, Declared: true}},
 		{"an enum word", style, "bad", false, Value{Type: TypeEnum}},
 		{"a loc key", title, "my_title", false, Value{Type: TypeLoc, Name: "my_title"}},
 		{"text where no loc key is", title, "Some Title", true, Value{Type: TypeString}},

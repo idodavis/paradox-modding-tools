@@ -406,7 +406,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 	// a ceiling is findings traced to the game's own files, not a filter: one more fails
 	ceilings := map[string]int{
 		"ck3/unresolved-ref":        1,   // coronation.txt: province:b_constantinople is a barony, read as its province
-		"ck3/wrong-scope":           2,   // legend_spread_events_8.txt: argument category is also an artifact trigger
+		"ck3/wrong-scope":           1,   // legend_spread_events_8.txt: argument category is also an artifact trigger
 		"vic3/duplicate-definition": 39,  // coat_of_arms/01_subs.txt defines coats of arms twice; the game keeps the last
 		"eu5/unresolved-ref":        218, // learner gap: setup/start's wrapper words hide the dynasty: and c: names
 	}

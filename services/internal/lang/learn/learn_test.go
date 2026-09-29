@@ -507,7 +507,9 @@ func scanned(t *testing.T, id, install string, docs ...string) *schema.Schema {
 	for _, entryMode := range game.Get(id).EntryModes {
 		modes = append(modes, entryMode.Word)
 	}
-	sch, err := Learn(t.Context(), Input{Game: id, Version: "test", Files: files, Vocab: schema.ReadVocab(docs), Info: schema.ReadInfo(files), Loc: loc.NewKeys(keys), EntryModes: modes, Subjects: game.Get(id).SubjectDirs})
+	vocab := schema.ReadVocab(docs)
+	info, _ := schema.ReadInfo(files, vocab)
+	sch, err := Learn(t.Context(), Input{Game: id, Version: "test", Files: files, Vocab: vocab, Info: info, Loc: loc.NewKeys(keys), EntryModes: modes, Subjects: game.Get(id).SubjectDirs})
 	if err != nil {
 		t.Fatal(err)
 	}

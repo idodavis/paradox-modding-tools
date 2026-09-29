@@ -184,7 +184,9 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	}
 
 	// what the game says of itself, and the schema learned from its files
-	in := &Install{Index: idx, Vocab: schema.ReadVocab(req.Docs), Info: schema.ReadInfo(files)}
+	vocab := schema.ReadVocab(req.Docs)
+	docs, unread := schema.ReadInfo(files, vocab)
+	in := &Install{Index: idx, Vocab: vocab, Info: docs}
 	var modes []string
 	for _, entryMode := range info.EntryModes {
 		modes = append(modes, entryMode.Word)
@@ -194,6 +196,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 		return nil, err
 	}
 	in.Schema = sch
+	sch.Drift.DocLines = unread
 
 	// every file has its place in the inventory, in load order, whether or not it is read
 	idx.Files = files

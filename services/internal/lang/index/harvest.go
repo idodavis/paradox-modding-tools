@@ -59,9 +59,11 @@ type walk struct {
 	fired   map[string]bool // the kinds an edge may point at
 	kind    string          // the kind of the top-level definition being walked, and its name
 	top     string
+	around  string          // the nested definition the walk is inside, "" at the top one's own level
 	met     map[string]bool // the parameters of the macro being walked that have been met
 	isMacro bool            // its kind takes parameters
 	call    bool            // the word being written down is a macro written as a key
+	reused  *schema.Field   // the field a macro's block is read at, whose members learned their scopes outside the call
 	body    bool            // the block being walked is a body, or inside one
 	listed  bool            // the word is a list entry: a bare word, or a number's value (100 = some_event)
 	at      int             // a probe's offset: the walk takes only the statements around it; -1 for a whole file
@@ -401,18 +403,25 @@ func (walk *walk) statement(kind *schema.Kind, field *schema.Field, st *jomini.A
 	walk.parameters(key, st.Key.Range.Start)
 	walk.level(st, kind, field, below, value, scope, via)
 
-	// a name of the nested kind defined here: a faith in a religion, a setting in a game rule
-	if field != nil && field.Defines != "" && !st.Key.Quoted && (value.Type == schema.TypeUnresolved || (value.Type == schema.TypeRef && value.Kind == field.Defines)) && jomini.IsDefName(key) {
-		walk.def(Def{Kind: field.Defines, Name: key, Parent: walk.top}, st.Key.Range.Start)
+	// a name of the nested kind defined here, after any entry mode a mod writes: a faith in a
+	// religion, a setting in a game rule, EU5's INJECT_OR_CREATE:headwear in a gene group
+	// Its parent is the definition it sits in: a county's is its kingdom, not its empire
+	mode, name := jomini.Mode(key)
+	if field != nil && field.Defines != "" && !st.Key.Quoted && (value.Type == schema.TypeUnresolved || (value.Type == schema.TypeRef && value.Kind == field.Defines)) && jomini.IsDefName(name) {
+		parent := cmp.Or(walk.around, walk.top)
+		walk.def(Def{Kind: field.Defines, Name: name, Mode: mode, Parent: parent}, st.Key.Range.Start)
 		if walk.probe != nil && len(walk.probe.Chain) > 0 && walk.probe.Chain[len(walk.probe.Chain)-1].Statement == st {
 			last := &walk.probe.Chain[len(walk.probe.Chain)-1]
-			last.Key, last.Kind = schema.Value{Type: schema.TypeRef, Kind: field.Defines, Name: key, Parent: walk.top}, walk.reader.Schema.Kinds[field.Defines]
+			last.Key, last.Kind = schema.Value{Type: schema.TypeRef, Kind: field.Defines, Name: name, Parent: parent}, walk.reader.Schema.Kinds[field.Defines]
 		}
+		around := walk.around
+		walk.around = name
 		walk.inside(walk.reader.Schema.Kinds[field.Defines], below, block, scope, via)
+		walk.around = around
 		return
 	}
 
-	moved := false
+	moved, reused := false, (*schema.Field)(nil)
 	switch value.Type {
 	case schema.TypeToken:
 		// a token with no declared output is transparent: its block runs where it stands, and no
@@ -455,7 +464,7 @@ func (walk *walk) statement(kind *schema.Kind, field *schema.Field, st *jomini.A
 		if walk.call {
 			// a macro with no parameters is followed by more of the body it is written in:
 			// every_adult_child = { add_gold = 1 }
-			walk.call, below = false, field
+			walk.call, below, reused = false, field, field
 		}
 		if cite, isCite := jomini.Cite(key); isCite {
 			scope, moved = walk.scoped(walk.reader.Vocab.Prefixes[cite.Prefix].Out), true
@@ -463,9 +472,9 @@ func (walk *walk) statement(kind *schema.Kind, field *schema.Field, st *jomini.A
 			scope, moved = walk.scoped(cited.ScopeType), true
 		}
 	}
-	// a learned body scope fills in only a declared scope type, and only where nothing declared moved
-	// it
-	if !moved && below != nil && below != field && walk.reader.Vocab.IsScopeType(below.BodyScope) {
+	// a learned body scope fills in only a declared scope type, only where nothing declared moved it,
+	// and not in a macro's block, where the field's members learned it around the call
+	if !moved && below != nil && below != field && field != walk.reused && walk.reader.Vocab.IsScopeType(below.BodyScope) {
 		scope = below.BodyScope
 	}
 	if _, effect := walk.reader.Vocab.Effects[via]; !effect && value.Type != schema.TypeToken && value.Type != schema.TypeNumber {
@@ -478,10 +487,10 @@ func (walk *walk) statement(kind *schema.Kind, field *schema.Field, st *jomini.A
 		walk.value(below, st, via)
 		return
 	}
-	body := walk.body
-	walk.body = body || (below != nil && below.Class == schema.ClassBody)
+	body, outer := walk.body, walk.reused
+	walk.body, walk.reused = body || (below != nil && below.Class == schema.ClassBody), cmp.Or(reused, outer)
 	walk.inside(kind, below, block, scope, via)
-	walk.body = body
+	walk.body, walk.reused = body, outer
 }
 
 // scoped is a scope type the dump declares, or "": a link or token whose output is a value, a

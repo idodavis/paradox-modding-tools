@@ -28,7 +28,7 @@ func fixture(t *testing.T, id string) (*session.Session, string) {
 	t.Helper()
 	scan, _ := installs.LoadOrStore(id, sync.OnceValues(func() (*index.Install, error) {
 		dir := filepath.Join("..", "lang", "testdata", id)
-		return index.Scan(t.Context(), index.Request{Game: id, Dir: dir, Version: "test", Docs: []string{filepath.Join(dir, "docs")}})
+		return index.Scan(t.Context(), index.Request{Game: id, Dir: dir, Version: "test", Dumps: []string{filepath.Join(dir, "docs")}})
 	}))
 	install, err := scan.(func() (*index.Install, error))()
 	if err != nil {
@@ -38,7 +38,7 @@ func fixture(t *testing.T, id string) (*session.Session, string) {
 	if err := os.MkdirAll(filepath.Join(dir, "common"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := session.New(t.Context(), game.Get(id), install, []session.Mod{{ID: "mod", Name: "M", Dir: dir, Calendar: session.Calendar{Era: "AC", EpochOffset: 7782}}}, "")
+	sess, err := session.New(t.Context(), game.Get(id), install, []session.Mod{{ID: "mod", Name: "M", Dir: dir, Calendar: session.Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,9 +145,9 @@ func TestComplete(t *testing.T) {
 		item Item
 		want string
 	}{
-		{Item{Label: "add_gold", Value: schema.Value{Type: schema.TypeToken, Name: "add_gold"}}, "Adds gold to the scoped character"},
-		{Item{Label: "v.1.t", Value: schema.Value{Type: schema.TypeLoc, Name: "v.1.t"}}, "Hello"},
-		{Item{Label: "brave", Value: schema.Value{Type: schema.TypeRef, Kind: "traits", Name: "brave"}}, "Brave"},
+		{Item{Label: "add_gold", Word: schema.Word{Type: schema.WordCommand, Name: "add_gold"}}, "Adds gold to the scoped character"},
+		{Item{Label: "v.1.t", Word: schema.Word{Type: schema.WordLoc, Name: "v.1.t"}}, "Hello"},
+		{Item{Label: "brave", Word: schema.Word{Type: schema.WordReference, Database: "traits", Name: "brave"}}, "Brave"},
 	} {
 		if docs, err := Resolve(install, path, tt.item); err != nil || !strings.Contains(docs, tt.want) {
 			t.Errorf("%s: %q (%v)", tt.item.Label, docs, err)
@@ -260,7 +260,7 @@ func TestSymbols(t *testing.T) {
 	got, err := DocumentSymbols(install, path)
 	var names []string
 	for _, sym := range got {
-		names = append(names, sym.Kind+":"+sym.Name)
+		names = append(names, sym.Database+":"+sym.Name)
 	}
 	if err != nil || !slices.Equal(names, []string{"scripted_triggers:m_inline", "events:m.1", "saved_scopes:mine", "events:m.2"}) {
 		t.Errorf("a file's definitions in the file's order: %v (%v)", names, err)
@@ -304,7 +304,7 @@ func TestDiagnose(t *testing.T) {
 		{"a declared cite that resolves", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { exists = title:k_x }\n}\n", nil},
 		{"a numeric cite nothing defines", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { exists = character:999999 }\n}\n", []string{"unresolved-ref"}},
 		{"a declared prefix bound to no kind", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { exists = flag:whatever }\n}\n", nil},
-		{"a script-made kind is never accused", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { exists = scope:nobody }\n}\n", nil},
+		{"a saved scope nothing saves", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { exists = scope:nobody }\n}\n", []string{"unresolved-ref"}},
 		{"a bare word nothing declares is never accused", "events/x.txt", "namespace = m\nm.1 = {\n\ttheme = no_such_theme\n}\n", nil},
 		{"a value of another type than the game declares", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { days = soon }\n}\n", []string{"wrong-value-type"}},
 		{"a value of the declared type", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { days = 10 }\n}\n", nil},
@@ -381,7 +381,7 @@ func TestDiagnose(t *testing.T) {
 			if got := codes(file.Path, nil); len(got) != 0 {
 				t.Errorf("an install file: %v", got)
 			}
-			if len(install.Defs("v.2")) != 1 || install.Workspace.Def("events", "v.1") {
+			if len(install.Defs("v.2")) != 1 || (index.All{install.Workspace}).Def("events", "v.1") {
 				t.Error("opening an install file harvests nothing")
 			}
 			install.DidClose(file.Path)
@@ -416,7 +416,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 			t.Errorf("%s: %s is not set", testCase.id, testCase.env)
 			continue
 		}
-		install, err := index.Scan(t.Context(), index.Request{Game: testCase.id, Dir: dir, Version: "gate", Docs: game.DumpDirs(testCase.id, dir)})
+		install, err := index.Scan(t.Context(), index.Request{Game: testCase.id, Dir: dir, Version: "gate", Dumps: game.DumpDirs(testCase.id, dir)})
 		if err != nil {
 			t.Fatalf("%s: %v", testCase.id, err)
 		}
@@ -557,7 +557,7 @@ func TestInlayHints(t *testing.T) {
 	if len(got) != 1 || strings.Contains(got[0].Label, "-") {
 		t.Errorf("a date as a key earns a hint; a year the offset pushes below one earns none: %+v", got)
 	}
-	install.Mods[0].Calendar.Era = ""
+	install.Mods[0].Calendar = nil
 	if got, _ := InlayHints(install, opened(install, dir, "events/y.txt", text)); len(got) != 0 {
 		t.Errorf("silent without a calendar: %+v", got)
 	}
@@ -596,95 +596,91 @@ func TestHover(t *testing.T) {
 	for _, tt := range []struct {
 		what, rel, text, needle string
 		plus                    int
-		typ                     schema.ValueType
+		typ                     schema.WordType
 		check                   func(insp *Inspect) bool
 	}{
-		{"a definition: its kind, its name, its loc label and its site", "common/traits/m.txt", "bold = {\n\tname = x\n}\n", "bold", 0, schema.TypeRef,
+		{"a definition: its kind, its name, its loc label and its site", "common/traits/m.txt", "bold = {\n\tname = x\n}\n", "bold", 0, schema.WordReference,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "traits" && insp.Value.Name == "bold" && len(insp.Sites) == 1 && insp.Sites[0].Origin == "mod" && insp.Sites[0].Path != "" && !insp.Graphed
+				return insp.Word.Database == "traits" && insp.Word.Name == "bold" && len(insp.Sites) == 1 && insp.Sites[0].Origin == "mod" && insp.Sites[0].Path != "" && !insp.Graphed
 			}},
-		{"a mod's twin of an install definition carries both sites, the mod's winning", "events/x.txt", "namespace = v\nv.1 = {\n\ttype = character_event\n}\n", "v.1 =", 0, schema.TypeRef,
+		{"a mod's twin of an install definition carries both sites, the mod's winning", "events/x.txt", "namespace = v\nv.1 = {\n\ttype = character_event\n}\n", "v.1 =", 0, schema.WordReference,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "events" && len(insp.Sites) == 2 && insp.Sites[0].Origin == "vanilla" && insp.Sites[1].Origin == "mod" && insp.Winner == 1 && insp.Graphed
+				return insp.Word.Database == "events" && len(insp.Sites) == 2 && insp.Sites[0].Origin == "vanilla" && insp.Sites[1].Origin == "mod" && insp.Winner == 1 && insp.Graphed
 			}},
-		{"a definition's label is its loc text", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { has_trait = brave }\n}\n", "brave", 0, schema.TypeRef,
+		{"a definition's label is its loc text", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { has_trait = brave }\n}\n", "brave", 0, schema.WordReference,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "traits" && insp.Label == "Brave" && len(insp.Sites) == 1
+				return insp.Word.Database == "traits" && insp.Name == "Brave" && len(insp.Sites) == 1
 			}},
-		{"the comment above a definition is its docs, read from the file", "events/x.txt", "namespace = m\n# The mod's event.\n# Fires at birth.\nm.1 = { type = character_event }\n", "m.1", 0, schema.TypeRef,
-			func(insp *Inspect) bool { return insp.Docs == "The mod's event.\nFires at birth." }},
-		{"a loc key: its text and its site", "events/x.txt", "namespace = m\nm.1 = {\n\ttitle = v.1.t\n}\n", "v.1.t", 0, schema.TypeLoc,
+		{"the comment above a definition is its docs, read from the file", "events/x.txt", "namespace = m\n# The mod's event.\n# Fires at birth.\nm.1 = { type = character_event }\n", "m.1", 0, schema.WordReference,
+			func(insp *Inspect) bool { return insp.Prose == "The mod's event.\nFires at birth." }},
+		{"a loc key: its text and its site", "events/x.txt", "namespace = m\nm.1 = {\n\ttitle = v.1.t\n}\n", "v.1.t", 0, schema.WordLoc,
 			func(insp *Inspect) bool {
-				return insp.Label == "Hello" && len(insp.Sites) == 1 && strings.HasSuffix(insp.Sites[0].Rel, "v_l_english.yml") && insp.Sites[0].Range.Start.Line == 1
+				return insp.Name == "Hello" && len(insp.Sites) == 1 && strings.HasSuffix(insp.Sites[0].Rel, "v_l_english.yml") && insp.Sites[0].Range.Start.Line == 1
 			}},
-		{"a structure key: its class, what it accepts, and the game's own prose", "events/x.txt", "namespace = m\nm.1 = {\n\ttype = character_event\n\toption = {\n\t\tname = x\n\t}\n}\n", "option", 0, schema.TypeMember,
+		{"a key: the game's own prose", "events/x.txt", "namespace = m\nm.1 = {\n\ttype = character_event\n\toption = {\n\t\tname = x\n\t}\n}\n", "option", 0, schema.WordKey,
+			func(insp *Inspect) bool { return insp.Prose == "One choice offered to the player." }},
+		{"a declared token: its prose, usage, scope and what it accepts", "common/on_action/x.txt", "on_birth = {\n\teffect = {\n\t\tadd_gold = 1\n\t}\n}\n", "add_gold", 0, schema.WordCommand,
 			func(insp *Inspect) bool {
-				return insp.Class == "structure" && insp.Docs == "One choice offered to the player."
+				return insp.Prose == "Adds gold to the scoped character" && insp.Word.Declared && insp.Scopes.This == "character"
 			}},
-		{"a key that accepts a loc key says so", "events/x.txt", "namespace = m\nm.1 = {\n\tdesc = m.1.desc\n}\n", "desc", 0, schema.TypeMember,
-			func(insp *Inspect) bool { return len(insp.Accepts) > 0 && insp.Accepts[0] == "loc" }},
-		{"a declared token: its prose, usage, scope and what it accepts", "common/on_action/x.txt", "on_birth = {\n\teffect = {\n\t\tadd_gold = 1\n\t}\n}\n", "add_gold", 0, schema.TypeToken,
-			func(insp *Inspect) bool {
-				return insp.Docs == "Adds gold to the scoped character" && insp.Value.Declared && insp.Scope == "character"
-			}},
-		{"a body key under a token is an argument", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tset_variable = {\n\t\t\tname = x\n\t\t}\n\t}\n}\n", "name = x", 0, schema.TypeMember,
+		{"a body key under a token is an argument", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tset_variable = {\n\t\t\tname = x\n\t\t}\n\t}\n}\n", "name = x", 0, schema.WordKey,
 			func(insp *Inspect) bool { return insp.Key == "name" }},
-		{"a link as a key: from its scope to the one it yields", "common/on_action/x.txt", "on_birth = {\n\teffect = {\n\t\tcapital_county = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n", "capital_county", 0, schema.TypeScopePath,
-			func(insp *Inspect) bool { return insp.Scope == "character" && insp.ScopeOut == "landed_title" }},
-		{"an iterator: the scope it runs in and the one it hands its block", "common/on_action/x.txt", "on_birth = {\n\teffect = {\n\t\tevery_vassal = {\n\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n", "every_vassal", 0, schema.TypeToken,
-			func(insp *Inspect) bool { return insp.Scope == "character" && insp.ScopeOut == "character" }},
-		{"a trigger inside a logic word is a trigger, in the scope around it", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = {\n\t\tOR = {\n\t\t\thas_trait = brave\n\t\t}\n\t}\n}\n", "has_trait", 0, schema.TypeToken,
+		{"an event target as a key: the scope it is written in", "common/on_action/x.txt", "on_birth = {\n\teffect = {\n\t\tcapital_county = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n", "capital_county", 0, schema.WordScopePath,
+			func(insp *Inspect) bool { return insp.Scopes.This == "character" }},
+		{"an iterator: the scope it runs in", "common/on_action/x.txt", "on_birth = {\n\teffect = {\n\t\tevery_vassal = {\n\t\t\tadd_gold = 1\n\t\t}\n\t}\n}\n", "every_vassal", 0, schema.WordCommand,
+			func(insp *Inspect) bool { return insp.Scopes.This == "character" }},
+		{"a trigger inside a logic word is a trigger, in the scope around it", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = {\n\t\tOR = {\n\t\t\thas_trait = brave\n\t\t}\n\t}\n}\n", "has_trait", 0, schema.WordCommand,
 			func(insp *Inspect) bool {
-				return insp.Docs == "does the character have this trait" && insp.Scope == "character"
+				return insp.Prose == "does the character have this trait" && insp.Scopes.This == "character"
 			}},
-		{"a word under a token nothing defines is the token's slot value", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tadd_character_flag = born_as_taltos\n\t}\n}\n", "born_as_taltos", 0, schema.TypeUnresolved,
-			func(insp *Inspect) bool { return insp.Key == "add_character_flag" && insp.Docs == "adds a flag" }},
-		{"a numbered branch of a random list is a weight", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\trandom_list = {\n\t\t\t95 = { add_gold = 1 }\n\t\t\t5 = { add_gold = 2 }\n\t\t}\n\t}\n}\n", "95 = {", 0, schema.TypeNumber,
+		{"a word under a token nothing defines is the token's slot value", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tadd_character_flag = born_as_taltos\n\t}\n}\n", "born_as_taltos", 0, schema.WordUnknown,
+			func(insp *Inspect) bool { return insp.Key == "add_character_flag" && insp.Prose == "adds a flag" }},
+		{"a numbered branch of a random list is a weight", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\trandom_list = {\n\t\t\t95 = { add_gold = 1 }\n\t\t\t5 = { add_gold = 2 }\n\t\t}\n\t}\n}\n", "95 = {", 0, schema.WordNumber,
 			func(insp *Inspect) bool { return insp.Weight == 95 }},
-		{"a date, written out, and in the mod's calendar", "common/decisions/d.txt", "m_decision = {\n\tstart_date = 8082.1.1\n}\n", "8082.1.1", 0, schema.TypeDate,
+		{"a date, written out, and in the mod's calendar", "common/decisions/d.txt", "m_decision = {\n\tstart_date = 8082.1.1\n}\n", "8082.1.1", 0, schema.WordDate,
 			func(insp *Inspect) bool {
 				return insp.Date == "January 1st, 8082 AD; 300.1.1 AC in this mod's calendar"
 			}},
-		{"a quoted date", "common/decisions/d.txt", "m_decision = {\n\tstart_date = \"1066.9.15\"\n}\n", "1066.9.15", 0, schema.TypeDate,
+		{"a quoted date", "common/decisions/d.txt", "m_decision = {\n\tstart_date = \"1066.9.15\"\n}\n", "1066.9.15", 0, schema.WordDate,
 			func(insp *Inspect) bool { return strings.HasPrefix(insp.Date, "September 15th, 1066 AD") }},
-		{"a date as a history key", "history/characters/m.txt", "1000 = {\n\t830.3.22 = {\n\t\tbirth = yes\n\t}\n}\n", "830.3.22", 0, schema.TypeDate,
+		{"a date as a history key", "history/characters/m.txt", "1000 = {\n\t830.3.22 = {\n\t\tbirth = yes\n\t}\n}\n", "830.3.22", 0, schema.WordDate,
 			func(insp *Inspect) bool { return strings.HasPrefix(insp.Date, "March 22nd, 830 AD") }},
-		{"a character cite as a key: the character, by its label", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tcharacter:186004 = { save_scope_as = x }\n\t}\n}\n", "character:186004", 10, schema.TypeRef,
+		{"a character's prefixed word as a key: the character", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tcharacter:186004 = { save_scope_as = x }\n\t}\n}\n", "character:186004", 10, schema.WordReference,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "characters" && insp.Value.Name == "186004" && insp.Label == "Rognvald" && len(insp.Sites) == 1 && strings.HasSuffix(insp.Sites[0].Rel, "v_characters.txt")
+				return insp.Word.Database == "characters" && insp.Word.Name == "186004" && len(insp.Sites) == 1 && strings.HasSuffix(insp.Sites[0].Rel, "v_characters.txt")
 			}},
-		{"a character cite as a value", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = {\n\t\texists = character:186004\n\t}\n}\n", "character:186004", 0, schema.TypeRef,
-			func(insp *Inspect) bool { return insp.Value.Kind == "characters" && insp.Value.Declared }},
-		{"a saved scope: where its own definition saves it, not another's, none replacing another, and the scope type there", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tsave_scope_as = mine\n\t\ttitle:c_x = { save_scope_as = near }\n\t}\n\ttrigger = { exists = scope:near }\n}\nm.2 = {\n\timmediate = { save_scope_as = near }\n}\n", "scope:near", 6, schema.TypeRef,
+		{"a character cite as a value", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = {\n\t\texists = character:186004\n\t}\n}\n", "character:186004", 0, schema.WordReference,
+			func(insp *Inspect) bool { return insp.Word.Database == "characters" && insp.Word.Declared }},
+		{"a saved scope: where its own definition saves it, not another's, none replacing another, and the scope type there", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tsave_scope_as = mine\n\t\ttitle:c_x = { save_scope_as = near }\n\t}\n\ttrigger = { exists = scope:near }\n}\nm.2 = {\n\timmediate = { save_scope_as = near }\n}\n", "scope:near", 6, schema.WordReference,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "saved_scopes" && len(insp.Sites) == 1 && insp.Sites[0].Range.Start.Line == 4 && insp.Winner == -1 && insp.ScopeOut == "landed_title"
+				return insp.Word.Database == "saved_scopes" && len(insp.Sites) == 1 && insp.Sites[0].Range.Start.Line == 4 && insp.Winner == -1
 			}},
-		{"a variable: its site", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tset_variable = { name = foo value = 3 }\n\t}\n\ttrigger = { exists = var:foo }\n}\n", "var:foo", 4, schema.TypeRef,
+		{"a variable: its site", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tset_variable = { name = foo value = 3 }\n\t}\n\ttrigger = { exists = var:foo }\n}\n", "var:foo", 4, schema.WordReference,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "variables" && len(insp.Sites) == 1 && insp.Sites[0].Range.Start.Line == 3
+				return insp.Word.Database == "variables" && len(insp.Sites) == 1 && insp.Sites[0].Range.Start.Line == 3
 			}},
-		{"a macro's parameter: its macro, and the words written for it where the macro is called", "common/scripted_effects/x.txt", "m_effect = {\n\tadd_gold = $AMOUNT$\n}\n", "$AMOUNT$", 1, schema.TypeParam,
-			func(insp *Inspect) bool { return insp.Value.Name == "AMOUNT" && len(insp.Sites) == 1 }},
-		{"the install's parameter, with the values its callers write", "common/scripted_effects/x.txt", "m_effect = {\n\tv_effect = { AMOUNT = 7 }\n}\n", "AMOUNT", 0, schema.TypeRef,
-			func(insp *Inspect) bool { return insp.Value.Kind == "params" && insp.Value.Parent == "v_effect" }},
-		{"a macro written as a key: its definition", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tv_effect = { AMOUNT = 5 }\n\t}\n}\n", "v_effect", 0, schema.TypeRef,
+		{"a macro's parameter: its macro, and the words written for it where the macro is called", "common/scripted_effects/x.txt", "m_effect = {\n\tadd_gold = $AMOUNT$\n}\n", "$AMOUNT$", 1, schema.WordParameter,
+			func(insp *Inspect) bool { return insp.Word.Name == "AMOUNT" && len(insp.Sites) == 1 }},
+		{"the install's parameter, with the values its callers write", "common/scripted_effects/x.txt", "m_effect = {\n\tv_effect = { AMOUNT = 7 }\n}\n", "AMOUNT", 0, schema.WordReference,
+			func(insp *Inspect) bool { return insp.Word.Database == "params" && insp.Word.Parent == "v_effect" }},
+		{"a macro written as a key: its definition", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tv_effect = { AMOUNT = 5 }\n\t}\n}\n", "v_effect", 0, schema.WordReference,
 			func(insp *Inspect) bool {
-				return insp.Value.Kind == "scripted_effects" && len(insp.Sites) == 1 && insp.Sites[0].Origin == "vanilla"
+				return insp.Word.Database == "scripted_effects" && len(insp.Sites) == 1 && insp.Sites[0].Origin == "vanilla"
 			}},
-		{"a constant: its value, looked up within the file", "events/x.txt", "@gold_cost = 50\nnamespace = m\nm.1 = {\n\timmediate = {\n\t\tadd_gold = @gold_cost\n\t}\n}\n", "@gold_cost\n", 1, schema.TypeConstant,
+		{"a constant: its value, looked up within the file", "events/x.txt", "@gold_cost = 50\nnamespace = m\nm.1 = {\n\timmediate = {\n\t\tadd_gold = @gold_cost\n\t}\n}\n", "@gold_cost\n", 1, schema.WordConstant,
 			func(insp *Inspect) bool {
-				return insp.Label == "50" && len(insp.Sites) == 1 && insp.Sites[0].Range.Start.Line == 0
+				return insp.Name == "50" && len(insp.Sites) == 1 && insp.Sites[0].Range.Start.Line == 0
 			}},
-		{"a colour swatch", "common/traits/m.txt", "bold = {\n\tcolor = rgb { 255 0 0 }\n}\n", "color", 0, schema.TypeUnresolved,
+		{"a colour swatch", "common/traits/m.txt", "bold = {\n\tcolor = rgb { 255 0 0 }\n}\n", "color", 0, schema.WordUnknown,
 			func(insp *Inspect) bool { return insp.Color == "#ff0000" }},
-		{"a file: where it is, and its header when it is an image", "gui/m.gui", "types m_types = {\n\ttype m_icon = icon {\n\t\ttexture = \"gfx/interface/icons/traits/brave.dds\"\n\t}\n}\n", "gfx/interface", 0, schema.TypeFile,
+		{"a file: where it is, and its header when it is an image", "gui/m.gui", "types m_types = {\n\ttype m_icon = icon {\n\t\ttexture = \"gfx/interface/icons/traits/brave.dds\"\n\t}\n}\n", "gfx/interface", 0, schema.WordFile,
 			func(insp *Inspect) bool { return len(insp.Sites) == 1 && insp.Image != nil && insp.Image.Width > 0 }},
-		{"a loc key at the line's start", "localization/english/m_l_english.yml", locText, "m.1.t", 0, schema.TypeLoc,
-			func(insp *Inspect) bool { return insp.Label == "Cost: $VALUE|=+0$ and $v.1.t$" }},
-		{"an engine value the loc text interpolates", "localization/english/m_l_english.yml", locText, "VALUE", 0, schema.TypeParam,
-			func(insp *Inspect) bool { return insp.Label == "" }},
-		{"a loc key the loc text interpolates", "localization/english/m_l_english.yml", locText, "v.1.t", 0, schema.TypeLoc,
-			func(insp *Inspect) bool { return insp.Label == "Hello" }},
+		{"a loc key at the line's start", "localization/english/m_l_english.yml", locText, "m.1.t", 0, schema.WordLoc,
+			func(insp *Inspect) bool { return insp.Name == "Cost: $VALUE|=+0$ and $v.1.t$" }},
+		{"an engine value the loc text interpolates", "localization/english/m_l_english.yml", locText, "VALUE", 0, schema.WordParameter,
+			func(insp *Inspect) bool { return insp.Name == "" }},
+		{"a loc key the loc text interpolates", "localization/english/m_l_english.yml", locText, "v.1.t", 0, schema.WordLoc,
+			func(insp *Inspect) bool { return insp.Name == "Hello" }},
 	} {
 		path := opened(install, dir, tt.rel, tt.text)
 		line, col := aim(t, tt.text, tt.needle, tt.plus)
@@ -693,7 +689,7 @@ func TestHover(t *testing.T) {
 			t.Errorf("%s: no card (%v)", tt.what, err)
 			continue
 		}
-		if card.Value.Type != tt.typ || !tt.check(card) {
+		if card.Word.Type != tt.typ || !tt.check(card) {
 			t.Errorf("%s: %+v", tt.what, *card)
 		}
 	}
@@ -716,7 +712,7 @@ func TestHover(t *testing.T) {
 	history := "1000 = {\n\tculture = norse\n}\n"
 	path := opened(install, dir, "history/characters/m.txt", history)
 	line, col := aim(t, history, "norse", 0)
-	if card, _ := Hover(install, path, line, col); card == nil || card.Value.Type == schema.TypeLoc {
+	if card, _ := Hover(install, path, line, col); card == nil || card.Word.Type == schema.WordLoc {
 		t.Errorf("loc never wins over script: %+v", card)
 	}
 }

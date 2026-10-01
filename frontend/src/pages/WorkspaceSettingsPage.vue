@@ -30,6 +30,7 @@ import {
   ImportWorkshopIgnore,
 } from "@services/workspaceservice";
 import type { WorkspaceMod } from "@services/models";
+import type { Era } from "@services/internal/session/models";
 import { CopyDiagnostics } from "@services/logservice";
 import FileSelector, { pickDirectory } from "../components/FileSelector.vue";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
@@ -553,9 +554,9 @@ function patchMod(mod: WorkspaceMod, patch: ModPatch): void {
 
 /** The calendar's own setter, debounced: setting one drops the session, which is rebuilt. */
 const persistCalendar = useDebounceFn(
-  async (mod: WorkspaceMod, era: string, epochOffset: number) => {
+  async (mod: WorkspaceMod, eras: Era[]) => {
     try {
-      await SetWorkspaceModCalendar(id.value, mod.id, era, epochOffset);
+      await SetWorkspaceModCalendar(id.value, mod.id, eras);
     } catch (e) {
       toast.add({
         title: e instanceof Error ? e.message : String(e),
@@ -567,10 +568,9 @@ const persistCalendar = useDebounceFn(
 );
 
 /** Show the change at once, persist it once the typing stops. */
-function setModCalendar(mod: WorkspaceMod, era: string, epochOffset: number): void {
-  mod.era = era;
-  mod.epochOffset = epochOffset;
-  void persistCalendar(mod, era, epochOffset);
+function setModCalendar(mod: WorkspaceMod, eras: Era[]): void {
+  mod.eras = eras;
+  void persistCalendar(mod, eras);
 }
 
 async function exportIgnore(mod: WorkspaceMod): Promise<void> {
@@ -752,7 +752,7 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
               v-if="langHealth"
               v-model:open="scriptDocsOpen"
               :dumps="dumps"
-              :drift="langHealth.drift"
+              :unread="langHealth.unread"
             />
             <UCard
               title="Diagnostics"
@@ -784,7 +784,7 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                   :thumb-url="wsStore.thumbUrls[mod.id]"
                   @update:expanded="setModExpanded(mod.id, $event)"
                   @patch="patchMod(mod, $event)"
-                  @calendar="(era, off) => setModCalendar(mod, era, off)"
+                  @calendar="(eras) => setModCalendar(mod, eras)"
                   @import-ignore="importIgnore(mod)"
                   @export-ignore="exportIgnore(mod)"
                   @remove="removeMod(mod)"

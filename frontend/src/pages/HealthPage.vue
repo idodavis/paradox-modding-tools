@@ -10,7 +10,17 @@ import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import DetailPane from "../components/DetailPane.vue";
 import ScriptSnippet from "../components/ScriptSnippet.vue";
-import HealthTable, { type Card, type Gap, type Row } from "../components/health/HealthTable.vue";
+import HealthTable, {
+  PROBLEM_CARDS,
+  problemsOf,
+  type Card,
+  type Gap,
+  type ProblemCard,
+  type Row,
+} from "../components/health/HealthTable.vue";
+import { useQuery } from "@pinia/colada";
+import { DiagnosticCodes } from "@services/ideservice";
+import { useSettingsStore } from "../stores/settings";
 import { useHealth } from "../composables/useHealth";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { useOpenInIde } from "../composables/useOpenInIde";
@@ -26,10 +36,22 @@ const store = useWorkspaceStore();
 const { openInIde } = useOpenInIde();
 const workspaceId = computed(() => String(route.params.id ?? ""));
 const live = useLiveEnabled(workspaceId);
-const { order, dirty, health, error, isPending, save, saving, locKey, lookup, places, lines } = useHealth(
+const { order, dirty, health: report, error, isPending, save, saving, locKey, lookup, places, lines } = useHealth(
   workspaceId,
   live,
 );
+
+// the report without the problems whose check the user turned off (ide.diag.<code>, else its
+// default); a parser's own code is always on
+const settings = useSettingsStore();
+const { data: codes } = useQuery({ key: ["diagnostic-codes"], query: () => DiagnosticCodes() });
+const health = computed(() => {
+  const on = (code: string) => {
+    const stored = settings.values[`ide.diag.${code}`];
+    return stored ? stored === "on" : (codes.value?.find((known) => known.code === code)?.default ?? true);
+  };
+  return report.value && { ...report.value, problems: (report.value.problems ?? []).filter((problem) => on(problem.code)) };
+});
 const card = shallowRef<Card>("contests");
 const selected = shallowRef<Row | null>(null);
 // the rows the table shows for its card, which that card's numbers count
@@ -92,6 +114,11 @@ const cards = computed(() => {
       count: listed("files", report?.files).length,
       note: "images the game finds by a name",
     },
+    ...(Object.keys(PROBLEM_CARDS) as ProblemCard[]).map((id) => ({
+      id, label: PROBLEM_CARDS[id].label, color: "neutral",
+      count: listed(id, problemsOf(report, id)).length,
+      note: "the editor's checks",
+    })),
   ] satisfies { id: Card; label: string; color: string; count: number; note: string }[];
 });
 const current = computed(() => cards.value.find((item) => item.id === card.value));
@@ -105,7 +132,8 @@ const sites = computed(() => {
   if ("sites" in row) {
     return (row.sites ?? []).map((site, i) => ({ ...site, at: sources[site.file], lines: lines.value?.[i] ?? null }));
   }
-  return [{ at: sources[row.file], line: row.line, lines: null, kind: undefined, name: undefined }];
+  if ("site" in row) return [{ ...row.site, at: sources[row.site.file], lines: lines.value?.[0] ?? null }];
+  return [{ at: sources[row.file], line: row.line, lines: null, database: undefined, name: undefined }];
 });
 const kept = computed(() => (selected.value && "winner" in selected.value ? selected.value.winner : -1));
 // the open row when it is a contest, whose kind and rule head the pane
@@ -124,6 +152,7 @@ const ruleText = computed(() => {
 const title = computed(() => {
   const row = selected.value;
   if (!row) return "";
+  if ("message" in row) return row.message;
   if ("key" in row) return row.key;
   if ("name" in row) return row.name;
   return `${store.originName(row.from)} needs ${store.originName(row.to)}`;
@@ -133,10 +162,8 @@ const title = computed(() => {
 watch(selected, (row) => {
   const sources = health.value?.sources ?? [];
   locKey.value = row && "gap" in row ? row.key : "";
-  places.value =
-    row && "sites" in row
-      ? (row.sites ?? []).map((site) => ({ path: sources[site.file].path, line: site.line, col: site.col, definition: "rule" in row }))
-      : [];
+  const written = row && "site" in row ? [row.site] : row && "sites" in row ? (row.sites ?? []) : [];
+  places.value = written.map((site) => ({ path: sources[site.file].path, line: site.line, col: site.col, definition: !!row && "rule" in row }));
 });
 </script>
 
@@ -169,7 +196,7 @@ watch(selected, (row) => {
       <UButton label="Save as workspace order" size="sm" :disabled="!dirty" :loading="saving" @click="save()" />
     </div>
 
-    <div class="grid shrink-0 grid-cols-6 gap-2 p-2">
+    <div class="grid shrink-0 grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2 p-2">
       <button
         v-for="item in cards"
         :key="item.id"
@@ -212,7 +239,7 @@ watch(selected, (row) => {
           :line="sites[kept]?.line ?? sites[0]?.line"
         >
           <template v-if="contest" #badges>
-            <UBadge :label="contest.kind" color="neutral" variant="subtle" />
+            <UBadge :label="contest.database" color="neutral" variant="subtle" />
             <UBadge :label="contest.rule" :color="contest.firstWins ? 'warning' : 'info'" variant="subtle" />
             <span class="text-sm text-toned">{{ ruleText }}</span>
           </template>
@@ -228,7 +255,7 @@ watch(selected, (row) => {
                   <span class="shrink-0 text-sm font-medium text-highlighted">
                     {{ store.originName(site.at.origin) }}
                   </span>
-                  <UBadge v-if="site.kind" :label="site.kind" color="neutral" variant="subtle" size="sm" />
+                  <UBadge v-if="site.database" :label="site.database" color="neutral" variant="subtle" size="sm" />
                   <span v-if="site.name" class="shrink-0 font-mono text-xs text-toned">{{ site.name }}</span>
                   <button
                     type="button"
@@ -257,7 +284,7 @@ watch(selected, (row) => {
             </template>
             <section v-if="art">
               <p class="mb-2 text-toned">
-                Every {{ art.kind }} definition in the game has these images, which the game finds by the name;
+                Every {{ art.database }} definition in the game has these images, which the game finds by the name;
                 this one lacks {{ art.missing?.length ?? 0 }} of {{ art.of }}:
               </p>
               <ul class="space-y-1 rounded-md border border-default bg-default p-3 font-mono text-xs text-default">

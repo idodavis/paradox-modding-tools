@@ -127,7 +127,7 @@ func CodeActions(sess *session.Session, path string, line, col int) ([]CodeActio
 	if word == nil || word.IsKey || word.Level.Below == nil || sess.All().Loc(word.Text) {
 		return out, nil
 	}
-	if !slices.ContainsFunc(word.Level.Below.Accepts, func(accept schema.Accept) bool { return accept.Type == schema.TypeLoc }) || !loc.LooksLikeKey(word.Text) {
+	if !slices.ContainsFunc(word.Level.Below.Takes, func(take schema.Take) bool { return take.Type == schema.WordLoc }) || !loc.LooksLikeKey(word.Text) {
 		return out, nil
 	}
 	target, at := file.locFile()
@@ -159,11 +159,13 @@ func (file *file) locFile() (string, Position) {
 			return at.Path, Position{Line: lines}
 		}
 	}
-	return filepath.Join(mod.Dir, "localization", sess.Language, mod.ID+"_l_"+sess.Language+".yml"), Position{}
+	folders := sess.Game.ModFolders
+	folder := folders[slices.IndexFunc(folders, func(folder string) bool { return strings.HasSuffix("/"+folder, "/localization") })]
+	return filepath.Join(mod.Dir, filepath.FromSlash(folder), sess.Language, mod.ID+"_l_"+sess.Language+".yml"), Position{}
 }
 
 // InlayHints is the era's date after every date of a file, where the mod declares a calendar and
-// the year stays positive.
+// one of its eras applies.
 func InlayHints(sess *session.Session, path string) ([]InlayHint, error) {
 	sess.RLock()
 	defer sess.RUnlock()
@@ -172,14 +174,15 @@ func InlayHints(sess *session.Session, path string) ([]InlayHint, error) {
 		return nil, err
 	}
 	calendar := file.place.Calendar
-	if calendar.Era == "" || file.place.Format != source.Script {
+	if len(calendar) == 0 || file.place.Format != source.Script {
 		return nil, nil
 	}
 	var out []InlayHint
 	lines := file.parsed.Lines()
 	hint := func(scalar *jomini.Scalar) {
-		if year, month, day, _, ok := jomini.ParseDate(scalar.Text); ok && year-calendar.EpochOffset > 0 {
-			out = append(out, InlayHint{Position: lines.PositionAt(scalar.Range.End), Label: fmt.Sprintf(" %d.%d.%d %s", year-calendar.EpochOffset, month, day, calendar.Era)})
+		year, month, day, _, ok := jomini.ParseDate(scalar.Text)
+		if inEra, era, applies := calendar.Read(year); ok && applies {
+			out = append(out, InlayHint{Position: lines.PositionAt(scalar.Range.End), Label: fmt.Sprintf(" %d.%d.%d %s", inEra, month, day, era)})
 		}
 	}
 	jomini.Walk(file.parsed.Root, func(st jomini.Statement, depth int, parent *jomini.Block) bool {

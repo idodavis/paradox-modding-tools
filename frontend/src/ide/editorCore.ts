@@ -1,9 +1,8 @@
 /**
  * The editor's reading of the backend's answers, free of the workbench: columns between the
- * backend's UTF-8 bytes and the editor's UTF-16 units, a value's name, and the hover card.
+ * backend's UTF-8 bytes and the editor's UTF-16 units, and the hover card.
  * languageClient.ts hands what these return to the workbench.
  */
-import { ValueType, type Value } from "@services/internal/lang/schema";
 import type { ImageInfo } from "@services/internal/lang/source";
 import type { Inspect, Location, Position, Range } from "@services/internal/lsp";
 
@@ -28,31 +27,25 @@ export function editorRange(range: Range, lineText: LineText): Range {
   return { start: column(range.start), end: column(range.end) };
 }
 
-/** What a word is: a definition's kind, else its value type as Go spells it (scope_path). */
-export function valueName(value: Value): string {
-  return value.kind || ValueType[value.type].slice(4).replace(/\B(?=[A-Z])/g, "_").toLowerCase();
-}
-
 /** What the card needs from the workbench: an origin's name and colour, and a link to a site. */
 export interface CardLinks {
   origin(id: string): { name: string; hex: string };
   open(site: Location): string;
 }
 
-/** The hover card: what the word is, its prose, where it runs, its facts, where it is defined. */
+/** The hover card: the word and its head, its name, prose, takes and scopes, where it is defined. */
 export function hoverMarkdown(card: Inspect, links: CardLinks): string {
   const code = (text: string) => "`" + text + "`";
-  const name = card.value.name || card.key || "";
-  const head = [`**${valueName(card.value)}**`, name && code(name), card.class && `· ${card.class}`];
-  if (card.key && card.key !== name) head.push(`· at ${code(card.key)}`);
-  const parts = [head.filter(Boolean).join(" ")];
-  if (card.label) parts.push(card.label.split("\n").map((line) => `> ${line}`).join("\n"));
+  const word = card.word.name || card.key || "";
+  const parts = [[word && code(word), card.head && `· ${card.head}`].filter(Boolean).join(" ")];
+  if (card.name) parts.push(card.name.split("\n").map((line) => `> ${line}`).join("\n"));
   // a single newline is markdown's space; two trailing spaces keep an author's line breaks
-  if (card.docs) parts.push(card.docs.replace(/(?<!\n)\n(?!\n)/g, "  \n"));
-  if (card.usage) parts.push("```\n" + card.usage.trim() + "\n```");
-  if (card.accepts?.length) parts.push(`*accepts ${card.accepts.map(code).join(", ")}*`);
-  const scope = [card.scope && `in a ${code(card.scope)} scope`, card.scopeOut && `moves to ${code(card.scopeOut)}`];
-  if (card.scope || card.scopeOut) parts.push(`*${scope.filter(Boolean).join(" · ")}*`);
+  if (card.prose) parts.push(card.prose.replace(/(?<!\n)\n(?!\n)/g, "  \n"));
+  if (card.about) parts.push(`*${card.about}*`);
+  if (card.takes?.length) parts.push(`Takes: ${card.takes.join("; ")}`);
+  const scopes = [card.scopes.this && `this ${card.scopes.this}`, card.scopes.root && `root ${card.scopes.root}`];
+  if (scopes.some(Boolean)) parts.push(`Scope: ${scopes.filter(Boolean).join(" · ")}${card.scopes.guessed ? " (guessed)" : ""}`);
+  if (card.source?.startsWith("the wiki")) parts.push(`*From ${card.source}*`);
 
   const facts = [card.weight ? `${card.weight}% of its siblings` : "", card.date ?? "", imageFact(card.image)];
   if (card.color && /^#[0-9a-f]{6}$/i.test(card.color)) {

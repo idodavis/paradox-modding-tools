@@ -5,6 +5,7 @@ package game
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -63,17 +64,27 @@ type GameInfo struct {
 	// GOOS; Workshop publish loads it. A GOOS with no row has no build of the game. Backend-only.
 	SteamLibrary map[string]string `json:"-"`
 
-	// FIOSKinds are the kinds this game resolves first-in-order; every other
-	// kind is last-in-order. Backend-only — FirstWins is the same fact as the
+	// FirstWinsDatabases are the databases this game resolves first-in-order; every other
+	// database is last-in-order. Backend-only — FirstWins is the same fact as the
 	// sentence the Conflicts and Settings pages show.
-	FIOSKinds []string `json:"-"`
-	FirstWins string   `json:"firstWins,omitempty"`
+	FirstWinsDatabases []string `json:"-"`
+	FirstWins          string   `json:"firstWins,omitempty"`
 
-	// SubjectDirs are the folders whose definitions are named after other kinds' definitions:
-	// history, coats of arms, flags. The learner makes a kind under one a subject kind of the
-	// kind that defines its names, with no prefix. They are parent folders, so a folder the
-	// game adds below one needs no row. Backend-only.
-	SubjectDirs []string `json:"-"`
+	// FileTypes, Folders, Nested and MapTable say where entries are and how they are named; the
+	// databases themselves are read from the install. Backend-only.
+	FileTypes map[string]FileType `json:"-"`
+	Folders   map[string]Folder   `json:"-"`
+	Nested    []Nested            `json:"-"`
+	MapTable  MapTable            `json:"-"`
+
+	// ModFolders are the folders a new mod gets, from its root; the localization one is the one whose
+	// last segment is localization. Backend-only.
+	ModFolders []string `json:"-"`
+	// SoundKeys are the keys whose values are sound events. Backend-only.
+	SoundKeys []string `json:"-"`
+	// DataTypesCommand is the console command that writes the data-type dumps. Backend-only: the
+	// frontend reads it from LanguageHealth.
+	DataTypesCommand string `json:"-"`
 }
 
 // EntryMode is a word written before a definition's name, and what it does to one already loaded.
@@ -84,12 +95,99 @@ type EntryMode struct {
 	Creates  bool // _OR_CREATE: defines it where there is none
 }
 
+// FileType is how an extension's files name entries; an extension with no row defines nothing.
+type FileType struct {
+	NameKey   string            // the key whose value names a top block's entry: .asset name = x
+	Keywords  []string          // the words that declare an entry: type x = button { }
+	Uses      map[string]string // a keyword whose value names an entry of another keyword's database
+	NameKeyOf map[string]string // a block key at any depth, and the key whose value names its entry
+	WidgetKey string            // the key that makes a block below the top an entry of <ext>.widget
+}
+
+// Folder is one folder's row, by its path from a root (stage-free for EU5); a path takes the longest
+// row at or above it.
+type Folder struct {
+	History    bool     // a history or setup folder: the start state of entries, defining none of its own
+	Of         []string // History: the databases its entries are named after, the first that has the name
+	ByFile     bool     // History: each file is one entry, named after one of Of's, or by its stem
+	Unnamed    bool     // data whose entries name nothing: generated objects, locators, path-keyed lists
+	NameKey    string   // every top block is one entry named by this key's value, up to a (
+	Wrappers   []string // keys that only wrap entries, at any depth
+	CalledIn   []string // scripted: the blocks that call an entry by its name: effect, trigger, value
+	Body       []string // scripted: the block an entry is: effect, trigger, value
+	Keyword    string   // scripted: the word that declares an entry inline in any file
+	Parameters bool     // scripted: a call passes parameters
+	Events     bool     // the whole tree is one database, named by event id
+	OnActions  bool     // its entries are on_actions
+}
+
+// Nested is a position inside an entry where keys create entries, or name another database's.
+type Nested struct {
+	Parent   string // a folder path; the row holds for every database at or below it
+	Path     string // "" the entry's own block, * one key, a leading **/ any depth
+	Database string // the word for the database the keys create; self for the parent's own entries
+}
+
+// MapTable is a table named by its first column, and the keys whose numbers name one of its rows.
+type MapTable struct {
+	Database string
+	File     string
+	Keys     []string
+}
+
 // entryModes is the six words Victoria 3 and EU5 share, in processing order (both wikis'
 // Mod compatibility page).
 var entryModes = []EntryMode{
 	{Word: "INJECT_OR_CREATE", Creates: true}, {Word: "REPLACE_OR_CREATE", Replaces: true, Creates: true},
 	{Word: "TRY_INJECT", Optional: true}, {Word: "TRY_REPLACE", Replaces: true, Optional: true},
 	{Word: "INJECT"}, {Word: "REPLACE", Replaces: true},
+}
+
+// fileTypes is every game's: how .txt, .asset, .font and .gui files name entries.
+var fileTypes = map[string]FileType{
+	".txt":   {},
+	".asset": {NameKey: "name"},
+	".font":  {NameKey: "name"},
+	".gui": {
+		NameKey:   "name",
+		Keywords:  []string{"type", "local_type", "template", "local_template", "block", "layer"},
+		Uses:      map[string]string{"blockoverride": "block", "using": "template"},
+		NameKeyOf: map[string]string{"texticon": "icon", "format": "name"},
+		WidgetKey: "name",
+	},
+}
+
+// soundKeys are the keys whose values are sound events, in every game's GUI and script.
+var soundKeys = []string{"sound", "soundeffect", "clicksound", "clicksoundlater", "rightclicksound",
+	"open_sound", "close_sound", "init_event", "deinit_event"}
+
+// sharedFolders are the rows every game has; EU5 has no music_player_categories and its vanilla no
+// data_binding (its mods do), so those rows match nothing there.
+var sharedFolders = map[string]Folder{
+	"common/scripted_effects":   {CalledIn: []string{"effect"}, Body: []string{"effect"}, Keyword: "scripted_effect", Parameters: true},
+	"common/scripted_triggers":  {CalledIn: []string{"trigger"}, Body: []string{"trigger"}, Keyword: "scripted_trigger", Parameters: true},
+	"common/scripted_modifiers": {CalledIn: []string{"value"}, Body: []string{"value"}, Parameters: true},
+	"common/script_values":      {CalledIn: []string{"trigger", "value"}, Body: []string{"value"}},
+	"common/scripted_lists":     {CalledIn: []string{"trigger", "effect"}},
+	"events":                    {Events: true},
+	"common/genes": {Wrappers: []string{"color_genes", "special_genes", "morph_genes", "accessory_genes",
+		"decal_atlases", "age_presets"}},
+	"common/named_colors":              {Wrappers: []string{"colors"}},
+	"data_binding":                     {NameKey: "definition"},
+	"common/achievement_groups.txt":    {NameKey: "name"},
+	"common/coat_of_arms/options":      {Unnamed: true},
+	"common/coat_of_arms/coat_of_arms": {Wrappers: []string{"template"}},
+	"common/coat_of_arms/template_lists": {Wrappers: []string{"coat_of_arms_template_lists",
+		"pattern_texture_lists", "colored_emblem_texture_lists", "textured_emblem_texture_lists", "color_lists"}},
+	"gui/scripted_widgets":          {Unnamed: true},
+	"music/music_player_categories": {NameKey: "id"},
+}
+
+// withShared is the shared rows with one game's own rows over them.
+func withShared(own map[string]Folder) map[string]Folder {
+	rows := maps.Clone(sharedFolders)
+	maps.Copy(rows, own)
+	return rows
 }
 
 // GameList is the Wails payload for ListGames (consts are not exported).
@@ -101,37 +199,71 @@ type GameList struct {
 // registry is the supported-game table, keyed by id.
 var registry = map[string]*GameInfo{
 	"ck3": {
-		ID:             "ck3",
-		Name:           "Crusader Kings III",
-		ShortName:      "CK3",
-		WikiAPI:        "https://ck3.paradoxwikis.com/api.php",
-		ScriptRoot:     "game",
-		Descriptor:     "mod",
-		DocsFolderName: "Crusader Kings III",
-		ScriptDocsDirs: []string{"logs", "docs"},
-		DataTypesDir:   "logs/data_types",
-		SteamAppID:     1158310,
-		SteamLibrary:   map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
-		FIOSKinds:      []string{"gui.type", "gui.template"},
-		FirstWins:      "GUI types and templates are first-wins.",
-		SubjectDirs:    []string{"history", "common/coat_of_arms"},
+		ID:                 "ck3",
+		Name:               "Crusader Kings III",
+		ShortName:          "CK3",
+		WikiAPI:            "https://ck3.paradoxwikis.com/api.php",
+		ScriptRoot:         "game",
+		Descriptor:         "mod",
+		DocsFolderName:     "Crusader Kings III",
+		ScriptDocsDirs:     []string{"logs", "docs"},
+		DataTypesDir:       "logs/data_types",
+		SteamAppID:         1158310,
+		SteamLibrary:       map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
+		FirstWinsDatabases: []string{"gui.type", "gui.template"},
+		FirstWins:          "GUI types and templates are first-wins.",
+		FileTypes:          fileTypes,
+		Folders: withShared(map[string]Folder{
+			"common/on_action":         {OnActions: true},
+			"gfx/map/map_object_data":  {Unnamed: true},
+			"history/titles":           {History: true, Of: []string{"landed_titles"}},
+			"history/provinces":        {History: true, Of: []string{"map_data.definition"}},
+			"history/province_mapping": {History: true, Of: []string{"map_data.definition"}},
+			"history/cultures":         {History: true, Of: []string{"cultures", "pillars"}, ByFile: true},
+			"history/artifacts":        {History: true},
+			"history/situations":       {History: true},
+			"history/struggles":        {History: true},
+			"history/wars":             {History: true},
+		}),
+		Nested: []Nested{
+			{Parent: "common/landed_titles", Path: "", Database: "self"},
+			{Parent: "common/defines", Path: "", Database: "define"},
+			{Parent: "common/activities/activity_types", Path: "options", Database: "option_category"},
+			{Parent: "common/activities/activity_types", Path: "phases", Database: "phase"},
+			{Parent: "common", Path: "**/parameters", Database: "parameter"},
+			{Parent: "common", Path: "**/*_parameters", Database: "parameter"},
+		},
+		MapTable:         MapTable{Database: "map_data.definition", File: "map_data/definition.csv", Keys: []string{"province"}},
+		ModFolders:       []string{"common", "events", "localization"},
+		SoundKeys:        soundKeys,
+		DataTypesCommand: "dump_data_types",
 	},
 	"vic3": {
-		ID:             "vic3",
-		Name:           "Victoria 3",
-		ShortName:      "Vic3",
-		WikiAPI:        "https://vic3.paradoxwikis.com/api.php",
-		ScriptRoot:     "game",
-		Descriptor:     "metadata",
-		DocsFolderName: "Victoria 3",
-		ScriptDocsDirs: []string{"logs", "docs"},
-		DataTypesDir:   "logs/data_types",
-		EntryModes:     entryModes,
-		SteamAppID:     529340,
-		SteamLibrary:   map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
-		FIOSKinds:      []string{"gui.type", "gui.template", "events"},
-		FirstWins:      "GUI types, templates, and events are first-wins.",
-		SubjectDirs:    []string{"common/history", "common/coat_of_arms", "common/flag_definitions"},
+		ID:                 "vic3",
+		Name:               "Victoria 3",
+		ShortName:          "Vic3",
+		WikiAPI:            "https://vic3.paradoxwikis.com/api.php",
+		ScriptRoot:         "game",
+		Descriptor:         "metadata",
+		DocsFolderName:     "Victoria 3",
+		ScriptDocsDirs:     []string{"logs", "docs"},
+		DataTypesDir:       "logs/data_types",
+		EntryModes:         entryModes,
+		SteamAppID:         529340,
+		SteamLibrary:       map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
+		FirstWinsDatabases: []string{"gui.type", "gui.template", "events"},
+		FirstWins:          "GUI types, templates, and events are first-wins.",
+		FileTypes:          fileTypes,
+		Folders: withShared(map[string]Folder{
+			"common/on_actions":       {OnActions: true},
+			"gfx/map/map_object_data": {Unnamed: true},
+			"gfx/map/post_effects":    {NameKey: "name"},
+			"common/history":          {History: true},
+		}),
+		Nested:           []Nested{{Parent: "common/defines", Path: "", Database: "define"}},
+		ModFolders:       []string{"common", "events", "localization"},
+		SoundKeys:        soundKeys,
+		DataTypesCommand: "DumpDataTypes",
 	},
 	"eu5": {
 		ID:         "eu5",
@@ -142,16 +274,51 @@ var registry = map[string]*GameInfo{
 		StageRoots: []string{"in_game", "main_menu", "loading_screen"},
 		Descriptor: "metadata",
 		// where EU5 mods keep it; GAME-SYNTAX.md has the counts
-		ThumbnailDir:   ".metadata",
-		DocsFolderName: "Europa Universalis V",
-		ScriptDocsDirs: []string{"logs", "docs"},
-		DataTypesDir:   "logs/data_types",
-		EntryModes:     entryModes,
-		SteamAppID:     3450310,
-		SteamLibrary:   map[string]string{"windows": "binaries/steam_api64.dll"}, // no Linux build; it runs under Proton
-		FIOSKinds:      []string{"events"},
-		FirstWins:      "Events are first-wins; GUI types last-wins.",
-		SubjectDirs:    []string{"setup/start", "common/coat_of_arms", "common/flag_definitions"},
+		ThumbnailDir:       ".metadata",
+		DocsFolderName:     "Europa Universalis V",
+		ScriptDocsDirs:     []string{"logs", "docs"},
+		DataTypesDir:       "logs/data_types",
+		EntryModes:         entryModes,
+		SteamAppID:         3450310,
+		SteamLibrary:       map[string]string{"windows": "binaries/steam_api64.dll"}, // no Linux build; it runs under Proton
+		FirstWinsDatabases: []string{"events"},
+		FirstWins:          "Events are first-wins; GUI types last-wins.",
+		FileTypes:          fileTypes,
+		Folders: withShared(map[string]Folder{
+			"common/on_action":                     {OnActions: true},
+			"gfx/map/map_objects":                  {Unnamed: true},
+			"gfx/map/city_data":                    {NameKey: "name"},
+			"setup/start":                          {History: true},
+			"setup/templates":                      {History: true, ByFile: true},
+			"map_data/location_templates.txt":      {History: true, Of: []string{"named_locations"}},
+			"map_data/generated_locators_port.txt": {Unnamed: true},
+		}),
+		Nested: []Nested{
+			{Parent: "common/defines", Path: "", Database: "define"},
+			{Parent: "gfx/defines", Path: "", Database: "define"},
+			{Parent: "common/laws", Path: "", Database: "policy"},
+			{Parent: "common/languages", Path: "dialects", Database: "dialect"},
+			{Parent: "common/gods", Path: "omens", Database: "omen"},
+			{Parent: "common/building_types", Path: "unique_production_methods", Database: "unique_production_method"},
+			{Parent: "map_data/definitions.txt", Path: "", Database: "sub_continent"},
+			{Parent: "map_data/definitions.txt", Path: "*", Database: "region"},
+			{Parent: "map_data/definitions.txt", Path: "*/*", Database: "area"},
+			{Parent: "map_data/definitions.txt", Path: "*/*/*", Database: "province"},
+			{Parent: "setup/start", Path: "character_db", Database: "character"},
+			{Parent: "setup/start", Path: "dynasty_manager", Database: "dynasty"},
+			{Parent: "setup/start", Path: "countries/countries"},
+			{Parent: "setup/start", Path: "locations"},
+			{Parent: "setup/start", Path: "road_network"},
+			{Parent: "setup/start", Path: "townrights_manager"},
+			{Parent: "setup/start", Path: "building_manager"},
+			{Parent: "setup/start", Path: "work_of_art_manager"},
+			{Parent: "setup/start", Path: "colony_manager"},
+			{Parent: "setup/start", Path: "institution_manager/institutions"},
+			{Parent: "setup/start", Path: "situation_manager"},
+		},
+		ModFolders:       []string{"in_game/common", "in_game/events", "main_menu/localization"},
+		SoundKeys:        soundKeys,
+		DataTypesCommand: "dump_data_types",
 	},
 }
 
@@ -165,13 +332,13 @@ func All() []*GameInfo {
 	return []*GameInfo{registry["ck3"], registry["eu5"], registry["vic3"]}
 }
 
-// IsFIOS reports whether kind resolves first-in-order for this game.
+// FirstWinsAt reports whether database resolves first-in-order for this game.
 // For an empty or unknown gameID only GUI types are.
-func IsFIOS(gameID, kind string) bool {
+func FirstWinsAt(gameID, database string) bool {
 	if info := Get(gameID); info != nil {
-		return slices.Contains(info.FIOSKinds, kind)
+		return slices.Contains(info.FirstWinsDatabases, database)
 	}
-	return kind == "gui.type"
+	return database == "gui.type"
 }
 
 // DetectedInstall is a game install found on disk.

@@ -17,7 +17,7 @@ type ErrorCode string
 const (
 	ErrUnclosedBrace      ErrorCode = "unclosed-brace"      // reported at the opening brace
 	ErrStrayClose         ErrorCode = "stray-close"         // `}` with no open block
-	ErrUnterminatedString ErrorCode = "unterminated-string" // recovered at end of line
+	ErrUnterminatedString ErrorCode = "unterminated-string" // runs to the end of the text
 	ErrMissingValue       ErrorCode = "missing-value"       // `key =` with nothing after
 )
 

@@ -37,6 +37,7 @@ const { fitView } = useVueFlow("event-graph");
 const ICONS: Record<string, string> = {
   events: "i-lucide-scroll-text",
   on_action: "i-lucide-timer",
+  on_actions: "i-lucide-timer",
   scripted_effects: "i-lucide-zap",
 };
 
@@ -143,14 +144,14 @@ function cardClass(node: Node): string {
         <template v-else>
           <div
             class="flex h-7 items-center gap-1.5 border-t-2 px-3 text-xs font-semibold"
-            :style="{ backgroundColor: kindColour(data.kind, 12), borderColor: kindColour(data.kind, 100) }"
+            :style="{ backgroundColor: kindColour(data.database, 12), borderColor: kindColour(data.database, 100) }"
           >
             <UIcon
-              :name="ICONS[data.kind] ?? 'i-lucide-box'"
+              :name="ICONS[data.database] ?? 'i-lucide-box'"
               class="size-4 shrink-0"
-              :style="{ color: kindColour(data.kind, 100) }"
+              :style="{ color: kindColour(data.database, 100) }"
             />
-            <span class="truncate" :style="{ color: kindColour(data.kind, 100) }">{{ data.kind }}</span>
+            <span class="truncate" :style="{ color: kindColour(data.database, 100) }">{{ data.database }}</span>
           </div>
           <div class="space-y-1 px-3 py-2">
             <div class="truncate text-base font-semibold text-highlighted">{{ data.id }}</div>

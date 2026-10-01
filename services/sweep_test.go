@@ -22,6 +22,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/wiki"
 )
 
 // The sample budgets: files diagnosed per mod, files hovered in, and words hovered in each.
@@ -46,7 +47,8 @@ func TestSweep(t *testing.T) {
 		}
 		user := game.UserDataDir(id, install)
 		started := time.Now()
-		scanned, err := index.Scan(t.Context(), index.Request{Game: id, Dir: install, Version: "sweep", Docs: game.DumpDirs(id, install)})
+		sidecar, _ := wiki.SidecarPath(id)
+		scanned, err := index.Scan(t.Context(), index.Request{Game: id, Dir: install, Version: "sweep", Dumps: game.DumpDirs(id, install), Wiki: sidecar})
 		if err != nil {
 			t.Fatal(err)
 		}

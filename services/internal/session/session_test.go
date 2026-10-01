@@ -18,7 +18,7 @@ import (
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {
 	dir := filepath.Join("..", "lang", "testdata", "ck3")
-	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test", Docs: []string{filepath.Join(dir, "docs")}})
+	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test", Dumps: []string{filepath.Join(dir, "docs")}})
 })
 
 // workspace is a session over the fixture install with the fixture mod copied to a temp dir.
@@ -32,7 +32,7 @@ func workspace(t *testing.T) (*Session, string) {
 	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "lang", "testdata", "mods", "ck3"))); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := New(t.Context(), game.Get("ck3"), install, []Mod{{ID: "mod", Name: "M", Dir: dir, Calendar: Calendar{Era: "AC", EpochOffset: 7782}}}, "")
+	sess, err := New(t.Context(), game.Get("ck3"), install, []Mod{{ID: "mod", Name: "M", Dir: dir, Calendar: Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestEdits(t *testing.T) {
 	if err := sess.Replace(t.Context(), install); err != nil {
 		t.Fatal(err)
 	}
-	if defs(sess, "m.1") != 1 || defs(sess, "f.1") != 1 || !sess.Workspace.Def("traits", "bold") {
+	if defs(sess, "m.1") != 1 || defs(sess, "f.1") != 1 || !(index.All{sess.Workspace}).Def("traits", "bold") {
 		t.Error("a rescanned install under the workspace keeps the workspace's records and the open buffers")
 	}
 
@@ -179,21 +179,21 @@ func TestQueries(t *testing.T) {
 	}{
 		{"a mod's file", events, "mod", "events/m_events.txt", 1},
 		{"a mod's file nothing has walked", filepath.Join(dir, "common", "traits", "new.txt"), "mod", "common/traits/new.txt", 1},
-		{"an install file", sess.Install.Index.Files[0].Path, "vanilla", sess.Install.Index.Files[0].Rel, len(sess.Schema.KindsAt(sess.Install.Index.Files[0].Rel))},
+		{"an install file", sess.Install.Index.Files[0].Path, "vanilla", sess.Install.Index.Files[0].Rel, len(sess.Schema.DatabasesAt(sess.Install.Index.Files[0].Rel))},
 		{"a path under no root", filepath.Join(t.TempDir(), "x.txt"), "", "", 0},
 	} {
 		place := sess.Where(testCase.path)
-		if place.Origin != testCase.origin || place.Rel != testCase.rel || len(place.Kinds) != testCase.kinds {
+		if place.Origin != testCase.origin || place.Rel != testCase.rel || len(place.Databases) != testCase.kinds {
 			t.Errorf("%s: %+v", testCase.what, place)
 		}
 	}
-	if sess.Where(events).Calendar.Era != "AC" || sess.Where(sess.Install.Index.Files[0].Path).Calendar.Era != "" {
+	if len(sess.Where(events).Calendar) != 1 || sess.Where(events).Calendar[0].Name != "AC" || len(sess.Where(sess.Install.Index.Files[0].Path).Calendar) != 0 {
 		t.Error("a mod's calendar is the mod's alone")
 	}
 
 	// EU5: each stage folder is a root of its own (source.Roots), so a rel starts below in_game/
 	eu5 := filepath.Join("..", "lang", "testdata", "eu5")
-	install, err := index.Scan(t.Context(), index.Request{Game: "eu5", Dir: eu5, Version: "test", Docs: []string{filepath.Join(eu5, "docs")}})
+	install, err := index.Scan(t.Context(), index.Request{Game: "eu5", Dir: eu5, Version: "test", Dumps: []string{filepath.Join(eu5, "docs")}})
 	if err != nil {
 		t.Fatal(err)
 	}

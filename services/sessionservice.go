@@ -19,6 +19,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/wiki"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/singleflight"
@@ -43,27 +44,31 @@ type SessionService struct {
 // LanguageHealth is what the health strip shows: whether the session is live, what the install's
 // cache holds, and whether the dumps are there.
 type LanguageHealth struct {
-	WorkspaceID string       `json:"workspaceId"`
-	InstallID   string       `json:"installId"`
-	GameID      string       `json:"gameId"`
-	InstallOk   bool         `json:"installOk"`
-	GameVersion string       `json:"gameVersion"`
-	CacheStale  bool         `json:"cacheStale"` // no cache for the install, or one older than the game
-	ScannedAt   string       `json:"scannedAt"`
-	Scanning    bool         `json:"scanning"`
-	Ready       bool         `json:"ready"`
-	Dumps       []DumpHealth `json:"dumps"`
-	Drift       schema.Drift `json:"drift"`
-	WatchError  string       `json:"watchError,omitempty"`
+	WorkspaceID string        `json:"workspaceId"`
+	InstallID   string        `json:"installId"`
+	GameID      string        `json:"gameId"`
+	InstallOk   bool          `json:"installOk"`
+	GameVersion string        `json:"gameVersion"`
+	CacheStale  bool          `json:"cacheStale"` // no cache for the install, or one older than the game
+	ScannedAt   string        `json:"scannedAt"`
+	Scanning    bool          `json:"scanning"`
+	Ready       bool          `json:"ready"`
+	Dumps       []DumpHealth  `json:"dumps"`
+	Unread      schema.Unread `json:"unread"`
+	WatchError  string        `json:"watchError,omitempty"`
+
+	DumpsFrom        schema.DumpsFrom `json:"dumpsFrom"`              // whose each dump set the live schema read
+	DumpsVersion     string           `json:"dumpsVersion,omitempty"` // the shipped dumps' game version, where used
+	DataTypesCommand string           `json:"dataTypesCommand"`       // the console command that writes the data types
 }
 
 // DumpHealth is one folder the game's script_docs dumps may be in, and what was read there.
 type DumpHealth struct {
-	Folder   string `json:"folder"`
-	Effects  int    `json:"effects"`
-	Triggers int    `json:"triggers"`
-	Links    int    `json:"links"`
-	Scopes   int    `json:"scopes"` // scope types; Vic3 and EU5 write event_scopes.log to logs/, other dumps to docs/
+	Folder       string `json:"folder"`
+	Effects      int    `json:"effects"`
+	Triggers     int    `json:"triggers"`
+	EventTargets int    `json:"eventTargets"`
+	Scopes       int    `json:"scopes"` // scope types; Vic3 and EU5 write event_scopes.log to logs/, other dumps to docs/
 }
 
 // start makes the scanner, the live sessions, the emitter and the one scan slot on first use.
@@ -180,7 +185,7 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 	}
 	var mods []session.Mod
 	for _, mod := range ws.Mods {
-		mods = append(mods, session.Mod{ID: mod.ID, Name: mod.Name, Dir: mod.Path, Calendar: session.Calendar{Era: mod.Era, EpochOffset: mod.EpochOffset}})
+		mods = append(mods, session.Mod{ID: mod.ID, Name: mod.Name, Dir: mod.Path, Calendar: mod.Eras})
 	}
 	sess, err := session.New(context.Background(), game.Get(inst.GameID), install, mods, ws.DefaultLocLang)
 	if err != nil {
@@ -201,7 +206,7 @@ func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
 
 	// each stage has the part of the bar its share of a CK3 scan's time earns; a move is told once,
 	// and a stage's time is logged when the next begins
-	spans := map[string][2]int{"reading localization": {0, 12}, "reading the install": {12, 30}, "learning the schema": {30, 74}, "reading definitions": {74, 81}, "reading references": {81, 95}}
+	spans := map[string][2]int{"reading localization": {0, 2}, "reading the install": {2, 43}, "reading definitions": {43, 78}, "reading references": {78, 95}}
 	told, running, since := -1, "", started
 	lap := func(next string) {
 		if running != "" {
@@ -219,7 +224,9 @@ func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
 			emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: percent, Stage: stage})
 		}
 	}
-	install, err := s.Scan(context.Background(), index.Request{Game: inst.GameID, Dir: inst.Path, Version: inst.Version, Docs: game.DumpDirs(inst.GameID, inst.Path), Progress: progress})
+	sidecar, _ := wiki.SidecarPath(inst.GameID)
+	request := index.Request{Game: inst.GameID, Dir: inst.Path, Version: inst.Version, Dumps: game.DumpDirs(inst.GameID, inst.Path), Wiki: sidecar, Progress: progress}
+	install, err := s.Scan(context.Background(), request)
 	if err != nil {
 		slog.Error("scan failed", "game", inst.GameID, "stage", running, "error", err)
 		return nil, err
@@ -229,6 +236,14 @@ func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
 	if err := local.SaveInstall(inst.ID, inst.Version, install); err != nil {
 		slog.Error("scan failed", "game", inst.GameID, "stage", running, "error", err)
 		return nil, err
+	}
+
+	// the user's own dumps of both sets refresh the layers the owner may ship
+	if from := install.Schema.DumpsFrom; from.ScriptDocs == "yours" && from.DataTypes == "yours" {
+		shipped := schema.Shipped{GameVersion: inst.Version, Dumps: install.Schema.Dumps, Wiki: install.Schema.Wiki}
+		if err := local.SaveShipped(inst.GameID, shipped); err != nil {
+			slog.Warn("shipped layers not saved", "game", inst.GameID, "error", err)
+		}
 	}
 	lap("")
 	slog.Info("scan end", "game", inst.GameID, "took", time.Since(started).Round(time.Millisecond))
@@ -344,15 +359,16 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth,
 	health.ScannedAt = local.ScannedAt(inst.ID, inst.Version)
 	health.CacheStale = health.ScannedAt == "" || predatesInstall(health.ScannedAt, inst.Path)
 	_, health.Scanning = s.Queued()
-	user := game.UserDataDir(inst.GameID, inst.Path)
-	for _, dir := range game.Get(inst.GameID).ScriptDocsDirs {
+	user, info := game.UserDataDir(inst.GameID, inst.Path), game.Get(inst.GameID)
+	health.DataTypesCommand = info.DataTypesCommand
+	for _, dir := range info.ScriptDocsDirs {
 		folder := filepath.Join(user, dir)
-		vocab := schema.ReadVocab([]string{folder})
-		health.Dumps = append(health.Dumps, DumpHealth{Folder: folder, Effects: len(vocab.Effects), Triggers: len(vocab.Triggers), Links: len(vocab.Links) + len(vocab.Prefixes), Scopes: len(vocab.ScopeTypes)})
+		dumps := schema.ReadDumps([]string{folder})
+		health.Dumps = append(health.Dumps, DumpHealth{Folder: folder, Effects: len(dumps.Effects), Triggers: len(dumps.Triggers), EventTargets: len(dumps.EventTargets) + len(dumps.DataTargets), Scopes: len(dumps.Scopes)})
 	}
 	if live := s.get(workspaceID); live != nil {
 		live.RLock()
-		health.Ready, health.Drift = true, live.Schema.Drift
+		health.Ready, health.Unread, health.DumpsFrom, health.DumpsVersion = true, live.Schema.Unread, live.Schema.DumpsFrom, live.Schema.DumpsVersion
 		if err := live.WatchError(); err != nil {
 			health.WatchError = err.Error()
 		}

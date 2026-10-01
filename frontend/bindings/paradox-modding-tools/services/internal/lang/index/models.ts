@@ -15,12 +15,12 @@ export interface Cited {
     /**
      * Ref | Loc | File
      */
-    "type": schema$0.ValueType;
+    "type": schema$0.WordType;
 
     /**
-     * Ref: the kind of the definition named
+     * Ref: the database of the definition named
      */
-    "kind"?: string;
+    "database"?: string;
     "name": string;
     "parent"?: string;
 
@@ -32,4 +32,16 @@ export interface Cited {
     "line": number;
     "col": number;
     "at": source$0.File;
+}
+
+/**
+ * Scopes is the scopes a statement runs in: its entry's root, this, the one before the last move, the
+ * saved ones by name to their scope, and whether a scope rests on a guess.
+ */
+export interface Scopes {
+    "root"?: string;
+    "this"?: string;
+    "prev"?: string;
+    "saved"?: { [_ in string]?: string } | null;
+    "guessed"?: boolean;
 }

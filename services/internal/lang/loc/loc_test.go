@@ -1,6 +1,6 @@
 // loc_test.go covers the loc dialect: entries, header/tab/unterminated
 // errors, last-quote-wins values, byte-offset ranges, language extraction,
-// and which strings look like keys; and learning a kind's loc-key templates and rendering them.
+// and which strings look like keys; and learning a database's loc-key templates and rendering them.
 
 package loc
 
@@ -159,7 +159,7 @@ func TestLooksLikeKey(t *testing.T) {
 	}
 }
 
-func TestLearnAndExpand(t *testing.T) {
+func TestConventionsAndExpand(t *testing.T) {
 	keys := map[string]bool{}
 	var traits, titles, rules []string
 	for i := range 10 {
@@ -184,7 +184,7 @@ func TestLearnAndExpand(t *testing.T) {
 		{"one def", traits[:1], nil, nil},
 		{"two defs", traits[:2], nil, []Template{"{id}", "{id}_desc"}},
 	} {
-		got := Learn(testCase.ids, testCase.members, idx)
+		got := Conventions(testCase.ids, testCase.members, idx, nil)
 		var names []Template
 		for _, template := range got {
 			names = append(names, template.Template)

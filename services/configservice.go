@@ -19,6 +19,7 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/local"
+	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/wiki"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -74,8 +75,8 @@ type WorkspaceMod struct {
 	WorkshopIgnore string `json:"workshopIgnore,omitempty"`
 	IsBroken       bool   `json:"isBroken"` // derived by markBroken; whatever is on disk is ignored
 	CreatedAt      string `json:"createdAt"`
-	Era            string `json:"era,omitempty"`         // calendar of the mod's dates; set by hand, as no mod states it
-	EpochOffset    int    `json:"epochOffset,omitempty"` // with Era; nothing set leaves every date exactly as written
+	// the eras of the mod's dates; set by hand, as no mod states them, and none leaves every date as written
+	Eras session.Calendar `json:"eras,omitempty"`
 }
 
 // ConfigService holds config.json and serves the settings.

@@ -6,7 +6,8 @@ import { computed, nextTick, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import { PatchPage, Patches } from "@services/wikiservice";
-import type { PatchEntry, Section } from "@services/internal/wiki/models";
+import type { PatchEntry } from "@services/internal/wiki/models";
+import type { WikiSection } from "@services/internal/lang/schema/models";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { useWikiArticle } from "../../composables/useWikiArticle";
 import WikiToc from "../WikiToc.vue";
@@ -63,7 +64,7 @@ const html = computed(() => {
   }
 });
 
-const tocSections = computed<Section[]>(() => {
+const tocSections = computed<WikiSection[]>(() => {
   switch (mode.value) {
     case "modding":
       return page.value?.moddingSections ?? [];

@@ -13,6 +13,8 @@ import (
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+
+	"paradox-modding-tools/services/internal/lang/schema"
 )
 
 const openTableRows = 2 // a table of more rows is kept folded
@@ -37,7 +39,7 @@ func init() {
 
 // clean returns a page's allowlisted HTML and its headings, and its Modding section with that
 // section's headings.
-func clean(raw, base string) (page string, sections []Section, modding string, moddingSections []Section) {
+func clean(raw, base string) (page string, sections []schema.WikiSection, modding string, moddingSections []schema.WikiSection) {
 	doc, err := html.Parse(strings.NewReader(raw))
 	if err != nil {
 		return "", nil, "", nil
@@ -77,7 +79,7 @@ func clean(raw, base string) (page string, sections []Section, modding string, m
 		}
 		id := cmp.Or(attr(node, "id"), strings.ReplaceAll(line, " ", "_"))
 		node.Attr = []html.Attribute{{Key: "id", Val: id}}
-		sections = append(sections, Section{rank(node), line, id})
+		sections = append(sections, schema.WikiSection{TocLevel: rank(node), Line: line, Anchor: id})
 	}
 	page = render(nodes)
 	cut := slices.IndexFunc(nodes, func(node *html.Node) bool {
@@ -87,7 +89,7 @@ func clean(raw, base string) (page string, sections []Section, modding string, m
 		return page, sections, "", nil
 	}
 	modding = render(nodes[cut:blockEnd(nodes, cut)])
-	first := slices.IndexFunc(sections, func(entry Section) bool { return entry.Anchor == attr(nodes[cut], "id") })
+	first := slices.IndexFunc(sections, func(entry schema.WikiSection) bool { return entry.Anchor == attr(nodes[cut], "id") })
 	end := first + 1
 	for end < len(sections) && sections[end].TocLevel > sections[first].TocLevel {
 		end++
@@ -238,14 +240,9 @@ var denyExact = map[string]bool{
 	"list of gui script functions": true,
 }
 
-func normTitle(text string) string {
-	text = strings.ReplaceAll(text, "_", " ")
-	return strings.ToLower(strings.TrimSpace(text))
-}
-
 // denied reports whether an article title is skipped (tools, dumps, user pages).
 func denied(title string) bool {
-	normalized := normTitle(title)
+	normalized := schema.NormTitle(title)
 	if denyExact[normalized] || userRe.MatchString(title) {
 		return true
 	}
@@ -256,5 +253,6 @@ func denied(title string) bool {
 }
 
 func keepMember(title string, mods map[string]bool) bool {
-	return !denied(title) && !mods[normTitle(title)]
+	page, _, _ := strings.Cut(title, "/") // a mod's subpage (Way of Kings/Religions) goes with it
+	return !denied(title) && !mods[schema.NormTitle(page)]
 }

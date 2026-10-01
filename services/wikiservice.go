@@ -28,9 +28,9 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	if place.Origin == "" {
 		return &wiki.Guide{}, nil
 	}
-	kind, name := "", sess.Game.Name
-	if len(place.Kinds) > 0 {
-		kind = place.Kinds[0].Name
+	database, name := "", sess.Game.Name
+	if len(place.Databases) > 0 {
+		database = place.Databases[0].Name
 	}
 	if at := slices.IndexFunc(sess.Mods, func(mod session.Mod) bool { return mod.ID == place.Origin }); at >= 0 {
 		name = sess.Mods[at].Name
@@ -39,8 +39,8 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 		Rel:         place.Rel,
 		Origin:      place.Origin,
 		OriginName:  name,
-		Kind:        kind,
-		Pages:       wiki.PagesFor(sess.Game.ID, kind, place.Rel),
+		Database:    database,
+		Pages:       wiki.PagesFor(sess.Game.ID, database, place.Rel),
 		Attribution: wiki.Attribution(sess.Game.ID),
 	}, nil
 }

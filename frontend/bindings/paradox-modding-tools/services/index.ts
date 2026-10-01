@@ -29,6 +29,7 @@ export {
 export type {
     Contest,
     Dangling,
+    DatabaseCount,
     Dependency,
     Detail,
     DirEntry,
@@ -45,7 +46,6 @@ export type {
     HealthParams,
     IdeRoot,
     IdeRoots,
-    KindCount,
     Language,
     LanguageHealth,
     Listing,
@@ -56,6 +56,7 @@ export type {
     Option,
     Params,
     PathStat,
+    Problem,
     PublishResult,
     RefGroup,
     Roots,

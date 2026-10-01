@@ -6,13 +6,13 @@
  */
 import { computed } from "vue";
 import type { DumpHealth } from "@services/models";
-import type { Drift } from "@services/internal/lang/schema";
+import type { Unread } from "@services/internal/lang/schema";
 
 const open = defineModel<boolean>("open", { required: true });
 
 const props = defineProps<{
   dumps: DumpHealth[];
-  drift: Drift | undefined;
+  unread: Unread | undefined;
   gameName?: string;
 }>();
 
@@ -57,7 +57,7 @@ const kept = [
 
 // what the scan saw and nothing explained, by what it was: a game update changing the language
 const unexplained = computed(() =>
-  Object.entries(props.drift ?? {})
+  Object.entries(props.unread ?? {})
     .filter(([, tallies]) => tallies?.length)
     .map(([what, tallies]) => ({ what: what.replace(/[A-Z]/g, " $&").toLowerCase(), tallies: tallies!.slice(0, 5) })),
 );
@@ -109,7 +109,7 @@ const unexplained = computed(() =>
 
         <p v-for="dump in dumps" :key="dump.folder" class="break-all text-xs text-muted">
           {{ dump.folder }}: {{ dump.effects.toLocaleString() }} effects, {{ dump.triggers.toLocaleString() }}
-          triggers, {{ dump.links }} links, {{ dump.scopes }} scope types.
+          triggers, {{ dump.eventTargets }} event targets, {{ dump.scopes }} scope types.
         </p>
 
         <div v-if="unexplained.length" class="space-y-1">

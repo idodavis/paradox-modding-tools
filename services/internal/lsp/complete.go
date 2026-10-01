@@ -1,10 +1,11 @@
-// complete.go is what may be written at the cursor: at a key, what the enclosing field holds (a
-// body's declared tokens and its class's macros, a structure's members, a database's names); at a
-// value, what the field accepts. Items carry the reader's value of what they write; their docs are
-// fetched when one is shown.
+// complete.go is what may be written at the cursor: at a key, what the enclosing key holds (a
+// body's declared commands and its class's scripted effects, a structure's keys, a database's
+// names); at a value, what the key takes. Items carry the reader's value of what they write; their
+// docs are fetched when one is shown.
 package lsp
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
@@ -18,13 +19,16 @@ import (
 // maxComplete caps the list; a cut list is marked incomplete, so the editor asks again.
 const maxComplete = 80
 
-// Item is one completion: the text it writes, what that text is, and its rank (0 a token in scope,
-// 1 a member, 2 a definition or a token out of scope, 3 a loc key).
+// Item is one completion: the text it writes, what that text is, its head and takes, and its rank
+// (0 a command in scope or a key every entry writes, 1 a key, 2 a definition or a command out of
+// scope, 3 a loc key).
 type Item struct {
-	Label string       `json:"label"`
-	Value schema.Value `json:"value"`
-	Rank  int          `json:"rank"`
-	Range Range        `json:"range"`
+	Label string      `json:"label"`
+	Word  schema.Word `json:"word"`
+	Head  string      `json:"head"`
+	Takes []string    `json:"takes,omitempty"`
+	Rank  int         `json:"rank"`
+	Range Range       `json:"range"`
 }
 
 // Completion is the list, and whether the cap cut it.
@@ -41,15 +45,25 @@ func Complete(sess *session.Session, path string, line, col int) (*Completion, e
 	if err != nil {
 		return nil, err
 	}
+	offset := file.offset(line, col)
+
+	// in a data call's [ … ], in script and localization alike, what may follow the typed part
+	lineStart := strings.LastIndexByte(file.text[:offset], '\n') + 1
+	if open := strings.LastIndexByte(file.text[lineStart:offset], '['); open >= 0 && !strings.Contains(file.text[lineStart+open:offset], "]") {
+		written := file.text[lineStart+open : offset]
+		typed := written[strings.LastIndexAny(written, "[.")+1:]
+		char := &completer{file: file, prefix: strings.ToLower(typed), at: file.span(jomini.Range{Start: offset - len(typed), End: offset}), seen: map[string]bool{}}
+		char.calls(written)
+		return char.list(), nil
+	}
 	if file.place.Format != source.Script || len(file.place.Rel) == 0 {
 		return &Completion{}, nil
 	}
-	offset := file.offset(line, col)
 	_, start, end := file.parsed.TokenAt(offset)
 	if end < offset || start > offset {
 		start, end = offset, offset
 	}
-	// a cite is one word: the prefix and the colon before the typed part belong to it
+	// a prefixed word is one word: the prefix and the colon before the typed part belong to it
 	for start > 0 && (isWord(file.text[start-1]) || file.text[start-1] == ':') {
 		start--
 	}
@@ -63,13 +77,38 @@ func Complete(sess *session.Session, path string, line, col int) (*Completion, e
 	} else {
 		char.keys(reader)
 	}
+	return char.list(), nil
+}
 
-	slices.SortStableFunc(char.items, func(first, second Item) int { return first.Rank - second.Rank })
-	out := &Completion{Items: char.items}
+// list is the items by rank, cut at maxComplete.
+func (completer *completer) list() *Completion {
+	slices.SortStableFunc(completer.items, func(first, second Item) int { return first.Rank - second.Rank })
+	out := &Completion{Items: completer.items}
 	if len(out.Items) > maxComplete {
 		out.Items, out.Incomplete = out.Items[:maxComplete], true
 	}
-	return out, nil
+	return out
+}
+
+// calls offers what may follow in a data call: after [ the globals, the data types and the loaded
+// data_binding macros; after a step's dot the functions its return type declares.
+func (completer *completer) calls(written string) {
+	dumps := completer.file.sess.Schema.Dumps
+	dot := strings.LastIndexByte(written, '.')
+	if dot < 0 {
+		for name := range dumps.Globals {
+			completer.add(name, schema.Word{Type: schema.WordDataCall, Name: name}, 1)
+		}
+		for name := range dumps.DataTypes {
+			completer.add(name, schema.Word{Type: schema.WordDataCall, Name: name}, 2)
+		}
+		completer.entries("data_binding", "", 2)
+		return
+	}
+	function, dataType := completer.file.function(jomini.ParseCall(written[:dot], 0))
+	for name := range dumps.DataTypes[cmp.Or(dataType, function.Returns)].Functions {
+		completer.add(name, schema.Word{Type: schema.WordDataCall, Name: name}, 1)
+	}
 }
 
 // completer gathers items that start with the typed prefix.
@@ -82,58 +121,41 @@ type completer struct {
 }
 
 // add keeps an item whose label starts with what was typed, once.
-func (completer *completer) add(label string, value schema.Value, rank int) {
+func (completer *completer) add(label string, word schema.Word, rank int) {
 	if !strings.HasPrefix(strings.ToLower(label), completer.prefix) || completer.seen[label] {
 		return
 	}
-	completer.seen[label], completer.items = true, append(completer.items, Item{Label: label, Value: value, Rank: rank, Range: completer.at})
+	item := Item{Label: label, Word: word, Head: completer.file.head(word, label), Rank: rank, Range: completer.at}
+	completer.seen[label], completer.items = true, append(completer.items, item)
 }
 
-// enclosing is the statement whose block holds the cursor, that block's field, and the scope it
-// runs in; nil at the top of the file.
-func (completer *completer) enclosing(descent *index.Descent) (*index.Level, *schema.Field, string) {
-	sess := completer.file.sess
-	for _, level := range slices.Backward(descent.Chain) {
+// key offers a key: one every entry writes first, and one written under a condition or optional
+// says so in its head.
+func (completer *completer) key(name string, key *schema.Key) {
+	rank, from := 1, len(completer.items)
+	if key.Required == schema.RequiredAlways {
+		rank = 0
+	}
+	completer.add(name, schema.Word{Type: schema.WordKey, Name: name}, rank)
+	for i := from; i < len(completer.items); i++ {
+		item := &completer.items[i]
+		item.Takes = completer.file.takes(key)
+		switch key.Required {
+		case schema.RequiredWhen:
+			item.Head += " · " + key.When
+		case schema.RequiredOptional:
+			item.Head += " · optional"
+		}
+	}
+}
 
-		assignment, ok := level.Statement.(*jomini.Assignment)
-		if !ok || jomini.BlockOf(assignment.Value) == nil {
-			continue
+// enclosing is the statement whose block holds the cursor, that block's key, and the scope it
+// runs in, as the descent found it; nil at the top of the file.
+func (completer *completer) enclosing(descent *index.Descent) (*index.Level, *schema.Key, string) {
+	for _, level := range slices.Backward(descent.Chain) {
+		if assignment, ok := level.Statement.(*jomini.Assignment); ok && jomini.BlockOf(assignment.Value) != nil {
+			return &level, level.Below, descent.Scopes.This
 		}
-		scope, vocab, moved := level.Scope, sess.Install.Vocab, false
-		switch level.Key.Type {
-		case schema.TypeToken:
-			moved = true
-			if _, _, _, out := tokenDocs(vocab, level.Key.Name); out != "" {
-				scope = out
-			} else if slices.ContainsFunc(schema.NameTokensOf(level.Key.Name), func(row schema.NameToken) bool { return row.Member != "" && !row.Defines }) {
-				scope = ""
-			}
-		case schema.TypeScopePath:
-			last, links := assignment.Key.Text[strings.LastIndexByte(assignment.Key.Text, '.')+1:], vocab.Links
-			if cite, isCite := jomini.Cite(last); isCite {
-				last, links = cite.Prefix, vocab.Prefixes
-			}
-			scope, moved = links[strings.ToLower(last)].Out, true
-		case schema.TypeRef:
-			if cite, isCite := jomini.Cite(assignment.Key.Text); isCite {
-				scope, moved = vocab.Prefixes[cite.Prefix].Out, true
-			} else if kind := sess.Schema.Kinds[level.Key.Kind]; kind != nil {
-				scope, moved = kind.ScopeType, true
-			}
-		case schema.TypeMember, schema.TypeUnresolved:
-			if link, isLink := vocab.Links[strings.ToLower(assignment.Key.Text)]; isLink && !link.Wild {
-				scope, moved = link.Out, true
-			} else if _, _, _, out := tokenDocs(vocab, strings.ToLower(assignment.Key.Text)); out != "" || level.Key.Type == schema.TypeUnresolved {
-				scope, moved = out, true
-			}
-		}
-		if moved && !vocab.IsScopeType(scope) {
-			scope = ""
-		}
-		if !moved && level.Below != nil && vocab.IsScopeType(level.Below.BodyScope) {
-			scope = level.Below.BodyScope
-		}
-		return &level, level.Below, scope
 	}
 	return nil, nil, ""
 }
@@ -141,55 +163,55 @@ func (completer *completer) enclosing(descent *index.Descent) (*index.Level, *sc
 // keys offers what may be written as a key here.
 func (completer *completer) keys(descent *index.Descent) {
 	sess := completer.file.sess
-	level, field, scope := completer.enclosing(descent)
+	level, key, scope := completer.enclosing(descent)
 	if level == nil {
-		for _, kind := range completer.file.place.Kinds {
-			completer.cited(kind.Name, "", 2)
+		for _, database := range completer.file.place.Databases {
+			completer.entries(database.Name, "", 2)
 		}
 		return
 	}
 
-	// a block nothing classifies offers what the body around it offers
-	body := field
+	// a block nothing describes offers what the command block around it offers
+	body := key
 	for i := len(descent.Chain) - 1; body == nil && i >= 0; i-- {
-		if descent.Chain[i].Below != nil && descent.Chain[i].Below.Class == schema.ClassBody {
+		if descent.Chain[i].Below != nil && descent.Chain[i].Below.Block != schema.BlockNone {
 			body = descent.Chain[i].Below
 		}
 	}
-	if field != nil && field.Class != schema.ClassBody {
-		for name := range field.Members {
+	if key != nil && key.Block == schema.BlockNone {
+		for name := range key.Keys {
 			if !strings.HasPrefix(name, "<") {
-				completer.add(name, schema.Value{Type: schema.TypeMember, Name: name}, 1)
+				completer.key(name, key.Keys[name])
 			}
 		}
-		if field.Defines != "" {
-			completer.cited(field.Defines, "", 2)
+		for _, database := range []string{key.Defines, key.Names} {
+			if database != "" {
+				completer.entries(database, "", 2)
+			}
 		}
-		if field.Class == schema.ClassDatabase && level.Kind != nil {
-			completer.cited(level.Kind.Name, "", 2)
-		}
-		if field.Class == schema.ClassList {
-			completer.accepted(field)
+		if key.Written == schema.WrittenList {
+			completer.takes(key)
 		}
 		return
 	}
 	if body == nil {
 		return
 	}
-	if body.Body&schema.BodyEffect != 0 {
-		completer.tokens(sess.Install.Vocab.Effects, scope)
+	dumps := sess.Schema.Dumps
+	switch body.Block {
+	case schema.BlockEffects:
+		completer.commands(dumps.Effects, scope)
+	case schema.BlockTriggers:
+		completer.commands(dumps.Triggers, scope)
 	}
-	if body.Body&schema.BodyTrigger != 0 {
-		completer.tokens(sess.Install.Vocab.Triggers, scope)
-	}
-	for name, link := range sess.Install.Vocab.Links {
-		if !link.Wild && (len(link.In) == 0 || scope == "" || slices.Contains(link.In, scope)) {
-			completer.add(name, schema.Value{Type: schema.TypeScopePath, Declared: true}, 2)
+	for name, target := range dumps.EventTargets {
+		if !target.Wild && (len(target.In) == 0 || scope == "" || slices.Contains(target.In, scope)) {
+			completer.add(name, schema.Word{Type: schema.WordScopePath, Declared: true}, 2)
 		}
 	}
-	for _, kind := range sess.Schema.Kinds {
-		if kind.Macro&body.Body != 0 {
-			completer.cited(kind.Name, "", 2)
+	for _, database := range sess.Schema.Databases {
+		if slices.Contains(database.CalledIn, body.Block) {
+			completer.entries(database.Name, "", 2)
 		}
 	}
 }
@@ -199,120 +221,128 @@ func isWord(char byte) bool {
 	return char == '_' || char == '.' || char == '@' || char == '$' || ('a' <= char && char <= 'z') || ('A' <= char && char <= 'Z') || ('0' <= char && char <= '9')
 }
 
-// tokens offers a vocabulary's tokens, those usable in the scope first.
-func (completer *completer) tokens(tokens map[string]schema.EngineToken, scope string) {
-	for name, token := range tokens {
+// commands offers a vocabulary's commands, those usable in the scope first.
+func (completer *completer) commands(commands map[string]schema.Command, scope string) {
+	for name, command := range commands {
 		rank := 2
-		if scope == "" || schema.UsableIn(token.In, scope) {
+		if scope == "" || schema.UsableIn(command.In, scope) {
 			rank = 0
 		}
-		completer.add(name, schema.Value{Type: schema.TypeToken, Name: name, Declared: true}, rank)
+		completer.add(name, schema.Word{Type: schema.WordCommand, Name: name, Declared: true}, rank)
 	}
 }
 
-// cited offers a kind's definitions, spelled with the prefix (trait:brave) where one was typed.
-func (completer *completer) cited(kind, prefix string, rank int) {
-	for _, idx := range completer.file.sess.All() {
+// entries offers a database's definitions, spelled with the prefix (trait:brave) where one was
+// typed.
+func (completer *completer) entries(database, prefix string, rank int) {
+	all := completer.file.sess.All()
+	for _, idx := range all {
 		for _, def := range idx.Defs {
-			if def.File >= 0 && def.Kind == kind {
-				completer.add(prefix+def.Name, schema.Value{Type: schema.TypeRef, Kind: kind, Name: def.Name, Parent: def.Parent}, rank)
+			if def.Database == database && all.Loaded(idx, def.File) {
+				completer.add(prefix+def.Name, schema.Word{Type: schema.WordReference, Database: database, Name: def.Name, Parent: def.Parent}, rank)
 			}
 		}
 	}
 }
 
-// values offers what the field of the statement being written accepts. The statement may not have
-// parsed yet (hidden = ), so its key is read from the text before the operator and its field from
-// the block around the cursor.
+// values offers what the key of the statement being written takes. The statement may not have
+// parsed yet (hidden = ), so its key is read from the text before the operator and its schema key
+// from the block around the cursor.
 func (completer *completer) values(descent *index.Descent, before string) {
 	sess := completer.file.sess
 	if len(descent.Chain) == 0 {
 		return
 	}
 	level := descent.Chain[len(descent.Chain)-1]
-	field := level.Below
+	at := level.Below
 	if _, bare := level.Statement.(*jomini.ValueStmt); bare {
-		field = level.Field
+		at = level.At
 	}
 	key, _, _ := completer.file.parsed.TokenAt(len(strings.TrimRight(before, " \t")) - 1)
 	if assignment, ok := level.Statement.(*jomini.Assignment); !ok || assignment.Key.Text != key {
-		// the block's statement is a name token whose member this key is: the names the member reads
-		if level.Key.Type == schema.TypeToken {
-			for _, row := range schema.NameTokensOf(level.Key.Name) {
-				if !row.Defines && row.Member == key {
-					completer.cited(row.Kind, "", 2)
+		// the block's statement is a name command whose key this key is: the names the key reads
+		if level.Key.Type == schema.WordCommand {
+			for _, row := range schema.NameCommandsOf(level.Key.Name) {
+				if !row.Defines && row.NameKey == key {
+					completer.entries(row.Database, "", 2)
 				}
 			}
 		}
 		reader := sess.Reader()
-		value := reader.Key(level.Below, key)
-		level, field = index.Level{Kind: level.Kind, Field: level.Below, Key: value, Scope: level.Scope}, reader.Below(level.Kind, level.Below, key, value)
+		word := reader.Key(level.Below, key)
+		database := sess.Schema.Databases[level.Database]
+		level, at = index.Level{Database: level.Database, At: level.Below, Key: word, Scopes: level.Scopes}, reader.Below(database, level.Below, key, word)
 	}
 
-	// a cite: the kind the prefix belongs to, spelled whole
+	// a prefixed word: the database the prefix belongs to, spelled whole
 	if prefix, _, ok := strings.Cut(completer.prefix, ":"); ok {
-		for _, kind := range sess.Schema.ByPrefix(prefix) {
-			completer.cited(kind.Name, prefix+":", 2)
+		for _, database := range sess.Schema.ByPrefix(prefix) {
+			completer.entries(database.Name, prefix+":", 2)
 		}
 		return
 	}
-	if level.Key.Type == schema.TypeToken {
-		for _, row := range schema.NameTokensOf(level.Key.Name) {
-			if !row.Defines && row.Member == "" {
-				completer.cited(row.Kind, "", 2)
+	if level.Key.Type == schema.WordCommand {
+		for _, row := range schema.NameCommandsOf(level.Key.Name) {
+			if !row.Defines && row.NameKey == "" {
+				completer.entries(row.Database, "", 2)
 			}
 		}
 	}
-	if field != nil {
-		completer.accepted(field)
+	if at != nil {
+		completer.takes(at)
 	}
 }
 
-// accepted offers the words a field accepts: definitions, enum words, yes and no, loc keys.
-func (completer *completer) accepted(field *schema.Field) {
-	for _, accept := range field.Accepts {
-		switch accept.Type {
-		case schema.TypeRef:
-			completer.cited(accept.Kind, "", 2)
-		case schema.TypeEnum:
-			for _, enum := range accept.Enum {
-				completer.add(enum, schema.Value{Type: schema.TypeEnum, Name: enum}, 1)
+// takes offers the words a key takes: definitions, enum words, yes and no, loc keys; the words of a
+// guessed take are marked guessed.
+func (completer *completer) takes(key *schema.Key) {
+	for _, take := range key.Takes {
+		from := len(completer.items)
+		switch take.Type {
+		case schema.WordReference:
+			completer.entries(take.Database, "", 2)
+		case schema.WordEnum:
+			for _, enum := range take.Enum {
+				completer.add(enum, schema.Word{Type: schema.WordEnum, Name: enum}, 1)
 			}
-		case schema.TypeBool:
-			completer.add("yes", schema.Value{Type: schema.TypeBool}, 1)
-			completer.add("no", schema.Value{Type: schema.TypeBool}, 1)
-		case schema.TypeLoc:
+		case schema.WordBool:
+			completer.add("yes", schema.Word{Type: schema.WordBool}, 1)
+			completer.add("no", schema.Word{Type: schema.WordBool}, 1)
+		case schema.WordLoc:
 			for _, key := range completer.file.sess.LocKeys(completer.prefix, maxComplete+1) {
-				completer.add(key, schema.Value{Type: schema.TypeLoc, Name: key}, 3)
+				completer.add(key, schema.Word{Type: schema.WordLoc, Name: key}, 3)
 			}
+		}
+		for i := from; take.Guessed && i < len(completer.items); i++ {
+			completer.items[i].Head += " · guessed"
 		}
 	}
 }
 
-// Resolve is an item's documentation, fetched when the editor shows it: a token's prose, a
+// Resolve is an item's documentation, fetched when the editor shows it: a command's prose, a
 // definition's label or comment, a loc key's text.
 func Resolve(sess *session.Session, path string, item Item) (string, error) {
 	sess.RLock()
 	defer sess.RUnlock()
-	value := item.Value
-	switch value.Type {
-	case schema.TypeToken:
-		docs, usage, _, _ := tokenDocs(sess.Install.Vocab, value.Name)
+	word := item.Word
+	switch word.Type {
+	case schema.WordCommand:
+		docs, usage, _, _ := commandDocs(sess.Schema.Dumps, word.Name)
 		return strings.TrimSpace(docs + "\n" + usage), nil
-	case schema.TypeScopePath:
-		return sess.Install.Vocab.Links[item.Label].Doc, nil
-	case schema.TypeLoc:
-		if said, ok := sess.Loc(value.Name, ""); ok {
+	case schema.WordScopePath:
+		return sess.Schema.Dumps.EventTargets[item.Label].Doc, nil
+	case schema.WordLoc:
+		if said, ok := sess.Loc(word.Name, ""); ok {
 			return said.Value, nil
 		}
-	case schema.TypeRef:
+	case schema.WordReference:
 		file, err := open(sess, path)
 		if err != nil {
 			return "", err
 		}
 		card := &Inspect{}
-		file.defined(card, value, "")
-		return strings.TrimSpace(card.Label + "\n" + card.Docs), nil
+		file.defined(card, word, "")
+		return strings.TrimSpace(card.Name + "\n" + card.Prose), nil
 	}
 	return "", nil
 }

@@ -150,8 +150,8 @@ function open(path: string, line: number): void {
           <div class="font-mono text-xs text-dimmed">{{ fire.via }}</div>
         </div>
       </section>
-      <section v-for="group in detail.refs" :key="group.kind" class="py-3 first:pt-0">
-        <h5 class="mb-1.5 font-medium text-toned">{{ group.kind }}</h5>
+      <section v-for="group in detail.refs" :key="group.database" class="py-3 first:pt-0">
+        <h5 class="mb-1.5 font-medium text-toned">{{ group.database }}</h5>
         <div class="flex flex-wrap gap-x-3 gap-y-1">
           <UButton
             v-for="ref in group.refs"

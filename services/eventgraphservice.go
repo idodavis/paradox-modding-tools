@@ -25,23 +25,23 @@ type Params struct {
 	MaxNodes int      `json:"maxNodes"` // nodes drawn before the graph is marked truncated
 	Expand   []string `json:"expand"`   // stubs the page opened: more:<id>, more-in:<id>
 	Origins  []string `json:"origins"`  // the origins drawn, with the root and its stubs; empty for all
-	Macros   bool     `json:"macros"`   // each macro on a chain drawn as a node between the two it joins
+	Scripted bool     `json:"scripted"` // each scripted effect on a chain drawn as a node between the two it joins
 }
 
 // Node is one definition drawn, or a stub standing for what is hidden.
 type Node struct {
-	ID     string `json:"id"`
-	Kind   string `json:"kind"`
-	Title  string `json:"title,omitempty"`
-	Origin string `json:"origin,omitempty"`
-	Rel    string `json:"rel,omitempty"`
-	Line   int    `json:"line"`
-	Root   bool   `json:"root,omitempty"`
-	Stub   string `json:"stub,omitempty"` // "more": hidden fires out of Hidden's node; "fired-by": hidden callers
-	Hidden int    `json:"hidden,omitempty"`
+	ID       string `json:"id"`
+	Database string `json:"database"`
+	Title    string `json:"title,omitempty"`
+	Origin   string `json:"origin,omitempty"`
+	Rel      string `json:"rel,omitempty"`
+	Line     int    `json:"line"`
+	Root     bool   `json:"root,omitempty"`
+	Stub     string `json:"stub,omitempty"` // "more": hidden fires out of Hidden's node; "fired-by": hidden callers
+	Hidden   int    `json:"hidden,omitempty"`
 }
 
-// Edge is one fire drawn; Via names the tokens and macros between.
+// Edge is one fire drawn; Via names the commands and scripted effects between.
 type Edge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
@@ -62,22 +62,23 @@ type EventGraphService struct {
 	Session *SessionService
 }
 
-// Roots is a root search's hits, grouped by kind, and how many of each kind the query holds.
+// Roots is a root search's hits, grouped by database, and how many of each database the query
+// holds.
 type Roots struct {
-	Hits  []Node      `json:"hits"`
-	Kinds []KindCount `json:"kinds"`
+	Hits      []Node          `json:"hits"`
+	Databases []DatabaseCount `json:"databases"`
 }
 
-// KindCount is one kind and how many roots of it a search holds.
-type KindCount struct {
-	Kind  string `json:"kind"`
-	Count int    `json:"count"`
+// DatabaseCount is one database and how many roots of it a search holds.
+type DatabaseCount struct {
+	Database string `json:"database"`
+	Count    int    `json:"count"`
 }
 
-// SearchRoots is what the graph can be drawn from: the events and on_actions the install and the mods
-// fire, and every definition but a macro that fires one, whose id holds the query. Ids that start with
-// it come first; of one kind at most 50, of every kind at most 8 each.
-func (v *EventGraphService) SearchRoots(workspaceID, query, kind string) (*Roots, error) {
+// SearchRoots is what the graph can be drawn from: the events and on_actions the install and the
+// mods fire, and every definition but a scripted effect that fires one, whose id holds the query.
+// Ids that start with it come first; of one database at most 50, of every database at most 8 each.
+func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*Roots, error) {
 	sess, err := v.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
@@ -85,39 +86,39 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, kind string) (*Roots
 	sess.RLock()
 	defer sess.RUnlock()
 	query = strings.ToLower(query)
-	kinds, checked := map[string]string{}, map[string]bool{}
-	for _, idx := range sess.All() {
+	databases, checked, all := map[string]string{}, map[string]bool{}, sess.All()
+	for _, idx := range all {
 		for _, edge := range idx.Edges {
-			if edge.File < 0 {
+			if !all.Loaded(idx, edge.File) {
 				continue
 			}
-			if sess.Fired(edge.ToKind) {
-				kinds[edge.To] = edge.ToKind
+			if sess.Fired(edge.ToDatabase) {
+				databases[edge.To] = edge.ToDatabase
 			}
-			if caller := sess.Schema.Kinds[edge.FromKind]; !checked[edge.From] && (caller == nil || caller.Macro == 0) {
+			if caller := sess.Schema.Databases[edge.FromDatabase]; !checked[edge.From] && (caller == nil || len(caller.CalledIn) == 0) {
 				checked[edge.From] = true
 				if len(sess.Fires(edge.From, map[string]bool{})) > 0 {
-					kinds[edge.From] = edge.FromKind
+					databases[edge.From] = edge.FromDatabase
 				}
 			}
 		}
 	}
 
-	// the query's hits by kind, those that start with it first
+	// the query's hits by database, those that start with it first
 	byKind := map[string][]string{}
-	for name, named := range kinds {
+	for name, named := range databases {
 		if strings.Contains(strings.ToLower(name), query) {
 			byKind[named] = append(byKind[named], name)
 		}
 	}
 	out, limit := &Roots{}, 8
-	if kind != "" {
+	if database != "" {
 		limit = 50
 	}
 	builder := &grapher{sess: sess, out: &EventGraph{}, drawn: map[string]bool{}, parsed: map[string]*jomini.Result{}}
 	for named, names := range byKind {
-		out.Kinds = append(out.Kinds, KindCount{Kind: named, Count: len(names)})
-		if kind != "" && kind != named {
+		out.Databases = append(out.Databases, DatabaseCount{Database: named, Count: len(names)})
+		if database != "" && database != named {
 			continue
 		}
 		slices.SortFunc(names, func(first, second string) int {
@@ -128,12 +129,12 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, kind string) (*Roots
 			builder.node(id, false)
 		}
 	}
-	slices.SortFunc(out.Kinds, func(first, second KindCount) int {
-		return cmp.Or(second.Count-first.Count, strings.Compare(first.Kind, second.Kind))
+	slices.SortFunc(out.Databases, func(first, second DatabaseCount) int {
+		return cmp.Or(second.Count-first.Count, strings.Compare(first.Database, second.Database))
 	})
 	slices.SortStableFunc(builder.out.Nodes, func(first, second Node) int {
-		return slices.IndexFunc(out.Kinds, func(count KindCount) bool { return count.Kind == first.Kind }) -
-			slices.IndexFunc(out.Kinds, func(count KindCount) bool { return count.Kind == second.Kind })
+		return slices.IndexFunc(out.Databases, func(count DatabaseCount) bool { return count.Database == first.Database }) -
+			slices.IndexFunc(out.Databases, func(count DatabaseCount) bool { return count.Database == second.Database })
 	})
 	out.Hits = builder.out.Nodes
 	return out, nil
@@ -166,7 +167,7 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 			opened := slices.Contains(params.Expand, "more:"+from)
 			for i, fire := range fires {
 				if !opened && params.Fanout > 0 && i >= params.Fanout {
-					builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more:" + from, Kind: "more", Stub: "more", Hidden: len(fires) - i, Title: fmt.Sprintf("+%d more", len(fires)-i)})
+					builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more:" + from, Database: "more", Stub: "more", Hidden: len(fires) - i, Title: fmt.Sprintf("+%d more", len(fires)-i)})
 					builder.out.Edges = append(builder.out.Edges, Edge{From: from, To: "more:" + from})
 					break
 				}
@@ -186,7 +187,7 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 
 	// into a root the game fires, one hop: a stub until the page opens it
 	var callers []session.Fire
-	if kept, _ := sess.Winner(found); sess.Fired(kept.Kind) {
+	if kept, _ := sess.Winner(found); sess.Fired(kept.Database) {
 		callers = firedBy(sess, params.Root)
 	}
 	if len(callers) > 0 {
@@ -198,7 +199,7 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 				builder.out.Edges = append(builder.out.Edges, Edge{From: caller.Name, To: params.Root, Via: caller.Via})
 			}
 		} else {
-			builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more-in:" + params.Root, Kind: "more", Stub: "fired-by", Hidden: len(callers), Title: fmt.Sprintf("+%d fired by", len(callers))})
+			builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more-in:" + params.Root, Database: "more", Stub: "fired-by", Hidden: len(callers), Title: fmt.Sprintf("+%d fired by", len(callers))})
 			builder.out.Edges = append(builder.out.Edges, Edge{From: "more-in:" + params.Root, To: params.Root})
 			builder.out.Nodes[0].Hidden = len(callers)
 		}
@@ -224,19 +225,20 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 		builder.out.Edges = slices.DeleteFunc(builder.out.Edges, func(edge Edge) bool { return !kept[edge.From] || !kept[edge.To] })
 	}
 
-	// the page's macros shown: each chain's macros drawn in turn between the two it joins, the
-	// last hop labelled by the token that fires; a hop two chains share is drawn once
-	if params.Macros {
+	// the page's scripted effects shown: each chain's scripted effects drawn in turn between the
+	// two it joins, the last hop labelled by the command that fires; a hop two chains share is
+	// drawn once
+	if params.Scripted {
 		var edges []Edge
 		for _, edge := range builder.out.Edges {
 			hops := strings.Split(edge.Via, " → ")
 			from := edge.From
-			for _, macro := range hops[:len(hops)-1] {
-				if !builder.drawn[macro] {
-					builder.node(macro, false)
+			for _, scripted := range hops[:len(hops)-1] {
+				if !builder.drawn[scripted] {
+					builder.node(scripted, false)
 				}
-				edges = append(edges, Edge{From: from, To: macro})
-				from = macro
+				edges = append(edges, Edge{From: from, To: scripted})
+				from = scripted
 			}
 			edges = append(edges, Edge{From: from, To: edge.To, Via: hops[len(hops)-1]})
 		}
@@ -264,19 +266,21 @@ func (grapher *grapher) node(id string, root bool) {
 		grapher.parsed[kept.At.Path] = parsed
 	}
 	grapher.drawn[id] = true
-	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Kind: kept.Kind, Title: title(grapher.sess, kept, parsed), Origin: kept.At.Origin, Rel: kept.At.Rel, Line: int(kept.Line), Root: root})
+	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: kept.Database, Title: title(grapher.sess, kept, parsed), Origin: kept.At.Origin, Rel: kept.At.Rel, Line: int(kept.Line), Root: root})
 }
 
-// firedBy is what fires a definition, in name order; a fire inside a macro counts for its callers,
-// its chain the macros from the caller's own call to the token at this site, as Fires writes one.
+// firedBy is what fires a definition, in name order; a fire inside a scripted effect counts for
+// its callers, its chain the scripted effects from the caller's own call to the command at this
+// site, as Fires writes one.
 func firedBy(sess *session.Session, to string) []session.Fire {
 	var out []session.Fire
-	for _, idx := range sess.All() {
+	all := sess.All()
+	for _, idx := range all {
 		for _, incoming := range idx.FiredBy(to) {
-			if incoming.File < 0 {
+			if !all.Loaded(idx, incoming.File) {
 				continue
 			}
-			if kind := sess.Schema.Kinds[incoming.FromKind]; kind != nil && kind.Macro != 0 && incoming.From != to {
+			if database := sess.Schema.Databases[incoming.FromDatabase]; database != nil && len(database.CalledIn) > 0 && incoming.From != to {
 				for _, caller := range firedBy(sess, incoming.From) {
 					out = append(out, session.Fire{Name: caller.Name, Via: caller.Via + " → " + incoming.Via})
 				}
@@ -289,14 +293,11 @@ func firedBy(sess *session.Session, to string) []session.Fire {
 	return slices.CompactFunc(out, func(first, second session.Fire) bool { return first.Name == second.Name })
 }
 
-// title is a definition's display name: its label, else the text of its first templated loc key,
-// else, in its parsed file, the text of the key its title member names, as events write theirs.
+// title is a definition's display name: the text of its database's first loc key it has, else, in
+// its parsed file, the text of the key its title key names, as events write theirs.
 func title(sess *session.Session, found index.Found, parsed *jomini.Result) string {
-	if found.Label != "" {
-		return found.Label
-	}
-	if kind := sess.Schema.Kinds[found.Kind]; kind != nil {
-		for _, key := range loc.Expand(found.Name, kind.LocTemplates) {
+	if database := sess.Schema.Databases[found.Database]; database != nil {
+		for _, key := range loc.Expand(found.Name, database.LocKeys) {
 			if said, ok := sess.Loc(key, ""); ok {
 				return said.Value
 			}
@@ -325,9 +326,9 @@ type Detail struct {
 	Lines    []string       `json:"lines"` // the definition as its file writes it
 	Sections []Section      `json:"sections"`
 	Options  []Option       `json:"options"`
-	Fires    []session.Fire `json:"fires"`   // as the graph draws them: events and on_actions, through macros
+	Fires    []session.Fire `json:"fires"`   // as the graph draws them: events and on_actions, through scripted effects
 	FiredBy  []session.Fire `json:"firedBy"` // the same, into it
-	Refs     []RefGroup     `json:"refs"`    // what the block names, by kind in the order first written
+	Refs     []RefGroup     `json:"refs"`    // what the block names, by database in the order first written
 	Reason   string         `json:"reason,omitempty"`
 }
 
@@ -347,10 +348,11 @@ type Option struct {
 	Line int    `json:"line"`
 }
 
-// RefGroup is the references of one kind written in a block; loc keys are kind loc, files file.
+// RefGroup is the references of one database written in a block; loc keys are database loc, files
+// file.
 type RefGroup struct {
-	Kind string        `json:"kind"`
-	Refs []index.Cited `json:"refs"`
+	Database string        `json:"database"`
+	Refs     []index.Cited `json:"refs"`
 }
 
 // GetEventDetail opens one definition by name: the one the game keeps.
@@ -398,19 +400,19 @@ func (v *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 		detail.Sections = append(detail.Sections, section)
 	}
 
-	// the references written inside the block, grouped by kind in the order first written
+	// the references written inside the block, grouped by database in the order first written
 	for _, ref := range index.Visit(kept.At, parsed, sess.Reader(), nil).Refs {
 		if offset := lines.OffsetAt(int(ref.Line), int(ref.Col)); offset < defined.Range.Start || offset >= defined.Range.End {
 			continue
 		}
-		kind := ref.Kind
-		if ref.Type != schema.TypeRef {
-			kind = ref.Type.String()
+		database := ref.Database
+		if ref.Type != schema.WordReference {
+			database = ref.Type.String()
 		}
-		at := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Kind == kind })
+		at := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Database == database })
 		if at < 0 {
 			at = len(detail.Refs)
-			detail.Refs = append(detail.Refs, RefGroup{Kind: kind})
+			detail.Refs = append(detail.Refs, RefGroup{Database: database})
 		}
 		detail.Refs[at].Refs = append(detail.Refs[at].Refs, index.Cited{Ref: ref, At: kept.At})
 	}
@@ -445,7 +447,7 @@ func spanLines(parsed *jomini.Result, span jomini.Range, limit int) []string {
 }
 
 // option reads an option block's name and the text it has, at its line. A name written as a
-// block, one per condition, is its text member's key; the first name is kept.
+// block, one per condition, is its text key's value; the first name is kept.
 func option(sess *session.Session, block *jomini.Block, line int) Option {
 	other := Option{Line: line}
 	for _, st := range block.Statements {

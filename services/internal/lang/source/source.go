@@ -81,7 +81,10 @@ var ignored = map[string]string{
 }
 
 // layout is the folder names that mark a folder as mirroring the game layout.
-var layout = []string{"common", "events", "gfx", "gui", "history", "localization", "map_data", "music", "sound", "fonts"}
+var layout = []string{
+	"common", "events", "gfx", "gui", "history", "localization", "map_data", "music", "sound", "fonts", "data_binding",
+	"input_profile", "interface", "setup",
+}
 
 // File is one file of an install or a mod.
 type File struct {
@@ -108,13 +111,17 @@ func (file File) Text() (string, error) {
 var documentation = map[string]bool{"readme": true, "info": true, "example": true, "examples": true, "template": true, "help": true, "documentation": true}
 
 // Classify is the format of a file, from its path relative to a root. A .txt named as
-// documentation is read to see whether it is: its comment lines outnumber its script lines.
+// documentation is read to see whether it is: its comments and sentences outnumber its script lines.
 func Classify(abs, rel string) Format {
-	name := strings.ToLower(path.Base(rel))
+	name, dir := strings.ToLower(path.Base(rel)), strings.ToLower(path.Dir(rel))
 
-	// two files are what they are by name, not by extension
-	if name == "guids.txt" && strings.HasSuffix(strings.ToLower(path.Dir(rel)), "sound") {
+	// some files are what they are by name and folder, not by extension: a sound GUID list, and the
+	// Wwise bank listing beside its .bnk
+	if strings.HasSuffix(name, "guids.txt") && strings.HasSuffix(dir, "sound") {
 		return List
+	}
+	if path.Ext(name) == ".txt" && strings.Contains("/"+dir+"/", "/sound/banks/") {
+		return Opaque
 	}
 	if strings.HasPrefix(name, "readme") {
 		return Info
@@ -129,7 +136,8 @@ func Classify(abs, rel string) Format {
 	return format
 }
 
-// prose reports a text file whose comment lines outnumber its script lines, up to a megabyte.
+// prose reports a text file whose comment and sentence lines outnumber its script lines, up to a
+// megabyte. A sentence has three words or more, no brace, and no operator second (Vic3's clones info).
 func prose(abs string) bool {
 	raw, err := os.ReadFile(abs)
 	if err != nil || len(raw) > 1<<20 {
@@ -138,9 +146,12 @@ func prose(abs string) bool {
 	text, _ := jomini.Decode(raw)
 	script, comment := 0, 0
 	for line := range strings.SplitSeq(text, "\n") {
+		words := strings.Fields(line)
 		switch trimmed := strings.TrimSpace(line); {
 		case trimmed == "":
 		case strings.HasPrefix(trimmed, "#"):
+			comment++
+		case len(words) >= 3 && !strings.ContainsAny(trimmed, "{}") && !strings.ContainsAny(words[1], "=<>"):
 			comment++
 		default:
 			script++

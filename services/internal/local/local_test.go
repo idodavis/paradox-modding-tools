@@ -222,8 +222,8 @@ func TestWriteNewMod(t *testing.T) {
 		{"vic3 omits latest", "vic3", "V", "latest", "french", "", ".metadata/metadata.json", "localization/french/v_l_french.yml",
 			[]string{`"name": "V"`}, []string{"supported_game_version"}, nil},
 		// EU5 writes the file into .metadata/ and still declares the bare name as its picture.
-		{"eu5 thumbnail goes beside metadata", "eu5", "M", "1", "english", ".gif", ".metadata/metadata.json", "localization/english/m_l_english.yml",
-			[]string{`"picture": "thumbnail.gif"`}, nil, []string{".metadata/thumbnail.gif"}},
+		{"eu5 thumbnail goes beside metadata", "eu5", "M", "1", "english", ".gif", ".metadata/metadata.json", "main_menu/localization/english/m_l_english.yml",
+			[]string{`"picture": "thumbnail.gif"`}, nil, []string{".metadata/thumbnail.gif", "in_game/common", "in_game/events"}},
 		{"ck3 thumbnail", "ck3", "M", "1", "english", ".png", "descriptor.mod", "localization/english/m_l_english.yml",
 			[]string{`picture="thumbnail.png"`}, nil, []string{"thumbnail.png"}},
 	} {

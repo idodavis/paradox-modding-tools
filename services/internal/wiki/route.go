@@ -19,22 +19,6 @@ var synonyms = map[string][]string{
 
 var languageStems = map[string]bool{"effect": true, "trigger": true, "scope": true, "on action": true}
 
-// stem is the kind-like core of a title or a name: lower-cased, "_" read as a space, without
-// "scripted " before or " guide" / " modding" after, each word's plural s folded; "" for the hub.
-func stem(text string) string {
-	text = strings.TrimSuffix(strings.TrimSuffix(normTitle(text), " guide"), " modding")
-	if text == "modding" {
-		return ""
-	}
-	words := strings.Fields(strings.TrimPrefix(text, "scripted "))
-	for i, word := range words {
-		if len(word) > 2 && !strings.HasSuffix(word, "ss") {
-			words[i] = strings.TrimSuffix(word, "s")
-		}
-	}
-	return strings.Join(words, " ")
-}
-
 // Attribution is the Guide / Patch Notes footer line.
 func Attribution(gameID string) string {
 	info := game.Get(gameID)

@@ -384,3 +384,13 @@ func LooksLikeKey(name string) bool {
 	}
 	return true
 }
+
+// plainMarks is the markup a player never reads: [concept|E] links, $KEY$ interpolations, and the
+// #style … #! formatting around text.
+var plainMarks = regexp.MustCompile(`\[([A-Za-z0-9_.]+)\|E\]|\$([A-Za-z0-9_.]+)(?:\|[^$]*)?\$|#![ ]?|#[A-Za-z0-9_;]+ `)
+
+// Plain is localization as a player reads it: a concept link as the concept's word, an interpolated
+// key as its name, formatting dropped.
+func Plain(text string) string {
+	return plainMarks.ReplaceAllString(text, "$1$2")
+}

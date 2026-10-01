@@ -28,7 +28,7 @@ import (
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {
 	dir := filepath.Join("internal", "lang", "testdata", "ck3")
-	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test", Docs: []string{filepath.Join(dir, "docs")}})
+	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test", Dumps: []string{filepath.Join(dir, "docs")}})
 })
 
 // workspace is a session service holding, as workspace "ws", a session over the fixture install
@@ -262,7 +262,7 @@ func TestEventGraph(t *testing.T) {
 	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire → trigger_event" {
 		t.Errorf("the same chain into it: %+v", drawn.Edges)
 	}
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Macros: true})
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Scripted: true})
 	into, _ := edge(drawn, "m_fire", "m.2")
 	if _, ok := edge(drawn, "m.1", "m_fire"); !ok || into.Via != "trigger_event" || !slices.Contains(ids(drawn), "m_fire") {
 		t.Errorf("the macro drawn: %+v %v", drawn.Edges, ids(drawn))
@@ -312,7 +312,7 @@ func TestEventGraph(t *testing.T) {
 		t.Errorf("a macro is a hop, not a root: %+v", got)
 	}
 	actions, _ := graphs.SearchRoots("ws", "", "on_action")
-	if !slices.Equal(ids(&EventGraph{Nodes: actions.Hits}), []string{"on_birth"}) || !slices.ContainsFunc(actions.Kinds, func(count KindCount) bool { return count.Kind == "events" && count.Count > 10 }) {
+	if !slices.Equal(ids(&EventGraph{Nodes: actions.Hits}), []string{"on_birth"}) || !slices.ContainsFunc(actions.Databases, func(count DatabaseCount) bool { return count.Database == "events" && count.Count > 10 }) {
 		t.Errorf("one kind's hits, every kind's count: %+v", actions)
 	}
 }
@@ -323,7 +323,7 @@ func TestDetail(t *testing.T) {
 		"localization/english/m_l_english.yml": "\xEF\xBB\xBFl_english:\n v.1.a:0 \"Go\"\n",
 	})}
 	detail, _ := graphs.GetEventDetail("ws", "m.1")
-	if detail.Reason != "" || detail.Kind != "events" || detail.At.Origin != "moda" || detail.Title != "Hello" {
+	if detail.Reason != "" || detail.Database != "events" || detail.At.Origin != "moda" || detail.Title != "Hello" {
 		t.Fatalf("the header, its title from the title member's key: %+v", detail)
 	}
 	if drawn, _ := graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 1, Fanout: 5, MaxNodes: 10}); len(drawn.Nodes) == 0 || drawn.Nodes[0].Title != "Hello" {
@@ -348,7 +348,7 @@ func TestDetail(t *testing.T) {
 	if len(detail.Options) != 1 || detail.Options[0].Name != "v.1.a" || detail.Options[0].Text != "Go" {
 		t.Errorf("the options: %+v", detail.Options)
 	}
-	if len(detail.Refs) == 0 || detail.Refs[0].Kind != "loc" || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
+	if len(detail.Refs) == 0 || detail.Refs[0].Database != "loc" || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
 		t.Errorf("the block's references, by kind in the order written: %+v", detail.Refs)
 	}
 	if len(detail.Fires) != 1 || detail.Fires[0].Name != "v.2" {
@@ -357,7 +357,7 @@ func TestDetail(t *testing.T) {
 	if detail, _ := graphs.GetEventDetail("ws", "v.2"); len(detail.FiredBy) == 0 {
 		t.Errorf("what fires it: %+v", detail.FiredBy)
 	}
-	if on, _ := graphs.GetEventDetail("ws", "on_birth"); on.Kind != "on_action" || len(on.Sections) == 0 {
+	if on, _ := graphs.GetEventDetail("ws", "on_birth"); on.Database != "on_action" || len(on.Sections) == 0 {
 		t.Errorf("an on_action's detail: %+v", on)
 	}
 	if none, _ := graphs.GetEventDetail("ws", "nothing.1"); none.Reason == "" {
@@ -531,7 +531,7 @@ func TestWorkspaceHealth(t *testing.T) {
 	}
 	if at := slices.IndexFunc(health.Depends, func(dep Dependency) bool { return dep.From == "moda" && dep.To == "modb" }); at < 0 {
 		t.Errorf("mod a names bold_b, which only mod b defines: %+v", health.Depends)
-	} else if uses := health.Depends[at].Sites; len(uses) != 1 || uses[0].Kind != "traits" || uses[0].Name != "bold_b" || !slices.Equal(lines(uses, false)[0], []string{"\t\thas_trait = bold_b"}) {
+	} else if uses := health.Depends[at].Sites; len(uses) != 1 || uses[0].Database != "traits" || uses[0].Name != "bold_b" || !slices.Equal(lines(uses, false)[0], []string{"\t\thas_trait = bold_b"}) {
 		t.Errorf("each use, with its kind, name and line: %+v", uses)
 	}
 
@@ -830,7 +830,7 @@ func TestEnsureSession(t *testing.T) {
 		t.Fatalf("a session built from a scan, its cache written: %+v (%v)", health, err)
 	}
 	live := svc.get("ws")
-	if live == nil || len(live.Mods) != 1 || !live.Workspace.Def("traits", "bold") {
+	if live == nil || len(live.Mods) != 1 || !(index.All{live.Workspace}).Def("traits", "bold") {
 		t.Error("the mod is indexed over the install")
 	}
 

@@ -2,9 +2,9 @@
 // game. The name shapes the games key their objects by. The words that are values rather than
 // names: a number, and a Clausewitz date (a two-part dotted word is an event id, never a date,
 // and a date is never a name, because history files key their blocks by one). And the four
-// spellings one word can carry inside it: a cite (prefix:name, with a |member and a .chain
+// spellings one word can carry inside it: a prefixed word (prefix:name, with a |key and a .chain
 // after it), an entry mode before a definition's name (REPLACE:name), a constant (@name), and
-// the $NAME$ parameters a macro is called with.
+// the $NAME$ parameters a scripted effect or trigger is called with.
 package jomini
 
 import (
@@ -111,21 +111,6 @@ func isAlnumUnder(char byte) bool {
 		(char >= '0' && char <= '9')
 }
 
-// PeelComment strips leading `#` markers from a line and reports whether any
-// were there. A commented-out template still parses as script once peeled,
-// which is how a game's shipped README documents a shape it never runs.
-func PeelComment(raw string) (body string, hashed bool) {
-	text := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
-	if text == "" {
-		return "", false
-	}
-	hashed = strings.HasPrefix(text, "#")
-	for strings.HasPrefix(text, "#") {
-		text = strings.TrimSpace(text[1:])
-	}
-	return text, hashed
-}
-
 // LiteralKind is what a scalar is when it is not a name.
 type LiteralKind uint8
 
@@ -163,15 +148,20 @@ func Literal(text string) LiteralKind {
 
 // ParseDate reads a Clausewitz date, `Y.M.D` or `Y.M.D.H`, every part digits. Two parts is an
 // event id (`ns.1`), never a date; history files key their blocks by a date, so a date is
-// never a definition name.
+// never a definition name. A year may be negative (`-221.1.1`, before year 1), and one trailing
+// dot is allowed (`867.1.1.`, as CK3 history writes 40 date keys).
 func ParseDate(text string) (year, month, day, hour int, ok bool) {
-	parts := strings.Split(text, ".")
+	parts := strings.Split(strings.TrimSuffix(text, "."), ".")
 	if len(parts) != 3 && len(parts) != 4 {
 		return 0, 0, 0, 0, false
 	}
 	out := [4]int{}
 	for i, part := range parts {
-		if part == "" || len(part) > 5 || !IsDigits(part) {
+		digits := part
+		if i == 0 {
+			digits = strings.TrimPrefix(part, "-")
+		}
+		if digits == "" || len(digits) > 5 || !IsDigits(digits) {
 			return 0, 0, 0, 0, false
 		}
 		out[i], _ = strconv.Atoi(part)
@@ -189,59 +179,59 @@ func IsDigits(text string) bool {
 	return text != ""
 }
 
-// Cited is a word written prefix:name, split.
-type Cited struct {
+// Prefixed is a word written prefix:name, split.
+type Prefixed struct {
 	Prefix string // character, title, scope, define
 	Name   string // 186004, k_france, target, NGame
-	Member string // the key after a bar: define:NGame|START_DATE
+	Key    string // the key after a bar: define:NGame|START_DATE
 	Chain  string // what follows the first dot: scope:target.culture -> culture
 }
 
-// Cite splits a word written prefix:name. It refuses a word whose prefix is not one plain
+// SplitPrefixed splits a word written prefix:name. It refuses a word whose prefix is not one plain
 // lower-case identifier (root.var:x is a scope path, INJECT:x an entry mode), and a colon
 // followed by a slash (event:/SFX/x is a sound's name, file:/x a file, C:/x a path).
-func Cite(text string) (Cited, bool) {
+func SplitPrefixed(text string) (Prefixed, bool) {
 	colon := strings.IndexByte(text, ':')
 	if colon <= 0 || colon == len(text)-1 || strings.ContainsRune(`/\`, rune(text[colon+1])) {
-		return Cited{}, false
+		return Prefixed{}, false
 	}
 
 	// the prefix: a letter, then letters, digits and underscores, with at least one lower-case letter
 	prefix, lower := text[:colon], false
 	for i, char := range prefix {
 		if !(unicode.IsLetter(char) || char == '_' || (i > 0 && unicode.IsDigit(char))) || (i == 0 && char == '_') {
-			return Cited{}, false
+			return Prefixed{}, false
 		}
 		lower = lower || unicode.IsLower(char)
 	}
 	if !lower {
-		return Cited{}, false
+		return Prefixed{}, false
 	}
 
 	// the name runs to a bar, a dot or the end
 	rest := text[colon+1:]
 	end := nameEnd(rest)
 	if end == 0 {
-		return Cited{}, false
+		return Prefixed{}, false
 	}
-	cited := Cited{Prefix: prefix, Name: rest[:end]}
+	prefixed := Prefixed{Prefix: prefix, Name: rest[:end]}
 	rest = rest[end:]
 
-	// a member after a bar, then a chain after a dot
+	// a key after a bar, then a chain after a dot
 	if strings.HasPrefix(rest, "|") {
 		end = nameEnd(rest[1:])
 		if end == 0 {
-			return Cited{}, false
+			return Prefixed{}, false
 		}
-		cited.Member, rest = rest[1:1+end], rest[1+end:]
+		prefixed.Key, rest = rest[1:1+end], rest[1+end:]
 	}
 	if strings.HasPrefix(rest, ".") && len(rest) > 1 {
-		cited.Chain, rest = rest[1:], ""
+		prefixed.Chain, rest = rest[1:], ""
 	}
 	if rest != "" {
-		return Cited{}, false
+		return Prefixed{}, false
 	}
-	return cited, true
+	return prefixed, true
 }
 
 // nameEnd is how many bytes of name are a name: letters, digits, underscores and hyphens.

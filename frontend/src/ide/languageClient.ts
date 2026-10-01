@@ -8,7 +8,7 @@ import { useDebounceFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import * as ide from "@services/ideservice";
 import type { Item, Location, Range, Symbol as Defined } from "@services/internal/lsp";
-import { editorRange, hoverMarkdown, toBytes, valueName, type CardLinks, type LineText } from "./editorCore";
+import { editorRange, hoverMarkdown, toBytes, type CardLinks, type LineText } from "./editorCore";
 import { normFs } from "./fsBridge";
 
 const OPEN_EVENT_GRAPH = "pmt.openInEventGraph";
@@ -45,7 +45,7 @@ function toLocation(site: Location): vscode.Location {
 }
 
 function symbolOf(defined: Defined): vscode.SymbolInformation {
-  const container = defined.parent || defined.kind;
+  const container = defined.parent || defined.database;
   return new vscode.SymbolInformation(defined.name, vscode.SymbolKind.Object, container, toLocation(defined.location));
 }
 
@@ -102,7 +102,7 @@ export function registerLanguageClient(getWorkspaceId: () => string, origin: Car
         md.supportHtml = true;
         md.isTrusted = { enabledCommands: ["vscode.open", OPEN_EVENT_GRAPH] };
         if (card.graphed) {
-          const args = encodeURIComponent(JSON.stringify([card.value.name]));
+          const args = encodeURIComponent(JSON.stringify([card.word.name]));
           md.appendMarkdown(`\n\n[Open in Event Graph](command:${OPEN_EVENT_GRAPH}?${args})`);
         }
         return new vscode.Hover(md, toRange(card.range, linesOf(doc)));
@@ -143,7 +143,7 @@ export function registerLanguageClient(getWorkspaceId: () => string, origin: Car
           if (!list || token.isCancellationRequested) return undefined;
           const shown = (list.items ?? []).map((item, i) => {
             const entry = new vscode.CompletionItem(item.label, vscode.CompletionItemKind.Value);
-            entry.detail = valueName(item.value);
+            entry.detail = item.head;
             // the backend's rank first, then the order it wrote the ties in
             entry.sortText = `${item.rank}${String(i).padStart(4, "0")}`;
             entry.range = toRange(item.range, linesOf(doc));

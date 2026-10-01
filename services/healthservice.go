@@ -7,8 +7,10 @@ package services
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
@@ -16,6 +18,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/source"
+	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -33,11 +36,19 @@ type Health struct {
 	Dangling  []Dangling    `json:"dangling"`
 	Loc       []Language    `json:"loc"`
 	Files     []FileRow     `json:"files"`
+	Problems  []Problem     `json:"problems"` // what the editor's checks find that no card above shows
+}
+
+// Problem is one finding of the editor's checks, at its site.
+type Problem struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Site    Site   `json:"site"`
 }
 
 // Contest is one name two origins define, its definitions in load order, with the game's rule.
 type Contest struct {
-	Kind      string `json:"kind"`
+	Database  string `json:"database"`
 	Name      string `json:"name"`
 	Winner    int    `json:"winner"` // the position in Sites of the definition the game keeps
 	FirstWins bool   `json:"firstWins"`
@@ -50,7 +61,7 @@ type Site struct {
 	File     int    `json:"file"` // its number in Sources
 	Line     int    `json:"line"`
 	Col      int    `json:"col"`
-	Kind     string `json:"kind,omitempty"` // a dependency's use: the kind and name written there
+	Database string `json:"database,omitempty"` // a dependency's use: the database and name written there
 	Name     string `json:"name,omitempty"`
 	Injected bool   `json:"injected,omitempty"` // a definition added to the kept one (INJECT), not replaced
 }
@@ -64,9 +75,9 @@ type Dependency struct {
 
 // Dangling is one name a mod writes that nothing defines, and where.
 type Dangling struct {
-	Kind     string `json:"kind"`
+	Database string `json:"database"`
 	Name     string `json:"name"`
-	Declared bool   `json:"declared"` // a declared cite: the game itself would reject it
+	Declared bool   `json:"declared"` // a declared prefixed word: the game itself would reject it
 	Sites    []Site `json:"sites"`
 }
 
@@ -80,22 +91,22 @@ type Language struct {
 
 // LocRow is one key and, where it has one, the definition or the file it belongs to.
 type LocRow struct {
-	Key  string `json:"key"`
-	Kind string `json:"kind,omitempty"`
-	Name string `json:"name,omitempty"`
-	File int    `json:"file"` // its number in Sources
-	Line int    `json:"line"`
+	Key      string `json:"key"`
+	Database string `json:"database,omitempty"`
+	Name     string `json:"name,omitempty"`
+	File     int    `json:"file"` // its number in Sources
+	Line     int    `json:"line"`
 }
 
-// FileRow is one definition without images every definition of its kind in the game has, which the
-// game finds by the name.
+// FileRow is one definition without images every definition of its database in the game has, which
+// the game finds by the name.
 type FileRow struct {
-	Kind    string   `json:"kind"`
-	Name    string   `json:"name"`
-	File    int      `json:"file"` // its number in Sources
-	Line    int      `json:"line"`
-	Missing []string `json:"missing"` // each image it lacks, as the path the game looks for
-	Of      int      `json:"of"`      // how many such images its kind has
+	Database string   `json:"database"`
+	Name     string   `json:"name"`
+	File     int      `json:"file"` // its number in Sources
+	Line     int      `json:"line"`
+	Missing  []string `json:"missing"` // each image it lacks, as the path the game looks for
+	Of       int      `json:"of"`      // how many such images its database has
 }
 
 // SourceAt is one place a pane shows the source of: a definition's statement, or a reference's
@@ -107,9 +118,18 @@ type SourceAt struct {
 	Definition bool   `json:"definition"`
 }
 
-// HealthService answers the health page.
+// HealthService answers the health page. It keeps each workspace's findings while its session's
+// records are unchanged.
 type HealthService struct {
-	Session *SessionService
+	Session  *SessionService
+	mu       sync.Mutex
+	problems map[string]problemsAt
+}
+
+// problemsAt is a workspace's findings by path, and the session's changes they were found at.
+type problemsAt struct {
+	changes int64
+	found   map[string][]lsp.Diagnostic
 }
 
 // GetHealth is the workspace's health report.
@@ -118,6 +138,7 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	if err != nil {
 		return nil, err
 	}
+	found := v.findings(workspaceID, sess)
 	sess.RLock()
 	defer sess.RUnlock()
 	order := sess.Order()
@@ -136,14 +157,14 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 
 	// each name two origins define: a contest where two mods define it, else one mod's override of the
 	// install's
-	for _, contest := range index.Contests(sess.All(), sess.Schema, func(kind string) bool { return game.IsFIOS(sess.Game.ID, kind) }, sess.Game.EntryModes, order) {
+	for _, contest := range index.Contests(sess.All(), sess.Schema, func(database string) bool { return game.FirstWinsAt(sess.Game.ID, database) }, sess.Game.EntryModes, order) {
 		mods := map[string]bool{}
 		for _, found := range contest.Found {
 			if found.At.Origin != game.OriginVanilla {
 				mods[found.At.Origin] = true
 			}
 		}
-		row := Contest{Kind: contest.Kind, Name: contest.Name, Winner: contest.Winner, FirstWins: contest.FirstWins, Rule: "LIOS"}
+		row := Contest{Database: contest.Database, Name: contest.Name, Winner: contest.Winner, FirstWins: contest.FirstWins, Rule: "LIOS"}
 		if contest.FirstWins {
 			row.Rule = "FIOS"
 		}
@@ -171,26 +192,26 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	// what each mod needs from another
 	needs := map[[2]string]*Dependency{}
 	dangling := map[[2]string]*Dangling{}
-	idx := sess.Workspace
+	idx, all := sess.Workspace, sess.All()
 	for _, ref := range idx.Refs {
-		if ref.File < 0 || ref.Type != schema.TypeRef || ref.Kind == "" {
+		if ref.Type != schema.WordReference || ref.Database == "" || !all.Loaded(idx, ref.File) {
 			continue
 		}
-		if _, scriptMade := schema.ScriptKinds[ref.Kind]; scriptMade {
+		if _, scriptMade := schema.ScriptMade[ref.Database]; scriptMade {
 			continue
 		}
 		from := idx.Files[ref.File].Origin
 		var definers []string
 		for _, name := range sess.Defs(ref.Name) {
-			if name.Kind == ref.Kind && (ref.Parent == "" || name.Parent == ref.Parent) {
+			if name.Database == ref.Database && (ref.Parent == "" || name.Parent == ref.Parent) {
 				definers = append(definers, name.At.Origin)
 			}
 		}
 		site := Site{File: number(idx.Files[ref.File]), Line: int(ref.Line), Col: int(ref.Col)}
 		if len(definers) == 0 {
-			key := [2]string{ref.Kind, ref.Name}
+			key := [2]string{ref.Database, ref.Name}
 			if dangling[key] == nil {
-				dangling[key] = &Dangling{Kind: ref.Kind, Name: ref.Name, Declared: ref.Declared}
+				dangling[key] = &Dangling{Database: ref.Database, Name: ref.Name, Declared: ref.Declared}
 			}
 			dangling[key].Sites = append(dangling[key].Sites, site)
 			continue
@@ -200,7 +221,7 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 			if needs[key] == nil {
 				needs[key] = &Dependency{From: from, To: definers[0]}
 			}
-			site.Kind, site.Name = ref.Kind, ref.Name
+			site.Database, site.Name = ref.Database, ref.Name
 			needs[key].Sites = append(needs[key].Sites, site)
 		}
 	}
@@ -212,12 +233,68 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		health.Dangling = append(health.Dangling, *row)
 	}
 	slices.SortFunc(health.Dangling, func(first, second Dangling) int {
-		return strings.Compare(first.Kind+first.Name, second.Kind+second.Name)
+		return strings.Compare(first.Database+first.Name, second.Database+second.Name)
 	})
 
 	health.Loc = localization(sess, number)
 	health.Files = files(sess, number)
+
+	// the findings no card above shows: a duplicate at a contest's site, an unresolved reference at a
+	// dangling one's, and every required-loc (Loc gaps) are left out
+	type place struct {
+		path      string
+		line, col int
+	}
+	shown := map[string]map[place]bool{"duplicate-definition": {}, "unresolved-ref": {}}
+	for _, row := range health.Contests {
+		for _, site := range row.Sites {
+			shown["duplicate-definition"][place{health.Sources[site.File].Path, site.Line, site.Col}] = true
+		}
+	}
+	for _, row := range health.Dangling {
+		for _, site := range row.Sites {
+			shown["unresolved-ref"][place{health.Sources[site.File].Path, site.Line, site.Col}] = true
+		}
+	}
+	for _, path := range slices.Sorted(maps.Keys(found)) {
+		file, _ := sess.Workspace.At(path)
+		for _, diagnostic := range found[path] {
+			at := place{path, diagnostic.Range.Start.Line, diagnostic.Range.Start.Character}
+			if diagnostic.Code != "required-loc" && !shown[diagnostic.Code][at] {
+				site := Site{File: number(file), Line: at.line, Col: at.col}
+				health.Problems = append(health.Problems, Problem{Code: diagnostic.Code, Message: diagnostic.Message, Site: site})
+			}
+		}
+	}
 	return health, nil
+}
+
+// findings is every mod file's findings with every code on, found again only when the session's
+// records changed since. Diagnose takes the session's read lock itself.
+func (v *HealthService) findings(workspaceID string, sess *session.Session) map[string][]lsp.Diagnostic {
+	sess.RLock()
+	changes, files := sess.Changes, slices.Clone(sess.Workspace.Files)
+	sess.RUnlock()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if cached, ok := v.problems[workspaceID]; ok && cached.changes == changes {
+		return cached.found
+	}
+	every := map[string]bool{}
+	for _, code := range lsp.Codes {
+		every[code.Code] = true
+	}
+	found := map[string][]lsp.Diagnostic{}
+	for _, file := range files {
+		if diagnostics, err := lsp.Diagnose(sess, file.Path, every); err == nil && len(diagnostics) > 0 {
+			found[file.Path] = diagnostics
+		}
+	}
+	if v.problems == nil {
+		v.problems = map[string]problemsAt{}
+	}
+	v.problems[workspaceID] = problemsAt{changes: changes, found: found}
+	return found
 }
 
 // GetLines is the source a pane shows at each place: a definition's statement, its first ten lines
@@ -255,14 +332,14 @@ func (v *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]str
 // has and it lacks (untranslated); in any, a key its own mod never reads (orphaned). A key is
 // listed once.
 func localization(sess *session.Session, number func(source.File) int) []Language {
-	idx := sess.Workspace
+	idx, all := sess.Workspace, sess.All()
 	base := cmp.Or(sess.Language, "english")
 	languages := map[string]bool{base: true}
 	read := map[string]map[string]bool{}  // by origin: the keys something of that origin reads
 	has := map[string]map[string]bool{}   // by language: the keys the workspace has
 	ships := map[string]map[string]bool{} // by origin: the languages its loc files are in
 	for _, entry := range idx.Loc {
-		if entry.File < 0 {
+		if !all.Loaded(idx, entry.File) {
 			continue
 		}
 		at := idx.Files[entry.File]
@@ -278,7 +355,7 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 		ships[at.Origin][lang] = true
 	}
 	for _, ref := range idx.Refs {
-		if ref.File >= 0 && ref.Type == schema.TypeLoc {
+		if ref.Type == schema.WordLoc && all.Loaded(idx, ref.File) {
 			origin := idx.Files[ref.File].Origin
 			if read[origin] == nil {
 				read[origin] = map[string]bool{}
@@ -286,7 +363,7 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 			read[origin][ref.Name] = true
 		}
 	}
-	// each definition's key every vanilla one of its kind has
+	// each definition's key every vanilla one of its database has
 	type want struct {
 		key string
 		def index.Def
@@ -294,11 +371,11 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 	var wanted []want
 	conventional := map[string]map[string]bool{} // by origin: its definitions' conventional keys
 	for _, def := range idx.Defs {
-		if def.File < 0 {
+		if !all.Loaded(idx, def.File) {
 			continue
 		}
-		kind := sess.Schema.Kinds[def.Kind]
-		if kind == nil {
+		database := sess.Schema.Databases[def.Database]
+		if database == nil {
 			continue
 		}
 		origin := idx.Files[def.File].Origin
@@ -308,10 +385,10 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 		if conventional[origin] == nil {
 			conventional[origin] = map[string]bool{}
 		}
-		for _, locTemplate := range kind.LocTemplates {
-			key := loc.Expand(def.Name, []loc.Convention{locTemplate})[0]
+		for _, convention := range database.LocKeys {
+			key := loc.Expand(def.Name, []loc.Convention{convention})[0]
 			read[origin][key], conventional[origin][key] = true, true
-			if locTemplate.Coverage == 1 {
+			if convention.Coverage == 1 {
 				wanted = append(wanted, want{key, def})
 			}
 		}
@@ -338,12 +415,12 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 	}) {
 		coverage := Language{Language: lang}
 		for _, want := range wanted {
-			if lang == base && !has[lang][want.key] && !slices.ContainsFunc(index.All(sess.All()).Entries(want.key), func(said index.Said) bool { return loc.LanguageFromRel(said.At.Rel) == lang }) {
-				coverage.Missing = append(coverage.Missing, LocRow{Key: want.key, Kind: want.def.Kind, Name: want.def.Name, File: number(idx.Files[want.def.File]), Line: int(want.def.Line)})
+			if lang == base && !has[lang][want.key] && !slices.ContainsFunc(all.Entries(want.key), func(said index.Said) bool { return loc.LanguageFromRel(said.At.Rel) == lang }) {
+				coverage.Missing = append(coverage.Missing, LocRow{Key: want.key, Database: want.def.Database, Name: want.def.Name, File: number(idx.Files[want.def.File]), Line: int(want.def.Line)})
 			}
 		}
 		for _, entry := range idx.Loc {
-			if entry.File < 0 {
+			if !all.Loaded(idx, entry.File) {
 				continue
 			}
 			at := idx.Files[entry.File]
@@ -360,25 +437,26 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 	return out
 }
 
-// files is each mod definition missing an image every vanilla one of its kind has, one row with
+// files is each mod definition missing an image every vanilla one of its database has, one row with
 // every such image it lacks.
 func files(sess *session.Session, number func(source.File) int) []FileRow {
 	var out []FileRow
+	all := sess.All()
 	for _, def := range sess.Workspace.Defs {
-		if def.File < 0 {
+		if !all.Loaded(sess.Workspace, def.File) {
 			continue
 		}
-		kind := sess.Schema.Kinds[def.Kind]
-		if kind == nil {
+		database := sess.Schema.Databases[def.Database]
+		if database == nil {
 			continue
 		}
-		row := FileRow{Kind: def.Kind, Name: def.Name, Line: int(def.Line)}
-		for _, fileTemplate := range kind.FileTemplates {
-			if fileTemplate.Coverage != 1 {
+		row := FileRow{Database: def.Database, Name: def.Name, Line: int(def.Line)}
+		for _, pattern := range database.Files {
+			if pattern.Coverage != 1 {
 				continue
 			}
 			row.Of++
-			if path := strings.ReplaceAll(fileTemplate.Pattern, "{id}", def.Name); !sess.All().File(path) {
+			if path := strings.ReplaceAll(pattern.Pattern, "{id}", def.Name); !all.File(path) {
 				row.Missing = append(row.Missing, path)
 			}
 		}
@@ -411,13 +489,16 @@ func (v *HealthService) LookupLoc(workspaceID, key string) (*Lookup, error) {
 	}
 	sess.RLock()
 	defer sess.RUnlock()
-	lookup := &Lookup{Key: key}
-	for _, said := range index.All(sess.All()).Entries(key) {
+	lookup, all := &Lookup{Key: key}, sess.All()
+	for _, said := range all.Entries(key) {
 		lookup.Entries = append(lookup.Entries, LocEntry{Said: said, Language: loc.LanguageFromRel(said.At.Rel)})
 	}
-	for _, idx := range sess.All() {
-		lookup.Readers = append(lookup.Readers, idx.Referring(key)...)
+	for _, idx := range all {
+		for _, cited := range idx.Referring(key) {
+			if cited.Type == schema.WordLoc && all.Loaded(idx, cited.File) {
+				lookup.Readers = append(lookup.Readers, cited)
+			}
+		}
 	}
-	lookup.Readers = slices.DeleteFunc(lookup.Readers, func(cited index.Cited) bool { return cited.Type != schema.TypeLoc })
 	return lookup, nil
 }

@@ -6,6 +6,5 @@ export type {
     GuidePage,
     PatchEntry,
     PatchList,
-    PatchPage,
-    Section
+    PatchPage
 } from "./models.js";

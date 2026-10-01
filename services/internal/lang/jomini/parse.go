@@ -7,6 +7,8 @@
 // and always returns a usable CST plus any recovered structural errors.
 package jomini
 
+import "strings"
+
 // Result is an immutable parse result. Src is the exact text that was parsed;
 // all node offsets are byte indices into it.
 type Result struct {
@@ -338,7 +340,7 @@ func (parser *parser) makeScalar(tok token) *Scalar {
 		if tok.unterminated {
 			parser.errors = append(parser.errors, ParseError{
 				Code:    ErrUnterminatedString,
-				Message: "Unterminated string; recovered at end of line.",
+				Message: "Unterminated string: it runs to the end of the file.",
 				Range:   Range{Start: tok.start, End: tok.end},
 			})
 			inner = parser.text[tok.start+1 : tok.end]
@@ -348,4 +350,151 @@ func (parser *parser) makeScalar(tok token) *Scalar {
 		return slabAlloc(&parser.scalars, Scalar{Text: inner, Quoted: true, Range: Range{Start: tok.start, End: tok.end}})
 	}
 	return slabAlloc(&parser.scalars, Scalar{Text: parser.text[tok.start:tok.end], Quoted: false, Range: Range{Start: tok.start, End: tok.end}})
+}
+
+// Step is one step of a data call: a name, then its arguments when it has parentheses.
+type Step struct {
+	Name  string
+	Args  []Arg
+	Range Range
+}
+
+// Arg is one argument of a step, as written; Text has no quotes when Quoted.
+type Arg struct {
+	Text   string
+	Quoted bool
+	Range  Range
+}
+
+// Calls is every [ … ] segment of text, brackets included, nested brackets kept inside their
+// segment; an unclosed one runs to the end. Ranges are offset by offset.
+func Calls(text string, offset int) []Range {
+	var calls []Range
+	depth, open := 0, 0
+	for i := 0; i < len(text); i++ {
+		switch text[i] {
+		case '[':
+			if depth == 0 {
+				open = i
+			}
+			depth++
+		case ']':
+			if depth == 0 {
+				continue
+			}
+			if depth--; depth == 0 {
+				calls = append(calls, Range{Start: offset + open, End: offset + i + 1})
+			}
+		}
+	}
+	if depth > 0 {
+		calls = append(calls, Range{Start: offset + open, End: offset + len(text)})
+	}
+	return calls
+}
+
+// ParseCall reads one data call, with or without its brackets, into its steps; what does not
+// parse ends the steps, so a half-typed call gives the steps before it. The call ends at a | outside
+// parentheses and quotes: [glory|E] is the step glory, written with the format E.
+func ParseCall(text string, offset int) []Step {
+	if strings.HasPrefix(text, "[") {
+		text, offset = text[1:], offset+1
+	}
+	text = strings.TrimSuffix(text, "]")
+	var steps []Step
+	at := skipBlanks(text, 0)
+	for {
+		start := at
+		for at < len(text) && isAlnumUnder(text[at]) {
+			at++
+		}
+		if at == start {
+			return steps
+		}
+		step := Step{Name: text[start:at], Range: Range{Start: offset + start, End: offset + at}}
+
+		// its arguments, when a parenthesis follows; one that does not close ends the call
+		if next := skipBlanks(text, at); next < len(text) && text[next] == '(' {
+			var closed bool
+			step.Args, at, closed = callArgs(text, next+1, offset)
+			step.Range.End = offset + at
+			if !closed {
+				return append(steps, step)
+			}
+		}
+		steps = append(steps, step)
+		if at = skipBlanks(text, at); at >= len(text) || text[at] != '.' {
+			return steps
+		}
+		at = skipBlanks(text, at+1)
+	}
+}
+
+// callArgs reads a step's arguments from just after its ( to past its ); closed is false when the
+// list runs out first.
+func callArgs(text string, at, offset int) (args []Arg, end int, closed bool) {
+	for {
+		if at = skipBlanks(text, at); at >= len(text) {
+			return args, at, false
+		}
+		if text[at] == ')' {
+			return args, at + 1, true
+		}
+
+		// a quoted argument, or everything to a , or ) outside nested parentheses and quotes
+		start := at
+		if quote := text[at]; quote == '\'' || quote == '"' {
+			if at = pastQuote(text, at); at > len(text) {
+				return args, len(text), false
+			}
+			args = append(args, Arg{Text: text[start+1 : at-1], Quoted: true, Range: Range{Start: offset + start, End: offset + at}})
+		} else {
+			depth := 0
+			for at < len(text) && (depth > 0 || text[at] != ',' && text[at] != ')') {
+				switch text[at] {
+				case '(':
+					depth++
+				case ')':
+					depth--
+				case '\'', '"':
+					at = pastQuote(text, at) - 1
+				}
+				at++
+			}
+			if at >= len(text) {
+				return args, len(text), false
+			}
+			written := strings.TrimRight(text[start:at], " \t")
+			args = append(args, Arg{Text: written, Range: Range{Start: offset + start, End: offset + start + len(written)}})
+		}
+
+		if at = skipBlanks(text, at); at < len(text) && text[at] == ',' {
+			at++
+			continue
+		}
+		if at < len(text) && text[at] == ')' {
+			return args, at + 1, true
+		}
+		return args, at, false
+	}
+}
+
+// pastQuote is the offset past the quote that closes the one at text[at], a backslash escaping the
+// byte after it; past the end when none closes it.
+func pastQuote(text string, at int) int {
+	quote := text[at]
+	for at++; at < len(text) && text[at] != quote; at++ {
+		if text[at] == '\\' {
+			at++
+		}
+	}
+	return at + 1
+}
+
+// skipBlanks is the offset of the first byte at or after at that is no space or tab.
+func skipBlanks(text string, at int) int {
+	for at < len(text) && (text[at] == ' ' || text[at] == '\t') {
+		at++
+	}
+	return at
 }

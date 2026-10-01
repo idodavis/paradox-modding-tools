@@ -15,7 +15,7 @@ import (
 // Symbol is one definition, for an outline or a workspace search.
 type Symbol struct {
 	Name     string   `json:"name"`
-	Kind     string   `json:"kind"`
+	Database string   `json:"database"`
 	Parent   string   `json:"parent,omitempty"`
 	Location Location `json:"location"`
 }
@@ -52,22 +52,22 @@ func References(sess *session.Session, path string, line, col int) ([]Location, 
 	if err != nil {
 		return nil, err
 	}
-	var value schema.Value
+	var target schema.Word
 	if file.place.Format == source.Loc {
 		card := file.locCard(file.offset(line, col))
 		if card == nil {
 			return nil, nil
 		}
-		value = card.Value
+		target = card.Word
 	} else {
 		word := file.at(file.offset(line, col))
 		if word == nil {
 			return nil, nil
 		}
-		value = word.Value
+		target = word.Value
 	}
-	if value.Type == schema.TypeParam && file.place.Format == source.Loc {
-		value.Type = schema.TypeLoc
+	if target.Type == schema.WordParameter && file.place.Format == source.Loc {
+		target.Type = schema.WordLoc
 	}
 
 	seen := map[Location]bool{}
@@ -77,22 +77,26 @@ func References(sess *session.Session, path string, line, col int) ([]Location, 
 			seen[loc], out = true, append(out, loc)
 		}
 	}
-	for _, idx := range sess.All() {
-		for _, name := range idx.Referring(value.Name) {
-			if name.Type == value.Type && (value.Type != schema.TypeRef || (name.Kind == value.Kind && (value.Parent == "" || name.Parent == value.Parent))) {
+	all := sess.All()
+	for _, idx := range all {
+		for _, name := range idx.Referring(target.Name) {
+			if !all.Loaded(idx, name.File) {
+				continue
+			}
+			if name.Type == target.Type && (target.Type != schema.WordReference || (name.Database == target.Database && (target.Parent == "" || name.Parent == target.Parent))) {
 				add(locate(name.At, int(name.Line), int(name.Col)))
 			}
 		}
 	}
-	switch value.Type {
-	case schema.TypeRef, schema.TypeConstant, schema.TypeParam:
-		for _, name := range sess.Defs(value.Name) {
-			if value.Type != schema.TypeRef || (name.Kind == value.Kind && (value.Parent == "" || name.Parent == value.Parent)) {
+	switch target.Type {
+	case schema.WordReference, schema.WordConstant, schema.WordParameter:
+		for _, name := range sess.Defs(target.Name) {
+			if target.Type != schema.WordReference || (name.Database == target.Database && (target.Parent == "" || name.Parent == target.Parent)) {
 				add(locate(name.At, int(name.Line), int(name.Col)))
 			}
 		}
-	case schema.TypeLoc:
-		for _, said := range index.All(sess.All()).Entries(value.Name) {
+	case schema.WordLoc:
+		for _, said := range all.Entries(target.Name) {
 			add(locate(said.At, said.Line, 0))
 		}
 	}
@@ -118,8 +122,8 @@ func DocumentSymbols(sess *session.Session, path string) ([]Symbol, error) {
 	}
 	// a file nothing has walked: its own harvest, kept nowhere
 	var out []Symbol
-	for _, reader := range index.Harvest(found, file.text, schema.Reader{Schema: sess.Schema, Vocab: sess.Install.Vocab}).Defs {
-		out = append(out, Symbol{Name: reader.Name, Kind: reader.Kind, Parent: reader.Parent, Location: locate(found, int(reader.Line), int(reader.Col))})
+	for _, reader := range index.Harvest(found, file.text, schema.Reader{Schema: sess.Schema}).Defs {
+		out = append(out, Symbol{Name: reader.Name, Database: reader.Database, Parent: reader.Parent, Location: locate(found, int(reader.Line), int(reader.Col))})
 	}
 	return out, nil
 }
@@ -129,7 +133,7 @@ func symbols(idx *index.Index, at source.File) []Symbol {
 	var out []Symbol
 	for _, def := range idx.Defs {
 		if def.File >= 0 && index.PathKey(idx.Files[def.File].Path) == index.PathKey(at.Path) {
-			out = append(out, Symbol{Name: def.Name, Kind: def.Kind, Parent: def.Parent, Location: locate(idx.Files[def.File], int(def.Line), int(def.Col))})
+			out = append(out, Symbol{Name: def.Name, Database: def.Database, Parent: def.Parent, Location: locate(idx.Files[def.File], int(def.Line), int(def.Col))})
 		}
 	}
 	return out
@@ -146,8 +150,8 @@ func WorkspaceSymbols(sess *session.Session, query string) []Symbol {
 	var out []Symbol
 	idx := sess.Workspace
 	for _, def := range idx.Defs {
-		if def.File >= 0 && strings.Contains(strings.ToLower(def.Name), query) {
-			out = append(out, Symbol{Name: def.Name, Kind: def.Kind, Parent: def.Parent, Location: locate(idx.Files[def.File], int(def.Line), int(def.Col))})
+		if strings.Contains(strings.ToLower(def.Name), query) && sess.All().Loaded(idx, def.File) {
+			out = append(out, Symbol{Name: def.Name, Database: def.Database, Parent: def.Parent, Location: locate(idx.Files[def.File], int(def.Line), int(def.Col))})
 		}
 	}
 	return out

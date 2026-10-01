@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
@@ -27,11 +28,29 @@ import (
 	"paradox-modding-tools/services/internal/lang/source"
 )
 
-// Calendar is the era a mod writes its dates in. A mod never states the offset, so the user
-// declares it; with none declared, dates read as written.
-type Calendar struct {
-	Era         string
-	EpochOffset int
+// Calendar is the eras a mod writes its dates in. A mod never states them, so the user declares
+// them; with none declared, dates read as written.
+type Calendar []Era
+
+// Era is one era of a mod's calendar: its name and the year before its first (AGOT's A.C., 8000).
+type Era struct {
+	Name   string `json:"name"`
+	Offset int    `json:"offset"`
+}
+
+// Read is a year in the named era with the greatest offset below it, and the era's name; false where
+// none applies (8082 is 82 A.C.).
+func (calendar Calendar) Read(year int) (int, string, bool) {
+	best := -1
+	for i, era := range calendar {
+		if era.Name != "" && year-era.Offset > 0 && (best < 0 || era.Offset > calendar[best].Offset) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return 0, "", false
+	}
+	return year - calendar[best].Offset, calendar[best].Name, true
 }
 
 // Mod is one mod of the workspace, in the playset's order.
@@ -40,13 +59,13 @@ type Mod struct {
 	Calendar      Calendar
 }
 
-// Place is where a path sits: its origin, its path from the root, and the kinds it may define.
+// Place is where a path sits: its origin, its path from the root, and the databases it may define.
 type Place struct {
-	Origin   string // game.OriginVanilla, a mod's ID, or "" for a path under no root
-	Rel      string
-	Kinds    []*schema.Kind
-	Format   source.Format
-	Calendar Calendar
+	Origin    string // game.OriginVanilla, a mod's ID, or "" for a path under no root
+	Rel       string
+	Databases []*schema.Database
+	Format    source.Format
+	Calendar  Calendar
 }
 
 // buffer is a file open in the editor: its text and that text's parse, made once when the text
@@ -57,13 +76,17 @@ type buffer struct {
 	parsed jomini.Result
 }
 
+// changes numbers every build of and change to any session's records, so no value repeats.
+var changes atomic.Int64
+
 // Session is one workspace: the install, the mods over it, and the open files.
 type Session struct {
+	Changes   int64 // the number of the last build of or change to the workspace's records
 	mu        sync.RWMutex
 	Game      *game.GameInfo
 	Install   *index.Install
 	Workspace *index.Index
-	Schema    *schema.Schema // the install's plus what Relearn added for the workspace
+	Schema    *schema.Schema // the install's plus what the workspace's build added
 	Mods      []Mod
 	Language  string
 	watcher   *Watcher
@@ -84,11 +107,11 @@ func (sess *Session) build(ctx context.Context) error {
 	for _, mod := range sess.Mods {
 		mods = append(mods, index.Mod{ID: mod.ID, Dir: mod.Dir})
 	}
-	idx, sc, err := index.BuildWorkspace(ctx, mods, sess.Install)
+	idx, built, err := index.BuildWorkspace(ctx, mods, sess.Install)
 	if err != nil {
 		return err
 	}
-	sess.Workspace, sess.Schema, sess.built = idx, sc, map[string]string{}
+	sess.Workspace, sess.Schema, sess.built, sess.Changes = idx, built, map[string]string{}, changes.Add(1)
 	for _, buffer := range sess.buffers {
 		sess.harvest(buffer.file, buffer.text)
 	}
@@ -110,7 +133,7 @@ func (sess *Session) All() index.All {
 
 // Reader is the one reader, answering from the workspace and the install together.
 func (sess *Session) Reader() schema.Reader {
-	return schema.Reader{Schema: sess.Schema, Vocab: sess.Install.Vocab, Found: sess.All()}
+	return schema.Reader{Schema: sess.Schema, Found: sess.All()}
 }
 
 // Order is the load order: the game, then each mod as the playset lists them.
@@ -132,31 +155,33 @@ func (sess *Session) Winner(found []index.Found) (index.Found, int) {
 	if len(found) == 0 {
 		return index.Found{}, -1
 	}
-	return index.Winner(found, game.IsFIOS(sess.Game.ID, found[0].Kind), sess.Game.EntryModes, sess.Order())
+	return index.Winner(found, game.FirstWinsAt(sess.Game.ID, found[0].Database), sess.Game.EntryModes, sess.Order())
 }
 
-// Fired reports a kind the game fires: events, the kind whose names are event ids, and on_actions.
-func (sess *Session) Fired(kind string) bool {
-	named := sess.Schema.Kinds[kind]
-	return kind == "on_action" || (named != nil && named.Naming.Form == "event_id")
+// Fired reports a database the game fires: events and on_actions, as the registry says.
+func (sess *Session) Fired(database string) bool {
+	named := sess.Schema.Databases[database]
+	return named != nil && named.Fired
 }
 
-// Fire is the definition at the far end of a fire, with the tokens and macros between.
+// Fire is the definition at the far end of a fire, with the commands and scripted effects between.
 type Fire struct {
 	Name string `json:"name"`
 	Via  string `json:"via"`
 }
 
 // Fires is what a definition fires, in name order: events and on_actions only. A fire through a
-// macro is followed to what the macro fires, and a macro already met on the way is not entered again.
+// scripted effect is followed to what it fires, and one already met on the way is not entered
+// again.
 func (sess *Session) Fires(from string, seen map[string]bool) []Fire {
 	var out []Fire
-	for _, idx := range sess.All() {
+	all := sess.All()
+	for _, idx := range all {
 		for _, fired := range idx.Fires(from) {
-			if fired.File < 0 {
+			if !all.Loaded(idx, fired.File) {
 				continue
 			}
-			if kind := sess.Schema.Kinds[fired.ToKind]; kind != nil && kind.Macro != 0 {
+			if database := sess.Schema.Databases[fired.ToDatabase]; database != nil && len(database.CalledIn) > 0 {
 				if !seen[fired.To] {
 					seen[fired.To] = true
 					for _, through := range sess.Fires(fired.To, seen) {
@@ -165,7 +190,7 @@ func (sess *Session) Fires(from string, seen map[string]bool) []Fire {
 				}
 				continue
 			}
-			if sess.Fired(fired.ToKind) {
+			if sess.Fired(fired.ToDatabase) {
 				out = append(out, Fire{Name: fired.To, Via: fired.Via})
 			}
 		}
@@ -192,10 +217,10 @@ func (sess *Session) Loc(key, language string) (index.Said, bool) {
 
 // LocKeys is up to limit distinct keys that start with prefix.
 func (sess *Session) LocKeys(prefix string, limit int) []string {
-	seen, out := map[string]bool{}, []string{}
-	for _, idx := range sess.All() {
+	seen, out, all := map[string]bool{}, []string{}, sess.All()
+	for _, idx := range all {
 		for _, loc := range idx.Loc {
-			if loc.File >= 0 && !seen[loc.Key] && strings.HasPrefix(loc.Key, prefix) {
+			if !seen[loc.Key] && strings.HasPrefix(loc.Key, prefix) && all.Loaded(idx, loc.File) {
 				seen[loc.Key], out = true, append(out, loc.Key)
 				if len(out) == limit {
 					return out
@@ -206,14 +231,14 @@ func (sess *Session) LocKeys(prefix string, limit int) []string {
 	return out
 }
 
-// Where places a path in the workspace: its origin, rel, and the kinds a file there may define. A
-// file not yet walked is placed by its root.
+// Where places a path in the workspace: its origin, rel, and the databases a file there may
+// define. A file not yet walked is placed by its root.
 func (sess *Session) Where(path string) Place {
 	file, mod, ok := sess.Located(path)
 	if !ok {
 		return Place{Format: source.Classify(path, filepath.ToSlash(path))}
 	}
-	place := Place{Origin: file.Origin, Rel: file.Rel, Kinds: sess.Schema.KindsAt(file.Rel), Format: file.Format}
+	place := Place{Origin: file.Origin, Rel: file.Rel, Databases: sess.Schema.DatabasesAt(file.Rel), Format: file.Format}
 	if mod != nil {
 		place.Calendar = mod.Calendar
 	}
@@ -340,8 +365,9 @@ func (sess *Session) changed(path, text string, err error) {
 	}
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		sess.Workspace.Drop(path)
+		sess.Workspace.Drop(path, true)
 		delete(sess.built, index.PathKey(path))
+		sess.Changes = changes.Add(1)
 	case err == nil:
 		sess.harvest(file, text)
 	}
@@ -355,7 +381,7 @@ func (sess *Session) harvest(file source.File, text string) {
 	if file.Origin == game.OriginVanilla || file.Origin == "" || sess.built[key] == text {
 		return
 	}
-	sess.built[key] = text
+	sess.built[key], sess.Changes = text, changes.Add(1)
 	all := sess.All()
 	idx := sess.Workspace
 	defs, locs := len(idx.Defs), len(idx.Loc)

@@ -1,10 +1,11 @@
 // hover.go is the card for the word under the cursor: one switch on what the reader made of it. A
-// literal or a comment has no card. Signature help is a declared token's usage. A card's prose is
-// what the game declares about a token, link or field, and the comment above a definition, read
-// from the file when the card is built and never stored.
+// literal or a comment has no card. Signature help is a declared command's usage. A card's prose is
+// what the game declares about a command, event target or key, and the comment above a definition,
+// read from the file when the card is built and never stored.
 package lsp
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -38,51 +39,57 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 
 // card fills the card for a word by its type.
 func (file *file) card(site *site) *Inspect {
-	sess, value := file.sess, site.Value
-	card := &Inspect{Value: value, Range: file.span(site.Range), Winner: -1, Scope: site.Level.Scope}
+	sess, word := file.sess, site.Value
+	card := &Inspect{Word: word, Range: file.span(site.Range), Winner: -1, Scopes: site.Level.Scopes}
 	if assignment, ok := site.Level.Statement.(*jomini.Assignment); ok {
 		card.Key = assignment.Key.Text
 	}
+	card.Head = file.head(word, card.Key)
+	start := site.Range.Start
+	if site.Quoted {
+		start++
+	}
+	if steps, concept := dataCall(site.Text, start, site.Offset); steps != nil {
+		file.dataCard(card, steps, concept, site.Offset)
+		return card
+	}
 
-	switch value.Type {
-	case schema.TypeNone, schema.TypeString, schema.TypeBool, schema.TypeCall:
+	dumps, below := sess.Schema.Dumps, site.Level.Below
+	switch word.Type {
+	case schema.WordNone, schema.WordString, schema.WordBool, schema.WordDataCall:
 		return nil
-	case schema.TypeNumber:
+	case schema.WordNumber:
 		if site.Weight == 0 {
 			return nil
 		}
 		card.Weight = site.Weight
-	case schema.TypeDate:
+	case schema.WordDate:
 		card.Date = date(site.Text, file.place.Calendar)
-	case schema.TypeToken:
-		docs, usage, in, out := tokenDocs(sess.Install.Vocab, value.Name)
-		card.Docs, card.Usage, card.ScopeOut, card.Accepts = docs, usage, out, spell(site.Level.Below)
-		if card.Scope == "" && len(in) == 1 {
-			card.Scope = in[0]
-		}
-	case schema.TypeScopePath:
+	case schema.WordCommand:
+		file.command(card, word.Name)
+	case schema.WordScopePath:
 		first, _, _ := strings.Cut(site.Text, ".")
-		if link, ok := sess.Install.Vocab.Links[strings.ToLower(first)]; ok {
-			card.Docs, card.ScopeOut = link.Doc, link.Out
+		if target, ok := dumps.EventTargets[strings.ToLower(first)]; ok {
+			card.Prose, card.Source = target.Doc, "the dumps"
 		}
-	case schema.TypeMember, schema.TypeEnum:
-		card.Accepts, card.Docs = spell(site.Level.Below), fieldDocs(sess, site.Level, site.Text)
-		if site.Level.Below != nil {
-			card.Class = site.Level.Below.Class.String()
+	case schema.WordKey, schema.WordEnum:
+		if below != nil {
+			card.Prose, card.Takes, card.Source = below.Doc, file.takes(below), layer(below)
 		}
-		// a body's field named like a link is the link where the dump lets it stand in this scope
-		// (owner = c:FRA in a state), and a field elsewhere (a message's title = some_key)
-		if link, ok := sess.Install.Vocab.Links[site.Text]; ok && site.Level.Field != nil && site.Level.Field.Class == schema.ClassBody && slices.Contains(link.In, site.Level.Scope) {
-			card.Docs, card.ScopeOut = link.Doc, link.Out
+		// a block's key named like a target is the target where the dump lets it stand in this scope
+		// (owner = c:FRA in a state), and a key elsewhere (a message's title = some_key)
+		at := site.Level.At
+		if target, ok := dumps.EventTargets[site.Text]; ok && at != nil && at.Block != schema.BlockNone && slices.Contains(target.In, site.Level.Scopes.This) {
+			card.Prose, card.Source = target.Doc, "the dumps"
 		}
-	case schema.TypeRef:
-		file.defined(card, value, site.Path.Top)
-	case schema.TypeLoc:
-		if said, ok := sess.Loc(value.Name, ""); ok {
-			card.Label, card.Sites, card.Winner = said.Value, []Location{locate(said.At, said.Line, 0)}, 0
+	case schema.WordReference:
+		file.defined(card, word, site.Path.Top)
+	case schema.WordLoc:
+		if said, ok := sess.Loc(word.Name, ""); ok {
+			card.Name, card.Sites, card.Winner = loc.Plain(said.Value), []Location{locate(said.At, said.Line, 0)}, 0
 		}
-	case schema.TypeFile:
-		if found, ok := index.All(sess.All()).Find(value.Name); ok {
+	case schema.WordFile:
+		if found, ok := index.All(sess.All()).Find(word.Name); ok {
 			card.Sites, card.Winner = []Location{locate(found, 0, 0)}, 0
 			if found.Format == source.Image {
 				if info, err := source.ReadImageInfo(found.Path); err == nil {
@@ -90,51 +97,61 @@ func (file *file) card(site *site) *Inspect {
 				}
 			}
 		}
-	case schema.TypeConstant:
-		for _, found := range sess.Defs(value.Name) {
-			if found.Kind == "constants" && index.PathKey(found.At.Path) == index.PathKey(file.path) {
+	case schema.WordConstant:
+		for _, found := range sess.Defs(word.Name) {
+			if found.Database == "constants" && index.PathKey(found.At.Path) == index.PathKey(file.path) {
 				card.Sites, card.Winner = []Location{locate(found.At, int(found.Line), int(found.Col))}, 0
 				if text, err := sess.Text(found.At.Path); err == nil {
 					_, value, _ := strings.Cut(lineOf(text, int(found.Line)), "=")
-					card.Label = strings.TrimSpace(value)
+					card.Name = strings.TrimSpace(value)
 				}
 			}
 		}
-	case schema.TypeParam:
-		if kind := sess.Schema.Kinds[site.Path.Kind]; kind != nil && kind.Params {
-			file.parameter(card, value.Name, site.Path.Top)
+	case schema.WordParameter:
+		if database := sess.Schema.Databases[site.Path.Database]; database != nil && database.Parameters {
+			file.parameter(card, word.Name, site.Path.Top)
 		}
-	case schema.TypeUnresolved:
-		if !site.IsKey && site.Level.Key.Type == schema.TypeToken {
-			card.Docs, _, _, _ = tokenDocs(sess.Install.Vocab, site.Level.Key.Name)
+	case schema.WordUnknown:
+		if !site.IsKey && site.Level.Key.Type == schema.WordCommand {
+			card.Prose, _, _, _ = commandDocs(dumps, site.Level.Key.Name)
 		}
 	}
 	if tagged, ok := file.colour(site); ok {
 		card.Color = tagged
 	}
-	if value.Type == schema.TypeUnresolved && card.Docs == "" && card.Color == "" {
+	if word.Type == schema.WordUnknown && card.Prose == "" && card.Color == "" {
 		return nil // a word nothing claims, with nothing known about it, has no card
 	}
 	return card
 }
 
-// defined fills a definition's sites in load order, the kept one, its label and the comment above.
+// defined fills a definition's sites in load order, the kept one, its name from its database's
+// first loc key, and the comment above.
 // A name a script makes is saved, not defined: its sites are the saves in top, the definition the
 // cursor is in, else in this file, else anywhere, and none of them replaces another.
-func (file *file) defined(card *Inspect, value schema.Value, top string) {
+func (file *file) defined(card *Inspect, word schema.Word, top string) {
 	sess := file.sess
 	var found []index.Found
-	for _, name := range sess.Defs(value.Name) {
-		if name.Kind == value.Kind && (value.Parent == "" || name.Parent == value.Parent) {
+	for _, name := range sess.Defs(word.Name) {
+		if name.Database == word.Database && (word.Parent == "" || name.Parent == word.Parent) {
 			found = append(found, name)
 		}
 	}
-	_, scriptMade := schema.ScriptKinds[value.Kind]
+	// a name a script makes is nearest in the definition, then the file; an inline entry or a GUI local
+	// one in the file
+	_, scriptMade := schema.ScriptMade[word.Database]
+	database := sess.Schema.Databases[word.Database]
+	inline := database != nil && len(database.Folders) > 0 && slices.ContainsFunc(found, func(name index.Found) bool {
+		return !slices.Contains(sess.Schema.DatabasesAt(name.At.Rel), database)
+	})
 	nearest := []func(index.Found) bool{
 		func(name index.Found) bool { return name.Parent == top },
 		func(name index.Found) bool { return index.PathKey(name.At.Path) == index.PathKey(file.path) },
 	}
-	for i := 0; scriptMade && i < len(nearest); i++ {
+	if !scriptMade {
+		nearest = nearest[1:]
+	}
+	for i := 0; (scriptMade || inline || database != nil && strings.HasPrefix(database.Naming.Keyword, "local_")) && i < len(nearest); i++ {
 		if local := slices.DeleteFunc(slices.Clone(found), func(name index.Found) bool { return !nearest[i](name) }); len(local) > 0 {
 			found = local
 			break
@@ -147,35 +164,70 @@ func (file *file) defined(card *Inspect, value schema.Value, top string) {
 	for _, definition := range found {
 		card.Sites = append(card.Sites, locate(definition.At, int(definition.Line), int(definition.Col)))
 	}
-	card.Winner, card.Label, card.ScopeOut = at, kept.Label, kept.ScopeType
+	card.Winner = at
 	if scriptMade {
 		card.Winner = -1
 	}
-	if kind := sess.Schema.Kinds[value.Kind]; kind == nil || kind.Macro == 0 {
-		card.Graphed = sess.Fired(value.Kind) || len(sess.Fires(value.Name, map[string]bool{})) > 0
+	if database == nil || len(database.CalledIn) == 0 {
+		card.Graphed = sess.Fired(word.Database) || len(sess.Fires(word.Name, map[string]bool{})) > 0
 	}
-	if kind := sess.Schema.Kinds[value.Kind]; card.Label == "" && kind != nil && len(kind.LocTemplates) > 0 {
-		if said, ok := sess.Loc(loc.Expand(value.Name, kind.LocTemplates[:1])[0], ""); ok {
-			card.Label = said.Value
+	if database == nil {
+		return
+	}
+
+	// its name and description from its loc keys (a _desc key describes), else the docs' blurb of it,
+	// else the comment above it; the database's first paragraph of docs
+	for _, key := range loc.Expand(word.Name, database.LocKeys) {
+		said, ok := sess.Loc(key, "")
+		switch {
+		case !ok:
+		case strings.HasSuffix(key, "_desc"):
+			card.Prose = cmp.Or(card.Prose, loc.Plain(said.Value))
+		default:
+			card.Name = cmp.Or(card.Name, loc.Plain(said.Value))
 		}
 	}
-	if text, err := sess.Text(kept.At.Path); err == nil {
-		card.Docs = comment(text, int(kept.Line))
+	for _, folder := range database.Folders {
+		if docs := sess.Schema.Docs[strings.ToLower(folder)]; docs != nil {
+			about, _, _ := strings.Cut(docs.About, "\n\n")
+			card.About, card.Prose = cmp.Or(card.About, about), cmp.Or(card.Prose, docs.Blurbs[word.Name])
+		}
+	}
+	text, err := sess.Text(kept.At.Path)
+	if err == nil {
+		card.Prose = cmp.Or(card.Prose, comment(text, int(kept.Line)))
+	}
+
+	// a scripted entry's parameters; an entry written as one number shows it (a script value)
+	var parameters []string
+	for _, idx := range sess.All() {
+		for _, def := range idx.Defs {
+			if database.Parameters && def.Database == "params" && def.Parent == word.Name {
+				parameters = append(parameters, "$"+def.Name+"$")
+			}
+		}
+	}
+	if parameters = slices.Compact(slices.Sorted(slices.Values(parameters))); len(parameters) > 0 {
+		card.Prose = strings.TrimSpace(card.Prose + "\n\nParameters: " + strings.Join(parameters, ", "))
+	}
+	if _, value, ok := strings.Cut(lineOf(text, int(kept.Line)), "="); ok && jomini.Literal(strings.TrimSpace(value)) == jomini.LitNumber {
+		card.Name = strings.TrimSpace(value)
 	}
 }
 
-// parameter fills a macro parameter's sites and the words written for it where the macro is called.
-func (file *file) parameter(card *Inspect, name, macro string) {
+// parameter fills a scripted effect parameter's sites and the words written for it where the
+// scripted effect is called.
+func (file *file) parameter(card *Inspect, name, scripted string) {
 	sess := file.sess
 	for _, definition := range sess.Defs(name) {
-		if definition.Kind == "params" && definition.Parent == macro {
+		if definition.Database == "params" && definition.Parent == scripted {
 			card.Sites, card.Winner = append(card.Sites, locate(definition.At, int(definition.Line), int(definition.Col))), 0
 		}
 	}
-	seen := map[string]int{}
-	for _, idx := range sess.All() {
+	seen, all := map[string]int{}, sess.All()
+	for _, idx := range all {
 		for _, cited := range idx.Referring(name) {
-			if cited.Kind == "params" && cited.Parent == macro {
+			if cited.Database == "params" && cited.Parent == scripted && all.Loaded(idx, cited.File) {
 				if text, err := sess.Text(cited.At.Path); err == nil {
 					if _, value, ok := strings.Cut(lineOf(text, int(cited.Line)), "="); ok {
 						seen[strings.TrimSpace(value)]++
@@ -204,8 +256,8 @@ func lineOf(text string, line int) string {
 	return lines[line]
 }
 
-// date writes a date out (January 1st, 8082 AD), and in the mod's calendar where one is declared
-// and the year stays positive.
+// date writes a date out (January 1st, 8082 AD; year -221 is 221 BC), and in the mod's calendar
+// where one of its eras applies (82.1.1 A.C.).
 func date(text string, calendar session.Calendar) string {
 	year, month, day, _, ok := jomini.ParseDate(strings.Trim(text, `"`))
 	if !ok {
@@ -213,8 +265,11 @@ func date(text string, calendar session.Calendar) string {
 	}
 	months := [...]string{"", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}
 	out := fmt.Sprintf("%s %s, %d AD", months[month], ordinal(day), year)
-	if calendar.Era != "" && year-calendar.EpochOffset > 0 {
-		out += fmt.Sprintf("; %d.%d.%d %s in this mod's calendar", year-calendar.EpochOffset, month, day, calendar.Era)
+	if year < 0 {
+		out = fmt.Sprintf("%s %s, %d BC", months[month], ordinal(day), -year)
+	}
+	if inEra, era, ok := calendar.Read(year); ok {
+		out += fmt.Sprintf("; %d.%d.%d %s in this mod's calendar", inEra, month, day, era)
 	}
 	return out
 }
@@ -316,12 +371,17 @@ func (file *file) locCard(offset int) *Inspect {
 	pos := lines.PositionAt(offset)
 	line := lineOf(file.text, pos.Line)
 	start := lines.OffsetAt(pos.Line, 0)
+	if steps, concept := dataCall(line, start, offset); steps != nil {
+		card := &Inspect{Winner: -1}
+		file.dataCard(card, steps, concept, offset)
+		return card
+	}
 	for _, span := range loc.Interps(line, start) {
 		if within(jomini.Range{Start: span.WrapRange.Start, End: span.WrapRange.End}, offset) {
 			name := span.Key
-			card := &Inspect{Value: schema.Value{Type: schema.TypeParam, Name: name}, Winner: -1, Range: file.span(jomini.Range{Start: span.WrapRange.Start, End: span.WrapRange.End})}
+			card := &Inspect{Word: schema.Word{Type: schema.WordParameter, Name: name}, Winner: -1, Range: file.span(jomini.Range{Start: span.WrapRange.Start, End: span.WrapRange.End})}
 			if said, ok := file.sess.Loc(name, ""); ok {
-				card.Value.Type, card.Label, card.Sites, card.Winner = schema.TypeLoc, said.Value, []Location{locate(said.At, said.Line, 0)}, 0
+				card.Word.Type, card.Name, card.Sites, card.Winner = schema.WordLoc, said.Value, []Location{locate(said.At, said.Line, 0)}, 0
 			}
 			return card
 		}
@@ -331,14 +391,14 @@ func (file *file) locCard(offset int) *Inspect {
 	if key == "" || strings.HasPrefix(key, "#") || strings.HasPrefix(key, "l_") || !within(jomini.Range{Start: start + indent, End: start + indent + len(key)}, offset) {
 		return nil
 	}
-	card := &Inspect{Value: schema.Value{Type: schema.TypeLoc, Name: key}, Winner: -1, Range: file.span(jomini.Range{Start: start + indent, End: start + indent + len(key)})}
+	card := &Inspect{Word: schema.Word{Type: schema.WordLoc, Name: key}, Winner: -1, Range: file.span(jomini.Range{Start: start + indent, End: start + indent + len(key)})}
 	if said, ok := file.sess.Loc(key, ""); ok {
-		card.Label, card.Sites, card.Winner = said.Value, []Location{locate(said.At, said.Line, 0)}, 0
+		card.Name, card.Sites, card.Winner = said.Value, []Location{locate(said.At, said.Line, 0)}, 0
 	}
 	return card
 }
 
-// SignatureHelp is the declared usage of the token whose block holds the cursor, with its $NAME$
+// SignatureHelp is the declared usage of the command whose block holds the cursor, with its $NAME$
 // and {NAME} parameters; nil for a word with no usage.
 func SignatureHelp(sess *session.Session, path string, line, col int) (*Signature, error) {
 	sess.RLock()
@@ -350,8 +410,8 @@ func SignatureHelp(sess *session.Session, path string, line, col int) (*Signatur
 	found, _, _ := sess.Located(path)
 	offset := file.offset(line, col)
 	reader := index.Probe(found, file.parsed, sess.Reader(), offset)
-	// only the block the cursor is directly in, past the statement it is on: a scope or a member
-	// written inside a token's block is no argument of it
+	// only the block the cursor is directly in, past the statement it is on: a scope or a key
+	// written inside a command's block is no argument of it
 	for _, level := range slices.Backward(reader.Chain) {
 		assignment, ok := level.Statement.(*jomini.Assignment)
 		if !ok {
@@ -360,12 +420,15 @@ func SignatureHelp(sess *session.Session, path string, line, col int) (*Signatur
 		if block := jomini.BlockOf(assignment.Value); block == nil || offset <= block.OpenBrace || offset > block.CloseBrace {
 			continue
 		}
-		if level.Key.Type != schema.TypeToken {
+		if level.Key.Type != schema.WordCommand {
 			return nil, nil
 		}
-		docs, usage, _, _ := tokenDocs(sess.Install.Vocab, level.Key.Name)
+		docs, usage, _, _ := commandDocs(sess.Schema.Dumps, level.Key.Name)
 		if usage == "" {
 			return nil, nil
+		}
+		if takes := file.takes(sess.Schema.Arguments[level.Key.Name]); len(takes) > 0 {
+			docs = strings.TrimSpace(docs + "\n\nTakes: " + strings.Join(takes, ", "))
 		}
 		help := &Signature{Label: usage, Docs: docs}
 		for _, span := range jomini.Interpolations(usage) {
@@ -381,30 +444,212 @@ func SignatureHelp(sess *session.Session, path string, line, col int) (*Signatur
 	return nil, nil
 }
 
-// tokenDocs is a declared token's prose and usage, from whichever vocabulary declares it.
-func tokenDocs(vocab *schema.Vocab, name string) (docs, usage string, in []string, out string) {
-	if effect, ok := vocab.Effects[name]; ok {
+// commandDocs is a declared command's prose and usage, from whichever dump declares it.
+func commandDocs(dumps *schema.Dumps, name string) (docs, usage string, in []string, out string) {
+	if effect, ok := dumps.Effects[name]; ok {
 		return effect.Doc, effect.Usage, effect.In, effect.Out
 	}
-	if trigger, ok := vocab.Triggers[name]; ok {
+	if trigger, ok := dumps.Triggers[name]; ok {
 		return trigger.Doc, trigger.Usage, trigger.In, trigger.Out
 	}
-	if modifier, ok := vocab.Modifiers[name]; ok {
+	if modifier, ok := dumps.Modifiers[name]; ok {
 		return modifier.Doc, "", modifier.Categories, ""
 	}
 	return "", "", nil, ""
 }
 
-// fieldDocs is what the game's info file says of a key under its parent, in the kind's folders.
-func fieldDocs(sess *session.Session, level index.Level, key string) string {
-	if level.Kind == nil {
-		return ""
+// head is what a word is, in plain words: a command's kind, an entry's head, a key by its name.
+func (file *file) head(word schema.Word, key string) string {
+	dumps := file.sess.Schema.Dumps
+	_, effect := dumps.Effects[word.Name]
+	_, trigger := dumps.Triggers[word.Name]
+	switch {
+	case word.Type == schema.WordCommand && effect && trigger:
+		return "effect and trigger"
+	case word.Type == schema.WordCommand && effect:
+		return "effect"
+	case word.Type == schema.WordCommand && trigger:
+		return "trigger"
+	case word.Type == schema.WordReference:
+		return file.entryHead(word.Database)
+	case word.Type == schema.WordKey || word.Type == schema.WordEnum:
+		return key + " key"
 	}
-	parent := ""
-	if level.Field != nil {
-		parent = level.Field.Name
+	return map[schema.WordType]string{
+		schema.WordCommand: "modifier", schema.WordScopePath: "event target", schema.WordLoc: "localization key",
+		schema.WordFile: "file", schema.WordConstant: "script constant", schema.WordParameter: "parameter",
+		schema.WordDataCall: "data function", schema.WordDate: "date",
+	}[word.Type]
+}
+
+// entryHead is an entry's head: the game concept its database is named for, else the database's
+// name made singular; a list's entries are headed by its folder (sound).
+func (file *file) entryHead(name string) string {
+	if database := file.sess.Schema.Databases[name]; database != nil && database.Naming.Form == "line" {
+		folder, _, _ := strings.Cut(name, ".")
+		return folder
 	}
-	return sess.Install.Info.Field(level.Kind.Folders, parent, key, true).Doc
+	last := name[strings.LastIndexAny(name, "./")+1:]
+	singular := strings.TrimSuffix(last, "s")
+	if stem, ok := strings.CutSuffix(last, "ies"); ok {
+		singular = stem + "y"
+	}
+	return cmp.Or(file.concept(singular), strings.ReplaceAll(singular, "_", " "))
+}
+
+// concept is the text of the game concept named word, or concept_word; "" for none.
+func (file *file) concept(word string) string {
+	sess := file.sess
+	concepts := sess.Schema.Databases["game_concepts"]
+	for _, name := range []string{word, "concept_" + word} {
+		if concepts != nil && len(concepts.LocKeys) > 0 && sess.All().Def(concepts.Name, name) {
+			if said, ok := sess.Loc(loc.Expand(name, concepts.LocKeys[:1])[0], ""); ok {
+				return loc.Plain(said.Value)
+			}
+		}
+	}
+	return ""
+}
+
+// command fills a command's card: its effect or trigger localization's text, else the dumps'
+// description; what it takes; where an iterator goes; a modifier's own text and its dump name.
+func (file *file) command(card *Inspect, name string) {
+	sess, dumps := file.sess, file.sess.Schema.Dumps
+	docs, _, in, out := commandDocs(dumps, name)
+	card.Prose, card.Takes, card.Source = cmp.Or(file.localized(name), docs), file.takes(sess.Schema.Arguments[name]), "the dumps"
+	if out != "" {
+		card.Head += " that goes through each " + strings.ReplaceAll(out, "_", " ")
+	}
+	if modifier, ok := dumps.Modifier(name); ok && card.Head == "modifier" {
+		said, _ := sess.Loc(name, "")
+		card.Name = loc.Plain(cmp.Or(said.Value, modifier.Label))
+	}
+	if card.Scopes.This == "" && len(in) == 1 {
+		card.Scopes.This = in[0]
+	}
+}
+
+// localized is the text an effect_localization or trigger_localization entry gives a command: its
+// global line's; "" for none.
+func (file *file) localized(command string) string {
+	sess := file.sess
+	for _, found := range sess.Defs(command) {
+		if found.Database != "effect_localization" && found.Database != "trigger_localization" {
+			continue
+		}
+		parsed, _, err := sess.Parsed(found.At.Path)
+		if err != nil {
+			continue
+		}
+		for _, st := range parsed.Root.Statements {
+			entry, ok := st.(*jomini.Assignment)
+			if !ok || entry.Key.Text != command || jomini.BlockOf(entry.Value) == nil {
+				continue
+			}
+			for _, line := range jomini.BlockOf(entry.Value).Statements {
+				global, ok := line.(*jomini.Assignment)
+				if !ok || global.Key.Text != "global" {
+					continue
+				}
+				if scalar, isWord := global.Value.(*jomini.Scalar); isWord {
+					said, _ := sess.Loc(scalar.Text, "")
+					return loc.Plain(said.Value)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// takes is what a word at a key may be, in plain words; a long word list ends with how many more.
+func (file *file) takes(key *schema.Key) []string {
+	if key == nil {
+		return nil
+	}
+	var out []string
+	for _, take := range key.Takes {
+		switch take.Type {
+		case schema.WordReference:
+			out = append(out, plain(file.entryHead(take.Database)))
+		case schema.WordScopePath:
+			out = append(out, plain(take.Database))
+		case schema.WordEnum:
+			words := take.Enum
+			if len(words) > 6 {
+				words = append(words[:6:6], fmt.Sprintf("… and %d more", len(take.Enum)-6))
+			}
+			out = append(out, "one of "+strings.Join(words, ", "))
+		default:
+			out = append(out, map[schema.WordType]string{
+				schema.WordBool: "yes or no", schema.WordNumber: "a number", schema.WordDate: "a date",
+				schema.WordLoc: "a localization key", schema.WordFile: "a file path",
+			}[take.Type])
+		}
+	}
+	return slices.Compact(out)
+}
+
+// dataCard fills a data call step's card: a concept link's game concept; a quoted argument's entry
+// where its function returns a database's; a function the globals or the step before's return type
+// declare; a data type written first; else a loaded data_binding macro.
+func (file *file) dataCard(card *Inspect, steps []jomini.Step, concept bool, offset int) {
+	step := steps[len(steps)-1]
+	function, dataType := file.function(steps)
+	card.Range, card.Word = file.span(step.Range), schema.Word{Type: schema.WordDataCall, Name: step.Name}
+	for _, arg := range step.Args {
+		if database := file.sess.Schema.DatabaseNamed(function.Returns); arg.Quoted && within(arg.Range, offset) && database != "" {
+			card.Range, card.Word = file.span(arg.Range), schema.Word{Type: schema.WordReference, Database: database, Name: arg.Text}
+		}
+	}
+	switch {
+	case card.Word.Type == schema.WordReference:
+	case concept && len(steps) == 1:
+		card.Word = schema.Word{Type: schema.WordReference, Database: "game_concepts", Name: step.Name}
+	case function.Name != "":
+		card.Head, card.Prose = "data function", strings.TrimSpace(function.Doc+"\n\nReturns "+function.Returns)
+		return
+	case dataType != "":
+		card.Head, card.Prose = "data type", file.sess.Schema.Dumps.DataTypes[dataType].Doc
+		return
+	default:
+		card.Word = schema.Word{Type: schema.WordReference, Database: "data_binding", Name: step.Name}
+	}
+	card.Head = file.entryHead(card.Word.Database)
+	file.defined(card, card.Word, "")
+}
+
+// function is what a data call's last step is: a function the globals or the step before's return
+// type declare, or, written first, the data type of its name.
+func (file *file) function(steps []jomini.Step) (schema.DataFunction, string) {
+	dumps, dataType := file.sess.Schema.Dumps, ""
+	for i, step := range steps {
+		function, ok := dumps.DataTypes[dataType].Functions[step.Name]
+		if i == 0 {
+			function, ok = dumps.Globals[step.Name]
+		}
+		if _, isType := dumps.DataTypes[step.Name]; i == 0 && !ok && isType {
+			dataType = step.Name
+			continue
+		}
+		if !ok {
+			return schema.DataFunction{}, ""
+		}
+		if i == len(steps)-1 {
+			return function, ""
+		}
+		dataType = function.Returns
+	}
+	return schema.DataFunction{}, dataType
+}
+
+// layer is where a key's facts come from, in plain words.
+func layer(key *schema.Key) string {
+	if key.Source == schema.SourceWiki {
+		return fmt.Sprintf("the wiki: %s (r%d)", key.Page, key.Revision)
+	}
+	return map[schema.Source]string{
+		schema.SourceVanilla: "vanilla", schema.SourceDumps: "the dumps", schema.SourceDocs: "the docs", schema.SourceRegistry: "the registry",
+	}[key.Source]
 }
 
 // comment is the comment on the lines just above a line of a text, joined; "" where there is none.
@@ -419,23 +664,4 @@ func comment(text string, line int) string {
 		above = append([]string{strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))}, above...)
 	}
 	return strings.Join(above, "\n")
-}
-
-// spell writes a field's accepts as the schema file spells them.
-func spell(field *schema.Field) []string {
-	if field == nil {
-		return nil
-	}
-	var out []string
-	for _, accept := range field.Accepts {
-		switch accept.Type {
-		case schema.TypeRef:
-			out = append(out, "ref:"+accept.Kind)
-		case schema.TypeEnum:
-			out = append(out, "enum:"+strings.Join(accept.Enum, "|"))
-		default:
-			out = append(out, accept.Type.String())
-		}
-	}
-	return out
 }

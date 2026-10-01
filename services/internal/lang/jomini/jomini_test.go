@@ -279,7 +279,7 @@ func TestLiteral(t *testing.T) {
 		{"birth.1001", 0, 0, 0, 0, false},
 		{"1066.9", 0, 0, 0, 0, false},
 		{"1066..15", 0, 0, 0, 0, false},
-		{"-1.1.1", 0, 0, 0, 0, false},
+		{"-1.1.1", -1, 1, 1, 0, true},
 		{"", 0, 0, 0, 0, false},
 	} {
 		year, month, day, hour, ok := ParseDate(testCase.text)
@@ -289,65 +289,65 @@ func TestLiteral(t *testing.T) {
 	}
 }
 
-func TestCite(t *testing.T) {
+func TestSplitPrefixed(t *testing.T) {
 	for _, testCase := range []struct {
 		text string
-		want Cited
+		want Prefixed
 		ok   bool
 	}{
 		// plain cites, words that are none, and cites with a chain
-		{"culture:english", Cited{Prefix: "culture", Name: "english"}, true},
-		{"trait:brave", Cited{Prefix: "trait", Name: "brave"}, true},
-		{"coat_of_arms:b_appleby", Cited{Prefix: "coat_of_arms", Name: "b_appleby"}, true},
-		{"title:k_france", Cited{Prefix: "title", Name: "k_france"}, true},
-		{"script_value:max_soldiers", Cited{Prefix: "script_value", Name: "max_soldiers"}, true},
-		{"location:stockholm", Cited{Prefix: "location", Name: "stockholm"}, true},
-		{"c:SWE", Cited{Prefix: "c", Name: "SWE"}, true},
-		{"english", Cited{}, false},
-		{"capital_province.culture", Cited{}, false},
-		{"$COA$", Cited{}, false},
-		{"situation:foo.var:x", Cited{Prefix: "situation", Name: "foo", Chain: "var:x"}, true},
-		{"s:STATE_KENYA.region_state:OMA", Cited{Prefix: "s", Name: "STATE_KENYA", Chain: "region_state:OMA"}, true},
+		{"culture:english", Prefixed{Prefix: "culture", Name: "english"}, true},
+		{"trait:brave", Prefixed{Prefix: "trait", Name: "brave"}, true},
+		{"coat_of_arms:b_appleby", Prefixed{Prefix: "coat_of_arms", Name: "b_appleby"}, true},
+		{"title:k_france", Prefixed{Prefix: "title", Name: "k_france"}, true},
+		{"script_value:max_soldiers", Prefixed{Prefix: "script_value", Name: "max_soldiers"}, true},
+		{"location:stockholm", Prefixed{Prefix: "location", Name: "stockholm"}, true},
+		{"c:SWE", Prefixed{Prefix: "c", Name: "SWE"}, true},
+		{"english", Prefixed{}, false},
+		{"capital_province.culture", Prefixed{}, false},
+		{"$COA$", Prefixed{}, false},
+		{"situation:foo.var:x", Prefixed{Prefix: "situation", Name: "foo", Chain: "var:x"}, true},
+		{"s:STATE_KENYA.region_state:OMA", Prefixed{Prefix: "s", Name: "STATE_KENYA", Chain: "region_state:OMA"}, true},
 
 		// a prefix is one plain identifier: a dotted word is a scope path whose later step is the cite
-		{"$SCOPE$.var:x", Cited{}, false},
-		{"root.var:x", Cited{}, false},
-		{"this.culture:english", Cited{}, false},
+		{"$SCOPE$.var:x", Prefixed{}, false},
+		{"root.var:x", Prefixed{}, false},
+		{"this.culture:english", Prefixed{}, false},
 
 		// script-made names are cited like any other: no prefix is refused by name
-		{"scope:foo", Cited{Prefix: "scope", Name: "foo"}, true},
-		{"var:gold", Cited{Prefix: "var", Name: "gold"}, true},
-		{"scope:a.var:b", Cited{Prefix: "scope", Name: "a", Chain: "var:b"}, true},
-		{"type:character_event", Cited{Prefix: "type", Name: "character_event"}, true},
-		{"scope:my_target.culture", Cited{Prefix: "scope", Name: "my_target", Chain: "culture"}, true},
+		{"scope:foo", Prefixed{Prefix: "scope", Name: "foo"}, true},
+		{"var:gold", Prefixed{Prefix: "var", Name: "gold"}, true},
+		{"scope:a.var:b", Prefixed{Prefix: "scope", Name: "a", Chain: "var:b"}, true},
+		{"type:character_event", Prefixed{Prefix: "type", Name: "character_event"}, true},
+		{"scope:my_target.culture", Prefixed{Prefix: "scope", Name: "my_target", Chain: "culture"}, true},
 
 		// a number is a legal name, and so is one that is not ASCII
-		{"character:186004", Cited{Prefix: "character", Name: "186004"}, true},
-		{"province:1234", Cited{Prefix: "province", Name: "1234"}, true},
-		{"scope:Linnéa", Cited{Prefix: "scope", Name: "Linnéa"}, true},
-		{"p:xB0D0E0.state.owner", Cited{Prefix: "p", Name: "xB0D0E0", Chain: "state.owner"}, true},
+		{"character:186004", Prefixed{Prefix: "character", Name: "186004"}, true},
+		{"province:1234", Prefixed{Prefix: "province", Name: "1234"}, true},
+		{"scope:Linnéa", Prefixed{Prefix: "scope", Name: "Linnéa"}, true},
+		{"p:xB0D0E0.state.owner", Prefixed{Prefix: "p", Name: "xB0D0E0", Chain: "state.owner"}, true},
 
 		// a define names its group and its key
-		{"define:NGame|START_DATE", Cited{Prefix: "define", Name: "NGame", Member: "START_DATE"}, true},
-		{"define:NGame|", Cited{}, false},
+		{"define:NGame|START_DATE", Prefixed{Prefix: "define", Name: "NGame", Key: "START_DATE"}, true},
+		{"define:NGame|", Prefixed{}, false},
 
 		// not a cite: a sound's name, a file, a path, an entry mode, and the broken spellings
-		{"event:/SFX/UI/Generic/sfx_ui_click", Cited{}, false},
-		{"file:/music/my_new_song.ogg", Cited{}, false},
-		{"C:/Games/x.dds", Cited{}, false},
-		{`C:\Games\x.dds`, Cited{}, false},
-		{"INJECT:my_building", Cited{}, false},
-		{"REPLACE_OR_CREATE:my_building", Cited{}, false},
-		{"", Cited{}, false},
-		{"scope", Cited{}, false},
-		{"scope:", Cited{}, false},
-		{":x", Cited{}, false},
-		{"1a:x", Cited{}, false},
-		{"_a:x", Cited{}, false},
-		{"scope:a b", Cited{}, false},
-		{"scope:a.", Cited{}, false},
+		{"event:/SFX/UI/Generic/sfx_ui_click", Prefixed{}, false},
+		{"file:/music/my_new_song.ogg", Prefixed{}, false},
+		{"C:/Games/x.dds", Prefixed{}, false},
+		{`C:\Games\x.dds`, Prefixed{}, false},
+		{"INJECT:my_building", Prefixed{}, false},
+		{"REPLACE_OR_CREATE:my_building", Prefixed{}, false},
+		{"", Prefixed{}, false},
+		{"scope", Prefixed{}, false},
+		{"scope:", Prefixed{}, false},
+		{":x", Prefixed{}, false},
+		{"1a:x", Prefixed{}, false},
+		{"_a:x", Prefixed{}, false},
+		{"scope:a b", Prefixed{}, false},
+		{"scope:a.", Prefixed{}, false},
 	} {
-		got, ok := Cite(testCase.text)
+		got, ok := SplitPrefixed(testCase.text)
 		if ok != testCase.ok || got != testCase.want {
 			t.Errorf("Cite(%q) = %+v, %v; want %+v, %v", testCase.text, got, ok, testCase.want, testCase.ok)
 		}

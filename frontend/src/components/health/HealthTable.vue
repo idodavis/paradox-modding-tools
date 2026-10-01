@@ -1,3 +1,33 @@
+<script lang="ts">
+import type { Contest, Dangling, Dependency, FileRow, Health, LocRow, Problem } from "@services/models";
+
+/** The editor's checks' cards, each the codes it lists; parse errors are every other code. */
+export const PROBLEM_CARDS = {
+  scope: { label: "Wrong scope", codes: ["wrong-scope"] },
+  values: { label: "Values", codes: ["wrong-value-type", "wrong-declared-value", "missing-key"] },
+  references: { label: "References", codes: ["unresolved-ref", "unknown-event"] },
+  missingFiles: { label: "Missing files", codes: ["missing-file"] },
+  locFiles: { label: "Localization files", codes: ["missing-bom", "loc-header-mismatch", "wrong-localization-folder"] },
+  duplicates: { label: "Duplicates", codes: ["duplicate-definition"] },
+  parse: { label: "Parse errors", codes: [] },
+} as const satisfies Record<string, { label: string; codes: readonly string[] }>;
+export type ProblemCard = keyof typeof PROBLEM_CARDS;
+
+export type Card = "contests" | "overrides" | "depends" | "dangling" | "loc" | "files" | ProblemCard;
+/** A loc row, with the language and the gap it is listed under. */
+export type Gap = LocRow & { language: string; gap: "missing" | "untranslated" | "orphaned" };
+export type Row = Contest | Dependency | Dangling | Gap | FileRow | Problem;
+
+/** A problem card's rows: the problems of its codes; parse errors, those of no card's code. */
+export function problemsOf(health: Health | null | undefined, card: ProblemCard): Problem[] {
+  const carded = Object.values(PROBLEM_CARDS).flatMap((group) => group.codes as readonly string[]);
+  const codes = PROBLEM_CARDS[card].codes as readonly string[];
+  return (health?.problems ?? []).filter((problem) =>
+    card === "parse" ? !carded.includes(problem.code) : codes.includes(problem.code),
+  );
+}
+</script>
+
 <script setup lang="ts">
 /**
  * The report's table: the card chosen above picks the rows it lists and the columns it shows. Each
@@ -7,14 +37,8 @@
 import { computed, h, ref, resolveComponent, shallowRef, useTemplateRef, watch } from "vue";
 import type { TableColumn } from "@nuxt/ui";
 import type { FilterFn, HeaderContext } from "@tanstack/vue-table";
-import type { Contest, Dangling, Dependency, FileRow, Health, LocRow } from "@services/models";
 import { originHexByOriginId } from "../../ide/rootDecorations";
 import { useWorkspaceStore } from "../../stores/workspace";
-
-export type Card = "contests" | "overrides" | "depends" | "dangling" | "loc" | "files";
-/** A loc row, with the language and the gap it is listed under. */
-export type Gap = LocRow & { language: string; gap: "missing" | "untranslated" | "orphaned" };
-export type Row = Contest | Dependency | Dangling | Gap | FileRow;
 
 const props = defineProps<{ health: Health | null | undefined; card: Card; loading: boolean }>();
 const emit = defineEmits<{ select: [row: Row]; shown: [card: Card, rows: Row[]] }>();
@@ -128,6 +152,8 @@ const rows = computed((): Row[] => {
           (language[gap] ?? []).map((row) => ({ ...row, language: language.language, gap })),
         ),
       );
+    default:
+      return problemsOf(health, props.card);
   }
 });
 
@@ -147,7 +173,7 @@ watch(
 );
 
 const contests: TableColumn<Contest>[] = [
-  { accessorKey: "kind", header: head("Kind", String), filterFn: among },
+  { accessorKey: "database", header: head("Database", String), filterFn: among },
   {
     accessorKey: "name",
     header: head("Name"),
@@ -196,7 +222,7 @@ const depends: TableColumn<Dependency>[] = [
   { id: "count", header: head("Uses"), accessorFn: (row) => row.sites?.length ?? 0 },
 ];
 const dangling: TableColumn<Dangling>[] = [
-  { accessorKey: "kind", header: head("Kind", String), filterFn: among },
+  { accessorKey: "database", header: head("Database", String), filterFn: among },
   { accessorKey: "name", header: head("Name") },
   {
     accessorKey: "declared",
@@ -223,7 +249,7 @@ const loc: TableColumn<Gap>[] = [
   },
 ];
 const files: TableColumn<FileRow>[] = [
-  { accessorKey: "kind", header: head("Kind", String), filterFn: among },
+  { accessorKey: "database", header: head("Database", String), filterFn: among },
   { accessorKey: "name", header: head("Name") },
   {
     id: "missing",
@@ -239,9 +265,22 @@ const files: TableColumn<FileRow>[] = [
     cell: ({ row }) => origin(originOf(row.original.file)),
   },
 ];
+const problems: TableColumn<Problem>[] = [
+  { accessorKey: "code", header: head("Check", String), filterFn: among, cell: ({ row }) => badge(row.original.code, "neutral") },
+  { accessorKey: "message", header: head("Finding") },
+  {
+    id: "origin",
+    header: head("Origin", store.originName),
+    accessorFn: (row) => originOf(row.site.file),
+    filterFn: among,
+    cell: ({ row }) => origin(originOf(row.original.site.file)),
+  },
+];
 // each card's columns are typed by its own rows; the table holds whichever the card picks
 const columns = computed(
-  () => ({ contests, overrides: contests, depends, dangling, loc, files })[props.card] as TableColumn<Row>[],
+  () =>
+    (({ contests, overrides: contests, depends, dangling, loc, files }) as Record<string, TableColumn<any>[]>)[props.card] ??
+    (problems as TableColumn<Row>[]),
 );
 </script>
 

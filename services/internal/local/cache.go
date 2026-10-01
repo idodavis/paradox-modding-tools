@@ -1,13 +1,14 @@
 // cache.go is an install's scan kept between runs: vanilla-<install>-<version>.gob holds when
-// it was scanned and then the index, and .schema.txt beside it holds the schema as text a
-// person can read and diff. The engine under lang/ says what a scan is; this file only says
-// where it lives and how it is written and read back.
+// it was scanned and then the install, its index and schema. The engine under lang/ says what a
+// scan is; this file only says where it lives and how it is written and read back.
 
 package local
 
 import (
 	"cmp"
+	"compress/gzip"
 	"encoding/gob"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,36 +36,22 @@ func SaveInstall(installID, version string, install *index.Install) error {
 	if err != nil {
 		return err
 	}
-	if err := Write(base+".schema.txt", func(out io.Writer) error {
-		_, err := io.WriteString(out, schema.Write(install.Schema))
-		return err
-	}); err != nil {
-		return err
-	}
 	return Write(base+".gob", func(out io.Writer) error {
 		encoder := gob.NewEncoder(out)
 		if err := encoder.Encode(time.Now().UTC().Format(time.RFC3339)); err != nil {
 			return err
 		}
-		return encoder.Encode(index.Body{Index: install.Index, Vocab: install.Vocab, Info: install.Info})
+		return encoder.Encode(install)
 	})
 }
 
-// LoadInstall reads an install's cache back, its lookups rebuilt before it is shared.
+// LoadInstall reads an install's cache back, its lookups rebuilt before it is shared. A cache with
+// no index or schema is an old or broken one, and fails so the session scans again.
 func LoadInstall(installID, version string) (*index.Install, error) {
 	base, err := cachePath(installID, version)
 	if err != nil {
 		return nil, err
 	}
-	text, err := os.ReadFile(base + ".schema.txt")
-	if err != nil {
-		return nil, err
-	}
-	read, err := schema.Read(string(text))
-	if err != nil {
-		return nil, err
-	}
-
 	file, err := os.Open(base + ".gob")
 	if err != nil {
 		return nil, err
@@ -75,12 +62,15 @@ func LoadInstall(installID, version string) (*index.Install, error) {
 	if err := decoder.Decode(&scannedAt); err != nil {
 		return nil, err
 	}
-	var body index.Body
-	if err := decoder.Decode(&body); err != nil {
+	var install index.Install
+	if err := decoder.Decode(&install); err != nil {
 		return nil, err
 	}
-	body.Restore()
-	return &index.Install{Index: body.Index, Schema: read, Vocab: body.Vocab, Info: body.Info}, nil
+	if install.Index == nil || install.Schema == nil {
+		return nil, errors.New("the cache holds no index or schema")
+	}
+	install.Restore()
+	return &install, nil
 }
 
 // ScannedAt is when an install's cache was written, "" where there is none.
@@ -99,6 +89,22 @@ func ScannedAt(installID, version string) string {
 		return ""
 	}
 	return scannedAt
+}
+
+// SaveShipped writes a game's layers as shipped-<game>.gob.gz in the cache folder, for the owner
+// to copy into the schema's shipped folder when they choose.
+func SaveShipped(gameID string, shipped schema.Shipped) error {
+	dir, err := CacheDir()
+	if err != nil {
+		return err
+	}
+	return Write(filepath.Join(dir, "shipped-"+gameID+".gob.gz"), func(out io.Writer) error {
+		zipped := gzip.NewWriter(out)
+		if err := gob.NewEncoder(zipped).Encode(shipped); err != nil {
+			return err
+		}
+		return zipped.Close()
+	})
 }
 
 // DropInstall removes every cache file of an install, whatever its version.

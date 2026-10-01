@@ -24,7 +24,7 @@ import * as steam$0 from "./internal/steam/models.js";
  * Contest is one name two origins define, its definitions in load order, with the game's rule.
  */
 export interface Contest {
-    "kind": string;
+    "database": string;
     "name": string;
 
     /**
@@ -44,14 +44,22 @@ export interface Contest {
  * Dangling is one name a mod writes that nothing defines, and where.
  */
 export interface Dangling {
-    "kind": string;
+    "database": string;
     "name": string;
 
     /**
-     * a declared cite: the game itself would reject it
+     * a declared prefixed word: the game itself would reject it
      */
     "declared": boolean;
     "sites": Site[] | null;
+}
+
+/**
+ * DatabaseCount is one database and how many roots of it a search holds.
+ */
+export interface DatabaseCount {
+    "database": string;
+    "count": number;
 }
 
 /**
@@ -68,24 +76,19 @@ export interface Dependency {
  */
 export interface Detail {
     /**
-     * the kind it belongs to
+     * the database it belongs to
      */
-    "kind": string;
+    "database": string;
 
     /**
-     * its name, found the way Kind.Naming says
+     * its name, found the way Database.Naming says
      */
     "name": string;
 
     /**
-     * nested kind: the definition it sits inside; a parameter: its macro
+     * nested: the definition it sits inside; a parameter: its scripted effect
      */
     "parent"?: string;
-
-    /**
-     * the value of the kind's LabelMember. "" if none
-     */
-    "label"?: string;
 
     /**
      * the entry mode written before the name: REPLACE, INJECT. "" if none
@@ -95,7 +98,7 @@ export interface Detail {
     /**
      * saved_scopes only: the scope type at the save site
      */
-    "scopeType"?: string;
+    "scope"?: string;
 
     /**
      * index into Index.Files; -1 once the file that held it was dropped
@@ -114,7 +117,7 @@ export interface Detail {
     "options": Option[] | null;
 
     /**
-     * as the graph draws them: events and on_actions, through macros
+     * as the graph draws them: events and on_actions, through scripted effects
      */
     "fires": session$0.Fire[] | null;
 
@@ -124,7 +127,7 @@ export interface Detail {
     "firedBy": session$0.Fire[] | null;
 
     /**
-     * what the block names, by kind in the order first written
+     * what the block names, by database in the order first written
      */
     "refs": RefGroup[] | null;
     "reason"?: string;
@@ -145,7 +148,7 @@ export interface DumpHealth {
     "folder": string;
     "effects": number;
     "triggers": number;
-    "links": number;
+    "eventTargets": number;
 
     /**
      * scope types; Vic3 and EU5 write event_scopes.log to logs/, other dumps to docs/
@@ -154,7 +157,7 @@ export interface DumpHealth {
 }
 
 /**
- * Edge is one fire drawn; Via names the tokens and macros between.
+ * Edge is one fire drawn; Via names the commands and scripted effects between.
  */
 export interface Edge {
     "from": string;
@@ -189,11 +192,11 @@ export interface FileBytes {
 }
 
 /**
- * FileRow is one definition without images every definition of its kind in the game has, which the
- * game finds by the name.
+ * FileRow is one definition without images every definition of its database in the game has, which
+ * the game finds by the name.
  */
 export interface FileRow {
-    "kind": string;
+    "database": string;
     "name": string;
 
     /**
@@ -208,7 +211,7 @@ export interface FileRow {
     "missing": string[] | null;
 
     /**
-     * how many such images its kind has
+     * how many such images its database has
      */
     "of": number;
 }
@@ -278,6 +281,11 @@ export interface Health {
     "dangling": Dangling[] | null;
     "loc": Language[] | null;
     "files": FileRow[] | null;
+
+    /**
+     * what the editor's checks find that no card above shows
+     */
+    "problems": Problem[] | null;
 }
 
 /**
@@ -312,14 +320,6 @@ export interface IdeRoots {
     "hideExplorerBinaries": boolean;
     "ideOpenFiles"?: string[] | null;
     "ideActiveFile"?: string;
-}
-
-/**
- * KindCount is one kind and how many roots of it a search holds.
- */
-export interface KindCount {
-    "kind": string;
-    "count": number;
 }
 
 /**
@@ -363,8 +363,23 @@ export interface LanguageHealth {
     "scanning": boolean;
     "ready": boolean;
     "dumps": DumpHealth[] | null;
-    "drift": schema$0.Drift;
+    "unread": schema$0.Unread;
     "watchError"?: string;
+
+    /**
+     * whose each dump set the live schema read
+     */
+    "dumpsFrom": schema$0.DumpsFrom;
+
+    /**
+     * the shipped dumps' game version, where used
+     */
+    "dumpsVersion"?: string;
+
+    /**
+     * the console command that writes the data types
+     */
+    "dataTypesCommand": string;
 }
 
 /**
@@ -420,7 +435,7 @@ export interface LocEntry {
  */
 export interface LocRow {
     "key": string;
-    "kind"?: string;
+    "database"?: string;
     "name"?: string;
 
     /**
@@ -444,7 +459,7 @@ export interface Lookup {
  */
 export interface Node {
     "id": string;
-    "kind": string;
+    "database": string;
     "title"?: string;
     "origin"?: string;
     "rel"?: string;
@@ -502,9 +517,9 @@ export interface Params {
     "origins": string[] | null;
 
     /**
-     * each macro on a chain drawn as a node between the two it joins
+     * each scripted effect on a chain drawn as a node between the two it joins
      */
-    "macros": boolean;
+    "scripted": boolean;
 }
 
 /**
@@ -519,6 +534,15 @@ export interface PathStat {
 }
 
 /**
+ * Problem is one finding of the editor's checks, at its site.
+ */
+export interface Problem {
+    "code": string;
+    "message": string;
+    "site": Site;
+}
+
+/**
  * PublishResult is Steam's answer plus the listing saved with the item's id.
  */
 export interface PublishResult {
@@ -529,19 +553,21 @@ export interface PublishResult {
 }
 
 /**
- * RefGroup is the references of one kind written in a block; loc keys are kind loc, files file.
+ * RefGroup is the references of one database written in a block; loc keys are database loc, files
+ * file.
  */
 export interface RefGroup {
-    "kind": string;
+    "database": string;
     "refs": index$0.Cited[] | null;
 }
 
 /**
- * Roots is a root search's hits, grouped by kind, and how many of each kind the query holds.
+ * Roots is a root search's hits, grouped by database, and how many of each database the query
+ * holds.
  */
 export interface Roots {
     "hits": Node[] | null;
-    "kinds": KindCount[] | null;
+    "databases": DatabaseCount[] | null;
 }
 
 /**
@@ -567,9 +593,9 @@ export interface Site {
     "col": number;
 
     /**
-     * a dependency's use: the kind and name written there
+     * a dependency's use: the database and name written there
      */
-    "kind"?: string;
+    "database"?: string;
     "name"?: string;
 
     /**
@@ -683,12 +709,7 @@ export interface WorkspaceMod {
     "createdAt": string;
 
     /**
-     * calendar of the mod's dates; set by hand, as no mod states it
+     * the eras of the mod's dates; set by hand, as no mod states them, and none leaves every date as written
      */
-    "era"?: string;
-
-    /**
-     * with Era; nothing set leaves every date exactly as written
-     */
-    "epochOffset"?: number;
+    "eras"?: session$0.Calendar;
 }

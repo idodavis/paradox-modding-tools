@@ -94,7 +94,7 @@ watch(guide, (g) => {
   if (guideOpen.value || !ideVisible.value || !g.pages?.length || !toastAllowed()) {
     return;
   }
-  const kind = g.kind;
+  const kind = g.database;
   if (!kind || toastedKinds.has(kind)) return;
   toastedKinds.add(kind);
   const title = g.pages[0]?.title ?? "Guide";

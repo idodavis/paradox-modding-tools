@@ -8,41 +8,43 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"paradox-modding-tools/services/internal/lang/schema"
 )
 
-// PagesFor returns the Guide tabs for a file of an extract kind at a relative path: the best
-// page named for the kind or the folder, the scripting-language pages for a script file, then
+// PagesFor returns the Guide tabs for a file of an extract database at a relative path: the best
+// page named for the database or the folder, the scripting-language pages for a script file, then
 // the other named pages. A missing sidecar or an unmatched file gives none.
-func PagesFor(gameID, kind, rel string) []GuidePage {
+func PagesFor(gameID, database, rel string) []GuidePage {
 	sidecar, err := load(gameID)
 	if err != nil {
 		return nil
 	}
 	wanted := map[string]bool{}
-	for _, name := range append([]string{kind, path.Base(path.Dir(strings.ReplaceAll(rel, "\\", "/")))}, synonyms[kind]...) {
-		wanted[stem(name)] = true
+	for _, name := range append([]string{database, path.Base(path.Dir(strings.ReplaceAll(rel, "\\", "/")))}, synonyms[database]...) {
+		wanted[schema.Stem(name)] = true
 	}
 	delete(wanted, "")
-	var matches, language []Page
+	var matches, language []schema.WikiPage
 	for _, page := range sidecar.Guides {
-		switch title := stem(page.Title); {
+		switch title := schema.Stem(page.Title); {
 		case wanted[title]:
 			matches = append(matches, page)
-		case synonyms[kind] == nil && languageStems[title]:
+		case synonyms[database] == nil && languageStems[title]:
 			language = append(language, page)
 		}
 	}
-	notModding := func(page Page) int {
+	notModding := func(page schema.WikiPage) int {
 		if strings.Contains(strings.ToLower(page.Title), "modding") {
 			return 0
 		}
 		return 1
 	}
-	slices.SortFunc(matches, func(first, second Page) int {
+	slices.SortFunc(matches, func(first, second schema.WikiPage) int {
 		return cmp.Or(cmp.Compare(notModding(first), notModding(second)),
 			cmp.Compare(len(first.Title), len(second.Title)), strings.Compare(first.Title, second.Title))
 	})
-	slices.SortFunc(language, func(first, second Page) int { return strings.Compare(first.Title, second.Title) })
+	slices.SortFunc(language, func(first, second schema.WikiPage) int { return strings.Compare(first.Title, second.Title) })
 	best := min(1, len(matches))
 	var out []GuidePage
 	for _, page := range slices.Concat(matches[:best], language, matches[best:]) {
@@ -53,7 +55,7 @@ func PagesFor(gameID, kind, rel string) []GuidePage {
 	return out
 }
 
-func patchEntry(page Page) PatchEntry {
+func patchEntry(page schema.WikiPage) PatchEntry {
 	entry := PatchEntry{Title: page.Title, URL: page.URL, HasModding: page.ModdingHTML != ""}
 	if pv, ok := parsePatchTitle(page.Title); ok {
 		entry.Version = pv.Label
@@ -109,12 +111,12 @@ func PatchByVersion(gameID, want string) *PatchPage {
 	if err != nil {
 		return nil
 	}
-	wantN := normTitle(want)
+	wantN := schema.NormTitle(want)
 	wantN = strings.TrimPrefix(wantN, "patch ")
-	var fallback *Page
+	var fallback *schema.WikiPage
 	for i := range sidecar.Patches {
 		page := &sidecar.Patches[i]
-		n := normTitle(page.Title)
+		n := schema.NormTitle(page.Title)
 		if n == wantN || n == "patch "+wantN {
 			return patchPageOf(page)
 		}
@@ -131,7 +133,7 @@ func PatchByVersion(gameID, want string) *PatchPage {
 	return nil
 }
 
-func patchPageOf(page *Page) *PatchPage {
+func patchPageOf(page *schema.WikiPage) *PatchPage {
 	pv, _ := parsePatchTitle(page.Title)
 	return &PatchPage{
 		Title:           page.Title,
@@ -152,44 +154,20 @@ const (
 	memberCap = 500
 )
 
-// Section is one heading of a page, for the TOC.
-type Section struct {
-	TocLevel int    `json:"tocLevel"`
-	Line     string `json:"line"`
-	Anchor   string `json:"anchor"`
-}
-
-// Page is one sanitized wiki page in a sidecar; a patch page also keeps its Modding section.
-type Page struct {
-	Title           string    `json:"title"`
-	URL             string    `json:"url"`
-	Revid           int       `json:"revid"`
-	HTML            string    `json:"html"`
-	Sections        []Section `json:"sections,omitempty"`
-	ModdingHTML     string    `json:"moddingHtml,omitempty"`
-	ModdingSections []Section `json:"moddingSections,omitempty"`
-}
-
-// Sidecar is wiki-<gameID>.json: a game's guide pages and patch notes.
-type Sidecar struct {
-	Guides  []Page `json:"guides"`
-	Patches []Page `json:"patches"`
-}
-
 // GuidePage is one tab in the Guide pane.
 type GuidePage struct {
-	Title    string    `json:"title"`
-	HTML     string    `json:"html"`
-	URL      string    `json:"url"`
-	Sections []Section `json:"sections"`
+	Title    string               `json:"title"`
+	HTML     string               `json:"html"`
+	URL      string               `json:"url"`
+	Sections []schema.WikiSection `json:"sections"`
 }
 
-// Guide is the WikiService.Guide payload. Rel/origin/kind come from Locate.
+// Guide is the WikiService.Guide payload. Rel/origin/database come from Locate.
 type Guide struct {
 	Rel         string      `json:"rel"`
 	Origin      string      `json:"origin"`
 	OriginName  string      `json:"originName"`
-	Kind        string      `json:"kind"`
+	Database    string      `json:"database"`
 	Pages       []GuidePage `json:"pages"`
 	Attribution string      `json:"attribution"`
 }
@@ -211,12 +189,12 @@ type PatchList struct {
 
 // PatchPage is one patch notes body (All + optional Modding HTML).
 type PatchPage struct {
-	Title           string    `json:"title"`
-	Version         string    `json:"version"`
-	HTML            string    `json:"html"`
-	ModdingHTML     string    `json:"moddingHtml"`
-	URL             string    `json:"url"`
-	HasModding      bool      `json:"hasModding"`
-	Sections        []Section `json:"sections"`
-	ModdingSections []Section `json:"moddingSections"`
+	Title           string               `json:"title"`
+	Version         string               `json:"version"`
+	HTML            string               `json:"html"`
+	ModdingHTML     string               `json:"moddingHtml"`
+	URL             string               `json:"url"`
+	HasModding      bool                 `json:"hasModding"`
+	Sections        []schema.WikiSection `json:"sections"`
+	ModdingSections []schema.WikiSection `json:"moddingSections"`
 }

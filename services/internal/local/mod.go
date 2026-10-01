@@ -6,6 +6,7 @@
 package local
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"fmt"
@@ -276,9 +277,11 @@ func quoteMod(text string) string {
 	return `"` + strings.ReplaceAll(strings.TrimSpace(text), `"`, `'`) + `"`
 }
 
+// readMetadataJSON reads a metadata.json's listing fields; 8 of 13 local EU5 mods' start with a
+// byte-order mark, which encoding/json rejects, so it goes first.
 func readMetadataJSON(raw []byte) (ListingFields, error) {
 	var metadata map[string]any
-	if err := json.Unmarshal(raw, &metadata); err != nil {
+	if err := json.Unmarshal(bytes.TrimPrefix(raw, utf8BOM), &metadata); err != nil {
 		return ListingFields{}, err
 	}
 	var fields ListingFields
@@ -295,10 +298,12 @@ func readMetadataJSON(raw []byte) (ListingFields, error) {
 	return fields, nil
 }
 
+// patchMetadataJSON writes the listing fields into a metadata.json, keeping its byte-order mark.
 func patchMetadataJSON(raw []byte, fields ListingFields) ([]byte, error) {
 	metadata := map[string]any{}
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &metadata); err != nil {
+	body, marked := bytes.CutPrefix(raw, utf8BOM)
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &metadata); err != nil {
 			return nil, err
 		}
 	}
@@ -324,6 +329,9 @@ func patchMetadataJSON(raw []byte, fields ListingFields) ([]byte, error) {
 	out, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		return nil, err
+	}
+	if marked {
+		out = append(append([]byte{}, utf8BOM...), out...)
 	}
 	return append(out, '\n'), nil
 }
@@ -372,8 +380,8 @@ type NewModOpts struct {
 	GameID, Root, Name, SupportedVersion, LocLang, ThumbnailSrc string
 }
 
-// WriteNewMod creates root with a descriptor, empty common/ and events/, a loc stub, and the
-// thumbnail when one is given.
+// WriteNewMod creates root with a descriptor, each of the game's ModFolders empty but for a loc stub
+// in the localization one's language folder, and the thumbnail when one is given.
 func WriteNewMod(opts NewModOpts) error {
 	info := game.Get(opts.GameID)
 	if info == nil {
@@ -414,17 +422,16 @@ func WriteNewMod(opts NewModOpts) error {
 	if err := WriteListingFields(opts.GameID, root, fields); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(root, "common"), 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(root, "events"), 0o755); err != nil {
-		return err
-	}
-
-	language := cmp.Or(strings.TrimSpace(opts.LocLang), "english")
-	locDir := filepath.Join(root, "localization", language)
-	if err := os.MkdirAll(locDir, 0o755); err != nil {
-		return err
+	language, locDir := cmp.Or(strings.TrimSpace(opts.LocLang), "english"), ""
+	for _, folder := range info.ModFolders {
+		dir := filepath.Join(root, filepath.FromSlash(folder))
+		if strings.HasSuffix("/"+folder, "/localization") {
+			dir = filepath.Join(dir, language)
+			locDir = dir
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
 	}
 	locName := ModSlug(name) + "_l_" + language + ".yml"
 	locBody := append(append([]byte{}, utf8BOM...), []byte("l_"+language+":\n")...)

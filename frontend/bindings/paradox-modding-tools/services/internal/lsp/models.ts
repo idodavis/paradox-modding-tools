@@ -3,6 +3,9 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as index$0 from "../lang/index/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as jomini$0 from "../lang/jomini/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -70,7 +73,7 @@ export interface InlayHint {
  * Inspect is the hover card: the reader's reading of the word and what the workspace knows of it.
  */
 export interface Inspect {
-    "value": schema$0.Value;
+    "word": schema$0.Word;
 
     /**
      * the key the word is written at, or is
@@ -78,59 +81,34 @@ export interface Inspect {
     "key"?: string;
 
     /**
-     * a key's shape: value, list, structure, database, body
+     * the card's first line: what the word is
      */
-    "class"?: string;
+    "head"?: string;
 
     /**
-     * a key: the value types it accepts, as the schema spells them
+     * an entry's name as the player reads it, a loc key's text, a constant's value
      */
-    "accepts"?: string[] | null;
+    "name"?: string;
 
     /**
-     * the scope type the site runs in
+     * what the docs say of the word's database
      */
-    "scope"?: string;
+    "about"?: string;
 
     /**
-     * a link or an iterator: the scope type it leads to
+     * a command's or key's docs, or an entry's comment
      */
-    "scopeOut"?: string;
+    "prose"?: string;
 
     /**
-     * prose: a token's or field's docs, or a definition's comment
+     * a key: what a word there may be
      */
-    "docs"?: string;
+    "takes"?: string[] | null;
 
     /**
-     * a token's declared usage
+     * the scopes the site runs in
      */
-    "usage"?: string;
-
-    /**
-     * a definition's label, a loc key's text, a constant's value
-     */
-    "label"?: string;
-
-    /**
-     * a numbered branch: its share of its siblings, in percent
-     */
-    "weight"?: number;
-
-    /**
-     * a date written out; with a mod calendar, the era's date too
-     */
-    "date"?: string;
-
-    /**
-     * a colour, as #rrggbb
-     */
-    "color"?: string;
-
-    /**
-     * a file that is an image: its header
-     */
-    "image"?: source$0.ImageInfo | null;
+    "scopes": index$0.Scopes;
 
     /**
      * where it is defined, in load order
@@ -143,24 +121,52 @@ export interface Inspect {
     "winner": number;
 
     /**
+     * where the facts shown come from
+     */
+    "source"?: string;
+
+    /**
+     * a date written out; with a mod calendar, the era's date too
+     */
+    "date"?: string;
+
+    /**
+     * a numbered branch: its share of its siblings, in percent
+     */
+    "weight"?: number;
+
+    /**
+     * a colour, as #rrggbb
+     */
+    "color"?: string;
+
+    /**
+     * a file that is an image: its header
+     */
+    "image"?: source$0.ImageInfo | null;
+
+    /**
+     * a parameter: the words its scripted effect's callers pass for it
+     */
+    "values"?: Seen[] | null;
+
+    /**
      * the event graph draws it: an event or on_action, or it fires one
      */
     "graphed"?: boolean;
-
-    /**
-     * a parameter: the words its macro's callers pass for it
-     */
-    "values"?: Seen[] | null;
     "range": Range;
 }
 
 /**
- * Item is one completion: the text it writes, what that text is, and its rank (0 a token in scope,
- * 1 a member, 2 a definition or a token out of scope, 3 a loc key).
+ * Item is one completion: the text it writes, what that text is, its head and takes, and its rank
+ * (0 a command in scope or a key every entry writes, 1 a key, 2 a definition or a command out of
+ * scope, 3 a loc key).
  */
 export interface Item {
     "label": string;
-    "value": schema$0.Value;
+    "word": schema$0.Word;
+    "head": string;
+    "takes"?: string[] | null;
     "rank": number;
     "range": Range;
 }
@@ -214,7 +220,7 @@ export interface Signature {
  */
 export interface Symbol {
     "name": string;
-    "kind": string;
+    "database": string;
     "parent"?: string;
     "location": Location;
 }

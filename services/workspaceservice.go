@@ -13,6 +13,7 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/local"
+	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/steam"
 )
 
@@ -423,15 +424,17 @@ func (w *WorkspaceService) UpdateWorkspaceMod(
 	})
 }
 
-// SetWorkspaceModCalendar declares the era a mod's date literals are written in, apart from
-// UpdateWorkspaceMod because a calendar is set once and rarely. era "" with offset 0 clears it, and
-// a cleared calendar leaves every date exactly as written.
-func (w *WorkspaceService) SetWorkspaceModCalendar(
-	workspaceID, modID, era string, epochOffset int,
-) error {
+// SetWorkspaceModCalendar declares the eras a mod's date literals are written in, apart from
+// UpdateWorkspaceMod because a calendar is set once and rarely. Each name is trimmed and an unnamed
+// era dropped; an empty list clears it, and a cleared calendar leaves every date exactly as written.
+func (w *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, eras session.Calendar) error {
 	err := w.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
-		mod.Era = strings.TrimSpace(era)
-		mod.EpochOffset = epochOffset
+		mod.Eras = nil
+		for _, era := range eras {
+			if era.Name = strings.TrimSpace(era.Name); era.Name != "" {
+				mod.Eras = append(mod.Eras, era)
+			}
+		}
 		return nil
 	})
 	if err != nil {

@@ -1,7 +1,7 @@
-// convention.go is the one loc-naming rule: a kind's definitions are localized
-// under a small set of key templates, and which of them a kind actually uses is
-// read from the install's own localization rather than guessed. Learn runs once
-// per kind at scan time; Expand is the only way a key is derived from a
+// convention.go is the one loc-naming rule: a database's definitions are localized
+// under a small set of key templates, and which of them a database actually uses is
+// read from the install's own localization rather than guessed. Conventions runs once
+// per database at scan time; Expand is the only way a key is derived from a
 // definition afterwards.
 
 package loc
@@ -12,16 +12,16 @@ import (
 	"strings"
 )
 
-// Template is one loc-key shape a kind uses: "{id}", "{id}_desc", "rule_{id}", "{id}_adj".
+// Template is one loc-key shape a database uses: "{id}", "{id}_desc", "rule_{id}", "{id}_adj".
 type Template string
 
-// baseTemplates are tried for every kind; its block members and the install's prefixes add more.
+// baseTemplates are tried for every database; its block keys and the install's prefixes add more.
 var baseTemplates = []Template{"{id}", "{id}_desc"}
 
-// Convention is one template a kind's defs are localized with, and how often.
+// Convention is one template a database's defs are localized with, and how often.
 type Convention struct {
 	Template Template `json:"template"`
-	Coverage float64  `json:"coverage"` // share of vanilla defs of the kind that have this key
+	Coverage float64  `json:"coverage"` // share of vanilla defs of the database that have this key
 }
 
 // Keys is the vanilla key set, indexed once: exact lookup, and per suffix the prefixes before it.
@@ -54,8 +54,8 @@ func (keys *Keys) PrefixesOf(id string) []string {
 // Has reports an exact key.
 func (keys *Keys) Has(key string) bool { return keys != nil && keys.has[key] }
 
-// render fills a template's {id} with the def id into buf, which the caller reuses: Learn tests
-// every template against every id, and a string built per pair would be the whole cost.
+// render fills a template's {id} with the def id into buf, which the caller reuses: Conventions
+// tests every template against every id, and a string built per pair would be the whole cost.
 func render(buf []byte, template Template, id string) []byte {
 	buf, rest := buf[:0], string(template)
 	for {
@@ -81,25 +81,32 @@ func Expand(id string, cs []Convention) []string {
 	return out
 }
 
-// Learn keeps the templates under which most of a kind's vanilla ids have a key, each with its
-// exact coverage (required-loc demands 1.0). A shape only one definition has is no convention.
-func Learn(ids []string, members []string, keys *Keys) []Convention {
+// Conventions keeps the templates under which most of a database's vanilla ids have a key, each
+// with its exact coverage (required-loc demands 1.0). A shape only one definition has is no
+// convention. A template the docs declare is measured beside them and kept even below the majority.
+func Conventions(ids []string, entryKeys []string, keys *Keys, declared []string) []Convention {
 	if keys == nil {
 		return nil
 	}
 	var out []Convention
 	buf := make([]byte, 0, 64)
-	for _, template := range candidates(ids, members, keys) {
-		// stop once the template cannot reach most ids: still exact, and most pairs go untested
-		hits := 0
+	found := candidates(ids, entryKeys, keys)
+	for _, template := range declared {
+		if !slices.Contains(found, Template(template)) {
+			found = append(found, Template(template))
+		}
+	}
+	for _, template := range found {
+		// stop once a found template cannot reach most ids: still exact, and most pairs go untested
+		hits, isDeclared := 0, slices.Contains(declared, string(template))
 		for i, id := range ids {
 			if buf = render(buf, template, id); keys.has[string(buf)] {
 				hits++
-			} else if (hits+len(ids)-i-1)*2 <= len(ids) {
+			} else if !isDeclared && (hits+len(ids)-i-1)*2 <= len(ids) {
 				break
 			}
 		}
-		if hits > 1 && hits*2 > len(ids) {
+		if hits > 0 && isDeclared || hits > 1 && hits*2 > len(ids) {
 			out = append(out, Convention{Template: template, Coverage: float64(hits) / float64(len(ids))})
 		}
 	}
@@ -116,17 +123,17 @@ func Learn(ids []string, members []string, keys *Keys) []Convention {
 	return out
 }
 
-// candidates is the base shapes, one per block member, and one per prefix that precedes most ids.
-func candidates(ids, members []string, keys *Keys) []Template {
+// candidates is the base shapes, one per block key, and one per prefix that precedes most ids.
+func candidates(ids, entryKeys []string, keys *Keys) []Template {
 	out := slices.Clone(baseTemplates)
 	add := func(template Template) {
 		if !slices.Contains(out, template) {
 			out = append(out, template)
 		}
 	}
-	for _, member := range members {
-		if member != "" {
-			add(Template("{id}_" + member))
+	for _, entryKey := range entryKeys {
+		if entryKey != "" {
+			add(Template("{id}_" + entryKey))
 		}
 	}
 	// `P_<id>` reconstructs the key, so one id cannot be counted twice under one prefix.

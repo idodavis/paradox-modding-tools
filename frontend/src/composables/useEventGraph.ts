@@ -30,7 +30,7 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
     maxNodes: 40,
     expand: [] as string[],
     origins: [] as string[],
-    macros: false,
+    scripted: false,
   });
   const selected = shallowRef("");
   const searchTerm = shallowRef("");

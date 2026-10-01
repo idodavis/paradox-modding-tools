@@ -1,0 +1,14 @@
+game_rule = {
+	default = setting_name 	# Which setting to default to
+
+	# What categories this game rule belongs too
+	categories = {
+		category_1 category_2
+	}
+
+	setting_name = {
+		apply_modifier = category:modifier_key	# Apply a modifier to characters matching a specific category. Valid are player, ai, and all. E.G., player:very_easy
+
+		flag = flag_key	# Has some specific effect. See "flags" section for list
+	}
+}

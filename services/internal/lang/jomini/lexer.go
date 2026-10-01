@@ -23,8 +23,8 @@ const (
 )
 
 // token is a single lexeme. start/end are UTF-8 byte offsets into the source.
-// value holds the operator text for tokOp; unterminated marks a string that hit
-// end-of-line/EOF before its closing quote.
+// value holds the operator text for tokOp; unterminated marks a string that reached
+// the end of the text before its closing quote.
 type token struct {
 	kind         tokenKind
 	start        int
@@ -32,10 +32,6 @@ type token struct {
 	value        string
 	unterminated bool
 }
-
-// maxStringSpan caps how many newlines a quoted string may cross while a `[`
-// data-function bracket is still open, so a stray `"[` cannot swallow a whole file.
-const maxStringSpan = 32
 
 // isWhitespace reports the space/tab/newline/CR/FF/VT bytes that separate tokens.
 func isWhitespace(char byte) bool {
@@ -130,49 +126,22 @@ func tokenize(text string) []token {
 	return tokens
 }
 
-// lexString consumes a quoted string starting at *cursor (on the opening quote). A
-// newline continues the string only while a `[` data-function bracket is open.
+// lexString consumes a quoted string starting at *cursor (on the opening quote). It runs to its
+// closing quote across lines, as the game reads it; only the end of the text leaves it unterminated.
 func lexString(text string, cursor *int) token {
-	length := len(text)
-	start := *cursor
-	pos := *cursor + 1
-	unterminated := false
-	brackets := 0
-	spanned := 0
-	for {
-		if pos >= length {
-			unterminated = true
-			break
-		}
-		cc := text[pos]
-		if cc == '\\' {
-			pos += 2
-			continue
-		}
-		if cc == '"' {
+	start, pos := *cursor, *cursor+1
+	for pos < len(text) && text[pos] != '"' {
+		if text[pos] == '\\' {
 			pos++
-			break
-		}
-		if cc == '\n' || cc == '\r' {
-			if brackets == 0 || spanned >= maxStringSpan {
-				unterminated = true
-				break
-			}
-			if cc == '\n' {
-				spanned++
-			}
-			pos++
-			continue
-		}
-		if cc == '[' {
-			brackets++
-		} else if cc == ']' && brackets > 0 {
-			brackets--
 		}
 		pos++
 	}
-	*cursor = pos
-	return token{kind: tokString, start: start, end: pos, unterminated: unterminated}
+	unterminated := pos >= len(text)
+	if !unterminated {
+		pos++
+	}
+	*cursor = min(pos, len(text))
+	return token{kind: tokString, start: start, end: *cursor, unterminated: unterminated}
 }
 
 // lexOperator consumes an operator token at *cursor, or reports ok=false to fall

@@ -3,6 +3,7 @@
  * One workspace mod row: load-order header, expandable fields, nested ignore.
  */
 import type { WorkspaceMod } from "@services/models";
+import type { Era } from "@services/internal/session/models";
 
 /** Field help used by this card and the settings filter. */
 export const MOD_HELP = {
@@ -10,7 +11,7 @@ export const MOD_HELP = {
   descMd: "Markdown listing description. Empty uses mod-description.md in the mod folder. The file must already exist.",
   descBb: "BBCode sent to Steam. Empty uses mod-description.bbcode. The file must already exist.",
   calendar:
-    "Total conversions offset the year so the engine’s date arithmetic still works — A Game of Thrones writes 8082.1.1 for what players see as 300 AC. Set the era and offset and PMT reads dates back in that era on hover. Nothing is guessed, and with nothing set every date reads exactly as written. Never changes what is saved to disk.",
+    "Total conversions offset the year so the engine's date arithmetic still works: A Game of Thrones writes 8082.1.1 for 82 A.C. and has five eras. Add a row per era; a date reads in the era with the greatest offset below its year, as the year minus that offset. Nothing is guessed, and with no era every date reads as written. Never changes what is saved to disk.",
   workshopIgnore:
     "Gitignore syntax, stored in this workspace. Steam never uploads: dotfiles (except .metadata/), .gitignore, and patterns in a .gitignore in the mod folder. Export writes .workshop-ignore; Import reads it. Editing that file in the IDE does nothing until Import.",
 } as const;
@@ -63,7 +64,7 @@ const emit = defineEmits<{
   "update:expanded": [open: boolean];
   patch: [patch: ModPatch];
   /** Persisted by SetWorkspaceModCalendar, not UpdateWorkspaceMod. */
-  calendar: [era: string, epochOffset: number];
+  calendar: [eras: Era[]];
   importIgnore: [];
   exportIgnore: [];
   remove: [];
@@ -73,14 +74,18 @@ const ignoreOpen = shallowRef(false);
 const deriveOpen = shallowRef(false);
 const exWritten = shallowRef("");
 const exSeen = shallowRef("");
+const exEra = shallowRef("");
 
-/** A stand-in date, so the current setting is legible without hunting for one. */
-const SAMPLE_DATE = "8082.1.1";
+/** The mod's eras; each change sends the whole list. */
+const eras = computed(() => props.mod.eras ?? []);
+function setEra(i: number, patch: Partial<Era>): void {
+  emit("calendar", eras.value.map((era, at) => (at === i ? { ...era, ...patch } : era)));
+}
 
 /**
  * The epoch offset from an example: a year the mod's script writes and the year a player sees
- * (AGoT writes 8082 for year 300, so 7782). Permissive, since a calendar only changes what a
- * hover reads: a bare year serves, a negative offset is kept, and only unparseable input is null.
+ * (AGoT writes 8082 for 82, so 8000). Permissive, since a calendar only changes what a hover
+ * reads: a bare year serves, a negative offset is kept, and only unparseable input is null.
  */
 function offsetFromExample(written: string, seen: string): number | null {
   const yearOf = (raw: string): number | null => {
@@ -94,25 +99,6 @@ function offsetFromExample(written: string, seen: string): number | null {
   if (w === null || s === null) return null;
   return w - s;
 }
-
-function emitCalendar(era: string, epochOffset: number): void {
-  emit("calendar", era, epochOffset);
-}
-
-/**
- * SAMPLE_DATE under the current setting, by the rule the editor's hover and inlay hints use
- * (lsp's date): no era year at or below 0.
- */
-const preview = computed(() => {
-  const era = props.mod.era ?? "";
-  const off = props.mod.epochOffset ?? 0;
-  if (!era && !off) return "";
-  const parts = SAMPLE_DATE.split(".");
-  const year = Number(parts[0]) - off;
-  if (year <= 0) return "";
-  parts[0] = String(year);
-  return parts.join(".") + (era ? " " + era : "");
-});
 
 const derivedOffset = computed(() => offsetFromExample(exWritten.value, exSeen.value));
 
@@ -225,23 +211,23 @@ const swatch = computed(() =>
             <span class="text-sm font-medium">Calendar</span>
             <FieldHelpTip :text="MOD_HELP.calendar" />
           </div>
-          <div class="flex flex-wrap items-end gap-3">
-            <UFormField label="Era" class="w-24">
-              <UInput
-                :model-value="mod.era ?? ''"
-                placeholder="AC"
-                size="sm"
-                @update:model-value="emitCalendar(String($event ?? ''), mod.epochOffset ?? 0)"
-              />
+          <div v-for="(era, i) in eras" :key="i" class="flex flex-wrap items-end gap-3">
+            <UFormField :label="i === 0 ? 'Era' : undefined" class="w-24">
+              <UInput :model-value="era.name" placeholder="A.C." size="sm" @update:model-value="setEra(i, { name: String($event ?? '') })" />
             </UFormField>
-            <UFormField label="Year offset" class="w-32">
-              <UInput
-                type="number"
-                :model-value="mod.epochOffset ?? 0"
-                size="sm"
-                @update:model-value="emitCalendar(mod.era ?? '', Number($event) || 0)"
-              />
+            <UFormField :label="i === 0 ? 'Year offset' : undefined" class="w-32">
+              <UInput type="number" :model-value="era.offset" size="sm" @update:model-value="setEra(i, { offset: Number($event) || 0 })" />
             </UFormField>
+            <UButton
+              icon="i-lucide-trash-2"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              @click="emit('calendar', eras.filter((_, at) => at !== i))"
+            />
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton label="Add era" icon="i-lucide-plus" color="neutral" variant="outline" size="xs" @click="emit('calendar', [...eras, { name: '', offset: 0 }])" />
             <UButton
               :label="deriveOpen ? 'Hide helper' : 'Work it out'"
               color="neutral"
@@ -249,31 +235,23 @@ const swatch = computed(() =>
               size="xs"
               @click="deriveOpen = !deriveOpen"
             />
-            <UButton
-              v-if="(mod.era ?? '') || (mod.epochOffset ?? 0)"
-              label="Clear"
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              @click="emitCalendar('', 0)"
-            />
+            <UButton v-if="eras.length" label="Clear" color="neutral" variant="ghost" size="xs" @click="emit('calendar', [])" />
           </div>
-          <p v-if="preview" class="text-xs text-muted">
-            A date written <code>{{ SAMPLE_DATE }}</code> reads
-            <code>{{ preview }}</code> on hover.
-          </p>
           <div v-if="deriveOpen" class="flex flex-wrap items-end gap-3 rounded-md bg-elevated/50 p-3">
             <UFormField label="Date as written" class="w-36">
               <UInput v-model="exWritten" placeholder="8082.1.1" size="sm" />
             </UFormField>
             <UFormField label="Year players see" class="w-32">
-              <UInput v-model="exSeen" placeholder="300" size="sm" />
+              <UInput v-model="exSeen" placeholder="82" size="sm" />
+            </UFormField>
+            <UFormField label="Era" class="w-24">
+              <UInput v-model="exEra" placeholder="A.C." size="sm" />
             </UFormField>
             <UButton
-              label="Use this offset"
+              label="Add this era"
               size="xs"
-              :disabled="derivedOffset === null"
-              @click="emitCalendar(mod.era ?? '', derivedOffset ?? 0)"
+              :disabled="derivedOffset === null || !exEra.trim()"
+              @click="emit('calendar', [...eras, { name: exEra.trim(), offset: derivedOffset ?? 0 }])"
             />
             <p v-if="exWritten && exSeen && derivedOffset === null" class="text-xs text-error">
               Enter a date like 8082.1.1 and the year it should read.

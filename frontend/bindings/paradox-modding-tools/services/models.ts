@@ -3,15 +3,6 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as index$0 from "./internal/lang/index/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as loc$0 from "./internal/lang/loc/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as schema$0 from "./internal/lang/schema/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as source$0 from "./internal/lang/source/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -19,6 +10,16 @@ import * as session$0 from "./internal/session/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as steam$0 from "./internal/steam/models.js";
+
+/**
+ * Cited is one name a block writes, and where.
+ */
+export interface Cited {
+    "name": string;
+    "line": number;
+    "col": number;
+    "at": source$0.File;
+}
 
 /**
  * Contest is one name two origins define, its definitions in load order, with the game's rule.
@@ -46,11 +47,6 @@ export interface Contest {
 export interface Dangling {
     "database": string;
     "name": string;
-
-    /**
-     * a declared prefixed word: the game itself would reject it
-     */
-    "declared": boolean;
     "sites": Site[] | null;
 }
 
@@ -75,35 +71,13 @@ export interface Dependency {
  * Detail is one definition, opened.
  */
 export interface Detail {
-    /**
-     * the database it belongs to
-     */
     "database": string;
-
-    /**
-     * its name, found the way Database.Naming says
-     */
     "name": string;
 
     /**
-     * nested: the definition it sits inside; a parameter: its scripted effect
-     */
-    "parent"?: string;
-
-    /**
-     * the entry mode written before the name: REPLACE, INJECT. "" if none
+     * the entry mode written before the name: REPLACE, INJECT
      */
     "mode"?: string;
-
-    /**
-     * saved_scopes only: the scope type at the save site
-     */
-    "scope"?: string;
-
-    /**
-     * index into Index.Files; -1 once the file that held it was dropped
-     */
-    "file": number;
     "line": number;
     "col": number;
     "at": source$0.File;
@@ -142,22 +116,7 @@ export interface DirEntry {
 }
 
 /**
- * DumpHealth is one folder the game's script_docs dumps may be in, and what was read there.
- */
-export interface DumpHealth {
-    "folder": string;
-    "effects": number;
-    "triggers": number;
-    "eventTargets": number;
-
-    /**
-     * scope types; Vic3 and EU5 write event_scopes.log to logs/, other dumps to docs/
-     */
-    "scopes": number;
-}
-
-/**
- * Edge is one fire drawn; Via names the commands and scripted effects between.
+ * Edge is one fire drawn; Via names the scripted effects between, in the order they are entered.
  */
 export interface Edge {
     "from": string;
@@ -192,31 +151,6 @@ export interface FileBytes {
 }
 
 /**
- * FileRow is one definition without images every definition of its database in the game has, which
- * the game finds by the name.
- */
-export interface FileRow {
-    "database": string;
-    "name": string;
-
-    /**
-     * its number in Sources
-     */
-    "file": number;
-    "line": number;
-
-    /**
-     * each image it lacks, as the path the game looks for
-     */
-    "missing": string[] | null;
-
-    /**
-     * how many such images its database has
-     */
-    "of": number;
-}
-
-/**
  * FileSearchHit is one path from FileSearch.
  */
 export interface FileSearchHit {
@@ -248,7 +182,6 @@ export interface GameInstall {
     "gameId": string;
     "name": string;
     "path": string;
-    "version": string;
     "versionDetected": string;
 
     /**
@@ -256,6 +189,10 @@ export interface GameInstall {
      */
     "isBroken": boolean;
     "createdAt": string;
+
+    /**
+     * derived: its install built, else its cache written
+     */
     "scannedAt"?: string;
 }
 
@@ -274,13 +211,12 @@ export interface Health {
     "contests": Contest[] | null;
 
     /**
-     * names one mod defines over the install's
+     * names one mod defines over, or adds to, another origin's
      */
     "overrides": Contest[] | null;
     "depends": Dependency[] | null;
     "dangling": Dangling[] | null;
     "loc": Language[] | null;
-    "files": FileRow[] | null;
 
     /**
      * what the editor's checks find that no card above shows
@@ -329,24 +265,14 @@ export interface Language {
     "language": string;
 
     /**
-     * the workspace's language: a definition's key, absent
-     */
-    "missing": LocRow[] | null;
-
-    /**
-     * another: a mod key the workspace's language has and it lacks
+     * not the workspace's language: a mod key that one has and this lacks
      */
     "untranslated": LocRow[] | null;
-
-    /**
-     * a mod key nothing of its mod reads
-     */
-    "orphaned": LocRow[] | null;
 }
 
 /**
- * LanguageHealth is what the health strip shows: whether the session is live, what the install's
- * cache holds, and whether the dumps are there.
+ * LanguageHealth is what the health strip shows: whether the session is live, and whose dumps the
+ * live schema read and what it could not explain.
  */
 export interface LanguageHealth {
     "workspaceId": string;
@@ -356,25 +282,42 @@ export interface LanguageHealth {
     "gameVersion": string;
 
     /**
-     * no cache for the install, or one older than the game
+     * when the install was built, else its cache file written
      */
-    "cacheStale": boolean;
-    "scannedAt": string;
+    "scannedAt"?: string;
+
+    /**
+     * the version this run's scan replaced, where it differs
+     */
+    "updatedFrom"?: string;
     "scanning": boolean;
     "ready": boolean;
-    "dumps": DumpHealth[] | null;
-    "unread": schema$0.Unread;
+
+    /**
+     * doc and wiki lines no rule reads
+     */
+    "unread": string[] | null;
     "watchError"?: string;
 
     /**
-     * whose each dump set the live schema read
+     * whose dumps the schema read: yours, shipped or none
      */
-    "dumpsFrom": schema$0.DumpsFrom;
+    "dumpsFrom": string;
 
     /**
-     * the shipped dumps' game version, where used
+     * when the oldest dump file was written, where known
      */
-    "dumpsVersion"?: string;
+    "dumpsWritten"?: string;
+
+    /**
+     * they predate the install, or are another game version's
+     */
+    "dumpsStale": boolean;
+
+    /**
+     * where the game's script_docs writes them
+     */
+    "dumpFolders": string[] | null;
 
     /**
      * the console command that writes the data types
@@ -416,11 +359,7 @@ export interface Listing {
  * LocEntry is one of a key's entries, with the language its file is written in.
  */
 export interface LocEntry {
-    "key": string;
-    "keyRange": loc$0.Range;
-    "version": number;
     "value": string;
-    "valueRange": loc$0.Range;
 
     /**
      * 0-based
@@ -431,12 +370,10 @@ export interface LocEntry {
 }
 
 /**
- * LocRow is one key and, where it has one, the definition or the file it belongs to.
+ * LocRow is one key and the file it is in.
  */
 export interface LocRow {
     "key": string;
-    "database"?: string;
-    "name"?: string;
 
     /**
      * its number in Sources
@@ -446,12 +383,13 @@ export interface LocRow {
 }
 
 /**
- * Lookup is one localization key: its entries in the workspace and everything that reads it.
+ * Lookup is one localization key: its entries in the workspace and the install, and everything that
+ * reads it.
  */
 export interface Lookup {
     "key": string;
     "entries": LocEntry[] | null;
-    "readers": index$0.Cited[] | null;
+    "readers": Cited[] | null;
 }
 
 /**
@@ -553,12 +491,12 @@ export interface PublishResult {
 }
 
 /**
- * RefGroup is the references of one database written in a block; loc keys are database loc, files
- * file.
+ * RefGroup is the references of one database written in a block; loc keys are database
+ * localization, files file.
  */
 export interface RefGroup {
     "database": string;
-    "refs": index$0.Cited[] | null;
+    "refs": Cited[] | null;
 }
 
 /**
@@ -709,7 +647,7 @@ export interface WorkspaceMod {
     "createdAt": string;
 
     /**
-     * the eras of the mod's dates; set by hand, as no mod states them, and none leaves every date as written
+     * the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written
      */
     "eras"?: session$0.Calendar;
 }

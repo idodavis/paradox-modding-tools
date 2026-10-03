@@ -1,19 +1,18 @@
-// eventgraphservice.go is the event graph page: the walk out of one definition over the index's
-// edges, and one event's detail -- where it is, what its block holds at the top, its options, and
-// the fires in and out of it. Every number the walk obeys comes from the page; this file has none.
+// eventgraphservice.go is the event graph page: the walk out of one definition over what it fires,
+// and one event's detail -- where it is, what its block holds at the top, its options, and the
+// fires in and out of it. Every number the walk obeys comes from the page; this file has none.
 package services
 
 import (
 	"cmp"
 	"fmt"
-	"path/filepath"
+	"maps"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
-	"paradox-modding-tools/services/internal/lang/loc"
-	"paradox-modding-tools/services/internal/lang/schema"
+	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -41,7 +40,7 @@ type Node struct {
 	Hidden   int    `json:"hidden,omitempty"`
 }
 
-// Edge is one fire drawn; Via names the commands and scripted effects between.
+// Edge is one fire drawn; Via names the scripted effects between, in the order they are entered.
 type Edge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
@@ -75,9 +74,8 @@ type DatabaseCount struct {
 	Count    int    `json:"count"`
 }
 
-// SearchRoots is what the graph can be drawn from: the events and on_actions the install and the
-// mods fire, and every definition but a scripted effect that fires one, whose id holds the query.
-// Ids that start with it come first; of one database at most 50, of every database at most 8 each.
+// SearchRoots is the fired events and on_actions, and what fires one but a scripted entry, whose id
+// holds the query: ids that start with it first, 50 of one database or 8 of each.
 func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*Roots, error) {
 	sess, err := v.Session.live(workspaceID)
 	if err != nil {
@@ -86,39 +84,85 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*R
 	sess.RLock()
 	defer sess.RUnlock()
 	query = strings.ToLower(query)
-	databases, checked, all := map[string]string{}, map[string]bool{}, sess.All()
-	for _, idx := range all {
-		for _, edge := range idx.Edges {
-			if !all.Loaded(idx, edge.File) {
+	sch, indexes := sess.Schema(), sess.Indexes()
+
+	// in the files the game loads: what is fired, each definition that fires itself, and the
+	// scripted entries each one runs
+	fired, fires, runs := map[string]string{}, map[index.Def]bool{}, map[index.Def][]index.Ref{}
+	for _, idx := range indexes {
+		for _, file := range idx.Files {
+			records := idx.Records[file.Path]
+			if _, loaded := index.Loaded(indexes, file.Path); records == nil || !loaded {
 				continue
 			}
-			if sess.Fired(edge.ToDatabase) {
-				databases[edge.To] = edge.ToDatabase
-			}
-			if caller := sess.Schema.Databases[edge.FromDatabase]; !checked[edge.From] && (caller == nil || len(caller.CalledIn) == 0) {
-				checked[edge.From] = true
-				if len(sess.Fires(edge.From, map[string]bool{})) > 0 {
-					databases[edge.From] = edge.FromDatabase
+			for _, ref := range records.Refs {
+				firing := ref.Fires(sch)
+				if firing {
+					fired[ref.Name] = ref.Database
+				}
+				switch {
+				case ref.From >= 0 && firing:
+					fires[records.Defs[ref.From]] = true
+				case ref.From >= 0 && ref.Runs(sch):
+					runs[records.Defs[ref.From]] = append(runs[records.Defs[ref.From]], ref)
 				}
 			}
 		}
 	}
 
+	// what fires through the entries it runs (Session.Fires): reached backwards from what fires
+	// itself over each call, resolved once
+	resolved, ranBy := map[[3]string][]index.Def{}, map[index.Def][]index.Def{}
+	for caller, refs := range runs {
+		for _, ref := range refs {
+			spelled := [3]string{ref.Database, ref.Called, ref.Name}
+			if _, done := resolved[spelled]; !done {
+				resolved[spelled], _ = index.Resolve(sch, indexes, ref)
+			}
+			for _, target := range resolved[spelled] {
+				ranBy[target] = append(ranBy[target], caller)
+			}
+		}
+	}
+	for queue := slices.Collect(maps.Keys(fires)); len(queue) > 0; {
+		def := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		for _, caller := range ranBy[def] {
+			if !fires[caller] {
+				fires[caller], queue = true, append(queue, caller)
+			}
+		}
+	}
+
+	// the roots the query holds: what is fired and defined, and what fires but is no scripted entry;
+	// a name of several databases takes the first in sorted order, so no map order decides
+	named := map[string]string{}
+	for name, kind := range fired {
+		if strings.Contains(strings.ToLower(name), query) && len(sess.Defs(kind, name)) > 0 {
+			named[name] = kind
+		}
+	}
+	for caller := range fires {
+		row, current := sch.Databases[caller.Database], named[caller.Name]
+		if (row == nil || len(row.Naming.CalledIn) == 0) && strings.Contains(strings.ToLower(caller.Name), query) &&
+			(current == "" || caller.Database < current) {
+			named[caller.Name] = caller.Database
+		}
+	}
+
 	// the query's hits by database, those that start with it first
 	byKind := map[string][]string{}
-	for name, named := range databases {
-		if strings.Contains(strings.ToLower(name), query) {
-			byKind[named] = append(byKind[named], name)
-		}
+	for name, kind := range named {
+		byKind[kind] = append(byKind[kind], name)
 	}
 	out, limit := &Roots{}, 8
 	if database != "" {
 		limit = 50
 	}
-	builder := &grapher{sess: sess, out: &EventGraph{}, drawn: map[string]bool{}, parsed: map[string]*jomini.Result{}}
-	for named, names := range byKind {
-		out.Databases = append(out.Databases, DatabaseCount{Database: named, Count: len(names)})
-		if database != "" && database != named {
+	builder := newGrapher(sess)
+	for kind, names := range byKind {
+		out.Databases = append(out.Databases, DatabaseCount{Database: kind, Count: len(names)})
+		if database != "" && database != kind {
 			continue
 		}
 		slices.SortFunc(names, func(first, second string) int {
@@ -151,11 +195,11 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	if params.Root == "" {
 		return &EventGraph{Reason: "Pick a root event."}, nil
 	}
-	found := sess.Defs(params.Root)
-	if len(found) == 0 {
+	builder := newGrapher(sess)
+	root := builder.def(params.Root)
+	if root.Name == "" {
 		return &EventGraph{Reason: fmt.Sprintf("Nothing defines %s.", params.Root)}, nil
 	}
-	builder := &grapher{sess: sess, params: params, out: &EventGraph{}, drawn: map[string]bool{}, parsed: map[string]*jomini.Result{}}
 	builder.node(params.Root, true)
 
 	// out of the root, hop by hop, each node's fan-out cut by the page's number
@@ -163,7 +207,7 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	for hop := 0; hop < params.Depth && len(frontier) > 0 && !builder.out.Truncated; hop++ {
 		var next []string
 		for _, from := range frontier {
-			fires := sess.Fires(from, map[string]bool{})
+			fires := sess.Fires(builder.def(from))
 			opened := slices.Contains(params.Expand, "more:"+from)
 			for i, fire := range fires {
 				if !opened && params.Fanout > 0 && i >= params.Fanout {
@@ -187,8 +231,8 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 
 	// into a root the game fires, one hop: a stub until the page opens it
 	var callers []session.Fire
-	if kept, _ := sess.Winner(found); sess.Fired(kept.Database) {
-		callers = firedBy(sess, params.Root)
+	if (index.Ref{Database: root.Database}).Fires(sess.Schema()) {
+		callers = firedBy(sess, root)
 	}
 	if len(callers) > 0 {
 		if slices.Contains(params.Expand, "more-in:"+params.Root) {
@@ -206,8 +250,8 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	}
 
 	// every fire between two drawn definitions is drawn, whatever hop found them
-	for id := range builder.drawn {
-		for _, fired := range sess.Fires(id, map[string]bool{}) {
+	for _, id := range slices.Sorted(maps.Keys(builder.drawn)) {
+		for _, fired := range sess.Fires(builder.def(id)) {
 			if builder.drawn[fired.Name] && !slices.ContainsFunc(builder.out.Edges, func(edge Edge) bool { return edge.From == id && edge.To == fired.Name }) {
 				builder.out.Edges = append(builder.out.Edges, Edge{From: id, To: fired.Name, Via: fired.Via})
 			}
@@ -226,21 +270,21 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	}
 
 	// the page's scripted effects shown: each chain's scripted effects drawn in turn between the
-	// two it joins, the last hop labelled by the command that fires; a hop two chains share is
-	// drawn once
+	// two it joins; a hop two chains share is drawn once
 	if params.Scripted {
 		var edges []Edge
 		for _, edge := range builder.out.Edges {
-			hops := strings.Split(edge.Via, " → ")
 			from := edge.From
-			for _, scripted := range hops[:len(hops)-1] {
-				if !builder.drawn[scripted] {
-					builder.node(scripted, false)
+			if edge.Via != "" {
+				for _, scripted := range strings.Split(edge.Via, " → ") {
+					if !builder.drawn[scripted] {
+						builder.node(scripted, false)
+					}
+					edges = append(edges, Edge{From: from, To: scripted})
+					from = scripted
 				}
-				edges = append(edges, Edge{From: from, To: scripted})
-				from = scripted
 			}
-			edges = append(edges, Edge{From: from, To: edge.To, Via: hops[len(hops)-1]})
+			edges = append(edges, Edge{From: from, To: edge.To})
 		}
 		slices.SortStableFunc(edges, func(first, second Edge) int { return strings.Compare(first.From+first.To, second.From+second.To) })
 		builder.out.Edges = slices.CompactFunc(edges, func(first, second Edge) bool { return first.From == second.From && first.To == second.To })
@@ -248,80 +292,94 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	return builder.out, nil
 }
 
-// grapher holds one graph as it is drawn, and each file parsed for a title, once.
+// grapher holds one graph as it is drawn, and each definition found, once.
 type grapher struct {
-	sess   *session.Session
-	params Params
-	out    *EventGraph
-	drawn  map[string]bool
-	parsed map[string]*jomini.Result
+	sess  *session.Session
+	out   *EventGraph
+	drawn map[string]bool
+	found map[string]index.Def
+}
+
+// newGrapher is an empty graph over a session.
+func newGrapher(sess *session.Session) *grapher {
+	return &grapher{sess: sess, out: &EventGraph{}, drawn: map[string]bool{}, found: map[string]index.Def{}}
+}
+
+// def is the definition the game keeps of an id, in whichever database defines it: one a fire names
+// (an event, an on_action) before the others; the zero Def where nothing does.
+func (grapher *grapher) def(id string) index.Def {
+	found, known := grapher.found[id]
+	if known {
+		return found
+	}
+	sch := grapher.sess.Schema()
+	for _, database := range slices.Sorted(maps.Keys(sch.Databases)) {
+		if defs := grapher.sess.Defs(database, id); len(defs) > 0 && (found.Name == "" || (index.Ref{Database: database}).Fires(sch)) {
+			found, _, _, _ = grapher.sess.Winner(defs)
+		}
+	}
+	grapher.found[id] = found
+	return found
 }
 
 // node draws a definition: the one the game keeps, with its title.
 func (grapher *grapher) node(id string, root bool) {
-	kept, _ := grapher.sess.Winner(grapher.sess.Defs(id))
-	parsed, known := grapher.parsed[kept.At.Path]
-	if !known {
-		parsed, _, _ = grapher.sess.Parsed(kept.At.Path)
-		grapher.parsed[kept.At.Path] = parsed
-	}
+	def := grapher.def(id)
+	file, _, _ := grapher.sess.Located(def.Path)
 	grapher.drawn[id] = true
-	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: kept.Database, Title: title(grapher.sess, kept, parsed), Origin: kept.At.Origin, Rel: kept.At.Rel, Line: int(kept.Line), Root: root})
+	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: def.Database, Title: grapher.sess.Title(def), Origin: file.Origin, Rel: file.Rel, Line: int(def.Line), Root: root})
 }
 
-// firedBy is what fires a definition, in name order; a fire inside a scripted effect counts for
-// its callers, its chain the scripted effects from the caller's own call to the command at this
-// site, as Fires writes one.
-func firedBy(sess *session.Session, to string) []session.Fire {
-	var out []session.Fire
-	all := sess.All()
-	for _, idx := range all {
-		for _, incoming := range idx.FiredBy(to) {
-			if !all.Loaded(idx, incoming.File) {
-				continue
+// firedBy is what fires a definition, in name order: its references outside a trigger, one in a
+// scripted effect followed to that effect's callers, with the chain as Fires writes one.
+func firedBy(sess *session.Session, target index.Def) []session.Fire {
+	sch, indexes := sess.Schema(), sess.Indexes()
+	seen := map[index.Def]bool{target: true}
+	var follow func(def index.Def) []session.Fire
+	follow = func(def index.Def) (out []session.Fire) {
+		// the references to the name, and the calls whose kind resolves in its database (D-24, D-29)
+		refs := index.LookupRefs(indexes, def.Database, def.Name)
+		for _, call := range index.LookupRefs(indexes, "", def.Name) {
+			if slices.Contains(sch.Callees[call.Called], def.Database) {
+				refs = append(refs, call)
 			}
-			if database := sess.Schema.Databases[incoming.FromDatabase]; database != nil && len(database.CalledIn) > 0 && incoming.From != to {
-				for _, caller := range firedBy(sess, incoming.From) {
-					out = append(out, session.Fire{Name: caller.Name, Via: caller.Via + " → " + incoming.Via})
-				}
-				continue
-			}
-			out = append(out, session.Fire{Name: incoming.From, Via: incoming.Via})
 		}
+		for _, ref := range refs {
+			var caller index.Def
+			for _, idx := range indexes {
+				if records := idx.Records[ref.Path]; records != nil && ref.From >= 0 {
+					caller = records.Defs[ref.From]
+				}
+			}
+			row := sch.Databases[caller.Database]
+			switch {
+			case ref.InTrigger || caller.Name == "":
+			case row != nil && len(row.Naming.CalledIn) > 0:
+				if !seen[caller] {
+					seen[caller] = true
+					for _, up := range follow(caller) {
+						out = append(out, session.Fire{Name: up.Name, Via: strings.TrimPrefix(up.Via+" → "+caller.Name, " → ")})
+					}
+				}
+			default:
+				out = append(out, session.Fire{Name: caller.Name})
+			}
+		}
+		return out
 	}
+	out := follow(target)
 	slices.SortStableFunc(out, func(first, second session.Fire) int { return strings.Compare(first.Name, second.Name) })
 	return slices.CompactFunc(out, func(first, second session.Fire) bool { return first.Name == second.Name })
 }
 
-// title is a definition's display name: the text of its database's first loc key it has, else, in
-// its parsed file, the text of the key its title key names, as events write theirs.
-func title(sess *session.Session, found index.Found, parsed *jomini.Result) string {
-	if database := sess.Schema.Databases[found.Database]; database != nil {
-		for _, key := range loc.Expand(found.Name, database.LocKeys) {
-			if said, ok := sess.Loc(key, ""); ok {
-				return said.Value
-			}
-		}
-	}
-	if parsed == nil {
-		return ""
-	}
-	if defined := keyedAt(parsed, int(found.Line), int(found.Col)); defined != nil && jomini.BlockOf(defined.Value) != nil {
-		for _, st := range jomini.BlockOf(defined.Value).Statements {
-			if assignment, ok := st.(*jomini.Assignment); ok && assignment.Key.Text == "title" {
-				if scalar, ok := assignment.Value.(*jomini.Scalar); ok {
-					said, _ := sess.Loc(scalar.Text, "")
-					return said.Value
-				}
-			}
-		}
-	}
-	return ""
-}
-
 // Detail is one definition, opened.
 type Detail struct {
-	index.Found
+	Database string         `json:"database"`
+	Name     string         `json:"name"`
+	Mode     string         `json:"mode,omitempty"` // the entry mode written before the name: REPLACE, INJECT
+	Line     int            `json:"line"`
+	Col      int            `json:"col"`
+	At       source.File    `json:"at"`
 	Title    string         `json:"title,omitempty"`
 	Lines    []string       `json:"lines"` // the definition as its file writes it
 	Sections []Section      `json:"sections"`
@@ -348,11 +406,19 @@ type Option struct {
 	Line int    `json:"line"`
 }
 
-// RefGroup is the references of one database written in a block; loc keys are database loc, files
-// file.
+// RefGroup is the references of one database written in a block; loc keys are database
+// localization, files file.
 type RefGroup struct {
-	Database string        `json:"database"`
-	Refs     []index.Cited `json:"refs"`
+	Database string  `json:"database"`
+	Refs     []Cited `json:"refs"`
+}
+
+// Cited is one name a block writes, and where.
+type Cited struct {
+	Name string      `json:"name"`
+	Line int         `json:"line"`
+	Col  int         `json:"col"`
+	At   source.File `json:"at"`
 }
 
 // GetEventDetail opens one definition by name: the one the game keeps.
@@ -363,26 +429,26 @@ func (v *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	}
 	sess.RLock()
 	defer sess.RUnlock()
-	found := sess.Defs(id)
-	if len(found) == 0 {
+	builder := newGrapher(sess)
+	def := builder.def(id)
+	if def.Name == "" {
 		return &Detail{Reason: "Nothing defines " + id + "."}, nil
 	}
-	kept, _ := sess.Winner(found)
-	detail := &Detail{Found: kept, Fires: sess.Fires(id, map[string]bool{}), FiredBy: firedBy(sess, id)}
+	file, _, _ := sess.Located(def.Path)
+	detail := &Detail{
+		Database: def.Database, Name: def.Name, Mode: def.Mode, Line: int(def.Line), Col: int(def.Col), At: file,
+		Title: sess.Title(def), Fires: sess.Fires(def), FiredBy: firedBy(sess, def),
+	}
 
 	// the block, read from the file: the statement whose key the definition was found at
-	parsed, _, err := sess.Parsed(filepath.Clean(kept.At.Path))
-	detail.Title = title(sess, kept, parsed)
-	if err != nil {
+	parsed, defined := sess.Entry(def)
+	block := jomini.ChildBlock(defined)
+	if block == nil {
 		return detail, nil
 	}
-	defined := keyedAt(parsed, int(kept.Line), int(kept.Col))
-	if defined == nil || jomini.BlockOf(defined.Value) == nil {
-		return detail, nil
-	}
-	detail.Lines = spanLines(parsed, defined.Range, 0)
+	detail.Lines = spanLines(parsed, defined.NodeRange(), 0)
 	lines := parsed.Lines()
-	for _, inner := range jomini.BlockOf(defined.Value).Statements {
+	for _, inner := range block.Statements {
 		assignment, ok := inner.(*jomini.Assignment)
 		if !ok {
 			continue
@@ -391,7 +457,7 @@ func (v *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 		if scalar, ok := assignment.Value.(*jomini.Scalar); ok {
 			section.Value = scalar.Text
 			if said, ok := sess.Loc(scalar.Text, ""); ok {
-				section.Text = said.Value
+				section.Text = said.Text
 			}
 		}
 		if block := jomini.BlockOf(assignment.Value); block != nil && assignment.Key.Text == "option" {
@@ -400,36 +466,36 @@ func (v *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 		detail.Sections = append(detail.Sections, section)
 	}
 
-	// the references written inside the block, grouped by database in the order first written
-	for _, ref := range index.Visit(kept.At, parsed, sess.Reader(), nil).Refs {
-		if offset := lines.OffsetAt(int(ref.Line), int(ref.Col)); offset < defined.Range.Start || offset >= defined.Range.End {
+	// the references the walk read inside the entry, grouped by database in the order first written;
+	// a call by the database that defines what it calls, and one nothing defines is left out
+	indexes := sess.Indexes()
+	for _, idx := range indexes {
+		records := idx.Records[def.Path]
+		if records == nil {
 			continue
 		}
-		database := ref.Database
-		if ref.Type != schema.WordReference {
-			database = ref.Type.String()
+		entry := slices.Index(records.Defs, def)
+		for _, ref := range records.Refs {
+			database := ref.Database
+			if entry < 0 || int(ref.From) != entry || database == index.Parameter {
+				continue
+			}
+			if ref.Called != "" {
+				called, known := index.Resolve(sess.Schema(), indexes, ref)
+				if !known {
+					continue
+				}
+				database = called[0].Database
+			}
+			at := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Database == database })
+			if at < 0 {
+				at = len(detail.Refs)
+				detail.Refs = append(detail.Refs, RefGroup{Database: database})
+			}
+			detail.Refs[at].Refs = append(detail.Refs[at].Refs, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
 		}
-		at := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Database == database })
-		if at < 0 {
-			at = len(detail.Refs)
-			detail.Refs = append(detail.Refs, RefGroup{Database: database})
-		}
-		detail.Refs[at].Refs = append(detail.Refs[at].Refs, index.Cited{Ref: ref, At: kept.At})
 	}
 	return detail, nil
-}
-
-// keyedAt is the assignment whose key starts at a line and byte column: where a definition sits.
-func keyedAt(parsed *jomini.Result, line, col int) *jomini.Assignment {
-	offset := parsed.Lines().OffsetAt(line, col)
-	var keyed *jomini.Assignment
-	jomini.Walk(parsed.Root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
-		if assignment, ok := st.(*jomini.Assignment); ok && assignment.Key.Range.Start == offset {
-			keyed = assignment
-		}
-		return keyed == nil && st.NodeRange().Start <= offset && offset < st.NodeRange().End
-	})
-	return keyed
 }
 
 // spanLines is the source lines a span is written on; past limit lines, when limit is not 0, the
@@ -450,8 +516,8 @@ func spanLines(parsed *jomini.Result, span jomini.Range, limit int) []string {
 // block, one per condition, is its text key's value; the first name is kept.
 func option(sess *session.Session, block *jomini.Block, line int) Option {
 	other := Option{Line: line}
-	for _, st := range block.Statements {
-		assignment, ok := st.(*jomini.Assignment)
+	for _, statement := range block.Statements {
+		assignment, ok := statement.(*jomini.Assignment)
 		if !ok || assignment.Key.Text != "name" || other.Name != "" {
 			continue
 		}
@@ -466,7 +532,7 @@ func option(sess *session.Session, block *jomini.Block, line int) Option {
 		if scalar, ok := value.(*jomini.Scalar); ok {
 			other.Name = scalar.Text
 			if said, ok := sess.Loc(scalar.Text, ""); ok {
-				other.Text = said.Value
+				other.Text = said.Text
 			}
 		}
 	}

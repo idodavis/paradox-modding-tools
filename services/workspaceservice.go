@@ -12,6 +12,7 @@ import (
 	"uuid"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/steam"
@@ -32,22 +33,28 @@ func (w *WorkspaceService) ListGames() game.GameList {
 	return game.GameList{OriginVanilla: game.OriginVanilla, Games: game.All()}
 }
 
-// ListGameInstalls returns a game's installs, each with its cache time and whether it exists.
+// ListGameInstalls returns a game's installs, each with its scan time and whether it exists.
 func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error) {
 	var out []GameInstall
+	languages := map[string]string{} // by install id: the language of the first workspace on it
 	w.Config.read(func(cfg *Config) {
 		for _, inst := range cfg.Installs {
 			if inst.GameID == gameID {
 				out = append(out, inst)
 			}
 		}
+		for _, ws := range cfg.Workspaces {
+			if _, found := languages[ws.InstallID]; !found {
+				languages[ws.InstallID] = ws.DefaultLocLang
+			}
+		}
 	})
 
-	// a stat and a cache header read per install, so the config lock is back before any of it
+	// a stat and a cache file's time per install, so the config lock is back before any of it
 	for i := range out {
 		_, err := os.Stat(out[i].Path)
 		out[i].IsBroken = err != nil
-		out[i].ScannedAt = local.ScannedAt(out[i].ID, out[i].Version)
+		out[i].ScannedAt = w.Session.scannedAt(&out[i], languages[out[i].ID])
 	}
 	return out, nil
 }
@@ -57,24 +64,27 @@ func (w *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstal
 	return game.FindInstalls(gameID)
 }
 
-// DetectGameVersion reads version from launcher-settings.json.
-func (w *WorkspaceService) DetectGameVersion(path string) string {
-	return game.ReadGameVersion(path)
+// DetectGameVersion reads an install's version (launcher-settings.json, else the Steam manifest).
+func (w *WorkspaceService) DetectGameVersion(gameID, path string) string {
+	info := game.Get(gameID)
+	if info == nil {
+		return ""
+	}
+	return game.ReadGameVersion(path, info.SteamAppID)
 }
 
-// AddGameInstall adds a new game installation. version empty → detected or latest.
-func (w *WorkspaceService) AddGameInstall(gameID, name, path, version string) (*GameInstall, error) {
-	if game.Get(gameID) == nil {
+// AddGameInstall adds a new game installation, with the version it holds now.
+func (w *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInstall, error) {
+	info := game.Get(gameID)
+	if info == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
 	}
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
-	detected := game.ReadGameVersion(path)
-	version = cmp.Or(version, detected)
 	inst := GameInstall{
 		ID: uuid.New().String(), GameID: gameID, Name: name, Path: path,
-		Version: version, VersionDetected: detected, CreatedAt: nowUTC(),
+		VersionDetected: game.ReadGameVersion(path, info.SteamAppID), CreatedAt: nowUTC(),
 	}
 	err := w.Config.mutate(func(cfg *Config) error {
 		cfg.Installs = append(cfg.Installs, inst)
@@ -99,10 +109,14 @@ func (w *WorkspaceService) UpdateGameInstall(id, path string) (*GameInstall, err
 		if inst == nil {
 			return fmt.Errorf("install not found")
 		}
+		info := game.Get(inst.GameID)
+		if info == nil {
+			return fmt.Errorf("unknown game %s", inst.GameID)
+		}
 		if path != "" {
 			inst.Path = path
 		}
-		inst.VersionDetected = game.ReadGameVersion(inst.Path)
+		inst.VersionDetected = game.ReadGameVersion(inst.Path, info.SteamAppID)
 		cp := *inst
 		out = &cp
 		return nil
@@ -113,18 +127,6 @@ func (w *WorkspaceService) UpdateGameInstall(id, path string) (*GameInstall, err
 	return out, nil
 }
 
-// SetInstallVersion pins the cache-key version (user override; empty → latest).
-func (w *WorkspaceService) SetInstallVersion(id, version string) error {
-	return w.Config.mutate(func(cfg *Config) error {
-		inst := findInstall(cfg, id)
-		if inst == nil {
-			return fmt.Errorf("install not found")
-		}
-		inst.Version = version
-		return nil
-	})
-}
-
 // DeleteGameInstall removes an install if no workspace uses it.
 func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err error) {
 	w.Config.read(func(cfg *Config) {
@@ -133,8 +135,10 @@ func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err err
 	if len(inUse) > 0 {
 		return inUse, fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))
 	}
-	if err := local.DropInstall(id); err != nil {
-		return nil, err
+	if inst := w.Session.install(id); inst != nil {
+		if err := index.DropInstall(index.Request{Game: inst.GameID, Dir: inst.Path}); err != nil {
+			return nil, err
+		}
 	}
 	return nil, w.Config.mutate(func(cfg *Config) error {
 		kept := cfg.Installs[:0]
@@ -424,9 +428,8 @@ func (w *WorkspaceService) UpdateWorkspaceMod(
 	})
 }
 
-// SetWorkspaceModCalendar declares the eras a mod's date literals are written in, apart from
-// UpdateWorkspaceMod because a calendar is set once and rarely. Each name is trimmed and an unnamed
-// era dropped; an empty list clears it, and a cleared calendar leaves every date exactly as written.
+// SetWorkspaceModCalendar declares the eras a mod's dates are written in: names trimmed, unnamed
+// eras dropped; an empty list clears it, leaving every date as written.
 func (w *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, eras session.Calendar) error {
 	err := w.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Eras = nil

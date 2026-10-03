@@ -107,8 +107,8 @@ func (s *LogService) ServiceShutdown() error {
 	return s.file.Close()
 }
 
-// diagnostics is the report: the app's version, the OS, each install with its version and when it
-// was scanned, the last scan's stage times, and the log's last 200 lines.
+// diagnostics is the report: the app's version, the OS, each install with its version, the last
+// scan's stage times, and the log's last 200 lines.
 func (s *LogService) diagnostics() string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "Paradox Modding Tools %s\n", s.version)
@@ -129,7 +129,7 @@ func (s *LogService) diagnostics() string {
 		s.Config.read(func(cfg *Config) { installs = slices.Clone(cfg.Installs) })
 	}
 	for _, install := range installs {
-		fmt.Fprintf(&out, "Install: %s %s, version %s, scanned %s\n", install.GameID, install.Name, cmp.Or(install.Version, install.VersionDetected), cmp.Or(local.ScannedAt(install.ID, install.Version), "never"))
+		fmt.Fprintf(&out, "Install: %s %s, version %s\n", install.GameID, install.Name, install.VersionDetected)
 	}
 
 	raw, _ := os.ReadFile(s.file.Name())

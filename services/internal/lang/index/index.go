@@ -1,548 +1,352 @@
-// Package index is what a scan found: the file inventory, and the definitions, references, edges
-// and localization entries written in the files, for an install and for a workspace's mods. It
-// infers nothing: every database, key and rule about what a written word is comes from the schema
-// and its reader; the index records where things are and answers whether they exist.
-//
-// index.go is the records, the lookups over them, and load order. Only the five slices are stored;
-// the lookups are rebuilt, since decoded postings would each sit in an over-grown slice.
+// Package index holds, per file, the definitions, references and localization entries a walk
+// produced. Names resolve at query time across indexes, never when a file is added.
 package index
 
 import (
-	"cmp"
-	"path"
-	"path/filepath"
-	"runtime"
+	"iter"
+	"maps"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/loc"
+	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/source"
 )
 
-// Index is what one scan found. There is one for the install and one for the workspace's mods.
-type Index struct {
-	Roots []string      // the folders that mirror the game layout: the game folder and each DLC folder, or each mod
-	Files []source.File // the inventory: each file's path, rel, origin and format; the only catalogue of binary files
-	Defs  []Def
-	Refs  []Ref
-	Edges []Edge
-	Loc   []Loc
+// Localization and File are the databases a loc key and a file path name; no definition carries
+// them, so Resolve answers them from the loc entries and the inventories. Parameter holds a
+// scripted entry's $NAME$ parameters, each named <entry>:<NAME> where defined and where passed.
+const (
+	Localization = "localization"
+	File         = "file"
+	Parameter    = "parameter"
+)
 
-	Replaced         []string           // workspace only: lower-cased replace_path folders, where no install file loads
-	defs, refs, locs map[string][]int32 // definitions by name, references by name, loc entries by key
-	from, to         map[string][]int32 // edges by either end
-	bases            map[string][]int32 // files by lower-cased base name
-	stems            map[string]int32   // a file by its lower-cased base name without the extension
-	rels, paths      map[string]int32   // a file by lower-cased rel (the last root's wins) and by PathKey
-	relOf            []string           // each file's lower-cased rel
-	owned            map[int32]*owns    // a live index only: what each file added, so an edit can take it back
-	shared           map[string]string  // each word kept once, cloned so it does not pin its file's text
-}
-
-// Def is one definition found in a file.
+// Def is one definition of a name; Mode is the entry word written before it, "" for none.
 type Def struct {
-	Database string `json:"database"`         // the database it belongs to
-	Name     string `json:"name"`             // its name, found the way Database.Naming says
-	Parent   string `json:"parent,omitempty"` // nested: the definition it sits inside; a parameter: its scripted effect
-	Mode     string `json:"mode,omitempty"`   // the entry mode written before the name: REPLACE, INJECT. "" if none
-	Scope    string `json:"scope,omitempty"`  // saved_scopes only: the scope type at the save site
-	File     int32  `json:"file"`             // index into Index.Files; -1 once the file that held it was dropped
-	Line     int32  `json:"line"`
-	Col      int32  `json:"col"`
+	Database, Name, Mode, Path string
+	Range                      jomini.Range
+	Line, Col                  int32 // where Range starts, 0-based
 }
 
-// Ref is one written word that names something: a definition, a loc key or a file.
+// Ref is a name the walk reads as naming something: an entry of Database (Localization and File
+// included), or a call, Called set and Database "".
 type Ref struct {
-	Type     schema.WordType `json:"type"`               // Ref | Loc | File
-	Database string          `json:"database,omitempty"` // Ref: the database of the definition named
-	Name     string          `json:"name"`
-	Parent   string          `json:"parent,omitempty"`
-	Declared bool            `json:"declared,omitempty"` // copied from the Value it was read as
-	File     int32           `json:"file"`
-	Line     int32           `json:"line"`
-	Col      int32           `json:"col"`
+	Database, Name, Path string
+	Called               string // the block kind a call is written in (trigger, effect); "*" undeclared (D-29)
+	Range                jomini.Range
+	Line, Col            int32 // where Range starts, 0-based
+	From                 int32 // the enclosing definition's index in its file's Records.Defs, -1 none
+	InTrigger            bool
 }
 
-// Edge is one place where one definition fires or invokes another: the event graph's arrows.
-type Edge struct {
-	FromDatabase string `json:"fromDatabase"` // the definition the site is written in
-	From         string `json:"from"`
-	ToDatabase   string `json:"toDatabase"` // the definition fired or invoked
-	To           string `json:"to"`
-	Via          string `json:"via"` // the command at the site: trigger_event, on_actions, the scripted effect's own name
-	File         int32  `json:"file"`
-	Line         int32  `json:"line"`
-}
-
-// Loc is one localization entry and the file it is written in; the file's path says its language.
+// Loc is one localization entry.
 type Loc struct {
-	loc.Entry
-	File int32
+	Key, Language, Text, Path string
+	Line                      int
 }
 
-// owns is what one file added to a live index, as positions in its slices.
-type owns struct{ defs, refs, edges, loc []int32 }
-
-// Records is what one file holds, before it has a place in an index.
+// Records is one file's definitions, references and localization entries, never changed once added.
 type Records struct {
-	File  source.File
-	Defs  []Def
-	Refs  []Ref
-	Edges []Edge
-	Loc   []loc.Entry
+	Defs   []Def
+	Refs   []Ref
+	Loc    []Loc
+	scoped map[[2]string]bool // the walk's Pairs, moved into Index.Scoped by Add
 }
 
-// Found is one definition with its file, which load order is decided on; a Def's File means nothing
-// outside its own index.
-type Found struct {
-	Def
-	At source.File `json:"at"`
+// Index is one inventory with the records of its files.
+type Index struct {
+	Files    []source.File        // the inventory, as source.Inventory lists it
+	Roots    []string             // the folders Files lists, in load order; a path under one belongs to it
+	Replaced []string             // mods: folders whose earlier files the game does not load
+	Records  map[string]*Records  // by path
+	Repeated map[string]bool      // databases where two of its files define one name; Ready resets, Add marks
+	Scoped   map[[2]string]bool   // each Pair its files write; kept in the cache, never reset (D-34)
+	order    map[string]int       // a lower-case path → position in Files
+	rels     map[string]int       // a lower-case Rel → the last position in Files holding it
+	defs     map[[2]string][]*Def // by database and name
+	refs     map[[2]string][]*Ref // by database and name
+	locs     map[string][]*Loc    // by key
 }
 
-// Cited is one reference with the file it is written in.
-type Cited struct {
-	Ref
-	At source.File `json:"at"`
-}
-
-// Said is one localization entry with the file it is written in.
-type Said struct {
-	loc.Entry
-	At source.File `json:"at"`
-}
-
-// Contest is a name more than one origin defines, in load order, and which one the game keeps.
-type Contest struct {
-	Database, Name string
-	Found          []Found
-	Winner         int  // the position in Found of the definition the game keeps
-	FirstWins      bool // the database's rule in this game
-}
-
-// PathKey is the one spelling two paths of one file share: cleaned, and lower-cased on Windows,
-// where the file system folds case. The editor keys its tabs by the caller's spelling, which every
-// record keeps; only the lookup folds.
-func PathKey(path string) string {
-	path = filepath.Clean(path)
-	if runtime.GOOS == "windows" {
-		return strings.ToLower(path)
-	}
-	return path
-}
-
-// At is the inventory's file at a path.
-func (idx *Index) At(path string) (source.File, bool) {
-	idx.Ready()
-	at, ok := idx.paths[PathKey(path)]
-	if !ok {
-		return source.File{}, false
-	}
-	return idx.Files[at], true
-}
-
-// Ready builds the lookups of an index loaded or filled without them. Every lookup calls it; a scan
-// calls it once before readers share the index, since building is the one write a lookup makes.
-func (idx *Index) Ready() {
+// Add stores a file's records and lists its definitions, references and loc entries by name. A
+// path already added is dropped first by the caller.
+func (idx *Index) Add(records *Records, path string) {
 	if idx.defs == nil {
-		idx.defs, idx.refs, idx.locs, idx.bases = map[string][]int32{}, map[string][]int32{}, map[string][]int32{}, map[string][]int32{}
-		idx.from, idx.to = map[string][]int32{}, map[string][]int32{}
-		idx.rels, idx.paths, idx.stems, idx.shared = map[string]int32{}, map[string]int32{}, map[string]int32{}, map[string]string{}
-		idx.relOf = nil
-		idx.post(0, 0, 0, 0, 0)
+		idx.Ready()
+	}
+	idx.Records[path] = records
+	if records.scoped != nil {
+		maps.Copy(idx.Scoped, records.scoped)
+		records.scoped = nil
+	}
+	for i := range records.Defs {
+		def := &records.Defs[i]
+		key := [2]string{def.Database, def.Name}
+		if list := idx.defs[key]; def.Name != "" && len(list) > 0 && list[0].Path != def.Path {
+			idx.Repeated[def.Database] = true
+		}
+		idx.defs[key] = append(idx.defs[key], def)
+	}
+	for i := range records.Refs {
+		ref := &records.Refs[i]
+		key := [2]string{ref.Database, ref.Name}
+		idx.refs[key] = append(idx.refs[key], ref)
+	}
+	for i := range records.Loc {
+		entry := &records.Loc[i]
+		idx.locs[entry.Key] = append(idx.locs[entry.Key], entry)
 	}
 }
 
-// post adds every file, definition, reference, edge and loc entry from the given positions on.
-func (idx *Index) post(fromFile, fromDef, fromRef, fromEdge, fromLoc int) {
-	for i := fromFile; i < len(idx.Files); i++ {
-		rel := strings.ToLower(idx.Files[i].Rel)
-		base := path.Base(rel)
-		idx.rels[rel], idx.paths[PathKey(idx.Files[i].Path)], idx.bases[base], idx.stems[strings.TrimSuffix(base, path.Ext(base))] = int32(i), int32(i), append(idx.bases[base], int32(i)), int32(i)
-		idx.relOf = append(idx.relOf, rel)
-	}
-	for i := fromDef; i < len(idx.Defs); i++ {
-		idx.defs[idx.Defs[i].Name] = append(idx.defs[idx.Defs[i].Name], int32(i))
-	}
-	for i := fromRef; i < len(idx.Refs); i++ {
-		idx.refs[idx.Refs[i].Name] = append(idx.refs[idx.Refs[i].Name], int32(i))
-	}
-	for i := fromEdge; i < len(idx.Edges); i++ {
-		idx.from[idx.Edges[i].From], idx.to[idx.Edges[i].To] = append(idx.from[idx.Edges[i].From], int32(i)), append(idx.to[idx.Edges[i].To], int32(i))
-	}
-	for i := fromLoc; i < len(idx.Loc); i++ {
-		idx.locs[idx.Loc[i].Key] = append(idx.locs[idx.Loc[i].Key], int32(i))
-	}
-}
-
-// own is the one kept copy of a word.
-func (idx *Index) own(word string) string {
-	if kept, ok := idx.shared[word]; ok || word == "" {
-		return kept
-	}
-	if idx.shared == nil {
-		idx.shared = map[string]string{}
-	}
-	idx.shared[strings.Clone(word)] = strings.Clone(word)
-	return idx.shared[word]
-}
-
-// Add gives a file's harvest its place: the file joins the inventory if it is new, and every record
-// is filed under its name.
-func (idx *Index) Add(records *Records) {
-	idx.Ready()
-	fromFile, fromDef, fromRef, fromEdge, fromLoc := len(idx.Files), len(idx.Defs), len(idx.Refs), len(idx.Edges), len(idx.Loc)
-	at, known := idx.paths[PathKey(records.File.Path)]
-	if !known {
-		at, idx.Files = int32(len(idx.Files)), append(idx.Files, records.File)
-	} else if idx.Files[at] != records.File {
-		idx.Files[at] = records.File
-	}
-
-	mine := idx.owned[at]
-	if mine == nil {
-		mine = &owns{}
-	}
-	for _, def := range records.Defs {
-		def.Database, def.Name, def.Parent, def.Mode, def.Scope = idx.own(def.Database), idx.own(def.Name), idx.own(def.Parent), idx.own(def.Mode), idx.own(def.Scope)
-		def.File = at
-		mine.defs, idx.Defs = append(mine.defs, int32(len(idx.Defs))), append(idx.Defs, def)
-	}
-	for _, ref := range records.Refs {
-		ref.Database, ref.Name, ref.Parent = idx.own(ref.Database), idx.own(ref.Name), idx.own(ref.Parent)
-		ref.File = at
-		mine.refs, idx.Refs = append(mine.refs, int32(len(idx.Refs))), append(idx.Refs, ref)
-	}
-	for _, edge := range records.Edges {
-		edge.FromDatabase, edge.From, edge.ToDatabase, edge.To, edge.Via = idx.own(edge.FromDatabase), idx.own(edge.From), idx.own(edge.ToDatabase), idx.own(edge.To), idx.own(edge.Via)
-		edge.File = at
-		mine.edges, idx.Edges = append(mine.edges, int32(len(idx.Edges))), append(idx.Edges, edge)
-	}
-	for _, entry := range records.Loc {
-		entry.Key, entry.Value = idx.own(entry.Key), strings.Clone(entry.Value)
-		mine.loc, idx.Loc = append(mine.loc, int32(len(idx.Loc))), append(idx.Loc, Loc{Entry: entry, File: at})
-	}
-	if idx.owned != nil {
-		idx.owned[at] = mine
-	}
-	idx.post(fromFile, fromDef, fromRef, fromEdge, fromLoc)
-}
-
-// Drop takes back everything the file at path added. Each record leaves the lookups but keeps its
-// slot with File -1, so the slices never move under a reader. Only a live index can drop. A gone
-// (deleted) file also leaves the paths, and its rel falls back to the last other file of that rel.
-func (idx *Index) Drop(filePath string, gone bool) {
-	idx.Ready()
-	at, known := idx.paths[PathKey(filePath)]
-	mine := idx.owned[at]
-	if !known || mine == nil {
+// Drop removes a file's records and their entries in the per-name lists.
+func (idx *Index) Drop(path string) {
+	records := idx.Records[path]
+	if records == nil {
 		return
 	}
-	if gone {
-		rel := idx.relOf[at]
-		delete(idx.paths, PathKey(filePath))
-		delete(idx.rels, rel)
-		for i, file := range slices.Backward(idx.Files) {
-			if _, kept := idx.paths[PathKey(file.Path)]; kept && idx.relOf[i] == rel {
-				idx.rels[rel] = int32(i)
-				break
-			}
+	for i := range records.Defs {
+		def := &records.Defs[i]
+		key := [2]string{def.Database, def.Name}
+		if list := slices.DeleteFunc(idx.defs[key], func(other *Def) bool { return other == def }); len(list) > 0 {
+			idx.defs[key] = list
+		} else {
+			delete(idx.defs, key)
 		}
 	}
-	without := func(posting map[string][]int32, name string, i int32) {
-		if posting[name] = slices.DeleteFunc(posting[name], func(position int32) bool { return position == i }); len(posting[name]) == 0 {
-			delete(posting, name)
+	for i := range records.Refs {
+		ref := &records.Refs[i]
+		key := [2]string{ref.Database, ref.Name}
+		if list := slices.DeleteFunc(idx.refs[key], func(other *Ref) bool { return other == ref }); len(list) > 0 {
+			idx.refs[key] = list
+		} else {
+			delete(idx.refs, key)
 		}
 	}
-	for _, at := range mine.defs {
-		without(idx.defs, idx.Defs[at].Name, at)
-		idx.Defs[at].File = -1
-	}
-	for _, at := range mine.refs {
-		without(idx.refs, idx.Refs[at].Name, at)
-		idx.Refs[at].File = -1
-	}
-	for _, at := range mine.edges {
-		without(idx.from, idx.Edges[at].From, at)
-		without(idx.to, idx.Edges[at].To, at)
-		idx.Edges[at].File = -1
-	}
-	for _, at := range mine.loc {
-		without(idx.locs, idx.Loc[at].Key, at)
-		idx.Loc[at].File = -1
-	}
-	delete(idx.owned, at)
-}
-
-// Referring is every reference to a name, of any database, with its file.
-func (idx *Index) Referring(name string) []Cited {
-	idx.Ready()
-	var out []Cited
-	for _, at := range idx.refs[name] {
-		out = append(out, Cited{Ref: idx.Refs[at], At: idx.Files[idx.Refs[at].File]})
-	}
-	return out
-}
-
-// Fires is every edge out of a definition, and FiredBy every edge into one.
-func (idx *Index) Fires(name string) []Edge   { return idx.edges(idx.from, name) }
-func (idx *Index) FiredBy(name string) []Edge { return idx.edges(idx.to, name) }
-
-// edges is the edges a posting lists for a name.
-func (idx *Index) edges(posting map[string][]int32, name string) []Edge {
-	idx.Ready()
-	var out []Edge
-	for _, at := range posting[name] {
-		out = append(out, idx.Edges[at])
-	}
-	return out
-}
-
-// Find is the file a written word names, by three lookups in turn: the path from a root, the file
-// name anywhere, the same name under another extension (.tga written, .dds shipped).
-func (idx *Index) Find(name string) (source.File, bool) {
-	idx.Ready()
-	name = strings.ToLower(strings.ReplaceAll(name, "\\", "/"))
-	base := path.Base(name)
-	if at, ok := idx.rels[name]; ok {
-		return idx.Files[at], true
-	}
-	if len(idx.bases[base]) > 0 {
-		return idx.Files[idx.bases[base][0]], true
-	}
-	if at, ok := idx.stems[strings.TrimSuffix(base, path.Ext(base))]; ok && path.Ext(base) != "" {
-		return idx.Files[at], true
-	}
-	return source.File{}, false
-}
-
-// All answers from several indexes together (schema.Defined): a workspace's mods and the install
-// beneath them. What a file the game does not load holds does not exist.
-type All []*Index
-
-// Loaded reports a file of idx the game reads: not dropped, the last of its rel in its own index
-// (roots and mods come in load order), not an install file another index ships at its rel, and in
-// no folder another index replaces.
-func (all All) Loaded(idx *Index, file int32) bool {
-	if file < 0 {
-		return false
-	}
-	idx.Ready()
-	rel := idx.relOf[file]
-	if at, ok := idx.rels[rel]; ok && at != file {
-		return false
-	}
-	vanilla, folder := idx.Files[file].Origin == game.OriginVanilla, path.Dir(rel)
-	return !slices.ContainsFunc(all, func(other *Index) bool {
-		if other == idx {
-			return false
-		}
-		other.Ready()
-		_, shipped := other.rels[rel]
-		return vanilla && shipped || slices.Contains(other.Replaced, folder)
-	})
-}
-
-// Named is every definition of that name the game loads, of any database, with its file.
-func (all All) Named(name string) []Found {
-	var out []Found
-	for _, idx := range all {
-		idx.Ready()
-		for _, at := range idx.defs[name] {
-			if all.Loaded(idx, idx.Defs[at].File) {
-				out = append(out, Found{Def: idx.Defs[at], At: idx.Files[idx.Defs[at].File]})
-			}
+	for i := range records.Loc {
+		entry := &records.Loc[i]
+		if list := slices.DeleteFunc(idx.locs[entry.Key], func(other *Loc) bool { return other == entry }); len(list) > 0 {
+			idx.locs[entry.Key] = list
+		} else {
+			delete(idx.locs, entry.Key)
 		}
 	}
-	return out
+	delete(idx.Records, path)
 }
 
-// Def reports a definition of that database and name in a file the game loads, from the postings.
-func (all All) Def(database, name string) bool {
-	for _, idx := range all {
-		idx.Ready()
-		for _, at := range idx.defs[name] {
-			if idx.Defs[at].Database == database && all.Loaded(idx, idx.Defs[at].File) {
-				return true
-			}
+// Ready builds the lookup maps from Files and Records, after a cache load; Add keeps them current.
+// A record of a path no longer in Files is dropped.
+func (idx *Index) Ready() {
+	cached := idx.Records
+	idx.Records = make(map[string]*Records, len(cached))
+	idx.order, idx.rels = make(map[string]int, len(idx.Files)), make(map[string]int, len(idx.Files))
+	idx.defs, idx.refs, idx.locs = map[[2]string][]*Def{}, map[[2]string][]*Ref{}, map[string][]*Loc{}
+	idx.Repeated = map[string]bool{}
+	if idx.Scoped == nil {
+		idx.Scoped = map[[2]string]bool{}
+	}
+	for i, file := range idx.Files {
+		idx.order[strings.ToLower(file.Path)] = i
+		idx.rels[strings.ToLower(file.Rel)] = i
+		if records := cached[file.Path]; records != nil {
+			idx.Add(records, file.Path)
 		}
 	}
-	return false
 }
 
-// Loc reports a key with an entry in a file the game loads.
-func (all All) Loc(key string) bool {
-	for _, idx := range all {
-		idx.Ready()
-		for _, at := range idx.locs[key] {
-			if all.Loaded(idx, idx.Loc[at].File) {
-				return true
-			}
-		}
+// At is the file listed at a path, whatever the case it is spelled in (Windows spells one by any).
+func (idx *Index) At(path string) (source.File, bool) {
+	pos, listed := idx.order[strings.ToLower(path)]
+	if !listed {
+		return source.File{}, false
 	}
-	return false
+	return idx.Files[pos], true
 }
 
-// DefinedBy is the one database defining a name among the files the game loads; "" for none or
-// several. Script-made names, constants, parameters and sounds are never a guess.
-func (all All) DefinedBy(name string) string {
-	found := ""
-	for _, idx := range all {
-		idx.Ready()
-		for _, at := range idx.defs[name] {
-			database := idx.Defs[at].Database
-			_, made := schema.ScriptMade[database]
-			never := made || database == "constants" || database == "params" || strings.HasPrefix(database, "sound.")
-			if never || database == found || !all.Loaded(idx, idx.Defs[at].File) {
-				continue
-			}
-			if found != "" {
-				return ""
-			}
-			found = database
-		}
-	}
-	return found
-}
-
-// Entries is every entry of a key the game loads, in the indexes' order.
-func (all All) Entries(key string) []Said {
-	var out []Said
-	for _, idx := range all {
-		idx.Ready()
-		for _, at := range idx.locs[key] {
-			if all.Loaded(idx, idx.Loc[at].File) {
-				out = append(out, Said{Entry: idx.Loc[at].Entry, At: idx.Files[idx.Loc[at].File]})
-			}
-		}
-	}
-	return out
-}
-func (all All) File(name string) bool {
-	_, ok := all.Find(name)
-	return ok
-}
-
-// Find is the file a written word names, the last index's first, leaving out a file in a folder
-// another index replaces.
-func (all All) Find(name string) (source.File, bool) {
-	for _, idx := range slices.Backward(all) {
-		if file, ok := idx.Find(name); ok && all.Loaded(idx, idx.paths[PathKey(file.Path)]) {
-			return file, true
+// FileAt is the file at a Rel across the indexes, whatever its case: the last index's that lists
+// it, at its last place there.
+func FileAt(indexes []*Index, rel string) (source.File, bool) {
+	for _, idx := range slices.Backward(indexes) {
+		if pos, listed := idx.rels[strings.ToLower(rel)]; listed {
+			return idx.Files[pos], true
 		}
 	}
 	return source.File{}, false
 }
 
-// Before orders two definitions by load order: their origins' place in the playset, then file name
-// in ASCII order with a folder's own files before its subfolders' (the Vic3 and EU5 wikis, Mod
-// compatibility), then line.
-func Before(first, second Found, order []string) int {
-	folderA, folderB := path.Dir(strings.ToLower(first.At.Rel)), path.Dir(strings.ToLower(second.At.Rel))
-	return cmp.Or(
-		cmp.Compare(slices.Index(order, first.At.Origin), slices.Index(order, second.At.Origin)),
-		cmp.Compare(strings.Count(folderA, "/"), strings.Count(folderB, "/")),
-		strings.Compare(folderA, folderB),
-		strings.Compare(path.Base(strings.ToLower(first.At.Rel)), path.Base(strings.ToLower(second.At.Rel))),
-		cmp.Compare(first.Line, second.Line),
-	)
+// Forget removes a deleted file from the index: its records and its place in Files, so it no longer
+// hides a file at its Rel.
+func (idx *Index) Forget(path string) {
+	pos, listed := idx.order[strings.ToLower(path)]
+	if !listed {
+		return
+	}
+	idx.Files = slices.Delete(idx.Files, pos, pos+1)
+	idx.Ready()
 }
 
-// Winner is the definition the game keeps of several with one database and name, and its position
-// once Winner has sorted them into load order in place. Plain definitions come first, then each
-// entry mode in the registry's order; load order decides only within one mode. Among plain
-// definitions a database is first-wins or last-wins; a replace takes the place of what was kept; an
-// inject adds to it and never displaces it; a mode that creates is kept where nothing was. order is
-// the origins in playset order, the install first.
-func Winner(definitions []Found, firstWins bool, modes []game.EntryMode, order []string) (Found, int) {
-	rank := func(definition Found) int {
-		return 1 + slices.IndexFunc(modes, func(mode game.EntryMode) bool { return mode.Word == definition.Mode })
-	}
-	slices.SortStableFunc(definitions, func(first, second Found) int {
-		return cmp.Or(cmp.Compare(rank(first), rank(second)), Before(first, second, order))
-	})
+// LocKeys is every key a loc entry has, in no order.
+func (idx *Index) LocKeys() iter.Seq[string] {
+	return maps.Keys(idx.locs)
+}
 
-	kept := -1
-	for i, definition := range definitions {
-		if rank(definition) == 0 {
-			if kept < 0 || !firstWins {
-				kept = i
-			}
+// Loaded is the file listed at a path of the indexes and whether the game loads it (D-30): it is
+// hidden by a later file at its Rel, in its index or a later one, or by a later index's Replaced.
+func Loaded(indexes []*Index, path string) (source.File, bool) {
+	path = strings.ToLower(path)
+	for rank, idx := range indexes {
+		pos, listed := idx.order[path]
+		if !listed {
 			continue
 		}
-		if mode := modes[rank(definition)-1]; (mode.Replaces && (kept >= 0 || mode.Creates || !mode.Optional)) || (kept < 0 && mode.Creates) {
-			kept = i
-		}
+		rel := strings.ToLower(idx.Files[pos].Rel)
+		return idx.Files[pos], idx.rels[rel] <= pos && !slices.ContainsFunc(indexes[rank+1:], func(later *Index) bool {
+			_, shipped := later.rels[rel]
+			return shipped || slices.ContainsFunc(later.Replaced, func(folder string) bool {
+				return strings.HasPrefix(rel, strings.ToLower(folder)+"/")
+			})
+		})
 	}
-	if kept < 0 {
-		return Found{}, -1
-	}
-	return definitions[kept], kept
+	return source.File{}, false
 }
 
-// Contests is every name of a file-defined database that more than one origin defines, sorted by
-// database and name. Script-made names, constants, parameters, history and nested entries never
-// contest: nothing loads one over another, or a mod replaces the entry around them. A define
-// contests by its group and name (NGame|START_DATE), and a group never does.
-func Contests(all All, schema *schema.Schema, firstWins func(database string) bool, modes []game.EntryMode, order []string) []Contest {
-	type id struct{ kind, name string }
-	found := map[id][]Found{}
-	for _, idx := range all {
-		for _, def := range idx.Defs {
-			database := schema.Databases[def.Database]
-			define, group := strings.HasSuffix(def.Database, ".define"), schema.Databases[def.Database+".define"] != nil
-			filed := database != nil && len(database.HistoryOf) == 0 && (len(database.Folders) > 0 || define) && !group
-			if filed && all.Loaded(idx, def.File) {
-				at := id{def.Database, def.Name}
-				if define {
-					at.name = def.Parent + "|" + def.Name
-				}
-				found[at] = append(found[at], Found{Def: def, At: idx.Files[def.File]})
+// gather is one name's items across the indexes in the game's load order (D-30), by Rel, those in
+// files the game loads.
+func gather[Item any](indexes []*Index, list func(idx *Index) []*Item, path func(item *Item) string) []Item {
+	type placed struct {
+		item *Item
+		rel  string
+	}
+	var found []placed
+	for _, idx := range indexes {
+		for _, item := range list(idx) {
+			if file, loaded := Loaded(indexes, path(item)); loaded {
+				found = append(found, placed{item: item, rel: strings.ToLower(file.Rel)})
 			}
 		}
 	}
 
-	var out []Contest
-	for at, defs := range found {
-		origins := map[string]bool{}
-		for _, def := range defs {
-			origins[def.At.Origin] = true
-		}
-		if len(origins) > 1 {
-			_, winner := Winner(defs, firstWins(at.kind), modes, order)
-			out = append(out, Contest{Database: at.kind, Name: at.name, Found: defs, Winner: winner, FirstWins: firstWins(at.kind)})
-		}
+	// equal Rels left are one file's items, kept in source order
+	slices.SortStableFunc(found, func(first, second placed) int { return strings.Compare(first.rel, second.rel) })
+	items := make([]Item, len(found))
+	for i, entry := range found {
+		items[i] = *entry.item
 	}
-	slices.SortFunc(out, func(first, second Contest) int {
-		return cmp.Or(strings.Compare(first.Database, second.Database), strings.Compare(first.Name, second.Name))
-	})
-	return out
+	return items
 }
 
-// Restore prepares an Install that has come back from a decoder: its slices are cut to their length
-// (a decoder grows them by doubling), its words are shared again, and its and its schema's lookups
-// are rebuilt.
-func (install *Install) Restore() {
-	idx := install.Index
-	idx.shared = map[string]string{}
-	idx.Files, idx.Defs, idx.Refs, idx.Edges, idx.Loc = slices.Clone(idx.Files), slices.Clone(idx.Defs), slices.Clone(idx.Refs), slices.Clone(idx.Edges), slices.Clone(idx.Loc)
-	for i := range idx.Defs {
-		def := &idx.Defs[i]
-		def.Database, def.Name, def.Parent, def.Mode, def.Scope = idx.own(def.Database), idx.own(def.Name), idx.own(def.Parent), idx.own(def.Mode), idx.own(def.Scope)
+// Lookup is every definition of a name across the indexes, in load order.
+func Lookup(indexes []*Index, database, name string) []Def {
+	return gather(indexes, func(idx *Index) []*Def { return idx.defs[[2]string{database, name}] },
+		func(def *Def) string { return def.Path })
+}
+
+// LookupRefs is every reference to a name across the indexes, in load order and hidden alike.
+func LookupRefs(indexes []*Index, database, name string) []Ref {
+	return gather(indexes, func(idx *Index) []*Ref { return idx.refs[[2]string{database, name}] },
+		func(ref *Ref) string { return ref.Path })
+}
+
+// LookupLocs is every localization entry of a key across the indexes, in load order.
+func LookupLocs(indexes []*Index, key string) []Loc {
+	return gather(indexes, func(idx *Index) []*Loc { return idx.locs[key] },
+		func(entry *Loc) string { return entry.Path })
+}
+
+// Names is every name defined in a database across the indexes, in load order, each once.
+func Names(indexes []*Index, database string) []string {
+	defs := gather(indexes, func(idx *Index) (found []*Def) {
+		for _, file := range idx.Files {
+			records := idx.Records[file.Path]
+			for i := 0; records != nil && i < len(records.Defs); i++ {
+				if records.Defs[i].Database == database {
+					found = append(found, &records.Defs[i])
+				}
+			}
+		}
+		return found
+	}, func(def *Def) string { return def.Path })
+
+	seen, names := map[string]bool{}, []string(nil)
+	for _, def := range defs {
+		if def.Name != "" && !seen[def.Name] {
+			seen[def.Name], names = true, append(names, def.Name)
+		}
 	}
-	for i := range idx.Refs {
-		ref := &idx.Refs[i]
-		ref.Database, ref.Name, ref.Parent = idx.own(ref.Database), idx.own(ref.Name), idx.own(ref.Parent)
+	return names
+}
+
+// Resolve is the one resolver of a reference: a call by its databases' CalledIn (D-24, D-29); a
+// scope saved from code, a loc key or a file path known with no definitions; else Lookup.
+func Resolve(sch *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known bool) {
+	switch {
+	case ref.Called != "":
+		for _, database := range sch.Callees[ref.Called] {
+			defs = append(defs, Lookup(indexes, database, ref.Name)...)
+		}
+	case ref.Database == game.NameCommands["save_scope_as"] && sch.Saved[ref.Name]:
+		return nil, true
+	case ref.Database == Localization:
+		return nil, slices.ContainsFunc(indexes, func(idx *Index) bool { return len(idx.locs[ref.Name]) > 0 })
+	case ref.Database == File:
+		_, listed := FileAt(indexes, ref.Name)
+		return nil, listed
+	default:
+		defs = Lookup(indexes, ref.Database, ref.Name)
 	}
-	for i := range idx.Edges {
-		edge := &idx.Edges[i]
-		edge.FromDatabase, edge.From, edge.ToDatabase, edge.To, edge.Via = idx.own(edge.FromDatabase), idx.own(edge.From), idx.own(edge.ToDatabase), idx.own(edge.To), idx.own(edge.Via)
+	return defs, len(defs) > 0
+}
+
+// Winner applies the entry modes to a name's definitions in Lookup's order, plain then each mode's:
+// the winner, its adds, INJECT/REPLACE orphans with no target, and whether two mods contest it.
+func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (winner Def, adds, orphans []Def, contested bool) {
+	found := false
+	for _, mode := range slices.Concat([]game.EntryMode{{}}, info.EntryModes) {
+		plain := mode.Word == ""
+		contends := plain || mode.Replaces
+		for _, def := range defs {
+			if def.Mode != mode.Word {
+				continue
+			}
+
+			// two mods contest when one takes, or tries to take, the other's place
+			if found && contends {
+				incoming, current := origin(def.Path), origin(winner.Path)
+				if incoming != current && incoming != game.OriginVanilla && current != game.OriginVanilla {
+					contested = true
+				}
+			}
+
+			switch {
+			case !found:
+				// nothing to act on: the definition creates its own, or, unless a TRY_ form, is an orphan
+				if plain || mode.Creates {
+					winner, found = def, true
+				} else if !mode.Optional {
+					orphans = append(orphans, def)
+				}
+			case plain && game.FirstWinsAt(info.ID, def.Database):
+				// the earlier plain definition holds
+			case contends:
+				winner, adds = def, nil
+			default:
+				adds = append(adds, def)
+			}
+		}
 	}
-	for i := range idx.Loc {
-		idx.Loc[i].Key = idx.own(idx.Loc[i].Key)
-	}
-	idx.shared = nil
-	idx.Ready()
-	install.Schema.BuildLookups()
+	return winner, adds, orphans, contested
+}
+
+// Fires is whether a reference fires its target: an event or on_action outside a trigger.
+func (ref Ref) Fires(sch *schema.Schema) bool {
+	database := sch.Databases[ref.Database]
+	return !ref.InTrigger && database != nil && (database.Naming.Events || database.Naming.OnActions)
+}
+
+// Runs is whether a reference outside a trigger runs a scripted entry, so what it fires is fired
+// through it: a call, or a name of a database called in effects.
+func (ref Ref) Runs(sch *schema.Schema) bool {
+	database := sch.Databases[ref.Database]
+	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Naming.CalledIn, "effect"))
 }

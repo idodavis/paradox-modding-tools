@@ -393,8 +393,8 @@ func Calls(text string, offset int) []Range {
 	return calls
 }
 
-// ParseCall reads one data call, with or without its brackets, into its steps; what does not
-// parse ends the steps, so a half-typed call gives the steps before it. The call ends at a | outside
+// ParseCall reads one data call, with or without its brackets, into its steps; what does not parse
+// ends the steps, so a half-typed call gives the steps before it. The call ends at a | outside
 // parentheses and quotes: [glory|E] is the step glory, written with the format E.
 func ParseCall(text string, offset int) []Step {
 	if strings.HasPrefix(text, "[") {

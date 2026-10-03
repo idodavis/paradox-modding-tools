@@ -118,7 +118,7 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
     workspace: true,
     help: [
       "Overview: name, default loc language, whether the IDE remembers open files, explorer hide-binaries, and which page Library should open.",
-      "Game: pick or add an install and pin a version. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then color, reorder, or detach. Detach does not delete the folder on disk. Per-mod description file paths and Workshop ignore live here.",
+      "Game: pick or add an install; its version is read from the install at each scan. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then color, reorder, or detach. Detach does not delete the folder on disk. Per-mod description file paths and Workshop ignore live here.",
       "Remove this workspace deletes the PMT record only. Reset all data lives on the Library page. Appearance (scale, editor font, which tools show) lives in the header Display control, not here.",
     ],
   },

@@ -1,6 +1,6 @@
 // jomini_test.go covers the parser/lexer: assignments, GUI templates, error
 // recovery, tagged blocks, byte-offset decoding, the line index and the walk;
-// and the name shapes, literals, cites, entry modes and interpolations of the shared grammar.
+// and the name shapes, literals, cites and interpolations of the shared grammar.
 
 package jomini
 
@@ -13,7 +13,6 @@ import (
 var (
 	defNameRe = regexp.MustCompile(`^[\p{L}\p{Nd}_][\p{L}\p{Nd}_.-]*$`)
 	eventIDRe = regexp.MustCompile(`^[\p{L}\p{Nd}_-]+\.\d+$`)
-	nameOKRe  = regexp.MustCompile(`^\p{Ll}[\p{Ll}\p{Nd}_]*$`)
 )
 
 // topKeys returns the keys of a source's top-level Assignment statements.
@@ -210,9 +209,6 @@ func TestNameShapes(t *testing.T) {
 			if got, want := IsEventID(input), eventIDRe.MatchString(input); got != want {
 				t.Errorf("IsEventID(%q) = %v, pattern says %v", input, got, want)
 			}
-			if got, want := IsLowerName(input), nameOKRe.MatchString(input); got != want {
-				t.Errorf("IsLowerName(%q) = %v, pattern says %v", input, got, want)
-			}
 		})
 	}
 
@@ -350,30 +346,6 @@ func TestSplitPrefixed(t *testing.T) {
 		got, ok := SplitPrefixed(testCase.text)
 		if ok != testCase.ok || got != testCase.want {
 			t.Errorf("Cite(%q) = %+v, %v; want %+v, %v", testCase.text, got, ok, testCase.want, testCase.ok)
-		}
-	}
-}
-
-func TestMode(t *testing.T) {
-	for _, testCase := range []struct{ key, mode, name string }{
-		{"INJECT:my_building", "INJECT", "my_building"},
-		{"REPLACE:my_building", "REPLACE", "my_building"},
-		{"TRY_INJECT:x", "TRY_INJECT", "x"},
-		{"REPLACE_OR_CREATE:x", "REPLACE_OR_CREATE", "x"},
-
-		// a word the registry has never heard of still splits, so the learner can report it as drift
-		{"APPEND:x", "APPEND", "x"},
-
-		// not a mode
-		{"my_building", "", "my_building"},
-		{"culture:english", "", "culture:english"},
-		{"Inject:x", "", "Inject:x"},
-		{"INJECT:", "", "INJECT:"},
-		{":x", "", ":x"},
-		{"", "", ""},
-	} {
-		if mode, name := Mode(testCase.key); mode != testCase.mode || name != testCase.name {
-			t.Errorf("Mode(%q) = %q, %q; want %q, %q", testCase.key, mode, name, testCase.mode, testCase.name)
 		}
 	}
 }

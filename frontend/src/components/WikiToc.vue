@@ -3,10 +3,10 @@
  * Left Contents rail for Guide and Patch Notes.
  */
 import { useLocalStorage } from "@vueuse/core";
-import type { WikiSection } from "@services/internal/lang/schema/models";
+import type { Section } from "@services/internal/wiki/models";
 
 const props = defineProps<{
-  sections: WikiSection[];
+  sections: Section[];
   active?: string;
 }>();
 
@@ -16,11 +16,11 @@ const emit = defineEmits<{
 
 const open = useLocalStorage("pmt.wiki.toc", true);
 
-function isGroup(s: WikiSection): boolean {
+function isGroup(s: Section): boolean {
   return (s.tocLevel || 1) <= 2;
 }
 
-function itemPad(s: WikiSection): string {
+function itemPad(s: Section): string {
   const n = Math.max(0, (s.tocLevel || 1) - 3);
   return `${0.5 + n * 0.5}rem`;
 }

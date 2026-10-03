@@ -38,11 +38,10 @@ type GameInstall struct {
 	GameID          string `json:"gameId"`
 	Name            string `json:"name"`
 	Path            string `json:"path"`
-	Version         string `json:"version"`
 	VersionDetected string `json:"versionDetected"`
 	IsBroken        bool   `json:"isBroken"` // derived by ListGameInstalls; whatever is on disk is ignored
 	CreatedAt       string `json:"createdAt"`
-	ScannedAt       string `json:"scannedAt,omitempty"`
+	ScannedAt       string `json:"scannedAt,omitempty"` // derived: its install built, else its cache written
 }
 
 // Workspace is a user-defined mod working environment tied to a game.
@@ -75,7 +74,7 @@ type WorkspaceMod struct {
 	WorkshopIgnore string `json:"workshopIgnore,omitempty"`
 	IsBroken       bool   `json:"isBroken"` // derived by markBroken; whatever is on disk is ignored
 	CreatedAt      string `json:"createdAt"`
-	// the eras of the mod's dates; set by hand, as no mod states them, and none leaves every date as written
+	// the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written
 	Eras session.Calendar `json:"eras,omitempty"`
 }
 

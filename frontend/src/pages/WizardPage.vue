@@ -18,7 +18,6 @@ import {
   AddWorkspaceMod,
   FindGameInstalls,
   DeleteGameInstall,
-  SetInstallVersion,
   SetWorkspaceLocLang,
 } from "@services/workspaceservice";
 
@@ -33,8 +32,6 @@ const selectedGame = ref(ctx.currentGameId);
 const selectedInstallId = ref<string | undefined>(undefined);
 const newInstallPath = ref("");
 const newInstallName = ref("");
-const newInstallVersion = ref("latest");
-const draftVersion = ref("latest");
 const defaultLocLang = ref("english");
 const modEntries = ref<{ path: string; thumbnail: string }[]>([]);
 const workspaceName = ref("");
@@ -57,19 +54,14 @@ const stepItems: StepperItem[] = [
 /** Install options for the radio group. */
 const installItems = computed(() =>
   installs.value.map((i) => ({
-    label: `${i.name} (${i.version || "latest"})${i.scannedAt ? " — cache ready" : ""}`,
+    label: `${i.name}${i.versionDetected ? ` (${i.versionDetected})` : ""}${i.scannedAt ? " — cache ready" : ""}`,
     description: i.path,
     value: i.id,
   })),
 );
 
 const selectedInstall = computed(() => installs.value.find((i) => i.id === selectedInstallId.value));
-const supportedVersion = computed(() => {
-  const i = selectedInstall.value;
-  if (!i) return "";
-  const v = i.versionDetected || i.version || "";
-  return v === "latest" ? "" : v;
-});
+const supportedVersion = computed(() => selectedInstall.value?.versionDetected ?? "");
 
 const canContinue = computed(() => {
   switch (step.value) {
@@ -115,12 +107,6 @@ watch(installs, (list) => {
   const keep = selectedInstallId.value;
   const next = list.find((i) => i.id === keep) ?? list[0];
   selectedInstallId.value = next?.id;
-  draftVersion.value = next?.version || "latest";
-});
-
-watch(selectedInstallId, (id) => {
-  const i = installs.value.find((x) => x.id === id);
-  draftVersion.value = i?.version || "latest";
 });
 
 const {
@@ -130,29 +116,11 @@ const {
 } = useMutation({
   mutation: async () => {
     if (!newInstallPath.value || !newInstallName.value) return;
-    const install = await AddGameInstall(
-      selectedGame.value,
-      newInstallName.value,
-      newInstallPath.value,
-      newInstallVersion.value || "latest",
-    );
+    const install = await AddGameInstall(selectedGame.value, newInstallName.value, newInstallPath.value);
     if (!install) throw new Error("Failed to create install");
     selectedInstallId.value = install.id;
     newInstallPath.value = "";
     newInstallName.value = "";
-    newInstallVersion.value = "latest";
-    await refetchInstalls();
-  },
-});
-
-const {
-  mutateAsync: saveSelectedVersion,
-  isLoading: savingVersion,
-  error: saveVerError,
-} = useMutation({
-  mutation: async () => {
-    if (!selectedInstallId.value) return;
-    await SetInstallVersion(selectedInstallId.value, draftVersion.value || "latest");
     await refetchInstalls();
   },
 });
@@ -232,14 +200,11 @@ const {
   },
 });
 
-const busy = computed(
-  () => installsPending.value || adding.value || savingVersion.value || deleting.value || creating.value,
-);
+const busy = computed(() => installsPending.value || adding.value || deleting.value || creating.value);
 const error = computed(
   () =>
     installError.value?.message ??
     addError.value?.message ??
-    saveVerError.value?.message ??
     deleteError.value?.message ??
     createError.value?.message ??
     "",
@@ -278,24 +243,8 @@ const error = computed(
                     <p v-else class="text-sm text-muted">No installs added yet.</p>
                     <div v-if="selectedInstall" class="space-y-2">
                       <p class="truncate text-xs text-muted">{{ selectedInstall.path }}</p>
-                      <UFormField label="Version pin">
-                        <div class="flex gap-2">
-                          <UInput v-model="draftVersion" placeholder="latest" />
-                          <UButton label="latest" size="xs" variant="outline" @click="draftVersion = 'latest'" />
-                          <UButton
-                            label="Save"
-                            size="xs"
-                            variant="outline"
-                            :loading="busy"
-                            @click="saveSelectedVersion()"
-                          />
-                        </div>
-                      </UFormField>
-                      <p class="text-xs text-muted">
-                        <template v-if="selectedInstall.versionDetected">
-                          detected: {{ selectedInstall.versionDetected }} from launcher/launcher-settings.json
-                        </template>
-                        <template v-else>no file — default latest, pin optional</template>
+                      <p v-if="selectedInstall.versionDetected" class="text-xs text-muted">
+                        detected: {{ selectedInstall.versionDetected }} from launcher/launcher-settings.json
                       </p>
                       <p class="text-xs text-muted">
                         {{
@@ -316,7 +265,6 @@ const error = computed(
                 <AddInstallCard
                   v-model:path="newInstallPath"
                   v-model:name="newInstallName"
-                  v-model:version="newInstallVersion"
                   :game-id="selectedGame"
                   :detected="detectedInstalls"
                   :saved-paths="savedInstallPaths"

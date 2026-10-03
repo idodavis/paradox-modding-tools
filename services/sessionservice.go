@@ -1,5 +1,5 @@
 // sessionservice.go owns the workspaces the editor has open: the pool of live sessions, the scan of
-// an install and the one slot that lets only one run at a time, and the health strip a page shows.
+// an install and the slot that lets one rebuild run at a time, and the health strip a page shows.
 // The events the frontend listens for are declared here too: a session became ready, a scan moved,
 // a cache was replaced, a mod's calendar or file changed, a wiki was refreshed.
 package services
@@ -9,17 +9,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/local"
+	"paradox-modding-tools/services/internal/lang/shipped"
 	"paradox-modding-tools/services/internal/session"
-	"paradox-modding-tools/services/internal/wiki"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/singleflight"
@@ -36,39 +33,30 @@ type SessionService struct {
 	smu      sync.RWMutex
 	sessions map[string]*session.Session
 	sf       singleflight.Group
-	slot     chan struct{} // one scan at a time
-	mu       sync.Mutex    // the queue
-	queue    []string
+	slot     chan struct{} // one rebuild at a time
+	scanned  sync.Map      // install id → time.Time: when its install was built, as this run last scanned or loaded it
 }
 
-// LanguageHealth is what the health strip shows: whether the session is live, what the install's
-// cache holds, and whether the dumps are there.
+// LanguageHealth is what the health strip shows: whether the session is live, and whose dumps the
+// live schema read and what it could not explain.
 type LanguageHealth struct {
-	WorkspaceID string        `json:"workspaceId"`
-	InstallID   string        `json:"installId"`
-	GameID      string        `json:"gameId"`
-	InstallOk   bool          `json:"installOk"`
-	GameVersion string        `json:"gameVersion"`
-	CacheStale  bool          `json:"cacheStale"` // no cache for the install, or one older than the game
-	ScannedAt   string        `json:"scannedAt"`
-	Scanning    bool          `json:"scanning"`
-	Ready       bool          `json:"ready"`
-	Dumps       []DumpHealth  `json:"dumps"`
-	Unread      schema.Unread `json:"unread"`
-	WatchError  string        `json:"watchError,omitempty"`
+	WorkspaceID string   `json:"workspaceId"`
+	InstallID   string   `json:"installId"`
+	GameID      string   `json:"gameId"`
+	InstallOk   bool     `json:"installOk"`
+	GameVersion string   `json:"gameVersion"`
+	ScannedAt   string   `json:"scannedAt,omitempty"`   // when the install was built, else its cache file written
+	UpdatedFrom string   `json:"updatedFrom,omitempty"` // the version this run's scan replaced, where it differs
+	Scanning    bool     `json:"scanning"`
+	Ready       bool     `json:"ready"`
+	Unread      []string `json:"unread"` // doc and wiki lines no rule reads
+	WatchError  string   `json:"watchError,omitempty"`
 
-	DumpsFrom        schema.DumpsFrom `json:"dumpsFrom"`              // whose each dump set the live schema read
-	DumpsVersion     string           `json:"dumpsVersion,omitempty"` // the shipped dumps' game version, where used
-	DataTypesCommand string           `json:"dataTypesCommand"`       // the console command that writes the data types
-}
-
-// DumpHealth is one folder the game's script_docs dumps may be in, and what was read there.
-type DumpHealth struct {
-	Folder       string `json:"folder"`
-	Effects      int    `json:"effects"`
-	Triggers     int    `json:"triggers"`
-	EventTargets int    `json:"eventTargets"`
-	Scopes       int    `json:"scopes"` // scope types; Vic3 and EU5 write event_scopes.log to logs/, other dumps to docs/
+	DumpsFrom        string   `json:"dumpsFrom"`              // whose dumps the schema read: yours, shipped or none
+	DumpsWritten     string   `json:"dumpsWritten,omitempty"` // when the oldest dump file was written, where known
+	DumpsStale       bool     `json:"dumpsStale"`             // they predate the install, or are another game version's
+	DumpFolders      []string `json:"dumpFolders"`            // where the game's script_docs writes them
+	DataTypesCommand string   `json:"dataTypesCommand"`       // the console command that writes the data types
 }
 
 // start makes the scanner, the live sessions, the emitter and the one scan slot on first use.
@@ -177,11 +165,9 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 	if ws == nil || inst == nil {
 		return nil, fmt.Errorf("workspace %s has no install", workspaceID)
 	}
-	install, err := local.LoadInstall(inst.ID, inst.Version)
-	if err != nil || predatesInstall(local.ScannedAt(inst.ID, inst.Version), inst.Path) {
-		if install, err = s.scan(inst); err != nil {
-			return nil, err
-		}
+	install, err := s.scan(inst, ws.DefaultLocLang)
+	if err != nil {
+		return nil, err
 	}
 	var mods []session.Mod
 	for _, mod := range ws.Mods {
@@ -198,15 +184,32 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 	return sess, nil
 }
 
-// scan reads an install, saves its cache, and tells the frontend as it goes.
-func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
+// request is the scan of an install in a language: the version read from the install now, so a game
+// update is another cache file, and the app's own version.
+func (s *SessionService) request(inst *GameInstall, language string) index.Request {
+	return index.Request{
+		Game: inst.GameID, Dir: inst.Path, Version: game.ReadGameVersion(inst.Path, game.Get(inst.GameID).SteamAppID),
+		Language: language, App: s.Config.Version,
+	}
+}
+
+// scan gives an install's schema and index, from its cache or else read from the install, and tells
+// the frontend as it goes. The cache is the scan's own, keyed by the language too (D-28).
+func (s *SessionService) scan(inst *GameInstall, language string) (*index.Install, error) {
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 0, Stage: "scanning"})
-	slog.Info("scan start", "game", inst.GameID, "install", inst.Name, "version", inst.Version)
+	request := s.request(inst, language)
+	slog.Info("scan start", "game", inst.GameID, "install", inst.Name, "version", request.Version)
 	started := time.Now()
 
-	// each stage has the part of the bar its share of a CK3 scan's time earns; a move is told once,
-	// and a stage's time is logged when the next begins
-	spans := map[string][2]int{"reading localization": {0, 2}, "reading the install": {2, 43}, "reading definitions": {43, 78}, "reading references": {78, 95}}
+	// each stage has the part of the bar its share of a CK3 scan's time earns, and the name the bar
+	// shows; a move is told once, and a stage's time is logged when the next begins
+	stages := map[string]struct {
+		label    string
+		from, to int
+	}{
+		"inventory": {"listing the install", 0, 2}, "schema": {"reading the game's rules", 2, 37},
+		"index": {"reading definitions", 37, 92}, "saving": {"saving", 92, 100},
+	}
 	told, running, since := -1, "", started
 	lap := func(next string) {
 		if running != "" {
@@ -214,58 +217,37 @@ func (s *SessionService) scan(inst *GameInstall) (*index.Install, error) {
 		}
 		running, since = next, time.Now()
 	}
-	progress := func(stage string, done, total int) {
-		if stage != running {
-			lap(stage)
+	progress := func(name string, done, total int) {
+		if name != running {
+			lap(name)
 		}
-		span := spans[stage]
-		if percent := span[0] + (span[1]-span[0])*done/max(total, 1); percent != told {
+		stage := stages[name]
+		if percent := stage.from + (stage.to-stage.from)*done/max(total, 1); percent != told {
 			told = percent
-			emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: percent, Stage: stage})
+			emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: percent, Stage: stage.label})
 		}
 	}
-	sidecar, _ := wiki.SidecarPath(inst.GameID)
-	request := index.Request{Game: inst.GameID, Dir: inst.Path, Version: inst.Version, Dumps: game.DumpDirs(inst.GameID, inst.Path), Wiki: sidecar, Progress: progress}
+	request.Progress = progress
 	install, err := s.Scan(context.Background(), request)
-	if err != nil {
-		slog.Error("scan failed", "game", inst.GameID, "stage", running, "error", err)
-		return nil, err
-	}
-	lap("saving")
-	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 95, Stage: "saving"})
-	if err := local.SaveInstall(inst.ID, inst.Version, install); err != nil {
+	if install == nil {
 		slog.Error("scan failed", "game", inst.GameID, "stage", running, "error", err)
 		return nil, err
 	}
 
-	// the user's own dumps of both sets refresh the layers the owner may ship
-	if from := install.Schema.DumpsFrom; from.ScriptDocs == "yours" && from.DataTypes == "yours" {
-		shipped := schema.Shipped{GameVersion: inst.Version, Dumps: install.Schema.Dumps, Wiki: install.Schema.Wiki}
-		if err := local.SaveShipped(inst.GameID, shipped); err != nil {
-			slog.Warn("shipped layers not saved", "game", inst.GameID, "error", err)
-		}
+	// a cache that could not be written still gives the install
+	if err != nil {
+		slog.Warn("cache not saved", "game", inst.GameID, "error", err)
 	}
 	lap("")
+	s.scanned.Store(inst.ID, install.Scanned)
 	slog.Info("scan end", "game", inst.GameID, "took", time.Since(started).Round(time.Millisecond))
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 100, Stage: "done"})
 	emit(EventLangCacheUpdated, inst.ID)
 	return install, nil
 }
 
-// predatesInstall reports a scan older than the game's binaries: the game was patched since,
-// whatever its version string says (EU5 ships none). Nothing known either way is not stale, because
-// guessing would rescan on every poll.
-func predatesInstall(scannedAt, installPath string) bool {
-	scanned, err := time.Parse(time.RFC3339, scannedAt)
-	if err != nil {
-		return false
-	}
-	updated := game.InstallUpdatedAt(installPath)
-	return !updated.IsZero() && updated.After(scanned)
-}
-
-// RebuildInstallSemantics scans an install now, then drops every session so each is built again
-// from the new cache. A scan already running is waited for.
+// RebuildInstallSemantics deletes an install's cache, then drops every session so each is built
+// again with a scan. A rebuild already running is waited for.
 func (s *SessionService) RebuildInstallSemantics(installID string) error {
 	inst := s.install(installID)
 	if inst == nil {
@@ -273,56 +255,10 @@ func (s *SessionService) RebuildInstallSemantics(installID string) error {
 	}
 	s.start()
 	s.slot <- struct{}{}
-	_, err := s.scan(inst)
+	err := index.DropInstall(index.Request{Game: inst.GameID, Dir: inst.Path})
 	s.dropAllExcept("")
-	go s.drain(s.finished(installID))
+	<-s.slot
 	return err
-}
-
-// QueueScan asks for a scan nobody waits for: it runs now, or after the one running, once per
-// install. Its error is swallowed; the health strip already says the cache is stale.
-func (s *SessionService) QueueScan(installID string) {
-	s.mu.Lock()
-	if !slices.Contains(s.queue, installID) {
-		s.queue = append(s.queue, installID)
-	}
-	s.mu.Unlock()
-	s.start()
-	select {
-	case s.slot <- struct{}{}:
-		go s.drain(installID)
-	default:
-	}
-}
-
-// drain runs queued scans in order holding the slot, and frees it when the queue is empty.
-func (s *SessionService) drain(installID string) {
-	for installID != "" {
-		if inst := s.install(installID); inst != nil {
-			s.scan(inst)
-		}
-		installID = s.finished(installID)
-	}
-}
-
-// finished takes a scanned install off the queue and returns the next; at "" it frees the slot.
-func (s *SessionService) finished(installID string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.queue = slices.DeleteFunc(s.queue, func(id string) bool { return id == installID })
-	if len(s.queue) == 0 {
-		<-s.slot
-		return ""
-	}
-	return s.queue[0]
-}
-
-// Queued is the installs waiting for a scan, and whether one runs.
-func (s *SessionService) Queued() ([]string, bool) {
-	s.start()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return slices.Clone(s.queue), len(s.slot) > 0
 }
 
 // install is a copy of one install's record.
@@ -337,13 +273,28 @@ func (s *SessionService) install(id string) *GameInstall {
 	return inst
 }
 
+// scannedAt is when an install was built, in RFC 3339: as this run built or loaded it, else by the
+// time of its cache file in the language; "" with neither.
+func (s *SessionService) scannedAt(inst *GameInstall, language string) string {
+	built, _ := s.scanned.Load(inst.ID)
+	at, ran := built.(time.Time)
+	if !ran {
+		at = index.CachedAt(s.request(inst, language))
+	}
+	if at.IsZero() {
+		return ""
+	}
+	return at.Format(time.RFC3339)
+}
+
 // GetLanguageHealth is the health strip for a workspace, from its live session where there is one.
 func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth, error) {
 	health := &LanguageHealth{WorkspaceID: workspaceID}
 	var inst *GameInstall
+	language := ""
 	s.Config.read(func(cfg *Config) {
 		if listed := findWorkspace(cfg, workspaceID); listed != nil {
-			health.InstallID = listed.InstallID
+			health.InstallID, language = listed.InstallID, listed.DefaultLocLang
 			if found := findInstall(cfg, listed.InstallID); found != nil {
 				copied := *found
 				inst = &copied
@@ -353,22 +304,27 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth,
 	if inst == nil {
 		return health, nil
 	}
-	health.GameID, health.GameVersion = inst.GameID, inst.Version
+	health.GameID, health.GameVersion = inst.GameID, inst.VersionDetected
 	_, statErr := os.Stat(inst.Path)
 	health.InstallOk = statErr == nil
-	health.ScannedAt = local.ScannedAt(inst.ID, inst.Version)
-	health.CacheStale = health.ScannedAt == "" || predatesInstall(health.ScannedAt, inst.Path)
-	_, health.Scanning = s.Queued()
-	user, info := game.UserDataDir(inst.GameID, inst.Path), game.Get(inst.GameID)
-	health.DataTypesCommand = info.DataTypesCommand
-	for _, dir := range info.ScriptDocsDirs {
-		folder := filepath.Join(user, dir)
-		dumps := schema.ReadDumps([]string{folder})
-		health.Dumps = append(health.Dumps, DumpHealth{Folder: folder, Effects: len(dumps.Effects), Triggers: len(dumps.Triggers), EventTargets: len(dumps.EventTargets) + len(dumps.DataTargets), Scopes: len(dumps.Scopes)})
-	}
+	health.ScannedAt = s.scannedAt(inst, language)
+	s.start()
+	health.Scanning = len(s.slot) > 0
+	health.DataTypesCommand = game.Get(inst.GameID).DataTypesCommand
+	health.DumpFolders = game.DumpDirs(inst.GameID, inst.Path)
 	if live := s.get(workspaceID); live != nil {
 		live.RLock()
-		health.Ready, health.Unread, health.DumpsFrom, health.DumpsVersion = true, live.Schema.Unread, live.Schema.DumpsFrom, live.Schema.DumpsVersion
+		dumps := live.Schema().Sources[schema.SourceDumps]
+		health.Ready, health.Unread, health.DumpsFrom, health.DumpsStale = true, live.Schema().Unread, dumps.From, dumps.Stale
+
+		// the version the scan read, and the one it replaced where the game was updated since
+		health.GameVersion = live.Schema().Version
+		if previous := live.Install.Previous; previous != "" && previous != shipped.Safe(health.GameVersion) {
+			health.UpdatedFrom = previous
+		}
+		if !dumps.Written.IsZero() {
+			health.DumpsWritten = dumps.Written.Format(time.RFC3339)
+		}
 		if err := live.WatchError(); err != nil {
 			health.WatchError = err.Error()
 		}
@@ -380,7 +336,7 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth,
 const (
 	EventLangReady           = "lang:ready"            // a workspace's session is built: data is its id
 	EventLangScanProgress    = "lang:scan-progress"    // an install scan moved: data is ScanProgress
-	EventLangCacheUpdated    = "lang:cache-updated"    // an install's cache was written: data is the install id
+	EventLangCacheUpdated    = "lang:cache-updated"    // an install was scanned or loaded from its cache: data is its id
 	EventLangCalendarChanged = "lang:calendar-changed" // a mod's calendar changed: data is the workspace id
 	EventFSChanged           = "fs:changed"            // a file under a mod changed on disk: data is FSChanged
 	EventWikiUpdated         = "wiki:updated"          // a game's wiki pages were refreshed: data is WikiUpdated

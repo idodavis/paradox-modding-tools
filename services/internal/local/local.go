@@ -1,7 +1,7 @@
 // Package local is this machine's files: the app's own folders, the one way a file is written
-// so no reader ever sees half of it, the install cache, and a mod's own files (descriptor,
-// thumbnail, the skeleton of a new mod). Nothing here understands the script language; the
-// engine under lang/ does not import it.
+// so no reader ever sees half of it, and a mod's own files (descriptor, thumbnail, the skeleton
+// of a new mod). Nothing here understands the script language; the engine under lang/ does not
+// import it.
 //
 // local.go is the folders and the write every other file here goes through.
 package local

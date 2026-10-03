@@ -8,43 +8,52 @@ import (
 	"path"
 	"slices"
 	"strings"
-
-	"paradox-modding-tools/services/internal/lang/schema"
 )
 
-// PagesFor returns the Guide tabs for a file of an extract database at a relative path: the best
-// page named for the database or the folder, the scripting-language pages for a script file, then
-// the other named pages. A missing sidecar or an unmatched file gives none.
-func PagesFor(gameID, database, rel string) []GuidePage {
+// NamedPages returns the guide pages named for a database or its file's folder, best first.
+func NamedPages(gameID, database, rel string) []Page {
 	sidecar, err := load(gameID)
 	if err != nil {
 		return nil
 	}
 	wanted := map[string]bool{}
 	for _, name := range append([]string{database, path.Base(path.Dir(strings.ReplaceAll(rel, "\\", "/")))}, synonyms[database]...) {
-		wanted[schema.Stem(name)] = true
+		wanted[Stem(name)] = true
 	}
 	delete(wanted, "")
-	var matches, language []schema.WikiPage
+	var matches []Page
 	for _, page := range sidecar.Guides {
-		switch title := schema.Stem(page.Title); {
-		case wanted[title]:
+		if wanted[Stem(page.Title)] {
 			matches = append(matches, page)
-		case synonyms[database] == nil && languageStems[title]:
-			language = append(language, page)
 		}
 	}
-	notModding := func(page schema.WikiPage) int {
+	notModding := func(page Page) int {
 		if strings.Contains(strings.ToLower(page.Title), "modding") {
 			return 0
 		}
 		return 1
 	}
-	slices.SortFunc(matches, func(first, second schema.WikiPage) int {
+	slices.SortFunc(matches, func(first, second Page) int {
 		return cmp.Or(cmp.Compare(notModding(first), notModding(second)),
 			cmp.Compare(len(first.Title), len(second.Title)), strings.Compare(first.Title, second.Title))
 	})
-	slices.SortFunc(language, func(first, second schema.WikiPage) int { return strings.Compare(first.Title, second.Title) })
+	return matches
+}
+
+// PagesFor returns a file's Guide tabs: the best page named for its database or folder, the
+// scripting-language pages for a script file, then the other named pages; none without a sidecar.
+func PagesFor(gameID, database, rel string) []GuidePage {
+	matches := NamedPages(gameID, database, rel)
+	var language []Page
+	if sidecar, err := load(gameID); err == nil && synonyms[database] == nil {
+		for _, page := range sidecar.Guides {
+			named := slices.ContainsFunc(matches, func(match Page) bool { return match.Title == page.Title })
+			if languageStems[Stem(page.Title)] && !named {
+				language = append(language, page)
+			}
+		}
+	}
+	slices.SortFunc(language, func(first, second Page) int { return strings.Compare(first.Title, second.Title) })
 	best := min(1, len(matches))
 	var out []GuidePage
 	for _, page := range slices.Concat(matches[:best], language, matches[best:]) {
@@ -55,19 +64,15 @@ func PagesFor(gameID, database, rel string) []GuidePage {
 	return out
 }
 
-func patchEntry(page schema.WikiPage) PatchEntry {
+func patchEntry(page Page) PatchEntry {
 	entry := PatchEntry{Title: page.Title, URL: page.URL, HasModding: page.ModdingHTML != ""}
 	if pv, ok := parsePatchTitle(page.Title); ok {
 		entry.Version = pv.Label
 		if pv.Patch > 0 || pv.Wildcard {
-			entry.Parent = itoa2(pv.Major, pv.Minor)
+			entry.Parent = fmt.Sprintf("%d.%d", pv.Major, pv.Minor)
 		}
 	}
 	return entry
-}
-
-func itoa2(major, minor int) string {
-	return fmt.Sprintf("%d.%d", major, minor)
 }
 
 // Patches returns patch notes entries, newest first.
@@ -111,19 +116,19 @@ func PatchByVersion(gameID, want string) *PatchPage {
 	if err != nil {
 		return nil
 	}
-	wantN := schema.NormTitle(want)
+	wantN := NormTitle(want)
 	wantN = strings.TrimPrefix(wantN, "patch ")
-	var fallback *schema.WikiPage
+	var fallback *Page
 	for i := range sidecar.Patches {
 		page := &sidecar.Patches[i]
-		n := schema.NormTitle(page.Title)
-		if n == wantN || n == "patch "+wantN {
+		title := NormTitle(page.Title)
+		if title == wantN || title == "patch "+wantN {
 			return patchPageOf(page)
 		}
 		if pv, ok := parsePatchTitle(page.Title); ok && pv.Label == want {
 			return patchPageOf(page)
 		}
-		if fallback == nil && strings.Contains(n, wantN) {
+		if fallback == nil && strings.Contains(title, wantN) {
 			fallback = page
 		}
 	}
@@ -133,7 +138,7 @@ func PatchByVersion(gameID, want string) *PatchPage {
 	return nil
 }
 
-func patchPageOf(page *schema.WikiPage) *PatchPage {
+func patchPageOf(page *Page) *PatchPage {
 	pv, _ := parsePatchTitle(page.Title)
 	return &PatchPage{
 		Title:           page.Title,
@@ -156,10 +161,10 @@ const (
 
 // GuidePage is one tab in the Guide pane.
 type GuidePage struct {
-	Title    string               `json:"title"`
-	HTML     string               `json:"html"`
-	URL      string               `json:"url"`
-	Sections []schema.WikiSection `json:"sections"`
+	Title    string    `json:"title"`
+	HTML     string    `json:"html"`
+	URL      string    `json:"url"`
+	Sections []Section `json:"sections"`
 }
 
 // Guide is the WikiService.Guide payload. Rel/origin/database come from Locate.
@@ -189,12 +194,50 @@ type PatchList struct {
 
 // PatchPage is one patch notes body (All + optional Modding HTML).
 type PatchPage struct {
-	Title           string               `json:"title"`
-	Version         string               `json:"version"`
-	HTML            string               `json:"html"`
-	ModdingHTML     string               `json:"moddingHtml"`
-	URL             string               `json:"url"`
-	HasModding      bool                 `json:"hasModding"`
-	Sections        []schema.WikiSection `json:"sections"`
-	ModdingSections []schema.WikiSection `json:"moddingSections"`
+	Title           string    `json:"title"`
+	Version         string    `json:"version"`
+	HTML            string    `json:"html"`
+	ModdingHTML     string    `json:"moddingHtml"`
+	URL             string    `json:"url"`
+	HasModding      bool      `json:"hasModding"`
+	Sections        []Section `json:"sections"`
+	ModdingSections []Section `json:"moddingSections"`
+}
+
+// Section is one heading of a page, for the TOC.
+type Section struct {
+	TocLevel int    `json:"tocLevel"`
+	Line     string `json:"line"`
+	Anchor   string `json:"anchor"`
+}
+
+// Page is one fetched page as the sidecar keeps it: its sanitized HTML and headings, and for a
+// patch note its Modding section apart.
+type Page struct {
+	Title           string    `json:"title"`
+	URL             string    `json:"url"`
+	Revid           int       `json:"revid"`
+	HTML            string    `json:"html"`
+	Sections        []Section `json:"sections,omitempty"`
+	ModdingHTML     string    `json:"moddingHtml,omitempty"`
+	ModdingSections []Section `json:"moddingSections,omitempty"`
+}
+
+// Sidecar is one game's wiki file: its guide pages and its patch notes.
+type Sidecar struct {
+	Guides  []Page `json:"guides"`
+	Patches []Page `json:"patches"`
+}
+
+// NormTitle is a page title as titles are compared: lower case, underscores as spaces, single
+// spaces.
+func NormTitle(title string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.ReplaceAll(title, "_", " ")), " "))
+}
+
+// Stem is what a page title or a database name is matched by: NormTitle without a trailing
+// "modding" and without a plural s.
+func Stem(name string) string {
+	stem := strings.TrimSpace(strings.TrimSuffix(" "+NormTitle(name), " modding"))
+	return strings.TrimSuffix(stem, "s")
 }

@@ -12,8 +12,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"paradox-modding-tools/services/internal/lang/schema"
 )
 
 func TestMain(tests *testing.M) {
@@ -42,7 +40,7 @@ func useTempCache(t *testing.T) {
 }
 
 func TestLookupRouting(t *testing.T) {
-	lang := []schema.WikiPage{
+	lang := []Page{
 		{Title: "Triggers", HTML: "<p>trig</p>"},
 		{Title: "Effects", HTML: "<p>eff</p>"},
 		{Title: "Scopes", HTML: "<p>sc</p>"},
@@ -50,7 +48,7 @@ func TestLookupRouting(t *testing.T) {
 	}
 	cases := []struct {
 		name, game, kind, rel, primary string
-		pages                          []schema.WikiPage
+		pages                          []Page
 		want, not, sections            []string
 	}{
 		{
@@ -59,9 +57,9 @@ func TestLookupRouting(t *testing.T) {
 			kind:    "event",
 			rel:     "events/foo.txt",
 			primary: "Event modding",
-			pages: append([]schema.WikiPage{
+			pages: append([]Page{
 				{Title: "Event modding", HTML: `<h2 id="Effects">Effects</h2><p>events</p>`,
-					Sections: []schema.WikiSection{{TocLevel: 2, Line: "Effects", Anchor: "Effects"}}},
+					Sections: []Section{{TocLevel: 2, Line: "Effects", Anchor: "Effects"}}},
 				{Title: "Event targets", HTML: "<p>t</p>"},
 				{Title: "Modding", HTML: "<p>hub</p>"},
 			}, lang...),
@@ -75,7 +73,7 @@ func TestLookupRouting(t *testing.T) {
 			kind:    "event",
 			rel:     "in_game/events/character/court.txt",
 			primary: "Event modding",
-			pages: append([]schema.WikiPage{
+			pages: append([]Page{
 				{Title: "Event modding", HTML: "<p>e</p>"},
 				{Title: "Event targets", HTML: "<p>t</p>"},
 				{Title: "Modding", HTML: "<p>hub</p>"},
@@ -89,7 +87,7 @@ func TestLookupRouting(t *testing.T) {
 			kind:    "scripted_effect",
 			rel:     "common/scripted_effects/x.txt",
 			primary: "Effect",
-			pages: []schema.WikiPage{
+			pages: []Page{
 				{Title: "Effect", HTML: "<p>e</p>"},
 				{Title: "Trigger", HTML: "<p>t</p>"},
 				{Title: "Scope", HTML: "<p>s</p>"},
@@ -105,7 +103,7 @@ func TestLookupRouting(t *testing.T) {
 			kind:    "traits",
 			rel:     "common/traits/x.txt",
 			primary: "Trait modding",
-			pages: append([]schema.WikiPage{
+			pages: append([]Page{
 				{Title: "Trait modding", HTML: "<p>t</p>"},
 				{Title: "Traits", HTML: "<p>ts</p>"},
 			}, lang...),
@@ -117,7 +115,7 @@ func TestLookupRouting(t *testing.T) {
 			kind:    "gui_type",
 			rel:     "gui/window.gui",
 			primary: "Interface",
-			pages: []schema.WikiPage{
+			pages: []Page{
 				{Title: "Interface", HTML: "<p>i</p>"},
 				{Title: "GUI script", HTML: "<p>g</p>"},
 				{Title: "Effects", HTML: "<p>e</p>"},
@@ -131,7 +129,7 @@ func TestLookupRouting(t *testing.T) {
 			kind:    "gui_type",
 			rel:     "gui/window.gui",
 			primary: "GUI script",
-			pages: []schema.WikiPage{
+			pages: []Page{
 				{Title: "GUI script", HTML: "<p>g</p>"},
 				{Title: "Effect", HTML: "<p>e</p>"},
 			},
@@ -143,7 +141,7 @@ func TestLookupRouting(t *testing.T) {
 			kind:    "loc_key",
 			rel:     "localization/english/foo.yml",
 			primary: "Localization",
-			pages: []schema.WikiPage{
+			pages: []Page{
 				{Title: "Localization", HTML: "<p>l</p>"},
 				{Title: "Customizable localization", HTML: "<p>c</p>"},
 				{Title: "Effects", HTML: "<p>e</p>"},
@@ -156,7 +154,7 @@ func TestLookupRouting(t *testing.T) {
 			game: "ck3",
 			kind: "event",
 			rel:  "events/foo.txt",
-			pages: []schema.WikiPage{
+			pages: []Page{
 				{Title: "Modding", HTML: "<p>hub</p>"},
 			},
 		},
@@ -164,7 +162,7 @@ func TestLookupRouting(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			useTempCache(t)
-			if err := save(testCase.game, &schema.WikiSidecar{Guides: testCase.pages}); err != nil {
+			if err := save(testCase.game, &Sidecar{Guides: testCase.pages}); err != nil {
 				t.Fatal(err)
 			}
 			got := PagesFor(testCase.game, testCase.kind, testCase.rel)
@@ -287,7 +285,7 @@ func TestClean(t *testing.T) {
 	}
 }
 
-func sectionLines(sections []schema.WikiSection) []string {
+func sectionLines(sections []Section) []string {
 	var lines []string
 	for _, section := range sections {
 		lines = append(lines, section.Line)

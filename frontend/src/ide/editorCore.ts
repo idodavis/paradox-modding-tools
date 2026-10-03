@@ -36,29 +36,30 @@ export interface CardLinks {
 /** The hover card: the word and its head, its name, prose, takes and scopes, where it is defined. */
 export function hoverMarkdown(card: Inspect, links: CardLinks): string {
   const code = (text: string) => "`" + text + "`";
-  const word = card.word.name || card.key || "";
+  const word = card.word || card.key || "";
   const parts = [[word && code(word), card.head && `· ${card.head}`].filter(Boolean).join(" ")];
-  if (card.name) parts.push(card.name.split("\n").map((line) => `> ${line}`).join("\n"));
+  // one quoted line per line of the name; two trailing spaces keep the break
+  if (card.name) parts.push(card.name.split("\n").map((line) => `> ${line}`).join("  \n"));
   // a single newline is markdown's space; two trailing spaces keep an author's line breaks
   if (card.prose) parts.push(card.prose.replace(/(?<!\n)\n(?!\n)/g, "  \n"));
   if (card.about) parts.push(`*${card.about}*`);
   if (card.takes?.length) parts.push(`Takes: ${card.takes.join("; ")}`);
-  const scopes = [card.scopes.this && `this ${card.scopes.this}`, card.scopes.root && `root ${card.scopes.root}`];
-  if (scopes.some(Boolean)) parts.push(`Scope: ${scopes.filter(Boolean).join(" · ")}${card.scopes.guessed ? " (guessed)" : ""}`);
-  if (card.source?.startsWith("the wiki")) parts.push(`*From ${card.source}*`);
+  const scopes = [card.scope && `Scope: ${card.scope}`, card.leads && `Leads to: ${card.leads}`].filter(Boolean);
+  if (scopes.length) parts.push(scopes.join(" · "));
+  if (card.stale) parts.push("*may be outdated*");
 
   const facts = [card.weight ? `${card.weight}% of its siblings` : "", card.date ?? "", imageFact(card.image)];
   if (card.color && /^#[0-9a-f]{6}$/i.test(card.color)) {
     facts.push(`<span style="color:${card.color};">■</span> ${card.color}`);
   }
   if (facts.some(Boolean)) parts.push(facts.filter(Boolean).join(" · "));
-  if (card.values?.length) parts.push(card.values.map((seen) => `${code(seen.text)} ×${seen.count}`).join(" · "));
 
-  // where it is defined, in load order; with more than one, which the game keeps
+  // where it is defined, in load order; with more than one, which the game keeps and which add to it
   const sites = card.sites ?? [];
   const lines = sites.map((site, i) => {
     const origin = links.origin(site.origin);
-    const mark = sites.length > 1 && card.winner >= 0 ? (i === card.winner ? " · kept" : " · replaced") : "";
+    const kept = i === card.winner ? " · kept" : card.adds?.includes(i) ? " · adds to it" : " · replaced";
+    const mark = sites.length > 1 && card.winner >= 0 ? kept : "";
     const at = `${escapeHtml(site.rel)}:${site.range.start.line + 1}`;
     const originLabel = `<span style="color:${origin.hex};">${escapeHtml(origin.name)}</span>`;
     return `${originLabel} · [${at}](${links.open(site)})${mark}`;

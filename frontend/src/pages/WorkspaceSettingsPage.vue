@@ -17,7 +17,6 @@ import {
   GetWorkspace,
   RemoveWorkspaceMod,
   ReorderWorkspaceMods,
-  SetInstallVersion,
   SetWorkspaceLocLang,
   SetWorkspaceModCalendar,
   UpdateGameInstall,
@@ -59,13 +58,15 @@ const removeOpen = ref(false);
 // Shared with the health strip, so the Game tab and the IDE agree on whether a
 // type system is loaded.
 const { health: langHealth } = useLanguageHealth(id);
-const dumps = computed(() => langHealth.value?.dumps ?? []);
 const scriptDocsOpen = ref(false);
-const schemaBadge = computed(() =>
-  dumps.value.some((dump) => dump.effects > 0)
-    ? { color: "success" as const, label: "Loaded" }
-    : { color: "warning" as const, label: "Not generated" },
-);
+const schemaBadge = computed(() => {
+  const live = langHealth.value;
+  if (live?.dumpsFrom === "yours") {
+    return { color: "success" as const, label: live.dumpsStale ? "Loaded, older than the game" : "Loaded" };
+  }
+  if (live?.dumpsFrom === "shipped") return { color: "warning" as const, label: "PMT's copy" };
+  return { color: "warning" as const, label: "Not generated" };
+});
 
 const name = ref("");
 const locLang = ref("english");
@@ -84,8 +85,6 @@ const expandedIds = shallowRef<Record<string, boolean>>({});
 
 const newInstallPath = ref("");
 const newInstallName = ref("");
-const newInstallVersion = ref("latest");
-const draftVersion = ref("latest");
 const draftPath = ref("");
 
 const pageItems: { label: string; value: string }[] = WORKSPACE_TOOLS.map((t) => ({
@@ -138,22 +137,16 @@ function applyWorkspace(): void {
   installId.value = w.installId;
   mods.value = p.mods.map((m) => ({ ...m }));
   const inst = p.installs.find((i) => i.id === w.installId);
-  draftVersion.value = inst?.version || "latest";
   draftPath.value = inst?.path ?? "";
 }
 
 watch(page, applyWorkspace, { immediate: true });
 
 const selectedInstall = computed(() => page.value?.installs.find((i) => i.id === installId.value));
-const supportedVersion = computed(() => {
-  const i = selectedInstall.value;
-  if (!i) return "";
-  const v = i.versionDetected || i.version || "";
-  return v === "latest" ? "" : v;
-});
+const supportedVersion = computed(() => selectedInstall.value?.versionDetected ?? "");
 const installItems = computed<RadioGroupItem[]>(() =>
   (page.value?.installs ?? []).map((i) => ({
-    label: `${i.name} (${i.version || "latest"})`,
+    label: i.versionDetected ? `${i.name} (${i.versionDetected})` : i.name,
     description: i.path,
     value: i.id,
   })),
@@ -269,17 +262,6 @@ const { mutateAsync: changeInstall, isLoading: changingInstall } = useMutation({
   },
 });
 
-const { mutateAsync: saveVersion, isLoading: savingVersion } = useMutation({
-  mutation: async () => {
-    if (!installId.value) return;
-    await SetInstallVersion(installId.value, draftVersion.value || "latest");
-  },
-  onSuccess: () => {
-    toastOk("Version pin saved.");
-    void refetch();
-  },
-});
-
 const { mutateAsync: saveInstallPaths, isLoading: savingPaths } = useMutation({
   mutation: async () => {
     if (!installId.value) return;
@@ -295,16 +277,10 @@ const { mutateAsync: addInstall, isLoading: addingInstall } = useMutation({
   mutation: async () => {
     const gameId = page.value?.workspace.gameId;
     if (!gameId || !newInstallPath.value || !newInstallName.value) return;
-    const inst = await AddGameInstall(
-      gameId,
-      newInstallName.value,
-      newInstallPath.value,
-      newInstallVersion.value || "latest",
-    );
+    const inst = await AddGameInstall(gameId, newInstallName.value, newInstallPath.value);
     if (!inst) throw new Error("Failed to create install");
     newInstallPath.value = "";
     newInstallName.value = "";
-    newInstallVersion.value = "latest";
     await changeInstall(inst.id);
   },
 });
@@ -387,7 +363,6 @@ const COPY = {
   explorer: "Hide dll/exe/pdb and similar binaries. Images, audio, meshes, and .metadata stay listed.",
   gameColor: ORIGIN_COLOR_DESC,
   installList: "Which scanned game install this workspace reads. Shared installs warn before you switch.",
-  versionPin: "Version of the game that this install is. Your pin wins over auto-detection.",
   installPath: "Top-level folder of the game; needed for scanning the game and supporting most features.",
   addInstall: "Draft a Steam or browsed path, then Add install. Selecting a found path does not save it.",
   mods: "Last listed wins (LIOS). Drag the left grip to reorder. Color and thumbnail paint explorer and origin chips.",
@@ -428,14 +403,11 @@ const showGame = computed(() =>
     COPY.gameColor,
     "Install list",
     COPY.installList,
-    "Version pin",
-    COPY.versionPin,
     "Install path",
     COPY.installPath,
     "Add install",
     COPY.addInstall,
     "Install name",
-    "Version",
     "Found on this machine",
   ),
 );
@@ -682,19 +654,6 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                         · detected {{ selectedInstall.versionDetected }}
                       </template>
                     </p>
-                    <UFormField label="Version pin" :description="COPY.versionPin">
-                      <div class="flex gap-2">
-                        <UInput v-model="draftVersion" placeholder="latest" class="w-full" />
-                        <UButton label="latest" size="xs" variant="outline" @click="draftVersion = 'latest'" />
-                        <UButton
-                          label="Save"
-                          size="xs"
-                          variant="outline"
-                          :loading="savingVersion"
-                          @click="saveVersion()"
-                        />
-                      </div>
-                    </UFormField>
                     <UFormField label="Change folder" :description="COPY.installPath">
                       <FileSelector v-model="draftPath" mode="folder" dialog-title="Select game install folder" />
                     </UFormField>
@@ -718,7 +677,6 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                 v-if="page?.workspace"
                 v-model:path="newInstallPath"
                 v-model:name="newInstallName"
-                v-model:version="newInstallVersion"
                 :game-id="page.workspace.gameId"
                 :detected="page.detected"
                 :saved-paths="savedInstallPaths"
@@ -735,9 +693,8 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                 <div class="flex flex-wrap items-center gap-2 text-sm">
                   <UBadge :color="schemaBadge.color" variant="subtle" :label="schemaBadge.label" />
                 </div>
-                <p v-for="dump in dumps" :key="dump.folder" class="break-all text-xs text-muted">
-                  {{ dump.folder }}: {{ dump.effects.toLocaleString() }} effects ·
-                  {{ dump.triggers.toLocaleString() }} triggers · {{ dump.scopes }} scope types
+                <p v-for="folder in langHealth.dumpFolders ?? []" :key="folder" class="break-all text-xs text-muted">
+                  {{ folder }}
                 </p>
                 <UButton
                   label="How to generate it"
@@ -751,8 +708,8 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
             <ScriptDocsGuide
               v-if="langHealth"
               v-model:open="scriptDocsOpen"
-              :dumps="dumps"
-              :unread="langHealth.unread"
+              :folders="langHealth.dumpFolders ?? []"
+              :unread="langHealth.unread ?? []"
             />
             <UCard
               title="Diagnostics"

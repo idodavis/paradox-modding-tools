@@ -14,28 +14,27 @@ const { health, scanning, scanPct, scanMsg, lastScanned, scanLabel, rescan } = u
   () => props.workspaceId,
 );
 
-const scanColor = computed(() => (health.value?.cacheStale || !health.value?.scannedAt ? "warning" : "primary"));
+const scanColor = computed(() => (health.value?.scannedAt ? "primary" : "warning"));
 
 const guideOpen = ref(false);
 
-const unexplained = computed(() =>
-  Object.values(health.value?.unread ?? {}).reduce((sum, tallies) => sum + (tallies?.length ?? 0), 0),
-);
+const unexplained = computed(() => health.value?.unread?.length ?? 0);
 
-// where each dump set came from: the user's, PMT's shipped copy (with the command that writes the
-// user's own), or none; EU5 publishes no version, so a shipped set may have none
+// whose dumps the schema read: the user's, PMT's shipped copy, or none; either may be out of date,
+// and the commands that write the user's own are told with it
 const dumpsChip = computed(() => {
   const live = health.value;
   if (!live?.ready || !live.dumpsFrom) return null;
-  const { scriptDocs, dataTypes } = live.dumpsFrom;
-  if (scriptDocs === "none" && dataTypes === "none") {
-    return { label: "No dumps", color: "text-warning", icon: "i-lucide-triangle-alert" };
+  if (live.dumpsFrom === "none") return { label: "No dumps", color: "text-warning", icon: "i-lucide-triangle-alert" };
+  if (live.dumpsFrom === "yours" && !live.dumpsStale) {
+    return { label: "Dumps: yours ✓", color: "text-muted", icon: "i-lucide-check" };
   }
-  const said = (from: string) => (from === "yours" ? "yours" : from === "shipped" ? `PMT's${live.dumpsVersion ? `, game ${live.dumpsVersion}` : ""}` : "none");
-  const sets = scriptDocs === dataTypes ? said(scriptDocs) : `${said(scriptDocs)}; data types ${said(dataTypes)}`;
-  const run = [scriptDocs !== "yours" && "script_docs", dataTypes !== "yours" && live.dataTypesCommand].filter(Boolean);
-  if (!run.length) return { label: `Dumps: ${sets} ✓`, color: "text-muted", icon: "i-lucide-check" };
-  return { label: `Dumps: ${sets} · run ${run.join(" and ")} for yours`, color: "text-warning", icon: "i-lucide-circle-help" };
+  const run = `run script_docs${live.dataTypesCommand ? ` and ${live.dataTypesCommand}` : ""}`;
+  const said =
+    live.dumpsFrom === "yours"
+      ? `yours, older than the game · ${run} again`
+      : `PMT's${live.dumpsStale ? ", may be outdated" : ""} · ${run} for yours`;
+  return { label: `Dumps: ${said}`, color: "text-warning", icon: "i-lucide-circle-help" };
 });
 </script>
 
@@ -52,9 +51,7 @@ const dumpsChip = computed(() => {
     <span :class="health.installOk ? 'text-success' : 'text-error'">
       {{ health.installOk ? "Install OK" : "Install missing" }}
     </span>
-    <span v-if="health.gameVersion">
-      {{ health.gameVersion }}<template v-if="health.cacheStale"> (cache stale)</template>
-    </span>
+    <span v-if="health.gameVersion">{{ health.gameVersion }}</span>
     <span v-if="!health.ready">index pending</span>
     <span v-if="health.watchError" class="text-warning" :title="health.watchError">watch degraded</span>
     <span v-if="!scanning && lastScanned">Scanned {{ lastScanned }}</span>
@@ -81,6 +78,6 @@ const dumpsChip = computed(() => {
       <UIcon name="i-lucide-circle-help" class="size-3.5" />
       {{ unexplained }} unexplained
     </button>
-    <ScriptDocsGuide v-model:open="guideOpen" :dumps="health.dumps ?? []" :unread="health.unread" />
+    <ScriptDocsGuide v-model:open="guideOpen" :folders="health.dumpFolders ?? []" :unread="health.unread ?? []" />
   </div>
 </template>

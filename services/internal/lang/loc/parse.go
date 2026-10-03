@@ -1,6 +1,5 @@
-// Package loc parses Paradox's localization "YAML" dialect (not real YAML) and learns the
-// loc-key templates a kind's definitions use (convention.go). It is game-agnostic. Offsets are
-// UTF-8 byte indices into the original text (a leading BOM is skipped, not stripped).
+// Package loc parses Paradox's localization "YAML" dialect (not real YAML). It is game-agnostic.
+// Offsets are UTF-8 byte indices into the original text (a leading BOM is skipped, not stripped).
 //
 // parse.go is a line-by-line, never-panicking scanner emitting entries and typed errors; it
 // also derives a file's language from its name, path or header.

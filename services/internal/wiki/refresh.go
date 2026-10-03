@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 
-	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/local"
 )
 
@@ -23,7 +22,7 @@ var (
 	cacheDirFn = local.CacheDir
 	refreshMu  sync.Mutex // one refresh at a time
 	memMu      sync.Mutex
-	mem        = map[string]*schema.WikiSidecar{}
+	mem        = map[string]*Sidecar{}
 )
 
 func filterMembers(members []mwMember, mods map[string]bool) []mwMember {
@@ -33,7 +32,7 @@ func filterMembers(members []mwMember, mods map[string]bool) []mwMember {
 		if !keepMember(member.Title, mods) {
 			continue
 		}
-		key := schema.NormTitle(member.Title)
+		key := NormTitle(member.Title)
 		if seen[key] {
 			continue
 		}
@@ -46,30 +45,30 @@ func filterMembers(members []mwMember, mods map[string]bool) []mwMember {
 func modsSet(members []mwMember) map[string]bool {
 	out := map[string]bool{}
 	for _, member := range members {
-		out[schema.NormTitle(member.Title)] = true
+		out[NormTitle(member.Title)] = true
 	}
 	return out
 }
 
 // fetchPages parses each wanted page whose revision differs from the one kept before; a page
 // that fails to fetch or clean keeps its previous copy.
-func fetchPages(ctx context.Context, gameID, api, wikiBase string, patches bool, wanted []mwMember, prev []schema.WikiPage) ([]schema.WikiPage, error) {
-	old := make(map[string]schema.WikiPage, len(prev))
+func fetchPages(ctx context.Context, gameID, api, wikiBase string, patches bool, wanted []mwMember, prev []Page) ([]Page, error) {
+	old := make(map[string]Page, len(prev))
 	for _, page := range prev {
-		old[schema.NormTitle(page.Title)] = page
+		old[NormTitle(page.Title)] = page
 	}
-	out := make([]schema.WikiPage, 0, len(wanted))
+	out := make([]Page, 0, len(wanted))
 	for _, want := range wanted {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		prior, known := old[schema.NormTitle(want.Title)]
+		prior, known := old[NormTitle(want.Title)]
 		if known && prior.Revid != 0 && prior.Revid == want.LastRevid && prior.HTML != "" {
 			out = append(out, prior)
 			continue
 		}
 		raw, revid, err := parsePage(ctx, api, want.Title)
-		var page schema.WikiPage
+		var page Page
 		if err == nil {
 			page.HTML, page.Sections, page.ModdingHTML, page.ModdingSections = clean(raw, wikiBase)
 		}
@@ -116,7 +115,7 @@ func Refresh(ctx context.Context, gameID string) error {
 
 	prev, err := load(gameID)
 	if err != nil {
-		prev = &schema.WikiSidecar{}
+		prev = &Sidecar{}
 	}
 	guides, err := fetchPages(ctx, gameID, api, wikiBase, false, filterMembers(guideMembers, modsSet(mods)), prev.Guides)
 	if err != nil {
@@ -129,7 +128,7 @@ func Refresh(ctx context.Context, gameID string) error {
 	if err != nil {
 		return err
 	}
-	return save(gameID, &schema.WikiSidecar{Guides: guides, Patches: patches})
+	return save(gameID, &Sidecar{Guides: guides, Patches: patches})
 }
 
 func SidecarPath(gameID string) (string, error) {
@@ -144,11 +143,11 @@ func SidecarPath(gameID string) (string, error) {
 func ForgetAll() {
 	memMu.Lock()
 	defer memMu.Unlock()
-	mem = map[string]*schema.WikiSidecar{}
+	mem = map[string]*Sidecar{}
 }
 
 // load reads gameID's sidecar, from memory once read; a missing or unreadable file is an error.
-func load(gameID string) (*schema.WikiSidecar, error) {
+func load(gameID string) (*Sidecar, error) {
 	memMu.Lock()
 	cached := mem[gameID]
 	memMu.Unlock()
@@ -163,7 +162,7 @@ func load(gameID string) (*schema.WikiSidecar, error) {
 	if err != nil {
 		return nil, err
 	}
-	var sidecar schema.WikiSidecar
+	var sidecar Sidecar
 	if err := json.Unmarshal(raw, &sidecar); err != nil {
 		return nil, err
 	}
@@ -173,7 +172,7 @@ func load(gameID string) (*schema.WikiSidecar, error) {
 	return &sidecar, nil
 }
 
-func save(gameID string, sidecar *schema.WikiSidecar) error {
+func save(gameID string, sidecar *Sidecar) error {
 	path, err := SidecarPath(gameID)
 	if err != nil {
 		return err

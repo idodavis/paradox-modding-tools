@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Contest, Dangling, Dependency, FileRow, Health, LocRow, Problem } from "@services/models";
+import type { Contest, Dangling, Dependency, Health, LocRow, Problem } from "@services/models";
 
 /** The editor's checks' cards, each the codes it lists; parse errors are every other code. */
 export const PROBLEM_CARDS = {
@@ -13,10 +13,10 @@ export const PROBLEM_CARDS = {
 } as const satisfies Record<string, { label: string; codes: readonly string[] }>;
 export type ProblemCard = keyof typeof PROBLEM_CARDS;
 
-export type Card = "contests" | "overrides" | "depends" | "dangling" | "loc" | "files" | ProblemCard;
+export type Card = "contests" | "overrides" | "depends" | "dangling" | "loc" | ProblemCard;
 /** A loc row, with the language and the gap it is listed under. */
-export type Gap = LocRow & { language: string; gap: "missing" | "untranslated" | "orphaned" };
-export type Row = Contest | Dependency | Dangling | Gap | FileRow | Problem;
+export type Gap = LocRow & { language: string; gap: "untranslated" };
+export type Row = Contest | Dependency | Dangling | Gap | Problem;
 
 /** A problem card's rows: the problems of its codes; parse errors, those of no card's code. */
 export function problemsOf(health: Health | null | undefined, card: ProblemCard): Problem[] {
@@ -77,7 +77,7 @@ const origins = (ids: string[]) =>
   ]);
 const badge = (label: string, color: string) => h(UBadge, { label, color, variant: "subtle" });
 // each loc gap's colour, matching its card
-const GAP_COLOR = { missing: "primary", untranslated: "tertiary", orphaned: "success" };
+const GAP_COLOR = { untranslated: "tertiary" };
 
 // keeps a row whose value is among those ticked in its column's head, or every row when none is
 const among: FilterFn<any> = (row, id, wanted: string[]) =>
@@ -144,13 +144,9 @@ const rows = computed((): Row[] => {
       return health?.depends ?? [];
     case "dangling":
       return health?.dangling ?? [];
-    case "files":
-      return health?.files ?? [];
     case "loc":
       return (health?.loc ?? []).flatMap((language) =>
-        (["missing", "untranslated", "orphaned"] as const).flatMap((gap) =>
-          (language[gap] ?? []).map((row) => ({ ...row, language: language.language, gap })),
-        ),
+        (language.untranslated ?? []).map((row) => ({ ...row, language: language.language, gap: "untranslated" as const })),
       );
     default:
       return problemsOf(health, props.card);
@@ -224,11 +220,6 @@ const depends: TableColumn<Dependency>[] = [
 const dangling: TableColumn<Dangling>[] = [
   { accessorKey: "database", header: head("Database", String), filterFn: among },
   { accessorKey: "name", header: head("Name") },
-  {
-    accessorKey: "declared",
-    header: "",
-    cell: ({ row }) => (row.original.declared ? badge("the game rejects it", "error") : ""),
-  },
   { id: "count", header: head("Written"), accessorFn: (row) => row.sites?.length ?? 0 },
 ];
 const loc: TableColumn<Gap>[] = [
@@ -240,23 +231,6 @@ const loc: TableColumn<Gap>[] = [
     cell: ({ row }) => badge(row.original.gap, GAP_COLOR[row.original.gap]),
   },
   { accessorKey: "key", header: head("Key") },
-  {
-    id: "origin",
-    header: head("Origin", store.originName),
-    accessorFn: (row) => originOf(row.file),
-    filterFn: among,
-    cell: ({ row }) => origin(originOf(row.original.file)),
-  },
-];
-const files: TableColumn<FileRow>[] = [
-  { accessorKey: "database", header: head("Database", String), filterFn: among },
-  { accessorKey: "name", header: head("Name") },
-  {
-    id: "missing",
-    header: head("Missing"),
-    accessorFn: (row) => row.missing?.length ?? 0,
-    cell: ({ row }) => `${row.original.missing?.length ?? 0} of ${row.original.of}`,
-  },
   {
     id: "origin",
     header: head("Origin", store.originName),
@@ -279,7 +253,7 @@ const problems: TableColumn<Problem>[] = [
 // each card's columns are typed by its own rows; the table holds whichever the card picks
 const columns = computed(
   () =>
-    (({ contests, overrides: contests, depends, dangling, loc, files }) as Record<string, TableColumn<any>[]>)[props.card] ??
+    (({ contests, overrides: contests, depends, dangling, loc }) as Record<string, TableColumn<any>[]>)[props.card] ??
     (problems as TableColumn<Row>[]),
 );
 </script>

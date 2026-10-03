@@ -80,7 +80,7 @@ export function References(workspaceID: string, path: string, line: number, col:
     return $Call.ByID(3329907361, workspaceID, path, line, col);
 }
 
-export function ResolveCompletion(workspaceID: string, path: string, item: lsp$0.Item): $CancellablePromise<string> {
+export function ResolveCompletion(workspaceID: string, path: string, item: lsp$0.Item): $CancellablePromise<lsp$0.Inspect | null> {
     return $Call.ByID(1177144527, workspaceID, path, item);
 }
 

@@ -17,7 +17,7 @@ Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later
 | Page | What it does |
 |------|----------------|
 | **Library** | Workspaces by game; open / edit / delete the PMT record; New Workspace / New Mod; Reset all data |
-| **Create Workspace** | Game → install (detect/add, version pin / `latest`) → mods + load order → name |
+| **Create Workspace** | Game → install (detect/add) → mods + load order → name |
 | **Workspace IDE** | monaco-vscode workbench; PMT-owned roots; game files read-only; Guide wiki pane |
 | **Event Graph** | Live-session harvest; origin groups; Open from IDE hover |
 | **Workspace Health** | FIOS/LIOS contests, overlays, depends, dangling refs, loc missing/orphan/untranslated |

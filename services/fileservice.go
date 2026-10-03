@@ -120,7 +120,7 @@ func (f *FileService) readBase64(fullPath string, textOnly bool) (FileBytes, err
 	if st.IsDir() {
 		return FileBytes{}, fmt.Errorf("read file: is a directory")
 	}
-	if msg := rejectOpen(nil, st.Size()); msg != "" {
+	if msg := rejectOpen(st.Size()); msg != "" {
 		return FileBytes{Exists: true, Reject: msg}, nil
 	}
 	fh, err := os.Open(fullPath)
@@ -158,7 +158,7 @@ func (f *FileService) readBase64(fullPath string, textOnly bool) (FileBytes, err
 }
 
 // rejectOpen refuses a file too large to hold in memory, on every read, image or not.
-func rejectOpen(_ []byte, size int64) string {
+func rejectOpen(size int64) string {
 	if size > maxOpenBytes {
 		return fmt.Sprintf("file too large to open (%d bytes, max %d)",
 			size, maxOpenBytes)

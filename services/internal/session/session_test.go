@@ -1,6 +1,6 @@
-// session_test.go covers a workspace over the ck3 fixture install: what edits, saves, closes, disk
-// changes and a rescanned install do to the records, the read side, how a path is placed and
-// spelled, and the lock contract under -race.
+// session_test.go covers a workspace over the ck3 fixture install: what edits, saves, closes and
+// disk changes do to the records, the read side, how a path is placed, and the lock contract under
+// -race.
 package session
 
 import (
@@ -18,7 +18,7 @@ import (
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {
 	dir := filepath.Join("..", "lang", "testdata", "ck3")
-	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test", Dumps: []string{filepath.Join(dir, "docs")}})
+	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test"})
 })
 
 // workspace is a session over the fixture install with the fixture mod copied to a temp dir.
@@ -40,13 +40,7 @@ func workspace(t *testing.T) (*Session, string) {
 }
 
 func defs(sess *Session, name string) int {
-	n := 0
-	for _, definition := range sess.Defs(name) {
-		if definition.At.Origin == "mod" {
-			n++
-		}
-	}
-	return n
+	return len(sess.Defs("events", name))
 }
 
 func TestEdits(t *testing.T) {
@@ -61,34 +55,16 @@ func TestEdits(t *testing.T) {
 		t.Errorf("a file opened with a definition and changed to the same text defines it once: %d", defs(sess, "f.1"))
 	}
 
-	// a rescanned install under the workspace keeps the workspace's records and the open buffers
-	install, _ := scanned()
-	if err := sess.Replace(t.Context(), install); err != nil {
-		t.Fatal(err)
-	}
-	if defs(sess, "m.1") != 1 || defs(sess, "f.1") != 1 || !(index.All{sess.Workspace}).Def("traits", "bold") {
-		t.Error("a rescanned install under the workspace keeps the workspace's records and the open buffers")
-	}
-
 	sess.DidChange(fresh, "namespace = f\nf.2 = { type = character_event }\n")
 	if defs(sess, "f.1") != 0 || defs(sess, "f.2") != 1 {
 		t.Error("a change replaces the file's definitions")
 	}
-	if len(sess.Defs("m.1")) != 1 {
-		t.Fatalf("the mod's file on disk is indexed to begin with: %+v", sess.Defs("m.1"))
+	if len(sess.Defs("events", "m.1")) != 1 {
+		t.Fatalf("the mod's file on disk is indexed to begin with: %+v", sess.Defs("events", "m.1"))
 	}
 	sess.DidOpen(strings.ToUpper(events[:1])+events[1:], "namespace = m\nm.9 = { type = character_event }\n")
 	if runtime.GOOS == "windows" && (defs(sess, "m.1") != 0 || defs(sess, "m.9") != 1) {
 		t.Error("windows: a path opened under another spelling is the same file")
-	}
-	refs := 0
-	for _, ref := range sess.Workspace.Refs {
-		if ref.File >= 0 && ref.Name == "v.2" {
-			refs++
-		}
-	}
-	if refs != 0 {
-		t.Errorf("the disk harvest's references went with its definitions: %d left", refs)
 	}
 
 	// on disk behind a closed buffer: an unreadable file keeps its records, a gone file loses them
@@ -111,7 +87,7 @@ func TestEdits(t *testing.T) {
 	if defs(sess, "m.1") != 0 {
 		t.Error("a deleted file keeps no definitions")
 	}
-	if len(sess.Defs("brave")) != 2 {
+	if len(sess.Defs("traits", "brave")) != 2 {
 		t.Error("another file's records stay")
 	}
 }
@@ -123,11 +99,11 @@ func TestQueries(t *testing.T) {
 	if sess.Language != "english" || len(sess.Mods) != 1 || sess.Mods[0].Name != "M" || sess.Game.Name != "Crusader Kings III" {
 		t.Errorf("the session knows its language, its mods and its game: %s %+v", sess.Language, sess.Mods)
 	}
-	if _, at := sess.Winner(nil); at != -1 {
+	if winner, _, _, _ := sess.Winner(nil); winner != (index.Def{}) {
 		t.Error("no definitions, no winner")
 	}
 
-	// localization: the mod's before the install's, the asked language before any other
+	// localization: a key is found in the asked language
 	if err := os.MkdirAll(filepath.Join(dir, "localization", "french"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -136,8 +112,8 @@ func TestQueries(t *testing.T) {
 		t.Fatal(err)
 	}
 	sess.Changed(french)
-	if said, ok := sess.Loc("only_french", "english"); !ok || said.Value != "Salut" {
-		t.Errorf("a key with no entry in the asked language falls back to another: %+v", said)
+	if entry, ok := sess.Loc("only_french", "french"); !ok || entry.Text != "Salut" {
+		t.Errorf("a key is found in the asked language: %+v", entry)
 	}
 	if _, ok := sess.Loc("nothing_at_all", ""); ok {
 		t.Error("a key nothing writes")
@@ -163,37 +139,28 @@ func TestQueries(t *testing.T) {
 		t.Error("a file that is nowhere")
 	}
 
-	// the caller's spelling of a path is kept, cleaned
-	spelled := filepath.Join(dir, "events", "..", "events", "m_events.txt")
-	sess.DidOpen(spelled, "namespace = m\nm.1 = { type = character_event }\n")
-	if found := sess.Defs("m.1"); len(found) != 1 || found[0].At.Path != events {
-		t.Errorf("the definition's path is the caller's spelling, cleaned: %+v", found)
-	}
-	if runtime.GOOS == "windows" != (index.PathKey(strings.ToLower(events)) == index.PathKey(events)) {
-		t.Error("windows folds case; unix keeps it")
-	}
-
+	installFile := sess.Install.Index.Files[0]
 	for _, testCase := range []struct {
 		what, path, origin, rel string
-		kinds                   int
+		defines                 bool
 	}{
-		{"a mod's file", events, "mod", "events/m_events.txt", 1},
-		{"a mod's file nothing has walked", filepath.Join(dir, "common", "traits", "new.txt"), "mod", "common/traits/new.txt", 1},
-		{"an install file", sess.Install.Index.Files[0].Path, "vanilla", sess.Install.Index.Files[0].Rel, len(sess.Schema.DatabasesAt(sess.Install.Index.Files[0].Rel))},
-		{"a path under no root", filepath.Join(t.TempDir(), "x.txt"), "", "", 0},
+		{"a mod's file", events, "mod", "events/m_events.txt", true},
+		{"a mod's file nothing has walked", filepath.Join(dir, "common", "traits", "new.txt"), "mod", "common/traits/new.txt", true},
+		{"an install file", installFile.Path, "vanilla", installFile.Rel, sess.Schema().DatabaseAt(installFile.Rel) != nil},
+		{"a path under no root", filepath.Join(t.TempDir(), "x.txt"), "", "", false},
 	} {
 		place := sess.Where(testCase.path)
-		if place.Origin != testCase.origin || place.Rel != testCase.rel || len(place.Databases) != testCase.kinds {
+		if place.Origin != testCase.origin || place.Rel != testCase.rel || (place.Database != nil) != testCase.defines {
 			t.Errorf("%s: %+v", testCase.what, place)
 		}
 	}
-	if len(sess.Where(events).Calendar) != 1 || sess.Where(events).Calendar[0].Name != "AC" || len(sess.Where(sess.Install.Index.Files[0].Path).Calendar) != 0 {
+	if len(sess.Where(events).Calendar) != 1 || sess.Where(events).Calendar[0].Name != "AC" || len(sess.Where(installFile.Path).Calendar) != 0 {
 		t.Error("a mod's calendar is the mod's alone")
 	}
 
 	// EU5: each stage folder is a root of its own (source.Roots), so a rel starts below in_game/
 	eu5 := filepath.Join("..", "lang", "testdata", "eu5")
-	install, err := index.Scan(t.Context(), index.Request{Game: "eu5", Dir: eu5, Version: "test", Dumps: []string{filepath.Join(eu5, "docs")}})
+	install, err := index.Scan(t.Context(), index.Request{Game: "eu5", Dir: eu5, Version: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +188,7 @@ func TestLockContract(t *testing.T) {
 			defer wg.Done()
 			sess.RLock()
 			defer sess.RUnlock()
-			sess.Defs("m.1")
+			sess.Defs("events", "m.1")
 			sess.Loc("v.1.t", "")
 			sess.Where(events)
 			sess.Parsed(events)

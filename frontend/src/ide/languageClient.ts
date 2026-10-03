@@ -7,7 +7,7 @@ import * as vscode from "vscode";
 import { useDebounceFn } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import * as ide from "@services/ideservice";
-import type { Item, Location, Range, Symbol as Defined } from "@services/internal/lsp";
+import type { Inspect, Item, Location, Range, Symbol as Defined } from "@services/internal/lsp";
 import { editorRange, hoverMarkdown, toBytes, type CardLinks, type LineText } from "./editorCore";
 import { normFs } from "./fsBridge";
 
@@ -45,8 +45,7 @@ function toLocation(site: Location): vscode.Location {
 }
 
 function symbolOf(defined: Defined): vscode.SymbolInformation {
-  const container = defined.parent || defined.database;
-  return new vscode.SymbolInformation(defined.name, vscode.SymbolKind.Object, container, toLocation(defined.location));
+  return new vscode.SymbolInformation(defined.name, vscode.SymbolKind.Object, defined.database, toLocation(defined.location));
 }
 
 /** Attach PMT language intelligence to the workbench; the host names origins. Dispose to detach. */
@@ -85,24 +84,30 @@ export function registerLanguageClient(getWorkspaceId: () => string, origin: Car
     dirty.clear();
   }, 200);
 
+  // a card as the workbench shows it, its sites linking to the editor
+  const links: CardLinks = {
+    origin,
+    open: (site: Location) => {
+      const selection = { startLineNumber: site.range.start.line + 1, startColumn: 1 };
+      const args = [uriOf(site.path).toString(), { selection }];
+      return `command:vscode.open?${encodeURIComponent(JSON.stringify(args))}`;
+    },
+  };
+  const markdownOf = (card: Inspect) => {
+    const md = new vscode.MarkdownString(hoverMarkdown(card, links), true);
+    md.supportHtml = true;
+    md.isTrusted = { enabledCommands: ["vscode.open", OPEN_EVENT_GRAPH] };
+    return md;
+  };
+
   provide((lang) =>
     vscode.languages.registerHoverProvider(lang, {
       async provideHover(doc, pos) {
         const card = await ide.Hover(...at(doc, pos));
         if (!card) return null;
-        const links = {
-          origin,
-          open: (site: Location) => {
-            const selection = { startLineNumber: site.range.start.line + 1, startColumn: 1 };
-            const args = [uriOf(site.path).toString(), { selection }];
-            return `command:vscode.open?${encodeURIComponent(JSON.stringify(args))}`;
-          },
-        };
-        const md = new vscode.MarkdownString(hoverMarkdown(card, links), true);
-        md.supportHtml = true;
-        md.isTrusted = { enabledCommands: ["vscode.open", OPEN_EVENT_GRAPH] };
+        const md = markdownOf(card);
         if (card.graphed) {
-          const args = encodeURIComponent(JSON.stringify([card.word.name]));
+          const args = encodeURIComponent(JSON.stringify([card.word]));
           md.appendMarkdown(`\n\n[Open in Event Graph](command:${OPEN_EVENT_GRAPH}?${args})`);
         }
         return new vscode.Hover(md, toRange(card.range, linesOf(doc)));
@@ -147,16 +152,17 @@ export function registerLanguageClient(getWorkspaceId: () => string, origin: Car
             // the backend's rank first, then the order it wrote the ties in
             entry.sortText = `${item.rank}${String(i).padStart(4, "0")}`;
             entry.range = toRange(item.range, linesOf(doc));
+            if (item.snippet) entry.insertText = new vscode.SnippetString(item.snippet);
             items.set(entry, { path: pathOf(doc), item });
             return entry;
           });
           return new vscode.CompletionList(shown, list.incomplete);
         },
-        // prose is fetched for the item the reader is looking at, not for the whole list
+        // the card is fetched for the item the reader is looking at, not for the whole list
         async resolveCompletionItem(entry) {
-          const origin = items.get(entry);
-          const docs = origin && (await ide.ResolveCompletion(getWorkspaceId(), origin.path, origin.item));
-          if (docs) entry.documentation = new vscode.MarkdownString(docs);
+          const offered = items.get(entry);
+          const card = offered && (await ide.ResolveCompletion(getWorkspaceId(), offered.path, offered.item));
+          if (card) entry.documentation = markdownOf(card);
           return entry;
         },
       },

@@ -1,313 +1,381 @@
-// scan.go is the three ways records come to be: a scan of a game install, which also builds its
-// schema; the build of a workspace's mods over an install; and one file read again after an edit.
-// Each reads files with a reader per CPU and adds their records in inventory order, because load
-// order decides winners.
+// scan.go scans an install and a workspace's mods into indexes, keeps an install's schema and index
+// in one cache file, and walks one mod file again when it is saved (spec §3, §7.3).
 
 package index
 
 import (
-	"bytes"
+	"cmp"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/schema"
+	"paradox-modding-tools/services/internal/lang/shipped"
 	"paradox-modding-tools/services/internal/lang/source"
+	"paradox-modding-tools/services/internal/local"
+	"paradox-modding-tools/services/internal/wiki"
 )
 
-// Install is everything one scan of a game install produced. It is what the cache holds.
-type Install struct {
-	Index  *Index
-	Schema *schema.Schema
-}
-
-// Request is what a scan is asked for.
+// Request is one install's scan: Version is the game's (D-11), Language the localization kept
+// besides english. Progress hears inventory, schema, index (per file read) and saving.
 type Request struct {
-	Game     string   // the registry's id
-	Dir      string   // the game's root folder
-	Version  string   // the install's version
-	Dumps    []string // the folders the game's script_docs dumps may be in
-	Wiki     string   // the wiki sidecar's path; the shipped wiki where it does not exist
-	Language string   // the workspace's language, read beside english; "" for english alone
-
-	// Progress hears each file read or step taken, by stage: reading localization, reading the
-	// install, reading definitions, reading references; nil for none
-	Progress func(stage string, done, total int)
+	Game, Dir, Version, Language string
+	App                          string // the app's version; "dev" or "" never reads or writes the cache
+	Progress                     func(stage string, done, total int)
 }
 
-// Mod is one mod of a workspace, in the playset's order.
+// Install is an install's schema and the index of its files.
+type Install struct {
+	Schema   *schema.Schema
+	Index    *Index
+	Scanned  time.Time // when the install was built; a cache load keeps the original
+	Previous string    // the version of the older cache file this scan replaced; "" when none or loaded
+}
+
+// Mod is one mod of a workspace: its id and folder.
 type Mod struct{ ID, Dir string }
 
-// replaced is the folders a mod replaces, lower-cased and slash separated, a leading stage folder
-// dropped (EU5's main_menu/setup/start): replace_path lines in a CK3 descriptor,
-// game_custom_data.replace_paths in a Victoria 3 or EU5 metadata.json, whose byte-order mark goes.
-func replaced(dir string, stages []string) []string {
-	var out []string
-	if raw, err := os.ReadFile(filepath.Join(dir, "descriptor.mod")); err == nil {
-		text, _ := jomini.Decode(raw)
-		for _, st := range jomini.Parse(text).Root.Statements {
-			if assignment, ok := st.(*jomini.Assignment); ok && assignment.Key.Text == "replace_path" {
-				if folder, ok := assignment.Value.(*jomini.Scalar); ok {
-					out = append(out, folder.Text)
-				}
-			}
-		}
-	}
-	var metadata struct {
-		Custom struct {
-			ReplacePaths []string `json:"replace_paths"`
-		} `json:"game_custom_data"`
-	}
-	metadataPath := filepath.Join(dir, ".metadata", "metadata.json")
-	if raw, err := os.ReadFile(metadataPath); err == nil && json.Unmarshal(bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF}), &metadata) == nil {
-		out = append(out, metadata.Custom.ReplacePaths...)
-	}
-	for i, folder := range out {
-		folder = strings.Trim(strings.ToLower(filepath.ToSlash(folder)), "/")
-		for _, stage := range stages {
-			if rest, ok := strings.CutPrefix(folder, stage+"/"); ok {
-				folder = rest
-				break
-			}
-		}
-		out[i] = folder
-	}
-	return out
-}
-
-// each harvests the files with a reader per CPU and hands the results to keep in file order,
-// telling progress, where there is one, of each under stage.
-func each(
-	ctx context.Context,
-	files []source.File,
-	reader schema.Reader,
-	keep func(*Records),
-	progress func(stage string, done, total int),
-	stage string,
-) error {
-	type read struct {
-		i       int
-		records *Records
-	}
-	workers := runtime.NumCPU()
-	window, jobs, out := make(chan struct{}, workers*4), make(chan int), make(chan read, workers*4)
-	go func() {
-		defer close(jobs)
-		for i := range files {
-			select {
-			case window <- struct{}{}:
-				jobs <- i
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Go(func() {
-			for i := range jobs {
-				text := ""
-				if Readable(files[i], reader.Schema) {
-					text, _ = files[i].Text()
-				}
-				out <- read{i, Harvest(files[i], text, reader)}
-			}
-		})
-	}
-	go func() {
-		wg.Wait()
-		close(out)
-	}()
-
-	// keep each file when its turn comes; only this loop touches what is waiting
-	waiting, turn := map[int]*Records{}, 0
-	for got := range out {
-		waiting[got.i] = got.records
-		for records := waiting[turn]; records != nil; records = waiting[turn] {
-			keep(records)
-			delete(waiting, turn)
-			turn++
-			<-window
-			if progress != nil {
-				progress(stage, turn, len(files))
-			}
-		}
-	}
-	return ctx.Err()
-}
-
-// wanted is the files of a language the scan reads, and every file that is no localization.
-func wanted(files []source.File, language string, locs bool) []source.File {
-	var out []source.File
-	for _, file := range files {
-		spoken := loc.LanguageFromRel(file.Rel)
-		isLoc := file.Format == source.Loc
-		inLanguage := !isLoc || spoken == "english" || (language != "" && spoken == language)
-		if isLoc == locs && inLanguage {
-			out = append(out, file)
-		}
-	}
-	return out
-}
-
-// harvested fills an index from files in the two walks the harvest needs: definitions and
-// localization for all, then settle with the names each database defines, then, with those behind
-// Found, references and edges, in script and in localization (a $key$ a value interpolates).
-func harvested(
-	ctx context.Context,
-	idx *Index,
-	files []source.File,
-	reader schema.Reader,
-	found schema.Defined,
-	progress func(stage string, done, total int),
-	settle func(names map[string][]string),
-) error {
-	reader.Found = nil
-	if err := each(ctx, files, reader, idx.Add, progress, "reading definitions"); err != nil {
-		return err
-	}
-
-	idx.Ready()
-	names := map[string][]string{}
-	for _, def := range idx.Defs {
-		names[def.Database] = append(names[def.Database], def.Name)
-	}
-	settle(names)
-	reader.Found = found
-	scripts := slices.DeleteFunc(slices.Clone(files), func(file source.File) bool {
-		return file.Format != source.Script && file.Format != source.Loc
-	})
-	return each(ctx, scripts, reader, func(records *Records) {
-		records.Defs, records.Loc = nil, nil
-		idx.Add(records)
-	}, progress, "reading references")
-}
-
-// Scan reads a game install: its files, its localization, what the game says of itself, the schema
-// built from all of it, and then every definition, reference and edge.
+// Scan gives an install's schema and index from the cache, else builds and caches them (D-5); a
+// cache that cannot be written returns the install with its error.
 func Scan(ctx context.Context, req Request) (*Install, error) {
-	gameInfo := game.Get(req.Game)
-	if gameInfo == nil {
-		return nil, fmt.Errorf("unknown game %q", req.Game)
+	if req.Progress == nil {
+		req.Progress = func(string, int, int) {}
 	}
-	idx := &Index{Roots: source.Roots(req.Dir)}
-	files := source.Inventory(game.OriginVanilla, idx.Roots)
-	if !slices.ContainsFunc(files, func(file source.File) bool { return file.Format == source.Script }) {
-		return nil, fmt.Errorf("no script files under %s: check the install path", req.Dir)
+	cached := req.App != "" && req.App != "dev"
+	if cached {
+		if install, err := LoadInstall(req); err == nil {
+			return install, nil
+		}
 	}
 
-	// localization first: the build asks which words are loc keys
-	keys := map[string]bool{}
-	locs := wanted(files, req.Language, true)
-	if err := each(ctx, locs, schema.Reader{Schema: &schema.Schema{Dumps: &schema.Dumps{}}}, func(records *Records) {
-		for _, entry := range records.Loc {
-			keys[entry.Key] = true
+	// 1. the install's files and the dump folders'
+	req.Progress("inventory", 0, 1)
+	roots := source.Roots(req.Dir)
+	input := inventory(req, roots)
+
+	// 2. the schema, from the dump files when every one is there, else with the shipped dump part; a
+	// shipped file that does not decode leaves Build the dump files that exist
+	req.Progress("schema", 0, 1)
+	if len(schema.MissingDumps(input.Dumps)) > 0 {
+		if backup, exact, _ := shipped.Load(req.Game, req.Version); backup != nil {
+			origin := backup.Sources[schema.SourceDumps]
+			origin.From, origin.Stale = "shipped", !exact
+			backup.Sources[schema.SourceDumps] = origin
+			input.Shipped = backup
 		}
-	}, req.Progress, "reading localization"); err != nil {
+	}
+	sch, err := schema.Build(ctx, input)
+	if err != nil {
 		return nil, err
 	}
 
-	// what the game says of itself, each dump set the user's where it is not older than the install,
-	// else the shipped one; the wiki the sidecar where there is one, else the shipped one
-	if req.Progress != nil {
-		req.Progress("reading the install", 0, 1)
-	}
-	shipped, hasShipped := schema.ShippedLayers(req.Game)
-	yours, installed := schema.ReadDumps(req.Dumps), game.InstallUpdatedAt(req.Dir)
-	pick := func(written time.Time) (*schema.Dumps, string) {
-		switch {
-		case !written.IsZero() && !written.Before(installed):
-			return yours, "yours"
-		case hasShipped && shipped.Dumps != nil:
-			return shipped.Dumps, "shipped"
-		}
-		return &schema.Dumps{}, "none"
-	}
-	dumps, scriptDocsFrom := pick(yours.ScriptDocsWritten)
-	dataTypes, dataTypesFrom := pick(yours.DataTypesWritten)
-	if dataTypes != dumps {
-		dumps = &schema.Dumps{
-			Effects: dumps.Effects, Triggers: dumps.Triggers, Modifiers: dumps.Modifiers, EventTargets: dumps.EventTargets,
-			DataTargets: dumps.DataTargets, Scopes: dumps.Scopes, OnActions: dumps.OnActions, CustomLocalization: dumps.CustomLocalization,
-			SavedScopes: dumps.SavedScopes, Unknown: dumps.Unknown, ScriptDocsWritten: dumps.ScriptDocsWritten,
-			DataTypes: dataTypes.DataTypes, Globals: dataTypes.Globals, DataTypesWritten: dataTypes.DataTypesWritten,
-		}
-	}
-	scripts := schema.ReadScripts(files, gameInfo)
-	docs, unread := schema.ReadDocs(files, scripts, dumps)
-	wiki, wikiUnread := schema.ReadWiki(req.Wiki, scripts, dumps)
-	if _, err := os.Stat(req.Wiki); err != nil && hasShipped {
-		wiki, wikiUnread = shipped.Wiki, nil
-	}
-	built := schema.Build(schema.Input{Game: gameInfo, Version: req.Version, Files: files, Scripts: scripts, Dumps: dumps, Docs: docs, Wiki: wiki})
-	built.DumpsFrom = schema.DumpsFrom{ScriptDocs: scriptDocsFrom, DataTypes: dataTypesFrom}
-	if scriptDocsFrom == "shipped" || dataTypesFrom == "shipped" {
-		built.DumpsVersion = shipped.GameVersion
-	}
-	built.Unread.DocLines = append(unread, wikiUnread...)
-	if req.Progress != nil {
-		req.Progress("reading the install", 1, 1)
+	// 3. the index: each file parsed and walked once, localization in english and the asked language
+	idx := &Index{Files: input.Install, Roots: roots}
+	languages := []string{"english", strings.ToLower(req.Language)}
+	err = index(ctx, sch, idx, languages, func(done, total int) { req.Progress("index", done, total) })
+	if err != nil {
+		return nil, err
 	}
 
-	// every file has its place in the inventory, in load order, whether or not it is read
-	idx.Files = files
-	err := harvested(ctx, idx, append(locs, wanted(files, "", false)...), schema.Reader{Schema: built}, All{idx}, req.Progress, func(names map[string][]string) {
-		schema.Settle(built, names, loc.NewKeys(keys), files, scripts)
-	})
-	idx.shared = nil
-	return &Install{Index: idx, Schema: built}, err
+	install := &Install{Schema: sch, Index: idx, Scanned: time.Now()}
+	if !cached {
+		return install, nil
+	}
+	req.Progress("saving", 0, 1)
+	return install, SaveInstall(req, install)
 }
 
-// BuildWorkspace reads a workspace's mods over an install: the databases their files add to the
-// install's schema, read with the install's dumps, docs and wiki, and their own records, whose
-// references may name anything of the install. Every loc file of a mod is read, whatever its
-// language: health reports each language's gaps.
-func BuildWorkspace(ctx context.Context, mods []Mod, install *Install) (*Index, *schema.Schema, error) {
-	base, gameInfo := install.Schema, game.Get(install.Schema.Game)
-	idx := &Index{owned: map[int32]*owns{}}
+// BuildSchema is what the generator ships (D-27): the install's databases, which dump claims name,
+// and the dump part; refused unless every dump file is there, so a partial backup never ships.
+func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
+	input := inventory(req, source.Roots(req.Dir))
+	if missing := schema.MissingDumps(input.Dumps); len(missing) > 0 {
+		return nil, fmt.Errorf("dump files missing for %s: %s", req.Game, strings.Join(missing, ", "))
+	}
+	input.DumpsOnly = true
+	return schema.Build(ctx, input)
+}
+
+// inventory is the schema stage's input: the files under the install's roots in load order, the
+// dump folders' files, the wiki sidecar and when the install last changed.
+func inventory(req Request, roots []string) schema.Input {
+	sidecar, _ := wiki.SidecarPath(req.Game)
+	return schema.Input{
+		Game:    req.Game,
+		Version: req.Version,
+		Install: source.Inventory(game.OriginVanilla, roots),
+		Dumps:   source.Inventory("dumps", game.DumpDirs(req.Game, req.Dir)),
+		Wiki:    sidecar,
+		Updated: game.InstallUpdatedAt(req.Dir),
+	}
+}
+
+// index reads the files of idx.Files that hold records: a worker per CPU parses and walks ahead
+// while Add runs in file order here. languages limits the localization kept (none: every language).
+func index(ctx context.Context, sch *schema.Schema, idx *Index, languages []string,
+	progress func(done, total int)) error {
+	idx.Ready()
+	var files []source.File
+	for _, file := range idx.Files {
+		if slices.Contains([]source.Format{source.Script, source.Table, source.List, source.Loc}, file.Format) {
+			files = append(files, file)
+		}
+	}
+
+	done := 0
+	return source.Ordered(ctx, files, func(file source.File) *Records {
+		text, _ := file.Text()
+		return read(sch, file, text, languages)
+	}, func(file source.File, records *Records) {
+		if records != nil {
+			idx.Add(records, file.Path)
+		}
+		done++
+		if progress != nil {
+			progress(done, len(files))
+		}
+	})
+}
+
+// read is one file's records by its format: script walked, a table or sound list walked without a
+// tree, localization parsed; nil when the format holds none or the language is not kept.
+func read(sch *schema.Schema, file source.File, text string, languages []string) *Records {
+	switch file.Format {
+	case source.Script:
+		parsed := jomini.Parse(text)
+		return Walk(sch, file, &parsed, nil)
+	case source.Table, source.List:
+		return Walk(sch, file, nil, nil)
+	case source.Loc:
+		parsed := loc.Parse(text)
+		language := strings.ToLower(cmp.Or(parsed.Language, loc.LanguageFromRel(file.Rel)))
+		if len(languages) > 0 && !slices.Contains(languages, language) {
+			return nil
+		}
+
+		// strings are cloned, so a record never pins the file's text. Each $key$ a text interpolates
+		// names a loc key; a [x|E] or [x|e] link and Concept('x', …) name a concept of the database
+		// whose registry row has Concepts; each is a reference in no definition (D-31)
+		concepts := cmp.Or(sch.Flagged(func(row game.Folder) bool { return row.Concepts })...)
+		records, language, lines := &Records{}, strings.Clone(language), jomini.NewLineIndex(text)
+		refer := func(database, name string, span jomini.Range) {
+			at := lines.PositionAt(span.Start)
+			records.Refs = append(records.Refs, Ref{
+				Database: database, Name: strings.Clone(name), Path: file.Path, Range: span,
+				Line: int32(at.Line), Col: int32(at.Character), From: -1,
+			})
+		}
+		for _, entry := range parsed.Entries {
+			records.Loc = append(records.Loc, Loc{
+				Key: strings.Clone(entry.Key), Language: language, Text: strings.Clone(entry.Value), Path: file.Path,
+				Line: entry.Line,
+			})
+			for _, interp := range loc.Interps(entry.Value, entry.ValueRange.Start) {
+				refer(Localization, interp.Key, interp.KeyRange)
+			}
+			for _, call := range jomini.Calls(entry.Value, entry.ValueRange.Start) {
+				steps := jomini.ParseCall(text[call.Start:call.End], call.Start)
+				if concepts == "" || len(steps) == 0 {
+					continue
+				}
+				format := strings.TrimLeft(text[steps[0].Range.End:call.End], " \t")
+				if len(steps) == 1 && len(steps[0].Args) == 0 && (format == "|E]" || format == "|e]") {
+					refer(concepts, steps[0].Name, steps[0].Range)
+				}
+				for _, step := range steps {
+					if step.Name == "Concept" && len(step.Args) > 0 && step.Args[0].Quoted {
+						arg := step.Args[0]
+						refer(concepts, arg.Text, jomini.Range{Start: arg.Range.Start + 1, End: arg.Range.End - 1})
+					}
+				}
+			}
+		}
+		return records
+	}
+	return nil
+}
+
+// ScanMods indexes a workspace's mods, in playset order, over an install: one index of their files,
+// every localization language kept, with the folders their descriptors unload in Replaced.
+func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error) {
+	info := game.Get(install.Schema.Game)
+	idx := &Index{}
 	for _, mod := range mods {
 		roots := source.Roots(mod.Dir)
 		idx.Roots = append(idx.Roots, roots...)
 		idx.Files = append(idx.Files, source.Inventory(mod.ID, roots)...)
-		idx.Replaced = append(idx.Replaced, replaced(mod.Dir, gameInfo.StageRoots)...)
-	}
-	files := idx.Files
-	scripts := schema.ReadScripts(files, gameInfo)
-	built := schema.Build(schema.Input{
-		Game: gameInfo, Version: base.Version, Files: files, Scripts: scripts, Dumps: base.Dumps, Docs: base.Docs, Wiki: base.Wiki, Base: base,
-	})
 
-	// the harvest reads a copy: adding a file's records writes back into idx.Files
-	return idx, built, harvested(ctx, idx, slices.Clone(files), schema.Reader{Schema: built}, All{idx, install.Index}, nil, func(names map[string][]string) {
-		keys := map[string]bool{}
-		for _, entries := range [][]Loc{install.Index.Loc, idx.Loc} {
-			for _, entry := range entries {
-				keys[entry.Key] = true
+		// CK3's descriptor.mod has a replace_path line per folder; Vic3 and EU5 list them in the
+		// metadata's game_custom_data.replace_paths
+		descriptor, _ := source.File{Path: game.DescriptorPath(info.ID, mod.Dir)}.Text()
+		var folders []string
+		if info.Descriptor == "metadata" {
+			var metadata struct {
+				Custom struct {
+					Paths []string `json:"replace_paths"`
+				} `json:"game_custom_data"`
+			}
+			_ = json.Unmarshal([]byte(descriptor), &metadata)
+			folders = metadata.Custom.Paths
+		} else {
+			parsed := jomini.Parse(descriptor)
+			for _, statement := range parsed.Root.Statements {
+				if assign, isAssign := statement.(*jomini.Assignment); isAssign && assign.Key.Text == "replace_path" {
+					if scalar, isScalar := assign.Value.(*jomini.Scalar); isScalar {
+						folders = append(folders, scalar.Text)
+					}
+				}
 			}
 		}
-		schema.Settle(built, names, loc.NewKeys(keys), files, scripts)
-	})
+
+		// a folder is held lower-case, slash separated and without the stage an inventory root drops
+		for _, folder := range folders {
+			folder = strings.Trim(strings.ReplaceAll(strings.ToLower(folder), `\`, "/"), "/")
+			if stage, rest, staged := strings.Cut(folder, "/"); staged && slices.Contains(info.StageRoots, stage) {
+				folder = rest
+			}
+			idx.Replaced = append(idx.Replaced, folder)
+		}
+	}
+	return idx, index(ctx, install.Schema, idx, nil, nil)
 }
 
-// IndexFile reads one file of a live index again: what it added is taken back, and it is harvested
-// as a scan would, its own definitions first.
-func (idx *Index) IndexFile(file source.File, text string, reader schema.Reader) {
-	idx.Drop(file.Path, false)
-	found := reader.Found
-	reader.Found = nil
-	idx.Add(Harvest(file, text, reader))
-	reader.Found = found
-	refs := Harvest(file, text, reader)
-	refs.Defs, refs.Loc = nil, nil
-	idx.Add(refs)
+// Reindex walks one file again: its records dropped and added back. A file not yet in Files is
+// appended to it, its Rel listed. Every localization language is kept.
+func (idx *Index) Reindex(sch *schema.Schema, file source.File, text string) {
+	idx.Drop(file.Path)
+	if idx.defs == nil {
+		idx.Ready()
+	}
+	if _, listed := idx.At(file.Path); !listed {
+		idx.order[strings.ToLower(file.Path)] = len(idx.Files)
+		idx.rels[strings.ToLower(file.Rel)] = len(idx.Files)
+		idx.Files = append(idx.Files, file)
+	}
+	if records := read(sch, file, text, nil); records != nil {
+		idx.Add(records, file.Path)
+	}
+}
+
+// cachePath is a request's cache file, install-<game>-<folder>-<version>-<app>-<state>.gob.gz, and
+// its prefix (D-28); the state hashes the language, install update time, dump names and dates.
+func cachePath(req Request) (path, ofFolder string, err error) {
+	dir, err := local.CacheDir()
+	if err != nil {
+		return "", "", err
+	}
+	state := sha256.New()
+	fmt.Fprintf(state, "%s|%d", req.Language, game.InstallUpdatedAt(req.Dir).UnixNano())
+	for _, file := range source.Inventory("dumps", game.DumpDirs(req.Game, req.Dir)) {
+		name := filepath.Base(file.Path)
+		if info, err := os.Stat(file.Path); err == nil && slices.Contains(schema.DumpFiles, name) {
+			fmt.Fprintf(state, "|%s|%d", name, info.ModTime().UnixNano())
+		}
+	}
+	folder := sha256.Sum256([]byte(filepath.Clean(req.Dir)))
+	ofFolder = filepath.Join(dir, fmt.Sprintf("install-%s-%x-", shipped.Safe(req.Game), folder[:6]))
+	version, app := shipped.Safe(req.Version), shipped.Safe(req.App)
+	return fmt.Sprintf("%s%s-%s-%x.gob.gz", ofFolder, version, app, state.Sum(nil)[:6]), ofFolder, nil
+}
+
+// forget deletes the cache files whose path begins with prefix, except keep, and gives the version
+// in the name of the first (a version has no dash).
+func forget(prefix, keep string) (version string, err error) {
+	dir := filepath.Dir(prefix)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if path == keep || !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return version, err
+		}
+		if version == "" {
+			version, _, _ = strings.Cut(strings.TrimPrefix(path, prefix), "-")
+		}
+	}
+	return version, nil
+}
+
+// SaveInstall writes an install's schema and index to its request's cache file, whole or not at
+// all, then deletes the older cache files of its game and install folder and sets the install's
+// Previous to the version the first held; the file itself holds none.
+func SaveInstall(req Request, install *Install) error {
+	path, ofFolder, err := cachePath(req)
+	if err != nil {
+		return err
+	}
+	err = local.Write(path, func(out io.Writer) error {
+		zip := gzip.NewWriter(out)
+		if err := gob.NewEncoder(zip).Encode(install); err != nil {
+			return err
+		}
+		return zip.Close()
+	})
+	if err != nil {
+		return err
+	}
+	install.Previous, err = forget(ofFolder, path)
+	return err
+}
+
+// CachedAt is when a request's cache file was written, by its file time; zero where there is none.
+func CachedAt(req Request) time.Time {
+	if path, _, err := cachePath(req); err == nil {
+		if info, err := os.Stat(path); err == nil {
+			return info.ModTime()
+		}
+	}
+	return time.Time{}
+}
+
+// LoadInstall reads a request's cache file, with the index ready to query.
+func LoadInstall(req Request) (*Install, error) {
+	path, _, err := cachePath(req)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	unzip, err := gzip.NewReader(file)
+	if err != nil {
+		return nil, err
+	}
+	defer unzip.Close()
+	install := &Install{}
+	if err := gob.NewDecoder(unzip).Decode(install); err != nil {
+		return nil, err
+	}
+	install.Index.Ready()
+	return install, nil
+}
+
+// DropInstall deletes every cache file of a request's game and install folder.
+func DropInstall(req Request) error {
+	_, ofFolder, err := cachePath(req)
+	if err != nil {
+		return err
+	}
+	_, err = forget(ofFolder, "")
+	return err
 }

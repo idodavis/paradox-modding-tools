@@ -80,8 +80,8 @@ const flowNodes = computed((): FlowNode<Node>[] =>
   })),
 );
 
-// a lit edge is labelled by the macro its source writes, with … when that macro fires through
-// others, else by the firing key; the whole chain is in the detail's links
+// a lit edge is labelled by the scripted effect it fires through, with … when that effect fires
+// through others, and not at all for a direct fire; the whole chain is in the detail's links
 const flowEdges = computed((): FlowEdge[] =>
   props.edges.map((edge, i) => {
     const onRoute = lit.value?.route.has(edge.from) && lit.value.route.has(edge.to);

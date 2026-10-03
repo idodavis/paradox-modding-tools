@@ -15,9 +15,9 @@ type ScanState = {
 };
 
 const scanByInstall = new Map<string, ScanState>();
-/** Installs already toasted for CacheStale this process (no per-navigation spam). */
-const staleToasted = new Set<string>();
-/** Same, for an install with no script_docs: told once, not on every navigation. */
+/** Installs whose game update was already told this process: once, not on every navigation. */
+const updatedToasted = new Set<string>();
+/** Same, for an install with no dumps. */
 const docsToasted = new Set<string>();
 let scanListening = false;
 let sessionQueryCache: ReturnType<typeof useQueryCache> | null = null;
@@ -91,7 +91,7 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
 
   const scanLabel = computed(() => (health.value?.scannedAt ? "Rescan" : "Scan"));
 
-  /** Auto-rescan install semantics then reindex; bust session queries. */
+  /** Rescan install semantics then reindex; bust session queries. */
   async function rescan(): Promise<void> {
     const wsId = id.value;
     const installId = health.value?.installId;
@@ -101,7 +101,6 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     scan.value.msg = "starting";
     try {
       await RebuildInstallSemantics(installId);
-      staleToasted.delete(installId);
       await EnsureSession(wsId);
       await bustSessionQueries(queryCache);
     } finally {
@@ -111,33 +110,18 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     }
   }
 
+  // a scan that replaced another version's: the game was updated, and the new scan is already done
   watch(
-    () => ({
-      stale: health.value?.cacheStale,
-      installId: health.value?.installId,
-      scannedAt: health.value?.scannedAt,
-      scanning: scan.value.scanning,
-    }),
+    () => ({ installId: health.value?.installId, from: health.value?.updatedFrom, to: health.value?.gameVersion }),
     (s) => {
-      if (!s.stale || !s.installId || !s.scannedAt || s.scanning) return;
-      if (staleToasted.has(s.installId)) return;
-      staleToasted.add(s.installId);
+      if (!s.installId || !s.from || updatedToasted.has(s.installId)) return;
+      updatedToasted.add(s.installId);
       useToast().add({
         title: "Game updated",
-        description: "The installed version changed since the last scan. Rescan so the semantic cache matches.",
+        description: `Game updated from ${s.from} to ${s.to} — rescanned.`,
         color: "warning",
         icon: "i-lucide-refresh-cw",
         duration: 0,
-        actions: [
-          {
-            label: scanLabel.value,
-            color: "warning",
-            onClick: (e?: Event) => {
-              e?.stopPropagation();
-              void rescan();
-            },
-          },
-        ],
       });
     },
     { immediate: true },
@@ -147,10 +131,10 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
   watch(
     () => ({
       installId: health.value?.installId,
-      dumped: (health.value?.dumps ?? []).some((dump) => dump.effects > 0),
+      missing: !!health.value?.ready && health.value.dumpsFrom === "none",
     }),
     (s) => {
-      if (!s.installId || s.dumped || docsToasted.has(s.installId)) return;
+      if (!s.installId || !s.missing || docsToasted.has(s.installId)) return;
       docsToasted.add(s.installId);
       useToast().add({
         title: "No script_docs for this game",

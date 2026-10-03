@@ -133,7 +133,11 @@ func FindThumbnail(gameID, root, picture string) (string, bool) {
 		candidates = append(candidates, path.Join("", filepath.ToSlash(picture)), path.Join(game.MetadataDir, filepath.ToSlash(picture)))
 	}
 	for _, rel := range candidates {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if inside, err := filepath.Rel(root, full); err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if _, err := os.Stat(full); err == nil {
 			return rel, true
 		}
 	}
@@ -432,6 +436,9 @@ func WriteNewMod(opts NewModOpts) error {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
+	}
+	if locDir == "" {
+		return nil
 	}
 	locName := ModSlug(name) + "_l_" + language + ".yml"
 	locBody := append(append([]byte{}, utf8BOM...), []byte("l_"+language+":\n")...)

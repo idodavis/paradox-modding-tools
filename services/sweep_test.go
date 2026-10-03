@@ -22,7 +22,6 @@ import (
 	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/session"
-	"paradox-modding-tools/services/internal/wiki"
 )
 
 // The sample budgets: files diagnosed per mod, files hovered in, and words hovered in each.
@@ -47,8 +46,7 @@ func TestSweep(t *testing.T) {
 		}
 		user := game.UserDataDir(id, install)
 		started := time.Now()
-		sidecar, _ := wiki.SidecarPath(id)
-		scanned, err := index.Scan(t.Context(), index.Request{Game: id, Dir: install, Version: "sweep", Dumps: game.DumpDirs(id, install), Wiki: sidecar})
+		scanned, err := index.Scan(t.Context(), index.Request{Game: id, Dir: install, Version: "sweep"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,9 +81,12 @@ func TestSweep(t *testing.T) {
 func sweep(t *testing.T, id, name string, sess *session.Session) {
 	started := time.Now()
 	health, _ := (&HealthService{Session: serving(sess)}).GetHealth("ws", HealthParams{})
-	missing, orphaned := 0, 0
+	untranslated, defs := 0, 0
 	for _, language := range health.Loc {
-		missing, orphaned = missing+len(language.Missing), orphaned+len(language.Orphaned)
+		untranslated += len(language.Untranslated)
+	}
+	for _, records := range sess.Workspace.Records {
+		defs += len(records.Defs)
 	}
 	var files []source.File
 	for _, file := range sess.Workspace.Files {
@@ -131,8 +132,8 @@ func sweep(t *testing.T, id, name string, sess *session.Session) {
 			}
 		}
 	}
-	fmt.Printf("SWEEP %s %s: %d files, %d defs; contests %d, depends %d, dangling %d, loc missing %d orphaned %d, files %d; findings %v; hover answered %d of %d; %.1fs\n",
-		id, name, len(sess.Workspace.Files), len(sess.Workspace.Defs), len(health.Contests), len(health.Depends), len(health.Dangling), missing, orphaned, len(health.Files), findings, answered, hovers, time.Since(started).Seconds())
+	fmt.Printf("SWEEP %s %s: %d files, %d defs; contests %d, depends %d, dangling %d, loc untranslated %d; findings %v; hover answered %d of %d; %.1fs\n",
+		id, name, len(sess.Workspace.Files), defs, len(health.Contests), len(health.Depends), len(health.Dangling), untranslated, findings, answered, hovers, time.Since(started).Seconds())
 }
 
 // spread takes at most n files evenly across the list, so a big mod's sample reaches every corner.

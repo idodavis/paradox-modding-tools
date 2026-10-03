@@ -16,9 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
@@ -28,7 +26,7 @@ import (
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {
 	dir := filepath.Join("internal", "lang", "testdata", "ck3")
-	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test", Dumps: []string{filepath.Join(dir, "docs")}})
+	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test"})
 })
 
 // workspace is a session service holding, as workspace "ws", a session over the fixture install
@@ -136,7 +134,7 @@ func fixtureService(t *testing.T) *SessionService {
 		t.Fatal(err)
 	}
 	config := tempConfig(t,
-		[]GameInstall{{ID: "i1", GameID: "ck3", Name: "CK3", Path: install, Version: "test"}},
+		[]GameInstall{{ID: "i1", GameID: "ck3", Name: "CK3", Path: install}},
 		Workspace{ID: "ws", GameID: "ck3", Name: "W", InstallID: "i1", Mods: []WorkspaceMod{{ID: "m", Name: "M", Path: mod}}})
 	return &SessionService{Config: config, Scan: func(context.Context, index.Request) (*index.Install, error) { return scanned() }}
 }
@@ -238,8 +236,8 @@ func TestEventGraph(t *testing.T) {
 	if at := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more-in:g.1" }); at < 0 || drawn.Nodes[at].Stub != "fired-by" || drawn.Nodes[at].Title != "+1 fired by" {
 		t.Errorf("the fired-by stub: %+v", drawn.Nodes)
 	}
-	if found, ok := edge(drawn, "g.1", "g.2"); !ok || found.Via != "trigger_event" {
-		t.Errorf("a fire is an edge via its token: %+v", drawn.Edges)
+	if found, ok := edge(drawn, "g.1", "g.2"); !ok || found.Via != "" {
+		t.Errorf("a direct fire is an edge through no scripted effect: %+v", drawn.Edges)
 	}
 
 	// opening the stub draws the caller, and the on_action that fires g.3 is one hop in from g.3 only
@@ -255,19 +253,19 @@ func TestEventGraph(t *testing.T) {
 	// a macro is a hop: the edge goes through it, labelled by its chain, the same either way round;
 	// with the page's macros shown it is a node between the two
 	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2})
-	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire → trigger_event" || slices.Contains(ids(drawn), "m_fire") {
+	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire" || slices.Contains(ids(drawn), "m_fire") {
 		t.Errorf("a fire through a scripted effect: %+v %v", drawn.Edges, ids(drawn))
 	}
 	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.2", Depth: 1, Expand: []string{"more-in:m.2"}})
-	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire → trigger_event" {
+	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire" {
 		t.Errorf("the same chain into it: %+v", drawn.Edges)
 	}
 	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Scripted: true})
 	into, _ := edge(drawn, "m_fire", "m.2")
-	if _, ok := edge(drawn, "m.1", "m_fire"); !ok || into.Via != "trigger_event" || !slices.Contains(ids(drawn), "m_fire") {
+	if _, ok := edge(drawn, "m.1", "m_fire"); !ok || into.Via != "" || !slices.Contains(ids(drawn), "m_fire") {
 		t.Errorf("the macro drawn: %+v %v", drawn.Edges, ids(drawn))
 	}
-	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0] != (session.Fire{Name: "m.1", Via: "m_fire → trigger_event"}) {
+	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0] != (session.Fire{Name: "m.1", Via: "m_fire"}) {
 		t.Errorf("the detail's fired-by, as the graph draws it: %+v", detail.FiredBy)
 	}
 
@@ -348,7 +346,7 @@ func TestDetail(t *testing.T) {
 	if len(detail.Options) != 1 || detail.Options[0].Name != "v.1.a" || detail.Options[0].Text != "Go" {
 		t.Errorf("the options: %+v", detail.Options)
 	}
-	if len(detail.Refs) == 0 || detail.Refs[0].Database != "loc" || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
+	if len(detail.Refs) == 0 || detail.Refs[0].Database != index.Localization || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
 		t.Errorf("the block's references, by kind in the order written: %+v", detail.Refs)
 	}
 	if len(detail.Fires) != 1 || detail.Fires[0].Name != "v.2" {
@@ -473,8 +471,8 @@ func TestReadBase64(t *testing.T) {
 }
 
 // TestWorkspaceHealth covers the report over two mods: contests and dependencies in a chosen order,
-// dangling references and what must never be one, each language's missing, untranslated and
-// orphaned keys, the files a definition lacks, a site's lines, and the lookup of one key.
+// dangling references and what must never be one, each language's untranslated keys, a site's lines,
+// and the lookup of one key.
 func TestWorkspaceHealth(t *testing.T) {
 	reports := &HealthService{Session: workspace(t,
 		map[string]string{
@@ -536,14 +534,14 @@ func TestWorkspaceHealth(t *testing.T) {
 	}
 
 	// dangling: a declared cite nothing defines, with its sites; never what resolves or is unclaimed
-	if len(health.Dangling) != 1 || health.Dangling[0].Name != "k_nowhere" || !health.Dangling[0].Declared || len(health.Dangling[0].Sites) != 1 {
+	if len(health.Dangling) != 1 || health.Dangling[0].Name != "k_nowhere" || len(health.Dangling[0].Sites) != 1 {
 		t.Fatalf("one dangling reference: %+v", health.Dangling)
 	}
 	if got := lines(health.Dangling[0].Sites, false)[0]; !slices.Equal(got, []string{"\t\texists = title:k_nowhere"}) {
 		t.Errorf("a dangling site's line: %q", got)
 	}
 
-	// localization: both languages; conventional keys missing; untranslated; orphaned within the mod
+	// localization: both languages; untranslated
 	langs := map[string]Language{}
 	for _, loc := range health.Loc {
 		langs[loc.Language] = loc
@@ -559,25 +557,11 @@ func TestWorkspaceHealth(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	if got := keys(langs["english"].Missing); !slices.Equal(got, []string{"bold_b", "shared_a", "shared_a"}) {
-		t.Errorf("english: a trait's own key is what every vanilla trait has; bold and brave have theirs; a name two mods define is two rows: %v", got)
-	}
-	if got := keys(langs["french"].Missing); len(got) != 0 {
-		t.Errorf("french: missing is the workspace's language's alone, so no key is listed twice: %v", got)
-	}
 	if got := keys(langs["french"].Untranslated); !slices.Contains(got, "bold") || slices.Contains(got, "a.1.t") || slices.Contains(got, "b_only") {
 		t.Errorf("french: an english key with no french entry is untranslated where its mod ships french; one with an entry is not, nor a key of a mod that ships none: %v", got)
 	}
-	if got := keys(langs["english"].Orphaned); !slices.Equal(got, []string{"a_dead", "a_reader", "b_only"}) {
-		t.Errorf("orphaned: a key nothing reads, one that only reads; not one a definition names, one that goes on from it, one script reads, or one another key reads: %v", got)
-	}
-	if row := langs["english"].Orphaned[0]; !strings.HasSuffix(health.Sources[row.File].Rel, "a_l_english.yml") {
+	if row := langs["french"].Untranslated[0]; !strings.HasSuffix(health.Sources[row.File].Rel, "a_l_english.yml") {
 		t.Errorf("a row names its file by its number in Sources: %+v in %+v", row, health.Sources[row.File])
-	}
-
-	// files: the icon template covers 5 of 8 vanilla traits, so a trait lacking an icon is fine
-	if len(health.Files) != 0 {
-		t.Errorf("a template short of full coverage accuses nothing: %+v", health.Files)
 	}
 
 	// looking one key up: its entries in every language, and its readers
@@ -821,34 +805,22 @@ func TestEnsureSession(t *testing.T) {
 		mu.Unlock()
 	}
 	before, err := svc.GetLanguageHealth("ws")
-	if err != nil || before.Ready || !before.CacheStale || !before.InstallOk || before.GameID != "ck3" {
-		t.Fatalf("before the first build: no session, no cache: %+v (%v)", before, err)
+	if err != nil || before.Ready || !before.InstallOk || before.GameID != "ck3" {
+		t.Fatalf("before the first build: no session: %+v (%v)", before, err)
 	}
 
 	health, err := svc.EnsureSession("ws")
-	if err != nil || !health.Ready || health.CacheStale || health.ScannedAt == "" || health.Scanning {
-		t.Fatalf("a session built from a scan, its cache written: %+v (%v)", health, err)
+	if err != nil || !health.Ready || health.Scanning {
+		t.Fatalf("a session built from a scan: %+v (%v)", health, err)
 	}
 	live := svc.get("ws")
-	if live == nil || len(live.Mods) != 1 || !(index.All{live.Workspace}).Def("traits", "bold") {
+	if live == nil || len(live.Mods) != 1 || len(index.Lookup(live.Indexes(), "traits", "bold")) == 0 {
 		t.Error("the mod is indexed over the install")
-	}
-
-	// dropped and asked again, the session comes from the cache, not a scan
-	scans := int32(0)
-	svc.Scan = func(ctx context.Context, req index.Request) (*index.Install, error) {
-		atomic.AddInt32(&scans, 1)
-		return nil, os.ErrNotExist
-	}
-	svc.dropAllExcept("")
-	if health, err := svc.EnsureSession("ws"); err != nil || !health.Ready || scans != 0 {
-		t.Errorf("the cache serves the second build: %+v (%v), %d scans", health, err, scans)
 	}
 	if _, err := svc.EnsureSession("nowhere"); err == nil {
 		t.Error("a workspace the config lacks")
 	}
 
-	// the first build writes the cache, so the concurrent ones below load instead of scanning
 	svc.dropAllExcept("")
 	mu.Lock()
 	events = nil
@@ -879,87 +851,6 @@ func TestEnsureSession(t *testing.T) {
 	svc.dropAllExcept("")
 	if svc.get("ws") != nil {
 		t.Error("dropping every session leaves none live")
-	}
-}
-
-func TestPredatesInstall(t *testing.T) {
-	install := t.TempDir()
-	writeTree(t, install, map[string]string{"binaries/game.exe": "x"})
-	exe := filepath.Join(install, "binaries", "game.exe")
-	scanned := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	if err := os.Chtimes(exe, time.Now(), time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range []struct {
-		what, scannedAt, install string
-		stale                    bool
-	}{
-		{"a binary newer than the scan: the game was patched since", scanned, install, true},
-		{"a scan after the last patch is current", time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339), install, false},
-		{"no scan timestamp is not stale: guessing would rescan on every poll", "", install, false},
-		{"an unreadable install is not stale", scanned, filepath.Join(install, "gone"), false},
-	} {
-		if got := predatesInstall(row.scannedAt, row.install); got != row.stale {
-			t.Errorf("%s: %v", row.what, got)
-		}
-	}
-}
-
-func TestScanQueue(t *testing.T) {
-	svc := fixtureService(t)
-	var mu sync.Mutex
-	var order []string
-	release := make(chan struct{})
-	svc.Scan = func(ctx context.Context, req index.Request) (*index.Install, error) {
-		<-release
-		mu.Lock()
-		order = append(order, req.Version)
-		mu.Unlock()
-		return nil, os.ErrNotExist
-	}
-	if err := svc.Config.mutate(func(cfg *Config) error {
-		cfg.Installs = append(cfg.Installs, GameInstall{ID: "i2", GameID: "ck3", Path: t.TempDir(), Version: "two"}, GameInstall{ID: "i3", GameID: "ck3", Path: t.TempDir(), Version: "three"})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// the first automatic scan runs, the others queue once each; the manual one waits for the slot
-	svc.QueueScan("i1")
-	svc.QueueScan("i2")
-	svc.QueueScan("i3")
-	svc.QueueScan("i2")
-	queued, running := svc.Queued()
-	if !running || len(queued) != 3 {
-		t.Fatalf("one runs, three are queued once each: %v %v", queued, running)
-	}
-	done := make(chan error, 1)
-	go func() { done <- svc.RebuildInstallSemantics("i1") }()
-	time.Sleep(20 * time.Millisecond)
-	select {
-	case <-done:
-		t.Fatal("a manual scan started while another ran")
-	default:
-	}
-	for range 4 {
-		release <- struct{}{}
-	}
-	<-done
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		queued, running := svc.Queued()
-		if len(queued) == 0 && !running {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the queue never drained: %v %v", queued, running)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(order) != 4 || order[0] != "test" || order[1] != "two" || order[2] != "three" || order[3] != "test" {
-		t.Errorf("scans run one at a time, the queue in order, the manual one when the slot is free: %v", order)
 	}
 }
 

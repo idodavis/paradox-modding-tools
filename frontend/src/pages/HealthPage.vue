@@ -75,8 +75,7 @@ const cards = computed(() => {
     for (const gap of shown.value.rows as Gap[]) languages.set(gap.language, (languages.get(gap.language) ?? 0) + 1);
   } else {
     for (const language of report?.loc ?? []) {
-      const count = (language.missing?.length ?? 0) + (language.untranslated?.length ?? 0) + (language.orphaned?.length ?? 0);
-      languages.set(language.language, count);
+      languages.set(language.language, language.untranslated?.length ?? 0);
     }
   }
   return [
@@ -109,11 +108,6 @@ const cards = computed(() => {
       count: [...languages.values()].reduce((sum, count) => sum + count, 0),
       note: [...languages].map(([language, count]) => `${language} ${count}`).join(" · "),
     },
-    {
-      id: "files", label: "Missing art", color: "tertiary",
-      count: listed("files", report?.files).length,
-      note: "images the game finds by a name",
-    },
     ...(Object.keys(PROBLEM_CARDS) as ProblemCard[]).map((id) => ({
       id, label: PROBLEM_CARDS[id].label, color: "neutral",
       count: listed(id, problemsOf(report, id)).length,
@@ -138,8 +132,6 @@ const sites = computed(() => {
 const kept = computed(() => (selected.value && "winner" in selected.value ? selected.value.winner : -1));
 // the open row when it is a contest, whose kind and rule head the pane
 const contest = computed(() => (selected.value && "rule" in selected.value ? selected.value : null));
-// the open row when it is a definition missing art, whose images the pane lists
-const art = computed(() => (selected.value && "missing" in selected.value ? selected.value : null));
 // what its rule does: an inject adds to the kept definition, a mode like REPLACE takes its place,
 // else load order decides
 const ruleText = computed(() => {
@@ -282,15 +274,6 @@ watch(selected, (row) => {
                 />
               </div>
             </template>
-            <section v-if="art">
-              <p class="mb-2 text-toned">
-                Every {{ art.database }} definition in the game has these images, which the game finds by the name;
-                this one lacks {{ art.missing?.length ?? 0 }} of {{ art.of }}:
-              </p>
-              <ul class="space-y-1 rounded-md border border-default bg-default p-3 font-mono text-xs text-default">
-                <li v-for="path in art.missing ?? []" :key="path" class="truncate" :title="path">{{ path }}</li>
-              </ul>
-            </section>
             <section v-if="lookup?.entries?.length">
               <h4 class="mb-2 text-sm font-semibold text-highlighted">Text</h4>
               <!-- the text column shrinks to the pane: a long path is cut, its whole on hover -->

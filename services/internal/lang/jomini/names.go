@@ -1,10 +1,10 @@
 // names.go reads a single written word, whatever the word is for, the same way in every Jomini
 // game. The name shapes the games key their objects by. The words that are values rather than
 // names: a number, and a Clausewitz date (a two-part dotted word is an event id, never a date,
-// and a date is never a name, because history files key their blocks by one). And the four
+// and a date is never a name, because history files key their blocks by one). And the three
 // spellings one word can carry inside it: a prefixed word (prefix:name, with a |key and a .chain
-// after it), an entry mode before a definition's name (REPLACE:name), a constant (@name), and
-// the $NAME$ parameters a scripted effect or trigger is called with.
+// after it), a constant (@name), and the $NAME$ parameters a scripted effect or trigger is
+// called with.
 package jomini
 
 import (
@@ -74,34 +74,6 @@ func IsEventID(name string) bool {
 		if char := name[i]; char < '0' || char > '9' {
 			return false
 		}
-	}
-	return true
-}
-
-// IsLowerName reports a lowercase script identifier: the ASCII shape
-// `^[a-z][a-z0-9_]*$`, widened to any lowercase Unicode letter. Lowercase, not any letter:
-// this decides whether a word is an effect or trigger name, and the games write those in
-// lower case.
-func IsLowerName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i := 0; i < len(name); {
-		char := name[i]
-		if char < utf8.RuneSelf {
-			ok := (char >= 'a' && char <= 'z') ||
-				(i > 0 && (char == '_' || (char >= '0' && char <= '9')))
-			if !ok {
-				return false
-			}
-			i++
-			continue
-		}
-		decoded, size := utf8.DecodeRuneInString(name[i:])
-		if !unicode.IsLower(decoded) && !(i > 0 && unicode.IsDigit(decoded)) {
-			return false
-		}
-		i += size
 	}
 	return true
 }
@@ -244,22 +216,6 @@ func nameEnd(name string) int {
 		i += size
 	}
 	return len(name)
-}
-
-// Mode splits an entry mode off a definition's name: REPLACE:name gives REPLACE and name. A
-// mode is upper-case letters and underscores; any other word comes back whole with no mode.
-func Mode(key string) (mode, name string) {
-	colon := strings.IndexByte(key, ':')
-	if colon <= 0 || colon == len(key)-1 {
-		return "", key
-	}
-
-	for _, char := range key[:colon] {
-		if !(char >= 'A' && char <= 'Z') && char != '_' {
-			return "", key
-		}
-	}
-	return key[:colon], key[colon+1:]
 }
 
 // Constant is the name in @name. An inline expression, @[ … ], is a constant with no name.

@@ -126,8 +126,8 @@ func tokenize(text string) []token {
 	return tokens
 }
 
-// lexString consumes a quoted string starting at *cursor (on the opening quote). It runs to its
-// closing quote across lines, as the game reads it; only the end of the text leaves it unterminated.
+// lexString consumes a quoted string starting at *cursor (on the opening quote), to its closing
+// quote across lines as the game reads it; only the end of the text leaves it unterminated.
 func lexString(text string, cursor *int) token {
 	start, pos := *cursor, *cursor+1
 	for pos < len(text) && text[pos] != '"' {
@@ -299,7 +299,7 @@ func Decode(raw []byte) (text string, hadBOM bool) {
 	if utf8.Valid(body) {
 		return Normalize(string(body)), hadBOM
 	}
-	return Normalize(latin1Decode(raw)), false
+	return Normalize(latin1Decode(body)), hadBOM
 }
 
 // latin1Decode maps each byte 1:1 to U+00xx. Used only when raw is not valid UTF-8.

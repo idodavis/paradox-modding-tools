@@ -12,9 +12,9 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/loc"
-	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -57,12 +57,16 @@ func Format(sess *session.Session, path string) ([]TextEdit, error) {
 	if err != nil {
 		return nil, err
 	}
+	// lines as the parse breaks them, a lone CR included, so they match LineIndents one to one
 	var edits []TextEdit
-	lines := strings.Split(file.text, "\n")
+	lines := file.parsed.Lines()
+	line := func(i int) string {
+		return strings.TrimRight(file.text[lines.OffsetAt(i, 0):lines.OffsetAt(i+1, 0)], "\r\n")
+	}
 	fix := func(i int, want string) {
-		line := strings.TrimRight(lines[i], "\r")
-		have := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-		if have != want && strings.TrimSpace(line) != "" {
+		text := line(i)
+		have := text[:len(text)-len(strings.TrimLeft(text, " \t"))]
+		if have != want && strings.TrimSpace(text) != "" {
 			edits = append(edits, TextEdit{Range: Range{Start: Position{Line: i}, End: Position{Line: i, Character: len(have)}}, NewText: want})
 		}
 	}
@@ -72,8 +76,8 @@ func Format(sess *session.Session, path string) ([]TextEdit, error) {
 			fix(i, strings.Repeat("\t", depth))
 		}
 	case source.Loc:
-		for i, line := range lines {
-			if i > 0 && !strings.HasPrefix(strings.TrimSpace(line), "l_") {
+		for i := 1; i < lines.LineCount(); i++ {
+			if !strings.HasPrefix(strings.TrimSpace(line(i)), "l_") {
 				fix(i, " ")
 			}
 		}
@@ -96,8 +100,8 @@ func Folding(sess *session.Session, path string) ([]FoldingRange, error) {
 	}
 	var out []FoldingRange
 	lines := file.parsed.Lines()
-	jomini.Walk(file.parsed.Root, func(st jomini.Statement, depth int, parent *jomini.Block) bool {
-		if block := jomini.ChildBlock(st); block != nil && block.CloseBrace >= 0 {
+	jomini.Walk(file.parsed.Root, func(statement jomini.Statement, depth int, parent *jomini.Block) bool {
+		if block := jomini.ChildBlock(statement); block != nil && block.CloseBrace >= 0 {
 			if from, to := lines.PositionAt(block.OpenBrace).Line, lines.PositionAt(block.CloseBrace).Line; to > from {
 				out = append(out, FoldingRange{StartLine: from, EndLine: to})
 			}
@@ -123,18 +127,18 @@ func CodeActions(sess *session.Session, path string, line, col int) ([]CodeActio
 		}
 		return out, nil
 	}
-	word := file.at(file.offset(line, col))
-	if word == nil || word.IsKey || word.Level.Below == nil || sess.All().Loc(word.Text) {
+	ref := file.target(file.parsed.Lines().OffsetAt(line, col))
+	if ref == nil || ref.Database != index.Localization || !loc.LooksLikeKey(ref.Name) {
 		return out, nil
 	}
-	if !slices.ContainsFunc(word.Level.Below.Takes, func(take schema.Take) bool { return take.Type == schema.WordLoc }) || !loc.LooksLikeKey(word.Text) {
+	if _, known := index.Resolve(sess.Schema(), sess.Indexes(), *ref); known {
 		return out, nil
 	}
 	target, at := file.locFile()
 	if target == "" {
 		return out, nil
 	}
-	out = append(out, CodeAction{Title: fmt.Sprintf("Create localization key %q", word.Text), Edit: WorkspaceEdit{Changes: map[string][]TextEdit{target: {{Range: Range{Start: at, End: at}, NewText: fmt.Sprintf(" %s:0 \"\"\n", word.Text)}}}}})
+	out = append(out, CodeAction{Title: fmt.Sprintf("Create localization key %q", ref.Name), Edit: WorkspaceEdit{Changes: map[string][]TextEdit{target: {{Range: Range{Start: at, End: at}, NewText: fmt.Sprintf(" %s:0 \"\"\n", ref.Name)}}}}})
 	return out, nil
 }
 
@@ -160,7 +164,11 @@ func (file *file) locFile() (string, Position) {
 		}
 	}
 	folders := sess.Game.ModFolders
-	folder := folders[slices.IndexFunc(folders, func(folder string) bool { return strings.HasSuffix("/"+folder, "/localization") })]
+	at := slices.IndexFunc(folders, func(folder string) bool { return strings.HasSuffix("/"+folder, "/localization") })
+	if at < 0 {
+		return "", Position{}
+	}
+	folder := folders[at]
 	return filepath.Join(mod.Dir, filepath.FromSlash(folder), sess.Language, mod.ID+"_l_"+sess.Language+".yml"), Position{}
 }
 
@@ -185,15 +193,15 @@ func InlayHints(sess *session.Session, path string) ([]InlayHint, error) {
 			out = append(out, InlayHint{Position: lines.PositionAt(scalar.Range.End), Label: fmt.Sprintf(" %d.%d.%d %s", inEra, month, day, era)})
 		}
 	}
-	jomini.Walk(file.parsed.Root, func(st jomini.Statement, depth int, parent *jomini.Block) bool {
-		switch st := st.(type) {
+	jomini.Walk(file.parsed.Root, func(statement jomini.Statement, depth int, parent *jomini.Block) bool {
+		switch statement := statement.(type) {
 		case *jomini.Assignment:
-			hint(&st.Key)
-			if scalar, ok := st.Value.(*jomini.Scalar); ok {
+			hint(&statement.Key)
+			if scalar, ok := statement.Value.(*jomini.Scalar); ok {
 				hint(scalar)
 			}
 		case *jomini.ValueStmt:
-			if scalar, ok := st.Value.(*jomini.Scalar); ok {
+			if scalar, ok := statement.Value.(*jomini.Scalar); ok {
 				hint(scalar)
 			}
 		}

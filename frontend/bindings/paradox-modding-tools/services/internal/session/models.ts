@@ -16,7 +16,7 @@ export interface Era {
 }
 
 /**
- * Fire is the definition at the far end of a fire, with the commands and scripted effects between.
+ * Fire is the definition at the far end of a fire, with the scripted effects between.
  */
 export interface Fire {
     "name": string;

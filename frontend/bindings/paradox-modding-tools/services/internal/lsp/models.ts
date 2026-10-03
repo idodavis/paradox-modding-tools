@@ -3,13 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as index$0 from "../lang/index/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as jomini$0 from "../lang/jomini/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as schema$0 from "../lang/schema/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as source$0 from "../lang/source/models.js";
@@ -70,10 +64,13 @@ export interface InlayHint {
 }
 
 /**
- * Inspect is the hover card: the reader's reading of the word and what the workspace knows of it.
+ * Inspect is the hover card: what the word is and what the workspace knows of it.
  */
 export interface Inspect {
-    "word": schema$0.Word;
+    /**
+     * the name it names: an entry, command, key, loc key
+     */
+    "word": string;
 
     /**
      * the key the word is written at, or is
@@ -86,29 +83,34 @@ export interface Inspect {
     "head"?: string;
 
     /**
-     * an entry's name as the player reads it, a loc key's text, a constant's value
+     * an object's localized name, a loc key's text
      */
     "name"?: string;
 
     /**
-     * what the docs say of the word's database
+     * what the dumps or docs say of its database
      */
     "about"?: string;
 
     /**
-     * a command's or key's docs, or an entry's comment
+     * what the dumps or docs say of the word
      */
     "prose"?: string;
 
     /**
-     * a key: what a word there may be
+     * a key or command: what a word there may be
      */
     "takes"?: string[] | null;
 
     /**
-     * the scopes the site runs in
+     * the scope it runs in; "" unknown
      */
-    "scopes": index$0.Scopes;
+    "scope"?: string;
+
+    /**
+     * the scope it leads to; "" none
+     */
+    "leads"?: string;
 
     /**
      * where it is defined, in load order
@@ -121,17 +123,22 @@ export interface Inspect {
     "winner": number;
 
     /**
-     * where the facts shown come from
+     * the sites that add to the kept one (INJECT)
      */
-    "source"?: string;
+    "adds"?: number[] | null;
 
     /**
-     * a date written out; with a mod calendar, the era's date too
+     * a fact shown may be outdated: its source is
+     */
+    "stale"?: boolean;
+
+    /**
+     * a date written out, and in a mod's calendar
      */
     "date"?: string;
 
     /**
-     * a numbered branch: its share of its siblings, in percent
+     * a numbered branch: its share of its siblings, in %
      */
     "weight"?: number;
 
@@ -146,27 +153,25 @@ export interface Inspect {
     "image"?: source$0.ImageInfo | null;
 
     /**
-     * a parameter: the words its scripted effect's callers pass for it
-     */
-    "values"?: Seen[] | null;
-
-    /**
-     * the event graph draws it: an event or on_action, or it fires one
+     * the event graph draws it: it is or fires an event
      */
     "graphed"?: boolean;
     "range": Range;
 }
 
 /**
- * Item is one completion: the text it writes, what that text is, its head and takes, and its rank
- * (0 a command in scope or a key every entry writes, 1 a key, 2 a definition or a command out of
- * scope, 3 a loc key).
+ * Item is one completion: its text, what it is, what may follow, and its rank (0 stated or in
+ * scope, 1 vanilla writes it, 2 a name, a link or a command for another scope, 3 a loc key).
  */
 export interface Item {
     "label": string;
-    "word": schema$0.Word;
     "head": string;
     "takes"?: string[] | null;
+
+    /**
+     * the editor snippet a key writes: its block, or key = and a value
+     */
+    "snippet"?: string;
     "rank": number;
     "range": Range;
 }
@@ -199,15 +204,7 @@ export interface Range {
 }
 
 /**
- * Seen is one word and how often it was written.
- */
-export interface Seen {
-    "text": string;
-    "count": number;
-}
-
-/**
- * Signature is a token's declared usage with its parameters.
+ * Signature is a command's arguments: the keys its block holds, and its blurb.
  */
 export interface Signature {
     "label": string;
@@ -221,7 +218,6 @@ export interface Signature {
 export interface Symbol {
     "name": string;
     "database": string;
-    "parent"?: string;
     "location": Location;
 }
 

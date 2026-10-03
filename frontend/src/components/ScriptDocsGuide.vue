@@ -5,14 +5,12 @@
  * its own console, so this is the one part of the language engine the user does by hand.
  */
 import { computed } from "vue";
-import type { DumpHealth } from "@services/models";
-import type { Unread } from "@services/internal/lang/schema";
 
 const open = defineModel<boolean>("open", { required: true });
 
 const props = defineProps<{
-  dumps: DumpHealth[];
-  unread: Unread | undefined;
+  folders: string[];
+  unread: string[];
   gameName?: string;
 }>();
 
@@ -35,8 +33,8 @@ const steps = computed(() => [
   },
   {
     title: "Come back and rescan",
-    body: props.dumps[0]?.folder
-      ? `The files land in ${props.dumps[0].folder}; the rescan reads them from there.`
+    body: props.folders[0]
+      ? `The files land in ${props.folders[0]}; the rescan reads them from there.`
       : "The rescan reads the files from the game's logs or docs folder.",
   },
 ]);
@@ -55,12 +53,8 @@ const kept = [
   "The Event Graph",
 ];
 
-// what the scan saw and nothing explained, by what it was: a game update changing the language
-const unexplained = computed(() =>
-  Object.entries(props.unread ?? {})
-    .filter(([, tallies]) => tallies?.length)
-    .map(([what, tallies]) => ({ what: what.replace(/[A-Z]/g, " $&").toLowerCase(), tallies: tallies!.slice(0, 5) })),
-);
+// what the scan saw and nothing explained, a few lines of it: a game update changing the language
+const unexplained = computed(() => props.unread.slice(0, 5));
 </script>
 
 <template>
@@ -107,18 +101,11 @@ const unexplained = computed(() =>
           </div>
         </div>
 
-        <p v-for="dump in dumps" :key="dump.folder" class="break-all text-xs text-muted">
-          {{ dump.folder }}: {{ dump.effects.toLocaleString() }} effects, {{ dump.triggers.toLocaleString() }}
-          triggers, {{ dump.eventTargets }} event targets, {{ dump.scopes }} scope types.
-        </p>
-
         <div v-if="unexplained.length" class="space-y-1">
           <p class="font-medium text-highlighted">What the last scan could not explain</p>
-          <p v-for="group in unexplained" :key="group.what" class="text-xs text-muted">
-            {{ group.what }}:
-            <span v-for="tally in group.tallies" :key="tally.name" class="mr-2 font-mono">
-              {{ tally.name }} ×{{ tally.count }}
-            </span>
+          <p v-for="(line, i) in unexplained" :key="i" class="break-all font-mono text-xs text-muted">{{ line }}</p>
+          <p v-if="unread.length > unexplained.length" class="text-xs text-muted">
+            and {{ (unread.length - unexplained.length).toLocaleString() }} more lines
           </p>
         </div>
       </div>

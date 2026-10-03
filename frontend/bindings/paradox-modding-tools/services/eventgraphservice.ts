@@ -29,9 +29,8 @@ export function GetEventGraph(workspaceID: string, params: $models.Params): $Can
 }
 
 /**
- * SearchRoots is what the graph can be drawn from: the events and on_actions the install and the
- * mods fire, and every definition but a scripted effect that fires one, whose id holds the query.
- * Ids that start with it come first; of one database at most 50, of every database at most 8 each.
+ * SearchRoots is the fired events and on_actions, and what fires one but a scripted entry, whose id
+ * holds the query: ids that start with it first, 50 of one database or 8 of each.
  */
 export function SearchRoots(workspaceID: string, query: string, database: string): $CancellablePromise<$models.Roots | null> {
     return $Call.ByID(4257437728, workspaceID, query, database);

@@ -13,7 +13,6 @@ export type {
     Location,
     Position,
     Range,
-    Seen,
     Signature,
     Symbol,
     TextEdit,

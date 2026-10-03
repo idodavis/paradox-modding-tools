@@ -8,11 +8,3 @@ export interface Position {
     "line": number;
     "character": number;
 }
-
-/**
- * Range is a half-open span of UTF-8 byte offsets into the source (Start..End).
- */
-export interface Range {
-    "start": number;
-    "end": number;
-}

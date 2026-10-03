@@ -1,6 +1,6 @@
-// local_test.go covers dropping an install's cache (its files go, another install's stay), the
-// write that leaves no half-file and no leftovers, and a mod's own files: the descriptor round
-// trip in both formats, where a thumbnail is found and installed, and a new mod's skeleton.
+// local_test.go covers the write that leaves no half-file and no leftovers, and a mod's own files:
+// the descriptor round trip in both formats, where a thumbnail is found and installed, and a new
+// mod's skeleton.
 
 package local
 
@@ -12,36 +12,6 @@ import (
 	"strings"
 	"testing"
 )
-
-// isolate points the user config directory at a temporary folder, away from the real cache.
-func isolate(t *testing.T) {
-	t.Setenv("APPDATA", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("HOME", t.TempDir())
-}
-
-func TestCachePathAndDrop(t *testing.T) {
-	isolate(t)
-	base, _ := cachePath("steam:1158310", "1.0")
-	other, _ := cachePath("steam:529340", "1.0")
-	for _, path := range []string{base + ".gob", base + ".schema.txt", other + ".gob"} {
-		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := DropInstall("steam:1158310"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(base + ".gob"); err == nil {
-		t.Error("dropping an install removes every file of it")
-	}
-	if _, err := os.Stat(base + ".schema.txt"); err == nil {
-		t.Error("dropping an install removes its schema text too")
-	}
-	if _, err := os.Stat(other + ".gob"); err != nil {
-		t.Error("dropping an install leaves another install's files")
-	}
-}
 
 func TestWrite(t *testing.T) {
 	t.Parallel()

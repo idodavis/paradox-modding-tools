@@ -1,13 +1,10 @@
 // loc_test.go covers the loc dialect: entries, header/tab/unterminated
 // errors, last-quote-wins values, byte-offset ranges, language extraction,
-// and which strings look like keys; and learning a database's loc-key templates and rendering them.
+// and which strings look like keys.
 
 package loc
 
-import (
-	"slices"
-	"testing"
-)
+import "testing"
 
 func TestParse(t *testing.T) {
 	t.Run("basic_entries", func(t *testing.T) {
@@ -156,44 +153,5 @@ func TestLooksLikeKey(t *testing.T) {
 		if got := LooksLikeKey(testCase.text); got != testCase.want {
 			t.Errorf("LooksLikeKey(%q) = %v, want %v", testCase.text, got, testCase.want)
 		}
-	}
-}
-
-func TestConventionsAndExpand(t *testing.T) {
-	keys := map[string]bool{}
-	var traits, titles, rules []string
-	for i := range 10 {
-		text := string(rune('a' + i))
-		traits = append(traits, "trait"+text)
-		keys["trait"+text], keys["trait"+text+"_desc"] = true, true
-		titles = append(titles, "k_"+text)
-		keys["k_"+text], keys["k_"+text+"_adj"] = true, true
-		rules = append(rules, "r"+text)
-		keys["rule_r"+text] = true
-	}
-	idx := NewKeys(keys)
-	for _, testCase := range []struct {
-		kind         string
-		ids, members []string
-		want         []Template
-	}{
-		{"traits", traits, nil, []Template{"{id}", "{id}_desc"}},
-		{"titles", titles, []string{"adj"}, []Template{"{id}", "{id}_adj"}},
-		{"game_rules", rules, nil, []Template{"rule_{id}"}},
-		// A shape one definition has is a coincidence, not a convention: it has to repeat.
-		{"one def", traits[:1], nil, nil},
-		{"two defs", traits[:2], nil, []Template{"{id}", "{id}_desc"}},
-	} {
-		got := Conventions(testCase.ids, testCase.members, idx, nil)
-		var names []Template
-		for _, template := range got {
-			names = append(names, template.Template)
-		}
-		if !slices.Equal(names, testCase.want) {
-			t.Errorf("%s: %v, want %v", testCase.kind, names, testCase.want)
-		}
-	}
-	if got := Expand("bold", []Convention{{"{id}", 1}, {"{id}_desc", 1}}); !slices.Equal(got, []string{"bold", "bold_desc"}) {
-		t.Errorf("Expand = %v", got)
 	}
 }

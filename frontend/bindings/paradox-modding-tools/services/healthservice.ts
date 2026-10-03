@@ -24,14 +24,14 @@ export function GetHealth(workspaceID: string, params: $models.HealthParams): $C
 
 /**
  * GetLines is the source a pane shows at each place: a definition's statement, its first ten lines
- * and a "�" where it runs on, or a reference's line.
+ * and a "…" where it runs on, or a reference's line.
  */
 export function GetLines(workspaceID: string, places: $models.SourceAt[] | null): $CancellablePromise<(string[] | null)[] | null> {
     return $Call.ByID(244732570, workspaceID, places);
 }
 
 /**
- * LookupLoc looks one localization key up: its entries in the workspace and everything reading it.
+ * LookupLoc looks one localization key up: its entries and everything reading it.
  */
 export function LookupLoc(workspaceID: string, key: string): $CancellablePromise<$models.Lookup | null> {
     return $Call.ByID(1038613663, workspaceID, key);

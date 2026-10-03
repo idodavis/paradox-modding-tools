@@ -66,10 +66,10 @@ func (s *IdeService) Complete(workspaceID, path string, line, col int) (*lsp.Com
 	return lsp.Complete(sess, path, line, col)
 }
 
-func (s *IdeService) ResolveCompletion(workspaceID, path string, item lsp.Item) (string, error) {
+func (s *IdeService) ResolveCompletion(workspaceID, path string, item lsp.Item) (*lsp.Inspect, error) {
 	sess, err := s.Session.live(workspaceID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	return lsp.Resolve(sess, path, item)
 }

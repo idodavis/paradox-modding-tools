@@ -1,9 +1,9 @@
-// Package session is one workspace open in the editor: the install's scanned index and schema, the
+// Package session is one workspace open in the editor: the install's scanned schema and index, the
 // mods' index built over it, and the files the editor has open. It decides nothing about words; the
-// schema reader does that, with the session's indexes as its Defined.
+// index's walk does that, and a query resolves names across the session's two indexes.
 //
-// Readers hold RLock for a whole request. The writers (Did*, Changed, Replace) take Lock themselves
-// and are never called under a read lock.
+// Readers hold RLock for a whole request. The writers (Did*, Changed) take Lock themselves and are
+// never called under a read lock.
 package session
 
 import (
@@ -12,6 +12,7 @@ import (
 	"errors"
 	"github.com/fsnotify/fsnotify"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,7 +24,6 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
-	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/source"
 )
@@ -38,8 +38,8 @@ type Era struct {
 	Offset int    `json:"offset"`
 }
 
-// Read is a year in the named era with the greatest offset below it, and the era's name; false where
-// none applies (8082 is 82 A.C.).
+// Read is a year in the named era with the greatest offset below it, and the era's name; false
+// where none applies (8082 is 82 A.C.).
 func (calendar Calendar) Read(year int) (int, string, bool) {
 	best := -1
 	for i, era := range calendar {
@@ -59,13 +59,13 @@ type Mod struct {
 	Calendar      Calendar
 }
 
-// Place is where a path sits: its origin, its path from the root, and the databases it may define.
+// Place is where a path sits: its origin, its path from the root, and the database it defines.
 type Place struct {
-	Origin    string // game.OriginVanilla, a mod's ID, or "" for a path under no root
-	Rel       string
-	Databases []*schema.Database
-	Format    source.Format
-	Calendar  Calendar
+	Origin   string // game.OriginVanilla, a mod's ID, or "" for a path under no root
+	Rel      string
+	Database *schema.Database // nil when the folder holds none
+	Format   source.Format
+	Calendar Calendar
 }
 
 // buffer is a file open in the editor: its text and that text's parse, made once when the text
@@ -85,160 +85,184 @@ type Session struct {
 	mu        sync.RWMutex
 	Game      *game.GameInfo
 	Install   *index.Install
-	Workspace *index.Index
-	Schema    *schema.Schema // the install's plus what the workspace's build added
+	Workspace *index.Index // the mods' files, in the playset's order
 	Mods      []Mod
 	Language  string
 	watcher   *Watcher
-	buffers   map[string]*buffer // by index.PathKey
-	built     map[string]string  // by index.PathKey: the text a workspace file's records were built from
+	buffers   map[string]*buffer // by lower-cased clean path
 }
 
 // New builds the workspace's index over a scanned install.
 func New(ctx context.Context, info *game.GameInfo, install *index.Install, mods []Mod, language string) (*Session, error) {
-	language = cmp.Or(language, "english")
-	sess := &Session{Game: info, Install: install, Mods: mods, Language: language, buffers: map[string]*buffer{}, built: map[string]string{}}
-	return sess, sess.build(ctx)
-}
-
-// build makes the workspace index and schema from the mods' files, then re-indexes open buffers.
-func (sess *Session) build(ctx context.Context) error {
-	var mods []index.Mod
-	for _, mod := range sess.Mods {
-		mods = append(mods, index.Mod{ID: mod.ID, Dir: mod.Dir})
+	var scanned []index.Mod
+	for _, mod := range mods {
+		scanned = append(scanned, index.Mod{ID: mod.ID, Dir: mod.Dir})
 	}
-	idx, built, err := index.BuildWorkspace(ctx, mods, sess.Install)
+	workspace, err := index.ScanMods(ctx, install, scanned)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	sess.Workspace, sess.Schema, sess.built, sess.Changes = idx, built, map[string]string{}, changes.Add(1)
-	for _, buffer := range sess.buffers {
-		sess.harvest(buffer.file, buffer.text)
-	}
-	return nil
+	return &Session{
+		Changes: changes.Add(1), Game: info, Install: install, Workspace: workspace, Mods: mods,
+		Language: cmp.Or(language, "english"), buffers: map[string]*buffer{},
+	}, nil
 }
 
-// Replace puts a rescanned install under the workspace and rebuilds it; the open buffers stay.
-func (sess *Session) Replace(ctx context.Context, install *index.Install) error {
-	sess.mu.Lock()
-	defer sess.mu.Unlock()
-	sess.Install = install
-	return sess.build(ctx)
+// Schema is the install's.
+func (sess *Session) Schema() *schema.Schema {
+	return sess.Install.Schema
 }
 
-// All is the two indexes in load order: the install, then the workspace's mods over it.
-func (sess *Session) All() index.All {
-	return index.All{sess.Install.Index, sess.Workspace}
+// Indexes are the two indexes in load order: the install, then the workspace's mods over it.
+func (sess *Session) Indexes() []*index.Index {
+	return []*index.Index{sess.Install.Index, sess.Workspace}
 }
 
-// Reader is the one reader, answering from the workspace and the install together.
-func (sess *Session) Reader() schema.Reader {
-	return schema.Reader{Schema: sess.Schema, Found: sess.All()}
+// Defs is every definition of a name in a database the game loads, in load order.
+func (sess *Session) Defs(database, name string) []index.Def {
+	return index.Lookup(sess.Indexes(), database, name)
 }
 
-// Order is the load order: the game, then each mod as the playset lists them.
-func (sess *Session) Order() []string {
-	order := []string{game.OriginVanilla}
-	for _, mod := range sess.Mods {
-		order = append(order, mod.ID)
-	}
-	return order
+// Winner is the definition the game keeps of several by the entry modes, its adds, the INJECT and
+// REPLACE definitions with no target, and whether two mods contest the name.
+func (sess *Session) Winner(defs []index.Def) (winner index.Def, adds, orphans []index.Def, contested bool) {
+	return index.Winner(sess.Game, defs, func(path string) string {
+		// a path no mod lists is the install's
+		if file, listed := sess.Workspace.At(path); listed {
+			return file.Origin
+		}
+		return game.OriginVanilla
+	})
 }
 
-// Defs is every definition of a name the game loads, in load order.
-func (sess *Session) Defs(name string) []index.Found {
-	return sess.All().Named(name)
-}
-
-// Winner is the definition the game keeps of several, by the registry's first-wins and entry modes.
-func (sess *Session) Winner(found []index.Found) (index.Found, int) {
-	if len(found) == 0 {
-		return index.Found{}, -1
-	}
-	return index.Winner(found, game.FirstWinsAt(sess.Game.ID, found[0].Database), sess.Game.EntryModes, sess.Order())
-}
-
-// Fired reports a database the game fires: events and on_actions, as the registry says.
-func (sess *Session) Fired(database string) bool {
-	named := sess.Schema.Databases[database]
-	return named != nil && named.Fired
-}
-
-// Fire is the definition at the far end of a fire, with the commands and scripted effects between.
+// Fire is the definition at the far end of a fire, with the scripted effects between.
 type Fire struct {
 	Name string `json:"name"`
 	Via  string `json:"via"`
 }
 
 // Fires is what a definition fires, in name order: events and on_actions only. A fire through a
-// scripted effect is followed to what it fires, and one already met on the way is not entered
+// scripted effect is followed to what it fires, and an effect already met on the way is not entered
 // again.
-func (sess *Session) Fires(from string, seen map[string]bool) []Fire {
-	var out []Fire
-	all := sess.All()
-	for _, idx := range all {
-		for _, fired := range idx.Fires(from) {
-			if !all.Loaded(idx, fired.File) {
+func (sess *Session) Fires(from index.Def) []Fire {
+	sch, indexes := sess.Schema(), sess.Indexes()
+	seen, out := map[index.Def]bool{from: true}, []Fire(nil)
+
+	// follow reads the references written in one definition; via is the effects entered to reach it
+	var follow func(def index.Def, via string)
+	follow = func(def index.Def, via string) {
+		for _, idx := range indexes {
+			records := idx.Records[def.Path]
+			if records == nil {
 				continue
 			}
-			if database := sess.Schema.Databases[fired.ToDatabase]; database != nil && len(database.CalledIn) > 0 {
-				if !seen[fired.To] {
-					seen[fired.To] = true
-					for _, through := range sess.Fires(fired.To, seen) {
-						out = append(out, Fire{Name: through.Name, Via: fired.To + " → " + through.Via})
+			at := slices.Index(records.Defs, def)
+			if at < 0 {
+				continue
+			}
+			for _, ref := range records.Refs {
+				if int(ref.From) != at {
+					continue
+				}
+				switch {
+				case ref.Fires(sch):
+					out = append(out, Fire{Name: ref.Name, Via: via})
+				case ref.Runs(sch):
+					called, _ := index.Resolve(sch, indexes, ref)
+					for _, target := range called {
+						if !seen[target] {
+							seen[target] = true
+							follow(target, strings.TrimPrefix(via+" → "+target.Name, " → "))
+						}
 					}
 				}
-				continue
-			}
-			if sess.Fired(fired.ToDatabase) {
-				out = append(out, Fire{Name: fired.To, Via: fired.Via})
 			}
 		}
 	}
+	follow(from, "")
+
 	slices.SortStableFunc(out, func(first, second Fire) int { return strings.Compare(first.Name, second.Name) })
 	return slices.CompactFunc(out, func(first, second Fire) bool { return first.Name == second.Name })
 }
 
-// Loc is a key's entry in a language, the last loaded (a mod's over the install's). With none in
-// that language it is an entry of any language: a key that exists is not a missing key.
-func (sess *Session) Loc(key, language string) (index.Said, bool) {
-	language = cmp.Or(language, sess.Language)
-	said := sess.All().Entries(key)
-	for _, entry := range slices.Backward(said) {
-		if loc.LanguageFromRel(entry.At.Rel) == language {
-			return entry, true
-		}
-	}
-	if len(said) > 0 {
-		return said[len(said)-1], true
-	}
-	return index.Said{}, false
-}
-
-// LocKeys is up to limit distinct keys that start with prefix.
-func (sess *Session) LocKeys(prefix string, limit int) []string {
-	seen, out, all := map[string]bool{}, []string{}, sess.All()
-	for _, idx := range all {
-		for _, loc := range idx.Loc {
-			if !seen[loc.Key] && strings.HasPrefix(loc.Key, prefix) && all.Loaded(idx, loc.File) {
-				seen[loc.Key], out = true, append(out, loc.Key)
-				if len(out) == limit {
-					return out
-				}
+// Loc is a key's entry in a language, the last loaded: a mod's over the install's. With none in the
+// language it is the english one, so a title shows; whether the key exists is Resolve's to say.
+func (sess *Session) Loc(key, language string) (index.Loc, bool) {
+	entries := index.LookupLocs(sess.Indexes(), key)
+	for _, wanted := range []string{cmp.Or(language, sess.Language), "english"} {
+		for _, entry := range slices.Backward(entries) {
+			if entry.Language == wanted {
+				return entry, true
 			}
 		}
 	}
-	return out
+	return index.Loc{}, false
 }
 
-// Where places a path in the workspace: its origin, rel, and the databases a file there may
-// define. A file not yet walked is placed by its root.
+// Entry is a definition's statement in its file's parse: the assignment whose key starts at the
+// definition's line and column; nil where its file does not parse or none starts there.
+func (sess *Session) Entry(def index.Def) (*jomini.Result, jomini.Statement) {
+	parsed, _, err := sess.Parsed(def.Path)
+	if def.Path == "" || err != nil {
+		return nil, nil
+	}
+	start, found := parsed.Lines().OffsetAt(int(def.Line), int(def.Col)), jomini.Statement(nil)
+	jomini.Walk(parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
+		if assign, isAssign := statement.(*jomini.Assignment); isAssign && assign.Key.Range.Start == start {
+			found = statement
+		}
+		return found == nil && statement.NodeRange().Start <= start && start < statement.NodeRange().End
+	})
+	return parsed, found
+}
+
+// Title is a definition's display name: the text of its name as a loc key, else of the first of its
+// fields a declared source calls a loc key that has text.
+func (sess *Session) Title(def index.Def) string {
+	if said, found := sess.Loc(def.Name, ""); found {
+		return said.Text
+	}
+	row := sess.Schema().Databases[def.Database]
+	_, entry := sess.Entry(def)
+	for i, block := 0, jomini.ChildBlock(entry); row != nil && block != nil && i < len(block.Statements); i++ {
+		field, isField := block.Statements[i].(*jomini.Assignment)
+		if !isField {
+			continue
+		}
+		position, _ := sess.Schema().Slot(row.Entry, field.Key.Text, false)
+		value, isWord := field.Value.(*jomini.Scalar)
+		if !isWord || position == nil || position.Value.Value.Type != schema.WordLoc {
+			continue
+		}
+		if said, found := sess.Loc(value.Text, ""); found {
+			return said.Text
+		}
+	}
+	return ""
+}
+
+// LocKeys is up to limit of the keys that start with prefix, in order.
+func (sess *Session) LocKeys(prefix string, limit int) []string {
+	keys := map[string]bool{}
+	for _, idx := range sess.Indexes() {
+		for key := range idx.LocKeys() {
+			if strings.HasPrefix(key, prefix) {
+				keys[key] = true
+			}
+		}
+	}
+	sorted := slices.Sorted(maps.Keys(keys))
+	return sorted[:min(limit, len(sorted))]
+}
+
+// Where places a path in the workspace: its origin, rel, and the database a file there defines.
+// A file not yet walked is placed by its root.
 func (sess *Session) Where(path string) Place {
 	file, mod, ok := sess.Located(path)
 	if !ok {
 		return Place{Format: source.Classify(path, filepath.ToSlash(path))}
 	}
-	place := Place{Origin: file.Origin, Rel: file.Rel, Databases: sess.Schema.DatabasesAt(file.Rel), Format: file.Format}
+	place := Place{Origin: file.Origin, Rel: file.Rel, Database: sess.Schema().DatabaseAt(file.Rel), Format: file.Format}
 	if mod != nil {
 		place.Calendar = mod.Calendar
 	}
@@ -248,17 +272,17 @@ func (sess *Session) Where(path string) Place {
 // Located is the indexed file at a path, else the file the path would be under a mod's or the
 // install's root, and the mod it belongs to.
 func (sess *Session) Located(path string) (source.File, *Mod, bool) {
+	path = filepath.Clean(path)
 	mod := func(origin string) *Mod {
 		if at := slices.IndexFunc(sess.Mods, func(mod Mod) bool { return mod.ID == origin }); at >= 0 {
 			return &sess.Mods[at]
 		}
 		return nil
 	}
-	if file, ok := sess.Workspace.At(path); ok {
-		return file, mod(file.Origin), true
-	}
-	if file, ok := sess.Install.Index.At(path); ok {
-		return file, nil, true
+	for _, idx := range slices.Backward(sess.Indexes()) {
+		if file, listed := idx.At(path); listed {
+			return file, mod(file.Origin), true
+		}
 	}
 	under := func(roots []string, origin string) (source.File, bool) {
 		for _, root := range roots {
@@ -282,7 +306,7 @@ func (sess *Session) Located(path string) (source.File, *Mod, bool) {
 
 // Text is a file's text: the open buffer's, else the disk's.
 func (sess *Session) Text(path string) (string, error) {
-	if buffer := sess.buffers[index.PathKey(path)]; buffer != nil {
+	if buffer := sess.buffers[strings.ToLower(filepath.Clean(path))]; buffer != nil {
 		return buffer.text, nil
 	}
 	return source.File{Path: path}.Text()
@@ -290,7 +314,7 @@ func (sess *Session) Text(path string) (string, error) {
 
 // Parsed is the parse of a file's text: an open buffer's, made once per text, else the disk's.
 func (sess *Session) Parsed(path string) (*jomini.Result, string, error) {
-	if buffer := sess.buffers[index.PathKey(path)]; buffer != nil {
+	if buffer := sess.buffers[strings.ToLower(filepath.Clean(path))]; buffer != nil {
 		return &buffer.parsed, buffer.text, nil
 	}
 	text, err := sess.Text(path)
@@ -302,26 +326,25 @@ func (sess *Session) Parsed(path string) (*jomini.Result, string, error) {
 }
 
 // DidOpen and DidChange hold the editor's text of a file and index it from that text, in place of
-// the disk's records. The caller's spelling of the path is kept: the editor keys its tabs by it.
+// the disk's records. The records keep the inventory's spelling of the path.
 func (sess *Session) DidOpen(path, text string) { sess.DidChange(path, text) }
 func (sess *Session) DidChange(path, text string) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	key := index.PathKey(path)
-	buf := sess.buffers[key]
-	if buf == nil {
+	key := strings.ToLower(filepath.Clean(path))
+	opened := sess.buffers[key]
+	if opened == nil {
 		file, _, ok := sess.Located(path)
 		if !ok {
-			file = source.File{Path: path, Format: source.Classify(path, filepath.ToSlash(path))}
+			file = source.File{Path: filepath.Clean(path), Format: source.Classify(path, filepath.ToSlash(path))}
 		}
-		file.Path = filepath.Clean(path)
-		buf = &buffer{file: file}
-		sess.buffers[key] = buf
+		opened = &buffer{file: file}
+		sess.buffers[key] = opened
 	}
-	if buf.text != text || buf.parsed.Root == nil {
-		buf.text, buf.parsed = text, jomini.Parse(text)
+	if opened.text != text || opened.parsed.Root == nil {
+		opened.text, opened.parsed = text, jomini.Parse(text)
 	}
-	sess.harvest(buf.file, text)
+	sess.changed(opened.file, text, nil)
 }
 
 // DidClose forgets the editor's text; the file is read from disk again.
@@ -329,21 +352,24 @@ func (sess *Session) DidClose(path string) {
 	text, err := source.File{Path: filepath.Clean(path)}.Text()
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	buf := sess.buffers[index.PathKey(path)]
-	if buf == nil {
+	key := strings.ToLower(filepath.Clean(path))
+	opened := sess.buffers[key]
+	if opened == nil {
 		return
 	}
-	delete(sess.buffers, index.PathKey(path))
-	sess.changed(buf.file.Path, text, err)
+	delete(sess.buffers, key)
+	sess.changed(opened.file, text, err)
 }
 
-// DidSave reads the saved file: the same text as the buffer indexes nothing again.
+// DidSave reads the saved file and indexes it again.
 func (sess *Session) DidSave(path string) {
 	// read before the lock: every editor request waits on this mutex, so disk reads stay outside it
 	text, err := source.File{Path: path}.Text()
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	sess.changed(path, text, err)
+	if file, _, ok := sess.Located(path); ok {
+		sess.changed(file, text, err)
+	}
 }
 
 // Changed is a file changed on disk outside the editor. An unreadable file keeps its records, since
@@ -352,57 +378,26 @@ func (sess *Session) Changed(path string) {
 	text, err := source.File{Path: path}.Text()
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	if sess.buffers[index.PathKey(path)] == nil {
-		sess.changed(path, text, err)
+	if file, _, ok := sess.Located(path); ok && sess.buffers[strings.ToLower(filepath.Clean(path))] == nil {
+		sess.changed(file, text, err)
 	}
 }
 
-// changed indexes a path from text its caller has already read, under the lock.
-func (sess *Session) changed(path, text string, err error) {
-	file, mod, ok := sess.Located(path)
-	if !ok || mod == nil {
+// changed walks a mod file again from text its caller has already read, under the lock; an
+// install's file, or one under no root, is never indexed from the editor.
+func (sess *Session) changed(file source.File, text string, err error) {
+	if file.Origin == game.OriginVanilla || file.Origin == "" {
 		return
 	}
 	switch {
-	case errors.Is(err, os.ErrNotExist):
-		sess.Workspace.Drop(path, true)
-		delete(sess.built, index.PathKey(path))
-		sess.Changes = changes.Add(1)
 	case err == nil:
-		sess.harvest(file, text)
-	}
-}
-
-// harvest indexes a workspace file from a text, once per distinct text; an install's file is never
-// indexed from the editor. When the file defines a new name, every other open buffer that spells it
-// is indexed again, since it was read while the name did not exist.
-func (sess *Session) harvest(file source.File, text string) {
-	key := index.PathKey(file.Path)
-	if file.Origin == game.OriginVanilla || file.Origin == "" || sess.built[key] == text {
+		sess.Workspace.Reindex(sess.Schema(), file, text)
+	case errors.Is(err, os.ErrNotExist):
+		sess.Workspace.Forget(file.Path)
+	default:
 		return
 	}
-	sess.built[key], sess.Changes = text, changes.Add(1)
-	all := sess.All()
-	idx := sess.Workspace
-	defs, locs := len(idx.Defs), len(idx.Loc)
-	idx.IndexFile(file, text, sess.Reader())
-	var fresh []string
-	for _, def := range idx.Defs[defs:] {
-		if len(all.Named(def.Name)) == 1 {
-			fresh = append(fresh, def.Name)
-		}
-	}
-	for _, loc := range idx.Loc[locs:] {
-		if len(all.Entries(loc.Key)) == 1 {
-			fresh = append(fresh, loc.Key)
-		}
-	}
-	for other, buffer := range sess.buffers {
-		if other != key && buffer.file.Origin != game.OriginVanilla && buffer.file.Origin != "" && slices.ContainsFunc(fresh, func(name string) bool { return strings.Contains(buffer.text, name) }) {
-			sess.built[other] = buffer.text
-			idx.IndexFile(buffer.file, buffer.text, sess.Reader())
-		}
-	}
+	sess.Changes = changes.Add(1)
 }
 
 // RLock and RUnlock are held by a reader for its whole request.
@@ -415,11 +410,11 @@ func (sess *Session) Watch(after func(path string)) error {
 	for _, mod := range sess.Mods {
 		dirs = append(dirs, mod.Dir)
 	}
-	word, err := NewWatcher(dirs, func(path string) {
+	watcher, err := NewWatcher(dirs, func(path string) {
 		sess.Changed(path)
 		after(path)
 	})
-	sess.watcher = word
+	sess.watcher = watcher
 	return err
 }
 
@@ -522,11 +517,11 @@ func (watcher *Watcher) loop() {
 		select {
 		case <-watcher.done:
 			return
-		case ev, ok := <-watcher.fsw.Events:
+		case event, ok := <-watcher.fsw.Events:
 			if !ok {
 				return
 			}
-			watcher.handle(ev)
+			watcher.handle(event)
 		case err, ok := <-watcher.fsw.Errors:
 			if !ok {
 				return
@@ -537,21 +532,21 @@ func (watcher *Watcher) loop() {
 }
 
 // handle debounces a relevant event and, for new directories, extends the watch.
-func (watcher *Watcher) handle(ev fsnotify.Event) {
-	if ev.Op&fsnotify.Create != 0 {
-		if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-			watcher.addTree(ev.Name)
+func (watcher *Watcher) handle(event fsnotify.Event) {
+	if event.Op&fsnotify.Create != 0 {
+		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+			watcher.addTree(event.Name)
 			return
 		}
 	}
-	if !indexable(ev.Name) {
+	if !indexable(event.Name) {
 		return
 	}
 	watcher.mu.Lock()
-	if timer := watcher.timers[ev.Name]; timer != nil {
+	if timer := watcher.timers[event.Name]; timer != nil {
 		timer.Stop()
 	}
-	name := ev.Name
+	name := event.Name
 	watcher.timers[name] = time.AfterFunc(watchDebounce, func() {
 		watcher.mu.Lock()
 		delete(watcher.timers, name)

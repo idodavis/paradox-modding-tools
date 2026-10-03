@@ -104,8 +104,8 @@ tasks:
 
   test:gate:
     summary: >
-      The real-install tier: the source, schema, learner, index and vanilla
-      diagnostics gates over CK3, Victoria 3 and EU5. Each of them skips under
+      The real-install tier: the source and vanilla diagnostics gates over
+      CK3, Victoria 3 and EU5. Each of them skips under
       -short and again when its own variable is unset, so dropping -short is
       not what turns the tier on — these variables are. Set
       PMT_TEST_INSTALL_{CK3,VIC3,EU5} to the three game roots; the console
@@ -113,9 +113,6 @@ tasks:
     dir: services
     env:
       PMT_SOURCE_GATE: 1
-      PMT_SCHEMA_GATE: 1
-      PMT_LEARN_GATE: 1
-      PMT_INDEX_GATE: 1
       PMT_VANILLA_GATE: 1
     cmds:
       # not 60s: each gate here scans three real installs

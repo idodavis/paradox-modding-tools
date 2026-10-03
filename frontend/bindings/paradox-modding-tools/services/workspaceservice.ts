@@ -22,10 +22,10 @@ import * as session$0 from "./internal/session/models.js";
 import * as $models from "./models.js";
 
 /**
- * AddGameInstall adds a new game installation. version empty → detected or latest.
+ * AddGameInstall adds a new game installation, with the version it holds now.
  */
-export function AddGameInstall(gameID: string, name: string, path: string, version: string): $CancellablePromise<$models.GameInstall | null> {
-    return $Call.ByID(1554142306, gameID, name, path, version);
+export function AddGameInstall(gameID: string, name: string, path: string): $CancellablePromise<$models.GameInstall | null> {
+    return $Call.ByID(1554142306, gameID, name, path);
 }
 
 /**
@@ -78,10 +78,10 @@ export function DeleteWorkspace(id: string): $CancellablePromise<void> {
 }
 
 /**
- * DetectGameVersion reads version from launcher-settings.json.
+ * DetectGameVersion reads an install's version (launcher-settings.json, else the Steam manifest).
  */
-export function DetectGameVersion(path: string): $CancellablePromise<string> {
-    return $Call.ByID(4095463977, path);
+export function DetectGameVersion(gameID: string, path: string): $CancellablePromise<string> {
+    return $Call.ByID(4095463977, gameID, path);
 }
 
 /**
@@ -120,7 +120,7 @@ export function ImportWorkshopIgnore(workspaceID: string, modID: string): $Cance
 }
 
 /**
- * ListGameInstalls returns a game's installs, each with its cache time and whether it exists.
+ * ListGameInstalls returns a game's installs, each with its scan time and whether it exists.
  */
 export function ListGameInstalls(gameID: string): $CancellablePromise<$models.GameInstall[] | null> {
     return $Call.ByID(3468235284, gameID);
@@ -162,13 +162,6 @@ export function SaveIdeSession(workspaceID: string, files: string[] | null, acti
 }
 
 /**
- * SetInstallVersion pins the cache-key version (user override; empty → latest).
- */
-export function SetInstallVersion(id: string, version: string): $CancellablePromise<void> {
-    return $Call.ByID(2135672107, id, version);
-}
-
-/**
  * SetWorkspaceLocLang sets the default loc language; a live session is built again with it.
  */
 export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromise<void> {
@@ -176,9 +169,8 @@ export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromi
 }
 
 /**
- * SetWorkspaceModCalendar declares the eras a mod's date literals are written in, apart from
- * UpdateWorkspaceMod because a calendar is set once and rarely. Each name is trimmed and an unnamed
- * era dropped; an empty list clears it, and a cleared calendar leaves every date exactly as written.
+ * SetWorkspaceModCalendar declares the eras a mod's dates are written in: names trimmed, unnamed
+ * eras dropped; an empty list clears it, leaving every date as written.
  */
 export function SetWorkspaceModCalendar(workspaceID: string, modID: string, eras: session$0.Calendar): $CancellablePromise<void> {
     return $Call.ByID(2457080507, workspaceID, modID, eras);

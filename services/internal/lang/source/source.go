@@ -1,14 +1,15 @@
 // Package source knows every file of a game install or a mod: which folders mirror the game
 // layout, what each file is relative to, where it came from, and which reader its format needs.
 // It interprets no content. One format table serves every game: an extension it does not list is
-// Unknown, read as opaque and reported by the learner as drift, so a new kind of file is seen
-// rather than guessed at. The walk follows symlinks and Windows junctions (mods are often linked
-// folders), keeps every path spelled under its root, refuses a link back to an ancestor, and reads
-// folders in name order so two walks of one tree agree. Image headers give a PNG, DDS or TGA's
-// dimensions and format without decoding a pixel.
+// Unknown, kept in the inventory as such, so a new kind of file is seen rather than guessed at.
+// The walk follows symlinks and Windows junctions (mods are often linked folders), keeps every path
+// spelled under its root, refuses a link back to an ancestor, and reads folders in name order so
+// two walks of one tree agree. Image headers give a PNG, DDS or TGA's dimensions and format
+// without decoding a pixel.
 package source
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"image"
@@ -19,8 +20,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/services/internal/lang/jomini"
 )
@@ -68,6 +72,9 @@ var formats = map[string]Format{
 	".wav": Opaque, ".mp3": Opaque, ".flac": Opaque, ".ttf": Opaque, ".otf": Opaque, ".fnt": Opaque, ".dat": Opaque,
 	".bin": Opaque, ".bmp": Opaque, ".cur": Opaque, ".ani": Opaque, ".shader": Opaque, ".fxh": Opaque, ".swatch": Opaque,
 	".splnet": Opaque, ".svg": Opaque, ".ico": Opaque,
+
+	// the games' console dumps: listed so the dump folders inventory them
+	".log": Opaque,
 }
 
 // ignored is what ships in an install and is no part of the game's content, with the reason.
@@ -75,7 +82,7 @@ var ignored = map[string]string{
 	".dll": "program code", ".dylib": "program code", ".py": "a build script", ".lnk": "a Windows shortcut left in the install",
 	".pdf": "a font licence", ".psd": "source art", ".mb": "source art", ".jpf": "source art", ".obj": "source art",
 	".mtl": "source art", ".xml": "Wwise bank metadata; audio is deferred", ".ini": "a desktop.ini",
-	".log": "a tool's log", ".tmp": "a tool's leftover", ".cache": "a tool's cache", ".hash": "a tool's cache",
+	".tmp": "a tool's leftover", ".cache": "a tool's cache", ".hash": "a tool's cache",
 	".dmp": "a crash dump", ".disabled": "a file the game itself switched off", ".gitignore": "version control",
 	".xnviewsort": "an image viewer's leftover", "": "no extension: licence texts and tool leftovers",
 }
@@ -110,8 +117,8 @@ func (file File) Text() (string, error) {
 // the name, never part of one: rainforest is no info file, 00_event_templates.txt is script.
 var documentation = map[string]bool{"readme": true, "info": true, "example": true, "examples": true, "template": true, "help": true, "documentation": true}
 
-// Classify is the format of a file, from its path relative to a root. A .txt named as
-// documentation is read to see whether it is: its comments and sentences outnumber its script lines.
+// Classify is the format of a file, from its path relative to a root. A .txt named as documentation
+// is read to see whether it is: its comments and sentences outnumber its script lines.
 func Classify(abs, rel string) Format {
 	name, dir := strings.ToLower(path.Base(rel)), strings.ToLower(path.Dir(rel))
 
@@ -136,8 +143,8 @@ func Classify(abs, rel string) Format {
 	return format
 }
 
-// prose reports a text file whose comment and sentence lines outnumber its script lines, up to a
-// megabyte. A sentence has three words or more, no brace, and no operator second (Vic3's clones info).
+// prose reports a text file of up to a megabyte whose comment and sentence lines outnumber its
+// script lines. A sentence: three words or more, no brace, no operator second (Vic3's clones info).
 func prose(abs string) bool {
 	raw, err := os.ReadFile(abs)
 	if err != nil || len(raw) > 1<<20 {
@@ -229,6 +236,36 @@ func Inventory(origin string, roots []string) []File {
 		})
 	}
 	return files
+}
+
+// Ordered runs work over files on a worker per CPU, a bounded window ahead, and keep on each
+// result in file order on the calling goroutine, so what keep builds never depends on timing.
+func Ordered[T any](ctx context.Context, files []File, work func(File) T, keep func(File, T)) error {
+	var workers errgroup.Group
+	workers.SetLimit(runtime.NumCPU())
+	queue := make(chan chan T, 4*runtime.NumCPU())
+	go func() {
+		defer close(queue)
+		for _, file := range files {
+			ready := make(chan T, 1)
+			select {
+			case queue <- ready:
+			case <-ctx.Done():
+				return
+			}
+			workers.Go(func() error {
+				ready <- work(file)
+				return nil
+			})
+		}
+	}()
+
+	next := 0
+	for ready := range queue {
+		keep(files[next], <-ready)
+		next++
+	}
+	return ctx.Err()
 }
 
 // Walk calls fn with the path of every file under root.

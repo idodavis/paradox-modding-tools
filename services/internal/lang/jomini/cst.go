@@ -1,9 +1,12 @@
 // cst.go defines the concrete syntax tree node types, the LineIndex
-// (offset<->position, UTF-8 byte columns), and the walk/lookup helpers.
+// (offset<->position, UTF-8 byte columns), the walk/lookup helpers, and comment attachment.
 
 package jomini
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // Range is a half-open span of UTF-8 byte offsets into the source (Start..End).
 type Range struct {
@@ -217,4 +220,65 @@ func Walk(root *Root, fn func(st Statement, depth int, parent *Block) bool) {
 		}
 	}
 	visit(root.Statements, 0, nil)
+}
+
+// Attach gives each statement the comments that belong to it, and the comments that belong to none.
+// Loose comments keep source order.
+func (result Result) Attach() (attached map[Statement][]Comment, loose []Comment) {
+	lines := result.Lines()
+
+	// the outermost statement starting on each line is the shallowest, the first Walk visits at
+	// that depth
+	startsOn, depthOn := map[int]Statement{}, map[int]int{}
+	Walk(result.Root, func(stmt Statement, depth int, _ *Block) bool {
+		line := lines.PositionAt(stmt.NodeRange().Start).Line
+		if seen, ok := depthOn[line]; !ok || depth < seen {
+			startsOn[line], depthOn[line] = stmt, depth
+		}
+		return true
+	})
+
+	// the last trailing comment (or its continuation), and the run of whole-line comments
+	// that may still turn out to lead a statement; its comments wait at the tail of loose
+	attached = map[Statement][]Comment{}
+	var trailing Statement
+	trailAt := Position{Line: -2}
+	runStart, runLine := 0, -2
+	for _, comment := range result.Comments {
+		pos := lines.PositionAt(comment.Range.Start)
+		before := result.Src[comment.Range.Start-pos.Character : comment.Range.Start]
+		wholeLine := strings.TrimSpace(before) == ""
+
+		// a comment after code on a line where a statement starts trails the outermost one
+		if stmt, ok := startsOn[pos.Line]; ok {
+			attached[stmt] = append(attached[stmt], comment)
+			trailing, trailAt = stmt, pos
+			continue
+		}
+
+		// a whole-line comment under a trailing comment, in its column, continues it
+		if wholeLine && pos.Line == trailAt.Line+1 && pos.Character == trailAt.Character {
+			attached[trailing] = append(attached[trailing], comment)
+			trailAt = pos
+			continue
+		}
+
+		// a comment after code where no statement starts, such as `} # end`, belongs to none
+		if !wholeLine {
+			loose = append(loose, comment)
+			continue
+		}
+
+		// a run of whole-line comments on consecutive lines leads the statement on the next line
+		if pos.Line != runLine+1 {
+			runStart = len(loose)
+		}
+		runLine = pos.Line
+		loose = append(loose, comment)
+		if stmt, ok := startsOn[pos.Line+1]; ok {
+			attached[stmt] = append(attached[stmt], loose[runStart:]...)
+			loose = loose[:runStart]
+		}
+	}
+	return attached, loose
 }

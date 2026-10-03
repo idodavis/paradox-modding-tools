@@ -27,17 +27,16 @@ export {
 };
 
 export type {
+    Cited,
     Contest,
     Dangling,
     DatabaseCount,
     Dependency,
     Detail,
     DirEntry,
-    DumpHealth,
     Edge,
     EventGraph,
     FileBytes,
-    FileRow,
     FileSearchHit,
     FileSearchQuery,
     FileSearchResult,

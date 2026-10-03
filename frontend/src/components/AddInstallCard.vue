@@ -10,7 +10,6 @@ import type { DetectedInstall } from "@services/internal/game/models";
 
 const path = defineModel<string>("path", { required: true });
 const name = defineModel<string>("name", { required: true });
-const version = defineModel<string>("version", { required: true });
 
 const props = withDefaults(
   defineProps<{
@@ -46,7 +45,6 @@ const isDraft = computed(() => !!path.value);
 /** Prefill the draft from a Steam-detected folder. Does not persist. */
 function selectDetected(d: DetectedInstall): void {
   path.value = d.path;
-  version.value = d.version || "latest";
   detectedVersion.value = d.version || "";
   if (!name.value) {
     name.value = d.version ? `Steam ${d.version}` : "Steam";
@@ -54,15 +52,7 @@ function selectDetected(d: DetectedInstall): void {
 }
 
 watch(path, async (p) => {
-  if (!p) {
-    detectedVersion.value = "";
-    return;
-  }
-  const d = await DetectGameVersion(p);
-  detectedVersion.value = d;
-  if (!version.value || version.value === "latest") {
-    version.value = d || "latest";
-  }
+  detectedVersion.value = p ? await DetectGameVersion(props.gameId, p) : "";
 });
 </script>
 
@@ -119,14 +109,8 @@ watch(path, async (p) => {
       <UFormField label="Install name">
         <UInput v-model="name" placeholder="e.g. Steam 1.14.0" />
       </UFormField>
-      <UFormField label="Version">
-        <UInput v-model="version" placeholder="latest" />
-      </UFormField>
-      <p class="text-xs text-muted">
-        <template v-if="detectedVersion">
-          detected: {{ detectedVersion }} from launcher/launcher-settings.json
-        </template>
-        <template v-else>detected: none — default latest, pin optional</template>
+      <p v-if="detectedVersion" class="text-xs text-muted">
+        detected: {{ detectedVersion }} from launcher/launcher-settings.json
       </p>
       <UButton
         label="Add install"

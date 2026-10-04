@@ -83,6 +83,11 @@ export interface Inspect {
     "head"?: string;
 
     /**
+     * a key: optional, required, required when ...
+     */
+    "need"?: string;
+
+    /**
      * an object's localized name, a loc key's text
      */
     "name"?: string;
@@ -101,6 +106,11 @@ export interface Inspect {
      * a key or command: what a word there may be
      */
     "takes"?: string[] | null;
+
+    /**
+     * a key nothing declares: what vanilla writes there
+     */
+    "writes"?: string[] | null;
 
     /**
      * the scope it runs in; "" unknown

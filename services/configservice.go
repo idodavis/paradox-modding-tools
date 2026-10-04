@@ -39,8 +39,7 @@ type GameInstall struct {
 	Name            string `json:"name"`
 	Path            string `json:"path"`
 	VersionDetected string `json:"versionDetected"`
-	IsBroken        bool   `json:"isBroken"` // derived by ListGameInstalls; whatever is on disk is ignored
-	CreatedAt       string `json:"createdAt"`
+	IsBroken        bool   `json:"isBroken"`            // derived by ListGameInstalls; whatever is on disk is ignored
 	ScannedAt       string `json:"scannedAt,omitempty"` // derived: its install built, else its cache written
 }
 
@@ -57,7 +56,6 @@ type Workspace struct {
 	DefaultTool          string         `json:"defaultTool,omitempty"`
 	IdeOpenFiles         []string       `json:"ideOpenFiles,omitempty"`
 	IdeActiveFile        string         `json:"ideActiveFile,omitempty"`
-	CreatedAt            string         `json:"createdAt"`
 	Mods                 []WorkspaceMod `json:"mods"`
 }
 
@@ -73,7 +71,6 @@ type WorkspaceMod struct {
 	DescBbRel      string `json:"descBbRel,omitempty"`
 	WorkshopIgnore string `json:"workshopIgnore,omitempty"`
 	IsBroken       bool   `json:"isBroken"` // derived by markBroken; whatever is on disk is ignored
-	CreatedAt      string `json:"createdAt"`
 	// the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written
 	Eras session.Calendar `json:"eras,omitempty"`
 }

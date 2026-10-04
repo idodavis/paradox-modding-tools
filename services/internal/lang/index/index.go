@@ -28,13 +28,15 @@ type Def struct {
 	Database, Name, Mode, Path string
 	Range                      jomini.Range
 	Line, Col                  int32 // where Range starts, 0-based
+	Local                      bool  // declared inline by a folder row's Keyword: seen only in its file
+	Named                      bool  // a name an entry's Names key gives its database, not an entry
 }
 
 // Ref is a name the walk reads as naming something: an entry of Database (Localization and File
 // included), or a call, Called set and Database "".
 type Ref struct {
 	Database, Name, Path string
-	Called               string // the block kind a call is written in (trigger, effect); "*" undeclared (D-29)
+	Called               string // a call's CalledIn word (trigger, effect, value); game.AnyCall any
 	Range                jomini.Range
 	Line, Col            int32 // where Range starts, 0-based
 	From                 int32 // the enclosing definition's index in its file's Records.Defs, -1 none
@@ -62,27 +64,39 @@ type Index struct {
 	Replaced []string             // mods: folders whose earlier files the game does not load
 	Records  map[string]*Records  // by path
 	Repeated map[string]bool      // databases where two of its files define one name; Ready resets, Add marks
-	Scoped   map[[2]string]bool   // each Pair its files write; kept in the cache, never reset (D-34)
+	Scoped   map[[2]string]bool   // each Pair its files write; kept in the cache, never reset
 	order    map[string]int       // a lower-case path → position in Files
 	rels     map[string]int       // a lower-case Rel → the last position in Files holding it
 	defs     map[[2]string][]*Def // by database and name
 	refs     map[[2]string][]*Ref // by database and name
 	locs     map[string][]*Loc    // by key
+	shared   map[string]string    // the one kept copy of each record string
 }
 
 // Add stores a file's records and lists its definitions, references and loc entries by name. A
-// path already added is dropped first by the caller.
+// path already added is dropped first by the caller. Every name and database becomes the index's one
+// kept copy of its text, and every path the file's, so no record pins a file's text and a name read
+// a million times, or decoded from the cache, is kept once.
 func (idx *Index) Add(records *Records, path string) {
 	if idx.defs == nil {
 		idx.Ready()
 	}
-	idx.Records[path] = records
-	if records.scoped != nil {
-		maps.Copy(idx.Scoped, records.scoped)
-		records.scoped = nil
+	share := func(text string) string {
+		if kept, found := idx.shared[text]; found {
+			return kept
+		}
+		text = strings.Clone(text)
+		idx.shared[text] = text
+		return text
 	}
+	idx.Records[path] = records
+	for pair := range records.scoped {
+		idx.Scoped[[2]string{share(pair[0]), pair[1]}] = true
+	}
+	records.scoped = nil
 	for i := range records.Defs {
 		def := &records.Defs[i]
+		def.Database, def.Name, def.Mode, def.Path = share(def.Database), share(def.Name), share(def.Mode), path
 		key := [2]string{def.Database, def.Name}
 		if list := idx.defs[key]; def.Name != "" && len(list) > 0 && list[0].Path != def.Path {
 			idx.Repeated[def.Database] = true
@@ -91,11 +105,13 @@ func (idx *Index) Add(records *Records, path string) {
 	}
 	for i := range records.Refs {
 		ref := &records.Refs[i]
+		ref.Database, ref.Name, ref.Called, ref.Path = share(ref.Database), share(ref.Name), share(ref.Called), path
 		key := [2]string{ref.Database, ref.Name}
 		idx.refs[key] = append(idx.refs[key], ref)
 	}
 	for i := range records.Loc {
 		entry := &records.Loc[i]
+		entry.Key, entry.Language, entry.Path = share(entry.Key), share(entry.Language), path
 		idx.locs[entry.Key] = append(idx.locs[entry.Key], entry)
 	}
 }
@@ -141,7 +157,7 @@ func (idx *Index) Ready() {
 	cached := idx.Records
 	idx.Records = make(map[string]*Records, len(cached))
 	idx.order, idx.rels = make(map[string]int, len(idx.Files)), make(map[string]int, len(idx.Files))
-	idx.defs, idx.refs, idx.locs = map[[2]string][]*Def{}, map[[2]string][]*Ref{}, map[string][]*Loc{}
+	idx.defs, idx.refs, idx.locs, idx.shared = map[[2]string][]*Def{}, map[[2]string][]*Ref{}, map[string][]*Loc{}, map[string]string{}
 	idx.Repeated = map[string]bool{}
 	if idx.Scoped == nil {
 		idx.Scoped = map[[2]string]bool{}
@@ -191,8 +207,8 @@ func (idx *Index) LocKeys() iter.Seq[string] {
 	return maps.Keys(idx.locs)
 }
 
-// Loaded is the file listed at a path of the indexes and whether the game loads it (D-30): it is
-// hidden by a later file at its Rel, in its index or a later one, or by a later index's Replaced.
+// Loaded is the file listed at a path of the indexes and whether the game loads it: it is hidden by
+// a later file at its Rel, in its index or a later one, or by a later index's Replaced.
 func Loaded(indexes []*Index, path string) (source.File, bool) {
 	path = strings.ToLower(path)
 	for rank, idx := range indexes {
@@ -211,8 +227,8 @@ func Loaded(indexes []*Index, path string) (source.File, bool) {
 	return source.File{}, false
 }
 
-// gather is one name's items across the indexes in the game's load order (D-30), by Rel, those in
-// files the game loads.
+// gather is one name's items across the indexes in the game's load order, by Rel, those in files
+// the game loads.
 func gather[Item any](indexes []*Index, list func(idx *Index) []*Item, path func(item *Item) string) []Item {
 	type placed struct {
 		item *Item
@@ -277,15 +293,16 @@ func Names(indexes []*Index, database string) []string {
 	return names
 }
 
-// Resolve is the one resolver of a reference: a call by its databases' CalledIn (D-24, D-29); a
-// scope saved from code, a loc key or a file path known with no definitions; else Lookup.
+// Resolve is the one resolver of a reference: a call in the databases its CalledIn word names; a
+// scope saved from code, a loc key or a file path known with no definitions; else Lookup. A local
+// definition answers only a reference in its own file.
 func Resolve(sch *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known bool) {
 	switch {
 	case ref.Called != "":
 		for _, database := range sch.Callees[ref.Called] {
 			defs = append(defs, Lookup(indexes, database, ref.Name)...)
 		}
-	case ref.Database == game.NameCommands["save_scope_as"] && sch.Saved[ref.Name]:
+	case ref.Database == game.SavedScopes && sch.Saved[ref.Name]:
 		return nil, true
 	case ref.Database == Localization:
 		return nil, slices.ContainsFunc(indexes, func(idx *Index) bool { return len(idx.locs[ref.Name]) > 0 })
@@ -295,20 +312,30 @@ func Resolve(sch *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known b
 	default:
 		defs = Lookup(indexes, ref.Database, ref.Name)
 	}
+	defs = slices.DeleteFunc(defs, func(def Def) bool { return def.Local && def.Path != ref.Path })
 	return defs, len(defs) > 0
 }
 
 // Winner applies the entry modes to a name's definitions in Lookup's order, plain then each mode's:
 // the winner, its adds, INJECT/REPLACE orphans with no target, and whether two mods contest it.
 func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (winner Def, adds, orphans []Def, contested bool) {
+	// in a database whose registry row has OnActions every plain definition after the first adds,
+	// as an inject does; a moded one follows its mode
+	merged := map[string]bool{}
+	for at, row := range info.Folders {
+		merged[schema.NameOf(at)] = row.OnActions
+	}
+
 	found := false
 	for _, mode := range slices.Concat([]game.EntryMode{{}}, info.EntryModes) {
 		plain := mode.Word == ""
-		contends := plain || mode.Replaces
 		for _, def := range defs {
 			if def.Mode != mode.Word {
 				continue
 			}
+
+			// a plain on_action, a name an entry gives (Named) and a local declaration take no place
+			contends := (plain && !merged[def.Database] || mode.Replaces) && !def.Named && !def.Local
 
 			// two mods contest when one takes, or tries to take, the other's place
 			if found && contends {
@@ -348,5 +375,5 @@ func (ref Ref) Fires(sch *schema.Schema) bool {
 // through it: a call, or a name of a database called in effects.
 func (ref Ref) Runs(sch *schema.Schema) bool {
 	database := sch.Databases[ref.Database]
-	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Naming.CalledIn, "effect"))
+	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Naming.CalledIn, game.Blocks[game.BlockEffects].Calls))
 }

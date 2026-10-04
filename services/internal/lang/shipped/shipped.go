@@ -1,5 +1,5 @@
 // Package shipped holds what the dumps declare of each game version the owner shipped: the backup
-// for a user missing a dump file (D-5, D-27). It is a schema built from the dumps alone, never the
+// for a user missing a dump file. It is a schema built from the dumps alone, never the
 // dumps. One <game>-<version>.gob.gz sits beside this file for each game version, written by the
 // generator.
 package shipped

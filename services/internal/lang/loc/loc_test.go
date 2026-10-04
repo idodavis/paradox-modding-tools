@@ -63,8 +63,7 @@ func TestParse(t *testing.T) {
 			t.Fatalf("interps=%+v", got)
 		}
 		if src[got[0].KeyRange.Start:got[0].KeyRange.End] != "used" ||
-			src[got[0].WrapRange.Start:got[0].WrapRange.End] != "$used$" ||
-			src[got[1].WrapRange.Start:got[1].WrapRange.End] != "$used|U$" {
+			src[got[1].KeyRange.Start:got[1].KeyRange.End] != "used" {
 			t.Fatalf("interp ranges %+v", got)
 		}
 		if len(Interps("plain $notclosed", 0)) != 0 {

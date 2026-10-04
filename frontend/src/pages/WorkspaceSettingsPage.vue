@@ -709,7 +709,6 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
               v-if="langHealth"
               v-model:open="scriptDocsOpen"
               :folders="langHealth.dumpFolders ?? []"
-              :unread="langHealth.unread ?? []"
             />
             <UCard
               title="Diagnostics"

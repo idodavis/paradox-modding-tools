@@ -21,20 +21,18 @@ type Range = jomini.Range
 // Entry is one `key:version "value"` localization entry. Version is -1 when absent.
 // Value is the verbatim text between the opening quote and the LAST quote on the line.
 type Entry struct {
-	Key        string `json:"key"`
-	KeyRange   Range  `json:"keyRange"`
-	Version    int    `json:"version"`
-	Value      string `json:"value"`
-	ValueRange Range  `json:"valueRange"`
-	Line       int    `json:"line"` // 0-based
+	Key        string
+	KeyRange   Range
+	Version    int
+	Value      string
+	ValueRange Range
+	Line       int // 0-based
 }
 
 // Interp is a `$key$` (optional `|filter`) reuse inside a loc value.
 type Interp struct {
-	Key       string
-	Filter    string // text after | when present
-	KeyRange  Range  // inner key, not `$` or `|filter`
-	WrapRange Range  // opening `$` through closing `$` (exclusive end)
+	Key      string
+	KeyRange Range // inner key, not `$` or `|filter`
 }
 
 // A parse error is the same as in script (code, message, range); the codes below are loc's own.
@@ -53,11 +51,10 @@ const (
 
 // Result is the parsed localization file.
 type Result struct {
-	Language    string // "english" from `l_english:`; "" if none found
-	HeaderRange *Range
-	Entries     []Entry
-	Errors      []Error
-	HadBOM      bool
+	Language string // "english" from `l_english:`; "" if none found
+	Entries  []Entry
+	Errors   []Error
+	HadBOM   bool
 }
 
 // headerRe matches a header line: optional indent, `l_<name>:`, then only trailing
@@ -113,13 +110,7 @@ func Parse(text string) Result {
 		})
 	}
 
-	return Result{
-		Language:    scanner.language,
-		HeaderRange: scanner.headerRange,
-		Entries:     scanner.entries,
-		Errors:      scanner.errs,
-		HadBOM:      scanner.hadBOM,
-	}
+	return Result{Language: scanner.language, Entries: scanner.entries, Errors: scanner.errs, HadBOM: scanner.hadBOM}
 }
 
 // Interps finds `$key$` / `$key|filter$` interpolations in a loc value.
@@ -157,12 +148,7 @@ func Interps(value string, valueStart int) []Interp {
 		}
 		key := value[i+1 : j]
 		if LooksLikeKey(key) || (strings.EqualFold(key, "VALUE") && filter != "") {
-			out = append(out, Interp{
-				Key:       key,
-				Filter:    filter,
-				KeyRange:  Range{Start: valueStart + i + 1, End: valueStart + j},
-				WrapRange: Range{Start: valueStart + i, End: valueStart + closeAt + 1},
-			})
+			out = append(out, Interp{Key: key, KeyRange: Range{Start: valueStart + i + 1, End: valueStart + j}})
 		}
 		i = closeAt + 1
 	}
@@ -174,7 +160,6 @@ type scanner struct {
 	entries     []Entry
 	errs        []Error
 	language    string
-	headerRange *Range
 	headerFound bool
 	hadBOM      bool
 	lineNo      int
@@ -205,27 +190,8 @@ func (scanner *scanner) processLine(line string, base int) {
 	}
 
 	if !scanner.headerFound {
-		if !strings.Contains(line, "l_") {
-			scanner.errs = append(scanner.errs, Error{
-				Code:    ErrContentBeforeHeader,
-				Message: "Content appears before the localization header (e.g. `l_english:`).",
-				Range:   Range{Start: base + contentStart, End: base + len(line)},
-			})
-			return
-		}
-		if match := headerRe.FindStringSubmatch(line); match != nil {
-			scanner.headerFound = true
-			scanner.language = match[1]
-			at := strings.Index(line, "l_")
-			colon := strings.Index(line[max(at, 0):], ":")
-			if colon >= 0 {
-				colon += max(at, 0)
-			}
-			end := base + len(line)
-			if colon >= 0 {
-				end = base + colon + 1
-			}
-			scanner.headerRange = &Range{Start: base + at, End: end}
+		if match := headerRe.FindStringSubmatch(line); strings.Contains(line, "l_") && match != nil {
+			scanner.headerFound, scanner.language = true, match[1]
 			return
 		}
 		scanner.errs = append(scanner.errs, Error{
@@ -292,6 +258,7 @@ func (scanner *scanner) parseEntry(entry string, entryBase int, fullLine string,
 	quoteOpen := j
 	valueInnerStart := entryBase + quoteOpen + 1
 
+	// an unterminated value runs to the end of the line
 	quoteClose := strings.LastIndexByte(entry, '"')
 	if quoteClose == quoteOpen {
 		scanner.errs = append(scanner.errs, Error{
@@ -299,17 +266,8 @@ func (scanner *scanner) parseEntry(entry string, entryBase int, fullLine string,
 			Message: "Unterminated localization value (missing closing quote).",
 			Range:   Range{Start: entryBase + quoteOpen, End: lineBase + len(fullLine)},
 		})
-		scanner.entries = append(scanner.entries, Entry{
-			Key:        key,
-			KeyRange:   keyRange,
-			Version:    version,
-			Value:      entry[quoteOpen+1:],
-			ValueRange: Range{Start: valueInnerStart, End: entryBase + len(entry)},
-			Line:       scanner.lineNo,
-		})
-		return
+		quoteClose = len(entry)
 	}
-
 	scanner.entries = append(scanner.entries, Entry{
 		Key:        key,
 		KeyRange:   keyRange,

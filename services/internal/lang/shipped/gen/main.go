@@ -1,5 +1,5 @@
 // Command gen writes the shipped backup schema of one game version: what the install's dump files
-// declare (D-27), saved beside shipped.go. Run it from the repo root:
+// declare, saved beside shipped.go. Run it from the repo root:
 //
 //	go run ./services/internal/lang/shipped/gen -game ck3 [-dir <install root>]
 package main
@@ -59,7 +59,7 @@ func main() {
 	if sch.Sources[schema.SourceDumps].From == "none" {
 		log.Fatalf("no dump files found for %s: run the game's script_docs and data type dumps first", *gameID)
 	}
-	sch.Databases, sch.Unread = nil, nil
+	sch.Databases = nil
 
 	// 4. gob inside gzip, as shipped.Load reads it
 	var encoded bytes.Buffer

@@ -108,19 +108,9 @@ func New(ctx context.Context, info *game.GameInfo, install *index.Install, mods 
 	}, nil
 }
 
-// Schema is the install's.
-func (sess *Session) Schema() *schema.Schema {
-	return sess.Install.Schema
-}
-
 // Indexes are the two indexes in load order: the install, then the workspace's mods over it.
 func (sess *Session) Indexes() []*index.Index {
 	return []*index.Index{sess.Install.Index, sess.Workspace}
-}
-
-// Defs is every definition of a name in a database the game loads, in load order.
-func (sess *Session) Defs(database, name string) []index.Def {
-	return index.Lookup(sess.Indexes(), database, name)
 }
 
 // Winner is the definition the game keeps of several by the entry modes, its adds, the INJECT and
@@ -145,7 +135,7 @@ type Fire struct {
 // scripted effect is followed to what it fires, and an effect already met on the way is not entered
 // again.
 func (sess *Session) Fires(from index.Def) []Fire {
-	sch, indexes := sess.Schema(), sess.Indexes()
+	sch, indexes := sess.Install.Schema, sess.Indexes()
 	seen, out := map[index.Def]bool{from: true}, []Fire(nil)
 
 	// follow reads the references written in one definition; via is the effects entered to reach it
@@ -222,14 +212,14 @@ func (sess *Session) Title(def index.Def) string {
 	if said, found := sess.Loc(def.Name, ""); found {
 		return said.Text
 	}
-	row := sess.Schema().Databases[def.Database]
+	row := sess.Install.Schema.Databases[def.Database]
 	_, entry := sess.Entry(def)
 	for i, block := 0, jomini.ChildBlock(entry); row != nil && block != nil && i < len(block.Statements); i++ {
 		field, isField := block.Statements[i].(*jomini.Assignment)
 		if !isField {
 			continue
 		}
-		position, _ := sess.Schema().Slot(row.Entry, field.Key.Text, false)
+		position := sess.Install.Schema.Step(sess.Install.Schema.Start(row), field, field.Key.Text, false).Key
 		value, isWord := field.Value.(*jomini.Scalar)
 		if !isWord || position == nil || position.Value.Value.Type != schema.WordLoc {
 			continue
@@ -262,7 +252,7 @@ func (sess *Session) Where(path string) Place {
 	if !ok {
 		return Place{Format: source.Classify(path, filepath.ToSlash(path))}
 	}
-	place := Place{Origin: file.Origin, Rel: file.Rel, Database: sess.Schema().DatabaseAt(file.Rel), Format: file.Format}
+	place := Place{Origin: file.Origin, Rel: file.Rel, Database: sess.Install.Schema.DatabaseAt(file.Rel), Format: file.Format}
 	if mod != nil {
 		place.Calendar = mod.Calendar
 	}
@@ -325,9 +315,8 @@ func (sess *Session) Parsed(path string) (*jomini.Result, string, error) {
 	return &parsed, text, nil
 }
 
-// DidOpen and DidChange hold the editor's text of a file and index it from that text, in place of
-// the disk's records. The records keep the inventory's spelling of the path.
-func (sess *Session) DidOpen(path, text string) { sess.DidChange(path, text) }
+// DidChange holds the editor's text of an opened or changed file and indexes it from that text, in
+// place of the disk's records. The records keep the inventory's spelling of the path.
 func (sess *Session) DidChange(path, text string) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
@@ -391,7 +380,7 @@ func (sess *Session) changed(file source.File, text string, err error) {
 	}
 	switch {
 	case err == nil:
-		sess.Workspace.Reindex(sess.Schema(), file, text)
+		sess.Workspace.Reindex(sess.Install.Schema, file, text)
 	case errors.Is(err, os.ErrNotExist):
 		sess.Workspace.Forget(file.Path)
 	default:

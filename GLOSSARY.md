@@ -52,7 +52,7 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 |---|---|---|
 | Product pane | Guide, `GuidePane`, `pmt.guide`, `ui.guide.*` | Helper, HelperPane, `pmt.helper`, `ui.helper`, `ide.helperWidth`, `WikiGuide` |
 | Guide RPC | `WikiService.Guide` | `SessionService.WikiGuide`; query key `wiki-guide` → `guide` |
-| Events | `lang:ready`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`, `wiki:updated` | `docs:wiki-*` |
+| Events | `lang:ready`, `lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`, `wiki:updated` | `docs:wiki-*` |
 | Package / load | `package wiki`, `LoadGuides`, `guidesPath()` | `package docs`, `LoadDocs`, persist `docsPath()` |
 | Dumps health | `LanguageHealth.dumpsFrom` (yours, shipped or none), `dumpsStale` | `docsPresent`, UI “dumps required” |
 | Dump signature | `Command.Args` | prose in a usage field; a flat usage map |
@@ -85,7 +85,7 @@ These are the terms of the language engine (`services/internal/lang/README.md`),
 | script-made name | a name a command creates while script runs, in a database no folder holds (`game.NameCommands`) | `save_scope_as = x`; `set_variable = { name = y }` |
 | position | a place in a database's entry or in a command's arguments (`schema.Key`); keys collapse only by written form: `<number>`, `<date>`, `<prefix:>` | `trigger` inside an event; `<number>` inside `random_list` |
 | block kind | what a block holds: fields, triggers or effects (`schema.Block`) | `trigger = { … }` is a triggers block; an event's own block is fields |
-| slot | where a key is written: a fields block, a triggers or effects block, or a block nothing declares. The slot decides what the key is (`Schema.Slot`), never the word | a declared command's name in an effects block is the command; in a fields block it is a field |
+| slot | where a key is written: the kind of block it sits in (`game.Block`). The slot decides what the key is (`game.Blocks`, read by `schema.Step`), never the word | a declared command's name in an effects block is the command; in a fields block it is a field |
 | value | one written word, and the form it is written in: number, date, bool, text or word | `brave`, `character:186004`, `"gfx/x.dds"`, `1066.9.15` |
 | reference | a word at a position whose declared value names a database, or a prefixed word whose prefix is a declared link; a word no source declares is no reference | `trait = brave`, `culture = "norse"`, `holder = 168673` |
 | prefixed word | a word spelled `prefix:name` (`jomini.SplitPrefixed`) | `title:k_france`, `scope:target` |
@@ -98,7 +98,7 @@ These are the terms of the language engine (`services/internal/lang/README.md`),
 | docs | the prose the install ships beside its script | `_traits.info`, `readme.txt`, `*.md` |
 | claim | a fact a source states at a position or about a command, with who stated it (`schema.Said`); the first source in trust order (dumps, docs, wiki) to state it keeps it | `Required` optional, `Scope` character |
 | declared / evidence | stated by a source (the dumps, the docs, the wiki, the registry) / written in vanilla's files. A name says which; only a claim of the dumps, docs or wiki lets a diagnostic accuse (`schema.Speaks`); the registry's classify | |
-| evidence | what vanilla writes at a position (`schema.Seen`): how many of the parent's blocks hold it, and the forms and values written, with counts. Never a claim | `Seen.In`, `Seen.Values` |
+| evidence | what vanilla writes at a position (`schema.Seen`): how many of the parent's blocks hold it, and the forms and values written, with counts. Never a claim, though where no source types a value its words do | `Seen.In`, `Seen.Values` |
 | entry mode | a word before a definition's name that says how it combines with an earlier one | Victoria 3 and EU5 `REPLACE:name`, `INJECT:name` |
 | data call | a `[…]` expression in GUI or loc | `[Character.GetName]` |
 
@@ -117,7 +117,7 @@ Two sources of fact, and a name must say which one it came from. Getting this wr
 | **Declared** | A source states it: the dumps, the docs, the wiki and the registry's rows. Read as written, each claim keeping who stated it. |
 | **Evidence** | Written in vanilla's own files and counted by the schema stage: which positions exist, which keys sit under each, which forms and values are written. Never a claim, never hand-written. |
 
-Only a declared claim that is fresh and that no evidence contradicts lets a diagnostic accuse (`schema.Speaks`); evidence offers a completion, feeds a hover and keeps a declared claim from accusing where vanilla writes otherwise. Do not say "learned", "voted" or "inferred" for either.
+Only a declared claim that is fresh and that no evidence contradicts lets a diagnostic accuse (`schema.Speaks`); evidence offers a completion, feeds a hover, types a value no source types and keeps a declared claim from accusing where vanilla writes otherwise. Do not say "learned", "voted" or "inferred" for either.
 
 **Keep as different words:** `lsp.Position.character` vs a card's `col`. Disk `DocsFolderName` / `ScriptDocsDirs`.
 
@@ -125,17 +125,17 @@ Only a declared claim that is fresh and that no evidence contradicts lets a diag
 
 | Name | Lives in |
 |---|---|
-| `GameInfo` (with `Folders`, the registry's per-folder rows: how entries are named, wrappers, history, scripted keywords; `FileTypes`, `Nested`, `MapTable`; and `EntryModes`, the six entry-mode words of Victoria 3 and EU5 with what each does, in the order the game processes them), `UserDataDir`, `DumpDirs`, `ReadGameVersion`, `FirstWinsAt` | `services/internal/game` — **the only game-aware package** |
+| The language rules (`Block`, `Blocks`, `Contents`, `Structurals`, `ScopeRules`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Folders`, `Nested`, `MapTable`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo`, `UserDataDir`, `DumpDirs`, `ReadGameVersion`, `FirstWinsAt` — `game.go` | `services/internal/game` — **the only game-aware package** |
 | The CST, the lexer, the name and literal shapes, encodings; `SplitPrefixed`, `Constant`, `Interpolations` (the spellings inside one word); `Result.Attach` (comments onto statements) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install, a mod or a dump folder, its format, an image's header | `services/internal/lang/source` — one format table for every game |
 | Loc files: entries, interpolations, language | `services/internal/lang/loc` |
-| `Schema` with `Database`, `Key` (a position), `Command`, `Said` (a claim), `Seen` (vanilla's evidence); `Build`, `Input`; `Speaks`, the one rule for when a claim may accuse; `Slot`, `Link`, `Named`, `Flagged`; `Entries` and `Entry`, the entry detector; the dump reader, the doc normalizer | `services/internal/lang/schema` — the schema stage: what each source states, in trust order |
+| `Schema` with `Database`, `Key` (a position), `Command`, `Said` (a claim), `Seen` (vanilla's evidence); `Build`, `Input`; `Speaks`, the one rule for when a claim may accuse; `Read`, `Step` and `Reader`, the walker every reader of script uses; `Link`, `Named`, `Flagged`; `Entries` and `Entry`, the entry detector; the dump reader, the doc normalizer | `services/internal/lang/schema` — the schema stage: what each source states, in trust order |
 | `Load`, `Name`, `Safe`; the generator `gen` | `services/internal/lang/shipped` — the backup schemas, the dump part only, for a user missing a dump file |
-| `Index` with `Def`, `Ref`, `Loc`, `Records`; `Walk` and its `Context`, the only place that decides what a written word is; `Scan`, `ScanMods`, `Reindex`, `BuildSchema`; `SaveInstall`, `LoadInstall`, `DropInstall`, `CachedAt`; `Lookup`, `Resolve`, `Winner` | `services/internal/lang/index` — the index stage: what a scan found and where, load order, and the install's cache. It infers nothing |
+| `Index` with `Def`, `Ref`, `Loc`, `Records`; `Walk` and its `Context`, a file's records by the walker and the name rules; `Scan`, `ScanMods`, `Reindex`, `BuildSchema`; `SaveInstall`, `LoadInstall`, `DropInstall`, `CachedAt`; `Lookup`, `Resolve`, `Winner` | `services/internal/lang/index` — the index stage: what a scan found and where, load order, and the install's cache. It infers nothing |
 | `Session` with `New`, `Defs`, `Winner`, `Loc`, `LocKeys`, `Where` (`Place`), `Text`, `Parsed`, `Did*`, `Changed`, `Watch`; `Watcher`; `Fires` (`Fire`: what a definition fires, through scripted effects) | `services/internal/session` — one workspace open in the editor, and its lock |
 | `Hover` (`Inspect`), `SignatureHelp`, `Complete` (`Item`, `Resolve`), `Definition`, `References`, `DocumentSymbols`, `WorkspaceSymbols`, `Diagnose` (`Codes`), `Format`, `Folding`, `CodeActions`, `InlayHints` | `services/internal/lsp` — the editor's requests, each from one walk of the open file; payloads carry display data |
 | `EventGraphService` (`GetEventGraph`: `Params`, `EventGraph`, `Node`, `Edge`; `GetEventDetail`: `Detail`, `Section`, `Option`; `SearchRoots`: `Roots`, `DatabaseCount`), `HealthService` (`GetHealth`: `HealthParams`, `Health`, `Contest`, `Site`, `Dependency`, `Dangling`, `Language`, `LocRow`, `Problem`; `GetLines`: `SourceAt`; `LookupLoc`: `Lookup`, `LocEntry`) | `services/` — a page's question answered from the index's records; every number in a payload is the page's |
-| `ConfigService` (`config.json`, the settings, version, updates, `ResetData`), `SessionService` (`EnsureSession`, `RebuildInstallSemantics`, `GetLanguageHealth`), `IdeService` (the editor's requests), `ReleaseService`, `WorkspaceService`, the `lang:*` events | `services/` — the Wails layer, services only |
+| `ConfigService` (`config.json`, the settings, version, updates, `ResetData`), `SessionService` (`EnsureSession`, `GetLanguageHealth`; every scan starts by itself and reports through `lang:scan-progress`), `IdeService` (the editor's requests), `ReleaseService`, `WorkspaceService`, the `lang:*` events | `services/` — the Wails layer, services only |
 | `AppDir`, `CacheDir`, `Write`, `CopyFile`; `ReadListingFields`, `WriteListingFields`, `FindThumbnail`, `CopyThumbnail`, `WriteNewMod` | `services/internal/local` — this machine's files: the app's own, a mod's Paradox files |
 | `Library`, `Publish`, `Serve` (a publish run as a second copy of the app); `MarkdownToBBCode`, `BBCodeToMarkdown`; `EnsureDescriptions`, `DescriptionFiles`; `ScanPreviews`, `AddPreview`, `AddVideo`; `CopyMod` | `services/internal/steam` — everything the Steam Workshop reads |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
@@ -172,7 +172,7 @@ Parse errors carry their own codes from the parser (`unclosed-brace`,
 file's prefixed `loc-`). They are not in the list above and cannot be turned
 off: a file that does not parse is wrong.
 
-**Evidence never accuses.** The rule is `schema.Speaks` (`.claude/plans/engine.md` §4.3): every code
+**Evidence never accuses.** The rule is `schema.Speaks`: every code
 above except the three localization-format ones accuses only on a claim a
 declared source states (dumps, docs or wiki), fresh, that no vanilla evidence
 contradicts; a docs or wiki claim also needs vanilla to write the position.

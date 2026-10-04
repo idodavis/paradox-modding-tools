@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * How to make the game print its scripting documentation, what it gives PMT, what the last scan
- * read of it, and what the scan saw that nothing explained. The game writes these files only from
- * its own console, so this is the one part of the language engine the user does by hand.
+ * How to make the game print its scripting documentation and what it gives PMT. The game writes
+ * these files only from its own console, so this is the one part of the language engine the user
+ * does by hand.
  */
 import { computed } from "vue";
 
@@ -10,7 +10,6 @@ const open = defineModel<boolean>("open", { required: true });
 
 const props = defineProps<{
   folders: string[];
-  unread: string[];
   gameName?: string;
 }>();
 
@@ -32,10 +31,10 @@ const steps = computed(() => [
     body: "It runs instantly and prints nothing. That is expected.",
   },
   {
-    title: "Come back and rescan",
+    title: "Come back and reopen the workspace",
     body: props.folders[0]
-      ? `The files land in ${props.folders[0]}; the rescan reads them from there.`
-      : "The rescan reads the files from the game's logs or docs folder.",
+      ? `The files land in ${props.folders[0]}; they are read when the workspace next opens.`
+      : "The files are read from the game's logs or docs folder when the workspace next opens.",
   },
 ]);
 
@@ -52,9 +51,6 @@ const kept = [
   "Localization coverage",
   "The Event Graph",
 ];
-
-// what the scan saw and nothing explained, a few lines of it: a game update changing the language
-const unexplained = computed(() => props.unread.slice(0, 5));
 </script>
 
 <template>
@@ -99,14 +95,6 @@ const unexplained = computed(() => props.unread.slice(0, 5));
               </li>
             </ul>
           </div>
-        </div>
-
-        <div v-if="unexplained.length" class="space-y-1">
-          <p class="font-medium text-highlighted">What the last scan could not explain</p>
-          <p v-for="(line, i) in unexplained" :key="i" class="break-all font-mono text-xs text-muted">{{ line }}</p>
-          <p v-if="unread.length > unexplained.length" class="text-xs text-muted">
-            and {{ (unread.length - unexplained.length).toLocaleString() }} more lines
-          </p>
         </div>
       </div>
     </template>

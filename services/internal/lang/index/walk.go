@@ -1,11 +1,10 @@
-// walk.go is the classify walk: one pass over a file's tree with the schema, keeping each
-// statement's context. It is the only place that decides what a written word is (spec §7.2).
+// walk.go turns a file into records: the walker reads its tree, and the name rules (game.KeyNames,
+// game.ValueNames) say what each word defines or refers to. Each step is handed on as a Context.
 
 package index
 
 import (
 	"cmp"
-	"maps"
 	"slices"
 	"strings"
 
@@ -15,23 +14,14 @@ import (
 	"paradox-modding-tools/services/internal/lang/source"
 )
 
-// Context is what the walk knows at one statement: Block, Scope and InTrigger say where it is
-// written; Key and Command are what its key reads as; the Inner fields are how its own block reads.
+// Context is a step as the index reads it.
 type Context struct {
-	Statement    jomini.Statement
-	Entry        int32           // index into the Records' Defs, -1 outside an entry
-	Key          *schema.Key     // the statement's position
-	Command      *schema.Command // when the key is a declared command
-	Block        schema.Block
-	Scope        string // "" unknown
-	InTrigger    bool
-	InnerKey     *schema.Key // the position its block reads at: a link's is its parent's; nil unknown
-	InnerBlock   schema.Block
-	InnerScope   string // the scope its block runs in; "" unknown
-	InnerTrigger bool   // its block reads inside a trigger
+	schema.Step
+	Entry int32  // the entry it is in, as an index into the Records' Defs; -1 outside one
+	Names string // the database its value names by a name command (set_variable); "" none
 }
 
-// Walk classifies a file with the schema: its records, and each statement's context handed to visit
+// Walk reads a file with the schema: its records, and each statement's context handed to visit
 // (nil for none); visit returning false stops the walk.
 func Walk(sch *schema.Schema, file source.File, parsed *jomini.Result, visit func(Context) bool) *Records {
 	records := &Records{scoped: map[[2]string]bool{}}
@@ -50,10 +40,10 @@ func Walk(sch *schema.Schema, file source.File, parsed *jomini.Result, visit fun
 		return int32(at.Line), int32(at.Character)
 	}
 
-	// define records a definition; a name is cloned, so a record never pins the file's text
-	define := func(database, name, mode string, span jomini.Range) {
-		def := Def{Database: database, Name: strings.Clone(name), Mode: strings.Clone(mode), Path: file.Path, Range: span}
-		def.Line, def.Col = position(span.Start)
+	// define records a definition in this file (Index.Add gives it shared copies of its strings)
+	define := func(def Def) {
+		def.Path = file.Path
+		def.Line, def.Col = position(def.Range.Start)
 		records.Defs = append(records.Defs, def)
 	}
 
@@ -72,12 +62,8 @@ func Walk(sch *schema.Schema, file source.File, parsed *jomini.Result, visit fun
 			top = []jomini.Statement{entry.Statement}
 		}
 		own[entry.Statement] = int32(len(records.Defs))
-		define(entry.Database, entry.Name, entry.Mode, span)
+		define(Def{Database: entry.Database, Name: entry.Name, Mode: entry.Mode, Range: span, Local: entry.Local})
 	})
-
-	// a link prefix's database, kept per prefix (Prefixed); an event id names an entry of the
-	// database whose registry row is Events (D-25)
-	links, events := map[string]string{}, cmp.Or(sch.Flagged(func(row game.Folder) bool { return row.Events })...)
 
 	// a word can name something unless it is a constant (@x) or holds a parameter ($X$)
 	named := func(word string) bool {
@@ -85,191 +71,147 @@ func Walk(sch *schema.Schema, file source.File, parsed *jomini.Result, visit fun
 		return word != "" && !constant && len(jomini.Interpolations(word)) == 0
 	}
 	refer := func(ref Ref, at Context) {
-		ref.Name, ref.Path, ref.From, ref.InTrigger = strings.Clone(ref.Name), file.Path, at.Entry, at.InTrigger
+		ref.Path, ref.From, ref.InTrigger = file.Path, at.Entry, at.InTrigger
 		ref.Line, ref.Col = position(ref.Range.Start)
 		records.Refs = append(records.Refs, ref)
 	}
+	events := cmp.Or(sch.Flagged(func(row game.Folder) bool { return row.Events })...)
 
-	// linked refers each part of a word read through a declared link (scope:x, root.var:y),
-	// saying whether one was
-	linked := func(word string, span jomini.Range, at Context) (found bool) {
-		if !strings.Contains(word, ":") {
-			return false
-		}
-		for _, part := range strings.Split(word, ".") {
-			prefixed, isPrefixed := jomini.SplitPrefixed(part)
-			if !isPrefixed || sch.Link(strings.ToLower(part)) == nil {
-				continue
+	// each written block's entry, so a step knows the entry it is in
+	stopped, entries := false, map[*jomini.Block]int32{}
+	reader := schema.Reader{
+		Entry: func(statement jomini.Statement) *schema.Database {
+			if index, isEntry := own[statement]; isEntry {
+				return sch.Databases[records.Defs[index].Database]
 			}
-			found = true
-			database, known := links[prefixed.Prefix]
-			if !known {
-				database = Prefixed(sch, prefixed.Prefix)
-				links[prefixed.Prefix] = database
-			}
-			if database != "" {
-				refer(Ref{Database: database, Name: prefixed.Name, Range: span}, at)
-			}
-		}
-		return found
-	}
-
-	// parameters defines each $NAME$ in a word of an entry whose registry row passes parameters, as
-	// <entry>:<NAME> (D-31)
-	parameters := func(word *jomini.Scalar, at Context) {
-		if at.Entry < 0 || !strings.Contains(word.Text, "$") {
-			return
-		}
-		entry := records.Defs[at.Entry]
-		if database := sch.Databases[entry.Database]; database == nil || !database.Naming.Parameters {
-			return
-		}
-		start := word.Range.Start
-		if word.Quoted {
-			start++
-		}
-		for _, span := range jomini.Interpolations(word.Text) {
-			define(Parameter, entry.Name+":"+span.Name, "", jomini.Range{Start: start + span.Start, End: start + span.End})
-		}
-	}
-
-	// walk visits a block's statements read at under (nil: outside any entry, nothing classified) in
-	// the context at, inside the lower-case command whose Args it reads (NameCommands' command/key),
-	// as the arguments of call when the block is a call's
-	nothing, stopped := &schema.Key{}, false
-	var walk func(statements []jomini.Statement, under *schema.Key, at Context, enclosing, call string)
-	walk = func(statements []jomini.Statement, under *schema.Key, at Context, enclosing, call string) {
-		for _, statement := range statements {
+			return nil
+		},
+		Visit: func(step *schema.Step) bool {
 			if stopped {
-				return
+				return false
 			}
-			here := at
-			here.Statement = statement
-			assign, isAssign := statement.(*jomini.Assignment)
-			var value jomini.Value
+			here, isEntry := Context{Step: *step, Entry: -1}, false
+			if entry, known := entries[step.Holder]; known {
+				here.Entry = entry
+			}
+			if entry, known := own[step.Statement]; known {
+				here.Entry, isEntry = entry, true
+			}
+			var database *schema.Database
+			if here.Entry >= 0 {
+				database = sch.Databases[records.Defs[here.Entry].Database]
+			}
+
+			// the database its value names, by a name command: the key's own (set_variable), or the key's
+			// inside the command whose block it is in (save_scope_value_as = { name = x })
+			assign, isAssign := step.Statement.(*jomini.Assignment)
+			value, naming := jomini.ValueOf(step.Statement), game.NameCommand{}
 			if isAssign {
-				value = assign.Value
-			} else if list, isList := statement.(*jomini.ValueStmt); isList {
-				value = list.Value
-			}
-
-			// below is where the statement's block reads, inner the context it gives, inside its command,
-			// calls the name it calls
-			below, inner, inside, calls := under, at, enclosing, ""
-			entry, isEntry := own[statement]
-			switch {
-			case isEntry:
-				// an entry starts at its database's position, in the root scope it claims
-				here.Entry, below, inner, inside = entry, nil, Context{Entry: entry}, ""
-				if database := sch.Databases[records.Defs[entry].Database]; database != nil {
-					here.Key, below = database.Entry, database.Entry
-					inner.Block, inner.Scope = below.Block.Value, below.Scope.Value
-					inner.InTrigger = inner.Block == schema.BlockTriggers
-				}
-			case under == nil, !isAssign:
-				// outside an entry nothing is classified; a list element is at the position holding it
-				if under != nothing {
-					here.Key = under
-				}
-			default:
-				// the slot decides the kind (D-17): a command reads on in its Args, a link's block at
-				// under, a field at its position; an unknown key's block is one nothing declares
-				key := assign.Key.Text
-				here.Key, here.Command = sch.Slot(under, key, false)
-				command := here.Command
-				here.InTrigger = here.InTrigger || command != nil && command.Kind == schema.KindTrigger
-
-				// a key in a call's block passes the called entry's parameter of its name (D-31)
-				if call != "" {
-					refer(Ref{Database: Parameter, Name: call + ":" + key, Range: assign.Key.Range}, here)
-				}
-
-				// a data call (name(…), jomini's call form) is no field and no call
-				data := command == nil && strings.Contains(key, "(") && slices.ContainsFunc(jomini.ParseCall(key, 0),
-					func(step jomini.Step) bool { return step.Range.End-step.Range.Start > len(step.Name) })
-				if data {
-					here.Key = nil
-				}
-
-				// out is where the key leads: a link chain's last link's Out (root.liege), a command's Out
-				below, inside = here.Key, ""
-				out := ""
-				switch {
-				case command != nil && command.Kind&schema.KindLink != 0:
-					below, inside = under, enclosing
-					if last := sch.Link(strings.ToLower(key[strings.LastIndexByte(key, '.')+1:])); last != nil {
-						out = last.Out
-					}
-				case command != nil:
-					inside, out = strings.ToLower(key), command.Out
-				}
-				if below == nil {
-					below = nothing
-				}
-
-				// the scope inside comes from the position's claim, then where the key leads when that is
-				// a declared scope; a command leading nowhere and a declared block keep it; else unknown
-				inner = Context{Entry: here.Entry, Block: below.Block.Value}
-				inner.InTrigger = here.InTrigger || inner.Block == schema.BlockTriggers
-				_, leads := sch.Scopes[out]
-				switch {
-				case here.Key != nil && here.Key.Scope.From != schema.SourceNone:
-					inner.Scope = here.Key.Scope.Value
-				case leads:
-					inner.Scope = out
-				case command != nil && command.Kind&schema.KindLink == 0,
-					here.Key != nil && here.Key.Block.From != schema.SourceNone:
-					inner.Scope = here.Scope
-				}
-
-				// the key's words: a link form, else a call resolved by CalledIn: in a triggers or effects
-				// block unless a stated field takes it (D-24), in an undeclared one with FormCommand (D-29)
-				word := Called(here.Block, under)
-				if !linked(key, assign.Key.Range, here) && command == nil && !data && named(key) && word != "" &&
-					(here.Block == schema.BlockUnknown || here.Key == nil) {
-					refer(Ref{Called: word, Name: key, Range: assign.Key.Range}, here)
-					calls = key
+				naming = game.NameCommands[step.Place.Command+"/"+assign.Key.Text]
+				if own, found := game.NameCommands[strings.ToLower(assign.Key.Text)]; found {
+					naming = own
 				}
 			}
+			made := ""
+			if here.Names = naming.Database; naming.Makes {
+				made = here.Names
+			}
 
-			// the value's word: a link form, a name a command creates (its own word, or the key of its
-			// block NameCommands lists), a word the position's declared value names, or an event id
+			// what each word names: the key by every key rule that fits, the value by the first value
+			// rule; a link prefix (scope:x) and a $NAME$ parameter always
 			scalar, isScalar := value.(*jomini.Scalar)
-			if (isEntry || under != nil) && isScalar && named(scalar.Text) && !linked(scalar.Text, scalar.Range, here) {
-				claim, made := schema.Value{}, ""
-				if here.Key != nil {
-					claim = here.Key.Value.Value
-				}
-				if isAssign {
-					made = Made(enclosing, assign.Key.Text, here.Command != nil)
-				}
-				word := Ref{Name: scalar.Text, Range: scalar.Range}
-				switch {
-				case made != "":
-					define(made, scalar.Text, "", scalar.Range)
-				case claim.Type == schema.WordReference:
-					word.Database = claim.Database
-				case claim.Type == schema.WordLoc:
-					word.Database = Localization
-				case claim.Type == schema.WordFile:
-					word.Database = File
-				case jomini.IsEventID(scalar.Text) && jomini.Literal(scalar.Text) != jomini.LitNumber:
-					word.Database = events
-				}
-				if word.Database != "" {
-					refer(word, here)
-				}
-			}
-
-			// a $NAME$ in its key or value defines a parameter of its entry (D-31)
+			var words []*jomini.Scalar
 			if isAssign {
-				parameters(&assign.Key, here)
+				words = append(words, &assign.Key)
 			}
 			if isScalar {
-				parameters(scalar, here)
+				words = append(words, scalar)
+			}
+			for i, word := range words {
+				isKey := isAssign && i == 0
+				reads := isKey && !isEntry && step.InEntry || !isKey && (isEntry || step.InEntry) && named(word.Text)
+
+				linked := false
+				for part := range strings.SplitSeq(word.Text, ".") {
+					prefixed, isPrefixed := jomini.SplitPrefixed(part)
+					if !reads || !isPrefixed || sch.Link(strings.ToLower(part)) == nil {
+						continue
+					}
+					linked = true
+					if database := sch.Prefixes[strings.ToLower(prefixed.Prefix)]; database != "" {
+						refer(Ref{Database: database, Name: prefixed.Name, Range: word.Range}, here)
+					}
+				}
+
+				claim := schema.Value{}
+				if step.Key != nil {
+					claim = step.Key.Value.Value
+				}
+				if isKey {
+					for _, rule := range game.KeyNames {
+						switch {
+						case rule == game.NameHistory && isEntry && database != nil && database.Naming.History &&
+							len(database.Naming.Of) == 1:
+							refer(Ref{Database: database.Naming.Of[0], Name: records.Defs[here.Entry].Name, Range: word.Range}, here)
+						case rule == game.NameList && reads && step.Listed != "":
+							refer(Ref{Database: sch.Lists, Name: strings.TrimPrefix(word.Text, step.Listed), Range: word.Range}, here)
+						case rule == game.NameCall && reads && step.Calls != "" && named(word.Text):
+							refer(Ref{Called: step.Calls, Name: word.Text, Range: word.Range}, here)
+						case rule == game.NameParameter && reads && step.Place.Call != "":
+							refer(Ref{Database: Parameter, Name: step.Place.Call + ":" + word.Text, Range: word.Range}, here)
+						}
+					}
+				}
+			values:
+				for _, rule := range game.ValueNames {
+					if isKey || !reads || linked || isEntry && !isAssign { // a listed entry's word is its name
+						break
+					}
+					ref := Ref{Name: word.Text, Range: word.Range}
+					switch {
+					case rule == game.NameMade && made != "":
+						define(Def{Database: made, Name: word.Text, Range: word.Range})
+					case rule == game.NameGroup && isAssign && database != nil && step.Place.Key == database.Entry &&
+						slices.Contains(database.Naming.Names, assign.Key.Text):
+						define(Def{Database: database.Name, Name: word.Text, Range: word.Range, Named: true})
+					case rule == game.NameRead && here.Names != "":
+						ref.Database = here.Names
+					case rule == game.NameClaim && claim.Type == schema.WordReference &&
+						(step.Key.Value.From != schema.SourceVanilla || jomini.Literal(word.Text) != jomini.LitNumber):
+						ref.Database = claim.Database // vanilla types a position by its words, never its numbers
+					case rule == game.NameClaim && claim.Type == schema.WordLoc:
+						ref.Database = Localization
+					case rule == game.NameClaim && claim.Type == schema.WordFile:
+						ref.Database = File
+					case rule == game.NameValue && jomini.Literal(word.Text) != jomini.LitNumber && step.Key != nil &&
+						(claim.Type == schema.WordNumber || step.Key.Seen.Forms&schema.FormNumber != 0):
+						ref.Called = game.Blocks[game.BlockValue].Calls
+					case rule == game.NameEvent && jomini.IsEventID(word.Text) && jomini.Literal(word.Text) != jomini.LitNumber:
+						ref.Database = events
+					default:
+						continue
+					}
+					if ref.Database != "" || ref.Called != "" {
+						refer(ref, here)
+					}
+					break values
+				}
+
+				// each $NAME$ in an entry of a folder with Parameters defines that entry's parameter
+				if database == nil || !database.Naming.Parameters {
+					continue
+				}
+				start := word.Range.Start
+				if word.Quoted {
+					start++
+				}
+				for _, span := range jomini.Interpolations(word.Text) {
+					written := jomini.Range{Start: start + span.Start, End: start + span.End}
+					define(Def{Database: Parameter, Name: records.Defs[here.Entry].Name + ":" + span.Name, Range: written})
+				}
 			}
 
-			// a command or link key, or a value word read through a link, in a known scope (D-34)
+			// the scope each command, link or link-read word is written in, where it is known
 			if here.Scope != "" && isAssign && here.Command != nil {
 				records.scoped[Pair(assign.Key.Text, here.Scope)] = true
 			}
@@ -277,41 +219,18 @@ func Walk(sch *schema.Schema, file source.File, parsed *jomini.Result, visit fun
 				records.scoped[Pair(scalar.Text, here.Scope)] = true
 			}
 
-			// a scope that evaluates no triggers and executes no effects leaves its block unknown (D-34)
-			if scope := sch.Scopes[inner.Scope]; !scope.Triggers && !scope.Effects {
-				inner.Scope = ""
-			}
-
-			// how its own block reads, for the visit; a block nothing declares reads at no position
-			here.InnerKey, here.InnerBlock, here.InnerScope, here.InnerTrigger = below, inner.Block, inner.Scope, inner.InTrigger
-			if below == nothing {
-				here.InnerKey = nil
-			}
 			if visit != nil && !visit(here) {
 				stopped = true
-				return
+				return false
 			}
 			if block := jomini.BlockOf(value); block != nil {
-				walk(block.Statements, below, inner, inside, calls)
+				entries[block] = here.Entry
 			}
-		}
+			return true
+		},
 	}
-	walk(top, nil, Context{Entry: -1}, "", "")
+	sch.Read(reader, nil, top, schema.Place{})
 	return records
-}
-
-// Called is the CalledIn word a key written in a block of this kind calls a name by (D-24):
-// trigger, effect, or "*" in a block nothing declares where vanilla writes commands (D-29).
-func Called(block schema.Block, under *schema.Key) string {
-	switch {
-	case block == schema.BlockTriggers:
-		return "trigger"
-	case block == schema.BlockEffects:
-		return "effect"
-	case block == schema.BlockUnknown && under != nil && under.Seen.Forms&schema.FormCommand != 0:
-		return "*"
-	}
-	return ""
 }
 
 // Pair is a written command, link or link-read word and the scope it is read in, as Index.Scoped
@@ -320,28 +239,4 @@ func Pair(written, scope string) [2]string {
 	first, _, _ := strings.Cut(strings.ToLower(written), ".")
 	name, _, _ := strings.Cut(first, ":")
 	return [2]string{name, scope}
-}
-
-// ScriptMade reports a database of names script makes: one game.NameCommands names (scope, var).
-func ScriptMade(database string) bool {
-	return slices.Contains(slices.Collect(maps.Values(game.NameCommands)), database)
-}
-
-// Prefixed is the database the names a link prefix reads belong to: a script-made name's (read as
-// scope:x and var:x, ScriptMade), else the one it names (D-15).
-func Prefixed(sch *schema.Schema, prefix string) string {
-	if ScriptMade(prefix) {
-		return prefix
-	}
-	return sch.Named(prefix)
-}
-
-// Made is the database a word written as a key's value is a new name in (game.NameCommands): the
-// key's own when it reads as a command, else its own under the command whose block it is in.
-func Made(enclosing, key string, command bool) string {
-	made := game.NameCommands[enclosing+"/"+key]
-	if command {
-		made = cmp.Or(game.NameCommands[strings.ToLower(key)], made)
-	}
-	return made
 }

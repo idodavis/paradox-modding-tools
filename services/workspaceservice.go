@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	"uuid"
 
 	"paradox-modding-tools/services/internal/game"
@@ -23,8 +22,6 @@ type WorkspaceService struct {
 	Config  *ConfigService
 	Session *SessionService
 }
-
-func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 
 // Game installs.
 
@@ -84,7 +81,7 @@ func (w *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInsta
 	}
 	inst := GameInstall{
 		ID: uuid.New().String(), GameID: gameID, Name: name, Path: path,
-		VersionDetected: game.ReadGameVersion(path, info.SteamAppID), CreatedAt: nowUTC(),
+		VersionDetected: game.ReadGameVersion(path, info.SteamAppID),
 	}
 	err := w.Config.mutate(func(cfg *Config) error {
 		cfg.Installs = append(cfg.Installs, inst)
@@ -208,7 +205,7 @@ func (w *WorkspaceService) CreateWorkspace(
 	id := uuid.New().String()
 	ws := Workspace{
 		ID: id, GameID: gameID, Name: name, InstallID: installID,
-		HideExplorerBinaries: true, CreatedAt: nowUTC(),
+		HideExplorerBinaries: true,
 	}
 	err := w.Config.mutate(func(cfg *Config) error {
 		cfg.Workspaces = append(cfg.Workspaces, ws)
@@ -383,7 +380,7 @@ func (w *WorkspaceService) AddWorkspaceMod(
 	}
 	mod := WorkspaceMod{
 		ID: uuid.New().String(), Name: name, Path: path,
-		Thumbnail: thumbnail, CreatedAt: nowUTC(),
+		Thumbnail: thumbnail,
 	}
 	err := w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		mod.SortOrder = len(ws.Mods)
@@ -544,15 +541,15 @@ func findMod(config *ConfigService, workspaceID, modID string) (*Workspace, *Wor
 	var mod WorkspaceMod
 	var foundWS, foundMod bool
 	config.read(func(cfg *Config) {
-		word := findWorkspace(cfg, workspaceID)
-		if word == nil {
+		found := findWorkspace(cfg, workspaceID)
+		if found == nil {
 			return
 		}
-		ws = *word
+		ws = *found
 		foundWS = true
-		for i := range word.Mods {
-			if word.Mods[i].ID == modID {
-				mod = word.Mods[i]
+		for i := range found.Mods {
+			if found.Mods[i].ID == modID {
+				mod = found.Mods[i]
 				foundMod = true
 				return
 			}

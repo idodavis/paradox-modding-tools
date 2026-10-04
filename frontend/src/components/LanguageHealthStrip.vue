@@ -10,15 +10,9 @@ const props = defineProps<{
   workspaceId: string;
 }>();
 
-const { health, scanning, scanPct, scanMsg, lastScanned, scanLabel, rescan } = useLanguageHealth(
-  () => props.workspaceId,
-);
-
-const scanColor = computed(() => (health.value?.scannedAt ? "primary" : "warning"));
+const { health, scanning, scanPct, scanMsg, lastScanned } = useLanguageHealth(() => props.workspaceId);
 
 const guideOpen = ref(false);
-
-const unexplained = computed(() => health.value?.unread?.length ?? 0);
 
 // whose dumps the schema read: the user's, PMT's shipped copy, or none; either may be out of date,
 // and the commands that write the user's own are told with it
@@ -40,27 +34,25 @@ const dumpsChip = computed(() => {
 
 <template>
   <div v-if="health" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-    <UButton
-      :label="scanLabel"
-      icon="i-lucide-refresh-cw"
-      size="sm"
-      :color="scanColor"
-      :loading="scanning"
-      @click.stop="rescan"
-    />
-    <span :class="health.installOk ? 'text-success' : 'text-error'">
-      {{ health.installOk ? "Install OK" : "Install missing" }}
-    </span>
-    <span v-if="health.gameVersion">{{ health.gameVersion }}</span>
-    <span v-if="!health.ready">index pending</span>
-    <span v-if="health.watchError" class="text-warning" :title="health.watchError">watch degraded</span>
-    <span v-if="!scanning && lastScanned">Scanned {{ lastScanned }}</span>
-    <div v-if="scanning" class="flex min-w-40 max-w-64 flex-1 items-center gap-2">
-      <UProgress :model-value="scanPct" :max="100" size="xs" class="min-w-24 flex-1" />
-      <span class="shrink-0 text-xs text-muted">{{ scanMsg }}</span>
-    </div>
+    <template v-if="scanning">
+      <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin" />
+      <span class="font-medium text-default">Scanning</span>
+      <span>{{ scanMsg }}</span>
+      <div class="flex min-w-40 max-w-64 flex-1 items-center gap-2">
+        <UProgress :model-value="scanPct" :max="100" size="xs" class="min-w-24 flex-1" />
+        <span class="shrink-0 tabular-nums">{{ scanPct }}%</span>
+      </div>
+    </template>
+    <template v-else>
+      <span :class="health.installOk ? 'text-success' : 'text-error'">
+        {{ health.installOk ? "Install OK" : "Install missing" }}
+      </span>
+      <span v-if="health.gameVersion">{{ health.gameVersion }}</span>
+      <span v-if="lastScanned">Scanned {{ lastScanned }}</span>
+      <span v-if="health.watchError" class="text-warning" :title="health.watchError">watch degraded</span>
+    </template>
     <button
-      v-if="dumpsChip"
+      v-if="dumpsChip && !scanning"
       type="button"
       class="flex items-center gap-1 underline decoration-dotted underline-offset-2"
       :class="dumpsChip.color"
@@ -69,15 +61,6 @@ const dumpsChip = computed(() => {
       <UIcon :name="dumpsChip.icon" class="size-3.5" />
       {{ dumpsChip.label }}
     </button>
-    <button
-      v-if="health.ready && unexplained"
-      type="button"
-      class="flex items-center gap-1 text-muted underline decoration-dotted underline-offset-2"
-      @click.stop="guideOpen = true"
-    >
-      <UIcon name="i-lucide-circle-help" class="size-3.5" />
-      {{ unexplained }} unexplained
-    </button>
-    <ScriptDocsGuide v-model:open="guideOpen" :folders="health.dumpFolders ?? []" :unread="health.unread ?? []" />
+    <ScriptDocsGuide v-model:open="guideOpen" :folders="health.dumpFolders ?? []" />
   </div>
 </template>

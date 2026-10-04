@@ -88,12 +88,12 @@ func (file *file) complete(offset int, label string) *completer {
 		return completer
 	}
 
-	// a prefixed word: the names of the database its link prefix reads (index.Prefixed), spelled
+	// a prefixed word: the names of the database its link prefix reads (Schema.Prefixes), spelled
 	// whole, and the scopes the game saves that Resolve knows there
-	sch, prefix := file.sess.Schema(), completer.prefix
+	sch, prefix := file.sess.Install.Schema, completer.prefix
 	if colon := strings.LastIndexByte(prefix, ':'); colon >= 0 {
 		link := prefix[strings.LastIndexByte(prefix[:colon], '.')+1 : colon]
-		database := index.Prefixed(sch, link)
+		database := sch.Prefixes[link]
 		var saved []string
 		for _, name := range slices.Sorted(maps.Keys(sch.Saved)) {
 			if _, known := index.Resolve(sch, file.sess.Indexes(), index.Ref{Database: database, Name: name}); known {
@@ -149,7 +149,7 @@ func (completer *completer) names(database, spelled string, rank int, more ...st
 // keys offers the keys of the cursor's block: a call's parameters, its position's keys, the
 // commands its kind allows (in scope first), links, the names it calls; at the top, its database's.
 func (completer *completer) keys(cursor spot) {
-	sess, sch := completer.file.sess, completer.file.sess.Schema()
+	sess, sch := completer.file.sess, completer.file.sess.Install.Schema
 	holder := cursor.block()
 	if holder < 0 {
 		if database := completer.file.place.Database; database != nil {
@@ -159,7 +159,7 @@ func (completer *completer) keys(cursor spot) {
 	}
 	at := cursor.chain[holder]
 
-	// a call's block passes the parameters the called entry defines, <entry>:<NAME> (D-31)
+	// a call's block passes the parameters the called entry defines, <entry>:<NAME>
 	assign, isAssign := at.Statement.(*jomini.Assignment)
 	if found := slices.IndexFunc(cursor.records.Refs, func(ref index.Ref) bool {
 		return isAssign && ref.Called != "" && ref.Range == assign.Key.Range
@@ -172,19 +172,26 @@ func (completer *completer) keys(cursor spot) {
 			}
 		}
 	}
-	under := at.InnerKey
-	if under == nil {
+	inner := at.Inner
+	if inner.Key == nil {
 		return
 	}
 
-	// how the block reads, as the walk read it, and the word it calls names by (D-24, D-29)
-	block, scope, inTrigger := at.InnerBlock, at.InnerScope, at.InnerTrigger
-	called := index.Called(block, under)
+	// the commands the block's kind allows, a value block's operators first
+	scope, called, allowed := inner.Scope, inner.Calls, game.Blocks[inner.Kind].Allows
+	if inner.InTrigger {
+		allowed &^= game.KindEffect
+	}
+	for _, name := range slices.Sorted(maps.Keys(game.ValueOperators)) {
+		if step := sch.Step(inner, nil, name, false); step.Rule == game.StepOperator {
+			completer.add(Item{Label: name, Head: need(step.Key), Takes: takes(step.Key)}, reading{key: step.Key, scope: scope})
+		}
+	}
 
-	// the position's keys, each read where the slot says; one the slot leaves to calls is a call
-	names, stated := keys(under)
+	// the position's keys, stated first, each read as the walker reads it; one left to calls is a call
+	names, stated := keys(inner.Key)
 	for i, name := range names {
-		position, _ := sch.Slot(under, name, false)
+		position := sch.Step(inner, nil, name, false).Key
 		read := reading{key: position, scope: scope}
 		if position == nil {
 			read = reading{ref: &index.Ref{Called: called, Name: name}}
@@ -195,21 +202,9 @@ func (completer *completer) keys(cursor spot) {
 		}
 		completer.add(item, read)
 	}
-
-	// the commands the kind allows, those running in the scope first, and the links
-	allowed := schema.Kinds(0)
-	switch {
-	case block == schema.BlockFields:
-	case inTrigger:
-		allowed = schema.KindTrigger
-	case block == schema.BlockEffects:
-		allowed = schema.KindEffect
-	case called == "*":
-		allowed = schema.KindEffect | schema.KindTrigger
-	}
 	for _, name := range slices.Sorted(maps.Keys(sch.Commands)) {
 		command := sch.Commands[name]
-		if allowed == 0 || command.Kind&(allowed|schema.KindLink) == 0 {
+		if allowed == 0 || command.Kind&(allowed|game.KindLink) == 0 || command.Wild { // a Wild Card link has no name to write
 			continue
 		}
 		item := Item{Label: name, Head: kinds(command), Takes: takes(command.Args), Rank: 2,
@@ -228,21 +223,20 @@ func (completer *completer) keys(cursor spot) {
 }
 
 // values offers what the statement takes: its declared words, vanilla's (most written first), a
-// referenced database's names or loc keys, and the names made in the database its command makes.
+// referenced database's names or loc keys, and the names its command makes or reads (Names).
 func (completer *completer) values(cursor spot) {
 	if len(cursor.chain) == 0 {
 		return
 	}
 	at := cursor.chain[len(cursor.chain)-1]
-	assign, isAssign := at.Statement.(*jomini.Assignment)
-	if !isAssign {
+	if _, isAssign := at.Statement.(*jomini.Assignment); !isAssign {
 		return
 	}
 	if position := at.Key; position != nil {
 		claim := position.Value.Value
 		words := claim.Words
 		if claim.Type == schema.WordBool {
-			words = []string{"yes", "no"}
+			words = game.Bools
 		}
 		for _, word := range words {
 			completer.add(Item{Label: word}, reading{})
@@ -264,22 +258,14 @@ func (completer *completer) values(cursor spot) {
 		}
 	}
 
-	// a name a command makes (index.Made), inside the command whose Args the block reads at
-	enclosing := ""
-	if holder := cursor.block(); holder >= 0 && cursor.chain[holder].InnerKey != nil {
-		for name, command := range completer.file.sess.Schema().Commands {
-			if command.Args == cursor.chain[holder].InnerKey {
-				enclosing = name
-			}
-		}
-	}
-	completer.names(index.Made(enclosing, assign.Key.Text, at.Command != nil), "", 2)
+	// the names of the database its command makes or reads them in (set_variable, has_variable)
+	completer.names(at.Names, "", 2)
 }
 
 // calls offers what may follow in a data call: after [ the global functions, data types and data
 // function or concept entries; after a dot the functions of the type the steps lead to.
 func (completer *completer) calls(written string) {
-	sch := completer.file.sess.Schema()
+	sch := completer.file.sess.Install.Schema
 	types := sch.DataTypes
 	if dot := strings.LastIndexByte(written, '.'); dot >= 0 {
 		for _, name := range slices.Sorted(maps.Keys(types[leads(types, jomini.ParseCall(written[:dot], 0))].Functions)) {
@@ -287,7 +273,7 @@ func (completer *completer) calls(written string) {
 		}
 		return
 	}
-	for _, name := range slices.Sorted(maps.Keys(types["Global"].Functions)) {
+	for _, name := range slices.Sorted(maps.Keys(types[game.GlobalType].Functions)) {
 		completer.add(Item{Label: name, Head: "data function", Rank: 1}, reading{})
 	}
 	for _, name := range slices.Sorted(maps.Keys(types)) {
@@ -329,7 +315,7 @@ func Resolve(sess *session.Session, path string, item Item) (*Inspect, error) {
 	start := file.parsed.Lines().OffsetAt(item.Range.Start.Line, item.Range.Start.Character)
 	read, offered := file.complete(start, item.Label).about[item.Label]
 	card := &Inspect{Word: item.Label, Winner: -1}
-	if !offered || !file.describe(card, read) {
+	if !offered || !file.describe(card, read) && len(card.Writes) == 0 {
 		return nil, nil
 	}
 	return card, nil

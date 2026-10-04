@@ -73,10 +73,12 @@ type Inspect struct {
 	Word    string            `json:"word"`              // the name it names: an entry, command, key, loc key
 	Key     string            `json:"key,omitempty"`     // the key the word is written at, or is
 	Head    string            `json:"head,omitempty"`    // the card's first line: what the word is
+	Need    string            `json:"need,omitempty"`    // a key: optional, required, required when ...
 	Name    string            `json:"name,omitempty"`    // an object's localized name, a loc key's text
 	About   string            `json:"about,omitempty"`   // what the dumps or docs say of its database
 	Prose   string            `json:"prose,omitempty"`   // what the dumps or docs say of the word
 	Takes   []string          `json:"takes,omitempty"`   // a key or command: what a word there may be
+	Writes  []string          `json:"writes,omitempty"`  // a key nothing declares: what vanilla writes there
 	Scope   string            `json:"scope,omitempty"`   // the scope it runs in; "" unknown
 	Leads   string            `json:"leads,omitempty"`   // the scope it leads to; "" none
 	Sites   []Location        `json:"sites,omitempty"`   // where it is defined, in load order
@@ -115,12 +117,12 @@ type spot struct {
 	offset  int
 }
 
-// walk reads the file up to an offset (spec §7.2). A statement holds the offset when its span
-// does, or when it ends at an operator with only blanks up to the offset: a value still to come.
+// walk reads the file up to an offset. A statement holds the offset when its span does, or when it
+// ends at an operator with only blanks up to the offset: a value still to come.
 func (file *file) walk(offset int) spot {
 	cursor := spot{offset: offset}
 	located, _, _ := file.sess.Located(file.path)
-	cursor.records = index.Walk(file.sess.Schema(), located, file.parsed, func(at index.Context) bool {
+	cursor.records = index.Walk(file.sess.Install.Schema, located, file.parsed, func(at index.Context) bool {
 		span := at.Statement.NodeRange()
 		if span.Start > offset {
 			return false
@@ -148,19 +150,16 @@ func (cursor spot) block() int {
 }
 
 // word is the scalar under the cursor (the innermost statement's key or value; nil for none), if it
-// is the key, and the definition or reference the walk read inside it ($NAME$ included).
-func (cursor spot) word() (word *jomini.Scalar, isKey bool, ref *index.Ref) {
+// is the key, and the definition or reference the walk read inside it ($NAME$ included): of several
+// references (a call's parameter and the call), the first that resolves, else the first.
+func (cursor spot) word(sess *session.Session) (word *jomini.Scalar, isKey bool, ref *index.Ref) {
 	if len(cursor.chain) == 0 {
 		return nil, false, nil
 	}
 	at := cursor.chain[len(cursor.chain)-1]
-	if list, isList := at.Statement.(*jomini.ValueStmt); isList {
-		word, _ = list.Value.(*jomini.Scalar)
-	} else if assign, isAssign := at.Statement.(*jomini.Assignment); isAssign {
-		word, _ = assign.Value.(*jomini.Scalar)
-		if within(assign.Key.Range, cursor.offset) {
-			word, isKey = &assign.Key, true
-		}
+	word, _ = jomini.ValueOf(at.Statement).(*jomini.Scalar)
+	if assign, isAssign := at.Statement.(*jomini.Assignment); isAssign && within(assign.Key.Range, cursor.offset) {
+		word, isKey = &assign.Key, true
 	}
 	if word == nil || !within(word.Range, cursor.offset) {
 		return nil, false, nil
@@ -168,7 +167,17 @@ func (cursor spot) word() (word *jomini.Scalar, isKey bool, ref *index.Ref) {
 	inWord := func(span jomini.Range) bool {
 		return word.Range.Start <= span.Start && span.End <= word.Range.End && within(span, cursor.offset)
 	}
-	if found := slices.IndexFunc(cursor.records.Refs, func(ref index.Ref) bool { return inWord(ref.Range) }); found >= 0 {
+	found := slices.IndexFunc(cursor.records.Refs, func(ref index.Ref) bool {
+		if !inWord(ref.Range) {
+			return false
+		}
+		_, known := index.Resolve(sess.Install.Schema, sess.Indexes(), ref)
+		return known
+	})
+	if found < 0 {
+		found = slices.IndexFunc(cursor.records.Refs, func(ref index.Ref) bool { return inWord(ref.Range) })
+	}
+	if found >= 0 {
 		return word, isKey, &cursor.records.Refs[found]
 	}
 	if found := slices.IndexFunc(cursor.records.Defs, func(def index.Def) bool {
@@ -198,7 +207,7 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 
 	// the word under the cursor, and the definition or reference the walk read in it
 	cursor := file.walk(offset)
-	word, isKey, named := cursor.word()
+	word, isKey, named := cursor.word(sess)
 	if word == nil {
 		return nil, nil
 	}
@@ -219,13 +228,13 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 	}
 
 	// what the word names (a $NAME$ in it included), else what its key reads as
-	sch, read := sess.Schema(), reading{ref: named, scope: at.Scope}
+	sch, read := sess.Install.Schema, reading{ref: named, scope: at.Scope}
 	if isKey {
 		read.key, read.command = at.Key, at.Command
 	}
 
 	// a link chain's part under the cursor reads through its own link, run where the one before leads
-	if read.ref == nil && read.command != nil && read.command.Kind&schema.KindLink != 0 {
+	if read.ref == nil && read.command != nil && read.command.Kind&game.KindLink != 0 {
 		from := word.Range.Start
 		for _, part := range strings.Split(word.Text, ".") {
 			if read.command = sch.Link(strings.ToLower(part)); read.command == nil || offset <= from+len(part) {
@@ -258,6 +267,7 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 			known = true
 		}
 	}
+	known = known || len(card.Writes) > 0
 
 	// what the written form says: a date, a script constant's value in this file
 	if jomini.Literal(word.Text) == jomini.LitDate {
@@ -279,7 +289,7 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 	// a numbered key in a command's block: its share of its siblings' numbers (random_list)
 	if parent := len(cursor.chain) - 2; isKey && parent >= 0 && jomini.Literal(word.Text) == jomini.LitNumber {
 		holder, block, sum, mine := cursor.chain[parent], jomini.ChildBlock(cursor.chain[parent].Statement), 0.0, 0.0
-		if block != nil && holder.Command != nil && holder.Command.Kind&schema.KindLink == 0 {
+		if block != nil && holder.Command != nil && holder.Command.Kind&game.KindLink == 0 {
 			for _, sibling := range block.Statements {
 				branch, isBranch := sibling.(*jomini.Assignment)
 				if isBranch && jomini.Literal(branch.Key.Text) == jomini.LitNumber {
@@ -299,6 +309,22 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 		card.Color = colour(assign)
 		known = known || card.Color != ""
 	}
+
+	// a key nothing else names says where it is written: in its entry's database when the statement
+	// holding it is the entry, else in the key holding it
+	if parent := len(cursor.chain) - 2; isKey && read.command == nil && parent >= 0 && card.Head == "" {
+		holder, database := cursor.chain[parent], (*schema.Database)(nil)
+		if holder.Entry >= 0 {
+			database = sch.Databases[cursor.records.Defs[holder.Entry].Database]
+		}
+		holding, isAssign := holder.Statement.(*jomini.Assignment)
+		switch {
+		case database != nil && holder.Key == database.Entry:
+			card.Head, known = "in "+heading(database.Name), true
+		case isAssign:
+			card.Head, known = "in `"+holding.Key.Text+"`", true
+		}
+	}
 	if !known {
 		return nil, nil
 	}
@@ -308,13 +334,14 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 // describe fills a card from what a word names, saying whether anything is known of it: a
 // reference's definitions, else a command's or a key's claims. A blurb is the dumps' or the docs'.
 func (file *file) describe(card *Inspect, read reading) bool {
-	sch := file.sess.Schema()
+	sch := file.sess.Install.Schema
 	shown := func(from schema.Source) {
 		card.Stale = card.Stale || sch.Sources[from].Stale
 	}
 	if read.ref != nil && file.defined(card, *read.ref, shown) {
 		return true
 	}
+	key := read.key
 	switch {
 	case read.command != nil:
 		command := read.command
@@ -326,32 +353,9 @@ func (file *file) describe(card *Inspect, read reading) bool {
 			card.Leads = command.Out
 		}
 		shown(schema.SourceDumps)
-
-		// its game text (D-32): each word of the entry named after it in a database describing its
-		// kind that is a loc key, as key: text, in the order written
-		var lines []string
-		describing := map[string]schema.Kinds{"trigger": schema.KindTrigger, "effect": schema.KindEffect}
-		for _, database := range sch.Flagged(func(row game.Folder) bool { return describing[row.Describes]&command.Kind != 0 }) {
-			winner, _, _, _ := file.sess.Winner(file.sess.Defs(database, strings.ToLower(card.Word)))
-			_, entry := file.sess.Entry(winner)
-			block := jomini.ChildBlock(entry)
-			for i := 0; block != nil && i < len(block.Statements); i++ {
-				field, isField := block.Statements[i].(*jomini.Assignment)
-				if !isField {
-					continue
-				}
-				if value, isWord := field.Value.(*jomini.Scalar); isWord {
-					if text, found := file.sess.Loc(value.Text, ""); found {
-						lines = append(lines, field.Key.Text+": "+loc.Plain(text.Text))
-					}
-				}
-			}
-		}
-		card.Name = strings.Join(lines, "\n")
-		return true
-	case read.key != nil:
-		key := read.key
-		card.Head, card.Takes, card.Scope, card.Leads = need(key), takes(key), read.scope, key.Scope.Value
+		key = command.Args
+	case key != nil:
+		card.Need, card.Takes, card.Scope, card.Leads = need(key), takes(key), read.scope, key.Scope.Value
 		if from := key.Blurb.From; from == schema.SourceDumps || from == schema.SourceDocs {
 			card.Prose = key.Blurb.Value
 			shown(from)
@@ -362,15 +366,22 @@ func (file *file) describe(card *Inspect, read reading) bool {
 		} {
 			shown(from)
 		}
-		return card.Head != "" || card.Prose != "" || len(card.Takes) > 0 || card.Leads != ""
+	default:
+		return false
 	}
-	return false
+
+	// where no declared source says what it takes, what vanilla writes there: an inference, which
+	// alone does not make the card known
+	if len(card.Takes) == 0 {
+		card.Writes = writes(key)
+	}
+	return card.Head != "" || card.Need != "" || card.Prose != "" || len(card.Takes) > 0 || card.Leads != ""
 }
 
 // defined fills a reference's card: its database, its sites (the kept one and its adds), localized
 // name and what the dumps and docs say of its database; a call nothing defines is unknown.
 func (file *file) defined(card *Inspect, ref index.Ref, shown func(schema.Source)) bool {
-	sess, sch := file.sess, file.sess.Schema()
+	sess, sch := file.sess, file.sess.Install.Schema
 	defs, known := index.Resolve(sch, sess.Indexes(), ref)
 	database := ref.Database
 	if len(defs) > 0 {
@@ -418,7 +429,7 @@ func (file *file) defined(card *Inspect, ref index.Ref, shown func(schema.Source
 		}
 	}
 
-	// its localized name, and the comment a mod's author leads their definition with (spec §9)
+	// its localized name, and the comment a mod's author leads their definition with
 	listed, _, _ := sess.Located(winner.Path)
 	authored, comment := len(defs) > 0 && listed.Origin != game.OriginVanilla && listed.Origin != "", ""
 	if row != nil {
@@ -497,7 +508,7 @@ func (file *file) locCard(offset int) *Inspect {
 	if ref == nil {
 		return nil
 	}
-	if _, known := index.Resolve(file.sess.Schema(), file.sess.Indexes(), *ref); !known {
+	if _, known := index.Resolve(file.sess.Install.Schema, file.sess.Indexes(), *ref); !known {
 		return nil
 	}
 	card := &Inspect{Word: ref.Name, Range: file.span(ref.Range), Winner: -1}
@@ -505,8 +516,8 @@ func (file *file) locCard(offset int) *Inspect {
 	return card
 }
 
-// SignatureHelp is the arguments of the command whose block holds the cursor: the keys its block
-// holds, those a declared source states first, with the command's blurb; nil elsewhere.
+// SignatureHelp is the arguments of the command whose block holds the cursor: the keys a declared
+// source states its block holds, with the command's blurb; nil elsewhere.
 func SignatureHelp(sess *session.Session, path string, line, col int) (*Signature, error) {
 	sess.RLock()
 	defer sess.RUnlock()
@@ -523,11 +534,11 @@ func SignatureHelp(sess *session.Session, path string, line, col int) (*Signatur
 	}
 	at := cursor.chain[holder]
 	assign, isAssign := at.Statement.(*jomini.Assignment)
-	if !isAssign || at.Command == nil || at.Command.Kind&schema.KindLink != 0 {
+	if !isAssign || at.Command == nil || at.Command.Kind&game.KindLink != 0 {
 		return nil, nil
 	}
-	names, _ := keys(at.Command.Args)
-	if len(names) == 0 {
+	names, stated := keys(at.Command.Args)
+	if names = names[:stated]; len(names) == 0 {
 		return nil, nil
 	}
 	label := assign.Key.Text + " = { " + strings.Join(names, " ") + " }"
@@ -535,9 +546,9 @@ func SignatureHelp(sess *session.Session, path string, line, col int) (*Signatur
 }
 
 // dataCard is a data call step's card: a custom localization a quoted argument names, a data
-// function or concept entry (D-31), a function of the type before it, else a data type.
+// function or concept entry, a function of the type before it, else a data type.
 func (file *file) dataCard(steps []jomini.Step) *Inspect {
-	sch, step := file.sess.Schema(), steps[len(steps)-1]
+	sch, step := file.sess.Install.Schema, steps[len(steps)-1]
 	card, defined := &Inspect{Word: step.Name, Range: file.span(step.Range), Winner: -1}, false
 	on, stale := leads(sch.DataTypes, steps[:len(steps)-1]), sch.Sources[schema.SourceDumps].Stale
 	for _, arg := range step.Args {
@@ -551,7 +562,7 @@ func (file *file) dataCard(steps []jomini.Step) *Inspect {
 		}
 	}
 	for _, name := range sch.Flagged(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
-		if !defined && len(file.sess.Defs(name, step.Name)) > 0 {
+		if !defined && len(index.Lookup(file.sess.Indexes(), name, step.Name)) > 0 {
 			defined = file.defined(card, index.Ref{Database: name, Name: step.Name}, func(schema.Source) {})
 		}
 	}
@@ -570,7 +581,7 @@ func (file *file) dataCard(steps []jomini.Step) *Inspect {
 // leads is the data type a data call's steps lead to: from the global functions, or a data type
 // written first, through each function's return type; "" where a step is unknown.
 func leads(types map[string]schema.DataType, steps []jomini.Step) string {
-	on := "Global"
+	on := game.GlobalType
 	for i, step := range steps {
 		function, found := types[on].Functions[step.Name]
 		_, isType := types[step.Name]
@@ -614,12 +625,9 @@ func locate(sess *session.Session, path string, at Position) Location {
 // kinds is what a command is, in the dumps' words: effect, trigger, event target, joined.
 func kinds(command *schema.Command) string {
 	var names []string
-	for _, kind := range []struct {
-		bit  schema.Kinds
-		name string
-	}{{schema.KindEffect, "effect"}, {schema.KindTrigger, "trigger"}, {schema.KindLink, "event target"}} {
-		if command.Kind&kind.bit != 0 {
-			names = append(names, kind.name)
+	for _, kind := range game.KindWords {
+		if command.Kind&kind.Kind != 0 {
+			names = append(names, kind.Word)
 		}
 	}
 	return strings.Join(names, " and ")
@@ -641,20 +649,19 @@ func need(key *schema.Key) string {
 	return ""
 }
 
-// takes is what a key takes, as declared: its block's triggers or effects, its word's type or list
-// (a long one ends with how many more), and its default.
+// takes is what a key takes, as declared, never vanilla's inference: its block's triggers or
+// effects, its word's type or list (a long one ends with how many more), and its default.
 func takes(key *schema.Key) []string {
 	if key == nil {
 		return nil
 	}
 	claim, out := key.Value.Value, []string(nil)
+	if key.Value.From == schema.SourceVanilla {
+		claim = schema.Value{}
+	}
 	said := []string{
-		map[schema.Block]string{schema.BlockTriggers: "triggers", schema.BlockEffects: "effects"}[key.Block.Value],
-		map[schema.WordType]string{
-			schema.WordNumber: "a number", schema.WordBool: "yes or no", schema.WordDate: "a date", schema.WordText: "text",
-			schema.WordReference: heading(claim.Database), schema.WordLoc: "a localization key",
-			schema.WordFile: "a file path", schema.WordScope: "a scope",
-		}[claim.Type],
+		map[game.Block]string{game.BlockTriggers: "triggers", game.BlockEffects: "effects"}[key.Block.Value],
+		typed(claim),
 	}
 	if words := claim.Words; len(words) > 0 {
 		if len(words) > 6 {
@@ -673,6 +680,36 @@ func takes(key *schema.Key) []string {
 	return out
 }
 
+// typed is a word type as a card says it; "" unknown.
+func typed(claim schema.Value) string {
+	return map[schema.WordType]string{
+		schema.WordNumber: "a number", schema.WordBool: "yes or no", schema.WordDate: "a date", schema.WordText: "text",
+		schema.WordReference: heading(claim.Database), schema.WordLoc: "a localization key",
+		schema.WordFile: "a file path", schema.WordScope: "a scope",
+	}[claim.Type]
+}
+
+// writes is what vanilla writes at a key, as a card says it: each form it writes there, its words
+// and texts typed by vanilla's names, else its words listed where few.
+func writes(key *schema.Key) (out []string) {
+	words := slices.Sorted(maps.Keys(key.Seen.Values))
+	for bit, said := range [...]string{"a number", "yes or no", "a date", "a word", "text", "a block"} { // by Forms bit
+		switch form := schema.Forms(1) << bit; {
+		case key.Seen.Forms&form == 0:
+			continue
+		case form&(schema.FormWord|schema.FormText) == 0:
+		case key.Value.From == schema.SourceVanilla:
+			said = typed(key.Value.Value)
+		case form == schema.FormWord && len(words) <= 6:
+			said = "one of " + strings.Join(words, ", ")
+		}
+		if !slices.Contains(out, said) {
+			out = append(out, said)
+		}
+	}
+	return out
+}
+
 // heading is a database's name as a modder reads it: its last folder, underscores and dots spaced.
 func heading(database string) string {
 	return strings.NewReplacer("_", " ", ".", " ").Replace(database[strings.LastIndexByte(database, '/')+1:])
@@ -681,16 +718,13 @@ func heading(database string) string {
 // keys is a position's written keys, placeholders aside: those a declared source states first, then
 // those vanilla writes, the most written first; stated is how many lead.
 func keys(position *schema.Key) (names []string, stated int) {
-	if position == nil {
-		return nil, 0
-	}
 	rank := map[string]int{}
 	for name, key := range position.Keys {
 		if strings.HasPrefix(name, "<") {
 			continue
 		}
 		names, rank[name] = append(names, name), 1
-		if key.Stated() {
+		if key.Written != schema.SourceNone {
 			rank[name], stated = 0, stated+1
 		}
 	}
@@ -736,39 +770,36 @@ func ordinal(number int) string {
 	return strconv.Itoa(number) + suffix
 }
 
-// colour is the #rrggbb of the rgb, hsv or hex block a statement writes, for a swatch; "" for none.
+// colour is the #rrggbb of a colour block a statement writes (game.Colours), for a swatch; "" for
+// none.
 func colour(assign *jomini.Assignment) string {
 	tagged, isTagged := assign.Value.(*jomini.TaggedBlock)
 	if !isTagged {
 		return ""
 	}
+	var words []string
 	var parts []float64
 	for _, statement := range tagged.Block.Statements {
 		if list, isList := statement.(*jomini.ValueStmt); isList {
 			if scalar, isScalar := list.Value.(*jomini.Scalar); isScalar {
 				part, _ := strconv.ParseFloat(scalar.Text, 64)
-				parts = append(parts, part)
+				words, parts = append(words, scalar.Text), append(parts, part)
 			}
 		}
 	}
-	switch tag := strings.ToLower(tagged.Tag.Text); {
-	case tag == "rgb" && len(parts) >= 3:
+	found := slices.IndexFunc(game.Colours, func(row game.Colour) bool { return strings.EqualFold(row.Tag, tagged.Tag.Text) })
+	switch {
+	case found < 0:
+	case game.Colours[found].Hex && len(words) == 1:
+		if digits := strings.TrimPrefix(strings.ToLower(words[0]), "0x"); len(digits) >= 6 {
+			return "#" + digits[:6]
+		}
+	case len(parts) < 3:
+	case game.Colours[found].HSV:
+		row := game.Colours[found]
+		return hex(hsv(parts[0]/cmp.Or(row.Hue, 1), parts[1]/cmp.Or(row.Parts, 1), parts[2]/cmp.Or(row.Parts, 1)))
+	default:
 		return hex(parts[0], parts[1], parts[2])
-	case (tag == "hsv" || tag == "hsv360") && len(parts) >= 3:
-		hue, saturation, value := parts[0], parts[1], parts[2]
-		if tag == "hsv360" {
-			hue, saturation, value = hue/360, saturation/100, value/100
-		}
-		red, green, blue := hsv(hue, saturation, value)
-		return hex(red*255, green*255, blue*255)
-	case tag == "hex" && len(tagged.Block.Statements) == 1:
-		if list, isList := tagged.Block.Statements[0].(*jomini.ValueStmt); isList {
-			if scalar, isScalar := list.Value.(*jomini.Scalar); isScalar {
-				if digits := strings.TrimPrefix(strings.ToLower(scalar.Text), "0x"); len(digits) >= 6 {
-					return "#" + digits[:6]
-				}
-			}
-		}
 	}
 	return ""
 }

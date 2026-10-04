@@ -152,7 +152,7 @@ func (s *IdeService) DidOpen(workspaceID, path, text string) error {
 	if err != nil {
 		return err
 	}
-	sess.DidOpen(path, text)
+	sess.DidChange(path, text)
 	return nil
 }
 

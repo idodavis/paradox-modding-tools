@@ -810,7 +810,7 @@ func TestEnsureSession(t *testing.T) {
 	}
 
 	health, err := svc.EnsureSession("ws")
-	if err != nil || !health.Ready || health.Scanning {
+	if err != nil || !health.Ready {
 		t.Fatalf("a session built from a scan: %+v (%v)", health, err)
 	}
 	live := svc.get("ws")

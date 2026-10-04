@@ -424,7 +424,7 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 
 	// an HTML challenge page answered with 200 is an error that carries its text
 	mock.challenge = true
-	_, err = apiGet(t.Context(), srv.URL, url.Values{"action": {"query"}})
+	err = apiGet(t.Context(), srv.URL, url.Values{"action": {"query"}}, &struct{}{})
 	if err == nil || !strings.Contains(err.Error(), "wiki http 200") {
 		t.Fatalf("err = %v", err)
 	}

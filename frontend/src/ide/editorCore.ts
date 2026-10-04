@@ -42,8 +42,11 @@ export function hoverMarkdown(card: Inspect, links: CardLinks): string {
   if (card.name) parts.push(card.name.split("\n").map((line) => `> ${line}`).join("  \n"));
   // a single newline is markdown's space; two trailing spaces keep an author's line breaks
   if (card.prose) parts.push(card.prose.replace(/(?<!\n)\n(?!\n)/g, "  \n"));
+  if (card.need) parts.push(card.need);
   if (card.about) parts.push(`*${card.about}*`);
+  // what it takes as a game source declares it, else what vanilla writes there, marked as inferred
   if (card.takes?.length) parts.push(`Takes: ${card.takes.join("; ")}`);
+  else if (card.writes?.length) parts.push(`Takes: ${card.writes.join("; ")} *(inferred from vanilla)*`);
   const scopes = [card.scope && `Scope: ${card.scope}`, card.leads && `Leads to: ${card.leads}`].filter(Boolean);
   if (scopes.length) parts.push(scopes.join(" · "));
   if (card.stale) parts.push("*may be outdated*");

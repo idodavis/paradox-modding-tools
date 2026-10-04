@@ -192,17 +192,20 @@ func (li *LineIndex) OffsetAt(line, col int) int {
 	return offset
 }
 
-// ChildBlock returns the Block a statement owns (via block or tagged-block value),
-// or nil.
-func ChildBlock(st Statement) *Block {
-	var value Value
-	switch statement := st.(type) {
+// ValueOf is the value a statement writes: an assignment's right side, or a listed value.
+func ValueOf(statement Statement) Value {
+	switch written := statement.(type) {
 	case *Assignment:
-		value = statement.Value
+		return written.Value
 	case *ValueStmt:
-		value = statement.Value
+		return written.Value
 	}
-	return BlockOf(value)
+	return nil
+}
+
+// ChildBlock returns the Block a statement owns (via block or tagged-block value), or nil.
+func ChildBlock(statement Statement) *Block {
+	return BlockOf(ValueOf(statement))
 }
 
 // Walk visits every statement depth-first. depth is 0 at root; parent is the

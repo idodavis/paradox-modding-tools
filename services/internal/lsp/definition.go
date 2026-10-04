@@ -28,7 +28,7 @@ func (file *file) target(offset int) *index.Ref {
 		ref, _ := file.locRef(offset)
 		return ref
 	case file.place.Format == source.Script && file.place.Rel != "":
-		_, _, ref := file.walk(offset).word()
+		_, _, ref := file.walk(offset).word(file.sess)
 		return ref
 	}
 	return nil
@@ -37,7 +37,7 @@ func (file *file) target(offset int) *index.Ref {
 // inFile is a name's definitions; for a name the walk makes (saved, a parameter), none replaces
 // another, so only those in this file where there are any.
 func (file *file) inFile(defs []index.Def) []index.Def {
-	if len(defs) == 0 || file.sess.Schema().Databases[defs[0].Database] != nil {
+	if len(defs) == 0 || file.sess.Install.Schema.Databases[defs[0].Database] != nil {
 		return defs
 	}
 	here, _, _ := file.sess.Located(file.path)
@@ -62,8 +62,8 @@ func (file *file) sites(ref index.Ref) []Location {
 			out = []Location{locate(sess, found.Path, Position{})}
 		}
 	default:
-		defs, _ := index.Resolve(sess.Schema(), indexes, ref)
-		if winner, _, _, _ := sess.Winner(defs); slices.Contains(defs, winner) && sess.Schema().Databases[winner.Database] != nil {
+		defs, _ := index.Resolve(sess.Install.Schema, indexes, ref)
+		if winner, _, _, _ := sess.Winner(defs); slices.Contains(defs, winner) && sess.Install.Schema.Databases[winner.Database] != nil {
 			defs = slices.Insert(slices.DeleteFunc(slices.Clone(defs), func(def index.Def) bool { return def == winner }), 0, winner)
 		}
 		for _, def := range file.inFile(defs) {
@@ -89,7 +89,7 @@ func Definition(sess *session.Session, path string, line, col int) ([]Location, 
 }
 
 // References is every place naming what the word at a position names, once: its references, the
-// calls whose kind resolves in its database (D-24, D-29), and its definitions.
+// calls whose CalledIn word resolves in its database, and its definitions.
 func References(sess *session.Session, path string, line, col int) ([]Location, error) {
 	sess.RLock()
 	defer sess.RUnlock()
@@ -101,7 +101,7 @@ func References(sess *session.Session, path string, line, col int) ([]Location, 
 	if ref == nil {
 		return nil, nil
 	}
-	sch, indexes := sess.Schema(), sess.Indexes()
+	sch, indexes := sess.Install.Schema, sess.Indexes()
 
 	// the databases the name is in: its own, or those a call of its kind resolves in
 	databases := []string{ref.Database}
@@ -170,7 +170,7 @@ func WorkspaceSymbols(sess *session.Session, query string) []Symbol {
 			continue
 		}
 		for _, def := range records.Defs {
-			if strings.Contains(strings.ToLower(def.Name), query) && slices.Contains(sess.Defs(def.Database, def.Name), def) {
+			if strings.Contains(strings.ToLower(def.Name), query) && slices.Contains(index.Lookup(sess.Indexes(), def.Database, def.Name), def) {
 				out = append(out, Symbol{Name: def.Name, Database: def.Database,
 					Location: locate(sess, def.Path, Position{Line: int(def.Line), Character: int(def.Col)})})
 			}

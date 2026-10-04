@@ -1,5 +1,5 @@
 // sessionservice.go owns the workspaces the editor has open: the pool of live sessions, the scan of
-// an install and the slot that lets one rebuild run at a time, and the health strip a page shows.
+// an install, and the health strip a page shows.
 // The events the frontend listens for are declared here too: a session became ready, a scan moved,
 // a cache was replaced, a mod's calendar or file changed, a wiki was refreshed.
 package services
@@ -33,33 +33,29 @@ type SessionService struct {
 	smu      sync.RWMutex
 	sessions map[string]*session.Session
 	sf       singleflight.Group
-	slot     chan struct{} // one rebuild at a time
-	scanned  sync.Map      // install id → time.Time: when its install was built, as this run last scanned or loaded it
+	scanned  sync.Map // install id → time.Time: when its install was built, as this run last scanned or loaded it
 }
 
 // LanguageHealth is what the health strip shows: whether the session is live, and whose dumps the
-// live schema read and what it could not explain.
+// live schema read.
 type LanguageHealth struct {
-	WorkspaceID string   `json:"workspaceId"`
-	InstallID   string   `json:"installId"`
-	GameID      string   `json:"gameId"`
-	InstallOk   bool     `json:"installOk"`
-	GameVersion string   `json:"gameVersion"`
-	ScannedAt   string   `json:"scannedAt,omitempty"`   // when the install was built, else its cache file written
-	UpdatedFrom string   `json:"updatedFrom,omitempty"` // the version this run's scan replaced, where it differs
-	Scanning    bool     `json:"scanning"`
-	Ready       bool     `json:"ready"`
-	Unread      []string `json:"unread"` // doc and wiki lines no rule reads
-	WatchError  string   `json:"watchError,omitempty"`
+	WorkspaceID string `json:"workspaceId"`
+	InstallID   string `json:"installId"`
+	GameID      string `json:"gameId"`
+	InstallOk   bool   `json:"installOk"`
+	GameVersion string `json:"gameVersion"`
+	ScannedAt   string `json:"scannedAt,omitempty"`   // when the install was built, else its cache file written
+	UpdatedFrom string `json:"updatedFrom,omitempty"` // the version this run's scan replaced, where it differs
+	Ready       bool   `json:"ready"`
+	WatchError  string `json:"watchError,omitempty"`
 
-	DumpsFrom        string   `json:"dumpsFrom"`              // whose dumps the schema read: yours, shipped or none
-	DumpsWritten     string   `json:"dumpsWritten,omitempty"` // when the oldest dump file was written, where known
-	DumpsStale       bool     `json:"dumpsStale"`             // they predate the install, or are another game version's
-	DumpFolders      []string `json:"dumpFolders"`            // where the game's script_docs writes them
-	DataTypesCommand string   `json:"dataTypesCommand"`       // the console command that writes the data types
+	DumpsFrom        string   `json:"dumpsFrom"`        // whose dumps the schema read: yours, shipped or none
+	DumpsStale       bool     `json:"dumpsStale"`       // they predate the install, or are another game version's
+	DumpFolders      []string `json:"dumpFolders"`      // where the game's script_docs writes them
+	DataTypesCommand string   `json:"dataTypesCommand"` // the console command that writes the data types
 }
 
-// start makes the scanner, the live sessions, the emitter and the one scan slot on first use.
+// start makes the scanner, the live sessions and the emitter on first use.
 func (s *SessionService) start() {
 	s.once.Do(func() {
 		if s.Scan == nil {
@@ -69,7 +65,6 @@ func (s *SessionService) start() {
 			s.emit = emit
 		}
 		s.sessions = map[string]*session.Session{}
-		s.slot = make(chan struct{}, 1)
 	})
 }
 
@@ -99,6 +94,7 @@ func (s *SessionService) live(workspaceID string) (*session.Session, error) {
 		}
 		built, err := s.build(workspaceID)
 		if err != nil {
+			s.emit(EventLangFailed, workspaceID)
 			return nil, err
 		}
 		s.smu.Lock()
@@ -169,6 +165,9 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// the mods are read after the install's scan, which ended at 100; the strip names the stage
+	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 100, Stage: "reading your mods"})
 	var mods []session.Mod
 	for _, mod := range ws.Mods {
 		mods = append(mods, session.Mod{ID: mod.ID, Name: mod.Name, Dir: mod.Path, Calendar: mod.Eras})
@@ -194,7 +193,7 @@ func (s *SessionService) request(inst *GameInstall, language string) index.Reque
 }
 
 // scan gives an install's schema and index, from its cache or else read from the install, and tells
-// the frontend as it goes. The cache is the scan's own, keyed by the language too (D-28).
+// the frontend as it goes. The cache is the scan's own, keyed by the language too.
 func (s *SessionService) scan(inst *GameInstall, language string) (*index.Install, error) {
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 0, Stage: "scanning"})
 	request := s.request(inst, language)
@@ -207,8 +206,9 @@ func (s *SessionService) scan(inst *GameInstall, language string) (*index.Instal
 		label    string
 		from, to int
 	}{
-		"inventory": {"listing the install", 0, 2}, "schema": {"reading the game's rules", 2, 37},
-		"index": {"reading definitions", 37, 92}, "saving": {"saving", 92, 100},
+		"inventory": {"listing the install", 0, 6}, "localization": {"reading localization", 6, 7},
+		"schema": {"reading the game's rules", 7, 44}, "index": {"reading definitions", 44, 56},
+		"saving": {"saving", 56, 100},
 	}
 	told, running, since := -1, "", started
 	lap := func(next string) {
@@ -244,21 +244,6 @@ func (s *SessionService) scan(inst *GameInstall, language string) (*index.Instal
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 100, Stage: "done"})
 	emit(EventLangCacheUpdated, inst.ID)
 	return install, nil
-}
-
-// RebuildInstallSemantics deletes an install's cache, then drops every session so each is built
-// again with a scan. A rebuild already running is waited for.
-func (s *SessionService) RebuildInstallSemantics(installID string) error {
-	inst := s.install(installID)
-	if inst == nil {
-		return fmt.Errorf("install %s not found", installID)
-	}
-	s.start()
-	s.slot <- struct{}{}
-	err := index.DropInstall(index.Request{Game: inst.GameID, Dir: inst.Path})
-	s.dropAllExcept("")
-	<-s.slot
-	return err
 }
 
 // install is a copy of one install's record.
@@ -309,21 +294,17 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth,
 	health.InstallOk = statErr == nil
 	health.ScannedAt = s.scannedAt(inst, language)
 	s.start()
-	health.Scanning = len(s.slot) > 0
 	health.DataTypesCommand = game.Get(inst.GameID).DataTypesCommand
 	health.DumpFolders = game.DumpDirs(inst.GameID, inst.Path)
 	if live := s.get(workspaceID); live != nil {
 		live.RLock()
-		dumps := live.Schema().Sources[schema.SourceDumps]
-		health.Ready, health.Unread, health.DumpsFrom, health.DumpsStale = true, live.Schema().Unread, dumps.From, dumps.Stale
+		dumps := live.Install.Schema.Sources[schema.SourceDumps]
+		health.Ready, health.DumpsFrom, health.DumpsStale = true, dumps.From, dumps.Stale
 
 		// the version the scan read, and the one it replaced where the game was updated since
-		health.GameVersion = live.Schema().Version
+		health.GameVersion = live.Install.Schema.Version
 		if previous := live.Install.Previous; previous != "" && previous != shipped.Safe(health.GameVersion) {
 			health.UpdatedFrom = previous
-		}
-		if !dumps.Written.IsZero() {
-			health.DumpsWritten = dumps.Written.Format(time.RFC3339)
 		}
 		if err := live.WatchError(); err != nil {
 			health.WatchError = err.Error()
@@ -335,6 +316,7 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth,
 
 const (
 	EventLangReady           = "lang:ready"            // a workspace's session is built: data is its id
+	EventLangFailed          = "lang:failed"           // a workspace's session could not be built: data is its id
 	EventLangScanProgress    = "lang:scan-progress"    // an install scan moved: data is ScanProgress
 	EventLangCacheUpdated    = "lang:cache-updated"    // an install was scanned or loaded from its cache: data is its id
 	EventLangCalendarChanged = "lang:calendar-changed" // a mod's calendar changed: data is the workspace id

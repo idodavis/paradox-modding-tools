@@ -9,7 +9,6 @@ export interface DetectedInstall {
     "name": string;
     "path": string;
     "version": string;
-    "appId": number;
 }
 
 /**
@@ -22,29 +21,14 @@ export interface GameInfo {
     "shortName": string;
 
     /**
-     * WikiAPI is the MediaWiki api.php endpoint for this game's wiki.
-     */
-    "wikiApi"?: string;
-
-    /**
-     * ScriptRoot is the install-relative folder holding script (e.g. "game"). EU5's
-     * StageRoots sit under it: game/{in_game,main_menu,loading_screen}.
-     * Mods omit game/ and put StageRoots at the mod root.
-     */
-    "scriptRoot"?: string;
-    "stageRoots"?: string[] | null;
-
-    /**
      * Descriptor is how a mod root is identified: "mod" (descriptor.mod) or
      * "metadata" (.metadata/metadata.json).
      */
     "descriptor"?: string;
 
     /**
-     * DocsFolderName is the per-game Documents subfolder (e.g. "Crusader Kings III").
+     * FirstWins is Layout.FirstWinsDatabases as the sentence the Conflicts and Settings pages show.
      */
-    "docsFolderName"?: string;
-    "steamAppId"?: number;
     "firstWins"?: string;
 }
 

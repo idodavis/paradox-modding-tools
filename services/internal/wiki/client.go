@@ -100,31 +100,39 @@ type mwMember struct {
 	LastRevid int    `json:"lastrevid"`
 }
 
-func apiGet(ctx context.Context, api string, vals url.Values) ([]byte, error) {
+func apiGet(ctx context.Context, api string, vals url.Values, into any) error {
 	if err := throttle(ctx); err != nil {
-		return nil, err
+		return err
 	}
 	vals.Set("format", "json")
 	vals.Set("formatversion", "2")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api+"?"+vals.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
 	res, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer res.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(res.Body, htmlCap+64*1024))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if res.StatusCode != http.StatusOK || !looksJSON(body) {
-		return nil, fmt.Errorf("wiki http %d: %s", res.StatusCode, clipBody(body))
+		return fmt.Errorf("wiki http %d: %s", res.StatusCode, clipBody(body))
 	}
-	return body, nil
+
+	// the API answers a failed request with an error object, whatever the action
+	var failed struct {
+		Error *struct{ Code, Info string } `json:"error"`
+	}
+	if json.Unmarshal(body, &failed) == nil && failed.Error != nil {
+		return fmt.Errorf("wiki %s %s: %s", vals.Get("action"), failed.Error.Code, failed.Error.Info)
+	}
+	return json.Unmarshal(body, into)
 }
 
 // categoryMembers lists a category's articles with each one's latest revision, following the
@@ -140,25 +148,14 @@ func categoryMembers(ctx context.Context, api, category string) ([]mwMember, err
 		"prop":         {"info"},
 	}
 	for {
-		raw, err := apiGet(ctx, api, vals)
-		if err != nil {
-			return nil, err
-		}
 		var parsed struct {
 			Continue map[string]string `json:"continue"`
 			Query    struct {
 				Pages []mwMember `json:"pages"`
 			} `json:"query"`
-			Error *struct {
-				Code string `json:"code"`
-				Info string `json:"info"`
-			} `json:"error"`
 		}
-		if err := json.Unmarshal(raw, &parsed); err != nil {
-			return nil, fmt.Errorf("categorymembers: %w", err)
-		}
-		if parsed.Error != nil {
-			return nil, fmt.Errorf("wiki %s: %s", parsed.Error.Code, parsed.Error.Info)
+		if err := apiGet(ctx, api, vals, &parsed); err != nil {
+			return nil, err
 		}
 		out = append(out, parsed.Query.Pages...)
 		if len(out) >= memberCap || len(parsed.Continue) == 0 {
@@ -180,25 +177,14 @@ func parsePage(ctx context.Context, api, title string) (html string, revid int, 
 		"disableeditsection": {"1"},
 		"disabletoc":         {"1"},
 	}
-	raw, err := apiGet(ctx, api, vals)
-	if err != nil {
-		return "", 0, err
-	}
 	var parsed struct {
 		Parse struct {
 			Revid int    `json:"revid"`
 			Text  string `json:"text"`
 		} `json:"parse"`
-		Error *struct {
-			Code string `json:"code"`
-			Info string `json:"info"`
-		} `json:"error"`
 	}
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", 0, fmt.Errorf("parse: %w", err)
-	}
-	if parsed.Error != nil {
-		return "", 0, fmt.Errorf("wiki parse %s: %s", parsed.Error.Code, parsed.Error.Info)
+	if err := apiGet(ctx, api, vals, &parsed); err != nil {
+		return "", 0, err
 	}
 	return parsed.Parse.Text, parsed.Parse.Revid, nil
 }

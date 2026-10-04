@@ -70,6 +70,7 @@ const cards = computed(() => {
   const report = health.value;
   const contests = listed("contests", report?.contests);
   const firstWins = contests.filter((contest) => contest.firstWins).length;
+  const depends = listed("depends", report?.depends);
   const languages = new Map<string, number>();
   if (card.value === "loc" && shown.value.card === "loc") {
     for (const gap of shown.value.rows as Gap[]) languages.set(gap.language, (languages.get(gap.language) ?? 0) + 1);
@@ -81,37 +82,37 @@ const cards = computed(() => {
   return [
     {
       id: "contests",
-      label: "Contests",
+      label: "Conflicts",
       color: "warning",
       count: contests.length,
-      note: `two or more mods · ${contests.length - firstWins} LIOS · ${firstWins} FIOS`,
+      note: `entries two mods both define · ${contests.length - firstWins} last-loaded wins · ${firstWins} first-loaded wins`,
     },
     {
       id: "overrides", label: "Overrides", color: "secondary",
       count: listed("overrides", report?.overrides).length,
-      note: "a mod over the game's",
+      note: "game entries a mod replaces or adds to",
     },
     {
       id: "depends", label: "Dependencies", color: "info",
-      count: listed("depends", report?.depends).length,
-      note: "a mod needing another",
+      count: depends.length,
+      note: `mods using entries only another mod adds · ${depends.filter((row) => row.affected).length} affected by changes`,
     },
     {
       id: "dangling", label: "Dangling refs", color: "error",
       count: listed("dangling", report?.dangling).length,
-      note: "named, defined nowhere",
+      note: "names used but defined nowhere",
     },
     {
       id: "loc",
       label: "Loc gaps",
       color: "primary",
       count: [...languages.values()].reduce((sum, count) => sum + count, 0),
-      note: [...languages].map(([language, count]) => `${language} ${count}`).join(" · "),
+      note: `keys missing in: ${[...languages].map(([language, count]) => `${language} ${count}`).join(" · ")}`,
     },
     ...(Object.keys(PROBLEM_CARDS) as ProblemCard[]).map((id) => ({
       id, label: PROBLEM_CARDS[id].label, color: "neutral",
       count: listed(id, problemsOf(report, id)).length,
-      note: "the editor's checks",
+      note: PROBLEM_CARDS[id].note,
     })),
   ] satisfies { id: Card; label: string; color: string; count: number; note: string }[];
 });
@@ -147,8 +148,10 @@ const title = computed(() => {
   if ("message" in row) return row.message;
   if ("key" in row) return row.key;
   if ("name" in row) return row.name;
-  return `${store.originName(row.from)} needs ${store.originName(row.to)}`;
+  return `${store.originName(row.from)} ${row.affected ? "is affected by" : "depends on"} ${store.originName(row.to)}`;
 });
+// the mod an open dependency row is about, which a removed site says took the name out
+const remover = computed(() => (selected.value && "to" in selected.value ? store.originName(selected.value.to) : ""));
 // an open loc row's key is looked up; an open row's sites have their lines read, a definition's
 // whole
 watch(selected, (row) => {
@@ -257,7 +260,15 @@ watch(selected, (row) => {
                     {{ site.at.rel }}:{{ site.line + 1 }}
                   </button>
                   <UBadge
-                    v-if="kept >= 0"
+                    v-if="site.removed"
+                    :label="`removed by ${remover}`"
+                    color="error"
+                    variant="subtle"
+                    size="sm"
+                    class="ml-auto shrink-0"
+                  />
+                  <UBadge
+                    v-else-if="kept >= 0"
                     :label="i === kept ? 'kept' : site.injected ? 'injected' : 'replaced'"
                     :color="i === kept ? 'success' : site.injected ? 'info' : 'error'"
                     variant="subtle"

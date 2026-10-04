@@ -1,9 +1,10 @@
 // vanilla.go is the one entry detector, for the schema and the index stage alike, and vanilla's
-// evidence: what the install writes under each database's entries, recorded and never claimed.
+// evidence: what the install writes under each database's entries, and the value types it gives.
 
 package schema
 
 import (
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -18,10 +19,16 @@ import (
 type Entry struct {
 	Database, Name, Mode string
 	Statement            jomini.Statement // the statement that defines it
+	Local                bool             // declared inline by a folder's Keyword in another folder's file
+}
+
+// NameOf is a registry row's database name: the row's path without common/.
+func NameOf(at string) string {
+	return strings.TrimPrefix(at, "common/")
 }
 
 // folder is where a path's database sits: the longest registry row at or above it (else its
-// folder), and the database's name: that path without common/.
+// folder), and the database's name (NameOf).
 func (schema *Schema) folder(rel string) (at, name string) {
 	info := game.Get(schema.Game)
 	at = path.Dir(rel)
@@ -31,7 +38,7 @@ func (schema *Schema) folder(rel string) (at, name string) {
 			break
 		}
 	}
-	return at, strings.TrimPrefix(at, "common/")
+	return at, NameOf(at)
 }
 
 // DatabaseAt is the database of the file at rel (folder), nil when the schema has none.
@@ -55,6 +62,15 @@ func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found fun
 		}
 	}
 
+	// a folder row's Keyword declares an entry inline in its database; one written in a file of
+	// another folder is local to that file
+	declares, inline := map[string]string{}, map[string]bool{}
+	for at, declaring := range info.Folders {
+		if declaring.Keyword != "" {
+			declares[declaring.Keyword], inline[NameOf(at)] = NameOf(at), true
+		}
+	}
+
 	// strip splits a declared mode word off a written name: REPLACE:x is x with mode REPLACE
 	strip := func(written string) (mode, name string) {
 		word, rest, cut := strings.Cut(written, ":")
@@ -70,7 +86,7 @@ func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found fun
 	var entry func(database, written string, statement jomini.Statement, inside []game.Nested)
 	entry = func(database, written string, statement jomini.Statement, inside []game.Nested) {
 		mode, name := strip(written)
-		found(Entry{Database: database, Name: name, Mode: mode, Statement: statement})
+		found(Entry{Database: database, Name: name, Mode: mode, Statement: statement, Local: inline[database] && database != own})
 		for _, row := range inside {
 			nested, again := strings.TrimPrefix(row.Parent, "common/"), []game.Nested{row}
 			if row.Database != "self" {
@@ -78,7 +94,7 @@ func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found fun
 			}
 
 			// in the entry's own block a key in the database's Fields is a field, and so is a declared
-			// command or link: nested entries are new names (D-21)
+			// command or link: nested entries are the other names
 			var declared map[string]bool
 			if parent := schema.Databases[database]; row.Path == "" && parent != nil {
 				declared = parent.Fields
@@ -103,9 +119,10 @@ func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found fun
 						below = block.Statements
 					}
 					_, constant := jomini.Constant(assign.Key.Text)
+					command := schema.Commands[assign.Key.Text]
 					switch {
 					case constant, declared[collapse(assign.Key.Text)],
-						row.Path == "" && (schema.Commands[assign.Key.Text] != nil || schema.Link(assign.Key.Text) != nil):
+						row.Path == "" && (command != nil && !command.Wild || schema.Link(assign.Key.Text) != nil):
 					case len(steps) == 0:
 						entry(nested, assign.Key.Text, assign, again)
 					case steps[0] == "**":
@@ -158,7 +175,7 @@ func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found fun
 		return
 	}
 
-	fileType, typed := info.FileTypes[ext]
+	fileType, typed := game.FileTypes[ext]
 	if !typed {
 		return
 	}
@@ -167,15 +184,9 @@ func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found fun
 		row = database.Naming
 	}
 
-	// keywords declare an entry inline: a file type's in <ext>.<word>, a folder row's in its database
-	declares := map[string]string{}
+	// a file type's keywords declare an entry inline in <ext>.<word>, global wherever it is written
 	for _, word := range fileType.Keywords {
 		declares[word] = ext[1:] + "." + word
-	}
-	for at, declaring := range info.Folders {
-		if declaring.Keyword != "" {
-			_, declares[declaring.Keyword] = schema.folder(at)
-		}
 	}
 
 	// nameIn is the word a block writes for key, "" when it writes none
@@ -263,95 +274,198 @@ func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found fun
 	walk(parsed.Root.Statements, !whole)
 }
 
-// observe records vanilla's evidence for a file's entries under their databases' Entry positions,
-// each key where Slot reads it; a statement that is itself an entry is observed only on its own,
-// and a listed word that is one only as a value of its position.
+// observe records vanilla's evidence for a file's entries under their databases' positions, each key
+// where the rules read it (Read, creating); an entry inside another is observed only on its own, and
+// a listed word that is one only as a value of its position.
 func (schema *Schema) observe(entries []Entry) {
 	own := map[jomini.Statement]bool{}
 	for _, entry := range entries {
 		own[entry.Statement] = true
 	}
 
-	// held is the positions each open block holds, innermost last, so In counts a key once per block
-	var held []*Key
-	var read func(statements []jomini.Statement, at *Key, from int)
-	record := func(written jomini.Value, at *Key) {
-		switch value := written.(type) {
+	// a written word's form, and the word, kept at a position; a block is counted there
+	record := func(value jomini.Value, at *Key) {
+		switch written := value.(type) {
 		case *jomini.Scalar:
 			form := FormWord
-			switch literal := jomini.Literal(value.Text); {
-			case value.Quoted:
+			switch literal := jomini.Literal(written.Text); {
+			case written.Quoted:
 				form = FormText
 			case literal == jomini.LitNumber:
 				form = FormNumber
 			case literal == jomini.LitDate:
 				form = FormDate
-			case value.Text == "yes" || value.Text == "no":
+			case slices.Contains(game.Bools, written.Text):
 				form = FormBool
 			}
 			at.Seen.Forms |= form
-			// a word a declared value names a database's entry with is kept too: unresolved-ref checks it
+			// a word is cloned on every write, since a map write stores its key again: the schema never
+			// pins vanilla's text
 			if form&(FormNumber|FormDate) == 0 {
 				if at.Seen.Values == nil {
 					at.Seen.Values = map[string]int{}
 				}
-				at.Seen.Values[value.Text]++
+				at.Seen.Values[strings.Clone(written.Text)]++
 			}
 		case *jomini.Block, *jomini.TaggedBlock:
 			at.Seen.Blocks++
 			at.Seen.Forms |= FormBlock
-			from := len(held)
-			read(jomini.BlockOf(value).Statements, at, from)
-			held = held[:from]
 		}
 	}
-	read = func(statements []jomini.Statement, at *Key, from int) {
-		for _, statement := range statements {
-			// an entry is observed on its own, but a listed word that is one (an alias) stays a value of
-			// the position holding it
-			list, isList := statement.(*jomini.ValueStmt)
-			if own[statement] && (!isList || jomini.BlockOf(list.Value) != nil) {
-				continue
+
+	// a declared command marks the block it is written in; In counts a key once per block; a key the
+	// walker reads as nothing records nothing, and neither does its block
+	counted := map[*jomini.Block]map[*Key]bool{}
+	reader := Reader{Create: true, Visit: func(step *Step) bool {
+		list, isList := step.Statement.(*jomini.ValueStmt)
+		switch {
+		case own[step.Statement] && (!isList || jomini.BlockOf(list.Value) != nil):
+			return false
+		case isList:
+			record(list.Value, step.Key)
+			return true
+		}
+		if step.Command != nil && step.Command.Kind&game.KindLink == 0 && step.Place.Key != nil {
+			step.Place.Key.Seen.Forms |= FormCommand
+		}
+		if step.Key == nil {
+			return step.Command != nil
+		}
+		if !step.Leaf {
+			if counted[step.Holder] == nil {
+				counted[step.Holder] = map[*Key]bool{}
 			}
-			switch written := statement.(type) {
-			case *jomini.ValueStmt:
-				record(written.Value, at)
-			case *jomini.Assignment:
-				// a declared command (not a link) marks the block it is written in (D-29); a link's block
-				// reads at its parent
-				position, command := schema.Slot(at, written.Key.Text, true)
-				if command != nil && command.Kind&KindLink == 0 {
-					at.Seen.Forms |= FormCommand
+			if !counted[step.Holder][step.Key] {
+				counted[step.Holder][step.Key] = true
+				step.Key.Seen.In++
+			}
+		}
+		record(step.Statement.(*jomini.Assignment).Value, step.Key)
+		return true
+	}}
+
+	// Build has made every entry's database; an entry written as a bare word (a table row, a sound)
+	// is its name, with nothing to record
+	for _, entry := range entries {
+		database := schema.Databases[entry.Database]
+		var block *jomini.Block
+		switch statement := entry.Statement.(type) {
+		case *jomini.Assignment:
+			record(statement.Value, database.Entry)
+			block = jomini.BlockOf(statement.Value)
+		case *jomini.ValueStmt:
+			if block = jomini.ChildBlock(statement); block != nil {
+				record(block, database.Entry)
+			}
+		}
+		if block != nil {
+			schema.Read(reader, block, block.Statements, schema.Start(database))
+		}
+	}
+}
+
+// typeValues gives each position no claim types (in every entry tree, command's Args and scripted
+// entry's parameters) the type vanilla's words there share; then each link prefix the database
+// vanilla writes names of.
+func (schema *Schema) typeValues(names map[string]map[string]bool, locKeys map[string]bool) {
+	// the words a database's entries write at its row's Names keys name entries too (trait groups)
+	for name, database := range schema.Databases {
+		for _, key := range database.Naming.Names {
+			if position := database.Entry.At(key); position != nil {
+				if names[name] == nil {
+					names[name] = map[string]bool{}
 				}
-				if position == nil {
-					if block := jomini.BlockOf(written.Value); block != nil {
-						read(block.Statements, at, from)
-					}
-					continue
+				for word := range position.Seen.Values {
+					names[name][word] = true
 				}
-				if !slices.Contains(held[from:], position) {
-					held = append(held, position)
-					position.Seen.In++
-				}
-				record(written.Value, position)
 			}
 		}
 	}
 
-	// an entry whose database is not made records nothing; one written as a bare word (a table row, a
-	// sound) is its name, with nothing to record
-	for _, entry := range entries {
-		database := schema.Databases[entry.Database]
-		if database == nil {
-			continue
+	// the databases holding each name, so words are tested only against those holding the first
+	holding := map[string][]string{}
+	for database, entries := range names {
+		for name := range entries {
+			holding[name] = append(holding[name], database)
 		}
-		switch statement := entry.Statement.(type) {
-		case *jomini.Assignment:
-			record(statement.Value, database.Entry)
-		case *jomini.ValueStmt:
-			if block := jomini.ChildBlock(statement); block != nil {
-				record(block, database.Entry)
+	}
+
+	// gui is whether a database is a GUI file type's (<ext>.<x> whose FileTypes row has a NameKey)
+	gui := func(database string) bool {
+		ext, _, cut := strings.Cut(database, ".")
+		return cut && game.FileTypes["."+ext].NameKey != ""
+	}
+
+	// one is the database holding every word, "" when none or several do; a position in a GUI
+	// database's tree takes only a GUI database, any other position only a script one; a history
+	// database's names are other databases' and count for none
+	one := func(words []string, inGUI bool) (found string) {
+		for _, database := range holding[words[0]] {
+			missing := func(word string) bool { return !names[database][word] }
+			if gui(database) != inGUI || schema.Databases[database].Naming.History || slices.ContainsFunc(words, missing) {
+				continue
 			}
+			if found != "" {
+				return ""
+			}
+			found = database
+		}
+		return found
+	}
+
+	// a position's words, link forms and $PARAM$ words aside, name one database's entries, else
+	// localization keys; each name written after a declared link's prefix, a link's name aside
+	// (ai_state_value:root), is kept for that prefix
+	after := map[string]map[string]bool{}
+	var visit func(key *Key, inGUI bool)
+	visit = func(key *Key, inGUI bool) {
+		var words []string
+		for word := range key.Seen.Values {
+			switch {
+			case len(jomini.Interpolations(word)) > 0:
+			case schema.Link(strings.ToLower(word)) == nil:
+				words = append(words, word)
+			default:
+				for _, part := range strings.Split(word, ".") {
+					prefixed, isPrefixed := jomini.SplitPrefixed(part)
+					if !isPrefixed || schema.Link(strings.ToLower(part)) == nil ||
+						schema.Link(strings.ToLower(prefixed.Name)) != nil {
+						continue
+					}
+					prefix := strings.ToLower(prefixed.Prefix)
+					if after[prefix] == nil {
+						after[prefix] = map[string]bool{}
+					}
+					after[prefix][prefixed.Name] = true
+				}
+			}
+		}
+		if len(words) > 0 && key.Value.From == SourceNone {
+			if database := one(words, inGUI); database != "" {
+				Set(&key.Value, Value{Type: WordReference, Database: database}, SourceVanilla)
+			} else if !slices.ContainsFunc(words, func(word string) bool { return !locKeys[word] }) {
+				Set(&key.Value, Value{Type: WordLoc}, SourceVanilla)
+			}
+		}
+		for _, child := range key.Keys {
+			visit(child, inGUI)
+		}
+	}
+	for name, database := range schema.Databases {
+		visit(database.Entry, gui(name))
+	}
+	for _, command := range schema.Commands {
+		visit(command.Args, false)
+	}
+	for _, parameters := range schema.Macros {
+		visit(parameters, false)
+	}
+
+	// a prefix, script syntax, names the one script database holding every name written after it,
+	// unless Build has set it already
+	for prefix, written := range after {
+		if database := one(slices.Collect(maps.Keys(written)), false); database != "" && schema.Prefixes[prefix] == "" {
+			schema.Prefixes[prefix] = database
 		}
 	}
 }

@@ -47,7 +47,7 @@ func fixture(t *testing.T, id string) (*session.Session, string) {
 // opened puts a file of the mod in the editor with a text, and gives its path.
 func opened(sess *session.Session, dir, rel, text string) string {
 	path := filepath.Join(dir, filepath.FromSlash(rel))
-	sess.DidOpen(path, text)
+	sess.DidChange(path, text)
 	return path
 }
 
@@ -325,7 +325,7 @@ func TestDiagnose(t *testing.T) {
 	if err := os.WriteFile(locPath, []byte("\xEF\xBB\xBFl_english:\n d:0 \"Hi\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	install.DidOpen(locPath, "l_english:\n d:0 \"Hi\"\n")
+	install.DidChange(locPath, "l_english:\n d:0 \"Hi\"\n")
 	if got, _ := Diagnose(install, locPath, nil); len(got) != 0 {
 		t.Errorf("a BOM on disk: %+v", got)
 	}
@@ -349,11 +349,11 @@ func TestDiagnose(t *testing.T) {
 	// the install's own files are silent, and never indexed from the editor
 	for _, file := range install.Install.Index.Files {
 		if strings.HasSuffix(file.Rel, "v_events.txt") {
-			install.DidOpen(file.Path, "namespace = v\nv.1 = {\n\timmediate = { capital_county = { add_gold = 1 } }\n}\n")
+			install.DidChange(file.Path, "namespace = v\nv.1 = {\n\timmediate = { capital_county = { add_gold = 1 } }\n}\n")
 			if got := codes(file.Path, nil); len(got) != 0 {
 				t.Errorf("an install file: %v", got)
 			}
-			if len(install.Defs("events", "v.2")) != 1 || len(index.Lookup([]*index.Index{install.Workspace}, "events", "v.1")) != 0 {
+			if len(index.Lookup(install.Indexes(), "events", "v.2")) != 1 || len(index.Lookup([]*index.Index{install.Workspace}, "events", "v.1")) != 0 {
 				t.Error("opening an install file indexes nothing")
 			}
 			install.DidClose(file.Path)
@@ -511,7 +511,7 @@ func TestCodeActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	install.Changed(locPath)
-	install.DidOpen(locPath, "l_english:\n k:0 \"v\"\n")
+	install.DidChange(locPath, "l_english:\n k:0 \"v\"\n")
 	actions, _ := CodeActions(install, locPath, 0, 0)
 	if len(actions) != 1 || actions[0].Title != "Add UTF-8 BOM" || actions[0].Edit.Changes[locPath][0].NewText != "\xEF\xBB\xBF" {
 		t.Errorf("a loc file with no BOM: %+v", actions)

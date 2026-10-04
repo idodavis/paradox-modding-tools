@@ -3,7 +3,7 @@
  * report for that order, saving it as the workspace's, one loc key looked up and the source lines
  * of the open row's sites, for the site pane.
  */
-import { computed, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from "vue";
+import { computed, onActivated, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
 import { GetHealth, GetLines, LookupLoc } from "@services/healthservice";
 import type { SourceAt } from "@services/models";
@@ -25,10 +25,15 @@ export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefO
   );
   const dirty = computed(() => order.value.some((id, i) => id !== persisted.value[i]));
 
-  const { data: health, error, isPending } = useQuery({
+  const { data: health, error, isPending, refetch } = useQuery({
     key: () => ["session", "health", toValue(workspaceId), [...order.value]],
     query: () => GetHealth(toValue(workspaceId), { order: order.value }),
     enabled: () => toValue(live),
+  });
+  // the page is kept alive, so a report already shown is asked for again on return: edits made
+  // meanwhile were indexed (a first visit's fetch is still running, and a refetch would cancel it)
+  onActivated(() => {
+    if (health.value) void refetch();
   });
   const { mutateAsync: save, isLoading: saving } = useMutation({
     mutation: async () => {

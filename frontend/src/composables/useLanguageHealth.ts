@@ -6,7 +6,7 @@ import { useQuery, useQueryCache } from "@pinia/colada";
 import { useEventListener } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { useToast } from "@nuxt/ui/composables/useToast";
-import { EnsureSession, GetLanguageHealth, RebuildInstallSemantics } from "@services/sessionservice";
+import { GetLanguageHealth } from "@services/sessionservice";
 
 type ScanState = {
   scanning: boolean;
@@ -22,7 +22,7 @@ const docsToasted = new Set<string>();
 let scanListening = false;
 let sessionQueryCache: ReturnType<typeof useQueryCache> | null = null;
 
-/** Bust health + IDE boot so a failed first open remounts after rescan. */
+/** Bust health + IDE boot so a failed first open remounts once the session is ready. */
 async function bustSessionQueries(cache: ReturnType<typeof useQueryCache> | null): Promise<void> {
   if (!cache) return;
   await Promise.all([cache.invalidateQueries({ key: ["session"] }), cache.invalidateQueries({ key: ["ide-boot"] })]);
@@ -46,11 +46,18 @@ function ensureScanListener(): void {
     const row = data as { installId?: string; percent?: number; stage?: string };
     if (!row.installId) return;
     const s = scanState(row.installId);
+    s.scanning = true;
     if (typeof row.percent === "number") s.pct = row.percent;
     if (typeof row.stage === "string") s.msg = row.stage;
   });
+  // one session is built at a time, so its readiness or failure ends every scan shown; a failure
+  // busts no query, since the rebuild would fail again
   Events.On("lang:ready", () => {
+    for (const s of scanByInstall.values()) s.scanning = false;
     void bustSessionQueries(sessionQueryCache);
+  });
+  Events.On("lang:failed", () => {
+    for (const s of scanByInstall.values()) s.scanning = false;
   });
   // a game's wiki pages were refreshed: the Guide pane reads them again, and a failure is told
   Events.On("wiki:updated", (ev: { data?: { gameId?: string; error?: string } }) => {
@@ -59,7 +66,7 @@ function ensureScanListener(): void {
   });
 }
 
-/** Health payload, rescan action, and shared scan progress for a workspace. */
+/** Health payload and shared scan progress for a workspace. */
 export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
   ensureScanListener();
   const queryCache = useQueryCache();
@@ -88,27 +95,6 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     if (Number.isNaN(ms)) return raw;
     return new Date(ms).toLocaleString();
   });
-
-  const scanLabel = computed(() => (health.value?.scannedAt ? "Rescan" : "Scan"));
-
-  /** Rescan install semantics then reindex; bust session queries. */
-  async function rescan(): Promise<void> {
-    const wsId = id.value;
-    const installId = health.value?.installId;
-    if (!wsId || !installId || scan.value.scanning) return;
-    scan.value.scanning = true;
-    scan.value.pct = 0;
-    scan.value.msg = "starting";
-    try {
-      await RebuildInstallSemantics(installId);
-      await EnsureSession(wsId);
-      await bustSessionQueries(queryCache);
-    } finally {
-      scan.value.scanning = false;
-      scan.value.msg = "";
-      scan.value.pct = 0;
-    }
-  }
 
   // a scan that replaced another version's: the game was updated, and the new scan is already done
   watch(
@@ -154,7 +140,5 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     scanPct: computed(() => scan.value.pct),
     scanMsg: computed(() => scan.value.msg),
     lastScanned,
-    scanLabel,
-    rescan,
   };
 }

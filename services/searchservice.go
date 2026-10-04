@@ -314,22 +314,9 @@ func textSearchFolder(
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(runtime.NumCPU())
 
-	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if gctx.Err() != nil {
-			return gctx.Err()
-		}
-		if entry.IsDir() {
-			if skipSearchDir(entry.Name(), true) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
+	walkErr := searchFiles(gctx, root, gs, func(path, rel string) error {
 		// an image the format table names is never opened: two in five of an install's files
-		if err != nil || !pathMatchesGlobs(rel, gs) || source.Classify(path, filepath.ToSlash(rel)) == source.Image {
+		if source.Classify(path, filepath.ToSlash(rel)) == source.Image {
 			return nil
 		}
 		group.Go(func() error {
@@ -363,6 +350,27 @@ func textSearchFolder(
 		return found, limitHit, walkErr
 	}
 	return found, limitHit, nil
+}
+
+// searchFiles visits each file under root that the folder's globs keep, never entering a folder
+// search skips; visit returning filepath.SkipAll stops it, and so does a cancelled ctx.
+func searchFiles(ctx context.Context, root string, gs globSet, visit func(path, rel string) error) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return nil
+		case ctx.Err() != nil:
+			return ctx.Err()
+		case entry.IsDir() && skipSearchDir(entry.Name(), true):
+			return filepath.SkipDir
+		case entry.IsDir():
+			return nil
+		}
+		if rel, err := filepath.Rel(root, path); err == nil && pathMatchesGlobs(rel, gs) {
+			return visit(path, rel)
+		}
+		return nil
+	})
 }
 
 // TextSearch walks workspace folders and greps file bodies in-process, sending each file's hits
@@ -439,33 +447,14 @@ func (s *SearchService) FileSearch(ctx context.Context, query FileSearchQuery) (
 			break
 		}
 		gs := splitGlobs(folderGlobs(folder))
-		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if entry.IsDir() {
-				if skipSearchDir(entry.Name(), true) {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if len(out.Hits) >= maxHits {
+		err := searchFiles(ctx, root, gs, func(path, _ string) error {
+			switch {
+			case len(out.Hits) >= maxHits:
 				out.LimitHit = true
 				return filepath.SkipAll
+			case strings.Contains(strings.ToLower(path), needle):
+				out.Hits = append(out.Hits, FileSearchHit{Path: path})
 			}
-			rel, err := filepath.Rel(root, path)
-			if err != nil || !pathMatchesGlobs(rel, gs) {
-				return nil
-			}
-			if needle != "" &&
-				!strings.Contains(strings.ToLower(path), needle) &&
-				!strings.Contains(strings.ToLower(filepath.Base(path)), needle) {
-				return nil
-			}
-			out.Hits = append(out.Hits, FileSearchHit{Path: path})
 			return nil
 		})
 		if err != nil && !errors.Is(err, context.Canceled) {

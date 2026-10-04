@@ -27,11 +27,3 @@ export function EnsureSession(workspaceID: string): $CancellablePromise<$models.
 export function GetLanguageHealth(workspaceID: string): $CancellablePromise<$models.LanguageHealth | null> {
     return $Call.ByID(1851235705, workspaceID);
 }
-
-/**
- * RebuildInstallSemantics deletes an install's cache, then drops every session so each is built
- * again with a scan. A rebuild already running is waited for.
- */
-export function RebuildInstallSemantics(installID: string): $CancellablePromise<void> {
-    return $Call.ByID(521221046, installID);
-}

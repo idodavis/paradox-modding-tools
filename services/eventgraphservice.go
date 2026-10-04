@@ -84,7 +84,7 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*R
 	sess.RLock()
 	defer sess.RUnlock()
 	query = strings.ToLower(query)
-	sch, indexes := sess.Schema(), sess.Indexes()
+	sch, indexes := sess.Install.Schema, sess.Indexes()
 
 	// in the files the game loads: what is fired, each definition that fires itself, and the
 	// scripted entries each one runs
@@ -111,11 +111,11 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*R
 	}
 
 	// what fires through the entries it runs (Session.Fires): reached backwards from what fires
-	// itself over each call, resolved once
-	resolved, ranBy := map[[3]string][]index.Def{}, map[index.Def][]index.Def{}
+	// itself over each call, resolved once per file, where a local definition shows
+	resolved, ranBy := map[[4]string][]index.Def{}, map[index.Def][]index.Def{}
 	for caller, refs := range runs {
 		for _, ref := range refs {
-			spelled := [3]string{ref.Database, ref.Called, ref.Name}
+			spelled := [4]string{ref.Database, ref.Called, ref.Name, ref.Path}
 			if _, done := resolved[spelled]; !done {
 				resolved[spelled], _ = index.Resolve(sch, indexes, ref)
 			}
@@ -138,7 +138,7 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*R
 	// a name of several databases takes the first in sorted order, so no map order decides
 	named := map[string]string{}
 	for name, kind := range fired {
-		if strings.Contains(strings.ToLower(name), query) && len(sess.Defs(kind, name)) > 0 {
+		if strings.Contains(strings.ToLower(name), query) && len(index.Lookup(indexes, kind, name)) > 0 {
 			named[name] = kind
 		}
 	}
@@ -231,7 +231,7 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 
 	// into a root the game fires, one hop: a stub until the page opens it
 	var callers []session.Fire
-	if (index.Ref{Database: root.Database}).Fires(sess.Schema()) {
+	if (index.Ref{Database: root.Database}).Fires(sess.Install.Schema) {
 		callers = firedBy(sess, root)
 	}
 	if len(callers) > 0 {
@@ -312,9 +312,9 @@ func (grapher *grapher) def(id string) index.Def {
 	if known {
 		return found
 	}
-	sch := grapher.sess.Schema()
+	sch := grapher.sess.Install.Schema
 	for _, database := range slices.Sorted(maps.Keys(sch.Databases)) {
-		if defs := grapher.sess.Defs(database, id); len(defs) > 0 && (found.Name == "" || (index.Ref{Database: database}).Fires(sch)) {
+		if defs := index.Lookup(grapher.sess.Indexes(), database, id); len(defs) > 0 && (found.Name == "" || (index.Ref{Database: database}).Fires(sch)) {
 			found, _, _, _ = grapher.sess.Winner(defs)
 		}
 	}
@@ -333,11 +333,11 @@ func (grapher *grapher) node(id string, root bool) {
 // firedBy is what fires a definition, in name order: its references outside a trigger, one in a
 // scripted effect followed to that effect's callers, with the chain as Fires writes one.
 func firedBy(sess *session.Session, target index.Def) []session.Fire {
-	sch, indexes := sess.Schema(), sess.Indexes()
+	sch, indexes := sess.Install.Schema, sess.Indexes()
 	seen := map[index.Def]bool{target: true}
 	var follow func(def index.Def) []session.Fire
 	follow = func(def index.Def) (out []session.Fire) {
-		// the references to the name, and the calls whose kind resolves in its database (D-24, D-29)
+		// the references to the name, and the calls whose CalledIn word resolves in its database
 		refs := index.LookupRefs(indexes, def.Database, def.Name)
 		for _, call := range index.LookupRefs(indexes, "", def.Name) {
 			if slices.Contains(sch.Callees[call.Called], def.Database) {
@@ -481,7 +481,7 @@ func (v *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 				continue
 			}
 			if ref.Called != "" {
-				called, known := index.Resolve(sess.Schema(), indexes, ref)
+				called, known := index.Resolve(sess.Install.Schema, indexes, ref)
 				if !known {
 					continue
 				}

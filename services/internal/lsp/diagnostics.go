@@ -56,12 +56,13 @@ var Codes = []Code{
 func Diagnose(sess *session.Session, path string, enabled map[string]bool) ([]Diagnostic, error) {
 	sess.RLock()
 	defer sess.RUnlock()
+	// only a mod's script and loc files have findings; any other file (images, sound) is never read
+	if place := sess.Where(path); place.Origin == game.OriginVanilla || place.Origin == "" || place.Format != source.Script && place.Format != source.Loc {
+		return nil, nil
+	}
 	file, err := open(sess, path)
 	if err != nil {
 		return nil, err
-	}
-	if file.place.Origin == game.OriginVanilla || file.place.Origin == "" {
-		return nil, nil
 	}
 	if enabled == nil {
 		enabled = map[string]bool{}
@@ -127,7 +128,7 @@ func (judge *judge) script() {
 	}
 	found, _, _ := sess.Located(judge.file.path)
 	judge.written = map[jomini.Range]*schema.Key{}
-	records := index.Walk(sess.Schema(), found, judge.file.parsed, func(at index.Context) bool {
+	records := index.Walk(sess.Install.Schema, found, judge.file.parsed, func(at index.Context) bool {
 		switch statement := at.Statement.(type) {
 		case *jomini.Assignment:
 			judge.key(at, statement)
@@ -148,14 +149,14 @@ func (judge *judge) script() {
 // variable judges a non-global variable read (var:x, not local_var:x) written directly in a scope
 // the dumps say stores none; unknown, a read through a link and a pair vanilla writes are quiet.
 func (judge *judge) variable(at index.Context, word *jomini.Scalar) {
-	sess, sch := judge.file.sess, judge.file.sess.Schema()
+	sess, sch := judge.file.sess, judge.file.sess.Install.Schema
 	scope, declared := sch.Scopes[at.Scope]
 	if !declared || scope.Variables {
 		return
 	}
 	prefixed, isPrefixed := jomini.SplitPrefixed(word.Text)
-	link := sch.Link(strings.ToLower(word.Text))
-	if isPrefixed && link != nil && !link.Global && index.ScriptMade(prefixed.Prefix) &&
+	link, database := sch.Link(strings.ToLower(word.Text)), sch.Prefixes[prefixed.Prefix]
+	if isPrefixed && link != nil && !link.Global && database != "" && sch.Databases[database] == nil &&
 		!sess.Install.Index.Scoped[index.Pair(word.Text, at.Scope)] && sch.Speaks(schema.ClaimCommand, at.Key, nil) {
 		judge.report(word.Range, 2, "wrong-scope", fmt.Sprintf("%s reads a variable, but %s stores none",
 			word.Text, plain(at.Scope)))
@@ -163,9 +164,9 @@ func (judge *judge) variable(at index.Context, word *jomini.Scalar) {
 }
 
 // key judges a key: a variable read, a command written in a scope it does not run in where vanilla
-// never writes it (D-34), and a key the position's sources call required that its block leaves out.
+// never writes it there, and a key the position's sources call required that its block leaves out.
 func (judge *judge) key(at index.Context, assign *jomini.Assignment) {
-	sess, sch := judge.file.sess, judge.file.sess.Schema()
+	sess, sch := judge.file.sess, judge.file.sess.Install.Schema
 	judge.variable(at, &assign.Key)
 	if command := at.Command; command != nil && at.Scope != "" && len(command.Scopes) > 0 &&
 		!slices.Contains(command.Scopes, at.Scope) && !sess.Install.Index.Scoped[index.Pair(assign.Key.Text, at.Scope)] &&
@@ -223,15 +224,15 @@ func (judge *judge) value(at index.Context, scalar *jomini.Scalar) {
 		wrong = !listed
 	case claim.Type == schema.WordNumber:
 		if scalar.Quoted || jomini.Literal(text) != jomini.LitNumber {
-			_, valued := index.Resolve(sess.Schema(), sess.Indexes(), index.Ref{Called: "value", Name: text})
+			_, valued := index.Resolve(sess.Install.Schema, sess.Indexes(), index.Ref{Called: game.Blocks[game.BlockValue].Calls, Name: text})
 			wrong = !valued
 		}
 	case claim.Type == schema.WordBool:
-		wrong = scalar.Quoted || text != "yes" && text != "no"
+		wrong = scalar.Quoted || !slices.Contains(game.Bools, text)
 	case claim.Type == schema.WordDate:
 		wrong = scalar.Quoted || jomini.Literal(text) != jomini.LitDate
 	}
-	if wrong && sess.Schema().Speaks(schema.ClaimValue, at.Key, nil) {
+	if wrong && sess.Install.Schema.Speaks(schema.ClaimValue, at.Key, nil) {
 		judge.report(scalar.Range, 2, code, fmt.Sprintf("%s is not allowed here; this key takes %s",
 			text, strings.Join(takes(at.Key), ", ")))
 	}
@@ -241,7 +242,7 @@ func (judge *judge) value(at index.Context, scalar *jomini.Scalar) {
 // a word a position declares names a database or a file; vanilla's contradiction keeps it quiet.
 func (judge *judge) references(refs []index.Ref) {
 	sess := judge.file.sess
-	sch := sess.Schema()
+	sch := sess.Install.Schema
 	for _, ref := range refs {
 		position, row := judge.written[ref.Range], sch.Databases[ref.Database]
 		events := row != nil && row.Naming.Events
@@ -271,20 +272,17 @@ func (judge *judge) references(refs []index.Ref) {
 	}
 }
 
-// contradicted is §4.3 rule 3 for a reference: vanilla writes a word at its position that would
-// make the same kind of reference (for an event, an event-shaped word) and that nothing defines.
+// contradicted is whether vanilla itself writes, at the reference's position, a word of the same
+// kind (for an event, an event-shaped word) that nothing defines: then a miss proves nothing.
 func (judge *judge) contradicted(position *schema.Key, ref index.Ref) bool {
-	if position == nil {
-		return false
-	}
 	sess := judge.file.sess
-	row := sess.Schema().Databases[ref.Database]
+	row := sess.Install.Schema.Databases[ref.Database]
 	for word := range position.Seen.Values {
 		shaped := jomini.IsEventID(word) && jomini.Literal(word) != jomini.LitNumber
 		if row != nil && row.Naming.Events && !shaped {
 			continue
 		}
-		if _, found := index.Resolve(sess.Schema(), sess.Indexes(), index.Ref{Database: ref.Database, Name: word}); !found {
+		if _, found := index.Resolve(sess.Install.Schema, sess.Indexes(), index.Ref{Database: ref.Database, Name: word}); !found {
 			return true
 		}
 	}
@@ -294,9 +292,6 @@ func (judge *judge) contradicted(position *schema.Key, ref index.Ref) bool {
 // plain is a scope as a sentence says it: a character, an army, a landed title.
 func plain(scope string) string {
 	words := strings.ReplaceAll(scope, "_", " ")
-	if words == "" {
-		return ""
-	}
 	if strings.ContainsRune("aeiou", rune(words[0])) {
 		return "an " + words
 	}
@@ -305,13 +300,17 @@ func plain(scope string) string {
 
 // definitions judges a file's loaded named definitions: an INJECT or REPLACE with nothing before
 // it, and a plain name another mod file defines plain where vanilla never repeats names (Repeated).
+// Only definitions that take each other's place collide: never in a database whose entries merge
+// (on_actions), nor a file-local one or a name an entry gives.
 func (judge *judge) definitions(defs []index.Def) {
 	sess := judge.file.sess
+	contends := func(def index.Def) bool { return def.Mode == "" && !def.Local && !def.Named }
 	for _, def := range defs {
-		if def.Name == "" || def.Database == index.Parameter || index.ScriptMade(def.Database) {
+		row := sess.Install.Schema.Databases[def.Database]
+		if def.Name == "" || row == nil {
 			continue
 		}
-		loaded := sess.Defs(def.Database, def.Name)
+		loaded := index.Lookup(sess.Indexes(), def.Database, def.Name)
 		if !slices.Contains(loaded, def) {
 			continue
 		}
@@ -321,12 +320,12 @@ func (judge *judge) definitions(defs []index.Def) {
 				fmt.Sprintf("%s:%s does nothing: no %s is loaded before it", def.Mode, def.Name, def.Name))
 			continue
 		}
-		if def.Mode != "" || sess.Install.Index.Repeated[def.Database] {
+		if !contends(def) || row.Naming.OnActions || sess.Install.Index.Repeated[def.Database] {
 			continue
 		}
 		if other := slices.IndexFunc(loaded, func(other index.Def) bool {
 			listed, _, _ := sess.Located(other.Path)
-			return other.Mode == "" && other.Path != def.Path && listed.Origin != game.OriginVanilla
+			return contends(other) && other.Path != def.Path && listed.Origin != game.OriginVanilla
 		}); other >= 0 {
 			listed, _, _ := sess.Located(loaded[other].Path)
 			judge.report(def.Range, 2, "duplicate-definition", fmt.Sprintf("%s is also defined in %s", def.Name, listed.Rel))
@@ -345,8 +344,10 @@ func (judge *judge) locFile() {
 	if named := loc.LanguageFromFilename(judge.file.path); named != "" && parsed.Language != "" && named != parsed.Language {
 		judge.report(whole, 2, "loc-header-mismatch", fmt.Sprintf("the file is named for %s but its header says l_%s", named, parsed.Language))
 	}
-	if strings.Contains(strings.ToLower(judge.file.place.Rel), "localisation/") {
-		judge.report(whole, 2, "wrong-localization-folder", "the game reads localization, not localisation")
+	for wrong, read := range game.MisspelledFolders {
+		if strings.Contains(strings.ToLower(judge.file.place.Rel), wrong+"/") {
+			judge.report(whole, 2, "wrong-localization-folder", "the game reads "+read+", not "+wrong)
+		}
 	}
 	if !parsed.HadBOM {
 		raw, err := os.ReadFile(judge.file.path)

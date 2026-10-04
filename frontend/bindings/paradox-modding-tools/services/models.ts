@@ -59,11 +59,14 @@ export interface DatabaseCount {
 }
 
 /**
- * Dependency is one mod naming what only another mod defines, and each place it does.
+ * Dependency is one mod using a name another mod's definitions decide, and each place it does: it
+ * depends on the other where only that mod defines the name, and is affected by it where the other's
+ * definition differs from the one it hides, adds to it, or leaves it out.
  */
 export interface Dependency {
     "from": string;
     "to": string;
+    "affected": boolean;
     "sites": Site[] | null;
 }
 
@@ -188,7 +191,6 @@ export interface GameInstall {
      * derived by ListGameInstalls; whatever is on disk is ignored
      */
     "isBroken": boolean;
-    "createdAt": string;
 
     /**
      * derived: its install built, else its cache written
@@ -272,7 +274,7 @@ export interface Language {
 
 /**
  * LanguageHealth is what the health strip shows: whether the session is live, and whose dumps the
- * live schema read and what it could not explain.
+ * live schema read.
  */
 export interface LanguageHealth {
     "workspaceId": string;
@@ -290,24 +292,13 @@ export interface LanguageHealth {
      * the version this run's scan replaced, where it differs
      */
     "updatedFrom"?: string;
-    "scanning": boolean;
     "ready": boolean;
-
-    /**
-     * doc and wiki lines no rule reads
-     */
-    "unread": string[] | null;
     "watchError"?: string;
 
     /**
      * whose dumps the schema read: yours, shipped or none
      */
     "dumpsFrom": string;
-
-    /**
-     * when the oldest dump file was written, where known
-     */
-    "dumpsWritten"?: string;
 
     /**
      * they predate the install, or are another game version's
@@ -537,9 +528,14 @@ export interface Site {
     "name"?: string;
 
     /**
-     * a definition added to the kept one (INJECT), not replaced
+     * a definition added to the kept one (an inject, a merged on_action)
      */
     "injected"?: boolean;
+
+    /**
+     * a dependency's use of a name the other mod's file left out
+     */
+    "removed"?: boolean;
 }
 
 /**
@@ -622,7 +618,6 @@ export interface Workspace {
     "defaultTool"?: string;
     "ideOpenFiles"?: string[] | null;
     "ideActiveFile"?: string;
-    "createdAt": string;
     "mods": WorkspaceMod[] | null;
 }
 
@@ -644,7 +639,6 @@ export interface WorkspaceMod {
      * derived by markBroken; whatever is on disk is ignored
      */
     "isBroken": boolean;
-    "createdAt": string;
 
     /**
      * the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written

@@ -122,12 +122,12 @@ var documentation = map[string]bool{"readme": true, "info": true, "example": tru
 func Classify(abs, rel string) Format {
 	name, dir := strings.ToLower(path.Base(rel)), strings.ToLower(path.Dir(rel))
 
-	// some files are what they are by name and folder, not by extension: a sound GUID list, and the
-	// Wwise bank listing beside its .bnk
+	// some files are what they are by name and folder, not by extension: a sound GUID list, the
+	// Wwise bank listing beside its .bnk, and a .txt directly in a root, which is no script
 	if strings.HasSuffix(name, "guids.txt") && strings.HasSuffix(dir, "sound") {
 		return List
 	}
-	if path.Ext(name) == ".txt" && strings.Contains("/"+dir+"/", "/sound/banks/") {
+	if path.Ext(name) == ".txt" && (strings.Contains("/"+dir+"/", "/sound/banks/") || !strings.Contains(rel, "/")) {
 		return Opaque
 	}
 	if strings.HasPrefix(name, "readme") {

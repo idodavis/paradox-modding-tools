@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -59,14 +60,18 @@ type Site struct {
 	Col      int    `json:"col"`
 	Database string `json:"database,omitempty"` // a dependency's use: the database and name written there
 	Name     string `json:"name,omitempty"`
-	Injected bool   `json:"injected,omitempty"` // a definition added to the kept one (INJECT), not replaced
+	Injected bool   `json:"injected,omitempty"` // a definition added to the kept one (an inject, a merged on_action)
+	Removed  bool   `json:"removed,omitempty"`  // a dependency's use of a name the other mod's file left out
 }
 
-// Dependency is one mod naming what only another mod defines, and each place it does.
+// Dependency is one mod using a name another mod's definitions decide, and each place it does: it
+// depends on the other where only that mod defines the name, and is affected by it where the other's
+// definition differs from the one it hides, adds to it, or leaves it out.
 type Dependency struct {
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Sites []Site `json:"sites"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Affected bool   `json:"affected"`
+	Sites    []Site `json:"sites"`
 }
 
 // Dangling is one name a mod writes that nothing defines, and where.
@@ -130,7 +135,7 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		}
 		return numbers[file.Path]
 	}
-	sch, indexes := sess.Schema(), sess.Indexes()
+	sch, indexes := sess.Install.Schema, sess.Indexes()
 
 	// the mods in the order to judge: the workspace's files again, a mod's together, in that order
 	preview := indexes
@@ -144,12 +149,12 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	}
 
 	// each name two origins define: a contest where two mods contend for it, else one mod's override
-	// of another origin's; not in a database where the game repeats names, nor a name script makes
+	// of another origin's; not in a database where the game repeats names, nor one no schema database
+	// names (a parameter, a name script makes)
 	names := map[[2]string]bool{}
 	for _, records := range sess.Workspace.Records {
 		for _, def := range records.Defs {
-			if def.Name != "" && def.Database != index.Parameter && !index.ScriptMade(def.Database) &&
-				!sess.Install.Index.Repeated[def.Database] {
+			if def.Name != "" && sch.Databases[def.Database] != nil && !sess.Install.Index.Repeated[def.Database] {
 				names[[2]string{def.Database, def.Name}] = true
 			}
 		}
@@ -157,7 +162,9 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	for _, name := range slices.SortedFunc(maps.Keys(names), func(first, second [2]string) int {
 		return slices.Compare(first[:], second[:])
 	}) {
-		defs := index.Lookup(preview, name[0], name[1])
+		defs := slices.DeleteFunc(index.Lookup(preview, name[0], name[1]), func(def index.Def) bool {
+			return def.Local || def.Named
+		})
 		files, origins := make([]source.File, len(defs)), map[string]bool{}
 		for i, def := range defs {
 			files[i], _, _ = sess.Located(def.Path)
@@ -166,7 +173,7 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		if len(origins) < 2 {
 			continue
 		}
-		winner, _, _, contested := sess.Winner(defs)
+		winner, adds, _, contested := sess.Winner(defs)
 		row := Contest{
 			Database: name[0], Name: name[1], Winner: slices.Index(defs, winner),
 			FirstWins: game.FirstWinsAt(sess.Game.ID, name[0]), Rule: "LIOS",
@@ -175,13 +182,12 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 			row.Rule = "FIOS"
 		}
 
-		// sites in the game's order: an inject after the kept one is part of it; the kept one's mode,
-		// else an inject's, is the row's rule
+		// sites in the game's order: what the mode function counts as an add (an inject, a merged
+		// on_action) is part of the kept one; the kept one's mode, else an add's, is the row's rule
 		for i, def := range defs {
 			site := Site{File: number(files[i]), Line: int(def.Line), Col: int(def.Col)}
-			mode := slices.IndexFunc(sess.Game.EntryModes, func(mode game.EntryMode) bool { return mode.Word == def.Mode })
-			if site.Injected = mode >= 0 && !sess.Game.EntryModes[mode].Replaces && i > row.Winner; site.Injected {
-				row.Rule = def.Mode
+			if site.Injected = slices.Contains(adds, def); site.Injected {
+				row.Rule = cmp.Or(def.Mode, row.Rule)
 			}
 			row.Sites = append(row.Sites, site)
 		}
@@ -202,39 +208,96 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		line, col int
 	}
 	shown := map[string]map[place]bool{"duplicate-definition": {}, "unresolved-ref": {}, "unknown-event": {}}
-	needs, dangling := map[[2]string]*Dependency{}, map[[2]string]*Dangling{}
-	resolved := map[[3]string][]index.Def{} // a name resolves alike wherever it is written
+	type need struct {
+		from, to string
+		affected bool
+	}
+	needs, dangling := map[need]*Dependency{}, map[[2]string]*Dangling{}
+	resolved := map[[4]string][]index.Def{} // a name resolves alike in one file, where a local definition shows
+	compared := map[[2]index.Def]bool{}     // whether a definition's statement differs from the one it hides
+	installOnly := []*index.Index{sess.Install.Index}
 	for _, file := range sess.Workspace.Files {
 		records := sess.Workspace.Records[file.Path]
 		if _, loaded := index.Loaded(indexes, file.Path); records == nil || !loaded {
 			continue
 		}
 		for _, ref := range records.Refs {
-			if ref.Database == index.Parameter || ref.Database == index.Localization || ref.Database == index.File ||
-				index.ScriptMade(ref.Database) {
+			// a name no schema database holds (a loc key, a file, a parameter, a name script makes) is no
+			// mod's entry; a call names none
+			if ref.Database != "" && sch.Databases[ref.Database] == nil {
 				continue
 			}
-			spelled := [3]string{ref.Database, ref.Called, ref.Name}
+			spelled := [4]string{ref.Database, ref.Called, ref.Name, file.Path}
 			defs, resolvedOnce := resolved[spelled]
 			if !resolvedOnce {
 				defs, _ = index.Resolve(sch, indexes, ref)
 				resolved[spelled] = defs
 			}
-			if len(defs) == 0 {
-				continue
-			}
-			var definers []string
-			for _, def := range defs {
-				definer, _, _ := sess.Located(def.Path)
-				definers = append(definers, definer.Origin)
-			}
-			if !slices.Contains(definers, file.Origin) && !slices.Contains(definers, game.OriginVanilla) {
-				key := [2]string{file.Origin, definers[0]}
-				if needs[key] == nil {
-					needs[key] = &Dependency{From: file.Origin, To: definers[0]}
+			// each other mod's contribution to the name is a row: where no loaded file defines it but
+			// the install does, the mod whose file loads at its path left it out; else the winner, and
+			// each add (an inject, a merged on_action) whatever the winner's origin
+			database, removed := ref.Database, len(defs) == 0
+			var landed []need
+			if removed {
+				installed, _ := index.Resolve(sch, installOnly, ref)
+				if len(installed) == 0 {
+					continue
 				}
-				site := Site{File: number(file), Line: int(ref.Line), Col: int(ref.Col), Database: cmp.Or(ref.Database, defs[0].Database), Name: ref.Name}
-				needs[key].Sites = append(needs[key].Sites, site)
+				at, _, _ := sess.Located(installed[0].Path)
+				remover, _ := index.FileAt(indexes, at.Rel)
+				database = cmp.Or(database, installed[0].Database)
+				if remover.Origin != "" && remover.Origin != file.Origin && remover.Origin != game.OriginVanilla {
+					landed = append(landed, need{file.Origin, remover.Origin, true})
+				}
+			} else {
+				winner, adds, _, _ := sess.Winner(defs)
+				database = cmp.Or(database, winner.Database)
+				for at, held := range slices.Concat([]index.Def{winner}, adds) {
+					holder, _, _ := sess.Located(held.Path)
+					if holder.Origin == "" || holder.Origin == file.Origin || holder.Origin == game.OriginVanilla {
+						continue
+					}
+
+					// an add affects the mod; the winner does when its statement differs from the one it
+					// hides (the loaded one before it, else the install's own), and with none it is only
+					// that mod's, so the mod depends on it
+					key := need{file.Origin, holder.Origin, at > 0}
+					if at == 0 {
+						var base index.Def
+						if before := slices.Index(defs, winner); before > 0 {
+							base = defs[before-1]
+						} else {
+							installed, _ := index.Resolve(sch, installOnly, ref)
+							base, _, _, _ = sess.Winner(installed)
+						}
+						if base.Path != "" {
+							pair := [2]index.Def{winner, base}
+							differs, done := compared[pair]
+							if !done {
+								_, winning := sess.Entry(winner)
+								_, hidden := sess.Entry(base)
+								differs = !sameStatement(winning, hidden)
+								compared[pair] = differs
+							}
+							if !differs {
+								continue
+							}
+							key.affected = true
+						}
+					}
+					// a mod's add to its own name, which only it defines, is part of what the mod depends on
+					if !slices.Contains(landed, key) && !slices.Contains(landed, need{file.Origin, holder.Origin, false}) {
+						landed = append(landed, key)
+					}
+				}
+			}
+			for _, key := range landed {
+				if needs[key] == nil {
+					needs[key] = &Dependency{From: key.from, To: key.to, Affected: key.affected}
+				}
+				needs[key].Sites = append(needs[key].Sites, Site{
+					File: number(file), Line: int(ref.Line), Col: int(ref.Col), Database: database, Name: ref.Name, Removed: removed,
+				})
 			}
 		}
 		for _, diagnostic := range found[file.Path] {
@@ -257,7 +320,10 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	for _, row := range needs {
 		health.Depends = append(health.Depends, *row)
 	}
-	slices.SortFunc(health.Depends, func(first, second Dependency) int { return strings.Compare(first.From+first.To, second.From+second.To) })
+	slices.SortFunc(health.Depends, func(first, second Dependency) int {
+		return strings.Compare(
+			first.From+first.To+strconv.FormatBool(first.Affected), second.From+second.To+strconv.FormatBool(second.Affected))
+	})
 	for _, row := range dangling {
 		health.Dangling = append(health.Dangling, *row)
 	}
@@ -285,6 +351,31 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		}
 	}
 	return health, nil
+}
+
+// sameStatement is whether two statements are written alike: key text, operator, scalar text (quoted
+// or not) and block statements in order. Comments live outside the tree, so they never count.
+func sameStatement(first, second jomini.Node) bool {
+	switch left := first.(type) {
+	case *jomini.Assignment:
+		right, ok := second.(*jomini.Assignment)
+		return ok && left.Key.Text == right.Key.Text && left.Op == right.Op && sameStatement(left.Value, right.Value)
+	case *jomini.ValueStmt:
+		right, ok := second.(*jomini.ValueStmt)
+		return ok && sameStatement(left.Value, right.Value)
+	case *jomini.Scalar:
+		right, ok := second.(*jomini.Scalar)
+		return ok && left.Text == right.Text
+	case *jomini.TaggedBlock:
+		right, ok := second.(*jomini.TaggedBlock)
+		return ok && left.Tag.Text == right.Tag.Text && sameStatement(&left.Block, &right.Block)
+	case *jomini.Block:
+		right, ok := second.(*jomini.Block)
+		return ok && slices.EqualFunc(left.Statements, right.Statements, func(before, after jomini.Statement) bool {
+			return sameStatement(before, after)
+		})
+	}
+	return false
 }
 
 // findings is every mod file's findings under the editor's default codes, found again only when the

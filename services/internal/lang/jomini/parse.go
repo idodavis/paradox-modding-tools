@@ -296,8 +296,7 @@ func (parser *parser) parseBlock() *Block {
 	open := parser.advance()
 	openBrace := open.start
 	var statements []Statement
-	closeBrace := -1
-	end := open.end
+	closeBrace, end := -1, 0
 
 	for {
 		tok := parser.peek()

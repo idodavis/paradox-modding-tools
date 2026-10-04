@@ -79,7 +79,7 @@ event or an on_action is a fire unless it sits inside a trigger
 
 **EU5 publishes its version nowhere in the install folder.** The version the
 engine reads for it is the Steam manifest's `buildid`, beside the install
-(`game.ReadGameVersion`, D-11); freshness never depends on a version string.
+(`game.ReadGameVersion`); freshness never depends on a version string.
 
 `game.InstallUpdatedAt` therefore uses the **newest mtime among `binaries/`**,
 falling back to the install root. It works for all three, needs nothing outside
@@ -141,7 +141,7 @@ repeated inner key counted as a database would mint phantom definitions:
 On CK3 that would be **64% of the entire model**. So nested databases are
 declared, not found: a registry `Nested` row says where keys create entries
 (`GameInfo.Nested`), a constant (`@x`) is never an entry, and in a nested row's
-own block a key a declared source states is a field (D-21).
+own block a key a declared source states is a field.
 
 Root cause worth remembering: `jomini.SplitPrefixed` (`lang/jomini/names.go`)
 accepts any word shaped like `prefix:name` — a one-identifier prefix with a
@@ -180,7 +180,7 @@ What separates an ordinary field from a row is **repetition**, and it is
 evidence only: an ordinary field appears in most instances of the parent
 (`categories` in 81 of 81 game rules, `flag` in 24 of 27 law groups), a row
 appears in one. Vanilla's counts (`Seen.In`) feed completion; a declared source
-decides what is a field (D-21), and vanilla alone never accuses.
+decides what is a field, and vanilla alone never accuses.
 
 **Rule: absence is never a claim. Derive membership from how a thing is written,
 not from whether anything in vanilla points at it.**
@@ -199,7 +199,7 @@ Measured 2026-09-06, four cases where one spelling is two things:
 | `has_realm_law = x` | the loc key `has_realm_law` | a key is a declared command or a field, never a loc key (`Schema.Slot`); only a value at a position whose declared value is a loc key reads as one |
 | `culture = french` | the culture's own loc key | a value at a position whose declared value names a database is that database's entry; a loc key is read only where the declared value is a loc key |
 | `add_trait = conqueror` | `namespace = conqueror` in the mod | a namespace is a word of its file, not an entry: only event ids are entries (`Folder.Events`) |
-| `random_list = { 95 = … }` | province `95` in `map_data/positions.txt` | a number key is a number (`<number>`, D-22), and only a prefixed word or a declared value names an entry |
+| `random_list = { 95 = … }` | province `95` in `map_data/positions.txt` | a number key is a number (`<number>`), and only a prefixed word or a declared value names an entry |
 
 The last one is worth stating plainly because it is a whole class: **a bare
 number on the left of an `=` is a weight** (§3c says the same of fire tables),
@@ -212,8 +212,8 @@ weight under a declared command, but also where no command declares one:
 `random_events = { 100 = some.event }` (§3c) and a Vic3 gene block's
 `20 = empty` sit under no command, so nothing is claimed for them.
 
-**The rule:** load order decides which *definition of the same database* wins
-(D-30), nothing else. Every discriminator above is a structural fact — the slot,
+**The rule:** load order decides which *definition of the same database* wins,
+nothing else. Every discriminator above is a structural fact — the slot,
 the position's declared value, the file's folder row — so none of them is a list
 of names that a game update can invalidate.
 
@@ -239,7 +239,7 @@ vanilla:
 
 A value is a loc key only when a declared source says the position holds one,
 and vanilla's own unresolved stems contradict that claim where they sit, so it
-never accuses there (spec §4.3 rule 3). `required-loc` is dropped (D-10).
+never accuses there. There is no `required-loc` check.
 
 **Quoting does not tell you anything.** The obvious guess — quoted means display
 text, bare means a key reference — is wrong. Of quoted values of loc-key
@@ -279,12 +279,12 @@ words will miss these.
 
 | Form | Example | Where it appears |
 |---|---|---|
-| Prefixed word | `culture:english`, `title:k_x` | everywhere; a reference where its prefix is a declared link, which names a database by D-15 (`Schema.Named`) |
+| Prefixed word | `culture:english`, `title:k_x` | everywhere; a reference where its prefix is a declared link, whose prefix names a database (`Schema.Prefixes`) |
 | Dotted chain | `character.culture`, `title:h_china.holder` | scope walks |
 | Field RHS | `has_game_rule = suf_quieter` | **not a prefixed word** — a reference only where the position's declared value names a database |
 | Keyword pair | `scripted_effect foo = { }` | inline scripted entries, GUI `type`/`template` |
 | Saved scope | `save_scope_as = x` then `scope:x` | a definition in the `scope` database, made by the command that saves it (`game.NameCommands`) |
-| Script param | `$SKILL$` inside a `scripted_*` body | a definition in the `parameter` database, named `<entry>:<NAME>` (D-31) |
+| Script param | `$SKILL$` inside a `scripted_*` body | a definition in the `parameter` database, named `<entry>:<NAME>` |
 
 ---
 
@@ -383,7 +383,7 @@ constantly:
 An EU5 country tag such as `BYZ` is at once a `countries`, a `coat_of_arms`, a
 `flag_definitions` and a `customizable_localization` key. So a reference is never
 resolved by guessing which database a name belongs to: the position says (the
-slot decides, D-17, and a declared value names the database), and a name defined
+slot decides, and a declared value names the database), and a name defined
 in two databases is two definitions.
 
 ---
@@ -448,7 +448,7 @@ this" and "what can go here" from the same walk.
 Measured on vanilla, where the keys and the script that cites them ship from the
 same build, many localization keys are no definition's name and no script's
 citation: they are derived from **another key** or from a family pattern. The
-engine reports no orphaned keys (D-33): a key nothing cites is not evidence.
+engine reports no orphaned keys: a key nothing cites is not evidence.
 
 The largest families no definition's name derives, as measured 2026-09:
 
@@ -484,10 +484,12 @@ rules keep that from collapsing back into one loose predicate:
 
 1. **What a word is stays strict.** Vanilla evidence feeds completion and hover,
    where the worst case is a suggestion that does not belong, and it decides no
-   type, scope or block kind and accuses of nothing (spec §4.2, §4.3). Only a
-   declared source says what a word is.
+   scope or block kind and accuses of nothing. Where no source types a position's
+   value, the words vanilla writes there give it one (all names of one database,
+   or all loc keys): it hovers, completes and navigates,
+   and never accuses. Only a declared source says what a command or a scope is.
 2. **Nothing permissive runs where a claim accuses.** A claim speaks through one
-   rule, `schema.Speaks`, and a misread doc position stays quiet (D-20).
+   rule, `schema.Speaks`, and a misread doc position stays quiet.
 
 Which positions hold a localization key is the neighbour to keep honest for the
 same reason: it changes hover and go-to-definition directly. Only a declared
@@ -521,7 +523,7 @@ one check that reports an *absence* — everything else fires on a positive
 contradiction of something the game declares. Positions are keyed by database and
 path (`activities/<entry>/max_guests`), so `event > option` and
 `accolade_names > option` are separate, and `missing-key` speaks only for a key a
-declared source calls required (spec §8). Any absence check starts from this
+declared source calls required. Any absence check starts from this
 number, measured again against the pathed positions.
 
 ## 14. A declaration keyword makes a definition file-local
@@ -565,7 +567,7 @@ verified by scanning the files directly, and the game keeps the last.
 
 Five formats, and every doc line goes through the one normalizer
 (`lang/schema/README.md`), so a format it does not recognise is prose that stays
-a comment and is listed as unread, not a file it skips.
+a comment, not a file it skips; the health strip counts none of it.
 
 | Shape | Game | Example |
 |---|---|---|
@@ -610,7 +612,7 @@ gap.
 Prose wears the same brackets — EU5's `<name of global variable list with the
 list of candidates in>`, Vic3's `<locator_name_1>` — so a bracketed word is a
 type only where the type table lists it (the phrase catalogue,
-`lang/schema/README.md`), and a placeholder names a database only by D-15.
+`lang/schema/README.md`), and a placeholder names a database only by its name (`Schema.Named`).
 
 ## 16. What declares an event's scope, and what only looks like it does
 
@@ -754,7 +756,7 @@ charter types use a documented value; this one does not, and the game ships it,
 so the script is right and the doc is stale.
 
 That is one finding in one file, and it is the reason a declared word list is
-contradicted by vanilla's own values (spec §4.3 rule 3). A check for a value
+contradicted by vanilla's own values. A check for a value
 outside a declared set would be correct — a value outside the set the game
 states — and the set is wrong. Nothing in the install says which of the two to
 believe.

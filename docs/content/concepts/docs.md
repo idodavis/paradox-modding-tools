@@ -11,7 +11,7 @@ People say “docs” for three different things. PMT keeps them separate on pur
 | What | In PMT | Where it comes from | What it is |
 |------|--------|---------------------|------------|
 | Community wiki | **Guide** | Cached MediaWiki HTML | The pane beside the IDE. Search, contents, related pages. |
-| Console dumps | `script_docs` | User-data `logs/` (CK3) or `docs/` (Vic3/EU5) | Optional overlay. In-game `script_docs` / `dump_data_types`. The health strip counts the effects the dumps declare, shows **No script_docs** when none were read, and **N unexplained** when the learned schema and the dumps disagree (click either for the guide). |
+| Console dumps | `script_docs` | User-data `logs/` (CK3) or `docs/` (Vic3/EU5) | Optional overlay. In-game `script_docs` / `dump_data_types`. The health strip shows whose dumps were read (yours, PMT's, or **No script_docs** when none were) and opens the guide to writing them when you click it. |
 | Install prose | game info | `_*.info`, readmes, `*.md` **inside the game install** | Read for the hover's description of a field. |
 
 ## Guide (wiki)
@@ -27,7 +27,7 @@ From the game’s debug console (`~` with `-debug_mode`):
 - CK3: writes under Documents `Crusader Kings III/logs/`
 - Vic3 / EU5: Documents `<Game>/docs/` (Vic3 also `DumpDataTypes`; EU5 `dump_data_types` under `logs/data_types`)
 
-Dumps are optional: definitions, references, conflicts and localization work without them. Dumps add each effect's and trigger's description, its usage (the signature help) and the scopes it runs in and hands on, so scope-aware completion, typed hover and scope diagnostics need them. If the health strip shows **No script_docs**, run `script_docs` in-game once, then Rescan.
+Dumps are optional: definitions, references, conflicts and localization work without them. Dumps add each effect's and trigger's description, its usage (the signature help) and the scopes it runs in and hands on, so scope-aware completion, typed hover and scope diagnostics need them. If the health strip shows **No script_docs**, run `script_docs` in-game once; PMT reads the files when the workspace next opens.
 
 ## Install `_*.info`
 

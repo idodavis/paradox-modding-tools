@@ -14,6 +14,7 @@ import (
 	"github.com/yuin/goldmark/ast"
 	gmtext "github.com/yuin/goldmark/text"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/jomini"
 )
 
@@ -130,11 +131,11 @@ var phrases = []struct {
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:triggers?)(?:\s*\)|"?$)`), false,
 		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Block, BlockTriggers, from)
+			Set(&found.Block, game.BlockTriggers, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:effects?)(?:\s*\)|"?$)`), false,
 		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Block, BlockEffects, from)
+			Set(&found.Block, game.BlockEffects, from)
 		}},
 	// "path/to/file": one quoted word with a slash
 	{regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), false, func(_ *Schema, found *Key, _ []string, from Source) {
@@ -341,161 +342,150 @@ func normalize(text string, markdown, usage bool) string {
 	return out.String()
 }
 
-// template reads normalized text into the positions under at, each claim stated by from; command is
-// the documented command's name for a usage, "" for a doc or wiki example (spec D-14).
-func (schema *Schema) template(text string, markdown bool, at *Key, from Source, command string) (prose []string) {
-	parsed := jomini.Parse(normalize(text, markdown, command != ""))
-	attached, loose := parsed.Attach()
-	lines, source := parsed.Lines(), strings.Split(parsed.Src, "\n")
+// doc is one normalized, parsed doc, wiki example or dump usage, read as one source. In a usage, an
+// argument written as a block placeholder runs in an unknown scope.
+type doc struct {
+	schema   *Schema
+	parsed   *jomini.Result
+	attached map[jomini.Statement][]jomini.Comment
+	from     Source
+	usage    bool
+}
 
-	// prose gives each source line once
-	told := map[int]bool{}
-	tell := func(low, high int) {
-		for line := lines.PositionAt(low).Line; line <= lines.PositionAt(high).Line; line++ {
-			if !told[line] {
-				told[line] = true
-				prose = append(prose, source[line])
-			}
-		}
+// failed is whether a statement holds a parse error none of its children holds: it is left out.
+func (doc doc) failed(statement jomini.Statement) bool {
+	span, children := statement.NodeRange(), []jomini.Statement(nil)
+	if block := jomini.ChildBlock(statement); block != nil {
+		children = block.Statements
 	}
+	return slices.ContainsFunc(doc.parsed.Errors, func(failure jomini.ParseError) bool {
+		start := failure.Range.Start
+		return start >= span.Start && start < span.End && !slices.ContainsFunc(children, func(child jomini.Statement) bool {
+			return start >= child.NodeRange().Start && start < child.NodeRange().End
+		})
+	})
+}
 
-	// catalogue reads one text through the phrase catalogue, saying whether a row read it
-	catalogue := func(found *Key, text string) (known bool) {
+// claims is a statement's claims: its value as written, then its comments, through the phrase
+// catalogue; the comment lines no row reads, headings aside, are its blurb.
+func (doc doc) claims(statement jomini.Statement) (found Key) {
+	catalogue := func(text string) (known bool) {
 		for _, phrase := range phrases {
 			if match := phrase.pattern.FindStringSubmatch(text); match != nil && (!phrase.alone || !known) {
 				known = true
 				if phrase.set != nil {
-					phrase.set(schema, found, match, from)
+					phrase.set(doc.schema, &found, match, doc.from)
 				}
 			}
 		}
 		return known
 	}
+	_, isAssign := statement.(*jomini.Assignment)
 
-	// claims reads a statement's value as written, then its comments, through the phrase catalogue;
-	// the comment lines no row reads, headings aside, are the blurb
-	claims := func(statement jomini.Statement, value jomini.Value) (found Key) {
-		var blurb []string
-		if scalar, isScalar := value.(*jomini.Scalar); isScalar {
-			written := parsed.Src[scalar.Range.Start:scalar.Range.End]
-			word := strings.TrimSuffix(strings.TrimPrefix(written, `"<`), `>"`)
-			placeholder := len(word)+4 == len(written)
-			switch {
-			case placeholder && !catalogue(&found, word):
-				// a placeholder no type row reads names a database by D-15
-				if named := schema.Named(word); named != "" {
-					Set(&found.Value, Value{Type: WordReference, Database: named}, from)
-				}
-			case !placeholder && !catalogue(&found, written) && scalar.Quoted && strings.ContainsAny(scalar.Text, " \t"):
-				blurb = append(blurb, scalar.Text)
+	// a placeholder no type row reads names a database (Named); a quoted text no row reads is prose
+	var blurb []string
+	if scalar, isScalar := jomini.ValueOf(statement).(*jomini.Scalar); isScalar {
+		written := doc.parsed.Src[scalar.Range.Start:scalar.Range.End]
+		word := strings.TrimSuffix(strings.TrimPrefix(written, `"<`), `>"`)
+		placeholder := len(word)+4 == len(written)
+		switch {
+		case placeholder && !catalogue(word):
+			if named := doc.schema.Named(word); named != "" {
+				Set(&found.Value, Value{Type: WordReference, Database: named}, doc.from)
 			}
+		case !placeholder && !catalogue(written) && scalar.Quoted && strings.ContainsAny(scalar.Text, " \t"):
+			blurb = append(blurb, scalar.Text)
 		}
-		for _, comment := range attached[statement] {
-			raw := parsed.Src[comment.Range.Start:comment.Range.End]
-			said := strings.TrimSpace(strings.TrimLeft(raw, "# \t"))
-			if !catalogue(&found, said) && said != "" && !strings.HasPrefix(strings.TrimLeft(raw[1:], " \t"), "#") {
-				blurb = append(blurb, said)
-			}
-		}
-		slices.Sort(found.Value.Value.Words)
-		found.Value.Value.Words = slices.Compact(found.Value.Value.Words)
-		if len(blurb) > 0 {
-			Set(&found.Blurb, strings.Join(blurb, " "), from)
-		}
-		return found
-	}
-
-	// in a doc, the one top-level block that is no declared command wraps the example entry;
-	// without exactly one, the top-level statements are the entry's fields
-	var blocks []jomini.Statement
-	for _, statement := range parsed.Root.Statements {
-		if assign, isAssign := statement.(*jomini.Assignment); isAssign && command == "" && jomini.BlockOf(assign.Value) != nil {
-			if example := schema.Commands[strings.ToLower(assign.Key.Text)]; example == nil || example.Kind&KindLink != 0 {
-				blocks = append(blocks, statement)
-			}
+		if isAssign && doc.usage && found.Block.From != SourceNone {
+			Set(&found.Scope, "", doc.from)
 		}
 	}
-	wrapper := jomini.Statement(nil)
-	if len(blocks) == 1 {
-		wrapper = blocks[0]
-	}
-
-	var walk func(statements []jomini.Statement, under *Key, top bool)
-	walk = func(statements []jomini.Statement, under *Key, top bool) {
-		for _, statement := range statements {
-			// a statement holding an error no child holds, a value outside any block, or a usage's top
-			// statement not named after its command is left out: its and its comments' lines are prose
-			span, children := statement.NodeRange(), []jomini.Statement(nil)
-			if block := jomini.ChildBlock(statement); block != nil {
-				children = block.Statements
-			}
-			failed := slices.ContainsFunc(parsed.Errors, func(failure jomini.ParseError) bool {
-				start := failure.Range.Start
-				return start >= span.Start && start < span.End && !slices.ContainsFunc(children,
-					func(child jomini.Statement) bool {
-						return start >= child.NodeRange().Start && start < child.NodeRange().End
-					})
-			})
-			assign, isAssign := statement.(*jomini.Assignment)
-			if failed || top && !isAssign || top && command != "" && !strings.EqualFold(assign.Key.Text, command) {
-				low, high := span.Start, span.End
-				for _, comment := range attached[statement] {
-					low, high = min(low, comment.Range.Start), max(high, comment.Range.End)
-				}
-				tell(low, high)
-				continue
-			}
-
-			// a list value states its claims for the position holding it, and reads its block there
-			value := jomini.Value(nil)
-			if isAssign {
-				value = assign.Value
-			} else if list, isList := statement.(*jomini.ValueStmt); isList {
-				value = list.Value
-			}
-			found, block := claims(statement, value), jomini.BlockOf(value)
-			state := func(position *Key) {
-				Set(&position.Value, found.Value.Value, found.Value.From)
-				Set(&position.Block, found.Block.Value, found.Block.From)
-				Set(&position.Scope, found.Scope.Value, found.Scope.From)
-				Set(&position.Required, found.Required.Value, found.Required.From)
-				Set(&position.Default, found.Default.Value, found.Default.From)
-				Set(&position.Blurb, found.Blurb.Value, found.Blurb.From)
-			}
-			if !isAssign {
-				state(under)
-				if block != nil {
-					walk(block.Statements, under, false)
-				}
-				continue
-			}
-
-			// the usage's statement and the example entry read at at; a usage's own argument is a field
-			// whatever else its name is (D-34); each other name of a/b/c where Slot reads it
-			for _, name := range strings.FieldsFunc(assign.Key.Text, func(char rune) bool {
-				return char == '/' || char == '|'
-			}) {
-				position := at
-				switch {
-				case top && strings.EqualFold(name, command), statement == wrapper:
-				case command != "" && under == at:
-					position = at.Below(name)
-				default:
-					position, _ = schema.Slot(under, name, true)
-				}
-				if position != nil {
-					state(position)
-				}
-				if block != nil {
-					walk(block.Statements, cmp.Or(position, under), false)
-				}
-			}
+	for _, comment := range doc.attached[statement] {
+		raw := doc.parsed.Src[comment.Range.Start:comment.Range.End]
+		said := strings.TrimSpace(strings.TrimLeft(raw, "# \t"))
+		if !catalogue(said) && said != "" && !strings.HasPrefix(strings.TrimLeft(raw[1:], " \t"), "#") {
+			blurb = append(blurb, said)
 		}
 	}
-	walk(parsed.Root.Statements, at, true)
-
-	for _, comment := range loose {
-		tell(comment.Range.Start, comment.Range.Start)
+	slices.Sort(found.Value.Value.Words)
+	found.Value.Value.Words = slices.Compact(found.Value.Value.Words)
+	if len(blurb) > 0 {
+		Set(&found.Blurb, strings.Join(blurb, " "), doc.from)
 	}
-	return prose
+	return found
+}
+
+// state writes a statement's claims at a position, which keeps the first declared source that
+// writes it.
+func (doc doc) state(position *Key, statement jomini.Statement) {
+	found := doc.claims(statement)
+	position.Written = cmp.Or(position.Written, doc.from)
+	Set(&position.Value, found.Value.Value, found.Value.From)
+	Set(&position.Block, found.Block.Value, found.Block.From)
+	Set(&position.Scope, found.Scope.Value, found.Scope.From)
+	Set(&position.Required, found.Required.Value, found.Required.From)
+	Set(&position.Default, found.Default.Value, found.Default.From)
+	Set(&position.Blurb, found.Blurb.Value, found.Blurb.From)
+}
+
+// join reads a doc or wiki example into a database's tree. A key at a position vanilla writes gives
+// it its claims; a list word's go to the position holding it. A key vanilla writes nowhere below
+// where it stands (an example entry's name) is transparent: its block is read in its place, and at
+// the top its claims are the entry's. A doc never makes a position.
+func (schema *Schema) join(parsed *jomini.Result, database *Database, from Source) {
+	attached, _ := parsed.Attach()
+	doc, seen := doc{schema, parsed, attached, from, false}, map[*Key]map[string]bool{}
+	var gather func(names map[string]bool, key *Key)
+	gather = func(names map[string]bool, key *Key) {
+		for name, child := range key.Keys {
+			names[name] = names[name] || child.Seen.In > 0
+			gather(names, child)
+		}
+	}
+	reader := Reader{Names: alternatives, Visit: func(step *Step) bool {
+		_, isAssign := step.Statement.(*jomini.Assignment)
+		if under := step.Place.Key; under != nil && seen[under] == nil {
+			seen[under] = map[string]bool{}
+			gather(seen[under], under)
+		}
+		switch {
+		case doc.failed(step.Statement):
+			return false
+		case isAssign && step.Command == nil && !seen[step.Place.Key][collapse(step.Name)]:
+			if step.Inner = step.Place; step.Holder == nil {
+				doc.state(step.Place.Key, step.Statement)
+			}
+		case step.Key != nil && step.Command == nil && step.Key.Seen.In > 0:
+			doc.state(step.Key, step.Statement)
+		}
+		return true
+	}}
+	schema.Read(reader, nil, parsed.Root.Statements, schema.Start(database))
+}
+
+// usage reads a dump usage into a command's arguments. The statement named written (the command's
+// own name, or a sibling command's the usage is written under) gives the command's own claims; each
+// key in its block is an argument whatever else its name is; each block below is read by the walker.
+func (schema *Schema) usage(parsed *jomini.Result, command *Command, written string) {
+	attached, _ := parsed.Attach()
+	doc := doc{schema, parsed, attached, SourceDumps, true}
+	top := &Key{Keys: map[string]*Key{collapse(written): command.Args}}
+	reader := Reader{Create: true, Names: alternatives, Visit: func(step *Step) bool {
+		switch {
+		case doc.failed(step.Statement), step.Holder == nil && step.Key != command.Args:
+			return false
+		case step.Key == command.Args:
+			step.Inner.Kind = game.BlockFields
+		}
+		if step.Key != nil && step.Command == nil {
+			doc.state(step.Key, step.Statement)
+		}
+		return true
+	}}
+	schema.Read(reader, nil, parsed.Root.Statements, Place{Key: top, Kind: game.BlockFields, InEntry: true})
+}
+
+// alternatives is a docs key's names: a/b/c and a|b|c name alternatives.
+func alternatives(key string) []string {
+	return strings.FieldsFunc(key, func(char rune) bool { return char == '/' || char == '|' })
 }

@@ -14,6 +14,8 @@ import (
 	"time"
 	"unicode"
 
+	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/source"
 )
 
@@ -71,7 +73,7 @@ var dumpLabels = []struct {
 		entry:  regexp.MustCompile(`(?m)^(?:(?:-{20}\n\n|### )(\S+)(?: - |$)|(Event Targets Saved from Code):$)`),
 		labels: map[string]string{
 			"Input Scopes": "Command.Scopes", "Output Scopes": "Command.Out", "Requires Data": "",
-			"Global Link": "Command.Global", "Wild Card": "",
+			"Global Link": "Command.Global", "Wild Card": "Command.Wild",
 		},
 	},
 	{
@@ -154,8 +156,9 @@ func (schema *Schema) readDumps(files []source.File) (written time.Time) {
 		}
 	}
 
-	kinds := map[string]Kinds{"effects.log": KindEffect, "triggers.log": KindTrigger, "event_targets.log": KindLink}
-	usages := map[string][]string{}
+	kinds := map[string]game.Kinds{"effects.log": game.KindEffect, "triggers.log": game.KindTrigger, "event_targets.log": game.KindLink}
+	ranked := map[string]int{}
+	usages, texts := map[string][]string{}, map[string]string{}
 
 	// a scope list names scopes; none and all name no scope
 	scopes := func(list string) (named []string) {
@@ -248,7 +251,7 @@ func (schema *Schema) readDumps(files []source.File) (written time.Time) {
 					}
 
 					// a name written twice is one command: it runs where either reading runs, and a reading
-					// with no scope runs anywhere. Names are lower-case: script writes AND for and (D-26)
+					// with no scope runs anywhere. Names are lower-case: script writes AND for and
 					entryName = strings.ToLower(entryName)
 					command, named := schema.Commands[entryName], scopes(fields["Command.Scopes"])
 					switch {
@@ -260,10 +263,21 @@ func (schema *Schema) readDumps(files []source.File) (written time.Time) {
 					case len(command.Scopes) > 0:
 						command.Scopes = slices.Compact(slices.Sorted(slices.Values(append(command.Scopes, named...))))
 					}
+					// its blurb is its trigger or effect reading's, else a plain link's, else a global link's
+					reading := 2
+					switch {
+					case kinds[fileName] != game.KindLink:
+						reading = 0
+					case fields["Command.Global"] != "yes":
+						reading = 1
+					}
+					if best, seen := ranked[entryName]; blurb != "" && (!seen || reading < best) {
+						command.Blurb, ranked[entryName] = blurb, reading
+					}
 					command.Kind |= kinds[fileName]
 					command.Out = cmp.Or(command.Out, fields["Command.Out"])
-					command.Blurb = cmp.Or(command.Blurb, blurb)
 					command.Global = command.Global || fields["Command.Global"] == "yes"
+					command.Wild = command.Wild || fields["Command.Wild"] == "yes"
 
 					// a Traits value says what the command's own value is; comparison operators say no type
 					claim, traits := Value{}, fields["Command.Args.Value"]
@@ -277,7 +291,7 @@ func (schema *Schema) readDumps(files []source.File) (written time.Time) {
 						claim.Type = WordScope
 					case strings.HasPrefix(traits, "class C") && strings.HasSuffix(traits, "Database key"):
 						// class CXDatabase key is read as the usage `command = <x>`, X in snake_case (TenetType
-						// → tenet_type): x names a database by D-15 (D-23)
+						// → tenet_type), x naming a database (Named)
 						var word []rune
 						for i, char := range strings.TrimSuffix(strings.TrimPrefix(traits, "class C"), "Database key") {
 							if i > 0 && unicode.IsUpper(char) {
@@ -285,7 +299,8 @@ func (schema *Schema) readDumps(files []source.File) (written time.Time) {
 							}
 							word = append(word, unicode.ToLower(char))
 						}
-						schema.template(entryName+" = <"+string(word)+">", false, command.Args, SourceDumps, entryName)
+						parsed := jomini.Parse(normalize(entryName+" = <"+string(word)+">", false, true))
+						schema.usage(&parsed, command, entryName)
 					case strings.Contains(traits, ", "):
 						list := traits
 						if _, after, prefixed := strings.Cut(traits, ": "); prefixed {
@@ -303,6 +318,7 @@ func (schema *Schema) readDumps(files []source.File) (written time.Time) {
 					if strings.TrimSpace(usage) != "" {
 						usages[entryName] = append(usages[entryName], usage)
 					}
+					texts[entryName] += strings.Join(lines, "\n") + "\n"
 
 				case "Modifier":
 					// a section heading (--- name ---) is no modifier
@@ -326,7 +342,7 @@ func (schema *Schema) readDumps(files []source.File) (written time.Time) {
 				case "DataType":
 					owner, member := group(1), group(2)
 					if member == "" && fields["DataType.Functions"] != "Type" {
-						owner, member = "Global", owner
+						owner, member = game.GlobalType, owner
 					}
 					dataType := schema.DataTypes[owner]
 					dataType.Name = owner
@@ -345,10 +361,68 @@ func (schema *Schema) readDumps(files []source.File) (written time.Time) {
 		}
 	}
 
-	// a usage is read once every command is declared, so a command it names reads as that command
-	for _, name := range slices.Sorted(maps.Keys(usages)) {
+	// a usage is read once every command is declared, so a command it names reads as that command:
+	// its statement named after the command, else (none so named anywhere) its first top-level
+	// statement when that is a block written under another declared command's name
+	placeholder := regexp.MustCompile(game.UsagePlaceholder)
+	for _, name := range slices.Sorted(maps.Keys(schema.Commands)) {
+		command, text, blocks, plain := schema.Commands[name], texts[name], 0, 0
 		for _, usage := range usages[name] {
-			schema.template(usage, false, schema.Commands[name].Args, SourceDumps, name)
+			parsed, usageName := jomini.Parse(normalize(usage, false, true)), ""
+			jomini.Walk(parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
+				if assign, isAssign := statement.(*jomini.Assignment); isAssign && strings.EqualFold(assign.Key.Text, name) {
+					usageName = assign.Key.Text
+				}
+				return usageName == ""
+			})
+			if len(parsed.Root.Statements) > 0 && usageName == "" {
+				if first, isAssign := parsed.Root.Statements[0].(*jomini.Assignment); isAssign && jomini.BlockOf(first.Value) != nil {
+					if sibling := schema.Commands[strings.ToLower(first.Key.Text)]; sibling != nil && sibling.Kind&(game.KindEffect|game.KindTrigger) != 0 {
+						usageName = first.Key.Text
+					}
+				}
+			}
+			usageName = cmp.Or(usageName, name)
+			schema.usage(&parsed, command, usageName)
+
+			// a usage block is plain when every line, comments unread, is key = value with no placeholder
+			raw := jomini.Parse(usage)
+			for _, statement := range raw.Root.Statements {
+				assign, isAssign := statement.(*jomini.Assignment)
+				block := jomini.ChildBlock(statement)
+				if !isAssign || block == nil || !strings.EqualFold(assign.Key.Text, usageName) {
+					continue
+				}
+				end, lines := block.CloseBrace, true
+				if end < 0 {
+					end = len(usage)
+				}
+				for _, line := range strings.Split(usage[block.OpenBrace+1:end], "\n") {
+					line, _, _ = strings.Cut(line, "#")
+					lines = lines && !placeholder.MatchString(line) &&
+						(strings.Trim(line, "{} \t") == "" || islands.statement.MatchString(strings.TrimSpace(line)))
+				}
+				blocks++
+				if lines {
+					plain++
+				}
+			}
+		}
+
+		// "Iterate through" with no target walks a list or variable map: its block's scope is unknown
+		command.Lists = command.Out == "" && strings.Contains(command.Blurb, "Iterate through")
+
+		// a block placeholder in the dump text gives the block's kind when the usage reader gave none
+		// (any_child's usage does not parse)
+		for _, written := range game.Placeholders {
+			if strings.Contains(text, written.Text) {
+				Set(&command.Args.Block, written.Kind, SourceDumps)
+			}
+		}
+
+		// a usage whose blocks write no block placeholder takes arguments only
+		if blocks > 0 && plain == blocks {
+			Set(&command.Args.Block, game.BlockArguments, SourceDumps)
 		}
 	}
 	return written

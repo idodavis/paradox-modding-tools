@@ -1,16 +1,24 @@
 <script lang="ts">
 import type { Contest, Dangling, Dependency, Health, LocRow, Problem } from "@services/models";
 
-/** The editor's checks' cards, each the codes it lists; parse errors are every other code. */
+/** The editor's checks' cards, each the codes it lists; syntax errors are every other code. */
 export const PROBLEM_CARDS = {
-  scope: { label: "Wrong scope", codes: ["wrong-scope"] },
-  values: { label: "Values", codes: ["wrong-value-type", "wrong-declared-value", "missing-key"] },
-  references: { label: "References", codes: ["unresolved-ref", "unknown-event"] },
-  missingFiles: { label: "Missing files", codes: ["missing-file"] },
-  locFiles: { label: "Localization files", codes: ["missing-bom", "loc-header-mismatch", "wrong-localization-folder"] },
-  duplicates: { label: "Duplicates", codes: ["duplicate-definition"] },
-  parse: { label: "Parse errors", codes: [] },
-} as const satisfies Record<string, { label: string; codes: readonly string[] }>;
+  scope: { label: "Wrong scope", note: "commands used where they can't run", codes: ["wrong-scope"] },
+  values: {
+    label: "Values",
+    note: "values a key doesn't take; required keys missing",
+    codes: ["wrong-value-type", "wrong-declared-value", "missing-key"],
+  },
+  references: { label: "References", note: "names and events that don't exist", codes: ["unresolved-ref", "unknown-event"] },
+  missingFiles: { label: "Missing files", note: "file paths that don't exist", codes: ["missing-file"] },
+  locFiles: {
+    label: "Localization files",
+    note: "wrong header, folder or encoding",
+    codes: ["missing-bom", "loc-header-mismatch", "wrong-localization-folder"],
+  },
+  duplicates: { label: "Duplicates", note: "entries defined twice where the game keeps one", codes: ["duplicate-definition"] },
+  parse: { label: "Syntax errors", note: "script or loc that doesn't parse", codes: [] },
+} as const satisfies Record<string, { label: string; note: string; codes: readonly string[] }>;
 export type ProblemCard = keyof typeof PROBLEM_CARDS;
 
 export type Card = "contests" | "overrides" | "depends" | "dangling" | "loc" | ProblemCard;
@@ -210,8 +218,15 @@ const depends: TableColumn<Dependency>[] = [
     cell: ({ row }) => origin(row.original.from),
   },
   {
+    id: "relation",
+    header: head("Relation", String),
+    accessorFn: (row) => (row.affected ? "affected by" : "depends on"),
+    filterFn: among,
+    cell: ({ row }) => badge(row.original.affected ? "affected by" : "depends on", row.original.affected ? "warning" : "info"),
+  },
+  {
     accessorKey: "to",
-    header: head("Needs", store.originName),
+    header: head("Other mod", store.originName),
     filterFn: among,
     cell: ({ row }) => origin(row.original.to),
   },

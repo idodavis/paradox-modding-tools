@@ -131,7 +131,7 @@ func CodeActions(sess *session.Session, path string, line, col int) ([]CodeActio
 	if ref == nil || ref.Database != index.Localization || !loc.LooksLikeKey(ref.Name) {
 		return out, nil
 	}
-	if _, known := index.Resolve(sess.Schema(), sess.Indexes(), *ref); known {
+	if _, known := index.Resolve(sess.Install.Schema, sess.Indexes(), *ref); known {
 		return out, nil
 	}
 	target, at := file.locFile()

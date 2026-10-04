@@ -40,7 +40,7 @@ func workspace(t *testing.T) (*Session, string) {
 }
 
 func defs(sess *Session, name string) int {
-	return len(sess.Defs("events", name))
+	return len(index.Lookup(sess.Indexes(), "events", name))
 }
 
 func TestEdits(t *testing.T) {
@@ -49,7 +49,7 @@ func TestEdits(t *testing.T) {
 	fresh := filepath.Join(dir, "events", "m_fresh.txt")
 
 	// the editor's text replaces the disk's records, once per distinct text
-	sess.DidOpen(fresh, "namespace = f\nf.1 = { type = character_event }\n")
+	sess.DidChange(fresh, "namespace = f\nf.1 = { type = character_event }\n")
 	sess.DidChange(fresh, "namespace = f\nf.1 = { type = character_event }\n")
 	if defs(sess, "f.1") != 1 {
 		t.Errorf("a file opened with a definition and changed to the same text defines it once: %d", defs(sess, "f.1"))
@@ -59,10 +59,10 @@ func TestEdits(t *testing.T) {
 	if defs(sess, "f.1") != 0 || defs(sess, "f.2") != 1 {
 		t.Error("a change replaces the file's definitions")
 	}
-	if len(sess.Defs("events", "m.1")) != 1 {
-		t.Fatalf("the mod's file on disk is indexed to begin with: %+v", sess.Defs("events", "m.1"))
+	if len(index.Lookup(sess.Indexes(), "events", "m.1")) != 1 {
+		t.Fatalf("the mod's file on disk is indexed to begin with: %+v", index.Lookup(sess.Indexes(), "events", "m.1"))
 	}
-	sess.DidOpen(strings.ToUpper(events[:1])+events[1:], "namespace = m\nm.9 = { type = character_event }\n")
+	sess.DidChange(strings.ToUpper(events[:1])+events[1:], "namespace = m\nm.9 = { type = character_event }\n")
 	if runtime.GOOS == "windows" && (defs(sess, "m.1") != 0 || defs(sess, "m.9") != 1) {
 		t.Error("windows: a path opened under another spelling is the same file")
 	}
@@ -87,7 +87,7 @@ func TestEdits(t *testing.T) {
 	if defs(sess, "m.1") != 0 {
 		t.Error("a deleted file keeps no definitions")
 	}
-	if len(sess.Defs("traits", "brave")) != 2 {
+	if len(index.Lookup(sess.Indexes(), "traits", "brave")) != 2 {
 		t.Error("another file's records stay")
 	}
 }
@@ -129,7 +129,7 @@ func TestQueries(t *testing.T) {
 	if text, err := sess.Text(events); err != nil || !strings.Contains(text, "m.1") {
 		t.Errorf("the disk's text: %v", err)
 	}
-	sess.DidOpen(events, "namespace = m\nm.7 = {}\n")
+	sess.DidChange(events, "namespace = m\nm.7 = {}\n")
 	first, text, _ := sess.Parsed(events)
 	again, _, _ := sess.Parsed(events)
 	if text != "namespace = m\nm.7 = {}\n" || first != again {
@@ -146,7 +146,7 @@ func TestQueries(t *testing.T) {
 	}{
 		{"a mod's file", events, "mod", "events/m_events.txt", true},
 		{"a mod's file nothing has walked", filepath.Join(dir, "common", "traits", "new.txt"), "mod", "common/traits/new.txt", true},
-		{"an install file", installFile.Path, "vanilla", installFile.Rel, sess.Schema().DatabaseAt(installFile.Rel) != nil},
+		{"an install file", installFile.Path, "vanilla", installFile.Rel, sess.Install.Schema.DatabaseAt(installFile.Rel) != nil},
 		{"a path under no root", filepath.Join(t.TempDir(), "x.txt"), "", "", false},
 	} {
 		place := sess.Where(testCase.path)
@@ -188,7 +188,7 @@ func TestLockContract(t *testing.T) {
 			defer wg.Done()
 			sess.RLock()
 			defer sess.RUnlock()
-			sess.Defs("events", "m.1")
+			index.Lookup(sess.Indexes(), "events", "m.1")
 			sess.Loc("v.1.t", "")
 			sess.Where(events)
 			sess.Parsed(events)

@@ -111,9 +111,9 @@ Each Go package keeps its tests in one file, `<pkg>_test.go`.
 | `task test` | The fast tests (`go test -short -timeout 60s ./...` in `services/`) |
 | `task test:race` | The same under the race detector; what CI runs. It works on Windows (`CGO_ENABLED=0`) |
 | `task check` | The frontend typecheck, `.vue` files included (`npm run check` in `frontend/`) |
-| `task test:gate` | The real-install tier: the source, schema, learner, index and vanilla-diagnostics gates over CK3, Victoria 3 and EU5. Set `PMT_TEST_INSTALL_CK3`, `PMT_TEST_INSTALL_VIC3` and `PMT_TEST_INSTALL_EU5` to each game's root folder (the one that holds `game/`); a game whose variable is unset is skipped |
+| `task test:gate` | The real-install tier: the source and vanilla-diagnostics gates over CK3, Victoria 3 and EU5. Set `PMT_TEST_INSTALL_CK3`, `PMT_TEST_INSTALL_VIC3` and `PMT_TEST_INSTALL_EU5` to each game's root folder (the one that holds `game/`); a game whose variable is unset is skipped |
 | `task test:full` | `test:gate`, then `check`: before a commit that touches the engine |
-| `task test:sweep` | The engine's scoreboard, not a gate: every mod in a game's Documents mod folder opened over its install, with the health report and hover answer rate printed. Needs `PMT_TEST_INSTALL_<GAME>` and `PMT_TEST_MODS_<GAME>`; `services/sweep_test.go` builds only with the `sweep` tag |
+| `task test:sweep` | The engine's scoreboard, not a gate: every mod in a game's Documents mod folder opened over its install, with the health report and hover answer rate printed. Needs `PMT_TEST_INSTALL_<GAME>` and `PMT_TEST_MODS_<GAME>`; it runs only when `PMT_TEST_SWEEP` is set, which the task does |
 
 ## Layout (high level)
 

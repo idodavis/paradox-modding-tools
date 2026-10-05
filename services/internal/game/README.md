@@ -15,7 +15,7 @@ in one row, never as a branch in a reader.
 
 | Table | Says | Read by |
 |---|---|---|
-| `Block` | the kinds of block: fields, triggers, effects, arguments, value, description, unknown | everything |
+| `Block` | the kinds of block: fields, triggers, effects, arguments, value, description, unknown, setup (a history or start block: its fields, then effects), widget (GUI) | everything |
 | `Blocks` (`BlockRule`) | per kind: the order a key's readings are tried (`Step`), the word its calls resolve by, the commands it holds | the walker, completion |
 | `Kinds`, `KindWords` | what a declared command is (effect, trigger, link) and the dumps' word for each | dumps, hover |
 | `Contents`, `ContentsOrder` | what a command's own block holds, first rule that fits | the walker |
@@ -26,20 +26,23 @@ in one row, never as a branch in a reader.
 | `ListIterators` | the prefixes a scripted list is iterated by, and their block kind | the walker, the index |
 | `ValueOperators` | a value block's operators, and whether each takes a number | the walker, completion |
 | `DynamicDescription` | the shape of a dynamic description (`first_valid`, `triggered_desc`, `desc`) | the walker |
-| `Bools`, `Colours`, `Placeholders`, `UsagePlaceholder`, `GlobalType` | how values, colours, dump placeholders and data calls are written | the readers, hover |
+| `Bools`, `Colours`, `GlobalType` | how yes/no, colours and data calls are written | the readers, hover |
+| `Placeholders`, `UsagePlaceholder`, `DumpWords` | the block placeholders' last words and their kinds, a usage's placeholder, the dumps' words the engine decides by (`Iterate through`, `none`/`all`) | the dump and doc readers |
 | `MisspelledFolders` | folder names the game never reads | diagnostics |
-| `EntryMode` | the words before a definition's name (`REPLACE:`, `INJECT:`) and what each does | the entry detector, `index.Winner` |
-| `FileTypes` | how `.txt`, `.asset`, `.font` and `.gui` files name entries | the entry detector |
-| `Layout` (`Folder`, `Nested`, `MapTable`) | per game: folder rows (naming, wrappers, history, scripted folders, references), entries nested in entries, the map table, entry modes, first-wins databases | the schema, the index |
+| `EntryMode`, `GameInfo.Mode` | the words before a definition's name (`REPLACE:`, `INJECT:`), what each does, and the split of one off a name | the entry detector, diagnostics, `index.Winner` |
+| `FileTypes` | how `.txt`, `.asset`, `.font` and `.gui` files name entries, the block kind their entries hold (`Body`) and the keys that name another entry (`Refs`: `using`, `layer`) | the entry detector, the index |
+| `Layout` (`Folder`, `Nested`, `MapTable`) | per game: folder rows (naming, wrappers, history and the database it sets up (`Of`), dated blocks (`Dated`), scripted folders, references), entries nested in entries (a nested path's history database, `Nested.Of`), the map table, entry modes, first-wins databases | the schema, the index |
 
 **How a key reads.** In a block of kind K, the walker tries `Blocks[K].Keys` in order; the first step
 that fits decides: a vanilla scripted entry's name is a call, then a declared position, a declared
-command, a value operator, a link, a position vanilla writes, the position itself, else a call. To
-change how keys read in a kind of block, reorder or edit that row.
+command, a value operator, a link, a position vanilla writes, the position itself, else a call. An
+arguments block reads no links; a GUI widget's keys are positions only. To change how keys read in
+a kind of block, reorder or edit that row.
 
 **Layouts.** A folder row holds for its path and everything below it; a path takes the longest row at
 or above it. `sharedFolders` and `sharedNested` are the rows every game has; each game's `layouts`
-entry adds its own over them. A database is found in the install, one per script folder, so a folder
+entry adds its own over them. A database is found in the install, one per script folder (a `common/` subfolder joins its
+ancestor's), so a folder
 needs a row only to say what its files cannot: how entries are named, what wraps them, what calls
 them.
 

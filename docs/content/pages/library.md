@@ -28,4 +28,4 @@ Use this when a bad install pin or leftover cache is worse than setting workspac
 
 ## Switching workspaces
 
-The header dropdown switches workspace. Only one session is live — the previous harvest is dropped. Unsaved editor buffers follow the “remember tabs” setting.
+The header dropdown switches workspace. Only one workspace is live at a time; the previous one's session is closed. Unsaved editor buffers follow the “remember tabs” setting.

@@ -112,7 +112,7 @@ func TestLookupRouting(t *testing.T) {
 		{
 			name:    "ck3 gui",
 			game:    "ck3",
-			kind:    "gui_type",
+			kind:    "gui",
 			rel:     "gui/window.gui",
 			primary: "Interface",
 			pages: []Page{
@@ -126,7 +126,7 @@ func TestLookupRouting(t *testing.T) {
 		{
 			name:    "vic3 gui",
 			game:    "vic3",
-			kind:    "gui_type",
+			kind:    "gui",
 			rel:     "gui/window.gui",
 			primary: "GUI script",
 			pages: []Page{
@@ -138,7 +138,7 @@ func TestLookupRouting(t *testing.T) {
 		{
 			name:    "ck3 loc",
 			game:    "ck3",
-			kind:    "loc_key",
+			kind:    "yml",
 			rel:     "localization/english/foo.yml",
 			primary: "Localization",
 			pages: []Page{
@@ -400,7 +400,7 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 	}
 
 	patch := PatchByVersion("ck3", "1.16")
-	if patch == nil || !patch.HasModding || !strings.Contains(patch.ModdingHTML, "ai_war_chest") {
+	if patch == nil || !strings.Contains(patch.ModdingHTML, "ai_war_chest") {
 		t.Fatalf("patch modding: %#v", patch)
 	}
 	if strings.Contains(patch.ModdingHTML, "crash") {

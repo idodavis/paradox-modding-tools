@@ -53,7 +53,7 @@ Thumbnail: `thumbnail.png` in the mod folder (Workshop, ~1:1, under about 1MB).
 
 `events/` — `namespace` + `namespace.id`. Fired from on_actions, decisions, interactions, other events. Copy vanilla structure; do not invent `type` values. Typical loc: `id.t`, `id.desc`, option names.
 
-[Event Graph]({{< relref "/pages/event-graph" >}}) follows `trigger_event` and on_action links from the harvest.
+[Event Graph]({{< relref "/pages/event-graph" >}}) follows `trigger_event` and on_action links from the workspace's index.
 
 ## Debug
 

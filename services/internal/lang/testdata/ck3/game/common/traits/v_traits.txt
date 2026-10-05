@@ -1,6 +1,7 @@
 brave = {
 	category = personality
 	diplomacy = 0
+	icon = "gfx/interface/icons/traits/brave.dds"
 }
 craven = {
 	category = personality

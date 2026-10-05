@@ -1,6 +1,7 @@
 // definition.go is navigation: where the word under the cursor is defined, where a name is used,
 // and the definitions a file or the workspace holds. Every answer is the index's records as
 // locations, placed by the lines they keep; nothing is parsed but the open file.
+
 package lsp
 
 import (
@@ -34,14 +35,13 @@ func (file *file) target(offset int) *index.Ref {
 	return nil
 }
 
-// inFile is a name's definitions; for a name the walk makes (saved, a parameter), none replaces
-// another, so only those in this file where there are any.
+// inFile narrows a name no schema database holds (a saved scope, a parameter) to this file's
+// definitions, where it has any: none of them replaces another.
 func (file *file) inFile(defs []index.Def) []index.Def {
 	if len(defs) == 0 || file.sess.Install.Schema.Databases[defs[0].Database] != nil {
 		return defs
 	}
-	here, _, _ := file.sess.Located(file.path)
-	if local := slices.DeleteFunc(slices.Clone(defs), func(def index.Def) bool { return def.Path != here.Path }); len(local) > 0 {
+	if local := slices.DeleteFunc(slices.Clone(defs), func(def index.Def) bool { return def.Path != file.place.Path }); len(local) > 0 {
 		return local
 	}
 	return defs
@@ -108,20 +108,14 @@ func References(sess *session.Session, path string, line, col int) ([]Location, 
 	if ref.Called != "" {
 		databases = sch.Callees[ref.Called]
 	}
-	seen, out, calls := map[Location]bool{}, []Location(nil), index.LookupRefs(indexes, "", ref.Name)
+	seen, out := map[Location]bool{}, []Location(nil)
 	add := func(site Location) {
 		if !seen[site] {
 			seen[site], out = true, append(out, site)
 		}
 	}
 	for _, database := range databases {
-		refs := index.LookupRefs(indexes, database, ref.Name)
-		for _, call := range calls {
-			if slices.Contains(sch.Callees[call.Called], database) {
-				refs = append(refs, call)
-			}
-		}
-		for _, found := range refs {
+		for _, found := range index.Uses(sch, indexes, database, ref.Name) {
 			add(locate(sess, found.Path, Position{Line: int(found.Line), Character: int(found.Col)}))
 		}
 	}

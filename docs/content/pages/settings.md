@@ -19,7 +19,7 @@ Configure **this** workspace. Appearance is [Display]({{< relref "/pages/display
 
 ## Game
 
-Pick or add an install and pin a version (`latest` or a `launcher-settings.json` version). Changing install rebuilds language intelligence.
+Pick or add an install; its version is read from `launcher/launcher-settings.json`. Changing install rebuilds language intelligence.
 
 **Scripting documentation** shows where the game's `script_docs` output was read and how many effects, triggers and scope types it declares, with how to generate it. See [three kinds of docs]({{< relref "/concepts/docs" >}}).
 

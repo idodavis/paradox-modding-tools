@@ -12,7 +12,7 @@ import (
 
 var (
 	defNameRe = regexp.MustCompile(`^[\p{L}\p{Nd}_][\p{L}\p{Nd}_.-]*$`)
-	eventIDRe = regexp.MustCompile(`^[\p{L}\p{Nd}_-]+\.\d+$`)
+	eventIDRe = regexp.MustCompile(`^[\p{L}\p{Nd}_-]*[\p{L}_][\p{L}\p{Nd}_-]*\.\d+$`)
 )
 
 // topKeys returns the keys of a source's top-level Assignment statements.
@@ -178,9 +178,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestNameShapes(t *testing.T) {
-	// Real shapes from the three installs, plus the edges that decide the
-	// boundaries: empty, leading punctuation, trailing dot, spaces — and the
-	// non-ASCII identifiers the games and mods actually ship.
+	// real shapes from the three games, the boundary edges, and the non-ASCII names they ship
 	inputs := []string{
 		"", " ", ".", "-", "_", "a", "A", "0", "9",
 		"brave", "k_england", "00_traits", "birth.1", "birth.0001",

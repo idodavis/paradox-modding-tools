@@ -1,10 +1,9 @@
-// Package jomini is the game-agnostic Paradox/Jomini script language: syntax
-// tree and grammar shared by every game on the engine. It is a leaf — never
-// imports game — and all offsets are UTF-8 byte indices (the UTF-16 seam
-// lives only at the Monaco boundary in the frontend).
-//
-// parse.go is the error-tolerant recursive-descent parser: it never panics
-// and always returns a usable CST plus any recovered structural errors.
+// parse.go is the error-tolerant recursive-descent parser: it never panics and always returns a
+// usable CST plus any recovered structural errors.
+
+// Package jomini is the game-agnostic Paradox/Jomini script language: the syntax tree and grammar
+// every game on the engine shares. It is a leaf that never imports game, and every offset is a
+// UTF-8 byte index (UTF-16 is only the frontend's, at the Monaco boundary).
 package jomini
 
 import "strings"

@@ -131,9 +131,9 @@ tasks:
       findings and the hover answer rate are printed. It asserts nothing, so a
       count that moves is news and never a failure. Needs
       PMT_TEST_INSTALL_<GAME> and PMT_TEST_MODS_<GAME>, and takes minutes per
-      game; the probe build tag keeps it out of every other task.
+      game; PMT_TEST_SWEEP keeps it out of every other task.
     dir: services
     env:
       PMT_TEST_SWEEP: 1
     cmds:
-      - go test -tags sweep -count=1 -v -run TestSweep -timeout 60m .
+      - go test -count=1 -v -run TestSweep -timeout 60m .

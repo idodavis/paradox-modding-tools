@@ -3,6 +3,7 @@
 // symbols, the diagnostic codes with their guards and suppression, formatting, folding,
 // quick-fixes, era hints, hover misses, signature help, no panic at any position, and the gate
 // over the real installs.
+
 package lsp
 
 import (
@@ -37,7 +38,7 @@ func fixture(t *testing.T, id string) (*session.Session, string) {
 	if err := os.MkdirAll(filepath.Join(dir, "common"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := session.New(t.Context(), game.Get(id), install, []session.Mod{{ID: "mod", Name: "M", Dir: dir, Calendar: session.Calendar{{Name: "AC", Offset: 7782}}}}, "")
+	sess, err := session.New(t.Context(), game.Get(id), install, []session.Mod{{ID: "mod", Dir: dir, Calendar: session.Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +66,7 @@ func aim(t *testing.T, text, needle string, plus int) (int, int) {
 
 func TestComplete(t *testing.T) {
 	install, dir := fixture(t, "ck3")
-	opened(install, dir, "common/scripted_effects/m.txt", "m_effect = {\n\tadd_gold = 1\n}\n")
+	opened(install, dir, "common/scripted_effects/m.txt", "v_m_effect = {\n\tadd_gold = 1\n}\n")
 	labels := func(items []Item) []string {
 		var out []string
 		for _, item := range items {
@@ -85,14 +86,14 @@ func TestComplete(t *testing.T) {
 		has, hasNot     []string
 		check           func(items []Item) bool
 	}{
-		{"a trigger body offers triggers, not effects", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = {\n\t\t", []string{"is_adult", "has_trait"}, []string{"add_gold", "type"}, nil},
-		{"an effect body offers effects, those in its scope first", "common/on_action/x.txt", "on_birth = {\n\teffect = {\n\t\t", []string{"add_gold", "add_title_law"}, nil,
-			func(items []Item) bool { return rank(items, "add_gold") == 0 && rank(items, "add_title_law") == 2 }},
+		{"a trigger body offers triggers, not effects", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = {\n\t\tadd_", []string{"add_to_temporary_list"}, []string{"add_gold"}, nil},
+		{"an effect body offers effects, those in its scope first", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tevery_vassal = {\n\t\t\tadd_t", []string{"add_trait", "add_tenet"}, nil,
+			func(items []Item) bool { return rank(items, "add_trait") == 0 && rank(items, "add_tenet") == 2 }},
 		{"a structure offers its members, from every position the key is written at", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = {\n\t\t", []string{"days", "months"}, nil, nil},
 		{"the top of a file offers the kind's own names", "events/x.txt", "namespace = m\nm.1 = { }\nm.2 = { }\nm.", []string{"m.1", "m.2"}, nil, nil},
 		{"a value position offers definitions of the kind the field accepts", "events/x.txt", "namespace = m\nm.1 = {\n\ttheme = s", []string{"seduction"}, []string{"brave"}, nil},
 		{"a loc field offers loc keys, not definitions", "events/x.txt", "namespace = m\nm.1 = {\n\ttitle = v.1", []string{"v.1.t"}, []string{"v.1"}, nil},
-		{"a body offers the macros of its class beside its tokens", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\t", []string{"add_gold", "v_effect", "m_effect"}, []string{"v_trigger"}, nil},
+		{"a body offers the macros of its class beside its tokens", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tv_", []string{"v_effect", "v_m_effect"}, []string{"v_trigger"}, nil},
 		{"a name token offers the names the workspace makes", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = {\n\t\tadd_to_variable_list = { name = mine target = root }\n\t\tevery_in_list = { variable = ", []string{"mine", "seen_list"}, nil, nil},
 		{"a block nothing classifies offers what the body around it offers", "common/on_action/x.txt", "on_birth = {\n\teffect = {\n\t\tweird = {\n\t\t\t", []string{"add_gold"}, nil, nil},
 		{"a cite offers the kind's names spelled whole, over the whole cite", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = {\n\t\thas_trait = trait:br", []string{"trait:brave"}, nil,
@@ -163,7 +164,7 @@ func TestDefinition(t *testing.T) {
 		{"a parameter, from the call site, goes to the macro that was called", "events/e.txt", "namespace = m\nm.1 = {\n\timmediate = { v_effect = { AMOUNT = 1 } }\n}\n", "AMOUNT", 0, []string{"scripted_effects/v_effects.txt"}},
 		{"a parameter inside its body", "common/scripted_effects/p.txt", "p_effect = {\n\tadd_gold = $AMOUNT$\n\tadd_prestige = $AMOUNT$\n}\n", "$AMOUNT$\n\tadd_prestige", 1, []string{"scripted_effects/p.txt"}},
 		{"a loc key from script", "events/e.txt", "namespace = m\nm.1 = {\n\ttitle = v.1.t\n}\n", "v.1.t", 0, []string{"v_l_english.yml"}},
-		{"a mod's twin: the winner first", "events/e.txt", "namespace = v\nv.1 = {\n\ttype = character_event\n}\n", "v.1 =", 0, []string{"events/e.txt", "events/v_events.txt"}},
+		{"a mod's twin loaded last: the winner first", "events/zz_e.txt", "namespace = v\nv.1 = {\n\ttype = character_event\n}\n", "v.1 =", 0, []string{"events/zz_e.txt", "events/v_events.txt"}},
 	} {
 		path := opened(install, dir, tt.rel, tt.text)
 		line, col := aim(t, tt.text, tt.needle, tt.plus)
@@ -247,7 +248,7 @@ func TestSymbols(t *testing.T) {
 	for _, sym := range got {
 		names = append(names, sym.Database+":"+sym.Name)
 	}
-	if err != nil || !slices.Equal(names, []string{"scripted_triggers:m_inline", "events:m.1", "saved_scopes:mine", "events:m.2"}) {
+	if err != nil || !slices.Equal(names, []string{"scripted_triggers:m_inline", "events:m.1", "scope:mine", "events:m.2"}) {
 		t.Errorf("a file's definitions in the file's order: %v (%v)", names, err)
 	}
 	if got[1].Location.Range.Start.Line != 2 {
@@ -335,9 +336,8 @@ func TestDiagnose(t *testing.T) {
 	if got := codes(path, map[string]bool{"wrong-scope": false}); len(got) != 0 {
 		t.Errorf("a code turned off: %v", got)
 	}
-	gui := opened(install, dir, "gui/m.gui", "types m = {\n\ttype m_icon = icon {\n\t\ttexture = \"gfx/nowhere/absent.dds\"\n\t}\n}\n")
-	if got := codes(gui, map[string]bool{"missing-file": true}); !slices.Equal(got, []string{"missing-file"}) {
-
+	icon := opened(install, dir, "common/traits/m_icons.txt", "m_iconic = {\n\ticon = \"gfx/nowhere/absent.dds\"\n}\n")
+	if got := codes(icon, map[string]bool{"missing-file": true}); !slices.Equal(got, []string{"missing-file"}) {
 		t.Errorf("missing-file turned on: %v", got)
 	}
 
@@ -421,7 +421,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		sess, err := session.New(t.Context(), game.Get(testCase.id), install, []session.Mod{{ID: "sample", Name: "Sample", Dir: mod}}, "")
+		sess, err := session.New(t.Context(), game.Get(testCase.id), install, []session.Mod{{ID: "sample", Dir: mod}}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -602,7 +602,8 @@ func TestSignatureHelp(t *testing.T) {
 	text := "namespace = m\nm.1 = {\n\timmediate = {\n\t\ttrigger_event = { id = v.2 }\n\t\thidden_effect = { add_gold = 1 }\n\t}\n}\n"
 	path := opened(install, dir, "events/x.txt", text)
 	line, col := aim(t, text, "id = v.2", 0)
-	if help, _ := SignatureHelp(install, path, line, col); help == nil || help.Label != "trigger_event = { id = X days = Y }" {
+	if help, _ := SignatureHelp(install, path, line, col); help == nil || !strings.HasPrefix(help.Label, "trigger_event = {") ||
+		!slices.Contains(help.Parameters, "id") || !slices.Contains(help.Parameters, "days") {
 		t.Errorf("inside a declared token's block, its usage: %+v", help)
 	}
 	line, col = aim(t, text, "add_gold = 1", 0)

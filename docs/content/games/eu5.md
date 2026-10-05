@@ -13,7 +13,7 @@ EU5 coverage in PMT is **partial**. Stage roots and entry modes are understood; 
 
 Install script is split under `game/`: `loading_screen`, `main_menu`, `in_game`. Local mods: `Documents/Paradox Interactive/Europa Universalis V/mod/<mod>/` — **the same three top folders**, no extra `game/` segment. Steam app `3450310`. `script_docs` writes to Documents `docs/`.
 
-If `launcher/launcher-settings.json` is missing, PMT’s detected version is empty and **Add install** defaults the pin to `latest`.
+If `launcher/launcher-settings.json` is missing, PMT reads the version from Steam's build id (shown as `build 24187685`), and empty when there is neither; the install is scanned and cached either way.
 
 ## Mod layout
 

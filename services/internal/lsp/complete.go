@@ -2,6 +2,7 @@
 // the keys the block's position holds and the commands, links and names its kind and scope allow;
 // at a value, the words its position declares or vanilla writes, or a database's names. Resolve
 // reads an item's place again for what its label names.
+
 package lsp
 
 import (
@@ -22,7 +23,8 @@ import (
 const maxComplete = 80
 
 // Item is one completion: its text, what it is, what may follow, and its rank (0 stated or in
-// scope, 1 vanilla writes it, 2 a name, a link or a command for another scope, 3 a loc key).
+// scope, 1 vanilla writes it, 2 a name, a link or a command for another scope, 3 a loc key; in a
+// data call 1 a function, 2 a type).
 type Item struct {
 	Label   string   `json:"label"`
 	Head    string   `json:"head"`
@@ -135,7 +137,7 @@ func (completer *completer) add(item Item, read reading) {
 	completer.items, completer.about[item.Label] = append(completer.items, item), read
 }
 
-// names offers a database's names and more, spelled after spelled (scope:), each a reference to it.
+// names offers a database's names and more, each prefixed with spelled (scope:).
 func (completer *completer) names(database, spelled string, rank int, more ...string) {
 	if database == "" {
 		return
@@ -172,12 +174,18 @@ func (completer *completer) keys(cursor spot) {
 			}
 		}
 	}
+	// a list's words are what its key takes (events = { v.1 }); a block nothing classifies offers
+	// what the body around it offers
+	completer.values(spot{chain: cursor.chain[:holder+1]})
 	inner := at.Inner
+	if inner.Key == nil && len(completer.items) == 0 && holder > 0 {
+		inner = cursor.chain[holder-1].Inner
+	}
 	if inner.Key == nil {
 		return
 	}
 
-	// the commands the block's kind allows, a value block's operators first
+	// a value block's operators; allowed is for the commands below
 	scope, called, allowed := inner.Scope, inner.Calls, game.Blocks[inner.Kind].Allows
 	if inner.InTrigger {
 		allowed &^= game.KindEffect
@@ -188,7 +196,7 @@ func (completer *completer) keys(cursor spot) {
 		}
 	}
 
-	// the position's keys, stated first, each read as the walker reads it; one left to calls is a call
+	// the position's keys, stated first, read as the walker reads them; one left to calls is a call
 	names, stated := keys(inner.Key)
 	for i, name := range names {
 		position := sch.Step(inner, nil, name, false).Key
@@ -202,9 +210,10 @@ func (completer *completer) keys(cursor spot) {
 		}
 		completer.add(item, read)
 	}
+	// the commands the block's kind allows, in scope first; a Wild Card link has no name to write
 	for _, name := range slices.Sorted(maps.Keys(sch.Commands)) {
 		command := sch.Commands[name]
-		if allowed == 0 || command.Kind&(allowed|game.KindLink) == 0 || command.Wild { // a Wild Card link has no name to write
+		if allowed == 0 || command.Kind&(allowed|game.KindLink) == 0 || command.Wild {
 			continue
 		}
 		item := Item{Label: name, Head: kinds(command), Takes: takes(command.Args), Rank: 2,

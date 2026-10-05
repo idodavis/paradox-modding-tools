@@ -33,7 +33,7 @@ export interface GameInfo {
 }
 
 /**
- * GameList is the Wails payload for ListGames (consts are not exported).
+ * GameList is the Wails payload for ListGames (bindings carry no Go constants).
  */
 export interface GameList {
     "originVanilla": string;

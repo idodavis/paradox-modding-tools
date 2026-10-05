@@ -5,6 +5,7 @@
 package schema
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
@@ -14,15 +15,17 @@ import (
 
 // Place is where statements are read.
 type Place struct {
-	Key       *Key       // the position the block reads at; nil when none is known
-	Kind      game.Block // what the block holds
-	Calls     string     // the CalledIn word a call in the block resolves by
-	Scope     string     // the scope the block runs in; "" unknown
-	InTrigger bool       // inside a trigger
-	InEntry   bool       // inside a database entry
-	Command   string     // the command whose own block this is, lower-case
-	Call      string     // the scripted entry this block calls, whose parameters its keys pass
-	Bound     *Key       // the position a dynamic description in the block belongs to
+	Key       *Key            // the position the block reads at; nil when none is known
+	Kind      game.Block      // what the block holds
+	Calls     string          // the CalledIn word a call in the block resolves by
+	Scope     string          // the scope the block runs in; "" unknown
+	InTrigger bool            // inside a trigger
+	InEntry   bool            // inside a database entry
+	Command   string          // the command whose own block this is, lower-case
+	Call      string          // the scripted entry this block calls, whose parameters its keys pass
+	Bound     *Key            // the position a dynamic description in the block belongs to
+	Dated     bool            // an entry's own block whose number keys are dates (Folder.Dated)
+	Fields    map[string]bool // in an entry's own block: the key names its database's docs write
 }
 
 // Step is one statement as the walker reads it.
@@ -53,10 +56,10 @@ type Reader struct {
 
 // Read reads a block's statements (holder nil: a file's top) at a place.
 func (schema *Schema) Read(reader Reader, holder *jomini.Block, statements []jomini.Statement, at Place) {
-	for _, statement := range statements {
+	for index, statement := range statements {
 		assign, isAssign := statement.(*jomini.Assignment)
 
-		// an entry starts at its database; a key inside an entry is read once per name; a list word,
+		// an entry starts at its database; a key inside an entry is read once per name; a bare value,
 		// or anything outside an entry, stays at the place's position
 		var steps []Step
 		var database *Database
@@ -65,14 +68,25 @@ func (schema *Schema) Read(reader Reader, holder *jomini.Block, statements []jom
 		}
 		switch {
 		case database != nil:
-			steps = []Step{{Statement: statement, Key: database.Entry, Place: at, Inner: schema.Start(database)}}
+			inner := schema.Start(database)
+			if isAssign && database.Naming.OnActions && schema.OnActions[assign.Key.Text].Scope != "" {
+				inner.Scope = schema.OnActions[assign.Key.Text].Scope // the scope the dumps declare for it
+			}
+			steps = []Step{{Statement: statement, Key: database.Entry, Place: at, Inner: inner}}
 		case isAssign && at.InEntry:
-			names := []string{assign.Key.Text}
+			names, here := []string{assign.Key.Text}, at
 			if reader.Names != nil {
 				names = reader.Names(assign.Key.Text)
 			}
+			if index > 0 { // a calling word written before a name calls it by that word (blockoverride "x" { })
+				if before, isWord := statements[index-1].(*jomini.ValueStmt); isWord {
+					if word, isScalar := before.Value.(*jomini.Scalar); isScalar && len(schema.Callees[word.Text]) > 0 {
+						here.Calls = word.Text
+					}
+				}
+			}
 			for _, name := range names {
-				steps = append(steps, schema.Step(at, statement, name, reader.Create))
+				steps = append(steps, schema.Step(here, statement, name, reader.Create))
 			}
 		default:
 			steps = []Step{{Statement: statement, Key: at.Key, Place: at, Inner: at}}
@@ -95,7 +109,7 @@ func (schema *Schema) Start(database *Database) Place {
 		scope = ""
 	}
 	return Place{Key: database.Entry, Kind: kind, Calls: game.Blocks[kind].Calls, Scope: scope,
-		InTrigger: kind == game.BlockTriggers, InEntry: true}
+		InTrigger: kind == game.BlockTriggers, InEntry: true, Dated: database.Naming.Dated, Fields: database.Fields}
 }
 
 // Step reads one key written at a place: what it is by the block's steps (or the dynamic
@@ -115,6 +129,12 @@ func (schema *Schema) Step(at Place, statement jomini.Statement, name string, cr
 		value = assign.Value
 	}
 
+	// a date key re-opens the block it stands in: the same keys again, at that date (history)
+	if literal := jomini.Literal(name); literal == jomini.LitDate || at.Dated && literal == jomini.LitNumber {
+		step.Inner = at
+		return step
+	}
+
 	// a key holding a parameter ($ACTOR$, $TARGET$.liege) or written as a data call (name(…)) is a
 	// scope written in place, no position and no call: its block reads where it stands, scope unknown
 	command := schema.Commands[lower]
@@ -123,7 +143,8 @@ func (schema *Schema) Step(at Place, statement jomini.Statement, name string, cr
 		step.Inner, step.Inner.Scope, step.Inner.Command, step.Inner.Call = at, "", "", ""
 		return step
 	}
-	known := schema.Macros[name] != nil && command == nil
+	macro, called := schema.Macros[at.Calls+":"+name] // a scripted entry the block's calling word calls
+	known := called && command == nil
 	if command != nil && command.Kind&game.KindLink != 0 {
 		command = nil
 	}
@@ -150,9 +171,12 @@ func (schema *Schema) Step(at Place, statement jomini.Statement, name string, cr
 			step.Rule = rule
 			switch {
 			case rule == game.StepKnownCall && known:
-				step.Key, step.Calls = schema.Macros[name], at.Calls // its block holds the entry's parameters
+				// its block holds the entry's parameters, or reads at its database's entry
+				step.Key, step.Calls = cmp.Or(macro.Parameters, schema.Databases[macro.Database].Entry), at.Calls
 			case rule == game.StepDeclared && position != nil && position.Written != SourceNone:
 				step.Key = position
+			case rule == game.StepDocumented && at.Fields[collapse(name)]:
+				step.Key = made()
 			case rule == game.StepCommand && command != nil:
 				step.Key, step.Command = command.Args, command
 			case rule == game.StepOperator && operator:
@@ -179,9 +203,10 @@ func (schema *Schema) Step(at Place, statement jomini.Statement, name string, cr
 	isLink := step.Command != nil && step.Command.Kind&game.KindLink != 0
 	isCommand := step.Command != nil && !isLink
 
-	// a call in a triggers, effects or value block that starts with an iterator prefix also
-	// iterates the scripted list named by the rest
-	if word := at.Calls; step.Calls != "" && schema.Lists != "" && word != "" && word != game.AnyCall {
+	// a call in a triggers, effects or value block that starts with an iterator prefix, takes a block
+	// and names no known scripted entry also iterates the scripted list named by the rest
+	listing := step.Calls != "" && step.Rule != game.StepKnownCall && jomini.BlockOf(value) != nil
+	if word := at.Calls; listing && schema.Lists != "" && word != "" && word != game.AnyCall {
 		for prefix := range game.ListIterators {
 			if strings.HasPrefix(name, prefix) {
 				step.Listed = prefix
@@ -189,9 +214,8 @@ func (schema *Schema) Step(at Place, statement jomini.Statement, name string, cr
 		}
 	}
 
-	// what its block holds: a link's block reads where the link is written (but is no command's or
-	// call's own block); a command's by the contents rules; an operator's by what it takes; a
-	// description part's by the shape; a position's by its claim
+	// what its block holds: a link's reads where the link stands, a command's by the contents rules,
+	// an operator's by what it takes, a description part's by the shape, a position's by its claim
 	inner := Place{InEntry: at.InEntry, Bound: at.Bound}
 	switch {
 	case isLink:
@@ -215,6 +239,9 @@ func (schema *Schema) Step(at Place, statement jomini.Statement, name string, cr
 				inner.Kind = at.Kind
 			}
 		}
+	}
+	if at.Kind == game.BlockWidget { // a widget's blocks are widgets again: no script is read in a GUI file
+		inner.Kind = game.BlockWidget
 	}
 	if step.Listed != "" {
 		inner.Kind = game.ListIterators[step.Listed]
@@ -254,7 +281,7 @@ scopes:
 			row.When == game.WhenOut && isCommand && step.Command.Out != "" && !iterates,
 			row.When == game.WhenValue && (inner.Kind == game.BlockValue || inner.Kind == game.BlockDescription),
 			row.When == game.WhenCommand && isCommand,
-			row.When == game.WhenClaimed && step.Key != nil && step.Key.Block.From != SourceNone,
+			row.When == game.WhenClaimed && step.Key != nil && (step.Key.Block.From != SourceNone || inner.Kind != game.BlockUnknown),
 			row.When == game.WhenAnything:
 		default:
 			continue
@@ -285,7 +312,7 @@ func (schema *Schema) contents(command *Command, kind game.Block) game.Block {
 	args := command.Args
 	for _, rule := range game.ContentsOrder {
 		switch {
-		case rule == game.ContentsNumber && args.Value.Value.Type == WordNumber && args.Value.From.Declared():
+		case rule == game.ContentsNumber && holds(args) == game.BlockValue:
 			return game.BlockValue
 		case rule == game.ContentsUsage && args.Block.Value == game.BlockArguments:
 			return game.BlockArguments
@@ -303,14 +330,29 @@ func (schema *Schema) contents(command *Command, kind game.Block) game.Block {
 }
 
 // holds is the kind of block a position holds: its claim, else a value block where a declared
-// source says it takes a number, else unknown.
+// source says it takes a number, else what vanilla writes there makes it, else unknown.
 func holds(position *Key) game.Block {
+	// every key vanilla writes there is a value operator (add_prestige = { value = x if = { … } })
+	operators := func() bool {
+		for name := range position.Keys {
+			if _, operator := game.ValueOperators[name]; !operator {
+				return false
+			}
+		}
+		return len(position.Keys) > 0
+	}
 	switch {
 	case position == nil:
 	case position.Block.From != SourceNone:
 		return position.Block.Value
-	case position.Value.Value.Type == WordNumber && position.Value.From.Declared():
+	case position.Value.Value.Type == WordNumber && position.Value.From.Declared(), operators():
 		return game.BlockValue
+	case position.Seen.Forms&(FormTrigger|FormEffect) == FormTrigger: // every command vanilla writes there
+		return game.BlockTriggers
+	case position.Seen.Forms&(FormTrigger|FormEffect) == FormEffect:
+		return game.BlockEffects
+	case position.Seen.Forms&FormCommand == 0 && len(position.Keys) > 0: // vanilla writes keys, no command
+		return game.BlockFields
 	}
 	return game.BlockUnknown
 }

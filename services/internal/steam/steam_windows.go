@@ -1,7 +1,7 @@
 //go:build windows
 
 // steam_windows.go opens Steam's library with LoadLibrary, and lays out CreateItemResult_t as
-// Windows packs it: Steam's callback structs are packed to 8 bytes here, 4 on Linux and macOS.
+// Windows packs it: Steam's callback structs are packed to 8 bytes here, 4 on Linux.
 
 package steam
 

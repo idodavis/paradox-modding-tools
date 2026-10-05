@@ -67,9 +67,8 @@ export function StatPath(fullPath: string): $CancellablePromise<$models.PathStat
 }
 
 /**
- * WriteFileBase64 writes raw bytes from standard base64. It is the editor's save path, the only
- * file PMT writes that it cannot regenerate, so it goes through local.Write: a failed save leaves
- * the modder's script as it was.
+ * WriteFileBase64 writes raw bytes from standard base64. It is the editor's save path, so it goes
+ * through local.Write: a failed save never leaves half a file.
  */
 export function WriteFileBase64(fullPath: string, b64: string): $CancellablePromise<void> {
     return $Call.ByID(256026061, fullPath, b64);

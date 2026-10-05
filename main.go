@@ -28,23 +28,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("log: %v", err)
 	}
-	configSvc, err := services.OpenConfig()
+	appSvc, err := services.OpenApp()
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
-	configSvc.Version = version
-	logSvc.Config = configSvc
+	appSvc.Version = version
+	logSvc.App = appSvc
 
 	fileSvc := &services.FileService{}
-	sessSvc := &services.SessionService{Config: configSvc}
-	configSvc.Session = sessSvc
-	workspaceSvc := &services.WorkspaceService{Config: configSvc, Session: sessSvc}
-	ideSvc := &services.IdeService{Session: sessSvc, Config: configSvc}
+	sessSvc := &services.SessionService{App: appSvc}
+	appSvc.Session = sessSvc
+	workspaceSvc := &services.WorkspaceService{App: appSvc, Session: sessSvc}
+	ideSvc := &services.IdeService{Session: sessSvc, App: appSvc}
 	graphSvc := &services.EventGraphService{Session: sessSvc}
 	healthSvc := &services.HealthService{Session: sessSvc}
 	wikiSvc := &services.WikiService{Session: sessSvc}
 	searchSvc := &services.SearchService{}
-	releaseSvc := &services.ReleaseService{Config: configSvc}
+	releaseSvc := &services.ReleaseService{App: appSvc}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -53,7 +53,7 @@ func main() {
 		// registered first, so Wails shuts it down last and the others' shutdowns are logged
 		Services: []application.Service{
 			application.NewService(logSvc),
-			application.NewService(configSvc),
+			application.NewService(appSvc),
 			application.NewService(fileSvc),
 			application.NewService(workspaceSvc),
 			application.NewService(sessSvc),

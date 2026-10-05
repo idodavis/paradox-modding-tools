@@ -44,11 +44,7 @@ const (
 	Opaque                // a path and nothing more
 )
 
-var formatNames = [...]string{"unknown", "script", "loc", "table", "list", "json", "info", "image", "opaque"}
-
-func (format Format) String() string { return formatNames[format] }
-
-// formats is the one format table, by lower-case extension, for every game.
+// formats is the format table, by lower-case extension, for every game.
 var formats = map[string]Format{
 	// script the games and mods define things in
 	".txt": Script, ".gui": Script, ".asset": Script, ".gfx": Script, ".font": Script, ".map": Script, ".shortcuts": Script,
@@ -81,7 +77,7 @@ var formats = map[string]Format{
 var ignored = map[string]string{
 	".dll": "program code", ".dylib": "program code", ".py": "a build script", ".lnk": "a Windows shortcut left in the install",
 	".pdf": "a font licence", ".psd": "source art", ".mb": "source art", ".jpf": "source art", ".obj": "source art",
-	".mtl": "source art", ".xml": "Wwise bank metadata; audio is deferred", ".ini": "a desktop.ini",
+	".mtl": "source art", ".xml": "Wwise bank metadata", ".ini": "a desktop.ini",
 	".tmp": "a tool's leftover", ".cache": "a tool's cache", ".hash": "a tool's cache",
 	".dmp": "a crash dump", ".disabled": "a file the game itself switched off", ".gitignore": "version control",
 	".xnviewsort": "an image viewer's leftover", "": "no extension: licence texts and tool leftovers",
@@ -144,7 +140,7 @@ func Classify(abs, rel string) Format {
 }
 
 // prose reports a text file of up to a megabyte whose comment and sentence lines outnumber its
-// script lines. A sentence: three words or more, no brace, no operator second (Vic3's clones info).
+// script lines. A sentence: three words or more, no brace, no operator second.
 func prose(abs string) bool {
 	raw, err := os.ReadFile(abs)
 	if err != nil || len(raw) > 1<<20 {
@@ -318,7 +314,7 @@ type ImageInfo struct {
 // d3d names the pre-DX10 formats a DDS writes as a number in place of a FourCC's letters.
 var d3d = map[uint32]string{36: "RGBA16", 111: "R16F", 112: "RG16F", 113: "RGBA16F", 114: "R32F", 115: "RG32F", 116: "RGBA32F"}
 
-// dxgi names the DXGI formats the three installs use in a DX10 header.
+// dxgi names the DXGI formats the three games use in a DX10 header.
 var dxgi = map[uint32]string{
 	2: "RGBA32F", 10: "RGBA16F", 28: "RGBA8", 29: "RGBA8 sRGB", 56: "R16", 61: "R8",
 	71: "BC1", 72: "BC1 sRGB", 74: "BC2", 75: "BC2 sRGB", 77: "BC3", 78: "BC3 sRGB", 80: "BC4", 83: "BC5",

@@ -1,5 +1,6 @@
 // lookup.go answers the Guide and Patch Notes queries from a game's sidecar, and holds the
 // sidecar's shape on disk and the payloads the RPCs hand back.
+
 package wiki
 
 import (
@@ -8,7 +9,30 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"paradox-modding-tools/services/internal/game"
 )
+
+const guideTabCap = 6
+
+// synonyms are the page stems a file no script database holds also matches, by its extension.
+var synonyms = map[string][]string{
+	"gui": {"interface", "gui script"}, "yml": {"localization", "customizable localization"},
+	"mod": {"mod structure"}, "json": {"mod structure"},
+}
+
+// languageStems are the scripting-language pages a script file's Guide shows beside its own.
+var languageStems = map[string]bool{"effect": true, "trigger": true, "scope": true, "on action": true}
+
+// Attribution is the Guide / Patch Notes footer line.
+func Attribution(gameID string) string {
+	info := game.Get(gameID)
+	name := "Paradox"
+	if info != nil && info.ShortName != "" {
+		name = info.ShortName
+	}
+	return "From " + name + " Wiki (" + License + ")"
+}
 
 // NamedPages returns the guide pages named for a database or its file's folder, best first.
 func NamedPages(gameID, database, rel string) []Page {
@@ -42,7 +66,7 @@ func NamedPages(gameID, database, rel string) []Page {
 
 // PagesFor returns a file's Guide tabs: the best page named for its database or folder, the
 // scripting-language pages for a script file, then the other named pages; none without a sidecar.
-func PagesFor(gameID, database, rel string) []GuidePage {
+func PagesFor(gameID, database, rel string) []Page {
 	matches := NamedPages(gameID, database, rel)
 	var language []Page
 	if sidecar, err := load(gameID); err == nil && synonyms[database] == nil {
@@ -55,17 +79,12 @@ func PagesFor(gameID, database, rel string) []GuidePage {
 	}
 	slices.SortFunc(language, func(first, second Page) int { return strings.Compare(first.Title, second.Title) })
 	best := min(1, len(matches))
-	var out []GuidePage
-	for _, page := range slices.Concat(matches[:best], language, matches[best:]) {
-		if len(out) < guideTabCap {
-			out = append(out, GuidePage{Title: page.Title, HTML: page.HTML, URL: page.URL, Sections: page.Sections})
-		}
-	}
-	return out
+	pages := slices.Concat(matches[:best], language, matches[best:])
+	return pages[:min(len(pages), guideTabCap)]
 }
 
 func patchEntry(page Page) PatchEntry {
-	entry := PatchEntry{Title: page.Title, URL: page.URL, HasModding: page.ModdingHTML != ""}
+	entry := PatchEntry{Title: page.Title}
 	if pv, ok := parsePatchTitle(page.Title); ok {
 		entry.Version = pv.Label
 		if pv.Patch > 0 || pv.Wildcard {
@@ -111,7 +130,7 @@ func Patches(gameID string) PatchList {
 }
 
 // PatchByVersion finds a patch page by title or version label (e.g. "1.16").
-func PatchByVersion(gameID, want string) *PatchPage {
+func PatchByVersion(gameID, want string) *Page {
 	sidecar, err := load(gameID)
 	if err != nil {
 		return nil
@@ -123,33 +142,16 @@ func PatchByVersion(gameID, want string) *PatchPage {
 		page := &sidecar.Patches[i]
 		title := NormTitle(page.Title)
 		if title == wantN || title == "patch "+wantN {
-			return patchPageOf(page)
+			return page
 		}
 		if pv, ok := parsePatchTitle(page.Title); ok && pv.Label == want {
-			return patchPageOf(page)
+			return page
 		}
 		if fallback == nil && strings.Contains(title, wantN) {
 			fallback = page
 		}
 	}
-	if fallback != nil {
-		return patchPageOf(fallback)
-	}
-	return nil
-}
-
-func patchPageOf(page *Page) *PatchPage {
-	pv, _ := parsePatchTitle(page.Title)
-	return &PatchPage{
-		Title:           page.Title,
-		Version:         pv.Label,
-		HTML:            page.HTML,
-		ModdingHTML:     page.ModdingHTML,
-		URL:             page.URL,
-		HasModding:      page.ModdingHTML != "",
-		Sections:        page.Sections,
-		ModdingSections: page.ModdingSections,
-	}
+	return fallback
 }
 
 const (
@@ -159,49 +161,24 @@ const (
 	memberCap = 500
 )
 
-// GuidePage is one tab in the Guide pane.
-type GuidePage struct {
-	Title    string    `json:"title"`
-	HTML     string    `json:"html"`
-	URL      string    `json:"url"`
-	Sections []Section `json:"sections"`
-}
-
-// Guide is the WikiService.Guide payload. Rel/origin/database come from Locate.
+// Guide is the WikiService.Guide payload: the open file's database and its Guide tabs.
 type Guide struct {
-	Rel         string      `json:"rel"`
-	Origin      string      `json:"origin"`
-	OriginName  string      `json:"originName"`
-	Database    string      `json:"database"`
-	Pages       []GuidePage `json:"pages"`
-	Attribution string      `json:"attribution"`
+	Database    string `json:"database"`
+	Pages       []Page `json:"pages"`
+	Attribution string `json:"attribution"`
 }
 
 // PatchEntry is one row in the Patch Notes version tree.
 type PatchEntry struct {
-	Title      string `json:"title"`
-	Version    string `json:"version"`
-	Parent     string `json:"parent"`
-	URL        string `json:"url"`
-	HasModding bool   `json:"hasModding"`
+	Title   string `json:"title"`
+	Version string `json:"version"`
+	Parent  string `json:"parent"`
 }
 
 // PatchList is the WikiService.Patches payload.
 type PatchList struct {
 	GameID string       `json:"gameId"`
 	Pages  []PatchEntry `json:"pages"`
-}
-
-// PatchPage is one patch notes body (All + optional Modding HTML).
-type PatchPage struct {
-	Title           string    `json:"title"`
-	Version         string    `json:"version"`
-	HTML            string    `json:"html"`
-	ModdingHTML     string    `json:"moddingHtml"`
-	URL             string    `json:"url"`
-	HasModding      bool      `json:"hasModding"`
-	Sections        []Section `json:"sections"`
-	ModdingSections []Section `json:"moddingSections"`
 }
 
 // Section is one heading of a page, for the TOC.
@@ -211,8 +188,8 @@ type Section struct {
 	Anchor   string `json:"anchor"`
 }
 
-// Page is one fetched page as the sidecar keeps it: its sanitized HTML and headings, and for a
-// patch note its Modding section apart.
+// Page is one fetched page as the sidecar keeps it and the panes show it: its sanitized HTML and
+// headings, and for a patch note its Modding section apart.
 type Page struct {
 	Title           string    `json:"title"`
 	URL             string    `json:"url"`

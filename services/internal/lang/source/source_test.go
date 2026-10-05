@@ -106,10 +106,11 @@ func TestInventory(t *testing.T) {
 	})
 	files := Inventory("vanilla", Roots(dir))
 
+	names := [...]string{Unknown: "unknown", Script: "script", List: "list", Info: "info", Image: "image", Opaque: "opaque"}
 	var got []string
 	for _, file := range files {
 		root, _ := filepath.Rel(dir, file.Path[:len(file.Path)-len(file.Rel)-1])
-		got = append(got, filepath.ToSlash(root)+" | "+file.Rel+" | "+file.Format.String()+" | "+file.Origin)
+		got = append(got, filepath.ToSlash(root)+" | "+file.Rel+" | "+names[file.Format]+" | "+file.Origin)
 	}
 	want := []string{
 		"game | common/GUIDs.txt | script | vanilla",

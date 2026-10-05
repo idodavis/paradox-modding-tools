@@ -1,20 +1,18 @@
-// Package shipped holds what the dumps declare of each game version the owner shipped: the backup
-// for a user missing a dump file. It is a schema built from the dumps alone, never the
-// dumps. One <game>-<version>.gob.gz sits beside this file for each game version, written by the
-// generator.
+// Package shipped is the backup for a user missing a dump file: for each game version, a schema
+// built from the dumps alone (never the dumps themselves), written by gen beside this file as
+// <game>-<version>.gob.gz.
 package shipped
 
 import (
 	"cmp"
-	"compress/gzip"
 	"embed"
-	"encoding/gob"
 	"io/fs"
 	"regexp"
 	"slices"
 	"strconv"
 
 	"paradox-modding-tools/services/internal/lang/schema"
+	"paradox-modding-tools/services/internal/local"
 )
 
 // files is the shipped schemas. The pattern matches this file too, so an empty set still builds.
@@ -61,12 +59,7 @@ func Load(gameID, version string) (sch *schema.Schema, exact bool, err error) {
 		return nil, false, err
 	}
 	defer file.Close()
-	unzip, err := gzip.NewReader(file)
-	if err != nil {
-		return nil, false, err
-	}
-	defer unzip.Close()
-	if err := gob.NewDecoder(unzip).Decode(&sch); err != nil {
+	if err := local.Decode(file, &sch); err != nil {
 		return nil, false, err
 	}
 	return sch, exact, nil

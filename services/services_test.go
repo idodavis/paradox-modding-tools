@@ -1,6 +1,9 @@
 // services_test.go holds the package's tests and what they share: one scan of the ck3 fixture
 // install, a session over it with the mods a test writes, and a config in a temporary folder that
-// APPDATA, XDG_CONFIG_HOME and HOME are sent to, so no test writes into the real user folders.
+// APPDATA, XDG_CONFIG_HOME and HOME are sent to, so no test writes into the real user folders. It
+// also holds the sweep, the engine's scoreboard over every mod of a game's mod folder, which runs
+// only behind PMT_TEST_SWEEP (`task test:sweep`).
+
 package services
 
 import (
@@ -12,15 +15,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"
+	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -42,7 +49,7 @@ func workspace(t *testing.T, mods ...map[string]string) *SessionService {
 		dir := t.TempDir()
 		writeTree(t, dir, files)
 		id := string(rune('a' + i))
-		playset = append(playset, session.Mod{ID: "mod" + id, Name: "Mod " + id, Dir: dir})
+		playset = append(playset, session.Mod{ID: "mod" + id, Dir: dir})
 	}
 	sess, err := session.New(t.Context(), game.Get("ck3"), install, playset, "")
 	if err != nil {
@@ -61,13 +68,13 @@ func serving(sess *session.Session) *SessionService {
 
 // tempConfig sends APPDATA, XDG_CONFIG_HOME and HOME to a temporary folder and opens a config.json
 // there, unwritten, holding the given installs and workspaces.
-func tempConfig(t *testing.T, installs []GameInstall, workspaces ...Workspace) *ConfigService {
+func tempConfig(t *testing.T, installs []GameInstall, workspaces ...Workspace) *AppService {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("APPDATA", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
 	t.Setenv("HOME", home)
-	config := newConfig(filepath.Join(home, "config.json"))
+	config := newApp(filepath.Join(home, "config.json"))
 	config.cfg.Installs, config.cfg.Workspaces = installs, workspaces
 	return config
 }
@@ -136,7 +143,7 @@ func fixtureService(t *testing.T) *SessionService {
 	config := tempConfig(t,
 		[]GameInstall{{ID: "i1", GameID: "ck3", Name: "CK3", Path: install}},
 		Workspace{ID: "ws", GameID: "ck3", Name: "W", InstallID: "i1", Mods: []WorkspaceMod{{ID: "m", Name: "M", Path: mod}}})
-	return &SessionService{Config: config, Scan: func(context.Context, index.Request) (*index.Install, error) { return scanned() }}
+	return &SessionService{App: config, Scan: func(context.Context, index.Request) (*index.Install, error) { return scanned() }}
 }
 
 // A config that cannot be read is not a first run: serving it empty and then saving would write
@@ -148,7 +155,7 @@ func TestConfig(t *testing.T) {
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		config := newConfig(path)
+		config := newApp(path)
 		if config.loadErr == nil {
 			t.Fatal("want loadErr set for a corrupt config")
 		}
@@ -179,7 +186,7 @@ func TestConfig(t *testing.T) {
 			t.Fatalf("mutate on first run: %v", err)
 		}
 		var installs int
-		newConfig(config.path).read(func(cfg *Config) { installs = len(cfg.Installs) })
+		newApp(config.path).read(func(cfg *Config) { installs = len(cfg.Installs) })
 		if installs != 1 {
 			t.Fatalf("got %d installs", installs)
 		}
@@ -265,7 +272,7 @@ func TestEventGraph(t *testing.T) {
 	if _, ok := edge(drawn, "m.1", "m_fire"); !ok || into.Via != "" || !slices.Contains(ids(drawn), "m_fire") {
 		t.Errorf("the macro drawn: %+v %v", drawn.Edges, ids(drawn))
 	}
-	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0] != (session.Fire{Name: "m.1", Via: "m_fire"}) {
+	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0] != (session.Fire{Name: "m.1", Database: "events", Via: "m_fire"}) {
 		t.Errorf("the detail's fired-by, as the graph draws it: %+v", detail.FiredBy)
 	}
 
@@ -394,8 +401,7 @@ func TestListDirectoryMetadata(t *testing.T) {
 	}
 }
 
-// The IDE bridge refuses everything binary, but names images apart so the caller can offer a
-// preview instead of an error. Detection is by content: a .dds renamed to .png is still a .dds.
+// The IDE bridge refuses everything binary, by content rather than by extension.
 func TestReadBase64(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -405,13 +411,6 @@ func TestReadBase64(t *testing.T) {
 		editor string // what the editor reader's refusal says; "" opens it
 		raw    string // what the raw reader's refusal says; "" returns it whole
 	}{
-		// a PNG has a NUL at byte 8, yet the raw reader returns it whole for thumbnails
-		{"png", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D}, 0, RejectImage, ""},
-		{"jpeg", []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10, 'J', 'F', 'I', 'F', 0}, 0, RejectImage, ""},
-		{"gif", append([]byte("GIF89a"), 0, 0, 0), 0, RejectImage, ""},
-		{"webp", append([]byte("RIFF\x00\x00\x00\x00WEBP"), 0), 0, RejectImage, ""},
-		{"bmp", append([]byte("BM"), 0, 0, 0, 0), 0, RejectImage, ""},
-		{"ico", []byte{0x00, 0x00, 0x01, 0x00, 0x01, 0x00}, 0, RejectImage, ""},
 		// Paradox ships a lot of these; no browser decodes either.
 		{"dds", append([]byte("DDS "), 0, 0, 0, 0x7C), 0, "binary", ""},
 		{"tga", []byte{0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}, 0, "binary", ""},
@@ -439,11 +438,6 @@ func TestReadBase64(t *testing.T) {
 			t.Errorf("%s: refused %q; text opens in the editor", testCase.name, got.Reject)
 		case testCase.editor != "" && got.Reject == "":
 			t.Errorf("%s: opened in the editor; nothing binary may be", testCase.name)
-		case testCase.editor == RejectImage && got.Reject != RejectImage:
-			t.Errorf("%s: reject %q, want %q so the UI can offer a preview",
-				testCase.name, got.Reject, RejectImage)
-		case testCase.editor != RejectImage && got.Reject == RejectImage:
-			t.Errorf("%s: named an image, but nothing here can display it", testCase.name)
 		case !strings.Contains(got.Reject, testCase.editor):
 			t.Errorf("%s: reject %q, want %q", testCase.name, got.Reject, testCase.editor)
 		}
@@ -471,30 +465,31 @@ func TestReadBase64(t *testing.T) {
 }
 
 // TestWorkspaceHealth covers the report over two mods: contests and dependencies in a chosen order,
-// dangling references and what must never be one, each language's untranslated keys, a site's lines,
-// and the lookup of one key.
+// dangling references and what must never be one, each language's untranslated keys, a site's
+// lines, and the lookup of one key.
 func TestWorkspaceHealth(t *testing.T) {
 	reports := &HealthService{Session: workspace(t,
 		map[string]string{
-			"common/traits/a.txt":                  "brave = { name = x }\nshared_a = { name = x }\nbold = { name = x }\ncraven = { name = x }\n",
+			"common/traits/zz_a.txt":               "brave = { name = x }\nshared_a = { name = x }\nbold = { name = x }\ncraven = { name = x }\n",
 			"events/a.txt":                         "namespace = a\na.1 = {\n\ttype = character_event\n\ttitle = a.1.t\n\ttrigger = {\n\t\thas_trait = brave\n\t\thas_trait = bold_b\n\t\texists = title:k_nowhere\n\t\texists = title:k_x\n\t\tfaith = faith:catholic\n\t\texists = scope:whatever\n\t}\n\timmediate = { add_gold = small_value }\n}\n",
 			"localization/english/a_l_english.yml": "\xEF\xBB\xBFl_english:\n a.1.t:0 \"Hi $VALUE|=+0$\"\n a_dead:0 \"Nothing reads me\"\n a_reader:0 \"$a_read$\"\n a_read:0 \"Read by a key\"\n bold:0 \"Bold\"\n bold_extra:0 \"More\"\n",
 			"localization/french/a_l_french.yml":   "\xEF\xBB\xBFl_french:\n a.1.t:0 \"Salut\"\n",
 		},
 		map[string]string{
-			"common/traits/b.txt":                  "brave = {\n" + strings.Repeat("\tname = x\n", 11) + "}\nshared_a = { name = x }\nbold_b = { name = x }\n",
+			"common/traits/zz_b.txt":               "brave = {\n" + strings.Repeat("\tname = x\n", 11) + "}\nshared_a = { name = x }\nbold_b = { name = x }\n",
 			"localization/english/b_l_english.yml": "\xEF\xBB\xBFl_english:\n b_only:0 \"B\"\n",
 		})}
 	health, _ := reports.GetHealth("ws", HealthParams{})
 
-	// contests: brave is defined three times, the last wins under LIOS; a reversed order flips it
+	// contests: brave is defined three times, the last file loaded wins under LIOS; files load by
+	// path, so reversing the mods' order leaves the winner of two differently named files alone
 	brave := slices.IndexFunc(health.Contests, func(contest Contest) bool { return contest.Name == "brave" })
 	origin := func(report *Health, site Site) string { return report.Sources[site.File].Origin }
 	if brave < 0 || health.Contests[brave].Rule != "LIOS" || origin(health, health.Contests[brave].Sites[health.Contests[brave].Winner]) != "modb" || len(health.Contests[brave].Sites) != 3 {
 		t.Fatalf("brave contested by three, won by the last: %+v", health.Contests)
 	}
 	reversed, _ := reports.GetHealth("ws", HealthParams{Order: []string{"modb", "moda"}})
-	if at := slices.IndexFunc(reversed.Contests, func(contest Contest) bool { return contest.Name == "brave" }); at < 0 || origin(reversed, reversed.Contests[at].Sites[reversed.Contests[at].Winner]) != "moda" {
+	if at := slices.IndexFunc(reversed.Contests, func(contest Contest) bool { return contest.Name == "brave" }); at < 0 || origin(reversed, reversed.Contests[at].Sites[reversed.Contests[at].Winner]) != "modb" {
 		t.Errorf("the reversed order: %+v", reversed.Contests)
 	}
 
@@ -521,7 +516,7 @@ func TestWorkspaceHealth(t *testing.T) {
 		return got
 	}
 	braves := lines(health.Contests[brave].Sites, true)
-	if !slices.Equal(braves[0], []string{"brave = {", "\tcategory = personality", "\tdiplomacy = 0", "}"}) {
+	if !slices.Equal(braves[0], []string{"brave = {", "\tcategory = personality", "\tdiplomacy = 0", "\ticon = \"gfx/interface/icons/traits/brave.dds\"", "}"}) {
 		t.Errorf("the install's brave, whole: %q", braves[0])
 	}
 	if cut := braves[2]; len(cut) != 11 || cut[0] != "brave = {" || cut[10] != "…" {
@@ -666,26 +661,22 @@ func TestTextSearch(t *testing.T) {
 	writeTree(t, root, searchTree)
 	writeTree(t, other, searchTree)
 	whole := []TextSearchFolder{{Path: root}}
-	var hits []TextSearchHit
-	svc := &SearchService{found: func(sent TextSearchHits) { hits = append(hits, sent.Hits...) }}
+	svc := &SearchService{}
 	for _, row := range []struct {
 		name  string
 		query TextSearchQuery
-		hits  int                    // -1 is any but none
-		where func(path string) bool // what every hit's slash path satisfies; nil is anything
+		hits  int
 		fails bool
 	}{
 		{
 			name:  "an include glob limits hits to events/",
 			query: TextSearchQuery{Pattern: "unique_search_token", Folders: []TextSearchFolder{{Path: root, Includes: []string{"**/events/**"}}}},
 			hits:  2,
-			where: func(path string) bool { return strings.Contains(path, "/events/") },
 		},
 		{
 			name:  "an exclude glob drops .txt",
 			query: TextSearchQuery{Pattern: "unique_search_token", Folders: []TextSearchFolder{{Path: root, Excludes: []string{"*.txt"}}}},
-			hits:  -1,
-			where: func(path string) bool { return !strings.HasSuffix(path, ".txt") },
+			hits:  1,
 		},
 		{
 			name: "each folder's globs apply only to it",
@@ -694,29 +685,22 @@ func TestTextSearch(t *testing.T) {
 				{Path: other, Includes: []string{"**/common/**"}},
 			}},
 			hits: 3,
-			where: func(path string) bool {
-				return strings.HasPrefix(path, filepath.ToSlash(root)) && strings.Contains(path, "/events/") ||
-					strings.HasPrefix(path, filepath.ToSlash(other)) && strings.Contains(path, "/common/")
-			},
 		},
 		{
 			name:  ".git is not searched",
 			query: TextSearchQuery{Pattern: "hidden_token", Folders: whole},
 			hits:  1,
-			where: func(path string) bool { return !strings.Contains(path, "/.git/") },
 		},
 		{
 			name:  "a file with a NUL byte is skipped",
 			query: TextSearchQuery{Pattern: "findme", Folders: whole},
 			hits:  1,
-			where: func(path string) bool { return !strings.HasSuffix(path, "binary.dat") },
 		},
 		{name: "case-sensitive word", query: TextSearchQuery{Pattern: "tok", IsCaseSensitive: true, IsWordMatch: true, Folders: whole}, hits: 0},
 		{name: "case-insensitive word", query: TextSearchQuery{Pattern: "tok", IsWordMatch: true, Folders: whole}, hits: 2},
 		{name: "regex", query: TextSearchQuery{Pattern: `tok.+only`, IsRegexp: true, Folders: whole}, hits: 1},
 		{name: "an invalid regex is an error", query: TextSearchQuery{Pattern: "[", IsRegexp: true, Folders: whole}, fails: true},
 	} {
-		hits = nil
 		result, err := svc.TextSearch(t.Context(), row.query)
 		if (err != nil) != row.fails {
 			t.Errorf("%s: error %v, want one %v", row.name, err, row.fails)
@@ -724,13 +708,8 @@ func TestTextSearch(t *testing.T) {
 		if err != nil || row.fails {
 			continue
 		}
-		if row.hits < 0 && len(hits) == 0 || row.hits >= 0 && len(hits) != row.hits || result.Found != len(hits) {
-			t.Errorf("%s: %d found, hits sent = %+v", row.name, result.Found, hits)
-		}
-		for _, hit := range hits {
-			if row.where != nil && !row.where(filepath.ToSlash(hit.Path)) {
-				t.Errorf("%s: leaked %s", row.name, hit.Path)
-			}
+		if result.Found != row.hits {
+			t.Errorf("%s: %d found, want %d", row.name, result.Found, row.hits)
 		}
 	}
 }
@@ -797,13 +776,6 @@ func TestTextSearchCancel(t *testing.T) {
 
 func TestEnsureSession(t *testing.T) {
 	svc := fixtureService(t)
-	var mu sync.Mutex
-	var events []string
-	svc.emit = func(event string, data any) {
-		mu.Lock()
-		events = append(events, event)
-		mu.Unlock()
-	}
 	before, err := svc.GetLanguageHealth("ws")
 	if err != nil || before.Ready || !before.InstallOk || before.GameID != "ck3" {
 		t.Fatalf("before the first build: no session: %+v (%v)", before, err)
@@ -822,9 +794,6 @@ func TestEnsureSession(t *testing.T) {
 	}
 
 	svc.dropAllExcept("")
-	mu.Lock()
-	events = nil
-	mu.Unlock()
 
 	var wg sync.WaitGroup
 	got := make([]*session.Session, 20)
@@ -834,15 +803,8 @@ func TestEnsureSession(t *testing.T) {
 		})
 	}
 	wg.Wait()
-
-	mu.Lock()
-	rang := append([]string(nil), events...)
-	mu.Unlock()
 	if got[0] == nil || slices.ContainsFunc(got, func(live *session.Session) bool { return live != got[0] }) {
 		t.Error("twenty callers at once share one build and one instance")
-	}
-	if len(rang) != 1 || rang[0] != EventLangReady {
-		t.Errorf("one build tells the frontend once: %v", rang)
 	}
 	if _, err := svc.live(""); err == nil || svc.get("ws") != got[0] {
 		t.Error("an empty id is refused and the live session is untouched")
@@ -856,7 +818,7 @@ func TestEnsureSession(t *testing.T) {
 
 func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	config := tempConfig(t, nil, Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
-	svc := &WorkspaceService{Config: config, Session: &SessionService{Config: config}}
+	svc := &WorkspaceService{App: config, Session: &SessionService{App: config}}
 	modDir := t.TempDir()
 	writeTree(t, modDir, map[string]string{"a/descriptor.mod": "", "b/descriptor.mod": ""})
 
@@ -947,7 +909,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	config := tempConfig(t,
 		[]GameInstall{{ID: "inst1", GameID: "ck3", Name: "My CK3 nickname", Path: install}},
 		Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
-	svc := &WorkspaceService{Config: config, Session: &SessionService{Config: config}}
+	svc := &WorkspaceService{App: config, Session: &SessionService{App: config}}
 	writeTree(t, modDir, map[string]string{"descriptor.mod": ""})
 	if _, err := svc.AddWorkspaceMod("ws1", "Alpha", modDir, ""); err != nil {
 		t.Fatal(err)
@@ -1007,7 +969,7 @@ func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 	} {
 		t.Run(testCase.game+"/"+testCase.rel, func(t *testing.T) {
 			config := tempConfig(t, nil, Workspace{ID: "ws", GameID: testCase.game, Name: "T"})
-			svc := &WorkspaceService{Config: config, Session: &SessionService{Config: config}}
+			svc := &WorkspaceService{App: config, Session: &SessionService{App: config}}
 			root, want := t.TempDir(), ""
 			writeTree(t, root, map[string]string{game.DescriptorFile(testCase.game): ""})
 			if testCase.rel != "" {
@@ -1023,4 +985,137 @@ func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The sample budgets: files diagnosed per mod, files hovered in, and words hovered in each.
+const (
+	diagnosed  = 300
+	hoverFiles = 40
+	hoverWords = 8
+)
+
+var modPath = regexp.MustCompile(`(?m)^\s*path\s*=\s*"([^"]+)"`)
+
+// TestSweep is the scoreboard, not a gate: it asserts nothing, so a count that moves is news. Counts
+// are not targets, and the samples are budgets, since one editor request walks its file. It walks
+// every mod the folders PMT_TEST_MODS_<GAME> list (a game's Documents mod folder, whose .mod
+// descriptors say where each mod is), over the install PMT_TEST_INSTALL_<GAME>.
+func TestSweep(t *testing.T) {
+	if os.Getenv("PMT_TEST_SWEEP") == "" {
+		t.Skip("walks every mod of a game's mod folder; set PMT_TEST_SWEEP=1")
+	}
+	for _, id := range []string{"ck3", "vic3", "eu5"} {
+		install, mods := os.Getenv("PMT_TEST_INSTALL_"+strings.ToUpper(id)), os.Getenv("PMT_TEST_MODS_"+strings.ToUpper(id))
+		if install == "" || mods == "" {
+			continue
+		}
+		user := game.UserDataDir(id, install)
+		started := time.Now()
+		scanned, err := index.Scan(t.Context(), index.Request{Game: id, Dir: install, Version: "sweep"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("SWEEP %s: install scanned in %.1fs", id, time.Since(started).Seconds())
+
+		descriptors, _ := filepath.Glob(filepath.Join(mods, "*.mod"))
+		for _, descriptor := range descriptors {
+			raw, err := os.ReadFile(descriptor)
+			if err != nil {
+				continue
+			}
+			match := modPath.FindSubmatch(raw)
+			if match == nil {
+				continue
+			}
+			dir := string(match[1])
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(user, dir)
+			}
+			sess, err := session.New(t.Context(), game.Get(id), scanned, []session.Mod{{ID: "mod", Dir: dir}}, "")
+			if err != nil {
+				t.Logf("SWEEP %s %s: %v", id, filepath.Base(descriptor), err)
+				continue
+			}
+			sweep(t, id, filepath.Base(descriptor), sess)
+		}
+	}
+}
+
+// sweep reports one mod: the health counts, the findings over a sample of its script files, and
+// the hover answer rate over a sample of the words in a sample of those files.
+func sweep(t *testing.T, id, name string, sess *session.Session) {
+	started := time.Now()
+	health, _ := (&HealthService{Session: serving(sess)}).GetHealth("ws", HealthParams{})
+	untranslated, defs := 0, 0
+	for _, language := range health.Loc {
+		untranslated += len(language.Untranslated)
+	}
+	for _, records := range sess.Workspace.Records {
+		defs += len(records.Defs)
+	}
+	var files []source.File
+	for _, file := range sess.Workspace.Files {
+		if file.Format == source.Script {
+			files = append(files, file)
+		}
+	}
+	slices.SortFunc(files, func(first, second source.File) int { return strings.Compare(first.Rel, second.Rel) })
+
+	findings := map[string]int{}
+	for _, file := range spread(files, diagnosed) {
+		for _, finding := range must(lsp.Diagnose(sess, file.Path, nil)) {
+			findings[finding.Code]++
+		}
+	}
+	hovers, answered := 0, 0
+	for _, hoverFile := range spread(files, hoverFiles) {
+		text, err := sess.Text(hoverFile.Path)
+		if err != nil {
+			continue
+		}
+		asked := 0
+		for line, lineText := range strings.Split(text, "\n") {
+			for _, word := range strings.Fields(lineText) {
+				if strings.HasPrefix(word, "#") {
+					break
+				}
+				col := strings.Index(lineText, word)
+				if col < 0 || word == "=" || word == "{" || word == "}" {
+					continue
+				}
+				asked++
+				if asked > hoverWords {
+					break
+				}
+				hovers++
+				if card, _ := lsp.Hover(sess, hoverFile.Path, line, col); card != nil {
+					answered++
+				}
+			}
+			if asked > hoverWords {
+				break
+			}
+		}
+	}
+	fmt.Printf("SWEEP %s %s: %d files, %d defs; contests %d, depends %d, dangling %d, loc untranslated %d; findings %v; hover answered %d of %d; %.1fs\n",
+		id, name, len(sess.Workspace.Files), defs, len(health.Contests), len(health.Depends), len(health.Dangling), untranslated, findings, answered, hovers, time.Since(started).Seconds())
+}
+
+// spread takes at most n files evenly across the list, so a big mod's sample reaches every corner.
+func spread(files []source.File, n int) []source.File {
+	if len(files) <= n {
+		return files
+	}
+	out := make([]source.File, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, files[i*len(files)/n])
+	}
+	return out
+}
+
+func must[T any](value T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return value
 }

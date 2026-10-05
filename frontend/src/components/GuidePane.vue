@@ -6,7 +6,7 @@ import { computed, nextTick, shallowRef, watch } from "vue";
 import type { TabsItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
 import { Guide } from "@services/wikiservice";
-import type { GuidePage } from "@services/internal/wiki/models";
+import type { Page } from "@services/internal/wiki/models";
 import { useWorkspaceStore } from "../stores/workspace";
 import { useIdeActiveFile } from "../composables/useIdeActiveFile";
 import {
@@ -136,7 +136,7 @@ watch(q, async (needle) => {
   if (hit) jumpTo(hit);
 });
 
-function pageMatches(p: GuidePage, needle: string): boolean {
+function pageMatches(p: Page, needle: string): boolean {
   if (p.title.toLowerCase().includes(needle)) return true;
   return (p.sections ?? []).some((s) => s.line.toLowerCase().includes(needle));
 }

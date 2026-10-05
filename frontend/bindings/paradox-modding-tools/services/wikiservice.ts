@@ -25,7 +25,7 @@ export function Guide(workspaceID: string, path: string): $CancellablePromise<wi
 /**
  * PatchPage returns one patch notes body by title or version label.
  */
-export function PatchPage(gameID: string, version: string): $CancellablePromise<wiki$0.PatchPage | null> {
+export function PatchPage(gameID: string, version: string): $CancellablePromise<wiki$0.Page | null> {
     return $Call.ByID(2002999296, gameID, version);
 }
 

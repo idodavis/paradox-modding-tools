@@ -3,9 +3,8 @@
 
 export type {
     Guide,
-    GuidePage,
+    Page,
     PatchEntry,
     PatchList,
-    PatchPage,
     Section
 } from "./models.js";

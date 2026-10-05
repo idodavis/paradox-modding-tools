@@ -73,7 +73,7 @@ export interface Inspect {
     "word": string;
 
     /**
-     * the key the word is written at, or is
+     * its statement's key (the word, when it is the key)
      */
     "key"?: string;
 
@@ -138,7 +138,7 @@ export interface Inspect {
     "adds"?: number[] | null;
 
     /**
-     * a fact shown may be outdated: its source is
+     * a fact shown comes from a stale source
      */
     "stale"?: boolean;
 
@@ -171,7 +171,8 @@ export interface Inspect {
 
 /**
  * Item is one completion: its text, what it is, what may follow, and its rank (0 stated or in
- * scope, 1 vanilla writes it, 2 a name, a link or a command for another scope, 3 a loc key).
+ * scope, 1 vanilla writes it, 2 a name, a link or a command for another scope, 3 a loc key; in a
+ * data call 1 a function, 2 a type).
  */
 export interface Item {
     "label": string;

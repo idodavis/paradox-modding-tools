@@ -35,7 +35,7 @@ export interface Contest {
     "firstWins": boolean;
 
     /**
-     * FIOS or LIOS, or the entry mode that decided it (REPLACE, INJECT)
+     * FIOS (first wins) or LIOS (last wins), or the deciding entry mode (REPLACE, INJECT)
      */
     "rule": string;
     "sites": Site[] | null;
@@ -60,8 +60,8 @@ export interface DatabaseCount {
 
 /**
  * Dependency is one mod using a name another mod's definitions decide, and each place it does: it
- * depends on the other where only that mod defines the name, and is affected by it where the other's
- * definition differs from the one it hides, adds to it, or leaves it out.
+ * depends on the other where only that mod defines the name, and is affected by it where the
+ * other's definition differs from the one it hides, adds to it, or leaves it out.
  */
 export interface Dependency {
     "from": string;
@@ -188,11 +188,6 @@ export interface GameInstall {
     "versionDetected": string;
 
     /**
-     * derived by ListGameInstalls; whatever is on disk is ignored
-     */
-    "isBroken": boolean;
-
-    /**
      * derived: its install built, else its cache written
      */
     "scannedAt"?: string;
@@ -267,7 +262,7 @@ export interface Language {
     "language": string;
 
     /**
-     * not the workspace's language: a mod key that one has and this lacks
+     * keys a mod has in the workspace language but not in this one
      */
     "untranslated": LocRow[] | null;
 }
@@ -324,9 +319,6 @@ export interface Listing {
     "modId": string;
     "gameId": string;
     "root": string;
-    "rel": string;
-    "origin": string;
-    "originName": string;
     "name": string;
     "version": string;
     "supportedVersion": string;
@@ -396,7 +388,7 @@ export interface Node {
     "root"?: boolean;
 
     /**
-     * "more": hidden fires out of Hidden's node; "fired-by": hidden callers
+     * "more": fires hidden out of the node in its ID; "fired-by": callers hidden
      */
     "stub"?: string;
     "hidden"?: number;
@@ -636,7 +628,7 @@ export interface WorkspaceMod {
     "workshopIgnore"?: string;
 
     /**
-     * derived by markBroken; whatever is on disk is ignored
+     * derived by markBroken; a value saved in config.json is ignored
      */
     "isBroken": boolean;
 

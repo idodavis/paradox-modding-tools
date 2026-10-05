@@ -3,9 +3,11 @@
 // one: a Vic3 .asset breaks on CRLF, and EU5's setup/start must have no BOM while its other folders
 // need one. Folding is one range per block. The quick-fixes add a BOM or a missing loc key. Inlay
 // hints give a date's era where the mod declares a calendar.
+
 package lsp
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,7 +114,8 @@ func Folding(sess *session.Session, path string) ([]FoldingRange, error) {
 }
 
 // CodeActions is the quick-fixes at a position: a BOM for a localization file without one, and a
-// loc key no file defines for a word in a loc-key slot, appended to the mod's file of the language.
+// loc key no file defines for a word at a loc-key position, appended to the mod's file of the
+// language.
 func CodeActions(sess *session.Session, path string, line, col int) ([]CodeAction, error) {
 	sess.RLock()
 	defer sess.RUnlock()
@@ -122,8 +125,8 @@ func CodeActions(sess *session.Session, path string, line, col int) ([]CodeActio
 	}
 	var out []CodeAction
 	if file.place.Format == source.Loc {
-		if raw, err := os.ReadFile(path); err == nil && !jomini.HasUTF8BOM(raw) && !strings.HasPrefix(file.text, "\xEF\xBB\xBF") {
-			out = append(out, CodeAction{Title: "Add UTF-8 BOM", Edit: WorkspaceEdit{Changes: map[string][]TextEdit{path: {{NewText: "\xEF\xBB\xBF"}}}}})
+		if raw, err := os.ReadFile(path); err == nil && !bytes.HasPrefix(raw, []byte(jomini.BOM)) && !strings.HasPrefix(file.text, jomini.BOM) {
+			out = append(out, CodeAction{Title: "Add UTF-8 BOM", Edit: WorkspaceEdit{Changes: map[string][]TextEdit{path: {{NewText: jomini.BOM}}}}})
 		}
 		return out, nil
 	}

@@ -1,7 +1,7 @@
 # lang/shipped
 
-The backup for a user missing a dump file: a schema, never the dumps, that the owner builds on
-their own install and ships inside the app. `shipped.go` embeds the files and picks one;
+The backup for a user missing a dump file: a schema, never the dumps, that the maintainer builds
+on their own install and ships inside the app. `shipped.go` embeds the files and picks one;
 `gen/main.go` writes them.
 
 ## What is shipped
@@ -13,7 +13,8 @@ game and version. `Databases`, the docs and wiki claims, vanilla's evidence, its
 their own install as usual and takes the dump part from this file (`Input.Shipped`), so
 everything else is theirs.
 
-One `<game>-<version>.gob.gz` per game version, gob inside gzip with no format version. The name is
+One `<game>-<version>.gob.gz` per game version, gob inside gzip with no format version (`local.Encode`
+and `local.Decode`, the install cache's form too). The name is
 `shipped.Name(game, version)`, the one builder `Load` and the generator share: `Safe(game + "-" +
 version)` + `.gob.gz`, so version `build 24187685` is `eu5-build_24187685.gob.gz`. The files sit
 beside `shipped.go` and are embedded by its `//go:embed`; a game with none gives `Load` no schema.
@@ -52,5 +53,5 @@ Run it:
   `schema.DumpFiles` is there (the generator refuses to run without them);
 - before an app release, for each game, so the release carries the newest dumps.
 
-The owner decides when to ship and commits the files. Old versions' files stay until deleted: they
+The maintainer decides when to ship and commits the files. Old versions' files stay until deleted: they
 are the stale fallback for a user on a version with no file.

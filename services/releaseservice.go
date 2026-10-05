@@ -32,7 +32,7 @@ func ServeSteamPublish() (exitCode int, served bool) {
 
 // ReleaseService loads, saves and publishes a mod's listing.
 type ReleaseService struct {
-	Config *ConfigService
+	App *AppService
 }
 
 // Listing is the Release page payload.
@@ -41,9 +41,6 @@ type Listing struct {
 	ModID            string          `json:"modId"`
 	GameID           string          `json:"gameId"`
 	Root             string          `json:"root"`
-	Rel              string          `json:"rel"`
-	Origin           string          `json:"origin"`
-	OriginName       string          `json:"originName"`
 	Name             string          `json:"name"`
 	Version          string          `json:"version"`
 	SupportedVersion string          `json:"supportedVersion"`
@@ -80,7 +77,7 @@ func (r *ReleaseService) LoadListing(workspaceID, modID string) (*Listing, error
 	return r.loadFrom(ws, mod)
 }
 
-// SaveListing writes descriptor, description files, optional thumb, and changelog.
+// SaveListing writes the descriptor, description files and changelog.
 func (r *ReleaseService) SaveListing(in Listing) (*Listing, error) {
 	ws, mod, err := r.workspaceMod(in.WorkspaceID, in.ModID)
 	if err != nil {
@@ -228,14 +225,10 @@ func (r *ReleaseService) PublishSteam(in Listing) (result *PublishResult, err er
 	}
 
 	// the child loads the game's own copy of Steam's library, from the install the workspace is on
-	var installPath string
-	r.Config.read(func(cfg *Config) {
-		if listed := findWorkspace(cfg, in.WorkspaceID); listed != nil {
-			if record := findInstall(cfg, listed.InstallID); record != nil {
-				installPath = record.Path
-			}
-		}
-	})
+	installPath := ""
+	if _, inst := r.App.workspace(in.WorkspaceID); inst != nil {
+		installPath = inst.Path
+	}
 	library, err := steam.Library(game.Get(listing.GameID), installPath)
 	if err != nil {
 		return nil, err
@@ -282,7 +275,7 @@ func (r *ReleaseService) PublishSteam(in Listing) (result *PublishResult, err er
 
 // workspaceMod is findMod for a mod that has a folder to read, write and publish.
 func (r *ReleaseService) workspaceMod(workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
-	ws, mod, err := findMod(r.Config, workspaceID, modID)
+	ws, mod, err := findMod(r.App, workspaceID, modID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -333,8 +326,7 @@ func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, e
 	}
 	return &Listing{
 		WorkspaceID: ws.ID, ModID: mod.ID, GameID: ws.GameID,
-		Root: root, Rel: filepath.Base(root), Origin: mod.ID, OriginName: mod.Name,
-		Name: fields.Name, Version: fields.Version,
+		Root: root, Name: fields.Name, Version: fields.Version,
 		SupportedVersion: fields.SupportedVersion, Tags: fields.Tags,
 		ThumbnailRel: thumbRel, ThumbnailAbs: thumbAbs,
 		Previews: steam.ScanPreviews(root), RemoteFileID: fields.RemoteFileID,

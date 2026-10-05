@@ -1,6 +1,7 @@
 // eventgraphservice.go is the event graph page: the walk out of one definition over what it fires,
 // and one event's detail -- where it is, what its block holds at the top, its options, and the
-// fires in and out of it. Every number the walk obeys comes from the page; this file has none.
+// fires in and out of it. Every number the walk obeys comes from the page.
+
 package services
 
 import (
@@ -36,7 +37,7 @@ type Node struct {
 	Rel      string `json:"rel,omitempty"`
 	Line     int    `json:"line"`
 	Root     bool   `json:"root,omitempty"`
-	Stub     string `json:"stub,omitempty"` // "more": hidden fires out of Hidden's node; "fired-by": hidden callers
+	Stub     string `json:"stub,omitempty"` // "more": fires hidden out of the node in its ID; "fired-by": callers hidden
 	Hidden   int    `json:"hidden,omitempty"`
 }
 
@@ -76,8 +77,8 @@ type DatabaseCount struct {
 
 // SearchRoots is the fired events and on_actions, and what fires one but a scripted entry, whose id
 // holds the query: ids that start with it first, 50 of one database or 8 of each.
-func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*Roots, error) {
-	sess, err := v.Session.live(workspaceID)
+func (s *EventGraphService) SearchRoots(workspaceID, query, database string) (*Roots, error) {
+	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -86,9 +87,9 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*R
 	query = strings.ToLower(query)
 	sch, indexes := sess.Install.Schema, sess.Indexes()
 
-	// in the files the game loads: what is fired, each definition that fires itself, and the
-	// scripted entries each one runs
-	fired, fires, runs := map[string]string{}, map[index.Def]bool{}, map[index.Def][]index.Ref{}
+	// in the files the game loads: what is fired, and what fires it, a scripted entry by what fires
+	// through it (Session.FiredBy)
+	fired, firing := map[string]string{}, map[index.Def][]session.Fire{}
 	for _, idx := range indexes {
 		for _, file := range idx.Files {
 			records := idx.Records[file.Path]
@@ -96,57 +97,36 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*R
 				continue
 			}
 			for _, ref := range records.Refs {
-				firing := ref.Fires(sch)
-				if firing {
-					fired[ref.Name] = ref.Database
+				if !ref.Fires(sch) {
+					continue
 				}
-				switch {
-				case ref.From >= 0 && firing:
-					fires[records.Defs[ref.From]] = true
-				case ref.From >= 0 && ref.Runs(sch):
-					runs[records.Defs[ref.From]] = append(runs[records.Defs[ref.From]], ref)
+				fired[ref.Name] = ref.Database
+				if ref.From < 0 {
+					continue
+				}
+				caller := records.Defs[ref.From]
+				if _, entered := firing[caller]; !entered && caller.Scripted(sch) {
+					firing[caller] = sess.FiredBy(caller)
+				} else if !entered {
+					firing[caller] = []session.Fire{{Name: caller.Name, Database: caller.Database}}
 				}
 			}
 		}
 	}
 
-	// what fires through the entries it runs (Session.Fires): reached backwards from what fires
-	// itself over each call, resolved once per file, where a local definition shows
-	resolved, ranBy := map[[4]string][]index.Def{}, map[index.Def][]index.Def{}
-	for caller, refs := range runs {
-		for _, ref := range refs {
-			spelled := [4]string{ref.Database, ref.Called, ref.Name, ref.Path}
-			if _, done := resolved[spelled]; !done {
-				resolved[spelled], _ = index.Resolve(sch, indexes, ref)
-			}
-			for _, target := range resolved[spelled] {
-				ranBy[target] = append(ranBy[target], caller)
-			}
-		}
-	}
-	for queue := slices.Collect(maps.Keys(fires)); len(queue) > 0; {
-		def := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-		for _, caller := range ranBy[def] {
-			if !fires[caller] {
-				fires[caller], queue = true, append(queue, caller)
-			}
-		}
-	}
-
-	// the roots the query holds: what is fired and defined, and what fires but is no scripted entry;
-	// a name of several databases takes the first in sorted order, so no map order decides
+	// the roots the query holds: what is fired and defined, and what fires one; a name of several
+	// databases takes the first in sorted order, so no map order decides
 	named := map[string]string{}
 	for name, kind := range fired {
 		if strings.Contains(strings.ToLower(name), query) && len(index.Lookup(indexes, kind, name)) > 0 {
 			named[name] = kind
 		}
 	}
-	for caller := range fires {
-		row, current := sch.Databases[caller.Database], named[caller.Name]
-		if (row == nil || len(row.Naming.CalledIn) == 0) && strings.Contains(strings.ToLower(caller.Name), query) &&
-			(current == "" || caller.Database < current) {
-			named[caller.Name] = caller.Database
+	for _, roots := range firing {
+		for _, root := range roots {
+			if current := named[root.Name]; strings.Contains(strings.ToLower(root.Name), query) && (current == "" || root.Database < current) {
+				named[root.Name] = root.Database
+			}
 		}
 	}
 
@@ -185,8 +165,8 @@ func (v *EventGraphService) SearchRoots(workspaceID, query, database string) (*R
 }
 
 // GetEventGraph draws the definitions around a root.
-func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*EventGraph, error) {
-	sess, err := v.Session.live(workspaceID)
+func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*EventGraph, error) {
+	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +212,7 @@ func (v *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	// into a root the game fires, one hop: a stub until the page opens it
 	var callers []session.Fire
 	if (index.Ref{Database: root.Database}).Fires(sess.Install.Schema) {
-		callers = firedBy(sess, root)
+		callers = sess.FiredBy(root)
 	}
 	if len(callers) > 0 {
 		if slices.Contains(params.Expand, "more-in:"+params.Root) {
@@ -330,48 +310,6 @@ func (grapher *grapher) node(id string, root bool) {
 	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: def.Database, Title: grapher.sess.Title(def), Origin: file.Origin, Rel: file.Rel, Line: int(def.Line), Root: root})
 }
 
-// firedBy is what fires a definition, in name order: its references outside a trigger, one in a
-// scripted effect followed to that effect's callers, with the chain as Fires writes one.
-func firedBy(sess *session.Session, target index.Def) []session.Fire {
-	sch, indexes := sess.Install.Schema, sess.Indexes()
-	seen := map[index.Def]bool{target: true}
-	var follow func(def index.Def) []session.Fire
-	follow = func(def index.Def) (out []session.Fire) {
-		// the references to the name, and the calls whose CalledIn word resolves in its database
-		refs := index.LookupRefs(indexes, def.Database, def.Name)
-		for _, call := range index.LookupRefs(indexes, "", def.Name) {
-			if slices.Contains(sch.Callees[call.Called], def.Database) {
-				refs = append(refs, call)
-			}
-		}
-		for _, ref := range refs {
-			var caller index.Def
-			for _, idx := range indexes {
-				if records := idx.Records[ref.Path]; records != nil && ref.From >= 0 {
-					caller = records.Defs[ref.From]
-				}
-			}
-			row := sch.Databases[caller.Database]
-			switch {
-			case ref.InTrigger || caller.Name == "":
-			case row != nil && len(row.Naming.CalledIn) > 0:
-				if !seen[caller] {
-					seen[caller] = true
-					for _, up := range follow(caller) {
-						out = append(out, session.Fire{Name: up.Name, Via: strings.TrimPrefix(up.Via+" → "+caller.Name, " → ")})
-					}
-				}
-			default:
-				out = append(out, session.Fire{Name: caller.Name})
-			}
-		}
-		return out
-	}
-	out := follow(target)
-	slices.SortStableFunc(out, func(first, second session.Fire) int { return strings.Compare(first.Name, second.Name) })
-	return slices.CompactFunc(out, func(first, second session.Fire) bool { return first.Name == second.Name })
-}
-
 // Detail is one definition, opened.
 type Detail struct {
 	Database string         `json:"database"`
@@ -422,8 +360,8 @@ type Cited struct {
 }
 
 // GetEventDetail opens one definition by name: the one the game keeps.
-func (v *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, error) {
-	sess, err := v.Session.live(workspaceID)
+func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, error) {
+	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +375,7 @@ func (v *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	file, _, _ := sess.Located(def.Path)
 	detail := &Detail{
 		Database: def.Database, Name: def.Name, Mode: def.Mode, Line: int(def.Line), Col: int(def.Col), At: file,
-		Title: sess.Title(def), Fires: sess.Fires(def), FiredBy: firedBy(sess, def),
+		Title: sess.Title(def), Fires: sess.Fires(def), FiredBy: sess.FiredBy(def),
 	}
 
 	// the block, read from the file: the statement whose key the definition was found at
@@ -469,31 +407,24 @@ func (v *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	// the references the walk read inside the entry, grouped by database in the order first written;
 	// a call by the database that defines what it calls, and one nothing defines is left out
 	indexes := sess.Indexes()
-	for _, idx := range indexes {
-		records := idx.Records[def.Path]
-		if records == nil {
+	for _, ref := range index.Within(indexes, def) {
+		database := ref.Database
+		if database == index.Parameter {
 			continue
 		}
-		entry := slices.Index(records.Defs, def)
-		for _, ref := range records.Refs {
-			database := ref.Database
-			if entry < 0 || int(ref.From) != entry || database == index.Parameter {
+		if ref.Called != "" {
+			called, known := index.Resolve(sess.Install.Schema, indexes, ref)
+			if !known {
 				continue
 			}
-			if ref.Called != "" {
-				called, known := index.Resolve(sess.Install.Schema, indexes, ref)
-				if !known {
-					continue
-				}
-				database = called[0].Database
-			}
-			at := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Database == database })
-			if at < 0 {
-				at = len(detail.Refs)
-				detail.Refs = append(detail.Refs, RefGroup{Database: database})
-			}
-			detail.Refs[at].Refs = append(detail.Refs[at].Refs, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
+			database = called[0].Database
 		}
+		at := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Database == database })
+		if at < 0 {
+			at = len(detail.Refs)
+			detail.Refs = append(detail.Refs, RefGroup{Database: database})
+		}
+		detail.Refs[at].Refs = append(detail.Refs[at].Refs, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
 	}
 	return detail, nil
 }

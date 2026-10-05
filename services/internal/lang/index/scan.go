@@ -5,11 +5,8 @@ package index
 
 import (
 	"cmp"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
-	"encoding/gob"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -70,7 +67,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	// 2. the localization, read once in english and the asked language (a file whose path names
 	// another is never read): its keys go to the schema, its records to the index
 	req.Progress("localization", 0, 1)
-	languages, localized := []string{"english", strings.ToLower(req.Language)}, map[string]*Records{}
+	languages, localized := []string{game.BaseLanguage, strings.ToLower(req.Language)}, map[string]*Records{}
 	var locs []source.File
 	for _, file := range input.Install {
 		if file.Format != source.Loc {
@@ -128,8 +125,8 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	return install, SaveInstall(req, install)
 }
 
-// BuildSchema is what the generator ships: the install's databases, which dump claims name,
-// and the dump part; refused unless every dump file is there, so a partial backup never ships.
+// BuildSchema is the dump part the generator ships, with the install's databases so dump claims
+// can name them; it refuses unless every dump file is there, so a partial backup never ships.
 func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
 	input := inventory(req, source.Roots(req.Dir))
 	if missing := schema.MissingDumps(input.Dumps); len(missing) > 0 {
@@ -197,10 +194,8 @@ func read(gameID string, sch *schema.Schema, file source.File, text string, lang
 			return nil
 		}
 
-		// an entry's text is cloned, so a record never pins the file's text (Index.Add shares the
-		// rest). Each $key$ a text interpolates names a loc key; a [x|E] or [x|e] link and
-		// Concept('x', …) name a concept of the database whose registry row has Concepts (NameOf); each
-		// is a reference in no definition
+		// a loc text is cloned so no record pins the file; its $key$ names a loc key, and [x|E] and
+		// Concept('x', …) a game concept: each a reference in no definition
 		concepts := ""
 		for at, row := range game.Get(gameID).Folders {
 			if row.Concepts {
@@ -254,31 +249,10 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 		idx.Roots = append(idx.Roots, roots...)
 		idx.Files = append(idx.Files, source.Inventory(mod.ID, roots)...)
 
-		// CK3's descriptor.mod has a replace_path line per folder; Vic3 and EU5 list them in the
-		// metadata's game_custom_data.replace_paths
-		descriptor, _ := source.File{Path: game.DescriptorPath(info.ID, mod.Dir)}.Text()
-		var folders []string
-		if info.Descriptor == "metadata" {
-			var metadata struct {
-				Custom struct {
-					Paths []string `json:"replace_paths"`
-				} `json:"game_custom_data"`
-			}
-			_ = json.Unmarshal([]byte(descriptor), &metadata)
-			folders = metadata.Custom.Paths
-		} else {
-			parsed := jomini.Parse(descriptor)
-			for _, statement := range parsed.Root.Statements {
-				if assign, isAssign := statement.(*jomini.Assignment); isAssign && assign.Key.Text == "replace_path" {
-					if scalar, isScalar := assign.Value.(*jomini.Scalar); isScalar {
-						folders = append(folders, scalar.Text)
-					}
-				}
-			}
-		}
-
-		// a folder is held lower-case, slash separated and without the stage an inventory root drops
-		for _, folder := range folders {
+		// each folder its descriptor unloads, held lower-case, slash separated and without the stage an
+		// inventory root drops
+		descriptor, _ := local.ReadListingFields(info.ID, mod.Dir)
+		for _, folder := range descriptor.ReplacePaths {
 			folder = strings.Trim(strings.ReplaceAll(strings.ToLower(folder), `\`, "/"), "/")
 			if stage, rest, staged := strings.Cut(folder, "/"); staged && slices.Contains(info.StageRoots, stage) {
 				folder = rest
@@ -385,23 +359,15 @@ func forget(prefix, keep string) (version string, err error) {
 	return version, nil
 }
 
-// SaveInstall writes an install's schema and index to its request's cache file, whole or not at
-// all, then deletes the older cache files of its game and install folder and sets the install's
-// Previous to the version the first held; the file itself holds none. Every file in the cache
-// folder no current reader names (neither install- nor wiki-) goes too, as far as it can,
-// except a . name: a write in flight (local.Write's temporary file).
+// SaveInstall writes the install to its cache file whole, then deletes its install folder's older
+// cache files (Previous takes the first one's version) and every cache file no reader names
+// (neither install- nor wiki-), except a dot name: a write in flight.
 func SaveInstall(req Request, install *Install) error {
 	path, ofFolder, err := cachePath(req)
 	if err != nil {
 		return err
 	}
-	err = local.Write(path, func(out io.Writer) error {
-		zip := gzip.NewWriter(out)
-		if err := gob.NewEncoder(zip).Encode(install); err != nil {
-			return err
-		}
-		return zip.Close()
-	})
+	err = local.Write(path, func(out io.Writer) error { return local.Encode(out, install) })
 	if err != nil {
 		return err
 	}
@@ -437,13 +403,8 @@ func LoadInstall(req Request) (*Install, error) {
 		return nil, err
 	}
 	defer file.Close()
-	unzip, err := gzip.NewReader(file)
-	if err != nil {
-		return nil, err
-	}
-	defer unzip.Close()
 	install := &Install{}
-	if err := gob.NewDecoder(unzip).Decode(install); err != nil {
+	if err := local.Decode(file, install); err != nil {
 		return nil, err
 	}
 	install.Index.Ready()

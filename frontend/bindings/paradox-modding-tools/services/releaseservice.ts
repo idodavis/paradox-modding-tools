@@ -90,7 +90,7 @@ export function RemoveWorkshopVideo(workspaceID: string, modID: string, id: stri
 }
 
 /**
- * SaveListing writes descriptor, description files, optional thumb, and changelog.
+ * SaveListing writes the descriptor, description files and changelog.
  */
 export function SaveListing($in: $models.Listing): $CancellablePromise<$models.Listing | null> {
     return $Call.ByID(746970025, $in);

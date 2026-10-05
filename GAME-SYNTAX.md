@@ -196,7 +196,7 @@ Measured 2026-09-06, four cases where one spelling is two things:
 
 | Written | Also spelled the same | What actually decides |
 |---|---|---|
-| `has_realm_law = x` | the loc key `has_realm_law` | a key is a declared command or a field, never a loc key (`Schema.Slot`); only a value at a position whose declared value is a loc key reads as one |
+| `has_realm_law = x` | the loc key `has_realm_law` | a key is a declared command or a field, never a loc key (the walker's `Step`); only a value at a position whose declared value is a loc key reads as one |
 | `culture = french` | the culture's own loc key | a value at a position whose declared value names a database is that database's entry; a loc key is read only where the declared value is a loc key |
 | `add_trait = conqueror` | `namespace = conqueror` in the mod | a namespace is a word of its file, not an entry: only event ids are entries (`Folder.Events`) |
 | `random_list = { 95 = … }` | province `95` in `map_data/positions.txt` | a number key is a number (`<number>`), and only a prefixed word or a declared value names an entry |

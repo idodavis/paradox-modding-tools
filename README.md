@@ -19,8 +19,8 @@ Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later
 | **Library** | Workspaces by game; open / edit / delete the PMT record; New Workspace / New Mod; Reset all data |
 | **Create Workspace** | Game → install (detect/add) → mods + load order → name |
 | **Workspace IDE** | monaco-vscode workbench; PMT-owned roots; game files read-only; Guide wiki pane |
-| **Event Graph** | Live-session harvest; origin groups; Open from IDE hover |
-| **Workspace Health** | FIOS/LIOS contests, overlays, depends, dangling refs, loc missing/orphan/untranslated |
+| **Event Graph** | Events and on_actions and what fires them, grouped by origin; open from an IDE hover |
+| **Workspace Health** | Which mod's definition wins (first or last loaded), overrides, dependencies, dangling references, missing and untranslated localization, the editor's findings |
 | **Patch Center** | Cached wiki patch notes |
 | **Publish** | Descriptor + Markdown/BBCode, Steam Workshop (embedded helper), Paradox Mods copy-paste |
 | **Workspace Settings** | Name, loc language, remember tabs, default tool, install, mods, Workshop ignore |
@@ -96,7 +96,8 @@ go test ./...
 | `docs/` | User guide (GitHub Pages) |
 | `build/` | Wails Taskfiles and icons |
 
-Agent-facing architecture: [AGENTS.md](AGENTS.md). Terms: [GLOSSARY.md](GLOSSARY.md).
+How the backend fits together, with diagrams of each path: [services/README.md](services/README.md).
+Terms: [GLOSSARY.md](GLOSSARY.md). Notes for coding agents: [AGENTS.md](AGENTS.md).
 
 ## License
 

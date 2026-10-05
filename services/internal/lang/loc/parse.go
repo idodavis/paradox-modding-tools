@@ -1,8 +1,8 @@
+// parse.go is a line-by-line, never-panicking scanner emitting entries and typed errors; it also
+// derives a file's language from its name, path or header.
+
 // Package loc parses Paradox's localization "YAML" dialect (not real YAML). It is game-agnostic.
 // Offsets are UTF-8 byte indices into the original text (a leading BOM is skipped, not stripped).
-//
-// parse.go is a line-by-line, never-panicking scanner emitting entries and typed errors; it
-// also derives a file's language from its name, path or header.
 package loc
 
 import (
@@ -167,10 +167,8 @@ type scanner struct {
 
 // processLine handles one line; base is the byte offset in text of line[0].
 func (scanner *scanner) processLine(line string, base int) {
-	if scanner.lineNo == 0 && strings.HasPrefix(line, "\ufeff") {
-		scanner.hadBOM = true
-		line = line[len("\ufeff"):]
-		base += len("\ufeff")
+	if body, marked := strings.CutPrefix(line, jomini.BOM); scanner.lineNo == 0 && marked {
+		scanner.hadBOM, line, base = true, body, base+len(jomini.BOM)
 	}
 	i := 0
 	sawTab := false
@@ -344,7 +342,7 @@ func LooksLikeKey(name string) bool {
 
 // plainMarks is the markup a player never reads: [concept|E] links, $KEY$ interpolations, and the
 // #style … #! formatting around text.
-var plainMarks = regexp.MustCompile(`\[([A-Za-z0-9_.]+)\|E\]|\$([A-Za-z0-9_.]+)(?:\|[^$]*)?\$|#![ ]?|#[A-Za-z0-9_;]+ `)
+var plainMarks = regexp.MustCompile(`\[([A-Za-z0-9_.]+)\|[Ee]\]|\$([A-Za-z0-9_.]+)(?:\|[^$]*)?\$|#![ ]?|#[A-Za-z0-9_;]+ `)
 
 // Plain is localization as a player reads it: a concept link as the concept's word, an interpolated
 // key as its name, formatting dropped.

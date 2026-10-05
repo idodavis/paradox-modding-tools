@@ -21,7 +21,7 @@ import {
   type ThemeMenuItem,
   type ThemeSwatchColors,
 } from "./ide/colorThemes";
-import { CheckForUpdates, GetVersion } from "@services/configservice";
+import { CheckForUpdates, GetVersion } from "@services/appservice";
 import { CopyDiagnostics, LastRunCrashed } from "@services/logservice";
 import { isWorkbenchReady } from "./ide/workbenchHost";
 import IdeWorkbenchLayout from "./components/IdeWorkbenchLayout.vue";

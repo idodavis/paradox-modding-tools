@@ -120,7 +120,7 @@ export function ImportWorkshopIgnore(workspaceID: string, modID: string): $Cance
 }
 
 /**
- * ListGameInstalls returns a game's installs, each with its scan time and whether it exists.
+ * ListGameInstalls returns a game's installs, each with its scan time.
  */
 export function ListGameInstalls(gameID: string): $CancellablePromise<$models.GameInstall[] | null> {
     return $Call.ByID(3468235284, gameID);

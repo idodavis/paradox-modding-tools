@@ -38,4 +38,4 @@ The workspace default loc language is an IDE and hover setting; the report cover
 
 Drag the load-order chips to preview the kept definitions **without** writing the workspace. **Save as workspace order** persists the same `SortOrder` as Settings.
 
-After a game patch: pin or rescan the install, then use Dangling refs and Overrides here. See [roadmap]({{< relref "/roadmap" >}}).
+After a game patch: reopen the workspace (the install is scanned again by itself), then use Dangling refs and Overrides here. See [roadmap]({{< relref "/roadmap" >}}).

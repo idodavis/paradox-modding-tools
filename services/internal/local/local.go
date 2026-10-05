@@ -1,13 +1,15 @@
-// Package local is this machine's files: the app's own folders, the one way a file is written
-// so no reader ever sees half of it, and a mod's own files (descriptor, thumbnail, the skeleton
-// of a new mod). Nothing here understands the script language; the engine under lang/ does not
-// import it.
-//
-// local.go is the folders and the write every other file here goes through.
+// local.go is the folders, the write every other file here goes through, and the stored form.
+
+// Package local is this machine's files: the app's own folders, the write that keeps a reader from
+// seeing half a file, the form a cache or shipped file is stored in, and a mod's own files
+// (descriptor, thumbnail, the skeleton of a new mod). Nothing here understands the script language.
 package local
 
 import (
+	"compress/gzip"
+	"encoding/gob"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -33,9 +35,9 @@ func CacheDir() (string, error) {
 	return dir, os.MkdirAll(dir, 0o755)
 }
 
-// Write builds path's new contents through fill in a temporary file beside it, then puts that
-// file in its place. A reader never sees half a file, and a failure leaves the current file
-// untouched and no leftovers.
+// Write builds path's new contents through fill in a temporary file beside it, then puts that file
+// in its place. A reader never sees half a file; a failure leaves either the current file or, once
+// that is removed, the new contents in the temporary file.
 func Write(path string, fill func(io.Writer) error) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -67,16 +69,39 @@ func Write(path string, fill func(io.Writer) error) error {
 		return err
 	}
 
-	// Rename first; remove only if it fails. A Windows replace-rename returns
-	// ERROR_ACCESS_DENIED while anything holds the destination open (the game, another editor,
-	// an antivirus scanning the cache), while unlinking the name succeeds.
+	// rename first, remove only if that fails: a Windows replace-rename is refused while anything
+	// holds the target open (the game, another editor, an antivirus), while unlinking succeeds
 	if err := os.Rename(tempName, path); err == nil {
 		return nil
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.Rename(tempName, path)
+	if err := os.Rename(tempName, path); err != nil {
+		tempName = "" // the old file is gone: the new contents stay in the temp file
+		return fmt.Errorf("%w; the new contents are kept in %s", err, temp.Name())
+	}
+	return nil
+}
+
+// Encode writes value to out as gob inside gzip, the form of the install cache and the shipped
+// schemas.
+func Encode(out io.Writer, value any) error {
+	zip := gzip.NewWriter(out)
+	if err := gob.NewEncoder(zip).Encode(value); err != nil {
+		return err
+	}
+	return zip.Close()
+}
+
+// Decode reads what Encode wrote into value, a pointer.
+func Decode(in io.Reader, value any) error {
+	unzip, err := gzip.NewReader(in)
+	if err != nil {
+		return err
+	}
+	defer unzip.Close()
+	return gob.NewDecoder(unzip).Decode(value)
 }
 
 // CopyFile copies src over dest, which is written whole or not at all.

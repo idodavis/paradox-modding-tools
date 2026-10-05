@@ -2,7 +2,8 @@
 
 The language engine: it reads a game install, its dump folders and a workspace's mods, and answers
 what every written word is. Each package under it has its design in its own README; this file is
-the overview and the map.
+the overview and the map. The whole backend, its services and the paths through it are in
+[`services/README.md`](../../README.md).
 
 ## What it must do
 

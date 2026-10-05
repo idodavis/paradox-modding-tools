@@ -8,8 +8,8 @@ walker that reads script by the language rules in `game/lang-rules.go`.
 | `schema.go` | the types (`Source`, `Said`, `Key`, `Command`, `Database`, `Schema`), `Speaks`, `Link`, `Named`, `Flagged`, positions (`At`, `Below`, `collapse`) and `Build` |
 | `read.go` | the walker: `Read`, `Start`, `Step` |
 | `dumps.go` | the reader of the console dumps |
-| `vanilla.go` | the entry detector (`Entries`), vanilla's evidence (`observe`) and the value types it gives (`typeValues`) |
-| `template.go` | the reader of docs, wiki examples and dump usages: the normalizer, the phrase catalogue, `join`, `usage` |
+| `vanilla.go` | the entry detector (`Entries`, `tableEntries`), vanilla's evidence (`observe`) and the value types it gives (`typeValues`) |
+| `template.go` | the reader of docs, wiki examples and dump usages: the normalizer (`normalize`, `usageLines`, `markdown`), the phrase catalogue, `join`, `usage` |
 
 ## Sources and claims
 
@@ -38,7 +38,9 @@ writes a position: the dumps anywhere, the docs and wiki only where vanilla writ
 ## Build
 
 1. **Databases.** Each script file's folder is a database (`folder`: the longest registry row at
-   or above the path, named without `common/`). Its entry block is the row's `Body` kind, else a
+   or above the path, named without `common/`). The game reads a `common/` folder whole, so a
+   subfolder with no row is its highest ancestor's database (`decisions/dlc_decisions` is
+   `decisions`); folders are declared shallow first so a subfolder finds it. Its entry block is the row's `Body` kind, else a
    fields block; each of the row's `Refs` is claimed as a reference to the database itself.
    `Callees` maps each `CalledIn` word, and `game.AnyCall`, to the databases a call by it resolves
    in.
@@ -46,9 +48,11 @@ writes a position: the dumps anywhere, the docs and wiki only where vanilla writ
 3. **Docs and wiki examples**, normalized and parsed once: a doc into its own folder's database; a
    database's named wiki pages' `<pre>` blocks (none for a history database).
 4. **Fields**: every key name each database's docs and wiki write, for the entry detector.
-5. **Vanilla**: first `Macros`, vanilla's scripted entries by name, each with the position its
-   calls' blocks read at (the entry's parameters), from the scripted folders alone, so a call is
-   never observed as an argument. Then each install file's entries (`Entries`), a database made for
+5. **Vanilla**: first `Macros`, vanilla's scripted entries by calling word and name, from the
+   scripted folders alone, so a call is never observed as an argument. A `Macro` names its database
+   and, where that database takes parameters, holds the position its calls' blocks read at; a call
+   of any other entry reads at its database's entry. No position is held twice, since the cache
+   (gob) would write a shared tree once per reference. Then each install file's entries (`Entries`), a database made for
    any new name, and its evidence (`observe`).
 6. **Value types and prefixes** (`typeValues`), before any docs claim. `Prefixes` maps each link
    prefix to the database the names after it are in: the name commands' databases first, then
@@ -68,9 +72,12 @@ call whose block it is). Each key becomes a `Step` by `Step(at, statement, name,
   triggers, the leaf reads at the position the description belongs to.
 - **What its block holds.** A link's block reads where the link is written. A command's block is
   the first contents rule that fits (`game.ContentsOrder`). An operator's is a value block or
-  arguments. Otherwise the position's claim decides. `game.Structurals` fix random_list's branches
+  arguments. Otherwise the position's claim decides, else vanilla's evidence (`holds`): every key a
+  value operator (its `if`s aside) is a value block, only triggers a triggers block, only effects an
+  effects block, keys and no command a fields block. `game.Structurals` fix random_list's branches
   and switch's cases; a call starting with an iterator prefix iterates that scripted list
-  (`game.ListIterators`).
+  (`game.ListIterators`). An arguments block reads no links: a key it neither declares nor sees in
+  vanilla is a plain position, never a scope change.
 - **Its scope.** The first scope rule that fits (`game.ScopeRules`); a scope that runs no triggers
   and no effects is unknown.
 
@@ -99,12 +106,15 @@ keeps a trigger or effect reading's blurb over a link's, a plain link's over a g
 `Wild` link is a pattern (`value`, `compare_value`) that no written name reads as. Names are held
 lower-case.
 
-A usage is read once every command is declared, into the command's `Args` (`usage`): its statement
-named after the command, else its first statement when that is a block under another declared
-command's name (Vic3 `set_global_variable`'s usage is written as `set_variable = { … }`). Every key
-in that statement's block is an argument, whatever else its name is. A block placeholder in the
-dump text gives `Args.Block` its kind when the usage gave none; a usage whose blocks write no
-placeholder takes arguments only. `Lists` marks a command that iterates a list with no target.
+A usage is read once every command is declared, into the command's `Args` (`usage`): every
+statement named after the command, at any depth (CK3 `any_vassal` writes two), else its one
+statement under another name (Vic3 `set_global_variable`'s is `set_variable = { … }`), else a bare
+list of the arguments. Every key in that statement's block is an argument, whatever else its name
+is; `<count=num/all>` is the argument `count`. A block that lists a block placeholder takes the kind
+its last word names (`game.Placeholders`: `<triggers>`, `<display_triggers>`, `<interface effects>`),
+at any level; a usage whose blocks write no placeholder takes arguments only. `Lists` marks a
+command whose blurb opens with `game.DumpWords.Iterates` and that has no target. A modifier named
+with `$TYPE$` parts keeps them as a glob (`Modifier.Pattern`).
 
 ## Entries and evidence (`vanilla.go`)
 
@@ -117,9 +127,9 @@ hands on each `Entry` (database, name, mode word, statement, `Local`) in source 
 | `.gui`, `.asset`, `.font` | a block named by its name key, a `NameKeyOf` key or the widget key | `FileType` |
 | a database's top | each assignment is an entry named by its key; wrapper keys hold top statements; only event ids in events; a `NameKey` folder names each top block by that key; `Unnamed`, `ByFile` and history rows as their fields say | `Folder` |
 | inside an entry | keys at a nested row's path define entries of their own; a key the docs write there, or a declared command or link, is a field | `Layout.Nested` |
-| tables and sound lists | each line's name | `Layout.MapTable`, `source.List` |
+| tables and sound lists | each line's name (`tableEntries`) | `Layout.MapTable`, `source.List` |
 
-A mode word (`REPLACE:x`) is stripped from every name.
+A mode word (`REPLACE:x`) is stripped from every name (`GameInfo.Mode`).
 
 `observe` reads each entry with the walker, creating positions, and records only evidence: `Seen.In`
 (how many blocks of the parent hold the key), `Blocks`, `Forms` (and `FormCommand` on a block that
@@ -134,31 +144,39 @@ writes after each link prefix. Vanilla's types never accuse.
 
 ## Docs, wiki examples and usages (`template.go`)
 
-`normalize` turns a doc, wiki example or usage into script and keeps every other line as a comment:
-lines shaped like script stay code (braces, `key =`, `key {`, field bullets); the rewrite table
-quotes placeholders and moved notes (`(optional)`, `(default = x)`) into the line's comment; a
-usage line is split before each statement; blocks left open close by indentation; markdown
-headings and lists become comments.
+`normalize` turns the lines of a doc, wiki example or usage into script and keeps every other line
+as a comment: lines shaped like script stay code (braces, `key =`, `key {`, field bullets); the
+rewrite table quotes placeholders, reads `<key = value>` as that argument, and moves a `(note)` after
+a value into the line's comment; blocks a text leaves open close by indentation. An empty comment
+line ends a paragraph, so the comments above it lead no statement; an upper-case line is a heading.
+`usageLines` splits a usage line before each statement; `markdown` blanks headings and comments list
+lines that are no field.
 
 `join` reads a doc into its database's tree with the walker. A key at a position vanilla writes
 takes the statement's claims; a list word's claims go to the position holding it. A key vanilla
-writes nowhere below where it stands (an example entry's name, `my_event.1 = { … }`) is
-transparent: its block is read in its place, and at the top its claims are the entry's. A doc never
-makes a position.
+writes nowhere below where it stands is a **stand-in** (an example entry's name, `<key>`,
+`my_phase_key`): its block reads in its place where vanilla writes its keys there, else at each
+position one level below that writes them (each real phase, each real guest), else nowhere; at the
+top its claims are the entry's, unless it is a value where vanilla writes every entry as a block.
+A doc never makes a position.
 
-The phrase catalogue (`phrases`) reads a statement's value as written and its comments into claims;
-the comment lines no row reads are the blurb.
+The phrase catalogue (`phrases`) reads a statement's value as written and its comments into claims.
+A comment line is the blurb unless the rows read all of it, or a row that claims nothing reads it.
 
 | Row | Reads | Claim |
 |---|---|---|
-| default | `default is x`, `defaults to x`, `default = x` | `Default` |
+| default | `default is x`, `defaults to x`, `default = x`, `default: x` | `Default` |
 | optional, required | `optional`; `required`, `required if/when …` | `Required` |
 | root | `root = x` opening the text | `Scope` |
-| types | `int`, `number`, `script value`; `bool`, `yes/no`; `date`; `string`, `text`; `scope`; `loc key` | `Value` type |
+| no claim | `scope:x = …`, `Brief:`, a line ending in `:` | — |
+| types | a type word opening the text or a parenthesis: `int`, `float`, `number`, `scripted value`; `bool`, `yes/no`; `date`; `loc key`; `string`, `text`, `scope` only alone | `Value` type |
 | event, on_action | `event id`; `on_action` | `Value`: a reference to the events or on_actions database |
 | block kinds | `trigger(s)`; `effect(s)` | `Block` |
 | file | one quoted word with a slash | `Value` file |
-| words, items | `a/b/c`; `- item: blurb` lines | `Value.Words` |
+| items | `- item: blurb` lines | `Value.Words` |
 
-A placeholder no row reads names the database `Named` gives. In a usage, an argument written as a
-block placeholder word (`on_created = effect`) runs in an unknown scope.
+A value written `a/b/c` that no row reads whole is read word by word: a type word gives its type,
+the rest are its words (`num/all`: a number or `all`). A placeholder no row reads names the database
+`Named` gives. A doc's literal states its form (`expiration_days = 3650` a number), and a doc's
+block whose kind nothing names states only that the key takes a block (`WordBlock`). In a usage,
+an argument written as a block placeholder word (`on_created = effect`) runs in an unknown scope.

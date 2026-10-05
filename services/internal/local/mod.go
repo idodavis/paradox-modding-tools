@@ -20,7 +20,7 @@ import (
 	"paradox-modding-tools/services/internal/game"
 )
 
-// ListingFields are the descriptor keys the Release page edits.
+// ListingFields are the descriptor keys the Release page edits, and the folders the mod unloads.
 type ListingFields struct {
 	Name             string
 	Version          string
@@ -29,7 +29,8 @@ type ListingFields struct {
 	RemoteFileID     string
 	Picture          string
 	ShortDescription string
-	ID               string // metadata.json only: written with a new mod, never cleared
+	ID               string   // metadata.json only: written with a new mod, never cleared
+	ReplacePaths     []string // read, never written: replace_path lines, or game_custom_data.replace_paths
 }
 
 // listingField is one descriptor key, spelled for .mod and for metadata.json.
@@ -104,6 +105,7 @@ func WriteListingFields(gameID, root string, fields ListingFields) error {
 	return os.WriteFile(descriptor, next, 0o644)
 }
 
+// ThumbnailExts are the image types a listing thumbnail may be.
 var ThumbnailExts = []string{".png", ".gif", ".jpg", ".jpeg"}
 
 // thumbnailDirs is where a new listing image goes, and every folder a mod may keep one in, the
@@ -176,6 +178,9 @@ func readDescriptorMod(src string) ListingFields {
 		if !ok {
 			continue
 		}
+		if key == "replace_path" {
+			fields.ReplacePaths = append(fields.ReplacePaths, value)
+		}
 		for _, field := range listingFields {
 			if field.mod == key {
 				field.set(&fields, value)
@@ -244,9 +249,14 @@ func splitModKV(line string) (key, value string, ok bool) {
 	if eq < 1 {
 		return "", "", false
 	}
-	key = strings.TrimSpace(line[:eq])
-	value = strings.Trim(strings.TrimSpace(line[eq+1:]), `"`)
-	return key, value, true
+	// a quoted value ends at its closing quote, a bare one at a comment
+	key, value = strings.TrimSpace(line[:eq]), strings.TrimSpace(line[eq+1:])
+	if body, quoted := strings.CutPrefix(value, `"`); quoted {
+		value, _, _ = strings.Cut(body, `"`)
+		return key, value, true
+	}
+	value, _, _ = strings.Cut(value, "#")
+	return key, strings.TrimSpace(value), true
 }
 
 func collectModTags(lines []string, i int) ([]string, int) {
@@ -281,8 +291,8 @@ func quoteMod(text string) string {
 	return `"` + strings.ReplaceAll(strings.TrimSpace(text), `"`, `'`) + `"`
 }
 
-// readMetadataJSON reads a metadata.json's listing fields; 8 of 13 local EU5 mods' start with a
-// byte-order mark, which encoding/json rejects, so it goes first.
+// readMetadataJSON reads a metadata.json's listing fields; a leading byte-order mark, common in EU5
+// mods, is dropped first, as encoding/json rejects it.
 func readMetadataJSON(raw []byte) (ListingFields, error) {
 	var metadata map[string]any
 	if err := json.Unmarshal(bytes.TrimPrefix(raw, utf8BOM), &metadata); err != nil {
@@ -292,10 +302,13 @@ func readMetadataJSON(raw []byte) (ListingFields, error) {
 	for _, field := range listingFields {
 		field.set(&fields, firstString(metadata, append([]string{field.json}, field.jsonAlso...)...))
 	}
-	if tags, ok := metadata["tags"].([]any); ok {
-		for _, tag := range tags {
-			if text, ok := tag.(string); ok && text != "" {
-				fields.Tags = append(fields.Tags, text)
+	// the two lists of strings: the tags, and the folders game_custom_data says the mod replaces
+	custom, _ := metadata["game_custom_data"].(map[string]any)
+	for into, values := range map[*[]string]any{&fields.Tags: metadata["tags"], &fields.ReplacePaths: custom["replace_paths"]} {
+		listed, _ := values.([]any)
+		for _, value := range listed {
+			if text, ok := value.(string); ok && text != "" {
+				*into = append(*into, text)
 			}
 		}
 	}
@@ -384,8 +397,8 @@ type NewModOpts struct {
 	GameID, Root, Name, SupportedVersion, LocLang, ThumbnailSrc string
 }
 
-// WriteNewMod creates root with a descriptor, each of the game's ModFolders empty but for a loc stub
-// in the localization one's language folder, and the thumbnail when one is given.
+// WriteNewMod creates root with a descriptor, each of the game's ModFolders empty but for a loc
+// stub in the localization one's language folder, and the thumbnail when one is given.
 func WriteNewMod(opts NewModOpts) error {
 	info := game.Get(opts.GameID)
 	if info == nil {
@@ -426,7 +439,7 @@ func WriteNewMod(opts NewModOpts) error {
 	if err := WriteListingFields(opts.GameID, root, fields); err != nil {
 		return err
 	}
-	language, locDir := cmp.Or(strings.TrimSpace(opts.LocLang), "english"), ""
+	language, locDir := cmp.Or(strings.TrimSpace(opts.LocLang), game.BaseLanguage), ""
 	for _, folder := range info.ModFolders {
 		dir := filepath.Join(root, filepath.FromSlash(folder))
 		if strings.HasSuffix("/"+folder, "/localization") {

@@ -37,19 +37,15 @@ export function DiagnosticCodes(): $CancellablePromise<lsp$0.Code[] | null> {
     return $Call.ByID(4095535154);
 }
 
+/**
+ * DidChange, DidClose and DidSave are the editor's buffer events; an opened buffer is a change.
+ */
 export function DidChange(workspaceID: string, path: string, text: string): $CancellablePromise<void> {
     return $Call.ByID(3111290104, workspaceID, path, text);
 }
 
 export function DidClose(workspaceID: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(1896704868, workspaceID, path);
-}
-
-/**
- * DidOpen, DidChange, DidClose and DidSave are the editor's buffer events.
- */
-export function DidOpen(workspaceID: string, path: string, text: string): $CancellablePromise<void> {
-    return $Call.ByID(500946888, workspaceID, path, text);
 }
 
 export function DidSave(workspaceID: string, path: string): $CancellablePromise<void> {

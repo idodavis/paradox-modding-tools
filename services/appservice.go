@@ -1,7 +1,7 @@
-// configservice.go is the app's config, config.json: the game installs, the workspaces and their
-// mods, and the settings, held in memory behind one lock and written whole on every change. Its
-// RPCs are the settings, the app version and update check, and the reset; the other services read
-// and change the config through read and mutate.
+// appservice.go is the app-wide service: the version, the update check, the display settings and
+// the reset. It also holds config.json (the game installs, the workspaces and their mods, the
+// settings) in memory behind one lock, written whole on every change; the other services read and
+// change it through read and mutate.
 
 package services
 
@@ -39,7 +39,6 @@ type GameInstall struct {
 	Name            string `json:"name"`
 	Path            string `json:"path"`
 	VersionDetected string `json:"versionDetected"`
-	IsBroken        bool   `json:"isBroken"`            // derived by ListGameInstalls; whatever is on disk is ignored
 	ScannedAt       string `json:"scannedAt,omitempty"` // derived: its install built, else its cache written
 }
 
@@ -70,13 +69,13 @@ type WorkspaceMod struct {
 	DescMdRel      string `json:"descMdRel,omitempty"`
 	DescBbRel      string `json:"descBbRel,omitempty"`
 	WorkshopIgnore string `json:"workshopIgnore,omitempty"`
-	IsBroken       bool   `json:"isBroken"` // derived by markBroken; whatever is on disk is ignored
+	IsBroken       bool   `json:"isBroken"` // derived by markBroken; a value saved in config.json is ignored
 	// the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written
 	Eras session.Calendar `json:"eras,omitempty"`
 }
 
-// ConfigService holds config.json and serves the settings.
-type ConfigService struct {
+// AppService serves the app-wide calls and holds config.json for every other service.
+type AppService struct {
 	Session *SessionService
 	Version string
 
@@ -86,18 +85,18 @@ type ConfigService struct {
 	loadErr error // config.json exists but could not be read; the config is then served empty and never written
 }
 
-// OpenConfig loads config.json from the app's folder. A missing file is a first run; any other read
+// OpenApp loads config.json from the app's folder. A missing file is a first run; any other read
 // failure leaves the config read-only.
-func OpenConfig() (*ConfigService, error) {
+func OpenApp() (*AppService, error) {
 	dir, err := local.AppDir()
 	if err != nil {
 		return nil, err
 	}
-	return newConfig(filepath.Join(dir, "config.json")), nil
+	return newApp(filepath.Join(dir, "config.json")), nil
 }
 
-func newConfig(path string) *ConfigService {
-	config := &ConfigService{path: path, cfg: Config{Settings: map[string]map[string]string{}}}
+func newApp(path string) *AppService {
+	config := &AppService{path: path, cfg: Config{Settings: map[string]map[string]string{}}}
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return config
@@ -118,14 +117,14 @@ func newConfig(path string) *ConfigService {
 }
 
 // read runs fn with the live config under the lock; fn must not keep pointers into it.
-func (s *ConfigService) read(fn func(*Config)) {
+func (s *AppService) read(fn func(*Config)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fn(&s.cfg)
 }
 
 // mutate runs fn and saves the config; an fn error or an unreadable config saves nothing.
-func (s *ConfigService) mutate(fn func(*Config) error) error {
+func (s *AppService) mutate(fn func(*Config) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.loadErr != nil {
@@ -138,12 +137,12 @@ func (s *ConfigService) mutate(fn func(*Config) error) error {
 }
 
 // GetVersion returns the app version string.
-func (s *ConfigService) GetVersion() string {
+func (s *AppService) GetVersion() string {
 	return s.Version
 }
 
 // CheckForUpdates triggers the Wails updater.
-func (s *ConfigService) CheckForUpdates() {
+func (s *AppService) CheckForUpdates() {
 	app := application.Get()
 	if app == nil {
 		return
@@ -154,7 +153,7 @@ func (s *ConfigService) CheckForUpdates() {
 }
 
 // GetSettings loads the settings as a map of "namespace.key" to value.
-func (s *ConfigService) GetSettings() (map[string]string, error) {
+func (s *AppService) GetSettings() (map[string]string, error) {
 	out := map[string]string{}
 	s.read(func(cfg *Config) {
 		for namespace, values := range cfg.Settings {
@@ -167,7 +166,7 @@ func (s *ConfigService) GetSettings() (map[string]string, error) {
 }
 
 // SaveSettings writes settings keyed "namespace.key"; a key with no namespace is skipped.
-func (s *ConfigService) SaveSettings(settings map[string]string) error {
+func (s *AppService) SaveSettings(settings map[string]string) error {
 	return s.mutate(func(cfg *Config) error {
 		for qualified, value := range settings {
 			namespace, key, ok := strings.Cut(qualified, ".")
@@ -185,7 +184,7 @@ func (s *ConfigService) SaveSettings(settings map[string]string) error {
 
 // ResetData forgets every install and workspace, deletes the caches, and closes the live session.
 // Mod and game folders stay.
-func (s *ConfigService) ResetData() error {
+func (s *AppService) ResetData() error {
 	if err := s.mutate(func(cfg *Config) error {
 		cfg.Installs, cfg.Workspaces = nil, nil
 		return nil
@@ -216,6 +215,25 @@ func cloneWorkspace(ws Workspace) Workspace {
 		return strings.Compare(first.Name, second.Name)
 	})
 	return ws
+}
+
+// workspace is a copy of a workspace and of the install it is on, from one read; nil where either
+// is not listed.
+func (s *AppService) workspace(id string) (ws *Workspace, inst *GameInstall) {
+	s.read(func(cfg *Config) {
+		listed := findWorkspace(cfg, id)
+		if listed == nil {
+			return
+		}
+		copied := *listed
+		copied.Mods = slices.Clone(listed.Mods)
+		ws = &copied
+		if found := findInstall(cfg, listed.InstallID); found != nil {
+			record := *found
+			inst = &record
+		}
+	})
+	return ws, inst
 }
 
 func findInstall(cfg *Config, id string) *GameInstall {

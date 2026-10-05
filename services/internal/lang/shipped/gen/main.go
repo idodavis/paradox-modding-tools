@@ -6,9 +6,7 @@ package main
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
-	"encoding/gob"
 	"flag"
 	"log"
 	"os"
@@ -19,6 +17,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/shipped"
+	"paradox-modding-tools/services/internal/local"
 )
 
 func main() {
@@ -61,25 +60,16 @@ func main() {
 	}
 	sch.Databases = nil
 
-	// 4. gob inside gzip, as shipped.Load reads it
+	// 4. the stored form, as shipped.Load reads it
 	var encoded bytes.Buffer
-	zip := gzip.NewWriter(&encoded)
-	if err := gob.NewEncoder(zip).Encode(sch); err != nil {
-		log.Fatal(err)
-	}
-	if err := zip.Close(); err != nil {
+	if err := local.Encode(&encoded, sch); err != nil {
 		log.Fatal(err)
 	}
 
 	// 5. a file of this version stays when it decodes to the same schema (gob map order changes the
 	// bytes on every run); both sides are decoded so empty slices and maps compare alike
 	decode := func(data []byte) (decoded *schema.Schema, err error) {
-		unzip, err := gzip.NewReader(bytes.NewReader(data))
-		if err != nil {
-			return nil, err
-		}
-		defer unzip.Close()
-		err = gob.NewDecoder(unzip).Decode(&decoded)
+		err = local.Decode(bytes.NewReader(data), &decoded)
 		return decoded, err
 	}
 	path := filepath.Join(shippedDir, shipped.Name(*gameID, version))

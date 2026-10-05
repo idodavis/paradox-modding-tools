@@ -15,8 +15,11 @@ import (
 	"time"
 )
 
-// OriginVanilla is the session/IDE origin id for game files (not a cache filename).
+// OriginVanilla is the session/IDE origin id for game files.
 const OriginVanilla = "vanilla"
+
+// BaseLanguage is the localization every game ships whole, read beside a workspace's language.
+const BaseLanguage = "english"
 
 // GameInfo is the static identity and convention set for one game. It carries no
 // derived data; the engine under lang/ scans the install for that.
@@ -38,11 +41,8 @@ type GameInfo struct {
 	// "metadata" (.metadata/metadata.json).
 	Descriptor string `json:"descriptor,omitempty"`
 
-	// ThumbnailDir is where a NEW listing image goes, relative to the mod root:
-	// "" for the root itself, ".metadata" beside the metadata file. Not implied by
-	// Descriptor: Victoria 3 uses metadata.json yet keeps its thumbnail at the root
-	// (GAME-SYNTAX.md has the counts). An existing thumbnail keeps its place.
-	// Backend-only: the frontend is told the resulting path on the listing.
+	// ThumbnailDir is where a new listing image goes, from the mod root ("" the root); Descriptor
+	// does not imply it (Vic3 keeps it at the root). An existing thumbnail stays. Backend-only.
 	ThumbnailDir string `json:"-"`
 
 	// DocsFolderName is the per-game Documents subfolder (e.g. "Crusader Kings III"). Backend-only.
@@ -67,7 +67,7 @@ type GameInfo struct {
 	DataTypesCommand string `json:"-"`
 }
 
-// GameList is the Wails payload for ListGames (consts are not exported).
+// GameList is the Wails payload for ListGames (bindings carry no Go constants).
 type GameList struct {
 	OriginVanilla string      `json:"originVanilla"`
 	Games         []*GameInfo `json:"games"`
@@ -113,7 +113,7 @@ var registry = map[string]*GameInfo{
 		ScriptRoot: "game",
 		StageRoots: []string{"in_game", "main_menu", "loading_screen"},
 		Descriptor: "metadata",
-		// where EU5 mods keep it; GAME-SYNTAX.md has the counts
+		// where EU5 mods keep it
 		ThumbnailDir:     ".metadata",
 		DocsFolderName:   "Europa Universalis V",
 		SteamAppID:       3450310,
@@ -396,17 +396,8 @@ func dirExists(path string) bool {
 	return err == nil && stat.IsDir()
 }
 
-// InstallUpdatedAt is when the game's files last changed, for judging whether
-// generated files (script_docs) still describe the installed build.
-//
-// The binaries' mtimes are the signal: launcher/launcher-settings.json is missing on
-// EU5 and lags the update on CK3, and Steam's appmanifest covers only Steam copies.
-// "Last changed" is deliberately not "highest version": Steam stamps files as it
-// writes them, so switching to an older build (a beta branch) moves the time forward
-// too, which comparing versions would miss, and EU5 publishes no version at all.
-// Copying an install preserves mtimes, which can only make this quieter.
-//
-// Zero time means unknown; callers must treat that as "cannot tell", never stale.
+// InstallUpdatedAt is the newest mtime among the install's binaries, else its top files: an update
+// or a branch switch moves it, so a dump older than it is stale. Zero means unknown, never stale.
 func InstallUpdatedAt(installPath string) time.Time {
 	if installPath == "" {
 		return time.Time{}
@@ -442,8 +433,7 @@ func newestFileIn(dir string) time.Time {
 	return newest
 }
 
-// MetadataDir is the folder of a metadata descriptor: a constant rather than a registry field
-// because the layout is a Paradox convention; which descriptor a game uses is GameInfo.Descriptor.
+// MetadataDir is the folder a metadata descriptor sits in (.metadata/metadata.json).
 const (
 	MetadataDir = ".metadata"
 )

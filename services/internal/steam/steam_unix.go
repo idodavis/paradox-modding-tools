@@ -1,7 +1,7 @@
 //go:build !windows
 
-// steam_unix.go opens Steam's library with dlopen, and lays out CreateItemResult_t as Linux
-// and macOS pack it: Steam's callback structs are packed to 4 bytes here and to 8 on Windows.
+// steam_unix.go opens Steam's library with dlopen, and lays out CreateItemResult_t as Linux packs
+// it: Steam's callback structs are packed to 4 bytes here and to 8 on Windows.
 
 package steam
 

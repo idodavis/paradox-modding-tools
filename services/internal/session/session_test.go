@@ -1,6 +1,7 @@
 // session_test.go covers a workspace over the ck3 fixture install: what edits, saves, closes and
 // disk changes do to the records, the read side, how a path is placed, and the lock contract under
 // -race.
+
 package session
 
 import (
@@ -32,7 +33,7 @@ func workspace(t *testing.T) (*Session, string) {
 	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "lang", "testdata", "mods", "ck3"))); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := New(t.Context(), game.Get("ck3"), install, []Mod{{ID: "mod", Name: "M", Dir: dir, Calendar: Calendar{{Name: "AC", Offset: 7782}}}}, "")
+	sess, err := New(t.Context(), game.Get("ck3"), install, []Mod{{ID: "mod", Dir: dir, Calendar: Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +97,7 @@ func TestQueries(t *testing.T) {
 	sess, dir := workspace(t)
 	events := filepath.Join(dir, "events", "m_events.txt")
 
-	if sess.Language != "english" || len(sess.Mods) != 1 || sess.Mods[0].Name != "M" || sess.Game.Name != "Crusader Kings III" {
+	if sess.Language != "english" || len(sess.Mods) != 1 || sess.Mods[0].ID != "mod" || sess.Game.Name != "Crusader Kings III" {
 		t.Errorf("the session knows its language, its mods and its game: %s %+v", sess.Language, sess.Mods)
 	}
 	if winner, _, _, _ := sess.Winner(nil); winner != (index.Def{}) {

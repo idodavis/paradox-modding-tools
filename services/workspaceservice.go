@@ -19,22 +19,22 @@ import (
 
 // WorkspaceService manages workspaces, game installs, and mods.
 type WorkspaceService struct {
-	Config  *ConfigService
+	App     *AppService
 	Session *SessionService
 }
 
 // Game installs.
 
 // ListGames returns the supported-game table and vanilla origin token.
-func (w *WorkspaceService) ListGames() game.GameList {
+func (s *WorkspaceService) ListGames() game.GameList {
 	return game.GameList{OriginVanilla: game.OriginVanilla, Games: game.All()}
 }
 
-// ListGameInstalls returns a game's installs, each with its scan time and whether it exists.
-func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error) {
+// ListGameInstalls returns a game's installs, each with its scan time.
+func (s *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error) {
 	var out []GameInstall
 	languages := map[string]string{} // by install id: the language of the first workspace on it
-	w.Config.read(func(cfg *Config) {
+	s.App.read(func(cfg *Config) {
 		for _, inst := range cfg.Installs {
 			if inst.GameID == gameID {
 				out = append(out, inst)
@@ -47,22 +47,20 @@ func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error
 		}
 	})
 
-	// a stat and a cache file's time per install, so the config lock is back before any of it
+	// a cache file's time per install, so the config lock is back before any of it
 	for i := range out {
-		_, err := os.Stat(out[i].Path)
-		out[i].IsBroken = err != nil
-		out[i].ScannedAt = w.Session.scannedAt(&out[i], languages[out[i].ID])
+		out[i].ScannedAt = s.Session.scannedAt(&out[i], languages[out[i].ID])
 	}
 	return out, nil
 }
 
 // FindGameInstalls returns Steam-detected installs for a game.
-func (w *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstall {
+func (s *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstall {
 	return game.FindInstalls(gameID)
 }
 
 // DetectGameVersion reads an install's version (launcher-settings.json, else the Steam manifest).
-func (w *WorkspaceService) DetectGameVersion(gameID, path string) string {
+func (s *WorkspaceService) DetectGameVersion(gameID, path string) string {
 	info := game.Get(gameID)
 	if info == nil {
 		return ""
@@ -71,7 +69,7 @@ func (w *WorkspaceService) DetectGameVersion(gameID, path string) string {
 }
 
 // AddGameInstall adds a new game installation, with the version it holds now.
-func (w *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInstall, error) {
+func (s *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInstall, error) {
 	info := game.Get(gameID)
 	if info == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
@@ -83,7 +81,7 @@ func (w *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInsta
 		ID: uuid.New().String(), GameID: gameID, Name: name, Path: path,
 		VersionDetected: game.ReadGameVersion(path, info.SteamAppID),
 	}
-	err := w.Config.mutate(func(cfg *Config) error {
+	err := s.App.mutate(func(cfg *Config) error {
 		cfg.Installs = append(cfg.Installs, inst)
 		return nil
 	})
@@ -94,14 +92,14 @@ func (w *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInsta
 }
 
 // UpdateGameInstall updates path, then refreshes version.
-func (w *WorkspaceService) UpdateGameInstall(id, path string) (*GameInstall, error) {
+func (s *WorkspaceService) UpdateGameInstall(id, path string) (*GameInstall, error) {
 	if path != "" {
 		if _, err := os.Stat(path); err != nil {
 			return nil, fmt.Errorf("invalid path: %w", err)
 		}
 	}
 	var out *GameInstall
-	err := w.Config.mutate(func(cfg *Config) error {
+	err := s.App.mutate(func(cfg *Config) error {
 		inst := findInstall(cfg, id)
 		if inst == nil {
 			return fmt.Errorf("install not found")
@@ -125,19 +123,23 @@ func (w *WorkspaceService) UpdateGameInstall(id, path string) (*GameInstall, err
 }
 
 // DeleteGameInstall removes an install if no workspace uses it.
-func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err error) {
-	w.Config.read(func(cfg *Config) {
+func (s *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err error) {
+	var listed GameInstall
+	s.App.read(func(cfg *Config) {
 		inUse = workspacesUsingInstall(cfg, id)
+		if found := findInstall(cfg, id); found != nil {
+			listed = *found
+		}
 	})
 	if len(inUse) > 0 {
 		return inUse, fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))
 	}
-	if inst := w.Session.install(id); inst != nil {
-		if err := index.DropInstall(index.Request{Game: inst.GameID, Dir: inst.Path}); err != nil {
+	if listed.ID != "" {
+		if err := index.DropInstall(index.Request{Game: listed.GameID, Dir: listed.Path}); err != nil {
 			return nil, err
 		}
 	}
-	return nil, w.Config.mutate(func(cfg *Config) error {
+	return nil, s.App.mutate(func(cfg *Config) error {
 		kept := cfg.Installs[:0]
 		for _, inst := range cfg.Installs {
 			if inst.ID != id {
@@ -152,9 +154,9 @@ func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err err
 // Workspaces.
 
 // ListWorkspaces returns workspaces, optionally filtered by game. Pass "" for all.
-func (w *WorkspaceService) ListWorkspaces(gameID string) ([]Workspace, error) {
+func (s *WorkspaceService) ListWorkspaces(gameID string) ([]Workspace, error) {
 	var out []Workspace
-	w.Config.read(func(cfg *Config) {
+	s.App.read(func(cfg *Config) {
 		for _, ws := range cfg.Workspaces {
 			if gameID == "" || ws.GameID == gameID {
 				out = append(out, cloneWorkspace(ws))
@@ -177,12 +179,12 @@ func markBroken(ws *Workspace) {
 }
 
 // GetWorkspace returns a workspace by ID.
-func (w *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
+func (s *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
 	if id == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
 	var ws *Workspace
-	w.Config.read(func(cfg *Config) {
+	s.App.read(func(cfg *Config) {
 		if found := findWorkspace(cfg, id); found != nil {
 			cp := cloneWorkspace(*found)
 			ws = &cp
@@ -196,7 +198,7 @@ func (w *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
 }
 
 // CreateWorkspace creates a new workspace.
-func (w *WorkspaceService) CreateWorkspace(
+func (s *WorkspaceService) CreateWorkspace(
 	gameID, name, installID string,
 ) (*Workspace, error) {
 	if game.Get(gameID) == nil {
@@ -207,7 +209,7 @@ func (w *WorkspaceService) CreateWorkspace(
 		ID: id, GameID: gameID, Name: name, InstallID: installID,
 		HideExplorerBinaries: true,
 	}
-	err := w.Config.mutate(func(cfg *Config) error {
+	err := s.App.mutate(func(cfg *Config) error {
 		cfg.Workspaces = append(cfg.Workspaces, ws)
 		return nil
 	})
@@ -218,15 +220,15 @@ func (w *WorkspaceService) CreateWorkspace(
 }
 
 // UpdateWorkspace updates workspace fields. A different install retires the session.
-func (w *WorkspaceService) UpdateWorkspace(id, name, installID string) error {
+func (s *WorkspaceService) UpdateWorkspace(id, name, installID string) error {
 	var moved bool
-	err := w.mutateWorkspace(id, func(ws *Workspace) error {
+	err := s.mutateWorkspace(id, func(ws *Workspace) error {
 		moved = ws.InstallID != installID
 		ws.Name, ws.InstallID = name, installID
 		return nil
 	})
 	if err == nil && moved {
-		w.Session.drop(id)
+		s.Session.drop(id)
 	}
 	return err
 }
@@ -241,14 +243,14 @@ var legalDefaultTools = map[string]bool{
 }
 
 // UpdateWorkspacePrefs sets the IDE reset, default landing page, explorer hiding, and game color.
-func (w *WorkspaceService) UpdateWorkspacePrefs(
+func (s *WorkspaceService) UpdateWorkspacePrefs(
 	workspaceID string, resetIdeOnOpen bool, defaultTool, gameColor string,
 	hideExplorerBinaries bool,
 ) error {
 	if !legalDefaultTools[defaultTool] {
 		return fmt.Errorf("invalid default tool")
 	}
-	return w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+	return s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		ws.ResetIdeOnOpen = resetIdeOnOpen
 		ws.DefaultTool = defaultTool
 		ws.GameColor = gameColor
@@ -258,23 +260,22 @@ func (w *WorkspaceService) UpdateWorkspacePrefs(
 }
 
 // SetWorkspaceLocLang sets the default loc language; a live session is built again with it.
-func (w *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
-	err := w.mutateWorkspace(id, func(ws *Workspace) error {
+func (s *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
+	err := s.mutateWorkspace(id, func(ws *Workspace) error {
 		ws.DefaultLocLang = lang
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	// the session holds the language, so it is built again on the next request
-	w.Session.drop(id)
+	s.Session.drop(id)
 	return nil
 }
 
 // CountWorkspacesUsingInstall returns names of workspaces on this install.
-func (w *WorkspaceService) CountWorkspacesUsingInstall(installID string) []string {
+func (s *WorkspaceService) CountWorkspacesUsingInstall(installID string) []string {
 	var names []string
-	w.Config.read(func(cfg *Config) {
+	s.App.read(func(cfg *Config) {
 		names = workspacesUsingInstall(cfg, installID)
 	})
 	return names
@@ -291,11 +292,11 @@ func workspacesUsingInstall(cfg *Config, installID string) []string {
 }
 
 // DeleteWorkspace removes a workspace from PMT. Mod folders on disk stay.
-func (w *WorkspaceService) DeleteWorkspace(id string) error {
+func (s *WorkspaceService) DeleteWorkspace(id string) error {
 	if id == "" {
 		return fmt.Errorf("workspace id is required")
 	}
-	err := w.Config.mutate(func(cfg *Config) error {
+	err := s.App.mutate(func(cfg *Config) error {
 		for i, ws := range cfg.Workspaces {
 			if ws.ID == id {
 				cfg.Workspaces = append(cfg.Workspaces[:i], cfg.Workspaces[i+1:]...)
@@ -307,12 +308,12 @@ func (w *WorkspaceService) DeleteWorkspace(id string) error {
 	if err != nil {
 		return err
 	}
-	w.Session.drop(id)
+	s.Session.drop(id)
 	return nil
 }
 
-func (w *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Workspace) error) error {
-	return w.Config.mutate(func(cfg *Config) error {
+func (s *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Workspace) error) error {
+	return s.App.mutate(func(cfg *Config) error {
 		ws := findWorkspace(cfg, workspaceID)
 		if ws == nil {
 			return fmt.Errorf("workspace not found")
@@ -324,12 +325,12 @@ func (w *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Workspac
 // Mods in a workspace.
 
 // DefaultModParent is UserDataDir/<game>/mod, or "".
-func (w *WorkspaceService) DefaultModParent(gameID string) string {
+func (s *WorkspaceService) DefaultModParent(gameID string) string {
 	return local.DefaultModParent(gameID)
 }
 
 // CreateMod writes a new mod skeleton under parentDir and returns its path.
-func (w *WorkspaceService) CreateMod(
+func (s *WorkspaceService) CreateMod(
 	gameID, parentDir, name, locLang, supportedVersion, description, thumbnailSrc string,
 ) (string, error) {
 	if game.Get(gameID) == nil {
@@ -356,11 +357,11 @@ func (w *WorkspaceService) CreateMod(
 }
 
 // AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor.
-func (w *WorkspaceService) AddWorkspaceMod(
+func (s *WorkspaceService) AddWorkspaceMod(
 	workspaceID, name, path, thumbnail string,
 ) (*WorkspaceMod, error) {
 	var gameID string
-	w.Config.read(func(cfg *Config) {
+	s.App.read(func(cfg *Config) {
 		if ws := findWorkspace(cfg, workspaceID); ws != nil {
 			gameID = ws.GameID
 		}
@@ -382,7 +383,7 @@ func (w *WorkspaceService) AddWorkspaceMod(
 		ID: uuid.New().String(), Name: name, Path: path,
 		Thumbnail: thumbnail,
 	}
-	err := w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+	err := s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		mod.SortOrder = len(ws.Mods)
 		ws.Mods = append(ws.Mods, mod)
 		return nil
@@ -390,45 +391,34 @@ func (w *WorkspaceService) AddWorkspaceMod(
 	if err != nil {
 		return nil, fmt.Errorf("insert mod: %w", err)
 	}
-	w.Session.drop(workspaceID)
+	s.Session.drop(workspaceID)
 	return &mod, nil
 }
 
 // UpdateWorkspaceMod updates listing paths, ignore text, name, color, and thumbnail.
-func (w *WorkspaceService) UpdateWorkspaceMod(
+func (s *WorkspaceService) UpdateWorkspaceMod(
 	workspaceID, modID, name, color, thumbnail, descMdRel, descBbRel, workshopIgnore string,
 ) error {
-	return w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
-		for i := range ws.Mods {
-			if ws.Mods[i].ID != modID {
-				continue
-			}
-			if name != "" {
-				ws.Mods[i].Name = name
-			}
-			ws.Mods[i].Color = color
-			ws.Mods[i].Thumbnail = thumbnail
-			markdown, err := steam.DescriptionRel(ws.Mods[i].Path, descMdRel)
-			if err != nil {
-				return err
-			}
-			bbcode, err := steam.DescriptionRel(ws.Mods[i].Path, descBbRel)
-			if err != nil {
-				return err
-			}
-			ws.Mods[i].DescMdRel = markdown
-			ws.Mods[i].DescBbRel = bbcode
-			ws.Mods[i].WorkshopIgnore = workshopIgnore
-			return nil
+	return s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+		mod.Name = cmp.Or(name, mod.Name)
+		mod.Color, mod.Thumbnail = color, thumbnail
+		markdown, err := steam.DescriptionRel(mod.Path, descMdRel)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("mod not found")
+		bbcode, err := steam.DescriptionRel(mod.Path, descBbRel)
+		if err != nil {
+			return err
+		}
+		mod.DescMdRel, mod.DescBbRel, mod.WorkshopIgnore = markdown, bbcode, workshopIgnore
+		return nil
 	})
 }
 
 // SetWorkspaceModCalendar declares the eras a mod's dates are written in: names trimmed, unnamed
 // eras dropped; an empty list clears it, leaving every date as written.
-func (w *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, eras session.Calendar) error {
-	err := w.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+func (s *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, eras session.Calendar) error {
+	err := s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Eras = nil
 		for _, era := range eras {
 			if era.Name = strings.TrimSpace(era.Name); era.Name != "" {
@@ -441,15 +431,15 @@ func (w *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, er
 		return err
 	}
 	// the session holds the calendar, so it is built again on the next request
-	w.Session.drop(workspaceID)
+	s.Session.drop(workspaceID)
 	// VS Code re-requests a document's inlay hints only when told they changed
 	emit(EventLangCalendarChanged, workspaceID)
 	return nil
 }
 
 // ReorderWorkspaceMods writes SortOrder from the given id list.
-func (w *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []string) error {
-	err := w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+func (s *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []string) error {
+	err := s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		if len(modIDs) != len(ws.Mods) {
 			return fmt.Errorf("mod id set incomplete")
 		}
@@ -473,13 +463,13 @@ func (w *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []str
 	if err != nil {
 		return err
 	}
-	w.Session.drop(workspaceID)
+	s.Session.drop(workspaceID)
 	return nil
 }
 
 // RemoveWorkspaceMod detaches a mod from a workspace.
-func (w *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
-	err := w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+func (s *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
+	err := s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		kept := ws.Mods[:0]
 		found := false
 		for _, mod := range ws.Mods {
@@ -498,13 +488,13 @@ func (w *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
 	if err != nil {
 		return err
 	}
-	w.Session.drop(workspaceID)
+	s.Session.drop(workspaceID)
 	return nil
 }
 
 // ExportWorkshopIgnore writes the saved ignore text to .workshop-ignore in the mod root.
-func (w *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error {
-	_, mod, err := findMod(w.Config, workspaceID, modID)
+func (s *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error {
+	_, mod, err := findMod(s.App, workspaceID, modID)
 	if err != nil {
 		return err
 	}
@@ -516,8 +506,8 @@ func (w *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error
 }
 
 // ImportWorkshopIgnore reads .workshop-ignore into workspace config and returns the text.
-func (w *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (string, error) {
-	_, mod, err := findMod(w.Config, workspaceID, modID)
+func (s *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (string, error) {
+	_, mod, err := findMod(s.App, workspaceID, modID)
 	if err != nil {
 		return "", err
 	}
@@ -526,7 +516,7 @@ func (w *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (stri
 		return "", err
 	}
 	text := string(raw)
-	err = w.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+	err = s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.WorkshopIgnore = text
 		return nil
 	})
@@ -536,36 +526,21 @@ func (w *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (stri
 	return text, nil
 }
 
-func findMod(config *ConfigService, workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
-	var ws Workspace
-	var mod WorkspaceMod
-	var foundWS, foundMod bool
-	config.read(func(cfg *Config) {
-		found := findWorkspace(cfg, workspaceID)
-		if found == nil {
-			return
-		}
-		ws = *found
-		foundWS = true
-		for i := range found.Mods {
-			if found.Mods[i].ID == modID {
-				mod = found.Mods[i]
-				foundMod = true
-				return
-			}
-		}
-	})
-	if !foundWS {
+func findMod(app *AppService, workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
+	ws, _ := app.workspace(workspaceID)
+	if ws == nil {
 		return nil, nil, fmt.Errorf("workspace not found")
 	}
-	if !foundMod {
-		return nil, nil, fmt.Errorf("mod not found")
+	for i := range ws.Mods {
+		if ws.Mods[i].ID == modID {
+			return ws, &ws.Mods[i], nil
+		}
 	}
-	return &ws, &mod, nil
+	return nil, nil, fmt.Errorf("mod not found")
 }
 
-func (w *WorkspaceService) mutateMod(workspaceID, modID string, fn func(*WorkspaceMod) error) error {
-	return w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+func (s *WorkspaceService) mutateMod(workspaceID, modID string, fn func(*WorkspaceMod) error) error {
+	return s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		for i := range ws.Mods {
 			if ws.Mods[i].ID == modID {
 				return fn(&ws.Mods[i])
@@ -598,7 +573,7 @@ type IdeRoots struct {
 }
 
 // GetIdeRoots returns game / mod folders and tab restore for the IDE.
-func (w *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
+func (s *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
@@ -606,7 +581,7 @@ func (w *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 	// one read, so the workspace and the install it names cannot disagree
 	var ws *Workspace
 	var scriptRoot string
-	w.Config.read(func(cfg *Config) {
+	s.App.read(func(cfg *Config) {
 		found := findWorkspace(cfg, workspaceID)
 		if found == nil {
 			return
@@ -652,8 +627,8 @@ func (w *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 }
 
 // SaveIdeSession stores open editor paths for a workspace.
-func (w *WorkspaceService) SaveIdeSession(workspaceID string, files []string, active string) error {
-	return w.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+func (s *WorkspaceService) SaveIdeSession(workspaceID string, files []string, active string) error {
+	return s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		ws.IdeOpenFiles = append([]string(nil), files...)
 		ws.IdeActiveFile = active
 		return nil

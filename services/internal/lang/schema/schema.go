@@ -1,5 +1,5 @@
-// Package schema is the one position tree every source writes into, and the one rule that decides
-// whether a claim in it may accuse a user's code.
+// Package schema is the position tree every source writes into, and the rule that decides whether
+// a claim in it may accuse a user's code.
 package schema
 
 import (
@@ -27,7 +27,7 @@ type Source uint8
 
 const (
 	SourceNone     Source = iota
-	SourceRegistry        // game's rows and the language rules: declared and always fresh
+	SourceRegistry        // game's rows and the language rules: they classify, never accuse
 	SourceDumps
 	SourceVanilla
 	SourceDocs
@@ -45,7 +45,7 @@ type Said[T any] struct {
 	From  Source
 }
 
-// WordType is the kind of word a position holds.
+// WordType is the kind of word a position holds; WordBlock is a doc's block, whose kind none names.
 type WordType uint8
 
 const (
@@ -58,6 +58,7 @@ const (
 	WordLoc
 	WordFile
 	WordScope
+	WordBlock
 )
 
 // Value is what a source says a position holds.
@@ -84,7 +85,7 @@ type Required struct {
 }
 
 // Forms is the set of written forms seen at a position, as bits.
-type Forms uint8
+type Forms uint16
 
 const (
 	FormNumber Forms = 1 << iota
@@ -94,7 +95,24 @@ const (
 	FormText
 	FormBlock
 	FormCommand // a declared command is written directly in this block
+	FormTrigger // a command that is only a trigger is written directly in this block
+	FormEffect  // a command that is only an effect is written directly in this block
 )
+
+// formOf is the form a word is written in.
+func formOf(written *jomini.Scalar) Forms {
+	switch literal := jomini.Literal(written.Text); {
+	case written.Quoted:
+		return FormText
+	case literal == jomini.LitNumber:
+		return FormNumber
+	case literal == jomini.LitDate:
+		return FormDate
+	case slices.Contains(game.Bools, written.Text):
+		return FormBool
+	}
+	return FormWord
+}
 
 // Seen is vanilla's evidence at a position; it is never a claim.
 type Seen struct {
@@ -152,6 +170,13 @@ type Scope struct {
 	Variables, Triggers, Effects bool // stores variables, evaluates triggers, executes effects
 }
 
+// Macro is a scripted entry as a call reads it: at its own parameters, or at its database's entry
+// where the database takes none. It names the database, so no entry tree is held twice.
+type Macro struct {
+	Database   string
+	Parameters *Key // nil where the database takes no parameters
+}
+
 // Schema is everything the sources state about one game version.
 type Schema struct {
 	Game, Version string
@@ -166,12 +191,12 @@ type Schema struct {
 	DataTypes     map[string]DataType
 	CustomLoc     map[string]CustomLoc
 	Prefixes      map[string]string // a link prefix → the database the names written after it are in; "" none
-	Macros        map[string]*Key   // vanilla's scripted entries by name, each with its calls' parameters
+	Macros        map[string]Macro  // vanilla's scripted entries by calling word and name (word:name)
 	Lists         string            // the database of scripted lists (a folder row Iterated); "" none
 }
 
-// Link is the declared link a key starts with: the first link of a chain (root.liege), by name or by
-// the prefix before ':' (c:FRA, scope:x), never a Wild Card link; nil for none. key is lower-case.
+// Link is the declared link a lower-case key starts with: the first link of a chain (root.liege),
+// by name or by the prefix before ':' (c:FRA, scope:x), never a Wild Card link; nil for none.
 func (schema *Schema) Link(key string) *Command {
 	first, _, _ := strings.Cut(key, ".")
 	prefix, _, _ := strings.Cut(first, ":")
@@ -267,7 +292,8 @@ func (schema *Schema) Speaks(claim Claim, key, parent *Key) bool {
 			}
 			allowed = FormWord | FormText
 		}
-		if key.Seen.Forms&^(allowed|FormCommand) != 0 { // FormCommand marks the block, not a value form
+		// the command forms mark the block, not a value
+		if key.Seen.Forms&^(allowed|FormCommand|FormTrigger|FormEffect) != 0 {
 			return false
 		}
 		if words := key.Value.Value.Words; len(words) > 0 {
@@ -307,8 +333,8 @@ func (key *Key) Below(name string) *Key {
 	return child
 }
 
-// collapse is the name a written key is held under, by written form only (jomini's readers): a
-// number <number>, a date <date>, prefix:x <prefix:>, any other name as written.
+// collapse is the name a written key is held under, by written form only: a number <number>, a
+// date <date>, prefix:x <prefix:>, any other name as written.
 func collapse(name string) string {
 	switch jomini.Literal(name) {
 	case jomini.LitNumber:
@@ -368,26 +394,51 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		schema.Databases[name] = database
 	}
 
-	// 1. databases: each script file's, by folder; a file at the root belongs to none
-	first := map[string]string{}
+	// 1. databases: each script file's, by folder; a file at the root belongs to none, and one whose
+	// file type names its own entries (.asset, .gui) or none makes its folder no database
+	var scripts []string
 	for _, file := range input.Install {
-		if file.Format != source.Script {
-			continue
-		}
-		at, name := schema.folder(file.Rel)
-		if at != "." && schema.Databases[name] == nil {
-			declare(name, info.Folders[at])
-			first[name] = file.Rel
+		fileType, typed := game.FileTypes[strings.ToLower(path.Ext(file.Rel))]
+		if file.Format == source.Script && typed && fileType.NameKey == "" && fileType.Keywords == nil {
+			scripts = append(scripts, file.Rel)
 		}
 	}
 
-	// the databases a call by each CalledIn word resolves in, in name order; AnyCall every one
+	// shallow folders first, so a common/ subfolder finds its ancestor's database
+	slices.SortStableFunc(scripts, func(first, second string) int {
+		return cmp.Compare(strings.Count(first, "/"), strings.Count(second, "/"))
+	})
+	for _, rel := range scripts {
+		if at, name := schema.folder(rel); at != "." && schema.Databases[name] == nil {
+			declare(name, info.Folders[at])
+		}
+	}
+
+	// a nested row that sets up entries defined elsewhere makes a history database of its keys
+	for _, row := range info.Nested {
+		if row.Of != "" {
+			declare(strings.TrimPrefix(row.Parent, "common/")+"."+row.Database, game.Folder{History: true, Of: row.Of})
+		}
+	}
+
+	// a row named after a file type's own database (gui.type) declares it, with the type's Body
+	for at, row := range info.Folders {
+		if ext, _, cut := strings.Cut(at, "."); cut && game.FileTypes["."+ext].Body != 0 {
+			row.Body = game.FileTypes["."+ext].Body
+			declare(at, row)
+		}
+	}
+
+	// the databases a call by each CalledIn word resolves in, in name order; AnyCall every scripted
+	// folder's (a file type's own database answers only its own words)
 	schema.Callees = map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
-		if called := schema.Databases[name].Naming.CalledIn; len(called) > 0 {
-			for _, word := range append(slices.Clone(called), game.AnyCall) {
-				schema.Callees[word] = append(schema.Callees[word], name)
-			}
+		called := schema.Databases[name].Naming.CalledIn
+		if len(called) > 0 && !strings.Contains(name, ".") {
+			called = append(slices.Clone(called), game.AnyCall)
+		}
+		for _, word := range called {
+			schema.Callees[word] = append(schema.Callees[word], name)
 		}
 	}
 	schema.Lists = cmp.Or(schema.Flagged(func(row game.Folder) bool { return row.Iterated })...)
@@ -424,7 +475,13 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		if file.Format != source.Info {
 			continue
 		}
+		// a doc documents its own folder's database, or the folder beside it it is named after
+		// (history/_characters.info)
 		at, name := schema.folder(file.Rel)
+		stem := strings.TrimPrefix(strings.TrimSuffix(path.Base(file.Rel), path.Ext(file.Rel)), "_")
+		if beside := path.Join(path.Dir(file.Rel), stem); schema.Databases[NameOf(beside)] != nil {
+			at, name = path.Dir(file.Rel), NameOf(beside)
+		}
 		if schema.Databases[name] == nil || at != path.Dir(file.Rel) {
 			continue
 		}
@@ -432,8 +489,11 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		if err != nil {
 			continue
 		}
-		markdown := strings.EqualFold(path.Ext(file.Rel), ".md")
-		examples = append(examples, parsedExample{name, jomini.Parse(normalize(text, markdown, false)), SourceDocs})
+		lines := strings.Split(text, "\n")
+		if strings.EqualFold(path.Ext(file.Rel), ".md") {
+			lines = markdown(text)
+		}
+		examples = append(examples, parsedExample{name, jomini.Parse(normalize(lines)), SourceDocs})
 	}
 	schema.Sources[SourceDocs] = Origin{From: "install", Written: input.Updated}
 
@@ -450,7 +510,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		if schema.Databases[name].Naming.History {
 			continue
 		}
-		for _, page := range wiki.NamedPages(input.Game, name, first[name]) {
+		for _, page := range wiki.NamedPages(input.Game, name, "") {
 			document, err := html.Parse(strings.NewReader(page.HTML))
 			if err != nil {
 				continue
@@ -465,7 +525,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 						text.WriteString(inner.Data)
 					}
 				}
-				parsed := jomini.Parse(normalize(text.String(), false, false))
+				parsed := jomini.Parse(normalize(strings.Split(text.String(), "\n")))
 				examples = append(examples, parsedExample{name, parsed, SourceWiki})
 			}
 		}
@@ -474,40 +534,58 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	// 4. each database's Fields: every key name its docs and wiki examples write, at any depth
 	for _, example := range examples {
 		fields := schema.Databases[example.database].Fields
-		var gather func(statements []jomini.Statement)
-		gather = func(statements []jomini.Statement) {
-			for _, statement := range statements {
-				if assign, isAssign := statement.(*jomini.Assignment); isAssign {
-					for _, name := range alternatives(assign.Key.Text) {
-						fields[collapse(name)] = true
-					}
-				}
-				if block := jomini.ChildBlock(statement); block != nil {
-					gather(block.Statements)
+		jomini.Walk(example.parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
+			if assign, isAssign := statement.(*jomini.Assignment); isAssign {
+				for _, name := range alternatives(assign.Key.Text) {
+					fields[collapse(name)] = true
 				}
 			}
-		}
-		gather(example.parsed.Root.Statements)
+			return true
+		})
 	}
 
-	// 5. vanilla's scripted entries by name first, so observe reads a key naming one as a call and
-	// never as an argument (game.StepKnownCall); then workers parse ahead (not tables or sound lists),
-	// and Entries and observe run in file order, every database Entries names is made, and each
-	// database's entry names are kept
+	// 5. vanilla's scripted entries first, so observe reads their names as calls (StepKnownCall);
+	// then every file's entries and evidence, in file order, making each database Entries names
 	names := map[string]map[string]bool{}
-	schema.Macros = map[string]*Key{}
+	schema.Macros = map[string]Macro{}
+
+	// macro keeps a called entry by each word its database is called by (word:name); one of a
+	// database with no parameters reads at its database's entry (every GUI type's block is a widget)
+	macro := func(entry Entry) {
+		database := schema.Databases[entry.Database]
+		if database == nil || len(database.Naming.CalledIn) == 0 {
+			return
+		}
+		called, words := Macro{Database: database.Name}, database.Naming.CalledIn
+		if database.Naming.Parameters {
+			called.Parameters = &Key{}
+		}
+		if !strings.Contains(entry.Database, ".") {
+			words = append(slices.Clone(words), game.AnyCall)
+		}
+		for _, word := range words {
+			schema.Macros[word+":"+strings.Clone(entry.Name)] = called
+		}
+	}
 	var files []source.File
+	parsedFirst := map[string]jomini.Result{} // the called folders' and GUI files' parses, read once
 	for _, file := range input.Install {
-		if at, _ := schema.folder(file.Rel); file.Format == source.Script && len(info.Folders[at].CalledIn) > 0 {
+		at, _ := schema.folder(file.Rel)
+		gui := game.FileTypes[strings.ToLower(path.Ext(file.Rel))].Keywords != nil
+		if file.Format == source.Script && (len(info.Folders[at].CalledIn) > 0 || gui) {
 			text, _ := file.Text()
 			parsed := jomini.Parse(text)
-			schema.Entries(file, &parsed, func(entry Entry) { schema.Macros[strings.Clone(entry.Name)] = &Key{} })
+			schema.Entries(file, &parsed, macro)
+			parsedFirst[file.Path] = parsed
 		}
 		if file.Format == source.Script || file.Format == source.Table || file.Format == source.List {
 			files = append(files, file)
 		}
 	}
 	err := source.Ordered(ctx, files, func(file source.File) (result jomini.Result) {
+		if parsed, found := parsedFirst[file.Path]; found {
+			return parsed
+		}
 		if file.Format == source.Script {
 			text, _ := file.Text()
 			result = jomini.Parse(text)
@@ -522,7 +600,8 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		schema.Entries(file, parsed, func(entry Entry) { entries = append(entries, entry) })
 		for _, entry := range entries {
 			if schema.Databases[entry.Database] == nil {
-				declare(entry.Database, game.Folder{})
+				ext, _, _ := strings.Cut(entry.Database, ".") // a file type's database holds its Body (gui.x)
+				declare(entry.Database, game.Folder{Body: game.FileTypes["."+ext].Body})
 			}
 			if entry.Name != "" {
 				if names[entry.Database] == nil {
@@ -530,8 +609,8 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 				}
 				names[entry.Database][entry.Name] = true
 			}
-			if entry.Local && schema.Macros[entry.Name] == nil { // inline in another folder's file
-				schema.Macros[strings.Clone(entry.Name)] = &Key{}
+			if entry.Local { // inline in another folder's file
+				macro(entry)
 			}
 		}
 		schema.observe(entries)
@@ -540,9 +619,8 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		return nil, err
 	}
 
-	// 6. the types vanilla's values give, before the docs' claims so the trust order holds; a link
-	// prefix names the database of the names script makes, else vanilla's, else the database its
-	// link's own name names
+	// 6. vanilla's value types, before the docs' claims; a link prefix names the database of the
+	// names script makes, else vanilla's, else the one its own name names
 	schema.Prefixes = map[string]string{}
 	for _, row := range game.NameCommands {
 		schema.Prefixes[row.Database] = row.Database

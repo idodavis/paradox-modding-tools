@@ -12,14 +12,14 @@ weight: 8
 
 ## The language strip never says the session is ready
 
-Vanilla scan of a full install takes time the first time. Leave the window open. If it stays empty: the install path is wrong or marked broken, or the version pin does not match files on disk. Fix the install in [Workspace Settings]({{< relref "/pages/settings" >}}), or use `latest` and reopen.
+Vanilla scan of a full install takes time the first time. Leave the window open. If it stays empty, the install path is probably wrong: it must be the game's root folder, the one that holds `game/`. Fix the install in [Workspace Settings]({{< relref "/pages/settings" >}}) and reopen.
 
-Two workspaces sharing one install share the vanilla **script** cache. Switching default loc language loads another loc sidecar; it should not rescan every `.txt`.
+Two workspaces sharing one install and default loc language share the vanilla cache. The cache is kept per language, so the first open in another loc language scans the install again.
 
 ## I changed vanilla / subscribed a Workshop item and PMT looks stale
 
-- **Vanilla:** change the version pin or trigger a rescan of that install (Settings). Live sessions on that install hot-swap the cache without restarting the app.
-- **Mods:** harvest is RAM-only. Close and reopen the workspace (or switch away and back) after adding files outside the IDE.
+- **Vanilla:** after a game patch the install is scanned again by itself; reopen the workspace to use it.
+- **Mods:** the mods' index lives in memory. Close and reopen the workspace (or switch away and back) after adding files outside the IDE.
 - Attach a new folder in Settings or the wizard after you subscribe on Workshop.
 
 ## Localization is “ignored” in-game
@@ -40,7 +40,7 @@ It suppresses IDE diagnostics on that line or the next (`# pmt:ignore-next-line`
 
 ## How do I check a game update?
 
-Pin or keep `latest`, rescan the install, reopen the workspace, and read [Workspace Health]({{< relref "/pages/health" >}}) (Dangling refs and Overrides). [Patch Center]({{< relref "/pages/patch-center" >}}) has the wiki notes for that version. Suggested file-level retarget is on the [roadmap]({{< relref "/roadmap" >}}).
+Reopen the workspace (the install is scanned again by itself) and read [Workspace Health]({{< relref "/pages/health" >}}) (Dangling refs and Overrides). [Patch Center]({{< relref "/pages/patch-center" >}}) has the wiki notes for that version. Suggested file-level retarget is on the [roadmap]({{< relref "/roadmap" >}}).
 
 ## SmartScreen / my antivirus blocked the zip
 

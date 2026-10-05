@@ -1,4 +1,5 @@
 // searchservice.go runs in-process Find in Files for the IDE workbench.
+
 package services
 
 import (
@@ -23,13 +24,11 @@ import (
 	"paradox-modding-tools/services/internal/lang/source"
 )
 
-// SearchService is the Wails RPC shell for Find in Files. A text search sends each file's hits as
-// it finds them: to found, or where it is nil to the frontend as search:hits.
-type SearchService struct {
-	found func(TextSearchHits)
-}
+// SearchService is the Wails RPC shell for Find in Files. A text search sends each file's hits to
+// the frontend as search:hits as it finds them.
+type SearchService struct{}
 
-// the generator types the hits a text search sends
+// registers search:hits so the bindings generator types it
 func init() { application.RegisterEvent[TextSearchHits](EventSearchHits) }
 
 const (
@@ -109,89 +108,40 @@ func capResults(n int) int {
 	return n
 }
 
-func rgGlob(glob string) string {
-	glob = strings.TrimSpace(glob)
-	if glob == "" {
-		return ""
-	}
-	neg := strings.HasPrefix(glob, "!")
-	if neg {
-		glob = strings.TrimSpace(glob[1:])
-	}
-	if glob != "" && !strings.Contains(glob, "**") {
-		glob = "**/" + strings.TrimPrefix(glob, "/")
-	}
-	if neg {
-		return "!" + glob
-	}
-	return glob
-}
-
-func folderGlobs(folder TextSearchFolder) []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(glob string) {
-		glob = rgGlob(glob)
-		if glob == "" || seen[glob] {
+// folderGlobs is a folder's filters as rg reads them: a glob with no ** matches at any depth, and a
+// leading "!" makes an include an exclude.
+func folderGlobs(folder TextSearchFolder) globSet {
+	var gs globSet
+	add := func(glob string, exclude bool) {
+		glob = strings.TrimSpace(glob)
+		if after, negated := strings.CutPrefix(glob, "!"); negated {
+			glob, exclude = strings.TrimSpace(after), true
+		}
+		if glob == "" {
 			return
 		}
-		seen[glob] = true
-		out = append(out, glob)
+		if !strings.Contains(glob, "**") {
+			glob = "**/" + strings.TrimPrefix(glob, "/")
+		}
+		if exclude {
+			gs.excludes = append(gs.excludes, glob)
+		} else {
+			gs.includes = append(gs.includes, glob)
+		}
 	}
 	for _, include := range folder.Includes {
-		add(include)
+		add(include, false)
 	}
 	for _, exclude := range folder.Excludes {
-		if strings.HasPrefix(exclude, "!") {
-			add(exclude)
-			continue
-		}
-		add("!" + exclude)
-	}
-	return out
-}
-
-func splitGlobs(globs []string) globSet {
-	var gs globSet
-	for _, glob := range globs {
-		if after, ok := strings.CutPrefix(glob, "!"); ok {
-			gs.excludes = append(gs.excludes, after)
-			continue
-		}
-		gs.includes = append(gs.includes, glob)
+		add(exclude, true)
 	}
 	return gs
-}
-
-func pathMatchPattern(pattern, rel string) bool {
-	if ok, _ := doublestar.PathMatch(pattern, rel); ok {
-		return true
-	}
-	if !strings.HasSuffix(pattern, "/**") {
-		return false
-	}
-	dirPat := strings.TrimSuffix(pattern, "/**")
-	if dirPat == "" {
-		return true
-	}
-	if after, ok := strings.CutPrefix(dirPat, "**/"); ok {
-		suffix := after
-		if suffix == "" {
-			return true
-		}
-		if ok, _ := doublestar.PathMatch(suffix+"/**", rel); ok {
-			return true
-		}
-		return strings.HasPrefix(rel, suffix+"/") || rel == suffix
-	}
-	ok, _ := doublestar.PathMatch(dirPat+"/**", rel)
-	return ok
 }
 
 func pathMatchesGlobs(rel string, gs globSet) bool {
 	rel = filepath.ToSlash(rel)
 	for _, ex := range gs.excludes {
-		if pathMatchPattern(ex, rel) {
+		if ok, _ := doublestar.Match(ex, rel); ok {
 			return false
 		}
 	}
@@ -199,7 +149,7 @@ func pathMatchesGlobs(rel string, gs globSet) bool {
 		return true
 	}
 	for _, inc := range gs.includes {
-		if pathMatchPattern(inc, rel) {
+		if ok, _ := doublestar.Match(inc, rel); ok {
 			return true
 		}
 	}
@@ -315,7 +265,7 @@ func textSearchFolder(
 	group.SetLimit(runtime.NumCPU())
 
 	walkErr := searchFiles(gctx, root, gs, func(path, rel string) error {
-		// an image the format table names is never opened: two in five of an install's files
+		// an image the format table names is never opened
 		if source.Classify(path, filepath.ToSlash(rel)) == source.Image {
 			return nil
 		}
@@ -398,14 +348,7 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 			return bytes.Contains(data, literal)
 		}
 	}
-	send := func(hits []TextSearchHit) {
-		sent := TextSearchHits{ID: query.ID, Hits: hits}
-		if s.found != nil {
-			s.found(sent)
-		} else {
-			emit(EventSearchHits, sent)
-		}
-	}
+	send := func(hits []TextSearchHit) { emit(EventSearchHits, TextSearchHits{ID: query.ID, Hits: hits}) }
 	maxHits := capResults(query.MaxResults)
 	out := TextSearchResult{}
 	for _, folder := range query.Folders {
@@ -418,7 +361,7 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 			out.LimitHit = true
 			break
 		}
-		gs := splitGlobs(folderGlobs(folder))
+		gs := folderGlobs(folder)
 		found, limit, err := textSearchFolder(ctx, path, gs, re, holds, remain, send)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return TextSearchResult{}, err
@@ -446,7 +389,7 @@ func (s *SearchService) FileSearch(ctx context.Context, query FileSearchQuery) (
 			out.LimitHit = true
 			break
 		}
-		gs := splitGlobs(folderGlobs(folder))
+		gs := folderGlobs(folder)
 		err := searchFiles(ctx, root, gs, func(path, _ string) error {
 			switch {
 			case len(out.Hits) >= maxHits:

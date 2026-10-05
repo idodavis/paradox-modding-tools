@@ -1,10 +1,6 @@
-// names.go reads a single written word, whatever the word is for, the same way in every Jomini
-// game. The name shapes the games key their objects by. The words that are values rather than
-// names: a number, and a Clausewitz date (a two-part dotted word is an event id, never a date,
-// and a date is never a name, because history files key their blocks by one). And the three
-// spellings one word can carry inside it: a prefixed word (prefix:name, with a |key and a .chain
-// after it), a constant (@name), and the $NAME$ parameters a scripted effect or trigger is
-// called with.
+// names.go reads one written word the same way in every Jomini game: the name shapes, numbers and
+// dates, and the prefix:name, @constant and $NAME$ spellings.
+
 package jomini
 
 import (
@@ -14,14 +10,9 @@ import (
 	"unicode/utf8"
 )
 
-// The three name shapes below are tested on every key of every file, so they are written out
-// rather than as regexes and allocate nothing; TestNameShapes pins each against its pattern.
-
-// The games ship non-ASCII identifiers: Victoria 3's `mon_general_petar_vukotić` is a vanilla
-// character template, CK3 saves a scope as `Linnéa`, a Victoria 3 mod names a journal entry
-// `bpm_je_propaganda_of_the_deed_бомбометр`. A byte at or above utf8.RuneSelf opens a
-// multi-byte sequence, so it is decoded and judged by unicode; ASCII costs one comparison.
-// `country_event·` stays rejected: U+00B7 is punctuation, and that is a real mod typo.
+// IsDefName and IsEventID run on every key, so they are hand-written rather than regexes and
+// allocate nothing; TestNameShapes pins each to its regex. Non-ASCII letters and digits count, as
+// the games and mods use them; ASCII costs one comparison.
 
 // IsDefName reports a definition key: the ASCII shape
 // `^[A-Za-z0-9_][A-Za-z0-9_.-]*$`, widened to any Unicode letter or digit.
@@ -47,12 +38,12 @@ func IsDefName(name string) bool {
 	return true
 }
 
-// IsEventID reports `namespace.1234`: the ASCII shape `^[A-Za-z0-9_-]+\.\d+$`,
-// with the namespace half widened the same way as IsDefName. The number after
-// the dot stays ASCII digits — it is an engine-assigned index, not a name.
+// IsEventID reports `namespace.1234`: the ASCII shape `^[A-Za-z0-9_-]+\.\d+$` with a namespace
+// that is no number (1.5 is none), widened the same way as IsDefName. The number after the dot
+// stays ASCII digits: it is an engine-assigned index, not a name.
 func IsEventID(name string) bool {
 	dot := strings.LastIndexByte(name, '.')
-	if dot <= 0 || dot == len(name)-1 {
+	if dot <= 0 || dot == len(name)-1 || strings.Trim(name[:dot], "0123456789-") == "" {
 		return false
 	}
 	for i := 0; i < dot; {
@@ -118,10 +109,9 @@ func Literal(text string) LiteralKind {
 	return NotLiteral
 }
 
-// ParseDate reads a Clausewitz date, `Y.M.D` or `Y.M.D.H`, every part digits. Two parts is an
-// event id (`ns.1`), never a date; history files key their blocks by a date, so a date is
-// never a definition name. A year may be negative (`-221.1.1`, before year 1), and one trailing
-// dot is allowed (`867.1.1.`, as CK3 history writes 40 date keys).
+// ParseDate reads a Clausewitz date, `Y.M.D` or `Y.M.D.H`, every part digits; two parts is an event
+// id (`ns.1`). A date is never a definition name: history files key their blocks by one. A year may
+// be negative (`-221.1.1`) and one trailing dot is allowed (`867.1.1.`).
 func ParseDate(text string) (year, month, day, hour int, ok bool) {
 	parts := strings.Split(strings.TrimSuffix(text, "."), ".")
 	if len(parts) != 3 && len(parts) != 4 {

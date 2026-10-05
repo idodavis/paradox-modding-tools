@@ -9,7 +9,7 @@ import { useWorkspaceStore } from "../stores/workspace";
 import { Workspace, WorkspaceMod } from "@services/models";
 import { AddWorkspaceMod, DeleteWorkspace } from "@services/workspaceservice";
 import CreateModForm from "../components/CreateModForm.vue";
-import { ResetData } from "@services/configservice";
+import { ResetData } from "@services/appservice";
 import GameIcon from "../components/GameIcon.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";

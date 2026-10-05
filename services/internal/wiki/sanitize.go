@@ -1,6 +1,7 @@
 // sanitize.go is what a fetched wiki page keeps: one copy of the page with only the allowed tags
 // and attributes and none of the wiki's chrome, the section cuts on that copy's top level, and the
 // title filter that decides which pages are worth fetching at all.
+
 package wiki
 
 import (

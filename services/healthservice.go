@@ -2,6 +2,7 @@
 // finds nothing for, the localization a language lacks, and one localization key looked up. Every
 // row is sent, naming its file by its number in Sources; a site's lines are read when the page
 // opens its row.
+
 package services
 
 import (
@@ -49,7 +50,7 @@ type Contest struct {
 	Name      string `json:"name"`
 	Winner    int    `json:"winner"` // the position in Sites of the definition the game keeps
 	FirstWins bool   `json:"firstWins"`
-	Rule      string `json:"rule"` // FIOS or LIOS, or the entry mode that decided it (REPLACE, INJECT)
+	Rule      string `json:"rule"` // FIOS (first wins) or LIOS (last wins), or the deciding entry mode (REPLACE, INJECT)
 	Sites     []Site `json:"sites"`
 }
 
@@ -65,8 +66,8 @@ type Site struct {
 }
 
 // Dependency is one mod using a name another mod's definitions decide, and each place it does: it
-// depends on the other where only that mod defines the name, and is affected by it where the other's
-// definition differs from the one it hides, adds to it, or leaves it out.
+// depends on the other where only that mod defines the name, and is affected by it where the
+// other's definition differs from the one it hides, adds to it, or leaves it out.
 type Dependency struct {
 	From     string `json:"from"`
 	To       string `json:"to"`
@@ -84,7 +85,7 @@ type Dangling struct {
 // Language is one language's localization gaps.
 type Language struct {
 	Language     string   `json:"language"`
-	Untranslated []LocRow `json:"untranslated"` // not the workspace's language: a mod key that one has and this lacks
+	Untranslated []LocRow `json:"untranslated"` // keys a mod has in the workspace language but not in this one
 }
 
 // LocRow is one key and the file it is in.
@@ -118,12 +119,12 @@ type problemsAt struct {
 }
 
 // GetHealth is the workspace's health report.
-func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Health, error) {
-	sess, err := v.Session.live(workspaceID)
+func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Health, error) {
+	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	found := v.findings(workspaceID, sess)
+	found := s.findings(workspaceID, sess)
 	sess.RLock()
 	defer sess.RUnlock()
 	health := &Health{}
@@ -135,22 +136,59 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		}
 		return numbers[file.Path]
 	}
-	sch, indexes := sess.Install.Schema, sess.Indexes()
 
 	// the mods in the order to judge: the workspace's files again, a mod's together, in that order
-	preview := indexes
+	preview := sess.Indexes()
 	if len(params.Order) > 0 {
 		ordered := *sess.Workspace
 		ordered.Files = slices.SortedStableFunc(slices.Values(sess.Workspace.Files), func(first, second source.File) int {
 			return cmp.Compare(slices.Index(params.Order, first.Origin), slices.Index(params.Order, second.Origin))
 		})
-		ordered.Ready()
+		ordered.Place()
 		preview = []*index.Index{sess.Install.Index, &ordered}
 	}
+	health.Contests, health.Overrides = contests(sess, preview, number)
+	health.Depends = dependencies(sess, number)
+	health.Dangling = dangling(sess, found, number)
+	health.Loc = localization(sess, number)
 
-	// each name two origins define: a contest where two mods contend for it, else one mod's override
-	// of another origin's; not in a database where the game repeats names, nor one no schema database
-	// names (a parameter, a name script makes)
+	// the findings no card above shows: a duplicate at a contest's site, a dangling reference at a
+	// dangling row's, and every other finding
+	type place struct {
+		path      string
+		line, col int
+	}
+	shown := map[place][]string{}
+	for _, row := range health.Contests {
+		for _, site := range row.Sites {
+			at := place{health.Sources[site.File].Path, site.Line, site.Col}
+			shown[at] = append(shown[at], "duplicate-definition")
+		}
+	}
+	for _, row := range health.Dangling {
+		for _, site := range row.Sites {
+			at := place{health.Sources[site.File].Path, site.Line, site.Col}
+			shown[at] = append(shown[at], "unresolved-ref", "unknown-event")
+		}
+	}
+	for _, path := range slices.Sorted(maps.Keys(found)) {
+		file, _ := sess.Workspace.At(path)
+		for _, diagnostic := range found[path] {
+			at := place{path, diagnostic.Range.Start.Line, diagnostic.Range.Start.Character}
+			if !slices.Contains(shown[at], diagnostic.Code) {
+				site := Site{File: number(file), Line: at.line, Col: at.col}
+				health.Problems = append(health.Problems, Problem{Code: diagnostic.Code, Message: diagnostic.Message, Site: site})
+			}
+		}
+	}
+	return health, nil
+}
+
+// contests is each name two origins define, by a load order: a contest where two mods contend for
+// it, else one mod's override of another origin's; not in a database where the game repeats names,
+// nor one no schema database names (a parameter, a name script makes).
+func contests(sess *session.Session, preview []*index.Index, number func(source.File) int) (contested, overrides []Contest) {
+	sch := sess.Install.Schema
 	names := map[[2]string]bool{}
 	for _, records := range sess.Workspace.Records {
 		for _, def := range records.Defs {
@@ -173,7 +211,7 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		if len(origins) < 2 {
 			continue
 		}
-		winner, adds, _, contested := sess.Winner(defs)
+		winner, adds, _, betweenMods := sess.Winner(defs)
 		row := Contest{
 			Database: name[0], Name: name[1], Winner: slices.Index(defs, winner),
 			FirstWins: game.FirstWinsAt(sess.Game.ID, name[0]), Rule: "LIOS",
@@ -182,8 +220,8 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 			row.Rule = "FIOS"
 		}
 
-		// sites in the game's order: what the mode function counts as an add (an inject, a merged
-		// on_action) is part of the kept one; the kept one's mode, else an add's, is the row's rule
+		// sites in the game's order: what Winner counts as an add (an inject, a merged on_action) is
+		// part of the kept one; the kept one's mode, else an add's, is the row's rule
 		for i, def := range defs {
 			site := Site{File: number(files[i]), Line: int(def.Line), Col: int(def.Col)}
 			if site.Injected = slices.Contains(adds, def); site.Injected {
@@ -194,28 +232,25 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		if row.Winner >= 0 && defs[row.Winner].Mode != "" {
 			row.Rule = defs[row.Winner].Mode
 		}
-		if contested {
-			health.Contests = append(health.Contests, row)
+		if betweenMods {
+			contested = append(contested, row)
 		} else {
-			health.Overrides = append(health.Overrides, row)
+			overrides = append(overrides, row)
 		}
 	}
+	return contested, overrides
+}
 
-	// what each mod needs from another, from the references its loaded files write; and what the
-	// editor's checks find nothing for, from their findings, so a name dangles by the editor's rules
-	type place struct {
-		path      string
-		line, col int
-	}
-	shown := map[string]map[place]bool{"duplicate-definition": {}, "unresolved-ref": {}, "unknown-event": {}}
+// dependencies is what each mod needs from another, from the references its loaded files write.
+func dependencies(sess *session.Session, number func(source.File) int) []Dependency {
+	sch, indexes := sess.Install.Schema, sess.Indexes()
 	type need struct {
 		from, to string
 		affected bool
 	}
-	needs, dangling := map[need]*Dependency{}, map[[2]string]*Dangling{}
+	needs := map[need]Dependency{}
 	resolved := map[[4]string][]index.Def{} // a name resolves alike in one file, where a local definition shows
 	compared := map[[2]index.Def]bool{}     // whether a definition's statement differs from the one it hides
-	installOnly := []*index.Index{sess.Install.Index}
 	for _, file := range sess.Workspace.Files {
 		records := sess.Workspace.Records[file.Path]
 		if _, loaded := index.Loaded(indexes, file.Path); records == nil || !loaded {
@@ -228,18 +263,17 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 				continue
 			}
 			spelled := [4]string{ref.Database, ref.Called, ref.Name, file.Path}
-			defs, resolvedOnce := resolved[spelled]
-			if !resolvedOnce {
-				defs, _ = index.Resolve(sch, indexes, ref)
-				resolved[spelled] = defs
+			if _, done := resolved[spelled]; !done {
+				resolved[spelled], _ = index.Resolve(sch, indexes, ref)
 			}
-			// each other mod's contribution to the name is a row: where no loaded file defines it but
-			// the install does, the mod whose file loads at its path left it out; else the winner, and
-			// each add (an inject, a merged on_action) whatever the winner's origin
+			defs := resolved[spelled]
+
+			// a row per other mod with a part in the name: the winner and each add, or, where no loaded
+			// file defines it but the install does, the mod whose file at its path left it out
 			database, removed := ref.Database, len(defs) == 0
 			var landed []need
 			if removed {
-				installed, _ := index.Resolve(sch, installOnly, ref)
+				installed, _ := index.Resolve(sch, []*index.Index{sess.Install.Index}, ref)
 				if len(installed) == 0 {
 					continue
 				}
@@ -258,32 +292,15 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 						continue
 					}
 
-					// an add affects the mod; the winner does when its statement differs from the one it
-					// hides (the loaded one before it, else the install's own), and with none it is only
-					// that mod's, so the mod depends on it
+					// an add affects the mod; the winner does when it differs from the one it hides, and
+					// when it hides none the name is only that mod's, so the mod depends on it
 					key := need{file.Origin, holder.Origin, at > 0}
 					if at == 0 {
-						var base index.Def
-						if before := slices.Index(defs, winner); before > 0 {
-							base = defs[before-1]
-						} else {
-							installed, _ := index.Resolve(sch, installOnly, ref)
-							base, _, _, _ = sess.Winner(installed)
+						base, differs := hidden(sess, ref, defs, winner, compared)
+						if base.Path != "" && !differs {
+							continue
 						}
-						if base.Path != "" {
-							pair := [2]index.Def{winner, base}
-							differs, done := compared[pair]
-							if !done {
-								_, winning := sess.Entry(winner)
-								_, hidden := sess.Entry(base)
-								differs = !sameStatement(winning, hidden)
-								compared[pair] = differs
-							}
-							if !differs {
-								continue
-							}
-							key.affected = true
-						}
+						key.affected = base.Path != ""
 					}
 					// a mod's add to its own name, which only it defines, is part of what the mod depends on
 					if !slices.Contains(landed, key) && !slices.Contains(landed, need{file.Origin, holder.Origin, false}) {
@@ -292,13 +309,48 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 				}
 			}
 			for _, key := range landed {
-				if needs[key] == nil {
-					needs[key] = &Dependency{From: key.from, To: key.to, Affected: key.affected}
-				}
-				needs[key].Sites = append(needs[key].Sites, Site{
+				row := needs[key]
+				row.From, row.To, row.Affected = key.from, key.to, key.affected
+				row.Sites = append(row.Sites, Site{
 					File: number(file), Line: int(ref.Line), Col: int(ref.Col), Database: database, Name: ref.Name, Removed: removed,
 				})
+				needs[key] = row
 			}
+		}
+	}
+	return slices.SortedFunc(maps.Values(needs), func(first, second Dependency) int {
+		return strings.Compare(
+			first.From+first.To+strconv.FormatBool(first.Affected), second.From+second.To+strconv.FormatBool(second.Affected))
+	})
+}
+
+// hidden is the definition a winning one hides, the loaded one before it, else the install's own
+// (the zero Def for none), and whether the two are written otherwise; each pair is compared once.
+func hidden(sess *session.Session, ref index.Ref, defs []index.Def, winner index.Def, compared map[[2]index.Def]bool) (index.Def, bool) {
+	var base index.Def
+	if before := slices.Index(defs, winner); before > 0 {
+		base = defs[before-1]
+	} else {
+		installed, _ := index.Resolve(sess.Install.Schema, []*index.Index{sess.Install.Index}, ref)
+		base, _, _, _ = sess.Winner(installed)
+	}
+	pair := [2]index.Def{winner, base}
+	if _, done := compared[pair]; !done && base.Path != "" {
+		_, winning := sess.Entry(winner)
+		_, hiding := sess.Entry(base)
+		compared[pair] = !sameStatement(winning, hiding)
+	}
+	return base, compared[pair]
+}
+
+// dangling is each name a mod's loaded file writes that the editor's checks find nothing for, from
+// their findings, so a name dangles by the editor's rules.
+func dangling(sess *session.Session, found map[string][]lsp.Diagnostic, number func(source.File) int) []Dangling {
+	indexes, rows := sess.Indexes(), map[[2]string]Dangling{}
+	for _, file := range sess.Workspace.Files {
+		records := sess.Workspace.Records[file.Path]
+		if _, loaded := index.Loaded(indexes, file.Path); records == nil || !loaded {
+			continue
 		}
 		for _, diagnostic := range found[file.Path] {
 			start := diagnostic.Range.Start
@@ -310,51 +362,19 @@ func (v *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 			}
 			ref := records.Refs[at]
 			key := [2]string{ref.Database, ref.Name}
-			if dangling[key] == nil {
-				dangling[key] = &Dangling{Database: ref.Database, Name: ref.Name}
-			}
-			dangling[key].Sites = append(dangling[key].Sites, Site{File: number(file), Line: start.Line, Col: start.Character})
-			shown[diagnostic.Code][place{file.Path, start.Line, start.Character}] = true
+			row := rows[key]
+			row.Database, row.Name = ref.Database, ref.Name
+			row.Sites = append(row.Sites, Site{File: number(file), Line: start.Line, Col: start.Character})
+			rows[key] = row
 		}
 	}
-	for _, row := range needs {
-		health.Depends = append(health.Depends, *row)
-	}
-	slices.SortFunc(health.Depends, func(first, second Dependency) int {
-		return strings.Compare(
-			first.From+first.To+strconv.FormatBool(first.Affected), second.From+second.To+strconv.FormatBool(second.Affected))
-	})
-	for _, row := range dangling {
-		health.Dangling = append(health.Dangling, *row)
-	}
-	slices.SortFunc(health.Dangling, func(first, second Dangling) int {
+	return slices.SortedFunc(maps.Values(rows), func(first, second Dangling) int {
 		return strings.Compare(first.Database+first.Name, second.Database+second.Name)
 	})
-
-	health.Loc = localization(sess, number)
-
-	// the findings no card above shows: a duplicate at a contest's site, and every other finding that
-	// is not a dangling reference
-	for _, row := range health.Contests {
-		for _, site := range row.Sites {
-			shown["duplicate-definition"][place{health.Sources[site.File].Path, site.Line, site.Col}] = true
-		}
-	}
-	for _, path := range slices.Sorted(maps.Keys(found)) {
-		file, _ := sess.Workspace.At(path)
-		for _, diagnostic := range found[path] {
-			at := place{path, diagnostic.Range.Start.Line, diagnostic.Range.Start.Character}
-			if !shown[diagnostic.Code][at] {
-				site := Site{File: number(file), Line: at.line, Col: at.col}
-				health.Problems = append(health.Problems, Problem{Code: diagnostic.Code, Message: diagnostic.Message, Site: site})
-			}
-		}
-	}
-	return health, nil
 }
 
-// sameStatement is whether two statements are written alike: key text, operator, scalar text (quoted
-// or not) and block statements in order. Comments live outside the tree, so they never count.
+// sameStatement is whether two statements are written alike: key text, operator, scalar text
+// (quoted or not) and block statements in order. Comments are outside the tree and never count.
 func sameStatement(first, second jomini.Node) bool {
 	switch left := first.(type) {
 	case *jomini.Assignment:
@@ -380,13 +400,13 @@ func sameStatement(first, second jomini.Node) bool {
 
 // findings is every mod file's findings under the editor's default codes, found again only when the
 // session's records changed since. Diagnose takes the session's read lock itself.
-func (v *HealthService) findings(workspaceID string, sess *session.Session) map[string][]lsp.Diagnostic {
+func (s *HealthService) findings(workspaceID string, sess *session.Session) map[string][]lsp.Diagnostic {
 	sess.RLock()
 	changes, files := sess.Changes, slices.Clone(sess.Workspace.Files)
 	sess.RUnlock()
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if cached, ok := v.problems[workspaceID]; ok && cached.changes == changes {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cached, ok := s.problems[workspaceID]; ok && cached.changes == changes {
 		return cached.found
 	}
 	found := map[string][]lsp.Diagnostic{}
@@ -395,17 +415,17 @@ func (v *HealthService) findings(workspaceID string, sess *session.Session) map[
 			found[file.Path] = diagnostics
 		}
 	}
-	if v.problems == nil {
-		v.problems = map[string]problemsAt{}
+	if s.problems == nil {
+		s.problems = map[string]problemsAt{}
 	}
-	v.problems[workspaceID] = problemsAt{changes: changes, found: found}
+	s.problems[workspaceID] = problemsAt{changes: changes, found: found}
 	return found
 }
 
 // GetLines is the source a pane shows at each place: a definition's statement, its first ten lines
 // and a "…" where it runs on, or a reference's line.
-func (v *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]string, error) {
-	sess, err := v.Session.live(workspaceID)
+func (s *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]string, error) {
+	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +451,7 @@ func (v *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]str
 // key of its workspace-language files no workspace file in that language has, once.
 func localization(sess *session.Session, number func(source.File) int) []Language {
 	indexes := sess.Indexes()
-	workspaceLanguage := strings.ToLower(cmp.Or(sess.Language, "english"))
+	workspaceLanguage := strings.ToLower(sess.Language)
 	languages := map[string]bool{workspaceLanguage: true}
 	has := map[string]map[string]bool{}   // by language: the keys the workspace has
 	ships := map[string]map[string]bool{} // by origin: the languages its loc files are in
@@ -491,8 +511,8 @@ type LocEntry struct {
 }
 
 // LookupLoc looks one localization key up: its entries and everything reading it.
-func (v *HealthService) LookupLoc(workspaceID, key string) (*Lookup, error) {
-	sess, err := v.Session.live(workspaceID)
+func (s *HealthService) LookupLoc(workspaceID, key string) (*Lookup, error) {
+	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
 	}

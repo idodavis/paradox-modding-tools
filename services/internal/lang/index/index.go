@@ -73,10 +73,8 @@ type Index struct {
 	shared   map[string]string    // the one kept copy of each record string
 }
 
-// Add stores a file's records and lists its definitions, references and loc entries by name. A
-// path already added is dropped first by the caller. Every name and database becomes the index's one
-// kept copy of its text, and every path the file's, so no record pins a file's text and a name read
-// a million times, or decoded from the cache, is kept once.
+// Add stores a file's records (the caller drops old ones first) and lists them by name; record
+// strings share one copy per index, so no record pins a file's text.
 func (idx *Index) Add(records *Records, path string) {
 	if idx.defs == nil {
 		idx.Ready()
@@ -156,18 +154,26 @@ func (idx *Index) Drop(path string) {
 func (idx *Index) Ready() {
 	cached := idx.Records
 	idx.Records = make(map[string]*Records, len(cached))
-	idx.order, idx.rels = make(map[string]int, len(idx.Files)), make(map[string]int, len(idx.Files))
 	idx.defs, idx.refs, idx.locs, idx.shared = map[[2]string][]*Def{}, map[[2]string][]*Ref{}, map[string][]*Loc{}, map[string]string{}
 	idx.Repeated = map[string]bool{}
 	if idx.Scoped == nil {
 		idx.Scoped = map[[2]string]bool{}
 	}
-	for i, file := range idx.Files {
-		idx.order[strings.ToLower(file.Path)] = i
-		idx.rels[strings.ToLower(file.Rel)] = i
+	idx.Place()
+	for _, file := range idx.Files {
 		if records := cached[file.Path]; records != nil {
 			idx.Add(records, file.Path)
 		}
+	}
+}
+
+// Place indexes where each file stands in Files. A copy given another load order calls it alone, so
+// the records it shares with the live index are never written.
+func (idx *Index) Place() {
+	idx.order, idx.rels = make(map[string]int, len(idx.Files)), make(map[string]int, len(idx.Files))
+	for i, file := range idx.Files {
+		idx.order[strings.ToLower(file.Path)] = i
+		idx.rels[strings.ToLower(file.Rel)] = i
 	}
 }
 
@@ -258,10 +264,25 @@ func Lookup(indexes []*Index, database, name string) []Def {
 		func(def *Def) string { return def.Path })
 }
 
-// LookupRefs is every reference to a name across the indexes, in load order and hidden alike.
+// LookupRefs is every reference to a name in a file the game loads, in load order.
 func LookupRefs(indexes []*Index, database, name string) []Ref {
 	return gather(indexes, func(idx *Index) []*Ref { return idx.refs[[2]string{database, name}] },
 		func(ref *Ref) string { return ref.Path })
+}
+
+// Within is the references written inside a definition, in its file's order.
+func Within(indexes []*Index, def Def) (refs []Ref) {
+	for _, idx := range indexes {
+		if records := idx.Records[def.Path]; records != nil {
+			at := slices.Index(records.Defs, def)
+			for _, ref := range records.Refs {
+				if at >= 0 && int(ref.From) == at {
+					refs = append(refs, ref)
+				}
+			}
+		}
+	}
+	return refs
 }
 
 // LookupLocs is every localization entry of a key across the indexes, in load order.
@@ -293,8 +314,8 @@ func Names(indexes []*Index, database string) []string {
 	return names
 }
 
-// Resolve is the one resolver of a reference: a call in the databases its CalledIn word names; a
-// scope saved from code, a loc key or a file path known with no definitions; else Lookup. A local
+// Resolve is a reference's definitions: a call's in the databases its CalledIn word names; a scope
+// saved from code, a loc key or a file path known with no definitions; else Lookup. A local
 // definition answers only a reference in its own file.
 func Resolve(sch *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known bool) {
 	switch {
@@ -314,6 +335,18 @@ func Resolve(sch *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known b
 	}
 	defs = slices.DeleteFunc(defs, func(def Def) bool { return def.Local && def.Path != ref.Path })
 	return defs, len(defs) > 0
+}
+
+// Uses is Resolve turned around: every reference to a name of a database, the calls whose
+// CalledIn word resolves in that database included.
+func Uses(sch *schema.Schema, indexes []*Index, database, name string) []Ref {
+	refs := LookupRefs(indexes, database, name)
+	for _, call := range LookupRefs(indexes, "", name) {
+		if slices.Contains(sch.Callees[call.Called], database) {
+			refs = append(refs, call)
+		}
+	}
+	return refs
 }
 
 // Winner applies the entry modes to a name's definitions in Lookup's order, plain then each mode's:
@@ -376,4 +409,11 @@ func (ref Ref) Fires(sch *schema.Schema) bool {
 func (ref Ref) Runs(sch *schema.Schema) bool {
 	database := sch.Databases[ref.Database]
 	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Naming.CalledIn, game.Blocks[game.BlockEffects].Calls))
+}
+
+// Scripted is whether a definition is a scripted entry, one a reference may run (Runs): of a
+// database some block calls.
+func (def Def) Scripted(sch *schema.Schema) bool {
+	database := sch.Databases[def.Database]
+	return database != nil && len(database.Naming.CalledIn) > 0
 }

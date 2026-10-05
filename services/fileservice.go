@@ -166,47 +166,17 @@ func rejectOpen(size int64) string {
 	return ""
 }
 
-// RejectImage is the Reject value for a file the workbench cannot open but PMT
-// can display: the frontend keys on it to offer a preview instead of an error.
-const RejectImage = "image file"
-
-// rejectBinary refuses content no editor here can show; only the editor bridge applies it. Images
-// are refused as RejectImage rather than as binary: monaco-vscode has no webviews, so an image in
-// the editor renders as mojibake, but the caller can still offer a preview.
+// rejectBinary refuses content no editor here can show, images included: monaco-vscode has no
+// webviews, so an image in the editor renders as mojibake. Only the editor bridge applies it.
 func rejectBinary(head []byte) string {
 	if bytes.IndexByte(head, 0) < 0 {
 		return "" // text
 	}
-	if viewableImage(head) {
-		return RejectImage
-	}
-	return fmt.Sprintf("binary file (NUL in first %d bytes)", len(head))
+	return "binary file: the editor opens script, localization and other text files only"
 }
 
-// viewableImage reports a raster format the workbench's media preview can show, by content, not by
-// extension. DDS and TGA are absent though Paradox ships many: no browser decodes them.
-func viewableImage(head []byte) bool {
-	switch {
-	case bytes.HasPrefix(head, []byte("\x89PNG\r\n\x1a\n")):
-		return true
-	case bytes.HasPrefix(head, []byte("\xff\xd8\xff")): // JPEG
-		return true
-	case bytes.HasPrefix(head, []byte("GIF87a")), bytes.HasPrefix(head, []byte("GIF89a")):
-		return true
-	case bytes.HasPrefix(head, []byte("RIFF")) && len(head) >= 12 &&
-		bytes.Equal(head[8:12], []byte("WEBP")):
-		return true
-	case bytes.HasPrefix(head, []byte("BM")): // BMP
-		return true
-	case bytes.HasPrefix(head, []byte{0x00, 0x00, 0x01, 0x00}): // ICO
-		return true
-	}
-	return false
-}
-
-// WriteFileBase64 writes raw bytes from standard base64. It is the editor's save path, the only
-// file PMT writes that it cannot regenerate, so it goes through local.Write: a failed save leaves
-// the modder's script as it was.
+// WriteFileBase64 writes raw bytes from standard base64. It is the editor's save path, so it goes
+// through local.Write: a failed save never leaves half a file.
 func (f *FileService) WriteFileBase64(fullPath, b64 string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	data, err := base64.StdEncoding.DecodeString(b64)

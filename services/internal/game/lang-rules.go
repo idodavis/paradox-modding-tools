@@ -1,12 +1,13 @@
-// lang-rules.go is Paradox script's language rules as data: the same for every game and version.
-// The schema's walker (lang/schema/read.go) reads statements by these tables alone. What differs
-// per game lives in game.go.
+// lang-rules.go is Paradox script's language rules as data, the same for every game and version,
+// and each game's file Layout. The schema's walker (lang/schema/read.go) reads statements by these
+// tables alone.
 
 package game
 
 import (
 	"maps"
 	"slices"
+	"strings"
 )
 
 // ---- Blocks: what a block holds, and how a key written in it is read.
@@ -22,6 +23,8 @@ const (
 	BlockArguments                // a command's arguments only
 	BlockValue                    // a script value's formula
 	BlockDescription              // a dynamic description
+	BlockSetup                    // a history entry's start state: the docs' fields, else effects
+	BlockWidget                   // a GUI widget: its properties, and blocks that are widgets again
 )
 
 // Step is one way a key can be read; a block tries its steps in order and the first that fits wins.
@@ -30,6 +33,7 @@ type Step uint8
 const (
 	StepKnownCall      Step = iota // the name of a scripted entry vanilla defines: a call
 	StepDeclared                   // a key the dumps, docs or wiki declare at this place
+	StepDocumented                 // a key the docs of the entry's database write (Database.Fields)
 	StepCommand                    // a trigger or effect the dumps declare
 	StepOperator                   // a value operator (ValueOperators)
 	StepLink                       // a link the dumps declare, read by name or prefix
@@ -56,8 +60,10 @@ var Blocks = map[Block]BlockRule{
 	BlockTriggers:  {[]Step{StepKnownCall, StepDeclared, StepCommand, StepLink, StepObserved, StepCall}, "trigger", KindTrigger},
 	BlockEffects:   {[]Step{StepKnownCall, StepDeclared, StepCommand, StepLink, StepObserved, StepCall}, "effect", KindEffect},
 	BlockValue:     {[]Step{StepKnownCall, StepDeclared, StepCommand, StepOperator, StepLink, StepObserved, StepCall}, "value", KindTrigger | KindEffect},
-	BlockArguments: {[]Step{StepKnownCall, StepDeclared, StepCommand, StepObserved, StepLink, StepCall}, AnyCall, KindLink},
+	BlockArguments: {[]Step{StepKnownCall, StepDeclared, StepCommand, StepObserved, StepCall}, AnyCall, 0},
 	BlockUnknown:   {[]Step{StepKnownCall, StepDeclared, StepCommand, StepLink, StepPositionOrCall}, AnyCall, KindTrigger | KindEffect},
+	BlockSetup:     {[]Step{StepDeclared, StepDocumented, StepKnownCall, StepCommand, StepObserved, StepLink, StepCall}, "effect", KindEffect},
+	BlockWidget:    {[]Step{StepKnownCall, StepPosition}, "widget", 0},
 }
 
 // ---- Commands: what a declared command is, and what its block holds.
@@ -81,7 +87,7 @@ var KindWords = []struct {
 type Contents uint8
 
 const (
-	ContentsNumber  Contents = iota // a declared source says it takes a number: a value block
+	ContentsNumber  Contents = iota // it takes a number, or vanilla writes only value operators in it: a value block
 	ContentsUsage                   // its dump usage writes arguments only: an arguments block
 	ContentsInValue                 // written inside a value block: a value block
 	ContentsBoth                    // both a trigger and an effect: the kind of block it is written in
@@ -154,7 +160,7 @@ var ScopeRules = []ScopeRule{
 type Name uint8
 
 const (
-	NameHistory   Name = iota // a history entry's top key names the object it sets up
+	NameHistory   Name = iota // a history entry's top key, and its value (key = value), name what it sets up
 	NameList                  // a call starting with a ListIterators prefix iterates that scripted list
 	NameCall                  // a call names a scripted entry
 	NameParameter             // a key in a call's block names a parameter of the called entry
@@ -164,6 +170,7 @@ const (
 	NameClaim                 // a value at a position declared to name a database, a loc key or a file
 	NameValue                 // a word where a number is declared or vanilla writes one names a script value
 	NameEvent                 // a value written as an event id names an event
+	NameFileRef               // a value at a key its file type lists (FileType.Refs) names that entry
 )
 
 // KeyNames are the rules for a key, every one that fits; ValueNames for a value, the first that
@@ -171,7 +178,7 @@ const (
 // link, and $NAME$ in an entry of a folder with Parameters defines a parameter.
 var (
 	KeyNames   = []Name{NameHistory, NameList, NameCall, NameParameter}
-	ValueNames = []Name{NameMade, NameGroup, NameRead, NameClaim, NameValue, NameEvent}
+	ValueNames = []Name{NameHistory, NameFileRef, NameMade, NameGroup, NameRead, NameClaim, NameValue, NameEvent}
 )
 
 // SavedScopes is the database of saved scope names (save_scope_as).
@@ -204,6 +211,22 @@ var NameCommands = map[string]NameCommand{
 	"set_global_variable/name":             {"global_var", true},
 	"add_to_global_variable_list/name":     {"global_var", true},
 	"has_global_variable":                  {"global_var", false},
+
+	// the commands that read a variable or variable list, and the keys a list iterator takes one by
+	"variable": {"var", false}, "change_variable/name": {"var", false}, "clamp_variable/name": {"var", false},
+	"round_variable/name": {"var", false}, "remove_variable": {"var", false}, "has_variable_list": {"var", false},
+	"clear_variable_list": {"var", false}, "is_target_in_variable_list/name": {"var", false},
+	"variable_list_size/name": {"var", false}, "remove_list_variable/name": {"var", false},
+	"local_variable": {"local_var", false}, "change_local_variable/name": {"local_var", false},
+	"clamp_local_variable/name": {"local_var", false}, "round_local_variable/name": {"local_var", false},
+	"remove_local_variable": {"local_var", false}, "has_local_variable_list": {"local_var", false},
+	"clear_local_variable_list": {"local_var", false}, "is_target_in_local_variable_list/name": {"local_var", false},
+	"local_variable_list_size/name": {"local_var", false}, "remove_list_local_variable/name": {"local_var", false},
+	"global_variable": {"global_var", false}, "change_global_variable/name": {"global_var", false},
+	"clamp_global_variable/name": {"global_var", false}, "round_global_variable/name": {"global_var", false},
+	"remove_global_variable": {"global_var", false}, "has_global_variable_list": {"global_var", false},
+	"clear_global_variable_list": {"global_var", false}, "is_target_in_global_variable_list/name": {"global_var", false},
+	"global_variable_list_size/name": {"global_var", false}, "remove_list_global_variable/name": {"global_var", false},
 }
 
 // ListIterators are the prefixes a scripted list is iterated by (every_<list>), and the kind of
@@ -221,8 +244,8 @@ var ValueOperators = map[string]bool{
 }
 
 // DynamicDescription is the shape of a dynamic description. A block is one when it holds a marker
-// whose block holds the leaf or another marker. Inside, a marker holds the shape again, Trigger holds
-// triggers, and the leaf is read as the position the description belongs to.
+// whose block holds the leaf or another marker. Inside, a marker holds the shape again, Trigger
+// holds triggers, and the leaf is read as the position the description belongs to.
 var DynamicDescription = struct {
 	Markers       []string
 	Trigger, Leaf string
@@ -238,30 +261,31 @@ type Colour struct {
 	Tag        string
 	HSV        bool    // hue, saturation, value; else red, green, blue
 	Hex        bool    // one hex word
-	Hue, Parts float64 // what the hue and the other parts are out of; 0 for 1
+	Hue, Parts float64 // what the hue and the other parts are out of; 0 means 1
 }
 
-// Colours are the colour blocks script writes.
+// Colours are the colour blocks script writes; rgb's parts are out of 255, or of 1 where every part
+// is at most 1.
 var Colours = []Colour{
 	{Tag: "rgb"}, {Tag: "hsv", HSV: true}, {Tag: "hsv360", HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
 }
 
-// Placeholder is how a dump's command text names the kind of block the command takes.
-type Placeholder struct {
-	Text string
-	Kind Block
-}
-
-// Placeholders are the dumps' block placeholders; the first found in a command's text wins, so
-// effects come first.
-var Placeholders = []Placeholder{
-	{"<effects>", BlockEffects}, {"<more effects>", BlockEffects}, {"<hidden effects>", BlockEffects},
-	{"<triggers>", BlockTriggers}, {"<trigger>", BlockTriggers}, {"<display_triggers>", BlockTriggers},
+// Placeholders are the last words of a block placeholder a block lists ({ <display_triggers> },
+// { <interface effects> }) and the kind of block each names; the first listed wins.
+var Placeholders = map[string]Block{
+	"effect": BlockEffects, "effects": BlockEffects, "trigger": BlockTriggers, "triggers": BlockTriggers,
 }
 
 // UsagePlaceholder matches a block placeholder in a dump usage line; a usage with none writes
 // arguments only.
 const UsagePlaceholder = `<[^<>\n]*(?i:trigger|effect)[^<>\n]*>|\.\.\.\s*(?i:triggers?|effects?)\s*\.\.\.`
+
+// DumpWords are the dumps' words the engine decides by: a blurb opening "Iterate through" with no
+// target walks a list or variable map, so its block's scope is unknown; none and all name no scope.
+var DumpWords = struct {
+	Iterates string
+	NoScope  []string
+}{"Iterate through", []string{"none", "all"}}
 
 // GlobalType is the data type a data call's first step is read on.
 const GlobalType = "Global"
@@ -279,6 +303,15 @@ type EntryMode struct {
 	Creates  bool // _OR_CREATE: defines it where there is none
 }
 
+// Mode splits a game's mode word off a written name: REPLACE:x is x with mode REPLACE.
+func (info *GameInfo) Mode(written string) (mode, name string) {
+	word, rest, cut := strings.Cut(written, ":")
+	if cut && slices.ContainsFunc(info.EntryModes, func(entryMode EntryMode) bool { return entryMode.Word == word }) {
+		return word, rest
+	}
+	return "", written
+}
+
 // entryModes are the words Victoria 3 and EU5 share, in the order the game processes them.
 var entryModes = []EntryMode{
 	{Word: "INJECT_OR_CREATE", Creates: true}, {Word: "REPLACE_OR_CREATE", Replaces: true, Creates: true},
@@ -291,19 +324,23 @@ type FileType struct {
 	NameKey   string            // the key whose value names a top block's entry: .asset name = x
 	Keywords  []string          // the words that declare an entry: type x = button { }
 	NameKeyOf map[string]string // a block key at any depth, and the key whose value names its entry
-	WidgetKey string            // the key that makes a block below the top an entry of <ext>.widget
+	WidgetKey string            // every other top block is an entry of <ext>.widget, named by this key's value
+	Body      Block             // the kind its entries' blocks hold
+	Refs      map[string]string // keys whose value names an entry of <ext>.<word>, at any depth
 }
 
-// FileTypes are how .txt, .asset, .font and .gui files name entries, in every game.
+// FileTypes are how .txt, .asset, .font and .gui files name entries, in every game. In a .gui file
+// a word before a top block declares it (template x { }) or groups declarations (types x { }).
 var FileTypes = map[string]FileType{
 	".txt":   {},
 	".asset": {NameKey: "name"},
 	".font":  {NameKey: "name"},
 	".gui": {
-		NameKey:   "name",
 		Keywords:  []string{"type", "local_type", "template", "local_template", "block", "layer"},
 		NameKeyOf: map[string]string{"texticon": "icon", "format": "name"},
 		WidgetKey: "name",
+		Body:      BlockWidget,
+		Refs:      map[string]string{"using": "template", "layer": "layer"},
 	},
 }
 
@@ -311,13 +348,14 @@ var FileTypes = map[string]FileType{
 // the longest row at or above it.
 type Folder struct {
 	History    bool     // the start state of entries defined elsewhere; defines none of its own
-	Of         []string // History: the databases its entries are named after, the first that has the name
-	ByFile     bool     // History: each file is one entry, named after one of Of's, or by its stem
+	Of         string   // History: the database its entries are named after
+	ByFile     bool     // History: each file is one entry, named by its stem
+	Dated      bool     // a number key in an entry's own block is a date written short (999, 1077.1)
 	Unnamed    bool     // its entries name nothing: generated objects, locators, path-keyed lists
 	NameKey    string   // every top block is one entry named by this key's value, up to a (
 	Wrappers   []string // keys that only wrap entries: their blocks hold top statements
 	CalledIn   []string // scripted: the CalledIn words (Blocks' Calls) a call by an entry's name is in
-	Body       Block    // scripted: the kind an entry's block holds; unknown, its own fields
+	Body       Block    // scripted: the kind an entry's block holds; unset means its own fields
 	Keyword    string   // scripted: the word that declares an entry inline in any file
 	Parameters bool     // scripted: a call passes parameters
 	Events     bool     // the whole tree is one database, named by event id
@@ -334,6 +372,7 @@ type Nested struct {
 	Parent   string // a folder path; the row holds for every database at or below it
 	Path     string // "" the entry's own block, * one key, a leading **/ any depth
 	Database string // the database the keys define; self for the parent's own
+	Of       string // the keys set up entries of this database, defined elsewhere (start state)
 }
 
 // MapTable is a table whose rows are named by their first column.
@@ -359,15 +398,16 @@ var layouts = map[string]Layout{
 				Refs: []string{"on_actions", "random_on_action/<number>", "first_valid_on_action", "fallback"}},
 			"common/traits":            {Names: []string{"group", "group_equivalence"}},
 			"gfx/map/map_object_data":  {Unnamed: true},
-			"history/titles":           {History: true, Of: []string{"landed_titles"}},
-			"history/provinces":        {History: true, Of: []string{"map_data.definition"}},
-			"history/province_mapping": {History: true, Of: []string{"map_data.definition"}},
-			"history/cultures":         {History: true, Of: []string{"culture/cultures", "culture/pillars"}, ByFile: true},
-			"history/faiths":           {History: true, Of: []string{"religion/faith_types"}},
+			"history/titles":           {History: true, Of: "landed_titles"},
+			"history/provinces":        {History: true, Of: "map_data.definition"},
+			"history/province_mapping": {History: true, Of: "map_data.definition"},
+			"history/cultures":         {History: true, Of: "culture/cultures", ByFile: true},
+			"history/faiths":           {History: true, Of: "religion/faith_types"},
 			"history/artifacts":        {History: true},
 			"history/situations":       {History: true},
 			"history/struggles":        {History: true},
-			"history/wars":             {History: true},
+			"history/wars":             {History: true, Unnamed: true},
+			"history/characters":       {Body: BlockSetup, Dated: true},
 		}),
 		Nested: slices.Concat(sharedNested, []Nested{
 			{Parent: "common/landed_titles", Path: "", Database: "self"},
@@ -386,7 +426,7 @@ var layouts = map[string]Layout{
 				Refs: []string{"on_actions", "random_on_actions/<number>", "first_valid_on_action", "fallback"}},
 			"gfx/map/map_object_data": {Unnamed: true},
 			"gfx/map/post_effects":    {NameKey: "name", Wrappers: []string{"posteffect_volumes"}},
-			"common/history":          {History: true},
+			"common/history":          {History: true, Unnamed: true, Body: BlockEffects}, // COUNTRIES = { … }: effects
 		}),
 		Nested:             sharedNested,
 		EntryModes:         entryModes,
@@ -399,8 +439,8 @@ var layouts = map[string]Layout{
 			"gfx/map/map_objects":                  {Unnamed: true},
 			"gfx/map/city_data":                    {NameKey: "name"},
 			"setup/start":                          {History: true},
-			"setup/templates":                      {History: true, ByFile: true},
-			"map_data/location_templates.txt":      {History: true, Of: []string{"map_data/named_locations"}},
+			"setup/templates":                      {ByFile: true},
+			"map_data/location_templates.txt":      {History: true, Of: "map_data/named_locations"},
 			"map_data/generated_locators_port.txt": {Unnamed: true},
 		}),
 		Nested: slices.Concat(sharedNested, []Nested{
@@ -416,15 +456,15 @@ var layouts = map[string]Layout{
 			{Parent: "map_data/definitions.txt", Path: "*/*/*", Database: "province"},
 			{Parent: "setup/start", Path: "character_db", Database: "character"},
 			{Parent: "setup/start", Path: "dynasty_manager", Database: "dynasty"},
-			{Parent: "setup/start", Path: "countries/countries"},
-			{Parent: "setup/start", Path: "locations"},
-			{Parent: "setup/start", Path: "road_network"},
-			{Parent: "setup/start", Path: "townrights_manager"},
-			{Parent: "setup/start", Path: "building_manager"},
-			{Parent: "setup/start", Path: "work_of_art_manager"},
-			{Parent: "setup/start", Path: "colony_manager"},
-			{Parent: "setup/start", Path: "institution_manager/institutions"},
-			{Parent: "setup/start", Path: "situation_manager"},
+			{Parent: "setup/start", Path: "countries/countries", Database: "country", Of: "setup/countries"},
+			{Parent: "setup/start", Path: "locations", Database: "location", Of: "map_data/named_locations"},
+			{Parent: "setup/start", Path: "road_network", Database: "road", Of: "map_data/named_locations"},
+			{Parent: "setup/start", Path: "townrights_manager", Database: "town_rights", Of: "map_data/named_locations"},
+			{Parent: "setup/start", Path: "building_manager", Database: "building", Of: "building_types"},
+			{Parent: "setup/start", Path: "work_of_art_manager", Database: "work_of_art", Of: "artist_work"},
+			{Parent: "setup/start", Path: "colony_manager", Database: "colony", Of: "map_data/definitions.txt.province"},
+			{Parent: "setup/start", Path: "institution_manager/institutions", Database: "institution", Of: "institution"},
+			{Parent: "setup/start", Path: "situation_manager", Database: "situation", Of: "situations"},
 		}),
 		EntryModes:         entryModes,
 		FirstWinsDatabases: []string{"events"},
@@ -434,7 +474,7 @@ var layouts = map[string]Layout{
 // sharedNested are the nested rows every game has.
 var sharedNested = []Nested{{Parent: "common/defines", Path: "", Database: "define"}}
 
-// sharedFolders are the folder rows every game has; a row whose folder a game lacks matches nothing.
+// sharedFolders are every game's folder rows; a row whose folder a game lacks matches nothing.
 var sharedFolders = map[string]Folder{
 	"common/scripted_effects":   {CalledIn: []string{"effect"}, Body: BlockEffects, Keyword: "scripted_effect", Parameters: true},
 	"common/scripted_triggers":  {CalledIn: []string{"trigger"}, Body: BlockTriggers, Keyword: "scripted_trigger", Parameters: true},
@@ -453,6 +493,8 @@ var sharedFolders = map[string]Folder{
 	"common/coat_of_arms/template_lists": {Wrappers: []string{"coat_of_arms_template_lists",
 		"pattern_texture_lists", "colored_emblem_texture_lists", "textured_emblem_texture_lists", "color_lists"}},
 	"gui/scripted_widgets":          {Unnamed: true},
+	"gui.type":                      {CalledIn: []string{"widget"}},        // a widget key naming a type
+	"gui.block":                     {CalledIn: []string{"blockoverride"}}, // blockoverride "x" { }
 	"music/music_player_categories": {NameKey: "id"},
 }
 

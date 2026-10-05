@@ -17,9 +17,8 @@ This is **direction**, not a calendar. Order can change. File issues against a [
 
 After a game patch today:
 
-1. Pin or keep `latest`, rescan the install.
-2. Reopen the workspace.
-3. Read [Workspace Health]({{< relref "/pages/health" >}}) — dangling refs and overrides.
+1. Reopen the workspace: the install is scanned again by itself.
+2. Read [Workspace Health]({{< relref "/pages/health" >}}) — dangling refs and overrides.
 
 Later: suggested **file-level retarget in the IDE** (open the mod's copy of a changed game file, copy forward what you still own).
 
@@ -75,4 +74,4 @@ Target: **IDE undock first; full-app windows after the one-session rule is relax
 
 ## Game coverage
 
-Deeper EU5 extract rules and Guide/wiki coverage. More loc languages in hover without a full rescan (sidecar already works this way).
+Deeper EU5 extract rules and Guide/wiki coverage. More loc languages in hover without a full rescan (today the install's cache is kept per language).

@@ -8,8 +8,9 @@ and walks one saved mod file again.
 ## The walk (`walk.go`)
 
 `Walk(sch, file, parsed, visit)` turns one parsed file into `Records`. The schema's walker reads the
-tree (it never writes the schema, so walks run in parallel); the name rules in `game/lang-rules.go`
-say what each word defines or refers to. Every record keeps its 0-based line and column; `Index.Add`
+tree (it never writes the schema, so walks run in parallel) and hands each statement to a `walker`
+(`step`; each written word to `word`); the name rules in `game/lang-rules.go` say what each word
+defines or refers to. Every record keeps its 0-based line and column; `Index.Add`
 gives it shared copies of its strings. For a table or sound list (`parsed` nil) only the entry
 detector's definitions come back.
 
@@ -21,7 +22,8 @@ by a folder's keyword in another folder's file) answers only references in its o
 
 | Rule | Where | Record |
 |---|---|---|
-| history | a history entry's top key | a reference to the object it sets up (`Of`) |
+| history | a history entry's top key, and its value where it is written key = value | a reference to the object it sets up (`Of`) |
+| file ref | a value at a key its file type lists (`FileType.Refs`: a GUI `using`) | a reference to that entry |
 | list | a call starting with `every_`, `any_`, `random_`, `ordered_` in a triggers, effects or value block | a reference to that scripted list |
 | call | a key read as a call | a call reference (`Called`: the block's CalledIn word) |
 | parameter | a key in a call's block | a reference to the called entry's parameter, `<entry>:<NAME>` |
@@ -30,7 +32,7 @@ by a folder's keyword in another folder's file) answers only references in its o
 | read | the value of a name command that reads one (`has_variable`) | a reference into the name's database |
 | claim | a value at a position typed as a database, a loc key or a file | a reference to it; a number at a position vanilla typed is none |
 | value | a word at a position declared to take a number | a call to a script value |
-| event | a value written as an event id | a reference to the events database |
+| event | a value written as an event id (a number is none) | a reference to the events database |
 
 Always, on any word: each `prefix:name` part a link reads is a reference into the prefix's database
 (`Schema.Prefixes`); each `$NAME$` in an entry of a folder with `Parameters` defines a parameter.
@@ -56,10 +58,12 @@ vanilla defines one name in two files: there `duplicate-definition` never speaks
 **Load order.** `Lookup`, `LookupRefs` and `LookupLocs` give a name's items across the indexes in the
 game's load order: a file is hidden by a later file at its `Rel`, or by a later index's `Replaced`
 folder (`Loaded`); the rest sort by `Rel`. `Names` is every name a database defines, for completion.
+`Within` is the references written inside one definition.
 
 **Resolution.** `Resolve` is the one resolver: a call looks in the databases its CalledIn word names
 (`Schema.Callees`); a scope the game saves from code, a loc key or a file path is known with no
-definitions; anything else is `Lookup`. A local definition answers only its own file.
+definitions; anything else is `Lookup`. A local definition answers only its own file. `Uses` is
+Resolve turned around: every reference to a name of a database, the calls into it included.
 
 **Entry modes.** `Winner` applies a name's definitions in load order, plain first, then each entry
 mode in the game's processing order: a plain definition or a replacing mode takes the winner's place
@@ -69,6 +73,8 @@ place. Two mods contest a name when one takes the other's place.
 
 **Fires.** `Ref.Fires` is a reference to an event or on_action outside a trigger; `Ref.Runs` is a
 call, or a name of a database called in effects, outside a trigger, whose fires are fired through it.
+`Def.Scripted` is a definition a reference may run: one of a database some block calls. The event
+graph's `session.Fires` and `session.FiredBy` follow these three and nothing else.
 
 ## Scan and cache (`scan.go`)
 
@@ -91,4 +97,5 @@ call, or a name of a database called in effects, outside a trigger, whose fires 
    install folder, and deletes any cache file no current reader names.
 
 `ScanMods` indexes the mods in playset order; `Replaced` comes from each descriptor's
-`replace_path`s. `Reindex` walks one saved mod file again in place; `Forget` removes a deleted one.
+`replace_path`s, as `local.ReadListingFields` reads them. `Reindex` walks one saved mod file again
+in place; `Forget` removes a deleted one.

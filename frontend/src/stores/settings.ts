@@ -3,7 +3,7 @@
  */
 import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
-import { GetSettings, SaveSettings } from "@services/configservice";
+import { GetSettings, SaveSettings } from "@services/appservice";
 import { applyEditorFontSize } from "../ide/themeBridge";
 import { WORKSPACE_TOOL_NAMES, type WorkspaceToolName } from "../workspaceTools";
 

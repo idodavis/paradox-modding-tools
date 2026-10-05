@@ -3,10 +3,11 @@
 package services
 
 import (
+	"cmp"
 	"context"
-	"slices"
+	"path/filepath"
+	"strings"
 
-	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/wiki"
 )
 
@@ -28,19 +29,13 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	if place.Origin == "" {
 		return &wiki.Guide{}, nil
 	}
-	database, name := "", sess.Game.Name
+	database := ""
 	if place.Database != nil {
 		database = place.Database.Name
 	}
-	if at := slices.IndexFunc(sess.Mods, func(mod session.Mod) bool { return mod.ID == place.Origin }); at >= 0 {
-		name = sess.Mods[at].Name
-	}
 	return &wiki.Guide{
-		Rel:         place.Rel,
-		Origin:      place.Origin,
-		OriginName:  name,
 		Database:    database,
-		Pages:       wiki.PagesFor(sess.Game.ID, database, place.Rel),
+		Pages:       wiki.PagesFor(sess.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel),
 		Attribution: wiki.Attribution(sess.Game.ID),
 	}, nil
 }
@@ -49,7 +44,7 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 // guides are current without a click, and tells the frontend as each game is done.
 func (s *WikiService) StartWikiWarm() {
 	games := map[string]bool{}
-	s.Session.Config.read(func(cfg *Config) {
+	s.Session.App.read(func(cfg *Config) {
 		for _, inst := range cfg.Installs {
 			games[inst.GameID] = true
 		}
@@ -72,6 +67,6 @@ func (s *WikiService) Patches(gameID string) (*wiki.PatchList, error) {
 }
 
 // PatchPage returns one patch notes body by title or version label.
-func (s *WikiService) PatchPage(gameID, version string) (*wiki.PatchPage, error) {
+func (s *WikiService) PatchPage(gameID, version string) (*wiki.Page, error) {
 	return wiki.PatchByVersion(gameID, version), nil
 }

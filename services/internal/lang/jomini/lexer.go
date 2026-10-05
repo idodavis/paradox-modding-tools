@@ -1,9 +1,11 @@
-// lexer.go turns a file's bytes into tokens: first the decode, which strips a UTF-8 byte order
-// mark, reads UTF-8 where the bytes are valid UTF-8 and latin1 where they are not, and
-// normalises line endings; then the single-pass, allocation-light tokenizer for Paradox script.
+// lexer.go turns a file's bytes into tokens: the single-pass, allocation-light tokenizer for
+// Paradox script, and the decode, which strips a UTF-8 byte order mark, drops every CR, and reads
+// latin1 where the bytes are not valid UTF-8.
+
 package jomini
 
 import (
+	"bytes"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -50,17 +52,16 @@ func isWordTerminator(char byte) bool {
 }
 
 // tokenPool reuses token buffers across parses: a scan parses the install several times over,
-// and the CST slices its strings out of the source, so no token outlives its parse.
+// and the CST slices its strings out of the source, so no token outlives its parse. It holds
+// *[]token, so a Put stores no slice header in an interface.
 var tokenPool sync.Pool
 
 // getTokens takes a buffer sized for text, from the pool where one fits. Script averages about
 // 9 bytes a token; under-guessing costs one doubling, over-guessing costs memory on every file.
 func getTokens(text string) []token {
 	want := len(text)/8 + 16
-	if pooled := tokenPool.Get(); pooled != nil {
-		if tokens, ok := pooled.([]token); ok && cap(tokens) >= want {
-			return tokens[:0]
-		}
+	if pooled, ok := tokenPool.Get().(*[]token); ok && cap(*pooled) >= want {
+		return (*pooled)[:0]
 	}
 	return make([]token, 0, want)
 }
@@ -71,7 +72,8 @@ func putTokens(tokens []token) {
 	if cap(tokens) > 1<<20 {
 		return
 	}
-	tokenPool.Put(tokens[:0]) //nolint:staticcheck // slices are the point here
+	tokens = tokens[:0]
+	tokenPool.Put(&tokens)
 }
 
 // tokenize lexes the entire source into tokens (with a trailing EOF). Never panics.
@@ -273,29 +275,18 @@ func lineIndentsFrom(src string, toks []token) []int {
 	return out
 }
 
-// UTF-8 byte-order-mark bytes. Paradox files are UTF-8, frequently with a BOM.
-var utf8BOM = [3]byte{0xEF, 0xBB, 0xBF}
-
-// HasUTF8BOM reports whether raw begins with a UTF-8 byte-order mark.
-func HasUTF8BOM(raw []byte) bool {
-	return len(raw) >= 3 && raw[0] == utf8BOM[0] && raw[1] == utf8BOM[1] && raw[2] == utf8BOM[2]
-}
+// BOM is the UTF-8 byte-order mark; Paradox files are UTF-8, frequently with one.
+const BOM = "\xEF\xBB\xBF"
 
 // Normalize drops CR so Windows CRLF files share offsets with LF editor buffers.
 func Normalize(text string) string {
 	return strings.ReplaceAll(text, "\r", "")
 }
 
-// Decode turns raw file bytes into text for parsing. It strips a leading UTF-8
-// BOM and CR, and returns hadBOM. If the bytes are not valid UTF-8 (typically
-// hand-edited Latin-1/Windows-1252 files) it falls back to a latin1 decode so
-// callers get usable text rather than U+FFFD replacement characters.
+// Decode turns raw file bytes into text for parsing: it strips a leading BOM (reported by hadBOM)
+// and every CR, and decodes bytes that are not valid UTF-8 (hand-edited Windows-1252) as latin1.
 func Decode(raw []byte) (text string, hadBOM bool) {
-	hadBOM = HasUTF8BOM(raw)
-	body := raw
-	if hadBOM {
-		body = raw[3:]
-	}
+	body, hadBOM := bytes.CutPrefix(raw, []byte(BOM))
 	if utf8.Valid(body) {
 		return Normalize(string(body)), hadBOM
 	}

@@ -54,7 +54,7 @@ If the window is blank, the WebKitGTK 6 runtime is the first thing to check.
 On first launch the [wizard]({{< relref "/pages/wizard" >}}) walks you through:
 
 1. **Game** — CK3, Vic3, or EU5.
-2. **Install** — detect a Steam/Paradox folder or browse. Pin a version from `launcher/launcher-settings.json`, or use `latest` (the live folder across patches).
+2. **Install** — detect a Steam/Paradox folder or browse. Its version is read from `launcher/launcher-settings.json`.
 3. **Mods** — attach existing folders and/or **Create new mod** (descriptor, empty `common/` and `events/`, readmes, a localization stub with UTF-8 BOM). Drag to set load order.
 4. **Name** — how the workspace appears in the Library.
 
@@ -64,7 +64,7 @@ You land in the [Workspace IDE]({{< relref "/pages/ide" >}}).
 
 ## 5. First scan
 
-PMT indexes **vanilla** script into a cache keyed by install + version, then harvests your mods into RAM when the workspace opens. Large installs take a while the first time. Later opens reuse the vanilla cache.
+PMT indexes **vanilla** script into a cache keyed by install and version, then indexes your mods in memory when the workspace opens. Large installs take a while the first time. Later opens reuse the vanilla cache.
 
 The language strip (defs count / “index ready”) tells you the [live session]({{< relref "/concepts/workspace" >}}) is up. Tool pages wait for that.
 

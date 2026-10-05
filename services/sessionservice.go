@@ -2,6 +2,7 @@
 // an install, and the health strip a page shows.
 // The events the frontend listens for are declared here too: a session became ready, a scan moved,
 // a cache was replaced, a mod's calendar or file changed, a wiki was refreshed.
+
 package services
 
 import (
@@ -24,10 +25,8 @@ import (
 
 // SessionService is the Wails RPC shell for sessions.
 type SessionService struct {
-	Config *ConfigService
-	Scan   func(ctx context.Context, req index.Request) (*index.Install, error) // index.Scan, or a stand-in under test
-
-	emit func(event string, data any) // emit, or a recorder under test
+	App  *AppService
+	Scan func(ctx context.Context, req index.Request) (*index.Install, error) // index.Scan, or a stand-in under test
 
 	once     sync.Once
 	smu      sync.RWMutex
@@ -55,14 +54,11 @@ type LanguageHealth struct {
 	DataTypesCommand string   `json:"dataTypesCommand"` // the console command that writes the data types
 }
 
-// start makes the scanner, the live sessions and the emitter on first use.
+// start makes the scanner and the live sessions on first use.
 func (s *SessionService) start() {
 	s.once.Do(func() {
 		if s.Scan == nil {
 			s.Scan = index.Scan
-		}
-		if s.emit == nil {
-			s.emit = emit
 		}
 		s.sessions = map[string]*session.Session{}
 	})
@@ -94,13 +90,13 @@ func (s *SessionService) live(workspaceID string) (*session.Session, error) {
 		}
 		built, err := s.build(workspaceID)
 		if err != nil {
-			s.emit(EventLangFailed, workspaceID)
+			emit(EventLangFailed, workspaceID)
 			return nil, err
 		}
 		s.smu.Lock()
 		s.sessions[workspaceID] = built
 		s.smu.Unlock()
-		s.emit(EventLangReady, workspaceID)
+		emit(EventLangReady, workspaceID)
 		return built, nil
 	})
 	if err != nil {
@@ -146,19 +142,8 @@ func (s *SessionService) dropAllExcept(keep string) {
 
 // build makes a workspace's session: the install from its cache, scanned if none, and its mods.
 func (s *SessionService) build(workspaceID string) (*session.Session, error) {
-	var ws *Workspace
-	var inst *GameInstall
-	s.Config.read(func(cfg *Config) {
-		if listed := findWorkspace(cfg, workspaceID); listed != nil {
-			workspace := *listed
-			ws = &workspace
-			if record := findInstall(cfg, listed.InstallID); record != nil {
-				copied := *record
-				inst = &copied
-			}
-		}
-	})
-	if ws == nil || inst == nil {
+	ws, inst := s.App.workspace(workspaceID)
+	if inst == nil {
 		return nil, fmt.Errorf("workspace %s has no install", workspaceID)
 	}
 	install, err := s.scan(inst, ws.DefaultLocLang)
@@ -170,7 +155,7 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 100, Stage: "reading your mods"})
 	var mods []session.Mod
 	for _, mod := range ws.Mods {
-		mods = append(mods, session.Mod{ID: mod.ID, Name: mod.Name, Dir: mod.Path, Calendar: mod.Eras})
+		mods = append(mods, session.Mod{ID: mod.ID, Dir: mod.Path, Calendar: mod.Eras})
 	}
 	sess, err := session.New(context.Background(), game.Get(inst.GameID), install, mods, ws.DefaultLocLang)
 	if err != nil {
@@ -188,7 +173,7 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 func (s *SessionService) request(inst *GameInstall, language string) index.Request {
 	return index.Request{
 		Game: inst.GameID, Dir: inst.Path, Version: game.ReadGameVersion(inst.Path, game.Get(inst.GameID).SteamAppID),
-		Language: language, App: s.Config.Version,
+		Language: language, App: s.App.Version,
 	}
 }
 
@@ -200,7 +185,7 @@ func (s *SessionService) scan(inst *GameInstall, language string) (*index.Instal
 	slog.Info("scan start", "game", inst.GameID, "install", inst.Name, "version", request.Version)
 	started := time.Now()
 
-	// each stage has the part of the bar its share of a CK3 scan's time earns, and the name the bar
+	// each stage has the part of the bar its share of a scan's time earns, and the name the bar
 	// shows; a move is told once, and a stage's time is logged when the next begins
 	stages := map[string]struct {
 		label    string
@@ -246,18 +231,6 @@ func (s *SessionService) scan(inst *GameInstall, language string) (*index.Instal
 	return install, nil
 }
 
-// install is a copy of one install's record.
-func (s *SessionService) install(id string) *GameInstall {
-	var inst *GameInstall
-	s.Config.read(func(cfg *Config) {
-		if found := findInstall(cfg, id); found != nil {
-			copied := *found
-			inst = &copied
-		}
-	})
-	return inst
-}
-
 // scannedAt is when an install was built, in RFC 3339: as this run built or loaded it, else by the
 // time of its cache file in the language; "" with neither.
 func (s *SessionService) scannedAt(inst *GameInstall, language string) string {
@@ -275,24 +248,17 @@ func (s *SessionService) scannedAt(inst *GameInstall, language string) string {
 // GetLanguageHealth is the health strip for a workspace, from its live session where there is one.
 func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth, error) {
 	health := &LanguageHealth{WorkspaceID: workspaceID}
-	var inst *GameInstall
-	language := ""
-	s.Config.read(func(cfg *Config) {
-		if listed := findWorkspace(cfg, workspaceID); listed != nil {
-			health.InstallID, language = listed.InstallID, listed.DefaultLocLang
-			if found := findInstall(cfg, listed.InstallID); found != nil {
-				copied := *found
-				inst = &copied
-			}
-		}
-	})
+	ws, inst := s.App.workspace(workspaceID)
+	if ws != nil {
+		health.InstallID = ws.InstallID
+	}
 	if inst == nil {
 		return health, nil
 	}
 	health.GameID, health.GameVersion = inst.GameID, inst.VersionDetected
 	_, statErr := os.Stat(inst.Path)
 	health.InstallOk = statErr == nil
-	health.ScannedAt = s.scannedAt(inst, language)
+	health.ScannedAt = s.scannedAt(inst, ws.DefaultLocLang)
 	s.start()
 	health.DataTypesCommand = game.Get(inst.GameID).DataTypesCommand
 	health.DumpFolders = game.DumpDirs(inst.GameID, inst.Path)

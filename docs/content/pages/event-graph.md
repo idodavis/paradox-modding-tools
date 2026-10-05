@@ -15,7 +15,7 @@ See what an event or on_action fires and what fires it, drawn from the **live** 
 1. **Root:** type any part of an id, its namespace or its number, and pick one. The **kind** select narrows the search to one kind (events, on_actions, decisions and the other kinds that fire events), with how many each has.
 2. **Depth**, **Fanout** and **Nodes** set how many hops the graph reaches, how many fires one node shows before the rest become a "+N more" stub, and how many nodes it draws. When the node cap cuts the graph, a warning says at what depth; raise **Nodes** to go deeper.
 3. The **origins** select limits the graph to the game and the mods you pick.
-4. **Show macros** draws each scripted effect or trigger on a path between two events as a node of its own. Off, an edge carries the first one as its label.
+4. **Show scripted effects and triggers** draws each scripted effect or trigger on a path between two events as a node of its own. Off, an edge carries the first one as its label.
 5. **Click** a node to open its detail and light its route from the root; everything else dims. **Double-click** a node to draw the graph from it. Click a "+N" stub to open it; **Reset expands** closes them again. **Fit** shows the whole graph.
 
 The graph draws events, on_actions and the definitions that fire them. Scopes are never drawn.

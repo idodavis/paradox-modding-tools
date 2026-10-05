@@ -47,7 +47,7 @@ const { data: page } = useQuery({
 const mode = shallowRef<BodyMode>("modding");
 
 watch(page, (p) => {
-  mode.value = p?.hasModding ? "modding" : "all";
+  mode.value = p?.moddingHtml ? "modding" : "all";
 }, { immediate: true });
 
 const html = computed(() => {
@@ -253,7 +253,7 @@ function openUrl(url: string): void {
           <UButton
             label="Modding"
             size="sm"
-            :disabled="!page?.hasModding"
+            :disabled="!page?.moddingHtml"
             :color="mode === 'modding' ? 'primary' : 'neutral'"
             :variant="mode === 'modding' ? 'soft' : 'ghost'"
             @click="setMode('modding')"

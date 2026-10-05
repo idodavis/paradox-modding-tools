@@ -247,7 +247,7 @@ export function registerLanguageClient(getWorkspaceId: () => string, origin: Car
   // document sync: the backend indexes an open buffer's text in place of the disk's
   const opened = (doc: vscode.TextDocument) => {
     if (!ours(doc)) return;
-    void ide.DidOpen(getWorkspaceId(), pathOf(doc), doc.getText()).then(() => refreshDiagnostics(doc));
+    void ide.DidChange(getWorkspaceId(), pathOf(doc), doc.getText()).then(() => refreshDiagnostics(doc));
   };
   subs.push(
     vscode.workspace.onDidOpenTextDocument(opened),

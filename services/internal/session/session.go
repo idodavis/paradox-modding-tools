@@ -55,16 +55,15 @@ func (calendar Calendar) Read(year int) (int, string, bool) {
 
 // Mod is one mod of the workspace, in the playset's order.
 type Mod struct {
-	ID, Name, Dir string
-	Calendar      Calendar
+	ID, Dir  string
+	Calendar Calendar
 }
 
-// Place is where a path sits: its origin, its path from the root, and the database it defines.
+// Place is where a path sits: its file (Origin "" for a path under no root), the database it
+// defines and its mod's calendar.
 type Place struct {
-	Origin   string // game.OriginVanilla, a mod's ID, or "" for a path under no root
-	Rel      string
+	source.File
 	Database *schema.Database // nil when the folder holds none
-	Format   source.Format
 	Calendar Calendar
 }
 
@@ -104,7 +103,7 @@ func New(ctx context.Context, info *game.GameInfo, install *index.Install, mods 
 	}
 	return &Session{
 		Changes: changes.Add(1), Game: info, Install: install, Workspace: workspace, Mods: mods,
-		Language: cmp.Or(language, "english"), buffers: map[string]*buffer{},
+		Language: cmp.Or(language, game.BaseLanguage), buffers: map[string]*buffer{},
 	}, nil
 }
 
@@ -125,45 +124,33 @@ func (sess *Session) Winner(defs []index.Def) (winner index.Def, adds, orphans [
 	})
 }
 
-// Fire is the definition at the far end of a fire, with the scripted effects between.
+// Fire is the definition at the far end of a fire, its database, and the scripted entries between.
 type Fire struct {
-	Name string `json:"name"`
-	Via  string `json:"via"`
+	Name     string `json:"name"`
+	Database string `json:"database"`
+	Via      string `json:"via"`
 }
 
-// Fires is what a definition fires, in name order: events and on_actions only. A fire through a
-// scripted effect is followed to what it fires, and an effect already met on the way is not entered
-// again.
+// Fires is what a definition fires, in name order: events and on_actions only (Ref.Fires). A
+// scripted entry it runs (Ref.Runs) is followed to what it fires, and an entry already met on the
+// way is not entered again.
 func (sess *Session) Fires(from index.Def) []Fire {
 	sch, indexes := sess.Install.Schema, sess.Indexes()
 	seen, out := map[index.Def]bool{from: true}, []Fire(nil)
 
-	// follow reads the references written in one definition; via is the effects entered to reach it
+	// follow reads the references written in one definition; via is the entries entered to reach it
 	var follow func(def index.Def, via string)
 	follow = func(def index.Def, via string) {
-		for _, idx := range indexes {
-			records := idx.Records[def.Path]
-			if records == nil {
-				continue
-			}
-			at := slices.Index(records.Defs, def)
-			if at < 0 {
-				continue
-			}
-			for _, ref := range records.Refs {
-				if int(ref.From) != at {
-					continue
-				}
-				switch {
-				case ref.Fires(sch):
-					out = append(out, Fire{Name: ref.Name, Via: via})
-				case ref.Runs(sch):
-					called, _ := index.Resolve(sch, indexes, ref)
-					for _, target := range called {
-						if !seen[target] {
-							seen[target] = true
-							follow(target, strings.TrimPrefix(via+" → "+target.Name, " → "))
-						}
+		for _, ref := range index.Within(indexes, def) {
+			switch {
+			case ref.Fires(sch):
+				out = append(out, Fire{Name: ref.Name, Database: ref.Database, Via: via})
+			case ref.Runs(sch):
+				called, _ := index.Resolve(sch, indexes, ref)
+				for _, target := range called {
+					if !seen[target] {
+						seen[target] = true
+						follow(target, strings.TrimPrefix(via+" → "+target.Name, " → "))
 					}
 				}
 			}
@@ -175,11 +162,48 @@ func (sess *Session) Fires(from index.Def) []Fire {
 	return slices.CompactFunc(out, func(first, second Fire) bool { return first.Name == second.Name })
 }
 
+// FiredBy is Fires turned around, in name order: each definition holding a reference that fires
+// or runs this one, a scripted entry followed to what runs it, with the chain as Fires writes it.
+func (sess *Session) FiredBy(target index.Def) []Fire {
+	sch, indexes := sess.Install.Schema, sess.Indexes()
+	seen := map[index.Def]bool{target: true}
+
+	// follow reads the references to one definition; a local one answers only its own file's
+	var follow func(def index.Def) []Fire
+	follow = func(def index.Def) (out []Fire) {
+		for _, ref := range index.Uses(sch, indexes, def.Database, def.Name) {
+			var caller index.Def
+			for _, idx := range indexes {
+				if records := idx.Records[ref.Path]; records != nil && ref.From >= 0 {
+					caller = records.Defs[ref.From]
+				}
+			}
+			switch {
+			case !ref.Fires(sch) && !ref.Runs(sch) || caller.Name == "" || def.Local && ref.Path != def.Path:
+			case caller.Scripted(sch):
+				if !seen[caller] {
+					seen[caller] = true
+					for _, up := range follow(caller) {
+						out = append(out, Fire{Name: up.Name, Database: up.Database, Via: strings.TrimPrefix(up.Via+" → "+caller.Name, " → ")})
+					}
+				}
+			default:
+				out = append(out, Fire{Name: caller.Name, Database: caller.Database})
+			}
+		}
+		return out
+	}
+	out := follow(target)
+
+	slices.SortStableFunc(out, func(first, second Fire) int { return strings.Compare(first.Name, second.Name) })
+	return slices.CompactFunc(out, func(first, second Fire) bool { return first.Name == second.Name })
+}
+
 // Loc is a key's entry in a language, the last loaded: a mod's over the install's. With none in the
 // language it is the english one, so a title shows; whether the key exists is Resolve's to say.
 func (sess *Session) Loc(key, language string) (index.Loc, bool) {
 	entries := index.LookupLocs(sess.Indexes(), key)
-	for _, wanted := range []string{cmp.Or(language, sess.Language), "english"} {
+	for _, wanted := range []string{cmp.Or(language, sess.Language), game.BaseLanguage} {
 		for _, entry := range slices.Backward(entries) {
 			if entry.Language == wanted {
 				return entry, true
@@ -206,8 +230,8 @@ func (sess *Session) Entry(def index.Def) (*jomini.Result, jomini.Statement) {
 	return parsed, found
 }
 
-// Title is a definition's display name: the text of its name as a loc key, else of the first of its
-// fields a declared source calls a loc key that has text.
+// Title is a definition's display name: the text of its name as a loc key, else of its first field
+// typed as a loc key that has text.
 func (sess *Session) Title(def index.Def) string {
 	if said, found := sess.Loc(def.Name, ""); found {
 		return said.Text
@@ -245,14 +269,14 @@ func (sess *Session) LocKeys(prefix string, limit int) []string {
 	return sorted[:min(limit, len(sorted))]
 }
 
-// Where places a path in the workspace: its origin, rel, and the database a file there defines.
-// A file not yet walked is placed by its root.
+// Where places a path in the workspace: its file, and the database a file there defines. A file
+// not yet walked is placed by its root.
 func (sess *Session) Where(path string) Place {
 	file, mod, ok := sess.Located(path)
 	if !ok {
-		return Place{Format: source.Classify(path, filepath.ToSlash(path))}
+		return Place{File: source.File{Format: source.Classify(path, filepath.ToSlash(path))}}
 	}
-	place := Place{Origin: file.Origin, Rel: file.Rel, Database: sess.Install.Schema.DatabaseAt(file.Rel), Format: file.Format}
+	place := Place{File: file, Database: sess.Install.Schema.DatabaseAt(file.Rel)}
 	if mod != nil {
 		place.Calendar = mod.Calendar
 	}
@@ -439,8 +463,8 @@ type Watcher struct {
 	err error
 }
 
-// NewWatcher starts watching roots recursively, calling onChange(absPath) once a
-// changed .txt/.gui/.yml file settles. Close stops it.
+// NewWatcher starts watching roots recursively, calling onChange once a changed indexable file
+// settles. Close stops it.
 func NewWatcher(roots []string, onChange func(path string)) (*Watcher, error) {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {

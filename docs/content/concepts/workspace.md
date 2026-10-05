@@ -20,13 +20,11 @@ You can have many workspaces. Only **one** is live at a time: opening another dr
 
 ## Install
 
-The **install** is the Steam or Paradox game folder (vanilla `game/` script, GUI, loc, and shipped `_*.info` files). PMT’s vanilla cache is keyed by install id + version.
+The **install** is the Steam or Paradox game folder (vanilla `game/` script, GUI, loc, and shipped `_*.info` files). PMT reads it as it is in the folder now.
 
-Version comes only from `<install>/launcher/launcher-settings.json` (`rawVersion`, then `version` with the `(Codename)` stripped). If that file is missing (common on EU5 right now), PMT stores `""` and **Add game install** defaults the pin to `latest`.
+The version comes from `<install>/launcher/launcher-settings.json` (`rawVersion`, then `version` with the `(Codename)` stripped); where that file is missing (common on EU5 right now), from Steam's build id. PMT’s vanilla cache is keyed by the version, the loc language, the install's last update and your dump files, so after a game patch the next session scans the install again by itself.
 
-`latest` means “whatever is in the folder now” — useful across patches. A pinned version is a cache key; if you pin `1.16.2` and then the folder updates, rescan or change the pin. **Your pin always wins over auto-detection.**
-
-Two workspaces that share the same Steam install share one vanilla script cache. Different default loc languages load different loc sidecars without rescanning script.
+Two workspaces that share the same install and default loc language share one vanilla cache. The cache is kept per language, so the first open in another loc language scans the install again.
 
 ## User data
 
@@ -41,7 +39,7 @@ That is where the launcher’s default `mod/` parent lives, and where `script_do
 
 Workshop downloads live under `steamapps/workshop/content/<appid>/`. **Attach** folders (Workshop, Documents `mod/`, or anywhere) in the wizard or [Workspace Settings]({{< relref "/pages/settings" >}}).
 
-Harvest of those folders is **RAM-only**. It is rebuilt when the workspace opens. If the session looks wrong, close and reopen the workspace or change the install so vanilla is rescanned.
+PMT's index of those folders lives **in memory** and is rebuilt when the workspace opens. If it looks wrong, close and reopen the workspace.
 
 ## PMT’s own config
 

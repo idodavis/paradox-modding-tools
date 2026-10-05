@@ -1,5 +1,6 @@
 // refresh.go fetches a game's wiki pages again and keeps them in one sidecar file per game under
 // local.CacheDir, reusing every page whose revision has not changed.
+
 package wiki
 
 import (
@@ -52,7 +53,7 @@ func modsSet(members []mwMember) map[string]bool {
 
 // fetchPages parses each wanted page whose revision differs from the one kept before; a page
 // that fails to fetch or clean keeps its previous copy.
-func fetchPages(ctx context.Context, gameID, api, wikiBase string, patches bool, wanted []mwMember, prev []Page) ([]Page, error) {
+func fetchPages(ctx context.Context, api, wikiBase string, patches bool, wanted []mwMember, prev []Page) ([]Page, error) {
 	old := make(map[string]Page, len(prev))
 	for _, page := range prev {
 		old[NormTitle(page.Title)] = page
@@ -78,7 +79,7 @@ func fetchPages(ctx context.Context, gameID, api, wikiBase string, patches bool,
 			}
 			continue
 		}
-		page.Title, page.URL, page.Revid = want.Title, pageURL(gameID, want.Title), cmp.Or(revid, want.LastRevid)
+		page.Title, page.URL, page.Revid = want.Title, wikiBase+strings.ReplaceAll(want.Title, " ", "_"), cmp.Or(revid, want.LastRevid)
 		if !patches {
 			page.ModdingHTML, page.ModdingSections = "", nil
 		}
@@ -95,10 +96,8 @@ func Refresh(ctx context.Context, gameID string) error {
 	if api == "" {
 		return fmt.Errorf("no wiki api for %s", gameID)
 	}
-	wikiBase := wikiBaseURL(gameID)
-	if apiOverride != "" {
-		wikiBase = strings.TrimRight(apiOverride, "/") + "/"
-	}
+	// the folder api.php is in, which page links and page URLs are read against
+	wikiBase := strings.TrimRight(strings.TrimSuffix(api, "api.php"), "/") + "/"
 
 	mods, err := categoryMembers(ctx, api, "Category:Mods")
 	if err != nil {
@@ -117,20 +116,21 @@ func Refresh(ctx context.Context, gameID string) error {
 	if err != nil {
 		prev = &Sidecar{}
 	}
-	guides, err := fetchPages(ctx, gameID, api, wikiBase, false, filterMembers(guideMembers, modsSet(mods)), prev.Guides)
+	guides, err := fetchPages(ctx, api, wikiBase, false, filterMembers(guideMembers, modsSet(mods)), prev.Guides)
 	if err != nil {
 		return err
 	}
 	if len(guides) == 0 && len(prev.Guides) == 0 {
 		return fmt.Errorf("wiki guides empty")
 	}
-	patches, err := fetchPages(ctx, gameID, api, wikiBase, true, filterMembers(patchMembers, nil), prev.Patches)
+	patches, err := fetchPages(ctx, api, wikiBase, true, filterMembers(patchMembers, nil), prev.Patches)
 	if err != nil {
 		return err
 	}
 	return save(gameID, &Sidecar{Guides: guides, Patches: patches})
 }
 
+// SidecarPath is gameID's wiki sidecar file in the cache folder.
 func SidecarPath(gameID string) (string, error) {
 	dir, err := cacheDirFn()
 	if err != nil {

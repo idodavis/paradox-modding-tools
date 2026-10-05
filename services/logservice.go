@@ -27,9 +27,9 @@ import (
 // files are kept.
 const logRotateAt = 2 << 20
 
-// LogService owns pmt.log and the one logger over it.
+// LogService owns pmt.log and the logger over it.
 type LogService struct {
-	Config *ConfigService
+	App    *AppService
 	Logger *slog.Logger
 
 	file    *os.File
@@ -37,10 +37,9 @@ type LogService struct {
 	crashed bool // the run before this one ended without writing its session end
 }
 
-// OpenLog opens pmt.log for this run. A run that ended without its session end crashed, or was
-// ended from outside, and its log is never moved aside, so the next report still holds its end; a
-// second launch, which Wails ends inside application.New, sees the running session unclosed too.
-// Go's crash output and the standard log package write into the same file.
+// OpenLog opens pmt.log for this run. A log whose last session never ended (a crash, a kill, a
+// second launch while the app runs) is not moved aside, so the next report keeps its end. Go's
+// crash output and the standard log package write here too.
 func OpenLog(version string) (*LogService, error) {
 	dir, err := local.AppDir()
 	if err != nil {
@@ -125,8 +124,8 @@ func (s *LogService) diagnostics() string {
 	}
 	fmt.Fprintf(&out, "OS: %s\n", system)
 	var installs []GameInstall
-	if s.Config != nil {
-		s.Config.read(func(cfg *Config) { installs = slices.Clone(cfg.Installs) })
+	if s.App != nil {
+		s.App.read(func(cfg *Config) { installs = slices.Clone(cfg.Installs) })
 	}
 	for _, install := range installs {
 		fmt.Fprintf(&out, "Install: %s %s, version %s\n", install.GameID, install.Name, install.VersionDetected)

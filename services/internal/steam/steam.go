@@ -1,3 +1,6 @@
+// steam.go is both ends of a publish: the parent that starts the child and the child's request
+// loop.
+
 // Package steam publishes a mod to the Steam Workshop, keeps what a mod holds for its Workshop
 // page, and converts its description between Markdown and the Workshop's BBCode.
 //
@@ -7,10 +10,6 @@
 // costs that process rather than the editor. The child loads the game's own copy of Steam's
 // library, where the game table says the install keeps it, so PMT ships none. The parent
 // writes the request on the child's stdin and reads the answer from its stdout.
-//
-// steam.go is both ends of that exchange; ugc.go is the ISteamUGC calls; steam_windows.go and
-// steam_unix.go open the library and lay out the one result struct the platforms pack
-// differently; workshop.go is the mod's Workshop files; bbcode.go is the description markup.
 package steam
 
 import (

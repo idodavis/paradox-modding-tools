@@ -4,8 +4,7 @@
  */
 import { computed } from "vue";
 import type { WorkspaceMod } from "@services/models";
-import OriginBadge from "../OriginBadge.vue";
-import { originHexByOriginId } from "../../ide/rootDecorations";
+import { modColor } from "../../stores/workspace";
 
 const props = defineProps<{
   mods: WorkspaceMod[];
@@ -51,11 +50,7 @@ const ordered = computed(() => props.mods);
             alt=""
             class="size-4 shrink-0 rounded-sm object-cover"
           >
-          <OriginBadge
-            :label="mod.name"
-            :hex="originHexByOriginId(mod.id)"
-            class="min-w-0"
-          />
+          <OriginChip :label="mod.name" :color="modColor(mod)" class="min-w-0" />
         </button>
       </li>
     </ul>

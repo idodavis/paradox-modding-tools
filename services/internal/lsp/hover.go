@@ -87,7 +87,7 @@ type Inspect struct {
 	Stale   bool              `json:"stale,omitempty"`   // a fact shown comes from a stale source
 	Date    string            `json:"date,omitempty"`    // a date written out, and in a mod's calendar
 	Weight  int               `json:"weight,omitempty"`  // a numbered branch: its share of its siblings, in %
-	Color   string            `json:"color,omitempty"`   // a colour, as #rrggbb
+	Color   string            `json:"color,omitempty"`   // a color, as #rrggbb
 	Image   *source.ImageInfo `json:"image,omitempty"`   // a file that is an image: its header
 	Graphed bool              `json:"graphed,omitempty"` // the event graph draws it: it is or fires an event
 	Range   Range             `json:"range"`
@@ -307,7 +307,7 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 		}
 	}
 	if isKey {
-		card.Color = colour(assign)
+		card.Color = color(assign)
 	}
 
 	// a card says something, else there is none; a key nothing else names then says where it is
@@ -792,9 +792,9 @@ func ordinal(number int) string {
 	return strconv.Itoa(number) + suffix
 }
 
-// colour is the #rrggbb of a colour block a statement writes (game.Colours), for a swatch; "" for
+// color is the #rrggbb of a color block a statement writes (game.Colors), for a swatch; "" for
 // none.
-func colour(assign *jomini.Assignment) string {
+func color(assign *jomini.Assignment) string {
 	tagged, isTagged := assign.Value.(*jomini.TaggedBlock)
 	if !isTagged {
 		return ""
@@ -809,16 +809,16 @@ func colour(assign *jomini.Assignment) string {
 			}
 		}
 	}
-	found := slices.IndexFunc(game.Colours, func(row game.Colour) bool { return strings.EqualFold(row.Tag, tagged.Tag.Text) })
+	found := slices.IndexFunc(game.Colors, func(row game.Color) bool { return strings.EqualFold(row.Tag, tagged.Tag.Text) })
 	switch {
 	case found < 0:
-	case game.Colours[found].Hex && len(words) == 1:
+	case game.Colors[found].Hex && len(words) == 1:
 		if digits := strings.TrimPrefix(strings.ToLower(words[0]), "0x"); len(digits) >= 6 {
 			return "#" + digits[:6]
 		}
 	case len(parts) < 3:
-	case game.Colours[found].HSV:
-		row := game.Colours[found]
+	case game.Colors[found].HSV:
+		row := game.Colors[found]
 		return hex(hsv(parts[0]/cmp.Or(row.Hue, 1), parts[1]/cmp.Or(row.Parts, 1), parts[2]/cmp.Or(row.Parts, 1)))
 	default:
 		return hex(parts[0], parts[1], parts[2])
@@ -826,7 +826,7 @@ func colour(assign *jomini.Assignment) string {
 	return ""
 }
 
-// hex spells a colour whose parts are 0 to 255, or 0 to 1 where every part is at most 1.
+// hex spells a color whose parts are 0 to 255, or 0 to 1 where every part is at most 1.
 func hex(red, green, blue float64) string {
 	if red <= 1 && green <= 1 && blue <= 1 {
 		red, green, blue = red*255, green*255, blue*255
@@ -836,7 +836,7 @@ func hex(red, green, blue float64) string {
 
 // hsv turns hue, saturation and value, each 0 to 1, into red, green and blue, each 0 to 1.
 func hsv(hue, saturation, value float64) (float64, float64, float64) {
-	// the hue's sixth of the colour wheel, how far into it, and the three levels a channel takes
+	// the hue's sixth of the color wheel, how far into it, and the three levels a channel takes
 	sector := int(hue*6) % 6
 	fraction := hue*6 - float64(int(hue*6))
 	bottom, falling, rising := value*(1-saturation), value*(1-fraction*saturation), value*(1-(1-fraction)*saturation)

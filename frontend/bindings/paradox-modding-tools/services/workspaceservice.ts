@@ -177,6 +177,13 @@ export function SetWorkspaceModCalendar(workspaceID: string, modID: string, eras
 }
 
 /**
+ * SetWorkspaceModSlot gives a mod one of the color slots and clears its hand-picked color.
+ */
+export function SetWorkspaceModSlot(workspaceID: string, modID: string, slot: number): $CancellablePromise<void> {
+    return $Call.ByID(484053781, workspaceID, modID, slot);
+}
+
+/**
  * UpdateGameInstall updates path, then refreshes version.
  */
 export function UpdateGameInstall(id: string, path: string): $CancellablePromise<$models.GameInstall | null> {

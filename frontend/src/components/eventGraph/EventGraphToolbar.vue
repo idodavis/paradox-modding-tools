@@ -5,10 +5,8 @@
  */
 import { computed } from "vue";
 import type { DatabaseCount, Node } from "@services/models";
-import OriginBadge from "../OriginBadge.vue";
 import OriginSelectMenu, { type OriginMenuItem } from "../OriginSelectMenu.vue";
-import { kindColour } from "../../composables/useEventGraph";
-import { originHexByOriginId } from "../../ide/rootDecorations";
+import { kindColor } from "../../composables/useEventGraph";
 import { useWorkspaceStore } from "../../stores/workspace";
 
 const props = defineProps<{
@@ -76,15 +74,11 @@ const items = computed(() => {
       :ui="{ content: 'min-w-[34rem]', itemLabel: 'whitespace-normal break-all' }"
     >
       <template #item-leading="{ item }">
-        <span class="h-4 w-1 rounded-full" :style="{ backgroundColor: kindColour(item.database, 80) }" />
+        <span class="h-4 w-1 rounded-full" :style="{ backgroundColor: kindColor(item.database, 80) }" />
       </template>
       <!-- the id already starts with its namespace, so only the origin follows it -->
       <template #item-trailing="{ item }">
-        <OriginBadge
-          v-if="item.origin"
-          :label="store.originName(item.origin)"
-          :hex="originHexByOriginId(item.origin)"
-        />
+        <OriginChip v-if="item.origin" :label="store.originName(item.origin)" :color="store.originColor(item.origin)" />
       </template>
     </UInputMenu>
     <USelect v-model="kindChoice" :items="kindItems" value-key="value" size="sm" class="w-44" />

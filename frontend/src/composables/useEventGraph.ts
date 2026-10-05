@@ -12,11 +12,11 @@ import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraph
 export const NODE_WIDTH = 260;
 export const NODE_HEIGHT = 112;
 
-// a kind's name picks its colour, so a kind no list here knows still gets one of its own
+// a kind's name picks its color, so a kind no list here knows still gets one of its own
 const PALETTE = ["info", "success", "warning", "secondary", "primary", "error"];
 
-/** A kind's colour, as a tint of one of the theme's colours. */
-export function kindColour(kind: string, strength = 22): string {
+/** A kind's color, as a tint of one of the theme's colors. */
+export function kindColor(kind: string, strength = 22): string {
   let hash = 0;
   for (const char of kind) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return `color-mix(in oklab, var(--ui-${PALETTE[hash % PALETTE.length]}) ${strength}%, transparent)`;

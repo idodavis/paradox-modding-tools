@@ -19,13 +19,13 @@ const htmlLines = ref<string[]>([]);
 const sourceLines = computed(() => (props.text ?? "").split("\n"));
 const from = computed(() => props.fromLine ?? 0);
 
-// the plain lines show until the workbench can colour them; a colouring for older text is dropped
+// the plain lines show until the workbench can color them; a coloring for older text is dropped
 watch(
   () => [props.text, props.language] as const,
   async ([text, language]) => {
     htmlLines.value = [];
-    const coloured = await colorizeLines((text ?? "").split("\n"), language);
-    if (text === props.text) htmlLines.value = coloured;
+    const colored = await colorizeLines((text ?? "").split("\n"), language);
+    if (text === props.text) htmlLines.value = colored;
   },
   { immediate: true },
 );

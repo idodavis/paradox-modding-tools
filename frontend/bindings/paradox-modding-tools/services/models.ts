@@ -241,6 +241,7 @@ export interface IdeRoot {
     "kind": string;
     "origin"?: string;
     "color"?: string;
+    "slot"?: number;
     "thumbnail"?: string;
 }
 
@@ -621,7 +622,16 @@ export interface WorkspaceMod {
     "name": string;
     "path": string;
     "sortOrder": number;
+
+    /**
+     * a hand-picked hex; it wins over the slot
+     */
     "color"?: string;
+
+    /**
+     * the mod's color slot, 1 to 16; a reorder keeps it
+     */
+    "slot": number;
     "thumbnail"?: string;
     "descMdRel"?: string;
     "descBbRel"?: string;

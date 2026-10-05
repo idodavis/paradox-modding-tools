@@ -6,7 +6,7 @@ import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useDebounceFn } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import type { NavigationMenuItem, RadioGroupItem } from "@nuxt/ui";
 import {
   AddGameInstall,
@@ -19,6 +19,7 @@ import {
   ReorderWorkspaceMods,
   SetWorkspaceLocLang,
   SetWorkspaceModCalendar,
+  SetWorkspaceModSlot,
   UpdateGameInstall,
   UpdateWorkspace,
   UpdateWorkspaceMod,
@@ -37,7 +38,6 @@ import CreateModForm from "../components/CreateModForm.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import AddInstallCard from "../components/AddInstallCard.vue";
 import ScriptDocsGuide from "../components/ScriptDocsGuide.vue";
-import DiagnosticSettings from "../components/DiagnosticSettings.vue";
 import { useLanguageHealth } from "../composables/useLanguageHealth";
 import OriginColorField, { ORIGIN_COLOR_DESC } from "../components/OriginColorField.vue";
 import WorkspaceModCard, { MOD_HELP, type ModPatch } from "../components/WorkspaceModCard.vue";
@@ -121,6 +121,12 @@ const {
   },
   enabled: () => !!id.value,
 });
+
+const queryCache = useQueryCache();
+/** A mod saved here makes the loaded workspace stale: the next visit loads it again, this one keeps its drafts. */
+function settingsStale(): void {
+  void queryCache.invalidateQueries({ key: ["workspace-settings", id.value] }, false);
+}
 
 /** Copy the last loaded workspace into the form (initial load and Cancel). */
 function applyWorkspace(): void {
@@ -297,6 +303,7 @@ const persistMod = useDebounceFn(async (mod: WorkspaceMod) => {
       mod.descBbRel ?? "",
       mod.workshopIgnore ?? "",
     );
+    settingsStale();
     await wsStore.refresh();
     const rec = await GetIdeRoots(id.value);
     refreshIdeRootDecorations(rec?.roots ?? []);
@@ -368,7 +375,6 @@ const COPY = {
   mods: "Last listed wins (LIOS). Drag the left grip to reorder. Color and thumbnail paint explorer and origin chips.",
   modColor: ORIGIN_COLOR_DESC,
   ...MOD_HELP,
-  editor: "Which language checks report findings in the editor, and how loudly. Applies to every workspace — these are IDE settings, not workspace ones.",
   remove: "Drops the workspace record. Mod folders on disk stay.",
 } as const;
 
@@ -436,11 +442,11 @@ const loadOrderCopy = computed(() => {
     : "Last listed wins for most kinds. Vanilla loses to any mod. Conflicts labels each row.";
 });
 const showDanger = computed(() => matchesFilter("Danger", "Remove workspace", COPY.remove));
-const showEditor = computed(() =>
-  matchesFilter("Editor", "Diagnostics", "Checks", "Severity", COPY.editor),
+const showAppearance = computed(() =>
+  matchesFilter("Appearance", "Theme", "Light and dark", "Text size", "Interface scale", "Pages", "Mod colors"),
 );
 
-type SettingsSection = "overview" | "game" | "mods" | "editor" | "danger";
+type SettingsSection = "overview" | "game" | "mods" | "danger" | "appearance";
 
 const section = shallowRef<SettingsSection>("overview");
 
@@ -449,8 +455,8 @@ const visibleSections = computed<SettingsSection[]>(() => {
     ["overview", showOverview.value],
     ["game", showGame.value],
     ["mods", showMods.value],
-    ["editor", showEditor.value],
     ["danger", showDanger.value],
+    ["appearance", showAppearance.value],
   ];
   return rows.filter(([, on]) => on).map(([id]) => id);
 });
@@ -467,8 +473,8 @@ watch(
       case "overview":
       case "game":
       case "mods":
-      case "editor":
       case "danger":
+      case "appearance":
         section.value = s;
         return;
       default:
@@ -482,12 +488,13 @@ const sectionMeta: Record<SettingsSection, { label: string; icon: string }> = {
   overview: { label: "Overview", icon: "i-lucide-layout-dashboard" },
   game: { label: "Game", icon: "i-lucide-gamepad-2" },
   mods: { label: "Mods", icon: "i-lucide-puzzle" },
-  editor: { label: "Editor", icon: "i-lucide-file-search" },
   danger: { label: "Danger", icon: "i-lucide-triangle-alert" },
+  appearance: { label: "Appearance", icon: "i-lucide-palette" },
 };
 
-const navItems = computed<NavigationMenuItem[]>(() =>
-  visibleSections.value.map((id) => ({
+/** The workspace's sections, then the app's under their own heading. */
+const navItems = computed<NavigationMenuItem[][]>(() => {
+  const item = (id: SettingsSection): NavigationMenuItem => ({
     ...sectionMeta[id],
     value: id,
     active: section.value === id,
@@ -495,8 +502,13 @@ const navItems = computed<NavigationMenuItem[]>(() =>
       e.preventDefault();
       section.value = id;
     },
-  })),
-);
+  });
+  const app = visibleSections.value.filter((id) => id === "appearance");
+  return [
+    visibleSections.value.filter((id) => id !== "appearance").map(item),
+    app.length ? [{ label: "App", type: "label" }, ...app.map(item)] : [],
+  ];
+});
 
 const showFooter = computed(() => section.value === "overview");
 
@@ -508,14 +520,23 @@ function saveSection(): void {
       return;
     case "game":
     case "mods":
-    case "editor":
     case "danger":
+    case "appearance":
       return;
     default: {
       const _exhaustive: never = section.value;
       void _exhaustive;
     }
   }
+}
+
+/** Give a mod a color slot; that clears its picked color. */
+async function setModSlot(mod: WorkspaceMod, slot: number): Promise<void> {
+  await SetWorkspaceModSlot(id.value, mod.id, slot);
+  settingsStale();
+  mod.slot = slot;
+  mod.color = "";
+  await wsStore.refresh();
 }
 
 /** Merge one card edit into the draft mod and persist. */
@@ -529,6 +550,7 @@ const persistCalendar = useDebounceFn(
   async (mod: WorkspaceMod, eras: Era[]) => {
     try {
       await SetWorkspaceModCalendar(id.value, mod.id, eras);
+      settingsStale();
     } catch (e) {
       toast.add({
         title: e instanceof Error ? e.message : String(e),
@@ -667,7 +689,6 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                   </template>
                   <OriginColorField
                     v-model="gameColor"
-                    kind="game"
                     label="Origin color (game)"
                     @update:model-value="persistColors()"
                   />
@@ -740,6 +761,7 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                   :thumb-url="wsStore.thumbUrls[mod.id]"
                   @update:expanded="setModExpanded(mod.id, $event)"
                   @patch="patchMod(mod, $event)"
+                  @slot="setModSlot(mod, $event)"
                   @calendar="(eras) => setModCalendar(mod, eras)"
                   @import-ignore="importIgnore(mod)"
                   @export-ignore="exportIgnore(mod)"
@@ -771,11 +793,7 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
             />
           </div>
 
-          <div v-else-if="section === 'editor'" class="space-y-5">
-            <UFormField label="Diagnostics" :description="COPY.editor">
-              <DiagnosticSettings />
-            </UFormField>
-          </div>
+          <AppearanceSettings v-else-if="section === 'appearance'" />
           <div v-else-if="section === 'danger'" class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
             <UFormField label="Remove workspace" :description="COPY.remove">
               <UButton label="Remove workspace" color="error" variant="outline" size="sm" @click="removeOpen = true" />

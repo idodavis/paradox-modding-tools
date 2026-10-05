@@ -6,20 +6,20 @@
 
 /* ExplorerDelegate.ITEM_HEIGHT is 22. Taller CSS rows overlap the next slot. */
 .monaco-workbench .explorer-folders-view {
-  --pmt-explorer-row: 22px;
+  --explorer-row: 22px;
 }
 
 .monaco-workbench .explorer-folders-view .monaco-list-row {
-  height: var(--pmt-explorer-row);
-  min-height: var(--pmt-explorer-row);
+  height: var(--explorer-row);
+  min-height: var(--explorer-row);
   overflow: hidden;
-  font-size: var(--pmt-ide-ui-font, 13px);
-  line-height: var(--pmt-explorer-row);
+  font-size: var(--ide-ui-font, 13px);
+  line-height: var(--explorer-row);
 }
 
 .monaco-workbench .explorer-folders-view .monaco-tl-row {
-  height: var(--pmt-explorer-row);
-  min-height: var(--pmt-explorer-row);
+  height: var(--explorer-row);
+  min-height: var(--explorer-row);
   align-items: center;
 }
 
@@ -28,7 +28,7 @@
 }
 
 .monaco-workbench .explorer-folders-view .monaco-menu {
-  font-size: var(--pmt-ide-ui-font, 13px);
+  font-size: var(--ide-ui-font, 13px);
 }
 
 .monaco-workbench .explorer-folders-view .monaco-icon-label::before {
@@ -36,7 +36,7 @@
   background-position: center;
   background-repeat: no-repeat;
   width: 16px;
-  height: var(--pmt-explorer-row);
+  height: var(--explorer-row);
   padding-right: 6px;
   flex-shrink: 0;
   display: inline-block;
@@ -45,9 +45,9 @@
 }
 
 .monaco-workbench .explorer-folders-view .monaco-list-row[aria-level="1"] {
-  font-size: calc(var(--pmt-ide-ui-font, 13px) + 2px);
+  font-size: calc(var(--ide-ui-font, 13px) + 2px);
   font-weight: 600;
-  line-height: var(--pmt-explorer-row);
+  line-height: var(--explorer-row);
 }
 
 /* Origin dot is painted on the 22px row, not in-flow after the name. */

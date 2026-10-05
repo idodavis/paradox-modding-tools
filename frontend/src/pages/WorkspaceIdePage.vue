@@ -26,6 +26,7 @@ const workspaceId = computed(() => String(route.params.id ?? ""));
         :variant="guideOpen ? 'soft' : 'ghost'"
         @click="setGuideOpen(!guideOpen)"
       />
+      <IdeSettingsCard />
       <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
     </template>
   </WorkspaceToolBar>

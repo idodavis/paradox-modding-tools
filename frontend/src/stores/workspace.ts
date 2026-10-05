@@ -49,6 +49,11 @@ export function thumbMime(path: string): string {
   }
 }
 
+/** A mod's color: its hand-picked hex, else its slot's token. */
+export function modColor(mod: { color?: string; slot?: number }): string {
+  return mod.color || `var(--o${mod.slot || 1})`;
+}
+
 function revokeAll(urls: Record<string, string>): void {
   for (const u of Object.values(urls)) URL.revokeObjectURL(u);
 }
@@ -99,6 +104,13 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   function originName(id: string): string {
     if (!id || id === originVanilla.value) return gameName(activeWorkspace.value?.gameId ?? "");
     return workspaceMods.value.find((mod) => mod.id === id)?.name ?? id;
+  }
+
+  /** An origin's color: the game's own or its near-grey for vanilla, else its mod's. */
+  function originColor(id: string): string {
+    if (!id || id === originVanilla.value) return activeWorkspace.value?.gameColor || "var(--game)";
+    const mod = workspaceMods.value.find((m) => m.id === id);
+    return mod ? modColor(mod) : "var(--game)";
   }
 
   /** FIOS sentence from GameInfo.firstWins. */
@@ -265,6 +277,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     shortName,
     gameName,
     originName,
+    originColor,
     firstWins,
     refresh,
     loadActiveWorkspace,

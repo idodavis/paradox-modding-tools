@@ -6,6 +6,7 @@
 package services
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -64,7 +65,8 @@ type WorkspaceMod struct {
 	Name           string `json:"name"`
 	Path           string `json:"path"`
 	SortOrder      int    `json:"sortOrder"`
-	Color          string `json:"color,omitempty"`
+	Color          string `json:"color,omitempty"` // a hand-picked hex; it wins over the slot
+	Slot           int    `json:"slot"`            // the mod's color slot, 1 to 16; a reorder keeps it
 	Thumbnail      string `json:"thumbnail,omitempty"`
 	DescMdRel      string `json:"descMdRel,omitempty"`
 	DescBbRel      string `json:"descBbRel,omitempty"`
@@ -113,6 +115,10 @@ func newApp(path string) *AppService {
 	if config.cfg.Settings == nil {
 		config.cfg.Settings = map[string]map[string]string{}
 	}
+	if config.loadErr == nil && slotUnslotted(&config.cfg) {
+		// mods saved before slots existed; a failed write keeps the slots for the next save
+		_ = config.save()
+	}
 	return config
 }
 
@@ -133,6 +139,11 @@ func (s *AppService) mutate(fn func(*Config) error) error {
 	if err := fn(&s.cfg); err != nil {
 		return err
 	}
+	return s.save()
+}
+
+// save writes config.json; the caller holds the lock, or has the AppService to itself.
+func (s *AppService) save() error {
 	return local.Write(s.path, func(out io.Writer) error { return json.NewEncoder(out).Encode(&s.cfg) })
 }
 
@@ -208,13 +219,13 @@ func (s *AppService) ResetData() error {
 func cloneWorkspace(ws Workspace) Workspace {
 	ws.IdeOpenFiles = slices.Clone(ws.IdeOpenFiles)
 	ws.Mods = slices.Clone(ws.Mods)
-	slices.SortFunc(ws.Mods, func(first, second WorkspaceMod) int {
-		if first.SortOrder != second.SortOrder {
-			return first.SortOrder - second.SortOrder
-		}
-		return strings.Compare(first.Name, second.Name)
-	})
+	slices.SortFunc(ws.Mods, loadOrder)
 	return ws
+}
+
+// loadOrder compares two mods by their place in the workspace's load order.
+func loadOrder(first, second WorkspaceMod) int {
+	return cmp.Or(first.SortOrder-second.SortOrder, strings.Compare(first.Name, second.Name))
 }
 
 // workspace is a copy of a workspace and of the install it is on, from one read; nil where either

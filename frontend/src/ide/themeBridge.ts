@@ -1,5 +1,5 @@
 /**
- * Sync the monaco-vscode workbench color/icon theme with `{family}-{dark|light}`.
+ * Sync the monaco-vscode workbench color/icon theme with the page's `data-theme`.
  *
  * Colors come from contributed theme JSON (hex). This module only writes
  * `workbench.colorTheme` and related settings — no CSS variable painting.
@@ -71,6 +71,11 @@ export function applyEditorFontSize(px: number): void {
   if (lastThemeName) void applyWorkbenchTheme(lastThemeName);
 }
 
+/** Give a booted workbench the page's theme; before boot it starts with the page's own. */
+export function followWorkbenchTheme(themeName: string): void {
+  if (lastThemeName) void applyWorkbenchTheme(themeName);
+}
+
 /** Push workbench.colorTheme / iconTheme / tree indent from the Nuxt name. */
 export async function applyWorkbenchTheme(themeName: string): Promise<void> {
   if (applyingTheme) {
@@ -89,6 +94,7 @@ export async function applyWorkbenchTheme(themeName: string): Promise<void> {
           {
             ...workbenchSettingsForTheme(name),
             "editor.fontSize": editorFontSize,
+            "editor.fontFamily": '"Geist Mono", monospace',
             "workbench.startupEditor": "none",
             "window.title": "PMT${separator}${activeEditorShort}",
             "files.autoSave": "off",

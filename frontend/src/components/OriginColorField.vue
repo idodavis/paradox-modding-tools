@@ -1,48 +1,42 @@
 <script lang="ts">
 /**
- * Origin color picker shared by game and mod settings.
+ * An origin's color: automatic (a mod's slot hue, the game's near-grey) or a hex picked by hand.
  */
 export const ORIGIN_COLOR_DESC =
-  "Used for IDE explorer roots, origin chips on Conflicts / Loc coverage / Event graph, origin filter menus, and hover origin labels. Empty uses the palette (game teal, mods by load-order).";
+  "Used for explorer roots, origin chips and filters, and hover origin labels. Each mod keeps the color it got when it joined; a picked color wins.";
 </script>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { originHex } from "../ide/rootDecorations";
-import FieldHelpTip from "./FieldHelpTip.vue";
+import { computed, useTemplateRef } from "vue";
+import { cssHex } from "../lib/cssHex";
 
+/** The hand-picked hex, or "" for automatic. */
 const color = defineModel<string>({ required: true });
 
-const props = withDefaults(
-  defineProps<{
-    kind: "game" | "mod";
-    wrapIndex?: number;
-    label?: string;
-    /** Hide the paragraph; keep the same copy on an info tooltip. */
-    compact?: boolean;
-  }>(),
-  { wrapIndex: 0, label: "Origin color", compact: false },
-);
+const { slot = 0, label = "Origin color", compact = false } = defineProps<{
+  /** A mod's slot; none for the game. */
+  slot?: number;
+  label?: string;
+  /** Hide the paragraph; keep the same copy on an info tooltip. */
+  compact?: boolean;
+}>();
 
-/** Resolved #rrggbb for the swatch (palette when the stored color is empty). */
-const hex = computed(() =>
-  originHex({
-    kind: props.kind,
-    path: "",
-    color: color.value,
-    wrapIndex: props.wrapIndex,
-  }).toLowerCase(),
-);
+const emit = defineEmits<{ slot: [slot: number] }>();
 
-/** Persist a native color-input value. */
-function onPick(ev: Event): void {
-  color.value = (ev.target as HTMLInputElement).value;
+const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
+const picker = useTemplateRef("picker");
+/** Where the system picker starts: the color shown now. */
+const shown = computed(() => color.value || (slot ? `var(--o${slot})` : "var(--game)"));
+
+function onPick(event: Event): void {
+  if (event.target instanceof HTMLInputElement) color.value = event.target.value;
 }
 
-function reset(): void {
-  color.value = "";
+function pickCustom(): void {
+  if (!picker.value) return;
+  picker.value.value = cssHex(shown.value);
+  picker.value.click();
 }
-
 </script>
 
 <template>
@@ -51,27 +45,34 @@ function reset(): void {
       <FieldHelpTip v-if="compact" :label="label" :text="ORIGIN_COLOR_DESC" />
       <template v-else>{{ label }}</template>
     </template>
-    <div class="flex items-center gap-2">
-      <span
-        class="relative size-8 shrink-0 overflow-hidden rounded border border-default"
-        :style="{ backgroundColor: hex }"
-      >
-        <input
-          type="color"
-          :key="`${kind}-${hex}`"
-          :value="hex"
-          class="absolute inset-0 size-full cursor-pointer opacity-0"
-          @input="onPick"
-        >
-      </span>
-      <span class="font-mono text-xs text-muted tabular-nums">{{ hex }}</span>
-      <UButton
-        v-if="color"
-        label="Reset color"
-        size="xs"
-        variant="ghost"
-        @click="reset"
+    <div class="flex flex-wrap items-center gap-2">
+      <template v-if="slot">
+        <button
+          v-for="n in SLOTS"
+          :key="n"
+          type="button"
+          class="size-5.5 rounded-md border border-accented outline-offset-2 outline-primary"
+          :class="{ outline: !color && slot === n }"
+          :style="{ background: `var(--o${n})` }"
+          :aria-label="`Color ${n}`"
+          @click="emit('slot', n)"
+        />
+      </template>
+      <button
+        v-else
+        type="button"
+        class="size-5.5 rounded-md border border-accented bg-(--game) outline-offset-2 outline-primary"
+        :class="{ outline: !color }"
+        aria-label="Automatic"
+        @click="color = ''"
       />
+      <span
+        v-if="color"
+        class="size-5.5 rounded-md border border-accented outline outline-offset-2 outline-primary"
+        :style="{ background: color }"
+      />
+      <UButton label="Custom…" size="sm" @click="pickCustom" />
+      <input ref="picker" type="color" class="sr-only" tabindex="-1" @change="onPick">
     </div>
   </UFormField>
 </template>

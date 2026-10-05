@@ -14,7 +14,6 @@ import GuidePane from "./GuidePane.vue";
 
 const props = defineProps<{
   visible: boolean;
-  theme?: string;
 }>();
 
 const SIDEBAR_KEY = "ide.sidebarWidth";
@@ -113,11 +112,7 @@ watch(
   () => props.visible,
   (v) => {
     ideVisible.value = v;
-    if (!v) {
-      setGuideOpen(false);
-      return;
-    }
-    void import("../ide/rootDecorations").then((m) => m.repaintDecoratedRoots());
+    if (!v) setGuideOpen(false);
   },
   { immediate: true },
 );

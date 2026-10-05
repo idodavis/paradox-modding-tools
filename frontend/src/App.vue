@@ -2,8 +2,7 @@
 /**
  * Vue app root with library-centric shell and workbench singleton host.
  */
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
-import { useColorMode } from "@vueuse/core";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import appIcon from "@assets/PMT-SquareIcon-Mint.png?url";
@@ -11,41 +10,16 @@ import PMTLogo from "./components/PMTLogo.vue";
 import GameIcon from "./components/GameIcon.vue";
 import { useWorkspaceStore } from "./stores/workspace";
 import { useSettingsStore } from "./stores/settings";
-import {
-  applySeedCss,
-  familyLabel,
-  normalizeThemeFamily,
-  themeMenuItems,
-  workbenchThemeId,
-  type PmtThemeFamily,
-  type ThemeMenuItem,
-  type ThemeSwatchColors,
-} from "./ide/colorThemes";
 import { CheckForUpdates, GetVersion } from "@services/appservice";
 import { CopyDiagnostics, LastRunCrashed } from "@services/logservice";
-import { isWorkbenchReady } from "./ide/workbenchHost";
 import IdeWorkbenchLayout from "./components/IdeWorkbenchLayout.vue";
 import IdeStatusStrip from "./components/IdeStatusStrip.vue";
-import { applyEditorFontSize, applyWorkbenchTheme } from "./ide/themeBridge";
-import DisplayPopover from "./components/DisplayPopover.vue";
 import { workspaceHomeRoute } from "./workspaceTools";
 
 const route = useRoute();
 const router = useRouter();
 const ws = useWorkspaceStore();
 const settings = useSettingsStore();
-const colorMode = useColorMode();
-const currentFamily = shallowRef<PmtThemeFamily>("pmt");
-const appearance = computed(() =>
-  colorMode.value === "dark" ? ("dark" as const) : ("light" as const),
-);
-const themeItems = computed(() => themeMenuItems(appearance.value));
-const currentThemeSwatches = computed(
-  (): ThemeSwatchColors =>
-    themeItems.value.find((i) => i.value === currentFamily.value)?.swatches ??
-    themeItems.value[0]!.swatches,
-);
-const currentFamilyLabel = computed(() => familyLabel(currentFamily.value));
 const version = ref("...");
 const helpOpen = ref(false);
 
@@ -119,18 +93,6 @@ const workspaceDropdownItems = computed<DropdownMenuItem[][]>(() => {
   return items;
 });
 
-/** Apply a palette family to `data-theme` (appearance is color-mode). */
-function setFamily(family: PmtThemeFamily): void {
-  currentFamily.value = family;
-  document.documentElement.dataset.theme = family;
-  applySeedCss(workbenchThemeId(family, appearance.value));
-}
-
-/** Persist the palette family via settings store. */
-async function saveFamily(family: PmtThemeFamily): Promise<void> {
-  await settings.set("_global.theme", family);
-}
-
 /** Load version string. */
 async function loadVersion(): Promise<void> {
   try {
@@ -138,29 +100,6 @@ async function loadVersion(): Promise<void> {
   } catch (error) {
     version.value = error instanceof Error ? error.message : String(error);
   }
-}
-
-/** Persist a user-picked palette family; CSS apply is the family/color-mode watch. */
-async function onThemeChange(theme: string | null): Promise<void> {
-  if (!theme) return;
-  const family = normalizeThemeFamily(theme);
-  if (family === currentFamily.value) return;
-  setFamily(family);
-  await saveFamily(family);
-}
-
-/** Swatch colors for a SelectMenu theme item. */
-function itemSwatches(
-  item: ThemeMenuItem | string | undefined,
-): ThemeSwatchColors {
-  if (!item) return themeItems.value[0]!.swatches;
-  if (typeof item === "string") {
-    return (
-      themeItems.value.find((i) => i.value === normalizeThemeFamily(item))
-        ?.swatches ?? themeItems.value[0]!.swatches
-    );
-  }
-  return item.swatches;
 }
 
 /** Open workspace settings for the active workspace, or Library if none. */
@@ -212,28 +151,8 @@ async function noticeCrash(): Promise<void> {
   });
 }
 
-watch(
-  [currentFamily, () => colorMode.value],
-  async () => {
-    document.documentElement.dataset.theme = currentFamily.value;
-    applySeedCss(workbenchThemeId(currentFamily.value, appearance.value));
-    if (isWorkbenchReady()) {
-      await applyWorkbenchTheme(
-        workbenchThemeId(currentFamily.value, appearance.value),
-      );
-    }
-  },
-);
-
 onMounted(async () => {
-  await Promise.all([settings.load(), loadVersion(), ws.refresh()]);
-  applyEditorFontSize(settings.editorFontSize);
-  const stored = settings.values["_global.theme"];
-  const family = normalizeThemeFamily(stored);
-  if (colorMode.store.value === "auto") {
-    colorMode.store.value = "dark";
-  }
-  setFamily(family);
+  await Promise.all([loadVersion(), ws.refresh()]);
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (link) link.href = appIcon;
   void noticeCrash();
@@ -243,7 +162,7 @@ onMounted(async () => {
 <template>
   <UApp>
     <div class="pmt-root flex h-screen min-h-0 flex-col overflow-hidden">
-      <header class="z-10 shrink-0 border-b border-default bg-default px-2 py-1 shadow-sm">
+      <header class="z-10 shrink-0 border-b border-default bg-default px-2 py-1">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <PMTLogo :icon-height="40" :text-height="48" class="-ml-4.5" />
@@ -261,30 +180,15 @@ onMounted(async () => {
                 </template>
               </UButton>
             </UDropdownMenu>
-            <USelectMenu :model-value="currentFamily" :items="themeItems" value-key="value" :ui="{
-              content: 'min-w-44',
-              base: 'w-auto gap-1.5 ps-2 pe-2',
-              leading: 'static inset-auto',
-              trailing: 'static inset-auto',
-            }" @update:model-value="onThemeChange">
-              <template #leading>
-                <span class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default" aria-hidden="true">
-                  <span v-for="(color, i) in currentThemeSwatches" :key="i" class="size-3.5"
-                    :style="{ backgroundColor: color }" />
-                </span>
-              </template>
-              <template #default>
-                <span class="text-sm">{{ currentFamilyLabel }}</span>
-              </template>
-              <template #item-leading="{ item }">
-                <span class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default" aria-hidden="true">
-                  <span v-for="(color, i) in itemSwatches(item as ThemeMenuItem)" :key="i" class="size-3.5"
-                    :style="{ backgroundColor: color }" />
-                </span>
-              </template>
-            </USelectMenu>
-            <UColorModeButton />
-            <DisplayPopover />
+            <UTooltip :text="settings.mode === 'dark' ? 'Switch to light' : 'Switch to dark'">
+              <UButton
+                :icon="settings.mode === 'dark' ? 'i-lucide-sun' : 'i-lucide-moon'"
+                variant="ghost"
+                square
+                :aria-label="settings.mode === 'dark' ? 'Switch to light' : 'Switch to dark'"
+                @click="settings.toggleMode()"
+              />
+            </UTooltip>
             <UTooltip v-if="ws.hasWorkspaces" text="Workspace settings">
               <UButton icon="i-lucide-settings" color="neutral" variant="ghost" @click="openWorkspaceSettings" />
             </UTooltip>
@@ -293,7 +197,7 @@ onMounted(async () => {
       </header>
 
       <main class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <IdeWorkbenchLayout :visible="showWorkbench" :theme="currentFamily">
+        <IdeWorkbenchLayout :visible="showWorkbench">
           <template #toolbar>
             <div class="shrink-0 border-b border-default" :class="{ hidden: route.name !== 'workspace-ide' }">
               <router-view name="ide" v-slot="{ Component }">

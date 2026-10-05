@@ -27,7 +27,7 @@ import { computed, shallowRef } from "vue";
 import FileSelector from "./FileSelector.vue";
 import FieldHelpTip from "./FieldHelpTip.vue";
 import OriginColorField from "./OriginColorField.vue";
-import { originHex } from "../ide/rootDecorations";
+import { modColor } from "../stores/workspace";
 
 const FILE_FIELDS = [
   {
@@ -63,6 +63,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:expanded": [open: boolean];
   patch: [patch: ModPatch];
+  /** Persisted by SetWorkspaceModSlot, which also clears a picked color. */
+  slot: [slot: number];
   /** Persisted by SetWorkspaceModCalendar, not UpdateWorkspaceMod. */
   calendar: [eras: Era[]];
   importIgnore: [];
@@ -102,15 +104,6 @@ function offsetFromExample(written: string, seen: string): number | null {
 
 const derivedOffset = computed(() => offsetFromExample(exWritten.value, exSeen.value));
 
-/** Palette or stored hex for the collapsed header swatch. */
-const swatch = computed(() =>
-  originHex({
-    kind: "mod",
-    path: props.mod.path,
-    color: props.mod.color,
-    wrapIndex: props.index,
-  }).toLowerCase(),
-);
 </script>
 
 <template>
@@ -139,8 +132,7 @@ const swatch = computed(() =>
       <div class="flex items-center gap-2 px-2 py-1.5">
         <span
           class="size-5 shrink-0 rounded border border-default"
-          :style="{ backgroundColor: swatch }"
-          :title="swatch"
+          :style="{ backgroundColor: modColor(mod) }"
         />
         <div class="min-w-0 flex-1">
           <UInput
@@ -171,10 +163,10 @@ const swatch = computed(() =>
         <div class="grid grid-cols-1 gap-x-6 gap-y-3 md:grid-cols-2">
           <OriginColorField
             :model-value="mod.color ?? ''"
-            kind="mod"
+            :slot="mod.slot"
             compact
-            :wrap-index="index"
             @update:model-value="emit('patch', { color: $event })"
+            @slot="emit('slot', $event)"
           />
           <UFormField v-for="f in FILE_FIELDS" :key="f.key" size="sm">
             <template #label>

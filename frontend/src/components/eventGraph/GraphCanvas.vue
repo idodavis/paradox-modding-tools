@@ -19,8 +19,7 @@ import { Controls } from "@vue-flow/controls";
 import { MiniMap } from "@vue-flow/minimap";
 import "@vue-flow/minimap/dist/style.css";
 import type { Edge, Node } from "@services/models";
-import { NODE_HEIGHT, NODE_WIDTH, kindColour } from "../../composables/useEventGraph";
-import { originHexByOriginId } from "../../ide/rootDecorations";
+import { NODE_HEIGHT, NODE_WIDTH, kindColor } from "../../composables/useEventGraph";
 import { useWorkspaceStore } from "../../stores/workspace";
 
 const props = defineProps<{
@@ -144,14 +143,14 @@ function cardClass(node: Node): string {
         <template v-else>
           <div
             class="flex h-7 items-center gap-1.5 border-t-2 px-3 text-xs font-semibold"
-            :style="{ backgroundColor: kindColour(data.database, 12), borderColor: kindColour(data.database, 100) }"
+            :style="{ backgroundColor: kindColor(data.database, 12), borderColor: kindColor(data.database, 100) }"
           >
             <UIcon
               :name="ICONS[data.database] ?? 'i-lucide-box'"
               class="size-4 shrink-0"
-              :style="{ color: kindColour(data.database, 100) }"
+              :style="{ color: kindColor(data.database, 100) }"
             />
-            <span class="truncate" :style="{ color: kindColour(data.database, 100) }">{{ data.database }}</span>
+            <span class="truncate" :style="{ color: kindColor(data.database, 100) }">{{ data.database }}</span>
           </div>
           <div class="space-y-1 px-3 py-2">
             <div class="truncate text-base font-semibold text-highlighted">{{ data.id }}</div>
@@ -159,7 +158,7 @@ function cardClass(node: Node): string {
             <div class="flex items-center gap-1.5 text-xs text-muted">
               <span
                 class="size-2 shrink-0 rounded-full"
-                :style="{ backgroundColor: originHexByOriginId(data.origin ?? '') }"
+                :style="{ backgroundColor: store.originColor(data.origin ?? '') }"
               />
               <span class="truncate">{{ store.originName(data.origin ?? "") }}</span>
             </div>

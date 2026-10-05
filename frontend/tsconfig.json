@@ -18,7 +18,8 @@
     }
   },
   "vueCompilerOptions": {
-    "strictTemplates": true
+    "strictTemplates": true,
+    "dataAttributes": ["data-*", "aria-*"]
   },
   "include": [
     "src/**/*.ts",

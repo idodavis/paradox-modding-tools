@@ -7,10 +7,8 @@ import { computed, ref } from "vue";
 import { createReusableTemplate } from "@vueuse/core";
 import type { Detail } from "@services/models";
 import FieldHelpTip from "../FieldHelpTip.vue";
-import OriginBadge from "../OriginBadge.vue";
 import ScriptSnippet from "../ScriptSnippet.vue";
 import { useOpenInIde } from "../../composables/useOpenInIde";
-import { originHexByOriginId } from "../../ide/rootDecorations";
 import { useWorkspaceStore } from "../../stores/workspace";
 
 const props = defineProps<{ workspaceId: string; detail: Detail | null | undefined; layout: "drawer" | "panel" }>();
@@ -187,7 +185,7 @@ function open(path: string, line: number): void {
         />
         <template v-if="detail">
           <div class="flex items-center gap-2">
-            <OriginBadge :label="store.originName(detail.at.origin)" :hex="originHexByOriginId(detail.at.origin)" />
+            <OriginChip :label="store.originName(detail.at.origin)" :color="store.originColor(detail.at.origin)" />
             <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted">
               {{ detail.at.rel }}:{{ detail.line + 1 }}
             </span>
@@ -223,7 +221,7 @@ function open(path: string, line: number): void {
         <div class="truncate text-lg font-semibold text-highlighted">{{ detail.name }}</div>
         <div v-if="detail.title" class="truncate text-sm text-toned">{{ detail.title }}</div>
       </div>
-      <OriginBadge :label="store.originName(detail.at.origin)" :hex="originHexByOriginId(detail.at.origin)" />
+      <OriginChip :label="store.originName(detail.at.origin)" :color="store.originColor(detail.at.origin)" />
       <span class="truncate font-mono text-xs text-muted">{{ detail.at.rel }}:{{ detail.line + 1 }}</span>
       <div class="flex-1" />
       <UButton label="Open in IDE" size="sm" @click="open(detail.at.path, detail.line)" />

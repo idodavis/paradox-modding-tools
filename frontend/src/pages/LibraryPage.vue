@@ -5,8 +5,8 @@
 import { computed, onActivated, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation } from "@pinia/colada";
-import { useWorkspaceStore } from "../stores/workspace";
-import { Workspace, WorkspaceMod } from "@services/models";
+import { modColor, useWorkspaceStore } from "../stores/workspace";
+import { Workspace } from "@services/models";
 import { AddWorkspaceMod, DeleteWorkspace } from "@services/workspaceservice";
 import CreateModForm from "../components/CreateModForm.vue";
 import { ResetData } from "@services/appservice";
@@ -15,7 +15,6 @@ import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import { workspaceHomeRoute } from "../workspaceTools";
 import { useSettingsStore } from "../stores/settings";
-import { originHex } from "../ide/rootDecorations";
 
 defineOptions({ name: "LibraryPage" });
 
@@ -124,15 +123,6 @@ onActivated(() => {
   void ctx.refresh();
 });
 
-/** Accent hex for a library-card mod avatar (payload color, else palette). */
-function modHex(mod: WorkspaceMod, index: number): string {
-  return originHex({
-    kind: "mod",
-    path: mod.path,
-    color: mod.color,
-    wrapIndex: index,
-  });
-}
 </script>
 
 <template>
@@ -189,7 +179,7 @@ function modHex(mod: WorkspaceMod, index: number): string {
             <p>{{ ctx.workspaceMods.length }} mod(s) attached</p>
             <UAvatarGroup v-if="ctx.workspaceMods.length" :max="5" size="sm" class="mt-2">
               <UAvatar v-for="(mod, i) in ctx.workspaceMods" :key="mod.id" :src="ctx.thumbUrls[mod.id]" :alt="mod.name"
-                :style="{ boxShadow: `0 0 0 2px ${modHex(mod, i)}` }" />
+                :style="{ boxShadow: `0 0 0 2px ${modColor(mod)}` }" />
             </UAvatarGroup>
             <LanguageHealthStrip class="mt-2" :workspace-id="ctx.activeWorkspace.id" />
           </div>
@@ -225,7 +215,7 @@ function modHex(mod: WorkspaceMod, index: number): string {
                 <p v-else class="text-warning">No install set</p>
                 <UAvatarGroup v-if="ws.mods?.length" :max="5" size="sm">
                   <UAvatar v-for="(mod, i) in ws.mods" :key="mod.id" :src="ctx.thumbUrls[mod.id]" :alt="mod.name"
-                    :style="{ boxShadow: `0 0 0 2px ${modHex(mod, i)}` }" />
+                    :style="{ boxShadow: `0 0 0 2px ${modColor(mod)}` }" />
                 </UAvatarGroup>
               </div>
             </UCard>

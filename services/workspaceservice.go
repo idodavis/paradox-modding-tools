@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"uuid"
 
@@ -384,7 +385,7 @@ func (s *WorkspaceService) AddWorkspaceMod(
 		Thumbnail: thumbnail,
 	}
 	err := s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
-		mod.SortOrder = len(ws.Mods)
+		mod.SortOrder, mod.Slot = len(ws.Mods), freeSlot(ws.Mods)
 		ws.Mods = append(ws.Mods, mod)
 		return nil
 	})
@@ -413,6 +414,54 @@ func (s *WorkspaceService) UpdateWorkspaceMod(
 		mod.DescMdRel, mod.DescBbRel, mod.WorkshopIgnore = markdown, bbcode, workshopIgnore
 		return nil
 	})
+}
+
+// SetWorkspaceModSlot gives a mod one of the color slots and clears its hand-picked color.
+func (s *WorkspaceService) SetWorkspaceModSlot(workspaceID, modID string, slot int) error {
+	if slot < 1 || slot > modSlots {
+		return fmt.Errorf("slot %d is not between 1 and %d", slot, modSlots)
+	}
+	return s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+		mod.Slot, mod.Color = slot, ""
+		return nil
+	})
+}
+
+// modSlots is how many color slots a workspace's mods share: eight hues at two lightnesses.
+const modSlots = 16
+
+// freeSlot is the lowest slot no mod in mods holds; with every slot held, slot 1 again.
+func freeSlot(mods []WorkspaceMod) int {
+	held := make([]bool, modSlots+1)
+	for _, mod := range mods {
+		if mod.Slot >= 1 && mod.Slot <= modSlots {
+			held[mod.Slot] = true
+		}
+	}
+	if free := slices.Index(held[1:], false); free >= 0 {
+		return free + 1
+	}
+	return 1
+}
+
+// slotUnslotted gives each mod saved without a slot the lowest free one, in load order, and says
+// whether it gave any.
+func slotUnslotted(cfg *Config) bool {
+	changed := false
+	for w := range cfg.Workspaces {
+		mods := cfg.Workspaces[w].Mods
+		byOrder := make([]*WorkspaceMod, len(mods))
+		for i := range mods {
+			byOrder[i] = &mods[i]
+		}
+		slices.SortFunc(byOrder, func(first, second *WorkspaceMod) int { return loadOrder(*first, *second) })
+		for _, mod := range byOrder {
+			if mod.Slot == 0 {
+				mod.Slot, changed = freeSlot(mods), true
+			}
+		}
+	}
+	return changed
 }
 
 // SetWorkspaceModCalendar declares the eras a mod's dates are written in: names trimmed, unnamed
@@ -560,6 +609,7 @@ type IdeRoot struct {
 	Kind      string `json:"kind"`
 	Origin    string `json:"origin,omitempty"`
 	Color     string `json:"color,omitempty"`
+	Slot      int    `json:"slot,omitempty"`
 	Thumbnail string `json:"thumbnail,omitempty"`
 }
 
@@ -609,7 +659,7 @@ func (s *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 		label = cmp.Or(label, "Mod")
 		out.Roots = append(out.Roots, IdeRoot{
 			Label: label, Path: mod.Path, Kind: "mod",
-			Origin: mod.ID, Color: mod.Color, Thumbnail: mod.Thumbnail,
+			Origin: mod.ID, Color: mod.Color, Slot: mod.Slot, Thumbnail: mod.Thumbnail,
 		})
 	}
 	if scriptRoot != "" {

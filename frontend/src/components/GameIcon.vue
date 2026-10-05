@@ -30,5 +30,6 @@ const sizeClass = computed(() =>
     :src="src"
     :alt="gameId"
     :class="['shrink-0 rounded-sm object-contain', sizeClass]"
+    data-art
   />
 </template>

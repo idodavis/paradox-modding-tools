@@ -1,11 +1,8 @@
 /**
- * Explorer color tags for Game / Mod workspace roots.
- *
- * Accent hex comes from Settings (`originHex`) via injected CSS, not
- * static ThemeColor ids.
+ * Explorer root rows for the game and each mod: the origin's color and thumbnail, by injected CSS.
  */
+import { watch } from "vue";
 import * as vscode from "vscode";
-import { registerExtension, ExtensionHostKind } from "@codingame/monaco-vscode-api/extensions";
 import { ReadFileBase64 } from "@services/fileservice";
 import { normFs, type IdeRoot } from "./fsBridge";
 import { thumbMime, useWorkspaceStore } from "../stores/workspace";
@@ -21,97 +18,9 @@ const GAME_ICONS: Record<string, string> = {
 
 let thumbStyle: HTMLStyleElement | null = null;
 
-/** Fixed Game root accent (muted teal). */
-const GAME_COLOR_ID = "pmt.root.game";
-/** Soft mod palette — wrap by SortOrder % 10. */
-const MOD_COLOR_IDS = [
-  "pmt.root.mod0",
-  "pmt.root.mod1",
-  "pmt.root.mod2",
-  "pmt.root.mod3",
-  "pmt.root.mod4",
-  "pmt.root.mod5",
-  "pmt.root.mod6",
-  "pmt.root.mod7",
-  "pmt.root.mod8",
-  "pmt.root.mod9",
-] as const;
-
-/** Default hex for contributed colors (work on dark + light themes). */
-const COLOR_DEFAULTS: Record<string, string> = {
-  [GAME_COLOR_ID]: "#5B9A8B",
-  [MOD_COLOR_IDS[0]]: "#7A8FB5",
-  [MOD_COLOR_IDS[1]]: "#8F7AA8",
-  [MOD_COLOR_IDS[2]]: "#6F9E7A",
-  [MOD_COLOR_IDS[3]]: "#A88B6F",
-  [MOD_COLOR_IDS[4]]: "#6F8F9E",
-  [MOD_COLOR_IDS[5]]: "#9E6F8A",
-  [MOD_COLOR_IDS[6]]: "#8A9E6F",
-  [MOD_COLOR_IDS[7]]: "#7A7A9E",
-  [MOD_COLOR_IDS[8]]: "#B07A6F",
-  [MOD_COLOR_IDS[9]]: "#6FA8A0",
-};
-
 let roots: IdeRoot[] = [];
 let registered = false;
 const changeEmitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
-
-/** Hex for a root or origin: custom #RRGGBB, else game default, else palette. */
-export function originHex(origin: {
-  kind: string;
-  path: string;
-  origin?: string;
-  color?: string;
-  wrapIndex?: number;
-}): string {
-  if (origin.color && /^#[0-9A-Fa-f]{6}$/.test(origin.color)) return origin.color;
-  if (origin.kind === "game") return COLOR_DEFAULTS[GAME_COLOR_ID]!;
-  const i = wrapIndexFor(origin);
-  return COLOR_DEFAULTS[MOD_COLOR_IDS[i]!] ?? COLOR_DEFAULTS[MOD_COLOR_IDS[0]]!;
-}
-
-/** Hex for a Go origin id (`vanilla` or mod id). Fallback teal. */
-export function originHexByOriginId(id: string): string {
-  const key = id || "vanilla";
-  const store = useWorkspaceStore();
-  if (key === "vanilla") {
-    return originHex({
-      kind: "game",
-      path: "",
-      color: store.activeWorkspace?.gameColor,
-    });
-  }
-  const mods = store.workspaceMods;
-  const i = mods.findIndex((m) => m.id === key);
-  const mod = i >= 0 ? mods[i] : undefined;
-  if (mod) {
-    return originHex({
-      kind: "mod",
-      path: mod.path,
-      origin: mod.id,
-      color: mod.color,
-      wrapIndex: i,
-    });
-  }
-  const root = roots.find((r) => r.origin === key);
-  if (root) return originHex(root);
-  return COLOR_DEFAULTS[GAME_COLOR_ID]!;
-}
-
-function wrapIndexFor(root: {
-  kind: string;
-  path: string;
-  wrapIndex?: number;
-}): number {
-  if (root.kind !== "mod") return 0;
-  const n = MOD_COLOR_IDS.length;
-  if (root.wrapIndex !== undefined) {
-    return ((root.wrapIndex % n) + n) % n;
-  }
-  const mods = roots.filter((r) => r.kind === "mod");
-  const i = mods.findIndex((r) => normFs(r.path) === normFs(root.path));
-  return (i < 0 ? 0 : i) % n;
-}
 
 /** Tooltip for the decoration color tag. */
 function tooltipFor(root: IdeRoot): string {
@@ -123,26 +32,6 @@ function tooltipFor(root: IdeRoot): string {
     default:
       return root.label;
   }
-}
-
-/** Contribute pmt.root.* colors once. */
-function registerRootColors(): void {
-  registerExtension(
-    {
-      name: "pmt-root-colors",
-      publisher: "pmt",
-      version: "1.0.0",
-      engines: { vscode: "*" },
-      contributes: {
-        colors: Object.entries(COLOR_DEFAULTS).map(([id, defaults]) => ({
-          id,
-          description: `PMT explorer root tag (${id})`,
-          defaults: { dark: defaults, light: defaults, highContrast: defaults },
-        })),
-      },
-    },
-    ExtensionHostKind.LocalProcess,
-  );
 }
 
 /** FileDecorationProvider for workspace root folders only. */
@@ -161,16 +50,15 @@ class RootDecorationProvider implements vscode.FileDecorationProvider {
   }
 }
 
-/**
- * Register root color contributions + decoration provider (once).
- * Call after workbench services are ready.
- */
+/** Register the decoration provider (once), after workbench services are ready. */
 export function registerRootDecorations(): vscode.Disposable {
   if (registered) {
     return { dispose() {} };
   }
   registered = true;
-  registerRootColors();
+  // a mod's slot or picked color changes on the Settings pages; the roots follow
+  const store = useWorkspaceStore();
+  watch(() => [store.workspaceMods, store.activeWorkspace], repaintDecoratedRoots);
   const provider = new RootDecorationProvider();
   return vscode.window.registerFileDecorationProvider(provider);
 }
@@ -188,11 +76,11 @@ function iconRule(label: string, url: string): string {
   return `${sel} { background-image: url("${url}") !important; }`;
 }
 
-function dotRule(label: string, hex: string): string {
+function dotRule(label: string, color: string): string {
   const row = explorerRootSel(label);
   return [
-    `${row}::after { background: ${hex}; }`,
-    `${row} .monaco-icon-name-container { color: ${hex} !important; }`,
+    `${row}::after { background: ${color}; }`,
+    `${row} .monaco-icon-name-container { color: ${color} !important; }`,
   ].join("\n");
 }
 
@@ -202,10 +90,11 @@ async function paintRootThumbs(next: IdeRoot[]): Promise<void> {
     thumbStyle.id = "pmt-root-thumbs";
     document.head.appendChild(thumbStyle);
   }
-  const gameUrl = GAME_ICONS[useWorkspaceStore().currentGameId];
+  const store = useWorkspaceStore();
+  const gameUrl = GAME_ICONS[store.currentGameId];
   const rules: string[] = [];
   for (const r of next) {
-    rules.push(dotRule(r.label, originHex(r)));
+    rules.push(dotRule(r.label, store.originColor(r.origin ?? "")));
     if (r.kind === "game" && gameUrl) {
       rules.push(iconRule(r.label, gameUrl));
       continue;

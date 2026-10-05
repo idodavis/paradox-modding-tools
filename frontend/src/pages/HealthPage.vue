@@ -18,13 +18,9 @@ import HealthTable, {
   type ProblemCard,
   type Row,
 } from "../components/health/HealthTable.vue";
-import { useQuery } from "@pinia/colada";
-import { DiagnosticCodes } from "@services/ideservice";
-import { useSettingsStore } from "../stores/settings";
 import { useHealth } from "../composables/useHealth";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { useOpenInIde } from "../composables/useOpenInIde";
-import { originHexByOriginId } from "../ide/rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
 
 defineOptions({ name: "HealthPage" });
@@ -36,22 +32,11 @@ const store = useWorkspaceStore();
 const { openInIde } = useOpenInIde();
 const workspaceId = computed(() => String(route.params.id ?? ""));
 const live = useLiveEnabled(workspaceId);
-const { order, dirty, health: report, error, isPending, save, saving, locKey, lookup, places, lines } = useHealth(
+const { order, dirty, health, error, isPending, save, saving, locKey, lookup, places, lines } = useHealth(
   workspaceId,
   live,
 );
 
-// the report without the problems whose check the user turned off (ide.diag.<code>, else its
-// default); a parser's own code is always on
-const settings = useSettingsStore();
-const { data: codes } = useQuery({ key: ["diagnostic-codes"], query: () => DiagnosticCodes() });
-const health = computed(() => {
-  const on = (code: string) => {
-    const stored = settings.values[`ide.diag.${code}`];
-    return stored ? stored === "on" : (codes.value?.find((known) => known.code === code)?.default ?? true);
-  };
-  return report.value && { ...report.value, problems: (report.value.problems ?? []).filter((problem) => on(problem.code)) };
-});
 const card = shallowRef<Card>("contests");
 const selected = shallowRef<Row | null>(null);
 // the rows the table shows for its card, which that card's numbers count
@@ -182,7 +167,7 @@ watch(selected, (row) => {
         >
           <UIcon name="i-lucide-grip-vertical" class="size-4 text-dimmed" />
           <img v-if="store.thumbUrls[id]" :src="store.thumbUrls[id]" alt="" class="size-5 rounded-sm object-cover" />
-          <span class="size-2 shrink-0 rounded-full" :style="{ backgroundColor: originHexByOriginId(id) }" />
+          <span class="size-2 shrink-0 rounded-full" :style="{ backgroundColor: store.originColor(id) }" />
           {{ store.originName(id) }}
         </li>
       </ul>
@@ -245,7 +230,7 @@ watch(selected, (row) => {
                 <div class="flex items-center gap-2 border-b border-default bg-default px-2 py-1.5">
                   <span
                     class="size-2 shrink-0 rounded-full"
-                    :style="{ backgroundColor: originHexByOriginId(site.at.origin) }"
+                    :style="{ backgroundColor: store.originColor(site.at.origin) }"
                   />
                   <span class="shrink-0 text-sm font-medium text-highlighted">
                     {{ store.originName(site.at.origin) }}

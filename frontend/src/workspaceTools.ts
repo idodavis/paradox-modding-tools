@@ -139,17 +139,11 @@ export type WorkspaceToolName = (typeof WORKSPACE_TOOLS)[number]["name"];
 /** All workspace tool route names, in toolbar order. */
 export const WORKSPACE_TOOL_NAMES: WorkspaceToolName[] = WORKSPACE_TOOLS.map((t) => t.name);
 
-/** Landing route for a workspace, honoring DefaultTool and visible-tool filter. */
+/** Landing route for a workspace: its default page if shown, else the first shown page. */
 export function workspaceHomeRoute(
   ws: { id: string; defaultTool?: string },
   visible: readonly string[],
 ): { name: string; params: { id: string } } {
-  const allowed = new Set<string>(WORKSPACE_TOOL_NAMES);
-  const shown = visible.filter((n) => allowed.has(n));
-  if (!shown.length) {
-    return { name: "workspace-ide", params: { id: ws.id } };
-  }
   const want = ws.defaultTool || "workspace-ide";
-  const name = shown.includes(want) ? want : shown[0]!;
-  return { name, params: { id: ws.id } };
+  return { name: visible.includes(want) ? want : (visible[0] ?? "workspace-ide"), params: { id: ws.id } };
 }

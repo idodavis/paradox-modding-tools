@@ -88,12 +88,12 @@ import {
   workbenchSettingsForTheme,
   lockWorkbenchTheme,
 } from "./themeBridge";
-import { currentWorkbenchTheme, workbenchThemeId, normalizeThemeFamily } from "./colorThemes";
-import { useColorMode } from "@vueuse/core";
+import { pageTheme } from "./colorThemes";
+import { cssHex } from "../lib/cssHex";
 import { registerParadoxLanguages } from "./paradoxLanguages";
 import { registerLanguageClient } from "./languageClient";
 import { setIdeActiveFile } from "../composables/useIdeActiveFile";
-import { originHexByOriginId, registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
+import { registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
 import {
   GetIdeRoots,
@@ -241,7 +241,7 @@ setModRootDeletedHook(async (originId) => {
   await RemoveWorkspaceMod(wsId, originId);
   const roots = (await GetIdeRoots(wsId))?.roots ?? [];
   if (!roots.length) return;
-  await setWorkbenchRoots(roots, currentWorkbenchTheme());
+  await setWorkbenchRoots(roots, pageTheme());
 });
 
 function setupWorkers(): void {
@@ -745,19 +745,6 @@ function lockKeybindingsJson(): string {
   ]);
 }
 
-/** Workbench color-theme id from colorMode + family, not html.dark. */
-function chromeTheme(): string {
-  try {
-    const mode = useColorMode().value === "dark" ? "dark" : "light";
-    return workbenchThemeId(
-      normalizeThemeFamily(document.documentElement.dataset.theme),
-      mode,
-    );
-  } catch {
-    return currentWorkbenchTheme();
-  }
-}
-
 async function runInitialize(theme: string): Promise<void> {
   if (!containerEl || !partRefs) {
     throw new Error("Workbench layout refs not set");
@@ -786,7 +773,7 @@ async function runInitialize(theme: string): Promise<void> {
         JSON.stringify(
           {
             ...workbenchSettingsForTheme(
-              document.documentElement.dataset.theme ? chromeTheme() : theme,
+              theme,
             ),
             "workbench.startupEditor": "none",
             "workbench.activity.showAccounts": false,
@@ -839,16 +826,16 @@ async function runInitialize(theme: string): Promise<void> {
     langClient?.dispose();
     langClient = registerLanguageClient(
       () => useWorkspaceStore().activeWorkspaceId ?? "",
-      (id) => ({ name: useWorkspaceStore().originName(id), hex: originHexByOriginId(id) }),
+      (id) => ({ name: useWorkspaceStore().originName(id), hex: cssHex(useWorkspaceStore().originColor(id)) }),
     );
     themeLock?.dispose();
-    themeLock = lockWorkbenchTheme(() => chromeTheme());
+    themeLock = lockWorkbenchTheme(pageTheme);
     if (!rootDeco) {
       rootDeco = registerRootDecorations();
     }
     setDecoratedRoots(currentRoots);
     await applyWorkbenchTheme(
-      document.documentElement.dataset.theme ? chromeTheme() : theme,
+      theme,
     );
     if (!foldersMatch(currentRoots)) {
       await writeWorkspaceFolders(currentRoots);
@@ -941,7 +928,7 @@ async function applyWorkbenchRoots(
   if (!foldersMatch(roots)) {
     await writeWorkspaceFolders(roots);
   }
-  await applyWorkbenchTheme(chromeTheme());
+  await applyWorkbenchTheme(pageTheme());
 
   if (session) {
     mountedWorkspaceId = session.workspaceId;

@@ -27,7 +27,7 @@ export function editorRange(range: Range, lineText: LineText): Range {
   return { start: column(range.start), end: column(range.end) };
 }
 
-/** What the card needs from the workbench: an origin's name and colour, and a link to a site. */
+/** What the card needs from the workbench: an origin's name and color, and a link to a site. */
 export interface CardLinks {
   origin(id: string): { name: string; hex: string };
   open(site: Location): string;

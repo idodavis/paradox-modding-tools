@@ -45,7 +45,6 @@ export function problemsOf(health: Health | null | undefined, card: ProblemCard)
 import { computed, h, ref, resolveComponent, shallowRef, useTemplateRef, watch } from "vue";
 import type { TableColumn } from "@nuxt/ui";
 import type { FilterFn, HeaderContext } from "@tanstack/vue-table";
-import { originHexByOriginId } from "../../ide/rootDecorations";
 import { useWorkspaceStore } from "../../stores/workspace";
 
 const props = defineProps<{ health: Health | null | undefined; card: Card; loading: boolean }>();
@@ -73,9 +72,9 @@ watch(
 // the origin of a row's file, by its number in the report's sources
 const originOf = (file: number | undefined) => (file === undefined ? "" : (props.health?.sources?.[file]?.origin ?? ""));
 
-// an origin as its colour's dot, then by name; several as their dots and how many
+// an origin as its color's dot, then by name; several as their dots and how many
 const dot = (id: string) =>
-  h("span", { class: "size-2 shrink-0 rounded-full", style: { backgroundColor: originHexByOriginId(id) } });
+  h("span", { class: "size-2 shrink-0 rounded-full", style: { backgroundColor: store.originColor(id) } });
 const origin = (id: string) =>
   h("span", { class: "inline-flex items-center gap-1.5" }, [dot(id), store.originName(id)]);
 const origins = (ids: string[]) =>
@@ -84,7 +83,7 @@ const origins = (ids: string[]) =>
     h("span", { class: "ml-1 text-xs tabular-nums text-muted" }, String(ids.length)),
   ]);
 const badge = (label: string, color: string) => h(UBadge, { label, color, variant: "subtle" });
-// each loc gap's colour, matching its card
+// each loc gap's color, matching its card
 const GAP_COLOR = { untranslated: "tertiary" };
 
 // keeps a row whose value is among those ticked in its column's head, or every row when none is
@@ -111,7 +110,7 @@ function head(label: string, name?: (value: string) => string) {
       values.map((value) => ({
         type: "checkbox" as const,
         label: name!(value) || "(none)",
-        // an origin leads with its colour's dot, as in the rows
+        // an origin leads with its color's dot, as in the rows
         slot: name === store.originName ? ("origin" as const) : undefined,
         value,
         checked: wanted.includes(value),

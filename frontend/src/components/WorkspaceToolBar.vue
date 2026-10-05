@@ -9,7 +9,7 @@ import { useQuery } from "@pinia/colada";
 import type { NavigationMenuItem } from "@nuxt/ui";
 import { GetIdeRoots } from "@services/workspaceservice";
 import { EnsureSession } from "@services/sessionservice";
-import { currentWorkbenchTheme } from "../ide/colorThemes";
+import { pageTheme } from "../ide/colorThemes";
 import { setWorkbenchRoots } from "../ide/workbenchHost";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -38,7 +38,7 @@ const { error, isPending } = useQuery({
     if (!roots.length) {
       throw new Error("No game or mod paths available for this workspace.");
     }
-    await setWorkbenchRoots(roots, currentWorkbenchTheme(), {
+    await setWorkbenchRoots(roots, pageTheme(), {
       workspaceId: id.value,
       persistTabs: !rec?.resetIdeOnOpen,
       openFiles: rec?.ideOpenFiles ?? [],
@@ -63,12 +63,7 @@ function goBack(): void {
 
 /** Tool routes as navigation-menu items with active-state highlighting. */
 const toolItems = computed<NavigationMenuItem[]>(() => {
-  const visible = settings.visibleTools;
-  let shown = WORKSPACE_TOOLS.filter((t) => visible.includes(t.name));
-  if (!shown.length) {
-    shown = WORKSPACE_TOOLS.filter((t) => t.name === "workspace-ide");
-  }
-  return shown.map((t) => ({
+  return WORKSPACE_TOOLS.filter((t) => settings.visibleTools.includes(t.name)).map((t) => ({
     label: t.label,
     icon: t.icon,
     active: route.name === t.name,

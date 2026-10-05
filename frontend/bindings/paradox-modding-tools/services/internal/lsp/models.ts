@@ -153,7 +153,7 @@ export interface Inspect {
     "weight"?: number;
 
     /**
-     * a colour, as #rrggbb
+     * a color, as #rrggbb
      */
     "color"?: string;
 

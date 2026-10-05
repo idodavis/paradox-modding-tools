@@ -8,7 +8,7 @@ import App from "./App.vue";
 import { createPinia } from "pinia";
 import { PiniaColada } from "@pinia/colada";
 import router from "./router";
-import { applySeedCss } from "./ide/colorThemes";
+import { useSettingsStore } from "./stores/settings";
 import { Log } from "@services/logservice";
 
 // what nothing caught goes to pmt.log, where a bug report finds it
@@ -20,8 +20,6 @@ window.addEventListener("unhandledrejection", (event) => {
   void Log("error", reason.message, { kind: "unhandled rejection", stack: String(reason.stack ?? "") });
 });
 
-applySeedCss("pmt-dark");
-
 const app = createApp(App);
 // Vue catches a component's error, so the window's error event never sees it; the console still
 // gets it, as without a handler
@@ -31,6 +29,8 @@ app.config.errorHandler = (err, _instance, info) => {
   void Log("error", error.message, { kind: "vue", info, stack: String(error.stack ?? "") });
 };
 app.use(createPinia());
+// the settings put the theme and text sizes on the page as they load
+void useSettingsStore().load();
 app.use(PiniaColada, {
   queryOptions: {
     staleTime: 30_000,

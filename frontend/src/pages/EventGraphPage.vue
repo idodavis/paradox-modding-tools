@@ -13,7 +13,6 @@ import GraphCanvas from "../components/eventGraph/GraphCanvas.vue";
 import EventDetail from "../components/eventGraph/EventDetail.vue";
 import { useEventGraph } from "../composables/useEventGraph";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
-import { originHexByOriginId } from "../ide/rootDecorations";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 
@@ -39,7 +38,7 @@ const originItems = computed(() =>
   [store.originVanilla, ...store.workspaceMods.map((mod) => mod.id)].map((id) => ({
     id,
     label: store.originName(id),
-    color: originHexByOriginId(id),
+    color: store.originColor(id),
     thumbnail: store.thumbUrls[id],
     gameId: id === store.originVanilla ? store.activeWorkspace?.gameId : undefined,
   })),

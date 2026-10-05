@@ -1,168 +1,353 @@
 /*
- * Runtime Nuxt UI theme bridge: `data-theme` is the palette family;
- * `.dark` from color-mode selects Dark vs Light. Palettes come from SEEDS.
+ * The design tokens (.claude/DESIGN.md; values from .claude/design/pmt.css) and Nuxt UI's variables read from
+ * them. A theme is `data-theme` on any element and sets colors only; type and sizes are shared.
  */
 
-@theme static {
-  --color-base-100: var(--pmt-base-100);
-  --color-base-200: var(--pmt-base-200);
-  --color-base-300: var(--pmt-base-300);
-  --color-base-content: var(--pmt-base-content);
-  --color-primary: var(--pmt-primary);
-  --color-primary-content: var(--pmt-primary-content);
-  --color-secondary: var(--pmt-secondary);
-  --color-secondary-content: var(--pmt-secondary-content);
-  --color-accent: var(--pmt-accent);
-  --color-accent-content: var(--pmt-accent-content);
-  --color-neutral: var(--pmt-neutral);
-  --color-neutral-content: var(--pmt-neutral-content);
-  --color-info: var(--pmt-info);
-  --color-info-content: var(--pmt-info-content);
-  --color-success: var(--pmt-success);
-  --color-success-content: var(--pmt-success-content);
-  --color-warning: var(--pmt-warning);
-  --color-warning-content: var(--pmt-warning-content);
-  --color-error: var(--pmt-error);
-  --color-error-content: var(--pmt-error-content);
-  --color-dark-input: var(--pmt-editor-bg);
+@font-face {
+  font-family: "Geist";
+  src: url("../assets/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: block;
 }
 
-:root,
-:root[data-theme] {
-  --pmt-radius: 0.5rem;
-  --pmt-editor-bg: color-mix(in oklab, var(--pmt-base-200) 78%, var(--pmt-base-300) 22%);
-  --ui-radius: var(--pmt-radius);
-  --ui-primary: var(--pmt-primary);
-  --ui-secondary: var(--pmt-secondary);
-  --ui-accent: var(--pmt-accent);
-  --ui-success: var(--pmt-success);
-  --ui-info: var(--pmt-info);
-  --ui-warning: var(--pmt-warning);
-  --ui-error: var(--pmt-error);
-  --ui-bg: var(--pmt-base-100);
-  --ui-bg-muted: var(--pmt-base-200);
-  --ui-bg-elevated: color-mix(in oklab, var(--pmt-base-100) 35%, var(--pmt-base-200) 65%);
-  --ui-bg-accented: var(--pmt-base-300);
-  --ui-bg-inverted: var(--pmt-base-content);
-  --ui-text-dimmed: color-mix(in oklab, var(--pmt-base-content) 45%, transparent);
-  --ui-text-muted: color-mix(in oklab, var(--pmt-base-content) 60%, transparent);
-  --ui-text-toned: color-mix(in oklab, var(--pmt-base-content) 78%, transparent);
-  --ui-text: var(--pmt-base-content);
-  --ui-text-highlighted: var(--pmt-base-content);
-  --ui-text-inverted: var(--pmt-base-100);
-  --ui-border: color-mix(in oklab, var(--pmt-base-content) 16%, transparent);
-  --ui-border-muted: color-mix(in oklab, var(--pmt-base-content) 12%, transparent);
-  --ui-border-accented: color-mix(in oklab, var(--pmt-base-content) 24%, transparent);
-  --ui-border-inverted: var(--pmt-base-content);
-  --ui-color-primary-50: color-mix(in oklab, white 92%, var(--pmt-primary));
-  --ui-color-primary-100: color-mix(in oklab, white 84%, var(--pmt-primary));
-  --ui-color-primary-200: color-mix(in oklab, white 72%, var(--pmt-primary));
-  --ui-color-primary-300: color-mix(in oklab, white 58%, var(--pmt-primary));
-  --ui-color-primary-400: color-mix(in oklab, white 40%, var(--pmt-primary));
-  --ui-color-primary-500: var(--pmt-primary);
-  --ui-color-primary-600: color-mix(in oklab, black 12%, var(--pmt-primary));
-  --ui-color-primary-700: color-mix(in oklab, black 24%, var(--pmt-primary));
-  --ui-color-primary-800: color-mix(in oklab, black 36%, var(--pmt-primary));
-  --ui-color-primary-900: color-mix(in oklab, black 52%, var(--pmt-primary));
-  --ui-color-primary-950: color-mix(in oklab, black 70%, var(--pmt-primary));
-  --ui-color-secondary-50: color-mix(in oklab, white 92%, var(--pmt-secondary));
-  --ui-color-secondary-100: color-mix(in oklab, white 84%, var(--pmt-secondary));
-  --ui-color-secondary-200: color-mix(in oklab, white 72%, var(--pmt-secondary));
-  --ui-color-secondary-300: color-mix(in oklab, white 58%, var(--pmt-secondary));
-  --ui-color-secondary-400: color-mix(in oklab, white 40%, var(--pmt-secondary));
-  --ui-color-secondary-500: var(--pmt-secondary);
-  --ui-color-secondary-600: color-mix(in oklab, black 12%, var(--pmt-secondary));
-  --ui-color-secondary-700: color-mix(in oklab, black 24%, var(--pmt-secondary));
-  --ui-color-secondary-800: color-mix(in oklab, black 36%, var(--pmt-secondary));
-  --ui-color-secondary-900: color-mix(in oklab, black 52%, var(--pmt-secondary));
-  --ui-color-secondary-950: color-mix(in oklab, black 70%, var(--pmt-secondary));
-  --ui-color-info-50: color-mix(in oklab, white 92%, var(--pmt-info));
-  --ui-color-info-100: color-mix(in oklab, white 84%, var(--pmt-info));
-  --ui-color-info-200: color-mix(in oklab, white 72%, var(--pmt-info));
-  --ui-color-info-300: color-mix(in oklab, white 58%, var(--pmt-info));
-  --ui-color-info-400: color-mix(in oklab, white 40%, var(--pmt-info));
-  --ui-color-info-500: var(--pmt-info);
-  --ui-color-info-600: color-mix(in oklab, black 12%, var(--pmt-info));
-  --ui-color-info-700: color-mix(in oklab, black 24%, var(--pmt-info));
-  --ui-color-info-800: color-mix(in oklab, black 36%, var(--pmt-info));
-  --ui-color-info-900: color-mix(in oklab, black 52%, var(--pmt-info));
-  --ui-color-info-950: color-mix(in oklab, black 70%, var(--pmt-info));
-  --ui-color-success-50: color-mix(in oklab, white 92%, var(--pmt-success));
-  --ui-color-success-100: color-mix(in oklab, white 84%, var(--pmt-success));
-  --ui-color-success-200: color-mix(in oklab, white 72%, var(--pmt-success));
-  --ui-color-success-300: color-mix(in oklab, white 58%, var(--pmt-success));
-  --ui-color-success-400: color-mix(in oklab, white 40%, var(--pmt-success));
-  --ui-color-success-500: var(--pmt-success);
-  --ui-color-success-600: color-mix(in oklab, black 12%, var(--pmt-success));
-  --ui-color-success-700: color-mix(in oklab, black 24%, var(--pmt-success));
-  --ui-color-success-800: color-mix(in oklab, black 36%, var(--pmt-success));
-  --ui-color-success-900: color-mix(in oklab, black 52%, var(--pmt-success));
-  --ui-color-success-950: color-mix(in oklab, black 70%, var(--pmt-success));
-  --ui-color-warning-50: color-mix(in oklab, white 92%, var(--pmt-warning));
-  --ui-color-warning-100: color-mix(in oklab, white 84%, var(--pmt-warning));
-  --ui-color-warning-200: color-mix(in oklab, white 72%, var(--pmt-warning));
-  --ui-color-warning-300: color-mix(in oklab, white 58%, var(--pmt-warning));
-  --ui-color-warning-400: color-mix(in oklab, white 40%, var(--pmt-warning));
-  --ui-color-warning-500: var(--pmt-warning);
-  --ui-color-warning-600: color-mix(in oklab, black 12%, var(--pmt-warning));
-  --ui-color-warning-700: color-mix(in oklab, black 24%, var(--pmt-warning));
-  --ui-color-warning-800: color-mix(in oklab, black 36%, var(--pmt-warning));
-  --ui-color-warning-900: color-mix(in oklab, black 52%, var(--pmt-warning));
-  --ui-color-warning-950: color-mix(in oklab, black 70%, var(--pmt-warning));
-  --ui-color-error-50: color-mix(in oklab, white 92%, var(--pmt-error));
-  --ui-color-error-100: color-mix(in oklab, white 84%, var(--pmt-error));
-  --ui-color-error-200: color-mix(in oklab, white 72%, var(--pmt-error));
-  --ui-color-error-300: color-mix(in oklab, white 58%, var(--pmt-error));
-  --ui-color-error-400: color-mix(in oklab, white 40%, var(--pmt-error));
-  --ui-color-error-500: var(--pmt-error);
-  --ui-color-error-600: color-mix(in oklab, black 12%, var(--pmt-error));
-  --ui-color-error-700: color-mix(in oklab, black 24%, var(--pmt-error));
-  --ui-color-error-800: color-mix(in oklab, black 36%, var(--pmt-error));
-  --ui-color-error-900: color-mix(in oklab, black 52%, var(--pmt-error));
-  --ui-color-error-950: color-mix(in oklab, black 70%, var(--pmt-error));
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../assets/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: block;
 }
 
-:root:not(.dark) {
-  --ui-color-neutral-50: var(--pmt-base-100);
-  --ui-color-neutral-100: var(--pmt-base-200);
-  --ui-color-neutral-200: var(--pmt-base-300);
-  --ui-color-neutral-300: color-mix(in oklab, var(--pmt-base-content) 15%, var(--pmt-base-100));
-  --ui-color-neutral-400: color-mix(in oklab, var(--pmt-base-content) 28%, var(--pmt-base-100));
-  --ui-color-neutral-500: color-mix(in oklab, var(--pmt-base-content) 42%, var(--pmt-base-100));
-  --ui-color-neutral-600: color-mix(in oklab, var(--pmt-base-content) 56%, var(--pmt-base-100));
-  --ui-color-neutral-700: color-mix(in oklab, var(--pmt-base-content) 70%, var(--pmt-base-100));
-  --ui-color-neutral-800: color-mix(in oklab, var(--pmt-base-content) 82%, var(--pmt-base-100));
-  --ui-color-neutral-900: color-mix(in oklab, var(--pmt-base-content) 92%, var(--pmt-base-100));
-  --ui-color-neutral-950: color-mix(in oklab, black 14%, var(--pmt-base-content));
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  /* the type scale: 11 caption, 12 dense, 13 body, 14 reading, 16 section, 20 page, 28 stat */
+  --text-11: 0.6875rem;
+  --text-11--line-height: 1rem;
+  --text-12: 0.75rem;
+  --text-12--line-height: 1rem;
+  --text-13: 0.8125rem;
+  --text-13--line-height: 1.25rem;
+  --text-14: 0.875rem;
+  --text-14--line-height: 1.375rem;
+  --text-16: 1rem;
+  --text-16--line-height: 1.5rem;
+  --text-16--font-weight: 600;
+  --text-16--letter-spacing: -0.01em;
+  --text-20: 1.25rem;
+  --text-20--line-height: 1.75rem;
+  --text-20--font-weight: 600;
+  --text-20--letter-spacing: -0.015em;
+  --text-28: 1.75rem;
+  --text-28--line-height: 2rem;
+  --text-28--font-weight: 600;
+  --text-28--letter-spacing: -0.02em;
+  /* badges and keys */
+  --text-tiny: 0.65625rem;
+  --text-tiny--line-height: 1;
+  --radius-chip: 0.3125rem;
+  /* the theme tiles in Appearance */
+  --radius-tile: 0.625rem;
 }
 
-:root.dark {
-  --ui-color-neutral-50: color-mix(in oklab, white 8%, var(--pmt-base-content));
-  --ui-color-neutral-100: color-mix(in oklab, var(--pmt-base-content) 94%, var(--pmt-base-100));
-  --ui-color-neutral-200: color-mix(in oklab, var(--pmt-base-content) 86%, var(--pmt-base-100));
-  --ui-color-neutral-300: color-mix(in oklab, var(--pmt-base-content) 76%, var(--pmt-base-100));
-  --ui-color-neutral-400: color-mix(in oklab, var(--pmt-base-content) 64%, var(--pmt-base-100));
-  --ui-color-neutral-500: color-mix(in oklab, var(--pmt-base-content) 52%, var(--pmt-base-100));
-  --ui-color-neutral-600: color-mix(in oklab, var(--pmt-base-content) 40%, var(--pmt-base-100));
-  --ui-color-neutral-700: color-mix(in oklab, var(--pmt-base-content) 28%, var(--pmt-base-100));
-  --ui-color-neutral-800: var(--pmt-base-300);
-  --ui-color-neutral-900: var(--pmt-base-200);
-  --ui-color-neutral-950: var(--pmt-base-100);
+/* PMT */
+[data-theme="pmt-dark"] {
+  --bg-0: #0f1116; --bg-1: #13161c; --bg-2: #181c24; --bg-3: #1e232c; --bg-4: #262c37;
+  --line-1: #232933; --line-2: #303743;
+  --fg-1: #e8ecf1; --fg-2: #aab4c1; --fg-3: #7f8a98;
+  --accent: #e0b64c; --accent-ink: #1a1405; --link: #4cd3a6;
+  --red: #f0716b; --orange: #f0a04b; --blue: #6fb7f0; --green: #5ccb8f; --purple: #b19cf5;
+  --syn-kw: #6fb7f0; --syn-str: #5ccb8f; --syn-num: #f0a04b; --syn-fn: #b19cf5; --syn-ref: #4cd3a6; --syn-com: #7f8a98;
+  --ol: 0.72; --oc: 0.115;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="pmt-light"] {
+  --bg-0: #ffffff; --bg-1: #f4f5f8; --bg-2: #eceef2; --bg-3: #ffffff; --bg-4: #e2e5eb;
+  --line-1: #e1e4ea; --line-2: #cfd4dd;
+  --fg-1: #1a1f27; --fg-2: #4d5866; --fg-3: #636e7c;
+  --accent: #a8801a; --accent-ink: #ffffff; --link: #138a66;
+  --red: #c4372f; --orange: #b8650e; --blue: #2568b8; --green: #1f8a4c; --purple: #6b4fd1;
+  --syn-kw: #2568b8; --syn-str: #1f8a4c; --syn-num: #b8650e; --syn-fn: #6b4fd1; --syn-ref: #138a66; --syn-com: #6b7684;
+  --ol: 0.56; --oc: 0.135;
+  --shadow: 0 8px 24px rgba(20, 30, 50, 0.16), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
+/* Catppuccin: Mocha and Latte */
+[data-theme="catppuccin-dark"] {
+  --bg-0: #1e1e2e; --bg-1: #11111b; --bg-2: #181825; --bg-3: #313244; --bg-4: #45475a;
+  --line-1: #262637; --line-2: #45475a;
+  --fg-1: #cdd6f4; --fg-2: #bac2de; --fg-3: #8e93ad;
+  --accent: #cba6f7; --accent-ink: #1e1e2e; --link: #74c7ec;
+  --red: #f38ba8; --orange: #fab387; --blue: #89b4fa; --green: #a6e3a1; --purple: #b4befe;
+  --syn-kw: #cba6f7; --syn-str: #a6e3a1; --syn-num: #fab387; --syn-fn: #89b4fa; --syn-ref: #94e2d5; --syn-com: #7f849c;
+  --ol: 0.78; --oc: 0.108;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="catppuccin-light"] {
+  --bg-0: #eff1f5; --bg-1: #e6e9ef; --bg-2: #dce0e8; --bg-3: #f5f6f9; --bg-4: #ccd0da;
+  --line-1: #ccd0da; --line-2: #bcc0cc;
+  --fg-1: #4c4f69; --fg-2: #5c5f77; --fg-3: #6c6f85;
+  --accent: #8839ef; --accent-ink: #ffffff; --link: #1e66f5;
+  --red: #d20f39; --orange: #c9550a; --blue: #1e66f5; --green: #40a02b; --purple: #7287fd;
+  --syn-kw: #8839ef; --syn-str: #40a02b; --syn-num: #c9550a; --syn-fn: #1e66f5; --syn-ref: #179299; --syn-com: #8c8fa1;
+  --ol: 0.58; --oc: 0.135;
+  --shadow: 0 8px 24px rgba(76, 79, 105, 0.18), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
+/* One: One Dark and One Light */
+[data-theme="one-dark"] {
+  --bg-0: #282c34; --bg-1: #21252b; --bg-2: #1e2227; --bg-3: #2c313a; --bg-4: #3a3f4b;
+  --line-1: #181a1f; --line-2: #3e4451;
+  --fg-1: #d7dae0; --fg-2: #abb2bf; --fg-3: #7f848e;
+  --accent: #61afef; --accent-ink: #10141a; --link: #56b6c2;
+  --red: #e06c75; --orange: #d19a66; --blue: #61afef; --green: #98c379; --purple: #c678dd;
+  --syn-kw: #c678dd; --syn-str: #98c379; --syn-num: #d19a66; --syn-fn: #61afef; --syn-ref: #56b6c2; --syn-com: #7f848e;
+  --ol: 0.74; --oc: 0.108;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="one-light"] {
+  --bg-0: #fafafa; --bg-1: #f0f0f1; --bg-2: #e5e5e6; --bg-3: #ffffff; --bg-4: #d8d8da;
+  --line-1: #dbdbdc; --line-2: #c6c6c8;
+  --fg-1: #383a42; --fg-2: #4f525d; --fg-3: #656873;
+  --accent: #2f62d6; --accent-ink: #ffffff; --link: #0f73a0;
+  --red: #c8133f; --orange: #946300; --blue: #2f62d6; --green: #367a36; --purple: #a024a0;
+  --syn-kw: #a024a0; --syn-str: #367a36; --syn-num: #946300; --syn-fn: #2f62d6; --syn-ref: #0f73a0; --syn-com: #686b75;
+  --ol: 0.56; --oc: 0.13;
+  --shadow: 0 8px 24px rgba(40, 44, 52, 0.16), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
+/* Crusader Kings */
+[data-theme="ck3-dark"] {
+  --bg-0: #140f0e; --bg-1: #1a1312; --bg-2: #211817; --bg-3: #2a1f1d; --bg-4: #362825;
+  --line-1: #2e2220; --line-2: #45332f;
+  --fg-1: #f0e6d6; --fg-2: #c7b8a3; --fg-3: #978672;
+  --accent: #d6a84e; --accent-ink: #1d1405; --link: #8fbfc4;
+  --red: #e2665e; --orange: #e59a52; --blue: #86a9d6; --green: #8fbf7a; --purple: #c29ad6;
+  --syn-kw: #e0a36b; --syn-str: #a9c48c; --syn-num: #d9846a; --syn-fn: #c29ad6; --syn-ref: #8fbfc4; --syn-com: #8a7a69;
+  --ol: 0.72; --oc: 0.095;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="ck3-light"] {
+  --bg-0: #fdf8ef; --bg-1: #f4ecdf; --bg-2: #ebdfcc; --bg-3: #fffbf4; --bg-4: #e0d0b6;
+  --line-1: #e3d5bf; --line-2: #cfbc9d;
+  --fg-1: #2b1d16; --fg-2: #5a463a; --fg-3: #6b5848;
+  --accent: #86600f; --accent-ink: #ffffff; --link: #26666d;
+  --red: #a32d27; --orange: #8f4f10; --blue: #365a89; --green: #46702f; --purple: #77448b;
+  --syn-kw: #94491a; --syn-str: #4a6e2c; --syn-num: #9c422c; --syn-fn: #77448b; --syn-ref: #26666d; --syn-com: #766452;
+  --ol: 0.55; --oc: 0.12;
+  --shadow: 0 8px 24px rgba(70, 45, 25, 0.18), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
+/* Europa Universalis */
+[data-theme="eu5-dark"] {
+  --bg-0: #0c1119; --bg-1: #10161f; --bg-2: #141b26; --bg-3: #1a2330; --bg-4: #232e3d;
+  --line-1: #1c2532; --line-2: #2a3747;
+  --fg-1: #e6ebf2; --fg-2: #a9b6c7; --fg-3: #7d8b9e;
+  --accent: #c9a55e; --accent-ink: #17120a; --link: #6fb4dd;
+  --red: #ec6f68; --orange: #e89f55; --blue: #6fb4dd; --green: #6cc494; --purple: #a99cf0;
+  --syn-kw: #7fb2e6; --syn-str: #8fcf9c; --syn-num: #e0a867; --syn-fn: #b3a2f0; --syn-ref: #6fd0c4; --syn-com: #7a889b;
+  --ol: 0.72; --oc: 0.108;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="eu5-light"] {
+  --bg-0: #fcfdfe; --bg-1: #f0f3f7; --bg-2: #e5eaf1; --bg-3: #ffffff; --bg-4: #d8e0ea;
+  --line-1: #dbe2eb; --line-2: #c4cedb;
+  --fg-1: #162030; --fg-2: #44546a; --fg-3: #56657a;
+  --accent: #82601a; --accent-ink: #ffffff; --link: #1b6497;
+  --red: #b0352d; --orange: #9b550e; --blue: #235ca2; --green: #25704a; --purple: #5c4cb3;
+  --syn-kw: #235ca2; --syn-str: #2a7344; --syn-num: #97560f; --syn-fn: #6549b8; --syn-ref: #12736d; --syn-com: #617085;
+  --ol: 0.56; --oc: 0.125;
+  --shadow: 0 8px 24px rgba(20, 35, 60, 0.16), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
+/* Victoria */
+[data-theme="vic3-dark"] {
+  --bg-0: #0d1312; --bg-1: #111917; --bg-2: #161f1d; --bg-3: #1c2825; --bg-4: #25332f;
+  --line-1: #1d2926; --line-2: #2d3d39;
+  --fg-1: #e6ede8; --fg-2: #a8b8b0; --fg-3: #7e8f87;
+  --accent: #4fb39a; --accent-ink: #06140f; --link: #d99257;
+  --red: #e3685d; --orange: #e09b52; --blue: #7aa8d8; --green: #78c38a; --purple: #b59bd9;
+  --syn-kw: #5fbfa6; --syn-str: #a8c47a; --syn-num: #e0a060; --syn-fn: #b59bd9; --syn-ref: #d99257; --syn-com: #7e8f87;
+  --ol: 0.72; --oc: 0.11;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="vic3-light"] {
+  --bg-0: #fbf7ee; --bg-1: #f1eadb; --bg-2: #e8dfcb; --bg-3: #fdfaf3; --bg-4: #ddd2ba;
+  --line-1: #ddd3bd; --line-2: #cbbfa5;
+  --fg-1: #2a241b; --fg-2: #5a4f40; --fg-3: #6f634f;
+  --accent: #1f6b5c; --accent-ink: #ffffff; --link: #9a4f24;
+  --red: #b3382e; --orange: #a8610f; --blue: #2f5f9e; --green: #2f7a3e; --purple: #6f4a9e;
+  --syn-kw: #1f6b5c; --syn-str: #5f7a1f; --syn-num: #a8610f; --syn-fn: #6f4a9e; --syn-ref: #9a4f24; --syn-com: #8a7e6a;
+  --ol: 0.55; --oc: 0.12;
+  --shadow: 0 8px 24px rgba(60, 45, 20, 0.18), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
+/* Mixed from the theme's tokens on the element that sets it; a theme never sets these. */
+[data-theme] {
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --link-soft: color-mix(in srgb, var(--link) 14%, transparent);
+  --red-soft: color-mix(in srgb, var(--red) 16%, transparent);
+  --orange-soft: color-mix(in srgb, var(--orange) 16%, transparent);
+  --blue-soft: color-mix(in srgb, var(--blue) 16%, transparent);
+  --green-soft: color-mix(in srgb, var(--green) 16%, transparent);
+  --purple-soft: color-mix(in srgb, var(--purple) 16%, transparent);
+
+  /* origin slots: one lightness and chroma per theme, a hue per slot, the first four farthest apart; 5 to 8 a
+     little lighter; 9 to 16 repeat 1 to 8 darker. The hues skip gold, orange and red. */
+  --game: oklch(var(--ol) 0.025 220);
+  --o1: oklch(var(--ol) var(--oc) 250);
+  --o2: oklch(var(--ol) var(--oc) 135);
+  --o3: oklch(var(--ol) var(--oc) 315);
+  --o4: oklch(var(--ol) var(--oc) 190);
+  --o5: oklch(calc(var(--ol) + 0.06) var(--oc) 100);
+  --o6: oklch(calc(var(--ol) + 0.06) var(--oc) 280);
+  --o7: oklch(calc(var(--ol) + 0.06) var(--oc) 160);
+  --o8: oklch(calc(var(--ol) + 0.06) var(--oc) 345);
+  --o9: oklch(calc(var(--ol) - 0.1) var(--oc) 250);
+  --o10: oklch(calc(var(--ol) - 0.1) var(--oc) 135);
+  --o11: oklch(calc(var(--ol) - 0.1) var(--oc) 315);
+  --o12: oklch(calc(var(--ol) - 0.1) var(--oc) 190);
+  --o13: oklch(calc(var(--ol) - 0.04) var(--oc) 100);
+  --o14: oklch(calc(var(--ol) - 0.04) var(--oc) 280);
+  --o15: oklch(calc(var(--ol) - 0.04) var(--oc) 160);
+  --o16: oklch(calc(var(--ol) - 0.04) var(--oc) 345);
+
+  /* Nuxt UI: radius-sm, md, lg and xl are 4, 6, 8 and 12 */
+  --ui-radius: 0.25rem;
+  --ui-bg: var(--bg-1);
+  --ui-bg-muted: var(--bg-2);
+  --ui-bg-elevated: var(--bg-3);
+  --ui-bg-accented: var(--bg-4);
+  --ui-bg-inverted: var(--fg-1);
+  --ui-text-dimmed: var(--fg-3);
+  --ui-text-muted: var(--fg-2);
+  --ui-text-toned: var(--fg-2);
+  --ui-text: var(--fg-1);
+  --ui-text-highlighted: var(--fg-1);
+  --ui-text-inverted: var(--bg-1);
+  --ui-border: var(--line-1);
+  --ui-border-muted: var(--line-1);
+  --ui-border-accented: var(--line-2);
+  --ui-border-inverted: var(--fg-1);
+  --ui-primary: var(--accent);
+  --ui-secondary: var(--link);
+  --ui-success: var(--green);
+  --ui-info: var(--blue);
+  --ui-warning: var(--orange);
+  --ui-error: var(--red);
+  /* the neutral steps run from the lightest surface or text to the darkest */
+  --ui-color-neutral-50: light-dark(var(--bg-0), var(--fg-1));
+  --ui-color-neutral-100: light-dark(var(--bg-1), color-mix(in oklab, var(--fg-1) 88%, var(--bg-1)));
+  --ui-color-neutral-200: light-dark(var(--bg-4), color-mix(in oklab, var(--fg-1) 76%, var(--bg-1)));
+  --ui-color-neutral-300: light-dark(var(--line-2), var(--fg-2));
+  --ui-color-neutral-400: light-dark(color-mix(in oklab, var(--fg-3) 60%, var(--bg-1)), var(--fg-3));
+  --ui-color-neutral-500: var(--fg-3);
+  --ui-color-neutral-600: light-dark(var(--fg-2), color-mix(in oklab, var(--fg-3) 60%, var(--bg-1)));
+  --ui-color-neutral-700: light-dark(color-mix(in oklab, var(--fg-1) 76%, var(--bg-1)), var(--line-2));
+  --ui-color-neutral-800: light-dark(color-mix(in oklab, var(--fg-1) 88%, var(--bg-1)), var(--bg-4));
+  --ui-color-neutral-900: light-dark(var(--fg-1), var(--bg-1));
+  --ui-color-neutral-950: light-dark(color-mix(in oklab, black 14%, var(--fg-1)), var(--bg-0));
+  --ui-color-primary-50: color-mix(in oklab, white 92%, var(--accent));
+  --ui-color-primary-100: color-mix(in oklab, white 84%, var(--accent));
+  --ui-color-primary-200: color-mix(in oklab, white 72%, var(--accent));
+  --ui-color-primary-300: color-mix(in oklab, white 58%, var(--accent));
+  --ui-color-primary-400: color-mix(in oklab, white 40%, var(--accent));
+  --ui-color-primary-500: var(--accent);
+  --ui-color-primary-600: color-mix(in oklab, black 12%, var(--accent));
+  --ui-color-primary-700: color-mix(in oklab, black 24%, var(--accent));
+  --ui-color-primary-800: color-mix(in oklab, black 36%, var(--accent));
+  --ui-color-primary-900: color-mix(in oklab, black 52%, var(--accent));
+  --ui-color-primary-950: color-mix(in oklab, black 70%, var(--accent));
+  --ui-color-secondary-50: color-mix(in oklab, white 92%, var(--link));
+  --ui-color-secondary-100: color-mix(in oklab, white 84%, var(--link));
+  --ui-color-secondary-200: color-mix(in oklab, white 72%, var(--link));
+  --ui-color-secondary-300: color-mix(in oklab, white 58%, var(--link));
+  --ui-color-secondary-400: color-mix(in oklab, white 40%, var(--link));
+  --ui-color-secondary-500: var(--link);
+  --ui-color-secondary-600: color-mix(in oklab, black 12%, var(--link));
+  --ui-color-secondary-700: color-mix(in oklab, black 24%, var(--link));
+  --ui-color-secondary-800: color-mix(in oklab, black 36%, var(--link));
+  --ui-color-secondary-900: color-mix(in oklab, black 52%, var(--link));
+  --ui-color-secondary-950: color-mix(in oklab, black 70%, var(--link));
+  --ui-color-success-50: color-mix(in oklab, white 92%, var(--green));
+  --ui-color-success-100: color-mix(in oklab, white 84%, var(--green));
+  --ui-color-success-200: color-mix(in oklab, white 72%, var(--green));
+  --ui-color-success-300: color-mix(in oklab, white 58%, var(--green));
+  --ui-color-success-400: color-mix(in oklab, white 40%, var(--green));
+  --ui-color-success-500: var(--green);
+  --ui-color-success-600: color-mix(in oklab, black 12%, var(--green));
+  --ui-color-success-700: color-mix(in oklab, black 24%, var(--green));
+  --ui-color-success-800: color-mix(in oklab, black 36%, var(--green));
+  --ui-color-success-900: color-mix(in oklab, black 52%, var(--green));
+  --ui-color-success-950: color-mix(in oklab, black 70%, var(--green));
+  --ui-color-info-50: color-mix(in oklab, white 92%, var(--blue));
+  --ui-color-info-100: color-mix(in oklab, white 84%, var(--blue));
+  --ui-color-info-200: color-mix(in oklab, white 72%, var(--blue));
+  --ui-color-info-300: color-mix(in oklab, white 58%, var(--blue));
+  --ui-color-info-400: color-mix(in oklab, white 40%, var(--blue));
+  --ui-color-info-500: var(--blue);
+  --ui-color-info-600: color-mix(in oklab, black 12%, var(--blue));
+  --ui-color-info-700: color-mix(in oklab, black 24%, var(--blue));
+  --ui-color-info-800: color-mix(in oklab, black 36%, var(--blue));
+  --ui-color-info-900: color-mix(in oklab, black 52%, var(--blue));
+  --ui-color-info-950: color-mix(in oklab, black 70%, var(--blue));
+  --ui-color-warning-50: color-mix(in oklab, white 92%, var(--orange));
+  --ui-color-warning-100: color-mix(in oklab, white 84%, var(--orange));
+  --ui-color-warning-200: color-mix(in oklab, white 72%, var(--orange));
+  --ui-color-warning-300: color-mix(in oklab, white 58%, var(--orange));
+  --ui-color-warning-400: color-mix(in oklab, white 40%, var(--orange));
+  --ui-color-warning-500: var(--orange);
+  --ui-color-warning-600: color-mix(in oklab, black 12%, var(--orange));
+  --ui-color-warning-700: color-mix(in oklab, black 24%, var(--orange));
+  --ui-color-warning-800: color-mix(in oklab, black 36%, var(--orange));
+  --ui-color-warning-900: color-mix(in oklab, black 52%, var(--orange));
+  --ui-color-warning-950: color-mix(in oklab, black 70%, var(--orange));
+  --ui-color-error-50: color-mix(in oklab, white 92%, var(--red));
+  --ui-color-error-100: color-mix(in oklab, white 84%, var(--red));
+  --ui-color-error-200: color-mix(in oklab, white 72%, var(--red));
+  --ui-color-error-300: color-mix(in oklab, white 58%, var(--red));
+  --ui-color-error-400: color-mix(in oklab, white 40%, var(--red));
+  --ui-color-error-500: var(--red);
+  --ui-color-error-600: color-mix(in oklab, black 12%, var(--red));
+  --ui-color-error-700: color-mix(in oklab, black 24%, var(--red));
+  --ui-color-error-800: color-mix(in oklab, black 36%, var(--red));
+  --ui-color-error-900: color-mix(in oklab, black 52%, var(--red));
+  --ui-color-error-950: color-mix(in oklab, black 70%, var(--red));
 }
 
 @layer base {
   html, body, #app { min-height: 100%; }
-  body { @apply bg-default text-default antialiased; }
+  body {
+    @apply bg-default text-default antialiased;
+    font-size: var(--text-13);
+    line-height: 1.45;
+  }
   button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
 
-  /* Soft-pill scrollbars: primary thumb, fade until the scroller is hovered. */
+  /* Thin scrollbars: a line-2 thumb that shows while its scroller is hovered. */
   * {
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
   }
   *:hover {
-    scrollbar-color: color-mix(in oklab, var(--ui-primary) 70%, transparent)
-      transparent;
+    scrollbar-color: var(--line-2) transparent;
   }
   ::-webkit-scrollbar {
     width: 6px;
@@ -181,10 +366,7 @@
     background: transparent;
   }
   *:hover::-webkit-scrollbar-thumb {
-    background: color-mix(in oklab, var(--ui-primary) 70%, transparent);
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--ui-primary);
+    background: var(--line-2);
   }
   .monaco-workbench,
   .monaco-workbench * {

@@ -256,17 +256,17 @@ var DynamicDescription = struct {
 // Bools are the words a yes-or-no value is written with.
 var Bools = []string{"yes", "no"}
 
-// Colour is a tagged block a colour is written with (rgb { 255 0 0 }).
-type Colour struct {
+// Color is a tagged block a color is written with (rgb { 255 0 0 }).
+type Color struct {
 	Tag        string
 	HSV        bool    // hue, saturation, value; else red, green, blue
 	Hex        bool    // one hex word
 	Hue, Parts float64 // what the hue and the other parts are out of; 0 means 1
 }
 
-// Colours are the colour blocks script writes; rgb's parts are out of 255, or of 1 where every part
+// Colors are the color blocks script writes; rgb's parts are out of 255, or of 1 where every part
 // is at most 1.
-var Colours = []Colour{
+var Colors = []Color{
 	{Tag: "rgb"}, {Tag: "hsv", HSV: true}, {Tag: "hsv360", HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
 }
 

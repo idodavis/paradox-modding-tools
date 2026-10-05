@@ -5,24 +5,15 @@
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import logoText from "@assets/PMT-Logo-Text.svg?url";
 
-withDefaults(
-  defineProps<{
-    iconHeight?: number;
-    textHeight?: number;
-  }>(),
-  {
-    iconHeight: 30,
-    textHeight: 40,
-  },
-);
+const { iconHeight = 30, textHeight = 40 } = defineProps<{ iconHeight?: number; textHeight?: number }>();
 </script>
 
 <template>
-  <div class="inline-flex items-center">
+  <div class="inline-flex items-center" data-art>
     <span class="inline-block" :style="{
       width: `${iconHeight * 2}px`,
       height: `${iconHeight}px`,
-      backgroundColor: 'var(--pmt-primary, #dec572)',
+      backgroundColor: 'var(--accent)',
       maskImage: `url(${logoIcon})`,
       maskRepeat: 'no-repeat',
       maskPosition: 'center',
@@ -31,7 +22,7 @@ withDefaults(
     <span class="inline-block" :style="{
       width: `${textHeight * 3}px`,
       height: `${textHeight}px`,
-      backgroundColor: 'var(--pmt-secondary, #5ad7b2)',
+      backgroundColor: 'var(--link)',
       maskImage: `url(${logoText})`,
       maskRepeat: 'no-repeat',
       maskPosition: '0% center',

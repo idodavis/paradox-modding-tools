@@ -26,6 +26,11 @@ export interface Cited {
  */
 export interface Contest {
     "database": string;
+
+    /**
+     * what one of its database is called (game.KindName)
+     */
+    "kind": string;
     "name": string;
 
     /**
@@ -46,6 +51,7 @@ export interface Contest {
  */
 export interface Dangling {
     "database": string;
+    "kind": string;
     "name": string;
     "sites": Site[] | null;
 }
@@ -75,6 +81,7 @@ export interface Dependency {
  */
 export interface Detail {
     "database": string;
+    "kind": string;
     "name": string;
 
     /**
@@ -390,6 +397,11 @@ export interface Lookup {
 export interface Node {
     "id": string;
     "database": string;
+
+    /**
+     * what one of its database is called (game.KindName)
+     */
+    "kind": string;
     "title"?: string;
     "origin"?: string;
     "rel"?: string;
@@ -404,12 +416,16 @@ export interface Node {
 }
 
 /**
- * Option is one option block of an event: its name key and the text that key has.
+ * Option is one option block of an event: its first name key and the text that key has, its trigger on
+ * one line, every name it is written with (the first whose trigger holds shows) and its flags.
  */
 export interface Option {
     "name": string;
     "text"?: string;
     "line": number;
+    "when"?: string;
+    "names"?: Version[] | null;
+    "flags"?: string[] | null;
 }
 
 /**
@@ -450,6 +466,11 @@ export interface Params {
      * each scripted effect on a chain drawn as a node between the two it joins
      */
     "scripted": boolean;
+
+    /**
+     * fires reached through a scripted effect are drawn; else only direct ones
+     */
+    "follow": boolean;
 }
 
 /**
@@ -488,6 +509,11 @@ export interface PublishResult {
  */
 export interface RefGroup {
     "database": string;
+
+    /**
+     * what one of its database is called (game.KindName)
+     */
+    "kind": string;
     "refs": Cited[] | null;
 }
 
@@ -510,14 +536,29 @@ export interface ScanProgress {
 }
 
 /**
- * Section is one key at the top of the definition's block: its value where that is one word, and
- * the text that word has as a loc key.
+ * Section is one key at the top of the definition's block: its value as written (a block as its
+ * statements on one line, each inner block as { … }), and the text a one-word value has as a loc key.
  */
 export interface Section {
     "key": string;
     "value"?: string;
     "text"?: string;
     "line": number;
+
+    /**
+     * a block's own trigger, on one line: it applies only then
+     */
+    "when"?: string;
+
+    /**
+     * a text's parts in order: a loc key, or a dynamic description's
+     */
+    "parts"?: TextPart[] | null;
+
+    /**
+     * a portrait's character
+     */
+    "portrait"?: string;
 }
 
 /**
@@ -546,6 +587,16 @@ export interface Site {
      * a dependency's use of a name the other mod's file left out
      */
     "removed"?: boolean;
+
+    /**
+     * a replaced file's row: the names the file defines
+     */
+    "defines"?: string[] | null;
+
+    /**
+     * and those it and the kept file both define but write otherwise
+     */
+    "changed"?: string[] | null;
 }
 
 /**
@@ -557,6 +608,15 @@ export interface SourceAt {
     "line": number;
     "col": number;
     "definition": boolean;
+}
+
+/**
+ * TextPart is one part of a text, read in order: one of its versions shows, the first whose trigger
+ * holds, or one of them at random.
+ */
+export interface TextPart {
+    "random"?: boolean;
+    "versions": Version[] | null;
 }
 
 /**
@@ -631,6 +691,17 @@ export interface UploadFiles {
      * the files left out, mod-relative with forward slashes
      */
     "left": string[] | null;
+}
+
+/**
+ * Version is one text a part can show: its trigger on one line (none: it always can), its loc key and
+ * that key's text, at its line.
+ */
+export interface Version {
+    "when"?: string;
+    "key": string;
+    "text"?: string;
+    "line": number;
 }
 
 /**

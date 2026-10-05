@@ -1,65 +1,59 @@
 <script setup lang="ts">
 /**
- * The graph's controls: its root, searched by any part of an id; how far it reaches; the origins it
- * draws; and whether the detail opens as a drawer or a bottom panel.
+ * The graph's toolbar (the EventGraph board's): the root, searched by any part of an id; Filters; Follow
+ * macros; how many nodes are drawn; fit, fold every opened group, full screen, and the detail below or
+ * beside. In full screen it floats over the canvas with Exit full screen (the EventGraphFull board's).
  */
 import { computed } from "vue";
-import type { DatabaseCount, Node } from "@services/models";
-import OriginSelectMenu, { type OriginMenuItem } from "../OriginSelectMenu.vue";
-import { kindColor } from "../../composables/useEventGraph";
+import type { Roots } from "@services/models";
 import { useWorkspaceStore } from "../../stores/workspace";
 
-const props = defineProps<{
-  roots: Node[];
-  kinds: DatabaseCount[];
+const { roots, searching, rootKind, nodes, full = false } = defineProps<{
+  roots: Roots | null | undefined;
   searching: boolean;
-  originItems: OriginMenuItem[];
-  truncated: boolean;
-  reached: number;
+  /** What the root is, for its badge. */
+  rootKind: string;
+  nodes: number;
+  full?: boolean;
 }>();
-const emit = defineEmits<{ fit: []; reset: [] }>();
+const emit = defineEmits<{ fit: []; collapse: []; fullscreen: [] }>();
 const root = defineModel<string>("root", { required: true });
 const searchTerm = defineModel<string>("searchTerm", { required: true });
-const rootKind = defineModel<string>("rootKind", { required: true });
-const depth = defineModel<number>("depth", { required: true });
-const fanout = defineModel<number>("fanout", { required: true });
-const maxNodes = defineModel<number>("maxNodes", { required: true });
-const origins = defineModel<string[]>("origins", { required: true });
-const scripted = defineModel<boolean>("scripted", { required: true });
+const follow = defineModel<boolean>("follow", { required: true });
 const layout = defineModel<"drawer" | "panel">("layout", { required: true });
 
 const store = useWorkspaceStore();
-
-// the kind select: every kind the search holds, with its count; a select item cannot be "", so
-// every kind is "all" there and "" to the search
-const kindItems = computed(() => [
-  { label: "All kinds", value: "all" },
-  ...props.kinds.map((count) => ({ label: `${count.database} (${count.count})`, value: count.database })),
-]);
-const kindChoice = computed({
-  get: () => rootKind.value || "all",
-  set: (value: string) => (rootKind.value = value === "all" ? "" : value),
+// the seg's two buttons; a tab's value comes back as a string
+const tab = computed({
+  get: () => layout.value,
+  set: (value: string | number) => (layout.value = value === "panel" ? "panel" : "drawer"),
 });
+const LAYOUTS = [
+  { label: "Detail below", icon: "i-lucide-panel-bottom", value: "panel" },
+  { label: "Detail beside", icon: "i-lucide-panel-right", value: "drawer" },
+];
 
-// the hits under a header per kind, and the root first when a new search does not hold it; the
-// menu labels every item by id, so a header's id is its text
+// the hits under a head per kind, saying how many more the search holds; the root first when the
+// search does not hold it. The menu labels every item by id, so a head's id is its text.
 const items = computed(() => {
-  type Item = { id: string; database: string; origin?: string; type?: "label" };
+  type Item = { id: string; kind: string; origin?: string; type?: "label" };
   const groups: Item[][] = [];
-  for (const count of props.kinds) {
-    const hits = props.roots.filter((node) => node.database === count.database);
+  for (const count of roots?.databases ?? []) {
+    const hits = (roots?.hits ?? []).filter((node) => node.database === count.database);
     if (!hits.length) continue;
-    const more = count.count > hits.length ? ` · ${count.count - hits.length} more, type to narrow` : "";
-    const header: Item = { id: `${count.database} (${count.count})${more}`, database: count.database, type: "label" };
-    groups.push([header, ...hits]);
+    const more = count.count > hits.length ? `, ${count.count - hits.length} more: type to narrow` : "";
+    groups.push([{ id: `${hits[0].kind} (${count.count})${more}`, kind: "", type: "label" }, ...hits]);
   }
-  if (root.value && !props.roots.some((node) => node.id === root.value)) groups.unshift([{ id: root.value, database: "" }]);
+  if (root.value && !roots?.hits?.some((node) => node.id === root.value)) groups.unshift([{ id: root.value, kind: rootKind }]);
   return groups;
 });
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center gap-2 border-b border-default px-2 py-1.5 text-xs text-muted">
+  <div
+    class="flex h-12 shrink-0 items-center gap-2"
+    :class="full ? 'rounded-tile bg-elevated px-2 shadow-(--shadow)' : 'border-b border-default bg-muted ps-4 pe-3'"
+  >
     <UInputMenu
       v-model="root"
       v-model:search-term="searchTerm"
@@ -68,45 +62,51 @@ const items = computed(() => {
       label-key="id"
       ignore-filter
       :loading="searching"
-      icon="i-lucide-search"
-      placeholder="Root: an id, a namespace or a number"
-      class="w-80"
-      :ui="{ content: 'min-w-[34rem]', itemLabel: 'whitespace-normal break-all' }"
+      placeholder="An id, a namespace or a number"
+      class="shrink-0"
+      :class="full ? 'w-75' : 'w-95'"
+      :ui="{ base: ['font-mono', full ? 'ps-9' : 'ps-17'], content: 'min-w-120', itemLabel: 'whitespace-normal break-all' }"
     >
-      <template #item-leading="{ item }">
-        <span class="h-4 w-1 rounded-full" :style="{ backgroundColor: kindColor(item.database, 80) }" />
+      <template #leading>
+        <span class="flex items-center gap-2 text-12 text-muted">
+          <UIcon name="i-lucide-target" class="size-4" />
+          <span v-if="!full">Root</span>
+        </span>
       </template>
-      <!-- the id already starts with its namespace, so only the origin follows it -->
+      <template v-if="rootKind" #trailing><UBadge :label="rootKind" color="info" size="sm" /></template>
       <template #item-trailing="{ item }">
-        <OriginChip v-if="item.origin" :label="store.originName(item.origin)" :color="store.originColor(item.origin)" />
+        <OriginChip v-if="item.origin" :label="store.originName(item.origin)" :color="store.originColor(item.origin)" small />
       </template>
     </UInputMenu>
-    <USelect v-model="kindChoice" :items="kindItems" value-key="value" size="sm" class="w-44" />
-    <span>Depth</span>
-    <UInputNumber v-model="depth" :min="1" :max="10" size="sm" class="w-24" />
-    <span>Fanout</span>
-    <UInputNumber v-model="fanout" :min="1" :max="100" size="sm" class="w-24" />
-    <span>Nodes</span>
-    <UInputNumber v-model="maxNodes" :min="5" :max="400" :step="5" size="sm" class="w-24" />
-    <OriginSelectMenu v-model="origins" :items="originItems" />
-    <USwitch v-model="scripted" label="Show scripted effects and triggers" size="sm" />
-    <UBadge
-      v-if="truncated"
-      color="warning"
-      variant="subtle"
-      icon="i-lucide-triangle-alert"
-      :label="`Cut at ${maxNodes} nodes at depth ${reached} of ${depth}: raise Nodes to go deeper`"
-    />
-    <div class="flex-1" />
-    <UButton label="Fit" icon="i-lucide-scan" size="sm" color="neutral" variant="ghost" @click="emit('fit')" />
-    <UButton label="Reset expands" size="sm" color="neutral" variant="outline" @click="emit('reset')" />
-    <UButton
-      :icon="layout === 'drawer' ? 'i-lucide-panel-bottom' : 'i-lucide-panel-right'"
-      :label="layout === 'drawer' ? 'Detail below' : 'Detail beside'"
-      size="sm"
-      color="neutral"
-      variant="ghost"
-      @click="layout = layout === 'drawer' ? 'panel' : 'drawer'"
-    />
+    <slot name="filters" />
+    <UTooltip text="Walk into scripted effects and triggers to find the events they fire">
+      <UButton
+        label="Follow macros"
+        :icon="follow ? 'i-lucide-check' : undefined"
+        :variant="follow ? 'soft' : 'outline'"
+        :ui="{ leadingIcon: 'text-primary' }"
+        @click="follow = !follow"
+      />
+    </UTooltip>
+    <span v-if="!full" class="grow" />
+    <USeparator v-else orientation="vertical" class="h-5" />
+    <span class="text-12 whitespace-nowrap text-dimmed" title="Fan-outs past six fold into groups">
+      {{ nodes }} {{ nodes === 1 ? "node" : "nodes" }}{{ full ? "" : " shown" }}
+    </span>
+    <USeparator v-if="!full" orientation="vertical" class="h-5" />
+    <UButton icon="i-lucide-scan" square aria-label="Fit to view" @click="emit('fit')" />
+    <template v-if="full">
+      <UButton label="Exit full screen" icon="i-lucide-minimize-2" @click="emit('fullscreen')">
+        <template #trailing><UKbd value="Esc" /></template>
+      </UButton>
+    </template>
+    <template v-else>
+      <UTooltip text="Fold every group you opened back into +N">
+        <UButton label="Collapse all" icon="i-lucide-fold-vertical" @click="emit('collapse')" />
+      </UTooltip>
+      <UButton icon="i-lucide-maximize-2" square aria-label="Full screen" @click="emit('fullscreen')" />
+      <USeparator orientation="vertical" class="h-5" />
+      <UTabs v-model="tab" :items="LAYOUTS" :content="false" :ui="{ label: 'sr-only' }" />
+    </template>
   </div>
 </template>

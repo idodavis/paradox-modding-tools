@@ -2,7 +2,7 @@
 /**
  * Guide column: search, page tabs, left Contents, one wiki article.
  */
-import { computed, nextTick, shallowRef, watch } from "vue";
+import { computed, shallowRef, watch } from "vue";
 import type { TabsItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
 import { wikiKeys } from "../queries";
@@ -18,7 +18,6 @@ import {
 } from "../composables/useGuidePrefs";
 import { useWikiArticle } from "../composables/useWikiArticle";
 import WikiToc from "./WikiToc.vue";
-import { firstSectionHit } from "../wikiArticle";
 
 const ws = useWorkspaceStore();
 const path = useIdeActiveFile();
@@ -114,8 +113,9 @@ const currentIndex = computed(() =>
   Math.max(0, allPages.value.findIndex((p) => p.title === tab.value)),
 );
 
-const { tocActive, jumpTo, onWikiClick } = useWikiArticle({
+const { tocActive, jumpTo, onWikiClick, openUrl } = useWikiArticle({
   html: () => activePage.value?.html,
+  sections: () => activePage.value?.sections,
   pages: allPages,
   currentIndex,
   query: q,
@@ -128,13 +128,10 @@ const { tocActive, jumpTo, onWikiClick } = useWikiArticle({
   },
 });
 
-watch(q, async (needle) => {
-  if (!needle || !pages.value.length) return;
-  const dest = pages.value.find((p) => pageMatches(p, needle));
+// a find opens the first page that names it; the article then shows its first hit
+watch(q, (needle) => {
+  const dest = needle ? pages.value.find((p) => pageMatches(p, needle)) : undefined;
   if (dest) tab.value = dest.title;
-  await nextTick();
-  const hit = firstSectionHit(dest?.sections, needle);
-  if (hit) jumpTo(hit);
 });
 
 function pageMatches(p: Page, needle: string): boolean {
@@ -144,10 +141,6 @@ function pageMatches(p: Page, needle: string): boolean {
 
 function onTab(v: string | number): void {
   tab.value = String(v);
-}
-
-function openUrl(url: string): void {
-  window.open(url, "_blank");
 }
 </script>
 
@@ -192,6 +185,7 @@ function openUrl(url: string): void {
     <div class="flex min-h-0 flex-1">
       <WikiToc
         v-if="tocItems.length"
+        class="w-40 shrink-0 border-e border-default"
         :sections="tocItems"
         :active="tocActive"
         @jump="jumpTo"
@@ -202,9 +196,10 @@ function openUrl(url: string): void {
       >
         <p v-if="isPending" class="text-xs text-muted">Loading guide…</p>
         <p v-else-if="error" class="text-xs text-error">{{ error.message }}</p>
-        <div
+        <article
           v-else-if="activePage?.html"
           ref="article"
+          class="art"
           @click="onWikiClick"
           v-html="activePage.html"
         />

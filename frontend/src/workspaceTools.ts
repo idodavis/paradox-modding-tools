@@ -55,19 +55,19 @@ export const PAGES = {
     workspace: true,
     tab: true,
     help: [
-      "Compatibility cards: contests (FIOS / LIOS), game-file overrides, cross-mod depends, and dangling refs. Localization cards: missing, orphans, and untranslated for the language in the heading select.",
-      "Drag load-order chips to preview winners without writing the workspace. Save as workspace order persists the same order as Settings.",
-      "Row detail shows a colorized snippet around the hit.",
+      "Load order cards: contests between mods (LIOS or FIOS), mods overriding the game, and mods that need or change another mod. Problems in the mods: dangling references, localization gaps, and script errors from the editor's checks.",
+      "Drag the load order's chips to preview another order without saving it. Save as workspace order saves it, as Settings does.",
+      "A row opens beside the table with each place it is written; Compare the two sets a contest's kept file beside the one it replaces.",
     ],
   },
-  patcher: {
+  "patch-notes": {
     title: "Patch Notes",
     icon: "i-lucide-newspaper",
     workspace: true,
     tab: true,
     help: [
-      "The game's patch notes from the wiki, cached, for the game this workspace uses.",
-      "Pick a version to read its notes.",
+      "The game's patch notes from its wiki, read when PMT starts and kept, for the game this workspace uses.",
+      "Pick a version to read its notes; a dot marks a note with a Modding section. Ctrl F finds in the note shown.",
     ],
   },
   release: {
@@ -116,7 +116,7 @@ export function isWorkspacePage(name: PageName): name is WorkspacePage {
 }
 
 /** The top bar's page tabs, in order. */
-export const WORKSPACE_TOOLS = (["workspace-ide", "event-graph", "health", "patcher", "release"] as const).map(
+export const WORKSPACE_TOOLS = (["workspace-ide", "event-graph", "health", "patch-notes", "release"] as const).map(
   (name: WorkspaceToolName) => ({ name, label: PAGES[name].title, icon: PAGES[name].icon }),
 );
 

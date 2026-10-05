@@ -117,8 +117,10 @@ export const useSettingsStore = defineStore("settings", () => {
     if (persist) await save();
   }
 
+  /** Pick a family for every workspace, so matching the workspace's game turns off. */
   function pickTheme(id: FamilyId): Promise<void> {
-    return set("_global.theme", id);
+    values.value = { ...values.value, "_global.theme": id, "ui.matchGameTheme": "off" };
+    return save();
   }
 
   /** The top bar's button: the other mode, which stops following Windows. */

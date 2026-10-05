@@ -43,10 +43,12 @@ Workspace pages are children of one `/workspace/:id` route and take `id` as a pr
 nothing reads `route.params` for it. The top bar is App's, on every page. The router's `beforeEach` alone
 sets the active workspace. Route names are typed (`RouteNamedMap`) and come from the page catalogue
 (`workspaceTools.ts`); pages load lazily; one `KeepAlive` with `include`. A page's facts in the status bar
-go through `StatusFacts`, which leaves with a kept-alive page.
+go through `StatusFacts`, which leaves with a kept-alive page. State a link names (a Settings section, a
+Health card and row) is the route's query, handed to the page by a `props` function, and written back with
+`router.replace`.
 
 ```ts
-{ path: "health", name: "health", component: () => import("./pages/HealthPage.vue"), props: true }
+{ path: "graph", name: "event-graph", component: () => import("./pages/EventGraphPage.vue"), props: true }
 ```
 
 ```vue

@@ -245,11 +245,23 @@ var ValueOperators = map[string]bool{
 
 // DynamicDescription is the shape of a dynamic description. A block is one when it holds a marker
 // whose block holds the leaf or another marker. Inside, a marker holds the shape again, Trigger
-// holds triggers, and the leaf is read as the position the description belongs to.
+// holds triggers, and the leaf is read as the position the description belongs to. Triggered shows
+// its leaf only while its trigger holds; Random shows one of its own at random, any other marker the
+// first whose trigger holds.
 var DynamicDescription = struct {
-	Markers       []string
-	Trigger, Leaf string
-}{[]string{"first_valid", "random_valid", "triggered_desc"}, "trigger", "desc"}
+	Markers                          []string
+	Trigger, Leaf, Triggered, Random string
+}{[]string{"first_valid", "random_valid", "triggered_desc"}, "trigger", "desc", "triggered_desc", "random_valid"}
+
+// EventPortraits are the keys an event names its portraits with, by their last word (left_portrait,
+// left_icon), and the key a portrait's block names its character with.
+var EventPortraits = struct {
+	Suffixes  []string
+	Character string
+}{[]string{"_portrait", "_icon"}, "character"}
+
+// OptionFlags are the yes-or-no words an option is marked with: the default and the historical choice.
+var OptionFlags = []string{"default_option", "historical_option"}
 
 // ---- Written forms.
 
@@ -294,6 +306,26 @@ const GlobalType = "Global"
 
 // MisspelledFolders are folder names the game never reads, by the name it reads instead.
 var MisspelledFolders = map[string]string{"localisation": "localization"}
+
+// plurals make a folder's last word one thing's: the first row whose plural ending fits wins
+// (houses, diseases, policies, statuses, boxes, patches, sashes, events).
+var plurals = []struct{ Plural, One string }{
+	{"ouses", "ouse"}, {"eases", "ease"}, {"ies", "y"}, {"ses", "s"}, {"xes", "x"}, {"ches", "ch"}, {"shes", "sh"},
+	{"s", ""},
+}
+
+// KindName is what one entry of a database is called: its last path word, _ and . as spaces, made
+// singular by plurals ("scripted_effects" is "scripted effect").
+func KindName(database string) string {
+	word := database[strings.LastIndexByte(database, '/')+1:]
+	for _, row := range plurals {
+		if stem, cut := strings.CutSuffix(word, row.Plural); cut {
+			word = stem + row.One
+			break
+		}
+	}
+	return strings.NewReplacer("_", " ", ".", " ").Replace(word)
+}
 
 // EntryMode is a word written before a definition's name, and what it does to one already loaded.
 type EntryMode struct {

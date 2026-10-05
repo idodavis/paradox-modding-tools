@@ -9,7 +9,7 @@ import appIcon from "@assets/PMT-SquareIcon-Mint.png?url";
 
 const route = useRoute();
 const onIde = computed(() => route.name === "workspace-ide");
-const KEPT = ["LibraryPage", "EventGraphPage", "HealthPage", "PatcherPage", "ReleasePage", "WorkspaceSettingsPage"];
+const KEPT = ["LibraryPage", "EventGraphPage", "HealthPage", "PatchNotesPage", "ReleasePage", "WorkspaceSettingsPage"];
 
 onMounted(() => {
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');

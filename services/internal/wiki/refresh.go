@@ -188,11 +188,11 @@ func save(gameID string, sidecar *Sidecar) error {
 
 var patchTitleRe = regexp.MustCompile(`(?i)^Patch\s+(\d+\.\d+(?:\.(?:\d+|[Xx]))?)`)
 
-// patchVer is a parsed "Patch 1.16.2" / "Patch 1.16.X" title.
+// patchVer is a parsed "Patch 1.16.2" / "Patch 1.16.X" title: the version as written, its minor version
+// (1.16), and whether it is a hotfix or, written X, a page of them.
 type patchVer struct {
-	Major, Minor, Patch int
-	Wildcard            bool
-	Label               string
+	Label, Minor     string
+	Hotfix, Wildcard bool
 }
 
 func parsePatchTitle(title string) (patchVer, bool) {
@@ -200,34 +200,21 @@ func parsePatchTitle(title string) (patchVer, bool) {
 	if match == nil {
 		return patchVer{}, false
 	}
-	label := match[1]
-	parts := strings.Split(label, ".")
-	if len(parts) < 2 {
-		return patchVer{}, false
-	}
-	major, err1 := strconv.Atoi(parts[0])
-	minor, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return patchVer{}, false
-	}
-	pv := patchVer{Major: major, Minor: minor, Label: label}
-	if len(parts) >= 3 {
-		if strings.EqualFold(parts[2], "x") {
-			pv.Wildcard = true
-			pv.Patch = 0
-		} else if n, err := strconv.Atoi(parts[2]); err == nil {
-			pv.Patch = n
-		}
-	}
-	return pv, true
+	written, numbers := strings.Split(match[1], "."), versionParts(match[1])
+	wildcard := len(written) > 2 && strings.EqualFold(written[2], "x")
+	return patchVer{
+		Label: match[1], Minor: written[0] + "." + written[1],
+		Hotfix: wildcard || len(numbers) > 2 && numbers[2] > 0, Wildcard: wildcard,
+	}, true
 }
 
-func cmpPatch(first, second patchVer) int {
-	if first.Major != second.Major {
-		return first.Major - second.Major
+// versionParts is a version's numbers; a .X page's are its major and minor.
+func versionParts(label string) []int {
+	var parts []int
+	for part := range strings.SplitSeq(label, ".") {
+		if n, err := strconv.Atoi(part); err == nil {
+			parts = append(parts, n)
+		}
 	}
-	if first.Minor != second.Minor {
-		return first.Minor - second.Minor
-	}
-	return first.Patch - second.Patch
+	return parts
 }

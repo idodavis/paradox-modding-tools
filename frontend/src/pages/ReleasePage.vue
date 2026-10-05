@@ -6,6 +6,7 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useClipboard } from "@vueuse/core";
 import { useMutation, useQuery } from "@pinia/colada";
+import { Browser } from "@wailsio/runtime";
 import type { EditorCustomHandlers, EditorToolbarItem, TabsItem } from "@nuxt/ui";
 import type { Editor as TiptapEditor } from "@tiptap/vue-3";
 import UInputTags from "@nuxt/ui/components/InputTags.vue";
@@ -618,11 +619,9 @@ function errMsg(e: unknown): string {
                     v-if="listing.workshopUrl"
                     label="Open on Steam Workshop"
                     icon="i-lucide-external-link"
-                    :to="listing.workshopUrl"
-                    target="_blank"
-                    external
                     variant="soft"
                     size="sm"
+                    @click="Browser.OpenURL(listing.workshopUrl)"
                   />
                   <UFormField label="Upload exclusions" :description="ignoreSummary">
                     <UButton
@@ -670,11 +669,9 @@ function errMsg(e: unknown): string {
                   <UButton
                     v-if="publishResult?.legalUrl"
                     label="Open Workshop legal agreement"
-                    :to="publishResult.legalUrl"
-                    target="_blank"
-                    external
                     variant="outline"
                     size="sm"
+                    @click="Browser.OpenURL(publishResult.legalUrl)"
                   />
                 </div>
                 <div v-else class="space-y-3 text-sm">

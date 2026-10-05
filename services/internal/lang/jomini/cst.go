@@ -225,6 +225,18 @@ func Walk(root *Root, fn func(st Statement, depth int, parent *Block) bool) {
 	visit(root.Statements, 0, nil)
 }
 
+// AssignmentAt is the assignment whose key starts at a line and column of Src; nil where none does.
+func (result Result) AssignmentAt(line, col int) Statement {
+	start, found := result.Lines().OffsetAt(line, col), Statement(nil)
+	Walk(result.Root, func(statement Statement, _ int, _ *Block) bool {
+		if assign, isAssign := statement.(*Assignment); isAssign && assign.Key.Range.Start == start {
+			found = statement
+		}
+		return found == nil && statement.NodeRange().Start <= start && start < statement.NodeRange().End
+	})
+	return found
+}
+
 // Attach gives each statement the comments that belong to it, and the comments that belong to none.
 // Loose comments keep source order.
 func (result Result) Attach() (attached map[Statement][]Comment, loose []Comment) {

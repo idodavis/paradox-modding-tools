@@ -1,55 +1,36 @@
 <script setup lang="ts">
 /**
- * Recessed colorized snippet with an optional line gutter and hit-line mark.
+ * Read-only code, as Pierre draws it: the boards' `.code`, its rows numbered by the file's lines; inline, one
+ * line in the code's colors (a property's value), plain until its grammar loads.
  */
-import { computed, ref, watch } from "vue";
-import { colorizeLines, type ColorizeLang } from "../colorize";
+import { onBeforeUnmount, useTemplateRef, watchEffect } from "vue";
+import { computedAsync } from "@vueuse/core";
+import { codeTokens, codeView, drawCode } from "../lib/code";
 
-const props = defineProps<{
+const { text, name, fromLine = 0, inline = false } = defineProps<{
   text: string;
-  language: ColorizeLang;
-  /** 0-based first line of `text`. */
+  /** The file's name or path, whose extension picks the grammar. */
+  name: string;
+  /** The 0-based file line `text` starts at. */
   fromLine?: number;
-  /** 0-based hit line in the source file. */
-  hitLine?: number;
-  gutter?: boolean;
+  inline?: boolean;
 }>();
 
-const htmlLines = ref<string[]>([]);
-const sourceLines = computed(() => (props.text ?? "").split("\n"));
-const from = computed(() => props.fromLine ?? 0);
-
-// the plain lines show until the workbench can color them; a coloring for older text is dropped
-watch(
-  () => [props.text, props.language] as const,
-  async ([text, language]) => {
-    htmlLines.value = [];
-    const colored = await colorizeLines((text ?? "").split("\n"), language);
-    if (text === props.text) htmlLines.value = colored;
-  },
-  { immediate: true },
-);
-
-/** True when this display line is the hit line. */
-function isHit(i: number): boolean {
-  return props.hitLine != null && from.value + i === props.hitLine;
-}
+const host = useTemplateRef("host");
+const view = inline ? undefined : codeView(true);
+watchEffect(() => {
+  if (view && host.value) drawCode(view, host.value, text, name, fromLine);
+});
+onBeforeUnmount(() => view?.cleanUp());
+const tokens = computedAsync(() => (inline ? codeTokens(text, name) : null), null);
 </script>
 
 <template>
-  <pre
-    class="my-0 overflow-x-auto rounded-md border border-accented bg-elevated px-2 py-1.5 text-xs leading-relaxed"
-  ><div
-      v-for="(line, i) in sourceLines"
-      :key="i"
-      class="flex gap-2"
-      :class="isHit(i) ? 'rounded-sm bg-error/20' : ''"
-    >
-      <span
-        v-if="gutter"
-        class="w-8 shrink-0 select-none text-right tabular-nums text-muted"
-      >{{ from + i + 1 }}</span>
-      <span v-if="htmlLines[i]" class="min-w-0 flex-1" v-html="htmlLines[i]" />
-      <span v-else class="min-w-0 flex-1">{{ line || " " }}</span>
-    </div></pre>
+  <span v-if="inline" class="font-mono">
+    <template v-if="tokens">
+      <span v-for="(token, i) in tokens" :key="i" :style="{ color: token.color }">{{ token.content }}</span>
+    </template>
+    <template v-else>{{ text }}</template>
+  </span>
+  <div v-else ref="host" />
 </template>

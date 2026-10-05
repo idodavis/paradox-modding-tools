@@ -1,104 +1,91 @@
-<script lang="ts">
-import type { Contest, Dangling, Dependency, Health, LocRow, Problem } from "@services/models";
-
-/** The editor's checks' cards, each the codes it lists; syntax errors are every other code. */
-export const PROBLEM_CARDS = {
-  scope: { label: "Wrong scope", note: "commands used where they can't run", codes: ["wrong-scope"] },
-  values: {
-    label: "Values",
-    note: "values a key doesn't take; required keys missing",
-    codes: ["wrong-value-type", "wrong-declared-value", "missing-key"],
-  },
-  references: { label: "References", note: "names and events that don't exist", codes: ["unresolved-ref", "unknown-event"] },
-  missingFiles: { label: "Missing files", note: "file paths that don't exist", codes: ["missing-file"] },
-  locFiles: {
-    label: "Localization files",
-    note: "wrong header, folder or encoding",
-    codes: ["missing-bom", "loc-header-mismatch", "wrong-localization-folder"],
-  },
-  duplicates: { label: "Duplicates", note: "entries defined twice where the game keeps one", codes: ["duplicate-definition"] },
-  parse: { label: "Syntax errors", note: "script or loc that doesn't parse", codes: [] },
-} as const satisfies Record<string, { label: string; note: string; codes: readonly string[] }>;
-export type ProblemCard = keyof typeof PROBLEM_CARDS;
-
-export type Card = "contests" | "overrides" | "depends" | "dangling" | "loc" | ProblemCard;
-/** A loc row, with the language and the gap it is listed under. */
-export type Gap = LocRow & { language: string; gap: "untranslated" };
-export type Row = Contest | Dependency | Dangling | Gap | Problem;
-
-/** A problem card's rows: the problems of its codes; parse errors, those of no card's code. */
-export function problemsOf(health: Health | null | undefined, card: ProblemCard): Problem[] {
-  const carded = Object.values(PROBLEM_CARDS).flatMap((group) => group.codes as readonly string[]);
-  const codes = PROBLEM_CARDS[card].codes as readonly string[];
-  return (health?.problems ?? []).filter((problem) =>
-    card === "parse" ? !carded.includes(problem.code) : codes.includes(problem.code),
-  );
-}
-</script>
-
 <script setup lang="ts">
 /**
- * The report's table: the card chosen above picks the rows it lists and the columns it shows. Each
- * column's head sorts by it, and where its values are few, keeps only the ones ticked. Every row is
- * listed, rendered as it scrolls into view; the rows the filters leave are told to the page.
+ * The chosen card's table (the Health board's left pane): its title, what it lists and a filter, then its
+ * rows. Each column's head sorts by it and, where its values are few, keeps only the ones ticked. Rows are
+ * drawn as they scroll into view.
  */
 import { computed, h, ref, resolveComponent, shallowRef, useTemplateRef, watch } from "vue";
 import type { TableColumn } from "@nuxt/ui";
-import type { FilterFn, HeaderContext } from "@tanstack/vue-table";
+import type { ColumnFiltersState, HeaderContext, Row as TableRow, SortingState } from "@tanstack/vue-table";
+import type { Contest, Dangling, Dependency, Problem } from "@services/models";
+import type { File as SourceFile } from "@services/internal/lang/source/models";
+import { checkColor, type Card, type Gap, type Row } from "../../composables/useHealth";
 import { useWorkspaceStore } from "../../stores/workspace";
+import OriginDot from "../ui/OriginDot.vue";
 
-const props = defineProps<{ health: Health | null | undefined; card: Card; loading: boolean }>();
-const emit = defineEmits<{ select: [row: Row]; shown: [card: Card, rows: Row[]] }>();
+const { card, rows, sources, loading } = defineProps<{
+  card: Card;
+  rows: Row[];
+  sources: SourceFile[];
+  loading: boolean;
+}>();
+/** The open row. */
+const open = defineModel<Row | null>({ required: true });
+
 const store = useWorkspaceStore();
 const UBadge = resolveComponent("UBadge");
 const UButton = resolveComponent("UButton");
 const UDropdownMenu = resolveComponent("UDropdownMenu");
-const table = useTemplateRef<{ tableApi?: { getFilteredRowModel(): { rows: { original: unknown }[] } } }>("table");
+const table = useTemplateRef<{ tableApi?: { getRowModel(): { rows: TableRow<Row>[] } } }>("table");
 const filter = shallowRef<string | undefined>("");
-const sorting = ref<{ id: string; desc: boolean }[] | undefined>([]);
-const filters = ref<{ id: string; value: unknown }[] | undefined>([]);
-const picked = ref<Record<string, boolean> | undefined>({});
+const sorting = ref<SortingState | undefined>([]);
+const filters = ref<ColumnFiltersState | undefined>([]);
 
-// a new card starts unsorted and unfiltered, with no row open
+// a new card starts unsorted and unfiltered
 watch(
-  () => props.card,
+  () => card,
   () => {
+    filter.value = "";
     sorting.value = [];
     filters.value = [];
-    picked.value = {};
   },
 );
 
-// the origin of a row's file, by its number in the report's sources
-const originOf = (file: number | undefined) => (file === undefined ? "" : (props.health?.sources?.[file]?.origin ?? ""));
+/** Each card's title and what it lists. */
+const HEADS: Record<Card, { title: string; blurb: string }> = {
+  contests: { title: "Contests", blurb: "Objects defined by more than one mod. Load order decides which one the game keeps." },
+  overrides: { title: "Overrides", blurb: "Game objects a mod replaces or adds to." },
+  depends: { title: "Dependencies", blurb: "Where a mod uses what only another mod defines, or what another mod changes." },
+  dangling: { title: "Dangling refs", blurb: "Names a mod uses that nothing defines." },
+  loc: { title: "Loc gaps", blurb: "Keys a mod has in the workspace language and not in another, and localization files the game reads wrong." },
+  script: { title: "Script errors", blurb: "What the editor's checks find in the mods' files." },
+};
 
-// an origin as its color's dot, then by name; several as their dots and how many
-const dot = (id: string) =>
-  h("span", { class: "size-2 shrink-0 rounded-full", style: { backgroundColor: store.originColor(id) } });
+const originOf = (file: number) => sources[file]?.origin ?? "";
+const isProblem = (row: Row): row is Problem => "code" in row;
+
+// an origin as its color's dot, then by name, cut short with its whole name on hover; several as their
+// dots and how many
+const dot = (id: string) => h(OriginDot, { color: store.originColor(id), small: true });
 const origin = (id: string) =>
-  h("span", { class: "inline-flex items-center gap-1.5" }, [dot(id), store.originName(id)]);
-const origins = (ids: string[]) =>
-  h("span", { class: "inline-flex items-center gap-1", title: ids.map(store.originName).join(", ") }, [
-    ...ids.map(dot),
-    h("span", { class: "ml-1 text-xs tabular-nums text-muted" }, String(ids.length)),
+  h("span", { class: "flex min-w-0 items-center gap-1.5", title: store.originName(id) }, [
+    dot(id),
+    h("span", { class: "truncate" }, store.originName(id)),
   ]);
-const badge = (label: string, color: string) => h(UBadge, { label, color, variant: "subtle" });
-// each loc gap's color, matching its card
-const GAP_COLOR = { untranslated: "tertiary" };
+const origins = (ids: string[]) =>
+  h("span", { class: "inline-flex items-center gap-0.75", title: ids.map(store.originName).join(", ") }, [
+    ...ids.map(dot),
+    h("span", { class: "ms-0.75 text-dimmed tabular-nums" }, String(ids.length)),
+  ]);
+const badge = (label: string, color = "neutral") => h(UBadge, { label, color, size: "sm" });
+// a finding's check, in its kind's color
+const check = (code: string) => badge(code, checkColor(code));
+const mono = (text: string) => h("span", { class: "font-mono" }, text);
 
-// keeps a row whose value is among those ticked in its column's head, or every row when none is
-const among: FilterFn<any> = (row, id, wanted: string[]) =>
-  !wanted?.length || wanted.includes(String(row.getValue(id)));
+/** Keeps a row whose value is among those ticked in its column's head, or every row when none is. */
+function among<T>(row: TableRow<T>, id: string, wanted: string[] | undefined): boolean {
+  return !wanted?.length || wanted.includes(String(row.getValue(id)));
+}
 
 /**
- * A column's head: a menu that sorts by it and, given how its values are named, ticks the ones
- * to keep.
+ * A column's head: a button that shows it sorts (and filters, given how its values are named) and opens a
+ * menu to sort by it and tick the values to keep.
  */
-function head(label: string, name?: (value: string) => string) {
-  return ({ column, table: rowsOf }: HeaderContext<any, unknown>) => {
+function head<T>(label: string, name?: (value: string) => string) {
+  return ({ column, table }: HeaderContext<T, unknown>) => {
     const wanted = (column.getFilterValue() as string[] | undefined) ?? [];
     const values = name
-      ? [...new Set(rowsOf.getPreFilteredRowModel().rows.map((row) => String(row.getValue(column.id))))].sort()
+      ? [...new Set(table.getPreFilteredRowModel().rows.map((row) => String(row.getValue(column.id))))].sort()
       : [];
     const tick = (value: string, checked: boolean) =>
       column.setFilterValue(checked ? [...wanted, value] : wanted.filter((kept) => kept !== value));
@@ -109,7 +96,7 @@ function head(label: string, name?: (value: string) => string) {
       ],
       values.map((value) => ({
         type: "checkbox" as const,
-        label: name!(value) || "(none)",
+        label: name?.(value) || "(none)",
         // an origin leads with its color's dot, as in the rows
         slot: name === store.originName ? ("origin" as const) : undefined,
         value,
@@ -119,8 +106,6 @@ function head(label: string, name?: (value: string) => string) {
       })),
     ];
     const sorted = column.getIsSorted();
-    const icon =
-      sorted === "asc" ? "i-lucide-arrow-up" : sorted === "desc" ? "i-lucide-arrow-down" : "i-lucide-chevrons-up-down";
     return h(
       UDropdownMenu,
       { items, content: { align: "start" } },
@@ -128,11 +113,13 @@ function head(label: string, name?: (value: string) => string) {
         default: () =>
           h(UButton, {
             label: wanted.length ? `${label} (${wanted.length})` : label,
-            trailingIcon: icon,
+            icon: name ? "i-lucide-list-filter" : undefined,
+            trailingIcon: sorted === "asc" ? "i-lucide-arrow-up" : sorted === "desc" ? "i-lucide-arrow-down" : "i-lucide-chevrons-up-down",
             color: wanted.length ? "primary" : "neutral",
             variant: "ghost",
             size: "xs",
             class: "-mx-2 font-medium",
+            ui: { leadingIcon: "size-3.5 text-dimmed", trailingIcon: "size-3.5 text-dimmed" },
           }),
         "origin-leading": ({ item }: { item: { value: string } }) => dot(item.value),
       },
@@ -140,165 +127,164 @@ function head(label: string, name?: (value: string) => string) {
   };
 }
 
-const rows = computed((): Row[] => {
-  const health = props.health;
-  switch (props.card) {
-    case "contests":
-      return health?.contests ?? [];
-    case "overrides":
-      return health?.overrides ?? [];
-    case "depends":
-      return health?.depends ?? [];
-    case "dangling":
-      return health?.dangling ?? [];
-    case "loc":
-      return (health?.loc ?? []).flatMap((language) =>
-        (language.untranslated ?? []).map((row) => ({ ...row, language: language.language, gap: "untranslated" as const })),
-      );
-    default:
-      return problemsOf(health, props.card);
-  }
-});
-
-// a virtualized row is drawn at the height given here: a badge's line and the cell's padding,
-// 2.25rem, in pixels at the page's scale
-const rowHeight = () => 2.25 * parseFloat(getComputedStyle(document.documentElement).fontSize);
-
-// the rows the filters leave, taken from the table once it has applied a change
-const shown = shallowRef<Row[]>([]);
-watch(
-  [filter, filters, rows, table],
-  () => {
-    shown.value = table.value?.tableApi?.getFilteredRowModel().rows.map((row) => row.original as Row) ?? rows.value;
-    emit("shown", props.card, shown.value);
-  },
-  { immediate: true, flush: "post" },
-);
+/** A fixed column width, as the board's colgroup sets it. */
+const width = (cls: string) => ({ class: { th: cls, td: cls } });
 
 const contests: TableColumn<Contest>[] = [
-  { accessorKey: "database", header: head("Database", String), filterFn: among },
-  {
-    accessorKey: "name",
-    header: head("Name"),
-    cell: ({ row }) => h("span", { class: "font-mono" }, row.original.name),
-  },
+  { accessorKey: "kind", header: head("Kind", String), filterFn: among, meta: width("w-32.5") },
+  { accessorKey: "name", header: head("Name"), cell: ({ row }) => mono(row.original.name) },
   {
     accessorKey: "rule",
     header: head("Rule", String),
     filterFn: among,
-    // a contest the install has no part in is a mod overriding another mod's own definition
-    cell: ({ row }) =>
-      h("div", { class: "flex gap-1" }, [
-        badge(row.original.rule, row.original.firstWins ? "warning" : "info"),
-        row.original.sites?.some((site) => originOf(site.file) === store.originVanilla)
-          ? ""
-          : badge("overrides a mod's own", "error"),
-      ]),
+    meta: width("w-22"),
+    cell: ({ row }) => badge(row.original.rule, row.original.firstWins ? "warning" : "info"),
   },
   {
     id: "sites",
     header: head("Defined by"),
     accessorFn: (row) => row.sites?.length ?? 0,
+    meta: width("w-25"),
     cell: ({ row }) => origins((row.original.sites ?? []).map((site) => originOf(site.file))),
   },
   {
     id: "kept",
     header: head("Kept", store.originName),
-    accessorFn: (row) => originOf(row.sites?.[row.winner]?.file),
+    accessorFn: (row) => originOf(row.sites?.[row.winner]?.file ?? -1),
     filterFn: among,
-    cell: ({ row }) => origin(originOf(row.original.sites?.[row.original.winner]?.file)),
+    meta: width("w-44"),
+    cell: ({ getValue }) => origin(String(getValue())),
   },
 ];
 const depends: TableColumn<Dependency>[] = [
-  {
-    accessorKey: "from",
-    header: head("Mod", store.originName),
-    filterFn: among,
-    cell: ({ row }) => origin(row.original.from),
-  },
+  { accessorKey: "from", header: head("Mod", store.originName), filterFn: among, cell: ({ row }) => origin(row.original.from) },
   {
     id: "relation",
     header: head("Relation", String),
     accessorFn: (row) => (row.affected ? "affected by" : "depends on"),
     filterFn: among,
+    meta: width("w-28"),
     cell: ({ row }) => badge(row.original.affected ? "affected by" : "depends on", row.original.affected ? "warning" : "info"),
   },
-  {
-    accessorKey: "to",
-    header: head("Other mod", store.originName),
-    filterFn: among,
-    cell: ({ row }) => origin(row.original.to),
-  },
-  { id: "count", header: head("Uses"), accessorFn: (row) => row.sites?.length ?? 0 },
+  { accessorKey: "to", header: head("Other mod", store.originName), filterFn: among, cell: ({ row }) => origin(row.original.to) },
+  { id: "uses", header: head("Uses"), accessorFn: (row) => row.sites?.length ?? 0, meta: width("w-20") },
 ];
-const dangling: TableColumn<Dangling>[] = [
-  { accessorKey: "database", header: head("Database", String), filterFn: among },
-  { accessorKey: "name", header: head("Name") },
-  { id: "count", header: head("Written"), accessorFn: (row) => row.sites?.length ?? 0 },
-];
-const loc: TableColumn<Gap>[] = [
-  { accessorKey: "language", header: head("Language", String), filterFn: among },
+// a finding the card lists beside its own rows takes its code, message and file in the same columns
+const dangling: TableColumn<Dangling | Problem>[] = [
   {
-    accessorKey: "gap",
-    header: head("Gap", String),
+    id: "kind",
+    header: head("Kind", String),
+    accessorFn: (row) => (isProblem(row) ? row.code : row.kind),
     filterFn: among,
-    cell: ({ row }) => badge(row.original.gap, GAP_COLOR[row.original.gap]),
+    meta: width("w-32.5"),
+    cell: ({ row }) => (isProblem(row.original) ? check(row.original.code) : row.original.kind),
   },
-  { accessorKey: "key", header: head("Key") },
+  {
+    id: "name",
+    header: head("Name"),
+    accessorFn: (row) => (isProblem(row) ? row.message : row.name),
+    cell: ({ row }) => (isProblem(row.original) ? row.original.message : mono(row.original.name)),
+  },
+  {
+    id: "origins",
+    header: head("Written by"),
+    accessorFn: (row) => (isProblem(row) ? 1 : (row.sites?.length ?? 0)),
+    meta: width("w-25"),
+    cell: ({ row }) =>
+      origins(isProblem(row.original) ? [originOf(row.original.site.file)] : (row.original.sites ?? []).map((site) => originOf(site.file))),
+  },
+];
+const loc: TableColumn<Gap | Problem>[] = [
+  {
+    id: "language",
+    header: head("Language", String),
+    accessorFn: (row) => (isProblem(row) ? row.code : row.language),
+    filterFn: among,
+    meta: width("w-32.5"),
+    cell: ({ row }) => (isProblem(row.original) ? check(row.original.code) : row.original.language),
+  },
+  {
+    id: "key",
+    header: head("Key"),
+    accessorFn: (row) => (isProblem(row) ? row.message : row.key),
+    cell: ({ row }) => (isProblem(row.original) ? row.original.message : mono(row.original.key)),
+  },
   {
     id: "origin",
     header: head("Origin", store.originName),
-    accessorFn: (row) => originOf(row.file),
+    accessorFn: (row) => originOf(isProblem(row) ? row.site.file : row.file),
     filterFn: among,
-    cell: ({ row }) => origin(originOf(row.original.file)),
+    meta: width("w-44"),
+    cell: ({ getValue }) => origin(String(getValue())),
   },
 ];
-const problems: TableColumn<Problem>[] = [
-  { accessorKey: "code", header: head("Check", String), filterFn: among, cell: ({ row }) => badge(row.original.code, "neutral") },
+const script: TableColumn<Problem>[] = [
+  { accessorKey: "code", header: head("Check", String), filterFn: among, meta: width("w-40"), cell: ({ row }) => check(row.original.code) },
   { accessorKey: "message", header: head("Finding") },
   {
     id: "origin",
     header: head("Origin", store.originName),
     accessorFn: (row) => originOf(row.site.file),
     filterFn: among,
-    cell: ({ row }) => origin(originOf(row.original.site.file)),
+    meta: width("w-44"),
+    cell: ({ getValue }) => origin(String(getValue())),
   },
 ];
 // each card's columns are typed by its own rows; the table holds whichever the card picks
 const columns = computed(
   () =>
-    (({ contests, overrides: contests, depends, dangling, loc }) as Record<string, TableColumn<any>[]>)[props.card] ??
-    (problems as TableColumn<Row>[]),
+    ({ contests, overrides: contests, depends, dangling, loc, script } as Record<Card, TableColumn<Row>[]>)[card],
 );
+
+// the open row, by its place in the rows
+const selection = computed(() => {
+  const at = open.value ? rows.indexOf(open.value) : -1;
+  return at < 0 ? {} : { [at]: true };
+});
+
+// rows striped faintly by their place as shown, sorted and filtered
+function stripe(row: TableRow<Row>): string {
+  return (table.value?.tableApi?.getRowModel().rows.indexOf(row) ?? row.index) % 2 ? "bg-elevated/40" : "";
+}
+
+function select(_event: Event, row: { original: Row }): void {
+  open.value = row.original;
+}
+
+// a virtualized row is drawn at the board's 30px, at the page's scale
+const rowHeight = () => (30 / 16) * parseFloat(getComputedStyle(document.documentElement).fontSize);
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
-    <div class="flex shrink-0 items-center gap-2 border-b border-default px-3 py-2">
-      <slot />
-      <div class="flex-1" />
-      <span class="text-xs text-muted">{{ shown.length }} {{ shown.length === 1 ? "row" : "rows" }}</span>
-      <UInput v-model="filter" icon="i-lucide-search" placeholder="Filter…" size="sm" class="w-56" />
+  <section class="flex min-h-0 min-w-0 flex-col bg-muted">
+    <div class="flex h-11 shrink-0 items-center gap-2.5 border-b border-default px-3">
+      <span class="text-13 font-semibold">{{ HEADS[card].title }}</span>
+      <span class="truncate text-12 text-dimmed">{{ HEADS[card].blurb }}</span>
+      <span class="grow" />
+      <UInput
+        v-model="filter"
+        icon="i-lucide-filter"
+        size="sm"
+        :placeholder="`Filter ${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`"
+        class="w-45 shrink-0"
+      />
     </div>
     <UTable
       ref="table"
       v-model:global-filter="filter"
       v-model:sorting="sorting"
       v-model:column-filters="filters"
-      v-model:row-selection="picked"
       :data="rows"
       :columns="columns"
       :loading="loading"
       sticky
       :virtualize="{ estimateSize: rowHeight() }"
       empty="Nothing to list."
-      :ui="{
-        th: 'px-3 py-2 text-xs font-medium text-muted',
-        td: 'px-3 py-1.5 text-sm text-default',
-        tr: 'data-[selected=true]:bg-primary/10',
-      }"
+      :ui="{ base: 'w-full table-fixed', td: 'truncate', tr: 'cursor-pointer' }"
+      :row-selection="selection"
+      :meta="{ class: { tr: stripe } }"
       class="min-h-0 flex-1"
-      @select="(_event, row) => ((picked = { [row.id]: true }), emit('select', row.original))"
+      @select="select"
     />
-  </div>
+  </section>
 </template>

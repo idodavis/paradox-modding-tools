@@ -2,5 +2,4 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 @import "./themes.css";
-@import "@vue-flow/core/dist/style.css";
-@import "@vue-flow/controls/dist/style.css";
+@import "./article.css";

@@ -22,7 +22,7 @@ var (
 	dropHead    = map[string]bool{"see also": true, "references": true, "external links": true, "further reading": true}
 	moveHead    = map[string]bool{"scripting tools": true}
 	keepModding = map[string]bool{"modding": true, "user modding": true}
-	dropClass   = map[string]bool{"navbox": true, "infobox": true, "thumb": true, "noprint": true, "metadata": true, "reference": true, "references": true}
+	dropClass   = map[string]bool{"navbox": true, "infobox": true, "eu4box": true, "thumb": true, "noprint": true, "metadata": true, "reference": true, "references": true}
 	dropTag     = map[atom.Atom]bool{atom.Img: true, atom.Figure: true, atom.Script: true, atom.Style: true, atom.Noscript: true, atom.Iframe: true}
 	allowed     = map[atom.Atom]bool{}
 )

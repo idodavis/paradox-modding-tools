@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/source"
@@ -26,12 +27,14 @@ type Params struct {
 	Expand   []string `json:"expand"`   // stubs the page opened: more:<id>, more-in:<id>
 	Origins  []string `json:"origins"`  // the origins drawn, with the root and its stubs; empty for all
 	Scripted bool     `json:"scripted"` // each scripted effect on a chain drawn as a node between the two it joins
+	Follow   bool     `json:"follow"`   // fires reached through a scripted effect are drawn; else only direct ones
 }
 
 // Node is one definition drawn, or a stub standing for what is hidden.
 type Node struct {
 	ID       string `json:"id"`
 	Database string `json:"database"`
+	Kind     string `json:"kind"` // what one of its database is called (game.KindName)
 	Title    string `json:"title,omitempty"`
 	Origin   string `json:"origin,omitempty"`
 	Rel      string `json:"rel,omitempty"`
@@ -182,16 +185,24 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	}
 	builder.node(params.Root, true)
 
+	// the fires drawn: through a scripted effect only when the page follows them
+	followed := func(fires []session.Fire) []session.Fire {
+		if params.Follow {
+			return fires
+		}
+		return slices.DeleteFunc(fires, func(fire session.Fire) bool { return fire.Via != "" })
+	}
+
 	// out of the root, hop by hop, each node's fan-out cut by the page's number
 	frontier := []string{params.Root}
 	for hop := 0; hop < params.Depth && len(frontier) > 0 && !builder.out.Truncated; hop++ {
 		var next []string
 		for _, from := range frontier {
-			fires := sess.Fires(builder.def(from))
+			fires := followed(sess.Fires(builder.def(from)))
 			opened := slices.Contains(params.Expand, "more:"+from)
 			for i, fire := range fires {
 				if !opened && params.Fanout > 0 && i >= params.Fanout {
-					builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more:" + from, Database: "more", Stub: "more", Hidden: len(fires) - i, Title: fmt.Sprintf("+%d more", len(fires)-i)})
+					builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more:" + from, Database: "more", Stub: "more", Hidden: len(fires) - i, Title: stubTitle(fires[i:])})
 					builder.out.Edges = append(builder.out.Edges, Edge{From: from, To: "more:" + from})
 					break
 				}
@@ -212,7 +223,7 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	// into a root the game fires, one hop: a stub until the page opens it
 	var callers []session.Fire
 	if (index.Ref{Database: root.Database}).Fires(sess.Install.Schema) {
-		callers = sess.FiredBy(root)
+		callers = followed(sess.FiredBy(root))
 	}
 	if len(callers) > 0 {
 		if slices.Contains(params.Expand, "more-in:"+params.Root) {
@@ -231,7 +242,7 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 
 	// every fire between two drawn definitions is drawn, whatever hop found them
 	for _, id := range slices.Sorted(maps.Keys(builder.drawn)) {
-		for _, fired := range sess.Fires(builder.def(id)) {
+		for _, fired := range followed(sess.Fires(builder.def(id))) {
 			if builder.drawn[fired.Name] && !slices.ContainsFunc(builder.out.Edges, func(edge Edge) bool { return edge.From == id && edge.To == fired.Name }) {
 				builder.out.Edges = append(builder.out.Edges, Edge{From: id, To: fired.Name, Via: fired.Via})
 			}
@@ -272,6 +283,20 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	return builder.out, nil
 }
 
+// stubTitle is a fan-out stub's title: "+7 more events" where every hidden fire is of one database,
+// else "+7 more".
+func stubTitle(hidden []session.Fire) string {
+	title := fmt.Sprintf("+%d more", len(hidden))
+	if slices.ContainsFunc(hidden, func(fire session.Fire) bool { return fire.Database != hidden[0].Database }) {
+		return title
+	}
+	title += " " + game.KindName(hidden[0].Database)
+	if len(hidden) > 1 {
+		title += "s"
+	}
+	return title
+}
+
 // grapher holds one graph as it is drawn, and each definition found, once.
 type grapher struct {
 	sess  *session.Session
@@ -307,12 +332,13 @@ func (grapher *grapher) node(id string, root bool) {
 	def := grapher.def(id)
 	file, _, _ := grapher.sess.Located(def.Path)
 	grapher.drawn[id] = true
-	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: def.Database, Title: grapher.sess.Title(def), Origin: file.Origin, Rel: file.Rel, Line: int(def.Line), Root: root})
+	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: def.Database, Kind: game.KindName(def.Database), Title: grapher.sess.Title(def), Origin: file.Origin, Rel: file.Rel, Line: int(def.Line), Root: root})
 }
 
 // Detail is one definition, opened.
 type Detail struct {
 	Database string         `json:"database"`
+	Kind     string         `json:"kind"`
 	Name     string         `json:"name"`
 	Mode     string         `json:"mode,omitempty"` // the entry mode written before the name: REPLACE, INJECT
 	Line     int            `json:"line"`
@@ -328,26 +354,50 @@ type Detail struct {
 	Reason   string         `json:"reason,omitempty"`
 }
 
-// Section is one key at the top of the definition's block: its value where that is one word, and
-// the text that word has as a loc key.
+// Section is one key at the top of the definition's block: its value as written (a block as its
+// statements on one line, each inner block as { … }), and the text a one-word value has as a loc key.
 type Section struct {
-	Key   string `json:"key"`
-	Value string `json:"value,omitempty"`
-	Text  string `json:"text,omitempty"`
-	Line  int    `json:"line"`
+	Key      string     `json:"key"`
+	Value    string     `json:"value,omitempty"`
+	Text     string     `json:"text,omitempty"`
+	Line     int        `json:"line"`
+	When     string     `json:"when,omitempty"`     // a block's own trigger, on one line: it applies only then
+	Parts    []TextPart `json:"parts,omitempty"`    // a text's parts in order: a loc key, or a dynamic description's
+	Portrait string     `json:"portrait,omitempty"` // a portrait's character
 }
 
-// Option is one option block of an event: its name key and the text that key has.
-type Option struct {
-	Name string `json:"name"`
+// TextPart is one part of a text, read in order: one of its versions shows, the first whose trigger
+// holds, or one of them at random.
+type TextPart struct {
+	Random   bool      `json:"random,omitempty"`
+	Versions []Version `json:"versions"`
+}
+
+// Version is one text a part can show: its trigger on one line (none: it always can), its loc key and
+// that key's text, at its line.
+type Version struct {
+	When string `json:"when,omitempty"`
+	Key  string `json:"key"`
 	Text string `json:"text,omitempty"`
 	Line int    `json:"line"`
+}
+
+// Option is one option block of an event: its first name key and the text that key has, its trigger on
+// one line, every name it is written with (the first whose trigger holds shows) and its flags.
+type Option struct {
+	Name  string    `json:"name"`
+	Text  string    `json:"text,omitempty"`
+	Line  int       `json:"line"`
+	When  string    `json:"when,omitempty"`
+	Names []Version `json:"names,omitempty"`
+	Flags []string  `json:"flags,omitempty"`
 }
 
 // RefGroup is the references of one database written in a block; loc keys are database
 // localization, files file.
 type RefGroup struct {
 	Database string  `json:"database"`
+	Kind     string  `json:"kind"` // what one of its database is called (game.KindName)
 	Refs     []Cited `json:"refs"`
 }
 
@@ -374,7 +424,7 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	}
 	file, _, _ := sess.Located(def.Path)
 	detail := &Detail{
-		Database: def.Database, Name: def.Name, Mode: def.Mode, Line: int(def.Line), Col: int(def.Col), At: file,
+		Database: def.Database, Kind: game.KindName(def.Database), Name: def.Name, Mode: def.Mode, Line: int(def.Line), Col: int(def.Col), At: file,
 		Title: sess.Title(def), Fires: sess.Fires(def), FiredBy: sess.FiredBy(def),
 	}
 
@@ -385,21 +435,34 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 		return detail, nil
 	}
 	detail.Lines = spanLines(parsed, defined.NodeRange(), 0)
-	lines := parsed.Lines()
+	read := eventText{sess, parsed}
 	for _, inner := range block.Statements {
 		assignment, ok := inner.(*jomini.Assignment)
 		if !ok {
 			continue
 		}
-		section := Section{Key: assignment.Key.Text, Line: lines.PositionAt(assignment.Key.Range.Start).Line}
+		section := Section{Key: assignment.Key.Text, Line: parsed.Lines().PositionAt(assignment.Key.Range.Start).Line}
+		portrait := slices.ContainsFunc(game.EventPortraits.Suffixes, func(suffix string) bool { return strings.HasSuffix(section.Key, suffix) })
 		if scalar, ok := assignment.Value.(*jomini.Scalar); ok {
 			section.Value = scalar.Text
 			if said, ok := sess.Loc(scalar.Text, ""); ok {
 				section.Text = said.Text
+				section.Parts = []TextPart{{Versions: []Version{read.version(scalar, "")}}}
 			}
-		}
-		if block := jomini.BlockOf(assignment.Value); block != nil && assignment.Key.Text == "option" {
-			detail.Options = append(detail.Options, option(sess, block, section.Line))
+			if portrait {
+				section.Portrait = scalar.Text
+			}
+		} else if written := jomini.BlockOf(assignment.Value); written != nil {
+			when, trigger := read.trigger(written)
+			section.When = when
+			section.Value = oneLine(parsed.Src, slices.DeleteFunc(slices.Clone(written.Statements), func(statement jomini.Statement) bool { return statement == trigger }))
+			section.Parts = read.parts(written)
+			if character := read.scalar(written, game.EventPortraits.Character); portrait && character != nil {
+				section.Portrait = character.Text
+			}
+			if section.Key == "option" {
+				detail.Options = append(detail.Options, read.option(written, section.Line))
+			}
 		}
 		detail.Sections = append(detail.Sections, section)
 	}
@@ -422,11 +485,26 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 		at := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Database == database })
 		if at < 0 {
 			at = len(detail.Refs)
-			detail.Refs = append(detail.Refs, RefGroup{Database: database})
+			detail.Refs = append(detail.Refs, RefGroup{Database: database, Kind: game.KindName(database)})
 		}
 		detail.Refs[at].Refs = append(detail.Refs[at].Refs, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
 	}
 	return detail, nil
+}
+
+// oneLine is a block's statements on one line: each as written, an inner block as { … }. Comments are
+// outside the tree, so none is kept.
+func oneLine(src string, statements []jomini.Statement) string {
+	parts := []string{"{"}
+	for _, statement := range statements {
+		span := statement.NodeRange()
+		if inner := jomini.ChildBlock(statement); inner != nil {
+			parts = append(parts, strings.Join(strings.Fields(src[span.Start:inner.OpenBrace]), " ")+" { … }")
+		} else {
+			parts = append(parts, strings.Join(strings.Fields(src[span.Start:span.End]), " "))
+		}
+	}
+	return strings.Join(append(parts, "}"), " ")
 }
 
 // spanLines is the source lines a span is written on; past limit lines, when limit is not 0, the
@@ -443,29 +521,126 @@ func spanLines(parsed *jomini.Result, span jomini.Range, limit int) []string {
 	return out
 }
 
-// option reads an option block's name and the text it has, at its line. A name written as a
-// block, one per condition, is its text key's value; the first name is kept.
-func option(sess *session.Session, block *jomini.Block, line int) Option {
-	other := Option{Line: line}
+// eventText reads an event's texts, triggers and options from its file's parse, as written.
+type eventText struct {
+	sess   *session.Session
+	parsed *jomini.Result
+}
+
+// flat is the source between two offsets on one line, its comments left out.
+func (read eventText) flat(start, end int) string {
+	text := []byte(read.parsed.Src[start:end])
+	for _, comment := range read.parsed.Comments {
+		for at := max(comment.Range.Start, start); at < min(comment.Range.End, end); at++ {
+			text[at-start] = ' '
+		}
+	}
+	return strings.Join(strings.Fields(string(text)), " ")
+}
+
+// trigger is a block's own trigger, its inside on one line, and the statement it is written in.
+func (read eventText) trigger(block *jomini.Block) (string, jomini.Statement) {
 	for _, statement := range block.Statements {
-		assignment, ok := statement.(*jomini.Assignment)
-		if !ok || assignment.Key.Text != "name" || other.Name != "" {
-			continue
-		}
-		value := assignment.Value
-		if named := jomini.BlockOf(value); named != nil {
-			for _, inner := range named.Statements {
-				if text, ok := inner.(*jomini.Assignment); ok && text.Key.Text == "text" {
-					value = text.Value
-				}
-			}
-		}
-		if scalar, ok := value.(*jomini.Scalar); ok {
-			other.Name = scalar.Text
-			if said, ok := sess.Loc(scalar.Text, ""); ok {
-				other.Text = said.Text
+		if assignment, ok := statement.(*jomini.Assignment); ok && assignment.Key.Text == game.DynamicDescription.Trigger {
+			if inner := jomini.BlockOf(assignment.Value); inner != nil {
+				return read.flat(inner.OpenBrace+1, inner.CloseBrace), statement
 			}
 		}
 	}
-	return other
+	return "", nil
+}
+
+// scalar is the one-word value a block writes for a key; nil where it writes none.
+func (read eventText) scalar(block *jomini.Block, key string) *jomini.Scalar {
+	for _, statement := range block.Statements {
+		if assignment, ok := statement.(*jomini.Assignment); ok && assignment.Key.Text == key {
+			if scalar, ok := assignment.Value.(*jomini.Scalar); ok {
+				return scalar
+			}
+		}
+	}
+	return nil
+}
+
+// version is a loc key as one version of a text, shown when its trigger holds.
+func (read eventText) version(scalar *jomini.Scalar, when string) Version {
+	version := Version{When: when, Key: scalar.Text, Line: read.parsed.Lines().PositionAt(scalar.Range.Start).Line}
+	if said, ok := read.sess.Loc(scalar.Text, ""); ok {
+		version.Text = said.Text
+	}
+	return version
+}
+
+// parts reads a dynamic description as the game does: each statement a part, in order. A leaf shows its
+// key; a triggered leaf shows it only while its trigger holds; another marker shows one of its own.
+func (read eventText) parts(block *jomini.Block) []TextPart {
+	shape := game.DynamicDescription
+	var out []TextPart
+	for _, statement := range block.Statements {
+		assignment, ok := statement.(*jomini.Assignment)
+		switch {
+		case !ok:
+		case assignment.Key.Text == shape.Leaf && jomini.BlockOf(assignment.Value) != nil:
+			out = append(out, read.parts(jomini.BlockOf(assignment.Value))...)
+		case assignment.Key.Text == shape.Leaf || assignment.Key.Text == shape.Triggered:
+			out = append(out, TextPart{Versions: read.versions(statement)})
+		case slices.Contains(shape.Markers, assignment.Key.Text):
+			part := TextPart{Random: assignment.Key.Text == shape.Random}
+			for _, inner := range jomini.ChildBlock(statement).Statements {
+				part.Versions = append(part.Versions, read.versions(inner)...)
+			}
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// versions is what one statement of a dynamic description shows: a leaf's key, a triggered leaf's with
+// its trigger.
+func (read eventText) versions(statement jomini.Statement) []Version {
+	assignment, ok := statement.(*jomini.Assignment)
+	if !ok {
+		return nil
+	}
+	shape := game.DynamicDescription
+	if scalar, ok := assignment.Value.(*jomini.Scalar); ok && assignment.Key.Text == shape.Leaf {
+		return []Version{read.version(scalar, "")}
+	}
+	if block := jomini.BlockOf(assignment.Value); block != nil && assignment.Key.Text == shape.Triggered {
+		if leaf := read.scalar(block, shape.Leaf); leaf != nil {
+			when, _ := read.trigger(block)
+			return []Version{read.version(leaf, when)}
+		}
+	}
+	return nil
+}
+
+// option reads an option block at its line: its trigger, each name (a block one per condition, its text
+// key the name) and its flags.
+func (read eventText) option(block *jomini.Block, line int) Option {
+	option := Option{Line: line}
+	option.When, _ = read.trigger(block)
+	for _, statement := range block.Statements {
+		assignment, ok := statement.(*jomini.Assignment)
+		if !ok {
+			continue
+		}
+		scalar, _ := assignment.Value.(*jomini.Scalar)
+		named := jomini.BlockOf(assignment.Value)
+		switch key := assignment.Key.Text; {
+		case key == "name" && scalar != nil:
+			option.Names = append(option.Names, read.version(scalar, ""))
+		case key == "name" && named != nil:
+			if text := read.scalar(named, "text"); text != nil {
+				when, _ := read.trigger(named)
+				option.Names = append(option.Names, read.version(text, when))
+			}
+		case slices.Contains(game.OptionFlags, key) && scalar != nil && scalar.Text == game.Bools[0]:
+			option.Flags = append(option.Flags, key)
+		}
+	}
+	if len(option.Names) > 0 {
+		option.Name, option.Text = option.Names[0].Key, option.Names[0].Text
+	}
+	return option
 }

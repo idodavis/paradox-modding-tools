@@ -28,6 +28,7 @@
           "end": "\"(?=[^\"]*$)",
           "patterns": [
             { "name": "constant.character.escape.paradox-loc", "match": "\\\\." },
+            { "name": "support.function.databinding.paradox-loc", "match": "\\[[^\\]]*\\]" },
             { "name": "variable.other.substitution.paradox-loc", "match": "\\$[A-Za-z0-9_.|\\-]+\\$" },
             { "name": "constant.other.formatting.paradox-loc", "match": "#[!A-Za-z_;]*" },
             { "name": "constant.other.icon.paradox-loc", "match": "@[A-Za-z0-9_]+!" }

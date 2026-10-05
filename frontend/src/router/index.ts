@@ -22,8 +22,14 @@ const router = createRouter({
           props: { ide: true },
         },
         { path: "graph", name: "event-graph", component: () => import("../pages/EventGraphPage.vue"), props: true },
-        { path: "health", name: "health", component: () => import("../pages/HealthPage.vue"), props: true },
-        { path: "patcher", name: "patcher", component: () => import("../pages/PatcherPage.vue"), props: true },
+        {
+          path: "health",
+          name: "health",
+          component: () => import("../pages/HealthPage.vue"),
+          // a link opens a card, and a row by its name
+          props: (to) => ({ ...to.params, card: to.query.card, name: to.query.name }),
+        },
+        { path: "patch-notes", name: "patch-notes", component: () => import("../pages/PatchNotesPage.vue"), props: true },
         { path: "release", name: "release", component: () => import("../pages/ReleasePage.vue"), props: true },
         {
           path: "settings",

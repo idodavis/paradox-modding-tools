@@ -128,7 +128,18 @@ func (sess *Session) Winner(defs []index.Def) (winner index.Def, adds, orphans [
 type Fire struct {
 	Name     string `json:"name"`
 	Database string `json:"database"`
+	Kind     string `json:"kind"` // what one of its database is called (game.KindName)
 	Via      string `json:"via"`
+	Through  int    `json:"through,omitempty"` // how many scripted entries Via names
+}
+
+// newFire is a fire at name through the chain via, written as Fires writes it.
+func newFire(name, database, via string) Fire {
+	fire := Fire{Name: name, Database: database, Kind: game.KindName(database), Via: via}
+	if via != "" {
+		fire.Through = strings.Count(via, " → ") + 1
+	}
+	return fire
 }
 
 // Fires is what a definition fires, in name order: events and on_actions only (Ref.Fires). A
@@ -144,7 +155,7 @@ func (sess *Session) Fires(from index.Def) []Fire {
 		for _, ref := range index.Within(indexes, def) {
 			switch {
 			case ref.Fires(sch):
-				out = append(out, Fire{Name: ref.Name, Database: ref.Database, Via: via})
+				out = append(out, newFire(ref.Name, ref.Database, via))
 			case ref.Runs(sch):
 				called, _ := index.Resolve(sch, indexes, ref)
 				for _, target := range called {
@@ -184,11 +195,11 @@ func (sess *Session) FiredBy(target index.Def) []Fire {
 				if !seen[caller] {
 					seen[caller] = true
 					for _, up := range follow(caller) {
-						out = append(out, Fire{Name: up.Name, Database: up.Database, Via: strings.TrimPrefix(up.Via+" → "+caller.Name, " → ")})
+						out = append(out, newFire(up.Name, up.Database, strings.TrimPrefix(up.Via+" → "+caller.Name, " → ")))
 					}
 				}
 			default:
-				out = append(out, Fire{Name: caller.Name, Database: caller.Database})
+				out = append(out, newFire(caller.Name, caller.Database, ""))
 			}
 		}
 		return out
@@ -220,14 +231,7 @@ func (sess *Session) Entry(def index.Def) (*jomini.Result, jomini.Statement) {
 	if def.Path == "" || err != nil {
 		return nil, nil
 	}
-	start, found := parsed.Lines().OffsetAt(int(def.Line), int(def.Col)), jomini.Statement(nil)
-	jomini.Walk(parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
-		if assign, isAssign := statement.(*jomini.Assignment); isAssign && assign.Key.Range.Start == start {
-			found = statement
-		}
-		return found == nil && statement.NodeRange().Start <= start && start < statement.NodeRange().End
-	})
-	return parsed, found
+	return parsed, parsed.AssignmentAt(int(def.Line), int(def.Col))
 }
 
 // Title is a definition's display name: the text of its name as a loc key, else of its first field

@@ -259,26 +259,26 @@ func TestEventGraph(t *testing.T) {
 
 	// a macro is a hop: the edge goes through it, labelled by its chain, the same either way round;
 	// with the page's macros shown it is a node between the two
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2})
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Follow: true})
 	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire" || slices.Contains(ids(drawn), "m_fire") {
 		t.Errorf("a fire through a scripted effect: %+v %v", drawn.Edges, ids(drawn))
 	}
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.2", Depth: 1, Expand: []string{"more-in:m.2"}})
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.2", Depth: 1, Expand: []string{"more-in:m.2"}, Follow: true})
 	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire" {
 		t.Errorf("the same chain into it: %+v", drawn.Edges)
 	}
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Scripted: true})
+	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Scripted: true, Follow: true})
 	into, _ := edge(drawn, "m_fire", "m.2")
 	if _, ok := edge(drawn, "m.1", "m_fire"); !ok || into.Via != "" || !slices.Contains(ids(drawn), "m_fire") {
 		t.Errorf("the macro drawn: %+v %v", drawn.Edges, ids(drawn))
 	}
-	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0] != (session.Fire{Name: "m.1", Database: "events", Via: "m_fire"}) {
+	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0] != (session.Fire{Name: "m.1", Database: "events", Kind: "event", Via: "m_fire", Through: 1}) {
 		t.Errorf("the detail's fired-by, as the graph draws it: %+v", detail.FiredBy)
 	}
 
 	// a wide fan-out: the page's number of targets, then a stub; opened, all; a node cap truncates
 	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "w.0", Depth: 1, Fanout: 12, MaxNodes: 40})
-	if at := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more:w.0" }); at < 0 || drawn.Nodes[at].Title != "+3 more" || len(drawn.Nodes) != 14 {
+	if at := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more:w.0" }); at < 0 || drawn.Nodes[at].Title != "+3 more events" || len(drawn.Nodes) != 14 {
 		t.Errorf("the more stub: %d nodes, %+v", len(drawn.Nodes), drawn.Nodes)
 	}
 	if got, _ := graphs.GetEventGraph("ws", Params{Root: "w.0", Depth: 1, Fanout: 12, MaxNodes: 40, Expand: []string{"more:w.0"}}); len(got.Nodes) != 16 {

@@ -47,6 +47,7 @@ type Problem struct {
 // Contest is one name two origins define, its definitions in load order, with the game's rule.
 type Contest struct {
 	Database  string `json:"database"`
+	Kind      string `json:"kind"` // what one of its database is called (game.KindName)
 	Name      string `json:"name"`
 	Winner    int    `json:"winner"` // the position in Sites of the definition the game keeps
 	FirstWins bool   `json:"firstWins"`
@@ -56,13 +57,15 @@ type Contest struct {
 
 // Site is where a definition or a reference is written.
 type Site struct {
-	File     int    `json:"file"` // its number in Sources
-	Line     int    `json:"line"`
-	Col      int    `json:"col"`
-	Database string `json:"database,omitempty"` // a dependency's use: the database and name written there
-	Name     string `json:"name,omitempty"`
-	Injected bool   `json:"injected,omitempty"` // a definition added to the kept one (an inject, a merged on_action)
-	Removed  bool   `json:"removed,omitempty"`  // a dependency's use of a name the other mod's file left out
+	File     int      `json:"file"` // its number in Sources
+	Line     int      `json:"line"`
+	Col      int      `json:"col"`
+	Database string   `json:"database,omitempty"` // a dependency's use: the database and name written there
+	Name     string   `json:"name,omitempty"`
+	Injected bool     `json:"injected,omitempty"` // a definition added to the kept one (an inject, a merged on_action)
+	Removed  bool     `json:"removed,omitempty"`  // a dependency's use of a name the other mod's file left out
+	Defines  []string `json:"defines,omitempty"`  // a replaced file's row: the names the file defines
+	Changed  []string `json:"changed,omitempty"`  // and those it and the kept file both define but write otherwise
 }
 
 // Dependency is one mod using a name another mod's definitions decide, and each place it does: it
@@ -78,6 +81,7 @@ type Dependency struct {
 // Dangling is one name a mod writes that nothing defines, and where.
 type Dangling struct {
 	Database string `json:"database"`
+	Kind     string `json:"kind"`
 	Name     string `json:"name"`
 	Sites    []Site `json:"sites"`
 }
@@ -148,6 +152,8 @@ func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		preview = []*index.Index{sess.Install.Index, &ordered}
 	}
 	health.Contests, health.Overrides = contests(sess, preview, number)
+	files, replacing := replaced(sess, preview, number)
+	health.Contests, health.Overrides = append(health.Contests, files...), append(health.Overrides, replacing...)
 	health.Depends = dependencies(sess, number)
 	health.Dangling = dangling(sess, found, number)
 	health.Loc = localization(sess, number)
@@ -213,7 +219,7 @@ func contests(sess *session.Session, preview []*index.Index, number func(source.
 		}
 		winner, adds, _, betweenMods := sess.Winner(defs)
 		row := Contest{
-			Database: name[0], Name: name[1], Winner: slices.Index(defs, winner),
+			Database: name[0], Kind: game.KindName(name[0]), Name: name[1], Winner: slices.Index(defs, winner),
 			FirstWins: game.FirstWinsAt(sess.Game.ID, name[0]), Rule: "LIOS",
 		}
 		if row.FirstWins {
@@ -233,6 +239,88 @@ func contests(sess *session.Session, preview []*index.Index, number func(source.
 			row.Rule = defs[row.Winner].Mode
 		}
 		if betweenMods {
+			contested = append(contested, row)
+		} else {
+			overrides = append(overrides, row)
+		}
+	}
+	return contested, overrides
+}
+
+// replaced is each path a mod ships a file at that another origin ships too, by a load order: the game
+// loads one file of a path, so the loaded one replaces the others whole -- a contest where two mods
+// ship it, else an override -- and each site lists the entries its file defines, as contests counts them,
+// and those the kept file writes otherwise. Only a file in a folder the install ships files in is the
+// game's: a mod's descriptor, readme, thumbnail or editor settings are not.
+func replaced(sess *session.Session, preview []*index.Index, number func(source.File) int) (contested, overrides []Contest) {
+	sch := sess.Install.Schema
+	folders := map[string]bool{}
+	for _, file := range sess.Install.Index.Files {
+		if top, _, inFolder := strings.Cut(strings.ToLower(file.Rel), "/"); inFolder {
+			folders[top] = true
+		}
+	}
+	shipped := map[string][]source.File{}
+	defines := map[string][]index.Def{}
+	for _, idx := range preview {
+		for _, file := range idx.Files {
+			rel := strings.ToLower(file.Rel)
+			if top, _, _ := strings.Cut(rel, "/"); !folders[top] {
+				continue
+			}
+			shipped[rel] = append(shipped[rel], file)
+			if records := idx.Records[file.Path]; records != nil {
+				// its entries, not the names its script makes or declares inline
+				for _, def := range records.Defs {
+					if def.Name != "" && sch.Databases[def.Database] != nil && !def.Local && !def.Named {
+						defines[file.Path] = append(defines[file.Path], def)
+					}
+				}
+			}
+		}
+	}
+	// each file with entries parsed once for its row, an image never
+	parse := func(file source.File) *jomini.Result {
+		if len(defines[file.Path]) == 0 {
+			return nil
+		}
+		parsed, _, _ := sess.Parsed(file.Path)
+		return parsed
+	}
+	for _, rel := range slices.Sorted(maps.Keys(shipped)) {
+		files := shipped[rel]
+		kept := slices.IndexFunc(files, func(file source.File) bool { _, loaded := index.Loaded(preview, file.Path); return loaded })
+		origins := map[string]bool{}
+		for _, file := range files {
+			origins[file.Origin] = true
+		}
+		if len(origins) < 2 || kept < 0 {
+			continue
+		}
+		row := Contest{Database: index.File, Kind: game.KindName(index.File), Name: files[kept].Rel, Winner: kept, Rule: "LIOS"}
+		keptParse, keptDefs, changed := parse(files[kept]), map[string]index.Def{}, map[string]bool{}
+		for _, def := range defines[files[kept].Path] {
+			keptDefs[def.Name] = def
+		}
+		for i, file := range files {
+			site, parsed := Site{File: number(file)}, parse(file)
+			for _, def := range defines[file.Path] {
+				site.Defines = append(site.Defines, def.Name)
+				if other, both := keptDefs[def.Name]; both && i != kept && parsed != nil && keptParse != nil && !sameStatement(
+					parsed.AssignmentAt(int(def.Line), int(def.Col)), keptParse.AssignmentAt(int(other.Line), int(other.Col))) {
+					site.Changed, changed[def.Name] = append(site.Changed, def.Name), true
+				}
+			}
+			row.Sites = append(row.Sites, site)
+		}
+		// the kept file's entries any replaced file writes otherwise
+		for _, name := range row.Sites[kept].Defines {
+			if changed[name] {
+				row.Sites[kept].Changed = append(row.Sites[kept].Changed, name)
+			}
+		}
+		// two mods between them, the game's file aside
+		if delete(origins, game.OriginVanilla); len(origins) >= 2 {
 			contested = append(contested, row)
 		} else {
 			overrides = append(overrides, row)
@@ -363,7 +451,7 @@ func dangling(sess *session.Session, found map[string][]lsp.Diagnostic, number f
 			ref := records.Refs[at]
 			key := [2]string{ref.Database, ref.Name}
 			row := rows[key]
-			row.Database, row.Name = ref.Database, ref.Name
+			row.Database, row.Kind, row.Name = ref.Database, game.KindName(ref.Database), ref.Name
 			row.Sites = append(row.Sites, Site{File: number(file), Line: start.Line, Col: start.Character})
 			rows[key] = row
 		}

@@ -104,7 +104,8 @@ export default defineConfig({
             active: { false: { item: "data-highlighted:before:bg-(--accent-soft) data-[state=open]:before:bg-(--accent-soft)" } },
           },
         },
-        popover: { slots: { content: "bg-elevated rounded-xl ring-0 shadow-(--shadow)" } },
+        // its content keeps inside the rounded corners, a footer's fill included
+        popover: { slots: { content: "overflow-hidden bg-elevated rounded-xl ring-0 shadow-(--shadow)" } },
         // a dialog is the boards' .pop: bg-3, 12px corners, the theme's shadow
         modal: {
           slots: { content: "bg-elevated" },

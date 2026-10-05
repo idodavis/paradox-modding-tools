@@ -199,10 +199,10 @@ function exportExclusions(): void {
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">
-    <div class="flex items-center gap-3.5 border-b border-default px-5 py-4">
+  <div class="@container flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">
+    <div class="flex flex-wrap items-center gap-3.5 border-b border-default px-5 py-4">
       <Thumb :path="thumbnail" :color="modColor(mod)" size="lg" />
-      <div class="flex min-w-0 grow flex-col gap-0.5">
+      <div class="flex min-w-48 grow basis-0 flex-col gap-0.5">
         <span class="truncate text-16">{{ mod.name }}</span>
         <span class="truncate font-mono text-12 text-dimmed">{{ mod.folder }}</span>
       </div>
@@ -210,8 +210,8 @@ function exportExclusions(): void {
       <UButton label="Remove from workspace" variant="ghost" class="text-error" @click="remove" />
     </div>
 
-    <div class="grid min-h-0 flex-1 grid-cols-2 overflow-y-auto">
-      <div class="flex flex-col border-e border-default">
+    <div class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto @2xl:grid-cols-2">
+      <div class="flex flex-col border-b border-default @2xl:border-e @2xl:border-b-0">
         <FieldGroup title="Identity">
           <UFormField label="Name">
             <UInput :model-value="mod.name" class="w-full" @change="saveFields({ name: typed($event) })" />

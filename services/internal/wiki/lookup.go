@@ -5,10 +5,12 @@ package wiki
 
 import (
 	"cmp"
-	"fmt"
+	"os"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"paradox-modding-tools/services/internal/game"
 )
@@ -84,52 +86,102 @@ func PagesFor(gameID, database, rel string) []Page {
 }
 
 func patchEntry(page Page) PatchEntry {
-	entry := PatchEntry{Title: page.Title}
+	entry := PatchEntry{Title: page.Title, Modding: page.ModdingHTML != ""}
 	if pv, ok := parsePatchTitle(page.Title); ok {
 		entry.Version = pv.Label
-		if pv.Patch > 0 || pv.Wildcard {
-			entry.Parent = fmt.Sprintf("%d.%d", pv.Major, pv.Minor)
+		if pv.Hotfix {
+			entry.Parent = pv.Minor
 		}
 	}
 	return entry
 }
 
-// Patches returns patch notes entries, newest first.
+// hotfix is one hotfix of a .X page: the part of the page under a heading that names a version.
+type hotfix struct {
+	version  string
+	html     string
+	sections []Section
+}
+
+var versionRe = regexp.MustCompile(`^\d+\.\d+(\.\d+)+$`)
+
+// hotfixes are a .X page's hotfixes, in the page's order; none when no heading names a version.
+func hotfixes(page Page) (fixes []hotfix) {
+	for i, section := range page.Sections {
+		if section.TocLevel != 2 || !versionRe.MatchString(section.Anchor) {
+			continue
+		}
+		open := strings.Index(page.HTML, `<h2 id="`+section.Anchor+`"`)
+		start := strings.Index(page.HTML[max(open, 0):], "</h2>")
+		if open < 0 || start < 0 {
+			continue
+		}
+		body := page.HTML[open+start+len("</h2>"):]
+		if next := strings.Index(body, "<h2"); next >= 0 {
+			body = body[:next]
+		}
+		fix := hotfix{version: section.Anchor, html: strings.TrimSpace(body)}
+		for _, sub := range page.Sections[i+1:] {
+			if sub.TocLevel <= 2 {
+				break
+			}
+			fix.sections = append(fix.sections, sub)
+		}
+		fixes = append(fixes, fix)
+	}
+	return fixes
+}
+
+// Patches returns patch notes entries by minor version, newest first: each version's own note, then
+// its hotfixes, oldest first, a .X page's hotfixes each its own entry. The newest is Latest.
 func Patches(gameID string) PatchList {
 	out := PatchList{GameID: gameID}
 	sidecar, err := load(gameID)
 	if err != nil {
 		return out
 	}
-	type row struct {
-		entry PatchEntry
-		pv    patchVer
-		ok    bool
+	// a refresh saves the sidecar whole, so its time is the last fetch
+	if path, err := SidecarPath(gameID); err == nil {
+		if info, err := os.Stat(path); err == nil {
+			out.Fetched = info.ModTime().UTC().Format(time.RFC3339)
+		}
 	}
-	rows := make([]row, 0, len(sidecar.Patches))
 	for _, page := range sidecar.Patches {
 		pv, ok := parsePatchTitle(page.Title)
-		rows = append(rows, row{entry: patchEntry(page), pv: pv, ok: ok})
+		fixes := hotfixes(page)
+		if !ok || !pv.Wildcard || len(fixes) == 0 {
+			out.Pages = append(out.Pages, patchEntry(page))
+			continue
+		}
+		for _, fix := range fixes {
+			modding := slices.ContainsFunc(fix.sections, func(section Section) bool { return NormTitle(section.Line) == "modding" })
+			out.Pages = append(out.Pages, PatchEntry{
+				Title: "Patch " + fix.version, Version: fix.version, Parent: pv.Minor, Modding: modding,
+			})
+		}
 	}
-	slices.SortFunc(rows, func(first, second row) int {
-		if first.ok && second.ok {
-			return -cmpPatch(first.pv, second.pv)
+	// by minor version newest first, a version before its hotfixes; a page no version names goes last
+	slices.SortStableFunc(out.Pages, func(first, second PatchEntry) int {
+		a, b := versionParts(first.Version), versionParts(second.Version)
+		if len(a) < 2 || len(b) < 2 {
+			return cmp.Compare(len(b), len(a))
 		}
-		if first.ok != second.ok {
-			if first.ok {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(second.entry.Title, first.entry.Title)
+		return cmp.Or(-slices.Compare(a[:2], b[:2]), slices.Compare(a[2:], b[2:]))
 	})
-	for _, row := range rows {
-		out.Pages = append(out.Pages, row.entry)
+	latest := -1
+	for i, entry := range out.Pages {
+		if parts := versionParts(entry.Version); len(parts) >= 2 && (latest < 0 || slices.Compare(parts, versionParts(out.Pages[latest].Version)) > 0) {
+			latest = i
+		}
+	}
+	if latest >= 0 {
+		out.Pages[latest].Latest = true
 	}
 	return out
 }
 
-// PatchByVersion finds a patch page by title or version label (e.g. "1.16").
+// PatchByVersion finds a patch page by title or version label (e.g. "1.16"), or a hotfix of a .X
+// page as a page of its own.
 func PatchByVersion(gameID, want string) *Page {
 	sidecar, err := load(gameID)
 	if err != nil {
@@ -146,6 +198,11 @@ func PatchByVersion(gameID, want string) *Page {
 		}
 		if pv, ok := parsePatchTitle(page.Title); ok && pv.Label == want {
 			return page
+		}
+		for _, fix := range hotfixes(*page) {
+			if fix.version == wantN {
+				return &Page{Title: "Patch " + fix.version, URL: page.URL + "#" + fix.version, Revid: page.Revid, HTML: fix.html, Sections: fix.sections}
+			}
 		}
 		if fallback == nil && strings.Contains(title, wantN) {
 			fallback = page
@@ -172,13 +229,16 @@ type Guide struct {
 type PatchEntry struct {
 	Title   string `json:"title"`
 	Version string `json:"version"`
-	Parent  string `json:"parent"`
+	Parent  string `json:"parent"`           // the version a hotfix belongs to, as 1.14
+	Modding bool   `json:"modding"`          // the page has a Modding section
+	Latest  bool   `json:"latest,omitempty"` // the newest patch
 }
 
 // PatchList is the WikiService.Patches payload.
 type PatchList struct {
-	GameID string       `json:"gameId"`
-	Pages  []PatchEntry `json:"pages"`
+	GameID  string       `json:"gameId"`
+	Pages   []PatchEntry `json:"pages"`
+	Fetched string       `json:"fetched,omitempty"` // when the game's pages were last fetched (RFC 3339)
 }
 
 // Section is one heading of a page, for the TOC.

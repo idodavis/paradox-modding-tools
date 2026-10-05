@@ -1,81 +1,135 @@
 /**
- * The Event Graph page's state: what the graph is drawn from and how far, the stubs opened, the
- * selected node, the graph, detail and root-search queries, and where dagre puts each node.
+ * The Event Graph page's state: the root and how far the graph reaches, the kinds hidden in the page, the
+ * stubs opened, the selected node, and where dagre puts each node, left to right by step.
  */
 import { computed, ref, shallowRef, toValue, type MaybeRefOrGetter } from "vue";
 import { useQuery } from "@pinia/colada";
-import { sessionKeys } from "../queries";
 import { refDebounced } from "@vueuse/core";
 import { Graph, layout } from "@dagrejs/dagre";
-import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
+import type { Edge, Node, Params } from "@services/models";
+import { eventDetailQuery, graphQuery, rootsQuery } from "../queries";
+import { useSettingsStore } from "../stores/settings";
 
-/** Every node's box on the canvas; dagre lays them out by it. */
-export const NODE_WIDTH = 260;
-export const NODE_HEIGHT = 112;
-
-// a kind's name picks its color, so a kind no list here knows still gets one of its own
-const PALETTE = ["info", "success", "warning", "secondary", "primary", "error"];
-
-/** A kind's color, as a tint of one of the theme's colors. */
-export function kindColor(kind: string, strength = 22): string {
-  let hash = 0;
-  for (const char of kind) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return `color-mix(in oklab, var(--ui-${PALETTE[hash % PALETTE.length]}) ${strength}%, transparent)`;
+/** Each kind's color and icon, on the graph and in the detail; any other kind is quiet. */
+const KINDS: Record<string, { color: string; icon: string }> = {
+  event: { color: "var(--blue)", icon: "i-lucide-scroll" },
+  "on action": { color: "var(--green)", icon: "i-lucide-timer" },
+  "scripted effect": { color: "var(--purple)", icon: "i-lucide-zap" },
+};
+export function kindOf(kind: string): { color: string; icon: string } {
+  return KINDS[kind] ?? { color: "var(--fg-3)", icon: "i-lucide-box" };
 }
 
+/** What a node is drawn as: events are cards, a stub a dashed group, the rest pills. */
+type Shape = "card" | "pill" | "group";
+export function shapeOf(node: Node): Shape {
+  if (node.stub) return "group";
+  return node.kind === "event" ? "card" : "pill";
+}
+/** Each shape's box at 100%, as the board draws it; the interface scale scales it as it scales the nodes. */
+const BOX: Record<Shape, { width: number; height: number }> = {
+  card: { width: 196, height: 56 },
+  pill: { width: 176, height: 26 },
+  group: { width: 176, height: 26 },
+};
+
+/** Each node a start reaches along the fires, forward or back, by its step from the start. */
+export function reach(edges: Edge[], start: string, forward: boolean): Map<string, number> {
+  const step = new Map([[start, 0]]);
+  for (let frontier = [start], at = 1; frontier.length; at++) {
+    const next: string[] = [];
+    for (const edge of edges) {
+      const [from, to] = forward ? [edge.from, edge.to] : [edge.to, edge.from];
+      if (frontier.includes(from) && !step.has(to)) {
+        step.set(to, at);
+        next.push(to);
+      }
+    }
+    frontier = next;
+  }
+  return step;
+}
+
+/** The page's defaults: three steps out, 120 nodes, fan-outs past six folded, macros followed. */
+const DEFAULTS = { depth: 3, maxNodes: 120, fanout: 6, origins: [] as string[], scripted: false, follow: true };
+
 export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefOrGetter<boolean>) {
-  const params = ref({
-    root: "",
-    depth: 3,
-    fanout: 12,
-    maxNodes: 40,
-    expand: [] as string[],
-    origins: [] as string[],
-    scripted: false,
-  });
+  const params = ref<Params>({ root: "", expand: [], ...DEFAULTS });
+  const hidden = ref<string[]>([]);
   const selected = shallowRef("");
   const searchTerm = shallowRef("");
-  const rootKind = shallowRef("");
   const search = refDebounced(searchTerm, 200);
+  const settings = useSettingsStore();
 
-  const { data: graph, error } = useQuery({
-    key: () => sessionKeys.graph(toValue(workspaceId), { ...params.value }),
-    query: () => GetEventGraph(toValue(workspaceId), params.value),
-    enabled: () => toValue(live),
-    placeholderData: (previous) => previous,
-  });
-  const { data: detail } = useQuery({
-    key: () => sessionKeys.eventDetail(toValue(workspaceId), selected.value),
-    query: () => GetEventDetail(toValue(workspaceId), selected.value),
-    enabled: () => toValue(live) && !!selected.value,
-  });
-  const { data: roots, isLoading: searching } = useQuery({
-    key: () => sessionKeys.roots(toValue(workspaceId), search.value, rootKind.value),
-    query: () => SearchRoots(toValue(workspaceId), search.value, rootKind.value),
-    enabled: () => toValue(live),
-    placeholderData: (previous) => previous,
+  const { data: graph, error } = useQuery(() =>
+    graphQuery({ id: toValue(workspaceId), params: params.value, live: toValue(live) }),
+  );
+  const { data: detail } = useQuery(() =>
+    eventDetailQuery({ id: toValue(workspaceId), event: selected.value, live: toValue(live) }),
+  );
+  const { data: roots, isLoading: searching } = useQuery(() =>
+    rootsQuery({ id: toValue(workspaceId), search: search.value, live: toValue(live) }),
+  );
+
+  // the graph without the kinds hidden in the page, and the fires among what is left
+  const shown = computed(() => {
+    const nodes = (graph.value?.nodes ?? []).filter((node) => !hidden.value.includes(node.kind));
+    const ids = new Set(nodes.map((node) => node.id));
+    return { nodes, edges: (graph.value?.edges ?? []).filter((edge) => ids.has(edge.from) && ids.has(edge.to)) };
   });
 
-  // dagre's top-left corner for each node, the graph read left to right
-  const positions = computed(() => {
+  // each node's step from the root along the fires: what the root reaches after it, what reaches the root
+  // before it (a chain of macros into it one step each), and a side branch one step after what fires it
+  const steps = computed(() => {
+    const { edges } = shown.value;
+    const root = params.value.root;
+    const step = reach(edges, root, true);
+    for (const [id, back] of reach(edges, root, false)) if (!step.has(id)) step.set(id, -back);
+    for (let added = true; added; ) {
+      added = false;
+      for (const edge of edges) {
+        const from = step.get(edge.from);
+        if (from !== undefined && !step.has(edge.to)) {
+          step.set(edge.to, from + 1);
+          added = true;
+        }
+      }
+    }
+    return step;
+  });
+
+  // dagre's top-left corner for each node, laid out by step: dagre is given only the fires one step
+  // further, so its columns are the steps; every fire is drawn
+  const laid = computed(() => {
+    const unit = settings.fontScale / 100;
     const dag = new Graph();
-    dag.setGraph({ rankdir: "LR", nodesep: 56, ranksep: 180, marginx: 32, marginy: 32 });
+    dag.setGraph({ rankdir: "LR", nodesep: 12 * unit, ranksep: 60 * unit, marginx: 20 * unit, marginy: 40 * unit });
     dag.setDefaultEdgeLabel(() => ({}));
-    for (const node of graph.value?.nodes ?? []) dag.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
-    for (const edge of graph.value?.edges ?? []) dag.setEdge(edge.from, edge.to);
+    for (const node of shown.value.nodes) {
+      const box = BOX[shapeOf(node)];
+      dag.setNode(node.id, { width: box.width * unit, height: box.height * unit });
+    }
+    for (const edge of shown.value.edges) {
+      const from = steps.value.get(edge.from);
+      if (from !== undefined && steps.value.get(edge.to) === from + 1) dag.setEdge(edge.from, edge.to);
+    }
     layout(dag);
-    return new Map(
-      dag.nodes().map((id) => [id, { x: dag.node(id).x - NODE_WIDTH / 2, y: dag.node(id).y - NODE_HEIGHT / 2 }]),
-    );
+    const centers = [...new Set(dag.nodes().map((id) => Math.round(dag.node(id).x)))].sort((a, b) => a - b);
+    const rootColumn = centers.indexOf(Math.round(dag.node(params.value.root)?.x ?? NaN));
+    const top = Math.min(...dag.nodes().map((id) => dag.node(id).y - dag.node(id).height / 2));
+    return {
+      positions: new Map(
+        dag.nodes().map((id) => [id, { x: dag.node(id).x - dag.node(id).width / 2, y: dag.node(id).y - dag.node(id).height / 2 }]),
+      ),
+      // a column's head is its step from the root's; the callers' columns stand before it
+      heads: rootColumn < 0 ? [] : centers.map((x, i) => ({ x: x - (BOX.card.width * unit) / 2, y: top - 28 * unit, step: i - rootColumn })),
+    };
   });
 
   /** A click: a stub opens what it hides; anything else is selected. */
-  function select(id: string): void {
-    if (id.startsWith("more:") || id.startsWith("more-in:")) {
-      params.value = { ...params.value, expand: [...params.value.expand, id] };
-      return;
-    }
-    selected.value = id;
+  function select(node: Node): void {
+    if (node.stub) params.value = { ...params.value, expand: [...(params.value.expand ?? []), node.id] };
+    else selected.value = node.id;
   }
 
   /** Draw the graph around another definition, and select it. */
@@ -84,5 +138,37 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
     selected.value = id;
   }
 
-  return { params, selected, searchTerm, rootKind, graph, error, detail, roots, searching, positions, select, setRoot };
+  /** The filters back as the page starts: every kind, every origin, three steps, 120 nodes. */
+  function resetFilters(): void {
+    params.value = { ...params.value, ...DEFAULTS };
+    hidden.value = [];
+  }
+  // how many of the four filters differ from their defaults
+  const filtersOn = computed(
+    () =>
+      [
+        hidden.value.length > 0 || params.value.scripted,
+        !!params.value.origins?.length,
+        params.value.depth !== DEFAULTS.depth,
+        params.value.maxNodes !== DEFAULTS.maxNodes,
+      ].filter(Boolean).length,
+  );
+
+  return {
+    params,
+    hidden,
+    selected,
+    searchTerm,
+    graph,
+    error,
+    detail,
+    roots,
+    searching,
+    shown,
+    laid,
+    filtersOn,
+    select,
+    setRoot,
+    resetFilters,
+  };
 }

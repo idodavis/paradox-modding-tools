@@ -7,11 +7,14 @@
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
 import { LastRunCrashed } from "@services/logservice";
-import { ReadFileBase64, StatPath } from "@services/fileservice";
-import { GetHealth } from "@services/healthservice";
+import { ReadEditableBase64, ReadFileBase64, StatPath } from "@services/fileservice";
+import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
+import { GetHealth, GetLines, LookupLoc } from "@services/healthservice";
+import type { EventGraph, Params, Roots, SourceAt } from "@services/models";
 import { DiagnosticCodes } from "@services/ideservice";
 import { LoadListing, UploadFiles } from "@services/releaseservice";
 import { EnsureSession, GetLanguageHealth } from "@services/sessionservice";
+import { PatchPage, Patches } from "@services/wikiservice";
 import {
   DefaultModParent,
   FindGameInstalls,
@@ -45,7 +48,7 @@ export const sessionKeys = {
   health: (id: string, order: readonly string[]) => ["session", id, "health", [...order]] as const,
   graph: (id: string, params: object) => ["session", id, "graph", params] as const,
   eventDetail: (id: string, event: string) => ["session", id, "event-detail", event] as const,
-  roots: (id: string, search: string, kind: string) => ["session", id, "roots", search, kind] as const,
+  roots: (id: string, search: string) => ["session", id, "roots", search] as const,
   loc: (id: string, key: string) => ["session", id, "loc", key] as const,
   lines: (id: string, places: readonly string[]) => ["session", id, "lines", [...places]] as const,
 };
@@ -73,6 +76,7 @@ export const wikiKeys = {
 export const fileKeys = {
   image: (path: string) => ["file", "image", path] as const,
   stat: (path: string) => ["file", "stat", path] as const,
+  text: (path: string) => ["file", "text", path] as const,
 };
 
 export const versionQuery = defineQueryOptions({ key: appKeys.version, query: () => GetVersion(), staleTime: Infinity });
@@ -142,6 +146,59 @@ export const healthQuery = defineQueryOptions(
   }),
 );
 
+/** The event graph around a root, the one drawn kept while the next is read. */
+export const graphQuery = defineQueryOptions(({ id, params, live }: { id: string; params: Params; live: boolean }) => ({
+  key: sessionKeys.graph(id, params),
+  query: () => GetEventGraph(id, params),
+  enabled: !!id && live,
+  placeholderData: (previous: EventGraph | null | undefined) => previous,
+}));
+
+/** One definition of the graph, opened. */
+export const eventDetailQuery = defineQueryOptions(({ id, event, live }: { id: string; event: string; live: boolean }) => ({
+  key: sessionKeys.eventDetail(id, event),
+  query: () => GetEventDetail(id, event),
+  enabled: !!id && live && !!event,
+}));
+
+/** The roots a search holds, by kind. */
+export const rootsQuery = defineQueryOptions(({ id, search, live }: { id: string; search: string; live: boolean }) => ({
+  key: sessionKeys.roots(id, search),
+  query: () => SearchRoots(id, search, ""),
+  enabled: !!id && live,
+  placeholderData: (previous: Roots | null | undefined) => previous,
+}));
+
+/** A game's patch notes, newest first, and when its wiki was last read. */
+export const patchesQuery = defineQueryOptions((gameId: string) => ({
+  key: wikiKeys.patches(gameId),
+  query: () => Patches(gameId),
+  enabled: !!gameId,
+}));
+
+/** One patch note, by its version or title. */
+export const patchPageQuery = defineQueryOptions(({ gameId, version }: { gameId: string; version: string }) => ({
+  key: wikiKeys.patch(gameId, version),
+  query: () => PatchPage(gameId, version),
+  enabled: !!gameId && !!version,
+}));
+
+/** The source lines of the places a pane shows: a definition's statement, a reference's line. */
+export const linesQuery = defineQueryOptions(
+  ({ id, places, live }: { id: string; places: SourceAt[]; live: boolean }) => ({
+    key: sessionKeys.lines(id, places.map((at) => `${at.path}:${at.line}:${at.col}:${at.definition}`)),
+    query: () => GetLines(id, places),
+    enabled: !!id && live && places.length > 0,
+  }),
+);
+
+/** A localization key's entries in every language, and what reads it. */
+export const locQuery = defineQueryOptions(({ id, key, live }: { id: string; key: string; live: boolean }) => ({
+  key: sessionKeys.loc(id, key),
+  query: () => LookupLoc(id, key),
+  enabled: !!id && live && !!key,
+}));
+
 export const codesQuery = defineQueryOptions({
   key: ideKeys.codes,
   query: async () => (await DiagnosticCodes()) ?? [],
@@ -186,6 +243,17 @@ export const imageQuery = defineQueryOptions((path: string) => ({
     image.src = `data:${imageMime(path)};base64,${file.b64}`;
     await image.decode();
     return { src: image.src, width: image.naturalWidth, height: image.naturalHeight };
+  },
+  enabled: !!path,
+}));
+
+/** A text file's contents, read as the editor reads them; none when it cannot be read. */
+export const textQuery = defineQueryOptions((path: string) => ({
+  key: fileKeys.text(path),
+  query: async () => {
+    const file = await ReadEditableBase64(path);
+    if (!file.exists || file.reject) return undefined;
+    return new TextDecoder().decode(Uint8Array.from(atob(file.b64 ?? ""), (c) => c.charCodeAt(0)));
   },
   enabled: !!path,
 }));

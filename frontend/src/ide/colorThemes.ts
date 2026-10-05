@@ -14,6 +14,7 @@ import lightVs from
   "@codingame/monaco-vscode-theme-defaults-default-extension/resources/light_vs.json";
 import Color from "colorjs.io";
 import { MODES, THEMES, type ThemeId } from "../stores/settings";
+import { PARADOX_SCOPES } from "../lib/code";
 
 /** Each family's two halves, as the workbench lists them. */
 const HALVES = THEMES.flatMap((family) =>
@@ -122,40 +123,10 @@ function workbenchColors(t: Tokens): Record<string, string> {
 
 /** The Paradox grammars' scopes in the boards' six syntax colors. */
 function paradoxTokenColors(t: Tokens): unknown[] {
-  return [
-    { scope: ["comment", "comment.line.number-sign.paradox"], settings: { foreground: t["syn-com"], fontStyle: "italic" } },
-    // operators and braces in the text's own color, as the boards draw them
-    {
-      scope: ["keyword.operator.comparison.paradox", "keyword.operator.arithmetic.paradox",
-        "punctuation.section.block.begin.paradox", "punctuation.section.block.end.paradox",
-        "punctuation.section.brackets.paradox"],
-      settings: { foreground: t["fg-1"] },
-    },
-    {
-      scope: ["keyword.control.paradox", "keyword.operator.iterator.paradox", "variable.other.property.paradox",
-        "entity.name.type.paradox", "keyword.control.paradox-gui", "keyword.control.language.paradox-loc"],
-      settings: { foreground: t["syn-kw"] },
-    },
-    {
-      scope: ["string.quoted.double.paradox", "string.quoted.double.paradox-loc", "string.quoted.double.paradox-gui"],
-      settings: { foreground: t["syn-str"] },
-    },
-    {
-      scope: ["constant.numeric.paradox", "constant.numeric.date.paradox", "constant.language.paradox"],
-      settings: { foreground: t["syn-num"] },
-    },
-    {
-      scope: ["entity.name.function.event-id.paradox", "support.function.databinding.paradox",
-        "support.function.databinding.paradox-gui"],
-      settings: { foreground: t["syn-fn"] },
-    },
-    {
-      scope: ["variable.other.saved-scope.paradox", "variable.other.constant.script.paradox",
-        "variable.other.substitution.paradox", "variable.other.substitution.paradox-loc", "variable.parameter.macro.paradox",
-        "variable.parameter.placeholder.paradox", "variable.language.scope.paradox"],
-      settings: { foreground: t["syn-ref"] },
-    },
-  ];
+  return PARADOX_SCOPES.map(({ token, italic, scope }) => ({
+    scope,
+    settings: { foreground: t[token], ...(italic && { fontStyle: "italic" }) },
+  }));
 }
 
 /** One theme's document: its colors, VS Code's own token colors, and the Paradox scopes. */

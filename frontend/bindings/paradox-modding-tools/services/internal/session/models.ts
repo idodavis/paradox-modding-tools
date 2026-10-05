@@ -21,5 +21,15 @@ export interface Era {
 export interface Fire {
     "name": string;
     "database": string;
+
+    /**
+     * what one of its database is called (game.KindName)
+     */
+    "kind": string;
     "via": string;
+
+    /**
+     * how many scripted entries Via names
+     */
+    "through"?: number;
 }

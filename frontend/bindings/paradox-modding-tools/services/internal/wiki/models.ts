@@ -30,7 +30,21 @@ export interface Page {
 export interface PatchEntry {
     "title": string;
     "version": string;
+
+    /**
+     * the version a hotfix belongs to, as 1.14
+     */
     "parent": string;
+
+    /**
+     * the page has a Modding section
+     */
+    "modding": boolean;
+
+    /**
+     * the newest patch
+     */
+    "latest"?: boolean;
 }
 
 /**
@@ -39,6 +53,11 @@ export interface PatchEntry {
 export interface PatchList {
     "gameId": string;
     "pages": PatchEntry[] | null;
+
+    /**
+     * when the game's pages were last fetched (RFC 3339)
+     */
+    "fetched"?: string;
 }
 
 /**

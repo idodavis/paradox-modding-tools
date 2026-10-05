@@ -1,305 +1,162 @@
 <script setup lang="ts">
 /**
- * Health: what the workspace's load order decides and what it lacks. Five counts pick the table;
- * a row opens beside it with the lines each of its sites writes.
+ * Health (the Health board): the load order, dragged to preview another; six cards, three the order
+ * changes and three fixed in the files, each a count; the chosen card's table, and the open row beside it.
+ * A link opens a card and a row by name (`?card=&name=`).
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
+import { useRouter } from "vue-router";
+import { useElementSize, useLocalStorage } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
-import DetailPane from "../components/DetailPane.vue";
-import ScriptSnippet from "../components/ScriptSnippet.vue";
-import HealthTable, {
-  PROBLEM_CARDS,
-  problemsOf,
-  type Card,
-  type Gap,
-  type ProblemCard,
-  type Row,
-} from "../components/health/HealthTable.vue";
-import { useHealth } from "../composables/useHealth";
+import HealthDetail from "../components/health/HealthDetail.vue";
+import HealthTable from "../components/health/HealthTable.vue";
+import { rowsOf, useHealth, type Card, type Row } from "../composables/useHealth";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
-import { useOpenInIde } from "../composables/useOpenInIde";
 import { useWorkspaceStore } from "../stores/workspace";
 
-const PANEL_UI = { root: "min-h-0", body: "gap-0 overflow-hidden p-0 sm:p-0" } as const;
+const { id, card: linkedCard, name } = defineProps<{ id: string; card?: string; name?: string }>();
 
+const router = useRouter();
 const store = useWorkspaceStore();
-const { openInIde } = useOpenInIde();
-const { id: workspaceId } = defineProps<{ id: string }>();
-const live = useLiveEnabled(() => workspaceId);
-const { order, dirty, health, error, isPending, save, saving, locKey, lookup, places, lines } = useHealth(
-  () => workspaceId,
-  live,
-);
+const live = useLiveEnabled(() => id);
+const { order, dirty, health, error, isPending, save, saving } = useHealth(() => id, live);
 
-const card = shallowRef<Card>("contests");
-const selected = shallowRef<Row | null>(null);
-// the rows the table shows for its card, which that card's numbers count
-const shown = shallowRef<{ card: Card; rows: Row[] }>({ card: "contests", rows: [] });
-watch(card, () => (selected.value = null));
+/** Each card's tile: its name, its dot's color and what it counts. */
+const TILES: Record<Card, { label: string; dot: string; note?: string }> = {
+  contests: { label: "Contests", dot: "var(--orange)" },
+  overrides: { label: "Overrides", dot: "var(--blue)", note: "Mods replacing game objects" },
+  depends: { label: "Dependencies", dot: "var(--fg-3)", note: "Mods reading other mods" },
+  // the problems in the error colors: red, orange, and a yellow between orange and the accent
+  dangling: { label: "Dangling refs", dot: "var(--red)", note: "Used, never defined" },
+  loc: { label: "Loc gaps", dot: "color-mix(in oklab, var(--orange), var(--accent))" },
+  script: { label: "Script errors", dot: "var(--orange)", note: "Scope, values, syntax" },
+};
+const GROUPS: { title: string; hint: string; cards: Card[] }[] = [
+  { title: "Load order", hint: "Changes when you reorder mods", cards: ["contests", "overrides", "depends"] },
+  { title: "Problems in the mods", hint: "Fixed in the files", cards: ["dangling", "loc", "script"] },
+];
+const isCard = (value: string | undefined): value is Card => !!value && value in TILES;
 
-// the playset's chips, dragged to preview another load order
-useSortable(useTemplateRef<HTMLElement>("chips"), order, { animation: 150, watchElement: true });
+// the card is the route's, so a link and the tiles pick it alike
+const card = computed({
+  get: (): Card => (isCard(linkedCard) ? linkedCard : "contests"),
+  set: (next: Card) => void router.replace({ query: { card: next } }),
+});
+const rows = computed(() => rowsOf(health.value, card.value));
+const open = shallowRef<Row | null>(null);
+watch(card, () => (open.value = null));
+// a linked name opens its row once the report holds it
+watch([() => name, rows], () => {
+  const named = name && rows.value.find((row) => ("name" in row && row.name === name) || ("key" in row && row.key === name));
+  if (named) open.value = named;
+});
 
-/** A card's rows: those its table shows, so its numbers follow the filters; all when not chosen. */
-function listed<T>(id: Card, all: T[] | null | undefined): T[] {
-  return card.value === id && shown.value.card === id ? (shown.value.rows as T[]) : (all ?? []);
+const counts = computed(() => Object.fromEntries(GROUPS.flatMap((group) => group.cards).map((c) => [c, rowsOf(health.value, c).length])));
+const total = computed(() => Object.values(counts.value).reduce((sum, count) => sum + count, 0));
+/** A tile's note: the rule each contest goes by, the languages keys are missing in, else its own. */
+function note(c: Card): string {
+  if (c === "contests") {
+    const fios = (health.value?.contests ?? []).filter((contest) => contest.firstWins).length;
+    return `${counts.value.contests - fios} LIOS, ${fios} FIOS`;
+  }
+  if (c === "loc") {
+    const missing = (health.value?.loc ?? []).filter((gaps) => gaps.untranslated?.length);
+    return missing.map((gaps) => `${gaps.language} ${gaps.untranslated?.length}`).join(", ") || "Every key translated";
+  }
+  return TILES[c].note ?? "";
 }
 
-const cards = computed(() => {
-  const report = health.value;
-  const contests = listed("contests", report?.contests);
-  const firstWins = contests.filter((contest) => contest.firstWins).length;
-  const depends = listed("depends", report?.depends);
-  const languages = new Map<string, number>();
-  if (card.value === "loc" && shown.value.card === "loc") {
-    for (const gap of shown.value.rows as Gap[]) languages.set(gap.language, (languages.get(gap.language) ?? 0) + 1);
-  } else {
-    for (const language of report?.loc ?? []) {
-      languages.set(language.language, language.untranslated?.length ?? 0);
-    }
-  }
-  return [
-    {
-      id: "contests",
-      label: "Conflicts",
-      color: "warning",
-      count: contests.length,
-      note: `entries two mods both define · ${contests.length - firstWins} last-loaded wins · ${firstWins} first-loaded wins`,
-    },
-    {
-      id: "overrides", label: "Overrides", color: "secondary",
-      count: listed("overrides", report?.overrides).length,
-      note: "game entries a mod replaces or adds to",
-    },
-    {
-      id: "depends", label: "Dependencies", color: "info",
-      count: depends.length,
-      note: `mods using entries only another mod adds · ${depends.filter((row) => row.affected).length} affected by changes`,
-    },
-    {
-      id: "dangling", label: "Dangling refs", color: "error",
-      count: listed("dangling", report?.dangling).length,
-      note: "names used but defined nowhere",
-    },
-    {
-      id: "loc",
-      label: "Loc gaps",
-      color: "primary",
-      count: [...languages.values()].reduce((sum, count) => sum + count, 0),
-      note: `keys missing in: ${[...languages].map(([language, count]) => `${language} ${count}`).join(" · ")}`,
-    },
-    ...(Object.keys(PROBLEM_CARDS) as ProblemCard[]).map((id) => ({
-      id, label: PROBLEM_CARDS[id].label, color: "neutral",
-      count: listed(id, problemsOf(report, id)).length,
-      note: PROBLEM_CARDS[id].note,
-    })),
-  ] satisfies { id: Card; label: string; color: string; count: number; note: string }[];
-});
-const current = computed(() => cards.value.find((item) => item.id === card.value));
-
-// the selected row's sites with their files and the lines read for them, else the one place the
-// row is written
-const sites = computed(() => {
-  const row = selected.value;
-  const sources = health.value?.sources ?? [];
-  if (!row) return [];
-  if ("sites" in row) {
-    return (row.sites ?? []).map((site, i) => ({ ...site, at: sources[site.file], lines: lines.value?.[i] ?? null }));
-  }
-  if ("site" in row) return [{ ...row.site, at: sources[row.site.file], lines: lines.value?.[0] ?? null }];
-  return [{ at: sources[row.file], line: row.line, lines: null, database: undefined, name: undefined }];
-});
-const kept = computed(() => (selected.value && "winner" in selected.value ? selected.value.winner : -1));
-// the open row when it is a contest, whose kind and rule head the pane
-const contest = computed(() => (selected.value && "rule" in selected.value ? selected.value : null));
-// what its rule does: an inject adds to the kept definition, a mode like REPLACE takes its place,
-// else load order decides
-const ruleText = computed(() => {
-  const row = contest.value;
-  if (!row) return "";
-  if (row.sites?.some((site) => site.injected)) return "an injected definition is added to the one kept";
-  if (row.rule !== "FIOS" && row.rule !== "LIOS") return `the ${row.rule} definition takes its place`;
-  return `the ${row.firstWins ? "first" : "last"} definition loaded wins`;
-});
-const title = computed(() => {
-  const row = selected.value;
-  if (!row) return "";
-  if ("message" in row) return row.message;
-  if ("key" in row) return row.key;
-  if ("name" in row) return row.name;
-  return `${store.originName(row.from)} ${row.affected ? "is affected by" : "depends on"} ${store.originName(row.to)}`;
-});
-// the mod an open dependency row is about, which a removed site says took the name out
-const remover = computed(() => (selected.value && "to" in selected.value ? store.originName(selected.value.to) : ""));
-// an open loc row's key is looked up; an open row's sites have their lines read, a definition's
-// whole
-watch(selected, (row) => {
-  const sources = health.value?.sources ?? [];
-  locKey.value = row && "gap" in row ? row.key : "";
-  const written = row && "site" in row ? [row.site] : row && "sites" in row ? (row.sites ?? []) : [];
-  places.value = written.map((site) => ({ path: sources[site.file].path, line: site.line, col: site.col, definition: !!row && "rule" in row }));
+/** A load-order chip's look, the game's and each mod's. */
+const CHIP = "flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-default bg-muted ps-1.5 pe-2.5 text-12 font-medium text-muted whitespace-nowrap";
+// the mods' chips, dragged to preview another load order; the game stays first
+useSortable(useTemplateRef<HTMLElement>("chips"), order, { animation: 150, watchElement: true });
+// the table's share of the split, either pane taking up to four fifths
+const split = useTemplateRef<HTMLElement>("split");
+const { width: splitWidth } = useElementSize(split);
+const tableShare = useLocalStorage("pmt.health.tableShare", 0.65);
+const tableWidth = computed({
+  get: () => Math.round(tableShare.value * splitWidth.value),
+  set: (px: number) => (tableShare.value = splitWidth.value ? px / splitWidth.value : tableShare.value),
 });
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <UAlert v-if="error" color="error" variant="subtle" :description="error.message" class="m-2" />
+  <div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden px-6 pt-4.5">
+    <UAlert v-if="error" color="error" variant="subtle" :description="error.message" />
 
-    <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default px-3 py-2 text-sm text-muted">
-      <span class="font-medium text-toned">Load order</span>
-      <ul ref="chips" class="flex flex-wrap items-center gap-1.5">
-        <li
-          v-for="id in order"
-          :key="id"
-          class="flex cursor-grab items-center gap-1.5 rounded-md border border-default bg-elevated py-1 pr-2.5 pl-1
-            text-default hover:border-accented"
-        >
-          <UIcon name="i-lucide-grip-vertical" class="size-4 text-dimmed" />
-          <Thumb v-if="store.mod(id)?.thumbnail" :path="store.mod(id)?.thumbnail" size="sm" />
-          <span class="size-2 shrink-0 rounded-full" :style="{ backgroundColor: store.originColor(id) }" />
-          {{ store.originName(id) }}
+    <div class="flex items-center gap-2">
+      <span class="me-1.5 shrink-0 text-12 font-medium whitespace-nowrap text-muted">Load order</span>
+      <span :class="CHIP">
+        <span class="w-3 text-center font-mono text-11 text-dimmed">0</span>
+        <OriginDot :color="store.originColor(store.originVanilla)" small />
+        {{ store.originName(store.originVanilla) }}
+      </span>
+      <ul ref="chips" class="flex min-w-0 items-center gap-2 overflow-x-auto">
+        <li v-for="(mod, i) in order" :key="mod" class="flex shrink-0 cursor-grab items-center gap-2">
+          <UIcon name="i-lucide-chevron-right" class="size-3.5 text-dimmed" />
+          <span :class="CHIP">
+            <UIcon name="i-lucide-grip-vertical" class="size-3.5 text-dimmed" />
+            <span class="w-3 text-center font-mono text-11 text-dimmed">{{ i + 1 }}</span>
+            <OriginDot :color="store.originColor(mod)" small />
+            {{ store.originName(mod) }}
+          </span>
         </li>
       </ul>
-      <span>drag to preview another order</span>
-      <div class="flex-1" />
-      <UButton label="Save as workspace order" size="sm" :disabled="!dirty" :loading="saving" @click="save()" />
+      <span class="ms-2 shrink-0 text-12 whitespace-nowrap text-dimmed">Drag to preview another order.</span>
+      <span class="grow" />
+      <UButton label="Save as workspace order" class="shrink-0" :disabled="!dirty" :loading="saving" @click="save()" />
     </div>
 
-    <div class="grid shrink-0 grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2 p-2">
-      <button
-        v-for="item in cards"
-        :key="item.id"
-        type="button"
-        class="rounded-lg border bg-elevated px-3 py-2.5 text-left transition-colors"
-        :class="card === item.id ? 'border-(--card) ring-1 ring-(--card)' : 'border-default hover:border-accented'"
-        :style="{ '--card': `var(--ui-${item.color})` }"
-        @click="card = item.id"
-      >
-        <div class="text-sm font-medium text-toned">{{ item.label }}</div>
-        <div class="my-0.5 text-3xl font-semibold tabular-nums text-(--card)">{{ item.count }}</div>
-        <div class="truncate text-xs text-muted">{{ item.note }}</div>
-      </button>
-    </div>
-
-    <UDashboardGroup
-      storage="local"
-      storage-key="pmt-health"
-      :ui="{ base: 'relative inset-auto flex min-h-0 min-w-0 flex-1 overflow-hidden' }"
-      class="mx-2 mb-2 rounded-lg border border-default"
-    >
-      <UDashboardPanel id="health-table" resizable :default-size="65" :min-size="40" :max-size="85" :ui="PANEL_UI">
-        <HealthTable
-          :health="health"
-          :card="card"
-          :loading="isPending"
-          @select="selected = $event"
-          @shown="(id, rows) => (shown = { card: id, rows })"
-        >
-          <span class="text-base font-semibold text-highlighted">{{ current?.label }}</span>
-          <span class="truncate text-sm text-muted">{{ current?.note }}</span>
-        </HealthTable>
-      </UDashboardPanel>
-      <UDashboardPanel id="health-sites" :ui="PANEL_UI">
-        <DetailPane
-          :workspace-id="workspaceId"
-          :title="title"
-          :file="sites[kept]?.at.path ?? sites[0]?.at.path"
-          :rel="sites[kept]?.at.rel ?? sites[0]?.at.rel"
-          :line="sites[kept]?.line ?? sites[0]?.line"
-        >
-          <template v-if="contest" #badges>
-            <UBadge :label="contest.database" color="neutral" variant="subtle" />
-            <UBadge :label="contest.rule" :color="contest.firstWins ? 'warning' : 'info'" variant="subtle" />
-            <span class="text-sm text-toned">{{ ruleText }}</span>
-          </template>
-          <div class="space-y-3 text-sm">
-            <!-- a site without lines, as a loc row's, is the header's own file and not repeated -->
-            <template v-for="(site, i) in sites" :key="`${site.at.path}:${site.line}`">
-              <div v-if="site.lines?.length" class="overflow-hidden rounded-md border border-default">
-                <div class="flex items-center gap-2 border-b border-default bg-default px-2 py-1.5">
-                  <span
-                    class="size-2 shrink-0 rounded-full"
-                    :style="{ backgroundColor: store.originColor(site.at.origin) }"
-                  />
-                  <span class="shrink-0 text-sm font-medium text-highlighted">
-                    {{ store.originName(site.at.origin) }}
-                  </span>
-                  <UBadge v-if="site.database" :label="site.database" color="neutral" variant="subtle" size="sm" />
-                  <span v-if="site.name" class="shrink-0 font-mono text-xs text-toned">{{ site.name }}</span>
-                  <button
-                    type="button"
-                    class="min-w-0 truncate font-mono text-xs text-muted hover:underline"
-                    @click="openInIde(workspaceId, site.at.path, site.line + 1)"
-                  >
-                    {{ site.at.rel }}:{{ site.line + 1 }}
-                  </button>
-                  <UBadge
-                    v-if="site.removed"
-                    :label="`removed by ${remover}`"
-                    color="error"
-                    variant="subtle"
-                    size="sm"
-                    class="ml-auto shrink-0"
-                  />
-                  <UBadge
-                    v-else-if="kept >= 0"
-                    :label="i === kept ? 'kept' : site.injected ? 'injected' : 'replaced'"
-                    :color="i === kept ? 'success' : site.injected ? 'info' : 'error'"
-                    variant="subtle"
-                    size="sm"
-                    class="ml-auto shrink-0"
-                  />
-                </div>
-                <ScriptSnippet
-                  :text="site.lines.join('\n')"
-                  language="paradox"
-                  :from-line="site.line"
-                  gutter
-                  class="rounded-none! border-0!"
-                />
-              </div>
-            </template>
-            <section v-if="lookup?.entries?.length">
-              <h4 class="mb-2 text-sm font-semibold text-highlighted">Text</h4>
-              <!-- the text column shrinks to the pane: a long path is cut, its whole on hover -->
-              <dl
-                class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-md border border-default bg-default
-                  p-3"
-              >
-                <template v-for="entry in lookup.entries" :key="`${entry.at.path}:${entry.line}`">
-                  <dt class="text-muted">{{ entry.language }}</dt>
-                  <dd class="min-w-0">
-                    <blockquote class="border-l-2 border-accented pl-3 break-words text-default italic">
-                      {{ entry.value }}
-                    </blockquote>
-                    <button
-                      type="button"
-                      class="mt-1 block max-w-full truncate font-mono text-xs text-muted hover:underline"
-                      :title="entry.at.rel"
-                      @click="openInIde(workspaceId, entry.at.path, entry.line + 1)"
-                    >
-                      {{ entry.at.rel }}:{{ entry.line + 1 }}
-                    </button>
-                  </dd>
-                </template>
-              </dl>
-            </section>
-            <div v-if="lookup?.readers?.length" class="space-y-1">
-              <h4 class="mb-2 text-sm font-semibold text-highlighted">Read by</h4>
-              <button
-                v-for="reader in lookup.readers"
-                :key="`${reader.at.path}:${reader.line}:${reader.col}`"
-                type="button"
-                class="block max-w-full truncate font-mono text-xs text-muted hover:underline"
-                :title="reader.at.rel"
-                @click="openInIde(workspaceId, reader.at.path, reader.line + 1)"
-              >
-                {{ reader.at.rel }}:{{ reader.line + 1 }}
-              </button>
-            </div>
+    <div class="flex items-stretch gap-6">
+      <template v-for="(group, g) in GROUPS" :key="group.title">
+        <USeparator v-if="g" orientation="vertical" class="h-auto" />
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <div class="flex items-baseline gap-2.5 whitespace-nowrap">
+            <span class="text-13 font-semibold">{{ group.title }}</span>
+            <span class="text-12 text-dimmed">{{ group.hint }}</span>
           </div>
-        </DetailPane>
-      </UDashboardPanel>
-    </UDashboardGroup>
+          <div class="grid grid-cols-3 gap-2.5">
+            <button
+              v-for="c in group.cards"
+              :key="c"
+              type="button"
+              class="flex min-w-0 flex-col gap-1 rounded-lg border px-3.5 py-3 text-left"
+              :class="card === c ? 'border-primary bg-elevated ring-2 ring-(--accent-soft)' : 'border-default bg-muted'"
+              @click="card = c"
+            >
+              <span class="flex items-center gap-1.5 text-12 font-medium whitespace-nowrap text-muted">
+                <OriginDot :color="TILES[c].dot" :small="g === 0" />{{ TILES[c].label }}
+              </span>
+              <span class="text-28 tabular-nums">{{ counts[c] }}</span>
+              <span class="truncate text-11 leading-3.75 text-dimmed">{{ note(c) }}</span>
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <div ref="split" class="flex min-h-0 grow overflow-hidden rounded-t-lg border border-b-0 border-default">
+      <HealthTable
+        v-model="open"
+        :card="card"
+        :rows="rows"
+        :sources="health?.sources ?? []"
+        :loading="isPending"
+        class="shrink-0 border-e border-default"
+        :style="{ width: `${tableWidth}px` }"
+      />
+      <ResizeGrip
+        v-model="tableWidth"
+        :min="splitWidth * 0.2"
+        :max="splitWidth * 0.8"
+        :default-size="Math.round(splitWidth * 0.65)"
+      />
+      <HealthDetail :workspace-id="id" :row="open" :sources="health?.sources ?? []" :live="live" />
+    </div>
+
+    <StatusFacts>
+      <span>{{ total }} findings across {{ Object.keys(counts).length }} checks</span>
+      <span>{{ dirty ? "Preview order differs from the workspace" : "Preview order matches the workspace" }}</span>
+    </StatusFacts>
   </div>
 </template>

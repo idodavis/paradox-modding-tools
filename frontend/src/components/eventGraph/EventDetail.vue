@@ -1,237 +1,347 @@
 <script setup lang="ts">
 /**
- * The selected definition, opened: its header, then three sections (overview, script and links),
- * each written once and placed as tabs in a drawer or as columns in a bottom panel.
+ * The selected definition (the EventGraph board's drawer as O-R35 redraws it): its kind, origin, name and file,
+ * Set as root and Open in IDE; then three tabs. The first shows it part by part (O-R37): its type and one-word
+ * properties, its title, portraits, texts and options, a part with versions a version at a time; Links, what it
+ * fires and what fires it by kind, and the names it reads; Script, as written, in Health's site card.
  */
-import { computed, ref } from "vue";
-import { createReusableTemplate } from "@vueuse/core";
-import type { Detail } from "@services/models";
-import FieldHelpTip from "../FieldHelpTip.vue";
-import ScriptSnippet from "../ScriptSnippet.vue";
+import { computed, shallowRef, watch } from "vue";
+import { createReusableTemplate, useClipboard } from "@vueuse/core";
+import type { Cited, Detail, Version } from "@services/models";
+import { kindOf } from "../../composables/useEventGraph";
 import { useOpenInIde } from "../../composables/useOpenInIde";
 import { useWorkspaceStore } from "../../stores/workspace";
 
-const props = defineProps<{ workspaceId: string; detail: Detail | null | undefined; layout: "drawer" | "panel" }>();
+const { workspaceId, detail, isRoot } = defineProps<{ workspaceId: string; detail: Detail; isRoot: boolean }>();
 const emit = defineEmits<{ close: []; root: [id: string] }>();
 const store = useWorkspaceStore();
 const { openInIde } = useOpenInIde();
-const [DefineHead, Head] = createReusableTemplate<{ title: string; hint: string }>();
-const [DefineOverview, Overview] = createReusableTemplate();
-const [DefineScript, Script] = createReusableTemplate();
-const [DefineLinks, Links] = createReusableTemplate();
+const { copy, copied } = useClipboard();
 
-// what each section holds, told by the tip beside its head
-const HINTS = {
-  properties: "The block's one-word members, as written.",
-  text: "The members that name a localization key, with the text the playset gives it. Hover a name for its key.",
-  options: "The event's options in order, by the text of their name.",
-  glance: "How many definitions this one fires, how many fire it, and how many kinds of name its block uses.",
-  script: "The definition as the kept file writes it.",
-  links:
-    "What this fires and what fires it: click one to draw the graph from it. Then every name its block uses, " +
-    "by kind: click one to open it in the IDE.",
-};
-const TABS = [
-  { label: "Overview", slot: "overview" as const },
-  { label: "Script", slot: "script" as const },
-  { label: "Links", slot: "links" as const },
-];
+const kind = computed(() => kindOf(detail.kind));
+/** A soft fill of a color, as the boards' badges draw it. */
+const soft = (color: string) => `color-mix(in srgb, ${color} 16%, transparent)`;
+const language = computed(() => store.activeWorkspace?.defaultLocLang ?? "");
 
-// the block's one-word keys, and its keys that name loc text
-const words = computed(() => props.detail?.sections?.filter((section) => section.value && !section.text) ?? []);
-const texts = computed(() => props.detail?.sections?.filter((section) => section.text) ?? []);
+/** A key or word as a label: its first letter capital, its underscores spaces. */
+const sentence = (text: string) => (text.charAt(0).toUpperCase() + text.slice(1)).replaceAll("_", " ");
 
-// the panel's height and the drawer's width, each dragged by its inner edge
-const size = ref({ height: 300, width: 560 });
-function resize(down: PointerEvent, side: "height" | "width"): void {
-  const client = side === "height" ? "clientY" : "clientX";
-  const [least, most] = side === "height" ? [160, 640] : [380, 960];
-  const start = size.value[side] + down[client];
-  const move = (event: PointerEvent) => (size.value[side] = Math.min(Math.max(start - event[client], least), most));
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", () => window.removeEventListener("pointermove", move), { once: true });
+// the version each stepper shows, by its id; each starts at the first
+const at = shallowRef<Record<string, number>>({});
+type Shown = Partial<Version> & { id: string; index: number; count: number };
+function shown(id: string, versions: Version[] | null | undefined): Shown {
+  const count = versions?.length ?? 0;
+  const index = (at.value[id] ?? 0) % Math.max(count, 1);
+  return { ...versions?.[index], id, index, count };
 }
+function step({ id, index, count }: Shown, by: number): void {
+  at.value = { ...at.value, [id]: (index + by + count) % count };
+}
+const [DefineStepper, Stepper] = createReusableTemplate<{ shown: Shown }>();
+const [DefineSaid, Said] = createReusableTemplate<{ shown: Shown; random?: boolean; title?: boolean }>();
 
+// its parts: the type, the texts (the title first), the portraits, the options, and its properties: the
+// one-word ones, the blocks of one-word keys (a background) and the blocks that apply only when their
+// trigger holds (a conditional background)
+const sections = computed(() => detail.sections ?? []);
+const type = computed(() => sections.value.find((section) => section.key === "type")?.value ?? detail.kind);
+const texts = computed(() =>
+  sections.value
+    .filter((section) => section.parts?.length)
+    .sort((a, b) => +(b.key === "title") - +(a.key === "title"))
+    .map((section) => ({ ...section, parts: section.parts!.map((part, p) => ({ ...part, shown: shown(`${section.line}:${p}`, part.versions) })) })),
+);
+const portraits = computed(() => sections.value.filter((section) => section.portrait));
+const options = computed(() => (detail.options ?? []).map((option) => ({ ...option, shown: shown(`option:${option.line}`, option.names) })));
+const properties = computed(() =>
+  sections.value.filter(
+    (section) => !section.parts?.length && !section.portrait && !["type", "option"].includes(section.key) && (section.when || !section.value?.includes("{ … }")),
+  ),
+);
+
+// what it fires and what fires it, the first few at a time, each kind counted
+const allFires = shallowRef(false);
+const allFiredBy = shallowRef(false);
+const fires = computed(() => (allFires.value ? detail.fires : detail.fires?.slice(0, 6)) ?? []);
+const firedBy = computed(() => (allFiredBy.value ? detail.firedBy : detail.firedBy?.slice(0, 8)) ?? []);
+function kinds(list: { kind: string }[] | null | undefined): { kind: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const { kind } of list ?? []) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  return [...counts].map(([kind, count]) => ({ kind, count }));
+}
+// a chain every caller shares is said once
+const sharedVia = computed(() => {
+  const vias = new Set(detail.firedBy?.map((fire) => fire.via));
+  return vias.size === 1 ? [...vias][0] : "";
+});
+
+// what it reads: each database's names once, with how often and where first
+const READ_COLORS: Record<string, string> = {
+  scope: "var(--syn-ref)", localization: "var(--syn-str)", scripted_effects: "var(--syn-fn)",
+  scripted_triggers: "var(--syn-fn)", script_values: "var(--syn-num)",
+};
+const reads = computed(() =>
+  (detail.refs ?? []).map((group) => {
+    const names = new Map<string, { name: string; count: number; at: Cited }>();
+    for (const cited of group.refs ?? []) {
+      const seen = names.get(cited.name);
+      if (seen) seen.count++;
+      else names.set(cited.name, { name: cited.name, count: 1, at: cited });
+    }
+    return { ...group, uses: group.refs?.length ?? 0, names: [...names.values()], color: READ_COLORS[group.database] ?? "var(--syn-kw)" };
+  }),
+);
+const uses = computed(() => reads.value.reduce((sum, group) => sum + group.uses, 0));
+const named = computed(() => reads.value.reduce((sum, group) => sum + group.names.length, 0));
+const openRead = shallowRef("");
+
+watch(
+  () => detail.name,
+  () => {
+    at.value = {};
+    allFires.value = allFiredBy.value = false;
+    openRead.value = "";
+  },
+);
+
+const tabs = computed(() => [
+  { label: sentence(detail.kind), slot: "main" as const },
+  { label: "Links", slot: "links" as const, badge: { label: String((detail.fires?.length ?? 0) + (detail.firedBy?.length ?? 0)), size: "sm" as const } },
+  { label: "Script", slot: "script" as const },
+]);
+
+/** Open a line of a file in the IDE (0-based here, 1-based in the editor). */
 function open(path: string, line: number): void {
-  void openInIde(props.workspaceId, path, line + 1);
+  void openInIde(workspaceId, path, line + 1);
 }
 </script>
 
 <template>
-  <DefineHead v-slot="{ title, hint }">
-    <div class="mb-2 flex items-center gap-1">
-      <h4 class="text-sm font-semibold text-highlighted">{{ title }}</h4>
-      <FieldHelpTip :text="hint" />
-    </div>
-  </DefineHead>
-
-  <DefineOverview>
-    <div v-if="detail" class="space-y-6 text-sm">
-      <section v-if="words.length">
-        <Head title="Properties" :hint="HINTS.properties" />
-        <div class="flex flex-wrap gap-1.5">
-          <UBadge
-            v-for="section in words"
-            :key="section.line"
-            color="neutral"
-            variant="subtle"
-            :label="`${section.key} = ${section.value}`"
-          />
-        </div>
-      </section>
-      <section v-if="texts.length">
-        <Head title="Text" :hint="HINTS.text" />
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 rounded-md border border-default bg-default p-3">
-          <template v-for="section in texts" :key="section.line">
-            <dt class="text-muted" :title="section.value">{{ section.key }}</dt>
-            <dd>
-              <blockquote class="border-l-2 border-accented pl-3 text-default italic">{{ section.text }}</blockquote>
-            </dd>
-          </template>
-        </dl>
-      </section>
-      <section v-if="detail.options?.length">
-        <Head :title="`Options (${detail.options.length})`" :hint="HINTS.options" />
-        <ol class="divide-y divide-default rounded-md border border-default bg-default">
-          <li
-            v-for="(option, i) in detail.options"
-            :key="option.line"
-            class="flex items-center gap-3 px-3 py-2"
-            :title="option.name"
-          >
-            <span class="grid size-5 shrink-0 place-items-center rounded bg-accented text-xs font-medium text-toned">
-              {{ String.fromCharCode(97 + i) }}
-            </span>
-            <span v-if="option.text || option.name" class="text-default">{{ option.text || option.name }}</span>
-            <span v-else class="text-dimmed">No name</span>
-          </li>
-        </ol>
-      </section>
-      <section>
-        <Head title="At a glance" :hint="HINTS.glance" />
-        <div class="flex flex-wrap gap-1.5">
-          <UBadge color="neutral" variant="outline" :label="`Fires ${detail.fires?.length ?? 0}`" />
-          <UBadge color="neutral" variant="outline" :label="`Fired by ${detail.firedBy?.length ?? 0}`" />
-          <UBadge color="neutral" variant="outline" :label="`Names ${detail.refs?.length ?? 0} kinds`" />
-        </div>
-      </section>
-    </div>
-  </DefineOverview>
-
-  <!-- the definition as written; long lines scroll -->
-  <DefineScript>
-    <Head title="Script" :hint="HINTS.script" />
-    <div v-if="detail?.lines?.length" class="overflow-x-auto rounded-md border border-default bg-default">
-      <ScriptSnippet
-        :text="detail.lines.join('\n')"
-        language="paradox"
-        :from-line="detail.line"
-        gutter
-        class="w-max min-w-full border-0! bg-transparent!"
-      />
-    </div>
-  </DefineScript>
-
-  <DefineLinks>
-    <Head title="Links" :hint="HINTS.links" />
-    <div v-if="detail" class="divide-y divide-default text-sm">
-      <section
-        v-for="[head, fires] in [['Fires', detail.fires], ['Fired by', detail.firedBy]] as const"
-        v-show="fires?.length"
-        :key="head"
-        class="py-3 first:pt-0"
-      >
-        <h5 class="mb-1.5 font-medium text-toned">{{ head }}</h5>
-        <!-- each with the chain of macros and the token between, as the graph draws it -->
-        <div v-for="fire in fires" :key="fire.name" class="py-0.5">
-          <UButton :label="fire.name" size="sm" variant="link" class="p-0" @click="emit('root', fire.name)" />
-          <div class="font-mono text-xs text-dimmed">{{ fire.via }}</div>
-        </div>
-      </section>
-      <section v-for="group in detail.refs" :key="group.database" class="py-3 first:pt-0">
-        <h5 class="mb-1.5 font-medium text-toned">{{ group.database }}</h5>
-        <div class="flex flex-wrap gap-x-3 gap-y-1">
-          <UButton
-            v-for="ref in group.refs"
-            :key="`${ref.line}:${ref.col}`"
-            :label="ref.name"
-            size="sm"
-            variant="link"
-            color="neutral"
-            class="p-0"
-            @click="open(ref.at.path, ref.line)"
-          />
-        </div>
-      </section>
-    </div>
-  </DefineLinks>
-
-  <div v-if="layout === 'drawer'" class="contents" :style="{ '--drawer': `${size.width}px` }">
-    <USlideover
-      :open="!!detail"
-      :modal="false"
-      :overlay="false"
-      :portal="false"
-      :dismissible="false"
-      :title="detail?.name"
-      :description="detail?.title"
-      :ui="{ content: 'absolute max-w-none w-(--drawer)', title: 'text-lg', body: 'space-y-4' }"
-      @update:open="emit('close')"
-    >
-      <template #body>
-        <div
-          class="absolute inset-y-0 left-0 w-1.5 cursor-col-resize hover:bg-primary/30"
-          @pointerdown="resize($event, 'width')"
-        />
-        <template v-if="detail">
-          <div class="flex items-center gap-2">
-            <OriginChip :label="store.originName(detail.at.origin)" :color="store.originColor(detail.at.origin)" />
-            <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted">
-              {{ detail.at.rel }}:{{ detail.line + 1 }}
-            </span>
-            <UButton label="Open in IDE" size="sm" @click="open(detail.at.path, detail.line)" />
-            <UButton
-              label="Set as root"
-              size="sm"
-              color="neutral"
-              variant="outline"
-              @click="emit('root', detail.name)"
-            />
-          </div>
-          <UTabs :items="TABS" variant="link" size="sm">
-            <template #overview><Overview /></template>
-            <template #script><Script /></template>
-            <template #links><Links /></template>
-          </UTabs>
-        </template>
-      </template>
-    </USlideover>
-  </div>
-
-  <div
-    v-else-if="detail"
-    class="flex shrink-0 flex-col border-t border-default bg-elevated"
-    :style="{ height: `${size.height}px` }"
-  >
-    <div class="flex h-3 shrink-0 cursor-row-resize justify-center pt-1" @pointerdown="resize($event, 'height')">
-      <div class="h-1 w-10 rounded-full bg-accented" />
-    </div>
-    <div class="flex shrink-0 items-center gap-3 border-b border-default px-4 pb-2">
-      <div class="min-w-0">
-        <div class="truncate text-lg font-semibold text-highlighted">{{ detail.name }}</div>
-        <div v-if="detail.title" class="truncate text-sm text-toned">{{ detail.title }}</div>
+  <aside class="flex min-h-0 min-w-0 flex-col bg-muted">
+    <div class="flex flex-col gap-1.5 border-b border-default px-4 pt-3.5 pb-3">
+      <div class="flex items-center gap-2">
+        <UBadge :label="detail.kind" :icon="kind.icon" size="sm" :style="{ color: kind.color, background: soft(kind.color) }" />
+        <OriginChip :label="store.originName(detail.at.origin)" :color="store.originColor(detail.at.origin)" small />
+        <span class="grow" />
+        <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Close detail" @click="emit('close')" />
       </div>
-      <OriginChip :label="store.originName(detail.at.origin)" :color="store.originColor(detail.at.origin)" />
-      <span class="truncate font-mono text-xs text-muted">{{ detail.at.rel }}:{{ detail.line + 1 }}</span>
-      <div class="flex-1" />
-      <UButton label="Open in IDE" size="sm" @click="open(detail.at.path, detail.line)" />
-      <UButton label="Set as root" size="sm" color="neutral" variant="outline" @click="emit('root', detail.name)" />
-      <UButton icon="i-lucide-x" label="Close" size="sm" color="neutral" variant="ghost" @click="emit('close')" />
+      <span class="font-mono text-16 leading-5.5 font-semibold break-all text-highlighted">{{ detail.name }}</span>
+      <UButton
+        :label="`${detail.at.rel}:${detail.line + 1}`"
+        variant="link"
+        size="xs"
+        class="self-start p-0 font-mono"
+        @click="open(detail.at.path, detail.line)"
+      />
+      <div class="mt-1.5 flex items-center gap-2">
+        <UButton label="Set as root" icon="i-lucide-target" color="primary" variant="solid" :disabled="isRoot" @click="emit('root', detail.name)" />
+        <span class="grow" />
+        <UButton label="Open in IDE" icon="i-lucide-external-link" @click="open(detail.at.path, detail.line)" />
+      </div>
     </div>
-    <div class="grid min-h-0 flex-1 grid-cols-[1fr_1.5fr_1fr] divide-x divide-default">
-      <section class="overflow-auto p-4"><Overview /></section>
-      <section class="overflow-auto p-4"><Script /></section>
-      <section class="overflow-auto p-4"><Links /></section>
-    </div>
-  </div>
+    <UTabs :items="tabs" variant="link" class="min-h-0 flex-1 gap-0" :ui="{ list: 'px-3', content: 'min-h-0 overflow-auto' }">
+      <template #main>
+        <DefineStepper v-slot="{ shown }">
+          <span class="flex items-center text-11 text-muted tabular-nums">
+            <UButton icon="i-lucide-chevron-left" variant="ghost" size="xs" square aria-label="Previous version" @click="step(shown, -1)" />
+            {{ shown.index + 1 }} of {{ shown.count }}
+            <UButton icon="i-lucide-chevron-right" variant="ghost" size="xs" square aria-label="Next version" @click="step(shown, 1)" />
+          </span>
+        </DefineStepper>
+        <DefineSaid v-slot="{ shown, random, title }">
+          <LocQuote
+            :text="shown.text || `No ${language} text`"
+            bare
+            :class="title ? 'text-center text-18 leading-6 font-semibold text-highlighted' : 'text-13 text-highlighted'"
+          />
+          <p v-if="shown.when || (shown.index && !random)" class="truncate text-11 text-dimmed" :title="shown.when">
+            when <code v-if="shown.when" class="font-mono text-muted">{{ shown.when }}</code><template v-else>none before it applies</template>
+          </p>
+        </DefineSaid>
+        <div class="px-4 py-3.5">
+          <section class="flex flex-col divide-y divide-default overflow-hidden rounded-lg border border-default bg-elevated">
+            <div class="flex flex-col gap-1 bg-accented/40 px-3.5 py-3">
+              <span class="text-11 text-muted">{{ sentence(type) }}</span>
+              <p v-for="section in properties" :key="section.line" class="truncate text-11 text-muted" :title="section.when">
+                {{ section.key }} <ScriptSnippet :text="section.value ?? ''" :name="detail.at.rel" inline />
+                <template v-if="section.when">
+                  <span class="ms-1 text-(--orange)">if</span> <code class="font-mono text-dimmed">{{ section.when }}</code>
+                </template>
+              </p>
+            </div>
+            <div v-for="section in texts" :key="section.line" class="flex flex-col gap-1 px-3.5 py-3" :class="{ 'bg-accented/40': section.key === 'title' }">
+              <span class="flex h-6 items-center text-11 text-muted">
+                {{ sentence(section.key) }}<span class="grow" />
+                <Stepper v-if="section.parts.length === 1 && section.parts[0].shown.count > 1" :shown="section.parts[0].shown" />
+              </span>
+              <div v-for="(part, p) in section.parts" :key="p" class="flex flex-col gap-1" :class="{ 'mt-1 border-t border-dashed border-default pt-2': p }">
+                <div v-if="section.parts.length > 1" class="flex h-6 items-center gap-1.5 text-11 text-dimmed">
+                  <span v-if="section.parts.length > 1">Part {{ p + 1 }}{{ part.random ? " · one at random" : "" }}</span>
+                  <span class="grow" />
+                  <Stepper v-if="part.shown.count > 1" :shown="part.shown" />
+                </div>
+                <Said :shown="part.shown" :random="part.random" :title="section.key === 'title'" />
+              </div>
+            </div>
+            <div v-if="portraits.length" class="flex flex-col gap-1.5 px-3.5 py-3">
+              <span class="text-11 text-muted">Portraits</span>
+              <div class="flex flex-wrap gap-1.5">
+                <div
+                  v-for="section in portraits"
+                  :key="section.line"
+                  class="flex max-w-full min-w-22 flex-col items-center gap-0.5 rounded-md border border-accented bg-muted px-2 py-1.5 text-11"
+                  :title="section.when"
+                >
+                  <UIcon name="i-lucide-user-round" class="size-6 text-dimmed" />
+                  <span class="text-dimmed">{{ section.key.replace(/_[a-z]+$/, "").replaceAll("_", " ") }}</span>
+                  <span class="max-w-full truncate font-mono text-(--syn-ref)">{{ section.portrait }}</span>
+                  <span v-if="section.when" class="text-(--orange)">only if …</span>
+                </div>
+              </div>
+            </div>
+            <div v-if="options.length" class="flex flex-col gap-1.5 px-3.5 py-3">
+              <span class="text-11 text-muted">Options</span>
+              <div v-for="option in options" :key="option.line" class="flex flex-col gap-1 rounded-md border border-accented bg-muted px-3 py-2">
+                <p v-if="option.when" class="truncate text-11 text-dimmed" :title="option.when">
+                  shown when <code class="font-mono text-muted">{{ option.when }}</code>
+                </p>
+                <Said v-if="option.shown.count" :shown="option.shown" />
+                <span class="flex items-center gap-1.5">
+                  <UButton
+                    :label="option.shown.key || 'option'"
+                    variant="link"
+                    color="neutral"
+                    size="xs"
+                    class="min-w-0 p-0 font-mono text-dimmed"
+                    @click="open(detail.at.path, option.shown.line ?? option.line)"
+                  />
+                  <UBadge v-for="flag in option.flags" :key="flag" :label="flag" size="sm" />
+                  <span class="grow" />
+                  <Stepper v-if="option.shown.count > 1" :shown="option.shown" />
+                </span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </template>
+      <template #links>
+        <div class="flex flex-col gap-4 px-4 py-3.5">
+          <section v-if="detail.fires?.length" class="flex flex-col gap-1">
+            <h4 class="flex flex-wrap items-center gap-2 px-2 pb-1 text-12 font-semibold text-highlighted">
+              Fires
+              <span v-for="row in kinds(detail.fires)" :key="row.kind" class="flex items-center gap-1 text-11 font-normal text-muted">
+                <OriginDot :color="kindOf(row.kind).color" small />{{ row.kind }}<span class="text-dimmed">{{ row.count }}</span>
+              </span>
+            </h4>
+            <div
+              v-for="fire in fires"
+              :key="`${fire.name}:${fire.via}`"
+              class="flex h-7 items-center gap-2 rounded-[5px] px-2 even:bg-accented/40"
+              :title="fire.via ? `Through ${fire.via}` : 'Directly'"
+            >
+              <UIcon :name="kindOf(fire.kind).icon" class="size-3.5 shrink-0" :style="{ color: kindOf(fire.kind).color }" />
+              <UButton :label="fire.name" variant="link" color="neutral" size="xs" class="min-w-0 p-0 font-mono text-highlighted" :ui="{ label: 'truncate' }" @click="emit('root', fire.name)" />
+              <span class="grow" />
+              <UBadge
+                :label="fire.through ? `${fire.through} ${fire.through === 1 ? 'effect' : 'effects'}` : 'direct'"
+                size="sm"
+                :style="fire.through ? { color: 'var(--purple)', background: 'var(--purple-soft)' } : undefined"
+              />
+            </div>
+            <UButton
+              v-if="(detail.fires?.length ?? 0) > 6"
+              :label="allFires ? 'Fewer' : `${(detail.fires?.length ?? 0) - 6} more`"
+              variant="link"
+              size="xs"
+              class="self-start px-2"
+              @click="allFires = !allFires"
+            />
+          </section>
+          <section v-if="detail.firedBy?.length" class="flex flex-col gap-1.5">
+            <h4 class="flex flex-wrap items-center gap-2 px-2 text-12 font-semibold text-highlighted">
+              Fired by
+              <span v-for="row in kinds(detail.firedBy)" :key="row.kind" class="flex items-center gap-1 text-11 font-normal text-muted">
+                <OriginDot :color="kindOf(row.kind).color" small />{{ row.kind }}<span class="text-dimmed">{{ row.count }}</span>
+              </span>
+              <span v-if="sharedVia" class="text-11 font-normal text-muted">
+                through <span class="font-mono text-(--purple)">{{ sharedVia }}</span>
+              </span>
+            </h4>
+            <div class="flex flex-wrap gap-1 px-2">
+              <UTooltip v-for="fire in firedBy" :key="`${fire.name}:${fire.via}`" :text="fire.via ? `Through ${fire.via}` : 'Directly'">
+                <UButton :label="fire.name" variant="outline" size="xs" class="font-mono" @click="emit('root', fire.name)" />
+              </UTooltip>
+              <UButton
+                v-if="(detail.firedBy?.length ?? 0) > 8"
+                :label="allFiredBy ? 'Fewer' : `${(detail.firedBy?.length ?? 0) - 8} more`"
+                variant="link"
+                size="xs"
+                @click="allFiredBy = !allFiredBy"
+              />
+            </div>
+          </section>
+          <section v-if="reads.length" class="flex flex-col gap-1.5">
+            <h4 class="flex items-center gap-2 px-2 text-12 font-semibold text-highlighted">
+              Reads<span class="text-11 font-normal text-dimmed">{{ uses }} uses of {{ named }} names</span>
+            </h4>
+            <div class="flex flex-wrap gap-1 px-2">
+              <UButton
+                v-for="group in reads"
+                :key="group.database"
+                variant="outline"
+                size="xs"
+                :class="{ 'bg-elevated': openRead === group.database }"
+                @click="openRead = openRead === group.database ? '' : group.database"
+              >
+                <OriginDot :color="group.color" small />{{ group.kind }}<span class="text-dimmed">{{ group.uses }}</span>
+              </UButton>
+            </div>
+            <template v-for="group in reads" :key="group.database">
+              <div v-if="openRead === group.database" class="mx-2 flex flex-wrap gap-x-3 gap-y-1 rounded-md border border-default bg-elevated px-2.5 py-2">
+                <UButton
+                  v-for="read in group.names"
+                  :key="read.name"
+                  variant="link"
+                  size="xs"
+                  class="p-0 font-mono"
+                  @click="open(read.at.at.path, read.at.line)"
+                >
+                  {{ read.name }}<span v-if="read.count > 1" class="text-dimmed">×{{ read.count }}</span>
+                </UButton>
+              </div>
+            </template>
+          </section>
+        </div>
+      </template>
+      <template #script>
+        <div class="px-4 py-3.5">
+          <div v-if="detail.lines?.length" class="overflow-hidden rounded-lg border border-default bg-(--bg-0)">
+            <div class="flex h-8 items-center gap-2 border-b border-default bg-elevated px-2.5 text-12 whitespace-nowrap">
+              <UIcon name="i-lucide-code" class="size-3.5 shrink-0 text-dimmed" />
+              <UButton
+                :label="`${detail.at.rel}:${detail.line + 1}`"
+                variant="link"
+                size="xs"
+                class="min-w-0 p-0 font-mono"
+                :ui="{ label: 'truncate' }"
+                @click="open(detail.at.path, detail.line)"
+              />
+              <span class="grow" />
+              <span class="text-11 text-dimmed">{{ detail.lines.length }} lines</span>
+              <UButton
+                :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+                variant="ghost"
+                size="xs"
+                square
+                aria-label="Copy the definition"
+                @click="copy(detail.lines.join('\n'))"
+              />
+              <UButton icon="i-lucide-external-link" variant="ghost" size="xs" square aria-label="Open in IDE" @click="open(detail.at.path, detail.line)" />
+            </div>
+            <ScriptSnippet :text="detail.lines.join('\n')" :name="detail.at.rel" :from-line="detail.line" class="py-1.5" />
+          </div>
+        </div>
+      </template>
+    </UTabs>
+  </aside>
 </template>

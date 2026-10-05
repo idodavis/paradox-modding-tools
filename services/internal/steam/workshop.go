@@ -266,7 +266,7 @@ func ParseYouTubeID(urlOrID string) (string, error) {
 // ignore text name. It walks the way the engine does, following linked folders and junctions,
 // because Steam receives real files and mods are often linked from elsewhere.
 func CopyMod(src, dest, extraIgnore string) error {
-	patterns := loadIgnorePatterns(src, extraIgnore)
+	patterns := LoadIgnorePatterns(src, extraIgnore)
 	var failed error
 	source.Walk(src, func(file string) {
 		if failed != nil {
@@ -277,17 +277,17 @@ func CopyMod(src, dest, extraIgnore string) error {
 			failed = err
 			return
 		}
-		if !ignored(filepath.ToSlash(rel), patterns) {
+		if !Ignored(filepath.ToSlash(rel), patterns) {
 			failed = local.CopyFile(file, filepath.Join(dest, rel))
 		}
 	})
 	return failed
 }
 
-// ignored reports a file the upload leaves out: a .gitignore, anything under a dot-named
+// Ignored reports a file the upload leaves out: a .gitignore, anything under a dot-named
 // folder but a top-level .metadata, or a match of the ignore rules on the file or any folder
 // above it, which no later rule can take back.
-func ignored(rel string, patterns []string) bool {
+func Ignored(rel string, patterns []string) bool {
 	parts := strings.Split(rel, "/")
 	if parts[len(parts)-1] == ".gitignore" {
 		return true
@@ -350,7 +350,8 @@ func writeVideoIDs(root string, ids []string) error {
 	return nil
 }
 
-func loadIgnorePatterns(root, extra string) []string {
+// LoadIgnorePatterns is the upload's ignore rules for the mod at root: its .gitignore, then extra.
+func LoadIgnorePatterns(root, extra string) []string {
 	var out []string
 	if file, err := os.Open(filepath.Join(root, ".gitignore")); err == nil {
 		lines := bufio.NewScanner(file)

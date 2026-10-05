@@ -95,3 +95,10 @@ export function RemoveWorkshopVideo(workspaceID: string, modID: string, id: stri
 export function SaveListing($in: $models.Listing): $CancellablePromise<$models.Listing | null> {
     return $Call.ByID(746970025, $in);
 }
+
+/**
+ * UploadFiles walks a mod as its upload copy does, by its saved ignore text.
+ */
+export function UploadFiles(workspaceID: string, modID: string): $CancellablePromise<$models.UploadFiles | null> {
+    return $Call.ByID(2294613846, workspaceID, modID);
+}

@@ -5,6 +5,7 @@
 import { computed, nextTick, shallowRef, watch } from "vue";
 import type { TabsItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
+import { wikiKeys } from "../queries";
 import { Guide } from "@services/wikiservice";
 import type { Page } from "@services/internal/wiki/models";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -36,8 +37,8 @@ const q = computed(() => query.value.trim().toLowerCase());
 const { data: guide, error, isPending } = useQuery({
   key: () =>
     guideOpen.value
-      ? ["guide", workspaceId.value, path.value]
-      : ["guide", "toast", workspaceId.value],
+      ? wikiKeys.guide(workspaceId.value, path.value)
+      : wikiKeys.guide("toast", workspaceId.value),
   query: () => Guide(workspaceId.value, path.value),
   enabled: () => {
     if (!workspaceId.value || !path.value) return false;

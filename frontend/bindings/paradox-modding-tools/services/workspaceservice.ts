@@ -29,7 +29,8 @@ export function AddGameInstall(gameID: string, name: string, path: string): $Can
 }
 
 /**
- * AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor.
+ * AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor. An empty name
+ * is the descriptor's, else the folder's.
  */
 export function AddWorkspaceMod(workspaceID: string, name: string, path: string, thumbnail: string): $CancellablePromise<$models.WorkspaceMod | null> {
     return $Call.ByID(123649806, workspaceID, name, path, thumbnail);
@@ -141,6 +142,20 @@ export function ListWorkspaces(gameID: string): $CancellablePromise<$models.Work
 }
 
 /**
+ * ModFolder is the folder CreateMod makes for a mod named name under parentDir.
+ */
+export function ModFolder(parentDir: string, name: string): $CancellablePromise<string> {
+    return $Call.ByID(491495046, parentDir, name);
+}
+
+/**
+ * OpenFolder shows a folder in the system's file manager.
+ */
+export function OpenFolder(path: string): $CancellablePromise<void> {
+    return $Call.ByID(2509310482, path);
+}
+
+/**
  * RemoveWorkspaceMod detaches a mod from a workspace.
  */
 export function RemoveWorkspaceMod(workspaceID: string, modID: string): $CancellablePromise<void> {
@@ -174,6 +189,14 @@ export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromi
  */
 export function SetWorkspaceModCalendar(workspaceID: string, modID: string, eras: session$0.Calendar): $CancellablePromise<void> {
     return $Call.ByID(2457080507, workspaceID, modID, eras);
+}
+
+/**
+ * SetWorkspaceModPath points a mod at another folder, one holding its game's descriptor; the
+ * session is built again from it.
+ */
+export function SetWorkspaceModPath(workspaceID: string, modID: string, path: string): $CancellablePromise<void> {
+    return $Call.ByID(1976049482, workspaceID, modID, path);
 }
 
 /**

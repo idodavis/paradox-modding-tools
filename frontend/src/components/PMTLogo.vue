@@ -1,33 +1,16 @@
 <script setup lang="ts">
 /**
- * PMT brand mark used in the Vue app.
+ * PMT's brand (pmt.css .brand): the logo's mark, 18px in the accent, then PMT.
  */
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
-import logoText from "@assets/PMT-Logo-Text.svg?url";
-
-const { iconHeight = 30, textHeight = 40 } = defineProps<{ iconHeight?: number; textHeight?: number }>();
 </script>
 
 <template>
-  <div class="inline-flex items-center" data-art>
-    <span class="inline-block" :style="{
-      width: `${iconHeight * 2}px`,
-      height: `${iconHeight}px`,
-      backgroundColor: 'var(--accent)',
-      maskImage: `url(${logoIcon})`,
-      maskRepeat: 'no-repeat',
-      maskPosition: 'center',
-      maskSize: 'contain',
-    }" />
-    <span class="inline-block" :style="{
-      width: `${textHeight * 3}px`,
-      height: `${textHeight}px`,
-      backgroundColor: 'var(--link)',
-      maskImage: `url(${logoText})`,
-      maskRepeat: 'no-repeat',
-      maskPosition: '0% center',
-      maskSize: 'contain',
-      marginLeft: `${-1.0 * iconHeight}px`,
-    }" />
-  </div>
+  <span class="flex shrink-0 items-center gap-2 text-13 font-semibold text-highlighted" data-art>
+    <span
+      class="size-4.5 bg-primary"
+      :style="{ maskImage: `url(${logoIcon})`, maskRepeat: 'no-repeat', maskPosition: 'center', maskSize: 'contain' }"
+    />
+    PMT
+  </span>
 </template>

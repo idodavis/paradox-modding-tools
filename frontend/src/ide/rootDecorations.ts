@@ -5,7 +5,8 @@ import { watch } from "vue";
 import * as vscode from "vscode";
 import { ReadFileBase64 } from "@services/fileservice";
 import { normFs, type IdeRoot } from "./fsBridge";
-import { thumbMime, useWorkspaceStore } from "../stores/workspace";
+import { useWorkspaceStore } from "../stores/workspace";
+import { imageMime } from "../queries";
 import iconCk3 from "@assets/Icon_CK3.png?url";
 import iconEu5 from "@assets/Icon_EUV.png?url";
 import iconVic3 from "@assets/Icon_Vic3.png?url";
@@ -91,7 +92,7 @@ async function paintRootThumbs(next: IdeRoot[]): Promise<void> {
     document.head.appendChild(thumbStyle);
   }
   const store = useWorkspaceStore();
-  const gameUrl = GAME_ICONS[store.currentGameId];
+  const gameUrl = GAME_ICONS[store.activeWorkspace?.gameId ?? ""];
   const rules: string[] = [];
   for (const r of next) {
     rules.push(dotRule(r.label, store.originColor(r.origin ?? "")));
@@ -103,7 +104,7 @@ async function paintRootThumbs(next: IdeRoot[]): Promise<void> {
     try {
       const file = await ReadFileBase64(r.thumbnail);
       if (!file?.exists || !file.b64) continue;
-      rules.push(iconRule(r.label, `data:${thumbMime(r.thumbnail)};base64,${file.b64}`));
+      rules.push(iconRule(r.label, `data:${imageMime(r.thumbnail)};base64,${file.b64}`));
     } catch {
       /* skip */
     }

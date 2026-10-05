@@ -27,8 +27,8 @@ import {
 import type { Listing, PublishResult } from "@services/models";
 import type { Preview } from "@services/internal/steam";
 import { ReadFileBase64 } from "@services/fileservice";
-import { thumbMime, useWorkspaceStore } from "../stores/workspace";
-import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
+import { useWorkspaceStore } from "../stores/workspace";
+import { imageMime, releaseKeys } from "../queries";
 import ReleaseModRail from "../components/release/ReleaseModRail.vue";
 import WorkshopMediaCard, { type MediaSlide } from "../components/release/WorkshopMediaCard.vue";
 import { pickFile } from "../lib/nativeDialog";
@@ -39,8 +39,6 @@ const UEditor = RawEditor as unknown as new () => {
   $slots: { default: (props: { editor: TiptapEditor }) => unknown };
 };
 
-defineOptions({ name: "ReleasePage" });
-
 type DeployTarget = "steam" | "pdx";
 type ReleaseTab = "listing" | "publish";
 
@@ -49,7 +47,7 @@ const router = useRouter();
 const ws = useWorkspaceStore();
 const toast = useToast();
 const { copy } = useClipboard();
-const workspaceId = computed(() => String(route.params.id ?? ""));
+const { id: workspaceId } = defineProps<{ id: string }>();
 const liveMods = computed(() => ws.workspaceMods.filter((m) => !m.isBroken && m.path));
 const selectedId = shallowRef("");
 const listing = ref<Listing | null>(null);
@@ -112,9 +110,9 @@ const {
   isPending,
   refetch,
 } = useQuery({
-  key: () => ["release", "listing", workspaceId.value, selectedId.value],
-  query: () => LoadListing(workspaceId.value, selectedId.value),
-  enabled: () => Boolean(workspaceId.value && selectedId.value),
+  key: () => releaseKeys.listing(workspaceId, selectedId.value),
+  query: () => LoadListing(workspaceId, selectedId.value),
+  enabled: () => Boolean(workspaceId && selectedId.value),
 });
 
 watch(loaded, async (next) => {
@@ -200,7 +198,7 @@ const { mutateAsync: saveMut, isLoading: saving } = useMutation({
 });
 
 const { mutateAsync: draftMut } = useMutation({
-  mutation: () => DraftChangelog(workspaceId.value, selectedId.value, listing.value?.version ?? ""),
+  mutation: () => DraftChangelog(workspaceId, selectedId.value, listing.value?.version ?? ""),
   onSuccess: (text) => {
     if (listing.value) listing.value.changeNote = text;
   },
@@ -232,7 +230,7 @@ const { mutateAsync: bumpMut } = useMutation({
 });
 
 const { mutateAsync: thumbMut } = useMutation({
-  mutation: (src: string) => CopyThumbnail(workspaceId.value, selectedId.value, src),
+  mutation: (src: string) => CopyThumbnail(workspaceId, selectedId.value, src),
   onSuccess: () => {
     toast.add({ title: "Thumbnail copied", color: "success" });
     thumbNonce.value++;
@@ -251,7 +249,7 @@ async function addGalleryImage(): Promise<void> {
   const path = await pickFile("Workshop image", "*.png; *.jpg; *.jpeg; *.gif; *.webp");
   if (!path) return;
   try {
-    const next = await AddWorkshopPreview(workspaceId.value, selectedId.value, path);
+    const next = await AddWorkshopPreview(workspaceId, selectedId.value, path);
     if (next) listing.value = asListing(next);
     toast.add({
       title: "Added to Workshop media",
@@ -266,7 +264,7 @@ async function addGalleryImage(): Promise<void> {
 /** Parse a YouTube URL/id into workshop/videos.txt. */
 async function addGalleryVideo(url: string): Promise<void> {
   try {
-    const next = await AddWorkshopVideo(workspaceId.value, selectedId.value, url);
+    const next = await AddWorkshopVideo(workspaceId, selectedId.value, url);
     if (next) listing.value = asListing(next);
   } catch (e) {
     toast.add({ title: errMsg(e), color: "error" });
@@ -278,8 +276,8 @@ async function removeMedia(item: MediaSlide): Promise<void> {
   try {
     const next =
       item.kind === "youtube"
-        ? await RemoveWorkshopVideo(workspaceId.value, selectedId.value, item.id)
-        : await RemoveWorkshopPreview(workspaceId.value, selectedId.value, item.rel);
+        ? await RemoveWorkshopVideo(workspaceId, selectedId.value, item.id)
+        : await RemoveWorkshopPreview(workspaceId, selectedId.value, item.rel);
     if (next) listing.value = asListing(next);
   } catch (e) {
     toast.add({ title: errMsg(e), color: "error" });
@@ -385,7 +383,7 @@ function asListing(next: Listing): Listing {
 
 const settingsModsTo = computed(() => ({
   name: "workspace-settings" as const,
-  params: { id: workspaceId.value },
+  params: { id: workspaceId },
   query: { section: "mods" },
 }));
 
@@ -405,7 +403,7 @@ async function blobUrl(abs: string): Promise<string> {
     const file = await ReadFileBase64(abs);
     if (!file?.exists || !file.b64) return "";
     const bin = Uint8Array.from(atob(file.b64), (c) => c.charCodeAt(0));
-    return URL.createObjectURL(new Blob([bin], { type: thumbMime(abs) }));
+    return URL.createObjectURL(new Blob([bin], { type: imageMime(abs) }));
   } catch {
     return "";
   }
@@ -428,12 +426,10 @@ function errMsg(e: unknown): string {
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <WorkspaceToolBar :workspace-id="workspaceId" />
     <div class="flex min-h-0 flex-1 overflow-hidden">
       <ReleaseModRail
         :mods="liveMods"
         :selected-id="selectedId"
-        :thumb-urls="ws.thumbUrls"
         @select="selectedId = $event"
       />
       <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

@@ -8,8 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+
 	"paradox-modding-tools/services/internal/wiki"
 )
+
+// registers wiki:updated so the bindings generator types it
+func init() { application.RegisterEvent[WikiUpdated](EventWikiUpdated) }
 
 // WikiService serves the wiki guides and patch notes.
 type WikiService struct {

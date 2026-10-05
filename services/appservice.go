@@ -71,7 +71,10 @@ type WorkspaceMod struct {
 	DescMdRel      string `json:"descMdRel,omitempty"`
 	DescBbRel      string `json:"descBbRel,omitempty"`
 	WorkshopIgnore string `json:"workshopIgnore,omitempty"`
-	IsBroken       bool   `json:"isBroken"` // derived by markBroken; a value saved in config.json is ignored
+	IsBroken       bool   `json:"isBroken"` // derived by markDisk; a value saved in config.json is ignored
+	// the folder as shown: under the game's user folder relative to it (mod\sir), else absolute; derived
+	// by markDisk
+	Folder string `json:"folder"`
 	// the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written
 	Eras session.Calendar `json:"eras,omitempty"`
 }

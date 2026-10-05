@@ -5,14 +5,16 @@
  * active workspace's mod colors.
  */
 import { computed } from "vue";
-import { useMutation } from "@pinia/colada";
+import { useMutation, useQueryCache } from "@pinia/colada";
 import { SetWorkspaceModSlot, UpdateWorkspacePrefs } from "@services/workspaceservice";
 import { FONT_SCALES, THEMES, useSettingsStore, type ThemeFamily, type ThemeId } from "../stores/settings";
+import { workspaceKeys } from "../queries";
 import { modColor, useWorkspaceStore } from "../stores/workspace";
 import { WORKSPACE_TOOLS, type WorkspaceToolName } from "../workspaceTools";
 
 const settings = useSettingsStore();
 const workspace = useWorkspaceStore();
+const queryCache = useQueryCache();
 
 const SCALES = FONT_SCALES.map((percent) => ({ label: `${percent}%`, value: percent }));
 
@@ -63,7 +65,7 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
     }
     if (ws.gameColor) await UpdateWorkspacePrefs(ws.id, ws.resetIdeOnOpen, ws.defaultTool ?? "", "", ws.hideExplorerBinaries);
   },
-  onSettled: () => workspace.refresh(),
+  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
 </script>
 
@@ -74,50 +76,41 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
       <p class="text-13 text-dimmed">Applies to every workspace and every PMT window.</p>
     </div>
 
-    <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-b border-default pt-4 pb-5">
-      <div>
-        <h2 class="text-13 font-semibold">Theme</h2>
-        <p class="mt-0.75 text-12 leading-4.5 text-dimmed">
-          Every theme is the same set of tokens with different values, so all pages and the editor change together.
-          Each comes dark and light: switch with the sun and moon in the top bar.
-        </p>
+    <SettingSection
+      title="Theme"
+      hint="Every theme is the same set of tokens with different values, so all pages and the editor change together. Each comes dark and light: switch with the sun and moon in the top bar."
+    >
+      <div class="flex items-center gap-2.5">
+        <USwitch id="match-game" :model-value="settings.matchGameTheme" @update:model-value="setMatchGame" />
+        <label for="match-game" class="text-13 font-medium whitespace-nowrap">Match the workspace's game</label>
+        <span class="truncate text-12 text-dimmed">
+          Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere.
+        </span>
       </div>
-      <div class="flex flex-col gap-3.5">
-        <div class="flex items-center gap-2.5">
-          <USwitch id="match-game" :model-value="settings.matchGameTheme" @update:model-value="setMatchGame" />
-          <label for="match-game" class="text-13 font-medium whitespace-nowrap">Match the workspace's game</label>
-          <span class="truncate text-12 text-dimmed">
-            Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere.
+      <div class="grid grid-cols-3 gap-3.5">
+        <button
+          v-for="family in THEMES"
+          :key="family.id"
+          type="button"
+          class="flex flex-col gap-2 rounded-tile border bg-muted p-2 text-start"
+          :class="family.id === settings.theme.id ? 'border-primary ring-2 ring-primary/15' : 'border-default'"
+          @click="settings.pickTheme(family.id)"
+        >
+          <ThemePreview :theme="halfOf(family)" />
+          <span class="flex min-w-0 items-center gap-1.5 px-1 pb-0.5 text-12 font-medium whitespace-nowrap">
+            {{ family.label }}
+            <span class="grow" />
+            <UBadge v-if="tileMark(family).badge" size="sm" v-bind="tileMark(family).badge" />
+            <span v-else class="truncate text-11 font-normal text-dimmed">{{ tileMark(family).note }}</span>
           </span>
-        </div>
-        <div class="grid grid-cols-3 gap-3.5">
-          <button
-            v-for="family in THEMES"
-            :key="family.id"
-            type="button"
-            class="flex flex-col gap-2 rounded-tile border bg-muted p-2 text-start"
-            :class="family.id === settings.theme.id ? 'border-primary ring-2 ring-primary/15' : 'border-default'"
-            @click="settings.pickTheme(family.id)"
-          >
-            <ThemePreview :theme="halfOf(family)" />
-            <span class="flex min-w-0 items-center gap-1.5 px-1 pb-0.5 text-12 font-medium whitespace-nowrap">
-              {{ family.label }}
-              <span class="grow" />
-              <UBadge v-if="tileMark(family).badge" size="sm" v-bind="tileMark(family).badge" />
-              <span v-else class="truncate text-11 font-normal text-dimmed">{{ tileMark(family).note }}</span>
-            </span>
-          </button>
-        </div>
+        </button>
       </div>
-    </section>
+    </SettingSection>
 
-    <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-b border-default py-5">
-      <div>
-        <h2 class="text-13 font-semibold">Light and dark</h2>
-        <p class="mt-0.75 text-12 leading-4.5 text-dimmed">
-          The sun and moon in the top bar switch them on every page; switching stops following Windows.
-        </p>
-      </div>
+    <SettingSection
+      title="Light and dark"
+      hint="The sun and moon in the top bar switch them on every page; switching stops following Windows."
+    >
       <div class="flex items-center gap-2.5">
         <USwitch
           id="follow-windows"
@@ -127,32 +120,30 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
         <label for="follow-windows" class="text-13 font-medium whitespace-nowrap">Follow Windows</label>
         <span class="truncate text-12 text-dimmed">Use the light or dark mode your system is set to.</span>
       </div>
-    </section>
+    </SettingSection>
 
-    <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-b border-default py-5">
-      <div>
-        <h2 class="text-13 font-semibold">Text size</h2>
-        <p class="mt-0.75 text-12 leading-4.5 text-dimmed">
-          Scales every page. The editor and panel sizes are in the IDE's own
-          <ULink v-if="workspace.activeWorkspaceId" :to="{ name: 'workspace-ide', params: { id: workspace.activeWorkspaceId } }" class="text-secondary">settings</ULink>
-          <template v-else>settings</template>.
-        </p>
-      </div>
+    <SettingSection title="Text size">
+      <template #hint>
+        Scales every page. The editor and panel sizes are in the IDE's own
+        <ULink
+          v-if="workspace.activeWorkspaceId"
+          :to="{ name: 'workspace-ide', params: { id: workspace.activeWorkspaceId } }"
+          class="text-secondary"
+        >settings</ULink>
+        <template v-else>settings</template>.
+      </template>
       <div class="flex flex-col gap-1.5">
         <span class="text-12 font-medium text-toned">Interface scale</span>
         <div>
           <UTabs :items="SCALES" :model-value="settings.fontScale" :content="false" @update:model-value="setScale" />
         </div>
       </div>
-    </section>
+    </SettingSection>
 
-    <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 border-b border-default py-5">
-      <div>
-        <h2 class="text-13 font-semibold">Pages</h2>
-        <p class="mt-0.75 text-12 leading-4.5 text-dimmed">
-          The pages a workspace shows in the top bar and the palette. With none chosen, the IDE stays.
-        </p>
-      </div>
+    <SettingSection
+      title="Pages"
+      hint="The pages a workspace shows in the top bar and the palette. With none chosen, the IDE stays."
+    >
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
         <UCheckbox
           v-for="tool in WORKSPACE_TOOLS"
@@ -162,20 +153,17 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
           @update:model-value="setToolShown(tool.name, $event)"
         />
       </div>
-    </section>
+    </SettingSection>
 
-    <section class="grid grid-cols-[260px_minmax(0,1fr)] gap-8 py-5">
-      <div>
-        <h2 class="text-13 font-semibold">Mod colors</h2>
-        <p class="mt-0.75 text-12 leading-4.5 text-dimmed">
-          Each mod gets a color when it joins a workspace and keeps it. Pick one by hand in Mods.
-        </p>
-      </div>
+    <SettingSection
+      title="Mod colors"
+      hint="Each mod gets a color when it joins a workspace and keeps it. Pick one by hand in Mods and load order."
+    >
       <div class="flex flex-wrap items-center gap-3">
         <OriginChip v-for="origin in origins" :key="origin.id" :label="origin.label" :color="origin.color" />
         <span class="grow" />
         <UButton label="Reset all to automatic" size="sm" :disabled="!anyPicked" :loading="resetting" @click="resetColors()" />
       </div>
-    </section>
+    </SettingSection>
   </div>
 </template>

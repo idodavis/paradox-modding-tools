@@ -1,0 +1,214 @@
+<script setup lang="ts">
+/**
+ * The top bar on every page (the boards' .topbar): PMT and the Library, the workspace switcher and the
+ * workspace's page tabs, then its scan, search, light and dark, and Settings. On a workspace's page it
+ * builds the workspace's session and mounts its folders in the workbench behind the pages, until the IDE
+ * leaves Monaco.
+ */
+import { computed, useTemplateRef, watch } from "vue";
+import { useRoute } from "vue-router";
+import { useQuery } from "@pinia/colada";
+import { useElementSize, useTimeAgo } from "@vueuse/core";
+import type { DropdownMenuItem } from "@nuxt/ui";
+import type { IdeRoots } from "@services/models";
+import CommandPalette from "./CommandPalette.vue";
+import { useLanguageHealth } from "../composables/useLanguageHealth";
+import { ideRootsQuery, sessionQuery, workspacesQuery } from "../queries";
+import { useSettingsStore } from "../stores/settings";
+import { useWorkspaceStore } from "../stores/workspace";
+import { isWorkspacePage, PAGES, WORKSPACE_TOOLS, workspaceHomeRoute } from "../workspaceTools";
+
+const route = useRoute();
+const store = useWorkspaceStore();
+const settings = useSettingsStore();
+const toast = useToast();
+
+/** The workspace whose page is open; none on the Library and the wizard. */
+const routeId = computed(() => ("id" in route.params ? route.params.id : ""));
+const activeId = computed(() => store.activeWorkspaceId);
+
+const { data: workspaces } = useQuery(workspacesQuery);
+useQuery(() => sessionQuery(routeId.value));
+const { health, scan } = useLanguageHealth(activeId);
+
+// the folders need no session, so they mount at once and a switch shows the new workspace's
+const { data: roots } = useQuery(() => ideRootsQuery(routeId.value));
+watch(roots, (rec) => {
+  if (rec?.roots?.length) void mount(routeId.value, rec);
+});
+
+async function mount(id: string, rec: IdeRoots): Promise<void> {
+  const [{ setWorkbenchRoots }, { pageTheme }] = await Promise.all([
+    import("../ide/workbenchHost"),
+    import("../ide/colorThemes"),
+  ]);
+  try {
+    await setWorkbenchRoots(rec.roots ?? [], pageTheme(), {
+      workspaceId: id,
+      persistTabs: !rec.resetIdeOnOpen,
+      openFiles: rec.ideOpenFiles ?? [],
+      activeFile: rec.ideActiveFile ?? "",
+      hideExplorerBinaries: rec.hideExplorerBinaries,
+    });
+  } catch (e) {
+    toast.add({ title: "The IDE could not open this workspace", description: String(e), color: "error" });
+  }
+}
+
+const TAB = "flex h-11 items-center gap-1.5 px-2.5 -mb-px border-b-2 text-13 font-medium whitespace-nowrap";
+function tabClass(on: boolean): string[] {
+  return [TAB, on ? "border-primary text-highlighted" : "border-transparent text-toned hover:text-highlighted"];
+}
+
+const tabs = computed(() => WORKSPACE_TOOLS.filter((tool) => settings.visibleTools.includes(tool.name)));
+
+// a narrow window keeps the inactive tabs' icons and the scan's age (pmt.css .topbar.compact)
+const bar = useTemplateRef("bar");
+const { width } = useElementSize(bar);
+const compact = computed(() => width.value > 0 && width.value < (1220 * settings.fontScale) / 100);
+
+/** A workspace's link from the switcher: the page open now, where it is one of a workspace's. */
+function switchTo(id: string) {
+  const name = route.name;
+  if (name && isWorkspacePage(name)) return { name, params: { id } };
+  const ws = workspaces.value?.find((w) => w.id === id);
+  return workspaceHomeRoute({ id, defaultTool: ws?.defaultTool }, settings.visibleTools);
+}
+
+/** The switcher's menu: each game's workspaces, then New workspace. */
+const switcher = computed(() => [
+  ...store.games
+    .map((game) => {
+      const rows = (workspaces.value ?? []).filter((w) => w.gameId === game.id);
+      return rows.length
+        ? [
+            { type: "label" as const, label: game.name, slot: "game" as const, gameId: game.id },
+            ...rows.map((w) => ({
+              label: w.name,
+              icon: w.id === activeId.value ? "i-lucide-check" : undefined,
+              to: switchTo(w.id),
+            })),
+          ]
+        : [];
+    })
+    .filter((group) => group.length),
+  [{ label: "New workspace", icon: "i-lucide-plus", to: { name: "wizard" as const } }],
+] satisfies DropdownMenuItem[][]);
+
+const scanned = useTimeAgo<"second" | "minute" | "hour" | "day" | "week" | "month" | "year">(() => health.value?.scannedAt ?? 0, {
+  messages: {
+    justNow: "just now",
+    past: (n: string) => (n.match(/\d/) ? `${n} ago` : n),
+    future: (n: string) => n,
+    month: (n: number) => `${n} mo`,
+    year: (n: number) => `${n} y`,
+    day: (n: number) => `${n} d`,
+    week: (n: number) => `${n} wk`,
+    hour: (n: number) => `${n} h`,
+    minute: (n: number) => `${n} min`,
+    second: (n: number) => `${n} s`,
+    invalid: "",
+  },
+});
+
+/** "1.14.2 scanned 4 min ago"; a narrow bar keeps the age. */
+const scanText = computed(() => [compact.value ? "" : health.value?.gameVersion, `scanned ${scanned.value}`].filter(Boolean).join(" "));
+
+const palette = useOverlay().create(CommandPalette);
+function openPalette(): void {
+  void palette.open();
+}
+defineShortcuts({ meta_k: openPalette });
+</script>
+
+<template>
+  <header ref="bar" class="flex h-11 shrink-0 items-center gap-3 border-b border-default bg-muted ps-3.5 pe-3">
+    <RouterLink :to="{ name: 'library' }" aria-label="PMT, go to Library" class="flex shrink-0">
+      <PMTLogo />
+    </RouterLink>
+    <nav class="ms-1 flex h-11 items-center gap-0.5">
+      <RouterLink
+        :to="{ name: 'library' }"
+        :class="tabClass(route.name === 'library' || route.name === 'wizard')"
+      >
+        <UIcon :name="PAGES.library.icon" class="size-4" />
+        <span v-if="!compact || route.name === 'library'">Library</span>
+      </RouterLink>
+    </nav>
+    <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
+
+    <UDropdownMenu :items="switcher" :content="{ align: 'start' }">
+      <template #game-leading="{ item }">
+        <GameIcon :game-id="item.gameId" />
+      </template>
+      <UButton
+        size="sm"
+        class="w-56 shrink-0 gap-2 ps-1.5 pe-2 text-13"
+        trailing-icon="i-lucide-chevron-down"
+        :ui="{ trailingIcon: 'text-dimmed' }"
+      >
+        <GameIcon v-if="store.activeWorkspace" :game-id="store.activeWorkspace.gameId" />
+        <span class="min-w-0 flex-1 truncate text-start">
+          {{ store.activeWorkspace?.name ?? "Choose a workspace" }}
+        </span>
+      </UButton>
+    </UDropdownMenu>
+
+    <nav v-if="store.activeWorkspace" class="ms-1 flex h-11 min-w-0 items-center gap-0.5">
+      <RouterLink
+        v-for="tool in tabs"
+        :key="tool.name"
+        :to="{ name: tool.name, params: { id: activeId } }"
+        :class="tabClass(route.name === tool.name)"
+        :aria-label="tool.label"
+      >
+        <UIcon :name="tool.icon" class="size-4" />
+        <span v-if="!compact || route.name === tool.name">{{ tool.label }}</span>
+      </RouterLink>
+    </nav>
+
+    <div class="ms-auto flex shrink-0 items-center gap-1.5">
+      <div
+        v-if="health"
+        class="flex h-7 items-center gap-1.5 rounded-md border border-default bg-elevated ps-2 pe-2.5 text-12
+          whitespace-nowrap text-toned"
+      >
+        <span
+          class="size-1.75 shrink-0 rounded-full"
+          :class="[health.installOk ? 'bg-success' : 'bg-error', { 'animate-pulse': scan }]"
+        />
+        <template v-if="scan">
+          <span>{{ scan.stage }}</span>
+          <span class="tabular-nums">{{ scan.percent }}%</span>
+        </template>
+        <span v-else-if="!health.installOk">Install not found</span>
+        <span v-else-if="health.scannedAt">{{ scanText }}</span>
+        <span v-else>Not scanned</span>
+      </div>
+      <UTooltip text="Search and commands" :kbds="['meta', 'K']">
+        <UButton icon="i-lucide-search" variant="ghost" size="sm" square aria-label="Search and commands" @click="openPalette" />
+      </UTooltip>
+      <UTooltip :text="settings.mode === 'dark' ? 'Switch to light' : 'Switch to dark'">
+        <UButton
+          :icon="settings.mode === 'dark' ? 'i-lucide-sun' : 'i-lucide-moon'"
+          variant="ghost"
+          size="sm"
+          square
+          :aria-label="settings.mode === 'dark' ? 'Switch to light' : 'Switch to dark'"
+          @click="settings.toggleMode()"
+        />
+      </UTooltip>
+      <UTooltip text="Settings">
+        <UButton
+          icon="i-lucide-settings"
+          :variant="route.name === 'workspace-settings' ? 'soft' : 'ghost'"
+          size="sm"
+          square
+          aria-label="Settings"
+          :disabled="!store.activeWorkspace"
+          :to="store.activeWorkspace ? { name: 'workspace-settings', params: { id: activeId } } : undefined"
+        />
+      </UTooltip>
+    </div>
+  </header>
+</template>

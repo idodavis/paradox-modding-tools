@@ -1,29 +1,20 @@
-<script lang="ts">
-/**
- * An origin's color: automatic (a mod's slot hue, the game's near-grey) or a hex picked by hand.
- */
-export const ORIGIN_COLOR_DESC =
-  "Used for explorer roots, origin chips and filters, and hover origin labels. Each mod keeps the color it got when it joined; a picked color wins.";
-</script>
-
 <script setup lang="ts">
+/**
+ * An origin's color (the Settings board's Color group): a mod's eight slot swatches, or the game's own
+ * near-grey, then Custom…, a hex picked by hand, which wins over either.
+ */
 import { computed, useTemplateRef } from "vue";
 import { cssHex } from "../lib/cssHex";
 
-/** The hand-picked hex, or "" for automatic. */
+/** The hand-picked hex, or "" for the slot (a mod) or the near-grey (the game). */
 const color = defineModel<string>({ required: true });
-
-const { slot = 0, label = "Origin color", compact = false } = defineProps<{
-  /** A mod's slot; none for the game. */
-  slot?: number;
-  label?: string;
-  /** Hide the paragraph; keep the same copy on an info tooltip. */
-  compact?: boolean;
-}>();
-
+/** A mod's slot; none for the game. */
+const { slot = 0 } = defineProps<{ slot?: number }>();
 const emit = defineEmits<{ slot: [slot: number] }>();
 
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
+const SWATCH = "size-5.5 shrink-0 rounded-md border border-accented";
+const ON = "ring-1 ring-primary ring-offset-2 ring-offset-(--bg-3)";
 const picker = useTemplateRef("picker");
 /** Where the system picker starts: the color shown now. */
 const shown = computed(() => color.value || (slot ? `var(--o${slot})` : "var(--game)"));
@@ -40,39 +31,27 @@ function pickCustom(): void {
 </script>
 
 <template>
-  <UFormField :description="compact ? undefined : ORIGIN_COLOR_DESC">
-    <template #label>
-      <FieldHelpTip v-if="compact" :label="label" :text="ORIGIN_COLOR_DESC" />
-      <template v-else>{{ label }}</template>
-    </template>
-    <div class="flex flex-wrap items-center gap-2">
-      <template v-if="slot">
-        <button
-          v-for="n in SLOTS"
-          :key="n"
-          type="button"
-          class="size-5.5 rounded-md border border-accented outline-offset-2 outline-primary"
-          :class="{ outline: !color && slot === n }"
-          :style="{ background: `var(--o${n})` }"
-          :aria-label="`Color ${n}`"
-          @click="emit('slot', n)"
-        />
-      </template>
+  <div class="flex items-center gap-2">
+    <template v-if="slot">
       <button
-        v-else
+        v-for="n in SLOTS"
+        :key="n"
         type="button"
-        class="size-5.5 rounded-md border border-accented bg-(--game) outline-offset-2 outline-primary"
-        :class="{ outline: !color }"
-        aria-label="Automatic"
-        @click="color = ''"
+        :class="[SWATCH, { [ON]: !color && slot === n }]"
+        :style="{ background: `var(--o${n})` }"
+        :aria-label="`Color ${n}`"
+        @click="emit('slot', n)"
       />
-      <span
-        v-if="color"
-        class="size-5.5 rounded-md border border-accented outline outline-offset-2 outline-primary"
-        :style="{ background: color }"
-      />
-      <UButton label="Custom…" size="sm" @click="pickCustom" />
-      <input ref="picker" type="color" class="sr-only" tabindex="-1" @change="onPick">
-    </div>
-  </UFormField>
+    </template>
+    <button
+      v-else
+      type="button"
+      :class="[SWATCH, 'bg-(--game)', { [ON]: !color }]"
+      aria-label="Automatic"
+      @click="color = ''"
+    />
+    <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
+    <UButton label="Custom…" size="sm" @click="pickCustom" />
+    <input ref="picker" type="color" class="sr-only" tabindex="-1" @change="onPick">
+  </div>
 </template>

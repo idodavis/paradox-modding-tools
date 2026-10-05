@@ -1,33 +1,25 @@
 <script setup lang="ts">
 /**
- * Workspace IDE toolbar; workbench fills App.vue host below this strip, booted by the toolbar.
+ * The IDE page's strip over the workbench, which App keeps mounted behind every page: the Guide and the
+ * IDE's settings. The open file's facts go to the status bar.
  */
-import { computed } from "vue";
-import { useRoute } from "vue-router";
-import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
-import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import { guideOpen, setGuideOpen } from "../composables/useGuidePrefs";
 
-defineOptions({ name: "WorkspaceIdePage" });
-
-const route = useRoute();
-
-const workspaceId = computed(() => String(route.params.id ?? ""));
+defineProps<{ id: string }>();
 </script>
 
 <template>
-  <WorkspaceToolBar :workspace-id="workspaceId">
-    <template #trailing>
-      <UButton
-        icon="i-lucide-book-open"
-        label="Guide"
-        size="xs"
-        color="neutral"
-        :variant="guideOpen ? 'soft' : 'ghost'"
-        @click="setGuideOpen(!guideOpen)"
-      />
-      <IdeSettingsCard />
-      <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
-    </template>
-  </WorkspaceToolBar>
+  <div class="flex h-8 shrink-0 items-center justify-end gap-1.5 border-b border-default bg-muted px-2">
+    <UButton
+      icon="i-lucide-book-open"
+      label="Guide"
+      size="xs"
+      :variant="guideOpen ? 'soft' : 'ghost'"
+      @click="setGuideOpen(!guideOpen)"
+    />
+    <IdeSettingsCard />
+  </div>
+  <StatusFacts>
+    <IdeStatusStrip />
+  </StatusFacts>
 </template>

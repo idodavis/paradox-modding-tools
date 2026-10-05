@@ -5,6 +5,7 @@
 import { computed, nextTick, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
+import { wikiKeys } from "../../queries";
 import { PatchPage, Patches } from "@services/wikiservice";
 import type { PatchEntry, Section } from "@services/internal/wiki/models";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -23,7 +24,7 @@ const query = shallowRef("");
 const gameId = computed(() => ws.activeWorkspace?.gameId ?? "");
 
 const { data: list } = useQuery({
-  key: () => ["wiki-patches", gameId.value],
+  key: () => wikiKeys.patches(gameId.value),
   query: () => Patches(gameId.value),
   enabled: () => !!gameId.value,
 });
@@ -39,7 +40,7 @@ const selected = computed(() => {
 });
 
 const { data: page } = useQuery({
-  key: () => ["wiki-patch-page", gameId.value, selected.value],
+  key: () => wikiKeys.patch(gameId.value, selected.value),
   query: () => PatchPage(gameId.value, selected.value),
   enabled: () => !!gameId.value && !!selected.value,
 });

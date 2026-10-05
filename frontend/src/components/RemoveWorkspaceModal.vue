@@ -1,33 +1,36 @@
 <script setup lang="ts">
 /**
- * Confirm removing a workspace from PMT (mod folders on disk stay).
+ * Asks before removing a workspace from PMT, then removes it; mod folders on disk stay. Opened through
+ * useOverlay, it closes with true once the workspace is gone.
  */
-const open = defineModel<boolean>("open", { required: true });
+import { useMutation, useQueryCache } from "@pinia/colada";
+import { DeleteWorkspace } from "@services/workspaceservice";
+import { workspaceKeys } from "../queries";
 
-defineProps<{
-  name: string;
-  loading?: boolean;
-}>();
+const { id, name } = defineProps<{ id: string; name: string }>();
+const emit = defineEmits<{ close: [removed: boolean] }>();
 
-const emit = defineEmits<{
-  confirm: [];
-}>();
+const queryCache = useQueryCache();
+const toast = useToast();
+const { mutate: remove, isLoading: removing } = useMutation({
+  mutation: () => DeleteWorkspace(id),
+  onSuccess: () => {
+    toast.add({ title: `${name} removed`, color: "success" });
+    emit("close", true);
+  },
+  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
+});
 </script>
 
 <template>
   <UModal
-    v-model:open="open"
-    :title="`Remove “${name}”?`"
-    description="This workspace leaves Paradox Modding Tools. Mod folders on disk are not deleted. You can attach them to another workspace later."
+    :title="`Remove ${name}?`"
+    description="The workspace leaves PMT. Its mod folders stay on disk, and you can add them to another workspace."
   >
-    <template #footer="{ close }">
-      <UButton label="Cancel" color="neutral" variant="outline" @click="close" />
-      <UButton
-        label="Remove"
-        color="error"
-        :loading="loading"
-        @click="emit('confirm')"
-      />
+    <template #footer>
+      <span class="grow" />
+      <UButton label="Cancel" @click="emit('close', false)" />
+      <UButton label="Remove workspace" color="error" variant="soft" :loading="removing" @click="remove()" />
     </template>
   </UModal>
 </template>

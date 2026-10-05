@@ -4,6 +4,7 @@
  */
 import { computed, ref, shallowRef, toValue, type MaybeRefOrGetter } from "vue";
 import { useQuery } from "@pinia/colada";
+import { sessionKeys } from "../queries";
 import { refDebounced } from "@vueuse/core";
 import { Graph, layout } from "@dagrejs/dagre";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
@@ -38,18 +39,18 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
   const search = refDebounced(searchTerm, 200);
 
   const { data: graph, error } = useQuery({
-    key: () => ["session", "graph", toValue(workspaceId), { ...params.value }],
+    key: () => sessionKeys.graph(toValue(workspaceId), { ...params.value }),
     query: () => GetEventGraph(toValue(workspaceId), params.value),
     enabled: () => toValue(live),
     placeholderData: (previous) => previous,
   });
   const { data: detail } = useQuery({
-    key: () => ["session", "event-detail", toValue(workspaceId), selected.value],
+    key: () => sessionKeys.eventDetail(toValue(workspaceId), selected.value),
     query: () => GetEventDetail(toValue(workspaceId), selected.value),
     enabled: () => toValue(live) && !!selected.value,
   });
   const { data: roots, isLoading: searching } = useQuery({
-    key: () => ["session", "roots", toValue(workspaceId), search.value, rootKind.value],
+    key: () => sessionKeys.roots(toValue(workspaceId), search.value, rootKind.value),
     query: () => SearchRoots(toValue(workspaceId), search.value, rootKind.value),
     enabled: () => toValue(live),
     placeholderData: (previous) => previous,

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/steam"
 )
@@ -66,6 +67,38 @@ type PublishResult struct {
 	NeedsLegalAgreement bool     `json:"needsLegalAgreement"`
 	LegalURL            string   `json:"legalUrl,omitempty"`
 	Listing             *Listing `json:"listing,omitempty"`
+}
+
+// UploadFiles is what an upload of a mod sends and leaves out.
+type UploadFiles struct {
+	Count int      `json:"count"` // the files sent
+	Bytes int64    `json:"bytes"` // their size
+	Left  []string `json:"left"`  // the files left out, mod-relative with forward slashes
+}
+
+// UploadFiles walks a mod as its upload copy does, by its saved ignore text.
+func (r *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles, error) {
+	_, mod, err := r.workspaceMod(workspaceID, modID)
+	if err != nil {
+		return nil, err
+	}
+	patterns := steam.LoadIgnorePatterns(mod.Path, mod.WorkshopIgnore)
+	files := &UploadFiles{Left: []string{}}
+	source.Walk(mod.Path, func(file string) {
+		rel, err := filepath.Rel(mod.Path, file)
+		if err != nil {
+			return
+		}
+		if rel = filepath.ToSlash(rel); steam.Ignored(rel, patterns) {
+			files.Left = append(files.Left, rel)
+			return
+		}
+		if info, err := os.Stat(file); err == nil {
+			files.Count++
+			files.Bytes += info.Size()
+		}
+	})
+	return files, nil
 }
 
 // LoadListing reads descriptor + readmes for a workspace mod.

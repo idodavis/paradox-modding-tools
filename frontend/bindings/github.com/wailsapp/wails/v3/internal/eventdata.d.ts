@@ -12,7 +12,14 @@ import type * as services$0 from "../../../../../paradox-modding-tools/services/
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "fs:changed": services$0.FSChanged;
+            "lang:cache-updated": string;
+            "lang:calendar-changed": string;
+            "lang:failed": string;
+            "lang:ready": string;
+            "lang:scan-progress": services$0.ScanProgress;
             "search:hits": services$0.TextSearchHits;
+            "wiki:updated": services$0.WikiUpdated;
         }
     }
 }

@@ -105,6 +105,11 @@ export default defineConfig({
           },
         },
         popover: { slots: { content: "bg-elevated rounded-xl ring-0 shadow-(--shadow)" } },
+        // a dialog is the boards' .pop: bg-3, 12px corners, the theme's shadow
+        modal: {
+          slots: { content: "bg-elevated" },
+          variants: { fullscreen: { false: { content: "rounded-xl ring-0 shadow-(--shadow)" } } },
+        },
         switch: {
           slots: {
             base: "border border-accented p-0.5 data-[state=checked]:border-primary",
@@ -117,6 +122,75 @@ export default defineConfig({
         checkbox: {
           slots: { base: "bg-(--bg-0)", indicator: "text-(--accent-ink)" },
           variants: { size: { md: { base: "size-4", icon: "size-3", container: "h-4.5" } } },
+        },
+        // the CommandPalette board: a 46px search, .mh group labels, 32px .ci rows in the accent's soft fill
+        commandPalette: {
+          slots: {
+            label: "font-medium text-dimmed",
+            item: "items-center",
+            itemLeadingIcon: "text-dimmed",
+            itemLabelPrefix: "text-dimmed",
+            footer: "px-3.5 py-2",
+          },
+          variants: {
+            size: {
+              md: {
+                input: "[&>input]:h-11.25 [&>input]:text-14",
+                label: "px-2.5 pt-2 pb-1 text-11",
+                item: "h-8 px-3 py-0 text-13 gap-2.5",
+                itemLeadingIcon: "size-3.5",
+                itemTrailing: "gap-2",
+              },
+            },
+          },
+          compoundVariants: [
+            { active: false, class: { item: "data-highlighted:not-data-disabled:before:bg-(--accent-soft)" } },
+          ],
+        },
+        // the boards' .f: a .label over its control, 5px apart, hints in the quiet 11px
+        formField: {
+          slots: {
+            label: "text-12 font-medium text-toned",
+            description: "text-11 text-dimmed",
+            hint: "text-11 text-dimmed",
+            help: "mt-1.25 text-11 text-dimmed",
+            error: "mt-1.25 text-11",
+          },
+          variants: { size: { md: { root: "text-12" } }, orientation: { vertical: { container: "mt-1.25" } } },
+        },
+        // the Wizard board's .step: a 22px circle and its label in a row, a rule on to the next; done is green
+        stepper: {
+          compoundVariants: [
+            {
+              orientation: "horizontal",
+              class: {
+                root: "gap-6",
+                header: "items-center gap-3",
+                item: "flex w-auto flex-1 items-center gap-2 text-start last:flex-none",
+                container: "contents",
+                trigger: [
+                  "size-5.5 text-11 font-medium ring ring-inset ring-accented bg-transparent text-dimmed",
+                  "group-data-[state=completed]:bg-(--green-soft) group-data-[state=completed]:text-success group-data-[state=completed]:ring-0",
+                  "group-data-[state=active]:bg-primary group-data-[state=active]:text-(--accent-ink) group-data-[state=active]:ring-primary",
+                ],
+                icon: "size-3.5",
+                separator: "static order-last h-px flex-1 bg-accented group-data-[state=completed]:bg-accented",
+                wrapper: "mt-0",
+                title: "text-12 font-medium whitespace-nowrap text-dimmed group-data-[state=completed]:text-toned group-data-[state=active]:text-highlighted",
+              },
+            },
+          ],
+        },
+        // a card is the boards' .opt: 6px corners on bg-2, the accent's soft fill when picked
+        radioGroup: {
+          compoundVariants: [
+            { variant: "card", class: { item: "rounded-md bg-muted px-3 py-2.5 gap-2.5" } },
+            {
+              color: "primary",
+              variant: "card",
+              class: { item: "has-data-[state=checked]:border-primary has-data-[state=checked]:bg-(--accent-soft)" },
+            },
+          ],
         },
         tabs: {
           slots: { trigger: "font-medium", leadingIcon: "size-3.5" },

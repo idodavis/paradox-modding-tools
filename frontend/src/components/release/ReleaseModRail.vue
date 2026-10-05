@@ -9,7 +9,6 @@ import { modColor } from "../../stores/workspace";
 const props = defineProps<{
   mods: WorkspaceMod[];
   selectedId: string;
-  thumbUrls: Record<string, string>;
 }>();
 
 const emit = defineEmits<{
@@ -44,12 +43,7 @@ const ordered = computed(() => props.mods);
           <span class="w-4 shrink-0 tabular-nums text-xs text-muted">
             {{ (mod.sortOrder ?? i) + 1 }}
           </span>
-          <img
-            v-if="thumbUrls[mod.id]"
-            :src="thumbUrls[mod.id]"
-            alt=""
-            class="size-4 shrink-0 rounded-sm object-cover"
-          >
+          <Thumb v-if="mod.thumbnail" :path="mod.thumbnail" size="xs" />
           <OriginChip :label="mod.name" :color="modColor(mod)" class="min-w-0" />
         </button>
       </li>

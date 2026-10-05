@@ -11,12 +11,17 @@ import (
 	"strings"
 	"uuid"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/steam"
 )
+
+// registers lang:calendar-changed so the bindings generator types it
+func init() { application.RegisterEvent[string](EventLangCalendarChanged) }
 
 // WorkspaceService manages workspaces, game installs, and mods.
 type WorkspaceService struct {
@@ -165,17 +170,23 @@ func (s *WorkspaceService) ListWorkspaces(gameID string) ([]Workspace, error) {
 		}
 	})
 	for i := range out {
-		markBroken(&out[i])
+		markDisk(&out[i])
 	}
 	return out, nil
 }
 
-// markBroken re-derives IsBroken from disk, a stat per mod, outside the config lock; stored, it
-// would go stale the moment a folder moves.
-func markBroken(ws *Workspace) {
+// markDisk re-derives each mod's IsBroken and Folder from disk, a stat per mod, outside the config
+// lock; stored, they would go stale the moment a folder moves.
+func markDisk(ws *Workspace) {
+	userData := game.UserDataDir(ws.GameID, "")
 	for i := range ws.Mods {
-		_, err := os.Stat(ws.Mods[i].Path)
-		ws.Mods[i].IsBroken = err != nil
+		mod := &ws.Mods[i]
+		_, err := os.Stat(mod.Path)
+		mod.IsBroken = err != nil
+		mod.Folder = mod.Path
+		if rel, err := filepath.Rel(userData, mod.Path); userData != "" && err == nil && filepath.IsLocal(rel) {
+			mod.Folder = rel
+		}
 	}
 }
 
@@ -194,7 +205,7 @@ func (s *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace not found")
 	}
-	markBroken(ws)
+	markDisk(ws)
 	return ws, nil
 }
 
@@ -330,6 +341,11 @@ func (s *WorkspaceService) DefaultModParent(gameID string) string {
 	return local.DefaultModParent(gameID)
 }
 
+// ModFolder is the folder CreateMod makes for a mod named name under parentDir.
+func (s *WorkspaceService) ModFolder(parentDir, name string) string {
+	return filepath.Join(parentDir, local.ModSlug(name))
+}
+
 // CreateMod writes a new mod skeleton under parentDir and returns its path.
 func (s *WorkspaceService) CreateMod(
 	gameID, parentDir, name, locLang, supportedVersion, description, thumbnailSrc string,
@@ -347,7 +363,7 @@ func (s *WorkspaceService) CreateMod(
 	if parentDir == "" {
 		return "", fmt.Errorf("parent folder is required")
 	}
-	root := filepath.Join(parentDir, local.ModSlug(name))
+	root := s.ModFolder(parentDir, name)
 	if err := local.WriteNewMod(local.NewModOpts{
 		GameID: gameID, Root: root, Name: name, SupportedVersion: supportedVersion,
 		LocLang: locLang, ThumbnailSrc: thumbnailSrc,
@@ -357,21 +373,21 @@ func (s *WorkspaceService) CreateMod(
 	return root, steam.EnsureDescriptions(root, name, description)
 }
 
-// AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor.
+// AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor. An empty name
+// is the descriptor's, else the folder's.
 func (s *WorkspaceService) AddWorkspaceMod(
 	workspaceID, name, path, thumbnail string,
 ) (*WorkspaceMod, error) {
-	var gameID string
-	s.App.read(func(cfg *Config) {
-		if ws := findWorkspace(cfg, workspaceID); ws != nil {
-			gameID = ws.GameID
-		}
-	})
-	if info, err := os.Stat(path); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("%s is not a folder", path)
+	gameID, err := s.modFolderOf(workspaceID, path)
+	if err != nil {
+		return nil, err
 	}
-	if _, err := os.Stat(game.DescriptorPath(gameID, path)); err != nil {
-		return nil, fmt.Errorf("%s has no %s, so it is not a mod", path, game.DescriptorFile(gameID))
+	if name == "" {
+		fields, err := local.ReadListingFields(gameID, path)
+		if err != nil {
+			return nil, err
+		}
+		name = cmp.Or(fields.Name, filepath.Base(path))
 	}
 
 	// an empty thumbnail is found here, as for the Release page: only Go knows each game's folder
@@ -384,7 +400,7 @@ func (s *WorkspaceService) AddWorkspaceMod(
 		ID: uuid.New().String(), Name: name, Path: path,
 		Thumbnail: thumbnail,
 	}
-	err := s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
+	err = s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
 		mod.SortOrder, mod.Slot = len(ws.Mods), freeSlot(ws.Mods)
 		ws.Mods = append(ws.Mods, mod)
 		return nil
@@ -394,6 +410,46 @@ func (s *WorkspaceService) AddWorkspaceMod(
 	}
 	s.Session.drop(workspaceID)
 	return &mod, nil
+}
+
+// modFolderOf is the game of a workspace whose mod may live at path: a folder holding the game's
+// descriptor.
+func (s *WorkspaceService) modFolderOf(workspaceID, path string) (string, error) {
+	var gameID string
+	s.App.read(func(cfg *Config) {
+		if ws := findWorkspace(cfg, workspaceID); ws != nil {
+			gameID = ws.GameID
+		}
+	})
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("%s is not a folder", path)
+	}
+	if _, err := os.Stat(game.DescriptorPath(gameID, path)); err != nil {
+		return "", fmt.Errorf("%s has no %s, so it is not a mod", path, game.DescriptorFile(gameID))
+	}
+	return gameID, nil
+}
+
+// SetWorkspaceModPath points a mod at another folder, one holding its game's descriptor; the
+// session is built again from it.
+func (s *WorkspaceService) SetWorkspaceModPath(workspaceID, modID, path string) error {
+	if _, err := s.modFolderOf(workspaceID, path); err != nil {
+		return err
+	}
+	err := s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+		mod.Path = path
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.Session.drop(workspaceID)
+	return nil
+}
+
+// OpenFolder shows a folder in the system's file manager.
+func (s *WorkspaceService) OpenFolder(path string) error {
+	return application.Get().Env.OpenFileManager(path, false)
 }
 
 // UpdateWorkspaceMod updates listing paths, ignore text, name, color, and thumbnail.
@@ -643,7 +699,7 @@ func (s *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace not found")
 	}
-	markBroken(ws)
+	markDisk(ws)
 
 	out := &IdeRoots{
 		ResetIdeOnOpen:       ws.ResetIdeOnOpen,

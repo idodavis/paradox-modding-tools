@@ -1,391 +1,186 @@
 <script setup lang="ts">
 /**
- * Workspace creation wizard: game → install → mods → name → create.
+ * A new workspace (the Wizard board): the game, its install, the mods in load order, then a name. It
+ * opens in the IDE once made.
  */
-import { computed, ref, useTemplateRef, watch } from "vue";
+import { computed, shallowRef, useTemplateRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useMutation, useQuery } from "@pinia/colada";
-import type { StepperItem } from "@nuxt/ui";
+import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { createReusableTemplate } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
-import FileSelector, { pickDirectory } from "../components/FileSelector.vue";
+import type { StepperItem } from "@nuxt/ui";
+import { AddWorkspaceMod, CreateWorkspace, SetWorkspaceLocLang } from "@services/workspaceservice";
 import CreateModForm from "../components/CreateModForm.vue";
-import AddInstallCard from "../components/AddInstallCard.vue";
-import { LOC_LANG_ITEMS, useWorkspaceStore } from "../stores/workspace";
-import {
-  ListGameInstalls,
-  AddGameInstall,
-  CreateWorkspace,
-  AddWorkspaceMod,
-  FindGameInstalls,
-  DeleteGameInstall,
-  SetWorkspaceLocLang,
-} from "@services/workspaceservice";
+import { pickDirectory } from "../lib/nativeDialog";
+import { installsQuery, workspaceKeys } from "../queries";
+import { useWorkspaceStore } from "../stores/workspace";
+import { LOC_LANGUAGES } from "../workspaceTools";
 
-const router = useRouter();
 const route = useRoute();
-const ctx = useWorkspaceStore();
-const wantsNewMod = computed(() => String(route.query.newMod ?? "") === "1");
-const creatingMod = ref(false);
+const router = useRouter();
+const store = useWorkspaceStore();
+const queryCache = useQueryCache();
+const createModal = useOverlay().create(CreateModForm);
+const [DefineFooter, Footer] = createReusableTemplate<{ next: string; disabled: boolean }>();
 
-const step = ref(0);
-const selectedGame = ref(ctx.currentGameId);
-const selectedInstallId = ref<string | undefined>(undefined);
-const newInstallPath = ref("");
-const newInstallName = ref("");
-const defaultLocLang = ref("english");
-const modEntries = ref<{ path: string; thumbnail: string }[]>([]);
-const workspaceName = ref("");
-const wizardModsEl = useTemplateRef<HTMLElement>("wizardModsEl");
+// "New workspace for this game" names the game, so the wizard starts at its install
+const asked = typeof route.query.game === "string" ? route.query.game : "";
+const gameId = shallowRef(asked || store.activeWorkspace?.gameId || "ck3");
+const step = shallowRef(asked ? 1 : 0);
+const chosenInstall = shallowRef("");
+const mods = shallowRef<string[]>([]);
+const name = shallowRef("");
+const locLang = shallowRef("english");
 
-useSortable(wizardModsEl, modEntries, {
-  handle: ".mod-handle",
-  animation: 150,
-  watchElement: true,
+const game = computed(() => store.game(gameId.value));
+const { data: installs } = useQuery(() => installsQuery(gameId.value));
+// the install picked for this game, else its first
+const installId = computed({
+  get: () => installs.value?.find((install) => install.id === chosenInstall.value)?.id ?? installs.value?.[0]?.id ?? "",
+  set: (id: string) => (chosenInstall.value = id),
 });
 
-/** Wizard steps; numeric `value` is the 0-based index UStepper uses. */
-const stepItems: StepperItem[] = [
-  { title: "Game", icon: "i-lucide-gamepad-2", value: 0 },
-  { title: "Install", icon: "i-lucide-folder", value: 1 },
-  { title: "Mods", icon: "i-lucide-package", value: 2 },
-  { title: "Details", icon: "i-lucide-file-text", value: 3 },
-];
-
-/** Install options for the radio group. */
-const installItems = computed(() =>
-  installs.value.map((i) => ({
-    label: `${i.name}${i.versionDetected ? ` (${i.versionDetected})` : ""}${i.scannedAt ? " — cache ready" : ""}`,
-    description: i.path,
-    value: i.id,
+const steps = computed<StepperItem[]>(() =>
+  ["Game", "Install", "Mods", "Details"].map((title, i) => ({
+    title,
+    slot: title.toLowerCase(),
+    icon: i < step.value ? "i-lucide-check" : undefined,
+    disabled: i > 1 && !installId.value,
   })),
 );
+const gameItems = computed(() => store.games.map((g) => ({ label: g.name, value: g.id })));
 
-const selectedInstall = computed(() => installs.value.find((i) => i.id === selectedInstallId.value));
-const supportedVersion = computed(() => selectedInstall.value?.versionDetected ?? "");
+const list = useTemplateRef("list");
+useSortable(list, mods, { handle: ".mod-handle", animation: 150, watchElement: true });
 
-const canContinue = computed(() => {
-  switch (step.value) {
-    case 0:
-      return !!selectedGame.value;
-    case 1:
-      return !!selectedInstallId.value;
-    case 2:
-      return wantsNewMod.value ? modEntries.value.length > 0 : true;
-    case 3:
-      return !!workspaceName.value.trim();
-    default:
-      return false;
-  }
-});
+async function addExisting(): Promise<void> {
+  const path = await pickDirectory("A mod folder");
+  if (path && !mods.value.includes(path)) mods.value = [...mods.value, path];
+}
 
-/** Load installs for selected game. */
-const {
-  data: installPack,
-  isPending: installsPending,
-  error: installError,
-  refetch: refetchInstalls,
-} = useQuery({
-  key: () => ["wizard-installs", selectedGame.value],
-  query: async () => {
-    const [listed, detected] = await Promise.all([
-      ListGameInstalls(selectedGame.value),
-      FindGameInstalls(selectedGame.value),
-    ]);
-    return {
-      installs: listed ?? [],
-      detected: detected ?? [],
-    };
-  },
-  enabled: () => step.value >= 1,
-});
+async function createNew(): Promise<void> {
+  const supportedVersion = installs.value?.find((install) => install.id === installId.value)?.versionDetected ?? "";
+  const path = await createModal.open({ gameId: gameId.value, locLang: locLang.value, supportedVersion });
+  if (path) mods.value = [...mods.value, path];
+}
 
-const installs = computed(() => installPack.value?.installs ?? []);
-const detectedInstalls = computed(() => installPack.value?.detected ?? []);
-const savedInstallPaths = computed(() => installs.value.map((i) => i.path).filter(Boolean));
-
-watch(installs, (list) => {
-  const keep = selectedInstallId.value;
-  const next = list.find((i) => i.id === keep) ?? list[0];
-  selectedInstallId.value = next?.id;
-});
-
-const {
-  mutateAsync: addNewInstall,
-  isLoading: adding,
-  error: addError,
-} = useMutation({
+const { mutate: create, isLoading: creating } = useMutation({
   mutation: async () => {
-    if (!newInstallPath.value || !newInstallName.value) return;
-    const install = await AddGameInstall(selectedGame.value, newInstallName.value, newInstallPath.value);
-    if (!install) throw new Error("Failed to create install");
-    selectedInstallId.value = install.id;
-    newInstallPath.value = "";
-    newInstallName.value = "";
-    await refetchInstalls();
+    const ws = await CreateWorkspace(gameId.value, name.value.trim(), installId.value);
+    if (!ws) throw new Error("The workspace was not made");
+    await SetWorkspaceLocLang(ws.id, locLang.value);
+    // in load order; Go names each from its descriptor
+    for (const path of mods.value) await AddWorkspaceMod(ws.id, "", path, "");
+    return ws;
   },
+  onSuccess: (ws) => void router.replace({ name: "workspace-ide", params: { id: ws.id } }),
+  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
 
-const {
-  mutateAsync: deleteSelectedInstall,
-  isLoading: deleting,
-  error: deleteError,
-} = useMutation({
-  mutation: async () => {
-    if (!selectedInstallId.value) return;
-    await DeleteGameInstall(selectedInstallId.value);
-    selectedInstallId.value = undefined;
-    await refetchInstalls();
-  },
-});
-
-/** Add a mod path entry. */
-async function addModPath(): Promise<void> {
-  const path = await pickDirectory("Select mod folder");
-  if (path) modEntries.value.push({ path, thumbnail: "" });
+function goTo(at: string | number | undefined): void {
+  if (typeof at === "number") step.value = at;
 }
 
-/** Attach a newly created mod folder. */
-function onModCreated(path: string, thumbnail = ""): void {
-  if (!modEntries.value.some((m) => m.path === path)) {
-    modEntries.value.push({ path, thumbnail });
-  }
-  creatingMod.value = false;
+function next(): void {
+  if (step.value < 3) step.value++;
+  else create();
 }
-
-/** Remove a mod path. */
-function removeModPath(index: number): void {
-  modEntries.value.splice(index, 1);
-}
-
-/** Move the stepper; later steps stay locked until an install is selected. */
-function onStep(v: number | string | undefined): void {
-  if (typeof v !== "number") return;
-  if (v > 1 && !selectedInstallId.value) {
-    step.value = 1;
-    return;
-  }
-  step.value = v;
-}
-
-function nextStep(): void {
-  onStep(step.value + 1);
-}
-function prevStep(): void {
-  step.value--;
-}
-
-const {
-  mutateAsync: createWorkspace,
-  isLoading: creating,
-  error: createError,
-} = useMutation({
-  mutation: async () => {
-    if (!workspaceName.value.trim()) {
-      throw new Error("Workspace name is required.");
-    }
-    if (!selectedInstallId.value) {
-      step.value = 1;
-      throw new Error("Select or add a game install before creating.");
-    }
-    const ws = await CreateWorkspace(selectedGame.value, workspaceName.value.trim(), selectedInstallId.value);
-    if (!ws) throw new Error("Failed to create workspace");
-    await SetWorkspaceLocLang(ws.id, defaultLocLang.value);
-    for (const mod of modEntries.value) {
-      const name = mod.path.split(/[/\\]/).pop() || "Mod";
-      await AddWorkspaceMod(ws.id, name, mod.path, mod.thumbnail);
-    }
-    ctx.setActiveWorkspace(ws.id);
-    await ctx.refresh();
-    void router.replace({ name: "workspace-ide", params: { id: ws.id } });
-  },
-});
-
-const busy = computed(() => installsPending.value || adding.value || deleting.value || creating.value);
-const error = computed(
-  () =>
-    installError.value?.message ??
-    addError.value?.message ??
-    deleteError.value?.message ??
-    createError.value?.message ??
-    "",
-);
 </script>
 
 <template>
-  <div class="h-full w-full min-h-0 overflow-y-auto">
-    <div class="flex min-h-full w-full items-center justify-center p-4">
-      <div class="w-full" :class="step === 1 ? 'max-w-4xl' : 'max-w-2xl'">
-        <h1 class="mb-6 text-center text-xl font-bold">Create Workspace</h1>
-        <UAlert v-if="error" color="error" variant="subtle" :description="error" class="mb-4" />
-        <UStepper :model-value="step" :items="stepItems" class="mb-6" @update:model-value="onStep" />
-
-        <UCard>
-          <template v-if="step === 0">
-            <div class="space-y-4">
-              <h2 class="font-semibold">Select Game</h2>
-              <URadioGroup v-model="selectedGame" :items="ctx.gameOptions" variant="card" />
-            </div>
-          </template>
-
-          <template v-else-if="step === 1">
-            <div class="space-y-4">
-              <h2 class="font-semibold">Game Install</h2>
-              <p class="text-sm text-muted">Pick a saved install, or draft one on the right and click Add install.</p>
-              <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
-                <UCard title="Added installs" description="These are saved. Select one before continuing.">
-                  <div class="space-y-4">
-                    <URadioGroup
-                      v-if="installs.length"
-                      v-model="selectedInstallId"
-                      :items="installItems"
-                      variant="card"
-                    />
-                    <p v-else class="text-sm text-muted">No installs added yet.</p>
-                    <div v-if="selectedInstall" class="space-y-2">
-                      <p class="truncate text-xs text-muted">{{ selectedInstall.path }}</p>
-                      <p v-if="selectedInstall.versionDetected" class="text-xs text-muted">
-                        detected: {{ selectedInstall.versionDetected }} from launcher/launcher-settings.json
-                      </p>
-                      <p class="text-xs text-muted">
-                        {{
-                          selectedInstall.scannedAt ? `cache ready (${selectedInstall.scannedAt})` : "cache not scanned"
-                        }}
-                      </p>
-                      <UButton
-                        label="Delete"
-                        size="xs"
-                        color="error"
-                        variant="ghost"
-                        :loading="busy"
-                        @click="deleteSelectedInstall()"
-                      />
-                    </div>
-                  </div>
-                </UCard>
-                <AddInstallCard
-                  v-model:path="newInstallPath"
-                  v-model:name="newInstallName"
-                  :game-id="selectedGame"
-                  :detected="detectedInstalls"
-                  :saved-paths="savedInstallPaths"
-                  :loading="adding"
-                  @add="addNewInstall()"
-                />
-              </div>
-            </div>
-          </template>
-
-          <template v-else-if="step === 2">
-            <div class="space-y-4">
-              <h2 class="font-semibold">Mod Folders</h2>
-              <UAlert
-                v-if="wantsNewMod"
-                color="info"
-                variant="subtle"
-                title="Creating a new mod"
-                description="Add at least one new or existing mod folder, then continue."
-              />
-              <p v-else class="text-sm text-muted">Add one or more mod folders to include in this workspace.</p>
-              <div ref="wizardModsEl" class="space-y-2">
-                <div
-                  v-for="(mod, idx) in modEntries"
-                  :key="mod.path"
-                  class="space-y-2 rounded border border-default p-2"
-                >
-                  <div class="flex items-center gap-2">
-                    <UButton
-                      icon="i-lucide-grip-vertical"
-                      color="neutral"
-                      variant="ghost"
-                      size="xs"
-                      class="mod-handle cursor-grab"
-                    />
-                    <UInput :model-value="mod.path" readonly class="flex-1" />
-                    <UButton
-                      icon="i-lucide-trash-2"
-                      color="error"
-                      variant="ghost"
-                      size="sm"
-                      @click="removeModPath(idx)"
-                    />
-                  </div>
-                  <UFormField label="Thumbnail" class="flex-1">
-                    <div class="flex items-end gap-2">
-                      <FileSelector
-                        v-model="mod.thumbnail"
-                        mode="file"
-                        dialog-title="Select thumbnail"
-                        file-filter="*.png; *.jpg; *.jpeg; *.svg"
-                        class="min-w-0 flex-1"
-                      />
-                      <UButton
-                        v-if="mod.thumbnail"
-                        label="Clear"
-                        size="xs"
-                        color="neutral"
-                        variant="ghost"
-                        @click="mod.thumbnail = ''"
-                      />
-                    </div>
-                  </UFormField>
-                </div>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <UButton
-                  label="Add existing mod to workspace"
-                  icon="i-lucide-folder-plus"
-                  variant="outline"
-                  @click="addModPath"
-                />
-                <UButton
-                  label="Create new mod"
-                  icon="i-lucide-package-plus"
-                  variant="outline"
-                  @click="creatingMod = !creatingMod"
-                />
-              </div>
-              <CreateModForm
-                v-if="creatingMod"
-                :game-id="selectedGame"
-                :loc-lang="defaultLocLang"
-                :supported-version="supportedVersion"
-                @created="onModCreated"
-              />
-            </div>
-          </template>
-
-          <template v-else-if="step === 3">
-            <div class="space-y-4">
-              <h2 class="font-semibold">Workspace Details</h2>
-              <UFormField label="Workspace name" required>
-                <UInput v-model="workspaceName" placeholder="My CK3 Mod Project" />
-              </UFormField>
-              <UFormField label="Default loc language">
-                <USelect v-model="defaultLocLang" :items="LOC_LANG_ITEMS" value-key="value" />
-              </UFormField>
-            </div>
-          </template>
-
-          <template #footer>
-            <div class="flex justify-between">
-              <UButton v-if="step > 0" label="Back" variant="outline" @click="prevStep" />
-              <div v-else />
-              <UButton v-if="step < 3" label="Continue" :disabled="!canContinue" @click="nextStep" />
-              <UButton
-                v-else
-                label="Create Workspace"
-                :disabled="!canContinue"
-                :loading="busy"
-                @click="createWorkspace()"
-              />
-            </div>
-          </template>
-        </UCard>
-
-        <div class="mt-4 flex justify-center">
-          <UButton label="Cancel" variant="ghost" color="neutral" @click="router.replace({ name: 'library' })" />
-        </div>
+  <div class="flex h-full justify-center overflow-y-auto px-6 pt-10 pb-8">
+    <div class="flex w-215 max-w-full flex-col gap-6">
+      <div class="flex items-center gap-2.5">
+        <UButton icon="i-lucide-arrow-left" variant="ghost" size="sm" square aria-label="Back to Library" :to="{ name: 'library' }" />
+        <h1 class="text-20">New workspace</h1>
+        <span class="grow" />
+        <UButton label="Cancel" size="md" :to="{ name: 'library' }" />
       </div>
+
+      <DefineFooter v-slot="{ next: label, disabled }">
+        <div class="flex items-center gap-2 border-t border-default pt-5">
+          <UButton v-if="step > 0" label="Back" variant="ghost" size="md" @click="step--" />
+          <span class="grow" />
+          <span class="text-11 text-dimmed">Step {{ step + 1 }} of 4</span>
+          <UButton :label="label" color="primary" variant="solid" size="md" :disabled="disabled" :loading="creating" @click="next" />
+        </div>
+      </DefineFooter>
+
+      <UStepper
+        :model-value="step"
+        :items="steps"
+        :ui="{ content: 'flex flex-col gap-5 rounded-lg border border-default bg-elevated p-6' }"
+        @update:model-value="goTo"
+      >
+        <template #game>
+          <div class="flex flex-col gap-1">
+            <h2 class="text-16">Which game is this workspace for?</h2>
+            <p class="text-13 text-dimmed">PMT reads that game's files and its scripting language.</p>
+          </div>
+          <URadioGroup v-model="gameId" :items="gameItems" variant="card" />
+          <Footer next="Continue" :disabled="!gameId" />
+        </template>
+
+        <template #install>
+          <div class="flex flex-col gap-1">
+            <h2 class="text-16">Which {{ game?.name }} install should this workspace use?</h2>
+            <p class="text-13 text-dimmed">
+              PMT reads game files from it and scans its script_docs. You can add more installs later in Settings.
+            </p>
+          </div>
+          <InstallPicker v-model="installId" :game-id="gameId" />
+          <Footer next="Continue" :disabled="!installId" />
+        </template>
+
+        <template #mods>
+          <div class="flex flex-col gap-1">
+            <h2 class="text-16">Which mods do you work on in it?</h2>
+            <p class="text-13 text-dimmed">
+              Mods load top to bottom after the game; drag them into order. You can also leave the game files alone.
+            </p>
+          </div>
+          <div v-if="mods.length" ref="list" class="flex flex-col divide-y divide-default rounded-lg border border-default bg-muted">
+            <div v-for="(path, i) in mods" :key="path" class="flex h-10 items-center gap-2.5 ps-2 pe-1.5">
+              <UIcon name="i-lucide-grip-vertical" class="mod-handle size-3.5 cursor-grab text-dimmed" />
+              <span class="w-3.5 text-center font-mono text-11 text-dimmed">{{ i + 1 }}</span>
+              <span class="min-w-0 grow truncate font-mono text-12">{{ path }}</span>
+              <UButton
+                icon="i-lucide-x"
+                variant="ghost"
+                size="xs"
+                square
+                aria-label="Leave out"
+                @click="mods = mods.filter((p) => p !== path)"
+              />
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <UButton label="Add an existing mod" icon="i-lucide-plus" @click="addExisting" />
+            <UButton label="Create a new mod" @click="createNew" />
+          </div>
+          <Footer next="Continue" :disabled="false" />
+        </template>
+
+        <template #details>
+          <div class="flex flex-col gap-1">
+            <h2 class="text-16">Name the workspace</h2>
+            <p class="text-13 text-dimmed">Shown in the Library and the workspace switcher.</p>
+          </div>
+          <div class="grid grid-cols-2 gap-6">
+            <UFormField label="Name" required>
+              <UInput v-model="name" :placeholder="`My ${game?.shortName ?? ''} mod`" class="w-full" />
+            </UFormField>
+            <UFormField label="Localization language" help="Used for localization gaps, hover text and new mods' files.">
+              <USelect v-model="locLang" :items="LOC_LANGUAGES" class="w-full" />
+            </UFormField>
+          </div>
+          <Footer next="Create workspace" :disabled="!name.trim() || !installId" />
+        </template>
+      </UStepper>
     </div>
+
+    <StatusFacts>
+      <span>Creating a workspace for {{ game?.name }}</span>
+    </StatusFacts>
   </div>
 </template>

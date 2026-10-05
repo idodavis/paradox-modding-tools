@@ -143,6 +143,14 @@ export interface EventGraph {
 }
 
 /**
+ * FSChanged is one path under a mod that changed on disk; Deleted when it is gone.
+ */
+export interface FSChanged {
+    "path": string;
+    "deleted": boolean;
+}
+
+/**
  * FileBytes is a binary file payload for the IDE FS bridge. A missing file is Exists=false with no
  * error, so optional paths are skipped quietly. Reject says why an existing file must not be
  * opened; it is not a Go error, so Wails does not log a binding failure.
@@ -493,6 +501,15 @@ export interface Roots {
 }
 
 /**
+ * ScanProgress is one step of an install scan.
+ */
+export interface ScanProgress {
+    "installId": string;
+    "percent": number;
+    "stage": string;
+}
+
+/**
  * Section is one key at the top of the definition's block: its value where that is one word, and
  * the text that word has as a loc key.
  */
@@ -597,6 +614,34 @@ export interface TextSearchResult {
 }
 
 /**
+ * UploadFiles is what an upload of a mod sends and leaves out.
+ */
+export interface UploadFiles {
+    /**
+     * the files sent
+     */
+    "count": number;
+
+    /**
+     * their size
+     */
+    "bytes": number;
+
+    /**
+     * the files left out, mod-relative with forward slashes
+     */
+    "left": string[] | null;
+}
+
+/**
+ * WikiUpdated is one game's wiki refresh, done; Error says why it failed.
+ */
+export interface WikiUpdated {
+    "gameId": string;
+    "error"?: string;
+}
+
+/**
  * Workspace is a user-defined mod working environment tied to a game.
  */
 export interface Workspace {
@@ -638,9 +683,15 @@ export interface WorkspaceMod {
     "workshopIgnore"?: string;
 
     /**
-     * derived by markBroken; a value saved in config.json is ignored
+     * derived by markDisk; a value saved in config.json is ignored
      */
     "isBroken": boolean;
+
+    /**
+     * the folder as shown: under the game's user folder relative to it (mod\sir), else absolute; derived
+     * by markDisk
+     */
+    "folder": string;
 
     /**
      * the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written

@@ -4,14 +4,16 @@
  * of the open row's sites, for the site pane.
  */
 import { computed, onActivated, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from "vue";
-import { useMutation, useQuery } from "@pinia/colada";
+import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { GetHealth, GetLines, LookupLoc } from "@services/healthservice";
 import type { SourceAt } from "@services/models";
 import { ReorderWorkspaceMods } from "@services/workspaceservice";
 import { useWorkspaceStore } from "../stores/workspace";
+import { sessionKeys, workspaceKeys } from "../queries";
 
 export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefOrGetter<boolean>) {
   const store = useWorkspaceStore();
+  const queryCache = useQueryCache();
 
   // the workspace's order as Go keeps it, never re-sorted here: it is what the report judges by
   const persisted = computed(() => store.workspaceMods.map((mod) => mod.id));
@@ -26,7 +28,7 @@ export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefO
   const dirty = computed(() => order.value.some((id, i) => id !== persisted.value[i]));
 
   const { data: health, error, isPending, refetch } = useQuery({
-    key: () => ["session", "health", toValue(workspaceId), [...order.value]],
+    key: () => sessionKeys.health(toValue(workspaceId), order.value),
     query: () => GetHealth(toValue(workspaceId), { order: order.value }),
     enabled: () => toValue(live),
   });
@@ -38,20 +40,20 @@ export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefO
   const { mutateAsync: save, isLoading: saving } = useMutation({
     mutation: async () => {
       await ReorderWorkspaceMods(toValue(workspaceId), order.value);
-      await store.refresh();
+      await queryCache.invalidateQueries({ key: workspaceKeys.all });
     },
   });
 
   const locKey = shallowRef("");
   const { data: lookup } = useQuery({
-    key: () => ["session", "loc", toValue(workspaceId), locKey.value],
+    key: () => sessionKeys.loc(toValue(workspaceId), locKey.value),
     query: () => LookupLoc(toValue(workspaceId), locKey.value),
     enabled: () => toValue(live) && !!locKey.value,
   });
 
   const places = shallowRef<SourceAt[]>([]);
   const { data: lines } = useQuery({
-    key: () => ["session", "lines", toValue(workspaceId), places.value.map((at) => `${at.path}:${at.line}:${at.col}`)],
+    key: () => sessionKeys.lines(toValue(workspaceId), places.value.map((at) => `${at.path}:${at.line}:${at.col}`)),
     query: () => GetLines(toValue(workspaceId), places.value),
     enabled: () => toValue(live) && places.value.length > 0,
   });

@@ -3,7 +3,6 @@
  * Multi-select origin menu. Default-all when items change. Vanilla may set gameId.
  */
 import { watch } from "vue";
-import GameIcon from "./GameIcon.vue";
 
 export type OriginMenuItem = {
   id: string;
@@ -46,12 +45,7 @@ const MENU_UI = { content: "min-w-96 w-[420px]", viewport: "max-h-96" };
   >
     <template #item-leading="{ item }">
       <GameIcon v-if="item.gameId" :game-id="item.gameId" />
-      <img
-        v-else-if="item.thumbnail"
-        :src="item.thumbnail"
-        alt=""
-        class="size-4 rounded-sm object-cover"
-      />
+      <Thumb v-else-if="item.thumbnail" :path="item.thumbnail" size="xs" />
       <span
         v-else
         class="size-2 shrink-0 rounded-full"

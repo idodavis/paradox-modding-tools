@@ -1,43 +1,15 @@
 /**
- * Native Wails v3 file/folder dialogs for browse buttons in forms.
+ * The system's folder and file pickers, for the forms' Browse buttons. A cancel gives "".
  */
 import { Dialogs } from "@wailsio/runtime";
 
-/** Open a folder picker. Cancel yields an empty path. */
-export async function pickDirectory(title: string): Promise<string> {
-  const path = await Dialogs.OpenFile({
-    Title: title,
-    CanChooseDirectories: true,
-    CanChooseFiles: false,
-  });
-  return typeof path === "string" ? path : "";
+/** The images a thumbnail may be. */
+export const IMAGE_FILTER = "*.png; *.jpg; *.jpeg; *.svg";
+
+export function pickDirectory(title: string): Promise<string> {
+  return Dialogs.OpenFile({ Title: title, CanChooseDirectories: true, CanChooseFiles: false });
 }
 
-/** Open a file picker. Cancel yields an empty path. */
-export async function pickFile(title: string, filter: string): Promise<string> {
-  const path = await Dialogs.OpenFile({
-    Title: title,
-    CanChooseDirectories: false,
-    CanChooseFiles: true,
-    Filters: filter ? [{ DisplayName: filter, Pattern: filter }] : undefined,
-  });
-  return typeof path === "string" ? path : "";
-}
-
-/** Open a save-file picker. Cancel yields an empty path. */
-export async function pickSave(title: string, filter: string): Promise<string> {
-  const dialogs = Dialogs as typeof Dialogs & {
-    SaveFile?: (opts: {
-      Title: string;
-      Filters?: { DisplayName: string; Pattern: string }[];
-    }) => Promise<unknown>;
-  };
-  if (typeof dialogs.SaveFile !== "function") {
-    return pickFile(title, filter);
-  }
-  const path = await dialogs.SaveFile({
-    Title: title,
-    Filters: filter ? [{ DisplayName: filter, Pattern: filter }] : undefined,
-  });
-  return typeof path === "string" ? path : "";
+export function pickFile(title: string, filter: string): Promise<string> {
+  return Dialogs.OpenFile({ Title: title, CanChooseFiles: true, Filters: [{ DisplayName: filter, Pattern: filter }] });
 }

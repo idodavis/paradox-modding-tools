@@ -1,0 +1,197 @@
+/**
+ * Every binding the pages read, as Pinia Colada query options: one key factory per service, one
+ * defineQueryOptions per RPC. A workspace's session-backed reads sit under ["session", id], so an event
+ * or a mutation refreshes one workspace's and never builds another's (EnsureSession and GetHealth build
+ * a session, dropping the live one).
+ */
+import { defineQueryOptions } from "@pinia/colada";
+import { GetVersion } from "@services/appservice";
+import { LastRunCrashed } from "@services/logservice";
+import { ReadFileBase64, StatPath } from "@services/fileservice";
+import { GetHealth } from "@services/healthservice";
+import { DiagnosticCodes } from "@services/ideservice";
+import { LoadListing, UploadFiles } from "@services/releaseservice";
+import { EnsureSession, GetLanguageHealth } from "@services/sessionservice";
+import {
+  DefaultModParent,
+  FindGameInstalls,
+  GetIdeRoots,
+  ListGameInstalls,
+  ListGames,
+  ListWorkspaces,
+  ModFolder,
+} from "@services/workspaceservice";
+
+export const appKeys = { version: ["app", "version"], crashed: ["app", "crashed"] } as const;
+
+export const workspaceKeys = {
+  games: ["games"] as const,
+  /** Every workspace, and under it each one's own reads. */
+  all: ["workspaces"] as const,
+  ideRoots: (id: string) => ["workspaces", id, "ide-roots"] as const,
+  modParent: (gameId: string) => ["mod-parent", gameId] as const,
+  modFolder: (parent: string, name: string) => ["mod-folder", parent, name] as const,
+};
+
+export const installKeys = {
+  all: ["installs"] as const,
+  game: (gameId: string) => ["installs", gameId] as const,
+  found: (gameId: string) => ["installs", gameId, "found"] as const,
+};
+
+export const sessionKeys = {
+  /** The live session, and under it everything read from it. */
+  live: (id: string) => ["session", id] as const,
+  health: (id: string, order: readonly string[]) => ["session", id, "health", [...order]] as const,
+  graph: (id: string, params: object) => ["session", id, "graph", params] as const,
+  eventDetail: (id: string, event: string) => ["session", id, "event-detail", event] as const,
+  roots: (id: string, search: string, kind: string) => ["session", id, "roots", search, kind] as const,
+  loc: (id: string, key: string) => ["session", id, "loc", key] as const,
+  lines: (id: string, places: readonly string[]) => ["session", id, "lines", [...places]] as const,
+};
+
+/** The scan and dumps state, read without building a session. */
+export const languageKeys = {
+  all: ["language"] as const,
+  one: (id: string) => ["language", id] as const,
+};
+
+export const ideKeys = { codes: ["ide", "codes"] as const };
+
+export const releaseKeys = {
+  listing: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "listing"] as const,
+  upload: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "upload"] as const,
+};
+
+export const wikiKeys = {
+  all: ["wiki"] as const,
+  guide: (...parts: string[]) => ["wiki", "guide", ...parts] as const,
+  patches: (gameId: string) => ["wiki", "patches", gameId] as const,
+  patch: (gameId: string, version: string) => ["wiki", "patch", gameId, version] as const,
+};
+
+export const fileKeys = {
+  image: (path: string) => ["file", "image", path] as const,
+  stat: (path: string) => ["file", "stat", path] as const,
+};
+
+export const versionQuery = defineQueryOptions({ key: appKeys.version, query: () => GetVersion(), staleTime: Infinity });
+
+export const crashedQuery = defineQueryOptions({
+  key: appKeys.crashed,
+  query: () => LastRunCrashed(),
+  staleTime: Infinity,
+});
+
+export const gamesQuery = defineQueryOptions({ key: workspaceKeys.games, query: () => ListGames(), staleTime: Infinity });
+
+export const workspacesQuery = defineQueryOptions({
+  key: workspaceKeys.all,
+  query: async () => (await ListWorkspaces("")) ?? [],
+});
+
+export const ideRootsQuery = defineQueryOptions((id: string) => ({
+  key: workspaceKeys.ideRoots(id),
+  query: () => GetIdeRoots(id),
+  enabled: !!id,
+}));
+
+export const installsQuery = defineQueryOptions((gameId: string) => ({
+  key: installKeys.game(gameId),
+  query: async () => (await ListGameInstalls(gameId)) ?? [],
+  enabled: !!gameId,
+}));
+
+export const foundInstallsQuery = defineQueryOptions((gameId: string) => ({
+  key: installKeys.found(gameId),
+  query: async () => (await FindGameInstalls(gameId)) ?? [],
+  enabled: !!gameId,
+}));
+
+export const modParentQuery = defineQueryOptions((gameId: string) => ({
+  key: workspaceKeys.modParent(gameId),
+  query: () => DefaultModParent(gameId),
+  enabled: !!gameId,
+}));
+
+export const modFolderQuery = defineQueryOptions(({ parent, name }: { parent: string; name: string }) => ({
+  key: workspaceKeys.modFolder(parent, name),
+  query: () => ModFolder(parent, name),
+  enabled: !!parent && !!name.trim(),
+}));
+
+/** The workspace's live session: built once, then its health. */
+export const sessionQuery = defineQueryOptions((id: string) => ({
+  key: sessionKeys.live(id),
+  query: () => EnsureSession(id),
+  enabled: !!id,
+}));
+
+export const languageQuery = defineQueryOptions((id: string) => ({
+  key: languageKeys.one(id),
+  query: () => GetLanguageHealth(id),
+  enabled: !!id,
+}));
+
+/** The Health report for a load order (empty: the workspace's own); only while the session is live. */
+export const healthQuery = defineQueryOptions(
+  ({ id, order = [], live }: { id: string; order?: readonly string[]; live: boolean }) => ({
+    key: sessionKeys.health(id, order),
+    query: () => GetHealth(id, { order: [...order] }),
+    enabled: !!id && live,
+  }),
+);
+
+export const codesQuery = defineQueryOptions({
+  key: ideKeys.codes,
+  query: async () => (await DiagnosticCodes()) ?? [],
+  staleTime: Infinity,
+});
+
+export const listingQuery = defineQueryOptions(({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
+  key: releaseKeys.listing(workspaceId, modId),
+  query: () => LoadListing(workspaceId, modId),
+  enabled: !!workspaceId && !!modId,
+}));
+
+export const uploadFilesQuery = defineQueryOptions(
+  ({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
+    key: releaseKeys.upload(workspaceId, modId),
+    query: () => UploadFiles(workspaceId, modId),
+    enabled: !!workspaceId && !!modId,
+  }),
+);
+
+/** An image's MIME type by its extension, for a data URL. */
+export function imageMime(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  const known: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    svg: "image/svg+xml",
+    gif: "image/gif",
+    webp: "image/webp",
+  };
+  return known[ext] ?? "application/octet-stream";
+}
+
+/** An image file as a data URL with its size in pixels; none when it cannot be read. */
+export const imageQuery = defineQueryOptions((path: string) => ({
+  key: fileKeys.image(path),
+  query: async () => {
+    const file = await ReadFileBase64(path);
+    if (!file.exists || !file.b64) return undefined;
+    const image = new Image();
+    image.src = `data:${imageMime(path)};base64,${file.b64}`;
+    await image.decode();
+    return { src: image.src, width: image.naturalWidth, height: image.naturalHeight };
+  },
+  enabled: !!path,
+}));
+
+export const statQuery = defineQueryOptions((path: string) => ({
+  key: fileKeys.stat(path),
+  query: () => StatPath(path),
+  enabled: !!path,
+}));

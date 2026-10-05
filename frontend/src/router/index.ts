@@ -1,94 +1,44 @@
 /**
- * Vue router for PMT workspace-centric page routing.
+ * The routes: the Library, the wizard, and a workspace's pages under /workspace/:id, each given the id as a
+ * prop. The guard alone sets the active workspace.
  */
 import { createRouter, createWebHashHistory } from "vue-router";
-import LibraryPage from "../pages/LibraryPage.vue";
-import WizardPage from "../pages/WizardPage.vue";
-import WorkspaceIdePage from "../pages/WorkspaceIdePage.vue";
-import EventGraphPage from "../pages/EventGraphPage.vue";
-import HealthPage from "../pages/HealthPage.vue";
-import PatcherPage from "../pages/PatcherPage.vue";
-import ReleasePage from "../pages/ReleasePage.vue";
-import WorkspaceSettingsPage from "../pages/WorkspaceSettingsPage.vue";
-import { PAGE_CATALOG } from "../workspaceTools";
 import { useWorkspaceStore } from "../stores/workspace";
-
-const routes = [
-  {
-    path: "/",
-    redirect: "/library",
-  },
-  {
-    path: "/library",
-    name: "library",
-    component: LibraryPage,
-    meta: PAGE_CATALOG.library,
-  },
-  {
-    path: "/wizard",
-    name: "wizard",
-    component: WizardPage,
-    meta: PAGE_CATALOG.wizard,
-  },
-  {
-    path: "/workspace/:id",
-    name: "workspace-ide",
-    components: { ide: WorkspaceIdePage },
-    meta: PAGE_CATALOG["workspace-ide"],
-  },
-  {
-    path: "/workspace/:id/graph",
-    name: "event-graph",
-    component: EventGraphPage,
-    meta: PAGE_CATALOG["event-graph"],
-  },
-  {
-    path: "/workspace/:id/health",
-    name: "health",
-    component: HealthPage,
-    meta: PAGE_CATALOG.health,
-  },
-  {
-    path: "/workspace/:id/patcher",
-    name: "patcher",
-    component: PatcherPage,
-    meta: PAGE_CATALOG.patcher,
-  },
-  {
-    path: "/workspace/:id/release",
-    name: "release",
-    component: ReleasePage,
-    meta: PAGE_CATALOG.release,
-  },
-  {
-    path: "/workspace/:id/settings",
-    name: "workspace-settings",
-    component: WorkspaceSettingsPage,
-    meta: PAGE_CATALOG["workspace-settings"],
-  },
-  {
-    path: "/settings",
-    name: "settings",
-    redirect: () => {
-      const id = useWorkspaceStore().activeWorkspaceId;
-      if (id) return { name: "workspace-settings", params: { id } };
-      return { name: "library" };
-    },
-  },
-];
 
 const router = createRouter({
   history: createWebHashHistory(),
-  routes,
+  routes: [
+    { path: "/", redirect: { name: "library" } },
+    { path: "/library", name: "library", component: () => import("../pages/LibraryPage.vue") },
+    { path: "/wizard", name: "wizard", component: () => import("../pages/WizardPage.vue") },
+    {
+      path: "/workspace/:id",
+      children: [
+        // the IDE's strip sits in the workbench, which App keeps mounted behind every page
+        {
+          path: "",
+          name: "workspace-ide",
+          components: { ide: () => import("../pages/WorkspaceIdePage.vue") },
+          props: { ide: true },
+        },
+        { path: "graph", name: "event-graph", component: () => import("../pages/EventGraphPage.vue"), props: true },
+        { path: "health", name: "health", component: () => import("../pages/HealthPage.vue"), props: true },
+        { path: "patcher", name: "patcher", component: () => import("../pages/PatcherPage.vue"), props: true },
+        { path: "release", name: "release", component: () => import("../pages/ReleasePage.vue"), props: true },
+        {
+          path: "settings",
+          name: "workspace-settings",
+          component: () => import("../pages/WorkspaceSettingsPage.vue"),
+          // the section is in the query, so the palette and links open the one they name
+          props: (to) => ({ ...to.params, section: to.query.section }),
+        },
+      ],
+    },
+  ],
 });
 
 router.beforeEach((to) => {
-  if (!to.meta.workspace) return true;
-  const id = to.params.id;
-  if (typeof id !== "string" || !id) return true;
-  const ws = useWorkspaceStore();
-  ws.setActiveWorkspace(id);
-  return true;
+  if ("id" in to.params) useWorkspaceStore().select(to.params.id);
 });
 
 export default router;

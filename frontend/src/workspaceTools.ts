@@ -1,73 +1,47 @@
 /**
- * One page catalog: title, description, help, keepAlive, and toolbar pills.
+ * The pages: each route's name and title, its Help, and for a workspace's pages the top bar's tab. The
+ * router's typed route names come from here.
  */
-export type PageId =
-  | "library"
-  | "wizard"
-  | "workspace-ide"
-  | "event-graph"
-  | "health"
-  | "patcher"
-  | "release"
-  | "workspace-settings";
+import type { RouteRecordInfo } from "vue-router";
 
-/** Route meta shared by the header, Help modal, toolbar, and KeepAlive. */
-export type PageEntry = {
-  title: string;
-  description: string;
-  help: string[];
-  keepAlive?: boolean;
-  /** beforeEach sets the active workspace from :id. */
-  workspace?: boolean;
-  /** Toolbar / Display visible-tools pill. */
-  tool?: { label: string; icon: string };
-};
+type Page = { title: string; help: readonly string[]; icon?: string; workspace?: true; tab?: true };
 
-declare module "vue-router" {
-  interface RouteMeta extends PageEntry {}
-}
-
-/** Canonical copy and chrome for every named route. */
-export const PAGE_CATALOG: Record<PageId, PageEntry> = {
+export const PAGES = {
   library: {
     title: "Library",
-    description: "Browse and manage your modding workspaces.",
-    keepAlive: true,
+    icon: "i-lucide-layout-grid",
     help: [
-      "This is your workspace library. A workspace is one game install plus the mods you are editing.",
-      "Click a card to open that workspace’s default page. Edit opens Workspace Settings. Delete removes the workspace from PMT only — mod folders on disk stay.",
-      "New Workspace starts the setup wizard. New Mod creates a skeleton in an existing workspace, or starts the wizard when the library is empty.",
-      "Reset all data at the bottom wipes PMT workspaces, install records, leftover folders under the PMT config tree, and caches. It does not delete mods or Steam/game installs on disk. Theme, UI scale, and editor font are kept.",
+      "A workspace is one game install plus the mods you load with it. The active one is at the top; open another's card to make it active.",
+      "More removes a workspace from PMT. Mod folders on disk stay.",
+      "New mod creates a mod skeleton and adds it to a workspace. New workspace starts the setup.",
+      "Reset all PMT data, in the status bar, removes every workspace, install record and cache. Mods, game files and your appearance settings stay.",
     ],
   },
   wizard: {
-    title: "Create Workspace",
-    description: "Set up a new modding workspace.",
+    title: "New workspace",
     help: [
-      "Walk through game, install, mods, and name.",
-      "Add existing mod to workspace or Create new mod (descriptor, empty common/ and events/, readmes, localization stub with UTF-8 BOM).",
-      "Drag mods to set load order (SortOrder). You can change all of this later in Workspace Settings.",
-      "After create you land in the IDE so you can open the files you just attached.",
+      "Pick the game, the install PMT reads its files from, and the mods you work on, then name the workspace.",
+      "Add an existing mod folder or create a new mod, and drag them into load order. All of it can be changed later in Settings.",
+      "The new workspace opens in the IDE.",
     ],
   },
   "workspace-ide": {
-    title: "Workspace IDE",
-    description: "View and edit files in your workspace.",
+    title: "IDE",
+    icon: "i-lucide-code",
     workspace: true,
-    tool: { label: "IDE", icon: "i-lucide-code" },
+    tab: true,
     help: [
-      "Folders come from this workspace: your mods, then the game files. There is no Open Folder — PMT owns the folder set. Back returns to the Library, not the create-workspace wizard.",
-      "Game files (Crusader Kings III, Victoria 3, or Europa Universalis V) are read-only. Edit in a mod folder. Search and Ctrl+P index every root. Deleting a mod’s root folder in the explorer also detaches it from this workspace; files inside a mod delete normally.",
-      "Open editor tabs persist across workspace switch and app close unless you turn that off in Workspace Settings. Themes live in the PMT header, not in VS Code settings.",
-      "The Guide pull-tab on the editor’s right edge opens a resizable wiki pane (search, contents, related pages). It stays closed until you open it. Snooze or turn off the toast under Display.",
+      "Folders come from this workspace: your mods, then the game files. Game files are read only; edit in a mod folder. Search and Ctrl+P index every folder.",
+      "Deleting a mod's root folder in the explorer also removes it from this workspace; files inside a mod delete normally.",
+      "Open tabs are kept across a workspace switch and a restart unless you turn that off in Settings › General. The editor's text sizes and checks are in the IDE settings (the gear).",
+      "The Guide tab on the editor's right edge opens a wiki pane for the file you are in.",
     ],
   },
   "event-graph": {
     title: "Event Graph",
-    description: "Browse event and on_action links in the workspace.",
-    keepAlive: true,
+    icon: "i-lucide-git-branch",
     workspace: true,
-    tool: { label: "Event Graph", icon: "i-lucide-waypoints" },
+    tab: true,
     help: [
       "Pick a root event to see what it fires and what fires it. Origins filter which mods (and game files) feed the graph.",
       "Namespace narrows the picker; leave it empty to search every id. Double-click a node to re-root. Drag is temporary until you change layout or root.",
@@ -76,74 +50,139 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
     ],
   },
   health: {
-    title: "Workspace Health",
-    description: "Compatibility contests and localization coverage for this workspace.",
-    keepAlive: true,
+    title: "Health",
+    icon: "i-lucide-activity",
     workspace: true,
-    tool: { label: "Workspace Health", icon: "i-lucide-heart-pulse" },
+    tab: true,
     help: [
       "Compatibility cards: contests (FIOS / LIOS), game-file overrides, cross-mod depends, and dangling refs. Localization cards: missing, orphans, and untranslated for the language in the heading select.",
-      "Drag load-order chips to preview winners without writing the workspace. Save as workspace order persists the same SortOrder as Settings.",
-      "Row detail shows a colorized snippet around the hit. Default loc language is an IDE/LSP setting; coverage lists every language the mods ship.",
+      "Drag load-order chips to preview winners without writing the workspace. Save as workspace order persists the same order as Settings.",
+      "Row detail shows a colorized snippet around the hit.",
     ],
   },
   patcher: {
-    title: "Patch Center",
-    description: "Wiki patch notes for the workspace game.",
-    keepAlive: true,
+    title: "Patch Notes",
+    icon: "i-lucide-newspaper",
     workspace: true,
-    tool: { label: "Patch Center", icon: "i-lucide-arrow-left-right" },
+    tab: true,
     help: [
-      "Patch Notes is a cached wiki changelog reader for the game this workspace uses.",
-      "Pick a version to read the notes. This page does not retarget or merge files.",
+      "The game's patch notes from the wiki, cached, for the game this workspace uses.",
+      "Pick a version to read its notes.",
     ],
   },
   release: {
     title: "Publish",
-    description: "Edit the listing and publish to Steam Workshop or Paradox Mods.",
-    keepAlive: true,
+    icon: "i-lucide-upload",
     workspace: true,
-    tool: { label: "Publish", icon: "i-lucide-upload" },
+    tab: true,
     help: [
       "This page edits the mod folder: descriptor, mod-description.md, mod-description.bbcode, and changelog/<version>.bbcode.",
-      "Description is Markdown in a rich editor. Save writes the Markdown file and converts to BBCode. Steam always uploads BBCode. Description paths are in Workspace Settings.",
-      "Steam staging skips dotfiles (except .metadata/), .gitignore, patterns in .gitignore, and Workshop ignore patterns from Settings.",
+      "Description is Markdown in a rich editor. Save writes the Markdown file and converts to BBCode. Steam always uploads BBCode. Description paths are in Settings › Mods and load order.",
+      "Steam staging skips dotfiles (except .metadata/), .gitignore, patterns in .gitignore, and the mod's upload exclusions from Settings.",
       "Steam: Steam client must be running and signed in as the Workshop owner. New items stay private until you set them Public on Workshop. Do not run a local copy and a Workshop subscribe of the same mod together.",
       "Paradox Mods has no API. Copy BBCode for the launcher, or Copy Markdown. The site often strips formatting. PMT does not write a sibling Documents/…/mod/<name>.mod pointer.",
     ],
   },
   "workspace-settings": {
-    title: "Workspace Settings",
-    description: "Configure this workspace.",
+    title: "Settings",
+    icon: "i-lucide-settings",
     workspace: true,
     help: [
-      "Overview: name, default loc language, whether the IDE remembers open files, explorer hide-binaries, and which page Library should open.",
-      "Game: pick or add an install; its version is read from the install at each scan. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then color, reorder, or detach. Detach does not delete the folder on disk. Per-mod description file paths and Workshop ignore live here.",
-      "Remove this workspace deletes the PMT record only. Reset all data lives on the Library page. Appearance (scale, editor font, which tools show) lives in the header Display control, not here.",
+      "General: the workspace's name, its localization language, the page it opens on, and the IDE's tabs and explorer.",
+      "Game install: the install this workspace reads, and how to make the game print its script_docs.",
+      "Mods and load order: drag to reorder; for most kinds the last mod to define an object wins. Colors stay with the mod, not its position. Changes save as you make them.",
+      "Appearance applies to every workspace: the theme, light and dark, the interface scale and the pages shown.",
     ],
   },
-};
+} as const satisfies Record<string, Page>;
 
-/** Toolbar pills in catalog order. */
-export const WORKSPACE_TOOLS = (Object.entries(PAGE_CATALOG) as [PageId, PageEntry][])
-  .filter((entry): entry is [PageId, PageEntry & { tool: { label: string; icon: string } }] => !!entry[1].tool)
-  .map(([name, page]) => ({
-    name,
-    label: page.tool.label,
-    icon: page.tool.icon,
-  }));
+export type PageName = keyof typeof PAGES;
+export type WorkspacePage = { [N in PageName]: (typeof PAGES)[N] extends { workspace: true } ? N : never }[PageName];
+export type WorkspaceToolName = { [N in PageName]: (typeof PAGES)[N] extends { tab: true } ? N : never }[PageName];
 
-/** Route name of a workspace tool page. */
-export type WorkspaceToolName = (typeof WORKSPACE_TOOLS)[number]["name"];
-
-/** All workspace tool route names, in toolbar order. */
-export const WORKSPACE_TOOL_NAMES: WorkspaceToolName[] = WORKSPACE_TOOLS.map((t) => t.name);
-
-/** Landing route for a workspace: its default page if shown, else the first shown page. */
-export function workspaceHomeRoute(
-  ws: { id: string; defaultTool?: string },
-  visible: readonly string[],
-): { name: string; params: { id: string } } {
-  const want = ws.defaultTool || "workspace-ide";
-  return { name: visible.includes(want) ? want : (visible[0] ?? "workspace-ide"), params: { id: ws.id } };
+declare module "vue-router" {
+  interface TypesConfig {
+    RouteNamedMap: {
+      [N in PageName]: N extends WorkspacePage
+        ? RouteRecordInfo<N, string, { id: string }, { id: string }>
+        : RouteRecordInfo<N, string, Record<never, never>, Record<never, never>>;
+    };
+  }
 }
+
+/** Whether a route is one of a workspace's pages, which take its id. */
+export function isWorkspacePage(name: PageName): name is WorkspacePage {
+  return "workspace" in PAGES[name];
+}
+
+/** The top bar's page tabs, in order. */
+export const WORKSPACE_TOOLS = (["workspace-ide", "event-graph", "health", "patcher", "release"] as const).map(
+  (name: WorkspaceToolName) => ({ name, label: PAGES[name].title, icon: PAGES[name].icon }),
+);
+
+export const WORKSPACE_TOOL_NAMES: WorkspaceToolName[] = WORKSPACE_TOOLS.map((tool) => tool.name);
+
+/** Where a workspace opens: its default page if shown, else the first shown page. */
+export function workspaceHomeRoute(ws: { id: string; defaultTool?: string }, visible: readonly WorkspaceToolName[]) {
+  const want = ws.defaultTool || "workspace-ide";
+  const name = visible.find((tool) => tool === want) ?? visible[0] ?? "workspace-ide";
+  return { name, params: { id: ws.id } };
+}
+
+/** Settings' sections: a workspace's, then the app's. */
+export const SETTINGS_SECTIONS = {
+  general: { label: "General", scope: "Workspace" },
+  install: { label: "Game install", scope: "Workspace" },
+  mods: { label: "Mods and load order", scope: "Workspace" },
+  appearance: { label: "Appearance", scope: "App" },
+} as const;
+export type SettingsSection = keyof typeof SETTINGS_SECTIONS;
+
+/** A setting the palette flips where you are. */
+export type SettingSwitch = "reopenTabs" | "hideBinaries" | "matchGame" | "followSystem";
+
+/**
+ * Every setting, once: Settings' search keeps the sections holding a match, and the palette lists each,
+ * flipping a switch in place and opening the section, or the IDE's settings card, for one with a value.
+ */
+export const SETTINGS: readonly { label: string; section: SettingsSection | "ide"; words?: string; flips?: SettingSwitch }[] = [
+  { label: "Workspace name", section: "general" },
+  { label: "Localization language", section: "general", words: "loc english french german spanish russian" },
+  { label: "Page a workspace opens on", section: "general", words: "default start" },
+  { label: "Reopen the IDE's tabs", section: "general", words: "remember open files", flips: "reopenTabs" },
+  { label: "Hide binaries in the explorer", section: "general", words: "dll exe files", flips: "hideBinaries" },
+  { label: "Game install", section: "install", words: "folder path version steam delete" },
+  { label: "script_docs", section: "install", words: "dumps documentation type system" },
+  { label: "Load order", section: "mods", words: "reorder drag add create remove" },
+  { label: "Mod color", section: "mods", words: "slot custom" },
+  { label: "Mod folder", section: "mods", words: "locate path" },
+  { label: "Thumbnail", section: "mods", words: "image picture" },
+  { label: "Calendar", section: "mods", words: "era year offset date" },
+  { label: "Workshop item", section: "mods", words: "steam publishing description markdown bbcode unlink" },
+  { label: "Upload exclusions", section: "mods", words: "workshop ignore gitignore" },
+  { label: "Theme", section: "appearance", words: "dark light catppuccin one crusader kings europa universalis victoria" },
+  { label: "Match the workspace's game theme", section: "appearance", flips: "matchGame" },
+  { label: "Follow Windows light and dark", section: "appearance", words: "system mode", flips: "followSystem" },
+  { label: "Interface scale", section: "appearance", words: "text size zoom" },
+  { label: "Pages a workspace shows", section: "appearance", words: "tabs ide event graph health patch notes publish" },
+  { label: "Mod colors", section: "appearance", words: "reset automatic" },
+  { label: "Editor text size", section: "ide", words: "font" },
+  { label: "Explorer and panel text size", section: "ide", words: "font problems search wiki" },
+  { label: "Checks", section: "ide", words: "diagnostics problems" },
+  { label: "Wiki suggestion toast", section: "ide", words: "guide" },
+];
+
+/** The localization languages a workspace may default to. */
+export const LOC_LANGUAGES = [
+  { label: "English", value: "english" },
+  { label: "French", value: "french" },
+  { label: "German", value: "german" },
+  { label: "Spanish", value: "spanish" },
+  { label: "Russian", value: "russian" },
+  { label: "Korean", value: "korean" },
+  { label: "Simplified Chinese", value: "simp_chinese" },
+  { label: "Polish", value: "polish" },
+  { label: "Turkish", value: "turkish" },
+  { label: "Brazilian Portuguese", value: "braz_por" },
+  { label: "Japanese", value: "japanese" },
+];

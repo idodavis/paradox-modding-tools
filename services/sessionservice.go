@@ -291,6 +291,15 @@ const (
 	EventSearchHits          = "search:hits"           // a text search is done with a file: data is TextSearchHits
 )
 
+// registers the events this file emits so the bindings generator types them
+func init() {
+	application.RegisterEvent[string](EventLangReady)
+	application.RegisterEvent[string](EventLangFailed)
+	application.RegisterEvent[ScanProgress](EventLangScanProgress)
+	application.RegisterEvent[string](EventLangCacheUpdated)
+	application.RegisterEvent[FSChanged](EventFSChanged)
+}
+
 // FSChanged is one path under a mod that changed on disk; Deleted when it is gone.
 type FSChanged struct {
 	Path    string `json:"path"`

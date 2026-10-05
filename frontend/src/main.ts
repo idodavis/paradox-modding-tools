@@ -1,5 +1,6 @@
 /**
- * Vue app bootstrap with Pinia, router, and Nuxt UI.
+ * The app's start: Pinia, Pinia Colada with the one toast for a failed save, the router, Nuxt UI, Go's
+ * events and the settings.
  */
 import { createApp } from "vue";
 import ui from "@nuxt/ui/vue-plugin";
@@ -8,6 +9,7 @@ import App from "./App.vue";
 import { createPinia } from "pinia";
 import { PiniaColada } from "@pinia/colada";
 import router from "./router";
+import { subscribeEvents } from "./events";
 import { useSettingsStore } from "./stores/settings";
 import { Log } from "@services/logservice";
 
@@ -29,14 +31,22 @@ app.config.errorHandler = (err, _instance, info) => {
   void Log("error", error.message, { kind: "vue", info, stack: String(error.stack ?? "") });
 };
 app.use(createPinia());
-// the settings put the theme and text sizes on the page as they load
-void useSettingsStore().load();
+const toast = app.runWithContext(useToast);
 app.use(PiniaColada, {
   queryOptions: {
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   },
+  // every failed save is told here, once; Go's error says what went wrong
+  mutationOptions: {
+    onError: (error) => toast.add({ title: error instanceof Error ? error.message : String(error), color: "error" }),
+  },
 });
 app.use(router);
 app.use(ui);
+app.runWithContext(() => {
+  subscribeEvents();
+  // the settings put the theme and text sizes on the page as they load
+  void useSettingsStore().load();
+});
 app.mount("#app");

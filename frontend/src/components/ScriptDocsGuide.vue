@@ -2,18 +2,12 @@
 /**
  * How to make the game print its scripting documentation and what it gives PMT. The game writes
  * these files only from its own console, so this is the one part of the language engine the user
- * does by hand.
+ * does by hand. Opened through useOverlay.
  */
-import { computed } from "vue";
+const { folders } = defineProps<{ folders: string[] }>();
+const emit = defineEmits<{ close: [] }>();
 
-const open = defineModel<boolean>("open", { required: true });
-
-const props = defineProps<{
-  folders: string[];
-  gameName?: string;
-}>();
-
-const steps = computed(() => [
+const steps = [
   {
     title: "Add the -debug_mode launch option",
     body: "In Steam: right-click the game, Properties, Launch Options. In the Paradox launcher there is no equivalent, so use Steam.",
@@ -32,11 +26,11 @@ const steps = computed(() => [
   },
   {
     title: "Come back and reopen the workspace",
-    body: props.folders[0]
-      ? `The files land in ${props.folders[0]}; they are read when the workspace next opens.`
+    body: folders[0]
+      ? `The files land in ${folders[0]}; they are read when the workspace next opens.`
       : "The files are read from the game's logs or docs folder when the workspace next opens.",
   },
-]);
+];
 
 const gained = [
   "Scope-aware completion — only the effects and triggers valid in the block you are editing",
@@ -55,23 +49,22 @@ const kept = [
 
 <template>
   <UModal
-    v-model:open="open"
     title="Generate script_docs"
-    :description="`${gameName || 'The game'} can print its own scripting documentation. PMT reads it as the type system — it is never guessed.`"
-    :ui="{ content: 'max-w-2xl' }"
+    description="The game can print its own scripting documentation. PMT reads it as the type system — it is never guessed."
+    :ui="{ content: 'sm:max-w-2xl' }"
   >
     <template #body>
-      <div class="space-y-5 text-sm">
+      <div class="flex flex-col gap-5 text-13">
         <ol class="space-y-3">
           <li v-for="(s, i) in steps" :key="s.title" class="flex gap-3">
             <span
-              class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-elevated text-xs font-medium"
+              class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-accented text-11 font-medium"
             >
               {{ i + 1 }}
             </span>
             <div class="min-w-0">
               <p class="font-medium text-highlighted">{{ s.title }}</p>
-              <p class="text-muted break-words">{{ s.body }}</p>
+              <p class="text-toned break-words">{{ s.body }}</p>
             </div>
           </li>
         </ol>
@@ -79,7 +72,7 @@ const kept = [
         <div class="grid gap-4 sm:grid-cols-2">
           <div>
             <p class="mb-1 font-medium text-highlighted">With script_docs</p>
-            <ul class="space-y-1 text-muted">
+            <ul class="space-y-1 text-toned">
               <li v-for="g in gained" :key="g" class="flex gap-2">
                 <UIcon name="i-lucide-check" class="mt-1 size-3.5 shrink-0 text-success" />
                 <span>{{ g }}</span>
@@ -88,9 +81,9 @@ const kept = [
           </div>
           <div>
             <p class="mb-1 font-medium text-highlighted">Works without it</p>
-            <ul class="space-y-1 text-muted">
+            <ul class="space-y-1 text-toned">
               <li v-for="k in kept" :key="k" class="flex gap-2">
-                <UIcon name="i-lucide-dot" class="mt-1 size-3.5 shrink-0 text-muted" />
+                <UIcon name="i-lucide-dot" class="mt-1 size-3.5 shrink-0 text-dimmed" />
                 <span>{{ k }}</span>
               </li>
             </ul>
@@ -98,8 +91,9 @@ const kept = [
         </div>
       </div>
     </template>
-    <template #footer="{ close }">
-      <UButton label="Close" color="neutral" variant="outline" @click="close" />
+    <template #footer>
+      <span class="grow" />
+      <UButton label="Close" @click="emit('close')" />
     </template>
   </UModal>
 </template>

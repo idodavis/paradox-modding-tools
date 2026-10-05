@@ -36,6 +36,7 @@ export type {
     DirEntry,
     Edge,
     EventGraph,
+    FSChanged,
     FileBytes,
     FileSearchHit,
     FileSearchQuery,
@@ -59,6 +60,7 @@ export type {
     PublishResult,
     RefGroup,
     Roots,
+    ScanProgress,
     Section,
     Site,
     SourceAt,
@@ -67,6 +69,8 @@ export type {
     TextSearchHits,
     TextSearchQuery,
     TextSearchResult,
+    UploadFiles,
+    WikiUpdated,
     Workspace,
     WorkspaceMod
 } from "./models.js";

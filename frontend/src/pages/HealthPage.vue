@@ -4,10 +4,7 @@
  * a row opens beside it with the lines each of its sites writes.
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
-import { useRoute } from "vue-router";
 import { useSortable } from "@vueuse/integrations/useSortable";
-import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
-import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import DetailPane from "../components/DetailPane.vue";
 import ScriptSnippet from "../components/ScriptSnippet.vue";
 import HealthTable, {
@@ -23,17 +20,14 @@ import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { useOpenInIde } from "../composables/useOpenInIde";
 import { useWorkspaceStore } from "../stores/workspace";
 
-defineOptions({ name: "HealthPage" });
-
 const PANEL_UI = { root: "min-h-0", body: "gap-0 overflow-hidden p-0 sm:p-0" } as const;
 
-const route = useRoute();
 const store = useWorkspaceStore();
 const { openInIde } = useOpenInIde();
-const workspaceId = computed(() => String(route.params.id ?? ""));
-const live = useLiveEnabled(workspaceId);
+const { id: workspaceId } = defineProps<{ id: string }>();
+const live = useLiveEnabled(() => workspaceId);
 const { order, dirty, health, error, isPending, save, saving, locKey, lookup, places, lines } = useHealth(
-  workspaceId,
+  () => workspaceId,
   live,
 );
 
@@ -149,11 +143,6 @@ watch(selected, (row) => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <WorkspaceToolBar :workspace-id="workspaceId">
-      <template #trailing>
-        <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
-      </template>
-    </WorkspaceToolBar>
     <UAlert v-if="error" color="error" variant="subtle" :description="error.message" class="m-2" />
 
     <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default px-3 py-2 text-sm text-muted">
@@ -166,7 +155,7 @@ watch(selected, (row) => {
             text-default hover:border-accented"
         >
           <UIcon name="i-lucide-grip-vertical" class="size-4 text-dimmed" />
-          <img v-if="store.thumbUrls[id]" :src="store.thumbUrls[id]" alt="" class="size-5 rounded-sm object-cover" />
+          <Thumb v-if="store.mod(id)?.thumbnail" :path="store.mod(id)?.thumbnail" size="sm" />
           <span class="size-2 shrink-0 rounded-full" :style="{ backgroundColor: store.originColor(id) }" />
           {{ store.originName(id) }}
         </li>

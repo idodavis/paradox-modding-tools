@@ -1,21 +1,27 @@
+<script lang="ts">
+import { shallowRef } from "vue";
+
+/** Whether the card is open; the palette opens it. */
+export const ideSettingsOpen = shallowRef(false);
+</script>
+
 <script setup lang="ts">
 /**
  * The IDE's settings (the IdeSettings board): a card opened from the gear on the IDE page, its tabs the
  * text sizes, the checks and the Wiki's toast. They apply to every workspace.
  */
-import { computed, shallowRef } from "vue";
+import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
-import { DiagnosticCodes } from "@services/ideservice";
+import { codesQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { GUIDE_PREF_ITEMS, useGuidePrefs } from "../composables/useGuidePrefs";
 
 const settings = useSettingsStore();
 const { toastPref, setToastPref } = useGuidePrefs();
-const open = shallowRef(false);
 const tab = shallowRef<string | number>("editor");
 
 // the list is the backend's (lsp.Codes); Diagnose reads ide.diag.<code> on every call
-const { data: codes } = useQuery({ key: ["diagnostic-codes"], query: () => DiagnosticCodes() });
+const { data: codes } = useQuery(codesQuery);
 
 const tabs = computed(() => [
   { label: "Editor", value: "editor", slot: "editor" as const },
@@ -41,15 +47,15 @@ function resetTab(): void {
 </script>
 
 <template>
-  <UPopover v-model:open="open" :content="{ align: 'end', side: 'bottom' }">
-    <UButton icon="i-lucide-settings" size="sm" square :variant="open ? 'soft' : 'ghost'" aria-label="IDE settings" />
+  <UPopover v-model:open="ideSettingsOpen" :content="{ align: 'end', side: 'bottom' }">
+    <UButton icon="i-lucide-settings" size="sm" square :variant="ideSettingsOpen ? 'soft' : 'ghost'" aria-label="IDE settings" />
     <template #content>
       <div class="flex w-105 flex-col overflow-hidden">
         <div class="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-1.5">
           <UIcon name="i-lucide-settings" class="size-3.5 text-dimmed" />
           <span class="text-13 font-semibold">IDE settings</span>
           <span class="grow" />
-          <UButton icon="i-lucide-x" size="sm" square variant="ghost" aria-label="Close" @click="open = false" />
+          <UButton icon="i-lucide-x" size="sm" square variant="ghost" aria-label="Close" @click="ideSettingsOpen = false" />
         </div>
         <UTabs v-model="tab" :items="tabs" variant="link" :ui="{ list: 'border-t' }">
           <template #editor>

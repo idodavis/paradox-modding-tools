@@ -6,8 +6,6 @@
 import { computed, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useVueFlow } from "@vue-flow/core";
-import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
-import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import EventGraphToolbar from "../components/eventGraph/EventGraphToolbar.vue";
 import GraphCanvas from "../components/eventGraph/GraphCanvas.vue";
 import EventDetail from "../components/eventGraph/EventDetail.vue";
@@ -16,15 +14,13 @@ import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 
-defineOptions({ name: "EventGraphPage" });
-
 const route = useRoute();
 const store = useWorkspaceStore();
 const settings = useSettingsStore();
-const workspaceId = computed(() => String(route.params.id ?? ""));
-const live = useLiveEnabled(workspaceId);
+const { id: workspaceId } = defineProps<{ id: string }>();
+const live = useLiveEnabled(() => workspaceId);
 const { params, selected, searchTerm, rootKind, graph, error, detail, roots, searching, positions, select, setRoot } =
-  useEventGraph(workspaceId, live);
+  useEventGraph(() => workspaceId, live);
 const { fitView } = useVueFlow("event-graph");
 
 // where the detail opens, kept in the app's settings
@@ -39,7 +35,7 @@ const originItems = computed(() =>
     id,
     label: store.originName(id),
     color: store.originColor(id),
-    thumbnail: store.thumbUrls[id],
+    thumbnail: store.mod(id)?.thumbnail,
     gameId: id === store.originVanilla ? store.activeWorkspace?.gameId : undefined,
   })),
 );
@@ -50,16 +46,11 @@ watch(
   (root) => typeof root === "string" && root && setRoot(root),
   { immediate: true },
 );
-watch(workspaceId, () => setRoot(""));
+watch(() => workspaceId, () => setRoot(""));
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <WorkspaceToolBar :workspace-id="workspaceId">
-      <template #trailing>
-        <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
-      </template>
-    </WorkspaceToolBar>
     <EventGraphToolbar
       v-model:search-term="searchTerm"
       v-model:root-kind="rootKind"

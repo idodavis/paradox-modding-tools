@@ -5,6 +5,7 @@
 package services
 
 import (
+	"strconv"
 	"strings"
 
 	"paradox-modding-tools/services/internal/lsp"
@@ -110,12 +111,24 @@ func (s *IdeService) WorkspaceSymbols(workspaceID, query string) ([]lsp.Symbol, 
 	return lsp.WorkspaceSymbols(sess, query), nil
 }
 
+// FormatDocument indents a file by depth; a script file in the settings' unit: a tab, or with
+// ide.indent "spaces", ide.indentSize spaces (4 unless 1 to 8).
 func (s *IdeService) FormatDocument(workspaceID, path string) ([]lsp.TextEdit, error) {
 	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	return lsp.Format(sess, path)
+	unit := "\t"
+	s.App.read(func(cfg *Config) {
+		if ide := cfg.Settings["ide"]; ide["indent"] == "spaces" {
+			size, err := strconv.Atoi(ide["indentSize"])
+			if err != nil || size < 1 || size > 8 {
+				size = 4
+			}
+			unit = strings.Repeat(" ", size)
+		}
+	})
+	return lsp.Format(sess, path, unit)
 }
 
 func (s *IdeService) FoldingRanges(workspaceID, path string) ([]lsp.FoldingRange, error) {

@@ -60,6 +60,10 @@ export function FoldingRanges(workspaceID: string, path: string): $CancellablePr
     return $Call.ByID(2841121370, workspaceID, path);
 }
 
+/**
+ * FormatDocument indents a file by depth; a script file in the settings' unit: a tab, or with
+ * ide.indent "spaces", ide.indentSize spaces (4 unless 1 to 8).
+ */
 export function FormatDocument(workspaceID: string, path: string): $CancellablePromise<lsp$0.TextEdit[] | null> {
     return $Call.ByID(3770361501, workspaceID, path);
 }

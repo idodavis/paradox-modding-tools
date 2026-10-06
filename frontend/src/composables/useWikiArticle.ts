@@ -1,11 +1,10 @@
 /**
- * One sanitized wiki article in a pane: its code blocks drawn by Pierre, a find's hits marked and stepped
+ * One sanitized wiki article in a pane: its code blocks drawn in the code's colors, a find's hits marked and stepped
  * through one at a time, the heading in view marked as it scrolls, and its links followed in the pane. Its
  * look is `.art` (styles/article.css).
  */
 import {
   nextTick,
-  onScopeDispose,
   shallowRef,
   toValue,
   useTemplateRef,
@@ -14,8 +13,7 @@ import {
 } from "vue";
 import { useEventListener } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
-import type { File } from "@pierre/diffs";
-import { codeView, drawCode } from "../lib/code";
+import { drawCode } from "../lib/code";
 
 /** The page an article belongs to, for resolving its in-pane wiki links. */
 type WikiArticlePage = { title: string; url: string };
@@ -42,7 +40,6 @@ export function useWikiArticle(opts: {
   const articleEl = useTemplateRef<HTMLElement>("article");
   const tocActive = shallowRef("");
   const pendingAnchor = shallowRef("");
-  let views: { view: File; host: HTMLElement }[] = [];
   // the find's hits, how many, and which one is shown
   let marks: HTMLElement[] = [];
   const hits = shallowRef(0);
@@ -94,21 +91,16 @@ export function useWikiArticle(opts: {
     marks[hit.value].classList.add("current");
     if (scroll) marks[hit.value].scrollIntoView({ block: "center" });
   }
-  onScopeDispose(() => views.forEach(({ view }) => view.cleanUp()));
 
-  /** Each <pre> becomes read-only code; the views of an article no longer shown are let go. */
+  /** Each <pre> becomes read-only code. */
   function drawCodeBlocks(root: HTMLElement): void {
-    for (const { view, host } of views) if (!host.isConnected) view.cleanUp();
-    views = views.filter(({ host }) => host.isConnected);
     for (const pre of root.querySelectorAll("pre")) {
       const text = (pre.textContent ?? "").replace(/\n$/, "");
       if (!text.trim()) continue;
       const host = document.createElement("div");
       host.className = "code";
       pre.replaceWith(host);
-      const view = codeView(false);
-      drawCode(view, host, text, "snippet.txt");
-      views.push({ view, host });
+      drawCode(host, text, "snippet.txt");
     }
   }
 

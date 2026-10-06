@@ -81,6 +81,7 @@ type Inspect struct {
 	Writes  []string          `json:"writes,omitempty"`  // a key nothing declares: what vanilla writes there
 	Scope   string            `json:"scope,omitempty"`   // the scope it runs in; "" unknown
 	Leads   string            `json:"leads,omitempty"`   // the scope it leads to; "" none
+	Returns string            `json:"returns,omitempty"` // what a defined name's entries give: yes or no, a number
 	Sites   []Location        `json:"sites,omitempty"`   // where it is defined, in load order
 	Winner  int               `json:"winner"`            // the site the game keeps; -1 for none
 	Adds    []int             `json:"adds,omitempty"`    // the sites that add to the kept one (INJECT)
@@ -90,6 +91,7 @@ type Inspect struct {
 	Color   string            `json:"color,omitempty"`   // a color, as #rrggbb
 	Image   *source.ImageInfo `json:"image,omitempty"`   // a file that is an image: its header
 	Graphed bool              `json:"graphed,omitempty"` // the event graph draws it: it is or fires an event
+	Within  []string          `json:"within,omitempty"`  // the entry the cursor is in, then its blocks' keys
 	Range   Range             `json:"range"`
 }
 
@@ -149,6 +151,27 @@ func (cursor spot) block() int {
 	return holder
 }
 
+// within is the entry the cursor is in, then the keys of the blocks between it and the cursor; nil
+// outside an entry. The entry's own statement is its name, not a key.
+func (cursor spot) within() []string {
+	holder := cursor.block()
+	if holder < 0 || cursor.chain[holder].Entry < 0 {
+		return nil
+	}
+	entry := cursor.chain[holder].Entry
+	def := cursor.records.Defs[entry]
+	out := []string{def.Name}
+	for _, at := range cursor.chain[:holder+1] {
+		if assign, isAssign := at.Statement.(*jomini.Assignment); isAssign && at.Entry == entry && assign.Key.Range != def.Range {
+			out = append(out, assign.Key.Text)
+		}
+	}
+	if def.Name == "" {
+		out = out[1:]
+	}
+	return out
+}
+
 // word is the scalar under the cursor (the innermost statement's key or value; nil for none), if it
 // is the key, and the definition or reference the walk read inside it ($NAME$ included): of several
 // references (a call's parameter and the call), the first that resolves, else the first.
@@ -205,15 +228,23 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 		return nil, nil
 	}
 
-	// the word under the cursor, and the definition or reference the walk read in it
+	// the word under the cursor, and the definition or reference the walk read in it; where nothing is
+	// known of it, the card is only the entry and blocks the cursor is in
 	cursor := file.walk(offset)
+	within := cursor.within()
+	bare := func(span jomini.Range) *Inspect {
+		if len(within) == 0 {
+			return nil
+		}
+		return &Inspect{Within: within, Range: file.span(span), Winner: -1}
+	}
 	word, isKey, named := cursor.word(sess)
 	if word == nil {
-		return nil, nil
+		return bare(jomini.Range{Start: offset, End: offset}), nil
 	}
 	at := cursor.chain[len(cursor.chain)-1]
 	assign, isAssign := at.Statement.(*jomini.Assignment)
-	card := &Inspect{Word: word.Text, Range: file.span(word.Range), Winner: -1}
+	card := &Inspect{Word: word.Text, Range: file.span(word.Range), Winner: -1, Within: within}
 	if isAssign {
 		card.Key = assign.Key.Text
 	}
@@ -224,7 +255,12 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 		start++
 	}
 	if steps := dataCall(word.Text, start, offset); steps != nil {
-		return file.dataCard(steps), nil
+		data := file.dataCard(steps)
+		if data == nil {
+			return bare(word.Range), nil
+		}
+		data.Within = within
+		return data, nil
 	}
 
 	// what the word names (a $NAME$ in it included), else what its key reads as
@@ -314,7 +350,7 @@ func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) 
 	// written: in its entry's database when the statement holding it is the entry, else in its key
 	if card.Head == "" && card.Need == "" && card.Prose == "" && card.Date == "" && card.Color == "" &&
 		card.Weight == 0 && card.Leads == "" && len(card.Takes)+len(card.Writes)+len(card.Sites) == 0 {
-		return nil, nil
+		return bare(word.Range), nil
 	}
 	if parent := len(cursor.chain) - 2; isKey && read.command == nil && parent >= 0 && card.Head == "" {
 		holder, database := cursor.chain[parent], (*schema.Database)(nil)
@@ -339,7 +375,7 @@ func (file *file) describe(card *Inspect, read reading) bool {
 	shown := func(from schema.Source) {
 		card.Stale = card.Stale || sch.Sources[from].Stale
 	}
-	if read.ref != nil && file.defined(card, *read.ref, shown) {
+	if read.ref != nil && file.defined(card, *read.ref, read.scope, shown) {
 		return true
 	}
 	key := read.key
@@ -383,8 +419,9 @@ func (file *file) describe(card *Inspect, read reading) bool {
 }
 
 // defined fills a reference's card: its database, its sites (the kept one and its adds), localized
-// name and what the dumps and docs say of its database; a call nothing defines is unknown.
-func (file *file) defined(card *Inspect, ref index.Ref, shown func(schema.Source)) bool {
+// name and what the dumps and docs say of its database; a call nothing defines is unknown. scope is
+// where the reference is written, which a scripted entry runs in when its database declares none.
+func (file *file) defined(card *Inspect, ref index.Ref, scope string, shown func(schema.Source)) bool {
 	sess, sch := file.sess, file.sess.Install.Schema
 	defs, known := index.Resolve(sch, sess.Indexes(), ref)
 	database := ref.Database
@@ -395,7 +432,7 @@ func (file *file) defined(card *Inspect, ref index.Ref, shown func(schema.Source
 	if !known && (ref.Called != "" || row == nil && database != index.Localization && database != index.File) {
 		return false
 	}
-	card.Word, card.Head = ref.Name, heading(database)
+	card.Word, card.Head = ref.Name, game.KindName(database)
 	if entry, name, cut := strings.Cut(ref.Name, ":"); database == index.Parameter && cut {
 		card.Word, card.Head = name, "parameter of "+entry
 	}
@@ -460,7 +497,10 @@ func (file *file) defined(card *Inspect, ref index.Ref, shown func(schema.Source
 			card.About = row.Entry.Blurb.Value
 			shown(from)
 		}
-		card.Scope = row.Entry.Scope.Value
+		card.Scope, card.Returns = row.Entry.Scope.Value, returns[row.Entry.Block.Value]
+		if card.Scope == "" && len(row.Naming.CalledIn) > 0 {
+			card.Scope = scope
+		}
 		shown(row.Entry.Scope.From)
 		if action, found := sch.OnActions[ref.Name]; found && row.Naming.OnActions {
 			card.Prose, card.Scope = action.Blurb, cmp.Or(action.Scope, card.Scope)
@@ -516,7 +556,7 @@ func (file *file) locCard(offset int) *Inspect {
 		return nil
 	}
 	card := &Inspect{Word: ref.Name, Range: file.span(ref.Range), Winner: -1}
-	file.defined(card, *ref, func(schema.Source) {})
+	file.defined(card, *ref, "", func(schema.Source) {})
 	return card
 }
 
@@ -567,7 +607,7 @@ func (file *file) dataCard(steps []jomini.Step) *Inspect {
 	}
 	for _, name := range sch.Flagged(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
 		if !defined && len(index.Lookup(file.sess.Indexes(), name, step.Name)) > 0 {
-			defined = file.defined(card, index.Ref{Database: name, Name: step.Name}, func(schema.Source) {})
+			defined = file.defined(card, index.Ref{Database: name, Name: step.Name}, "", func(schema.Source) {})
 		}
 	}
 	_, isType := sch.DataTypes[step.Name]
@@ -700,11 +740,14 @@ var held = map[game.Block]string{
 	game.BlockDescription: "a description",
 }
 
+// returns is what a database's entries give where they are run, by what their block is.
+var returns = map[game.Block]string{game.BlockTriggers: "yes or no", game.BlockValue: "a number"}
+
 // typed is a word type as a card says it; "" unknown.
 func typed(claim schema.Value) string {
 	return map[schema.WordType]string{
 		schema.WordNumber: "a number", schema.WordBool: "yes or no", schema.WordDate: "a date", schema.WordText: "text",
-		schema.WordReference: heading(claim.Database), schema.WordLoc: "a localization key",
+		schema.WordReference: game.KindName(claim.Database), schema.WordLoc: "a localization key",
 		schema.WordFile: "a file path", schema.WordScope: "a scope", schema.WordBlock: "a block",
 	}[claim.Type]
 }

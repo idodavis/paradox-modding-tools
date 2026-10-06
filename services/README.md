@@ -83,7 +83,7 @@ pages; it parses only what it is handed. `go list -deps ./services/...` gives ev
 | | Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
 | Pages and tools | Health | `healthservice.go` | the Workspace Health page |
 | | EventGraph | `eventgraphservice.go` | the event graph and one event's detail |
-| | Wiki | `wikiservice.go` | the Guide pane and Patch Center |
+| | Wiki | `wikiservice.go` | the IDE's Wiki pane and Patch Notes |
 | | Search | `searchservice.go` | the IDE's text and file search |
 | | Release | `releaseservice.go` | the Publish page: descriptor, description, Workshop extras, Steam publish |
 
@@ -125,7 +125,7 @@ Every request is one walk of the open file, stopped at the cursor or run whole.
 
 ```mermaid
 sequenceDiagram
-  participant M as Monaco (ide/languageClient.ts)
+  participant M as the editor (ide/monacoEditor.ts)
   participant I as IdeService
   participant L as lsp
   participant S as session
@@ -151,7 +151,7 @@ flowchart LR
   B --> D
   C[DidSave, DidClose: the disk's text] --> D
   W[file watcher: a change outside the editor] --> D[session.changed]
-  W --> X[fs:changed to the workbench, ide/fsBridge.ts]
+  W --> X[fs:changed to the frontend: the file read again, the explorer updated]
   D --> E{a mod's file?}
   E -- yes --> F[index.Reindex: the file walked again]
   E -- gone --> G[index.Forget]

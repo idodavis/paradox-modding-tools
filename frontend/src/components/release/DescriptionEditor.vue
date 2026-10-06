@@ -1,3 +1,29 @@
+<script lang="ts">
+import type { EditorToolbarItem } from "@nuxt/ui";
+
+// every mark and block the BBCode conversion carries (owner, 2026-10-05), but links and images (owner, 2026-10-06)
+export const MARKDOWN_TOOLBAR: EditorToolbarItem[][] = [
+  [
+    { kind: "heading", level: 1, icon: "i-lucide-heading-1", tooltip: { text: "Heading 1" } },
+    { kind: "heading", level: 2, icon: "i-lucide-heading-2", tooltip: { text: "Heading 2" } },
+    { kind: "heading", level: 3, icon: "i-lucide-heading-3", tooltip: { text: "Heading 3" } },
+  ],
+  [
+    { kind: "mark", mark: "bold", icon: "i-lucide-bold", tooltip: { text: "Bold" } },
+    { kind: "mark", mark: "italic", icon: "i-lucide-italic", tooltip: { text: "Italic" } },
+    { kind: "mark", mark: "strike", icon: "i-lucide-strikethrough", tooltip: { text: "Strike" } },
+    { kind: "mark", mark: "code", icon: "i-lucide-code", tooltip: { text: "Code" } },
+  ],
+  [
+    { kind: "bulletList", icon: "i-lucide-list", tooltip: { text: "Bulleted list" } },
+    { kind: "orderedList", icon: "i-lucide-list-ordered", tooltip: { text: "Numbered list" } },
+    { kind: "blockquote", icon: "i-lucide-text-quote", tooltip: { text: "Quote" } },
+    { kind: "codeBlock", icon: "i-lucide-square-code", tooltip: { text: "Code block" } },
+    { kind: "horizontalRule", icon: "i-lucide-separator-horizontal", tooltip: { text: "Rule" } },
+  ],
+];
+</script>
+
 <script setup lang="ts">
 /**
  * The listing's description (the PublishListing board's right column): its source and how to change it,
@@ -6,7 +32,7 @@
 import { computed, shallowRef } from "vue";
 import { computedAsync } from "@vueuse/core";
 import { useMutation, useQueryCache } from "@pinia/colada";
-import type { DropdownMenuItem, EditorToolbarItem, TabsItem } from "@nuxt/ui";
+import type { DropdownMenuItem, TabsItem } from "@nuxt/ui";
 import type { Listing, ListingSummary } from "@services/models";
 import { Convert, CreateDescriptionFile, LoadListing } from "@services/releaseservice";
 import { SetWorkspaceModDescription } from "@services/workspaceservice";
@@ -33,28 +59,6 @@ const sent = computedAsync(async () => {
   const converted = fromMarkdown.value ? await Convert(markdown.value, "bbcode") : { text: bbcode.value, notes: [] };
   return { ...converted, shown: (await Convert(converted.text, "markdown")).text };
 });
-
-// every mark and block the BBCode conversion carries (owner, 2026-10-05), but links and images (owner, 2026-10-06)
-const toolbar: EditorToolbarItem[][] = [
-  [
-    { kind: "heading", level: 1, icon: "i-lucide-heading-1", tooltip: { text: "Heading 1" } },
-    { kind: "heading", level: 2, icon: "i-lucide-heading-2", tooltip: { text: "Heading 2" } },
-    { kind: "heading", level: 3, icon: "i-lucide-heading-3", tooltip: { text: "Heading 3" } },
-  ],
-  [
-    { kind: "mark", mark: "bold", icon: "i-lucide-bold", tooltip: { text: "Bold" } },
-    { kind: "mark", mark: "italic", icon: "i-lucide-italic", tooltip: { text: "Italic" } },
-    { kind: "mark", mark: "strike", icon: "i-lucide-strikethrough", tooltip: { text: "Strike" } },
-    { kind: "mark", mark: "code", icon: "i-lucide-code", tooltip: { text: "Code" } },
-  ],
-  [
-    { kind: "bulletList", icon: "i-lucide-list", tooltip: { text: "Bulleted list" } },
-    { kind: "orderedList", icon: "i-lucide-list-ordered", tooltip: { text: "Numbered list" } },
-    { kind: "blockquote", icon: "i-lucide-text-quote", tooltip: { text: "Quote" } },
-    { kind: "codeBlock", icon: "i-lucide-square-code", tooltip: { text: "Code block" } },
-    { kind: "horizontalRule", icon: "i-lucide-separator-horizontal", tooltip: { text: "Rule" } },
-  ],
-];
 
 // the editor takes no placeholder: one makes it dispatch on creation, and its plugins' appended
 // paragraph then reads as an edit of the file
@@ -110,7 +114,7 @@ const sources = computed<DropdownMenuItem[]>(() => [
         :mention="false" :starter-kit="{ heading: { levels: [1, 2, 3] }, underline: false }"
         class="flex min-h-0 grow flex-col" :ui="{ content: 'min-h-0 grow overflow-auto bg-(--bg-0)' }">
         <div class="flex h-9 shrink-0 items-center gap-0.5 border-b border-default bg-elevated px-2">
-          <UEditorToolbar :editor="editor" :items="toolbar" />
+          <UEditorToolbar :editor="editor" :items="MARKDOWN_TOOLBAR" />
           <span class="grow" />
           <span class="min-w-0 truncate pe-1.5 text-11 text-dimmed">Markdown -> BBCode on upload</span>
         </div>

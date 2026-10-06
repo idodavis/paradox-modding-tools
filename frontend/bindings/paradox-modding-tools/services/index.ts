@@ -66,6 +66,8 @@ export type {
     SourceAt,
     SteamCompare,
     TextPart,
+    TextReplaceQuery,
+    TextReplaceResult,
     TextSearchFolder,
     TextSearchHit,
     TextSearchHits,

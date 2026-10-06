@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -475,17 +476,17 @@ func gateOut(t *testing.T, name string, lines []string) {
 func TestFormat(t *testing.T) {
 	install, dir := fixture(t, "ck3")
 	path := opened(install, dir, "events/x.txt", "a = {\n b = 1\n\t\tc = {\n\td = 1\n\t}\n}\n")
-	edits, err := Format(install, path)
+	edits, err := Format(install, path, "\t")
 	if err != nil || len(edits) == 0 || slices.ContainsFunc(edits, func(edit TextEdit) bool { return strings.HasPrefix(edit.NewText, " ") }) {
 		t.Errorf("mixed indentation is fixed with tabs: %+v (%v)", edits, err)
 	}
-	if edits, _ := Format(install, opened(install, dir, "events/y.txt", "a = {\r\n\tb = 1\r\n}\r\n")); len(edits) != 0 {
+	if edits, _ := Format(install, opened(install, dir, "events/y.txt", "a = {\r\n\tb = 1\r\n}\r\n"), "\t"); len(edits) != 0 {
 		t.Errorf("a file indented right, with its own line endings, needs nothing: %+v", edits)
 	}
-	if edits, _ := Format(install, opened(install, dir, "localization/english/a_l_english.yml", "l_english:\n\tk:0 \"v\"\n")); len(edits) != 1 || edits[0].NewText != " " {
+	if edits, _ := Format(install, opened(install, dir, "localization/english/a_l_english.yml", "l_english:\n\tk:0 \"v\"\n"), "\t"); len(edits) != 1 || edits[0].NewText != " " {
 		t.Errorf("localization indents with one space: %+v", edits)
 	}
-	if edits, _ := Format(install, opened(install, dir, "descriptor.mod", "name = \"M\"\n")); edits != nil {
+	if edits, _ := Format(install, opened(install, dir, "descriptor.mod", "name = \"M\"\n"), "\t"); edits != nil {
 		t.Errorf("a descriptor is not formatted: %+v", edits)
 	}
 }
@@ -572,7 +573,7 @@ func TestNoPanicAnywhere(t *testing.T) {
 			}
 		}
 		Diagnose(install, path, nil)
-		Format(install, path)
+		Format(install, path, "\t")
 		Folding(install, path)
 		InlayHints(install, path)
 		DocumentSymbols(install, path)
@@ -591,7 +592,8 @@ func TestHover(t *testing.T) {
 	} {
 		path := opened(install, dir, tt.rel, tt.text)
 		line, col := aim(t, tt.text, tt.needle, 0)
-		if card, _ := Hover(install, path, line, col); card != nil {
+		// a card here holds only the entry and blocks the cursor is in, which draws nothing
+		if card, _ := Hover(install, path, line, col); card != nil && !reflect.DeepEqual(*card, Inspect{Within: card.Within, Range: card.Range, Winner: -1}) {
 			t.Errorf("%s: a card: %+v", tt.what, *card)
 		}
 	}

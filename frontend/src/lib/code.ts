@@ -1,197 +1,370 @@
 /**
- * Read-only code, drawn by Pierre (`@pierre/diffs`): the Paradox grammars and the PMT theme, whose
- * colors are the page's tokens, so a theme or mode change needs no redraw.
+ * Code, drawn by Monaco (`monaco-editor`): the Paradox languages and the PMT theme, for the IDE's editors, every
+ * compare, and read-only code. Read-only code is Monaco's tokens drawn as the page's own elements, colored by the
+ * page's tokens, so a theme change redraws nothing; an editor takes the theme on the page as Monaco's own colors.
  */
-import {
-  File,
-  FileDiff,
-  getSharedHighlighter,
-  parseDiffFromFile,
-  registerCustomLanguage,
-  registerCustomTheme,
-  type FileContents,
-  type LanguageRegistration,
-  type ThemeRegistration,
-} from "@pierre/diffs";
+import * as monaco from "monaco-editor/editor/editor.api";
+import "monaco-editor/features/register.all";
+// Markdown, the one language of Monaco's own a mod has (its Workshop description, readme)
+import "monaco-editor/languages/definitions/markdown/register";
+import EditorWorker from "monaco-editor/editor/editor.worker?worker";
+import { diffLines } from "diff";
 
-/** The Paradox grammars' scopes and the token each is drawn in (styles/themes.css). */
-export const PARADOX_SCOPES: {
-  token: "fg-1" | "syn-kw" | "syn-str" | "syn-num" | "syn-fn" | "syn-ref" | "syn-com";
-  italic?: boolean;
-  scope: string[];
-}[] = [
-  { token: "syn-com", italic: true, scope: ["comment", "comment.line.number-sign.paradox"] },
-  { token: "syn-com", scope: ["constant.other.formatting.paradox-loc"] },
-  // operators and braces in the text's own color, as the boards draw them
-  {
-    token: "fg-1",
-    scope: ["keyword.operator.comparison.paradox", "keyword.operator.arithmetic.paradox",
-      "punctuation.section.block.begin.paradox", "punctuation.section.block.end.paradox",
-      "punctuation.section.brackets.paradox"],
-  },
-  {
-    token: "syn-kw",
-    scope: ["keyword.control.paradox", "keyword.operator.iterator.paradox", "variable.other.property.paradox",
-      "entity.name.type.paradox", "keyword.control.paradox-gui", "keyword.control.language.paradox-loc"],
-  },
-  {
-    token: "syn-str",
-    scope: ["string.quoted.double.paradox", "string.quoted.double.paradox-loc", "string.quoted.double.paradox-gui"],
-  },
-  {
-    token: "syn-num",
-    scope: ["constant.numeric.paradox", "constant.numeric.date.paradox", "constant.language.paradox", "constant.other.icon.paradox-loc"],
-  },
-  {
-    token: "syn-fn",
-    scope: ["entity.name.function.event-id.paradox", "support.function.databinding.paradox",
-      "support.function.databinding.paradox-gui", "support.function.databinding.paradox-loc"],
-  },
-  {
-    token: "syn-ref",
-    scope: ["variable.other.saved-scope.paradox", "variable.other.constant.script.paradox",
-      "variable.other.substitution.paradox", "variable.other.substitution.paradox-loc", "variable.parameter.macro.paradox",
-      "variable.parameter.placeholder.paradox", "variable.language.scope.paradox"],
-  },
-];
+export { monaco };
 
-/** The Paradox grammars, by the name each is registered and drawn by. */
-const GRAMMARS: Record<string, () => Promise<{ default: object }>> = {
-  paradox: () => import("../syntaxes/paradox.tmLanguage.json"),
-  "paradox-loc": () => import("../syntaxes/paradox-loc.tmLanguage.json"),
-  "paradox-gui": () => import("../syntaxes/paradox-gui.tmLanguage.json"),
+self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
+
+/** A file's model, made when a peek or a definition reaches a file no editor has open (ide/monacoEditor.ts). */
+export const models: { load: (uri: monaco.Uri) => Promise<monaco.editor.ITextModel | null> } = { load: async () => null };
+
+// Monaco makes its services once, with the first editor: this one, so the files it reaches are read on demand
+monaco.editor
+  .create(document.createElement("div"), {}, {
+    textModelService: {
+      async createModelReference(uri: monaco.Uri) {
+        const model = monaco.editor.getModel(uri) ?? (await models.load(uri));
+        if (!model) throw new Error(`${uri.fsPath} could not be read`);
+        return { object: { textEditorModel: model }, dispose() {} };
+      },
+    },
+  })
+  .dispose();
+
+/** A file's model address; Monaco writes a path's slashes and its drive's letter one way, so Go's and the explorer's
+ * spellings of a path are one model. */
+export function fileUri(path: string): monaco.Uri {
+  return monaco.Uri.file(path.replace(/[\\/]+$/, ""));
+}
+
+/** Each kind of token and the page's token it is drawn in (styles/themes.css); none is the text's own color. */
+const TOKENS: Record<string, { color: string; italic?: boolean }> = {
+  comment: { color: "syn-com", italic: true },
+  string: { color: "syn-str" },
+  "string.format": { color: "syn-com" },
+  "string.fn": { color: "syn-fn" },
+  "string.ref": { color: "syn-ref" },
+  "string.icon": { color: "syn-num" },
+  keyword: { color: "syn-kw" },
+  number: { color: "syn-num" },
+  function: { color: "syn-fn" },
+  variable: { color: "syn-ref" },
 };
-// Pierre finds a grammar by its name, so each is loaded under the name it is registered by
-for (const [name, load] of Object.entries(GRAMMARS)) {
-  registerCustomLanguage(name, async () => ({ default: [{ ...(await load()).default, name } as LanguageRegistration] }));
+
+const ESCAPE: monaco.languages.IMonarchLanguageRule = [/\\./, "string"];
+
+/** Paradox script: keys before `=`, the flow keywords and iterators, events, dates, saved scopes, constants. */
+const SCRIPT: monaco.languages.IMonarchLanguage = {
+  tokenPostfix: "",
+  defaultToken: "",
+  tokenizer: {
+    root: [
+      [/#.*$/, "comment"],
+      [/\s+/, ""],
+      [/"/, "string", "@string"],
+      [/\$[\w.|-]+\$/, "variable"],
+      [/@\[/, "", "@math"],
+      [/@[A-Za-z_]\w*/, "variable"],
+      [/\d{1,4}\.\d{1,2}\.\d{1,2}(?:\.\d{1,2})?(?![\w.])/, "number"],
+      [/[A-Za-z][\w-]*\.\d+(?![\w.])/, "function"],
+      [/-?\d+(?:\.\d+)?(?![\w.])/, "number"],
+      [/(?:yes|no|none)(?![\w.-])/, "number"],
+      [/(?:if|else_if|else|limit|AND|OR|NOT|NOR|NAND)(?![\w.-])/, "keyword"],
+      [/([A-Za-z_][\w.-]*)(\s*)(\??=)/, ["keyword", "", ""]],
+      [/(?:scope|var|local_var|global_var|flag|event_target):[\w.-]+/, "variable"],
+      [/(?:any|every|random|ordered)_[a-z0-9_]+(?![\w.-])/, "keyword"],
+      [/[A-Za-z_][\w.-]*/, ""],
+    ],
+    string: [[/[^\\"$[]+/, "string"], ESCAPE, [/\$[\w.|-]+\$/, "string.ref"], [/\[[^\]]*\]/, "string.fn"], [/"/, "string", "@pop"], [/./, "string"]],
+    math: [[/\]/, "", "@pop"], [/-?\d+(?:\.\d+)?/, "number"], [/[A-Za-z_]\w*/, "variable"]],
+  },
+};
+
+/** Localization: the language line, each key and its quoted text with the text's codes. */
+const LOC: monaco.languages.IMonarchLanguage = {
+  tokenPostfix: "",
+  defaultToken: "",
+  tokenizer: {
+    root: [
+      [/#.*$/, "comment"],
+      [/^\s*l_[a-z_]+:\s*$/, "keyword"],
+      [/"/, "string", "@text"],
+      [/[^"#]+/, ""],
+    ],
+    // the last quote on a line closes the text, so a text may quote
+    text: [
+      [/"(?=[^"]*$)/, "string", "@pop"],
+      ESCAPE,
+      [/\[[^\]]*\]/, "string.fn"],
+      [/\$[\w.|-]+\$/, "string.ref"],
+      [/#[!A-Za-z_;]*/, "string.format"],
+      [/@\w+!/, "string.icon"],
+      [/[^\\[$#@"]+/, "string"],
+      [/./, "string"],
+    ],
+  },
+};
+
+/** GUI: its widget words, quoted text and its data calls. */
+const GUI: monaco.languages.IMonarchLanguage = {
+  tokenPostfix: "",
+  defaultToken: "",
+  tokenizer: {
+    root: [
+      [/#.*$/, "comment"],
+      [/\s+/, ""],
+      [/"/, "string", "@string"],
+      [
+        /(?:types|type|template|widget|button|hbox|vbox|container|scrollarea|flowcontainer|fixedgridbox|overlappingcontainer|background|icon|datamodel|datacontext|visible|size|position|margin|using|blockoverride|onmousehierarchyenter|text)(?![\w.])/,
+        "keyword",
+      ],
+      [/[A-Za-z_][\w.]*/, ""],
+    ],
+    string: [[/[^"[]+/, "string"], [/\[[^\]]*\]/, "string.fn"], [/"/, "string", "@pop"], [/./, "string"]],
+  },
+};
+
+const LANGUAGES: [id: string, extensions: string[], grammar: monaco.languages.IMonarchLanguage][] = [
+  ["paradox", [".txt", ".mod", ".info", ".asset", ".editordata"], SCRIPT],
+  ["paradox-loc", [".yml"], LOC],
+  ["paradox-gui", [".gui"], GUI],
+];
+const PAIRS = [
+  { open: "{", close: "}" },
+  { open: "[", close: "]" },
+  { open: "(", close: ")" },
+  { open: '"', close: '"', notIn: ["string", "comment"] },
+];
+for (const [id, extensions, grammar] of LANGUAGES) {
+  monaco.languages.register({ id, extensions });
+  monaco.languages.setMonarchTokensProvider(id, grammar);
+  monaco.languages.setLanguageConfiguration(id, {
+    comments: { lineComment: "#" },
+    brackets: [["{", "}"], ["[", "]"], ["(", ")"]],
+    autoClosingPairs: PAIRS,
+    surroundingPairs: PAIRS,
+    colorizedBracketPairs: [["{", "}"], ["[", "]"]],
+    // a dotted id, a saved scope and a loc key's $ are one word
+    wordPattern: id === "paradox-loc" ? /[\w$.-]+/ : /[\w.:@$-]+/,
+  });
 }
 
-/** The grammar a file's extension calls for: localization, GUI, else script. */
-function grammarOf(name: string): string {
+/** The language a file's name calls for: localization, GUI, script, else plain text. */
+export function languageOf(name: string): string {
   const extension = name.slice(name.lastIndexOf(".")).toLowerCase();
-  return extension === ".yml" ? "paradox-loc" : extension === ".gui" ? "paradox-gui" : "paradox";
+  return LANGUAGES.find(([, extensions]) => extensions.includes(extension))?.[0] ?? (extension === ".md" ? "markdown" : "plaintext");
 }
 
-/** A file to draw, in its grammar. */
-export function codeFile(name: string, contents: string): FileContents {
-  return { name, contents, lang: grammarOf(name) };
+/**
+ * The theme on the page as Monaco's: the page's tokens read as colors (Monaco takes no CSS variables), one theme per
+ * page theme, set again whenever the page's changes.
+ */
+function followTheme(): void {
+  const page = document.documentElement.dataset.theme ?? "pmt-dark";
+  const name = `pmt-${page}`;
+  if (!defined.has(name)) {
+    defined.add(name);
+    const css = getComputedStyle(document.documentElement);
+    const token = (key: string) => css.getPropertyValue(`--${key}`).trim();
+    const [accent, green, red] = [token("accent"), token("green"), token("red")];
+    const light = page.endsWith("-light");
+    // where Monaco draws nothing: a token at no strength
+    const clear = `${token("bg-0")}00`;
+    monaco.editor.defineTheme(name, {
+      base: light ? "vs" : "vs-dark",
+      inherit: true,
+      rules: [
+        { token: "", foreground: token("fg-1") },
+        ...Object.entries(TOKENS).map(([kind, { color, italic }]) => ({ token: kind, foreground: token(color), fontStyle: italic ? "italic" : "" })),
+      ],
+      colors: {
+        "editor.background": token("bg-0"),
+        "editor.foreground": token("fg-1"),
+        "editorGutter.background": token("bg-0"),
+        "editorLineNumber.foreground": token("fg-3"),
+        "editorLineNumber.activeForeground": token("fg-1"),
+        "editorCursor.foreground": accent,
+        "editor.lineHighlightBackground": token("bg-3"),
+        "editor.lineHighlightBorder": clear,
+        "editor.selectionBackground": `${accent}40`,
+        "editor.inactiveSelectionBackground": `${accent}26`,
+        "editor.selectionHighlightBackground": `${accent}1f`,
+        "editor.wordHighlightBackground": `${token("fg-3")}33`,
+        "editor.findMatchBackground": `${accent}66`,
+        "editor.findMatchHighlightBackground": `${accent}33`,
+        "editorIndentGuide.background1": token("line-1"),
+        "editorIndentGuide.activeBackground1": token("line-2"),
+        "editorWhitespace.foreground": token("line-2"),
+        "editorBracketHighlight.foreground1": token("syn-kw"),
+        "editorBracketHighlight.foreground2": token("syn-fn"),
+        "editorBracketHighlight.foreground3": token("syn-num"),
+        "editorBracketMatch.background": `${accent}26`,
+        "editorBracketMatch.border": `${accent}80`,
+        "editorError.foreground": red,
+        "editorWarning.foreground": token("orange"),
+        "editorInfo.foreground": token("blue"),
+        "editorInlayHint.foreground": token("fg-3"),
+        "editorInlayHint.background": clear,
+        "editorGhostText.foreground": token("fg-3"),
+        "editorLink.activeForeground": token("link"),
+        "editorLightBulb.foreground": token("orange"),
+        "editorOverviewRuler.border": clear,
+        "editorStickyScroll.background": token("bg-0"),
+        "editorStickyScrollHover.background": token("bg-3"),
+        "editorWidget.background": token("bg-3"),
+        "editorWidget.foreground": token("fg-1"),
+        "editorWidget.border": token("line-2"),
+        "editorSuggestWidget.background": token("bg-3"),
+        "editorSuggestWidget.border": token("line-2"),
+        "editorSuggestWidget.selectedBackground": `${accent}26`,
+        "editorSuggestWidget.highlightForeground": accent,
+        "editorSuggestWidget.focusHighlightForeground": accent,
+        "peekView.border": accent,
+        "peekViewTitle.background": token("bg-2"),
+        "peekViewTitleLabel.foreground": token("fg-1"),
+        "peekViewTitleDescription.foreground": token("fg-3"),
+        "peekViewResult.background": token("bg-1"),
+        "peekViewResult.fileForeground": token("fg-1"),
+        "peekViewResult.lineForeground": token("fg-2"),
+        "peekViewResult.selectionBackground": `${accent}26`,
+        "peekViewResult.selectionForeground": token("fg-1"),
+        "peekViewResult.matchHighlightBackground": `${accent}40`,
+        "peekViewEditor.background": token("bg-0"),
+        "peekViewEditorGutter.background": token("bg-0"),
+        "peekViewEditor.matchHighlightBackground": `${accent}40`,
+        "input.background": token("bg-0"),
+        "input.border": token("line-2"),
+        "input.foreground": token("fg-1"),
+        "inputOption.activeBorder": accent,
+        "inputOption.activeBackground": `${accent}26`,
+        focusBorder: accent,
+        "list.hoverBackground": token("bg-4"),
+        "list.activeSelectionBackground": `${accent}26`,
+        "list.activeSelectionForeground": token("fg-1"),
+        "list.focusBackground": `${accent}26`,
+        "list.highlightForeground": accent,
+        "scrollbarSlider.background": `${token("line-2")}99`,
+        "scrollbarSlider.hoverBackground": token("line-2"),
+        "scrollbarSlider.activeBackground": token("fg-3"),
+        "minimap.background": token("bg-0"),
+        "widget.shadow": `${token(light ? "fg-1" : "bg-0")}40`,
+        "diffEditor.insertedTextBackground": `${green}33`,
+        "diffEditor.removedTextBackground": `${red}33`,
+        "diffEditor.insertedLineBackground": `${green}1a`,
+        "diffEditor.removedLineBackground": `${red}1a`,
+        "diffEditorGutter.insertedLineBackground": `${green}26`,
+        "diffEditorGutter.removedLineBackground": `${red}26`,
+        "diffEditor.diagonalFill": token("line-1"),
+        "diffEditor.unchangedRegionBackground": token("bg-1"),
+        "diffEditor.unchangedRegionForeground": token("fg-3"),
+      },
+    });
+  }
+  monaco.editor.setTheme(name);
 }
+const defined = new Set<string>();
+followTheme();
+new MutationObserver(followTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+// a web font measured before it loaded leaves the carets and squiggles short of its letters; the editor's own text is
+// what asks for Geist Mono, after this module ran, so measure again whenever fonts finish loading
+document.fonts.addEventListener("loadingdone", () => monaco.editor.remeasureFonts());
 
-/** The lines one text adds and removes against another, as a diff of the two counts them. */
-export function lineCounts(before: string, after: string): { added: number; removed: number } {
-  const { hunks } = parseDiffFromFile(codeFile("before", before), codeFile("after", after));
-  return {
-    added: hunks.reduce((sum, hunk) => sum + hunk.additionLines, 0),
-    removed: hunks.reduce((sum, hunk) => sum + hunk.deletionLines, 0),
-  };
-}
+/** A token of code: its text, and its color and slant as the page's tokens, none for the text's own. */
+export type CodeToken = { content: string; color?: string; italic?: boolean };
 
-/** A token of code: its text and its color, none for the text's own. */
-type CodeToken = { content: string; color?: string };
-
-/** One line of a file's code as the theme's tokens, for code written inline (a property's value). */
-export async function codeTokens(text: string, name: string): Promise<CodeToken[]> {
-  const lang = grammarOf(name);
-  const highlighter = await getSharedHighlighter({ themes: ["pmt"], langs: [lang] });
-  return highlighter.codeToTokensBase(text, { lang, theme: "pmt" })[0] ?? [];
+/** Text's lines as tokens in its grammar (the file name's): what read-only code draws. */
+export function codeLines(text: string, name: string): CodeToken[][] {
+  const lines = text.split("\n");
+  return monaco.editor.tokenize(text, languageOf(name)).map((tokens, i) => {
+    const line = lines[i] ?? "";
+    return tokens.map((token, j) => {
+      const style = TOKENS[token.type] ?? TOKENS[token.type.slice(0, token.type.lastIndexOf("."))];
+      return { content: line.slice(token.offset, tokens[j + 1]?.offset), color: style && `var(--${style.color})`, italic: style?.italic };
+    });
+  });
 }
 
 /**
  * A localization value's tokens, read as a loc file writes it: its codes ($variables$, [data functions],
  * #formatting, @icons!) in their colors, its own text uncolored.
  */
-export async function locTokens(value: string): Promise<CodeToken[]> {
+export function locTokens(value: string): CodeToken[] {
   const before = ' key:0 "';
-  const end = before.length + value.length;
   const out: CodeToken[] = [];
   let at = 0;
-  for (const token of await codeTokens(`${before}${value}"`, "loc.yml")) {
-    const content = token.content.slice(Math.max(before.length - at, 0), Math.max(end - at, 0));
-    if (content) out.push({ content, color: token.color === "var(--syn-str)" ? undefined : token.color });
+  for (const token of codeLines(`${before}${value}"`, "loc.yml")[0] ?? []) {
+    const content = token.content.slice(Math.max(before.length - at, 0), Math.max(before.length + value.length - at, 0));
+    if (content) out.push({ ...token, content, color: token.color === "var(--syn-str)" ? undefined : token.color });
     at += token.content.length;
   }
   return out;
 }
 
-const THEME: ThemeRegistration = {
-  name: "pmt",
-  colors: { "editor.foreground": "var(--fg-1)", "editor.background": "var(--bg-0)" },
-  tokenColors: PARADOX_SCOPES.map(({ token, italic, scope }) => ({
-    scope,
-    settings: { foreground: `var(--${token})`, fontStyle: italic ? "italic" : "" },
-  })),
-};
-registerCustomTheme("pmt", () => Promise.resolve(THEME));
+/** Read-only code into an element: its lines' tokens as spans, each line ending in a break. */
+export function drawCode(host: HTMLElement, text: string, name: string): void {
+  host.replaceChildren(
+    ...codeLines(text, name).flatMap((line) => [
+      ...line.map(({ content, color, italic }) => {
+        const span = document.createElement("span");
+        span.textContent = content;
+        if (color) span.style.color = color;
+        if (italic) span.style.fontStyle = "italic";
+        return span;
+      }),
+      document.createTextNode("\n"),
+    ]),
+  );
+}
+
+/** The lines one text adds and removes against another. */
+export function lineCounts(before: string, after: string): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const part of diffLines(before, after)) {
+    if (part.added) added += part.count;
+    if (part.removed) removed += part.count;
+  }
+  return { added, removed };
+}
+
+/** What a code view draws its text in: the IDE's editor font. */
+export type CodeFont = { fontFamily: string; fontSize: number; lineHeight: number };
 
 /**
- * The boards' `.code`: Geist Mono 12.5 / 20; numbers in fg-3, right-aligned in a 48px column whose
- * last 16px are space; the container sets the padding around the rows. Sizes are rem (the page's, even in
- * Pierre's shadow root), so code follows the app's text size. A long line scrolls, with the page's thin
- * scrollbar (styles/themes.css), which does not reach into Pierre's shadow root.
+ * Two texts compared, what differs marked, side by side or stacked; unchanged lines folded into bars that open,
+ * unless every line is asked for. Read only; `dispose` lets it and its texts go.
  */
-const CODE_CSS = `:host {
-  --diffs-font-family: var(--font-mono); --diffs-font-size: 0.78125rem; --diffs-line-height: 1.25rem;
-  --diffs-fg-number-override: var(--fg-3); --diffs-selection-base: var(--accent);
-  --diffs-addition-color-override: var(--green); --diffs-deletion-color-override: var(--red);
-  --diffs-modified-color-override: var(--blue);
-  --diffs-gap-block: 0px; --diffs-gap-style: none; --diffs-overflow-override: auto;
-}
-[data-code] { scrollbar-width: thin; scrollbar-color: transparent transparent; }
-[data-code]:hover { scrollbar-color: var(--line-2) transparent; }
-[data-gutter] [data-column-number] { padding: 0 1rem 0 0; }
-[data-line-number-content] { min-width: 2rem; }
-[data-line] { padding-inline: 0 1rem; }
-[data-disable-line-numbers] [data-column-number] { padding: 0; }
-[data-disable-line-numbers] [data-line] { padding-inline-start: 0.75rem; }`;
-
-/** A view that draws read-only code; numbered when asked. */
-export function codeView(numbers: boolean): File {
-  return new File({
-    theme: "pmt",
-    disableFileHeader: true,
-    disableLineNumbers: !numbers,
-    overflow: "scroll",
-    unsafeCSS: CODE_CSS,
+export function diffView(host: HTMLElement, font: CodeFont, side: boolean, all: boolean) {
+  const view = monaco.editor.createDiffEditor(host, {
+    ...font,
+    readOnly: true,
+    automaticLayout: true,
+    renderSideBySide: side,
+    // a change of whitespace alone is a change of the file, as the line counts say
+    ignoreTrimWhitespace: false,
+    useInlineViewWhenSpaceIsLimited: false,
+    hideUnchangedRegions: { enabled: !all },
+    renderOverviewRuler: false,
+    renderMarginRevertIcon: false,
+    minimap: { enabled: false },
+    glyphMargin: false,
+    folding: false,
+    scrollBeyondLastLine: false,
+    stickyScroll: { enabled: false },
+    contextmenu: false,
   });
-}
-
-/**
- * Draw text from a file (its name picks the grammar) into a host with a view, in Pierre's own element
- * (which carries its styles). `from` is the 0-based file line the text starts at: the text is drawn as
- * that window of its file, so its rows carry the file's line numbers.
- */
-export function drawCode(view: File, host: HTMLElement, text: string, name: string, from = 0): void {
-  const rows = text.split("\n").length;
-  view.render({
-    file: codeFile(name, "\n".repeat(from) + text),
-    containerWrapper: host,
-    renderRange: { startingLine: from, totalLines: rows, bufferBefore: 0, bufferAfter: 0 },
-  });
-}
-
-/**
- * A view that draws two files side by side, or as one unified, what differs marked; unchanged lines are
- * folded into sections that open when asked, else every line is drawn. Each file is as `codeFile` makes it.
- */
-export function diffView(style: "split" | "unified" = "split", fold = false): FileDiff {
-  return new FileDiff({
-    theme: "pmt",
-    diffStyle: style,
-    expandUnchanged: !fold,
-    disableFileHeader: true,
-    overflow: "scroll",
-    unsafeCSS: CODE_CSS,
-  });
-}
-
-/** A line of one side of a diff, 1-based: the old file's (deletions) or the new file's (additions). */
-export type DiffLine = { side: "deletions" | "additions"; line: number };
-
-/** Select a line of a drawn diff and scroll it to the middle, unfolding it first if it is folded away. */
-export async function showLine(view: FileDiff, host: HTMLElement, { side, line }: DiffLine): Promise<void> {
-  // Pierre unfolds by the new file's lines; a removed line is never folded
-  if (side === "additions") view.revealLine(line);
-  view.setSelectedLines({ start: line, end: line, side });
-  await new Promise(requestAnimationFrame);
-  host.querySelector("diffs-container")?.shadowRoot?.querySelector("[data-selected-line]")?.scrollIntoView({ block: "center" });
+  let shown: monaco.editor.ITextModel[] = [];
+  return {
+    view,
+    /** Show two texts, each in its file's grammar. */
+    show(before: { text: string; name: string }, after: { text: string; name: string }): void {
+      const next = [before, after].map(({ text, name }) => monaco.editor.createModel(text, languageOf(name)));
+      view.setModel({ original: next[0]!, modified: next[1]! });
+      shown.forEach((model) => model.dispose());
+      shown = next;
+    },
+    dispose(): void {
+      view.dispose();
+      shown.forEach((model) => model.dispose());
+    },
+  };
 }

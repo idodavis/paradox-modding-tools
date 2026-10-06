@@ -48,7 +48,8 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />
-    <UModal :title="`Help: ${page?.title ?? 'PMT'}`" :ui="{ content: 'sm:max-w-2xl' }">
+    <!-- one size on every page, the longest help's (Publish) -->
+    <UModal :title="`Help: ${page?.title ?? 'PMT'}`" :ui="{ content: 'h-118 sm:max-w-2xl' }">
       <button type="button" :class="ITEM">Help</button>
       <template #body>
         <div class="flex flex-col gap-3 text-13 text-toned">

@@ -23,6 +23,14 @@ export function FileSearch(query: $models.FileSearchQuery): $CancellablePromise<
 }
 
 /**
+ * Replace writes every match of a text search as the replacement, line by line as the search matches; a regular
+ * expression's replacement names its groups ($1), a plain one is written as it is.
+ */
+export function Replace(query: $models.TextReplaceQuery): $CancellablePromise<$models.TextReplaceResult> {
+    return $Call.ByID(1745561777, query);
+}
+
+/**
  * TextSearch walks workspace folders and greps file bodies in-process, sending each file's hits
  * as it finds them.
  */

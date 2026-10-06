@@ -10,17 +10,18 @@
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useLocalStorage, useTimeAgo } from "@vueuse/core";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
-import { parseDiffFromFile, type FileContents, type FileDiff } from "@pierre/diffs";
 import type { TabsItem } from "@nuxt/ui";
 import type { Listing, ListingChange } from "@services/models";
 import { DownloadFromSteam } from "@services/releaseservice";
-import { codeFile, diffView, showLine, type DiffLine } from "../../lib/code";
+import { diffView, monaco } from "../../lib/code";
 import { compareQuery, releaseKeys, textQuery, uploadFilesQuery } from "../../queries";
 import { day, list, plural } from "../../lib/format";
+import { useSettingsStore } from "../../stores/settings";
 
 const { listing } = defineProps<{ listing: Listing }>();
 const emit = defineEmits<{ close: [] }>();
 
+const settings = useSettingsStore();
 const ids = computed(() => ({ workspaceId: listing.workspaceId, modId: listing.modId }));
 const { data: steam } = useQuery(() => compareQuery(ids.value));
 const style = shallowRef<"split" | "unified">("split");
@@ -88,45 +89,62 @@ const current = computed(() => {
 // the picked row's two sides, a file's read as the editor reads it
 const { data: before } = useQuery(() => textQuery(current.value?.files?.[0] ?? ""));
 const { data: after } = useQuery(() => textQuery(current.value?.files?.[1] ?? ""));
-// a side a file lacks is null, so Pierre draws a new or removed file as one column
-const sides = computed((): [FileContents | null, FileContents | null] | undefined => {
+// a side a file lacks is null, so a new or removed file is all added or all removed
+const sides = computed((): [string | null, string | null] | undefined => {
   const row = current.value;
-  // a field's value ends its line, so the diff says nothing of a missing last newline
-  const prose = (contents: string): FileContents => ({ name: row?.label ?? "", contents: contents.replace(/\n?$/, "\n"), lang: "text" });
-  if (row?.texts) return [prose(row.texts[0]), prose(row.texts[1])];
+  // a field's value ends its line, so the compare says nothing of a missing last newline
+  if (row?.texts) return [row.texts[0].replace(/\n?$/, "\n"), row.texts[1].replace(/\n?$/, "\n")];
   if (!row?.files) return undefined;
-  const side = (path: string, text: string | undefined) => (!path ? null : text === undefined ? undefined : codeFile(row.label, text));
-  const [old, now] = [side(row.files[0], before.value), side(row.files[1], after.value)];
+  const side = (path: string, text: string | undefined) => (!path ? null : text);
+  const [old, now] = [side(row.files[0], before.value?.text), side(row.files[1], after.value?.text)];
   return old === undefined || now === undefined ? undefined : [old, now];
 });
-const diff = computed(() => sides.value && parseDiffFromFile(...sides.value));
-// the header has a column per side only where Pierre draws two
-const split = computed(() => style.value === "split" && diff.value?.type === "change");
+const kind = computed(() => (!sides.value ? undefined : sides.value[0] === null ? "new" : sides.value[1] === null ? "deleted" : "change"));
+const unchanged = computed(() => !!sides.value && sides.value[0] === sides.value[1]);
+// the header has a column per side only where both are drawn
+const split = computed(() => style.value === "split" && kind.value === "change");
 
-// a view per diff, since Pierre keeps the sections it opened until its view is cleaned up; the style and
-// "Show all lines" change in place
+// one view, its texts swapped as the row changes; its unchanged lines fold into bars unless every line is asked for
 const all = useLocalStorage("pmt.publish.compareAll", false);
 const host = useTemplateRef("host");
-let view: FileDiff | undefined;
-watch([host, diff], ([el, next]) => {
-  view?.cleanUp();
-  view = el && next?.hunks.length ? diffView(style.value, !all.value) : undefined;
-  view?.render({ fileDiff: next, containerWrapper: el ?? undefined });
+const view = shallowRef<ReturnType<typeof diffView>>();
+/** A line of a side, 1-based: the old file's (deletions) or the new's (additions), and the new file's line beside it. */
+type DiffLine = { side: "deletions" | "additions"; line: number; at: number };
+const lineChanges = shallowRef<monaco.editor.ILineChange[]>([]);
+watch([host, sides], ([el, next], [was]) => {
+  // an unchanged row takes the view's element away; the next change draws a new one
+  if (el !== was) {
+    view.value?.dispose();
+    view.value = undefined;
+  }
+  if (!el || !next || next[0] === next[1]) return;
+  if (!view.value) {
+    view.value = diffView(el, settings.codeFont, style.value === "split", all.value);
+    view.value.view.onDidUpdateDiff(() => (lineChanges.value = view.value?.view.getLineChanges() ?? []));
+  }
+  const name = current.value?.texts ? "field.text" : (current.value?.label ?? "");
+  view.value.show({ text: next[0] ?? "", name }, { text: next[1] ?? "", name });
   at.value = -1;
 });
-watch([style, all], () => {
-  view?.setOptions({ ...view.options, diffStyle: style.value, expandUnchanged: all.value });
-  view?.rerender();
-});
-onBeforeUnmount(() => view?.cleanUp());
-const show = (line: DiffLine | undefined) => view && host.value && line && void showLine(view, host.value, line);
+watch([style, all], () => view.value?.view.updateOptions({ renderSideBySide: style.value === "split", hideUnchangedRegions: { enabled: !all.value } }));
+onBeforeUnmount(() => view.value?.dispose());
+
+/** Show a line: the new file's where it is drawn, else the old file's beside the new one's place. */
+function show(line: DiffLine | undefined): void {
+  const shown = view.value?.view;
+  if (!shown || !line) return;
+  const editor = line.side === "additions" || !split.value ? shown.getModifiedEditor() : shown.getOriginalEditor();
+  const number = line.side === "additions" || split.value ? line.line : line.at;
+  editor.revealLineInCenter(number);
+  editor.setSelection(new monaco.Range(number, 1, number, 1));
+}
 
 // each change's first line, on the side it adds to, else the side it removes from
 const changes = computed((): DiffLine[] =>
-  (diff.value?.hunks ?? []).flatMap((hunk) =>
-    hunk.hunkContent.flatMap((part): DiffLine[] =>
-      part.type !== "change" ? [] : [part.additions ? { side: "additions", line: part.additionLineIndex + 1 } : { side: "deletions", line: part.deletionLineIndex + 1 }],
-    ),
+  lineChanges.value.map((change) =>
+    change.modifiedEndLineNumber > 0
+      ? { side: "additions", line: change.modifiedStartLineNumber, at: change.modifiedStartLineNumber }
+      : { side: "deletions", line: change.originalStartLineNumber, at: Math.max(change.modifiedStartLineNumber, 1) },
   ),
 );
 const at = shallowRef(-1);
@@ -136,25 +154,27 @@ function stepChange(by: number): void {
   show(changes.value[at.value]);
 }
 
-// Find: every line of either side holding the text, in the order the diff shows them; a line both sides
-// share is found once, on the workspace's side, and a removed line sits before the lines its change adds
+// Find: every line of either side holding the text, in the order the compare shows them; a line both sides share
+// is found once, on the workspace's side, and a removed line sits before the lines its change adds
 const query = shallowRef("");
 const hits = computed((): DiffLine[] => {
   const needle = query.value.trim().toLowerCase();
-  if (!needle || !diff.value) return [];
-  const removed = new Map<number, number>();
-  for (const part of diff.value.hunks.flatMap((hunk) => hunk.hunkContent)) {
-    if (part.type !== "change") continue;
-    for (let i = 0; i < part.deletions; i++) removed.set(part.deletionLineIndex + i, part.additionLineIndex - 1 + (i + 1) / (part.deletions + 1));
+  if (!needle || !sides.value) return [];
+  const removed = new Map<number, { place: number; at: number }>();
+  for (const change of lineChanges.value) {
+    const count = change.originalEndLineNumber - change.originalStartLineNumber + 1;
+    if (change.originalEndLineNumber === 0) continue;
+    const next = change.modifiedEndLineNumber > 0 ? change.modifiedStartLineNumber - 1 : change.modifiedStartLineNumber;
+    for (let i = 0; i < count; i++) removed.set(change.originalStartLineNumber + i, { place: next - 1 + (i + 1) / (count + 1), at: Math.max(next, 1) });
   }
-  const found = (lines: string[], side: DiffLine["side"], order: (i: number) => number | undefined) =>
-    lines.flatMap((text, i) => {
-      const place = order(i);
-      return place !== undefined && text.toLowerCase().includes(needle) ? [{ side, line: i + 1, place }] : [];
+  const found = (text: string | null, side: DiffLine["side"], order: (n: number) => { place: number; at: number } | undefined) =>
+    (text ?? "").split("\n").flatMap((line, i) => {
+      const spot = order(i + 1);
+      return spot && line.toLowerCase().includes(needle) ? [{ side, line: i + 1, ...spot }] : [];
     });
-  return [...found(diff.value.deletionLines, "deletions", (i) => removed.get(i)), ...found(diff.value.additionLines, "additions", (i) => i)]
+  return [...found(sides.value[0], "deletions", (n) => removed.get(n)), ...found(sides.value[1], "additions", (n) => ({ place: n - 1, at: n }))]
     .sort((a, b) => a.place - b.place)
-    .map(({ side, line }) => ({ side, line }));
+    .map(({ side, line, at }) => ({ side, line, at }));
 });
 const hit = shallowRef(0);
 watch(hits, (next) => {
@@ -252,18 +272,18 @@ const { mutate: download, isLoading: downloading } = useMutation({
               <FindBox v-model="query" :hit="hit" :hits="hits.length" placeholder="Find in both sides" class="w-60" @step="stepHit" />
             </div>
             <div class="flex h-8.5 shrink-0 items-center border-b border-default bg-muted text-12 whitespace-nowrap text-toned">
-              <div v-if="diff?.type !== 'new'" class="flex h-full items-center gap-2 px-3" :class="{ 'flex-1 border-e border-default': split }">
+              <div v-if="kind !== 'new'" class="flex h-full items-center gap-2 px-3" :class="{ 'flex-1 border-e border-default': split }">
                 <UIcon name="i-lucide-cloud" class="size-3.5" />On Steam, v{{ steam.version }}<span class="text-11 text-dimmed">{{ updated }}</span>
               </div>
-              <UIcon v-if="!split && diff?.type === 'change'" name="i-lucide-arrow-right" class="size-3.5 text-dimmed" />
-              <div v-if="diff?.type !== 'deleted'" class="flex h-full items-center gap-2 px-3" :class="{ 'flex-1': split }">
+              <UIcon v-if="!split && kind === 'change'" name="i-lucide-arrow-right" class="size-3.5 text-dimmed" />
+              <div v-if="kind !== 'deleted'" class="flex h-full items-center gap-2 px-3" :class="{ 'flex-1': split }">
                 <UIcon name="i-lucide-save" class="size-3.5" />Saved in the workspace, v{{ listing.version }}
                 <span class="text-11 text-dimmed">{{ savedAgo }}</span>
               </div>
             </div>
             <p v-if="current && !current.texts && !current.files" class="p-4 text-12 text-dimmed">A binary file: no lines to compare.</p>
-            <p v-else-if="diff && !diff.hunks.length" class="p-4 text-12 text-dimmed">Unchanged: Steam has the same {{ current?.label }}.</p>
-            <div v-else ref="host" class="min-h-0 grow overflow-auto bg-(--bg-0)" />
+            <p v-else-if="unchanged" class="p-4 text-12 text-dimmed">Unchanged: Steam has the same {{ current?.label }}.</p>
+            <div v-else ref="host" class="min-h-0 grow" />
           </div>
         </div>
       </div>

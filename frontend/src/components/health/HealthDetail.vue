@@ -10,7 +10,7 @@ import type { File as SourceFile } from "@services/internal/lang/source/models";
 import { sitesOf, typeOf, type Row } from "../../composables/useHealth";
 import { linesQuery, locReadersQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
-import CompareSites from "./CompareSites.vue";
+import CompareFiles from "../CompareFiles.vue";
 import { list } from "../../lib/format";
 
 const { workspaceId, row, sources, live } = defineProps<{
@@ -21,7 +21,7 @@ const { workspaceId, row, sources, live } = defineProps<{
 }>();
 
 const store = useWorkspaceStore();
-const compare = useOverlay().create(CompareSites);
+const compare = useOverlay().create(CompareFiles);
 
 const contest = computed(() => (row && "rule" in row ? row : null));
 // a whole file one origin ships at another's path: its sites list what each file defines, not lines
@@ -98,8 +98,10 @@ const rule = computed(() => {
 });
 
 function openCompare(): void {
-  const at = (i: number) => ({ ...sites.value[i].at, line: sites.value[i].line, name: names.value[i] });
-  if (contest.value && nearest.value >= 0) void compare.open({ old: at(nearest.value), now: at(contest.value.winner) });
+  const at = (i: number) => ({ ...sites.value[i].at, line: sites.value[i].line });
+  if (contest.value && nearest.value >= 0) {
+    void compare.open({ title: "Compare the two", tags: ["Replaced", "Kept"], old: at(nearest.value), now: at(contest.value.winner) });
+  }
 }
 </script>
 

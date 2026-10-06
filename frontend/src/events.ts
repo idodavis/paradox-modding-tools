@@ -1,12 +1,12 @@
 /**
  * Go's events, subscribed once at startup (main.ts, in the app's context): each refreshes the queries it
- * changes. The IDE's own subscriptions (fs:changed to the workbench, search hits, inlay hints) stay in
- * its adapters.
+ * changes. The IDE's own subscriptions (fs:changed to its explorer, search:hits to its search) stay in the
+ * components that draw them.
  */
 import { useQueryCache } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { scans } from "./composables/useLanguageHealth";
-import { installKeys, languageKeys, sessionKeys, wikiKeys } from "./queries";
+import { fileKeys, installKeys, languageKeys, sessionKeys, wikiKeys } from "./queries";
 
 export function subscribeEvents(): void {
   const queryCache = useQueryCache();
@@ -30,6 +30,8 @@ export function subscribeEvents(): void {
     void queryCache.invalidateQueries({ key: installKeys.all });
     void queryCache.invalidateQueries({ key: languageKeys.all });
   });
+  // a file changed on disk is read again; an editor with nothing unsaved shows the new text
+  Events.On("fs:changed", ({ data }) => void queryCache.invalidateQueries({ key: fileKeys.text(data.path) }));
   Events.On("wiki:updated", ({ data }) => {
     void queryCache.invalidateQueries({ key: wikiKeys.all });
     if (data.error) toast.add({ title: "Wiki fetch failed", description: data.error, color: "error" });

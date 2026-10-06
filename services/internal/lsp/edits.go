@@ -50,7 +50,7 @@ type InlayHint struct {
 
 // Format is the edits that indent a script file with tabs by brace depth, or a localization file's
 // entries with one space. Only leading whitespace changes; other formats are left alone.
-func Format(sess *session.Session, path string) ([]TextEdit, error) {
+func Format(sess *session.Session, path, unit string) ([]TextEdit, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -73,7 +73,7 @@ func Format(sess *session.Session, path string) ([]TextEdit, error) {
 	switch file.place.Format {
 	case source.Script:
 		for i, depth := range file.parsed.LineIndents() {
-			fix(i, strings.Repeat("\t", depth))
+			fix(i, strings.Repeat(unit, depth))
 		}
 	case source.Loc:
 		for i := 1; i < lines.LineCount(); i++ {

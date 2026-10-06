@@ -1,0 +1,295 @@
+/**
+ * The IDE's client state: the editor groups, their tabs and where they sit, the files with unsaved edits, the open
+ * files' problems, the caret, a place a tab is asked to show, and which panes are open. The editors themselves are
+ * the CodeEditor components', the files' text ide/monacoEditor.ts's.
+ */
+import { computed, ref, shallowRef } from "vue";
+import { defineStore } from "pinia";
+import { useLocalStorage } from "@vueuse/core";
+import { DidClose } from "@services/ideservice";
+import type { Diagnostic } from "@services/internal/lsp";
+import { pathKey } from "../composables/useIdeRoots";
+import { useWorkspaceStore } from "./workspace";
+
+/** An editor group: its tabs in order and the one shown. */
+export type Group = { id: number; files: string[]; active: string };
+/** Where the groups sit: a group, or parts side by side (a row) or stacked (a column), each part's share of it. */
+export type Layout = { group: number } | { split: "row" | "column"; parts: Layout[]; sizes: number[] };
+/** Where a tab dropped on a group goes: a new group on one of its edges, or the group itself. */
+export type Edge = "left" | "right" | "up" | "down" | "middle";
+/** A place a tab is asked to show: a 0-based line and UTF-8 byte column, as the backend counts. */
+export type Place = { path: string; line: number; col: number };
+/** A row of the panel's Search results, a text search's hit or a reference: its file by origin, its line and span. */
+export type Result = Place & { rel: string; origin: string; end: number; preview: string };
+/** What the Search results tab shows: what was looked for, its rows so far, and whether it is done or capped. */
+export type Results = { title: string; rows: Result[]; done: boolean; capped: boolean };
+
+/** A layout with a group put beside another, on one of its edges. */
+function beside(node: Layout, target: number, edge: Exclude<Edge, "middle">, added: number): Layout {
+  const split = edge === "left" || edge === "right" ? "row" : "column";
+  const first = edge === "left" || edge === "up";
+  if ("group" in node) {
+    if (node.group !== target) return node;
+    return { split, parts: first ? [{ group: added }, node] : [node, { group: added }], sizes: [0.5, 0.5] };
+  }
+  const at = node.parts.findIndex((part) => "group" in part && part.group === target);
+  // a group beside its sibling in the same direction shares that sibling's room
+  if (node.split === split && at >= 0) {
+    const parts = [...node.parts];
+    const sizes = [...node.sizes];
+    const half = (sizes[at] ?? 1) / 2;
+    sizes[at] = half;
+    parts.splice(first ? at : at + 1, 0, { group: added });
+    sizes.splice(first ? at : at + 1, 0, half);
+    return { ...node, parts, sizes };
+  }
+  return { ...node, parts: node.parts.map((part) => beside(part, target, edge, added)) };
+}
+
+/** A layout without a group; a split left with one part becomes that part. */
+function without(node: Layout, gone: number): Layout | null {
+  if ("group" in node) return node.group === gone ? null : node;
+  const kept = node.parts.map((part, i) => ({ part: without(part, gone), size: node.sizes[i] ?? 0 })).filter((one) => one.part);
+  if (kept.length === 1) return kept[0]?.part ?? null;
+  const total = kept.reduce((sum, one) => sum + one.size, 0) || 1;
+  return kept.length ? { ...node, parts: kept.map((one) => one.part as Layout), sizes: kept.map((one) => one.size / total) } : null;
+}
+
+/** The group at a layout's top right, whose tab strip ends with the Wiki button. */
+function corner(node: Layout): number {
+  if ("group" in node) return node.group;
+  const part = node.split === "row" ? node.parts.at(-1) : node.parts[0];
+  return part ? corner(part) : 0;
+}
+
+/** A layout's groups in order. */
+function order(node: Layout): number[] {
+  return "group" in node ? [node.group] : node.parts.flatMap(order);
+}
+
+export const useIdeStore = defineStore("ide", () => {
+  const workspace = useWorkspaceStore();
+  const groups = ref<Group[]>([{ id: 1, files: [], active: "" }]);
+  const layout = ref<Layout>({ group: 1 });
+  const focused = shallowRef(1);
+  const unsaved = ref(new Set<string>());
+  const problems = ref(new Map<string, Diagnostic[]>());
+  /** The caret: its line, its column in the editor's characters and in UTF-8 bytes (`col`), as the backend counts. */
+  const caret = shallowRef<{ line: number; character: number; col: number } | null>(null);
+  const place = shallowRef<Place | null>(null);
+  const results = shallowRef<Results | null>(null);
+  // the files selected in the explorer, which the palette compares; the file picked to compare with another
+  const selected = shallowRef<string[]>([]);
+  const comparing = shallowRef("");
+  // the Markdown files shown Rich rather than as their text
+  const rich = ref(new Set<string>());
+  // a tab being dragged, and the group it is dragged from
+  const dragging = shallowRef<{ path: string; from: number } | null>(null);
+  const sidebar = useLocalStorage<"explorer" | "search">("pmt.ide.sidebar", "explorer");
+  const panel = useLocalStorage<"problems" | "search" | "">("pmt.ide.panel", "problems");
+  const wikiOpen = useLocalStorage("pmt.ide.wikiOpen", false);
+  // each workspace's groups and where they sit, kept on this computer
+  const layouts = useLocalStorage<Record<string, { layout: Layout; groups: Group[] }>>("pmt.ide.layouts", {});
+
+  const group = (id: number) => groups.value.find((one) => one.id === id);
+  /** The file shown in the focused group. */
+  const activePath = computed(() => group(focused.value)?.active ?? "");
+  /** Every open file once, in the groups' order. */
+  const openFiles = computed(() => [...new Set(groups.value.flatMap((one) => one.files))]);
+  const cornerGroup = computed(() => corner(layout.value));
+
+  /** A path as an open tab spells it, else as given. */
+  const spelled = (file: string) => openFiles.value.find((open) => pathKey(open) === pathKey(file)) ?? file;
+
+  /** Show a file: in the focused group if it has it, else the first that does, else after the focused group's tab;
+   * at a place when given one. */
+  function open(file: string, at?: { line: number; col?: number }): void {
+    const path = spelled(file);
+    const target = [group(focused.value), ...groups.value].find((one) => one?.files.includes(path)) ?? group(focused.value) ?? groups.value[0];
+    if (!target) return;
+    if (!target.files.includes(path)) target.files.splice(target.files.indexOf(target.active) + 1, 0, path);
+    target.active = path;
+    focused.value = target.id;
+    if (at) place.value = { path, line: at.line, col: at.col ?? 0 };
+  }
+
+  /** A file edited where no tab shows it (a peek): a tab after the focused group's, the shown tab kept. */
+  function adopt(file: string): void {
+    const target = group(focused.value);
+    if (!target || openFiles.value.some((open) => pathKey(open) === pathKey(file))) return;
+    target.files.splice(target.files.indexOf(target.active) + 1, 0, file);
+    if (!target.active) target.active = file;
+  }
+
+  /** Take a tab out of a group: its neighbor shows, and an emptied group goes unless it is the last. */
+  function remove(id: number, path: string): void {
+    const from = group(id);
+    if (!from) return;
+    const at = from.files.indexOf(path);
+    if (at < 0) return;
+    from.files.splice(at, 1);
+    if (from.active === path) from.active = from.files[Math.min(at, from.files.length - 1)] ?? "";
+    if (from.files.length || groups.value.length < 2) return;
+    groups.value = groups.value.filter((one) => one !== from);
+    layout.value = without(layout.value, id) ?? { group: groups.value[0]?.id ?? 1 };
+    if (focused.value === id) focused.value = order(layout.value)[0] ?? 1;
+  }
+
+  /** Close a file's tab in a group; a file in no group any more is forgotten, the backend too. */
+  function closeIn(id: number, path: string): void {
+    remove(id, path);
+    if (openFiles.value.includes(path)) return;
+    unsaved.value.delete(path);
+    problems.value.delete(path);
+    void DidClose(workspace.activeWorkspaceId, path).catch(() => undefined);
+  }
+
+  /** Close a file in every group. */
+  function close(path: string): void {
+    for (const one of [...groups.value]) closeIn(one.id, path);
+  }
+
+  /** The tabs of a file or folder moved on disk follow it; those of one deleted close. */
+  function moved(from: string, to?: string): void {
+    const base = pathKey(from);
+    for (const path of openFiles.value) {
+      const key = pathKey(path);
+      if (key !== base && !key.startsWith(`${base}/`)) continue;
+      if (!to) {
+        close(path);
+        continue;
+      }
+      const next = to + path.slice(from.length);
+      for (const one of groups.value) {
+        one.files = one.files.map((file) => (file === path ? next : file));
+        if (one.active === path) one.active = next;
+      }
+      unsaved.value.delete(path);
+      problems.value.delete(path);
+    }
+  }
+
+  /** A new group on an edge of another, showing a file. */
+  function splitAt(id: number, edge: Exclude<Edge, "middle">, path: string): void {
+    const added = Math.max(...groups.value.map((one) => one.id)) + 1;
+    groups.value.push({ id: added, files: [path], active: path });
+    layout.value = beside(layout.value, id, edge, added);
+    focused.value = added;
+  }
+
+  /** A tab dropped on a group: on an edge it moves into a new group there, in the middle into the group, before a
+   * tab when dropped on it. */
+  function drop(path: string, from: number, to: number, edge: Edge, before?: string): void {
+    const source = group(from);
+    const target = group(to);
+    if (!source || !target) return;
+    if (edge !== "middle") {
+      // a group's only tab splits nothing off it
+      if (from === to && source.files.length < 2) return;
+      remove(from, path);
+      return splitAt(to, edge, path);
+    }
+    if (from !== to) remove(from, path);
+    const files = target.files.filter((file) => file !== path);
+    const at = before ? files.indexOf(before) : -1;
+    files.splice(at < 0 ? files.length : at, 0, path);
+    target.files = files;
+    target.active = path;
+    focused.value = to;
+  }
+
+  /** A group's file (the focused group's shown one by default) shown in a new group beside it as well. */
+  function split(edge: "right" | "down", path = activePath.value, id = focused.value): void {
+    if (path) splitAt(id, edge, path);
+  }
+
+  /** Move the room between a split's part and the next: the part's new share of the split. */
+  function resize(node: Extract<Layout, { split: string }>, part: number, share: number): void {
+    const pair = (node.sizes[part] ?? 0) + (node.sizes[part + 1] ?? 0);
+    node.sizes[part] = share;
+    node.sizes[part + 1] = pair - share;
+  }
+
+  /** The focused group's file moved into the next group, made on the right if there is none. */
+  function moveToNext(): void {
+    const path = activePath.value;
+    const ids = order(layout.value);
+    const next = ids[(ids.indexOf(focused.value) + 1) % ids.length];
+    if (!path) return;
+    if (next === undefined || next === focused.value) return drop(path, focused.value, focused.value, "right");
+    drop(path, focused.value, next, "middle");
+  }
+
+  /** Mark a file unsaved or not, under its tab's spelling of its path. */
+  function setUnsaved(file: string, on: boolean): void {
+    const path = spelled(file);
+    if (on) unsaved.value.add(path);
+    else unsaved.value.delete(path);
+  }
+
+  /** A workspace's saved tabs, in the groups they were in where this computer kept them, else in one group. */
+  function restore(id: string, files: string[], active: string): void {
+    const keys = new Set(files.map(pathKey));
+    const kept = (layouts.value[id]?.groups ?? [])
+      .map((one) => ({ ...one, files: one.files.filter((file) => keys.has(pathKey(file))) }))
+      .filter((one) => one.files.length);
+    let shape: Layout | null = layouts.value[id]?.layout ?? null;
+    for (const one of layouts.value[id]?.groups ?? []) if (!kept.some((k) => k.id === one.id) && shape) shape = without(shape, one.id);
+    const placed = new Set(kept.flatMap((one) => one.files.map(pathKey)));
+    const rest = files.filter((file) => !placed.has(pathKey(file)));
+    if (!kept.length || !shape) {
+      kept.splice(0, kept.length, { id: 1, files: [], active: "" });
+      shape = { group: 1 };
+    }
+    kept[0]?.files.push(...rest);
+    for (const one of kept) if (!one.files.includes(one.active)) one.active = one.files[0] ?? "";
+    // the file shown last is shown again, in the group that has it
+    const home = kept.find((one) => one.files.some((file) => pathKey(file) === pathKey(active)));
+    if (home) home.active = home.files.find((file) => pathKey(file) === pathKey(active)) ?? home.active;
+    groups.value = kept;
+    layout.value = shape;
+    focused.value = home?.id ?? kept[0]?.id ?? 1;
+    unsaved.value.clear();
+    problems.value.clear();
+    caret.value = null;
+  }
+
+  /** Keep a workspace's groups and where they sit. */
+  function remember(id: string): void {
+    layouts.value = { ...layouts.value, [id]: { layout: layout.value, groups: groups.value } };
+  }
+
+  return {
+    groups,
+    layout,
+    focused,
+    unsaved,
+    problems,
+    caret,
+    place,
+    results,
+    selected,
+    comparing,
+    rich,
+    dragging,
+    sidebar,
+    panel,
+    wikiOpen,
+    activePath,
+    openFiles,
+    cornerGroup,
+    group,
+    open,
+    adopt,
+    closeIn,
+    close,
+    moved,
+    drop,
+    split,
+    resize,
+    moveToNext,
+    setUnsaved,
+    restore,
+    remember,
+  };
+});

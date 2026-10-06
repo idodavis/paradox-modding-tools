@@ -9,12 +9,11 @@ what the three games actually do**, measured against real installs with a
 reproduction per claim — start there when a game update breaks something, and
 before changing the schema stage or the entry detector.
 
-## Guide, not Helper
+## Wiki pane, not Guide or Helper
 
-The product pane beside the IDE editor is **Guide**. The SFC is `GuidePane.vue`.
-The monaco-vscode custom view id is `pmt.guide`. Prefs are `pmt.guide.*` /
-`ui.guide.*`. RPC is `WikiService.Guide`. Do not say Helper, HelperPane,
-`pmt.helper`, `WikiGuide`, or `ide.helperWidth`.
+The pane beside the IDE editor is the **Wiki** pane (R12). The SFC is `components/ide/WikiPane.vue`, its
+preferences `useWikiPrefs.ts` and the keys `ui.wiki.*`. The RPC keeps its name, `WikiService.Guide`. Do not say
+Helper, HelperPane, `pmt.helper`, `WikiGuide`, `ide.helperWidth`, or GuidePane.
 
 ## Three things people call “docs”
 
@@ -50,7 +49,7 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 
 | Concept | Canonical | Kill |
 |---|---|---|
-| Product pane | Guide, `GuidePane`, `pmt.guide`, `ui.guide.*` | Helper, HelperPane, `pmt.helper`, `ui.helper`, `ide.helperWidth`, `WikiGuide` |
+| Product pane | the Wiki pane, `WikiPane`, `ui.wiki.*` | Guide pane, `GuidePane`, `ui.guide.*`, Helper, HelperPane, `pmt.helper`, `ui.helper`, `ide.helperWidth`, `WikiGuide` |
 | Guide RPC | `WikiService.Guide` | `SessionService.WikiGuide`; query key `wiki-guide` → `guide` |
 | Events | `lang:ready`, `lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`, `wiki:updated` | `docs:wiki-*` |
 | Package / load | `package wiki`, `LoadGuides`, `guidesPath()` | `package docs`, `LoadDocs`, persist `docsPath()` |
@@ -139,8 +138,8 @@ Only a declared claim that is fresh and that no evidence contradicts lets a diag
 | `AppDir`, `CacheDir`, `Write`, `Encode`, `Decode`, `CopyFile`; `ReadListingFields`, `WriteListingFields`, `FindThumbnail`, `CopyThumbnail`, `WriteNewMod` | `services/internal/local` — this machine's files: the app's own, a mod's Paradox files |
 | `Library`, `Publish`, `Serve` (a publish run as a second copy of the app); `MarkdownToBBCode`, `BBCodeToMarkdown`; `EnsureDescriptions`, `DescriptionFiles`; `ScanPreviews`, `AddPreview`, `AddVideo`; `CopyMod` | `services/internal/steam` — everything the Steam Workshop reads |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
-| Guide UI | `GuidePane.vue`, a Nuxt column beside the workbench (`pmt.guide`) |
-| Editor client | `frontend/src/ide/editorCore.ts` (payload → display, no framework) + `ide/languageClient.ts` (the one adapter to the workbench) |
+| Wiki pane | `components/ide/WikiPane.vue`, beside the IDE's editor |
+| Editor | Monaco: `frontend/src/lib/code.ts` (its setup, languages and theme) + `ide/monacoEditor.ts` (the IDE's models and providers) + `ide/editorCore.ts` (UTF-8 and UTF-16 columns) |
 | Graph layout | frontend `useEventGraph` + `@dagrejs/dagre` |
 
 ## Diagnostic codes

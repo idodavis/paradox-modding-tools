@@ -47,6 +47,9 @@
   --text-28--font-weight: 600;
   --text-28--letter-spacing: -0.02em;
   /* badges and keys */
+  /* the boards' .code: 12.5 / 20 */
+  --text-code: 0.78125rem;
+  --text-code--line-height: 1.25rem;
   --text-tiny: 0.65625rem;
   --text-tiny--line-height: 1;
   --radius-chip: 0.3125rem;
@@ -257,6 +260,7 @@
   --ui-info: var(--blue);
   --ui-warning: var(--orange);
   --ui-error: var(--red);
+  --ui-purple: var(--purple);
 }
 
 @layer base {
@@ -295,13 +299,9 @@
   *:hover::-webkit-scrollbar-thumb {
     background: var(--line-2);
   }
-  .monaco-workbench,
-  .monaco-workbench * {
-    scrollbar-width: auto;
-    scrollbar-color: auto;
-  }
-  .monaco-workbench ::-webkit-scrollbar {
-    width: unset;
-    height: unset;
-  }
+}
+
+/* Monaco (lib/code.ts): the active line's accent bar on its start, as the boards draw it */
+.monaco-editor .view-overlays .current-line {
+  box-shadow: inset 2px 0 0 var(--accent);
 }

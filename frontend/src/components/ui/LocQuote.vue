@@ -5,16 +5,14 @@
  * grammar's colors (`lib/code.ts`'s `locTokens`), its \n are line breaks, none kept at either end.
  */
 import { computed } from "vue";
-import { computedAsync } from "@vueuse/core";
 import { locTokens } from "../../lib/code";
 
 const { text, bare = false } = defineProps<{ text: string; bare?: boolean }>();
 
 const value = computed(() => text.replace(/^(\\n)+|(\\n)+\s*$/g, ""));
-const tokens = computedAsync(() => locTokens(value.value), null);
-// each token's \n a line break; the plain text until the grammar loads
+// each token's \n a line break
 const parts = computed(() =>
-  (tokens.value ?? [{ content: value.value }]).flatMap(({ content, color }) =>
+  locTokens(value.value).flatMap(({ content, color }) =>
     content.split(/(\\n)/).filter(Boolean).map((part) => ({ part, color, br: part === "\\n" })),
   ),
 );

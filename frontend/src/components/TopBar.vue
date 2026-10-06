@@ -2,19 +2,17 @@
 /**
  * The top bar on every page (the boards' .topbar): PMT and the Library, the workspace switcher and the
  * workspace's page tabs, then its scan, search, light and dark, and Settings. On a workspace's page it
- * builds the workspace's session and mounts its folders in the workbench behind the pages, until the IDE
- * leaves Monaco.
+ * builds the workspace's session.
  */
-import { computed, useTemplateRef, watch } from "vue";
+import { computed, useTemplateRef } from "vue";
 import { useRoute } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import { useElementSize, useTimeAgo } from "@vueuse/core";
 import type { DropdownMenuItem } from "@nuxt/ui";
-import type { IdeRoots } from "@services/models";
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
-import CommandPalette from "./CommandPalette.vue";
+import { openPalette } from "./CommandPalette.vue";
 import { useLanguageHealth } from "../composables/useLanguageHealth";
-import { ideRootsQuery, sessionQuery, workspacesQuery } from "../queries";
+import { sessionQuery, workspacesQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 import { isWorkspacePage, WORKSPACE_TOOLS, workspaceHomeRoute } from "../workspaceTools";
@@ -22,7 +20,6 @@ import { isWorkspacePage, WORKSPACE_TOOLS, workspaceHomeRoute } from "../workspa
 const route = useRoute();
 const store = useWorkspaceStore();
 const settings = useSettingsStore();
-const toast = useToast();
 
 /** The workspace whose page is open; none on the Library and the wizard. */
 const routeId = computed(() => ("id" in route.params ? route.params.id : ""));
@@ -30,27 +27,6 @@ const routeId = computed(() => ("id" in route.params ? route.params.id : ""));
 const { data: workspaces } = useQuery(workspacesQuery);
 useQuery(() => sessionQuery(routeId.value));
 const { health, scan } = useLanguageHealth(() => store.activeWorkspaceId);
-
-// the folders need no session, so they mount at once and a switch shows the new workspace's
-const { data: roots } = useQuery(() => ideRootsQuery(routeId.value));
-watch(roots, (rec) => {
-  if (rec?.roots?.length) void mount(routeId.value, rec);
-});
-
-async function mount(id: string, rec: IdeRoots): Promise<void> {
-  const { setWorkbenchRoots } = await import("../ide/workbenchHost");
-  try {
-    await setWorkbenchRoots(rec.roots ?? [], {
-      workspaceId: id,
-      persistTabs: !rec.resetIdeOnOpen,
-      openFiles: rec.ideOpenFiles ?? [],
-      activeFile: rec.ideActiveFile ?? "",
-      hideExplorerBinaries: rec.hideExplorerBinaries,
-    });
-  } catch (e) {
-    toast.add({ title: "The IDE could not open this workspace", description: String(e), color: "error" });
-  }
-}
 
 const TAB = "flex h-11 items-center gap-1.5 px-2.5 -mb-px border-b-2 text-13 font-medium whitespace-nowrap";
 function tabClass(on: boolean): string[] {
@@ -111,11 +87,12 @@ const scanned = useTimeAgo<"second" | "minute" | "hour" | "day" | "week" | "mont
 /** "1.14.2 scanned 4 min ago"; a narrow bar keeps the age. */
 const scanText = computed(() => [compact.value ? "" : health.value?.gameVersion, `scanned ${scanned.value}`].filter(Boolean).join(" "));
 
-const palette = useOverlay().create(CommandPalette);
-function openPalette(): void {
-  void palette.open();
-}
-defineShortcuts({ meta_k: openPalette });
+// with a modifier, so they work while typing too (the editor's text is an input to Nuxt UI)
+defineShortcuts({
+  meta_k: { handler: () => openPalette(), usingInput: true },
+  meta_shift_p: { handler: () => openPalette(), usingInput: true },
+  meta_p: { handler: () => openPalette(""), usingInput: true },
+});
 </script>
 
 <template>
@@ -185,7 +162,7 @@ defineShortcuts({ meta_k: openPalette });
         <span v-else>Not scanned</span>
       </div>
       <UTooltip text="Search and commands" :kbds="['meta', 'K']">
-        <UButton icon="i-lucide-search" variant="ghost" size="sm" square aria-label="Search and commands" @click="openPalette" />
+        <UButton icon="i-lucide-search" variant="ghost" size="sm" square aria-label="Search and commands" @click="openPalette()" />
       </UTooltip>
       <UTooltip :text="settings.mode === 'dark' ? 'Switch to light' : 'Switch to dark'">
         <UButton
@@ -210,4 +187,5 @@ defineShortcuts({ meta_k: openPalette });
       </UTooltip>
     </div>
   </header>
+  <CommandPalette />
 </template>

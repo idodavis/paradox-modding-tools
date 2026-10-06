@@ -31,10 +31,10 @@ export const PAGES = {
     workspace: true,
     tab: true,
     help: [
-      "Folders come from this workspace: your mods, then the game files. Game files are read only; edit in a mod folder. Search and Ctrl+P index every folder.",
+      "The explorer shows this workspace's mods, then the game's files, which are read only; edit in a mod folder. Ctrl P finds a file, Ctrl Shift F searches the files' text.",
       "Deleting a mod's root folder in the explorer also removes it from this workspace; files inside a mod delete normally.",
       "Open tabs are kept across a workspace switch and a restart unless you turn that off in Settings › General. The editor's text sizes and checks are in the IDE settings (the gear).",
-      "The Guide tab on the editor's right edge opens a wiki pane for the file you are in.",
+      "The Wiki button at the end of the editor's tabs (Ctrl Shift W) opens the wiki's pages for the file you are in.",
     ],
   },
   "event-graph": {
@@ -46,7 +46,7 @@ export const PAGES = {
       "Pick a root event to see what it fires and what fires it. Origins filter which mods (and game files) feed the graph.",
       "Namespace narrows the picker; leave it empty to search every id. Double-click a node to re-root. Drag is temporary until you change layout or root.",
       "Recenter only pans to fit — it does not undo a layout change.",
-      "Hover an event id in the IDE (the definition or a trigger_event) for Open in Event Graph.",
+      "In the IDE, Ctrl Shift G or the right-click menu opens the event under the cursor in the Event Graph.",
     ],
   },
   health: {

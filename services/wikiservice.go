@@ -10,6 +10,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/wiki"
 )
 
@@ -31,12 +32,13 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	if place.Origin == "" {
 		return &wiki.Guide{}, nil
 	}
-	database := ""
+	database, kind := "", ""
 	if place.Database != nil {
-		database = place.Database.Name
+		database, kind = place.Database.Name, game.KindName(place.Database.Name)
 	}
 	return &wiki.Guide{
 		Database:    database,
+		Kind:        kind,
 		Pages:       wiki.PagesFor(sess.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel),
 		Attribution: wiki.Attribution(sess.Game.ID),
 	}, nil

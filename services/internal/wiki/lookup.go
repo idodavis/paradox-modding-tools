@@ -221,6 +221,7 @@ const (
 // Guide is the WikiService.Guide payload: the open file's database and its Guide tabs.
 type Guide struct {
 	Database    string `json:"database"`
+	Kind        string `json:"kind"` // what one of its database is called (game.KindName)
 	Pages       []Page `json:"pages"`
 	Attribution string `json:"attribution"`
 }

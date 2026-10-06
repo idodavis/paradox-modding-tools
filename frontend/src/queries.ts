@@ -11,10 +11,11 @@ import { ReadEditableBase64, ReadFileBase64 } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { EventGraph, Params, Roots, SourceAt } from "@services/models";
-import { DiagnosticCodes } from "@services/ideservice";
+import { Definition, DiagnosticCodes, DocumentSymbols, Hover, References } from "@services/ideservice";
+import { FileSearch } from "@services/searchservice";
 import { CompareWithSteam, ListingSummary, LoadListing, UploadFiles } from "@services/releaseservice";
 import { EnsureSession, GetLanguageHealth } from "@services/sessionservice";
-import { PatchPage, Patches } from "@services/wikiservice";
+import { Guide, PatchPage, Patches } from "@services/wikiservice";
 import {
   DefaultModParent,
   FindGameInstalls,
@@ -60,7 +61,13 @@ export const languageKeys = {
   one: (id: string) => ["language", id] as const,
 };
 
-const ideKeys = { codes: ["ide", "codes"] as const };
+const ideKeys = {
+  codes: ["ide", "codes"] as const,
+  hover: (path: string, line: number, col: number) => ["ide", "hover", path, line, col] as const,
+  sites: (mode: string, path: string, line: number, col: number) => ["ide", "sites", mode, path, line, col] as const,
+  files: (id: string, pattern: string) => ["ide", "files", id, pattern] as const,
+  symbols: (path: string) => ["ide", "symbols", path] as const,
+};
 
 export const releaseKeys = {
   /** A mod's listing, and under it everything read of it. */
@@ -73,7 +80,7 @@ export const releaseKeys = {
 
 export const wikiKeys = {
   all: ["wiki"] as const,
-  guide: (...parts: string[]) => ["wiki", "guide", ...parts] as const,
+  guide: (id: string, path: string) => ["wiki", "guide", id, path] as const,
   patches: (gameId: string) => ["wiki", "patches", gameId] as const,
   patch: (gameId: string, version: string) => ["wiki", "patch", gameId, version] as const,
 };
@@ -187,6 +194,13 @@ export const patchPageQuery = defineQueryOptions(({ gameId, version }: { gameId:
   enabled: !!gameId && !!version,
 }));
 
+/** The wiki's pages for a file of a workspace, and the kind of file it is. */
+export const guideQuery = defineQueryOptions(({ id, path, enabled }: { id: string; path: string; enabled: boolean }) => ({
+  key: wikiKeys.guide(id, path),
+  query: () => Guide(id, path),
+  enabled: enabled && !!id && !!path,
+}));
+
 /** The source lines of the places a pane shows: a definition's statement, a reference's line. */
 export const linesQuery = defineQueryOptions(
   ({ id, places, live }: { id: string; places: SourceAt[]; live: boolean }) => ({
@@ -202,6 +216,34 @@ export const locReadersQuery = defineQueryOptions(({ id, key, live }: { id: stri
   query: () => LocReaders(id, key),
   enabled: !!id && live && !!key,
 }));
+
+/** What a word is, at a place of a file (a 0-based line and UTF-8 byte column). */
+export const hoverQuery = defineQueryOptions(({ id, path, line, col }: { id: string; path: string; line: number; col: number }) => ({
+  key: ideKeys.hover(path, line, col),
+  query: () => Hover(id, path, line, col),
+}));
+
+/** The files whose path holds a text, in the IDE's folders. */
+export const filesQuery = defineQueryOptions(({ id, pattern, folders }: { id: string; pattern: string; folders: string[] }) => ({
+  key: ideKeys.files(id, pattern),
+  query: () => FileSearch({ filePattern: pattern, maxResults: 50, folders: folders.map((path) => ({ path })) }),
+  enabled: !!id && !!pattern && folders.length > 0,
+}));
+
+/** The names a file defines. */
+export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
+  key: ideKeys.symbols(path),
+  query: async () => (await DocumentSymbols(id, path)) ?? [],
+  enabled: !!id && !!path,
+}));
+
+/** A word's definitions, or every place that names it, from a place of a file. */
+export const sitesQuery = defineQueryOptions(
+  ({ id, path, line, col, mode }: { id: string; path: string; line: number; col: number; mode: "definition" | "references" }) => ({
+    key: ideKeys.sites(mode, path, line, col),
+    query: async () => ((await (mode === "definition" ? Definition : References)(id, path, line, col)) ?? []),
+  }),
+);
 
 export const codesQuery = defineQueryOptions({
   key: ideKeys.codes,
@@ -266,14 +308,21 @@ export const imageQuery = defineQueryOptions((path: string) => ({
   enabled: !!path,
 }));
 
-/** A text file's contents, read as the editor reads them; none when it cannot be read. */
+/**
+ * A text file as the editor reads it: its text without the byte order mark (none for a binary or too large a
+ * file, and why), and whether it had one.
+ */
+export async function readText(path: string): Promise<{ text?: string; reject: string; bom: boolean }> {
+  const file = await ReadEditableBase64(path);
+  if (!file.exists || file.reject) return { reject: file.reject || "The file is not there.", bom: false };
+  const bytes = Uint8Array.from(atob(file.b64 ?? ""), (c) => c.charCodeAt(0));
+  const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+  return { text: new TextDecoder().decode(bytes), reject: "", bom };
+}
+
 export const textQuery = defineQueryOptions((path: string) => ({
   key: fileKeys.text(path),
-  query: async () => {
-    const file = await ReadEditableBase64(path);
-    if (!file.exists || file.reject) return undefined;
-    return new TextDecoder().decode(Uint8Array.from(atob(file.b64 ?? ""), (c) => c.charCodeAt(0)));
-  },
+  query: () => readText(path),
   enabled: !!path,
 }));
 

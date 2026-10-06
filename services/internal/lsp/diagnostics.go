@@ -258,7 +258,7 @@ func (judge *judge) references(refs []index.Ref) {
 		case events:
 			code, message = "unknown-event", "no event is named "+ref.Name
 		case linked:
-			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", heading(ref.Database), ref.Name)
+			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.Name)
 		case position == nil || written != ref.Name:
 			continue
 		case !sch.Speaks(schema.ClaimValue, position, nil):
@@ -266,7 +266,7 @@ func (judge *judge) references(refs []index.Ref) {
 		case position.Value.Value.Type == schema.WordFile && ref.Database == index.File:
 			code, message = "missing-file", ref.Name+" exists nowhere in the install or the mods"
 		case position.Value.Value.Type == schema.WordReference && position.Value.Value.Database == ref.Database:
-			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", heading(ref.Database), ref.Name)
+			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.Name)
 		default:
 			continue
 		}

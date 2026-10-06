@@ -13,7 +13,7 @@ const { data: before } = useQuery(() => textQuery(files?.[0] ?? ""));
 const { data: after } = useQuery(() => textQuery(files?.[1] ?? ""));
 
 const counts = computed(() => {
-  const [old, now] = texts ?? [files?.[0] ? before.value : "", files?.[1] ? after.value : ""];
+  const [old, now] = texts ?? [files?.[0] ? before.value?.text : "", files?.[1] ? after.value?.text : ""];
   return old === undefined || now === undefined ? undefined : lineCounts(old, now);
 });
 </script>

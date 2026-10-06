@@ -35,6 +35,27 @@ function familyOf(id: string | undefined): ThemeFamily {
   return THEMES.find((t) => t.id === id) ?? PMT;
 }
 
+/** The IDE's switches by key, each with its default (the IdeSettings board). */
+export const IDE_SWITCHES = {
+  "ide.wordWrap": false,
+  "ide.closeBrackets": true,
+  "ide.minimap": true,
+  "ide.indentGuides": true,
+  "ide.bracketColors": true,
+  "ide.whitespace": false,
+  "ide.folding": true,
+  "ide.hover": true,
+  "ide.complete": true,
+  "ide.predict": true,
+  "ide.signature": true,
+  "ide.stickyFolders": true,
+  "ide.gameFiles": true,
+  "ide.rootColors": true,
+  "ide.followFile": true,
+  "ui.wiki.follow": true,
+} as const;
+export type IdeSwitch = keyof typeof IDE_SWITCHES;
+
 /** Interface scale steps, in percent. */
 export const FONT_SCALES = [80, 90, 100, 110, 120, 130, 140, 150] as const;
 const EDITOR_FONT = { min: 10, max: 24 } as const;
@@ -153,7 +174,31 @@ export const useSettingsStore = defineStore("settings", () => {
     return set(`ide.diag.${code}`, on ? "on" : "off");
   }
 
-  // the one place the theme reaches the page and Nuxt UI's color mode; the IDE watches it (ide/themeBridge.ts)
+  /** An IDE switch: the stored choice, else its default. */
+  function ideOn(key: IdeSwitch): boolean {
+    const stored = values.value[key];
+    return stored ? stored === "on" : IDE_SWITCHES[key];
+  }
+
+  function setIde(key: IdeSwitch, on: boolean): Promise<void> {
+    return set(key, on ? "on" : "off");
+  }
+
+  // a new line's indentation and Format document's (ideservice.go reads the same keys)
+  const indentSpaces = computed(() => values.value["ide.indent"] === "spaces");
+  const indentSize = computed(() => clamp(Number(values.value["ide.indentSize"]) || 4, 1, 8));
+  const indentUnit = computed(() => (indentSpaces.value ? " ".repeat(indentSize.value) : "\t"));
+  const treeDensity = computed(() => (values.value["ide.density"] === "comfortable" ? "comfortable" : "compact"));
+  // the editors' and compares' code: the font named (one installed, else Geist Mono), its size and line height
+  const editorFont = computed(() => values.value["ui.editorFont"]?.trim() || "Geist Mono");
+  const roomy = computed(() => values.value["ide.lineHeight"] === "roomy");
+  const codeFont = computed(() => ({
+    fontFamily: [...new Set([editorFont.value.replaceAll('"', ""), "Geist Mono"])].map((font) => `"${font}"`).join(", ") + ", monospace",
+    fontSize: editorFontSize.value,
+    lineHeight: roomy.value ? 1.6 : 1.35,
+  }));
+
+  // the one place the theme reaches the page and Nuxt UI's color mode
   const colorMode = useColorMode();
   watch(
     activeTheme,
@@ -194,6 +239,15 @@ export const useSettingsStore = defineStore("settings", () => {
     showTool,
     checkOn,
     setCheck,
+    ideOn,
+    setIde,
+    indentSpaces,
+    indentSize,
+    indentUnit,
+    treeDensity,
+    editorFont,
+    roomy,
+    codeFont,
     reset,
   };
 });

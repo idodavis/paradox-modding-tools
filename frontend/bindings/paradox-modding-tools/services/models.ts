@@ -694,6 +694,24 @@ export interface TextPart {
 }
 
 /**
+ * TextReplaceQuery is a Replace all from the IDE's search: the search, over the mods' folders only (the game's
+ * files are never written), the text each match becomes, and the files the editor holds, which it changes itself.
+ */
+export interface TextReplaceQuery {
+    "search": TextSearchQuery;
+    "text": string;
+    "skip": string[] | null;
+}
+
+/**
+ * TextReplaceResult is how many matches a Replace all changed, in how many files.
+ */
+export interface TextReplaceResult {
+    "replaced": number;
+    "files": number;
+}
+
+/**
  * TextSearchFolder is one workspace folder plus optional glob filters.
  */
 export interface TextSearchFolder {
@@ -707,6 +725,16 @@ export interface TextSearchFolder {
  */
 export interface TextSearchHit {
     "path": string;
+
+    /**
+     * its path from the folder it was found in, slash separated
+     */
+    "rel": string;
+
+    /**
+     * that folder's index in the query
+     */
+    "folder": number;
     "line": number;
     "col": number;
     "endCol": number;

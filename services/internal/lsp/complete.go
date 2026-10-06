@@ -142,7 +142,7 @@ func (completer *completer) names(database, spelled string, rank int, more ...st
 		return
 	}
 	for _, name := range append(index.Names(completer.file.sess.Indexes(), database), more...) {
-		completer.add(Item{Label: spelled + name, Head: heading(database), Rank: rank},
+		completer.add(Item{Label: spelled + name, Head: game.KindName(database), Rank: rank},
 			reading{ref: &index.Ref{Database: database, Name: name}})
 	}
 }

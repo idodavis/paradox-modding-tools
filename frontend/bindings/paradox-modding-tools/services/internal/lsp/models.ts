@@ -123,6 +123,11 @@ export interface Inspect {
     "leads"?: string;
 
     /**
+     * what a defined name's entries give: yes or no, a number
+     */
+    "returns"?: string;
+
+    /**
      * where it is defined, in load order
      */
     "sites"?: Location[] | null;
@@ -166,6 +171,11 @@ export interface Inspect {
      * the event graph draws it: it is or fires an event
      */
     "graphed"?: boolean;
+
+    /**
+     * the entry the cursor is in, then its blocks' keys
+     */
+    "within"?: string[] | null;
     "range": Range;
 }
 

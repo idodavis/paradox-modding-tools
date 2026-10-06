@@ -1,5 +1,5 @@
 /**
- * Vite config: Vue, Nuxt UI, Wails, Tailwind, monaco-vscode workers/CSS.
+ * Vite config: Vue, Nuxt UI, Wails, Tailwind.
  */
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
@@ -74,7 +74,7 @@ export default defineConfig({
     ui({
       colorMode: true,
       theme: {
-        colors: ["primary", "secondary", "success", "info", "warning", "error"],
+        colors: ["primary", "secondary", "success", "info", "warning", "error", "purple"],
       },
       ui: {
         // the type scale and the radii of themes.css, so merged classes keep them
@@ -256,6 +256,7 @@ export default defineConfig({
             { color: "info", variant: "soft", class: "bg-(--blue-soft) text-info" },
             { color: "warning", variant: "soft", class: "bg-(--orange-soft) text-warning" },
             { color: "error", variant: "soft", class: "bg-(--red-soft) text-error" },
+            { color: "purple", variant: "soft", class: "bg-(--purple-soft) text-(--purple)" },
           ],
           defaultVariants: { color: "neutral", variant: "soft" },
         },
@@ -275,39 +276,15 @@ export default defineConfig({
     }),
     wails("./bindings"),
     tailwindcss(),
-    {
-      name: "load-vscode-css-as-string",
-      enforce: "pre",
-      async resolveId(source, importer, options) {
-        const resolved = await this.resolve(source, importer, options);
-        if (resolved && resolved.id.match(/node_modules\/(@codingame\/monaco-vscode|vscode|monaco-editor).*\.css$/)) {
-          return { ...resolved, id: resolved.id + "?inline" };
-        }
-        return undefined;
-      },
-    },
-    {
-      name: "reload-on-workbench",
-      handleHotUpdate({ file, server }) {
-        if (/[\\/]src[\\/](ide[\\/]|App\.vue)/.test(file)) {
-          server.ws.send({ type: "full-reload" });
-          return [];
-        }
-      },
-    },
   ],
   server: {
     host: "127.0.0.1",
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
     strictPort: true,
   },
-  worker: { format: "es" },
   build: { target: "esnext" },
   optimizeDeps: {
     include: [
-      "vscode-textmate",
-      "vscode-oniguruma",
-      "vscode/localExtensionHost",
       "@nuxt/ui > prosemirror-state",
       "@nuxt/ui > prosemirror-transform",
       "@nuxt/ui > prosemirror-model",
@@ -320,6 +297,5 @@ export default defineConfig({
       "@services": path.resolve(import.meta.dirname, "bindings/paradox-modding-tools/services"),
       "@assets": path.resolve(import.meta.dirname, "src/assets"),
     },
-    dedupe: ["vscode", "monaco-editor"],
   },
 });

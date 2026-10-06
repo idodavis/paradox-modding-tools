@@ -4,7 +4,8 @@
  * macros; how many nodes are drawn; fit, fold every opened group, full screen, and the detail below or
  * beside. In full screen it floats over the canvas with Exit full screen (the EventGraphFull board's).
  */
-import { computed } from "vue";
+import { computed, useTemplateRef } from "vue";
+import { useElementSize } from "@vueuse/core";
 import type { Roots } from "@services/models";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { plural } from "../../lib/format";
@@ -33,6 +34,11 @@ const LAYOUTS = [
   { label: "Detail below", icon: "i-lucide-panel-bottom", value: "panel" },
   { label: "Detail beside", icon: "i-lucide-panel-right", value: "drawer" },
 ];
+
+// the root's kind sits over the field's end, as wide as its words: a long id stops before it (the badge, the slot's
+// 10px end padding and a gap)
+const kindBadge = useTemplateRef("kindBadge");
+const { width: kindWidth } = useElementSize(kindBadge, undefined, { box: "border-box" });
 
 // the hits under a head per kind, saying how many more the search holds; the root first when the
 // search does not hold it. The menu labels every item by id, so a head's id is its text.
@@ -66,7 +72,8 @@ const items = computed(() => {
       placeholder="An id, a namespace or a number"
       class="shrink-0"
       :class="full ? 'w-75' : 'w-95'"
-      :ui="{ base: ['font-mono', full ? 'ps-9' : 'ps-17'], content: 'min-w-120', itemLabel: 'whitespace-normal break-all' }"
+      :style="{ '--kind': `${kindWidth + 16}px` }"
+      :ui="{ base: ['font-mono', full ? 'ps-9' : 'ps-17', rootKind && 'pe-(--kind)'], content: 'min-w-120', itemLabel: 'whitespace-normal break-all' }"
     >
       <template #leading>
         <span class="flex items-center gap-2 text-12 text-muted">
@@ -74,7 +81,7 @@ const items = computed(() => {
           <span v-if="!full">Root</span>
         </span>
       </template>
-      <template v-if="rootKind" #trailing><UBadge :label="rootKind" color="info" size="sm" /></template>
+      <template v-if="rootKind" #trailing><UBadge ref="kindBadge" :label="rootKind" color="info" size="sm" /></template>
       <template #item-trailing="{ item }">
         <OriginChip v-if="item.origin" :label="store.originName(item.origin)" :color="store.originColor(item.origin)" small />
       </template>

@@ -47,7 +47,12 @@ const { mutate: create, isLoading: creating } = useMutation({
 </script>
 
 <template>
-  <UModal title="Create a mod" description="A descriptor, the game's mod folders, readmes and a localization file.">
+  <!-- one size, with the folder's line shown: neither the line nor a longer description (which scrolls) moves it -->
+  <UModal
+    title="Create a mod"
+    description="A descriptor, the game's mod folders, readmes and a localization file."
+    :ui="{ content: 'h-128' }"
+  >
     <template #body>
       <div class="flex flex-col gap-4">
         <UFormField label="Name" required>

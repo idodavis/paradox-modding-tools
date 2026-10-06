@@ -14,13 +14,7 @@ const router = createRouter({
     {
       path: "/workspace/:id",
       children: [
-        // the IDE's strip sits in the workbench, which App keeps mounted behind every page
-        {
-          path: "",
-          name: "workspace-ide",
-          components: { ide: () => import("../pages/WorkspaceIdePage.vue") },
-          props: { ide: true },
-        },
+        { path: "", name: "workspace-ide", component: () => import("../pages/WorkspaceIdePage.vue"), props: true },
         { path: "graph", name: "event-graph", component: () => import("../pages/EventGraphPage.vue"), props: true },
         {
           path: "health",

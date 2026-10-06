@@ -6,6 +6,11 @@
  */
 export interface Guide {
     "database": string;
+
+    /**
+     * what one of its database is called (game.KindName)
+     */
+    "kind": string;
     "pages": Page[] | null;
     "attribution": string;
 }

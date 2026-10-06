@@ -1,4 +1,4 @@
-// searchservice.go runs in-process Find in Files for the IDE workbench.
+// searchservice.go runs in-process Find in Files and Replace all for the IDE.
 
 package services
 
@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/services/internal/lang/source"
+	"paradox-modding-tools/services/internal/local"
 )
 
 // SearchService is the Wails RPC shell for Find in Files. A text search sends each file's hits to
@@ -53,6 +54,8 @@ type TextSearchQuery struct {
 // TextSearchHit is one match line mapped for monaco (0-based columns).
 type TextSearchHit struct {
 	Path    string `json:"path"`
+	Rel     string `json:"rel"`    // its path from the folder it was found in, slash separated
+	Folder  int    `json:"folder"` // that folder's index in the query
 	Line    int    `json:"line"`
 	Col     int    `json:"col"`
 	EndCol  int    `json:"endCol"`
@@ -70,6 +73,20 @@ type TextSearchHits struct {
 type TextSearchResult struct {
 	Found    int  `json:"found"`
 	LimitHit bool `json:"limitHit"`
+}
+
+// TextReplaceQuery is a Replace all from the IDE's search: the search, over the mods' folders only (the game's
+// files are never written), the text each match becomes, and the files the editor holds, which it changes itself.
+type TextReplaceQuery struct {
+	Search TextSearchQuery `json:"search"`
+	Text   string          `json:"text"`
+	Skip   []string        `json:"skip"`
+}
+
+// TextReplaceResult is how many matches a Replace all changed, in how many files.
+type TextReplaceResult struct {
+	Replaced int `json:"replaced"`
+	Files    int `json:"files"`
 }
 
 // FileSearchQuery is a filename search across workspace folders.
@@ -172,8 +189,9 @@ func compileSearchRegex(query TextSearchQuery) (*regexp.Regexp, error) {
 	return regexp.Compile(pattern)
 }
 
-// grepFile is path's matches; none where it can't be read, is empty, is over the size cap or is binary.
-func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) []TextSearchHit {
+// searchable is a file's bytes as a search reads them; none where it can't be read, is empty, is over the size cap
+// or is binary.
+func searchable(path string) []byte {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -190,8 +208,16 @@ func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) []Te
 		return nil
 	}
 	rest, err := io.ReadAll(file)
-	data := append(head, rest...)
-	if err != nil || !holds(data) {
+	if err != nil {
+		return nil
+	}
+	return append(head, rest...)
+}
+
+// grepFile is path's matches.
+func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) []TextSearchHit {
+	data := searchable(path)
+	if data == nil || !holds(data) {
 		return nil
 	}
 	text := string(data)
@@ -221,7 +247,7 @@ func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) []Te
 // textSearchFolder greps the files under root, sending each one's hits as it is done, at most maxHits
 // in all, and says how many it sent and whether it stopped at the cap.
 func textSearchFolder(
-	ctx context.Context, root string, gs globSet, re *regexp.Regexp, holds func(data []byte) bool, maxHits int,
+	ctx context.Context, root string, folder int, gs globSet, re *regexp.Regexp, holds func(data []byte) bool, maxHits int,
 	send func(hits []TextSearchHit),
 ) (found int, limitHit bool) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -242,6 +268,9 @@ func textSearchFolder(
 				return nil
 			}
 			fileHits := grepFile(path, re, holds)
+			for i := range fileHits {
+				fileHits[i].Rel, fileHits[i].Folder = filepath.ToSlash(rel), folder
+			}
 			// a file's hits are sent as it is done, as many as the cap leaves
 			mu.Lock()
 			defer mu.Unlock()
@@ -311,7 +340,7 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 	send := func(hits []TextSearchHit) { emit(EventSearchHits, TextSearchHits{ID: query.ID, Hits: hits}) }
 	maxHits := capResults(query.MaxResults)
 	out := TextSearchResult{}
-	for _, folder := range query.Folders {
+	for i, folder := range query.Folders {
 		path := folderPath(folder)
 		if path == "" {
 			continue
@@ -320,11 +349,77 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 			out.LimitHit = true
 			break
 		}
-		found, limit := textSearchFolder(ctx, path, folderGlobs(folder), re, holds, maxHits-out.Found, send)
+		found, limit := textSearchFolder(ctx, path, i, folderGlobs(folder), re, holds, maxHits-out.Found, send)
 		out.Found += found
 		if limit {
 			out.LimitHit = true
 			break
+		}
+	}
+	return out, nil
+}
+
+// Replace writes every match of a text search as the replacement, line by line as the search matches; a regular
+// expression's replacement names its groups ($1), a plain one is written as it is.
+func (s *SearchService) Replace(ctx context.Context, query TextReplaceQuery) (TextReplaceResult, error) {
+	if strings.TrimSpace(query.Search.Pattern) == "" {
+		return TextReplaceResult{}, nil
+	}
+	re, err := compileSearchRegex(query.Search)
+	if err != nil {
+		return TextReplaceResult{}, fmt.Errorf("invalid pattern: %w", err)
+	}
+	// a path as the session keys an open file
+	key := func(path string) string { return strings.ToLower(filepath.Clean(filepath.FromSlash(path))) }
+	skip := map[string]bool{}
+	for _, path := range query.Skip {
+		skip[key(path)] = true
+	}
+	var out TextReplaceResult
+	for _, folder := range query.Search.Folders {
+		root := folderPath(folder)
+		if root == "" {
+			continue
+		}
+		err := searchFiles(ctx, root, folderGlobs(folder), func(path, rel string) error {
+			if skip[key(path)] || source.Classify(path, filepath.ToSlash(rel)) == source.Image {
+				return nil
+			}
+			data := searchable(path)
+			if data == nil {
+				return nil
+			}
+			lines := strings.Split(string(data), "\n")
+			replaced := 0
+			for i, line := range lines {
+				body, cr := strings.CutSuffix(line, "\r")
+				found := len(re.FindAllStringIndex(body, -1))
+				if found == 0 {
+					continue
+				}
+				replaced += found
+				if query.Search.IsRegexp {
+					body = re.ReplaceAllString(body, query.Text)
+				} else {
+					body = re.ReplaceAllLiteralString(body, query.Text)
+				}
+				if cr {
+					body += "\r"
+				}
+				lines[i] = body
+			}
+			if replaced == 0 {
+				return nil
+			}
+			if err := local.WriteBytes(path, []byte(strings.Join(lines, "\n"))); err != nil {
+				return err
+			}
+			out.Replaced += replaced
+			out.Files++
+			return nil
+		})
+		if err != nil {
+			return out, err
 		}
 	}
 	return out, nil

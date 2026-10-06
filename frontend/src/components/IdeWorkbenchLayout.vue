@@ -11,7 +11,6 @@
 import { computed, onMounted, useTemplateRef, watch } from "vue";
 import { useElementSize, useLocalStorage } from "@vueuse/core";
 import { guideOpen, ideVisible, setGuideOpen } from "../composables/useGuidePrefs";
-import GuidePane from "./GuidePane.vue";
 
 const props = defineProps<{
   visible: boolean;

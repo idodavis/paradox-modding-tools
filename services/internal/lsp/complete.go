@@ -26,12 +26,11 @@ const maxComplete = 80
 // scope, 1 vanilla writes it, 2 a name, a link or a command for another scope, 3 a loc key; in a
 // data call 1 a function, 2 a type).
 type Item struct {
-	Label   string   `json:"label"`
-	Head    string   `json:"head"`
-	Takes   []string `json:"takes,omitempty"`
-	Snippet string   `json:"snippet,omitempty"` // the editor snippet a key writes: its block, or key = and a value
-	Rank    int      `json:"rank"`
-	Range   Range    `json:"range"`
+	Label   string `json:"label"`
+	Head    string `json:"head"`
+	Snippet string `json:"snippet,omitempty"` // the editor snippet a key writes: its block, or key = and a value
+	Rank    int    `json:"rank"`
+	Range   Range  `json:"range"`
 }
 
 // Completion is the list, and whether the cap cut it.
@@ -192,7 +191,7 @@ func (completer *completer) keys(cursor spot) {
 	}
 	for _, name := range slices.Sorted(maps.Keys(game.ValueOperators)) {
 		if step := sch.Step(inner, nil, name, false); step.Rule == game.StepOperator {
-			completer.add(Item{Label: name, Head: need(step.Key), Takes: takes(step.Key)}, reading{key: step.Key, scope: scope})
+			completer.add(Item{Label: name, Head: need(step.Key)}, reading{key: step.Key, scope: scope})
 		}
 	}
 
@@ -204,7 +203,7 @@ func (completer *completer) keys(cursor spot) {
 		if position == nil {
 			read = reading{ref: &index.Ref{Called: called, Name: name}}
 		}
-		item := Item{Label: name, Head: need(position), Takes: takes(position), Snippet: snippet(name, position), Rank: 1}
+		item := Item{Label: name, Head: need(position), Snippet: snippet(name, position), Rank: 1}
 		if i < stated {
 			item.Rank = 0
 		}
@@ -216,7 +215,7 @@ func (completer *completer) keys(cursor spot) {
 		if allowed == 0 || command.Kind&(allowed|game.KindLink) == 0 || command.Wild {
 			continue
 		}
-		item := Item{Label: name, Head: kinds(command), Takes: takes(command.Args), Rank: 2,
+		item := Item{Label: name, Head: kinds(command), Rank: 2,
 			Snippet: snippet(name, command.Args)}
 		inScope := scope == "" || len(command.Scopes) == 0 || slices.Contains(command.Scopes, scope)
 		if command.Kind&allowed != 0 && inScope {

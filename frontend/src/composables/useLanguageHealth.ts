@@ -4,10 +4,20 @@
  */
 import { computed, reactive, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { useQuery } from "@pinia/colada";
+import type { LanguageHealth } from "@services/models";
 import { languageQuery } from "../queries";
 
 /** Each install's scan while it runs, as lang:scan-progress tells it (events.ts); a session built or failed ends them. */
 export const scans = reactive(new Map<string, { percent: number; stage: string }>());
+
+/** Whose script_docs a built session reads: the game's own and current, or not. */
+export function dumpsState(live: LanguageHealth | null | undefined): { ok: boolean; label: string } | undefined {
+  if (!live?.ready) return undefined;
+  if (live.dumpsFrom === "yours" && !live.dumpsStale) return { ok: true, label: "script_docs loaded" };
+  if (live.dumpsFrom === "yours") return { ok: false, label: "script_docs older than the game" };
+  if (live.dumpsFrom === "shipped") return { ok: false, label: "Using PMT's copy of script_docs" };
+  return { ok: false, label: "No script_docs" };
+}
 
 /** Installs already told of, this run: a game update, and no dumps. */
 const told = { updated: new Set<string>(), noDumps: new Set<string>() };

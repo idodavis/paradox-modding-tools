@@ -36,12 +36,11 @@ func init() {
 	}
 }
 
-// clean returns a page's allowlisted HTML and its headings, and its Modding section with that
-// section's headings.
-func clean(raw, base string) (page string, sections []Section, modding string, moddingSections []Section) {
+// clean returns a page's allowlisted HTML and its headings, and whether it has a Modding section.
+func clean(raw, base string) (page string, sections []Section, modding bool) {
 	doc, err := html.Parse(strings.NewReader(raw))
 	if err != nil {
-		return "", nil, "", nil
+		return "", nil, false
 	}
 	wiki, _ := url.Parse(base)
 	root := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
@@ -80,23 +79,10 @@ func clean(raw, base string) (page string, sections []Section, modding string, m
 		node.Attr = []html.Attribute{{Key: "id", Val: id}}
 		sections = append(sections, Section{TocLevel: rank(node), Line: line, Anchor: id})
 	}
-	page = render(nodes)
-	cut := slices.IndexFunc(nodes, func(node *html.Node) bool {
+	modding = slices.ContainsFunc(nodes, func(node *html.Node) bool {
 		return rank(node) > 0 && keepModding[strings.ToLower(strings.TrimSpace(text(node)))]
 	})
-	if cut < 0 {
-		return page, sections, "", nil
-	}
-	modding = render(nodes[cut:blockEnd(nodes, cut)])
-	first := slices.IndexFunc(sections, func(entry Section) bool { return entry.Anchor == attr(nodes[cut], "id") })
-	if first < 0 {
-		return page, sections, modding, nil
-	}
-	end := first + 1
-	for end < len(sections) && sections[end].TocLevel > sections[first].TocLevel {
-		end++
-	}
-	return page, sections, modding, sections[first:end]
+	return render(nodes), sections, modding
 }
 
 // copyAllowed appends a copy of in's children to out that keeps the allowed tags and attributes,
@@ -232,26 +218,13 @@ var (
 	userRe    = regexp.MustCompile(`(?i)^User:`)
 )
 
-var denyExact = map[string]bool{
-	"pdx deepl":                    true,
-	"modding tools":                true,
-	"exporters":                    true,
-	"effects list":                 true,
-	"triggers list":                true,
-	"list of baronies":             true,
-	"list of gui script functions": true,
-}
+// denyExact is the titles no pattern below denies.
+var denyExact = map[string]bool{"pdx deepl": true, "modding tools": true, "exporters": true}
 
 // denied reports whether an article title is skipped (tools, dumps, user pages).
 func denied(title string) bool {
-	normalized := NormTitle(title)
-	if denyExact[normalized] || userRe.MatchString(title) {
-		return true
-	}
-	if listOfRe.MatchString(title) || listEndRe.MatchString(strings.TrimSpace(title)) {
-		return true
-	}
-	return false
+	return denyExact[NormTitle(title)] || userRe.MatchString(title) || listOfRe.MatchString(title) ||
+		listEndRe.MatchString(strings.TrimSpace(title))
 }
 
 func keepMember(title string, mods map[string]bool) bool {

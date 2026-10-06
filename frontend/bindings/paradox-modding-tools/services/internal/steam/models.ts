@@ -10,6 +10,29 @@ export interface Converted {
 }
 
 /**
+ * FileChange is one file an upload changes on Steam: A added, M modified, D deleted.
+ */
+export interface FileChange {
+    "rel": string;
+    "status": string;
+
+    /**
+     * no line diff: a NUL in its first 512 bytes, as the editor's reads judge
+     */
+    "binary": boolean;
+
+    /**
+     * its path in Steam's copy, which a new file lacks
+     */
+    "steam": string;
+
+    /**
+     * its path in the mod, which a removed file lacks
+     */
+    "workspace": string;
+}
+
+/**
  * Preview is one extra Workshop image or YouTube id on the listing.
  */
 export interface Preview {

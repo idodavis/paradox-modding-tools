@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -114,7 +113,7 @@ var registry = map[string]*GameInfo{
 		StageRoots: []string{"in_game", "main_menu", "loading_screen"},
 		Descriptor: "metadata",
 		// where EU5 mods keep it
-		ThumbnailDir:     ".metadata",
+		ThumbnailDir:     MetadataDir,
 		DocsFolderName:   "Europa Universalis V",
 		SteamAppID:       3450310,
 		SteamLibrary:     map[string]string{"windows": "binaries/steam_api64.dll"}, // no Linux build: Proton
@@ -133,15 +132,6 @@ func Get(id string) *GameInfo {
 // All returns supported games in UI order (ck3, eu5, vic3).
 func All() []*GameInfo {
 	return []*GameInfo{registry["ck3"], registry["eu5"], registry["vic3"]}
-}
-
-// FirstWinsAt reports whether database resolves first-in-order for this game.
-// For an empty or unknown gameID only GUI types are.
-func FirstWinsAt(gameID, database string) bool {
-	if info := Get(gameID); info != nil {
-		return slices.Contains(info.FirstWinsDatabases, database)
-	}
-	return database == "gui.type"
 }
 
 // DetectedInstall is a game install found on disk.
@@ -164,13 +154,21 @@ type launcherSettings struct {
 	GameDataPath string `json:"gameDataPath"`
 }
 
-// ReadGameVersion is launcher-settings.json's rawVersion, else its version without the codename,
-// else (EU5) the Steam manifest's buildid two folders up, as "build <id>"; "" for none.
-func ReadGameVersion(installPath string, steamAppID int) string {
-	var settings launcherSettings
+// readLauncher is the install's launcher/launcher-settings.json; empty where there is none.
+func readLauncher(installPath string) (settings launcherSettings) {
+	if installPath == "" {
+		return settings
+	}
 	if data, err := os.ReadFile(filepath.Join(installPath, "launcher", "launcher-settings.json")); err == nil {
 		_ = json.Unmarshal(data, &settings)
 	}
+	return settings
+}
+
+// ReadGameVersion is launcher-settings.json's rawVersion, else its version without the codename,
+// else (EU5) the Steam manifest's buildid two folders up, as "build <id>"; "" for none.
+func ReadGameVersion(gameID, installPath string) string {
+	settings := readLauncher(installPath)
 	if settings.RawVersion != "" {
 		return settings.RawVersion
 	}
@@ -179,7 +177,11 @@ func ReadGameVersion(installPath string, steamAppID int) string {
 		return version
 	}
 
-	manifest, err := os.ReadFile(filepath.Join(installPath, "..", "..", "appmanifest_"+strconv.Itoa(steamAppID)+".acf"))
+	info := Get(gameID)
+	if info == nil {
+		return ""
+	}
+	manifest, err := os.ReadFile(filepath.Join(installPath, "..", "..", "appmanifest_"+strconv.Itoa(info.SteamAppID)+".acf"))
 	if match := buildIDRe.FindSubmatch(manifest); err == nil && match != nil {
 		return "build " + string(match[1])
 	}
@@ -232,7 +234,7 @@ func userDataCandidates(gameID, installPath string) []string {
 			candidates = append(candidates, filepath.Clean(path))
 		}
 	}
-	add(launcherGameDataPath(installPath))
+	add(expandGameDataPath(readLauncher(installPath).GameDataPath))
 	home, homeErr := os.UserHomeDir()
 	nativeDocs := ""
 	if homeErr == nil {
@@ -262,21 +264,6 @@ func userDataCandidates(gameID, installPath string) []string {
 	return candidates
 }
 
-func launcherGameDataPath(installPath string) string {
-	if installPath == "" {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(installPath, "launcher", "launcher-settings.json"))
-	if err != nil {
-		return ""
-	}
-	var settings launcherSettings
-	if json.Unmarshal(data, &settings) != nil {
-		return ""
-	}
-	return expandGameDataPath(settings.GameDataPath)
-}
-
 func expandGameDataPath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -301,7 +288,7 @@ func DescriptorPath(gameID, root string) string {
 // DescriptorFile is the mod-root descriptor's path relative to the mod, in slash form.
 func DescriptorFile(gameID string) string {
 	if info := Get(gameID); info != nil && info.Descriptor == "metadata" {
-		return ".metadata/metadata.json"
+		return MetadataDir + "/metadata.json"
 	}
 	return "descriptor.mod"
 }
@@ -328,10 +315,9 @@ func FindInstalls(gameID string) []DetectedInstall {
 			continue
 		}
 		out = append(out, DetectedInstall{
-			GameID:  gameID,
 			Name:    info.Name,
 			Path:    path,
-			Version: ReadGameVersion(path, info.SteamAppID),
+			Version: ReadGameVersion(info.ID, path),
 		})
 	}
 	return out
@@ -434,6 +420,4 @@ func newestFileIn(dir string) time.Time {
 }
 
 // MetadataDir is the folder a metadata descriptor sits in (.metadata/metadata.json).
-const (
-	MetadataDir = ".metadata"
-)
+const MetadataDir = ".metadata"

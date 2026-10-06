@@ -10,6 +10,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"log/slog"
 	"maps"
@@ -38,9 +39,9 @@ type Era struct {
 	Offset int    `json:"offset"`
 }
 
-// Read is a year in the named era with the greatest offset below it, and the era's name; false
-// where none applies (8082 is 82 A.C.).
-func (calendar Calendar) Read(year int) (int, string, bool) {
+// Date is a date in the named era with the greatest offset below its year ("82.1.1 A.C." for
+// 8082.1.1); false where none applies.
+func (calendar Calendar) Date(year, month, day int) (string, bool) {
 	best := -1
 	for i, era := range calendar {
 		if era.Name != "" && year-era.Offset > 0 && (best < 0 || era.Offset > calendar[best].Offset) {
@@ -48,9 +49,9 @@ func (calendar Calendar) Read(year int) (int, string, bool) {
 		}
 	}
 	if best < 0 {
-		return 0, "", false
+		return "", false
 	}
-	return year - calendar[best].Offset, calendar[best].Name, true
+	return fmt.Sprintf("%d.%d.%d %s", year-calendar[best].Offset, month, day, calendar[best].Name), true
 }
 
 // Mod is one mod of the workspace, in the playset's order.
@@ -168,9 +169,13 @@ func (sess *Session) Fires(from index.Def) []Fire {
 		}
 	}
 	follow(from, "")
+	return byName(out)
+}
 
-	slices.SortStableFunc(out, func(first, second Fire) int { return strings.Compare(first.Name, second.Name) })
-	return slices.CompactFunc(out, func(first, second Fire) bool { return first.Name == second.Name })
+// byName is fires in name order, each name once.
+func byName(fires []Fire) []Fire {
+	slices.SortStableFunc(fires, func(first, second Fire) int { return strings.Compare(first.Name, second.Name) })
+	return slices.CompactFunc(fires, func(first, second Fire) bool { return first.Name == second.Name })
 }
 
 // FiredBy is Fires turned around, in name order: each definition holding a reference that fires
@@ -204,10 +209,7 @@ func (sess *Session) FiredBy(target index.Def) []Fire {
 		}
 		return out
 	}
-	out := follow(target)
-
-	slices.SortStableFunc(out, func(first, second Fire) int { return strings.Compare(first.Name, second.Name) })
-	return slices.CompactFunc(out, func(first, second Fire) bool { return first.Name == second.Name })
+	return byName(follow(target))
 }
 
 // Loc is a key's entry in a language, the last loaded: a mod's over the install's. With none in the
@@ -227,8 +229,11 @@ func (sess *Session) Loc(key, language string) (index.Loc, bool) {
 // Entry is a definition's statement in its file's parse: the assignment whose key starts at the
 // definition's line and column; nil where its file does not parse or none starts there.
 func (sess *Session) Entry(def index.Def) (*jomini.Result, jomini.Statement) {
+	if def.Path == "" {
+		return nil, nil
+	}
 	parsed, _, err := sess.Parsed(def.Path)
-	if def.Path == "" || err != nil {
+	if err != nil {
 		return nil, nil
 	}
 	return parsed, parsed.AssignmentAt(int(def.Line), int(def.Col))
@@ -259,12 +264,12 @@ func (sess *Session) Title(def index.Def) string {
 	return ""
 }
 
-// LocKeys is up to limit of the keys that start with prefix, in order.
+// LocKeys is up to limit of the keys that start with prefix, lower-cased, in order.
 func (sess *Session) LocKeys(prefix string, limit int) []string {
 	keys := map[string]bool{}
 	for _, idx := range sess.Indexes() {
 		for key := range idx.LocKeys() {
-			if strings.HasPrefix(key, prefix) {
+			if strings.HasPrefix(strings.ToLower(key), prefix) {
 				keys[key] = true
 			}
 		}
@@ -278,7 +283,7 @@ func (sess *Session) LocKeys(prefix string, limit int) []string {
 func (sess *Session) Where(path string) Place {
 	file, mod, ok := sess.Located(path)
 	if !ok {
-		return Place{File: source.File{Format: source.Classify(path, filepath.ToSlash(path))}}
+		return Place{File: file}
 	}
 	place := Place{File: file, Database: sess.Install.Schema.DatabaseAt(file.Rel)}
 	if mod != nil {
@@ -288,8 +293,11 @@ func (sess *Session) Where(path string) Place {
 }
 
 // Located is the indexed file at a path, else the file the path would be under a mod's or the
-// install's root, and the mod it belongs to.
+// install's root, and the mod it belongs to; under no root, the path alone and false.
 func (sess *Session) Located(path string) (source.File, *Mod, bool) {
+	if path == "" {
+		return source.File{}, nil, false
+	}
 	path = filepath.Clean(path)
 	mod := func(origin string) *Mod {
 		if at := slices.IndexFunc(sess.Mods, func(mod Mod) bool { return mod.ID == origin }); at >= 0 {
@@ -304,7 +312,7 @@ func (sess *Session) Located(path string) (source.File, *Mod, bool) {
 	}
 	under := func(roots []string, origin string) (source.File, bool) {
 		for _, root := range roots {
-			if rel, err := filepath.Rel(root, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			if rel, err := filepath.Rel(root, path); err == nil && filepath.IsLocal(rel) {
 				rel = filepath.ToSlash(rel)
 				return source.File{Path: path, Rel: rel, Origin: origin, Format: source.Classify(path, rel)}, true
 			}
@@ -319,7 +327,7 @@ func (sess *Session) Located(path string) (source.File, *Mod, bool) {
 	if file, ok := under(sess.Install.Index.Roots, game.OriginVanilla); ok {
 		return file, nil, true
 	}
-	return source.File{}, nil, false
+	return source.File{Path: path, Format: source.Classify(path, filepath.ToSlash(path))}, nil, false
 }
 
 // Text is a file's text: the open buffer's, else the disk's.
@@ -351,17 +359,15 @@ func (sess *Session) DidChange(path, text string) {
 	key := strings.ToLower(filepath.Clean(path))
 	opened := sess.buffers[key]
 	if opened == nil {
-		file, _, ok := sess.Located(path)
-		if !ok {
-			file = source.File{Path: filepath.Clean(path), Format: source.Classify(path, filepath.ToSlash(path))}
-		}
+		file, _, _ := sess.Located(path)
 		opened = &buffer{file: file}
 		sess.buffers[key] = opened
 	}
+	// the editor sends its text before each completion: the same text is not walked again
 	if opened.text != text || opened.parsed.Root == nil {
 		opened.text, opened.parsed = text, jomini.Parse(text)
+		sess.changed(opened.file, text, nil)
 	}
-	sess.changed(opened.file, text, nil)
 }
 
 // DidClose forgets the editor's text; the file is read from disk again.
@@ -435,14 +441,6 @@ func (sess *Session) Watch(after func(path string)) error {
 	return err
 }
 
-// WatchError is the first error the session's watcher hit, nil while it is live or there is none.
-func (sess *Session) WatchError() error {
-	if sess.watcher == nil {
-		return nil
-	}
-	return sess.watcher.Err()
-}
-
 // Close stops the session's watcher, if it has one.
 func (sess *Session) Close() {
 	if sess.watcher != nil {
@@ -463,8 +461,6 @@ type Watcher struct {
 	timers map[string]*time.Timer
 	closed bool
 	done   chan struct{}
-	// err is the first Add or event failure (inotify limits, overflow); shown on the health strip.
-	err error
 }
 
 // NewWatcher starts watching roots recursively, calling onChange once a changed indexable file
@@ -476,7 +472,7 @@ func NewWatcher(roots []string, onChange func(path string)) (*Watcher, error) {
 	}
 	watcher := &Watcher{fsw: fsw, onChange: onChange, timers: map[string]*time.Timer{}, done: make(chan struct{})}
 	for _, root := range roots {
-		watcher.addTree(root)
+		watcher.addTree(root, nil)
 	}
 	go watcher.loop()
 	return watcher, nil
@@ -496,36 +492,27 @@ func (watcher *Watcher) Close() error {
 	return watcher.fsw.Close()
 }
 
-// addTree watches root and every folder under it that holds a file; fsnotify is not recursive.
-func (watcher *Watcher) addTree(root string) {
+// addTree watches root and every folder under it that holds a file, fsnotify not being recursive,
+// and gives each file to found when found is not nil.
+func (watcher *Watcher) addTree(root string, found func(path string)) {
 	seen := map[string]bool{}
-	watcher.fail(watcher.fsw.Add(root))
+	warn(watcher.fsw.Add(root))
 	source.Walk(root, func(path string) {
 		if dir := filepath.Dir(path); !seen[dir] {
 			seen[dir] = true
-			watcher.fail(watcher.fsw.Add(dir))
+			warn(watcher.fsw.Add(dir))
+		}
+		if found != nil {
+			found(path)
 		}
 	})
 }
 
-// fail records the first error; later ones add nothing a user can act on.
-func (watcher *Watcher) fail(err error) {
-	if err == nil {
-		return
-	}
-	watcher.mu.Lock()
-	if watcher.err == nil {
-		watcher.err = err
+// warn logs a watch failure (inotify limits, overflow): the editor works on, missing outside changes.
+func warn(err error) {
+	if err != nil {
 		slog.Warn("watcher failed", "error", err)
 	}
-	watcher.mu.Unlock()
-}
-
-// Err is the first error the watch hit, or nil while it is fully live.
-func (watcher *Watcher) Err() error {
-	watcher.mu.Lock()
-	defer watcher.mu.Unlock()
-	return watcher.err
 }
 
 // loop consumes fsnotify events until Close.
@@ -543,27 +530,35 @@ func (watcher *Watcher) loop() {
 			if !ok {
 				return
 			}
-			watcher.fail(err)
+			warn(err)
 		}
 	}
 }
 
-// handle debounces a relevant event and, for new directories, extends the watch.
+// handle reports a relevant event. A folder made or moved in is watched, and its files reported, as
+// no event tells of them; a path removed or renamed away may be a folder whose files went with it.
 func (watcher *Watcher) handle(event fsnotify.Event) {
 	if event.Op&fsnotify.Create != 0 {
 		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-			watcher.addTree(event.Name)
+			watcher.addTree(event.Name, func(path string) {
+				if indexable(path) {
+					watcher.report(path)
+				}
+			})
 			return
 		}
 	}
-	if !indexable(event.Name) {
-		return
+	if indexable(event.Name) || event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
+		watcher.report(event.Name)
 	}
+}
+
+// report tells onChange of name once it has been quiet for watchDebounce.
+func (watcher *Watcher) report(name string) {
 	watcher.mu.Lock()
-	if timer := watcher.timers[event.Name]; timer != nil {
+	if timer := watcher.timers[name]; timer != nil {
 		timer.Stop()
 	}
-	name := event.Name
 	watcher.timers[name] = time.AfterFunc(watchDebounce, func() {
 		watcher.mu.Lock()
 		delete(watcher.timers, name)

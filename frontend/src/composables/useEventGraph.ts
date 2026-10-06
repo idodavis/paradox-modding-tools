@@ -51,7 +51,7 @@ export function reach(edges: Edge[], start: string, forward: boolean): Map<strin
 }
 
 /** The page's defaults: three steps out, 120 nodes, fan-outs past six folded, macros followed. */
-const DEFAULTS = { depth: 3, maxNodes: 120, fanout: 6, origins: [] as string[], scripted: false, follow: true };
+const DEFAULTS = { depth: 3, maxNodes: 120, fanout: 6, origins: [] as string[], scripted: true, follow: true };
 
 export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefOrGetter<boolean>) {
   const params = ref<Params>({ root: "", expand: [], ...DEFAULTS });
@@ -119,10 +119,18 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
     const top = Math.min(...dag.nodes().map((id) => dag.node(id).y - dag.node(id).height / 2));
     return {
       positions: new Map(
-        dag.nodes().map((id) => [id, { x: dag.node(id).x - dag.node(id).width / 2, y: dag.node(id).y - dag.node(id).height / 2 }]),
+        dag
+          .nodes()
+          .map((id) => [
+            id,
+            { x: dag.node(id).x - dag.node(id).width / 2, y: dag.node(id).y - dag.node(id).height / 2 },
+          ]),
       ),
       // a column's head is its step from the root's; the callers' columns stand before it
-      heads: rootColumn < 0 ? [] : centers.map((x, i) => ({ x: x - (BOX.card.width * unit) / 2, y: top - 28 * unit, step: i - rootColumn })),
+      heads:
+        rootColumn < 0
+          ? []
+          : centers.map((x, i) => ({ x: x - (BOX.card.width * unit) / 2, y: top - 28 * unit, step: i - rootColumn })),
     };
   });
 
@@ -147,7 +155,7 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
   const filtersOn = computed(
     () =>
       [
-        hidden.value.length > 0 || params.value.scripted,
+        hidden.value.length > 0 || params.value.scripted !== DEFAULTS.scripted,
         !!params.value.origins?.length,
         params.value.depth !== DEFAULTS.depth,
         params.value.maxNodes !== DEFAULTS.maxNodes,

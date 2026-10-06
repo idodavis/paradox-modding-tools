@@ -1,14 +1,17 @@
-// workshop.go is what a mod keeps for its Steam Workshop page: the two description files
-// (Markdown, and the Workshop's BBCode), the extra preview images under workshop/previews, the
-// YouTube ids in workshop/videos.txt, the .workshop-ignore export, and the copy of the mod that
-// is uploaded, with the mod's .gitignore and the workspace's ignore text applied.
+// workshop.go is what a mod keeps for its Steam Workshop page, under workshop/: its description file
+// (Markdown, or the Workshop's BBCode), the latest change note, the extra preview images and the
+// YouTube ids in workshop/previews (never uploaded as the mod's files), the .workshop-ignore
+// export, and the copy of the mod that is uploaded, with the mod's .gitignore and the workspace's
+// ignore text applied.
 
 package steam
 
 import (
-	"bufio"
+	"bytes"
 	"cmp"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -16,6 +19,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/source"
@@ -23,13 +27,21 @@ import (
 )
 
 const (
-	DescMdName = "mod-description.md"     // the default description in Markdown
-	DescBbName = "mod-description.bbcode" // the default description in Workshop BBCode
-	IgnoreFile = ".workshop-ignore"       // where the workspace's ignore text is exported beside the mod
+	DescMdName    = "workshop/mod-description.md"     // the default Markdown description
+	DescBbName    = "workshop/mod-description.bbcode" // the default BBCode description
+	ChangelogName = "workshop/changelog.bbcode"       // the latest change note
+	IgnoreFile    = ".workshop-ignore"                // where the workspace's ignore text is exported beside the mod
 
 	previewDir        = "workshop/previews"
-	videosRel         = "workshop/videos.txt"
+	videosRel         = "workshop/previews/videos.txt"
 	maxWorkshopExtras = 10
+)
+
+// Where a mod's Workshop description comes from.
+const (
+	FromMarkdown = "markdown" // a Markdown file, converted to BBCode in the upload
+	FromBBCode   = "bbcode"   // a BBCode file, uploaded as written
+	FromSteam    = "steam"    // Steam's own text, which an upload leaves alone
 )
 
 var youtubeID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
@@ -45,43 +57,23 @@ type Preview struct {
 	ID   string `json:"id"`
 }
 
-// EnsureDescriptions writes the default description files that are missing, leaving existing ones.
-func EnsureDescriptions(root, name, description string) error {
+// NewDescription writes the description file rel, missing until now, for a mod called name: its
+// name as a heading, then description, in the markup of source.
+func NewDescription(root, rel, source, name, description string) error {
+	file := filepath.Join(root, filepath.FromSlash(rel))
+	if _, err := os.Stat(file); err == nil {
+		return fmt.Errorf("%s already exists", rel)
+	}
 	body := cmp.Or(strings.TrimSpace(description), name)
-	markdown := filepath.Join(root, DescMdName)
-	bbcode := filepath.Join(root, DescBbName)
-	if _, err := os.Stat(markdown); os.IsNotExist(err) {
-		if err := os.WriteFile(markdown, []byte("# "+name+"\n\n"+body+"\n"), 0o644); err != nil {
-			return err
-		}
+	text := "# " + name + "\n\n" + body + "\n"
+	if source == FromBBCode {
+		text = "[b]" + name + "[/b]\n\n" + body + "\n"
 	}
-	if _, err := os.Stat(bbcode); os.IsNotExist(err) {
-		if err := os.WriteFile(bbcode, []byte("[b]"+name+"[/b]\n\n"+body+"\n"), 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// DescriptionFiles is the mod's two description files relative to root: the ones the
-// workspace chose, which must exist, else the defaults.
-func DescriptionFiles(root, markdownChoice, bbcodeChoice string) (markdown, bbcode string, err error) {
-	markdown = cmp.Or(strings.TrimSpace(markdownChoice), DescMdName)
-	bbcode = cmp.Or(strings.TrimSpace(bbcodeChoice), DescBbName)
-	if markdown == DescMdName && bbcode == DescBbName {
-		return markdown, bbcode, nil
-	}
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(markdown))); err != nil {
-		return "", "", fmt.Errorf("description markdown: %w", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(bbcode))); err != nil {
-		return "", "", fmt.Errorf("description bbcode: %w", err)
-	}
-	return markdown, bbcode, nil
+	return local.WriteBytes(file, []byte(text))
 }
 
 // DescriptionRel is a chosen description file as the workspace stores it: relative to the mod
-// root, which it must be inside, and "" for a default name or no choice.
+// root, which it must be inside, and "" for a default name or no choice. It need not exist yet.
 func DescriptionRel(root, chosen string) (string, error) {
 	chosen = strings.TrimSpace(chosen)
 	if chosen == "" {
@@ -91,18 +83,14 @@ func DescriptionRel(root, chosen string) (string, error) {
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(root, filepath.FromSlash(chosen))
 	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return "", fmt.Errorf("description file: %w", err)
-	}
-	if info.IsDir() {
+	if info, err := os.Stat(abs); err == nil && info.IsDir() {
 		return "", fmt.Errorf("description path is a directory")
 	}
 	rel, err := filepath.Rel(root, abs)
 	if err != nil {
 		return "", err
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+	if !filepath.IsLocal(rel) {
 		return "", fmt.Errorf("description file must be inside the mod folder")
 	}
 	if slash := filepath.ToSlash(rel); slash != DescMdName && slash != DescBbName {
@@ -111,7 +99,7 @@ func DescriptionRel(root, chosen string) (string, error) {
 	return "", nil
 }
 
-// ScanPreviews lists the extra images under workshop/previews and the ids in workshop/videos.txt.
+// ScanPreviews lists the extra images in workshop/previews, then the ids in its videos.txt.
 func ScanPreviews(root string) []Preview {
 	out := []Preview{}
 	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(previewDir)))
@@ -134,6 +122,87 @@ func ScanPreviews(root string) []Preview {
 	return out
 }
 
+// Extra is one of an item's extra previews on Steam: an image's address and file name, or a YouTube id.
+type Extra struct {
+	URL   string `json:"url,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Video string `json:"video,omitempty"`
+}
+
+// Label is how an extra is known on both sides: an image by its file name, a video by its id.
+func (extra Extra) Label() string {
+	return cmp.Or(extra.Video, extra.Name)
+}
+
+// ExtrasOf is a listing's previews as the extras an upload sends.
+func ExtrasOf(previews []Preview) []Extra {
+	var extras []Extra
+	for _, preview := range previews {
+		if preview.Kind == "youtube" {
+			extras = append(extras, Extra{Video: preview.ID})
+		} else {
+			extras = append(extras, Extra{Name: path.Base(preview.Rel)})
+		}
+	}
+	return extras
+}
+
+// imageExts is the extension an image Steam serves without one in its name gets, by its type.
+var imageExts = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+
+// SaveExtras adds Steam's extras the mod lacks: a video's id to workshop/previews/videos.txt, an
+// image downloaded into workshop/previews unless one of its name is there, within Steam's cap.
+func SaveExtras(modRoot string, extras []Extra) error {
+	have := map[string]bool{}
+	for _, extra := range ExtrasOf(ScanPreviews(modRoot)) {
+		have[extra.Label()] = true
+	}
+	for _, extra := range extras {
+		if extra.Video != "" {
+			if err := AddVideo(modRoot, extra.Video); err != nil {
+				return err
+			}
+			continue
+		}
+		if have[extra.Name] || extra.URL == "" {
+			continue
+		}
+		if len(ScanPreviews(modRoot)) >= maxWorkshopExtras {
+			return fmt.Errorf("workshop extras cap is %d", maxWorkshopExtras)
+		}
+		if err := saveImage(filepath.Join(modRoot, filepath.FromSlash(previewDir)), extra); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var imageClient = &http.Client{Timeout: time.Minute}
+
+func saveImage(dir string, extra Extra) error {
+	resp, err := imageClient.Get(extra.URL)
+	if err != nil {
+		return fmt.Errorf("download %s: %w", extra.Name, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s: %s", extra.Name, resp.Status)
+	}
+	name := cmp.Or(extra.Name, "steam-preview")
+	if !slices.Contains(previewExts, strings.ToLower(filepath.Ext(name))) {
+		name += cmp.Or(imageExts[resp.Header.Get("Content-Type")], ".png")
+	}
+	dest, err := uniquePreviewDest(dir, name)
+	if err != nil {
+		return err
+	}
+	// whole or not at all: a half image would pass for one already imported
+	return local.Write(dest, func(out io.Writer) error {
+		_, err := io.Copy(out, resp.Body)
+		return err
+	})
+}
+
 // AddPreview copies an image into workshop/previews, within Steam's cap on extras.
 func AddPreview(modRoot, srcPath string) error {
 	if len(ScanPreviews(modRoot)) >= maxWorkshopExtras {
@@ -153,18 +222,13 @@ func AddPreview(modRoot, srcPath string) error {
 	return nil
 }
 
-// RemovePreview deletes one extra image under workshop/previews.
+// RemovePreview deletes one extra image in workshop/previews, and nothing else.
 func RemovePreview(modRoot, rel string) error {
-	rel = filepath.ToSlash(rel)
-	if !strings.HasPrefix(rel, previewDir+"/") {
+	rel = path.Clean(filepath.ToSlash(rel))
+	if path.Dir(rel) != previewDir || !slices.Contains(previewExts, strings.ToLower(path.Ext(rel))) {
 		return fmt.Errorf("not a workshop preview")
 	}
-	abs := filepath.Join(modRoot, filepath.FromSlash(rel))
-	inside, err := filepath.Rel(modRoot, abs)
-	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(os.PathSeparator)) {
-		return fmt.Errorf("not a workshop preview")
-	}
-	if err := os.Remove(abs); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(filepath.Join(modRoot, filepath.FromSlash(rel))); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove preview: %w", err)
 	}
 	return nil
@@ -172,7 +236,7 @@ func RemovePreview(modRoot, rel string) error {
 
 // AddVideo appends a YouTube id, given as a watch, embed or youtu.be URL or as the id itself.
 func AddVideo(modRoot, urlOrID string) error {
-	id, err := ParseYouTubeID(urlOrID)
+	id, err := parseYouTubeID(urlOrID)
 	if err != nil {
 		return err
 	}
@@ -187,7 +251,7 @@ func AddVideo(modRoot, urlOrID string) error {
 	return writeVideoIDs(modRoot, append(ids, id))
 }
 
-// RemoveVideo drops one YouTube id from workshop/videos.txt.
+// RemoveVideo drops one YouTube id from workshop/previews/videos.txt.
 func RemoveVideo(modRoot, id string) error {
 	kept := slices.DeleteFunc(readVideoIDs(modRoot), func(listed string) bool { return listed == id })
 	return writeVideoIDs(modRoot, kept)
@@ -207,27 +271,19 @@ func VideoIDs(previews []Preview) []string {
 	return ids
 }
 
-// StagedPreviewFiles is where the listing's extra images are inside the upload copy, each
-// once and only where it exists.
-func StagedPreviewFiles(stage string, previews []Preview) []string {
-	seen := map[string]bool{}
+// PreviewFiles is the listing's extra images in the mod, which the upload copy leaves out.
+func PreviewFiles(previews []Preview) []string {
 	var out []string
 	for _, preview := range previews {
-		if preview.Kind == "youtube" || preview.Rel == "" {
-			continue
+		if preview.Kind != "youtube" {
+			out = append(out, preview.Abs)
 		}
-		staged := filepath.Join(stage, filepath.FromSlash(preview.Rel))
-		if _, err := os.Stat(staged); err != nil || seen[staged] {
-			continue
-		}
-		seen[staged] = true
-		out = append(out, staged)
 	}
 	return out
 }
 
-// ParseYouTubeID accepts a raw id or the common YouTube URLs.
-func ParseYouTubeID(urlOrID string) (string, error) {
+// parseYouTubeID accepts a raw id or the common YouTube URLs.
+func parseYouTubeID(urlOrID string) (string, error) {
 	urlOrID = strings.TrimSpace(urlOrID)
 	if youtubeID.MatchString(urlOrID) {
 		return urlOrID, nil
@@ -262,34 +318,106 @@ func ParseYouTubeID(urlOrID string) (string, error) {
 	return "", fmt.Errorf("not a youtube id")
 }
 
-// CopyMod copies a mod into dest for upload, leaving out what its .gitignore and the extra
-// ignore text name. It walks the way the engine does, following linked folders and junctions,
-// because Steam receives real files and mods are often linked from elsewhere.
-func CopyMod(src, dest, extraIgnore string) error {
-	patterns := LoadIgnorePatterns(src, extraIgnore)
-	var failed error
-	source.Walk(src, func(file string) {
-		if failed != nil {
-			return
-		}
-		rel, err := filepath.Rel(src, file)
+// Upload is the mod at root as an upload takes it, relative to root with forward slashes: the
+// files it sends, and those its .gitignore and the extra ignore text leave out. It walks the way
+// the engine does, following linked folders and junctions, because Steam receives real files and
+// mods are often linked from elsewhere.
+func Upload(root, extraIgnore string) (sent, left []string) {
+	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
+	patterns := strings.Split(string(gitignore)+"\n"+extraIgnore, "\n")
+	source.Walk(root, func(file string) {
+		rel, err := filepath.Rel(root, file)
 		if err != nil {
-			failed = err
 			return
 		}
-		if !Ignored(filepath.ToSlash(rel), patterns) {
-			failed = local.CopyFile(file, filepath.Join(dest, rel))
+		if rel = filepath.ToSlash(rel); ignored(rel, patterns) {
+			left = append(left, rel)
+		} else {
+			sent = append(sent, rel)
 		}
 	})
-	return failed
+	return sent, left
 }
 
-// Ignored reports a file the upload leaves out: a .gitignore, anything under a dot-named
-// folder but a top-level .metadata, or a match of the ignore rules on the file or any folder
-// above it, which no later rule can take back.
-func Ignored(rel string, patterns []string) bool {
+// CopyMod copies what an upload of the mod at src sends into dest, a fresh folder nothing reads until
+// the copy is whole: plain writes, no flush per file (a mod has thousands).
+func CopyMod(src, dest, extraIgnore string) error {
+	sent, _ := Upload(src, extraIgnore)
+	for _, rel := range sent {
+		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(rel)))
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dest, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// FileChange is one file an upload changes on Steam: A added, M modified, D deleted.
+type FileChange struct {
+	Rel       string `json:"rel"`
+	Status    string `json:"status"`
+	Binary    bool   `json:"binary"`    // no line diff: a NUL in its first 512 bytes, as the editor's reads judge
+	Steam     string `json:"steam"`     // its path in Steam's copy, which a new file lacks
+	Workspace string `json:"workspace"` // its path in the mod, which a removed file lacks
+}
+
+// Changes is what an upload of the mod at root changes in the copy of it Steam has at steamRoot, by
+// path.
+func Changes(steamRoot, root, extraIgnore string) []FileChange {
+	read := func(dir, rel string) []byte {
+		data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		return data
+	}
+	change := func(rel, status string, data []byte) FileChange {
+		c := FileChange{Rel: rel, Status: status, Binary: bytes.IndexByte(data[:min(len(data), 512)], 0) >= 0}
+		if status != "A" {
+			c.Steam = filepath.Join(steamRoot, filepath.FromSlash(rel))
+		}
+		if status != "D" {
+			c.Workspace = filepath.Join(root, filepath.FromSlash(rel))
+		}
+		return c
+	}
+	theirs, _ := Upload(steamRoot, "")
+	gone := map[string]bool{}
+	for _, rel := range theirs {
+		gone[rel] = true
+	}
+	ours, _ := Upload(root, extraIgnore)
+	changes := []FileChange{}
+	for _, rel := range ours {
+		data := read(root, rel)
+		status := "A"
+		if gone[rel] {
+			delete(gone, rel)
+			if bytes.Equal(data, read(steamRoot, rel)) {
+				continue
+			}
+			status = "M"
+		}
+		changes = append(changes, change(rel, status, data))
+	}
+	for rel := range gone {
+		changes = append(changes, change(rel, "D", read(steamRoot, rel)))
+	}
+	slices.SortFunc(changes, func(a, b FileChange) int { return strings.Compare(a.Rel, b.Rel) })
+	return changes
+}
+
+// ignored reports a file the upload leaves out: a .gitignore, the Workshop page's extras in
+// workshop/previews (Steam takes them as the page's gallery), anything under a dot-named folder
+// but a top-level .metadata, or a match of the ignore rules on the file or any folder above it,
+// which no later rule can take back.
+func ignored(rel string, patterns []string) bool {
 	parts := strings.Split(rel, "/")
-	if parts[len(parts)-1] == ".gitignore" {
+	if parts[len(parts)-1] == ".gitignore" || strings.HasPrefix(rel, previewDir+"/") {
 		return true
 	}
 	for depth, part := range parts {
@@ -336,35 +464,11 @@ func readVideoIDs(root string) []string {
 }
 
 func writeVideoIDs(root string, ids []string) error {
-	videos := filepath.Join(root, filepath.FromSlash(videosRel))
-	if err := os.MkdirAll(filepath.Dir(videos), 0o755); err != nil {
-		return fmt.Errorf("create workshop dir: %w", err)
-	}
 	body := strings.Join(ids, "\n")
 	if body != "" {
 		body += "\n"
 	}
-	if err := os.WriteFile(videos, []byte(body), 0o644); err != nil {
-		return fmt.Errorf("write videos: %w", err)
-	}
-	return nil
-}
-
-// LoadIgnorePatterns is the upload's ignore rules for the mod at root: its .gitignore, then extra.
-func LoadIgnorePatterns(root, extra string) []string {
-	var out []string
-	if file, err := os.Open(filepath.Join(root, ".gitignore")); err == nil {
-		lines := bufio.NewScanner(file)
-		for lines.Scan() {
-			out = append(out, lines.Text())
-		}
-		_ = file.Close()
-	}
-	lines := bufio.NewScanner(strings.NewReader(extra))
-	for lines.Scan() {
-		out = append(out, lines.Text())
-	}
-	return out
+	return local.WriteBytes(filepath.Join(root, filepath.FromSlash(videosRel)), []byte(body))
 }
 
 func ignoreMatch(rel string, isDir bool, patterns []string) bool {
@@ -397,9 +501,6 @@ func matchGitPattern(pattern, rel string, isDir bool) bool {
 	}
 	if anchored {
 		return globMatch(pattern, rel)
-	}
-	if globMatch(pattern, rel) || globMatch(pattern, path.Base(rel)) {
-		return true
 	}
 	parts := strings.Split(rel, "/")
 	for i := range parts {

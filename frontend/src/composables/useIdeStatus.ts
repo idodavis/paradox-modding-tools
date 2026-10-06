@@ -1,13 +1,7 @@
 /**
  * Active editor language, caret, and diagnostic counts for the PMT footer.
  */
-import {
-  onScopeDispose,
-  ref,
-  toValue,
-  watch,
-  type MaybeRefOrGetter,
-} from "vue";
+import { ref, toValue, watch, type MaybeRefOrGetter } from "vue";
 import * as vscode from "vscode";
 import { isWorkbenchReady, showProblemsPanel, whenWorkbenchReady } from "../ide/workbenchHost";
 
@@ -85,19 +79,21 @@ export function useIdeStatus(enabled: MaybeRefOrGetter<boolean>) {
     );
   }
 
+  // the cleanup runs on a change and when the strip goes, so a boot that ends after either binds nothing
   watch(
     () => toValue(enabled),
-    async (on) => {
-      clearSubs();
+    async (on, _was, onCleanup) => {
+      let gone = false;
+      onCleanup(() => {
+        gone = true;
+        clearSubs();
+      });
       if (!on) return;
       await whenWorkbenchReady();
-      if (!toValue(enabled) || !isWorkbenchReady()) return;
-      bind();
+      if (!gone && isWorkbenchReady()) bind();
     },
     { immediate: true },
   );
-
-  onScopeDispose(clearSubs);
 
   return {
     language,

@@ -50,6 +50,10 @@ export interface Contest {
  * Dangling is one name a mod writes that nothing defines, and where.
  */
 export interface Dangling {
+    /**
+     * the check that found it, one of danglingChecks
+     */
+    "code": string;
     "database": string;
     "kind": string;
     "name": string;
@@ -80,18 +84,10 @@ export interface Dependency {
  * Detail is one definition, opened.
  */
 export interface Detail {
-    "database": string;
     "kind": string;
     "name": string;
-
-    /**
-     * the entry mode written before the name: REPLACE, INJECT
-     */
-    "mode"?: string;
     "line": number;
-    "col": number;
     "at": source$0.File;
-    "title"?: string;
 
     /**
      * the definition as its file writes it
@@ -255,8 +251,6 @@ export interface IdeRoot {
     "readOnly": boolean;
     "kind": string;
     "origin"?: string;
-    "color"?: string;
-    "slot"?: number;
     "thumbnail"?: string;
 }
 
@@ -288,9 +282,7 @@ export interface Language {
  * live schema read.
  */
 export interface LanguageHealth {
-    "workspaceId": string;
     "installId": string;
-    "gameId": string;
     "installOk": boolean;
     "gameVersion": string;
 
@@ -304,7 +296,6 @@ export interface LanguageHealth {
      */
     "updatedFrom"?: string;
     "ready": boolean;
-    "watchError"?: string;
 
     /**
      * whose dumps the schema read: yours, shipped or none
@@ -320,11 +311,6 @@ export interface LanguageHealth {
      * where the game's script_docs writes them
      */
     "dumpFolders": string[] | null;
-
-    /**
-     * the console command that writes the data types
-     */
-    "dataTypesCommand": string;
 }
 
 /**
@@ -333,7 +319,6 @@ export interface LanguageHealth {
 export interface Listing {
     "workspaceId": string;
     "modId": string;
-    "gameId": string;
     "root": string;
     "name": string;
     "version": string;
@@ -344,28 +329,80 @@ export interface Listing {
     "previews": steam$0.Preview[] | null;
     "remoteFileId": string;
     "shortDescription": string;
+
+    /**
+     * the description, from a Markdown file
+     */
     "readmeMd": string;
+
+    /**
+     * the description, from a BBCode file
+     */
     "readmeBbcode": string;
     "changeNote": string;
-    "steamAppId": number;
     "descMdRel": string;
     "descBbRel": string;
-    "workshopIgnore": string;
     "workshopUrl": string;
+
+    /**
+     * the descriptor's path in the mod
+     */
+    "descriptor": string;
+
+    /**
+     * when the descriptor was last written (RFC 3339)
+     */
+    "saved": string;
+
+    /**
+     * the Workshop agreement an upload accepts
+     */
+    "legalUrl": string;
 }
 
 /**
- * LocEntry is one of a key's entries, with the language its file is written in.
+ * ListingChange is one field of the listing as Steam has it and as an upload would send it.
  */
-export interface LocEntry {
-    "value": string;
+export interface ListingChange {
+    "field": string;
+    "steam": string;
+    "workspace": string;
+    "changed": boolean;
 
     /**
-     * 0-based
+     * of a list field (the tags): what an upload adds
      */
-    "line": number;
-    "at": source$0.File;
-    "language": string;
+    "added"?: string[] | null;
+
+    /**
+     * and what it takes away
+     */
+    "removed"?: string[] | null;
+}
+
+/**
+ * ListingSummary is a mod's listing as Settings shows it, read without writing.
+ */
+export interface ListingSummary {
+    "remoteFileId": string;
+    "thumbnailRel": string;
+    "thumbnailAbs": string;
+
+    /**
+     * markdown, bbcode or steam
+     */
+    "descSource": string;
+
+    /**
+     * the source's file in the mod; "" for steam
+     */
+    "descRel": string;
+    "descExists": boolean;
+
+    /**
+     * the version in PMT's last copy of the item, read without comparing
+     */
+    "steamVersion"?: string;
 }
 
 /**
@@ -379,16 +416,11 @@ export interface LocRow {
      */
     "file": number;
     "line": number;
-}
 
-/**
- * Lookup is one localization key: its entries in the workspace and the install, and everything that
- * reads it.
- */
-export interface Lookup {
-    "key": string;
-    "entries": LocEntry[] | null;
-    "readers": Cited[] | null;
+    /**
+     * the mod's file in the missing language it goes in
+     */
+    "target": number;
 }
 
 /**
@@ -404,24 +436,19 @@ export interface Node {
     "kind": string;
     "title"?: string;
     "origin"?: string;
-    "rel"?: string;
-    "line": number;
     "root"?: boolean;
 
     /**
      * "more": fires hidden out of the node in its ID; "fired-by": callers hidden
      */
     "stub"?: string;
-    "hidden"?: number;
 }
 
 /**
- * Option is one option block of an event: its first name key and the text that key has, its trigger on
- * one line, every name it is written with (the first whose trigger holds shows) and its flags.
+ * Option is one option block of an event: its trigger on one line, every name it is written with (the
+ * first whose trigger holds shows) and its flags.
  */
 export interface Option {
-    "name": string;
-    "text"?: string;
     "line": number;
     "when"?: string;
     "names"?: Version[] | null;
@@ -481,7 +508,6 @@ export interface PathStat {
     "isDir": boolean;
     "size": number;
     "mtimeMs": number;
-    "ctimeMs": number;
 }
 
 /**
@@ -491,16 +517,20 @@ export interface Problem {
     "code": string;
     "message": string;
     "site": Site;
+
+    /**
+     * a localization file's language
+     */
+    "language"?: string;
 }
 
 /**
- * PublishResult is Steam's answer plus the listing saved with the item's id.
+ * PublishResult is Steam's answer.
  */
 export interface PublishResult {
     "publishedFileId": string;
     "needsLegalAgreement": boolean;
     "legalUrl"?: string;
-    "listing"?: Listing | null;
 }
 
 /**
@@ -542,7 +572,6 @@ export interface ScanProgress {
 export interface Section {
     "key": string;
     "value"?: string;
-    "text"?: string;
     "line": number;
 
     /**
@@ -611,6 +640,51 @@ export interface SourceAt {
 }
 
 /**
+ * SteamCompare is a mod in the workspace against the copy Steam has: the snapshot PMT kept at its
+ * last upload, or a download from Steam (O-R14).
+ */
+export interface SteamCompare {
+    /**
+     * the Workshop id; "" when the mod is not published
+     */
+    "item": string;
+
+    /**
+     * "snapshot", "download", or "" with neither
+     */
+    "from": string;
+
+    /**
+     * the version in Steam's copy of the descriptor
+     */
+    "version": string;
+
+    /**
+     * RFC 3339
+     */
+    "uploadedAt": string;
+    "title": string;
+
+    /**
+     * Steam's copy of the mod's files
+     */
+    "root": string;
+    "listing": ListingChange[] | null;
+    "files": steam$0.FileChange[] | null;
+
+    /**
+     * the listing fields and files an upload changes
+     */
+    "changes": number;
+
+    /**
+     * Steam's extra images and videos the mod does not keep: an upload removes them when the mod keeps
+     * extras of its own, and leaves them when it keeps none
+     */
+    "onlyOnSteam": string[] | null;
+}
+
+/**
  * TextPart is one part of a text, read in order: one of its versions shows, the first whose trigger
  * holds, or one of them at random.
  */
@@ -626,7 +700,6 @@ export interface TextSearchFolder {
     "path": string;
     "includes"?: string[] | null;
     "excludes"?: string[] | null;
-    "disregardIgnoreFiles"?: boolean;
 }
 
 /**
@@ -708,7 +781,6 @@ export interface Version {
  * WikiUpdated is one game's wiki refresh, done; Error says why it failed.
  */
 export interface WikiUpdated {
-    "gameId": string;
     "error"?: string;
 }
 
@@ -749,6 +821,11 @@ export interface WorkspaceMod {
      */
     "slot": number;
     "thumbnail"?: string;
+
+    /**
+     * markdown, bbcode or steam; "" for the file the mod has
+     */
+    "descSource"?: string;
     "descMdRel"?: string;
     "descBbRel"?: string;
     "workshopIgnore"?: string;

@@ -5,6 +5,8 @@
 import { computed, shallowRef, watch } from "vue";
 import type { TabsItem } from "@nuxt/ui";
 import { useQuery } from "@pinia/colada";
+import { useLocalStorage } from "@vueuse/core";
+import { Browser } from "@wailsio/runtime";
 import { wikiKeys } from "../queries";
 import { Guide } from "@services/wikiservice";
 import type { Page } from "@services/internal/wiki/models";
@@ -17,7 +19,6 @@ import {
   useGuidePrefs,
 } from "../composables/useGuidePrefs";
 import { useWikiArticle } from "../composables/useWikiArticle";
-import WikiToc from "./WikiToc.vue";
 
 const ws = useWorkspaceStore();
 const path = useIdeActiveFile();
@@ -27,20 +28,20 @@ const toastedKinds = new Set<string>();
 const toastFetched = shallowRef(false);
 const tab = shallowRef("");
 const query = shallowRef("");
+const tocCollapsed = useLocalStorage("pmt.guide.tocCollapsed", false);
 
 const allPages = computed(() => guide.value?.pages ?? []);
 
-const workspaceId = computed(() => ws.activeWorkspaceId);
 const q = computed(() => query.value.trim().toLowerCase());
 
 const { data: guide, error, isPending } = useQuery({
   key: () =>
     guideOpen.value
-      ? wikiKeys.guide(workspaceId.value, path.value)
-      : wikiKeys.guide("toast", workspaceId.value),
-  query: () => Guide(workspaceId.value, path.value),
+      ? wikiKeys.guide(ws.activeWorkspaceId, path.value)
+      : wikiKeys.guide("toast", ws.activeWorkspaceId),
+  query: () => Guide(ws.activeWorkspaceId, path.value),
   enabled: () => {
-    if (!workspaceId.value || !path.value) return false;
+    if (!ws.activeWorkspaceId || !path.value) return false;
     if (!ideVisible.value) return false;
     if (guideOpen.value) return true;
     return toastAllowed() && !toastFetched.value;
@@ -83,7 +84,7 @@ watch(
   },
 );
 
-watch(workspaceId, () => {
+watch(() => ws.activeWorkspaceId, () => {
   toastFetched.value = false;
   toastedKinds.clear();
 });
@@ -113,7 +114,7 @@ const currentIndex = computed(() =>
   Math.max(0, allPages.value.findIndex((p) => p.title === tab.value)),
 );
 
-const { tocActive, jumpTo, onWikiClick, openUrl } = useWikiArticle({
+const { tocActive, jumpTo, onWikiClick } = useWikiArticle({
   html: () => activePage.value?.html,
   sections: () => activePage.value?.sections,
   pages: allPages,
@@ -185,7 +186,9 @@ function onTab(v: string | number): void {
     <div class="flex min-h-0 flex-1">
       <WikiToc
         v-if="tocItems.length"
-        class="w-40 shrink-0 border-e border-default"
+        v-model:collapsed="tocCollapsed"
+        class="shrink-0 border-e border-default"
+        :class="{ 'w-40': !tocCollapsed }"
         :sections="tocItems"
         :active="tocActive"
         @jump="jumpTo"
@@ -213,7 +216,7 @@ function onTab(v: string | number): void {
         v-if="activePage?.url"
         :href="activePage.url"
         class="text-primary hover:underline"
-        @click.prevent="openUrl(activePage.url)"
+        @click.prevent="Browser.OpenURL(activePage.url)"
       >
         {{ guide?.attribution || "Wiki" }}
       </a>

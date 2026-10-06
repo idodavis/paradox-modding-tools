@@ -41,8 +41,6 @@ const state = computed(() => [
     </span>
     <span class="truncate font-mono font-semibold" :class="lod ? 'text-11' : 'text-12 leading-4.5'">{{ node.id }}</span>
     <span v-if="!lod && node.title" class="truncate text-12 leading-4 text-muted">{{ node.title }}</span>
-    <Handle type="target" :position="Position.Left" :connectable="false" />
-    <Handle type="source" :position="Position.Right" :connectable="false" />
   </div>
   <div
     v-else-if="shape === 'pill'"
@@ -56,8 +54,6 @@ const state = computed(() => [
     <OriginDot :color="color" small />
     <UIcon :name="kind.icon" class="size-3 shrink-0" :style="{ color: kind.color }" />
     <span class="truncate">{{ node.id }}</span>
-    <Handle type="target" :position="Position.Left" :connectable="false" />
-    <Handle type="source" :position="Position.Right" :connectable="false" />
   </div>
   <div
     v-else
@@ -67,7 +63,8 @@ const state = computed(() => [
     <UIcon name="i-lucide-layers" class="size-3 shrink-0" />
     <span class="truncate">{{ node.title }}</span>
     <UIcon name="i-lucide-chevron-right" class="ms-auto size-3 shrink-0" />
-    <Handle type="target" :position="Position.Left" :connectable="false" />
-    <Handle type="source" :position="Position.Right" :connectable="false" />
   </div>
+  <!-- each shape's edges meet at the middle of its sides -->
+  <Handle type="target" :position="Position.Left" :connectable="false" />
+  <Handle type="source" :position="Position.Right" :connectable="false" />
 </template>

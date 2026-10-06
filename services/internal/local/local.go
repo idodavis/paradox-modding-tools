@@ -84,6 +84,14 @@ func Write(path string, fill func(io.Writer) error) error {
 	return nil
 }
 
+// WriteBytes is Write for contents already in memory.
+func WriteBytes(path string, data []byte) error {
+	return Write(path, func(out io.Writer) error {
+		_, err := out.Write(data)
+		return err
+	})
+}
+
 // Encode writes value to out as gob inside gzip, the form of the install cache and the shipped
 // schemas.
 func Encode(out io.Writer, value any) error {

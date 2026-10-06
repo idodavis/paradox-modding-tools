@@ -32,11 +32,6 @@ const TOKENS = [
 ] as const;
 type Tokens = Record<(typeof TOKENS)[number], string>;
 
-/** The theme on the page. */
-export function pageTheme(): ThemeId {
-  return (document.documentElement.dataset.theme as ThemeId | undefined) ?? "pmt-dark";
-}
-
 /** A theme's tokens as hex, read from an element carrying its `data-theme`. */
 function tokensOf(id: ThemeId): Tokens {
   const el = document.body.appendChild(document.createElement("div"));

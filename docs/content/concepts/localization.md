@@ -21,7 +21,7 @@ l_english:
  my_event.1.d: "Body text with a $other_key$."
 ```
 
-Copy English files to other language folders (rename the suffix **and** the header) or other-language players see raw keys. PMT Health's **Loc gaps** list the **untranslated** keys of each language (filter the Language column).
+Copy English files to other language folders (rename the suffix **and** the header) or other-language players see raw keys. PMT Health's **Localization Issues** list each **untranslated** key once per language, with the file it goes in (filter the Type or Language column).
 
 ## Override a vanilla key
 

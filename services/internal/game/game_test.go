@@ -23,15 +23,15 @@ func writeLauncher(t *testing.T, body string) string {
 }
 
 func TestReadGameVersion(t *testing.T) {
-	if got := ReadGameVersion(writeLauncher(t,
-		`{ "rawVersion": "1.12.5", "version": "Scythe v1.12.5" }`), 0); got != "1.12.5" {
+	if got := ReadGameVersion("ck3", writeLauncher(t,
+		`{ "rawVersion": "1.12.5", "version": "Scythe v1.12.5" }`)); got != "1.12.5" {
 		t.Fatalf("version = %q want 1.12.5", got)
 	}
-	if got := ReadGameVersion(t.TempDir(), 0); got != "" {
+	if got := ReadGameVersion("ck3", t.TempDir()); got != "" {
 		t.Fatalf("missing file version = %q want empty", got)
 	}
-	if got := ReadGameVersion(writeLauncher(t,
-		`{ "version": "1.13.11 (Chamomile)" }`), 0); got != "1.13.11" {
+	if got := ReadGameVersion("ck3", writeLauncher(t,
+		`{ "version": "1.13.11 (Chamomile)" }`)); got != "1.13.11" {
 		t.Fatalf("codename strip = %q want 1.13.11", got)
 	}
 }

@@ -71,7 +71,7 @@ func fetchPages(ctx context.Context, api, wikiBase string, patches bool, wanted 
 		raw, revid, err := parsePage(ctx, api, want.Title)
 		var page Page
 		if err == nil {
-			page.HTML, page.Sections, page.ModdingHTML, page.ModdingSections = clean(raw, wikiBase)
+			page.HTML, page.Sections, page.Modding = clean(raw, wikiBase)
 		}
 		if page.HTML == "" || len(page.HTML) > htmlCap {
 			if known {
@@ -80,9 +80,7 @@ func fetchPages(ctx context.Context, api, wikiBase string, patches bool, wanted 
 			continue
 		}
 		page.Title, page.URL, page.Revid = want.Title, wikiBase+strings.ReplaceAll(want.Title, " ", "_"), cmp.Or(revid, want.LastRevid)
-		if !patches {
-			page.ModdingHTML, page.ModdingSections = "", nil
-		}
+		page.Modding = page.Modding && patches
 		out = append(out, page)
 	}
 	return out, nil

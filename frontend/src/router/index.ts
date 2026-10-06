@@ -30,7 +30,13 @@ const router = createRouter({
           props: (to) => ({ ...to.params, card: to.query.card, name: to.query.name }),
         },
         { path: "patch-notes", name: "patch-notes", component: () => import("../pages/PatchNotesPage.vue"), props: true },
-        { path: "release", name: "release", component: () => import("../pages/ReleasePage.vue"), props: true },
+        {
+          path: "release",
+          name: "release",
+          component: () => import("../pages/ReleasePage.vue"),
+          // a link opens a step: the listing, the version and change note, or review and upload
+          props: (to) => ({ ...to.params, step: to.query.step }),
+        },
         {
           path: "settings",
           name: "workspace-settings",

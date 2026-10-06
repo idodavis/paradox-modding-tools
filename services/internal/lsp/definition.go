@@ -67,7 +67,7 @@ func (file *file) sites(ref index.Ref) []Location {
 			defs = slices.Insert(slices.DeleteFunc(slices.Clone(defs), func(def index.Def) bool { return def == winner }), 0, winner)
 		}
 		for _, def := range file.inFile(defs) {
-			out = append(out, locate(sess, def.Path, Position{Line: int(def.Line), Character: int(def.Col)}))
+			out = append(out, defined(sess, def))
 		}
 	}
 	return out
@@ -141,7 +141,7 @@ func DocumentSymbols(sess *session.Session, path string) ([]Symbol, error) {
 		}) {
 			if def.Name != "" && def.Database != index.Parameter {
 				out = append(out, Symbol{Name: def.Name, Database: def.Database,
-					Location: locate(sess, def.Path, Position{Line: int(def.Line), Character: int(def.Col)})})
+					Location: defined(sess, def)})
 			}
 		}
 	}
@@ -164,9 +164,9 @@ func WorkspaceSymbols(sess *session.Session, query string) []Symbol {
 			continue
 		}
 		for _, def := range records.Defs {
-			if strings.Contains(strings.ToLower(def.Name), query) && slices.Contains(index.Lookup(sess.Indexes(), def.Database, def.Name), def) {
+			if def.Database != index.Parameter && strings.Contains(strings.ToLower(def.Name), query) && slices.Contains(index.Lookup(sess.Indexes(), def.Database, def.Name), def) {
 				out = append(out, Symbol{Name: def.Name, Database: def.Database,
-					Location: locate(sess, def.Path, Position{Line: int(def.Line), Character: int(def.Col)})})
+					Location: defined(sess, def)})
 			}
 		}
 	}

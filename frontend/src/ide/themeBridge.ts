@@ -1,129 +1,40 @@
 /**
- * Sync the monaco-vscode workbench color/icon theme with the page's `data-theme`.
- *
- * Colors come from contributed theme JSON (hex). This module only writes
- * `workbench.colorTheme` and related settings — no CSS variable painting.
+ * The workbench's user settings, written whole whenever one changes: the page's theme and the editor's text
+ * size from the settings store, and the workspace's Hide binaries. What never changes is the workbench's
+ * configurationDefaults (workbenchHost.ts).
  */
+import { shallowRef, watch } from "vue";
 import { updateUserConfiguration } from "@codingame/monaco-vscode-configuration-service-override";
 import * as vscode from "vscode";
+import { useSettingsStore } from "../stores/settings";
 
-/** Bracket match / auto-close defaults (also in workbench construction). */
-export const EDITOR_BRACKET_DEFAULTS: Record<string, unknown> = {
-  "editor.matchBrackets": "always",
-  "editor.bracketPairColorization.enabled": true,
-  "editor.guides.bracketPairs": "active",
-  "editor.autoClosingBrackets": "languageDefined",
-};
+/** Hidden in the explorer and search while Hide binaries is on; images, .asset and .metadata stay. */
+const BINARY_GLOBS = ["**/*.{dll,exe,pdb,hash,hex,bin,dat}", "**/.git"];
 
-/** User-settings fragment: named theme + icon theme + tree indent. */
-export function workbenchSettingsForTheme(
-  themeName: string,
-): Record<string, unknown> {
-  return {
-    "workbench.colorTheme": themeName,
-    "workbench.iconTheme": "pmt-icons",
-    "workbench.tree.indent": 16,
-    "workbench.tree.renderIndentGuides": "always",
-    "editor.semanticHighlighting.enabled": false,
-    ...EDITOR_BRACKET_DEFAULTS,
-  };
-}
+/** The mounted workspace's Hide binaries. */
+export const hideBinaries = shallowRef(true);
 
-/** Default explorer hide: binaries only (images/.asset/.metadata stay). */
-const BINARY_EXCLUDES: Record<string, boolean> = {
-  "**/*.{dll,exe,pdb,hash,hex,bin,dat}": true,
-  "**/.git": true,
-};
-
-const FILE_ASSOCIATIONS: Record<string, string> = {
-  "**/localization/**/*.yml": "paradox-loc",
-  "**/localization/**/*.yaml": "paradox-loc",
-  "*.yml": "yaml",
-  "*.yaml": "yaml",
-};
-
-let hideExplorerBinaries = true;
-let applyingTheme = false;
-let lastThemeName = "";
-let queuedTheme: string | null = null;
-let editorFontSize = 14;
-
-/** Explorer exclude globs for files.exclude / search.exclude. */
-export function explorerExcludeSettings(
-  hide = hideExplorerBinaries,
-): Record<string, unknown> {
-  return {
-    "files.exclude": hide ? BINARY_EXCLUDES : {},
-    "search.exclude": hide ? BINARY_EXCLUDES : {},
-    "files.associations": FILE_ASSOCIATIONS,
-  };
-}
-
-/** Save hide-binaries and update the workbench settings when the IDE is up. */
-export function setHideExplorerBinaries(hide: boolean): void {
-  hideExplorerBinaries = hide;
-  if (lastThemeName) void applyWorkbenchTheme(lastThemeName);
-}
-
-/** Merge editor.fontSize into the next workbench settings write. */
-export function applyEditorFontSize(px: number): void {
-  editorFontSize = Math.min(24, Math.max(10, Math.round(px)));
-  if (lastThemeName) void applyWorkbenchTheme(lastThemeName);
-}
-
-/** Give a booted workbench the page's theme; before boot it starts with the page's own. */
-export function followWorkbenchTheme(themeName: string): void {
-  if (lastThemeName) void applyWorkbenchTheme(themeName);
-}
-
-/** Push workbench.colorTheme / iconTheme / tree indent from the Nuxt name. */
-export async function applyWorkbenchTheme(themeName: string): Promise<void> {
-  if (applyingTheme) {
-    queuedTheme = themeName;
-    return;
-  }
-  applyingTheme = true;
-  lastThemeName = themeName;
-  try {
-    do {
-      const name = queuedTheme ?? lastThemeName;
-      queuedTheme = null;
-      lastThemeName = name;
-      await updateUserConfiguration(
-        JSON.stringify(
-          {
-            ...workbenchSettingsForTheme(name),
-            "editor.fontSize": editorFontSize,
-            "editor.fontFamily": '"Geist Mono", monospace',
-            "workbench.startupEditor": "none",
-            "window.title": "PMT${separator}${activeEditorShort}",
-            "files.autoSave": "off",
-            ...explorerExcludeSettings(),
-          },
-          null,
-          2,
-        ),
-      );
-    } while (queuedTheme);
-  } finally {
-    applyingTheme = false;
-  }
-}
-
-/**
- * Re-apply the Nuxt-owned color/icon theme if the workbench picker drifts.
- */
-export function lockWorkbenchTheme(
-  getThemeName: () => string,
-): vscode.Disposable {
-  return vscode.workspace.onDidChangeConfiguration((e) => {
-    if (applyingTheme) return;
-    if (
-      !e.affectsConfiguration("workbench.colorTheme") &&
-      !e.affectsConfiguration("workbench.iconTheme")
-    ) {
-      return;
-    }
-    void applyWorkbenchTheme(getThemeName());
+/** The user settings as JSON; each glob is written on or off, as a user `{}` merges with the defaults. */
+export function userSettings(): string {
+  const settings = useSettingsStore();
+  const excludes = Object.fromEntries(BINARY_GLOBS.map((glob) => [glob, hideBinaries.value]));
+  return JSON.stringify({
+    "workbench.colorTheme": settings.activeTheme,
+    "editor.fontSize": settings.editorFontSize,
+    "files.exclude": excludes,
+    "search.exclude": excludes,
   });
+}
+
+/** Write the user settings now and on each change, and again if a picker swaps the theme. */
+export function followSettings(): vscode.Disposable {
+  const settings = useSettingsStore();
+  const write = () => void updateUserConfiguration(userSettings());
+  const stop = watch(() => [settings.activeTheme, settings.editorFontSize, hideBinaries.value], write, { immediate: true });
+  const lock = vscode.workspace.onDidChangeConfiguration((e) => {
+    if (!e.affectsConfiguration("workbench.colorTheme") && !e.affectsConfiguration("workbench.iconTheme")) return;
+    const now = vscode.workspace.getConfiguration("workbench");
+    if (now.get("colorTheme") !== settings.activeTheme || now.get("iconTheme") !== "pmt-icons") write();
+  });
+  return vscode.Disposable.from(lock, { dispose: stop });
 }

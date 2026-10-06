@@ -18,7 +18,7 @@ import type { File } from "@pierre/diffs";
 import { codeView, drawCode } from "../lib/code";
 
 /** The page an article belongs to, for resolving its in-pane wiki links. */
-export type WikiArticlePage = { title: string; url: string };
+type WikiArticlePage = { title: string; url: string };
 
 /** A heading of the article, which a find jumps to before its first hit. */
 type Heading = { line: string; anchor: string };
@@ -141,7 +141,7 @@ export function useWikiArticle(opts: {
         if (hit.anchor) jumpTo(hit.anchor);
         break;
       case "external":
-        openUrl(a.href);
+        void Browser.OpenURL(a.href);
         break;
       default: {
         const _x: never = hit;
@@ -150,12 +150,7 @@ export function useWikiArticle(opts: {
     }
   }
 
-  return { articleEl, tocActive, hits, hit, showHit, jumpTo, onWikiClick, openUrl };
-}
-
-/** Open a page in the system's browser, not a window of the app. */
-function openUrl(url: string): void {
-  void Browser.OpenURL(url);
+  return { articleEl, tocActive, hits, hit, showHit, jumpTo, onWikiClick };
 }
 
 /** First heading anchor whose text holds the needle, or empty. */

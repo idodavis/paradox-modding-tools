@@ -7,12 +7,12 @@
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
 import { LastRunCrashed } from "@services/logservice";
-import { ReadEditableBase64, ReadFileBase64, StatPath } from "@services/fileservice";
+import { ReadEditableBase64, ReadFileBase64 } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
-import { GetHealth, GetLines, LookupLoc } from "@services/healthservice";
+import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { EventGraph, Params, Roots, SourceAt } from "@services/models";
 import { DiagnosticCodes } from "@services/ideservice";
-import { LoadListing, UploadFiles } from "@services/releaseservice";
+import { CompareWithSteam, ListingSummary, LoadListing, UploadFiles } from "@services/releaseservice";
 import { EnsureSession, GetLanguageHealth } from "@services/sessionservice";
 import { PatchPage, Patches } from "@services/wikiservice";
 import {
@@ -25,7 +25,7 @@ import {
   ModFolder,
 } from "@services/workspaceservice";
 
-export const appKeys = { version: ["app", "version"], crashed: ["app", "crashed"] } as const;
+const appKeys = { version: ["app", "version"], crashed: ["app", "crashed"] } as const;
 
 export const workspaceKeys = {
   games: ["games"] as const,
@@ -39,7 +39,8 @@ export const workspaceKeys = {
 export const installKeys = {
   all: ["installs"] as const,
   game: (gameId: string) => ["installs", gameId] as const,
-  found: (gameId: string) => ["installs", gameId, "found"] as const,
+  // apart from the installs: a Steam scan, run again only by its own page
+  found: (gameId: string) => ["installs-found", gameId] as const,
 };
 
 export const sessionKeys = {
@@ -59,11 +60,15 @@ export const languageKeys = {
   one: (id: string) => ["language", id] as const,
 };
 
-export const ideKeys = { codes: ["ide", "codes"] as const };
+const ideKeys = { codes: ["ide", "codes"] as const };
 
 export const releaseKeys = {
+  /** A mod's listing, and under it everything read of it. */
+  mod: (workspaceId: string, modId: string) => ["release", workspaceId, modId] as const,
   listing: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "listing"] as const,
+  summary: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "summary"] as const,
   upload: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "upload"] as const,
+  compare: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "compare"] as const,
 };
 
 export const wikiKeys = {
@@ -75,7 +80,6 @@ export const wikiKeys = {
 
 export const fileKeys = {
   image: (path: string) => ["file", "image", path] as const,
-  stat: (path: string) => ["file", "stat", path] as const,
   text: (path: string) => ["file", "text", path] as const,
 };
 
@@ -91,7 +95,7 @@ export const gamesQuery = defineQueryOptions({ key: workspaceKeys.games, query: 
 
 export const workspacesQuery = defineQueryOptions({
   key: workspaceKeys.all,
-  query: async () => (await ListWorkspaces("")) ?? [],
+  query: async () => (await ListWorkspaces()) ?? [],
 });
 
 export const ideRootsQuery = defineQueryOptions((id: string) => ({
@@ -164,7 +168,7 @@ export const eventDetailQuery = defineQueryOptions(({ id, event, live }: { id: s
 /** The roots a search holds, by kind. */
 export const rootsQuery = defineQueryOptions(({ id, search, live }: { id: string; search: string; live: boolean }) => ({
   key: sessionKeys.roots(id, search),
-  query: () => SearchRoots(id, search, ""),
+  query: () => SearchRoots(id, search),
   enabled: !!id && live,
   placeholderData: (previous: Roots | null | undefined) => previous,
 }));
@@ -192,10 +196,10 @@ export const linesQuery = defineQueryOptions(
   }),
 );
 
-/** A localization key's entries in every language, and what reads it. */
-export const locQuery = defineQueryOptions(({ id, key, live }: { id: string; key: string; live: boolean }) => ({
+/** What reads a localization key. */
+export const locReadersQuery = defineQueryOptions(({ id, key, live }: { id: string; key: string; live: boolean }) => ({
   key: sessionKeys.loc(id, key),
-  query: () => LookupLoc(id, key),
+  query: () => LocReaders(id, key),
   enabled: !!id && live && !!key,
 }));
 
@@ -208,6 +212,20 @@ export const codesQuery = defineQueryOptions({
 export const listingQuery = defineQueryOptions(({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
   key: releaseKeys.listing(workspaceId, modId),
   query: () => LoadListing(workspaceId, modId),
+  enabled: !!workspaceId && !!modId,
+}));
+
+/** A mod's Workshop id, listing image and description source, read without writing. */
+export const summaryQuery = defineQueryOptions(({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
+  key: releaseKeys.summary(workspaceId, modId),
+  query: () => ListingSummary(workspaceId, modId),
+  enabled: !!workspaceId && !!modId,
+}));
+
+/** A mod against the copy Steam has, by the snapshot PMT kept; never a download. */
+export const compareQuery = defineQueryOptions(({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
+  key: releaseKeys.compare(workspaceId, modId),
+  query: () => CompareWithSteam(workspaceId, modId),
   enabled: !!workspaceId && !!modId,
 }));
 
@@ -233,7 +251,7 @@ export function imageMime(path: string): string {
   return known[ext] ?? "application/octet-stream";
 }
 
-/** An image file as a data URL with its size in pixels; none when it cannot be read. */
+/** An image file as a data URL with its size in pixels and in bytes; none when it cannot be read. */
 export const imageQuery = defineQueryOptions((path: string) => ({
   key: fileKeys.image(path),
   query: async () => {
@@ -242,7 +260,8 @@ export const imageQuery = defineQueryOptions((path: string) => ({
     const image = new Image();
     image.src = `data:${imageMime(path)};base64,${file.b64}`;
     await image.decode();
-    return { src: image.src, width: image.naturalWidth, height: image.naturalHeight };
+    const padding = file.b64.endsWith("==") ? 2 : file.b64.endsWith("=") ? 1 : 0;
+    return { src: image.src, width: image.naturalWidth, height: image.naturalHeight, bytes: (file.b64.length * 3) / 4 - padding };
   },
   enabled: !!path,
 }));
@@ -258,8 +277,3 @@ export const textQuery = defineQueryOptions((path: string) => ({
   enabled: !!path,
 }));
 
-export const statQuery = defineQueryOptions((path: string) => ({
-  key: fileKeys.stat(path),
-  query: () => StatPath(path),
-  enabled: !!path,
-}));

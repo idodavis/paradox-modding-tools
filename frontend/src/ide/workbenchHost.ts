@@ -75,20 +75,11 @@ import * as vscode from "vscode";
 import {
   WailsFileSystemProvider,
   setListShowAll,
-  setModRootDeletedHook,
   normFs,
   caseSensitiveFs,
   type IdeRoot,
 } from "./fsBridge";
-import {
-  applyWorkbenchTheme,
-  EDITOR_BRACKET_DEFAULTS,
-  explorerExcludeSettings,
-  setHideExplorerBinaries,
-  workbenchSettingsForTheme,
-  lockWorkbenchTheme,
-} from "./themeBridge";
-import { pageTheme } from "./colorThemes";
+import { followSettings, hideBinaries, userSettings } from "./themeBridge";
 import { cssHex } from "../lib/cssHex";
 import { registerParadoxLanguages } from "./paradoxLanguages";
 import { registerLanguageClient } from "./languageClient";
@@ -96,8 +87,6 @@ import { setIdeActiveFile } from "../composables/useIdeActiveFile";
 import { registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
 import {
-  GetIdeRoots,
-  RemoveWorkspaceMod,
   SaveIdeSession,
 } from "@services/workspaceservice";
 import { getService } from "@codingame/monaco-vscode-api";
@@ -195,9 +184,9 @@ export type IdeSessionOpts = {
 };
 
 /** Apply Overview hide-binaries to explorer listing and workbench excludes. */
-export function applyExplorerVisibility(hideBinaries: boolean): void {
-  setListShowAll(!hideBinaries);
-  setHideExplorerBinaries(hideBinaries);
+export function applyExplorerVisibility(hide: boolean): void {
+  setListShowAll(!hide);
+  hideBinaries.value = hide;
 }
 
 const ATTACHED_PARTS = [
@@ -234,15 +223,6 @@ let editorHooked = false;
 let searchRegistered = false;
 let langsRegistered = false;
 let menusRegistered = false;
-
-setModRootDeletedHook(async (originId) => {
-  const wsId = mountedWorkspaceId || useWorkspaceStore().activeWorkspaceId;
-  if (!wsId) return;
-  await RemoveWorkspaceMod(wsId, originId);
-  const roots = (await GetIdeRoots(wsId))?.roots ?? [];
-  if (!roots.length) return;
-  await setWorkbenchRoots(roots, pageTheme());
-});
 
 function setupWorkers(): void {
   const w = window as Window & {
@@ -357,9 +337,20 @@ function constructOptions(): IWorkbenchConstructionOptions {
         comments: "off",
         strings: "on",
       },
-      ...EDITOR_BRACKET_DEFAULTS,
+      "editor.matchBrackets": "always",
+      "editor.bracketPairColorization.enabled": true,
+      "editor.guides.bracketPairs": "active",
+      "editor.autoClosingBrackets": "languageDefined",
+      "editor.fontFamily": '"Geist Mono", monospace',
+      "window.title": "PMT${separator}${activeEditorShort}",
+      "files.autoSave": "off",
+      "files.associations": {
+        "**/localization/**/*.yml": "paradox-loc",
+        "**/localization/**/*.yaml": "paradox-loc",
+        "*.yml": "yaml",
+        "*.yaml": "yaml",
+      },
       "explorer.autoReveal": true,
-      ...explorerExcludeSettings(),
     },
   };
 }
@@ -745,7 +736,7 @@ function lockKeybindingsJson(): string {
   ]);
 }
 
-async function runInitialize(theme: string): Promise<void> {
+async function runInitialize(): Promise<void> {
   if (!containerEl || !partRefs) {
     throw new Error("Workbench layout refs not set");
   }
@@ -769,31 +760,7 @@ async function runInitialize(theme: string): Promise<void> {
       mem.registerFile(workspaceMemFile);
       registerFileSystemOverlay(1, mem);
       registerFileSystemOverlay(2, fsProvider);
-      await initUserConfiguration(
-        JSON.stringify(
-          {
-            ...workbenchSettingsForTheme(
-              theme,
-            ),
-            "workbench.startupEditor": "none",
-            "workbench.activity.showAccounts": false,
-            "window.menuBarVisibility": "hidden",
-            "window.title": "PMT${separator}${activeEditorShort}",
-            "explorer.autoReveal": true,
-            "files.autoSave": "off",
-            "editor.acceptSuggestionOnCommitCharacter": false,
-            "editor.quickSuggestions": {
-              other: "on",
-              comments: "off",
-              strings: "on",
-            },
-            ...EDITOR_BRACKET_DEFAULTS,
-            ...explorerExcludeSettings(),
-          },
-          null,
-          2,
-        ),
-      );
+      await initUserConfiguration(userSettings());
       await initUserKeybindings(lockKeybindingsJson());
       const options = constructOptions();
       if (!monacoLifecycle.serviceInitializedBarrier.isOpen()) {
@@ -829,14 +796,11 @@ async function runInitialize(theme: string): Promise<void> {
       (id) => ({ name: useWorkspaceStore().originName(id), hex: cssHex(useWorkspaceStore().originColor(id)) }),
     );
     themeLock?.dispose();
-    themeLock = lockWorkbenchTheme(pageTheme);
+    themeLock = followSettings();
     if (!rootDeco) {
       rootDeco = registerRootDecorations();
     }
     setDecoratedRoots(currentRoots);
-    await applyWorkbenchTheme(
-      theme,
-    );
     if (!foldersMatch(currentRoots)) {
       await writeWorkspaceFolders(currentRoots);
     }
@@ -875,15 +839,13 @@ export function refreshIdeRootDecorations(roots: IdeRoot[]): void {
  */
 export async function setWorkbenchRoots(
   roots: IdeRoot[],
-  themeName: string,
   session?: IdeSessionOpts,
 ): Promise<void> {
-  return enqueueRoots(() => applyWorkbenchRoots(roots, themeName, session));
+  return enqueueRoots(() => applyWorkbenchRoots(roots, session));
 }
 
 async function applyWorkbenchRoots(
   roots: IdeRoot[],
-  themeName: string,
   session?: IdeSessionOpts,
 ): Promise<void> {
   if (!roots.length) {
@@ -897,6 +859,8 @@ async function applyWorkbenchRoots(
     session.workspaceId !== mountedWorkspaceId;
   if (switching) {
     await flushIdeSession();
+    // its tabs are saved: closing them must not save the workspace again, empty, before the switch is done
+    persistTabsForMounted = false;
     await closeAllEditors();
   }
 
@@ -914,7 +878,7 @@ async function applyWorkbenchRoots(
   }
 
   if (!initPromise) {
-    initPromise = runInitialize(themeName).catch((err) => {
+    initPromise = runInitialize().catch((err) => {
       if (monacoLifecycle.servicesInitialized || isAlreadyInitialized(err)) {
         recoverAlreadyInitialized();
         return;
@@ -928,7 +892,6 @@ async function applyWorkbenchRoots(
   if (!foldersMatch(roots)) {
     await writeWorkspaceFolders(roots);
   }
-  await applyWorkbenchTheme(pageTheme());
 
   if (session) {
     mountedWorkspaceId = session.workspaceId;

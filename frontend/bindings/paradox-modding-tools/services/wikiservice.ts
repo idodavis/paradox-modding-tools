@@ -32,14 +32,6 @@ export function PatchPage(gameID: string, version: string): $CancellablePromise<
 /**
  * Patches returns the Patch Notes version list, newest first.
  */
-export function Patches(gameID: string): $CancellablePromise<wiki$0.PatchList | null> {
+export function Patches(gameID: string): $CancellablePromise<wiki$0.PatchList> {
     return $Call.ByID(681892155, gameID);
-}
-
-/**
- * StartWikiWarm refreshes, in the background, the wiki pages of every installed game, so the
- * guides are current without a click, and tells the frontend as each game is done.
- */
-export function StartWikiWarm(): $CancellablePromise<void> {
-    return $Call.ByID(2663403356);
 }

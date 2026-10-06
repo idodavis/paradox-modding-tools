@@ -27,7 +27,11 @@ import {
   DeletePath,
   RenamePath,
 } from "@services/fileservice";
+import { RemoveWorkspaceMod } from "@services/workspaceservice";
 import type { IdeRoot } from "@services/models";
+import { useQueryCache } from "@pinia/colada";
+import { sessionKeys, workspaceKeys } from "../queries";
+import { useWorkspaceStore } from "../stores/workspace";
 
 type Uri = monaco.Uri;
 
@@ -86,15 +90,6 @@ function underRoot(filePath: string, root: string): boolean {
   const a = normFs(filePath);
   const b = normFs(root);
   return a === b || a.startsWith(b + "/");
-}
-
-type ModRootDeletedFn = (originId: string) => void | Promise<void>;
-
-let modRootDeleted: ModRootDeletedFn | undefined;
-
-/** Called after a successful disk delete of a mounted mod root. */
-export function setModRootDeletedHook(fn: ModRootDeletedFn | undefined): void {
-  modRootDeleted = fn;
 }
 
 /** Minimal event emitter matching VS Code Event shape. */
@@ -212,7 +207,7 @@ export class WailsFileSystemProvider
     if (!st.exists) this.notFound();
     return {
       type: st.isDir ? FileType.Directory : FileType.File,
-      ctime: st.ctimeMs,
+      ctime: st.mtimeMs,
       mtime: st.mtimeMs,
       size: st.size,
       permissions: this.isReadOnly(path) ? FilePermission.Readonly : undefined,
@@ -250,7 +245,13 @@ export class WailsFileSystemProvider
     this.assertWritable(path);
     const originId = this.modRootOrigin(path);
     await DeletePath(path);
-    if (originId && modRootDeleted) await modRootDeleted(originId);
+    if (!originId) return;
+    // a mod's own folder: the workspace drops the mod, and its folders and session are read again
+    const id = useWorkspaceStore().activeWorkspaceId;
+    await RemoveWorkspaceMod(id, originId);
+    const queryCache = useQueryCache();
+    void queryCache.invalidateQueries({ key: workspaceKeys.all });
+    void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
   }
 
   async rename(from: Uri, to: Uri, _opts: IFileOverwriteOptions): Promise<void> {

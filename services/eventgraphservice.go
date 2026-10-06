@@ -37,11 +37,8 @@ type Node struct {
 	Kind     string `json:"kind"` // what one of its database is called (game.KindName)
 	Title    string `json:"title,omitempty"`
 	Origin   string `json:"origin,omitempty"`
-	Rel      string `json:"rel,omitempty"`
-	Line     int    `json:"line"`
 	Root     bool   `json:"root,omitempty"`
 	Stub     string `json:"stub,omitempty"` // "more": fires hidden out of the node in its ID; "fired-by": callers hidden
-	Hidden   int    `json:"hidden,omitempty"`
 }
 
 // Edge is one fire drawn; Via names the scripted effects between, in the order they are entered.
@@ -80,7 +77,7 @@ type DatabaseCount struct {
 
 // SearchRoots is the fired events and on_actions, and what fires one but a scripted entry, whose id
 // holds the query: ids that start with it first, 50 of one database or 8 of each.
-func (s *EventGraphService) SearchRoots(workspaceID, query, database string) (*Roots, error) {
+func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, error) {
 	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
@@ -139,15 +136,9 @@ func (s *EventGraphService) SearchRoots(workspaceID, query, database string) (*R
 		byKind[kind] = append(byKind[kind], name)
 	}
 	out, limit := &Roots{}, 8
-	if database != "" {
-		limit = 50
-	}
 	builder := newGrapher(sess)
 	for kind, names := range byKind {
 		out.Databases = append(out.Databases, DatabaseCount{Database: kind, Count: len(names)})
-		if database != "" && database != kind {
-			continue
-		}
 		slices.SortFunc(names, func(first, second string) int {
 			starts := func(name string) int { return strings.Index(strings.ToLower(name), query) }
 			return cmp.Or(cmp.Compare(min(starts(first), 1), min(starts(second), 1)), strings.Compare(first, second))
@@ -202,7 +193,7 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 			opened := slices.Contains(params.Expand, "more:"+from)
 			for i, fire := range fires {
 				if !opened && params.Fanout > 0 && i >= params.Fanout {
-					builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more:" + from, Database: "more", Stub: "more", Hidden: len(fires) - i, Title: stubTitle(fires[i:])})
+					builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more:" + from, Database: "more", Stub: "more", Title: stubTitle(fires[i:])})
 					builder.out.Edges = append(builder.out.Edges, Edge{From: from, To: "more:" + from})
 					break
 				}
@@ -234,9 +225,8 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 				builder.out.Edges = append(builder.out.Edges, Edge{From: caller.Name, To: params.Root, Via: caller.Via})
 			}
 		} else {
-			builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more-in:" + params.Root, Database: "more", Stub: "fired-by", Hidden: len(callers), Title: fmt.Sprintf("+%d fired by", len(callers))})
+			builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more-in:" + params.Root, Database: "more", Stub: "fired-by", Title: fmt.Sprintf("+%d fired by", len(callers))})
 			builder.out.Edges = append(builder.out.Edges, Edge{From: "more-in:" + params.Root, To: params.Root})
-			builder.out.Nodes[0].Hidden = len(callers)
 		}
 	}
 
@@ -332,19 +322,15 @@ func (grapher *grapher) node(id string, root bool) {
 	def := grapher.def(id)
 	file, _, _ := grapher.sess.Located(def.Path)
 	grapher.drawn[id] = true
-	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: def.Database, Kind: game.KindName(def.Database), Title: grapher.sess.Title(def), Origin: file.Origin, Rel: file.Rel, Line: int(def.Line), Root: root})
+	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: def.Database, Kind: game.KindName(def.Database), Title: grapher.sess.Title(def), Origin: file.Origin, Root: root})
 }
 
 // Detail is one definition, opened.
 type Detail struct {
-	Database string         `json:"database"`
 	Kind     string         `json:"kind"`
 	Name     string         `json:"name"`
-	Mode     string         `json:"mode,omitempty"` // the entry mode written before the name: REPLACE, INJECT
 	Line     int            `json:"line"`
-	Col      int            `json:"col"`
 	At       source.File    `json:"at"`
-	Title    string         `json:"title,omitempty"`
 	Lines    []string       `json:"lines"` // the definition as its file writes it
 	Sections []Section      `json:"sections"`
 	Options  []Option       `json:"options"`
@@ -359,7 +345,6 @@ type Detail struct {
 type Section struct {
 	Key      string     `json:"key"`
 	Value    string     `json:"value,omitempty"`
-	Text     string     `json:"text,omitempty"`
 	Line     int        `json:"line"`
 	When     string     `json:"when,omitempty"`     // a block's own trigger, on one line: it applies only then
 	Parts    []TextPart `json:"parts,omitempty"`    // a text's parts in order: a loc key, or a dynamic description's
@@ -382,11 +367,9 @@ type Version struct {
 	Line int    `json:"line"`
 }
 
-// Option is one option block of an event: its first name key and the text that key has, its trigger on
-// one line, every name it is written with (the first whose trigger holds shows) and its flags.
+// Option is one option block of an event: its trigger on one line, every name it is written with (the
+// first whose trigger holds shows) and its flags.
 type Option struct {
-	Name  string    `json:"name"`
-	Text  string    `json:"text,omitempty"`
 	Line  int       `json:"line"`
 	When  string    `json:"when,omitempty"`
 	Names []Version `json:"names,omitempty"`
@@ -424,8 +407,8 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	}
 	file, _, _ := sess.Located(def.Path)
 	detail := &Detail{
-		Database: def.Database, Kind: game.KindName(def.Database), Name: def.Name, Mode: def.Mode, Line: int(def.Line), Col: int(def.Col), At: file,
-		Title: sess.Title(def), Fires: sess.Fires(def), FiredBy: sess.FiredBy(def),
+		Kind: game.KindName(def.Database), Name: def.Name, Line: int(def.Line), At: file,
+		Fires: sess.Fires(def), FiredBy: sess.FiredBy(def),
 	}
 
 	// the block, read from the file: the statement whose key the definition was found at
@@ -445,8 +428,7 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 		portrait := slices.ContainsFunc(game.EventPortraits.Suffixes, func(suffix string) bool { return strings.HasSuffix(section.Key, suffix) })
 		if scalar, ok := assignment.Value.(*jomini.Scalar); ok {
 			section.Value = scalar.Text
-			if said, ok := sess.Loc(scalar.Text, ""); ok {
-				section.Text = said.Text
+			if _, ok := sess.Loc(scalar.Text, ""); ok {
 				section.Parts = []TextPart{{Versions: []Version{read.version(scalar, "")}}}
 			}
 			if portrait {
@@ -638,9 +620,6 @@ func (read eventText) option(block *jomini.Block, line int) Option {
 		case slices.Contains(game.OptionFlags, key) && scalar != nil && scalar.Text == game.Bools[0]:
 			option.Flags = append(option.Flags, key)
 		}
-	}
-	if len(option.Names) > 0 {
-		option.Name, option.Text = option.Names[0].Key, option.Names[0].Text
 	}
 	return option
 }

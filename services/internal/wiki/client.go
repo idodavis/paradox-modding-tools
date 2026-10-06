@@ -19,11 +19,12 @@ import (
 	"paradox-modding-tools/services/internal/game"
 )
 
+const userAgent = "ParadoxModdingTools/dev (https://github.com/idodavis/paradox-modding-tools; wiki-sidecar)"
+
 var (
 	httpClient  = wikiHTTP()
 	minInterval = time.Second
 	apiOverride = ""
-	userAgent   = "ParadoxModdingTools/dev (https://github.com/idodavis/paradox-modding-tools; wiki-sidecar)"
 	lastMu      sync.Mutex
 	lastCall    time.Time
 )

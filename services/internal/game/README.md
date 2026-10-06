@@ -26,7 +26,8 @@ in one row, never as a branch in a reader.
 | `ListIterators` | the prefixes a scripted list is iterated by, and their block kind | the walker, the index |
 | `ValueOperators` | a value block's operators, and whether each takes a number | the walker, completion |
 | `DynamicDescription` | the shape of a dynamic description (`first_valid`, `triggered_desc`, `desc`) | the walker |
-| `Bools`, `Colours`, `GlobalType` | how yes/no, colours and data calls are written | the readers, hover |
+| `Bools`, `Colors`, `GlobalType` | how yes/no, colors and data calls are written | the readers, hover |
+| `EventPortraits`, `OptionFlags` | the keys an event names its portraits with (by their last word, and the one that names the character), the yes-or-no words an option is marked with | the event graph's detail |
 | `Placeholders`, `UsagePlaceholder`, `DumpWords` | the block placeholders' last words and their kinds, a usage's placeholder, the dumps' words the engine decides by (`Iterate through`, `none`/`all`) | the dump and doc readers |
 | `MisspelledFolders` | folder names the game never reads | diagnostics |
 | `EntryMode`, `GameInfo.Mode` | the words before a definition's name (`REPLACE:`, `INJECT:`), what each does, and the split of one off a name | the entry detector, diagnostics, `index.Winner` |
@@ -50,6 +51,6 @@ them.
 
 `registry` is the table of supported games: names, wiki endpoint, script and stage roots, descriptor
 kind, Documents folder, Steam app id and library, the first-wins sentence the pages show, the new-mod
-folders and the data-types command. `Get`, `All` and `FirstWinsAt` read it. The rest finds installs
+folders and the data-types command. `Get` and `All` read it. The rest finds installs
 through Steam's library folders, reads a game's version, and locates its user-data and dump folders on
 Windows and Linux.

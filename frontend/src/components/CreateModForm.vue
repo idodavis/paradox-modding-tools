@@ -38,7 +38,7 @@ const { mutate: create, isLoading: creating } = useMutation({
   mutation: async () => {
     const path = await CreateMod(gameId, parent.value, name.value.trim(), lang.value, supportedVersion, description.value, thumbnail.value);
     // Go names the mod from its descriptor, and finds the thumbnail where the game keeps it
-    if (workspaceId) await AddWorkspaceMod(workspaceId, "", path, "");
+    if (workspaceId) await AddWorkspaceMod(workspaceId, path);
     return path;
   },
   onSuccess: (path) => emit("close", path),

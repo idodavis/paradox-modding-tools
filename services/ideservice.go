@@ -28,18 +28,13 @@ func (s *IdeService) enabled() map[string]bool {
 	for _, code := range lsp.Codes {
 		on[code.Code] = code.Default
 	}
-	if s.App == nil {
-		return on
-	}
-	settings, err := s.App.GetSettings()
-	if err != nil {
-		return on
-	}
-	for key, value := range settings {
-		if code, ok := strings.CutPrefix(key, "ide.diag."); ok && value != "" {
-			on[code] = value == "on"
+	s.App.read(func(cfg *Config) {
+		for key, value := range cfg.Settings["ide"] {
+			if code, ok := strings.CutPrefix(key, "diag."); ok && value != "" {
+				on[code] = value == "on"
+			}
 		}
-	}
+	})
 	return on
 }
 

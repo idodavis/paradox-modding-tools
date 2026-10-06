@@ -143,7 +143,7 @@ func TestParseYouTubeID(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ParseYouTubeID(tc.in)
+			got, err := parseYouTubeID(tc.in)
 			if tc.ok {
 				if err != nil || got != id {
 					t.Fatalf("got %q %v", got, err)
@@ -329,16 +329,16 @@ func TestWorkshopExtras(t *testing.T) {
 	}
 }
 
-func TestEnsureDescriptionsCreatesMissingOnly(t *testing.T) {
+func TestNewDescriptionCreatesMissingOnly(t *testing.T) {
 	root := t.TempDir()
-	if err := EnsureDescriptions(root, "M", "desc"); err != nil {
+	if err := NewDescription(root, DescMdName, FromMarkdown, "M", "desc"); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, DescMdName), []byte("kept\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureDescriptions(root, "M", "other"); err != nil {
-		t.Fatal(err)
+	if err := NewDescription(root, DescMdName, FromMarkdown, "M", "other"); err == nil {
+		t.Fatal("want an error for a file that exists")
 	}
 	md, err := os.ReadFile(filepath.Join(root, DescMdName))
 	if err != nil {

@@ -3,5 +3,6 @@
 
 export type {
     Converted,
+    FileChange,
     Preview
 } from "./models.js";

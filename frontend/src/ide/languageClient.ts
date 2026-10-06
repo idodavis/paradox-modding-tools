@@ -260,6 +260,8 @@ export function registerLanguageClient(getWorkspaceId: () => string, origin: Car
       if (ours(doc)) void ide.DidSave(getWorkspaceId(), pathOf(doc)).then(() => refreshDiagnostics(doc));
     }),
     vscode.workspace.onDidCloseTextDocument((doc) => {
+      // an edit still waiting would open it again in the backend after the close
+      dirty.delete(doc.uri.toString());
       if (ours(doc)) void ide.DidClose(getWorkspaceId(), pathOf(doc));
       diagnostics.delete(doc.uri);
     }),

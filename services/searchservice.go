@@ -5,7 +5,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -18,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/services/internal/lang/source"
@@ -28,9 +26,6 @@ import (
 // the frontend as search:hits as it finds them.
 type SearchService struct{}
 
-// registers search:hits so the bindings generator types it
-func init() { application.RegisterEvent[TextSearchHits](EventSearchHits) }
-
 const (
 	searchMaxResults   = 10000
 	searchMaxFileBytes = 8 * 1024 * 1024
@@ -39,10 +34,9 @@ const (
 
 // TextSearchFolder is one workspace folder plus optional glob filters.
 type TextSearchFolder struct {
-	Path                 string   `json:"path"`
-	Includes             []string `json:"includes,omitempty"`
-	Excludes             []string `json:"excludes,omitempty"`
-	DisregardIgnoreFiles bool     `json:"disregardIgnoreFiles,omitempty"`
+	Path     string   `json:"path"`
+	Includes []string `json:"includes,omitempty"`
+	Excludes []string `json:"excludes,omitempty"`
 }
 
 // TextSearchQuery is a Find-in-Files request from the workbench.
@@ -156,16 +150,6 @@ func pathMatchesGlobs(rel string, gs globSet) bool {
 	return false
 }
 
-func byteToRune(text string, byteOff int) int {
-	if byteOff <= 0 {
-		return 0
-	}
-	if byteOff >= len(text) {
-		return utf8.RuneCountInString(text)
-	}
-	return utf8.RuneCountInString(text[:byteOff])
-}
-
 func folderPath(folder TextSearchFolder) string {
 	path := filepath.Clean(filepath.FromSlash(folder.Path))
 	if path == "" || path == "." {
@@ -188,44 +172,27 @@ func compileSearchRegex(query TextSearchQuery) (*regexp.Regexp, error) {
 	return regexp.Compile(pattern)
 }
 
-func skipSearchDir(name string, isDir bool) bool {
-	return isDir && name == ".git"
-}
-
-func fileHasNUL(data []byte) bool {
-	n := min(len(data), searchNulProbe)
-	return bytes.Contains(data[:n], []byte{0})
-}
-
-func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) ([]TextSearchHit, error) {
+// grepFile is path's matches; none where it can't be read, is empty, is over the size cap or is binary.
+func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) []TextSearchHit {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 	defer file.Close()
 	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if info.Size() == 0 || info.Size() > searchMaxFileBytes {
-		return nil, nil
+	if err != nil || info.Size() == 0 || info.Size() > searchMaxFileBytes {
+		return nil
 	}
 	// a NUL in the head marks the file binary and the rest is never read, which keeps a mod's meshes
 	// and images out of the search without listing extensions
 	head := make([]byte, min(int64(searchNulProbe), info.Size()))
-	if _, err := io.ReadFull(file, head); err != nil {
-		return nil, err
-	}
-	if fileHasNUL(head) {
-		return nil, nil
+	if _, err := io.ReadFull(file, head); err != nil || bytes.IndexByte(head, 0) >= 0 {
+		return nil
 	}
 	rest, err := io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
 	data := append(head, rest...)
-	if !holds(data) {
-		return nil, nil
+	if err != nil || !holds(data) {
+		return nil
 	}
 	text := string(data)
 	var hits []TextSearchHit
@@ -240,43 +207,41 @@ func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) ([]T
 			hits = append(hits, TextSearchHit{
 				Path:    path,
 				Line:    lineNo,
-				Col:     byteToRune(line, loc[0]),
-				EndCol:  byteToRune(line, loc[1]),
+				Col:     utf8.RuneCountInString(line[:loc[0]]),
+				EndCol:  utf8.RuneCountInString(line[:loc[1]]),
 				Preview: line,
 			})
 		}
 		lineNo++
 		text = rest
 	}
-	return hits, nil
+	return hits
 }
 
+// textSearchFolder greps the files under root, sending each one's hits as it is done, at most maxHits
+// in all, and says how many it sent and whether it stopped at the cap.
 func textSearchFolder(
 	ctx context.Context, root string, gs globSet, re *regexp.Regexp, holds func(data []byte) bool, maxHits int,
 	send func(hits []TextSearchHit),
-) (int, bool, error) {
+) (found int, limitHit bool) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var mu sync.Mutex
-	found, limitHit := 0, false
-
-	group, gctx := errgroup.WithContext(ctx)
+	var group errgroup.Group
 	group.SetLimit(runtime.NumCPU())
 
-	walkErr := searchFiles(gctx, root, gs, func(path, rel string) error {
+	// only a cancel ends the walk early, and the caller's ctx already says so
+	_ = searchFiles(ctx, root, gs, func(path, rel string) error {
 		// an image the format table names is never opened
 		if source.Classify(path, filepath.ToSlash(rel)) == source.Image {
 			return nil
 		}
 		group.Go(func() error {
-			if gctx.Err() != nil {
+			if ctx.Err() != nil {
 				return nil
 			}
-			fileHits, err := grepFile(path, re, holds)
-			if err != nil {
-				return nil
-			}
+			fileHits := grepFile(path, re, holds)
 			// a file's hits are sent as it is done, as many as the cap leaves
 			mu.Lock()
 			defer mu.Unlock()
@@ -293,13 +258,8 @@ func textSearchFolder(
 		})
 		return nil
 	})
-	if err := group.Wait(); err != nil && !errors.Is(err, context.Canceled) {
-		return found, limitHit, err
-	}
-	if walkErr != nil && !errors.Is(walkErr, context.Canceled) {
-		return found, limitHit, walkErr
-	}
-	return found, limitHit, nil
+	_ = group.Wait()
+	return found, limitHit
 }
 
 // searchFiles visits each file under root that the folder's globs keep, never entering a folder
@@ -311,7 +271,7 @@ func searchFiles(ctx context.Context, root string, gs globSet, visit func(path, 
 			return nil
 		case ctx.Err() != nil:
 			return ctx.Err()
-		case entry.IsDir() && skipSearchDir(entry.Name(), true):
+		case entry.IsDir() && entry.Name() == ".git":
 			return filepath.SkipDir
 		case entry.IsDir():
 			return nil
@@ -356,18 +316,13 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 		if path == "" {
 			continue
 		}
-		remain := maxHits - out.Found
-		if remain <= 0 {
+		if out.Found >= maxHits {
 			out.LimitHit = true
 			break
 		}
-		gs := folderGlobs(folder)
-		found, limit, err := textSearchFolder(ctx, path, gs, re, holds, remain, send)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			return TextSearchResult{}, err
-		}
+		found, limit := textSearchFolder(ctx, path, folderGlobs(folder), re, holds, maxHits-out.Found, send)
 		out.Found += found
-		if limit || errors.Is(err, context.Canceled) {
+		if limit {
 			out.LimitHit = true
 			break
 		}
@@ -376,7 +331,7 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 }
 
 // FileSearch lists files whose path contains FilePattern under workspace folders.
-func (s *SearchService) FileSearch(ctx context.Context, query FileSearchQuery) (FileSearchResult, error) {
+func (s *SearchService) FileSearch(ctx context.Context, query FileSearchQuery) FileSearchResult {
 	maxHits := capResults(query.MaxResults)
 	needle := strings.ToLower(strings.TrimSpace(query.FilePattern))
 	out := FileSearchResult{Hits: []FileSearchHit{}}
@@ -389,8 +344,8 @@ func (s *SearchService) FileSearch(ctx context.Context, query FileSearchQuery) (
 			out.LimitHit = true
 			break
 		}
-		gs := folderGlobs(folder)
-		err := searchFiles(ctx, root, gs, func(path, _ string) error {
+		// the walk ends early only on a cancel, which ends the search too
+		err := searchFiles(ctx, root, folderGlobs(folder), func(path, _ string) error {
 			switch {
 			case len(out.Hits) >= maxHits:
 				out.LimitHit = true
@@ -400,12 +355,9 @@ func (s *SearchService) FileSearch(ctx context.Context, query FileSearchQuery) (
 			}
 			return nil
 		})
-		if err != nil && !errors.Is(err, context.Canceled) {
-			return FileSearchResult{}, err
-		}
-		if out.LimitHit {
+		if err != nil || out.LimitHit {
 			break
 		}
 	}
-	return out, nil
+	return out
 }

@@ -423,7 +423,7 @@ func (file *file) defined(card *Inspect, ref index.Ref, shown func(schema.Source
 
 	defs = file.inFile(defs)
 	for _, def := range defs {
-		card.Sites = append(card.Sites, locate(sess, def.Path, Position{Line: int(def.Line), Character: int(def.Col)}))
+		card.Sites = append(card.Sites, defined(sess, def))
 	}
 	winner, adds, _, _ := sess.Winner(defs)
 	if len(defs) > 0 && row != nil {
@@ -620,6 +620,11 @@ func within(span jomini.Range, offset int) bool {
 	return span.Start <= offset && offset <= span.End
 }
 
+// defined is where a definition is written.
+func defined(sess *session.Session, def index.Def) Location {
+	return locate(sess, def.Path, Position{Line: int(def.Line), Character: int(def.Col)})
+}
+
 // locate is the editor's location of a position in a file of the workspace or the install.
 func locate(sess *session.Session, path string, at Position) Location {
 	listed, _, _ := sess.Located(path)
@@ -712,8 +717,12 @@ func writes(key *schema.Key) (out []string) {
 		form schema.Forms
 		said string
 	}{
-		{schema.FormNumber, "a number"}, {schema.FormBool, "yes or no"}, {schema.FormDate, "a date"},
-		{schema.FormWord, "a word"}, {schema.FormText, "text"}, {schema.FormBlock, "a block"},
+		{schema.FormNumber, "a number"},
+		{schema.FormBool, "yes or no"},
+		{schema.FormDate, "a date"},
+		{schema.FormWord, "a word"},
+		{schema.FormText, "text"},
+		{schema.FormBlock, "a block"},
 	} {
 		form, said := row.form, row.said
 		switch {
@@ -761,7 +770,7 @@ func keys(position *schema.Key) (names []string, stated int) {
 // where one of its eras applies (82.1.1 A.C.).
 // TODO: What about custom months in addition to years?
 func date(text string, calendar session.Calendar) string {
-	year, month, day, _, ok := jomini.ParseDate(strings.Trim(text, `"`))
+	year, month, day, _, ok := jomini.ParseDate(text)
 	if !ok || month < 1 || month > 12 {
 		return ""
 	}
@@ -770,8 +779,8 @@ func date(text string, calendar session.Calendar) string {
 	if year < 0 {
 		out = fmt.Sprintf("%s %s, %d BC", months[month], ordinal(day), -year)
 	}
-	if inEra, era, ok := calendar.Read(year); ok {
-		out += fmt.Sprintf("; %d.%d.%d %s in this mod's calendar", inEra, month, day, era)
+	if inEra, ok := calendar.Date(year, month, day); ok {
+		out += "; " + inEra + " in this mod's calendar"
 	}
 	return out
 }

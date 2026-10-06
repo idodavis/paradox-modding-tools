@@ -39,9 +39,10 @@ type Health struct {
 
 // Problem is one finding of the editor's checks, at its site.
 type Problem struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Site    Site   `json:"site"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Site     Site   `json:"site"`
+	Language string `json:"language,omitempty"` // a localization file's language
 }
 
 // Contest is one name two origins define, its definitions in load order, with the game's rule.
@@ -80,11 +81,15 @@ type Dependency struct {
 
 // Dangling is one name a mod writes that nothing defines, and where.
 type Dangling struct {
+	Code     string `json:"code"` // the check that found it, one of danglingChecks
 	Database string `json:"database"`
 	Kind     string `json:"kind"`
 	Name     string `json:"name"`
 	Sites    []Site `json:"sites"`
 }
+
+// danglingChecks are the editor's checks for a name nothing defines; Dangling lists their findings by name.
+var danglingChecks = []string{"unresolved-ref", "unknown-event", "missing-file"}
 
 // Language is one language's localization gaps.
 type Language struct {
@@ -94,9 +99,10 @@ type Language struct {
 
 // LocRow is one key and the file it is in.
 type LocRow struct {
-	Key  string `json:"key"`
-	File int    `json:"file"` // its number in Sources
-	Line int    `json:"line"`
+	Key    string `json:"key"`
+	File   int    `json:"file"` // its number in Sources
+	Line   int    `json:"line"`
+	Target int    `json:"target"` // the mod's file in the missing language it goes in
 }
 
 // SourceAt is one place a pane shows the source of: a definition's statement, or a reference's
@@ -108,18 +114,13 @@ type SourceAt struct {
 	Definition bool   `json:"definition"`
 }
 
-// HealthService answers the health page. It keeps each workspace's findings while its session's
-// records are unchanged.
+// HealthService answers the health page. It keeps the live session's findings while its records are
+// unchanged; Changes never repeats across sessions, so one set is enough.
 type HealthService struct {
-	Session  *SessionService
-	mu       sync.Mutex
-	problems map[string]problemsAt
-}
-
-// problemsAt is a workspace's findings by path, and the session's changes they were found at.
-type problemsAt struct {
-	changes int64
-	found   map[string][]lsp.Diagnostic
+	Session *SessionService
+	mu      sync.Mutex
+	changes int64                       // the session's Changes the findings were made at
+	found   map[string][]lsp.Diagnostic // by path
 }
 
 // GetHealth is the workspace's health report.
@@ -128,7 +129,7 @@ func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	if err != nil {
 		return nil, err
 	}
-	found := s.findings(workspaceID, sess)
+	found := s.findings(sess)
 	sess.RLock()
 	defer sess.RUnlock()
 	health := &Health{}
@@ -174,16 +175,20 @@ func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	for _, row := range health.Dangling {
 		for _, site := range row.Sites {
 			at := place{health.Sources[site.File].Path, site.Line, site.Col}
-			shown[at] = append(shown[at], "unresolved-ref", "unknown-event")
+			shown[at] = append(shown[at], danglingChecks...)
 		}
 	}
 	for _, path := range slices.Sorted(maps.Keys(found)) {
 		file, _ := sess.Workspace.At(path)
+		language := ""
+		if records := sess.Workspace.Records[path]; records != nil && len(records.Loc) > 0 {
+			language = records.Loc[0].Language
+		}
 		for _, diagnostic := range found[path] {
 			at := place{path, diagnostic.Range.Start.Line, diagnostic.Range.Start.Character}
 			if !slices.Contains(shown[at], diagnostic.Code) {
 				site := Site{File: number(file), Line: at.line, Col: at.col}
-				health.Problems = append(health.Problems, Problem{Code: diagnostic.Code, Message: diagnostic.Message, Site: site})
+				health.Problems = append(health.Problems, Problem{Code: diagnostic.Code, Message: diagnostic.Message, Site: site, Language: language})
 			}
 		}
 	}
@@ -220,7 +225,7 @@ func contests(sess *session.Session, preview []*index.Index, number func(source.
 		winner, adds, _, betweenMods := sess.Winner(defs)
 		row := Contest{
 			Database: name[0], Kind: game.KindName(name[0]), Name: name[1], Winner: slices.Index(defs, winner),
-			FirstWins: game.FirstWinsAt(sess.Game.ID, name[0]), Rule: "LIOS",
+			FirstWins: slices.Contains(sess.Game.FirstWinsDatabases, name[0]), Rule: "LIOS",
 		}
 		if row.FirstWins {
 			row.Rule = "FIOS"
@@ -445,13 +450,13 @@ func dangling(sess *session.Session, found map[string][]lsp.Diagnostic, number f
 			at := slices.IndexFunc(records.Refs, func(ref index.Ref) bool {
 				return int(ref.Line) == start.Line && int(ref.Col) == start.Character
 			})
-			if diagnostic.Code != "unresolved-ref" && diagnostic.Code != "unknown-event" || at < 0 {
+			if !slices.Contains(danglingChecks, diagnostic.Code) || at < 0 {
 				continue
 			}
 			ref := records.Refs[at]
 			key := [2]string{ref.Database, ref.Name}
 			row := rows[key]
-			row.Database, row.Kind, row.Name = ref.Database, game.KindName(ref.Database), ref.Name
+			row.Code, row.Database, row.Kind, row.Name = diagnostic.Code, ref.Database, game.KindName(ref.Database), ref.Name
 			row.Sites = append(row.Sites, Site{File: number(file), Line: start.Line, Col: start.Character})
 			rows[key] = row
 		}
@@ -488,26 +493,22 @@ func sameStatement(first, second jomini.Node) bool {
 
 // findings is every mod file's findings under the editor's default codes, found again only when the
 // session's records changed since. Diagnose takes the session's read lock itself.
-func (s *HealthService) findings(workspaceID string, sess *session.Session) map[string][]lsp.Diagnostic {
+func (s *HealthService) findings(sess *session.Session) map[string][]lsp.Diagnostic {
 	sess.RLock()
 	changes, files := sess.Changes, slices.Clone(sess.Workspace.Files)
 	sess.RUnlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cached, ok := s.problems[workspaceID]; ok && cached.changes == changes {
-		return cached.found
+	if s.found != nil && s.changes == changes {
+		return s.found
 	}
-	found := map[string][]lsp.Diagnostic{}
+	s.changes, s.found = changes, map[string][]lsp.Diagnostic{}
 	for _, file := range files {
 		if diagnostics, err := lsp.Diagnose(sess, file.Path, nil); err == nil && len(diagnostics) > 0 {
-			found[file.Path] = diagnostics
+			s.found[file.Path] = diagnostics
 		}
 	}
-	if s.problems == nil {
-		s.problems = map[string]problemsAt{}
-	}
-	s.problems[workspaceID] = problemsAt{changes: changes, found: found}
-	return found
+	return s.found
 }
 
 // GetLines is the source a pane shows at each place: a definition's statement, its first ten lines
@@ -536,13 +537,14 @@ func (s *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]str
 }
 
 // localization is each language's gaps: in a language a mod ships other than the workspace's, each
-// key of its workspace-language files no workspace file in that language has, once.
+// key of its workspace-language files no workspace file in that language has, once, and the mod's file
+// in that language it goes in.
 func localization(sess *session.Session, number func(source.File) int) []Language {
 	indexes := sess.Indexes()
 	workspaceLanguage := strings.ToLower(sess.Language)
 	languages := map[string]bool{workspaceLanguage: true}
-	has := map[string]map[string]bool{}   // by language: the keys the workspace has
-	ships := map[string]map[string]bool{} // by origin: the languages its loc files are in
+	has := map[string]map[string]bool{}      // by language: the keys the workspace has
+	filesIn := map[[2]string][]source.File{} // by origin and language: its loc files
 	type written struct {
 		file  source.File
 		entry index.Loc
@@ -559,22 +561,29 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 				has[entry.Language] = map[string]bool{}
 			}
 			has[entry.Language][entry.Key] = true
-			if ships[file.Origin] == nil {
-				ships[file.Origin] = map[string]bool{}
-			}
-			ships[file.Origin][entry.Language] = true
 			if entry.Language == workspaceLanguage {
 				inWorkspaceLanguage = append(inWorkspaceLanguage, written{file, entry})
 			}
 		}
+		if len(records.Loc) > 0 {
+			in := [2]string{file.Origin, records.Loc[0].Language}
+			filesIn[in] = append(filesIn[in], file)
+		}
+	}
+	// where a key goes in another language: the file named as its own in that language, else the first
+	target := func(file source.File, language string) int {
+		in := filesIn[[2]string{file.Origin, language}]
+		want := strings.ReplaceAll(strings.ToLower(file.Rel), workspaceLanguage, language)
+		return number(in[max(slices.IndexFunc(in, func(other source.File) bool { return strings.ToLower(other.Rel) == want }), 0)])
 	}
 
 	var out []Language
 	for _, language := range slices.Sorted(maps.Keys(languages)) {
 		coverage := Language{Language: language}
 		for _, own := range inWorkspaceLanguage {
-			if language != workspaceLanguage && ships[own.file.Origin][language] && !has[language][own.entry.Key] {
-				coverage.Untranslated = append(coverage.Untranslated, LocRow{Key: own.entry.Key, File: number(own.file), Line: own.entry.Line})
+			if language != workspaceLanguage && len(filesIn[[2]string{own.file.Origin, language}]) > 0 && !has[language][own.entry.Key] {
+				row := LocRow{Key: own.entry.Key, File: number(own.file), Line: own.entry.Line, Target: target(own.file, language)}
+				coverage.Untranslated = append(coverage.Untranslated, row)
 			}
 		}
 		out = append(out, coverage)
@@ -582,38 +591,18 @@ func localization(sess *session.Session, number func(source.File) int) []Languag
 	return out
 }
 
-// Lookup is one localization key: its entries in the workspace and the install, and everything that
-// reads it.
-type Lookup struct {
-	Key     string     `json:"key"`
-	Entries []LocEntry `json:"entries"`
-	Readers []Cited    `json:"readers"`
-}
-
-// LocEntry is one of a key's entries, with the language its file is written in.
-type LocEntry struct {
-	Value    string      `json:"value"`
-	Line     int         `json:"line"` // 0-based
-	At       source.File `json:"at"`
-	Language string      `json:"language"`
-}
-
-// LookupLoc looks one localization key up: its entries and everything reading it.
-func (s *HealthService) LookupLoc(workspaceID, key string) (*Lookup, error) {
+// LocReaders lists everything that reads one localization key.
+func (s *HealthService) LocReaders(workspaceID, key string) ([]Cited, error) {
 	sess, err := s.Session.live(workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	sess.RLock()
 	defer sess.RUnlock()
-	lookup, indexes := &Lookup{Key: key}, sess.Indexes()
-	for _, entry := range index.LookupLocs(indexes, key) {
-		file, _, _ := sess.Located(entry.Path)
-		lookup.Entries = append(lookup.Entries, LocEntry{Value: entry.Text, Line: entry.Line, At: file, Language: entry.Language})
-	}
-	for _, ref := range index.LookupRefs(indexes, index.Localization, key) {
+	var readers []Cited
+	for _, ref := range index.LookupRefs(sess.Indexes(), index.Localization, key) {
 		file, _, _ := sess.Located(ref.Path)
-		lookup.Readers = append(lookup.Readers, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
+		readers = append(readers, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
 	}
-	return lookup, nil
+	return readers, nil
 }

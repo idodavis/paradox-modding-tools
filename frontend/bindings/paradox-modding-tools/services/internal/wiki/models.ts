@@ -12,7 +12,7 @@ export interface Guide {
 
 /**
  * Page is one fetched page as the sidecar keeps it and the panes show it: its sanitized HTML and
- * headings, and for a patch note its Modding section apart.
+ * headings, and for a patch note whether it has a Modding section.
  */
 export interface Page {
     "title": string;
@@ -20,8 +20,7 @@ export interface Page {
     "revid": number;
     "html": string;
     "sections"?: Section[] | null;
-    "moddingHtml"?: string;
-    "moddingSections"?: Section[] | null;
+    "modding"?: boolean;
 }
 
 /**

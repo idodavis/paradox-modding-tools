@@ -52,7 +52,7 @@ That turns diagnostics off on the comment's own line and the next one. With code
 
 ## Guide
 
-The **Guide** pull-tab on the editor’s right edge opens a resizable **wiki** pane (search, contents, related pages). It stays closed until you open it.
+The **Guide** pull-tab on the editor’s right edge opens a resizable **wiki** pane (search, contents, related pages); the contents can be hidden by the button beside them. It stays closed until you open it.
 
 This is the community wiki, not `script_docs` and not install `_*.info`. See [three kinds of docs]({{< relref "/concepts/docs" >}}).
 

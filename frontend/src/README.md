@@ -63,7 +63,7 @@ Subscribed once, in `events.ts`, called from `main.ts`; each event invalidates i
 typed by Go's `application.RegisterEvent`, which the bindings declare on `Events.CustomEvents`: no casts.
 
 ```ts
-Events.On("lang:ready", (event) => queryCache.invalidateQueries({ key: sessionKeys.one(event.data) }));
+Events.On("lang:ready", ({ data: id }) => void queryCache.invalidateQueries({ key: sessionKeys.live(id) }));
 ```
 
 ## Composables
@@ -72,9 +72,8 @@ Events.On("lang:ready", (event) => queryCache.invalidateQueries({ key: sessionKe
 (`useEventListener`, `useIntervalFn`) or `onScopeDispose`. An async watcher is a query, or uses `onCleanup`.
 
 ```ts
-export function useLocEntries(workspaceId: MaybeRefOrGetter<string>, key: MaybeRefOrGetter<string>) {
-  return useQuery(() => locQuery({ workspaceId: toValue(workspaceId), key: toValue(key) }));
-}
+export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
+  const { data: health } = useQuery(() => languageQuery(toValue(workspaceId)));
 ```
 
 ## Components
@@ -96,7 +95,7 @@ const list = useTemplateRef("list");
 
 Overlays through `useOverlay`, toasts through `useToast`. Sections, steps and segmented choices are `UTabs`,
 `UStepper` or `URadioGroup` with `:items` and item slots; lists are `UListbox` or `UCollapsible`; a link
-action is `UButton variant="link"`; a resizable pane is `USplitter`. Nuxt UI's components and composables are
+action is `UButton variant="link"`; a resizable pane is `ResizeGrip`. Nuxt UI's components and composables are
 auto-imported (no deep `@nuxt/ui/…` import), and so are this folder's: a template uses a component under
 `components/` by its file name and never imports it; only a script that needs the component itself (for
 `useOverlay().create`) imports it. Colors by aliases (`primary`, `neutral`, …) and the tokens; theme
@@ -111,7 +110,8 @@ const confirmed = await remove.open({ name: workspace.value.name });
 
 From the payload (AGENTS.md): no slug, rel, basename or MIME derivation the payload could carry. Origins
 through the workspace store's `originName` and `originColor`; external links through `Browser.OpenURL`
-only; dates through one formatter (`useTimeAgo` for "4 min ago", `Intl.DateTimeFormat` for dates).
+only; counts, lists, dates and sizes through `lib/format.ts` (`plural`, `list`, `day`, `bytes`), and
+`useTimeAgo` for "4 min ago".
 
 ```vue
 <OriginDot :color="store.originColor(site.origin)" /> {{ store.originName(site.origin) }} {{ site.rel }}
@@ -123,19 +123,21 @@ Settings keys are read and written only through `stores/settings.ts`'s typed acc
 share the prefix `pmt.`.
 
 ```ts
-const layout = useLocalStorage("pmt.eventGraph.layout", "below");
+const layout = useLocalStorage<"drawer" | "panel">("pmt.graph.layout", "drawer");
 ```
 
 ## Styles
 
 Screens are composed of the building blocks (`.claude/DESIGN.md`); a page adds no style a block covers. Token
 utilities only: no hex or `rgb()` color outside `styles/themes.css`, no Tailwind palette color
-(`text-gray-500`), no arbitrary value (`w-[420px]`), no `uppercase`, no weight but 400, 500 and 600. A class
-string written three times is a block.
+(`text-gray-500`), no arbitrary value (`w-[420px]`), no `uppercase`, no weight but 400, 500 and 600. A block
+is a component only for structure or logic it repeats; classes alone stay classes, as Nuxt UI's own components
+take their look from `vite.config.ts`'s `ui()`.
 
 ```vue
-<SectionHeading>Load order</SectionHeading>
-<p class="text-sm text-muted">Mods load top to bottom; the last one wins.</p>
+<div class="rounded-lg border border-default bg-muted px-4 py-3">
+  <p class="text-13 text-toned">Mods load top to bottom; the last one wins.</p>
+</div>
 ```
 
 ## Smallest

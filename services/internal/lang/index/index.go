@@ -5,6 +5,7 @@ package index
 import (
 	"iter"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -197,15 +198,18 @@ func FileAt(indexes []*Index, rel string) (source.File, bool) {
 	return source.File{}, false
 }
 
-// Forget removes a deleted file from the index: its records and its place in Files, so it no longer
-// hides a file at its Rel.
+// Forget removes a deleted file, or every file under a deleted folder, from the index: their records
+// and their places in Files, so they no longer hide files at their Rels.
 func (idx *Index) Forget(path string) {
-	pos, listed := idx.order[strings.ToLower(path)]
-	if !listed {
-		return
+	path = strings.ToLower(path)
+	listed := len(idx.Files)
+	idx.Files = slices.DeleteFunc(idx.Files, func(file source.File) bool {
+		at := strings.ToLower(file.Path)
+		return at == path || strings.HasPrefix(at, path+string(filepath.Separator))
+	})
+	if len(idx.Files) != listed {
+		idx.Ready()
 	}
-	idx.Files = slices.Delete(idx.Files, pos, pos+1)
-	idx.Ready()
 }
 
 // LocKeys is every key a loc entry has, in no order.
@@ -386,7 +390,7 @@ func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (w
 				} else if !mode.Optional {
 					orphans = append(orphans, def)
 				}
-			case plain && game.FirstWinsAt(info.ID, def.Database):
+			case plain && slices.Contains(info.FirstWinsDatabases, def.Database):
 				// the earlier plain definition holds
 			case contends:
 				winner, adds = def, nil

@@ -4,7 +4,7 @@
 import { computed, shallowRef } from "vue";
 import { useSettingsStore } from "../stores/settings";
 
-export type GuidePref = "show" | "1h" | "restart" | "off";
+type GuidePref = "show" | "1h" | "restart" | "off";
 
 const PREFS: GuidePref[] = ["show", "1h", "restart", "off"];
 

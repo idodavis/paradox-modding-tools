@@ -86,7 +86,7 @@ func PagesFor(gameID, database, rel string) []Page {
 }
 
 func patchEntry(page Page) PatchEntry {
-	entry := PatchEntry{Title: page.Title, Modding: page.ModdingHTML != ""}
+	entry := PatchEntry{Title: page.Title, Modding: page.Modding}
 	if pv, ok := parsePatchTitle(page.Title); ok {
 		entry.Version = pv.Label
 		if pv.Hotfix {
@@ -249,15 +249,14 @@ type Section struct {
 }
 
 // Page is one fetched page as the sidecar keeps it and the panes show it: its sanitized HTML and
-// headings, and for a patch note its Modding section apart.
+// headings, and for a patch note whether it has a Modding section.
 type Page struct {
-	Title           string    `json:"title"`
-	URL             string    `json:"url"`
-	Revid           int       `json:"revid"`
-	HTML            string    `json:"html"`
-	Sections        []Section `json:"sections,omitempty"`
-	ModdingHTML     string    `json:"moddingHtml,omitempty"`
-	ModdingSections []Section `json:"moddingSections,omitempty"`
+	Title    string    `json:"title"`
+	URL      string    `json:"url"`
+	Revid    int       `json:"revid"`
+	HTML     string    `json:"html"`
+	Sections []Section `json:"sections,omitempty"`
+	Modding  bool      `json:"modding,omitempty"`
 }
 
 // Sidecar is one game's wiki file: its guide pages and its patch notes.

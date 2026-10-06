@@ -11,6 +11,7 @@ import type { Cited, Detail, Version } from "@services/models";
 import { kindOf } from "../../composables/useEventGraph";
 import { useOpenInIde } from "../../composables/useOpenInIde";
 import { useWorkspaceStore } from "../../stores/workspace";
+import { capital, countKinds, plural } from "../../lib/format";
 
 const { workspaceId, detail, isRoot } = defineProps<{ workspaceId: string; detail: Detail; isRoot: boolean }>();
 const emit = defineEmits<{ close: []; root: [id: string] }>();
@@ -19,12 +20,10 @@ const { openInIde } = useOpenInIde();
 const { copy, copied } = useClipboard();
 
 const kind = computed(() => kindOf(detail.kind));
-/** A soft fill of a color, as the boards' badges draw it. */
-const soft = (color: string) => `color-mix(in srgb, ${color} 16%, transparent)`;
 const language = computed(() => store.activeWorkspace?.defaultLocLang ?? "");
 
 /** A key or word as a label: its first letter capital, its underscores spaces. */
-const sentence = (text: string) => (text.charAt(0).toUpperCase() + text.slice(1)).replaceAll("_", " ");
+const sentence = (text: string) => capital(text).replaceAll("_", " ");
 
 // the version each stepper shows, by its id; each starts at the first
 const at = shallowRef<Record<string, number>>({});
@@ -49,7 +48,7 @@ const texts = computed(() =>
   sections.value
     .filter((section) => section.parts?.length)
     .sort((a, b) => +(b.key === "title") - +(a.key === "title"))
-    .map((section) => ({ ...section, parts: section.parts!.map((part, p) => ({ ...part, shown: shown(`${section.line}:${p}`, part.versions) })) })),
+    .map((section) => ({ ...section, parts: (section.parts ?? []).map((part, p) => ({ ...part, shown: shown(`${section.line}:${p}`, part.versions) })) })),
 );
 const portraits = computed(() => sections.value.filter((section) => section.portrait));
 const options = computed(() => (detail.options ?? []).map((option) => ({ ...option, shown: shown(`option:${option.line}`, option.names) })));
@@ -64,11 +63,6 @@ const allFires = shallowRef(false);
 const allFiredBy = shallowRef(false);
 const fires = computed(() => (allFires.value ? detail.fires : detail.fires?.slice(0, 6)) ?? []);
 const firedBy = computed(() => (allFiredBy.value ? detail.firedBy : detail.firedBy?.slice(0, 8)) ?? []);
-function kinds(list: { kind: string }[] | null | undefined): { kind: string; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const { kind } of list ?? []) counts.set(kind, (counts.get(kind) ?? 0) + 1);
-  return [...counts].map(([kind, count]) => ({ kind, count }));
-}
 // a chain every caller shares is said once
 const sharedVia = computed(() => {
   const vias = new Set(detail.firedBy?.map((fire) => fire.via));
@@ -120,19 +114,13 @@ function open(path: string, line: number): void {
   <aside class="flex min-h-0 min-w-0 flex-col bg-muted">
     <div class="flex flex-col gap-1.5 border-b border-default px-4 pt-3.5 pb-3">
       <div class="flex items-center gap-2">
-        <UBadge :label="detail.kind" :icon="kind.icon" size="sm" :style="{ color: kind.color, background: soft(kind.color) }" />
+        <UBadge :label="detail.kind" :icon="kind.icon" size="sm" class="bg-current/16" :style="{ color: kind.color }" />
         <OriginChip :label="store.originName(detail.at.origin)" :color="store.originColor(detail.at.origin)" small />
         <span class="grow" />
         <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Close detail" @click="emit('close')" />
       </div>
       <span class="font-mono text-16 leading-5.5 font-semibold break-all text-highlighted">{{ detail.name }}</span>
-      <UButton
-        :label="`${detail.at.rel}:${detail.line + 1}`"
-        variant="link"
-        size="xs"
-        class="self-start p-0 font-mono"
-        @click="open(detail.at.path, detail.line)"
-      />
+      <SourceLink :workspace-id="workspaceId" :at="detail.at" :line="detail.line" class="self-start" />
       <div class="mt-1.5 flex items-center gap-2">
         <UButton label="Set as root" icon="i-lucide-target" color="primary" variant="solid" :disabled="isRoot" @click="emit('root', detail.name)" />
         <span class="grow" />
@@ -158,17 +146,17 @@ function open(path: string, line: number): void {
             when <code v-if="shown.when" class="font-mono text-muted">{{ shown.when }}</code><template v-else>none before it applies</template>
           </p>
         </DefineSaid>
-        <div class="px-4 py-3.5">
+        <div class="flex flex-col gap-2.5 px-4 py-3.5">
+          <div class="flex flex-col gap-1">
+            <span class="text-11 text-muted">{{ sentence(type) }}</span>
+            <p v-for="section in properties" :key="section.line" class="truncate text-11 text-muted" :title="section.when">
+              {{ section.key }} <ScriptSnippet :text="section.value ?? ''" :name="detail.at.rel" inline />
+              <template v-if="section.when">
+                <span class="ms-1 text-(--orange)">if</span> <code class="font-mono text-dimmed">{{ section.when }}</code>
+              </template>
+            </p>
+          </div>
           <section class="flex flex-col divide-y divide-default overflow-hidden rounded-lg border border-default bg-elevated">
-            <div class="flex flex-col gap-1 bg-accented/40 px-3.5 py-3">
-              <span class="text-11 text-muted">{{ sentence(type) }}</span>
-              <p v-for="section in properties" :key="section.line" class="truncate text-11 text-muted" :title="section.when">
-                {{ section.key }} <ScriptSnippet :text="section.value ?? ''" :name="detail.at.rel" inline />
-                <template v-if="section.when">
-                  <span class="ms-1 text-(--orange)">if</span> <code class="font-mono text-dimmed">{{ section.when }}</code>
-                </template>
-              </p>
-            </div>
             <div v-for="section in texts" :key="section.line" class="flex flex-col gap-1 px-3.5 py-3" :class="{ 'bg-accented/40': section.key === 'title' }">
               <span class="flex h-6 items-center text-11 text-muted">
                 {{ sentence(section.key) }}<span class="grow" />
@@ -229,21 +217,21 @@ function open(path: string, line: number): void {
           <section v-if="detail.fires?.length" class="flex flex-col gap-1">
             <h4 class="flex flex-wrap items-center gap-2 px-2 pb-1 text-12 font-semibold text-highlighted">
               Fires
-              <span v-for="row in kinds(detail.fires)" :key="row.kind" class="flex items-center gap-1 text-11 font-normal text-muted">
+              <span v-for="row in countKinds(detail.fires ?? [])" :key="row.kind" class="flex items-center gap-1 text-11 font-normal text-muted">
                 <OriginDot :color="kindOf(row.kind).color" small />{{ row.kind }}<span class="text-dimmed">{{ row.count }}</span>
               </span>
             </h4>
             <div
               v-for="fire in fires"
               :key="`${fire.name}:${fire.via}`"
-              class="flex h-7 items-center gap-2 rounded-[5px] px-2 even:bg-accented/40"
+              class="flex h-7 items-center gap-2 rounded-chip px-2 even:bg-accented/40"
               :title="fire.via ? `Through ${fire.via}` : 'Directly'"
             >
               <UIcon :name="kindOf(fire.kind).icon" class="size-3.5 shrink-0" :style="{ color: kindOf(fire.kind).color }" />
               <UButton :label="fire.name" variant="link" color="neutral" size="xs" class="min-w-0 p-0 font-mono text-highlighted" :ui="{ label: 'truncate' }" @click="emit('root', fire.name)" />
               <span class="grow" />
               <UBadge
-                :label="fire.through ? `${fire.through} ${fire.through === 1 ? 'effect' : 'effects'}` : 'direct'"
+                :label="fire.through ? plural(fire.through, 'effect') : 'direct'"
                 size="sm"
                 :style="fire.through ? { color: 'var(--purple)', background: 'var(--purple-soft)' } : undefined"
               />
@@ -260,7 +248,7 @@ function open(path: string, line: number): void {
           <section v-if="detail.firedBy?.length" class="flex flex-col gap-1.5">
             <h4 class="flex flex-wrap items-center gap-2 px-2 text-12 font-semibold text-highlighted">
               Fired by
-              <span v-for="row in kinds(detail.firedBy)" :key="row.kind" class="flex items-center gap-1 text-11 font-normal text-muted">
+              <span v-for="row in countKinds(detail.firedBy ?? [])" :key="row.kind" class="flex items-center gap-1 text-11 font-normal text-muted">
                 <OriginDot :color="kindOf(row.kind).color" small />{{ row.kind }}<span class="text-dimmed">{{ row.count }}</span>
               </span>
               <span v-if="sharedVia" class="text-11 font-normal text-muted">
@@ -318,14 +306,7 @@ function open(path: string, line: number): void {
           <div v-if="detail.lines?.length" class="overflow-hidden rounded-lg border border-default bg-(--bg-0)">
             <div class="flex h-8 items-center gap-2 border-b border-default bg-elevated px-2.5 text-12 whitespace-nowrap">
               <UIcon name="i-lucide-code" class="size-3.5 shrink-0 text-dimmed" />
-              <UButton
-                :label="`${detail.at.rel}:${detail.line + 1}`"
-                variant="link"
-                size="xs"
-                class="min-w-0 p-0 font-mono"
-                :ui="{ label: 'truncate' }"
-                @click="open(detail.at.path, detail.line)"
-              />
+              <SourceLink :workspace-id="workspaceId" :at="detail.at" :line="detail.line" />
               <span class="grow" />
               <span class="text-11 text-dimmed">{{ detail.lines.length }} lines</span>
               <UButton

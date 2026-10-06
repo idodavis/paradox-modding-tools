@@ -10,8 +10,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"path/filepath"
-	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/lang/index"
@@ -137,42 +135,34 @@ func CodeActions(sess *session.Session, path string, line, col int) ([]CodeActio
 	if _, known := index.Resolve(sess.Install.Schema, sess.Indexes(), *ref); known {
 		return out, nil
 	}
-	target, at := file.locFile()
+	target, at, unended := file.keyFile()
 	if target == "" {
 		return out, nil
 	}
-	out = append(out, CodeAction{Title: fmt.Sprintf("Create localization key %q", ref.Name), Edit: WorkspaceEdit{Changes: map[string][]TextEdit{target: {{Range: Range{Start: at, End: at}, NewText: fmt.Sprintf(" %s:0 \"\"\n", ref.Name)}}}}})
+	entry := fmt.Sprintf(" %s:0 \"\"\n", ref.Name)
+	if unended {
+		entry = "\n" + entry
+	}
+	out = append(out, CodeAction{Title: fmt.Sprintf("Create localization key %q", ref.Name), Edit: WorkspaceEdit{Changes: map[string][]TextEdit{target: {{Range: Range{Start: at, End: at}, NewText: entry}}}}})
 	return out, nil
 }
 
-// locFile is the mod's localization file in the workspace's language to append a key to, and the
-// position after its last line; a new file's path where the mod has none, and "" outside a mod.
-func (file *file) locFile() (string, Position) {
+// keyFile is the mod's localization file in the workspace's language a new key is appended to, the
+// position at its end, and whether its text lacks a final newline; "" where the mod has none.
+func (file *file) keyFile() (string, Position, bool) {
 	sess := file.sess
 	_, mod, ok := sess.Located(file.path)
 	if !ok || mod == nil {
-		return "", Position{}
+		return "", Position{}, false
 	}
 	for _, at := range sess.Workspace.Files {
 		if at.Origin == mod.ID && at.Format == source.Loc && loc.LanguageFromRel(at.Rel) == sess.Language {
-			text, err := sess.Text(at.Path)
-			if err != nil {
-				continue
+			if text, err := sess.Text(at.Path); err == nil {
+				return at.Path, jomini.NewLineIndex(text).PositionAt(len(text)), text != "" && !strings.HasSuffix(text, "\n")
 			}
-			lines := strings.Count(text, "\n")
-			if !strings.HasSuffix(text, "\n") {
-				lines++
-			}
-			return at.Path, Position{Line: lines}
 		}
 	}
-	folders := sess.Game.ModFolders
-	at := slices.IndexFunc(folders, func(folder string) bool { return strings.HasSuffix("/"+folder, "/localization") })
-	if at < 0 {
-		return "", Position{}
-	}
-	folder := folders[at]
-	return filepath.Join(mod.Dir, filepath.FromSlash(folder), sess.Language, mod.ID+"_l_"+sess.Language+".yml"), Position{}
+	return "", Position{}, false
 }
 
 // InlayHints is the era's date after every date of a file, where the mod declares a calendar and
@@ -192,8 +182,8 @@ func InlayHints(sess *session.Session, path string) ([]InlayHint, error) {
 	lines := file.parsed.Lines()
 	hint := func(scalar *jomini.Scalar) {
 		year, month, day, _, ok := jomini.ParseDate(scalar.Text)
-		if inEra, era, applies := calendar.Read(year); ok && applies {
-			out = append(out, InlayHint{Position: lines.PositionAt(scalar.Range.End), Label: fmt.Sprintf(" %d.%d.%d %s", inEra, month, day, era)})
+		if inEra, applies := calendar.Date(year, month, day); ok && applies {
+			out = append(out, InlayHint{Position: lines.PositionAt(scalar.Range.End), Label: " " + inEra})
 		}
 	}
 	jomini.Walk(file.parsed.Root, func(statement jomini.Statement, depth int, parent *jomini.Block) bool {

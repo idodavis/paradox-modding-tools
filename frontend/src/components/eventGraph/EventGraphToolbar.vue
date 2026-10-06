@@ -7,6 +7,7 @@
 import { computed } from "vue";
 import type { Roots } from "@services/models";
 import { useWorkspaceStore } from "../../stores/workspace";
+import { plural } from "../../lib/format";
 
 const { roots, searching, rootKind, nodes, full = false } = defineProps<{
   roots: Roots | null | undefined;
@@ -91,7 +92,7 @@ const items = computed(() => {
     <span v-if="!full" class="grow" />
     <USeparator v-else orientation="vertical" class="h-5" />
     <span class="text-12 whitespace-nowrap text-dimmed" title="Fan-outs past six fold into groups">
-      {{ nodes }} {{ nodes === 1 ? "node" : "nodes" }}{{ full ? "" : " shown" }}
+      {{ plural(nodes, "node") }}{{ full ? "" : " shown" }}
     </span>
     <USeparator v-if="!full" orientation="vertical" class="h-5" />
     <UButton icon="i-lucide-scan" square aria-label="Fit to view" @click="emit('fit')" />

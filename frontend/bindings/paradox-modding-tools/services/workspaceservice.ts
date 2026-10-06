@@ -29,18 +29,11 @@ export function AddGameInstall(gameID: string, name: string, path: string): $Can
 }
 
 /**
- * AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor. An empty name
- * is the descriptor's, else the folder's.
+ * AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor, named by it (else
+ * by the folder), with the thumbnail where its game keeps one, last in load order.
  */
-export function AddWorkspaceMod(workspaceID: string, name: string, path: string, thumbnail: string): $CancellablePromise<$models.WorkspaceMod | null> {
-    return $Call.ByID(123649806, workspaceID, name, path, thumbnail);
-}
-
-/**
- * CountWorkspacesUsingInstall returns names of workspaces on this install.
- */
-export function CountWorkspacesUsingInstall(installID: string): $CancellablePromise<string[] | null> {
-    return $Call.ByID(1820687512, installID);
+export function AddWorkspaceMod(workspaceID: string, path: string): $CancellablePromise<$models.WorkspaceMod | null> {
+    return $Call.ByID(123649806, workspaceID, path);
 }
 
 /**
@@ -67,7 +60,7 @@ export function DefaultModParent(gameID: string): $CancellablePromise<string> {
 /**
  * DeleteGameInstall removes an install if no workspace uses it.
  */
-export function DeleteGameInstall(id: string): $CancellablePromise<string[] | null> {
+export function DeleteGameInstall(id: string): $CancellablePromise<void> {
     return $Call.ByID(3448659062, id);
 }
 
@@ -76,13 +69,6 @@ export function DeleteGameInstall(id: string): $CancellablePromise<string[] | nu
  */
 export function DeleteWorkspace(id: string): $CancellablePromise<void> {
     return $Call.ByID(1615435582, id);
-}
-
-/**
- * DetectGameVersion reads an install's version (launcher-settings.json, else the Steam manifest).
- */
-export function DetectGameVersion(gameID: string, path: string): $CancellablePromise<string> {
-    return $Call.ByID(4095463977, gameID, path);
 }
 
 /**
@@ -107,13 +93,6 @@ export function GetIdeRoots(workspaceID: string): $CancellablePromise<$models.Id
 }
 
 /**
- * GetWorkspace returns a workspace by ID.
- */
-export function GetWorkspace(id: string): $CancellablePromise<$models.Workspace | null> {
-    return $Call.ByID(2164363903, id);
-}
-
-/**
  * ImportWorkshopIgnore reads .workshop-ignore into workspace config and returns the text.
  */
 export function ImportWorkshopIgnore(workspaceID: string, modID: string): $CancellablePromise<string> {
@@ -135,10 +114,10 @@ export function ListGames(): $CancellablePromise<game$0.GameList> {
 }
 
 /**
- * ListWorkspaces returns workspaces, optionally filtered by game. Pass "" for all.
+ * ListWorkspaces returns every workspace, its mods in load order.
  */
-export function ListWorkspaces(gameID: string): $CancellablePromise<$models.Workspace[] | null> {
-    return $Call.ByID(1786820820, gameID);
+export function ListWorkspaces(): $CancellablePromise<$models.Workspace[] | null> {
+    return $Call.ByID(1786820820);
 }
 
 /**
@@ -177,6 +156,15 @@ export function SaveIdeSession(workspaceID: string, files: string[] | null, acti
 }
 
 /**
+ * SetModListingImage makes src the mod's listing image: copied in where its game keeps one, named in
+ * its descriptor (its Workshop id as it is) and made the workspace's picture of the mod. It returns the
+ * image's path.
+ */
+export function SetModListingImage(workspaceID: string, modID: string, src: string): $CancellablePromise<string> {
+    return $Call.ByID(1721906755, workspaceID, modID, src);
+}
+
+/**
  * SetWorkspaceLocLang sets the default loc language; a live session is built again with it.
  */
 export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromise<void> {
@@ -189,6 +177,14 @@ export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromi
  */
 export function SetWorkspaceModCalendar(workspaceID: string, modID: string, eras: session$0.Calendar): $CancellablePromise<void> {
     return $Call.ByID(2457080507, workspaceID, modID, eras);
+}
+
+/**
+ * SetWorkspaceModDescription sets where a mod's Workshop description comes from: a Markdown or a
+ * BBCode file at rel ("" for the default name), or Steam's own text.
+ */
+export function SetWorkspaceModDescription(workspaceID: string, modID: string, source: string, rel: string): $CancellablePromise<void> {
+    return $Call.ByID(1961411765, workspaceID, modID, source, rel);
 }
 
 /**
@@ -209,7 +205,7 @@ export function SetWorkspaceModSlot(workspaceID: string, modID: string, slot: nu
 /**
  * UpdateGameInstall updates path, then refreshes version.
  */
-export function UpdateGameInstall(id: string, path: string): $CancellablePromise<$models.GameInstall | null> {
+export function UpdateGameInstall(id: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(1401884060, id, path);
 }
 
@@ -221,10 +217,10 @@ export function UpdateWorkspace(id: string, name: string, installID: string): $C
 }
 
 /**
- * UpdateWorkspaceMod updates listing paths, ignore text, name, color, and thumbnail.
+ * UpdateWorkspaceMod updates a mod's name, color, thumbnail and upload exclusions.
  */
-export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: string, color: string, thumbnail: string, descMdRel: string, descBbRel: string, workshopIgnore: string): $CancellablePromise<void> {
-    return $Call.ByID(439726452, workspaceID, modID, name, color, thumbnail, descMdRel, descBbRel, workshopIgnore);
+export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: string, color: string, thumbnail: string, workshopIgnore: string): $CancellablePromise<void> {
+    return $Call.ByID(439726452, workspaceID, modID, name, color, thumbnail, workshopIgnore);
 }
 
 /**

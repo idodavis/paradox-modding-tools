@@ -6,14 +6,13 @@ import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { useColorMode, usePreferredDark } from "@vueuse/core";
 import { GetSettings, SaveSettings } from "@services/appservice";
-import { applyEditorFontSize, followWorkbenchTheme } from "../ide/themeBridge";
 import { WORKSPACE_TOOL_NAMES, type WorkspaceToolName } from "../workspaceTools";
 import { useWorkspaceStore } from "./workspace";
 
 /** A theme family; its halves are `<id>-dark` and `<id>-light` in styles/themes.css. */
 export type ThemeFamily = { id: "pmt" | "catppuccin" | "one" | "ck3" | "eu5" | "vic3"; label: string; note: string; game?: string };
-export type FamilyId = ThemeFamily["id"];
-export type Mode = "dark" | "light";
+type FamilyId = ThemeFamily["id"];
+type Mode = "dark" | "light";
 export type ThemeId = `${FamilyId}-${Mode}`;
 /** Light or dark as the top bar sets it; system follows Windows. */
 export type Appearance = Mode | "system";
@@ -38,8 +37,8 @@ function familyOf(id: string | undefined): ThemeFamily {
 
 /** Interface scale steps, in percent. */
 export const FONT_SCALES = [80, 90, 100, 110, 120, 130, 140, 150] as const;
-export const EDITOR_FONT = { min: 10, max: 24 } as const;
-export const IDE_UI_FONT = { min: 10, max: 20 } as const;
+const EDITOR_FONT = { min: 10, max: 24 } as const;
+const IDE_UI_FONT = { min: 10, max: 20 } as const;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
@@ -62,7 +61,6 @@ function parseVisibleTools(raw: string | undefined): WorkspaceToolName[] {
 /** App-wide settings, and the theme and text sizes they set. */
 export const useSettingsStore = defineStore("settings", () => {
   const values = ref<Record<string, string>>({});
-  const saving = ref(false);
 
   const fontScale = computed(() => clamp(Number(values.value["ui.fontScale"]) || 100, 80, 150));
   const editorFontSize = computed(() =>
@@ -102,19 +100,20 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   /** Persist the settings map. */
-  async function save(): Promise<void> {
-    saving.value = true;
-    try {
-      await SaveSettings(values.value);
-    } finally {
-      saving.value = false;
-    }
+  function save(): Promise<void> {
+    return SaveSettings(values.value);
   }
 
-  /** Set one key, then persist unless told not to. */
-  async function set(key: string, value: string, persist = true): Promise<void> {
+  /** Set one key and persist. */
+  function set(key: string, value: string): Promise<void> {
     values.value = { ...values.value, [key]: value };
-    if (persist) await save();
+    return save();
+  }
+
+  /** Keys back to their defaults: each written "", so a changed default is followed. */
+  function reset(keys: readonly string[]): Promise<void> {
+    values.value = { ...values.value, ...Object.fromEntries(keys.map((key) => [key, ""])) };
+    return save();
   }
 
   /** Pick a family for every workspace, so matching the workspace's game turns off. */
@@ -133,8 +132,15 @@ export const useSettingsStore = defineStore("settings", () => {
     return set("ui.appearance", on ? "system" : mode.value);
   }
 
-  function setVisibleTools(names: WorkspaceToolName[]): Promise<void> {
-    return set("ui.visibleTools", JSON.stringify(names));
+  /** The workspace's theme follows its game's, or the family picked. */
+  function setMatchGame(on: boolean): Promise<void> {
+    return set("ui.matchGameTheme", on ? "on" : "off");
+  }
+
+  /** Show or hide a page in the workspace's bar. */
+  function showTool(name: WorkspaceToolName, on: boolean): Promise<void> {
+    const others = visibleTools.value.filter((tool) => tool !== name);
+    return set("ui.visibleTools", JSON.stringify(on ? [...others, name] : others));
   }
 
   /** Whether a check shows in the editor: the stored choice, else the check's default. */
@@ -147,20 +153,13 @@ export const useSettingsStore = defineStore("settings", () => {
     return set(`ide.diag.${code}`, on ? "on" : "off");
   }
 
-  /** Every check back to its default: its choice is written "", so a changed default is followed. */
-  function resetChecks(codes: readonly string[]): Promise<void> {
-    values.value = { ...values.value, ...Object.fromEntries(codes.map((code) => [`ide.diag.${code}`, ""])) };
-    return save();
-  }
-
-  // the one place the theme reaches the page, Nuxt UI's color mode and the IDE
+  // the one place the theme reaches the page and Nuxt UI's color mode; the IDE watches it (ide/themeBridge.ts)
   const colorMode = useColorMode();
   watch(
     activeTheme,
     (active) => {
       document.documentElement.dataset.theme = active;
       colorMode.value = mode.value;
-      followWorkbenchTheme(active);
     },
     { immediate: true },
   );
@@ -173,11 +172,9 @@ export const useSettingsStore = defineStore("settings", () => {
     },
     { immediate: true },
   );
-  watch(editorFontSize, applyEditorFontSize, { immediate: true });
 
   return {
     values,
-    saving,
     fontScale,
     editorFontSize,
     ideUiFontSize,
@@ -193,9 +190,10 @@ export const useSettingsStore = defineStore("settings", () => {
     pickTheme,
     toggleMode,
     followSystem,
-    setVisibleTools,
+    setMatchGame,
+    showTool,
     checkOn,
     setCheck,
-    resetChecks,
+    reset,
   };
 });

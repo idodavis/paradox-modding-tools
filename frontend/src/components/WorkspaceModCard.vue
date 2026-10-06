@@ -7,7 +7,7 @@ import { computed, shallowRef } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import type { WorkspaceMod } from "@services/models";
 import type { Era } from "@services/internal/session/models";
-import { CopyThumbnail, SaveListing } from "@services/releaseservice";
+import { SetListingLink } from "@services/releaseservice";
 import {
   ExportWorkshopIgnore,
   ImportWorkshopIgnore,
@@ -18,19 +18,19 @@ import {
   SetWorkspaceModSlot,
   UpdateWorkspaceMod,
 } from "@services/workspaceservice";
-import { IMAGE_FILTER, pickDirectory, pickFile } from "../lib/nativeDialog";
+import { useListingImage } from "../composables/useListingImage";
+import { useWorkspaceSave } from "../composables/useWorkspaceSave";
+import { pickDirectory } from "../lib/nativeDialog";
 import {
   healthQuery,
   imageQuery,
-  listingQuery,
-  releaseKeys,
-  sessionKeys,
-  statQuery,
+  summaryQuery,
   uploadFilesQuery,
   workspaceKeys,
   workspacesQuery,
 } from "../queries";
 import { modColor, useWorkspaceStore } from "../stores/workspace";
+import { imageSize } from "../lib/format";
 
 const { workspaceId, mod, live = false } = defineProps<{ workspaceId: string; mod: WorkspaceMod; live?: boolean }>();
 const emit = defineEmits<{ removed: [] }>();
@@ -38,23 +38,13 @@ const emit = defineEmits<{ removed: [] }>();
 const store = useWorkspaceStore();
 const queryCache = useQueryCache();
 const ids = computed(() => ({ workspaceId, modId: mod.id }));
-const { data: listing } = useQuery(() => listingQuery(ids.value));
+const { data: summary } = useQuery(() => summaryQuery(ids.value));
 const { data: upload } = useQuery(() => uploadFilesQuery(ids.value));
 const { data: health } = useQuery(() => healthQuery({ id: workspaceId, live }));
-const thumbnail = computed(() => mod.thumbnail || listing.value?.thumbnailAbs || "");
+const thumbnail = computed(() => mod.thumbnail || summary.value?.thumbnailAbs || "");
 const { data: image } = useQuery(() => imageQuery(thumbnail.value));
-const { data: stat } = useQuery(() => statQuery(thumbnail.value));
 
-/** Each change to the mod, saved; one that rebuilds the session says so. */
-const { mutate: run } = useMutation({
-  mutation: ({ save }: { save: () => Promise<unknown>; rebuilds?: boolean }) => save(),
-  onSettled: (_data, _error, { rebuilds }) => {
-    void queryCache.invalidateQueries({ key: workspaceKeys.all });
-    void queryCache.invalidateQueries({ key: releaseKeys.listing(workspaceId, mod.id) });
-    void queryCache.invalidateQueries({ key: releaseKeys.upload(workspaceId, mod.id) });
-    if (rebuilds) void queryCache.invalidateQueries({ key: sessionKeys.live(workspaceId) });
-  },
-});
+const { mutate: run } = useWorkspaceSave(() => workspaceId);
 
 /** Show a change at once: the next save of another field sends it too. */
 function shown(next: WorkspaceMod): void {
@@ -63,20 +53,19 @@ function shown(next: WorkspaceMod): void {
   );
 }
 
-type Fields = Partial<Pick<WorkspaceMod, "name" | "color" | "thumbnail" | "descMdRel" | "descBbRel" | "workshopIgnore">>;
-function saveFields(set: Fields): void {
+type Fields = Partial<Pick<WorkspaceMod, "name" | "color" | "workshopIgnore">>;
+/** Save fields of the mod, then, once they are saved, what reads them. */
+function saveFields(set: Fields, then?: () => Promise<unknown>): void {
   const next = { ...mod, ...set };
   shown(next);
   run({
-    save: () =>
-      UpdateWorkspaceMod(workspaceId, mod.id, next.name, next.color ?? "", next.thumbnail ?? "", next.descMdRel ?? "",
-        next.descBbRel ?? "", next.workshopIgnore ?? ""),
+    save: async () => {
+      await UpdateWorkspaceMod(workspaceId, mod.id, next.name, next.color ?? "", next.thumbnail ?? "", next.workshopIgnore ?? "");
+      await then?.();
+    },
+    // the upload exclusions are what Publish counts and compares
+    release: set.workshopIgnore === undefined ? undefined : mod.id,
   });
-}
-
-/** A text field's value once it is left. */
-function typed(event: Event): string {
-  return event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement ? event.target.value : "";
 }
 
 const { mutate: openFolder } = useMutation({ mutation: () => OpenFolder(mod.path) });
@@ -88,7 +77,7 @@ function setSlot(slot: number): void {
 
 async function changeFolder(): Promise<void> {
   const path = await pickDirectory("The mod's folder");
-  if (path) run({ save: () => SetWorkspaceModPath(workspaceId, mod.id, path), rebuilds: true });
+  if (path) run({ save: () => SetWorkspaceModPath(workspaceId, mod.id, path), rebuilds: true, release: mod.id });
 }
 
 function remove(): void {
@@ -97,24 +86,9 @@ function remove(): void {
 }
 
 // the listing's image, which the launcher and Steam show, is PMT's too
-async function changeThumbnail(): Promise<void> {
-  const src = await pickFile("Thumbnail", IMAGE_FILTER);
-  const current = listing.value;
-  if (!src || !current) return;
-  run({
-    save: async () => {
-      const rel = await CopyThumbnail(workspaceId, mod.id, src);
-      const saved = await SaveListing({ ...current, thumbnailRel: rel });
-      await UpdateWorkspaceMod(workspaceId, mod.id, mod.name, mod.color ?? "", saved?.thumbnailAbs ?? "",
-        mod.descMdRel ?? "", mod.descBbRel ?? "", mod.workshopIgnore ?? "");
-    },
-  });
-}
+const { change: changeThumbnail } = useListingImage(() => workspaceId);
 
-const size = computed(() => {
-  if (!image.value || !stat.value?.exists) return "";
-  return `${image.value.width} by ${image.value.height}, ${Math.round(stat.value.size / 1024)} KB`;
-});
+const size = computed(() => (image.value ? imageSize(image.value) : ""));
 
 const eras = computed(() => mod.eras ?? []);
 function setEras(next: Era[]): void {
@@ -153,8 +127,7 @@ const workedOut = computed(() => {
 });
 
 function unlink(): void {
-  const current = listing.value;
-  if (current) run({ save: () => SaveListing({ ...current, remoteFileId: "" }) });
+  run({ save: () => SetListingLink(workspaceId, mod.id, "", ""), release: mod.id });
 }
 
 /** Who reads this mod's objects, and how much of the game it replaces. */
@@ -192,9 +165,9 @@ const { mutate: importExclusions } = useMutation({
   onSuccess: (text) => (draft.value = text),
   onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
+// the export writes the saved text, so it waits for the save
 function exportExclusions(): void {
-  saveFields({ workshopIgnore: draft.value });
-  run({ save: () => ExportWorkshopIgnore(workspaceId, mod.id) });
+  saveFields({ workshopIgnore: draft.value }, () => ExportWorkshopIgnore(workspaceId, mod.id));
 }
 </script>
 
@@ -214,7 +187,7 @@ function exportExclusions(): void {
       <div class="flex flex-col border-b border-default @2xl:border-e @2xl:border-b-0">
         <FieldGroup title="Identity">
           <UFormField label="Name">
-            <UInput :model-value="mod.name" class="w-full" @change="saveFields({ name: typed($event) })" />
+            <UInput :model-value="mod.name" :model-modifiers="{ lazy: true }" class="w-full" @update:model-value="saveFields({ name: $event })" />
           </UFormField>
           <UFormField label="Folder">
             <div class="flex gap-2">
@@ -232,9 +205,9 @@ function exportExclusions(): void {
           <div class="flex items-end gap-3.5">
             <Thumb :path="thumbnail" :color="modColor(mod)" size="xl" />
             <div class="flex min-w-0 flex-col items-start gap-1.5">
-              <span class="truncate font-mono text-12 text-toned">{{ listing?.thumbnailRel || "No thumbnail" }}</span>
+              <span class="truncate font-mono text-12 text-toned">{{ summary?.thumbnailRel || "No thumbnail" }}</span>
               <span v-if="size" class="text-12 text-dimmed">{{ size }}</span>
-              <UButton label="Change" @click="changeThumbnail" />
+              <UButton label="Change" @click="changeThumbnail(mod.id)" />
             </div>
           </div>
         </FieldGroup>
@@ -242,10 +215,10 @@ function exportExclusions(): void {
         <FieldGroup title="Calendar" hint="Shows event dates as in-game years">
           <div v-for="(era, i) in eras" :key="i" class="flex items-end gap-2.5">
             <UFormField label="Era" class="w-30">
-              <UInput :model-value="era.name" placeholder="AD" @change="setEra(i, { name: typed($event) })" />
+              <UInput :model-value="era.name" :model-modifiers="{ lazy: true }" placeholder="AD" @update:model-value="setEra(i, { name: $event })" />
             </UFormField>
             <UFormField label="Year offset" class="w-30">
-              <UInput type="number" :model-value="era.offset" @change="setEra(i, { offset: Number(typed($event)) || 0 })" />
+              <UInput type="number" :model-value="era.offset" :model-modifiers="{ lazy: true }" @update:model-value="setEra(i, { offset: $event || 0 })" />
             </UFormField>
             <UButton
               icon="i-lucide-x"
@@ -258,10 +231,10 @@ function exportExclusions(): void {
           </div>
           <div v-if="blank" class="flex items-end gap-2.5">
             <UFormField label="Era" class="w-30">
-              <UInput :model-value="blank.name" placeholder="AD" autofocus @change="editBlank({ name: typed($event) })" />
+              <UInput :model-value="blank.name" :model-modifiers="{ lazy: true }" placeholder="AD" autofocus @update:model-value="editBlank({ name: $event })" />
             </UFormField>
             <UFormField label="Year offset" class="w-30">
-              <UInput type="number" :model-value="blank.offset" @change="editBlank({ offset: Number(typed($event)) || 0 })" />
+              <UInput type="number" :model-value="blank.offset" :model-modifiers="{ lazy: true }" @update:model-value="editBlank({ offset: $event || 0 })" />
             </UFormField>
             <UButton icon="i-lucide-x" variant="ghost" size="md" square aria-label="Remove this era" @click="blank = undefined" />
           </div>
@@ -303,35 +276,20 @@ function exportExclusions(): void {
           <UFormField label="Workshop item">
             <div class="flex gap-2">
               <UInput
-                :model-value="listing?.remoteFileId"
+                :model-value="summary?.remoteFileId"
                 readonly
                 placeholder="Not published"
                 class="grow"
                 :ui="{ base: 'font-mono' }"
               />
-              <UButton label="Unlink" variant="ghost" size="md" :disabled="!listing?.remoteFileId" @click="unlink" />
+              <UButton label="Unlink" variant="ghost" size="md" :disabled="!summary?.remoteFileId" @click="unlink" />
             </div>
           </UFormField>
-          <div class="grid grid-cols-2 gap-2.5">
-            <UFormField label="Description, Markdown">
-              <UInput
-                :model-value="mod.descMdRel"
-                :placeholder="listing?.descMdRel"
-                class="w-full"
-                :ui="{ base: 'font-mono' }"
-                @change="saveFields({ descMdRel: typed($event) })"
-              />
-            </UFormField>
-            <UFormField label="Description, BBCode">
-              <UInput
-                :model-value="mod.descBbRel"
-                :placeholder="listing?.descBbRel"
-                class="w-full"
-                :ui="{ base: 'font-mono' }"
-                @change="saveFields({ descBbRel: typed($event) })"
-              />
-            </UFormField>
-          </div>
+          <UFormField v-if="summary" label="Description">
+            <DescriptionSource :summary="summary">
+              <ULink :to="{ name: 'release', params: { id: workspaceId } }" class="text-secondary">Change source in Publish</ULink>
+            </DescriptionSource>
+          </UFormField>
         </FieldGroup>
 
         <FieldGroup title="Used by and uses">
@@ -366,16 +324,20 @@ function exportExclusions(): void {
             <UModal
               :open="editing"
               title="Upload exclusions"
-              description="Gitignore patterns, kept in this workspace. Uploads always leave out dotfiles but .metadata, .gitignore and what the mod's .gitignore names."
+              description="Gitignore patterns, kept in this workspace. Uploads always leave out dotfiles but .metadata, .gitignore and what the mod's .gitignore names, and workshop/previews, which Steam takes as the page's gallery."
               @update:open="edit"
             >
               <UButton label="Edit" />
               <template #body>
-                <UTextarea v-model="draft" :rows="10" class="w-full" :ui="{ base: 'font-mono' }" placeholder="gfx/source/**" />
+                <div class="flex flex-col gap-2">
+                  <UTextarea v-model="draft" :rows="10" class="w-full" :ui="{ base: 'font-mono' }" placeholder="gfx/source/**" />
+                  <div class="flex gap-1">
+                    <UButton label="Import .workshop-ignore" icon="i-lucide-file-down" variant="ghost" size="sm" @click="importExclusions()" />
+                    <UButton label="Export .workshop-ignore" icon="i-lucide-file-up" variant="ghost" size="sm" @click="exportExclusions" />
+                  </div>
+                </div>
               </template>
               <template #footer>
-                <UButton label="Import .workshop-ignore" variant="ghost" @click="importExclusions()" />
-                <UButton label="Export .workshop-ignore" variant="ghost" @click="exportExclusions" />
                 <span class="grow" />
                 <UButton label="Cancel" @click="edit(false)" />
                 <UButton label="Save" color="primary" variant="solid" @click="saveExclusions" />

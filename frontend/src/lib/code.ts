@@ -6,6 +6,7 @@ import {
   File,
   FileDiff,
   getSharedHighlighter,
+  parseDiffFromFile,
   registerCustomLanguage,
   registerCustomTheme,
   type FileContents,
@@ -76,8 +77,17 @@ export function codeFile(name: string, contents: string): FileContents {
   return { name, contents, lang: grammarOf(name) };
 }
 
+/** The lines one text adds and removes against another, as a diff of the two counts them. */
+export function lineCounts(before: string, after: string): { added: number; removed: number } {
+  const { hunks } = parseDiffFromFile(codeFile("before", before), codeFile("after", after));
+  return {
+    added: hunks.reduce((sum, hunk) => sum + hunk.additionLines, 0),
+    removed: hunks.reduce((sum, hunk) => sum + hunk.deletionLines, 0),
+  };
+}
+
 /** A token of code: its text and its color, none for the text's own. */
-export type CodeToken = { content: string; color?: string };
+type CodeToken = { content: string; color?: string };
 
 /** One line of a file's code as the theme's tokens, for code written inline (a property's value). */
 export async function codeTokens(text: string, name: string): Promise<CodeToken[]> {
@@ -115,11 +125,12 @@ registerCustomTheme("pmt", () => Promise.resolve(THEME));
 
 /**
  * The boards' `.code`: Geist Mono 12.5 / 20; numbers in fg-3, right-aligned in a 48px column whose
- * last 16px are space; the container sets the padding around the rows. A long line scrolls, with the
- * page's thin scrollbar (styles/themes.css), which does not reach into Pierre's shadow root.
+ * last 16px are space; the container sets the padding around the rows. Sizes are rem (the page's, even in
+ * Pierre's shadow root), so code follows the app's text size. A long line scrolls, with the page's thin
+ * scrollbar (styles/themes.css), which does not reach into Pierre's shadow root.
  */
 const CODE_CSS = `:host {
-  --diffs-font-family: var(--font-mono); --diffs-font-size: 12.5px; --diffs-line-height: 20px;
+  --diffs-font-family: var(--font-mono); --diffs-font-size: 0.78125rem; --diffs-line-height: 1.25rem;
   --diffs-fg-number-override: var(--fg-3); --diffs-selection-base: var(--accent);
   --diffs-addition-color-override: var(--green); --diffs-deletion-color-override: var(--red);
   --diffs-modified-color-override: var(--blue);
@@ -127,11 +138,11 @@ const CODE_CSS = `:host {
 }
 [data-code] { scrollbar-width: thin; scrollbar-color: transparent transparent; }
 [data-code]:hover { scrollbar-color: var(--line-2) transparent; }
-[data-gutter] [data-column-number] { padding: 0 16px 0 0; }
-[data-line-number-content] { min-width: 32px; }
-[data-line] { padding-inline: 0 16px; }
+[data-gutter] [data-column-number] { padding: 0 1rem 0 0; }
+[data-line-number-content] { min-width: 2rem; }
+[data-line] { padding-inline: 0 1rem; }
 [data-disable-line-numbers] [data-column-number] { padding: 0; }
-[data-disable-line-numbers] [data-line] { padding-inline-start: 12px; }`;
+[data-disable-line-numbers] [data-line] { padding-inline-start: 0.75rem; }`;
 
 /** A view that draws read-only code; numbered when asked. */
 export function codeView(numbers: boolean): File {
@@ -159,16 +170,28 @@ export function drawCode(view: File, host: HTMLElement, text: string, name: stri
 }
 
 /**
- * A view that draws two files side by side, what differs marked and nothing folded, so any line of either
- * can be shown; each file is given as `codeFile` makes it.
+ * A view that draws two files side by side, or as one unified, what differs marked; unchanged lines are
+ * folded into sections that open when asked, else every line is drawn. Each file is as `codeFile` makes it.
  */
-export function diffView(): FileDiff {
+export function diffView(style: "split" | "unified" = "split", fold = false): FileDiff {
   return new FileDiff({
     theme: "pmt",
-    diffStyle: "split",
-    expandUnchanged: true,
+    diffStyle: style,
+    expandUnchanged: !fold,
     disableFileHeader: true,
     overflow: "scroll",
     unsafeCSS: CODE_CSS,
   });
+}
+
+/** A line of one side of a diff, 1-based: the old file's (deletions) or the new file's (additions). */
+export type DiffLine = { side: "deletions" | "additions"; line: number };
+
+/** Select a line of a drawn diff and scroll it to the middle, unfolding it first if it is folded away. */
+export async function showLine(view: FileDiff, host: HTMLElement, { side, line }: DiffLine): Promise<void> {
+  // Pierre unfolds by the new file's lines; a removed line is never folded
+  if (side === "additions") view.revealLine(line);
+  view.setSelectedLines({ start: line, end: line, side });
+  await new Promise(requestAnimationFrame);
+  host.querySelector("diffs-container")?.shadowRoot?.querySelector("[data-selected-line]")?.scrollIntoView({ block: "center" });
 }

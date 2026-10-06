@@ -36,10 +36,9 @@ function setSize(key: "ui.editorFontSize" | "ui.ideUiFontSize", value: string | 
 /** Every setting of the open tab back to its default. */
 function resetTab(): void {
   if (tab.value === "editor") {
-    void settings.set("ui.editorFontSize", "", false);
-    void settings.set("ui.ideUiFontSize", "");
+    void settings.reset(["ui.editorFontSize", "ui.ideUiFontSize"]);
   } else if (tab.value === "checks") {
-    void settings.resetChecks((codes.value ?? []).map((check) => check.code));
+    void settings.reset((codes.value ?? []).map((check) => `ide.diag.${check.code}`));
   } else {
     void setToastPref("show");
   }

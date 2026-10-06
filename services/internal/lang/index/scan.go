@@ -263,17 +263,23 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 	return idx, index(ctx, install.Schema, idx, true, nil)
 }
 
-// Reindex walks one file again: its records dropped and added back. A file not yet in Files is
-// appended to it, its Rel listed. Every localization language is kept.
+// Reindex walks one file again: its records dropped and added back. A file not yet in Files goes
+// after its origin's last file, so it keeps that origin's place in load order. Every localization
+// language is kept.
 func (idx *Index) Reindex(sch *schema.Schema, file source.File, text string) {
 	idx.Drop(file.Path)
 	if idx.defs == nil {
 		idx.Ready()
 	}
 	if _, listed := idx.At(file.Path); !listed {
-		idx.order[strings.ToLower(file.Path)] = len(idx.Files)
-		idx.rels[strings.ToLower(file.Rel)] = len(idx.Files)
-		idx.Files = append(idx.Files, file)
+		at := len(idx.Files)
+		for i, other := range idx.Files {
+			if other.Origin == file.Origin {
+				at = i + 1
+			}
+		}
+		idx.Files = slices.Insert(idx.Files, at, file)
+		idx.Place()
 	}
 	if records := read(sch.Game, sch, file, text, nil); records != nil {
 		idx.Add(records, file.Path)

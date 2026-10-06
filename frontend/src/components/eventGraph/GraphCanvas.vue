@@ -12,7 +12,7 @@ import "@vue-flow/core/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
 import type { Edge, Node } from "@services/models";
 import { reach } from "../../composables/useEventGraph";
-import GraphNode from "./GraphNode.vue";
+import { plural } from "../../lib/format";
 
 const { nodes, edges, positions, heads, rootId, selectedId, depth, full = false } = defineProps<{
   nodes: Node[];
@@ -51,7 +51,7 @@ function headOf(step: number): string {
   if (step === 0) return "Root";
   if (step === -1) return "Fired by";
   if (step < 0) return `${-step} steps before`;
-  return `${step} ${step === 1 ? "step" : "steps"}${step === depth ? ", the depth limit" : ""}`;
+  return `${plural(step, "step")}${step === depth ? ", the depth limit" : ""}`;
 }
 
 const flowNodes = computed((): FlowNode[] => [

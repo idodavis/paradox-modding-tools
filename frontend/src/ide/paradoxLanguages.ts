@@ -53,13 +53,12 @@ export async function registerParadoxLanguages(): Promise<void> {
           {
             id: "paradox-info",
             aliases: ["Paradox Info"],
-            filenames: ["*.info"],
+            extensions: [".info"],
           },
           {
             id: "paradox-mod",
             aliases: ["Paradox Mod Descriptor"],
             extensions: [".mod"],
-            filenames: ["descriptor.mod"],
           },
         ],
         grammars: [

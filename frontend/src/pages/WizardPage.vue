@@ -70,7 +70,7 @@ const { mutate: create, isLoading: creating } = useMutation({
     if (!ws) throw new Error("The workspace was not made");
     await SetWorkspaceLocLang(ws.id, locLang.value);
     // in load order; Go names each from its descriptor
-    for (const path of mods.value) await AddWorkspaceMod(ws.id, "", path, "");
+    for (const path of mods.value) await AddWorkspaceMod(ws.id, path);
     return ws;
   },
   onSuccess: (ws) => void router.replace({ name: "workspace-ide", params: { id: ws.id } }),

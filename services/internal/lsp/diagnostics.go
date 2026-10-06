@@ -110,8 +110,8 @@ func (judge *judge) report(span jomini.Range, severity int, code, message string
 func ignores(text string) map[int][]string {
 	out := map[int][]string{}
 	for i, line := range strings.Split(text, "\n") {
-		_, after, ok := strings.Cut(line, "pmt:ignore")
-		if !ok || !strings.Contains(line[:strings.Index(line, "pmt:ignore")], "#") {
+		before, after, ok := strings.Cut(line, "pmt:ignore")
+		if !ok || !strings.Contains(before, "#") {
 			continue
 		}
 		codes := strings.FieldsFunc(after, func(char rune) bool { return char == ',' || char == ' ' || char == '\t' || char == '\r' })

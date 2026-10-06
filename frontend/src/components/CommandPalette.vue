@@ -9,7 +9,7 @@ import { useRouter, type RouteLocationRaw } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { ideSettingsOpen } from "./IdeSettingsCard.vue";
-import { useWorkspacePrefs } from "../composables/useWorkspacePrefs";
+import { useWorkspacePrefs } from "../composables/useWorkspaceSave";
 import { codesQuery, workspacesQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -43,7 +43,7 @@ function flip(id: SettingSwitch): { on: boolean; set: (on: boolean) => void } | 
   const ws = store.activeWorkspace;
   switch (id) {
     case "matchGame":
-      return { on: settings.matchGameTheme, set: (on) => void settings.set("ui.matchGameTheme", on ? "on" : "off") };
+      return { on: settings.matchGameTheme, set: (on) => void settings.setMatchGame(on) };
     case "followSystem":
       return { on: settings.appearance === "system", set: (on) => void settings.followSystem(on) };
     case "reopenTabs":
@@ -97,41 +97,28 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
       return [switchItem(setting.label, scope, state.on, state.set, setting.words)];
     }),
     ...WORKSPACE_TOOLS.map((tool) =>
-      switchItem(`Show the ${tool.label} page`, "App", settings.visibleTools.includes(tool.name), (on) => {
-        const others = settings.visibleTools.filter((name) => name !== tool.name);
-        void settings.setVisibleTools(on ? [...others, tool.name] : others);
-      }),
+      switchItem(`Show the ${tool.label} page`, "App", settings.visibleTools.includes(tool.name), (on) => void settings.showTool(tool.name, on)),
     ),
     ...(codes.value ?? []).map((check) =>
       switchItem(`Check: ${check.summary}`, "IDE", settings.checkOn(check.code, check.default), (on) =>
         void settings.setCheck(check.code, on), check.code),
     ),
   ];
-  const values: Item[] = SETTINGS.filter((setting) => !setting.flips).flatMap((setting) => {
-    if (setting.section === "ide") {
-      if (!id) return [];
-      return [{
-        label: setting.label,
-        words: setting.words,
-        icon: "i-lucide-settings",
-        slot: "value",
-        opens: "opens IDE settings",
-        onSelect: () => {
-          go({ name: "workspace-ide", params: { id } });
-          ideSettingsOpen.value = true;
-        },
-      }];
-    }
-    const section = SETTINGS_SECTIONS[setting.section];
-    if (!id) return [];
-    return [{
+  // a value opens where it is set: the IDE's settings card, or the settings page at its section
+  const values: Item[] = !id ? [] : SETTINGS.filter((setting) => !setting.flips).map((setting) => {
+    const section = setting.section === "ide" ? undefined : SETTINGS_SECTIONS[setting.section];
+    return {
       label: setting.label,
       words: setting.words,
       icon: "i-lucide-settings",
       slot: "value",
-      opens: section.scope === "App" ? `opens ${section.label}` : "opens workspace settings",
-      onSelect: () => go(settingsAt(setting.section)),
-    }];
+      opens: !section ? "opens IDE settings" : section.scope === "App" ? `opens ${section.label}` : "opens workspace settings",
+      onSelect: () => {
+        if (section) return go(settingsAt(setting.section));
+        go({ name: "workspace-ide", params: { id } });
+        ideSettingsOpen.value = true;
+      },
+    };
   });
   return [
     { id: "pages", label: "Pages", items: pages },

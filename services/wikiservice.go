@@ -13,9 +13,6 @@ import (
 	"paradox-modding-tools/services/internal/wiki"
 )
 
-// registers wiki:updated so the bindings generator types it
-func init() { application.RegisterEvent[WikiUpdated](EventWikiUpdated) }
-
 // WikiService serves the wiki guides and patch notes.
 type WikiService struct {
 	Session *SessionService
@@ -45,9 +42,9 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	}, nil
 }
 
-// StartWikiWarm refreshes, in the background, the wiki pages of every installed game, so the
-// guides are current without a click, and tells the frontend as each game is done.
-func (s *WikiService) StartWikiWarm() {
+// ServiceStartup refreshes, in the background, the wiki pages of every installed game, so the
+// guides are current without a click, and tells the frontend as each game is done; Wails calls it.
+func (s *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	games := map[string]bool{}
 	s.Session.App.read(func(cfg *Config) {
 		for _, inst := range cfg.Installs {
@@ -56,22 +53,22 @@ func (s *WikiService) StartWikiWarm() {
 	})
 	go func() {
 		for gameID := range games {
-			done := WikiUpdated{GameID: gameID}
-			if err := wiki.Refresh(context.Background(), gameID); err != nil {
+			done := WikiUpdated{}
+			if err := wiki.Refresh(ctx, gameID); err != nil {
 				done.Error = err.Error()
 			}
 			emit(EventWikiUpdated, done)
 		}
 	}()
+	return nil
 }
 
 // Patches returns the Patch Notes version list, newest first.
-func (s *WikiService) Patches(gameID string) (*wiki.PatchList, error) {
-	patches := wiki.Patches(gameID)
-	return &patches, nil
+func (s *WikiService) Patches(gameID string) wiki.PatchList {
+	return wiki.Patches(gameID)
 }
 
 // PatchPage returns one patch notes body by title or version label.
-func (s *WikiService) PatchPage(gameID, version string) (*wiki.Page, error) {
-	return wiki.PatchByVersion(gameID, version), nil
+func (s *WikiService) PatchPage(gameID, version string) *wiki.Page {
+	return wiki.PatchByVersion(gameID, version)
 }

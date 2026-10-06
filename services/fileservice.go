@@ -30,7 +30,7 @@ type DirEntry struct {
 // CreateDir creates a directory (parents created as needed).
 func (f *FileService) CreateDir(fullPath string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	if fullPath == "" || fullPath == "." {
+	if fullPath == "." {
 		return fmt.Errorf("path is required")
 	}
 	return os.MkdirAll(fullPath, 0o755)
@@ -40,7 +40,7 @@ func (f *FileService) CreateDir(fullPath string) error {
 func (f *FileService) RenamePath(oldPath, newPath string) error {
 	oldPath = filepath.Clean(filepath.FromSlash(oldPath))
 	newPath = filepath.Clean(filepath.FromSlash(newPath))
-	if oldPath == "" || newPath == "" {
+	if oldPath == "." || newPath == "." {
 		return fmt.Errorf("path is required")
 	}
 	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
@@ -52,7 +52,7 @@ func (f *FileService) RenamePath(oldPath, newPath string) error {
 // DeletePath removes a file or directory recursively.
 func (f *FileService) DeletePath(fullPath string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	if fullPath == "" || fullPath == "." {
+	if fullPath == "." {
 		return fmt.Errorf("path is required")
 	}
 	return os.RemoveAll(fullPath)
@@ -64,7 +64,6 @@ type PathStat struct {
 	IsDir   bool  `json:"isDir"`
 	Size    int64 `json:"size"`
 	MtimeMs int64 `json:"mtimeMs"`
-	CtimeMs int64 `json:"ctimeMs"`
 }
 
 // StatPath returns metadata for a path (Exists=false when missing, no error).
@@ -77,14 +76,7 @@ func (f *FileService) StatPath(fullPath string) (PathStat, error) {
 		}
 		return PathStat{}, err
 	}
-	mtime := info.ModTime().UnixMilli()
-	return PathStat{
-		Exists:  true,
-		IsDir:   info.IsDir(),
-		Size:    info.Size(),
-		MtimeMs: mtime,
-		CtimeMs: mtime,
-	}, nil
+	return PathStat{Exists: true, IsDir: info.IsDir(), Size: info.Size(), MtimeMs: info.ModTime().UnixMilli()}, nil
 }
 
 // FileBytes is a binary file payload for the IDE FS bridge. A missing file is Exists=false with no
@@ -109,70 +101,34 @@ func (f *FileService) ReadEditableBase64(fullPath string) (FileBytes, error) {
 }
 
 func (f *FileService) readBase64(fullPath string, textOnly bool) (FileBytes, error) {
-	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	st, err := os.Stat(fullPath)
+	file, err := os.Open(filepath.Clean(filepath.FromSlash(fullPath)))
+	if errors.Is(err, os.ErrNotExist) {
+		return FileBytes{Exists: false}, nil
+	}
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return FileBytes{Exists: false}, nil
-		}
-		return FileBytes{}, fmt.Errorf("stat file: %w", err)
-	}
-	if st.IsDir() {
-		return FileBytes{}, fmt.Errorf("read file: is a directory")
-	}
-	if msg := rejectOpen(st.Size()); msg != "" {
-		return FileBytes{Exists: true, Reject: msg}, nil
-	}
-	fh, err := os.Open(fullPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return FileBytes{Exists: false}, nil
-		}
 		return FileBytes{}, fmt.Errorf("read file: %w", err)
 	}
-	defer fh.Close()
-	headN := min(512, int(st.Size()))
-	head := make([]byte, headN)
-	if headN > 0 {
-		if _, err := io.ReadFull(fh, head); err != nil {
-			return FileBytes{}, fmt.Errorf("read file: %w", err)
-		}
+	defer file.Close()
+	info, err := file.Stat()
+	switch {
+	case err != nil:
+		return FileBytes{}, fmt.Errorf("stat file: %w", err)
+	case info.IsDir():
+		return FileBytes{}, fmt.Errorf("read file: is a directory")
+	case info.Size() > maxOpenBytes:
+		// too large to hold in memory, on every read, image or not
+		return FileBytes{Exists: true, Reject: fmt.Sprintf("file too large to open (%d bytes, max %d)", info.Size(), maxOpenBytes)}, nil
 	}
-	if textOnly {
-		if msg := rejectBinary(head); msg != "" {
-			return FileBytes{Exists: true, Reject: msg}, nil
-		}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return FileBytes{}, fmt.Errorf("read file: %w", err)
 	}
-	if st.Size() == 0 {
-		return FileBytes{Exists: true, B64: ""}, nil
-	}
-	data := head
-	if int64(len(head)) < st.Size() {
-		data = make([]byte, st.Size())
-		copy(data, head)
-		if _, err := io.ReadFull(fh, data[len(head):]); err != nil {
-			return FileBytes{}, fmt.Errorf("read file: %w", err)
-		}
+	// only the editor bridge refuses binary, images included: monaco-vscode has no webviews, so an
+	// image in the editor renders as mojibake
+	if textOnly && bytes.IndexByte(data[:min(512, len(data))], 0) >= 0 {
+		return FileBytes{Exists: true, Reject: "binary file: the editor opens script, localization and other text files only"}, nil
 	}
 	return FileBytes{Exists: true, B64: base64.StdEncoding.EncodeToString(data)}, nil
-}
-
-// rejectOpen refuses a file too large to hold in memory, on every read, image or not.
-func rejectOpen(size int64) string {
-	if size > maxOpenBytes {
-		return fmt.Sprintf("file too large to open (%d bytes, max %d)",
-			size, maxOpenBytes)
-	}
-	return ""
-}
-
-// rejectBinary refuses content no editor here can show, images included: monaco-vscode has no
-// webviews, so an image in the editor renders as mojibake. Only the editor bridge applies it.
-func rejectBinary(head []byte) string {
-	if bytes.IndexByte(head, 0) < 0 {
-		return "" // text
-	}
-	return "binary file: the editor opens script, localization and other text files only"
 }
 
 // WriteFileBase64 writes raw bytes from standard base64. It is the editor's save path, so it goes
@@ -183,10 +139,7 @@ func (f *FileService) WriteFileBase64(fullPath, b64 string) error {
 	if err != nil {
 		return fmt.Errorf("decode: %w", err)
 	}
-	return local.Write(fullPath, func(out io.Writer) error {
-		_, err := out.Write(data)
-		return err
-	})
+	return local.WriteBytes(fullPath, data)
 }
 
 // ListDirectory lists immediate children of dirPath (non-recursive).

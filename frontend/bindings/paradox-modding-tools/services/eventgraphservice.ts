@@ -32,6 +32,6 @@ export function GetEventGraph(workspaceID: string, params: $models.Params): $Can
  * SearchRoots is the fired events and on_actions, and what fires one but a scripted entry, whose id
  * holds the query: ids that start with it first, 50 of one database or 8 of each.
  */
-export function SearchRoots(workspaceID: string, query: string, database: string): $CancellablePromise<$models.Roots | null> {
-    return $Call.ByID(4257437728, workspaceID, query, database);
+export function SearchRoots(workspaceID: string, query: string): $CancellablePromise<$models.Roots | null> {
+    return $Call.ByID(4257437728, workspaceID, query);
 }

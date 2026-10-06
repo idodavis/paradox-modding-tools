@@ -18,7 +18,6 @@ import (
 	"strings"
 	"sync"
 
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/wiki"
@@ -68,6 +67,7 @@ type WorkspaceMod struct {
 	Color          string `json:"color,omitempty"` // a hand-picked hex; it wins over the slot
 	Slot           int    `json:"slot"`            // the mod's color slot, 1 to 16; a reorder keeps it
 	Thumbnail      string `json:"thumbnail,omitempty"`
+	DescSource     string `json:"descSource,omitempty"` // markdown, bbcode or steam; "" for the file the mod has
 	DescMdRel      string `json:"descMdRel,omitempty"`
 	DescBbRel      string `json:"descBbRel,omitempty"`
 	WorkshopIgnore string `json:"workshopIgnore,omitempty"`
@@ -118,10 +118,6 @@ func newApp(path string) *AppService {
 	if config.cfg.Settings == nil {
 		config.cfg.Settings = map[string]map[string]string{}
 	}
-	if config.loadErr == nil && slotUnslotted(&config.cfg) {
-		// mods saved before slots existed; a failed write keeps the slots for the next save
-		_ = config.save()
-	}
 	return config
 }
 
@@ -167,7 +163,7 @@ func (s *AppService) CheckForUpdates() {
 }
 
 // GetSettings loads the settings as a map of "namespace.key" to value.
-func (s *AppService) GetSettings() (map[string]string, error) {
+func (s *AppService) GetSettings() map[string]string {
 	out := map[string]string{}
 	s.read(func(cfg *Config) {
 		for namespace, values := range cfg.Settings {
@@ -176,7 +172,7 @@ func (s *AppService) GetSettings() (map[string]string, error) {
 			}
 		}
 	})
-	return out, nil
+	return out
 }
 
 // SaveSettings writes settings keyed "namespace.key"; a key with no namespace is skipped.
@@ -213,9 +209,7 @@ func (s *AppService) ResetData() error {
 		return fmt.Errorf("wipe cache: %w", err)
 	}
 	wiki.ForgetAll()
-	if s.Session != nil {
-		s.Session.dropAllExcept("")
-	}
+	s.Session.dropAllExcept("")
 	return nil
 }
 
@@ -239,8 +233,7 @@ func (s *AppService) workspace(id string) (ws *Workspace, inst *GameInstall) {
 		if listed == nil {
 			return
 		}
-		copied := *listed
-		copied.Mods = slices.Clone(listed.Mods)
+		copied := cloneWorkspace(*listed)
 		ws = &copied
 		if found := findInstall(cfg, listed.InstallID); found != nil {
 			record := *found
@@ -266,16 +259,4 @@ func findWorkspace(cfg *Config, id string) *Workspace {
 		}
 	}
 	return nil
-}
-
-func installScriptRoot(cfg *Config, installID string) (string, error) {
-	inst := findInstall(cfg, installID)
-	if inst == nil {
-		return "", fmt.Errorf("install not found")
-	}
-	info := game.Get(inst.GameID)
-	if info == nil {
-		return "", fmt.Errorf("unknown game: %s", inst.GameID)
-	}
-	return filepath.Join(inst.Path, info.ScriptRoot), nil
 }

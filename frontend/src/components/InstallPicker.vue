@@ -98,7 +98,7 @@ const { mutate: remove } = useMutation({
 
     <div class="flex min-w-0 flex-col gap-2.5">
       <span class="text-12 font-medium text-toned">Add an install</span>
-      <Card v-if="found?.length" class="flex flex-col gap-2 px-3 py-2.5">
+      <div v-if="found?.length" class="flex flex-col gap-2 rounded-lg border border-default bg-muted px-3 py-2.5">
         <span class="text-12 text-dimmed">Found on this computer</span>
         <div v-for="install in found" :key="install.path" class="flex items-center gap-2">
           <div class="flex min-w-0 grow flex-col gap-px">
@@ -108,7 +108,7 @@ const { mutate: remove } = useMutation({
           <UBadge v-if="added.has(install.path)" label="Added" />
           <UButton v-else label="Add" :loading="adding" @click="add({ name: install.name, path: install.path })" />
         </div>
-      </Card>
+      </div>
       <UFormField label="Install folder">
         <FileSelector
           v-model="path"

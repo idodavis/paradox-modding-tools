@@ -55,7 +55,7 @@ export const PAGES = {
     workspace: true,
     tab: true,
     help: [
-      "Load order cards: contests between mods (LIOS or FIOS), mods overriding the game, and mods that need or change another mod. Problems in the mods: dangling references, localization gaps, and script errors from the editor's checks.",
+      "Load order cards: contests between mods (LIOS or FIOS), mods overriding the game, and mods that need or change another mod. Problems in the mods: dangling refs, localization issues and script issues.",
       "Drag the load order's chips to preview another order without saving it. Save as workspace order saves it, as Settings does.",
       "A row opens beside the table with each place it is written; Compare the two sets a contest's kept file beside the one it replaces.",
     ],
@@ -76,11 +76,11 @@ export const PAGES = {
     workspace: true,
     tab: true,
     help: [
-      "This page edits the mod folder: descriptor, mod-description.md, mod-description.bbcode, and changelog/<version>.bbcode.",
-      "Description is Markdown in a rich editor. Save writes the Markdown file and converts to BBCode. Steam always uploads BBCode. Description paths are in Settings › Mods and load order.",
-      "Steam staging skips dotfiles (except .metadata/), .gitignore, patterns in .gitignore, and the mod's upload exclusions from Settings.",
-      "Steam: Steam client must be running and signed in as the Workshop owner. New items stay private until you set them Public on Workshop. Do not run a local copy and a Workshop subscribe of the same mod together.",
-      "Paradox Mods has no API. Copy BBCode for the launcher, or Copy Markdown. The site often strips formatting. PMT does not write a sibling Documents/…/mod/<name>.mod pointer.",
+      "Publish edits the mod's own files: its descriptor, and in workshop/ its description file and changelog.bbcode, the latest change note. Nothing is written until you save.",
+      "The description comes from a Markdown file (converted to BBCode when you upload), a BBCode file (uploaded as written), or Steam's own text, which uploads leave as it is. Change source picks one.",
+      "Uploads leave out dotfiles but .metadata, .gitignore and what it names, workshop/previews (Steam takes those as the page's gallery), and the mod's upload exclusions in Settings. PMT keeps a copy of each upload, so Compare shows what the next one changes.",
+      "Steam must be running and signed in as the item's owner. A new item stays private until you make it public on its Workshop page. Do not load a local copy and a Workshop subscription of the same mod together.",
+      "Paradox Mods has no API: copy the description as BBCode and paste it in the Paradox Launcher's Upload Mod.",
     ],
   },
   "workspace-settings": {
@@ -96,8 +96,8 @@ export const PAGES = {
   },
 } as const satisfies Record<string, Page>;
 
-export type PageName = keyof typeof PAGES;
-export type WorkspacePage = { [N in PageName]: (typeof PAGES)[N] extends { workspace: true } ? N : never }[PageName];
+type PageName = keyof typeof PAGES;
+type WorkspacePage = { [N in PageName]: (typeof PAGES)[N] extends { workspace: true } ? N : never }[PageName];
 export type WorkspaceToolName = { [N in PageName]: (typeof PAGES)[N] extends { tab: true } ? N : never }[PageName];
 
 declare module "vue-router" {

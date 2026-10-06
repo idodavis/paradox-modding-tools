@@ -20,9 +20,6 @@ import (
 	"paradox-modding-tools/services/internal/steam"
 )
 
-// registers lang:calendar-changed so the bindings generator types it
-func init() { application.RegisterEvent[string](EventLangCalendarChanged) }
-
 // WorkspaceService manages workspaces, game installs, and mods.
 type WorkspaceService struct {
 	App     *AppService
@@ -65,19 +62,9 @@ func (s *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstal
 	return game.FindInstalls(gameID)
 }
 
-// DetectGameVersion reads an install's version (launcher-settings.json, else the Steam manifest).
-func (s *WorkspaceService) DetectGameVersion(gameID, path string) string {
-	info := game.Get(gameID)
-	if info == nil {
-		return ""
-	}
-	return game.ReadGameVersion(path, info.SteamAppID)
-}
-
 // AddGameInstall adds a new game installation, with the version it holds now.
 func (s *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInstall, error) {
-	info := game.Get(gameID)
-	if info == nil {
+	if game.Get(gameID) == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -85,7 +72,7 @@ func (s *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInsta
 	}
 	inst := GameInstall{
 		ID: uuid.New().String(), GameID: gameID, Name: name, Path: path,
-		VersionDetected: game.ReadGameVersion(path, info.SteamAppID),
+		VersionDetected: game.ReadGameVersion(gameID, path),
 	}
 	err := s.App.mutate(func(cfg *Config) error {
 		cfg.Installs = append(cfg.Installs, inst)
@@ -98,81 +85,69 @@ func (s *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInsta
 }
 
 // UpdateGameInstall updates path, then refreshes version.
-func (s *WorkspaceService) UpdateGameInstall(id, path string) (*GameInstall, error) {
+func (s *WorkspaceService) UpdateGameInstall(id, path string) error {
 	if path != "" {
 		if _, err := os.Stat(path); err != nil {
-			return nil, fmt.Errorf("invalid path: %w", err)
+			return fmt.Errorf("invalid path: %w", err)
 		}
 	}
-	var out *GameInstall
 	err := s.App.mutate(func(cfg *Config) error {
 		inst := findInstall(cfg, id)
 		if inst == nil {
 			return fmt.Errorf("install not found")
 		}
-		info := game.Get(inst.GameID)
-		if info == nil {
-			return fmt.Errorf("unknown game %s", inst.GameID)
-		}
-		if path != "" {
-			inst.Path = path
-		}
-		inst.VersionDetected = game.ReadGameVersion(inst.Path, info.SteamAppID)
-		cp := *inst
-		out = &cp
+		inst.Path = cmp.Or(path, inst.Path)
+		inst.VersionDetected = game.ReadGameVersion(inst.GameID, inst.Path)
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("update install: %w", err)
+		return fmt.Errorf("update install: %w", err)
 	}
-	return out, nil
+	return nil
 }
 
 // DeleteGameInstall removes an install if no workspace uses it.
-func (s *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err error) {
+func (s *WorkspaceService) DeleteGameInstall(id string) error {
+	var inUse []string
 	var listed GameInstall
 	s.App.read(func(cfg *Config) {
-		inUse = workspacesUsingInstall(cfg, id)
+		for _, ws := range cfg.Workspaces {
+			if ws.InstallID == id {
+				inUse = append(inUse, ws.Name)
+			}
+		}
 		if found := findInstall(cfg, id); found != nil {
 			listed = *found
 		}
 	})
 	if len(inUse) > 0 {
-		return inUse, fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))
+		return fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))
 	}
 	if listed.ID != "" {
 		if err := index.DropInstall(index.Request{Game: listed.GameID, Dir: listed.Path}); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return nil, s.App.mutate(func(cfg *Config) error {
-		kept := cfg.Installs[:0]
-		for _, inst := range cfg.Installs {
-			if inst.ID != id {
-				kept = append(kept, inst)
-			}
-		}
-		cfg.Installs = kept
+	return s.App.mutate(func(cfg *Config) error {
+		cfg.Installs = slices.DeleteFunc(cfg.Installs, func(inst GameInstall) bool { return inst.ID == id })
 		return nil
 	})
 }
 
 // Workspaces.
 
-// ListWorkspaces returns workspaces, optionally filtered by game. Pass "" for all.
-func (s *WorkspaceService) ListWorkspaces(gameID string) ([]Workspace, error) {
+// ListWorkspaces returns every workspace, its mods in load order.
+func (s *WorkspaceService) ListWorkspaces() []Workspace {
 	var out []Workspace
 	s.App.read(func(cfg *Config) {
 		for _, ws := range cfg.Workspaces {
-			if gameID == "" || ws.GameID == gameID {
-				out = append(out, cloneWorkspace(ws))
-			}
+			out = append(out, cloneWorkspace(ws))
 		}
 	})
 	for i := range out {
 		markDisk(&out[i])
 	}
-	return out, nil
+	return out
 }
 
 // markDisk re-derives each mod's IsBroken and Folder from disk, a stat per mod, outside the config
@@ -188,25 +163,6 @@ func markDisk(ws *Workspace) {
 			mod.Folder = rel
 		}
 	}
-}
-
-// GetWorkspace returns a workspace by ID.
-func (s *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
-	if id == "" {
-		return nil, fmt.Errorf("workspace id is required")
-	}
-	var ws *Workspace
-	s.App.read(func(cfg *Config) {
-		if found := findWorkspace(cfg, id); found != nil {
-			cp := cloneWorkspace(*found)
-			ws = &cp
-		}
-	})
-	if ws == nil {
-		return nil, fmt.Errorf("workspace not found")
-	}
-	markDisk(ws)
-	return ws, nil
 }
 
 // CreateWorkspace creates a new workspace.
@@ -250,7 +206,7 @@ var legalDefaultTools = map[string]bool{
 	"workspace-ide": true,
 	"event-graph":   true,
 	"health":        true,
-	"patcher":       true,
+	"patch-notes":   true,
 	"release":       true,
 }
 
@@ -284,38 +240,15 @@ func (s *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
 	return nil
 }
 
-// CountWorkspacesUsingInstall returns names of workspaces on this install.
-func (s *WorkspaceService) CountWorkspacesUsingInstall(installID string) []string {
-	var names []string
-	s.App.read(func(cfg *Config) {
-		names = workspacesUsingInstall(cfg, installID)
-	})
-	return names
-}
-
-func workspacesUsingInstall(cfg *Config, installID string) []string {
-	var names []string
-	for _, ws := range cfg.Workspaces {
-		if ws.InstallID == installID {
-			names = append(names, ws.Name)
-		}
-	}
-	return names
-}
-
 // DeleteWorkspace removes a workspace from PMT. Mod folders on disk stay.
 func (s *WorkspaceService) DeleteWorkspace(id string) error {
-	if id == "" {
-		return fmt.Errorf("workspace id is required")
-	}
 	err := s.App.mutate(func(cfg *Config) error {
-		for i, ws := range cfg.Workspaces {
-			if ws.ID == id {
-				cfg.Workspaces = append(cfg.Workspaces[:i], cfg.Workspaces[i+1:]...)
-				return nil
-			}
+		listed := len(cfg.Workspaces)
+		cfg.Workspaces = slices.DeleteFunc(cfg.Workspaces, func(ws Workspace) bool { return ws.ID == id })
+		if len(cfg.Workspaces) == listed {
+			return fmt.Errorf("workspace not found")
 		}
-		return fmt.Errorf("workspace not found")
+		return nil
 	})
 	if err != nil {
 		return err
@@ -350,13 +283,8 @@ func (s *WorkspaceService) ModFolder(parentDir, name string) string {
 func (s *WorkspaceService) CreateMod(
 	gameID, parentDir, name, locLang, supportedVersion, description, thumbnailSrc string,
 ) (string, error) {
-	if game.Get(gameID) == nil {
-		return "", fmt.Errorf("unknown game %s", gameID)
-	}
+	// WriteNewMod refuses an unknown game or an empty name
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", fmt.Errorf("name is required")
-	}
 	if parentDir == "" {
 		parentDir = local.DefaultModParent(gameID)
 	}
@@ -370,38 +298,30 @@ func (s *WorkspaceService) CreateMod(
 	}); err != nil {
 		return "", err
 	}
-	return root, steam.EnsureDescriptions(root, name, description)
+	return root, steam.NewDescription(root, steam.DescMdName, steam.FromMarkdown, name, description)
 }
 
-// AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor. An empty name
-// is the descriptor's, else the folder's.
-func (s *WorkspaceService) AddWorkspaceMod(
-	workspaceID, name, path, thumbnail string,
-) (*WorkspaceMod, error) {
+// AddWorkspaceMod adds a mod to a workspace: a folder holding its game's descriptor, named by it (else
+// by the folder), with the thumbnail where its game keeps one, last in load order.
+func (s *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*WorkspaceMod, error) {
 	gameID, err := s.modFolderOf(workspaceID, path)
 	if err != nil {
 		return nil, err
 	}
-	if name == "" {
-		fields, err := local.ReadListingFields(gameID, path)
-		if err != nil {
-			return nil, err
-		}
-		name = cmp.Or(fields.Name, filepath.Base(path))
+	fields, err := local.ReadListingFields(gameID, path)
+	if err != nil {
+		return nil, err
 	}
-
-	// an empty thumbnail is found here, as for the Release page: only Go knows each game's folder
-	if thumbnail == "" {
-		if rel, found := local.FindThumbnail(gameID, path, ""); found {
-			thumbnail = filepath.Join(path, filepath.FromSlash(rel))
-		}
-	}
-	mod := WorkspaceMod{
-		ID: uuid.New().String(), Name: name, Path: path,
-		Thumbnail: thumbnail,
+	mod := WorkspaceMod{ID: uuid.New().String(), Name: cmp.Or(fields.Name, filepath.Base(path)), Path: path}
+	if rel, found := local.FindThumbnail(gameID, path, fields.Picture); found {
+		mod.Thumbnail = filepath.Join(path, filepath.FromSlash(rel))
 	}
 	err = s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
-		mod.SortOrder, mod.Slot = len(ws.Mods), freeSlot(ws.Mods)
+		// after the last one, whatever gaps removals left
+		for _, other := range ws.Mods {
+			mod.SortOrder = max(mod.SortOrder, other.SortOrder+1)
+		}
+		mod.Slot = freeSlot(ws.Mods)
 		ws.Mods = append(ws.Mods, mod)
 		return nil
 	})
@@ -452,22 +372,60 @@ func (s *WorkspaceService) OpenFolder(path string) error {
 	return application.Get().Env.OpenFileManager(path, false)
 }
 
-// UpdateWorkspaceMod updates listing paths, ignore text, name, color, and thumbnail.
-func (s *WorkspaceService) UpdateWorkspaceMod(
-	workspaceID, modID, name, color, thumbnail, descMdRel, descBbRel, workshopIgnore string,
-) error {
+// UpdateWorkspaceMod updates a mod's name, color, thumbnail and upload exclusions.
+func (s *WorkspaceService) UpdateWorkspaceMod(workspaceID, modID, name, color, thumbnail, workshopIgnore string) error {
 	return s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Name = cmp.Or(name, mod.Name)
-		mod.Color, mod.Thumbnail = color, thumbnail
-		markdown, err := steam.DescriptionRel(mod.Path, descMdRel)
+		mod.Color, mod.Thumbnail, mod.WorkshopIgnore = color, thumbnail, workshopIgnore
+		return nil
+	})
+}
+
+// SetModListingImage makes src the mod's listing image: copied in where its game keeps one, named in
+// its descriptor (its Workshop id as it is) and made the workspace's picture of the mod. It returns the
+// image's path.
+func (s *WorkspaceService) SetModListingImage(workspaceID, modID, src string) (string, error) {
+	ws, mod, err := findMod(s.App, workspaceID, modID)
+	if err != nil {
+		return "", err
+	}
+	rel, err := local.CopyThumbnail(ws.GameID, mod.Path, src)
+	if err != nil {
+		return "", err
+	}
+	fields, err := local.ReadListingFields(ws.GameID, mod.Path)
+	if err != nil {
+		return "", err
+	}
+	fields.Picture = picture(rel)
+	if err := local.WriteListingFields(ws.GameID, mod.Path, fields); err != nil {
+		return "", err
+	}
+	image := filepath.Join(mod.Path, filepath.FromSlash(rel))
+	return image, s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+		mod.Thumbnail = image
+		return nil
+	})
+}
+
+// SetWorkspaceModDescription sets where a mod's Workshop description comes from: a Markdown or a
+// BBCode file at rel ("" for the default name), or Steam's own text.
+func (s *WorkspaceService) SetWorkspaceModDescription(workspaceID, modID, source, rel string) error {
+	return s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+		rel, err := steam.DescriptionRel(mod.Path, rel)
 		if err != nil {
 			return err
 		}
-		bbcode, err := steam.DescriptionRel(mod.Path, descBbRel)
-		if err != nil {
-			return err
+		switch source {
+		case steam.FromMarkdown:
+			mod.DescMdRel = rel
+		case steam.FromBBCode:
+			mod.DescBbRel = rel
+		case steam.FromSteam:
+		default:
+			return fmt.Errorf("no description source %q", source)
 		}
-		mod.DescMdRel, mod.DescBbRel, mod.WorkshopIgnore = markdown, bbcode, workshopIgnore
+		mod.DescSource = source
 		return nil
 	})
 }
@@ -498,26 +456,6 @@ func freeSlot(mods []WorkspaceMod) int {
 		return free + 1
 	}
 	return 1
-}
-
-// slotUnslotted gives each mod saved without a slot the lowest free one, in load order, and says
-// whether it gave any.
-func slotUnslotted(cfg *Config) bool {
-	changed := false
-	for w := range cfg.Workspaces {
-		mods := cfg.Workspaces[w].Mods
-		byOrder := make([]*WorkspaceMod, len(mods))
-		for i := range mods {
-			byOrder[i] = &mods[i]
-		}
-		slices.SortFunc(byOrder, func(first, second *WorkspaceMod) int { return loadOrder(*first, *second) })
-		for _, mod := range byOrder {
-			if mod.Slot == 0 {
-				mod.Slot, changed = freeSlot(mods), true
-			}
-		}
-	}
-	return changed
 }
 
 // SetWorkspaceModCalendar declares the eras a mod's dates are written in: names trimmed, unnamed
@@ -575,19 +513,11 @@ func (s *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []str
 // RemoveWorkspaceMod detaches a mod from a workspace.
 func (s *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
 	err := s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
-		kept := ws.Mods[:0]
-		found := false
-		for _, mod := range ws.Mods {
-			if mod.ID == modID {
-				found = true
-				continue
-			}
-			kept = append(kept, mod)
-		}
-		if !found {
+		listed := len(ws.Mods)
+		ws.Mods = slices.DeleteFunc(ws.Mods, func(mod WorkspaceMod) bool { return mod.ID == modID })
+		if len(ws.Mods) == listed {
 			return fmt.Errorf("mod not found")
 		}
-		ws.Mods = kept
 		return nil
 	})
 	if err != nil {
@@ -603,32 +533,21 @@ func (s *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(
-		filepath.Join(mod.Path, steam.IgnoreFile),
-		[]byte(mod.WorkshopIgnore),
-		0o644,
-	)
+	return local.WriteBytes(filepath.Join(mod.Path, steam.IgnoreFile), []byte(mod.WorkshopIgnore))
 }
 
 // ImportWorkshopIgnore reads .workshop-ignore into workspace config and returns the text.
 func (s *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (string, error) {
-	_, mod, err := findMod(s.App, workspaceID, modID)
-	if err != nil {
-		return "", err
-	}
-	raw, err := os.ReadFile(filepath.Join(mod.Path, steam.IgnoreFile))
-	if err != nil {
-		return "", err
-	}
-	text := string(raw)
-	err = s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
-		mod.WorkshopIgnore = text
+	var text string
+	err := s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
+		raw, err := os.ReadFile(filepath.Join(mod.Path, steam.IgnoreFile))
+		if err != nil {
+			return err
+		}
+		text, mod.WorkshopIgnore = string(raw), string(raw)
 		return nil
 	})
-	if err != nil {
-		return "", err
-	}
-	return text, nil
+	return text, err
 }
 
 func findMod(app *AppService, workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
@@ -664,8 +583,6 @@ type IdeRoot struct {
 	ReadOnly  bool   `json:"readOnly"`
 	Kind      string `json:"kind"`
 	Origin    string `json:"origin,omitempty"`
-	Color     string `json:"color,omitempty"`
-	Slot      int    `json:"slot,omitempty"`
 	Thumbnail string `json:"thumbnail,omitempty"`
 }
 
@@ -680,53 +597,28 @@ type IdeRoots struct {
 
 // GetIdeRoots returns game / mod folders and tab restore for the IDE.
 func (s *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
-	}
-
 	// one read, so the workspace and the install it names cannot disagree
-	var ws *Workspace
-	var scriptRoot string
-	s.App.read(func(cfg *Config) {
-		found := findWorkspace(cfg, workspaceID)
-		if found == nil {
-			return
-		}
-		cp := cloneWorkspace(*found)
-		ws = &cp
-		scriptRoot, _ = installScriptRoot(cfg, cp.InstallID)
-	})
+	ws, inst := s.App.workspace(workspaceID)
 	if ws == nil {
 		return nil, fmt.Errorf("workspace not found")
 	}
 	markDisk(ws)
 
 	out := &IdeRoots{
-		ResetIdeOnOpen:       ws.ResetIdeOnOpen,
-		HideExplorerBinaries: ws.HideExplorerBinaries,
-		IdeOpenFiles:         append([]string(nil), ws.IdeOpenFiles...),
-		IdeActiveFile:        ws.IdeActiveFile,
+		ResetIdeOnOpen: ws.ResetIdeOnOpen, HideExplorerBinaries: ws.HideExplorerBinaries,
+		IdeOpenFiles: ws.IdeOpenFiles, IdeActiveFile: ws.IdeActiveFile,
 	}
 	for _, mod := range ws.Mods {
-		if mod.IsBroken || mod.Path == "" {
-			continue
+		if !mod.IsBroken {
+			out.Roots = append(out.Roots, IdeRoot{
+				Label: mod.Name, Path: mod.Path, Kind: "mod", Origin: mod.ID, Thumbnail: mod.Thumbnail,
+			})
 		}
-		label := mod.Name
-		label = cmp.Or(label, "Mod")
-		out.Roots = append(out.Roots, IdeRoot{
-			Label: label, Path: mod.Path, Kind: "mod",
-			Origin: mod.ID, Color: mod.Color, Slot: mod.Slot, Thumbnail: mod.Thumbnail,
-		})
 	}
-	if scriptRoot != "" {
-		label := "Game"
-		if info := game.Get(ws.GameID); info != nil && info.Name != "" {
-			label = info.Name
-		}
+	if info := game.Get(ws.GameID); inst != nil && info != nil {
 		out.Roots = append(out.Roots, IdeRoot{
-			Label: label, Path: scriptRoot,
+			Label: info.Name, Path: filepath.Join(inst.Path, info.ScriptRoot),
 			ReadOnly: true, Kind: "game", Origin: game.OriginVanilla,
-			Color: ws.GameColor,
 		})
 	}
 	return out, nil

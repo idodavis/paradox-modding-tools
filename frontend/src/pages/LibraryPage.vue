@@ -5,6 +5,7 @@
  */
 import { computed, onActivated, shallowRef } from "vue";
 import { useRouter } from "vue-router";
+import { storeToRefs } from "pinia";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { useTimeAgo } from "@vueuse/core";
 import type { DropdownMenuItem } from "@nuxt/ui";
@@ -14,6 +15,9 @@ import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import ScriptDocsGuide from "../components/ScriptDocsGuide.vue";
 import { healthQuery, languageQuery, workspacesQuery } from "../queries";
 import { modColor, useWorkspaceStore } from "../stores/workspace";
+import { plural } from "../lib/format";
+import { rowsOf } from "../composables/useHealth";
+import { dumpsState } from "../composables/useLanguageHealth";
 
 const router = useRouter();
 const store = useWorkspaceStore();
@@ -24,7 +28,7 @@ const removeModal = overlay.create(RemoveWorkspaceModal);
 const guide = overlay.create(ScriptDocsGuide);
 
 const { data: workspaces, isPending } = useQuery(workspacesQuery);
-const active = computed(() => store.activeWorkspace);
+const { activeWorkspace: active } = storeToRefs(store);
 const { data: language } = useQuery(() => languageQuery(active.value?.id ?? ""));
 const { data: health, refresh } = useQuery(() =>
   healthQuery({ id: active.value?.id ?? "", live: !!language.value?.ready }),
@@ -54,44 +58,30 @@ const games = computed(() =>
 const summary = computed(() => {
   const count = workspaces.value?.length ?? 0;
   const across = games.value.length;
-  return `${count} ${count === 1 ? "workspace" : "workspaces"} across ${across} ${across === 1 ? "game" : "games"}.`;
+  return `${plural(count, "workspace")} across ${plural(across, "game")}.`;
 });
 
-/** Whose script_docs the live session reads: the game's own, current, or not. */
-const dumps = computed(() => {
-  const live = language.value;
-  if (!live?.ready) return undefined;
-  if (live.dumpsFrom === "yours" && !live.dumpsStale) return { ok: true, label: "script_docs loaded" };
-  if (live.dumpsFrom === "yours") return { ok: false, label: "script_docs older than the game" };
-  if (live.dumpsFrom === "shipped") return { ok: false, label: "Using PMT's copy of script_docs" };
-  return { ok: false, label: "No script_docs" };
-});
+const dumps = computed(() => dumpsState(language.value));
 
-const counts = computed(() => {
-  const report = health.value;
-  if (!report) return [];
-  const gaps = (report.loc ?? []).reduce((sum, language) => sum + (language.untranslated?.length ?? 0), 0);
-  return [
-    { count: report.contests?.length ?? 0, label: "contests" },
-    { count: report.dangling?.length ?? 0, label: "dangling" },
-    { count: gaps, label: "loc gaps" },
-  ];
-});
+// the Health page's own tiles' counts
+const counts = computed(() =>
+  health.value
+    ? [
+        { count: rowsOf(health.value, "contests").length, label: "contests" },
+        { count: rowsOf(health.value, "dangling").length, label: "dangling refs" },
+        { count: rowsOf(health.value, "loc").length, label: "localization issues" },
+      ]
+    : [],
+);
 
 const more = computed<DropdownMenuItem[]>(() => [
   {
     label: "Remove from PMT…",
     icon: "i-lucide-trash-2",
     color: "error",
-    onSelect: () => void removeActive(),
+    onSelect: () => void (active.value && removeModal.open({ id: active.value.id, name: active.value.name })),
   },
 ]);
-
-async function removeActive(): Promise<void> {
-  const ws = active.value;
-  if (!ws || !(await removeModal.open({ id: ws.id, name: ws.name }))) return;
-  store.select(workspaces.value?.find((w) => w.id !== ws.id)?.id ?? "");
-}
 
 function newMod(): void {
   const ws = active.value;
@@ -214,7 +204,7 @@ const { mutate: resetData, isLoading: resetting } = useMutation({
           <GameIcon :game-id="group.game.id" />
           <span class="text-13 font-semibold">{{ group.game.name }}</span>
           <span class="text-12 text-dimmed">
-            {{ group.workspaces.length }} {{ group.workspaces.length === 1 ? "workspace" : "workspaces" }}
+            {{ plural(group.workspaces.length, "workspace") }}
           </span>
         </div>
         <div class="grid grid-cols-3 gap-4">
@@ -237,7 +227,7 @@ const { mutate: resetData, isLoading: resetting } = useMutation({
     </div>
 
     <StatusFacts>
-      <span>{{ workspaces?.length ?? 0 }} {{ workspaces?.length === 1 ? "workspace" : "workspaces" }}</span>
+      <span>{{ plural(workspaces?.length ?? 0, "workspace") }}</span>
     </StatusFacts>
     <StatusFacts end>
       <UModal

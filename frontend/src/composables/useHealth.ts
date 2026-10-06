@@ -4,7 +4,7 @@
  */
 import { computed, onActivated, ref, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
-import type { Contest, Dangling, Dependency, Health, LocRow, Problem } from "@services/models";
+import type { Contest, Dangling, Dependency, Health, LocRow, Problem, Site } from "@services/models";
 import { ReorderWorkspaceMods } from "@services/workspaceservice";
 import { healthQuery, sessionKeys, workspaceKeys } from "../queries";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -15,31 +15,71 @@ export type Card = "contests" | "overrides" | "depends" | "dangling" | "loc" | "
 export type Gap = LocRow & { language: string };
 export type Row = Contest | Dependency | Dangling | Gap | Problem;
 
-/** The editor's findings Dangling refs and Loc gaps list beside their own rows; Script errors lists the rest. */
-const CODES = {
-  dangling: ["unresolved-ref", "unknown-event"],
-  loc: ["missing-bom", "loc-header-mismatch", "wrong-localization-folder"],
+/** Each card: its name, its dot's color, what its tile counts, and what its table lists. */
+export const CARDS: Record<Card, { label: string; dot: string; note?: string; blurb: string }> = {
+  contests: {
+    label: "Contests", dot: "var(--orange)",
+    blurb: "Objects defined by more than one mod. Load order decides which one the game keeps.",
+  },
+  overrides: {
+    label: "Overrides", dot: "var(--blue)", note: "Mods replacing game objects",
+    blurb: "Game objects a mod replaces or adds to.",
+  },
+  depends: {
+    label: "Dependencies", dot: "var(--fg-3)", note: "Mods reading other mods",
+    blurb: "Where a mod uses what only another mod defines, or what another mod changes.",
+  },
+  // the problems in the error colors: red, orange, and a yellow between orange and the accent
+  dangling: {
+    label: "Dangling Refs", dot: "var(--red)", note: "Used, never defined",
+    blurb: "Names, events and files a mod uses that nothing defines, one row per name.",
+  },
+  loc: {
+    label: "Localization Issues", dot: "color-mix(in oklab, var(--orange), var(--accent))",
+    blurb: "Keys left untranslated, and localization files the game reads wrong, one row per place to fix.",
+  },
+  script: {
+    label: "Script Issues", dot: "var(--orange)", note: "Syntax, scopes, values",
+    blurb: "What the editor's checks find in the mods' script files, one row per place to fix.",
+  },
 };
 
-/** Each kind of finding's color: syntax red, references orange, scope and values blue, duplicates and
- * localization files teal. */
-const CHECK_COLORS: Record<string, "error" | "warning" | "info" | "secondary"> = {
-  "unclosed-brace": "error", "stray-close": "error", "unterminated-string": "error", "missing-value": "error",
-  "loc-no-header": "error", "loc-bad-entry": "error", "loc-tab-indent": "error", "loc-unterminated-value": "error",
-  "loc-content-before-header": "error",
-  "unresolved-ref": "warning", "unknown-event": "warning", "missing-file": "warning", "inject-without-target": "warning",
-  "wrong-scope": "info", "wrong-value-type": "info", "wrong-declared-value": "info", "missing-key": "info",
-  "duplicate-definition": "secondary", "missing-bom": "secondary", "loc-header-mismatch": "secondary",
-  "wrong-localization-folder": "secondary",
-};
-export function checkColor(code: string): string {
-  return CHECK_COLORS[code] ?? "neutral";
+/** Where a row is written: each of its sites, or the one line a finding or a gap names (a gap's source). */
+export function sitesOf(row: Row): Site[] {
+  return "sites" in row ? (row.sites ?? []) : "site" in row ? [row.site] : [{ file: row.file, line: row.line, col: 0 }];
+}
+
+/** Each type a problem row is: its color (red the game cannot read it, orange something missing, blue
+ * written wrong, teal a file or a duplicate to tidy), its card, and the editor's checks that find it
+ * ("untranslated" is a gap's; a check named nowhere is Script Issues'). */
+const TYPES: [label: string, color: "error" | "warning" | "info" | "secondary", card: Card, codes: string[]][] = [
+  ["Syntax", "error", "script", ["unclosed-brace", "stray-close", "unterminated-string", "missing-value"]],
+  ["Syntax", "error", "loc", ["loc-no-header", "loc-bad-entry", "loc-tab-indent", "loc-unterminated-value", "loc-content-before-header"]],
+  ["Undefined", "warning", "dangling", ["unresolved-ref"]],
+  ["Unknown event", "warning", "dangling", ["unknown-event"]],
+  ["Missing file", "warning", "dangling", ["missing-file"]],
+  ["No target", "warning", "dangling", ["inject-without-target"]],
+  ["Missing key", "warning", "script", ["missing-key"]],
+  ["Untranslated", "warning", "loc", ["untranslated"]],
+  ["Scope", "info", "script", ["wrong-scope"]],
+  ["Value", "info", "script", ["wrong-value-type", "wrong-declared-value"]],
+  ["Duplicate", "secondary", "script", ["duplicate-definition"]],
+  ["No BOM", "secondary", "loc", ["missing-bom"]],
+  ["Wrong header", "secondary", "loc", ["loc-header-mismatch"]],
+  ["Wrong folder", "secondary", "loc", ["wrong-localization-folder"]],
+];
+const typeOfCode = (code: string) => TYPES.find(([, , , codes]) => codes.includes(code));
+/** A problem row's type and color: a gap's, else its check's. */
+export function typeOf(row: Row): { label: string; color: string } {
+  const code = "key" in row ? "untranslated" : "code" in row ? row.code : "";
+  const found = typeOfCode(code);
+  return found ? { label: found[0], color: found[1] } : { label: code, color: "neutral" };
 }
 
 /** A card's rows in a report. */
 export function rowsOf(health: Health | null | undefined, card: Card): Row[] {
   const problems = health?.problems ?? [];
-  const coded = (codes: string[]) => problems.filter((problem) => codes.includes(problem.code));
+  const coded = (of: Card) => problems.filter((problem) => (typeOfCode(problem.code)?.[2] ?? "script") === of);
   switch (card) {
     case "contests":
       return health?.contests ?? [];
@@ -48,16 +88,16 @@ export function rowsOf(health: Health | null | undefined, card: Card): Row[] {
     case "depends":
       return health?.depends ?? [];
     case "dangling":
-      return [...(health?.dangling ?? []), ...coded(CODES.dangling)];
+      return [...(health?.dangling ?? []), ...coded("dangling")];
     case "loc":
       return [
         ...(health?.loc ?? []).flatMap((gaps) =>
           (gaps.untranslated ?? []).map((row) => ({ ...row, language: gaps.language })),
         ),
-        ...coded(CODES.loc),
+        ...coded("loc"),
       ];
     case "script":
-      return problems.filter((problem) => !CODES.dangling.includes(problem.code) && !CODES.loc.includes(problem.code));
+      return coded("script");
   }
 }
 

@@ -7,20 +7,15 @@
 import { computed, useTemplateRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useElementSize, useFullscreen, useLocalStorage } from "@vueuse/core";
-import EventDetail from "../components/eventGraph/EventDetail.vue";
-import EventGraphFilters from "../components/eventGraph/EventGraphFilters.vue";
-import EventGraphToolbar from "../components/eventGraph/EventGraphToolbar.vue";
-import GraphCanvas from "../components/eventGraph/GraphCanvas.vue";
 import { useEventGraph } from "../composables/useEventGraph";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
-import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
+import { countKinds, plural } from "../lib/format";
 
 const { id: workspaceId } = defineProps<{ id: string }>();
 
 const route = useRoute();
 const store = useWorkspaceStore();
-const settings = useSettingsStore();
 const live = useLiveEnabled(() => workspaceId);
 const { params, hidden, selected, searchTerm, graph, error, detail, roots, searching, shown, laid, filtersOn, select, setRoot, resetFilters } =
   useEventGraph(() => workspaceId, live);
@@ -29,11 +24,8 @@ const page = useTemplateRef<HTMLElement>("page");
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(page);
 const { width: pageWidth } = useElementSize(page);
 
-// where the detail opens, kept in the app's settings, and how big: beside the graph, up to half the page
-const layout = computed({
-  get: () => (settings.values["eventGraph.layout"] === "panel" ? "panel" : "drawer"),
-  set: (value: "drawer" | "panel") => void settings.set("eventGraph.layout", value),
-});
+// where the detail opens, and how big: beside the graph, up to half the page
+const layout = useLocalStorage<"drawer" | "panel">("pmt.graph.layout", "drawer");
 const drawerWidth = useLocalStorage("pmt.graph.drawerWidth", 420);
 const panelHeight = useLocalStorage("pmt.graph.panelHeight", 320);
 // full screen keeps the detail beside the graph
@@ -41,11 +33,7 @@ const below = computed(() => layout.value === "panel" && !isFullscreen.value);
 
 const rootKind = computed(() => graph.value?.nodes?.find((node) => node.root)?.kind ?? "");
 // each kind drawn and each origin, with how many nodes of it
-const kinds = computed(() => {
-  const counts = new Map<string, number>();
-  for (const node of graph.value?.nodes ?? []) if (!node.stub) counts.set(node.kind, (counts.get(node.kind) ?? 0) + 1);
-  return [...counts].map(([kind, count]) => ({ kind, count }));
-});
+const kinds = computed(() => countKinds((graph.value?.nodes ?? []).filter((node) => !node.stub)));
 const origins = computed(() =>
   [store.originVanilla, ...store.workspaceMods.map((mod) => mod.id)].map((id) => ({
     id,
@@ -123,7 +111,17 @@ watch(() => workspaceId, () => setRoot(""));
       <template v-if="selected && detail">
         <ResizeGrip v-if="below" v-model="panelHeight" axis="y" reverse :min="180" :max="640" :default-size="320" />
         <ResizeGrip v-else v-model="drawerWidth" reverse :min="320" :max="Math.max(420, pageWidth / 2)" :default-size="420" />
+        <!-- a name nothing defines has its reason, not a definition, to show -->
+        <p
+          v-if="detail.reason"
+          class="grid shrink-0 place-items-center border-default p-6 text-13 text-dimmed"
+          :class="below ? 'border-t' : 'border-s'"
+          :style="below ? { height: `${panelHeight}px` } : { width: `${drawerWidth}px` }"
+        >
+          {{ detail.reason }}
+        </p>
         <EventDetail
+          v-else
           :workspace-id="workspaceId"
           :detail="detail"
           :is-root="detail.name === params.root"
@@ -137,8 +135,8 @@ watch(() => workspaceId, () => setRoot(""));
     </div>
     <StatusFacts>
       <span>
-        {{ shown.nodes.length }} {{ shown.nodes.length === 1 ? "node" : "nodes" }}{{ graph?.truncated ? `, stopped at the node limit at step ${graph.reached}` : "" }},
-        {{ folded }} {{ folded === 1 ? "group" : "groups" }} folded
+        {{ plural(shown.nodes.length, "node") }}{{ graph?.truncated ? `, stopped at the node limit at step ${graph.reached}` : "" }},
+        {{ plural(folded, "group") }} folded
       </span>
       <span>Laid out left to right by step</span>
     </StatusFacts>

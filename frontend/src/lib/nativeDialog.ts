@@ -3,13 +3,23 @@
  */
 import { Dialogs } from "@wailsio/runtime";
 
-/** The images a thumbnail may be. */
-export const IMAGE_FILTER = "*.png; *.jpg; *.jpeg; *.svg";
+/** The images a thumbnail may be: Go's local.ThumbnailExts. */
+export const IMAGE_FILTER = "*.png; *.gif; *.jpg; *.jpeg";
 
 export function pickDirectory(title: string): Promise<string> {
-  return Dialogs.OpenFile({ Title: title, CanChooseDirectories: true, CanChooseFiles: false });
+  return picked(Dialogs.OpenFile({ Title: title, CanChooseDirectories: true, CanChooseFiles: false }));
 }
 
-export function pickFile(title: string, filter: string): Promise<string> {
-  return Dialogs.OpenFile({ Title: title, CanChooseFiles: true, Filters: [{ DisplayName: filter, Pattern: filter }] });
+/** A file; the picker opens in directory when given, else where any picker in the app was last used. */
+export function pickFile(title: string, filter: string, directory?: string): Promise<string> {
+  const filters = [{ DisplayName: filter, Pattern: filter }];
+  return picked(Dialogs.OpenFile({ Title: title, CanChooseFiles: true, Filters: filters, Directory: directory }));
+}
+
+// Wails rejects a cancelled dialog ("cancelled by user"); any other failure still throws
+function picked(choice: Promise<string>): Promise<string> {
+  return choice.catch((error: unknown) => {
+    if (String(error).includes("cancelled by user")) return "";
+    throw error;
+  });
 }

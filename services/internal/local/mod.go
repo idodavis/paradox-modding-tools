@@ -13,12 +13,17 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode"
 
 	"paradox-modding-tools/services/internal/game"
 )
+
+// SteamItemRel is a metadata.json mod's Workshop id, what descriptor.mod keeps as remote_file_id:
+// the format has no key for one (neither wiki lists one, and no Workshop mod writes one).
+const steamItemRel = "workshop/steam-item.txt"
 
 // ListingFields are the descriptor keys the Release page edits, and the folders the mod unloads.
 type ListingFields struct {
@@ -41,44 +46,38 @@ type listingField struct {
 	modDropEmpty  bool     // an empty value removes the line; name and version never drop, the launcher needs them
 	jsonKeepEmpty bool     // an empty value leaves the key: picture (CopyThumbnail owns it), id (a new mod writes it)
 
-	get func(*ListingFields) string
-	set func(*ListingFields, string)
+	value func(*ListingFields) *string
 }
 
 // listingFields is also the order missing keys are appended to a .mod file.
 var listingFields = []listingField{
-	{mod: "name", json: "name",
-		get: func(fields *ListingFields) string { return fields.Name },
-		set: func(fields *ListingFields, value string) { fields.Name = value }},
-	{mod: "version", json: "version",
-		get: func(fields *ListingFields) string { return fields.Version },
-		set: func(fields *ListingFields, value string) { fields.Version = value }},
+	{mod: "name", json: "name", value: func(fields *ListingFields) *string { return &fields.Name }},
+	{mod: "version", json: "version", value: func(fields *ListingFields) *string { return &fields.Version }},
 	{mod: "supported_version", json: "supported_game_version", modDropEmpty: true,
-		get: func(fields *ListingFields) string { return fields.SupportedVersion },
-		set: func(fields *ListingFields, value string) { fields.SupportedVersion = value }},
-	{mod: "remote_file_id", json: "remote_file_id", modDropEmpty: true,
-		get: func(fields *ListingFields) string { return fields.RemoteFileID },
-		set: func(fields *ListingFields, value string) { fields.RemoteFileID = value }},
-	{mod: "picture", json: "picture", jsonAlso: []string{"thumbnail"},
-		modDropEmpty: true, jsonKeepEmpty: true,
-		get: func(fields *ListingFields) string { return fields.Picture },
-		set: func(fields *ListingFields, value string) { fields.Picture = value }},
-	{json: "short_description",
-		get: func(fields *ListingFields) string { return fields.ShortDescription },
-		set: func(fields *ListingFields, value string) { fields.ShortDescription = value }},
-	{json: "id", jsonKeepEmpty: true,
-		get: func(fields *ListingFields) string { return fields.ID },
-		set: func(fields *ListingFields, value string) { fields.ID = value }},
+		value: func(fields *ListingFields) *string { return &fields.SupportedVersion }},
+	// metadata.json's is steamItemRel
+	{mod: "remote_file_id", modDropEmpty: true, value: func(fields *ListingFields) *string { return &fields.RemoteFileID }},
+	{mod: "picture", json: "picture", jsonAlso: []string{"thumbnail"}, modDropEmpty: true, jsonKeepEmpty: true,
+		value: func(fields *ListingFields) *string { return &fields.Picture }},
+	{json: "short_description", value: func(fields *ListingFields) *string { return &fields.ShortDescription }},
+	{json: "id", jsonKeepEmpty: true, value: func(fields *ListingFields) *string { return &fields.ID }},
 }
 
-// ReadListingFields loads the mod's descriptor: descriptor.mod or metadata.json, per its game.
+// ReadListingFields loads the mod's descriptor: descriptor.mod or metadata.json, per its game. A
+// missing one reads as no fields.
 func ReadListingFields(gameID, root string) (ListingFields, error) {
 	raw, err := os.ReadFile(game.DescriptorPath(gameID, root))
+	if os.IsNotExist(err) {
+		return ListingFields{}, nil
+	}
 	if err != nil {
 		return ListingFields{}, err
 	}
 	if info := game.Get(gameID); info != nil && info.Descriptor == "metadata" {
-		return readMetadataJSON(raw)
+		fields, err := readMetadataJSON(raw)
+		id, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(steamItemRel)))
+		fields.RemoteFileID = strings.TrimSpace(string(id))
+		return fields, err
 	}
 	return readDescriptorMod(string(raw)), nil
 }
@@ -96,13 +95,25 @@ func WriteListingFields(gameID, root string, fields ListingFields) error {
 		if next, err = patchMetadataJSON(raw, fields); err != nil {
 			return err
 		}
+		if err := writeSteamItem(root, fields.RemoteFileID); err != nil {
+			return err
+		}
 	} else {
 		next = []byte(patchDescriptorMod(string(raw), fields))
 	}
-	if err := os.MkdirAll(filepath.Dir(descriptor), 0o755); err != nil {
-		return err
+	return WriteBytes(descriptor, next)
+}
+
+// writeSteamItem keeps a metadata.json mod's Workshop id in steamItemRel; no id, no file.
+func writeSteamItem(root, id string) error {
+	file := filepath.Join(root, filepath.FromSlash(steamItemRel))
+	if id = strings.TrimSpace(id); id == "" {
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
 	}
-	return os.WriteFile(descriptor, next, 0o644)
+	return WriteBytes(file, []byte(id+"\n"))
 }
 
 // ThumbnailExts are the image types a listing thumbnail may be.
@@ -132,14 +143,13 @@ func FindThumbnail(gameID, root, picture string) (string, bool) {
 		}
 	}
 	if picture != "" {
-		candidates = append(candidates, path.Join("", filepath.ToSlash(picture)), path.Join(game.MetadataDir, filepath.ToSlash(picture)))
+		candidates = append(candidates, path.Clean(filepath.ToSlash(picture)), path.Join(game.MetadataDir, filepath.ToSlash(picture)))
 	}
 	for _, rel := range candidates {
-		full := filepath.Join(root, filepath.FromSlash(rel))
-		if inside, err := filepath.Rel(root, full); err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		if !filepath.IsLocal(filepath.FromSlash(rel)) {
 			continue
 		}
-		if _, err := os.Stat(full); err == nil {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
 			return rel, true
 		}
 	}
@@ -155,14 +165,18 @@ func CopyThumbnail(gameID, root, src string) (string, error) {
 	}
 	convention, _ := thumbnailDirs(gameID)
 	rel := path.Join(convention, "thumbnail"+ext)
-	if existing, found := FindThumbnail(gameID, root, ""); found {
+	existing, found := FindThumbnail(gameID, root, "")
+	if found {
 		rel = strings.TrimSuffix(existing, path.Ext(existing)) + ext
-		// a new extension: the superseded file goes, so there are never two to choose between
-		if rel != existing {
-			_ = os.Remove(filepath.Join(root, filepath.FromSlash(existing)))
-		}
 	}
-	return rel, CopyFile(src, filepath.Join(root, filepath.FromSlash(rel)))
+	if err := CopyFile(src, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+		return "", err
+	}
+	// a new extension: the superseded file goes, so there are never two to choose between
+	if found && rel != existing {
+		_ = os.Remove(filepath.Join(root, filepath.FromSlash(existing)))
+	}
+	return rel, nil
 }
 
 func readDescriptorMod(src string) ListingFields {
@@ -183,7 +197,7 @@ func readDescriptorMod(src string) ListingFields {
 		}
 		for _, field := range listingFields {
 			if field.mod == key {
-				field.set(&fields, value)
+				*field.value(&fields) = value
 				break
 			}
 		}
@@ -217,7 +231,7 @@ func patchDescriptorMod(src string, fields ListingFields) string {
 		if ok {
 			if field, known := byKey[key]; known {
 				seen[key] = true
-				value := field.get(&fields)
+				value := *field.value(&fields)
 				if value == "" && field.modDropEmpty {
 					continue
 				}
@@ -229,10 +243,10 @@ func patchDescriptorMod(src string, fields ListingFields) string {
 	}
 	// a key the file never had is appended only when it has something to say
 	for _, field := range listingFields {
-		if field.mod == "" || seen[field.mod] || field.get(&fields) == "" {
+		if field.mod == "" || seen[field.mod] || *field.value(&fields) == "" {
 			continue
 		}
-		out = append(out, field.mod+"="+quoteMod(field.get(&fields)))
+		out = append(out, field.mod+"="+quoteMod(*field.value(&fields)))
 	}
 	if !seen["tags"] && len(fields.Tags) > 0 {
 		out = append(out, formatModTags(fields.Tags)...)
@@ -259,19 +273,26 @@ func splitModKV(line string) (key, value string, ok bool) {
 	return key, strings.TrimSpace(value), true
 }
 
+var quotedTag = regexp.MustCompile(`"([^"]*)"`)
+
+// collectModTags reads the tags block opening on lines[i], on one line or many: each quoted tag up to
+// the closing brace, and the line the block ends on.
 func collectModTags(lines []string, i int) ([]string, int) {
 	var tags []string
-	for i < len(lines) {
-		line := strings.TrimSpace(lines[i])
-		if strings.Contains(line, "}") && !strings.Contains(line, "{") {
+	_, text, _ := strings.Cut(lines[i], "{")
+	for {
+		body, _, closed := strings.Cut(text, "}")
+		for _, match := range quotedTag.FindAllStringSubmatch(body, -1) {
+			if match[1] != "" {
+				tags = append(tags, match[1])
+			}
+		}
+		if closed || i+1 == len(lines) {
 			return tags, i
 		}
-		if tag := strings.Trim(line, `"`); tag != line && tag != "" {
-			tags = append(tags, tag)
-		}
 		i++
+		text = lines[i]
 	}
-	return tags, i
 }
 
 func formatModTags(tags []string) []string {
@@ -300,7 +321,7 @@ func readMetadataJSON(raw []byte) (ListingFields, error) {
 	}
 	var fields ListingFields
 	for _, field := range listingFields {
-		field.set(&fields, firstString(metadata, append([]string{field.json}, field.jsonAlso...)...))
+		*field.value(&fields) = firstString(metadata, append([]string{field.json}, field.jsonAlso...)...)
 	}
 	// the two lists of strings: the tags, and the folders game_custom_data says the mod replaces
 	custom, _ := metadata["game_custom_data"].(map[string]any)
@@ -325,7 +346,10 @@ func patchMetadataJSON(raw []byte, fields ListingFields) ([]byte, error) {
 		}
 	}
 	for _, field := range listingFields {
-		value := strings.TrimSpace(field.get(&fields))
+		if field.json == "" {
+			continue
+		}
+		value := strings.TrimSpace(*field.value(&fields))
 		if value == "" {
 			if !field.jsonKeepEmpty {
 				delete(metadata, field.json)
@@ -413,9 +437,6 @@ func WriteNewMod(opts NewModOpts) error {
 	if _, err := os.Stat(descriptor); err == nil {
 		return fmt.Errorf("mod already exists: %s", descriptor)
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return err
-	}
 
 	// picture names the bare file even where it sits in .metadata/, as workshop mods declare it
 	picture := ""
@@ -455,5 +476,5 @@ func WriteNewMod(opts NewModOpts) error {
 	}
 	locName := ModSlug(name) + "_l_" + language + ".yml"
 	locBody := append(append([]byte{}, utf8BOM...), []byte("l_"+language+":\n")...)
-	return os.WriteFile(filepath.Join(locDir, locName), locBody, 0o644)
+	return WriteBytes(filepath.Join(locDir, locName), locBody)
 }

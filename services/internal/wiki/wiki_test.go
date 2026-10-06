@@ -261,7 +261,7 @@ func TestClean(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			page, sections, modding, moddingSections := clean(`<div class="mw-parser-output">`+testCase.body+`</div>`, "https://ck3.paradoxwikis.com/")
+			page, sections, modding := clean(`<div class="mw-parser-output">`+testCase.body+`</div>`, "https://ck3.paradoxwikis.com/")
 			for _, text := range testCase.want {
 				if !strings.Contains(page, text) {
 					t.Errorf("%q missing: %s", text, page)
@@ -275,11 +275,8 @@ func TestClean(t *testing.T) {
 			if lines := sectionLines(sections); !slices.Equal(lines, testCase.sections) {
 				t.Errorf("sections = %v, want %v", lines, testCase.sections)
 			}
-			if lines := sectionLines(moddingSections); !slices.Equal(lines, testCase.modding) {
-				t.Errorf("modding sections = %v, want %v", lines, testCase.modding)
-			}
-			if testCase.modding != nil && (!strings.Contains(modding, "deeper") || strings.Contains(modding, "nerf") || strings.Contains(modding, "crash")) {
-				t.Errorf("modding = %s", modding)
+			if modding != (testCase.modding != nil) {
+				t.Errorf("modding = %v", modding)
 			}
 		})
 	}
@@ -399,12 +396,8 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 		}
 	}
 
-	patch := PatchByVersion("ck3", "1.16")
-	if patch == nil || !strings.Contains(patch.ModdingHTML, "ai_war_chest") {
+	if patch := PatchByVersion("ck3", "1.16"); patch == nil || !patch.Modding {
 		t.Fatalf("patch modding: %#v", patch)
-	}
-	if strings.Contains(patch.ModdingHTML, "crash") {
-		t.Fatalf("modding leaked bugfixes: %s", patch.ModdingHTML)
 	}
 
 	if err := Refresh(t.Context(), "ck3"); err != nil {

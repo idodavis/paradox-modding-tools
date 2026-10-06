@@ -5,11 +5,11 @@
  * shown note's headings; the note, with Find in these notes (Ctrl F; Enter and Shift Enter step through its
  * hits) and Open on the wiki. `?patch=` names the version shown, else the latest.
  */
-import { computed, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import { useLocalStorage, useTimeAgo } from "@vueuse/core";
-import WikiToc from "../components/WikiToc.vue";
+import { Browser } from "@wailsio/runtime";
 import { useWikiArticle } from "../composables/useWikiArticle";
 import { patchPageQuery, patchesQuery } from "../queries";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -25,18 +25,6 @@ const gameId = computed(() => store.activeWorkspace?.gameId ?? "");
 const { data: list } = useQuery(() => patchesQuery(gameId.value));
 const pages = computed(() => list.value?.pages ?? []);
 const cached = useTimeAgo(() => list.value?.fetched || Date.now());
-// the version shown is the route's, else the latest
-const selected = computed({
-  get: () => {
-    const want = String(route.query.patch ?? "");
-    const keys = pages.value.map((entry) => entry.version || entry.title);
-    const latest = pages.value.find((entry) => entry.latest);
-    return keys.includes(want) ? want : latest ? latest.version || latest.title : (keys[0] ?? "");
-  },
-  set: (patch: string | undefined) => patch && void router.replace({ query: { patch } }),
-});
-const { data: page } = useQuery(() => patchPageQuery({ gameId: gameId.value, version: selected.value }));
-
 /** A version's row; a hotfix's row is the board's smaller .hot. */
 type Version = { label: string; value: string; modding?: boolean; latest?: boolean; hotfix?: boolean; class?: string };
 // in Go's order: newest first, a version before its hotfixes
@@ -47,9 +35,19 @@ const versions = computed(() =>
     return { label: key, value: key, modding: entry.modding, latest: entry.latest, hotfix, class: hotfix ? "h-6.5 ps-5.5 text-12" : undefined };
   }),
 );
+// the version shown is the route's, else the latest
+const selected = computed({
+  get: () => {
+    const want = String(route.query.patch ?? "");
+    const rows = versions.value;
+    return (rows.find((row) => row.value === want) ?? rows.find((row) => row.latest) ?? rows[0])?.value ?? "";
+  },
+  set: (patch: string | undefined) => patch && void router.replace({ query: { patch } }),
+});
+const { data: page } = useQuery(() => patchPageQuery({ gameId: gameId.value, version: selected.value }));
 
 const query = shallowRef("");
-const { tocActive, hits, hit, showHit, jumpTo, onWikiClick, openUrl } = useWikiArticle({
+const { tocActive, hits, hit, showHit, jumpTo, onWikiClick } = useWikiArticle({
   html: () => page.value?.html,
   pages: () => (page.value ? [{ title: page.value.title, url: page.value.url }] : []),
   currentIndex: 0,
@@ -58,23 +56,9 @@ const { tocActive, hits, hit, showHit, jumpTo, onWikiClick, openUrl } = useWikiA
 });
 watch(selected, () => (tocActive.value = ""));
 
-// Ctrl F finds in these notes while the page is shown (it is kept alive behind the others); in the
-// find, Enter and Shift Enter step to the next and previous hit
-const find = useTemplateRef("find");
-const shown = shallowRef(true);
-onActivated(() => (shown.value = true));
-onDeactivated(() => (shown.value = false));
-defineShortcuts({
-  ctrl_f: {
-    usingInput: true,
-    handler: () => shown.value && find.value?.inputRef?.focus(),
-  },
-  enter: { usingInput: "patch-notes-find", handler: () => showHit(hit.value + 1) },
-  shift_enter: { usingInput: "patch-notes-find", handler: () => showHit(hit.value - 1) },
-});
-
 const versionsWidth = useLocalStorage("pmt.patchNotes.versionsWidth", 248);
 const tocWidth = useLocalStorage("pmt.patchNotes.tocWidth", 208);
+const tocCollapsed = useLocalStorage("pmt.patchNotes.tocCollapsed", false);
 </script>
 
 <template>
@@ -120,37 +104,21 @@ const tocWidth = useLocalStorage("pmt.patchNotes.tocWidth", 208);
       <ResizeGrip v-model="versionsWidth" :min="180" :max="400" :default-size="248" />
       <template v-if="page?.sections?.length">
         <WikiToc
+          v-model:collapsed="tocCollapsed"
           class="shrink-0 border-e border-default"
-          :style="{ width: `${tocWidth}px` }"
+          :style="tocCollapsed ? undefined : { width: `${tocWidth}px` }"
           :sections="page.sections"
           :active="tocActive"
           @jump="jumpTo"
         />
-        <ResizeGrip v-model="tocWidth" :min="140" :max="360" :default-size="208" />
+        <ResizeGrip v-if="!tocCollapsed" v-model="tocWidth" :min="140" :max="360" :default-size="208" />
       </template>
       <section class="flex min-w-0 grow flex-col bg-(--bg-0)">
         <div class="flex h-13 shrink-0 items-center gap-3 border-b border-default ps-8 pe-6">
           <h1 class="truncate text-16">{{ page?.title ?? selected }}</h1>
           <span class="grow" />
-          <UInput
-            ref="find"
-            v-model="query"
-            icon="i-lucide-search"
-            placeholder="Find in these notes"
-            class="w-65 shrink-0"
-            name="patch-notes-find"
-            :ui="{ base: query.trim() && 'pe-30', trailing: 'gap-0.5' }"
-          >
-            <template #trailing>
-              <template v-if="query.trim()">
-                <span class="pe-1 text-11 text-dimmed tabular-nums">{{ hits ? `${hit + 1} of ${hits}` : "No results" }}</span>
-                <UButton icon="i-lucide-chevron-up" variant="ghost" size="xs" :disabled="!hits" aria-label="Previous match" @click="showHit(hit - 1)" />
-                <UButton icon="i-lucide-chevron-down" variant="ghost" size="xs" :disabled="!hits" aria-label="Next match" @click="showHit(hit + 1)" />
-              </template>
-              <UKbd v-else value="Ctrl F" />
-            </template>
-          </UInput>
-          <UButton v-if="page?.url" label="Open on the wiki" icon="i-lucide-external-link" variant="ghost" @click="openUrl(page.url)" />
+          <FindBox v-model="query" :hit="hit" :hits="hits" placeholder="Find in these notes" class="w-65 shrink-0" @step="(by) => showHit(hit + by)" />
+          <UButton v-if="page?.url" label="Open on the wiki" icon="i-lucide-external-link" variant="ghost" @click="Browser.OpenURL(page.url)" />
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto px-8 pt-2 pb-8">
           <article v-if="page?.html" ref="article" class="art" @click="onWikiClick" v-html="page.html" />

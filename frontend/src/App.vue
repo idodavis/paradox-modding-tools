@@ -3,18 +3,12 @@
  * The app's frame: the top bar, the page over the IDE's workbench (kept mounted behind every page), and
  * the status bar. The pages are kept alive, so leaving one for another keeps its state.
  */
-import { computed, onMounted } from "vue";
+import { computed } from "vue";
 import { useRoute } from "vue-router";
-import appIcon from "@assets/PMT-SquareIcon-Mint.png?url";
 
 const route = useRoute();
 const onIde = computed(() => route.name === "workspace-ide");
 const KEPT = ["LibraryPage", "EventGraphPage", "HealthPage", "PatchNotesPage", "ReleasePage", "WorkspaceSettingsPage"];
-
-onMounted(() => {
-  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-  if (link) link.href = appIcon;
-});
 </script>
 
 <template>

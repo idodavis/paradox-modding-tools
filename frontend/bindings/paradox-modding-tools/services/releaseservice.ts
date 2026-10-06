@@ -21,23 +21,22 @@ import * as $models from "./models.js";
 /**
  * AddWorkshopPreview copies an image into workshop/previews (Steam extra cap).
  */
-export function AddWorkshopPreview(workspaceID: string, modID: string, srcPath: string): $CancellablePromise<$models.Listing | null> {
+export function AddWorkshopPreview(workspaceID: string, modID: string, srcPath: string): $CancellablePromise<void> {
     return $Call.ByID(4111048788, workspaceID, modID, srcPath);
 }
 
 /**
  * AddWorkshopVideo appends a YouTube id from a watch/embed/youtu.be URL or raw id.
  */
-export function AddWorkshopVideo(workspaceID: string, modID: string, urlOrID: string): $CancellablePromise<$models.Listing | null> {
+export function AddWorkshopVideo(workspaceID: string, modID: string, urlOrID: string): $CancellablePromise<void> {
     return $Call.ByID(3064931667, workspaceID, modID, urlOrID);
 }
 
 /**
- * BumpVersion returns current with its patch number, or with kind "minor" its minor number, one
- * higher and every number after it zeroed.
+ * CompareWithSteam compares the mod with Steam's copy by its snapshot alone: it never downloads.
  */
-export function BumpVersion(current: string, kind: string): $CancellablePromise<string> {
-    return $Call.ByID(3779889750, current, kind);
+export function CompareWithSteam(workspaceID: string, modID: string): $CancellablePromise<$models.SteamCompare | null> {
+    return $Call.ByID(1438888675, workspaceID, modID);
 }
 
 /**
@@ -48,52 +47,78 @@ export function Convert(src: string, to: string): $CancellablePromise<steam$0.Co
 }
 
 /**
- * CopyThumbnail replaces the mod's listing image with src and returns its mod-relative path.
+ * CreateDescriptionFile writes the mod's missing description file from its name and short
+ * description, in its source's markup.
  */
-export function CopyThumbnail(workspaceID: string, modID: string, src: string): $CancellablePromise<string> {
-    return $Call.ByID(909999901, workspaceID, modID, src);
+export function CreateDescriptionFile(workspaceID: string, modID: string): $CancellablePromise<void> {
+    return $Call.ByID(1686557318, workspaceID, modID);
 }
 
 /**
- * DraftChangelog returns a version stub for the Steam change note field.
+ * DownloadFromSteam replaces the mod's snapshot with Steam's own copy of the item, then compares.
  */
-export function DraftChangelog(workspaceID: string, modID: string, version: string): $CancellablePromise<string> {
-    return $Call.ByID(2949102389, workspaceID, modID, version);
+export function DownloadFromSteam(workspaceID: string, modID: string): $CancellablePromise<$models.SteamCompare | null> {
+    return $Call.ByID(4246482294, workspaceID, modID);
 }
 
 /**
- * LoadListing reads descriptor + readmes for a workspace mod.
+ * ImportSteamExtras brings the extra images and videos the mod's Workshop item has and the mod lacks into
+ * its workshop folder, so an upload keeps them.
+ */
+export function ImportSteamExtras(workspaceID: string, modID: string): $CancellablePromise<void> {
+    return $Call.ByID(8275430, workspaceID, modID);
+}
+
+/**
+ * ListingSummary reads a mod's Workshop id, listing image and description source, writing nothing.
+ */
+export function ListingSummary(workspaceID: string, modID: string): $CancellablePromise<$models.ListingSummary | null> {
+    return $Call.ByID(693609158, workspaceID, modID);
+}
+
+/**
+ * LoadListing reads a workspace mod's descriptor and description, writing nothing.
  */
 export function LoadListing(workspaceID: string, modID: string): $CancellablePromise<$models.Listing | null> {
     return $Call.ByID(479006178, workspaceID, modID);
 }
 
 /**
- * PublishSteam saves the listing, publishes to the Workshop, then saves the listing with its id.
+ * PublishSteam publishes the mod, as the workspace has it saved, to the Workshop, saves the item's
+ * id, and keeps what it sent as the item's snapshot.
  */
-export function PublishSteam($in: $models.Listing): $CancellablePromise<$models.PublishResult | null> {
-    return $Call.ByID(2912840271, $in);
+export function PublishSteam(workspaceID: string, modID: string): $CancellablePromise<$models.PublishResult | null> {
+    return $Call.ByID(2912840271, workspaceID, modID);
 }
 
 /**
  * RemoveWorkshopPreview deletes one extra image under workshop/previews.
  */
-export function RemoveWorkshopPreview(workspaceID: string, modID: string, rel: string): $CancellablePromise<$models.Listing | null> {
+export function RemoveWorkshopPreview(workspaceID: string, modID: string, rel: string): $CancellablePromise<void> {
     return $Call.ByID(2120077753, workspaceID, modID, rel);
 }
 
 /**
- * RemoveWorkshopVideo drops one YouTube id from workshop/videos.txt.
+ * RemoveWorkshopVideo drops one YouTube id from workshop/previews/videos.txt.
  */
-export function RemoveWorkshopVideo(workspaceID: string, modID: string, id: string): $CancellablePromise<$models.Listing | null> {
+export function RemoveWorkshopVideo(workspaceID: string, modID: string, id: string): $CancellablePromise<void> {
     return $Call.ByID(1658939442, workspaceID, modID, id);
 }
 
 /**
- * SaveListing writes the descriptor, description files and changelog.
+ * SaveListing writes the descriptor, the description to its source's file where the mod has one,
+ * and the changelog.
  */
-export function SaveListing($in: $models.Listing): $CancellablePromise<$models.Listing | null> {
+export function SaveListing($in: $models.Listing): $CancellablePromise<void> {
     return $Call.ByID(746970025, $in);
+}
+
+/**
+ * SetListingLink writes the descriptor's Workshop id and, where thumbnailRel names one, its picture,
+ * and nothing else of the listing; it returns the summary they make.
+ */
+export function SetListingLink(workspaceID: string, modID: string, remoteFileID: string, thumbnailRel: string): $CancellablePromise<$models.ListingSummary | null> {
+    return $Call.ByID(71003730, workspaceID, modID, remoteFileID, thumbnailRel);
 }
 
 /**

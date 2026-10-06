@@ -3,9 +3,9 @@
  * Compare the two (the Health board's button): the replaced definition's file beside the kept one's, what
  * differs marked, opened at the kept definition. Opened through useOverlay.
  */
-import { nextTick, onBeforeUnmount, useTemplateRef, watchEffect } from "vue";
+import { onBeforeUnmount, useTemplateRef, watchEffect } from "vue";
 import { useQuery } from "@pinia/colada";
-import { codeFile, diffView } from "../../lib/code";
+import { codeFile, diffView, showLine } from "../../lib/code";
 import { textQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 
@@ -19,16 +19,14 @@ const { data: before, isPending: readingOld } = useQuery(() => textQuery(old.pat
 const { data: after, isPending: readingNew } = useQuery(() => textQuery(now.path));
 const host = useTemplateRef("host");
 const view = diffView();
-watchEffect(async () => {
+watchEffect(() => {
   if (!host.value || before.value === undefined || after.value === undefined) return;
   view.render({
     oldFile: codeFile(old.rel, before.value),
     newFile: codeFile(now.rel, after.value),
     containerWrapper: host.value,
   });
-  view.setSelectedLines({ start: now.line + 1, end: now.line + 1, side: "additions" });
-  await nextTick();
-  host.value.querySelector("diffs-container")?.shadowRoot?.querySelector("[data-selected-line]")?.scrollIntoView({ block: "center" });
+  void showLine(view, host.value, { side: "additions", line: now.line + 1 });
 });
 onBeforeUnmount(() => view.cleanUp());
 </script>

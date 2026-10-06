@@ -177,7 +177,6 @@ export interface Inspect {
 export interface Item {
     "label": string;
     "head": string;
-    "takes"?: string[] | null;
 
     /**
      * the editor snippet a key writes: its block, or key = and a value

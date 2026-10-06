@@ -1,13 +1,14 @@
-// steam.go is both ends of a publish: the parent that starts the child and the child's request
-// loop.
+// steam.go is both ends of a publish or a download: the parent that starts the child and the
+// child's request loop.
 
-// Package steam publishes a mod to the Steam Workshop, keeps what a mod holds for its Workshop
-// page, and converts its description between Markdown and the Workshop's BBCode.
+// Package steam publishes a mod to the Steam Workshop and downloads one back, keeps what a mod
+// holds for its Workshop page, and converts its description between Markdown and the Workshop's
+// BBCode.
 //
-// A publish runs in a second copy of this same executable, started with ServeArg, which main
-// hands to Serve before anything else starts: Steam ties a process to one game's app id for as
-// long as it lives, so each publish gets its own process, and a crash inside Steam's library
-// costs that process rather than the editor. The child loads the game's own copy of Steam's
+// A publish or a download runs in a second copy of this same executable, started with serveArg,
+// which main hands to Serve before anything else starts: Steam ties a process to one game's app
+// id for as long as it lives, so each request gets its own process, and a crash inside Steam's
+// library costs that process rather than the editor. The child loads the game's own copy of Steam's
 // library, where the game table says the install keeps it, so PMT ships none. The parent
 // writes the request on the child's stdin and reads the answer from its stdout.
 package steam
@@ -30,30 +31,40 @@ import (
 	"paradox-modding-tools/services/internal/game"
 )
 
-// ServeArg is the argument that makes this executable the publishing child.
-const ServeArg = "steam-publish"
+// serveArg is the argument that makes this executable the publishing child.
+const serveArg = "steam-publish"
 
 const publishTimeout = 15 * time.Minute
 
 // Request is one publish: the item's content and page, and the item to update (none creates one).
+// With Download, it is the item PublishedFileID downloaded instead, or with PageOnly only its page read.
 type Request struct {
 	AppID           uint32   `json:"appId"`
 	Folder          string   `json:"folder"`
 	Title           string   `json:"title"`
 	Description     string   `json:"description"`
+	KeepDescription bool     `json:"keepDescription,omitempty"` // leave Steam's description as it is
 	Preview         string   `json:"preview"`
 	PublishedFileID string   `json:"publishedFileId"`
 	ChangeNote      string   `json:"changeNote"`
-	Visibility      int32    `json:"visibility"`
 	ExtraPreviews   []string `json:"extraPreviews,omitempty"`
 	ExtraVideos     []string `json:"extraVideos,omitempty"`
+	KeepExtras      bool     `json:"keepExtras,omitempty"` // leave Steam's extra images and videos as they are
+	Download        bool     `json:"download,omitempty"`
+	PageOnly        bool     `json:"pageOnly,omitempty"`
 }
 
-// Response is what Steam answered.
+// Response is what Steam answered. A download's names the folder Steam put the item in, and the
+// item's page as Steam has it.
 type Response struct {
-	PublishedFileID     string `json:"publishedFileId"`
-	NeedsLegalAgreement bool   `json:"needsLegalAgreement"`
-	Error               string `json:"error,omitempty"`
+	PublishedFileID     string  `json:"publishedFileId"`
+	NeedsLegalAgreement bool    `json:"needsLegalAgreement"`
+	Folder              string  `json:"folder,omitempty"`
+	Title               string  `json:"title,omitempty"`
+	Description         string  `json:"description,omitempty"`
+	Updated             int64   `json:"updated,omitempty"` // Unix seconds
+	Extras              []Extra `json:"extras,omitempty"`
+	Error               string  `json:"error,omitempty"`
 }
 
 // eresultHints is advice for the Steam results a modder can act on.
@@ -66,9 +77,6 @@ var eresultHints = map[int]string{
 // Library is where the game's copy of Steam's library is in an install, or why this system
 // cannot publish for that game.
 func Library(info *game.GameInfo, installPath string) (string, error) {
-	if runtime.GOOS == "darwin" {
-		return "", fmt.Errorf("workshop publish is not supported on macOS yet")
-	}
 	rel, ok := info.SteamLibrary[runtime.GOOS]
 	if !ok {
 		return "", fmt.Errorf("%s has no %s build, so publish it from Windows", info.ShortName, runtime.GOOS)
@@ -80,9 +88,9 @@ func Library(info *game.GameInfo, installPath string) (string, error) {
 	return library, nil
 }
 
-// Publish runs one publish in a child process over library and returns Steam's answer, a
-// known failure turned into advice.
-func Publish(library string, req Request) (Response, error) {
+// Run runs one request in a child process over library and returns Steam's answer, a known
+// failure turned into advice.
+func Run(library string, req Request) (Response, error) {
 	// Steam reads the app id from steam_appid.txt in the working directory
 	dir, err := os.MkdirTemp("", "pmt-steam-*")
 	if err != nil {
@@ -104,7 +112,7 @@ func Publish(library string, req Request) (Response, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 	defer cancel()
-	child := exec.CommandContext(ctx, self, ServeArg, library)
+	child := exec.CommandContext(ctx, self, serveArg, library)
 	child.Dir = dir
 	child.Stdin = bytes.NewReader(body)
 	out, err := child.Output()
@@ -143,18 +151,21 @@ func eresultHint(failure string) string {
 }
 
 // Serve is the child, and reports served false for any other run: it reads a Request from
-// stdin, publishes it through the library named after ServeArg, writes the Response to
-// stdout, and returns the exit code.
+// stdin, publishes or downloads it through the library named after serveArg, writes the
+// Response to stdout, and returns the exit code.
 func Serve() (exitCode int, served bool) {
-	if len(os.Args) < 2 || os.Args[1] != ServeArg {
+	if len(os.Args) < 2 || os.Args[1] != serveArg {
 		return 0, false
 	}
 	resp := Response{Error: "no steam library given"}
 	if len(os.Args) > 2 {
 		var req Request
-		if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
+		switch err := json.NewDecoder(os.Stdin).Decode(&req); {
+		case err != nil:
 			resp.Error = err.Error()
-		} else {
+		case req.Download:
+			resp = download(os.Args[2], req)
+		default:
 			resp = publish(os.Args[2], req)
 		}
 	}

@@ -11,12 +11,13 @@ import { useQuery } from "@pinia/colada";
 import { useElementSize, useTimeAgo } from "@vueuse/core";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { IdeRoots } from "@services/models";
+import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import CommandPalette from "./CommandPalette.vue";
 import { useLanguageHealth } from "../composables/useLanguageHealth";
 import { ideRootsQuery, sessionQuery, workspacesQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
-import { isWorkspacePage, PAGES, WORKSPACE_TOOLS, workspaceHomeRoute } from "../workspaceTools";
+import { isWorkspacePage, WORKSPACE_TOOLS, workspaceHomeRoute } from "../workspaceTools";
 
 const route = useRoute();
 const store = useWorkspaceStore();
@@ -25,11 +26,10 @@ const toast = useToast();
 
 /** The workspace whose page is open; none on the Library and the wizard. */
 const routeId = computed(() => ("id" in route.params ? route.params.id : ""));
-const activeId = computed(() => store.activeWorkspaceId);
 
 const { data: workspaces } = useQuery(workspacesQuery);
 useQuery(() => sessionQuery(routeId.value));
-const { health, scan } = useLanguageHealth(activeId);
+const { health, scan } = useLanguageHealth(() => store.activeWorkspaceId);
 
 // the folders need no session, so they mount at once and a switch shows the new workspace's
 const { data: roots } = useQuery(() => ideRootsQuery(routeId.value));
@@ -38,12 +38,9 @@ watch(roots, (rec) => {
 });
 
 async function mount(id: string, rec: IdeRoots): Promise<void> {
-  const [{ setWorkbenchRoots }, { pageTheme }] = await Promise.all([
-    import("../ide/workbenchHost"),
-    import("../ide/colorThemes"),
-  ]);
+  const { setWorkbenchRoots } = await import("../ide/workbenchHost");
   try {
-    await setWorkbenchRoots(rec.roots ?? [], pageTheme(), {
+    await setWorkbenchRoots(rec.roots ?? [], {
       workspaceId: id,
       persistTabs: !rec.resetIdeOnOpen,
       openFiles: rec.ideOpenFiles ?? [],
@@ -85,7 +82,7 @@ const switcher = computed(() => [
             { type: "label" as const, label: game.name, slot: "game" as const, gameId: game.id },
             ...rows.map((w) => ({
               label: w.name,
-              icon: w.id === activeId.value ? "i-lucide-check" : undefined,
+              icon: w.id === store.activeWorkspaceId ? "i-lucide-check" : undefined,
               to: switchTo(w.id),
             })),
           ]
@@ -123,18 +120,20 @@ defineShortcuts({ meta_k: openPalette });
 
 <template>
   <header ref="bar" class="flex h-11 shrink-0 items-center gap-3 border-b border-default bg-muted ps-3.5 pe-3">
-    <RouterLink :to="{ name: 'library' }" aria-label="PMT, go to Library" class="flex shrink-0">
-      <PMTLogo />
+    <!-- the brand (pmt.css .brand), the logo's mark 18px in the accent, then PMT: it is the Library's tab -->
+    <RouterLink
+      :to="{ name: 'library' }"
+      aria-label="PMT, go to Library"
+      class="-mb-px flex h-11 shrink-0 items-center gap-2 border-b-2 px-1 text-13 font-semibold text-highlighted"
+      :class="route.name === 'library' || route.name === 'wizard' ? 'border-primary' : 'border-transparent'"
+      data-art
+    >
+      <span
+        class="size-4.5 bg-primary"
+        :style="{ maskImage: `url(${logoIcon})`, maskRepeat: 'no-repeat', maskPosition: 'center', maskSize: 'contain' }"
+      />
+      PMT
     </RouterLink>
-    <nav class="ms-1 flex h-11 items-center gap-0.5">
-      <RouterLink
-        :to="{ name: 'library' }"
-        :class="tabClass(route.name === 'library' || route.name === 'wizard')"
-      >
-        <UIcon :name="PAGES.library.icon" class="size-4" />
-        <span v-if="!compact || route.name === 'library'">Library</span>
-      </RouterLink>
-    </nav>
     <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
 
     <UDropdownMenu :items="switcher" :content="{ align: 'start' }">
@@ -158,7 +157,7 @@ defineShortcuts({ meta_k: openPalette });
       <RouterLink
         v-for="tool in tabs"
         :key="tool.name"
-        :to="{ name: tool.name, params: { id: activeId } }"
+        :to="{ name: tool.name, params: { id: store.activeWorkspaceId } }"
         :class="tabClass(route.name === tool.name)"
         :aria-label="tool.label"
       >
@@ -206,7 +205,7 @@ defineShortcuts({ meta_k: openPalette });
           square
           aria-label="Settings"
           :disabled="!store.activeWorkspace"
-          :to="store.activeWorkspace ? { name: 'workspace-settings', params: { id: activeId } } : undefined"
+          :to="store.activeWorkspace ? { name: 'workspace-settings', params: { id: store.activeWorkspaceId } } : undefined"
         />
       </UTooltip>
     </div>

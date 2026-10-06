@@ -5,7 +5,7 @@
  */
 import { computed, shallowRef, useTemplateRef } from "vue";
 import { useRouter } from "vue-router";
-import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useQuery, useQueryCache } from "@pinia/colada";
 import { useLocalStorage } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import type { TabsItem } from "@nuxt/ui";
@@ -20,10 +20,11 @@ import {
 import CreateModForm from "../components/CreateModForm.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import ScriptDocsGuide from "../components/ScriptDocsGuide.vue";
+import { dumpsState } from "../composables/useLanguageHealth";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
-import { useWorkspacePrefs } from "../composables/useWorkspacePrefs";
+import { useWorkspacePrefs, useWorkspaceSave } from "../composables/useWorkspaceSave";
 import { pickDirectory } from "../lib/nativeDialog";
-import { languageQuery, sessionKeys, workspaceKeys, workspacesQuery } from "../queries";
+import { languageQuery, workspacesQuery } from "../queries";
 import { modColor, useWorkspaceStore } from "../stores/workspace";
 import {
   LOC_LANGUAGES,
@@ -49,6 +50,7 @@ const game = computed(() => store.game(workspace.value?.gameId ?? ""));
 const { data: language } = useQuery(() => languageQuery(id));
 const live = useLiveEnabled(() => id);
 const { mutate: savePrefs } = useWorkspacePrefs();
+const { mutate: run } = useWorkspaceSave(() => id);
 const PAGE_ITEMS: { label: string; value: string }[] = WORKSPACE_TOOLS.map((tool) => ({ label: tool.label, value: tool.name }));
 
 // the sections holding a setting that matches, by its name or the words it goes by
@@ -90,28 +92,7 @@ const tabs = computed<TabsItem[]>(() => {
 
 async function removeWorkspace(): Promise<void> {
   const ws = workspace.value;
-  if (!ws || !(await removeModal.open({ id: ws.id, name: ws.name }))) return;
-  store.select(workspaces.value?.find((other) => other.id !== ws.id)?.id ?? "");
-  void router.push({ name: "library" });
-}
-
-/** A change to the workspace, saved; one that rebuilds the session says so. */
-const { mutate: run } = useMutation({
-  mutation: ({ save }: { save: () => Promise<unknown>; rebuilds?: boolean }) => save(),
-  onSettled: (_data, _error, { rebuilds }) => {
-    void queryCache.invalidateQueries({ key: workspaceKeys.all });
-    if (rebuilds) void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
-  },
-});
-
-function typed(event: Event): string {
-  return event.target instanceof HTMLInputElement ? event.target.value : "";
-}
-
-type Prefs = Partial<Pick<Workspace, "resetIdeOnOpen" | "defaultTool" | "gameColor" | "hideExplorerBinaries">>;
-function setPrefs(set: Prefs): void {
-  const ws = workspace.value;
-  if (ws) savePrefs({ ws, ...set });
+  if (ws && (await removeModal.open({ id: ws.id, name: ws.name }))) void router.push({ name: "library" });
 }
 
 function setLanguage(lang: string): void {
@@ -131,13 +112,7 @@ const installId = computed({
   },
 });
 
-const dumps = computed(() => {
-  const live = language.value;
-  if (!live?.ready) return { color: "neutral" as const, label: "Read when the workspace opens" };
-  if (live.dumpsFrom === "yours") return { color: "success" as const, label: live.dumpsStale ? "Yours, older than the game" : "Yours" };
-  if (live.dumpsFrom === "shipped") return { color: "warning" as const, label: "PMT's copy" };
-  return { color: "warning" as const, label: "None" };
-});
+const dumps = computed(() => dumpsState(language.value));
 
 // Mods and load order: the game, then the mods in the order they load
 const mods = computed<WorkspaceMod[]>({
@@ -166,7 +141,7 @@ async function locate(mod: WorkspaceMod): Promise<void> {
 async function addExisting(): Promise<void> {
   const path = await pickDirectory("A mod folder");
   // Go names it from its descriptor, and finds its thumbnail
-  if (path) run({ save: () => AddWorkspaceMod(id, "", path, ""), rebuilds: true });
+  if (path) run({ save: () => AddWorkspaceMod(id, path), rebuilds: true });
 }
 
 function createNew(): void {
@@ -225,7 +200,7 @@ function rowClass(on: boolean): string[] {
           <p class="text-13 text-dimmed">This workspace's name, language and the IDE's start.</p>
         </div>
         <SettingSection title="Name" hint="Shown in the Library and the workspace switcher.">
-          <UInput :model-value="workspace.name" class="w-80" @change="rename(typed($event))" />
+          <UInput :model-value="workspace.name" :model-modifiers="{ lazy: true }" class="w-80" @update:model-value="rename" />
         </SettingSection>
         <SettingSection
           title="Localization language"
@@ -243,7 +218,7 @@ function rowClass(on: boolean): string[] {
             :model-value="workspace.defaultTool || 'workspace-ide'"
             :items="PAGE_ITEMS"
             class="w-60"
-            @update:model-value="setPrefs({ defaultTool: $event })"
+            @update:model-value="savePrefs({ ws: workspace, defaultTool: $event })"
           />
         </SettingSection>
         <SettingSection title="IDE" hint="How the IDE opens this workspace.">
@@ -251,7 +226,7 @@ function rowClass(on: boolean): string[] {
             <USwitch
               id="reopen-tabs"
               :model-value="!workspace.resetIdeOnOpen"
-              @update:model-value="setPrefs({ resetIdeOnOpen: !$event })"
+              @update:model-value="savePrefs({ ws: workspace, resetIdeOnOpen: !$event })"
             />
             <label for="reopen-tabs" class="text-13 font-medium whitespace-nowrap">Reopen the IDE's tabs</label>
             <span class="truncate text-12 text-dimmed">The files that were open when you left or closed PMT.</span>
@@ -260,7 +235,7 @@ function rowClass(on: boolean): string[] {
             <USwitch
               id="hide-binaries"
               :model-value="workspace.hideExplorerBinaries"
-              @update:model-value="setPrefs({ hideExplorerBinaries: $event })"
+              @update:model-value="savePrefs({ ws: workspace, hideExplorerBinaries: $event })"
             />
             <label for="hide-binaries" class="text-13 font-medium whitespace-nowrap">Hide binaries in the explorer</label>
             <span class="truncate text-12 text-dimmed">dll, exe, pdb and the like. Images, sounds, meshes and .metadata stay.</span>
@@ -283,7 +258,7 @@ function rowClass(on: boolean): string[] {
           hint="The game prints its own scripting documentation once you ask it to. PMT reads it rather than guessing, and keeps its own copy for when it is missing."
         >
           <div class="flex items-center gap-2">
-            <UBadge :label="dumps.label" :color="dumps.color" />
+            <UBadge :label="dumps?.label ?? 'Read when the workspace opens'" :color="dumps ? (dumps.ok ? 'success' : 'warning') : 'neutral'" />
           </div>
           <p v-for="folder in language?.dumpFolders ?? []" :key="folder" class="font-mono text-12 break-all text-dimmed">
             {{ folder }}
@@ -347,7 +322,7 @@ function rowClass(on: boolean): string[] {
                   <span class="flex min-w-0 grow flex-col">
                     <span class="truncate text-13 font-medium">{{ mod.name }}</span>
                     <span v-if="mod.isBroken" class="truncate text-11 text-error">Folder not found</span>
-                    <span v-else class="truncate font-mono text-11 text-dimmed">{{ mod.folder }}</span>
+                    <SteamState v-else :workspace-id="id" :mod-id="mod.id" brief />
                   </span>
                   <UButton v-if="mod.isBroken" label="Locate" @click.stop="locate(mod)" />
                   <UIcon v-else name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed" />
@@ -381,7 +356,7 @@ function rowClass(on: boolean): string[] {
             <FieldGroup title="Color" :hint="workspace.gameColor ? 'Picked by hand' : 'Automatic, a grey of the theme'">
               <OriginColorField
                 :model-value="workspace.gameColor ?? ''"
-                @update:model-value="setPrefs({ gameColor: $event })"
+                @update:model-value="savePrefs({ ws: workspace, gameColor: $event })"
               />
             </FieldGroup>
           </div>

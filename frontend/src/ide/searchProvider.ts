@@ -48,7 +48,6 @@ function folderDto(
       fq.includePattern as Record<string, unknown> | undefined,
     ),
     excludes: resolvePatternsForProvider(extraExc, folderExc),
-    disregardIgnoreFiles: !!fq.disregardIgnoreFiles,
   };
 }
 

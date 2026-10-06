@@ -4,14 +4,15 @@
  * rows. Each column's head sorts by it and, where its values are few, keeps only the ones ticked. Rows are
  * drawn as they scroll into view.
  */
-import { computed, h, ref, resolveComponent, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, h, ref, resolveComponent, shallowRef, useTemplateRef } from "vue";
 import type { TableColumn } from "@nuxt/ui";
 import type { ColumnFiltersState, HeaderContext, Row as TableRow, SortingState } from "@tanstack/vue-table";
 import type { Contest, Dangling, Dependency, Problem } from "@services/models";
 import type { File as SourceFile } from "@services/internal/lang/source/models";
-import { checkColor, type Card, type Gap, type Row } from "../../composables/useHealth";
+import { CARDS, typeOf, type Card, type Gap, type Row } from "../../composables/useHealth";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginDot from "../ui/OriginDot.vue";
+import { plural } from "../../lib/format";
 
 const { card, rows, sources, loading } = defineProps<{
   card: Card;
@@ -31,28 +32,9 @@ const filter = shallowRef<string | undefined>("");
 const sorting = ref<SortingState | undefined>([]);
 const filters = ref<ColumnFiltersState | undefined>([]);
 
-// a new card starts unsorted and unfiltered
-watch(
-  () => card,
-  () => {
-    filter.value = "";
-    sorting.value = [];
-    filters.value = [];
-  },
-);
-
-/** Each card's title and what it lists. */
-const HEADS: Record<Card, { title: string; blurb: string }> = {
-  contests: { title: "Contests", blurb: "Objects defined by more than one mod. Load order decides which one the game keeps." },
-  overrides: { title: "Overrides", blurb: "Game objects a mod replaces or adds to." },
-  depends: { title: "Dependencies", blurb: "Where a mod uses what only another mod defines, or what another mod changes." },
-  dangling: { title: "Dangling refs", blurb: "Names a mod uses that nothing defines." },
-  loc: { title: "Loc gaps", blurb: "Keys a mod has in the workspace language and not in another, and localization files the game reads wrong." },
-  script: { title: "Script errors", blurb: "What the editor's checks find in the mods' files." },
-};
 
 const originOf = (file: number) => sources[file]?.origin ?? "";
-const isProblem = (row: Row): row is Problem => "code" in row;
+const isProblem = (row: Row): row is Problem => "message" in row;
 
 // an origin as its color's dot, then by name, cut short with its whole name on hover; several as their
 // dots and how many
@@ -68,9 +50,16 @@ const origins = (ids: string[]) =>
     h("span", { class: "ms-0.75 text-dimmed tabular-nums" }, String(ids.length)),
   ]);
 const badge = (label: string, color = "neutral") => h(UBadge, { label, color, size: "sm" });
-// a finding's check, in its kind's color
-const check = (code: string) => badge(code, checkColor(code));
 const mono = (text: string) => h("span", { class: "font-mono" }, text);
+// a problem row's type, in its color; the same column heads each problem card
+const typeColumn = <T extends Row>(): TableColumn<T> => ({
+  id: "type",
+  header: head("Type", String),
+  accessorFn: (row) => typeOf(row).label,
+  filterFn: among,
+  meta: width("w-30"),
+  cell: ({ row }) => badge(typeOf(row.original).label, typeOf(row.original).color),
+});
 
 /** Keeps a row whose value is among those ticked in its column's head, or every row when none is. */
 function among<T>(row: TableRow<T>, id: string, wanted: string[] | undefined): boolean {
@@ -169,22 +158,16 @@ const depends: TableColumn<Dependency>[] = [
   { accessorKey: "to", header: head("Other mod", store.originName), filterFn: among, cell: ({ row }) => origin(row.original.to) },
   { id: "uses", header: head("Uses"), accessorFn: (row) => row.sites?.length ?? 0, meta: width("w-20") },
 ];
-// a finding the card lists beside its own rows takes its code, message and file in the same columns
+// a finding the card lists beside its own rows takes its message in the name's column
 const dangling: TableColumn<Dangling | Problem>[] = [
-  {
-    id: "kind",
-    header: head("Kind", String),
-    accessorFn: (row) => (isProblem(row) ? row.code : row.kind),
-    filterFn: among,
-    meta: width("w-32.5"),
-    cell: ({ row }) => (isProblem(row.original) ? check(row.original.code) : row.original.kind),
-  },
+  typeColumn(),
   {
     id: "name",
     header: head("Name"),
     accessorFn: (row) => (isProblem(row) ? row.message : row.name),
     cell: ({ row }) => (isProblem(row.original) ? row.original.message : mono(row.original.name)),
   },
+  { id: "kind", header: head("Kind", String), accessorFn: (row) => (isProblem(row) ? "" : row.kind), filterFn: among, meta: width("w-32.5") },
   {
     id: "origins",
     header: head("Written by"),
@@ -194,20 +177,27 @@ const dangling: TableColumn<Dangling | Problem>[] = [
       origins(isProblem(row.original) ? [originOf(row.original.site.file)] : (row.original.sites ?? []).map((site) => originOf(site.file))),
   },
 ];
+// a row's language and file are where it is fixed: a gap's, the language it is missing in and its file there
 const loc: TableColumn<Gap | Problem>[] = [
+  typeColumn(),
+  {
+    id: "key",
+    header: head("Key or problem"),
+    accessorFn: (row) => (isProblem(row) ? row.message : row.key),
+    cell: ({ row }) => (isProblem(row.original) ? row.original.message : mono(row.original.key)),
+  },
   {
     id: "language",
     header: head("Language", String),
-    accessorFn: (row) => (isProblem(row) ? row.code : row.language),
+    accessorFn: (row) => row.language ?? "",
     filterFn: among,
-    meta: width("w-32.5"),
-    cell: ({ row }) => (isProblem(row.original) ? check(row.original.code) : row.original.language),
+    meta: width("w-28"),
   },
   {
-    id: "key",
-    header: head("Key"),
-    accessorFn: (row) => (isProblem(row) ? row.message : row.key),
-    cell: ({ row }) => (isProblem(row.original) ? row.original.message : mono(row.original.key)),
+    id: "file",
+    header: head("File"),
+    accessorFn: (row) => (isProblem(row) ? `${sources[row.site.file]?.rel}:${row.site.line + 1}` : (sources[row.target]?.rel ?? "")),
+    cell: ({ getValue }) => mono(String(getValue())),
   },
   {
     id: "origin",
@@ -219,7 +209,7 @@ const loc: TableColumn<Gap | Problem>[] = [
   },
 ];
 const script: TableColumn<Problem>[] = [
-  { accessorKey: "code", header: head("Check", String), filterFn: among, meta: width("w-40"), cell: ({ row }) => check(row.original.code) },
+  typeColumn(),
   { accessorKey: "message", header: head("Finding") },
   {
     id: "origin",
@@ -258,14 +248,14 @@ const rowHeight = () => (30 / 16) * parseFloat(getComputedStyle(document.documen
 <template>
   <section class="flex min-h-0 min-w-0 flex-col bg-muted">
     <div class="flex h-11 shrink-0 items-center gap-2.5 border-b border-default px-3">
-      <span class="text-13 font-semibold">{{ HEADS[card].title }}</span>
-      <span class="truncate text-12 text-dimmed">{{ HEADS[card].blurb }}</span>
+      <span class="text-13 font-semibold">{{ CARDS[card].label }}</span>
+      <span class="truncate text-12 text-dimmed">{{ CARDS[card].blurb }}</span>
       <span class="grow" />
       <UInput
         v-model="filter"
         icon="i-lucide-filter"
         size="sm"
-        :placeholder="`Filter ${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`"
+        :placeholder="`Filter ${plural(rows.length, 'row')}`"
         class="w-45 shrink-0"
       />
     </div>

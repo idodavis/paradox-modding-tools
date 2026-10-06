@@ -1,6 +1,6 @@
 ---
 title: Workspace Health
-description: Contests, overrides, dependencies, dangling refs, loc gaps and missing files.
+description: Contests, overrides, dependencies, dangling refs, localization issues and script issues.
 weight: 5
 ---
 
@@ -19,18 +19,19 @@ Six cards count what the report found. A card picks the table below it.
 | **Contests** | A name two or more mods define, with or without the game's own. The one kept follows [FIOS / LIOS]({{< relref "/concepts/load-order" >}}); a contest the game has no part in is marked as a mod overriding another mod's own. |
 | **Overrides** | One mod's definition over the game's own of the same name. |
 | **Dependencies** | A mod naming something only another mod defines. |
-| **Dangling refs** | A name written that nothing defines: a typo, a missing dependency, or a game patch that removed it. The ones the game itself would reject are marked. |
-| **Loc gaps** | For each language the mods ship: **missing** (a definition's conventional key is absent), **untranslated** (English has the key, this language does not), **orphaned** (a mod's key that nothing of that mod reads). |
-| **Missing files** | A definition without the file its kind always has, such as an icon. |
+| **Dangling Refs** | A name, event or file a mod uses that nothing defines: a typo, a missing dependency, or a game patch that removed it. One row per name, however many places use it. |
+| **Localization Issues** | A key left **untranslated** (the mod has it in English and ships another language without it), and localization files the game reads wrong: **syntax**, a missing byte order mark, a header naming another language, a misspelled folder. One row per place to fix. |
+| **Script Issues** | What the editor's checks find in script files: syntax, scopes, values, duplicates. One row per place to fix. |
 
 ## The table and the pane
 
-Each column head sorts the table and, where a column's values are few (kind, rule, language, gap, origin), ticks the ones to keep. The filter box searches every column. Pick a row to open it beside the table:
+Each column head sorts the table and, where a column's values are few (type, kind, rule, language, origin), ticks the ones to keep. A problem's **Type** is colored by what it is: red the game cannot read it, orange something missing, blue written wrong, teal a file or a duplicate to tidy. The filter box searches every column. Pick a row to open it beside the table:
 
 - a contest or override: every definition in load order, each with its first lines, the kept one marked;
 - a dependency: each place the mod names what the other defines, with its line;
 - a dangling reference: each place it is written;
-- a loc gap: the key's text in each language, quoted, and what reads it.
+- an untranslated key: its English line, the file in that language it goes in, and what reads it;
+- any other issue: its line.
 
 The workspace default loc language is an IDE and hover setting; the report covers every language.
 

@@ -38,20 +38,16 @@ type SessionService struct {
 // LanguageHealth is what the health strip shows: whether the session is live, and whose dumps the
 // live schema read.
 type LanguageHealth struct {
-	WorkspaceID string `json:"workspaceId"`
 	InstallID   string `json:"installId"`
-	GameID      string `json:"gameId"`
 	InstallOk   bool   `json:"installOk"`
 	GameVersion string `json:"gameVersion"`
 	ScannedAt   string `json:"scannedAt,omitempty"`   // when the install was built, else its cache file written
 	UpdatedFrom string `json:"updatedFrom,omitempty"` // the version this run's scan replaced, where it differs
 	Ready       bool   `json:"ready"`
-	WatchError  string `json:"watchError,omitempty"`
 
-	DumpsFrom        string   `json:"dumpsFrom"`        // whose dumps the schema read: yours, shipped or none
-	DumpsStale       bool     `json:"dumpsStale"`       // they predate the install, or are another game version's
-	DumpFolders      []string `json:"dumpFolders"`      // where the game's script_docs writes them
-	DataTypesCommand string   `json:"dataTypesCommand"` // the console command that writes the data types
+	DumpsFrom   string   `json:"dumpsFrom"`   // whose dumps the schema read: yours, shipped or none
+	DumpsStale  bool     `json:"dumpsStale"`  // they predate the install, or are another game version's
+	DumpFolders []string `json:"dumpFolders"` // where the game's script_docs writes them
 }
 
 // start makes the scanner and the live sessions on first use.
@@ -69,7 +65,7 @@ func (s *SessionService) EnsureSession(workspaceID string) (*LanguageHealth, err
 	if _, err := s.live(workspaceID); err != nil {
 		return nil, err
 	}
-	return s.GetLanguageHealth(workspaceID)
+	return s.GetLanguageHealth(workspaceID), nil
 }
 
 // live is the workspace's session, built once however many callers ask at once, with every other
@@ -146,6 +142,10 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 	if inst == nil {
 		return nil, fmt.Errorf("workspace %s has no install", workspaceID)
 	}
+	info := game.Get(inst.GameID)
+	if info == nil {
+		return nil, fmt.Errorf("unknown game %s", inst.GameID)
+	}
 	install, err := s.scan(inst, ws.DefaultLocLang)
 	if err != nil {
 		return nil, err
@@ -157,14 +157,17 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 	for _, mod := range ws.Mods {
 		mods = append(mods, session.Mod{ID: mod.ID, Dir: mod.Path, Calendar: mod.Eras})
 	}
-	sess, err := session.New(context.Background(), game.Get(inst.GameID), install, mods, ws.DefaultLocLang)
+	sess, err := session.New(context.Background(), info, install, mods, ws.DefaultLocLang)
 	if err != nil {
 		return nil, err
 	}
-	sess.Watch(func(path string) {
+	// without a watcher the editor still works; it misses changes made outside it
+	if err := sess.Watch(func(path string) {
 		_, err := os.Stat(path)
 		emit(EventFSChanged, FSChanged{Path: path, Deleted: err != nil})
-	})
+	}); err != nil {
+		slog.Warn("file watcher", "error", err)
+	}
 	return sess, nil
 }
 
@@ -172,7 +175,7 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 // update is another cache file, and the app's own version.
 func (s *SessionService) request(inst *GameInstall, language string) index.Request {
 	return index.Request{
-		Game: inst.GameID, Dir: inst.Path, Version: game.ReadGameVersion(inst.Path, game.Get(inst.GameID).SteamAppID),
+		Game: inst.GameID, Dir: inst.Path, Version: game.ReadGameVersion(inst.GameID, inst.Path),
 		Language: language, App: s.App.Version,
 	}
 }
@@ -246,21 +249,19 @@ func (s *SessionService) scannedAt(inst *GameInstall, language string) string {
 }
 
 // GetLanguageHealth is the health strip for a workspace, from its live session where there is one.
-func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth, error) {
-	health := &LanguageHealth{WorkspaceID: workspaceID}
+func (s *SessionService) GetLanguageHealth(workspaceID string) *LanguageHealth {
+	health := &LanguageHealth{}
 	ws, inst := s.App.workspace(workspaceID)
 	if ws != nil {
 		health.InstallID = ws.InstallID
 	}
 	if inst == nil {
-		return health, nil
+		return health
 	}
-	health.GameID, health.GameVersion = inst.GameID, inst.VersionDetected
+	health.GameVersion = inst.VersionDetected
 	_, statErr := os.Stat(inst.Path)
 	health.InstallOk = statErr == nil
 	health.ScannedAt = s.scannedAt(inst, ws.DefaultLocLang)
-	s.start()
-	health.DataTypesCommand = game.Get(inst.GameID).DataTypesCommand
 	health.DumpFolders = game.DumpDirs(inst.GameID, inst.Path)
 	if live := s.get(workspaceID); live != nil {
 		live.RLock()
@@ -272,12 +273,9 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth,
 		if previous := live.Install.Previous; previous != "" && previous != shipped.Safe(health.GameVersion) {
 			health.UpdatedFrom = previous
 		}
-		if err := live.WatchError(); err != nil {
-			health.WatchError = err.Error()
-		}
 		live.RUnlock()
 	}
-	return health, nil
+	return health
 }
 
 const (
@@ -291,13 +289,16 @@ const (
 	EventSearchHits          = "search:hits"           // a text search is done with a file: data is TextSearchHits
 )
 
-// registers the events this file emits so the bindings generator types them
+// registers every event so the bindings generator types them
 func init() {
 	application.RegisterEvent[string](EventLangReady)
 	application.RegisterEvent[string](EventLangFailed)
 	application.RegisterEvent[ScanProgress](EventLangScanProgress)
 	application.RegisterEvent[string](EventLangCacheUpdated)
+	application.RegisterEvent[string](EventLangCalendarChanged)
 	application.RegisterEvent[FSChanged](EventFSChanged)
+	application.RegisterEvent[WikiUpdated](EventWikiUpdated)
+	application.RegisterEvent[TextSearchHits](EventSearchHits)
 }
 
 // FSChanged is one path under a mod that changed on disk; Deleted when it is gone.
@@ -308,8 +309,7 @@ type FSChanged struct {
 
 // WikiUpdated is one game's wiki refresh, done; Error says why it failed.
 type WikiUpdated struct {
-	GameID string `json:"gameId"`
-	Error  string `json:"error,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 // ScanProgress is one step of an install scan.

@@ -41,6 +41,16 @@ const menu = {
     itemTrailingIcon: "size-3.5",
   },
 };
+// a step's 22px circle: outlined, green when done, the accent when current
+const step = {
+  trigger: [
+    "size-5.5 text-11 font-medium ring ring-inset ring-accented bg-transparent text-dimmed",
+    "group-data-[state=completed]:bg-(--green-soft) group-data-[state=completed]:text-success group-data-[state=completed]:ring-0",
+    "group-data-[state=active]:bg-primary group-data-[state=active]:text-(--accent-ink) group-data-[state=active]:ring-primary",
+  ],
+  icon: "size-3.5",
+  wrapper: "mt-0",
+};
 const listbox = {
   slots: menu.slots,
   variants: {
@@ -48,6 +58,14 @@ const listbox = {
     variant: field.variant,
   },
   compoundVariants: field.compoundVariants,
+};
+// the dropdown and context menus: an item under the pointer or open on the accent's soft fill
+const contextual = {
+  slots: menu.slots,
+  variants: {
+    size: { md: menu.item },
+    active: { false: { item: "data-highlighted:before:bg-(--accent-soft) data-[state=open]:before:bg-(--accent-soft)" } },
+  },
 };
 
 export default defineConfig({
@@ -60,7 +78,7 @@ export default defineConfig({
       },
       ui: {
         // the type scale and the radii of themes.css, so merged classes keep them
-        tv: { twMergeConfig: { extend: { theme: { text: ["11", "12", "13", "14", "16", "20", "28", "tiny"], radius: ["chip", "tile"] } } } },
+        tv: { twMergeConfig: { extend: { theme: { text: ["11", "12", "13", "14", "16", "18", "20", "28", "tiny"], radius: ["chip", "tile"] } } } },
         button: {
           slots: { leadingIcon: "size-3.5", trailingIcon: "size-3.5" },
           variants: {
@@ -90,20 +108,8 @@ export default defineConfig({
         select: listbox,
         selectMenu: listbox,
         inputMenu: listbox,
-        dropdownMenu: {
-          slots: menu.slots,
-          variants: {
-            size: { md: menu.item },
-            active: { false: { item: "data-highlighted:before:bg-(--accent-soft) data-[state=open]:before:bg-(--accent-soft)" } },
-          },
-        },
-        contextMenu: {
-          slots: menu.slots,
-          variants: {
-            size: { md: menu.item },
-            active: { false: { item: "data-highlighted:before:bg-(--accent-soft) data-[state=open]:before:bg-(--accent-soft)" } },
-          },
-        },
+        dropdownMenu: contextual,
+        contextMenu: contextual,
         // its content keeps inside the rounded corners, a footer's fill included
         popover: { slots: { content: "overflow-hidden bg-elevated rounded-xl ring-0 shadow-(--shadow)" } },
         // a dialog is the boards' .pop: bg-3, 12px corners, the theme's shadow
@@ -159,25 +165,47 @@ export default defineConfig({
           },
           variants: { size: { md: { root: "text-12" } }, orientation: { vertical: { container: "mt-1.25" } } },
         },
-        // the Wizard board's .step: a 22px circle and its label in a row, a rule on to the next; done is green
+        // a description wraps where Steam's will: Steam's text column is 639px at 14/20 on every window width
+        // (its .workshopItemDescription, 655px with 8px sides, measured 2026-10-05); headings and bold at 600
+        editor: {
+          slots: {
+            base: [
+              "mx-auto w-159.75 max-w-full px-0 py-4 sm:px-0 *:my-2.5 text-14 text-toned [&_p]:leading-5 [&_li]:leading-5 [&_strong]:font-semibold",
+              "[&_:is(h1,h2,h3,h4,h5,h6)]:font-semibold [&_h1]:text-20 [&_h2]:text-18 [&_h3]:text-16 [&_:is(h4,h5,h6)]:text-13",
+            ],
+          },
+        },
+        // horizontal is the Wizard's .step, vertical the Publish rail's .stp
         stepper: {
           compoundVariants: [
             {
               orientation: "horizontal",
               class: {
+                ...step,
                 root: "gap-6",
                 header: "items-center gap-3",
                 item: "flex w-auto flex-1 items-center gap-2 text-start last:flex-none",
                 container: "contents",
-                trigger: [
-                  "size-5.5 text-11 font-medium ring ring-inset ring-accented bg-transparent text-dimmed",
-                  "group-data-[state=completed]:bg-(--green-soft) group-data-[state=completed]:text-success group-data-[state=completed]:ring-0",
-                  "group-data-[state=active]:bg-primary group-data-[state=active]:text-(--accent-ink) group-data-[state=active]:ring-primary",
-                ],
-                icon: "size-3.5",
                 separator: "static order-last h-px flex-1 bg-accented group-data-[state=completed]:bg-accented",
-                wrapper: "mt-0",
                 title: "text-12 font-medium whitespace-nowrap text-dimmed group-data-[state=completed]:text-toned group-data-[state=active]:text-highlighted",
+              },
+            },
+            {
+              orientation: "vertical",
+              class: {
+                ...step,
+                header: "w-full gap-1.5",
+                // each step a card, the whole of it the step's button: the circle's hit area stretched over it
+                item: [
+                  "items-center gap-2.5 rounded-md px-2.5 py-2.25 ring ring-inset ring-default hover:bg-elevated/60",
+                  "data-[state=active]:bg-elevated data-[state=active]:ring-accented",
+                  "data-disabled:opacity-60 data-disabled:hover:bg-transparent",
+                ],
+                container: "static",
+                trigger: [...step.trigger, "cursor-pointer after:absolute after:inset-0 after:rounded-md group-data-disabled:cursor-not-allowed"],
+                separator: "hidden",
+                title: "text-13 font-medium text-dimmed group-data-[state=completed]:text-toned group-data-[state=active]:text-highlighted",
+                description: "text-11 text-dimmed",
               },
             },
           ],

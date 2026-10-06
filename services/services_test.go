@@ -237,8 +237,8 @@ func TestEventGraph(t *testing.T) {
 	if slices.Contains(ids(drawn), "g.5") || slices.Contains(ids(drawn), "g.9") || slices.Contains(ids(drawn), "g.0") || drawn.Truncated {
 		t.Errorf("a fourth hop, an unconnected event and the caller are not drawn: %v", ids(drawn))
 	}
-	if drawn.Nodes[0].ID != "g.1" || !drawn.Nodes[0].Root || drawn.Nodes[0].Origin != "moda" || drawn.Nodes[0].Hidden != 1 {
-		t.Errorf("the root, its origin, and its hidden caller: %+v", drawn.Nodes[0])
+	if drawn.Nodes[0].ID != "g.1" || !drawn.Nodes[0].Root || drawn.Nodes[0].Origin != "moda" {
+		t.Errorf("the root and its origin: %+v", drawn.Nodes[0])
 	}
 	if at := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more-in:g.1" }); at < 0 || drawn.Nodes[at].Stub != "fired-by" || drawn.Nodes[at].Title != "+1 fired by" {
 		t.Errorf("the fired-by stub: %+v", drawn.Nodes)
@@ -303,22 +303,22 @@ func TestEventGraph(t *testing.T) {
 	}
 
 	// the root search: an install event by its number and by its namespace, the ids that start with
-	// the query first; never a name no edge has, nor a macro; one kind, and the count of each
-	if got, _ := graphs.SearchRoots("ws", ".2", ""); !slices.Contains(ids(&EventGraph{Nodes: got.Hits}), "v.2") {
+	// the query first; never a name no edge has, nor a macro; and the count of each kind
+	if got, _ := graphs.SearchRoots("ws", ".2"); !slices.Contains(ids(&EventGraph{Nodes: got.Hits}), "v.2") {
 		t.Errorf("by number: %+v", got)
 	}
-	if got, _ := graphs.SearchRoots("ws", "V.", ""); len(got.Hits) < 2 || got.Hits[0].ID != "v.1" || got.Hits[1].ID != "v.2" || got.Hits[0].Origin != game.OriginVanilla {
+	if got, _ := graphs.SearchRoots("ws", "V."); len(got.Hits) < 2 || got.Hits[0].ID != "v.1" || got.Hits[1].ID != "v.2" || got.Hits[0].Origin != game.OriginVanilla {
 		t.Errorf("by namespace: %+v", got)
 	}
-	if got, _ := graphs.SearchRoots("ws", "vsub", ""); len(got.Hits) != 0 {
+	if got, _ := graphs.SearchRoots("ws", "vsub"); len(got.Hits) != 0 {
 		t.Errorf("an event nothing fires and that fires nothing: %+v", got)
 	}
-	if got, _ := graphs.SearchRoots("ws", "m_fire", ""); len(got.Hits) != 0 {
+	if got, _ := graphs.SearchRoots("ws", "m_fire"); len(got.Hits) != 0 {
 		t.Errorf("a macro is a hop, not a root: %+v", got)
 	}
-	actions, _ := graphs.SearchRoots("ws", "", "on_action")
-	if !slices.Equal(ids(&EventGraph{Nodes: actions.Hits}), []string{"on_birth"}) || !slices.ContainsFunc(actions.Databases, func(count DatabaseCount) bool { return count.Database == "events" && count.Count > 10 }) {
-		t.Errorf("one kind's hits, every kind's count: %+v", actions)
+	every, _ := graphs.SearchRoots("ws", "")
+	if !slices.ContainsFunc(every.Databases, func(count DatabaseCount) bool { return count.Database == "events" && count.Count > 10 }) {
+		t.Errorf("every kind's count: %+v", every)
 	}
 }
 
@@ -328,13 +328,13 @@ func TestDetail(t *testing.T) {
 		"localization/english/m_l_english.yml": "\xEF\xBB\xBFl_english:\n v.1.a:0 \"Go\"\n",
 	})}
 	detail, _ := graphs.GetEventDetail("ws", "m.1")
-	if detail.Reason != "" || detail.Database != "events" || detail.At.Origin != "moda" || detail.Title != "Hello" {
-		t.Fatalf("the header, its title from the title member's key: %+v", detail)
+	if detail.Reason != "" || detail.Kind != "event" || detail.At.Origin != "moda" {
+		t.Fatalf("the header: %+v", detail)
 	}
 	if drawn, _ := graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 1, Fanout: 5, MaxNodes: 10}); len(drawn.Nodes) == 0 || drawn.Nodes[0].Title != "Hello" {
 		t.Errorf("a node's title: %+v", drawn)
 	}
-	if named, _ := graphs.GetEventDetail("ws", "m.2"); len(named.Options) != 1 || named.Options[0].Name != "v.1.a" || named.Options[0].Text != "Go" {
+	if named, _ := graphs.GetEventDetail("ws", "m.2"); len(named.Options) != 1 || named.Options[0].Names[0].Key != "v.1.a" || named.Options[0].Names[0].Text != "Go" {
 		t.Errorf("an option named by a block: %+v", named.Options)
 	}
 	sections := map[string]Section{}
@@ -344,13 +344,13 @@ func TestDetail(t *testing.T) {
 	if sections["type"].Value != "character_event" || len(detail.Sections) != 5 {
 		t.Errorf("the sections: %+v", detail.Sections)
 	}
-	if sections["desc"].Text != "Desc" {
+	if desc := sections["desc"].Parts; len(desc) == 0 || desc[0].Versions[0].Text != "Desc" {
 		t.Errorf("a one-word section's loc text: %+v", sections["desc"])
 	}
 	if len(detail.Lines) != 9 || detail.Lines[0] != "m.1 = {" || detail.Lines[5] != "\toption = {" || detail.Lines[8] != "}" {
 		t.Errorf("the definition as its file writes it: %q", detail.Lines)
 	}
-	if len(detail.Options) != 1 || detail.Options[0].Name != "v.1.a" || detail.Options[0].Text != "Go" {
+	if len(detail.Options) != 1 || detail.Options[0].Names[0].Key != "v.1.a" || detail.Options[0].Names[0].Text != "Go" {
 		t.Errorf("the options: %+v", detail.Options)
 	}
 	if len(detail.Refs) == 0 || detail.Refs[0].Database != index.Localization || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
@@ -362,7 +362,7 @@ func TestDetail(t *testing.T) {
 	if detail, _ := graphs.GetEventDetail("ws", "v.2"); len(detail.FiredBy) == 0 {
 		t.Errorf("what fires it: %+v", detail.FiredBy)
 	}
-	if on, _ := graphs.GetEventDetail("ws", "on_birth"); on.Database != "on_action" || len(on.Sections) == 0 {
+	if on, _ := graphs.GetEventDetail("ws", "on_birth"); on.Kind != "on action" || len(on.Sections) == 0 {
 		t.Errorf("an on_action's detail: %+v", on)
 	}
 	if none, _ := graphs.GetEventDetail("ws", "nothing.1"); none.Reason == "" {
@@ -559,13 +559,9 @@ func TestWorkspaceHealth(t *testing.T) {
 		t.Errorf("a row names its file by its number in Sources: %+v in %+v", row, health.Sources[row.File])
 	}
 
-	// looking one key up: its entries in every language, and its readers
-	look, _ := reports.LookupLoc("ws", "a.1.t")
-	if len(look.Entries) != 2 || len(look.Readers) != 1 || look.Readers[0].At.Origin != "moda" {
-		t.Errorf("a key's entries and readers: %+v", look)
-	}
-	if look, _ := reports.LookupLoc("ws", "v.1.t"); len(look.Entries) != 1 || look.Entries[0].At.Origin != "vanilla" || look.Entries[0].Language != "english" {
-		t.Errorf("an install key: %+v", look)
+	// what reads one key
+	if readers, _ := reports.LocReaders("ws", "a.1.t"); len(readers) != 1 || readers[0].At.Origin != "moda" {
+		t.Errorf("a key's readers: %+v", readers)
 	}
 }
 
@@ -642,19 +638,6 @@ func TestLog(t *testing.T) {
 	logs.ServiceShutdown()
 }
 
-func TestBumpVersion(t *testing.T) {
-	svc := &ReleaseService{}
-	for _, row := range []struct{ current, kind, want string }{
-		{"1.2.0", "patch", "1.2.1"},
-		{"1.2.3", "minor", "1.3.0"},
-		{"", "patch", "1.0.0"},
-	} {
-		if got := svc.BumpVersion(row.current, row.kind); got != row.want {
-			t.Errorf("BumpVersion(%q, %q) = %q, want %q", row.current, row.kind, got, row.want)
-		}
-	}
-}
-
 func TestTextSearch(t *testing.T) {
 	t.Parallel()
 	root, other := t.TempDir(), t.TempDir()
@@ -719,16 +702,13 @@ func TestFileSearchNeedleAndGlob(t *testing.T) {
 	root := t.TempDir()
 	writeTree(t, root, searchTree)
 	svc := &SearchService{}
-	res, err := svc.FileSearch(t.Context(), FileSearchQuery{
+	res := svc.FileSearch(t.Context(), FileSearchQuery{
 		FilePattern: "hit",
 		Folders: []TextSearchFolder{{
 			Path:     root,
 			Includes: []string{"**/events/**"},
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if len(res.Hits) != 2 {
 		t.Fatalf("file hits = %+v", res.Hits)
 	}
@@ -776,9 +756,9 @@ func TestTextSearchCancel(t *testing.T) {
 
 func TestEnsureSession(t *testing.T) {
 	svc := fixtureService(t)
-	before, err := svc.GetLanguageHealth("ws")
-	if err != nil || before.Ready || !before.InstallOk || before.GameID != "ck3" {
-		t.Fatalf("before the first build: no session: %+v (%v)", before, err)
+	before := svc.GetLanguageHealth("ws")
+	if before.Ready || !before.InstallOk || before.InstallID == "" {
+		t.Fatalf("before the first build: no session: %+v", before)
 	}
 
 	health, err := svc.EnsureSession("ws")
@@ -823,25 +803,22 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	writeTree(t, modDir, map[string]string{"a/descriptor.mod": "", "b/descriptor.mod": ""})
 
 	// a folder with no descriptor, or no folder at all, is no mod
-	if _, err := svc.AddWorkspaceMod("ws1", "None", modDir, ""); err == nil || !strings.Contains(err.Error(), "descriptor.mod") {
+	if _, err := svc.AddWorkspaceMod("ws1", modDir); err == nil || !strings.Contains(err.Error(), "descriptor.mod") {
 		t.Fatalf("a folder with no descriptor: %v", err)
 	}
-	if _, err := svc.AddWorkspaceMod("ws1", "Gone", filepath.Join(modDir, "gone"), ""); err == nil {
+	if _, err := svc.AddWorkspaceMod("ws1", filepath.Join(modDir, "gone")); err == nil {
 		t.Fatal("a path that is not there")
 	}
 
-	alpha, err := svc.AddWorkspaceMod("ws1", "Alpha", filepath.Join(modDir, "a"), "")
+	alpha, err := svc.AddWorkspaceMod("ws1", filepath.Join(modDir, "a"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	beta, err := svc.AddWorkspaceMod("ws1", "Beta", filepath.Join(modDir, "b"), "")
+	beta, err := svc.AddWorkspaceMod("ws1", filepath.Join(modDir, "b"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws, err := svc.GetWorkspace("ws1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	ws, _ := svc.App.workspace("ws1")
 	listed := ws.Mods
 	if len(listed) != 2 || listed[0].ID != alpha.ID || listed[1].ID != beta.ID {
 		t.Fatalf("initial order: %+v", listed)
@@ -856,17 +833,14 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.ReorderWorkspaceMods("ws1", []string{beta.ID, alpha.ID}); err != nil {
 		t.Fatal(err)
 	}
-	ws, err = svc.GetWorkspace("ws1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	ws, _ = svc.App.workspace("ws1")
 	listed = ws.Mods
 	if len(listed) != 2 || listed[0].ID != beta.ID || listed[1].ID != alpha.ID {
 		t.Fatalf("reordered: %+v", listed)
 	}
-	workspaces, err := svc.ListWorkspaces("")
-	if err != nil || len(workspaces) != 1 {
-		t.Fatalf("list: %v %+v", err, workspaces)
+	workspaces := svc.ListWorkspaces()
+	if len(workspaces) != 1 {
+		t.Fatalf("list: %+v", workspaces)
 	}
 	fromList := workspaces[0].Mods
 	if len(fromList) != 2 || fromList[0].ID != beta.ID || fromList[1].ID != alpha.ID {
@@ -876,10 +850,7 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.RemoveWorkspaceMod("ws1", beta.ID); err != nil {
 		t.Fatal(err)
 	}
-	ws, err = svc.GetWorkspace("ws1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	ws, _ = svc.App.workspace("ws1")
 	listed = ws.Mods
 	if len(listed) != 1 || listed[0].ID != alpha.ID {
 		t.Fatalf("after remove: %+v", listed)
@@ -891,11 +862,7 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.DeleteWorkspace("ws1"); err != nil {
 		t.Fatal(err)
 	}
-	workspaces, err = svc.ListWorkspaces("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(workspaces) != 0 {
+	if workspaces = svc.ListWorkspaces(); len(workspaces) != 0 {
 		t.Fatalf("listed: %+v", workspaces)
 	}
 	if err := svc.DeleteWorkspace("ws1"); err == nil {
@@ -911,7 +878,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 		Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
 	svc := &WorkspaceService{App: config, Session: &SessionService{App: config}}
 	writeTree(t, modDir, map[string]string{"descriptor.mod": ""})
-	if _, err := svc.AddWorkspaceMod("ws1", "Alpha", modDir, ""); err != nil {
+	if _, err := svc.AddWorkspaceMod("ws1", modDir); err != nil {
 		t.Fatal(err)
 	}
 	got, err := svc.GetIdeRoots("ws1")
@@ -944,10 +911,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	if err := svc.SaveIdeSession("ws1", []string{"/a.txt"}, "/a.txt"); err != nil {
 		t.Fatal(err)
 	}
-	ws, err := svc.GetWorkspace("ws1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	ws, _ := svc.App.workspace("ws1")
 	if !ws.ResetIdeOnOpen || ws.DefaultTool != "health" || ws.HideExplorerBinaries {
 		t.Fatalf("prefs: %+v", ws)
 	}
@@ -971,12 +935,12 @@ func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 			config := tempConfig(t, nil, Workspace{ID: "ws", GameID: testCase.game, Name: "T"})
 			svc := &WorkspaceService{App: config, Session: &SessionService{App: config}}
 			root, want := t.TempDir(), ""
-			writeTree(t, root, map[string]string{game.DescriptorFile(testCase.game): ""})
+			writeTree(t, root, map[string]string{game.DescriptorFile(testCase.game): "{}"})
 			if testCase.rel != "" {
 				want = filepath.Join(root, filepath.FromSlash(testCase.rel))
 				writeTree(t, root, map[string]string{testCase.rel: "img"})
 			}
-			mod, err := svc.AddWorkspaceMod("ws", "M", root, "")
+			mod, err := svc.AddWorkspaceMod("ws", root)
 			if err != nil {
 				t.Fatal(err)
 			}

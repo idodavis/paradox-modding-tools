@@ -44,7 +44,7 @@ func main() {
 		}
 		*installDir = installs[0].Path
 	}
-	version := game.ReadGameVersion(*installDir, info.SteamAppID)
+	version := game.ReadGameVersion(info.ID, *installDir)
 	if version == "" {
 		log.Fatalf("no game version found for %s", *installDir)
 	}

@@ -8,9 +8,8 @@ import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useElementSize, useLocalStorage } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
-import HealthDetail from "../components/health/HealthDetail.vue";
-import HealthTable from "../components/health/HealthTable.vue";
-import { rowsOf, useHealth, type Card, type Row } from "../composables/useHealth";
+import { CARDS, rowsOf, typeOf, useHealth, type Card, type Row } from "../composables/useHealth";
+import { countKinds } from "../lib/format";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { useWorkspaceStore } from "../stores/workspace";
 
@@ -21,21 +20,11 @@ const store = useWorkspaceStore();
 const live = useLiveEnabled(() => id);
 const { order, dirty, health, error, isPending, save, saving } = useHealth(() => id, live);
 
-/** Each card's tile: its name, its dot's color and what it counts. */
-const TILES: Record<Card, { label: string; dot: string; note?: string }> = {
-  contests: { label: "Contests", dot: "var(--orange)" },
-  overrides: { label: "Overrides", dot: "var(--blue)", note: "Mods replacing game objects" },
-  depends: { label: "Dependencies", dot: "var(--fg-3)", note: "Mods reading other mods" },
-  // the problems in the error colors: red, orange, and a yellow between orange and the accent
-  dangling: { label: "Dangling refs", dot: "var(--red)", note: "Used, never defined" },
-  loc: { label: "Loc gaps", dot: "color-mix(in oklab, var(--orange), var(--accent))" },
-  script: { label: "Script errors", dot: "var(--orange)", note: "Scope, values, syntax" },
-};
 const GROUPS: { title: string; hint: string; cards: Card[] }[] = [
   { title: "Load order", hint: "Changes when you reorder mods", cards: ["contests", "overrides", "depends"] },
   { title: "Problems in the mods", hint: "Fixed in the files", cards: ["dangling", "loc", "script"] },
 ];
-const isCard = (value: string | undefined): value is Card => !!value && value in TILES;
+const isCard = (value: string | undefined): value is Card => !!value && value in CARDS;
 
 // the card is the route's, so a link and the tiles pick it alike
 const card = computed({
@@ -53,17 +42,17 @@ watch([() => name, rows], () => {
 
 const counts = computed(() => Object.fromEntries(GROUPS.flatMap((group) => group.cards).map((c) => [c, rowsOf(health.value, c).length])));
 const total = computed(() => Object.values(counts.value).reduce((sum, count) => sum + count, 0));
-/** A tile's note: the rule each contest goes by, the languages keys are missing in, else its own. */
+/** A tile's note: the rule each contest goes by, how many of each type Localization Issues lists, else its own. */
 function note(c: Card): string {
   if (c === "contests") {
     const fios = (health.value?.contests ?? []).filter((contest) => contest.firstWins).length;
     return `${counts.value.contests - fios} LIOS, ${fios} FIOS`;
   }
   if (c === "loc") {
-    const missing = (health.value?.loc ?? []).filter((gaps) => gaps.untranslated?.length);
-    return missing.map((gaps) => `${gaps.language} ${gaps.untranslated?.length}`).join(", ") || "Every key translated";
+    const types = countKinds(rowsOf(health.value, "loc").map((row) => ({ kind: typeOf(row).label })));
+    return types.map(({ kind, count }) => `${count} ${kind.toLowerCase()}`).join(", ") || "Nothing to fix";
   }
-  return TILES[c].note ?? "";
+  return CARDS[c].note ?? "";
 }
 
 /** A load-order chip's look, the game's and each mod's. */
@@ -125,7 +114,7 @@ const tableWidth = computed({
               @click="card = c"
             >
               <span class="flex items-center gap-1.5 text-12 font-medium whitespace-nowrap text-muted">
-                <OriginDot :color="TILES[c].dot" :small="g === 0" />{{ TILES[c].label }}
+                <OriginDot :color="CARDS[c].dot" :small="g === 0" />{{ CARDS[c].label }}
               </span>
               <span class="text-28 tabular-nums">{{ counts[c] }}</span>
               <span class="truncate text-11 leading-3.75 text-dimmed">{{ note(c) }}</span>
@@ -137,6 +126,7 @@ const tableWidth = computed({
 
     <div ref="split" class="flex min-h-0 grow overflow-hidden rounded-t-lg border border-b-0 border-default">
       <HealthTable
+        :key="card"
         v-model="open"
         :card="card"
         :rows="rows"

@@ -1,18 +1,17 @@
 <script setup lang="ts">
 /**
  * The open row (the Health board's right pane): its name with its kind and rule, what the rule does, then
- * each place it is written as a site card with its lines; a loc key's text in every language. A contest
- * compares the kept definition's file with the one it replaces.
+ * each place it is written as a site card with its lines; an untranslated key's file in the language it
+ * goes in, and what reads it. A contest compares the kept definition's file with the one it replaces.
  */
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
 import type { File as SourceFile } from "@services/internal/lang/source/models";
-import type { Site } from "@services/models";
-import { useOpenInIde } from "../../composables/useOpenInIde";
-import type { Row } from "../../composables/useHealth";
-import { linesQuery, locQuery } from "../../queries";
+import { sitesOf, typeOf, type Row } from "../../composables/useHealth";
+import { linesQuery, locReadersQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import CompareSites from "./CompareSites.vue";
+import { list } from "../../lib/format";
 
 const { workspaceId, row, sources, live } = defineProps<{
   workspaceId: string;
@@ -22,18 +21,12 @@ const { workspaceId, row, sources, live } = defineProps<{
 }>();
 
 const store = useWorkspaceStore();
-const { openInIde } = useOpenInIde();
 const compare = useOverlay().create(CompareSites);
 
 const contest = computed(() => (row && "rule" in row ? row : null));
 // a whole file one origin ships at another's path: its sites list what each file defines, not lines
 const replacedFile = computed(() => contest.value?.database === "file");
-// where the row is written: each of its sites, or the one line a finding or a gap names
-const sites = computed(() => {
-  if (!row) return [];
-  const written: Site[] = "sites" in row ? (row.sites ?? []) : "site" in row ? [row.site] : [{ file: row.file, line: row.line, col: 0 }];
-  return written.map((site) => ({ ...site, at: sources[site.file] }));
-});
+const sites = computed(() => (row ? sitesOf(row).map((site) => ({ ...site, at: sources[site.file] })) : []));
 const { data: lines } = useQuery(() =>
   linesQuery({
     id: workspaceId,
@@ -43,7 +36,7 @@ const { data: lines } = useQuery(() =>
     live,
   }),
 );
-const { data: lookup } = useQuery(() => locQuery({ id: workspaceId, key: row && "key" in row ? row.key : "", live }));
+const { data: readers } = useQuery(() => locReadersQuery({ id: workspaceId, key: row && "key" in row ? row.key : "", live }));
 
 const title = computed(() => {
   if (!row) return "";
@@ -52,12 +45,9 @@ const title = computed(() => {
   if ("name" in row) return row.name;
   return `${store.originName(row.from)} ${row.affected ? "is affected by" : "depends on"} ${store.originName(row.to)}`;
 });
-const badge = computed(() => {
-  if (!row) return "";
-  if ("kind" in row) return row.kind;
-  if ("code" in row) return row.code;
-  return "language" in row ? row.language : "";
-});
+// a problem row's type in its color, then what kind of name it is or the language it is fixed in
+const type = computed(() => (row && ("code" in row || "key" in row) ? typeOf(row) : null));
+const tag = computed(() => (row && (("kind" in row && row.kind) || ("language" in row && row.language))) || "");
 
 const names = computed(() => sites.value.map((site) => store.originName(site.at.origin)));
 /** Each site's part in a contest: kept, added to the kept one, or replaced by it. */
@@ -95,12 +85,11 @@ function dropped(i: number): string[] {
 }
 
 // what the contest's rule does, in the names of the origins it is between ("A, B, and C")
-const AND = new Intl.ListFormat("en");
 const rule = computed(() => {
   const row = contest.value;
   if (!row || row.winner < 0) return "";
   const kept = names.value[row.winner];
-  const others = (by: ReturnType<typeof part>) => AND.format(new Set(names.value.filter((_, i) => part(i) === by)));
+  const others = (by: ReturnType<typeof part>) => list(new Set(names.value.filter((_, i) => part(i) === by)));
   if (replacedFile.value) return `The game loads one file per path, so ${kept}'s file replaces ${others("replaced")}'s whole.`;
   if (others("injected")) return `The game runs ${kept}'s definition together with what ${others("injected")} injected into it.`;
   if (row.rule !== "FIOS" && row.rule !== "LIOS") return `${kept} writes it as ${row.rule}, so its version takes the place of ${others("replaced")}'s.`;
@@ -121,7 +110,8 @@ function openCompare(): void {
       <div class="flex flex-col gap-2 border-b border-default px-4 py-3">
         <div class="flex items-center gap-2">
           <span class="truncate font-mono text-13 font-semibold">{{ title }}</span>
-          <UBadge v-if="badge" :label="badge" size="sm" />
+          <UBadge v-if="type" :label="type.label" :color="type.color" size="sm" />
+          <UBadge v-if="tag" :label="tag" size="sm" />
           <UBadge v-if="contest" :label="contest.rule" :color="contest.firstWins ? 'warning' : 'info'" size="sm" />
           <UBadge v-if="replacedMod" label="Replaces a mod's own" color="error" size="sm" />
           <span class="grow" />
@@ -139,14 +129,7 @@ function openCompare(): void {
             <OriginDot :color="store.originColor(site.at.origin)" small />
             <span class="font-medium">{{ names[i] }}</span>
             <span v-if="site.name" class="font-mono text-dimmed">{{ site.name }}</span>
-            <UButton
-              :label="replacedFile ? site.at.rel : `${site.at.rel}:${site.line + 1}`"
-              variant="link"
-              size="xs"
-              class="min-w-0 p-0 font-mono"
-              :ui="{ label: 'truncate' }"
-              @click="openInIde(workspaceId, site.at.path, site.line + 1)"
-            />
+            <SourceLink :workspace-id="workspaceId" :at="site.at" :line="site.line" :file="replacedFile" />
             <span class="grow" />
             <UBadge v-if="site.removed" :label="`Removed by ${row && 'to' in row ? store.originName(row.to) : ''}`" color="error" size="sm" />
             <UBadge v-else-if="part(i) === 'kept' && contest" label="Kept" color="success" size="sm" />
@@ -178,38 +161,18 @@ function openCompare(): void {
             </div>
           </div>
         </div>
-        <section v-if="lookup?.entries?.length" class="flex flex-col gap-2">
-          <h4 class="text-12 font-semibold">Text</h4>
-          <div class="flex flex-col divide-y divide-default">
-            <div
-              v-for="entry in lookup.entries"
-              :key="`${entry.at.path}:${entry.line}`"
-              class="flex min-w-0 flex-col items-start gap-0.5 py-1.5"
-            >
-              <span class="font-mono text-11 text-dimmed">{{ entry.language }}</span>
-              <LocQuote :text="entry.value" class="self-stretch" />
-              <UButton
-                :label="`${entry.at.rel}:${entry.line + 1}`"
-                variant="link"
-                size="xs"
-                class="max-w-full p-0 font-mono"
-                :ui="{ label: 'truncate' }"
-                @click="openInIde(workspaceId, entry.at.path, entry.line + 1)"
-              />
-            </div>
-          </div>
-        </section>
-        <section v-if="lookup?.readers?.length" class="flex flex-col items-start gap-1">
+        <p v-if="row && 'target' in row" class="flex min-w-0 items-center gap-1.5 text-12 text-muted">
+          In {{ row.language }} it goes in
+          <SourceLink :workspace-id="workspaceId" :at="sources[row.target]" :line="0" file />
+        </p>
+        <section v-if="readers?.length" class="flex flex-col items-start gap-1">
           <h4 class="text-12 font-semibold">Read by</h4>
-          <UButton
-            v-for="reader in lookup.readers"
+          <SourceLink
+            v-for="reader in readers"
             :key="`${reader.at.path}:${reader.line}:${reader.col}`"
-            :label="`${reader.at.rel}:${reader.line + 1}`"
-            variant="link"
-            size="xs"
-            class="max-w-full p-0 font-mono"
-            :ui="{ label: 'truncate' }"
-            @click="openInIde(workspaceId, reader.at.path, reader.line + 1)"
+            :workspace-id="workspaceId"
+            :at="reader.at"
+            :line="reader.line"
           />
         </section>
       </div>

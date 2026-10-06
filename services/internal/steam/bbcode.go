@@ -6,6 +6,7 @@ package steam
 import (
 	"cmp"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -44,10 +45,14 @@ func renderMarkdown(node ast.Node, src []byte, out *strings.Builder, notes *[]st
 			renderMarkdown(child, src, out, notes, listDepth)
 		}
 	case ast.KindHeading:
-		opening, closing := headingTags(node.(*ast.Heading).Level)
-		out.WriteString(opening)
+		// Steam has three heading sizes; a smaller heading is bold
+		tag := "b"
+		if level := node.(*ast.Heading).Level; level <= 3 {
+			tag = "h" + strconv.Itoa(level)
+		}
+		out.WriteString("[" + tag + "]")
 		writeInlines(node, src, out, notes)
-		out.WriteString(closing + "\n\n")
+		out.WriteString("[/" + tag + "]\n\n")
 	case ast.KindParagraph:
 		writeInlines(node, src, out, notes)
 		out.WriteString("\n\n")
@@ -100,19 +105,6 @@ func renderMarkdown(node ast.Node, src []byte, out *strings.Builder, notes *[]st
 		for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 			renderMarkdown(child, src, out, notes, listDepth)
 		}
-	}
-}
-
-func headingTags(level int) (string, string) {
-	switch level {
-	case 1:
-		return "[h1]", "[/h1]"
-	case 2:
-		return "[h2]", "[/h2]"
-	case 3:
-		return "[h3]", "[/h3]"
-	default:
-		return "[b]", "[/b]"
 	}
 }
 
@@ -320,14 +312,20 @@ func parseTag(src string, i int) (name, arg string, closing bool, end int, ok bo
 	return name, arg, closing, j + 1, name != ""
 }
 
-// closeTag finds name's closing tag from from on: the body before it and where it ends.
+// closeTag finds name's closing tag from from on, in any case: the body before it and where it ends.
+// It compares in place, as lower-casing can change the text's length.
 func closeTag(src string, from int, name string) (body string, after int, ok bool) {
 	needle := "[/" + name + "]"
-	at := strings.Index(strings.ToLower(src[from:]), needle)
-	if at < 0 {
-		return "", from, false
+	for at := from; ; at += 2 {
+		next := strings.Index(src[at:], "[/")
+		if next < 0 {
+			return "", from, false
+		}
+		at += next
+		if end := at + len(needle); end <= len(src) && strings.EqualFold(src[at:end], needle) {
+			return src[from:at], end, true
+		}
 	}
-	return src[from : from+at], from + at + len(needle), true
 }
 
 func listToMarkdown(body string, ordered bool) string {

@@ -6,7 +6,8 @@
  */
 import { computed } from "vue";
 import { useMutation, useQueryCache } from "@pinia/colada";
-import { SetWorkspaceModSlot, UpdateWorkspacePrefs } from "@services/workspaceservice";
+import { SetWorkspaceModSlot } from "@services/workspaceservice";
+import { updatePrefs } from "../composables/useWorkspaceSave";
 import { FONT_SCALES, THEMES, useSettingsStore, type ThemeFamily, type ThemeId } from "../stores/settings";
 import { workspaceKeys } from "../queries";
 import { modColor, useWorkspaceStore } from "../stores/workspace";
@@ -22,13 +23,8 @@ function setScale(value: string | number): void {
   void settings.set("ui.fontScale", String(value));
 }
 
-function setMatchGame(on: boolean): void {
-  void settings.set("ui.matchGameTheme", on ? "on" : "off");
-}
-
 function setToolShown(name: WorkspaceToolName, shown: boolean | "indeterminate"): void {
-  const others = settings.visibleTools.filter((tool) => tool !== name);
-  void settings.setVisibleTools(shown === true ? [...others, name] : others);
+  void settings.showTool(name, shown === true);
 }
 
 /** A family's half in the mode showing now, which its tile previews. */
@@ -63,7 +59,7 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
     for (const mod of workspace.workspaceMods) {
       if (mod.color) await SetWorkspaceModSlot(ws.id, mod.id, mod.slot);
     }
-    if (ws.gameColor) await UpdateWorkspacePrefs(ws.id, ws.resetIdeOnOpen, ws.defaultTool ?? "", "", ws.hideExplorerBinaries);
+    if (ws.gameColor) await updatePrefs(ws, { gameColor: "" });
   },
   onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
@@ -81,7 +77,7 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
       hint="Every theme is the same set of tokens with different values, so all pages and the editor change together. Each comes dark and light: switch with the sun and moon in the top bar."
     >
       <div class="flex items-center gap-2.5">
-        <USwitch id="match-game" :model-value="settings.matchGameTheme" @update:model-value="setMatchGame" />
+        <USwitch id="match-game" :model-value="settings.matchGameTheme" @update:model-value="settings.setMatchGame" />
         <label for="match-game" class="text-13 font-medium whitespace-nowrap">Match the workspace's game</label>
         <span class="truncate text-12 text-dimmed">
           Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere.

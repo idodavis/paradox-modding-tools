@@ -33,6 +33,16 @@ export interface Page {
  */
 export interface PatchEntry {
     "title": string;
+
+    /**
+     * its code name: Crozier
+     */
+    "name"?: string;
+
+    /**
+     * its release date, 2026-09-30, as its note says
+     */
+    "released"?: string;
     "version": string;
 
     /**

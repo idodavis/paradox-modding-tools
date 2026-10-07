@@ -59,6 +59,13 @@ export function DocumentSymbols(workspaceID: string, path: string): $Cancellable
     return $Call.ByID(2046626823, workspaceID, path);
 }
 
+/**
+ * FindLoc is the localization keys that start with a prefix, at most limit, each at its entry (the palette's #).
+ */
+export function FindLoc(workspaceID: string, prefix: string, limit: number): $CancellablePromise<lsp$0.Symbol[] | null> {
+    return $Call.ByID(3583534390, workspaceID, prefix, limit);
+}
+
 export function FoldingRanges(workspaceID: string, path: string): $CancellablePromise<lsp$0.FoldingRange[] | null> {
     return $Call.ByID(2841121370, workspaceID, path);
 }
@@ -81,6 +88,13 @@ export function InlayHints(workspaceID: string, path: string): $CancellablePromi
 
 export function References(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.Location[] | null> {
     return $Call.ByID(3329907361, workspaceID, path, line, col);
+}
+
+/**
+ * Rename is the edits that rename the name at a place everywhere the mods write it, or why it cannot (F2).
+ */
+export function Rename(workspaceID: string, path: string, line: number, col: number, name: string): $CancellablePromise<lsp$0.WorkspaceEdit | null> {
+    return $Call.ByID(732777145, workspaceID, path, line, col, name);
 }
 
 /**

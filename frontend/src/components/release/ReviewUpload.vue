@@ -5,16 +5,19 @@
  * comparison, O-R40), the Steam item and its change note, and Upload, off until everything is saved, whose result
  * stays on screen. Paradox Mods takes the description as BBCode to paste.
  */
-import { computed, shallowRef } from "vue";
+import { computed, onScopeDispose, shallowRef } from "vue";
 import { useClipboard } from "@vueuse/core";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
-import { Browser } from "@wailsio/runtime";
+import { Browser, Events } from "@wailsio/runtime";
 import type { RadioGroupItem } from "@nuxt/ui";
 import type { Listing, ListingSummary, SteamCompare } from "@services/models";
-import { Convert, ImportSteamExtras, PublishSteam } from "@services/releaseservice";
+import type { Progress } from "@services/internal/steam/models";
+import { Convert, ExportZip, ImportSteamExtras, PublishSteam } from "@services/releaseservice";
+import { OpenFolder } from "@services/workspaceservice";
+import { pickSave } from "../../lib/nativeDialog";
 import { useLiveEnabled } from "../../composables/useLiveEnabled";
 import { rowsOf, sitesOf } from "../../composables/useHealth";
-import { healthQuery, imageQuery, languageQuery, releaseKeys, uploadFilesQuery } from "../../queries";
+import { healthQuery, imageQuery, languageQuery, releaseKeys, steamStatusQuery, uploadFilesQuery } from "../../queries";
 import { bytes, plural } from "../../lib/format";
 
 // saved: nothing unsaved, so an upload sends what is on screen
@@ -30,6 +33,11 @@ const { data: upload } = useQuery(() => uploadFilesQuery(ids.value));
 const { data: image } = useQuery(() => imageQuery(listing.thumbnailAbs));
 
 const where = shallowRef("steam");
+// whether Steam can take the upload now, asked when the step shows and on Check again
+const { data: steamProblem, refetch: checkSteam, isLoading: checkingSteam } = useQuery(() => steamStatusQuery({ id: listing.workspaceId, enabled: where.value === "steam" }));
+// the upload moving, while it runs
+const moved = shallowRef<Progress | null>(null);
+onScopeDispose(Events.On("steam:progress", ({ data }) => (moved.value = data)));
 const places: RadioGroupItem[] = [
   { label: "Steam Workshop", description: "PMT uploads through your Steam client. Steam must be running and signed in.", value: "steam" },
   { label: "Paradox Mods", description: "PMT prepares the description; you upload the mod with the Paradox Launcher.", value: "pdx" },
@@ -90,8 +98,23 @@ const ICONS: Record<string, [string, string]> = {
   undefined: ["i-lucide-file", "text-dimmed"],
 };
 
+// the upload copy (the ignore rules applied) as a zip for the Paradox Mods site, then shown in its folder
+const toast = useToast();
+const { mutate: exportZip, isLoading: zipping } = useMutation({
+  mutation: async () => {
+    const dest = await pickSave("Save the mod as a zip", `${listing.name || "mod"}.zip`, "*.zip");
+    if (dest) await ExportZip(listing.workspaceId, listing.modId, dest);
+    return dest;
+  },
+  onSuccess: (dest) =>
+    dest && toast.add({ title: "Zip saved", description: dest, color: "success", actions: [{ label: "Show in folder", onClick: () => void OpenFolder(dest.replace(/[\\/][^\\/]*$/, "")) }] }),
+});
+
 const { mutate: publish, isLoading: publishing, data: published } = useMutation({
-  mutation: () => PublishSteam(listing.workspaceId, listing.modId),
+  mutation: () => {
+    moved.value = null;
+    return PublishSteam(listing.workspaceId, listing.modId);
+  },
   onSettled: () => queryCache.invalidateQueries({ key: releaseKeys.mod(listing.workspaceId, listing.modId) }),
 });
 const openAgreement = () => Browser.OpenURL(published.value?.legalUrl ?? "");
@@ -186,12 +209,16 @@ async function copyBBCode(): Promise<void> {
           Paradox Mods takes the description as BBCode: copy it, open the Paradox Launcher, choose Upload Mod, pick this mod and
           Paradox Mods, and paste it. The site often drops line breaks. Screenshots and the thumbnail are added on the site.
         </p>
-        <UButton
-          :label="copied ? 'Copied' : 'Copy the description as BBCode'"
-          icon="i-lucide-clipboard"
-          :disabled="summary.descSource === 'steam' && !steamText"
-          @click="copyBBCode"
-        />
+        <div class="flex flex-wrap gap-2">
+          <UButton
+            :label="copied ? 'Copied' : 'Copy the description as BBCode'"
+            icon="i-lucide-clipboard"
+            :disabled="summary.descSource === 'steam' && !steamText"
+            @click="copyBBCode"
+          />
+          <UButton label="Save the mod as a zip" icon="i-lucide-file-archive" variant="outline" :loading="zipping" @click="exportZip()" />
+        </div>
+        <p class="text-12 text-dimmed">The zip holds what an upload sends (the ignore rules applied), for uploading on the Paradox Mods site.</p>
       </div>
     </div>
 
@@ -213,7 +240,11 @@ async function copyBBCode(): Promise<void> {
       <UButton label="Back to version and change note" icon="i-lucide-arrow-left" variant="ghost" @click="emit('back')" />
       <span class="grow" />
       <template v-if="where === 'steam'">
-        <span v-if="!saved" class="text-12 text-dimmed">Save to workspace first</span>
+        <span v-if="steamProblem" class="flex min-w-0 items-center gap-1.5 text-12 text-warning">
+          <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0" /><span class="truncate" :title="steamProblem">{{ steamProblem }}</span>
+          <UButton label="Check again" variant="link" size="xs" class="shrink-0 p-0" :loading="checkingSteam" @click="checkSteam()" />
+        </span>
+        <span v-else-if="!saved" class="text-12 text-dimmed">Save to workspace first</span>
         <span v-else class="text-12 text-dimmed">
           Uploading accepts the
           <UButton label="Steam Workshop agreement" variant="link" class="p-0 text-12" @click="Browser.OpenURL(listing.legalUrl)" />.
@@ -229,6 +260,13 @@ async function copyBBCode(): Promise<void> {
         />
       </template>
     </div>
-    <UModal :open="publishing" title="Uploading to Steam" description="Steam must be running. This can take several minutes." :dismissible="false" />
+    <UModal :open="publishing" title="Uploading to Steam" description="Steam must be running. This can take several minutes." :dismissible="false">
+      <template #body>
+        <div class="flex flex-col gap-2">
+          <span class="text-13 text-toned">{{ moved?.stage ?? "Starting Steam" }}<template v-if="moved?.total"> · {{ bytes(moved.done) }} of {{ bytes(moved.total) }}</template></span>
+          <UProgress :model-value="moved?.total ? (moved.done * 100) / moved.total : null" />
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

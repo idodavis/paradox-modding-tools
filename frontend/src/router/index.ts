@@ -7,7 +7,7 @@ import { Events } from "@wailsio/runtime";
 import UnsavedChangesModal from "../components/UnsavedChangesModal.vue";
 import { useIdeStore } from "../stores/ide";
 import { useWorkspaceStore } from "../stores/workspace";
-import { dockEditors, isMain, others } from "../windows";
+import { dock, isMain, others } from "../windows";
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -62,7 +62,7 @@ router.beforeEach(async (to, from) => {
   // another workspace's files would take the editors' place: the editor windows hand theirs back, then the unsaved
   // edits are saved or dropped, or we stay
   const ide = useIdeStore();
-  if (isMain && ide.editing && to.params.id !== ide.editing) await dockEditors();
+  if (isMain && ide.editing && to.params.id !== ide.editing) await dock((one) => one.name.startsWith("editor:"));
   if (ide.unsaved.size && ide.editing && to.params.id !== ide.editing && !(await unsavedModal.open())) return false;
   useWorkspaceStore().select(to.params.id);
 });

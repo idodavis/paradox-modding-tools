@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -19,12 +20,11 @@ import (
 const openTableRows = 2 // a table of more rows is kept folded
 
 var (
-	dropHead    = map[string]bool{"see also": true, "references": true, "external links": true, "further reading": true}
-	moveHead    = map[string]bool{"scripting tools": true}
-	keepModding = map[string]bool{"modding": true, "user modding": true}
-	dropClass   = map[string]bool{"navbox": true, "infobox": true, "eu4box": true, "thumb": true, "noprint": true, "metadata": true, "reference": true, "references": true}
-	dropTag     = map[atom.Atom]bool{atom.Img: true, atom.Figure: true, atom.Script: true, atom.Style: true, atom.Noscript: true, atom.Iframe: true}
-	allowed     = map[atom.Atom]bool{}
+	dropHead  = map[string]bool{"see also": true, "references": true, "external links": true, "further reading": true}
+	moveHead  = map[string]bool{"scripting tools": true}
+	dropClass = map[string]bool{"navbox": true, "infobox": true, "eu4box": true, "thumb": true, "noprint": true, "metadata": true, "reference": true, "references": true}
+	dropTag   = map[atom.Atom]bool{atom.Img: true, atom.Figure: true, atom.Script: true, atom.Style: true, atom.Noscript: true, atom.Iframe: true}
+	allowed   = map[atom.Atom]bool{}
 )
 
 func init() {
@@ -79,10 +79,16 @@ func clean(raw, base string) (page string, sections []Section, modding bool) {
 		node.Attr = []html.Attribute{{Key: "id", Val: id}}
 		sections = append(sections, Section{TocLevel: rank(node), Line: line, Anchor: id})
 	}
-	modding = slices.ContainsFunc(nodes, func(node *html.Node) bool {
-		return rank(node) > 0 && keepModding[strings.ToLower(strings.TrimSpace(text(node)))]
+	return render(nodes), sections, hasModding(sections)
+}
+
+// hasModding is whether a heading among sections, at any depth, names a patch note's modding section: Modding or User
+// modding, read by its words alone, since the wiki also writes "User-modding" and leaves zero-width spaces in headings.
+func hasModding(sections []Section) bool {
+	return slices.ContainsFunc(sections, func(section Section) bool {
+		words := strings.Join(strings.FieldsFunc(strings.ToLower(section.Line), func(r rune) bool { return !unicode.IsLetter(r) }), " ")
+		return words == "modding" || words == "user modding"
 	})
-	return render(nodes), sections, modding
 }
 
 // copyAllowed appends a copy of in's children to out that keeps the allowed tags and attributes,

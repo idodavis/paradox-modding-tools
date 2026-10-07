@@ -8,6 +8,7 @@
 import { computed, shallowRef, watch } from "vue";
 import { createReusableTemplate, useClipboard } from "@vueuse/core";
 import type { Cited, Detail, Version } from "@services/models";
+import type { Fire } from "@services/internal/session/models";
 import { kindOf } from "../../composables/useEventGraph";
 import { useOpenInIde } from "../../composables/useOpenInIde";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -24,6 +25,8 @@ const language = computed(() => store.activeWorkspace?.defaultLocLang ?? "");
 
 /** A key or word as a label: its first letter capital, its underscores spaces. */
 const sentence = (text: string) => capital(text).replaceAll("_", " ");
+/** Where a fire sits and what fires it, as written: "option a · trigger_event, days = 30". */
+const how = (fire: Fire) => [fire.block, [fire.command, fire.args].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
 
 // the version each stepper shows, by its id; each starts at the first
 const at = shallowRef<Record<string, number>>({});
@@ -228,7 +231,9 @@ function open(path: string, line: number): void {
               :title="fire.via ? `Through ${fire.via}` : 'Directly'"
             >
               <UIcon :name="kindOf(fire.kind).icon" class="size-3.5 shrink-0" :style="{ color: kindOf(fire.kind).color }" />
-              <UButton :label="fire.name" variant="link" color="neutral" size="xs" class="min-w-0 p-0 font-mono text-highlighted" :ui="{ label: 'truncate' }" @click="emit('root', fire.name)" />
+              <UButton :label="fire.name" variant="link" color="neutral" size="xs" class="min-w-0 shrink-0 p-0 font-mono text-highlighted" @click="emit('root', fire.name)" />
+              <!-- where it fires, opening its line in the IDE -->
+              <button v-if="how(fire)" type="button" class="min-w-0 cursor-pointer truncate text-11 text-muted hover:text-highlighted hover:underline" :title="`${how(fire)}: open line ${fire.line + 1}`" @click="openInIde(workspaceId, fire.path, fire.line + 1)">{{ how(fire) }}</button>
               <span class="grow" />
               <UBadge
                 :label="fire.through ? plural(fire.through, 'effect') : 'direct'"
@@ -256,7 +261,7 @@ function open(path: string, line: number): void {
               </span>
             </h4>
             <div class="flex flex-wrap gap-1 px-2">
-              <UTooltip v-for="fire in firedBy" :key="`${fire.name}:${fire.via}`" :text="fire.via ? `Through ${fire.via}` : 'Directly'">
+              <UTooltip v-for="fire in firedBy" :key="`${fire.name}:${fire.via}`" :text="[how(fire), fire.via ? `through ${fire.via}` : ''].filter(Boolean).join(', ') || 'Directly'">
                 <UButton :label="fire.name" variant="outline" size="xs" class="font-mono" @click="emit('root', fire.name)" />
               </UTooltip>
               <UButton

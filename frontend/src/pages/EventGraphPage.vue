@@ -10,7 +10,7 @@ import { useElementSize, useFullscreen, useLocalStorage } from "@vueuse/core";
 import { useEventGraph } from "../composables/useEventGraph";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { useWorkspaceStore } from "../stores/workspace";
-import { countKinds, plural } from "../lib/format";
+import { plural } from "../lib/format";
 
 const { id: workspaceId } = defineProps<{ id: string }>();
 
@@ -32,14 +32,14 @@ const panelHeight = useLocalStorage("pmt.graph.panelHeight", 320);
 const below = computed(() => layout.value === "panel" && !isFullscreen.value);
 
 const rootKind = computed(() => graph.value?.nodes?.find((node) => node.root)?.kind ?? "");
-// each kind drawn and each origin, with how many nodes of it
-const kinds = computed(() => countKinds((graph.value?.nodes ?? []).filter((node) => !node.stub)));
+// each kind and each origin, with how many of the graph's reach are of it (Go counts with no fan-out or node cap)
+const kinds = computed(() => Object.entries(graph.value?.kinds ?? {}).map(([kind, count]) => ({ kind, count: count ?? 0 })));
 const origins = computed(() =>
   [store.originVanilla, ...store.workspaceMods.map((mod) => mod.id)].map((id) => ({
     id,
     label: store.originName(id),
     color: store.originColor(id),
-    count: (graph.value?.nodes ?? []).filter((node) => (node.origin ?? "") === id && !node.stub).length,
+    count: graph.value?.origins?.[id] ?? 0,
   })),
 );
 const folded = computed(() => shown.value.nodes.filter((node) => node.stub).length);
@@ -67,6 +67,7 @@ watch(() => workspaceId, () => setRoot(""));
       :searching="searching"
       :root-kind="rootKind"
       :nodes="shown.nodes.length"
+      :reach="graph?.reach ?? 0"
       @update:root="setRoot"
       @fit="canvas?.fit()"
       @collapse="params.expand = []"
@@ -94,6 +95,7 @@ watch(() => workspaceId, () => setRoot(""));
           :nodes="shown.nodes"
           :edges="shown.edges"
           :positions="laid.positions"
+          :routes="laid.routes"
           :heads="laid.heads"
           :root-id="params.root"
           :selected-id="selected"

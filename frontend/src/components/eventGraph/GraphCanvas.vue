@@ -3,10 +3,22 @@
  * The graph on its canvas (pmt.css .gcanvas, .ge, .colh): Vue Flow over the laid-out nodes, a head over each
  * column by its step from the root, the legend, zoom and the minimap. With a node selected, what is off a
  * route from the root to it, but for its neighbors, fades, and the route's fires are drawn in the link
- * color, the selected node's own with what they pass through. Zoomed out, the nodes show their ids only, which full screen says.
+ * color, the selected node's own with what they pass through. A fire back to an earlier column runs along the route
+ * the layout gave it, between the nodes, and stays faint until it is lit, as one within its column does. Zoomed out,
+ * the nodes show their ids only, which full screen says.
  */
 import { computed, watch } from "vue";
-import { VueFlow, useVueFlow, type Edge as FlowEdge, type Node as FlowNode, type NodeMouseEvent } from "@vue-flow/core";
+import {
+  BaseEdge,
+  EdgeLabelRenderer,
+  VueFlow,
+  getBezierPath,
+  useVueFlow,
+  type Edge as FlowEdge,
+  type EdgeProps,
+  type Node as FlowNode,
+  type NodeMouseEvent,
+} from "@vue-flow/core";
 import { MiniMap } from "@vue-flow/minimap";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
@@ -14,10 +26,12 @@ import type { Edge, Node } from "@services/models";
 import { reach } from "../../composables/useEventGraph";
 import { plural } from "../../lib/format";
 
-const { nodes, edges, positions, heads, rootId, selectedId, depth, full = false } = defineProps<{
+type Point = { x: number; y: number };
+const { nodes, edges, positions, routes, heads, rootId, selectedId, depth, full = false } = defineProps<{
   nodes: Node[];
   edges: Edge[];
-  positions: Map<string, { x: number; y: number }>;
+  positions: Map<string, Point>;
+  routes: Map<string, { points: Point[]; back: boolean }>;
   heads: { x: number; y: number; step: number }[];
   rootId: string;
   selectedId: string;
@@ -31,11 +45,16 @@ const { viewport, setViewport, fitView, zoomIn, zoomOut } = useVueFlow("event-gr
 const lod = computed(() => viewport.value.zoom < 0.7);
 const zoom = computed(() => Math.round(viewport.value.zoom * 100));
 
-// what stays lit: every route from the root to the selected node, and that node's neighbors
+// what stays lit: every route between the root and the selected node along the fires forward (a fire back would loop
+// every event of a shared effect into the route), whichever comes first, and that node's neighbors
 const lit = computed(() => {
   if (!selectedId) return null;
-  const back = reach(edges, selectedId, false);
-  const route = new Set([...reach(edges, rootId, true).keys()].filter((id) => back.has(id)));
+  const ahead = edges.filter((edge) => !routes.get(`${edge.from}->${edge.to}`)?.back);
+  const between = (from: string, to: string) => {
+    const back = reach(ahead, to, false);
+    return [...reach(ahead, from, true).keys()].filter((id) => back.has(id));
+  };
+  const route = new Set([...between(rootId, selectedId), ...between(selectedId, rootId)]);
   const near = new Set([...route, selectedId]);
   for (const edge of edges) {
     if (edge.from === selectedId) near.add(edge.to);
@@ -71,18 +90,45 @@ const flowNodes = computed((): FlowNode[] => [
 ]);
 
 // a fire on the selected route, or into or out of the selected node, is drawn in the link color; one into
-// or out of the selected node is labelled by what it passes through (a dense graph's route is most of it)
+// or out of the selected node is labelled by the blocks it sits in and what it passes through (a dense graph's
+// route is most of it)
 const flowEdges = computed((): FlowEdge[] =>
-  edges.map((edge, i) => ({
-    id: `${edge.from}->${edge.to}:${i}`,
-    source: edge.from,
-    target: edge.to,
-    label: touches(edge) ? edge.via : "",
-    labelBgPadding: [4, 0] as [number, number],
-    labelBgBorderRadius: 3,
-    class: onRoute(edge) || touches(edge) ? "lit" : lit.value ? "dim" : "",
-  })),
+  edges.map((edge, i) => {
+    const route = routes.get(`${edge.from}->${edge.to}`);
+    return {
+      id: `${edge.from}->${edge.to}:${i}`,
+      source: edge.from,
+      target: edge.to,
+      type: "fire",
+      data: route,
+      label: touches(edge) ? [edge.block, edge.via].filter(Boolean).join(" · ") : "",
+      class: onRoute(edge) || touches(edge) ? "lit" : [lit.value && "dim", route?.back && "back"].filter(Boolean).join(" "),
+    };
+  }),
 );
+
+/** A fire's path and its label's place: a loop over its card's top-right corner for one that fires itself, a curve
+ * between its ends, or a fire back's route, the layout's, from the source's side facing its target through the gaps,
+ * level at each bend, labelled midway. */
+function drawn(edge: EdgeProps): [path: string, x: number, y: number] {
+  const at: Point[] = edge.data?.points ?? [];
+  if (edge.source === edge.target) {
+    const { sourceX: x, sourceY: y } = edge;
+    const top = y - edge.sourceNode.dimensions.height / 2;
+    return [`M${x},${y} C${x + 40},${y} ${x + 24},${top - 32} ${x - 16},${top}`, x + 18, top - 14];
+  }
+  if (!at.length) {
+    const [path, x, y] = getBezierPath(edge);
+    return [path, x, y];
+  }
+  const path = at.slice(1).reduce((drawn, to, i) => {
+    const from = at[i];
+    const half = (to.x - from.x) / 2;
+    return `${drawn} C${from.x + half},${from.y} ${to.x - half},${to.y} ${to.x},${to.y}`;
+  }, `M${at[0].x},${at[0].y}`);
+  const mid = at[Math.floor(at.length / 2)];
+  return [path, mid.x, mid.y];
+}
 
 // an opened stub's neighbor stays where it was on the screen while the graph is laid out again
 let anchor: { id: string; x: number; y: number } | undefined;
@@ -146,6 +192,13 @@ defineExpose({ fit: () => fitView({ padding: 0.15, maxZoom: 1 }) });
       @pane-click="emit('clear')"
       @nodes-initialized="fitRoot"
     >
+      <!-- a label sits in the layer over every fire's line, so no line crosses it -->
+      <template #edge-fire="edge">
+        <BaseEdge :id="edge.id" :path="drawn(edge)[0]" />
+        <EdgeLabelRenderer v-if="edge.label">
+          <span class="fire-label" :style="{ transform: `translate(-50%, -50%) translate(${drawn(edge)[1]}px, ${drawn(edge)[2]}px)` }">{{ edge.label }}</span>
+        </EdgeLabelRenderer>
+      </template>
       <template #node-head="{ data }">
         <span class="pointer-events-none text-11 font-medium whitespace-nowrap text-dimmed">{{ data.label }}</span>
       </template>
@@ -219,13 +272,19 @@ defineExpose({ fit: () => fitView({ padding: 0.15, maxZoom: 1 }) });
 .graph :deep(.vue-flow__edge.dim) {
   opacity: 0.35;
 }
-.graph :deep(.vue-flow__edge-text) {
-  fill: var(--link);
+.graph :deep(.vue-flow__edge.back) {
+  opacity: 0.2;
+}
+.fire-label {
+  position: absolute;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-0);
+  color: var(--link);
   font-family: var(--font-mono);
   font-size: 10.5px;
-}
-.graph :deep(.vue-flow__edge-textbg) {
-  fill: var(--bg-0);
+  white-space: nowrap;
+  pointer-events: none;
 }
 .graph :deep(.vue-flow__minimap) {
   inset: auto 12px 12px auto;

@@ -272,7 +272,7 @@ func TestEventGraph(t *testing.T) {
 	if _, ok := edge(drawn, "m.1", "m_fire"); !ok || into.Via != "" || !slices.Contains(ids(drawn), "m_fire") {
 		t.Errorf("the macro drawn: %+v %v", drawn.Edges, ids(drawn))
 	}
-	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0] != (session.Fire{Name: "m.1", Database: "events", Kind: "event", Via: "m_fire", Through: 1}) {
+	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0].Name != "m.1" || detail.FiredBy[0].Kind != "event" || detail.FiredBy[0].Via != "m_fire" || detail.FiredBy[0].Through != 1 {
 		t.Errorf("the detail's fired-by, as the graph draws it: %+v", detail.FiredBy)
 	}
 

@@ -4,5 +4,6 @@
 export type {
     Converted,
     FileChange,
-    Preview
+    Preview,
+    Progress
 } from "./models.js";

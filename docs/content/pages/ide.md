@@ -15,7 +15,7 @@ The window has four parts:
 
 - the **sidebar**: Explorer, Search and Source control, with the IDE settings (the gear) at the end of its row;
 - the **editors**, in one or more groups;
-- the **panel** under them: Problems, Search results and Git output (**Ctrl J** shows or hides it);
+- the **panel** under them: Problems and Git output (**Ctrl J** shows or hides it);
 - the **Wiki** pane on the right (**Ctrl Shift W**).
 
 Every edge between them drags to resize.
@@ -65,7 +65,8 @@ On Paradox script, localization and GUI files:
 | Signature help | What an effect or macro takes, while you fill it in |
 | Go to definition | **F12**, or **Ctrl+click**; on a definition, its references |
 | Peek | **Alt F12** shows the definition in place; each file in it says which mod (or the game) it is in, with that origin's color |
-| References | **Shift F12** in place; **Shift Alt F12** lists them all in Search results |
+| References | **Shift F12** in place; **Shift Alt F12** lists them all in the sidebar's Search |
+| Rename | **F2** renames a name everywhere the mods write it, each file left unsaved to check; refused, with the reason, where the game defines or uses it, two mods define it, or the new name is taken |
 | Format | **Shift Alt F** |
 | Folding | By the file's blocks |
 | Quick fixes | Add a missing UTF-8 BOM; create a missing localization key |
@@ -116,7 +117,10 @@ It turns the checks off on its own line and the next one; with codes, only those
 ## Search
 
 **Ctrl Shift F** opens Search in the sidebar: text or a regular expression, with Match case and Whole word, files to
-include and exclude (`common/**, *.txt`), and the folders to search. Hits fill Search results in the panel.
+include and exclude (`common/**, *.txt`), and the folders to search. It searches as you type, once you pause
+(**Enter** searches at once). Hits list under the search as they are found, by file, each named with its mod (or the
+game) and folder as a peek names it; once 500 hits show, the files after are listed folded. Click a file to fold or
+unfold its hits, and a hit to open its line.
 
 **Replace all** asks first, then writes the replacement into the mods' files on disk; a file open in an editor is
 changed there instead, unsaved. Game files are never changed.
@@ -199,7 +203,7 @@ A game file a mod replaces says so on its path's row, **Replaced by** the mod, w
 A file is open in one window at a time: opening it from another brings up the window that has it. Every window shows
 the main window's workspace and follows it to another; editor windows first come back into the main window, so you
 are asked about their unsaved changes. Closing any window but the main one moves what it shows back into the main
-window; closing the main window closes PMT. The status bar counts the windows, and its menu brings any of them to the
+window; closing the main window closes PMT, after asking about any window's unsaved files. The status bar counts the windows, and its menu brings any of them to the
 front. The tabs of every window come back in the main window the next time the workspace opens.
 
 ## IDE settings
@@ -220,7 +224,7 @@ They apply to every workspace. Each tab can be reset to its defaults.
 
 | Keys | Does |
 |------|------|
-| **Ctrl K**, **Ctrl Shift P** (and **F1** in the editor) | The command palette |
+| **Ctrl K**, **Ctrl Shift P** (and **F1** in the editor) | The command palette: files; `>` commands (Reload the window among them); `@` names in this file; `#` events, on_actions and localization keys |
 | **Ctrl P** | Open a file by name |
 | **Ctrl S** | Save |
 | **Ctrl Shift E** / **Ctrl Shift F** | Explorer / Search |

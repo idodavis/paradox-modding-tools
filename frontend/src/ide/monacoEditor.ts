@@ -431,6 +431,22 @@ monaco.languages.registerReferenceProvider(PARADOX, {
   },
 });
 
+// F2: the name renamed everywhere the mods write it, through the quick fixes' edits (each file's tab opened,
+// unsaved), or the reason it cannot be in Monaco's box
+monaco.languages.registerRenameProvider(PARADOX, {
+  async provideRenameEdits(model, at, name) {
+    await told(model);
+    const [line, col] = bytesAt(model, at);
+    try {
+      const edit = await rpc.Rename(workspaceId, pathOf(model), line, col, name);
+      if (edit) await applyFix({ title: `Rename to ${name}`, edit });
+      return { edits: [] };
+    } catch (error) {
+      return { edits: [], rejectReason: error instanceof Error ? error.message : String(error) };
+    }
+  },
+});
+
 monaco.languages.registerDocumentFormattingEditProvider(PARADOX, {
   async provideDocumentFormattingEdits(model) {
     await told(model);

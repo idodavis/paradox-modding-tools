@@ -16,6 +16,11 @@ export function pickFile(title: string, filter: string, directory?: string): Pro
   return picked(Dialogs.OpenFile({ Title: title, CanChooseFiles: true, Filters: filters, Directory: directory }));
 }
 
+/** Where to save a file, named name to start with. */
+export function pickSave(title: string, name: string, filter: string): Promise<string> {
+  return picked(Dialogs.SaveFile({ Title: title, Filename: name, Filters: [{ DisplayName: filter, Pattern: filter }] }));
+}
+
 // Wails rejects a cancelled dialog ("cancelled by user"); any other failure still throws
 function picked(choice: Promise<string>): Promise<string> {
   return choice.catch((error: unknown) => {

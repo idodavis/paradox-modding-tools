@@ -25,6 +25,13 @@ export function Open(route: string, name: string, title: string): $CancellablePr
 }
 
 /**
+ * QuitAnswer is the main window's answer to its close: quit, or stay, its next close asking again.
+ */
+export function QuitAnswer(quit: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1863345978, quit);
+}
+
+/**
  * Show brings the window with a name to the front.
  */
 export function Show(name: string): $CancellablePromise<void> {

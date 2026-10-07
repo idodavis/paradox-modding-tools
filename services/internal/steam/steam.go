@@ -14,6 +14,7 @@
 package steam
 
 import (
+	"bufio"
 	"bytes"
 	"cmp"
 	"context"
@@ -52,7 +53,18 @@ type Request struct {
 	KeepExtras      bool     `json:"keepExtras,omitempty"` // leave Steam's extra images and videos as they are
 	Download        bool     `json:"download,omitempty"`
 	PageOnly        bool     `json:"pageOnly,omitempty"`
+	Status          bool     `json:"status,omitempty"` // only whether Steam can take an upload now
 }
+
+// Progress is a publish's upload as Steam tells it: its stage in words, and the bytes done of the total.
+type Progress struct {
+	Stage string `json:"stage"`
+	Done  uint64 `json:"done"`
+	Total uint64 `json:"total"`
+}
+
+// progressPrefix starts a progress line on the child's stderr; any other line there is what it said failing.
+const progressPrefix = "progress "
 
 // Response is what Steam answered. A download's names the folder Steam put the item in, and the
 // item's page as Steam has it.
@@ -89,8 +101,8 @@ func Library(info *game.GameInfo, installPath string) (string, error) {
 }
 
 // Run runs one request in a child process over library and returns Steam's answer, a known
-// failure turned into advice.
-func Run(library string, req Request) (Response, error) {
+// failure turned into advice; progress, when given, hears the upload move.
+func Run(library string, req Request, progress func(Progress)) (Response, error) {
 	// Steam reads the app id from steam_appid.txt in the working directory
 	dir, err := os.MkdirTemp("", "pmt-steam-*")
 	if err != nil {
@@ -115,23 +127,41 @@ func Run(library string, req Request) (Response, error) {
 	child := exec.CommandContext(ctx, self, serveArg, library)
 	child.Dir = dir
 	child.Stdin = bytes.NewReader(body)
-	out, err := child.Output()
+	var out bytes.Buffer
+	child.Stdout = &out
+	stderr, err := child.StderrPipe()
+	if err != nil {
+		return Response{}, err
+	}
+	if err := child.Start(); err != nil {
+		return Response{}, err
+	}
+	// stderr as it comes: progress lines told, the rest kept as what a crash said
+	var said strings.Builder
+	for lines := bufio.NewScanner(stderr); lines.Scan(); {
+		if line, ok := strings.CutPrefix(lines.Text(), progressPrefix); ok {
+			var moved Progress
+			if json.Unmarshal([]byte(line), &moved) == nil && progress != nil {
+				progress(moved)
+			}
+		} else {
+			said.WriteString(lines.Text() + "\n")
+		}
+	}
+	err = child.Wait()
 
 	var resp Response
-	if len(out) > 0 {
-		_ = json.Unmarshal(out, &resp)
+	if out.Len() > 0 {
+		_ = json.Unmarshal(out.Bytes(), &resp)
 	}
 	if err != nil && resp.Error == "" {
 		// the child states its reason on stdout; one that crashed before that left only stderr
-		if exit, ok := errors.AsType[*exec.ExitError](err); ok {
-			resp.Error = strings.TrimSpace(string(exit.Stderr))
-		}
-		resp.Error = cmp.Or(resp.Error, err.Error())
+		resp.Error = cmp.Or(strings.TrimSpace(said.String()), err.Error())
 	}
 	if resp.Error != "" {
 		return Response{}, errors.New(cmp.Or(eresultHint(resp.Error), resp.Error))
 	}
-	if resp.PublishedFileID == "" {
+	if resp.PublishedFileID == "" && !req.Status {
 		return Response{}, fmt.Errorf("steam returned no published file id")
 	}
 	return resp, nil
@@ -163,6 +193,8 @@ func Serve() (exitCode int, served bool) {
 		switch err := json.NewDecoder(os.Stdin).Decode(&req); {
 		case err != nil:
 			resp.Error = err.Error()
+		case req.Status:
+			resp = status(os.Args[2])
 		case req.Download:
 			resp = download(os.Args[2], req)
 		default:

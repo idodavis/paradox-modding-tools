@@ -20,6 +20,8 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/steam"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const (
@@ -140,6 +142,35 @@ func (r *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles, e
 		}
 	}
 	return files, nil
+}
+
+// EventSteamProgress is a publish's upload moving: data is steam.Progress.
+const EventSteamProgress = "steam:progress"
+
+func init() { application.RegisterEvent[steam.Progress](EventSteamProgress) }
+
+// SteamStatus says why Steam cannot take an upload for a workspace's game now (not running, no account that owns
+// the game signed in, offline); nil when it can. It starts Steam's API in the publish's child, as an upload does.
+func (r *ReleaseService) SteamStatus(workspaceID string) error {
+	ws, _ := r.App.workspace(workspaceID)
+	if ws == nil {
+		return fmt.Errorf("workspace not found")
+	}
+	library, appID, err := r.steamLibrary(ws)
+	if err != nil {
+		return err
+	}
+	_, err = steam.Run(library, steam.Request{AppID: appID, Status: true}, nil)
+	return err
+}
+
+// ExportZip writes a workspace mod's upload copy (its ignore text applied) as a zip at dest, for Paradox Mods.
+func (r *ReleaseService) ExportZip(workspaceID, modID, dest string) error {
+	_, mod, err := findMod(r.App, workspaceID, modID)
+	if err != nil {
+		return err
+	}
+	return steam.ZipMod(mod.Path, dest, mod.WorkshopIgnore)
 }
 
 // LoadListing reads a workspace mod's descriptor and description, writing nothing.
@@ -329,7 +360,7 @@ func (r *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult
 		ExtraPreviews: steam.PreviewFiles(listing.Previews),
 		ExtraVideos:   steam.VideoIDs(listing.Previews),
 		KeepExtras:    len(listing.Previews) == 0,
-	})
+	}, func(moved steam.Progress) { emit(EventSteamProgress, moved) })
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +521,7 @@ func (r *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool)
 	if err != nil {
 		return "", steam.Response{}, err
 	}
-	resp, err := steam.Run(library, steam.Request{AppID: appID, PublishedFileID: fields.RemoteFileID, Download: true, PageOnly: !files})
+	resp, err := steam.Run(library, steam.Request{AppID: appID, PublishedFileID: fields.RemoteFileID, Download: true, PageOnly: !files}, nil)
 	return fields.RemoteFileID, resp, err
 }
 

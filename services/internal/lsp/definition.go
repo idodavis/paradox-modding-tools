@@ -6,10 +6,13 @@ package lsp
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -101,28 +104,93 @@ func References(sess *session.Session, path string, line, col int) ([]Location, 
 	if ref == nil {
 		return nil, nil
 	}
-	sch, indexes := sess.Install.Schema, sess.Indexes()
+	return file.uses(*ref), nil
+}
 
-	// the databases the name is in: its own, or those a call of its kind resolves in
-	databases := []string{ref.Database}
+// databases are the databases a reference's name is in: its own, or those a call of its kind resolves in.
+func databases(sess *session.Session, ref index.Ref) []string {
 	if ref.Called != "" {
-		databases = sch.Callees[ref.Called]
+		return sess.Install.Schema.Callees[ref.Called]
 	}
+	return []string{ref.Database}
+}
+
+// uses are a reference's name everywhere it is written: its uses, and where it is defined.
+func (file *file) uses(ref index.Ref) []Location {
+	sess := file.sess
 	seen, out := map[Location]bool{}, []Location(nil)
 	add := func(site Location) {
 		if !seen[site] {
 			seen[site], out = true, append(out, site)
 		}
 	}
-	for _, database := range databases {
-		for _, found := range index.Uses(sch, indexes, database, ref.Name) {
+	for _, database := range databases(sess, ref) {
+		for _, found := range index.Uses(sess.Install.Schema, sess.Indexes(), database, ref.Name) {
 			add(locate(sess, found.Path, Position{Line: int(found.Line), Character: int(found.Col)}))
 		}
 	}
-	for _, site := range file.sites(*ref) {
+	for _, site := range file.sites(ref) {
 		add(site)
 	}
-	return out, nil
+	return out
+}
+
+// Rename is the edits that rename the name at a place everywhere it is written, in the mods' files. It refuses, with
+// the reason, a name the game defines, one more than one origin defines, a site in the game's files or one that
+// does not read as the name there, and a new name that is no name or is taken.
+func Rename(sess *session.Session, path string, line, col int, name string) (WorkspaceEdit, error) {
+	sess.RLock()
+	defer sess.RUnlock()
+	edit := WorkspaceEdit{Changes: map[string][]TextEdit{}}
+	file, err := open(sess, path)
+	if err != nil {
+		return edit, err
+	}
+	ref := file.target(file.parsed.Lines().OffsetAt(line, col))
+	if ref == nil {
+		return edit, fmt.Errorf("nothing here to rename")
+	}
+	if !jomini.IsDefName(name) {
+		return edit, fmt.Errorf("%q is not a name the game reads", name)
+	}
+	origins := map[string]bool{}
+	for _, database := range databases(sess, *ref) {
+		if len(index.Lookup(sess.Indexes(), database, name)) > 0 {
+			return edit, fmt.Errorf("%s is taken", name)
+		}
+		for _, def := range index.Lookup(sess.Indexes(), database, ref.Name) {
+			listed, _, _ := sess.Located(def.Path)
+			origins[listed.Origin] = true
+		}
+	}
+	switch {
+	case len(origins) == 0:
+		return edit, fmt.Errorf("nothing defines %s", ref.Name)
+	case origins[game.OriginVanilla]:
+		return edit, fmt.Errorf("the game defines %s, and its files never change", ref.Name)
+	case len(origins) > 1:
+		return edit, fmt.Errorf("more than one mod defines %s", ref.Name)
+	}
+	texts := map[string][]string{}
+	for _, site := range file.uses(*ref) {
+		if site.Origin == game.OriginVanilla {
+			return edit, fmt.Errorf("the game's %s uses %s, and its files never change", site.Rel, ref.Name)
+		}
+		if texts[site.Path] == nil {
+			text, err := sess.Text(site.Path)
+			if err != nil {
+				return edit, err
+			}
+			texts[site.Path] = strings.Split(text, "\n")
+		}
+		at, lines := site.Range.Start, texts[site.Path]
+		if at.Line >= len(lines) || !strings.HasPrefix(lines[at.Line][min(at.Character, len(lines[at.Line])):], ref.Name) {
+			return edit, fmt.Errorf("%s:%d does not read %s where it is used; rename it by hand", site.Rel, at.Line+1, ref.Name)
+		}
+		end := Position{Line: at.Line, Character: at.Character + len(ref.Name)}
+		edit.Changes[site.Path] = append(edit.Changes[site.Path], TextEdit{Range: Range{Start: at, End: end}, NewText: name})
+	}
+	return edit, nil
 }
 
 // DocumentSymbols is the definitions a file holds, in the file's order.
@@ -168,6 +236,20 @@ func WorkspaceSymbols(sess *session.Session, query string) []Symbol {
 				out = append(out, Symbol{Name: def.Name, Database: def.Database,
 					Location: defined(sess, def)})
 			}
+		}
+	}
+	return out
+}
+
+// FindLoc is the localization keys that start with a prefix, at most limit, each where its entry in the workspace's
+// language is (the english one where it has none), for the palette's #.
+func FindLoc(sess *session.Session, prefix string, limit int) []Symbol {
+	sess.RLock()
+	defer sess.RUnlock()
+	var out []Symbol
+	for _, key := range sess.LocKeys(strings.ToLower(prefix), limit) {
+		if entry, found := sess.Loc(key, sess.Language); found {
+			out = append(out, Symbol{Name: key, Database: "localization", Location: locate(sess, entry.Path, Position{Line: entry.Line})})
 		}
 	}
 	return out

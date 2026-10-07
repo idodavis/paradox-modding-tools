@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -189,9 +190,9 @@ func compileSearchRegex(query TextSearchQuery) (*regexp.Regexp, error) {
 	return regexp.Compile(pattern)
 }
 
-// searchable is a file's bytes as a search reads them; none where it can't be read, is empty, is over the size cap
-// or is binary.
-func searchable(path string) []byte {
+// searchable is a file's bytes as a search reads them, read into buf (grown as needed; nil for a new one); none where
+// it can't be read, is empty, is over the size cap or is binary.
+func searchable(path string, buf []byte) []byte {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -203,20 +204,40 @@ func searchable(path string) []byte {
 	}
 	// a NUL in the head marks the file binary and the rest is never read, which keeps a mod's meshes
 	// and images out of the search without listing extensions
-	head := make([]byte, min(int64(searchNulProbe), info.Size()))
+	size, probe := int(info.Size()), min(searchNulProbe, int(info.Size()))
+	head := slices.Grow(buf[:0], probe)[:probe]
 	if _, err := io.ReadFull(file, head); err != nil || bytes.IndexByte(head, 0) >= 0 {
 		return nil
 	}
-	rest, err := io.ReadAll(file)
-	if err != nil {
+	data := slices.Grow(head, size-probe)[:size]
+	if _, err := io.ReadFull(file, data[probe:]); err != nil {
 		return nil
 	}
-	return append(head, rest...)
+	return data
 }
 
-// grepFile is path's matches.
-func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool) []TextSearchHit {
-	data := searchable(path)
+// containsFold is whether data holds lit in any case, lit lower-cased ASCII, compared in place.
+func containsFold(data, lit []byte) bool {
+	cases := string(lit[0]) + strings.ToUpper(string(lit[0]))
+	for len(data) >= len(lit) {
+		at := bytes.IndexAny(data, cases)
+		if at < 0 || len(data)-at < len(lit) {
+			return false
+		}
+		if bytes.EqualFold(data[at:at+len(lit)], lit) {
+			return true
+		}
+		data = data[at+1:]
+	}
+	return false
+}
+
+// grepFile is path's matches, the file read into buf, which keeps what it grew to for the next file.
+func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool, buf *[]byte) []TextSearchHit {
+	data := searchable(path, *buf)
+	if data != nil {
+		*buf = data[:0]
+	}
 	if data == nil || !holds(data) {
 		return nil
 	}
@@ -253,9 +274,38 @@ func textSearchFolder(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// a worker per core, each with its own read buffer for the whole search, greps the files the walk hands it
 	var mu sync.Mutex
 	var group errgroup.Group
-	group.SetLimit(runtime.NumCPU())
+	files := make(chan [2]string)
+	for range runtime.NumCPU() {
+		group.Go(func() error {
+			var buf []byte
+			for file := range files {
+				if ctx.Err() != nil {
+					continue
+				}
+				path, rel := file[0], file[1]
+				fileHits := grepFile(path, re, holds, &buf)
+				for i := range fileHits {
+					fileHits[i].Rel, fileHits[i].Folder = filepath.ToSlash(rel), folder
+				}
+				// a file's hits are sent as it is done, as many as the cap leaves
+				mu.Lock()
+				kept := fileHits[:min(len(fileHits), maxHits-found)]
+				found += len(kept)
+				if len(kept) > 0 {
+					send(kept)
+				}
+				if len(kept) < len(fileHits) {
+					limitHit = true
+					cancel()
+				}
+				mu.Unlock()
+			}
+			return nil
+		})
+	}
 
 	// only a cancel ends the walk early, and the caller's ctx already says so
 	_ = searchFiles(ctx, root, gs, func(path, rel string) error {
@@ -263,30 +313,14 @@ func textSearchFolder(
 		if source.Classify(path, filepath.ToSlash(rel)) == source.Image {
 			return nil
 		}
-		group.Go(func() error {
-			if ctx.Err() != nil {
-				return nil
-			}
-			fileHits := grepFile(path, re, holds)
-			for i := range fileHits {
-				fileHits[i].Rel, fileHits[i].Folder = filepath.ToSlash(rel), folder
-			}
-			// a file's hits are sent as it is done, as many as the cap leaves
-			mu.Lock()
-			defer mu.Unlock()
-			kept := fileHits[:min(len(fileHits), maxHits-found)]
-			found += len(kept)
-			if len(kept) > 0 {
-				send(kept)
-			}
-			if len(kept) < len(fileHits) {
-				limitHit = true
-				cancel()
-			}
+		select {
+		case files <- [2]string{path, rel}:
 			return nil
-		})
-		return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	})
+	close(files)
 	_ = group.Wait()
 	return found, limitHit
 }
@@ -322,20 +356,21 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 	if err != nil {
 		return TextSearchResult{}, fmt.Errorf("invalid pattern: %w", err)
 	}
-	// a plain query is first looked for in the whole of a file, lower-cased where case is ignored;
-	// most files fail that, and only one that holds it is matched line by line
+	// a plain query is first looked for in the whole of a file, in any case where case is ignored (an ASCII one
+	// compared in place, any other in a lower-cased copy); most files fail that, and only one that holds it is matched
+	// line by line
 	holds := func(data []byte) bool { return true }
-	if !query.IsRegexp {
-		literal := []byte(query.Pattern)
-		if !query.IsCaseSensitive {
-			literal = bytes.ToLower(literal)
-		}
-		holds = func(data []byte) bool {
-			if !query.IsCaseSensitive {
-				data = bytes.ToLower(data)
-			}
-			return bytes.Contains(data, literal)
-		}
+	literal := []byte(query.Pattern)
+	switch ascii := utf8.RuneCount(literal) == len(literal); {
+	case query.IsRegexp:
+	case query.IsCaseSensitive:
+		holds = func(data []byte) bool { return bytes.Contains(data, literal) }
+	case ascii:
+		literal = bytes.ToLower(literal)
+		holds = func(data []byte) bool { return containsFold(data, literal) }
+	default:
+		literal = bytes.ToLower(literal)
+		holds = func(data []byte) bool { return bytes.Contains(bytes.ToLower(data), literal) }
 	}
 	send := func(hits []TextSearchHit) { emit(EventSearchHits, TextSearchHits{ID: query.ID, Hits: hits}) }
 	maxHits := capResults(query.MaxResults)
@@ -385,7 +420,7 @@ func (s *SearchService) Replace(ctx context.Context, query TextReplaceQuery) (Te
 			if skip[key(path)] || source.Classify(path, filepath.ToSlash(rel)) == source.Image {
 				return nil
 			}
-			data := searchable(path)
+			data := searchable(path, nil)
 			if data == nil {
 				return nil
 			}

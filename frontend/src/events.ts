@@ -16,8 +16,9 @@ import { useGitStore } from "./stores/git";
 import { useIdeStore } from "./stores/ide";
 import { useSettingsStore } from "./stores/settings";
 import { useWorkspaceStore } from "./stores/workspace";
-import { Show } from "@services/windowservice";
-import { held, holdsFiles, isMain, others, receiveTabs, roots, windowName, windowPart } from "./windows";
+import { QuitAnswer, Show } from "@services/windowservice";
+import UnsavedChangesModal from "./components/UnsavedChangesModal.vue";
+import { dock, held, holdsFiles, isMain, others, receiveTabs, roots, windowName, windowPart } from "./windows";
 import { fileName } from "./lib/format";
 import { PAGES } from "./workspaceTools";
 
@@ -59,6 +60,7 @@ export function subscribeEvents(router: Router): void {
 
   const ide = useIdeStore();
   const store = useWorkspaceStore();
+  const unsavedModal = useOverlay().create(UnsavedChangesModal);
   const settings = useSettingsStore();
   const route = router.currentRoute;
   // a window's title: what it shows, then its workspace
@@ -82,17 +84,14 @@ export function subscribeEvents(router: Router): void {
     title: title.value,
     roots: roots.value,
     tabs: ide.openFiles,
+    unsaved: [...ide.unsaved],
     problems: Object.fromEntries(ide.problems),
   }));
   const ready = computed(() => !holdsFiles || isMain || !!ide.editing);
   const tell = () => ready.value && void Events.Emit("window:held", holding.value);
   watchDebounced([holding, ready, () => others.size], () => others.size && tell(), { debounce: 100 });
-  // a window opened asks what the others hold; the panel's window also gets the Search results
-  Events.On("window:hello", ({ data: name }) => {
-    if (name === windowName) return;
-    tell();
-    if (name === "panel" && holdsFiles && ide.results) void Events.Emit("window:results", ide.results);
-  });
+  // a window opened asks what the others hold
+  Events.On("window:hello", ({ data: name }) => name !== windowName && tell());
   Events.On("window:held", ({ data }) => data.name !== windowName && held(data));
   void Events.Emit("window:hello", windowName);
   // a window closed: its tabs came back before; the panel shows here again
@@ -103,11 +102,16 @@ export function subscribeEvents(router: Router): void {
   // this window asked to close: its tabs go back to the main window first
   Events.On("window:closing", async ({ data: name }) => {
     if (name !== windowName) return;
+    // the main window's close: the windows with unsaved files hand them here, then they are saved, dropped, or PMT stays
+    if (isMain) {
+      await dock((one) => !!one.unsaved?.length);
+      return void QuitAnswer(!ide.unsaved.size || (await unsavedModal.open({ going: "Closing PMT" })));
+    }
     if (ide.openFiles.length) await (await import("./ide/monacoEditor")).handOver("main", ide.openFiles, ide.activePath);
     void Window.Close();
   });
   Events.On("window:tabs", ({ data }) => {
-    if (data.to === windowName) receiveTabs(async () => (await import("./ide/monacoEditor")).receive(data));
+    if (data.to === windowName) receiveTabs((data.tabs ?? []).map((one) => one.tab), async () => (await import("./ide/monacoEditor")).receive(data));
   });
   // a tab this window holds, dragged into another
   Events.On("window:give", async ({ data }) => {
@@ -126,14 +130,20 @@ export function subscribeEvents(router: Router): void {
     await Show(windowName);
   });
 
-  // the panel's window shows every window's problems, and the Search results the others find
+  // the panel's window shows every window's problems
   if (windowPart === "panel") {
     watch(others, () => {
       ide.problems = new Map([...others.values()].flatMap((one) => Object.entries(one.problems ?? {}).map(([path, found]) => [path, found ?? []])));
     });
-    Events.On("window:results", ({ data }) => (ide.results = { ...data, rows: data.rows ?? [] }));
+  }
+  // the main window's sidebar shows the Search results another window finds (its references)
+  if (isMain) {
+    Events.On("window:results", ({ data }) => {
+      ide.results = { ...data, rows: data.rows ?? [] };
+      ide.sidebar = "search";
+    });
   } else if (holdsFiles) {
-    watch(() => ide.results, (results) => results && others.has("panel") && void Events.Emit("window:results", results));
+    watch(() => ide.results, (results) => results && void Events.Emit("window:results", results));
   }
 
   // another window saved: what this one shows is read again

@@ -62,6 +62,13 @@ export function DownloadFromSteam(workspaceID: string, modID: string): $Cancella
 }
 
 /**
+ * ExportZip writes a workspace mod's upload copy (its ignore text applied) as a zip at dest, for Paradox Mods.
+ */
+export function ExportZip(workspaceID: string, modID: string, dest: string): $CancellablePromise<void> {
+    return $Call.ByID(1041716119, workspaceID, modID, dest);
+}
+
+/**
  * ImportSteamExtras brings the extra images and videos the mod's Workshop item has and the mod lacks into
  * its workshop folder, so an upload keeps them.
  */
@@ -119,6 +126,14 @@ export function SaveListing($in: $models.Listing): $CancellablePromise<void> {
  */
 export function SetListingLink(workspaceID: string, modID: string, remoteFileID: string, thumbnailRel: string): $CancellablePromise<$models.ListingSummary | null> {
     return $Call.ByID(71003730, workspaceID, modID, remoteFileID, thumbnailRel);
+}
+
+/**
+ * SteamStatus says why Steam cannot take an upload for a workspace's game now (not running, no account that owns
+ * the game signed in, offline); nil when it can. It starts Steam's API in the publish's child, as an upload does.
+ */
+export function SteamStatus(workspaceID: string): $CancellablePromise<void> {
+    return $Call.ByID(858436140, workspaceID);
 }
 
 /**

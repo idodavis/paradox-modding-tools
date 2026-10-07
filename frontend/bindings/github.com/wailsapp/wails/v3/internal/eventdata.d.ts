@@ -8,6 +8,9 @@ import type { Events } from "@wailsio/runtime";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import type * as services$0 from "../../../../../paradox-modding-tools/services/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import type * as steam$0 from "../../../../../paradox-modding-tools/services/internal/steam/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {
@@ -20,6 +23,7 @@ declare module "@wailsio/runtime" {
             "lang:ready": string;
             "lang:scan-progress": services$0.ScanProgress;
             "search:hits": services$0.TextSearchHits;
+            "steam:progress": steam$0.Progress;
             "wiki:updated": services$0.WikiUpdated;
             "window:changed": string;
             "window:closed": string;

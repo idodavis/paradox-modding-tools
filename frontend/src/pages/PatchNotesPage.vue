@@ -26,15 +26,22 @@ const { data: list } = useQuery(() => patchesQuery(gameId.value));
 const pages = computed(() => list.value?.pages ?? []);
 const cached = useTimeAgo(() => list.value?.fetched || Date.now());
 /** A version's row; a hotfix's row is the board's smaller .hot. */
-type Version = { label: string; value: string; modding?: boolean; latest?: boolean; hotfix?: boolean; class?: string };
+type Version = { label: string; value: string; name?: string; modding?: boolean; latest?: boolean; hotfix?: boolean; class?: string };
 // in Go's order: newest first, a version before its hotfixes
 const versions = computed(() =>
   pages.value.map((entry): Version => {
     const key = entry.version || entry.title;
     const hotfix = !!entry.parent;
-    return { label: key, value: key, modding: entry.modding, latest: entry.latest, hotfix, class: hotfix ? "h-6.5 ps-5.5 text-12" : undefined };
+    return { label: key, value: key, name: entry.name, modding: entry.modding, latest: entry.latest, hotfix, class: hotfix ? "h-6.5 ps-5.5 text-12" : undefined };
   }),
 );
+// the shown note's name and release date, as its first sentence gives them: "Crozier · released 30 September 2026"
+const about = computed(() => {
+  const entry = pages.value.find((one) => (one.version || one.title) === selected.value);
+  // the day as written, read as this computer's day (a bare date reads as UTC, a day early here)
+  const released = entry?.released && new Date(`${entry.released}T00:00`).toLocaleDateString(undefined, { dateStyle: "long" });
+  return [entry?.name, released && `released ${released}`].filter(Boolean).join(" · ");
+});
 // the version shown is the route's, else the latest
 const selected = computed({
   get: () => {
@@ -90,7 +97,11 @@ const tocCollapsed = useLocalStorage("pmt.patchNotes.tocCollapsed", false);
         >
           <template #item-label="{ item }">
             <span v-if="item.hotfix" class="font-mono text-11 text-muted">{{ item.label }}</span>
-            <span v-else class="w-13 shrink-0 font-mono text-12 font-medium text-highlighted">{{ item.label }}</span>
+            <!-- the version, then its code name to the right, quieter -->
+            <span v-else class="flex min-w-0 flex-1 items-center gap-2">
+              <span class="shrink-0 font-mono text-12 font-medium text-highlighted">{{ item.label }}</span>
+              <span v-if="item.name" class="ms-auto min-w-0 truncate text-11 text-dimmed">{{ item.name }}</span>
+            </span>
           </template>
           <template #item-trailing="{ item }">
             <UBadge v-if="item.latest" label="Latest" color="success" size="sm" />
@@ -116,6 +127,7 @@ const tocCollapsed = useLocalStorage("pmt.patchNotes.tocCollapsed", false);
       <section class="flex min-w-0 grow flex-col bg-(--bg-0)">
         <div class="flex h-13 shrink-0 items-center gap-3 border-b border-default ps-8 pe-6">
           <h1 class="truncate text-16">{{ page?.title ?? selected }}</h1>
+          <span v-if="about" class="shrink-0 text-12 text-dimmed">{{ about }}</span>
           <span class="grow" />
           <FindBox v-model="query" :hit="hit" :hits="hits" placeholder="Find in these notes" class="w-65 shrink-0" @step="(by) => showHit(hit + by)" />
           <UButton v-if="page?.url" label="Open on the wiki" icon="i-lucide-external-link" variant="ghost" @click="Browser.OpenURL(page.url)" />

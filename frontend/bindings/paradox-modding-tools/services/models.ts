@@ -125,16 +125,20 @@ export interface DirEntry {
 }
 
 /**
- * Edge is one fire drawn; Via names the scripted effects between, in the order they are entered.
+ * Edge is one fire drawn; Via names the scripted effects between, in the order they are entered, and Block the
+ * block of its definition the fire sits in (option a, immediate).
  */
 export interface Edge {
     "from": string;
     "to": string;
     "via": string;
+    "block"?: string;
 }
 
 /**
- * EventGraph is the page's graph; Reason says why it is empty.
+ * EventGraph is the page's graph; Reason says why it is empty. Reach counts what the depth holds with no fan-out
+ * or node cap (the definitions, and the scripted effects between when they are drawn), Kinds and Origins split it
+ * by kind (game.KindName) and by the origin that defines each.
  */
 export interface EventGraph {
     "nodes": Node[] | null;
@@ -145,6 +149,9 @@ export interface EventGraph {
      * truncated: the hop the node cap cut
      */
     "reached"?: number;
+    "reach": number;
+    "kinds": { [_ in string]?: number } | null;
+    "origins": { [_ in string]?: number } | null;
     "reason"?: string;
 }
 
@@ -612,7 +619,7 @@ export interface PanelResult {
 }
 
 /**
- * PanelResults is what the panel's Search results show: what was looked for, its rows so far, and whether it is
+ * PanelResults is what the sidebar's Search results show: what was looked for, its rows so far, and whether it is
  * done or stopped at the cap.
  */
 export interface PanelResults {
@@ -990,13 +997,14 @@ export interface WindowGive {
 
 /**
  * WindowHeld is what a window holds: its title, the folders its explorer shows (their files open there), its tabs,
- * and their files' problems.
+ * the files among them with unsaved edits (which the main window's close asks about), and their files' problems.
  */
 export interface WindowHeld {
     "name": string;
     "title": string;
     "roots": string[] | null;
     "tabs": string[] | null;
+    "unsaved": string[] | null;
     "problems": { [_ in string]?: lsp$0.Diagnostic[] | null } | null;
 }
 

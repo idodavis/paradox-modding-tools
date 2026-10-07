@@ -21,7 +21,7 @@ const (
 	EventWindowTabs    = "window:tabs"    // tabs handed to a window: data is WindowTabs
 	EventWindowGive    = "window:give"    // a window asked to hand a tab to another (a tab dragged there): data is WindowGive
 	EventWindowShow    = "window:show"    // a window asked to the front, at a route or a file: data is WindowShow
-	EventWindowResults = "window:results" // the panel's Search results, told to the panel's window: data is PanelResults
+	EventWindowResults = "window:results" // the Search results another window found, told to the main window's sidebar: data is PanelResults
 	EventWindowClosing = "window:closing" // a window asked to hand its tabs back before it closes: data is its name
 	EventWindowClosed  = "window:closed"  // a window closed: data is its name
 	EventWindowChanged = "window:changed" // a window saved what the others read: data is its name
@@ -40,12 +40,13 @@ func init() {
 }
 
 // WindowHeld is what a window holds: its title, the folders its explorer shows (their files open there), its tabs,
-// and their files' problems.
+// the files among them with unsaved edits (which the main window's close asks about), and their files' problems.
 type WindowHeld struct {
 	Name     string                      `json:"name"`
 	Title    string                      `json:"title"`
 	Roots    []string                    `json:"roots"`
 	Tabs     []string                    `json:"tabs"`
+	Unsaved  []string                    `json:"unsaved"`
 	Problems map[string][]lsp.Diagnostic `json:"problems"`
 }
 
@@ -80,7 +81,7 @@ type WindowShow struct {
 	Col   int    `json:"col"`
 }
 
-// PanelResults is what the panel's Search results show: what was looked for, its rows so far, and whether it is
+// PanelResults is what the sidebar's Search results show: what was looked for, its rows so far, and whether it is
 // done or stopped at the cap.
 type PanelResults struct {
 	Title  string        `json:"title"`
@@ -102,9 +103,40 @@ type PanelResult struct {
 }
 
 // WindowService opens the other windows.
-type WindowService struct {
-	mu    sync.Mutex
-	asked map[string]bool // the windows asked to hand their tabs back, whose next close goes through
+type WindowService struct{}
+
+// the windows asked about their close (to hand their tabs back, the main window whether to quit), whose next close
+// goes through: a window that cannot answer still closes on a second try
+var held = struct {
+	sync.Mutex
+	asked map[string]bool
+}{asked: map[string]bool{}}
+
+// HoldClose holds a window's first close and asks it (window:closing); the close it then asks for goes through.
+func HoldClose(window *application.WebviewWindow) {
+	name := window.Name()
+	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		held.Lock()
+		defer held.Unlock()
+		if held.asked[name] {
+			delete(held.asked, name)
+			return
+		}
+		held.asked[name] = true
+		event.Cancel()
+		emit(EventWindowClosing, name)
+	})
+}
+
+// QuitAnswer is the main window's answer to its close: quit, or stay, its next close asking again.
+func (s *WindowService) QuitAnswer(quit bool) {
+	if quit {
+		application.Get().Quit()
+		return
+	}
+	held.Lock()
+	defer held.Unlock()
+	delete(held.asked, "main")
 }
 
 // Show brings the window with a name to the front.
@@ -136,20 +168,7 @@ func (s *WindowService) Open(route, name, title string) {
 		Height: 760,
 		URL:    "/?window=" + url.QueryEscape(name) + "#" + route,
 	})
-	// its first close is held and the window asked to hand its tabs back; the close it then asks for goes through
-	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.asked[name] {
-			delete(s.asked, name)
-			return
-		}
-		if s.asked == nil {
-			s.asked = map[string]bool{}
-		}
-		s.asked[name] = true
-		event.Cancel()
-		emit(EventWindowClosing, name)
-	})
+	// its first close is held and the window asked to hand its tabs back
+	HoldClose(window)
 	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { emit(EventWindowClosed, name) })
 }

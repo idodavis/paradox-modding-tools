@@ -10,12 +10,13 @@ import type { Roots } from "@services/models";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { plural } from "../../lib/format";
 
-const { roots, searching, rootKind, nodes, full = false } = defineProps<{
+const { roots, searching, rootKind, nodes, reach, full = false } = defineProps<{
   roots: Roots | null | undefined;
   searching: boolean;
   /** What the root is, for its badge. */
   rootKind: string;
   nodes: number;
+  reach: number;
   full?: boolean;
 }>();
 const emit = defineEmits<{ fit: []; collapse: []; fullscreen: [] }>();
@@ -98,8 +99,8 @@ const items = computed(() => {
     </UTooltip>
     <span v-if="!full" class="grow" />
     <USeparator v-else orientation="vertical" class="h-5" />
-    <span class="text-12 whitespace-nowrap text-dimmed" title="Fan-outs past six fold into groups">
-      {{ plural(nodes, "node") }}{{ full ? "" : " shown" }}
+    <span class="text-12 whitespace-nowrap text-dimmed" title="Drawn, of all the depth reaches: fan-outs past six fold into groups, and the node limit stops the rest">
+      {{ reach > nodes ? `${nodes} of ${plural(reach, "node")}` : plural(nodes, "node") }}{{ full ? "" : " shown" }}
     </span>
     <USeparator v-if="!full" orientation="vertical" class="h-5" />
     <UButton icon="i-lucide-scan" square aria-label="Fit to view" @click="emit('fit')" />

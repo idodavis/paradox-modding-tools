@@ -16,7 +16,9 @@ export interface Era {
 }
 
 /**
- * Fire is the definition at the far end of a fire, its database, and the scripted entries between.
+ * Fire is the definition at the far end of a fire, its database, and the scripted entries between; where it starts
+ * in the definition (the fire, or the scripted call that leads to it) and the definition's block it sits in there
+ * (option a, immediate); and the statement that fires, as written, with its other fields (trigger_event; days = 30).
  */
 export interface Fire {
     "name": string;
@@ -32,4 +34,15 @@ export interface Fire {
      * how many scripted entries Via names
      */
     "through"?: number;
+    "path": string;
+    "rel": string;
+    "origin": string;
+
+    /**
+     * 0-based
+     */
+    "line": number;
+    "block"?: string;
+    "command"?: string;
+    "args"?: string;
 }

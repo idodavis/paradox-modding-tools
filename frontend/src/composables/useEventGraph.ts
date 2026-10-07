@@ -98,8 +98,9 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
     return step;
   });
 
-  // dagre's top-left corner for each node, laid out by step: dagre is given only the fires one step
-  // further, so its columns are the steps; every fire is drawn
+  // dagre's top-left corner for each node, laid out by step: dagre is given the fires one step forward, so its
+  // columns are the steps, and those back to an earlier step turned around, so it orders the nodes for them too and
+  // routes them through the gaps (routes: a fire back's points, and whether it goes back or stays in its column)
   const laid = computed(() => {
     const unit = settings.fontScale / 100;
     const dag = new Graph();
@@ -109,15 +110,30 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
       const box = BOX[shapeOf(node)];
       dag.setNode(node.id, { width: box.width * unit, height: box.height * unit });
     }
+    const stepsOf = (edge: Edge) => [steps.value.get(edge.from) ?? 0, steps.value.get(edge.to) ?? 0];
     for (const edge of shown.value.edges) {
-      const from = steps.value.get(edge.from);
-      if (from !== undefined && steps.value.get(edge.to) === from + 1) dag.setEdge(edge.from, edge.to);
+      const [from, to] = stepsOf(edge);
+      if (to > from) dag.setEdge(edge.from, edge.to);
+      else if (to < from) dag.setEdge(edge.to, edge.from, { minlen: from - to });
     }
     layout(dag);
+    const routes = new Map(
+      shown.value.edges.map((edge) => {
+        const [from, to] = stepsOf(edge);
+        // a fire back leaves its source's left side and meets its target's right, through dagre's bends between
+        const [source, target] = [dag.node(edge.from), dag.node(edge.to)];
+        const bends = to < from ? (dag.edge(edge.to, edge.from)?.points ?? []).slice(1, -1).reverse() : [];
+        const points = bends.length
+          ? [{ x: source.x - source.width / 2, y: source.y }, ...bends, { x: target.x + target.width / 2, y: target.y }]
+          : [];
+        return [`${edge.from}->${edge.to}`, { points, back: to <= from }];
+      }),
+    );
     const centers = [...new Set(dag.nodes().map((id) => Math.round(dag.node(id).x)))].sort((a, b) => a - b);
     const rootColumn = centers.indexOf(Math.round(dag.node(params.value.root)?.x ?? NaN));
     const top = Math.min(...dag.nodes().map((id) => dag.node(id).y - dag.node(id).height / 2));
     return {
+      routes,
       positions: new Map(
         dag
           .nodes()

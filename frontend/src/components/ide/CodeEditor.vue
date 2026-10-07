@@ -82,7 +82,7 @@ async function graph(card?: Inspect | null): Promise<void> {
   if (word?.graphed) void router.push({ name: "event-graph", params: { id: workspaceId }, query: { root: word.word } });
 }
 
-/** Every reference to the word at the caret, in the panel's Search results. */
+/** Every reference to the word at the caret, in the sidebar's Search (the main window's). */
 async function findAll(): Promise<void> {
   const [line, col] = caret();
   const card = await rpc.Hover(workspaceId, path, line, col).catch(() => null);
@@ -101,7 +101,7 @@ async function findAll(): Promise<void> {
     done: true,
     capped: false,
   };
-  ide.panel = "search";
+  ide.sidebar = "search";
 }
 
 /** Run one of Monaco's actions in this editor. */
@@ -162,6 +162,7 @@ const menu = computed<ContextMenuItem[][]>(() =>
         ],
       },
       { label: "Find all references", kbds: ["Shift Alt F12"], onSelect: () => void findAll() },
+      { label: "Rename", kbds: ["F2"], disabled: readOnly.value, onSelect: () => run("editor.action.rename") },
     ],
     [
       { label: "Open in Event Graph", kbds: ["Ctrl Shift G"], disabled: !card.value?.graphed, onSelect: () => void graph(card.value) },

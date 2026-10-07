@@ -5,6 +5,7 @@ package wiki
 
 import (
 	"cmp"
+	stdhtml "html"
 	"os"
 	"path"
 	"regexp"
@@ -85,8 +86,30 @@ func PagesFor(gameID, database, rel string) []Page {
 	return pages[:min(len(pages), guideTabCap)]
 }
 
+// a patch note's first sentence names it and dates it (`Patch 1.20, aka "Crozier", was released on 2026-09-30`),
+// read with its tags taken out
+var (
+	tagRe      = regexp.MustCompile(`<[^>]+>`)
+	akaRe      = regexp.MustCompile(`aka\s+"([^"]+)"`)
+	releasedRe = regexp.MustCompile(`released on (?:the )?(\d{4}-\d{2}-\d{2})`)
+)
+
+// said is a note's name and release date, read from its opening text; empty where it gives none.
+func said(html string) (name, released string) {
+	text := stdhtml.UnescapeString(tagRe.ReplaceAllString(html[:min(len(html), 2000)], " "))
+	if match := akaRe.FindStringSubmatch(text); match != nil {
+		name = match[1]
+	}
+	if match := releasedRe.FindStringSubmatch(text); match != nil {
+		released = match[1]
+	}
+	return name, released
+}
+
 func patchEntry(page Page) PatchEntry {
-	entry := PatchEntry{Title: page.Title, Modding: page.Modding}
+	// judged from the headings kept, so a page fetched before the rule changed is judged by today's
+	entry := PatchEntry{Title: page.Title, Modding: hasModding(page.Sections)}
+	entry.Name, entry.Released = said(page.HTML)
 	if pv, ok := parsePatchTitle(page.Title); ok {
 		entry.Version = pv.Label
 		if pv.Hotfix {
@@ -154,9 +177,9 @@ func Patches(gameID string) PatchList {
 			continue
 		}
 		for _, fix := range fixes {
-			modding := slices.ContainsFunc(fix.sections, func(section Section) bool { return NormTitle(section.Line) == "modding" })
+			_, released := said(fix.html)
 			out.Pages = append(out.Pages, PatchEntry{
-				Title: "Patch " + fix.version, Version: fix.version, Parent: pv.Minor, Modding: modding,
+				Title: "Patch " + fix.version, Version: fix.version, Parent: pv.Minor, Modding: hasModding(fix.sections), Released: released,
 			})
 		}
 	}
@@ -228,11 +251,13 @@ type Guide struct {
 
 // PatchEntry is one row in the Patch Notes version tree.
 type PatchEntry struct {
-	Title   string `json:"title"`
-	Version string `json:"version"`
-	Parent  string `json:"parent"`           // the version a hotfix belongs to, as 1.14
-	Modding bool   `json:"modding"`          // the page has a Modding section
-	Latest  bool   `json:"latest,omitempty"` // the newest patch
+	Title    string `json:"title"`
+	Name     string `json:"name,omitempty"`     // its code name: Crozier
+	Released string `json:"released,omitempty"` // its release date, 2026-09-30, as its note says
+	Version  string `json:"version"`
+	Parent   string `json:"parent"`           // the version a hotfix belongs to, as 1.14
+	Modding  bool   `json:"modding"`          // the page has a Modding section
+	Latest   bool   `json:"latest,omitempty"` // the newest patch
 }
 
 // PatchList is the WikiService.Patches payload.

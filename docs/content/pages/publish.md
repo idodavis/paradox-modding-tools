@@ -72,7 +72,8 @@ screenshots and videos, and how much differs from Steam (**Compare with Steam**)
 **Upload** sends the mod as saved, its name, the change note, the thumbnail, and the description unless its source
 is Steam's own text. The mod's screenshots and videos replace Steam's; a mod with none leaves Steam's as they are.
 
-- The Steam **client** must be running and signed in to an account that owns the game. PMT uses the game's own copy
+- The Steam **client** must be running and signed in to an account that owns the game; Review says so when it is
+  not, with **Check again**. While it uploads, Steam's stage and progress show. PMT uses the game's own copy
   of Steam's library; nothing of Steam's ships with PMT. EU5 has no Linux build, so publish EU5 mods from Windows.
 - A new item is **private** until you make it public on its Workshop page; later uploads keep the visibility you set.
   If Steam needs you to accept the Workshop agreement first, PMT links to it.
@@ -85,6 +86,8 @@ is Steam's own text. The mod's screenshots and videos replace Steam's; a mod wit
 
 **Copy the description as BBCode**, then upload the mod through the Paradox Launcher (**Upload Mod**, pick the mod
 and Paradox Mods) and paste it. The site often drops line breaks; screenshots and the thumbnail are added there.
+**Save the mod as a zip** writes what an upload sends (the exclusions applied), for uploading on the Paradox Mods
+site.
 
 ## Compare with Steam
 

@@ -7,6 +7,7 @@
 package steam
 
 import (
+	"archive/zip"
 	"bytes"
 	"cmp"
 	"fmt"
@@ -357,6 +358,29 @@ func CopyMod(src, dest, extraIgnore string) error {
 		}
 	}
 	return nil
+}
+
+// ZipMod writes what an upload of the mod at src sends into a zip at dest, for a store with no upload of ours
+// (Paradox Mods): whole or not at all (local.Write), streamed, the files at the zip's root.
+func ZipMod(src, dest, extraIgnore string) error {
+	sent, _ := Upload(src, extraIgnore)
+	return local.Write(dest, func(out io.Writer) error {
+		archive := zip.NewWriter(out)
+		for _, rel := range sent {
+			data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(rel)))
+			if err != nil {
+				return err
+			}
+			entry, err := archive.Create(rel)
+			if err != nil {
+				return err
+			}
+			if _, err := entry.Write(data); err != nil {
+				return err
+			}
+		}
+		return archive.Close()
+	})
 }
 
 // FileChange is one file an upload changes on Steam: A added, M modified, D deleted.

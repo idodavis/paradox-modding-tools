@@ -65,7 +65,7 @@
   --accent: #ffc933; --accent-ink: #1a1405; --link: #4cd3a6;
   --red: #f0716b; --orange: #f0a04b; --blue: #6fb7f0; --green: #5ccb8f; --purple: #b19cf5;
   --syn-kw: #6fb7f0; --syn-str: #5ccb8f; --syn-num: #f0a04b; --syn-fn: #b19cf5; --syn-ref: #4cd3a6; --syn-com: #7f8a98;
-  --ol: 0.72; --oc: 0.115;
+  --ol: 0.76; --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
   color-scheme: dark;
 }
@@ -77,7 +77,7 @@
   --accent: #b8860b; --accent-ink: #1a1405; --link: #138a66;
   --red: #c4372f; --orange: #b8650e; --blue: #2568b8; --green: #1f8a4c; --purple: #6b4fd1;
   --syn-kw: #2568b8; --syn-str: #1f8a4c; --syn-num: #b8650e; --syn-fn: #6b4fd1; --syn-ref: #138a66; --syn-com: #6b7684;
-  --ol: 0.56; --oc: 0.135;
+  --ol: 0.56; --oc: 0.121;
   --shadow: 0 8px 24px rgba(20, 30, 50, 0.16), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
@@ -90,7 +90,7 @@
   --accent: #cba6f7; --accent-ink: #1e1e2e; --link: #74c7ec;
   --red: #f38ba8; --orange: #fab387; --blue: #89b4fa; --green: #a6e3a1; --purple: #b4befe;
   --syn-kw: #cba6f7; --syn-str: #a6e3a1; --syn-num: #fab387; --syn-fn: #89b4fa; --syn-ref: #94e2d5; --syn-com: #7f849c;
-  --ol: 0.78; --oc: 0.108;
+  --ol: 0.82; --oc: 0.119;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
   color-scheme: dark;
 }
@@ -102,7 +102,7 @@
   --accent: #8839ef; --accent-ink: #ffffff; --link: #1e66f5;
   --red: #d20f39; --orange: #c9550a; --blue: #1e66f5; --green: #40a02b; --purple: #7287fd;
   --syn-kw: #8839ef; --syn-str: #40a02b; --syn-num: #c9550a; --syn-fn: #1e66f5; --syn-ref: #179299; --syn-com: #8c8fa1;
-  --ol: 0.58; --oc: 0.135;
+  --ol: 0.58; --oc: 0.126;
   --shadow: 0 8px 24px rgba(76, 79, 105, 0.18), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
@@ -115,7 +115,7 @@
   --accent: #61afef; --accent-ink: #10141a; --link: #56b6c2;
   --red: #e06c75; --orange: #d19a66; --blue: #61afef; --green: #98c379; --purple: #c678dd;
   --syn-kw: #c678dd; --syn-str: #98c379; --syn-num: #d19a66; --syn-fn: #61afef; --syn-ref: #56b6c2; --syn-com: #7f848e;
-  --ol: 0.74; --oc: 0.108;
+  --ol: 0.78; --oc: 0.155;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
   color-scheme: dark;
 }
@@ -127,7 +127,7 @@
   --accent: #2f62d6; --accent-ink: #ffffff; --link: #0f73a0;
   --red: #c8133f; --orange: #946300; --blue: #2f62d6; --green: #367a36; --purple: #a024a0;
   --syn-kw: #a024a0; --syn-str: #367a36; --syn-num: #946300; --syn-fn: #2f62d6; --syn-ref: #0f73a0; --syn-com: #686b75;
-  --ol: 0.56; --oc: 0.13;
+  --ol: 0.56; --oc: 0.121;
   --shadow: 0 8px 24px rgba(40, 44, 52, 0.16), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
@@ -144,7 +144,7 @@
   --red: #ff6762; --orange: #ffba82; --blue: #69b1ff; --green: #60d199; --purple: #9d6afb;
   --diff-add: #07c480; --diff-del: #ff2e3f;
   --syn-kw: #ff91a8; --syn-str: #8cda94; --syn-num: #96d9f6; --syn-fn: #ba8ffd; --syn-ref: #ffba82; --syn-com: #636363;
-  --ol: 0.72; --oc: 0.115;
+  --ol: 0.76; --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line-2);
   color-scheme: dark;
 }
@@ -157,7 +157,7 @@
   --red: #ff2e3f; --orange: #fe8c2c; --blue: #009fff; --green: #07c480; --purple: #7b43f8;
   --diff-add: #18a46c; --diff-del: #d52c36;
   --syn-kw: #ff678d; --syn-str: #0dbe4e; --syn-num: #08c0ef; --syn-fn: #9d6afb; --syn-ref: #fe8c2c; --syn-com: #8a8a8a;
-  --ol: 0.56; --oc: 0.135;
+  --ol: 0.56; --oc: 0.121;
   --shadow: 0 8px 24px rgba(10, 10, 10, 0.12), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
@@ -170,7 +170,7 @@
   --accent: #d6a84e; --accent-ink: #1d1405; --link: #8fbfc4;
   --red: #e2665e; --orange: #e59a52; --blue: #86a9d6; --green: #8fbf7a; --purple: #c29ad6;
   --syn-kw: #e0a36b; --syn-str: #a9c48c; --syn-num: #d9846a; --syn-fn: #c29ad6; --syn-ref: #8fbfc4; --syn-com: #8a7a69;
-  --ol: 0.72; --oc: 0.095;
+  --ol: 0.76; --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
   color-scheme: dark;
 }
@@ -182,7 +182,7 @@
   --accent: #86600f; --accent-ink: #ffffff; --link: #26666d;
   --red: #a32d27; --orange: #8f4f10; --blue: #365a89; --green: #46702f; --purple: #77448b;
   --syn-kw: #94491a; --syn-str: #4a6e2c; --syn-num: #9c422c; --syn-fn: #77448b; --syn-ref: #26666d; --syn-com: #766452;
-  --ol: 0.55; --oc: 0.12;
+  --ol: 0.55; --oc: 0.118;
   --shadow: 0 8px 24px rgba(70, 45, 25, 0.18), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
@@ -195,7 +195,7 @@
   --accent: #c9a55e; --accent-ink: #17120a; --link: #6fb4dd;
   --red: #ec6f68; --orange: #e89f55; --blue: #6fb4dd; --green: #6cc494; --purple: #a99cf0;
   --syn-kw: #7fb2e6; --syn-str: #8fcf9c; --syn-num: #e0a867; --syn-fn: #b3a2f0; --syn-ref: #6fd0c4; --syn-com: #7a889b;
-  --ol: 0.72; --oc: 0.108;
+  --ol: 0.76; --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
   color-scheme: dark;
 }
@@ -207,7 +207,7 @@
   --accent: #82601a; --accent-ink: #ffffff; --link: #1b6497;
   --red: #b0352d; --orange: #9b550e; --blue: #235ca2; --green: #25704a; --purple: #5c4cb3;
   --syn-kw: #235ca2; --syn-str: #2a7344; --syn-num: #97560f; --syn-fn: #6549b8; --syn-ref: #12736d; --syn-com: #617085;
-  --ol: 0.56; --oc: 0.125;
+  --ol: 0.56; --oc: 0.121;
   --shadow: 0 8px 24px rgba(20, 35, 60, 0.16), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
@@ -220,7 +220,7 @@
   --accent: #4fb39a; --accent-ink: #06140f; --link: #d99257;
   --red: #e3685d; --orange: #e09b52; --blue: #7aa8d8; --green: #78c38a; --purple: #b59bd9;
   --syn-kw: #5fbfa6; --syn-str: #a8c47a; --syn-num: #e0a060; --syn-fn: #b59bd9; --syn-ref: #d99257; --syn-com: #7e8f87;
-  --ol: 0.72; --oc: 0.11;
+  --ol: 0.76; --oc: 0.174;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
   color-scheme: dark;
 }
@@ -232,7 +232,7 @@
   --accent: #1f6b5c; --accent-ink: #ffffff; --link: #9a4f24;
   --red: #b3382e; --orange: #a8610f; --blue: #2f5f9e; --green: #2f7a3e; --purple: #6f4a9e;
   --syn-kw: #1f6b5c; --syn-str: #5f7a1f; --syn-num: #a8610f; --syn-fn: #6f4a9e; --syn-ref: #9a4f24; --syn-com: #8a7e6a;
-  --ol: 0.55; --oc: 0.12;
+  --ol: 0.55; --oc: 0.118;
   --shadow: 0 8px 24px rgba(60, 45, 20, 0.18), 0 0 0 1px var(--line-2);
   color-scheme: light;
 }
@@ -247,25 +247,27 @@
   --green-soft: color-mix(in srgb, var(--green) 16%, transparent);
   --purple-soft: color-mix(in srgb, var(--purple) 16%, transparent);
 
-  /* origin slots: one lightness and chroma per theme, a hue per slot, the first four farthest apart; 5 to 8 a
-     little lighter; 9 to 16 repeat 1 to 8 darker. The hues skip gold, orange and red. */
+  /* origin slots: one lightness and chroma per theme, a hue per slot: mint, a leaf green and a dark violet (the owner's
+     picks), the others where they sit farthest from every theme's accent, link and colors (the kinds' and tags'); 5 to
+     7 a little lighter, 8 darker; 9 to 16 repeat 1 to 8 darker. A slot's chroma is the theme's --oc times what its hue
+     holds in sRGB beside the others'; each theme's --oc is the most all sixteen hold there. */
   --game: oklch(var(--ol) 0.025 220);
-  --o1: oklch(var(--ol) var(--oc) 250);
-  --o2: oklch(var(--ol) var(--oc) 135);
-  --o3: oklch(var(--ol) var(--oc) 315);
-  --o4: oklch(var(--ol) var(--oc) 190);
-  --o5: oklch(calc(var(--ol) + 0.06) var(--oc) 100);
-  --o6: oklch(calc(var(--ol) + 0.06) var(--oc) 280);
-  --o7: oklch(calc(var(--ol) + 0.06) var(--oc) 160);
-  --o8: oklch(calc(var(--ol) + 0.06) var(--oc) 345);
-  --o9: oklch(calc(var(--ol) - 0.1) var(--oc) 250);
-  --o10: oklch(calc(var(--ol) - 0.1) var(--oc) 135);
-  --o11: oklch(calc(var(--ol) - 0.1) var(--oc) 315);
-  --o12: oklch(calc(var(--ol) - 0.1) var(--oc) 190);
-  --o13: oklch(calc(var(--ol) - 0.04) var(--oc) 100);
-  --o14: oklch(calc(var(--ol) - 0.04) var(--oc) 280);
-  --o15: oklch(calc(var(--ol) - 0.04) var(--oc) 160);
-  --o16: oklch(calc(var(--ol) - 0.04) var(--oc) 345);
+  --o1: oklch(var(--ol) calc(var(--oc) * 0.91) 165);
+  --o2: oklch(var(--ol) calc(var(--oc) * 1.04) 345);
+  --o3: oklch(var(--ol) calc(var(--oc) * 1.27) 135);
+  --o4: oklch(var(--ol) calc(var(--oc) * 0.83) 37);
+  --o5: oklch(calc(var(--ol) + 0.03) calc(var(--oc) * 0.81) 218);
+  --o6: oklch(calc(var(--ol) + 0.03) calc(var(--oc) * 0.98) 70);
+  --o7: oklch(calc(var(--ol) + 0.03) calc(var(--oc) * 0.6) 268);
+  --o8: oklch(calc(var(--ol) - 0.08) calc(var(--oc) * 1.08) 295);
+  --o9: oklch(calc(var(--ol) - 0.1) calc(var(--oc) * 0.79) 165);
+  --o10: oklch(calc(var(--ol) - 0.1) calc(var(--oc) * 1.6) 345);
+  --o11: oklch(calc(var(--ol) - 0.1) calc(var(--oc) * 1.1) 135);
+  --o12: oklch(calc(var(--ol) - 0.1) calc(var(--oc) * 1.26) 37);
+  --o13: oklch(calc(var(--ol) - 0.04) calc(var(--oc) * 0.74) 218);
+  --o14: oklch(calc(var(--ol) - 0.04) calc(var(--oc) * 0.89) 70);
+  --o15: oklch(calc(var(--ol) - 0.04) calc(var(--oc) * 0.82) 268);
+  --o16: oklch(calc(var(--ol) - 0.18) calc(var(--oc) * 1.48) 295);
 
   /* Nuxt UI: radius-sm, md, lg and xl are 4, 6, 8 and 12 */
   --ui-radius: 0.25rem;

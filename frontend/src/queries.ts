@@ -11,10 +11,10 @@ import { ReadEditableBase64, ReadFileBase64 } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { EventGraph, GitCommit, Params, Roots, SourceAt } from "@services/models";
-import { Definition, DiagnosticCodes, DocumentSymbols, Hover, References, ReplacedBy } from "@services/ideservice";
+import { Definition, DiagnosticCodes, DocumentSymbols, FindLoc, Hover, References, ReplacedBy } from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
 import { Available, Branches, CommitFiles, Log, Repositories, Show, Status } from "@services/gitservice";
-import { CompareWithSteam, ListingSummary, LoadListing, UploadFiles } from "@services/releaseservice";
+import { CompareWithSteam, ListingSummary, LoadListing, SteamStatus, UploadFiles } from "@services/releaseservice";
 import { EnsureSession, GetLanguageHealth } from "@services/sessionservice";
 import { Guide, PatchPage, Patches } from "@services/wikiservice";
 import {
@@ -69,6 +69,7 @@ const ideKeys = {
   files: (id: string, pattern: string) => ["ide", "files", id, pattern] as const,
   symbols: (path: string) => ["ide", "symbols", path] as const,
   replaced: (path: string) => ["ide", "replaced", path] as const,
+  loc: (id: string, prefix: string) => ["ide", "loc", id, prefix] as const,
 };
 
 export const releaseKeys = {
@@ -296,6 +297,13 @@ export const filesQuery = defineQueryOptions(({ id, pattern, folders }: { id: st
 }));
 
 /** The names a file defines. */
+/** The localization keys starting with a prefix, each at its entry in the workspace's language. */
+export const locQuery = defineQueryOptions(({ id, prefix }: { id: string; prefix: string }) => ({
+  key: ideKeys.loc(id, prefix),
+  query: async () => (await FindLoc(id, prefix, 30)) ?? [],
+  enabled: !!id && !!prefix,
+}));
+
 export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
   key: ideKeys.symbols(path),
   query: async () => (await DocumentSymbols(id, path)) ?? [],
@@ -334,6 +342,14 @@ export const compareQuery = defineQueryOptions(({ workspaceId, modId }: { worksp
   key: releaseKeys.compare(workspaceId, modId),
   query: () => CompareWithSteam(workspaceId, modId),
   enabled: !!workspaceId && !!modId,
+}));
+
+/** Why Steam cannot take an upload for a workspace's game now ("" when it can), asked of the publish's child. */
+export const steamStatusQuery = defineQueryOptions(({ id, enabled }: { id: string; enabled: boolean }) => ({
+  key: ["steam-status", id] as const,
+  query: () => SteamStatus(id).then(() => "", (error: unknown) => (error instanceof Error ? error.message : String(error))),
+  enabled: !!id && enabled,
+  staleTime: 0,
 }));
 
 export const uploadFilesQuery = defineQueryOptions(

@@ -184,6 +184,25 @@ func (s *IdeService) DidSave(workspaceID, path string) error {
 	return nil
 }
 
+// Rename is the edits that rename the name at a place everywhere the mods write it, or why it cannot (F2).
+func (s *IdeService) Rename(workspaceID, path string, line, col int, name string) (*lsp.WorkspaceEdit, error) {
+	sess, err := s.Session.live(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	edit, err := lsp.Rename(sess, path, line, col, name)
+	return &edit, err
+}
+
+// FindLoc is the localization keys that start with a prefix, at most limit, each at its entry (the palette's #).
+func (s *IdeService) FindLoc(workspaceID, prefix string, limit int) ([]lsp.Symbol, error) {
+	sess, err := s.Session.live(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return lsp.FindLoc(sess, prefix, limit), nil
+}
+
 // ReplacedBy is the mods' files at a game file's path from its root, in load order: the copies the game loads in
 // its place (B46).
 func (s *IdeService) ReplacedBy(workspaceID, path string) ([]source.File, error) {

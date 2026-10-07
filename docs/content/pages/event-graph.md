@@ -24,9 +24,11 @@ event or anything else the graph can draw; the command palette has **Open the ev
 - **Filters** (its badge counts what differs from the defaults):
   - **Kinds**: which kinds of object become nodes. With **scripted effect** off, a scripted effect between two
     nodes is the label of the edge between them instead of a node;
-  - **Show nodes from**: the game and the mods; an origin left out hides the nodes only it defines;
+  - **Show nodes from**: the game and the mods; an origin left out hides the nodes only it defines, and a chain
+    through a hidden node stays joined;
   - **Depth** (1 to 10, 3 by default) and **Node limit** (10 to 400, 120 by default). Past six fires from one node,
-    the rest fold into a **+N more** group, which opens when you click it.
+    the rest fold into a **+N more** group, which opens when you click it. The toolbar says how many of all the
+    depth reaches are drawn ("29 of 35 nodes"), and Filters count kinds and origins over all of them.
 - **Follow macros** (on by default) walks into scripted effects and triggers to find the events they fire; off,
   only direct fires are drawn.
 - How many nodes are shown, **Fit to view**, **Collapse all** (closes every group you opened) and **Full screen**
@@ -55,5 +57,7 @@ it. Three tabs:
   (with each version when there are several, and when each shows), portraits, and its options with their text and
   conditions;
 - **Links**: what it **fires** and what it is **fired by**, each directly or through scripted effects (click a name
-  to draw the graph from it); then what it **reads**, by kind, each name opening the IDE at its first use;
+  to draw the graph from it), and where: the block it sits in and the statement as written ("option a ·
+  trigger_event, days = { 10 30 }"), which opens that line in the IDE; then what it **reads**, by kind, each name
+  opening the IDE at its first use;
 - **Script**: the definition as its file writes it, with **Copy the definition** and **Open in IDE**.

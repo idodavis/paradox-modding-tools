@@ -41,20 +41,27 @@ type Node struct {
 	Stub     string `json:"stub,omitempty"` // "more": fires hidden out of the node in its ID; "fired-by": callers hidden
 }
 
-// Edge is one fire drawn; Via names the scripted effects between, in the order they are entered.
+// Edge is one fire drawn; Via names the scripted effects between, in the order they are entered, and Block the
+// block of its definition the fire sits in (option a, immediate).
 type Edge struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Via  string `json:"via"`
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Via   string `json:"via"`
+	Block string `json:"block,omitempty"`
 }
 
-// EventGraph is the page's graph; Reason says why it is empty.
+// EventGraph is the page's graph; Reason says why it is empty. Reach counts what the depth holds with no fan-out
+// or node cap (the definitions, and the scripted effects between when they are drawn), Kinds and Origins split it
+// by kind (game.KindName) and by the origin that defines each.
 type EventGraph struct {
-	Nodes     []Node `json:"nodes"`
-	Edges     []Edge `json:"edges"`
-	Truncated bool   `json:"truncated"`
-	Reached   int    `json:"reached,omitempty"` // truncated: the hop the node cap cut
-	Reason    string `json:"reason,omitempty"`
+	Nodes     []Node         `json:"nodes"`
+	Edges     []Edge         `json:"edges"`
+	Truncated bool           `json:"truncated"`
+	Reached   int            `json:"reached,omitempty"` // truncated: the hop the node cap cut
+	Reach     int            `json:"reach"`
+	Kinds     map[string]int `json:"kinds"`
+	Origins   map[string]int `json:"origins"`
+	Reason    string         `json:"reason,omitempty"`
 }
 
 // EventGraphService draws the event graph page.
@@ -106,7 +113,7 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 				}
 				caller := records.Defs[ref.From]
 				if _, entered := firing[caller]; !entered && caller.Scripted(sch) {
-					firing[caller] = sess.FiredBy(caller)
+					firing[caller] = sess.FiredBy(caller, false)
 				} else if !entered {
 					firing[caller] = []session.Fire{{Name: caller.Name, Database: caller.Database}}
 				}
@@ -205,16 +212,19 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 					builder.node(fire.Name, false)
 					next = append(next, fire.Name)
 				}
-				builder.out.Edges = append(builder.out.Edges, Edge{From: from, To: fire.Name, Via: fire.Via})
+				builder.out.Edges = append(builder.out.Edges, Edge{From: from, To: fire.Name, Via: fire.Via, Block: fire.Block})
 			}
 		}
 		frontier = next
 	}
 
+	// what the depth holds, uncapped: counted, not drawn
+	builder.reach(params.Root, params.Depth, params.Scripted, followed)
+
 	// into a root the game fires, one hop: a stub until the page opens it
 	var callers []session.Fire
 	if (index.Ref{Database: root.Database}).Fires(sess.Install.Schema) {
-		callers = followed(sess.FiredBy(root))
+		callers = followed(sess.FiredBy(root, true))
 	}
 	if len(callers) > 0 {
 		if slices.Contains(params.Expand, "more-in:"+params.Root) {
@@ -222,7 +232,7 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 				if !builder.drawn[caller.Name] {
 					builder.node(caller.Name, false)
 				}
-				builder.out.Edges = append(builder.out.Edges, Edge{From: caller.Name, To: params.Root, Via: caller.Via})
+				builder.out.Edges = append(builder.out.Edges, Edge{From: caller.Name, To: params.Root, Via: caller.Via, Block: caller.Block})
 			}
 		} else {
 			builder.out.Nodes = append(builder.out.Nodes, Node{ID: "more-in:" + params.Root, Database: "more", Stub: "fired-by", Title: fmt.Sprintf("+%d fired by", len(callers))})
@@ -234,20 +244,9 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	for _, id := range slices.Sorted(maps.Keys(builder.drawn)) {
 		for _, fired := range followed(sess.Fires(builder.def(id))) {
 			if builder.drawn[fired.Name] && !slices.ContainsFunc(builder.out.Edges, func(edge Edge) bool { return edge.From == id && edge.To == fired.Name }) {
-				builder.out.Edges = append(builder.out.Edges, Edge{From: id, To: fired.Name, Via: fired.Via})
+				builder.out.Edges = append(builder.out.Edges, Edge{From: id, To: fired.Name, Via: fired.Via, Block: fired.Block})
 			}
 		}
-	}
-
-	// only the page's origins: the root, their nodes, a stub whose node stays, the edges among them
-	if len(params.Origins) > 0 {
-		kept := map[string]bool{}
-		builder.out.Nodes = slices.DeleteFunc(builder.out.Nodes, func(node Node) bool {
-			_, stubbed, _ := strings.Cut(node.ID, ":")
-			kept[node.ID] = node.Root || slices.Contains(params.Origins, node.Origin) || (node.Stub != "" && kept[stubbed])
-			return !kept[node.ID]
-		})
-		builder.out.Edges = slices.DeleteFunc(builder.out.Edges, func(edge Edge) bool { return !kept[edge.From] || !kept[edge.To] })
 	}
 
 	// the page's scripted effects shown: each chain's scripted effects drawn in turn between the
@@ -255,22 +254,99 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	if params.Scripted {
 		var edges []Edge
 		for _, edge := range builder.out.Edges {
-			from := edge.From
+			from, block := edge.From, edge.Block
 			if edge.Via != "" {
 				for _, scripted := range strings.Split(edge.Via, " → ") {
 					if !builder.drawn[scripted] {
 						builder.node(scripted, false)
 					}
-					edges = append(edges, Edge{From: from, To: scripted})
-					from = scripted
+					edges = append(edges, Edge{From: from, To: scripted, Block: block})
+					from, block = scripted, ""
 				}
 			}
-			edges = append(edges, Edge{From: from, To: edge.To})
+			edges = append(edges, Edge{From: from, To: edge.To, Block: block})
 		}
 		slices.SortStableFunc(edges, func(first, second Edge) int { return strings.Compare(first.From+first.To, second.From+second.To) })
 		builder.out.Edges = slices.CompactFunc(edges, func(first, second Edge) bool { return first.From == second.From && first.To == second.To })
 	}
+	// only the page's origins: a node stays where one of them defines it (the root, and a stub whose node stays,
+	// always), and a chain through a node that goes stays joined, its edges into the node spliced to those out
+	if len(params.Origins) > 0 {
+		kept := map[string]bool{}
+		var gone []string
+		builder.out.Nodes = slices.DeleteFunc(builder.out.Nodes, func(node Node) bool {
+			_, stubbed, _ := strings.Cut(node.ID, ":")
+			kept[node.ID] = node.Root || (node.Stub != "" && kept[stubbed]) || node.Stub == "" && builder.definedBy(node.ID, params.Origins)
+			if !kept[node.ID] {
+				gone = append(gone, node.ID)
+			}
+			return !kept[node.ID]
+		})
+		// each removal joins its edges, one edge per pair, so the edges stay within the nodes' pairs
+		for _, id := range gone {
+			var into, out, rest []Edge
+			joined := map[[2]string]bool{}
+			for _, edge := range builder.out.Edges {
+				switch id {
+				case edge.To:
+					into = append(into, edge)
+				case edge.From:
+					out = append(out, edge)
+				default:
+					rest = append(rest, edge)
+					joined[[2]string{edge.From, edge.To}] = true
+				}
+			}
+			for _, in := range into {
+				for _, next := range out {
+					if pair := [2]string{in.From, next.To}; in.From != next.To && !joined[pair] {
+						joined[pair] = true
+						rest = append(rest, Edge{From: in.From, To: next.To, Block: in.Block})
+					}
+				}
+			}
+			builder.out.Edges = rest
+		}
+	}
 	return builder.out, nil
+}
+
+// reach counts the definitions within depth hops of a root, each once, by kind and by origin; with scripted, the
+// scripted effects a chain passes through too.
+func (grapher *grapher) reach(root string, depth int, scripted bool, followed func([]session.Fire) []session.Fire) {
+	out := grapher.out
+	out.Kinds, out.Origins = map[string]int{}, map[string]int{}
+	seen := map[string]bool{}
+	count := func(id string) {
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		def := grapher.def(id)
+		file, _, _ := grapher.sess.Located(def.Path)
+		out.Reach++
+		out.Kinds[game.KindName(def.Database)]++
+		out.Origins[file.Origin]++
+	}
+	count(root)
+	frontier := []string{root}
+	for hop := 0; hop < depth && len(frontier) > 0; hop++ {
+		var next []string
+		for _, from := range frontier {
+			for _, fire := range followed(grapher.sess.Fires(grapher.def(from))) {
+				if scripted && fire.Via != "" {
+					for _, via := range strings.Split(fire.Via, " → ") {
+						count(via)
+					}
+				}
+				if !seen[fire.Name] {
+					count(fire.Name)
+					next = append(next, fire.Name)
+				}
+			}
+		}
+		frontier = next
+	}
 }
 
 // stubTitle is a fan-out stub's title: "+7 more events" where every hidden fire is of one database,
@@ -315,6 +391,15 @@ func (grapher *grapher) def(id string) index.Def {
 	}
 	grapher.found[id] = found
 	return found
+}
+
+// definedBy is whether one of the origins defines an id: the database the graph keeps it in, any copy.
+func (grapher *grapher) definedBy(id string, origins []string) bool {
+	def := grapher.def(id)
+	return slices.ContainsFunc(index.Lookup(grapher.sess.Indexes(), def.Database, id), func(one index.Def) bool {
+		file, _, _ := grapher.sess.Located(one.Path)
+		return slices.Contains(origins, file.Origin)
+	})
 }
 
 // node draws a definition: the one the game keeps, with its title.
@@ -408,7 +493,7 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	file, _, _ := sess.Located(def.Path)
 	detail := &Detail{
 		Kind: game.KindName(def.Database), Name: def.Name, Line: int(def.Line), At: file,
-		Fires: sess.Fires(def), FiredBy: sess.FiredBy(def),
+		Fires: sess.Fires(def), FiredBy: sess.FiredBy(def, true),
 	}
 
 	// the block, read from the file: the statement whose key the definition was found at

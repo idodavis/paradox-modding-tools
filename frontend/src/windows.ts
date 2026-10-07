@@ -29,11 +29,13 @@ export const placing = new Map<string, { group: number; edge: Edge; before?: str
 
 // a window opened, waiting for it to say what it holds (it is ready for tabs then)
 const opening = new Map<string, () => void>();
-// the tabs handed to this window, received one hand at a time
+// the tabs handed to this window, received one hand at a time, and those that have arrived
 let receiving = Promise.resolve();
+const arrived = reactive(new Set<string>());
 
 /** Receive tabs handed to this window, after those handed before. */
-export function receiveTabs(work: () => Promise<void>): void {
+export function receiveTabs(tabs: string[], work: () => Promise<void>): void {
+  tabs.forEach((tab) => arrived.add(tab));
   receiving = receiving.then(work);
 }
 
@@ -53,11 +55,14 @@ export function openWindow(route: string, name: string, title: string): Promise<
   });
 }
 
-/** Close the editor groups' windows, which hand their tabs back; resolved once they are gone and their tabs here. */
-export async function dockEditors(): Promise<void> {
-  const names = [...others.keys()].filter((name) => name.startsWith("editor:"));
-  names.forEach((name) => void Close(name));
-  await until(() => names.some((name) => others.has(name))).toBe(false, { timeout: 5000 });
+/** Close the windows that match, which hand their tabs back; resolved once they are gone and their tabs here, in
+ * whichever order Wails brings the two (it keeps no order between events). */
+export async function dock(which: (one: WindowHeld) => boolean): Promise<void> {
+  const closing = [...others.values()].filter(which);
+  const tabs = closing.flatMap((one) => one.tabs ?? []);
+  tabs.forEach((tab) => arrived.delete(tab));
+  closing.forEach((one) => void Close(one.name));
+  await until(() => closing.some((one) => others.has(one.name)) || tabs.some((tab) => !arrived.has(tab))).toBe(false, { timeout: 5000 });
   await receiving;
 }
 

@@ -21,9 +21,9 @@ export type Layout = { group: number } | { split: "row" | "column"; parts: Layou
 export type Edge = "left" | "right" | "up" | "down" | "middle";
 /** A place a tab is asked to show: a 0-based line and UTF-8 byte column, as the backend counts. */
 export type Place = { path: string; line: number; col: number };
-/** A row of the panel's Search results, a text search's hit or a reference: its file by origin, its line and span. */
+/** A row of the sidebar's Search results, a text search's hit or a reference: its file by origin, its line and span. */
 export type Result = Place & { rel: string; origin: string; end: number; preview: string };
-/** What the Search results tab shows: what was looked for, its rows so far, and whether it is done or capped. */
+/** What the sidebar's Search results show: what was looked for, its rows so far, and whether it is done or capped. */
 export type Results = { title: string; rows: Result[]; done: boolean; capped: boolean };
 /** A diff tab's kind: a file's changes (its staged copy against it), its staged changes (the last commit against
  * the staged copy), a conflict's two sides, or what a commit changed in it (its first parent against it). */
@@ -104,7 +104,7 @@ export const useIdeStore = defineStore("ide", () => {
   // what is kept)
   const kept = <T>(key: string, start: T) => (isMain ? useLocalStorage(key, start) : shallowRef(start));
   const sidebar = kept<"explorer" | "search" | "git">("pmt.ide.sidebar", "explorer");
-  const panel = kept<"problems" | "search" | "git" | "">("pmt.ide.panel", "problems");
+  const panel = kept<"problems" | "git" | "">("pmt.ide.panel", "problems");
   const wikiOpen = kept("pmt.ide.wikiOpen", false);
   // each workspace's groups and where they sit, kept on this computer
   const layouts = useLocalStorage<Record<string, { layout: Layout; groups: Group[] }>>("pmt.ide.layouts", {});

@@ -10,7 +10,8 @@ The patch notes of the workspace's game, read from its community wiki.
 
 {{< shot caption="Patch Notes: the versions, a note, and its contents." >}}
 
-**Versions**, on the left, lists the game's versions, newest first, each followed by its hotfixes; **Filter
+**Versions**, on the left, lists the game's versions, newest first, each followed by its hotfixes and with its code
+name where the note gives one ("Crozier"); the note's header gives its release date. **Filter
 versions** narrows the list. The newest is marked **Latest** and opens first; a dot marks a note with a modding
 section.
 

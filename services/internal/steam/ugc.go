@@ -9,6 +9,7 @@ package steam
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -65,6 +66,10 @@ type ugcAPI struct {
 	installInfo        func(uintptr, uint64, *uint64, *byte, uint32, *uint32) bool
 	callDone           func(uintptr, uint64, *byte) bool
 	callResult         func(uintptr, uint64, unsafe.Pointer, int32, int32, *byte) bool
+	updateProgress     func(uintptr, uint64, *uint64, *uint64) int32
+	user               func() uintptr
+	loggedOn           func(uintptr) bool
+	tick               func() // run with each wait's callbacks: a publish tells its progress
 }
 
 // submitItemResult is SubmitItemUpdateResult_t, which both packings lay out alike; the file id
@@ -140,6 +145,9 @@ func openUGC(path string) (*ugcAPI, error) {
 		{&api.installInfo, "SteamAPI_ISteamUGC_GetItemInstallInfo"},
 		{&api.callDone, "SteamAPI_ISteamUtils_IsAPICallCompleted"},
 		{&api.callResult, "SteamAPI_ISteamUtils_GetAPICallResult"},
+		{&api.updateProgress, "SteamAPI_ISteamUGC_GetItemUpdateProgress"},
+		{&api.user, versioned(contents, "SteamAPI_SteamUser_v")},
+		{&api.loggedOn, "SteamAPI_ISteamUser_BLoggedOn"},
 	} {
 		if err := bind(binding.fn, handle, binding.name); err != nil {
 			closeLibrary()
@@ -217,6 +225,9 @@ func (api *ugcAPI) waitCall(call uint64, dest unsafe.Pointer, size, callback int
 	var failed byte
 	for time.Now().Before(deadline) {
 		api.runCallbacks()
+		if api.tick != nil {
+			api.tick()
+		}
 		if api.callDone(utils, call, &failed) {
 			if failed != 0 {
 				return fmt.Errorf("steam api call failed")
@@ -312,6 +323,17 @@ func publish(library string, req Request) Response {
 		}
 	}
 
+	// the upload's progress on stderr, a line each time it moves, for the parent to tell the page
+	var told Progress
+	api.tick = func() {
+		var done, total uint64
+		now := Progress{Stage: updateStages[api.updateProgress(ugc, update, &done, &total)], Done: done, Total: total}
+		if now != told && now.Stage != "" {
+			told = now
+			line, _ := json.Marshal(now)
+			fmt.Fprintf(os.Stderr, "%s%s\n", progressPrefix, line)
+		}
+	}
 	var submitted submitItemResult
 	call := api.submit(ugc, update, cString(req.ChangeNote))
 	if err := api.waitCall(call, unsafe.Pointer(&submitted), int32(unsafe.Sizeof(submitted)), submitItemCallback); err != nil {
@@ -327,6 +349,23 @@ func publish(library string, req Request) Response {
 		PublishedFileID:     strconv.FormatUint(fileID, 10),
 		NeedsLegalAgreement: needLegal || submitted.NeedLegal,
 	}
+}
+
+// updateStages are EItemUpdateStatus' stages in words; 0 is none.
+var updateStages = map[int32]string{1: "Preparing the item", 2: "Preparing the files", 3: "Uploading the files", 4: "Uploading the preview", 5: "Committing"}
+
+// status starts Steam's API, which fails with Steam's reason where it is not running or no account that owns the
+// game is signed in, and says whether Steam is online.
+func status(library string) Response {
+	api, _, stop, err := start(library)
+	if err != nil {
+		return Response{Error: err.Error()}
+	}
+	defer stop()
+	if user := api.user(); user == 0 || !api.loggedOn(user) {
+		return Response{Error: "steam is running but offline: go online to upload"}
+	}
+	return Response{}
 }
 
 // download reads the item's page, then has Steam download its files and waits until the copy

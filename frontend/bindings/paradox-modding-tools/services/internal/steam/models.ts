@@ -41,3 +41,12 @@ export interface Preview {
     "kind": string;
     "id": string;
 }
+
+/**
+ * Progress is a publish's upload as Steam tells it: its stage in words, and the bytes done of the total.
+ */
+export interface Progress {
+    "stage": string;
+    "done": number;
+    "total": number;
+}

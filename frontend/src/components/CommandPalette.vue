@@ -1,7 +1,8 @@
 <script lang="ts">
 import { shallowRef } from "vue";
 
-/** Whether the palette is open, and what its search starts with: ">" commands, "" files, "@" symbols, "#" events. */
+/** Whether the palette is open, and what its search starts with: ">" commands, "" files, "@" symbols, "#" events and
+ * localization keys. */
 export const paletteOpen = shallowRef(false);
 const start = shallowRef("> ");
 
@@ -17,7 +18,7 @@ export function openPalette(prefix: "> " | "" = "> "): void {
  * The command palette (the CommandPalette and PaletteSettings boards) on every page. After ">", the pages, the
  * workspaces, the IDE's commands and every setting: a setting that is on or off flips where you are, one with a value
  * opens the page or the card that sets it. Without it, the workspace's files; after "@", the open file's names; after
- * "#", events and on_actions, the game's included.
+ * "#", events and on_actions, the game's included, and the localization keys starting with what is typed.
  */
 import { computed, watch } from "vue";
 import { useRouter, type RouteLocationRaw } from "vue-router";
@@ -31,7 +32,7 @@ import UnsavedChangesModal from "./UnsavedChangesModal.vue";
 import { useCompare } from "../composables/useCompare";
 import { useIdeRoots } from "../composables/useIdeRoots";
 import { useWorkspacePrefs } from "../composables/useWorkspaceSave";
-import { codesQuery, filesQuery, rootsQuery, symbolsQuery, workspacesQuery } from "../queries";
+import { codesQuery, filesQuery, locQuery, rootsQuery, symbolsQuery, workspacesQuery } from "../queries";
 import { useGitStore } from "../stores/git";
 import { diffTab, useIdeStore } from "../stores/ide";
 import { useSettingsStore } from "../stores/settings";
@@ -272,6 +273,7 @@ const { data: files } = useQuery(() =>
 );
 const { data: symbols } = useQuery(() => symbolsQuery({ id: id.value, path: mode.value === "symbols" ? ide.activeFile : "" }));
 const { data: events } = useQuery(() => rootsQuery({ id: id.value, search: query.value, live: mode.value === "events" && !!query.value }));
+const { data: locs } = useQuery(() => locQuery({ id: id.value, prefix: mode.value === "events" ? query.value : "" }));
 const lists = computed((): CommandPaletteGroup<Item>[] => {
   switch (mode.value) {
     case "commands":
@@ -306,7 +308,16 @@ const lists = computed((): CommandPaletteGroup<Item>[] => {
           if (detail?.at.path) show(detail.at.path, detail.line);
         },
       }));
-      return [{ id: "events", label: "Events and on_actions", ignoreFilter: true, items }];
+      const keys = (locs.value ?? []).map((found) => ({
+        label: found.name,
+        suffix: store.originName(found.location.origin),
+        icon: "i-lucide-languages",
+        onSelect: () => show(found.location.path, found.location.range.start.line),
+      }));
+      return [
+        { id: "events", label: "Events and on_actions", ignoreFilter: true, items },
+        { id: "loc", label: "Localization", ignoreFilter: true, items: keys },
+      ];
     }
   }
 });
@@ -336,7 +347,7 @@ const lists = computed((): CommandPaletteGroup<Item>[] => {
         <template #footer>
           <p class="text-11 text-dimmed">
             {{ mode === "commands" ? "Delete the > to open files." : "> for commands and settings." }}
-            @ finds names in this file, # finds events and on_actions. Enter flips a switch where you are.
+            @ finds names in this file, # finds events, on_actions and localization keys. Enter flips a switch where you are.
           </p>
         </template>
       </UCommandPalette>

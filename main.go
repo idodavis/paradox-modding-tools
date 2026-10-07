@@ -118,7 +118,8 @@ func main() {
 		},
 		URL: "/",
 	})
-	// the other windows close with it
+	// its close asks about every window's unsaved files first (H13), and the other windows close with it
+	services.HoldClose(mainWindow)
 	mainWindow.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { app.Quit() })
 
 	if err := app.Run(); err != nil {

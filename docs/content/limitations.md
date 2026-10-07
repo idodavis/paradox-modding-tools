@@ -18,7 +18,8 @@ PMT is **alpha**. Expect bugs. Back up your mods. A green Health table is not a 
 
 ## One live workspace
 
-Opening a workspace drops every other live session. [Roadmap]({{< relref "/roadmap" >}}) multi-window depends on relaxing that.
+Opening a workspace drops every other live session, so every window shows the same workspace. Two workspaces at
+once ([Roadmap]({{< relref "/roadmap" >}})) depends on relaxing that.
 
 ## Game coverage
 

@@ -19,10 +19,10 @@ export function useIdeRoots(workspaceId: MaybeRefOrGetter<string>) {
   const { data } = useQuery(() => ideRootsQuery(toValue(workspaceId)));
   const roots = computed(() => data.value?.roots ?? []);
 
-  /** The root a path is under, and its path from it. */
-  function locate(path: string): { root: IdeRoot; rel: string } | undefined {
+  /** The root a path is under (of the workspace's, or of the roots given), and its path from it. */
+  function locate(path: string, among = roots.value): { root: IdeRoot; rel: string } | undefined {
     const at = pathKey(path);
-    for (const root of roots.value) {
+    for (const root of among) {
       const base = pathKey(root.path);
       if (at.startsWith(`${base}/`)) return { root, rel: path.slice(base.length + 1).replaceAll("\\", "/") };
     }

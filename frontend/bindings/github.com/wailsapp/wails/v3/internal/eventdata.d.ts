@@ -21,6 +21,15 @@ declare module "@wailsio/runtime" {
             "lang:scan-progress": services$0.ScanProgress;
             "search:hits": services$0.TextSearchHits;
             "wiki:updated": services$0.WikiUpdated;
+            "window:changed": string;
+            "window:closed": string;
+            "window:closing": string;
+            "window:give": services$0.WindowGive;
+            "window:held": services$0.WindowHeld;
+            "window:hello": string;
+            "window:results": services$0.PanelResults;
+            "window:show": services$0.WindowShow;
+            "window:tabs": services$0.WindowTabs;
         }
     }
 }

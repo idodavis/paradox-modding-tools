@@ -6,9 +6,11 @@
 import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
 import { useLocalStorage } from "@vueuse/core";
+import { Events } from "@wailsio/runtime";
 import { DidClose } from "@services/ideservice";
 import type { Diagnostic } from "@services/internal/lsp";
 import { pathKey } from "../composables/useIdeRoots";
+import { holdsFiles, isMain, others } from "../windows";
 import { useWorkspaceStore } from "./workspace";
 
 /** An editor group: its tabs in order and the one shown. */
@@ -98,9 +100,12 @@ export const useIdeStore = defineStore("ide", () => {
   const rich = ref(new Set<string>());
   // a tab being dragged, and the group it is dragged from
   const dragging = shallowRef<{ path: string; from: number } | null>(null);
-  const sidebar = useLocalStorage<"explorer" | "search" | "git">("pmt.ide.sidebar", "explorer");
-  const panel = useLocalStorage<"problems" | "search" | "git" | "">("pmt.ide.panel", "problems");
-  const wikiOpen = useLocalStorage("pmt.ide.wikiOpen", false);
+  // which panes are open, kept on this computer by the main window; another window's are its own (the windows share
+  // what is kept)
+  const kept = <T>(key: string, start: T) => (isMain ? useLocalStorage(key, start) : shallowRef(start));
+  const sidebar = kept<"explorer" | "search" | "git">("pmt.ide.sidebar", "explorer");
+  const panel = kept<"problems" | "search" | "git" | "">("pmt.ide.panel", "problems");
+  const wikiOpen = kept("pmt.ide.wikiOpen", false);
   // each workspace's groups and where they sit, kept on this computer
   const layouts = useLocalStorage<Record<string, { layout: Layout; groups: Group[] }>>("pmt.ide.layouts", {});
 
@@ -116,9 +121,17 @@ export const useIdeStore = defineStore("ide", () => {
   const spelled = (file: string) => openFiles.value.find((open) => pathKey(open) === pathKey(file)) ?? file;
 
   /** Show a file: in the focused group if it has it, else the first that does, else after the focused group's tab;
-   * at a place when given one. */
+   * at a place when given one. A file is shown in the window holding it, else in one whose explorer shows its folder;
+   * a window that holds no files asks the main window. */
   function open(file: string, at?: { line: number; col?: number }): void {
     const path = spelled(file);
+    const key = pathKey(path);
+    const all = [...others.values()];
+    const holder = all.find((one) => one.tabs?.some((tab) => pathKey(tabOf(tab).file) === key));
+    const home = all.find((one) => one.roots?.some((root) => key.startsWith(`${pathKey(root)}/`)));
+    const here = openFiles.value.some((tab) => pathKey(tabOf(tab).file) === key);
+    const to = holder?.name ?? (here ? "" : home?.name) ?? (holdsFiles ? "" : "main");
+    if (to) return void Events.Emit("window:show", { to, route: "", path, line: at?.line ?? -1, col: at?.col ?? 0 });
     const target = [group(focused.value), ...groups.value].find((one) => one?.files.includes(path)) ?? group(focused.value) ?? groups.value[0];
     if (!target) return;
     if (!target.files.includes(path)) target.files.splice(target.files.indexOf(target.active) + 1, 0, path);
@@ -141,7 +154,7 @@ export const useIdeStore = defineStore("ide", () => {
     if (!from) return;
     const at = from.files.indexOf(path);
     if (at < 0) return;
-    from.files.splice(at, 1);
+    from.files = from.files.filter((file) => file !== path);
     if (from.active === path) from.active = from.files[Math.min(at, from.files.length - 1)] ?? "";
     if (from.files.length || groups.value.length < 2) return;
     groups.value = groups.value.filter((one) => one !== from);
@@ -149,14 +162,27 @@ export const useIdeStore = defineStore("ide", () => {
     if (focused.value === id) focused.value = order(layout.value)[0] ?? 1;
   }
 
-  /** Close a tab in a group; a file no tab shows any more (its own or a diff) is forgotten, the backend too. */
+  /** Forget a file no tab shows any more (its own or a diff); true when it went. */
+  function forget(file: string): boolean {
+    if (openFiles.value.some((open) => tabOf(open).file === file)) return false;
+    unsaved.value.delete(file);
+    problems.value.delete(file);
+    return true;
+  }
+
+  /** Close a tab in a group; a file no tab shows any more is forgotten, the backend too. */
   function closeIn(id: number, tab: string): void {
     remove(id, tab);
     const { file } = tabOf(tab);
-    if (openFiles.value.some((open) => tabOf(open).file === file)) return;
-    unsaved.value.delete(file);
-    problems.value.delete(file);
-    void DidClose(workspace.activeWorkspaceId, file).catch(() => undefined);
+    if (forget(file)) void DidClose(workspace.activeWorkspaceId, file).catch(() => undefined);
+  }
+
+  /** Let tabs go to another window, which holds their files now: the backend keeps them open. */
+  function release(tabs: string[]): void {
+    for (const tab of tabs) {
+      for (const one of [...groups.value]) remove(one.id, tab);
+      forget(tabOf(tab).file);
+    }
   }
 
   /** Close a file in every group. */
@@ -242,17 +268,19 @@ export const useIdeStore = defineStore("ide", () => {
     else unsaved.value.delete(path);
   }
 
-  /** A workspace's saved tabs, in the groups they were in where this computer kept them, else in one group. */
+  /** A workspace's saved tabs, in the groups they were in where this computer kept them, else in one group; a tab
+   * saved twice in a group comes back once. */
   function restore(id: string, files: string[], active: string): void {
     editing.value = id;
     const keys = new Set(files.map(pathKey));
+    const once = (list: string[]) => [...new Map(list.map((file) => [pathKey(file), file])).values()];
     const kept = (layouts.value[id]?.groups ?? [])
-      .map((one) => ({ ...one, files: one.files.filter((file) => keys.has(pathKey(file))) }))
+      .map((one) => ({ ...one, files: once(one.files.filter((file) => keys.has(pathKey(file)))) }))
       .filter((one) => one.files.length);
     let shape: Layout | null = layouts.value[id]?.layout ?? null;
     for (const one of layouts.value[id]?.groups ?? []) if (!kept.some((k) => k.id === one.id) && shape) shape = without(shape, one.id);
     const placed = new Set(kept.flatMap((one) => one.files.map(pathKey)));
-    const rest = files.filter((file) => !placed.has(pathKey(file)));
+    const rest = once(files.filter((file) => !placed.has(pathKey(file))));
     if (!kept.length || !shape) {
       kept.splice(0, kept.length, { id: 1, files: [], active: "" });
       shape = { group: 1 };
@@ -301,6 +329,7 @@ export const useIdeStore = defineStore("ide", () => {
     adopt,
     closeIn,
     close,
+    release,
     moved,
     drop,
     split,

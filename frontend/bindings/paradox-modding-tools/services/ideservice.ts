@@ -12,6 +12,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as source$0 from "./internal/lang/source/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as lsp$0 from "./internal/lsp/models.js";
 
 export function CodeActions(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.CodeAction[] | null> {
@@ -78,6 +81,14 @@ export function InlayHints(workspaceID: string, path: string): $CancellablePromi
 
 export function References(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.Location[] | null> {
     return $Call.ByID(3329907361, workspaceID, path, line, col);
+}
+
+/**
+ * ReplacedBy is the mods' files at a game file's path from its root, in load order: the copies the game loads in
+ * its place (B46).
+ */
+export function ReplacedBy(workspaceID: string, path: string): $CancellablePromise<source$0.File[] | null> {
+    return $Call.ByID(4213690086, workspaceID, path);
 }
 
 export function ResolveCompletion(workspaceID: string, path: string, item: lsp$0.Item): $CancellablePromise<lsp$0.Inspect | null> {

@@ -9,6 +9,7 @@ import { Events } from "@wailsio/runtime";
 import { WriteFileBase64 } from "@services/fileservice";
 import * as rpc from "@services/ideservice";
 import type { CodeAction, Completion, Inspect, Item, Location, Range as ByteRange, TextEdit } from "@services/internal/lsp";
+import type { WindowTabs } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { fileUri, labels, languageOf, models, monaco } from "../lib/code";
 import { readText } from "../queries";
@@ -16,6 +17,8 @@ import { tabOf, useIdeStore } from "../stores/ide";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 import { openPalette } from "../components/CommandPalette.vue";
+import { fileName } from "../lib/format";
+import { openWindow, others, placing } from "../windows";
 import { watchConflicts } from "./conflicts";
 import { editorRange, toBytes } from "./editorCore";
 
@@ -118,7 +121,11 @@ function fileModel(path: string, text: string, bom: boolean): File {
   const file: File = { path, model: made, bom, saved: made.getAlternativeVersionId(), open: false, pending: false, sent: Promise.resolve() };
   files.set(key, file);
   made.onDidChangeContent(() => changed(file));
-  made.onWillDispose(() => files.delete(key));
+  // a file let go (its tab closed, or handed to another window) sends nothing more
+  made.onWillDispose(() => {
+    files.delete(key);
+    clearTimeout(file.timer);
+  });
   watchConflicts(made, path);
   return file;
 }
@@ -177,6 +184,7 @@ function told(model: monaco.editor.ITextModel): Promise<unknown> {
 
 /** The file's problems as markers and the Problems panel's rows. */
 async function refresh(file: File): Promise<void> {
+  if (file.model.isDisposed()) return;
   const version = file.model.getVersionId();
   const found = (await rpc.Diagnose(workspaceId, file.path).catch(() => null)) ?? [];
   if (file.model.isDisposed() || file.model.getVersionId() !== version) return;
@@ -255,6 +263,62 @@ export function editText(path: string, edit: (text: string) => string): void {
   if (!file?.open || locked(file.path)) return;
   const text = edit(file.model.getValue());
   if (text !== file.model.getValue()) change(file.model, [{ range: file.model.getFullModelRange(), text }]);
+}
+
+/** Hand tabs to another window, each with its file's unsaved text; they go from here, the backend keeping them open.
+ * Resolved once they are sent. */
+export function handOver(to: string, tabs: string[], active = tabs[0] ?? ""): Promise<boolean> {
+  const handed = tabs.map((tab) => {
+    const file = files.get(fileUri(tabOf(tab).file).toString());
+    const unsaved = !!file && file.model.getAlternativeVersionId() !== file.saved;
+    return { tab, unsaved, text: unsaved && file ? file.model.getValue() : "" };
+  });
+  ide.release(tabs);
+  return Events.Emit("window:tabs", { to, tabs: handed, active });
+}
+
+/** Tabs handed to this window, the last shown one shown, and one dragged here where it was dropped; a file's unsaved
+ * text is an edit to the text saved, so its tab is marked and an undo goes back to the file. */
+export async function receive(handed: WindowTabs): Promise<void> {
+  for (const { tab, unsaved, text } of handed.tabs ?? []) {
+    ide.adopt(tab);
+    const path = tabOf(tab).file;
+    if (!unsaved || files.has(fileUri(path).toString())) continue;
+    const read = await readText(path);
+    const { model } = fileModel(path, read.text ?? "", read.bom);
+    change(model, [{ range: model.getFullModelRange(), text }]);
+  }
+  const group = ide.group(ide.focused);
+  if (group?.files.includes(handed.active)) group.active = handed.active;
+  for (const { tab } of handed.tabs ?? []) {
+    const dropped = placing.get(tab);
+    placing.delete(tab);
+    if (dropped) ide.drop(tab, ide.focused, dropped.group, dropped.edge, dropped.before);
+  }
+}
+
+/** A tab into another window: handed on from here, asked of the window holding it, or opened there. */
+export function sendTab(to: string, tab: string): Promise<unknown> {
+  if (ide.openFiles.includes(tab)) return handOver(to, [tab]);
+  const holder = [...others.values()].find((one) => one.tabs?.includes(tab));
+  if (holder) return Events.Emit("window:give", { to: holder.name, tab, window: to });
+  return Events.Emit("window:tabs", { to, tabs: [{ tab, unsaved: false, text: "" }], active: tab });
+}
+
+/** A tab in a new editor window of its own. */
+export async function newWindowWith(tab: string): Promise<void> {
+  const name = `editor:${Date.now().toString(36)}`;
+  await openWindow(`/workspace/${workspaceId}`, name, fileName(tabOf(tab).file));
+  await sendTab(name, tab);
+}
+
+/** A window whose explorer shows folders (the game's files, or one folder), given this window's tabs of files in
+ * them. */
+export async function openFilesWindow(name: string, title: string, folders: string[]): Promise<void> {
+  await openWindow(`/workspace/${workspaceId}`, name, title);
+  const keys = folders.map(pathKey);
+  const tabs = ide.openFiles.filter((tab) => keys.some((key) => pathKey(tabOf(tab).file).startsWith(`${key}/`)));
+  if (tabs.length) await handOver(name, tabs);
 }
 
 /** The backend's edits (UTF-8 byte ranges) as one undoable change. */
@@ -514,6 +578,7 @@ export function createEditor(host: HTMLElement, shown: monaco.editor.ITextModel)
     const end = word && editor.getScrolledVisiblePosition({ lineNumber: at.lineNumber, column: word.endColumn });
     if (!start || !end) return;
     await told(shown);
+    if (shown.isDisposed()) return;
     const [line, col] = bytesAt(shown, at);
     const card = await rpc.Hover(workspaceId, pathOf(shown), line, col).catch(() => null);
     if (hovered !== at) return;
@@ -565,7 +630,12 @@ export function createEditor(host: HTMLElement, shown: monaco.editor.ITextModel)
     last = editor;
     report();
   });
-  editor.onDidDispose(() => last === editor && (last = undefined));
+  // a card about to show goes with its editor (its tab closed, or moved to another window)
+  editor.onDidDispose(() => {
+    if (last === editor) last = undefined;
+    clearTimeout(showing);
+    clearTimeout(hiding);
+  });
   editor.onDidChangeCursorPosition(() => editor.hasTextFocus() && report());
   return { editor, hover, holdHover, muteHover, report };
 }

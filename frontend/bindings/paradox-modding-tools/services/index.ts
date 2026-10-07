@@ -12,6 +12,7 @@ import * as ReleaseService from "./releaseservice.js";
 import * as SearchService from "./searchservice.js";
 import * as SessionService from "./sessionservice.js";
 import * as WikiService from "./wikiservice.js";
+import * as WindowService from "./windowservice.js";
 import * as WorkspaceService from "./workspaceservice.js";
 export {
     AppService,
@@ -25,6 +26,7 @@ export {
     SearchService,
     SessionService,
     WikiService,
+    WindowService,
     WorkspaceService
 };
 
@@ -64,6 +66,8 @@ export type {
     LocRow,
     Node,
     Option,
+    PanelResult,
+    PanelResults,
     Params,
     PathStat,
     Problem,
@@ -86,6 +90,11 @@ export type {
     UploadFiles,
     Version,
     WikiUpdated,
+    WindowGive,
+    WindowHeld,
+    WindowShow,
+    WindowTab,
+    WindowTabs,
     Workspace,
     WorkspaceMod
 } from "./models.js";

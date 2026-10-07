@@ -8,6 +8,7 @@ import { useColorMode, usePreferredDark } from "@vueuse/core";
 import { FILE_TREE_DENSITY_PRESETS, type FileTreeDensityKeyword } from "@pierre/trees";
 import { GetSettings, SaveSettings } from "@services/appservice";
 import { WORKSPACE_TOOL_NAMES, type WorkspaceToolName } from "../workspaceTools";
+import { changed } from "../windows";
 import { useWorkspaceStore } from "./workspace";
 
 /** A theme family; its halves are `<id>-dark` and `<id>-light` in styles/themes.css. */
@@ -124,7 +125,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
   /** Persist the settings map. */
   function save(): Promise<void> {
-    return SaveSettings(values.value);
+    return SaveSettings(values.value).then(changed);
   }
 
   /** Set one key and persist. */

@@ -11,7 +11,7 @@ import { ReadEditableBase64, ReadFileBase64 } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { EventGraph, GitCommit, Params, Roots, SourceAt } from "@services/models";
-import { Definition, DiagnosticCodes, DocumentSymbols, Hover, References } from "@services/ideservice";
+import { Definition, DiagnosticCodes, DocumentSymbols, Hover, References, ReplacedBy } from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
 import { Available, Branches, CommitFiles, Log, Repositories, Show, Status } from "@services/gitservice";
 import { CompareWithSteam, ListingSummary, LoadListing, UploadFiles } from "@services/releaseservice";
@@ -68,6 +68,7 @@ const ideKeys = {
   sites: (mode: string, path: string, line: number, col: number) => ["ide", "sites", mode, path, line, col] as const,
   files: (id: string, pattern: string) => ["ide", "files", id, pattern] as const,
   symbols: (path: string) => ["ide", "symbols", path] as const,
+  replaced: (path: string) => ["ide", "replaced", path] as const,
 };
 
 export const releaseKeys = {
@@ -273,6 +274,12 @@ export const locReadersQuery = defineQueryOptions(({ id, key, live }: { id: stri
   key: sessionKeys.loc(id, key),
   query: () => LocReaders(id, key),
   enabled: !!id && live && !!key,
+}));
+
+/** The mods' copies of a game file, which the game loads in its place. */
+export const replacedQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
+  key: ideKeys.replaced(path),
+  query: () => ReplacedBy(id, path).then((copies) => copies ?? []),
 }));
 
 /** What a word is, at a place of a file (a 0-based line and UTF-8 byte column). */

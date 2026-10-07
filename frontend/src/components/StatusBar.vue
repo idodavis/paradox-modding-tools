@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * The status bar (pmt.css .statusbar): the page's own facts, which a page sends to #status-start and
- * #status-end, then Help, with the page's help and diagnostics for a bug report, and the version, which
- * checks for an update. It tells of a last run that ended without closing.
+ * #status-end, then the main window's count of windows, each brought to the front from it, Help, with the page's
+ * help and diagnostics for a bug report, and the version, which checks for an update. It tells of a last run that
+ * ended without closing.
  */
 import { computed, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -11,6 +12,8 @@ import { CheckForUpdates } from "@services/appservice";
 import { CopyDiagnostics } from "@services/logservice";
 import { crashedQuery, versionQuery } from "../queries";
 import { PAGES } from "../workspaceTools";
+import { Show } from "@services/windowservice";
+import { isMain, others } from "../windows";
 
 const route = useRoute();
 const toast = useToast();
@@ -38,6 +41,7 @@ watch(crashed, (yes) => {
 });
 
 const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
+const windows = computed(() => [...others.values()].map((one) => ({ label: one.title, onSelect: () => void Show(one.name) })));
 </script>
 
 <template>
@@ -48,6 +52,9 @@ const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />
+    <UDropdownMenu v-if="isMain && windows.length" :items="windows" :content="{ side: 'top' }">
+      <button type="button" :class="ITEM"><UIcon name="i-lucide-app-window" class="size-3" />{{ windows.length + 1 }} windows</button>
+    </UDropdownMenu>
     <!-- one size on every page, the longest help's (Publish) -->
     <UModal :title="`Help: ${page?.title ?? 'PMT'}`" :ui="{ content: 'h-118 sm:max-w-2xl' }">
       <button type="button" :class="ITEM">Help</button>

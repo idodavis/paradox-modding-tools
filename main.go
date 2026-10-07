@@ -9,6 +9,7 @@ import (
 	"paradox-modding-tools/services"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
@@ -46,6 +47,7 @@ func main() {
 	searchSvc := &services.SearchService{}
 	releaseSvc := &services.ReleaseService{App: appSvc}
 	gitSvc := &services.GitService{App: appSvc}
+	windowSvc := &services.WindowService{}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -65,6 +67,7 @@ func main() {
 			application.NewService(searchSvc),
 			application.NewService(releaseSvc),
 			application.NewService(gitSvc),
+			application.NewService(windowSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
@@ -103,7 +106,8 @@ func main() {
 		log.Fatalf("updater.Init: %v", err)
 	}
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:   "main",
 		Title:  "Paradox Modding Tools",
 		Width:  1300,
 		Height: 900,
@@ -114,6 +118,8 @@ func main() {
 		},
 		URL: "/",
 	})
+	// the other windows close with it
+	mainWindow.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { app.Quit() })
 
 	if err := app.Run(); err != nil {
 		log.Fatalf("app.Run: %v", err)

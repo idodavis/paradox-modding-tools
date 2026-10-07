@@ -2,20 +2,23 @@
 /**
  * The top bar on every page (the boards' .topbar): PMT and the Library, the workspace switcher and the
  * workspace's page tabs, then its scan, search, light and dark, and Settings. On a workspace's page it
- * builds the workspace's session.
+ * builds the workspace's session. A page but the IDE opens in a window of its own from its tab's menu; its tab then
+ * brings that window up, and its menu brings the page back.
  */
 import { computed, useTemplateRef } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
-import { useElementSize, useTimeAgo } from "@vueuse/core";
-import type { DropdownMenuItem } from "@nuxt/ui";
+import { until, useElementSize, useTimeAgo } from "@vueuse/core";
+import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import { openPalette } from "./CommandPalette.vue";
 import { useLanguageHealth } from "../composables/useLanguageHealth";
 import { sessionQuery, workspacesQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
-import { isWorkspacePage, WORKSPACE_TOOLS, workspaceHomeRoute } from "../workspaceTools";
+import { Close, Show } from "@services/windowservice";
+import { others, openWindow } from "../windows";
+import { isWorkspacePage, WORKSPACE_TOOLS, workspaceHomeRoute, type WorkspaceToolName } from "../workspaceTools";
 
 const route = useRoute();
 const store = useWorkspaceStore();
@@ -34,6 +37,30 @@ function tabClass(on: boolean): string[] {
 }
 
 const tabs = computed(() => WORKSPACE_TOOLS.filter((tool) => settings.visibleTools.includes(tool.name)));
+
+// a page in a window of its own: its tab brings that window up, and the main window shows another page; back, the
+// window closes and the page shows here
+const router = useRouter();
+const popped = (name: WorkspaceToolName) => others.has(`page:${name}`);
+async function popOut(name: WorkspaceToolName, label: string): Promise<void> {
+  const shown = route.name === name;
+  await openWindow(shown ? route.fullPath : router.resolve({ name, params: { id: store.activeWorkspaceId } }).fullPath, `page:${name}`, label);
+  const next = tabs.value.find((tool) => tool.name !== name && !popped(tool.name));
+  if (shown && next) void router.push({ name: next.name, params: { id: store.activeWorkspaceId } });
+}
+async function bringBack(name: WorkspaceToolName): Promise<void> {
+  void Close(`page:${name}`);
+  await until(() => popped(name)).toBe(false, { timeout: 5000 });
+  void router.push({ name, params: { id: store.activeWorkspaceId } });
+}
+function tabMenu(tool: { name: WorkspaceToolName; label: string }): ContextMenuItem[] {
+  if (tool.name === "workspace-ide") return [];
+  if (!popped(tool.name)) return [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void popOut(tool.name, tool.label) }];
+  return [
+    { label: "Show window", icon: "i-lucide-app-window", onSelect: () => void Show(`page:${tool.name}`) },
+    { label: "Back into the main window", icon: "i-lucide-panel-top-close", onSelect: () => void bringBack(tool.name) },
+  ];
+}
 
 // a narrow window keeps the inactive tabs' icons and the scan's age (pmt.css .topbar.compact)
 const bar = useTemplateRef("bar");
@@ -86,13 +113,6 @@ const scanned = useTimeAgo<"second" | "minute" | "hour" | "day" | "week" | "mont
 
 /** "1.14.2 scanned 4 min ago"; a narrow bar keeps the age. */
 const scanText = computed(() => [compact.value ? "" : health.value?.gameVersion, `scanned ${scanned.value}`].filter(Boolean).join(" "));
-
-// with a modifier, so they work while typing too (the editor's text is an input to Nuxt UI)
-defineShortcuts({
-  meta_k: { handler: () => openPalette(), usingInput: true },
-  meta_shift_p: { handler: () => openPalette(), usingInput: true },
-  meta_p: { handler: () => openPalette(""), usingInput: true },
-});
 </script>
 
 <template>
@@ -131,16 +151,22 @@ defineShortcuts({
     </UDropdownMenu>
 
     <nav v-if="store.activeWorkspace" class="ms-1 flex h-11 min-w-0 items-center gap-0.5">
-      <RouterLink
-        v-for="tool in tabs"
-        :key="tool.name"
-        :to="{ name: tool.name, params: { id: store.activeWorkspaceId } }"
-        :class="tabClass(route.name === tool.name)"
-        :aria-label="tool.label"
-      >
-        <UIcon :name="tool.icon" class="size-4" />
-        <span v-if="!compact || route.name === tool.name">{{ tool.label }}</span>
-      </RouterLink>
+      <UContextMenu v-for="tool in tabs" :key="tool.name" :items="tabMenu(tool)" :disabled="tool.name === 'workspace-ide'">
+        <button v-if="popped(tool.name)" type="button" :class="tabClass(false)" :aria-label="`${tool.label}, in its own window`" @click="Show(`page:${tool.name}`)">
+          <UIcon :name="tool.icon" class="size-4" />
+          <span v-if="!compact">{{ tool.label }}</span>
+          <UIcon name="i-lucide-app-window" class="size-3.5 text-dimmed" />
+        </button>
+        <RouterLink
+          v-else
+          :to="{ name: tool.name, params: { id: store.activeWorkspaceId } }"
+          :class="tabClass(route.name === tool.name)"
+          :aria-label="tool.label"
+        >
+          <UIcon :name="tool.icon" class="size-4" />
+          <span v-if="!compact || route.name === tool.name">{{ tool.label }}</span>
+        </RouterLink>
+      </UContextMenu>
     </nav>
 
     <div class="ms-auto flex shrink-0 items-center gap-1.5">
@@ -187,5 +213,4 @@ defineShortcuts({
       </UTooltip>
     </div>
   </header>
-  <CommandPalette />
 </template>

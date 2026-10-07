@@ -1,16 +1,27 @@
 /**
  * Go's events, subscribed once at startup (main.ts, in the app's context): each refreshes the queries it
  * changes. The IDE's own subscriptions (fs:changed to its explorer, search:hits to its search) stay in the
- * components that draw them.
+ * components that draw them. Then the windows' (windows.ts): what each holds, its title, the tabs handed between
+ * them, a file or a link shown in another, and what one saved, which the others read again.
  */
+import { computed, watch } from "vue";
+import type { Router } from "vue-router";
 import { useQueryCache } from "@pinia/colada";
-import { Events } from "@wailsio/runtime";
-import { useDebounceFn } from "@vueuse/core";
+import { Events, Window } from "@wailsio/runtime";
+import { useDebounceFn, watchDebounced } from "@vueuse/core";
+import type { WindowHeld } from "@services/models";
 import { scans } from "./composables/useLanguageHealth";
 import { fileKeys, installKeys, languageKeys, sessionKeys, wikiKeys } from "./queries";
 import { useGitStore } from "./stores/git";
+import { useIdeStore } from "./stores/ide";
+import { useSettingsStore } from "./stores/settings";
+import { useWorkspaceStore } from "./stores/workspace";
+import { Show } from "@services/windowservice";
+import { held, holdsFiles, isMain, others, receiveTabs, roots, windowName, windowPart } from "./windows";
+import { fileName } from "./lib/format";
+import { PAGES } from "./workspaceTools";
 
-export function subscribeEvents(): void {
+export function subscribeEvents(router: Router): void {
   const queryCache = useQueryCache();
   const toast = useToast();
   Events.On("lang:scan-progress", ({ data }) => {
@@ -45,4 +56,101 @@ export function subscribeEvents(): void {
     void queryCache.invalidateQueries({ key: wikiKeys.all });
     if (data.error) toast.add({ title: "Wiki fetch failed", description: data.error, color: "error" });
   });
+
+  const ide = useIdeStore();
+  const store = useWorkspaceStore();
+  const settings = useSettingsStore();
+  const route = router.currentRoute;
+  // a window's title: what it shows, then its workspace
+  const title = computed(() => {
+    const workspace = store.activeWorkspace;
+    const of = (what: string) => (workspace ? `${what}, ${workspace.name}` : what);
+    const file = fileName(ide.activeFile);
+    if (windowPart === "game") return `Game files, ${store.game(workspace?.gameId ?? "")?.name ?? ""}`;
+    if (windowPart === "files") return of(fileName(windowName));
+    if (windowPart === "panel") return of("Panel");
+    if (windowPart === "editor") return of(file || "Editor");
+    if (windowPart === "page") return of(route.value.name ? PAGES[route.value.name].title : "");
+    return "Paradox Modding Tools";
+  });
+  if (!isMain) watch(title, (text) => void Window.SetTitle(text), { immediate: true });
+
+  // what this window holds, told once ready (a window holding files when its editors are set up), and again when it
+  // changes while another window is open
+  const holding = computed<WindowHeld>(() => ({
+    name: windowName,
+    title: title.value,
+    roots: roots.value,
+    tabs: ide.openFiles,
+    problems: Object.fromEntries(ide.problems),
+  }));
+  const ready = computed(() => !holdsFiles || isMain || !!ide.editing);
+  const tell = () => ready.value && void Events.Emit("window:held", holding.value);
+  watchDebounced([holding, ready, () => others.size], () => others.size && tell(), { debounce: 100 });
+  // a window opened asks what the others hold; the panel's window also gets the Search results
+  Events.On("window:hello", ({ data: name }) => {
+    if (name === windowName) return;
+    tell();
+    if (name === "panel" && holdsFiles && ide.results) void Events.Emit("window:results", ide.results);
+  });
+  Events.On("window:held", ({ data }) => data.name !== windowName && held(data));
+  void Events.Emit("window:hello", windowName);
+  // a window closed: its tabs came back before; the panel shows here again
+  Events.On("window:closed", ({ data: name }) => {
+    others.delete(name);
+    if (name === "panel" && isMain) ide.panel ||= "problems";
+  });
+  // this window asked to close: its tabs go back to the main window first
+  Events.On("window:closing", async ({ data: name }) => {
+    if (name !== windowName) return;
+    if (ide.openFiles.length) await (await import("./ide/monacoEditor")).handOver("main", ide.openFiles, ide.activePath);
+    void Window.Close();
+  });
+  Events.On("window:tabs", ({ data }) => {
+    if (data.to === windowName) receiveTabs(async () => (await import("./ide/monacoEditor")).receive(data));
+  });
+  // a tab this window holds, dragged into another
+  Events.On("window:give", async ({ data }) => {
+    if (data.to === windowName) await (await import("./ide/monacoEditor")).handOver(data.window, [data.tab]);
+  });
+  // an editor group's window whose last tab went (closed, or moved to another window) closes
+  if (windowPart === "editor") watch(() => ide.openFiles.length, (count, was) => !count && was && void Window.Close());
+  // this window asked to the front: at a link, or showing a file (in the IDE, in the main window)
+  Events.On("window:show", async ({ data }) => {
+    if (data.to !== windowName) return;
+    if (data.route) await router.push(data.route);
+    if (data.path) {
+      ide.open(data.path, data.line < 0 ? undefined : { line: data.line, col: data.col });
+      if (isMain && route.value.name !== "workspace-ide") await router.push({ name: "workspace-ide", params: { id: store.activeWorkspaceId } });
+    }
+    await Show(windowName);
+  });
+
+  // the panel's window shows every window's problems, and the Search results the others find
+  if (windowPart === "panel") {
+    watch(others, () => {
+      ide.problems = new Map([...others.values()].flatMap((one) => Object.entries(one.problems ?? {}).map(([path, found]) => [path, found ?? []])));
+    });
+    Events.On("window:results", ({ data }) => (ide.results = { ...data, rows: data.rows ?? [] }));
+  } else if (holdsFiles) {
+    watch(() => ide.results, (results) => results && others.has("panel") && void Events.Emit("window:results", results));
+  }
+
+  // another window saved: what this one shows is read again
+  Events.On("window:changed", ({ data: name }) => {
+    if (name === windowName) return;
+    void queryCache.invalidateQueries();
+    void settings.load();
+  });
+
+  // a window of one thing follows the main window to another workspace
+  if (!isMain) {
+    watch(
+      () => store.activeWorkspaceId,
+      (id) => {
+        const now = route.value;
+        if ("id" in now.params && now.params.id !== id) void router.replace({ path: now.fullPath.replace(`/workspace/${now.params.id}`, `/workspace/${id}`) });
+      },
+    );
+  }
 }

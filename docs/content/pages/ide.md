@@ -170,6 +170,38 @@ says so; the IDE settings' Wiki tab can hide that toast for an hour, until resta
 This is the community wiki, not `script_docs` and not the install's `_*.info` files. See
 [three kinds of docs]({{< relref "/concepts/docs" >}}).
 
+## Windows
+
+Parts of PMT open in windows of their own, to put on another screen:
+
+- **A page.** Right-click the Event Graph's, Health's, Patch Notes' or Publish's tab in the top bar: **Open in a new
+  window**. The tab then shows a window mark, and clicking it brings that window to the front; its menu has **Show
+  window** and **Back into the main window**. Anything that would open the page (Open in Event Graph, Show in
+  Health, a link) goes to its window.
+- **An editor.** A tab's menu, **Move into a new window**, or the explorer's menu on a file, **Open in a new window**.
+  The tab moves with its unsaved changes. The window closes when its last tab does; **Dock back into the main
+  window** brings its tabs back.
+- **Game files.** The window button on the explorer's Game files header. The game's open files go with it, and any
+  game file you open later (a definition, a reference, a search hit) opens there. The explorer shows **Bring back**
+  and **Show window** in its place.
+- **A folder or a mod.** The explorer's menu on a folder, **Open in a new window**: its own tree and editors, which
+  take the folder's open files and every file of it you open later. In the main window's explorer the folder shows a
+  window mark; click it to bring that window to the front, or use the folder's menu, **Close the window**.
+- **The panel.** The window button in the panel's header. It shows the problems of every window's files, and a row
+  opens its file where it is open.
+
+Drag a tab onto another window's tabs or editor to move it there: a line between the tabs, or a highlighted half
+of the editor, shows where it lands. Drop it outside every window for a window of its own. The Game files window
+takes only game files.
+
+A game file a mod replaces says so on its path's row, **Replaced by** the mod, with **Compare**.
+
+A file is open in one window at a time: opening it from another brings up the window that has it. Every window shows
+the main window's workspace and follows it to another; editor windows first come back into the main window, so you
+are asked about their unsaved changes. Closing any window but the main one moves what it shows back into the main
+window; closing the main window closes PMT. The status bar counts the windows, and its menu brings any of them to the
+front. The tabs of every window come back in the main window the next time the workspace opens.
+
 ## IDE settings
 
 The gear at the end of the sidebar's row. Its tabs:

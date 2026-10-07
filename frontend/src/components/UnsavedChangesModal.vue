@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
- * Asked before another workspace's files take the editors' place: save the unsaved ones, drop them, or stay.
- * Opened through useOverlay by the router's guard, it closes with true to go on.
+ * Asked before the editors' unsaved files would go (another workspace's take their place, or the window reloads): save
+ * them, drop them, or stay. Opened through useOverlay, it closes with true to go on; `going` says what drops them.
  */
 import { computed } from "vue";
 import { useMutation } from "@pinia/colada";
 import { plural } from "../lib/format";
 import { useIdeStore } from "../stores/ide";
 
+const { going = "Switching workspace" } = defineProps<{ going?: string }>();
 const emit = defineEmits<{ close: [go: boolean] }>();
 
 const ide = useIdeStore();
@@ -26,7 +27,7 @@ const { mutate: save, isLoading: saving } = useMutation({
 <template>
   <UModal
     :title="`Save ${plural(names.length, 'file')}?`"
-    :description="`${listed} ${names.length === 1 ? 'has' : 'have'} changes not saved. Switching workspace without saving drops them.`"
+    :description="`${listed} ${names.length === 1 ? 'has' : 'have'} changes not saved. ${going} without saving drops them.`"
   >
     <template #footer>
       <span class="grow" />

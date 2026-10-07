@@ -18,7 +18,9 @@ export function iconOf(path: string): string | undefined {
   return kind && URLS[kind];
 }
 
-// the four icons as one sprite in the tree's shadow root, each gradient renamed so the four never share an id
+// the four icons as one sprite in the tree's shadow root, each gradient renamed so the four never share an id; and
+// Lucide's app-window, the mark of a folder in a window of its own
+const WINDOW = `<symbol id="pmt-window" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4M2 8h20M6 4v4"/></symbol>`;
 const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${Object.entries({ script: scriptSvg, loc: locSvg, gui: guiSvg, mod: modSvg })
   .map(([kind, svg]) =>
     svg
@@ -27,7 +29,7 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" sty
       .replaceAll('id="pmt"', `id="pmt-${kind}-fill"`)
       .replaceAll("url(#pmt)", `url(#pmt-${kind}-fill)`),
   )
-  .join("")}</svg>`;
+  .join("")}${WINDOW}</svg>`;
 // Pierre's icons for every other kind of file
 const ICONS = {
   set: "complete" as const,
@@ -44,7 +46,7 @@ export const BINARIES = /\.(dll|exe|pdb|hash|hex|bin|dat)$|^\.git$/i;
  * with a lock, their folders listed when opened. Files open in the editor; a writable section creates, renames,
  * moves and deletes in place. It follows the open file, and Go's file watcher (fs:changed).
  */
-import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch, watchEffect } from "vue";
 import { useMutation } from "@pinia/colada";
 import { Clipboard, Events } from "@wailsio/runtime";
 import { FileTree, type FileTreeDirectoryHandle, type GitStatus, type GitStatusEntry } from "@pierre/trees";
@@ -54,6 +56,9 @@ import { CreateDir, DeletePath, ListDirectory, RenamePath, StatPath, WriteFileBa
 import { OpenFolder, RemoveWorkspaceMod } from "@services/workspaceservice";
 import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
 import { useWorkspaceSave } from "../../composables/useWorkspaceSave";
+import { newWindowWith, openFilesWindow } from "../../ide/monacoEditor";
+import { Close, Show } from "@services/windowservice";
+import { others } from "../../windows";
 import { useGitStore } from "../../stores/git";
 import { useIdeStore } from "../../stores/ide";
 import { useSettingsStore } from "../../stores/settings";
@@ -88,11 +93,13 @@ function diskPath(treePath: string): string {
   return root ? (rel ? under(root, rel) : root.path) : "";
 }
 
+/** The root a root's row is, by its tree path ("<name>/"). */
+const rootOf = (path: string): IdeRoot | undefined => roots[names.value.indexOf(path.slice(0, -1))];
+
 /** A file on disk's tree path, where it is under one of this section's roots. */
 function treePath(path: string, dir = false): string | undefined {
-  const at = locate(path);
-  const i = at ? roots.indexOf(at.root) : -1;
-  return at && i >= 0 ? `${names.value[i]}/${at.rel}${dir ? "/" : ""}` : undefined;
+  const at = locate(path, roots);
+  return at && `${names.value[roots.indexOf(at.root)]}/${at.rel}${dir ? "/" : ""}`;
 }
 
 const host = useTemplateRef("host");
@@ -135,8 +142,11 @@ function mount(): void {
     icons: ICONS,
     gitStatus: gitStatus.value,
     unsafeCSS: rootRows,
-    // a read-only root says so with a lock
-    renderRowDecoration: ({ item }) => (!writable.value && paths.includes(`${item.path.replace(/\/$/, "")}/`) ? { icon: "file-tree-icon-lock", title: "Read only" } : null),
+    // a read-only root says so with a lock; a folder in a window of its own with that window's mark
+    renderRowDecoration: ({ item }) => {
+      if (!writable.value && paths.includes(`${item.path.replace(/\/$/, "")}/`)) return { icon: "file-tree-icon-lock", title: "Read only" };
+      return windowOf(item.path) ? { icon: { name: "pmt-window", viewBox: "0 0 24 24" }, title: "In its own window: show it" } : null;
+    },
     onSelectionChange: (selected) => {
       ide.selected = selected.filter((path) => !path.endsWith("/")).map(diskPath);
       const [only] = selected;
@@ -158,6 +168,8 @@ function mount(): void {
     for (const dir of folders) if (!listed.has(dir) && isOpen(made, dir)) void list(dir);
   });
   made.render({ containerWrapper: host.value });
+  const shadow = host.value.querySelector("*")?.shadowRoot;
+  if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, ignoredSheet];
   tree.value = made;
   follow();
 }
@@ -176,17 +188,12 @@ watch(
 );
 onBeforeUnmount(() => tree.value?.cleanUp());
 
-// each repository's changes on its files and folders, and what it ignores dimmed (O-R63): staged, then unstaged,
-// a file added kept as added
+// each repository's changes on its files and folders (O-R63): staged, then unstaged, a file added kept as added
 const STATUSES: Record<string, GitStatus> = { A: "added", M: "modified", D: "deleted", R: "renamed", U: "untracked", "!": "modified" };
 const gitStatus = computed<GitStatusEntry[]>(() => {
   const marked = new Map<string, GitStatus>();
   for (const status of Object.values(git.statuses ?? {})) {
     if (!status) continue;
-    for (const ignored of status.ignored ?? []) {
-      const path = treePath(ignored.replace(/[\\/]$/, ""), /[\\/]$/.test(ignored));
-      if (path) marked.set(path, "ignored");
-    }
     for (const change of [...(status.staged ?? []), ...(status.changes ?? []), ...(status.conflicts ?? [])]) {
       const path = treePath(change.path);
       if (path && marked.get(path) !== "added") marked.set(path, STATUSES[change.letter] ?? "modified");
@@ -195,6 +202,21 @@ const gitStatus = computed<GitStatusEntry[]>(() => {
   return [...marked].map(([path, status]) => ({ path, status }));
 });
 watch(gitStatus, (entries) => tree.value?.setGitStatus(entries));
+
+// what git ignores dimmed, a folder with all in it, by a sheet of its own in the tree's shadow root: as a git status,
+// an ignored path would mark every folder above it as changed
+const ignoredSheet = new CSSStyleSheet();
+const quoted = (path: string) => `"${path.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+watchEffect(() => {
+  const rows = Object.values(git.statuses ?? {}).flatMap((status) =>
+    (status?.ignored ?? []).flatMap((ignored) => {
+      const dir = /[\\/]$/.test(ignored);
+      const path = treePath(ignored.replace(/[\\/]$/, ""), dir);
+      return path ? [`[data-item-path${dir ? "^" : ""}=${quoted(path)}]`] : [];
+    }),
+  );
+  ignoredSheet.replaceSync(rows.length ? `${rows.join(",")} { color: var(--trees-status-ignored-override); }` : "");
+});
 
 /** Open the folders down to the open file and select it, while the explorer follows the open file; a diff tab is
  * not followed, since selecting a file opens it. */
@@ -282,13 +304,24 @@ const menu = computed<ContextMenuItem[][]>(() => {
   if (!path) return [];
   const dir = path.endsWith("/") ? path : path.slice(0, path.lastIndexOf("/") + 1);
   const root = path.indexOf("/") === path.length - 1;
+  // a folder window's own folder is not a mod's: it stays as it is there
+  const fixed = root && rootOf(path)?.kind === "folder";
+  // a folder in a window of its own: that window closes, its tabs back here
+  const windowed = windowOf(path);
   const selected = (tree.value?.getSelectedPaths() ?? []).filter((p) => !p.endsWith("/"));
   const file = path.endsWith("/") ? "" : diskPath(path);
   const picked = ide.comparing;
   // a mod's own folder in no repository is made one (O-R61), and source control shown
   const bare = root ? git.bare.find((mod) => pathKey(mod.path) === pathKey(diskPath(path))) : undefined;
   return [
-    file ? [{ label: "Open to the side", icon: "i-lucide-columns-2", onSelect: () => ide.split("right", file) }] : [],
+    file
+      ? [
+          { label: "Open to the side", icon: "i-lucide-columns-2", onSelect: () => ide.split("right", file) },
+          { label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void newWindowWith(file) },
+        ]
+      : windowed
+        ? [{ label: "Close the window", icon: "i-lucide-panel-top-close", onSelect: () => void Close(windowed) }]
+        : [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void openFolderWindow(path) }],
     writable.value
       ? [
           { label: "New file", icon: "i-lucide-file-plus", onSelect: () => void create(dir, false) },
@@ -298,7 +331,7 @@ const menu = computed<ContextMenuItem[][]>(() => {
     writable.value
       ? [
           { label: "Rename", disabled: root, onSelect: () => tree.value?.startRenaming(path) },
-          { label: root ? "Delete the mod's folder" : "Delete", color: "error" as const, onSelect: () => (deleting.value = path) },
+          { label: root ? "Delete the mod's folder" : "Delete", color: "error" as const, disabled: fixed, onSelect: () => (deleting.value = path) },
         ]
       : [],
     file
@@ -333,16 +366,43 @@ const menu = computed<ContextMenuItem[][]>(() => {
   ].filter((group) => group.length);
 });
 
+// the folders in windows of their own, as each window tells them, and the window each is in
+const folderWindows = computed(
+  () => new Map([...others.values()].filter((one) => one.name.startsWith("files:")).flatMap((one) => (one.roots ?? []).map((root) => [pathKey(root), one.name]))),
+);
+/** The window a folder's row (a tree path ending in "/") is open in, if it is. */
+const windowOf = (path: string) => (path.endsWith("/") ? folderWindows.value.get(pathKey(diskPath(path))) : undefined);
+// the marks follow the windows as they open and close (the tree draws its rows again)
+watch(
+  () => [...folderWindows.value.keys()].join("|"),
+  () => tree.value?.setIcons(ICONS),
+);
+/** A click on a folder's window mark brings that window up, and leaves the folder as it was. */
+function showFolderWindow(e: MouseEvent): void {
+  const at = e.composedPath().filter((el): el is HTMLElement => el instanceof HTMLElement);
+  const name = at.some((el) => el.dataset.itemSection === "decoration") ? windowOf(at.find((el) => el.dataset.itemPath)?.dataset.itemPath ?? "") : undefined;
+  if (!name) return;
+  e.stopPropagation();
+  e.preventDefault();
+  void Show(name);
+}
+
+/** A folder (a root's too) in a window of its own, with this window's tabs of its files. */
+function openFolderWindow(path: string): void {
+  const disk = diskPath(path);
+  void openFilesWindow(`files:${disk}`, path.replace(/\/$/, "").split("/").at(-1) ?? disk, [disk]);
+}
+
 /** Delete the asked path; a mod's own folder also leaves the workspace. */
 async function remove(): Promise<void> {
   const path = deleting.value;
   deleting.value = "";
   const disk = diskPath(path);
-  const root = roots[names.value.indexOf(path.slice(0, -1))];
+  const root = rootOf(path);
   await DeletePath(disk);
   tree.value?.remove(path, { recursive: true });
   ide.moved(disk);
-  if (root) saveWorkspace({ save: () => RemoveWorkspaceMod(workspaceId, root.origin ?? ""), rebuilds: true });
+  if (root?.kind === "mod") saveWorkspace({ save: () => RemoveWorkspaceMod(workspaceId, root.origin ?? ""), rebuilds: true });
 }
 const { mutate: confirmDelete, isLoading: removing } = useMutation({ mutation: remove });
 </script>
@@ -374,6 +434,7 @@ const { mutate: confirmDelete, isLoading: removing } = useMutation({ mutation: r
         '--trees-status-ignored-override': 'color-mix(in oklab, var(--fg-3), var(--bg-2) 40%)',
       }"
       @contextmenu.capture="onContext"
+      @click.capture="showFolderWindow"
     />
   </UContextMenu>
   <UModal :open="!!deleting" title="Delete from disk?" @update:open="(open) => !open && (deleting = '')">

@@ -52,29 +52,28 @@ The game’s `-mapeditor` still owns heightmap bake, locators, and splines. Vic3
 
 ## Multi-window
 
-Wails v3 can open extra windows. Today `main.go` creates one.
+Same-workspace windows are in (see [Windows]({{< relref "/pages/ide#windows" >}})): a page, an editor, the game's
+files or the panel in a window of its own, all on the one live session. What is left is two workspaces at once.
 
 {{< mermaid >}}
 flowchart LR
   subgraph now [Now]
-    oneWin[One webview]
+    wins[Several windows]
     oneSess[One live session]
   end
   subgraph later [Later]
-    ideWin[IDE window]
-    toolWin[Tool pages]
-    pool[Pool: N sessions or share one]
+    pool[Pool: N sessions]
+    twoWs[Two workspaces at once]
   end
-  oneWin --> ideWin
+  wins --> oneSess
   oneSess --> pool
-  pool --> toolWin
+  pool --> twoWs
 {{< /mermaid >}}
 
-- **Same workspace, extra windows:** feasible (hash router + Pinia). **IDE undock** is the useful first step: each window gets its own Monaco editors talking to the **same** Go session.
+- **Same workspace, extra windows:** done. Each window has its own Monaco editors talking to the **same** Go session.
 - **Two workspaces at once:** needs `EnsureSession` to keep more than one session live.
-- Undocking Health / Graph / Publish is the same extra-window work once the pool rule is decided.
 
-Target: **IDE undock first; full-app windows after the one-session rule is relaxed.**
+Target: **two workspaces at once, after the one-session rule is relaxed.**
 
 ## Game coverage
 

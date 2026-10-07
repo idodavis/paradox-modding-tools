@@ -6,6 +6,9 @@
 import * as source$0 from "./internal/lang/source/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as lsp$0 from "./internal/lsp/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as session$0 from "./internal/session/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -595,6 +598,31 @@ export interface Option {
 }
 
 /**
+ * PanelResult is a row of the Search results, a text search's hit or a reference: its file by origin, its 0-based
+ * line and its span in UTF-8 bytes, and the line's text.
+ */
+export interface PanelResult {
+    "path": string;
+    "rel": string;
+    "origin": string;
+    "line": number;
+    "col": number;
+    "end": number;
+    "preview": string;
+}
+
+/**
+ * PanelResults is what the panel's Search results show: what was looked for, its rows so far, and whether it is
+ * done or stopped at the cap.
+ */
+export interface PanelResults {
+    "title": string;
+    "rows": PanelResult[] | null;
+    "done": boolean;
+    "capped": boolean;
+}
+
+/**
  * Params is what the page asks for. Every number is the page's.
  */
 export interface Params {
@@ -949,6 +977,57 @@ export interface Version {
  */
 export interface WikiUpdated {
     "error"?: string;
+}
+
+/**
+ * WindowGive asks the window holding a tab to hand it to another.
+ */
+export interface WindowGive {
+    "to": string;
+    "tab": string;
+    "window": string;
+}
+
+/**
+ * WindowHeld is what a window holds: its title, the folders its explorer shows (their files open there), its tabs,
+ * and their files' problems.
+ */
+export interface WindowHeld {
+    "name": string;
+    "title": string;
+    "roots": string[] | null;
+    "tabs": string[] | null;
+    "problems": { [_ in string]?: lsp$0.Diagnostic[] | null } | null;
+}
+
+/**
+ * WindowShow asks a window to come to the front, at a route (a link followed in a window that shows one thing),
+ * or showing a file at a 0-based line and UTF-8 byte column; a line of -1 keeps where the file was.
+ */
+export interface WindowShow {
+    "to": string;
+    "route": string;
+    "path": string;
+    "line": number;
+    "col": number;
+}
+
+/**
+ * WindowTab is a tab (a file's path, or a diff tab) and, when its file has unsaved edits, its text.
+ */
+export interface WindowTab {
+    "tab": string;
+    "unsaved": boolean;
+    "text": string;
+}
+
+/**
+ * WindowTabs is tabs handed to a window, the one shown last.
+ */
+export interface WindowTabs {
+    "to": string;
+    "tabs": WindowTab[] | null;
+    "active": string;
 }
 
 /**

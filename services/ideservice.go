@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/lsp"
 )
 
@@ -181,4 +182,26 @@ func (s *IdeService) DidSave(workspaceID, path string) error {
 	}
 	sess.DidSave(path)
 	return nil
+}
+
+// ReplacedBy is the mods' files at a game file's path from its root, in load order: the copies the game loads in
+// its place (B46).
+func (s *IdeService) ReplacedBy(workspaceID, path string) ([]source.File, error) {
+	sess, err := s.Session.live(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	sess.RLock()
+	defer sess.RUnlock()
+	file, mod, ok := sess.Located(path)
+	if !ok || mod != nil {
+		return nil, nil
+	}
+	var copies []source.File
+	for _, other := range sess.Workspace.Files {
+		if strings.EqualFold(other.Rel, file.Rel) {
+			copies = append(copies, other)
+		}
+	}
+	return copies, nil
 }

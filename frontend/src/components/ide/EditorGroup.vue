@@ -5,18 +5,22 @@
  * editor's edge into a new group there. The breadcrumb, the file's origin, folders and name, then where the caret
  * is (Inspect.within), and a Markdown file's Raw or Rich; then the shown tab's editor. The group at the top right
  * ends its strip with the Wiki button. A diff tab shows its file's diff (GitDiff) in place of the breadcrumb and editor.
+ * A game file a mod replaces says so, with a compare (B46). A tab moves into a window of its own, and back.
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { refDebounced } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
-import { saveAll, saveFile } from "../../ide/monacoEditor";
+import { newWindowWith, saveAll, saveFile, sendTab } from "../../ide/monacoEditor";
 import { useCompare } from "../../composables/useCompare";
 import { useIdeRoots } from "../../composables/useIdeRoots";
-import { hoverQuery } from "../../queries";
+import { hoverQuery, replacedQuery } from "../../queries";
 import { tabOf, useIdeStore, type Edge } from "../../stores/ide";
 import { useWorkspaceStore } from "../../stores/workspace";
+import { Close } from "@services/windowservice";
+import { isMain, placing, windowName, windowPart } from "../../windows";
+import { fileName } from "../../lib/format";
 import { iconOf } from "./ExplorerTree.vue";
 
 const { workspaceId, groupId } = defineProps<{ workspaceId: string; groupId: number }>();
@@ -36,7 +40,7 @@ const readOnly = (path: string) => !!locate(path)?.root.readOnly;
 function name(tab: string): string {
   const path = tabOf(tab).file;
   const rel = locate(path)?.rel ?? path;
-  return rel.slice(Math.max(rel.lastIndexOf("/"), rel.lastIndexOf("\\")) + 1);
+  return fileName(rel);
 }
 
 function show(path: string): void {
@@ -97,9 +101,20 @@ function tabMenu(tab: string): ContextMenuItem[][] {
         onSelect: () => compare.files(picked, path),
       },
     ],
+    [
+      { label: "Move into a new window", icon: "i-lucide-app-window", onSelect: () => void newWindowWith(tab) },
+      ...(isMain ? [] : [{ label: "Dock back into the main window", icon: "i-lucide-panel-top-close", onSelect: () => void Close(windowName) }]),
+    ],
     [{ label: "Copy path", onSelect: () => void Clipboard.SetText(path) }],
   ];
 }
+
+// a game file the mods replace: the copy the game loads, which it compares with
+const { data: copies } = useQuery(() => ({
+  ...replacedQuery({ id: workspaceId, path: active.value }),
+  enabled: !!active.value && !diff.value && readOnly(active.value),
+}));
+const loaded = computed(() => (readOnly(active.value) ? copies.value?.at(-1) : undefined));
 
 // the shown tab scrolls into view in a strip of more tabs than fit
 const strip = useTemplateRef("strip");
@@ -109,15 +124,60 @@ function scrollTabs(e: WheelEvent): void {
   if (strip.value && !e.deltaX) strip.value.scrollLeft += e.deltaY;
 }
 
-// a tab dropped on a tab goes before it, on the strip after the last; on the editor, where its zone says
-function dropTab(edge: Edge, before?: string): void {
-  const dragged = ide.dragging;
-  ide.dragging = null;
-  zone.value = null;
-  if (dragged) ide.drop(dragged.path, dragged.from, groupId, edge, before);
+// a tab dragged, between windows too: the tab rides in the drag, and whether it is a game file, which alone the game's
+// files' window takes
+const TAB = "application/x-pmt-tab";
+const GAME = "application/x-pmt-game";
+function startDrag(e: DragEvent, path: string): void {
+  ide.dragging = { path, from: groupId };
+  e.dataTransfer?.setData(TAB, path);
+  if (readOnly(tabOf(path).file)) e.dataTransfer?.setData(GAME, "");
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
 }
+// dropped outside this window where no window took it: a new window of its own
+function endDrag(e: DragEvent, path: string): void {
+  ide.dragging = null;
+  const out = e.screenX < window.screenX || e.screenX > window.screenX + window.outerWidth || e.screenY < window.screenY || e.screenY > window.screenY + window.outerHeight;
+  if (e.dataTransfer?.dropEffect === "none" && out) void newWindowWith(path);
+}
+const takes = (e: DragEvent) => !!e.dataTransfer?.types.includes(TAB) && (windowPart !== "game" || e.dataTransfer.types.includes(GAME));
+
+// while a tab is dragged over the group: where it would go on the strip (before a tab, or at the end: null), and on
+// the editor (its zone)
+const over = shallowRef(false);
+const landing = shallowRef<string | null>();
 const zone = shallowRef<Edge | null>(null);
+function hover(e: DragEvent, before?: string | null): void {
+  if (!takes(e)) return;
+  e.preventDefault();
+  over.value = true;
+  if (before !== undefined) landing.value = before;
+}
+function leave(e: DragEvent): void {
+  if (e.currentTarget instanceof Node && e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+  over.value = false;
+  landing.value = undefined;
+  zone.value = null;
+}
+// a tab dropped on a tab goes before it, on the strip after the last; on the editor, where its zone says; one from
+// another window (none dragged here) is asked of the window holding it, and placed when it comes
+function dropTab(e: DragEvent, edge: Edge, before?: string): void {
+  const dragged = ide.dragging;
+  const tab = e.dataTransfer?.getData(TAB);
+  ide.dragging = null;
+  over.value = false;
+  landing.value = undefined;
+  zone.value = null;
+  if (!tab || !takes(e)) return;
+  e.preventDefault();
+  if (dragged) return ide.drop(dragged.path, dragged.from, groupId, edge, before);
+  placing.set(tab, { group: groupId, edge, before });
+  ide.focused = groupId;
+  void sendTab(windowName, tab);
+}
 function zoneAt(e: DragEvent): void {
+  if (!takes(e)) return;
+  e.preventDefault();
   if (!(e.currentTarget instanceof HTMLElement)) return;
   const box = e.currentTarget.getBoundingClientRect();
   const x = (e.clientX - box.left) / box.width;
@@ -153,7 +213,7 @@ function setView(view: string | number): void {
 </script>
 
 <template>
-  <section class="flex min-h-0 min-w-0 flex-1 flex-col" @pointerdown="ide.focused = groupId">
+  <section class="flex min-h-0 min-w-0 flex-1 flex-col" @pointerdown="ide.focused = groupId" @dragover="hover($event)" @dragleave="leave">
     <UModal :open="!!asking" title="Save your changes?" @update:open="(open) => !open && (asking = '')">
       <template #body>
         <p class="text-13 text-toned">{{ name(asking) }} has changes that are not saved.</p>
@@ -166,7 +226,7 @@ function setView(view: string | number): void {
         </div>
       </template>
     </UModal>
-    <div class="flex h-9 shrink-0 items-stretch border-b border-default bg-muted" @dragover.prevent @drop="dropTab('middle')">
+    <div class="flex h-9 shrink-0 items-stretch border-b border-default bg-muted" @dragover="hover($event, null)" @drop="dropTab($event, 'middle')">
       <!-- the tabs keep their names; more than fit scroll, by the wheel or a bar under the pointer, the app's 6px one
            (Chromium draws ::-webkit-scrollbar only where scrollbar-width and -color are auto) over the tabs' foot -->
       <div
@@ -187,14 +247,16 @@ function setView(view: string | number): void {
             :title="locate(tabOf(path).file)?.rel ?? path"
             @click="show(path)"
             @auxclick.middle="close(path)"
-            @dragstart="ide.dragging = { path, from: groupId }"
-            @dragend="ide.dragging = null"
-            @dragover.prevent
-            @drop.stop="dropTab('middle', path)"
+            @dragstart="startDrag($event, path)"
+            @dragend="endDrag($event, path)"
+            @dragover.stop="hover($event, path)"
+            @drop.stop="dropTab($event, 'middle', path)"
           >
             <UIcon v-if="tabOf(path).diff" name="i-lucide-git-compare" class="size-3.5 shrink-0 text-dimmed" />
             <img v-else-if="iconOf(path)" :src="iconOf(path)" alt="" class="size-3.5 shrink-0" />
             <UIcon v-else name="i-lucide-file" class="size-3.5 shrink-0" />
+            <!-- a tab dragged here goes before this one -->
+            <span v-if="landing === path" class="pointer-events-none absolute inset-y-1 -start-px w-0.5 rounded-full bg-primary" />
             <span class="truncate">{{ name(path) }}</span>
             <span v-if="tabOf(path).diff" class="text-dimmed">{{ tabOf(path).commit?.slice(0, 7) ?? tabOf(path).diff }}</span>
             <UIcon v-else-if="readOnly(path)" name="i-lucide-lock" class="size-3 shrink-0 text-dimmed" />
@@ -213,6 +275,7 @@ function setView(view: string | number): void {
             </span>
           </div>
         </UContextMenu>
+        <span v-if="landing === null" class="pointer-events-none mt-1.5 h-6 w-0.5 shrink-0 rounded-full bg-primary" />
       </div>
       <span class="grow" />
       <div class="flex shrink-0 items-center gap-0.5 px-2">
@@ -222,7 +285,7 @@ function setView(view: string | number): void {
         <UDropdownMenu :items="actions">
           <UButton icon="i-lucide-ellipsis" variant="ghost" size="sm" square aria-label="Tab actions" />
         </UDropdownMenu>
-        <template v-if="groupId === ide.cornerGroup">
+        <template v-if="isMain && groupId === ide.cornerGroup">
           <USeparator orientation="vertical" class="mx-1 h-4" />
           <UTooltip text="Wiki pane" :kbds="['Ctrl Shift W']">
             <UButton
@@ -248,6 +311,12 @@ function setView(view: string | number): void {
         <span :class="{ 'font-mono text-highlighted': i > folders, 'text-toned': i === folders }">{{ part }}</span>
       </template>
       <span class="grow" />
+      <template v-if="loaded">
+        Replaced by
+        <OriginDot :color="store.originColor(loaded.origin)" small />
+        <span class="text-toned">{{ store.originName(loaded.origin) }}</span>
+        <UButton label="Compare" variant="ghost" size="xs" @click="compare.files(active, loaded.path)" />
+      </template>
       <UTabs v-if="markdown" :model-value="ide.rich.has(active) ? 'rich' : 'raw'" :items="VIEWS" :content="false" size="xs" @update:model-value="setView" />
     </div>
     <div class="relative flex min-h-0 flex-1 flex-col">
@@ -255,7 +324,7 @@ function setView(view: string | number): void {
       <CodeEditor v-else-if="active" :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
       <div v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">Open a file from the explorer, or Ctrl P</div>
       <!-- while a tab is dragged: where it would go -->
-      <div v-if="ide.dragging" class="absolute inset-0 z-20" @dragover.prevent="zoneAt" @dragleave="zone = null" @drop.prevent="dropTab(zone ?? 'middle')">
+      <div v-if="ide.dragging || over" class="absolute inset-0 z-20" @dragover="zoneAt" @dragleave="zone = null" @drop="dropTab($event, zone ?? 'middle')">
         <div v-if="zone" class="pointer-events-none absolute bg-(--accent-soft) ring-1 ring-primary ring-inset" :class="ZONES[zone]" />
       </div>
     </div>

@@ -87,11 +87,12 @@ pages; it parses only what it is handed. `go list -deps ./services/...` gives ev
 | | Search | `searchservice.go` | the IDE's text and file search, and replace (`search:hits` per file) |
 | | Git | `gitservice.go` | the IDE's source control: the git installed on this machine, per mod repository (`gitservice_windows.go` hides git's console) |
 | | Release | `releaseservice.go` | the Publish page: descriptor, description, Workshop extras, Steam publish |
+| | Window | `windowservice.go` | the app's other windows: open, show, close (a closing one hands its tabs back first), and the `window:*` events they tell each other by |
 
 Ide, Health, EventGraph and Wiki reach the open workspace through Session (`live`); Session,
 Workspace, Ide, Release and Log read or change your saved data through App (`read`, `mutate`); Git
-reads a workspace's mods through App to find their repositories. File and Search stand alone: they
-work on paths the frontend hands them.
+reads a workspace's mods through App to find their repositories. File, Search and Window stand alone: the first two
+work on paths the frontend hands them, Window on the app's windows.
 
 Go tells the frontend about state with events (`emit` in `sessionservice.go`): `lang:ready`,
 `lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`,

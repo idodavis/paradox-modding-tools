@@ -14,6 +14,8 @@ import { plural } from "../../lib/format";
 import { useGitStore } from "../../stores/git";
 import { useIdeStore } from "../../stores/ide";
 import { useWorkspaceStore } from "../../stores/workspace";
+import { Close } from "@services/windowservice";
+import { isMain, openWindow, windowName } from "../../windows";
 
 const { workspaceId } = defineProps<{ workspaceId: string }>();
 
@@ -108,7 +110,15 @@ function open(at: { path: string; line: number; col: number }): void {
         <UInput v-model="filter" placeholder="Filter problems" size="xs" class="w-50" icon="i-lucide-filter" />
         <UButton label="Open in Health" variant="ghost" size="xs" :to="{ name: 'health', params: { id: workspaceId }, query: { card: 'script' } }" />
       </template>
-      <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Close the panel" @click="ide.panel = ''" />
+      <template v-if="isMain">
+        <UTooltip text="Open in its own window">
+          <UButton icon="i-lucide-app-window" variant="ghost" size="sm" square aria-label="Open in its own window" @click="openWindow(`/workspace/${workspaceId}`, 'panel', 'Panel')" />
+        </UTooltip>
+        <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Close the panel" @click="ide.panel = ''" />
+      </template>
+      <UTooltip v-else text="Back into the main window">
+        <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Back into the main window" @click="Close(windowName)" />
+      </UTooltip>
     </div>
     <div v-if="ide.panel === 'problems'" class="min-h-0 flex-1 overflow-y-auto py-1">
       <template v-for="file in files" :key="file.path">

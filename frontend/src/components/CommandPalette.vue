@@ -27,6 +27,7 @@ import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { GetEventDetail } from "@services/eventgraphservice";
 import { Hover } from "@services/ideservice";
 import { SWITCHES, ideSettingsOpen } from "./ide/IdeSettingsCard.vue";
+import UnsavedChangesModal from "./UnsavedChangesModal.vue";
 import { useCompare } from "../composables/useCompare";
 import { useIdeRoots } from "../composables/useIdeRoots";
 import { useWorkspacePrefs } from "../composables/useWorkspaceSave";
@@ -52,6 +53,7 @@ const { mutate: savePrefs } = useWorkspacePrefs();
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: codes } = useQuery(codesQuery);
 const ide = useIdeStore();
+const unsavedModal = useOverlay().create(UnsavedChangesModal);
 const git = useGitStore();
 const { roots, locate } = useIdeRoots(() => store.activeWorkspaceId);
 const compare = useCompare(() => store.activeWorkspaceId);
@@ -185,9 +187,18 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
       ? [{ label: "Two files selected in the explorer", prefix: "Compare:", icon: "i-lucide-diff", onSelect: run(() => compare.files(first, second)) }]
       : []),
   ];
+  // the window loaded again, its unsaved files saved or dropped first
+  const reload: Item = {
+    label: "Reload the window",
+    icon: "i-lucide-refresh-cw",
+    onSelect: async () => {
+      if (!ide.unsaved.size || (await unsavedModal.open({ going: "Reloading the window" }))) location.reload();
+    },
+  };
   const commands: Item[] = !id
-    ? []
+    ? [reload]
     : [
+        reload,
         ...compares,
         ...(active
           ? [

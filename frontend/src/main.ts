@@ -12,6 +12,7 @@ import router from "./router";
 import { subscribeEvents } from "./events";
 import { useSettingsStore } from "./stores/settings";
 import { Log } from "@services/logservice";
+import { changed } from "./windows";
 
 // what nothing caught goes to pmt.log, where a bug report finds it
 window.addEventListener("error", (event) => {
@@ -37,15 +38,17 @@ app.use(PiniaColada, {
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   },
-  // every failed save is told here, once; Go's error says what went wrong
+  // every failed save is told here, once (Go's error says what went wrong), and every save to the other windows,
+  // which read again what they show
   mutationOptions: {
     onError: (error) => toast.add({ title: error instanceof Error ? error.message : String(error), color: "error" }),
+    onSuccess: changed,
   },
 });
 app.use(router);
 app.use(ui);
 app.runWithContext(() => {
-  subscribeEvents();
+  subscribeEvents(router);
   // the settings put the theme and text sizes on the page as they load
   void useSettingsStore().load();
 });

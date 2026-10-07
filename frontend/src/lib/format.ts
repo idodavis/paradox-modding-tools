@@ -9,6 +9,9 @@ const AND = new Intl.ListFormat("en");
 /** "a, b, and c". */
 export const list = (words: Iterable<string>) => AND.format(words);
 
+/** A path's last part, its file's (or folder's) name, whichever way its slashes go. */
+export const fileName = (path: string) => path.split(/[\\/]/).at(-1) ?? path;
+
 /** The text with its first letter capital. */
 export const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 

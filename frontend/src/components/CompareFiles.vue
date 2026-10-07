@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Two files compared, what differs marked, split or stacked, opened at a line of the second: Health's "Compare the
+ * Two files compared, what differs marked, split or unified, opened at a line of the second: Health's "Compare the
  * two" (the replaced definition's file beside the kept one's) and the IDE's compares. Opened through useOverlay.
  */
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
@@ -21,7 +21,7 @@ const settings = useSettingsStore();
 const style = useLocalStorage<"split" | "unified">("pmt.compare.style", "split");
 const STYLES = [
   { label: "Split", value: "split" },
-  { label: "Stacked", value: "unified" },
+  { label: "Unified", value: "unified" },
 ];
 const { data: oldFile, isPending: readingOld } = useQuery(() => textQuery(old.path));
 const { data: newFile, isPending: readingNew } = useQuery(() => textQuery(now.path));
@@ -72,7 +72,7 @@ onBeforeUnmount(() => view.value?.dispose());
         <p v-else-if="before === undefined || after === undefined" class="p-4 text-12 text-dimmed">
           {{ before === undefined ? old.rel : now.rel }} could not be read.
         </p>
-        <div ref="host" class="min-h-0 flex-1" />
+        <div ref="host" class="min-h-0 flex-1 border-s-12 border-(--bg-0)" />
       </div>
     </template>
   </UModal>

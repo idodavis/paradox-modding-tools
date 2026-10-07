@@ -120,7 +120,7 @@ function remove(extra: Preview): void {
           <span class="min-w-0 truncate font-mono text-12 text-toned">
             {{ shown.kind === "youtube" ? `youtube.com/watch?v=${shown.id}` : shown.rel }}
           </span>
-          <UButton label="Remove" icon="i-lucide-trash-2" size="sm" variant="ghost" @click="remove(shown)" />
+          <UButton label="Remove" icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="remove(shown)" />
           <span class="grow" />
         </template>
         <UButton label="Add image" icon="i-lucide-plus" size="sm" @click="addImage" />

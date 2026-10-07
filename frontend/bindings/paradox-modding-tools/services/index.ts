@@ -4,6 +4,7 @@
 import * as AppService from "./appservice.js";
 import * as EventGraphService from "./eventgraphservice.js";
 import * as FileService from "./fileservice.js";
+import * as GitService from "./gitservice.js";
 import * as HealthService from "./healthservice.js";
 import * as IdeService from "./ideservice.js";
 import * as LogService from "./logservice.js";
@@ -16,6 +17,7 @@ export {
     AppService,
     EventGraphService,
     FileService,
+    GitService,
     HealthService,
     IdeService,
     LogService,
@@ -42,6 +44,14 @@ export type {
     FileSearchQuery,
     FileSearchResult,
     GameInstall,
+    GitBranch,
+    GitBranches,
+    GitChange,
+    GitCommit,
+    GitOutput,
+    GitRepository,
+    GitStatus,
+    GitText,
     Health,
     HealthParams,
     IdeRoot,

@@ -283,7 +283,7 @@ const { mutate: download, isLoading: downloading } = useMutation({
             </div>
             <p v-if="current && !current.texts && !current.files" class="p-4 text-12 text-dimmed">A binary file: no lines to compare.</p>
             <p v-else-if="unchanged" class="p-4 text-12 text-dimmed">Unchanged: Steam has the same {{ current?.label }}.</p>
-            <div v-else ref="host" class="min-h-0 grow" />
+            <div v-else ref="host" class="min-h-0 grow border-s-12 border-(--bg-0)" />
           </div>
         </div>
       </div>

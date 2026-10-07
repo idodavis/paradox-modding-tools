@@ -1,12 +1,12 @@
 ---
 title: Victoria 3
-description: Vic3 metadata.json layout, LIOS, and events that never self-fire.
+description: Vic3's metadata.json layout, its overrides and entry modes, and events that never fire by themselves.
 weight: 2
 ---
 
 # Victoria 3
 
-Install `game/` is the script root. Local mods: `Documents/Paradox Interactive/Victoria 3/mod/<mod>/` — that folder **is** `game/` (no extra `game/` segment). Steam app `529340`. `script_docs` / `DumpDataTypes` write to Documents `docs/`.
+Install `game/` is the script root. Local mods: `Documents/Paradox Interactive/Victoria 3/mod/<mod>/` — that folder **is** `game/` (no extra `game/` segment). Steam app `529340`. `script_docs` writes to Documents `docs/` (`event_scopes.log` to `logs/`), `DumpDataTypes` to `logs/data_types/`.
 
 Mods do not disable achievements (separate game rule).
 
@@ -15,7 +15,7 @@ Mods do not disable achievements (separate game rule).
 ```
 mod/my_mod/
   .metadata/metadata.json    # required or the game will not load the mod
-  .metadata/thumbnail.png
+  thumbnail.png              # at the mod's root
   common/
   events/
   localization/
@@ -23,15 +23,17 @@ mod/my_mod/
   gui/
 ```
 
-Do not edit the install. Vic3 does **not** use CK3-style `.mod` / `replace_path`. Overlay by path; unique filenames for new objects.
+Do not edit the install. Vic3 has no CK3-style `.mod` file; a folder the mod replaces whole is listed in `metadata.json`'s `game_custom_data.replace_paths`, which PMT reads too. Overlay by path; unique filenames for new objects.
 
 `metadata.json` (launcher): `name`, `id`, `version`, `supported_game_version`, `tags` (max 5), `relationships` (`dependency`, `incompatible_with`, `load_before`, `load_after`).
 
-PMT Publish edits this metadata and the listing Markdown/BBCode. The IDE warns if `.metadata/metadata.json` is missing.
+PMT's [Publish]({{< relref "/pages/publish" >}}) edits this metadata and the listing's Markdown or BBCode.
 
 ## Overrides
 
 - Same path+filename: full file replace. Last ASCII filename wins for the same object key ([LIOS]({{< relref "/concepts/load-order" >}})), taking priority over playset order.
+- One object without copying its file: an entry mode before its name, `INJECT:`, `REPLACE:` and their `TRY_` and `_OR_CREATE` forms ([entry modes]({{< relref "/concepts/load-order" >}})).
+- **Events, GUI types and templates are first-wins**: the first file to define the id keeps it.
 - New objects: new file (`mymod_buildings.txt`) in the vanilla folder.
 - Loc: `localization/<lang>/replace/`.
 - On actions: append; do not replace vanilla `effect`.

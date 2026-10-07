@@ -5,8 +5,10 @@
  */
 import { useQueryCache } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
+import { useDebounceFn } from "@vueuse/core";
 import { scans } from "./composables/useLanguageHealth";
 import { fileKeys, installKeys, languageKeys, sessionKeys, wikiKeys } from "./queries";
+import { useGitStore } from "./stores/git";
 
 export function subscribeEvents(): void {
   const queryCache = useQueryCache();
@@ -30,8 +32,15 @@ export function subscribeEvents(): void {
     void queryCache.invalidateQueries({ key: installKeys.all });
     void queryCache.invalidateQueries({ key: languageKeys.all });
   });
-  // a file changed on disk is read again; an editor with nothing unsaved shows the new text
-  Events.On("fs:changed", ({ data }) => void queryCache.invalidateQueries({ key: fileKeys.text(data.path) }));
+  // a file changed on disk is read again; an editor with nothing unsaved shows the new text; source control reads
+  // its repository again once a burst of changes is over
+  const git = useGitStore();
+  const gitChanged = useDebounceFn(() => git.refresh(), 500);
+  Events.On("fs:changed", ({ data }) => {
+    void queryCache.invalidateQueries({ key: fileKeys.text(data.path) });
+    void gitChanged();
+  });
+  Events.On("git:output", ({ data }) => git.told(data));
   Events.On("wiki:updated", ({ data }) => {
     void queryCache.invalidateQueries({ key: wikiKeys.all });
     if (data.error) toast.add({ title: "Wiki fetch failed", description: data.error, color: "error" });

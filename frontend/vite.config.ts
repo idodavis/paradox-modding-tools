@@ -112,6 +112,8 @@ export default defineConfig({
         contextMenu: contextual,
         // its content keeps inside the rounded corners, a footer's fill included
         popover: { slots: { content: "overflow-hidden bg-elevated rounded-xl ring-0 shadow-(--shadow)" } },
+        // a toast floats as a menu does: the theme's shadow, whose outline replaces the ring
+        toast: { slots: { root: "ring-0 shadow-(--shadow)" } },
         // a dialog is the boards' .pop: bg-3, 12px corners, the theme's shadow
         modal: {
           slots: { content: "bg-elevated" },

@@ -233,7 +233,7 @@ const { mutate: resetData, isLoading: resetting } = useMutation({
       <UModal
         v-model:open="resetOpen"
         title="Reset all of PMT's data?"
-        description="Mods, game files and your appearance settings stay."
+        description="Mods, game files and your settings stay."
       >
         <button type="button" class="h-6 hover:text-highlighted">Reset all PMT data</button>
         <template #body>

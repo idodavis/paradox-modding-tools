@@ -24,7 +24,8 @@ const lines = computed(() => codeLines(text, name));
   </span>
   <div v-else class="grid grid-cols-[auto_minmax(0,1fr)] overflow-x-auto font-mono text-(--fg-1) text-code whitespace-pre">
     <template v-for="(line, n) in lines" :key="n">
-      <span class="min-w-8 pe-4 text-end text-(--fg-3) select-none">{{ fromLine + n + 1 }}</span>
+      <!-- the board's 48px gutter; a longer number widens it, never to the edge -->
+      <span class="min-w-12 ps-3 pe-4 text-end text-(--fg-3) select-none">{{ fromLine + n + 1 }}</span>
       <span>
         <span v-for="(token, i) in line" :key="i" :style="{ color: token.color, fontStyle: token.italic ? 'italic' : undefined }">{{ token.content }}</span>
       </span>

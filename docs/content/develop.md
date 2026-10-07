@@ -15,12 +15,12 @@ Human-facing product docs start at the [home page]({{< relref "/" >}}). This pag
 | Tool | Version / notes |
 |------|-----------------|
 | [Go](https://go.dev/dl/) | **1.27.1** (see `go.mod`) |
-| [Node.js](https://nodejs.org/) + npm | Current LTS (18+). Frontend is Vue 3 + Vite |
+| [Node.js](https://nodejs.org/) + npm | `^20.19.0` or `>=22.12.0` (what Vite and Nuxt UI require). Frontend is Vue 3 + Vite |
 | [Task](https://taskfile.dev/installation/) | Taskfile v3 (`task` on your `PATH`) |
-| [Wails v3 CLI](https://v3.wails.io/) | Pin to the module: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.21` |
+| [Wails v3 CLI](https://v3.wails.io/) | Pin to the module: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28` |
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.21
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
 ```
 
 Confirm `wails3` is on your `PATH` (`$(go env GOPATH)/bin`).
@@ -54,7 +54,7 @@ sudo apt-get install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-de
 
 ## Steam Workshop in dev
 
-Nothing to fetch: **Publish → Steam** runs a second copy of the app, which loads the game's own copy of Steam's library from its install (`binaries/steam_api64.dll`, or `binaries/libsteam_api.so` on Linux).
+Nothing to fetch: **Publish → Steam** runs a second copy of the app, which loads the game's own copy of Steam's library from its install (`binaries/steam_api64.dll`, or `binaries/libsteam_api.so` for CK3 and Vic3 on Linux; EU5 has no Linux build).
 
 ## Develop (hot reload)
 
@@ -121,7 +121,7 @@ Each Go package keeps its tests in one file, `<pkg>_test.go`.
 |------|------|
 | `main.go` | Wails entry, updater (`SHA256SUMS`), single window |
 | `services/` | Wails services only, + `internal/` (game, lang, local, lsp, session, steam, wiki) |
-| `frontend/` | Vue 3 + Nuxt UI + Pinia + monaco-vscode-api |
+| `frontend/` | Vue 3 + Nuxt UI + Pinia + Pinia Colada; `monaco-editor`, `@pierre/trees` (the explorer), Vue Flow + dagre (the Event Graph) |
 | `docs/` | This site (Hugo). Content in `docs/content/` |
 | `build/` | Wails Taskfiles, icons, Windows `info.json` |
 

@@ -23,14 +23,18 @@ Opening a workspace drops every other live session. [Roadmap]({{< relref "/roadm
 ## Game coverage
 
 - CK3 and Vic3 are the well-trodden paths.
-- **EU5 is partial** — stage roots and `INJECT:` / `REPLACE:` exist; folder and effect coverage is thinner than CK3.
+- **EU5 is partial**: its stage folders and entry modes (`INJECT:`, `REPLACE:`) are read; folder and effect coverage is thinner than CK3's.
 
 ## Binaries and updater
 
 - Zips are **unsigned**. Windows SmartScreen will warn.
 - Windows needs **WebView2** (Win11 usually has it).
 - Linux needs the **WebKitGTK 6** runtime Wails uses — a missing `.so` looks like a blank window.
-- The footer **version button** verifies against a Release asset named `SHA256SUMS` plus the platform zip (`paradox-modding-tools-windows-amd64.zip`, `…-linux-amd64.zip`).
+- The status bar's **version button** verifies against a Release asset named `SHA256SUMS` plus the platform zip (`paradox-modding-tools-windows-amd64.zip`, `…-linux-amd64.zip`).
+
+## Source control
+
+The IDE's source control runs the **git installed on your computer**; without git on the PATH it is off. Git never asks for a password inside PMT: set up a credential helper or an SSH key for pulls and pushes that need one.
 
 ## Steam Workshop
 

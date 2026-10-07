@@ -5,12 +5,13 @@
 import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { useColorMode, usePreferredDark } from "@vueuse/core";
+import { FILE_TREE_DENSITY_PRESETS, type FileTreeDensityKeyword } from "@pierre/trees";
 import { GetSettings, SaveSettings } from "@services/appservice";
 import { WORKSPACE_TOOL_NAMES, type WorkspaceToolName } from "../workspaceTools";
 import { useWorkspaceStore } from "./workspace";
 
 /** A theme family; its halves are `<id>-dark` and `<id>-light` in styles/themes.css. */
-export type ThemeFamily = { id: "pmt" | "catppuccin" | "one" | "ck3" | "eu5" | "vic3"; label: string; note: string; game?: string };
+export type ThemeFamily = { id: "pmt" | "catppuccin" | "one" | "pierre" | "ck3" | "eu5" | "vic3"; label: string; note: string; game?: string };
 type FamilyId = ThemeFamily["id"];
 type Mode = "dark" | "light";
 export type ThemeId = `${FamilyId}-${Mode}`;
@@ -19,11 +20,12 @@ export type Appearance = Mode | "system";
 
 const PMT: ThemeFamily = { id: "pmt", label: "PMT", note: "PMT's own" };
 
-/** The six families, in the order Appearance shows them; each comes dark and light. */
+/** The seven families, in the order Appearance shows them; each comes dark and light. */
 export const THEMES: readonly ThemeFamily[] = [
   PMT,
   { id: "catppuccin", label: "Catppuccin", note: "Mocha and Latte" },
   { id: "one", label: "One", note: "One Dark and One Light" },
+  { id: "pierre", label: "Pierre Soft", note: "Pierre Dark Soft and Pierre Light Soft" },
   { id: "ck3", label: "Crusader Kings", note: "CK3 workspaces", game: "ck3" },
   { id: "eu5", label: "Europa Universalis", note: "EU5 workspaces", game: "eu5" },
   { id: "vic3", label: "Victoria", note: "Vic3 workspaces", game: "vic3" },
@@ -188,7 +190,12 @@ export const useSettingsStore = defineStore("settings", () => {
   const indentSpaces = computed(() => values.value["ide.indent"] === "spaces");
   const indentSize = computed(() => clamp(Number(values.value["ide.indentSize"]) || 4, 1, 8));
   const indentUnit = computed(() => (indentSpaces.value ? " ".repeat(indentSize.value) : "\t"));
-  const treeDensity = computed(() => (values.value["ide.density"] === "comfortable" ? "comfortable" : "compact"));
+  // the explorer's rows, one of @pierre/trees' own sizes; source control's rows and graph take its height
+  const treeDensity = computed<FileTreeDensityKeyword>(() => {
+    const stored = values.value["ide.density"];
+    return stored === "default" || stored === "relaxed" ? stored : "compact";
+  });
+  const treeRow = computed(() => FILE_TREE_DENSITY_PRESETS[treeDensity.value].itemHeight);
   // the editors' and compares' code: the font named (one installed, else Geist Mono), its size and line height
   const editorFont = computed(() => values.value["ui.editorFont"]?.trim() || "Geist Mono");
   const roomy = computed(() => values.value["ide.lineHeight"] === "roomy");
@@ -245,6 +252,7 @@ export const useSettingsStore = defineStore("settings", () => {
     indentSize,
     indentUnit,
     treeDensity,
+    treeRow,
     editorFont,
     roomy,
     codeFont,

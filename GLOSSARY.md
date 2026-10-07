@@ -21,7 +21,7 @@ These are different pipelines. Never collapse them into one word.
 
 | What | Canonical | Where | What it is |
 |---|---|---|---|
-| Community wiki | wiki, Guide | `package wiki` | Sanitized MediaWiki HTML. Guide is wiki-only. |
+| Community wiki | wiki (the Wiki pane, Patch Notes) | `package wiki` | Sanitized MediaWiki HTML; also a schema source, last in trust order. |
 | Console dumps | dumps (script_docs, dump_data_types) | OS user-data `logs/` (CK3) or `docs/` (Vic3/EU5), data types under `logs/data_types` | **What the game declares about its own language**, not an overlay: effects, triggers, links, scope types, modifiers, data types. |
 | Install prose | docs (`source.Info`) | Shipped `_*.info`, readmes, `*.md` **inside the game install** | The prose and the `<type>` a game writes beside its script; not the `docs/` folder the Vic3 and EU5 dumps land in. Never call this script_docs or wiki. Never name a field `GameInfo` (collides with `game.GameInfo`). |
 
@@ -32,7 +32,7 @@ Never persist a rendered hover string: a cache that held `"character; targets: c
 | Tree | What |
 |---|---|
 | **Install** | Steam/Paradox game folder. Vanilla script, GUI, loc, docs. An install's cache is keyed by game, game version, app version, the install folder, the language and the dump files (`services/internal/lang/README.md`). |
-| **User data** | `game.UserDataDir`: first existing of launcher `gameDataPath`; Win/mac `~/Documents/Paradox Interactive/<DocsFolderName>`; Linux `$XDG_DATA_HOME` or `~/.local/share/Paradox Interactive/<DocsFolderName>`; Proton `compatdata/<SteamAppID>/pfx/drive_c/users/steamuser/Documents/Paradox Interactive/<DocsFolderName>` (also Flatpak Steam). The dumps and the default `mod/` parent live here. |
+| **User data** | `game.UserDataDir`: first existing of launcher `gameDataPath`; Windows `~/Documents/Paradox Interactive/<DocsFolderName>`; Linux `$XDG_DATA_HOME` or `~/.local/share/Paradox Interactive/<DocsFolderName>`, then `~/Documents/…`; Proton `compatdata/<SteamAppID>/pfx/drive_c/users/steamuser/Documents/Paradox Interactive/<DocsFolderName>` (also Flatpak Steam). The dumps and the default `mod/` parent live here. |
 | **Workshop / mods** | User-specified mod roots on the workspace. A workspace's index is RAM-only. |
 
 ## Script
@@ -51,8 +51,8 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 |---|---|---|
 | Product pane | the Wiki pane, `WikiPane`, `ui.wiki.*` | Guide pane, `GuidePane`, `ui.guide.*`, Helper, HelperPane, `pmt.helper`, `ui.helper`, `ide.helperWidth`, `WikiGuide` |
 | Guide RPC | `WikiService.Guide` | `SessionService.WikiGuide`; query key `wiki-guide` → `guide` |
-| Events | `lang:ready`, `lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`, `wiki:updated` | `docs:wiki-*` |
-| Package / load | `package wiki`, `LoadGuides`, `guidesPath()` | `package docs`, `LoadDocs`, persist `docsPath()` |
+| Events | `lang:ready`, `lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`, `wiki:updated`, `search:hits`, `git:output` | `docs:wiki-*` |
+| Package / load | `package wiki`, `Refresh`, `SidecarPath` | `package docs`, `LoadDocs`, persist `docsPath()` |
 | Dumps health | `LanguageHealth.dumpsFrom` (yours, shipped or none), `dumpsStale` | `docsPresent`, UI “dumps required” |
 | Dump signature | `Command.Args` | prose in a usage field; a flat usage map |
 | Dump command text | `Command.Blurb` | a flat doc map |
@@ -124,23 +124,25 @@ Only a declared claim that is fresh and that no evidence contradicts lets a diag
 
 | Name | Lives in |
 |---|---|
-| The language rules (`Block`, `Blocks`, `Contents`, `Structurals`, `ScopeRules`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Folders`, `Nested`, `MapTable`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo`, `UserDataDir`, `DumpDirs`, `ReadGameVersion`, `FirstWinsAt` — `game.go` | `services/internal/game` — **the only game-aware package** |
+| The language rules (`Block`, `Blocks`, `Contents`, `Structurals`, `ScopeRules`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Folders`, `Nested`, `MapTable`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo` (its `FirstWins` sentence), `UserDataDir`, `DumpDirs`, `ReadGameVersion` — `game.go` | `services/internal/game` — **the only game-aware package** |
 | The CST, the lexer, the name and literal shapes, encodings; `SplitPrefixed`, `Constant`, `Interpolations` (the spellings inside one word); `Result.Attach` (comments onto statements) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install, a mod or a dump folder, its format, an image's header | `services/internal/lang/source` — one format table for every game |
 | Loc files: entries, interpolations, language | `services/internal/lang/loc` |
 | `Schema` with `Database`, `Key` (a position), `Command`, `Said` (a claim), `Seen` (vanilla's evidence); `Build`, `Input`; `Speaks`, the one rule for when a claim may accuse; `Read`, `Step` and `Reader`, the walker every reader of script uses; `Link`, `Named`, `Flagged`; `Entries` and `Entry`, the entry detector; the dump reader, the doc normalizer | `services/internal/lang/schema` — the schema stage: what each source states, in trust order |
 | `Load`, `Name`, `Safe`; the generator `gen` | `services/internal/lang/shipped` — the backup schemas, the dump part only, for a user missing a dump file |
 | `Index` with `Def`, `Ref`, `Loc`, `Records`; `Walk` and its `Context`, a file's records by the walker and the name rules; `Scan`, `ScanMods`, `Reindex`, `BuildSchema`; `SaveInstall`, `LoadInstall`, `DropInstall`, `CachedAt`; `Lookup`, `Within`, `Resolve`, `Uses`, `Winner` | `services/internal/lang/index` — the index stage: what a scan found and where, load order, and the install's cache. It infers nothing |
-| `Session` with `New`, `Defs`, `Winner`, `Loc`, `LocKeys`, `Where` (`Place`), `Text`, `Parsed`, `Did*`, `Changed`, `Watch`; `Watcher`; `Fires` and `FiredBy` (`Fire`: what a definition fires or is fired by, through scripted entries) | `services/internal/session` — one workspace open in the editor, and its lock |
+| `Session` with `New`, `Indexes`, `Winner`, `Loc`, `Entry`, `Title`, `LocKeys`, `Where` (`Place`), `Located`, `Text`, `Parsed`, `Did*`, `Changed`, `Watch`, `Close`; `Watcher`; `Fires` and `FiredBy` (`Fire`: what a definition fires or is fired by, through scripted entries) | `services/internal/session` — one workspace open in the editor, and its lock |
 | `Hover` (`Inspect`), `SignatureHelp`, `Complete` (`Item`, `Resolve`), `Definition`, `References`, `DocumentSymbols`, `WorkspaceSymbols`, `Diagnose` (`Codes`), `Format`, `Folding`, `CodeActions`, `InlayHints` | `services/internal/lsp` — the editor's requests, each from one walk of the open file; payloads carry display data |
 | `EventGraphService` (`GetEventGraph`: `Params`, `EventGraph`, `Node`, `Edge`; `GetEventDetail`: `Detail`, `Section`, `Option`; `SearchRoots`: `Roots`, `DatabaseCount`), `HealthService` (`GetHealth`: `HealthParams`, `Health`, `Contest`, `Site`, `Dependency`, `Dangling`, `Language`, `LocRow`, `Problem`; `GetLines`: `SourceAt`; `LocReaders`) | `services/` — a page's question answered from the index's records; every number in a payload is the page's |
-| `AppService` (the app-wide calls: settings, version, updates, `ResetData`; it holds `config.json`), `SessionService` (`EnsureSession`, `GetLanguageHealth`; every scan starts by itself and reports through `lang:scan-progress`), `IdeService` (the editor's requests), `ReleaseService`, `WorkspaceService`, the `lang:*` events | `services/` — the Wails layer, services only |
+| `AppService` (the app-wide calls: settings, version, updates, `ResetData`; it holds `config.json`), `SessionService` (`EnsureSession`, `GetLanguageHealth`; every scan starts by itself and reports through `lang:scan-progress`), `IdeService` (the editor's requests), `SearchService` (`TextSearch`, `Replace`, `FileSearch`), `GitService` (the git on the PATH, per mod repository), `ReleaseService`, `WorkspaceService`, `FileService`, `LogService`, `WikiService`, the `lang:*` events | `services/` — the Wails layer, services only |
 | `AppDir`, `CacheDir`, `Write`, `Encode`, `Decode`, `CopyFile`; `ReadListingFields`, `WriteListingFields`, `FindThumbnail`, `CopyThumbnail`, `WriteNewMod` | `services/internal/local` — this machine's files: the app's own, a mod's Paradox files |
-| `Library`, `Publish`, `Serve` (a publish run as a second copy of the app); `MarkdownToBBCode`, `BBCodeToMarkdown`; `EnsureDescriptions`, `DescriptionFiles`; `ScanPreviews`, `AddPreview`, `AddVideo`; `CopyMod` | `services/internal/steam` — everything the Steam Workshop reads |
-| Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
+| `Library`, `Run`, `Serve` (a publish run as a second copy of the app); `MarkdownToBBCode`, `BBCodeToMarkdown`; `NewDescription`, `DescriptionRel`; `ScanPreviews`, `ExtrasOf`, `SaveExtras`, `AddPreview`, `AddVideo`, `Remove*`; `Upload`, `CopyMod`, `Changes` | `services/internal/steam` — everything the Steam Workshop reads |
+| Wiki persist / sanitize / the Wiki pane's payload | `services/internal/wiki` |
 | Wiki pane | `components/ide/WikiPane.vue`, beside the IDE's editor |
 | Editor | Monaco: `frontend/src/lib/code.ts` (its setup, languages and theme) + `ide/monacoEditor.ts` (the IDE's models and providers) + `ide/editorCore.ts` (UTF-8 and UTF-16 columns) |
 | Graph layout | frontend `useEventGraph` + `@dagrejs/dagre` |
+| Editor groups and tabs | `stores/ide.ts`: `Layout` (groups in rows and columns); a tab's key is a file's path, or a diff tab's `git:<changes\|staged\|conflict>:<path>` / `git:commit@<hash>:<path>`, made and read only by `diffTab` and `tabOf` (`activeFile` is the file either way) |
+| Source control | `services/gitservice.go` (the git on the PATH; `gitservice_windows.go` hides its console), `stores/git.ts`, `components/ide/{SourceControlView,GitDiff,GitGraph,BranchMenu}.vue`, `ide/conflicts.ts` (conflicts resolved in the editor); `StageText` stages one block by writing the index's text |
 
 ## Diagnostic codes
 

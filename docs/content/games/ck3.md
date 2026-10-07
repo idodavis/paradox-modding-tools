@@ -25,7 +25,7 @@ mod/my_mod/
   gui/ …
 ```
 
-PMT **New Mod** writes a skeleton (descriptor, empty `common/` and `events/`, loc stub with BOM). You still need the sibling `.mod` with `path=` if you want the official launcher to see it; PMT attaches the **folder**.
+PMT's **New mod** writes a skeleton (descriptor, empty `common/` and `events/`, a localization file with its BOM). You still need the sibling `.mod` with `path=` if you want the official launcher to see it; PMT attaches the **folder**.
 
 ```
 version="0.1"

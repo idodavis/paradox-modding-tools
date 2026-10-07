@@ -1,9 +1,9 @@
 ---
 title: Pages
-description: Every live PMT page — Library through Display.
+description: Every PMT page, from the Library to Settings.
 weight: 4
 ---
 
 # Pages
 
-These are the screens in the alpha. Names match the header and toolbar.
+These are the screens in the alpha. Names match the top bar's.

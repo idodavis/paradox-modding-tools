@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
  * An editor group (the Ide board's editor): its tabs, each with its file's icon, a dot while unsaved and a lock on
- * the game's files, and a menu of what to do with it; a tab dragged onto a tab or the strip goes there, onto the
+ * the game's files, and a menu of what to do with it (a diff tab's is its file's, its diff named after it); a tab dragged onto a tab or the strip goes there, onto the
  * editor's edge into a new group there. The breadcrumb, the file's origin, folders and name, then where the caret
  * is (Inspect.within), and a Markdown file's Raw or Rich; then the shown tab's editor. The group at the top right
- * ends its strip with the Wiki button.
+ * ends its strip with the Wiki button. A diff tab shows its file's diff (GitDiff) in place of the breadcrumb and editor.
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -15,7 +15,7 @@ import { saveAll, saveFile } from "../../ide/monacoEditor";
 import { useCompare } from "../../composables/useCompare";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { hoverQuery } from "../../queries";
-import { useIdeStore, type Edge } from "../../stores/ide";
+import { tabOf, useIdeStore, type Edge } from "../../stores/ide";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { iconOf } from "./ExplorerTree.vue";
 
@@ -28,11 +28,13 @@ const compare = useCompare(() => workspaceId);
 
 const group = computed(() => ide.group(groupId));
 const active = computed(() => group.value?.active ?? "");
+const diff = computed(() => tabOf(active.value).diff);
 const located = computed(() => locate(active.value));
 const readOnly = (path: string) => !!locate(path)?.root.readOnly;
 
 /** A tab's label: its file's name. */
-function name(path: string): string {
+function name(tab: string): string {
+  const path = tabOf(tab).file;
   const rel = locate(path)?.rel ?? path;
   return rel.slice(Math.max(rel.lastIndexOf("/"), rel.lastIndexOf("\\")) + 1);
 }
@@ -43,46 +45,48 @@ function show(path: string): void {
   ide.focused = groupId;
 }
 
-// a file's last tab closed with unsaved edits asks first, shown so its editor can save
+// a file's last tab (its own or a diff) closed with unsaved edits asks first, shown so its editor can save
 const asking = shallowRef("");
-function close(path: string): void {
-  const elsewhere = ide.groups.some((one) => one.id !== groupId && one.files.includes(path));
-  if (elsewhere || !ide.unsaved.has(path)) return ide.closeIn(groupId, path);
-  show(path);
-  asking.value = path;
+function close(tab: string): void {
+  const { file } = tabOf(tab);
+  const elsewhere = ide.groups.some((one) => one.files.some((other) => tabOf(other).file === file && (other !== tab || one.id !== groupId)));
+  if (elsewhere || !ide.unsaved.has(file)) return ide.closeIn(groupId, tab);
+  show(tab);
+  asking.value = tab;
 }
 async function answer(save: boolean): Promise<void> {
-  const path = asking.value;
+  const tab = asking.value;
   asking.value = "";
-  if (save) await saveFile(path);
-  ide.closeIn(groupId, path);
+  if (save) await saveFile(tabOf(tab).file);
+  ide.closeIn(groupId, tab);
 }
 
 // closing many tabs closes all but the unsaved, which stay to be saved or closed one at a time
 function closeAll(keep?: string): void {
-  for (const path of [...(group.value?.files ?? [])]) if (path !== keep && !ide.unsaved.has(path)) ide.closeIn(groupId, path);
+  for (const tab of [...(group.value?.files ?? [])]) if (tab !== keep && !ide.unsaved.has(tabOf(tab).file)) ide.closeIn(groupId, tab);
 }
 const actions = computed<DropdownMenuItem[]>(() => [
   { label: "Close the others", onSelect: () => closeAll(active.value) },
   { label: "Close all", onSelect: () => closeAll() },
 ]);
 
-/** A tab's menu: save and close it, split it off, compare it. */
-function tabMenu(path: string): ContextMenuItem[][] {
+/** A tab's menu: save and close it, split it off, compare its file. */
+function tabMenu(tab: string): ContextMenuItem[][] {
   const picked = ide.comparing;
+  const path = tabOf(tab).file;
   return [
     [
       { label: "Save", kbds: ["Ctrl S"], disabled: !ide.unsaved.has(path), onSelect: () => void saveFile(path) },
       { label: "Save all", disabled: !ide.unsaved.size, onSelect: () => void saveAll() },
     ],
     [
-      { label: "Close", onSelect: () => close(path) },
-      { label: "Close the others", onSelect: () => closeAll(path) },
+      { label: "Close", onSelect: () => close(tab) },
+      { label: "Close the others", onSelect: () => closeAll(tab) },
       { label: "Close all", onSelect: () => closeAll() },
     ],
     [
-      { label: "Split right", icon: "i-lucide-columns-2", kbds: ["Ctrl \\"], onSelect: () => ide.split("right", path, groupId) },
-      { label: "Split down", icon: "i-lucide-rows-2", onSelect: () => ide.split("down", path, groupId) },
+      { label: "Split right", icon: "i-lucide-columns-2", kbds: ["Ctrl \\"], onSelect: () => ide.split("right", tab, groupId) },
+      { label: "Split down", icon: "i-lucide-rows-2", onSelect: () => ide.split("down", tab, groupId) },
     ],
     [
       { label: "Compare with the game's copy", disabled: readOnly(path), onSelect: () => void compare.withGame(path) },
@@ -132,7 +136,7 @@ const ZONES: Record<Edge, string> = {
 const caret = refDebounced(computed(() => (ide.focused === groupId ? ide.caret : null)), 300);
 const { data: card } = useQuery(() => ({
   ...hoverQuery({ id: workspaceId, path: active.value, line: caret.value?.line ?? 0, col: caret.value?.col ?? 0 }),
-  enabled: !!caret.value && !!active.value,
+  enabled: !!caret.value && !!active.value && !diff.value,
 }));
 const crumbs = computed(() => [...(located.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
 const folders = computed(() => (located.value?.rel.split("/").length ?? 0) - 1);
@@ -180,7 +184,7 @@ function setView(view: string | number): void {
                 ? 'bg-(--bg-0) text-highlighted before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-primary'
                 : 'text-dimmed hover:text-toned'
             "
-            :title="locate(path)?.rel ?? path"
+            :title="locate(tabOf(path).file)?.rel ?? path"
             @click="show(path)"
             @auxclick.middle="close(path)"
             @dragstart="ide.dragging = { path, from: groupId }"
@@ -188,20 +192,22 @@ function setView(view: string | number): void {
             @dragover.prevent
             @drop.stop="dropTab('middle', path)"
           >
-            <img v-if="iconOf(path)" :src="iconOf(path)" alt="" class="size-3.5 shrink-0" />
+            <UIcon v-if="tabOf(path).diff" name="i-lucide-git-compare" class="size-3.5 shrink-0 text-dimmed" />
+            <img v-else-if="iconOf(path)" :src="iconOf(path)" alt="" class="size-3.5 shrink-0" />
             <UIcon v-else name="i-lucide-file" class="size-3.5 shrink-0" />
             <span class="truncate">{{ name(path) }}</span>
-            <UIcon v-if="readOnly(path)" name="i-lucide-lock" class="size-3 shrink-0 text-dimmed" />
+            <span v-if="tabOf(path).diff" class="text-dimmed">{{ tabOf(path).commit?.slice(0, 7) ?? tabOf(path).diff }}</span>
+            <UIcon v-else-if="readOnly(path)" name="i-lucide-lock" class="size-3 shrink-0 text-dimmed" />
             <!-- an unsaved tab's dot turns into its close button under the pointer -->
             <span class="flex size-5 shrink-0 items-center justify-center">
-              <span v-if="ide.unsaved.has(path)" class="size-1.5 rounded-full bg-(--fg-2) group-hover:hidden" />
+              <span v-if="ide.unsaved.has(tabOf(path).file)" class="size-1.5 rounded-full bg-(--fg-2) group-hover:hidden" />
               <UButton
                 icon="i-lucide-x"
                 variant="ghost"
                 size="xs"
                 square
                 aria-label="Close"
-                :class="ide.unsaved.has(path) ? 'hidden group-hover:flex' : path === active ? '' : 'invisible group-hover:visible'"
+                :class="ide.unsaved.has(tabOf(path).file) ? 'hidden group-hover:flex' : path === active ? '' : 'invisible group-hover:visible'"
                 @click.stop="close(path)"
               />
             </span>
@@ -223,7 +229,7 @@ function setView(view: string | number): void {
               label="Wiki"
               icon="i-lucide-book-open"
               size="xs"
-              :color="ide.wikiOpen ? 'primary' : 'neutral'"
+              color="primary"
               :variant="ide.wikiOpen ? 'soft' : 'outline'"
               :aria-pressed="ide.wikiOpen"
               @click="ide.wikiOpen = !ide.wikiOpen"
@@ -232,7 +238,7 @@ function setView(view: string | number): void {
         </template>
       </div>
     </div>
-    <div v-if="active" class="flex h-7 shrink-0 items-center gap-1.5 overflow-hidden border-b border-default bg-(--bg-0) px-3.5 text-12 whitespace-nowrap text-dimmed">
+    <div v-if="active && !diff" class="flex h-7 shrink-0 items-center gap-1.5 overflow-hidden border-b border-default bg-(--bg-0) px-3.5 text-12 whitespace-nowrap text-dimmed">
       <template v-if="located">
         <OriginDot :color="store.originColor(located.root.origin ?? '')" small />
         <span>{{ store.originName(located.root.origin ?? "") }}</span>
@@ -245,7 +251,8 @@ function setView(view: string | number): void {
       <UTabs v-if="markdown" :model-value="ide.rich.has(active) ? 'rich' : 'raw'" :items="VIEWS" :content="false" size="xs" @update:model-value="setView" />
     </div>
     <div class="relative flex min-h-0 flex-1 flex-col">
-      <CodeEditor v-if="active" :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
+      <GitDiff v-if="diff" :key="active" :workspace-id="workspaceId" :tab="active" />
+      <CodeEditor v-else-if="active" :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
       <div v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">Open a file from the explorer, or Ctrl P</div>
       <!-- while a tab is dragged: where it would go -->
       <div v-if="ide.dragging" class="absolute inset-0 z-20" @dragover.prevent="zoneAt" @dragleave="zone = null" @drop.prevent="dropTab(zone ?? 'middle')">

@@ -222,6 +222,7 @@ function exportExclusions(): void {
             </UFormField>
             <UButton
               icon="i-lucide-x"
+              color="error"
               variant="ghost"
               size="md"
               square
@@ -236,7 +237,7 @@ function exportExclusions(): void {
             <UFormField label="Year offset" class="w-30">
               <UInput type="number" :model-value="blank.offset" :model-modifiers="{ lazy: true }" @update:model-value="editBlank({ offset: $event || 0 })" />
             </UFormField>
-            <UButton icon="i-lucide-x" variant="ghost" size="md" square aria-label="Remove this era" @click="blank = undefined" />
+            <UButton icon="i-lucide-x" color="error" variant="ghost" size="md" square aria-label="Remove this era" @click="blank = undefined" />
           </div>
           <div class="flex items-center gap-2">
             <UButton label="Add era" icon="i-lucide-plus" variant="ghost" size="md" :disabled="!!blank" @click="blank = { name: '', offset: 0 }" />

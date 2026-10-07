@@ -1,42 +1,67 @@
 ---
-title: Workspace Health
-description: Contests, overrides, dependencies, dangling refs, localization issues and script issues.
+title: Health
+description: What the load order decides (contests, overrides, dependencies) and the problems in the mods.
 weight: 5
 ---
 
-# Workspace Health
+# Health
 
-What this workspace's load order decides, and what it lacks.
+What this workspace's load order decides, and what its mods get wrong.
 
-{{< shot caption="The cards, the table, and a row's definitions beside it." >}}
+{{< shot caption="Health: the cards, the table, and a row's definitions beside it." >}}
 
 ## The cards
 
-Six cards count what the report found. A card picks the table below it.
+Six cards, in two groups, each with its count. A card picks the table below it.
 
-| Card | Meaning |
-|------|---------|
-| **Contests** | A name two or more mods define, with or without the game's own. The one kept follows [FIOS / LIOS]({{< relref "/concepts/load-order" >}}); a contest the game has no part in is marked as a mod overriding another mod's own. |
-| **Overrides** | One mod's definition over the game's own of the same name. |
-| **Dependencies** | A mod naming something only another mod defines. |
+**Load order** (changes when you reorder mods):
+
+| Card | Lists |
+|------|-------|
+| **Contests** | A name two or more mods define, with or without the game's own, and a whole file two mods ship at the same path. Its note counts how many follow [LIOS and FIOS]({{< relref "/concepts/load-order" >}}). |
+| **Overrides** | A game object a mod replaces or adds to: its own definition, an `INJECT` or `REPLACE`, or a whole file at the game's path. |
+| **Dependencies** | A mod that **depends on** another (uses what only the other defines) or is **affected by** it (the other's definition changes, adds to or removes what it uses). |
+
+**Problems in the mods** (fixed in the files):
+
+| Card | Lists |
+|------|-------|
 | **Dangling Refs** | A name, event or file a mod uses that nothing defines: a typo, a missing dependency, or a game patch that removed it. One row per name, however many places use it. |
-| **Localization Issues** | A key left **untranslated** (the mod has it in English and ships another language without it), and localization files the game reads wrong: **syntax**, a missing byte order mark, a header naming another language, a misspelled folder. One row per place to fix. |
+| **Localization Issues** | A key left **untranslated** (a mod has it in the workspace's language and ships another language without it), and files the game reads wrong: syntax, a missing byte order mark, a header naming another language, a misspelled folder. One row per place to fix. |
 | **Script Issues** | What the editor's checks find in script files: syntax, scopes, values, duplicates. One row per place to fix. |
 
-## The table and the pane
+A problem's **Type** is colored by what it is: red the game cannot read it (Syntax); orange something missing
+(Undefined, Unknown event, Missing file, No target, Missing key, Untranslated); blue written wrong (Scope, Value);
+teal a file or a duplicate to tidy (Duplicate, No BOM, Wrong header, Wrong folder).
 
-Each column head sorts the table and, where a column's values are few (type, kind, rule, language, origin), ticks the ones to keep. A problem's **Type** is colored by what it is: red the game cannot read it, orange something missing, blue written wrong, teal a file or a duplicate to tidy. The filter box searches every column. Pick a row to open it beside the table:
+## The table
 
-- a contest or override: every definition in load order, each with its first lines, the kept one marked;
-- a dependency: each place the mod names what the other defines, with its line;
-- a dangling reference: each place it is written;
-- an untranslated key: its English line, the file in that language it goes in, and what reads it;
-- any other issue: its line.
+Each column head sorts the table and, where the column's values are few (Kind, Rule, Kept, Mod, Relation, Other
+mod, Type, Language, Origin), ticks the ones to show. The filter box searches every column. The edge between the
+table and the pane drags to resize.
 
-The workspace default loc language is an IDE and hover setting; the report covers every language.
+## The pane
 
-## Load-order preview
+Pick a row to open it beside the table:
 
-Drag the load-order chips to preview the kept definitions **without** writing the workspace. **Save as workspace order** persists the same `SortOrder` as Settings.
+- **a contest or override**: why that definition is kept ("For this kind the last mod in load order wins…"), then
+  each definition with its first lines, the kept one first, each marked Kept, Injected, Replaced or Removed. A mod
+  replacing another mod's own is marked so. **Compare the two** sets the kept file beside the one it replaces. A
+  whole-file contest says how many names the file defines and how they differ;
+- **a dependency**: each place the mod uses what the other defines;
+- **a dangling reference**: each place it is written;
+- **an untranslated key**: its line in the workspace's language, the file it goes in for the missing language,
+  and what reads it;
+- **any other problem**: its line.
 
-After a game patch: reopen the workspace (the install is scanned again by itself), then use Dangling refs and Overrides here. See [roadmap]({{< relref "/roadmap" >}}).
+Every place is a link that opens the file in the [IDE]({{< relref "/pages/ide" >}}) at that line. In the IDE, **Show
+in Health** (right-click) opens the matching row here.
+
+## Previewing another load order
+
+The **Load order** bar at the top lists the game and the mods. Drag the mods to see what another order would keep,
+without changing the workspace; **Save as workspace order** keeps it, as
+[Settings]({{< relref "/pages/settings" >}}) would.
+
+After a game patch, open the workspace (the install is scanned again by itself), then read Dangling Refs and
+Overrides here.

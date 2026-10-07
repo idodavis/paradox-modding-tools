@@ -32,15 +32,16 @@ body:
       label: Related area
       options:
         - Library
-        - Wizard
+        - New workspace
         - IDE
-        - Guide
+        - Source control
+        - Wiki pane
         - Event Graph
         - Health
-        - Patch Center
-        - Release / Steam Workshop
-        - Workspace Settings
-        - Display / themes
+        - Patch Notes
+        - Publish / Steam Workshop
+        - Settings
+        - Appearance / themes
         - Language / scan / cache
         - Docs site
         - Build / updater

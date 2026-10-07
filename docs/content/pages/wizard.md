@@ -1,41 +1,42 @@
 ---
-title: Create Workspace
-description: Game, install, mods, name — then you land in the IDE.
+title: New workspace
+description: Game, install, mods, details; then the workspace opens in the IDE.
 weight: 2
 ---
 
-# Create Workspace
+# New workspace
 
-The wizard is how you add a workspace. You can change every choice later in [Workspace Settings]({{< relref "/pages/settings" >}}).
+The wizard adds a workspace in four steps: **Game**, **Install**, **Mods** and **Details**. **Back** and
+**Continue** move between them; every choice can be changed later in [Settings]({{< relref "/pages/settings" >}}).
 
-Walk through **game → install → mods → name**.
-
-{{< shot caption="Wizard Mods step with load-order drag handles." >}}
+{{< shot caption="New workspace: the Mods step, with rows to drag into load order." >}}
 
 ## Game
 
-CK3, Vic3, or EU5. EU5 is [partial]({{< relref "/games/eu5" >}}).
+Crusader Kings III, Victoria 3 or Europa Universalis V. EU5 is [partial]({{< relref "/games/eu5" >}}).
 
 ## Install
 
-Detect a known Steam/Paradox path or **Add** a folder. Multiple installs per game are allowed (beta vs live, different drives).
+Pick an install PMT already knows, or add one: **Found on this computer** lists the installs PMT detected, with
+their versions (**Add**), or type an **Install folder** and a **Name**. A game can have several installs (a beta
+and the live version, or two drives).
 
-- **Version** — read from `launcher/launcher-settings.json` and shown beside the install. After a game patch the next session scans the install again by itself.
-- Changing install later rebuilds language intelligence for that install.
-
-{{< shot caption="Wizard Install step (detected path + version)." >}}
+PMT reads the install's version at each scan. After a game patch, the next time the workspace opens it is scanned
+again by itself, with a toast that says so.
 
 ## Mods
 
-- **Add existing** — any folder (Documents `mod/`, Workshop content, a git clone).
-- **Create new mod** — descriptor (CK3 `.mod` + `descriptor.mod`; Vic3/EU5 `.metadata/metadata.json`), empty `common/` and `events/` (EU5: under the stage folders), readmes, localization stub **with UTF-8 BOM**.
-- **Drag** to set load order (`SortOrder`). Same order as Settings and Health.
-- A mod whose folder is gone shows **Missing**; you can fix its path later without deleting the workspace.
+The mods you work on, in load order: drag the rows, and **Leave out** removes one.
 
-You do not have to attach every Workshop item — only what you are editing or depending on.
+- **Add an existing mod**: any mod folder (in Documents' `mod/`, the Workshop's content, a git clone).
+- **Create a new mod**: a name, description, folder, localization language and thumbnail. PMT writes the
+  descriptor (CK3's `descriptor.mod`, or Vic3's and EU5's `.metadata/metadata.json`), the game's mod
+  folders, a localization file with its UTF-8 byte order mark and a Workshop description.
 
-## Name
+You can leave this step empty, and you do not need every Workshop mod you play with: only those you edit or depend
+on.
 
-Display name in the Library and title bar. After create you land in the [IDE]({{< relref "/pages/ide" >}}) so you can open the files you just attached.
+## Details
 
-**Back** from the IDE returns to the Library, not to this wizard.
+**Name** the workspace and pick its **Localization language**. **Create workspace** opens it in the
+[IDE]({{< relref "/pages/ide" >}}).

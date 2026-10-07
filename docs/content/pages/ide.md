@@ -1,65 +1,204 @@
 ---
-title: Workspace IDE
-description: monaco-vscode workbench with PMT-owned roots, read-only game files, and Guide.
+title: IDE
+description: "The editor for a workspace's mods: explorer, search and source control, Monaco editors in groups, hover cards, checks, the Wiki pane."
 weight: 3
 ---
 
-# Workspace IDE
+# IDE
 
-The IDE is a monaco-vscode-api workbench (Monaco + VS Code services) inside PMT chrome. Themes and scale live in the PMT header.
+The IDE edits the mods of the open workspace. The game's own files sit beside them, **read only**: you read and
+compare them, and edit in a mod.
 
-{{< shot caption="IDE: explorer + script editor + Guide open." >}}
+{{< shot caption="IDE: explorer, an editor with a hover card, the Problems panel and the Wiki pane." >}}
 
-## Folders
+The window has four parts:
 
-Roots come from **this workspace**: your mods, then the game files. PMT owns the folder set.
+- the **sidebar**: Explorer, Search and Source control, with the IDE settings (the gear) at the end of its row;
+- the **editors**, in one or more groups;
+- the **panel** under them: Problems, Search results and Git output (**Ctrl J** shows or hides it);
+- the **Wiki** pane on the right (**Ctrl Shift W**).
 
-- **Game files** (CK3, Vic3, or EU5) are **read-only**. Edit in a mod folder.
-- Search and Ctrl+P index every root.
-- Deleting a **mod’s root folder** in the explorer also detaches it from this workspace. Files inside a mod delete normally.
+Every edge between them drags to resize.
 
-## Tabs
+## Explorer
 
-Open editor tabs persist across workspace switch and app close unless you turn that off in [Workspace Settings]({{< relref "/pages/settings" >}}).
+Two sections: **Workspace** (your mods, in load order, with **+** to add a mod folder) and **Game files** (the
+install's script folders, read only, marked with a lock). A grip between them sets their sizes, and the Game files
+header folds that section away.
 
-## Language features
+Right-click a file or folder for: Open to the side, New file, New folder, Rename, Delete, Select for compare,
+Compare with selected, Compare the two selected, Copy path and Reveal in the file manager. Deleting a mod's own
+folder also takes it out of the workspace. On a mod folder that is not a git repository: **Initialize a git
+repository**.
 
-On Paradox script, loc, and descriptors in **mod** folders:
+A mod's top folder has its color's bar, and its name in that color too (the game's folder as well) unless **Color
+each top folder** is off. Where a mod is a git repository, changed files are marked: added, modified, deleted,
+renamed and untracked in their colors, the folders holding them marked, and what `.gitignore` matches dimmed.
 
-| Feature | Notes |
-|---------|--------|
-| Hover | Kind, where it is defined (the kept definition and those it replaced; a saved scope, where its own script saves it), its label, its comment or the game's description, the scopes it runs in and hands on, what a field accepts; loc text; dates, colours and random-list weights |
-| Complete / signature | The keys and names the session knows; an effect's or trigger's usage from `script_docs`, inside its own block |
-| Go to definition / references | Across attached mods + vanilla |
-| Symbols | The file's definitions, and a search over the workspace |
-| Format / folding | Jomini CST |
-| Diagnostics | Unresolved references, wrong value types, wrong scopes, duplicate definitions, required loc, loc BOM, header and folder, and missing files (off by default); each can be turned off in [Workspace Settings]({{< relref "/pages/settings" >}}) → Editor |
-| Code actions | Add a missing UTF-8 BOM; create a missing localization key |
+## Editors
+
+Files open in tabs. A dot marks unsaved changes; a lock marks a game file. Right-click a tab for Save, Save all,
+Close, Close the others, Close all, Split right (**Ctrl \\**), Split down, Compare with the game's copy, Select for
+compare, Compare with selected and Copy path. Drag a tab onto another tab to reorder it, or onto an editor's edge to
+split there; groups nest in rows and columns, and the same file can be open in several groups. When there are more
+tabs than fit, the strip scrolls (with the mouse wheel too).
+
+Above the editor, the path to the file and, at the caret, the blocks it is in. A Markdown file has a **Raw** /
+**Rich** switch there: Raw is its text, Rich the same editor as Publish's description.
+
+The status bar shows the open files' errors and warnings, the git branch, then the caret's line and column, the
+indentation, the file's kind and its encoding (UTF-8, or UTF-8 BOM).
+
+The editor is [Monaco](https://microsoft.github.io/monaco-editor/), the editor of VS Code: find and replace (**Ctrl F**,
+**Ctrl H**), folding, the minimap, indent guides, colored bracket pairs, multiple cursors, and the line at the top
+that names the block you are in. The IDE settings turn the minimap, folding, guides, bracket colors and shown
+whitespace on or off, and pick the editor's font and line height.
+
+### Language features
+
+On Paradox script, localization and GUI files:
+
+| Feature | How |
+|---------|-----|
+| Hover card | Rest the pointer on a word (see below) |
+| Completion | While you type, or **Ctrl Space**; the likeliest completion shows in grey, **Tab** takes it |
+| Signature help | What an effect or macro takes, while you fill it in |
+| Go to definition | **F12**, or **Ctrl+click**; on a definition, its references |
+| Peek | **Alt F12** shows the definition in place; each file in it says which mod (or the game) it is in, with that origin's color |
+| References | **Shift F12** in place; **Shift Alt F12** lists them all in Search results |
+| Format | **Shift Alt F** |
+| Folding | By the file's blocks |
+| Quick fixes | Add a missing UTF-8 BOM; create a missing localization key |
 | Inlay hints | A date in the mod's own calendar era, where the mod has one |
+| Event Graph | **Ctrl Shift G** draws the graph from the event at the caret |
 
-Game files stay read-only, so diagnostics run on mods.
+Right-click in the editor for the same actions, Show in Health, Format document, Cut, Copy, Paste and the command
+palette.
 
-### `# pmt:ignore`
+### The hover card
 
-In a script comment:
+Rest the pointer on a word for half a second. The card says what the word is, its scope and what it takes and
+returns, its localized name and the game's description of it, and last where it is defined and what it replaces:
+each mod or the game once, with each of its files under it (a file holding many places says how many), each a link
+to the place. A long value wraps, and a card taller than the room beside the word scrolls. A problem at the word shows at the top of the card. The card stays open while the pointer
+is on it, and any click closes it. When your `script_docs` are older than the game, the card says
+**outdated script_docs**; see [three kinds of docs]({{< relref "/concepts/docs" >}}).
+
+### Checks
+
+Problems show as squiggles in the editor and as rows in the **Problems** panel (filter them as you type, or open them
+in [Health]({{< relref "/pages/health" >}})). The checks, each on or off in the IDE settings' **Checks** tab:
+
+| Check | Finds |
+|-------|-------|
+| `unresolved-ref` | a word naming an entry that nothing defines |
+| `wrong-value-type` | a value of another type than the key takes |
+| `wrong-scope` | a command written in a scope it does not run in, or a variable read where none is stored |
+| `duplicate-definition` | a name the workspace defines twice |
+| `inject-without-target` | an INJECT or REPLACE with nothing loaded before it |
+| `missing-bom` | a localization file without a UTF-8 byte order mark |
+| `loc-header-mismatch` | a localization file whose header names another language than its name |
+| `wrong-localization-folder` | a folder spelled `localisation`, which the game never reads |
+| `unknown-event` | an event id no event defines |
+| `wrong-declared-value` | a word outside the words the key takes |
+| `missing-file` | a path that exists nowhere in the install or the mods (off by default) |
+| `missing-key` | a key the game's docs say every entry writes, left out (off by default) |
+
+Game files are never checked. To silence a line, write a comment:
 
 ```
 # pmt:ignore
-# pmt:ignore required-loc, missing-bom
+# pmt:ignore unresolved-ref, missing-bom
 ```
 
-That turns diagnostics off on the comment's own line and the next one. With codes, only those.
+It turns the checks off on its own line and the next one; with codes, only those.
 
-## Guide
+## Search
 
-The **Guide** pull-tab on the editor’s right edge opens a resizable **wiki** pane (search, contents, related pages); the contents can be hidden by the button beside them. It stays closed until you open it.
+**Ctrl Shift F** opens Search in the sidebar: text or a regular expression, with Match case and Whole word, files to
+include and exclude (`common/**, *.txt`), and the folders to search. Hits fill Search results in the panel.
 
-This is the community wiki, not `script_docs` and not install `_*.info`. See [three kinds of docs]({{< relref "/concepts/docs" >}}).
+**Replace all** asks first, then writes the replacement into the mods' files on disk; a file open in an editor is
+changed there instead, unsaved. Game files are never changed.
 
-Snooze or turn off the Guide toast under [Display]({{< relref "/pages/display" >}}).
+## Compare
 
-{{< shot caption="Hover card on a def (kind, docs, origin)." >}}
+Compare a mod's file with the game's copy at the same path, or any two files: **Select for compare** on one, then
+**Compare with selected** on the other (from a tab or the explorer). The two open side by side or in one column,
+the differences marked, at the first change.
 
-## Event Graph from hover
+## Source control
 
-Hover a definition the Event Graph can draw (an event, an on_action, or a definition that fires one) for **Open in Event Graph**.
+The sidebar's third view runs the **git installed on your computer**; without git on the PATH it says so. It
+works on every mod of the workspace that is in a git repository.
+
+- **The repository** shows at the top. With several, it is a menu that follows the file you are editing, and lists
+  the mods in no repository: **Initialize** makes one (`git init`; your first commit is yours to write).
+- **The branch** button opens the branch menu: switch branches, or type a name to create one; create one from
+  another branch; check out a tag or commit; the local and remote branches; Fetch, Pull, Pull from, Push, Merge
+  into the current branch, and Delete. Beside it, how many commits are to push and to pull; clicking it pulls then
+  pushes (a branch with no upstream shows **Publish**).
+- **The message** and **Commit**; its menu has Commit and push, and Amend the last commit. **Ctrl Enter** commits.
+- **Merge conflicts**, **Staged** and **Changes**, each file with its letter: A added, M modified, D deleted,
+  R renamed, U untracked, ! in conflict. A row opens the file's diff; its buttons open the file, stage, unstage or
+  discard it. Discarding asks first, and deletes a file git does not track yet.
+- **The graph**: the current branch and its upstream, branches and merges drawn as lanes, with the branches and
+  tags at each commit. Click a commit to see the files it changed; click a file to open what the commit changed in
+  it. The graph is a section of its own under the changes: drag its top edge to resize it, click its header to fold
+  it; older commits load as you scroll to its end.
+
+**Diffs** open as editor tabs, side by side or in one column. A file's changes compare its staged copy with the file
+itself, which you can edit right there. The **+** in the gutter stages one block, the arrow between the sides
+discards it (an unsaved edit you can undo); **Stage file** and **Discard** act on the whole file. A staged file's
+diff has a **−** to unstage a block.
+
+**Merge conflicts** are resolved in the editor: each conflict's two sides are shaded, and above it **Accept
+current**, **Accept incoming**, **Accept both** and **Compare** (both sides of the file side by side). Save, then
+stage the file to mark it resolved.
+
+Every git command, and what git said, is listed in the panel's **Git output**. Git never asks for a password here:
+a pull or push that needs one fails with git's message, so set up your credential helper or SSH key first.
+
+## Wiki
+
+The Wiki pane shows the community wiki's pages for the file you are editing, as tabs ("Suggested for event
+files"), with a search over the game's wiki and the page's contents (drag their edge to resize them; the button beside
+them hides them). It follows
+the open file unless you turn that off. When it is closed and the wiki has pages for a new kind of file, a toast
+says so; the IDE settings' Wiki tab can hide that toast for an hour, until restart, or for good.
+
+This is the community wiki, not `script_docs` and not the install's `_*.info` files. See
+[three kinds of docs]({{< relref "/concepts/docs" >}}).
+
+## IDE settings
+
+The gear at the end of the sidebar's row. Its tabs:
+
+- **Editor**: font (any font installed, by name), line height (Compact or Roomy), editor text size, word wrap,
+  closing brackets and quotes, the minimap, indent guides, bracket pair colors, shown spaces and tabs, indentation;
+- **Explorer**: explorer and panel text size, row density (Compact, Default or Relaxed), sticky folders, the Game
+  files section, coloring each top folder, following the open file;
+- **Language**: folding, hover cards, the completion list while typing, predicted text, signature help;
+- **Checks**: each check on or off;
+- **Wiki**: following the open file, and the suggestion toast.
+
+They apply to every workspace. Each tab can be reset to its defaults.
+
+## Keyboard
+
+| Keys | Does |
+|------|------|
+| **Ctrl K**, **Ctrl Shift P** (and **F1** in the editor) | The command palette |
+| **Ctrl P** | Open a file by name |
+| **Ctrl S** | Save |
+| **Ctrl Shift E** / **Ctrl Shift F** | Explorer / Search |
+| **Ctrl J** | The panel |
+| **Ctrl Shift W** | The Wiki pane |
+| **Ctrl \\** | Split the editor right |
+| **Ctrl F** / **Ctrl H** | Find / replace in the file |
+| **F12**, **Alt F12**, **Shift F12**, **Shift Alt F12** | Definition, peek, references, all references |
+| **Ctrl Shift G** | The Event Graph from the event at the caret |
+| **Shift Alt F** | Format the file |
+
+Open tabs come back when the workspace opens again, in the groups they were in, unless **Reopen the IDE's tabs** is
+off in [Settings]({{< relref "/pages/settings" >}}).

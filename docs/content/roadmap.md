@@ -10,15 +10,19 @@ This is **direction**, not a calendar. Order can change. File issues against a [
 
 ## Done
 
-- The language engine is rebuilt: each install's schema is learned from its own files and the game's `script_docs`, and the IDE, the Event Graph and Workspace Health all read one index.
-- The [Event Graph]({{< relref "/pages/event-graph" >}}) and [Workspace Health]({{< relref "/pages/health" >}}) are redesigned: a graph with its detail beside or below it, macros shown on request; six cards over a sortable, filterable table with each row's definitions beside it.
+- The language engine is rebuilt: each install's schema is learned from its own files and the game's `script_docs`, and the IDE, the Event Graph and Health all read one index.
+- A new look across the app: seven theme families, each dark and light, that the pages and the editor share.
+- The [IDE]({{< relref "/pages/ide" >}}) is rebuilt on Monaco: editor groups and splits, hover cards, search and replace, the Wiki pane, and git source control with a graph and merge conflicts resolved in the editor.
+- The [Event Graph]({{< relref "/pages/event-graph" >}}) and [Health]({{< relref "/pages/health" >}}) are redesigned: a graph with its detail beside or below it; six cards over a sortable, filterable table with each row's definitions beside it.
+- [Patch Notes]({{< relref "/pages/patch-notes" >}}) reads the game's patch notes from its wiki.
+- [Publish]({{< relref "/pages/publish" >}}) is a three-step flow: the description from Markdown, BBCode or Steam's own text, screenshots and videos imported from Steam, and a compare with what Steam has.
 
 ## Automatic game-update patching
 
 After a game patch today:
 
 1. Reopen the workspace: the install is scanned again by itself.
-2. Read [Workspace Health]({{< relref "/pages/health" >}}) — dangling refs and overrides.
+2. Read [Health]({{< relref "/pages/health" >}}): dangling refs and overrides.
 
 Later: suggested **file-level retarget in the IDE** (open the mod's copy of a changed game file, copy forward what you still own).
 
@@ -66,7 +70,7 @@ flowchart LR
   pool --> toolWin
 {{< /mermaid >}}
 
-- **Same workspace, extra windows:** feasible (hash router + Pinia). **IDE undock** is the useful first step — each webview gets its own monaco-vscode workbench talking to the **same** Go session.
+- **Same workspace, extra windows:** feasible (hash router + Pinia). **IDE undock** is the useful first step: each window gets its own Monaco editors talking to the **same** Go session.
 - **Two workspaces at once:** needs `EnsureSession` to keep more than one session live.
 - Undocking Health / Graph / Publish is the same extra-window work once the pool rule is decided.
 
@@ -74,4 +78,4 @@ Target: **IDE undock first; full-app windows after the one-session rule is relax
 
 ## Game coverage
 
-Deeper EU5 extract rules and Guide/wiki coverage. More loc languages in hover without a full rescan (today the install's cache is kept per language).
+Deeper EU5 extract rules and wiki coverage. More loc languages in hover without a full rescan (today the install's cache is kept per language).

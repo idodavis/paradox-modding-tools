@@ -75,25 +75,27 @@ pages; it parses only what it is handed. `go list -deps ./services/...` gives ev
 
 | Part | Service | File | What the frontend calls it for |
 |---|---|---|---|
-| The app and your data | App | `appservice.go` | the version, update checks, display settings, reset; it holds `config.json` for the other services |
+| The app and your data | App | `appservice.go` | the version, update checks, the settings map, reset; it holds `config.json` for the other services |
 | | Workspace | `workspaceservice.go` | installs, workspaces, mods and their load order, the IDE's roots |
 | | File | `fileservice.go` | the IDE's file system: read, write (atomic), list, rename, delete |
 | | Log | `logservice.go` | the app log (`pmt.log`), the frontend's log lines, crash detection |
-| The open workspace | Session | `sessionservice.go` | `EnsureSession` (open a workspace, scanning if needed), the language strip |
+| The open workspace | Session | `sessionservice.go` | `EnsureSession` (open a workspace, scanning if needed), the language health |
 | | Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
-| Pages and tools | Health | `healthservice.go` | the Workspace Health page |
+| Pages and tools | Health | `healthservice.go` | the Health page |
 | | EventGraph | `eventgraphservice.go` | the event graph and one event's detail |
 | | Wiki | `wikiservice.go` | the IDE's Wiki pane and Patch Notes |
-| | Search | `searchservice.go` | the IDE's text and file search |
+| | Search | `searchservice.go` | the IDE's text and file search, and replace (`search:hits` per file) |
+| | Git | `gitservice.go` | the IDE's source control: the git installed on this machine, per mod repository (`gitservice_windows.go` hides git's console) |
 | | Release | `releaseservice.go` | the Publish page: descriptor, description, Workshop extras, Steam publish |
 
 Ide, Health, EventGraph and Wiki reach the open workspace through Session (`live`); Session,
-Workspace, Ide, Release and Log read or change your saved data through App (`read`, `mutate`). File
-and Search stand alone: they work on paths the frontend hands them.
+Workspace, Ide, Release and Log read or change your saved data through App (`read`, `mutate`); Git
+reads a workspace's mods through App to find their repositories. File and Search stand alone: they
+work on paths the frontend hands them.
 
 Go tells the frontend about state with events (`emit` in `sessionservice.go`): `lang:ready`,
-`lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`
-and `wiki:updated`. After changing a service method or a payload type, run
+`lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`,
+`wiki:updated`, `search:hits` and `git:output`. After changing a service method or a payload type, run
 `task common:generate:bindings`; never edit `frontend/bindings/` by hand.
 
 ## Opening a workspace
@@ -163,15 +165,18 @@ refetches when it is shown again.
 
 ## The pages
 
-- **Workspace Health** (`GetHealth`): which mod's definition the game keeps where two origins define
+- **Health** (`GetHealth`): which mod's definition the game keeps where two origins define
   a name (contests and overrides), what a winning definition depends on or affects, references
   nothing defines, missing and untranslated localization, and the editor's own findings per file.
 - **Event graph** (`GetEventGraph`, `GetEventDetail`): events and on_actions and what fires them,
   from the references `session.Fires` and `session.FiredBy` follow.
-- **Guide and Patch Center**: `wiki.Refresh` stores each game's pages; `PagesFor` picks the tabs for
-  the open file.
-- **Publish**: `steam` runs the upload in a second copy of the app (`ServeArg`), which loads the
-  game's own copy of Steam's library.
+- **The Wiki pane and Patch Notes**: `wiki.Refresh` stores each game's pages; `PagesFor` picks the
+  tabs for the open file.
+- **Publish**: `steam` runs the upload in a second copy of the app (`steam.Serve`, from
+  `services.ServeSteamPublish`), which loads the game's own copy of Steam's library.
+- **Source control** (Git): status, log, a commit's files, a file's text at a revision, stage,
+  unstage, discard, `StageText` (one block), commit, branches, checkout, fetch, pull, push and
+  merge, each run of git told on `git:output`.
 
 ## Where to change what
 

@@ -16,6 +16,8 @@ self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 
 /** A file's model, made when a peek or a definition reaches a file no editor has open (ide/monacoEditor.ts). */
 export const models: { load: (uri: monaco.Uri) => Promise<monaco.editor.ITextModel | null> } = { load: async () => null };
+/** A folder's name in a peek's list and title, when the IDE knows whose it is (ide/monacoEditor.ts); else its path. */
+export const labels: { folder: (uri: monaco.Uri) => string | undefined } = { folder: () => undefined };
 
 // Monaco makes its services once, with the first editor: this one, so the files it reaches are read on demand
 monaco.editor
@@ -26,6 +28,10 @@ monaco.editor
         if (!model) throw new Error(`${uri.fsPath} could not be read`);
         return { object: { textEditorModel: model }, dispose() {} };
       },
+    },
+    labelService: {
+      getUriLabel: (uri: monaco.Uri) => labels.folder(uri) ?? (uri.scheme === "file" ? uri.fsPath : uri.path),
+      getUriBasenameLabel: (uri: monaco.Uri) => uri.path.slice(uri.path.lastIndexOf("/") + 1),
     },
   })
   .dispose();
@@ -166,6 +172,8 @@ function followTheme(): void {
     const css = getComputedStyle(document.documentElement);
     const token = (key: string) => css.getPropertyValue(`--${key}`).trim();
     const [accent, green, red] = [token("accent"), token("green"), token("red")];
+    // a theme may give its diffs a pair of their own (Pierre Soft takes Pierre's), else they are its green and red
+    const [added, removed] = [token("diff-add") || green, token("diff-del") || red];
     const light = page.endsWith("-light");
     // where Monaco draws nothing: a token at no strength
     const clear = `${token("bg-0")}00`;
@@ -247,12 +255,12 @@ function followTheme(): void {
         "scrollbarSlider.activeBackground": token("fg-3"),
         "minimap.background": token("bg-0"),
         "widget.shadow": `${token(light ? "fg-1" : "bg-0")}40`,
-        "diffEditor.insertedTextBackground": `${green}33`,
-        "diffEditor.removedTextBackground": `${red}33`,
-        "diffEditor.insertedLineBackground": `${green}1a`,
-        "diffEditor.removedLineBackground": `${red}1a`,
-        "diffEditorGutter.insertedLineBackground": `${green}26`,
-        "diffEditorGutter.removedLineBackground": `${red}26`,
+        "diffEditor.insertedTextBackground": `${added}33`,
+        "diffEditor.removedTextBackground": `${removed}33`,
+        "diffEditor.insertedLineBackground": `${added}1a`,
+        "diffEditor.removedLineBackground": `${removed}1a`,
+        "diffEditorGutter.insertedLineBackground": `${added}26`,
+        "diffEditorGutter.removedLineBackground": `${removed}26`,
         "diffEditor.diagonalFill": token("line-1"),
         "diffEditor.unchangedRegionBackground": token("bg-1"),
         "diffEditor.unchangedRegionForeground": token("fg-3"),

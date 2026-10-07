@@ -1,22 +1,24 @@
 <script setup lang="ts">
 /**
- * The IDE's panel (the Ide board's Problems and Search results): the open files' problems by file, filtered as
- * typed, with Open in Health; and a search's hits, or a word's references, by origin and file, each line with
- * its match in bold.
+ * The IDE's panel (the Ide board's Problems and Search results, the IdeDiff board's Git output): the open files'
+ * problems by file, filtered as typed, with Open in Health; a search's hits, or a word's references, by origin and
+ * file, each line with its match in bold; and every git command source control ran, with what it wrote.
  */
-import { computed, shallowRef } from "vue";
+import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import type { Result } from "../../stores/ide";
 import { editorRange } from "../../ide/editorCore";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { linesQuery } from "../../queries";
 import { plural } from "../../lib/format";
+import { useGitStore } from "../../stores/git";
 import { useIdeStore } from "../../stores/ide";
 import { useWorkspaceStore } from "../../stores/workspace";
 
 const { workspaceId } = defineProps<{ workspaceId: string }>();
 
 const ide = useIdeStore();
+const git = useGitStore();
 const store = useWorkspaceStore();
 const { locate } = useIdeRoots(() => workspaceId);
 
@@ -42,7 +44,17 @@ const files = computed(() => {
 const TABS = [
   { label: "Problems", value: "problems" },
   { label: "Search results", value: "search" },
+  { label: "Git output", value: "git" },
 ];
+const isTab = (value: string | number) => (value === "search" || value === "git" ? value : "problems");
+
+// the Git output keeps its newest command in view
+const gitLog = useTemplateRef("gitLog");
+watch(
+  () => [git.output.length, ide.panel],
+  () => gitLog.value?.scrollTo({ top: gitLog.value.scrollHeight }),
+  { flush: "post" },
+);
 
 // the results by origin, then file, in the order they came
 const groups = computed(() => {
@@ -83,7 +95,7 @@ function open(at: { path: string; line: number; col: number }): void {
 <template>
   <div class="flex min-h-0 flex-1 flex-col bg-muted text-(length:--ide-ui-font)">
     <div class="flex h-8 shrink-0 items-center gap-0.5 border-b border-default ps-2 pe-1.5">
-      <UTabs :model-value="ide.panel" :items="TABS" :content="false" variant="link" size="sm" @update:model-value="ide.panel = $event === 'search' ? 'search' : 'problems'">
+      <UTabs :model-value="ide.panel" :items="TABS" :content="false" variant="link" size="sm" @update:model-value="ide.panel = isTab($event)">
         <template #trailing="{ item }">
           <template v-if="item.value === 'problems'">
             <UBadge v-if="counts.errors" :label="String(counts.errors)" color="error" size="sm" />
@@ -124,6 +136,13 @@ function open(at: { path: string; line: number; col: number }): void {
       <p v-if="!files.length" class="px-3 py-2 text-12 text-dimmed">
         {{ filter ? "No problem matches the filter." : "No problems in the open files." }}
       </p>
+    </div>
+    <div v-else-if="ide.panel === 'git'" ref="gitLog" class="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-11">
+      <div v-for="(line, i) in git.output" :key="i" class="pb-1.5">
+        <div :class="line.failed ? 'text-error' : 'text-dimmed'">&gt; {{ line.command }}</div>
+        <pre v-if="line.output" class="whitespace-pre-wrap text-toned">{{ line.output }}</pre>
+      </div>
+      <p v-if="!git.output.length" class="font-sans text-12 text-dimmed">The git commands source control runs show here.</p>
     </div>
     <div v-else class="min-h-0 flex-1 overflow-y-auto py-1">
       <p v-if="ide.results" class="flex items-center gap-2 px-3 pb-1 text-11 text-dimmed">

@@ -10,9 +10,10 @@ import { LastRunCrashed } from "@services/logservice";
 import { ReadEditableBase64, ReadFileBase64 } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
-import type { EventGraph, Params, Roots, SourceAt } from "@services/models";
+import type { EventGraph, GitCommit, Params, Roots, SourceAt } from "@services/models";
 import { Definition, DiagnosticCodes, DocumentSymbols, Hover, References } from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
+import { Available, Branches, CommitFiles, Log, Repositories, Show, Status } from "@services/gitservice";
 import { CompareWithSteam, ListingSummary, LoadListing, UploadFiles } from "@services/releaseservice";
 import { EnsureSession, GetLanguageHealth } from "@services/sessionservice";
 import { Guide, PatchPage, Patches } from "@services/wikiservice";
@@ -89,6 +90,63 @@ export const fileKeys = {
   image: (path: string) => ["file", "image", path] as const,
   text: (path: string) => ["file", "text", path] as const,
 };
+
+// the repositories' reads sit under ["git"], so a command run refreshes them all
+export const gitKeys = {
+  available: ["git-available"] as const,
+  repos: (id: string) => ["git-repos", id] as const,
+  statuses: (roots: string[]) => ["git", "status", ...roots] as const,
+  log: (root: string, count: number) => ["git", root, "log", count] as const,
+  // a commit's files never change, so a repository's refresh leaves them be
+  commit: (root: string, hash: string) => ["git-commit", root, hash] as const,
+  branches: (root: string) => ["git", root, "branches"] as const,
+  text: (root: string, rev: string, path: string) => ["git", root, "text", rev, path] as const,
+};
+
+export const gitAvailableQuery = defineQueryOptions({ key: gitKeys.available, query: () => Available(), staleTime: Infinity });
+
+/** The repositories of a workspace's mods. */
+export const gitReposQuery = defineQueryOptions(({ id, enabled }: { id: string; enabled: boolean }) => ({
+  key: gitKeys.repos(id),
+  query: async () => (await Repositories(id)) ?? [],
+  enabled: !!id && enabled,
+}));
+
+/** Every repository's status by its root: Source control shows one, the explorer marks them all. */
+export const gitStatusesQuery = defineQueryOptions((roots: string[]) => ({
+  key: gitKeys.statuses(roots),
+  query: async () => Object.fromEntries(await Promise.all(roots.map(async (root) => [root, await Status(root)] as const))),
+  enabled: roots.length > 0,
+}));
+
+/** The current branch's and its upstream's newest commits, each before its parents. */
+export const gitLogQuery = defineQueryOptions(({ root, count }: { root: string; count: number }) => ({
+  key: gitKeys.log(root, count),
+  query: async () => (await Log(root, count)) ?? [],
+  enabled: !!root,
+  placeholderData: (previous: GitCommit[] | undefined) => previous,
+}));
+
+/** The files a commit changed. */
+export const gitCommitFilesQuery = defineQueryOptions(({ root, hash }: { root: string; hash: string }) => ({
+  key: gitKeys.commit(root, hash),
+  query: async () => (await CommitFiles(root, hash)) ?? [],
+  enabled: !!root && !!hash,
+  staleTime: Infinity,
+}));
+
+export const gitBranchesQuery = defineQueryOptions((root: string) => ({
+  key: gitKeys.branches(root),
+  query: () => Branches(root),
+  enabled: !!root,
+}));
+
+/** A file's text at a revision, or staged when rev is "" (":2" and ":3" are a conflict's two sides). */
+export const gitTextQuery = defineQueryOptions(({ root, rev, path }: { root: string; rev: string; path: string }) => ({
+  key: gitKeys.text(root, rev, path),
+  query: () => Show(root, rev, path),
+  enabled: !!root && !!path,
+}));
 
 export const versionQuery = defineQueryOptions({ key: appKeys.version, query: () => GetVersion(), staleTime: Infinity });
 
@@ -309,12 +367,13 @@ export const imageQuery = defineQueryOptions((path: string) => ({
 }));
 
 /**
- * A text file as the editor reads it: its text without the byte order mark (none for a binary or too large a
- * file, and why), and whether it had one.
+ * A text file as the editor reads it: its text without the byte order mark (none for a missing, binary or too
+ * large a file, and why), and whether it had one.
  */
-export async function readText(path: string): Promise<{ text?: string; reject: string; bom: boolean }> {
+export async function readText(path: string): Promise<{ text?: string; reject: string; bom: boolean; missing?: boolean }> {
   const file = await ReadEditableBase64(path);
-  if (!file.exists || file.reject) return { reject: file.reject || "The file is not there.", bom: false };
+  if (!file.exists) return { reject: "The file is not there.", bom: false, missing: true };
+  if (file.reject) return { reject: file.reject, bom: false };
   const bytes = Uint8Array.from(atob(file.b64 ?? ""), (c) => c.charCodeAt(0));
   const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
   return { text: new TextDecoder().decode(bytes), reject: "", bom };

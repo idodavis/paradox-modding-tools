@@ -205,6 +205,145 @@ export interface GameInstall {
 }
 
 /**
+ * GitBranch is a local or remote branch, or a tag.
+ */
+export interface GitBranch {
+    /**
+     * main, origin/main, v1.0
+     */
+    "name": string;
+    "upstream"?: string;
+    "ahead"?: number;
+    "behind"?: number;
+
+    /**
+     * its last commit's, RFC 3339
+     */
+    "date": string;
+    "current"?: boolean;
+}
+
+/**
+ * GitBranches is a repository's local and remote branches and tags, the newest first.
+ */
+export interface GitBranches {
+    "local": GitBranch[] | null;
+    "remote": GitBranch[] | null;
+    "tags": GitBranch[] | null;
+}
+
+/**
+ * GitChange is one changed file.
+ */
+export interface GitChange {
+    "path": string;
+    "name": string;
+
+    /**
+     * its folder from the repository's root, slash separated; "" at the root
+     */
+    "folder": string;
+
+    /**
+     * A, M, D, R (renamed), U (untracked) or ! (in conflict)
+     */
+    "letter": string;
+}
+
+/**
+ * GitCommit is one commit of the history.
+ */
+export interface GitCommit {
+    "hash": string;
+    "short": string;
+    "subject": string;
+
+    /**
+     * RFC 3339
+     */
+    "date": string;
+    "head"?: boolean;
+
+    /**
+     * the branches and tags at it: main, origin/main, tag: v1
+     */
+    "refs"?: string[] | null;
+
+    /**
+     * their hashes, the first parent first
+     */
+    "parents": string[] | null;
+}
+
+/**
+ * GitOutput is one git command and what it wrote: its errors and progress, and for a command that
+ * changes something, what it printed.
+ */
+export interface GitOutput {
+    "root": string;
+    "command": string;
+    "output"?: string;
+    "failed"?: boolean;
+}
+
+/**
+ * GitRepository is one repository holding a workspace's mod, named after the mod.
+ */
+export interface GitRepository {
+    "root": string;
+    "name": string;
+
+    /**
+     * the mod's, for its color
+     */
+    "origin": string;
+
+    /**
+     * every one of the workspace's mods it holds, by id
+     */
+    "mods": string[] | null;
+}
+
+/**
+ * GitStatus is a repository's branch and its changed files.
+ */
+export interface GitStatus {
+    /**
+     * "" while HEAD is detached
+     */
+    "branch": string;
+
+    /**
+     * HEAD's short hash; "" before the first commit
+     */
+    "commit": string;
+    "upstream"?: string;
+    "ahead": number;
+    "behind": number;
+    "staged": GitChange[] | null;
+    "changes": GitChange[] | null;
+    "conflicts": GitChange[] | null;
+
+    /**
+     * what .gitignore matches, a folder once, ending in its separator
+     */
+    "ignored": string[] | null;
+}
+
+/**
+ * GitText is a file's text at a revision or staged, its byte order mark apart; a binary file has none.
+ */
+export interface GitText {
+    "text": string;
+    "bom": boolean;
+
+    /**
+     * git's own test: a NUL in its first 8000 bytes
+     */
+    "binary"?: boolean;
+}
+
+/**
  * Health is the report.
  */
 export interface Health {

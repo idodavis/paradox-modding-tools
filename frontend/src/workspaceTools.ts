@@ -12,9 +12,9 @@ export const PAGES = {
     icon: "i-lucide-layout-grid",
     help: [
       "A workspace is one game install plus the mods you load with it. The active one is at the top; open another's card to make it active.",
-      "More removes a workspace from PMT. Mod folders on disk stay.",
+      "Remove from PMT…, in a workspace's … menu, takes it out of PMT. Mod folders on disk stay.",
       "New mod creates a mod skeleton and adds it to a workspace. New workspace starts the setup.",
-      "Reset all PMT data, in the status bar, removes every workspace, install record and cache. Mods, game files and your appearance settings stay.",
+      "Reset all PMT data, in the status bar, removes every workspace, install record and cache. Mods, game files and your settings stay.",
     ],
   },
   wizard: {
@@ -35,6 +35,7 @@ export const PAGES = {
       "Deleting a mod's root folder in the explorer also removes it from this workspace; files inside a mod delete normally.",
       "Open tabs are kept across a workspace switch and a restart unless you turn that off in Settings › General. The editor's text sizes and checks are in the IDE settings (the gear).",
       "The Wiki button at the end of the editor's tabs (Ctrl Shift W) opens the wiki's pages for the file you are in.",
+      "Source control, the sidebar's third view, runs the git installed on your computer on each mod that is a repository. Merge conflicts are resolved in the editor.",
     ],
   },
   "event-graph": {
@@ -43,9 +44,9 @@ export const PAGES = {
     workspace: true,
     tab: true,
     help: [
-      "Pick a root event to see what it fires and what fires it. Origins filter which mods (and game files) feed the graph.",
-      "Namespace narrows the picker; leave it empty to search every id. Double-click a node to re-root. Drag is temporary until you change layout or root.",
-      "Recenter only pans to fit — it does not undo a layout change.",
+      "Type an id, a namespace or a number in Root to see what that event or on_action fires and what fires it, left to right by step.",
+      "Filters picks the kinds drawn, the mods (and game files) shown, the depth and the node limit. Follow macros walks into scripted effects and triggers.",
+      "Click a node for its detail, double-click it to draw the graph from it, and click a +N group to open it.",
       "In the IDE, Ctrl Shift G or the right-click menu opens the event under the cursor in the Event Graph.",
     ],
   },
@@ -76,7 +77,7 @@ export const PAGES = {
     workspace: true,
     tab: true,
     help: [
-      "Publish edits the mod's own files: its descriptor, and in workshop/ its description file and changelog.bbcode, the latest change note. Nothing is written until you save.",
+      "Publish edits the mod's own files: its descriptor, and in workshop/ its description file and changelog.bbcode, the latest change note. Nothing is written until you save, except the thumbnail, screenshots and videos, which save at once.",
       "The description comes from a Markdown file (converted to BBCode when you upload), a BBCode file (uploaded as written), or Steam's own text, which uploads leave as it is. Change source picks one.",
       "Uploads leave out dotfiles but .metadata, .gitignore and what it names, workshop/previews (Steam takes those as the page's gallery), and the mod's upload exclusions in Settings. PMT keeps a copy of each upload, so Compare shows what the next one changes.",
       "Steam must be running and signed in as the item's owner. A new item stays private until you make it public on its Workshop page. Do not load a local copy and a Workshop subscription of the same mod together.",

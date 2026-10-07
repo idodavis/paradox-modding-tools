@@ -45,6 +45,7 @@ func main() {
 	wikiSvc := &services.WikiService{Session: sessSvc}
 	searchSvc := &services.SearchService{}
 	releaseSvc := &services.ReleaseService{App: appSvc}
+	gitSvc := &services.GitService{App: appSvc}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -63,6 +64,7 @@ func main() {
 			application.NewService(wikiSvc),
 			application.NewService(searchSvc),
 			application.NewService(releaseSvc),
+			application.NewService(gitSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),

@@ -31,7 +31,8 @@ import { useCompare } from "../composables/useCompare";
 import { useIdeRoots } from "../composables/useIdeRoots";
 import { useWorkspacePrefs } from "../composables/useWorkspaceSave";
 import { codesQuery, filesQuery, rootsQuery, symbolsQuery, workspacesQuery } from "../queries";
-import { useIdeStore } from "../stores/ide";
+import { useGitStore } from "../stores/git";
+import { diffTab, useIdeStore } from "../stores/ide";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 import {
@@ -51,6 +52,7 @@ const { mutate: savePrefs } = useWorkspacePrefs();
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: codes } = useQuery(codesQuery);
 const ide = useIdeStore();
+const git = useGitStore();
 const { roots, locate } = useIdeRoots(() => store.activeWorkspaceId);
 const compare = useCompare(() => store.activeWorkspaceId);
 
@@ -79,7 +81,7 @@ function show(path: string, line = 0, col = 0): void {
 const editors = () => import("../ide/monacoEditor");
 
 async function graphAtCaret(): Promise<void> {
-  const card = await Hover(store.activeWorkspaceId, ide.activePath, ide.caret?.line ?? 0, ide.caret?.col ?? 0).catch(() => null);
+  const card = await Hover(store.activeWorkspaceId, ide.activeFile, ide.caret?.line ?? 0, ide.caret?.col ?? 0).catch(() => null);
   if (card?.graphed) go({ name: "event-graph", params: { id: store.activeWorkspaceId }, query: { root: card.word } });
 }
 
@@ -153,7 +155,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
     ),
   ];
   // the IDE's commands, on the file it shows
-  const active = ide.activePath;
+  const active = ide.activeFile;
   const [first, second] = ide.selected;
   const picked = ide.comparing;
   const run = (fn: () => unknown) => () => {
@@ -166,6 +168,9 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
           { label: "Select the active file for compare", prefix: "Compare:", icon: "i-lucide-diff", onSelect: run(() => (ide.comparing = active)) },
           ...(picked && picked !== active
             ? [{ label: "Active file with the file selected", prefix: "Compare:", icon: "i-lucide-diff", onSelect: run(() => compare.files(picked, active)) }]
+            : []),
+          ...(git.repoOf(active)
+            ? [{ label: "Active file with the last commit", prefix: "Compare:", icon: "i-lucide-git-compare", onSelect: run(() => ide.open(diffTab("changes", active))) }]
             : []),
           {
             label: "Active file with the game's copy",
@@ -254,7 +259,7 @@ const id = computed(() => store.activeWorkspaceId);
 const { data: files } = useQuery(() =>
   filesQuery({ id: id.value, pattern: mode.value === "files" ? query.value : "", folders: roots.value.map((root) => root.path) }),
 );
-const { data: symbols } = useQuery(() => symbolsQuery({ id: id.value, path: mode.value === "symbols" ? ide.activePath : "" }));
+const { data: symbols } = useQuery(() => symbolsQuery({ id: id.value, path: mode.value === "symbols" ? ide.activeFile : "" }));
 const { data: events } = useQuery(() => rootsQuery({ id: id.value, search: query.value, live: mode.value === "events" && !!query.value }));
 const lists = computed((): CommandPaletteGroup<Item>[] => {
   switch (mode.value) {

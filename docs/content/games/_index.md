@@ -14,4 +14,4 @@ PMT shares one Clausewitz/Jomini parser. **Effects, triggers, folders, and descr
 | [Victoria 3]({{< relref "/games/vic3" >}}) | `.metadata/metadata.json` | that folder **is** `game/` (no extra `game/` segment) |
 | [Europa Universalis V]({{< relref "/games/eu5" >}}) | `.metadata/metadata.json` | `loading_screen/`, `main_menu/`, `in_game/` — **partial** support |
 
-Shared script syntax (comments, `yes`/`no`, `@foo`, dates, colors) matches vanilla. When in doubt, copy a vanilla file of the same type and [Guide]({{< relref "/pages/ide" >}}) / `script_docs`.
+Shared script syntax (comments, `yes`/`no`, `@foo`, dates, colors) matches vanilla. When in doubt, copy a vanilla file of the same type, and read the [Wiki pane]({{< relref "/pages/ide#wiki" >}}) and `script_docs`.

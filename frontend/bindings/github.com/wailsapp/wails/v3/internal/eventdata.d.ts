@@ -13,6 +13,7 @@ declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
             "fs:changed": services$0.FSChanged;
+            "git:output": services$0.GitOutput;
             "lang:cache-updated": string;
             "lang:calendar-changed": string;
             "lang:failed": string;

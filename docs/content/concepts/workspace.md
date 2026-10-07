@@ -10,11 +10,11 @@ These are four different trees. Mixing them up is the usual reason a scan looks 
 
 ## Workspace
 
-A **workspace** is a PMT record: one game, one **install**, a list of **mod folders** with a load order, a default loc language, and UI prefs (remember tabs, default tool).
+A **workspace** is a PMT record: one game, one **install**, a list of **mod folders** with a load order, a localization language, and a few preferences (the page it opens on, reopening the IDE's tabs).
 
 - Creating or deleting a workspace does **not** create or delete mods on disk (except **New Mod**, which writes a skeleton you asked for).
-- [Library]({{< relref "/pages/library" >}}) **Delete** removes the PMT record only.
-- **Reset all data** on the Library wipes PMT workspaces, install records, leftover folders under the PMT config tree, and caches. It does **not** delete your mods or Steam/game installs. Theme, UI scale, and editor font stay.
+- **Remove from PMT…** in the [Library]({{< relref "/pages/library" >}}) removes the PMT record only.
+- **Reset all PMT data**, in the Library's status bar, removes every workspace, install record and cache, and leftover folders under PMT's config folder. It does **not** delete your mods or the game. Your settings stay.
 
 You can have many workspaces. Only **one** is live at a time: opening another drops the previous session. See [limitations]({{< relref "/limitations" >}}).
 
@@ -24,7 +24,7 @@ The **install** is the Steam or Paradox game folder (vanilla `game/` script, GUI
 
 The version comes from `<install>/launcher/launcher-settings.json` (`rawVersion`, then `version` with the `(Codename)` stripped); where that file is missing (common on EU5 right now), from Steam's build id. PMT’s vanilla cache is keyed by the version, the loc language, the install's last update and your dump files, so after a game patch the next session scans the install again by itself.
 
-Two workspaces that share the same install and default loc language share one vanilla cache. The cache is kept per language, so the first open in another loc language scans the install again.
+Two workspaces that share the same install and localization language share one vanilla cache. The cache is kept per language, so the first open in another localization language scans the install again.
 
 ## User data
 
@@ -37,9 +37,9 @@ That is where the launcher’s default `mod/` parent lives, and where `script_do
 
 ## Workshop / attached mods
 
-Workshop downloads live under `steamapps/workshop/content/<appid>/`. **Attach** folders (Workshop, Documents `mod/`, or anywhere) in the wizard or [Workspace Settings]({{< relref "/pages/settings" >}}).
+Workshop downloads live under `steamapps/workshop/content/<appid>/`. **Attach** folders (Workshop, Documents `mod/`, or anywhere) in the wizard or [Settings]({{< relref "/pages/settings" >}}).
 
-PMT's index of those folders lives **in memory** and is rebuilt when the workspace opens. If it looks wrong, close and reopen the workspace.
+PMT's index of those folders lives **in memory**: it is built when the workspace opens, and while it is open PMT watches the mod folders, so a file changed, added or deleted outside PMT is read again at once.
 
 ## PMT’s own config
 

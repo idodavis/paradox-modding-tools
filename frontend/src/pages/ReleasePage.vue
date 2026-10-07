@@ -111,7 +111,7 @@ function compare(): void {
         <span v-if="step === 'review'" class="truncate text-12 text-dimmed">Uploading replaces the files and listing of the Steam item below.</span>
         <template v-else>
           <span class="grow" />
-          <UButton label="Discard changes" size="md" :disabled="!unsaved.length" @click="discard" />
+          <UButton label="Discard changes" size="md" color="error" :disabled="!unsaved.length" @click="discard" />
           <!-- with nothing to save, the way forward takes Save's place -->
           <UButton
             v-if="unsaved.length || saving"

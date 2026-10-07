@@ -3,6 +3,8 @@
  * prop. The guard alone sets the active workspace.
  */
 import { createRouter, createWebHashHistory } from "vue-router";
+import UnsavedChangesModal from "../components/UnsavedChangesModal.vue";
+import { useIdeStore } from "../stores/ide";
 import { useWorkspaceStore } from "../stores/workspace";
 
 const router = createRouter({
@@ -43,8 +45,14 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach((to) => {
-  if ("id" in to.params) useWorkspaceStore().select(to.params.id);
+const unsavedModal = useOverlay().create(UnsavedChangesModal);
+
+router.beforeEach(async (to) => {
+  if (!("id" in to.params)) return;
+  // another workspace's files would take the editors' place: their unsaved edits are saved or dropped first, or we stay
+  const ide = useIdeStore();
+  if (ide.unsaved.size && ide.editing && to.params.id !== ide.editing && !(await unsavedModal.open())) return false;
+  useWorkspaceStore().select(to.params.id);
 });
 
 export default router;

@@ -31,7 +31,7 @@ Steam Deck, Flatpak, AppImage, and immutable distros are unsupported.
 
 | Game | Coverage |
 |------|----------|
-| Crusader Kings III | Script, loc, events, health, Guide wiki, publish |
+| Crusader Kings III | Script, loc, events, health, wiki, publish |
 | Victoria 3 | Same |
 | Europa Universalis V | **Partial** — stage roots and `INJECT:` / `REPLACE:` |
 
@@ -39,21 +39,20 @@ Steam Deck, Flatpak, AppImage, and immutable distros are unsupported.
 
 Grab the latest **Windows** or **Linux** zip from [GitHub Releases](https://github.com/idodavis/paradox-modding-tools/releases). Then follow [Getting started]({{< relref "/getting-started" >}}).
 
-Inside the app, the **version button in the footer** runs Check for updates against those zips plus a `SHA256SUMS` sidecar.
+Inside the app, the **version button in the status bar** checks for updates against those zips plus a `SHA256SUMS` sidecar.
 
 ## What's in the app
 
 | Page | What it does |
 |------|----------------|
-| [Library]({{< relref "/pages/library" >}}) | Workspaces by game; open / edit / delete the PMT record; New Workspace / New Mod; Reset all data |
-| [Create Workspace]({{< relref "/pages/wizard" >}}) | Game → install → mods + load order → name |
-| [Workspace IDE]({{< relref "/pages/ide" >}}) | monaco-vscode workbench; PMT-owned roots; game files read-only; Guide wiki pane |
-| [Event Graph]({{< relref "/pages/event-graph" >}}) | Event / on_action neighborhood from the live session |
-| [Workspace Health]({{< relref "/pages/health" >}}) | Contests, overrides, dependencies, dangling refs, localization and script issues |
-| [Patch Center]({{< relref "/pages/patch-center" >}}) | Cached wiki patch notes |
-| [Publish]({{< relref "/pages/publish" >}}) | Descriptor + Markdown/BBCode, Steam Workshop, Paradox Mods copy-paste |
-| [Workspace Settings]({{< relref "/pages/settings" >}}) | Name, loc language, install, mods, Workshop ignore |
-| [Display]({{< relref "/pages/display" >}}) | Header: themes, scale, fonts, visible tools |
+| [Library]({{< relref "/pages/library" >}}) | Workspaces by game, the active one in full; New workspace, New mod; Reset all PMT data |
+| [New workspace]({{< relref "/pages/wizard" >}}) | Game, install, mods in load order, details |
+| [IDE]({{< relref "/pages/ide" >}}) | Monaco editors in groups, hover cards, checks, search and replace, git source control, the Wiki pane; game files read only |
+| [Event Graph]({{< relref "/pages/event-graph" >}}) | What an event or on_action fires and what fires it |
+| [Health]({{< relref "/pages/health" >}}) | Contests, overrides, dependencies, dangling refs, localization and script issues |
+| [Patch Notes]({{< relref "/pages/patch-notes" >}}) | The game's patch notes from its wiki |
+| [Publish]({{< relref "/pages/publish" >}}) | Listing, description, version and change note; Steam Workshop upload and compare; Paradox Mods copy |
+| [Settings]({{< relref "/pages/settings" >}}) | The workspace's name, language, install, mods and load order; the app's appearance |
 
 ## Next
 

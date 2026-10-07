@@ -53,37 +53,47 @@ If the window is blank, the WebKitGTK 6 runtime is the first thing to check.
 
 On first launch the [wizard]({{< relref "/pages/wizard" >}}) walks you through:
 
-1. **Game** — CK3, Vic3, or EU5.
-2. **Install** — detect a Steam/Paradox folder or browse. Its version is read from `launcher/launcher-settings.json`.
-3. **Mods** — attach existing folders and/or **Create new mod** (descriptor, empty `common/` and `events/`, readmes, a localization stub with UTF-8 BOM). Drag to set load order.
-4. **Name** — how the workspace appears in the Library.
+1. **Game**: CK3, Vic3 or EU5.
+2. **Install**: one PMT found on this computer, or a folder you pick (the game's root, the one that holds
+   `game/`).
+3. **Mods**: **Add an existing mod** and **Create a new mod**, dragged into load order. You can leave it empty.
+4. **Details**: the workspace's name and localization language.
 
-You land in the [Workspace IDE]({{< relref "/pages/ide" >}}).
+The workspace opens in the [IDE]({{< relref "/pages/ide" >}}).
 
-{{< shot caption="Wizard Install step (detected path + version)." >}}
+{{< shot caption="New workspace: the Install step." >}}
 
 ## 5. First scan
 
-PMT indexes **vanilla** script into a cache keyed by install and version, then indexes your mods in memory when the workspace opens. Large installs take a while the first time. Later opens reuse the vanilla cache.
+PMT indexes the game's script into a cache kept per install and version, then indexes your mods in memory when
+the workspace opens. A large install takes a while the first time; the top bar shows the scan's stage and progress,
+then the version and when it was scanned. Later opens reuse the cache.
 
-The language strip (defs count / “index ready”) tells you the [live session]({{< relref "/concepts/workspace" >}}) is up. Tool pages wait for that.
+Game files in the explorer are **read only**: edit in a mod folder.
 
-Game files in the explorer are **read-only**. Edit in a mod folder.
+## 6. Find your way in the IDE
 
-## 6. Open the IDE and Guide
+- The explorer shows this workspace only: your mods, then the game's files.
+- **Ctrl P** opens a file by name; **Ctrl Shift F** searches the files' text, and can replace.
+- Rest the pointer on a word for its hover card; problems show as squiggles and in the Problems panel.
+- The **Wiki** button at the end of the editor's tabs (**Ctrl Shift W**) opens the community wiki's pages for the file.
+- **Source control** (the sidebar's third view) works on mods that are git repositories. It needs
+  [git](https://git-scm.com/) installed.
 
-- Explorer roots are this workspace only: your mods, then the game.
-- Search and Ctrl+P index every root.
-- The **Guide** pull-tab on the editor’s right edge is the community wiki (search, contents, related pages). It stays closed until you open it.
-
-{{< shot caption="IDE: explorer + script editor + Guide open." >}}
+{{< shot caption="IDE: explorer, a script file and the Wiki pane." >}}
 
 ## After that
 
-- [Workspace Health]({{< relref "/pages/health" >}}) — who wins FIOS/LIOS, missing loc, dangling refs.
-- [Event Graph]({{< relref "/pages/event-graph" >}}) — hover an event id in the IDE and open the neighborhood.
-- [Publish]({{< relref "/pages/publish" >}}) — listing + Steam (client must be running) or Paradox Mods copy-paste.
+- [Health]({{< relref "/pages/health" >}}): what the load order keeps (FIOS/LIOS), dangling references, localization
+  and script problems.
+- [Event Graph]({{< relref "/pages/event-graph" >}}): **Ctrl Shift G** on an event in the IDE draws what it fires
+  and what fires it.
+- [Publish]({{< relref "/pages/publish" >}}): the listing, then the Steam Workshop (the client must be running) or a
+  BBCode copy for Paradox Mods.
 
-Later zips: click the **version number in the footer** to check for updates (needs `SHA256SUMS` on the GitHub Release).
+Later versions: click the **version number in the status bar** to check for updates (it needs `SHA256SUMS` on the
+GitHub Release).
 
-Read [concepts]({{< relref "/concepts" >}}) if “workspace”, “install”, and “user data” are getting mixed up. [FAQ]({{< relref "/faq" >}}) covers scan stale, loc ignored, and Workshop staying private.
+Read [concepts]({{< relref "/concepts" >}}) if “workspace”, “install” and “user data” are getting mixed up. The
+[FAQ]({{< relref "/faq" >}}) covers a scan that finds nothing, localization the game ignores, and a Workshop item
+that stays private.

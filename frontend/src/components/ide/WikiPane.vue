@@ -26,11 +26,12 @@ const store = useWorkspaceStore();
 const toast = useToast();
 const { toastAllowed } = useWikiPrefs();
 const tocCollapsed = useLocalStorage("pmt.wiki.tocCollapsed", false);
+const tocWidth = useLocalStorage("pmt.wiki.tocWidth", 136);
 
 // the file the pages are for: the open one, or while the pane does not follow, the one it had
 const path = shallowRef("");
 watch(
-  () => ide.activePath,
+  () => ide.activeFile,
   (open) => {
     if (open && (!path.value || settings.ideOn("ui.wiki.follow"))) path.value = open;
   },
@@ -115,15 +116,17 @@ watch(() => workspaceId, () => told.clear());
       <span v-if="guide?.kind" class="text-11 text-dimmed">Suggested for {{ guide.kind }} files</span>
     </div>
     <div class="flex min-h-0 flex-1 border-t border-default">
-      <WikiToc
-        v-if="page?.sections?.length"
-        v-model:collapsed="tocCollapsed"
-        class="shrink-0 border-e border-default"
-        :class="{ 'w-34': !tocCollapsed }"
-        :sections="page.sections"
-        :active="tocActive"
-        @jump="jumpTo"
-      />
+      <template v-if="page?.sections?.length">
+        <WikiToc
+          v-model:collapsed="tocCollapsed"
+          class="shrink-0 border-e border-default"
+          :style="tocCollapsed ? undefined : { width: `${tocWidth}px` }"
+          :sections="page.sections"
+          :active="tocActive"
+          @jump="jumpTo"
+        />
+        <ResizeGrip v-if="!tocCollapsed" v-model="tocWidth" :min="100" :max="220" :default-size="136" />
+      </template>
       <div class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3.5 py-3 wrap-break-word">
         <p v-if="isPending && path" class="text-12 text-dimmed">Reading the wiki…</p>
         <p v-else-if="error" class="text-12 text-error">{{ error.message }}</p>

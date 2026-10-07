@@ -6,11 +6,11 @@ weight: 3
 
 # Localization
 
-Player-facing text is YAML under `localization/` (US spelling, **z**). A `localisation/` folder is ignored by the games and by PMT.
+Player-facing text is YAML under `localization/` (US spelling, **z**). The games never read a `localisation/` folder; PMT flags one (`wrong-localization-folder`).
 
 ## File rules (all three games)
 
-1. **UTF-8 with BOM.** Without the BOM the game skips the file. PMT’s IDE flags this.
+1. **UTF-8 with BOM.** Without the BOM the game skips the file. PMT flags it (`missing-bom`) and can add the BOM for you.
 2. Filename: `anything_l_<lang>.yml` — `l_` is a lowercase L, not the digit 1.
 3. First line: `l_<lang>:` matching the filename (and usually the folder).
 4. Each entry: one space, key, colon, optional version int, quoted string.
@@ -45,8 +45,11 @@ Every string shown to the player should be a **loc key**. Bare quoted text in sc
 
 ## What PMT does with loc
 
-- The workspace **default loc language** is an IDE / hover setting (which language you read in tooltips).
-- Health coverage lists **every language the mods ship**, not only the default: missing keys, orphaned keys (a mod's key nothing of that mod reads), untranslated keys.
-- New Mod writes a stub file **with** the UTF-8 BOM.
+- The workspace's **localization language** is the language you read on hover cards and the one new mods are
+  written in, and Health measures every other language against it: a key a mod has in it and leaves out of another
+  language the mod ships is **untranslated**.
+- Health's **Localization Issues** also list files the game reads wrong: syntax, no BOM, a header naming another
+  language, a misspelled folder. A key script uses that no file defines is a **Dangling Ref**.
+- A new mod's localization file has the UTF-8 BOM.
 
-See [Workspace Health]({{< relref "/pages/health" >}}) and the [FAQ]({{< relref "/faq" >}}) if loc is “ignored.”
+See [Health]({{< relref "/pages/health" >}}) and the [FAQ]({{< relref "/faq" >}}) if loc is “ignored.”

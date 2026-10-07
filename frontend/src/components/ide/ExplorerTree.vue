@@ -47,13 +47,14 @@ export const BINARIES = /\.(dll|exe|pdb|hash|hex|bin|dat)$|^\.git$/i;
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useMutation } from "@pinia/colada";
 import { Clipboard, Events } from "@wailsio/runtime";
-import { FileTree, type FileTreeDirectoryHandle } from "@pierre/trees";
+import { FileTree, type FileTreeDirectoryHandle, type GitStatus, type GitStatusEntry } from "@pierre/trees";
 import type { ContextMenuItem } from "@nuxt/ui";
 import type { IdeRoot } from "@services/models";
 import { CreateDir, DeletePath, ListDirectory, RenamePath, StatPath, WriteFileBase64 } from "@services/fileservice";
 import { OpenFolder, RemoveWorkspaceMod } from "@services/workspaceservice";
-import { useIdeRoots } from "../../composables/useIdeRoots";
+import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
 import { useWorkspaceSave } from "../../composables/useWorkspaceSave";
+import { useGitStore } from "../../stores/git";
 import { useIdeStore } from "../../stores/ide";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -62,6 +63,7 @@ const { workspaceId, roots, hideBinaries } = defineProps<{ workspaceId: string; 
 const emit = defineEmits<{ compare: [old: string, now: string] }>();
 
 const ide = useIdeStore();
+const git = useGitStore();
 const settings = useSettingsStore();
 const store = useWorkspaceStore();
 const { locate, under } = useIdeRoots(() => workspaceId);
@@ -114,13 +116,12 @@ function mount(): void {
   listed.clear();
   folders.clear();
   if (!host.value || !roots.length) return;
-  const comfortable = settings.treeDensity === "comfortable";
   // a root's row, and its copy that sticks at the top, at 600 with its origin's bar on its start, in its origin's
-  // color where the explorer colors the mods
+  // color where the explorer colors the roots (the game's too)
   const rootRows = roots
     .map((root, i) => {
       const color = store.originColor(root.origin ?? "");
-      const text = settings.ideOn("ide.rootColors") && !root.readOnly ? color : "var(--fg-1)";
+      const text = settings.ideOn("ide.rootColors") ? color : "var(--fg-1)";
       return `[data-item-path="${CSS.escape(`${names.value[i]}/`)}"] { font-weight: 600; color: ${text}; border-radius: 0; box-shadow: inset 3px 0 0 ${color}; }`;
     })
     .join("\n");
@@ -129,10 +130,10 @@ function mount(): void {
   const made = new FileTree({
     paths,
     initialExpansion: "closed",
-    density: comfortable ? "default" : "compact",
-    itemHeight: comfortable ? 26 : 22,
+    density: settings.treeDensity,
     stickyFolders: settings.ideOn("ide.stickyFolders"),
     icons: ICONS,
+    gitStatus: gitStatus.value,
     unsafeCSS: rootRows,
     // a read-only root says so with a lock
     renderRowDecoration: ({ item }) => (!writable.value && paths.includes(`${item.path.replace(/\/$/, "")}/`) ? { icon: "file-tree-icon-lock", title: "Read only" } : null),
@@ -175,7 +176,28 @@ watch(
 );
 onBeforeUnmount(() => tree.value?.cleanUp());
 
-/** Open the folders down to the open file and select it, while the explorer follows the open file. */
+// each repository's changes on its files and folders, and what it ignores dimmed (O-R63): staged, then unstaged,
+// a file added kept as added
+const STATUSES: Record<string, GitStatus> = { A: "added", M: "modified", D: "deleted", R: "renamed", U: "untracked", "!": "modified" };
+const gitStatus = computed<GitStatusEntry[]>(() => {
+  const marked = new Map<string, GitStatus>();
+  for (const status of Object.values(git.statuses ?? {})) {
+    if (!status) continue;
+    for (const ignored of status.ignored ?? []) {
+      const path = treePath(ignored.replace(/[\\/]$/, ""), /[\\/]$/.test(ignored));
+      if (path) marked.set(path, "ignored");
+    }
+    for (const change of [...(status.staged ?? []), ...(status.changes ?? []), ...(status.conflicts ?? [])]) {
+      const path = treePath(change.path);
+      if (path && marked.get(path) !== "added") marked.set(path, STATUSES[change.letter] ?? "modified");
+    }
+  }
+  return [...marked].map(([path, status]) => ({ path, status }));
+});
+watch(gitStatus, (entries) => tree.value?.setGitStatus(entries));
+
+/** Open the folders down to the open file and select it, while the explorer follows the open file; a diff tab is
+ * not followed, since selecting a file opens it. */
 async function follow(): Promise<void> {
   const path = ide.activePath;
   const target = path && settings.ideOn("ide.followFile") ? treePath(path) : undefined;
@@ -226,7 +248,7 @@ const { mutate: rename } = useMutation({
   onError: (_error, { from, to }) => tree.value?.move(to, from),
 });
 
-/** A new file or folder in a folder, named in place. */
+/** A new file or folder in a folder, named in place; cancelled (Escape, or no name), it is deleted again. */
 async function create(dir: string, isFolder: boolean): Promise<void> {
   await list(dir);
   const taken = (name: string) => tree.value?.getItem(`${dir}${name}`) || tree.value?.getItem(`${dir}${name}/`);
@@ -235,9 +257,17 @@ async function create(dir: string, isFolder: boolean): Promise<void> {
   const path = `${dir}${name}${isFolder ? "/" : ""}`;
   await (isFolder ? CreateDir(diskPath(path)) : WriteFileBase64(diskPath(path), ""));
   if (isFolder) folders.add(path);
-  if (!tree.value?.getItem(path)) tree.value?.add(path);
-  folder(tree.value, dir)?.expand();
-  tree.value?.startRenaming(path);
+  const made = tree.value;
+  if (!made) return;
+  if (!made.getItem(path)) made.add(path);
+  // the tree drops the row when its naming is cancelled: the file and its tab go too (a path already gone deletes
+  // harmlessly)
+  const stop = made.onMutation("remove", (event) => {
+    if (event.path !== path) return;
+    stop();
+    void DeletePath(diskPath(path)).then(() => ide.moved(diskPath(path)));
+  });
+  made.startRenaming(path, { removeIfCanceled: true });
 }
 
 // the context menu's row, and the delete it asks about
@@ -255,6 +285,8 @@ const menu = computed<ContextMenuItem[][]>(() => {
   const selected = (tree.value?.getSelectedPaths() ?? []).filter((p) => !p.endsWith("/"));
   const file = path.endsWith("/") ? "" : diskPath(path);
   const picked = ide.comparing;
+  // a mod's own folder in no repository is made one (O-R61), and source control shown
+  const bare = root ? git.bare.find((mod) => pathKey(mod.path) === pathKey(diskPath(path))) : undefined;
   return [
     file ? [{ label: "Open to the side", icon: "i-lucide-columns-2", onSelect: () => ide.split("right", file) }] : [],
     writable.value
@@ -282,6 +314,18 @@ const menu = computed<ContextMenuItem[][]>(() => {
             : []),
         ]
       : [],
+    bare
+      ? [
+          {
+            label: "Initialize a git repository",
+            icon: "i-lucide-git-branch-plus",
+            onSelect: () => {
+              git.initialize(bare);
+              ide.sidebar = "git";
+            },
+          },
+        ]
+      : [],
     [
       { label: "Copy path", onSelect: () => void Clipboard.SetText(diskPath(path)) },
       { label: "Reveal in the file manager", onSelect: () => void OpenFolder(diskPath(dir)) },
@@ -306,12 +350,13 @@ const { mutate: confirmDelete, isLoading: removing } = useMutation({ mutation: r
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
   <UContextMenu :items="menu">
+    <!-- files a step brighter than the muted text, and what git ignores a step past the quiet text, in every theme -->
     <div
       ref="host"
       class="min-h-0 flex-1"
       :style="{
         '--trees-bg-override': 'var(--bg-2)',
-        '--trees-fg-override': 'var(--fg-2)',
+        '--trees-fg-override': 'color-mix(in oklab, var(--fg-2), var(--fg-1) 35%)',
         '--trees-fg-muted-override': 'var(--fg-3)',
         '--trees-selected-bg-override': 'var(--bg-4)',
         '--trees-selected-fg-override': 'var(--fg-1)',
@@ -320,6 +365,13 @@ const { mutate: confirmDelete, isLoading: removing } = useMutation({ mutation: r
         '--trees-focus-ring-color-override': 'var(--accent)',
         '--trees-font-family-override': 'var(--font-sans)',
         '--trees-font-size-override': 'var(--ide-ui-font)',
+        // git's marks in Source control's letters' colors
+        '--trees-status-added-override': 'var(--green)',
+        '--trees-status-untracked-override': 'var(--green)',
+        '--trees-status-modified-override': 'var(--orange)',
+        '--trees-status-deleted-override': 'var(--red)',
+        '--trees-status-renamed-override': 'var(--blue)',
+        '--trees-status-ignored-override': 'color-mix(in oklab, var(--fg-3), var(--bg-2) 40%)',
       }"
       @contextmenu.capture="onContext"
     />

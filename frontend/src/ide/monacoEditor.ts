@@ -10,11 +10,13 @@ import { WriteFileBase64 } from "@services/fileservice";
 import * as rpc from "@services/ideservice";
 import type { CodeAction, Completion, Inspect, Item, Location, Range as ByteRange, TextEdit } from "@services/internal/lsp";
 import { pathKey } from "../composables/useIdeRoots";
-import { fileUri, languageOf, models, monaco } from "../lib/code";
+import { fileUri, labels, languageOf, models, monaco } from "../lib/code";
 import { readText } from "../queries";
-import { useIdeStore } from "../stores/ide";
+import { tabOf, useIdeStore } from "../stores/ide";
 import { useSettingsStore } from "../stores/settings";
+import { useWorkspaceStore } from "../stores/workspace";
 import { openPalette } from "../components/CommandPalette.vue";
+import { watchConflicts } from "./conflicts";
 import { editorRange, toBytes } from "./editorCore";
 
 /**
@@ -40,7 +42,9 @@ let locked: (path: string) => boolean = () => false;
 
 const ide = useIdeStore();
 const settings = useSettingsStore();
-const PARADOX = ["paradox", "paradox-loc", "paradox-gui"];
+// the providers answer for files only: a compare's sides are models of text alone (inmemory://model/3), which the
+// backend would be asked to read as a file
+const PARADOX = ["paradox", "paradox-loc", "paradox-gui"].map((language) => ({ language, scheme: "file" }));
 
 /** The workspace the editors are of, and which of its files are read only; another workspace's files go. */
 export function setWorkspace(id: string, readOnly: (path: string) => boolean): void {
@@ -49,6 +53,9 @@ export function setWorkspace(id: string, readOnly: (path: string) => boolean): v
   workspaceId = id;
   for (const model of monaco.editor.getModels()) if (model.uri.scheme === "file") model.dispose();
   files.clear();
+  folders.clear();
+  dotted.clear();
+  dots.replaceSync("");
 }
 
 /** The path a model's address is of. */
@@ -69,12 +76,35 @@ export function bytesAt(model: monaco.editor.ITextModel, at: monaco.IPosition): 
   return [at.lineNumber - 1, toBytes(model.getLineContent(at.lineNumber), at.column - 1)];
 }
 
-/** A backend place as Monaco's, its path kept for the model it may open. */
+/** A backend place as Monaco's, its path kept for the model it may open, and its origin for a peek's rows. */
 function location(site: Location): monaco.languages.Location {
   const uri = fileUri(site.path);
   spelled.set(uri.toString(), site.path);
+  marked(uri, site);
   return { uri, range: toRange(monaco.editor.getModel(uri), site.range) };
 }
+
+// a peek's file rows say whose they are: the origin's name and the folder in it for their folder, and a dot in the
+// origin's color, which Monaco has no hook for, matched by the full path each row announces (themes.css draws it)
+const workspace = useWorkspaceStore();
+const folders = new Map<string, { origin: string; dir: string }>();
+const dotted = new Set<string>();
+const dots = new CSSStyleSheet();
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, dots];
+function marked(uri: monaco.Uri, site: Location): void {
+  const folder = uri.with({ path: uri.path.slice(0, uri.path.lastIndexOf("/")) });
+  folders.set(folder.toString(), { origin: site.origin, dir: site.rel.slice(0, Math.max(0, site.rel.lastIndexOf("/"))) });
+  if (dotted.has(uri.fsPath)) return;
+  dotted.add(uri.fsPath);
+  const path = uri.fsPath.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+  dots.insertRule(`.monaco-list-row[aria-label$="full path ${path}"] { --origin: ${workspace.originColor(site.origin)}; }`);
+}
+labels.folder = (uri) => {
+  const known = folders.get(uri.toString());
+  if (!known) return undefined;
+  const name = workspace.originName(known.origin);
+  return known.dir ? `${name} › ${known.dir}` : name;
+};
 
 /** A file's model, made the first time a tab or a peek reaches it, with the text read. */
 function fileModel(path: string, text: string, bom: boolean): File {
@@ -89,6 +119,7 @@ function fileModel(path: string, text: string, bom: boolean): File {
   files.set(key, file);
   made.onDidChangeContent(() => changed(file));
   made.onWillDispose(() => files.delete(key));
+  watchConflicts(made, path);
   return file;
 }
 
@@ -187,12 +218,13 @@ export async function saveAll(): Promise<void> {
   await Promise.all([...ide.unsaved].map(saveFile));
 }
 
-// a file closed in every group lets its model go
+// a file no tab shows (its own or a diff) lets its model go, once the tabs' editors have let it go
 watch(
-  () => ide.openFiles.map(pathKey),
+  () => ide.openFiles.map((tab) => pathKey(tabOf(tab).file)),
   (open) => {
     for (const file of [...files.values()]) if (file.open && !open.includes(pathKey(file.path))) file.model.dispose();
   },
+  { flush: "post" },
 );
 
 // a file changed on disk replaces a model with nothing unsaved, as one edit it can undo

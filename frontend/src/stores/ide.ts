@@ -23,6 +23,17 @@ export type Place = { path: string; line: number; col: number };
 export type Result = Place & { rel: string; origin: string; end: number; preview: string };
 /** What the Search results tab shows: what was looked for, its rows so far, and whether it is done or capped. */
 export type Results = { title: string; rows: Result[]; done: boolean; capped: boolean };
+/** A diff tab's kind: a file's changes (its staged copy against it), its staged changes (the last commit against
+ * the staged copy), a conflict's two sides, or what a commit changed in it (its first parent against it). */
+export type Diff = "changes" | "staged" | "conflict" | "commit";
+
+/** The tab of a file's diff; a commit's names the commit. */
+export const diffTab = (diff: Diff, path: string, commit = "") => `git:${diff}${commit && `@${commit}`}:${path}`;
+/** A tab's file, and its diff (and commit) when it shows one; a file's own tab is its path. */
+export function tabOf(tab: string): { file: string; diff?: Diff; commit?: string } {
+  const found = /^git:(changes|staged|conflict|commit)(?:@([0-9a-f]+))?:(.+)$/s.exec(tab);
+  return found ? { file: found[3] ?? "", diff: found[1] as Diff, commit: found[2] } : { file: tab };
+}
 
 /** A layout with a group put beside another, on one of its edges. */
 function beside(node: Layout, target: number, edge: Exclude<Edge, "middle">, added: number): Layout {
@@ -73,6 +84,8 @@ export const useIdeStore = defineStore("ide", () => {
   const layout = ref<Layout>({ group: 1 });
   const focused = shallowRef(1);
   const unsaved = ref(new Set<string>());
+  /** The workspace whose files the editors hold, the one last restored. */
+  const editing = shallowRef("");
   const problems = ref(new Map<string, Diagnostic[]>());
   /** The caret: its line, its column in the editor's characters and in UTF-8 bytes (`col`), as the backend counts. */
   const caret = shallowRef<{ line: number; character: number; col: number } | null>(null);
@@ -85,15 +98,16 @@ export const useIdeStore = defineStore("ide", () => {
   const rich = ref(new Set<string>());
   // a tab being dragged, and the group it is dragged from
   const dragging = shallowRef<{ path: string; from: number } | null>(null);
-  const sidebar = useLocalStorage<"explorer" | "search">("pmt.ide.sidebar", "explorer");
-  const panel = useLocalStorage<"problems" | "search" | "">("pmt.ide.panel", "problems");
+  const sidebar = useLocalStorage<"explorer" | "search" | "git">("pmt.ide.sidebar", "explorer");
+  const panel = useLocalStorage<"problems" | "search" | "git" | "">("pmt.ide.panel", "problems");
   const wikiOpen = useLocalStorage("pmt.ide.wikiOpen", false);
   // each workspace's groups and where they sit, kept on this computer
   const layouts = useLocalStorage<Record<string, { layout: Layout; groups: Group[] }>>("pmt.ide.layouts", {});
 
   const group = (id: number) => groups.value.find((one) => one.id === id);
-  /** The file shown in the focused group. */
+  /** The tab shown in the focused group, and its file (a diff tab's too). */
   const activePath = computed(() => group(focused.value)?.active ?? "");
+  const activeFile = computed(() => tabOf(activePath.value).file);
   /** Every open file once, in the groups' order. */
   const openFiles = computed(() => [...new Set(groups.value.flatMap((one) => one.files))]);
   const cornerGroup = computed(() => corner(layout.value));
@@ -135,13 +149,14 @@ export const useIdeStore = defineStore("ide", () => {
     if (focused.value === id) focused.value = order(layout.value)[0] ?? 1;
   }
 
-  /** Close a file's tab in a group; a file in no group any more is forgotten, the backend too. */
-  function closeIn(id: number, path: string): void {
-    remove(id, path);
-    if (openFiles.value.includes(path)) return;
-    unsaved.value.delete(path);
-    problems.value.delete(path);
-    void DidClose(workspace.activeWorkspaceId, path).catch(() => undefined);
+  /** Close a tab in a group; a file no tab shows any more (its own or a diff) is forgotten, the backend too. */
+  function closeIn(id: number, tab: string): void {
+    remove(id, tab);
+    const { file } = tabOf(tab);
+    if (openFiles.value.some((open) => tabOf(open).file === file)) return;
+    unsaved.value.delete(file);
+    problems.value.delete(file);
+    void DidClose(workspace.activeWorkspaceId, file).catch(() => undefined);
   }
 
   /** Close a file in every group. */
@@ -229,6 +244,7 @@ export const useIdeStore = defineStore("ide", () => {
 
   /** A workspace's saved tabs, in the groups they were in where this computer kept them, else in one group. */
   function restore(id: string, files: string[], active: string): void {
+    editing.value = id;
     const keys = new Set(files.map(pathKey));
     const kept = (layouts.value[id]?.groups ?? [])
       .map((one) => ({ ...one, files: one.files.filter((file) => keys.has(pathKey(file))) }))
@@ -264,6 +280,7 @@ export const useIdeStore = defineStore("ide", () => {
     layout,
     focused,
     unsaved,
+    editing,
     problems,
     caret,
     place,
@@ -276,6 +293,7 @@ export const useIdeStore = defineStore("ide", () => {
     panel,
     wikiOpen,
     activePath,
+    activeFile,
     openFiles,
     cornerGroup,
     group,

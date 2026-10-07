@@ -132,6 +132,36 @@
   color-scheme: light;
 }
 
+/* Pierre: Pierre Dark Soft and Pierre Light Soft, after @pierre/theme (Apache-2.0): each token from the key that
+   plays its part there (the editor, the bars and sidebars, menus, inputs; text, the sidebar's, the line numbers'),
+   its git colors as the status ones; the light link is Pierre Light's, the soft one reading too faint on white; the
+   diffs take Pierre's own (the regular theme's) green and red */
+[data-theme="pierre-dark"] {
+  --bg-0: #171717; --bg-1: #101010; --bg-2: #101010; --bg-3: #1d1d1d; --bg-4: #262626;
+  --line-1: #1d1d1d; --line-2: #2c2c2c;
+  --fg-1: #d4d4d4; --fg-2: #8a8a8a; --fg-3: #737373;
+  --accent: #69b1ff; --accent-ink: #171717; --link: #68cdf2;
+  --red: #ff6762; --orange: #ffba82; --blue: #69b1ff; --green: #60d199; --purple: #9d6afb;
+  --diff-add: #07c480; --diff-del: #ff2e3f;
+  --syn-kw: #ff91a8; --syn-str: #8cda94; --syn-num: #96d9f6; --syn-fn: #ba8ffd; --syn-ref: #ffba82; --syn-com: #636363;
+  --ol: 0.72; --oc: 0.115;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="pierre-light"] {
+  --bg-0: #ffffff; --bg-1: #f7f7f7; --bg-2: #f7f7f7; --bg-3: #fafafa; --bg-4: #e5e5e5;
+  --line-1: #ededed; --line-2: #d4d4d4;
+  --fg-1: #525252; --fg-2: #737373; --fg-3: #8a8a8a;
+  --accent: #009fff; --accent-ink: #ffffff; --link: #1a85d4;
+  --red: #ff2e3f; --orange: #fe8c2c; --blue: #009fff; --green: #07c480; --purple: #7b43f8;
+  --diff-add: #18a46c; --diff-del: #d52c36;
+  --syn-kw: #ff678d; --syn-str: #0dbe4e; --syn-num: #08c0ef; --syn-fn: #9d6afb; --syn-ref: #fe8c2c; --syn-com: #8a8a8a;
+  --ol: 0.56; --oc: 0.135;
+  --shadow: 0 8px 24px rgba(10, 10, 10, 0.12), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
 /* Crusader Kings */
 [data-theme="ck3-dark"] {
   --bg-0: #140f0e; --bg-1: #1a1312; --bg-2: #211817; --bg-3: #2a1f1d; --bg-4: #362825;
@@ -301,7 +331,21 @@
   }
 }
 
-/* Monaco (lib/code.ts): the active line's accent bar on its start, as the boards draw it */
-.monaco-editor .view-overlays .current-line {
-  box-shadow: inset 2px 0 0 var(--accent);
+/* a peek's file rows (ide/monacoEditor.ts): a dot in their origin's color before the name */
+.monaco-editor .reference-file .label-name::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-end: 6px;
+  border-radius: 9999px;
+  vertical-align: 1px;
+  background: var(--origin, transparent);
+}
+/* a merge conflict's sides (ide/conflicts.ts): the current in green, the incoming in blue */
+.monaco-editor .pmt-conflict-current {
+  background: var(--green-soft);
+}
+.monaco-editor .pmt-conflict-incoming {
+  background: var(--blue-soft);
 }

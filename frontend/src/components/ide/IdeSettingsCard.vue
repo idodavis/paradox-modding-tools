@@ -25,7 +25,7 @@ export const SWITCHES: Record<"editor" | "language" | "explorer" | "wiki", { key
   explorer: [
     { key: "ide.stickyFolders", label: "Sticky folders", hint: "A folder's name stays on top while you scroll its files" },
     { key: "ide.gameFiles", label: "Game files section", hint: "The game's files, read only, under the mods" },
-    { key: "ide.rootColors", label: "Color each mod's folder", hint: "A mod's folder in its color, as well as its bar" },
+    { key: "ide.rootColors", label: "Color each top folder", hint: "A mod's or the game's folder in its color, as well as its bar" },
     { key: "ide.followFile", label: "Follow the open file", hint: "The explorer selects the file you switch to" },
   ],
   wiki: [{ key: "ui.wiki.follow", label: "Follow the open file", hint: "Suggests pages for the file you are editing" }],
@@ -58,9 +58,9 @@ const { data: codes } = useQuery(codesQuery);
 
 const tabs = computed(() => [
   { label: "Editor", value: "editor", slot: "editor" as const },
+  { label: "Explorer", value: "explorer", slot: "explorer" as const },
   { label: "Language", value: "language", slot: "language" as const },
   { label: "Checks", value: "checks", slot: "checks" as const, badge: codes.value?.length },
-  { label: "Explorer", value: "explorer", slot: "explorer" as const },
   { label: "Wiki", value: "wiki", slot: "wiki" as const },
 ]);
 
@@ -70,7 +70,8 @@ const INDENT = [
 ];
 const DENSITY = [
   { label: "Compact", value: "compact" },
-  { label: "Comfortable", value: "comfortable" },
+  { label: "Default", value: "default" },
+  { label: "Relaxed", value: "relaxed" },
 ];
 const LINE_HEIGHT = [
   { label: "Compact", value: "compact" },
@@ -88,10 +89,10 @@ function setNumber(key: "ui.editorFontSize" | "ui.ideUiFontSize" | "ide.indentSi
 /** Every setting of the open tab back to its default. */
 function resetTab(): void {
   const keys: Record<Tab, string[]> = {
-    editor: ["ui.editorFont", "ide.lineHeight", "ui.editorFontSize", "ui.ideUiFontSize", "ide.indent", "ide.indentSize", ...SWITCHES.editor.map((s) => s.key)],
+    editor: ["ui.editorFont", "ide.lineHeight", "ui.editorFontSize", "ide.indent", "ide.indentSize", ...SWITCHES.editor.map((s) => s.key)],
     language: SWITCHES.language.map((s) => s.key),
     checks: (codes.value ?? []).map((check) => `ide.diag.${check.code}`),
-    explorer: ["ide.density", ...SWITCHES.explorer.map((s) => s.key)],
+    explorer: ["ui.ideUiFontSize", "ide.density", ...SWITCHES.explorer.map((s) => s.key)],
     wiki: [...SWITCHES.wiki.map((s) => s.key)],
   };
   if (tab.value === "wiki") void setToastPref("show");
@@ -145,11 +146,6 @@ function resetTab(): void {
                   <template #trailing><span class="text-11 text-dimmed">px</span></template>
                 </UInput>
               </SettingRow>
-              <SettingRow label="Explorer and panel text size" hint="The explorer, Problems, Search and the Wiki">
-                <UInput type="number" size="sm" class="w-19" :model-value="settings.ideUiFontSize" @update:model-value="setNumber('ui.ideUiFontSize', $event)">
-                  <template #trailing><span class="text-11 text-dimmed">px</span></template>
-                </UInput>
-              </SettingRow>
               <SettingRow v-for="row in SWITCHES.editor" :key="row.key" :label="row.label" :hint="row.hint">
                 <USwitch :model-value="settings.ideOn(row.key)" @update:model-value="settings.setIde(row.key, $event)" />
               </SettingRow>
@@ -185,7 +181,12 @@ function resetTab(): void {
           </template>
           <template #explorer>
             <div class="divide-y divide-default">
-              <SettingRow label="Row density" hint="Compact fits more; Comfortable is easier to hit">
+              <SettingRow label="Explorer and panel text size" hint="The explorer, Problems, Search and the Wiki">
+                <UInput type="number" size="sm" class="w-19" :model-value="settings.ideUiFontSize" @update:model-value="setNumber('ui.ideUiFontSize', $event)">
+                  <template #trailing><span class="text-11 text-dimmed">px</span></template>
+                </UInput>
+              </SettingRow>
+              <SettingRow label="Row density" hint="Compact fits more; Relaxed is easier to hit">
                 <UTabs
                   :model-value="settings.treeDensity"
                   :items="DENSITY"

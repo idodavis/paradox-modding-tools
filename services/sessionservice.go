@@ -287,6 +287,7 @@ const (
 	EventFSChanged           = "fs:changed"            // a file under a mod changed on disk: data is FSChanged
 	EventWikiUpdated         = "wiki:updated"          // a game's wiki pages were refreshed: data is WikiUpdated
 	EventSearchHits          = "search:hits"           // a text search is done with a file: data is TextSearchHits
+	EventGitOutput           = "git:output"            // a git command ran: data is GitOutput
 )
 
 // registers every event so the bindings generator types them
@@ -299,6 +300,7 @@ func init() {
 	application.RegisterEvent[FSChanged](EventFSChanged)
 	application.RegisterEvent[WikiUpdated](EventWikiUpdated)
 	application.RegisterEvent[TextSearchHits](EventSearchHits)
+	application.RegisterEvent[GitOutput](EventGitOutput)
 }
 
 // FSChanged is one path under a mod that changed on disk; Deleted when it is gone.

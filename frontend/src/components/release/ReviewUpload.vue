@@ -32,7 +32,7 @@ const { data: image } = useQuery(() => imageQuery(listing.thumbnailAbs));
 const where = shallowRef("steam");
 const places: RadioGroupItem[] = [
   { label: "Steam Workshop", description: "PMT uploads through your Steam client. Steam must be running and signed in.", value: "steam" },
-  { label: "Paradox Mods", description: "PMT prepares the description; you upload the mod on mods.paradoxplaza.com.", value: "pdx" },
+  { label: "Paradox Mods", description: "PMT prepares the description; you upload the mod with the Paradox Launcher.", value: "pdx" },
 ];
 
 /** A check before an upload: ok passes, not ok warns, no ok only informs; icon, a mark of its own. */

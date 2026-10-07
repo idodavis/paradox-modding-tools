@@ -1,31 +1,53 @@
 ---
 title: Library
-description: Browse workspaces by game. Delete removes the PMT record only.
+description: Your workspaces by game, the active one in full, new workspaces and mods, and Reset all PMT data.
 weight: 1
 ---
 
 # Library
 
-The Library is the list of your modding workspaces, grouped by game.
+The Library lists your workspaces, grouped by game. **PMT** at the left of the top bar brings you back here.
 
-A **workspace** is one game install plus the mods you are editing.
+A **workspace** is one game install plus the mods you load with it.
 
-{{< shot caption="Library with at least one workspace card." >}}
+{{< shot caption="Library: the active workspace's panel and the cards by game." >}}
 
-## What you can do
+## The active workspace
 
-- **Click a card** to open that workspace’s default page (IDE unless you changed it in Settings / visible tools).
-- **Edit** opens [Workspace Settings]({{< relref "/pages/settings" >}}).
-- **Delete** removes the workspace from PMT only. Mod folders on disk stay.
-- **New Workspace** starts the [wizard]({{< relref "/pages/wizard" >}}).
-- **New Mod** creates a skeleton in an existing workspace, or starts the wizard when the library is empty.
+At the top, the workspace you last opened: its install and version, and when it was scanned. **Open IDE**,
+**Health** and **Settings** open those pages, and its **…** menu has **Remove from PMT…**. Below:
 
-## Reset all data
+- **Load order**: the game, then the mods in order;
+- **Language**: whether the game's `script_docs` were found (click it for how to make them);
+- **Health**: contests (objects more than one mod defines), dangling references and localization issues, from
+  the last scan.
 
-At the bottom of the Library. It wipes PMT workspaces, install records, leftover folders under the PMT config tree, and caches. It does **not** delete mods or Steam/game installs on disk. Theme, UI scale, and editor font are kept.
+## The cards
 
-Use this when a bad install pin or leftover cache is worse than setting workspaces up again.
+Click a card to open that workspace on its **Page it opens on** (set in
+[Settings]({{< relref "/pages/settings" >}})). Each card's **…** menu has **Settings** and **Remove from PMT…**.
+Removing a workspace takes it out of PMT only: its mod folders stay on disk.
+
+Each game ends with a **New workspace for this game** tile, which starts the
+[wizard]({{< relref "/pages/wizard" >}}) at its Install step.
+
+## New workspace, new mod
+
+**New workspace** starts the wizard. **New mod** opens **Create a mod** for the active workspace: a name,
+description, folder, localization language and thumbnail. PMT writes the descriptor, the game's mod folders, a
+localization file with its byte order mark and a Workshop description, and adds the mod to the workspace. With no
+workspace yet, it starts the wizard instead.
 
 ## Switching workspaces
 
-The header dropdown switches workspace. Only one workspace is live at a time; the previous one's session is closed. Unsaved editor buffers follow the “remember tabs” setting.
+The top bar's workspace menu switches workspace and keeps you on the same page. One workspace is open at a time:
+opening another closes the first one's session. Its tabs are saved first and come back next time (unless **Reopen
+the IDE's tabs** is off). Files with unsaved changes are asked about first: **Save all**, **Don't save** (the
+changes are dropped) or **Cancel**.
+
+## Reset all PMT data
+
+In the status bar at the bottom. It removes every workspace and install record, clears the language cache and
+deletes leftover folders. Your mods, the game files and your settings stay. Type `RESET` to confirm.
+
+Use it when a bad install record or a broken cache is worse than setting your workspaces up again.

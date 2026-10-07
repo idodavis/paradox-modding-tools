@@ -209,7 +209,7 @@ function writeRich(markdown: string | undefined): void {
 <template>
   <!-- the menu takes the card's place: no card shows while it is open, nor one that was about to -->
   <UContextMenu :items="menu" :disabled="rich" :ui="{ content: 'w-79' }" @update:open="(open) => view?.muteHover(open)">
-    <div ref="host" class="min-h-0 flex-1" :class="{ hidden: rich }" @contextmenu="onContext" @focusin="ide.focused = group" />
+    <div ref="host" class="min-h-0 flex-1 border-s-12 border-(--bg-0)" :class="{ hidden: rich }" @contextmenu="onContext" @focusin="ide.focused = group" />
   </UContextMenu>
   <UEditor
     v-if="rich && shown"
@@ -234,7 +234,13 @@ function writeRich(markdown: string | undefined): void {
     @update:open="(open) => !open && view?.holdHover(false)"
   >
     <template #content>
-      <div v-if="hover" @mouseenter="view?.holdHover(true)" @mouseleave="view?.holdHover(false)">
+      <!-- never taller than the room beside the word: a long card scrolls inside itself -->
+      <div
+        v-if="hover"
+        class="max-h-(--reka-popover-content-available-height) overflow-y-auto"
+        @mouseenter="view?.holdHover(true)"
+        @mouseleave="view?.holdHover(false)"
+      >
         <HoverCard :card="hover.card" :problems="hover.problems" />
       </div>
     </template>

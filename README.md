@@ -16,21 +16,20 @@ Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later
 
 | Page | What it does |
 |------|----------------|
-| **Library** | Workspaces by game; open / edit / delete the PMT record; New Workspace / New Mod; Reset all data |
-| **Create Workspace** | Game → install (detect/add) → mods + load order → name |
-| **Workspace IDE** | monaco-vscode workbench; PMT-owned roots; game files read-only; Guide wiki pane |
-| **Event Graph** | Events and on_actions and what fires them, grouped by origin; open from an IDE hover |
-| **Workspace Health** | Which mod's definition wins (first or last loaded), overrides, dependencies, dangling references, missing and untranslated localization, the editor's findings |
-| **Patch Center** | Cached wiki patch notes |
-| **Publish** | Descriptor + Markdown/BBCode, Steam Workshop (embedded helper), Paradox Mods copy-paste |
-| **Workspace Settings** | Name, loc language, remember tabs, default tool, install, mods, Workshop ignore |
-| **Display** | Header popover: theme family, scale, fonts, visible tools |
+| **Library** | Workspaces by game, the active one in full; New workspace / New mod; Reset all PMT data |
+| **New workspace** | Game → install (found or added) → mods in load order → name and language |
+| **IDE** | Monaco editors in groups and splits; hover cards, completion, checks; search and replace; git source control with a graph and inline merge conflicts; the Wiki pane; game files read only |
+| **Event Graph** | Events and on_actions and what fires them, by origin; open from the IDE with Ctrl Shift G |
+| **Health** | Which mod's definition wins (first or last loaded), overrides, dependencies, dangling references, untranslated and misplaced localization, the editor's findings |
+| **Patch Notes** | The game's patch notes from its wiki |
+| **Publish** | Descriptor, Markdown/BBCode/Steam description, screenshots and videos, Steam Workshop upload and compare, Paradox Mods copy |
+| **Settings** | The workspace (name, language, install, mods, upload exclusions) and the app's appearance (seven theme families, scale, pages) |
 
 ## Supported games
 
 | Game | Coverage |
 |------|----------|
-| Crusader Kings III | Script, loc, events, health, Guide, publish |
+| Crusader Kings III | Script, loc, events, health, wiki, publish |
 | Victoria 3 | Same |
 | Europa Universalis V | **Partial** — stage roots and `INJECT:` / `REPLACE:` |
 
@@ -64,12 +63,12 @@ Windows zips are **unsigned** (SmartScreen will warn).
 ### Prerequisites
 
 - **[Go](https://go.dev/dl/) 1.27.1** (`go.mod`)
-- **[Node.js](https://nodejs.org/)** + npm
+- **[Node.js](https://nodejs.org/)** `^20.19.0` or `>=22.12.0`, + npm
 - **[Task](https://taskfile.dev/installation/)** (Taskfile v3)
 - **Wails v3 CLI** pinned to the module:
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.21
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
 ```
 
 Windows builds use `CGO_ENABLED=0`. Linux needs GTK4 + WebKitGTK 6 **dev** packages (e.g. Debian/Ubuntu: `build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev`).
@@ -92,7 +91,7 @@ go test ./...
 |------|------|
 | `main.go` | Wails entry, updater, single window |
 | `services/` | Wails services; `services/internal/` holds the language engine (`lang/*`, `session`, `lsp`) and `game`, `local`, `steam`, `wiki` |
-| `frontend/` | Vue 3 + Nuxt UI + Pinia + monaco-vscode-api |
+| `frontend/` | Vue 3 + Nuxt UI + Pinia + Pinia Colada; `monaco-editor`, `@pierre/trees`, Vue Flow |
 | `docs/` | User guide (GitHub Pages) |
 | `build/` | Wails Taskfiles and icons |
 

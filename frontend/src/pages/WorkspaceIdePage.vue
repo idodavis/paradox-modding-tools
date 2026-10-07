@@ -1,13 +1,17 @@
 <script setup lang="ts">
 /**
- * The IDE (the Ide board): the sidebar's explorer, a section for the mods and one for the game's files, and its
- * search; the editor groups where they sit; the panel's problems and search results; and the Wiki pane. A
- * workspace's tabs come back when it opens, in their groups. The status bar shows the problems and the shown file's
- * caret, indentation, kind and encoding.
+ * The IDE (the Ide board): the sidebar's explorer, a section for the mods and one for the game's files, its search
+ * and its source control (the IdeDiff board); the editor groups where they sit; the panel's problems, search
+ * results and Git output; and the Wiki pane. A workspace's tabs come back when it opens, in their groups. The status
+ * bar shows the problems and the branch, then the shown file's caret, indentation, kind and encoding, or what a
+ * diff compares.
  */
 import { computed, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
-import { useQuery } from "@pinia/colada";
+import { useQuery, useQueryCache } from "@pinia/colada";
 import { useElementSize, useLocalStorage, watchDebounced } from "@vueuse/core";
+import type { DropdownMenuItem } from "@nuxt/ui";
+import type { IdeRoots } from "@services/models";
+import { Fetch, Pull, Push, Stage, Unstage } from "@services/gitservice";
 import { AddWorkspaceMod, SaveIdeSession } from "@services/workspaceservice";
 import { setWorkspace } from "../ide/monacoEditor";
 import { useCompare } from "../composables/useCompare";
@@ -15,13 +19,15 @@ import { useIdeRoots } from "../composables/useIdeRoots";
 import { useWorkspaceSave } from "../composables/useWorkspaceSave";
 import { pickDirectory } from "../lib/nativeDialog";
 import { plural } from "../lib/format";
-import { textQuery } from "../queries";
-import { useIdeStore } from "../stores/ide";
+import { ideRootsQuery, textQuery } from "../queries";
+import { useGitStore } from "../stores/git";
+import { tabOf, useIdeStore } from "../stores/ide";
 import { useSettingsStore } from "../stores/settings";
 
 const { id } = defineProps<{ id: string }>();
 
 const ide = useIdeStore();
+const git = useGitStore();
 const settings = useSettingsStore();
 const { data: rec, roots, locate } = useIdeRoots(() => id);
 const { mutate: saveWorkspace } = useWorkspaceSave(() => id);
@@ -32,16 +38,28 @@ const game = computed(() => roots.value.filter((root) => root.readOnly));
 const hideBinaries = computed(() => !!rec.value?.hideExplorerBinaries);
 const gameShown = computed(() => !!game.value.length && settings.ideOn("ide.gameFiles"));
 
+// a workspace's tabs are saved, and its cached roots told, so opening it again restores them and not the roots'
+// first read
+const queryCache = useQueryCache();
+function saveTabs(workspaceId: string): void {
+  const files = ide.openFiles;
+  const { key } = ideRootsQuery(workspaceId);
+  const cached = queryCache.getQueryData(key);
+  if (cached) {
+    const next: IdeRoots = { ...cached, ideOpenFiles: files, ideActiveFile: ide.activePath };
+    queryCache.setQueryData(key, next);
+  }
+  void SaveIdeSession(workspaceId, files, ide.activePath).catch(() => undefined);
+  ide.remember(workspaceId);
+}
+
 // a workspace's tabs come back when it opens, unless it starts fresh; those of the one it replaces are saved first
 let restored = "";
 watch(
   rec,
   (open) => {
     if (!open || restored === id) return;
-    if (restored) {
-      void SaveIdeSession(restored, ide.openFiles, ide.activePath).catch(() => undefined);
-      ide.remember(restored);
-    }
+    if (restored) saveTabs(restored);
     restored = id;
     setWorkspace(id, (path) => !!locate(path)?.root.readOnly);
     ide.restore(id, open.resetIdeOnOpen ? [] : (open.ideOpenFiles ?? []), open.ideActiveFile ?? "");
@@ -52,8 +70,7 @@ watchDebounced(
   () => [ide.openFiles.join("\n"), ide.activePath, JSON.stringify(ide.layout)],
   () => {
     if (restored !== id || rec.value?.resetIdeOnOpen) return;
-    void SaveIdeSession(id, ide.openFiles, ide.activePath).catch(() => undefined);
-    ide.remember(id);
+    saveTabs(id);
   },
   { debounce: 1000 },
 );
@@ -84,6 +101,8 @@ const wikiMax = computed(() => Math.max(320, (width.value - Math.min(sidebarWidt
 const explorer = useTemplateRef("explorer");
 const { height: explorerHeight } = useElementSize(explorer);
 const modsHeight = useLocalStorage("pmt.ide.modsHeight", 320);
+// the Game files pane folds to its header, and the mods take its room
+const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
 
 // the IDE's keys while it is the page shown, in the editor too
 const shown = shallowRef(true);
@@ -109,9 +128,19 @@ const counts = computed(() => {
   const all = [...ide.problems.values()].flat();
   return { errors: all.filter((found) => found.severity === 1).length, warnings: all.filter((found) => found.severity !== 1).length };
 });
-const { data: file } = useQuery(() => textQuery(ide.activePath));
+const { data: file } = useQuery(() => textQuery(ide.activeFile));
+const diff = computed(() => tabOf(ide.activePath).diff);
+const COMPARES = { changes: "Comparing the working tree with the staged copy", staged: "Comparing the staged copy with the last commit", conflict: "Comparing a conflict's two sides", commit: "Comparing a commit with its parent" };
+
+// source control's More: the actions on every change at once, and the Git output
+const gitMore = computed<DropdownMenuItem[]>(() => [
+  { label: "Stage all changes", icon: "i-lucide-plus", onSelect: () => git.run((root) => Stage(root, (git.status?.changes ?? []).map((one) => one.path))) },
+  { label: "Unstage all", icon: "i-lucide-minus", onSelect: () => git.run((root) => Unstage(root, (git.status?.staged ?? []).map((one) => one.path))) },
+  { label: "Read the repository again", icon: "i-lucide-refresh-cw", onSelect: () => git.refresh() },
+  { label: "Show the Git output", icon: "i-lucide-terminal", onSelect: () => (ide.panel = "git") },
+]);
 const KINDS: Record<string, string> = { txt: "Paradox script", yml: "Paradox localization", gui: "Paradox GUI", mod: "Mod descriptor", info: "Mod metadata", md: "Markdown" };
-const kind = computed(() => KINDS[ide.activePath.slice(ide.activePath.lastIndexOf(".") + 1).toLowerCase()] ?? "Plain text");
+const kind = computed(() => KINDS[ide.activeFile.slice(ide.activeFile.lastIndexOf(".") + 1).toLowerCase()] ?? "Plain text");
 function showProblems(): void {
   ide.panel = "problems";
 }
@@ -139,7 +168,25 @@ function showProblems(): void {
           :variant="ide.sidebar === 'search' ? 'soft' : 'ghost'"
           @click="ide.sidebar = 'search'"
         />
+        <UButton
+          icon="i-lucide-git-compare"
+          square
+          :ui="{ leadingIcon: 'size-4.5' }"
+          aria-label="Source control"
+          :color="ide.sidebar === 'git' ? 'primary' : 'neutral'"
+          :variant="ide.sidebar === 'git' ? 'soft' : 'ghost'"
+          @click="ide.sidebar = 'git'"
+        />
         <span class="grow" />
+        <template v-if="ide.sidebar === 'git' && git.repo">
+          <UTooltip text="Fetch"><UButton icon="i-lucide-cloud-download" variant="ghost" square aria-label="Fetch" @click="git.run(Fetch)" /></UTooltip>
+          <UTooltip text="Pull"><UButton icon="i-lucide-arrow-down-to-line" variant="ghost" square aria-label="Pull" @click="git.run((root) => Pull(root, '', ''))" /></UTooltip>
+          <UTooltip text="Push"><UButton icon="i-lucide-arrow-up-from-line" variant="ghost" square aria-label="Push" @click="git.run(Push)" /></UTooltip>
+          <UDropdownMenu :items="gitMore">
+            <UButton icon="i-lucide-ellipsis" variant="ghost" square aria-label="More source control actions" />
+          </UDropdownMenu>
+          <USeparator orientation="vertical" class="mx-0.5 h-4" />
+        </template>
         <UTooltip v-if="ide.sidebar === 'explorer'" text="Collapse all">
           <UButton icon="i-lucide-chevrons-down-up" variant="ghost" square :ui="{ leadingIcon: 'size-4.5' }" aria-label="Collapse all" @click="collapseAll" />
         </UTooltip>
@@ -148,8 +195,8 @@ function showProblems(): void {
       <div v-show="ide.sidebar === 'explorer'" ref="explorer" class="flex min-h-0 flex-1 flex-col py-1">
         <div
           class="flex min-h-0 flex-col"
-          :class="gameShown ? 'shrink-0' : 'flex-1'"
-          :style="gameShown ? { height: `${Math.max(120, Math.min(modsHeight, explorerHeight - 120))}px` } : undefined"
+          :class="gameShown && gameOpen ? 'shrink-0' : 'flex-1'"
+          :style="gameShown && gameOpen ? { height: `${Math.max(120, Math.min(modsHeight, explorerHeight - 120))}px` } : undefined"
         >
           <div class="flex h-7 shrink-0 items-center gap-1 ps-2.5 pe-1 text-11 font-semibold whitespace-nowrap text-toned">
             Workspace<span class="ms-1 font-normal text-dimmed">{{ plural(mods.length, "mod") }}</span>
@@ -161,12 +208,20 @@ function showProblems(): void {
           <ExplorerTree ref="modTree" :workspace-id="id" :roots="mods" :hide-binaries="hideBinaries" @compare="compare.files" />
         </div>
         <template v-if="gameShown">
-          <ResizeGrip v-model="modsHeight" axis="y" :min="120" :max="Math.max(120, explorerHeight - 120)" :default-size="320" />
-          <div class="flex h-8 shrink-0 items-center border-t border-default ps-2.5 pe-1 text-11 font-semibold text-toned">Game files</div>
-          <ExplorerTree ref="gameTree" :workspace-id="id" :roots="game" :hide-binaries="hideBinaries" @compare="compare.files" />
+          <ResizeGrip v-if="gameOpen" v-model="modsHeight" axis="y" :min="120" :max="Math.max(120, explorerHeight - 120)" :default-size="320" />
+          <button
+            type="button"
+            class="flex h-8 shrink-0 cursor-pointer items-center gap-1 border-t border-default ps-1.5 pe-1 text-11 font-semibold text-toned hover:text-highlighted"
+            :aria-expanded="gameOpen"
+            @click="gameOpen = !gameOpen"
+          >
+            <UIcon :name="gameOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />Game files
+          </button>
+          <ExplorerTree v-show="gameOpen" ref="gameTree" :workspace-id="id" :roots="game" :hide-binaries="hideBinaries" @compare="compare.files" />
         </template>
       </div>
       <SearchView v-show="ide.sidebar === 'search'" :roots="roots" :hide-binaries="hideBinaries" />
+      <SourceControlView v-if="ide.sidebar === 'git'" />
     </aside>
     <ResizeGrip v-model="sidebarWidth" :min="170" :max="sidebarMax" :default-size="264" />
     <section class="flex min-w-0 flex-1 flex-col">
@@ -190,8 +245,15 @@ function showProblems(): void {
     <button class="flex h-6 items-center gap-1 text-warning" :aria-label="plural(counts.warnings, 'warning')" @click="showProblems">
       <UIcon name="i-lucide-triangle-alert" class="size-3" />{{ counts.warnings }}
     </button>
+    <button v-if="git.status" class="flex h-6 items-center gap-1 hover:text-highlighted" @click="ide.sidebar = 'git'">
+      <UIcon name="i-lucide-git-branch" class="size-3" />{{ git.status.branch || git.status.commit }}
+      <template v-if="git.status.upstream"><UIcon name="i-lucide-arrow-down-up" class="size-3" />{{ git.status.ahead }} up, {{ git.status.behind }} down</template>
+    </button>
   </StatusFacts>
-  <StatusFacts v-if="ide.activePath" end>
+  <StatusFacts v-if="diff" end>
+    <span>{{ COMPARES[diff] }}</span>
+  </StatusFacts>
+  <StatusFacts v-else-if="ide.activePath" end>
     <span v-if="ide.caret">Ln {{ ide.caret.line + 1 }}, Col {{ ide.caret.character + 1 }}</span>
     <span>{{ settings.indentSpaces ? `Spaces: ${settings.indentSize}` : "Tabs" }}</span>
     <span>{{ kind }}</span>

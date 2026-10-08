@@ -26,6 +26,17 @@ func (result Result) Lines() *LineIndex {
 	return NewLineIndex(result.Src)
 }
 
+// Flat is the source a range covers on one line: its runs of space folded to one, its comments left out.
+func (result Result) Flat(span Range) string {
+	text := []byte(result.Src[span.Start:span.End])
+	for _, comment := range result.Comments {
+		for at := max(comment.Range.Start, span.Start); at < min(comment.Range.End, span.End); at++ {
+			text[at-span.Start] = ' '
+		}
+	}
+	return strings.Join(strings.Fields(string(text)), " ")
+}
+
 // LineIndents is brace-depth indent per line. It tokenizes Src: a Result does
 // not keep its tokens, because only the two editor-time readers here ever want
 // them and a scan would otherwise carry one buffer per open file.

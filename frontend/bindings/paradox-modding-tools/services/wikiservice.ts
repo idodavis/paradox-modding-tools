@@ -15,11 +15,18 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as wiki$0 from "./internal/wiki/models.js";
 
 /**
- * Guide returns Guide pane pages for the active file. A path under no root gives an empty guide,
- * not an error.
+ * Guide returns the Guide pane's tabs for the active file: each page's title, address and headings, its text
+ * fetched apart (GuidePage) for the one tab shown. A path under no root gives an empty guide, not an error.
  */
 export function Guide(workspaceID: string, path: string): $CancellablePromise<wiki$0.Guide | null> {
     return $Call.ByID(941746565, workspaceID, path);
+}
+
+/**
+ * GuidePage returns one guide page whole, by its title; nil where the wiki has none so named.
+ */
+export function GuidePage(gameID: string, title: string): $CancellablePromise<wiki$0.Page | null> {
+    return $Call.ByID(2210643542, gameID, title);
 }
 
 /**

@@ -4,7 +4,7 @@
  * near-grey, then Custom…, a hex picked by hand, which wins over either.
  */
 import { computed, useTemplateRef } from "vue";
-import { cssHex } from "../lib/cssHex";
+import { cssHex } from "../../lib/cssHex";
 
 /** The hand-picked hex, or "" for the slot (a mod) or the near-grey (the game). */
 const color = defineModel<string>({ required: true });

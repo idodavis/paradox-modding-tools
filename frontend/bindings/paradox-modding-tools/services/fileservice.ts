@@ -37,19 +37,18 @@ export function ListDirectory(dirPath: string, showAll: boolean): $CancellablePr
 }
 
 /**
- * ReadEditableBase64 is ReadFileBase64 for the IDE bridge, which hands the bytes to an editor, so
- * it refuses binary too. It stays apart because every PNG has a NUL in its first 512 bytes.
- */
-export function ReadEditableBase64(fullPath: string): $CancellablePromise<$models.FileBytes> {
-    return $Call.ByID(4002040534, fullPath);
-}
-
-/**
- * ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if missing. Binary is
- * expected (thumbnails and workshop previews); oversized files are refused.
+ * ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if missing: images (thumbnails and
+ * workshop previews); oversized files are refused.
  */
 export function ReadFileBase64(fullPath: string): $CancellablePromise<$models.FileBytes> {
     return $Call.ByID(2750173100, fullPath);
+}
+
+/**
+ * ReadText is a file as the editor reads it.
+ */
+export function ReadText(fullPath: string): $CancellablePromise<$models.FileText> {
+    return $Call.ByID(4196653670, fullPath);
 }
 
 /**
@@ -67,9 +66,17 @@ export function StatPath(fullPath: string): $CancellablePromise<$models.PathStat
 }
 
 /**
- * WriteFileBase64 writes raw bytes from standard base64. It is the editor's save path, so it goes
- * through local.Write: a failed save never leaves half a file.
+ * TrashPath moves a file or directory into PMT's trash, where an undo of the delete finds it, and returns where it
+ * went. The trash is emptied when the app starts.
  */
-export function WriteFileBase64(fullPath: string, b64: string): $CancellablePromise<void> {
-    return $Call.ByID(256026061, fullPath, b64);
+export function TrashPath(fullPath: string): $CancellablePromise<string> {
+    return $Call.ByID(1835203742, fullPath);
+}
+
+/**
+ * WriteText is the editor's save: the text in the file's own encoding (jomini.Encode), through local.Write, so a
+ * failed save never leaves half a file.
+ */
+export function WriteText(fullPath: string, text: string, bom: boolean, legacy: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2180260259, fullPath, text, bom, legacy);
 }

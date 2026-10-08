@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Find in a page (the PatchNotes board's find): Ctrl F focuses it, Enter and Shift Enter step to the next and
- * previous hit, and it counts them as "N of M".
+ * Find in a page (Patch Notes, the Steam compare, the Wiki pane): Ctrl F focuses it, Enter and Shift Enter step to
+ * the next and previous hit, and it counts them as "N of M".
  */
 import { onActivated, onDeactivated, shallowRef, useId, useTemplateRef } from "vue";
 

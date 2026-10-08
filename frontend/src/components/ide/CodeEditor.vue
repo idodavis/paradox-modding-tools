@@ -18,7 +18,7 @@ import { monaco } from "../../lib/code";
 import { textQuery } from "../../queries";
 import { useIdeStore } from "../../stores/ide";
 import { useWorkspaceStore } from "../../stores/workspace";
-import { openPalette } from "../CommandPalette.vue";
+import { openPalette } from "../app/CommandPalette.vue";
 import { MARKDOWN_TOOLBAR } from "../release/DescriptionEditor.vue";
 
 const { workspaceId, path, group } = defineProps<{ workspaceId: string; path: string; group: number }>();
@@ -36,8 +36,8 @@ const shown = shallowRef<monaco.editor.ITextModel>();
 watch(
   [host, file],
   ([el, read]) => {
-    if (view.value || !el || read?.text === undefined) return;
-    shown.value = openFile(path, read.text, read.bom);
+    if (view.value || !el || !read || read.reject) return;
+    shown.value = openFile(path, read);
     view.value = createEditor(el, shown.value);
     const { editor } = view.value;
     const { CtrlCmd, Shift, Alt } = monaco.KeyMod;
@@ -227,7 +227,7 @@ function writeRich(markdown: string | undefined): void {
       <UEditorToolbar :editor="editor" :items="MARKDOWN_TOOLBAR" />
     </div>
   </UEditor>
-  <p v-if="file && file.text === undefined" class="absolute inset-x-0 top-10 text-center text-12 text-dimmed">{{ file.reject }}</p>
+  <p v-if="file?.reject" class="absolute inset-x-0 top-10 text-center text-12 text-dimmed">{{ file.reject }}</p>
   <UPopover
     :open="!!hover"
     :reference="reference"

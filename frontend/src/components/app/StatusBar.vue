@@ -3,17 +3,20 @@
  * The status bar (pmt.css .statusbar): the page's own facts, which a page sends to #status-start and
  * #status-end, then the main window's count of windows, each brought to the front from it, Help, with the page's
  * help and diagnostics for a bug report, and the version, which checks for an update. It tells of a last run that
- * ended without closing.
+ * ended without closing, and of each game's wiki while it downloads.
  */
-import { computed, watch } from "vue";
+import { computed, onScopeDispose, reactive, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
+import { Events } from "@wailsio/runtime";
+import type { WikiProgress } from "@services/models";
 import { CheckForUpdates } from "@services/appservice";
 import { CopyDiagnostics } from "@services/logservice";
-import { crashedQuery, versionQuery } from "../queries";
-import { PAGES } from "../workspaceTools";
+import { crashedQuery, versionQuery } from "../../queries";
+import { PAGES } from "../../workspaceTools";
 import { Show } from "@services/windowservice";
-import { isMain, others } from "../windows";
+import { isMain, others } from "../../windows";
+import { useWorkspaceStore } from "../../stores/workspace";
 
 const route = useRoute();
 const toast = useToast();
@@ -40,6 +43,12 @@ watch(crashed, (yes) => {
   });
 });
 
+// each game's wiki download while it runs (wiki:progress), gone once the game is done (wiki:updated)
+const store = useWorkspaceStore();
+const wikis = reactive(new Map<string, WikiProgress>());
+onScopeDispose(Events.On("wiki:progress", ({ data }) => void wikis.set(data.gameId, data)));
+onScopeDispose(Events.On("wiki:updated", ({ data }) => void wikis.delete(data.gameId)));
+
 const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
 const windows = computed(() => [...others.values()].map((one) => ({ label: one.title, onSelect: () => void Show(one.name) })));
 </script>
@@ -52,6 +61,10 @@ const windows = computed(() => [...others.values()].map((one) => ({ label: one.t
     <div id="status-start" class="contents" />
     <span class="grow" />
     <div id="status-end" class="contents" />
+    <span v-for="wiki in wikis.values()" :key="wiki.gameId" class="flex items-center gap-1.25 tabular-nums">
+      <span class="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+      {{ store.game(wiki.gameId)?.name ?? wiki.gameId }} wiki: {{ wiki.stage }} {{ wiki.done + 1 }} of {{ wiki.total }}
+    </span>
     <UDropdownMenu v-if="isMain && windows.length" :items="windows" :content="{ side: 'top' }">
       <button type="button" :class="ITEM"><UIcon name="i-lucide-app-window" class="size-3" />{{ windows.length + 1 }} windows</button>
     </UDropdownMenu>

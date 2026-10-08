@@ -51,12 +51,22 @@ func modsSet(members []mwMember) map[string]bool {
 	return out
 }
 
-// fetchPages parses each wanted page whose revision differs from the one kept before; a page
-// that fails to fetch or clean keeps its previous copy.
-func fetchPages(ctx context.Context, api, wikiBase string, patches bool, wanted []mwMember, prev []Page) ([]Page, error) {
+// fetchPages parses each wanted page whose revision differs from the one kept before, telling
+// progress how many of them are done; a page that fails to fetch or clean keeps its previous copy.
+func fetchPages(ctx context.Context, api, wikiBase string, patches bool, wanted []mwMember, prev []Page, progress func(done, total int)) ([]Page, error) {
 	old := make(map[string]Page, len(prev))
 	for _, page := range prev {
 		old[NormTitle(page.Title)] = page
+	}
+	kept := func(want mwMember) bool {
+		prior := old[NormTitle(want.Title)]
+		return prior.Revid != 0 && prior.Revid == want.LastRevid && prior.HTML != ""
+	}
+	total, done := 0, 0
+	for _, want := range wanted {
+		if !kept(want) {
+			total++
+		}
 	}
 	out := make([]Page, 0, len(wanted))
 	for _, want := range wanted {
@@ -64,10 +74,12 @@ func fetchPages(ctx context.Context, api, wikiBase string, patches bool, wanted 
 			return nil, err
 		}
 		prior, known := old[NormTitle(want.Title)]
-		if known && prior.Revid != 0 && prior.Revid == want.LastRevid && prior.HTML != "" {
+		if kept(want) {
 			out = append(out, prior)
 			continue
 		}
+		progress(done, total)
+		done++
 		raw, revid, err := parsePage(ctx, api, want.Title)
 		var page Page
 		if err == nil {
@@ -86,8 +98,9 @@ func fetchPages(ctx context.Context, api, wikiBase string, patches bool, wanted 
 	return out, nil
 }
 
-// Refresh fetches gameID's guides and patch notes again and saves them.
-func Refresh(ctx context.Context, gameID string) error {
+// Refresh fetches gameID's guides and patch notes again and saves them, telling progress each page
+// it fetches: the stage (guides, patch notes), how many are done and how many there are to fetch.
+func Refresh(ctx context.Context, gameID string, progress func(stage string, done, total int)) error {
 	refreshMu.Lock()
 	defer refreshMu.Unlock()
 	api := wikiAPI(gameID)
@@ -114,14 +127,16 @@ func Refresh(ctx context.Context, gameID string) error {
 	if err != nil {
 		prev = &Sidecar{}
 	}
-	guides, err := fetchPages(ctx, api, wikiBase, false, filterMembers(guideMembers, modsSet(mods)), prev.Guides)
+	guides, err := fetchPages(ctx, api, wikiBase, false, filterMembers(guideMembers, modsSet(mods)), prev.Guides,
+		func(done, total int) { progress("guides", done, total) })
 	if err != nil {
 		return err
 	}
 	if len(guides) == 0 && len(prev.Guides) == 0 {
 		return fmt.Errorf("wiki guides empty")
 	}
-	patches, err := fetchPages(ctx, api, wikiBase, true, filterMembers(patchMembers, nil), prev.Patches)
+	patches, err := fetchPages(ctx, api, wikiBase, true, filterMembers(patchMembers, nil), prev.Patches,
+		func(done, total int) { progress("patch notes", done, total) })
 	if err != nil {
 		return err
 	}

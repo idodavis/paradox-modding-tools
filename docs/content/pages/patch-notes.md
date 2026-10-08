@@ -6,7 +6,9 @@ weight: 6
 
 # Patch Notes
 
-The patch notes of the workspace's game, read from its community wiki.
+The patch notes of the workspace's game, read from its community wiki. PMT downloads each installed game's wiki
+when it starts, and the status bar shows each download page by page; the first takes a minute or two a game, later ones
+fetch only the pages that changed.
 
 {{< shot caption="Patch Notes: the versions, a note, and its contents." >}}
 

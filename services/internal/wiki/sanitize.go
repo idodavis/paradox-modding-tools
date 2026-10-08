@@ -7,6 +7,7 @@ package wiki
 import (
 	"cmp"
 	"net/url"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -133,17 +134,19 @@ func copyAllowed(out, in *html.Node, wiki *url.URL) {
 }
 
 // chrome reports what a page keeps nowhere: the wiki's navigation, images, citations and the links
-// back to the top.
+// back to the top, with the float that holds each (its spaces would be a blank line).
 func chrome(node *html.Node) bool {
 	id := attr(node, "id")
 	return dropTag[node.DataAtom] ||
 		slices.ContainsFunc(strings.Fields(attr(node, "class")), func(class string) bool { return dropClass[class] }) ||
 		strings.HasPrefix(id, "cite_note") || strings.HasPrefix(id, "cite_ref") ||
-		node.DataAtom == atom.A && strings.HasSuffix(attr(node, "href"), "#top")
+		node.DataAtom == atom.A && strings.HasSuffix(attr(node, "href"), "#top") ||
+		node.DataAtom == atom.Div && strings.TrimSpace(text(node)) == "[top]"
 }
 
-// attrs keeps a link's http or https target made absolute (an in-page #anchor as it is), a
-// heading's id (the wiki writes it on a span inside), and a cell's span.
+// attrs keeps a link's http or https target made absolute (an in-page #anchor as it is) and, for a
+// page of this wiki, its title (data-title), a heading's id (the wiki writes it on a span inside),
+// and a cell's span.
 func attrs(node *html.Node, wiki *url.URL) []html.Attribute {
 	switch {
 	case node.DataAtom == atom.A:
@@ -152,7 +155,11 @@ func attrs(node *html.Node, wiki *url.URL) []html.Attribute {
 			return []html.Attribute{{Key: "href", Val: href}}
 		}
 		if resolved, err := wiki.Parse(href); href != "" && err == nil && (resolved.Scheme == "http" || resolved.Scheme == "https") {
-			return []html.Attribute{{Key: "href", Val: resolved.String()}}
+			kept := []html.Attribute{{Key: "href", Val: resolved.String()}}
+			if title := path.Base(resolved.Path); resolved.Host == wiki.Host && !slices.Contains([]string{"/", ".", "wiki", "index.php"}, title) {
+				kept = append(kept, html.Attribute{Key: "data-title", Val: strings.ReplaceAll(title, "_", " ")})
+			}
+			return kept
 		}
 	case rank(node) > 0:
 		id := attr(node, "id")

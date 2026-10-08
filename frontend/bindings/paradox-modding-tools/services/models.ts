@@ -199,6 +199,22 @@ export interface FileSearchResult {
 }
 
 /**
+ * FileText is a text file as the editor and source control read it: its text without the byte order mark and with
+ * its line ends, whether it had the mark, whether it was Windows-1252 (saved back so), and the format the engine
+ * reads it as (source.Format's name: the editor's language follows it). Reject says why there is no text: the file
+ * is missing, binary or too large.
+ */
+export interface FileText {
+    "text": string;
+    "bom": boolean;
+    "format": string;
+    "legacy"?: boolean;
+    "binary"?: boolean;
+    "missing"?: boolean;
+    "reject"?: string;
+}
+
+/**
  * GameInstall is a user-configured game installation.
  */
 export interface GameInstall {
@@ -206,7 +222,11 @@ export interface GameInstall {
     "gameId": string;
     "name": string;
     "path": string;
-    "versionDetected": string;
+
+    /**
+     * derived: read from the install each time
+     */
+    "versionDetected"?: string;
 
     /**
      * derived: its install built, else its cache written
@@ -297,6 +317,14 @@ export interface GitOutput {
 }
 
 /**
+ * GitRemote is one of a repository's remotes: its name and its address.
+ */
+export interface GitRemote {
+    "name": string;
+    "url": string;
+}
+
+/**
  * GitRepository is one repository holding a workspace's mod, named after the mod.
  */
 export interface GitRepository {
@@ -338,19 +366,6 @@ export interface GitStatus {
      * what .gitignore matches, a folder once, ending in its separator
      */
     "ignored": string[] | null;
-}
-
-/**
- * GitText is a file's text at a revision or staged, its byte order mark apart; a binary file has none.
- */
-export interface GitText {
-    "text": string;
-    "bom": boolean;
-
-    /**
-     * git's own test: a NUL in its first 8000 bytes
-     */
-    "binary"?: boolean;
 }
 
 /**
@@ -404,14 +419,13 @@ export interface IdeRoot {
 }
 
 /**
- * IdeRoots is the IDE boot DTO: folders plus tab restore.
+ * IdeRoots is the IDE boot DTO: its folders, and whether it starts with no tabs (the tabs themselves are kept on
+ * this computer, in the frontend).
  */
 export interface IdeRoots {
     "roots": IdeRoot[] | null;
     "resetIdeOnOpen": boolean;
     "hideExplorerBinaries": boolean;
-    "ideOpenFiles"?: string[] | null;
-    "ideActiveFile"?: string;
 }
 
 /**
@@ -527,6 +541,12 @@ export interface ListingChange {
      * and what it takes away
      */
     "removed"?: string[] | null;
+
+    /**
+     * the lines a change adds and removes (steam.LineCounts)
+     */
+    "linesAdded": number;
+    "linesRemoved": number;
 }
 
 /**
@@ -605,26 +625,12 @@ export interface Option {
 }
 
 /**
- * PanelResult is a row of the Search results, a text search's hit or a reference: its file by origin, its 0-based
- * line and its span in UTF-8 bytes, and the line's text.
- */
-export interface PanelResult {
-    "path": string;
-    "rel": string;
-    "origin": string;
-    "line": number;
-    "col": number;
-    "end": number;
-    "preview": string;
-}
-
-/**
  * PanelResults is what the sidebar's Search results show: what was looked for, its rows so far, and whether it is
  * done or stopped at the cap.
  */
 export interface PanelResults {
     "title": string;
-    "rows": PanelResult[] | null;
+    "rows": TextSearchHit[] | null;
     "done": boolean;
     "capped": boolean;
 }
@@ -874,15 +880,21 @@ export interface TextPart {
 export interface TextReplaceQuery {
     "search": TextSearchQuery;
     "text": string;
-    "skip": string[] | null;
+
+    /**
+     * the files open in the editor, by path: their text there, unsaved
+     */
+    "open": { [_ in string]?: string } | null;
 }
 
 /**
- * TextReplaceResult is how many matches a Replace all changed, in how many files.
+ * TextReplaceResult is how many matches a Replace all changed, in how many files, and the new text of each open
+ * file it changed, which the editor takes (unsaved).
  */
 export interface TextReplaceResult {
     "replaced": number;
     "files": number;
+    "texts": { [_ in string]?: string } | null;
 }
 
 /**
@@ -890,12 +902,18 @@ export interface TextReplaceResult {
  */
 export interface TextSearchFolder {
     "path": string;
+
+    /**
+     * told back on its hits
+     */
+    "origin"?: string;
     "includes"?: string[] | null;
     "excludes"?: string[] | null;
 }
 
 /**
- * TextSearchHit is one match line mapped for monaco (0-based columns).
+ * TextSearchHit is one match line, or a reference, as the Search results list it: its file by origin, its 0-based
+ * line, its span in UTF-8 bytes as every backend place, and the line's text ("" for a reference: read when shown).
  */
 export interface TextSearchHit {
     "path": string;
@@ -906,12 +924,12 @@ export interface TextSearchHit {
     "rel": string;
 
     /**
-     * that folder's index in the query
+     * that folder's
      */
-    "folder": number;
+    "origin": string;
     "line": number;
     "col": number;
-    "endCol": number;
+    "end": number;
     "preview": string;
 }
 
@@ -980,9 +998,21 @@ export interface Version {
 }
 
 /**
+ * WikiProgress is one page a game's wiki refresh fetches: its stage (guides, patch notes), how many
+ * of the stage's pages are done and how many it fetches.
+ */
+export interface WikiProgress {
+    "gameId": string;
+    "stage": string;
+    "done": number;
+    "total": number;
+}
+
+/**
  * WikiUpdated is one game's wiki refresh, done; Error says why it failed.
  */
 export interface WikiUpdated {
+    "gameId": string;
     "error"?: string;
 }
 
@@ -1051,8 +1081,6 @@ export interface Workspace {
     "resetIdeOnOpen": boolean;
     "hideExplorerBinaries": boolean;
     "defaultTool"?: string;
-    "ideOpenFiles"?: string[] | null;
-    "ideActiveFile"?: string;
     "mods": WorkspaceMod[] | null;
 }
 

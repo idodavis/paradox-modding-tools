@@ -13,8 +13,9 @@ Mods. Nothing is uploaded until the last step.
 
 ## The page
 
-**Mod**, on the left, lists the workspace's mods, each with its Steam state: **Not published yet**, **On Steam, not
-compared yet**, **Changes not on Steam** or **Same as Steam**. Under it, the three steps:
+**Mod**, on the left, lists the workspace's mods, each with its Steam state: **Not published**, or the version on
+Steam (**v2.3.1, on Steam**). Whether an upload changes anything shows on Review and upload. Under it, the three
+steps:
 
 1. **Listing and description**: what players see;
 2. **Version and change note**: what this upload is;

@@ -9,6 +9,7 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -43,6 +44,11 @@ const (
 	Image                 // header facts, read on demand
 	Opaque                // a path and nothing more
 )
+
+// String is a format's name, as the editor reads it to pick a file's language.
+func (format Format) String() string {
+	return [...]string{"unknown", "script", "loc", "table", "list", "json", "info", "image", "opaque"}[format]
+}
 
 // formats is the format table, by lower-case extension, for every game.
 var formats = map[string]Format{
@@ -97,15 +103,23 @@ type File struct {
 	Format Format `json:"format"`
 }
 
-// Text reads the file as text: BOM stripped, CRLF folded, Latin-1 where it is not UTF-8.
+// Text reads the file as the engine reads it: jomini.Decode's text with every CR dropped, so a CRLF file and an
+// editor's LF buffer share offsets.
 func (file File) Text() (string, error) {
 	raw, err := os.ReadFile(file.Path)
 	if err != nil {
 		return "", err
 	}
+	text, _, _ := jomini.Decode(raw)
+	return strings.ReplaceAll(text, "\r", ""), nil
+}
 
-	text, _ := jomini.Decode(raw)
-	return text, nil
+// BinaryHead is how many of a file's first bytes Binary reads.
+const BinaryHead = 8000
+
+// Binary is whether a file's first bytes are binary: a NUL among the first BinaryHead, git's own test.
+func Binary(head []byte) bool {
+	return bytes.IndexByte(head[:min(len(head), BinaryHead)], 0) >= 0
 }
 
 // documentation is the words a .txt is named by when it is prose the games ship beside their
@@ -146,7 +160,7 @@ func prose(abs string) bool {
 	if err != nil || len(raw) > 1<<20 {
 		return false
 	}
-	text, _ := jomini.Decode(raw)
+	text, _, _ := jomini.Decode(raw)
 	script, comment := 0, 0
 	for line := range strings.SplitSeq(text, "\n") {
 		words := strings.Fields(line)
@@ -215,20 +229,20 @@ func rootRank(dir, root string) int {
 func Inventory(origin string, roots []string) []File {
 	var files []File
 	for _, root := range roots {
-		Walk(root, func(abs string) {
+		_ = Walk(root, func(abs string) error {
 			owned := slices.ContainsFunc(roots, func(other string) bool {
 				return len(other) > len(root) && strings.HasPrefix(abs, other+string(filepath.Separator))
 			})
 			rel, err := filepath.Rel(root, abs)
 			if owned || err != nil {
-				return
+				return nil
 			}
 
 			rel = filepath.ToSlash(rel)
-			if _, skip := ignored[strings.ToLower(path.Ext(rel))]; skip {
-				return
+			if _, skip := ignored[strings.ToLower(path.Ext(rel))]; !skip {
+				files = append(files, File{Path: abs, Rel: rel, Origin: origin, Format: Classify(abs, rel)})
 			}
-			files = append(files, File{Path: abs, Rel: rel, Origin: origin, Format: Classify(abs, rel)})
+			return nil
 		})
 	}
 	return files
@@ -264,26 +278,32 @@ func Ordered[T any](ctx context.Context, files []File, work func(File) T, keep f
 	return ctx.Err()
 }
 
-// Walk calls fn with the path of every file under root.
-func Walk(root string, fn func(path string)) {
+// Walk calls fn with the path of every file under root, following links and junctions and never entering .git. An
+// error from fn stops the walk and is returned; filepath.SkipAll stops it quietly.
+func Walk(root string, fn func(path string) error) error {
 	info, err := os.Stat(root)
 	if err != nil {
-		return
+		return nil
 	}
-	walk(root, []os.FileInfo{info}, fn)
+	if err := walk(root, []os.FileInfo{info}, fn); err != filepath.SkipAll {
+		return err
+	}
+	return nil
 }
 
 // walk reads one folder; ancestors is the folders above it, which a link may not lead back to.
-func walk(dir string, ancestors []os.FileInfo, fn func(path string)) {
+func walk(dir string, ancestors []os.FileInfo, fn func(path string) error) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return
+		return nil
 	}
 
 	for _, entry := range entries {
 		path := filepath.Join(dir, entry.Name())
 		if entry.Type().IsRegular() {
-			fn(path)
+			if err := fn(path); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -293,14 +313,19 @@ func walk(dir string, ancestors []os.FileInfo, fn func(path string)) {
 			continue
 		}
 		if !info.IsDir() {
-			fn(path)
+			if err := fn(path); err != nil {
+				return err
+			}
 			continue
 		}
 		if entry.Name() == ".git" || slices.ContainsFunc(ancestors, func(ancestor os.FileInfo) bool { return os.SameFile(ancestor, info) }) {
 			continue
 		}
-		walk(path, append(ancestors, info), fn)
+		if err := walk(path, append(ancestors, info), fn); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // ImageInfo is an image file's header facts.

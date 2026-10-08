@@ -7,12 +7,21 @@ import { defineStore } from "pinia";
 import { useQuery } from "@pinia/colada";
 import { useLocalStorage } from "@vueuse/core";
 import type { GameInfo } from "@services/internal/game/models";
-import type { WorkspaceMod } from "@services/models";
+import type { Workspace, WorkspaceMod } from "@services/models";
+import { UpdateWorkspacePrefs } from "@services/workspaceservice";
 import { gamesQuery, workspacesQuery } from "../queries";
 
 /** A mod's color: its hand-picked hex, else its slot's token. */
 export function modColor(mod: { color?: string; slot?: number }): string {
   return mod.color || `var(--o${mod.slot || 1})`;
+}
+
+type Prefs = Pick<Workspace, "resetIdeOnOpen" | "defaultTool" | "gameColor" | "hideExplorerBinaries">;
+
+/** Saves some of a workspace's preferences; the rest go as the workspace has them. */
+export function updatePrefs({ ws, ...set }: { ws: Workspace } & Partial<Prefs>): Promise<void> {
+  const next = { ...ws, ...set };
+  return UpdateWorkspacePrefs(ws.id, next.resetIdeOnOpen, next.defaultTool ?? "", next.gameColor ?? "", next.hideExplorerBinaries);
 }
 
 export const useWorkspaceStore = defineStore("workspace", () => {

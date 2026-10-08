@@ -6,17 +6,16 @@
  */
 import { shallowRef, watch } from "vue";
 import { Events } from "@wailsio/runtime";
-import { WriteFileBase64 } from "@services/fileservice";
+import { ReadText, WriteText } from "@services/fileservice";
 import * as rpc from "@services/ideservice";
 import type { CodeAction, Completion, Inspect, Item, Location, Range as ByteRange, TextEdit } from "@services/internal/lsp";
-import type { WindowTabs } from "@services/models";
+import type { FileText, WindowTabs } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { fileUri, labels, languageOf, models, monaco } from "../lib/code";
-import { readText } from "../queries";
 import { tabOf, useIdeStore } from "../stores/ide";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
-import { openPalette } from "../components/CommandPalette.vue";
+import { openPalette } from "../components/app/CommandPalette.vue";
 import { fileName } from "../lib/format";
 import { openWindow, others, placing } from "../windows";
 import { watchConflicts } from "./conflicts";
@@ -30,6 +29,7 @@ type File = {
   path: string;
   model: monaco.editor.ITextModel;
   bom: boolean;
+  legacy: boolean;
   saved: number;
   open: boolean;
   pending: boolean;
@@ -109,16 +109,19 @@ labels.folder = (uri) => {
   return known.dir ? `${name} › ${known.dir}` : name;
 };
 
+/** A file's text as read, its encoding with it. */
+type Read = Pick<FileText, "text" | "bom"> & Partial<Pick<FileText, "legacy" | "format">>;
+
 /** A file's model, made the first time a tab or a peek reaches it, with the text read. */
-function fileModel(path: string, text: string, bom: boolean): File {
+function fileModel(path: string, { text, bom, legacy = false, format }: Read): File {
   const uri = fileUri(path);
   const key = uri.toString();
   const known = files.get(key);
   if (known) return known;
-  const made = monaco.editor.createModel(text, languageOf(path), uri);
+  const made = monaco.editor.createModel(text, languageOf(path, format), uri);
   // a file keeps its own indentation; one with none takes the settings'
   made.detectIndentation(settings.indentSpaces, settings.indentSize);
-  const file: File = { path, model: made, bom, saved: made.getAlternativeVersionId(), open: false, pending: false, sent: Promise.resolve() };
+  const file: File = { path, model: made, bom, legacy, saved: made.getAlternativeVersionId(), open: false, pending: false, sent: Promise.resolve() };
   files.set(key, file);
   made.onDidChangeContent(() => changed(file));
   // a file let go (its tab closed, or handed to another window) sends nothing more
@@ -133,13 +136,13 @@ function fileModel(path: string, text: string, bom: boolean): File {
 // a peek or a definition reads the file it reaches
 models.load = async (uri) => {
   const path = pathAt(uri);
-  const read = await readText(path);
-  return read.text === undefined ? null : fileModel(path, read.text, read.bom).model;
+  const read = await ReadText(path);
+  return read.reject ? null : fileModel(path, read).model;
 };
 
 /** The model a tab shows, its text told to the backend: the one a group or a peek made, else one of the text read. */
-export function openFile(path: string, text: string, bom: boolean): monaco.editor.ITextModel {
-  const file = fileModel(path, text, bom);
+export function openFile(path: string, read: Read): monaco.editor.ITextModel {
+  const file = fileModel(path, read);
   if (file.open) return file.model;
   file.open = true;
   if (file.model.getAlternativeVersionId() !== file.saved) changed(file);
@@ -157,7 +160,7 @@ function fileOf(model: monaco.editor.ITextModel): File | undefined {
  */
 function changed(file: File): void {
   if (!file.open) {
-    openFile(file.path, "", file.bom);
+    openFile(file.path, { text: "", bom: file.bom, legacy: file.legacy });
     return ide.adopt(file.path);
   }
   file.pending = true;
@@ -201,20 +204,14 @@ async function refresh(file: File): Promise<void> {
   );
 }
 
-/** Bytes as base64, in chunks a call's arguments can hold. */
-function base64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(binary);
-}
-
-/** Write a file's text with the byte order mark it had, and tell the backend; a game file is never written. */
+/** Write a file's text in the encoding it was read in (its byte order mark, Windows-1252), and tell the backend; a
+ * game file is never written. */
 export async function saveFile(path: string): Promise<void> {
   const file = [...files.values()].find((one) => pathKey(one.path) === pathKey(path));
   if (!file || locked(file.path)) return;
   const text = file.model.getValue();
   const version = file.model.getAlternativeVersionId();
-  await WriteFileBase64(file.path, base64(new TextEncoder().encode((file.bom ? "\ufeff" : "") + text)));
+  await WriteText(file.path, text, file.bom, file.legacy);
   await flush(file);
   file.saved = version;
   ide.setUnsaved(file.path, file.model.getAlternativeVersionId() !== version);
@@ -239,8 +236,9 @@ watch(
 Events.On("fs:changed", async ({ data }) => {
   const file = files.get(fileUri(data.path).toString());
   if (!file || data.deleted || file.model.getAlternativeVersionId() !== file.saved) return;
-  const text = (await readText(file.path)).text;
-  if (text === undefined || text === file.model.getValue() || file.model.isDisposed()) return;
+  const read = await ReadText(file.path);
+  const text = read.text;
+  if (read.reject || text === file.model.getValue() || file.model.isDisposed()) return;
   change(file.model, [{ range: file.model.getFullModelRange(), text }]);
   file.saved = file.model.getAlternativeVersionId();
   ide.setUnsaved(file.path, false);
@@ -250,11 +248,16 @@ Events.On("fs:changed", async ({ data }) => {
 export async function applyFix(action: CodeAction): Promise<void> {
   for (const [target, edits] of Object.entries(action.edit.changes ?? {})) {
     if (!edits?.length) continue;
-    const read = files.has(fileUri(target).toString()) ? { text: "", bom: false } : await readText(target);
-    if (read.text === undefined) continue;
-    applyEdits(openFile(target, read.text, read.bom), edits);
+    const read = files.has(fileUri(target).toString()) ? { text: "", bom: false } : await ReadText(target);
+    if ("reject" in read && read.reject) continue;
+    applyEdits(openFile(target, read), edits);
     ide.open(target);
   }
+}
+
+/** An open file's text in the editor, unsaved edits and all; undefined where no editor holds it. */
+export function openText(path: string): string | undefined {
+  return files.get(fileUri(path).toString())?.model.getValue();
 }
 
 /** An open file's text through an edit, as one change it can undo; a game file is never changed. */
@@ -284,8 +287,7 @@ export async function receive(handed: WindowTabs): Promise<void> {
     ide.adopt(tab);
     const path = tabOf(tab).file;
     if (!unsaved || files.has(fileUri(path).toString())) continue;
-    const read = await readText(path);
-    const { model } = fileModel(path, read.text ?? "", read.bom);
+    const { model } = fileModel(path, await ReadText(path));
     change(model, [{ range: model.getFullModelRange(), text }]);
   }
   const group = ide.group(ide.focused);
@@ -392,7 +394,7 @@ monaco.languages.registerCompletionItemProvider(PARADOX, {
 // predicted text: the rest of the list's first item, at the end of the word typed so far
 monaco.languages.registerInlineCompletionsProvider(PARADOX, {
   async provideInlineCompletions(model, at) {
-    if (!settings.ideOn("ide.predict") || locked(pathOf(model))) return { items: [] };
+    if (!settings.on("ide.predict") || locked(pathOf(model))) return { items: [] };
     const top = (await complete(model, at))?.items?.[0];
     const row = model.getLineContent(at.lineNumber);
     const start = top && toRange(model, top.range);
@@ -475,8 +477,10 @@ monaco.languages.registerCodeActionProvider(PARADOX, {
 });
 monaco.editor.registerCommand("pmt.applyFix", (_, action: CodeAction) => void applyFix(action));
 
-// a date's era after it, where the mods declare a calendar
+// a date's era after it, where the mods declare a calendar; asked again when the session is built again
+const hintsChanged = new monaco.Emitter<void>();
 monaco.languages.registerInlayHintsProvider(PARADOX, {
+  onDidChangeInlayHints: hintsChanged.event,
   async provideInlayHints(model) {
     await told(model);
     const hints = (await rpc.InlayHints(workspaceId, pathOf(model)).catch(() => null)) ?? [];
@@ -489,6 +493,15 @@ monaco.languages.registerInlayHintsProvider(PARADOX, {
     };
   },
 });
+
+/** The session was built again (its inputs changed, a calendar among them): each open file's text is told to it
+ * again, its problems read again, and the era hints asked again. */
+export function rebuilt(): void {
+  for (const file of files.values()) {
+    if (file.open) file.sent = rpc.DidChange(workspaceId, file.path, file.model.getValue()).catch(() => undefined).then(() => refresh(file));
+  }
+  hintsChanged.fire();
+}
 
 // a definition in another file opens its tab there
 monaco.editor.registerEditorOpener({
@@ -523,7 +536,7 @@ monaco.editor.addKeybindingRules([
 
 /** What the IDE's settings set in its editors. */
 export function editorOptions(): monaco.editor.IStandaloneEditorConstructionOptions {
-  const on = settings.ideOn;
+  const on = settings.on;
   return {
     ...settings.codeFont,
     wordWrap: on("ide.wordWrap") ? "on" : "off",
@@ -616,7 +629,7 @@ export function createEditor(host: HTMLElement, shown: monaco.editor.ITextModel)
     hovered = word ? at : null;
     letGo();
     const target = hovered;
-    if (target && !muted && settings.ideOn("ide.hover")) showing = window.setTimeout(() => void showHover(target), 500);
+    if (target && !muted && settings.on("ide.hover")) showing = window.setTimeout(() => void showHover(target), 500);
   });
   /** Close the card and forget the word, so none shows until the pointer moves again. */
   function closeHover(): void {

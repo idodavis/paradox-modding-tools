@@ -4,7 +4,7 @@
  * bar, and the command palette in every window. The pages are kept alive, so leaving one for another keeps its state
  * (the IDE's editors and drafts among it).
  */
-import { openPalette } from "./components/CommandPalette.vue";
+import { openPalette } from "./components/app/CommandPalette.vue";
 import { isMain } from "./windows";
 
 // with a modifier, so they work while typing too (the editor's text is an input to Nuxt UI)

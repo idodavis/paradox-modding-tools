@@ -18,19 +18,18 @@ import {
   SetWorkspaceModSlot,
   UpdateWorkspaceMod,
 } from "@services/workspaceservice";
-import { useListingImage } from "../composables/useListingImage";
-import { useWorkspaceSave } from "../composables/useWorkspaceSave";
-import { pickDirectory } from "../lib/nativeDialog";
+import { useListingImage } from "../../composables/useListingImage";
+import { pickDirectory } from "../../lib/nativeDialog";
 import {
   healthQuery,
   imageQuery,
   summaryQuery,
+  releaseKeys,
   uploadFilesQuery,
-  workspaceKeys,
   workspacesQuery,
-} from "../queries";
-import { modColor, useWorkspaceStore } from "../stores/workspace";
-import { imageSize } from "../lib/format";
+} from "../../queries";
+import { modColor, useWorkspaceStore } from "../../stores/workspace";
+import { imageSize } from "../../lib/format";
 
 const { workspaceId, mod, live = false } = defineProps<{ workspaceId: string; mod: WorkspaceMod; live?: boolean }>();
 const emit = defineEmits<{ removed: [] }>();
@@ -44,7 +43,7 @@ const { data: health } = useQuery(() => healthQuery({ id: workspaceId, live }));
 const thumbnail = computed(() => mod.thumbnail || summary.value?.thumbnailAbs || "");
 const { data: image } = useQuery(() => imageQuery(thumbnail.value));
 
-const { mutate: run } = useWorkspaceSave(() => workspaceId);
+const { mutate: run } = useMutation({ mutation: (save: () => Promise<unknown>) => save() });
 
 /** Show a change at once: the next save of another field sends it too. */
 function shown(next: WorkspaceMod): void {
@@ -58,13 +57,9 @@ type Fields = Partial<Pick<WorkspaceMod, "name" | "color" | "workshopIgnore">>;
 function saveFields(set: Fields, then?: () => Promise<unknown>): void {
   const next = { ...mod, ...set };
   shown(next);
-  run({
-    save: async () => {
-      await UpdateWorkspaceMod(workspaceId, mod.id, next.name, next.color ?? "", next.thumbnail ?? "", next.workshopIgnore ?? "");
-      await then?.();
-    },
-    // the upload exclusions are what Publish counts and compares
-    release: set.workshopIgnore === undefined ? undefined : mod.id,
+  run(async () => {
+    await UpdateWorkspaceMod(workspaceId, mod.id, next.name, next.color ?? "", next.thumbnail ?? "", next.workshopIgnore ?? "");
+    await then?.();
   });
 }
 
@@ -72,16 +67,16 @@ const { mutate: openFolder } = useMutation({ mutation: () => OpenFolder(mod.path
 
 function setSlot(slot: number): void {
   shown({ ...mod, slot, color: "" });
-  run({ save: () => SetWorkspaceModSlot(workspaceId, mod.id, slot) });
+  run(() => SetWorkspaceModSlot(workspaceId, mod.id, slot));
 }
 
 async function changeFolder(): Promise<void> {
   const path = await pickDirectory("The mod's folder");
-  if (path) run({ save: () => SetWorkspaceModPath(workspaceId, mod.id, path), rebuilds: true, release: mod.id });
+  if (path) run(() => SetWorkspaceModPath(workspaceId, mod.id, path));
 }
 
 function remove(): void {
-  run({ save: () => RemoveWorkspaceMod(workspaceId, mod.id), rebuilds: true });
+  run(() => RemoveWorkspaceMod(workspaceId, mod.id));
   emit("removed");
 }
 
@@ -93,7 +88,7 @@ const size = computed(() => (image.value ? imageSize(image.value) : ""));
 const eras = computed(() => mod.eras ?? []);
 function setEras(next: Era[]): void {
   shown({ ...mod, eras: next });
-  run({ save: () => SetWorkspaceModCalendar(workspaceId, mod.id, next), rebuilds: true });
+  run(() => SetWorkspaceModCalendar(workspaceId, mod.id, next));
 }
 function setEra(at: number, set: Partial<Era>): void {
   setEras(eras.value.map((era, i) => (i === at ? { ...era, ...set } : era)));
@@ -127,7 +122,7 @@ const workedOut = computed(() => {
 });
 
 function unlink(): void {
-  run({ save: () => SetListingLink(workspaceId, mod.id, "", ""), release: mod.id });
+  run(() => SetListingLink(workspaceId, mod.id, "", "").then(() => queryCache.invalidateQueries({ key: releaseKeys.mod(workspaceId, mod.id) })));
 }
 
 /** Who reads this mod's objects, and how much of the game it replaces. */
@@ -163,7 +158,6 @@ function saveExclusions(): void {
 const { mutate: importExclusions } = useMutation({
   mutation: () => ImportWorkshopIgnore(workspaceId, mod.id),
   onSuccess: (text) => (draft.value = text),
-  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
 // the export writes the saved text, so it waits for the save
 function exportExclusions(): void {

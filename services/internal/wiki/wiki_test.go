@@ -352,7 +352,7 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 	t.Cleanup(srv.Close)
 	apiOverride = srv.URL
 
-	if err := Refresh(t.Context(), "ck3"); err != nil {
+	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err != nil {
 		t.Fatal(err)
 	}
 	first := mock.parses.Load()
@@ -400,7 +400,7 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 		t.Fatalf("patch modding: %#v", patch)
 	}
 
-	if err := Refresh(t.Context(), "ck3"); err != nil {
+	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err != nil {
 		t.Fatal(err)
 	}
 	if mock.parses.Load() != first {
@@ -408,7 +408,7 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 	}
 
 	mock.revid = 99
-	if err := Refresh(t.Context(), "ck3"); err != nil {
+	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err != nil {
 		t.Fatal(err)
 	}
 	if mock.parses.Load() <= first {
@@ -427,7 +427,7 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 
 	// a dead server is an error, and the failed fetch saves nothing over the pages already kept
 	srv.Close()
-	if err := Refresh(t.Context(), "ck3"); err == nil {
+	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err == nil {
 		t.Fatal("expected error")
 	}
 	forget("ck3")
@@ -444,7 +444,7 @@ func TestLiveCK3Refresh(t *testing.T) {
 	prev := minInterval
 	minInterval = time.Second
 	t.Cleanup(func() { minInterval = prev })
-	if err := Refresh(t.Context(), "ck3"); err != nil {
+	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err != nil {
 		t.Fatal(err)
 	}
 	sidecar, err := load("ck3")

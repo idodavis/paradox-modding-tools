@@ -5,17 +5,14 @@
  * active workspace's mod colors.
  */
 import { computed } from "vue";
-import { useMutation, useQueryCache } from "@pinia/colada";
+import { useMutation } from "@pinia/colada";
 import { SetWorkspaceModSlot } from "@services/workspaceservice";
-import { updatePrefs } from "../composables/useWorkspaceSave";
-import { FONT_SCALES, THEMES, useSettingsStore, type ThemeFamily, type ThemeId } from "../stores/settings";
-import { workspaceKeys } from "../queries";
-import { modColor, useWorkspaceStore } from "../stores/workspace";
-import { WORKSPACE_TOOLS, type WorkspaceToolName } from "../workspaceTools";
+import { FONT_SCALES, THEMES, useSettingsStore, type ThemeFamily, type ThemeId } from "../../stores/settings";
+import { modColor, updatePrefs, useWorkspaceStore } from "../../stores/workspace";
+import { WORKSPACE_TOOLS, type WorkspaceToolName } from "../../workspaceTools";
 
 const settings = useSettingsStore();
 const workspace = useWorkspaceStore();
-const queryCache = useQueryCache();
 
 const SCALES = FONT_SCALES.map((percent) => ({ label: `${percent}%`, value: percent }));
 
@@ -59,9 +56,8 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
     for (const mod of workspace.workspaceMods) {
       if (mod.color) await SetWorkspaceModSlot(ws.id, mod.id, mod.slot);
     }
-    if (ws.gameColor) await updatePrefs(ws, { gameColor: "" });
+    if (ws.gameColor) await updatePrefs({ ws, gameColor: "" });
   },
-  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
 </script>
 
@@ -76,13 +72,9 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
       title="Theme"
       hint="Every theme is the same set of tokens with different values, so all pages and the editor change together. Each comes dark and light: switch with the sun and moon in the top bar."
     >
-      <div class="flex items-center gap-2.5">
-        <USwitch id="match-game" :model-value="settings.matchGameTheme" @update:model-value="settings.setMatchGame" />
-        <label for="match-game" class="text-13 font-medium whitespace-nowrap">Match the workspace's game</label>
-        <span class="truncate text-12 text-dimmed">
-          Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere.
-        </span>
-      </div>
+      <SettingRow label="Match the workspace's game" hint="Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere.">
+        <USwitch :model-value="settings.matchGameTheme" @update:model-value="settings.setOn('ui.matchGameTheme', $event)" />
+      </SettingRow>
       <div class="grid grid-cols-3 gap-3.5">
         <button
           v-for="family in THEMES"
@@ -107,15 +99,9 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
       title="Light and dark"
       hint="The sun and moon in the top bar switch them on every page; switching stops following Windows."
     >
-      <div class="flex items-center gap-2.5">
-        <USwitch
-          id="follow-windows"
-          :model-value="settings.appearance === 'system'"
-          @update:model-value="settings.followSystem($event)"
-        />
-        <label for="follow-windows" class="text-13 font-medium whitespace-nowrap">Follow Windows</label>
-        <span class="truncate text-12 text-dimmed">Use the light or dark mode your system is set to.</span>
-      </div>
+      <SettingRow label="Follow Windows" hint="Use the light or dark mode your system is set to.">
+        <USwitch :model-value="settings.appearance === 'system'" @update:model-value="settings.followSystem($event)" />
+      </SettingRow>
     </SettingSection>
 
     <SettingSection title="Text size">

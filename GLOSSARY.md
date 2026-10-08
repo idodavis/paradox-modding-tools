@@ -51,7 +51,7 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 |---|---|---|
 | Product pane | the Wiki pane, `WikiPane`, `ui.wiki.*` | Guide pane, `GuidePane`, `ui.guide.*`, Helper, HelperPane, `pmt.helper`, `ui.helper`, `ide.helperWidth`, `WikiGuide` |
 | Guide RPC | `WikiService.Guide` | `SessionService.WikiGuide`; query key `wiki-guide` → `guide` |
-| Events | `lang:ready`, `lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`, `wiki:updated`, `search:hits`, `git:output` | `docs:wiki-*` |
+| Events | `lang:ready`, `lang:failed`, `lang:dropped`, `config:changed`, `lang:scan-progress`, `lang:cache-updated`, `fs:changed`, `wiki:updated`, `wiki:progress`, `search:hits`, `git:output` | `docs:wiki-*` |
 | Package / load | `package wiki`, `Refresh`, `SidecarPath` | `package docs`, `LoadDocs`, persist `docsPath()` |
 | Dumps health | `LanguageHealth.dumpsFrom` (yours, shipped or none), `dumpsStale` | `docsPresent`, UI “dumps required” |
 | Dump signature | `Command.Args` | prose in a usage field; a flat usage map |

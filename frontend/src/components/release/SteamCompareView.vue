@@ -10,10 +10,9 @@
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useLocalStorage, useTimeAgo } from "@vueuse/core";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
-import type { TabsItem } from "@nuxt/ui";
 import type { Listing, ListingChange } from "@services/models";
 import { DownloadFromSteam } from "@services/releaseservice";
-import { diffView, monaco } from "../../lib/code";
+import { COMPARE_STYLES, compareStyle, diffView, monaco } from "../../lib/code";
 import { compareQuery, releaseKeys, textQuery, uploadFilesQuery } from "../../queries";
 import { day, list, plural } from "../../lib/format";
 import { useSettingsStore } from "../../stores/settings";
@@ -24,11 +23,7 @@ const emit = defineEmits<{ close: [] }>();
 const settings = useSettingsStore();
 const ids = computed(() => ({ workspaceId: listing.workspaceId, modId: listing.modId }));
 const { data: steam } = useQuery(() => compareQuery(ids.value));
-const style = shallowRef<"split" | "unified">("split");
-const styles: TabsItem[] = [
-  { label: "Split", value: "split" },
-  { label: "Unified", value: "unified" },
-];
+const style = compareStyle;
 
 const STATUS: Record<string, string> = { "=": "text-dimmed", M: "text-warning", A: "text-success", D: "text-error" };
 const ROW_UI = {
@@ -43,7 +38,7 @@ const ROW_UI = {
 };
 
 /** One row: a listing field (its two values) or a file (its two paths, "" for a side without it). */
-type Row = { value: string; status: string; label: string; detail?: string; texts?: [string, string]; files?: [string, string] };
+type Row = { value: string; status: string; label: string; detail?: string; texts?: [string, string]; files?: [string, string]; lines: [number, number] };
 
 /** What a field's change says beside it: the tags added and removed, else its old and new value. */
 function detail(row: ListingChange): string | undefined {
@@ -62,6 +57,7 @@ const fields = computed(() =>
       label: row.field,
       detail: row.changed ? detail(row) : "",
       texts: [row.steam, row.workspace],
+      lines: [row.linesAdded, row.linesRemoved],
     }),
   ),
 );
@@ -73,6 +69,7 @@ const files = computed(() =>
       label: file.rel,
       detail: file.binary ? "binary" : undefined,
       files: file.binary ? undefined : [file.steam, file.workspace],
+      lines: [file.linesAdded, file.linesRemoved],
     }),
   ),
 );
@@ -187,7 +184,8 @@ function stepHit(by: number): void {
   show(hits.value[hit.value]);
 }
 
-const width = useLocalStorage("pmt.publish.compareWidth", 330);
+// the changes' list and the compare; the splitter keeps the list's width
+const PANES = [{ slot: "list", sizeUnit: "px" as const, defaultSize: 330, minSize: 240, maxSize: 560 }, { slot: "compare" }];
 const updated = computed(() => (steam.value?.uploadedAt ? day(steam.value.uploadedAt) : ""));
 const savedAgo = useTimeAgo(() => listing.saved || Date.now());
 
@@ -210,7 +208,7 @@ const { mutate: download, isLoading: downloading } = useMutation({
             {{ steam.changes }} differences: {{ changedFields }} in the listing, {{ files.length }} in files
           </span>
           <span class="grow" />
-          <UTabs :model-value="style" :items="styles" :content="false" @update:model-value="style = $event === 'unified' ? 'unified' : 'split'" />
+          <UTabs :model-value="style" :items="COMPARE_STYLES" :content="false" @update:model-value="style = $event === 'unified' ? 'unified' : 'split'" />
         </div>
         <p v-if="!steam" class="text-13 text-dimmed">Reading what Steam has…</p>
         <p v-else-if="!steam.item" class="text-13 text-dimmed">This mod is not on Steam yet, so there is nothing to compare it with.</p>
@@ -221,8 +219,9 @@ const { mutate: download, isLoading: downloading } = useMutation({
           </p>
           <UButton label="Download from Steam" icon="i-lucide-download" :loading="downloading" @click="download()" />
         </div>
-        <div v-else class="flex min-h-0 grow overflow-hidden rounded-lg border border-default">
-          <section class="relative flex min-h-0 shrink-0 flex-col border-e border-default bg-muted py-1.5" :style="{ width: `${width}px` }">
+        <USplitter v-else :items="PANES" auto-save-id="pmt.publish.compare" class="min-h-0 grow overflow-hidden rounded-lg border border-default">
+          <template #list>
+          <section class="relative flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted py-1.5">
             <div class="flex h-7.5 items-center gap-2 px-3 text-11 font-semibold text-toned">
               Listing<span class="font-normal text-dimmed">{{ changedFields }} of {{ fields.length }} changed</span>
             </div>
@@ -230,7 +229,7 @@ const { mutate: download, isLoading: downloading } = useMutation({
               <template #item="{ item }">
                 <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="STATUS[item.status]">{{ item.status }}</b>
                 <span class="truncate">{{ item.label }}</span>
-                <ChangeCounts v-if="item.status === 'M' && !item.detail" :texts="item.texts" />
+                <ChangeCounts v-if="item.status === 'M' && !item.detail" :added="item.lines[0]" :removed="item.lines[1]" />
                 <span v-else-if="item.detail" class="ms-auto truncate font-mono text-11 text-dimmed">{{ item.detail }}</span>
               </template>
             </UListbox>
@@ -247,7 +246,7 @@ const { mutate: download, isLoading: downloading } = useMutation({
               <template #item="{ item }">
                 <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="STATUS[item.status]">{{ item.status }}</b>
                 <span class="truncate">{{ item.label }}</span>
-                <ChangeCounts v-if="item.files" :files="item.files" />
+                <ChangeCounts v-if="item.files" :added="item.lines[0]" :removed="item.lines[1]" />
                 <span v-else class="ms-auto font-mono text-11 text-dimmed">{{ item.detail }}</span>
               </template>
             </UListbox>
@@ -259,7 +258,8 @@ const { mutate: download, isLoading: downloading } = useMutation({
               <UButton label="Download from Steam instead" icon="i-lucide-download" :loading="downloading" class="self-start" @click="download()" />
             </div>
           </section>
-          <ResizeGrip v-model="width" :min="240" :max="560" :default-size="330" />
+          </template>
+          <template #compare>
           <div class="flex min-w-0 grow flex-col">
             <div class="flex h-10 shrink-0 items-center gap-1 border-b border-default px-2.5">
               <UButton icon="i-lucide-chevron-up" variant="ghost" size="xs" square :disabled="!changes.length" aria-label="Previous change" @click="stepChange(-1)" />
@@ -285,7 +285,8 @@ const { mutate: download, isLoading: downloading } = useMutation({
             <p v-else-if="unchanged" class="p-4 text-12 text-dimmed">Unchanged: Steam has the same {{ current?.label }}.</p>
             <div v-else ref="host" class="min-h-0 grow border-s-12 border-(--bg-0)" />
           </div>
-        </div>
+          </template>
+        </USplitter>
       </div>
     </template>
   </UModal>

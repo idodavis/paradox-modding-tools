@@ -8,11 +8,18 @@ import "monaco-editor/features/register.all";
 // Markdown, the one language of Monaco's own a mod has (its Workshop description, readme)
 import "monaco-editor/languages/definitions/markdown/register";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
-import { diffLines } from "diff";
+import { useLocalStorage } from "@vueuse/core";
 
 export { monaco };
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
+
+/** Every compare's split or unified view, one choice kept on this computer, and the tabs that pick it. */
+export const compareStyle = useLocalStorage<"split" | "unified">("pmt.compare.style", "split");
+export const COMPARE_STYLES = [
+  { label: "Split", value: "split" },
+  { label: "Unified", value: "unified" },
+];
 
 /** A file's model, made when a peek or a definition reaches a file no editor has open (ide/monacoEditor.ts). */
 export const models: { load: (uri: monaco.Uri) => Promise<monaco.editor.ITextModel | null> } = { load: async () => null };
@@ -154,8 +161,13 @@ for (const [id, extensions, grammar] of LANGUAGES) {
   });
 }
 
-/** The language a file's name calls for: localization, GUI, script, else plain text. */
-export function languageOf(name: string): string {
+/** The language a file calls for: the engine's format for it (FileText.format) where the text came from Go, so the
+ * editor and the engine never disagree; else its name's (read-only snippets): localization, GUI, script, plain text. */
+export function languageOf(name: string, format?: string): string {
+  const gui = name.toLowerCase().endsWith(".gui");
+  if (format === "script") return gui ? "paradox-gui" : "paradox";
+  if (format === "loc") return "paradox-loc";
+  if (format) return name.toLowerCase().endsWith(".md") ? "markdown" : "plaintext";
   const extension = name.slice(name.lastIndexOf(".")).toLowerCase();
   return LANGUAGES.find(([, extensions]) => extensions.includes(extension))?.[0] ?? (extension === ".md" ? "markdown" : "plaintext");
 }
@@ -323,17 +335,6 @@ export function drawCode(host: HTMLElement, text: string, name: string): void {
   );
 }
 
-/** The lines one text adds and removes against another. */
-export function lineCounts(before: string, after: string): { added: number; removed: number } {
-  let added = 0;
-  let removed = 0;
-  for (const part of diffLines(before, after)) {
-    if (part.added) added += part.count;
-    if (part.removed) removed += part.count;
-  }
-  return { added, removed };
-}
-
 /** What a code view draws its text in: the IDE's editor font. */
 export type CodeFont = { fontFamily: string; fontSize: number; lineHeight: number };
 
@@ -363,9 +364,9 @@ export function diffView(host: HTMLElement, font: CodeFont, side: boolean, all: 
   let shown: monaco.editor.ITextModel[] = [];
   return {
     view,
-    /** Show two texts, each in its file's grammar. */
-    show(before: { text: string; name: string }, after: { text: string; name: string }): void {
-      const next = [before, after].map(({ text, name }) => monaco.editor.createModel(text, languageOf(name)));
+    /** Show two texts, each in its file's grammar (its format, where the text came from Go). */
+    show(before: { text: string; name: string; format?: string }, after: { text: string; name: string; format?: string }): void {
+      const next = [before, after].map(({ text, name, format }) => monaco.editor.createModel(text, languageOf(name, format)));
       view.setModel({ original: next[0]!, modified: next[1]! });
       shown.forEach((model) => model.dispose());
       shown = next;

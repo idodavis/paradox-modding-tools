@@ -16,6 +16,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * AddRemote adds a remote by its name and address: Publish asks for one where the repository has none.
+ */
+export function AddRemote(root: string, name: string, url: string): $CancellablePromise<void> {
+    return $Call.ByID(88907308, root, name, url);
+}
+
+/**
  * Available says whether git is on this machine's PATH.
  */
 export function Available(): $CancellablePromise<boolean> {
@@ -111,6 +118,20 @@ export function Push(root: string): $CancellablePromise<void> {
 }
 
 /**
+ * Remotes returns the repository's remotes, each with the address it fetches from.
+ */
+export function Remotes(root: string): $CancellablePromise<$models.GitRemote[] | null> {
+    return $Call.ByID(2034458630, root);
+}
+
+/**
+ * RemoveRemote removes a remote, with its remote branches and their settings.
+ */
+export function RemoveRemote(root: string, name: string): $CancellablePromise<void> {
+    return $Call.ByID(2624740645, root, name);
+}
+
+/**
  * Repositories returns each repository holding one of the workspace's mods, once, named after the
  * first mod in it; none when git is missing.
  */
@@ -119,9 +140,16 @@ export function Repositories(workspaceID: string): $CancellablePromise<$models.G
 }
 
 /**
+ * SetRemoteURL changes the address a remote fetches from and pushes to.
+ */
+export function SetRemoteURL(root: string, name: string, url: string): $CancellablePromise<void> {
+    return $Call.ByID(529880648, root, name, url);
+}
+
+/**
  * Show returns a file's text at a revision, or staged when rev is ""; empty when the file is not there.
  */
-export function Show(root: string, rev: string, file: string): $CancellablePromise<$models.GitText | null> {
+export function Show(root: string, rev: string, file: string): $CancellablePromise<$models.FileText | null> {
     return $Call.ByID(499935102, root, rev, file);
 }
 
@@ -136,8 +164,8 @@ export function Stage(root: string, files: string[] | null): $CancellablePromise
  * StageText makes text a file's staged copy, as one block of it is staged or unstaged: the frontend
  * sends the staged copy with the block applied. git's filters for the path apply (line endings).
  */
-export function StageText(root: string, file: string, text: string, bom: boolean): $CancellablePromise<void> {
-    return $Call.ByID(2553206880, root, file, text, bom);
+export function StageText(root: string, file: string, text: string, bom: boolean, legacy: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2553206880, root, file, text, bom, legacy);
 }
 
 /**

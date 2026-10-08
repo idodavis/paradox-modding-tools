@@ -21,6 +21,7 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import { Close } from "@services/windowservice";
 import { isMain, placing, windowName, windowPart } from "../../windows";
 import { fileName } from "../../lib/format";
+import UnsavedChangesModal from "../app/UnsavedChangesModal.vue";
 import { iconOf } from "./ExplorerTree.vue";
 
 const { workspaceId, groupId } = defineProps<{ workspaceId: string; groupId: number }>();
@@ -50,19 +51,13 @@ function show(path: string): void {
 }
 
 // a file's last tab (its own or a diff) closed with unsaved edits asks first, shown so its editor can save
-const asking = shallowRef("");
-function close(tab: string): void {
+const unsavedModal = useOverlay().create(UnsavedChangesModal);
+async function close(tab: string): Promise<void> {
   const { file } = tabOf(tab);
   const elsewhere = ide.groups.some((one) => one.files.some((other) => tabOf(other).file === file && (other !== tab || one.id !== groupId)));
   if (elsewhere || !ide.unsaved.has(file)) return ide.closeIn(groupId, tab);
   show(tab);
-  asking.value = tab;
-}
-async function answer(save: boolean): Promise<void> {
-  const tab = asking.value;
-  asking.value = "";
-  if (save) await saveFile(tabOf(tab).file);
-  ide.closeIn(groupId, tab);
+  if (await unsavedModal.open({ files: [file], going: "Closing it" })) ide.closeIn(groupId, tab);
 }
 
 // closing many tabs closes all but the unsaved, which stay to be saved or closed one at a time
@@ -214,18 +209,6 @@ function setView(view: string | number): void {
 
 <template>
   <section class="flex min-h-0 min-w-0 flex-1 flex-col" @pointerdown="ide.focused = groupId" @dragover="hover($event)" @dragleave="leave">
-    <UModal :open="!!asking" title="Save your changes?" @update:open="(open) => !open && (asking = '')">
-      <template #body>
-        <p class="text-13 text-toned">{{ name(asking) }} has changes that are not saved.</p>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <UButton label="Cancel" @click="asking = ''" />
-          <UButton label="Don't save" @click="answer(false)" />
-          <UButton label="Save" color="primary" variant="solid" @click="answer(true)" />
-        </div>
-      </template>
-    </UModal>
     <div class="flex h-9 shrink-0 items-stretch border-b border-default bg-muted" @dragover="hover($event, null)" @drop="dropTab($event, 'middle')">
       <!-- the tabs keep their names; more than fit scroll, by the wheel or a bar under the pointer, the app's 6px one
            (Chromium draws ::-webkit-scrollbar only where scrollbar-width and -color are auto) over the tabs' foot -->

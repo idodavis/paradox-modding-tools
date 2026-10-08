@@ -5,6 +5,7 @@
 package jomini
 
 import (
+	"bytes"
 	"reflect"
 	"regexp"
 	"testing"
@@ -107,18 +108,19 @@ func TestParse(t *testing.T) {
 
 	t.Run("decode", func(t *testing.T) {
 		withBOM := append([]byte{0xEF, 0xBB, 0xBF}, []byte("foo = 1")...)
-		text, had := Decode(withBOM)
+		text, had, _ := Decode(withBOM)
 		if !had || text != "foo = 1" {
 			t.Fatalf("BOM decode: had=%v text=%q", had, text)
 		}
-		crlf, hadCR := Decode([]byte("a = 1\r\nb = 2\r\n"))
-		if hadCR || crlf != "a = 1\nb = 2\n" {
+		crlf, hadCR, _ := Decode([]byte("a = 1\r\nb = 2\r\n"))
+		if hadCR || crlf != "a = 1\r\nb = 2\r\n" {
 			t.Fatalf("CRLF decode: had=%v text=%q", hadCR, crlf)
 		}
-		// 0xE9 alone is invalid UTF-8 -> latin1 fallback (é).
-		latin1, hadLatin1 := Decode([]byte{'x', 0xE9, 'y'})
-		if hadLatin1 || latin1 != "xéy" {
-			t.Fatalf("latin1 fallback: had=%v text=%q", hadLatin1, latin1)
+		// invalid UTF-8 is Windows-1252: 0x93 a left quote, 0xE9 é; encoded back to the same bytes
+		raw := []byte{'x', 0x93, 0xE9, 'y'}
+		legacy, _, isLegacy := Decode(raw)
+		if back, err := Encode(legacy, false, isLegacy); !isLegacy || legacy != "x“éy" || err != nil || !bytes.Equal(back, raw) {
+			t.Fatalf("Windows-1252: legacy=%v text=%q back=%v err=%v", isLegacy, legacy, back, err)
 		}
 	})
 

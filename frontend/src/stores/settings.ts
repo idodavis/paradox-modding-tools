@@ -97,7 +97,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
   /** The family picked in Appearance. */
   const theme = computed(() => familyOf(values.value["_global.theme"]));
-  const matchGameTheme = computed(() => values.value["ui.matchGameTheme"] !== "off");
+  const matchGameTheme = computed(() => on("ui.matchGameTheme", true));
   const appearance = computed<Appearance>(() => {
     const stored = values.value["ui.appearance"];
     return stored === "light" || stored === "system" ? stored : "dark";
@@ -156,34 +156,20 @@ export const useSettingsStore = defineStore("settings", () => {
     return set("ui.appearance", on ? "system" : mode.value);
   }
 
-  /** The workspace's theme follows its game's, or the family picked. */
-  function setMatchGame(on: boolean): Promise<void> {
-    return set("ui.matchGameTheme", on ? "on" : "off");
-  }
-
   /** Show or hide a page in the workspace's bar. */
   function showTool(name: WorkspaceToolName, on: boolean): Promise<void> {
     const others = visibleTools.value.filter((tool) => tool !== name);
     return set("ui.visibleTools", JSON.stringify(on ? [...others, name] : others));
   }
 
-  /** Whether a check shows in the editor: the stored choice, else the check's default. */
-  function checkOn(code: string, fallback: boolean): boolean {
-    const stored = values.value[`ide.diag.${code}`];
+  /** A switch (an IDE switch, a check's ide.diag.<code>, matching the game's theme): the stored choice, else its
+   * default, an IDE switch's from IDE_SWITCHES. */
+  function on(key: string, fallback = (IDE_SWITCHES as Record<string, boolean>)[key] ?? false): boolean {
+    const stored = values.value[key];
     return stored ? stored === "on" : fallback;
   }
 
-  function setCheck(code: string, on: boolean): Promise<void> {
-    return set(`ide.diag.${code}`, on ? "on" : "off");
-  }
-
-  /** An IDE switch: the stored choice, else its default. */
-  function ideOn(key: IdeSwitch): boolean {
-    const stored = values.value[key];
-    return stored ? stored === "on" : IDE_SWITCHES[key];
-  }
-
-  function setIde(key: IdeSwitch, on: boolean): Promise<void> {
+  function setOn(key: string, on: boolean): Promise<void> {
     return set(key, on ? "on" : "off");
   }
 
@@ -243,12 +229,9 @@ export const useSettingsStore = defineStore("settings", () => {
     pickTheme,
     toggleMode,
     followSystem,
-    setMatchGame,
     showTool,
-    checkOn,
-    setCheck,
-    ideOn,
-    setIde,
+    on,
+    setOn,
     indentSpaces,
     indentSize,
     indentUnit,

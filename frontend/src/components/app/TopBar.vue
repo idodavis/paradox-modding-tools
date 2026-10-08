@@ -12,23 +12,22 @@ import { until, useElementSize, useTimeAgo } from "@vueuse/core";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import { openPalette } from "./CommandPalette.vue";
-import { useLanguageHealth } from "../composables/useLanguageHealth";
-import { sessionQuery, workspacesQuery } from "../queries";
-import { useSettingsStore } from "../stores/settings";
-import { useWorkspaceStore } from "../stores/workspace";
+import { useLanguageHealth } from "../../composables/useLanguageHealth";
+import { sessionQuery, workspacesQuery } from "../../queries";
+import { useSettingsStore } from "../../stores/settings";
+import { useWorkspaceStore } from "../../stores/workspace";
 import { Close, Show } from "@services/windowservice";
-import { others, openWindow } from "../windows";
-import { isWorkspacePage, WORKSPACE_TOOLS, workspaceHomeRoute, type WorkspaceToolName } from "../workspaceTools";
+import { others, openWindow } from "../../windows";
+import { isWorkspacePage, WORKSPACE_TOOLS, workspaceHomeRoute, type WorkspaceToolName } from "../../workspaceTools";
 
 const route = useRoute();
 const store = useWorkspaceStore();
 const settings = useSettingsStore();
 
-/** The workspace whose page is open; none on the Library and the wizard. */
-const routeId = computed(() => ("id" in route.params ? route.params.id : ""));
-
 const { data: workspaces } = useQuery(workspacesQuery);
-useQuery(() => sessionQuery(routeId.value));
+// the open workspace's session, built on its pages only (the router's guard makes it the active one); none on the
+// Library and the wizard
+useQuery(() => sessionQuery(route.name && isWorkspacePage(route.name) ? store.activeWorkspaceId : ""));
 const { health, scan } = useLanguageHealth(() => store.activeWorkspaceId);
 
 const TAB = "flex h-11 items-center gap-1.5 px-2.5 -mb-px border-b-2 text-13 font-medium whitespace-nowrap";

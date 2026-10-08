@@ -6,7 +6,6 @@
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useRouter } from "vue-router";
-import { useElementSize, useLocalStorage } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import { CARDS, rowsOf, typeOf, useHealth, type Card, type Row } from "../composables/useHealth";
 import { countKinds } from "../lib/format";
@@ -59,14 +58,8 @@ function note(c: Card): string {
 const CHIP = "flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-default bg-muted ps-1.5 pe-2.5 text-12 font-medium text-muted whitespace-nowrap";
 // the mods' chips, dragged to preview another load order; the game stays first
 useSortable(useTemplateRef<HTMLElement>("chips"), order, { animation: 150, watchElement: true });
-// the table's share of the split, either pane taking up to four fifths
-const split = useTemplateRef<HTMLElement>("split");
-const { width: splitWidth } = useElementSize(split);
-const tableShare = useLocalStorage("pmt.health.tableShare", 0.65);
-const tableWidth = computed({
-  get: () => Math.round(tableShare.value * splitWidth.value),
-  set: (px: number) => (tableShare.value = splitWidth.value ? px / splitWidth.value : tableShare.value),
-});
+// the table's share of the split, in percent, either pane taking up to four fifths; the splitter keeps it
+const PANES = [{ slot: "table", defaultSize: 65, minSize: 20, maxSize: 80 }, { slot: "detail" }];
 </script>
 
 <template>
@@ -124,7 +117,8 @@ const tableWidth = computed({
       </template>
     </div>
 
-    <div ref="split" class="flex min-h-0 grow overflow-hidden rounded-t-lg border border-b-0 border-default">
+    <USplitter :items="PANES" auto-save-id="pmt.health" class="min-h-0 grow overflow-hidden rounded-t-lg border border-b-0 border-default">
+      <template #table>
       <HealthTable
         :key="card"
         v-model="open"
@@ -132,17 +126,13 @@ const tableWidth = computed({
         :rows="rows"
         :sources="health?.sources ?? []"
         :loading="isPending"
-        class="shrink-0 border-e border-default"
-        :style="{ width: `${tableWidth}px` }"
+        class="min-w-0 flex-1 border-e border-default"
       />
-      <ResizeGrip
-        v-model="tableWidth"
-        :min="splitWidth * 0.2"
-        :max="splitWidth * 0.8"
-        :default-size="Math.round(splitWidth * 0.65)"
-      />
+      </template>
+      <template #detail>
       <HealthDetail :workspace-id="id" :row="open" :sources="health?.sources ?? []" :live="live" />
-    </div>
+      </template>
+    </USplitter>
 
     <StatusFacts>
       <span>{{ total }} findings across {{ Object.keys(counts).length }} checks</span>

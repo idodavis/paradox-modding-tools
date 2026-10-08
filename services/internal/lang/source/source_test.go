@@ -218,9 +218,10 @@ func TestWalk(t *testing.T) {
 
 	walked := func() []string {
 		var got []string
-		Walk(dir, func(path string) {
+		_ = Walk(dir, func(path string) error {
 			rel, _ := filepath.Rel(dir, path)
 			got = append(got, filepath.ToSlash(rel))
+			return nil
 		})
 		return got
 	}
@@ -251,7 +252,7 @@ func TestWalk(t *testing.T) {
 	}
 
 	// a root that does not exist walks nothing
-	Walk(filepath.Join(dir, "missing"), func(string) { t.Error("walked a missing root") })
+	_ = Walk(filepath.Join(dir, "missing"), func(string) error { t.Error("walked a missing root"); return nil })
 }
 
 // dds builds a DDS file head: magic, 124 byte header, and a DX10 header when dxgiFormat is set.

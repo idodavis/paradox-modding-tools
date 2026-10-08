@@ -5,11 +5,11 @@
  * useOverlay, it closes with the new mod's folder.
  */
 import { computed, shallowRef } from "vue";
-import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { AddWorkspaceMod, CreateMod } from "@services/workspaceservice";
-import { IMAGE_FILTER } from "../lib/nativeDialog";
-import { modFolderQuery, modParentQuery, workspaceKeys } from "../queries";
-import { LOC_LANGUAGES } from "../workspaceTools";
+import { IMAGE_FILTER } from "../../lib/nativeDialog";
+import { modFolderQuery, modParentQuery } from "../../queries";
+import { LOC_LANGUAGES } from "../../workspaceTools";
 
 const { gameId, workspaceId = "", locLang = "english", supportedVersion = "" } = defineProps<{
   gameId: string;
@@ -20,7 +20,6 @@ const { gameId, workspaceId = "", locLang = "english", supportedVersion = "" } =
 }>();
 const emit = defineEmits<{ close: [path?: string] }>();
 
-const queryCache = useQueryCache();
 const name = shallowRef("");
 const description = shallowRef("");
 const chosenParent = shallowRef("");
@@ -42,7 +41,6 @@ const { mutate: create, isLoading: creating } = useMutation({
     return path;
   },
   onSuccess: (path) => emit("close", path),
-  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
 </script>
 

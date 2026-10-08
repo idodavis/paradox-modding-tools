@@ -4,26 +4,36 @@ How every file under `frontend/src` is written. The look is `.claude/DESIGN.md`'
 `GLOSSARY.md`'s. A file that breaks a rule here is fixed by the stage that rewrites it
 (`.claude/plans/frontend-revamp/frontend-revamp.md`, O-R30).
 
+## Layout
+
+A component used by one page lives in that page's folder under `components/` (`library/`, `settings/`, `ide/`,
+`eventGraph/`, `health/`, `release/`); the app's frame (top bar, status bar, command palette, the unsaved-changes
+prompt) in `app/`; a piece two or more pages use in `ui/`. No `.vue` file sits directly in `components/`.
+`composables/`, `stores/`, `lib/` and `ide/` stay flat. The root holds what the whole app shares and starts:
+`main.ts`, `App.vue`, `router.ts`, `queries.ts`, `events.ts`, `windows.ts`, `workspaceTools.ts` (the page and
+settings catalogues).
+
 ## Server state
 
 Every binding read is a Pinia Colada `useQuery` built from one `defineQueryOptions` per RPC in `queries.ts`,
-the one place for keys (a key factory per service). Stores hold client state only: no `loading`, `error`,
-`refresh` or copy of server data. After a mutation, invalidate the keys it changes. Query functions are
-pure: no store writes, no `EnsureSession`.
+the one place for keys: each option writes its own, and a key factory exists only for a key that an event or a
+mutation refreshes. Stores hold client state only: no `loading`, `error`, `refresh` or copy of server data. A
+write to `config.json` refreshes what it feeds through `config:changed`; any other mutation invalidates the
+keys it changes. Query functions are pure: no store writes, no `EnsureSession`.
 
 ```ts
 // queries.ts
-export const workspaceKeys = { one: (id: string) => ["workspace", id] as const };
-export const workspaceQuery = defineQueryOptions((id: string) => ({
-  key: workspaceKeys.one(id),
-  query: () => GetWorkspace(id),
+export const releaseKeys = { mod: (workspaceId: string, modId: string) => ["release", workspaceId, modId] as const };
+export const listingQuery = defineQueryOptions(({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
+  key: [...releaseKeys.mod(workspaceId, modId), "listing"],
+  query: () => LoadListing(workspaceId, modId),
 }));
 
-// a page, whose prop is id
-const { data: workspace } = useQuery(() => workspaceQuery(id));
-const { mutate: saveOrder, isLoading: saving } = useMutation({
-  mutation: (ids: string[]) => ReorderWorkspaceMods(id, ids),
-  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.one(id) }),
+// a component, whose props are workspaceId and modId
+const { data: listing } = useQuery(() => listingQuery({ workspaceId, modId }));
+const { mutate: create } = useMutation({
+  mutation: () => CreateDescriptionFile(workspaceId, modId), // the mod's file, not config.json
+  onSettled: () => queryCache.invalidateQueries({ key: releaseKeys.mod(workspaceId, modId) }),
 });
 ```
 
@@ -60,8 +70,8 @@ const { id } = defineProps<{ id: string }>();
 ## Wails events
 
 Subscribed once, in `events.ts`, called from `main.ts`; each event refreshes what it changes (its queries, the
-scan progress, the git store). The IDE's own subscriptions (`fs:changed` to its explorer and models,
-`search:hits` to its search) stay in the components that draw them. Payloads are typed by Go's
+scan progress, the git store). The subscriptions a component draws stay in it: the IDE's (`fs:changed` to its
+explorer and models, `search:hits` to its search) Publish's upload progress (`steam:progress`) and the status bar's wiki downloads (`wiki:progress`). Payloads are typed by Go's
 `application.RegisterEvent`, which the bindings declare on `Events.CustomEvents`: no casts. The windows' events
 (`window:*`) are there too: what each window holds (`windows.ts`' `others`), tabs handed between them, and a
 save in one that the others read again.
@@ -99,7 +109,7 @@ const list = useTemplateRef("list");
 
 Overlays through `useOverlay`, toasts through `useToast`. Sections, steps and segmented choices are `UTabs`,
 `UStepper` or `URadioGroup` with `:items` and item slots; lists are `UListbox` or `UCollapsible`; a link
-action is `UButton variant="link"`; a resizable pane is `ResizeGrip`. Nuxt UI's components and composables are
+action is `UButton variant="link"`; resizable panes are a `USplitter` (its handle themed in `vite.config.ts`, its sizes kept by `auto-save-id`). Nuxt UI's components and composables are
 auto-imported (no deep `@nuxt/ui/…` import), and so are this folder's: a template uses a component under
 `components/` by its file name and never imports it; only a script that needs the component itself (for
 `useOverlay().create`) imports it. Colors by aliases (`primary`, `neutral`, …) and the tokens; theme

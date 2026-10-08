@@ -19,8 +19,8 @@ type WikiService struct {
 	Session *SessionService
 }
 
-// Guide returns Guide pane pages for the active file. A path under no root gives an empty guide,
-// not an error.
+// Guide returns the Guide pane's tabs for the active file: each page's title, address and headings, its text
+// fetched apart (GuidePage) for the one tab shown. A path under no root gives an empty guide, not an error.
 func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	sess, err := s.Session.live(workspaceID)
 	if err != nil {
@@ -36,16 +36,21 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	if place.Database != nil {
 		database, kind = place.Database.Name, game.KindName(place.Database.Name)
 	}
-	return &wiki.Guide{
-		Database:    database,
-		Kind:        kind,
-		Pages:       wiki.PagesFor(sess.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel),
-		Attribution: wiki.Attribution(sess.Game.ID),
-	}, nil
+	pages := wiki.PagesFor(sess.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel)
+	for i := range pages {
+		pages[i].HTML = ""
+	}
+	return &wiki.Guide{Database: database, Kind: kind, Pages: pages, Attribution: wiki.Attribution(sess.Game.ID)}, nil
+}
+
+// GuidePage returns one guide page whole, by its title; nil where the wiki has none so named.
+func (s *WikiService) GuidePage(gameID, title string) *wiki.Page {
+	return wiki.GuidePage(gameID, title)
 }
 
 // ServiceStartup refreshes, in the background, the wiki pages of every installed game, so the
-// guides are current without a click, and tells the frontend as each game is done; Wails calls it.
+// guides are current without a click, and tells the frontend each page fetched and each game done;
+// Wails calls it.
 func (s *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	games := map[string]bool{}
 	s.Session.App.read(func(cfg *Config) {
@@ -55,8 +60,10 @@ func (s *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceO
 	})
 	go func() {
 		for gameID := range games {
-			done := WikiUpdated{}
-			if err := wiki.Refresh(ctx, gameID); err != nil {
+			done := WikiUpdated{GameID: gameID}
+			if err := wiki.Refresh(ctx, gameID, func(stage string, fetched, total int) {
+				emit(EventWikiProgress, WikiProgress{GameID: gameID, Stage: stage, Done: fetched, Total: total})
+			}); err != nil {
 				done.Error = err.Error()
 			}
 			emit(EventWikiUpdated, done)

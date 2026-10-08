@@ -28,12 +28,18 @@ header folds that section away.
 
 Right-click a file or folder for: Open to the side, New file, New folder, Rename, Delete, Select for compare,
 Compare with selected, Compare the two selected, Copy path and Reveal in the file manager. Deleting a mod's own
-folder also takes it out of the workspace. On a mod folder that is not a git repository: **Initialize a git
+folder also takes it out of the workspace. **Ctrl Z** in the explorer undoes the last rename, move or delete, and
+**Ctrl Y** (or **Ctrl Shift Z**) does it again: a deleted file waits in PMT's trash, which is emptied when PMT
+starts, so a delete can be undone until you close the app. A mod's own folder, once deleted, is not brought back. On a mod folder that is not a git repository: **Initialize a git
 repository**.
 
 A mod's top folder has its color's bar, and its name in that color too (the game's folder as well) unless **Color
 each top folder** is off. Where a mod is a git repository, changed files are marked: added, modified, deleted,
 renamed and untracked in their colors, the folders holding them marked, and what `.gitignore` matches dimmed.
+
+Paradox's own kinds of file have icons of their own, in the explorer and on the tabs: script, localization, GUI, a
+mod's descriptor, meshes, assets, animations, textures, shaders, sprites (`.gfx`), fonts, sound banks and audio, video,
+particles, map data and settings.
 
 ## Editors
 
@@ -140,8 +146,10 @@ works on every mod of the workspace that is in a git repository.
   the mods in no repository: **Initialize** makes one (`git init`; your first commit is yours to write).
 - **The branch** button opens the branch menu: switch branches, or type a name to create one; create one from
   another branch; check out a tag or commit; the local and remote branches; Fetch, Pull, Pull from, Push, Merge
-  into the current branch, and Delete. Beside it, how many commits are to push and to pull; clicking it pulls then
-  pushes (a branch with no upstream shows **Publish**).
+  into the current branch, **Remotes** (each remote's address, changed or removed, and a new one added) and
+  Delete. Beside it, how many commits are to push and to pull; clicking it pulls then pushes (a branch with no
+  upstream shows **Publish**; a repository with no remote, such as one made here, asks first for the address of an
+  empty repository to push to, and adds it as `origin`).
 - **The message** and **Commit**; its menu has Commit and push, and Amend the last commit. **Ctrl Enter** commits.
 - **Merge conflicts**, **Staged** and **Changes**, each file with its letter: A added, M modified, D deleted,
   R renamed, U untracked, ! in conflict. A row opens the file's diff; its buttons open the file, stage, unstage or
@@ -166,10 +174,11 @@ a pull or push that needs one fails with git's message, so set up your credentia
 ## Wiki
 
 The Wiki pane shows the community wiki's pages for the file you are editing, as tabs ("Suggested for event
-files"), with a search over the game's wiki and the page's contents (drag their edge to resize them; the button beside
-them hides them). It follows
-the open file unless you turn that off. When it is closed and the wiki has pages for a new kind of file, a toast
-says so; the IDE settings' Wiki tab can hide that toast for an hour, until restart, or for good.
+files"), and the page's contents beside it (drag their edge to resize them; the button beside them hides them). Its
+search keeps the pages it finds and marks its words in the page, as Patch Notes' find does: **Enter** and **Shift
+Enter** for the next and previous match, and **Ctrl F**, outside the editor, puts the cursor in it. It follows the
+open file unless you turn that off. When it is closed and the wiki has pages for a new kind of file, a toast says so;
+the IDE settings' Wiki tab can hide that toast for an hour, until restart, or for good.
 
 This is the community wiki, not `script_docs` and not the install's `_*.info` files. See
 [three kinds of docs]({{< relref "/concepts/docs" >}}).
@@ -232,6 +241,7 @@ They apply to every workspace. Each tab can be reset to its defaults.
 | **Ctrl Shift W** | The Wiki pane |
 | **Ctrl \\** | Split the editor right |
 | **Ctrl F** / **Ctrl H** | Find / replace in the file |
+| **Ctrl Z** / **Ctrl Y** in the explorer | Undo / redo a rename, move or delete |
 | **F12**, **Alt F12**, **Shift F12**, **Shift Alt F12** | Definition, peek, references, all references |
 | **Ctrl Shift G** | The Event Graph from the event at the caret |
 | **Shift Alt F** | Format the file |

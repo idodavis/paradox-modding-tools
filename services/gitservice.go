@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"paradox-modding-tools/services/internal/lang/jomini"
 )
 
 // GitService is the Wails RPC shell for source control. Every method but Repositories takes a
@@ -73,6 +75,12 @@ type GitCommit struct {
 	Parents []string `json:"parents"`        // their hashes, the first parent first
 }
 
+// GitRemote is one of a repository's remotes: its name and its address.
+type GitRemote struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 // GitBranch is a local or remote branch, or a tag.
 type GitBranch struct {
 	Name     string `json:"name"` // main, origin/main, v1.0
@@ -90,21 +98,13 @@ type GitBranches struct {
 	Tags   []GitBranch `json:"tags"`
 }
 
-// GitText is a file's text at a revision or staged, its byte order mark apart; a binary file has none.
-type GitText struct {
-	Text   string `json:"text"`
-	BOM    bool   `json:"bom"`
-	Binary bool   `json:"binary,omitempty"` // git's own test: a NUL in its first 8000 bytes
-}
-
-var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
-
 // hideConsole keeps git's console window from showing; only Windows opens one (gitservice_windows.go sets it)
 var hideConsole = func(*exec.Cmd) {}
 
 // run runs git in a repository and tells the Git output the command and what it wrote to stderr, and when
-// logged (a command that changes something) what it printed. git never asks for a password here, and
-// writes its messages in English.
+// logged (a command that changes something) what it printed. git never asks for a password here, writes its
+// messages in English, and takes no optional lock: a status rewriting the index would wake the file watcher,
+// which reads the repository again, for ever.
 func (s *GitService) run(root, stdin string, logged bool, args ...string) (string, error) {
 	// git -C "" runs where PMT runs
 	if root == "" {
@@ -113,7 +113,7 @@ func (s *GitService) run(root, stdin string, logged bool, args ...string) (strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C", "GIT_OPTIONAL_LOCKS=0")
 	cmd.Stdin = strings.NewReader(stdin)
 	var out, errs bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errs
@@ -140,8 +140,8 @@ func (s *GitService) Available() bool {
 // Repositories returns each repository holding one of the workspace's mods, once, named after the
 // first mod in it; none when git is missing.
 func (s *GitService) Repositories(workspaceID string) ([]GitRepository, error) {
-	ws, _ := s.App.workspace(workspaceID)
-	if ws == nil || !s.Available() {
+	ws, _, err := s.App.workspace(workspaceID)
+	if err != nil || !s.Available() {
 		return nil, nil
 	}
 	var out []GitRepository
@@ -298,24 +298,21 @@ func (s *GitService) CommitFiles(root, hash string) ([]GitChange, error) {
 }
 
 // Show returns a file's text at a revision, or staged when rev is ""; empty when the file is not there.
-func (s *GitService) Show(root, rev, file string) (*GitText, error) {
+func (s *GitService) Show(root, rev, file string) (*FileText, error) {
 	rel, err := filepath.Rel(root, file)
 	if err != nil {
 		return nil, err
 	}
 	object := rev + ":" + filepath.ToSlash(rel)
 	if _, err := s.run(root, "", false, "cat-file", "-e", object); err != nil {
-		return &GitText{}, nil
+		return &FileText{}, nil
 	}
 	out, err := s.run(root, "", false, "show", object)
 	if err != nil {
 		return nil, err
 	}
-	if strings.IndexByte(out[:min(len(out), 8000)], 0) >= 0 {
-		return &GitText{Binary: true}, nil
-	}
-	text, bom := bytes.CutPrefix([]byte(out), utf8BOM)
-	return &GitText{Text: string(text), BOM: bom}, nil
+	text := textOf([]byte(out), file, rel)
+	return &text, nil
 }
 
 // Stage stages files, their removal included.
@@ -357,16 +354,17 @@ func (s *GitService) Discard(root string, files []string) error {
 
 // StageText makes text a file's staged copy, as one block of it is staged or unstaged: the frontend
 // sends the staged copy with the block applied. git's filters for the path apply (line endings).
-func (s *GitService) StageText(root, file, text string, bom bool) error {
+func (s *GitService) StageText(root, file, text string, bom, legacy bool) error {
 	rel, err := filepath.Rel(root, file)
 	if err != nil {
 		return err
 	}
 	rel = filepath.ToSlash(rel)
-	if bom {
-		text = string(utf8BOM) + text
+	data, err := jomini.Encode(text, bom, legacy)
+	if err != nil {
+		return err
 	}
-	hash, err := s.run(root, text, false, "hash-object", "-w", "--stdin", "--path="+rel)
+	hash, err := s.run(root, string(data), false, "hash-object", "-w", "--stdin", "--path="+rel)
 	if err != nil {
 		return err
 	}
@@ -480,6 +478,41 @@ func (s *GitService) Push(root string) error {
 		return errors.New("this repository has no remote to push to")
 	}
 	_, err = s.run(root, "", true, "push", "--set-upstream", remote, "HEAD")
+	return err
+}
+
+// Remotes returns the repository's remotes, each with the address it fetches from.
+func (s *GitService) Remotes(root string) ([]GitRemote, error) {
+	out, err := s.run(root, "", false, "remote", "-v")
+	if err != nil {
+		return nil, err
+	}
+	remotes := []GitRemote{}
+	// each line is "name<TAB>address (fetch)", and again for push
+	for line := range strings.Lines(out) {
+		name, rest, _ := strings.Cut(strings.TrimSpace(line), "\t")
+		if url, fetch := strings.CutSuffix(rest, " (fetch)"); fetch {
+			remotes = append(remotes, GitRemote{Name: name, URL: url})
+		}
+	}
+	return remotes, nil
+}
+
+// AddRemote adds a remote by its name and address: Publish asks for one where the repository has none.
+func (s *GitService) AddRemote(root, name, url string) error {
+	_, err := s.run(root, "", true, "remote", "add", "--", name, url)
+	return err
+}
+
+// SetRemoteURL changes the address a remote fetches from and pushes to.
+func (s *GitService) SetRemoteURL(root, name, url string) error {
+	_, err := s.run(root, "", true, "remote", "set-url", "--", name, url)
+	return err
+}
+
+// RemoveRemote removes a remote, with its remote branches and their settings.
+func (s *GitService) RemoveRemote(root, name string) error {
+	_, err := s.run(root, "", true, "remote", "remove", "--", name)
 	return err
 }
 

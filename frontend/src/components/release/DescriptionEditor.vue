@@ -37,7 +37,7 @@ import type { Listing, ListingSummary } from "@services/models";
 import { Convert, CreateDescriptionFile, LoadListing } from "@services/releaseservice";
 import { SetWorkspaceModDescription } from "@services/workspaceservice";
 import { pickFile } from "../../lib/nativeDialog";
-import { releaseKeys, workspaceKeys } from "../../queries";
+import { releaseKeys } from "../../queries";
 
 const { listing, summary } = defineProps<{ listing: Listing; summary: ListingSummary }>();
 const markdown = defineModel<string>("markdown", { required: true });
@@ -73,10 +73,8 @@ const { mutate: change, isLoading: changing } = useMutation({
     markdown.value = next?.readmeMd ?? "";
     bbcode.value = next?.readmeBbcode ?? "";
   },
-  onSettled: () => {
-    void queryCache.invalidateQueries({ key: releaseKeys.mod(listing.workspaceId, listing.modId) });
-    void queryCache.invalidateQueries({ key: workspaceKeys.all });
-  },
+  // a description file is the mod's, not config.json's: Publish reads it again itself
+  onSettled: () => queryCache.invalidateQueries({ key: releaseKeys.mod(listing.workspaceId, listing.modId) }),
 });
 function setSource(source: string, rel = ""): void {
   change(() => SetWorkspaceModDescription(listing.workspaceId, listing.modId, source, rel));

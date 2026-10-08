@@ -6,7 +6,7 @@
  */
 import { computed, useTemplateRef, watch } from "vue";
 import { useRoute } from "vue-router";
-import { useElementSize, useFullscreen, useLocalStorage } from "@vueuse/core";
+import { useFullscreen, useLocalStorage } from "@vueuse/core";
 import { useEventGraph } from "../composables/useEventGraph";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -22,14 +22,17 @@ const { params, hidden, selected, searchTerm, graph, error, detail, roots, searc
 const canvas = useTemplateRef("canvas");
 const page = useTemplateRef<HTMLElement>("page");
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(page);
-const { width: pageWidth } = useElementSize(page);
 
-// where the detail opens, and how big: beside the graph, up to half the page
+// where the detail opens: beside the graph (the graph keeping at least half the page) or below it; full screen keeps
+// it beside. The splitter keeps each one's size.
 const layout = useLocalStorage<"drawer" | "panel">("pmt.graph.layout", "drawer");
-const drawerWidth = useLocalStorage("pmt.graph.drawerWidth", 420);
-const panelHeight = useLocalStorage("pmt.graph.panelHeight", 320);
-// full screen keeps the detail beside the graph
 const below = computed(() => layout.value === "panel" && !isFullscreen.value);
+const panes = computed(() => [
+  { id: "graph", slot: "graph", order: 1, minSize: below.value ? undefined : 50 },
+  ...(selected.value && detail.value
+    ? [{ id: "detail", slot: "detail", order: 2, sizeUnit: "px" as const, ...(below.value ? { defaultSize: 320, minSize: 180, maxSize: 640 } : { defaultSize: 420, minSize: 320 }) }]
+    : []),
+]);
 
 const rootKind = computed(() => graph.value?.nodes?.find((node) => node.root)?.kind ?? "");
 // each kind and each origin, with how many of the graph's reach are of it (Go counts with no fan-out or node cap)
@@ -88,7 +91,14 @@ watch(() => workspaceId, () => setRoot(""));
       </template>
     </EventGraphToolbar>
     <UAlert v-if="error" color="error" variant="subtle" :description="error.message" class="m-2" />
-    <div class="flex min-h-0 flex-1" :class="below ? 'flex-col' : 'flex-row'">
+    <USplitter
+      :key="below ? 'below' : 'beside'"
+      :items="panes"
+      :orientation="below ? 'vertical' : 'horizontal'"
+      :auto-save-id="below ? 'pmt.graph.panel' : 'pmt.graph.drawer'"
+      class="min-h-0 flex-1"
+    >
+      <template #graph>
       <div class="relative min-h-0 min-w-0 flex-1">
         <GraphCanvas
           ref="canvas"
@@ -110,31 +120,23 @@ watch(() => workspaceId, () => setRoot(""));
           </p>
         </GraphCanvas>
       </div>
-      <template v-if="selected && detail">
-        <ResizeGrip v-if="below" v-model="panelHeight" axis="y" reverse :min="180" :max="640" :default-size="320" />
-        <ResizeGrip v-else v-model="drawerWidth" reverse :min="320" :max="Math.max(420, pageWidth / 2)" :default-size="420" />
+      </template>
+      <template #detail>
         <!-- a name nothing defines has its reason, not a definition, to show -->
-        <p
-          v-if="detail.reason"
-          class="grid shrink-0 place-items-center border-default p-6 text-13 text-dimmed"
-          :class="below ? 'border-t' : 'border-s'"
-          :style="below ? { height: `${panelHeight}px` } : { width: `${drawerWidth}px` }"
-        >
+        <p v-if="detail?.reason" class="grid min-h-0 min-w-0 flex-1 place-items-center border-default p-6 text-13 text-dimmed" :class="below ? 'border-t' : 'border-s'">
           {{ detail.reason }}
         </p>
         <EventDetail
-          v-else
-          :workspace-id="workspaceId"
+          v-else-if="detail"
           :detail="detail"
           :is-root="detail.name === params.root"
-          class="shrink-0 border-default"
+          class="min-h-0 min-w-0 flex-1 border-default"
           :class="below ? 'border-t' : 'border-s'"
-          :style="below ? { height: `${panelHeight}px` } : { width: `${drawerWidth}px` }"
           @close="selected = ''"
           @root="setRoot"
         />
       </template>
-    </div>
+    </USplitter>
     <StatusFacts>
       <span>
         {{ plural(shown.nodes.length, "node") }}{{ graph?.truncated ? `, stopped at the node limit at step ${graph.reached}` : "" }},

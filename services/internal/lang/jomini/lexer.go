@@ -1,14 +1,16 @@
 // lexer.go turns a file's bytes into tokens: the single-pass, allocation-light tokenizer for
-// Paradox script, and the decode, which strips a UTF-8 byte order mark, drops every CR, and reads
-// latin1 where the bytes are not valid UTF-8.
+// Paradox script, and the decode and encode between a file's bytes and its text (a UTF-8 byte order
+// mark apart, Windows-1252 where the bytes are not UTF-8).
 
 package jomini
 
 import (
 	"bytes"
-	"strings"
+	"fmt"
 	"sync"
 	"unicode/utf8"
+
+	"golang.org/x/text/encoding/charmap"
 )
 
 // tokenKind enumerates the lexical token classes of Paradox script.
@@ -278,27 +280,28 @@ func lineIndentsFrom(src string, toks []token) []int {
 // BOM is the UTF-8 byte-order mark; Paradox files are UTF-8, frequently with one.
 const BOM = "\xEF\xBB\xBF"
 
-// Normalize drops CR so Windows CRLF files share offsets with LF editor buffers.
-func Normalize(text string) string {
-	return strings.ReplaceAll(text, "\r", "")
-}
-
-// Decode turns raw file bytes into text for parsing: it strips a leading BOM (reported by hadBOM)
-// and every CR, and decodes bytes that are not valid UTF-8 (hand-edited Windows-1252) as latin1.
-func Decode(raw []byte) (text string, hadBOM bool) {
-	body, hadBOM := bytes.CutPrefix(raw, []byte(BOM))
+// Decode is a file's bytes as text, for the engine and the editor alike: a leading BOM taken off (bom), and bytes
+// that are not valid UTF-8 read as Windows-1252, the games' old encoding (legacy). Line ends are kept.
+func Decode(raw []byte) (text string, bom, legacy bool) {
+	body, bom := bytes.CutPrefix(raw, []byte(BOM))
 	if utf8.Valid(body) {
-		return Normalize(string(body)), hadBOM
+		return string(body), bom, false
 	}
-	return Normalize(latin1Decode(body)), hadBOM
+	text, _ = charmap.Windows1252.NewDecoder().String(string(body))
+	return text, bom, true
 }
 
-// latin1Decode maps each byte 1:1 to U+00xx. Used only when raw is not valid UTF-8.
-func latin1Decode(raw []byte) string {
-	var out strings.Builder
-	out.Grow(len(raw))
-	for _, char := range raw {
-		out.WriteRune(rune(char))
+// Encode is text as a file's bytes: the BOM when it had one, and Windows-1252 when it was read so; a character
+// Windows-1252 has no byte for is an error, never a silent change.
+func Encode(text string, bom, legacy bool) ([]byte, error) {
+	if legacy {
+		var err error
+		if text, err = charmap.Windows1252.NewEncoder().String(text); err != nil {
+			return nil, fmt.Errorf("the file is Windows-1252, which has no byte for a character in it: %w", err)
+		}
 	}
-	return out.String()
+	if bom {
+		text = BOM + text
+	}
+	return []byte(text), nil
 }

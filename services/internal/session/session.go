@@ -27,6 +27,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/source"
+	"paradox-modding-tools/services/internal/local"
 )
 
 // Calendar is the eras a mod writes its dates in. A mod never states them, so the user declares
@@ -219,7 +220,7 @@ func (sess *Session) context(def index.Def, ref index.Ref, parsed map[string]*jo
 	for _, field := range blockFields(jomini.ChildBlock(path[last])) {
 		if jomini.Statement(field) != leaf && field.Value != nil {
 			at := field.Value.NodeRange()
-			args = strings.TrimPrefix(args+", "+field.Key.Text+" = "+strings.Join(strings.Fields(result.Src[at.Start:at.End]), " "), ", ")
+			args = strings.TrimPrefix(args+", "+field.Key.Text+" = "+result.Flat(at), ", ")
 		}
 	}
 	return block, command, args
@@ -441,7 +442,7 @@ func (sess *Session) Located(path string) (source.File, *Mod, bool) {
 
 // Text is a file's text: the open buffer's, else the disk's.
 func (sess *Session) Text(path string) (string, error) {
-	if buffer := sess.buffers[strings.ToLower(filepath.Clean(path))]; buffer != nil {
+	if buffer := sess.buffers[local.PathKey(path)]; buffer != nil {
 		return buffer.text, nil
 	}
 	return source.File{Path: path}.Text()
@@ -449,7 +450,7 @@ func (sess *Session) Text(path string) (string, error) {
 
 // Parsed is the parse of a file's text: an open buffer's, made once per text, else the disk's.
 func (sess *Session) Parsed(path string) (*jomini.Result, string, error) {
-	if buffer := sess.buffers[strings.ToLower(filepath.Clean(path))]; buffer != nil {
+	if buffer := sess.buffers[local.PathKey(path)]; buffer != nil {
 		return &buffer.parsed, buffer.text, nil
 	}
 	text, err := sess.Text(path)
@@ -465,7 +466,7 @@ func (sess *Session) Parsed(path string) (*jomini.Result, string, error) {
 func (sess *Session) DidChange(path, text string) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	key := strings.ToLower(filepath.Clean(path))
+	key := local.PathKey(path)
 	opened := sess.buffers[key]
 	if opened == nil {
 		file, _, _ := sess.Located(path)
@@ -484,7 +485,7 @@ func (sess *Session) DidClose(path string) {
 	text, err := source.File{Path: filepath.Clean(path)}.Text()
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	key := strings.ToLower(filepath.Clean(path))
+	key := local.PathKey(path)
 	opened := sess.buffers[key]
 	if opened == nil {
 		return
@@ -504,13 +505,27 @@ func (sess *Session) DidSave(path string) {
 	}
 }
 
-// Changed is a file changed on disk outside the editor. An unreadable file keeps its records, since
-// on Windows a save often hits a sharing violation; only a file that is gone loses them.
+// Changed is a file changed on disk outside the editor: read again (outside the lock) only when no editor holds it
+// and the index reads its format; any other file is only listed or forgotten. An unreadable file keeps its records,
+// since on Windows a save often hits a sharing violation; only a file that is gone loses them.
 func (sess *Session) Changed(path string) {
-	text, err := source.File{Path: path}.Text()
+	key := local.PathKey(path)
+	sess.mu.RLock()
+	file, _, ok := sess.Located(path)
+	held := sess.buffers[key] != nil
+	sess.mu.RUnlock()
+	if !ok || held {
+		return
+	}
+	text, err := "", error(nil)
+	if indexable(file.Format) {
+		text, err = file.Text()
+	} else {
+		_, err = os.Stat(path)
+	}
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	if file, _, ok := sess.Located(path); ok && sess.buffers[strings.ToLower(filepath.Clean(path))] == nil {
+	if sess.buffers[key] == nil {
 		sess.changed(file, text, err)
 	}
 }
@@ -606,7 +621,7 @@ func (watcher *Watcher) Close() error {
 func (watcher *Watcher) addTree(root string, found func(path string)) {
 	seen := map[string]bool{}
 	warn(watcher.fsw.Add(root))
-	source.Walk(root, func(path string) {
+	_ = source.Walk(root, func(path string) error {
 		if dir := filepath.Dir(path); !seen[dir] {
 			seen[dir] = true
 			warn(watcher.fsw.Add(dir))
@@ -614,6 +629,7 @@ func (watcher *Watcher) addTree(root string, found func(path string)) {
 		if found != nil {
 			found(path)
 		}
+		return nil
 	})
 }
 
@@ -644,22 +660,20 @@ func (watcher *Watcher) loop() {
 	}
 }
 
-// handle reports a relevant event. A folder made or moved in is watched, and its files reported, as
-// no event tells of them; a path removed or renamed away may be a folder whose files went with it.
+// handle reports an event: a file of any kind (the explorer lists them all), and a folder made or moved in is
+// watched and each of its files reported, as no event tells of them; a path removed or renamed away may be a folder
+// whose files went with it.
 func (watcher *Watcher) handle(event fsnotify.Event) {
+	if event.Op == fsnotify.Chmod {
+		return // only its attributes: nothing the editor or the explorer shows
+	}
 	if event.Op&fsnotify.Create != 0 {
 		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-			watcher.addTree(event.Name, func(path string) {
-				if indexable(path) {
-					watcher.report(path)
-				}
-			})
+			watcher.addTree(event.Name, watcher.report)
 			return
 		}
 	}
-	if indexable(event.Name) || event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
-		watcher.report(event.Name)
-	}
+	watcher.report(event.Name)
 }
 
 // report tells onChange of name once it has been quiet for watchDebounce.
@@ -681,9 +695,9 @@ func (watcher *Watcher) report(name string) {
 	watcher.mu.Unlock()
 }
 
-// indexable reports whether a path is a file the index reads.
-func indexable(path string) bool {
-	switch source.Classify(path, filepath.ToSlash(path)) {
+// indexable is whether the index reads a file of this format (its text, for records).
+func indexable(format source.Format) bool {
+	switch format {
 	case source.Script, source.Loc, source.Table, source.List:
 		return true
 	}

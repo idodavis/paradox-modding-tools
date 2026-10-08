@@ -8,11 +8,11 @@ import { useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { Workspace } from "@services/models";
-import RemoveWorkspaceModal from "./RemoveWorkspaceModal.vue";
-import { languageQuery } from "../queries";
-import { useSettingsStore } from "../stores/settings";
-import { modColor } from "../stores/workspace";
-import { workspaceHomeRoute } from "../workspaceTools";
+import RemoveWorkspaceModal from "../ui/RemoveWorkspaceModal.vue";
+import { languageQuery } from "../../queries";
+import { useSettingsStore } from "../../stores/settings";
+import { modColor } from "../../stores/workspace";
+import { workspaceHomeRoute } from "../../workspaceTools";
 
 const { workspace, active = false } = defineProps<{ workspace: Workspace; active?: boolean }>();
 

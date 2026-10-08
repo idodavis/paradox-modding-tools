@@ -5,21 +5,20 @@
  */
 import { computed, shallowRef, useTemplateRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { createReusableTemplate } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import type { StepperItem } from "@nuxt/ui";
 import { AddWorkspaceMod, CreateWorkspace, SetWorkspaceLocLang } from "@services/workspaceservice";
-import CreateModForm from "../components/CreateModForm.vue";
+import CreateModForm from "../components/ui/CreateModForm.vue";
 import { pickDirectory } from "../lib/nativeDialog";
-import { installsQuery, workspaceKeys } from "../queries";
+import { installsQuery } from "../queries";
 import { useWorkspaceStore } from "../stores/workspace";
 import { LOC_LANGUAGES } from "../workspaceTools";
 
 const route = useRoute();
 const router = useRouter();
 const store = useWorkspaceStore();
-const queryCache = useQueryCache();
 const createModal = useOverlay().create(CreateModForm);
 const [DefineFooter, Footer] = createReusableTemplate<{ next: string; disabled: boolean }>();
 
@@ -74,7 +73,6 @@ const { mutate: create, isLoading: creating } = useMutation({
     return ws;
   },
   onSuccess: (ws) => void router.replace({ name: "workspace-ide", params: { id: ws.id } }),
-  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
 
 function goTo(at: string | number | undefined): void {

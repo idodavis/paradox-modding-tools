@@ -95,8 +95,8 @@ reads a workspace's mods through App to find their repositories. File, Search an
 work on paths the frontend hands them, Window on the app's windows.
 
 Go tells the frontend about state with events (`emit` in `sessionservice.go`): `lang:ready`,
-`lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `lang:calendar-changed`, `fs:changed`,
-`wiki:updated`, `search:hits` and `git:output`. After changing a service method or a payload type, run
+`lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `fs:changed`,
+`wiki:updated`, `wiki:progress`, `search:hits` and `git:output`. After changing a service method or a payload type, run
 `task common:generate:bindings`; never edit `frontend/bindings/` by hand.
 
 ## Opening a workspace

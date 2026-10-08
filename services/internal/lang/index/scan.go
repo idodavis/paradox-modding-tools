@@ -301,12 +301,13 @@ var devKey = sync.OnceValues(func() (string, error) {
 	sum, engine := sha256.New(), false
 	for repo := filepath.Dir(executable); repo != filepath.Dir(repo) && !engine; repo = filepath.Dir(repo) {
 		for _, dir := range []string{"game", "lang", "wiki"} {
-			source.Walk(filepath.Join(repo, "services", "internal", dir), func(path string) {
+			_ = source.Walk(filepath.Join(repo, "services", "internal", dir), func(path string) error {
 				if text, err := os.ReadFile(path); err == nil && !strings.HasSuffix(path, "_test.go") && !strings.HasSuffix(path, ".md") {
 					engine = true
 					fmt.Fprintf(sum, "%s|%d|", filepath.Base(path), len(text))
 					sum.Write(text)
 				}
+				return nil
 			})
 		}
 	}
@@ -367,7 +368,8 @@ func forget(prefix, keep string) (version string, err error) {
 
 // SaveInstall writes the install to its cache file whole, then deletes its install folder's older
 // cache files (Previous takes the first one's version) and every cache file no reader names
-// (neither install- nor wiki-), except a dot name: a write in flight.
+// (neither install- nor wiki-), and the temporary files a run that ended mid-write left (local.Leftover); a write in
+// flight keeps its own.
 func SaveInstall(req Request, install *Install) error {
 	path, ofFolder, err := cachePath(req)
 	if err != nil {
@@ -380,9 +382,9 @@ func SaveInstall(req Request, install *Install) error {
 	install.Previous, err = forget(ofFolder, path)
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasPrefix(name, "install-") && !strings.HasPrefix(name, "wiki-") && !strings.HasPrefix(name, ".") {
-			_ = os.Remove(filepath.Join(filepath.Dir(path), name))
+		name, full := entry.Name(), filepath.Join(filepath.Dir(path), entry.Name())
+		if !strings.HasPrefix(name, "install-") && !strings.HasPrefix(name, "wiki-") && (!strings.HasPrefix(name, ".") || local.Leftover(full)) {
+			_ = os.Remove(full)
 		}
 	}
 	return err

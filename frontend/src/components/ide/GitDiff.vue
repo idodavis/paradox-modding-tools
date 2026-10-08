@@ -7,11 +7,10 @@
  */
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { useLocalStorage } from "@vueuse/core";
 import { Stage, StageText, Unstage } from "@services/gitservice";
 import { openFile } from "../../ide/monacoEditor";
 import { useIdeRoots } from "../../composables/useIdeRoots";
-import { diffView, languageOf, monaco } from "../../lib/code";
+import { COMPARE_STYLES, compareStyle, diffView, languageOf, monaco } from "../../lib/code";
 import { capital } from "../../lib/format";
 import { gitTextQuery, textQuery } from "../../queries";
 import { useGitStore } from "../../stores/git";
@@ -45,18 +44,14 @@ const deleted = computed(() => diff.value === "changes" && !!working.value?.miss
 const unreadable = computed(() =>
   left.value?.binary || right.value?.binary
     ? "A binary file: it has no text to compare."
-    : diff.value === "changes" && working.value && !working.value.missing && working.value.text === undefined
+    : diff.value === "changes" && working.value && !working.value.missing && working.value.reject
       ? capital(working.value.reject)
       : "",
 );
 // only changes and staged changes are staged or unstaged by the block
 const blockwise = computed(() => (diff.value === "changes" || diff.value === "staged") && !deleted.value);
 
-const style = useLocalStorage<"split" | "unified">("pmt.compare.style", "split");
-const STYLES = [
-  { label: "Split", value: "split" },
-  { label: "Unified", value: "unified" },
-];
+const style = compareStyle;
 
 const host = useTemplateRef("host");
 const view = shallowRef<ReturnType<typeof diffView>>();
@@ -74,9 +69,9 @@ watch(
       view.value = diffView(el, settings.codeFont, style.value === "split", false);
       const live = diff.value === "changes" && !deleted.value;
       view.value.view.updateOptions({ readOnly: !live, renderMarginRevertIcon: live, glyphMargin: blockwise.value });
-      const make = (value: string) => monaco.editor.createModel(value, languageOf(file.value));
+      const make = (value: string) => monaco.editor.createModel(value, languageOf(file.value, before.format));
       const original = make(before.text);
-      const modified = live ? openFile(file.value, text, now?.bom ?? false) : make(text);
+      const modified = live ? openFile(file.value, { text, bom: now?.bom ?? false, legacy: now?.legacy }) : make(text);
       own = live ? [original] : [original, modified];
       view.value.view.setModel({ original, modified });
       view.value.view.onDidUpdateDiff(mark);
@@ -145,8 +140,8 @@ function onGutter(e: monaco.editor.IEditorMouseEvent): void {
     ? replaced(before, c.originalStartLineNumber, c.originalEndLineNumber, span(after, c.modifiedStartLineNumber, c.modifiedEndLineNumber))
     : replaced(after, c.modifiedStartLineNumber, c.modifiedEndLineNumber, span(before, c.originalStartLineNumber, c.originalEndLineNumber));
   const eol = (staging ? model.original : model.modified).getEOL();
-  const bom = (staging ? left.value?.bom : right.value?.bom) ?? false;
-  git.run((at) => StageText(at, file.value, lines.join(eol), bom));
+  const side = staging ? left.value : right.value;
+  git.run((at) => StageText(at, file.value, lines.join(eol), side?.bom ?? false, side?.legacy ?? false));
 }
 
 /** Discard the file's changes in its editor: its text becomes the staged copy's, unsaved and undoable. */
@@ -176,7 +171,7 @@ const SIDES = computed<Record<Diff, [string, string]>>(() => ({
       <span class="grow" />
       <UBadge :label="`+${counts.added}`" color="success" size="sm" />
       <UBadge :label="`-${counts.removed}`" color="error" size="sm" />
-      <UTabs :model-value="style" :items="STYLES" :content="false" size="xs" @update:model-value="style = $event === 'unified' ? 'unified' : 'split'" />
+      <UTabs :model-value="style" :items="COMPARE_STYLES" :content="false" size="xs" @update:model-value="style = $event === 'unified' ? 'unified' : 'split'" />
       <template v-if="diff === 'changes'">
         <UButton label="Stage file" icon="i-lucide-plus" variant="ghost" size="xs" @click="git.run((at) => Stage(at, [file]))" />
         <UButton v-if="!deleted" label="Discard" color="error" variant="ghost" size="xs" @click="discard" />

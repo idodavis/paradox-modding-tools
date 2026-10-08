@@ -522,7 +522,7 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 		} else if written := jomini.BlockOf(assignment.Value); written != nil {
 			when, trigger := read.trigger(written)
 			section.When = when
-			section.Value = oneLine(parsed.Src, slices.DeleteFunc(slices.Clone(written.Statements), func(statement jomini.Statement) bool { return statement == trigger }))
+			section.Value = oneLine(parsed, slices.DeleteFunc(slices.Clone(written.Statements), func(statement jomini.Statement) bool { return statement == trigger }))
 			section.Parts = read.parts(written)
 			if character := read.scalar(written, game.EventPortraits.Character); portrait && character != nil {
 				section.Portrait = character.Text
@@ -559,16 +559,15 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	return detail, nil
 }
 
-// oneLine is a block's statements on one line: each as written, an inner block as { … }. Comments are
-// outside the tree, so none is kept.
-func oneLine(src string, statements []jomini.Statement) string {
+// oneLine is a block's statements on one line: each as written, an inner block as { … }, comments left out.
+func oneLine(parsed *jomini.Result, statements []jomini.Statement) string {
 	parts := []string{"{"}
 	for _, statement := range statements {
 		span := statement.NodeRange()
 		if inner := jomini.ChildBlock(statement); inner != nil {
-			parts = append(parts, strings.Join(strings.Fields(src[span.Start:inner.OpenBrace]), " ")+" { … }")
+			parts = append(parts, parsed.Flat(jomini.Range{Start: span.Start, End: inner.OpenBrace})+" { … }")
 		} else {
-			parts = append(parts, strings.Join(strings.Fields(src[span.Start:span.End]), " "))
+			parts = append(parts, parsed.Flat(span))
 		}
 	}
 	return strings.Join(append(parts, "}"), " ")
@@ -594,23 +593,12 @@ type eventText struct {
 	parsed *jomini.Result
 }
 
-// flat is the source between two offsets on one line, its comments left out.
-func (read eventText) flat(start, end int) string {
-	text := []byte(read.parsed.Src[start:end])
-	for _, comment := range read.parsed.Comments {
-		for at := max(comment.Range.Start, start); at < min(comment.Range.End, end); at++ {
-			text[at-start] = ' '
-		}
-	}
-	return strings.Join(strings.Fields(string(text)), " ")
-}
-
 // trigger is a block's own trigger, its inside on one line, and the statement it is written in.
 func (read eventText) trigger(block *jomini.Block) (string, jomini.Statement) {
 	for _, statement := range block.Statements {
 		if assignment, ok := statement.(*jomini.Assignment); ok && assignment.Key.Text == game.DynamicDescription.Trigger {
 			if inner := jomini.BlockOf(assignment.Value); inner != nil {
-				return read.flat(inner.OpenBrace+1, inner.CloseBrace), statement
+				return read.parsed.Flat(jomini.Range{Start: inner.OpenBrace + 1, End: inner.CloseBrace}), statement
 			}
 		}
 	}

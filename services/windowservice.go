@@ -84,22 +84,10 @@ type WindowShow struct {
 // PanelResults is what the sidebar's Search results show: what was looked for, its rows so far, and whether it is
 // done or stopped at the cap.
 type PanelResults struct {
-	Title  string        `json:"title"`
-	Rows   []PanelResult `json:"rows"`
-	Done   bool          `json:"done"`
-	Capped bool          `json:"capped"`
-}
-
-// PanelResult is a row of the Search results, a text search's hit or a reference: its file by origin, its 0-based
-// line and its span in UTF-8 bytes, and the line's text.
-type PanelResult struct {
-	Path    string `json:"path"`
-	Rel     string `json:"rel"`
-	Origin  string `json:"origin"`
-	Line    int    `json:"line"`
-	Col     int    `json:"col"`
-	End     int    `json:"end"`
-	Preview string `json:"preview"`
+	Title  string          `json:"title"`
+	Rows   []TextSearchHit `json:"rows"`
+	Done   bool            `json:"done"`
+	Capped bool            `json:"capped"`
 }
 
 // WindowService opens the other windows.

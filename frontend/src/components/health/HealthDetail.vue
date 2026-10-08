@@ -10,7 +10,7 @@ import type { File as SourceFile } from "@services/internal/lang/source/models";
 import { sitesOf, typeOf, type Row } from "../../composables/useHealth";
 import { linesQuery, locReadersQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
-import CompareFiles from "../CompareFiles.vue";
+import CompareFiles from "../ui/CompareFiles.vue";
 import { list } from "../../lib/format";
 
 const { workspaceId, row, sources, live } = defineProps<{
@@ -131,7 +131,7 @@ function openCompare(): void {
             <OriginDot :color="store.originColor(site.at.origin)" small />
             <span class="font-medium">{{ names[i] }}</span>
             <span v-if="site.name" class="font-mono text-dimmed">{{ site.name }}</span>
-            <SourceLink :workspace-id="workspaceId" :at="site.at" :line="site.line" :file="replacedFile" />
+            <SourceLink :at="site.at" :line="site.line" :file="replacedFile" />
             <span class="grow" />
             <UBadge v-if="site.removed" :label="`Removed by ${row && 'to' in row ? store.originName(row.to) : ''}`" color="error" size="sm" />
             <UBadge v-else-if="part(i) === 'kept' && contest" label="Kept" color="success" size="sm" />
@@ -165,14 +165,13 @@ function openCompare(): void {
         </div>
         <p v-if="row && 'target' in row" class="flex min-w-0 items-center gap-1.5 text-12 text-muted">
           In {{ row.language }} it goes in
-          <SourceLink :workspace-id="workspaceId" :at="sources[row.target]" :line="0" file />
+          <SourceLink :at="sources[row.target]" :line="0" file />
         </p>
         <section v-if="readers?.length" class="flex flex-col items-start gap-1">
           <h4 class="text-12 font-semibold">Read by</h4>
           <SourceLink
             v-for="reader in readers"
             :key="`${reader.at.path}:${reader.line}:${reader.col}`"
-            :workspace-id="workspaceId"
             :at="reader.at"
             :line="reader.line"
           />

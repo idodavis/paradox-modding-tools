@@ -3,7 +3,7 @@
  * A theme drawn small: a fixed sample of the app in that theme's tokens (the Themes board's tile), its code
  * highlighted as the app highlights code.
  */
-import type { ThemeId } from "../stores/settings";
+import type { ThemeId } from "../../stores/settings";
 
 defineProps<{ theme: ThemeId }>();
 

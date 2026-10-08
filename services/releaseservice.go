@@ -116,6 +116,9 @@ type ListingChange struct {
 	Changed   bool     `json:"changed"`
 	Added     []string `json:"added,omitempty"`   // of a list field (the tags): what an upload adds
 	Removed   []string `json:"removed,omitempty"` // and what it takes away
+	// the lines a change adds and removes (steam.LineCounts)
+	LinesAdded   int `json:"linesAdded"`
+	LinesRemoved int `json:"linesRemoved"`
 }
 
 // snapshotPage is a snapshot's listing.json: the item's page beside the files Steam has.
@@ -152,11 +155,7 @@ func init() { application.RegisterEvent[steam.Progress](EventSteamProgress) }
 // SteamStatus says why Steam cannot take an upload for a workspace's game now (not running, no account that owns
 // the game signed in, offline); nil when it can. It starts Steam's API in the publish's child, as an upload does.
 func (r *ReleaseService) SteamStatus(workspaceID string) error {
-	ws, _ := r.App.workspace(workspaceID)
-	if ws == nil {
-		return fmt.Errorf("workspace not found")
-	}
-	library, appID, err := r.steamLibrary(ws)
+	library, appID, err := r.steamLibrary(workspaceID)
 	if err != nil {
 		return err
 	}
@@ -331,7 +330,7 @@ func (r *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult
 	if _, rel := description(mod); sent && !exists(filepath.Join(mod.Path, filepath.FromSlash(rel))) {
 		return nil, fmt.Errorf("the description file %s is missing: create it, or keep Steam's own text", rel)
 	}
-	library, appID, err := r.steamLibrary(ws)
+	library, appID, err := r.steamLibrary(ws.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -460,6 +459,7 @@ func (r *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamComp
 		row := &out.Listing[i]
 		if row.Changed = row.Changed || row.Steam != row.Workspace; row.Changed {
 			out.Changes++
+			row.LinesAdded, row.LinesRemoved = steam.LineCounts(row.Steam, row.Workspace)
 		}
 	}
 	return out, nil
@@ -517,7 +517,7 @@ func (r *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool)
 	if fields.RemoteFileID == "" {
 		return "", steam.Response{}, fmt.Errorf("%s is not on the Workshop", mod.Name)
 	}
-	library, appID, err := r.steamLibrary(ws)
+	library, appID, err := r.steamLibrary(ws.ID)
 	if err != nil {
 		return "", steam.Response{}, err
 	}
@@ -527,13 +527,17 @@ func (r *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool)
 
 // steamLibrary is where the workspace's install keeps Steam's library, which the publishing child
 // loads, and the game's app id.
-func (r *ReleaseService) steamLibrary(ws *Workspace) (string, uint32, error) {
+func (r *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error) {
+	ws, inst, err := r.App.workspace(workspaceID)
+	if err != nil {
+		return "", 0, err
+	}
 	info := game.Get(ws.GameID)
 	if info == nil || info.SteamAppID == 0 {
 		return "", 0, fmt.Errorf("no Steam App ID for game %s", ws.GameID)
 	}
 	installPath := ""
-	if _, inst := r.App.workspace(ws.ID); inst != nil {
+	if inst != nil {
 		installPath = inst.Path
 	}
 	library, err := steam.Library(info, installPath)

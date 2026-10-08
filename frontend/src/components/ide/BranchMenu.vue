@@ -3,12 +3,15 @@
  * The branch control and its menu (the IdeDiff board's): switch to a branch, or type a name to create one; create
  * one from another branch; check out a tag or commit; the local and remote branches; then fetch, pull, pull from,
  * push, merge into the current branch and delete. A "…" action lists what it takes in place of the branches.
+ * Remotes… opens the repository's remotes: each one's address, changed or removed, and one added.
  */
-import { computed, shallowRef } from "vue";
+import { computed, ref, shallowRef } from "vue";
+import { useQuery } from "@pinia/colada";
 import { formatTimeAgo } from "@vueuse/core";
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
-import { Checkout, DeleteBranch, Fetch, Merge, Pull, Push } from "@services/gitservice";
-import type { GitBranch } from "@services/models";
+import { AddRemote, Checkout, DeleteBranch, Fetch, Merge, Pull, Push, RemoveRemote, SetRemoteURL } from "@services/gitservice";
+import type { GitBranch, GitRemote } from "@services/models";
+import { gitRemotesQuery } from "../../queries";
 import { useGitStore } from "../../stores/git";
 
 const git = useGitStore();
@@ -131,6 +134,34 @@ const PLACEHOLDERS: Record<Mode, string> = {
   delete: "The branch to delete",
 };
 
+// the remotes, read while their dialog is open: the one whose address is being changed, and the one to add (its
+// name origin when left empty)
+const remoting = shallowRef(false);
+const { data: addresses } = useQuery(() => gitRemotesQuery({ root: git.root, enabled: remoting.value }));
+const change = ref({ name: "", url: "" });
+const added = ref({ name: "", url: "" });
+function showRemotes(): void {
+  open.value = false;
+  change.value = { name: "", url: "" };
+  added.value = { name: "", url: "" };
+  remoting.value = true;
+}
+function editURL(remote: GitRemote): void {
+  change.value = { name: remote.name, url: remote.url };
+}
+function saveURL(): void {
+  const { name, url } = change.value;
+  if (!url.trim()) return;
+  change.value = { name: "", url: "" };
+  git.run((root) => SetRemoteURL(root, name, url.trim()));
+}
+function addRemote(): void {
+  const { name, url } = added.value;
+  if (!url.trim()) return;
+  added.value = { name: "", url: "" };
+  git.run((root) => AddRemote(root, name.trim() || "origin", url.trim()));
+}
+
 // a branch with commits merged nowhere is deleted only when asked again
 function remove(name: string): void {
   open.value = false;
@@ -155,6 +186,7 @@ function remove(name: string): void {
       trailing-icon="i-lucide-chevron-down"
       color="neutral"
       variant="soft"
+      size="sm"
       class="min-w-0 grow"
       :ui="{ label: 'truncate font-mono', trailingIcon: 'ms-auto text-dimmed' }"
       :label="git.status?.branch || `detached at ${git.status?.commit ?? ''}`"
@@ -174,6 +206,7 @@ function remove(name: string): void {
             <UButton label="Pull from…" size="sm" @click="show('pull')" />
             <UButton label="Push" icon="i-lucide-arrow-up-from-line" size="sm" @click="act(Push)" />
             <UButton :label="`Merge into ${current}…`" size="sm" @click="show('merge')" />
+            <UButton label="Remotes…" icon="i-lucide-server" size="sm" @click="showRemotes" />
             <UButton label="Delete…" color="error" variant="ghost" size="sm" @click="show('delete')" />
           </div>
           <UButton v-else label="Back" icon="i-lucide-arrow-left" variant="ghost" size="sm" @click="show('main')" />
@@ -181,4 +214,42 @@ function remove(name: string): void {
       </UCommandPalette>
     </template>
   </UPopover>
+  <UModal
+    v-model:open="remoting"
+    title="Remotes"
+    description="Where this repository fetches from and pushes to."
+    :ui="{ content: 'h-90 sm:max-w-xl', body: 'overflow-y-auto' }"
+  >
+    <template #body>
+      <div class="flex flex-col gap-2 text-12">
+        <p v-if="!addresses?.length" class="text-dimmed">This repository has no remote yet.</p>
+        <form v-for="one in addresses" :key="one.name" class="flex h-7 items-center gap-1.5" @submit.prevent="saveURL">
+          <span class="w-16 shrink-0 truncate font-mono text-highlighted">{{ one.name }}</span>
+          <template v-if="change.name === one.name">
+            <UInput v-model="change.url" size="sm" autofocus class="min-w-0 grow font-mono" />
+            <UButton type="submit" label="Save" size="sm" :disabled="!change.url.trim()" />
+            <UButton label="Cancel" variant="ghost" size="sm" @click="change.name = ''" />
+          </template>
+          <template v-else>
+            <span class="min-w-0 grow truncate font-mono text-toned">{{ one.url }}</span>
+            <UButton icon="i-lucide-pencil" variant="ghost" size="xs" square :aria-label="`Change ${one.name}'s address`" @click="editURL(one)" />
+            <UButton
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              size="xs"
+              square
+              :aria-label="`Remove ${one.name}`"
+              @click="git.run((root) => RemoveRemote(root, one.name))"
+            />
+          </template>
+        </form>
+        <form class="flex items-center gap-1.5 border-t border-default pt-3" @submit.prevent="addRemote">
+          <UInput v-model="added.name" placeholder="origin" size="sm" class="w-16 shrink-0 font-mono" />
+          <UInput v-model="added.url" placeholder="https://github.com/you/my-mod.git" size="sm" class="min-w-0 grow font-mono" />
+          <UButton type="submit" label="Add" icon="i-lucide-plus" size="sm" :disabled="!added.url.trim()" />
+        </form>
+      </div>
+    </template>
+  </UModal>
 </template>

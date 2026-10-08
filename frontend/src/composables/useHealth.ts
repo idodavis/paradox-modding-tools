@@ -3,10 +3,10 @@
  * for it, each card's rows in it, and saving the order as the workspace's.
  */
 import { computed, onActivated, ref, toValue, watch, type MaybeRefOrGetter } from "vue";
-import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import type { Contest, Dangling, Dependency, Health, LocRow, Problem, Site } from "@services/models";
 import { ReorderWorkspaceMods } from "@services/workspaceservice";
-import { healthQuery, sessionKeys, workspaceKeys } from "../queries";
+import { healthQuery } from "../queries";
 import { useWorkspaceStore } from "../stores/workspace";
 
 /** A card: three the load order changes, three fixed in the files. */
@@ -107,7 +107,6 @@ function sameOrder(first: readonly string[], second: readonly string[]): boolean
 
 export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefOrGetter<boolean>) {
   const store = useWorkspaceStore();
-  const queryCache = useQueryCache();
 
   // the workspace's order as Go keeps it; a drag survives a refresh that leaves it as it was
   const persisted = computed(() => store.workspaceMods.map((mod) => mod.id));
@@ -134,10 +133,6 @@ export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefO
 
   const { mutate: save, isLoading: saving } = useMutation({
     mutation: () => ReorderWorkspaceMods(toValue(workspaceId), order.value),
-    onSettled: () => {
-      void queryCache.invalidateQueries({ key: workspaceKeys.all });
-      void queryCache.invalidateQueries({ key: sessionKeys.live(toValue(workspaceId)) });
-    },
   });
 
   return { order, dirty, health, error, isPending, save, saving };

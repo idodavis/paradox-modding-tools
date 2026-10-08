@@ -107,16 +107,12 @@ func main() {
 	}
 
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:   "main",
-		Title:  "Paradox Modding Tools",
-		Width:  1300,
-		Height: 900,
-		Mac: application.MacWindow{
-			InvisibleTitleBarHeight: 50,
-			Backdrop:                application.MacBackdropTranslucent,
-			TitleBar:                application.MacTitleBarHiddenInset,
-		},
-		URL: "/",
+		Name:       "main",
+		Title:      "Paradox Modding Tools",
+		Width:      1300,
+		Height:     900,
+		StartState: application.WindowStateMaximised,
+		URL:        "/",
 	})
 	// its close asks about every window's unsaved files first (H13), and the other windows close with it
 	services.HoldClose(mainWindow)

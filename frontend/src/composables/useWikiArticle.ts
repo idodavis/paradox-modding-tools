@@ -15,8 +15,8 @@ import { useEventListener } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
 import { drawCode } from "../lib/code";
 
-/** The page an article belongs to, for resolving its in-pane wiki links. */
-type WikiArticlePage = { title: string; url: string };
+/** A page the pane holds, which a wiki link to it opens there. */
+type WikiArticlePage = { title: string };
 
 /** A heading of the article, which a find jumps to before its first hit. */
 type Heading = { line: string; anchor: string };
@@ -116,10 +116,9 @@ export function useWikiArticle(opts: {
   function onWikiClick(ev: MouseEvent): void {
     const a = (ev.target as HTMLElement | null)?.closest("a");
     if (!a) return;
-    const href = a.getAttribute("href") || a.href;
-    if (!href) return;
+    if (!a.getAttribute("href")) return;
     ev.preventDefault();
-    const hit = resolveWikiLink(href, toValue(opts.pages), toValue(opts.currentIndex));
+    const hit = resolveWikiLink(a, toValue(opts.pages), toValue(opts.currentIndex));
     switch (hit.kind) {
       case "anchor":
         if (hit.anchor) jumpTo(hit.anchor);
@@ -203,53 +202,12 @@ function wrapHits(node: Text, needle: string): void {
   node.parentNode?.replaceChild(frag, node);
 }
 
-/** Resolve a wiki href against the pages currently loaded in the pane. */
-function resolveWikiLink(href: string, pages: WikiArticlePage[], currentIndex: number): WikiLinkHit {
-  const raw = href.trim();
-  if (!raw) return { kind: "external" };
-  const base = pages[currentIndex]?.url || "https://local.invalid/";
-  let url: URL;
-  try {
-    url = new URL(raw, base);
-  } catch {
-    return { kind: "external" };
-  }
-  const anchor = decodeURIComponent(url.hash.replace(/^#/, ""));
-  const pathTitle = wikiPathTitle(url);
-  const idx = pages.findIndex((p) => wikiSamePage(p, url, pathTitle));
-  if (idx >= 0) {
-    if (idx === currentIndex) return { kind: "anchor", anchor };
-    return { kind: "page", index: idx, anchor };
-  }
-  if (!pathTitle && anchor) return { kind: "anchor", anchor };
-  return { kind: "external" };
-}
-
-function wikiPathTitle(url: URL): string {
-  const parts = url.pathname.split("/").filter(Boolean);
-  const last = parts.at(-1) ?? "";
-  if (!last || last === "wiki" || last === "index.php") return "";
-  try {
-    return decodeURIComponent(last).replace(/_/g, " ");
-  } catch {
-    return last.replace(/_/g, " ");
-  }
-}
-
-function wikiSamePage(p: WikiArticlePage, href: URL, pathTitle: string): boolean {
-  const want = normWiki(pathTitle);
-  if (want && normWiki(p.title) === want) return true;
-  try {
-    return normWikiPath(new URL(p.url)) === normWikiPath(href);
-  } catch {
-    return false;
-  }
-}
-
-function normWiki(s: string): string {
-  return s.trim().toLowerCase().replace(/_/g, " ");
-}
-
-function normWikiPath(u: URL): string {
-  return u.pathname.replace(/\/+$/, "").toLowerCase();
+/** A link followed: an in-page #anchor, a page of this wiki the pane holds (Go names it, data-title), else the browser. */
+function resolveWikiLink(a: HTMLAnchorElement, pages: WikiArticlePage[], currentIndex: number): WikiLinkHit {
+  const anchor = decodeURIComponent(a.hash.replace(/^#/, ""));
+  if (a.getAttribute("href")?.startsWith("#")) return { kind: "anchor", anchor };
+  const title = a.dataset.title?.toLowerCase();
+  const index = title ? pages.findIndex((page) => page.title.toLowerCase() === title) : -1;
+  if (index < 0) return { kind: "external" };
+  return index === currentIndex ? { kind: "anchor", anchor } : { kind: "page", index, anchor };
 }

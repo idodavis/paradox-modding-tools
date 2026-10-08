@@ -10,14 +10,15 @@ export interface Converted {
 }
 
 /**
- * FileChange is one file an upload changes on Steam: A added, M modified, D deleted.
+ * FileChange is one file an upload changes on Steam: A added, M modified, D deleted, with the lines
+ * it adds and removes (LineCounts) unless it is binary.
  */
 export interface FileChange {
     "rel": string;
     "status": string;
 
     /**
-     * no line diff: a NUL in its first 512 bytes, as the editor's reads judge
+     * no line diff: a NUL in its first 512 bytes on either side, as the editor's reads judge
      */
     "binary": boolean;
 
@@ -30,6 +31,8 @@ export interface FileChange {
      * its path in the mod, which a removed file lacks
      */
     "workspace": string;
+    "linesAdded": number;
+    "linesRemoved": number;
 }
 
 /**

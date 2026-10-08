@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,14 +28,13 @@ import (
 type SearchService struct{}
 
 const (
-	searchMaxResults   = 10000
-	searchMaxFileBytes = 8 * 1024 * 1024
-	searchNulProbe     = 8 * 1024
+	searchMaxResults = 10000
 )
 
 // TextSearchFolder is one workspace folder plus optional glob filters.
 type TextSearchFolder struct {
 	Path     string   `json:"path"`
+	Origin   string   `json:"origin,omitempty"` // told back on its hits
 	Includes []string `json:"includes,omitempty"`
 	Excludes []string `json:"excludes,omitempty"`
 }
@@ -52,14 +50,15 @@ type TextSearchQuery struct {
 	Folders         []TextSearchFolder `json:"folders"`
 }
 
-// TextSearchHit is one match line mapped for monaco (0-based columns).
+// TextSearchHit is one match line, or a reference, as the Search results list it: its file by origin, its 0-based
+// line, its span in UTF-8 bytes as every backend place, and the line's text ("" for a reference: read when shown).
 type TextSearchHit struct {
 	Path    string `json:"path"`
 	Rel     string `json:"rel"`    // its path from the folder it was found in, slash separated
-	Folder  int    `json:"folder"` // that folder's index in the query
+	Origin  string `json:"origin"` // that folder's
 	Line    int    `json:"line"`
 	Col     int    `json:"col"`
-	EndCol  int    `json:"endCol"`
+	End     int    `json:"end"`
 	Preview string `json:"preview"`
 }
 
@@ -79,15 +78,17 @@ type TextSearchResult struct {
 // TextReplaceQuery is a Replace all from the IDE's search: the search, over the mods' folders only (the game's
 // files are never written), the text each match becomes, and the files the editor holds, which it changes itself.
 type TextReplaceQuery struct {
-	Search TextSearchQuery `json:"search"`
-	Text   string          `json:"text"`
-	Skip   []string        `json:"skip"`
+	Search TextSearchQuery   `json:"search"`
+	Text   string            `json:"text"`
+	Open   map[string]string `json:"open"` // the files open in the editor, by path: their text there, unsaved
 }
 
-// TextReplaceResult is how many matches a Replace all changed, in how many files.
+// TextReplaceResult is how many matches a Replace all changed, in how many files, and the new text of each open
+// file it changed, which the editor takes (unsaved).
 type TextReplaceResult struct {
-	Replaced int `json:"replaced"`
-	Files    int `json:"files"`
+	Replaced int               `json:"replaced"`
+	Files    int               `json:"files"`
+	Texts    map[string]string `json:"texts"`
 }
 
 // FileSearchQuery is a filename search across workspace folders.
@@ -199,12 +200,12 @@ func searchable(path string, buf []byte) []byte {
 	}
 	defer file.Close()
 	info, err := file.Stat()
-	if err != nil || info.Size() == 0 || info.Size() > searchMaxFileBytes {
+	if err != nil || info.Size() == 0 || info.Size() > maxOpenBytes {
 		return nil
 	}
 	// a NUL in the head marks the file binary and the rest is never read, which keeps a mod's meshes
 	// and images out of the search without listing extensions
-	size, probe := int(info.Size()), min(searchNulProbe, int(info.Size()))
+	size, probe := int(info.Size()), min(source.BinaryHead, int(info.Size()))
 	head := slices.Grow(buf[:0], probe)[:probe]
 	if _, err := io.ReadFull(file, head); err != nil || bytes.IndexByte(head, 0) >= 0 {
 		return nil
@@ -254,8 +255,8 @@ func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool, buf 
 			hits = append(hits, TextSearchHit{
 				Path:    path,
 				Line:    lineNo,
-				Col:     utf8.RuneCountInString(line[:loc[0]]),
-				EndCol:  utf8.RuneCountInString(line[:loc[1]]),
+				Col:     loc[0],
+				End:     loc[1],
 				Preview: line,
 			})
 		}
@@ -268,7 +269,7 @@ func grepFile(path string, re *regexp.Regexp, holds func(data []byte) bool, buf 
 // textSearchFolder greps the files under root, sending each one's hits as it is done, at most maxHits
 // in all, and says how many it sent and whether it stopped at the cap.
 func textSearchFolder(
-	ctx context.Context, root string, folder int, gs globSet, re *regexp.Regexp, holds func(data []byte) bool, maxHits int,
+	ctx context.Context, root, origin string, gs globSet, re *regexp.Regexp, holds func(data []byte) bool, maxHits int,
 	send func(hits []TextSearchHit),
 ) (found int, limitHit bool) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -288,7 +289,7 @@ func textSearchFolder(
 				path, rel := file[0], file[1]
 				fileHits := grepFile(path, re, holds, &buf)
 				for i := range fileHits {
-					fileHits[i].Rel, fileHits[i].Folder = filepath.ToSlash(rel), folder
+					fileHits[i].Rel, fileHits[i].Origin = filepath.ToSlash(rel), origin
 				}
 				// a file's hits are sent as it is done, as many as the cap leaves
 				mu.Lock()
@@ -325,19 +326,12 @@ func textSearchFolder(
 	return found, limitHit
 }
 
-// searchFiles visits each file under root that the folder's globs keep, never entering a folder
-// search skips; visit returning filepath.SkipAll stops it, and so does a cancelled ctx.
+// searchFiles visits each file under root that the folder's globs keep, by the engine's walk (linked folders
+// followed, .git never entered); visit returning filepath.SkipAll stops it, and so does a cancelled ctx.
 func searchFiles(ctx context.Context, root string, gs globSet, visit func(path, rel string) error) error {
-	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return nil
-		case ctx.Err() != nil:
-			return ctx.Err()
-		case entry.IsDir() && entry.Name() == ".git":
-			return filepath.SkipDir
-		case entry.IsDir():
-			return nil
+	return source.Walk(root, func(path string) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		if rel, err := filepath.Rel(root, path); err == nil && pathMatchesGlobs(rel, gs) {
 			return visit(path, rel)
@@ -375,7 +369,7 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 	send := func(hits []TextSearchHit) { emit(EventSearchHits, TextSearchHits{ID: query.ID, Hits: hits}) }
 	maxHits := capResults(query.MaxResults)
 	out := TextSearchResult{}
-	for i, folder := range query.Folders {
+	for _, folder := range query.Folders {
 		path := folderPath(folder)
 		if path == "" {
 			continue
@@ -384,7 +378,7 @@ func (s *SearchService) TextSearch(ctx context.Context, query TextSearchQuery) (
 			out.LimitHit = true
 			break
 		}
-		found, limit := textSearchFolder(ctx, path, i, folderGlobs(folder), re, holds, maxHits-out.Found, send)
+		found, limit := textSearchFolder(ctx, path, folder.Origin, folderGlobs(folder), re, holds, maxHits-out.Found, send)
 		out.Found += found
 		if limit {
 			out.LimitHit = true
@@ -404,49 +398,52 @@ func (s *SearchService) Replace(ctx context.Context, query TextReplaceQuery) (Te
 	if err != nil {
 		return TextReplaceResult{}, fmt.Errorf("invalid pattern: %w", err)
 	}
-	// a path as the session keys an open file
-	key := func(path string) string { return strings.ToLower(filepath.Clean(filepath.FromSlash(path))) }
-	skip := map[string]bool{}
-	for _, path := range query.Skip {
-		skip[key(path)] = true
+	// one replace, a line at a time as search matches (a line's CR kept), for the files on disk and the open ones
+	replace := func(text string) (string, int) {
+		lines, replaced := strings.Split(text, "\n"), 0
+		for i, line := range lines {
+			body, cr := strings.CutSuffix(line, "\r")
+			found := len(re.FindAllStringIndex(body, -1))
+			if found == 0 {
+				continue
+			}
+			replaced += found
+			if query.Search.IsRegexp {
+				body = re.ReplaceAllString(body, query.Text)
+			} else {
+				body = re.ReplaceAllLiteralString(body, query.Text)
+			}
+			if cr {
+				body += "\r"
+			}
+			lines[i] = body
+		}
+		return strings.Join(lines, "\n"), replaced
 	}
-	var out TextReplaceResult
+	open := map[string]string{}
+	for path := range query.Open {
+		open[local.PathKey(path)] = path
+	}
+	out := TextReplaceResult{Texts: map[string]string{}}
 	for _, folder := range query.Search.Folders {
 		root := folderPath(folder)
 		if root == "" {
 			continue
 		}
-		err := searchFiles(ctx, root, folderGlobs(folder), func(path, rel string) error {
-			if skip[key(path)] || source.Classify(path, filepath.ToSlash(rel)) == source.Image {
+		globs := folderGlobs(folder)
+		err := searchFiles(ctx, root, globs, func(path, rel string) error {
+			if _, held := open[local.PathKey(path)]; held || source.Classify(path, filepath.ToSlash(rel)) == source.Image {
 				return nil
 			}
 			data := searchable(path, nil)
 			if data == nil {
 				return nil
 			}
-			lines := strings.Split(string(data), "\n")
-			replaced := 0
-			for i, line := range lines {
-				body, cr := strings.CutSuffix(line, "\r")
-				found := len(re.FindAllStringIndex(body, -1))
-				if found == 0 {
-					continue
-				}
-				replaced += found
-				if query.Search.IsRegexp {
-					body = re.ReplaceAllString(body, query.Text)
-				} else {
-					body = re.ReplaceAllLiteralString(body, query.Text)
-				}
-				if cr {
-					body += "\r"
-				}
-				lines[i] = body
-			}
+			text, replaced := replace(string(data))
 			if replaced == 0 {
 				return nil
 			}
-			if err := local.WriteBytes(path, []byte(strings.Join(lines, "\n"))); err != nil {
+			if err := local.WriteBytes(path, []byte(text)); err != nil {
 				return err
 			}
 			out.Replaced += replaced
@@ -455,6 +452,15 @@ func (s *SearchService) Replace(ctx context.Context, query TextReplaceQuery) (Te
 		})
 		if err != nil {
 			return out, err
+		}
+		// the open files in this folder that its globs keep, replaced in their unsaved text
+		for key, path := range open {
+			if rel, err := filepath.Rel(root, path); err == nil && filepath.IsLocal(rel) && pathMatchesGlobs(rel, globs) {
+				if text, replaced := replace(query.Open[path]); replaced > 0 {
+					out.Texts[path], out.Replaced, out.Files = text, out.Replaced+replaced, out.Files+1
+				}
+				delete(open, key)
+			}
 		}
 	}
 	return out, nil

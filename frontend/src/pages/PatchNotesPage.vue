@@ -56,25 +56,32 @@ const { data: page } = useQuery(() => patchPageQuery({ gameId: gameId.value, ver
 const query = shallowRef("");
 const { tocActive, hits, hit, showHit, jumpTo, onWikiClick } = useWikiArticle({
   html: () => page.value?.html,
-  pages: () => (page.value ? [{ title: page.value.title, url: page.value.url }] : []),
+  pages: () => (page.value ? [{ title: page.value.title }] : []),
   currentIndex: 0,
   sections: () => page.value?.sections,
   query,
 });
 watch(selected, () => (tocActive.value = ""));
 
-const versionsWidth = useLocalStorage("pmt.patchNotes.versionsWidth", 248);
-const tocWidth = useLocalStorage("pmt.patchNotes.tocWidth", 208);
 const tocCollapsed = useLocalStorage("pmt.patchNotes.tocCollapsed", false);
+// the versions, the contents while shown, and the notes; the splitter keeps the sizes
+const panes = computed(() => [
+  { id: "versions", slot: "versions", order: 1, sizeUnit: "px" as const, defaultSize: 248, minSize: 180, maxSize: 400 },
+  ...(page.value?.sections?.length && !tocCollapsed.value
+    ? [{ id: "toc", slot: "toc", order: 2, sizeUnit: "px" as const, defaultSize: 208, minSize: 140, maxSize: 360 }]
+    : []),
+  { id: "notes", slot: "notes", order: 3 },
+]);
 </script>
 
 <template>
   <div class="flex h-full min-h-0 overflow-hidden">
     <p v-if="!pages.length" class="p-6 text-13 text-dimmed">
-      No patch notes yet. PMT reads them from the {{ game }} wiki when it starts, and they show here once read.
+      No patch notes yet. PMT reads them from the {{ game }} wiki when it starts, the status bar showing how far it is, and they show here once read.
     </p>
-    <template v-else>
-      <aside class="flex shrink-0 flex-col border-e border-default bg-muted" :style="{ width: `${versionsWidth}px` }">
+    <USplitter v-else :items="panes" auto-save-id="pmt.patchNotes" class="min-w-0 flex-1">
+      <template #versions>
+      <aside class="flex min-w-0 flex-1 flex-col border-e border-default bg-muted">
         <div class="flex h-11 shrink-0 items-center px-3 text-12 font-semibold">
           Versions<span class="grow" /><span class="text-11 font-normal text-dimmed">{{ pages.length }}</span>
         </div>
@@ -112,18 +119,12 @@ const tocCollapsed = useLocalStorage("pmt.patchNotes.tocCollapsed", false);
           <OriginDot color="var(--link)" small />Has a modding section
         </div>
       </aside>
-      <ResizeGrip v-model="versionsWidth" :min="180" :max="400" :default-size="248" />
-      <template v-if="page?.sections?.length">
-        <WikiToc
-          v-model:collapsed="tocCollapsed"
-          class="shrink-0 border-e border-default"
-          :style="tocCollapsed ? undefined : { width: `${tocWidth}px` }"
-          :sections="page.sections"
-          :active="tocActive"
-          @jump="jumpTo"
-        />
-        <ResizeGrip v-if="!tocCollapsed" v-model="tocWidth" :min="140" :max="360" :default-size="208" />
       </template>
+      <template #toc>
+        <WikiToc v-model:collapsed="tocCollapsed" class="min-w-0 flex-1 border-e border-default" :sections="page?.sections ?? []" :active="tocActive" @jump="jumpTo" />
+      </template>
+      <template #notes>
+      <WikiToc v-if="page?.sections?.length && tocCollapsed" v-model:collapsed="tocCollapsed" class="shrink-0 border-e border-default" :sections="page.sections" :active="tocActive" @jump="jumpTo" />
       <section class="flex min-w-0 grow flex-col bg-(--bg-0)">
         <div class="flex h-13 shrink-0 items-center gap-3 border-b border-default ps-8 pe-6">
           <h1 class="truncate text-16">{{ page?.title ?? selected }}</h1>
@@ -137,7 +138,8 @@ const tocCollapsed = useLocalStorage("pmt.patchNotes.tocCollapsed", false);
           <p v-else class="text-13 text-dimmed">No notes for this version.</p>
         </div>
       </section>
-    </template>
+      </template>
+    </USplitter>
     <StatusFacts>
       <span>Patch notes from the {{ game }} wiki</span>
       <span v-if="list?.fetched">Cached {{ cached }}</span>

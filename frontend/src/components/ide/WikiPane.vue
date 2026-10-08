@@ -13,7 +13,7 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import type { Page } from "@services/internal/wiki/models";
 import { useWikiArticle } from "../../composables/useWikiArticle";
 import { useWikiPrefs } from "../../composables/useWikiPrefs";
-import { guideQuery } from "../../queries";
+import { guidePageQuery, guideQuery } from "../../queries";
 import { useIdeStore } from "../../stores/ide";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -26,14 +26,20 @@ const store = useWorkspaceStore();
 const toast = useToast();
 const { toastAllowed } = useWikiPrefs();
 const tocCollapsed = useLocalStorage("pmt.wiki.tocCollapsed", false);
-const tocWidth = useLocalStorage("pmt.wiki.tocWidth", 136);
+// the contents while shown, and the article; the splitter keeps the sizes
+const panes = computed(() => [
+  ...(page.value?.sections?.length && !tocCollapsed.value
+    ? [{ id: "toc", slot: "toc", order: 1, sizeUnit: "px" as const, defaultSize: 136, minSize: 100, maxSize: 220 }]
+    : []),
+  { id: "article", slot: "article", order: 2 },
+]);
 
 // the file the pages are for: the open one, or while the pane does not follow, the one it had
 const path = shallowRef("");
 watch(
   () => ide.activeFile,
   (open) => {
-    if (open && (!path.value || settings.ideOn("ui.wiki.follow"))) path.value = open;
+    if (open && (!path.value || settings.on("ui.wiki.follow"))) path.value = open;
   },
   { immediate: true },
 );
@@ -41,6 +47,7 @@ const { data: guide, error, isPending } = useQuery(() =>
   guideQuery({ id: workspaceId, path: path.value, enabled: ide.wikiOpen || toastAllowed() }),
 );
 const pages = computed(() => guide.value?.pages ?? []);
+// a tab's page is read whole only when shown, and kept by its title for every file it serves
 
 const query = shallowRef("");
 const needle = computed(() => query.value.trim().toLowerCase());
@@ -49,6 +56,9 @@ const matches = (page: Page) =>
 const shown = computed(() => (needle.value ? pages.value.filter(matches) : pages.value));
 const title = shallowRef("");
 const page = computed(() => shown.value.find((p) => p.title === title.value) ?? shown.value[0]);
+const { data: full } = useQuery(() =>
+  guidePageQuery({ gameId: store.activeWorkspace?.gameId ?? "", title: page.value?.title ?? "", enabled: ide.wikiOpen }),
+);
 // a search opens the first page it finds
 watch(needle, () => (title.value = shown.value[0]?.title ?? title.value));
 
@@ -57,8 +67,8 @@ const more = computed<DropdownMenuItem[]>(() =>
   shown.value.map((p) => ({ label: p.title, icon: p.title === page.value?.title ? "i-lucide-check" : undefined, onSelect: () => (title.value = p.title) })),
 );
 
-const { tocActive, jumpTo, onWikiClick } = useWikiArticle({
-  html: () => page.value?.html,
+const { tocActive, hits, hit, showHit, jumpTo, onWikiClick } = useWikiArticle({
+  html: () => full.value?.html,
   sections: () => page.value?.sections,
   pages,
   currentIndex: () => Math.max(pages.value.indexOf(page.value as Page), 0),
@@ -112,28 +122,23 @@ watch(() => workspaceId, () => told.clear());
       </UDropdownMenu>
     </div>
     <div class="flex shrink-0 flex-col gap-2 px-3 pt-2.5 pb-2">
-      <UInput v-model="query" :placeholder="`Search the ${gameName} wiki`" icon="i-lucide-search" size="sm" />
+      <FindBox v-model="query" :hit="hit" :hits="hits" :placeholder="`Search the ${gameName} wiki`" @step="(by) => showHit(hit + by)" />
       <span v-if="guide?.kind" class="text-11 text-dimmed">Suggested for {{ guide.kind }} files</span>
     </div>
-    <div class="flex min-h-0 flex-1 border-t border-default">
-      <template v-if="page?.sections?.length">
-        <WikiToc
-          v-model:collapsed="tocCollapsed"
-          class="shrink-0 border-e border-default"
-          :style="tocCollapsed ? undefined : { width: `${tocWidth}px` }"
-          :sections="page.sections"
-          :active="tocActive"
-          @jump="jumpTo"
-        />
-        <ResizeGrip v-if="!tocCollapsed" v-model="tocWidth" :min="100" :max="220" :default-size="136" />
+    <USplitter :items="panes" auto-save-id="pmt.wiki" class="min-h-0 flex-1 border-t border-default">
+      <template #toc>
+        <WikiToc v-model:collapsed="tocCollapsed" class="min-w-0 flex-1 border-e border-default" :sections="page?.sections ?? []" :active="tocActive" @jump="jumpTo" />
       </template>
+      <template #article>
+      <WikiToc v-if="page?.sections?.length && tocCollapsed" v-model:collapsed="tocCollapsed" class="shrink-0 border-e border-default" :sections="page.sections" :active="tocActive" @jump="jumpTo" />
       <div class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3.5 py-3 wrap-break-word">
         <p v-if="isPending && path" class="text-12 text-dimmed">Reading the wiki…</p>
         <p v-else-if="error" class="text-12 text-error">{{ error.message }}</p>
-        <article v-else-if="page?.html" ref="article" class="art" @click="onWikiClick" v-html="page.html" />
+        <article v-else-if="full?.html" ref="article" class="art max-w-none" @click="onWikiClick" v-html="full.html" />
         <p v-else class="text-12 text-dimmed">{{ path ? "The wiki has no page for this file." : "Open a file to see its wiki pages." }}</p>
       </div>
-    </div>
+      </template>
+    </USplitter>
     <div v-if="page" class="flex shrink-0 items-center gap-1 border-t border-default px-3 py-2 text-11 text-dimmed">
       <UButton :label="`Open on ${host}`" trailing-icon="i-lucide-external-link" variant="link" size="xs" class="p-0" @click="Browser.OpenURL(page.url)" />
       <span class="grow" />

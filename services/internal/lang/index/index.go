@@ -13,6 +13,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/source"
+	"paradox-modding-tools/services/internal/local"
 )
 
 // Localization and File are the databases a loc key and a file path name; no definition carries
@@ -173,14 +174,14 @@ func (idx *Index) Ready() {
 func (idx *Index) Place() {
 	idx.order, idx.rels = make(map[string]int, len(idx.Files)), make(map[string]int, len(idx.Files))
 	for i, file := range idx.Files {
-		idx.order[strings.ToLower(file.Path)] = i
+		idx.order[local.PathKey(file.Path)] = i
 		idx.rels[strings.ToLower(file.Rel)] = i
 	}
 }
 
-// At is the file listed at a path, whatever the case it is spelled in (Windows spells one by any).
+// At is the file listed at a path, by its local.PathKey (on Windows, whatever the case it is spelled in).
 func (idx *Index) At(path string) (source.File, bool) {
-	pos, listed := idx.order[strings.ToLower(path)]
+	pos, listed := idx.order[local.PathKey(path)]
 	if !listed {
 		return source.File{}, false
 	}
@@ -201,10 +202,10 @@ func FileAt(indexes []*Index, rel string) (source.File, bool) {
 // Forget removes a deleted file, or every file under a deleted folder, from the index: their records
 // and their places in Files, so they no longer hide files at their Rels.
 func (idx *Index) Forget(path string) {
-	path = strings.ToLower(path)
+	path = local.PathKey(path)
 	listed := len(idx.Files)
 	idx.Files = slices.DeleteFunc(idx.Files, func(file source.File) bool {
-		at := strings.ToLower(file.Path)
+		at := local.PathKey(file.Path)
 		return at == path || strings.HasPrefix(at, path+string(filepath.Separator))
 	})
 	if len(idx.Files) != listed {
@@ -220,7 +221,7 @@ func (idx *Index) LocKeys() iter.Seq[string] {
 // Loaded is the file listed at a path of the indexes and whether the game loads it: it is hidden by
 // a later file at its Rel, in its index or a later one, or by a later index's Replaced.
 func Loaded(indexes []*Index, path string) (source.File, bool) {
-	path = strings.ToLower(path)
+	path = local.PathKey(path)
 	for rank, idx := range indexes {
 		pos, listed := idx.order[path]
 		if !listed {

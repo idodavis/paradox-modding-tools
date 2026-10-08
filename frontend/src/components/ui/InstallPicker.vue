@@ -4,15 +4,14 @@
  * adding another, found on this computer or browsed to. The wizard and Settings › Game install use it.
  */
 import { computed, shallowRef } from "vue";
-import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { AddGameInstall, DeleteGameInstall, UpdateGameInstall } from "@services/workspaceservice";
-import { pickDirectory } from "../lib/nativeDialog";
-import { foundInstallsQuery, installKeys, installsQuery } from "../queries";
+import { pickDirectory } from "../../lib/nativeDialog";
+import { foundInstallsQuery, installsQuery } from "../../queries";
 
 const selected = defineModel<string>({ required: true });
 const { gameId } = defineProps<{ gameId: string }>();
 
-const queryCache = useQueryCache();
 const { data: installs } = useQuery(() => installsQuery(gameId));
 const { data: found } = useQuery(() => foundInstallsQuery(gameId));
 const path = shallowRef("");
@@ -36,12 +35,10 @@ const { mutate: add, isLoading: adding } = useMutation({
     path.value = "";
     name.value = "";
   },
-  onSettled: () => queryCache.invalidateQueries({ key: installKeys.game(gameId) }),
 });
 
 const { mutate: move } = useMutation({
   mutation: ({ id, path }: { id: string; path: string }) => UpdateGameInstall(id, path),
-  onSettled: () => queryCache.invalidateQueries({ key: installKeys.game(gameId) }),
 });
 
 async function changeFolder(id: string): Promise<void> {
@@ -55,7 +52,6 @@ const { mutate: remove } = useMutation({
   onSuccess: (_, id) => {
     if (selected.value === id) selected.value = "";
   },
-  onSettled: () => queryCache.invalidateQueries({ key: installKeys.game(gameId) }),
 });
 </script>
 

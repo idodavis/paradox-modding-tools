@@ -5,8 +5,7 @@
  */
 import { computed, shallowRef, useTemplateRef } from "vue";
 import { useRouter } from "vue-router";
-import { useQuery, useQueryCache } from "@pinia/colada";
-import { useLocalStorage } from "@vueuse/core";
+import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import type { TabsItem } from "@nuxt/ui";
 import type { Workspace, WorkspaceMod } from "@services/models";
@@ -17,15 +16,14 @@ import {
   SetWorkspaceModPath,
   UpdateWorkspace,
 } from "@services/workspaceservice";
-import CreateModForm from "../components/CreateModForm.vue";
-import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
-import ScriptDocsGuide from "../components/ScriptDocsGuide.vue";
+import CreateModForm from "../components/ui/CreateModForm.vue";
+import RemoveWorkspaceModal from "../components/ui/RemoveWorkspaceModal.vue";
+import ScriptDocsGuide from "../components/ui/ScriptDocsGuide.vue";
 import { dumpsState } from "../composables/useLanguageHealth";
 import { useLiveEnabled } from "../composables/useLiveEnabled";
-import { useWorkspacePrefs, useWorkspaceSave } from "../composables/useWorkspaceSave";
 import { pickDirectory } from "../lib/nativeDialog";
 import { languageQuery, workspacesQuery } from "../queries";
-import { modColor, useWorkspaceStore } from "../stores/workspace";
+import { modColor, updatePrefs, useWorkspaceStore } from "../stores/workspace";
 import {
   LOC_LANGUAGES,
   SETTINGS,
@@ -49,8 +47,8 @@ const workspace = computed(() => workspaces.value?.find((ws) => ws.id === id));
 const game = computed(() => store.game(workspace.value?.gameId ?? ""));
 const { data: language } = useQuery(() => languageQuery(id));
 const live = useLiveEnabled(() => id);
-const { mutate: savePrefs } = useWorkspacePrefs();
-const { mutate: run } = useWorkspaceSave(() => id);
+const { mutate: savePrefs } = useMutation({ mutation: updatePrefs });
+const { mutate: run } = useMutation({ mutation: (save: () => Promise<unknown>) => save() });
 const PAGE_ITEMS: { label: string; value: string }[] = WORKSPACE_TOOLS.map((tool) => ({ label: tool.label, value: tool.name }));
 
 // the sections holding a setting that matches, by its name or the words it goes by
@@ -96,19 +94,19 @@ async function removeWorkspace(): Promise<void> {
 }
 
 function setLanguage(lang: string): void {
-  run({ save: () => SetWorkspaceLocLang(id, lang), rebuilds: true });
+  run(() => SetWorkspaceLocLang(id, lang));
 }
 
 function rename(name: string): void {
   const ws = workspace.value;
-  if (ws && name.trim()) run({ save: () => UpdateWorkspace(ws.id, name.trim(), ws.installId) });
+  if (ws && name.trim()) run(() => UpdateWorkspace(ws.id, name.trim(), ws.installId));
 }
 
 const installId = computed({
   get: () => workspace.value?.installId ?? "",
   set: (next: string) => {
     const ws = workspace.value;
-    if (ws && next && next !== ws.installId) run({ save: () => UpdateWorkspace(ws.id, ws.name, next), rebuilds: true });
+    if (ws && next && next !== ws.installId) run(() => UpdateWorkspace(ws.id, ws.name, next));
   },
 });
 
@@ -122,7 +120,8 @@ const mods = computed<WorkspaceMod[]>({
 const chosen = shallowRef("");
 const selected = computed(() => mods.value.find((mod) => mod.id === chosen.value) ?? (chosen.value === "game" ? undefined : mods.value[0]));
 const gameSelected = computed(() => chosen.value === "game" || !mods.value.length);
-const listWidth = useLocalStorage("pmt.settings.modListWidth", 420);
+// the load order and the mod picked; the splitter keeps the list's width
+const PANES = [{ slot: "list", sizeUnit: "px" as const, defaultSize: 420, minSize: 320, maxSize: 640 }, { slot: "card" }];
 const list = useTemplateRef("list");
 useSortable(list, mods, { handle: ".mod-handle", animation: 150, watchElement: true });
 
@@ -130,18 +129,18 @@ function reorder(next: WorkspaceMod[]): void {
   queryCache.setQueryData(workspacesQuery.key, (all) =>
     (all ?? []).map((ws) => (ws.id === id ? { ...ws, mods: next.map((mod, i) => ({ ...mod, sortOrder: i })) } : ws)),
   );
-  run({ save: () => ReorderWorkspaceMods(id, next.map((mod) => mod.id)), rebuilds: true });
+  run(() => ReorderWorkspaceMods(id, next.map((mod) => mod.id)));
 }
 
 async function locate(mod: WorkspaceMod): Promise<void> {
   const path = await pickDirectory(`Where ${mod.name} is now`);
-  if (path) run({ save: () => SetWorkspaceModPath(id, mod.id, path), rebuilds: true });
+  if (path) run(() => SetWorkspaceModPath(id, mod.id, path));
 }
 
 async function addExisting(): Promise<void> {
   const path = await pickDirectory("A mod folder");
   // Go names it from its descriptor, and finds its thumbnail
-  if (path) run({ save: () => AddWorkspaceMod(id, path), rebuilds: true });
+  if (path) run(() => AddWorkspaceMod(id, path));
 }
 
 function createNew(): void {
@@ -222,24 +221,12 @@ function rowClass(on: boolean): string[] {
           />
         </SettingSection>
         <SettingSection title="IDE" hint="How the IDE opens this workspace.">
-          <div class="flex items-center gap-2.5">
-            <USwitch
-              id="reopen-tabs"
-              :model-value="!workspace.resetIdeOnOpen"
-              @update:model-value="savePrefs({ ws: workspace, resetIdeOnOpen: !$event })"
-            />
-            <label for="reopen-tabs" class="text-13 font-medium whitespace-nowrap">Reopen the IDE's tabs</label>
-            <span class="truncate text-12 text-dimmed">The files that were open when you left or closed PMT.</span>
-          </div>
-          <div class="flex items-center gap-2.5">
-            <USwitch
-              id="hide-binaries"
-              :model-value="workspace.hideExplorerBinaries"
-              @update:model-value="savePrefs({ ws: workspace, hideExplorerBinaries: $event })"
-            />
-            <label for="hide-binaries" class="text-13 font-medium whitespace-nowrap">Hide binaries in the explorer</label>
-            <span class="truncate text-12 text-dimmed">dll, exe, pdb and the like. Images, sounds, meshes and .metadata stay.</span>
-          </div>
+          <SettingRow label="Reopen the IDE's tabs" hint="The files that were open when you left or closed PMT.">
+            <USwitch :model-value="!workspace.resetIdeOnOpen" @update:model-value="savePrefs({ ws: workspace, resetIdeOnOpen: !$event })" />
+          </SettingRow>
+          <SettingRow label="Hide binaries in the explorer" hint="dll, exe, pdb and the like. Images, sounds, meshes and .metadata stay.">
+            <USwitch :model-value="workspace.hideExplorerBinaries" @update:model-value="savePrefs({ ws: workspace, hideExplorerBinaries: $event })" />
+          </SettingRow>
         </SettingSection>
       </div>
     </template>
@@ -288,8 +275,9 @@ function rowClass(on: boolean): string[] {
           <UButton label="Add an existing mod" icon="i-lucide-plus" size="md" @click="addExisting" />
         </div>
 
-        <div class="flex min-h-0 grow">
-          <div class="flex shrink-0 flex-col overflow-hidden rounded-lg border border-default bg-muted" :style="{ width: `${listWidth}px` }">
+        <USplitter :items="PANES" auto-save-id="pmt.settings.mods" class="min-h-0 grow" :ui="{ handle: 'mx-2.5' }">
+          <template #list>
+          <div class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">
             <div class="flex h-10 shrink-0 items-center border-b border-default px-3.5">
               <span class="text-13 font-semibold">Load order</span>
               <span class="grow" />
@@ -322,7 +310,7 @@ function rowClass(on: boolean): string[] {
                   <span class="flex min-w-0 grow flex-col">
                     <span class="truncate text-13 font-medium">{{ mod.name }}</span>
                     <span v-if="mod.isBroken" class="truncate text-11 text-error">Folder not found</span>
-                    <SteamState v-else :workspace-id="id" :mod-id="mod.id" brief />
+                    <SteamState v-else :workspace-id="id" :mod-id="mod.id" />
                   </span>
                   <UButton v-if="mod.isBroken" label="Locate" @click.stop="locate(mod)" />
                   <UIcon v-else name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed" />
@@ -335,8 +323,8 @@ function rowClass(on: boolean): string[] {
             </p>
           </div>
 
-          <ResizeGrip v-model="listWidth" class="mx-2.5" :min="320" :max="640" :default-size="420" />
-
+          </template>
+          <template #card>
           <WorkspaceModCard
             v-if="selected && !gameSelected"
             :key="selected.id"
@@ -360,7 +348,8 @@ function rowClass(on: boolean): string[] {
               />
             </FieldGroup>
           </div>
-        </div>
+          </template>
+        </USplitter>
       </div>
     </template>
 

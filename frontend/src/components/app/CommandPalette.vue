@@ -22,21 +22,20 @@ export function openPalette(prefix: "> " | "" = "> "): void {
  */
 import { computed, watch } from "vue";
 import { useRouter, type RouteLocationRaw } from "vue-router";
-import { useQuery } from "@pinia/colada";
+import { useMutation, useQuery } from "@pinia/colada";
 import { useFuse } from "@vueuse/integrations/useFuse";
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { GetEventDetail } from "@services/eventgraphservice";
 import { Hover } from "@services/ideservice";
-import { SWITCHES, ideSettingsOpen } from "./ide/IdeSettingsCard.vue";
+import { SWITCHES, ideSettingsOpen } from "../ide/IdeSettingsCard.vue";
 import UnsavedChangesModal from "./UnsavedChangesModal.vue";
-import { useCompare } from "../composables/useCompare";
-import { useIdeRoots } from "../composables/useIdeRoots";
-import { useWorkspacePrefs } from "../composables/useWorkspaceSave";
-import { codesQuery, filesQuery, locQuery, rootsQuery, symbolsQuery, workspacesQuery } from "../queries";
-import { useGitStore } from "../stores/git";
-import { diffTab, useIdeStore } from "../stores/ide";
-import { useSettingsStore } from "../stores/settings";
-import { useWorkspaceStore } from "../stores/workspace";
+import { useCompare } from "../../composables/useCompare";
+import { useIdeRoots } from "../../composables/useIdeRoots";
+import { codesQuery, filesQuery, locQuery, rootsQuery, symbolsQuery, workspacesQuery } from "../../queries";
+import { useGitStore } from "../../stores/git";
+import { diffTab, useIdeStore } from "../../stores/ide";
+import { useSettingsStore } from "../../stores/settings";
+import { updatePrefs, useWorkspaceStore } from "../../stores/workspace";
 import {
   PAGES,
   SETTINGS,
@@ -44,13 +43,13 @@ import {
   WORKSPACE_TOOLS,
   workspaceHomeRoute,
   type SettingSwitch,
-} from "../workspaceTools";
+} from "../../workspaceTools";
 
 
 const router = useRouter();
 const store = useWorkspaceStore();
 const settings = useSettingsStore();
-const { mutate: savePrefs } = useWorkspacePrefs();
+const { mutate: savePrefs } = useMutation({ mutation: updatePrefs });
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: codes } = useQuery(codesQuery);
 const ide = useIdeStore();
@@ -76,12 +75,12 @@ function go(to: RouteLocationRaw): void {
 
 /** Show a place of a file in the IDE (a 0-based line and UTF-8 byte column). */
 function show(path: string, line = 0, col = 0): void {
-  go({ name: "workspace-ide", params: { id: store.activeWorkspaceId } });
+  paletteOpen.value = false;
   ide.open(path, { line, col });
 }
 
 /** The IDE's editors, from their module, which loads with the IDE page. */
-const editors = () => import("../ide/monacoEditor");
+const editors = () => import("../../ide/monacoEditor");
 
 async function graphAtCaret(): Promise<void> {
   const card = await Hover(store.activeWorkspaceId, ide.activeFile, ide.caret?.line ?? 0, ide.caret?.col ?? 0).catch(() => null);
@@ -93,7 +92,7 @@ function flip(id: SettingSwitch): { on: boolean; set: (on: boolean) => void } | 
   const ws = store.activeWorkspace;
   switch (id) {
     case "matchGame":
-      return { on: settings.matchGameTheme, set: (on) => void settings.setMatchGame(on) };
+      return { on: settings.matchGameTheme, set: (on) => void settings.setOn("ui.matchGameTheme", on) };
     case "followSystem":
       return { on: settings.appearance === "system", set: (on) => void settings.followSystem(on) };
     case "reopenTabs":
@@ -151,10 +150,10 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
     ),
     ...Object.values(SWITCHES)
       .flat()
-      .map((row) => switchItem(row.label, row.key.startsWith("ui.wiki") ? "Wiki" : "IDE", settings.ideOn(row.key), (on) => void settings.setIde(row.key, on), row.hint)),
+      .map((row) => switchItem(row.label, row.key.startsWith("ui.wiki") ? "Wiki" : "IDE", settings.on(row.key), (on) => void settings.setOn(row.key, on), row.hint)),
     ...(codes.value ?? []).map((check) =>
-      switchItem(`Check: ${check.summary}`, "IDE", settings.checkOn(check.code, check.default), (on) =>
-        void settings.setCheck(check.code, on), check.code),
+      switchItem(`Check: ${check.summary}`, "IDE", settings.on(`ide.diag.${check.code}`, check.default), (on) =>
+        void settings.setOn(`ide.diag.${check.code}`, on), check.code),
     ),
   ];
   // the IDE's commands, on the file it shows

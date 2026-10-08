@@ -13,7 +13,21 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
+	"sync"
 )
+
+// PathKey is the key a file on this machine is known by: its path cleaned, and on Windows, where the file system
+// ignores case, lower-cased; elsewhere two paths that differ only by case are two files.
+func PathKey(path string) string {
+	path = filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(path)
+	}
+	return path
+}
 
 // AppDir is the app's own folder under the user's config directory, made if missing.
 func AppDir() (string, error) {
@@ -35,6 +49,20 @@ func CacheDir() (string, error) {
 	return dir, os.MkdirAll(dir, 0o755)
 }
 
+// writing is the temporary files a Write of this process is filling; tempPattern matches the names CreateTemp gives
+// them.
+var (
+	writing     sync.Map
+	tempPattern = regexp.MustCompile(`^\..+\.pmt\d+$`)
+)
+
+// Leftover is whether path is a Write's temporary file that no Write of this process is filling: one a run that
+// ended mid-write left behind, which nothing will finish or remove.
+func Leftover(path string) bool {
+	_, held := writing.Load(path)
+	return tempPattern.MatchString(filepath.Base(path)) && !held
+}
+
 // Write builds path's new contents through fill in a temporary file beside it, then puts that file
 // in its place. A reader never sees half a file; a failure leaves either the current file or, once
 // that is removed, the new contents in the temporary file.
@@ -50,6 +78,8 @@ func Write(path string, fill func(io.Writer) error) error {
 		return err
 	}
 	tempName := temp.Name()
+	writing.Store(tempName, true)
+	defer writing.Delete(tempName)
 	defer func() { _ = os.Remove(tempName) }() // a no-op once the rename has succeeded
 
 	if err := fill(temp); err != nil {

@@ -2,7 +2,7 @@
 /**
  * A path chosen with the system's picker: the path, read only, and Browse.
  */
-import { pickDirectory, pickFile } from "../lib/nativeDialog";
+import { pickDirectory, pickFile } from "../../lib/nativeDialog";
 
 const path = defineModel<string>({ required: true });
 const { dialogTitle, mode, placeholder = "", fileFilter = "" } = defineProps<{

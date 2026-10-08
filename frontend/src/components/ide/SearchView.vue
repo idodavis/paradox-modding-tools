@@ -12,15 +12,15 @@ import { watchDebounced } from "@vueuse/core";
 import { storeToRefs } from "pinia";
 import { useQuery } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
-import type { IdeRoot } from "@services/models";
+import type { IdeRoot, TextSearchHit } from "@services/models";
 import { Replace, TextSearch } from "@services/searchservice";
-import { pathKey } from "../../composables/useIdeRoots";
-import { editorRange, toBytes } from "../../ide/editorCore";
-import { editText } from "../../ide/monacoEditor";
+import { editorRange } from "../../ide/editorCore";
+import { editText, openText } from "../../ide/monacoEditor";
 import { fileName, plural } from "../../lib/format";
 import { linesQuery } from "../../queries";
-import { useIdeStore, type Result } from "../../stores/ide";
+import { useIdeStore } from "../../stores/ide";
 import { useWorkspaceStore } from "../../stores/workspace";
+import ConfirmModal from "../ui/ConfirmModal.vue";
 
 const { roots, hideBinaries } = defineProps<{ roots: IdeRoot[]; hideBinaries: boolean }>();
 
@@ -70,15 +70,15 @@ function query(id: string, searched: IdeRoot[]) {
     maxResults: 0,
     folders: searched.map((root) => ({
       path: root.path,
+      origin: root.origin,
       includes: globs(include.value),
       excludes: [...globs(exclude.value), ...(hideBinaries ? BINARY_GLOBS : [])],
     })),
   };
 }
 
-// the search shown, its folders' origins (a hit names its folder by index), and its call
+// the search shown, and its call
 let searching = "";
-let origins: string[] = [];
 let running: ReturnType<typeof TextSearch> | undefined;
 async function run(): Promise<void> {
   running?.cancel();
@@ -89,7 +89,6 @@ async function run(): Promise<void> {
   searching = id;
   results.value = { title: `“${pattern.value}”`, rows: [], done: false, capped: false };
   running = TextSearch(query(id, searched));
-  origins = searched.map((root) => root.origin ?? "");
   const end = await running.catch((error: unknown) => {
     if (searching === id) toast.add({ title: "The search could not run", description: String(error), color: "error" });
     return null;
@@ -97,23 +96,12 @@ async function run(): Promise<void> {
   if (searching === id && results.value) results.value = { ...results.value, done: true, capped: !!end?.limitHit };
 }
 
-// each file's hits as they come; a hit's columns are characters (code points), the IDE's places bytes
+// each file's hits as they come, columns in bytes as the IDE's places are
 let frame = 0;
 const stop = Events.On("search:hits", ({ data }) => {
   const shown = results.value;
   if (data.id !== searching || !shown) return;
-  const bytes = (text: string, chars: number) => toBytes(text, [...text].slice(0, chars).join("").length);
-  for (const hit of data.hits ?? []) {
-    shown.rows.push({
-      path: hit.path,
-      rel: hit.rel,
-      origin: origins[hit.folder] ?? "",
-      line: hit.line,
-      col: bytes(hit.preview, hit.col),
-      end: bytes(hit.preview, hit.endCol),
-      preview: hit.preview,
-    });
-  }
+  (shown.rows ??= []).push(...(data.hits ?? []));
   // the rows are drawn once a frame, however many files' hits came in it
   frame ||= requestAnimationFrame(() => {
     frame = 0;
@@ -133,7 +121,7 @@ watchDebounced([pattern, regex, matchCase, word, include, exclude, folders], () 
 // it is clicked (toggled)
 const toggled = shallowRef(new Set<string>());
 const files = computed(() => {
-  const out = new Map<string, { path: string; rel: string; origin: string; rows: Result[]; open: boolean }>();
+  const out = new Map<string, { path: string; rel: string; origin: string; rows: TextSearchHit[]; open: boolean }>();
   for (const row of results.value?.rows ?? []) {
     const file = out.get(row.path) ?? out.set(row.path, { path: row.path, rel: row.rel, origin: row.origin, rows: [], open: false }).get(row.path)!;
     file.rows.push(row);
@@ -163,7 +151,7 @@ const { data: lines } = useQuery(() =>
   }),
 );
 /** A result's line split around its match. */
-function parts(row: Result): [string, string, string] {
+function parts(row: TextSearchHit): [string, string, string] {
   const i = row.preview ? -1 : missing.value.indexOf(row);
   const text = row.preview || (lines.value?.[i]?.[0] ?? "");
   const { start, end } = editorRange({ start: { line: 0, character: row.col }, end: { line: 0, character: row.end } }, () => text);
@@ -172,40 +160,23 @@ function parts(row: Result): [string, string, string] {
 
 // Replace all: in the mods' folders picked; Go writes the files, the editor changes the ones it has open
 const writable = computed(() => folders.value.filter((root) => !root.readOnly));
-const confirming = shallowRef(false);
+const confirm = useOverlay().create(ConfirmModal);
 async function replaceAll(): Promise<void> {
-  confirming.value = false;
-  const roots = writable.value.map((root) => `${pathKey(root.path)}/`);
-  const open = ide.openFiles.filter((path) => roots.some((root) => pathKey(path).startsWith(root)));
-  // the search's matcher as JavaScript reads it, a line at a time as Go matches
-  const source = regex.value ? pattern.value : pattern.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(word.value ? `\\b(?:${source})\\b` : source, matchCase.value ? "g" : "gi");
-  let inEditor = 0;
-  for (const path of open) {
-    editText(path, (text) =>
-      text
-        .split("\n")
-        .map((line) => {
-          const cr = line.endsWith("\r");
-          const body = cr ? line.slice(0, -1) : line;
-          const found = body.match(re)?.length ?? 0;
-          inEditor += found;
-          if (!found) return line;
-          // a plain search's replacement is written as it is; a regular expression's names its groups ($1)
-          const replaced = regex.value ? body.replace(re, replacement.value) : body.replace(re, () => replacement.value);
-          return replaced + (cr ? "\r" : "");
-        })
-        .join("\n"),
-    );
-  }
-  const done = await Replace({ search: query("", writable.value), text: replacement.value, skip: ide.openFiles }).catch((error: unknown) => {
+  const text = `Every match of “${pattern.value}” in the mods' files becomes “${replacement.value}”. The game's files are not changed; a file open in the editor changes there, unsaved.`;
+  if (!(await confirm.open({ title: "Replace all?", text, action: "Replace all" }))) return;
+  // the open files go with their text in the editor, unsaved edits and all; Go replaces there as on disk, and
+  // hands their new text back for the editor
+  const open = Object.fromEntries(ide.openFiles.flatMap((path) => (openText(path) === undefined ? [] : [[path, openText(path) ?? ""]])));
+  const done = await Replace({ search: query("", writable.value), text: replacement.value, open }).catch((error: unknown) => {
     toast.add({ title: "Replace all could not run", description: String(error), color: "error" });
     return null;
   });
   if (!done) return;
+  const texts = Object.entries(done.texts ?? {});
+  for (const [path, text = ""] of texts) editText(path, () => text);
   toast.add({
-    title: plural(done.replaced + inEditor, "replacement"),
-    description: `${plural(done.files, "file")} written${inEditor ? `; ${inEditor} in open files, not saved yet` : ""}.`,
+    title: plural(done.replaced, "replacement"),
+    description: `${plural(done.files - texts.length, "file")} written${texts.length ? `; ${plural(texts.length, "open file")} changed, not saved yet` : ""}.`,
     color: "success",
   });
   void run();
@@ -244,25 +215,11 @@ async function replaceAll(): Promise<void> {
               variant="ghost"
               aria-label="Replace all"
               :disabled="!pattern.trim() || !writable.length"
-              @click="confirming = true"
+              @click="replaceAll"
             />
           </UTooltip>
         </template>
       </UInput>
-      <UModal v-model:open="confirming" title="Replace all?">
-        <template #body>
-          <p class="text-13 text-toned">
-            Every match of “{{ pattern }}” in the mods' files becomes “{{ replacement }}”. The game's files are not changed; a file open
-            in the editor changes there, unsaved.
-          </p>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end gap-2">
-            <UButton label="Cancel" @click="confirming = false" />
-            <UButton label="Replace all" color="primary" variant="solid" @click="replaceAll" />
-          </div>
-        </template>
-      </UModal>
       <UFormField v-for="glob in GLOBS" :key="glob.label" :label="glob.label">
         <UInput v-model="glob.text.value" :placeholder="glob.placeholder" size="sm" class="w-full font-mono" :ui="{ trailing: 'pe-1' }">
           <template v-if="glob.text.value" #trailing>
@@ -289,7 +246,7 @@ async function replaceAll(): Promise<void> {
     </div>
     <section v-if="results" class="border-t border-default py-1">
       <p class="flex flex-wrap items-center gap-x-2 px-2.5 pb-1 text-11 text-dimmed">
-        {{ results.title }}: {{ plural(results.rows.length, "result") }} in {{ plural(files.length, "file") }}
+        {{ results.title }}: {{ plural(results.rows?.length ?? 0, "result") }} in {{ plural(files.length, "file") }}
         <span v-if="!results.done">· searching…</span>
         <UBadge v-if="results.capped" label="Stopped at the cap" color="warning" size="sm" />
       </p>

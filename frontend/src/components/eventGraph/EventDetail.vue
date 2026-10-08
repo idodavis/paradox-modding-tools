@@ -10,14 +10,14 @@ import { createReusableTemplate, useClipboard } from "@vueuse/core";
 import type { Cited, Detail, Version } from "@services/models";
 import type { Fire } from "@services/internal/session/models";
 import { kindOf } from "../../composables/useEventGraph";
-import { useOpenInIde } from "../../composables/useOpenInIde";
+import { useIdeStore } from "../../stores/ide";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { capital, countKinds, plural } from "../../lib/format";
 
-const { workspaceId, detail, isRoot } = defineProps<{ workspaceId: string; detail: Detail; isRoot: boolean }>();
+const { detail, isRoot } = defineProps<{ detail: Detail; isRoot: boolean }>();
 const emit = defineEmits<{ close: []; root: [id: string] }>();
 const store = useWorkspaceStore();
-const { openInIde } = useOpenInIde();
+const ide = useIdeStore();
 const { copy, copied } = useClipboard();
 
 const kind = computed(() => kindOf(detail.kind));
@@ -107,9 +107,9 @@ const tabs = computed(() => [
   { label: "Script", slot: "script" as const },
 ]);
 
-/** Open a line of a file in the IDE (0-based here, 1-based in the editor). */
+/** Open a line of a file in the IDE. */
 function open(path: string, line: number): void {
-  void openInIde(workspaceId, path, line + 1);
+  ide.open(path, { line });
 }
 </script>
 
@@ -123,7 +123,7 @@ function open(path: string, line: number): void {
         <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Close detail" @click="emit('close')" />
       </div>
       <span class="font-mono text-16 leading-5.5 font-semibold break-all text-highlighted">{{ detail.name }}</span>
-      <SourceLink :workspace-id="workspaceId" :at="detail.at" :line="detail.line" class="self-start" />
+      <SourceLink :at="detail.at" :line="detail.line" class="self-start" />
       <div class="mt-1.5 flex items-center gap-2">
         <UButton label="Set as root" icon="i-lucide-target" color="primary" variant="solid" :disabled="isRoot" @click="emit('root', detail.name)" />
         <span class="grow" />
@@ -233,7 +233,7 @@ function open(path: string, line: number): void {
               <UIcon :name="kindOf(fire.kind).icon" class="size-3.5 shrink-0" :style="{ color: kindOf(fire.kind).color }" />
               <UButton :label="fire.name" variant="link" color="neutral" size="xs" class="min-w-0 shrink-0 p-0 font-mono text-highlighted" @click="emit('root', fire.name)" />
               <!-- where it fires, opening its line in the IDE -->
-              <button v-if="how(fire)" type="button" class="min-w-0 cursor-pointer truncate text-11 text-muted hover:text-highlighted hover:underline" :title="`${how(fire)}: open line ${fire.line + 1}`" @click="openInIde(workspaceId, fire.path, fire.line + 1)">{{ how(fire) }}</button>
+              <button v-if="how(fire)" type="button" class="min-w-0 cursor-pointer truncate text-11 text-muted hover:text-highlighted hover:underline" :title="`${how(fire)}: open line ${fire.line + 1}`" @click="open(fire.path, fire.line)">{{ how(fire) }}</button>
               <span class="grow" />
               <UBadge
                 :label="fire.through ? plural(fire.through, 'effect') : 'direct'"
@@ -311,7 +311,7 @@ function open(path: string, line: number): void {
           <div v-if="detail.lines?.length" class="overflow-hidden rounded-lg border border-default bg-(--bg-0)">
             <div class="flex h-8 items-center gap-2 border-b border-default bg-elevated px-2.5 text-12 whitespace-nowrap">
               <UIcon name="i-lucide-code" class="size-3.5 shrink-0 text-dimmed" />
-              <SourceLink :workspace-id="workspaceId" :at="detail.at" :line="detail.line" />
+              <SourceLink :at="detail.at" :line="detail.line" />
               <span class="grow" />
               <span class="text-11 text-dimmed">{{ detail.lines.length }} lines</span>
               <UButton

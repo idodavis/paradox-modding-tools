@@ -15,15 +15,17 @@ import type * as steam$0 from "../../../../../paradox-modding-tools/services/int
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "config:changed": string;
             "fs:changed": services$0.FSChanged;
             "git:output": services$0.GitOutput;
             "lang:cache-updated": string;
-            "lang:calendar-changed": string;
+            "lang:dropped": string;
             "lang:failed": string;
             "lang:ready": string;
             "lang:scan-progress": services$0.ScanProgress;
             "search:hits": services$0.TextSearchHits;
             "steam:progress": steam$0.Progress;
+            "wiki:progress": services$0.WikiProgress;
             "wiki:updated": services$0.WikiUpdated;
             "window:changed": string;
             "window:closed": string;

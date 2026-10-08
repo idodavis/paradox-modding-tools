@@ -5,10 +5,12 @@
  */
 import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
+import { useRouter } from "vue-router";
 import { useLocalStorage } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { DidClose } from "@services/ideservice";
 import type { Diagnostic } from "@services/internal/lsp";
+import type { PanelResults } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { holdsFiles, isMain, others } from "../windows";
 import { useWorkspaceStore } from "./workspace";
@@ -21,10 +23,6 @@ export type Layout = { group: number } | { split: "row" | "column"; parts: Layou
 export type Edge = "left" | "right" | "up" | "down" | "middle";
 /** A place a tab is asked to show: a 0-based line and UTF-8 byte column, as the backend counts. */
 export type Place = { path: string; line: number; col: number };
-/** A row of the sidebar's Search results, a text search's hit or a reference: its file by origin, its line and span. */
-export type Result = Place & { rel: string; origin: string; end: number; preview: string };
-/** What the sidebar's Search results show: what was looked for, its rows so far, and whether it is done or capped. */
-export type Results = { title: string; rows: Result[]; done: boolean; capped: boolean };
 /** A diff tab's kind: a file's changes (its staged copy against it), its staged changes (the last commit against
  * the staged copy), a conflict's two sides, or what a commit changed in it (its first parent against it). */
 export type Diff = "changes" | "staged" | "conflict" | "commit";
@@ -82,6 +80,7 @@ function order(node: Layout): number[] {
 
 export const useIdeStore = defineStore("ide", () => {
   const workspace = useWorkspaceStore();
+  const router = useRouter();
   const groups = ref<Group[]>([{ id: 1, files: [], active: "" }]);
   const layout = ref<Layout>({ group: 1 });
   const focused = shallowRef(1);
@@ -92,7 +91,8 @@ export const useIdeStore = defineStore("ide", () => {
   /** The caret: its line, its column in the editor's characters and in UTF-8 bytes (`col`), as the backend counts. */
   const caret = shallowRef<{ line: number; character: number; col: number } | null>(null);
   const place = shallowRef<Place | null>(null);
-  const results = shallowRef<Results | null>(null);
+  // the sidebar's Search results: what was looked for, its rows (hits or references) so far, done or capped
+  const results = shallowRef<PanelResults | null>(null);
   // the files selected in the explorer, which the palette compares; the file picked to compare with another
   const selected = shallowRef<string[]>([]);
   const comparing = shallowRef("");
@@ -107,7 +107,7 @@ export const useIdeStore = defineStore("ide", () => {
   const panel = kept<"problems" | "git" | "">("pmt.ide.panel", "problems");
   const wikiOpen = kept("pmt.ide.wikiOpen", false);
   // each workspace's groups and where they sit, kept on this computer
-  const layouts = useLocalStorage<Record<string, { layout: Layout; groups: Group[] }>>("pmt.ide.layouts", {});
+  const layouts = useLocalStorage<Record<string, { layout: Layout; groups: Group[]; others?: string[]; active?: string }>>("pmt.ide.layouts", {});
 
   const group = (id: number) => groups.value.find((one) => one.id === id);
   /** The tab shown in the focused group, and its file (a diff tab's too). */
@@ -122,7 +122,7 @@ export const useIdeStore = defineStore("ide", () => {
 
   /** Show a file: in the focused group if it has it, else the first that does, else after the focused group's tab;
    * at a place when given one. A file is shown in the window holding it, else in one whose explorer shows its folder;
-   * a window that holds no files asks the main window. */
+   * a window that holds no files asks the main window. The main window goes to the IDE to show it. */
   function open(file: string, at?: { line: number; col?: number }): void {
     const path = spelled(file);
     const key = pathKey(path);
@@ -138,6 +138,7 @@ export const useIdeStore = defineStore("ide", () => {
     target.active = path;
     focused.value = target.id;
     if (at) place.value = { path, line: at.line, col: at.col ?? 0 };
+    if (isMain && router.currentRoute.value.name !== "workspace-ide") void router.push({ name: "workspace-ide", params: { id: workspace.activeWorkspaceId } });
   }
 
   /** A file edited where no tab shows it (a peek): a tab after the focused group's, the shown tab kept. */
@@ -244,13 +245,6 @@ export const useIdeStore = defineStore("ide", () => {
     if (path) splitAt(id, edge, path);
   }
 
-  /** Move the room between a split's part and the next: the part's new share of the split. */
-  function resize(node: Extract<Layout, { split: string }>, part: number, share: number): void {
-    const pair = (node.sizes[part] ?? 0) + (node.sizes[part + 1] ?? 0);
-    node.sizes[part] = share;
-    node.sizes[part + 1] = pair - share;
-  }
-
   /** The focused group's file moved into the next group, made on the right if there is none. */
   function moveToNext(): void {
     const path = activePath.value;
@@ -270,17 +264,16 @@ export const useIdeStore = defineStore("ide", () => {
 
   /** A workspace's saved tabs, in the groups they were in where this computer kept them, else in one group; a tab
    * saved twice in a group comes back once. */
-  function restore(id: string, files: string[], active: string): void {
+  function restore(id: string, fresh: boolean): void {
     editing.value = id;
-    const keys = new Set(files.map(pathKey));
+    const saved = fresh ? undefined : layouts.value[id];
     const once = (list: string[]) => [...new Map(list.map((file) => [pathKey(file), file])).values()];
-    const kept = (layouts.value[id]?.groups ?? [])
-      .map((one) => ({ ...one, files: once(one.files.filter((file) => keys.has(pathKey(file)))) }))
-      .filter((one) => one.files.length);
-    let shape: Layout | null = layouts.value[id]?.layout ?? null;
-    for (const one of layouts.value[id]?.groups ?? []) if (!kept.some((k) => k.id === one.id) && shape) shape = without(shape, one.id);
+    const kept = (saved?.groups ?? []).map((one) => ({ ...one, files: once(one.files) })).filter((one) => one.files.length);
+    let shape: Layout | null = saved?.layout ?? null;
+    for (const one of saved?.groups ?? []) if (!kept.some((k) => k.id === one.id) && shape) shape = without(shape, one.id);
     const placed = new Set(kept.flatMap((one) => one.files.map(pathKey)));
-    const rest = once(files.filter((file) => !placed.has(pathKey(file))));
+    const rest = once((saved?.others ?? []).filter((file) => !placed.has(pathKey(file))));
+    const active = saved?.active ?? "";
     if (!kept.length || !shape) {
       kept.splice(0, kept.length, { id: 1, files: [], active: "" });
       shape = { group: 1 };
@@ -298,9 +291,10 @@ export const useIdeStore = defineStore("ide", () => {
     caret.value = null;
   }
 
-  /** Keep a workspace's groups and where they sit. */
-  function remember(id: string): void {
-    layouts.value = { ...layouts.value, [id]: { layout: layout.value, groups: groups.value } };
+  /** Keep a workspace's tabs on this computer: its groups and where they sit, the tabs other windows hold (they come
+   * back into the first group), and the file shown. */
+  function remember(id: string, others: string[]): void {
+    layouts.value = { ...layouts.value, [id]: { layout: layout.value, groups: groups.value, others, active: activePath.value } };
   }
 
   return {
@@ -333,7 +327,6 @@ export const useIdeStore = defineStore("ide", () => {
     moved,
     drop,
     split,
-    resize,
     moveToNext,
     setUnsaved,
     restore,

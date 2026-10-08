@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/local"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -128,7 +129,7 @@ func (s *LogService) diagnostics() string {
 		s.App.read(func(cfg *Config) { installs = slices.Clone(cfg.Installs) })
 	}
 	for _, install := range installs {
-		fmt.Fprintf(&out, "Install: %s %s, version %s\n", install.GameID, install.Name, install.VersionDetected)
+		fmt.Fprintf(&out, "Install: %s %s, version %s\n", install.GameID, install.Name, game.ReadGameVersion(install.GameID, install.Path))
 	}
 
 	raw, _ := os.ReadFile(s.file.Name())

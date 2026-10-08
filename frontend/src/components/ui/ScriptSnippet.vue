@@ -4,7 +4,7 @@
  * code's colors (a property's value).
  */
 import { computed } from "vue";
-import { codeLines } from "../lib/code";
+import { codeLines } from "../../lib/code";
 
 const { text, name, fromLine = 0, inline = false } = defineProps<{
   text: string;

@@ -5,11 +5,10 @@
  */
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { useLocalStorage } from "@vueuse/core";
-import { diffView } from "../lib/code";
-import { textQuery } from "../queries";
-import { useSettingsStore } from "../stores/settings";
-import { useWorkspaceStore } from "../stores/workspace";
+import { COMPARE_STYLES, compareStyle, diffView } from "../../lib/code";
+import { textQuery } from "../../queries";
+import { useSettingsStore } from "../../stores/settings";
+import { useWorkspaceStore } from "../../stores/workspace";
 
 /** One side: a file, its path from its root, its origin and the 0-based line it is opened at. */
 type Side = { path: string; rel: string; origin: string; line: number };
@@ -18,11 +17,7 @@ const emit = defineEmits<{ close: [] }>();
 
 const store = useWorkspaceStore();
 const settings = useSettingsStore();
-const style = useLocalStorage<"split" | "unified">("pmt.compare.style", "split");
-const STYLES = [
-  { label: "Split", value: "split" },
-  { label: "Unified", value: "unified" },
-];
+const style = compareStyle;
 const { data: oldFile, isPending: readingOld } = useQuery(() => textQuery(old.path));
 const { data: newFile, isPending: readingNew } = useQuery(() => textQuery(now.path));
 const before = computed(() => oldFile.value?.text);
@@ -40,7 +35,7 @@ watch([host, before, after], ([el, a, b]) => {
     });
     view.value = made;
   }
-  view.value.show({ text: a, name: old.rel }, { text: b, name: now.rel });
+  view.value.show({ text: a, name: old.rel, format: oldFile.value?.format }, { text: b, name: now.rel, format: newFile.value?.format });
   view.value.view.getModifiedEditor().revealLineInCenter(now.line + 1);
 });
 watch(style, (next) => view.value?.view.updateOptions({ renderSideBySide: next === "split" }));
@@ -50,7 +45,7 @@ onBeforeUnmount(() => view.value?.dispose());
 <template>
   <UModal :title="title" fullscreen @update:open="emit('close')">
     <template #actions>
-      <UTabs :model-value="style" :items="STYLES" :content="false" size="xs" @update:model-value="style = $event === 'unified' ? 'unified' : 'split'" />
+      <UTabs :model-value="style" :items="COMPARE_STYLES" :content="false" size="xs" @update:model-value="style = $event === 'unified' ? 'unified' : 'split'" />
     </template>
     <template #body>
       <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-default">

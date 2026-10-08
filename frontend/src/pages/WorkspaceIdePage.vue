@@ -7,19 +7,19 @@
  * diff compares. In a window of its own (windows.ts) it shows one part: an editor group, the game's files, or the panel.
  */
 import { computed, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
-import { useQuery, useQueryCache } from "@pinia/colada";
-import { useElementSize, useLocalStorage, watchDebounced } from "@vueuse/core";
+import { useMutation, useQuery } from "@pinia/colada";
+import { useLocalStorage, watchDebounced } from "@vueuse/core";
 import type { DropdownMenuItem } from "@nuxt/ui";
-import type { IdeRoot, IdeRoots } from "@services/models";
+import type { IdeRoot } from "@services/models";
 import { Fetch, Pull, Push, Stage, Unstage } from "@services/gitservice";
-import { AddWorkspaceMod, SaveIdeSession } from "@services/workspaceservice";
+import { AddWorkspaceMod } from "@services/workspaceservice";
 import { openFilesWindow, setWorkspace } from "../ide/monacoEditor";
 import { useCompare } from "../composables/useCompare";
 import { pathKey, useIdeRoots } from "../composables/useIdeRoots";
-import { useWorkspaceSave } from "../composables/useWorkspaceSave";
 import { pickDirectory } from "../lib/nativeDialog";
 import { fileName, plural } from "../lib/format";
-import { ideRootsQuery, textQuery } from "../queries";
+import { languageOf } from "../lib/code";
+import { textQuery } from "../queries";
 import { useGitStore } from "../stores/git";
 import { tabOf, useIdeStore } from "../stores/ide";
 import { useSettingsStore } from "../stores/settings";
@@ -32,7 +32,7 @@ const ide = useIdeStore();
 const git = useGitStore();
 const settings = useSettingsStore();
 const { data: rec, roots, locate } = useIdeRoots(() => id);
-const { mutate: saveWorkspace } = useWorkspaceSave(() => id);
+const { mutate: saveWorkspace } = useMutation({ mutation: (save: () => Promise<unknown>) => save() });
 const compare = useCompare(() => id);
 
 const mods = computed(() => roots.value.filter((root) => !root.readOnly));
@@ -46,25 +46,10 @@ const own = computed<IdeRoot[]>(() => {
   return root ? [root] : at ? [{ ...at.root, label: fileName(folder), path: folder, kind: "folder" }] : [];
 });
 const hideBinaries = computed(() => !!rec.value?.hideExplorerBinaries);
-const gameShown = computed(() => !!game.value.length && settings.ideOn("ide.gameFiles"));
+const gameShown = computed(() => !!game.value.length && settings.on("ide.gameFiles"));
 
 // the tabs the other windows hold, saved with the main window's so they come back here
 const elsewhere = computed(() => [...others.values()].flatMap((one) => one.tabs ?? []));
-
-// a workspace's tabs are saved, and its cached roots told, so opening it again restores them and not the roots'
-// first read
-const queryCache = useQueryCache();
-function saveTabs(workspaceId: string): void {
-  const files = [...new Set([...ide.openFiles, ...elsewhere.value])];
-  const { key } = ideRootsQuery(workspaceId);
-  const cached = queryCache.getQueryData(key);
-  if (cached) {
-    const next: IdeRoots = { ...cached, ideOpenFiles: files, ideActiveFile: ide.activePath };
-    queryCache.setQueryData(key, next);
-  }
-  void SaveIdeSession(workspaceId, files, ide.activePath).catch(() => undefined);
-  ide.remember(workspaceId);
-}
 
 // a workspace's tabs come back in the main window when it opens, unless it starts fresh; those of the one it replaces
 // are saved first; another window starts empty, ready for the tabs handed to it
@@ -73,14 +58,13 @@ watch(
   rec,
   (open) => {
     if (!open || restored === id) return;
-    if (restored && isMain) saveTabs(restored);
+    if (restored && isMain) ide.remember(restored, elsewhere.value);
     restored = id;
     windowRoots.value = own.value.map((root) => root.path);
     // the panel's window holds no files: its problems are the other windows'
     if (!holdsFiles) return;
     setWorkspace(id, (path) => !!locate(path)?.root.readOnly);
-    const tabs = isMain && !open.resetIdeOnOpen ? (open.ideOpenFiles ?? []) : [];
-    ide.restore(id, tabs, isMain ? (open.ideActiveFile ?? "") : "");
+    ide.restore(id, !isMain || open.resetIdeOnOpen);
   },
   { immediate: true },
 );
@@ -88,7 +72,7 @@ watchDebounced(
   () => [ide.openFiles.join("\n"), elsewhere.value.join("\n"), ide.activePath, JSON.stringify(ide.layout)],
   () => {
     if (!isMain || restored !== id || rec.value?.resetIdeOnOpen) return;
-    saveTabs(id);
+    ide.remember(id, elsewhere.value);
   },
   { debounce: 1000 },
 );
@@ -96,7 +80,7 @@ watchDebounced(
 async function addMod(): Promise<void> {
   const path = await pickDirectory("A mod folder");
   // Go names it from its descriptor, and finds its thumbnail
-  if (path) saveWorkspace({ save: () => AddWorkspaceMod(id, path), rebuilds: true });
+  if (path) saveWorkspace(() => AddWorkspaceMod(id, path));
 }
 
 const modTree = useTemplateRef("modTree");
@@ -106,23 +90,25 @@ function collapseAll(): void {
   gameTree.value?.collapseAll();
 }
 
-// the panes' sizes, each at most half the space it divides, also in a window smaller than the one they were set in:
-// the sidebar half the page, the Wiki pane half of what the sidebar leaves
-const page = useTemplateRef("page");
-const { width, height } = useElementSize(page);
-const sidebarWidth = useLocalStorage("pmt.ide.sidebarWidth", 264);
-const panelHeight = useLocalStorage("pmt.ide.panelHeight", 200);
-const wikiWidth = useLocalStorage("pmt.ide.wikiWidth", 440);
-const sidebarMax = computed(() => Math.max(170, width.value / 2));
-const wikiMax = computed(() => Math.max(320, (width.value - Math.min(sidebarWidth.value, sidebarMax.value)) / 2));
-// the mods' section's height, the game's files under it
-const explorer = useTemplateRef("explorer");
-const { height: explorerHeight } = useElementSize(explorer);
-const modsHeight = useLocalStorage("pmt.ide.modsHeight", 320);
-// the Game files pane folds to its header, and the mods take its room
+// the panes, their sizes kept by the splitters: the sidebar, the editors (at least a third of the page) and the Wiki
+// pane while open; under the editors the panel (the editors keeping half); in the explorer the mods' section and the
+// game's files under it, which fold to their header and give the mods their room
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
-// unfolded and not in a window of its own: the pane takes its height
-const gameHere = computed(() => gameOpen.value && !others.has("game"));
+const panes = computed(() => [
+  ...(isMain || own.value.length ? [{ id: "sidebar", slot: "sidebar", order: 1, sizeUnit: "px" as const, defaultSize: 264, minSize: 170 }] : []),
+  ...(windowPart !== "panel" ? [{ id: "editors", slot: "editors", order: 2, minSize: 33 }] : []),
+  ...(isMain && ide.wikiOpen ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: "px" as const, defaultSize: 440, minSize: 320 }] : []),
+]);
+const editorPanes = computed(() => [
+  { id: "code", slot: "code", order: 1, minSize: 50 },
+  ...(isMain && ide.panel && !others.has("panel") ? [{ id: "panel", slot: "panel", order: 2, sizeUnit: "px" as const, defaultSize: 200, minSize: 120 }] : []),
+]);
+const explorerPanes = computed(() => [
+  { id: "mods", slot: "mods", order: 1, ...(gameShown.value && gameOpen.value ? { sizeUnit: "px" as const, defaultSize: 320, minSize: 120 } : {}) },
+  ...(!gameShown.value ? [] : gameOpen.value
+    ? [{ id: "game", slot: "game", order: 2, sizeUnit: "px" as const, minSize: 120 }]
+    : [{ id: "game-folded", slot: "game", order: 2, sizeUnit: "px" as const, defaultSize: 33, minSize: 33, maxSize: 33 }]),
+]);
 
 // the IDE's keys while it is the page shown, in the editor too
 const shown = shallowRef(true);
@@ -159,17 +145,20 @@ const gitMore = computed<DropdownMenuItem[]>(() => [
   { label: "Read the repository again", icon: "i-lucide-refresh-cw", onSelect: () => git.refresh() },
   { label: "Show the Git output", icon: "i-lucide-terminal", onSelect: () => (ide.panel = "git") },
 ]);
-const KINDS: Record<string, string> = { txt: "Paradox script", yml: "Paradox localization", gui: "Paradox GUI", mod: "Mod descriptor", info: "Mod metadata", md: "Markdown" };
-const kind = computed(() => KINDS[ide.activeFile.slice(ide.activeFile.lastIndexOf(".") + 1).toLowerCase()] ?? "Plain text");
+// the language the editor reads the file in, which Go's format decides
+const KINDS: Record<string, string> = { paradox: "Paradox script", "paradox-loc": "Paradox localization", "paradox-gui": "Paradox GUI", markdown: "Markdown" };
+const kind = computed(() => KINDS[languageOf(ide.activeFile, file.value?.format)] ?? "Plain text");
 function showProblems(): void {
   ide.panel = "problems";
 }
 </script>
 
 <template>
-  <div ref="page" class="nokey flex h-full min-h-0">
+  <div class="nokey flex h-full min-h-0">
     <IdePanel v-if="windowPart === 'panel'" :workspace-id="id" />
-    <aside v-if="isMain" class="flex min-h-0 shrink-0 flex-col border-e border-default bg-muted text-(length:--ide-ui-font)" :style="{ width: `${Math.min(sidebarWidth, sidebarMax)}px` }">
+    <USplitter :items="panes" auto-save-id="pmt.ide" class="min-w-0 flex-1">
+    <template #sidebar>
+    <aside v-if="isMain" class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted text-(length:--ide-ui-font)">
       <div class="flex h-9 shrink-0 items-center gap-0.5 border-b border-default px-1.5">
         <UButton
           icon="i-lucide-files"
@@ -213,12 +202,9 @@ function showProblems(): void {
         </UTooltip>
         <IdeSettingsCard />
       </div>
-      <div v-show="ide.sidebar === 'explorer'" ref="explorer" class="flex min-h-0 flex-1 flex-col py-1">
-        <div
-          class="flex min-h-0 flex-col"
-          :class="gameShown && gameHere ? 'shrink-0' : 'flex-1'"
-          :style="gameShown && gameHere ? { height: `${Math.max(120, Math.min(modsHeight, explorerHeight - 120))}px` } : undefined"
-        >
+      <USplitter v-show="ide.sidebar === 'explorer'" :items="explorerPanes" orientation="vertical" :disabled="!gameOpen" auto-save-id="pmt.ide.explorer" class="min-h-0 flex-1 py-1">
+        <template #mods>
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
           <div class="flex h-7 shrink-0 items-center gap-1 ps-2.5 pe-1 text-11 font-semibold whitespace-nowrap text-toned">
             Workspace<span class="ms-1 font-normal text-dimmed">{{ plural(mods.length, "mod") }}</span>
             <span class="grow" />
@@ -228,8 +214,9 @@ function showProblems(): void {
           </div>
           <ExplorerTree ref="modTree" :workspace-id="id" :roots="mods" :hide-binaries="hideBinaries" @compare="compare.files" />
         </div>
-        <template v-if="gameShown">
-          <ResizeGrip v-if="gameHere" v-model="modsHeight" axis="y" :min="120" :max="Math.max(120, explorerHeight - 120)" :default-size="320" />
+        </template>
+        <template #game>
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
           <div class="flex h-8 shrink-0 items-center border-t border-default pe-1">
             <button
               type="button"
@@ -251,28 +238,30 @@ function showProblems(): void {
             </div>
           </div>
           <ExplorerTree v-else v-show="gameOpen" ref="gameTree" :workspace-id="id" :roots="game" :hide-binaries="hideBinaries" @compare="compare.files" />
+        </div>
         </template>
-      </div>
+      </USplitter>
       <SearchView v-show="ide.sidebar === 'search'" :roots="roots" :hide-binaries="hideBinaries" />
       <SourceControlView v-if="ide.sidebar === 'git'" />
     </aside>
-    <aside v-else-if="own.length" class="flex min-h-0 shrink-0 flex-col border-e border-default bg-muted py-1 text-(length:--ide-ui-font)" :style="{ width: `${Math.min(sidebarWidth, sidebarMax)}px` }">
+    <aside v-else class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted py-1 text-(length:--ide-ui-font)">
       <ExplorerTree :workspace-id="id" :roots="own" :hide-binaries="hideBinaries" @compare="compare.files" />
     </aside>
-    <ResizeGrip v-if="isMain || own.length" v-model="sidebarWidth" :min="170" :max="sidebarMax" :default-size="264" />
-    <section v-if="windowPart !== 'panel'" class="flex min-w-0 flex-1 flex-col">
-      <div class="flex min-h-0 flex-1">
-        <EditorLayout :node="ide.layout" :workspace-id="id" />
-      </div>
-      <template v-if="isMain && ide.panel && !others.has('panel')">
-        <ResizeGrip v-model="panelHeight" axis="y" reverse :min="120" :max="Math.max(120, height / 2)" :default-size="200" />
-        <div class="flex shrink-0 border-t border-default" :style="{ height: `${panelHeight}px` }">
-          <IdePanel :workspace-id="id" />
-        </div>
-      </template>
-    </section>
-    <ResizeGrip v-show="isMain && ide.wikiOpen" v-model="wikiWidth" reverse :min="320" :max="wikiMax" :default-size="440" />
-    <WikiPane v-if="isMain" v-show="ide.wikiOpen" :workspace-id="id" class="shrink-0" :style="{ width: `${Math.min(wikiWidth, wikiMax)}px` }" />
+    </template>
+    <template #editors>
+      <USplitter :items="editorPanes" orientation="vertical" auto-save-id="pmt.ide.editors" class="min-w-0 flex-1">
+        <template #code>
+          <div class="flex min-h-0 min-w-0 flex-1"><EditorLayout :node="ide.layout" :workspace-id="id" /></div>
+        </template>
+        <template #panel>
+          <div class="flex min-h-0 min-w-0 flex-1 border-t border-default"><IdePanel :workspace-id="id" /></div>
+        </template>
+      </USplitter>
+    </template>
+    <template #wiki>
+      <WikiPane :workspace-id="id" class="min-w-0 flex-1" />
+    </template>
+    </USplitter>
   </div>
   <StatusFacts v-if="windowPart !== 'panel'">
     <button class="flex h-6 items-center gap-1 text-error" :aria-label="plural(counts.errors, 'error')" @click="showProblems">
@@ -293,6 +282,6 @@ function showProblems(): void {
     <span v-if="ide.caret">Ln {{ ide.caret.line + 1 }}, Col {{ ide.caret.character + 1 }}</span>
     <span>{{ settings.indentSpaces ? `Spaces: ${settings.indentSize}` : "Tabs" }}</span>
     <span>{{ kind }}</span>
-    <span v-if="file?.text !== undefined">{{ file.bom ? "UTF-8 BOM" : "UTF-8" }}</span>
+    <span v-if="file && !file.reject">{{ file.legacy ? "Windows-1252" : file.bom ? "UTF-8 BOM" : "UTF-8" }}</span>
   </StatusFacts>
 </template>

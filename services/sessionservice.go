@@ -31,6 +31,7 @@ type SessionService struct {
 	once     sync.Once
 	smu      sync.RWMutex
 	sessions map[string]*session.Session
+	inputs   map[string]string // workspace id → what its live session was built from (inputsOf)
 	sf       singleflight.Group
 	scanned  sync.Map // install id → time.Time: when its install was built, as this run last scanned or loaded it
 }
@@ -56,7 +57,7 @@ func (s *SessionService) start() {
 		if s.Scan == nil {
 			s.Scan = index.Scan
 		}
-		s.sessions = map[string]*session.Session{}
+		s.sessions, s.inputs = map[string]*session.Session{}, map[string]string{}
 	})
 }
 
@@ -84,13 +85,14 @@ func (s *SessionService) live(workspaceID string) (*session.Session, error) {
 		if built := s.get(workspaceID); built != nil {
 			return built, nil
 		}
+		inputs := s.inputsOf(workspaceID)
 		built, err := s.build(workspaceID)
 		if err != nil {
 			emit(EventLangFailed, workspaceID)
 			return nil, err
 		}
 		s.smu.Lock()
-		s.sessions[workspaceID] = built
+		s.sessions[workspaceID], s.inputs[workspaceID] = built, inputs
 		s.smu.Unlock()
 		emit(EventLangReady, workspaceID)
 		return built, nil
@@ -101,11 +103,32 @@ func (s *SessionService) live(workspaceID string) (*session.Session, error) {
 	return made.(*session.Session), nil
 }
 
-// get is a workspace's live session, or nil where none is built.
+// get is a workspace's live session, or nil where none is built or the config no longer says what it was built
+// from (then it is closed, and the next request builds it again).
 func (s *SessionService) get(workspaceID string) *session.Session {
 	s.smu.RLock()
-	defer s.smu.RUnlock()
-	return s.sessions[workspaceID]
+	built, inputs, recorded := s.sessions[workspaceID], s.inputs[workspaceID], s.inputs[workspaceID] != ""
+	s.smu.RUnlock()
+	if built != nil && recorded && inputs != s.inputsOf(workspaceID) {
+		s.drop(workspaceID)
+		return nil
+	}
+	return built
+}
+
+// inputsOf is what a workspace's session is built from, as the config says now: its install and that install's
+// folder, its language, and each mod's id, folder and calendar, in load order. A workspace edit that changes any of
+// them needs no drop of its own: the next request finds the session stale and builds it again.
+func (s *SessionService) inputsOf(workspaceID string) string {
+	ws, inst, _ := s.App.workspace(workspaceID)
+	if inst == nil {
+		return ""
+	}
+	key := fmt.Sprintf("%s|%s|%s", inst.ID, inst.Path, ws.DefaultLocLang)
+	for _, mod := range ws.Mods {
+		key += fmt.Sprintf("|%s=%s %v", mod.ID, mod.Path, mod.Eras)
+	}
+	return key
 }
 
 // drop closes a workspace's session, so the next request builds it again with whatever changed.
@@ -113,9 +136,11 @@ func (s *SessionService) drop(workspaceID string) {
 	s.smu.Lock()
 	built := s.sessions[workspaceID]
 	delete(s.sessions, workspaceID)
+	delete(s.inputs, workspaceID)
 	s.smu.Unlock()
 	if built != nil {
 		built.Close()
+		emit(EventLangDropped, workspaceID)
 	}
 }
 
@@ -123,22 +148,27 @@ func (s *SessionService) drop(workspaceID string) {
 // time, because an install's index is most of a session's memory.
 func (s *SessionService) dropAllExcept(keep string) {
 	s.smu.Lock()
-	var closing []*session.Session
+	closing := map[string]*session.Session{}
 	for id, built := range s.sessions {
 		if id != keep {
-			closing = append(closing, built)
+			closing[id] = built
 			delete(s.sessions, id)
+			delete(s.inputs, id)
 		}
 	}
 	s.smu.Unlock()
-	for _, built := range closing {
+	for id, built := range closing {
 		built.Close()
+		emit(EventLangDropped, id)
 	}
 }
 
 // build makes a workspace's session: the install from its cache, scanned if none, and its mods.
 func (s *SessionService) build(workspaceID string) (*session.Session, error) {
-	ws, inst := s.App.workspace(workspaceID)
+	ws, inst, err := s.App.workspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
 	if inst == nil {
 		return nil, fmt.Errorf("workspace %s has no install", workspaceID)
 	}
@@ -251,14 +281,14 @@ func (s *SessionService) scannedAt(inst *GameInstall, language string) string {
 // GetLanguageHealth is the health strip for a workspace, from its live session where there is one.
 func (s *SessionService) GetLanguageHealth(workspaceID string) *LanguageHealth {
 	health := &LanguageHealth{}
-	ws, inst := s.App.workspace(workspaceID)
+	ws, inst, _ := s.App.workspace(workspaceID)
 	if ws != nil {
 		health.InstallID = ws.InstallID
 	}
 	if inst == nil {
 		return health
 	}
-	health.GameVersion = inst.VersionDetected
+	health.GameVersion = game.ReadGameVersion(inst.GameID, inst.Path)
 	_, statErr := os.Stat(inst.Path)
 	health.InstallOk = statErr == nil
 	health.ScannedAt = s.scannedAt(inst, ws.DefaultLocLang)
@@ -279,26 +309,30 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) *LanguageHealth {
 }
 
 const (
-	EventLangReady           = "lang:ready"            // a workspace's session is built: data is its id
-	EventLangFailed          = "lang:failed"           // a workspace's session could not be built: data is its id
-	EventLangScanProgress    = "lang:scan-progress"    // an install scan moved: data is ScanProgress
-	EventLangCacheUpdated    = "lang:cache-updated"    // an install was scanned or loaded from its cache: data is its id
-	EventLangCalendarChanged = "lang:calendar-changed" // a mod's calendar changed: data is the workspace id
-	EventFSChanged           = "fs:changed"            // a file under a mod changed on disk: data is FSChanged
-	EventWikiUpdated         = "wiki:updated"          // a game's wiki pages were refreshed: data is WikiUpdated
-	EventSearchHits          = "search:hits"           // a text search is done with a file: data is TextSearchHits
-	EventGitOutput           = "git:output"            // a git command ran: data is GitOutput
+	EventLangReady        = "lang:ready"         // a workspace's session is built: data is its id
+	EventLangFailed       = "lang:failed"        // a workspace's session could not be built: data is its id
+	EventLangDropped      = "lang:dropped"       // a workspace's session was closed (its inputs changed, another opened): data is its id
+	EventConfigChanged    = "config:changed"     // config.json was written: the section (workspaces, installs, settings; "" all)
+	EventLangScanProgress = "lang:scan-progress" // an install scan moved: data is ScanProgress
+	EventLangCacheUpdated = "lang:cache-updated" // an install was scanned or loaded from its cache: data is its id
+	EventFSChanged        = "fs:changed"         // a file under a mod changed on disk: data is FSChanged
+	EventWikiUpdated      = "wiki:updated"       // a game's wiki pages were refreshed: data is WikiUpdated
+	EventWikiProgress     = "wiki:progress"      // a game's wiki refresh fetches a page: data is WikiProgress
+	EventSearchHits       = "search:hits"        // a text search is done with a file: data is TextSearchHits
+	EventGitOutput        = "git:output"         // a git command ran: data is GitOutput
 )
 
 // registers every event so the bindings generator types them
 func init() {
 	application.RegisterEvent[string](EventLangReady)
 	application.RegisterEvent[string](EventLangFailed)
+	application.RegisterEvent[string](EventLangDropped)
+	application.RegisterEvent[string](EventConfigChanged)
 	application.RegisterEvent[ScanProgress](EventLangScanProgress)
 	application.RegisterEvent[string](EventLangCacheUpdated)
-	application.RegisterEvent[string](EventLangCalendarChanged)
 	application.RegisterEvent[FSChanged](EventFSChanged)
 	application.RegisterEvent[WikiUpdated](EventWikiUpdated)
+	application.RegisterEvent[WikiProgress](EventWikiProgress)
 	application.RegisterEvent[TextSearchHits](EventSearchHits)
 	application.RegisterEvent[GitOutput](EventGitOutput)
 }
@@ -311,7 +345,17 @@ type FSChanged struct {
 
 // WikiUpdated is one game's wiki refresh, done; Error says why it failed.
 type WikiUpdated struct {
-	Error string `json:"error,omitempty"`
+	GameID string `json:"gameId"`
+	Error  string `json:"error,omitempty"`
+}
+
+// WikiProgress is one page a game's wiki refresh fetches: its stage (guides, patch notes), how many
+// of the stage's pages are done and how many it fetches.
+type WikiProgress struct {
+	GameID string `json:"gameId"`
+	Stage  string `json:"stage"`
+	Done   int    `json:"done"`
+	Total  int    `json:"total"`
 }
 
 // ScanProgress is one step of an install scan.

@@ -5,16 +5,17 @@
  * Commit with its options; the conflicts, the staged files and the changes, a file's row opening its diff; and the
  * graph (GitGraph). Its text and rows are the explorer's. Without git it says so (O-R9).
  */
-import { computed, shallowRef, useTemplateRef } from "vue";
-import { useElementSize, useLocalStorage } from "@vueuse/core";
+import { computed, ref, shallowRef } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import type { DropdownMenuItem } from "@nuxt/ui";
-import { Commit, Discard, Pull, Push, Stage, Unstage } from "@services/gitservice";
+import { AddRemote, Commit, Discard, Pull, Push, Stage, Unstage } from "@services/gitservice";
 import type { GitChange } from "@services/models";
 import { plural } from "../../lib/format";
 import { useGitStore } from "../../stores/git";
 import { diffTab, tabOf, useIdeStore } from "../../stores/ide";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
+import ConfirmModal from "../ui/ConfirmModal.vue";
 
 const git = useGitStore();
 const ide = useIdeStore();
@@ -33,12 +34,12 @@ const repoMenu = computed<DropdownMenuItem[][]>(() => [
     : [],
 ]);
 
-function commit(amend = false, push = false): void {
+function commit(amend = false, andPush = false): void {
   const text = message.value;
   git.run(async (root) => {
     await Commit(root, text, amend);
     message.value = "";
-    if (push) await Push(root);
+    if (andPush) await push(root);
   });
 }
 const commitOptions = computed<DropdownMenuItem[]>(() => [
@@ -52,16 +53,35 @@ function sync(): void {
   const pull = !!status.value?.upstream;
   git.run(async (root) => {
     if (pull) await Pull(root, "", "");
+    await push(root);
+  });
+}
+
+// a repository with no remote (one initialized here) asks for its address, then is published to it
+const remote = ref({ asking: false, url: "", name: "origin" });
+async function push(root: string): Promise<void> {
+  try {
+    await Push(root);
+  } catch (err) {
+    if (!String(err).includes("no remote")) throw err;
+    remote.value = { asking: true, url: "", name: "origin" };
+  }
+}
+function publish(): void {
+  const { url, name } = remote.value;
+  if (!url.trim() || !name.trim()) return;
+  remote.value = { ...remote.value, asking: false };
+  git.run(async (root) => {
+    await AddRemote(root, name.trim(), url.trim());
     await Push(root);
   });
 }
 
 // discarding throws changes away, so it asks first
-const discarding = shallowRef<GitChange[]>([]);
-function discard(): void {
-  const files = discarding.value.map((change) => change.path);
-  discarding.value = [];
-  git.run((root) => Discard(root, files));
+const confirm = useOverlay().create(ConfirmModal);
+async function discard(rows: GitChange[]): Promise<void> {
+  const text = `The changes to ${rows.length === 1 ? rows[0]?.name : plural(rows.length, "file")} go, and a file git does not track yet is deleted. This cannot be undone.`;
+  if (await confirm.open({ title: "Discard the changes?", text, action: "Discard", danger: true })) git.run((root) => Discard(root, paths(rows)));
 }
 
 const paths = (rows: GitChange[]) => rows.map((one) => one.path);
@@ -94,12 +114,12 @@ const sections = computed<Section[]>(() => {
       open: (one) => ide.open(diffTab("changes", one.path)),
       each: (one) => [
         ...(one.letter === "D" ? [] : [openFile(one)]),
-        { icon: "i-lucide-undo-2", label: "Discard", run: () => (discarding.value = [one]), color: "error" },
+        { icon: "i-lucide-undo-2", label: "Discard", run: () => discard([one]), color: "error" },
         { icon: "i-lucide-plus", label: "Stage", run: () => stage([one]) },
       ],
       all: changes.length
         ? [
-            { icon: "i-lucide-undo-2", label: "Discard all changes", run: () => (discarding.value = changes), color: "error" },
+            { icon: "i-lucide-undo-2", label: "Discard all changes", run: () => discard(changes), color: "error" },
             { icon: "i-lucide-plus", label: "Stage all changes", run: () => stage(changes) },
           ]
         : [],
@@ -113,18 +133,21 @@ const shown = computed(() => tabOf(ide.activePath));
 const LETTERS: Record<string, string> = { A: "text-success", U: "text-success", M: "text-warning", R: "text-info", D: "text-error", "!": "text-error" };
 const SECTION = "flex h-7 shrink-0 items-center gap-1.5 ps-3 pe-1.5 text-11 font-semibold whitespace-nowrap text-toned";
 // the graph is a pane under the changes, as tall as it was left (the changes keep room for a few rows), or folded
-const pane = useTemplateRef<HTMLElement>("pane");
-const { height } = useElementSize(pane);
+// to its header; the splitter keeps its height
 const graphOpen = useLocalStorage("pmt.git.graphOpen", true);
-const graphHeight = useLocalStorage("pmt.git.graphHeight", 240);
-const graphMax = computed(() => Math.max(80, height.value - 280));
+const panes = computed(() => [
+  { id: "changes", slot: "changes", order: 1, sizeUnit: "px" as const, minSize: 200 },
+  graphOpen.value
+    ? { id: "graph", slot: "graph", order: 2, sizeUnit: "px" as const, defaultSize: 240, minSize: 80 }
+    : { id: "graph-folded", slot: "graph", order: 2, sizeUnit: "px" as const, defaultSize: 29, minSize: 29, maxSize: 29 },
+]);
 
 // a row as tall as the explorer's (--row, the graph's too), at its text size (the sidebar's)
 const ROW = "group flex h-(--row) w-full shrink-0 cursor-pointer items-center gap-2 ps-3.5 pe-2 text-start whitespace-nowrap text-toned hover:bg-elevated";
 </script>
 
 <template>
-  <div ref="pane" class="flex min-h-0 flex-1 flex-col" :style="{ '--row': `${settings.treeRow}px` }">
+  <div class="flex min-h-0 flex-1 flex-col" :style="{ '--row': `${settings.treeRow}px` }">
     <p v-if="git.available === false" class="px-3 py-2.5 text-dimmed">
       Source control runs the git installed on this computer, and there is none on the PATH. Install Git, then start
       PMT again.
@@ -140,7 +163,7 @@ const ROW = "group flex h-(--row) w-full shrink-0 cursor-pointer items-center ga
     <template v-else-if="git.repo">
       <div class="flex shrink-0 flex-col gap-2.5 px-3 pt-3" @keydown.ctrl.enter="canCommit && commit()">
         <UDropdownMenu v-if="(git.repos?.length ?? 0) > 1 || git.bare.length" :items="repoMenu" :content="{ align: 'start' }">
-          <UButton color="neutral" variant="ghost" trailing-icon="i-lucide-chevron-down" class="-mx-2.5 font-semibold" :ui="{ trailingIcon: 'ms-auto' }">
+          <UButton color="neutral" variant="ghost" trailing-icon="i-lucide-chevron-down" size="sm" class="-mx-2.5 font-semibold" :ui="{ trailingIcon: 'ms-auto' }">
             <OriginDot :color="color" small /><span class="truncate">{{ git.repo.name }}</span>
           </UButton>
           <template #item-leading="{ item }">
@@ -153,26 +176,29 @@ const ROW = "group flex h-(--row) w-full shrink-0 cursor-pointer items-center ga
         <div class="flex items-center gap-1.5">
           <BranchMenu />
           <UTooltip :text="status?.upstream ? `${status.ahead} to push, ${status.behind} to pull` : 'Push the branch, and track it'">
-            <UButton icon="i-lucide-arrow-down-up" :label="status?.upstream ? `${status.ahead} up, ${status.behind} down` : 'Publish'" @click="sync" />
+            <UButton icon="i-lucide-arrow-down-up" size="sm" :label="status?.upstream ? `${status.ahead} up, ${status.behind} down` : 'Publish'" @click="sync" />
           </UTooltip>
         </div>
-        <UTextarea v-model="message" :placeholder="`Message for the commit on ${status?.branch || 'HEAD'}`" :rows="3" :ui="{ base: 'resize-none' }" />
+        <UTextarea v-model="message" :placeholder="`Message for the commit on ${status?.branch || 'HEAD'}`" :rows="3" size="sm" :ui="{ base: 'resize-none' }" />
         <div class="flex gap-1">
           <UButton
             icon="i-lucide-check"
             color="primary"
             variant="solid"
+            size="sm"
             class="grow justify-center"
             :label="`Commit ${plural(staged.length, 'staged file')}`"
             :disabled="!canCommit"
             @click="commit()"
           />
           <UDropdownMenu :items="commitOptions">
-            <UButton icon="i-lucide-chevron-down" square aria-label="Commit options" />
+            <UButton icon="i-lucide-chevron-down" size="sm" square aria-label="Commit options" />
           </UDropdownMenu>
         </div>
       </div>
-      <div class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 pb-2">
+      <USplitter :items="panes" orientation="vertical" :disabled="!graphOpen" auto-save-id="pmt.git" class="min-h-0 flex-1">
+      <template #changes>
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pt-3 pb-2">
         <template v-for="section in sections" :key="section.title">
           <div :class="SECTION">
             {{ section.title }}<span class="font-normal text-dimmed">{{ section.rows.length }}</span>
@@ -203,8 +229,9 @@ const ROW = "group flex h-(--row) w-full shrink-0 cursor-pointer items-center ga
           </div>
         </template>
       </div>
-      <ResizeGrip v-if="graphOpen" v-model="graphHeight" axis="y" reverse :min="80" :max="graphMax" :default-size="240" />
-      <div class="flex shrink-0 flex-col border-t border-default" :style="graphOpen ? { height: `${Math.min(graphHeight, graphMax)}px` } : undefined">
+      </template>
+      <template #graph>
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col border-t border-default">
         <button
           type="button"
           class="flex h-7 shrink-0 cursor-pointer items-center gap-1 ps-1.5 pe-1.5 text-11 font-semibold whitespace-nowrap text-toned hover:text-highlighted"
@@ -215,19 +242,29 @@ const ROW = "group flex h-(--row) w-full shrink-0 cursor-pointer items-center ga
         </button>
         <GitGraph v-if="graphOpen" />
       </div>
+      </template>
+      </USplitter>
     </template>
-    <UModal :open="!!discarding.length" title="Discard the changes?" @update:open="(on) => !on && (discarding = [])">
+    <UModal
+      v-model:open="remote.asking"
+      title="Publish to a remote"
+      description="This repository has no remote yet. Give the address of an empty repository to push it to (GitHub, GitLab, …)."
+    >
       <template #body>
-        <p class="text-13 text-toned">
-          The changes to {{ discarding.length === 1 ? discarding[0]?.name : plural(discarding.length, "file") }} go, and a
-          file git does not track yet is deleted. This cannot be undone.
-        </p>
+        <form class="flex flex-col gap-3" @submit.prevent="publish">
+          <UFormField label="Address">
+            <UInput v-model="remote.url" placeholder="https://github.com/you/my-mod.git" autofocus class="w-full" />
+          </UFormField>
+          <UFormField label="Name">
+            <UInput v-model="remote.name" class="w-full" />
+          </UFormField>
+          <button type="submit" hidden />
+        </form>
       </template>
       <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <UButton label="Cancel" @click="discarding = []" />
-          <UButton label="Discard" color="error" variant="soft" @click="discard" />
-        </div>
+        <span class="grow" />
+        <UButton label="Cancel" @click="remote.asking = false" />
+        <UButton label="Publish" :disabled="!remote.url.trim() || !remote.name.trim()" @click="publish" />
       </template>
     </UModal>
   </div>

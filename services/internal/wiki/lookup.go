@@ -67,6 +67,20 @@ func NamedPages(gameID, database, rel string) []Page {
 	return matches
 }
 
+// GuidePage is a guide page by its title; nil where the game's wiki has none so named.
+func GuidePage(gameID, title string) *Page {
+	sidecar, err := load(gameID)
+	if err != nil {
+		return nil
+	}
+	for _, page := range sidecar.Guides {
+		if page.Title == title {
+			return &page
+		}
+	}
+	return nil
+}
+
 // PagesFor returns a file's Guide tabs: the best page named for its database or folder, the
 // scripting-language pages for a script file, then the other named pages; none without a sidecar.
 func PagesFor(gameID, database, rel string) []Page {

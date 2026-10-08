@@ -86,7 +86,7 @@ export function FindGameInstalls(gameID: string): $CancellablePromise<game$0.Det
 }
 
 /**
- * GetIdeRoots returns game / mod folders and tab restore for the IDE.
+ * GetIdeRoots returns the game and mod folders for the IDE.
  */
 export function GetIdeRoots(workspaceID: string): $CancellablePromise<$models.IdeRoots | null> {
     return $Call.ByID(720395743, workspaceID);
@@ -149,13 +149,6 @@ export function ReorderWorkspaceMods(workspaceID: string, modIDs: string[] | nul
 }
 
 /**
- * SaveIdeSession stores open editor paths for a workspace.
- */
-export function SaveIdeSession(workspaceID: string, files: string[] | null, active: string): $CancellablePromise<void> {
-    return $Call.ByID(3665330071, workspaceID, files, active);
-}
-
-/**
  * SetModListingImage makes src the mod's listing image: copied in where its game keeps one, named in
  * its descriptor (its Workshop id as it is) and made the workspace's picture of the mod. It returns the
  * image's path.
@@ -203,14 +196,14 @@ export function SetWorkspaceModSlot(workspaceID: string, modID: string, slot: nu
 }
 
 /**
- * UpdateGameInstall updates path, then refreshes version.
+ * UpdateGameInstall changes an install's path.
  */
 export function UpdateGameInstall(id: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(1401884060, id, path);
 }
 
 /**
- * UpdateWorkspace updates workspace fields. A different install retires the session.
+ * UpdateWorkspace updates workspace fields; the session follows a different install by itself (SessionService.get).
  */
 export function UpdateWorkspace(id: string, name: string, installID: string): $CancellablePromise<void> {
     return $Call.ByID(2311242704, id, name, installID);

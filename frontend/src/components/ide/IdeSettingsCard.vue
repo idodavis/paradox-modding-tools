@@ -147,7 +147,7 @@ function resetTab(): void {
                 </UInput>
               </SettingRow>
               <SettingRow v-for="row in SWITCHES.editor" :key="row.key" :label="row.label" :hint="row.hint">
-                <USwitch :model-value="settings.ideOn(row.key)" @update:model-value="settings.setIde(row.key, $event)" />
+                <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
               <SettingRow label="Indentation" hint="For new lines; a file keeps its own">
                 <UTabs
@@ -164,7 +164,7 @@ function resetTab(): void {
           <template #language>
             <div class="divide-y divide-default">
               <SettingRow v-for="row in SWITCHES.language" :key="row.key" :label="row.label" :hint="row.hint">
-                <USwitch :model-value="settings.ideOn(row.key)" @update:model-value="settings.setIde(row.key, $event)" />
+                <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
             </div>
           </template>
@@ -175,7 +175,7 @@ function resetTab(): void {
             </div>
             <div class="min-h-0 divide-y divide-default overflow-y-auto">
               <SettingRow v-for="check in codes ?? []" :key="check.code" :label="check.summary" :hint="check.code" mono>
-                <USwitch :model-value="settings.checkOn(check.code, check.default)" @update:model-value="settings.setCheck(check.code, $event)" />
+                <USwitch :model-value="settings.on(`ide.diag.${check.code}`, check.default)" @update:model-value="settings.setOn(`ide.diag.${check.code}`, $event)" />
               </SettingRow>
             </div>
           </template>
@@ -196,14 +196,14 @@ function resetTab(): void {
                 />
               </SettingRow>
               <SettingRow v-for="row in SWITCHES.explorer" :key="row.key" :label="row.label" :hint="row.hint">
-                <USwitch :model-value="settings.ideOn(row.key)" @update:model-value="settings.setIde(row.key, $event)" />
+                <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
             </div>
           </template>
           <template #wiki>
             <div class="divide-y divide-default">
               <SettingRow v-for="row in SWITCHES.wiki" :key="row.key" :label="row.label" :hint="row.hint">
-                <USwitch :model-value="settings.ideOn(row.key)" @update:model-value="settings.setIde(row.key, $event)" />
+                <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
               <SettingRow label="Suggestion toast" hint="A note when the Wiki has pages for a new file">
                 <USelect :model-value="toastPref" :items="TOAST_PREFS" value-key="value" variant="subtle" size="sm" class="w-33" @update:model-value="setToastPref" />

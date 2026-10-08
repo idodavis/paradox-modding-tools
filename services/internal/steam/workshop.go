@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"
@@ -326,16 +328,17 @@ func parseYouTubeID(urlOrID string) (string, error) {
 func Upload(root, extraIgnore string) (sent, left []string) {
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
 	patterns := strings.Split(string(gitignore)+"\n"+extraIgnore, "\n")
-	source.Walk(root, func(file string) {
+	_ = source.Walk(root, func(file string) error {
 		rel, err := filepath.Rel(root, file)
 		if err != nil {
-			return
+			return nil
 		}
 		if rel = filepath.ToSlash(rel); ignored(rel, patterns) {
 			left = append(left, rel)
 		} else {
 			sent = append(sent, rel)
 		}
+		return nil
 	})
 	return sent, left
 }
@@ -383,13 +386,38 @@ func ZipMod(src, dest, extraIgnore string) error {
 	})
 }
 
-// FileChange is one file an upload changes on Steam: A added, M modified, D deleted.
+// FileChange is one file an upload changes on Steam: A added, M modified, D deleted, with the lines
+// it adds and removes (LineCounts) unless it is binary.
 type FileChange struct {
-	Rel       string `json:"rel"`
-	Status    string `json:"status"`
-	Binary    bool   `json:"binary"`    // no line diff: a NUL in its first 512 bytes, as the editor's reads judge
-	Steam     string `json:"steam"`     // its path in Steam's copy, which a new file lacks
-	Workspace string `json:"workspace"` // its path in the mod, which a removed file lacks
+	Rel          string `json:"rel"`
+	Status       string `json:"status"`
+	Binary       bool   `json:"binary"`    // no line diff: a NUL in its first 512 bytes on either side, as the editor's reads judge
+	Steam        string `json:"steam"`     // its path in Steam's copy, which a new file lacks
+	Workspace    string `json:"workspace"` // its path in the mod, which a removed file lacks
+	LinesAdded   int    `json:"linesAdded"`
+	LinesRemoved int    `json:"linesRemoved"`
+}
+
+// LineCounts is how many lines a change from before to after adds and removes, by the shortest
+// edit between their lines (Myers): each line compared with its line break, as a diff draws them.
+func LineCounts(before, after string) (added, removed int) {
+	old, now := slices.Collect(strings.Lines(before)), slices.Collect(strings.Lines(after))
+	n, m := len(old), len(now)
+	far := make([]int, 2*(n+m)+2) // the furthest x reached on each diagonal k, at far[n+m+k]
+	for edits := 0; ; edits++ {
+		for k := -edits; k <= edits; k += 2 {
+			x := far[n+m+k+1] // down from the diagonal above, else right from the one below
+			if k != -edits && (k == edits || far[n+m+k-1] >= far[n+m+k+1]) {
+				x = far[n+m+k-1] + 1
+			}
+			for y := x - k; x < n && y < m && old[x] == now[y]; y++ {
+				x++
+			}
+			if far[n+m+k] = x; x >= n && x-k >= m {
+				return (m - n + edits) / 2, (n - m + edits) / 2
+			}
+		}
+	}
 }
 
 // Changes is what an upload of the mod at root changes in the copy of it Steam has at steamRoot, by
@@ -399,13 +427,16 @@ func Changes(steamRoot, root, extraIgnore string) []FileChange {
 		data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
 		return data
 	}
-	change := func(rel, status string, data []byte) FileChange {
-		c := FileChange{Rel: rel, Status: status, Binary: bytes.IndexByte(data[:min(len(data), 512)], 0) >= 0}
+	change := func(rel, status string, before, after []byte) FileChange {
+		c := FileChange{Rel: rel, Status: status, Binary: source.Binary(before) || source.Binary(after)}
 		if status != "A" {
 			c.Steam = filepath.Join(steamRoot, filepath.FromSlash(rel))
 		}
 		if status != "D" {
 			c.Workspace = filepath.Join(root, filepath.FromSlash(rel))
+		}
+		if !c.Binary {
+			c.LinesAdded, c.LinesRemoved = LineCounts(string(before), string(after))
 		}
 		return c
 	}
@@ -417,19 +448,18 @@ func Changes(steamRoot, root, extraIgnore string) []FileChange {
 	ours, _ := Upload(root, extraIgnore)
 	changes := []FileChange{}
 	for _, rel := range ours {
-		data := read(root, rel)
-		status := "A"
+		data, before, status := read(root, rel), []byte(nil), "A"
 		if gone[rel] {
 			delete(gone, rel)
-			if bytes.Equal(data, read(steamRoot, rel)) {
+			if before = read(steamRoot, rel); bytes.Equal(data, before) {
 				continue
 			}
 			status = "M"
 		}
-		changes = append(changes, change(rel, status, data))
+		changes = append(changes, change(rel, status, before, data))
 	}
 	for rel := range gone {
-		changes = append(changes, change(rel, "D", read(steamRoot, rel)))
+		changes = append(changes, change(rel, "D", read(steamRoot, rel), nil))
 	}
 	slices.SortFunc(changes, func(a, b FileChange) int { return strings.Compare(a.Rel, b.Rel) })
 	return changes
@@ -513,29 +543,18 @@ func ignoreMatch(rel string, isDir bool, patterns []string) bool {
 	return matched
 }
 
+// matchGitPattern is whether one ignore rule matches rel: a trailing / matches folders only, a leading / anchors it to
+// the mod's root, any other rule matches at any depth; ** spans folders (doublestar, as search's globs).
 func matchGitPattern(pattern, rel string, isDir bool) bool {
 	if strings.HasSuffix(pattern, "/") && !isDir {
 		return false
 	}
 	pattern = strings.TrimSuffix(pattern, "/")
-	anchored := strings.HasPrefix(pattern, "/")
-	pattern = strings.TrimPrefix(pattern, "/")
-	if pattern == "" {
-		return false
+	if after, anchored := strings.CutPrefix(pattern, "/"); anchored {
+		pattern = after
+	} else if pattern != "" {
+		pattern = "**/" + pattern
 	}
-	if anchored {
-		return globMatch(pattern, rel)
-	}
-	parts := strings.Split(rel, "/")
-	for i := range parts {
-		if globMatch(pattern, strings.Join(parts[i:], "/")) {
-			return true
-		}
-	}
-	return false
-}
-
-func globMatch(pattern, name string) bool {
-	matched, err := path.Match(pattern, name)
-	return err == nil && matched
+	matched, err := doublestar.Match(pattern, rel)
+	return pattern != "" && err == nil && matched
 }

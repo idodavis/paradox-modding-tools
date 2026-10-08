@@ -38,8 +38,8 @@ type GameInstall struct {
 	GameID          string `json:"gameId"`
 	Name            string `json:"name"`
 	Path            string `json:"path"`
-	VersionDetected string `json:"versionDetected"`
-	ScannedAt       string `json:"scannedAt,omitempty"` // derived: its install built, else its cache written
+	VersionDetected string `json:"versionDetected,omitempty"` // derived: read from the install each time
+	ScannedAt       string `json:"scannedAt,omitempty"`       // derived: its install built, else its cache written
 }
 
 // Workspace is a user-defined mod working environment tied to a game.
@@ -53,8 +53,6 @@ type Workspace struct {
 	ResetIdeOnOpen       bool           `json:"resetIdeOnOpen"`
 	HideExplorerBinaries bool           `json:"hideExplorerBinaries"`
 	DefaultTool          string         `json:"defaultTool,omitempty"`
-	IdeOpenFiles         []string       `json:"ideOpenFiles,omitempty"`
-	IdeActiveFile        string         `json:"ideActiveFile,omitempty"`
 	Mods                 []WorkspaceMod `json:"mods"`
 }
 
@@ -128,8 +126,9 @@ func (s *AppService) read(fn func(*Config)) {
 	fn(&s.cfg)
 }
 
-// mutate runs fn and saves the config; an fn error or an unreadable config saves nothing.
-func (s *AppService) mutate(fn func(*Config) error) error {
+// mutate runs fn and saves the config, then tells every window which section changed (settings,
+// installs, workspaces; "" all); an fn error or an unreadable config saves nothing.
+func (s *AppService) mutate(section string, fn func(*Config) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.loadErr != nil {
@@ -138,7 +137,11 @@ func (s *AppService) mutate(fn func(*Config) error) error {
 	if err := fn(&s.cfg); err != nil {
 		return err
 	}
-	return s.save()
+	if err := s.save(); err != nil {
+		return err
+	}
+	emit(EventConfigChanged, section)
+	return nil
 }
 
 // save writes config.json; the caller holds the lock, or has the AppService to itself.
@@ -177,7 +180,7 @@ func (s *AppService) GetSettings() map[string]string {
 
 // SaveSettings writes settings keyed "namespace.key"; a key with no namespace is skipped.
 func (s *AppService) SaveSettings(settings map[string]string) error {
-	return s.mutate(func(cfg *Config) error {
+	return s.mutate("settings", func(cfg *Config) error {
 		for qualified, value := range settings {
 			namespace, key, ok := strings.Cut(qualified, ".")
 			if !ok {
@@ -195,7 +198,7 @@ func (s *AppService) SaveSettings(settings map[string]string) error {
 // ResetData forgets every install and workspace, deletes the caches, and closes the live session.
 // Mod and game folders stay.
 func (s *AppService) ResetData() error {
-	if err := s.mutate(func(cfg *Config) error {
+	if err := s.mutate("", func(cfg *Config) error {
 		cfg.Installs, cfg.Workspaces = nil, nil
 		return nil
 	}); err != nil {
@@ -214,7 +217,6 @@ func (s *AppService) ResetData() error {
 }
 
 func cloneWorkspace(ws Workspace) Workspace {
-	ws.IdeOpenFiles = slices.Clone(ws.IdeOpenFiles)
 	ws.Mods = slices.Clone(ws.Mods)
 	slices.SortFunc(ws.Mods, loadOrder)
 	return ws
@@ -225,9 +227,15 @@ func loadOrder(first, second WorkspaceMod) int {
 	return cmp.Or(first.SortOrder-second.SortOrder, strings.Compare(first.Name, second.Name))
 }
 
-// workspace is a copy of a workspace and of the install it is on, from one read; nil where either
-// is not listed.
-func (s *AppService) workspace(id string) (ws *Workspace, inst *GameInstall) {
+// errNoWorkspace and errNoMod are what an id no workspace or mod has is told.
+var (
+	errNoWorkspace = errors.New("workspace not found")
+	errNoMod       = errors.New("mod not found")
+)
+
+// workspace is a copy of a workspace and of the install it is on (nil where none is listed), from one read;
+// errNoWorkspace where the workspace is not listed.
+func (s *AppService) workspace(id string) (ws *Workspace, inst *GameInstall, err error) {
 	s.read(func(cfg *Config) {
 		listed := findWorkspace(cfg, id)
 		if listed == nil {
@@ -240,7 +248,20 @@ func (s *AppService) workspace(id string) (ws *Workspace, inst *GameInstall) {
 			inst = &record
 		}
 	})
-	return ws, inst
+	if ws == nil {
+		return nil, nil, errNoWorkspace
+	}
+	return ws, inst, nil
+}
+
+// mod is one of the workspace's mods, by its id.
+func (ws *Workspace) mod(id string) (*WorkspaceMod, error) {
+	for i := range ws.Mods {
+		if ws.Mods[i].ID == id {
+			return &ws.Mods[i], nil
+		}
+	}
+	return nil, errNoMod
 }
 
 func findInstall(cfg *Config, id string) *GameInstall {

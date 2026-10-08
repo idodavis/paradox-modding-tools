@@ -77,6 +77,17 @@ export default defineConfig({
         colors: ["primary", "secondary", "success", "info", "warning", "error", "purple"],
       },
       ui: {
+        // a pane's resize handle takes no room: a 2px line on the border between two panes, the accent on hover and
+        // while dragging (reka's hit area reaches past it)
+        splitter: {
+          slots: { handle: "z-10 after:absolute after:bg-(--line-1) data-[state=hover]:after:bg-primary data-[state=drag]:after:bg-primary" },
+          variants: {
+            orientation: {
+              horizontal: { handle: "w-0 after:inset-y-0 after:start-1/2 after:w-0.5 after:-translate-x-1/2" },
+              vertical: { handle: "h-0 after:inset-x-0 after:top-1/2 after:h-0.5 after:-translate-y-1/2" },
+            },
+          },
+        },
         // the type scale and the radii of themes.css, so merged classes keep them
         tv: { twMergeConfig: { extend: { theme: { text: ["11", "12", "13", "14", "16", "18", "20", "28", "tiny"], radius: ["chip", "tile"] } } } },
         button: {

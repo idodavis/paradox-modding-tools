@@ -11,13 +11,13 @@ import { Events, Window } from "@wailsio/runtime";
 import { useDebounceFn, watchDebounced } from "@vueuse/core";
 import type { WindowHeld } from "@services/models";
 import { scans } from "./composables/useLanguageHealth";
-import { fileKeys, installKeys, languageKeys, sessionKeys, wikiKeys } from "./queries";
+import { fileKeys, installKeys, languageKeys, sessionKeys, wikiKeys, workspaceKeys } from "./queries";
 import { useGitStore } from "./stores/git";
 import { useIdeStore } from "./stores/ide";
 import { useSettingsStore } from "./stores/settings";
 import { useWorkspaceStore } from "./stores/workspace";
 import { QuitAnswer, Show } from "@services/windowservice";
-import UnsavedChangesModal from "./components/UnsavedChangesModal.vue";
+import UnsavedChangesModal from "./components/app/UnsavedChangesModal.vue";
 import { dock, held, holdsFiles, isMain, others, receiveTabs, roots, windowName, windowPart } from "./windows";
 import { fileName } from "./lib/format";
 import { PAGES } from "./workspaceTools";
@@ -28,11 +28,25 @@ export function subscribeEvents(router: Router): void {
   Events.On("lang:scan-progress", ({ data }) => {
     scans.set(data.installId, { percent: data.percent, stage: data.stage });
   });
-  // one session is built at a time, so its readiness or failure ends every scan shown
+  // one session is built at a time, so its readiness or failure ends every scan shown; the editors holding its
+  // workspace's files tell it their text again
   Events.On("lang:ready", ({ data: id }) => {
     scans.clear();
     void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
     void queryCache.invalidateQueries({ key: languageKeys.one(id) });
+    if (holdsFiles && useIdeStore().editing === id) void import("./ide/monacoEditor").then((editor) => editor.rebuilt());
+  });
+  // a session closed (its inputs changed, or another workspace opened): its state is read again, which builds it anew
+  Events.On("lang:dropped", ({ data: id }) => {
+    void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
+    void queryCache.invalidateQueries({ key: languageKeys.one(id) });
+  });
+  // config.json was written, in any window: what its section feeds is read again (a reset, "", all of it). The
+  // workspaces and installs feed the repositories they hold and Publish's listings; the language health first asks
+  // the session, which closes itself where its inputs changed (lang:dropped)
+  Events.On("config:changed", ({ data: section }) => {
+    if (section !== "settings") for (const key of [workspaceKeys.all, installKeys.all, languageKeys.all, ["git-repos"], ["release"]]) void queryCache.invalidateQueries({ key });
+    if (section === "settings" || !section) void settings.load();
   });
   // a failure refreshes no query: the rebuild would fail again
   Events.On("lang:failed", ({ data: id }) => {
@@ -123,10 +137,7 @@ export function subscribeEvents(router: Router): void {
   Events.On("window:show", async ({ data }) => {
     if (data.to !== windowName) return;
     if (data.route) await router.push(data.route);
-    if (data.path) {
-      ide.open(data.path, data.line < 0 ? undefined : { line: data.line, col: data.col });
-      if (isMain && route.value.name !== "workspace-ide") await router.push({ name: "workspace-ide", params: { id: store.activeWorkspaceId } });
-    }
+    if (data.path) ide.open(data.path, data.line < 0 ? undefined : { line: data.line, col: data.col });
     await Show(windowName);
   });
 
@@ -146,11 +157,11 @@ export function subscribeEvents(router: Router): void {
     watch(() => ide.results, (results) => results && void Events.Emit("window:results", results));
   }
 
-  // another window saved: what this one shows is read again
+  // another window saved something config.json does not hold (config:changed tells of that): its repositories' state
+  // and Publish's files are read again
   Events.On("window:changed", ({ data: name }) => {
     if (name === windowName) return;
-    void queryCache.invalidateQueries();
-    void settings.load();
+    for (const key of [["git"], ["release"]]) void queryCache.invalidateQueries({ key });
   });
 
   // a window of one thing follows the main window to another workspace

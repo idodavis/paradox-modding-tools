@@ -5,8 +5,8 @@
  */
 import { useMutation, useQueryCache } from "@pinia/colada";
 import { DeleteWorkspace } from "@services/workspaceservice";
-import { workspaceKeys, workspacesQuery } from "../queries";
-import { useWorkspaceStore } from "../stores/workspace";
+import { workspacesQuery } from "../../queries";
+import { useWorkspaceStore } from "../../stores/workspace";
 
 const { id, name } = defineProps<{ id: string; name: string }>();
 const emit = defineEmits<{ close: [removed: boolean] }>();
@@ -23,7 +23,6 @@ const { mutate: remove, isLoading: removing } = useMutation({
     toast.add({ title: `${name} removed`, color: "success" });
     emit("close", true);
   },
-  onSettled: () => queryCache.invalidateQueries({ key: workspaceKeys.all }),
 });
 </script>
 

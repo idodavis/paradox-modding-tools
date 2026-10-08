@@ -1,22 +1,22 @@
 /**
- * Every binding the pages read, as Pinia Colada query options: one key factory per service, one
- * defineQueryOptions per RPC. A workspace's session-backed reads sit under ["session", id], so an event
- * or a mutation refreshes one workspace's and never builds another's (EnsureSession and GetHealth build
- * a session, dropping the live one).
+ * Every binding the pages read, as Pinia Colada query options, one per RPC, each with its key; the keys an
+ * event or a mutation refreshes are exported. A workspace's session-backed reads sit under ["session", id], so
+ * an event or a mutation refreshes one workspace's and never builds another's (EnsureSession and GetHealth
+ * build a session, dropping the live one).
  */
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
 import { LastRunCrashed } from "@services/logservice";
-import { ReadEditableBase64, ReadFileBase64 } from "@services/fileservice";
+import { ReadFileBase64, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { EventGraph, GitCommit, Params, Roots, SourceAt } from "@services/models";
 import { Definition, DiagnosticCodes, DocumentSymbols, FindLoc, Hover, References, ReplacedBy } from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
-import { Available, Branches, CommitFiles, Log, Repositories, Show, Status } from "@services/gitservice";
+import { Available, Branches, CommitFiles, Log, Remotes, Repositories, Show, Status } from "@services/gitservice";
 import { CompareWithSteam, ListingSummary, LoadListing, SteamStatus, UploadFiles } from "@services/releaseservice";
 import { EnsureSession, GetLanguageHealth } from "@services/sessionservice";
-import { Guide, PatchPage, Patches } from "@services/wikiservice";
+import { Guide, GuidePage, PatchPage, Patches } from "@services/wikiservice";
 import {
   DefaultModParent,
   FindGameInstalls,
@@ -27,33 +27,16 @@ import {
   ModFolder,
 } from "@services/workspaceservice";
 
-const appKeys = { version: ["app", "version"], crashed: ["app", "crashed"] } as const;
-
 export const workspaceKeys = {
-  games: ["games"] as const,
   /** Every workspace, and under it each one's own reads. */
   all: ["workspaces"] as const,
-  ideRoots: (id: string) => ["workspaces", id, "ide-roots"] as const,
-  modParent: (gameId: string) => ["mod-parent", gameId] as const,
-  modFolder: (parent: string, name: string) => ["mod-folder", parent, name] as const,
 };
 
-export const installKeys = {
-  all: ["installs"] as const,
-  game: (gameId: string) => ["installs", gameId] as const,
-  // apart from the installs: a Steam scan, run again only by its own page
-  found: (gameId: string) => ["installs-found", gameId] as const,
-};
+export const installKeys = { all: ["installs"] as const };
 
 export const sessionKeys = {
   /** The live session, and under it everything read from it. */
   live: (id: string) => ["session", id] as const,
-  health: (id: string, order: readonly string[]) => ["session", id, "health", [...order]] as const,
-  graph: (id: string, params: object) => ["session", id, "graph", params] as const,
-  eventDetail: (id: string, event: string) => ["session", id, "event-detail", event] as const,
-  roots: (id: string, search: string) => ["session", id, "roots", search] as const,
-  loc: (id: string, key: string) => ["session", id, "loc", key] as const,
-  lines: (id: string, places: readonly string[]) => ["session", id, "lines", [...places]] as const,
 };
 
 /** The scan and dumps state, read without building a session. */
@@ -62,31 +45,13 @@ export const languageKeys = {
   one: (id: string) => ["language", id] as const,
 };
 
-const ideKeys = {
-  codes: ["ide", "codes"] as const,
-  hover: (path: string, line: number, col: number) => ["ide", "hover", path, line, col] as const,
-  sites: (mode: string, path: string, line: number, col: number) => ["ide", "sites", mode, path, line, col] as const,
-  files: (id: string, pattern: string) => ["ide", "files", id, pattern] as const,
-  symbols: (path: string) => ["ide", "symbols", path] as const,
-  replaced: (path: string) => ["ide", "replaced", path] as const,
-  loc: (id: string, prefix: string) => ["ide", "loc", id, prefix] as const,
-};
-
 export const releaseKeys = {
   /** A mod's listing, and under it everything read of it. */
   mod: (workspaceId: string, modId: string) => ["release", workspaceId, modId] as const,
-  listing: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "listing"] as const,
-  summary: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "summary"] as const,
-  upload: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "upload"] as const,
   compare: (workspaceId: string, modId: string) => ["release", workspaceId, modId, "compare"] as const,
 };
 
-export const wikiKeys = {
-  all: ["wiki"] as const,
-  guide: (id: string, path: string) => ["wiki", "guide", id, path] as const,
-  patches: (gameId: string) => ["wiki", "patches", gameId] as const,
-  patch: (gameId: string, version: string) => ["wiki", "patch", gameId, version] as const,
-};
+export const wikiKeys = { all: ["wiki"] as const };
 
 export const fileKeys = {
   image: (path: string) => ["file", "image", path] as const,
@@ -94,18 +59,9 @@ export const fileKeys = {
 };
 
 // the repositories' reads sit under ["git"], so a command run refreshes them all
-export const gitKeys = {
-  available: ["git-available"] as const,
-  repos: (id: string) => ["git-repos", id] as const,
-  statuses: (roots: string[]) => ["git", "status", ...roots] as const,
-  log: (root: string, count: number) => ["git", root, "log", count] as const,
-  // a commit's files never change, so a repository's refresh leaves them be
-  commit: (root: string, hash: string) => ["git-commit", root, hash] as const,
-  branches: (root: string) => ["git", root, "branches"] as const,
-  text: (root: string, rev: string, path: string) => ["git", root, "text", rev, path] as const,
-};
+export const gitKeys = { repos: (id: string) => ["git-repos", id] as const };
 
-export const gitAvailableQuery = defineQueryOptions({ key: gitKeys.available, query: () => Available(), staleTime: Infinity });
+export const gitAvailableQuery = defineQueryOptions({ key: ["git-available"], query: () => Available(), staleTime: Infinity });
 
 /** The repositories of a workspace's mods. */
 export const gitReposQuery = defineQueryOptions(({ id, enabled }: { id: string; enabled: boolean }) => ({
@@ -116,14 +72,14 @@ export const gitReposQuery = defineQueryOptions(({ id, enabled }: { id: string; 
 
 /** Every repository's status by its root: Source control shows one, the explorer marks them all. */
 export const gitStatusesQuery = defineQueryOptions((roots: string[]) => ({
-  key: gitKeys.statuses(roots),
+  key: ["git", "status", ...roots],
   query: async () => Object.fromEntries(await Promise.all(roots.map(async (root) => [root, await Status(root)] as const))),
   enabled: roots.length > 0,
 }));
 
 /** The current branch's and its upstream's newest commits, each before its parents. */
 export const gitLogQuery = defineQueryOptions(({ root, count }: { root: string; count: number }) => ({
-  key: gitKeys.log(root, count),
+  key: ["git", root, "log", count],
   query: async () => (await Log(root, count)) ?? [],
   enabled: !!root,
   placeholderData: (previous: GitCommit[] | undefined) => previous,
@@ -131,34 +87,41 @@ export const gitLogQuery = defineQueryOptions(({ root, count }: { root: string; 
 
 /** The files a commit changed. */
 export const gitCommitFilesQuery = defineQueryOptions(({ root, hash }: { root: string; hash: string }) => ({
-  key: gitKeys.commit(root, hash),
+  // a commit's files never change, so a repository's refresh leaves them be
+  key: ["git-commit", root, hash],
   query: async () => (await CommitFiles(root, hash)) ?? [],
   enabled: !!root && !!hash,
   staleTime: Infinity,
 }));
 
 export const gitBranchesQuery = defineQueryOptions((root: string) => ({
-  key: gitKeys.branches(root),
+  key: ["git", root, "branches"],
   query: () => Branches(root),
   enabled: !!root,
 }));
 
+export const gitRemotesQuery = defineQueryOptions(({ root, enabled }: { root: string; enabled: boolean }) => ({
+  key: ["git", root, "remotes"],
+  query: () => Remotes(root),
+  enabled: enabled && !!root,
+}));
+
 /** A file's text at a revision, or staged when rev is "" (":2" and ":3" are a conflict's two sides). */
 export const gitTextQuery = defineQueryOptions(({ root, rev, path }: { root: string; rev: string; path: string }) => ({
-  key: gitKeys.text(root, rev, path),
+  key: ["git", root, "text", rev, path],
   query: () => Show(root, rev, path),
   enabled: !!root && !!path,
 }));
 
-export const versionQuery = defineQueryOptions({ key: appKeys.version, query: () => GetVersion(), staleTime: Infinity });
+export const versionQuery = defineQueryOptions({ key: ["app", "version"], query: () => GetVersion(), staleTime: Infinity });
 
 export const crashedQuery = defineQueryOptions({
-  key: appKeys.crashed,
+  key: ["app", "crashed"],
   query: () => LastRunCrashed(),
   staleTime: Infinity,
 });
 
-export const gamesQuery = defineQueryOptions({ key: workspaceKeys.games, query: () => ListGames(), staleTime: Infinity });
+export const gamesQuery = defineQueryOptions({ key: ["games"], query: () => ListGames(), staleTime: Infinity });
 
 export const workspacesQuery = defineQueryOptions({
   key: workspaceKeys.all,
@@ -166,31 +129,32 @@ export const workspacesQuery = defineQueryOptions({
 });
 
 export const ideRootsQuery = defineQueryOptions((id: string) => ({
-  key: workspaceKeys.ideRoots(id),
+  key: ["workspaces", id, "ide-roots"],
   query: () => GetIdeRoots(id),
   enabled: !!id,
 }));
 
 export const installsQuery = defineQueryOptions((gameId: string) => ({
-  key: installKeys.game(gameId),
+  key: ["installs", gameId],
   query: async () => (await ListGameInstalls(gameId)) ?? [],
   enabled: !!gameId,
 }));
 
 export const foundInstallsQuery = defineQueryOptions((gameId: string) => ({
-  key: installKeys.found(gameId),
+  // apart from the installs: a Steam scan, run again only by its own page
+  key: ["installs-found", gameId],
   query: async () => (await FindGameInstalls(gameId)) ?? [],
   enabled: !!gameId,
 }));
 
 export const modParentQuery = defineQueryOptions((gameId: string) => ({
-  key: workspaceKeys.modParent(gameId),
+  key: ["mod-parent", gameId],
   query: () => DefaultModParent(gameId),
   enabled: !!gameId,
 }));
 
 export const modFolderQuery = defineQueryOptions(({ parent, name }: { parent: string; name: string }) => ({
-  key: workspaceKeys.modFolder(parent, name),
+  key: ["mod-folder", parent, name],
   query: () => ModFolder(parent, name),
   enabled: !!parent && !!name.trim(),
 }));
@@ -211,7 +175,7 @@ export const languageQuery = defineQueryOptions((id: string) => ({
 /** The Health report for a load order (empty: the workspace's own); only while the session is live. */
 export const healthQuery = defineQueryOptions(
   ({ id, order = [], live }: { id: string; order?: readonly string[]; live: boolean }) => ({
-    key: sessionKeys.health(id, order),
+    key: ["session", id, "health", [...order]],
     query: () => GetHealth(id, { order: [...order] }),
     enabled: !!id && live,
   }),
@@ -219,7 +183,7 @@ export const healthQuery = defineQueryOptions(
 
 /** The event graph around a root, the one drawn kept while the next is read. */
 export const graphQuery = defineQueryOptions(({ id, params, live }: { id: string; params: Params; live: boolean }) => ({
-  key: sessionKeys.graph(id, params),
+  key: ["session", id, "graph", params],
   query: () => GetEventGraph(id, params),
   enabled: !!id && live,
   placeholderData: (previous: EventGraph | null | undefined) => previous,
@@ -227,14 +191,14 @@ export const graphQuery = defineQueryOptions(({ id, params, live }: { id: string
 
 /** One definition of the graph, opened. */
 export const eventDetailQuery = defineQueryOptions(({ id, event, live }: { id: string; event: string; live: boolean }) => ({
-  key: sessionKeys.eventDetail(id, event),
+  key: ["session", id, "event-detail", event],
   query: () => GetEventDetail(id, event),
   enabled: !!id && live && !!event,
 }));
 
 /** The roots a search holds, by kind. */
 export const rootsQuery = defineQueryOptions(({ id, search, live }: { id: string; search: string; live: boolean }) => ({
-  key: sessionKeys.roots(id, search),
+  key: ["session", id, "roots", search],
   query: () => SearchRoots(id, search),
   enabled: !!id && live,
   placeholderData: (previous: Roots | null | undefined) => previous,
@@ -242,29 +206,36 @@ export const rootsQuery = defineQueryOptions(({ id, search, live }: { id: string
 
 /** A game's patch notes, newest first, and when its wiki was last read. */
 export const patchesQuery = defineQueryOptions((gameId: string) => ({
-  key: wikiKeys.patches(gameId),
+  key: ["wiki", "patches", gameId],
   query: () => Patches(gameId),
   enabled: !!gameId,
 }));
 
 /** One patch note, by its version or title. */
 export const patchPageQuery = defineQueryOptions(({ gameId, version }: { gameId: string; version: string }) => ({
-  key: wikiKeys.patch(gameId, version),
+  key: ["wiki", "patch", gameId, version],
   query: () => PatchPage(gameId, version),
   enabled: !!gameId && !!version,
 }));
 
 /** The wiki's pages for a file of a workspace, and the kind of file it is. */
 export const guideQuery = defineQueryOptions(({ id, path, enabled }: { id: string; path: string; enabled: boolean }) => ({
-  key: wikiKeys.guide(id, path),
+  key: ["wiki", "guide", id, path],
   query: () => Guide(id, path),
   enabled: enabled && !!id && !!path,
+}));
+
+/** One guide page whole, by its title: the page a Wiki tab shows (a guide's tabs carry no text). */
+export const guidePageQuery = defineQueryOptions(({ gameId, title, enabled }: { gameId: string; title: string; enabled: boolean }) => ({
+  key: ["wiki", "page", gameId, title],
+  query: () => GuidePage(gameId, title),
+  enabled: enabled && !!gameId && !!title,
 }));
 
 /** The source lines of the places a pane shows: a definition's statement, a reference's line. */
 export const linesQuery = defineQueryOptions(
   ({ id, places, live }: { id: string; places: SourceAt[]; live: boolean }) => ({
-    key: sessionKeys.lines(id, places.map((at) => `${at.path}:${at.line}:${at.col}:${at.definition}`)),
+    key: ["session", id, "lines", places.map((at) => `${at.path}:${at.line}:${at.col}:${at.definition}`)],
     query: () => GetLines(id, places),
     enabled: !!id && live && places.length > 0,
   }),
@@ -272,26 +243,26 @@ export const linesQuery = defineQueryOptions(
 
 /** What reads a localization key. */
 export const locReadersQuery = defineQueryOptions(({ id, key, live }: { id: string; key: string; live: boolean }) => ({
-  key: sessionKeys.loc(id, key),
+  key: ["session", id, "loc", key],
   query: () => LocReaders(id, key),
   enabled: !!id && live && !!key,
 }));
 
 /** The mods' copies of a game file, which the game loads in its place. */
 export const replacedQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
-  key: ideKeys.replaced(path),
+  key: ["ide", "replaced", path],
   query: () => ReplacedBy(id, path).then((copies) => copies ?? []),
 }));
 
 /** What a word is, at a place of a file (a 0-based line and UTF-8 byte column). */
 export const hoverQuery = defineQueryOptions(({ id, path, line, col }: { id: string; path: string; line: number; col: number }) => ({
-  key: ideKeys.hover(path, line, col),
+  key: ["ide", "hover", id, path, line, col],
   query: () => Hover(id, path, line, col),
 }));
 
 /** The files whose path holds a text, in the IDE's folders. */
 export const filesQuery = defineQueryOptions(({ id, pattern, folders }: { id: string; pattern: string; folders: string[] }) => ({
-  key: ideKeys.files(id, pattern),
+  key: ["ide", "files", id, pattern],
   query: () => FileSearch({ filePattern: pattern, maxResults: 50, folders: folders.map((path) => ({ path })) }),
   enabled: !!id && !!pattern && folders.length > 0,
 }));
@@ -299,13 +270,13 @@ export const filesQuery = defineQueryOptions(({ id, pattern, folders }: { id: st
 /** The names a file defines. */
 /** The localization keys starting with a prefix, each at its entry in the workspace's language. */
 export const locQuery = defineQueryOptions(({ id, prefix }: { id: string; prefix: string }) => ({
-  key: ideKeys.loc(id, prefix),
+  key: ["ide", "loc", id, prefix],
   query: async () => (await FindLoc(id, prefix, 30)) ?? [],
   enabled: !!id && !!prefix,
 }));
 
 export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
-  key: ideKeys.symbols(path),
+  key: ["ide", "symbols", path],
   query: async () => (await DocumentSymbols(id, path)) ?? [],
   enabled: !!id && !!path,
 }));
@@ -313,26 +284,26 @@ export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path
 /** A word's definitions, or every place that names it, from a place of a file. */
 export const sitesQuery = defineQueryOptions(
   ({ id, path, line, col, mode }: { id: string; path: string; line: number; col: number; mode: "definition" | "references" }) => ({
-    key: ideKeys.sites(mode, path, line, col),
+    key: ["ide", "sites", mode, path, line, col],
     query: async () => ((await (mode === "definition" ? Definition : References)(id, path, line, col)) ?? []),
   }),
 );
 
 export const codesQuery = defineQueryOptions({
-  key: ideKeys.codes,
+  key: ["ide", "codes"],
   query: async () => (await DiagnosticCodes()) ?? [],
   staleTime: Infinity,
 });
 
 export const listingQuery = defineQueryOptions(({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
-  key: releaseKeys.listing(workspaceId, modId),
+  key: [...releaseKeys.mod(workspaceId, modId), "listing"],
   query: () => LoadListing(workspaceId, modId),
   enabled: !!workspaceId && !!modId,
 }));
 
 /** A mod's Workshop id, listing image and description source, read without writing. */
 export const summaryQuery = defineQueryOptions(({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
-  key: releaseKeys.summary(workspaceId, modId),
+  key: [...releaseKeys.mod(workspaceId, modId), "summary"],
   query: () => ListingSummary(workspaceId, modId),
   enabled: !!workspaceId && !!modId,
 }));
@@ -354,7 +325,7 @@ export const steamStatusQuery = defineQueryOptions(({ id, enabled }: { id: strin
 
 export const uploadFilesQuery = defineQueryOptions(
   ({ workspaceId, modId }: { workspaceId: string; modId: string }) => ({
-    key: releaseKeys.upload(workspaceId, modId),
+    key: [...releaseKeys.mod(workspaceId, modId), "upload"],
     query: () => UploadFiles(workspaceId, modId),
     enabled: !!workspaceId && !!modId,
   }),
@@ -389,22 +360,10 @@ export const imageQuery = defineQueryOptions((path: string) => ({
   enabled: !!path,
 }));
 
-/**
- * A text file as the editor reads it: its text without the byte order mark (none for a missing, binary or too
- * large a file, and why), and whether it had one.
- */
-export async function readText(path: string): Promise<{ text?: string; reject: string; bom: boolean; missing?: boolean }> {
-  const file = await ReadEditableBase64(path);
-  if (!file.exists) return { reject: "The file is not there.", bom: false, missing: true };
-  if (file.reject) return { reject: file.reject, bom: false };
-  const bytes = Uint8Array.from(atob(file.b64 ?? ""), (c) => c.charCodeAt(0));
-  const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
-  return { text: new TextDecoder().decode(bytes), reject: "", bom };
-}
-
+/** A text file as the editor reads it, decoded in Go as the engine decodes it; `reject` says why there is no text. */
 export const textQuery = defineQueryOptions((path: string) => ({
   key: fileKeys.text(path),
-  query: () => readText(path),
+  query: () => ReadText(path),
   enabled: !!path,
 }));
 

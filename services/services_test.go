@@ -159,7 +159,7 @@ func TestConfig(t *testing.T) {
 		if config.loadErr == nil {
 			t.Fatal("want loadErr set for a corrupt config")
 		}
-		if err := config.mutate(func(cfg *Config) error {
+		if err := config.mutate("", func(cfg *Config) error {
 			cfg.Installs = append(cfg.Installs, GameInstall{ID: "new"})
 			return nil
 		}); err == nil {
@@ -179,7 +179,7 @@ func TestConfig(t *testing.T) {
 		if config.loadErr != nil {
 			t.Fatalf("absent config is not a failure: %v", config.loadErr)
 		}
-		if err := config.mutate(func(cfg *Config) error {
+		if err := config.mutate("", func(cfg *Config) error {
 			cfg.Installs = append(cfg.Installs, GameInstall{ID: "i1", Name: "CK3"})
 			return nil
 		}); err != nil {
@@ -429,7 +429,7 @@ func TestReadBase64(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		got, err := (*FileService)(nil).ReadEditableBase64(path)
+		got, err := (*FileService)(nil).ReadText(path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -818,7 +818,7 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws, _ := svc.App.workspace("ws1")
+	ws, _, _ := svc.App.workspace("ws1")
 	listed := ws.Mods
 	if len(listed) != 2 || listed[0].ID != alpha.ID || listed[1].ID != beta.ID {
 		t.Fatalf("initial order: %+v", listed)
@@ -833,7 +833,7 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.ReorderWorkspaceMods("ws1", []string{beta.ID, alpha.ID}); err != nil {
 		t.Fatal(err)
 	}
-	ws, _ = svc.App.workspace("ws1")
+	ws, _, _ = svc.App.workspace("ws1")
 	listed = ws.Mods
 	if len(listed) != 2 || listed[0].ID != beta.ID || listed[1].ID != alpha.ID {
 		t.Fatalf("reordered: %+v", listed)
@@ -850,7 +850,7 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.RemoveWorkspaceMod("ws1", beta.ID); err != nil {
 		t.Fatal(err)
 	}
-	ws, _ = svc.App.workspace("ws1")
+	ws, _, _ = svc.App.workspace("ws1")
 	listed = ws.Mods
 	if len(listed) != 1 || listed[0].ID != alpha.ID {
 		t.Fatalf("after remove: %+v", listed)
@@ -908,15 +908,9 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	if err := svc.UpdateWorkspacePrefs("ws1", true, "health", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SaveIdeSession("ws1", []string{"/a.txt"}, "/a.txt"); err != nil {
-		t.Fatal(err)
-	}
-	ws, _ := svc.App.workspace("ws1")
+	ws, _, _ := svc.App.workspace("ws1")
 	if !ws.ResetIdeOnOpen || ws.DefaultTool != "health" || ws.HideExplorerBinaries {
 		t.Fatalf("prefs: %+v", ws)
-	}
-	if len(ws.IdeOpenFiles) != 1 || ws.IdeActiveFile != "/a.txt" {
-		t.Fatalf("ide session: %+v", ws)
 	}
 }
 

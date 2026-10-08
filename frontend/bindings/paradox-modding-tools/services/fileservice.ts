@@ -37,11 +37,10 @@ export function ListDirectory(dirPath: string, showAll: boolean): $CancellablePr
 }
 
 /**
- * ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if missing: images (thumbnails and
- * workshop previews); oversized files are refused.
+ * ReadImageFacts is an image file's facts, which its pixels at ImageRoute do not carry.
  */
-export function ReadFileBase64(fullPath: string): $CancellablePromise<$models.FileBytes> {
-    return $Call.ByID(2750173100, fullPath);
+export function ReadImageFacts(fullPath: string): $CancellablePromise<$models.ImageFacts> {
+    return $Call.ByID(2047657521, fullPath);
 }
 
 /**

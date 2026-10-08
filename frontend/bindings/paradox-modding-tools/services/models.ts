@@ -164,17 +164,6 @@ export interface FSChanged {
 }
 
 /**
- * FileBytes is a binary file payload for the IDE FS bridge. A missing file is Exists=false with no
- * error, so optional paths are skipped quietly. Reject says why an existing file must not be
- * opened; it is not a Go error, so Wails does not log a binding failure.
- */
-export interface FileBytes {
-    "exists": boolean;
-    "b64"?: string;
-    "reject"?: string;
-}
-
-/**
  * FileSearchHit is one path from FileSearch.
  */
 export interface FileSearchHit {
@@ -426,6 +415,23 @@ export interface IdeRoots {
     "roots": IdeRoot[] | null;
     "resetIdeOnOpen": boolean;
     "hideExplorerBinaries": boolean;
+}
+
+/**
+ * ImageFacts is an image file's header (none where Go reads no header of its kind: SVG, WebP, BMP, ICO), its format as
+ * the page names it, its size, and its URL at ImageRoute, which names when the file changed so a changed file is read
+ * again; Reject says why it is not shown.
+ */
+export interface ImageFacts {
+    "info": source$0.ImageInfo;
+
+    /**
+     * DDS BC7, TGA 32-bit, PNG
+     */
+    "label": string;
+    "bytes": number;
+    "url": string;
+    "reject"?: string;
 }
 
 /**

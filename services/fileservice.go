@@ -2,12 +2,15 @@
 package services
 
 import (
+	"bytes"
 	"cmp"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
+	"image/png"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -131,15 +134,6 @@ func (f *FileService) StatPath(fullPath string) (PathStat, error) {
 	return PathStat{Exists: true, IsDir: info.IsDir(), Size: info.Size(), MtimeMs: info.ModTime().UnixMilli()}, nil
 }
 
-// FileBytes is a binary file payload for the IDE FS bridge. A missing file is Exists=false with no
-// error, so optional paths are skipped quietly. Reject says why an existing file must not be
-// opened; it is not a Go error, so Wails does not log a binding failure.
-type FileBytes struct {
-	Exists bool   `json:"exists"`
-	B64    string `json:"b64,omitempty"`
-	Reject string `json:"reject,omitempty"`
-}
-
 // FileText is a text file as the editor and source control read it: its text without the byte order mark and with
 // its line ends, whether it had the mark, whether it was Windows-1252 (saved back so), and the format the engine
 // reads it as (source.Format's name: the editor's language follows it). Reject says why there is no text: the file
@@ -191,14 +185,92 @@ func readCapped(fullPath string) (data []byte, missing bool, reject string, err 
 	return data, false, "", nil
 }
 
-// ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if missing: images (thumbnails and
-// workshop previews); oversized files are refused.
-func (f *FileService) ReadFileBase64(fullPath string) (FileBytes, error) {
-	data, missing, reject, err := readCapped(fullPath)
-	if err != nil || missing || reject != "" {
-		return FileBytes{Exists: !missing && err == nil, Reject: reject}, err
+// ImageRoute is where the page reads an image file, on Wails' asset server: ?path= its absolute path.
+const ImageRoute = "/pmt/image"
+
+// maxImageBytes is the largest image file shown; the games' map data runs past it.
+const maxImageBytes = 64 << 20
+
+// imageTypes is the files ImageRoute serves, by extension.
+var imageTypes = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true,
+	".ico": true, ".svg": true, ".dds": true, ".tga": true}
+
+// ImageFacts is an image file's header (none where Go reads no header of its kind: SVG, WebP, BMP, ICO), its format as
+// the page names it, its size, and its URL at ImageRoute, which names when the file changed so a changed file is read
+// again; Reject says why it is not shown.
+type ImageFacts struct {
+	Info   source.ImageInfo `json:"info"`
+	Label  string           `json:"label"` // DDS BC7, TGA 32-bit, PNG
+	Bytes  int64            `json:"bytes"`
+	URL    string           `json:"url"`
+	Reject string           `json:"reject,omitempty"`
+}
+
+// ReadImageFacts is an image file's facts, which its pixels at ImageRoute do not carry.
+func (f *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
+	stat, err := os.Stat(fullPath)
+	if err != nil {
+		return ImageFacts{}, err
 	}
-	return FileBytes{Exists: true, B64: base64.StdEncoding.EncodeToString(data)}, nil
+	facts := ImageFacts{Bytes: stat.Size(), URL: ImageRoute + "?path=" + url.QueryEscape(fullPath) + "&v=" + strconv.FormatInt(stat.ModTime().UnixMilli(), 10)}
+	if stat.Size() > maxImageBytes {
+		facts.Reject = fmt.Sprintf("larger than %d MB: not shown", maxImageBytes>>20)
+	}
+	facts.Info, _ = source.ReadImageInfo(fullPath)
+	ext := strings.ToUpper(strings.TrimPrefix(filepath.Ext(fullPath), "."))
+	switch format := facts.Info.Format; {
+	case ext == "DDS" && format != "png":
+		facts.Label = strings.TrimSpace("DDS " + format)
+	case strings.HasPrefix(format, "TGA"):
+		facts.Label = format
+	default:
+		facts.Label = strings.ToUpper(cmp.Or(format, ext))
+	}
+	return facts, nil
+}
+
+// ServeImages answers ImageRoute ahead of the page's assets (Wails' asset server takes it as its middleware): a DDS or
+// TGA decoded and sent as a PNG, any other image file as it is, which the webview draws and caches itself. Each is
+// read again only when the file changed.
+func ServeImages(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != ImageRoute {
+			next.ServeHTTP(w, r)
+			return
+		}
+		path := filepath.Clean(r.URL.Query().Get("path"))
+		ext := strings.ToLower(filepath.Ext(path))
+		stat, err := os.Stat(path)
+		switch {
+		case err != nil || stat.IsDir() || !imageTypes[ext]:
+			http.NotFound(w, r)
+			return
+		case stat.Size() > maxImageBytes:
+			http.Error(w, "image too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		if ext != ".dds" && ext != ".tga" {
+			http.ServeFile(w, r, path)
+			return
+		}
+		if since, err := http.ParseTime(r.Header.Get("If-Modified-Since")); err == nil && !stat.ModTime().Truncate(time.Second).After(since) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		img, err := source.DecodeImage(path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+			return
+		}
+		var out bytes.Buffer
+		if err := (&png.Encoder{CompressionLevel: png.BestSpeed}).Encode(&out, img); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.ServeContent(w, r, "image.png", stat.ModTime(), bytes.NewReader(out.Bytes()))
+	})
 }
 
 // ReadText is a file as the editor reads it.

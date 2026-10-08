@@ -7,9 +7,7 @@
 package services
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os"
@@ -402,22 +400,21 @@ func TestListDirectoryMetadata(t *testing.T) {
 }
 
 // The IDE bridge refuses everything binary, by content rather than by extension.
-func TestReadBase64(t *testing.T) {
+func TestReadText(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name   string
 		head   []byte
 		size   int64  // grown to this many bytes when set
 		editor string // what the editor reader's refusal says; "" opens it
-		raw    string // what the raw reader's refusal says; "" returns it whole
 	}{
 		// Paradox ships a lot of these; no browser decodes either.
-		{"dds", append([]byte("DDS "), 0, 0, 0, 0x7C), 0, "binary", ""},
-		{"tga", []byte{0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}, 0, "binary", ""},
-		{"exe", append([]byte("MZ"), 0, 0, 0, 0), 0, "binary", ""},
-		{"arbitrary", []byte{0x13, 0x37, 0x00, 0x42}, 0, "binary", ""},
-		{"text", []byte("hello"), 0, "", ""},
-		{"large", nil, maxOpenBytes + 1, "too large", "too large"},
+		{"dds", append([]byte("DDS "), 0, 0, 0, 0x7C), 0, "binary"},
+		{"tga", []byte{0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}, 0, "binary"},
+		{"exe", append([]byte("MZ"), 0, 0, 0, 0), 0, "binary"},
+		{"arbitrary", []byte{0x13, 0x37, 0x00, 0x42}, 0, "binary"},
+		{"text", []byte("hello"), 0, ""},
+		{"large", nil, maxOpenBytes + 1, "too large"},
 	}
 	for _, testCase := range cases {
 		path := filepath.Join(t.TempDir(), testCase.name+".bin")
@@ -441,26 +438,6 @@ func TestReadBase64(t *testing.T) {
 		case !strings.Contains(got.Reject, testCase.editor):
 			t.Errorf("%s: reject %q, want %q", testCase.name, got.Reject, testCase.editor)
 		}
-		// the raw reader returns whole whatever the editor refuses, except a file too large to hold
-		raw, err := (*FileService)(nil).ReadFileBase64(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		back, decodeErr := base64.StdEncoding.DecodeString(raw.B64)
-		switch {
-		case testCase.raw != "" && (!strings.Contains(raw.Reject, testCase.raw) || raw.B64 != ""):
-			t.Errorf("%s: raw read %+v, want a refusal naming %q", testCase.name, raw, testCase.raw)
-		case testCase.raw == "" && (!raw.Exists || raw.Reject != "" || decodeErr != nil || !bytes.Equal(back, testCase.head)):
-			t.Errorf("%s: raw read did not round-trip (%+v)", testCase.name, raw)
-		}
-	}
-	// a dds the editor refuses still reaches the webview through the raw reader
-	path := filepath.Join(t.TempDir(), "x.dds")
-	if err := os.WriteFile(path, append([]byte("DDS "), 0, 0, 0, 0x7C), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := (*FileService)(nil).ReadFileBase64(path); got.Reject != "" || got.B64 == "" {
-		t.Errorf("raw reader must not refuse a dds: %+v", got)
 	}
 }
 

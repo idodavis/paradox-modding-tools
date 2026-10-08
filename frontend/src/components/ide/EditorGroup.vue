@@ -16,7 +16,7 @@ import { newWindowWith, saveAll, saveFile, sendTab } from "../../ide/monacoEdito
 import { useCompare } from "../../composables/useCompare";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { hoverQuery, replacedQuery } from "../../queries";
-import { tabOf, useIdeStore, type Edge } from "../../stores/ide";
+import { IMAGES, tabOf, useIdeStore, viewsOf, type Edge } from "../../stores/ide";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { Close } from "@services/windowservice";
 import { isMain, placing, windowName, windowPart } from "../../windows";
@@ -196,15 +196,15 @@ const { data: card } = useQuery(() => ({
 const crumbs = computed(() => [...(located.value?.rel.split("/") ?? []), ...(card.value?.within ?? [])]);
 const folders = computed(() => (located.value?.rel.split("/").length ?? 0) - 1);
 
-const markdown = computed(() => active.value.toLowerCase().endsWith(".md"));
-const VIEWS = [
-  { label: "Raw", value: "raw" },
-  { label: "Rich", value: "rich" },
-];
+// a file with two views (Markdown, SVG) switches on its bar; an image's visual is the image pane
+const views = computed(() => {
+  const named = viewsOf(active.value);
+  return named && [{ label: named.code, value: "code" }, { label: named.visual, value: "visual" }];
+});
 function setView(view: string | number): void {
-  if (view === "rich") ide.rich.add(active.value);
-  else ide.rich.delete(active.value);
+  ide.views.set(active.value, view === "visual" ? "visual" : "code");
 }
+const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.value) === "visual");
 </script>
 
 <template>
@@ -300,10 +300,11 @@ function setView(view: string | number): void {
         <span class="text-toned">{{ store.originName(loaded.origin) }}</span>
         <UButton label="Compare" variant="ghost" size="xs" @click="compare.files(active, loaded.path)" />
       </template>
-      <UTabs v-if="markdown" :model-value="ide.rich.has(active) ? 'rich' : 'raw'" :items="VIEWS" :content="false" size="xs" @update:model-value="setView" />
+      <UTabs v-if="views" :model-value="ide.viewOf(active)" :items="views" :content="false" size="xs" @update:model-value="setView" />
     </div>
     <div class="relative flex min-h-0 flex-1 flex-col">
       <GitDiff v-if="diff" :key="active" :workspace-id="workspaceId" :tab="active" />
+      <ImageView v-else-if="image" :key="`image:${active}`" :path="active" />
       <CodeEditor v-else-if="active" :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
       <div v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">Open a file from the explorer, or Ctrl P</div>
       <!-- while a tab is dragged: where it would go -->

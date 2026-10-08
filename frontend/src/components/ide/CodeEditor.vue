@@ -201,7 +201,7 @@ const reference = computed(() => {
 const keepFocus = { onOpenAutoFocus: (e: Event) => e.preventDefault(), onCloseAutoFocus: (e: Event) => e.preventDefault() };
 
 // Rich: the Markdown as the Publish page's editor writes it, put into the file's text at each edit
-const rich = computed(() => ide.rich.has(path));
+const rich = computed(() => ide.viewOf(path) === "visual");
 function writeRich(markdown: string | undefined): void {
   if (markdown !== undefined) editText(path, () => markdown);
 }

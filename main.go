@@ -70,7 +70,8 @@ func main() {
 			application.NewService(windowSvc),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.BundledAssetFileServer(assets),
+			Handler:    application.BundledAssetFileServer(assets),
+			Middleware: services.ServeImages,
 			// a line per file the page loads would push everything else out of pmt.log's tail
 			DisableLogging: true,
 		},

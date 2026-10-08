@@ -64,6 +64,7 @@ export function subscribeEvents(router: Router): void {
   const gitChanged = useDebounceFn(() => git.refresh(), 500);
   Events.On("fs:changed", ({ data }) => {
     void queryCache.invalidateQueries({ key: fileKeys.text(data.path) });
+    void queryCache.invalidateQueries({ key: fileKeys.image(data.path) });
     void gitChanged();
   });
   Events.On("git:output", ({ data }) => git.told(data));

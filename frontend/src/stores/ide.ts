@@ -30,6 +30,19 @@ export type Diff = "changes" | "staged" | "conflict" | "commit";
 /** The tab of a file's diff; a commit's names the commit. */
 export const diffTab = (diff: Diff, path: string, commit = "") => `git:${diff}${commit && `@${commit}`}:${path}`;
 /** A tab's file, and its diff (and commit) when it shows one; a file's own tab is its path. */
+/** A file's view: its text (Code), or what it draws (Visual). */
+export type View = "code" | "visual";
+/** The images the IDE draws (ImageView); the raster ones have no text to show. */
+export const IMAGES = /\.(png|jpe?g|gif|webp|bmp|ico|dds|tga|svg)$/i;
+const VIEWS: Record<string, { code: string; visual: string; first: View }> = {
+  md: { code: "Raw", visual: "Rich", first: "code" },
+  svg: { code: "Text", visual: "Image", first: "visual" },
+};
+/** A file's two views where it has both, named as its kind names them, and the one it opens in. */
+export function viewsOf(path: string): (typeof VIEWS)[string] | undefined {
+  return VIEWS[path.slice(path.lastIndexOf(".") + 1).toLowerCase()];
+}
+
 export function tabOf(tab: string): { file: string; diff?: Diff; commit?: string } {
   const found = /^git:(changes|staged|conflict|commit)(?:@([0-9a-f]+))?:(.+)$/s.exec(tab);
   return found ? { file: found[3] ?? "", diff: found[1] as Diff, commit: found[2] } : { file: tab };
@@ -96,8 +109,11 @@ export const useIdeStore = defineStore("ide", () => {
   // the files selected in the explorer, which the palette compares; the file picked to compare with another
   const selected = shallowRef<string[]>([]);
   const comparing = shallowRef("");
-  // the Markdown files shown Rich rather than as their text
-  const rich = ref(new Set<string>());
+  // each file's view where it was switched from the one its kind opens in
+  const views = ref(new Map<string, View>());
+  function viewOf(path: string): View {
+    return views.value.get(path) ?? viewsOf(path)?.first ?? (IMAGES.test(path) ? "visual" : "code");
+  }
   // a tab being dragged, and the group it is dragged from
   const dragging = shallowRef<{ path: string; from: number } | null>(null);
   // which panes are open, kept on this computer by the main window; another window's are its own (the windows share
@@ -309,7 +325,8 @@ export const useIdeStore = defineStore("ide", () => {
     results,
     selected,
     comparing,
-    rich,
+    views,
+    viewOf,
     dragging,
     sidebar,
     panel,

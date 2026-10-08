@@ -7,7 +7,7 @@
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
 import { LastRunCrashed } from "@services/logservice";
-import { ReadFileBase64, ReadText } from "@services/fileservice";
+import { ReadImageFacts, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { EventGraph, GitCommit, Params, Roots, SourceAt } from "@services/models";
@@ -331,31 +331,13 @@ export const uploadFilesQuery = defineQueryOptions(
   }),
 );
 
-/** An image's MIME type by its extension, for a data URL. */
-export function imageMime(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  const known: Record<string, string> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    svg: "image/svg+xml",
-    gif: "image/gif",
-    webp: "image/webp",
-  };
-  return known[ext] ?? "application/octet-stream";
-}
-
-/** An image file as a data URL with its size in pixels and in bytes; none when it cannot be read. */
+/** An image file: its URL on Go's image route (a DDS or TGA decoded there), its size in pixels (the header's) and in
+ * bytes, and its facts; none when it cannot be read. */
 export const imageQuery = defineQueryOptions((path: string) => ({
   key: fileKeys.image(path),
   query: async () => {
-    const file = await ReadFileBase64(path);
-    if (!file.exists || !file.b64) return undefined;
-    const image = new Image();
-    image.src = `data:${imageMime(path)};base64,${file.b64}`;
-    await image.decode();
-    const padding = file.b64.endsWith("==") ? 2 : file.b64.endsWith("=") ? 1 : 0;
-    return { src: image.src, width: image.naturalWidth, height: image.naturalHeight, bytes: (file.b64.length * 3) / 4 - padding };
+    const facts = await ReadImageFacts(path).catch(() => undefined);
+    return facts && { src: facts.url, width: facts.info.width, height: facts.info.height, bytes: facts.bytes, facts };
   },
   enabled: !!path,
 }));

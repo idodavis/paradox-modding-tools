@@ -2,7 +2,7 @@
 // its channel masks) and TGA (true-color or grey, raw or run-length). BC7's tables are its spec's
 // (ARB_texture_compression_bptc).
 
-package inventory
+package texture
 
 import (
 	"bytes"
@@ -20,9 +20,9 @@ import (
 // MaxSide is the most pixels a side of a DDS is decoded at: a bigger one is decoded at its biggest mip level that fits.
 const MaxSide = 4096
 
-// DecodeImage decodes the image at path: a DDS at its first mip level, or the biggest within MaxSide; a TGA; anything
+// Decode decodes the image at path: a DDS at its first mip level, or the biggest within MaxSide; a TGA; anything
 // else by its magic (the games ship a PNG named .dds). A DDS format it does not decode is an error naming the format.
-func DecodeImage(path string) (image.Image, error) {
+func Decode(path string) (image.Image, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

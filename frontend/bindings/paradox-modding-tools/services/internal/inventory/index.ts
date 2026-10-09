@@ -6,6 +6,5 @@ export {
 } from "./models.js";
 
 export type {
-    File,
-    ImageInfo
+    File
 } from "./models.js";

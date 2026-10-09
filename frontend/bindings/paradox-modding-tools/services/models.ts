@@ -13,6 +13,9 @@ import * as session$0 from "./internal/session/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as steam$0 from "./internal/steam/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as texture$0 from "./internal/texture/models.js";
 
 /**
  * Cited is one name a block writes, and where.
@@ -423,7 +426,7 @@ export interface IdeRoots {
  * again; Reject says why it is not shown.
  */
 export interface ImageFacts {
-    "info": inventory$0.ImageInfo;
+    "info": texture$0.Facts;
 
     /**
      * DDS BC7, TGA 32-bit, PNG

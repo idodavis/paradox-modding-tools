@@ -76,21 +76,3 @@ export enum Format {
      */
     Skipped = 8,
 };
-
-/**
- * ImageInfo is an image file's header facts.
- */
-export interface ImageInfo {
-    "width": number;
-    "height": number;
-
-    /**
-     * DXT5, BC7, RGBA8, png, jpeg, TGA 32-bit
-     */
-    "format": string;
-
-    /**
-     * mip levels a DDS holds; 0 for the others
-     */
-    "mips": number;
-}

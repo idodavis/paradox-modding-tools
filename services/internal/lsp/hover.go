@@ -26,6 +26,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/texture"
 )
 
 // file is an open file's parse and place, held for one request.
@@ -70,29 +71,29 @@ type Location struct {
 
 // Inspect is the hover card: what the word is and what the workspace knows of it.
 type Inspect struct {
-	Word    string               `json:"word"`              // the name it names: an entry, command, key, loc key
-	Key     string               `json:"key,omitempty"`     // its statement's key (the word, when it is the key)
-	Head    string               `json:"head,omitempty"`    // the card's first line: what the word is
-	Need    string               `json:"need,omitempty"`    // a key: optional, required, required when ...
-	Name    string               `json:"name,omitempty"`    // an object's localized name, a loc key's text
-	About   string               `json:"about,omitempty"`   // what the dumps or docs say of its database
-	Prose   string               `json:"prose,omitempty"`   // what the dumps or docs say of the word
-	Takes   []string             `json:"takes,omitempty"`   // a key or command: what a word there may be
-	Writes  []string             `json:"writes,omitempty"`  // a key nothing declares: what vanilla writes there
-	Scope   string               `json:"scope,omitempty"`   // the scope it runs in; "" unknown
-	Leads   string               `json:"leads,omitempty"`   // the scope it leads to; "" none
-	Returns string               `json:"returns,omitempty"` // what a defined name's entries give: yes or no, a number
-	Sites   []Location           `json:"sites,omitempty"`   // where it is defined, in load order
-	Winner  int                  `json:"winner"`            // the site the game keeps; -1 for none
-	Adds    []int                `json:"adds,omitempty"`    // the sites that add to the kept one (INJECT)
-	Stale   bool                 `json:"stale,omitempty"`   // a fact shown comes from a stale source
-	Date    string               `json:"date,omitempty"`    // a date written out, and in a mod's calendar
-	Weight  int                  `json:"weight,omitempty"`  // a numbered branch: its share of its siblings, in %
-	Color   string               `json:"color,omitempty"`   // a color, as #rrggbb
-	Image   *inventory.ImageInfo `json:"image,omitempty"`   // a file that is an image: its header
-	Graphed bool                 `json:"graphed,omitempty"` // the event graph draws it: it is or fires an event
-	Within  []string             `json:"within,omitempty"`  // the entry the cursor is in, then its blocks' keys
-	Range   Range                `json:"range"`
+	Word    string         `json:"word"`              // the name it names: an entry, command, key, loc key
+	Key     string         `json:"key,omitempty"`     // its statement's key (the word, when it is the key)
+	Head    string         `json:"head,omitempty"`    // the card's first line: what the word is
+	Need    string         `json:"need,omitempty"`    // a key: optional, required, required when ...
+	Name    string         `json:"name,omitempty"`    // an object's localized name, a loc key's text
+	About   string         `json:"about,omitempty"`   // what the dumps or docs say of its database
+	Prose   string         `json:"prose,omitempty"`   // what the dumps or docs say of the word
+	Takes   []string       `json:"takes,omitempty"`   // a key or command: what a word there may be
+	Writes  []string       `json:"writes,omitempty"`  // a key nothing declares: what vanilla writes there
+	Scope   string         `json:"scope,omitempty"`   // the scope it runs in; "" unknown
+	Leads   string         `json:"leads,omitempty"`   // the scope it leads to; "" none
+	Returns string         `json:"returns,omitempty"` // what a defined name's entries give: yes or no, a number
+	Sites   []Location     `json:"sites,omitempty"`   // where it is defined, in load order
+	Winner  int            `json:"winner"`            // the site the game keeps; -1 for none
+	Adds    []int          `json:"adds,omitempty"`    // the sites that add to the kept one (INJECT)
+	Stale   bool           `json:"stale,omitempty"`   // a fact shown comes from a stale source
+	Date    string         `json:"date,omitempty"`    // a date written out, and in a mod's calendar
+	Weight  int            `json:"weight,omitempty"`  // a numbered branch: its share of its siblings, in %
+	Color   string         `json:"color,omitempty"`   // a color, as #rrggbb
+	Image   *texture.Facts `json:"image,omitempty"`   // a file that is an image: its header
+	Graphed bool           `json:"graphed,omitempty"` // the event graph draws it: it is or fires an event
+	Within  []string       `json:"within,omitempty"`  // the entry the cursor is in, then its blocks' keys
+	Range   Range          `json:"range"`
 }
 
 // Signature is a command's arguments: the keys its block holds, and its blurb.
@@ -451,7 +452,7 @@ func (file *file) defined(card *Inspect, ref index.Ref, scope string, shown func
 			card.Sites, card.Winner = []Location{locate(sess, found.Path, Position{})}, 0
 		}
 		if found.Format == inventory.Image {
-			if info, err := inventory.ReadImageInfo(found.Path); err == nil {
+			if info, err := texture.Info(found.Path); err == nil {
 				card.Image = &info
 			}
 		}

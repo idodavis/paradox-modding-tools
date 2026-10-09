@@ -24,6 +24,7 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/local"
+	"paradox-modding-tools/services/internal/texture"
 
 	"paradox-modding-tools/services/internal/game"
 )
@@ -199,11 +200,11 @@ var imageTypes = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gi
 // the page names it, its size, and its URL at ImageRoute, which names when the file changed so a changed file is read
 // again; Reject says why it is not shown.
 type ImageFacts struct {
-	Info   inventory.ImageInfo `json:"info"`
-	Label  string              `json:"label"` // DDS BC7, TGA 32-bit, PNG
-	Bytes  int64               `json:"bytes"`
-	URL    string              `json:"url"`
-	Reject string              `json:"reject,omitempty"`
+	Info   texture.Facts `json:"info"`
+	Label  string        `json:"label"` // DDS BC7, TGA 32-bit, PNG
+	Bytes  int64         `json:"bytes"`
+	URL    string        `json:"url"`
+	Reject string        `json:"reject,omitempty"`
 }
 
 // ReadImageFacts is an image file's facts, which its pixels at ImageRoute do not carry.
@@ -217,7 +218,7 @@ func (f *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
 	if stat.Size() > maxImageBytes {
 		facts.Reject = fmt.Sprintf("larger than %d MB: not shown", maxImageBytes>>20)
 	}
-	facts.Info, _ = inventory.ReadImageInfo(fullPath)
+	facts.Info, _ = texture.Info(fullPath)
 	ext := strings.ToUpper(strings.TrimPrefix(filepath.Ext(fullPath), "."))
 	switch format := facts.Info.Format; {
 	case ext == "DDS" && format != "png":
@@ -259,7 +260,7 @@ func ServeImages(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		img, err := inventory.DecodeImage(path)
+		img, err := texture.Decode(path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 			return

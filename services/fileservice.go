@@ -22,7 +22,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/services/internal/inventory"
-	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/texture"
 
@@ -149,13 +148,13 @@ type FileText struct {
 	Reject  string `json:"reject,omitempty"`
 }
 
-// textOf is a file's bytes as a FileText, decoded as the engine decodes them (jomini.Decode) and classified at path
+// textOf is a file's bytes as a FileText, decoded as the engine decodes them (inventory.DecodeText) and classified at path
 // (rel: its path in its root, or the whole path where it has none); binary is refused.
 func textOf(data []byte, path, rel string) FileText {
 	if inventory.Binary(data) {
 		return FileText{Binary: true, Reject: "binary file: the editor opens script, localization and other text files only"}
 	}
-	text, bom, legacy := jomini.Decode(data)
+	text, bom, legacy := inventory.DecodeText(data)
 	return FileText{Text: text, BOM: bom, Legacy: legacy, Format: inventory.Classify(path, filepath.ToSlash(rel)).String()}
 }
 
@@ -288,10 +287,10 @@ func (f *FileService) ReadText(fullPath string) (FileText, error) {
 	return textOf(data, fullPath, fullPath), nil
 }
 
-// WriteText is the editor's save: the text in the file's own encoding (jomini.Encode), through local.Write, so a
+// WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through local.Write, so a
 // failed save never leaves half a file.
 func (f *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
-	data, err := jomini.Encode(text, bom, legacy)
+	data, err := inventory.EncodeText(text, bom, legacy)
 	if err != nil {
 		return err
 	}

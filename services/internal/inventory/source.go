@@ -21,8 +21,6 @@ import (
 	"strings"
 
 	"golang.org/x/sync/errgroup"
-
-	"paradox-modding-tools/services/internal/jomini"
 )
 
 // Format is which reader a file needs.
@@ -98,14 +96,14 @@ type File struct {
 	Format Format `json:"format"`
 }
 
-// Text reads the file as the engine reads it: jomini.Decode's text with every CR dropped, so a CRLF file and an
+// Text reads the file as the engine reads it: DecodeText's text with every CR dropped, so a CRLF file and an
 // editor's LF buffer share offsets.
 func (file File) Text() (string, error) {
 	raw, err := os.ReadFile(file.Path)
 	if err != nil {
 		return "", err
 	}
-	text, _, _ := jomini.Decode(raw)
+	text, _, _ := DecodeText(raw)
 	return strings.ReplaceAll(text, "\r", ""), nil
 }
 
@@ -155,7 +153,7 @@ func prose(abs string) bool {
 	if err != nil || len(raw) > 1<<20 {
 		return false
 	}
-	text, _, _ := jomini.Decode(raw)
+	text, _, _ := DecodeText(raw)
 	script, comment := 0, 0
 	for line := range strings.SplitSeq(text, "\n") {
 		words := strings.Fields(line)

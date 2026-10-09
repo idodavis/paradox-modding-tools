@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	"paradox-modding-tools/services/internal/jomini"
+	"paradox-modding-tools/services/internal/inventory"
 )
 
 // GitService is the Wails RPC shell for source control. Every method but Repositories takes a
@@ -360,7 +360,7 @@ func (s *GitService) StageText(root, file, text string, bom, legacy bool) error 
 		return err
 	}
 	rel = filepath.ToSlash(rel)
-	data, err := jomini.Encode(text, bom, legacy)
+	data, err := inventory.EncodeText(text, bom, legacy)
 	if err != nil {
 		return err
 	}

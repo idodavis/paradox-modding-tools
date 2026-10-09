@@ -2,25 +2,31 @@
 
 What a scan found: each file's definitions, references and localization entries, kept per index and resolved by
 name at query time in the game's load order. The index infers nothing: what a written scalar defines or refers to
-is the schema's (`schema/names.go`); the index collects it.
+is the schema's (`schema/mentions.go`); the index collects it.
+
+Read `scan.go` first. `Scan` runs an install through six steps, `ScanMods` a mod set over it, `Reindex` one saved
+file again; each step is a function named for it, first in the file that holds its half (`fromCache`,
+`inventoryOf`, `localizationOf`, `schemaOf`, `Index.collectFiles`, `SaveInstall`).
 
 | file | holds |
 |---|---|
-| `index.go` | `Index`, `Def`, `Ref`, `Loc`, `Records`; storage (`Add`, `Drop`, `Forget`, `Rebuild`, `PlaceFiles`) and the lookups (`Loaded`, `Lookup`, `Resolve`, `RefsTo`, `Winner`, `WritesInScope`, …); `Fires`, `Runs`, `Scripted` |
-| `records.go` | `Read`, the collector; `recordsOf` by format, `locRecords` and `conceptReferences` for localization |
-| `scan.go` | `Scan`, `BuildSchema`, `ScanMods`, `Reindex` |
-| `cache.go` | the cache file: `SaveInstall`, `LoadInstall`, `CachedAt`, `DropInstall` and its name |
+| `scan.go` | the pipeline: `Request`, `Install`, `Mod`; `Scan`, `ScanMods`, `Reindex`; the steps only these call: `inventoryOf`, `localizationOf`, `schemaOf`, `schemaInput`, `BuildSchema` |
+| `collect.go` | step 5: `Collect`, `collector` and its methods, `scopePair`, `collectFile`, `collectLoc`, `conceptReferences`, `Index.collectFiles` |
+| `store.go` | what a scan keeps: `Def`, `Ref`, `Loc`, `Records`, `Index`; `Add`, `Drop`, `Rebuild`, `PlaceFiles`, `At`, `Forget`, `WritesInScope`, `LocKeys` |
+| `lookup.go` | the store's questions in the game's load order: `FileAt`, `Loaded`, `inLoadOrder`, `Lookup`, `LookupRefs`, `RefsInside`, `LookupLocs`, `Names`, `Resolve`, `RefsTo`, `Winner`, `Fires`, `Runs`, `Scripted` |
+| `cache.go` | steps 1 and 6: `fromCache`, `SaveInstall`, `LoadInstall`, `CachedAt`, `DropInstall` and the cache file's name |
 
-## The records (`records.go`)
+## The collector (`collect.go`)
 
-`Read(schema, file, parsed, visit)` makes each entry `FindEntries` returns a `Def`, then walks the file once with
-`schema.WalkFile` and turns each reading's `Names` into a `Def` or a `Ref` with its file, line and entry (`From`,
+`Collect(schema, file, parsed, visit)` makes each entry `FindEntries` returns a `Def`, then walks the file once with
+`schema.WalkFile` and turns each placement's `Mentions` into a `Def` or a `Ref` with its file, line and entry (`From`,
 the entry's index in `Defs`), and keeps the scope each command, link or link-read scalar is written in
-(`scopePair`). `visit` sees each reading: the index passes none, diagnostics judges each statement, and the editor
-stops at the cursor. A loc file is read by `locRecords`: each `$key$` in a text is a loc reference, and `[x|E]` or
-`Concept('x', …)` a reference to a game concept (`conceptReferences`).
+(`scopePair`). `visit` sees each placement: the index passes none, diagnostics judges each statement, and the editor
+stops at the cursor. `collectFile` picks by format, and `Index.collectFiles` runs it on a worker per CPU. A loc file
+is collected by `collectLoc`: each `$key$` in a text is a loc reference, and `[x|E]` or `Concept('x', …)` a
+reference to a game concept (`conceptReferences`).
 
-## The index (`index.go`)
+## The store and the lookups (`store.go`, `lookup.go`)
 
 An `Index` is one inventory (`Files`) with each file's `Records` by path, its `Roots` in load order,
 and, for the mods' index, the folders its descriptors unload (`Replaced`). `Add`, `Drop` and `Rebuild`
@@ -58,14 +64,14 @@ graph's `session.Fires` and `session.FiredBy` follow these three and nothing els
 
 `Scan(ctx, Request)` gives an install's `Install{Schema, Index, Scanned, Previous}`:
 
-1. **Cache.** `LoadInstall` answers when the cache file exists (`cache.go`).
-2. **Inventory** of the install and the dump folders.
-3. **Localization** (`readLocalization`), read once in english and the workspace language; its keys feed the
+1. **Cache** (`fromCache`). `LoadInstall` answers when the cache file exists (`cache.go`).
+2. **Inventory** (`inventoryOf`) of the install and the dump folders.
+3. **Localization** (`localizationOf`), read once in english and the workspace language; its keys feed the
    schema's loc type test, its records the index.
-4. **Schema.** `schema.Build` on the user's install, with the local dumps when every dump file is
+4. **Schema** (`schemaOf`). `schema.Build` on the user's install, with the local dumps when every dump file is
    there, else the shipped dump part (`schema.LoadShipped`). `BuildSchema` is the generator's dump part.
 5. **Index.** Every script, table and sound list file is read on a worker per CPU and added in file order
-   (`walkFiles`). A mod's localization entries become records too.
+   (`collectFiles`). A mod's localization entries become records too.
 6. **Save** (`SaveInstall`).
 
 `ScanMods` indexes the mods in playset order; `Replaced` comes from each descriptor's

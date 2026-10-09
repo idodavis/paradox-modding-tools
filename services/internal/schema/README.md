@@ -4,24 +4,28 @@ What the sources state about one game version's script: each database's position
 vanilla's evidence, each command the dumps declare, and the one walker every reader of script uses. It decides
 whether a claim may accuse a user's file (`MayAccuse`) and never looks at a mod.
 
+Read `build.go` first. `Build` makes one game version's schema in seven steps, in trust order, and each step is a
+function named for it, first in the file that holds it (`declareDatabases`, `dumpsOrShipped`,
+`parseDocsAndExamples`, `collectDocFields`, `countVanilla`, `inferTypesAndPrefixes`, `applyExamples`).
+
 | file | holds |
 |---|---|
-| `schema.go` | the types (`Schema`, `Database`, `Position`, `Claim`, `Command`, `Evidence`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
-| `build.go` | `Build`: one function per source, in trust order, each saying what it reads and writes; `DatabaseNames` for the scan |
-| `walk.go` | the walker: `WalkFile`, `WalkBlock`, `EntryContext`, `ReadKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |
+| `schema.go` | the types (`Schema`, `Database`, `Position`, `Claim`, `Command`, `Vanilla`, `Shapes`, `ExpectedKind`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
+| `build.go` | the pipeline: `Input`, `Build`, `DatabaseNames` for the scan; step 1, declaring the databases (`declare`, `declareDatabases`) |
+| `dumps.go` | step 2: `dumpsOrShipped`, then the parsers of the console dumps: the label table, one `parse…` per record kind, the usages |
+| `docs.go` | steps 3, 4 and 7: `example`, `parseDocsAndExamples`, `collectDocFields`, `applyExamples`, then the normalizer, the phrase catalog, the joiner |
+| `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
 | `entries.go` | the entry detector, `FindEntries`: which definitions a file makes, by its folder's row, its nested rows and its file type |
-| `names.go` | the name rules: what a key or value scalar defines or refers to (`keyNames`, `valueName`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
-| `evidence.go` | `recordEvidence`, what vanilla writes at each position, and `inferValueTypes`, the type its words share where nothing declares one |
-| `dumps.go` | the reader of the console dumps: the label table, one reader per record kind, the usages |
-| `docs.go` | the reader of docs, wiki examples and dump usages: the normalizer, the phrase catalog, the joiner |
+| `walk.go` | the walker: `WalkFile`, `WalkBlock`, `EntryContext`, `PlaceKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |
+| `mentions.go` | the mention rules: which entry each scalar of a placed statement stands for (`keyMentions`, `valueMention`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
 | `shipped.go` | the backup schemas embedded from `shipped/`, `LoadShipped`; `gen/` writes them |
 
 ## Sources, claims and accusing
 
 Sources write in trust order: the registry (the game's rows), the dumps, vanilla, the docs, the wiki. A
 claim keeps the first source that states it (`SetFirst`), so a later source fills only what an earlier one
-left empty. The dumps, docs and wiki declare; vanilla gives evidence (`Position.Evidence`: how often and in
-what forms it writes a position) and a value type only where nothing declares one. `MayAccuse` is the one
+left empty. The dumps, docs and wiki declare; vanilla gives evidence (`Position.Vanilla`: how often and in
+what shapes it writes a position) and a value type only where nothing declares one. `MayAccuse` is the one
 rule for when a claim may accuse a user's code: a declared source states it, that source is not stale, and
 vanilla's evidence at the position does not contradict it; a docs or wiki claim, and any declared word list,
 also needs vanilla to write the position. The registry and vanilla never accuse.
@@ -31,22 +35,22 @@ also needs vanilla to write the position. The registry and vanilla never accuse.
 A position is a place in a database's entry tree or a command's arguments, keyed by a key's written form: a
 number is `<number>`, a date `<date>`, a `prefix:x` word `<prefix:>`, any other key itself. `WalkBlock` reads
 a block's statements at a `BlockContext` (position, block kind, calling word, scope, inside a trigger or an
-entry); each key becomes a `Reading` by `ReadKey`, which decides in order what the key is (`keyMeaning`, by the
+entry); each key becomes a `Placement` by `PlaceKey`, which decides in order what the key is (`keyMeaning`, by the
 block kind's rules in `game.Blocks`), what its block holds (`blockKindOf`, `commandBlockKind`) and the scope
 that block runs in (`blockScope`). Each decision's doc comment states its order. Four readers use the walker:
-`recordEvidence`, `applyDocClaims`, `applyUsage` and the index's `Read`.
+`countFile`, `applyDocClaims`, `applyUsage` and the index's `Collect`.
 
 `WalkFile` is the one walk of a whole file: given the entries `FindEntries` returned, it reads every statement in
-source order, outer before inner, and each `Reading` carries the entry it is in (`Entry`, an index into the
-entries, -1 outside one), what its key and value name (`Names`, by the rules of `names.go`) and the database a name
-command's value names there (`NameDatabase`). `WalkBlock` reads a snippet (the docs, the dumps' usages): no entries,
+source order, outer before inner, and each `Placement` carries the entry it is in (`Entry`, an index into the
+entries, -1 outside one), what its key and value name (`Mentions`, by the rules of `mentions.go`) and the database a name
+command's value names there (`StoredIn`). `WalkBlock` reads a snippet (the docs, the dumps' usages): no entries,
 no names.
 
 ## Names
 
-A key is named by every key rule that fits (`keyNames`), a value by the first value rule that fits (`valueName`):
+A key is named by every key rule that fits (`keyMentions`), a value by the first value rule that fits (`valueMention`):
 
-| Rule | Where | Naming |
+| Rule | Where | Mention |
 |---|---|---|
 | history | a history entry's top key, and its value where it is written key = value | a reference to the object it sets up (`Of`) |
 | file ref | a value at a key its file type lists (`FileType.Refs`: a GUI `using`) | a reference to that entry |

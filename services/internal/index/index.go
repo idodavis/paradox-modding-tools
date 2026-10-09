@@ -79,7 +79,7 @@ type Index struct {
 // strings share one copy per index, so no record pins a file's text.
 func (idx *Index) Add(records *Records, path string) {
 	if idx.defs == nil {
-		idx.Ready()
+		idx.Rebuild()
 	}
 	share := func(text string) string {
 		if kept, found := idx.shared[text]; found {
@@ -151,9 +151,9 @@ func (idx *Index) Drop(path string) {
 	delete(idx.Records, path)
 }
 
-// Ready builds the lookup maps from Files and Records, after a cache load; Add keeps them current.
+// Rebuild builds the lookup maps again from Files and Records, after a cache load; Add keeps them current.
 // A record of a path no longer in Files is dropped.
-func (idx *Index) Ready() {
+func (idx *Index) Rebuild() {
 	cached := idx.Records
 	idx.Records = make(map[string]*Records, len(cached))
 	idx.defs, idx.refs, idx.locs, idx.shared = map[[2]string][]*Def{}, map[[2]string][]*Ref{}, map[string][]*Loc{}, map[string]string{}
@@ -161,7 +161,7 @@ func (idx *Index) Ready() {
 	if idx.Scoped == nil {
 		idx.Scoped = map[[2]string]bool{}
 	}
-	idx.Place()
+	idx.PlaceFiles()
 	for _, file := range idx.Files {
 		if records := cached[file.Path]; records != nil {
 			idx.Add(records, file.Path)
@@ -169,9 +169,9 @@ func (idx *Index) Ready() {
 	}
 }
 
-// Place indexes where each file stands in Files. A copy given another load order calls it alone, so
+// PlaceFiles records where each file stands in Files. A copy given another load order calls it alone, so
 // the records it shares with the live index are never written.
-func (idx *Index) Place() {
+func (idx *Index) PlaceFiles() {
 	idx.order, idx.rels = make(map[string]int, len(idx.Files)), make(map[string]int, len(idx.Files))
 	for i, file := range idx.Files {
 		idx.order[appdata.PathKey(file.Path)] = i
@@ -209,7 +209,7 @@ func (idx *Index) Forget(path string) {
 		return at == path || strings.HasPrefix(at, path+string(filepath.Separator))
 	})
 	if len(idx.Files) != listed {
-		idx.Ready()
+		idx.Rebuild()
 	}
 }
 
@@ -238,9 +238,9 @@ func Loaded(indexes []*Index, path string) (inventory.File, bool) {
 	return inventory.File{}, false
 }
 
-// gather is one name's items across the indexes in the game's load order, by Rel, those in files
-// the game loads.
-func gather[Item any](indexes []*Index, list func(idx *Index) []*Item, path func(item *Item) string) []Item {
+// inLoadOrder returns one name's items across the indexes in the game's load order, by Rel, those in
+// files the game loads.
+func inLoadOrder[Item any](indexes []*Index, list func(idx *Index) []*Item, path func(item *Item) string) []Item {
 	type placed struct {
 		item *Item
 		rel  string
@@ -265,18 +265,18 @@ func gather[Item any](indexes []*Index, list func(idx *Index) []*Item, path func
 
 // Lookup is every definition of a name across the indexes, in load order.
 func Lookup(indexes []*Index, database, name string) []Def {
-	return gather(indexes, func(idx *Index) []*Def { return idx.defs[[2]string{database, name}] },
+	return inLoadOrder(indexes, func(idx *Index) []*Def { return idx.defs[[2]string{database, name}] },
 		func(def *Def) string { return def.Path })
 }
 
 // LookupRefs is every reference to a name in a file the game loads, in load order.
 func LookupRefs(indexes []*Index, database, name string) []Ref {
-	return gather(indexes, func(idx *Index) []*Ref { return idx.refs[[2]string{database, name}] },
+	return inLoadOrder(indexes, func(idx *Index) []*Ref { return idx.refs[[2]string{database, name}] },
 		func(ref *Ref) string { return ref.Path })
 }
 
-// Within is the references written inside a definition, in its file's order.
-func Within(indexes []*Index, def Def) (refs []Ref) {
+// RefsInside returns the references written inside a definition, in its file's order.
+func RefsInside(indexes []*Index, def Def) (refs []Ref) {
 	for _, idx := range indexes {
 		if records := idx.Records[def.Path]; records != nil {
 			at := slices.Index(records.Defs, def)
@@ -292,13 +292,13 @@ func Within(indexes []*Index, def Def) (refs []Ref) {
 
 // LookupLocs is every localization entry of a key across the indexes, in load order.
 func LookupLocs(indexes []*Index, key string) []Loc {
-	return gather(indexes, func(idx *Index) []*Loc { return idx.locs[key] },
+	return inLoadOrder(indexes, func(idx *Index) []*Loc { return idx.locs[key] },
 		func(entry *Loc) string { return entry.Path })
 }
 
 // Names is every name defined in a database across the indexes, in load order, each once.
 func Names(indexes []*Index, database string) []string {
-	defs := gather(indexes, func(idx *Index) (found []*Def) {
+	defs := inLoadOrder(indexes, func(idx *Index) (found []*Def) {
 		for _, file := range idx.Files {
 			records := idx.Records[file.Path]
 			for i := 0; records != nil && i < len(records.Defs); i++ {
@@ -342,9 +342,9 @@ func Resolve(s *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known boo
 	return defs, len(defs) > 0
 }
 
-// Uses is Resolve turned around: every reference to a name of a database, the calls whose
+// RefsTo turns Resolve around: it returns every reference to a name of a database, the calls whose
 // CalledIn word resolves in that database included.
-func Uses(s *schema.Schema, indexes []*Index, database, name string) []Ref {
+func RefsTo(s *schema.Schema, indexes []*Index, database, name string) []Ref {
 	refs := LookupRefs(indexes, database, name)
 	for _, call := range LookupRefs(indexes, "", name) {
 		if slices.Contains(s.Callees[call.Called], database) {

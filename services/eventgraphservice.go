@@ -537,7 +537,7 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	// the references the walk read inside the entry, grouped by database in the order first written;
 	// a call by the database that defines what it calls, and one nothing defines is left out
 	indexes := sess.Indexes()
-	for _, ref := range index.Within(indexes, def) {
+	for _, ref := range index.RefsInside(indexes, def) {
 		database := ref.Database
 		if database == index.Parameter {
 			continue

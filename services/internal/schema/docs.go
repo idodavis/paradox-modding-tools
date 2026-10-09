@@ -521,7 +521,7 @@ type docReader struct {
 func (s *Schema) applyDocClaims(parsed *jomini.Result, database *Database, from Source) {
 	attached, _ := parsed.Attach()
 	reader := &docReader{doc: doc{s, parsed, attached, from, false}, seen: map[*Position]map[string]bool{}}
-	reader.visitor = Visitor{Names: alternatives, Visit: reader.visit}
+	reader.visitor = Visitor{Alternatives: alternatives, Visit: reader.visit}
 	s.WalkBlock(reader.visitor, nil, parsed.Root.Statements, s.EntryContext(database))
 }
 
@@ -598,7 +598,7 @@ func (s *Schema) applyUsage(parsed *jomini.Result, command *Command, written str
 			return true
 		})
 	}
-	visitor := Visitor{Create: true, Names: alternatives, Visit: func(r *Reading) bool {
+	visitor := Visitor{Create: true, Alternatives: alternatives, Visit: func(r *Reading) bool {
 		switch {
 		case d.failed(r.Statement):
 			return false

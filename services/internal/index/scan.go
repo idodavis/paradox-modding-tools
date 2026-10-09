@@ -85,7 +85,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	input.LocKeys = map[string]bool{}
 	err = inventory.Ordered(ctx, locs, func(file inventory.File) *Records {
 		text, _ := file.Text()
-		return read(req.Game, nil, file, text, languages)
+		return recordsOf(req.Game, nil, file, text, languages)
 	}, func(file inventory.File, kept *Records) {
 		if kept != nil {
 			localized[file.Path] = kept
@@ -117,7 +117,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	// 4. the index: each other file parsed and walked once; Ready adds the localization's records in
 	// file order, so no loc file is read again
 	idx := &Index{Files: input.Install, Roots: roots, Records: localized}
-	err = index(ctx, s, idx, false, func(done, total int) { req.Progress("index", done, total) })
+	err = walkFiles(ctx, s, idx, false, func(done, total int) { req.Progress("index", done, total) })
 	if err != nil {
 		return nil, err
 	}
@@ -153,10 +153,10 @@ func schemaInput(req Request, roots []string) schema.Input {
 	}
 }
 
-// index reads the files of idx.Files that hold records, localization in every language only when
+// walkFiles reads the files of idx.Files that hold records, localization in every language only when
 // withLoc is set: a worker per CPU parses and walks ahead while Add runs in file order here.
-func index(ctx context.Context, s *schema.Schema, idx *Index, withLoc bool, progress func(done, total int)) error {
-	idx.Ready()
+func walkFiles(ctx context.Context, s *schema.Schema, idx *Index, withLoc bool, progress func(done, total int)) error {
+	idx.Rebuild()
 	var files []inventory.File
 	for _, file := range idx.Files {
 		if slices.Contains([]inventory.Format{inventory.Script, inventory.Table, inventory.List}, file.Format) ||
@@ -168,7 +168,7 @@ func index(ctx context.Context, s *schema.Schema, idx *Index, withLoc bool, prog
 	done := 0
 	return inventory.Ordered(ctx, files, func(file inventory.File) *Records {
 		text, _ := file.Text()
-		return read(s.Game, s, file, text, nil)
+		return recordsOf(s.Game, s, file, text, nil)
 	}, func(file inventory.File, records *Records) {
 		if records != nil {
 			idx.Add(records, file.Path)
@@ -180,10 +180,10 @@ func index(ctx context.Context, s *schema.Schema, idx *Index, withLoc bool, prog
 	})
 }
 
-// read is one file's records by its format: script walked, a table or sound list walked without a
+// recordsOf returns one file's records by its format: script walked, a table or sound list walked without a
 // tree, localization parsed with no schema (nil before the schema stage); nil when the format holds
 // none or the language is not kept (languages none: every one).
-func read(gameID string, s *schema.Schema, file inventory.File, text string, languages []string) *Records {
+func recordsOf(gameID string, s *schema.Schema, file inventory.File, text string, languages []string) *Records {
 	switch file.Format {
 	case inventory.Script:
 		parsed := jomini.Parse(text)
@@ -263,7 +263,7 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 			idx.Replaced = append(idx.Replaced, folder)
 		}
 	}
-	return idx, index(ctx, install.Schema, idx, true, nil)
+	return idx, walkFiles(ctx, install.Schema, idx, true, nil)
 }
 
 // Reindex walks one file again: its records dropped and added back. A file not yet in Files goes
@@ -272,7 +272,7 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 func (idx *Index) Reindex(s *schema.Schema, file inventory.File, text string) {
 	idx.Drop(file.Path)
 	if idx.defs == nil {
-		idx.Ready()
+		idx.Rebuild()
 	}
 	if _, listed := idx.At(file.Path); !listed {
 		at := len(idx.Files)
@@ -282,9 +282,9 @@ func (idx *Index) Reindex(s *schema.Schema, file inventory.File, text string) {
 			}
 		}
 		idx.Files = slices.Insert(idx.Files, at, file)
-		idx.Place()
+		idx.PlaceFiles()
 	}
-	if records := read(s.Game, s, file, text, nil); records != nil {
+	if records := recordsOf(s.Game, s, file, text, nil); records != nil {
 		idx.Add(records, file.Path)
 	}
 }
@@ -347,9 +347,9 @@ func cachePath(req Request) (path, ofFolder string, err error) {
 	return fmt.Sprintf("%s%s-%s-%x.gob.gz", ofFolder, version, app, state.Sum(nil)[:6]), ofFolder, nil
 }
 
-// forget deletes the cache files whose path begins with prefix, except keep, and gives the version
+// forgetCaches deletes the cache files whose path begins with prefix, except keep, and gives the version
 // in the name of the first (a version has no dash).
-func forget(prefix, keep string) (version string, err error) {
+func forgetCaches(prefix, keep string) (version string, err error) {
 	dir := filepath.Dir(prefix)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -383,7 +383,7 @@ func SaveInstall(req Request, install *Install) error {
 	if err != nil {
 		return err
 	}
-	install.Previous, err = forget(ofFolder, path)
+	install.Previous, err = forgetCaches(ofFolder, path)
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	for _, entry := range entries {
 		name, full := entry.Name(), filepath.Join(filepath.Dir(path), entry.Name())
@@ -419,7 +419,7 @@ func LoadInstall(req Request) (*Install, error) {
 	if err := appdata.Decode(file, install); err != nil {
 		return nil, err
 	}
-	install.Index.Ready()
+	install.Index.Rebuild()
 	return install, nil
 }
 
@@ -429,6 +429,6 @@ func DropInstall(req Request) error {
 	if err != nil {
 		return err
 	}
-	_, err = forget(ofFolder, "")
+	_, err = forgetCaches(ofFolder, "")
 	return err
 }

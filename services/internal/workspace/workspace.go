@@ -251,7 +251,7 @@ func (sess *Session) Fires(from index.Def) []Fire {
 	// reference in from that leads there
 	var follow func(def index.Def, via string, start *index.Ref)
 	follow = func(def index.Def, via string, start *index.Ref) {
-		for _, ref := range index.Within(indexes, def) {
+		for _, ref := range index.RefsInside(indexes, def) {
 			first := cmp.Or(start, &ref)
 			switch {
 			case ref.Fires(s):
@@ -292,7 +292,7 @@ func (sess *Session) FiredBy(target index.Def, place bool) []Fire {
 	}
 	var follow func(def index.Def, fired *step) []Fire
 	follow = func(def index.Def, fired *step) (out []Fire) {
-		for _, ref := range index.Uses(s, indexes, def.Database, def.Name) {
+		for _, ref := range index.RefsTo(s, indexes, def.Database, def.Name) {
 			var caller index.Def
 			for _, idx := range indexes {
 				if records := idx.Records[ref.Path]; records != nil && ref.From >= 0 {

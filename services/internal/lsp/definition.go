@@ -125,7 +125,7 @@ func (file *file) uses(ref index.Ref) []Location {
 		}
 	}
 	for _, database := range databases(sess, ref) {
-		for _, found := range index.Uses(sess.Install.Schema, sess.Indexes(), database, ref.Name) {
+		for _, found := range index.RefsTo(sess.Install.Schema, sess.Indexes(), database, ref.Name) {
 			add(locate(sess, found.Path, Position{Line: int(found.Line), Character: int(found.Col)}))
 		}
 	}

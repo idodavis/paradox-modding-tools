@@ -42,14 +42,14 @@ type Reading struct {
 }
 
 // Visitor is one use of the walker. Create makes the positions it reads (vanilla, usages); Entry says which
-// database's entry a statement starts, nil for none; Names lists the names a key is read as (a docs key's
+// database's entry a statement starts, nil for none; Alternatives lists the names a key is read as (a docs key's
 // a/b|c alternatives); Visit sees each reading, may change where its block is read, and returns whether to
 // read that block.
 type Visitor struct {
-	Create bool
-	Entry  func(jomini.Statement) *Database
-	Names  func(key string) []string
-	Visit  func(*Reading) bool
+	Create       bool
+	Entry        func(jomini.Statement) *Database
+	Alternatives func(key string) []string
+	Visit        func(*Reading) bool
 }
 
 // meaning is what a key is: the rule that read it, its position, its declared command or link, the calling
@@ -108,8 +108,8 @@ func (s *Schema) entryReading(statement jomini.Statement, database *Database, in
 func (s *Schema) keyReadings(v Visitor, statements []jomini.Statement, index int, in BlockContext) []Reading {
 	assign := statements[index].(*jomini.Assignment)
 	names := []string{assign.Key.Text}
-	if v.Names != nil {
-		names = v.Names(assign.Key.Text)
+	if v.Alternatives != nil {
+		names = v.Alternatives(assign.Key.Text)
 	}
 	if index > 0 {
 		if listed, isList := statements[index-1].(*jomini.ValueStmt); isList {

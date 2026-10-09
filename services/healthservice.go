@@ -149,7 +149,7 @@ func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 		ordered.Files = slices.SortedStableFunc(slices.Values(sess.Workspace.Files), func(first, second inventory.File) int {
 			return cmp.Compare(slices.Index(params.Order, first.Origin), slices.Index(params.Order, second.Origin))
 		})
-		ordered.Place()
+		ordered.PlaceFiles()
 		preview = []*index.Index{sess.Install.Index, &ordered}
 	}
 	health.Contests, health.Overrides = contests(sess, preview, number)

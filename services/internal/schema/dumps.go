@@ -457,8 +457,8 @@ func (schema *Schema) parseDataType(e dumpEntry) {
 // placeholder matches a block placeholder in a usage.
 var placeholder = regexp.MustCompile(game.UsagePlaceholder)
 
-// applyUsages reads each command's usages into its arguments, once every command is declared. A command
-// whose usage blocks write no block placeholder takes arguments only.
+// applyUsages stores each command's usages in its arguments, once every command is declared, then decides
+// from them whether the command iterates a list and whether its block takes arguments only.
 func (schema *Schema) applyUsages(usages map[string][]string) {
 	for _, name := range slices.Sorted(maps.Keys(usages)) {
 		command := schema.Commands[name]
@@ -467,17 +467,12 @@ func (schema *Schema) applyUsages(usages map[string][]string) {
 			parsed := jomini.Parse(normalize(usageLines(usage)))
 			written := usageName(&parsed, name)
 			schema.applyUsage(&parsed, command, written)
-			if written == "" && len(parsed.Root.Statements) > 0 {
-				blocks++
-				if !placeholder.MatchString(usage) {
-					plain++
-				}
-				continue
-			}
-			found, plainBlocks := countBlocks(usage, written)
+			found, plainBlocks := argumentBlocks(usage, written, len(parsed.Root.Statements) > 0)
 			blocks, plain = blocks+found, plain+plainBlocks
 		}
+		// a command with no target whose blurb says it iterates runs its block once per list item
 		command.Lists = command.Out == "" && strings.Contains(command.Blurb, game.DumpWords.Iterates)
+		// every block the usages write under the command holds arguments only: so does the command's
 		if blocks > 0 && plain == blocks {
 			SetFirst(&command.Args.Block, game.BlockArguments, SourceDumps)
 		}
@@ -502,9 +497,21 @@ func usageName(parsed *jomini.Result, command string) (found string) {
 	return found
 }
 
-// countBlocks counts the blocks of a usage written under the command's name and how many of them write only
-// arguments: no line is a block placeholder, and each is a statement or a brace.
-func countBlocks(usage, written string) (blocks, plain int) {
+// argumentBlocks counts the blocks a usage writes under the command's name, and how many of them hold
+// arguments only: no line is a block placeholder, and each is a statement or a brace. A usage that lists the
+// arguments themselves (written "") is one block, plain when it has no placeholder. It reads the raw text,
+// not the normalized one: normalize turns prose into comments and placeholders into strings, and the
+// question is about the raw shape.
+func argumentBlocks(usage, written string, listsArguments bool) (blocks, plain int) {
+	if written == "" {
+		switch {
+		case !listsArguments:
+			return 0, 0
+		case placeholder.MatchString(usage):
+			return 1, 0
+		}
+		return 1, 1
+	}
 	raw := jomini.Parse(usage)
 	for _, statement := range raw.Root.Statements {
 		assign, isAssign := statement.(*jomini.Assignment)

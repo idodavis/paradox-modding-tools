@@ -13,7 +13,7 @@ export interface DetectedInstall {
 
 /**
  * GameInfo is the static identity and convention set for one game. It carries no
- * derived data; the engine under lang/ scans the install for that.
+ * derived data; the engine scans the install for that.
  */
 export interface GameInfo {
     "id": string;

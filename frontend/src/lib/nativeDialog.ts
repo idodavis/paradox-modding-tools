@@ -3,7 +3,7 @@
  */
 import { Dialogs } from "@wailsio/runtime";
 
-/** The images a thumbnail may be: Go's local.ThumbnailExts. */
+/** The images a thumbnail may be: Go's modfiles.ThumbnailExts. */
 export const IMAGE_FILTER = "*.png; *.gif; *.jpg; *.jpeg";
 
 export function pickDirectory(title: string): Promise<string> {

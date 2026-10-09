@@ -2,7 +2,7 @@
 // disk changes do to the records, the read side, how a path is placed, and the lock contract under
 // -race.
 
-package session
+package workspace
 
 import (
 	"context"
@@ -33,7 +33,7 @@ func workspace(t *testing.T) (*Session, string) {
 	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "testdata", "mods", "ck3"))); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := New(t.Context(), game.Get("ck3"), install, []Mod{{ID: "mod", Dir: dir, Calendar: Calendar{{Name: "AC", Offset: 7782}}}}, "")
+	sess, err := Open(t.Context(), game.Get("ck3"), install, []Mod{{ID: "mod", Dir: dir, Calendar: Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eu5Session, err := New(t.Context(), game.Get("eu5"), install, nil, "")
+	eu5Session, err := Open(t.Context(), game.Get("eu5"), install, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

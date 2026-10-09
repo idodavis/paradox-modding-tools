@@ -19,7 +19,7 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/schema"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 // Diagnostic is one finding.
@@ -55,7 +55,7 @@ var Codes = []Code{
 }
 
 // Diagnose is a file's findings under the codes the user has on; nil enabled means the defaults.
-func Diagnose(sess *session.Session, path string, enabled map[string]bool) ([]Diagnostic, error) {
+func Diagnose(sess *workspace.Session, path string, enabled map[string]bool) ([]Diagnostic, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	// only a mod's script and loc files have findings; any other file (images, sound) is never read

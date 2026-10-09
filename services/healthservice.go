@@ -18,7 +18,7 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lsp"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 // HealthParams is what the page asks for: the load order to preview.
@@ -198,7 +198,7 @@ func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 // contests is each name two origins define, by a load order: a contest where two mods contend for
 // it, else one mod's override of another origin's; not in a database where the game repeats names,
 // nor one no schema database names (a parameter, a name script makes).
-func contests(sess *session.Session, preview []*index.Index, number func(inventory.File) int) (contested, overrides []Contest) {
+func contests(sess *workspace.Session, preview []*index.Index, number func(inventory.File) int) (contested, overrides []Contest) {
 	sch := sess.Install.Schema
 	names := map[[2]string]bool{}
 	for _, records := range sess.Workspace.Records {
@@ -257,7 +257,7 @@ func contests(sess *session.Session, preview []*index.Index, number func(invento
 // ship it, else an override -- and each site lists the entries its file defines, as contests counts them,
 // and those the kept file writes otherwise. Only a file in a folder the install ships files in is the
 // game's: a mod's descriptor, readme, thumbnail or editor settings are not.
-func replaced(sess *session.Session, preview []*index.Index, number func(inventory.File) int) (contested, overrides []Contest) {
+func replaced(sess *workspace.Session, preview []*index.Index, number func(inventory.File) int) (contested, overrides []Contest) {
 	sch := sess.Install.Schema
 	folders := map[string]bool{}
 	for _, file := range sess.Install.Index.Files {
@@ -335,7 +335,7 @@ func replaced(sess *session.Session, preview []*index.Index, number func(invento
 }
 
 // dependencies is what each mod needs from another, from the references its loaded files write.
-func dependencies(sess *session.Session, number func(inventory.File) int) []Dependency {
+func dependencies(sess *workspace.Session, number func(inventory.File) int) []Dependency {
 	sch, indexes := sess.Install.Schema, sess.Indexes()
 	type need struct {
 		from, to string
@@ -419,7 +419,7 @@ func dependencies(sess *session.Session, number func(inventory.File) int) []Depe
 
 // hidden is the definition a winning one hides, the loaded one before it, else the install's own
 // (the zero Def for none), and whether the two are written otherwise; each pair is compared once.
-func hidden(sess *session.Session, ref index.Ref, defs []index.Def, winner index.Def, compared map[[2]index.Def]bool) (index.Def, bool) {
+func hidden(sess *workspace.Session, ref index.Ref, defs []index.Def, winner index.Def, compared map[[2]index.Def]bool) (index.Def, bool) {
 	var base index.Def
 	if before := slices.Index(defs, winner); before > 0 {
 		base = defs[before-1]
@@ -438,7 +438,7 @@ func hidden(sess *session.Session, ref index.Ref, defs []index.Def, winner index
 
 // dangling is each name a mod's loaded file writes that the editor's checks find nothing for, from
 // their findings, so a name dangles by the editor's rules.
-func dangling(sess *session.Session, found map[string][]lsp.Diagnostic, number func(inventory.File) int) []Dangling {
+func dangling(sess *workspace.Session, found map[string][]lsp.Diagnostic, number func(inventory.File) int) []Dangling {
 	indexes, rows := sess.Indexes(), map[[2]string]Dangling{}
 	for _, file := range sess.Workspace.Files {
 		records := sess.Workspace.Records[file.Path]
@@ -493,7 +493,7 @@ func sameStatement(first, second jomini.Node) bool {
 
 // findings is every mod file's findings under the editor's default codes, found again only when the
 // session's records changed since. Diagnose takes the session's read lock itself.
-func (s *HealthService) findings(sess *session.Session) map[string][]lsp.Diagnostic {
+func (s *HealthService) findings(sess *workspace.Session) map[string][]lsp.Diagnostic {
 	sess.RLock()
 	changes, files := sess.Changes, slices.Clone(sess.Workspace.Files)
 	sess.RUnlock()
@@ -539,7 +539,7 @@ func (s *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]str
 // localization is each language's gaps: in a language a mod ships other than the workspace's, each
 // key of its workspace-language files no workspace file in that language has, once, and the mod's file
 // in that language it goes in.
-func localization(sess *session.Session, number func(inventory.File) int) []Language {
+func localization(sess *workspace.Session, number func(inventory.File) int) []Language {
 	indexes := sess.Indexes()
 	workspaceLanguage := strings.ToLower(sess.Language)
 	languages := map[string]bool{workspaceLanguage: true}

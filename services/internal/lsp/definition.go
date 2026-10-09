@@ -14,7 +14,7 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 // Symbol is one definition, for an outline or a workspace search.
@@ -77,7 +77,7 @@ func (file *file) sites(ref index.Ref) []Location {
 }
 
 // Definition is every site defining the word at a position, in load order, the kept one first.
-func Definition(sess *session.Session, path string, line, col int) ([]Location, error) {
+func Definition(sess *workspace.Session, path string, line, col int) ([]Location, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -93,7 +93,7 @@ func Definition(sess *session.Session, path string, line, col int) ([]Location, 
 
 // References is every place naming what the word at a position names, once: its references, the
 // calls whose CalledIn word resolves in its database, and its definitions.
-func References(sess *session.Session, path string, line, col int) ([]Location, error) {
+func References(sess *workspace.Session, path string, line, col int) ([]Location, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -108,7 +108,7 @@ func References(sess *session.Session, path string, line, col int) ([]Location, 
 }
 
 // databases are the databases a reference's name is in: its own, or those a call of its kind resolves in.
-func databases(sess *session.Session, ref index.Ref) []string {
+func databases(sess *workspace.Session, ref index.Ref) []string {
 	if ref.Called != "" {
 		return sess.Install.Schema.Callees[ref.Called]
 	}
@@ -138,7 +138,7 @@ func (file *file) uses(ref index.Ref) []Location {
 // Rename is the edits that rename the name at a place everywhere it is written, in the mods' files. It refuses, with
 // the reason, a name the game defines, one more than one origin defines, a site in the game's files or one that
 // does not read as the name there, and a new name that is no name or is taken.
-func Rename(sess *session.Session, path string, line, col int, name string) (WorkspaceEdit, error) {
+func Rename(sess *workspace.Session, path string, line, col int, name string) (WorkspaceEdit, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	edit := WorkspaceEdit{Changes: map[string][]TextEdit{}}
@@ -194,7 +194,7 @@ func Rename(sess *session.Session, path string, line, col int, name string) (Wor
 }
 
 // DocumentSymbols is the definitions a file holds, in the file's order.
-func DocumentSymbols(sess *session.Session, path string) ([]Symbol, error) {
+func DocumentSymbols(sess *workspace.Session, path string) ([]Symbol, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	listed, _, _ := sess.Located(path)
@@ -218,7 +218,7 @@ func DocumentSymbols(sess *session.Session, path string) ([]Symbol, error) {
 
 // WorkspaceSymbols is the mod definitions whose names hold a non-empty query, ignoring case, that
 // the game loads.
-func WorkspaceSymbols(sess *session.Session, query string) []Symbol {
+func WorkspaceSymbols(sess *workspace.Session, query string) []Symbol {
 	sess.RLock()
 	defer sess.RUnlock()
 	query = strings.ToLower(query)
@@ -243,7 +243,7 @@ func WorkspaceSymbols(sess *session.Session, query string) []Symbol {
 
 // FindLoc is the localization keys that start with a prefix, at most limit, each where its entry in the workspace's
 // language is (the english one where it has none), for the palette's #.
-func FindLoc(sess *session.Session, prefix string, limit int) []Symbol {
+func FindLoc(sess *workspace.Session, prefix string, limit int) []Symbol {
 	sess.RLock()
 	defer sess.RUnlock()
 	var out []Symbol

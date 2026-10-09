@@ -9,13 +9,13 @@ import * as inventory$0 from "./internal/inventory/models.js";
 import * as lsp$0 from "./internal/lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as session$0 from "./internal/session/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as steam$0 from "./internal/steam/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as texture$0 from "./internal/texture/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as workspace$0 from "./internal/workspace/models.js";
 
 /**
  * Cited is one name a block writes, and where.
@@ -105,12 +105,12 @@ export interface Detail {
     /**
      * as the graph draws them: events and on_actions, through scripted effects
      */
-    "fires": session$0.Fire[] | null;
+    "fires": workspace$0.Fire[] | null;
 
     /**
      * the same, into it
      */
-    "firedBy": session$0.Fire[] | null;
+    "firedBy": workspace$0.Fire[] | null;
 
     /**
      * what the block names, by database in the order first written
@@ -1135,5 +1135,5 @@ export interface WorkspaceMod {
     /**
      * the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written
      */
-    "eras"?: session$0.Calendar;
+    "eras"?: workspace$0.Calendar;
 }

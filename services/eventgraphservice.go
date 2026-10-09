@@ -15,7 +15,7 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 // Params is what the page asks for. Every number is the page's.
@@ -96,7 +96,7 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 
 	// in the files the game loads: what is fired, and what fires it, a scripted entry by what fires
 	// through it (Session.FiredBy)
-	fired, firing := map[string]string{}, map[index.Def][]session.Fire{}
+	fired, firing := map[string]string{}, map[index.Def][]workspace.Fire{}
 	for _, idx := range indexes {
 		for _, file := range idx.Files {
 			records := idx.Records[file.Path]
@@ -115,7 +115,7 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 				if _, entered := firing[caller]; !entered && caller.Scripted(sch) {
 					firing[caller] = sess.FiredBy(caller, false)
 				} else if !entered {
-					firing[caller] = []session.Fire{{Name: caller.Name, Database: caller.Database}}
+					firing[caller] = []workspace.Fire{{Name: caller.Name, Database: caller.Database}}
 				}
 			}
 		}
@@ -184,11 +184,11 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	builder.node(params.Root, true)
 
 	// the fires drawn: through a scripted effect only when the page follows them
-	followed := func(fires []session.Fire) []session.Fire {
+	followed := func(fires []workspace.Fire) []workspace.Fire {
 		if params.Follow {
 			return fires
 		}
-		return slices.DeleteFunc(fires, func(fire session.Fire) bool { return fire.Via != "" })
+		return slices.DeleteFunc(fires, func(fire workspace.Fire) bool { return fire.Via != "" })
 	}
 
 	// out of the root, hop by hop, each node's fan-out cut by the page's number
@@ -222,7 +222,7 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	builder.reach(params.Root, params.Depth, params.Scripted, followed)
 
 	// into a root the game fires, one hop: a stub until the page opens it
-	var callers []session.Fire
+	var callers []workspace.Fire
 	if (index.Ref{Database: root.Database}).Fires(sess.Install.Schema) {
 		callers = followed(sess.FiredBy(root, true))
 	}
@@ -313,7 +313,7 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 
 // reach counts the definitions within depth hops of a root, each once, by kind and by origin; with scripted, the
 // scripted effects a chain passes through too.
-func (grapher *grapher) reach(root string, depth int, scripted bool, followed func([]session.Fire) []session.Fire) {
+func (grapher *grapher) reach(root string, depth int, scripted bool, followed func([]workspace.Fire) []workspace.Fire) {
 	out := grapher.out
 	out.Kinds, out.Origins = map[string]int{}, map[string]int{}
 	seen := map[string]bool{}
@@ -351,9 +351,9 @@ func (grapher *grapher) reach(root string, depth int, scripted bool, followed fu
 
 // stubTitle is a fan-out stub's title: "+7 more events" where every hidden fire is of one database,
 // else "+7 more".
-func stubTitle(hidden []session.Fire) string {
+func stubTitle(hidden []workspace.Fire) string {
 	title := fmt.Sprintf("+%d more", len(hidden))
-	if slices.ContainsFunc(hidden, func(fire session.Fire) bool { return fire.Database != hidden[0].Database }) {
+	if slices.ContainsFunc(hidden, func(fire workspace.Fire) bool { return fire.Database != hidden[0].Database }) {
 		return title
 	}
 	title += " " + game.KindName(hidden[0].Database)
@@ -365,14 +365,14 @@ func stubTitle(hidden []session.Fire) string {
 
 // grapher holds one graph as it is drawn, and each definition found, once.
 type grapher struct {
-	sess  *session.Session
+	sess  *workspace.Session
 	out   *EventGraph
 	drawn map[string]bool
 	found map[string]index.Def
 }
 
 // newGrapher is an empty graph over a session.
-func newGrapher(sess *session.Session) *grapher {
+func newGrapher(sess *workspace.Session) *grapher {
 	return &grapher{sess: sess, out: &EventGraph{}, drawn: map[string]bool{}, found: map[string]index.Def{}}
 }
 
@@ -412,17 +412,17 @@ func (grapher *grapher) node(id string, root bool) {
 
 // Detail is one definition, opened.
 type Detail struct {
-	Kind     string         `json:"kind"`
-	Name     string         `json:"name"`
-	Line     int            `json:"line"`
-	At       inventory.File `json:"at"`
-	Lines    []string       `json:"lines"` // the definition as its file writes it
-	Sections []Section      `json:"sections"`
-	Options  []Option       `json:"options"`
-	Fires    []session.Fire `json:"fires"`   // as the graph draws them: events and on_actions, through scripted effects
-	FiredBy  []session.Fire `json:"firedBy"` // the same, into it
-	Refs     []RefGroup     `json:"refs"`    // what the block names, by database in the order first written
-	Reason   string         `json:"reason,omitempty"`
+	Kind     string           `json:"kind"`
+	Name     string           `json:"name"`
+	Line     int              `json:"line"`
+	At       inventory.File   `json:"at"`
+	Lines    []string         `json:"lines"` // the definition as its file writes it
+	Sections []Section        `json:"sections"`
+	Options  []Option         `json:"options"`
+	Fires    []workspace.Fire `json:"fires"`   // as the graph draws them: events and on_actions, through scripted effects
+	FiredBy  []workspace.Fire `json:"firedBy"` // the same, into it
+	Refs     []RefGroup       `json:"refs"`    // what the block names, by database in the order first written
+	Reason   string           `json:"reason,omitempty"`
 }
 
 // Section is one key at the top of the definition's block: its value as written (a block as its
@@ -589,7 +589,7 @@ func spanLines(parsed *jomini.Result, span jomini.Range, limit int) []string {
 
 // eventText reads an event's texts, triggers and options from its file's parse, as written.
 type eventText struct {
-	sess   *session.Session
+	sess   *workspace.Session
 	parsed *jomini.Result
 }
 

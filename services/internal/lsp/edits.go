@@ -16,7 +16,7 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/loc"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 // TextEdit replaces a range of a file with new text.
@@ -50,7 +50,7 @@ type InlayHint struct {
 
 // Format is the edits that indent a script file with tabs by brace depth, or a localization file's
 // entries with one space. Only leading whitespace changes; other formats are left alone.
-func Format(sess *session.Session, path, unit string) ([]TextEdit, error) {
+func Format(sess *workspace.Session, path, unit string) ([]TextEdit, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -88,7 +88,7 @@ func Format(sess *session.Session, path, unit string) ([]TextEdit, error) {
 }
 
 // Folding is one range per block of a script file, by the lines of its braces.
-func Folding(sess *session.Session, path string) ([]FoldingRange, error) {
+func Folding(sess *workspace.Session, path string) ([]FoldingRange, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -114,7 +114,7 @@ func Folding(sess *session.Session, path string) ([]FoldingRange, error) {
 // CodeActions is the quick-fixes at a position: a BOM for a localization file without one, and a
 // loc key no file defines for a word at a loc-key position, appended to the mod's file of the
 // language.
-func CodeActions(sess *session.Session, path string, line, col int) ([]CodeAction, error) {
+func CodeActions(sess *workspace.Session, path string, line, col int) ([]CodeAction, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -167,7 +167,7 @@ func (file *file) keyFile() (string, Position, bool) {
 
 // InlayHints is the era's date after every date of a file, where the mod declares a calendar and
 // one of its eras applies.
-func InlayHints(sess *session.Session, path string) ([]InlayHint, error) {
+func InlayHints(sess *workspace.Session, path string) ([]InlayHint, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)

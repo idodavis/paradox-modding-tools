@@ -19,8 +19,8 @@ import (
 	"sync"
 
 	"paradox-modding-tools/services/internal/appdata"
-	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/wiki"
+	"paradox-modding-tools/services/internal/workspace"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -74,7 +74,7 @@ type WorkspaceMod struct {
 	// by markDisk
 	Folder string `json:"folder"`
 	// the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written
-	Eras session.Calendar `json:"eras,omitempty"`
+	Eras workspace.Calendar `json:"eras,omitempty"`
 }
 
 // AppService serves the app-wide calls and holds config.json for every other service.

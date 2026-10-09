@@ -16,7 +16,7 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/schema"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 // maxComplete caps the list; a cut list is marked incomplete, so the editor asks again.
@@ -49,7 +49,7 @@ type completer struct {
 }
 
 // Complete is what may be written at a position.
-func Complete(sess *session.Session, path string, line, col int) (*Completion, error) {
+func Complete(sess *workspace.Session, path string, line, col int) (*Completion, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -313,7 +313,7 @@ func isWord(char byte) bool {
 
 // Resolve is an item's card, fetched when the editor shows it: what its label names where it was
 // offered, read again there; nil where nothing is known.
-func Resolve(sess *session.Session, path string, item Item) (*Inspect, error) {
+func Resolve(sess *workspace.Session, path string, item Item) (*Inspect, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)

@@ -19,13 +19,13 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 var installs sync.Map
 
 // fixture is a session over one fixture install, scanned once, with an empty mod folder per test.
-func fixture(t *testing.T, id string) (*session.Session, string) {
+func fixture(t *testing.T, id string) (*workspace.Session, string) {
 	t.Helper()
 	scan, _ := installs.LoadOrStore(id, sync.OnceValues(func() (*index.Install, error) {
 		dir := filepath.Join("..", "testdata", id)
@@ -39,7 +39,7 @@ func fixture(t *testing.T, id string) (*session.Session, string) {
 	if err := os.MkdirAll(filepath.Join(dir, "common"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := session.New(t.Context(), game.Get(id), install, []session.Mod{{ID: "mod", Dir: dir, Calendar: session.Calendar{{Name: "AC", Offset: 7782}}}}, "")
+	sess, err := workspace.Open(t.Context(), game.Get(id), install, []workspace.Mod{{ID: "mod", Dir: dir, Calendar: workspace.Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func fixture(t *testing.T, id string) (*session.Session, string) {
 }
 
 // opened puts a file of the mod in the editor with a text, and gives its path.
-func opened(sess *session.Session, dir, rel, text string) string {
+func opened(sess *workspace.Session, dir, rel, text string) string {
 	path := filepath.Join(dir, filepath.FromSlash(rel))
 	sess.DidChange(path, text)
 	return path
@@ -422,7 +422,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		sess, err := session.New(t.Context(), game.Get(testCase.id), install, []session.Mod{{ID: "sample", Dir: mod}}, "")
+		sess, err := workspace.Open(t.Context(), game.Get(testCase.id), install, []workspace.Mod{{ID: "sample", Dir: mod}}, "")
 		if err != nil {
 			t.Fatal(err)
 		}

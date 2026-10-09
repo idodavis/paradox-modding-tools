@@ -25,21 +25,21 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/schema"
-	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/texture"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 // file is an open file's parse and place, held for one request.
 type file struct {
-	sess   *session.Session
+	sess   *workspace.Session
 	path   string
 	text   string
 	parsed *jomini.Result
-	place  session.Place
+	place  workspace.Place
 }
 
 // open parses a file (once per text for an open buffer) and places it.
-func open(sess *session.Session, path string) (*file, error) {
+func open(sess *workspace.Session, path string) (*file, error) {
 	parsed, text, err := sess.Parsed(path)
 	if err != nil {
 		return nil, err
@@ -176,7 +176,7 @@ func (cursor spot) within() []string {
 // word is the scalar under the cursor (the innermost statement's key or value; nil for none), if it
 // is the key, and the definition or reference the walk read inside it ($NAME$ included): of several
 // references (a call's parameter and the call), the first that resolves, else the first.
-func (cursor spot) word(sess *session.Session) (word *jomini.Scalar, isKey bool, ref *index.Ref) {
+func (cursor spot) word(sess *workspace.Session) (word *jomini.Scalar, isKey bool, ref *index.Ref) {
 	if len(cursor.chain) == 0 {
 		return nil, false, nil
 	}
@@ -214,7 +214,7 @@ func (cursor spot) word(sess *session.Session) (word *jomini.Scalar, isKey bool,
 }
 
 // Hover is the card for the word at a position, or nil where nothing is known of it.
-func Hover(sess *session.Session, path string, line, col int) (*Inspect, error) {
+func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -563,7 +563,7 @@ func (file *file) locCard(offset int) *Inspect {
 
 // SignatureHelp is the arguments of the command whose block holds the cursor: the keys a declared
 // source states its block holds, with the command's blurb; nil elsewhere.
-func SignatureHelp(sess *session.Session, path string, line, col int) (*Signature, error) {
+func SignatureHelp(sess *workspace.Session, path string, line, col int) (*Signature, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	file, err := open(sess, path)
@@ -662,12 +662,12 @@ func within(span jomini.Range, offset int) bool {
 }
 
 // defined is where a definition is written.
-func defined(sess *session.Session, def index.Def) Location {
+func defined(sess *workspace.Session, def index.Def) Location {
 	return locate(sess, def.Path, Position{Line: int(def.Line), Character: int(def.Col)})
 }
 
 // locate is the editor's location of a position in a file of the workspace or the install.
-func locate(sess *session.Session, path string, at Position) Location {
+func locate(sess *workspace.Session, path string, at Position) Location {
 	listed, _, _ := sess.Located(path)
 	return Location{Path: path, Origin: listed.Origin, Rel: listed.Rel, Range: Range{Start: at, End: at}}
 }
@@ -813,7 +813,7 @@ func keys(position *schema.Key) (names []string, stated int) {
 // date writes a date out (January 1st, 8082 AD; year -221 is 221 BC), and in the mod's calendar
 // where one of its eras applies (82.1.1 A.C.).
 // TODO: What about custom months in addition to years?
-func date(text string, calendar session.Calendar) string {
+func date(text string, calendar workspace.Calendar) string {
 	year, month, day, _, ok := jomini.ParseDate(text)
 	if !ok || month < 1 || month > 12 {
 		return ""

@@ -17,7 +17,7 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/schema"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/singleflight"
@@ -30,7 +30,7 @@ type SessionService struct {
 
 	once     sync.Once
 	smu      sync.RWMutex
-	sessions map[string]*session.Session
+	sessions map[string]*workspace.Session
 	inputs   map[string]string // workspace id → what its live session was built from (inputsOf)
 	sf       singleflight.Group
 	scanned  sync.Map // install id → time.Time: when its install was built, as this run last scanned or loaded it
@@ -57,7 +57,7 @@ func (s *SessionService) start() {
 		if s.Scan == nil {
 			s.Scan = index.Scan
 		}
-		s.sessions, s.inputs = map[string]*session.Session{}, map[string]string{}
+		s.sessions, s.inputs = map[string]*workspace.Session{}, map[string]string{}
 	})
 }
 
@@ -71,7 +71,7 @@ func (s *SessionService) EnsureSession(workspaceID string) (*LanguageHealth, err
 
 // live is the workspace's session, built once however many callers ask at once, with every other
 // workspace's session closed first so only one is ever live.
-func (s *SessionService) live(workspaceID string) (*session.Session, error) {
+func (s *SessionService) live(workspaceID string) (*workspace.Session, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
@@ -100,12 +100,12 @@ func (s *SessionService) live(workspaceID string) (*session.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return made.(*session.Session), nil
+	return made.(*workspace.Session), nil
 }
 
 // get is a workspace's live session, or nil where none is built or the config no longer says what it was built
 // from (then it is closed, and the next request builds it again).
-func (s *SessionService) get(workspaceID string) *session.Session {
+func (s *SessionService) get(workspaceID string) *workspace.Session {
 	s.smu.RLock()
 	built, inputs, recorded := s.sessions[workspaceID], s.inputs[workspaceID], s.inputs[workspaceID] != ""
 	s.smu.RUnlock()
@@ -148,7 +148,7 @@ func (s *SessionService) drop(workspaceID string) {
 // time, because an install's index is most of a session's memory.
 func (s *SessionService) dropAllExcept(keep string) {
 	s.smu.Lock()
-	closing := map[string]*session.Session{}
+	closing := map[string]*workspace.Session{}
 	for id, built := range s.sessions {
 		if id != keep {
 			closing[id] = built
@@ -164,7 +164,7 @@ func (s *SessionService) dropAllExcept(keep string) {
 }
 
 // build makes a workspace's session: the install from its cache, scanned if none, and its mods.
-func (s *SessionService) build(workspaceID string) (*session.Session, error) {
+func (s *SessionService) build(workspaceID string) (*workspace.Session, error) {
 	ws, inst, err := s.App.workspace(workspaceID)
 	if err != nil {
 		return nil, err
@@ -183,11 +183,11 @@ func (s *SessionService) build(workspaceID string) (*session.Session, error) {
 
 	// the mods are read after the install's scan, which ended at 100; the strip names the stage
 	emit(EventLangScanProgress, ScanProgress{InstallID: inst.ID, Percent: 100, Stage: "reading your mods"})
-	var mods []session.Mod
+	var mods []workspace.Mod
 	for _, mod := range ws.Mods {
-		mods = append(mods, session.Mod{ID: mod.ID, Dir: mod.Path, Calendar: mod.Eras})
+		mods = append(mods, workspace.Mod{ID: mod.ID, Dir: mod.Path, Calendar: mod.Eras})
 	}
-	sess, err := session.New(context.Background(), info, install, mods, ws.DefaultLocLang)
+	sess, err := workspace.Open(context.Background(), info, install, mods, ws.DefaultLocLang)
 	if err != nil {
 		return nil, err
 	}

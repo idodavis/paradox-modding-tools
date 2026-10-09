@@ -17,8 +17,8 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/modfiles"
-	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/steam"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 // WorkspaceService manages workspaces, game installs, and mods.
@@ -441,7 +441,7 @@ func freeSlot(mods []WorkspaceMod) int {
 
 // SetWorkspaceModCalendar declares the eras a mod's dates are written in: names trimmed, unnamed
 // eras dropped; an empty list clears it, leaving every date as written.
-func (s *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, eras session.Calendar) error {
+func (s *WorkspaceService) SetWorkspaceModCalendar(workspaceID, modID string, eras workspace.Calendar) error {
 	err := s.mutateMod(workspaceID, modID, func(mod *WorkspaceMod) error {
 		mod.Eras = nil
 		for _, era := range eras {

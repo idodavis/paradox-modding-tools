@@ -26,7 +26,7 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/lsp"
-	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/workspace"
 )
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {
@@ -36,20 +36,20 @@ var scanned = sync.OnceValues(func() (*index.Install, error) {
 
 // workspace is a session service holding, as workspace "ws", a session over the fixture install
 // with the given mods, each a map of rel to text.
-func workspace(t *testing.T, mods ...map[string]string) *SessionService {
+func openWorkspace(t *testing.T, mods ...map[string]string) *SessionService {
 	t.Helper()
 	install, err := scanned()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var playset []session.Mod
+	var playset []workspace.Mod
 	for i, files := range mods {
 		dir := t.TempDir()
 		writeTree(t, dir, files)
 		id := string(rune('a' + i))
-		playset = append(playset, session.Mod{ID: "mod" + id, Dir: dir})
+		playset = append(playset, workspace.Mod{ID: "mod" + id, Dir: dir})
 	}
-	sess, err := session.New(t.Context(), game.Get("ck3"), install, playset, "")
+	sess, err := workspace.Open(t.Context(), game.Get("ck3"), install, playset, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func workspace(t *testing.T, mods ...map[string]string) *SessionService {
 }
 
 // serving is a session service holding sess as workspace "ws".
-func serving(sess *session.Session) *SessionService {
+func serving(sess *workspace.Session) *SessionService {
 	served := &SessionService{}
 	served.start()
 	served.sessions["ws"] = sess
@@ -207,7 +207,7 @@ func TestEventGraph(t *testing.T) {
 	for i := range 15 {
 		wide += fmt.Sprintf("w.%d = { type = character_event }\n", i+1)
 	}
-	graphs := &EventGraphService{Session: workspace(t, map[string]string{
+	graphs := &EventGraphService{Session: openWorkspace(t, map[string]string{
 		"events/chain.txt":              chain,
 		"events/wide.txt":               wide,
 		"events/macro.txt":              "namespace = m\nm.1 = {\n\ttype = character_event\n\timmediate = { m_fire = yes }\n}\nm.2 = { type = character_event }\n",
@@ -291,7 +291,7 @@ func TestEventGraph(t *testing.T) {
 	if _, ok := edge(drawn, "v.1", "v.2"); !ok {
 		t.Errorf("the install's fire: %+v", drawn.Edges)
 	}
-	if got, _ := (&EventGraphService{Session: workspace(t)}).GetEventGraph("ws", Params{Root: "v.1", Depth: 1}); len(got.Nodes) == 0 {
+	if got, _ := (&EventGraphService{Session: openWorkspace(t)}).GetEventGraph("ws", Params{Root: "v.1", Depth: 1}); len(got.Nodes) == 0 {
 		t.Error("with no mod at all")
 	}
 
@@ -321,7 +321,7 @@ func TestEventGraph(t *testing.T) {
 }
 
 func TestDetail(t *testing.T) {
-	graphs := &EventGraphService{Session: workspace(t, map[string]string{
+	graphs := &EventGraphService{Session: openWorkspace(t, map[string]string{
 		"events/m.txt":                         "namespace = m\nm.1 = {\n\ttype = character_event\n\ttitle = v.1.t\n\tdesc = v.1.desc\n\timmediate = { trigger_event = v.2 }\n\toption = {\n\t\tname = v.1.a\n\t}\n}\nm.2 = {\n\toption = {\n\t\tname = {\n\t\t\ttrigger = { always = yes }\n\t\t\ttext = v.1.a\n\t\t}\n\t}\n}\n",
 		"localization/english/m_l_english.yml": "\xEF\xBB\xBFl_english:\n v.1.a:0 \"Go\"\n",
 	})}
@@ -445,7 +445,7 @@ func TestReadText(t *testing.T) {
 // dangling references and what must never be one, each language's untranslated keys, a site's
 // lines, and the lookup of one key.
 func TestWorkspaceHealth(t *testing.T) {
-	reports := &HealthService{Session: workspace(t,
+	reports := &HealthService{Session: openWorkspace(t,
 		map[string]string{
 			"common/traits/zz_a.txt":               "brave = { name = x }\nshared_a = { name = x }\nbold = { name = x }\ncraven = { name = x }\n",
 			"events/a.txt":                         "namespace = a\na.1 = {\n\ttype = character_event\n\ttitle = a.1.t\n\ttrigger = {\n\t\thas_trait = brave\n\t\thas_trait = bold_b\n\t\texists = title:k_nowhere\n\t\texists = title:k_x\n\t\tfaith = faith:catholic\n\t\texists = scope:whatever\n\t}\n\timmediate = { add_gold = small_value }\n}\n",
@@ -753,14 +753,14 @@ func TestEnsureSession(t *testing.T) {
 	svc.dropAllExcept("")
 
 	var wg sync.WaitGroup
-	got := make([]*session.Session, 20)
+	got := make([]*workspace.Session, 20)
 	for i := range got {
 		wg.Go(func() {
 			got[i], _ = svc.live("ws")
 		})
 	}
 	wg.Wait()
-	if got[0] == nil || slices.ContainsFunc(got, func(live *session.Session) bool { return live != got[0] }) {
+	if got[0] == nil || slices.ContainsFunc(got, func(live *workspace.Session) bool { return live != got[0] }) {
 		t.Error("twenty callers at once share one build and one instance")
 	}
 	if _, err := svc.live(""); err == nil || svc.get("ws") != got[0] {
@@ -966,7 +966,7 @@ func TestSweep(t *testing.T) {
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(user, dir)
 			}
-			sess, err := session.New(t.Context(), game.Get(id), scanned, []session.Mod{{ID: "mod", Dir: dir}}, "")
+			sess, err := workspace.Open(t.Context(), game.Get(id), scanned, []workspace.Mod{{ID: "mod", Dir: dir}}, "")
 			if err != nil {
 				t.Logf("SWEEP %s %s: %v", id, filepath.Base(descriptor), err)
 				continue
@@ -978,7 +978,7 @@ func TestSweep(t *testing.T) {
 
 // sweep reports one mod: the health counts, the findings over a sample of its script files, and
 // the hover answer rate over a sample of the words in a sample of those files.
-func sweep(t *testing.T, id, name string, sess *session.Session) {
+func sweep(t *testing.T, id, name string, sess *workspace.Session) {
 	started := time.Now()
 	health, _ := (&HealthService{Session: serving(sess)}).GetHealth("ws", HealthParams{})
 	untranslated, defs := 0, 0

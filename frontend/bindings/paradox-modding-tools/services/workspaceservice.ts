@@ -15,7 +15,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as game$0 from "./internal/game/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as session$0 from "./internal/session/models.js";
+import * as workspace$0 from "./internal/workspace/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -168,7 +168,7 @@ export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromi
  * SetWorkspaceModCalendar declares the eras a mod's dates are written in: names trimmed, unnamed
  * eras dropped; an empty list clears it, leaving every date as written.
  */
-export function SetWorkspaceModCalendar(workspaceID: string, modID: string, eras: session$0.Calendar): $CancellablePromise<void> {
+export function SetWorkspaceModCalendar(workspaceID: string, modID: string, eras: workspace$0.Calendar): $CancellablePromise<void> {
     return $Call.ByID(2457080507, workspaceID, modID, eras);
 }
 

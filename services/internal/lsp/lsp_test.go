@@ -28,7 +28,7 @@ var installs sync.Map
 func fixture(t *testing.T, id string) (*session.Session, string) {
 	t.Helper()
 	scan, _ := installs.LoadOrStore(id, sync.OnceValues(func() (*index.Install, error) {
-		dir := filepath.Join("..", "lang", "testdata", id)
+		dir := filepath.Join("..", "testdata", id)
 		return index.Scan(t.Context(), index.Request{Game: id, Dir: dir, Version: "test"})
 	}))
 	install, err := scan.(func() (*index.Install, error))()

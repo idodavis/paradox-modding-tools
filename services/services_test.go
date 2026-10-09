@@ -30,7 +30,7 @@ import (
 )
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {
-	dir := filepath.Join("internal", "lang", "testdata", "ck3")
+	dir := filepath.Join("internal", "testdata", "ck3")
 	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test"})
 })
 
@@ -133,9 +133,9 @@ func dirNames(entries []DirEntry) map[string]bool {
 // workspace with one mod, its cache folder sent to a temporary directory.
 func fixtureService(t *testing.T) *SessionService {
 	t.Helper()
-	install, _ := filepath.Abs(filepath.Join("internal", "lang", "testdata", "ck3"))
+	install, _ := filepath.Abs(filepath.Join("internal", "testdata", "ck3"))
 	mod := t.TempDir()
-	if err := os.CopyFS(mod, os.DirFS(filepath.Join("internal", "lang", "testdata", "mods", "ck3"))); err != nil {
+	if err := os.CopyFS(mod, os.DirFS(filepath.Join("internal", "testdata", "mods", "ck3"))); err != nil {
 		t.Fatal(err)
 	}
 	config := tempConfig(t,

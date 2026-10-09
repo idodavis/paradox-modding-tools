@@ -18,7 +18,7 @@ import (
 )
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {
-	dir := filepath.Join("..", "lang", "testdata", "ck3")
+	dir := filepath.Join("..", "testdata", "ck3")
 	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test"})
 })
 
@@ -30,7 +30,7 @@ func workspace(t *testing.T) (*Session, string) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "lang", "testdata", "mods", "ck3"))); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "testdata", "mods", "ck3"))); err != nil {
 		t.Fatal(err)
 	}
 	sess, err := New(t.Context(), game.Get("ck3"), install, []Mod{{ID: "mod", Dir: dir, Calendar: Calendar{{Name: "AC", Offset: 7782}}}}, "")
@@ -160,7 +160,7 @@ func TestQueries(t *testing.T) {
 	}
 
 	// EU5: each stage folder is a root of its own (source.Roots), so a rel starts below in_game/
-	eu5 := filepath.Join("..", "lang", "testdata", "eu5")
+	eu5 := filepath.Join("..", "testdata", "eu5")
 	install, err := index.Scan(t.Context(), index.Request{Game: "eu5", Dir: eu5, Version: "test"})
 	if err != nil {
 		t.Fatal(err)

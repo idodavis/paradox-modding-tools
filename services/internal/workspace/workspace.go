@@ -294,8 +294,8 @@ func (sess *Session) FiredBy(target index.Def, place bool) []Fire {
 	follow = func(def index.Def, fired *step) (out []Fire) {
 		for _, ref := range index.RefsTo(s, indexes, def.Database, def.Name) {
 			var caller index.Def
-			for _, idx := range indexes {
-				if records := idx.Records[ref.Path]; records != nil && ref.From >= 0 {
+			for _, index := range indexes {
+				if records := index.Records[ref.Path]; records != nil && ref.From >= 0 {
 					caller = records.Defs[ref.From]
 				}
 			}
@@ -377,8 +377,8 @@ func (sess *Session) Title(def index.Def) string {
 // LocKeys is up to limit of the keys that start with prefix, lower-cased, in order.
 func (sess *Session) LocKeys(prefix string, limit int) []string {
 	keys := map[string]bool{}
-	for _, idx := range sess.Indexes() {
-		for key := range idx.LocKeys() {
+	for _, index := range sess.Indexes() {
+		for key := range index.LocKeys() {
 			if strings.HasPrefix(strings.ToLower(key), prefix) {
 				keys[key] = true
 			}
@@ -415,8 +415,8 @@ func (sess *Session) Located(path string) (inventory.File, *Mod, bool) {
 		}
 		return nil
 	}
-	for _, idx := range slices.Backward(sess.Indexes()) {
-		if file, listed := idx.At(path); listed {
+	for _, index := range slices.Backward(sess.Indexes()) {
+		if file, listed := index.At(path); listed {
 			return file, mod(file.Origin), true
 		}
 	}

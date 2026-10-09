@@ -100,9 +100,9 @@ func TestGoldenRecords(t *testing.T) {
 	visited := map[string]bool{}
 	for _, id := range []string{ck3, vic3, "eu5"} {
 		install := fixtureInstall(t, id)
-		for _, idx := range []*Index{install.Index, fixtureMods(t, id, install)} {
-			for _, file := range idx.Files {
-				records := idx.Records[file.Path]
+		for _, index := range []*Index{install.Index, fixtureMods(t, id, install)} {
+			for _, file := range index.Files {
+				records := index.Records[file.Path]
 				if records == nil || dumpRecords(records) == "" {
 					continue
 				}

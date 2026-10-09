@@ -183,9 +183,9 @@ func (i *Index) At(path string) (inventory.File, bool) {
 // FileAt is the file at a Rel across the indexes, whatever its case: the last index's that lists
 // it, at its last place there.
 func FileAt(indexes []*Index, rel string) (inventory.File, bool) {
-	for _, idx := range slices.Backward(indexes) {
-		if pos, listed := idx.rels[strings.ToLower(rel)]; listed {
-			return idx.Files[pos], true
+	for _, index := range slices.Backward(indexes) {
+		if pos, listed := index.rels[strings.ToLower(rel)]; listed {
+			return index.Files[pos], true
 		}
 	}
 	return inventory.File{}, false
@@ -221,13 +221,13 @@ func (i *Index) LocKeys() iter.Seq[string] {
 // a later file at its Rel, in its index or a later one, or by a later index's Replaced.
 func Loaded(indexes []*Index, path string) (inventory.File, bool) {
 	path = appdata.PathKey(path)
-	for rank, idx := range indexes {
-		pos, listed := idx.order[path]
+	for rank, index := range indexes {
+		pos, listed := index.order[path]
 		if !listed {
 			continue
 		}
-		rel := strings.ToLower(idx.Files[pos].Rel)
-		return idx.Files[pos], idx.rels[rel] <= pos && !slices.ContainsFunc(indexes[rank+1:], func(later *Index) bool {
+		rel := strings.ToLower(index.Files[pos].Rel)
+		return index.Files[pos], index.rels[rel] <= pos && !slices.ContainsFunc(indexes[rank+1:], func(later *Index) bool {
 			_, shipped := later.rels[rel]
 			return shipped || slices.ContainsFunc(later.Replaced, func(folder string) bool {
 				return strings.HasPrefix(rel, strings.ToLower(folder)+"/")
@@ -239,14 +239,14 @@ func Loaded(indexes []*Index, path string) (inventory.File, bool) {
 
 // inLoadOrder returns one name's items across the indexes in the game's load order, by Rel, those
 // in files the game loads.
-func inLoadOrder[Item any](indexes []*Index, list func(idx *Index) []*Item, path func(item *Item) string) []Item {
+func inLoadOrder[Item any](indexes []*Index, list func(index *Index) []*Item, path func(item *Item) string) []Item {
 	type placed struct {
 		item *Item
 		rel  string
 	}
 	var found []placed
-	for _, idx := range indexes {
-		for _, item := range list(idx) {
+	for _, index := range indexes {
+		for _, item := range list(index) {
 			if file, loaded := Loaded(indexes, path(item)); loaded {
 				found = append(found, placed{item: item, rel: strings.ToLower(file.Rel)})
 			}
@@ -264,20 +264,20 @@ func inLoadOrder[Item any](indexes []*Index, list func(idx *Index) []*Item, path
 
 // Lookup is every definition of a name across the indexes, in load order.
 func Lookup(indexes []*Index, database, name string) []Def {
-	return inLoadOrder(indexes, func(idx *Index) []*Def { return idx.defs[[2]string{database, name}] },
+	return inLoadOrder(indexes, func(index *Index) []*Def { return index.defs[[2]string{database, name}] },
 		func(def *Def) string { return def.Path })
 }
 
 // LookupRefs is every reference to a name in a file the game loads, in load order.
 func LookupRefs(indexes []*Index, database, name string) []Ref {
-	return inLoadOrder(indexes, func(idx *Index) []*Ref { return idx.refs[[2]string{database, name}] },
+	return inLoadOrder(indexes, func(index *Index) []*Ref { return index.refs[[2]string{database, name}] },
 		func(ref *Ref) string { return ref.Path })
 }
 
 // RefsInside returns the references written inside a definition, in its file's order.
 func RefsInside(indexes []*Index, def Def) (refs []Ref) {
-	for _, idx := range indexes {
-		if records := idx.Records[def.Path]; records != nil {
+	for _, index := range indexes {
+		if records := index.Records[def.Path]; records != nil {
 			at := slices.Index(records.Defs, def)
 			for _, ref := range records.Refs {
 				if at >= 0 && int(ref.From) == at {
@@ -291,15 +291,15 @@ func RefsInside(indexes []*Index, def Def) (refs []Ref) {
 
 // LookupLocs is every localization entry of a key across the indexes, in load order.
 func LookupLocs(indexes []*Index, key string) []Loc {
-	return inLoadOrder(indexes, func(idx *Index) []*Loc { return idx.locs[key] },
+	return inLoadOrder(indexes, func(index *Index) []*Loc { return index.locs[key] },
 		func(entry *Loc) string { return entry.Path })
 }
 
 // Names is every name defined in a database across the indexes, in load order, each once.
 func Names(indexes []*Index, database string) []string {
-	defs := inLoadOrder(indexes, func(idx *Index) (found []*Def) {
-		for _, file := range idx.Files {
-			records := idx.Records[file.Path]
+	defs := inLoadOrder(indexes, func(index *Index) (found []*Def) {
+		for _, file := range index.Files {
+			records := index.Records[file.Path]
 			for i := 0; records != nil && i < len(records.Defs); i++ {
 				if records.Defs[i].Database == database {
 					found = append(found, &records.Defs[i])
@@ -330,7 +330,7 @@ func Resolve(s *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known boo
 	case ref.Database == game.SavedScopes && s.Saved[ref.Name]:
 		return nil, true
 	case ref.Database == schema.Localization:
-		return nil, slices.ContainsFunc(indexes, func(idx *Index) bool { return len(idx.locs[ref.Name]) > 0 })
+		return nil, slices.ContainsFunc(indexes, func(index *Index) bool { return len(index.locs[ref.Name]) > 0 })
 	case ref.Database == schema.File:
 		_, listed := FileAt(indexes, ref.Name)
 		return nil, listed

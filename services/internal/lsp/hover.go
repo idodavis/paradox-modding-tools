@@ -522,9 +522,9 @@ func (file *file) locRef(offset int) (ref *index.Ref, steps []jomini.Step) {
 	line := file.text[start:]
 	line, _, _ = strings.Cut(line, "\n")
 	line = strings.TrimRight(line, "\r")
-	for _, idx := range file.sess.Indexes() {
-		listed, found := idx.At(file.path)
-		records := idx.Records[listed.Path]
+	for _, index := range file.sess.Indexes() {
+		listed, found := index.At(file.path)
+		records := index.Records[listed.Path]
 		for i := 0; found && records != nil && i < len(records.Refs); i++ {
 			if within(records.Refs[i].Range, offset) {
 				ref = &records.Refs[i]

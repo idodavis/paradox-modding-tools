@@ -85,13 +85,13 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 
 	// 4. the index: each other file parsed and walked once; Ready adds the localization's records in
 	// file order, so no loc file is read again
-	idx := &Index{Files: input.Install, Roots: roots, Records: localized}
-	err = idx.walkFiles(ctx, s, false, func(done, total int) { req.Progress("index", done, total) })
+	index := &Index{Files: input.Install, Roots: roots, Records: localized}
+	err = index.walkFiles(ctx, s, false, func(done, total int) { req.Progress("index", done, total) })
 	if err != nil {
 		return nil, err
 	}
 
-	install := &Install{Schema: s, Index: idx, Scanned: time.Now()}
+	install := &Install{Schema: s, Index: index, Scanned: time.Now()}
 	if !cached {
 		return install, nil
 	}
@@ -182,11 +182,11 @@ func (i *Index) walkFiles(ctx context.Context, s *schema.Schema, withLoc bool, p
 // every localization language kept, with the folders their descriptors unload in Replaced.
 func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error) {
 	info := game.Get(install.Schema.Game)
-	idx := &Index{}
+	index := &Index{}
 	for _, mod := range mods {
 		roots := inventory.Roots(mod.Dir)
-		idx.Roots = append(idx.Roots, roots...)
-		idx.Files = append(idx.Files, inventory.Files(mod.ID, roots)...)
+		index.Roots = append(index.Roots, roots...)
+		index.Files = append(index.Files, inventory.Files(mod.ID, roots)...)
 
 		// each folder its descriptor unloads, held lower-case, slash separated and without the stage an
 		// inventory root drops
@@ -196,10 +196,10 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 			if stage, rest, staged := strings.Cut(folder, "/"); staged && slices.Contains(info.StageRoots, stage) {
 				folder = rest
 			}
-			idx.Replaced = append(idx.Replaced, folder)
+			index.Replaced = append(index.Replaced, folder)
 		}
 	}
-	return idx, idx.walkFiles(ctx, install.Schema, true, nil)
+	return index, index.walkFiles(ctx, install.Schema, true, nil)
 }
 
 // Reindex walks one file again: its records dropped and added back. A file not yet in Files goes

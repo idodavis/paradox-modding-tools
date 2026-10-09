@@ -267,14 +267,14 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 	}
 	shipped := map[string][]inventory.File{}
 	defines := map[string][]index.Def{}
-	for _, idx := range preview {
-		for _, file := range idx.Files {
+	for _, index := range preview {
+		for _, file := range index.Files {
 			rel := strings.ToLower(file.Rel)
 			if top, _, _ := strings.Cut(rel, "/"); !folders[top] {
 				continue
 			}
 			shipped[rel] = append(shipped[rel], file)
-			if records := idx.Records[file.Path]; records != nil {
+			if records := index.Records[file.Path]; records != nil {
 				// its entries, not the names its script makes or declares inline
 				for _, def := range records.Defs {
 					if def.Name != "" && sess.Install.Schema.Databases[def.Database] != nil && !def.Local && !def.Named {

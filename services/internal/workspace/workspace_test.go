@@ -159,7 +159,7 @@ func TestQueries(t *testing.T) {
 		t.Error("a mod's calendar is the mod's alone")
 	}
 
-	// EU5: each stage folder is a root of its own (source.Roots), so a rel starts below in_game/
+	// EU5: each stage folder is a root of its own (inventory.Roots), so a rel starts below in_game/
 	eu5 := filepath.Join("..", "testdata", "eu5")
 	install, err := index.Scan(t.Context(), index.Request{Game: "eu5", Dir: eu5, Version: "test"})
 	if err != nil {

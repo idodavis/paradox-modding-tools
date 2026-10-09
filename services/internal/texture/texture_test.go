@@ -32,7 +32,7 @@ func dds(width, height, mips, pfFlags uint32, fourCC string, bits, dxgiFormat ui
 	return head
 }
 
-func TestReadImageInfo(t *testing.T) {
+func TestInfo(t *testing.T) {
 	var pngBytes, jpgBytes bytes.Buffer
 	img := image.NewRGBA(image.Rect(0, 0, 3, 2))
 	if err := png.Encode(&pngBytes, img); err != nil {

@@ -48,7 +48,7 @@ var (
 	bc2Format = blockFormat{16, bc2}
 	bc3Format = blockFormat{16, bc3}
 	bc7Format = blockFormat{16, bc7}
-	// ddsBlocks is the block formats it decodes, by ReadImageInfo's name
+	// ddsBlocks is the block formats it decodes, by Info's name
 	ddsBlocks = map[string]blockFormat{
 		"DXT1": bc1Format, "BC1": bc1Format, "BC1 sRGB": bc1Format,
 		"DXT3": bc2Format, "BC2": bc2Format, "BC2 sRGB": bc2Format,

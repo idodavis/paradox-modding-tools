@@ -1,5 +1,5 @@
 // lang-rules.go is Paradox script's language rules as data, the same for every game and version,
-// and each game's file Layout. The schema's walker (lang/schema/read.go) reads statements by these
+// and each game's file Layout. The schema's walker (schema/read.go) reads statements by these
 // tables alone.
 
 package game

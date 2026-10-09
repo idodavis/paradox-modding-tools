@@ -1,6 +1,5 @@
-// shipped.go is the backup for a user missing a dump file: for each game version, a schema built from
-// the dumps alone (never the dumps themselves), written by gen beside this file as
-// <game>-<version>.gob.gz.
+// shipped.go loads the backup for a user missing a dump file: for each game version, a schema built from
+// the dumps alone (never the dumps themselves), written by gen beside this file as <game>-<version>.gob.gz.
 
 package schema
 
@@ -15,21 +14,21 @@ import (
 	"paradox-modding-tools/services/internal/appdata"
 )
 
-// shippedFiles is the shipped schemas.
+// shippedFiles holds the shipped schemas.
 //
 //go:embed *.gob.gz
 var shippedFiles embed.FS
 
-// numbers are the digit runs the newest file is picked by.
+// numbers matches the digit runs the newest shipped file is picked by.
 var numbers = regexp.MustCompile(`\d+`)
 
-// ShippedName is the shipped file of a game version: <game>-<version>.gob.gz, by appdata.SafeName.
+// ShippedName returns the shipped file of a game version: <game>-<version>.gob.gz, by appdata.SafeName.
 func ShippedName(game, version string) string {
 	return appdata.SafeName(game+"-"+version) + ".gob.gz"
 }
 
-// LoadShipped is a game's shipped schema: the exact version's file, else the newest by the names' digit
-// runs (1.20.0.3 over 1.9.2) with exact false; nil and no error when the game has none.
+// LoadShipped returns a game's shipped schema: the file of the exact version with exact true, else the
+// newest file by the digit runs of the names, with exact false; nil and no error when the game has none.
 func LoadShipped(gameID, version string) (s *Schema, exact bool, err error) {
 	names, err := fs.Glob(shippedFiles, gameID+"-*.gob.gz")
 	if err != nil || len(names) == 0 {
@@ -52,7 +51,7 @@ func LoadShipped(gameID, version string) (s *Schema, exact bool, err error) {
 	if err != nil {
 		return nil, false, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if err := appdata.Decode(file, &s); err != nil {
 		return nil, false, err
 	}

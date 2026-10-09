@@ -1,6 +1,6 @@
 // lang-rules.go is Paradox script's language rules as data, the same for every game and version,
-// and each game's file Layout. The schema's walker (schema/read.go) reads statements by these
-// tables alone.
+// and each game's file Layout. The schema's walker (schema/walk.go) reads statements by these tables and
+// the walker's own rules.
 
 package game
 
@@ -91,21 +91,6 @@ var KindWords = []struct {
 	Word string
 }{{KindEffect, "effect"}, {KindTrigger, "trigger"}, {KindLink, "event target"}}
 
-// Contents is one rule for the kind of block a command's block is.
-type Contents uint8
-
-const (
-	ContentsNumber  Contents = iota // it takes a number, or vanilla writes only value operators in it: a value block
-	ContentsUsage                   // its dump usage writes arguments only: an arguments block
-	ContentsInValue                 // written inside a value block: a value block
-	ContentsBoth                    // both a trigger and an effect: the kind of block it is written in
-	ContentsTrigger                 // a trigger: a triggers block
-	ContentsEffect                  // an effect: an effects block
-)
-
-// ContentsOrder is the order the contents rules are tried in; the first that fits wins.
-var ContentsOrder = []Contents{ContentsNumber, ContentsUsage, ContentsInValue, ContentsBoth, ContentsTrigger, ContentsEffect}
-
 // Structural is a key inside a command's block whose own block has a fixed kind.
 type Structural struct {
 	Command   string
@@ -119,47 +104,6 @@ type Structural struct {
 var Structurals = []Structural{
 	{Command: "random_list", Key: "<number>", Holds: BlockEffects, Calls: AnyCall},
 	{Command: "switch", Enclosing: true},
-}
-
-// ---- Scopes: how the scope changes going into a block.
-
-// When is a condition of the scope table.
-type When uint8
-
-const (
-	WhenClaim    When = iota // the key's position declares its scope
-	WhenLink                 // the key is a link or link chain
-	WhenIterator             // a command with a triggers or effects block and a target, not a list
-	WhenList                 // a list iterator: a scripted list's, or a command that iterates a list
-	WhenOut                  // a command with a target and no triggers or effects block
-	WhenValue                // a value or description block
-	WhenCommand              // any other command's block
-	WhenClaimed              // a block a declared source gives a kind
-	WhenAnything             // any other block
-)
-
-// To is the scope a block runs in.
-type To uint8
-
-const (
-	ToClaim   To = iota // the scope the position declares
-	ToTarget            // where the last link or the command leads, when that is a declared scope
-	ToSame              // the scope the key is written in
-	ToUnknown           // no known scope
-)
-
-// ScopeRule is one row of the scope table.
-type ScopeRule struct {
-	When When
-	To   To
-}
-
-// ScopeRules is the scope table: the first row that fits wins. A scope the dumps say runs no
-// triggers and no effects is then unknown.
-var ScopeRules = []ScopeRule{
-	{WhenClaim, ToClaim}, {WhenLink, ToTarget}, {WhenIterator, ToTarget}, {WhenList, ToUnknown},
-	{WhenOut, ToUnknown}, {WhenValue, ToSame}, {WhenCommand, ToSame}, {WhenClaimed, ToSame},
-	{WhenAnything, ToUnknown},
 }
 
 // ---- Names: what a written word names.

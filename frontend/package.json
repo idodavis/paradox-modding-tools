@@ -9,7 +9,10 @@
     "build:dev": "vite build --minify false --mode development",
     "build": "vite build --mode production",
     "preview": "vite preview",
-    "check": "node scripts/check.mjs --noEmit"
+    "check": "node scripts/check.mjs --noEmit",
+    "lint": "node scripts/eslint.mjs src && prettier --check src",
+    "format": "prettier --write src",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",
@@ -34,14 +37,22 @@
     "@types/node": "^26.6.4",
     "@types/sortablejs": "^1.15.9",
     "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.9.0",
     "esbuild": "^0.28.2",
+    "eslint": "^10.12.0",
+    "eslint-plugin-vue": "^10.11.1",
+    "prettier": "^3.9.9",
     "tsc-js": "npm:typescript@6.0.3",
     "typescript": "^7.0.2",
+    "typescript-eslint": "^8.71.1",
     "vite": "^8.3.2",
+    "vitest": "^5.0.3",
     "vue-tsc": "^3.3.12"
   },
   "overrides": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "typescript": "$typescript"
   },
   "allowScripts": {
     "vue-demi@0.14.10": true,

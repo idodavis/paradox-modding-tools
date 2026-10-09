@@ -1,0 +1,46 @@
+version: "2"
+
+run:
+  go: "1.27"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - revive
+    - gocritic
+    - nestif
+    - funlen
+    - goconst
+    - misspell
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: receiver-naming
+        - name: var-naming
+        - name: error-strings
+    nestif:
+      min-complexity: 4
+    funlen:
+      lines: 60
+      statements: 40
+      ignore-comments: true
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    paths:
+      - frontend
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  # Findings already in the code at the restructure's baseline wait for their stage. A stage reads
+  # its files' whole list with --new-from-rev= (empty).
+  new-from-rev: 6a0ea12

@@ -94,6 +94,32 @@ tasks:
       - go test -short -race -timeout 60s ./...
 
   check:
+    summary: Everything a commit must pass, Go and frontend. Run it before every commit.
+    cmds:
+      - task: check:go
+      - task: check:frontend
+
+  check:go:
+    summary: gofmt, the three vets, staticcheck, golangci-lint and the short tests.
+    cmds:
+      - test -z "$(gofmt -l main.go services)"
+      # plain vet skips the files of other systems; these two cover them
+      - go vet ./...
+      - GOOS=linux go vet ./services/internal/...
+      - GOOS=windows go vet ./services/internal/...
+      - staticcheck ./...
+      - golangci-lint run ./...
+      - task: test
+
+  check:frontend:
+    summary: The typecheck (~30s, .vue files included), eslint with prettier, and vitest.
+    dir: frontend
+    cmds:
+      - task: check:types
+      - npm run lint
+      - npm test
+
+  check:types:
     summary: >
       Type-check the frontend, .vue files included (~30s). vue-tsc wraps the
       JavaScript tsc, which TypeScript 7 no longer ships, so it drives the
@@ -122,7 +148,7 @@ tasks:
     summary: The real-install gates and then the frontend typecheck. What to run before a commit that touches the engine.
     cmds:
       - task: test:gate
-      - task: check
+      - task: check:types
 
   test:sweep:
     summary: >

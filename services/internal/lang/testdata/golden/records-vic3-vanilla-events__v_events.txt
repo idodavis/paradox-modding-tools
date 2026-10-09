@@ -1,0 +1,5 @@
+def events "vv.1" mode="" 16-20 @2:0 local=false named=false
+def events "vv.2" mode="" 388-392 @17:0 local=false named=false
+def scope "home_province" mode="" 228-241 @9:32 local=false named=false
+def scope "away_province" mode="" 276-289 @10:32 local=false named=false
+ref events "vv.2" called="" 376-380 @14:53 from=0 trigger=false

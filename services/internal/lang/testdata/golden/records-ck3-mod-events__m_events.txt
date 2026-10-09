@@ -1,0 +1,13 @@
+def events "m.1" mode="" 15-18 @2:0 local=false named=false
+def events "m.2" mode="" 290-293 @19:0 local=false named=false
+def scope "mod_target" mode="" 229-239 @12:18 local=false named=false
+ref localization "v.1.t" called="" 56-61 @4:9 from=0 trigger=false
+ref traits "bold" called="" 111-115 @6:36 from=0 trigger=true
+ref  "v_rich_trigger" called="trigger" 122-136 @7:2 from=0 trigger=true
+ref events "v.2" called="" 179-182 @10:18 from=0 trigger=false
+ref  "v_effect" called="effect" 185-193 @11:2 from=0 trigger=false
+ref parameter "v_effect:AMOUNT" called="" 198-204 @11:15 from=0 trigger=false
+ref localization "v.1.a" called="" 264-269 @15:9 from=0 trigger=false
+ref localization "v.2.t" called="" 331-336 @21:9 from=1 trigger=false
+ref localization "v.2.a" called="" 358-363 @23:9 from=1 trigger=false
+ref events "m.1" called="" 382-385 @24:18 from=1 trigger=false

@@ -1,0 +1,6 @@
+def events "vsub.1" mode="" 18-24 @2:0 local=false named=false
+def events "vsub.2" mode="" 115-121 @10:0 local=false named=false
+ref localization "v.1.t" called="" 62-67 @4:9 from=0 trigger=false
+ref localization "v.1.a" called="" 89-94 @6:9 from=0 trigger=false
+ref localization "v.2.t" called="" 159-164 @12:9 from=1 trigger=false
+ref localization "v.2.a" called="" 186-191 @14:9 from=1 trigger=false

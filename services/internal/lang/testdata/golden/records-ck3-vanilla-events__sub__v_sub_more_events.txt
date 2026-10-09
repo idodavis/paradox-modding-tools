@@ -1,0 +1,6 @@
+def events "vsubmore.1" mode="" 22-32 @2:0 local=false named=false
+def events "vsubmore.2" mode="" 123-133 @10:0 local=false named=false
+ref localization "v.1.t" called="" 70-75 @4:9 from=0 trigger=false
+ref localization "v.1.a" called="" 97-102 @6:9 from=0 trigger=false
+ref localization "v.2.t" called="" 171-176 @12:9 from=1 trigger=false
+ref localization "v.2.a" called="" 198-203 @14:9 from=1 trigger=false

@@ -1,0 +1,624 @@
+0:0 my_rule
+  {
+   "word": "my_rule",
+   "key": "my_rule",
+   "head": "game rule",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/game_rules/v_rules.txt",
+     "origin": "vanilla",
+     "rel": "common/game_rules/v_rules.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 7
+    }
+   }
+  }
+1:1 default
+  {
+   "word": "default",
+   "key": "default",
+   "head": "in game rules",
+   "prose": "Which setting to default to",
+   "writes": [
+    "one of opt_a, opt_easy, opt_slow"
+   ],
+   "winner": -1,
+   "within": [
+    "my_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 8
+    }
+   }
+  }
+1:11 opt_a
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "my_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 11
+    },
+    "end": {
+     "line": 1,
+     "character": 16
+    }
+   }
+  }
+2:1 opt_a
+  {
+   "word": "opt_a",
+   "key": "opt_a",
+   "head": "in game rules",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "my_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 1
+    },
+    "end": {
+     "line": 2,
+     "character": 6
+    }
+   }
+  }
+2:11 flag
+  {
+   "word": "flag",
+   "key": "flag",
+   "head": "event target",
+   "prose": "Flag literals eg: flag:the_boss",
+   "leads": "flag",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "my_rule",
+    "opt_a"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 11
+    },
+    "end": {
+     "line": 2,
+     "character": 15
+    }
+   }
+  }
+2:18 a
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "my_rule",
+    "opt_a"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 18
+    },
+    "end": {
+     "line": 2,
+     "character": 19
+    }
+   }
+  }
+3:1 opt_b
+  {
+   "word": "opt_b",
+   "key": "opt_b",
+   "head": "in game rules",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "my_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 1
+    },
+    "end": {
+     "line": 3,
+     "character": 6
+    }
+   }
+  }
+3:11 flag
+  {
+   "word": "flag",
+   "key": "flag",
+   "head": "event target",
+   "prose": "Flag literals eg: flag:the_boss",
+   "leads": "flag",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "my_rule",
+    "opt_b"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 11
+    },
+    "end": {
+     "line": 3,
+     "character": 15
+    }
+   }
+  }
+3:18 b
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "my_rule",
+    "opt_b"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 18
+    },
+    "end": {
+     "line": 3,
+     "character": 19
+    }
+   }
+  }
+5:0 hard_rule
+  {
+   "word": "hard_rule",
+   "key": "hard_rule",
+   "head": "game rule",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/game_rules/v_rules.txt",
+     "origin": "vanilla",
+     "rel": "common/game_rules/v_rules.txt",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 0
+      },
+      "end": {
+       "line": 5,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 0
+    },
+    "end": {
+     "line": 5,
+     "character": 9
+    }
+   }
+  }
+6:1 default
+  {
+   "word": "default",
+   "key": "default",
+   "head": "in game rules",
+   "prose": "Which setting to default to",
+   "writes": [
+    "one of opt_a, opt_easy, opt_slow"
+   ],
+   "winner": -1,
+   "within": [
+    "hard_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 1
+    },
+    "end": {
+     "line": 6,
+     "character": 8
+    }
+   }
+  }
+6:11 opt_easy
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "hard_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 11
+    },
+    "end": {
+     "line": 6,
+     "character": 19
+    }
+   }
+  }
+7:1 opt_easy
+  {
+   "word": "opt_easy",
+   "key": "opt_easy",
+   "head": "in game rules",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "hard_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 1
+    },
+    "end": {
+     "line": 7,
+     "character": 9
+    }
+   }
+  }
+7:14 flag
+  {
+   "word": "flag",
+   "key": "flag",
+   "head": "event target",
+   "prose": "Flag literals eg: flag:the_boss",
+   "leads": "flag",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "hard_rule",
+    "opt_easy"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 14
+    },
+    "end": {
+     "line": 7,
+     "character": 18
+    }
+   }
+  }
+7:21 easy
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "hard_rule",
+    "opt_easy"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 21
+    },
+    "end": {
+     "line": 7,
+     "character": 25
+    }
+   }
+  }
+8:1 opt_hard
+  {
+   "word": "opt_hard",
+   "key": "opt_hard",
+   "head": "in game rules",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "hard_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 1
+    },
+    "end": {
+     "line": 8,
+     "character": 9
+    }
+   }
+  }
+8:14 flag
+  {
+   "word": "flag",
+   "key": "flag",
+   "head": "event target",
+   "prose": "Flag literals eg: flag:the_boss",
+   "leads": "flag",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "hard_rule",
+    "opt_hard"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 14
+    },
+    "end": {
+     "line": 8,
+     "character": 18
+    }
+   }
+  }
+8:21 hard
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "hard_rule",
+    "opt_hard"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 21
+    },
+    "end": {
+     "line": 8,
+     "character": 25
+    }
+   }
+  }
+10:0 pace_rule
+  {
+   "word": "pace_rule",
+   "key": "pace_rule",
+   "head": "game rule",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/game_rules/v_rules.txt",
+     "origin": "vanilla",
+     "rel": "common/game_rules/v_rules.txt",
+     "range": {
+      "start": {
+       "line": 10,
+       "character": 0
+      },
+      "end": {
+       "line": 10,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 0
+    },
+    "end": {
+     "line": 10,
+     "character": 9
+    }
+   }
+  }
+11:1 default
+  {
+   "word": "default",
+   "key": "default",
+   "head": "in game rules",
+   "prose": "Which setting to default to",
+   "writes": [
+    "one of opt_a, opt_easy, opt_slow"
+   ],
+   "winner": -1,
+   "within": [
+    "pace_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 1
+    },
+    "end": {
+     "line": 11,
+     "character": 8
+    }
+   }
+  }
+11:11 opt_slow
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "pace_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 11
+    },
+    "end": {
+     "line": 11,
+     "character": 19
+    }
+   }
+  }
+12:1 opt_slow
+  {
+   "word": "opt_slow",
+   "key": "opt_slow",
+   "head": "in game rules",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "pace_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 1
+    },
+    "end": {
+     "line": 12,
+     "character": 9
+    }
+   }
+  }
+12:14 flag
+  {
+   "word": "flag",
+   "key": "flag",
+   "head": "event target",
+   "prose": "Flag literals eg: flag:the_boss",
+   "leads": "flag",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "pace_rule",
+    "opt_slow"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 14
+    },
+    "end": {
+     "line": 12,
+     "character": 18
+    }
+   }
+  }
+12:21 slow
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "pace_rule",
+    "opt_slow"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 21
+    },
+    "end": {
+     "line": 12,
+     "character": 25
+    }
+   }
+  }
+13:1 opt_fast
+  {
+   "word": "opt_fast",
+   "key": "opt_fast",
+   "head": "in game rules",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "pace_rule"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 1
+    },
+    "end": {
+     "line": 13,
+     "character": 9
+    }
+   }
+  }
+13:14 flag
+  {
+   "word": "flag",
+   "key": "flag",
+   "head": "event target",
+   "prose": "Flag literals eg: flag:the_boss",
+   "leads": "flag",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "pace_rule",
+    "opt_fast"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 14
+    },
+    "end": {
+     "line": 13,
+     "character": 18
+    }
+   }
+  }
+13:21 fast
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "pace_rule",
+    "opt_fast"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 21
+    },
+    "end": {
+     "line": 13,
+     "character": 25
+    }
+   }
+  }

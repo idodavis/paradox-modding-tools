@@ -1,0 +1,20 @@
+def scripted_triggers "v_inline_trigger" mode="" 36-52 @2:17 local=true named=false
+def events "vmore.1" mode="" 76-83 @6:0 local=false named=false
+def events "vmore.2" mode="" 528-535 @27:0 local=false named=false
+def scope "old_culture" mode="" 375-386 @18:36 local=false named=false
+def scope "far_title" mode="" 421-430 @19:32 local=false named=false
+def scope "near_title" mode="" 465-475 @20:32 local=false named=false
+ref localization "v.1.t" called="" 121-126 @8:9 from=1 trigger=false
+ref  "v_inline_trigger" called="trigger" 142-158 @10:2 from=1 trigger=true
+ref  "v_rule_trigger" called="trigger" 175-189 @11:10 from=1 trigger=true
+ref defines "NWar" called="" 208-228 @12:10 from=1 trigger=true
+ref traits "brave" called="" 243-254 @13:14 from=1 trigger=true
+ref  "v_gift_effect" called="effect" 275-288 @16:2 from=1 trigger=false
+ref history/characters "186004" called="" 297-313 @17:2 from=1 trigger=false
+ref traits "craven" called="" 330-336 @17:35 from=1 trigger=false
+ref culture/cultures "norse" called="" 341-354 @18:2 from=1 trigger=false
+ref landed_titles "e_y" called="" 391-400 @19:2 from=1 trigger=false
+ref landed_titles "k_y" called="" 435-444 @20:2 from=1 trigger=false
+ref localization "v.1.a" called="" 502-507 @23:9 from=1 trigger=false
+ref localization "v.2.t" called="" 573-578 @29:9 from=2 trigger=false
+ref localization "v.2.a" called="" 600-605 @31:9 from=2 trigger=false

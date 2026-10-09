@@ -1,0 +1,14 @@
+def events "vmore.1" mode="" 19-26 @2:0 local=false named=false
+def events "vmore.2" mode="" 525-532 @22:0 local=false named=false
+ref setup/countries "ENG" called="" 108-113 @5:42 from=0 trigger=true
+ref map_data "europe" called="" 129-145 @6:11 from=0 trigger=true
+ref map_data "asia" called="" 157-171 @7:11 from=0 trigger=true
+ref map_data/definitions.txt.region "france_region" called="" 183-203 @8:11 from=0 trigger=true
+ref map_data/definitions.txt.region "china_region" called="" 215-234 @9:11 from=0 trigger=true
+ref map_data/definitions.txt.area "paris_area" called="" 246-261 @10:11 from=0 trigger=true
+ref map_data/definitions.txt.area "thames_area" called="" 273-289 @11:11 from=0 trigger=true
+ref map_data/definitions.txt.area "loire_area" called="" 301-316 @12:11 from=0 trigger=true
+ref map_data/definitions.txt.sub_continent "western_europe" called="" 328-356 @13:11 from=0 trigger=true
+ref map_data/definitions.txt.sub_continent "east_asia" called="" 368-391 @14:11 from=0 trigger=true
+ref map_data/definitions.txt.region "britain_region" called="" 403-424 @15:11 from=0 trigger=true
+ref setup/countries "FRA" called="" 491-496 @19:2 from=0 trigger=false

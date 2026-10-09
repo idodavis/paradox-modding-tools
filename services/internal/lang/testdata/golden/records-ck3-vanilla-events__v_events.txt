@@ -1,0 +1,26 @@
+def events "v.1" mode="" 42-45 @3:0 local=false named=false
+def events "v.2" mode="" 1287-1290 @55:0 local=false named=false
+def var "seen" mode="" 325-329 @18:26 local=false named=false
+def scope "target" mode="" 360-366 @19:18 local=false named=false
+def scope "own_dynasty" mode="" 494-505 @23:30 local=false named=false
+def scope "named_dynasty" mode="" 548-561 @24:40 local=false named=false
+ref localization "v.1.t" called="" 83-88 @5:9 from=0 trigger=false
+ref localization "v.1.desc" called="" 97-105 @6:8 from=0 trigger=false
+ref event_themes "seduction" called="" 115-124 @7:9 from=0 trigger=false
+ref scope "target" called="" 166-178 @10:11 from=0 trigger=true
+ref landed_titles "k_x" called="" 215-224 @12:11 from=0 trigger=true
+ref landed_titles "c_x" called="" 236-245 @13:11 from=0 trigger=true
+ref traits "brave" called="" 260-265 @14:14 from=0 trigger=true
+ref events "v.2" called="" 385-388 @20:18 from=0 trigger=false
+ref events "v.2" called="" 608-611 @26:26 from=0 trigger=false
+ref  "v_effect" called="effect" 645-653 @29:2 from=0 trigger=false
+ref parameter "v_effect:AMOUNT" called="" 658-664 @29:15 from=0 trigger=false
+ref localization "v.1.toast" called="" 763-772 @33:11 from=0 trigger=false
+ref localization "v.1.toast_first" called="" 933-948 @37:108 from=0 trigger=false
+ref localization "v.1.toast_first" called="" 1017-1032 @38:60 from=0 trigger=false
+ref opinion_modifiers "v_opinion_1" called="" 1071-1082 @40:14 from=0 trigger=false
+ref localization "v.1.a" called="" 1128-1133 @45:9 from=0 trigger=false
+ref events "v.2" called="" 1183-1186 @47:18 from=0 trigger=false
+ref localization "v.2.t" called="" 1328-1333 @57:9 from=1 trigger=false
+ref localization "v.2.d" called="" 1363-1368 @59:9 from=1 trigger=false
+ref localization "v.2.a" called="" 1422-1427 @62:19 from=1 trigger=false

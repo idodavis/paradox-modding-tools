@@ -1,0 +1,94 @@
+0:0 font
+  {
+   "word": "v_font",
+   "key": "font",
+   "head": "font font",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/fonts/v.font",
+     "origin": "vanilla",
+     "rel": "fonts/v.font",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 4
+    }
+   }
+  }
+1:1 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in font font",
+   "writes": [
+    "font font"
+   ],
+   "winner": -1,
+   "within": [
+    "v_font"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 5
+    }
+   }
+  }
+1:9 v_font
+  {
+   "word": "v_font",
+   "key": "name",
+   "head": "font font",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/fonts/v.font",
+     "origin": "vanilla",
+     "rel": "fonts/v.font",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_font"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 8
+    },
+    "end": {
+     "line": 1,
+     "character": 16
+    }
+   }
+  }

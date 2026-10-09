@@ -1,0 +1,302 @@
+0:0 INJECT:GBR
+  {
+   "word": "GBR",
+   "key": "INJECT:GBR",
+   "head": "country definition",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/vic3/common/country_definitions/m_countries.txt",
+     "origin": "mod",
+     "rel": "common/country_definitions/m_countries.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    },
+    {
+     "path": "<fixtures>/vic3/game/common/country_definitions/v_countries.txt",
+     "origin": "vanilla",
+     "rel": "common/country_definitions/v_countries.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 1,
+   "adds": [
+    0
+   ],
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 10
+    }
+   }
+  }
+1:1 capital
+  {
+   "word": "capital",
+   "key": "capital",
+   "head": "in country definitions",
+   "writes": [
+    "state region"
+   ],
+   "winner": -1,
+   "within": [
+    "GBR"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 8
+    }
+   }
+  }
+1:11 STATE_AWAY
+  {
+   "word": "STATE_AWAY",
+   "key": "capital",
+   "head": "state region",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/map_data/state_regions/v_regions.txt",
+     "origin": "vanilla",
+     "rel": "map_data/state_regions/v_regions.txt",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 0
+      },
+      "end": {
+       "line": 5,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "GBR"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 11
+    },
+    "end": {
+     "line": 1,
+     "character": 21
+    }
+   }
+  }
+3:0 REPLACE:FRA
+  {
+   "word": "FRA",
+   "key": "REPLACE:FRA",
+   "head": "country definition",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/vic3/common/country_definitions/m_countries.txt",
+     "origin": "mod",
+     "rel": "common/country_definitions/m_countries.txt",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 0
+      },
+      "end": {
+       "line": 3,
+       "character": 0
+      }
+     }
+    },
+    {
+     "path": "<fixtures>/vic3/game/common/country_definitions/v_countries.txt",
+     "origin": "vanilla",
+     "rel": "common/country_definitions/v_countries.txt",
+     "range": {
+      "start": {
+       "line": 4,
+       "character": 0
+      },
+      "end": {
+       "line": 4,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 0
+    },
+    "end": {
+     "line": 3,
+     "character": 11
+    }
+   }
+  }
+4:1 color
+  {
+   "word": "color",
+   "key": "color",
+   "head": "in country definitions",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "FRA"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 1
+    },
+    "end": {
+     "line": 4,
+     "character": 6
+    }
+   }
+  }
+4:11 1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "FRA",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 11
+    },
+    "end": {
+     "line": 4,
+     "character": 12
+    }
+   }
+  }
+4:13 2
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "FRA",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 13
+    },
+    "end": {
+     "line": 4,
+     "character": 14
+    }
+   }
+  }
+4:15 3
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "FRA",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 15
+    },
+    "end": {
+     "line": 4,
+     "character": 16
+    }
+   }
+  }
+5:1 capital
+  {
+   "word": "capital",
+   "key": "capital",
+   "head": "in country definitions",
+   "writes": [
+    "state region"
+   ],
+   "winner": -1,
+   "within": [
+    "FRA"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 1
+    },
+    "end": {
+     "line": 5,
+     "character": 8
+    }
+   }
+  }
+5:11 STATE_AWAY
+  {
+   "word": "STATE_AWAY",
+   "key": "capital",
+   "head": "state region",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/map_data/state_regions/v_regions.txt",
+     "origin": "vanilla",
+     "rel": "map_data/state_regions/v_regions.txt",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 0
+      },
+      "end": {
+       "line": 5,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "FRA"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 11
+    },
+    "end": {
+     "line": 5,
+     "character": 21
+    }
+   }
+  }

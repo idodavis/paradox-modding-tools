@@ -1,0 +1,356 @@
+0:0 STATE_HOME
+  {
+   "word": "STATE_HOME",
+   "key": "STATE_HOME",
+   "head": "state region",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/map_data/state_regions/v_regions.txt",
+     "origin": "vanilla",
+     "rel": "map_data/state_regions/v_regions.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 10
+    }
+   }
+  }
+1:1 id
+  {
+   "word": "id",
+   "key": "id",
+   "head": "in state regions",
+   "writes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "STATE_HOME"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 3
+    }
+   }
+  }
+1:6 1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "STATE_HOME"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 6
+    },
+    "end": {
+     "line": 1,
+     "character": 7
+    }
+   }
+  }
+2:1 provinces
+  {
+   "word": "provinces",
+   "key": "provinces",
+   "head": "in state regions",
+   "writes": [
+    "text",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "STATE_HOME"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 1
+    },
+    "end": {
+     "line": 2,
+     "character": 10
+    }
+   }
+  }
+2:16 x0974E5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "STATE_HOME",
+    "provinces"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 15
+    },
+    "end": {
+     "line": 2,
+     "character": 24
+    }
+   }
+  }
+2:26 x216569
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "STATE_HOME",
+    "provinces"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 25
+    },
+    "end": {
+     "line": 2,
+     "character": 34
+    }
+   }
+  }
+3:1 city
+  {
+   "word": "city",
+   "key": "city",
+   "head": "in state regions",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "STATE_HOME"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 1
+    },
+    "end": {
+     "line": 3,
+     "character": 5
+    }
+   }
+  }
+3:9 x0974E5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "STATE_HOME"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 8
+    },
+    "end": {
+     "line": 3,
+     "character": 17
+    }
+   }
+  }
+5:0 STATE_AWAY
+  {
+   "word": "STATE_AWAY",
+   "key": "STATE_AWAY",
+   "head": "state region",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/map_data/state_regions/v_regions.txt",
+     "origin": "vanilla",
+     "rel": "map_data/state_regions/v_regions.txt",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 0
+      },
+      "end": {
+       "line": 5,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 0
+    },
+    "end": {
+     "line": 5,
+     "character": 10
+    }
+   }
+  }
+6:1 id
+  {
+   "word": "id",
+   "key": "id",
+   "head": "in state regions",
+   "writes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "STATE_AWAY"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 1
+    },
+    "end": {
+     "line": 6,
+     "character": 3
+    }
+   }
+  }
+6:6 2
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "STATE_AWAY"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 6
+    },
+    "end": {
+     "line": 6,
+     "character": 7
+    }
+   }
+  }
+7:1 provinces
+  {
+   "word": "provinces",
+   "key": "provinces",
+   "head": "in state regions",
+   "writes": [
+    "text",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "STATE_AWAY"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 1
+    },
+    "end": {
+     "line": 7,
+     "character": 10
+    }
+   }
+  }
+7:16 x4A0B1C
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "STATE_AWAY",
+    "provinces"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 15
+    },
+    "end": {
+     "line": 7,
+     "character": 24
+    }
+   }
+  }
+7:26 x5D2E3F
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "STATE_AWAY",
+    "provinces"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 25
+    },
+    "end": {
+     "line": 7,
+     "character": 34
+    }
+   }
+  }
+8:1 city
+  {
+   "word": "city",
+   "key": "city",
+   "head": "in state regions",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "STATE_AWAY"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 1
+    },
+    "end": {
+     "line": 8,
+     "character": 5
+    }
+   }
+  }
+8:9 x4A0B1C
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "STATE_AWAY"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 8
+    },
+    "end": {
+     "line": 8,
+     "character": 17
+    }
+   }
+  }

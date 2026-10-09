@@ -1,0 +1,68 @@
+0:0 catalyst_situation_flood
+  {
+   "word": "catalyst_situation_flood",
+   "key": "catalyst_situation_flood",
+   "head": "catalyst",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/situation/catalysts/v_catalysts.txt",
+     "origin": "vanilla",
+     "rel": "common/situation/catalysts/v_catalysts.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 24
+    }
+   }
+  }
+1:0 catalyst_situation_drought
+  {
+   "word": "catalyst_situation_drought",
+   "key": "catalyst_situation_drought",
+   "head": "catalyst",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/situation/catalysts/v_catalysts.txt",
+     "origin": "vanilla",
+     "rel": "common/situation/catalysts/v_catalysts.txt",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 0
+    },
+    "end": {
+     "line": 1,
+     "character": 26
+    }
+   }
+  }

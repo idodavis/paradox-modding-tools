@@ -1,0 +1,1206 @@
+0:0 brave
+  {
+   "word": "brave",
+   "key": "brave",
+   "head": "trait",
+   "name": "Brave",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/ck3/common/traits/m_traits.txt",
+     "origin": "mod",
+     "rel": "common/traits/m_traits.txt",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 0
+      },
+      "end": {
+       "line": 5,
+       "character": 0
+      }
+     }
+    },
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 1,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 5
+    }
+   }
+  }
+1:1 category
+  {
+   "word": "category",
+   "key": "category",
+   "head": "in traits",
+   "prose": "Which group the trait belongs to.",
+   "takes": [
+    "one of education, personality"
+   ],
+   "winner": -1,
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 9
+    }
+   }
+  }
+1:12 personality
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 12
+    },
+    "end": {
+     "line": 1,
+     "character": 23
+    }
+   }
+  }
+2:1 diplomacy
+  {
+   "word": "diplomacy",
+   "key": "diplomacy",
+   "head": "in traits",
+   "prose": "Skill bonus.",
+   "takes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 1
+    },
+    "end": {
+     "line": 2,
+     "character": 10
+    }
+   }
+  }
+2:13 0
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 13
+    },
+    "end": {
+     "line": 2,
+     "character": 14
+    }
+   }
+  }
+3:1 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "in traits",
+   "prose": "The trait's icon.",
+   "takes": [
+    "a file path"
+   ],
+   "winner": -1,
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 1
+    },
+    "end": {
+     "line": 3,
+     "character": 5
+    }
+   }
+  }
+3:9 gfx
+  {
+   "word": "gfx/interface/icons/traits/brave.dds",
+   "key": "icon",
+   "head": "file",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gfx/interface/icons/traits/brave.dds",
+     "origin": "vanilla",
+     "rel": "gfx/interface/icons/traits/brave.dds",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "image": {
+    "width": 4,
+    "height": 4,
+    "format": "DXT1",
+    "mips": 1
+   },
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 8
+    },
+    "end": {
+     "line": 3,
+     "character": 46
+    }
+   }
+  }
+3:13 interface
+  {
+   "word": "gfx/interface/icons/traits/brave.dds",
+   "key": "icon",
+   "head": "file",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gfx/interface/icons/traits/brave.dds",
+     "origin": "vanilla",
+     "rel": "gfx/interface/icons/traits/brave.dds",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "image": {
+    "width": 4,
+    "height": 4,
+    "format": "DXT1",
+    "mips": 1
+   },
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 8
+    },
+    "end": {
+     "line": 3,
+     "character": 46
+    }
+   }
+  }
+3:23 icons
+  {
+   "word": "gfx/interface/icons/traits/brave.dds",
+   "key": "icon",
+   "head": "file",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gfx/interface/icons/traits/brave.dds",
+     "origin": "vanilla",
+     "rel": "gfx/interface/icons/traits/brave.dds",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "image": {
+    "width": 4,
+    "height": 4,
+    "format": "DXT1",
+    "mips": 1
+   },
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 8
+    },
+    "end": {
+     "line": 3,
+     "character": 46
+    }
+   }
+  }
+3:29 traits
+  {
+   "word": "gfx/interface/icons/traits/brave.dds",
+   "key": "icon",
+   "head": "file",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gfx/interface/icons/traits/brave.dds",
+     "origin": "vanilla",
+     "rel": "gfx/interface/icons/traits/brave.dds",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "image": {
+    "width": 4,
+    "height": 4,
+    "format": "DXT1",
+    "mips": 1
+   },
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 8
+    },
+    "end": {
+     "line": 3,
+     "character": 46
+    }
+   }
+  }
+3:36 brave.dds
+  {
+   "word": "gfx/interface/icons/traits/brave.dds",
+   "key": "icon",
+   "head": "file",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gfx/interface/icons/traits/brave.dds",
+     "origin": "vanilla",
+     "rel": "gfx/interface/icons/traits/brave.dds",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "image": {
+    "width": 4,
+    "height": 4,
+    "format": "DXT1",
+    "mips": 1
+   },
+   "within": [
+    "brave"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 8
+    },
+    "end": {
+     "line": 3,
+     "character": 46
+    }
+   }
+  }
+5:0 craven
+  {
+   "word": "craven",
+   "key": "craven",
+   "head": "trait",
+   "name": "Craven",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 0
+      },
+      "end": {
+       "line": 5,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 0
+    },
+    "end": {
+     "line": 5,
+     "character": 6
+    }
+   }
+  }
+6:1 category
+  {
+   "word": "category",
+   "key": "category",
+   "head": "in traits",
+   "prose": "Which group the trait belongs to.",
+   "takes": [
+    "one of education, personality"
+   ],
+   "winner": -1,
+   "within": [
+    "craven"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 1
+    },
+    "end": {
+     "line": 6,
+     "character": 9
+    }
+   }
+  }
+6:12 personality
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "craven"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 12
+    },
+    "end": {
+     "line": 6,
+     "character": 23
+    }
+   }
+  }
+7:1 diplomacy
+  {
+   "word": "diplomacy",
+   "key": "diplomacy",
+   "head": "in traits",
+   "prose": "Skill bonus.",
+   "takes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "craven"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 1
+    },
+    "end": {
+     "line": 7,
+     "character": 10
+    }
+   }
+  }
+7:13 1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "craven"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 13
+    },
+    "end": {
+     "line": 7,
+     "character": 14
+    }
+   }
+  }
+9:0 ambitious
+  {
+   "word": "ambitious",
+   "key": "ambitious",
+   "head": "trait",
+   "name": "Ambitious",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 9,
+       "character": 0
+      },
+      "end": {
+       "line": 9,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 0
+    },
+    "end": {
+     "line": 9,
+     "character": 9
+    }
+   }
+  }
+10:1 category
+  {
+   "word": "category",
+   "key": "category",
+   "head": "in traits",
+   "prose": "Which group the trait belongs to.",
+   "takes": [
+    "one of education, personality"
+   ],
+   "winner": -1,
+   "within": [
+    "ambitious"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 1
+    },
+    "end": {
+     "line": 10,
+     "character": 9
+    }
+   }
+  }
+10:12 personality
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "ambitious"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 12
+    },
+    "end": {
+     "line": 10,
+     "character": 23
+    }
+   }
+  }
+11:1 diplomacy
+  {
+   "word": "diplomacy",
+   "key": "diplomacy",
+   "head": "in traits",
+   "prose": "Skill bonus.",
+   "takes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "ambitious"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 1
+    },
+    "end": {
+     "line": 11,
+     "character": 10
+    }
+   }
+  }
+11:13 2
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "ambitious"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 13
+    },
+    "end": {
+     "line": 11,
+     "character": 14
+    }
+   }
+  }
+13:0 content
+  {
+   "word": "content",
+   "key": "content",
+   "head": "trait",
+   "name": "Content",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 13,
+       "character": 0
+      },
+      "end": {
+       "line": 13,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 0
+    },
+    "end": {
+     "line": 13,
+     "character": 7
+    }
+   }
+  }
+14:1 category
+  {
+   "word": "category",
+   "key": "category",
+   "head": "in traits",
+   "prose": "Which group the trait belongs to.",
+   "takes": [
+    "one of education, personality"
+   ],
+   "winner": -1,
+   "within": [
+    "content"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 1
+    },
+    "end": {
+     "line": 14,
+     "character": 9
+    }
+   }
+  }
+14:12 personality
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "content"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 12
+    },
+    "end": {
+     "line": 14,
+     "character": 23
+    }
+   }
+  }
+15:1 diplomacy
+  {
+   "word": "diplomacy",
+   "key": "diplomacy",
+   "head": "in traits",
+   "prose": "Skill bonus.",
+   "takes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "content"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 1
+    },
+    "end": {
+     "line": 15,
+     "character": 10
+    }
+   }
+  }
+15:13 3
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "content"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 13
+    },
+    "end": {
+     "line": 15,
+     "character": 14
+    }
+   }
+  }
+17:0 lazy
+  {
+   "word": "lazy",
+   "key": "lazy",
+   "head": "trait",
+   "name": "Lazy",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 17,
+       "character": 0
+      },
+      "end": {
+       "line": 17,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 17,
+     "character": 0
+    },
+    "end": {
+     "line": 17,
+     "character": 4
+    }
+   }
+  }
+18:1 category
+  {
+   "word": "category",
+   "key": "category",
+   "head": "in traits",
+   "prose": "Which group the trait belongs to.",
+   "takes": [
+    "one of education, personality"
+   ],
+   "winner": -1,
+   "within": [
+    "lazy"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 1
+    },
+    "end": {
+     "line": 18,
+     "character": 9
+    }
+   }
+  }
+18:12 personality
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "lazy"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 12
+    },
+    "end": {
+     "line": 18,
+     "character": 23
+    }
+   }
+  }
+19:1 diplomacy
+  {
+   "word": "diplomacy",
+   "key": "diplomacy",
+   "head": "in traits",
+   "prose": "Skill bonus.",
+   "takes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "lazy"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 1
+    },
+    "end": {
+     "line": 19,
+     "character": 10
+    }
+   }
+  }
+19:13 4
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "lazy"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 13
+    },
+    "end": {
+     "line": 19,
+     "character": 14
+    }
+   }
+  }
+21:0 diligent
+  {
+   "word": "diligent",
+   "key": "diligent",
+   "head": "trait",
+   "name": "Diligent",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 21,
+       "character": 0
+      },
+      "end": {
+       "line": 21,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 21,
+     "character": 0
+    },
+    "end": {
+     "line": 21,
+     "character": 8
+    }
+   }
+  }
+22:1 category
+  {
+   "word": "category",
+   "key": "category",
+   "head": "in traits",
+   "prose": "Which group the trait belongs to.",
+   "takes": [
+    "one of education, personality"
+   ],
+   "winner": -1,
+   "within": [
+    "diligent"
+   ],
+   "range": {
+    "start": {
+     "line": 22,
+     "character": 1
+    },
+    "end": {
+     "line": 22,
+     "character": 9
+    }
+   }
+  }
+22:12 personality
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "diligent"
+   ],
+   "range": {
+    "start": {
+     "line": 22,
+     "character": 12
+    },
+    "end": {
+     "line": 22,
+     "character": 23
+    }
+   }
+  }
+23:1 diplomacy
+  {
+   "word": "diplomacy",
+   "key": "diplomacy",
+   "head": "in traits",
+   "prose": "Skill bonus.",
+   "takes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "diligent"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 1
+    },
+    "end": {
+     "line": 23,
+     "character": 10
+    }
+   }
+  }
+23:13 5
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "diligent"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 13
+    },
+    "end": {
+     "line": 23,
+     "character": 14
+    }
+   }
+  }
+25:0 zealous
+  {
+   "word": "zealous",
+   "key": "zealous",
+   "head": "trait",
+   "name": "Zealous",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 25,
+       "character": 0
+      },
+      "end": {
+       "line": 25,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 25,
+     "character": 0
+    },
+    "end": {
+     "line": 25,
+     "character": 7
+    }
+   }
+  }
+26:1 category
+  {
+   "word": "category",
+   "key": "category",
+   "head": "in traits",
+   "prose": "Which group the trait belongs to.",
+   "takes": [
+    "one of education, personality"
+   ],
+   "winner": -1,
+   "within": [
+    "zealous"
+   ],
+   "range": {
+    "start": {
+     "line": 26,
+     "character": 1
+    },
+    "end": {
+     "line": 26,
+     "character": 9
+    }
+   }
+  }
+26:12 personality
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "zealous"
+   ],
+   "range": {
+    "start": {
+     "line": 26,
+     "character": 12
+    },
+    "end": {
+     "line": 26,
+     "character": 23
+    }
+   }
+  }
+27:1 diplomacy
+  {
+   "word": "diplomacy",
+   "key": "diplomacy",
+   "head": "in traits",
+   "prose": "Skill bonus.",
+   "takes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "zealous"
+   ],
+   "range": {
+    "start": {
+     "line": 27,
+     "character": 1
+    },
+    "end": {
+     "line": 27,
+     "character": 10
+    }
+   }
+  }
+27:13 6
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "zealous"
+   ],
+   "range": {
+    "start": {
+     "line": 27,
+     "character": 13
+    },
+    "end": {
+     "line": 27,
+     "character": 14
+    }
+   }
+  }
+29:0 cynical
+  {
+   "word": "cynical",
+   "key": "cynical",
+   "head": "trait",
+   "name": "Cynical",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 29,
+       "character": 0
+      },
+      "end": {
+       "line": 29,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 29,
+     "character": 0
+    },
+    "end": {
+     "line": 29,
+     "character": 7
+    }
+   }
+  }
+30:1 category
+  {
+   "word": "category",
+   "key": "category",
+   "head": "in traits",
+   "prose": "Which group the trait belongs to.",
+   "takes": [
+    "one of education, personality"
+   ],
+   "winner": -1,
+   "within": [
+    "cynical"
+   ],
+   "range": {
+    "start": {
+     "line": 30,
+     "character": 1
+    },
+    "end": {
+     "line": 30,
+     "character": 9
+    }
+   }
+  }
+30:12 personality
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "cynical"
+   ],
+   "range": {
+    "start": {
+     "line": 30,
+     "character": 12
+    },
+    "end": {
+     "line": 30,
+     "character": 23
+    }
+   }
+  }
+31:1 diplomacy
+  {
+   "word": "diplomacy",
+   "key": "diplomacy",
+   "head": "in traits",
+   "prose": "Skill bonus.",
+   "takes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "cynical"
+   ],
+   "range": {
+    "start": {
+     "line": 31,
+     "character": 1
+    },
+    "end": {
+     "line": 31,
+     "character": 10
+    }
+   }
+  }
+31:13 7
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "cynical"
+   ],
+   "range": {
+    "start": {
+     "line": 31,
+     "character": 13
+    },
+    "end": {
+     "line": 31,
+     "character": 14
+    }
+   }
+  }

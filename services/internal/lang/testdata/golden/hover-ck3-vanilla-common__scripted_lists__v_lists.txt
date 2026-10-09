@@ -1,0 +1,308 @@
+0:0 adult_child
+  {
+   "word": "adult_child",
+   "key": "adult_child",
+   "head": "scripted list",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_lists/v_lists.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_lists/v_lists.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 11
+    }
+   }
+  }
+1:1 base
+  {
+   "word": "base",
+   "key": "base",
+   "head": "in scripted lists",
+   "writes": [
+    "one of child, vassal"
+   ],
+   "winner": -1,
+   "within": [
+    "adult_child"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 5
+    }
+   }
+  }
+1:8 child
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "adult_child"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 8
+    },
+    "end": {
+     "line": 1,
+     "character": 13
+    }
+   }
+  }
+2:1 conditions
+  {
+   "word": "conditions",
+   "key": "conditions",
+   "head": "in scripted lists",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "within": [
+    "adult_child"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 1
+    },
+    "end": {
+     "line": 2,
+     "character": 11
+    }
+   }
+  }
+2:16 is_adult
+  {
+   "word": "is_adult",
+   "key": "is_adult",
+   "head": "trigger",
+   "prose": "Is the scope character adult?",
+   "takes": [
+    "yes or no"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "adult_child",
+    "conditions"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 16
+    },
+    "end": {
+     "line": 2,
+     "character": 24
+    }
+   }
+  }
+2:27 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "adult_child",
+    "conditions"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 27
+    },
+    "end": {
+     "line": 2,
+     "character": 30
+    }
+   }
+  }
+4:0 rich_vassal
+  {
+   "word": "rich_vassal",
+   "key": "rich_vassal",
+   "head": "scripted list",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_lists/v_lists.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_lists/v_lists.txt",
+     "range": {
+      "start": {
+       "line": 4,
+       "character": 0
+      },
+      "end": {
+       "line": 4,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 0
+    },
+    "end": {
+     "line": 4,
+     "character": 11
+    }
+   }
+  }
+5:1 base
+  {
+   "word": "base",
+   "key": "base",
+   "head": "in scripted lists",
+   "writes": [
+    "one of child, vassal"
+   ],
+   "winner": -1,
+   "within": [
+    "rich_vassal"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 1
+    },
+    "end": {
+     "line": 5,
+     "character": 5
+    }
+   }
+  }
+5:8 vassal
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "rich_vassal"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 8
+    },
+    "end": {
+     "line": 5,
+     "character": 14
+    }
+   }
+  }
+6:1 conditions
+  {
+   "word": "conditions",
+   "key": "conditions",
+   "head": "in scripted lists",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "within": [
+    "rich_vassal"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 1
+    },
+    "end": {
+     "line": 6,
+     "character": 11
+    }
+   }
+  }
+6:16 gold
+  {
+   "word": "gold",
+   "key": "gold",
+   "head": "trigger",
+   "prose": "does the character have the required gold?",
+   "writes": [
+    "script value"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "rich_vassal",
+    "conditions"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 16
+    },
+    "end": {
+     "line": 6,
+     "character": 20
+    }
+   }
+  }
+6:23 big_value
+  {
+   "word": "big_value",
+   "key": "gold",
+   "head": "script value",
+   "returns": "a number",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/script_values/v_values.txt",
+     "origin": "vanilla",
+     "rel": "common/script_values/v_values.txt",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "rich_vassal",
+    "conditions"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 23
+    },
+    "end": {
+     "line": 6,
+     "character": 32
+    }
+   }
+  }

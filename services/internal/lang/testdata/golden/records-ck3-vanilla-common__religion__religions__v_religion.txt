@@ -1,0 +1,2 @@
+def religion/religions "christianity_religion" mode="" 0-21 @0:0 local=false named=false
+ref localization "catholic" called="" 63-71 @3:10 from=0 trigger=false

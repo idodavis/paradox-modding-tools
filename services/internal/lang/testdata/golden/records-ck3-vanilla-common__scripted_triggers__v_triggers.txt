@@ -1,0 +1,8 @@
+def scripted_triggers "v_trigger" mode="" 0-9 @0:0 local=false named=false
+def scripted_triggers "v_rich_trigger" mode="" 35-49 @3:0 local=false named=false
+def scripted_triggers "v_rule_trigger" mode="" 216-230 @14:0 local=false named=false
+def parameter "v_trigger:TARGET" mode="" 24-32 @1:10 local=false named=false
+ref script_values "big_value" called="" 71-80 @5:9 from=1 trigger=true
+ref  "v_inline_trigger" called="trigger" 131-147 @8:3 from=1 trigger=true
+ref  "big_value" called="trigger" 162-171 @11:1 from=1 trigger=true
+ref  "v_rich_trigger" called="trigger" 258-272 @15:23 from=2 trigger=true

@@ -1,0 +1,10 @@
+def gui.type "v_button" mode="" 21-29 @1:6 local=false named=false
+def gui.type "v_label" mode="" 95-102 @5:6 local=false named=false
+def gui.template "v_plain" mode="" 160-167 @9:9 local=false named=false
+def gui.template "v_faded" mode="" 192-199 @12:9 local=false named=false
+def gui.widget "v_window" mode="" 217-223 @15:0 local=false named=false
+def gui.widget "v_other_window" mode="" 315-321 @22:0 local=false named=false
+ref gui.widget "v_window" called="" 236-246 @16:8 from=4 trigger=false
+ref  "v_button" called="widget" 248-256 @17:1 from=4 trigger=false
+ref gui.widget "v_other_window" called="" 334-350 @23:8 from=5 trigger=false
+ref  "v_label" called="widget" 352-359 @24:1 from=5 trigger=false

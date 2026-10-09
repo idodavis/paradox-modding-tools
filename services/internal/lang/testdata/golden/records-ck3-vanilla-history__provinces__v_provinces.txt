@@ -1,0 +1,6 @@
+def history/provinces "1" mode="" 0-1 @0:0 local=false named=false
+def history/provinces "2" mode="" 51-52 @4:0 local=false named=false
+ref map_data.definition "1" called="" 0-1 @0:0 from=0 trigger=false
+ref culture/cultures "norse" called="" 17-22 @1:11 from=0 trigger=false
+ref map_data.definition "2" called="" 51-52 @4:0 from=1 trigger=false
+ref culture/cultures "english" called="" 68-75 @5:11 from=1 trigger=false

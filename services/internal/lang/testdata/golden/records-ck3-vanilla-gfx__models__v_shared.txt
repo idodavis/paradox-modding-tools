@@ -1,0 +1,10 @@
+def asset.pdxmesh "v_shared_mesh" mode="" 0-7 @0:0 local=false named=false
+def asset.pdxmesh "v_shared_low_mesh" mode="" 62-69 @4:0 local=false named=false
+def asset.entity "v_shared_entity" mode="" 128-134 @8:0 local=false named=false
+def asset.entity "v_shared_low_entity" mode="" 194-200 @12:0 local=false named=false
+ref asset.pdxmesh "v_shared_mesh" called="" 20-35 @1:8 from=0 trigger=false
+ref asset.pdxmesh "v_shared_low_mesh" called="" 82-101 @5:8 from=1 trigger=false
+ref asset.entity "v_shared_entity" called="" 147-164 @9:8 from=2 trigger=false
+ref asset.pdxmesh "v_shared_mesh" called="" 176-191 @10:11 from=2 trigger=false
+ref asset.entity "v_shared_low_entity" called="" 213-234 @13:8 from=3 trigger=false
+ref asset.pdxmesh "v_shared_low_mesh" called="" 246-265 @14:11 from=3 trigger=false

@@ -1,0 +1,1428 @@
+0:0 namespace -
+0:12 vmore -
+2:0 scripted_trigger -
+2:17 v_inline_trigger
+  {
+   "word": "v_inline_trigger",
+   "key": "v_inline_trigger",
+   "head": "scripted trigger",
+   "returns": "yes or no",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/events/v_more_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_more_events.txt",
+     "range": {
+      "start": {
+       "line": 2,
+       "character": 17
+      },
+      "end": {
+       "line": 2,
+       "character": 17
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 17
+    },
+    "end": {
+     "line": 2,
+     "character": 33
+    }
+   }
+  }
+3:1 is_adult
+  {
+   "word": "is_adult",
+   "key": "is_adult",
+   "head": "trigger",
+   "prose": "Is the scope character adult?",
+   "takes": [
+    "yes or no"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_inline_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 1
+    },
+    "end": {
+     "line": 3,
+     "character": 9
+    }
+   }
+  }
+3:12 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_inline_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 12
+    },
+    "end": {
+     "line": 3,
+     "character": 15
+    }
+   }
+  }
+6:0 vmore.1
+  {
+   "word": "vmore.1",
+   "key": "vmore.1",
+   "head": "event",
+   "name": "Hello",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/events/v_more_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_more_events.txt",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 0
+      },
+      "end": {
+       "line": 6,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 0
+    },
+    "end": {
+     "line": 6,
+     "character": 7
+    }
+   }
+  }
+7:1 type
+  {
+   "word": "type",
+   "key": "type",
+   "head": "in events",
+   "writes": [
+    "one of character_event"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.1"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 1
+    },
+    "end": {
+     "line": 7,
+     "character": 5
+    }
+   }
+  }
+7:8 character_event
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vmore.1"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 8
+    },
+    "end": {
+     "line": 7,
+     "character": 23
+    }
+   }
+  }
+8:1 title
+  {
+   "word": "title",
+   "key": "title",
+   "head": "in events",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.1"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 1
+    },
+    "end": {
+     "line": 8,
+     "character": 6
+    }
+   }
+  }
+8:9 v.1.t
+  {
+   "word": "v.1.t",
+   "key": "title",
+   "head": "localization",
+   "name": "Hello",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 9
+    },
+    "end": {
+     "line": 8,
+     "character": 14
+    }
+   }
+  }
+9:1 trigger
+  {
+   "word": "trigger",
+   "key": "trigger",
+   "head": "in events",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.1"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 1
+    },
+    "end": {
+     "line": 9,
+     "character": 8
+    }
+   }
+  }
+10:2 v_inline_trigger
+  {
+   "word": "v_inline_trigger",
+   "key": "v_inline_trigger",
+   "head": "scripted trigger",
+   "returns": "yes or no",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/events/v_more_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_more_events.txt",
+     "range": {
+      "start": {
+       "line": 2,
+       "character": 17
+      },
+      "end": {
+       "line": 2,
+       "character": 17
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 2
+    },
+    "end": {
+     "line": 10,
+     "character": 18
+    }
+   }
+  }
+10:21 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vmore.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 21
+    },
+    "end": {
+     "line": 10,
+     "character": 24
+    }
+   }
+  }
+11:2 NOT
+  {
+   "word": "NOT",
+   "key": "NOT",
+   "head": "trigger",
+   "prose": "negates content of trigger",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 2
+    },
+    "end": {
+     "line": 11,
+     "character": 5
+    }
+   }
+  }
+11:10 v_rule_trigger
+  {
+   "word": "v_rule_trigger",
+   "key": "v_rule_trigger",
+   "head": "scripted trigger",
+   "returns": "yes or no",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_triggers/v_triggers.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_triggers/v_triggers.txt",
+     "range": {
+      "start": {
+       "line": 14,
+       "character": 0
+      },
+      "end": {
+       "line": 14,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "trigger",
+    "NOT"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 10
+    },
+    "end": {
+     "line": 11,
+     "character": 24
+    }
+   }
+  }
+11:27 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vmore.1",
+    "trigger",
+    "NOT"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 27
+    },
+    "end": {
+     "line": 11,
+     "character": 30
+    }
+   }
+  }
+12:2 gold
+  {
+   "word": "gold",
+   "key": "gold",
+   "head": "trigger",
+   "prose": "does the character have the required gold?",
+   "writes": [
+    "script value"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 2
+    },
+    "end": {
+     "line": 12,
+     "character": 6
+    }
+   }
+  }
+12:10 define:NWar|WAR_COST
+  {
+   "word": "NWar",
+   "key": "gold",
+   "head": "define",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/defines/v_defines.txt",
+     "origin": "vanilla",
+     "rel": "common/defines/v_defines.txt",
+     "range": {
+      "start": {
+       "line": 4,
+       "character": 0
+      },
+      "end": {
+       "line": 4,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 10
+    },
+    "end": {
+     "line": 12,
+     "character": 30
+    }
+   }
+  }
+13:2 has_trait
+  {
+   "word": "has_trait",
+   "key": "has_trait",
+   "head": "trigger",
+   "prose": "Does the character have this trait or a trait of this trait group?",
+   "writes": [
+    "trait"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 2
+    },
+    "end": {
+     "line": 13,
+     "character": 11
+    }
+   }
+  }
+13:14 trait:brave
+  {
+   "word": "brave",
+   "key": "has_trait",
+   "head": "trait",
+   "name": "Brave",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/ck3/common/traits/m_traits.txt",
+     "origin": "mod",
+     "rel": "common/traits/m_traits.txt",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 0
+      },
+      "end": {
+       "line": 5,
+       "character": 0
+      }
+     }
+    },
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 1,
+   "within": [
+    "vmore.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 14
+    },
+    "end": {
+     "line": 13,
+     "character": 25
+    }
+   }
+  }
+15:1 immediate
+  {
+   "word": "immediate",
+   "key": "immediate",
+   "head": "in events",
+   "takes": [
+    "effects"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.1"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 1
+    },
+    "end": {
+     "line": 15,
+     "character": 10
+    }
+   }
+  }
+16:2 v_gift_effect
+  {
+   "word": "v_gift_effect",
+   "key": "v_gift_effect",
+   "head": "scripted effect",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_effects/v_effects.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_effects/v_effects.txt",
+     "range": {
+      "start": {
+       "line": 17,
+       "character": 0
+      },
+      "end": {
+       "line": 17,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 16,
+     "character": 2
+    },
+    "end": {
+     "line": 16,
+     "character": 15
+    }
+   }
+  }
+16:18 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vmore.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 16,
+     "character": 18
+    },
+    "end": {
+     "line": 16,
+     "character": 21
+    }
+   }
+  }
+17:2 character:186004
+  {
+   "word": "186004",
+   "key": "character:186004",
+   "head": "character",
+   "name": "Catholic",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/history/characters/v_characters.txt",
+     "origin": "vanilla",
+     "rel": "history/characters/v_characters.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 17,
+     "character": 2
+    },
+    "end": {
+     "line": 17,
+     "character": 18
+    }
+   }
+  }
+17:23 add_trait
+  {
+   "word": "add_trait",
+   "key": "add_trait",
+   "head": "effect",
+   "prose": "Adds a trait to a character (the trait will not be added and no tooltip will be shown if the character isn't eligible for the trait, i.e. when already having the trait, having an opposing trait, not fulfilling the trait's is_potential trigger or being outside of the trait's range)",
+   "writes": [
+    "trait"
+   ],
+   "scope": "character",
+   "leads": "trait",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.1",
+    "immediate",
+    "character:186004"
+   ],
+   "range": {
+    "start": {
+     "line": 17,
+     "character": 23
+    },
+    "end": {
+     "line": 17,
+     "character": 32
+    }
+   }
+  }
+17:35 craven
+  {
+   "word": "craven",
+   "key": "add_trait",
+   "head": "trait",
+   "name": "Craven",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/traits/v_traits.txt",
+     "origin": "vanilla",
+     "rel": "common/traits/v_traits.txt",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 0
+      },
+      "end": {
+       "line": 5,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "immediate",
+    "character:186004"
+   ],
+   "range": {
+    "start": {
+     "line": 17,
+     "character": 35
+    },
+    "end": {
+     "line": 17,
+     "character": 41
+    }
+   }
+  }
+18:2 culture:norse
+  {
+   "word": "norse",
+   "key": "culture:norse",
+   "head": "culture",
+   "name": "norse",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/culture/cultures/v_cultures.txt",
+     "origin": "vanilla",
+     "rel": "common/culture/cultures/v_cultures.txt",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 0
+      },
+      "end": {
+       "line": 6,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 2
+    },
+    "end": {
+     "line": 18,
+     "character": 15
+    }
+   }
+  }
+18:20 save_scope_as
+  {
+   "word": "save_scope_as",
+   "key": "save_scope_as",
+   "head": "effect",
+   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "takes": [
+    "text"
+   ],
+   "scope": "culture",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.1",
+    "immediate",
+    "culture:norse"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 20
+    },
+    "end": {
+     "line": 18,
+     "character": 33
+    }
+   }
+  }
+18:36 old_culture
+  {
+   "word": "old_culture",
+   "key": "save_scope_as",
+   "head": "scope",
+   "winner": -1,
+   "within": [
+    "vmore.1",
+    "immediate",
+    "culture:norse"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 36
+    },
+    "end": {
+     "line": 18,
+     "character": 47
+    }
+   }
+  }
+19:2 title:e_y
+  {
+   "word": "e_y",
+   "key": "title:e_y",
+   "head": "landed title",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/landed_titles/v_titles.txt",
+     "origin": "vanilla",
+     "rel": "common/landed_titles/v_titles.txt",
+     "range": {
+      "start": {
+       "line": 12,
+       "character": 0
+      },
+      "end": {
+       "line": 12,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 2
+    },
+    "end": {
+     "line": 19,
+     "character": 11
+    }
+   }
+  }
+19:16 save_scope_as
+  {
+   "word": "save_scope_as",
+   "key": "save_scope_as",
+   "head": "effect",
+   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "takes": [
+    "text"
+   ],
+   "scope": "landed_title",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.1",
+    "immediate",
+    "title:e_y"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 16
+    },
+    "end": {
+     "line": 19,
+     "character": 29
+    }
+   }
+  }
+19:32 far_title
+  {
+   "word": "far_title",
+   "key": "save_scope_as",
+   "head": "scope",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/events/v_more_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_more_events.txt",
+     "range": {
+      "start": {
+       "line": 19,
+       "character": 32
+      },
+      "end": {
+       "line": 19,
+       "character": 32
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.1",
+    "immediate",
+    "title:e_y"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 32
+    },
+    "end": {
+     "line": 19,
+     "character": 41
+    }
+   }
+  }
+20:2 title:k_y
+  {
+   "word": "k_y",
+   "key": "title:k_y",
+   "head": "landed title",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/landed_titles/v_titles.txt",
+     "origin": "vanilla",
+     "rel": "common/landed_titles/v_titles.txt",
+     "range": {
+      "start": {
+       "line": 14,
+       "character": 1
+      },
+      "end": {
+       "line": 14,
+       "character": 1
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 20,
+     "character": 2
+    },
+    "end": {
+     "line": 20,
+     "character": 11
+    }
+   }
+  }
+20:16 save_scope_as
+  {
+   "word": "save_scope_as",
+   "key": "save_scope_as",
+   "head": "effect",
+   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "takes": [
+    "text"
+   ],
+   "scope": "landed_title",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.1",
+    "immediate",
+    "title:k_y"
+   ],
+   "range": {
+    "start": {
+     "line": 20,
+     "character": 16
+    },
+    "end": {
+     "line": 20,
+     "character": 29
+    }
+   }
+  }
+20:32 near_title
+  {
+   "word": "near_title",
+   "key": "save_scope_as",
+   "head": "scope",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/events/v_more_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_more_events.txt",
+     "range": {
+      "start": {
+       "line": 20,
+       "character": 32
+      },
+      "end": {
+       "line": 20,
+       "character": 32
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.1",
+    "immediate",
+    "title:k_y"
+   ],
+   "range": {
+    "start": {
+     "line": 20,
+     "character": 32
+    },
+    "end": {
+     "line": 20,
+     "character": 42
+    }
+   }
+  }
+22:1 option
+  {
+   "word": "option",
+   "key": "option",
+   "head": "in events",
+   "prose": "One choice offered to the player.",
+   "takes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.1"
+   ],
+   "range": {
+    "start": {
+     "line": 22,
+     "character": 1
+    },
+    "end": {
+     "line": 22,
+     "character": 7
+    }
+   }
+  }
+23:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `option`",
+   "prose": "The option's localization key.",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 2
+    },
+    "end": {
+     "line": 23,
+     "character": 6
+    }
+   }
+  }
+23:9 v.1.a
+  {
+   "word": "v.1.a",
+   "key": "name",
+   "head": "localization",
+   "name": "Go",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 0
+      },
+      "end": {
+       "line": 3,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 9
+    },
+    "end": {
+     "line": 23,
+     "character": 14
+    }
+   }
+  }
+24:2 add_gold
+  {
+   "word": "add_gold",
+   "key": "add_gold",
+   "head": "effect",
+   "prose": "adds gold to a character",
+   "writes": [
+    "a number",
+    "script value"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 2
+    },
+    "end": {
+     "line": 24,
+     "character": 10
+    }
+   }
+  }
+24:13 1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vmore.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 13
+    },
+    "end": {
+     "line": 24,
+     "character": 14
+    }
+   }
+  }
+27:0 vmore.2
+  {
+   "word": "vmore.2",
+   "key": "vmore.2",
+   "head": "event",
+   "name": "Two",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/events/v_more_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_more_events.txt",
+     "range": {
+      "start": {
+       "line": 27,
+       "character": 0
+      },
+      "end": {
+       "line": 27,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "range": {
+    "start": {
+     "line": 27,
+     "character": 0
+    },
+    "end": {
+     "line": 27,
+     "character": 7
+    }
+   }
+  }
+28:1 type
+  {
+   "word": "type",
+   "key": "type",
+   "head": "in events",
+   "writes": [
+    "one of character_event"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.2"
+   ],
+   "range": {
+    "start": {
+     "line": 28,
+     "character": 1
+    },
+    "end": {
+     "line": 28,
+     "character": 5
+    }
+   }
+  }
+28:8 character_event
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vmore.2"
+   ],
+   "range": {
+    "start": {
+     "line": 28,
+     "character": 8
+    },
+    "end": {
+     "line": 28,
+     "character": 23
+    }
+   }
+  }
+29:1 title
+  {
+   "word": "title",
+   "key": "title",
+   "head": "in events",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.2"
+   ],
+   "range": {
+    "start": {
+     "line": 29,
+     "character": 1
+    },
+    "end": {
+     "line": 29,
+     "character": 6
+    }
+   }
+  }
+29:9 v.2.t
+  {
+   "word": "v.2.t",
+   "key": "title",
+   "head": "localization",
+   "name": "Two",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 4,
+       "character": 0
+      },
+      "end": {
+       "line": 4,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.2"
+   ],
+   "range": {
+    "start": {
+     "line": 29,
+     "character": 9
+    },
+    "end": {
+     "line": 29,
+     "character": 14
+    }
+   }
+  }
+30:1 option
+  {
+   "word": "option",
+   "key": "option",
+   "head": "in events",
+   "prose": "One choice offered to the player.",
+   "takes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.2"
+   ],
+   "range": {
+    "start": {
+     "line": 30,
+     "character": 1
+    },
+    "end": {
+     "line": 30,
+     "character": 7
+    }
+   }
+  }
+31:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `option`",
+   "prose": "The option's localization key.",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "vmore.2",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 31,
+     "character": 2
+    },
+    "end": {
+     "line": 31,
+     "character": 6
+    }
+   }
+  }
+31:9 v.2.a
+  {
+   "word": "v.2.a",
+   "key": "name",
+   "head": "localization",
+   "name": "A",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 0
+      },
+      "end": {
+       "line": 6,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "vmore.2",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 31,
+     "character": 9
+    },
+    "end": {
+     "line": 31,
+     "character": 14
+    }
+   }
+  }
+32:2 add_gold
+  {
+   "word": "add_gold",
+   "key": "add_gold",
+   "head": "effect",
+   "prose": "adds gold to a character",
+   "writes": [
+    "a number",
+    "script value"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vmore.2",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 32,
+     "character": 2
+    },
+    "end": {
+     "line": 32,
+     "character": 10
+    }
+   }
+  }
+32:13 2
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vmore.2",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 32,
+     "character": 13
+    },
+    "end": {
+     "line": 32,
+     "character": 14
+    }
+   }
+  }

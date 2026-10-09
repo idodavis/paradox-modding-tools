@@ -1,0 +1,2 @@
+def map_data/state_regions "STATE_HOME" mode="" 0-10 @0:0 local=false named=false
+def map_data/state_regions "STATE_AWAY" mode="" 80-90 @5:0 local=false named=false

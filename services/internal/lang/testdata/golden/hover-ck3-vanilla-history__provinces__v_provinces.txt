@@ -1,0 +1,272 @@
+0:0 1
+  {
+   "word": "1",
+   "key": "1",
+   "head": "map data definition",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/map_data/definition.csv",
+     "origin": "vanilla",
+     "rel": "map_data/definition.csv",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 1
+    }
+   }
+  }
+1:1 culture
+  {
+   "word": "culture",
+   "key": "culture",
+   "head": "in provinces",
+   "writes": [
+    "culture"
+   ],
+   "winner": -1,
+   "within": [
+    "1"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 8
+    }
+   }
+  }
+1:11 norse
+  {
+   "word": "norse",
+   "key": "culture",
+   "head": "culture",
+   "name": "norse",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/culture/cultures/v_cultures.txt",
+     "origin": "vanilla",
+     "rel": "common/culture/cultures/v_cultures.txt",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 0
+      },
+      "end": {
+       "line": 6,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "1"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 11
+    },
+    "end": {
+     "line": 1,
+     "character": 16
+    }
+   }
+  }
+2:1 holding
+  {
+   "word": "holding",
+   "key": "holding",
+   "head": "in provinces",
+   "writes": [
+    "one of castle_holding, city_holding"
+   ],
+   "winner": -1,
+   "within": [
+    "1"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 1
+    },
+    "end": {
+     "line": 2,
+     "character": 8
+    }
+   }
+  }
+2:11 castle_holding
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "1"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 11
+    },
+    "end": {
+     "line": 2,
+     "character": 25
+    }
+   }
+  }
+4:0 2
+  {
+   "word": "2",
+   "key": "2",
+   "head": "map data definition",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/map_data/definition.csv",
+     "origin": "vanilla",
+     "rel": "map_data/definition.csv",
+     "range": {
+      "start": {
+       "line": 2,
+       "character": 0
+      },
+      "end": {
+       "line": 2,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 0
+    },
+    "end": {
+     "line": 4,
+     "character": 1
+    }
+   }
+  }
+5:1 culture
+  {
+   "word": "culture",
+   "key": "culture",
+   "head": "in provinces",
+   "writes": [
+    "culture"
+   ],
+   "winner": -1,
+   "within": [
+    "2"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 1
+    },
+    "end": {
+     "line": 5,
+     "character": 8
+    }
+   }
+  }
+5:11 english
+  {
+   "word": "english",
+   "key": "culture",
+   "head": "culture",
+   "name": "english",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/culture/cultures/v_cultures.txt",
+     "origin": "vanilla",
+     "rel": "common/culture/cultures/v_cultures.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "2"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 11
+    },
+    "end": {
+     "line": 5,
+     "character": 18
+    }
+   }
+  }
+6:1 holding
+  {
+   "word": "holding",
+   "key": "holding",
+   "head": "in provinces",
+   "writes": [
+    "one of castle_holding, city_holding"
+   ],
+   "winner": -1,
+   "within": [
+    "2"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 1
+    },
+    "end": {
+     "line": 6,
+     "character": 8
+    }
+   }
+  }
+6:11 city_holding
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "2"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 11
+    },
+    "end": {
+     "line": 6,
+     "character": 23
+    }
+   }
+  }

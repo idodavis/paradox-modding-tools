@@ -1,0 +1,268 @@
+0:0 FRA
+  {
+   "word": "FRA",
+   "key": "FRA",
+   "head": "country",
+   "sites": [
+    {
+     "path": "<fixtures>/eu5/game/in_game/setup/countries/v_countries.txt",
+     "origin": "vanilla",
+     "rel": "setup/countries/v_countries.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 3
+    }
+   }
+  }
+1:1 color
+  {
+   "word": "color",
+   "key": "color",
+   "head": "in countries",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "color": "#1e1ec8",
+   "within": [
+    "FRA"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 6
+    }
+   }
+  }
+1:9 rgb
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "FRA"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 9
+    },
+    "end": {
+     "line": 1,
+     "character": 9
+    }
+   }
+  }
+1:15 30
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "FRA",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 15
+    },
+    "end": {
+     "line": 1,
+     "character": 17
+    }
+   }
+  }
+1:18 30
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "FRA",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 18
+    },
+    "end": {
+     "line": 1,
+     "character": 20
+    }
+   }
+  }
+1:21 200
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "FRA",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 21
+    },
+    "end": {
+     "line": 1,
+     "character": 24
+    }
+   }
+  }
+3:0 ENG
+  {
+   "word": "ENG",
+   "key": "ENG",
+   "head": "country",
+   "sites": [
+    {
+     "path": "<fixtures>/eu5/game/in_game/setup/countries/v_countries.txt",
+     "origin": "vanilla",
+     "rel": "setup/countries/v_countries.txt",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 0
+      },
+      "end": {
+       "line": 3,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 0
+    },
+    "end": {
+     "line": 3,
+     "character": 3
+    }
+   }
+  }
+4:1 color
+  {
+   "word": "color",
+   "key": "color",
+   "head": "in countries",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "color": "#c81e1e",
+   "within": [
+    "ENG"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 1
+    },
+    "end": {
+     "line": 4,
+     "character": 6
+    }
+   }
+  }
+4:9 rgb
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "ENG"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 9
+    },
+    "end": {
+     "line": 4,
+     "character": 9
+    }
+   }
+  }
+4:15 200
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "ENG",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 15
+    },
+    "end": {
+     "line": 4,
+     "character": 18
+    }
+   }
+  }
+4:19 30
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "ENG",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 19
+    },
+    "end": {
+     "line": 4,
+     "character": 21
+    }
+   }
+  }
+4:22 30
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "ENG",
+    "color"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 22
+    },
+    "end": {
+     "line": 4,
+     "character": 24
+    }
+   }
+  }

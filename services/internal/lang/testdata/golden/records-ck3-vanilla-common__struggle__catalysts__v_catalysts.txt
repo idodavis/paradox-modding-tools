@@ -1,0 +1,2 @@
+def struggle/catalysts "catalyst_struggle_war" mode="" 0-21 @0:0 local=false named=false
+def struggle/catalysts "catalyst_struggle_peace" mode="" 28-51 @1:0 local=false named=false

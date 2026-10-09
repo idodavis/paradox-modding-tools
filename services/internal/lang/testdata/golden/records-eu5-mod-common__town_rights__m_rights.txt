@@ -1,0 +1,3 @@
+def town_rights "aga_tr" mode="INJECT" 0-13 @0:0 local=false named=false
+def town_rights "aga_tr" mode="REPLACE" 52-66 @3:0 local=false named=false
+def town_rights "missing_tr" mode="TRY_INJECT" 103-124 @6:0 local=false named=false

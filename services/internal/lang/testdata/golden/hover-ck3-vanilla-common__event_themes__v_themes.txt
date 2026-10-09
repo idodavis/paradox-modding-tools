@@ -1,0 +1,76 @@
+0:0 seduction
+  {
+   "word": "seduction",
+   "key": "seduction",
+   "head": "event theme",
+   "name": "Seduction",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/event_themes/v_themes.txt",
+     "origin": "vanilla",
+     "rel": "common/event_themes/v_themes.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 9
+    }
+   }
+  }
+1:1 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "in event themes",
+   "writes": [
+    "one of x"
+   ],
+   "winner": -1,
+   "within": [
+    "seduction"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 5
+    }
+   }
+  }
+1:8 x
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "seduction"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 8
+    },
+    "end": {
+     "line": 1,
+     "character": 9
+    }
+   }
+  }

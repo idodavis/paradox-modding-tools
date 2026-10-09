@@ -1,0 +1,146 @@
+0:0 christianity_religion
+  {
+   "word": "christianity_religion",
+   "key": "christianity_religion",
+   "head": "religion",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/religion/religions/v_religion.txt",
+     "origin": "vanilla",
+     "rel": "common/religion/religions/v_religion.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 21
+    }
+   }
+  }
+1:1 faiths
+  {
+   "word": "faiths",
+   "key": "faiths",
+   "head": "in religions",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "christianity_religion"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 7
+    }
+   }
+  }
+2:2 catholic
+  {
+   "word": "catholic",
+   "key": "catholic",
+   "head": "in `faiths`",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "christianity_religion",
+    "faiths"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 2
+    },
+    "end": {
+     "line": 2,
+     "character": 10
+    }
+   }
+  }
+3:3 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "in `catholic`",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "christianity_religion",
+    "faiths",
+    "catholic"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 3
+    },
+    "end": {
+     "line": 3,
+     "character": 7
+    }
+   }
+  }
+3:10 catholic
+  {
+   "word": "catholic",
+   "key": "icon",
+   "head": "localization",
+   "name": "Catholic",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 42,
+       "character": 0
+      },
+      "end": {
+       "line": 42,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "christianity_religion",
+    "faiths",
+    "catholic"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 10
+    },
+    "end": {
+     "line": 3,
+     "character": 18
+    }
+   }
+  }

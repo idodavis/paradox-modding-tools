@@ -1,0 +1,150 @@
+0:0 dynasty_1
+  {
+   "word": "dynasty_1",
+   "key": "dynasty_1",
+   "head": "dynasty",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/dynasties/v.txt",
+     "origin": "vanilla",
+     "rel": "common/dynasties/v.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 9
+    }
+   }
+  }
+1:1 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in dynasties",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "dynasty_1"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 5
+    }
+   }
+  }
+1:9 dynn_1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "dynasty_1"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 8
+    },
+    "end": {
+     "line": 1,
+     "character": 16
+    }
+   }
+  }
+3:0 dynasty_2
+  {
+   "word": "dynasty_2",
+   "key": "dynasty_2",
+   "head": "dynasty",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/dynasties/v.txt",
+     "origin": "vanilla",
+     "rel": "common/dynasties/v.txt",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 0
+      },
+      "end": {
+       "line": 3,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 0
+    },
+    "end": {
+     "line": 3,
+     "character": 9
+    }
+   }
+  }
+4:1 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in dynasties",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "dynasty_2"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 1
+    },
+    "end": {
+     "line": 4,
+     "character": 5
+    }
+   }
+  }
+4:9 dynn_2
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "dynasty_2"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 8
+    },
+    "end": {
+     "line": 4,
+     "character": 16
+    }
+   }
+  }

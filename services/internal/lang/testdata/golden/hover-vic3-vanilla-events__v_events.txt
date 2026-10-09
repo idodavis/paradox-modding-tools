@@ -1,0 +1,946 @@
+0:0 namespace -
+0:12 vv -
+2:0 vv.1
+  {
+   "word": "vv.1",
+   "key": "vv.1",
+   "head": "event",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/events/v_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_events.txt",
+     "range": {
+      "start": {
+       "line": 2,
+       "character": 0
+      },
+      "end": {
+       "line": 2,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 0
+    },
+    "end": {
+     "line": 2,
+     "character": 4
+    }
+   }
+  }
+3:1 type
+  {
+   "word": "type",
+   "key": "type",
+   "head": "in events",
+   "writes": [
+    "one of country_event"
+   ],
+   "winner": -1,
+   "within": [
+    "vv.1"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 1
+    },
+    "end": {
+     "line": 3,
+     "character": 5
+    }
+   }
+  }
+3:8 country_event
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vv.1"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 8
+    },
+    "end": {
+     "line": 3,
+     "character": 21
+    }
+   }
+  }
+4:1 trigger
+  {
+   "word": "trigger",
+   "key": "trigger",
+   "head": "in events",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "within": [
+    "vv.1"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 1
+    },
+    "end": {
+     "line": 4,
+     "character": 8
+    }
+   }
+  }
+5:2 NOT
+  {
+   "word": "NOT",
+   "key": "NOT",
+   "head": "trigger",
+   "prose": "negates content of trigger",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 2
+    },
+    "end": {
+     "line": 5,
+     "character": 5
+    }
+   }
+  }
+5:10 any_scope_state
+  {
+   "word": "any_scope_state",
+   "key": "any_scope_state",
+   "head": "trigger",
+   "prose": "Iterate through all states including provinces from a: country, state_region, theater, front, or strait",
+   "takes": [
+    "triggers"
+   ],
+   "leads": "state",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "trigger",
+    "NOT"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 10
+    },
+    "end": {
+     "line": 5,
+     "character": 25
+    }
+   }
+  }
+5:30 owner
+  {
+   "word": "owner",
+   "key": "owner",
+   "head": "event target",
+   "prose": "Scope to the owner country of object",
+   "scope": "state",
+   "leads": "country",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "trigger",
+    "NOT",
+    "any_scope_state"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 30
+    },
+    "end": {
+     "line": 5,
+     "character": 35
+    }
+   }
+  }
+5:38 c:FRA
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vv.1",
+    "trigger",
+    "NOT",
+    "any_scope_state"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 38
+    },
+    "end": {
+     "line": 5,
+     "character": 43
+    }
+   }
+  }
+7:1 immediate
+  {
+   "word": "immediate",
+   "key": "immediate",
+   "head": "in events",
+   "takes": [
+    "effects"
+   ],
+   "winner": -1,
+   "within": [
+    "vv.1"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 1
+    },
+    "end": {
+     "line": 7,
+     "character": 10
+    }
+   }
+  }
+8:2 every_scope_state
+  {
+   "word": "every_scope_state",
+   "key": "every_scope_state",
+   "head": "effect",
+   "prose": "Iterate through all states including provinces from a: country, state_region, theater, front, or strait",
+   "takes": [
+    "effects"
+   ],
+   "leads": "state",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 2
+    },
+    "end": {
+     "line": 8,
+     "character": 19
+    }
+   }
+  }
+8:24 create_pop
+  {
+   "word": "create_pop",
+   "key": "create_pop",
+   "head": "effect",
+   "prose": "Creates a pop in the scoped state",
+   "takes": [
+    "effects"
+   ],
+   "scope": "state",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "immediate",
+    "every_scope_state"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 24
+    },
+    "end": {
+     "line": 8,
+     "character": 34
+    }
+   }
+  }
+8:39 culture
+  {
+   "word": "culture",
+   "key": "culture",
+   "head": "event target",
+   "prose": "Scope to pop's or character's culture",
+   "scope": "state",
+   "leads": "culture",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "immediate",
+    "every_scope_state",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 39
+    },
+    "end": {
+     "line": 8,
+     "character": 46
+    }
+   }
+  }
+8:49 british
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vv.1",
+    "immediate",
+    "every_scope_state",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 49
+    },
+    "end": {
+     "line": 8,
+     "character": 56
+    }
+   }
+  }
+8:57 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `create_pop`",
+   "writes": [
+    "a number"
+   ],
+   "scope": "state",
+   "winner": -1,
+   "within": [
+    "vv.1",
+    "immediate",
+    "every_scope_state",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 57
+    },
+    "end": {
+     "line": 8,
+     "character": 61
+    }
+   }
+  }
+8:64 1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vv.1",
+    "immediate",
+    "every_scope_state",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 64
+    },
+    "end": {
+     "line": 8,
+     "character": 65
+    }
+   }
+  }
+9:2 p:x0974E5
+  {
+   "word": "p:x0974E5",
+   "key": "p:x0974E5",
+   "head": "event target",
+   "prose": "Scope to province specified by hex key",
+   "takes": [
+    "effects"
+   ],
+   "leads": "province",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 2
+    },
+    "end": {
+     "line": 9,
+     "character": 11
+    }
+   }
+  }
+9:16 save_scope_as
+  {
+   "word": "save_scope_as",
+   "key": "save_scope_as",
+   "head": "effect",
+   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "takes": [
+    "text"
+   ],
+   "scope": "province",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "immediate",
+    "p:x0974E5"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 16
+    },
+    "end": {
+     "line": 9,
+     "character": 29
+    }
+   }
+  }
+9:32 home_province
+  {
+   "word": "home_province",
+   "key": "save_scope_as",
+   "head": "scope",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/events/v_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_events.txt",
+     "range": {
+      "start": {
+       "line": 9,
+       "character": 32
+      },
+      "end": {
+       "line": 9,
+       "character": 32
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "within": [
+    "vv.1",
+    "immediate",
+    "p:x0974E5"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 32
+    },
+    "end": {
+     "line": 9,
+     "character": 45
+    }
+   }
+  }
+10:2 p:x4A0B1C
+  {
+   "word": "p:x4A0B1C",
+   "key": "p:x4A0B1C",
+   "head": "event target",
+   "prose": "Scope to province specified by hex key",
+   "takes": [
+    "effects"
+   ],
+   "leads": "province",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 2
+    },
+    "end": {
+     "line": 10,
+     "character": 11
+    }
+   }
+  }
+10:16 save_scope_as
+  {
+   "word": "save_scope_as",
+   "key": "save_scope_as",
+   "head": "effect",
+   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "takes": [
+    "text"
+   ],
+   "scope": "province",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "immediate",
+    "p:x4A0B1C"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 16
+    },
+    "end": {
+     "line": 10,
+     "character": 29
+    }
+   }
+  }
+10:32 away_province
+  {
+   "word": "away_province",
+   "key": "save_scope_as",
+   "head": "scope",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/events/v_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_events.txt",
+     "range": {
+      "start": {
+       "line": 10,
+       "character": 32
+      },
+      "end": {
+       "line": 10,
+       "character": 32
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "within": [
+    "vv.1",
+    "immediate",
+    "p:x4A0B1C"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 32
+    },
+    "end": {
+     "line": 10,
+     "character": 45
+    }
+   }
+  }
+12:1 option
+  {
+   "word": "option",
+   "key": "option",
+   "head": "in events",
+   "takes": [
+    "effects"
+   ],
+   "winner": -1,
+   "within": [
+    "vv.1"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 1
+    },
+    "end": {
+     "line": 12,
+     "character": 7
+    }
+   }
+  }
+13:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "event target",
+   "prose": "Scope to the name (as a flag) of a script container",
+   "scope": "container",
+   "leads": "flag",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 2
+    },
+    "end": {
+     "line": 13,
+     "character": 6
+    }
+   }
+  }
+13:9 vv.1.a
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vv.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 13,
+     "character": 9
+    },
+    "end": {
+     "line": 13,
+     "character": 15
+    }
+   }
+  }
+14:2 if
+  {
+   "word": "if",
+   "key": "if",
+   "head": "effect",
+   "prose": "Executes enclosed effects if limit criteria are met",
+   "takes": [
+    "effects"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 2
+    },
+    "end": {
+     "line": 14,
+     "character": 4
+    }
+   }
+  }
+14:9 limit
+  {
+   "word": "limit",
+   "key": "limit",
+   "head": "in `if`",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "option",
+    "if"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 9
+    },
+    "end": {
+     "line": 14,
+     "character": 14
+    }
+   }
+  }
+14:19 is_player
+  {
+   "word": "is_player",
+   "key": "is_player",
+   "head": "trigger",
+   "prose": "True if country scope is a player",
+   "takes": [
+    "yes or no"
+   ],
+   "scope": "country",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "option",
+    "if",
+    "limit"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 19
+    },
+    "end": {
+     "line": 14,
+     "character": 28
+    }
+   }
+  }
+14:31 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vv.1",
+    "option",
+    "if",
+    "limit"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 31
+    },
+    "end": {
+     "line": 14,
+     "character": 34
+    }
+   }
+  }
+14:37 trigger_event
+  {
+   "word": "trigger_event",
+   "key": "trigger_event",
+   "head": "effect",
+   "prose": "Triggers an event for the current scope",
+   "takes": [
+    "a block with days, id, months, weeks, years"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.1",
+    "option",
+    "if"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 37
+    },
+    "end": {
+     "line": 14,
+     "character": 50
+    }
+   }
+  }
+14:53 vv.2
+  {
+   "word": "vv.2",
+   "key": "trigger_event",
+   "head": "event",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/events/v_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_events.txt",
+     "range": {
+      "start": {
+       "line": 17,
+       "character": 0
+      },
+      "end": {
+       "line": 17,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "within": [
+    "vv.1",
+    "option",
+    "if"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 53
+    },
+    "end": {
+     "line": 14,
+     "character": 57
+    }
+   }
+  }
+17:0 vv.2
+  {
+   "word": "vv.2",
+   "key": "vv.2",
+   "head": "event",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/events/v_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_events.txt",
+     "range": {
+      "start": {
+       "line": 17,
+       "character": 0
+      },
+      "end": {
+       "line": 17,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "range": {
+    "start": {
+     "line": 17,
+     "character": 0
+    },
+    "end": {
+     "line": 17,
+     "character": 4
+    }
+   }
+  }
+18:1 type
+  {
+   "word": "type",
+   "key": "type",
+   "head": "in events",
+   "writes": [
+    "one of country_event"
+   ],
+   "winner": -1,
+   "within": [
+    "vv.2"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 1
+    },
+    "end": {
+     "line": 18,
+     "character": 5
+    }
+   }
+  }
+18:8 country_event
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vv.2"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 8
+    },
+    "end": {
+     "line": 18,
+     "character": 21
+    }
+   }
+  }
+19:1 trigger
+  {
+   "word": "trigger",
+   "key": "trigger",
+   "head": "in events",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "within": [
+    "vv.2"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 1
+    },
+    "end": {
+     "line": 19,
+     "character": 8
+    }
+   }
+  }
+19:13 is_player
+  {
+   "word": "is_player",
+   "key": "is_player",
+   "head": "trigger",
+   "prose": "True if country scope is a player",
+   "takes": [
+    "yes or no"
+   ],
+   "scope": "country",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "vv.2",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 13
+    },
+    "end": {
+     "line": 19,
+     "character": 22
+    }
+   }
+  }
+19:25 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "vv.2",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 25
+    },
+    "end": {
+     "line": 19,
+     "character": 28
+    }
+   }
+  }

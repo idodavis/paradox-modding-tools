@@ -1,0 +1,816 @@
+0:0 v_trigger
+  {
+   "word": "v_trigger",
+   "key": "v_trigger",
+   "head": "scripted trigger",
+   "returns": "yes or no",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_triggers/v_triggers.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_triggers/v_triggers.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 9
+    }
+   }
+  }
+1:1 exists
+  {
+   "word": "exists",
+   "key": "exists",
+   "head": "trigger",
+   "prose": "Checks whether the specified scope target exists (check for not being the null object)",
+   "writes": [
+    "one of $TARGET$, scope:target, title:c_x, title:k_x"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 7
+    }
+   }
+  }
+1:10 $TARGET$
+  {
+   "word": "TARGET",
+   "key": "exists",
+   "head": "parameter of v_trigger",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_triggers/v_triggers.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_triggers/v_triggers.txt",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 10
+      },
+      "end": {
+       "line": 1,
+       "character": 10
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "within": [
+    "v_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 10
+    },
+    "end": {
+     "line": 1,
+     "character": 18
+    }
+   }
+  }
+3:0 v_rich_trigger
+  {
+   "word": "v_rich_trigger",
+   "key": "v_rich_trigger",
+   "head": "scripted trigger",
+   "returns": "yes or no",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_triggers/v_triggers.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_triggers/v_triggers.txt",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 0
+      },
+      "end": {
+       "line": 3,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 0
+    },
+    "end": {
+     "line": 3,
+     "character": 14
+    }
+   }
+  }
+4:1 OR
+  {
+   "word": "OR",
+   "key": "OR",
+   "head": "trigger",
+   "prose": "at least one entry inside trigger must be true",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rich_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 1
+    },
+    "end": {
+     "line": 4,
+     "character": 3
+    }
+   }
+  }
+5:2 gold
+  {
+   "word": "gold",
+   "key": "gold",
+   "head": "trigger",
+   "prose": "does the character have the required gold?",
+   "writes": [
+    "script value"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rich_trigger",
+    "OR"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 2
+    },
+    "end": {
+     "line": 5,
+     "character": 6
+    }
+   }
+  }
+5:9 big_value
+  {
+   "word": "big_value",
+   "key": "gold",
+   "head": "script value",
+   "returns": "a number",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/script_values/v_values.txt",
+     "origin": "vanilla",
+     "rel": "common/script_values/v_values.txt",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_rich_trigger",
+    "OR"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 9
+    },
+    "end": {
+     "line": 5,
+     "character": 18
+    }
+   }
+  }
+6:2 trigger_if
+  {
+   "word": "trigger_if",
+   "key": "trigger_if",
+   "head": "trigger",
+   "prose": "Evaluates the triggers if the display_triggers of the limit are met",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rich_trigger",
+    "OR"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 2
+    },
+    "end": {
+     "line": 6,
+     "character": 12
+    }
+   }
+  }
+7:3 limit
+  {
+   "word": "limit",
+   "key": "limit",
+   "head": "in `trigger_if`",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rich_trigger",
+    "OR",
+    "trigger_if"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 3
+    },
+    "end": {
+     "line": 7,
+     "character": 8
+    }
+   }
+  }
+7:13 is_adult
+  {
+   "word": "is_adult",
+   "key": "is_adult",
+   "head": "trigger",
+   "prose": "Is the scope character adult?",
+   "takes": [
+    "yes or no"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rich_trigger",
+    "OR",
+    "trigger_if",
+    "limit"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 13
+    },
+    "end": {
+     "line": 7,
+     "character": 21
+    }
+   }
+  }
+7:24 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rich_trigger",
+    "OR",
+    "trigger_if",
+    "limit"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 24
+    },
+    "end": {
+     "line": 7,
+     "character": 27
+    }
+   }
+  }
+8:3 v_inline_trigger
+  {
+   "word": "v_inline_trigger",
+   "key": "v_inline_trigger",
+   "head": "in `trigger_if`",
+   "writes": [
+    "yes or no"
+   ],
+   "winner": -1,
+   "within": [
+    "v_rich_trigger",
+    "OR",
+    "trigger_if"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 3
+    },
+    "end": {
+     "line": 8,
+     "character": 19
+    }
+   }
+  }
+8:22 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rich_trigger",
+    "OR",
+    "trigger_if"
+   ],
+   "range": {
+    "start": {
+     "line": 8,
+     "character": 22
+    },
+    "end": {
+     "line": 8,
+     "character": 25
+    }
+   }
+  }
+11:1 big_value
+  {
+   "word": "big_value",
+   "key": "big_value",
+   "head": "script value",
+   "returns": "a number",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/script_values/v_values.txt",
+     "origin": "vanilla",
+     "rel": "common/script_values/v_values.txt",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_rich_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 1
+    },
+    "end": {
+     "line": 11,
+     "character": 10
+    }
+   }
+  }
+11:13 3
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rich_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 13
+    },
+    "end": {
+     "line": 11,
+     "character": 14
+    }
+   }
+  }
+12:1 any_rich_vassal
+  {
+   "word": "any_rich_vassal",
+   "key": "any_rich_vassal",
+   "head": "in scripted triggers",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "within": [
+    "v_rich_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 1
+    },
+    "end": {
+     "line": 12,
+     "character": 16
+    }
+   }
+  }
+12:21 is_adult
+  {
+   "word": "is_adult",
+   "key": "is_adult",
+   "head": "trigger",
+   "prose": "Is the scope character adult?",
+   "takes": [
+    "yes or no"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rich_trigger",
+    "any_rich_vassal"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 21
+    },
+    "end": {
+     "line": 12,
+     "character": 29
+    }
+   }
+  }
+12:32 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rich_trigger",
+    "any_rich_vassal"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 32
+    },
+    "end": {
+     "line": 12,
+     "character": 35
+    }
+   }
+  }
+14:0 v_rule_trigger
+  {
+   "word": "v_rule_trigger",
+   "key": "v_rule_trigger",
+   "head": "scripted trigger",
+   "returns": "yes or no",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_triggers/v_triggers.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_triggers/v_triggers.txt",
+     "range": {
+      "start": {
+       "line": 14,
+       "character": 0
+      },
+      "end": {
+       "line": 14,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 0
+    },
+    "end": {
+     "line": 14,
+     "character": 14
+    }
+   }
+  }
+15:1 NOT
+  {
+   "word": "NOT",
+   "key": "NOT",
+   "head": "trigger",
+   "prose": "negates content of trigger",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 1
+    },
+    "end": {
+     "line": 15,
+     "character": 4
+    }
+   }
+  }
+15:9 any_child
+  {
+   "word": "any_child",
+   "key": "any_child",
+   "head": "trigger",
+   "prose": "Iterate through all children",
+   "takes": [
+    "triggers"
+   ],
+   "scope": "character",
+   "leads": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rule_trigger",
+    "NOT"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 9
+    },
+    "end": {
+     "line": 15,
+     "character": 18
+    }
+   }
+  }
+15:23 v_rich_trigger
+  {
+   "word": "v_rich_trigger",
+   "key": "v_rich_trigger",
+   "head": "scripted trigger",
+   "scope": "character",
+   "returns": "yes or no",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_triggers/v_triggers.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_triggers/v_triggers.txt",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 0
+      },
+      "end": {
+       "line": 3,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_rule_trigger",
+    "NOT",
+    "any_child"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 23
+    },
+    "end": {
+     "line": 15,
+     "character": 37
+    }
+   }
+  }
+15:40 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rule_trigger",
+    "NOT",
+    "any_child"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 40
+    },
+    "end": {
+     "line": 15,
+     "character": 43
+    }
+   }
+  }
+16:1 has_game_rule
+  {
+   "word": "has_game_rule",
+   "key": "has_game_rule",
+   "head": "trigger",
+   "prose": "Is the given game rule setting enabled?",
+   "writes": [
+    "one of opt_a, opt_b, opt_fast, opt_hard"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 16,
+     "character": 1
+    },
+    "end": {
+     "line": 16,
+     "character": 14
+    }
+   }
+  }
+16:17 opt_b
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 16,
+     "character": 17
+    },
+    "end": {
+     "line": 16,
+     "character": 22
+    }
+   }
+  }
+17:1 has_game_rule
+  {
+   "word": "has_game_rule",
+   "key": "has_game_rule",
+   "head": "trigger",
+   "prose": "Is the given game rule setting enabled?",
+   "writes": [
+    "one of opt_a, opt_b, opt_fast, opt_hard"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 17,
+     "character": 1
+    },
+    "end": {
+     "line": 17,
+     "character": 14
+    }
+   }
+  }
+17:17 opt_hard
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 17,
+     "character": 17
+    },
+    "end": {
+     "line": 17,
+     "character": 25
+    }
+   }
+  }
+18:1 has_game_rule
+  {
+   "word": "has_game_rule",
+   "key": "has_game_rule",
+   "head": "trigger",
+   "prose": "Is the given game rule setting enabled?",
+   "writes": [
+    "one of opt_a, opt_b, opt_fast, opt_hard"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 1
+    },
+    "end": {
+     "line": 18,
+     "character": 14
+    }
+   }
+  }
+18:17 opt_fast
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 18,
+     "character": 17
+    },
+    "end": {
+     "line": 18,
+     "character": 25
+    }
+   }
+  }
+19:1 has_game_rule
+  {
+   "word": "has_game_rule",
+   "key": "has_game_rule",
+   "head": "trigger",
+   "prose": "Is the given game rule setting enabled?",
+   "writes": [
+    "one of opt_a, opt_b, opt_fast, opt_hard"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 1
+    },
+    "end": {
+     "line": 19,
+     "character": 14
+    }
+   }
+  }
+19:17 opt_a
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_rule_trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 17
+    },
+    "end": {
+     "line": 19,
+     "character": 22
+    }
+   }
+  }

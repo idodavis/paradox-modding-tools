@@ -1,0 +1,16 @@
+def decisions "v_decision_1" mode="" 0-12 @0:0 local=false named=false
+def decisions "v_decision_2" mode="" 92-104 @4:0 local=false named=false
+def decisions "v_decision_3" mode="" 184-196 @8:0 local=false named=false
+def decisions "v_decision_4" mode="" 276-288 @12:0 local=false named=false
+def decisions "v_decision_5" mode="" 368-380 @16:0 local=false named=false
+def decisions "v_decision_6" mode="" 460-472 @20:0 local=false named=false
+def decisions "v_decision_7" mode="" 552-564 @24:0 local=false named=false
+def decisions "v_decision_8" mode="" 644-656 @28:0 local=false named=false
+ref localization "v_decision_1_tooltip" called="" 69-89 @2:21 from=0 trigger=false
+ref localization "v_decision_2_tooltip" called="" 161-181 @6:21 from=1 trigger=false
+ref localization "v_decision_3_tooltip" called="" 253-273 @10:21 from=2 trigger=false
+ref localization "v_decision_4_tooltip" called="" 345-365 @14:21 from=3 trigger=false
+ref localization "v_decision_5_tooltip" called="" 437-457 @18:21 from=4 trigger=false
+ref localization "v_decision_6_tooltip" called="" 529-549 @22:21 from=5 trigger=false
+ref localization "v_decision_7_tooltip" called="" 621-641 @26:21 from=6 trigger=false
+ref localization "v_decision_8_tooltip" called="" 713-733 @30:21 from=7 trigger=false

@@ -1,0 +1,5 @@
+def script_values "small_value" mode="" 0-11 @0:0 local=false named=false
+def script_values "big_value" mode="" 16-25 @1:0 local=false named=false
+def script_values "age_limit_value" mode="" 127-142 @10:0 local=false named=false
+ref script_values "small_value" called="" 49-60 @3:7 from=1 trigger=false
+ref defines "NGame" called="" 145-165 @10:18 from=2 trigger=false

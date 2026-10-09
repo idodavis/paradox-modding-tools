@@ -1,0 +1,6 @@
+def defines "NGame" mode="" 0-5 @0:0 local=false named=false
+def defines.define "START_DATE" mode="" 11-21 @1:1 local=false named=false
+def defines.define "MAX_AGE" mode="" 35-42 @2:1 local=false named=false
+def defines "NWar" mode="" 51-55 @4:0 local=false named=false
+def defines.define "WAR_COST" mode="" 61-69 @5:1 local=false named=false
+def defines.define "SIEGE_DAYS" mode="" 75-85 @6:1 local=false named=false

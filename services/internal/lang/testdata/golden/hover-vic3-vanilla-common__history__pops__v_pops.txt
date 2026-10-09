@@ -1,0 +1,293 @@
+0:0 POPS
+  {
+   "word": "POPS",
+   "key": "POPS",
+   "takes": [
+    "effects"
+   ],
+   "winner": -1,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 4
+    }
+   }
+  }
+1:1 s:STATE_HOME
+  {
+   "word": "s:STATE_HOME",
+   "key": "s:STATE_HOME",
+   "head": "event target",
+   "prose": "Scope to state region specified by key",
+   "takes": [
+    "effects"
+   ],
+   "leads": "state_region",
+   "winner": -1,
+   "stale": true,
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 13
+    }
+   }
+  }
+2:2 create_pop
+  {
+   "word": "create_pop",
+   "key": "create_pop",
+   "head": "effect",
+   "prose": "Creates a pop in the scoped state",
+   "takes": [
+    "effects"
+   ],
+   "scope": "state_region",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "s:STATE_HOME"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 2
+    },
+    "end": {
+     "line": 2,
+     "character": 12
+    }
+   }
+  }
+2:17 culture
+  {
+   "word": "culture",
+   "key": "culture",
+   "head": "event target",
+   "prose": "Scope to pop's or character's culture",
+   "scope": "state_region",
+   "leads": "culture",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "s:STATE_HOME",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 17
+    },
+    "end": {
+     "line": 2,
+     "character": 24
+    }
+   }
+  }
+2:27 british
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "s:STATE_HOME",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 27
+    },
+    "end": {
+     "line": 2,
+     "character": 34
+    }
+   }
+  }
+2:35 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `create_pop`",
+   "writes": [
+    "a number"
+   ],
+   "scope": "state_region",
+   "winner": -1,
+   "within": [
+    "s:STATE_HOME",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 35
+    },
+    "end": {
+     "line": 2,
+     "character": 39
+    }
+   }
+  }
+2:42 100
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "s:STATE_HOME",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 42
+    },
+    "end": {
+     "line": 2,
+     "character": 45
+    }
+   }
+  }
+4:1 s:STATE_AWAY
+  {
+   "word": "s:STATE_AWAY",
+   "key": "s:STATE_AWAY",
+   "head": "event target",
+   "prose": "Scope to state region specified by key",
+   "takes": [
+    "effects"
+   ],
+   "leads": "state_region",
+   "winner": -1,
+   "stale": true,
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 1
+    },
+    "end": {
+     "line": 4,
+     "character": 13
+    }
+   }
+  }
+5:2 create_pop
+  {
+   "word": "create_pop",
+   "key": "create_pop",
+   "head": "effect",
+   "prose": "Creates a pop in the scoped state",
+   "takes": [
+    "effects"
+   ],
+   "scope": "state_region",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "s:STATE_AWAY"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 2
+    },
+    "end": {
+     "line": 5,
+     "character": 12
+    }
+   }
+  }
+5:17 culture
+  {
+   "word": "culture",
+   "key": "culture",
+   "head": "event target",
+   "prose": "Scope to pop's or character's culture",
+   "scope": "state_region",
+   "leads": "culture",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "s:STATE_AWAY",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 17
+    },
+    "end": {
+     "line": 5,
+     "character": 24
+    }
+   }
+  }
+5:27 french
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "s:STATE_AWAY",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 27
+    },
+    "end": {
+     "line": 5,
+     "character": 33
+    }
+   }
+  }
+5:34 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `create_pop`",
+   "writes": [
+    "a number"
+   ],
+   "scope": "state_region",
+   "winner": -1,
+   "within": [
+    "s:STATE_AWAY",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 34
+    },
+    "end": {
+     "line": 5,
+     "character": 38
+    }
+   }
+  }
+5:41 50
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "s:STATE_AWAY",
+    "create_pop"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 41
+    },
+    "end": {
+     "line": 5,
+     "character": 43
+    }
+   }
+  }

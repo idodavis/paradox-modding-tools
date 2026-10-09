@@ -1,0 +1,14 @@
+def scripted_effects "v_effect" mode="" 0-8 @0:0 local=false named=false
+def scripted_effects "v_list_effect" mode="" 36-49 @3:0 local=false named=false
+def scripted_effects "v_gift_effect" mode="" 322-335 @17:0 local=false named=false
+def parameter "v_effect:AMOUNT" mode="" 25-33 @1:12 local=false named=false
+def var "seen_list" mode="" 125-134 @5:33 local=false named=false
+ref var "seen_list" called="" 183-192 @7:13 from=1 trigger=false
+ref  "v_trigger" called="trigger" 252-261 @12:13 from=1 trigger=true
+ref parameter "v_trigger:TARGET" called="" 266-272 @12:27 from=1 trigger=true
+ref  "v_effect" called="effect" 287-295 @13:3 from=1 trigger=false
+ref parameter "v_effect:AMOUNT" called="" 300-306 @13:16 from=1 trigger=false
+ref script_values "small_value" called="" 416-427 @20:13 from=2 trigger=false
+ref  "v_effect" called="effect" 443-451 @23:2 from=2 trigger=false
+ref parameter "v_effect:AMOUNT" called="" 456-462 @23:15 from=2 trigger=false
+ref  "v_list_effect" called="effect" 471-484 @24:2 from=2 trigger=false

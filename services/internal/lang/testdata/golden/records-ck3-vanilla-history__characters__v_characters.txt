@@ -1,0 +1,9 @@
+def history/characters "186004" mode="" 0-6 @0:0 local=false named=false
+def history/characters "186009" mode="" 173-179 @13:0 local=false named=false
+def history/characters "186010" mode="" 285-291 @22:0 local=false named=false
+ref localization "catholic" called="" 58-68 @3:12 from=0 trigger=false
+ref culture/cultures "norse" called="" 80-87 @4:11 from=0 trigger=false
+ref traits "brave" called="" 97-102 @5:9 from=0 trigger=false
+ref culture/cultures "norse" called="" 212-219 @15:11 from=1 trigger=false
+ref traits "craven" called="" 246-252 @17:9 from=1 trigger=false
+ref culture/cultures "english" called="" 340-349 @25:11 from=2 trigger=false

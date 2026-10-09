@@ -1,0 +1,4 @@
+def country_definitions "GBR" mode="INJECT" 0-10 @0:0 local=false named=false
+def country_definitions "FRA" mode="REPLACE" 39-50 @3:0 local=false named=false
+ref map_data/state_regions "STATE_AWAY" called="" 26-36 @1:11 from=0 trigger=false
+ref map_data/state_regions "STATE_AWAY" called="" 85-95 @5:11 from=1 trigger=false

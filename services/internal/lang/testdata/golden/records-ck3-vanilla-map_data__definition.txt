@@ -1,0 +1,4 @@
+def map_data.definition "0" mode="" 0-1 @0:0 local=false named=false
+def map_data.definition "1" mode="" 13-14 @1:0 local=false named=false
+def map_data.definition "2" mode="" 38-39 @2:0 local=false named=false
+def map_data.definition "3" mode="" 61-62 @3:0 local=false named=false

@@ -1,0 +1,68 @@
+0:0 catalyst_struggle_war
+  {
+   "word": "catalyst_struggle_war",
+   "key": "catalyst_struggle_war",
+   "head": "catalyst",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/struggle/catalysts/v_catalysts.txt",
+     "origin": "vanilla",
+     "rel": "common/struggle/catalysts/v_catalysts.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 21
+    }
+   }
+  }
+1:0 catalyst_struggle_peace
+  {
+   "word": "catalyst_struggle_peace",
+   "key": "catalyst_struggle_peace",
+   "head": "catalyst",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/struggle/catalysts/v_catalysts.txt",
+     "origin": "vanilla",
+     "rel": "common/struggle/catalysts/v_catalysts.txt",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 0
+    },
+    "end": {
+     "line": 1,
+     "character": 23
+    }
+   }
+  }

@@ -1,0 +1,1022 @@
+0:0 namespace -
+0:12 m -
+2:0 m.1
+  {
+   "word": "m.1",
+   "key": "m.1",
+   "head": "event",
+   "name": "Hello",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/ck3/events/m_events.txt",
+     "origin": "mod",
+     "rel": "events/m_events.txt",
+     "range": {
+      "start": {
+       "line": 2,
+       "character": 0
+      },
+      "end": {
+       "line": 2,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 0
+    },
+    "end": {
+     "line": 2,
+     "character": 3
+    }
+   }
+  }
+3:1 type
+  {
+   "word": "type",
+   "key": "type",
+   "head": "in events",
+   "writes": [
+    "one of character_event"
+   ],
+   "winner": -1,
+   "within": [
+    "m.1"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 1
+    },
+    "end": {
+     "line": 3,
+     "character": 5
+    }
+   }
+  }
+3:8 character_event
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "m.1"
+   ],
+   "range": {
+    "start": {
+     "line": 3,
+     "character": 8
+    },
+    "end": {
+     "line": 3,
+     "character": 23
+    }
+   }
+  }
+4:1 title
+  {
+   "word": "title",
+   "key": "title",
+   "head": "in events",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "m.1"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 1
+    },
+    "end": {
+     "line": 4,
+     "character": 6
+    }
+   }
+  }
+4:9 v.1.t
+  {
+   "word": "v.1.t",
+   "key": "title",
+   "head": "localization",
+   "name": "Hello",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "m.1"
+   ],
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 9
+    },
+    "end": {
+     "line": 4,
+     "character": 14
+    }
+   }
+  }
+5:1 trigger
+  {
+   "word": "trigger",
+   "key": "trigger",
+   "head": "in events",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "within": [
+    "m.1"
+   ],
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 1
+    },
+    "end": {
+     "line": 5,
+     "character": 8
+    }
+   }
+  }
+6:2 NOT
+  {
+   "word": "NOT",
+   "key": "NOT",
+   "head": "trigger",
+   "prose": "negates content of trigger",
+   "takes": [
+    "triggers"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "m.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 2
+    },
+    "end": {
+     "line": 6,
+     "character": 5
+    }
+   }
+  }
+6:10 any_child
+  {
+   "word": "any_child",
+   "key": "any_child",
+   "head": "trigger",
+   "prose": "Iterate through all children",
+   "takes": [
+    "triggers"
+   ],
+   "scope": "character",
+   "leads": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "m.1",
+    "trigger",
+    "NOT"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 10
+    },
+    "end": {
+     "line": 6,
+     "character": 19
+    }
+   }
+  }
+6:24 has_trait
+  {
+   "word": "has_trait",
+   "key": "has_trait",
+   "head": "trigger",
+   "prose": "Does the character have this trait or a trait of this trait group?",
+   "writes": [
+    "trait"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "m.1",
+    "trigger",
+    "NOT",
+    "any_child"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 24
+    },
+    "end": {
+     "line": 6,
+     "character": 33
+    }
+   }
+  }
+6:36 bold
+  {
+   "word": "bold",
+   "key": "has_trait",
+   "head": "trait",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/ck3/common/traits/m_traits.txt",
+     "origin": "mod",
+     "rel": "common/traits/m_traits.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "m.1",
+    "trigger",
+    "NOT",
+    "any_child"
+   ],
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 36
+    },
+    "end": {
+     "line": 6,
+     "character": 40
+    }
+   }
+  }
+7:2 v_rich_trigger
+  {
+   "word": "v_rich_trigger",
+   "key": "v_rich_trigger",
+   "head": "scripted trigger",
+   "returns": "yes or no",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_triggers/v_triggers.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_triggers/v_triggers.txt",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 0
+      },
+      "end": {
+       "line": 3,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "m.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 2
+    },
+    "end": {
+     "line": 7,
+     "character": 16
+    }
+   }
+  }
+7:19 yes
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "m.1",
+    "trigger"
+   ],
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 19
+    },
+    "end": {
+     "line": 7,
+     "character": 22
+    }
+   }
+  }
+9:1 immediate
+  {
+   "word": "immediate",
+   "key": "immediate",
+   "head": "in events",
+   "takes": [
+    "effects"
+   ],
+   "winner": -1,
+   "within": [
+    "m.1"
+   ],
+   "range": {
+    "start": {
+     "line": 9,
+     "character": 1
+    },
+    "end": {
+     "line": 9,
+     "character": 10
+    }
+   }
+  }
+10:2 trigger_event
+  {
+   "word": "trigger_event",
+   "key": "trigger_event",
+   "head": "effect",
+   "prose": "triggers an event or on_action",
+   "takes": [
+    "a block with days, delayed, id, months, on_action, saved_event_id, trigger_on_next_date, years"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "m.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 2
+    },
+    "end": {
+     "line": 10,
+     "character": 15
+    }
+   }
+  }
+10:18 v.2
+  {
+   "word": "v.2",
+   "key": "trigger_event",
+   "head": "event",
+   "name": "Two",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/events/v_events.txt",
+     "origin": "vanilla",
+     "rel": "events/v_events.txt",
+     "range": {
+      "start": {
+       "line": 55,
+       "character": 0
+      },
+      "end": {
+       "line": 55,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "within": [
+    "m.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 10,
+     "character": 18
+    },
+    "end": {
+     "line": 10,
+     "character": 21
+    }
+   }
+  }
+11:2 v_effect
+  {
+   "word": "v_effect",
+   "key": "v_effect",
+   "head": "scripted effect",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_effects/v_effects.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_effects/v_effects.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "m.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 2
+    },
+    "end": {
+     "line": 11,
+     "character": 10
+    }
+   }
+  }
+11:15 AMOUNT
+  {
+   "word": "AMOUNT",
+   "key": "AMOUNT",
+   "head": "parameter of v_effect",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/scripted_effects/v_effects.txt",
+     "origin": "vanilla",
+     "rel": "common/scripted_effects/v_effects.txt",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 12
+      },
+      "end": {
+       "line": 1,
+       "character": 12
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "within": [
+    "m.1",
+    "immediate",
+    "v_effect"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 15
+    },
+    "end": {
+     "line": 11,
+     "character": 21
+    }
+   }
+  }
+11:24 3
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "m.1",
+    "immediate",
+    "v_effect"
+   ],
+   "range": {
+    "start": {
+     "line": 11,
+     "character": 24
+    },
+    "end": {
+     "line": 11,
+     "character": 25
+    }
+   }
+  }
+12:2 save_scope_as
+  {
+   "word": "save_scope_as",
+   "key": "save_scope_as",
+   "head": "effect",
+   "prose": "Saves the current scope as an arbitrarily-named target to be referenced later in the (unbroken) event chain",
+   "takes": [
+    "text"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "m.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 2
+    },
+    "end": {
+     "line": 12,
+     "character": 15
+    }
+   }
+  }
+12:18 mod_target
+  {
+   "word": "mod_target",
+   "key": "save_scope_as",
+   "head": "scope",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/ck3/events/m_events.txt",
+     "origin": "mod",
+     "rel": "events/m_events.txt",
+     "range": {
+      "start": {
+       "line": 12,
+       "character": 18
+      },
+      "end": {
+       "line": 12,
+       "character": 18
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "within": [
+    "m.1",
+    "immediate"
+   ],
+   "range": {
+    "start": {
+     "line": 12,
+     "character": 18
+    },
+    "end": {
+     "line": 12,
+     "character": 28
+    }
+   }
+  }
+14:1 option
+  {
+   "word": "option",
+   "key": "option",
+   "head": "in events",
+   "prose": "One choice offered to the player.",
+   "takes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "m.1"
+   ],
+   "range": {
+    "start": {
+     "line": 14,
+     "character": 1
+    },
+    "end": {
+     "line": 14,
+     "character": 7
+    }
+   }
+  }
+15:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `option`",
+   "prose": "The option's localization key.",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "m.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 2
+    },
+    "end": {
+     "line": 15,
+     "character": 6
+    }
+   }
+  }
+15:9 v.1.a
+  {
+   "word": "v.1.a",
+   "key": "name",
+   "head": "localization",
+   "name": "Go",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 3,
+       "character": 0
+      },
+      "end": {
+       "line": 3,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "m.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 15,
+     "character": 9
+    },
+    "end": {
+     "line": 15,
+     "character": 14
+    }
+   }
+  }
+16:2 add_gold
+  {
+   "word": "add_gold",
+   "key": "add_gold",
+   "head": "effect",
+   "prose": "adds gold to a character",
+   "writes": [
+    "a number",
+    "script value"
+   ],
+   "scope": "character",
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "m.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 16,
+     "character": 2
+    },
+    "end": {
+     "line": 16,
+     "character": 10
+    }
+   }
+  }
+16:13 1
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "m.1",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 16,
+     "character": 13
+    },
+    "end": {
+     "line": 16,
+     "character": 14
+    }
+   }
+  }
+19:0 m.2
+  {
+   "word": "m.2",
+   "key": "m.2",
+   "head": "event",
+   "name": "Two",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/ck3/events/m_events.txt",
+     "origin": "mod",
+     "rel": "events/m_events.txt",
+     "range": {
+      "start": {
+       "line": 19,
+       "character": 0
+      },
+      "end": {
+       "line": 19,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "range": {
+    "start": {
+     "line": 19,
+     "character": 0
+    },
+    "end": {
+     "line": 19,
+     "character": 3
+    }
+   }
+  }
+20:1 type
+  {
+   "word": "type",
+   "key": "type",
+   "head": "in events",
+   "writes": [
+    "one of character_event"
+   ],
+   "winner": -1,
+   "within": [
+    "m.2"
+   ],
+   "range": {
+    "start": {
+     "line": 20,
+     "character": 1
+    },
+    "end": {
+     "line": 20,
+     "character": 5
+    }
+   }
+  }
+20:8 character_event
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "m.2"
+   ],
+   "range": {
+    "start": {
+     "line": 20,
+     "character": 8
+    },
+    "end": {
+     "line": 20,
+     "character": 23
+    }
+   }
+  }
+21:1 title
+  {
+   "word": "title",
+   "key": "title",
+   "head": "in events",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "m.2"
+   ],
+   "range": {
+    "start": {
+     "line": 21,
+     "character": 1
+    },
+    "end": {
+     "line": 21,
+     "character": 6
+    }
+   }
+  }
+21:9 v.2.t
+  {
+   "word": "v.2.t",
+   "key": "title",
+   "head": "localization",
+   "name": "Two",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 4,
+       "character": 0
+      },
+      "end": {
+       "line": 4,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "m.2"
+   ],
+   "range": {
+    "start": {
+     "line": 21,
+     "character": 9
+    },
+    "end": {
+     "line": 21,
+     "character": 14
+    }
+   }
+  }
+22:1 option
+  {
+   "word": "option",
+   "key": "option",
+   "head": "in events",
+   "prose": "One choice offered to the player.",
+   "takes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "m.2"
+   ],
+   "range": {
+    "start": {
+     "line": 22,
+     "character": 1
+    },
+    "end": {
+     "line": 22,
+     "character": 7
+    }
+   }
+  }
+23:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `option`",
+   "prose": "The option's localization key.",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "m.2",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 2
+    },
+    "end": {
+     "line": 23,
+     "character": 6
+    }
+   }
+  }
+23:9 v.2.a
+  {
+   "word": "v.2.a",
+   "key": "name",
+   "head": "localization",
+   "name": "A",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 0
+      },
+      "end": {
+       "line": 6,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "m.2",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 23,
+     "character": 9
+    },
+    "end": {
+     "line": 23,
+     "character": 14
+    }
+   }
+  }
+24:2 trigger_event
+  {
+   "word": "trigger_event",
+   "key": "trigger_event",
+   "head": "effect",
+   "prose": "triggers an event or on_action",
+   "takes": [
+    "a block with days, delayed, id, months, on_action, saved_event_id, trigger_on_next_date, years"
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "m.2",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 2
+    },
+    "end": {
+     "line": 24,
+     "character": 15
+    }
+   }
+  }
+24:18 m.1
+  {
+   "word": "m.1",
+   "key": "trigger_event",
+   "head": "event",
+   "name": "Hello",
+   "sites": [
+    {
+     "path": "<fixtures>/mods/ck3/events/m_events.txt",
+     "origin": "mod",
+     "rel": "events/m_events.txt",
+     "range": {
+      "start": {
+       "line": 2,
+       "character": 0
+      },
+      "end": {
+       "line": 2,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "graphed": true,
+   "within": [
+    "m.2",
+    "option"
+   ],
+   "range": {
+    "start": {
+     "line": 24,
+     "character": 18
+    },
+    "end": {
+     "line": 24,
+     "character": 21
+    }
+   }
+  }

@@ -1,0 +1,36 @@
+0:0 l_english: -
+1:1 vv.1.a:0
+  {
+   "word": "vv.1.a",
+   "head": "localization",
+   "name": "Go",
+   "sites": [
+    {
+     "path": "<fixtures>/vic3/game/localization/english/vv_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/vv_l_english.yml",
+     "range": {
+      "start": {
+       "line": 1,
+       "character": 0
+      },
+      "end": {
+       "line": 1,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 7
+    }
+   }
+  }
+1:11 Go -

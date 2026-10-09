@@ -1,0 +1,6 @@
+def scripted_character_templates "v_template" mode="" 0-10 @0:0 local=false named=false
+def scripted_character_templates "v_old_template" mode="" 80-94 @5:0 local=false named=false
+ref culture/cultures "norse" called="" 49-62 @2:11 from=0 trigger=false
+ref traits "brave" called="" 72-77 @3:9 from=0 trigger=false
+ref culture/cultures "english" called="" 133-148 @7:11 from=1 trigger=false
+ref traits "craven" called="" 158-164 @8:9 from=1 trigger=false

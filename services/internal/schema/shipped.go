@@ -14,10 +14,13 @@ import (
 	"paradox-modding-tools/services/internal/appdata"
 )
 
-// shippedFiles holds the shipped schemas.
+// shippedFiles holds the shipped schemas, kept in their own folder beside the code.
 //
-//go:embed *.gob.gz
+//go:embed shipped/*.gob.gz
 var shippedFiles embed.FS
+
+// shippedDir is the folder the shipped schemas sit in, inside the package.
+const shippedDir = "shipped"
 
 // numbers matches the digit runs the newest shipped file is picked by.
 var numbers = regexp.MustCompile(`\d+`)
@@ -30,11 +33,11 @@ func ShippedName(game, version string) string {
 // LoadShipped returns a game's shipped schema: the file of the exact version with exact true, else the
 // newest file by the digit runs of the names, with exact false; nil and no error when the game has none.
 func LoadShipped(gameID, version string) (s *Schema, exact bool, err error) {
-	names, err := fs.Glob(shippedFiles, gameID+"-*.gob.gz")
+	names, err := fs.Glob(shippedFiles, shippedDir+"/"+gameID+"-*.gob.gz")
 	if err != nil || len(names) == 0 {
 		return nil, false, err
 	}
-	name := ShippedName(gameID, version)
+	name := shippedDir + "/" + ShippedName(gameID, version)
 	exact = slices.Contains(names, name)
 	if !exact {
 		name = slices.MaxFunc(names, func(first, second string) int {

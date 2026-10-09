@@ -18,3 +18,6 @@ build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 # Wails writes bindings to a .bindings-tmp-<pid> dir and moves them into place;
 # an interrupted run leaves one behind. 13 of these were committed once.
 frontend/.bindings-tmp-*/
+
+# To ignore binaries generated during dev runs
+*.syso

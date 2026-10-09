@@ -26,8 +26,8 @@ func main() {
 	log.SetFlags(0)
 
 	// 1. the folder the file lands in, found from the repo root
-	shippedDir := filepath.Join("services", "internal", "schema")
-	if _, err := os.Stat(filepath.Join(shippedDir, "shipped.go")); err != nil {
+	shippedDir := filepath.Join("services", "internal", "schema", "shipped")
+	if _, err := os.Stat(filepath.Join(shippedDir, "..", "shipped.go")); err != nil {
 		log.Fatalf("%s not found: run from the repo root (go run ./services/internal/schema/gen)", shippedDir)
 	}
 

@@ -15,7 +15,10 @@ const words = computed(() => {
     bbcode: `From ${file}, uploaded as written. Steam's text is replaced.`,
   };
   const missing = file && !summary.descExists ? ` ${file} is not in the mod yet.` : "";
-  return (said[summary.descSource] ?? "Steam keeps its own text: uploads leave it as it is. Edit it on the Workshop page.") + missing;
+  return (
+    (said[summary.descSource] ?? "Steam keeps its own text: uploads leave it as it is. Edit it on the Workshop page.") +
+    missing
+  );
 });
 </script>
 

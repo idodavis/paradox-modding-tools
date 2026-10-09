@@ -16,7 +16,10 @@ import { changed } from "./windows";
 
 // what nothing caught goes to pmt.log, where a bug report finds it
 window.addEventListener("error", (event) => {
-  void Log("error", event.message, { at: `${event.filename}:${event.lineno}:${event.colno}`, stack: String(event.error?.stack ?? "") });
+  void Log("error", event.message, {
+    at: `${event.filename}:${event.lineno}:${event.colno}`,
+    stack: String(event.error?.stack ?? ""),
+  });
 });
 window.addEventListener("unhandledrejection", (event) => {
   const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason));

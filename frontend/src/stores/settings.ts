@@ -12,7 +12,12 @@ import { changed } from "../windows";
 import { useWorkspaceStore } from "./workspace";
 
 /** A theme family; its halves are `<id>-dark` and `<id>-light` in styles/themes.css. */
-export type ThemeFamily = { id: "pmt" | "catppuccin" | "one" | "pierre" | "ck3" | "eu5" | "vic3"; label: string; note: string; game?: string };
+export type ThemeFamily = {
+  id: "pmt" | "catppuccin" | "one" | "pierre" | "ck3" | "eu5" | "vic3";
+  label: string;
+  note: string;
+  game?: string;
+};
 type FamilyId = ThemeFamily["id"];
 type Mode = "dark" | "light";
 export type ThemeId = `${FamilyId}-${Mode}`;
@@ -187,7 +192,9 @@ export const useSettingsStore = defineStore("settings", () => {
   const editorFont = computed(() => values.value["ui.editorFont"]?.trim() || "Geist Mono");
   const roomy = computed(() => values.value["ide.lineHeight"] === "roomy");
   const codeFont = computed(() => ({
-    fontFamily: [...new Set([editorFont.value.replaceAll('"', ""), "Geist Mono"])].map((font) => `"${font}"`).join(", ") + ", monospace",
+    fontFamily:
+      [...new Set([editorFont.value.replaceAll('"', ""), "Geist Mono"])].map((font) => `"${font}"`).join(", ") +
+      ", monospace",
     fontSize: editorFontSize.value,
     lineHeight: roomy.value ? 1.6 : 1.35,
   }));

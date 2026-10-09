@@ -21,7 +21,13 @@ type Prefs = Pick<Workspace, "resetIdeOnOpen" | "defaultTool" | "gameColor" | "h
 /** Saves some of a workspace's preferences; the rest go as the workspace has them. */
 export function updatePrefs({ ws, ...set }: { ws: Workspace } & Partial<Prefs>): Promise<void> {
   const next = { ...ws, ...set };
-  return UpdateWorkspacePrefs(ws.id, next.resetIdeOnOpen, next.defaultTool ?? "", next.gameColor ?? "", next.hideExplorerBinaries);
+  return UpdateWorkspacePrefs(
+    ws.id,
+    next.resetIdeOnOpen,
+    next.defaultTool ?? "",
+    next.gameColor ?? "",
+    next.hideExplorerBinaries,
+  );
 }
 
 export const useWorkspaceStore = defineStore("workspace", () => {

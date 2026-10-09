@@ -11,7 +11,16 @@ const { node, workspaceId } = defineProps<{ node: Layout; workspaceId: string }>
 /** A part's key: its first group's, so a part keeps its editors when the parts around it change. */
 const keyOf = (part: Layout): number => ("group" in part ? part.group : keyOf(part.parts[0] ?? { group: 0 }));
 const panes = computed(() =>
-  "split" in node ? node.parts.map((part, i) => ({ id: String(keyOf(part)), slot: "part", order: i, part, defaultSize: (node.sizes[i] ?? 0) * 100, minSize: 10 })) : [],
+  "split" in node
+    ? node.parts.map((part, i) => ({
+        id: String(keyOf(part)),
+        slot: "part",
+        order: i,
+        part,
+        defaultSize: (node.sizes[i] ?? 0) * 100,
+        minSize: 10,
+      }))
+    : [],
 );
 </script>
 

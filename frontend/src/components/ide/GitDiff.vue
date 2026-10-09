@@ -33,10 +33,15 @@ const root = computed(() => git.repoOf(file.value)?.root ?? "");
 // conflict git's stage 2 (the current side) against its stage 3 (the incoming one); a commit its first parent's
 // against its own
 const revs = computed(() =>
-  diff.value === "commit" ? [`${commit.value}^`, commit.value] : { changes: ["", ""], staged: ["HEAD", ""], conflict: [":2", ":3"] }[diff.value],
+  diff.value === "commit"
+    ? [`${commit.value}^`, commit.value]
+    : { changes: ["", ""], staged: ["HEAD", ""], conflict: [":2", ":3"] }[diff.value],
 );
 const { data: left } = useQuery(() => gitTextQuery({ root: root.value, rev: revs.value[0] ?? "", path: file.value }));
-const { data: right } = useQuery(() => ({ ...gitTextQuery({ root: root.value, rev: revs.value[1] ?? "", path: file.value }), enabled: !!root.value && diff.value !== "changes" }));
+const { data: right } = useQuery(() => ({
+  ...gitTextQuery({ root: root.value, rev: revs.value[1] ?? "", path: file.value }),
+  enabled: !!root.value && diff.value !== "changes",
+}));
 const { data: working } = useQuery(() => ({ ...textQuery(file.value), enabled: diff.value === "changes" }));
 // a file deleted from the working tree is staged whole
 const deleted = computed(() => diff.value === "changes" && !!working.value?.missing);
@@ -137,8 +142,18 @@ function onGutter(e: monaco.editor.IEditorMouseEvent): void {
   const after = model.modified.getLinesContent();
   const staging = diff.value === "changes";
   const lines = staging
-    ? replaced(before, c.originalStartLineNumber, c.originalEndLineNumber, span(after, c.modifiedStartLineNumber, c.modifiedEndLineNumber))
-    : replaced(after, c.modifiedStartLineNumber, c.modifiedEndLineNumber, span(before, c.originalStartLineNumber, c.originalEndLineNumber));
+    ? replaced(
+        before,
+        c.originalStartLineNumber,
+        c.originalEndLineNumber,
+        span(after, c.modifiedStartLineNumber, c.modifiedEndLineNumber),
+      )
+    : replaced(
+        after,
+        c.modifiedStartLineNumber,
+        c.modifiedEndLineNumber,
+        span(before, c.originalStartLineNumber, c.originalEndLineNumber),
+      );
   const eol = (staging ? model.original : model.modified).getEOL();
   const side = staging ? left.value : right.value;
   git.run((at) => StageText(at, file.value, lines.join(eol), side?.bom ?? false, side?.legacy ?? false));
@@ -165,25 +180,53 @@ const SIDES = computed<Record<Diff, [string, string]>>(() => ({
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="flex h-7.5 shrink-0 items-center gap-2 border-b border-default bg-elevated ps-3.5 pe-2.5 text-12 whitespace-nowrap text-dimmed">
+    <div
+      class="flex h-7.5 shrink-0 items-center gap-2 border-b border-default bg-elevated ps-3.5 pe-2.5 text-12 whitespace-nowrap text-dimmed"
+    >
       <OriginDot :color="store.originColor(located?.root.origin ?? '')" small />
       <span class="truncate text-toned">{{ located?.rel ?? file }}</span>
       <span class="grow" />
       <UBadge :label="`+${counts.added}`" color="success" size="sm" />
       <UBadge :label="`-${counts.removed}`" color="error" size="sm" />
-      <UTabs :model-value="style" :items="COMPARE_STYLES" :content="false" size="xs" @update:model-value="style = $event === 'unified' ? 'unified' : 'split'" />
+      <UTabs
+        :model-value="style"
+        :items="COMPARE_STYLES"
+        :content="false"
+        size="xs"
+        @update:model-value="style = $event === 'unified' ? 'unified' : 'split'"
+      />
       <template v-if="diff === 'changes'">
-        <UButton label="Stage file" icon="i-lucide-plus" variant="ghost" size="xs" @click="git.run((at) => Stage(at, [file]))" />
+        <UButton
+          label="Stage file"
+          icon="i-lucide-plus"
+          variant="ghost"
+          size="xs"
+          @click="git.run((at) => Stage(at, [file]))"
+        />
         <UButton v-if="!deleted" label="Discard" color="error" variant="ghost" size="xs" @click="discard" />
       </template>
-      <UButton v-else-if="diff === 'staged'" label="Unstage file" icon="i-lucide-minus" variant="ghost" size="xs" @click="git.run((at) => Unstage(at, [file]))" />
+      <UButton
+        v-else-if="diff === 'staged'"
+        label="Unstage file"
+        icon="i-lucide-minus"
+        variant="ghost"
+        size="xs"
+        @click="git.run((at) => Unstage(at, [file]))"
+      />
     </div>
     <div class="flex h-6.5 shrink-0 border-b border-default bg-muted text-11 whitespace-nowrap text-dimmed">
-      <span v-for="(side, i) in style === 'split' ? SIDES[diff] : [SIDES[diff].join(' → ')]" :key="i" class="flex flex-1 items-center gap-1.5 px-3" :class="{ 'border-e border-default': i === 0 && style === 'split' }">
+      <span
+        v-for="(side, i) in style === 'split' ? SIDES[diff] : [SIDES[diff].join(' → ')]"
+        :key="i"
+        class="flex flex-1 items-center gap-1.5 px-3"
+        :class="{ 'border-e border-default': i === 0 && style === 'split' }"
+      >
         <UIcon :name="i === 0 ? 'i-lucide-git-commit-horizontal' : 'i-lucide-pencil'" class="size-3.5" />{{ side }}
       </span>
     </div>
-    <p v-if="unreadable" class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">{{ unreadable }}</p>
+    <p v-if="unreadable" class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
+      {{ unreadable }}
+    </p>
     <div v-show="!unreadable" ref="host" class="min-h-0 flex-1 border-s-12 border-(--bg-0) bg-(--bg-0)" />
   </div>
 </template>

@@ -21,15 +21,20 @@ const kept = computed(() => sites.value[winner.value]);
 // each other site by its part: added to the kept one, replaced by it, or one of several where none is kept
 const others = computed(() =>
   sites.value.flatMap((site, i) =>
-    i === winner.value ? [] : [{ site, part: winner.value < 0 ? "Defined by" : card?.adds?.includes(i) ? "Adds to it" : "Replaces" }],
+    i === winner.value
+      ? []
+      : [{ site, part: winner.value < 0 ? "Defined by" : card?.adds?.includes(i) ? "Adds to it" : "Replaces" }],
   ),
 );
 /** The sites as rows: a part's sites of one origin together, each file once with how many places it holds. */
 const groups = computed(() => {
   const rows: { part: string; origin: string; files: { rel: string; first: Location; count: number }[] }[] = [];
-  for (const { site, part } of kept.value ? [{ site: kept.value, part: "Defined by" }, ...others.value] : others.value) {
+  for (const { site, part } of kept.value
+    ? [{ site: kept.value, part: "Defined by" }, ...others.value]
+    : others.value) {
     let group = rows.at(-1);
-    if (!group || group.part !== part || group.origin !== site.origin) rows.push((group = { part, origin: site.origin, files: [] }));
+    if (!group || group.part !== part || group.origin !== site.origin)
+      rows.push((group = { part, origin: site.origin, files: [] }));
     const file = group.files.find((one) => one.rel === site.rel);
     if (file) file.count++;
     else group.files.push({ rel: site.rel, first: site, count: 1 });
@@ -38,7 +43,8 @@ const groups = computed(() => {
 });
 const overrides = computed(
   () =>
-    !!kept.value && kept.value.origin !== store.originVanilla &&
+    !!kept.value &&
+    kept.value.origin !== store.originVanilla &&
     others.value.some(({ site, part }) => part === "Replaces" && site.origin === store.originVanilla),
 );
 const facts = computed(() => {
@@ -50,7 +56,11 @@ const facts = computed(() => {
     ["Leads to", card.leads],
     ["Date", card.date],
     ["Weight", card.weight ? `${card.weight}% of its siblings` : ""],
-    ["Image", card.image && `${card.image.width}×${card.image.height} ${card.image.format}${card.image.mips ? `, ${card.image.mips} mips` : ""}`],
+    [
+      "Image",
+      card.image &&
+        `${card.image.width}×${card.image.height} ${card.image.format}${card.image.mips ? `, ${card.image.mips} mips` : ""}`,
+    ],
   ].filter((fact): fact is [string, string] => !!fact[1]);
 });
 const color = computed(() => (/^#[0-9a-f]{6}$/i.test(card?.color ?? "") ? card?.color : ""));
@@ -79,14 +89,18 @@ function open(site: Location): void {
         />
         <span class="text-toned">{{ problem.message }}</span>
         <span class="grow" />
-        <span class="shrink-0 font-mono text-11 text-dimmed">{{ typeof problem.code === "string" ? problem.code : problem.code?.value }}</span>
+        <span class="shrink-0 font-mono text-11 text-dimmed">{{
+          typeof problem.code === "string" ? problem.code : problem.code?.value
+        }}</span>
       </div>
     </div>
     <template v-if="card">
       <div v-if="said" class="flex flex-col gap-1 px-3.5 py-2.5">
         <div class="flex min-w-0 items-center gap-2">
           <UBadge v-if="card.head" :label="card.head" color="info" size="sm" />
-          <span class="min-w-0 font-mono text-13 font-semibold break-all text-highlighted">{{ card.word || card.key }}</span>
+          <span class="min-w-0 font-mono text-13 font-semibold break-all text-highlighted">{{
+            card.word || card.key
+          }}</span>
           <span class="grow" />
           <UBadge v-if="card.stale" label="outdated script_docs" color="warning" size="sm" />
           <UBadge v-if="overrides" label="Overrides the game" color="purple" size="sm" />
@@ -130,15 +144,21 @@ function open(site: Location): void {
                 class="cursor-pointer text-start font-mono text-11 break-all text-muted hover:text-highlighted hover:underline"
                 @click="open(file.first)"
               >
-                {{ file.count > 1 ? file.rel : `${file.rel}:${file.first.range.start.line + 1}` }}<span v-if="file.count > 1" class="font-sans text-dimmed"> · {{ file.count }} places</span>
+                {{ file.count > 1 ? file.rel : `${file.rel}:${file.first.range.start.line + 1}`
+                }}<span v-if="file.count > 1" class="font-sans text-dimmed"> · {{ file.count }} places</span>
               </button>
             </span>
           </template>
         </div>
       </div>
       <!-- each key with its word on one line; a narrow card wraps between them -->
-      <div v-if="said" class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted px-3.5 py-1.5 text-tiny whitespace-nowrap text-dimmed">
-        <span v-for="[key, word] in KEYS" :key="key" class="flex items-center gap-1"><UKbd :value="key" />{{ word }}</span>
+      <div
+        v-if="said"
+        class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted px-3.5 py-1.5 text-tiny whitespace-nowrap text-dimmed"
+      >
+        <span v-for="[key, word] in KEYS" :key="key" class="flex items-center gap-1"
+          ><UKbd :value="key" />{{ word }}</span
+        >
         <span v-if="card.graphed" class="flex items-center gap-1"><UKbd value="Ctrl Shift G" />graph</span>
         <span class="ms-auto">Right-click for more</span>
       </div>

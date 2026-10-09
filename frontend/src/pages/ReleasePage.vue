@@ -64,7 +64,9 @@ const edited = computed(() => (loaded.value && draft.value ? { ...loaded.value, 
 const unsaved = computed(() => {
   if (!loaded.value || !draft.value) return [];
   const saved = draftOf(loaded.value);
-  const changed = (Object.keys(EDITED) as (keyof Draft)[]).filter((key) => JSON.stringify(draft.value?.[key]) !== JSON.stringify(saved[key]));
+  const changed = (Object.keys(EDITED) as (keyof Draft)[]).filter(
+    (key) => JSON.stringify(draft.value?.[key]) !== JSON.stringify(saved[key]),
+  );
   return [...new Set(changed.map((key) => EDITED[key]))];
 });
 function discard(): void {
@@ -98,17 +100,13 @@ function compare(): void {
 
 <template>
   <div class="flex h-full min-h-0 overflow-hidden">
-    <ReleaseModRail
-      v-model:mod="modId"
-      v-model:step="step"
-      :workspace-id="id"
-      :mods="mods"
-      :saved="!unsaved.length"
-    />
+    <ReleaseModRail v-model:mod="modId" v-model:step="step" :workspace-id="id" :mods="mods" :saved="!unsaved.length" />
     <section v-if="loaded && draft && edited && summary && mod" class="flex min-w-0 grow flex-col overflow-hidden">
       <header class="flex h-14 shrink-0 items-center gap-3 border-b border-default ps-7 pe-5">
         <h1 class="text-16 whitespace-nowrap">{{ STEP_TITLES[step] }}</h1>
-        <span v-if="step === 'review'" class="truncate text-12 text-dimmed">Uploading replaces the files and listing of the Steam item below.</span>
+        <span v-if="step === 'review'" class="truncate text-12 text-dimmed"
+          >Uploading replaces the files and listing of the Steam item below.</span
+        >
         <template v-else>
           <span class="grow" />
           <UButton label="Discard changes" size="md" color="error" :disabled="!unsaved.length" @click="discard" />
@@ -136,7 +134,13 @@ function compare(): void {
       </header>
 
       <div class="shrink-0 px-7 pt-4">
-        <PublishState :unsaved="unsaved" :listing="loaded" :steam="steam" :review="step === 'review'" @compare="compare" />
+        <PublishState
+          :unsaved="unsaved"
+          :listing="loaded"
+          :steam="steam"
+          :review="step === 'review'"
+          @compare="compare"
+        />
       </div>
 
       <div v-if="step === 'listing'" class="flex min-h-0 grow gap-9 overflow-x-auto overflow-y-hidden px-7">
@@ -152,7 +156,12 @@ function compare(): void {
           </div>
           <ListingImages :listing="loaded" :mod="mod" />
         </div>
-        <DescriptionEditor v-model:markdown="draft.readmeMd" v-model:bbcode="draft.readmeBbcode" :listing="loaded" :summary="summary" />
+        <DescriptionEditor
+          v-model:markdown="draft.readmeMd"
+          v-model:bbcode="draft.readmeBbcode"
+          :listing="loaded"
+          :summary="summary"
+        />
       </div>
       <!-- what this upload is: its version, the game version it supports and its change note (O-R44) -->
       <div v-else-if="step === 'release'" class="flex min-h-0 grow flex-col overflow-y-auto px-7">
@@ -173,11 +182,17 @@ function compare(): void {
                 </UTooltip>
               </div>
             </UFormField>
-            <UFormField label="Supported game version" :help="language?.gameVersion ? `Installed game is ${language.gameVersion}` : undefined">
+            <UFormField
+              label="Supported game version"
+              :help="language?.gameVersion ? `Installed game is ${language.gameVersion}` : undefined"
+            >
               <UInput v-model="draft.supportedVersion" size="md" class="w-full" :ui="{ base: 'font-mono' }" />
             </UFormField>
           </div>
-          <UFormField label="Change note" help="Shown in the Steam change log. BBCode, kept as workshop/changelog.bbcode until the next note.">
+          <UFormField
+            label="Change note"
+            help="Shown in the Steam change log. BBCode, kept as workshop/changelog.bbcode until the next note."
+          >
             <template #hint>
               <UButton label="Draft" variant="link" class="p-0 text-12" @click="draftNote()" />
             </template>
@@ -198,7 +213,11 @@ function compare(): void {
     <p v-else-if="!mods.length" class="p-7 text-13 text-dimmed">This workspace has no mod with a folder to publish.</p>
 
     <StatusFacts v-if="loaded">
-      <span>{{ loaded.remoteFileId ? `${step === "review" ? "Steam" : "Workshop"} item ${loaded.remoteFileId}` : "Not on the Workshop yet" }}</span>
+      <span>{{
+        loaded.remoteFileId
+          ? `${step === "review" ? "Steam" : "Workshop"} item ${loaded.remoteFileId}`
+          : "Not on the Workshop yet"
+      }}</span>
       <span v-if="step !== 'review'">Nothing is uploaded until step 3</span>
     </StatusFacts>
   </div>

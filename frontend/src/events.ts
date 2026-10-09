@@ -34,7 +34,8 @@ export function subscribeEvents(router: Router): void {
     scans.clear();
     void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
     void queryCache.invalidateQueries({ key: languageKeys.one(id) });
-    if (holdsFiles && useIdeStore().editing === id) void import("./ide/monacoEditor").then((editor) => editor.rebuilt());
+    if (holdsFiles && useIdeStore().editing === id)
+      void import("./ide/monacoEditor").then((editor) => editor.rebuilt());
   });
   // a session closed (its inputs changed, or another workspace opened): its state is read again, which builds it anew
   Events.On("lang:dropped", ({ data: id }) => {
@@ -45,7 +46,9 @@ export function subscribeEvents(router: Router): void {
   // workspaces and installs feed the repositories they hold and Publish's listings; the language health first asks
   // the session, which closes itself where its inputs changed (lang:dropped)
   Events.On("config:changed", ({ data: section }) => {
-    if (section !== "settings") for (const key of [workspaceKeys.all, installKeys.all, languageKeys.all, ["git-repos"], ["release"]]) void queryCache.invalidateQueries({ key });
+    if (section !== "settings")
+      for (const key of [workspaceKeys.all, installKeys.all, languageKeys.all, ["git-repos"], ["release"]])
+        void queryCache.invalidateQueries({ key });
     if (section === "settings" || !section) void settings.load();
   });
   // a failure refreshes no query: the rebuild would fail again
@@ -122,18 +125,27 @@ export function subscribeEvents(router: Router): void {
       await dock((one) => !!one.unsaved?.length);
       return void QuitAnswer(!ide.unsaved.size || (await unsavedModal.open({ going: "Closing PMT" })));
     }
-    if (ide.openFiles.length) await (await import("./ide/monacoEditor")).handOver("main", ide.openFiles, ide.activePath);
+    if (ide.openFiles.length)
+      await (await import("./ide/monacoEditor")).handOver("main", ide.openFiles, ide.activePath);
     void Window.Close();
   });
   Events.On("window:tabs", ({ data }) => {
-    if (data.to === windowName) receiveTabs((data.tabs ?? []).map((one) => one.tab), async () => (await import("./ide/monacoEditor")).receive(data));
+    if (data.to === windowName)
+      receiveTabs(
+        (data.tabs ?? []).map((one) => one.tab),
+        async () => (await import("./ide/monacoEditor")).receive(data),
+      );
   });
   // a tab this window holds, dragged into another
   Events.On("window:give", async ({ data }) => {
     if (data.to === windowName) await (await import("./ide/monacoEditor")).handOver(data.window, [data.tab]);
   });
   // an editor group's window whose last tab went (closed, or moved to another window) closes
-  if (windowPart === "editor") watch(() => ide.openFiles.length, (count, was) => !count && was && void Window.Close());
+  if (windowPart === "editor")
+    watch(
+      () => ide.openFiles.length,
+      (count, was) => !count && was && void Window.Close(),
+    );
   // this window asked to the front: at a link, or showing a file (in the IDE, in the main window)
   Events.On("window:show", async ({ data }) => {
     if (data.to !== windowName) return;
@@ -145,7 +157,11 @@ export function subscribeEvents(router: Router): void {
   // the panel's window shows every window's problems
   if (windowPart === "panel") {
     watch(others, () => {
-      ide.problems = new Map([...others.values()].flatMap((one) => Object.entries(one.problems ?? {}).map(([path, found]) => [path, found ?? []])));
+      ide.problems = new Map(
+        [...others.values()].flatMap((one) =>
+          Object.entries(one.problems ?? {}).map(([path, found]) => [path, found ?? []]),
+        ),
+      );
     });
   }
   // the main window's sidebar shows the Search results another window finds (its references)
@@ -155,7 +171,10 @@ export function subscribeEvents(router: Router): void {
       ide.sidebar = "search";
     });
   } else if (holdsFiles) {
-    watch(() => ide.results, (results) => results && void Events.Emit("window:results", results));
+    watch(
+      () => ide.results,
+      (results) => results && void Events.Emit("window:results", results),
+    );
   }
 
   // another window saved something config.json does not hold (config:changed tells of that): its repositories' state
@@ -171,7 +190,8 @@ export function subscribeEvents(router: Router): void {
       () => store.activeWorkspaceId,
       (id) => {
         const now = route.value;
-        if ("id" in now.params && now.params.id !== id) void router.replace({ path: now.fullPath.replace(`/workspace/${now.params.id}`, `/workspace/${id}`) });
+        if ("id" in now.params && now.params.id !== id)
+          void router.replace({ path: now.fullPath.replace(`/workspace/${now.params.id}`, `/workspace/${id}`) });
       },
     );
   }

@@ -89,7 +89,14 @@ function next(): void {
   <div class="flex h-full justify-center overflow-y-auto px-6 pt-10 pb-8">
     <div class="flex w-215 max-w-full flex-col gap-6">
       <div class="flex items-center gap-2.5">
-        <UButton icon="i-lucide-arrow-left" variant="ghost" size="sm" square aria-label="Back to Library" :to="{ name: 'library' }" />
+        <UButton
+          icon="i-lucide-arrow-left"
+          variant="ghost"
+          size="sm"
+          square
+          aria-label="Back to Library"
+          :to="{ name: 'library' }"
+        />
         <h1 class="text-20">New workspace</h1>
         <span class="grow" />
         <UButton label="Cancel" size="md" :to="{ name: 'library' }" />
@@ -100,7 +107,15 @@ function next(): void {
           <UButton v-if="step > 0" label="Back" variant="ghost" size="md" @click="step--" />
           <span class="grow" />
           <span class="text-11 text-dimmed">Step {{ step + 1 }} of 4</span>
-          <UButton :label="label" color="primary" variant="solid" size="md" :disabled="disabled" :loading="creating" @click="next" />
+          <UButton
+            :label="label"
+            color="primary"
+            variant="solid"
+            size="md"
+            :disabled="disabled"
+            :loading="creating"
+            @click="next"
+          />
         </div>
       </DefineFooter>
 
@@ -137,7 +152,11 @@ function next(): void {
               Mods load top to bottom after the game; drag them into order. You can also leave the game files alone.
             </p>
           </div>
-          <div v-if="mods.length" ref="list" class="flex flex-col divide-y divide-default rounded-lg border border-default bg-muted">
+          <div
+            v-if="mods.length"
+            ref="list"
+            class="flex flex-col divide-y divide-default rounded-lg border border-default bg-muted"
+          >
             <div v-for="(path, i) in mods" :key="path" class="flex h-10 items-center gap-2.5 ps-2 pe-1.5">
               <UIcon name="i-lucide-grip-vertical" class="mod-handle size-3.5 cursor-grab text-dimmed" />
               <span class="w-3.5 text-center font-mono text-11 text-dimmed">{{ i + 1 }}</span>
@@ -168,7 +187,10 @@ function next(): void {
             <UFormField label="Name" required>
               <UInput v-model="name" :placeholder="`My ${game?.shortName ?? ''} mod`" class="w-full" />
             </UFormField>
-            <UFormField label="Localization language" help="Used for localization gaps, hover text and new mods' files.">
+            <UFormField
+              label="Localization language"
+              help="Used for localization gaps, hover text and new mods' files."
+            >
               <USelect v-model="locLang" :items="LOC_LANGUAGES" class="w-full" />
             </UFormField>
           </div>

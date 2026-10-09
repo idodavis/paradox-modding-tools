@@ -8,7 +8,15 @@ import { shallowRef, watch } from "vue";
 import { Events } from "@wailsio/runtime";
 import { ReadText, WriteText } from "@services/fileservice";
 import * as rpc from "@services/ideservice";
-import type { CodeAction, Completion, Inspect, Item, Location, Range as ByteRange, TextEdit } from "@services/internal/lsp";
+import type {
+  CodeAction,
+  Completion,
+  Inspect,
+  Item,
+  Location,
+  Range as ByteRange,
+  TextEdit,
+} from "@services/internal/lsp";
 import type { FileText, WindowTabs } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { fileUri, labels, languageOf, models, monaco } from "../lib/code";
@@ -70,7 +78,9 @@ const pathOf = (model: monaco.editor.ITextModel) => pathAt(model.uri);
 
 /** A backend range in the model's columns, 1-based; a file no model holds keeps its byte columns. */
 function toRange(model: monaco.editor.ITextModel | null, range: ByteRange): monaco.Range {
-  const { start, end } = editorRange(range, (n) => (model && n < model.getLineCount() ? model.getLineContent(n + 1) : undefined));
+  const { start, end } = editorRange(range, (n) =>
+    model && n < model.getLineCount() ? model.getLineContent(n + 1) : undefined,
+  );
   return new monaco.Range(start.line + 1, start.character + 1, end.line + 1, end.character + 1);
 }
 
@@ -96,11 +106,16 @@ const dots = new CSSStyleSheet();
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, dots];
 function marked(uri: monaco.Uri, site: Location): void {
   const folder = uri.with({ path: uri.path.slice(0, uri.path.lastIndexOf("/")) });
-  folders.set(folder.toString(), { origin: site.origin, dir: site.rel.slice(0, Math.max(0, site.rel.lastIndexOf("/"))) });
+  folders.set(folder.toString(), {
+    origin: site.origin,
+    dir: site.rel.slice(0, Math.max(0, site.rel.lastIndexOf("/"))),
+  });
   if (dotted.has(uri.fsPath)) return;
   dotted.add(uri.fsPath);
   const path = uri.fsPath.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
-  dots.insertRule(`.monaco-list-row[aria-label$="full path ${path}"] { --origin: ${workspace.originColor(site.origin)}; }`);
+  dots.insertRule(
+    `.monaco-list-row[aria-label$="full path ${path}"] { --origin: ${workspace.originColor(site.origin)}; }`,
+  );
 }
 labels.folder = (uri) => {
   const known = folders.get(uri.toString());
@@ -121,7 +136,16 @@ function fileModel(path: string, { text, bom, legacy = false, format }: Read): F
   const made = monaco.editor.createModel(text, languageOf(path, format), uri);
   // a file keeps its own indentation; one with none takes the settings'
   made.detectIndentation(settings.indentSpaces, settings.indentSize);
-  const file: File = { path, model: made, bom, legacy, saved: made.getAlternativeVersionId(), open: false, pending: false, sent: Promise.resolve() };
+  const file: File = {
+    path,
+    model: made,
+    bom,
+    legacy,
+    saved: made.getAlternativeVersionId(),
+    open: false,
+    pending: false,
+    sent: Promise.resolve(),
+  };
   files.set(key, file);
   made.onDidChangeContent(() => changed(file));
   // a file let go (its tab closed, or handed to another window) sends nothing more
@@ -146,7 +170,11 @@ export function openFile(path: string, read: Read): monaco.editor.ITextModel {
   if (file.open) return file.model;
   file.open = true;
   if (file.model.getAlternativeVersionId() !== file.saved) changed(file);
-  else file.sent = rpc.DidChange(workspaceId, file.path, file.model.getValue()).catch(() => undefined).then(() => refresh(file));
+  else
+    file.sent = rpc
+      .DidChange(workspaceId, file.path, file.model.getValue())
+      .catch(() => undefined)
+      .then(() => refresh(file));
   return file.model;
 }
 
@@ -325,7 +353,10 @@ export async function openFilesWindow(name: string, title: string, folders: stri
 
 /** The backend's edits (UTF-8 byte ranges) as one undoable change. */
 function applyEdits(model: monaco.editor.ITextModel, edits: TextEdit[]): void {
-  change(model, edits.map((edit) => ({ range: toRange(model, edit.range), text: edit.newText })));
+  change(
+    model,
+    edits.map((edit) => ({ range: toRange(model, edit.range), text: edit.newText })),
+  );
 }
 
 /** Edits made for the user, a step of their own that one undo takes back, apart from what was typed before. */
@@ -339,14 +370,20 @@ function change(model: monaco.editor.ITextModel, edits: monaco.editor.IIdentifie
 export function known(card: Inspect): boolean {
   return Object.entries(card).some(
     ([key, value]) =>
-      !["within", "range", "winner"].includes(key) && value !== undefined && value !== null && value !== "" &&
-      value !== false && !(Array.isArray(value) && !value.length),
+      !["within", "range", "winner"].includes(key) &&
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      value !== false &&
+      !(Array.isArray(value) && !value.length),
   );
 }
 
 /** A card as the completion list's details, under the item's kind (its detail): its scope, its text and prose. */
 function details(card: Inspect): string {
-  const scope = [card.scope && `${card.scope} scope`, card.returns && `returns ${card.returns}`].filter(Boolean).join(", ");
+  const scope = [card.scope && `${card.scope} scope`, card.returns && `returns ${card.returns}`]
+    .filter(Boolean)
+    .join(", ");
   return [scope, card.name && `> ${card.name}`, card.prose, card.about].filter(Boolean).join("\n\n");
 }
 
@@ -356,13 +393,20 @@ function complete(model: monaco.editor.ITextModel, at: monaco.IPosition): Promis
   const key = `${model.uri}:${model.getVersionId()}:${at.lineNumber}:${at.column}`;
   if (listed?.key !== key) {
     const [line, col] = bytesAt(model, at);
-    listed = { key, list: told(model).then(() => rpc.Complete(workspaceId, pathOf(model), line, col).catch(() => null)) };
+    listed = {
+      key,
+      list: told(model).then(() => rpc.Complete(workspaceId, pathOf(model), line, col).catch(() => null)),
+    };
   }
   return listed.list;
 }
 const items = new WeakMap<monaco.languages.CompletionItem, { path: string; item: Item }>();
 // a snippet's $0 is the caret; any other $ is text
-const snippet = (text: string) => text.replace(/\\/g, "\\\\").replace(/\$(?!0)/g, "\\$").replace(/}/g, "\\}");
+const snippet = (text: string) =>
+  text
+    .replace(/\\/g, "\\\\")
+    .replace(/\$(?!0)/g, "\\$")
+    .replace(/}/g, "\\}");
 
 monaco.languages.registerCompletionItemProvider(PARADOX, {
   triggerCharacters: [".", "@", "$", ":", "["],
@@ -399,8 +443,19 @@ monaco.languages.registerInlineCompletionsProvider(PARADOX, {
     const row = model.getLineContent(at.lineNumber);
     const start = top && toRange(model, top.range);
     const typed = start?.startLineNumber === at.lineNumber ? row.slice(start.startColumn - 1, at.column - 1) : "";
-    if (!top || !start || !typed || /[\w.:@$]/.test(row[at.column - 1] ?? "") || !top.label.toLowerCase().startsWith(typed.toLowerCase())) return { items: [] };
-    return { items: [{ insertText: top.label, range: new monaco.Range(at.lineNumber, start.startColumn, at.lineNumber, at.column) }] };
+    if (
+      !top ||
+      !start ||
+      !typed ||
+      /[\w.:@$]/.test(row[at.column - 1] ?? "") ||
+      !top.label.toLowerCase().startsWith(typed.toLowerCase())
+    )
+      return { items: [] };
+    return {
+      items: [
+        { insertText: top.label, range: new monaco.Range(at.lineNumber, start.startColumn, at.lineNumber, at.column) },
+      ],
+    };
   },
   disposeInlineCompletions() {},
 });
@@ -413,7 +468,14 @@ monaco.languages.registerSignatureHelpProvider(PARADOX, {
     const signature = await rpc.SignatureHelp(workspaceId, pathOf(model), line, col).catch(() => null);
     if (!signature?.label) return null;
     const parameters = (signature.parameters ?? []).map((label) => ({ label }));
-    return { value: { signatures: [{ label: signature.label, parameters, documentation: signature.docs }], activeSignature: 0, activeParameter: 0 }, dispose() {} };
+    return {
+      value: {
+        signatures: [{ label: signature.label, parameters, documentation: signature.docs }],
+        activeSignature: 0,
+        activeParameter: 0,
+      },
+      dispose() {},
+    };
   },
 });
 
@@ -471,7 +533,11 @@ monaco.languages.registerCodeActionProvider(PARADOX, {
     await told(model);
     const [line, col] = bytesAt(model, range.getStartPosition());
     const found = (await rpc.CodeActions(workspaceId, pathOf(model), line, col).catch(() => null)) ?? [];
-    const actions = found.map((action) => ({ title: action.title, kind: "quickfix", command: { id: "pmt.applyFix", title: action.title, arguments: [action] } }));
+    const actions = found.map((action) => ({
+      title: action.title,
+      kind: "quickfix",
+      command: { id: "pmt.applyFix", title: action.title, arguments: [action] },
+    }));
     return { actions, dispose() {} };
   },
 });
@@ -498,7 +564,11 @@ monaco.languages.registerInlayHintsProvider(PARADOX, {
  * again, its problems read again, and the era hints asked again. */
 export function rebuilt(): void {
   for (const file of files.values()) {
-    if (file.open) file.sent = rpc.DidChange(workspaceId, file.path, file.model.getValue()).catch(() => undefined).then(() => refresh(file));
+    if (file.open)
+      file.sent = rpc
+        .DidChange(workspaceId, file.path, file.model.getValue())
+        .catch(() => undefined)
+        .then(() => refresh(file));
   }
   hintsChanged.fire();
 }
@@ -518,7 +588,8 @@ monaco.editor.registerEditorOpener({
 monaco.editor.onDidCreateEditor((editor) => {
   const lock = () => {
     const shown = editor.getModel();
-    if (shown && !editor.getOption(monaco.editor.EditorOption.inDiffEditor)) editor.updateOptions({ readOnly: locked(pathOf(shown)) });
+    if (shown && !editor.getOption(monaco.editor.EditorOption.inDiffEditor))
+      editor.updateOptions({ readOnly: locked(pathOf(shown)) });
   };
   lock();
   editor.onDidChangeModel(lock);
@@ -612,9 +683,16 @@ export function createEditor(host: HTMLElement, shown: monaco.editor.ITextModel)
     const card = await rpc.Hover(workspaceId, pathOf(shown), line, col).catch(() => null);
     if (hovered !== at) return;
     // a problem shows where the backend has no card for the word (plain text in a localization value)
-    const problems = monaco.editor.getModelMarkers({ resource: shown.uri }).filter((marker) => monaco.Range.containsPosition(marker, at));
+    const problems = monaco.editor
+      .getModelMarkers({ resource: shown.uri })
+      .filter((marker) => monaco.Range.containsPosition(marker, at));
     const box = host.getBoundingClientRect();
-    const anchor = new DOMRect(box.left + start.left, box.top + start.top, Math.max(end.left - start.left, 1), start.height);
+    const anchor = new DOMRect(
+      box.left + start.left,
+      box.top + start.top,
+      Math.max(end.left - start.left, 1),
+      start.height,
+    );
     hover.value = (card && known(card)) || problems.length ? { card, problems, anchor } : null;
   }
 
@@ -623,7 +701,11 @@ export function createEditor(host: HTMLElement, shown: monaco.editor.ITextModel)
   editor.onMouseMove((e) => {
     const at = e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT ? e.target.position : null;
     const word = at && shown.getWordAtPosition(at);
-    const same = hovered && word && hovered.lineNumber === at.lineNumber && shown.getWordAtPosition(hovered)?.startColumn === word.startColumn;
+    const same =
+      hovered &&
+      word &&
+      hovered.lineNumber === at.lineNumber &&
+      shown.getWordAtPosition(hovered)?.startColumn === word.startColumn;
     if (same && hover.value) return clearTimeout(hiding);
     clearTimeout(showing);
     hovered = word ? at : null;

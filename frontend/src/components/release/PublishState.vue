@@ -9,7 +9,12 @@ import { useTimeAgo } from "@vueuse/core";
 import type { Listing, SteamCompare } from "@services/models";
 import { capital, day, list, plural } from "../../lib/format";
 
-const { unsaved, listing, steam, review = false } = defineProps<{
+const {
+  unsaved,
+  listing,
+  steam,
+  review = false,
+} = defineProps<{
   unsaved: string[];
   listing: Listing;
   steam?: SteamCompare | null;
@@ -33,7 +38,12 @@ const changes = computed(() => {
 
 const cells = computed(() => {
   const here = unsaved.length
-    ? { icon: "i-lucide-pencil", tone: TONES.orange, value: plural(unsaved.length, "unsaved change"), sub: capital(list(unsaved)) }
+    ? {
+        icon: "i-lucide-pencil",
+        tone: TONES.orange,
+        value: plural(unsaved.length, "unsaved change"),
+        sub: capital(list(unsaved)),
+      }
     : { icon: "i-lucide-check", tone: TONES.green, value: "Nothing unsaved", sub: "Every edit is in the workspace" };
   const saved = {
     icon: "i-lucide-save",
@@ -42,7 +52,12 @@ const cells = computed(() => {
     sub: review ? "This is what will be uploaded" : `${listing.descriptor}, ${savedAgo.value}`,
   };
   const updated = steam?.uploadedAt ? day(steam.uploadedAt) : "";
-  let onSteam = { icon: "i-lucide-cloud", tone: TONES.blue, value: "Not published", sub: "Uploading creates the Workshop item" };
+  let onSteam = {
+    icon: "i-lucide-cloud",
+    tone: TONES.blue,
+    value: "Not published",
+    sub: "Uploading creates the Workshop item",
+  };
   if (steam?.item && !steam.from) onSteam = { ...onSteam, value: steam.item, sub: "No copy of it to compare yet" };
   else if (steam?.from) {
     const same = !changes.value;
@@ -51,7 +66,9 @@ const cells = computed(() => {
       tone: review && !same ? TONES.orange : TONES.blue,
       value: `v${steam.version}`,
       sub: review
-        ? same ? "Nothing will change" : `${capital(changes.value)} will change`
+        ? same
+          ? "Nothing will change"
+          : `${capital(changes.value)} will change`
         : `Last updated ${updated}`,
     };
   }
@@ -73,7 +90,9 @@ const cells = computed(() => {
         </span>
         <span class="flex min-w-0 grow flex-col">
           <span class="text-11 whitespace-nowrap text-dimmed">{{ cell.label }}</span>
-          <span class="text-13 font-semibold whitespace-nowrap text-highlighted" :class="{ 'font-mono': cell.mono }">{{ cell.value }}</span>
+          <span class="text-13 font-semibold whitespace-nowrap text-highlighted" :class="{ 'font-mono': cell.mono }">{{
+            cell.value
+          }}</span>
           <span class="truncate text-11 text-dimmed" :title="cell.sub">{{ cell.sub }}</span>
         </span>
         <UButton v-if="i === 2 && steam?.item && !review" label="Compare" @click="emit('compare')" />

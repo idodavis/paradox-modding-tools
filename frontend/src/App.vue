@@ -14,7 +14,15 @@ defineShortcuts({
   meta_p: { handler: () => openPalette(""), usingInput: true },
 });
 
-const KEPT = ["LibraryPage", "WorkspaceIdePage", "EventGraphPage", "HealthPage", "PatchNotesPage", "ReleasePage", "WorkspaceSettingsPage"];
+const KEPT = [
+  "LibraryPage",
+  "WorkspaceIdePage",
+  "EventGraphPage",
+  "HealthPage",
+  "PatchNotesPage",
+  "ReleasePage",
+  "WorkspaceSettingsPage",
+];
 </script>
 
 <template>

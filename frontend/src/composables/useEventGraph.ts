@@ -85,7 +85,7 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
     const root = params.value.root;
     const step = reach(edges, root, true);
     for (const [id, back] of reach(edges, root, false)) if (!step.has(id)) step.set(id, -back);
-    for (let added = true; added; ) {
+    for (let added = true; added;) {
       added = false;
       for (const edge of edges) {
         const from = step.get(edge.from);

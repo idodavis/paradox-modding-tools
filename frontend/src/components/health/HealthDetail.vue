@@ -32,11 +32,18 @@ const { data: lines } = useQuery(() =>
     id: workspaceId,
     places: replacedFile.value
       ? []
-      : sites.value.map((site) => ({ path: site.at.path, line: site.line, col: site.col, definition: !!contest.value })),
+      : sites.value.map((site) => ({
+          path: site.at.path,
+          line: site.line,
+          col: site.col,
+          definition: !!contest.value,
+        })),
     live,
   }),
 );
-const { data: readers } = useQuery(() => locReadersQuery({ id: workspaceId, key: row && "key" in row ? row.key : "", live }));
+const { data: readers } = useQuery(() =>
+  locReadersQuery({ id: workspaceId, key: row && "key" in row ? row.key : "", live }),
+);
 
 const title = computed(() => {
   if (!row) return "";
@@ -57,7 +64,9 @@ function part(i: number): "kept" | "injected" | "replaced" {
 }
 // the kept definition first, as the board draws it, then the rest in load order
 const ordered = computed(() =>
-  sites.value.map((site, i) => ({ site, i })).sort((a, b) => Number(b.i === contest.value?.winner) - Number(a.i === contest.value?.winner)),
+  sites.value
+    .map((site, i) => ({ site, i }))
+    .sort((a, b) => Number(b.i === contest.value?.winner) - Number(a.i === contest.value?.winner)),
 );
 /** A site's lines without Go's closing "…" (a definition past ten lines), which is drawn apart, unnumbered. */
 function linesOf(i: number): { text: string; more: boolean } {
@@ -66,7 +75,8 @@ function linesOf(i: number): { text: string; more: boolean } {
   return { text: (more ? read.slice(0, -1) : read).join("\n"), more };
 }
 const replacedMod = computed(
-  () => !!contest.value && sites.value.some((site, i) => part(i) === "replaced" && site.at.origin !== store.originVanilla),
+  () =>
+    !!contest.value && sites.value.some((site, i) => part(i) === "replaced" && site.at.origin !== store.originVanilla),
 );
 // the replaced definition nearest the kept one in load order, which Compare the two sets beside it
 const nearest = computed(() => {
@@ -90,9 +100,12 @@ const rule = computed(() => {
   if (!row || row.winner < 0) return "";
   const kept = names.value[row.winner];
   const others = (by: ReturnType<typeof part>) => list(new Set(names.value.filter((_, i) => part(i) === by)));
-  if (replacedFile.value) return `The game loads one file per path, so ${kept}'s file replaces ${others("replaced")}'s whole.`;
-  if (others("injected")) return `The game runs ${kept}'s definition together with what ${others("injected")} injected into it.`;
-  if (row.rule !== "FIOS" && row.rule !== "LIOS") return `${kept} writes it as ${row.rule}, so its version takes the place of ${others("replaced")}'s.`;
+  if (replacedFile.value)
+    return `The game loads one file per path, so ${kept}'s file replaces ${others("replaced")}'s whole.`;
+  if (others("injected"))
+    return `The game runs ${kept}'s definition together with what ${others("injected")} injected into it.`;
+  if (row.rule !== "FIOS" && row.rule !== "LIOS")
+    return `${kept} writes it as ${row.rule}, so its version takes the place of ${others("replaced")}'s.`;
   const [order, loads] = row.firstWins ? ["first", "before"] : ["last", "after"];
   return `For this kind the ${order} mod in load order wins. ${kept} loads ${loads} ${others("replaced")}, so its version is the one the game runs.`;
 });
@@ -100,7 +113,12 @@ const rule = computed(() => {
 function openCompare(): void {
   const at = (i: number) => ({ ...sites.value[i].at, line: sites.value[i].line });
   if (contest.value && nearest.value >= 0) {
-    void compare.open({ title: "Compare the two", tags: ["Replaced", "Kept"], old: at(nearest.value), now: at(contest.value.winner) });
+    void compare.open({
+      title: "Compare the two",
+      tags: ["Replaced", "Kept"],
+      old: at(nearest.value),
+      now: at(contest.value.winner),
+    });
   }
 }
 </script>
@@ -133,7 +151,12 @@ function openCompare(): void {
             <span v-if="site.name" class="font-mono text-dimmed">{{ site.name }}</span>
             <SourceLink :at="site.at" :line="site.line" :file="replacedFile" />
             <span class="grow" />
-            <UBadge v-if="site.removed" :label="`Removed by ${row && 'to' in row ? store.originName(row.to) : ''}`" color="error" size="sm" />
+            <UBadge
+              v-if="site.removed"
+              :label="`Removed by ${row && 'to' in row ? store.originName(row.to) : ''}`"
+              color="error"
+              size="sm"
+            />
             <UBadge v-else-if="part(i) === 'kept' && contest" label="Kept" color="success" size="sm" />
             <UBadge v-else-if="part(i) === 'injected'" label="Injected" color="info" size="sm" />
             <UBadge v-else-if="contest" label="Replaced" size="sm" />
@@ -150,16 +173,23 @@ function openCompare(): void {
           </template>
           <div v-else-if="site.defines?.length" class="flex flex-col gap-1.5 px-2.5 py-2">
             <span class="text-11 text-dimmed">
-              Defines {{ site.defines.length }}<template v-if="site.changed?.length">;
-                <span class="text-info">{{ site.changed.length }} written differently</span></template><template v-if="dropped(i).length">;
-                <span class="text-warning">the kept file leaves out {{ dropped(i).length }}</span></template>
+              Defines {{ site.defines.length
+              }}<template v-if="site.changed?.length"
+                >; <span class="text-info">{{ site.changed.length }} written differently</span></template
+              ><template v-if="dropped(i).length"
+                >; <span class="text-warning">the kept file leaves out {{ dropped(i).length }}</span></template
+              >
             </span>
-            <div class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-12" :class="{ 'opacity-70': part(i) === 'replaced' }">
+            <div
+              class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-12"
+              :class="{ 'opacity-70': part(i) === 'replaced' }"
+            >
               <span
                 v-for="name in site.defines"
                 :key="name"
                 :class="{ 'text-info': site.changed?.includes(name), 'text-warning': dropped(i).includes(name) }"
-              >{{ name }}</span>
+                >{{ name }}</span
+              >
             </div>
           </div>
         </div>

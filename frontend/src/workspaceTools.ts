@@ -146,7 +146,12 @@ export type SettingSwitch = "reopenTabs" | "hideBinaries" | "matchGame" | "follo
  * Every setting, once: Settings' search keeps the sections holding a match, and the palette lists each,
  * flipping a switch in place and opening the section, or the IDE's settings card, for one with a value.
  */
-export const SETTINGS: readonly { label: string; section: SettingsSection | "ide"; words?: string; flips?: SettingSwitch }[] = [
+export const SETTINGS: readonly {
+  label: string;
+  section: SettingsSection | "ide";
+  words?: string;
+  flips?: SettingSwitch;
+}[] = [
   { label: "Workspace name", section: "general" },
   { label: "Localization language", section: "general", words: "loc english french german spanish russian" },
   { label: "Page a workspace opens on", section: "general", words: "default start" },
@@ -161,7 +166,11 @@ export const SETTINGS: readonly { label: string; section: SettingsSection | "ide
   { label: "Calendar", section: "mods", words: "era year offset date" },
   { label: "Workshop item", section: "mods", words: "steam publishing description markdown bbcode unlink" },
   { label: "Upload exclusions", section: "mods", words: "workshop ignore gitignore" },
-  { label: "Theme", section: "appearance", words: "dark light catppuccin one crusader kings europa universalis victoria" },
+  {
+    label: "Theme",
+    section: "appearance",
+    words: "dark light catppuccin one crusader kings europa universalis victoria",
+  },
   { label: "Match the workspace's game theme", section: "appearance", flips: "matchGame" },
   { label: "Follow Windows light and dark", section: "appearance", words: "system mode", flips: "followSystem" },
   { label: "Interface scale", section: "appearance", words: "text size zoom" },

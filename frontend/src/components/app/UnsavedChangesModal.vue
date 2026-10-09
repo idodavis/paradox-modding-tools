@@ -38,7 +38,13 @@ const { mutate: save, isLoading: saving } = useMutation({
       <span class="grow" />
       <UButton label="Cancel" @click="emit('close', false)" />
       <UButton label="Don't save" color="error" variant="soft" @click="emit('close', true)" />
-      <UButton :label="names.length === 1 ? 'Save' : 'Save all'" color="primary" variant="solid" :loading="saving" @click="save()" />
+      <UButton
+        :label="names.length === 1 ? 'Save' : 'Save all'"
+        color="primary"
+        variant="solid"
+        :loading="saving"
+        @click="save()"
+      />
     </template>
   </UModal>
 </template>

@@ -24,13 +24,7 @@ import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { pickDirectory } from "../lib/nativeDialog";
 import { languageQuery, workspacesQuery } from "../queries";
 import { modColor, updatePrefs, useWorkspaceStore } from "../stores/workspace";
-import {
-  LOC_LANGUAGES,
-  SETTINGS,
-  SETTINGS_SECTIONS,
-  WORKSPACE_TOOLS,
-  type SettingsSection,
-} from "../workspaceTools";
+import { LOC_LANGUAGES, SETTINGS, SETTINGS_SECTIONS, WORKSPACE_TOOLS, type SettingsSection } from "../workspaceTools";
 
 const { id, section = "general" } = defineProps<{ id: string; section?: string }>();
 
@@ -49,7 +43,10 @@ const { data: language } = useQuery(() => languageQuery(id));
 const live = useLiveEnabled(() => id);
 const { mutate: savePrefs } = useMutation({ mutation: updatePrefs });
 const { mutate: run } = useMutation({ mutation: (save: () => Promise<unknown>) => save() });
-const PAGE_ITEMS: { label: string; value: string }[] = WORKSPACE_TOOLS.map((tool) => ({ label: tool.label, value: tool.name }));
+const PAGE_ITEMS: { label: string; value: string }[] = WORKSPACE_TOOLS.map((tool) => ({
+  label: tool.label,
+  value: tool.name,
+}));
 
 // the sections holding a setting that matches, by its name or the words it goes by
 const find = shallowRef("");
@@ -58,8 +55,10 @@ const shownSections = computed(() => {
   const all = Object.keys(SETTINGS_SECTIONS) as SettingsSection[];
   if (!words) return all;
   return all.filter((key) =>
-    [SETTINGS_SECTIONS[key].label, ...SETTINGS.filter((s) => s.section === key).map((s) => `${s.label} ${s.words ?? ""}`)]
-      .some((text) => text.toLowerCase().includes(words)),
+    [
+      SETTINGS_SECTIONS[key].label,
+      ...SETTINGS.filter((s) => s.section === key).map((s) => `${s.label} ${s.words ?? ""}`),
+    ].some((text) => text.toLowerCase().includes(words)),
   );
 });
 const current = computed({
@@ -70,7 +69,8 @@ const current = computed({
 // a group's heading is a tab no one can pick
 const HEADING = {
   ui: {
-    trigger: "mt-3.5 h-auto rounded-none border-t border-default pt-3 ps-2.5 pb-1.5 disabled:cursor-default disabled:opacity-100",
+    trigger:
+      "mt-3.5 h-auto rounded-none border-t border-default pt-3 ps-2.5 pb-1.5 disabled:cursor-default disabled:opacity-100",
     label: "flex flex-col items-start gap-0.5 overflow-hidden",
   },
 };
@@ -80,10 +80,30 @@ const tabs = computed<TabsItem[]>(() => {
   const app = shownSections.value.filter((key) => SETTINGS_SECTIONS[key].scope === "App");
   return [
     ...(ours.length
-      ? [{ label: "Workspace", sub: workspace.value?.name, mark: "i-lucide-folder", value: "workspace", disabled: true, ...HEADING }, ...ours.map(item)]
+      ? [
+          {
+            label: "Workspace",
+            sub: workspace.value?.name,
+            mark: "i-lucide-folder",
+            value: "workspace",
+            disabled: true,
+            ...HEADING,
+          },
+          ...ours.map(item),
+        ]
       : []),
     ...(app.length
-      ? [{ label: "App", sub: "Every workspace on this computer", mark: "i-lucide-monitor", value: "app", disabled: true, ...HEADING }, ...app.map(item)]
+      ? [
+          {
+            label: "App",
+            sub: "Every workspace on this computer",
+            mark: "i-lucide-monitor",
+            value: "app",
+            disabled: true,
+            ...HEADING,
+          },
+          ...app.map(item),
+        ]
       : []),
   ];
 });
@@ -118,10 +138,15 @@ const mods = computed<WorkspaceMod[]>({
   set: (next) => reorder(next),
 });
 const chosen = shallowRef("");
-const selected = computed(() => mods.value.find((mod) => mod.id === chosen.value) ?? (chosen.value === "game" ? undefined : mods.value[0]));
+const selected = computed(
+  () => mods.value.find((mod) => mod.id === chosen.value) ?? (chosen.value === "game" ? undefined : mods.value[0]),
+);
 const gameSelected = computed(() => chosen.value === "game" || !mods.value.length);
 // the load order and the mod picked; the splitter keeps the list's width
-const PANES = [{ slot: "list", sizeUnit: "px" as const, defaultSize: 420, minSize: 320, maxSize: 640 }, { slot: "card" }];
+const PANES = [
+  { slot: "list", sizeUnit: "px" as const, defaultSize: 420, minSize: 320, maxSize: 640 },
+  { slot: "card" },
+];
 const list = useTemplateRef("list");
 useSortable(list, mods, { handle: ".mod-handle", animation: 150, watchElement: true });
 
@@ -129,7 +154,12 @@ function reorder(next: WorkspaceMod[]): void {
   queryCache.setQueryData(workspacesQuery.key, (all) =>
     (all ?? []).map((ws) => (ws.id === id ? { ...ws, mods: next.map((mod, i) => ({ ...mod, sortOrder: i })) } : ws)),
   );
-  run(() => ReorderWorkspaceMods(id, next.map((mod) => mod.id)));
+  run(() =>
+    ReorderWorkspaceMods(
+      id,
+      next.map((mod) => mod.id),
+    ),
+  );
 }
 
 async function locate(mod: WorkspaceMod): Promise<void> {
@@ -146,12 +176,22 @@ async function addExisting(): Promise<void> {
 function createNew(): void {
   const ws = workspace.value;
   if (!ws) return;
-  void createMod.open({ gameId: ws.gameId, workspaceId: ws.id, locLang: ws.defaultLocLang || "english", supportedVersion: language.value?.gameVersion ?? "" });
+  void createMod.open({
+    gameId: ws.gameId,
+    workspaceId: ws.id,
+    locLang: ws.defaultLocLang || "english",
+    supportedVersion: language.value?.gameVersion ?? "",
+  });
 }
 
 const ROW = "relative flex h-14 min-w-0 items-center gap-2.5 border-b border-default ps-2 pe-3 text-start";
 function rowClass(on: boolean): string[] {
-  return [ROW, on ? "bg-(--accent-soft) before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary" : "hover:bg-elevated"];
+  return [
+    ROW,
+    on
+      ? "bg-(--accent-soft) before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary"
+      : "hover:bg-elevated",
+  ];
 }
 </script>
 
@@ -164,8 +204,10 @@ function rowClass(on: boolean): string[] {
     :ui="{
       root: 'h-full items-stretch gap-0',
       list: 'h-full w-62 shrink-0 items-stretch gap-0.5 overflow-y-auto rounded-none border-e border-default bg-muted px-2.5 py-3.5 ring-0',
-      indicator: 'inset-x-2.5 overflow-hidden rounded-md bg-elevated before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary',
-      trigger: 'h-7.5 w-full justify-start rounded-md ps-8.5 pe-2.5 text-13 font-normal text-toned data-[state=active]:font-medium',
+      indicator:
+        'inset-x-2.5 overflow-hidden rounded-md bg-elevated before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-primary',
+      trigger:
+        'h-7.5 w-full justify-start rounded-md ps-8.5 pe-2.5 text-13 font-normal text-toned data-[state=active]:font-medium',
       content: 'h-full min-w-0 flex-1 overflow-hidden',
     }"
   >
@@ -199,7 +241,12 @@ function rowClass(on: boolean): string[] {
           <p class="text-13 text-dimmed">This workspace's name, language and the IDE's start.</p>
         </div>
         <SettingSection title="Name" hint="Shown in the Library and the workspace switcher.">
-          <UInput :model-value="workspace.name" :model-modifiers="{ lazy: true }" class="w-80" @update:model-value="rename" />
+          <UInput
+            :model-value="workspace.name"
+            :model-modifiers="{ lazy: true }"
+            class="w-80"
+            @update:model-value="rename"
+          />
         </SettingSection>
         <SettingSection
           title="Localization language"
@@ -222,10 +269,19 @@ function rowClass(on: boolean): string[] {
         </SettingSection>
         <SettingSection title="IDE" hint="How the IDE opens this workspace.">
           <SettingRow label="Reopen the IDE's tabs" hint="The files that were open when you left or closed PMT.">
-            <USwitch :model-value="!workspace.resetIdeOnOpen" @update:model-value="savePrefs({ ws: workspace, resetIdeOnOpen: !$event })" />
+            <USwitch
+              :model-value="!workspace.resetIdeOnOpen"
+              @update:model-value="savePrefs({ ws: workspace, resetIdeOnOpen: !$event })"
+            />
           </SettingRow>
-          <SettingRow label="Hide binaries in the explorer" hint="dll, exe, pdb and the like. Images, sounds, meshes and .metadata stay.">
-            <USwitch :model-value="workspace.hideExplorerBinaries" @update:model-value="savePrefs({ ws: workspace, hideExplorerBinaries: $event })" />
+          <SettingRow
+            label="Hide binaries in the explorer"
+            hint="dll, exe, pdb and the like. Images, sounds, meshes and .metadata stay."
+          >
+            <USwitch
+              :model-value="workspace.hideExplorerBinaries"
+              @update:model-value="savePrefs({ ws: workspace, hideExplorerBinaries: $event })"
+            />
           </SettingRow>
         </SettingSection>
       </div>
@@ -245,9 +301,16 @@ function rowClass(on: boolean): string[] {
           hint="The game prints its own scripting documentation once you ask it to. PMT reads it rather than guessing, and keeps its own copy for when it is missing."
         >
           <div class="flex items-center gap-2">
-            <UBadge :label="dumps?.label ?? 'Read when the workspace opens'" :color="dumps ? (dumps.ok ? 'success' : 'warning') : 'neutral'" />
+            <UBadge
+              :label="dumps?.label ?? 'Read when the workspace opens'"
+              :color="dumps ? (dumps.ok ? 'success' : 'warning') : 'neutral'"
+            />
           </div>
-          <p v-for="folder in language?.dumpFolders ?? []" :key="folder" class="font-mono text-12 break-all text-dimmed">
+          <p
+            v-for="folder in language?.dumpFolders ?? []"
+            :key="folder"
+            class="font-mono text-12 break-all text-dimmed"
+          >
             {{ folder }}
           </p>
           <UButton
@@ -277,77 +340,90 @@ function rowClass(on: boolean): string[] {
 
         <USplitter :items="PANES" auto-save-id="pmt.settings.mods" class="min-h-0 grow" :ui="{ handle: 'mx-2.5' }">
           <template #list>
-          <div class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">
-            <div class="flex h-10 shrink-0 items-center border-b border-default px-3.5">
-              <span class="text-13 font-semibold">Load order</span>
-              <span class="grow" />
-              <span class="text-12 text-dimmed">Drag to reorder</span>
-            </div>
-            <div class="min-h-0 grow overflow-y-auto">
-              <button type="button" :class="rowClass(gameSelected)" class="w-full text-dimmed" @click="chosen = 'game'">
-                <span class="w-3.5 shrink-0" />
-                <span class="w-3.5 shrink-0 text-center font-mono text-11">0</span>
-                <span class="size-5.5 shrink-0 rounded-md border border-accented" :style="{ background: store.originColor(store.originVanilla) }" />
-                <span class="flex min-w-0 grow flex-col">
-                  <span class="truncate text-13 font-medium text-toned">{{ game?.name }}</span>
-                  <span class="truncate text-11">Game install, read only</span>
-                </span>
-                <UIcon name="i-lucide-lock" class="size-3.5" />
-              </button>
-              <div ref="list">
-                <div
-                  v-for="(mod, i) in mods"
-                  :key="mod.id"
-                  :class="rowClass(!gameSelected && selected?.id === mod.id)"
-                  role="button"
-                  tabindex="0"
-                  @click="chosen = mod.id"
-                  @keydown.enter="chosen = mod.id"
+            <div class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">
+              <div class="flex h-10 shrink-0 items-center border-b border-default px-3.5">
+                <span class="text-13 font-semibold">Load order</span>
+                <span class="grow" />
+                <span class="text-12 text-dimmed">Drag to reorder</span>
+              </div>
+              <div class="min-h-0 grow overflow-y-auto">
+                <button
+                  type="button"
+                  :class="rowClass(gameSelected)"
+                  class="w-full text-dimmed"
+                  @click="chosen = 'game'"
                 >
-                  <UIcon name="i-lucide-grip-vertical" class="mod-handle size-3.5 shrink-0 cursor-grab text-dimmed" />
-                  <span class="w-3.5 shrink-0 text-center font-mono text-11 text-dimmed">{{ i + 1 }}</span>
-                  <span class="size-5.5 shrink-0 rounded-md border border-accented" :style="{ background: modColor(mod) }" />
+                  <span class="w-3.5 shrink-0" />
+                  <span class="w-3.5 shrink-0 text-center font-mono text-11">0</span>
+                  <span
+                    class="size-5.5 shrink-0 rounded-md border border-accented"
+                    :style="{ background: store.originColor(store.originVanilla) }"
+                  />
                   <span class="flex min-w-0 grow flex-col">
-                    <span class="truncate text-13 font-medium">{{ mod.name }}</span>
-                    <span v-if="mod.isBroken" class="truncate text-11 text-error">Folder not found</span>
-                    <SteamState v-else :workspace-id="id" :mod-id="mod.id" />
+                    <span class="truncate text-13 font-medium text-toned">{{ game?.name }}</span>
+                    <span class="truncate text-11">Game install, read only</span>
                   </span>
-                  <UButton v-if="mod.isBroken" label="Locate" @click.stop="locate(mod)" />
-                  <UIcon v-else name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed" />
+                  <UIcon name="i-lucide-lock" class="size-3.5" />
+                </button>
+                <div ref="list">
+                  <div
+                    v-for="(mod, i) in mods"
+                    :key="mod.id"
+                    :class="rowClass(!gameSelected && selected?.id === mod.id)"
+                    role="button"
+                    tabindex="0"
+                    @click="chosen = mod.id"
+                    @keydown.enter="chosen = mod.id"
+                  >
+                    <UIcon name="i-lucide-grip-vertical" class="mod-handle size-3.5 shrink-0 cursor-grab text-dimmed" />
+                    <span class="w-3.5 shrink-0 text-center font-mono text-11 text-dimmed">{{ i + 1 }}</span>
+                    <span
+                      class="size-5.5 shrink-0 rounded-md border border-accented"
+                      :style="{ background: modColor(mod) }"
+                    />
+                    <span class="flex min-w-0 grow flex-col">
+                      <span class="truncate text-13 font-medium">{{ mod.name }}</span>
+                      <span v-if="mod.isBroken" class="truncate text-11 text-error">Folder not found</span>
+                      <SteamState v-else :workspace-id="id" :mod-id="mod.id" />
+                    </span>
+                    <UButton v-if="mod.isBroken" label="Locate" @click.stop="locate(mod)" />
+                    <UIcon v-else name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed" />
+                  </div>
                 </div>
               </div>
+              <p class="shrink-0 border-t border-default px-3.5 py-3 text-12 text-dimmed">
+                Health and the Event Graph follow a new order as soon as you drop it. Colors stay with the mod, not the
+                position.
+              </p>
             </div>
-            <p class="shrink-0 border-t border-default px-3.5 py-3 text-12 text-dimmed">
-              Health and the Event Graph follow a new order as soon as you drop it. Colors stay with the mod, not the
-              position.
-            </p>
-          </div>
-
           </template>
           <template #card>
-          <WorkspaceModCard
-            v-if="selected && !gameSelected"
-            :key="selected.id"
-            :workspace-id="id"
-            :mod="selected"
-            :live="live"
-            @removed="chosen = ''"
-          />
-          <div v-else class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">
-            <div class="flex items-center gap-3.5 border-b border-default px-5 py-4">
-              <GameIcon :game-id="workspace.gameId" size="lg" />
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <span class="truncate text-16">{{ game?.name }}</span>
-                <span class="text-12 text-dimmed">Game install, read only</span>
+            <WorkspaceModCard
+              v-if="selected && !gameSelected"
+              :key="selected.id"
+              :workspace-id="id"
+              :mod="selected"
+              :live="live"
+              @removed="chosen = ''"
+            />
+            <div v-else class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">
+              <div class="flex items-center gap-3.5 border-b border-default px-5 py-4">
+                <GameIcon :game-id="workspace.gameId" size="lg" />
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <span class="truncate text-16">{{ game?.name }}</span>
+                  <span class="text-12 text-dimmed">Game install, read only</span>
+                </div>
               </div>
+              <FieldGroup
+                title="Color"
+                :hint="workspace.gameColor ? 'Picked by hand' : 'Automatic, a grey of the theme'"
+              >
+                <OriginColorField
+                  :model-value="workspace.gameColor ?? ''"
+                  @update:model-value="savePrefs({ ws: workspace, gameColor: $event })"
+                />
+              </FieldGroup>
             </div>
-            <FieldGroup title="Color" :hint="workspace.gameColor ? 'Picked by hand' : 'Automatic, a grey of the theme'">
-              <OriginColorField
-                :model-value="workspace.gameColor ?? ''"
-                @update:model-value="savePrefs({ ws: workspace, gameColor: $event })"
-              />
-            </FieldGroup>
-          </div>
           </template>
         </USplitter>
       </div>

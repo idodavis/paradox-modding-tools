@@ -26,7 +26,12 @@ const { data: version } = useQuery(versionQuery);
 const { mutate: checkForUpdates, isLoading: checking } = useMutation({ mutation: () => CheckForUpdates() });
 const { mutate: copyDiagnostics } = useMutation({
   mutation: () => CopyDiagnostics(),
-  onSuccess: () => toast.add({ title: "Diagnostics copied", description: "Paste them into a bug report on GitHub.", color: "success" }),
+  onSuccess: () =>
+    toast.add({
+      title: "Diagnostics copied",
+      description: "Paste them into a bug report on GitHub.",
+      color: "success",
+    }),
 });
 
 // a crash, or the app ended from outside
@@ -50,13 +55,14 @@ onScopeDispose(Events.On("wiki:progress", ({ data }) => void wikis.set(data.game
 onScopeDispose(Events.On("wiki:updated", ({ data }) => void wikis.delete(data.gameId)));
 
 const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
-const windows = computed(() => [...others.values()].map((one) => ({ label: one.title, onSelect: () => void Show(one.name) })));
+const windows = computed(() =>
+  [...others.values()].map((one) => ({ label: one.title, onSelect: () => void Show(one.name) })),
+);
 </script>
 
 <template>
   <footer
-    class="flex h-6 shrink-0 items-center gap-3.5 border-t border-default bg-muted px-3 text-11 whitespace-nowrap
-      text-dimmed"
+    class="flex h-6 shrink-0 items-center gap-3.5 border-t border-default bg-muted px-3 text-11 whitespace-nowrap text-dimmed"
   >
     <div id="status-start" class="contents" />
     <span class="grow" />
@@ -66,7 +72,9 @@ const windows = computed(() => [...others.values()].map((one) => ({ label: one.t
       {{ store.game(wiki.gameId)?.name ?? wiki.gameId }} wiki: {{ wiki.stage }} {{ wiki.done + 1 }} of {{ wiki.total }}
     </span>
     <UDropdownMenu v-if="isMain && windows.length" :items="windows" :content="{ side: 'top' }">
-      <button type="button" :class="ITEM"><UIcon name="i-lucide-app-window" class="size-3" />{{ windows.length + 1 }} windows</button>
+      <button type="button" :class="ITEM">
+        <UIcon name="i-lucide-app-window" class="size-3" />{{ windows.length + 1 }} windows
+      </button>
     </UDropdownMenu>
     <!-- one size on every page, the longest help's (Publish) -->
     <UModal :title="`Help: ${page?.title ?? 'PMT'}`" :ui="{ content: 'h-118 sm:max-w-2xl' }">

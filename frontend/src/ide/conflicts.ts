@@ -35,10 +35,16 @@ export function watchConflicts(model: monaco.editor.ITextModel, path: string): v
     const conflicts = model.findMatches("<<<<<<<", false, false, true, null, false, 1).length ? find(model) : [];
     const before = shown.get(key);
     if (!conflicts.length && !before?.conflicts.length) return;
-    const band = (from: number, to: number, className: string) => ({ range: new monaco.Range(from, 1, to, 1), options: { isWholeLine: true, className } });
+    const band = (from: number, to: number, className: string) => ({
+      range: new monaco.Range(from, 1, to, 1),
+      options: { isWholeLine: true, className },
+    });
     const bands = model.deltaDecorations(
       before?.bands ?? [],
-      conflicts.flatMap((c) => [band(c.start, (c.base ?? c.middle) - 1, "pmt-conflict-current"), band(c.middle + 1, c.end, "pmt-conflict-incoming")]),
+      conflicts.flatMap((c) => [
+        band(c.start, (c.base ?? c.middle) - 1, "pmt-conflict-current"),
+        band(c.middle + 1, c.end, "pmt-conflict-incoming"),
+      ]),
     );
     shown.set(key, { path, conflicts, bands });
     changed.fire(provider);
@@ -61,14 +67,17 @@ function accept(model: monaco.editor.ITextModel, conflict: Conflict, take: "curr
   model.pushStackElement();
 }
 
-monaco.editor.registerCommand("pmt.conflict", (_, uri: string, line: number, take: "current" | "incoming" | "both" | "compare") => {
-  const model = monaco.editor.getModel(monaco.Uri.parse(uri));
-  const found = shown.get(uri);
-  const conflict = found?.conflicts.find((c) => c.start === line);
-  if (!model || !found || !conflict) return;
-  if (take === "compare") return useIdeStore().open(diffTab("conflict", found.path));
-  accept(model, conflict, take);
-});
+monaco.editor.registerCommand(
+  "pmt.conflict",
+  (_, uri: string, line: number, take: "current" | "incoming" | "both" | "compare") => {
+    const model = monaco.editor.getModel(monaco.Uri.parse(uri));
+    const found = shown.get(uri);
+    const conflict = found?.conflicts.find((c) => c.start === line);
+    if (!model || !found || !conflict) return;
+    if (take === "compare") return useIdeStore().open(diffTab("conflict", found.path));
+    accept(model, conflict, take);
+  },
+);
 
 const provider: monaco.languages.CodeLensProvider = {
   onDidChange: changed.event,

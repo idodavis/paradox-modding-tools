@@ -6,7 +6,10 @@ import type { IdeSwitch } from "../../stores/settings";
 export const ideSettingsOpen = shallowRef(false);
 
 /** Each tab's switches, with the board's words. */
-export const SWITCHES: Record<"editor" | "language" | "explorer" | "wiki", { key: IdeSwitch; label: string; hint: string }[]> = {
+export const SWITCHES: Record<
+  "editor" | "language" | "explorer" | "wiki",
+  { key: IdeSwitch; label: string; hint: string }[]
+> = {
   editor: [
     { key: "ide.wordWrap", label: "Word wrap", hint: "Long lines wrap at the editor's edge" },
     { key: "ide.closeBrackets", label: "Close brackets and quotes", hint: "Typing { adds the }" },
@@ -23,9 +26,17 @@ export const SWITCHES: Record<"editor" | "language" | "explorer" | "wiki", { key
     { key: "ide.signature", label: "Signature help", hint: "What an effect or macro takes, while you fill it in" },
   ],
   explorer: [
-    { key: "ide.stickyFolders", label: "Sticky folders", hint: "A folder's name stays on top while you scroll its files" },
+    {
+      key: "ide.stickyFolders",
+      label: "Sticky folders",
+      hint: "A folder's name stays on top while you scroll its files",
+    },
     { key: "ide.gameFiles", label: "Game files section", hint: "The game's files, read only, under the mods" },
-    { key: "ide.rootColors", label: "Color each top folder", hint: "A mod's or the game's folder in its color, as well as its bar" },
+    {
+      key: "ide.rootColors",
+      label: "Color each top folder",
+      hint: "A mod's or the game's folder in its color, as well as its bar",
+    },
     { key: "ide.followFile", label: "Follow the open file", hint: "The explorer selects the file you switch to" },
   ],
   wiki: [{ key: "ui.wiki.follow", label: "Follow the open file", hint: "Suggests pages for the file you are editing" }],
@@ -78,7 +89,15 @@ const LINE_HEIGHT = [
   { label: "Roomy", value: "roomy" },
 ];
 // fonts to pick from; any font installed can be typed
-const FONTS = ["Geist Mono", "Cascadia Mono", "Cascadia Code", "Consolas", "JetBrains Mono", "Fira Code", "DejaVu Sans Mono"];
+const FONTS = [
+  "Geist Mono",
+  "Cascadia Mono",
+  "Cascadia Code",
+  "Consolas",
+  "JetBrains Mono",
+  "Fira Code",
+  "DejaVu Sans Mono",
+];
 const font = shallowRef(settings.editorFont);
 watchDebounced(font, (name) => void settings.set("ui.editorFont", name?.trim() ?? ""), { debounce: 500 });
 
@@ -89,7 +108,14 @@ function setNumber(key: "ui.editorFontSize" | "ui.ideUiFontSize" | "ide.indentSi
 /** Every setting of the open tab back to its default. */
 function resetTab(): void {
   const keys: Record<Tab, string[]> = {
-    editor: ["ui.editorFont", "ide.lineHeight", "ui.editorFontSize", "ide.indent", "ide.indentSize", ...SWITCHES.editor.map((s) => s.key)],
+    editor: [
+      "ui.editorFont",
+      "ide.lineHeight",
+      "ui.editorFontSize",
+      "ide.indent",
+      "ide.indentSize",
+      ...SWITCHES.editor.map((s) => s.key),
+    ],
     language: SWITCHES.language.map((s) => s.key),
     checks: (codes.value ?? []).map((check) => `ide.diag.${check.code}`),
     explorer: ["ui.ideUiFontSize", "ide.density", ...SWITCHES.explorer.map((s) => s.key)],
@@ -118,7 +144,14 @@ function resetTab(): void {
           <UIcon name="i-lucide-settings" class="size-3.5 text-dimmed" />
           <span class="text-13 font-semibold">IDE settings</span>
           <span class="grow" />
-          <UButton icon="i-lucide-x" size="sm" square variant="ghost" aria-label="Close" @click="ideSettingsOpen = false" />
+          <UButton
+            icon="i-lucide-x"
+            size="sm"
+            square
+            variant="ghost"
+            aria-label="Close"
+            @click="ideSettingsOpen = false"
+          />
         </div>
         <UTabs
           :model-value="tab"
@@ -142,7 +175,13 @@ function resetTab(): void {
                 />
               </SettingRow>
               <SettingRow label="Editor text size" hint="Code in the editor, peek and compare">
-                <UInput type="number" size="sm" class="w-19" :model-value="settings.editorFontSize" @update:model-value="setNumber('ui.editorFontSize', $event)">
+                <UInput
+                  type="number"
+                  size="sm"
+                  class="w-19"
+                  :model-value="settings.editorFontSize"
+                  @update:model-value="setNumber('ui.editorFontSize', $event)"
+                >
                   <template #trailing><span class="text-11 text-dimmed">px</span></template>
                 </UInput>
               </SettingRow>
@@ -157,7 +196,15 @@ function resetTab(): void {
                   size="xs"
                   @update:model-value="settings.set('ide.indent', String($event))"
                 />
-                <UInput type="number" size="sm" class="w-14" :min="1" :max="8" :model-value="settings.indentSize" @update:model-value="setNumber('ide.indentSize', $event)" />
+                <UInput
+                  type="number"
+                  size="sm"
+                  class="w-14"
+                  :min="1"
+                  :max="8"
+                  :model-value="settings.indentSize"
+                  @update:model-value="setNumber('ide.indentSize', $event)"
+                />
               </SettingRow>
             </div>
           </template>
@@ -175,14 +222,23 @@ function resetTab(): void {
             </div>
             <div class="min-h-0 divide-y divide-default overflow-y-auto">
               <SettingRow v-for="check in codes ?? []" :key="check.code" :label="check.summary" :hint="check.code" mono>
-                <USwitch :model-value="settings.on(`ide.diag.${check.code}`, check.default)" @update:model-value="settings.setOn(`ide.diag.${check.code}`, $event)" />
+                <USwitch
+                  :model-value="settings.on(`ide.diag.${check.code}`, check.default)"
+                  @update:model-value="settings.setOn(`ide.diag.${check.code}`, $event)"
+                />
               </SettingRow>
             </div>
           </template>
           <template #explorer>
             <div class="divide-y divide-default">
               <SettingRow label="Explorer and panel text size" hint="The explorer, Problems, Search and the Wiki">
-                <UInput type="number" size="sm" class="w-19" :model-value="settings.ideUiFontSize" @update:model-value="setNumber('ui.ideUiFontSize', $event)">
+                <UInput
+                  type="number"
+                  size="sm"
+                  class="w-19"
+                  :model-value="settings.ideUiFontSize"
+                  @update:model-value="setNumber('ui.ideUiFontSize', $event)"
+                >
                   <template #trailing><span class="text-11 text-dimmed">px</span></template>
                 </UInput>
               </SettingRow>
@@ -206,15 +262,30 @@ function resetTab(): void {
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
               <SettingRow label="Suggestion toast" hint="A note when the Wiki has pages for a new file">
-                <USelect :model-value="toastPref" :items="TOAST_PREFS" value-key="value" variant="subtle" size="sm" class="w-33" @update:model-value="setToastPref" />
+                <USelect
+                  :model-value="toastPref"
+                  :items="TOAST_PREFS"
+                  value-key="value"
+                  variant="subtle"
+                  size="sm"
+                  class="w-33"
+                  @update:model-value="setToastPref"
+                />
               </SettingRow>
             </div>
           </template>
         </UTabs>
-        <div class="flex h-9 shrink-0 items-center gap-1.5 border-t border-default bg-muted ps-3.5 pe-1.5 text-11 text-dimmed">
+        <div
+          class="flex h-9 shrink-0 items-center gap-1.5 border-t border-default bg-muted ps-3.5 pe-1.5 text-11 text-dimmed"
+        >
           Applies to every workspace
           <span class="grow" />
-          <UButton :label="tab === 'checks' ? 'Reset the checks' : 'Reset this tab'" variant="ghost" size="xs" @click="resetTab" />
+          <UButton
+            :label="tab === 'checks' ? 'Reset the checks' : 'Reset this tab'"
+            variant="ghost"
+            size="xs"
+            @click="resetTab"
+          />
         </div>
       </div>
     </template>

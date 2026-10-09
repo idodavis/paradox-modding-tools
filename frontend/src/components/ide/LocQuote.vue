@@ -13,7 +13,10 @@ const value = computed(() => text.replace(/^(\\n)+|(\\n)+\s*$/g, ""));
 // each token's \n a line break
 const parts = computed(() =>
   locTokens(value.value).flatMap(({ content, color }) =>
-    content.split(/(\\n)/).filter(Boolean).map((part) => ({ part, color, br: part === "\\n" })),
+    content
+      .split(/(\\n)/)
+      .filter(Boolean)
+      .map((part) => ({ part, color, br: part === "\\n" })),
   ),
 );
 </script>

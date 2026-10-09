@@ -11,7 +11,12 @@ import { IMAGE_FILTER } from "../../lib/nativeDialog";
 import { modFolderQuery, modParentQuery } from "../../queries";
 import { LOC_LANGUAGES } from "../../workspaceTools";
 
-const { gameId, workspaceId = "", locLang = "english", supportedVersion = "" } = defineProps<{
+const {
+  gameId,
+  workspaceId = "",
+  locLang = "english",
+  supportedVersion = "",
+} = defineProps<{
   gameId: string;
   /** The workspace the mod joins; none for the wizard, which adds it when it makes the workspace. */
   workspaceId?: string;
@@ -35,7 +40,15 @@ const { data: folder } = useQuery(() => modFolderQuery({ parent: parent.value, n
 
 const { mutate: create, isLoading: creating } = useMutation({
   mutation: async () => {
-    const path = await CreateMod(gameId, parent.value, name.value.trim(), lang.value, supportedVersion, description.value, thumbnail.value);
+    const path = await CreateMod(
+      gameId,
+      parent.value,
+      name.value.trim(),
+      lang.value,
+      supportedVersion,
+      description.value,
+      thumbnail.value,
+    );
     // Go names the mod from its descriptor, and finds the thumbnail where the game keeps it
     if (workspaceId) await AddWorkspaceMod(workspaceId, path);
     return path;
@@ -57,7 +70,13 @@ const { mutate: create, isLoading: creating } = useMutation({
           <UInput v-model="name" placeholder="Shown in the launcher and on Steam" class="w-full" autofocus />
         </UFormField>
         <UFormField label="Description" hint="Optional">
-          <UTextarea v-model="description" placeholder="Starts the listing's description" :rows="2" autoresize class="w-full" />
+          <UTextarea
+            v-model="description"
+            placeholder="Starts the listing's description"
+            :rows="2"
+            autoresize
+            class="w-full"
+          />
         </UFormField>
         <UFormField label="Folder" :help="folder ? `Creates ${folder}` : undefined">
           <FileSelector v-model="parent" mode="folder" dialog-title="Folder for the new mod" />
@@ -69,7 +88,13 @@ const { mutate: create, isLoading: creating } = useMutation({
           <UFormField label="Thumbnail" hint="Optional">
             <div class="flex items-center gap-2">
               <Thumb v-if="thumbnail" :path="thumbnail" />
-              <FileSelector v-model="thumbnail" mode="file" dialog-title="Thumbnail" :file-filter="IMAGE_FILTER" class="flex-1" />
+              <FileSelector
+                v-model="thumbnail"
+                mode="file"
+                dialog-title="Thumbnail"
+                :file-filter="IMAGE_FILTER"
+                class="flex-1"
+              />
             </div>
           </UFormField>
         </div>

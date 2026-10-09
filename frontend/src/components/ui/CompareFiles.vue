@@ -12,7 +12,12 @@ import { useWorkspaceStore } from "../../stores/workspace";
 
 /** One side: a file, its path from its root, its origin and the 0-based line it is opened at. */
 type Side = { path: string; rel: string; origin: string; line: number };
-const { old, now, title = "Compare", tags } = defineProps<{ old: Side; now: Side; title?: string; tags?: [string, string] }>();
+const {
+  old,
+  now,
+  title = "Compare",
+  tags,
+} = defineProps<{ old: Side; now: Side; title?: string; tags?: [string, string] }>();
 const emit = defineEmits<{ close: [] }>();
 
 const store = useWorkspaceStore();
@@ -31,11 +36,15 @@ watch([host, before, after], ([el, a, b]) => {
     // opened at no line in particular, it shows the first change
     made.view.onDidUpdateDiff(() => {
       const first = made.view.getLineChanges()?.[0];
-      if (!now.line && first) made.view.getModifiedEditor().revealLineInCenter(Math.max(first.modifiedStartLineNumber, 1));
+      if (!now.line && first)
+        made.view.getModifiedEditor().revealLineInCenter(Math.max(first.modifiedStartLineNumber, 1));
     });
     view.value = made;
   }
-  view.value.show({ text: a, name: old.rel, format: oldFile.value?.format }, { text: b, name: now.rel, format: newFile.value?.format });
+  view.value.show(
+    { text: a, name: old.rel, format: oldFile.value?.format },
+    { text: b, name: now.rel, format: newFile.value?.format },
+  );
   view.value.view.getModifiedEditor().revealLineInCenter(now.line + 1);
 });
 watch(style, (next) => view.value?.view.updateOptions({ renderSideBySide: next === "split" }));
@@ -45,7 +54,13 @@ onBeforeUnmount(() => view.value?.dispose());
 <template>
   <UModal :title="title" fullscreen @update:open="emit('close')">
     <template #actions>
-      <UTabs :model-value="style" :items="COMPARE_STYLES" :content="false" size="xs" @update:model-value="style = $event === 'unified' ? 'unified' : 'split'" />
+      <UTabs
+        :model-value="style"
+        :items="COMPARE_STYLES"
+        :content="false"
+        size="xs"
+        @update:model-value="style = $event === 'unified' ? 'unified' : 'split'"
+      />
     </template>
     <template #body>
       <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-default">

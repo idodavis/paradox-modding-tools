@@ -7,7 +7,11 @@
 import { useQuery } from "@pinia/colada";
 import { imageQuery } from "../../queries";
 
-const { path = "", color = "", size = "md" } = defineProps<{
+const {
+  path = "",
+  color = "",
+  size = "md",
+} = defineProps<{
   path?: string;
   color?: string;
   size?: "md" | "lg" | "xl" | "2xl" | "fill";

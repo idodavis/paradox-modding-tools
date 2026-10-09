@@ -122,7 +122,14 @@ const { mutate: resetData, isLoading: resetting } = useMutation({
         </div>
         <span class="grow" />
         <UButton label="New mod" size="md" @click="newMod" />
-        <UButton label="New workspace" icon="i-lucide-plus" color="primary" variant="solid" size="md" :to="{ name: 'wizard' }" />
+        <UButton
+          label="New workspace"
+          icon="i-lucide-plus"
+          color="primary"
+          variant="solid"
+          size="md"
+          :to="{ name: 'wizard' }"
+        />
       </div>
 
       <UEmpty
@@ -130,7 +137,9 @@ const { mutate: resetData, isLoading: resetting } = useMutation({
         icon="i-lucide-folder-plus"
         title="No workspaces yet"
         description="A workspace is one game install plus the mods you load with it."
-        :actions="[{ label: 'New workspace', icon: 'i-lucide-plus', color: 'primary', variant: 'solid', to: { name: 'wizard' } }]"
+        :actions="[
+          { label: 'New workspace', icon: 'i-lucide-plus', color: 'primary', variant: 'solid', to: { name: 'wizard' } },
+        ]"
       />
 
       <section v-if="active" class="flex flex-col gap-4 rounded-lg border border-accented bg-elevated p-5">
@@ -162,7 +171,10 @@ const { mutate: resetData, isLoading: resetting } = useMutation({
           <div class="flex min-w-0 flex-col gap-2">
             <span class="text-12 font-medium text-toned">Load order</span>
             <div class="flex flex-wrap gap-1.5">
-              <OriginChip :label="store.game(active.gameId)?.name ?? ''" :color="store.originColor(store.originVanilla)" />
+              <OriginChip
+                :label="store.game(active.gameId)?.name ?? ''"
+                :color="store.originColor(store.originVanilla)"
+              />
               <OriginChip v-for="mod in active.mods ?? []" :key="mod.id" :label="mod.name" :color="modColor(mod)" />
             </div>
           </div>
@@ -216,8 +228,7 @@ const { mutate: resetData, isLoading: resetting } = useMutation({
           />
           <RouterLink
             :to="{ name: 'wizard', query: { game: group.game.id } }"
-            class="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-default p-4 text-dimmed
-              hover:border-accented hover:text-toned"
+            class="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-default p-4 text-dimmed hover:border-accented hover:text-toned"
           >
             <UIcon name="i-lucide-plus" class="size-4" />
             <span class="text-12 font-medium">New workspace for this game</span>

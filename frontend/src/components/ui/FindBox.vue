@@ -23,13 +23,33 @@ defineShortcuts({
 </script>
 
 <template>
-  <UInput ref="input" v-model="query" icon="i-lucide-search" :placeholder="placeholder" :name="name"
-    :ui="{ base: query.trim() && 'pe-30', trailing: 'gap-0.5' }">
+  <UInput
+    ref="input"
+    v-model="query"
+    icon="i-lucide-search"
+    :placeholder="placeholder"
+    :name="name"
+    :ui="{ base: query.trim() && 'pe-30', trailing: 'gap-0.5' }"
+  >
     <template #trailing>
       <template v-if="query.trim()">
         <span class="pe-1 text-11 text-dimmed tabular-nums">{{ hits ? `${hit + 1} of ${hits}` : "No results" }}</span>
-        <UButton icon="i-lucide-chevron-up" variant="ghost" size="xs" :disabled="!hits" aria-label="Previous match" @click="emit('step', -1)" />
-        <UButton icon="i-lucide-chevron-down" variant="ghost" size="xs" :disabled="!hits" aria-label="Next match" @click="emit('step', 1)" />
+        <UButton
+          icon="i-lucide-chevron-up"
+          variant="ghost"
+          size="xs"
+          :disabled="!hits"
+          aria-label="Previous match"
+          @click="emit('step', -1)"
+        />
+        <UButton
+          icon="i-lucide-chevron-down"
+          variant="ghost"
+          size="xs"
+          :disabled="!hits"
+          aria-label="Next match"
+          @click="emit('step', 1)"
+        />
       </template>
       <UKbd v-else value="Ctrl F" />
     </template>

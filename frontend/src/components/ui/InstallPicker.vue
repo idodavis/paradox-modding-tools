@@ -77,7 +77,12 @@ const { mutate: remove } = useMutation({
               <UDropdownMenu
                 :items="[
                   { label: 'Change folder…', icon: 'i-lucide-folder', onSelect: () => changeFolder(item.value) },
-                  { label: 'Delete install', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => remove(item.value) },
+                  {
+                    label: 'Delete install',
+                    icon: 'i-lucide-trash-2',
+                    color: 'error',
+                    onSelect: () => remove(item.value),
+                  },
                 ]"
               >
                 <UButton icon="i-lucide-ellipsis" variant="ghost" size="xs" square aria-label="More" />

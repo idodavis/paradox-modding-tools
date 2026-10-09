@@ -128,7 +128,8 @@ only; counts, lists, dates and sizes through `lib/format.ts` (`plural`, `list`, 
 `useTimeAgo` for "4 min ago".
 
 ```vue
-<OriginDot :color="store.originColor(site.origin)" /> {{ store.originName(site.origin) }} {{ site.rel }}
+<OriginDot :color="store.originColor(site.origin)" />
+{{ store.originName(site.origin) }} {{ site.rel }}
 ```
 
 ## Settings and storage

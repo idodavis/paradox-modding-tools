@@ -101,27 +101,52 @@ const sources = computed<DropdownMenuItem[]>(() => [
       <UTabs v-if="editable" v-model="view" :items="views" :content="false" />
     </div>
     <DescriptionSource :summary="summary">
-      <UButton v-if="summary.descRel && !summary.descExists" :label="`Create ${summary.descRel}`" variant="link"
-        :loading="changing" class="me-2 h-5 p-0 text-12" @click="change(() => CreateDescriptionFile(listing.workspaceId, listing.modId))" />
+      <UButton
+        v-if="summary.descRel && !summary.descExists"
+        :label="`Create ${summary.descRel}`"
+        variant="link"
+        :loading="changing"
+        class="me-2 h-5 p-0 text-12"
+        @click="change(() => CreateDescriptionFile(listing.workspaceId, listing.modId))"
+      />
       <UDropdownMenu :items="sources">
         <UButton label="Change source" variant="link" class="h-5 p-0 text-12" />
       </UDropdownMenu>
     </DescriptionSource>
     <div v-if="editable" class="flex min-h-0 grow flex-col overflow-hidden rounded-lg border border-default bg-muted">
-      <UEditor v-if="view === 'edit' && fromMarkdown" v-slot="{ editor }" v-model="markdown" content-type="markdown"
-        :mention="false" :starter-kit="{ heading: { levels: [1, 2, 3] }, underline: false }"
-        class="flex min-h-0 grow flex-col" :ui="{ content: 'min-h-0 grow overflow-auto bg-(--bg-0)' }">
+      <UEditor
+        v-if="view === 'edit' && fromMarkdown"
+        v-slot="{ editor }"
+        v-model="markdown"
+        content-type="markdown"
+        :mention="false"
+        :starter-kit="{ heading: { levels: [1, 2, 3] }, underline: false }"
+        class="flex min-h-0 grow flex-col"
+        :ui="{ content: 'min-h-0 grow overflow-auto bg-(--bg-0)' }"
+      >
         <div class="flex h-9 shrink-0 items-center gap-0.5 border-b border-default bg-elevated px-2">
           <UEditorToolbar :editor="editor" :items="MARKDOWN_TOOLBAR" />
           <span class="grow" />
           <span class="min-w-0 truncate pe-1.5 text-11 text-dimmed">Markdown -> BBCode on upload</span>
         </div>
       </UEditor>
-      <UTextarea v-else-if="view === 'edit'" v-model="bbcode" variant="none" class="grow bg-(--bg-0)"
-        :ui="{ base: 'h-full resize-none px-4.5 py-4 font-mono text-12 md:text-12' }" />
+      <UTextarea
+        v-else-if="view === 'edit'"
+        v-model="bbcode"
+        variant="none"
+        class="grow bg-(--bg-0)"
+        :ui="{ base: 'h-full resize-none px-4.5 py-4 font-mono text-12 md:text-12' }"
+      />
       <template v-else-if="sent">
-        <UEditor v-if="view === 'preview'" :model-value="sent.shown" content-type="markdown" :editable="false"
-          :mention="false" class="min-h-0 grow" :ui="{ content: 'h-full overflow-auto bg-(--bg-0)' }" />
+        <UEditor
+          v-if="view === 'preview'"
+          :model-value="sent.shown"
+          content-type="markdown"
+          :editable="false"
+          :mention="false"
+          class="min-h-0 grow"
+          :ui="{ content: 'h-full overflow-auto bg-(--bg-0)' }"
+        />
         <pre v-else class="min-h-0 grow overflow-auto bg-(--bg-0) px-4.5 py-4 font-mono text-12 whitespace-pre-wrap">{{
           sent.text
         }}</pre>

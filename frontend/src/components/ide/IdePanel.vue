@@ -21,7 +21,10 @@ const { locate } = useIdeRoots(() => workspaceId);
 const filter = shallowRef("");
 const counts = computed(() => {
   const all = [...ide.problems.values()].flat();
-  return { errors: all.filter((found) => found.severity === 1).length, warnings: all.filter((found) => found.severity !== 1).length };
+  return {
+    errors: all.filter((found) => found.severity === 1).length,
+    warnings: all.filter((found) => found.severity !== 1).length,
+  };
 });
 const files = computed(() => {
   const needle = filter.value.trim().toLowerCase();
@@ -59,7 +62,14 @@ function open(at: { path: string; line: number; col: number }): void {
 <template>
   <div class="flex min-h-0 flex-1 flex-col bg-muted text-(length:--ide-ui-font)">
     <div class="flex h-8 shrink-0 items-center gap-0.5 border-b border-default ps-2 pe-1.5">
-      <UTabs :model-value="isTab(ide.panel)" :items="TABS" :content="false" variant="link" size="sm" @update:model-value="ide.panel = isTab($event)">
+      <UTabs
+        :model-value="isTab(ide.panel)"
+        :items="TABS"
+        :content="false"
+        variant="link"
+        size="sm"
+        @update:model-value="ide.panel = isTab($event)"
+      >
         <template #trailing="{ item }">
           <template v-if="item.value === 'problems'">
             <UBadge v-if="counts.errors" :label="String(counts.errors)" color="error" size="sm" />
@@ -70,16 +80,42 @@ function open(at: { path: string; line: number; col: number }): void {
       <span class="grow" />
       <template v-if="ide.panel === 'problems'">
         <UInput v-model="filter" placeholder="Filter problems" size="xs" class="w-50" icon="i-lucide-filter" />
-        <UButton label="Open in Health" variant="ghost" size="xs" :to="{ name: 'health', params: { id: workspaceId }, query: { card: 'script' } }" />
+        <UButton
+          label="Open in Health"
+          variant="ghost"
+          size="xs"
+          :to="{ name: 'health', params: { id: workspaceId }, query: { card: 'script' } }"
+        />
       </template>
       <template v-if="isMain">
         <UTooltip text="Open in its own window">
-          <UButton icon="i-lucide-app-window" variant="ghost" size="sm" square aria-label="Open in its own window" @click="openWindow(`/workspace/${workspaceId}`, 'panel', 'Panel')" />
+          <UButton
+            icon="i-lucide-app-window"
+            variant="ghost"
+            size="sm"
+            square
+            aria-label="Open in its own window"
+            @click="openWindow(`/workspace/${workspaceId}`, 'panel', 'Panel')"
+          />
         </UTooltip>
-        <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Close the panel" @click="ide.panel = ''" />
+        <UButton
+          icon="i-lucide-x"
+          variant="ghost"
+          size="sm"
+          square
+          aria-label="Close the panel"
+          @click="ide.panel = ''"
+        />
       </template>
       <UTooltip v-else text="Back into the main window">
-        <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Back into the main window" @click="Close(windowName)" />
+        <UButton
+          icon="i-lucide-x"
+          variant="ghost"
+          size="sm"
+          square
+          aria-label="Back into the main window"
+          @click="Close(windowName)"
+        />
       </UTooltip>
     </div>
     <div v-if="ide.panel === 'git'" ref="gitLog" class="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-11">
@@ -87,7 +123,9 @@ function open(at: { path: string; line: number; col: number }): void {
         <div :class="line.failed ? 'text-error' : 'text-dimmed'">&gt; {{ line.command }}</div>
         <pre v-if="line.output" class="whitespace-pre-wrap text-toned">{{ line.output }}</pre>
       </div>
-      <p v-if="!git.output.length" class="font-sans text-12 text-dimmed">The git commands source control runs show here.</p>
+      <p v-if="!git.output.length" class="font-sans text-12 text-dimmed">
+        The git commands source control runs show here.
+      </p>
     </div>
     <div v-else class="min-h-0 flex-1 overflow-y-auto py-1">
       <template v-for="file in files" :key="file.path">
@@ -109,7 +147,9 @@ function open(at: { path: string; line: number; col: number }): void {
           />
           <span class="min-w-0 grow truncate">{{ one.message }}</span>
           <span class="shrink-0 font-mono text-11 text-dimmed">{{ one.code }}</span>
-          <span class="shrink-0 font-mono text-11 text-dimmed">{{ one.range.start.line + 1 }}:{{ one.range.start.character + 1 }}</span>
+          <span class="shrink-0 font-mono text-11 text-dimmed"
+            >{{ one.range.start.line + 1 }}:{{ one.range.start.character + 1 }}</span
+          >
         </button>
       </template>
       <p v-if="!files.length" class="px-3 py-2 text-12 text-dimmed">

@@ -62,7 +62,9 @@ export async function dock(which: (one: WindowHeld) => boolean): Promise<void> {
   const tabs = closing.flatMap((one) => one.tabs ?? []);
   tabs.forEach((tab) => arrived.delete(tab));
   closing.forEach((one) => void Close(one.name));
-  await until(() => closing.some((one) => others.has(one.name)) || tabs.some((tab) => !arrived.has(tab))).toBe(false, { timeout: 5000 });
+  await until(() => closing.some((one) => others.has(one.name)) || tabs.some((tab) => !arrived.has(tab))).toBe(false, {
+    timeout: 5000,
+  });
   await receiving;
 }
 

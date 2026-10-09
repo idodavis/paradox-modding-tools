@@ -20,14 +20,7 @@ import {
 } from "@services/workspaceservice";
 import { useListingImage } from "../../composables/useListingImage";
 import { pickDirectory } from "../../lib/nativeDialog";
-import {
-  healthQuery,
-  imageQuery,
-  summaryQuery,
-  releaseKeys,
-  uploadFilesQuery,
-  workspacesQuery,
-} from "../../queries";
+import { healthQuery, imageQuery, summaryQuery, releaseKeys, uploadFilesQuery, workspacesQuery } from "../../queries";
 import { modColor, useWorkspaceStore } from "../../stores/workspace";
 import { imageSize } from "../../lib/format";
 
@@ -48,7 +41,9 @@ const { mutate: run } = useMutation({ mutation: (save: () => Promise<unknown>) =
 /** Show a change at once: the next save of another field sends it too. */
 function shown(next: WorkspaceMod): void {
   queryCache.setQueryData(workspacesQuery.key, (list) =>
-    (list ?? []).map((ws) => (ws.id !== workspaceId ? ws : { ...ws, mods: (ws.mods ?? []).map((m) => (m.id === next.id ? next : m)) })),
+    (list ?? []).map((ws) =>
+      ws.id !== workspaceId ? ws : { ...ws, mods: (ws.mods ?? []).map((m) => (m.id === next.id ? next : m)) },
+    ),
   );
 }
 
@@ -58,7 +53,14 @@ function saveFields(set: Fields, then?: () => Promise<unknown>): void {
   const next = { ...mod, ...set };
   shown(next);
   run(async () => {
-    await UpdateWorkspaceMod(workspaceId, mod.id, next.name, next.color ?? "", next.thumbnail ?? "", next.workshopIgnore ?? "");
+    await UpdateWorkspaceMod(
+      workspaceId,
+      mod.id,
+      next.name,
+      next.color ?? "",
+      next.thumbnail ?? "",
+      next.workshopIgnore ?? "",
+    );
     await then?.();
   });
 }
@@ -122,7 +124,11 @@ const workedOut = computed(() => {
 });
 
 function unlink(): void {
-  run(() => SetListingLink(workspaceId, mod.id, "", "").then(() => queryCache.invalidateQueries({ key: releaseKeys.mod(workspaceId, mod.id) })));
+  run(() =>
+    SetListingLink(workspaceId, mod.id, "", "").then(() =>
+      queryCache.invalidateQueries({ key: releaseKeys.mod(workspaceId, mod.id) }),
+    ),
+  );
 }
 
 /** Who reads this mod's objects, and how much of the game it replaces. */
@@ -139,7 +145,8 @@ const usage = computed(() => {
   }
   const replaced = (report.overrides ?? []).filter(
     (row) =>
-      origin(row.sites?.[row.winner]?.file) === mod.id && (row.sites ?? []).some((site) => origin(site.file) === store.originVanilla),
+      origin(row.sites?.[row.winner]?.file) === mod.id &&
+      (row.sites ?? []).some((site) => origin(site.file) === store.originVanilla),
   ).length;
   return { readers: [...readers].map(([from, names]) => ({ from, count: names.size })), replaced };
 });
@@ -181,7 +188,12 @@ function exportExclusions(): void {
       <div class="flex flex-col border-b border-default @2xl:border-e @2xl:border-b-0">
         <FieldGroup title="Identity">
           <UFormField label="Name">
-            <UInput :model-value="mod.name" :model-modifiers="{ lazy: true }" class="w-full" @update:model-value="saveFields({ name: $event })" />
+            <UInput
+              :model-value="mod.name"
+              :model-modifiers="{ lazy: true }"
+              class="w-full"
+              @update:model-value="saveFields({ name: $event })"
+            />
           </UFormField>
           <UFormField label="Folder">
             <div class="flex gap-2">
@@ -192,7 +204,12 @@ function exportExclusions(): void {
         </FieldGroup>
 
         <FieldGroup title="Color" :hint="mod.color ? 'Picked by hand' : `Slot ${mod.slot}, set automatically`">
-          <OriginColorField :model-value="mod.color ?? ''" :slot="mod.slot" @update:model-value="saveFields({ color: $event })" @slot="setSlot" />
+          <OriginColorField
+            :model-value="mod.color ?? ''"
+            :slot="mod.slot"
+            @update:model-value="saveFields({ color: $event })"
+            @slot="setSlot"
+          />
         </FieldGroup>
 
         <FieldGroup title="Thumbnail" hint="Shown in the launcher, on Steam and in PMT">
@@ -209,10 +226,20 @@ function exportExclusions(): void {
         <FieldGroup title="Calendar" hint="Shows event dates as in-game years">
           <div v-for="(era, i) in eras" :key="i" class="flex items-end gap-2.5">
             <UFormField label="Era" class="w-30">
-              <UInput :model-value="era.name" :model-modifiers="{ lazy: true }" placeholder="AD" @update:model-value="setEra(i, { name: $event })" />
+              <UInput
+                :model-value="era.name"
+                :model-modifiers="{ lazy: true }"
+                placeholder="AD"
+                @update:model-value="setEra(i, { name: $event })"
+              />
             </UFormField>
             <UFormField label="Year offset" class="w-30">
-              <UInput type="number" :model-value="era.offset" :model-modifiers="{ lazy: true }" @update:model-value="setEra(i, { offset: $event || 0 })" />
+              <UInput
+                type="number"
+                :model-value="era.offset"
+                :model-modifiers="{ lazy: true }"
+                @update:model-value="setEra(i, { offset: $event || 0 })"
+              />
             </UFormField>
             <UButton
               icon="i-lucide-x"
@@ -226,22 +253,48 @@ function exportExclusions(): void {
           </div>
           <div v-if="blank" class="flex items-end gap-2.5">
             <UFormField label="Era" class="w-30">
-              <UInput :model-value="blank.name" :model-modifiers="{ lazy: true }" placeholder="AD" autofocus @update:model-value="editBlank({ name: $event })" />
+              <UInput
+                :model-value="blank.name"
+                :model-modifiers="{ lazy: true }"
+                placeholder="AD"
+                autofocus
+                @update:model-value="editBlank({ name: $event })"
+              />
             </UFormField>
             <UFormField label="Year offset" class="w-30">
-              <UInput type="number" :model-value="blank.offset" :model-modifiers="{ lazy: true }" @update:model-value="editBlank({ offset: $event || 0 })" />
+              <UInput
+                type="number"
+                :model-value="blank.offset"
+                :model-modifiers="{ lazy: true }"
+                @update:model-value="editBlank({ offset: $event || 0 })"
+              />
             </UFormField>
-            <UButton icon="i-lucide-x" color="error" variant="ghost" size="md" square aria-label="Remove this era" @click="blank = undefined" />
+            <UButton
+              icon="i-lucide-x"
+              color="error"
+              variant="ghost"
+              size="md"
+              square
+              aria-label="Remove this era"
+              @click="blank = undefined"
+            />
           </div>
           <div class="flex items-center gap-2">
-            <UButton label="Add era" icon="i-lucide-plus" variant="ghost" size="md" :disabled="!!blank" @click="blank = { name: '', offset: 0 }" />
+            <UButton
+              label="Add era"
+              icon="i-lucide-plus"
+              variant="ghost"
+              size="md"
+              :disabled="!!blank"
+              @click="blank = { name: '', offset: 0 }"
+            />
             <UPopover :content="{ align: 'start' }">
               <UButton label="Work it out" variant="ghost" size="md" />
               <template #content>
                 <div class="flex w-80 flex-col gap-3 p-3.5">
                   <p class="text-12 text-dimmed">
-                    A total conversion offsets its years: A Game of Thrones writes 8082.1.1 for 82 AC. Give a date the mod
-                    writes and the year a player sees.
+                    A total conversion offsets its years: A Game of Thrones writes 8082.1.1 for 82 AC. Give a date the
+                    mod writes and the year a player sees.
                   </p>
                   <div class="grid grid-cols-3 gap-2">
                     <UFormField label="Written"><UInput v-model="exWritten" placeholder="8082.1.1" /></UFormField>
@@ -249,7 +302,11 @@ function exportExclusions(): void {
                     <UFormField label="Era"><UInput v-model="exEra" placeholder="AC" /></UFormField>
                   </div>
                   <UButton
-                    :label="workedOut === undefined ? 'Add this era' : `Add ${exEra.trim() || 'this era'}, offset ${workedOut}`"
+                    :label="
+                      workedOut === undefined
+                        ? 'Add this era'
+                        : `Add ${exEra.trim() || 'this era'}, offset ${workedOut}`
+                    "
                     color="primary"
                     variant="solid"
                     class="self-end"
@@ -266,7 +323,9 @@ function exportExclusions(): void {
       <div class="flex flex-col">
         <FieldGroup title="Publishing">
           <template #end>
-            <ULink :to="{ name: 'release', params: { id: workspaceId } }" class="text-12 text-secondary">Open Publish</ULink>
+            <ULink :to="{ name: 'release', params: { id: workspaceId } }" class="text-12 text-secondary"
+              >Open Publish</ULink
+            >
           </template>
           <UFormField label="Workshop item">
             <div class="flex gap-2">
@@ -282,14 +341,18 @@ function exportExclusions(): void {
           </UFormField>
           <UFormField v-if="summary" label="Description">
             <DescriptionSource :summary="summary">
-              <ULink :to="{ name: 'release', params: { id: workspaceId } }" class="text-secondary">Change source in Publish</ULink>
+              <ULink :to="{ name: 'release', params: { id: workspaceId } }" class="text-secondary"
+                >Change source in Publish</ULink
+              >
             </DescriptionSource>
           </UFormField>
         </FieldGroup>
 
         <FieldGroup title="Used by and uses">
           <template #end>
-            <ULink :to="{ name: 'health', params: { id: workspaceId } }" class="text-12 text-secondary">Open in Health</ULink>
+            <ULink :to="{ name: 'health', params: { id: workspaceId } }" class="text-12 text-secondary"
+              >Open in Health</ULink
+            >
           </template>
           <span v-if="!usage" class="text-12 text-dimmed">Shown once the workspace is open.</span>
           <span v-else-if="!usage.readers.length && !usage.replaced" class="text-12 text-dimmed">
@@ -325,10 +388,28 @@ function exportExclusions(): void {
               <UButton label="Edit" />
               <template #body>
                 <div class="flex flex-col gap-2">
-                  <UTextarea v-model="draft" :rows="10" class="w-full" :ui="{ base: 'font-mono' }" placeholder="gfx/source/**" />
+                  <UTextarea
+                    v-model="draft"
+                    :rows="10"
+                    class="w-full"
+                    :ui="{ base: 'font-mono' }"
+                    placeholder="gfx/source/**"
+                  />
                   <div class="flex gap-1">
-                    <UButton label="Import .workshop-ignore" icon="i-lucide-file-down" variant="ghost" size="sm" @click="importExclusions()" />
-                    <UButton label="Export .workshop-ignore" icon="i-lucide-file-up" variant="ghost" size="sm" @click="exportExclusions" />
+                    <UButton
+                      label="Import .workshop-ignore"
+                      icon="i-lucide-file-down"
+                      variant="ghost"
+                      size="sm"
+                      @click="importExclusions()"
+                    />
+                    <UButton
+                      label="Export .workshop-ignore"
+                      icon="i-lucide-file-up"
+                      variant="ghost"
+                      size="sm"
+                      @click="exportExclusions"
+                    />
                   </div>
                 </div>
               </template>

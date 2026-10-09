@@ -35,11 +35,14 @@ const open = shallowRef<Row | null>(null);
 watch(card, () => (open.value = null));
 // a linked name opens its row once the report holds it
 watch([() => name, rows], () => {
-  const named = name && rows.value.find((row) => ("name" in row && row.name === name) || ("key" in row && row.key === name));
+  const named =
+    name && rows.value.find((row) => ("name" in row && row.name === name) || ("key" in row && row.key === name));
   if (named) open.value = named;
 });
 
-const counts = computed(() => Object.fromEntries(GROUPS.flatMap((group) => group.cards).map((c) => [c, rowsOf(health.value, c).length])));
+const counts = computed(() =>
+  Object.fromEntries(GROUPS.flatMap((group) => group.cards).map((c) => [c, rowsOf(health.value, c).length])),
+);
 const total = computed(() => Object.values(counts.value).reduce((sum, count) => sum + count, 0));
 /** A tile's note: the rule each contest goes by, how many of each type Localization Issues lists, else its own. */
 function note(c: Card): string {
@@ -55,7 +58,8 @@ function note(c: Card): string {
 }
 
 /** A load-order chip's look, the game's and each mod's. */
-const CHIP = "flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-default bg-muted ps-1.5 pe-2.5 text-12 font-medium text-muted whitespace-nowrap";
+const CHIP =
+  "flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-default bg-muted ps-1.5 pe-2.5 text-12 font-medium text-muted whitespace-nowrap";
 // the mods' chips, dragged to preview another load order; the game stays first
 useSortable(useTemplateRef<HTMLElement>("chips"), order, { animation: 150, watchElement: true });
 // the table's share of the split, in percent, either pane taking up to four fifths; the splitter keeps it
@@ -117,20 +121,24 @@ const PANES = [{ slot: "table", defaultSize: 65, minSize: 20, maxSize: 80 }, { s
       </template>
     </div>
 
-    <USplitter :items="PANES" auto-save-id="pmt.health" class="min-h-0 grow overflow-hidden rounded-t-lg border border-b-0 border-default">
+    <USplitter
+      :items="PANES"
+      auto-save-id="pmt.health"
+      class="min-h-0 grow overflow-hidden rounded-t-lg border border-b-0 border-default"
+    >
       <template #table>
-      <HealthTable
-        :key="card"
-        v-model="open"
-        :card="card"
-        :rows="rows"
-        :sources="health?.sources ?? []"
-        :loading="isPending"
-        class="min-w-0 flex-1 border-e border-default"
-      />
+        <HealthTable
+          :key="card"
+          v-model="open"
+          :card="card"
+          :rows="rows"
+          :sources="health?.sources ?? []"
+          :loading="isPending"
+          class="min-w-0 flex-1 border-e border-default"
+        />
       </template>
       <template #detail>
-      <HealthDetail :workspace-id="id" :row="open" :sources="health?.sources ?? []" :live="live" />
+        <HealthDetail :workspace-id="id" :row="open" :sources="health?.sources ?? []" :live="live" />
       </template>
     </USplitter>
 

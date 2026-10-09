@@ -72,8 +72,14 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
       title="Theme"
       hint="Every theme is the same set of tokens with different values, so all pages and the editor change together. Each comes dark and light: switch with the sun and moon in the top bar."
     >
-      <SettingRow label="Match the workspace's game" hint="Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere.">
-        <USwitch :model-value="settings.matchGameTheme" @update:model-value="settings.setOn('ui.matchGameTheme', $event)" />
+      <SettingRow
+        label="Match the workspace's game"
+        hint="Crusader Kings III workspaces use Crusader Kings. Turn off to use your pick everywhere."
+      >
+        <USwitch
+          :model-value="settings.matchGameTheme"
+          @update:model-value="settings.setOn('ui.matchGameTheme', $event)"
+        />
       </SettingRow>
       <div class="grid grid-cols-3 gap-3.5">
         <button
@@ -111,7 +117,8 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
           v-if="workspace.activeWorkspaceId"
           :to="{ name: 'workspace-ide', params: { id: workspace.activeWorkspaceId } }"
           class="text-secondary"
-        >settings</ULink>
+          >settings</ULink
+        >
         <template v-else>settings</template>.
       </template>
       <div class="flex flex-col gap-1.5">
@@ -144,7 +151,13 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
       <div class="flex flex-wrap items-center gap-3">
         <OriginChip v-for="origin in origins" :key="origin.id" :label="origin.label" :color="origin.color" />
         <span class="grow" />
-        <UButton label="Reset all to automatic" size="sm" :disabled="!anyPicked" :loading="resetting" @click="resetColors()" />
+        <UButton
+          label="Reset all to automatic"
+          size="sm"
+          :disabled="!anyPicked"
+          :loading="resetting"
+          @click="resetColors()"
+        />
       </div>
     </SettingSection>
   </div>

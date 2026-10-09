@@ -23,14 +23,28 @@ const LEVELS: Record<number, string> = {
 <template>
   <nav v-if="collapsed" class="flex flex-col items-center px-1 pt-3">
     <UTooltip text="Show the contents">
-      <UButton icon="i-lucide-panel-left-open" variant="ghost" size="xs" square aria-label="Show the contents" @click="collapsed = false" />
+      <UButton
+        icon="i-lucide-panel-left-open"
+        variant="ghost"
+        size="xs"
+        square
+        aria-label="Show the contents"
+        @click="collapsed = false"
+      />
     </UTooltip>
   </nav>
   <nav v-else class="flex min-h-0 flex-col overflow-auto pt-3 ps-1 pe-2">
     <div class="flex items-center ps-2.5 pb-1">
       <span class="grow text-11 font-medium text-dimmed">On this page</span>
       <UTooltip text="Hide the contents">
-        <UButton icon="i-lucide-panel-left-close" variant="ghost" size="xs" square aria-label="Hide the contents" @click="collapsed = true" />
+        <UButton
+          icon="i-lucide-panel-left-close"
+          variant="ghost"
+          size="xs"
+          square
+          aria-label="Hide the contents"
+          @click="collapsed = true"
+        />
       </UTooltip>
     </div>
     <button

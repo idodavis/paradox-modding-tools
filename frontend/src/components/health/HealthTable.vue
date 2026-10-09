@@ -32,7 +32,6 @@ const filter = shallowRef<string | undefined>("");
 const sorting = ref<SortingState | undefined>([]);
 const filters = ref<ColumnFiltersState | undefined>([]);
 
-
 const originOf = (file: number) => sources[file]?.origin ?? "";
 const isProblem = (row: Row): row is Problem => "message" in row;
 
@@ -103,7 +102,12 @@ function head<T>(label: string, name?: (value: string) => string) {
           h(UButton, {
             label: wanted.length ? `${label} (${wanted.length})` : label,
             icon: name ? "i-lucide-list-filter" : undefined,
-            trailingIcon: sorted === "asc" ? "i-lucide-arrow-up" : sorted === "desc" ? "i-lucide-arrow-down" : "i-lucide-chevrons-up-down",
+            trailingIcon:
+              sorted === "asc"
+                ? "i-lucide-arrow-up"
+                : sorted === "desc"
+                  ? "i-lucide-arrow-down"
+                  : "i-lucide-chevrons-up-down",
             color: wanted.length ? "primary" : "neutral",
             variant: "ghost",
             size: "xs",
@@ -146,16 +150,27 @@ const contests: TableColumn<Contest>[] = [
   },
 ];
 const depends: TableColumn<Dependency>[] = [
-  { accessorKey: "from", header: head("Mod", store.originName), filterFn: among, cell: ({ row }) => origin(row.original.from) },
+  {
+    accessorKey: "from",
+    header: head("Mod", store.originName),
+    filterFn: among,
+    cell: ({ row }) => origin(row.original.from),
+  },
   {
     id: "relation",
     header: head("Relation", String),
     accessorFn: (row) => (row.affected ? "affected by" : "depends on"),
     filterFn: among,
     meta: width("w-28"),
-    cell: ({ row }) => badge(row.original.affected ? "affected by" : "depends on", row.original.affected ? "warning" : "info"),
+    cell: ({ row }) =>
+      badge(row.original.affected ? "affected by" : "depends on", row.original.affected ? "warning" : "info"),
   },
-  { accessorKey: "to", header: head("Other mod", store.originName), filterFn: among, cell: ({ row }) => origin(row.original.to) },
+  {
+    accessorKey: "to",
+    header: head("Other mod", store.originName),
+    filterFn: among,
+    cell: ({ row }) => origin(row.original.to),
+  },
   { id: "uses", header: head("Uses"), accessorFn: (row) => row.sites?.length ?? 0, meta: width("w-20") },
 ];
 // a finding the card lists beside its own rows takes its message in the name's column
@@ -167,14 +182,24 @@ const dangling: TableColumn<Dangling | Problem>[] = [
     accessorFn: (row) => (isProblem(row) ? row.message : row.name),
     cell: ({ row }) => (isProblem(row.original) ? row.original.message : mono(row.original.name)),
   },
-  { id: "kind", header: head("Kind", String), accessorFn: (row) => (isProblem(row) ? "" : row.kind), filterFn: among, meta: width("w-32.5") },
+  {
+    id: "kind",
+    header: head("Kind", String),
+    accessorFn: (row) => (isProblem(row) ? "" : row.kind),
+    filterFn: among,
+    meta: width("w-32.5"),
+  },
   {
     id: "origins",
     header: head("Written by"),
     accessorFn: (row) => (isProblem(row) ? 1 : (row.sites?.length ?? 0)),
     meta: width("w-25"),
     cell: ({ row }) =>
-      origins(isProblem(row.original) ? [originOf(row.original.site.file)] : (row.original.sites ?? []).map((site) => originOf(site.file))),
+      origins(
+        isProblem(row.original)
+          ? [originOf(row.original.site.file)]
+          : (row.original.sites ?? []).map((site) => originOf(site.file)),
+      ),
   },
 ];
 // a row's language and file are where it is fixed: a gap's, the language it is missing in and its file there
@@ -196,7 +221,8 @@ const loc: TableColumn<Gap | Problem>[] = [
   {
     id: "file",
     header: head("File"),
-    accessorFn: (row) => (isProblem(row) ? `${sources[row.site.file]?.rel}:${row.site.line + 1}` : (sources[row.target]?.rel ?? "")),
+    accessorFn: (row) =>
+      isProblem(row) ? `${sources[row.site.file]?.rel}:${row.site.line + 1}` : (sources[row.target]?.rel ?? ""),
     cell: ({ getValue }) => mono(String(getValue())),
   },
   {
@@ -222,8 +248,7 @@ const script: TableColumn<Problem>[] = [
 ];
 // each card's columns are typed by its own rows; the table holds whichever the card picks
 const columns = computed(
-  () =>
-    ({ contests, overrides: contests, depends, dangling, loc, script } as Record<Card, TableColumn<Row>[]>)[card],
+  () => (({ contests, overrides: contests, depends, dangling, loc, script }) as Record<Card, TableColumn<Row>[]>)[card],
 );
 
 // the open row, by its place in the rows

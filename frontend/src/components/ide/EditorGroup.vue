@@ -54,7 +54,9 @@ function show(path: string): void {
 const unsavedModal = useOverlay().create(UnsavedChangesModal);
 async function close(tab: string): Promise<void> {
   const { file } = tabOf(tab);
-  const elsewhere = ide.groups.some((one) => one.files.some((other) => tabOf(other).file === file && (other !== tab || one.id !== groupId)));
+  const elsewhere = ide.groups.some((one) =>
+    one.files.some((other) => tabOf(other).file === file && (other !== tab || one.id !== groupId)),
+  );
   if (elsewhere || !ide.unsaved.has(file)) return ide.closeIn(groupId, tab);
   show(tab);
   if (await unsavedModal.open({ files: [file], going: "Closing it" })) ide.closeIn(groupId, tab);
@@ -62,7 +64,8 @@ async function close(tab: string): Promise<void> {
 
 // closing many tabs closes all but the unsaved, which stay to be saved or closed one at a time
 function closeAll(keep?: string): void {
-  for (const tab of [...(group.value?.files ?? [])]) if (tab !== keep && !ide.unsaved.has(tabOf(tab).file)) ide.closeIn(groupId, tab);
+  for (const tab of [...(group.value?.files ?? [])])
+    if (tab !== keep && !ide.unsaved.has(tabOf(tab).file)) ide.closeIn(groupId, tab);
 }
 const actions = computed<DropdownMenuItem[]>(() => [
   { label: "Close the others", onSelect: () => closeAll(active.value) },
@@ -84,7 +87,12 @@ function tabMenu(tab: string): ContextMenuItem[][] {
       { label: "Close all", onSelect: () => closeAll() },
     ],
     [
-      { label: "Split right", icon: "i-lucide-columns-2", kbds: ["Ctrl \\"], onSelect: () => ide.split("right", tab, groupId) },
+      {
+        label: "Split right",
+        icon: "i-lucide-columns-2",
+        kbds: ["Ctrl \\"],
+        onSelect: () => ide.split("right", tab, groupId),
+      },
       { label: "Split down", icon: "i-lucide-rows-2", onSelect: () => ide.split("down", tab, groupId) },
     ],
     [
@@ -98,7 +106,15 @@ function tabMenu(tab: string): ContextMenuItem[][] {
     ],
     [
       { label: "Move into a new window", icon: "i-lucide-app-window", onSelect: () => void newWindowWith(tab) },
-      ...(isMain ? [] : [{ label: "Dock back into the main window", icon: "i-lucide-panel-top-close", onSelect: () => void Close(windowName) }]),
+      ...(isMain
+        ? []
+        : [
+            {
+              label: "Dock back into the main window",
+              icon: "i-lucide-panel-top-close",
+              onSelect: () => void Close(windowName),
+            },
+          ]),
     ],
     [{ label: "Copy path", onSelect: () => void Clipboard.SetText(path) }],
   ];
@@ -113,7 +129,11 @@ const loaded = computed(() => (readOnly(active.value) ? copies.value?.at(-1) : u
 
 // the shown tab scrolls into view in a strip of more tabs than fit
 const strip = useTemplateRef("strip");
-watch(active, (path) => strip.value?.querySelector(`[data-tab="${CSS.escape(path)}"]`)?.scrollIntoView({ inline: "nearest" }), { flush: "post" });
+watch(
+  active,
+  (path) => strip.value?.querySelector(`[data-tab="${CSS.escape(path)}"]`)?.scrollIntoView({ inline: "nearest" }),
+  { flush: "post" },
+);
 // the wheel turned over the strip scrolls it sideways
 function scrollTabs(e: WheelEvent): void {
   if (strip.value && !e.deltaX) strip.value.scrollLeft += e.deltaY;
@@ -132,10 +152,15 @@ function startDrag(e: DragEvent, path: string): void {
 // dropped outside this window where no window took it: a new window of its own
 function endDrag(e: DragEvent, path: string): void {
   ide.dragging = null;
-  const out = e.screenX < window.screenX || e.screenX > window.screenX + window.outerWidth || e.screenY < window.screenY || e.screenY > window.screenY + window.outerHeight;
+  const out =
+    e.screenX < window.screenX ||
+    e.screenX > window.screenX + window.outerWidth ||
+    e.screenY < window.screenY ||
+    e.screenY > window.screenY + window.outerHeight;
   if (e.dataTransfer?.dropEffect === "none" && out) void newWindowWith(path);
 }
-const takes = (e: DragEvent) => !!e.dataTransfer?.types.includes(TAB) && (windowPart !== "game" || e.dataTransfer.types.includes(GAME));
+const takes = (e: DragEvent) =>
+  !!e.dataTransfer?.types.includes(TAB) && (windowPart !== "game" || e.dataTransfer.types.includes(GAME));
 
 // while a tab is dragged over the group: where it would go on the strip (before a tab, or at the end: null), and on
 // the editor (its zone)
@@ -149,7 +174,8 @@ function hover(e: DragEvent, before?: string | null): void {
   if (before !== undefined) landing.value = before;
 }
 function leave(e: DragEvent): void {
-  if (e.currentTarget instanceof Node && e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+  if (e.currentTarget instanceof Node && e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))
+    return;
   over.value = false;
   landing.value = undefined;
   zone.value = null;
@@ -188,7 +214,10 @@ const ZONES: Record<Edge, string> = {
 };
 
 // the breadcrumb's end: where the caret rests, read a moment after it stops
-const caret = refDebounced(computed(() => (ide.focused === groupId ? ide.caret : null)), 300);
+const caret = refDebounced(
+  computed(() => (ide.focused === groupId ? ide.caret : null)),
+  300,
+);
 const { data: card } = useQuery(() => ({
   ...hoverQuery({ id: workspaceId, path: active.value, line: caret.value?.line ?? 0, col: caret.value?.col ?? 0 }),
   enabled: !!caret.value && !!active.value && !diff.value,
@@ -199,7 +228,12 @@ const folders = computed(() => (located.value?.rel.split("/").length ?? 0) - 1);
 // a file with two views (Markdown, SVG) switches on its bar; an image's visual is the image pane
 const views = computed(() => {
   const named = viewsOf(active.value);
-  return named && [{ label: named.code, value: "code" }, { label: named.visual, value: "visual" }];
+  return (
+    named && [
+      { label: named.code, value: "code" },
+      { label: named.visual, value: "visual" },
+    ]
+  );
 });
 function setView(view: string | number): void {
   ide.views.set(active.value, view === "visual" ? "visual" : "code");
@@ -208,8 +242,17 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
 </script>
 
 <template>
-  <section class="flex min-h-0 min-w-0 flex-1 flex-col" @pointerdown="ide.focused = groupId" @dragover="hover($event)" @dragleave="leave">
-    <div class="flex h-9 shrink-0 items-stretch border-b border-default bg-muted" @dragover="hover($event, null)" @drop="dropTab($event, 'middle')">
+  <section
+    class="flex min-h-0 min-w-0 flex-1 flex-col"
+    @pointerdown="ide.focused = groupId"
+    @dragover="hover($event)"
+    @dragleave="leave"
+  >
+    <div
+      class="flex h-9 shrink-0 items-stretch border-b border-default bg-muted"
+      @dragover="hover($event, null)"
+      @drop="dropTab($event, 'middle')"
+    >
       <!-- the tabs keep their names; more than fit scroll, by the wheel or a bar under the pointer, the app's 6px one
            (Chromium draws ::-webkit-scrollbar only where scrollbar-width and -color are auto) over the tabs' foot -->
       <div
@@ -239,20 +282,34 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
             <img v-else-if="iconOf(path)" :src="iconOf(path)" alt="" class="size-3.5 shrink-0" />
             <UIcon v-else name="i-lucide-file" class="size-3.5 shrink-0" />
             <!-- a tab dragged here goes before this one -->
-            <span v-if="landing === path" class="pointer-events-none absolute inset-y-1 -start-px w-0.5 rounded-full bg-primary" />
+            <span
+              v-if="landing === path"
+              class="pointer-events-none absolute inset-y-1 -start-px w-0.5 rounded-full bg-primary"
+            />
             <span class="truncate">{{ name(path) }}</span>
-            <span v-if="tabOf(path).diff" class="text-dimmed">{{ tabOf(path).commit?.slice(0, 7) ?? tabOf(path).diff }}</span>
+            <span v-if="tabOf(path).diff" class="text-dimmed">{{
+              tabOf(path).commit?.slice(0, 7) ?? tabOf(path).diff
+            }}</span>
             <UIcon v-else-if="readOnly(path)" name="i-lucide-lock" class="size-3 shrink-0 text-dimmed" />
             <!-- an unsaved tab's dot turns into its close button under the pointer -->
             <span class="flex size-5 shrink-0 items-center justify-center">
-              <span v-if="ide.unsaved.has(tabOf(path).file)" class="size-1.5 rounded-full bg-(--fg-2) group-hover:hidden" />
+              <span
+                v-if="ide.unsaved.has(tabOf(path).file)"
+                class="size-1.5 rounded-full bg-(--fg-2) group-hover:hidden"
+              />
               <UButton
                 icon="i-lucide-x"
                 variant="ghost"
                 size="xs"
                 square
                 aria-label="Close"
-                :class="ide.unsaved.has(tabOf(path).file) ? 'hidden group-hover:flex' : path === active ? '' : 'invisible group-hover:visible'"
+                :class="
+                  ide.unsaved.has(tabOf(path).file)
+                    ? 'hidden group-hover:flex'
+                    : path === active
+                      ? ''
+                      : 'invisible group-hover:visible'
+                "
                 @click.stop="close(path)"
               />
             </span>
@@ -263,7 +320,15 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
       <span class="grow" />
       <div class="flex shrink-0 items-center gap-0.5 px-2">
         <UTooltip text="Split right" :kbds="['Ctrl \\']">
-          <UButton icon="i-lucide-columns-2" variant="ghost" size="sm" square aria-label="Split right" :disabled="!active" @click="ide.split('right', active, groupId)" />
+          <UButton
+            icon="i-lucide-columns-2"
+            variant="ghost"
+            size="sm"
+            square
+            aria-label="Split right"
+            :disabled="!active"
+            @click="ide.split('right', active, groupId)"
+          />
         </UTooltip>
         <UDropdownMenu :items="actions">
           <UButton icon="i-lucide-ellipsis" variant="ghost" size="sm" square aria-label="Tab actions" />
@@ -284,7 +349,10 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
         </template>
       </div>
     </div>
-    <div v-if="active && !diff" class="flex h-7 shrink-0 items-center gap-1.5 overflow-hidden border-b border-default bg-(--bg-0) px-3.5 text-12 whitespace-nowrap text-dimmed">
+    <div
+      v-if="active && !diff"
+      class="flex h-7 shrink-0 items-center gap-1.5 overflow-hidden border-b border-default bg-(--bg-0) px-3.5 text-12 whitespace-nowrap text-dimmed"
+    >
       <template v-if="located">
         <OriginDot :color="store.originColor(located.root.origin ?? '')" small />
         <span>{{ store.originName(located.root.origin ?? "") }}</span>
@@ -300,16 +368,35 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
         <span class="text-toned">{{ store.originName(loaded.origin) }}</span>
         <UButton label="Compare" variant="ghost" size="xs" @click="compare.files(active, loaded.path)" />
       </template>
-      <UTabs v-if="views" :model-value="ide.viewOf(active)" :items="views" :content="false" size="xs" @update:model-value="setView" />
+      <UTabs
+        v-if="views"
+        :model-value="ide.viewOf(active)"
+        :items="views"
+        :content="false"
+        size="xs"
+        @update:model-value="setView"
+      />
     </div>
     <div class="relative flex min-h-0 flex-1 flex-col">
       <GitDiff v-if="diff" :key="active" :workspace-id="workspaceId" :tab="active" />
       <ImageView v-else-if="image" :key="`image:${active}`" :path="active" />
       <CodeEditor v-else-if="active" :key="active" :workspace-id="workspaceId" :path="active" :group="groupId" />
-      <div v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">Open a file from the explorer, or Ctrl P</div>
+      <div v-else class="flex flex-1 items-center justify-center bg-(--bg-0) text-12 text-dimmed">
+        Open a file from the explorer, or Ctrl P
+      </div>
       <!-- while a tab is dragged: where it would go -->
-      <div v-if="ide.dragging || over" class="absolute inset-0 z-20" @dragover="zoneAt" @dragleave="zone = null" @drop="dropTab($event, zone ?? 'middle')">
-        <div v-if="zone" class="pointer-events-none absolute bg-(--accent-soft) ring-1 ring-primary ring-inset" :class="ZONES[zone]" />
+      <div
+        v-if="ide.dragging || over"
+        class="absolute inset-0 z-20"
+        @dragover="zoneAt"
+        @dragleave="zone = null"
+        @drop="dropTab($event, zone ?? 'middle')"
+      >
+        <div
+          v-if="zone"
+          class="pointer-events-none absolute bg-(--accent-soft) ring-1 ring-primary ring-inset"
+          :class="ZONES[zone]"
+        />
       </div>
     </div>
   </section>

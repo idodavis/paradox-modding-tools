@@ -52,6 +52,6 @@ function pickCustom(): void {
     />
     <span class="mx-1 h-4.5 w-px shrink-0 bg-accented" />
     <UButton label="Custom…" size="sm" @click="pickCustom" />
-    <input ref="picker" type="color" class="sr-only" tabindex="-1" @change="onPick">
+    <input ref="picker" type="color" class="sr-only" tabindex="-1" @change="onPick" />
   </div>
 </template>

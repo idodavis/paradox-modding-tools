@@ -22,7 +22,9 @@ export const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, 
 export function bytes(count: number): string {
   const mb = count >= 1048576;
   const unit = mb ? "megabyte" : "kilobyte";
-  return new Intl.NumberFormat(undefined, { style: "unit", unit, maximumFractionDigits: 1 }).format(count / (mb ? 1048576 : 1024));
+  return new Intl.NumberFormat(undefined, { style: "unit", unit, maximumFractionDigits: 1 }).format(
+    count / (mb ? 1048576 : 1024),
+  );
 }
 
 /** An image as "1020 by 621, 245 kB". */

@@ -8,7 +8,13 @@ import { computed, shallowRef } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import type { Listing, WorkspaceMod } from "@services/models";
 import type { Preview } from "@services/internal/steam/models";
-import { AddWorkshopPreview, AddWorkshopVideo, ImportSteamExtras, RemoveWorkshopPreview, RemoveWorkshopVideo } from "@services/releaseservice";
+import {
+  AddWorkshopPreview,
+  AddWorkshopVideo,
+  ImportSteamExtras,
+  RemoveWorkshopPreview,
+  RemoveWorkshopVideo,
+} from "@services/releaseservice";
 import { useListingImage } from "../../composables/useListingImage";
 import { imageSize } from "../../lib/format";
 import { pickFile } from "../../lib/nativeDialog";
@@ -29,7 +35,8 @@ const { data: image } = useQuery(() => imageQuery(shown.value?.kind === "image" 
 const still = (id: string) => `https://img.youtube.com/vi/${id}/mqdefault.jpg`;
 
 const { mutate: edit, isLoading: editing } = useMutation({
-  mutation: (save: (workspaceId: string, modId: string) => Promise<unknown>) => save(listing.workspaceId, listing.modId),
+  mutation: (save: (workspaceId: string, modId: string) => Promise<unknown>) =>
+    save(listing.workspaceId, listing.modId),
   onSettled: () => queryCache.invalidateQueries({ key: releaseKeys.mod(listing.workspaceId, listing.modId) }),
 });
 async function addImage(): Promise<void> {
@@ -44,7 +51,9 @@ function addVideo(): void {
 }
 function remove(extra: Preview): void {
   edit((workspaceId, modId) =>
-    extra.kind === "youtube" ? RemoveWorkshopVideo(workspaceId, modId, extra.id) : RemoveWorkshopPreview(workspaceId, modId, extra.rel),
+    extra.kind === "youtube"
+      ? RemoveWorkshopVideo(workspaceId, modId, extra.id)
+      : RemoveWorkshopPreview(workspaceId, modId, extra.rel),
   );
 }
 </script>
@@ -64,7 +73,9 @@ function remove(extra: Preview): void {
       <div class="flex min-w-0 flex-col items-start gap-1">
         <span class="text-12 font-medium">Thumbnail</span>
         <span class="text-11 text-dimmed">Shown in the launcher and on Steam</span>
-        <span class="max-w-full truncate font-mono text-12 text-toned" :title="listing.thumbnailRel">{{ listing.thumbnailRel || "None yet" }}</span>
+        <span class="max-w-full truncate font-mono text-12 text-toned" :title="listing.thumbnailRel">{{
+          listing.thumbnailRel || "None yet"
+        }}</span>
         <span v-if="thumbnail" class="text-11 text-dimmed">{{ imageSize(thumbnail) }}</span>
         <UButton label="Change" :loading="changing" class="mt-1" @click="change(listing.modId)" />
       </div>
@@ -104,7 +115,9 @@ function remove(extra: Preview): void {
               <Thumb v-if="extra.kind === 'image'" :path="extra.abs" size="fill" />
               <template v-else>
                 <img :src="still(extra.id)" alt="" class="size-full rounded-md border border-accented object-cover" />
-                <span class="absolute inset-0 m-auto flex size-7 items-center justify-center rounded-full bg-(--bg-0)/70">
+                <span
+                  class="absolute inset-0 m-auto flex size-7 items-center justify-center rounded-full bg-(--bg-0)/70"
+                >
                   <UIcon name="i-lucide-play" class="size-3.5 text-highlighted" />
                 </span>
               </template>
@@ -120,7 +133,14 @@ function remove(extra: Preview): void {
           <span class="min-w-0 truncate font-mono text-12 text-toned">
             {{ shown.kind === "youtube" ? `youtube.com/watch?v=${shown.id}` : shown.rel }}
           </span>
-          <UButton label="Remove" icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="remove(shown)" />
+          <UButton
+            label="Remove"
+            icon="i-lucide-trash-2"
+            size="sm"
+            color="error"
+            variant="ghost"
+            @click="remove(shown)"
+          />
           <span class="grow" />
         </template>
         <UButton label="Add image" icon="i-lucide-plus" size="sm" @click="addImage" />

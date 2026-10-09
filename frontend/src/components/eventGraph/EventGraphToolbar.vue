@@ -10,7 +10,14 @@ import type { Roots } from "@services/models";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { plural } from "../../lib/format";
 
-const { roots, searching, rootKind, nodes, reach, full = false } = defineProps<{
+const {
+  roots,
+  searching,
+  rootKind,
+  nodes,
+  reach,
+  full = false,
+} = defineProps<{
   roots: Roots | null | undefined;
   searching: boolean;
   /** What the root is, for its badge. */
@@ -52,7 +59,8 @@ const items = computed(() => {
     const more = count.count > hits.length ? `, ${count.count - hits.length} more: type to narrow` : "";
     groups.push([{ id: `${hits[0].kind} (${count.count})${more}`, kind: "", type: "label" }, ...hits]);
   }
-  if (root.value && !roots?.hits?.some((node) => node.id === root.value)) groups.unshift([{ id: root.value, kind: rootKind }]);
+  if (root.value && !roots?.hits?.some((node) => node.id === root.value))
+    groups.unshift([{ id: root.value, kind: rootKind }]);
   return groups;
 });
 </script>
@@ -74,7 +82,11 @@ const items = computed(() => {
       class="shrink-0"
       :class="full ? 'w-75' : 'w-95'"
       :style="{ '--kind': `${kindWidth + 16}px` }"
-      :ui="{ base: ['font-mono', full ? 'ps-9' : 'ps-17', rootKind && 'pe-(--kind)'], content: 'min-w-120', itemLabel: 'whitespace-normal break-all' }"
+      :ui="{
+        base: ['font-mono', full ? 'ps-9' : 'ps-17', rootKind && 'pe-(--kind)'],
+        content: 'min-w-120',
+        itemLabel: 'whitespace-normal break-all',
+      }"
     >
       <template #leading>
         <span class="flex items-center gap-2 text-12 text-muted">
@@ -84,7 +96,12 @@ const items = computed(() => {
       </template>
       <template v-if="rootKind" #trailing><UBadge ref="kindBadge" :label="rootKind" color="info" size="sm" /></template>
       <template #item-trailing="{ item }">
-        <OriginChip v-if="item.origin" :label="store.originName(item.origin)" :color="store.originColor(item.origin)" small />
+        <OriginChip
+          v-if="item.origin"
+          :label="store.originName(item.origin)"
+          :color="store.originColor(item.origin)"
+          small
+        />
       </template>
     </UInputMenu>
     <slot name="filters" />
@@ -99,7 +116,10 @@ const items = computed(() => {
     </UTooltip>
     <span v-if="!full" class="grow" />
     <USeparator v-else orientation="vertical" class="h-5" />
-    <span class="text-12 whitespace-nowrap text-dimmed" title="Drawn, of all the depth reaches: fan-outs past six fold into groups, and the node limit stops the rest">
+    <span
+      class="text-12 whitespace-nowrap text-dimmed"
+      title="Drawn, of all the depth reaches: fan-outs past six fold into groups, and the node limit stops the rest"
+    >
       {{ reach > nodes ? `${nodes} of ${plural(reach, "node")}` : plural(nodes, "node") }}{{ full ? "" : " shown" }}
     </span>
     <USeparator v-if="!full" orientation="vertical" class="h-5" />

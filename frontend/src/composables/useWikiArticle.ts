@@ -3,14 +3,7 @@
  * through one at a time, the heading in view marked as it scrolls, and its links followed in the pane. Its
  * look is `.art` (styles/article.css).
  */
-import {
-  nextTick,
-  shallowRef,
-  toValue,
-  useTemplateRef,
-  watch,
-  type MaybeRefOrGetter,
-} from "vue";
+import { nextTick, shallowRef, toValue, useTemplateRef, watch, type MaybeRefOrGetter } from "vue";
 import { useEventListener } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
 import { drawCode } from "../lib/code";
@@ -23,9 +16,7 @@ type Heading = { line: string; anchor: string };
 
 /** How a wiki <a> is followed in the pane. */
 type WikiLinkHit =
-  | { kind: "anchor"; anchor: string }
-  | { kind: "page"; index: number; anchor: string }
-  | { kind: "external" };
+  { kind: "anchor"; anchor: string } | { kind: "page"; index: number; anchor: string } | { kind: "external" };
 
 /** Draw, mark and click-navigate one sanitized wiki article. */
 export function useWikiArticle(opts: {
@@ -160,9 +151,7 @@ function highlightWiki(root: HTMLElement, needle: string): void {
     acceptNode(node) {
       const p = (node as Text).parentElement;
       if (!p || p.closest("pre, code")) return NodeFilter.FILTER_REJECT;
-      return (node.textContent ?? "").toLowerCase().includes(lower)
-        ? NodeFilter.FILTER_ACCEPT
-        : NodeFilter.FILTER_SKIP;
+      return (node.textContent ?? "").toLowerCase().includes(lower) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
     },
   });
   const hits: Text[] = [];

@@ -11,7 +11,15 @@ import { ReadImageFacts, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { EventGraph, GitCommit, Params, Roots, SourceAt } from "@services/models";
-import { Definition, DiagnosticCodes, DocumentSymbols, FindLoc, Hover, References, ReplacedBy } from "@services/ideservice";
+import {
+  Definition,
+  DiagnosticCodes,
+  DocumentSymbols,
+  FindLoc,
+  Hover,
+  References,
+  ReplacedBy,
+} from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
 import { Available, Branches, CommitFiles, Log, Remotes, Repositories, Show, Status } from "@services/gitservice";
 import { CompareWithSteam, ListingSummary, LoadListing, SteamStatus, UploadFiles } from "@services/releaseservice";
@@ -61,7 +69,11 @@ export const fileKeys = {
 // the repositories' reads sit under ["git"], so a command run refreshes them all
 export const gitKeys = { repos: (id: string) => ["git-repos", id] as const };
 
-export const gitAvailableQuery = defineQueryOptions({ key: ["git-available"], query: () => Available(), staleTime: Infinity });
+export const gitAvailableQuery = defineQueryOptions({
+  key: ["git-available"],
+  query: () => Available(),
+  staleTime: Infinity,
+});
 
 /** The repositories of a workspace's mods. */
 export const gitReposQuery = defineQueryOptions(({ id, enabled }: { id: string; enabled: boolean }) => ({
@@ -73,7 +85,8 @@ export const gitReposQuery = defineQueryOptions(({ id, enabled }: { id: string; 
 /** Every repository's status by its root: Source control shows one, the explorer marks them all. */
 export const gitStatusesQuery = defineQueryOptions((roots: string[]) => ({
   key: ["git", "status", ...roots],
-  query: async () => Object.fromEntries(await Promise.all(roots.map(async (root) => [root, await Status(root)] as const))),
+  query: async () =>
+    Object.fromEntries(await Promise.all(roots.map(async (root) => [root, await Status(root)] as const))),
   enabled: roots.length > 0,
 }));
 
@@ -113,7 +126,11 @@ export const gitTextQuery = defineQueryOptions(({ root, rev, path }: { root: str
   enabled: !!root && !!path,
 }));
 
-export const versionQuery = defineQueryOptions({ key: ["app", "version"], query: () => GetVersion(), staleTime: Infinity });
+export const versionQuery = defineQueryOptions({
+  key: ["app", "version"],
+  query: () => GetVersion(),
+  staleTime: Infinity,
+});
 
 export const crashedQuery = defineQueryOptions({
   key: ["app", "crashed"],
@@ -190,11 +207,13 @@ export const graphQuery = defineQueryOptions(({ id, params, live }: { id: string
 }));
 
 /** One definition of the graph, opened. */
-export const eventDetailQuery = defineQueryOptions(({ id, event, live }: { id: string; event: string; live: boolean }) => ({
-  key: ["session", id, "event-detail", event],
-  query: () => GetEventDetail(id, event),
-  enabled: !!id && live && !!event,
-}));
+export const eventDetailQuery = defineQueryOptions(
+  ({ id, event, live }: { id: string; event: string; live: boolean }) => ({
+    key: ["session", id, "event-detail", event],
+    query: () => GetEventDetail(id, event),
+    enabled: !!id && live && !!event,
+  }),
+);
 
 /** The roots a search holds, by kind. */
 export const rootsQuery = defineQueryOptions(({ id, search, live }: { id: string; search: string; live: boolean }) => ({
@@ -219,18 +238,22 @@ export const patchPageQuery = defineQueryOptions(({ gameId, version }: { gameId:
 }));
 
 /** The wiki's pages for a file of a workspace, and the kind of file it is. */
-export const guideQuery = defineQueryOptions(({ id, path, enabled }: { id: string; path: string; enabled: boolean }) => ({
-  key: ["wiki", "guide", id, path],
-  query: () => Guide(id, path),
-  enabled: enabled && !!id && !!path,
-}));
+export const guideQuery = defineQueryOptions(
+  ({ id, path, enabled }: { id: string; path: string; enabled: boolean }) => ({
+    key: ["wiki", "guide", id, path],
+    query: () => Guide(id, path),
+    enabled: enabled && !!id && !!path,
+  }),
+);
 
 /** One guide page whole, by its title: the page a Wiki tab shows (a guide's tabs carry no text). */
-export const guidePageQuery = defineQueryOptions(({ gameId, title, enabled }: { gameId: string; title: string; enabled: boolean }) => ({
-  key: ["wiki", "page", gameId, title],
-  query: () => GuidePage(gameId, title),
-  enabled: enabled && !!gameId && !!title,
-}));
+export const guidePageQuery = defineQueryOptions(
+  ({ gameId, title, enabled }: { gameId: string; title: string; enabled: boolean }) => ({
+    key: ["wiki", "page", gameId, title],
+    query: () => GuidePage(gameId, title),
+    enabled: enabled && !!gameId && !!title,
+  }),
+);
 
 /** The source lines of the places a pane shows: a definition's statement, a reference's line. */
 export const linesQuery = defineQueryOptions(
@@ -255,17 +278,21 @@ export const replacedQuery = defineQueryOptions(({ id, path }: { id: string; pat
 }));
 
 /** What a word is, at a place of a file (a 0-based line and UTF-8 byte column). */
-export const hoverQuery = defineQueryOptions(({ id, path, line, col }: { id: string; path: string; line: number; col: number }) => ({
-  key: ["ide", "hover", id, path, line, col],
-  query: () => Hover(id, path, line, col),
-}));
+export const hoverQuery = defineQueryOptions(
+  ({ id, path, line, col }: { id: string; path: string; line: number; col: number }) => ({
+    key: ["ide", "hover", id, path, line, col],
+    query: () => Hover(id, path, line, col),
+  }),
+);
 
 /** The files whose path holds a text, in the IDE's folders. */
-export const filesQuery = defineQueryOptions(({ id, pattern, folders }: { id: string; pattern: string; folders: string[] }) => ({
-  key: ["ide", "files", id, pattern],
-  query: () => FileSearch({ filePattern: pattern, maxResults: 50, folders: folders.map((path) => ({ path })) }),
-  enabled: !!id && !!pattern && folders.length > 0,
-}));
+export const filesQuery = defineQueryOptions(
+  ({ id, pattern, folders }: { id: string; pattern: string; folders: string[] }) => ({
+    key: ["ide", "files", id, pattern],
+    query: () => FileSearch({ filePattern: pattern, maxResults: 50, folders: folders.map((path) => ({ path })) }),
+    enabled: !!id && !!pattern && folders.length > 0,
+  }),
+);
 
 /** The names a file defines. */
 /** The localization keys starting with a prefix, each at its entry in the workspace's language. */
@@ -283,9 +310,21 @@ export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path
 
 /** A word's definitions, or every place that names it, from a place of a file. */
 export const sitesQuery = defineQueryOptions(
-  ({ id, path, line, col, mode }: { id: string; path: string; line: number; col: number; mode: "definition" | "references" }) => ({
+  ({
+    id,
+    path,
+    line,
+    col,
+    mode,
+  }: {
+    id: string;
+    path: string;
+    line: number;
+    col: number;
+    mode: "definition" | "references";
+  }) => ({
     key: ["ide", "sites", mode, path, line, col],
-    query: async () => ((await (mode === "definition" ? Definition : References)(id, path, line, col)) ?? []),
+    query: async () => (await (mode === "definition" ? Definition : References)(id, path, line, col)) ?? [],
   }),
 );
 
@@ -318,7 +357,11 @@ export const compareQuery = defineQueryOptions(({ workspaceId, modId }: { worksp
 /** Why Steam cannot take an upload for a workspace's game now ("" when it can), asked of the publish's child. */
 export const steamStatusQuery = defineQueryOptions(({ id, enabled }: { id: string; enabled: boolean }) => ({
   key: ["steam-status", id] as const,
-  query: () => SteamStatus(id).then(() => "", (error: unknown) => (error instanceof Error ? error.message : String(error))),
+  query: () =>
+    SteamStatus(id).then(
+      () => "",
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    ),
   enabled: !!id && enabled,
   staleTime: 0,
 }));
@@ -348,4 +391,3 @@ export const textQuery = defineQueryOptions((path: string) => ({
   query: () => ReadText(path),
   enabled: !!path,
 }));
-

@@ -17,8 +17,23 @@ const { id: workspaceId } = defineProps<{ id: string }>();
 const route = useRoute();
 const store = useWorkspaceStore();
 const live = useLiveEnabled(() => workspaceId);
-const { params, hidden, selected, searchTerm, graph, error, detail, roots, searching, shown, laid, filtersOn, select, setRoot, resetFilters } =
-  useEventGraph(() => workspaceId, live);
+const {
+  params,
+  hidden,
+  selected,
+  searchTerm,
+  graph,
+  error,
+  detail,
+  roots,
+  searching,
+  shown,
+  laid,
+  filtersOn,
+  select,
+  setRoot,
+  resetFilters,
+} = useEventGraph(() => workspaceId, live);
 const canvas = useTemplateRef("canvas");
 const page = useTemplateRef<HTMLElement>("page");
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(page);
@@ -30,13 +45,23 @@ const below = computed(() => layout.value === "panel" && !isFullscreen.value);
 const panes = computed(() => [
   { id: "graph", slot: "graph", order: 1, minSize: below.value ? undefined : 50 },
   ...(selected.value && detail.value
-    ? [{ id: "detail", slot: "detail", order: 2, sizeUnit: "px" as const, ...(below.value ? { defaultSize: 320, minSize: 180, maxSize: 640 } : { defaultSize: 420, minSize: 320 }) }]
+    ? [
+        {
+          id: "detail",
+          slot: "detail",
+          order: 2,
+          sizeUnit: "px" as const,
+          ...(below.value ? { defaultSize: 320, minSize: 180, maxSize: 640 } : { defaultSize: 420, minSize: 320 }),
+        },
+      ]
     : []),
 ]);
 
 const rootKind = computed(() => graph.value?.nodes?.find((node) => node.root)?.kind ?? "");
 // each kind and each origin, with how many of the graph's reach are of it (Go counts with no fan-out or node cap)
-const kinds = computed(() => Object.entries(graph.value?.kinds ?? {}).map(([kind, count]) => ({ kind, count: count ?? 0 })));
+const kinds = computed(() =>
+  Object.entries(graph.value?.kinds ?? {}).map(([kind, count]) => ({ kind, count: count ?? 0 })),
+);
 const origins = computed(() =>
   [store.originVanilla, ...store.workspaceMods.map((mod) => mod.id)].map((id) => ({
     id,
@@ -53,7 +78,10 @@ watch(
   (root) => typeof root === "string" && root && setRoot(root),
   { immediate: true },
 );
-watch(() => workspaceId, () => setRoot(""));
+watch(
+  () => workspaceId,
+  () => setRoot(""),
+);
 </script>
 
 <template>
@@ -99,31 +127,38 @@ watch(() => workspaceId, () => setRoot(""));
       class="min-h-0 flex-1"
     >
       <template #graph>
-      <div class="relative min-h-0 min-w-0 flex-1">
-        <GraphCanvas
-          ref="canvas"
-          :nodes="shown.nodes"
-          :edges="shown.edges"
-          :positions="laid.positions"
-          :routes="laid.routes"
-          :heads="laid.heads"
-          :root-id="params.root"
-          :selected-id="selected"
-          :depth="params.depth"
-          :full="isFullscreen"
-          @select="select"
-          @reroot="setRoot"
-          @clear="selected = ''"
-        >
-          <p v-if="graph?.reason" class="pointer-events-none absolute inset-0 grid place-items-center text-13 text-dimmed">
-            {{ graph.reason }}
-          </p>
-        </GraphCanvas>
-      </div>
+        <div class="relative min-h-0 min-w-0 flex-1">
+          <GraphCanvas
+            ref="canvas"
+            :nodes="shown.nodes"
+            :edges="shown.edges"
+            :positions="laid.positions"
+            :routes="laid.routes"
+            :heads="laid.heads"
+            :root-id="params.root"
+            :selected-id="selected"
+            :depth="params.depth"
+            :full="isFullscreen"
+            @select="select"
+            @reroot="setRoot"
+            @clear="selected = ''"
+          >
+            <p
+              v-if="graph?.reason"
+              class="pointer-events-none absolute inset-0 grid place-items-center text-13 text-dimmed"
+            >
+              {{ graph.reason }}
+            </p>
+          </GraphCanvas>
+        </div>
       </template>
       <template #detail>
         <!-- a name nothing defines has its reason, not a definition, to show -->
-        <p v-if="detail?.reason" class="grid min-h-0 min-w-0 flex-1 place-items-center border-default p-6 text-13 text-dimmed" :class="below ? 'border-t' : 'border-s'">
+        <p
+          v-if="detail?.reason"
+          class="grid min-h-0 min-w-0 flex-1 place-items-center border-default p-6 text-13 text-dimmed"
+          :class="below ? 'border-t' : 'border-s'"
+        >
           {{ detail.reason }}
         </p>
         <EventDetail
@@ -139,7 +174,8 @@ watch(() => workspaceId, () => setRoot(""));
     </USplitter>
     <StatusFacts>
       <span>
-        {{ plural(shown.nodes.length, "node") }}{{ graph?.truncated ? `, stopped at the node limit at step ${graph.reached}` : "" }},
+        {{ plural(shown.nodes.length, "node")
+        }}{{ graph?.truncated ? `, stopped at the node limit at step ${graph.reached}` : "" }},
         {{ plural(folded, "group") }} folded
       </span>
       <span>Laid out left to right by step</span>

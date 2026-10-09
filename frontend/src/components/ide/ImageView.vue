@@ -18,7 +18,10 @@ const size = useElementSize(pane);
 // the pixels as drawn (a DDS past 4096 a side is drawn at a smaller mip level), and a load that failed
 const drawn = shallowRef({ width: 0, height: 0 });
 const failed = shallowRef(false);
-watch(() => image.value?.src, () => (failed.value = false));
+watch(
+  () => image.value?.src,
+  () => (failed.value = false),
+);
 function loaded(e: Event): void {
   const img = e.target as HTMLImageElement;
   drawn.value = { width: img.naturalWidth, height: img.naturalHeight };
@@ -27,7 +30,9 @@ function loaded(e: Event): void {
 // the zoom; none fits the image to the pane, never past its own size
 const zoom = shallowRef<number>();
 const fit = computed(() =>
-  drawn.value.width ? Math.min(1, (size.width.value - 32) / drawn.value.width, (size.height.value - 32) / drawn.value.height) : 1,
+  drawn.value.width
+    ? Math.min(1, (size.width.value - 32) / drawn.value.width, (size.height.value - 32) / drawn.value.height)
+    : 1,
 );
 const scale = computed(() => zoom.value ?? fit.value);
 const zoomTo = (next: number) => (zoom.value = Math.min(32, Math.max(0.02, next)));
@@ -56,9 +61,13 @@ const line = computed(() => {
     (info?.mips ?? 0) > 1 && `${info?.mips} mip levels`,
     facts.value && bytes(facts.value.bytes),
     drawn.value.width && width !== drawn.value.width && `shown at ${drawn.value.width} × ${drawn.value.height}`,
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 });
-const why = computed(() => facts.value?.reject || (failed.value ? `${facts.value?.label ?? "This image"} is not shown` : ""));
+const why = computed(
+  () => facts.value?.reject || (failed.value ? `${facts.value?.label ?? "This image"} is not shown` : ""),
+);
 </script>
 
 <template>
@@ -83,13 +92,31 @@ const why = computed(() => facts.value?.reject || (failed.value ? `${facts.value
       </div>
       <p v-if="why" class="absolute inset-x-0 top-10 text-center text-12 text-dimmed">{{ why }}</p>
     </div>
-    <div class="flex h-7 shrink-0 items-center gap-1.5 border-t border-default px-3.5 text-12 whitespace-nowrap text-dimmed tabular-nums">
+    <div
+      class="flex h-7 shrink-0 items-center gap-1.5 border-t border-default px-3.5 text-12 whitespace-nowrap text-dimmed tabular-nums"
+    >
       <span class="truncate">{{ line }}</span>
       <span class="grow" />
       <UButton label="Fit" variant="ghost" size="xs" :disabled="!shown" @click="zoom = undefined" />
       <UButton label="100%" variant="ghost" size="xs" :disabled="!shown" @click="zoom = 1" />
-      <UButton icon="i-lucide-minus" variant="ghost" size="xs" square aria-label="Zoom out" :disabled="!shown" @click="zoomTo(scale * 0.8)" />
-      <UButton icon="i-lucide-plus" variant="ghost" size="xs" square aria-label="Zoom in" :disabled="!shown" @click="zoomTo(scale * 1.25)" />
+      <UButton
+        icon="i-lucide-minus"
+        variant="ghost"
+        size="xs"
+        square
+        aria-label="Zoom out"
+        :disabled="!shown"
+        @click="zoomTo(scale * 0.8)"
+      />
+      <UButton
+        icon="i-lucide-plus"
+        variant="ghost"
+        size="xs"
+        square
+        aria-label="Zoom in"
+        :disabled="!shown"
+        @click="zoomTo(scale * 1.25)"
+      />
     </div>
   </div>
 </template>

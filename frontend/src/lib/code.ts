@@ -22,25 +22,31 @@ export const COMPARE_STYLES = [
 ];
 
 /** A file's model, made when a peek or a definition reaches a file no editor has open (ide/monacoEditor.ts). */
-export const models: { load: (uri: monaco.Uri) => Promise<monaco.editor.ITextModel | null> } = { load: async () => null };
+export const models: { load: (uri: monaco.Uri) => Promise<monaco.editor.ITextModel | null> } = {
+  load: async () => null,
+};
 /** A folder's name in a peek's list and title, when the IDE knows whose it is (ide/monacoEditor.ts); else its path. */
 export const labels: { folder: (uri: monaco.Uri) => string | undefined } = { folder: () => undefined };
 
 // Monaco makes its services once, with the first editor: this one, so the files it reaches are read on demand
 monaco.editor
-  .create(document.createElement("div"), {}, {
-    textModelService: {
-      async createModelReference(uri: monaco.Uri) {
-        const model = monaco.editor.getModel(uri) ?? (await models.load(uri));
-        if (!model) throw new Error(`${uri.fsPath} could not be read`);
-        return { object: { textEditorModel: model }, dispose() {} };
+  .create(
+    document.createElement("div"),
+    {},
+    {
+      textModelService: {
+        async createModelReference(uri: monaco.Uri) {
+          const model = monaco.editor.getModel(uri) ?? (await models.load(uri));
+          if (!model) throw new Error(`${uri.fsPath} could not be read`);
+          return { object: { textEditorModel: model }, dispose() {} };
+        },
+      },
+      labelService: {
+        getUriLabel: (uri: monaco.Uri) => labels.folder(uri) ?? (uri.scheme === "file" ? uri.fsPath : uri.path),
+        getUriBasenameLabel: (uri: monaco.Uri) => uri.path.slice(uri.path.lastIndexOf("/") + 1),
       },
     },
-    labelService: {
-      getUriLabel: (uri: monaco.Uri) => labels.folder(uri) ?? (uri.scheme === "file" ? uri.fsPath : uri.path),
-      getUriBasenameLabel: (uri: monaco.Uri) => uri.path.slice(uri.path.lastIndexOf("/") + 1),
-    },
-  })
+  )
   .dispose();
 
 /** A file's model address; Monaco writes a path's slashes and its drive's letter one way, so Go's and the explorer's
@@ -87,8 +93,19 @@ const SCRIPT: monaco.languages.IMonarchLanguage = {
       [/(?:any|every|random|ordered)_[a-z0-9_]+(?![\w.-])/, "keyword"],
       [/[A-Za-z_][\w.-]*/, ""],
     ],
-    string: [[/[^\\"$[]+/, "string"], ESCAPE, [/\$[\w.|-]+\$/, "string.ref"], [/\[[^\]]*\]/, "string.fn"], [/"/, "string", "@pop"], [/./, "string"]],
-    math: [[/\]/, "", "@pop"], [/-?\d+(?:\.\d+)?/, "number"], [/[A-Za-z_]\w*/, "variable"]],
+    string: [
+      [/[^\\"$[]+/, "string"],
+      ESCAPE,
+      [/\$[\w.|-]+\$/, "string.ref"],
+      [/\[[^\]]*\]/, "string.fn"],
+      [/"/, "string", "@pop"],
+      [/./, "string"],
+    ],
+    math: [
+      [/\]/, "", "@pop"],
+      [/-?\d+(?:\.\d+)?/, "number"],
+      [/[A-Za-z_]\w*/, "variable"],
+    ],
   },
 };
 
@@ -132,7 +149,12 @@ const GUI: monaco.languages.IMonarchLanguage = {
       ],
       [/[A-Za-z_][\w.]*/, ""],
     ],
-    string: [[/[^"[]+/, "string"], [/\[[^\]]*\]/, "string.fn"], [/"/, "string", "@pop"], [/./, "string"]],
+    string: [
+      [/[^"[]+/, "string"],
+      [/\[[^\]]*\]/, "string.fn"],
+      [/"/, "string", "@pop"],
+      [/./, "string"],
+    ],
   },
 };
 
@@ -152,10 +174,17 @@ for (const [id, extensions, grammar] of LANGUAGES) {
   monaco.languages.setMonarchTokensProvider(id, grammar);
   monaco.languages.setLanguageConfiguration(id, {
     comments: { lineComment: "#" },
-    brackets: [["{", "}"], ["[", "]"], ["(", ")"]],
+    brackets: [
+      ["{", "}"],
+      ["[", "]"],
+      ["(", ")"],
+    ],
     autoClosingPairs: PAIRS,
     surroundingPairs: PAIRS,
-    colorizedBracketPairs: [["{", "}"], ["[", "]"]],
+    colorizedBracketPairs: [
+      ["{", "}"],
+      ["[", "]"],
+    ],
     // a dotted id, a saved scope and a loc key's $ are one word
     wordPattern: id === "paradox-loc" ? /[\w$.-]+/ : /[\w.:@$-]+/,
   });
@@ -169,7 +198,10 @@ export function languageOf(name: string, format?: string): string {
   if (format === "loc") return "paradox-loc";
   if (format) return name.toLowerCase().endsWith(".md") ? "markdown" : "plaintext";
   const extension = name.slice(name.lastIndexOf(".")).toLowerCase();
-  return LANGUAGES.find(([, extensions]) => extensions.includes(extension))?.[0] ?? (extension === ".md" ? "markdown" : "plaintext");
+  return (
+    LANGUAGES.find(([, extensions]) => extensions.includes(extension))?.[0] ??
+    (extension === ".md" ? "markdown" : "plaintext")
+  );
 }
 
 /**
@@ -194,7 +226,11 @@ function followTheme(): void {
       inherit: true,
       rules: [
         { token: "", foreground: token("fg-1") },
-        ...Object.entries(TOKENS).map(([kind, { color, italic }]) => ({ token: kind, foreground: token(color), fontStyle: italic ? "italic" : "" })),
+        ...Object.entries(TOKENS).map(([kind, { color, italic }]) => ({
+          token: kind,
+          foreground: token(color),
+          fontStyle: italic ? "italic" : "",
+        })),
       ],
       colors: {
         "editor.background": token("bg-0"),
@@ -283,7 +319,10 @@ function followTheme(): void {
 }
 const defined = new Set<string>();
 followTheme();
-new MutationObserver(followTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+new MutationObserver(followTheme).observe(document.documentElement, {
+  attributes: true,
+  attributeFilter: ["data-theme"],
+});
 // a web font measured before it loaded leaves the carets and squiggles short of its letters; the editor's own text is
 // what asks for Geist Mono, after this module ran, so measure again whenever fonts finish loading
 document.fonts.addEventListener("loadingdone", () => monaco.editor.remeasureFonts());
@@ -298,7 +337,11 @@ export function codeLines(text: string, name: string): CodeToken[][] {
     const line = lines[i] ?? "";
     return tokens.map((token, j) => {
       const style = TOKENS[token.type] ?? TOKENS[token.type.slice(0, token.type.lastIndexOf("."))];
-      return { content: line.slice(token.offset, tokens[j + 1]?.offset), color: style && `var(--${style.color})`, italic: style?.italic };
+      return {
+        content: line.slice(token.offset, tokens[j + 1]?.offset),
+        color: style && `var(--${style.color})`,
+        italic: style?.italic,
+      };
     });
   });
 }
@@ -312,7 +355,10 @@ export function locTokens(value: string): CodeToken[] {
   const out: CodeToken[] = [];
   let at = 0;
   for (const token of codeLines(`${before}${value}"`, "loc.yml")[0] ?? []) {
-    const content = token.content.slice(Math.max(before.length - at, 0), Math.max(before.length + value.length - at, 0));
+    const content = token.content.slice(
+      Math.max(before.length - at, 0),
+      Math.max(before.length + value.length - at, 0),
+    );
     if (content) out.push({ ...token, content, color: token.color === "var(--syn-str)" ? undefined : token.color });
     at += token.content.length;
   }
@@ -365,8 +411,13 @@ export function diffView(host: HTMLElement, font: CodeFont, side: boolean, all: 
   return {
     view,
     /** Show two texts, each in its file's grammar (its format, where the text came from Go). */
-    show(before: { text: string; name: string; format?: string }, after: { text: string; name: string; format?: string }): void {
-      const next = [before, after].map(({ text, name, format }) => monaco.editor.createModel(text, languageOf(name, format)));
+    show(
+      before: { text: string; name: string; format?: string },
+      after: { text: string; name: string; format?: string },
+    ): void {
+      const next = [before, after].map(({ text, name, format }) =>
+        monaco.editor.createModel(text, languageOf(name, format)),
+      );
       view.setModel({ original: next[0]!, modified: next[1]! });
       shown.forEach((model) => model.dispose());
       shown = next;

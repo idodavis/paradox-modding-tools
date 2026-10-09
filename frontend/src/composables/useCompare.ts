@@ -32,7 +32,10 @@ export function useCompare(workspaceId: MaybeRefOrGetter<string>) {
     if (!at || !game || at.root.readOnly) return;
     const copy = under(game, at.rel);
     if (!(await StatPath(copy)).exists) return void toast.add({ title: `The game has no ${at.rel}`, color: "neutral" });
-    void compare.open({ old: { path: copy, rel: at.rel, origin: store.originVanilla, line: 0 }, now: side(path, line) });
+    void compare.open({
+      old: { path: copy, rel: at.rel, origin: store.originVanilla, line: 0 },
+      now: side(path, line),
+    });
   }
 
   return { files, withGame };

@@ -19,7 +19,9 @@ export const useGitStore = defineStore("git", () => {
   const queryCache = useQueryCache();
 
   const { data: available } = useQuery(gitAvailableQuery);
-  const { data: repos } = useQuery(() => gitReposQuery({ id: workspace.activeWorkspaceId, enabled: !!available.value }));
+  const { data: repos } = useQuery(() =>
+    gitReposQuery({ id: workspace.activeWorkspaceId, enabled: !!available.value }),
+  );
 
   /** The repository a file is in. */
   const repoOf = (path: string): GitRepository | undefined =>
@@ -87,5 +89,24 @@ export const useGitStore = defineStore("git", () => {
     onSettled: refresh,
   });
 
-  return { available, repos, repoOf, picked, repo, root, bare, initialize, statuses, status, log, hasMore, loadMore, branches, output, told, refresh, run };
+  return {
+    available,
+    repos,
+    repoOf,
+    picked,
+    repo,
+    root,
+    bare,
+    initialize,
+    statuses,
+    status,
+    log,
+    hasMore,
+    loadMore,
+    branches,
+    output,
+    told,
+    refresh,
+    run,
+  };
 });

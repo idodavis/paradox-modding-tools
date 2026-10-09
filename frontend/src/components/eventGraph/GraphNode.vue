@@ -11,7 +11,12 @@ import type { Node } from "@services/models";
 import { kindOf, shapeOf } from "../../composables/useEventGraph";
 import { useWorkspaceStore } from "../../stores/workspace";
 
-const { node, selected = false, dim = false, lod = false } = defineProps<{
+const {
+  node,
+  selected = false,
+  dim = false,
+  lod = false,
+} = defineProps<{
   node: Node;
   selected?: boolean;
   dim?: boolean;

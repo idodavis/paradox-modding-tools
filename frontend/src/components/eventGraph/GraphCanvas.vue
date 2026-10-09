@@ -27,7 +27,17 @@ import { reach } from "../../composables/useEventGraph";
 import { plural } from "../../lib/format";
 
 type Point = { x: number; y: number };
-const { nodes, edges, positions, routes, heads, rootId, selectedId, depth, full = false } = defineProps<{
+const {
+  nodes,
+  edges,
+  positions,
+  routes,
+  heads,
+  rootId,
+  selectedId,
+  depth,
+  full = false,
+} = defineProps<{
   nodes: Node[];
   edges: Edge[];
   positions: Map<string, Point>;
@@ -102,7 +112,8 @@ const flowEdges = computed((): FlowEdge[] =>
       type: "fire",
       data: route,
       label: touches(edge) ? [edge.block, edge.via].filter(Boolean).join(" · ") : "",
-      class: onRoute(edge) || touches(edge) ? "lit" : [lit.value && "dim", route?.back && "back"].filter(Boolean).join(" "),
+      class:
+        onRoute(edge) || touches(edge) ? "lit" : [lit.value && "dim", route?.back && "back"].filter(Boolean).join(" "),
     };
   }),
 );
@@ -196,7 +207,11 @@ defineExpose({ fit: () => fitView({ padding: 0.15, maxZoom: 1 }) });
       <template #edge-fire="edge">
         <BaseEdge :id="edge.id" :path="drawn(edge)[0]" />
         <EdgeLabelRenderer v-if="edge.label">
-          <span class="fire-label" :style="{ transform: `translate(-50%, -50%) translate(${drawn(edge)[1]}px, ${drawn(edge)[2]}px)` }">{{ edge.label }}</span>
+          <span
+            class="fire-label"
+            :style="{ transform: `translate(-50%, -50%) translate(${drawn(edge)[1]}px, ${drawn(edge)[2]}px)` }"
+            >{{ edge.label }}</span
+          >
         </EdgeLabelRenderer>
       </template>
       <template #node-head="{ data }">
@@ -233,8 +248,12 @@ defineExpose({ fit: () => fitView({ padding: 0.15, maxZoom: 1 }) });
         </span>
         Event
       </span>
-      <span class="flex items-center gap-1.5"><span class="h-2.5 w-5 rounded-full border border-accented bg-muted" />On action</span>
-      <span class="flex items-center gap-1.5"><span class="h-2.5 w-5 rounded-full border border-accented" />Effect or trigger</span>
+      <span class="flex items-center gap-1.5"
+        ><span class="h-2.5 w-5 rounded-full border border-accented bg-muted" />On action</span
+      >
+      <span class="flex items-center gap-1.5"
+        ><span class="h-2.5 w-5 rounded-full border border-accented" />Effect or trigger</span
+      >
       <span class="flex items-center gap-1.5"><OriginDot color="var(--o1)" small />Origin</span>
       <span class="flex items-center gap-1.5"><span class="h-0.5 w-3.5 bg-secondary" />Selected path</span>
     </div>

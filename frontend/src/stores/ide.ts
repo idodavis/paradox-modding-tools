@@ -73,10 +73,14 @@ function beside(node: Layout, target: number, edge: Exclude<Edge, "middle">, add
 /** A layout without a group; a split left with one part becomes that part. */
 function without(node: Layout, gone: number): Layout | null {
   if ("group" in node) return node.group === gone ? null : node;
-  const kept = node.parts.map((part, i) => ({ part: without(part, gone), size: node.sizes[i] ?? 0 })).filter((one) => one.part);
+  const kept = node.parts
+    .map((part, i) => ({ part: without(part, gone), size: node.sizes[i] ?? 0 }))
+    .filter((one) => one.part);
   if (kept.length === 1) return kept[0]?.part ?? null;
   const total = kept.reduce((sum, one) => sum + one.size, 0) || 1;
-  return kept.length ? { ...node, parts: kept.map((one) => one.part as Layout), sizes: kept.map((one) => one.size / total) } : null;
+  return kept.length
+    ? { ...node, parts: kept.map((one) => one.part as Layout), sizes: kept.map((one) => one.size / total) }
+    : null;
 }
 
 /** The group at a layout's top right, whose tab strip ends with the Wiki button. */
@@ -123,7 +127,9 @@ export const useIdeStore = defineStore("ide", () => {
   const panel = kept<"problems" | "git" | "">("pmt.ide.panel", "problems");
   const wikiOpen = kept("pmt.ide.wikiOpen", false);
   // each workspace's groups and where they sit, kept on this computer
-  const layouts = useLocalStorage<Record<string, { layout: Layout; groups: Group[]; others?: string[]; active?: string }>>("pmt.ide.layouts", {});
+  const layouts = useLocalStorage<
+    Record<string, { layout: Layout; groups: Group[]; others?: string[]; active?: string }>
+  >("pmt.ide.layouts", {});
 
   const group = (id: number) => groups.value.find((one) => one.id === id);
   /** The tab shown in the focused group, and its file (a diff tab's too). */
@@ -148,13 +154,17 @@ export const useIdeStore = defineStore("ide", () => {
     const here = openFiles.value.some((tab) => pathKey(tabOf(tab).file) === key);
     const to = holder?.name ?? (here ? "" : home?.name) ?? (holdsFiles ? "" : "main");
     if (to) return void Events.Emit("window:show", { to, route: "", path, line: at?.line ?? -1, col: at?.col ?? 0 });
-    const target = [group(focused.value), ...groups.value].find((one) => one?.files.includes(path)) ?? group(focused.value) ?? groups.value[0];
+    const target =
+      [group(focused.value), ...groups.value].find((one) => one?.files.includes(path)) ??
+      group(focused.value) ??
+      groups.value[0];
     if (!target) return;
     if (!target.files.includes(path)) target.files.splice(target.files.indexOf(target.active) + 1, 0, path);
     target.active = path;
     focused.value = target.id;
     if (at) place.value = { path, line: at.line, col: at.col ?? 0 };
-    if (isMain && router.currentRoute.value.name !== "workspace-ide") void router.push({ name: "workspace-ide", params: { id: workspace.activeWorkspaceId } });
+    if (isMain && router.currentRoute.value.name !== "workspace-ide")
+      void router.push({ name: "workspace-ide", params: { id: workspace.activeWorkspaceId } });
   }
 
   /** A file edited where no tab shows it (a peek): a tab after the focused group's, the shown tab kept. */
@@ -284,9 +294,12 @@ export const useIdeStore = defineStore("ide", () => {
     editing.value = id;
     const saved = fresh ? undefined : layouts.value[id];
     const once = (list: string[]) => [...new Map(list.map((file) => [pathKey(file), file])).values()];
-    const kept = (saved?.groups ?? []).map((one) => ({ ...one, files: once(one.files) })).filter((one) => one.files.length);
+    const kept = (saved?.groups ?? [])
+      .map((one) => ({ ...one, files: once(one.files) }))
+      .filter((one) => one.files.length);
     let shape: Layout | null = saved?.layout ?? null;
-    for (const one of saved?.groups ?? []) if (!kept.some((k) => k.id === one.id) && shape) shape = without(shape, one.id);
+    for (const one of saved?.groups ?? [])
+      if (!kept.some((k) => k.id === one.id) && shape) shape = without(shape, one.id);
     const placed = new Set(kept.flatMap((one) => one.files.map(pathKey)));
     const rest = once((saved?.others ?? []).filter((file) => !placed.has(pathKey(file))));
     const active = saved?.active ?? "";
@@ -310,7 +323,10 @@ export const useIdeStore = defineStore("ide", () => {
   /** Keep a workspace's tabs on this computer: its groups and where they sit, the tabs other windows hold (they come
    * back into the first group), and the file shown. */
   function remember(id: string, others: string[]): void {
-    layouts.value = { ...layouts.value, [id]: { layout: layout.value, groups: groups.value, others, active: activePath.value } };
+    layouts.value = {
+      ...layouts.value,
+      [id]: { layout: layout.value, groups: groups.value, others, active: activePath.value },
+    };
   }
 
   return {

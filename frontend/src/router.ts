@@ -27,7 +27,12 @@ const router = createRouter({
           // a link opens a card, and a row by its name
           props: (to) => ({ ...to.params, card: to.query.card, name: to.query.name }),
         },
-        { path: "patch-notes", name: "patch-notes", component: () => import("./pages/PatchNotesPage.vue"), props: true },
+        {
+          path: "patch-notes",
+          name: "patch-notes",
+          component: () => import("./pages/PatchNotesPage.vue"),
+          props: true,
+        },
         {
           path: "release",
           name: "release",

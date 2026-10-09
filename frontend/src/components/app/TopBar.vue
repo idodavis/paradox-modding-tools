@@ -43,7 +43,11 @@ const router = useRouter();
 const popped = (name: WorkspaceToolName) => others.has(`page:${name}`);
 async function popOut(name: WorkspaceToolName, label: string): Promise<void> {
   const shown = route.name === name;
-  await openWindow(shown ? route.fullPath : router.resolve({ name, params: { id: store.activeWorkspaceId } }).fullPath, `page:${name}`, label);
+  await openWindow(
+    shown ? route.fullPath : router.resolve({ name, params: { id: store.activeWorkspaceId } }).fullPath,
+    `page:${name}`,
+    label,
+  );
   const next = tabs.value.find((tool) => tool.name !== name && !popped(tool.name));
   if (shown && next) void router.push({ name: next.name, params: { id: store.activeWorkspaceId } });
 }
@@ -54,7 +58,14 @@ async function bringBack(name: WorkspaceToolName): Promise<void> {
 }
 function tabMenu(tool: { name: WorkspaceToolName; label: string }): ContextMenuItem[] {
   if (tool.name === "workspace-ide") return [];
-  if (!popped(tool.name)) return [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void popOut(tool.name, tool.label) }];
+  if (!popped(tool.name))
+    return [
+      {
+        label: "Open in a new window",
+        icon: "i-lucide-app-window",
+        onSelect: () => void popOut(tool.name, tool.label),
+      },
+    ];
   return [
     { label: "Show window", icon: "i-lucide-app-window", onSelect: () => void Show(`page:${tool.name}`) },
     { label: "Back into the main window", icon: "i-lucide-panel-top-close", onSelect: () => void bringBack(tool.name) },
@@ -75,43 +86,51 @@ function switchTo(id: string) {
 }
 
 /** The switcher's menu: each game's workspaces, then New workspace. */
-const switcher = computed(() => [
-  ...store.games
-    .map((game) => {
-      const rows = (workspaces.value ?? []).filter((w) => w.gameId === game.id);
-      return rows.length
-        ? [
-            { type: "label" as const, label: game.name, slot: "game" as const, gameId: game.id },
-            ...rows.map((w) => ({
-              label: w.name,
-              icon: w.id === store.activeWorkspaceId ? "i-lucide-check" : undefined,
-              to: switchTo(w.id),
-            })),
-          ]
-        : [];
-    })
-    .filter((group) => group.length),
-  [{ label: "New workspace", icon: "i-lucide-plus", to: { name: "wizard" as const } }],
-] satisfies DropdownMenuItem[][]);
+const switcher = computed(
+  () =>
+    [
+      ...store.games
+        .map((game) => {
+          const rows = (workspaces.value ?? []).filter((w) => w.gameId === game.id);
+          return rows.length
+            ? [
+                { type: "label" as const, label: game.name, slot: "game" as const, gameId: game.id },
+                ...rows.map((w) => ({
+                  label: w.name,
+                  icon: w.id === store.activeWorkspaceId ? "i-lucide-check" : undefined,
+                  to: switchTo(w.id),
+                })),
+              ]
+            : [];
+        })
+        .filter((group) => group.length),
+      [{ label: "New workspace", icon: "i-lucide-plus", to: { name: "wizard" as const } }],
+    ] satisfies DropdownMenuItem[][],
+);
 
-const scanned = useTimeAgo<"second" | "minute" | "hour" | "day" | "week" | "month" | "year">(() => health.value?.scannedAt ?? 0, {
-  messages: {
-    justNow: "just now",
-    past: (n: string) => (n.match(/\d/) ? `${n} ago` : n),
-    future: (n: string) => n,
-    month: (n: number) => `${n} mo`,
-    year: (n: number) => `${n} y`,
-    day: (n: number) => `${n} d`,
-    week: (n: number) => `${n} wk`,
-    hour: (n: number) => `${n} h`,
-    minute: (n: number) => `${n} min`,
-    second: (n: number) => `${n} s`,
-    invalid: "",
+const scanned = useTimeAgo<"second" | "minute" | "hour" | "day" | "week" | "month" | "year">(
+  () => health.value?.scannedAt ?? 0,
+  {
+    messages: {
+      justNow: "just now",
+      past: (n: string) => (n.match(/\d/) ? `${n} ago` : n),
+      future: (n: string) => n,
+      month: (n: number) => `${n} mo`,
+      year: (n: number) => `${n} y`,
+      day: (n: number) => `${n} d`,
+      week: (n: number) => `${n} wk`,
+      hour: (n: number) => `${n} h`,
+      minute: (n: number) => `${n} min`,
+      second: (n: number) => `${n} s`,
+      invalid: "",
+    },
   },
-});
+);
 
 /** "1.14.2 scanned 4 min ago"; a narrow bar keeps the age. */
-const scanText = computed(() => [compact.value ? "" : health.value?.gameVersion, `scanned ${scanned.value}`].filter(Boolean).join(" "));
+const scanText = computed(() =>
+  [compact.value ? "" : health.value?.gameVersion, `scanned ${scanned.value}`].filter(Boolean).join(" "),
+);
 </script>
 
 <template>
@@ -150,8 +169,19 @@ const scanText = computed(() => [compact.value ? "" : health.value?.gameVersion,
     </UDropdownMenu>
 
     <nav v-if="store.activeWorkspace" class="ms-1 flex h-11 min-w-0 items-center gap-0.5">
-      <UContextMenu v-for="tool in tabs" :key="tool.name" :items="tabMenu(tool)" :disabled="tool.name === 'workspace-ide'">
-        <button v-if="popped(tool.name)" type="button" :class="tabClass(false)" :aria-label="`${tool.label}, in its own window`" @click="Show(`page:${tool.name}`)">
+      <UContextMenu
+        v-for="tool in tabs"
+        :key="tool.name"
+        :items="tabMenu(tool)"
+        :disabled="tool.name === 'workspace-ide'"
+      >
+        <button
+          v-if="popped(tool.name)"
+          type="button"
+          :class="tabClass(false)"
+          :aria-label="`${tool.label}, in its own window`"
+          @click="Show(`page:${tool.name}`)"
+        >
           <UIcon :name="tool.icon" class="size-4" />
           <span v-if="!compact">{{ tool.label }}</span>
           <UIcon name="i-lucide-app-window" class="size-3.5 text-dimmed" />
@@ -171,8 +201,7 @@ const scanText = computed(() => [compact.value ? "" : health.value?.gameVersion,
     <div class="ms-auto flex shrink-0 items-center gap-1.5">
       <div
         v-if="health"
-        class="flex h-7 items-center gap-1.5 rounded-md border border-default bg-elevated ps-2 pe-2.5 text-12
-          whitespace-nowrap text-toned"
+        class="flex h-7 items-center gap-1.5 rounded-md border border-default bg-elevated ps-2 pe-2.5 text-12 whitespace-nowrap text-toned"
       >
         <span
           class="size-1.75 shrink-0 rounded-full"
@@ -187,7 +216,14 @@ const scanText = computed(() => [compact.value ? "" : health.value?.gameVersion,
         <span v-else>Not scanned</span>
       </div>
       <UTooltip text="Search and commands" :kbds="['meta', 'K']">
-        <UButton icon="i-lucide-search" variant="ghost" size="sm" square aria-label="Search and commands" @click="openPalette()" />
+        <UButton
+          icon="i-lucide-search"
+          variant="ghost"
+          size="sm"
+          square
+          aria-label="Search and commands"
+          @click="openPalette()"
+        />
       </UTooltip>
       <UTooltip :text="settings.mode === 'dark' ? 'Switch to light' : 'Switch to dark'">
         <UButton
@@ -207,7 +243,9 @@ const scanText = computed(() => [compact.value ? "" : health.value?.gameVersion,
           square
           aria-label="Settings"
           :disabled="!store.activeWorkspace"
-          :to="store.activeWorkspace ? { name: 'workspace-settings', params: { id: store.activeWorkspaceId } } : undefined"
+          :to="
+            store.activeWorkspace ? { name: 'workspace-settings', params: { id: store.activeWorkspaceId } } : undefined
+          "
         />
       </UTooltip>
     </div>

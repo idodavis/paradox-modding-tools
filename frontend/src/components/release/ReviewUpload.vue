@@ -21,7 +21,12 @@ import { healthQuery, imageQuery, languageQuery, releaseKeys, steamStatusQuery, 
 import { bytes, plural } from "../../lib/format";
 
 // saved: nothing unsaved, so an upload sends what is on screen
-const { listing, summary, steam, saved } = defineProps<{ listing: Listing; summary: ListingSummary; steam?: SteamCompare | null; saved: boolean }>();
+const { listing, summary, steam, saved } = defineProps<{
+  listing: Listing;
+  summary: ListingSummary;
+  steam?: SteamCompare | null;
+  saved: boolean;
+}>();
 const emit = defineEmits<{ back: []; compare: [] }>();
 
 const queryCache = useQueryCache();
@@ -34,13 +39,25 @@ const { data: image } = useQuery(() => imageQuery(listing.thumbnailAbs));
 
 const where = shallowRef("steam");
 // whether Steam can take the upload now, asked when the step shows and on Check again
-const { data: steamProblem, refetch: checkSteam, isLoading: checkingSteam } = useQuery(() => steamStatusQuery({ id: listing.workspaceId, enabled: where.value === "steam" }));
+const {
+  data: steamProblem,
+  refetch: checkSteam,
+  isLoading: checkingSteam,
+} = useQuery(() => steamStatusQuery({ id: listing.workspaceId, enabled: where.value === "steam" }));
 // the upload moving, while it runs
 const moved = shallowRef<Progress | null>(null);
 onScopeDispose(Events.On("steam:progress", ({ data }) => (moved.value = data)));
 const places: RadioGroupItem[] = [
-  { label: "Steam Workshop", description: "PMT uploads through your Steam client. Steam must be running and signed in.", value: "steam" },
-  { label: "Paradox Mods", description: "PMT prepares the description; you upload the mod with the Paradox Launcher.", value: "pdx" },
+  {
+    label: "Steam Workshop",
+    description: "PMT uploads through your Steam client. Steam must be running and signed in.",
+    value: "steam",
+  },
+  {
+    label: "Paradox Mods",
+    description: "PMT prepares the description; you upload the mod with the Paradox Launcher.",
+    value: "pdx",
+  },
 ];
 
 /** A check before an upload: ok passes, not ok warns, no ok only informs; icon, a mark of its own. */
@@ -57,7 +74,12 @@ const checks = computed((): Check[] => {
   const extras: Check[] = !steam?.item
     ? []
     : !mine
-      ? [{ text: `Leaves Steam's screenshots and videos as they are${only ? ` (${only} not in the workspace)` : ""}`, link: "import" }]
+      ? [
+          {
+            text: `Leaves Steam's screenshots and videos as they are${only ? ` (${only} not in the workspace)` : ""}`,
+            link: "import",
+          },
+        ]
       : only
         ? [{ ok: false, text: `Removes ${only} of Steam's screenshots and videos the workspace lacks`, link: "import" }]
         : [{ text: `Replaces Steam's screenshots and videos with the mod's ${mine}` }];
@@ -66,16 +88,46 @@ const checks = computed((): Check[] => {
       ? { ok: true, text: `Version ${version}, the first upload` }
       : !steam.from
         ? { text: `Version ${version}; Steam's is known once compared` }
-        : { ok: version !== steam.version, text: version !== steam.version ? `Version ${version}, up from ${steam.version} on Steam` : `Version ${version}, the same as on Steam` },
-    { ok: undefined, text: `Supports game ${listing.supportedVersion || "any version"}, installed ${language.value?.gameVersion ?? "unknown"}` },
+        : {
+            ok: version !== steam.version,
+            text:
+              version !== steam.version
+                ? `Version ${version}, up from ${steam.version} on Steam`
+                : `Version ${version}, the same as on Steam`,
+          },
+    {
+      ok: undefined,
+      text: `Supports game ${listing.supportedVersion || "any version"}, installed ${language.value?.gameVersion ?? "unknown"}`,
+    },
     image.value
-      ? { ok: small, text: `Thumbnail ${image.value.width} by ${image.value.height}, ${small ? "under" : "over Steam's"} 1 MB` }
+      ? {
+          ok: small,
+          text: `Thumbnail ${image.value.width} by ${image.value.height}, ${small ? "under" : "over Steam's"} 1 MB`,
+        }
       : { ok: false, text: "No thumbnail" },
     !live.value
       ? { ok: undefined, text: "Dangling references show once the workspace is open" }
-      : { ok: !dangling, text: dangling ? `${plural(dangling, "dangling reference")} in this mod` : "No dangling references in this mod", link: dangling ? "health" : undefined },
-    { ok: undefined, text: upload.value ? `${upload.value.count} files, ${bytes(upload.value.bytes)} after exclusions` : "Counting the files…", link: "exclusions" },
-    { ok: undefined, text: summary.descSource === "steam" ? "Leaves Steam's description as it is" : `Replaces Steam's description with ${summary.descRel}` },
+      : {
+          ok: !dangling,
+          text: dangling
+            ? `${plural(dangling, "dangling reference")} in this mod`
+            : "No dangling references in this mod",
+          link: dangling ? "health" : undefined,
+        },
+    {
+      ok: undefined,
+      text: upload.value
+        ? `${upload.value.count} files, ${bytes(upload.value.bytes)} after exclusions`
+        : "Counting the files…",
+      link: "exclusions",
+    },
+    {
+      ok: undefined,
+      text:
+        summary.descSource === "steam"
+          ? "Leaves Steam's description as it is"
+          : `Replaces Steam's description with ${summary.descRel}`,
+    },
     ...extras,
   ];
 });
@@ -85,8 +137,12 @@ const changes = computed(() => {
   if (!steam?.item) return undefined;
   if (!steam.from) return { text: "On Steam, with no copy to compare yet", tone: "bg-elevated text-dimmed" };
   const files = steam.files?.length ?? 0;
-  if (!steam.changes) return { text: "Same as Steam: an upload changes nothing", tone: "bg-(--orange-soft) text-warning" };
-  return { text: `${plural(steam.changes, "change")} on Steam: ${steam.changes - files} in the listing, ${plural(files, "file")}`, tone: "bg-(--blue-soft) text-info" };
+  if (!steam.changes)
+    return { text: "Same as Steam: an upload changes nothing", tone: "bg-(--orange-soft) text-warning" };
+  return {
+    text: `${plural(steam.changes, "change")} on Steam: ${steam.changes - files} in the listing, ${plural(files, "file")}`,
+    tone: "bg-(--blue-soft) text-info",
+  };
 });
 const { mutate: importExtras, isLoading: importing } = useMutation({
   mutation: () => ImportSteamExtras(listing.workspaceId, listing.modId),
@@ -107,10 +163,20 @@ const { mutate: exportZip, isLoading: zipping } = useMutation({
     return dest;
   },
   onSuccess: (dest) =>
-    dest && toast.add({ title: "Zip saved", description: dest, color: "success", actions: [{ label: "Show in folder", onClick: () => void OpenFolder(dest.replace(/[\\/][^\\/]*$/, "")) }] }),
+    dest &&
+    toast.add({
+      title: "Zip saved",
+      description: dest,
+      color: "success",
+      actions: [{ label: "Show in folder", onClick: () => void OpenFolder(dest.replace(/[\\/][^\\/]*$/, "")) }],
+    }),
 });
 
-const { mutate: publish, isLoading: publishing, data: published } = useMutation({
+const {
+  mutate: publish,
+  isLoading: publishing,
+  data: published,
+} = useMutation({
   mutation: () => {
     moved.value = null;
     return PublishSteam(listing.workspaceId, listing.modId);
@@ -124,7 +190,9 @@ const { copy, copied } = useClipboard();
 const steamText = computed(() => steam?.listing?.find((row) => row.field === "Description")?.steam ?? "");
 async function copyBBCode(): Promise<void> {
   if (summary.descSource === "steam") return void copy(steamText.value);
-  void copy(summary.descSource === "markdown" ? (await Convert(listing.readmeMd, "bbcode")).text : listing.readmeBbcode);
+  void copy(
+    summary.descSource === "markdown" ? (await Convert(listing.readmeMd, "bbcode")).text : listing.readmeBbcode,
+  );
 }
 </script>
 
@@ -144,10 +212,18 @@ async function copyBBCode(): Promise<void> {
         <span class="text-12 font-medium text-toned">Before you upload</span>
         <div class="divide-y divide-default overflow-hidden rounded-lg border border-default bg-muted px-4 py-0.5">
           <div v-for="check in checks" :key="check.text" class="flex items-start gap-2.5 py-2.5 text-13">
-            <UIcon :name="check.icon ?? ICONS[`${check.ok}`]?.[0] ?? ''" class="mt-0.75 size-3.5 shrink-0" :class="ICONS[`${check.ok}`]?.[1]" />
+            <UIcon
+              :name="check.icon ?? ICONS[`${check.ok}`]?.[0] ?? ''"
+              class="mt-0.75 size-3.5 shrink-0"
+              :class="ICONS[`${check.ok}`]?.[1]"
+            />
             <span class="flex min-w-0 flex-col gap-0.5">
               {{ check.text }}
-              <ULink v-if="check.link === 'health'" :to="{ name: 'health', params: { id: listing.workspaceId }, query: { card: 'dangling' } }" class="text-12 text-secondary">
+              <ULink
+                v-if="check.link === 'health'"
+                :to="{ name: 'health', params: { id: listing.workspaceId }, query: { card: 'dangling' } }"
+                class="text-12 text-secondary"
+              >
                 Review in Health
               </ULink>
               <UButton
@@ -167,7 +243,11 @@ async function copyBBCode(): Promise<void> {
               </ULink>
             </span>
           </div>
-          <div v-if="where === 'steam' && changes" class="-mx-4 -mb-0.5 flex items-center gap-2.5 px-4 py-2 text-13" :class="changes.tone">
+          <div
+            v-if="where === 'steam' && changes"
+            class="-mx-4 -mb-0.5 flex items-center gap-2.5 px-4 py-2 text-13"
+            :class="changes.tone"
+          >
             <UIcon name="i-lucide-git-compare" class="size-3.5 shrink-0" />
             <span class="min-w-0 grow text-default">{{ changes.text }}</span>
             <UButton label="Compare with Steam" size="sm" @click="emit('compare')" />
@@ -178,7 +258,13 @@ async function copyBBCode(): Promise<void> {
       <div v-if="where === 'steam'" class="flex flex-col gap-4">
         <UFormField label="Steam item">
           <div class="flex gap-2">
-            <UInput :model-value="listing.remoteFileId" readonly placeholder="A new private item" class="grow" :ui="{ base: 'font-mono text-12' }">
+            <UInput
+              :model-value="listing.remoteFileId"
+              readonly
+              placeholder="A new private item"
+              class="grow"
+              :ui="{ base: 'font-mono text-12' }"
+            >
               <template #trailing>
                 <span class="truncate text-12 text-dimmed">{{ steam?.title }}</span>
               </template>
@@ -206,8 +292,9 @@ async function copyBBCode(): Promise<void> {
       </div>
       <div v-else class="flex flex-col items-start gap-3">
         <p class="text-13 text-toned">
-          Paradox Mods takes the description as BBCode: copy it, open the Paradox Launcher, choose Upload Mod, pick this mod and
-          Paradox Mods, and paste it. The site often drops line breaks. Screenshots and the thumbnail are added on the site.
+          Paradox Mods takes the description as BBCode: copy it, open the Paradox Launcher, choose Upload Mod, pick this
+          mod and Paradox Mods, and paste it. The site often drops line breaks. Screenshots and the thumbnail are added
+          on the site.
         </p>
         <div class="flex flex-wrap gap-2">
           <UButton
@@ -216,9 +303,17 @@ async function copyBBCode(): Promise<void> {
             :disabled="summary.descSource === 'steam' && !steamText"
             @click="copyBBCode"
           />
-          <UButton label="Save the mod as a zip" icon="i-lucide-file-archive" variant="outline" :loading="zipping" @click="exportZip()" />
+          <UButton
+            label="Save the mod as a zip"
+            icon="i-lucide-file-archive"
+            variant="outline"
+            :loading="zipping"
+            @click="exportZip()"
+          />
         </div>
-        <p class="text-12 text-dimmed">The zip holds what an upload sends (the ignore rules applied), for uploading on the Paradox Mods site.</p>
+        <p class="text-12 text-dimmed">
+          The zip holds what an upload sends (the ignore rules applied), for uploading on the Paradox Mods site.
+        </p>
       </div>
     </div>
 
@@ -237,17 +332,38 @@ async function copyBBCode(): Promise<void> {
 
     <span class="grow" />
     <div class="flex items-center gap-3 border-t border-default pt-3.5 pb-4.5">
-      <UButton label="Back to version and change note" icon="i-lucide-arrow-left" variant="ghost" @click="emit('back')" />
+      <UButton
+        label="Back to version and change note"
+        icon="i-lucide-arrow-left"
+        variant="ghost"
+        @click="emit('back')"
+      />
       <span class="grow" />
       <template v-if="where === 'steam'">
         <span v-if="steamProblem" class="flex min-w-0 items-center gap-1.5 text-12 text-warning">
-          <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0" /><span class="truncate" :title="steamProblem">{{ steamProblem }}</span>
-          <UButton label="Check again" variant="link" size="xs" class="shrink-0 p-0" :loading="checkingSteam" @click="checkSteam()" />
+          <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0" /><span
+            class="truncate"
+            :title="steamProblem"
+            >{{ steamProblem }}</span
+          >
+          <UButton
+            label="Check again"
+            variant="link"
+            size="xs"
+            class="shrink-0 p-0"
+            :loading="checkingSteam"
+            @click="checkSteam()"
+          />
         </span>
         <span v-else-if="!saved" class="text-12 text-dimmed">Save to workspace first</span>
         <span v-else class="text-12 text-dimmed">
           Uploading accepts the
-          <UButton label="Steam Workshop agreement" variant="link" class="p-0 text-12" @click="Browser.OpenURL(listing.legalUrl)" />.
+          <UButton
+            label="Steam Workshop agreement"
+            variant="link"
+            class="p-0 text-12"
+            @click="Browser.OpenURL(listing.legalUrl)"
+          />.
         </span>
         <UButton
           :label="`Upload v${listing.version} to Steam`"
@@ -260,10 +376,18 @@ async function copyBBCode(): Promise<void> {
         />
       </template>
     </div>
-    <UModal :open="publishing" title="Uploading to Steam" description="Steam must be running. This can take several minutes." :dismissible="false">
+    <UModal
+      :open="publishing"
+      title="Uploading to Steam"
+      description="Steam must be running. This can take several minutes."
+      :dismissible="false"
+    >
       <template #body>
         <div class="flex flex-col gap-2">
-          <span class="text-13 text-toned">{{ moved?.stage ?? "Starting Steam" }}<template v-if="moved?.total"> · {{ bytes(moved.done) }} of {{ bytes(moved.total) }}</template></span>
+          <span class="text-13 text-toned"
+            >{{ moved?.stage ?? "Starting Steam"
+            }}<template v-if="moved?.total"> · {{ bytes(moved.done) }} of {{ bytes(moved.total) }}</template></span
+          >
           <UProgress :model-value="moved?.total ? (moved.done * 100) / moved.total : null" />
         </div>
       </template>

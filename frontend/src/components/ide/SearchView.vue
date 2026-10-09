@@ -55,7 +55,11 @@ const GLOBS = [
   { label: "Files to include", text: include, placeholder: "common/**, *.txt" },
   { label: "Files to exclude", text: exclude, placeholder: "gfx/**" },
 ];
-const globs = (text: string) => text.split(",").map((glob) => glob.trim()).filter(Boolean);
+const globs = (text: string) =>
+  text
+    .split(",")
+    .map((glob) => glob.trim())
+    .filter(Boolean);
 // hidden binaries are searched no more than they are listed
 const BINARY_GLOBS = ["*.{dll,exe,pdb,hash,hex,bin,dat}"];
 
@@ -123,7 +127,9 @@ const toggled = shallowRef(new Set<string>());
 const files = computed(() => {
   const out = new Map<string, { path: string; rel: string; origin: string; rows: TextSearchHit[]; open: boolean }>();
   for (const row of results.value?.rows ?? []) {
-    const file = out.get(row.path) ?? out.set(row.path, { path: row.path, rel: row.rel, origin: row.origin, rows: [], open: false }).get(row.path)!;
+    const file =
+      out.get(row.path) ??
+      out.set(row.path, { path: row.path, rel: row.rel, origin: row.origin, rows: [], open: false }).get(row.path)!;
     file.rows.push(row);
   }
   let shown = 0;
@@ -140,7 +146,9 @@ function toggle(path: string): void {
 }
 /** A file's folder, named by its origin as a peek names it. */
 const folderOf = (file: { rel: string; origin: string }) =>
-  [store.originName(file.origin), file.rel.slice(0, Math.max(0, file.rel.lastIndexOf("/")))].filter(Boolean).join(" › ");
+  [store.originName(file.origin), file.rel.slice(0, Math.max(0, file.rel.lastIndexOf("/")))]
+    .filter(Boolean)
+    .join(" › ");
 // a reference comes without its line; the lines are read for those
 const missing = computed(() => (results.value?.rows ?? []).filter((row) => !row.preview));
 const { data: lines } = useQuery(() =>
@@ -154,8 +162,15 @@ const { data: lines } = useQuery(() =>
 function parts(row: TextSearchHit): [string, string, string] {
   const i = row.preview ? -1 : missing.value.indexOf(row);
   const text = row.preview || (lines.value?.[i]?.[0] ?? "");
-  const { start, end } = editorRange({ start: { line: 0, character: row.col }, end: { line: 0, character: row.end } }, () => text);
-  return [text.slice(0, start.character).trimStart(), text.slice(start.character, end.character), text.slice(end.character)];
+  const { start, end } = editorRange(
+    { start: { line: 0, character: row.col }, end: { line: 0, character: row.end } },
+    () => text,
+  );
+  return [
+    text.slice(0, start.character).trimStart(),
+    text.slice(start.character, end.character),
+    text.slice(end.character),
+  ];
 }
 
 // Replace all: in the mods' folders picked; Go writes the files, the editor changes the ones it has open
@@ -166,11 +181,15 @@ async function replaceAll(): Promise<void> {
   if (!(await confirm.open({ title: "Replace all?", text, action: "Replace all" }))) return;
   // the open files go with their text in the editor, unsaved edits and all; Go replaces there as on disk, and
   // hands their new text back for the editor
-  const open = Object.fromEntries(ide.openFiles.flatMap((path) => (openText(path) === undefined ? [] : [[path, openText(path) ?? ""]])));
-  const done = await Replace({ search: query("", writable.value), text: replacement.value, open }).catch((error: unknown) => {
-    toast.add({ title: "Replace all could not run", description: String(error), color: "error" });
-    return null;
-  });
+  const open = Object.fromEntries(
+    ide.openFiles.flatMap((path) => (openText(path) === undefined ? [] : [[path, openText(path) ?? ""]])),
+  );
+  const done = await Replace({ search: query("", writable.value), text: replacement.value, open }).catch(
+    (error: unknown) => {
+      toast.add({ title: "Replace all could not run", description: String(error), color: "error" });
+      return null;
+    },
+  );
   if (!done) return;
   const texts = Object.entries(done.texts ?? {});
   for (const [path, text = ""] of texts) editText(path, () => text);
@@ -189,7 +208,15 @@ async function replaceAll(): Promise<void> {
     <div class="flex flex-col gap-2.5 p-2.5" @keydown.enter="run">
       <UInput v-model="pattern" placeholder="Search" size="sm" autofocus :ui="{ trailing: 'pe-1' }">
         <template #trailing>
-          <UButton v-if="pattern" icon="i-lucide-x" size="xs" square variant="ghost" aria-label="Clear" @click="pattern = ''" />
+          <UButton
+            v-if="pattern"
+            icon="i-lucide-x"
+            size="xs"
+            square
+            variant="ghost"
+            aria-label="Clear"
+            @click="pattern = ''"
+          />
           <UTooltip v-for="toggle in TOGGLES" :key="toggle.label" :text="toggle.label">
             <UButton
               :icon="toggle.icon"
@@ -206,7 +233,15 @@ async function replaceAll(): Promise<void> {
       </UInput>
       <UInput v-model="replacement" placeholder="Replace" size="sm" :ui="{ trailing: 'pe-1' }">
         <template #trailing>
-          <UButton v-if="replacement" icon="i-lucide-x" size="xs" square variant="ghost" aria-label="Clear" @click="replacement = ''" />
+          <UButton
+            v-if="replacement"
+            icon="i-lucide-x"
+            size="xs"
+            square
+            variant="ghost"
+            aria-label="Clear"
+            @click="replacement = ''"
+          />
           <UTooltip text="Replace all">
             <UButton
               icon="i-lucide-replace-all"
@@ -221,9 +256,22 @@ async function replaceAll(): Promise<void> {
         </template>
       </UInput>
       <UFormField v-for="glob in GLOBS" :key="glob.label" :label="glob.label">
-        <UInput v-model="glob.text.value" :placeholder="glob.placeholder" size="sm" class="w-full font-mono" :ui="{ trailing: 'pe-1' }">
+        <UInput
+          v-model="glob.text.value"
+          :placeholder="glob.placeholder"
+          size="sm"
+          class="w-full font-mono"
+          :ui="{ trailing: 'pe-1' }"
+        >
           <template v-if="glob.text.value" #trailing>
-            <UButton icon="i-lucide-x" size="xs" square variant="ghost" aria-label="Clear" @click="glob.text.value = ''" />
+            <UButton
+              icon="i-lucide-x"
+              size="xs"
+              square
+              variant="ghost"
+              aria-label="Clear"
+              @click="glob.text.value = ''"
+            />
           </template>
         </UInput>
       </UFormField>
@@ -251,8 +299,14 @@ async function replaceAll(): Promise<void> {
         <UBadge v-if="results.capped" label="Stopped at the cap" color="warning" size="sm" />
       </p>
       <template v-for="file in files" :key="file.path">
-        <button class="flex h-6 w-full items-center gap-1.5 ps-1.5 pe-2.5 text-start text-12 whitespace-nowrap hover:bg-accented" @click="toggle(file.path)">
-          <UIcon :name="file.open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5 shrink-0 text-dimmed" />
+        <button
+          class="flex h-6 w-full items-center gap-1.5 ps-1.5 pe-2.5 text-start text-12 whitespace-nowrap hover:bg-accented"
+          @click="toggle(file.path)"
+        >
+          <UIcon
+            :name="file.open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+            class="size-3.5 shrink-0 text-dimmed"
+          />
           <OriginDot :color="store.originColor(file.origin)" small />
           <span class="shrink-0 text-highlighted">{{ fileName(file.path) }}</span>
           <span class="min-w-0 truncate text-11 text-dimmed">{{ folderOf(file) }}</span>
@@ -266,7 +320,10 @@ async function replaceAll(): Promise<void> {
             :title="`${file.rel}:${row.line + 1}`"
             @click="ide.open(row.path, { line: row.line, col: row.col })"
           >
-            <span v-for="[before, match, after] in [parts(row)]" :key="0" class="truncate">{{ before }}<b class="rounded-xs bg-(--accent-soft) font-medium text-highlighted">{{ match }}</b>{{ after }}</span>
+            <span v-for="[before, match, after] in [parts(row)]" :key="0" class="truncate"
+              >{{ before }}<b class="rounded-xs bg-(--accent-soft) font-medium text-highlighted">{{ match }}</b
+              >{{ after }}</span
+            >
           </button>
         </template>
       </template>

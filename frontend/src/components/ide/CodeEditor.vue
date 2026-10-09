@@ -42,9 +42,24 @@ watch(
     const { editor } = view.value;
     const { CtrlCmd, Shift, Alt } = monaco.KeyMod;
     const { KeyCode } = monaco;
-    editor.addAction({ id: "pmt.save", label: "Save", keybindings: [CtrlCmd | KeyCode.KeyS], run: () => void saveFile(path) });
-    editor.addAction({ id: "pmt.graph", label: "Open in Event Graph", keybindings: [CtrlCmd | Shift | KeyCode.KeyG], run: () => void graph() });
-    editor.addAction({ id: "pmt.findAll", label: "Find all references", keybindings: [Shift | Alt | KeyCode.F12], run: () => void findAll() });
+    editor.addAction({
+      id: "pmt.save",
+      label: "Save",
+      keybindings: [CtrlCmd | KeyCode.KeyS],
+      run: () => void saveFile(path),
+    });
+    editor.addAction({
+      id: "pmt.graph",
+      label: "Open in Event Graph",
+      keybindings: [CtrlCmd | Shift | KeyCode.KeyG],
+      run: () => void graph(),
+    });
+    editor.addAction({
+      id: "pmt.findAll",
+      label: "Find all references",
+      keybindings: [Shift | Alt | KeyCode.F12],
+      run: () => void findAll(),
+    });
     // the status bar's caret is the shown tab's
     if (ide.focused === group) view.value.report();
     showPlace();
@@ -62,7 +77,9 @@ function showPlace(): void {
   ide.place = null;
   const model = shown.value;
   const byte = { line: place.line, character: place.col };
-  const at = editorRange({ start: byte, end: byte }, (n) => (n < model.getLineCount() ? model.getLineContent(n + 1) : undefined)).start;
+  const at = editorRange({ start: byte, end: byte }, (n) =>
+    n < model.getLineCount() ? model.getLineContent(n + 1) : undefined,
+  ).start;
   const position = { lineNumber: at.line + 1, column: at.character + 1 };
   editor.setPosition(position);
   editor.revealPositionInCenterIfOutsideViewport(position);
@@ -119,7 +136,10 @@ async function onContext(): Promise<void> {
   actions.value = [];
   card.value = null;
   [actions.value, card.value] = await Promise.all([
-    rpc.CodeActions(workspaceId, path, line, col).then((found) => found ?? []).catch(() => []),
+    rpc
+      .CodeActions(workspaceId, path, line, col)
+      .then((found) => found ?? [])
+      .catch(() => []),
     rpc.Hover(workspaceId, path, line, col).catch(() => null),
   ]);
 }
@@ -144,13 +164,20 @@ function selected(): string {
 /** Write text over the selections (a paste), or delete them with "" (a cut). */
 function write(text: string): void {
   const editor = view.value?.editor;
-  editor?.executeEdits("menu", (editor.getSelections() ?? []).map((range) => ({ range, text })));
+  editor?.executeEdits(
+    "menu",
+    (editor.getSelections() ?? []).map((range) => ({ range, text })),
+  );
 }
 
 const readOnly = computed(() => !!locate(path)?.root.readOnly);
 const menu = computed<ContextMenuItem[][]>(() =>
   [
-    actions.value.map((action) => ({ label: action.title, icon: "i-lucide-lightbulb", onSelect: () => void applyFix(action) })),
+    actions.value.map((action) => ({
+      label: action.title,
+      icon: "i-lucide-lightbulb",
+      onSelect: () => void applyFix(action),
+    })),
     [
       { label: "Go to definition", kbds: ["F12"], onSelect: () => run("editor.action.revealDefinition") },
       { label: "Go to references", kbds: ["Shift F12"], onSelect: () => run("editor.action.goToReferences") },
@@ -165,16 +192,30 @@ const menu = computed<ContextMenuItem[][]>(() =>
       { label: "Rename", kbds: ["F2"], disabled: readOnly.value, onSelect: () => run("editor.action.rename") },
     ],
     [
-      { label: "Open in Event Graph", kbds: ["Ctrl Shift G"], disabled: !card.value?.graphed, onSelect: () => void graph(card.value) },
+      {
+        label: "Open in Event Graph",
+        kbds: ["Ctrl Shift G"],
+        disabled: !card.value?.graphed,
+        onSelect: () => void graph(card.value),
+      },
       {
         label: "Show in Health",
         disabled: !healthCard.value,
         onSelect: () =>
-          void router.push({ name: "health", params: { id: workspaceId }, query: { card: healthCard.value, name: card.value?.word } }),
+          void router.push({
+            name: "health",
+            params: { id: workspaceId },
+            query: { card: healthCard.value, name: card.value?.word },
+          }),
       },
     ],
     [
-      { label: "Format document", kbds: ["Shift Alt F"], disabled: readOnly.value, onSelect: () => run("editor.action.formatDocument") },
+      {
+        label: "Format document",
+        kbds: ["Shift Alt F"],
+        disabled: readOnly.value,
+        onSelect: () => run("editor.action.formatDocument"),
+      },
       { label: "Copy path", onSelect: () => void Clipboard.SetText(path) },
       {
         label: "Cut",
@@ -186,7 +227,12 @@ const menu = computed<ContextMenuItem[][]>(() =>
         },
       },
       { label: "Copy", kbds: ["Ctrl C"], onSelect: () => void Clipboard.SetText(selected()) },
-      { label: "Paste", kbds: ["Ctrl V"], disabled: readOnly.value, onSelect: async () => write(await Clipboard.Text()) },
+      {
+        label: "Paste",
+        kbds: ["Ctrl V"],
+        disabled: readOnly.value,
+        onSelect: async () => write(await Clipboard.Text()),
+      },
     ],
     [{ label: "Command palette", kbds: ["Ctrl Shift P"], onSelect: () => openPalette() }],
   ].filter((items) => items.length),
@@ -198,7 +244,10 @@ const reference = computed(() => {
   const card = hover.value;
   return card ? { getBoundingClientRect: () => card.anchor } : undefined;
 });
-const keepFocus = { onOpenAutoFocus: (e: Event) => e.preventDefault(), onCloseAutoFocus: (e: Event) => e.preventDefault() };
+const keepFocus = {
+  onOpenAutoFocus: (e: Event) => e.preventDefault(),
+  onCloseAutoFocus: (e: Event) => e.preventDefault(),
+};
 
 // Rich: the Markdown as the Publish page's editor writes it, put into the file's text at each edit
 const rich = computed(() => ide.viewOf(path) === "visual");
@@ -210,7 +259,13 @@ function writeRich(markdown: string | undefined): void {
 <template>
   <!-- the menu takes the card's place: no card shows while it is open, nor one that was about to -->
   <UContextMenu :items="menu" :disabled="rich" :ui="{ content: 'w-79' }" @update:open="(open) => view?.muteHover(open)">
-    <div ref="host" class="min-h-0 flex-1 border-s-12 border-(--bg-0)" :class="{ hidden: rich }" @contextmenu="onContext" @focusin="ide.focused = group" />
+    <div
+      ref="host"
+      class="min-h-0 flex-1 border-s-12 border-(--bg-0)"
+      :class="{ hidden: rich }"
+      @contextmenu="onContext"
+      @focusin="ide.focused = group"
+    />
   </UContextMenu>
   <UEditor
     v-if="rich && shown"

@@ -31,7 +31,12 @@ const steps = computed<StepperItem[]>(() => {
   const items = [
     { value: "listing", title: STEP_TITLES.listing, line: "What players see" },
     { value: "release", title: STEP_TITLES.release, line: "What this upload is" },
-    { value: "review", title: STEP_TITLES.review, line: blocked ? "Save to workspace first" : "Check, then send to Steam", disabled: blocked },
+    {
+      value: "review",
+      title: STEP_TITLES.review,
+      line: blocked ? "Save to workspace first" : "Check, then send to Steam",
+      disabled: blocked,
+    },
   ];
   return items.map(({ line, ...item }, i) => {
     const done = saved && i < at;

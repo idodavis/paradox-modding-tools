@@ -45,7 +45,6 @@ import {
   type SettingSwitch,
 } from "../../workspaceTools";
 
-
 const router = useRouter();
 const store = useWorkspaceStore();
 const settings = useSettingsStore();
@@ -62,7 +61,13 @@ const compare = useCompare(() => store.activeWorkspaceId);
 const term = shallowRef("> ");
 watch(paletteOpen, (open) => open && (term.value = start.value));
 const mode = computed(() =>
-  term.value.startsWith(">") ? "commands" : term.value.startsWith("@") ? "symbols" : term.value.startsWith("#") ? "events" : "files",
+  term.value.startsWith(">")
+    ? "commands"
+    : term.value.startsWith("@")
+      ? "symbols"
+      : term.value.startsWith("#")
+        ? "events"
+        : "files",
 );
 const query = computed(() => (mode.value === "files" ? term.value : term.value.slice(1)).trim());
 
@@ -83,7 +88,9 @@ function show(path: string, line = 0, col = 0): void {
 const editors = () => import("../../ide/monacoEditor");
 
 async function graphAtCaret(): Promise<void> {
-  const card = await Hover(store.activeWorkspaceId, ide.activeFile, ide.caret?.line ?? 0, ide.caret?.col ?? 0).catch(() => null);
+  const card = await Hover(store.activeWorkspaceId, ide.activeFile, ide.caret?.line ?? 0, ide.caret?.col ?? 0).catch(
+    () => null,
+  );
   if (card?.graphed) go({ name: "event-graph", params: { id: store.activeWorkspaceId }, query: { root: card.word } });
 }
 
@@ -128,7 +135,11 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
             icon: tool.icon,
             onSelect: () => go({ name: tool.name, params: { id } }),
           })),
-          { label: PAGES["workspace-settings"].title, icon: PAGES["workspace-settings"].icon, onSelect: () => go(settingsAt("general")) },
+          {
+            label: PAGES["workspace-settings"].title,
+            icon: PAGES["workspace-settings"].icon,
+            onSelect: () => go(settingsAt("general")),
+          },
         ]
       : []),
   ];
@@ -146,14 +157,32 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
       return [switchItem(setting.label, scope, state.on, state.set, setting.words)];
     }),
     ...WORKSPACE_TOOLS.map((tool) =>
-      switchItem(`Show the ${tool.label} page`, "App", settings.visibleTools.includes(tool.name), (on) => void settings.showTool(tool.name, on)),
+      switchItem(
+        `Show the ${tool.label} page`,
+        "App",
+        settings.visibleTools.includes(tool.name),
+        (on) => void settings.showTool(tool.name, on),
+      ),
     ),
     ...Object.values(SWITCHES)
       .flat()
-      .map((row) => switchItem(row.label, row.key.startsWith("ui.wiki") ? "Wiki" : "IDE", settings.on(row.key), (on) => void settings.setOn(row.key, on), row.hint)),
+      .map((row) =>
+        switchItem(
+          row.label,
+          row.key.startsWith("ui.wiki") ? "Wiki" : "IDE",
+          settings.on(row.key),
+          (on) => void settings.setOn(row.key, on),
+          row.hint,
+        ),
+      ),
     ...(codes.value ?? []).map((check) =>
-      switchItem(`Check: ${check.summary}`, "IDE", settings.on(`ide.diag.${check.code}`, check.default), (on) =>
-        void settings.setOn(`ide.diag.${check.code}`, on), check.code),
+      switchItem(
+        `Check: ${check.summary}`,
+        "IDE",
+        settings.on(`ide.diag.${check.code}`, check.default),
+        (on) => void settings.setOn(`ide.diag.${check.code}`, on),
+        check.code,
+      ),
     ),
   ];
   // the IDE's commands, on the file it shows
@@ -167,12 +196,31 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
   const compares: Item[] = [
     ...(active
       ? [
-          { label: "Select the active file for compare", prefix: "Compare:", icon: "i-lucide-diff", onSelect: run(() => (ide.comparing = active)) },
+          {
+            label: "Select the active file for compare",
+            prefix: "Compare:",
+            icon: "i-lucide-diff",
+            onSelect: run(() => (ide.comparing = active)),
+          },
           ...(picked && picked !== active
-            ? [{ label: "Active file with the file selected", prefix: "Compare:", icon: "i-lucide-diff", onSelect: run(() => compare.files(picked, active)) }]
+            ? [
+                {
+                  label: "Active file with the file selected",
+                  prefix: "Compare:",
+                  icon: "i-lucide-diff",
+                  onSelect: run(() => compare.files(picked, active)),
+                },
+              ]
             : []),
           ...(git.repoOf(active)
-            ? [{ label: "Active file with the last commit", prefix: "Compare:", icon: "i-lucide-git-compare", onSelect: run(() => ide.open(diffTab("changes", active))) }]
+            ? [
+                {
+                  label: "Active file with the last commit",
+                  prefix: "Compare:",
+                  icon: "i-lucide-git-compare",
+                  onSelect: run(() => ide.open(diffTab("changes", active))),
+                },
+              ]
             : []),
           {
             label: "Active file with the game's copy",
@@ -184,7 +232,14 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
         ]
       : []),
     ...(first && second
-      ? [{ label: "Two files selected in the explorer", prefix: "Compare:", icon: "i-lucide-diff", onSelect: run(() => compare.files(first, second)) }]
+      ? [
+          {
+            label: "Two files selected in the explorer",
+            prefix: "Compare:",
+            icon: "i-lucide-diff",
+            onSelect: run(() => compare.files(first, second)),
+          },
+        ]
       : []),
   ];
   // the window loaded again, its unsaved files saved or dropped first
@@ -202,13 +257,47 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
         ...compares,
         ...(active
           ? [
-              { label: "Open the event under the cursor", prefix: "Event Graph:", icon: "i-lucide-git-branch", kbds: ["Ctrl Shift G"], onSelect: run(graphAtCaret) },
-              { label: "Format document", prefix: "IDE:", icon: "i-lucide-align-left", kbds: ["Shift Alt F"], onSelect: run(async () => (await editors()).runAction("editor.action.formatDocument")) },
-              { label: "Save", prefix: "IDE:", icon: "i-lucide-save", kbds: ["Ctrl S"], onSelect: run(async () => (await editors()).saveFile(active)) },
-              { label: "Save all", prefix: "IDE:", icon: "i-lucide-save-all", onSelect: run(async () => (await editors()).saveAll()) },
-              { label: "Split right", prefix: "IDE:", icon: "i-lucide-columns-2", kbds: ["Ctrl \\"], onSelect: run(() => ide.split("right")) },
+              {
+                label: "Open the event under the cursor",
+                prefix: "Event Graph:",
+                icon: "i-lucide-git-branch",
+                kbds: ["Ctrl Shift G"],
+                onSelect: run(graphAtCaret),
+              },
+              {
+                label: "Format document",
+                prefix: "IDE:",
+                icon: "i-lucide-align-left",
+                kbds: ["Shift Alt F"],
+                onSelect: run(async () => (await editors()).runAction("editor.action.formatDocument")),
+              },
+              {
+                label: "Save",
+                prefix: "IDE:",
+                icon: "i-lucide-save",
+                kbds: ["Ctrl S"],
+                onSelect: run(async () => (await editors()).saveFile(active)),
+              },
+              {
+                label: "Save all",
+                prefix: "IDE:",
+                icon: "i-lucide-save-all",
+                onSelect: run(async () => (await editors()).saveAll()),
+              },
+              {
+                label: "Split right",
+                prefix: "IDE:",
+                icon: "i-lucide-columns-2",
+                kbds: ["Ctrl \\"],
+                onSelect: run(() => ide.split("right")),
+              },
               { label: "Split down", prefix: "IDE:", icon: "i-lucide-rows-2", onSelect: run(() => ide.split("down")) },
-              { label: "Move the editor into the next group", prefix: "IDE:", icon: "i-lucide-arrow-right-to-line", onSelect: run(() => ide.moveToNext()) },
+              {
+                label: "Move the editor into the next group",
+                prefix: "IDE:",
+                icon: "i-lucide-arrow-right-to-line",
+                onSelect: run(() => ide.moveToNext()),
+              },
             ]
           : []),
         {
@@ -230,21 +319,27 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
         },
       ];
   // a value opens where it is set: the IDE's settings card, or the settings page at its section
-  const values: Item[] = !id ? [] : SETTINGS.filter((setting) => !setting.flips).map((setting) => {
-    const section = setting.section === "ide" ? undefined : SETTINGS_SECTIONS[setting.section];
-    return {
-      label: setting.label,
-      words: setting.words,
-      icon: "i-lucide-settings",
-      slot: "value",
-      opens: !section ? "opens IDE settings" : section.scope === "App" ? `opens ${section.label}` : "opens workspace settings",
-      onSelect: () => {
-        if (section) return go(settingsAt(setting.section));
-        go({ name: "workspace-ide", params: { id } });
-        ideSettingsOpen.value = true;
-      },
-    };
-  });
+  const values: Item[] = !id
+    ? []
+    : SETTINGS.filter((setting) => !setting.flips).map((setting) => {
+        const section = setting.section === "ide" ? undefined : SETTINGS_SECTIONS[setting.section];
+        return {
+          label: setting.label,
+          words: setting.words,
+          icon: "i-lucide-settings",
+          slot: "value",
+          opens: !section
+            ? "opens IDE settings"
+            : section.scope === "App"
+              ? `opens ${section.label}`
+              : "opens workspace settings",
+          onSelect: () => {
+            if (section) return go(settingsAt(setting.section));
+            go({ name: "workspace-ide", params: { id } });
+            ideSettingsOpen.value = true;
+          },
+        };
+      });
   return [
     { id: "commands", label: "Commands", items: commands },
     { id: "pages", label: "Pages", items: pages },
@@ -255,23 +350,37 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
 });
 
 // the commands as the search after ">" finds them, in their groups' order
-const all = computed(() => groups.value.flatMap((group) => (group.items ?? []).map((item) => ({ ...item, group: group.id }))));
+const all = computed(() =>
+  groups.value.flatMap((group) => (group.items ?? []).map((item) => ({ ...item, group: group.id }))),
+);
 const { results } = useFuse(query, all, {
   fuseOptions: { keys: ["label", "prefix", "suffix", "words"], threshold: 0.4 },
   matchAllWhenSearchEmpty: true,
   resultLimit: 40,
 });
 const found = computed(() =>
-  groups.value.map((group) => ({ ...group, ignoreFilter: true, items: results.value.map((hit) => hit.item).filter((item) => item.group === group.id) })),
+  groups.value.map((group) => ({
+    ...group,
+    ignoreFilter: true,
+    items: results.value.map((hit) => hit.item).filter((item) => item.group === group.id),
+  })),
 );
 
 // the other searches' finds, read from Go as the search changes
 const id = computed(() => store.activeWorkspaceId);
 const { data: files } = useQuery(() =>
-  filesQuery({ id: id.value, pattern: mode.value === "files" ? query.value : "", folders: roots.value.map((root) => root.path) }),
+  filesQuery({
+    id: id.value,
+    pattern: mode.value === "files" ? query.value : "",
+    folders: roots.value.map((root) => root.path),
+  }),
 );
-const { data: symbols } = useQuery(() => symbolsQuery({ id: id.value, path: mode.value === "symbols" ? ide.activeFile : "" }));
-const { data: events } = useQuery(() => rootsQuery({ id: id.value, search: query.value, live: mode.value === "events" && !!query.value }));
+const { data: symbols } = useQuery(() =>
+  symbolsQuery({ id: id.value, path: mode.value === "symbols" ? ide.activeFile : "" }),
+);
+const { data: events } = useQuery(() =>
+  rootsQuery({ id: id.value, search: query.value, live: mode.value === "events" && !!query.value }),
+);
 const { data: locs } = useQuery(() => locQuery({ id: id.value, prefix: mode.value === "events" ? query.value : "" }));
 const lists = computed((): CommandPaletteGroup<Item>[] => {
   switch (mode.value) {
@@ -280,7 +389,12 @@ const lists = computed((): CommandPaletteGroup<Item>[] => {
     case "files": {
       const items = (files.value?.hits ?? []).map((hit) => {
         const at = locate(hit.path);
-        return { label: at?.rel ?? hit.path, suffix: at ? store.originName(at.root.origin ?? "") : "", icon: "i-lucide-file", onSelect: () => show(hit.path) };
+        return {
+          label: at?.rel ?? hit.path,
+          suffix: at ? store.originName(at.root.origin ?? "") : "",
+          icon: "i-lucide-file",
+          onSelect: () => show(hit.path),
+        };
       });
       return [{ id: "files", label: "Files", ignoreFilter: true, items }];
     }
@@ -293,7 +407,8 @@ const lists = computed((): CommandPaletteGroup<Item>[] => {
           label: symbol.name,
           suffix: symbol.database,
           icon: "i-lucide-hash",
-          onSelect: () => show(symbol.location.path, symbol.location.range.start.line, symbol.location.range.start.character),
+          onSelect: () =>
+            show(symbol.location.path, symbol.location.range.start.line, symbol.location.range.start.character),
         }));
       return [{ id: "symbols", label: "In this file", ignoreFilter: true, items }];
     }
@@ -346,7 +461,8 @@ const lists = computed((): CommandPaletteGroup<Item>[] => {
         <template #footer>
           <p class="text-11 text-dimmed">
             {{ mode === "commands" ? "Delete the > to open files." : "> for commands and settings." }}
-            @ finds names in this file, # finds events, on_actions and localization keys. Enter flips a switch where you are.
+            @ finds names in this file, # finds events, on_actions and localization keys. Enter flips a switch where you
+            are.
           </p>
         </template>
       </UCommandPalette>

@@ -18,28 +18,38 @@ export type Row = Contest | Dependency | Dangling | Gap | Problem;
 /** Each card: its name, its dot's color, what its tile counts, and what its table lists. */
 export const CARDS: Record<Card, { label: string; dot: string; note?: string; blurb: string }> = {
   contests: {
-    label: "Contests", dot: "var(--orange)",
+    label: "Contests",
+    dot: "var(--orange)",
     blurb: "Objects defined by more than one mod. Load order decides which one the game keeps.",
   },
   overrides: {
-    label: "Overrides", dot: "var(--blue)", note: "Mods replacing game objects",
+    label: "Overrides",
+    dot: "var(--blue)",
+    note: "Mods replacing game objects",
     blurb: "Game objects a mod replaces or adds to.",
   },
   depends: {
-    label: "Dependencies", dot: "var(--fg-3)", note: "Mods reading other mods",
+    label: "Dependencies",
+    dot: "var(--fg-3)",
+    note: "Mods reading other mods",
     blurb: "Where a mod uses what only another mod defines, or what another mod changes.",
   },
   // the problems in the error colors: red, orange, and a yellow between orange and the accent
   dangling: {
-    label: "Dangling Refs", dot: "var(--red)", note: "Used, never defined",
+    label: "Dangling Refs",
+    dot: "var(--red)",
+    note: "Used, never defined",
     blurb: "Names, events and files a mod uses that nothing defines, one row per name.",
   },
   loc: {
-    label: "Localization Issues", dot: "color-mix(in oklab, var(--orange), var(--accent))",
+    label: "Localization Issues",
+    dot: "color-mix(in oklab, var(--orange), var(--accent))",
     blurb: "Keys left untranslated, and localization files the game reads wrong, one row per place to fix.",
   },
   script: {
-    label: "Script Issues", dot: "var(--orange)", note: "Syntax, scopes, values",
+    label: "Script Issues",
+    dot: "var(--orange)",
+    note: "Syntax, scopes, values",
     blurb: "What the editor's checks find in the mods' script files, one row per place to fix.",
   },
 };
@@ -54,7 +64,12 @@ export function sitesOf(row: Row): Site[] {
  * ("untranslated" is a gap's; a check named nowhere is Script Issues'). */
 const TYPES: [label: string, color: "error" | "warning" | "info" | "secondary", card: Card, codes: string[]][] = [
   ["Syntax", "error", "script", ["unclosed-brace", "stray-close", "unterminated-string", "missing-value"]],
-  ["Syntax", "error", "loc", ["loc-no-header", "loc-bad-entry", "loc-tab-indent", "loc-unterminated-value", "loc-content-before-header"]],
+  [
+    "Syntax",
+    "error",
+    "loc",
+    ["loc-no-header", "loc-bad-entry", "loc-tab-indent", "loc-unterminated-value", "loc-content-before-header"],
+  ],
   ["Undefined", "warning", "dangling", ["unresolved-ref"]],
   ["Unknown event", "warning", "dangling", ["unknown-event"]],
   ["Missing file", "warning", "dangling", ["missing-file"]],
@@ -122,7 +137,12 @@ export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefO
   const dirty = computed(() => !sameOrder(order.value, persisted.value));
 
   // the workspace's own order is asked for as Library and Settings ask, so the three share one report
-  const { data: health, error, isPending, refetch } = useQuery(() =>
+  const {
+    data: health,
+    error,
+    isPending,
+    refetch,
+  } = useQuery(() =>
     healthQuery({ id: toValue(workspaceId), order: dirty.value ? order.value : [], live: toValue(live) }),
   );
   // the page is kept alive, so a report already shown is asked for again on return: edits made

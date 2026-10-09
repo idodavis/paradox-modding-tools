@@ -5,7 +5,8 @@ const file = (kind: string) => `../../ide/fileicons/paradox-${kind}.svg`;
 
 /** The Paradox files' icons: each kind (its paradox-<kind>.svg) and the extensions it draws. */
 const EXTENSIONS = {
-  script: "txt editordata compound schematic aggregate curves layout lines anchor modifierpack guistateset meta smv ugraph dep skin lookup",
+  script:
+    "txt editordata compound schematic aggregate curves layout lines anchor modifierpack guistateset meta smv ugraph dep skin lookup",
   loc: "yml yaml",
   gui: "gui",
   mod: "mod info dlc",
@@ -36,7 +37,9 @@ export function iconOf(path: string): string | undefined {
 // the icons as one sprite in the tree's shadow root, each gradient renamed so no two share an id; and
 // Lucide's app-window, the mark of a folder in a window of its own
 const WINDOW = `<symbol id="pmt-window" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4M2 8h20M6 4v4"/></symbol>`;
-const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${Object.keys(EXTENSIONS)
+const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${Object.keys(
+  EXTENSIONS,
+)
   .map((kind) =>
     RAW[file(kind)]
       .replace(/<svg[^>]*>/, `<symbol id="pmt-${kind}" viewBox="0 0 800 800">`)
@@ -49,7 +52,9 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" sty
 const ICONS = {
   set: "complete" as const,
   spriteSheet: SPRITE,
-  byFileExtension: Object.fromEntries(Object.entries(KINDS).map(([ext, kind]) => [ext, { name: `pmt-${kind}`, viewBox: "0 0 800 800" }])),
+  byFileExtension: Object.fromEntries(
+    Object.entries(KINDS).map(([ext, kind]) => [ext, { name: `pmt-${kind}`, viewBox: "0 0 800 800" }]),
+  ),
 };
 // the explorer's renames, moves and deletes as disk paths (a delete is a move into PMT's trash), one list for the
 // window's sections: Ctrl Z moves the last back, Ctrl Y or Ctrl Shift Z does it again
@@ -71,7 +76,15 @@ import { Clipboard, Events } from "@wailsio/runtime";
 import { FileTree, type FileTreeDirectoryHandle, type GitStatus, type GitStatusEntry } from "@pierre/trees";
 import type { ContextMenuItem } from "@nuxt/ui";
 import type { IdeRoot } from "@services/models";
-import { CreateDir, DeletePath, ListDirectory, RenamePath, StatPath, TrashPath, WriteText } from "@services/fileservice";
+import {
+  CreateDir,
+  DeletePath,
+  ListDirectory,
+  RenamePath,
+  StatPath,
+  TrashPath,
+  WriteText,
+} from "@services/fileservice";
 import { OpenFolder, RemoveWorkspaceMod } from "@services/workspaceservice";
 import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
 import { newWindowWith, openFilesWindow } from "../../ide/monacoEditor";
@@ -83,7 +96,11 @@ import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import ConfirmModal from "../ui/ConfirmModal.vue";
 
-const { workspaceId, roots, hideBinaries } = defineProps<{ workspaceId: string; roots: IdeRoot[]; hideBinaries: boolean }>();
+const { workspaceId, roots, hideBinaries } = defineProps<{
+  workspaceId: string;
+  roots: IdeRoot[];
+  hideBinaries: boolean;
+}>();
 const emit = defineEmits<{ compare: [old: string, now: string] }>();
 
 const ide = useIdeStore();
@@ -163,14 +180,18 @@ function mount(): void {
     unsafeCSS: rootRows,
     // a read-only root says so with a lock; a folder in a window of its own with that window's mark
     renderRowDecoration: ({ item }) => {
-      if (!writable.value && paths.includes(`${item.path.replace(/\/$/, "")}/`)) return { icon: "file-tree-icon-lock", title: "Read only" };
-      return windowOf(item.path) ? { icon: { name: "pmt-window", viewBox: "0 0 24 24" }, title: "In its own window: show it" } : null;
+      if (!writable.value && paths.includes(`${item.path.replace(/\/$/, "")}/`))
+        return { icon: "file-tree-icon-lock", title: "Read only" };
+      return windowOf(item.path)
+        ? { icon: { name: "pmt-window", viewBox: "0 0 24 24" }, title: "In its own window: show it" }
+        : null;
     },
     onSelectionChange: (selected) => {
       ide.selected = selected.filter((path) => !path.endsWith("/")).map(diskPath);
       // the open file selected again (the tree following it) opens nothing: from another page it would go to the IDE
       const [only] = selected;
-      if (selected.length === 1 && only && !only.endsWith("/") && pathKey(diskPath(only)) !== pathKey(ide.activePath)) ide.open(diskPath(only));
+      if (selected.length === 1 && only && !only.endsWith("/") && pathKey(diskPath(only)) !== pathKey(ide.activePath))
+        ide.open(diskPath(only));
     },
     renaming: writable.value && {
       canRename: ({ path }) => path.indexOf("/") < path.length - 1,
@@ -179,7 +200,8 @@ function mount(): void {
     dragAndDrop: writable.value && {
       canDrop: ({ target }) => target.kind === "directory",
       onDropComplete: ({ draggedPaths, target }) => {
-        for (const from of draggedPaths) rename({ from, to: `${target.directoryPath}${from.slice(from.replace(/\/$/, "").lastIndexOf("/") + 1)}` });
+        for (const from of draggedPaths)
+          rename({ from, to: `${target.directoryPath}${from.slice(from.replace(/\/$/, "").lastIndexOf("/") + 1)}` });
       },
     },
   });
@@ -204,13 +226,27 @@ function isOpen(made: FileTree, dir: string): boolean {
 onMounted(mount);
 // each source on its own, so the tree is built again only when one of them changes, not whenever any setting is saved
 watch(
-  [() => roots, () => hideBinaries, () => settings.treeDensity, () => settings.on("ide.stickyFolders"), () => settings.on("ide.rootColors"), () => names.value.join("|")],
+  [
+    () => roots,
+    () => hideBinaries,
+    () => settings.treeDensity,
+    () => settings.on("ide.stickyFolders"),
+    () => settings.on("ide.rootColors"),
+    () => names.value.join("|"),
+  ],
   mount,
 );
 onBeforeUnmount(() => tree.value?.cleanUp());
 
 // each repository's changes on its files and folders (O-R63): staged, then unstaged, a file added kept as added
-const STATUSES: Record<string, GitStatus> = { A: "added", M: "modified", D: "deleted", R: "renamed", U: "untracked", "!": "modified" };
+const STATUSES: Record<string, GitStatus> = {
+  A: "added",
+  M: "modified",
+  D: "deleted",
+  R: "renamed",
+  U: "untracked",
+  "!": "modified",
+};
 const gitStatus = computed<GitStatusEntry[]>(() => {
   const marked = new Map<string, GitStatus>();
   for (const status of Object.values(git.statuses ?? {})) {
@@ -256,7 +292,10 @@ async function follow(): Promise<void> {
   if (made.getSelectedPaths()[0] !== target) made.getItem(target)?.select();
   made.scrollToPath(target, { focus: false, offset: "nearest" });
 }
-watch(() => ide.activePath, () => void follow());
+watch(
+  () => ide.activePath,
+  () => void follow(),
+);
 
 /** Collapse every folder. */
 function collapseAll(): void {
@@ -321,7 +360,9 @@ async function create(dir: string, isFolder: boolean): Promise<void> {
 const target = shallowRef("");
 const confirm = useOverlay().create(ConfirmModal);
 function onContext(e: MouseEvent): void {
-  const row = e.composedPath().find((el): el is HTMLElement => el instanceof HTMLElement && el.dataset.itemPath !== undefined);
+  const row = e
+    .composedPath()
+    .find((el): el is HTMLElement => el instanceof HTMLElement && el.dataset.itemPath !== undefined);
   target.value = row?.dataset.itemPath ?? "";
   if (row) return;
   e.preventDefault();
@@ -361,14 +402,27 @@ const menu = computed<ContextMenuItem[][]>(() => {
         : [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void openFolderWindow(path) }],
     writable.value
       ? [
-          { label: "New file", icon: "i-lucide-file-plus", onSelect: () => (afterClose = () => void create(dir, false)) },
-          { label: "New folder", icon: "i-lucide-folder-plus", onSelect: () => (afterClose = () => void create(dir, true)) },
+          {
+            label: "New file",
+            icon: "i-lucide-file-plus",
+            onSelect: () => (afterClose = () => void create(dir, false)),
+          },
+          {
+            label: "New folder",
+            icon: "i-lucide-folder-plus",
+            onSelect: () => (afterClose = () => void create(dir, true)),
+          },
         ]
       : [],
     writable.value
       ? [
           { label: "Rename", disabled: root, onSelect: () => (afterClose = () => tree.value?.startRenaming(path)) },
-          { label: root ? "Delete the mod's folder" : "Delete", color: "error" as const, disabled: fixed, onSelect: () => remove(path) },
+          {
+            label: root ? "Delete the mod's folder" : "Delete",
+            color: "error" as const,
+            disabled: fixed,
+            onSelect: () => remove(path),
+          },
         ]
       : [],
     file
@@ -380,7 +434,12 @@ const menu = computed<ContextMenuItem[][]>(() => {
             onSelect: () => emit("compare", picked, file),
           },
           ...(selected.length === 2
-            ? [{ label: "Compare the two selected", onSelect: () => emit("compare", diskPath(selected[0] ?? ""), diskPath(selected[1] ?? "")) }]
+            ? [
+                {
+                  label: "Compare the two selected",
+                  onSelect: () => emit("compare", diskPath(selected[0] ?? ""), diskPath(selected[1] ?? "")),
+                },
+              ]
             : []),
         ]
       : [],
@@ -405,7 +464,12 @@ const menu = computed<ContextMenuItem[][]>(() => {
 
 // the folders in windows of their own, as each window tells them, and the window each is in
 const folderWindows = computed(
-  () => new Map([...others.values()].filter((one) => one.name.startsWith("files:")).flatMap((one) => (one.roots ?? []).map((root) => [pathKey(root), one.name]))),
+  () =>
+    new Map(
+      [...others.values()]
+        .filter((one) => one.name.startsWith("files:"))
+        .flatMap((one) => (one.roots ?? []).map((root) => [pathKey(root), one.name])),
+    ),
 );
 /** The window a folder's row (a tree path ending in "/") is open in, if it is. */
 const windowOf = (path: string) => (path.endsWith("/") ? folderWindows.value.get(pathKey(diskPath(path))) : undefined);
@@ -417,7 +481,9 @@ watch(
 /** A click on a folder's window mark brings that window up, and leaves the folder as it was. */
 function showFolderWindow(e: MouseEvent): void {
   const at = e.composedPath().filter((el): el is HTMLElement => el instanceof HTMLElement);
-  const name = at.some((el) => el.dataset.itemSection === "decoration") ? windowOf(at.find((el) => el.dataset.itemPath)?.dataset.itemPath ?? "") : undefined;
+  const name = at.some((el) => el.dataset.itemSection === "decoration")
+    ? windowOf(at.find((el) => el.dataset.itemPath)?.dataset.itemPath ?? "")
+    : undefined;
   if (!name) return;
   e.stopPropagation();
   e.preventDefault();
@@ -441,59 +507,62 @@ async function replay(back: boolean): Promise<void> {
 }
 function onKey(e: KeyboardEvent): void {
   const key = e.key.toLowerCase();
-  if (!e.ctrlKey || (key !== "z" && key !== "y") || e.composedPath().some((el) => el instanceof HTMLInputElement)) return;
+  if (!e.ctrlKey || (key !== "z" && key !== "y") || e.composedPath().some((el) => el instanceof HTMLInputElement))
+    return;
   e.preventDefault();
   void replay(key === "z" && !e.shiftKey);
 }
 
 /** Delete a path once asked, into PMT's trash; a mod's own folder (its only slash the last) also leaves the workspace. */
-const { mutate: remove } = useMutation({ mutation: async (path: string) => {
-  const root = path.indexOf("/") === path.length - 1;
-  const text = `${diskPath(path)} is deleted from disk. ${root ? "The mod also leaves this workspace." : "Ctrl Z in the explorer brings it back until PMT closes."}`;
-  if (!(await confirm.open({ title: "Delete from disk?", text, action: "Delete", danger: true }))) return;
-  const disk = diskPath(path);
-  const owner = rootOf(path);
-  const trashed = await TrashPath(disk);
-  tree.value?.remove(path, { recursive: true });
-  ide.moved(disk);
-  if (!root) {
-    done.push({ from: disk, to: trashed, deleted: true });
-    undone.length = 0;
-  }
-  if (owner?.kind === "mod") saveWorkspace(() => RemoveWorkspaceMod(workspaceId, owner.origin ?? ""));
-} });
+const { mutate: remove } = useMutation({
+  mutation: async (path: string) => {
+    const root = path.indexOf("/") === path.length - 1;
+    const text = `${diskPath(path)} is deleted from disk. ${root ? "The mod also leaves this workspace." : "Ctrl Z in the explorer brings it back until PMT closes."}`;
+    if (!(await confirm.open({ title: "Delete from disk?", text, action: "Delete", danger: true }))) return;
+    const disk = diskPath(path);
+    const owner = rootOf(path);
+    const trashed = await TrashPath(disk);
+    tree.value?.remove(path, { recursive: true });
+    ide.moved(disk);
+    if (!root) {
+      done.push({ from: disk, to: trashed, deleted: true });
+      undone.length = 0;
+    }
+    if (owner?.kind === "mod") saveWorkspace(() => RemoveWorkspaceMod(workspaceId, owner.origin ?? ""));
+  },
+});
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-  <UContextMenu :items="menu" :content="{ onCloseAutoFocus }">
-    <!-- files a step brighter than the muted text, and what git ignores a step past the quiet text, in every theme -->
-    <div
-      ref="host"
-      class="min-h-0 flex-1"
-      :style="{
-        '--trees-bg-override': 'var(--bg-2)',
-        '--trees-fg-override': 'color-mix(in oklab, var(--fg-2), var(--fg-1) 35%)',
-        '--trees-fg-muted-override': 'var(--fg-3)',
-        '--trees-selected-bg-override': 'var(--bg-4)',
-        '--trees-selected-fg-override': 'var(--fg-1)',
-        '--trees-accent-override': 'var(--accent)',
-        '--trees-border-color-override': 'var(--line-1)',
-        '--trees-focus-ring-color-override': 'var(--accent)',
-        '--trees-font-family-override': 'var(--font-sans)',
-        '--trees-font-size-override': 'var(--ide-ui-font)',
-        // git's marks in Source control's letters' colors
-        '--trees-status-added-override': 'var(--green)',
-        '--trees-status-untracked-override': 'var(--green)',
-        '--trees-status-modified-override': 'var(--orange)',
-        '--trees-status-deleted-override': 'var(--red)',
-        '--trees-status-renamed-override': 'var(--blue)',
-        '--trees-status-ignored-override': 'color-mix(in oklab, var(--fg-3), var(--bg-2) 40%)',
-      }"
-      @contextmenu.capture="onContext"
-      @keydown="onKey"
-      @click.capture="showFolderWindow"
-    />
-  </UContextMenu>
+    <UContextMenu :items="menu" :content="{ onCloseAutoFocus }">
+      <!-- files a step brighter than the muted text, and what git ignores a step past the quiet text, in every theme -->
+      <div
+        ref="host"
+        class="min-h-0 flex-1"
+        :style="{
+          '--trees-bg-override': 'var(--bg-2)',
+          '--trees-fg-override': 'color-mix(in oklab, var(--fg-2), var(--fg-1) 35%)',
+          '--trees-fg-muted-override': 'var(--fg-3)',
+          '--trees-selected-bg-override': 'var(--bg-4)',
+          '--trees-selected-fg-override': 'var(--fg-1)',
+          '--trees-accent-override': 'var(--accent)',
+          '--trees-border-color-override': 'var(--line-1)',
+          '--trees-focus-ring-color-override': 'var(--accent)',
+          '--trees-font-family-override': 'var(--font-sans)',
+          '--trees-font-size-override': 'var(--ide-ui-font)',
+          // git's marks in Source control's letters' colors
+          '--trees-status-added-override': 'var(--green)',
+          '--trees-status-untracked-override': 'var(--green)',
+          '--trees-status-modified-override': 'var(--orange)',
+          '--trees-status-deleted-override': 'var(--red)',
+          '--trees-status-renamed-override': 'var(--blue)',
+          '--trees-status-ignored-override': 'color-mix(in oklab, var(--fg-3), var(--bg-2) 40%)',
+        }"
+        @contextmenu.capture="onContext"
+        @keydown="onKey"
+        @click.capture="showFolderWindow"
+      />
+    </UContextMenu>
   </div>
 </template>

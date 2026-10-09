@@ -6,7 +6,7 @@
 // Package lsp answers the editor's requests for one open file: the word under the cursor, where it
 // is defined and used, what may be written there, what is wrong, and how the file is folded,
 // formatted and annotated. Every answer starts from one walk of the file over the schema
-// (index.Read), stopped at the cursor or run whole; payloads carry display data and the frontend
+// (index.Collect), stopped at the cursor or run whole; payloads carry display data and the frontend
 // templates the text.
 package lsp
 
@@ -125,7 +125,7 @@ type spot struct {
 // ends at an operator with only blanks up to the offset: a value still to come.
 func (file *file) walk(offset int) spot {
 	cursor := spot{offset: offset}
-	cursor.records = index.Read(file.sess.Install.Schema, file.place.File, file.parsed, func(at *schema.Placement) bool {
+	cursor.records = index.Collect(file.sess.Install.Schema, file.place.File, file.parsed, func(at *schema.Placement) bool {
 		span := at.Statement.NodeRange()
 		if span.Start > offset {
 			return false

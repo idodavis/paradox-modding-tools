@@ -118,7 +118,7 @@ func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[
 	input.LocKeys = map[string]bool{}
 	err := inventory.Ordered(ctx, locs, func(file inventory.File) *Records {
 		text, _ := file.Text()
-		return locRecords(req.Game, file, text, languages)
+		return collectLoc(req.Game, file, text, languages)
 	}, func(file inventory.File, kept *Records) {
 		if kept != nil {
 			localized[file.Path] = kept
@@ -198,7 +198,7 @@ func (i *Index) Reindex(s *schema.Schema, file inventory.File, text string) {
 		i.Files = slices.Insert(i.Files, at, file)
 		i.PlaceFiles()
 	}
-	if records := recordsOf(s, file, text); records != nil {
+	if records := collectFile(s, file, text); records != nil {
 		i.Add(records, file.Path)
 	}
 }

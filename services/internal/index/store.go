@@ -48,7 +48,7 @@ type Records struct {
 	Defs   []Def
 	Refs   []Ref
 	Loc    []Loc
-	scoped map[[2]string]bool // the scope pairs Read collects (scopePair), moved into Index.Scoped by Add
+	scoped map[[2]string]bool // the scope pairs Collect collects (scopePair), moved into Index.Scoped by Add
 }
 
 // Index is one inventory with the records of its files.

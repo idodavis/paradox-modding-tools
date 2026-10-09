@@ -131,7 +131,7 @@ func (judge *judge) script() {
 		judge.report(issue.Range, 1, string(issue.Code), issue.Message)
 	}
 	judge.written = map[jomini.Range]*schema.Position{}
-	records := index.Read(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at *schema.Placement) bool {
+	records := index.Collect(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at *schema.Placement) bool {
 		switch statement := at.Statement.(type) {
 		case *jomini.Assignment:
 			judge.key(at, statement)

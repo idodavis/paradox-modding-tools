@@ -31,7 +31,7 @@ func (i *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc bool
 	done := 0
 	return inventory.Ordered(ctx, files, func(file inventory.File) *Records {
 		text, _ := file.Text()
-		return recordsOf(s, file, text)
+		return collectFile(s, file, text)
 	}, func(file inventory.File, records *Records) {
 		if records != nil {
 			i.Add(records, file.Path)
@@ -43,11 +43,11 @@ func (i *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc bool
 	})
 }
 
-// Read walks a file with the schema and collects its records: each entry a definition, each naming
+// Collect walks a file with the schema and collects its records: each entry a definition, each naming
 // a definition or a reference with its file, line and entry, and the scope each command, link or
 // link-read word is written in. visit (nil for none) sees each reading; returning false stops the
 // walk.
-func Read(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(*schema.Placement) bool) *Records {
+func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(*schema.Placement) bool) *Records {
 	c := &collector{schema: s, file: file, visit: visit, records: &Records{scoped: map[[2]string]bool{}}}
 	if parsed != nil {
 		c.lines = parsed.Lines()
@@ -136,25 +136,25 @@ func scopePair(written, scope string) [2]string {
 	return [2]string{strings.ToLower(name), scope}
 }
 
-// recordsOf returns one file's records by its format: script walked, a table or sound list walked
+// collectFile returns one file's records by its format: script walked, a table or sound list walked
 // without a tree, localization in every language; nil when the format holds none.
-func recordsOf(s *schema.Schema, file inventory.File, text string) *Records {
+func collectFile(s *schema.Schema, file inventory.File, text string) *Records {
 	switch file.Format {
 	case inventory.Script:
 		parsed := jomini.Parse(text)
-		return Read(s, file, &parsed, nil)
+		return Collect(s, file, &parsed, nil)
 	case inventory.Table, inventory.List:
-		return Read(s, file, nil, nil)
+		return Collect(s, file, nil, nil)
 	case inventory.Loc:
-		return locRecords(s.Game, file, text, nil)
+		return collectLoc(s.Game, file, text, nil)
 	}
 	return nil
 }
 
-// locRecords reads a localization file's entries, nil when its language is not kept (languages
+// collectLoc reads a localization file's entries, nil when its language is not kept (languages
 // none: every one). A loc text is cloned so no record pins the file; its $key$ names a loc key, and
 // its concepts a game concept (conceptReferences): each a reference in no definition.
-func locRecords(gameID string, file inventory.File, text string, languages []string) *Records {
+func collectLoc(gameID string, file inventory.File, text string, languages []string) *Records {
 	parsed := loc.Parse(text)
 	language := strings.ToLower(cmp.Or(parsed.Language, loc.LanguageFromRel(file.Rel)))
 	if len(languages) > 0 && !slices.Contains(languages, language) {

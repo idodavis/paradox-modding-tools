@@ -1,5 +1,6 @@
 // docs.go is steps 3, 4 and 7: the install's docs and the wiki's examples parsed, every key they write noted for
-// the entry detector, and their claims applied last, filling what vanilla left.
+// the entry detector, and their claims applied last, filling what vanilla left. The dumps' usages (step 2) go
+// through the same path, from dumps.go.
 
 package schema
 
@@ -142,13 +143,17 @@ var scriptShapes = func() (shapes struct{ field, statement, code, word, skip *re
 // choices matches a value written as alternatives (yes/no/all, num/all).
 var choices = regexp.MustCompile(`^[\w.]+(?:/[\w.]+)+$`)
 
-// phraseRules is the phrase catalog: each row reads one claim from a comment's text or from a value as
-// written. A row marked alone reads a text only when no other row does.
-var phraseRules = []struct {
+// phraseRule reads one claim from a comment's text or from a value as written: set writes into the position
+// what pattern matched. A rule marked alone reads a text only when no other rule does; one with no set marks
+// a text that claims nothing (a saved scope, a label, a line leading into the next).
+type phraseRule struct {
 	pattern *regexp.Regexp
 	alone   bool
 	set     func(s *Schema, found *Position, match []string, from Source)
-}{
+}
+
+// phraseRules is the phrase catalog, in the order the rules are tried.
+var phraseRules = []phraseRule{
 	// default is x, defaults to x, (default = x), default: x, and default x when x is a value: one word
 	// that ends its clause
 	{regexp.MustCompile(`(?i)\bdefaults?(?: is| to| =|:) ['"\x60]?([^\s,;()'"\x60]+?)['"\x60]?` +
@@ -310,12 +315,8 @@ func normalize(lines []string) string {
 
 // opensWithPhrase reports whether a phrase of the catalog opens a text.
 func opensWithPhrase(said string) bool {
-	return slices.ContainsFunc(phraseRules, func(phrase struct {
-		pattern *regexp.Regexp
-		alone   bool
-		set     func(s *Schema, found *Position, match []string, from Source)
-	}) bool {
-		where := phrase.pattern.FindStringIndex(said)
+	return slices.ContainsFunc(phraseRules, func(rule phraseRule) bool {
+		where := rule.pattern.FindStringIndex(said)
 		return where != nil && where[0] == 0
 	})
 }
@@ -473,57 +474,60 @@ func (doc doc) failed(statement jomini.Statement) bool {
 	})
 }
 
-// catalog reads a text through the phrase catalog into found and returns what no row read; a row that
-// claims nothing reads it all.
-func (doc doc) catalog(found *Position, text string) string {
-	rest, ignored := text, false
-	for _, phrase := range phraseRules {
-		if match := phrase.pattern.FindStringSubmatch(text); match != nil && (!phrase.alone || rest == text) {
-			rest, ignored = strings.Replace(rest, match[0], "", 1), ignored || phrase.set == nil
-			if phrase.set != nil {
-				phrase.set(doc.schema, found, match, doc.from)
-			}
+// claimPhrases writes into found every claim the phrase catalog reads from a text, and returns what is left
+// for a blurb: the text no rule read; nothing when a rule read it whole, a rule marked it as claiming
+// nothing, or it was an a/b/c list, whose words became choices.
+func (doc doc) claimPhrases(found *Position, text string) (left string) {
+	left, claimsNothing := text, false
+	for _, rule := range phraseRules {
+		match := rule.pattern.FindStringSubmatch(text)
+		if match == nil || rule.alone && left != text {
+			continue
 		}
+		left = strings.Replace(left, match[0], "", 1)
+		if rule.set == nil {
+			claimsNothing = true
+			continue
+		}
+		rule.set(doc.schema, found, match, doc.from)
 	}
-
-	// a/b/c no row reads whole is read word by word: a type word is its type, the rest its words
-	if rest == text && choices.MatchString(text) {
+	switch {
+	case left == text && choices.MatchString(text):
+		// a/b/c no rule reads whole is read word by word: a type word is its type, the rest are choices
 		for word := range strings.SplitSeq(text, "/") {
-			if doc.catalog(found, word) == word {
+			if doc.claimPhrases(found, word) == word {
 				found.Value.Value.Choices, found.Value.Source = append(found.Value.Value.Choices, word), doc.from
 			}
 		}
 		return ""
-	}
-	if ignored {
+	case claimsNothing:
 		return ""
 	}
-	return rest
+	return left
 }
 
-// prose reads a text through the catalog and reports whether letters are left over: it is a blurb.
-func (doc doc) prose(found *Position, text string) bool {
-	return strings.ContainsFunc(doc.catalog(found, text), unicode.IsLetter)
-}
+// isBlurb reports whether what the catalog left of a text still has words in it: prose, kept as a blurb.
+func isBlurb(left string) bool { return strings.ContainsFunc(left, unicode.IsLetter) }
 
-// claims reads a statement's claims: its value as written, then its comments, through the phrase catalog.
-// The comment lines no row reads whole, headings aside, are its blurb.
-func (doc doc) claims(statement jomini.Statement) (found Position) {
+// claimsOf collects one statement's claims into a position of its own, in this order: its scalar value as
+// written, the block placeholders its block lists, then each attached comment through the phrase catalog.
+// What the catalog leaves of a comment is blurb, a ## line aside. A doc's block whose kind nothing names
+// states only that the key takes a block.
+func (doc doc) claimsOf(statement jomini.Statement) (found Position) {
 	var blurb []string
 	if scalar, isScalar := jomini.ValueOf(statement).(*jomini.Scalar); isScalar {
-		blurb = doc.scalarClaims(&found, statement, scalar)
+		blurb = doc.claimScalar(&found, statement, scalar)
 	}
 	block := jomini.ChildBlock(statement)
-	doc.placeholderClaims(&found, block)
+	doc.claimPlaceholders(&found, block)
 	for _, comment := range doc.attached[statement] {
 		raw := doc.parsed.Src[comment.Range.Start:comment.Range.End]
 		said := strings.TrimSpace(strings.TrimLeft(raw, "# \t"))
-		if doc.prose(&found, said) && !strings.HasPrefix(strings.TrimLeft(raw[1:], " \t"), "#") {
+		left := doc.claimPhrases(&found, said)
+		if isBlurb(left) && !strings.HasPrefix(strings.TrimLeft(raw[1:], " \t"), "#") {
 			blurb = append(blurb, said)
 		}
 	}
-
-	// a doc's block whose kind nothing names states only that the key takes a block
 	if block != nil && found.Block.Source == SourceNone && !doc.usage {
 		SetFirst(&found.Value, Expected{Kind: ExpectsBlock}, doc.from)
 	}
@@ -535,25 +539,16 @@ func (doc doc) claims(statement jomini.Statement) (found Position) {
 	return found
 }
 
-// scalarClaims reads the claims a statement's scalar value states and returns the blurb it adds. A
-// placeholder no row reads names a database (DatabaseNamed); a quoted text no row reads whole is prose; a
-// literal states its form (expiration_days = 3650).
-func (doc doc) scalarClaims(found *Position, statement jomini.Statement, scalar *jomini.Scalar) (blurb []string) {
+// claimScalar writes the claims a statement's scalar value states and returns the blurb it adds: a
+// placeholder (<trait>) one way, any other value the other. In a usage, a key whose block has a kind runs in
+// no known scope.
+func (doc doc) claimScalar(found *Position, statement jomini.Statement, scalar *jomini.Scalar) (blurb []string) {
 	written := doc.parsed.Src[scalar.Range.Start:scalar.Range.End]
 	word := strings.TrimSuffix(strings.TrimPrefix(written, `"<`), `>"`)
-	placeholder := len(word)+4 == len(written)
-	switch {
-	case placeholder && doc.catalog(found, word) == word:
-		if named := doc.schema.DatabaseNamed(word); named != "" {
-			SetFirst(&found.Value, Expected{Kind: ExpectsReference, Database: named}, doc.from)
-		}
-	case !placeholder && doc.prose(found, written) && scalar.Quoted && strings.ContainsAny(scalar.Text, " \t"):
-		blurb = append(blurb, scalar.Text)
-	case !placeholder && !doc.usage:
-		literals := map[Shapes]ExpectedKind{ShapeNumber: ExpectsNumber, ShapeBool: ExpectsBool, ShapeDate: ExpectsDate}
-		if typed, literal := literals[shapeOf(scalar)]; literal {
-			SetFirst(&found.Value, Expected{Kind: typed}, doc.from)
-		}
+	if placeholder := len(word)+4 == len(written); placeholder {
+		doc.claimPlaceholder(found, word)
+	} else {
+		blurb = doc.claimValue(found, scalar, written)
 	}
 	if _, isAssign := statement.(*jomini.Assignment); isAssign && doc.usage && found.Block.Source != SourceNone {
 		SetFirst(&found.Scope, "", doc.from)
@@ -561,9 +556,35 @@ func (doc doc) scalarClaims(found *Position, statement jomini.Statement, scalar 
 	return blurb
 }
 
-// placeholderClaims states the kind of block a block that lists a block placeholder holds
+// claimPlaceholder runs a placeholder's word through the catalog; one no rule reads names a database.
+func (doc doc) claimPlaceholder(found *Position, word string) {
+	if doc.claimPhrases(found, word) != word {
+		return
+	}
+	if named := doc.schema.DatabaseNamed(word); named != "" {
+		SetFirst(&found.Value, Expected{Kind: ExpectsReference, Database: named}, doc.from)
+	}
+}
+
+// claimValue runs a value as written through the catalog and returns the blurb it adds: a quoted text with
+// words left is prose; else, outside a usage, a literal states its kind (expiration_days = 3650).
+func (doc doc) claimValue(found *Position, scalar *jomini.Scalar, written string) (blurb []string) {
+	left := doc.claimPhrases(found, written)
+	switch {
+	case isBlurb(left) && scalar.Quoted && strings.ContainsAny(scalar.Text, " \t"):
+		return []string{scalar.Text}
+	case !doc.usage:
+		literals := map[Shapes]ExpectedKind{ShapeNumber: ExpectsNumber, ShapeBool: ExpectsBool, ShapeDate: ExpectsDate}
+		if kind, literal := literals[shapeOf(scalar)]; literal {
+			SetFirst(&found.Value, Expected{Kind: kind}, doc.from)
+		}
+	}
+	return nil
+}
+
+// claimPlaceholders writes the kind of block a block states by listing a block placeholder
 // (limit = { <display_triggers> }).
-func (doc doc) placeholderClaims(found *Position, block *jomini.Block) {
+func (doc doc) claimPlaceholders(found *Position, block *jomini.Block) {
 	if block == nil {
 		return
 	}
@@ -579,9 +600,10 @@ func (doc doc) placeholderClaims(found *Position, block *jomini.Block) {
 	}
 }
 
-// state writes a statement's claims into a position, each only where the position's claim is still empty.
-func (doc doc) state(position *Position, statement jomini.Statement) {
-	found := doc.claims(statement)
+// store writes a statement's claims into a position, each only where the position's claim is still empty,
+// and marks the position declared by this source.
+func (doc doc) store(position *Position, statement jomini.Statement) {
+	found := doc.claimsOf(statement)
 	position.DeclaredBy = cmp.Or(position.DeclaredBy, doc.from)
 	SetFirst(&position.Value, found.Value.Value, found.Value.Source)
 	SetFirst(&position.Block, found.Block.Value, found.Block.Source)
@@ -591,7 +613,8 @@ func (doc doc) state(position *Position, statement jomini.Statement) {
 	SetFirst(&position.Blurb, found.Blurb.Value, found.Blurb.Source)
 }
 
-// docWalk holds what reading a doc into a database's tree needs.
+// docWalk is one walk of a doc into a database's tree: the doc, the keys seen under each position, and the
+// visitor it walks with.
 type docWalk struct {
 	doc     doc
 	seen    map[*Position]map[string]bool // under a position: every key name below it, with whether vanilla writes it
@@ -605,9 +628,9 @@ type docWalk struct {
 // a position.
 func (schema *Schema) applyDocClaims(parsed *jomini.Result, database *Database, from Source) {
 	attached, _ := parsed.Attach()
-	reader := &docWalk{doc: doc{schema, parsed, attached, from, false}, seen: map[*Position]map[string]bool{}}
-	reader.visitor = Visitor{Alternatives: alternatives, Visit: reader.visit}
-	schema.WalkBlock(reader.visitor, nil, parsed.Root.Statements, schema.EntryContext(database))
+	walk := &docWalk{doc: doc{schema, parsed, attached, from, false}, seen: map[*Position]map[string]bool{}}
+	walk.visitor = Visitor{Alternatives: alternatives, Visit: walk.visit}
+	schema.WalkBlock(walk.visitor, nil, parsed.Root.Statements, schema.EntryContext(database))
 }
 
 // gather adds to names every key name at or below a position, with whether vanilla writes it.
@@ -618,35 +641,38 @@ func gather(names map[string]bool, p *Position) {
 	}
 }
 
-// visit states a reading's claims and returns whether to read its block.
+// visit stores a placement's claims and returns whether to walk its block: a statement with a parse error
+// is skipped whole; a key vanilla writes nowhere below the position it stands in is a stand-in; a key at a
+// position vanilla writes stores its claims there.
 func (walk *docWalk) visit(placement *Placement) bool {
-	s, d := walk.doc.schema, walk.doc
-	if under := placement.BlockContext.Position; under != nil && walk.seen[under] == nil {
+	under := placement.BlockContext.Position
+	if under != nil && walk.seen[under] == nil {
 		walk.seen[under] = map[string]bool{}
 		gather(walk.seen[under], under)
 	}
 	_, isAssign := placement.Statement.(*jomini.Assignment)
 	switch {
-	case d.failed(placement.Statement):
+	case walk.doc.failed(placement.Statement):
 		return false
-	case isAssign && placement.Command == nil && !walk.seen[placement.BlockContext.Position][positionName(placement.Name)]:
-		return walk.standIn(s, placement)
+	case isAssign && placement.Command == nil && !walk.seen[under][positionName(placement.Name)]:
+		return walk.standIn(placement)
 	case placement.Position != nil && placement.Command == nil && placement.Position.Vanilla.In > 0:
-		d.state(placement.Position, placement.Statement)
+		walk.doc.store(placement.Position, placement.Statement)
 	}
 	return true
 }
 
-// standIn reads a key vanilla writes nowhere below where it stands. A value where vanilla writes every entry
-// as a block is a field it never writes, no entry. The key's block is read in its place where vanilla writes
-// its keys there, else at each position one level below that writes them (my_phase_key = { }); else it reads
-// nothing.
-func (walk *docWalk) standIn(s *Schema, placement *Placement) bool {
+// standIn handles a key vanilla writes nowhere below where it stands. A value where vanilla writes every
+// entry as a block is a field it never writes, no entry. The key's block is walked in its place where vanilla
+// writes its keys there, else at each position one level below that writes them (my_phase_key = { }); else
+// it is not walked. For the positions below, the walker is entered again from inside this visit, once per
+// position: a visit can move where one block is read, but cannot read it in several places.
+func (walk *docWalk) standIn(placement *Placement) bool {
 	block, context := jomini.ChildBlock(placement.Statement), placement.BlockContext
 	placement.Inner = context
 	if context.Position != nil && placement.Holder == nil &&
 		(block != nil || context.Position.Vanilla.Shapes != ShapeBlock) {
-		walk.doc.state(context.Position, placement.Statement)
+		walk.doc.store(context.Position, placement.Statement)
 	}
 	holds := func(at *Position) bool {
 		return block != nil && slices.ContainsFunc(block.Statements, func(inner jomini.Statement) bool {
@@ -660,21 +686,25 @@ func (walk *docWalk) standIn(s *Schema, placement *Placement) bool {
 	for _, below := range context.Position.Children {
 		if holds(below) {
 			context.Position = below
-			s.WalkBlock(walk.visitor, block, block.Statements, context)
+			walk.doc.schema.WalkBlock(walk.visitor, block, block.Statements, context)
 		}
 	}
 	return false
 }
 
-// applyUsage reads a dump usage into a command's arguments. Each statement named written, at any depth (in a
-// scope placeholder's block too), gives the command's own claims, and each key in its block is an argument;
-// written "" is a usage that lists the arguments themselves. Blocks below are walked.
+// applyUsage stores a dump usage's claims in a command's arguments. Each statement named written, at any
+// depth (in a scope placeholder's block too), gives the command's own claims, and each key in its block is
+// an argument; written "" is a usage that lists the arguments themselves. Blocks below are walked.
 func (schema *Schema) applyUsage(parsed *jomini.Result, command *Command, written string) {
 	attached, _ := parsed.Attach()
-	d := doc{schema, parsed, attached, SourceDumps, true}
+	usageDoc := doc{schema, parsed, attached, SourceDumps, true}
 	statements, in := parsed.Root.Statements, BlockContext{Position: command.Args, Kind: game.BlockFields, InEntry: true}
 	if written != "" {
-		statements, in.Position = nil, &Position{Children: map[string]*Position{positionName(written): command.Args}}
+		// the usage's root: the command's name is its one key and the command's arguments the position
+		// below it, so the walker places each statement named written at the arguments and reads its block
+		// there
+		root := &Position{Children: map[string]*Position{positionName(written): command.Args}}
+		statements, in.Position = nil, root
 		jomini.Walk(parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
 			if assign, isAssign := statement.(*jomini.Assignment); isAssign && assign.Key.Text == written {
 				statements = append(statements, statement)
@@ -684,14 +714,14 @@ func (schema *Schema) applyUsage(parsed *jomini.Result, command *Command, writte
 		})
 	}
 	visitor := Visitor{Create: true, Alternatives: alternatives, Visit: func(placement *Placement) bool {
-		switch {
-		case d.failed(placement.Statement):
+		if usageDoc.failed(placement.Statement) {
 			return false
-		case placement.Position == command.Args:
-			placement.Inner.Kind = game.BlockFields
+		}
+		if placement.Position == command.Args {
+			placement.Inner.Kind = game.BlockFields // the command's own block lists its arguments
 		}
 		if placement.Position != nil && placement.Command == nil {
-			d.state(placement.Position, placement.Statement)
+			usageDoc.store(placement.Position, placement.Statement)
 		}
 		return true
 	}}

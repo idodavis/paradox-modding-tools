@@ -14,7 +14,7 @@ function named for it, in the file named for the step: `declareDatabases` in `bu
 | `schema.go` | the types (`Schema`, `Database`, `Position`, `Claim`, `Command`, `Vanilla`, `Shapes`, `ExpectedKind`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
 | `build.go` | the pipeline: `Input`, `Build`, `DatabaseNames` for the scan; step 1, declaring the databases (`declare`, `declareDatabases`) |
 | `dumps.go` | step 2: `dumpsOrShipped`, then the parsers of the console dumps: the label table, one `parse…` per record kind, the usages |
-| `docs.go` | steps 3, 4 and 7: `example`, `parseDocsAndExamples`, `collectDocFields`, `applyExamples`, then the normalizer, the phrase catalog, the joiner |
+| `docs.go` | steps 3, 4 and 7: `example`, `parseDocsAndExamples`, `collectDocFields`, `applyExamples`, then the normalizer, the phrase catalog, the joiner; the dumps' usages (step 2) go through the same path |
 | `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
 | `entries.go` | the entry detector, `FindEntries`: which definitions a file makes, by its folder's row, its nested rows and its file type |
 | `walk.go` | the walker: `WalkFile`, `WalkBlock`, `EntryContext`, `PlaceKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |

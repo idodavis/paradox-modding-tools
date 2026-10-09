@@ -1,5 +1,5 @@
-// walk.go is the one walker: a whole file is read by WalkFile (vanilla's evidence, the index's records), a
-// snippet by WalkBlock (the docs, the dumps' usages); each key is read by ReadKey.
+// walk.go is the walker: WalkFile places every statement of a file at its position in the schema's tree,
+// WalkBlock a snippet's; each key is placed by ReadKey.
 
 package schema
 

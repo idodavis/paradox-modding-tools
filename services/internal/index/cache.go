@@ -1,5 +1,5 @@
-// cache.go keeps an install's schema and index in one cache file, named so that any change to the
-// engine, the install or the dumps is another file.
+// cache.go is step 1 and step 6: the store loaded again while nothing changed, and saved as one file.
+// The file is named so that any change to the engine, the install or the dumps is another file.
 
 package index
 
@@ -20,6 +20,16 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/schema"
 )
+
+// fromCache is the install a request's cache file holds, if it has a readable one; a request with no
+// app version never caches.
+func fromCache(req Request) (*Install, bool) {
+	if req.App == "" {
+		return nil, false
+	}
+	install, err := LoadInstall(req)
+	return install, err == nil
+}
 
 // devKey is a dev build's app part of a cache name: dev- and a hash of the engine's code, the files
 // of the packages game, jomini, loc, inventory, schema, index and wiki in the repo the build sits

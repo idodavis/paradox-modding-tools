@@ -1,10 +1,13 @@
-// docs.go reads the prose a game ships beside its script, the wiki's examples and the dumps' usages as one
-// kind of source: each is normalized into script, parsed, and its statements and comments state claims.
+// docs.go is steps 3, 4 and 7: the install's docs and the wiki's examples parsed, every key they write noted for
+// the entry detector, and their claims applied last, filling what vanilla left.
 
 package schema
 
 import (
 	"cmp"
+	"context"
+	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -15,8 +18,90 @@ import (
 	gmtext "github.com/yuin/goldmark/text"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 )
+
+// example is a doc or wiki example, normalized and parsed once, with the database it documents.
+type example struct {
+	database string
+	parsed   jomini.Result
+	from     Source
+}
+
+// parseDocsAndExamples normalizes and parses each doc and wiki example once, with its database. A doc is
+// read into its own folder's database, or the folder beside it that it is named after
+// (history/_characters.info); one under a row above its folder is not read. The wiki's examples follow the
+// docs', so a claim keeps the first source in trust order. A sanitized wiki page keeps no version label, so
+// the wiki is never stale.
+func (s *Schema) parseDocsAndExamples(ctx context.Context, input Input) (examples []example, err error) {
+	for _, file := range input.Install {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if file.Format != inventory.Prose {
+			continue
+		}
+		at, name := s.folder(file.Rel)
+		stem := strings.TrimPrefix(strings.TrimSuffix(path.Base(file.Rel), path.Ext(file.Rel)), "_")
+		if beside := NameOf(path.Join(path.Dir(file.Rel), stem)); s.Databases[beside] != nil {
+			at, name = path.Dir(file.Rel), beside
+		}
+		if s.Databases[name] == nil || at != path.Dir(file.Rel) {
+			continue
+		}
+		text, err := file.Text()
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(text, "\n")
+		if strings.EqualFold(path.Ext(file.Rel), ".md") {
+			lines = markdown(text)
+		}
+		examples = append(examples, example{name, jomini.Parse(normalize(lines)), SourceDocs})
+	}
+	s.Sources[SourceDocs] = SourceState{From: "install", Written: input.Updated}
+
+	s.Sources[SourceWiki] = SourceState{From: "none"}
+	if !input.WikiWritten.IsZero() {
+		s.Sources[SourceWiki] = SourceState{From: "yours", Written: input.WikiWritten}
+	}
+	for _, name := range slices.Sorted(maps.Keys(s.Databases)) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if s.Databases[name].Row.History {
+			continue
+		}
+		for _, text := range input.WikiExamples[name] {
+			examples = append(examples, example{name, jomini.Parse(normalize(strings.Split(text, "\n"))), SourceWiki})
+		}
+	}
+	return examples, nil
+}
+
+// collectDocFields records in each database every key name its docs and wiki examples write, at any depth,
+// for the entry detector.
+func (s *Schema) collectDocFields(examples []example) {
+	for _, written := range examples {
+		fields := s.Databases[written.database].Fields
+		jomini.Walk(written.parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
+			if assign, isAssign := statement.(*jomini.Assignment); isAssign {
+				for _, name := range alternatives(assign.Key.Text) {
+					fields[positionName(name)] = true
+				}
+			}
+			return true
+		})
+	}
+}
+
+// applyExamples applies the docs' and wiki's claims, last, to the databases they document.
+func (s *Schema) applyExamples(examples []example) {
+	for _, written := range examples {
+		s.applyDocClaims(&written.parsed, s.Databases[written.database], written.from)
+	}
+}
 
 // rewrites is the rewrite catalog, applied in order to a code line before its comment: each match becomes
 // replace, and move, expanded from the match, is added to the line's trailing comment.

@@ -1,5 +1,5 @@
-// dumps.go reads the console dumps the game writes about its own language: scopes, effects, triggers, links,
-// modifiers, on_actions, custom localization and data types.
+// dumps.go is step 2: the console dumps, or the shipped backup, parsed into commands, scopes, saved scopes,
+// modifiers, on_actions, data types and custom loc.
 
 package schema
 
@@ -125,6 +125,23 @@ var dumpLabels = []struct {
 			"Macro replacement": "", "Description": "",
 		},
 	},
+}
+
+// readDumpsOrShipped reads the dump files into the schema, or takes a shipped dump part whole. The dumps
+// are stale when older than the install's last update.
+func (s *Schema) readDumpsOrShipped(input Input) {
+	if shipped := input.Shipped; shipped != nil {
+		s.Commands, s.Scopes, s.Saved = shipped.Commands, shipped.Scopes, shipped.Saved
+		s.Modifiers, s.OnActions = shipped.Modifiers, shipped.OnActions
+		s.DataTypes, s.CustomLoc = shipped.DataTypes, shipped.CustomLoc
+		s.Sources[SourceDumps] = shipped.Sources[SourceDumps]
+		return
+	}
+	written := s.readDumps(input.Dumps)
+	s.Sources[SourceDumps] = SourceState{From: "none"}
+	if !written.IsZero() {
+		s.Sources[SourceDumps] = SourceState{From: "yours", Written: written, Stale: written.Before(input.Updated)}
+	}
 }
 
 // DumpFiles lists every file name the dumps are read from.

@@ -1,5 +1,5 @@
-// scan.go scans an install and a workspace's mods into indexes, and walks one mod file again when
-// it is saved.
+// scan.go is the pipeline: Scan runs an install through six steps, ScanMods a mod set over it,
+// Reindex one saved file again.
 
 package index
 
@@ -43,66 +43,68 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	if req.Progress == nil {
 		req.Progress = func(string, int, int) {}
 	}
-	cached := req.App != ""
-	if cached {
-		if install, err := LoadInstall(req); err == nil {
-			return install, nil
-		}
+	if install, found := fromCache(req); found { // 1: the cache, while nothing changed
+		return install, nil
 	}
-
-	// 1. the install's files and the dump folders'
-	req.Progress("inventory", 0, 1)
-	roots := inventory.Roots(req.Dir)
-	input := schemaInput(req, roots)
-	examples, written, err := wiki.ScriptExamples(req.Game, schema.DatabaseNames(input))
+	roots, input, err := inventoryOf(req) // 2: the install's files, the dump folders, the wiki's examples
 	if err != nil {
 		return nil, err
 	}
-	input.WikiExamples, input.WikiWritten = examples, written
-
-	// 2. the localization
-	req.Progress("localization", 0, 1)
-	localized, err := readLocalization(ctx, req, &input)
+	localized, err := localizationOf(ctx, req, &input) // 3: english and the asked language
+	if err != nil {
+		return nil, err
+	}
+	s, err := schemaOf(ctx, req, input) // 4: the dumps or the shipped backup, then Build
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. the schema, from the dump files when every one is there, else with the shipped dump part; a
-	// shipped file that does not decode leaves Build the dump files that exist
-	req.Progress("schema", 0, 1)
-	if len(schema.MissingDumps(input.Dumps)) > 0 {
-		if backup, exact, _ := schema.LoadShipped(req.Game, req.Version); backup != nil {
-			origin := backup.Sources[schema.SourceDumps]
-			origin.From, origin.Stale = "shipped", !exact
-			backup.Sources[schema.SourceDumps] = origin
-			input.Shipped = backup
-		}
-	}
-	s, err := schema.Build(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-
-	// 4. the index: each other file parsed and walked once; Ready adds the localization's records in
-	// file order, so no loc file is read again
+	// 5: each other file parsed and walked once; the localization's records are already in Records, so
+	// no loc file is read again
 	index := &Index{Files: input.Install, Roots: roots, Records: localized}
-	err = index.walkFiles(ctx, s, false, func(done, total int) { req.Progress("index", done, total) })
+	err = index.collectFiles(ctx, s, false, func(done, total int) { req.Progress("index", done, total) })
 	if err != nil {
 		return nil, err
 	}
-
 	install := &Install{Schema: s, Index: index, Scanned: time.Now()}
-	if !cached {
+	if req.App == "" {
 		return install, nil
 	}
 	req.Progress("saving", 0, 1)
-	return install, SaveInstall(req, install)
+	return install, SaveInstall(req, install) // 6: the cache
 }
 
-// readLocalization reads the install's localization once, in english and the asked language: a file
+// inventoryOf lists the install's files and the dump folders', and asks the wiki for the examples
+// of the databases they make.
+func inventoryOf(req Request) (roots []string, input schema.Input, err error) {
+	req.Progress("inventory", 0, 1)
+	roots = inventory.Roots(req.Dir)
+	input = schemaInput(req, roots)
+	examples, written, err := wiki.ScriptExamples(req.Game, schema.DatabaseNames(input))
+	if err != nil {
+		return nil, schema.Input{}, err
+	}
+	input.WikiExamples, input.WikiWritten = examples, written
+	return roots, input, nil
+}
+
+// schemaInput is the schema stage's input: the files under the install's roots in load order, the
+// dump folders' files and when the install last changed.
+func schemaInput(req Request, roots []string) schema.Input {
+	return schema.Input{
+		Game:    req.Game,
+		Version: req.Version,
+		Install: inventory.Files(game.OriginVanilla, roots),
+		Dumps:   inventory.Files("dumps", game.DumpDirs(req.Game, req.Dir)),
+		Updated: game.InstallUpdatedAt(req.Dir),
+	}
+}
+
+// localizationOf reads the install's localization once, in english and the asked language: a file
 // whose path names another language is never read. Its keys go to the schema's input, and its
 // records come back for the index.
-func readLocalization(ctx context.Context, req Request, input *schema.Input) (map[string]*Records, error) {
+func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[string]*Records, error) {
+	req.Progress("localization", 0, 1)
 	languages, localized := []string{game.BaseLanguage, strings.ToLower(req.Language)}, map[string]*Records{}
 	var locs []inventory.File
 	for _, file := range input.Install {
@@ -128,6 +130,21 @@ func readLocalization(ctx context.Context, req Request, input *schema.Input) (ma
 	return localized, err
 }
 
+// schemaOf builds the schema from the dump files when every one is there, else with the shipped dump
+// part; a shipped file that does not decode leaves Build the dump files that exist.
+func schemaOf(ctx context.Context, req Request, input schema.Input) (*schema.Schema, error) {
+	req.Progress("schema", 0, 1)
+	if len(schema.MissingDumps(input.Dumps)) > 0 {
+		if backup, exact, _ := schema.LoadShipped(req.Game, req.Version); backup != nil {
+			origin := backup.Sources[schema.SourceDumps]
+			origin.From, origin.Stale = "shipped", !exact
+			backup.Sources[schema.SourceDumps] = origin
+			input.Shipped = backup
+		}
+	}
+	return schema.Build(ctx, input)
+}
+
 // BuildSchema is the dump part the generator ships, with the install's databases so dump claims
 // can name them; it refuses unless every dump file is there, so a partial backup never ships.
 func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
@@ -137,45 +154,6 @@ func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
 	}
 	input.DumpsOnly = true
 	return schema.Build(ctx, input)
-}
-
-// schemaInput is the schema stage's input: the files under the install's roots in load order, the
-// dump folders' files and when the install last changed.
-func schemaInput(req Request, roots []string) schema.Input {
-	return schema.Input{
-		Game:    req.Game,
-		Version: req.Version,
-		Install: inventory.Files(game.OriginVanilla, roots),
-		Dumps:   inventory.Files("dumps", game.DumpDirs(req.Game, req.Dir)),
-		Updated: game.InstallUpdatedAt(req.Dir),
-	}
-}
-
-// walkFiles reads the files of Files that hold records, localization in every language only when
-// withLoc is set: a worker per CPU parses and walks ahead while Add runs in file order here.
-func (i *Index) walkFiles(ctx context.Context, s *schema.Schema, withLoc bool, progress func(done, total int)) error {
-	i.Rebuild()
-	var files []inventory.File
-	for _, file := range i.Files {
-		if slices.Contains([]inventory.Format{inventory.Script, inventory.Table, inventory.List}, file.Format) ||
-			withLoc && file.Format == inventory.Loc {
-			files = append(files, file)
-		}
-	}
-
-	done := 0
-	return inventory.Ordered(ctx, files, func(file inventory.File) *Records {
-		text, _ := file.Text()
-		return recordsOf(s, file, text)
-	}, func(file inventory.File, records *Records) {
-		if records != nil {
-			i.Add(records, file.Path)
-		}
-		done++
-		if progress != nil {
-			progress(done, len(files))
-		}
-	})
 }
 
 // ScanMods indexes a workspace's mods, in playset order, over an install: one index of their files,
@@ -199,7 +177,7 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 			index.Replaced = append(index.Replaced, folder)
 		}
 	}
-	return index, index.walkFiles(ctx, install.Schema, true, nil)
+	return index, index.collectFiles(ctx, install.Schema, true, nil)
 }
 
 // Reindex walks one file again: its records dropped and added back. A file not yet in Files goes

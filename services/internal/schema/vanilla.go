@@ -1,10 +1,12 @@
-// evidence.go records what vanilla writes at each position, and gives a position the type its words share
-// where no source declares one. Vanilla's types never accuse (MayAccuse).
+// vanilla.go is steps 5 and 6: what vanilla writes at each position, counted; then the kind a position's
+// scalars share where nothing declares one, and each prefix's database.
 
 package schema
 
 import (
+	"context"
 	"maps"
+	"path"
 	"slices"
 	"strings"
 
@@ -12,6 +14,100 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 )
+
+// recordVanilla reads the install's files for the entries they define and what they write. Scripted entries
+// come first, from the scripted folders and the GUI files alone, so the walk reads their names as calls
+// rather than as arguments. It returns the entry names vanilla defines, by database; a database made for a
+// new name is declared on the way.
+func (s *Schema) recordVanilla(ctx context.Context, install []inventory.File, info *game.GameInfo) (map[string]map[string]bool, error) {
+	s.ScriptedEntries = map[string]ScriptedEntry{}
+	names := map[string]map[string]bool{}
+	parsedFirst := map[string]jomini.Result{}
+	var files []inventory.File
+	for _, file := range install {
+		at, _ := s.folder(file.Rel)
+		gui := game.FileTypes[strings.ToLower(path.Ext(file.Rel))].Keywords != nil
+		if file.Format == inventory.Script && (len(info.Folders[at].CalledIn) > 0 || gui) {
+			parsed := parseScript(file)
+			for _, entry := range s.FindEntries(file, &parsed) {
+				s.registerScriptedEntries(entry)
+			}
+			parsedFirst[file.Path] = parsed
+		}
+		if slices.Contains([]inventory.Format{inventory.Script, inventory.Table, inventory.List}, file.Format) {
+			files = append(files, file)
+		}
+	}
+	work := func(file inventory.File) (parsed jomini.Result) {
+		if first, found := parsedFirst[file.Path]; found {
+			return first
+		}
+		if file.Format == inventory.Script {
+			return parseScript(file)
+		}
+		return parsed
+	}
+	keep := func(file inventory.File, result jomini.Result) {
+		var parsed *jomini.Result
+		if file.Format == inventory.Script {
+			parsed = &result
+		}
+		entries := s.FindEntries(file, parsed)
+		for _, entry := range entries {
+			s.noteEntry(entry, names)
+		}
+		s.recordEvidence(file, parsed, entries)
+	}
+	return names, inventory.Ordered(ctx, files, work, keep)
+}
+
+// noteEntry makes the database of an entry that has none (a file type's database holds its Body: gui.x),
+// records the name a named entry defines, and registers a scripted entry declared inline.
+func (s *Schema) noteEntry(entry Entry, names map[string]map[string]bool) {
+	if s.Databases[entry.Database] == nil {
+		extension, _, _ := strings.Cut(entry.Database, ".")
+		s.declare(entry.Database, game.Folder{Body: game.FileTypes["."+extension].Body})
+	}
+	if entry.Name != "" {
+		if names[entry.Database] == nil {
+			names[entry.Database] = map[string]bool{}
+		}
+		names[entry.Database][strings.Clone(entry.Name)] = true
+	}
+	if entry.Local {
+		s.registerScriptedEntries(entry)
+	}
+}
+
+// registerScriptedEntries records a scripted entry vanilla defines, under each word its database is called
+// by. A database that takes parameters gives the entry its own parameters position; one that takes none
+// reads at its database's entry, so no entry tree is held twice.
+func (s *Schema) registerScriptedEntries(entry Entry) {
+	database := s.Databases[entry.Database]
+	if database == nil || len(database.Row.CalledIn) == 0 {
+		return
+	}
+	called := ScriptedEntry{Database: database.Name}
+	if database.Row.Parameters {
+		called.Parameters = &Position{}
+	}
+	words := database.Row.CalledIn
+	if !strings.Contains(database.Name, ".") {
+		words = append(slices.Clone(words), game.AnyCall)
+	}
+	for _, word := range words {
+		s.ScriptedEntries[word+":"+strings.Clone(entry.Name)] = called
+	}
+}
+
+// parseScript parses a script file; an unreadable one parses as empty.
+func parseScript(file inventory.File) jomini.Result {
+	text, err := file.Text()
+	if err != nil {
+		return jomini.Parse("")
+	}
+	return jomini.Parse(text)
+}
 
 // recordEvidence walks one vanilla file with its entries and records at each position how often and in what
 // forms vanilla writes it. It records evidence only, never a claim.
@@ -93,6 +189,23 @@ func recordValue(value jomini.Value, at *Position) {
 	case *jomini.Block, *jomini.TaggedBlock:
 		at.Evidence.Blocks++
 		at.Evidence.Forms |= FormBlock
+	}
+}
+
+// inferTypesAndPrefixes gives positions the type vanilla's words share and each link prefix the database of
+// the names written after it. A prefix names the database of the names script makes (the name commands'
+// first), then the one vanilla's words show, then the one its own name names. It comes before any docs claim,
+// which fill only what is left.
+func (s *Schema) inferTypesAndPrefixes(names map[string]map[string]bool, locKeys map[string]bool) {
+	s.Prefixes = map[string]string{}
+	for _, row := range game.NameCommands {
+		s.Prefixes[row.Database] = row.Database
+	}
+	s.inferValueTypes(names, locKeys)
+	for name := range s.Commands {
+		if s.Link(name) != nil && s.Prefixes[name] == "" {
+			s.Prefixes[name] = s.DatabaseNamed(name)
+		}
 	}
 }
 

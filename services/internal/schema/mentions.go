@@ -1,6 +1,5 @@
-// names.go says what a written word names: a key by every key rule that fits, a value by the first
-// value rule that fits, each `prefix:name` part a link reads, and each `$NAME$` an entry of a
-// folder with Parameters writes. A constant (@x) and a word holding a parameter ($X$) name nothing.
+// mentions.go decides which entry each scalar of a placed statement stands for, and whether the
+// statement creates it.
 
 package schema
 

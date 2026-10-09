@@ -1,10 +1,11 @@
-// records.go turns one file into its records: script through the schema's walk, localization
-// through its own reader.
+// collect.go is step 5: one file's records from the schema's walk, and the worker pool that
+// collects every file of an index.
 
 package index
 
 import (
 	"cmp"
+	"context"
 	"slices"
 	"strings"
 
@@ -14,6 +15,33 @@ import (
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/schema"
 )
+
+// collectFiles reads the files of Files that hold records, localization in every language only when
+// withLoc is set: a worker per CPU parses and walks ahead while Add runs in file order here.
+func (i *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc bool, progress func(done, total int)) error {
+	i.Rebuild()
+	var files []inventory.File
+	for _, file := range i.Files {
+		if slices.Contains([]inventory.Format{inventory.Script, inventory.Table, inventory.List}, file.Format) ||
+			withLoc && file.Format == inventory.Loc {
+			files = append(files, file)
+		}
+	}
+
+	done := 0
+	return inventory.Ordered(ctx, files, func(file inventory.File) *Records {
+		text, _ := file.Text()
+		return recordsOf(s, file, text)
+	}, func(file inventory.File, records *Records) {
+		if records != nil {
+			i.Add(records, file.Path)
+		}
+		done++
+		if progress != nil {
+			progress(done, len(files))
+		}
+	})
+}
 
 // Read walks a file with the schema and collects its records: each entry a definition, each naming
 // a definition or a reference with its file, line and entry, and the scope each command, link or

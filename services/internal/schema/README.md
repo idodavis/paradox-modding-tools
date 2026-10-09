@@ -5,8 +5,9 @@ vanilla's evidence, each command the dumps declare, and the one walker every rea
 whether a claim may accuse a user's file (`MayAccuse`) and never looks at a mod.
 
 Read `build.go` first. `Build` makes one game version's schema in seven steps, in trust order, and each step is a
-function named for it, first in the file that holds it (`declareDatabases`, `dumpsOrShipped`,
-`parseDocsAndExamples`, `collectDocFields`, `countVanilla`, `inferTypesAndPrefixes`, `applyExamples`).
+function named for it, in the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` in
+`dumps.go`, `parseDocsAndExamples`, `collectDocFields` and `applyExamples` in `docs.go`, `countVanilla` and
+`inferTypesAndPrefixes` in `vanilla.go`.
 
 | file | holds |
 |---|---|

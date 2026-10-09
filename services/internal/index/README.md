@@ -5,8 +5,8 @@ name at query time in the game's load order. The index infers nothing: what a wr
 is the schema's (`schema/mentions.go`); the index collects it.
 
 Read `scan.go` first. `Scan` runs an install through six steps, `ScanMods` a mod set over it, `Reindex` one saved
-file again; each step is a function named for it, first in the file that holds its half (`fromCache`,
-`inventoryOf`, `localizationOf`, `schemaOf`, `Index.collectFiles`, `SaveInstall`).
+file again; each step is a function named for it, in the file that holds its half: `fromCache` and `SaveInstall` in
+`cache.go`, `inventoryOf`, `localizationOf` and `schemaOf` below `Scan`, `Index.collectFiles` in `collect.go`.
 
 | file | holds |
 |---|---|

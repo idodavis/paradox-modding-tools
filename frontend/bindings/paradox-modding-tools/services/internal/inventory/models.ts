@@ -64,7 +64,7 @@ export enum Format {
     /**
      * the prose a game ships beside its script
      */
-    Info = 6,
+    Prose = 6,
 
     /**
      * header facts, read on demand
@@ -74,7 +74,7 @@ export enum Format {
     /**
      * a path and nothing more
      */
-    Opaque = 8,
+    Skipped = 8,
 };
 
 /**

@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -28,10 +28,10 @@ type Symbol struct {
 // what a localization file's text or line key names; nil for none.
 func (file *file) target(offset int) *index.Ref {
 	switch {
-	case file.place.Format == source.Loc:
+	case file.place.Format == inventory.Loc:
 		ref, _ := file.locRef(offset)
 		return ref
-	case file.place.Format == source.Script && file.place.Rel != "":
+	case file.place.Format == inventory.Script && file.place.Rel != "":
 		_, _, ref := file.walk(offset).word(file.sess)
 		return ref
 	}

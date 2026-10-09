@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/session"
@@ -988,13 +988,13 @@ func sweep(t *testing.T, id, name string, sess *session.Session) {
 	for _, records := range sess.Workspace.Records {
 		defs += len(records.Defs)
 	}
-	var files []source.File
+	var files []inventory.File
 	for _, file := range sess.Workspace.Files {
-		if file.Format == source.Script {
+		if file.Format == inventory.Script {
 			files = append(files, file)
 		}
 	}
-	slices.SortFunc(files, func(first, second source.File) int { return strings.Compare(first.Rel, second.Rel) })
+	slices.SortFunc(files, func(first, second inventory.File) int { return strings.Compare(first.Rel, second.Rel) })
 
 	findings := map[string]int{}
 	for _, file := range spread(files, diagnosed) {
@@ -1037,11 +1037,11 @@ func sweep(t *testing.T, id, name string, sess *session.Session) {
 }
 
 // spread takes at most n files evenly across the list, so a big mod's sample reaches every corner.
-func spread(files []source.File, n int) []source.File {
+func spread(files []inventory.File, n int) []inventory.File {
 	if len(files) <= n {
 		return files
 	}
-	out := make([]source.File, 0, n)
+	out := make([]inventory.File, 0, n)
 	for i := 0; i < n; i++ {
 		out = append(out, files[i*len(files)/n])
 	}

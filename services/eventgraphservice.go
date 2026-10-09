@@ -12,9 +12,9 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -415,7 +415,7 @@ type Detail struct {
 	Kind     string         `json:"kind"`
 	Name     string         `json:"name"`
 	Line     int            `json:"line"`
-	At       source.File    `json:"at"`
+	At       inventory.File `json:"at"`
 	Lines    []string       `json:"lines"` // the definition as its file writes it
 	Sections []Section      `json:"sections"`
 	Options  []Option       `json:"options"`
@@ -471,10 +471,10 @@ type RefGroup struct {
 
 // Cited is one name a block writes, and where.
 type Cited struct {
-	Name string      `json:"name"`
-	Line int         `json:"line"`
-	Col  int         `json:"col"`
-	At   source.File `json:"at"`
+	Name string         `json:"name"`
+	Line int            `json:"line"`
+	Col  int            `json:"col"`
+	At   inventory.File `json:"at"`
 }
 
 // GetEventDetail opens one definition by name: the one the game keeps.

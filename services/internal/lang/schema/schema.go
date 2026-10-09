@@ -17,8 +17,8 @@ import (
 	"golang.org/x/net/html/atom"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/wiki"
 )
 
@@ -358,13 +358,13 @@ func Set[T any](claim *Said[T], value T, from Source) {
 // Input is what the schema stage reads.
 type Input struct {
 	Game, Version string
-	Install       []source.File   // the install's inventory, in load order
-	Dumps         []source.File   // the dump folders' inventory
-	Wiki          string          // the wiki sidecar's path
-	Updated       time.Time       // game.InstallUpdatedAt
-	LocKeys       map[string]bool // the install's localization keys, english and the workspace language
-	DumpsOnly     bool            // stop after the databases and dumps: the shipped schema's part
-	Shipped       *Schema         // a shipped dump part, taken in place of reading the dump files
+	Install       []inventory.File // the install's inventory, in load order
+	Dumps         []inventory.File // the dump folders' inventory
+	Wiki          string           // the wiki sidecar's path
+	Updated       time.Time        // game.InstallUpdatedAt
+	LocKeys       map[string]bool  // the install's localization keys, english and the workspace language
+	DumpsOnly     bool             // stop after the databases and dumps: the shipped schema's part
+	Shipped       *Schema          // a shipped dump part, taken in place of reading the dump files
 }
 
 // Build reads every source into the schema: the databases the install holds, the dumps, the docs'
@@ -399,7 +399,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	var scripts []string
 	for _, file := range input.Install {
 		fileType, typed := game.FileTypes[strings.ToLower(path.Ext(file.Rel))]
-		if file.Format == source.Script && typed && fileType.NameKey == "" && fileType.Keywords == nil {
+		if file.Format == inventory.Script && typed && fileType.NameKey == "" && fileType.Keywords == nil {
 			scripts = append(scripts, file.Rel)
 		}
 	}
@@ -472,7 +472,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if file.Format != source.Info {
+		if file.Format != inventory.Prose {
 			continue
 		}
 		// a doc documents its own folder's database, or the folder beside it it is named after
@@ -567,33 +567,33 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 			schema.Macros[word+":"+strings.Clone(entry.Name)] = called
 		}
 	}
-	var files []source.File
+	var files []inventory.File
 	parsedFirst := map[string]jomini.Result{} // the called folders' and GUI files' parses, read once
 	for _, file := range input.Install {
 		at, _ := schema.folder(file.Rel)
 		gui := game.FileTypes[strings.ToLower(path.Ext(file.Rel))].Keywords != nil
-		if file.Format == source.Script && (len(info.Folders[at].CalledIn) > 0 || gui) {
+		if file.Format == inventory.Script && (len(info.Folders[at].CalledIn) > 0 || gui) {
 			text, _ := file.Text()
 			parsed := jomini.Parse(text)
 			schema.Entries(file, &parsed, macro)
 			parsedFirst[file.Path] = parsed
 		}
-		if file.Format == source.Script || file.Format == source.Table || file.Format == source.List {
+		if file.Format == inventory.Script || file.Format == inventory.Table || file.Format == inventory.List {
 			files = append(files, file)
 		}
 	}
-	err := source.Ordered(ctx, files, func(file source.File) (result jomini.Result) {
+	err := inventory.Ordered(ctx, files, func(file inventory.File) (result jomini.Result) {
 		if parsed, found := parsedFirst[file.Path]; found {
 			return parsed
 		}
-		if file.Format == source.Script {
+		if file.Format == inventory.Script {
 			text, _ := file.Text()
 			result = jomini.Parse(text)
 		}
 		return result
-	}, func(file source.File, result jomini.Result) {
+	}, func(file inventory.File, result jomini.Result) {
 		var parsed *jomini.Result
-		if file.Format == source.Script {
+		if file.Format == inventory.Script {
 			parsed = &result
 		}
 		var entries []Entry

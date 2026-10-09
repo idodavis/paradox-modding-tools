@@ -1,4 +1,4 @@
-package source
+package inventory
 
 import (
 	"bytes"
@@ -104,9 +104,9 @@ func TestInventory(t *testing.T) {
 		"game/events/my_example_events.txt":            "namespace = x\nx.1 = { type = character_event }\n",
 		"game/common/artifacts/00_event_templates.txt": "# a list\nx = { }\ny = { }\n",
 	})
-	files := Inventory("vanilla", Roots(dir))
+	files := Files("vanilla", Roots(dir))
 
-	names := [...]string{Unknown: "unknown", Script: "script", List: "list", Info: "info", Image: "image", Opaque: "opaque"}
+	names := [...]string{Unknown: "unknown", Script: "script", List: "list", Prose: "info", Image: "image", Skipped: "opaque"}
 	var got []string
 	for _, file := range files {
 		root, _ := filepath.Rel(dir, file.Path[:len(file.Path)-len(file.Rel)-1])
@@ -130,7 +130,7 @@ func TestInventory(t *testing.T) {
 		"game/dlc/dlc001 | sound/GUIDs.txt | list | vanilla",
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Inventory =\n%v\nwant\n%v", got, want)
+		t.Fatalf("Files =\n%v\nwant\n%v", got, want)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestInstallsAreClassified(t *testing.T) {
 			continue
 		}
 		roots := Roots(install)
-		files := Inventory("vanilla", roots)
+		files := Files("vanilla", roots)
 		if len(roots) == 0 || len(files) < 10000 {
 			t.Errorf("%s: %d roots and %d files under %s: wrong folder", testCase.game, len(roots), len(files), install)
 			continue

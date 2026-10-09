@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -71,7 +71,7 @@ func (file *file) complete(offset int, label string) *completer {
 	case data:
 		written := file.text[lineStart+bracket : offset]
 		start = offset - len(written) + strings.LastIndexAny(written, "[.") + 1
-	case file.place.Format != source.Script || file.place.Rel == "":
+	case file.place.Format != inventory.Script || file.place.Rel == "":
 		return completer
 	default:
 		_, start, end = file.parsed.TokenAt(offset)

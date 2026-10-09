@@ -12,9 +12,9 @@ import (
 	"os"
 	"strings"
 
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -71,11 +71,11 @@ func Format(sess *session.Session, path, unit string) ([]TextEdit, error) {
 		}
 	}
 	switch file.place.Format {
-	case source.Script:
+	case inventory.Script:
 		for i, depth := range file.parsed.LineIndents() {
 			fix(i, strings.Repeat(unit, depth))
 		}
-	case source.Loc:
+	case inventory.Loc:
 		for i := 1; i < lines.LineCount(); i++ {
 			if !strings.HasPrefix(strings.TrimSpace(line(i)), "l_") {
 				fix(i, " ")
@@ -95,7 +95,7 @@ func Folding(sess *session.Session, path string) ([]FoldingRange, error) {
 	if err != nil {
 		return nil, err
 	}
-	if file.place.Format != source.Script {
+	if file.place.Format != inventory.Script {
 		return nil, nil
 	}
 	var out []FoldingRange
@@ -122,7 +122,7 @@ func CodeActions(sess *session.Session, path string, line, col int) ([]CodeActio
 		return nil, err
 	}
 	var out []CodeAction
-	if file.place.Format == source.Loc {
+	if file.place.Format == inventory.Loc {
 		if raw, err := os.ReadFile(path); err == nil && !bytes.HasPrefix(raw, []byte(jomini.BOM)) && !strings.HasPrefix(file.text, jomini.BOM) {
 			out = append(out, CodeAction{Title: "Add UTF-8 BOM", Edit: WorkspaceEdit{Changes: map[string][]TextEdit{path: {{NewText: jomini.BOM}}}}})
 		}
@@ -156,7 +156,7 @@ func (file *file) keyFile() (string, Position, bool) {
 		return "", Position{}, false
 	}
 	for _, at := range sess.Workspace.Files {
-		if at.Origin == mod.ID && at.Format == source.Loc && loc.LanguageFromRel(at.Rel) == sess.Language {
+		if at.Origin == mod.ID && at.Format == inventory.Loc && loc.LanguageFromRel(at.Rel) == sess.Language {
 			if text, err := sess.Text(at.Path); err == nil {
 				return at.Path, jomini.NewLineIndex(text).PositionAt(len(text)), text != "" && !strings.HasSuffix(text, "\n")
 			}
@@ -175,7 +175,7 @@ func InlayHints(sess *session.Session, path string) ([]InlayHint, error) {
 		return nil, err
 	}
 	calendar := file.place.Calendar
-	if len(calendar) == 0 || file.place.Format != source.Script {
+	if len(calendar) == 0 || file.place.Format != inventory.Script {
 		return nil, nil
 	}
 	var out []InlayHint

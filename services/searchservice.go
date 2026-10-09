@@ -19,7 +19,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/sync/errgroup"
 
-	"paradox-modding-tools/services/internal/lang/source"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/local"
 )
 
@@ -205,7 +205,7 @@ func searchable(path string, buf []byte) []byte {
 	}
 	// a NUL in the head marks the file binary and the rest is never read, which keeps a mod's meshes
 	// and images out of the search without listing extensions
-	size, probe := int(info.Size()), min(source.BinaryHead, int(info.Size()))
+	size, probe := int(info.Size()), min(inventory.BinaryHead, int(info.Size()))
 	head := slices.Grow(buf[:0], probe)[:probe]
 	if _, err := io.ReadFull(file, head); err != nil || bytes.IndexByte(head, 0) >= 0 {
 		return nil
@@ -311,7 +311,7 @@ func textSearchFolder(
 	// only a cancel ends the walk early, and the caller's ctx already says so
 	_ = searchFiles(ctx, root, gs, func(path, rel string) error {
 		// an image the format table names is never opened
-		if source.Classify(path, filepath.ToSlash(rel)) == source.Image {
+		if inventory.Classify(path, filepath.ToSlash(rel)) == inventory.Image {
 			return nil
 		}
 		select {
@@ -329,7 +329,7 @@ func textSearchFolder(
 // searchFiles visits each file under root that the folder's globs keep, by the engine's walk (linked folders
 // followed, .git never entered); visit returning filepath.SkipAll stops it, and so does a cancelled ctx.
 func searchFiles(ctx context.Context, root string, gs globSet, visit func(path, rel string) error) error {
-	return source.Walk(root, func(path string) error {
+	return inventory.Walk(root, func(path string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -432,7 +432,7 @@ func (s *SearchService) Replace(ctx context.Context, query TextReplaceQuery) (Te
 		}
 		globs := folderGlobs(folder)
 		err := searchFiles(ctx, root, globs, func(path, rel string) error {
-			if _, held := open[local.PathKey(path)]; held || source.Classify(path, filepath.ToSlash(rel)) == source.Image {
+			if _, held := open[local.PathKey(path)]; held || inventory.Classify(path, filepath.ToSlash(rel)) == inventory.Image {
 				return nil
 			}
 			data := searchable(path, nil)

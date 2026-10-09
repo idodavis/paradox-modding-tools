@@ -3,7 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as source$0 from "./internal/lang/source/models.js";
+import * as inventory$0 from "./internal/inventory/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as lsp$0 from "./internal/lsp/models.js";
@@ -21,7 +21,7 @@ export interface Cited {
     "name": string;
     "line": number;
     "col": number;
-    "at": source$0.File;
+    "at": inventory$0.File;
 }
 
 /**
@@ -90,7 +90,7 @@ export interface Detail {
     "kind": string;
     "name": string;
     "line": number;
-    "at": source$0.File;
+    "at": inventory$0.File;
 
     /**
      * the definition as its file writes it
@@ -190,7 +190,7 @@ export interface FileSearchResult {
 /**
  * FileText is a text file as the editor and source control read it: its text without the byte order mark and with
  * its line ends, whether it had the mark, whether it was Windows-1252 (saved back so), and the format the engine
- * reads it as (source.Format's name: the editor's language follows it). Reject says why there is no text: the file
+ * reads it as (inventory.Format's name: the editor's language follows it). Reject says why there is no text: the file
  * is missing, binary or too large.
  */
 export interface FileText {
@@ -364,7 +364,7 @@ export interface Health {
     /**
      * every file a row names, at the number it names it by
      */
-    "sources": source$0.File[] | null;
+    "sources": inventory$0.File[] | null;
 
     /**
      * names two or more mods define
@@ -423,7 +423,7 @@ export interface IdeRoots {
  * again; Reject says why it is not shown.
  */
 export interface ImageFacts {
-    "info": source$0.ImageInfo;
+    "info": inventory$0.ImageInfo;
 
     /**
      * DDS BC7, TGA 32-bit, PNG

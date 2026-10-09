@@ -1,4 +1,4 @@
-// Package source knows every file of a game install or a mod: which folders mirror the game
+// Package inventory knows every file of a game install or a mod: which folders mirror the game
 // layout, what each file is relative to, where it came from, and which reader its format needs.
 // It interprets no content. One format table serves every game: an extension it does not list is
 // Unknown, kept in the inventory as such, so a new kind of file is seen rather than guessed at.
@@ -6,7 +6,7 @@
 // spelled under its root, refuses a link back to an ancestor, and reads folders in name order so
 // two walks of one tree agree. Image headers give a PNG, DDS or TGA's dimensions and format
 // without decoding a pixel.
-package source
+package inventory
 
 import (
 	"bytes"
@@ -40,9 +40,9 @@ const (
 	Table                 // lines of ; separated columns
 	List                  // sound/GUIDs.txt: one name per line
 	JSON                  // a decoded value
-	Info                  // the prose a game ships beside its script
+	Prose                 // the prose a game ships beside its script
 	Image                 // header facts, read on demand
-	Opaque                // a path and nothing more
+	Skipped               // a path and nothing more
 )
 
 // String is a format's name, as the editor reads it to pick a file's language.
@@ -66,17 +66,17 @@ var formats = map[string]Format{
 	".yml":  Loc,
 	".csv":  Table,
 	".json": JSON,
-	".info": Info, ".md": Info,
+	".info": Prose, ".md": Prose,
 	".dds": Image, ".png": Image, ".jpg": Image, ".jpeg": Image, ".tga": Image,
 
 	// binary, or text nothing here reads: named in script by path, never opened
-	".mesh": Opaque, ".anim": Opaque, ".bank": Opaque, ".bnk": Opaque, ".wem": Opaque, ".bk2": Opaque, ".ogg": Opaque,
-	".wav": Opaque, ".mp3": Opaque, ".flac": Opaque, ".ttf": Opaque, ".otf": Opaque, ".fnt": Opaque, ".dat": Opaque,
-	".bin": Opaque, ".bmp": Opaque, ".cur": Opaque, ".ani": Opaque, ".shader": Opaque, ".fxh": Opaque, ".swatch": Opaque,
-	".splnet": Opaque, ".svg": Opaque, ".ico": Opaque,
+	".mesh": Skipped, ".anim": Skipped, ".bank": Skipped, ".bnk": Skipped, ".wem": Skipped, ".bk2": Skipped, ".ogg": Skipped,
+	".wav": Skipped, ".mp3": Skipped, ".flac": Skipped, ".ttf": Skipped, ".otf": Skipped, ".fnt": Skipped, ".dat": Skipped,
+	".bin": Skipped, ".bmp": Skipped, ".cur": Skipped, ".ani": Skipped, ".shader": Skipped, ".fxh": Skipped, ".swatch": Skipped,
+	".splnet": Skipped, ".svg": Skipped, ".ico": Skipped,
 
 	// the games' console dumps: listed so the dump folders inventory them
-	".log": Opaque,
+	".log": Skipped,
 }
 
 // ignored is what ships in an install and is no part of the game's content, with the reason.
@@ -138,16 +138,16 @@ func Classify(abs, rel string) Format {
 		return List
 	}
 	if path.Ext(name) == ".txt" && (strings.Contains("/"+dir+"/", "/sound/banks/") || !strings.Contains(rel, "/")) {
-		return Opaque
+		return Skipped
 	}
 	if strings.HasPrefix(name, "readme") {
-		return Info
+		return Prose
 	}
 	format := formats[path.Ext(name)]
 	if format == Script && path.Ext(name) == ".txt" {
 		words := strings.FieldsFunc(strings.TrimSuffix(name, ".txt"), func(char rune) bool { return char == '_' || char == '-' || char == ' ' || char == '.' })
 		if slices.ContainsFunc(words, func(word string) bool { return documentation[word] }) && prose(abs) {
-			return Info
+			return Prose
 		}
 	}
 	return format
@@ -224,9 +224,9 @@ func rootRank(dir, root string) int {
 	return 2
 }
 
-// Inventory is every content file under the roots, in root then path order. A root inside another
+// Files is every content file under the roots, in root then path order. A root inside another
 // root (a DLC folder) owns its own files.
-func Inventory(origin string, roots []string) []File {
+func Files(origin string, roots []string) []File {
 	var files []File
 	for _, root := range roots {
 		_ = Walk(root, func(abs string) error {

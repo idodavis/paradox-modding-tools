@@ -6,7 +6,7 @@
  */
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
-import type { File as SourceFile } from "@services/internal/lang/source/models";
+import type { File as SourceFile } from "@services/internal/inventory/models";
 import { sitesOf, typeOf, type Row } from "../../composables/useHealth";
 import { linesQuery, locReadersQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";

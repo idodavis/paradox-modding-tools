@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/shipped"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/wiki"
@@ -61,16 +61,16 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 
 	// 1. the install's files and the dump folders'
 	req.Progress("inventory", 0, 1)
-	roots := source.Roots(req.Dir)
-	input := inventory(req, roots)
+	roots := inventory.Roots(req.Dir)
+	input := schemaInput(req, roots)
 
 	// 2. the localization, read once in english and the asked language (a file whose path names
 	// another is never read): its keys go to the schema, its records to the index
 	req.Progress("localization", 0, 1)
 	languages, localized := []string{game.BaseLanguage, strings.ToLower(req.Language)}, map[string]*Records{}
-	var locs []source.File
+	var locs []inventory.File
 	for _, file := range input.Install {
-		if file.Format != source.Loc {
+		if file.Format != inventory.Loc {
 			continue
 		}
 		if named := loc.LanguageFromRel(file.Rel); named == "" || slices.Contains(languages, named) {
@@ -78,10 +78,10 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 		}
 	}
 	input.LocKeys = map[string]bool{}
-	err := source.Ordered(ctx, locs, func(file source.File) *Records {
+	err := inventory.Ordered(ctx, locs, func(file inventory.File) *Records {
 		text, _ := file.Text()
 		return read(req.Game, nil, file, text, languages)
-	}, func(file source.File, kept *Records) {
+	}, func(file inventory.File, kept *Records) {
 		if kept != nil {
 			localized[file.Path] = kept
 			for _, entry := range kept.Loc {
@@ -128,7 +128,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 // BuildSchema is the dump part the generator ships, with the install's databases so dump claims
 // can name them; it refuses unless every dump file is there, so a partial backup never ships.
 func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
-	input := inventory(req, source.Roots(req.Dir))
+	input := schemaInput(req, inventory.Roots(req.Dir))
 	if missing := schema.MissingDumps(input.Dumps); len(missing) > 0 {
 		return nil, fmt.Errorf("dump files missing for %s: %s", req.Game, strings.Join(missing, ", "))
 	}
@@ -136,15 +136,15 @@ func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
 	return schema.Build(ctx, input)
 }
 
-// inventory is the schema stage's input: the files under the install's roots in load order, the
+// schemaInput is the schema stage's input: the files under the install's roots in load order, the
 // dump folders' files, the wiki sidecar and when the install last changed.
-func inventory(req Request, roots []string) schema.Input {
+func schemaInput(req Request, roots []string) schema.Input {
 	sidecar, _ := wiki.SidecarPath(req.Game)
 	return schema.Input{
 		Game:    req.Game,
 		Version: req.Version,
-		Install: source.Inventory(game.OriginVanilla, roots),
-		Dumps:   source.Inventory("dumps", game.DumpDirs(req.Game, req.Dir)),
+		Install: inventory.Files(game.OriginVanilla, roots),
+		Dumps:   inventory.Files("dumps", game.DumpDirs(req.Game, req.Dir)),
 		Wiki:    sidecar,
 		Updated: game.InstallUpdatedAt(req.Dir),
 	}
@@ -154,19 +154,19 @@ func inventory(req Request, roots []string) schema.Input {
 // withLoc is set: a worker per CPU parses and walks ahead while Add runs in file order here.
 func index(ctx context.Context, sch *schema.Schema, idx *Index, withLoc bool, progress func(done, total int)) error {
 	idx.Ready()
-	var files []source.File
+	var files []inventory.File
 	for _, file := range idx.Files {
-		if slices.Contains([]source.Format{source.Script, source.Table, source.List}, file.Format) ||
-			withLoc && file.Format == source.Loc {
+		if slices.Contains([]inventory.Format{inventory.Script, inventory.Table, inventory.List}, file.Format) ||
+			withLoc && file.Format == inventory.Loc {
 			files = append(files, file)
 		}
 	}
 
 	done := 0
-	return source.Ordered(ctx, files, func(file source.File) *Records {
+	return inventory.Ordered(ctx, files, func(file inventory.File) *Records {
 		text, _ := file.Text()
 		return read(sch.Game, sch, file, text, nil)
-	}, func(file source.File, records *Records) {
+	}, func(file inventory.File, records *Records) {
 		if records != nil {
 			idx.Add(records, file.Path)
 		}
@@ -180,14 +180,14 @@ func index(ctx context.Context, sch *schema.Schema, idx *Index, withLoc bool, pr
 // read is one file's records by its format: script walked, a table or sound list walked without a
 // tree, localization parsed with no schema (nil before the schema stage); nil when the format holds
 // none or the language is not kept (languages none: every one).
-func read(gameID string, sch *schema.Schema, file source.File, text string, languages []string) *Records {
+func read(gameID string, sch *schema.Schema, file inventory.File, text string, languages []string) *Records {
 	switch file.Format {
-	case source.Script:
+	case inventory.Script:
 		parsed := jomini.Parse(text)
 		return Walk(sch, file, &parsed, nil)
-	case source.Table, source.List:
+	case inventory.Table, inventory.List:
 		return Walk(sch, file, nil, nil)
-	case source.Loc:
+	case inventory.Loc:
 		parsed := loc.Parse(text)
 		language := strings.ToLower(cmp.Or(parsed.Language, loc.LanguageFromRel(file.Rel)))
 		if len(languages) > 0 && !slices.Contains(languages, language) {
@@ -245,9 +245,9 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 	info := game.Get(install.Schema.Game)
 	idx := &Index{}
 	for _, mod := range mods {
-		roots := source.Roots(mod.Dir)
+		roots := inventory.Roots(mod.Dir)
 		idx.Roots = append(idx.Roots, roots...)
-		idx.Files = append(idx.Files, source.Inventory(mod.ID, roots)...)
+		idx.Files = append(idx.Files, inventory.Files(mod.ID, roots)...)
 
 		// each folder its descriptor unloads, held lower-case, slash separated and without the stage an
 		// inventory root drops
@@ -266,7 +266,7 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 // Reindex walks one file again: its records dropped and added back. A file not yet in Files goes
 // after its origin's last file, so it keeps that origin's place in load order. Every localization
 // language is kept.
-func (idx *Index) Reindex(sch *schema.Schema, file source.File, text string) {
+func (idx *Index) Reindex(sch *schema.Schema, file inventory.File, text string) {
 	idx.Drop(file.Path)
 	if idx.defs == nil {
 		idx.Ready()
@@ -301,7 +301,7 @@ var devKey = sync.OnceValues(func() (string, error) {
 	sum, engine := sha256.New(), false
 	for repo := filepath.Dir(executable); repo != filepath.Dir(repo) && !engine; repo = filepath.Dir(repo) {
 		for _, dir := range []string{"game", "lang", "wiki"} {
-			_ = source.Walk(filepath.Join(repo, "services", "internal", dir), func(path string) error {
+			_ = inventory.Walk(filepath.Join(repo, "services", "internal", dir), func(path string) error {
 				if text, err := os.ReadFile(path); err == nil && !strings.HasSuffix(path, "_test.go") && !strings.HasSuffix(path, ".md") {
 					engine = true
 					fmt.Fprintf(sum, "%s|%d|", filepath.Base(path), len(text))
@@ -332,7 +332,7 @@ func cachePath(req Request) (path, ofFolder string, err error) {
 	}
 	state := sha256.New()
 	fmt.Fprintf(state, "%s|%d", req.Language, game.InstallUpdatedAt(req.Dir).UnixNano())
-	for _, file := range source.Inventory("dumps", game.DumpDirs(req.Game, req.Dir)) {
+	for _, file := range inventory.Files("dumps", game.DumpDirs(req.Game, req.Dir)) {
 		name := filepath.Base(file.Path)
 		if info, err := os.Stat(file.Path); err == nil && slices.Contains(schema.DumpFiles, name) {
 			fmt.Fprintf(state, "|%s|%d", name, info.ModTime().UnixNano())

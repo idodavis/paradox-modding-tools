@@ -3,10 +3,10 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as jomini$0 from "../jomini/models.js";
+import * as inventory$0 from "../inventory/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as source$0 from "../lang/source/models.js";
+import * as jomini$0 from "../jomini/models.js";
 
 /**
  * Code is one check, for the settings: what it finds, and whether it runs by default.
@@ -165,7 +165,7 @@ export interface Inspect {
     /**
      * a file that is an image: its header
      */
-    "image"?: source$0.ImageInfo | null;
+    "image"?: inventory$0.ImageInfo | null;
 
     /**
      * the event graph draws it: it is or fires an event

@@ -17,8 +17,8 @@ import (
 	"testing"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -395,18 +395,18 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 		}
 
 		// the sample, copied into a mod
-		var common, events []source.File
+		var common, events []inventory.File
 		for _, file := range install.Index.Files {
 			switch {
-			case file.Format != source.Script || !strings.HasSuffix(file.Rel, ".txt"):
+			case file.Format != inventory.Script || !strings.HasSuffix(file.Rel, ".txt"):
 			case strings.HasPrefix(file.Rel, "events/") || strings.Contains(file.Rel, "/events/"):
 				events = append(events, file)
 			case strings.Contains(file.Rel, "common/"):
 				common = append(common, file)
 			}
 		}
-		slices.SortFunc(common, func(first, second source.File) int { return strings.Compare(first.Rel, second.Rel) })
-		slices.SortFunc(events, func(first, second source.File) int { return strings.Compare(first.Rel, second.Rel) })
+		slices.SortFunc(common, func(first, second inventory.File) int { return strings.Compare(first.Rel, second.Rel) })
+		slices.SortFunc(events, func(first, second inventory.File) int { return strings.Compare(first.Rel, second.Rel) })
 		samples := append(common[:min(400, len(common))], events[:min(250, len(events))]...)
 		mod := t.TempDir()
 		for _, sample := range samples {

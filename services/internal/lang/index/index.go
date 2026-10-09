@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"
 )
 
@@ -61,7 +61,7 @@ type Records struct {
 
 // Index is one inventory with the records of its files.
 type Index struct {
-	Files    []source.File        // the inventory, as source.Inventory lists it
+	Files    []inventory.File     // the inventory, as inventory.Files lists it
 	Roots    []string             // the folders Files lists, in load order; a path under one belongs to it
 	Replaced []string             // mods: folders whose earlier files the game does not load
 	Records  map[string]*Records  // by path
@@ -180,23 +180,23 @@ func (idx *Index) Place() {
 }
 
 // At is the file listed at a path, by its local.PathKey (on Windows, whatever the case it is spelled in).
-func (idx *Index) At(path string) (source.File, bool) {
+func (idx *Index) At(path string) (inventory.File, bool) {
 	pos, listed := idx.order[local.PathKey(path)]
 	if !listed {
-		return source.File{}, false
+		return inventory.File{}, false
 	}
 	return idx.Files[pos], true
 }
 
 // FileAt is the file at a Rel across the indexes, whatever its case: the last index's that lists
 // it, at its last place there.
-func FileAt(indexes []*Index, rel string) (source.File, bool) {
+func FileAt(indexes []*Index, rel string) (inventory.File, bool) {
 	for _, idx := range slices.Backward(indexes) {
 		if pos, listed := idx.rels[strings.ToLower(rel)]; listed {
 			return idx.Files[pos], true
 		}
 	}
-	return source.File{}, false
+	return inventory.File{}, false
 }
 
 // Forget removes a deleted file, or every file under a deleted folder, from the index: their records
@@ -204,7 +204,7 @@ func FileAt(indexes []*Index, rel string) (source.File, bool) {
 func (idx *Index) Forget(path string) {
 	path = local.PathKey(path)
 	listed := len(idx.Files)
-	idx.Files = slices.DeleteFunc(idx.Files, func(file source.File) bool {
+	idx.Files = slices.DeleteFunc(idx.Files, func(file inventory.File) bool {
 		at := local.PathKey(file.Path)
 		return at == path || strings.HasPrefix(at, path+string(filepath.Separator))
 	})
@@ -220,7 +220,7 @@ func (idx *Index) LocKeys() iter.Seq[string] {
 
 // Loaded is the file listed at a path of the indexes and whether the game loads it: it is hidden by
 // a later file at its Rel, in its index or a later one, or by a later index's Replaced.
-func Loaded(indexes []*Index, path string) (source.File, bool) {
+func Loaded(indexes []*Index, path string) (inventory.File, bool) {
 	path = local.PathKey(path)
 	for rank, idx := range indexes {
 		pos, listed := idx.order[path]
@@ -235,7 +235,7 @@ func Loaded(indexes []*Index, path string) (source.File, bool) {
 			})
 		})
 	}
-	return source.File{}, false
+	return inventory.File{}, false
 }
 
 // gather is one name's items across the indexes in the game's load order, by Rel, those in files

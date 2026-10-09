@@ -21,8 +21,8 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"
 
 	"paradox-modding-tools/services/internal/game"
@@ -136,7 +136,7 @@ func (f *FileService) StatPath(fullPath string) (PathStat, error) {
 
 // FileText is a text file as the editor and source control read it: its text without the byte order mark and with
 // its line ends, whether it had the mark, whether it was Windows-1252 (saved back so), and the format the engine
-// reads it as (source.Format's name: the editor's language follows it). Reject says why there is no text: the file
+// reads it as (inventory.Format's name: the editor's language follows it). Reject says why there is no text: the file
 // is missing, binary or too large.
 type FileText struct {
 	Text    string `json:"text"`
@@ -151,11 +151,11 @@ type FileText struct {
 // textOf is a file's bytes as a FileText, decoded as the engine decodes them (jomini.Decode) and classified at path
 // (rel: its path in its root, or the whole path where it has none); binary is refused.
 func textOf(data []byte, path, rel string) FileText {
-	if source.Binary(data) {
+	if inventory.Binary(data) {
 		return FileText{Binary: true, Reject: "binary file: the editor opens script, localization and other text files only"}
 	}
 	text, bom, legacy := jomini.Decode(data)
-	return FileText{Text: text, BOM: bom, Legacy: legacy, Format: source.Classify(path, filepath.ToSlash(rel)).String()}
+	return FileText{Text: text, BOM: bom, Legacy: legacy, Format: inventory.Classify(path, filepath.ToSlash(rel)).String()}
 }
 
 // readCapped is a file's bytes, or missing where it is not there, or why it is refused (too large to hold in
@@ -199,11 +199,11 @@ var imageTypes = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gi
 // the page names it, its size, and its URL at ImageRoute, which names when the file changed so a changed file is read
 // again; Reject says why it is not shown.
 type ImageFacts struct {
-	Info   source.ImageInfo `json:"info"`
-	Label  string           `json:"label"` // DDS BC7, TGA 32-bit, PNG
-	Bytes  int64            `json:"bytes"`
-	URL    string           `json:"url"`
-	Reject string           `json:"reject,omitempty"`
+	Info   inventory.ImageInfo `json:"info"`
+	Label  string              `json:"label"` // DDS BC7, TGA 32-bit, PNG
+	Bytes  int64               `json:"bytes"`
+	URL    string              `json:"url"`
+	Reject string              `json:"reject,omitempty"`
 }
 
 // ReadImageFacts is an image file's facts, which its pixels at ImageRoute do not carry.
@@ -217,7 +217,7 @@ func (f *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
 	if stat.Size() > maxImageBytes {
 		facts.Reject = fmt.Sprintf("larger than %d MB: not shown", maxImageBytes>>20)
 	}
-	facts.Info, _ = source.ReadImageInfo(fullPath)
+	facts.Info, _ = inventory.ReadImageInfo(fullPath)
 	ext := strings.ToUpper(strings.TrimPrefix(filepath.Ext(fullPath), "."))
 	switch format := facts.Info.Format; {
 	case ext == "DDS" && format != "png":
@@ -259,7 +259,7 @@ func ServeImages(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		img, err := source.DecodeImage(path)
+		img, err := inventory.DecodeImage(path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 			return

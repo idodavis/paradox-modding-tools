@@ -2,7 +2,7 @@
 // its channel masks) and TGA (true-color or grey, raw or run-length). BC7's tables are its spec's
 // (ARB_texture_compression_bptc).
 
-package source
+package inventory
 
 import (
 	"bytes"

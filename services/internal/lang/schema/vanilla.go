@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/lang/source"
 )
 
 // Entry is one definition a file makes. Mode is the declared mode word stripped from the written
@@ -56,7 +56,7 @@ func (schema *Schema) DatabaseAt(rel string) *Database {
 
 // Entries finds every entry a file defines, in source order, by the registry's rows: one per line
 // of a table or sound list (parsed nil); in script by keyword, file type, or the folder row.
-func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found func(Entry)) {
+func (schema *Schema) Entries(file inventory.File, parsed *jomini.Result, found func(Entry)) {
 	info, rel := game.Get(schema.Game), file.Rel
 	_, own := schema.folder(rel)
 	ext := strings.ToLower(path.Ext(rel))
@@ -246,7 +246,7 @@ func (schema *Schema) Entries(file source.File, parsed *jomini.Result, found fun
 // tableEntries finds the entries of a table or sound list, each a bare word at its place in the
 // text: the map table names a row by its first column (a # line is a comment), a sound list a sound
 // by what follows its GUID.
-func (schema *Schema) tableEntries(file source.File, own string, found func(Entry)) {
+func (schema *Schema) tableEntries(file inventory.File, own string, found func(Entry)) {
 	info := game.Get(schema.Game)
 	database := info.MapTable.Database
 	cut := func(line string) string {
@@ -256,11 +256,11 @@ func (schema *Schema) tableEntries(file source.File, own string, found func(Entr
 		}
 		return name
 	}
-	if file.Format == source.List {
+	if file.Format == inventory.List {
 		database = own
 		cut = func(line string) string { _, name, _ := strings.Cut(line, " "); return name }
 	}
-	if file.Format != source.List && file.Rel != info.MapTable.File {
+	if file.Format != inventory.List && file.Rel != info.MapTable.File {
 		return
 	}
 	text, err := file.Text()

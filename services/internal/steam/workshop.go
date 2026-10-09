@@ -25,7 +25,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/source"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/local"
 )
 
@@ -328,7 +328,7 @@ func parseYouTubeID(urlOrID string) (string, error) {
 func Upload(root, extraIgnore string) (sent, left []string) {
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
 	patterns := strings.Split(string(gitignore)+"\n"+extraIgnore, "\n")
-	_ = source.Walk(root, func(file string) error {
+	_ = inventory.Walk(root, func(file string) error {
 		rel, err := filepath.Rel(root, file)
 		if err != nil {
 			return nil
@@ -428,7 +428,7 @@ func Changes(steamRoot, root, extraIgnore string) []FileChange {
 		return data
 	}
 	change := func(rel, status string, before, after []byte) FileChange {
-		c := FileChange{Rel: rel, Status: status, Binary: source.Binary(before) || source.Binary(after)}
+		c := FileChange{Rel: rel, Status: status, Binary: inventory.Binary(before) || inventory.Binary(after)}
 		if status != "A" {
 			c.Steam = filepath.Join(steamRoot, filepath.FromSlash(rel))
 		}

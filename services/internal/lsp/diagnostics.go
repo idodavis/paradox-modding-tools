@@ -14,10 +14,10 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -61,7 +61,7 @@ func Diagnose(sess *session.Session, path string, enabled map[string]bool) ([]Di
 	// only a mod's script and loc files have findings; any other file (images, sound) is never read
 	place := sess.Where(path)
 	isModFile := place.Origin != game.OriginVanilla && place.Origin != ""
-	if isText := place.Format == source.Script || place.Format == source.Loc; !isModFile || !isText {
+	if isText := place.Format == inventory.Script || place.Format == inventory.Loc; !isModFile || !isText {
 		return nil, nil
 	}
 	file, err := open(sess, path)
@@ -76,9 +76,9 @@ func Diagnose(sess *session.Session, path string, enabled map[string]bool) ([]Di
 	}
 	judge := &judge{file: file, on: enabled, ignored: ignores(file.text)}
 	switch file.place.Format {
-	case source.Loc:
+	case inventory.Loc:
 		judge.locFile()
-	case source.Script:
+	case inventory.Script:
 		judge.script()
 	}
 	return judge.out, nil

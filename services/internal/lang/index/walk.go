@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/lang/source"
 )
 
 // Context is a step as the index reads it.
@@ -24,7 +24,7 @@ type Context struct {
 
 // Walk reads a file with the schema: its records, and each statement's context handed to visit
 // (nil for none); visit returning false stops the walk.
-func Walk(sch *schema.Schema, file source.File, parsed *jomini.Result, visit func(Context) bool) *Records {
+func Walk(sch *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(Context) bool) *Records {
 	walker := &walker{
 		sch: sch, file: file, records: &Records{scoped: map[[2]string]bool{}}, visit: visit,
 		own: map[jomini.Statement]int32{}, entries: map[*jomini.Block]int32{},
@@ -63,7 +63,7 @@ func Walk(sch *schema.Schema, file source.File, parsed *jomini.Result, visit fun
 // and the visitor each step is handed to.
 type walker struct {
 	sch     *schema.Schema
-	file    source.File
+	file    inventory.File
 	records *Records
 	lines   *jomini.LineIndex
 	own     map[jomini.Statement]int32 // an entry's statement: its index in Defs

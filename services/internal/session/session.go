@@ -23,10 +23,10 @@ import (
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"
 )
 
@@ -64,7 +64,7 @@ type Mod struct {
 // Place is where a path sits: its file (Origin "" for a path under no root), the database it
 // defines and its mod's calendar.
 type Place struct {
-	source.File
+	inventory.File
 	Database *schema.Database // nil when the folder holds none
 	Calendar Calendar
 }
@@ -72,7 +72,7 @@ type Place struct {
 // buffer is a file open in the editor: its text and that text's parse, made once when the text
 // arrives so a reader never writes.
 type buffer struct {
-	file   source.File
+	file   inventory.File
 	text   string
 	parsed jomini.Result
 }
@@ -404,9 +404,9 @@ func (sess *Session) Where(path string) Place {
 
 // Located is the indexed file at a path, else the file the path would be under a mod's or the
 // install's root, and the mod it belongs to; under no root, the path alone and false.
-func (sess *Session) Located(path string) (source.File, *Mod, bool) {
+func (sess *Session) Located(path string) (inventory.File, *Mod, bool) {
 	if path == "" {
-		return source.File{}, nil, false
+		return inventory.File{}, nil, false
 	}
 	path = filepath.Clean(path)
 	mod := func(origin string) *Mod {
@@ -420,24 +420,24 @@ func (sess *Session) Located(path string) (source.File, *Mod, bool) {
 			return file, mod(file.Origin), true
 		}
 	}
-	under := func(roots []string, origin string) (source.File, bool) {
+	under := func(roots []string, origin string) (inventory.File, bool) {
 		for _, root := range roots {
 			if rel, err := filepath.Rel(root, path); err == nil && filepath.IsLocal(rel) {
 				rel = filepath.ToSlash(rel)
-				return source.File{Path: path, Rel: rel, Origin: origin, Format: source.Classify(path, rel)}, true
+				return inventory.File{Path: path, Rel: rel, Origin: origin, Format: inventory.Classify(path, rel)}, true
 			}
 		}
-		return source.File{}, false
+		return inventory.File{}, false
 	}
 	for i := range sess.Mods {
-		if file, ok := under(source.Roots(sess.Mods[i].Dir), sess.Mods[i].ID); ok {
+		if file, ok := under(inventory.Roots(sess.Mods[i].Dir), sess.Mods[i].ID); ok {
 			return file, &sess.Mods[i], true
 		}
 	}
 	if file, ok := under(sess.Install.Index.Roots, game.OriginVanilla); ok {
 		return file, nil, true
 	}
-	return source.File{Path: path, Format: source.Classify(path, filepath.ToSlash(path))}, nil, false
+	return inventory.File{Path: path, Format: inventory.Classify(path, filepath.ToSlash(path))}, nil, false
 }
 
 // Text is a file's text: the open buffer's, else the disk's.
@@ -445,7 +445,7 @@ func (sess *Session) Text(path string) (string, error) {
 	if buffer := sess.buffers[local.PathKey(path)]; buffer != nil {
 		return buffer.text, nil
 	}
-	return source.File{Path: path}.Text()
+	return inventory.File{Path: path}.Text()
 }
 
 // Parsed is the parse of a file's text: an open buffer's, made once per text, else the disk's.
@@ -482,7 +482,7 @@ func (sess *Session) DidChange(path, text string) {
 
 // DidClose forgets the editor's text; the file is read from disk again.
 func (sess *Session) DidClose(path string) {
-	text, err := source.File{Path: filepath.Clean(path)}.Text()
+	text, err := inventory.File{Path: filepath.Clean(path)}.Text()
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	key := local.PathKey(path)
@@ -497,7 +497,7 @@ func (sess *Session) DidClose(path string) {
 // DidSave reads the saved file and indexes it again.
 func (sess *Session) DidSave(path string) {
 	// read before the lock: every editor request waits on this mutex, so disk reads stay outside it
-	text, err := source.File{Path: path}.Text()
+	text, err := inventory.File{Path: path}.Text()
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	if file, _, ok := sess.Located(path); ok {
@@ -532,7 +532,7 @@ func (sess *Session) Changed(path string) {
 
 // changed walks a mod file again from text its caller has already read, under the lock; an
 // install's file, or one under no root, is never indexed from the editor.
-func (sess *Session) changed(file source.File, text string, err error) {
+func (sess *Session) changed(file inventory.File, text string, err error) {
 	if file.Origin == game.OriginVanilla || file.Origin == "" {
 		return
 	}
@@ -621,7 +621,7 @@ func (watcher *Watcher) Close() error {
 func (watcher *Watcher) addTree(root string, found func(path string)) {
 	seen := map[string]bool{}
 	warn(watcher.fsw.Add(root))
-	_ = source.Walk(root, func(path string) error {
+	_ = inventory.Walk(root, func(path string) error {
 		if dir := filepath.Dir(path); !seen[dir] {
 			seen[dir] = true
 			warn(watcher.fsw.Add(dir))
@@ -696,9 +696,9 @@ func (watcher *Watcher) report(name string) {
 }
 
 // indexable is whether the index reads a file of this format (its text, for records).
-func indexable(format source.Format) bool {
+func indexable(format inventory.Format) bool {
 	switch format {
-	case source.Script, source.Loc, source.Table, source.List:
+	case inventory.Script, inventory.Loc, inventory.Table, inventory.List:
 		return true
 	}
 	return false

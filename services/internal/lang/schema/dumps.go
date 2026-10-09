@@ -15,8 +15,8 @@ import (
 	"unicode"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/lang/source"
 )
 
 // Modifier is one modifier the dumps declare; Pattern is a name written with $TYPE$ parts as a
@@ -130,9 +130,9 @@ var DumpFiles = func() (names []string) {
 }()
 
 // MissingDumps is the names of DumpFiles no file of files has.
-func MissingDumps(files []source.File) []string {
+func MissingDumps(files []inventory.File) []string {
 	return slices.DeleteFunc(slices.Clone(DumpFiles), func(name string) bool {
-		return slices.ContainsFunc(files, func(file source.File) bool { return filepath.Base(file.Path) == name })
+		return slices.ContainsFunc(files, func(file inventory.File) bool { return filepath.Base(file.Path) == name })
 	})
 }
 
@@ -141,12 +141,12 @@ var labelLine, dashes = regexp.MustCompile(`^\s*\*{0,2}([^:*]+?)\*{0,2}: *(.*)$`
 
 // readDumps reads the dump files into the schema: commands (with usages through template, stated by
 // SourceDumps) and the flat tables. It returns the oldest file's time, zero when none was read.
-func (schema *Schema) readDumps(files []source.File) (written time.Time) {
+func (schema *Schema) readDumps(files []inventory.File) (written time.Time) {
 	schema.Commands, schema.Scopes, schema.Saved = map[string]*Command{}, map[string]Scope{}, map[string]bool{}
 	schema.Modifiers, schema.OnActions = map[string]Modifier{}, map[string]OnAction{}
 	schema.DataTypes, schema.CustomLoc = map[string]DataType{}, map[string]CustomLoc{}
 
-	byName := map[string]source.File{}
+	byName := map[string]inventory.File{}
 	for _, file := range files {
 		if _, seen := byName[filepath.Base(file.Path)]; !seen {
 			byName[filepath.Base(file.Path)] = file

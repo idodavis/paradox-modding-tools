@@ -12,7 +12,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as source$0 from "./internal/lang/source/models.js";
+import * as inventory$0 from "./internal/inventory/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as lsp$0 from "./internal/lsp/models.js";
@@ -101,7 +101,7 @@ export function Rename(workspaceID: string, path: string, line: number, col: num
  * ReplacedBy is the mods' files at a game file's path from its root, in load order: the copies the game loads in
  * its place (B46).
  */
-export function ReplacedBy(workspaceID: string, path: string): $CancellablePromise<source$0.File[] | null> {
+export function ReplacedBy(workspaceID: string, path: string): $CancellablePromise<inventory$0.File[] | null> {
     return $Call.ByID(4213690086, workspaceID, path);
 }
 

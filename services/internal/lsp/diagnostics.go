@@ -131,7 +131,7 @@ func (judge *judge) script() {
 		judge.report(issue.Range, 1, string(issue.Code), issue.Message)
 	}
 	judge.written = map[jomini.Range]*schema.Position{}
-	records := index.Walk(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at index.Context) bool {
+	records := index.Read(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at *schema.Reading) bool {
 		switch statement := at.Statement.(type) {
 		case *jomini.Assignment:
 			judge.key(at, statement)
@@ -152,7 +152,7 @@ func (judge *judge) script() {
 // variable judges a non-global variable read (var:x, not local_var:x) written directly in a scope
 // the dumps say stores none; an undeclared scope, a read through a link, and a word vanilla writes
 // in that scope are quiet.
-func (judge *judge) variable(at index.Context, word *jomini.Scalar) {
+func (judge *judge) variable(at *schema.Reading, word *jomini.Scalar) {
 	sess, s := judge.file.sess, judge.file.sess.Install.Schema
 	scope, declared := s.Scopes[at.Scope]
 	if !declared || scope.Variables {
@@ -161,7 +161,7 @@ func (judge *judge) variable(at index.Context, word *jomini.Scalar) {
 	prefixed, isPrefixed := jomini.SplitPrefixed(word.Text)
 	link, database := s.Link(strings.ToLower(word.Text)), s.Prefixes[prefixed.Prefix]
 	if isPrefixed && link != nil && !link.Global && database != "" && s.Databases[database] == nil &&
-		!sess.Install.Index.Scoped[index.Pair(word.Text, at.Scope)] && s.MayAccuse(schema.CheckCommand, at.Position, nil) {
+		!sess.Install.Index.WritesInScope(word.Text, at.Scope) && s.MayAccuse(schema.CheckCommand, at.Position, nil) {
 		judge.report(word.Range, 2, "wrong-scope", fmt.Sprintf("%s reads a variable, but %s stores none",
 			word.Text, plain(at.Scope)))
 	}
@@ -169,11 +169,11 @@ func (judge *judge) variable(at index.Context, word *jomini.Scalar) {
 
 // key judges a key: a variable read, a command written in a scope it does not run in where vanilla
 // never writes it there, and a key the position's sources call required that its block leaves out.
-func (judge *judge) key(at index.Context, assign *jomini.Assignment) {
+func (judge *judge) key(at *schema.Reading, assign *jomini.Assignment) {
 	sess, s := judge.file.sess, judge.file.sess.Install.Schema
 	judge.variable(at, &assign.Key)
 	if command := at.Command; command != nil && at.Scope != "" && len(command.Scopes) > 0 &&
-		!slices.Contains(command.Scopes, at.Scope) && !sess.Install.Index.Scoped[index.Pair(assign.Key.Text, at.Scope)] &&
+		!slices.Contains(command.Scopes, at.Scope) && !sess.Install.Index.WritesInScope(assign.Key.Text, at.Scope) &&
 		s.MayAccuse(schema.CheckCommand, at.Position, nil) {
 		runs := make([]string, len(command.Scopes))
 		for i, scope := range command.Scopes {
@@ -205,7 +205,7 @@ func (judge *judge) key(at index.Context, assign *jomini.Assignment) {
 
 // value judges a word's variable read, and the word against its position's declared list or form;
 // a constant or parameter is not yet its word, and a word that reads a value stands for a number.
-func (judge *judge) value(at index.Context, scalar *jomini.Scalar) {
+func (judge *judge) value(at *schema.Reading, scalar *jomini.Scalar) {
 	judge.variable(at, scalar)
 	if at.Position == nil {
 		return
@@ -263,7 +263,7 @@ func (judge *judge) references(refs []index.Ref) {
 			continue
 		case !s.MayAccuse(schema.CheckValue, position, nil):
 			continue
-		case position.Value.Value.Type == schema.WordFile && ref.Database == index.File:
+		case position.Value.Value.Type == schema.WordFile && ref.Database == schema.File:
 			code, message = "missing-file", ref.Name+" exists nowhere in the install or the mods"
 		case position.Value.Value.Type == schema.WordReference && position.Value.Value.Database == ref.Database:
 			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.Name)

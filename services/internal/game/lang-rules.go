@@ -106,32 +106,8 @@ var Structurals = []Structural{
 	{Command: "switch", Enclosing: true},
 }
 
-// ---- Names: what a written word names.
-
-// Name is one rule for what a word names.
-type Name uint8
-
-const (
-	NameHistory   Name = iota // a history entry's top key, and its value (key = value), name what it sets up
-	NameList                  // a call starting with a ListIterators prefix iterates that scripted list
-	NameCall                  // a call names a scripted entry
-	NameParameter             // a key in a call's block names a parameter of the called entry
-	NameMade                  // the value of a command that makes a name defines it
-	NameGroup                 // a value at a folder's Names key names an entry of that folder
-	NameRead                  // the value of a command that reads a name refers to it
-	NameClaim                 // a value at a position declared to name a database, a loc key or a file
-	NameValue                 // a word where a number is declared or vanilla writes one names a script value
-	NameEvent                 // a value written as an event id names an event
-	NameFileRef               // a value at a key its file type lists (FileType.Refs) names that entry
-)
-
-// KeyNames are the rules for a key, every one that fits; ValueNames for a value, the first that
-// fits. On every word, prefix:name names an entry of the prefix's database where the prefix is a
-// link, and $NAME$ in an entry of a folder with Parameters defines a parameter.
-var (
-	KeyNames   = []Name{NameHistory, NameList, NameCall, NameParameter}
-	ValueNames = []Name{NameHistory, NameFileRef, NameMade, NameGroup, NameRead, NameClaim, NameValue, NameEvent}
-)
+// ---- Names: what a written word names: the name commands, the saved-scope database and the list iterators; the
+// rules themselves are the schema's (schema/names.go).
 
 // SavedScopes is the database of saved scope names (save_scope_as).
 const SavedScopes = "scope"

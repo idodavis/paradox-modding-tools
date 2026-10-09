@@ -9,52 +9,41 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// recordEvidence walks the entries vanilla's files define and records at each position how often and in
-// what forms vanilla writes it. It records evidence only, never a claim.
-func (s *Schema) recordEvidence(entries []Entry) {
-	own := map[jomini.Statement]*Database{}
-	for _, entry := range entries {
-		own[entry.Statement] = s.Databases[entry.Database]
-	}
+// recordEvidence walks one vanilla file with its entries and records at each position how often and in what
+// forms vanilla writes it. It records evidence only, never a claim.
+func (s *Schema) recordEvidence(file inventory.File, parsed *jomini.Result, entries []Entry) {
 	counted := map[*jomini.Block]map[*Position]bool{} // In counts a key once per block
-	visitor := Visitor{
+	s.WalkFile(file, parsed, entries, Visitor{
 		Create: true,
-		Entry: func(statement jomini.Statement) *Database {
-			if _, isAssign := statement.(*jomini.Assignment); isAssign {
-				return own[statement] // an entry inside another makes no position there
-			}
-			return nil
-		},
-		Visit: func(r *Reading) bool { return recordReading(r, own, counted) },
-	}
-	for _, entry := range entries {
-		database := s.Databases[entry.Database]
-		var block *jomini.Block
-		switch statement := entry.Statement.(type) {
-		case *jomini.Assignment:
-			recordValue(statement.Value, database.Entry)
-			block = jomini.BlockOf(statement.Value)
-		case *jomini.ValueStmt:
-			if block = jomini.ChildBlock(statement); block != nil {
-				recordValue(block, database.Entry)
-			}
-		}
-		if block != nil {
-			s.WalkBlock(visitor, block, block.Statements, s.EntryContext(database))
-		}
-	}
+		Visit:  func(r *Reading) bool { return recordReading(r, entries, counted) },
+	})
 }
 
 // recordReading records one reading of the walk and returns whether to read its block.
-func recordReading(r *Reading, own map[jomini.Statement]*Database, counted map[*jomini.Block]map[*Position]bool) bool {
-	list, isList := r.Statement.(*jomini.ValueStmt)
-	if own[r.Statement] != nil && (!isList || jomini.BlockOf(list.Value) != nil) {
-		return false
+func recordReading(r *Reading, entries []Entry, counted map[*jomini.Block]map[*Position]bool) bool {
+	// an entry's own statement records its value at the entry's position and counts nothing; a word listed as an
+	// entry is written at its holder's position, so it is recorded there
+	if r.Entry >= 0 && entries[r.Entry].Statement == r.Statement {
+		switch statement := r.Statement.(type) {
+		case *jomini.Assignment:
+			recordValue(statement.Value, r.Position)
+		case *jomini.ValueStmt:
+			if block := jomini.ChildBlock(statement); block != nil {
+				recordValue(block, r.Position)
+			} else {
+				recordValue(statement.Value, r.BlockContext.Position)
+			}
+		}
+		return true
 	}
-	if isList {
+	if r.Entry < 0 {
+		return true // outside every entry there is no position: read on for the entries inside
+	}
+	if list, isList := r.Statement.(*jomini.ValueStmt); isList {
 		recordValue(list.Value, r.Position)
 		return true
 	}

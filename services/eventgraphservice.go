@@ -15,6 +15,7 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -539,7 +540,7 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	indexes := sess.Indexes()
 	for _, ref := range index.RefsInside(indexes, def) {
 		database := ref.Database
-		if database == index.Parameter {
+		if database == schema.Parameter {
 			continue
 		}
 		if ref.Called != "" {

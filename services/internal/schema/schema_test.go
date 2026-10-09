@@ -97,6 +97,10 @@ func fixtureFile(t *testing.T, id, rel string) (inventory.File, *jomini.Result) 
 const (
 	ck3        = "ck3"
 	eventsFile = "events/v_events.txt"
+	v1         = "v.1"
+	immediate  = "immediate"
+	trigger    = "trigger"
+	vEffect    = "v_effect"
 )
 
 func TestGoldenSchema(t *testing.T) {
@@ -264,31 +268,29 @@ func sum(value any) string {
 	return fmt.Sprintf("%d:%08x", len(text), crc32.ChecksumIEEE([]byte(text)))
 }
 
-// readingOf walks a fixture file and returns the reading of the first statement whose key is name under the
-// given path of keys (an entry's name first).
+// readingOf walks a fixture file with its entries and returns the reading of the first statement whose key is
+// name under the given path of keys (an entry's name first); a step written key=value matches the value too.
 func readingOf(t *testing.T, s *Schema, rel string, path ...string) Reading {
 	t.Helper()
 	file, parsed := fixtureFile(t, s.Game, rel)
-	own := map[jomini.Statement]*Database{}
-	s.FindEntries(file, parsed, func(entry Entry) { own[entry.Statement] = s.Databases[entry.Database] })
 	readings := map[jomini.Statement]Reading{}
-	visitor := Visitor{
-		Entry: func(statement jomini.Statement) *Database { return own[statement] },
-		Visit: func(r *Reading) bool {
-			readings[r.Statement] = *r
-			return true
-		},
-	}
-	s.WalkBlock(visitor, nil, parsed.Root.Statements, BlockContext{})
+	s.WalkFile(file, parsed, s.FindEntries(file, parsed), Visitor{Visit: func(r *Reading) bool {
+		readings[r.Statement] = *r
+		return true
+	}})
 	return readings[statementAt(t, parsed.Root.Statements, path)]
 }
 
 // statementAt returns the first statement whose key is the path's last, following the path's keys down.
 func statementAt(t *testing.T, statements []jomini.Statement, path []string) jomini.Statement {
 	t.Helper()
+	key, value, valued := strings.Cut(path[0], "=")
 	for _, statement := range statements {
 		assign, isAssign := statement.(*jomini.Assignment)
-		if !isAssign || assign.Key.Text != path[0] {
+		if !isAssign || assign.Key.Text != key {
+			continue
+		}
+		if scalar, isScalar := assign.Value.(*jomini.Scalar); valued && (!isScalar || scalar.Text != value) {
 			continue
 		}
 		if len(path) == 1 {
@@ -305,19 +307,17 @@ func statementAt(t *testing.T, statements []jomini.Statement, path []string) jom
 func snippetReading(s *Schema, database, snippet, name string, create bool) Reading {
 	parsed := jomini.Parse(snippet)
 	var found Reading
-	entry := func(statement jomini.Statement) *Database {
-		if slices.Contains(parsed.Root.Statements, statement) {
-			return s.Databases[database]
-		}
-		return nil
-	}
-	visitor := Visitor{Create: create, Entry: entry, Visit: func(r *Reading) bool {
+	visitor := Visitor{Create: create, Visit: func(r *Reading) bool {
 		if r.Name == name && found.Statement == nil {
 			found = *r
 		}
 		return true
 	}}
-	s.WalkBlock(visitor, nil, parsed.Root.Statements, BlockContext{})
+	for _, statement := range parsed.Root.Statements {
+		if block := jomini.ChildBlock(statement); block != nil {
+			s.WalkBlock(visitor, block, block.Statements, s.EntryContext(s.Databases[database]))
+		}
+	}
 	return found
 }
 
@@ -332,24 +332,24 @@ func TestKeyMeaning(t *testing.T) {
 		command  *Command
 		calls    string
 	}{
-		{"a fields block reads every key as a position", readingOf(t, s, events, "v.1", "type"),
+		{"a fields block reads every key as a position", readingOf(t, s, events, v1, "type"),
 			game.KeyRulePosition, s.Databases["events"].Entry.Child("type"), nil, ""},
-		{"a declared effect", readingOf(t, s, events, "v.1", "immediate", "add_gold"),
+		{"a declared effect", readingOf(t, s, events, v1, immediate, "add_gold"),
 			game.KeyRuleCommand, s.Commands["add_gold"].Args, s.Commands["add_gold"], ""},
-		{"a scripted effect vanilla defines", readingOf(t, s, events, "v.1", "immediate", "v_effect"),
+		{"a scripted effect vanilla defines", readingOf(t, s, events, v1, immediate, vEffect),
 			game.KeyRuleKnownCall, s.ScriptedEntries["effect:v_effect"].Parameters, nil, "effect"},
 		{"a scripted trigger declared inline", readingOf(t, s, triggers, "v_rich_trigger", "OR", "trigger_if", "v_inline_trigger"),
-			game.KeyRuleKnownCall, s.ScriptedEntries["trigger:v_inline_trigger"].Parameters, nil, "trigger"},
-		{"a link", readingOf(t, s, events, "v.1", "immediate", "capital_county"),
+			game.KeyRuleKnownCall, s.ScriptedEntries["trigger:v_inline_trigger"].Parameters, nil, trigger},
+		{"a link", readingOf(t, s, events, v1, immediate, "capital_county"),
 			game.KeyRuleLink, nil, s.Commands["capital_county"], ""},
-		{"an argument the dumps declare", readingOf(t, s, events, "v.1", "immediate", "send_interface_toast", "title"),
+		{"an argument the dumps declare", readingOf(t, s, events, v1, immediate, "send_interface_toast", "title"),
 			game.KeyRuleDeclared, s.Commands["send_interface_toast"].Args.Child("title"), nil, ""},
-		{"an argument vanilla writes", readingOf(t, s, events, "v.1", "immediate", "send_interface_toast", "message_filter_type"),
+		{"an argument vanilla writes", readingOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type"),
 			game.KeyRuleObserved, s.Commands["send_interface_toast"].Args.Child("message_filter_type"), nil, ""},
 		{"a value operator", readingOf(t, s, values, "big_value", "add"),
 			game.KeyRuleOperator, s.Databases["script_values"].Entry.Child("add"), nil, ""},
 		{"a call where nothing is known", snippetReading(s, "scripted_triggers", "x = { nothing_declares_me = yes }", "nothing_declares_me", false),
-			game.KeyRuleCall, nil, nil, "trigger"},
+			game.KeyRuleCall, nil, nil, trigger},
 	}
 	for _, c := range cases {
 		r := c.reading
@@ -359,11 +359,11 @@ func TestKeyMeaning(t *testing.T) {
 		}
 	}
 
-	declared := readingOf(t, s, events, "v.1", "immediate", "send_interface_toast", "title").Position
+	declared := readingOf(t, s, events, v1, immediate, "send_interface_toast", "title").Position
 	if declared.DeclaredBy != SourceDumps {
 		t.Errorf("title is declared by %d, want the dumps", declared.DeclaredBy)
 	}
-	observed := readingOf(t, s, events, "v.1", "immediate", "send_interface_toast", "message_filter_type").Position
+	observed := readingOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type").Position
 	if observed.DeclaredBy != SourceNone || observed.Evidence.In != 1 {
 		t.Errorf("message_filter_type is declared by %d, written in %d blocks; want none, 1", observed.DeclaredBy, observed.Evidence.In)
 	}
@@ -384,8 +384,8 @@ func TestBlockKindOf(t *testing.T) {
 		want     game.Block
 	}{
 		{"an entry's registry claim", entry, game.BlockFields},
-		{"vanilla writes only triggers", entry.Child("trigger"), game.BlockTriggers},
-		{"vanilla writes only effects", entry.Child("immediate"), game.BlockEffects},
+		{"vanilla writes only triggers", entry.Child(trigger), game.BlockTriggers},
+		{"vanilla writes only effects", entry.Child(immediate), game.BlockEffects},
 		{"vanilla writes keys and no command", entry.Child("cooldown"), game.BlockFields},
 		{"no claim, no children", s.Commands["add_gold"].Args, game.BlockUnknown},
 		{"no position", nil, game.BlockUnknown},
@@ -424,10 +424,10 @@ func TestBlockScope(t *testing.T) {
 		reading Reading
 		want    string
 	}{
-		{"an iterator leads to its target", readingOf(t, s, events, "v.1", "immediate", "every_vassal"), "character"},
-		{"a link leads where its last link does", readingOf(t, s, events, "v.1", "immediate", "capital_county"), "landed_title"},
-		{"the events entry declares no scope", readingOf(t, s, events, "v.1", "immediate", "add_gold"), ""},
-		{"a trigger in an unscoped block", readingOf(t, s, events, "v.1", "trigger", "exists"), ""},
+		{"an iterator leads to its target", readingOf(t, s, events, v1, immediate, "every_vassal"), "character"},
+		{"a link leads where its last link does", readingOf(t, s, events, v1, immediate, "capital_county"), "landed_title"},
+		{"the events entry declares no scope", readingOf(t, s, events, v1, immediate, "add_gold"), ""},
+		{"a trigger in an unscoped block", readingOf(t, s, events, v1, trigger, "exists"), ""},
 		{"an on_action starts in its declared scope", readingOf(t, s, "common/on_action/v_on_actions.txt", "on_birth", "effect", "every_vassal"), "character"},
 	}
 	for _, c := range cases {
@@ -481,7 +481,9 @@ func TestFindEntries(t *testing.T) {
 		s := fixtureSchema(t, c.game)
 		file, parsed := fixtureFile(t, c.game, c.rel)
 		var got []string
-		s.FindEntries(file, parsed, func(entry Entry) { got = append(got, entry.Database+" "+entry.Name) })
+		for _, entry := range s.FindEntries(file, parsed) {
+			got = append(got, entry.Database+" "+entry.Name)
+		}
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s %s:\n got %v\nwant %v", c.game, c.rel, got, c.want)
 		}
@@ -506,5 +508,66 @@ func TestLoadShipped(t *testing.T) {
 	}
 	if s, _, err := LoadShipped("nosuchgame", "1"); s != nil || err != nil {
 		t.Errorf("nosuchgame: %v, %v; want nil, nil", s, err)
+	}
+}
+
+func TestWordNames(t *testing.T) {
+	s := fixtureSchema(t, ck3)
+	ref := func(database, name string, start, end int) Naming {
+		return Naming{Database: database, Name: name, Range: jomini.Range{Start: start, End: end}}
+	}
+	def := func(database, name string, start, end int) Naming {
+		return Naming{Defines: true, Database: database, Name: name, Range: jomini.Range{Start: start, End: end}}
+	}
+	call := func(called, name string, start, end int) Naming {
+		return Naming{Called: called, Name: name, Range: jomini.Range{Start: start, End: end}}
+	}
+	const (
+		effects  = "common/scripted_effects/v_effects.txt"
+		triggers = "common/scripted_triggers/v_triggers.txt"
+		more     = "events/v_more_events.txt"
+	)
+	cases := []struct {
+		rel          string
+		path         []string
+		want         []Naming
+		nameDatabase string
+	}{
+		{eventsFile, []string{v1, trigger, "exists"}, []Naming{ref("scope", "target", 166, 178)}, ""},
+		{eventsFile, []string{v1, trigger, "exists=title:k_x"}, []Naming{ref("landed_titles", "k_x", 215, 224)}, ""},
+		{eventsFile, []string{v1, trigger, "faith"}, nil, ""},
+		{eventsFile, []string{v1, immediate, "save_scope_as"}, []Naming{def("scope", "target", 360, 366)}, "scope"},
+		{eventsFile, []string{v1, immediate, "set_variable", "name"}, []Naming{def("var", "seen", 325, 329)}, "var"},
+		{eventsFile, []string{v1, immediate, "trigger_event"}, []Naming{ref("events", "v.2", 385, 388)}, ""},
+		{eventsFile, []string{v1, immediate, vEffect}, []Naming{call("effect", vEffect, 645, 653)}, ""},
+		{eventsFile, []string{v1, immediate, vEffect, "AMOUNT"},
+			[]Naming{ref(Parameter, "v_effect:AMOUNT", 658, 664)}, ""},
+		{eventsFile, []string{v1, "title"}, []Naming{ref(Localization, "v.1.t", 83, 88)}, ""},
+		{"common/traits/v_traits.txt", []string{"brave", "icon"},
+			[]Naming{ref(File, "gfx/interface/icons/traits/brave.dds", 57, 95)}, ""},
+		{effects, []string{vEffect, "add_gold"}, []Naming{def(Parameter, "v_effect:AMOUNT", 25, 33)}, ""},
+		{effects, []string{"v_list_effect", "every_in_list", "variable"}, []Naming{ref("var", "seen_list", 183, 192)}, "var"},
+		{triggers, []string{"v_rich_trigger", "OR", "gold"}, []Naming{ref("script_values", "big_value", 71, 80)}, ""},
+		{triggers, []string{"v_rich_trigger", "big_value"}, []Naming{call(trigger, "big_value", 162, 171)}, ""},
+		{"history/titles/v_titles.txt", []string{"k_x"}, []Naming{ref("landed_titles", "k_x", 0, 3)}, ""},
+		{"history/provinces/v_provinces.txt", []string{"1", "culture"}, []Naming{ref("culture/cultures", "norse", 17, 22)}, ""},
+		{more, []string{"vmore.1", trigger, "gold"}, []Naming{ref("defines", "NWar", 208, 228)}, ""},
+	}
+	for _, c := range cases {
+		r := readingOf(t, s, c.rel, c.path...)
+		if !slices.Equal(r.Names, c.want) || r.NameDatabase != c.nameDatabase {
+			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, r.Names, r.NameDatabase, c.want, c.nameDatabase)
+		}
+	}
+}
+
+func TestWalkFileEntries(t *testing.T) {
+	s := fixtureSchema(t, ck3)
+	const more = "events/v_more_events.txt"
+	if entry := readingOf(t, s, more, "vmore.1", trigger, "v_inline_trigger").Entry; entry != 1 {
+		t.Errorf("vmore.1 › trigger › v_inline_trigger: entry %d, want 1", entry)
+	}
+	if entry := readingOf(t, s, more, "namespace").Entry; entry != -1 {
+		t.Errorf("namespace: entry %d, want -1", entry)
 	}
 }

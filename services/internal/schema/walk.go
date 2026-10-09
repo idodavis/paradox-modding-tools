@@ -1,13 +1,16 @@
-// walk.go is the one walker: every reader of script (vanilla's evidence, the docs, the dumps' usages, the
-// index's records) walks a block with WalkBlock, which reads each key by ReadKey.
+// walk.go is the one walker: a whole file is read by WalkFile (vanilla's evidence, the index's records), a
+// snippet by WalkBlock (the docs, the dumps' usages); each key is read by ReadKey.
 
 package schema
 
 import (
+	"cmp"
+	"path"
 	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 )
 
@@ -37,17 +40,30 @@ type Reading struct {
 	Calls        string        // set when its key is a call: the CalledIn word it resolves by
 	Listed       string        // set when its key iterates a scripted list: the iterator prefix
 	Leaf         bool          // the leaf of a dynamic description
+	Entry        int           // the index, in the entries WalkFile was given, of the entry it is in; -1 outside one
+	Names        []Naming      // what its key and value name, in the order the rules fit (names.go)
+	NameDatabase string        // the database a name command's value names here (set_variable: var); "" none
 	BlockContext               // where it is written
 	Inner        BlockContext  // where its own block is read
 }
 
-// Visitor is one use of the walker. Create makes the positions it reads (vanilla, usages); Entry says which
-// database's entry a statement starts, nil for none; Alternatives lists the names a key is read as (a docs key's
-// a/b|c alternatives); Visit sees each reading, may change where its block is read, and returns whether to
-// read that block.
+// Naming is one thing a written word names: a definition the word makes in Database (Defines), else a
+// reference to Name in Database or, when Called is set, a call resolved by that calling word. Named marks a
+// definition an entry's Names key gives its database rather than an entry of its own.
+type Naming struct {
+	Defines  bool
+	Named    bool
+	Database string
+	Name     string
+	Called   string
+	Range    jomini.Range
+}
+
+// Visitor is one use of the walker. Create makes the positions it reads (vanilla, usages); Alternatives lists
+// the names a key is read as (a docs key's a/b|c alternatives); Visit sees each reading, may change where its
+// block is read, and returns whether to read that block.
 type Visitor struct {
 	Create       bool
-	Entry        func(jomini.Statement) *Database
 	Alternatives func(key string) []string
 	Visit        func(*Reading) bool
 }
@@ -62,14 +78,65 @@ type meaning struct {
 	leaf     bool
 }
 
-// WalkBlock reads a block's statements at a context; holder is nil at a file's top. A statement that starts
-// an entry is read at the entry's position and its block at the entry's context; inside an entry each key
-// is read by ReadKey; anything else stays at the context's position.
+// fileWalk is one walk of a file: the entries known, which block belongs to which entry, and what the name rules
+// need of the file (its extension, the events database, the parameters defined so far).
+type fileWalk struct {
+	s       *Schema
+	v       Visitor
+	entries []Entry
+	own     map[jomini.Statement]int // an entry's statement: its index in entries
+	inside  map[*jomini.Block]int    // a block: the entry it is in, -1 none
+	ext     string                   // the file's extension, lower-case, with its dot; "" for a snippet
+	events  string                   // the database an event id names; "" none
+	defined map[string]bool          // the parameters defined so far, as <entry>:<NAME>
+}
+
+// WalkFile reads a whole file with its entries known: every statement in source order, outer before inner,
+// each reading carrying the entry it is in and what its words name. A whole-file entry (a history file) holds the
+// root's statements as one block. A table or list (parsed nil) has no statements to read: its entries are its
+// records, and the visitor sees nothing.
+func (s *Schema) WalkFile(file inventory.File, parsed *jomini.Result, entries []Entry, v Visitor) {
+	if parsed == nil {
+		return
+	}
+	w := &fileWalk{
+		s: s, v: v, entries: entries, own: map[jomini.Statement]int{}, inside: map[*jomini.Block]int{},
+		ext:     strings.ToLower(path.Ext(file.Rel)),
+		events:  cmp.Or(s.DatabasesWhere(func(row game.Folder) bool { return row.Events })...),
+		defined: map[string]bool{},
+	}
+	top := parsed.Root.Statements
+	for i, entry := range entries {
+		w.own[entry.Statement] = i
+		if entry.Statement.NodeRange() == parsed.Root.Range {
+			top = []jomini.Statement{entry.Statement}
+		}
+	}
+	w.block(nil, top, BlockContext{})
+}
+
+// WalkBlock reads a snippet's statements at a context, with no entries and no names: the docs and the dumps'
+// usages read script this way.
 func (s *Schema) WalkBlock(v Visitor, holder *jomini.Block, statements []jomini.Statement, in BlockContext) {
+	w := &fileWalk{s: s, v: v, own: map[jomini.Statement]int{}, inside: map[*jomini.Block]int{}}
+	w.block(holder, statements, in)
+}
+
+// block reads a block's statements at a context; holder is nil at a file's top. A statement that starts an entry
+// is read at the entry's position and its block at the entry's context; inside an entry each key is read by
+// ReadKey; anything else stays at the context's position.
+func (w *fileWalk) block(holder *jomini.Block, statements []jomini.Statement, in BlockContext) {
+	s := w.s
 	for index, statement := range statements {
+		entry, inEntry := w.inside[holder]
+		if !inEntry {
+			entry = -1
+		}
 		var database *Database
-		if v.Entry != nil {
-			database = v.Entry(statement)
+		if i, isEntry := w.own[statement]; isEntry {
+			if database = s.Databases[w.entries[i].Database]; database != nil {
+				entry = i
+			}
 		}
 		_, isAssign := statement.(*jomini.Assignment)
 		var readings []Reading
@@ -77,15 +144,19 @@ func (s *Schema) WalkBlock(v Visitor, holder *jomini.Block, statements []jomini.
 		case database != nil:
 			readings = []Reading{s.entryReading(statement, database, in)}
 		case isAssign && in.InEntry:
-			readings = s.keyReadings(v, statements, index, in)
+			readings = s.keyReadings(w.v, statements, index, in)
 		default:
 			readings = []Reading{{Statement: statement, Position: in.Position, BlockContext: in, Inner: in}}
 		}
 		block := jomini.ChildBlock(statement)
 		for _, reading := range readings {
-			reading.Holder = holder
-			if v.Visit(&reading) && block != nil {
-				s.WalkBlock(v, block, block.Statements, reading.Inner)
+			reading.Holder, reading.Entry = holder, entry
+			if w.ext != "" {
+				w.names(&reading)
+			}
+			if w.v.Visit(&reading) && block != nil {
+				w.inside[block] = entry
+				w.block(block, block.Statements, reading.Inner)
 			}
 		}
 	}

@@ -50,15 +50,17 @@ func (s *Schema) DatabaseAt(rel string) *Database {
 	return s.Databases[name]
 }
 
-// FindEntries finds every entry a file defines, in source order. A table or list file has no parse; a script
+// FindEntries returns every entry a file defines, in source order. A table or list file has no parse; a script
 // file is read by its folder's row, its nested rows and its file type's keywords.
-func (s *Schema) FindEntries(file inventory.File, parsed *jomini.Result, found func(Entry)) {
+func (s *Schema) FindEntries(file inventory.File, parsed *jomini.Result) (entries []Entry) {
 	_, own := s.folder(file.Rel)
+	found := func(entry Entry) { entries = append(entries, entry) }
 	if parsed == nil {
 		s.tableEntries(file, own, found)
-		return
+	} else {
+		s.scriptEntries(file, own, parsed, found)
 	}
-	s.scriptEntries(file, own, parsed, found)
+	return entries
 }
 
 // tableEntries finds the entries of a table or list file: the map table's first column, or a list's names.

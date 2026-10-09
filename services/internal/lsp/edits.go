@@ -16,6 +16,7 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/loc"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -129,7 +130,7 @@ func CodeActions(sess *workspace.Session, path string, line, col int) ([]CodeAct
 		return out, nil
 	}
 	ref := file.target(file.parsed.Lines().OffsetAt(line, col))
-	if ref == nil || ref.Database != index.Localization || !loc.LooksLikeKey(ref.Name) {
+	if ref == nil || ref.Database != schema.Localization || !loc.LooksLikeKey(ref.Name) {
 		return out, nil
 	}
 	if _, known := index.Resolve(sess.Install.Schema, sess.Indexes(), *ref); known {

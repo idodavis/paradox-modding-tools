@@ -166,10 +166,10 @@ func (completer *completer) keys(cursor spot) {
 		return isAssign && ref.Called != "" && ref.Range == assign.Key.Range
 	}); found >= 0 {
 		passed := cursor.records.Refs[found].Name + ":"
-		for _, name := range index.Names(sess.Indexes(), index.Parameter) {
+		for _, name := range index.Names(sess.Indexes(), schema.Parameter) {
 			if parameter, isPassed := strings.CutPrefix(name, passed); isPassed {
-				completer.add(Item{Label: parameter, Head: heading(index.Parameter)},
-					reading{ref: &index.Ref{Database: index.Parameter, Name: name}})
+				completer.add(Item{Label: parameter, Head: heading(schema.Parameter)},
+					reading{ref: &index.Ref{Database: schema.Parameter, Name: name}})
 			}
 		}
 	}
@@ -260,14 +260,14 @@ func (completer *completer) values(cursor spot) {
 			completer.names(claim.Database, "", 2)
 		case schema.WordLoc:
 			for _, key := range completer.file.sess.LocKeys(completer.prefix, maxComplete+1) {
-				completer.add(Item{Label: key, Head: heading(index.Localization), Rank: 3},
-					reading{ref: &index.Ref{Database: index.Localization, Name: key}})
+				completer.add(Item{Label: key, Head: heading(schema.Localization), Rank: 3},
+					reading{ref: &index.Ref{Database: schema.Localization, Name: key}})
 			}
 		}
 	}
 
 	// the names of the database its command makes or reads them in (set_variable, has_variable)
-	completer.names(at.Names, "", 2)
+	completer.names(at.NameDatabase, "", 2)
 }
 
 // calls offers what may follow in a data call: after [ the global functions, data types and data

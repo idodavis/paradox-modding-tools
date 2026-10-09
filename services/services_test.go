@@ -26,6 +26,7 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/lsp"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -351,7 +352,7 @@ func TestDetail(t *testing.T) {
 	if len(detail.Options) != 1 || detail.Options[0].Names[0].Key != "v.1.a" || detail.Options[0].Names[0].Text != "Go" {
 		t.Errorf("the options: %+v", detail.Options)
 	}
-	if len(detail.Refs) == 0 || detail.Refs[0].Database != index.Localization || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
+	if len(detail.Refs) == 0 || detail.Refs[0].Database != schema.Localization || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
 		t.Errorf("the block's references, by kind in the order written: %+v", detail.Refs)
 	}
 	if len(detail.Fires) != 1 || detail.Fires[0].Name != "v.2" {

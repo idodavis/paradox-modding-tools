@@ -6,7 +6,7 @@
 // Package lsp answers the editor's requests for one open file: the word under the cursor, where it
 // is defined and used, what may be written there, what is wrong, and how the file is folded,
 // formatted and annotated. Every answer starts from one walk of the file over the schema
-// (index.Walk), stopped at the cursor or run whole; payloads carry display data and the frontend
+// (index.Read), stopped at the cursor or run whole; payloads carry display data and the frontend
 // templates the text.
 package lsp
 
@@ -116,7 +116,7 @@ type reading struct {
 // spot is the cursor's place in a script file, from one walk that stops past it: the statements
 // holding it, outer to inner, and the records so far.
 type spot struct {
-	chain   []index.Context
+	chain   []schema.Reading
 	records *index.Records
 	offset  int
 }
@@ -125,14 +125,14 @@ type spot struct {
 // ends at an operator with only blanks up to the offset: a value still to come.
 func (file *file) walk(offset int) spot {
 	cursor := spot{offset: offset}
-	cursor.records = index.Walk(file.sess.Install.Schema, file.place.File, file.parsed, func(at index.Context) bool {
+	cursor.records = index.Read(file.sess.Install.Schema, file.place.File, file.parsed, func(at *schema.Reading) bool {
 		span := at.Statement.NodeRange()
 		if span.Start > offset {
 			return false
 		}
 		assign, isAssign := at.Statement.(*jomini.Assignment)
 		if offset <= span.End || isAssign && assign.Value == nil && strings.TrimSpace(file.text[span.End:offset]) == "" {
-			cursor.chain = append(cursor.chain, at)
+			cursor.chain = append(cursor.chain, *at)
 		}
 		return true
 	})
@@ -140,7 +140,7 @@ func (file *file) walk(offset int) spot {
 }
 
 // block is the innermost statement whose block holds the cursor, -1 at the file's top; its
-// context says how that block reads (index.Context's Inner fields).
+// context says how that block reads (schema.Reading's Inner fields).
 func (cursor spot) block() int {
 	holder := -1
 	for i, at := range cursor.chain {
@@ -430,23 +430,23 @@ func (file *file) defined(card *Inspect, ref index.Ref, scope string, shown func
 		database = defs[0].Database
 	}
 	row := s.Databases[database]
-	if !known && (ref.Called != "" || row == nil && database != index.Localization && database != index.File) {
+	if !known && (ref.Called != "" || row == nil && database != schema.Localization && database != schema.File) {
 		return false
 	}
 	card.Word, card.Head = ref.Name, game.KindName(database)
-	if entry, name, cut := strings.Cut(ref.Name, ":"); database == index.Parameter && cut {
+	if entry, name, cut := strings.Cut(ref.Name, ":"); database == schema.Parameter && cut {
 		card.Word, card.Head = name, "parameter of "+entry
 	}
 
 	// a loc key's text, a file's place and image header
 	switch database {
-	case index.Localization:
+	case schema.Localization:
 		if entry, found := sess.Loc(ref.Name, ""); found {
 			card.Name, card.Winner = loc.Plain(entry.Text), 0
 			card.Sites = []Location{locate(sess, entry.Path, Position{Line: entry.Line})}
 		}
 		return true
-	case index.File:
+	case schema.File:
 		found, listed := index.FileAt(sess.Indexes(), ref.Name)
 		if listed {
 			card.Sites, card.Winner = []Location{locate(sess, found.Path, Position{})}, 0
@@ -538,7 +538,7 @@ func (file *file) locRef(offset int) (ref *index.Ref, steps []jomini.Step) {
 	key, _, _ := strings.Cut(line[indent:], ":")
 	span := jomini.Range{Start: start + indent, End: start + indent + len(key)}
 	if ref == nil && within(span, offset) {
-		ref = &index.Ref{Database: index.Localization, Name: key, Range: span}
+		ref = &index.Ref{Database: schema.Localization, Name: key, Range: span}
 	}
 	return ref, nil
 }

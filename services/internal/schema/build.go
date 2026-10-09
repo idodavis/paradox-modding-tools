@@ -279,7 +279,9 @@ func (s *Schema) recordVanilla(ctx context.Context, install []inventory.File, in
 		gui := game.FileTypes[strings.ToLower(path.Ext(file.Rel))].Keywords != nil
 		if file.Format == inventory.Script && (len(info.Folders[at].CalledIn) > 0 || gui) {
 			parsed := parseScript(file)
-			s.FindEntries(file, &parsed, s.registerScriptedEntries)
+			for _, entry := range s.FindEntries(file, &parsed) {
+				s.registerScriptedEntries(entry)
+			}
 			parsedFirst[file.Path] = parsed
 		}
 		if slices.Contains([]inventory.Format{inventory.Script, inventory.Table, inventory.List}, file.Format) {
@@ -300,12 +302,11 @@ func (s *Schema) recordVanilla(ctx context.Context, install []inventory.File, in
 		if file.Format == inventory.Script {
 			parsed = &result
 		}
-		var entries []Entry
-		s.FindEntries(file, parsed, func(entry Entry) { entries = append(entries, entry) })
+		entries := s.FindEntries(file, parsed)
 		for _, entry := range entries {
 			s.noteEntry(entry, names)
 		}
-		s.recordEvidence(entries)
+		s.recordEvidence(file, parsed, entries)
 	}
 	return names, inventory.Ordered(ctx, files, work, keep)
 }

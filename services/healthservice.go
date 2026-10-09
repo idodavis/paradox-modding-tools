@@ -18,6 +18,7 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lsp"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -258,7 +259,6 @@ func contests(sess *workspace.Session, preview []*index.Index, number func(inven
 // and those the kept file writes otherwise. Only a file in a folder the install ships files in is the
 // game's: a mod's descriptor, readme, thumbnail or editor settings are not.
 func replaced(sess *workspace.Session, preview []*index.Index, number func(inventory.File) int) (contested, overrides []Contest) {
-	schema := sess.Install.Schema
 	folders := map[string]bool{}
 	for _, file := range sess.Install.Index.Files {
 		if top, _, inFolder := strings.Cut(strings.ToLower(file.Rel), "/"); inFolder {
@@ -277,7 +277,7 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 			if records := idx.Records[file.Path]; records != nil {
 				// its entries, not the names its script makes or declares inline
 				for _, def := range records.Defs {
-					if def.Name != "" && schema.Databases[def.Database] != nil && !def.Local && !def.Named {
+					if def.Name != "" && sess.Install.Schema.Databases[def.Database] != nil && !def.Local && !def.Named {
 						defines[file.Path] = append(defines[file.Path], def)
 					}
 				}
@@ -302,7 +302,7 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 		if len(origins) < 2 || kept < 0 {
 			continue
 		}
-		row := Contest{Database: index.File, Kind: game.KindName(index.File), Name: files[kept].Rel, Winner: kept, Rule: "LIOS"}
+		row := Contest{Database: schema.File, Kind: game.KindName(schema.File), Name: files[kept].Rel, Winner: kept, Rule: "LIOS"}
 		keptParse, keptDefs, changed := parse(files[kept]), map[string]index.Def{}, map[string]bool{}
 		for _, def := range defines[files[kept].Path] {
 			keptDefs[def.Name] = def
@@ -600,7 +600,7 @@ func (s *HealthService) LocReaders(workspaceID, key string) ([]Cited, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	var readers []Cited
-	for _, ref := range index.LookupRefs(sess.Indexes(), index.Localization, key) {
+	for _, ref := range index.LookupRefs(sess.Indexes(), schema.Localization, key) {
 		file, _, _ := sess.Located(ref.Path)
 		readers = append(readers, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
 	}

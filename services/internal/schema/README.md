@@ -8,8 +8,9 @@ whether a claim may accuse a user's file (`MayAccuse`) and never looks at a mod.
 |---|---|
 | `schema.go` | the types (`Schema`, `Database`, `Position`, `Claim`, `Command`, `Evidence`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
 | `build.go` | `Build`: one function per source, in trust order, each saying what it reads and writes; `DatabaseNames` for the scan |
-| `walk.go` | the walker: `WalkBlock`, `EntryContext`, `ReadKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |
+| `walk.go` | the walker: `WalkFile`, `WalkBlock`, `EntryContext`, `ReadKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |
 | `entries.go` | the entry detector, `FindEntries`: which definitions a file makes, by its folder's row, its nested rows and its file type |
+| `names.go` | the name rules: what a key or value scalar defines or refers to (`keyNames`, `valueName`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
 | `evidence.go` | `recordEvidence`, what vanilla writes at each position, and `inferValueTypes`, the type its words share where nothing declares one |
 | `dumps.go` | the reader of the console dumps: the label table, one reader per record kind, the usages |
 | `docs.go` | the reader of docs, wiki examples and dump usages: the normalizer, the phrase catalog, the joiner |
@@ -33,7 +34,36 @@ a block's statements at a `BlockContext` (position, block kind, calling word, sc
 entry); each key becomes a `Reading` by `ReadKey`, which decides in order what the key is (`keyMeaning`, by the
 block kind's rules in `game.Blocks`), what its block holds (`blockKindOf`, `commandBlockKind`) and the scope
 that block runs in (`blockScope`). Each decision's doc comment states its order. Four readers use the walker:
-`recordEvidence`, `applyDocClaims`, `applyUsage` and the index's `Walk`.
+`recordEvidence`, `applyDocClaims`, `applyUsage` and the index's `Read`.
+
+`WalkFile` is the one walk of a whole file: given the entries `FindEntries` returned, it reads every statement in
+source order, outer before inner, and each `Reading` carries the entry it is in (`Entry`, an index into the
+entries, -1 outside one), what its key and value name (`Names`, by the rules of `names.go`) and the database a name
+command's value names there (`NameDatabase`). `WalkBlock` reads a snippet (the docs, the dumps' usages): no entries,
+no names.
+
+## Names
+
+A key is named by every key rule that fits (`keyNames`), a value by the first value rule that fits (`valueName`):
+
+| Rule | Where | Naming |
+|---|---|---|
+| history | a history entry's top key, and its value where it is written key = value | a reference to the object it sets up (`Of`) |
+| file ref | a value at a key its file type lists (`FileType.Refs`: a GUI `using`) | a reference to that entry |
+| list | a call starting with `every_`, `any_`, `random_`, `ordered_` in a triggers, effects or value block | a reference to that scripted list |
+| call | a key read as a call | a call reference (`Called`: the block's CalledIn word) |
+| parameter | a key in a call's block | a reference to the called entry's parameter, `<entry>:<NAME>` |
+| made | the value of a name command that makes a name (`save_scope_as`, `set_variable`) | a definition in the name's database |
+| group | a value at a folder's `Names` key | a definition the entry's database names (`Named`) |
+| read | the value of a name command that reads one (`has_variable`) | a reference into the name's database |
+| claim | a value at a position typed as a database, a loc key or a file | a reference to it; a number at a position vanilla typed is none |
+| value | a scalar at a position declared to take a number | a call to a script value |
+| event | a value written as an event id (a number is none) | a reference to the events database |
+
+Always, on any scalar: each `prefix:name` part a link reads is a reference into the prefix's database
+(`prefixReferences`, by `Schema.Prefixes`), and a scalar with such a part takes no value rule; each `$NAME$` in an
+entry of a folder with `Parameters` defines a parameter at its first use in the file (`parameterDefinitions`). A
+constant (`@x`) and a scalar holding a parameter (`$X$`) name nothing.
 
 ## The shipped schemas
 

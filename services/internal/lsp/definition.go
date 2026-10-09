@@ -14,6 +14,7 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -56,11 +57,11 @@ func (file *file) sites(ref index.Ref) []Location {
 	sess, indexes := file.sess, file.sess.Indexes()
 	var out []Location
 	switch ref.Database {
-	case index.Localization:
+	case schema.Localization:
 		for _, entry := range index.LookupLocs(indexes, ref.Name) {
 			out = append(out, locate(sess, entry.Path, Position{Line: entry.Line}))
 		}
-	case index.File:
+	case schema.File:
 		if found, listed := index.FileAt(indexes, ref.Name); listed {
 			out = []Location{locate(sess, found.Path, Position{})}
 		}
@@ -207,7 +208,7 @@ func DocumentSymbols(sess *workspace.Session, path string) ([]Symbol, error) {
 		for _, def := range slices.SortedFunc(slices.Values(records.Defs), func(first, second index.Def) int {
 			return cmp.Or(cmp.Compare(first.Line, second.Line), cmp.Compare(first.Col, second.Col))
 		}) {
-			if def.Name != "" && def.Database != index.Parameter {
+			if def.Name != "" && def.Database != schema.Parameter {
 				out = append(out, Symbol{Name: def.Name, Database: def.Database,
 					Location: defined(sess, def)})
 			}
@@ -232,7 +233,7 @@ func WorkspaceSymbols(sess *workspace.Session, query string) []Symbol {
 			continue
 		}
 		for _, def := range records.Defs {
-			if def.Database != index.Parameter && strings.Contains(strings.ToLower(def.Name), query) && slices.Contains(index.Lookup(sess.Indexes(), def.Database, def.Name), def) {
+			if def.Database != schema.Parameter && strings.Contains(strings.ToLower(def.Name), query) && slices.Contains(index.Lookup(sess.Indexes(), def.Database, def.Name), def) {
 				out = append(out, Symbol{Name: def.Name, Database: def.Database,
 					Location: defined(sess, def)})
 			}

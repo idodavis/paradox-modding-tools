@@ -16,15 +16,6 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
-// Localization and File are the databases a loc key and a file path name; no definition carries
-// them, so Resolve answers them from the loc entries and the inventories. Parameter holds a
-// scripted entry's $NAME$ parameters, each named <entry>:<NAME> where defined and where passed.
-const (
-	Localization = "localization"
-	File         = "file"
-	Parameter    = "parameter"
-)
-
 // Def is one definition of a name; Mode is the entry word written before it, "" for none.
 type Def struct {
 	Database, Name, Mode, Path string
@@ -34,8 +25,8 @@ type Def struct {
 	Named                      bool  // a name an entry's Names key gives its database, not an entry
 }
 
-// Ref is a name the walk reads as naming something: an entry of Database (Localization and File
-// included), or a call, Called set and Database "".
+// Ref is a name the walk reads as naming something: an entry of Database (schema.Localization and
+// schema.File included), or a call, Called set and Database "".
 type Ref struct {
 	Database, Name, Path string
 	Called               string // a call's CalledIn word (trigger, effect, value); game.AnyCall any
@@ -56,7 +47,7 @@ type Records struct {
 	Defs   []Def
 	Refs   []Ref
 	Loc    []Loc
-	scoped map[[2]string]bool // the walk's Pairs, moved into Index.Scoped by Add
+	scoped map[[2]string]bool // the scope pairs Read collects (scopePair), moved into Index.Scoped by Add
 }
 
 // Index is one inventory with the records of its files.
@@ -66,7 +57,7 @@ type Index struct {
 	Replaced []string             // mods: folders whose earlier files the game does not load
 	Records  map[string]*Records  // by path
 	Repeated map[string]bool      // databases where two of its files define one name; Ready resets, Add marks
-	Scoped   map[[2]string]bool   // each Pair its files write; kept in the cache, never reset
+	Scoped   map[[2]string]bool   // each scope pair its files write (WritesInScope); kept in the cache, never reset
 	order    map[string]int       // a lower-case path → position in Files
 	rels     map[string]int       // a lower-case Rel → the last position in Files holding it
 	defs     map[[2]string][]*Def // by database and name
@@ -213,6 +204,12 @@ func (idx *Index) Forget(path string) {
 	}
 }
 
+// WritesInScope reports whether a file of the index writes a command, link or link-read word in a scope: the
+// install's pairs are vanilla's evidence, and wrong-scope accuses only a pair vanilla never writes.
+func (idx *Index) WritesInScope(written, scope string) bool {
+	return idx.Scoped[scopePair(written, scope)]
+}
+
 // LocKeys is every key a loc entry has, in no order.
 func (idx *Index) LocKeys() iter.Seq[string] {
 	return maps.Keys(idx.locs)
@@ -330,9 +327,9 @@ func Resolve(s *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known boo
 		}
 	case ref.Database == game.SavedScopes && s.Saved[ref.Name]:
 		return nil, true
-	case ref.Database == Localization:
+	case ref.Database == schema.Localization:
 		return nil, slices.ContainsFunc(indexes, func(idx *Index) bool { return len(idx.locs[ref.Name]) > 0 })
-	case ref.Database == File:
+	case ref.Database == schema.File:
 		_, listed := FileAt(indexes, ref.Name)
 		return nil, listed
 	default:

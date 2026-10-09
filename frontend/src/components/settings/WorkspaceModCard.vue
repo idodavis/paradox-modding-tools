@@ -6,7 +6,7 @@
 import { computed, shallowRef } from "vue";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import type { WorkspaceMod } from "@services/models";
-import type { Era } from "@services/internal/session/models";
+import type { Era } from "@services/internal/workspace/models";
 import { SetListingLink } from "@services/releaseservice";
 import {
   ExportWorkshopIgnore,

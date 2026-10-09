@@ -3183,7 +3183,7 @@ command create_confederation kind=1 scopes=[character] out="" global=false wild=
   /leader value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=45:98779907:"Optional. House that leads the confedera"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="key/dynamic description"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=42:a27f2d21:"Optional. Type of confederation to creat"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-command create_divergent_culture kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=278:ae0e897e:"Creates a new divergent culture from the"
+command create_divergent_culture kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=279:87f2c707:"Creates a new divergent culture from the"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_divergent_culture_with_side_effects kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=291:ab15067c:"Creates a new divergent culture from the"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]

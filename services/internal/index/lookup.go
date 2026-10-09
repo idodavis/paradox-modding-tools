@@ -209,21 +209,21 @@ func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (w
 }
 
 // Fires is whether a reference fires its target: an event or on_action outside a trigger.
-func (r Ref) Fires(s *schema.Schema) bool {
-	database := s.Databases[r.Database]
-	return !r.InTrigger && database != nil && (database.Row.Events || database.Row.OnActions)
+func (ref Ref) Fires(s *schema.Schema) bool {
+	database := s.Databases[ref.Database]
+	return !ref.InTrigger && database != nil && (database.Row.Events || database.Row.OnActions)
 }
 
 // Runs is whether a reference outside a trigger runs a scripted entry, so what it fires is fired
 // through it: a call, or a name of a database called in effects.
-func (r Ref) Runs(s *schema.Schema) bool {
-	database := s.Databases[r.Database]
-	return !r.InTrigger && (r.Called != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Blocks[game.BlockEffects].Calls))
+func (ref Ref) Runs(s *schema.Schema) bool {
+	database := s.Databases[ref.Database]
+	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Blocks[game.BlockEffects].Calls))
 }
 
 // Scripted is whether a definition is a scripted entry, one a reference may run (Runs): of a
 // database some block calls.
-func (d Def) Scripted(s *schema.Schema) bool {
-	database := s.Databases[d.Database]
+func (def Def) Scripted(s *schema.Schema) bool {
+	database := s.Databases[def.Database]
 	return database != nil && len(database.Row.CalledIn) > 0
 }

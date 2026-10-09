@@ -76,7 +76,7 @@ func DatabaseNames(input Input) []string {
 
 // declare makes a database. Its entry block is a fields block unless its folder row's Body says what the
 // entry is; each of the row's Refs names the database's entries.
-func (s *Schema) declare(name string, row game.Folder) {
+func (schema *Schema) declare(name string, row game.Folder) {
 	database := &Database{Name: name, Entry: &Position{}, Row: row, Fields: map[string]bool{}}
 	SetFirst(&database.Entry.Block, cmp.Or(row.Body, game.BlockFields), SourceRegistry)
 	for _, at := range row.Refs {
@@ -86,12 +86,12 @@ func (s *Schema) declare(name string, row game.Folder) {
 		}
 		SetFirst(&position.Value, Expected{Kind: ExpectsReference, Database: name}, SourceRegistry)
 	}
-	s.Databases[name] = database
+	schema.Databases[name] = database
 }
 
 // declareDatabases declares the databases the install's folders and the game's rows make, then the calls
 // that resolve in them. It comes first because every later step reads databases.
-func (s *Schema) declareDatabases(install []inventory.File, info *game.GameInfo) {
+func (schema *Schema) declareDatabases(install []inventory.File, info *game.GameInfo) {
 	// each script file's folder is a database; a file at the root belongs to none, and one whose file type
 	// names its own entries (.asset, .gui) makes its folder no database. Shallow folders first, so a common/
 	// subfolder finds its ancestor's database.
@@ -106,15 +106,15 @@ func (s *Schema) declareDatabases(install []inventory.File, info *game.GameInfo)
 		return cmp.Compare(strings.Count(first, "/"), strings.Count(second, "/"))
 	})
 	for _, rel := range scripts {
-		if at, name := s.folder(rel); at != "." && s.Databases[name] == nil {
-			s.declare(name, info.Folders[at])
+		if at, name := schema.folder(rel); at != "." && schema.Databases[name] == nil {
+			schema.declare(name, info.Folders[at])
 		}
 	}
 
 	// a nested row that sets up entries defined elsewhere makes a history database of its keys
 	for _, row := range info.Nested {
 		if row.Of != "" {
-			s.declare(NameOf(row.Parent)+"."+row.Database, game.Folder{History: true, Of: row.Of})
+			schema.declare(NameOf(row.Parent)+"."+row.Database, game.Folder{History: true, Of: row.Of})
 		}
 	}
 
@@ -122,21 +122,21 @@ func (s *Schema) declareDatabases(install []inventory.File, info *game.GameInfo)
 	for at, row := range info.Folders {
 		if extension, _, cut := strings.Cut(at, "."); cut && game.FileTypes["."+extension].Body != 0 {
 			row.Body = game.FileTypes["."+extension].Body
-			s.declare(at, row)
+			schema.declare(at, row)
 		}
 	}
 
 	// the databases a call by each CalledIn word resolves in, in name order; AnyCall every scripted folder's
 	// (a file type's own database answers only its own words)
-	s.Callees = map[string][]string{}
-	for _, name := range slices.Sorted(maps.Keys(s.Databases)) {
-		called := s.Databases[name].Row.CalledIn
+	schema.Callees = map[string][]string{}
+	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
+		called := schema.Databases[name].Row.CalledIn
 		if len(called) > 0 && !strings.Contains(name, ".") {
 			called = append(slices.Clone(called), game.AnyCall)
 		}
 		for _, word := range called {
-			s.Callees[word] = append(s.Callees[word], name)
+			schema.Callees[word] = append(schema.Callees[word], name)
 		}
 	}
-	s.Lists = cmp.Or(s.DatabasesWhere(func(row game.Folder) bool { return row.Iterated })...)
+	schema.Lists = cmp.Or(schema.DatabasesWhere(func(row game.Folder) bool { return row.Iterated })...)
 }

@@ -34,22 +34,22 @@ type scalarFacts struct {
 }
 
 // mentionsOf fills a reading's StoredIn and Mentions: the key's names, then the value's.
-func (w *fileWalk) mentionsOf(placement *Placement) {
+func (walk *fileWalk) mentionsOf(placement *Placement) {
 	assign, isAssign := placement.Statement.(*jomini.Assignment)
-	command := w.nameCommand(placement, assign)
+	command := walk.nameCommand(placement, assign)
 	placement.StoredIn = command.Database
 	if isAssign {
-		w.scalarMentions(placement, &assign.Key, w.facts(placement, assign, &assign.Key, true), command)
+		walk.scalarMentions(placement, &assign.Key, walk.facts(placement, assign, &assign.Key, true), command)
 	}
 	if scalar, isScalar := jomini.ValueOf(placement.Statement).(*jomini.Scalar); isScalar {
-		w.scalarMentions(placement, scalar, w.facts(placement, assign, scalar, false), command)
+		walk.scalarMentions(placement, scalar, walk.facts(placement, assign, scalar, false), command)
 	}
 }
 
 // nameCommand returns the name command a statement's value belongs to: the key's own (set_variable
 // = x), else the key inside the command whose block it is in (save_scope_value_as = { name = x });
 // zero for none.
-func (w *fileWalk) nameCommand(placement *Placement, assign *jomini.Assignment) game.NameCommand {
+func (walk *fileWalk) nameCommand(placement *Placement, assign *jomini.Assignment) game.NameCommand {
 	if assign == nil {
 		return game.NameCommand{}
 	}
@@ -60,14 +60,14 @@ func (w *fileWalk) nameCommand(placement *Placement, assign *jomini.Assignment) 
 }
 
 // facts gathers what the rules ask of one word of a reading.
-func (w *fileWalk) facts(placement *Placement, assign *jomini.Assignment, scalar *jomini.Scalar, isKey bool) scalarFacts {
+func (walk *fileWalk) facts(placement *Placement, assign *jomini.Assignment, scalar *jomini.Scalar, isKey bool) scalarFacts {
 	f := scalarFacts{isKey: isKey, literal: jomini.Literal(scalar.Text)}
 	if assign != nil {
 		f.key = &assign.Key
 	}
 	if placement.Entry >= 0 {
-		f.isEntry = w.entries[placement.Entry].Statement == placement.Statement
-		f.database = w.s.Databases[w.entries[placement.Entry].Database]
+		f.isEntry = walk.entries[placement.Entry].Statement == placement.Statement
+		f.database = walk.s.Databases[walk.entries[placement.Entry].Database]
 	}
 	_, constant := jomini.Constant(scalar.Text)
 	f.named = scalar.Text != "" && !constant && len(jomini.Interpolations(scalar.Text)) == 0
@@ -80,32 +80,32 @@ func (w *fileWalk) facts(placement *Placement, assign *jomini.Assignment, scalar
 
 // scalarMentions adds what one word names: its link parts, then the key rules or the value rule, then
 // its parameters.
-func (w *fileWalk) scalarMentions(placement *Placement, scalar *jomini.Scalar, f scalarFacts, command game.NameCommand) {
-	linked := w.prefixReferences(placement, scalar, f)
+func (walk *fileWalk) scalarMentions(placement *Placement, scalar *jomini.Scalar, f scalarFacts, command game.NameCommand) {
+	linked := walk.prefixReferences(placement, scalar, f)
 	switch {
 	case f.isKey:
-		w.keyMentions(placement, scalar, f)
+		walk.keyMentions(placement, scalar, f)
 	case f.reads && !linked && (!f.isEntry || f.key != nil):
 		// a listed entry's word is its name, not a value
-		w.valueMention(placement, scalar, f, command)
+		walk.valueMention(placement, scalar, f, command)
 	}
-	w.parameterDefinitions(placement, scalar, f)
+	walk.parameterDefinitions(placement, scalar, f)
 }
 
 // prefixReferences refers, for each prefix:name part of a word that a link reads, to the name in
 // the prefix's database, and reports whether the word has any such part: a linked word takes no
 // value rule.
-func (w *fileWalk) prefixReferences(placement *Placement, scalar *jomini.Scalar, f scalarFacts) (linked bool) {
+func (walk *fileWalk) prefixReferences(placement *Placement, scalar *jomini.Scalar, f scalarFacts) (linked bool) {
 	if !f.reads {
 		return false
 	}
 	for part := range strings.SplitSeq(scalar.Text, ".") {
 		prefixed, isPrefixed := jomini.SplitPrefixed(part)
-		if !isPrefixed || w.s.Link(strings.ToLower(part)) == nil {
+		if !isPrefixed || walk.s.Link(strings.ToLower(part)) == nil {
 			continue
 		}
 		linked = true
-		if database := w.s.Prefixes[strings.ToLower(prefixed.Prefix)]; database != "" {
+		if database := walk.s.Prefixes[strings.ToLower(prefixed.Prefix)]; database != "" {
 			placement.Mentions = append(placement.Mentions, Mention{Database: database, ID: prefixed.Name, Range: scalar.Range})
 		}
 	}
@@ -116,13 +116,13 @@ func (w *fileWalk) prefixReferences(placement *Placement, scalar *jomini.Scalar,
 // key refers to the object it sets up; a call every_x iterates the scripted list x; a key read as a
 // call names a scripted entry by its calling word; a key in a call's block names the called entry's
 // parameter.
-func (w *fileWalk) keyMentions(placement *Placement, scalar *jomini.Scalar, f scalarFacts) {
+func (walk *fileWalk) keyMentions(placement *Placement, scalar *jomini.Scalar, f scalarFacts) {
 	if f.isEntry && f.database != nil && f.database.Row.Of != "" {
-		placement.Mentions = append(placement.Mentions, Mention{Database: f.database.Row.Of, ID: w.entries[placement.Entry].ID, Range: scalar.Range})
+		placement.Mentions = append(placement.Mentions, Mention{Database: f.database.Row.Of, ID: walk.entries[placement.Entry].ID, Range: scalar.Range})
 	}
 	if f.reads && placement.Listed != "" {
 		placement.Mentions = append(placement.Mentions, Mention{
-			Database: w.s.Lists, ID: strings.TrimPrefix(scalar.Text, placement.Listed), Range: scalar.Range,
+			Database: walk.s.Lists, ID: strings.TrimPrefix(scalar.Text, placement.Listed), Range: scalar.Range,
 		})
 	}
 	if f.reads && placement.Calls != "" && f.named {
@@ -137,17 +137,17 @@ func (w *fileWalk) keyMentions(placement *Placement, scalar *jomini.Scalar, f sc
 // reference, made, group, read, claim, value, event. A history key names its object before anything
 // else; a loc key is referred to only where the position's claim says so; vanilla types a position
 // by its words, never its numbers; a word where a number is expected names a script value.
-func (w *fileWalk) valueMention(placement *Placement, scalar *jomini.Scalar, f scalarFacts, command game.NameCommand) {
+func (walk *fileWalk) valueMention(placement *Placement, scalar *jomini.Scalar, f scalarFacts, command game.NameCommand) {
 	n := Mention{ID: scalar.Text, Range: scalar.Range}
 	fileRef := ""
 	if f.key != nil {
-		fileRef = game.FileTypes[w.ext].Refs[f.key.Text]
+		fileRef = game.FileTypes[walk.ext].Refs[f.key.Text]
 	}
 	switch {
 	case f.isEntry && f.database != nil && f.database.Row.Of != "":
 		n.Database = f.database.Row.Of
 	case fileRef != "":
-		n.Database = w.ext[1:] + "." + fileRef
+		n.Database = walk.ext[1:] + "." + fileRef
 	case command.Makes && placement.StoredIn != "":
 		n.Defines, n.Database = true, placement.StoredIn
 	case f.key != nil && f.database != nil && placement.BlockContext.Position == f.database.Entry &&
@@ -165,7 +165,7 @@ func (w *fileWalk) valueMention(placement *Placement, scalar *jomini.Scalar, f s
 		(f.claim.Kind == ExpectsNumber || placement.Position.Vanilla.Shapes&ShapeNumber != 0):
 		n.Called = game.Blocks[game.BlockValue].Calls
 	case jomini.IsEventID(scalar.Text):
-		n.Database = w.events
+		n.Database = walk.events
 	default:
 		return
 	}
@@ -176,7 +176,7 @@ func (w *fileWalk) valueMention(placement *Placement, scalar *jomini.Scalar, f s
 
 // parameterDefinitions defines each $NAME$ an entry of a folder with Parameters writes, at its
 // first use in the file.
-func (w *fileWalk) parameterDefinitions(placement *Placement, scalar *jomini.Scalar, f scalarFacts) {
+func (walk *fileWalk) parameterDefinitions(placement *Placement, scalar *jomini.Scalar, f scalarFacts) {
 	if f.database == nil || !f.database.Row.Parameters {
 		return
 	}
@@ -185,9 +185,9 @@ func (w *fileWalk) parameterDefinitions(placement *Placement, scalar *jomini.Sca
 		start++
 	}
 	for _, span := range jomini.Interpolations(scalar.Text) {
-		name := w.entries[placement.Entry].ID + ":" + span.Name
-		if !w.defined[name] {
-			w.defined[name] = true
+		name := walk.entries[placement.Entry].ID + ":" + span.Name
+		if !walk.defined[name] {
+			walk.defined[name] = true
 			placement.Mentions = append(placement.Mentions, Mention{
 				Defines: true, Database: Parameter, ID: name,
 				Range: jomini.Range{Start: start + span.Start, End: start + span.End},

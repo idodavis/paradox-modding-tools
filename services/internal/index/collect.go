@@ -18,10 +18,10 @@ import (
 
 // collectFiles reads the files of Files that hold records, localization in every language only when
 // withLoc is set: a worker per CPU parses and walks ahead while Add runs in file order here.
-func (i *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc bool, progress func(done, total int)) error {
-	i.Rebuild()
+func (index *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc bool, progress func(done, total int)) error {
+	index.Rebuild()
 	var files []inventory.File
-	for _, file := range i.Files {
+	for _, file := range index.Files {
 		if slices.Contains([]inventory.Format{inventory.Script, inventory.Table, inventory.List}, file.Format) ||
 			withLoc && file.Format == inventory.Loc {
 			files = append(files, file)
@@ -34,7 +34,7 @@ func (i *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc bool
 		return collectFile(s, file, text)
 	}, func(file inventory.File, records *Records) {
 		if records != nil {
-			i.Add(records, file.Path)
+			index.Add(records, file.Path)
 		}
 		done++
 		if progress != nil {
@@ -76,55 +76,55 @@ type collector struct {
 
 // position returns the line and column an offset starts, 0-based; a table or sound list is read for
 // its lines the first time.
-func (c *collector) position(offset int) (line, col int32) {
-	if c.lines == nil {
-		text, _ := c.file.Text()
-		c.lines = jomini.NewLineIndex(text)
+func (collector *collector) position(offset int) (line, col int32) {
+	if collector.lines == nil {
+		text, _ := collector.file.Text()
+		collector.lines = jomini.NewLineIndex(text)
 	}
-	at := c.lines.PositionAt(offset)
+	at := collector.lines.PositionAt(offset)
 	return int32(at.Line), int32(at.Character)
 }
 
 // define adds a definition where it is written. Entries come first, in the detector's order, so an
 // entry's index in Defs is the Placement.Entry a reference stores as From.
-func (c *collector) define(def Def) {
-	def.Path = c.file.Path
-	def.Line, def.Col = c.position(def.Range.Start)
-	c.records.Defs = append(c.records.Defs, def)
+func (collector *collector) define(def Def) {
+	def.Path = collector.file.Path
+	def.Line, def.Col = collector.position(def.Range.Start)
+	collector.records.Defs = append(collector.records.Defs, def)
 }
 
 // refer adds a reference where it is written, in the entry the reading is in.
-func (c *collector) refer(ref Ref, placement *schema.Placement) {
-	ref.Path, ref.From, ref.InTrigger = c.file.Path, int32(placement.Entry), placement.InTrigger
-	ref.Line, ref.Col = c.position(ref.Range.Start)
-	c.records.Refs = append(c.records.Refs, ref)
+func (collector *collector) refer(ref Ref, placement *schema.Placement) {
+	ref.Path, ref.From, ref.InTrigger = collector.file.Path, int32(placement.Entry), placement.InTrigger
+	ref.Line, ref.Col = collector.position(ref.Range.Start)
+	collector.records.Refs = append(collector.records.Refs, ref)
 }
 
 // collect records what a reading names and the scope its command, link or link-read word is written
 // in, then hands the reading to visit; once visit returns false the walk reads nothing more.
-func (c *collector) collect(placement *schema.Placement) bool {
-	if c.stopped {
+func (collector *collector) collect(placement *schema.Placement) bool {
+	if collector.stopped {
 		return false
 	}
 	for _, naming := range placement.Mentions {
 		if naming.Defines {
-			c.define(Def{Database: naming.Database, Name: naming.ID, Range: naming.Range, Named: naming.Named})
+			collector.define(Def{Database: naming.Database, Name: naming.ID, Range: naming.Range, Named: naming.Named})
 		} else {
-			c.refer(Ref{Database: naming.Database, Name: naming.ID, Called: naming.Called, Range: naming.Range}, placement)
+			collector.refer(Ref{Database: naming.Database, Name: naming.ID, Called: naming.Called, Range: naming.Range}, placement)
 		}
 	}
 	assign, isAssign := placement.Statement.(*jomini.Assignment)
 	scalar, isScalar := jomini.ValueOf(placement.Statement).(*jomini.Scalar)
 	if placement.Scope != "" && isAssign && placement.Command != nil {
-		c.records.scoped[scopePair(assign.Key.Text, placement.Scope)] = true
+		collector.records.scoped[scopePair(assign.Key.Text, placement.Scope)] = true
 	}
-	if placement.Scope != "" && isScalar && c.schema.Link(strings.ToLower(scalar.Text)) != nil {
-		c.records.scoped[scopePair(scalar.Text, placement.Scope)] = true
+	if placement.Scope != "" && isScalar && collector.schema.Link(strings.ToLower(scalar.Text)) != nil {
+		collector.records.scoped[scopePair(scalar.Text, placement.Scope)] = true
 	}
-	if c.visit != nil && !c.visit(placement) {
-		c.stopped = true
+	if collector.visit != nil && !collector.visit(placement) {
+		collector.stopped = true
 	}
-	return !c.stopped
+	return !collector.stopped
 }
 
 // scopePair is a written command, link or link-read word and the scope it is read in, as

@@ -129,18 +129,18 @@ var dumpLabels = []struct {
 
 // dumpsOrShipped reads the dump files into the schema, or takes a shipped dump part whole. The dumps
 // are stale when older than the install's last update.
-func (s *Schema) dumpsOrShipped(input Input) {
+func (schema *Schema) dumpsOrShipped(input Input) {
 	if shipped := input.Shipped; shipped != nil {
-		s.Commands, s.Scopes, s.Saved = shipped.Commands, shipped.Scopes, shipped.Saved
-		s.Modifiers, s.OnActions = shipped.Modifiers, shipped.OnActions
-		s.DataTypes, s.CustomLoc = shipped.DataTypes, shipped.CustomLoc
-		s.Sources[SourceDumps] = shipped.Sources[SourceDumps]
+		schema.Commands, schema.Scopes, schema.Saved = shipped.Commands, shipped.Scopes, shipped.Saved
+		schema.Modifiers, schema.OnActions = shipped.Modifiers, shipped.OnActions
+		schema.DataTypes, schema.CustomLoc = shipped.DataTypes, shipped.CustomLoc
+		schema.Sources[SourceDumps] = shipped.Sources[SourceDumps]
 		return
 	}
-	written := s.parseDumps(input.Dumps)
-	s.Sources[SourceDumps] = SourceState{From: "none"}
+	written := schema.parseDumps(input.Dumps)
+	schema.Sources[SourceDumps] = SourceState{From: "none"}
 	if !written.IsZero() {
-		s.Sources[SourceDumps] = SourceState{From: "yours", Written: written, Stale: written.Before(input.Updated)}
+		schema.Sources[SourceDumps] = SourceState{From: "yours", Written: written, Stale: written.Before(input.Updated)}
 	}
 }
 
@@ -173,10 +173,10 @@ type dumpEntry struct {
 
 // parseDumps reads the dump files into the schema and returns when they were written: the dumps are as fresh
 // as their oldest file. Usages are applied last, once every command is declared.
-func (s *Schema) parseDumps(files []inventory.File) (written time.Time) {
-	s.Commands, s.Scopes, s.Saved = map[string]*Command{}, map[string]Scope{}, map[string]bool{}
-	s.Modifiers, s.OnActions = map[string]Modifier{}, map[string]OnAction{}
-	s.DataTypes, s.CustomLoc = map[string]DataType{}, map[string]CustomLoc{}
+func (schema *Schema) parseDumps(files []inventory.File) (written time.Time) {
+	schema.Commands, schema.Scopes, schema.Saved = map[string]*Command{}, map[string]Scope{}, map[string]bool{}
+	schema.Modifiers, schema.OnActions = map[string]Modifier{}, map[string]OnAction{}
+	schema.DataTypes, schema.CustomLoc = map[string]DataType{}, map[string]CustomLoc{}
 
 	byName := map[string]inventory.File{}
 	for _, file := range files {
@@ -199,22 +199,22 @@ func (s *Schema) parseDumps(files []inventory.File) (written time.Time) {
 			for _, e := range splitEntries(kind.entry, kind.labels, content) {
 				switch kind.record {
 				case recordScope:
-					s.parseScope(e)
+					schema.parseScope(e)
 				case recordCommand:
-					s.parseCommand(e, kinds[fileName], ranked, usages)
+					schema.parseCommand(e, kinds[fileName], ranked, usages)
 				case "Modifier":
-					s.parseModifier(e)
+					schema.parseModifier(e)
 				case "OnAction":
-					s.parseOnAction(e)
+					schema.parseOnAction(e)
 				case "CustomLoc":
-					s.parseCustomLoc(e)
+					schema.parseCustomLoc(e)
 				case "DataType":
-					s.parseDataType(e)
+					schema.parseDataType(e)
 				}
 			}
 		}
 	}
-	s.applyUsages(usages)
+	schema.applyUsages(usages)
 	return written
 }
 
@@ -297,8 +297,8 @@ func parseEntryBody(body, name, group2 string, labels map[string]string) dumpEnt
 }
 
 // parseScope reads a scope type's entry.
-func (s *Schema) parseScope(e dumpEntry) {
-	s.Scopes[e.name] = Scope{
+func (schema *Schema) parseScope(e dumpEntry) {
+	schema.Scopes[e.name] = Scope{
 		Name:      e.name,
 		Variables: e.fields["Scope.Variables"] != "no",
 		Triggers:  e.fields["Scope.Triggers"] != "no",
@@ -308,22 +308,22 @@ func (s *Schema) parseScope(e dumpEntry) {
 
 // parseCommand reads an effect, trigger or link entry into the command of its name. A name written twice is
 // one command that runs where either reading runs.
-func (s *Schema) parseCommand(e dumpEntry, kind game.Kinds, ranked map[string]int, usages map[string][]string) {
+func (schema *Schema) parseCommand(e dumpEntry, kind game.Kinds, ranked map[string]int, usages map[string][]string) {
 	if e.group2 != "" { // the block closing the link dump, "Event Targets Saved from Code"
 		for _, line := range e.lines {
 			if line != "" {
-				s.Saved[line] = true
+				schema.Saved[line] = true
 			}
 		}
 		return
 	}
 	name := strings.ToLower(e.name) // script writes AND for and
 	named := scopeList(e.fields["Command.Scopes"])
-	command := s.Commands[name]
+	command := schema.Commands[name]
 	switch {
 	case command == nil:
 		command = &Command{Scopes: named, Args: &Position{}}
-		s.Commands[name] = command
+		schema.Commands[name] = command
 	case len(named) == 0:
 		command.Scopes = nil // a reading with no scope runs anywhere
 	case len(command.Scopes) > 0:
@@ -345,7 +345,7 @@ func (s *Schema) parseCommand(e dumpEntry, kind game.Kinds, ranked map[string]in
 	command.Global = command.Global || e.fields["Command.Global"] == yes
 	command.Wild = command.Wild || e.fields["Command.Wild"] == yes
 
-	if claim := s.valueFromTraits(command, name, e.fields["Command.Args.Value"]); claim.Kind != ExpectsUnknown || claim.Choices != nil {
+	if claim := schema.valueFromTraits(command, name, e.fields["Command.Args.Value"]); claim.Kind != ExpectsUnknown || claim.Choices != nil {
 		SetFirst(&command.Args.Value, claim, SourceDumps)
 	}
 	if strings.TrimSpace(e.usage) != "" {
@@ -365,7 +365,7 @@ func scopeList(list string) (scopes []string) {
 
 // valueFromTraits reads what a command's own value is from the dump's Traits line. A database key trait is
 // read as the usage name = <class>, which claims the reference itself.
-func (s *Schema) valueFromTraits(command *Command, name, traits string) (claim Expected) {
+func (schema *Schema) valueFromTraits(command *Command, name, traits string) (claim Expected) {
 	switch {
 	case traits == "yes/no":
 		claim.Kind = ExpectsBool
@@ -377,7 +377,7 @@ func (s *Schema) valueFromTraits(command *Command, name, traits string) (claim E
 	case strings.HasPrefix(traits, "class C") && strings.HasSuffix(traits, "Database key"):
 		class := strings.TrimSuffix(strings.TrimPrefix(traits, "class C"), "Database key")
 		parsed := jomini.Parse(normalize(usageLines(name + " = <" + snakeCase(strings.TrimSpace(class)) + ">")))
-		s.applyUsage(&parsed, command, name)
+		schema.applyUsage(&parsed, command, name)
 	case strings.Contains(traits, ", "):
 		list := traits
 		if _, after, found := strings.Cut(traits, ": "); found {
@@ -405,7 +405,7 @@ func snakeCase(class string) string {
 }
 
 // parseModifier reads a modifier's entry; a $TYPE$ part names a family matched as a glob.
-func (s *Schema) parseModifier(e dumpEntry) {
+func (schema *Schema) parseModifier(e dumpEntry) {
 	if e.group2 != "" { // a --- section --- heading
 		return
 	}
@@ -416,42 +416,42 @@ func (s *Schema) parseModifier(e dumpEntry) {
 			pattern = pattern[:span.Start] + "*" + pattern[span.End:]
 		}
 	}
-	s.Modifiers[e.name] = Modifier{Pattern: pattern, Blurb: e.blurb}
+	schema.Modifiers[e.name] = Modifier{Pattern: pattern, Blurb: e.blurb}
 }
 
 // parseOnAction reads an on_action's entry.
-func (s *Schema) parseOnAction(e dumpEntry) {
-	s.OnActions[e.name] = OnAction{Scope: cmp.Or(scopeList(e.fields["OnAction.Scope"])...), Blurb: e.blurb}
+func (schema *Schema) parseOnAction(e dumpEntry) {
+	schema.OnActions[e.name] = OnAction{Scope: cmp.Or(scopeList(e.fields["OnAction.Scope"])...), Blurb: e.blurb}
 }
 
 // parseCustomLoc reads a custom localization's entry.
-func (s *Schema) parseCustomLoc(e dumpEntry) {
+func (schema *Schema) parseCustomLoc(e dumpEntry) {
 	var entries []string
 	for _, line := range e.lines {
 		if line != "" {
 			entries = append(entries, line)
 		}
 	}
-	s.CustomLoc[e.name] = CustomLoc{
+	schema.CustomLoc[e.name] = CustomLoc{
 		Scope: cmp.Or(scopeList(e.fields["CustomLoc.Scope"])...), Parent: e.fields["CustomLoc.Parent"],
 		Suffix: e.fields["CustomLoc.Suffix"], Entries: entries,
 	}
 }
 
 // parseDataType reads a data type's entry, or one function of one; a function with no type is a global.
-func (s *Schema) parseDataType(e dumpEntry) {
+func (schema *Schema) parseDataType(e dumpEntry) {
 	owner, member := e.name, e.group2
 	if member == "" && e.fields["DataType.Functions"] != "Type" {
 		owner, member = game.GlobalType, owner
 	}
-	dataType := s.DataTypes[owner]
+	dataType := schema.DataTypes[owner]
 	if dataType.Functions == nil {
 		dataType.Functions = map[string]DataFunction{}
 	}
 	if _, present := dataType.Functions[member]; member != "" && !present {
 		dataType.Functions[member] = DataFunction{Returns: e.fields["DataFunction.Returns"]}
 	}
-	s.DataTypes[owner] = dataType
+	schema.DataTypes[owner] = dataType
 }
 
 // placeholder matches a block placeholder in a usage.
@@ -459,14 +459,14 @@ var placeholder = regexp.MustCompile(game.UsagePlaceholder)
 
 // applyUsages reads each command's usages into its arguments, once every command is declared. A command
 // whose usage blocks write no block placeholder takes arguments only.
-func (s *Schema) applyUsages(usages map[string][]string) {
+func (schema *Schema) applyUsages(usages map[string][]string) {
 	for _, name := range slices.Sorted(maps.Keys(usages)) {
-		command := s.Commands[name]
+		command := schema.Commands[name]
 		blocks, plain := 0, 0
 		for _, usage := range usages[name] {
 			parsed := jomini.Parse(normalize(usageLines(usage)))
 			written := usageName(&parsed, name)
-			s.applyUsage(&parsed, command, written)
+			schema.applyUsage(&parsed, command, written)
 			if written == "" && len(parsed.Root.Statements) > 0 {
 				blocks++
 				if !placeholder.MatchString(usage) {

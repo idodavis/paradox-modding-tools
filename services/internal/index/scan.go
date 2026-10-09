@@ -183,22 +183,22 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 // Reindex walks one file again: its records dropped and added back. A file not yet in Files goes
 // after its origin's last file, so it keeps that origin's place in load order. Every localization
 // language is kept.
-func (i *Index) Reindex(s *schema.Schema, file inventory.File, text string) {
-	i.Drop(file.Path)
-	if i.defs == nil {
-		i.Rebuild()
+func (index *Index) Reindex(s *schema.Schema, file inventory.File, text string) {
+	index.Drop(file.Path)
+	if index.defs == nil {
+		index.Rebuild()
 	}
-	if _, listed := i.At(file.Path); !listed {
-		at := len(i.Files)
-		for pos, other := range i.Files {
+	if _, listed := index.At(file.Path); !listed {
+		at := len(index.Files)
+		for pos, other := range index.Files {
 			if other.Origin == file.Origin {
 				at = pos + 1
 			}
 		}
-		i.Files = slices.Insert(i.Files, at, file)
-		i.PlaceFiles()
+		index.Files = slices.Insert(index.Files, at, file)
+		index.PlaceFiles()
 	}
 	if records := collectFile(s, file, text); records != nil {
-		i.Add(records, file.Path)
+		index.Add(records, file.Path)
 	}
 }

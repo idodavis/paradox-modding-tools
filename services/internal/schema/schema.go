@@ -27,7 +27,9 @@ const (
 )
 
 // Declared reports whether a source states claims that may accuse: the dumps, the docs or the wiki.
-func (s Source) Declared() bool { return s == SourceDumps || s == SourceDocs || s == SourceWiki }
+func (source Source) Declared() bool {
+	return source == SourceDumps || source == SourceDocs || source == SourceWiki
+}
 
 // Claim is a value and the source that stated it; Source is SourceNone while the claim is empty.
 type Claim[T any] struct {
@@ -191,11 +193,11 @@ type Schema struct {
 
 // Link returns the declared link a lower-case key starts with: the first link of a chain (root.liege), by
 // name or by the prefix before ':' (c:FRA, scope:x), never a Wild Card link; nil for none.
-func (s *Schema) Link(key string) *Command {
+func (schema *Schema) Link(key string) *Command {
 	first, _, _ := strings.Cut(key, ".")
 	prefix, _, _ := strings.Cut(first, ":")
 	for _, name := range []string{first, prefix} {
-		if command := s.Commands[name]; command != nil && command.Kind&game.KindLink != 0 && !command.Wild {
+		if command := schema.Commands[name]; command != nil && command.Kind&game.KindLink != 0 && !command.Wild {
 			return command
 		}
 	}
@@ -204,15 +206,15 @@ func (s *Schema) Link(key string) *Command {
 
 // DatabaseNamed returns the database a word names: the one called by the word or its plural, else the one
 // whose last path word is either; "" for none or several.
-func (s *Schema) DatabaseNamed(word string) string {
+func (schema *Schema) DatabaseNamed(word string) string {
 	var named []string
 	for _, name := range []string{word, word + "s"} {
-		if database := s.Databases[name]; database != nil && !database.Row.History {
+		if database := schema.Databases[name]; database != nil && !database.Row.History {
 			named = append(named, name)
 		}
 	}
 	exact := len(named) > 0
-	for name, database := range s.Databases {
+	for name, database := range schema.Databases {
 		last := name[strings.LastIndexByte(name, '/')+1:]
 		if !exact && !database.Row.History && (last == word || last == word+"s") {
 			named = append(named, name)
@@ -225,8 +227,8 @@ func (s *Schema) DatabaseNamed(word string) string {
 }
 
 // DatabasesWhere returns the names of the databases whose registry row passes a test, in name order.
-func (s *Schema) DatabasesWhere(test func(game.Folder) bool) (names []string) {
-	for name, database := range s.Databases {
+func (schema *Schema) DatabasesWhere(test func(game.Folder) bool) (names []string) {
+	for name, database := range schema.Databases {
 		if test(database.Row) {
 			names = append(names, name)
 		}
@@ -236,24 +238,24 @@ func (s *Schema) DatabasesWhere(test func(game.Folder) bool) (names []string) {
 }
 
 // Child returns the position under a written name; nil when there is none.
-func (p *Position) Child(name string) *Position {
-	if p == nil {
+func (position *Position) Child(name string) *Position {
+	if position == nil {
 		return nil
 	}
-	return p.Children[positionName(name)]
+	return position.Children[positionName(name)]
 }
 
 // EnsureChild returns the position under a written name, making it when it is missing. The name is cloned
 // so a position never pins a file's text.
-func (p *Position) EnsureChild(name string) *Position {
-	if child := p.Child(name); child != nil {
+func (position *Position) EnsureChild(name string) *Position {
+	if child := position.Child(name); child != nil {
 		return child
 	}
-	if p.Children == nil {
-		p.Children = map[string]*Position{}
+	if position.Children == nil {
+		position.Children = map[string]*Position{}
 	}
 	child := &Position{}
-	p.Children[strings.Clone(positionName(name))] = child
+	position.Children[strings.Clone(positionName(name))] = child
 	return child
 }
 
@@ -293,7 +295,7 @@ const (
 // fresh, and vanilla's evidence at the position does not contradict it. The registry and vanilla have no
 // Sources entry, so they never accuse. A docs or wiki claim, and a declared word list from any source,
 // accuse only where vanilla writes the position.
-func (s *Schema) MayAccuse(check Check, position, parent *Position) bool {
+func (schema *Schema) MayAccuse(check Check, position, parent *Position) bool {
 	from := SourceDumps
 	switch check {
 	case CheckValue:
@@ -301,7 +303,7 @@ func (s *Schema) MayAccuse(check Check, position, parent *Position) bool {
 	case CheckRequired:
 		from = position.Required.Source
 	}
-	state, found := s.Sources[from]
+	state, found := schema.Sources[from]
 	if !found || state.Stale {
 		return false
 	}

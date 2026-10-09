@@ -19,18 +19,18 @@ import (
 // come first, from the scripted folders and the GUI files alone, so the walk reads their names as calls
 // rather than as arguments. It returns the entry names vanilla defines, by database; a database made for a
 // new name is declared on the way.
-func (s *Schema) countVanilla(ctx context.Context, install []inventory.File, info *game.GameInfo) (map[string]map[string]bool, error) {
-	s.ScriptedEntries = map[string]ScriptedEntry{}
+func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File, info *game.GameInfo) (map[string]map[string]bool, error) {
+	schema.ScriptedEntries = map[string]ScriptedEntry{}
 	names := map[string]map[string]bool{}
 	parsedFirst := map[string]jomini.Result{}
 	var files []inventory.File
 	for _, file := range install {
-		at, _ := s.folder(file.Rel)
+		at, _ := schema.folder(file.Rel)
 		gui := game.FileTypes[strings.ToLower(path.Ext(file.Rel))].Keywords != nil
 		if file.Format == inventory.Script && (len(info.Folders[at].CalledIn) > 0 || gui) {
 			parsed := parseScript(file)
-			for _, entry := range s.FindEntries(file, &parsed) {
-				s.registerScriptedEntries(entry)
+			for _, entry := range schema.FindEntries(file, &parsed) {
+				schema.registerScriptedEntries(entry)
 			}
 			parsedFirst[file.Path] = parsed
 		}
@@ -52,21 +52,21 @@ func (s *Schema) countVanilla(ctx context.Context, install []inventory.File, inf
 		if file.Format == inventory.Script {
 			parsed = &result
 		}
-		entries := s.FindEntries(file, parsed)
+		entries := schema.FindEntries(file, parsed)
 		for _, entry := range entries {
-			s.noteEntry(entry, names)
+			schema.noteEntry(entry, names)
 		}
-		s.countFile(file, parsed, entries)
+		schema.countFile(file, parsed, entries)
 	}
 	return names, inventory.Ordered(ctx, files, work, keep)
 }
 
 // noteEntry makes the database of an entry that has none (a file type's database holds its Body: gui.x),
 // records the name a named entry defines, and registers a scripted entry declared inline.
-func (s *Schema) noteEntry(entry Entry, names map[string]map[string]bool) {
-	if s.Databases[entry.Database] == nil {
+func (schema *Schema) noteEntry(entry Entry, names map[string]map[string]bool) {
+	if schema.Databases[entry.Database] == nil {
 		extension, _, _ := strings.Cut(entry.Database, ".")
-		s.declare(entry.Database, game.Folder{Body: game.FileTypes["."+extension].Body})
+		schema.declare(entry.Database, game.Folder{Body: game.FileTypes["."+extension].Body})
 	}
 	if entry.ID != "" {
 		if names[entry.Database] == nil {
@@ -75,15 +75,15 @@ func (s *Schema) noteEntry(entry Entry, names map[string]map[string]bool) {
 		names[entry.Database][strings.Clone(entry.ID)] = true
 	}
 	if entry.Local {
-		s.registerScriptedEntries(entry)
+		schema.registerScriptedEntries(entry)
 	}
 }
 
 // registerScriptedEntries records a scripted entry vanilla defines, under each word its database is called
 // by. A database that takes parameters gives the entry its own parameters position; one that takes none
 // reads at its database's entry, so no entry tree is held twice.
-func (s *Schema) registerScriptedEntries(entry Entry) {
-	database := s.Databases[entry.Database]
+func (schema *Schema) registerScriptedEntries(entry Entry) {
+	database := schema.Databases[entry.Database]
 	if database == nil || len(database.Row.CalledIn) == 0 {
 		return
 	}
@@ -96,7 +96,7 @@ func (s *Schema) registerScriptedEntries(entry Entry) {
 		words = append(slices.Clone(words), game.AnyCall)
 	}
 	for _, word := range words {
-		s.ScriptedEntries[word+":"+strings.Clone(entry.ID)] = called
+		schema.ScriptedEntries[word+":"+strings.Clone(entry.ID)] = called
 	}
 }
 
@@ -111,9 +111,9 @@ func parseScript(file inventory.File) jomini.Result {
 
 // countFile walks one vanilla file with its entries and records at each position how often and in what
 // forms vanilla writes it. It records evidence only, never a claim.
-func (s *Schema) countFile(file inventory.File, parsed *jomini.Result, entries []Entry) {
+func (schema *Schema) countFile(file inventory.File, parsed *jomini.Result, entries []Entry) {
 	counted := map[*jomini.Block]map[*Position]bool{} // In counts a key once per block
-	s.WalkFile(file, parsed, entries, Visitor{
+	schema.WalkFile(file, parsed, entries, Visitor{
 		Create: true,
 		Visit:  func(placement *Placement) bool { return countPlacement(placement, entries, counted) },
 	})
@@ -196,15 +196,15 @@ func countValue(value jomini.Value, at *Position) {
 // the names written after it. A prefix names the database of the names script makes (the name commands'
 // first), then the one vanilla's words show, then the one its own name names. It comes before any docs claim,
 // which fill only what is left.
-func (s *Schema) inferTypesAndPrefixes(names map[string]map[string]bool, locKeys map[string]bool) {
-	s.Prefixes = map[string]string{}
+func (schema *Schema) inferTypesAndPrefixes(names map[string]map[string]bool, locKeys map[string]bool) {
+	schema.Prefixes = map[string]string{}
 	for _, row := range game.NameCommands {
-		s.Prefixes[row.Database] = row.Database
+		schema.Prefixes[row.Database] = row.Database
 	}
-	s.inferValueTypes(names, locKeys)
-	for name := range s.Commands {
-		if s.Link(name) != nil && s.Prefixes[name] == "" {
-			s.Prefixes[name] = s.DatabaseNamed(name)
+	schema.inferValueTypes(names, locKeys)
+	for name := range schema.Commands {
+		if schema.Link(name) != nil && schema.Prefixes[name] == "" {
+			schema.Prefixes[name] = schema.DatabaseNamed(name)
 		}
 	}
 }
@@ -220,11 +220,11 @@ type typing struct {
 
 // inferValueTypes gives each untyped position the type vanilla's words there share, then each link prefix
 // the database vanilla writes names of after it. names are the entry names vanilla defines, by database.
-func (s *Schema) inferValueTypes(names map[string]map[string]bool, locKeys map[string]bool) {
-	t := &typing{s: s, names: names, holding: map[string][]string{}, locKeys: locKeys, prefixes: map[string]map[string]bool{}}
+func (schema *Schema) inferValueTypes(names map[string]map[string]bool, locKeys map[string]bool) {
+	t := &typing{s: schema, names: names, holding: map[string][]string{}, locKeys: locKeys, prefixes: map[string]map[string]bool{}}
 
 	// the words a database's entries write at its row's Names keys name entries too (trait groups)
-	for name, database := range s.Databases {
+	for name, database := range schema.Databases {
 		for _, key := range database.Row.Names {
 			if child := database.Entry.Child(key); child != nil {
 				if names[name] == nil {
@@ -243,21 +243,21 @@ func (s *Schema) inferValueTypes(names map[string]map[string]bool, locKeys map[s
 	}
 
 	visited := map[*Position]bool{}
-	for name, database := range s.Databases {
+	for name, database := range schema.Databases {
 		t.visit(database.Entry, isFileTypeDatabase(name))
 	}
-	for _, command := range s.Commands {
+	for _, command := range schema.Commands {
 		t.visit(command.Args, false)
 	}
-	for _, entry := range s.ScriptedEntries {
+	for _, entry := range schema.ScriptedEntries {
 		if entry.Parameters != nil && !visited[entry.Parameters] { // an entry is under each word that calls it
 			visited[entry.Parameters] = true
 			t.visit(entry.Parameters, false)
 		}
 	}
 	for prefix, written := range t.prefixes {
-		if database := t.one(slices.Collect(maps.Keys(written)), false); database != "" && s.Prefixes[prefix] == "" {
-			s.Prefixes[prefix] = database
+		if database := t.one(slices.Collect(maps.Keys(written)), false); database != "" && schema.Prefixes[prefix] == "" {
+			schema.Prefixes[prefix] = database
 		}
 	}
 }
@@ -271,13 +271,13 @@ func isFileTypeDatabase(name string) bool {
 
 // one returns the only database that holds every one of the words, among the databases of the same kind
 // (a file type's own, or not) and not a history database; "" for none or several.
-func (t *typing) one(words []string, inGUI bool) (found string) {
+func (typing *typing) one(words []string, inGUI bool) (found string) {
 	count := 0
-	for _, database := range t.holding[words[0]] {
-		if isFileTypeDatabase(database) != inGUI || t.s.Databases[database].Row.History {
+	for _, database := range typing.holding[words[0]] {
+		if isFileTypeDatabase(database) != inGUI || typing.s.Databases[database].Row.History {
 			continue
 		}
-		if slices.ContainsFunc(words, func(word string) bool { return !t.names[database][word] }) {
+		if slices.ContainsFunc(words, func(word string) bool { return !typing.names[database][word] }) {
 			continue
 		}
 		found = database
@@ -291,41 +291,41 @@ func (t *typing) one(words []string, inGUI bool) (found string) {
 
 // visit types a position and the ones below it from the words vanilla writes at each: a database the words
 // all name, else a loc key when every word is one. The words after a link prefix are kept for the prefix.
-func (t *typing) visit(position *Position, inGUI bool) {
+func (typing *typing) visit(position *Position, inGUI bool) {
 	var words []string
 	for word := range position.Vanilla.Values {
 		switch {
 		case len(jomini.Interpolations(word)) > 0:
-		case t.s.Link(strings.ToLower(word)) == nil:
+		case typing.s.Link(strings.ToLower(word)) == nil:
 			words = append(words, word)
 		default:
-			t.keepAfterPrefixes(word)
+			typing.keepAfterPrefixes(word)
 		}
 	}
 	if len(words) > 0 && position.Value.Source == SourceNone {
-		if database := t.one(words, inGUI); database != "" {
+		if database := typing.one(words, inGUI); database != "" {
 			SetFirst(&position.Value, Expected{Kind: ExpectsReference, Database: database}, SourceVanilla)
-		} else if !slices.ContainsFunc(words, func(word string) bool { return !t.locKeys[word] }) {
+		} else if !slices.ContainsFunc(words, func(word string) bool { return !typing.locKeys[word] }) {
 			SetFirst(&position.Value, Expected{Kind: ExpectsLoc}, SourceVanilla)
 		}
 	}
 	for _, child := range position.Children {
-		t.visit(child, inGUI)
+		typing.visit(child, inGUI)
 	}
 }
 
 // keepAfterPrefixes keeps, for each link prefix in a chain of links (c:FRA.title), the name written after
 // it, unless that name is a link itself (ai_state_value:root).
-func (t *typing) keepAfterPrefixes(chain string) {
+func (typing *typing) keepAfterPrefixes(chain string) {
 	for part := range strings.SplitSeq(chain, ".") {
 		prefixed, found := jomini.SplitPrefixed(part)
-		if !found || t.s.Link(strings.ToLower(part)) == nil || t.s.Link(strings.ToLower(prefixed.Name)) != nil {
+		if !found || typing.s.Link(strings.ToLower(part)) == nil || typing.s.Link(strings.ToLower(prefixed.Name)) != nil {
 			continue
 		}
 		prefix := strings.ToLower(prefixed.Prefix)
-		if t.prefixes[prefix] == nil {
-			t.prefixes[prefix] = map[string]bool{}
+		if typing.prefixes[prefix] == nil {
+			typing.prefixes[prefix] = map[string]bool{}
 		}
-		t.prefixes[prefix][prefixed.Name] = true
+		typing.prefixes[prefix][prefixed.Name] = true
 	}
 }

@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
+
 	"paradox-modding-tools/services/internal/game"
 )
 
@@ -316,4 +319,47 @@ func NormTitle(title string) string {
 func Stem(name string) string {
 	stem := strings.TrimSpace(strings.TrimSuffix(" "+NormTitle(name), " modding"))
 	return strings.TrimSuffix(stem, "s")
+}
+
+// ScriptExamples returns the script examples the wiki's pages hold for each of the named databases: the text
+// of every <pre> block on the pages NamedPages picks for the database. The time is the sidecar's, zero when
+// the game has no sidecar. The engine reads these as a source in trust order; it never sees the HTML.
+func ScriptExamples(gameID string, databases []string) (map[string][]string, time.Time, error) {
+	sidecar, err := SidecarPath(gameID)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	info, err := os.Stat(sidecar)
+	if err != nil {
+		return nil, time.Time{}, nil // no sidecar: no examples, and the wiki source is "none"
+	}
+	examples := map[string][]string{}
+	for _, database := range databases {
+		for _, page := range NamedPages(gameID, database, "") {
+			examples[database] = append(examples[database], preBlocks(page.HTML)...)
+		}
+	}
+	return examples, info.ModTime(), nil
+}
+
+// preBlocks returns the text of every <pre> element of a page, in document order.
+func preBlocks(pageHTML string) []string {
+	document, err := html.Parse(strings.NewReader(pageHTML))
+	if err != nil {
+		return nil
+	}
+	var blocks []string
+	for node := range document.Descendants() {
+		if node.DataAtom != atom.Pre {
+			continue
+		}
+		var text strings.Builder
+		for inner := range node.Descendants() {
+			if inner.Type == html.TextNode {
+				text.WriteString(inner.Data)
+			}
+		}
+		blocks = append(blocks, text.String())
+	}
+	return blocks
 }

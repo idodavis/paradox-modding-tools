@@ -63,6 +63,11 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	req.Progress("inventory", 0, 1)
 	roots := inventory.Roots(req.Dir)
 	input := schemaInput(req, roots)
+	examples, written, err := wiki.ScriptExamples(req.Game, schema.DatabaseNames(input))
+	if err != nil {
+		return nil, err
+	}
+	input.WikiExamples, input.WikiWritten = examples, written
 
 	// 2. the localization, read once in english and the asked language (a file whose path names
 	// another is never read): its keys go to the schema, its records to the index
@@ -78,7 +83,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 		}
 	}
 	input.LocKeys = map[string]bool{}
-	err := inventory.Ordered(ctx, locs, func(file inventory.File) *Records {
+	err = inventory.Ordered(ctx, locs, func(file inventory.File) *Records {
 		text, _ := file.Text()
 		return read(req.Game, nil, file, text, languages)
 	}, func(file inventory.File, kept *Records) {
@@ -137,15 +142,13 @@ func BuildSchema(ctx context.Context, req Request) (*schema.Schema, error) {
 }
 
 // schemaInput is the schema stage's input: the files under the install's roots in load order, the
-// dump folders' files, the wiki sidecar and when the install last changed.
+// dump folders' files and when the install last changed.
 func schemaInput(req Request, roots []string) schema.Input {
-	sidecar, _ := wiki.SidecarPath(req.Game)
 	return schema.Input{
 		Game:    req.Game,
 		Version: req.Version,
 		Install: inventory.Files(game.OriginVanilla, roots),
 		Dumps:   inventory.Files("dumps", game.DumpDirs(req.Game, req.Dir)),
-		Wiki:    sidecar,
 		Updated: game.InstallUpdatedAt(req.Dir),
 	}
 }

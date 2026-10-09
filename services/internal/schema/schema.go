@@ -7,19 +7,14 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"os"
 	"path"
 	"slices"
 	"strings"
 	"time"
 
-	"golang.org/x/net/html"
-	"golang.org/x/net/html/atom"
-
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/wiki"
 )
 
 // Source is who stated a claim, listed in trust order.
@@ -360,46 +355,50 @@ func SetFirst[T any](claim *Claim[T], value T, from Source) {
 // Input is what the schema stage reads.
 type Input struct {
 	Game, Version string
-	Install       []inventory.File // the install's inventory, in load order
-	Dumps         []inventory.File // the dump folders' inventory
-	Wiki          string           // the wiki sidecar's path
-	Updated       time.Time        // game.InstallUpdatedAt
-	LocKeys       map[string]bool  // the install's localization keys, english and the workspace language
-	DumpsOnly     bool             // stop after the databases and dumps: the shipped schema's part
-	Shipped       *Schema          // a shipped dump part, taken in place of reading the dump files
+	Install       []inventory.File    // the install's inventory, in load order
+	Dumps         []inventory.File    // the dump folders' inventory
+	WikiExamples  map[string][]string // the wiki's script examples by database name, from wiki.ScriptExamples
+	WikiWritten   time.Time           // the wiki sidecar's time; zero for none
+	Updated       time.Time           // game.InstallUpdatedAt
+	LocKeys       map[string]bool     // the install's localization keys, english and the workspace language
+	DumpsOnly     bool                // stop after the databases and dumps: the shipped schema's part
+	Shipped       *Schema             // a shipped dump part, taken in place of reading the dump files
 }
 
-// Build reads every source into the schema: the databases the install holds, the dumps, the docs'
-// and wiki's key names, vanilla and the value types it gives, then the docs' and wiki's claims, in
-// that order, so a claim keeps the first source that states it.
-func Build(ctx context.Context, input Input) (*Schema, error) {
+// DatabaseNames returns the names of the databases Build will declare for an input: what the install's
+// folders and the game's rows make, before any source is read. The scan asks the wiki for examples by them.
+func DatabaseNames(input Input) []string {
 	info := game.Get(input.Game)
 	if info == nil {
-		return nil, fmt.Errorf("unknown game %q", input.Game)
+		return nil
 	}
-	schema := &Schema{
-		Game: input.Game, Version: input.Version, Sources: map[Source]SourceState{}, Databases: map[string]*Database{},
-	}
+	schema := &Schema{Game: input.Game, Databases: map[string]*Database{}}
+	schema.declareDatabases(input.Install, info)
+	return slices.Sorted(maps.Keys(schema.Databases))
+}
 
-	// a database's entry block is a fields block unless its folder row's Body says what the entry
-	// is; each of its Refs names its entries
-	declare := func(name string, row game.Folder) {
-		database := &Database{Name: name, Entry: &Position{}, Row: row, Fields: map[string]bool{}}
-		SetFirst(&database.Entry.Block, cmp.Or(row.Body, game.BlockFields), SourceRegistry)
-		for _, at := range row.Refs {
-			position := database.Entry
-			for step := range strings.SplitSeq(at, "/") {
-				position = position.EnsureChild(step)
-			}
-			SetFirst(&position.Value, Expected{Type: WordReference, Database: name}, SourceRegistry)
+// declare makes a database. Its entry block is a fields block unless its folder row's Body says what
+// the entry is; each of its Refs names its entries.
+func (schema *Schema) declare(name string, row game.Folder) {
+	database := &Database{Name: name, Entry: &Position{}, Row: row, Fields: map[string]bool{}}
+	SetFirst(&database.Entry.Block, cmp.Or(row.Body, game.BlockFields), SourceRegistry)
+	for _, at := range row.Refs {
+		position := database.Entry
+		for step := range strings.SplitSeq(at, "/") {
+			position = position.EnsureChild(step)
 		}
-		schema.Databases[name] = database
+		SetFirst(&position.Value, Expected{Type: WordReference, Database: name}, SourceRegistry)
 	}
+	schema.Databases[name] = database
+}
 
+// declareDatabases declares the databases the install's folders and the game's rows make, and the
+// calls that resolve in them.
+func (schema *Schema) declareDatabases(install []inventory.File, info *game.GameInfo) {
 	// 1. databases: each script file's, by folder; a file at the root belongs to none, and one whose
 	// file type names its own entries (.asset, .gui) or none makes its folder no database
 	var scripts []string
-	for _, file := range input.Install {
+	for _, file := range install {
 		fileType, typed := game.FileTypes[strings.ToLower(path.Ext(file.Rel))]
 		if file.Format == inventory.Script && typed && fileType.NameKey == "" && fileType.Keywords == nil {
 			scripts = append(scripts, file.Rel)
@@ -412,14 +411,14 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	})
 	for _, rel := range scripts {
 		if at, name := schema.folder(rel); at != "." && schema.Databases[name] == nil {
-			declare(name, info.Folders[at])
+			schema.declare(name, info.Folders[at])
 		}
 	}
 
 	// a nested row that sets up entries defined elsewhere makes a history database of its keys
 	for _, row := range info.Nested {
 		if row.Of != "" {
-			declare(strings.TrimPrefix(row.Parent, "common/")+"."+row.Database, game.Folder{History: true, Of: row.Of})
+			schema.declare(strings.TrimPrefix(row.Parent, "common/")+"."+row.Database, game.Folder{History: true, Of: row.Of})
 		}
 	}
 
@@ -427,7 +426,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	for at, row := range info.Folders {
 		if ext, _, cut := strings.Cut(at, "."); cut && game.FileTypes["."+ext].Body != 0 {
 			row.Body = game.FileTypes["."+ext].Body
-			declare(at, row)
+			schema.declare(at, row)
 		}
 	}
 
@@ -444,6 +443,21 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		}
 	}
 	schema.Lists = cmp.Or(schema.DatabasesWhere(func(row game.Folder) bool { return row.Iterated })...)
+}
+
+// Build reads every source into the schema: the databases the install holds, the dumps, the docs'
+// and wiki's key names, vanilla and the value types it gives, then the docs' and wiki's claims, in
+// that order, so a claim keeps the first source that states it.
+func Build(ctx context.Context, input Input) (*Schema, error) {
+	info := game.Get(input.Game)
+	if info == nil {
+		return nil, fmt.Errorf("unknown game %q", input.Game)
+	}
+	schema := &Schema{
+		Game: input.Game, Version: input.Version, Sources: map[Source]SourceState{}, Databases: map[string]*Database{},
+	}
+
+	schema.declareDatabases(input.Install, info)
 
 	// 2. dumps: read from the dump files, or taken whole from a shipped dump part
 	if shipped := input.Shipped; shipped != nil {
@@ -502,8 +516,8 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	// the wiki: each database's own named pages' <pre> examples; a history database names none. A
 	// sanitized page keeps no version label, so the wiki is never stale.
 	schema.Sources[SourceWiki] = SourceState{From: "none"}
-	if sidecar, err := os.Stat(input.Wiki); err == nil {
-		schema.Sources[SourceWiki] = SourceState{From: "yours", Written: sidecar.ModTime()}
+	if !input.WikiWritten.IsZero() {
+		schema.Sources[SourceWiki] = SourceState{From: "yours", Written: input.WikiWritten}
 	}
 	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
 		if err := ctx.Err(); err != nil {
@@ -512,24 +526,8 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		if schema.Databases[name].Row.History {
 			continue
 		}
-		for _, page := range wiki.NamedPages(input.Game, name, "") {
-			document, err := html.Parse(strings.NewReader(page.HTML))
-			if err != nil {
-				continue
-			}
-			for node := range document.Descendants() {
-				if node.DataAtom != atom.Pre {
-					continue
-				}
-				var text strings.Builder
-				for inner := range node.Descendants() {
-					if inner.Type == html.TextNode {
-						text.WriteString(inner.Data)
-					}
-				}
-				parsed := jomini.Parse(normalize(strings.Split(text.String(), "\n")))
-				examples = append(examples, parsedExample{name, parsed, SourceWiki})
-			}
+		for _, text := range input.WikiExamples[name] {
+			examples = append(examples, parsedExample{name, jomini.Parse(normalize(strings.Split(text, "\n"))), SourceWiki})
 		}
 	}
 
@@ -603,7 +601,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		for _, entry := range entries {
 			if schema.Databases[entry.Database] == nil {
 				ext, _, _ := strings.Cut(entry.Database, ".") // a file type's database holds its Body (gui.x)
-				declare(entry.Database, game.Folder{Body: game.FileTypes["."+ext].Body})
+				schema.declare(entry.Database, game.Folder{Body: game.FileTypes["."+ext].Body})
 			}
 			if entry.Name != "" {
 				if names[entry.Database] == nil {

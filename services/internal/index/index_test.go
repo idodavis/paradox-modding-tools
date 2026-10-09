@@ -25,8 +25,8 @@ const (
 
 var scans sync.Map
 
-// emptyHome points every home and config variable at a temp dir, so no dump folder, wiki cache or cache file of
-// this machine is read or written.
+// emptyHome points every home and config variable at a temp dir, so no dump folder, wiki cache or
+// cache file of this machine is read or written.
 func emptyHome(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()
@@ -35,8 +35,9 @@ func emptyHome(t *testing.T) {
 	}
 }
 
-// fixtureInstall scans a fixture install as the goldens' generator does: an emptied home, so no dump folder or
-// wiki cache of this machine is read, and no cache written (App ""). The scan is shared across tests.
+// fixtureInstall scans a fixture install as the goldens' generator does: an emptied home, so no
+// dump folder or wiki cache of this machine is read, and no cache written (App ""). The scan is
+// shared across tests.
 func fixtureInstall(t *testing.T, id string) *Install {
 	t.Helper()
 	emptyHome(t)

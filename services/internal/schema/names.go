@@ -1,6 +1,6 @@
-// names.go says what a written word names: a key by every key rule that fits, a value by the first value rule that
-// fits, each `prefix:name` part a link reads, and each `$NAME$` an entry of a folder with Parameters writes. A
-// constant (@x) and a word holding a parameter ($X$) name nothing.
+// names.go says what a written word names: a key by every key rule that fits, a value by the first
+// value rule that fits, each `prefix:name` part a link reads, and each `$NAME$` an entry of a
+// folder with Parameters writes. A constant (@x) and a word holding a parameter ($X$) name nothing.
 
 package schema
 
@@ -12,17 +12,17 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// Localization and File are the databases a loc key and a file path name; no definition carries them, so the
-// index resolves them from the loc entries and the inventories. Parameter holds a scripted entry's $NAME$
-// parameters, each named <entry>:<NAME> where defined and where passed.
+// Localization and File are the databases a loc key and a file path name; no definition carries
+// them, so the index resolves them from the loc entries and the inventories. Parameter holds a
+// scripted entry's $NAME$ parameters, each named <entry>:<NAME> where defined and where passed.
 const (
 	Localization = "localization"
 	File         = "file"
 	Parameter    = "parameter"
 )
 
-// wordFacts is what every name rule asks of a word: the statement it is in, whether that statement is an
-// entry's own, the entry's database, and whether the word is read as a name at all.
+// wordFacts is what every name rule asks of a word: the statement it is in, whether that statement
+// is an entry's own, the entry's database, and whether the word is read as a name at all.
 type wordFacts struct {
 	key      *jomini.Scalar // the statement's key; nil for a value statement
 	isEntry  bool           // the statement is an entry's own
@@ -47,8 +47,9 @@ func (w *fileWalk) names(r *Reading) {
 	}
 }
 
-// nameCommand returns the name command a statement's value belongs to: the key's own (set_variable = x), else
-// the key inside the command whose block it is in (save_scope_value_as = { name = x }); zero for none.
+// nameCommand returns the name command a statement's value belongs to: the key's own (set_variable
+// = x), else the key inside the command whose block it is in (save_scope_value_as = { name = x });
+// zero for none.
 func (w *fileWalk) nameCommand(r *Reading, assign *jomini.Assignment) game.NameCommand {
 	if assign == nil {
 		return game.NameCommand{}
@@ -78,7 +79,8 @@ func (w *fileWalk) facts(r *Reading, assign *jomini.Assignment, word *jomini.Sca
 	return f
 }
 
-// wordNames adds what one word names: its link parts, then the key rules or the value rule, then its parameters.
+// wordNames adds what one word names: its link parts, then the key rules or the value rule, then
+// its parameters.
 func (w *fileWalk) wordNames(r *Reading, word *jomini.Scalar, f wordFacts, command game.NameCommand) {
 	linked := w.prefixReferences(r, word, f)
 	switch {
@@ -91,8 +93,9 @@ func (w *fileWalk) wordNames(r *Reading, word *jomini.Scalar, f wordFacts, comma
 	w.parameterDefinitions(r, word, f)
 }
 
-// prefixReferences refers, for each prefix:name part of a word that a link reads, to the name in the prefix's
-// database, and reports whether the word has any such part: a linked word takes no value rule.
+// prefixReferences refers, for each prefix:name part of a word that a link reads, to the name in
+// the prefix's database, and reports whether the word has any such part: a linked word takes no
+// value rule.
 func (w *fileWalk) prefixReferences(r *Reading, word *jomini.Scalar, f wordFacts) (linked bool) {
 	if !f.reads {
 		return false
@@ -110,9 +113,10 @@ func (w *fileWalk) prefixReferences(r *Reading, word *jomini.Scalar, f wordFacts
 	return linked
 }
 
-// keyNames adds what a key names by every key rule that fits, in this order: a history entry's top key refers
-// to the object it sets up; a call every_x iterates the scripted list x; a key read as a call names a scripted
-// entry by its calling word; a key in a call's block names the called entry's parameter.
+// keyNames adds what a key names by every key rule that fits, in this order: a history entry's top
+// key refers to the object it sets up; a call every_x iterates the scripted list x; a key read as a
+// call names a scripted entry by its calling word; a key in a call's block names the called entry's
+// parameter.
 func (w *fileWalk) keyNames(r *Reading, word *jomini.Scalar, f wordFacts) {
 	if f.isEntry && f.database != nil && f.database.Row.Of != "" {
 		r.Names = append(r.Names, Naming{Database: f.database.Row.Of, Name: w.entries[r.Entry].Name, Range: word.Range})
@@ -130,10 +134,10 @@ func (w *fileWalk) keyNames(r *Reading, word *jomini.Scalar, f wordFacts) {
 	}
 }
 
-// valueName adds what a value names by the first value rule that fits, in this order: history, file reference,
-// made, group, read, claim, value, event. A history key names its object before anything else; a loc key is
-// referred to only where the position's claim says so; vanilla types a position by its words, never its
-// numbers; a word where a number is expected names a script value.
+// valueName adds what a value names by the first value rule that fits, in this order: history, file
+// reference, made, group, read, claim, value, event. A history key names its object before anything
+// else; a loc key is referred to only where the position's claim says so; vanilla types a position
+// by its words, never its numbers; a word where a number is expected names a script value.
 func (w *fileWalk) valueName(r *Reading, word *jomini.Scalar, f wordFacts, command game.NameCommand) {
 	n := Naming{Name: word.Text, Range: word.Range}
 	fileRef := ""
@@ -171,8 +175,8 @@ func (w *fileWalk) valueName(r *Reading, word *jomini.Scalar, f wordFacts, comma
 	}
 }
 
-// parameterDefinitions defines each $NAME$ an entry of a folder with Parameters writes, at its first use in the
-// file.
+// parameterDefinitions defines each $NAME$ an entry of a folder with Parameters writes, at its
+// first use in the file.
 func (w *fileWalk) parameterDefinitions(r *Reading, word *jomini.Scalar, f wordFacts) {
 	if f.database == nil || !f.database.Row.Parameters {
 		return

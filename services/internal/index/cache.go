@@ -1,5 +1,5 @@
-// cache.go keeps an install's schema and index in one cache file, named so that any change to the engine, the
-// install or the dumps is another file.
+// cache.go keeps an install's schema and index in one cache file, named so that any change to the
+// engine, the install or the dumps is another file.
 
 package index
 
@@ -21,9 +21,9 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
-// devKey is a dev build's app part of a cache name: dev- and a hash of the engine's code, the files of
-// the packages game, jomini, loc, inventory, schema, index and wiki in the repo the build sits in
-// (tests and READMEs aside), so only an engine change rescans. Outside a repo it hashes the
+// devKey is a dev build's app part of a cache name: dev- and a hash of the engine's code, the files
+// of the packages game, jomini, loc, inventory, schema, index and wiki in the repo the build sits
+// in (tests and READMEs aside), so only an engine change rescans. Outside a repo it hashes the
 // executable's path, size and time.
 var devKey = sync.OnceValues(func() (string, error) {
 	executable, err := os.Executable()
@@ -79,8 +79,8 @@ func cachePath(req Request) (path, ofFolder string, err error) {
 	return fmt.Sprintf("%s%s-%s-%x.gob.gz", ofFolder, version, app, state.Sum(nil)[:6]), ofFolder, nil
 }
 
-// forgetCaches deletes the cache files whose path begins with prefix, except keep, and gives the version
-// in the name of the first (a version has no dash).
+// forgetCaches deletes the cache files whose path begins with prefix, except keep, and gives the
+// version in the name of the first (a version has no dash).
 func forgetCaches(prefix, keep string) (version string, err error) {
 	dir := filepath.Dir(prefix)
 	entries, err := os.ReadDir(dir)
@@ -104,8 +104,8 @@ func forgetCaches(prefix, keep string) (version string, err error) {
 
 // SaveInstall writes the install to its cache file whole, then deletes its install folder's older
 // cache files (Previous takes the first one's version) and every cache file no reader names
-// (neither install- nor wiki-), and the temporary files a run that ended mid-write left (appdata.Leftover); a write in
-// flight keeps its own.
+// (neither install- nor wiki-), and the temporary files a run that ended mid-write left
+// (appdata.Leftover); a write in flight keeps its own.
 func SaveInstall(req Request, install *Install) error {
 	path, ofFolder, err := cachePath(req)
 	if err != nil {

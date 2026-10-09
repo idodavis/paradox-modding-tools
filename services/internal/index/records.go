@@ -1,5 +1,5 @@
-// records.go turns one file into its records: script through the schema's walk, localization through its own
-// reader.
+// records.go turns one file into its records: script through the schema's walk, localization
+// through its own reader.
 
 package index
 
@@ -15,9 +15,10 @@ import (
 	"paradox-modding-tools/services/internal/schema"
 )
 
-// Read walks a file with the schema and collects its records: each entry a definition, each naming a definition
-// or a reference with its file, line and entry, and the scope each command, link or link-read word is written in.
-// visit (nil for none) sees each reading; returning false stops the walk.
+// Read walks a file with the schema and collects its records: each entry a definition, each naming
+// a definition or a reference with its file, line and entry, and the scope each command, link or
+// link-read word is written in. visit (nil for none) sees each reading; returning false stops the
+// walk.
 func Read(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(*schema.Reading) bool) *Records {
 	c := &collector{schema: s, file: file, visit: visit, records: &Records{scoped: map[[2]string]bool{}}}
 	if parsed != nil {
@@ -45,8 +46,8 @@ type collector struct {
 	stopped bool
 }
 
-// position returns the line and column an offset starts, 0-based; a table or sound list is read for its lines
-// the first time.
+// position returns the line and column an offset starts, 0-based; a table or sound list is read for
+// its lines the first time.
 func (c *collector) position(offset int) (line, col int32) {
 	if c.lines == nil {
 		text, _ := c.file.Text()
@@ -56,8 +57,8 @@ func (c *collector) position(offset int) (line, col int32) {
 	return int32(at.Line), int32(at.Character)
 }
 
-// define adds a definition where it is written. Entries come first, in the detector's order, so an entry's index
-// in Defs is the Reading.Entry a reference stores as From.
+// define adds a definition where it is written. Entries come first, in the detector's order, so an
+// entry's index in Defs is the Reading.Entry a reference stores as From.
 func (c *collector) define(def Def) {
 	def.Path = c.file.Path
 	def.Line, def.Col = c.position(def.Range.Start)
@@ -71,8 +72,8 @@ func (c *collector) refer(ref Ref, r *schema.Reading) {
 	c.records.Refs = append(c.records.Refs, ref)
 }
 
-// collect records what a reading names and the scope its command, link or link-read word is written in, then
-// hands the reading to visit; once visit returns false the walk reads nothing more.
+// collect records what a reading names and the scope its command, link or link-read word is written
+// in, then hands the reading to visit; once visit returns false the walk reads nothing more.
 func (c *collector) collect(r *schema.Reading) bool {
 	if c.stopped {
 		return false
@@ -98,18 +99,18 @@ func (c *collector) collect(r *schema.Reading) bool {
 	return !c.stopped
 }
 
-// scopePair is a written command, link or link-read word and the scope it is read in, as Index.Scoped keeps
-// them: the first part's name before any colon, lower-case (scope:x.liege is scope).
+// scopePair is a written command, link or link-read word and the scope it is read in, as
+// Index.Scoped keeps them: the first part's name before any colon, lower-case (scope:x.liege is
+// scope).
 func scopePair(written, scope string) [2]string {
 	first, _, _ := strings.Cut(written, ".")
 	name, _, _ := strings.Cut(first, ":")
 	return [2]string{strings.ToLower(name), scope}
 }
 
-// recordsOf returns one file's records by its format: script walked, a table or sound list walked without a
-// tree, localization parsed with no schema (nil before the schema stage); nil when the format holds
-// none or the language is not kept (languages none: every one).
-func recordsOf(gameID string, s *schema.Schema, file inventory.File, text string, languages []string) *Records {
+// recordsOf returns one file's records by its format: script walked, a table or sound list walked
+// without a tree, localization in every language; nil when the format holds none.
+func recordsOf(s *schema.Schema, file inventory.File, text string) *Records {
 	switch file.Format {
 	case inventory.Script:
 		parsed := jomini.Parse(text)
@@ -117,14 +118,14 @@ func recordsOf(gameID string, s *schema.Schema, file inventory.File, text string
 	case inventory.Table, inventory.List:
 		return Read(s, file, nil, nil)
 	case inventory.Loc:
-		return locRecords(gameID, file, text, languages)
+		return locRecords(s.Game, file, text, nil)
 	}
 	return nil
 }
 
-// locRecords reads a localization file's entries, nil when its language is not kept (languages none: every one).
-// A loc text is cloned so no record pins the file; its $key$ names a loc key, and its concepts a game concept
-// (conceptReferences): each a reference in no definition.
+// locRecords reads a localization file's entries, nil when its language is not kept (languages
+// none: every one). A loc text is cloned so no record pins the file; its $key$ names a loc key, and
+// its concepts a game concept (conceptReferences): each a reference in no definition.
 func locRecords(gameID string, file inventory.File, text string, languages []string) *Records {
 	parsed := loc.Parse(text)
 	language := strings.ToLower(cmp.Or(parsed.Language, loc.LanguageFromRel(file.Rel)))
@@ -159,8 +160,8 @@ func locRecords(gameID string, file inventory.File, text string, languages []str
 	return records
 }
 
-// conceptReferences refers to each game concept a loc entry's data calls name: [x|E] and Concept('x', …) name
-// one in the concepts database.
+// conceptReferences refers to each game concept a loc entry's data calls name: [x|E] and
+// Concept('x', …) name one in the concepts database.
 func conceptReferences(
 	text string, entry loc.Entry, concepts string, refer func(database, name string, span jomini.Range),
 ) {

@@ -68,115 +68,116 @@ type Index struct {
 
 // Add stores a file's records (the caller drops old ones first) and lists them by name; record
 // strings share one copy per index, so no record pins a file's text.
-func (idx *Index) Add(records *Records, path string) {
-	if idx.defs == nil {
-		idx.Rebuild()
+func (i *Index) Add(records *Records, path string) {
+	if i.defs == nil {
+		i.Rebuild()
 	}
 	share := func(text string) string {
-		if kept, found := idx.shared[text]; found {
+		if kept, found := i.shared[text]; found {
 			return kept
 		}
 		text = strings.Clone(text)
-		idx.shared[text] = text
+		i.shared[text] = text
 		return text
 	}
-	idx.Records[path] = records
+	i.Records[path] = records
 	for pair := range records.scoped {
-		idx.Scoped[[2]string{share(pair[0]), pair[1]}] = true
+		i.Scoped[[2]string{share(pair[0]), pair[1]}] = true
 	}
 	records.scoped = nil
-	for i := range records.Defs {
-		def := &records.Defs[i]
+	for n := range records.Defs {
+		def := &records.Defs[n]
 		def.Database, def.Name, def.Mode, def.Path = share(def.Database), share(def.Name), share(def.Mode), path
 		key := [2]string{def.Database, def.Name}
-		if list := idx.defs[key]; def.Name != "" && len(list) > 0 && list[0].Path != def.Path {
-			idx.Repeated[def.Database] = true
+		if list := i.defs[key]; def.Name != "" && len(list) > 0 && list[0].Path != def.Path {
+			i.Repeated[def.Database] = true
 		}
-		idx.defs[key] = append(idx.defs[key], def)
+		i.defs[key] = append(i.defs[key], def)
 	}
-	for i := range records.Refs {
-		ref := &records.Refs[i]
+	for n := range records.Refs {
+		ref := &records.Refs[n]
 		ref.Database, ref.Name, ref.Called, ref.Path = share(ref.Database), share(ref.Name), share(ref.Called), path
 		key := [2]string{ref.Database, ref.Name}
-		idx.refs[key] = append(idx.refs[key], ref)
+		i.refs[key] = append(i.refs[key], ref)
 	}
-	for i := range records.Loc {
-		entry := &records.Loc[i]
+	for n := range records.Loc {
+		entry := &records.Loc[n]
 		entry.Key, entry.Language, entry.Path = share(entry.Key), share(entry.Language), path
-		idx.locs[entry.Key] = append(idx.locs[entry.Key], entry)
+		i.locs[entry.Key] = append(i.locs[entry.Key], entry)
 	}
 }
 
 // Drop removes a file's records and their entries in the per-name lists.
-func (idx *Index) Drop(path string) {
-	records := idx.Records[path]
+func (i *Index) Drop(path string) {
+	records := i.Records[path]
 	if records == nil {
 		return
 	}
-	for i := range records.Defs {
-		def := &records.Defs[i]
+	for n := range records.Defs {
+		def := &records.Defs[n]
 		key := [2]string{def.Database, def.Name}
-		if list := slices.DeleteFunc(idx.defs[key], func(other *Def) bool { return other == def }); len(list) > 0 {
-			idx.defs[key] = list
+		if list := slices.DeleteFunc(i.defs[key], func(other *Def) bool { return other == def }); len(list) > 0 {
+			i.defs[key] = list
 		} else {
-			delete(idx.defs, key)
+			delete(i.defs, key)
 		}
 	}
-	for i := range records.Refs {
-		ref := &records.Refs[i]
+	for n := range records.Refs {
+		ref := &records.Refs[n]
 		key := [2]string{ref.Database, ref.Name}
-		if list := slices.DeleteFunc(idx.refs[key], func(other *Ref) bool { return other == ref }); len(list) > 0 {
-			idx.refs[key] = list
+		if list := slices.DeleteFunc(i.refs[key], func(other *Ref) bool { return other == ref }); len(list) > 0 {
+			i.refs[key] = list
 		} else {
-			delete(idx.refs, key)
+			delete(i.refs, key)
 		}
 	}
-	for i := range records.Loc {
-		entry := &records.Loc[i]
-		if list := slices.DeleteFunc(idx.locs[entry.Key], func(other *Loc) bool { return other == entry }); len(list) > 0 {
-			idx.locs[entry.Key] = list
+	for n := range records.Loc {
+		entry := &records.Loc[n]
+		if list := slices.DeleteFunc(i.locs[entry.Key], func(other *Loc) bool { return other == entry }); len(list) > 0 {
+			i.locs[entry.Key] = list
 		} else {
-			delete(idx.locs, entry.Key)
+			delete(i.locs, entry.Key)
 		}
 	}
-	delete(idx.Records, path)
+	delete(i.Records, path)
 }
 
-// Rebuild builds the lookup maps again from Files and Records, after a cache load; Add keeps them current.
-// A record of a path no longer in Files is dropped.
-func (idx *Index) Rebuild() {
-	cached := idx.Records
-	idx.Records = make(map[string]*Records, len(cached))
-	idx.defs, idx.refs, idx.locs, idx.shared = map[[2]string][]*Def{}, map[[2]string][]*Ref{}, map[string][]*Loc{}, map[string]string{}
-	idx.Repeated = map[string]bool{}
-	if idx.Scoped == nil {
-		idx.Scoped = map[[2]string]bool{}
+// Rebuild builds the lookup maps again from Files and Records, after a cache load; Add keeps them
+// current. A record of a path no longer in Files is dropped.
+func (i *Index) Rebuild() {
+	cached := i.Records
+	i.Records = make(map[string]*Records, len(cached))
+	i.defs, i.refs, i.locs, i.shared = map[[2]string][]*Def{}, map[[2]string][]*Ref{}, map[string][]*Loc{}, map[string]string{}
+	i.Repeated = map[string]bool{}
+	if i.Scoped == nil {
+		i.Scoped = map[[2]string]bool{}
 	}
-	idx.PlaceFiles()
-	for _, file := range idx.Files {
+	i.PlaceFiles()
+	for _, file := range i.Files {
 		if records := cached[file.Path]; records != nil {
-			idx.Add(records, file.Path)
+			i.Add(records, file.Path)
 		}
 	}
 }
 
-// PlaceFiles records where each file stands in Files. A copy given another load order calls it alone, so
-// the records it shares with the live index are never written.
-func (idx *Index) PlaceFiles() {
-	idx.order, idx.rels = make(map[string]int, len(idx.Files)), make(map[string]int, len(idx.Files))
-	for i, file := range idx.Files {
-		idx.order[appdata.PathKey(file.Path)] = i
-		idx.rels[strings.ToLower(file.Rel)] = i
+// PlaceFiles records where each file stands in Files. A copy given another load order calls it
+// alone, so the records it shares with the live index are never written.
+func (i *Index) PlaceFiles() {
+	i.order, i.rels = make(map[string]int, len(i.Files)), make(map[string]int, len(i.Files))
+	for pos, file := range i.Files {
+		i.order[appdata.PathKey(file.Path)] = pos
+		i.rels[strings.ToLower(file.Rel)] = pos
 	}
 }
 
-// At is the file listed at a path, by its appdata.PathKey (on Windows, whatever the case it is spelled in).
-func (idx *Index) At(path string) (inventory.File, bool) {
-	pos, listed := idx.order[appdata.PathKey(path)]
+// At is the file listed at a path, by its appdata.PathKey (on Windows, whatever the case it is
+// spelled in).
+func (i *Index) At(path string) (inventory.File, bool) {
+	pos, listed := i.order[appdata.PathKey(path)]
 	if !listed {
 		return inventory.File{}, false
 	}
-	return idx.Files[pos], true
+	return i.Files[pos], true
 }
 
 // FileAt is the file at a Rel across the indexes, whatever its case: the last index's that lists
@@ -190,29 +191,30 @@ func FileAt(indexes []*Index, rel string) (inventory.File, bool) {
 	return inventory.File{}, false
 }
 
-// Forget removes a deleted file, or every file under a deleted folder, from the index: their records
-// and their places in Files, so they no longer hide files at their Rels.
-func (idx *Index) Forget(path string) {
+// Forget removes a deleted file, or every file under a deleted folder, from the index: their
+// records and their places in Files, so they no longer hide files at their Rels.
+func (i *Index) Forget(path string) {
 	path = appdata.PathKey(path)
-	listed := len(idx.Files)
-	idx.Files = slices.DeleteFunc(idx.Files, func(file inventory.File) bool {
+	listed := len(i.Files)
+	i.Files = slices.DeleteFunc(i.Files, func(file inventory.File) bool {
 		at := appdata.PathKey(file.Path)
 		return at == path || strings.HasPrefix(at, path+string(filepath.Separator))
 	})
-	if len(idx.Files) != listed {
-		idx.Rebuild()
+	if len(i.Files) != listed {
+		i.Rebuild()
 	}
 }
 
-// WritesInScope reports whether a file of the index writes a command, link or link-read word in a scope: the
-// install's pairs are vanilla's evidence, and wrong-scope accuses only a pair vanilla never writes.
-func (idx *Index) WritesInScope(written, scope string) bool {
-	return idx.Scoped[scopePair(written, scope)]
+// WritesInScope reports whether a file of the index writes a command, link or link-read word in a
+// scope: the install's pairs are vanilla's evidence, and wrong-scope accuses only a pair vanilla
+// never writes.
+func (i *Index) WritesInScope(written, scope string) bool {
+	return i.Scoped[scopePair(written, scope)]
 }
 
 // LocKeys is every key a loc entry has, in no order.
-func (idx *Index) LocKeys() iter.Seq[string] {
-	return maps.Keys(idx.locs)
+func (i *Index) LocKeys() iter.Seq[string] {
+	return maps.Keys(i.locs)
 }
 
 // Loaded is the file listed at a path of the indexes and whether the game loads it: it is hidden by
@@ -235,8 +237,8 @@ func Loaded(indexes []*Index, path string) (inventory.File, bool) {
 	return inventory.File{}, false
 }
 
-// inLoadOrder returns one name's items across the indexes in the game's load order, by Rel, those in
-// files the game loads.
+// inLoadOrder returns one name's items across the indexes in the game's load order, by Rel, those
+// in files the game loads.
 func inLoadOrder[Item any](indexes []*Index, list func(idx *Index) []*Item, path func(item *Item) string) []Item {
 	type placed struct {
 		item *Item
@@ -401,21 +403,21 @@ func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (w
 }
 
 // Fires is whether a reference fires its target: an event or on_action outside a trigger.
-func (ref Ref) Fires(s *schema.Schema) bool {
-	database := s.Databases[ref.Database]
-	return !ref.InTrigger && database != nil && (database.Row.Events || database.Row.OnActions)
+func (r Ref) Fires(s *schema.Schema) bool {
+	database := s.Databases[r.Database]
+	return !r.InTrigger && database != nil && (database.Row.Events || database.Row.OnActions)
 }
 
 // Runs is whether a reference outside a trigger runs a scripted entry, so what it fires is fired
 // through it: a call, or a name of a database called in effects.
-func (ref Ref) Runs(s *schema.Schema) bool {
-	database := s.Databases[ref.Database]
-	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Blocks[game.BlockEffects].Calls))
+func (r Ref) Runs(s *schema.Schema) bool {
+	database := s.Databases[r.Database]
+	return !r.InTrigger && (r.Called != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Blocks[game.BlockEffects].Calls))
 }
 
 // Scripted is whether a definition is a scripted entry, one a reference may run (Runs): of a
 // database some block calls.
-func (def Def) Scripted(s *schema.Schema) bool {
-	database := s.Databases[def.Database]
+func (d Def) Scripted(s *schema.Schema) bool {
+	database := s.Databases[d.Database]
 	return database != nil && len(database.Row.CalledIn) > 0
 }

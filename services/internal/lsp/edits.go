@@ -14,8 +14,8 @@ import (
 
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/loc"
 	"paradox-modding-tools/services/internal/lang/source"
+	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/session"
 )
 

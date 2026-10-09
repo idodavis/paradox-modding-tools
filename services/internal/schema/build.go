@@ -44,7 +44,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		Game: input.Game, Version: input.Version, Sources: map[Source]SourceState{}, Databases: map[string]*Database{},
 	}
 	s.declareDatabases(input.Install, info) // 1: the registry's rows for the folders the install holds
-	s.readDumpsOrShipped(input)             // 2: the dumps parsed, or the shipped backup
+	s.dumpsOrShipped(input)                 // 2: the dumps parsed, or the shipped backup
 	if input.DumpsOnly {
 		return s, nil
 	}
@@ -52,8 +52,8 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.collectDocFields(examples)                            // 4: every key the docs write, for the entry detector
-	names, err := s.recordVanilla(ctx, input.Install, info) // 5: what vanilla writes, counted
+	s.collectDocFields(examples)                           // 4: every key the docs write, for the entry detector
+	names, err := s.countVanilla(ctx, input.Install, info) // 5: what vanilla writes, counted
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (s *Schema) declare(name string, row game.Folder) {
 		for step := range strings.SplitSeq(at, "/") {
 			position = position.EnsureChild(step)
 		}
-		SetFirst(&position.Value, Expected{Type: WordReference, Database: name}, SourceRegistry)
+		SetFirst(&position.Value, Expected{Kind: ExpectsReference, Database: name}, SourceRegistry)
 	}
 	s.Databases[name] = database
 }

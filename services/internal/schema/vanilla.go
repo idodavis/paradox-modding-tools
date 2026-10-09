@@ -15,11 +15,11 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// recordVanilla reads the install's files for the entries they define and what they write. Scripted entries
+// countVanilla reads the install's files for the entries they define and what they write. Scripted entries
 // come first, from the scripted folders and the GUI files alone, so the walk reads their names as calls
 // rather than as arguments. It returns the entry names vanilla defines, by database; a database made for a
 // new name is declared on the way.
-func (s *Schema) recordVanilla(ctx context.Context, install []inventory.File, info *game.GameInfo) (map[string]map[string]bool, error) {
+func (s *Schema) countVanilla(ctx context.Context, install []inventory.File, info *game.GameInfo) (map[string]map[string]bool, error) {
 	s.ScriptedEntries = map[string]ScriptedEntry{}
 	names := map[string]map[string]bool{}
 	parsedFirst := map[string]jomini.Result{}
@@ -56,7 +56,7 @@ func (s *Schema) recordVanilla(ctx context.Context, install []inventory.File, in
 		for _, entry := range entries {
 			s.noteEntry(entry, names)
 		}
-		s.recordEvidence(file, parsed, entries)
+		s.countFile(file, parsed, entries)
 	}
 	return names, inventory.Ordered(ctx, files, work, keep)
 }
@@ -68,11 +68,11 @@ func (s *Schema) noteEntry(entry Entry, names map[string]map[string]bool) {
 		extension, _, _ := strings.Cut(entry.Database, ".")
 		s.declare(entry.Database, game.Folder{Body: game.FileTypes["."+extension].Body})
 	}
-	if entry.Name != "" {
+	if entry.ID != "" {
 		if names[entry.Database] == nil {
 			names[entry.Database] = map[string]bool{}
 		}
-		names[entry.Database][strings.Clone(entry.Name)] = true
+		names[entry.Database][strings.Clone(entry.ID)] = true
 	}
 	if entry.Local {
 		s.registerScriptedEntries(entry)
@@ -96,7 +96,7 @@ func (s *Schema) registerScriptedEntries(entry Entry) {
 		words = append(slices.Clone(words), game.AnyCall)
 	}
 	for _, word := range words {
-		s.ScriptedEntries[word+":"+strings.Clone(entry.Name)] = called
+		s.ScriptedEntries[word+":"+strings.Clone(entry.ID)] = called
 	}
 }
 
@@ -109,86 +109,86 @@ func parseScript(file inventory.File) jomini.Result {
 	return jomini.Parse(text)
 }
 
-// recordEvidence walks one vanilla file with its entries and records at each position how often and in what
+// countFile walks one vanilla file with its entries and records at each position how often and in what
 // forms vanilla writes it. It records evidence only, never a claim.
-func (s *Schema) recordEvidence(file inventory.File, parsed *jomini.Result, entries []Entry) {
+func (s *Schema) countFile(file inventory.File, parsed *jomini.Result, entries []Entry) {
 	counted := map[*jomini.Block]map[*Position]bool{} // In counts a key once per block
 	s.WalkFile(file, parsed, entries, Visitor{
 		Create: true,
-		Visit:  func(r *Reading) bool { return recordReading(r, entries, counted) },
+		Visit:  func(placement *Placement) bool { return countPlacement(placement, entries, counted) },
 	})
 }
 
-// recordReading records one reading of the walk and returns whether to read its block.
-func recordReading(r *Reading, entries []Entry, counted map[*jomini.Block]map[*Position]bool) bool {
+// countPlacement records one reading of the walk and returns whether to read its block.
+func countPlacement(placement *Placement, entries []Entry, counted map[*jomini.Block]map[*Position]bool) bool {
 	// an entry's own statement records its value at the entry's position and counts nothing; a word listed as an
 	// entry is written at its holder's position, so it is recorded there
-	if r.Entry >= 0 && entries[r.Entry].Statement == r.Statement {
-		switch statement := r.Statement.(type) {
+	if placement.Entry >= 0 && entries[placement.Entry].Statement == placement.Statement {
+		switch statement := placement.Statement.(type) {
 		case *jomini.Assignment:
-			recordValue(statement.Value, r.Position)
+			countValue(statement.Value, placement.Position)
 		case *jomini.ValueStmt:
 			if block := jomini.ChildBlock(statement); block != nil {
-				recordValue(block, r.Position)
+				countValue(block, placement.Position)
 			} else {
-				recordValue(statement.Value, r.BlockContext.Position)
+				countValue(statement.Value, placement.BlockContext.Position)
 			}
 		}
 		return true
 	}
-	if r.Entry < 0 {
+	if placement.Entry < 0 {
 		return true // outside every entry there is no position: read on for the entries inside
 	}
-	if list, isList := r.Statement.(*jomini.ValueStmt); isList {
-		recordValue(list.Value, r.Position)
+	if list, isList := placement.Statement.(*jomini.ValueStmt); isList {
+		countValue(list.Value, placement.Position)
 		return true
 	}
-	if command := r.Command; command != nil && command.Kind&game.KindLink == 0 && r.BlockContext.Position != nil {
-		forms := &r.BlockContext.Position.Evidence.Forms
-		*forms |= FormCommand
+	if command := placement.Command; command != nil && command.Kind&game.KindLink == 0 && placement.BlockContext.Position != nil {
+		forms := &placement.BlockContext.Position.Vanilla.Shapes
+		*forms |= ShapeCommand
 		if command.Kind == game.KindTrigger {
-			*forms |= FormTrigger
+			*forms |= ShapeTrigger
 		}
 		if command.Kind == game.KindEffect {
-			*forms |= FormEffect
+			*forms |= ShapeEffect
 		}
 	}
-	if r.Position == nil {
+	if placement.Position == nil {
 		// a key whose block reads in place, a link or a date, records nothing itself
-		return r.Command != nil || r.Inner.Position != nil && r.Inner.Position == r.BlockContext.Position
+		return placement.Command != nil || placement.Inner.Position != nil && placement.Inner.Position == placement.BlockContext.Position
 	}
-	if !r.Leaf {
-		if counted[r.Holder] == nil {
-			counted[r.Holder] = map[*Position]bool{}
+	if !placement.Leaf {
+		if counted[placement.Holder] == nil {
+			counted[placement.Holder] = map[*Position]bool{}
 		}
-		if !counted[r.Holder][r.Position] {
-			counted[r.Holder][r.Position] = true
-			r.Position.Evidence.In++
+		if !counted[placement.Holder][placement.Position] {
+			counted[placement.Holder][placement.Position] = true
+			placement.Position.Vanilla.In++
 		}
 	}
-	recordValue(r.Statement.(*jomini.Assignment).Value, r.Position)
+	countValue(placement.Statement.(*jomini.Assignment).Value, placement.Position)
 	return true
 }
 
-// recordValue records a written value at a position: a word's form and, unless it is a number or a date,
+// countValue records a written value at a position: a word's form and, unless it is a number or a date,
 // the word itself, cloned so the schema never pins vanilla's text; a block is counted.
-func recordValue(value jomini.Value, at *Position) {
+func countValue(value jomini.Value, at *Position) {
 	if at == nil {
 		return
 	}
 	switch written := value.(type) {
 	case *jomini.Scalar:
-		form := formOf(written)
-		at.Evidence.Forms |= form
-		if form&(FormNumber|FormDate) == 0 {
-			if at.Evidence.Values == nil {
-				at.Evidence.Values = map[string]int{}
+		form := shapeOf(written)
+		at.Vanilla.Shapes |= form
+		if form&(ShapeNumber|ShapeDate) == 0 {
+			if at.Vanilla.Values == nil {
+				at.Vanilla.Values = map[string]int{}
 			}
-			at.Evidence.Values[strings.Clone(written.Text)]++
+			at.Vanilla.Values[strings.Clone(written.Text)]++
 		}
 	case *jomini.Block, *jomini.TaggedBlock:
-		at.Evidence.Blocks++
-		at.Evidence.Forms |= FormBlock
+		at.Vanilla.Blocks++
+		at.Vanilla.Shapes |= ShapeBlock
 	}
 }
 
@@ -230,7 +230,7 @@ func (s *Schema) inferValueTypes(names map[string]map[string]bool, locKeys map[s
 				if names[name] == nil {
 					names[name] = map[string]bool{}
 				}
-				for word := range child.Evidence.Values {
+				for word := range child.Vanilla.Values {
 					names[name][word] = true
 				}
 			}
@@ -293,7 +293,7 @@ func (t *typing) one(words []string, inGUI bool) (found string) {
 // all name, else a loc key when every word is one. The words after a link prefix are kept for the prefix.
 func (t *typing) visit(position *Position, inGUI bool) {
 	var words []string
-	for word := range position.Evidence.Values {
+	for word := range position.Vanilla.Values {
 		switch {
 		case len(jomini.Interpolations(word)) > 0:
 		case t.s.Link(strings.ToLower(word)) == nil:
@@ -304,9 +304,9 @@ func (t *typing) visit(position *Position, inGUI bool) {
 	}
 	if len(words) > 0 && position.Value.Source == SourceNone {
 		if database := t.one(words, inGUI); database != "" {
-			SetFirst(&position.Value, Expected{Type: WordReference, Database: database}, SourceVanilla)
+			SetFirst(&position.Value, Expected{Kind: ExpectsReference, Database: database}, SourceVanilla)
 		} else if !slices.ContainsFunc(words, func(word string) bool { return !t.locKeys[word] }) {
-			SetFirst(&position.Value, Expected{Type: WordLoc}, SourceVanilla)
+			SetFirst(&position.Value, Expected{Kind: ExpectsLoc}, SourceVanilla)
 		}
 	}
 	for _, child := range position.Children {

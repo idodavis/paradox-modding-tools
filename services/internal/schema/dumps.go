@@ -127,9 +127,9 @@ var dumpLabels = []struct {
 	},
 }
 
-// readDumpsOrShipped reads the dump files into the schema, or takes a shipped dump part whole. The dumps
+// dumpsOrShipped reads the dump files into the schema, or takes a shipped dump part whole. The dumps
 // are stale when older than the install's last update.
-func (s *Schema) readDumpsOrShipped(input Input) {
+func (s *Schema) dumpsOrShipped(input Input) {
 	if shipped := input.Shipped; shipped != nil {
 		s.Commands, s.Scopes, s.Saved = shipped.Commands, shipped.Scopes, shipped.Saved
 		s.Modifiers, s.OnActions = shipped.Modifiers, shipped.OnActions
@@ -137,7 +137,7 @@ func (s *Schema) readDumpsOrShipped(input Input) {
 		s.Sources[SourceDumps] = shipped.Sources[SourceDumps]
 		return
 	}
-	written := s.readDumps(input.Dumps)
+	written := s.parseDumps(input.Dumps)
 	s.Sources[SourceDumps] = SourceState{From: "none"}
 	if !written.IsZero() {
 		s.Sources[SourceDumps] = SourceState{From: "yours", Written: written, Stale: written.Before(input.Updated)}
@@ -171,9 +171,9 @@ type dumpEntry struct {
 	usage, blurb string
 }
 
-// readDumps reads the dump files into the schema and returns when they were written: the dumps are as fresh
+// parseDumps reads the dump files into the schema and returns when they were written: the dumps are as fresh
 // as their oldest file. Usages are applied last, once every command is declared.
-func (s *Schema) readDumps(files []inventory.File) (written time.Time) {
+func (s *Schema) parseDumps(files []inventory.File) (written time.Time) {
 	s.Commands, s.Scopes, s.Saved = map[string]*Command{}, map[string]Scope{}, map[string]bool{}
 	s.Modifiers, s.OnActions = map[string]Modifier{}, map[string]OnAction{}
 	s.DataTypes, s.CustomLoc = map[string]DataType{}, map[string]CustomLoc{}
@@ -199,17 +199,17 @@ func (s *Schema) readDumps(files []inventory.File) (written time.Time) {
 			for _, e := range splitEntries(kind.entry, kind.labels, content) {
 				switch kind.record {
 				case recordScope:
-					s.readScope(e)
+					s.parseScope(e)
 				case recordCommand:
-					s.readCommand(e, kinds[fileName], ranked, usages)
+					s.parseCommand(e, kinds[fileName], ranked, usages)
 				case "Modifier":
-					s.readModifier(e)
+					s.parseModifier(e)
 				case "OnAction":
-					s.readOnAction(e)
+					s.parseOnAction(e)
 				case "CustomLoc":
-					s.readCustomLoc(e)
+					s.parseCustomLoc(e)
 				case "DataType":
-					s.readDataType(e)
+					s.parseDataType(e)
 				}
 			}
 		}
@@ -237,7 +237,7 @@ func splitEntries(header *regexp.Regexp, labels map[string]string, content strin
 			}
 			return content[at[2*i]:at[2*i+1]]
 		}
-		entries = append(entries, readEntryBody(body, group(1), group(2), labels))
+		entries = append(entries, parseEntryBody(body, group(1), group(2), labels))
 	}
 	return entries
 }
@@ -255,9 +255,9 @@ func knownLabel(line string, labels map[string]string) (field, value string, kno
 	return field, label[2], known
 }
 
-// readEntryBody sorts an entry's lines into fields and description lines and cuts off its usage. The usage
+// parseEntryBody sorts an entry's lines into fields and description lines and cuts off its usage. The usage
 // starts at its label or, when no label opens one, at the first line shaped like script.
-func readEntryBody(body, name, group2 string, labels map[string]string) dumpEntry {
+func parseEntryBody(body, name, group2 string, labels map[string]string) dumpEntry {
 	fields, lines, usageAt := map[string]string{}, []string{}, -1
 	for line := range strings.SplitSeq(body, "\n") {
 		line = strings.TrimRight(line, " \t\r")
@@ -296,8 +296,8 @@ func readEntryBody(body, name, group2 string, labels map[string]string) dumpEntr
 	return dumpEntry{name: name, group2: group2, fields: fields, lines: lines, usage: usage, blurb: blurb}
 }
 
-// readScope reads a scope type's entry.
-func (s *Schema) readScope(e dumpEntry) {
+// parseScope reads a scope type's entry.
+func (s *Schema) parseScope(e dumpEntry) {
 	s.Scopes[e.name] = Scope{
 		Name:      e.name,
 		Variables: e.fields["Scope.Variables"] != "no",
@@ -306,9 +306,9 @@ func (s *Schema) readScope(e dumpEntry) {
 	}
 }
 
-// readCommand reads an effect, trigger or link entry into the command of its name. A name written twice is
+// parseCommand reads an effect, trigger or link entry into the command of its name. A name written twice is
 // one command that runs where either reading runs.
-func (s *Schema) readCommand(e dumpEntry, kind game.Kinds, ranked map[string]int, usages map[string][]string) {
+func (s *Schema) parseCommand(e dumpEntry, kind game.Kinds, ranked map[string]int, usages map[string][]string) {
 	if e.group2 != "" { // the block closing the link dump, "Event Targets Saved from Code"
 		for _, line := range e.lines {
 			if line != "" {
@@ -345,7 +345,7 @@ func (s *Schema) readCommand(e dumpEntry, kind game.Kinds, ranked map[string]int
 	command.Global = command.Global || e.fields["Command.Global"] == yes
 	command.Wild = command.Wild || e.fields["Command.Wild"] == yes
 
-	if claim := s.valueFromTraits(command, name, e.fields["Command.Args.Value"]); claim.Type != WordUnknown || claim.Words != nil {
+	if claim := s.valueFromTraits(command, name, e.fields["Command.Args.Value"]); claim.Kind != ExpectsUnknown || claim.Choices != nil {
 		SetFirst(&command.Args.Value, claim, SourceDumps)
 	}
 	if strings.TrimSpace(e.usage) != "" {
@@ -368,12 +368,12 @@ func scopeList(list string) (scopes []string) {
 func (s *Schema) valueFromTraits(command *Command, name, traits string) (claim Expected) {
 	switch {
 	case traits == "yes/no":
-		claim.Type = WordBool
+		claim.Kind = ExpectsBool
 	case strings.HasSuffix(traits, " valid date"):
-		claim.Type = WordDate
+		claim.Kind = ExpectsDate
 	case strings.HasPrefix(traits, "<"): // a comparison operator says no type
 	case strings.HasSuffix(traits, " scope"), strings.HasSuffix(traits, " target"):
-		claim.Type = WordScope
+		claim.Kind = ExpectsScope
 	case strings.HasPrefix(traits, "class C") && strings.HasSuffix(traits, "Database key"):
 		class := strings.TrimSuffix(strings.TrimPrefix(traits, "class C"), "Database key")
 		parsed := jomini.Parse(normalize(usageLines(name + " = <" + snakeCase(strings.TrimSpace(class)) + ">")))
@@ -384,10 +384,10 @@ func (s *Schema) valueFromTraits(command *Command, name, traits string) (claim E
 			list = after
 		}
 		for word := range strings.SplitSeq(list, ", ") {
-			claim.Words = append(claim.Words, strings.TrimPrefix(word, "and "))
+			claim.Choices = append(claim.Choices, strings.TrimPrefix(word, "and "))
 		}
-		slices.Sort(claim.Words)
-		claim.Words = slices.Compact(claim.Words)
+		slices.Sort(claim.Choices)
+		claim.Choices = slices.Compact(claim.Choices)
 	}
 	return claim
 }
@@ -404,8 +404,8 @@ func snakeCase(class string) string {
 	return out.String()
 }
 
-// readModifier reads a modifier's entry; a $TYPE$ part names a family matched as a glob.
-func (s *Schema) readModifier(e dumpEntry) {
+// parseModifier reads a modifier's entry; a $TYPE$ part names a family matched as a glob.
+func (s *Schema) parseModifier(e dumpEntry) {
 	if e.group2 != "" { // a --- section --- heading
 		return
 	}
@@ -419,13 +419,13 @@ func (s *Schema) readModifier(e dumpEntry) {
 	s.Modifiers[e.name] = Modifier{Pattern: pattern, Blurb: e.blurb}
 }
 
-// readOnAction reads an on_action's entry.
-func (s *Schema) readOnAction(e dumpEntry) {
+// parseOnAction reads an on_action's entry.
+func (s *Schema) parseOnAction(e dumpEntry) {
 	s.OnActions[e.name] = OnAction{Scope: cmp.Or(scopeList(e.fields["OnAction.Scope"])...), Blurb: e.blurb}
 }
 
-// readCustomLoc reads a custom localization's entry.
-func (s *Schema) readCustomLoc(e dumpEntry) {
+// parseCustomLoc reads a custom localization's entry.
+func (s *Schema) parseCustomLoc(e dumpEntry) {
 	var entries []string
 	for _, line := range e.lines {
 		if line != "" {
@@ -438,8 +438,8 @@ func (s *Schema) readCustomLoc(e dumpEntry) {
 	}
 }
 
-// readDataType reads a data type's entry, or one function of one; a function with no type is a global.
-func (s *Schema) readDataType(e dumpEntry) {
+// parseDataType reads a data type's entry, or one function of one; a function with no type is a global.
+func (s *Schema) parseDataType(e dumpEntry) {
 	owner, member := e.name, e.group2
 	if member == "" && e.fields["DataType.Functions"] != "Type" {
 		owner, member = game.GlobalType, owner

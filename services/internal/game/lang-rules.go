@@ -107,7 +107,7 @@ var Structurals = []Structural{
 }
 
 // ---- Names: what a written word names: the name commands, the saved-scope database and the list iterators; the
-// rules themselves are the schema's (schema/names.go).
+// rules themselves are the schema's (schema/mentions.go).
 
 // SavedScopes is the database of saved scope names (save_scope_as).
 const SavedScopes = "scope"

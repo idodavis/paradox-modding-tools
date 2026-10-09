@@ -131,7 +131,7 @@ func (judge *judge) script() {
 		judge.report(issue.Range, 1, string(issue.Code), issue.Message)
 	}
 	judge.written = map[jomini.Range]*schema.Position{}
-	records := index.Read(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at *schema.Reading) bool {
+	records := index.Read(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at *schema.Placement) bool {
 		switch statement := at.Statement.(type) {
 		case *jomini.Assignment:
 			judge.key(at, statement)
@@ -152,7 +152,7 @@ func (judge *judge) script() {
 // variable judges a non-global variable read (var:x, not local_var:x) written directly in a scope
 // the dumps say stores none; an undeclared scope, a read through a link, and a word vanilla writes
 // in that scope are quiet.
-func (judge *judge) variable(at *schema.Reading, word *jomini.Scalar) {
+func (judge *judge) variable(at *schema.Placement, word *jomini.Scalar) {
 	sess, s := judge.file.sess, judge.file.sess.Install.Schema
 	scope, declared := s.Scopes[at.Scope]
 	if !declared || scope.Variables {
@@ -169,7 +169,7 @@ func (judge *judge) variable(at *schema.Reading, word *jomini.Scalar) {
 
 // key judges a key: a variable read, a command written in a scope it does not run in where vanilla
 // never writes it there, and a key the position's sources call required that its block leaves out.
-func (judge *judge) key(at *schema.Reading, assign *jomini.Assignment) {
+func (judge *judge) key(at *schema.Placement, assign *jomini.Assignment) {
 	sess, s := judge.file.sess, judge.file.sess.Install.Schema
 	judge.variable(at, &assign.Key)
 	if command := at.Command; command != nil && at.Scope != "" && len(command.Scopes) > 0 &&
@@ -205,7 +205,7 @@ func (judge *judge) key(at *schema.Reading, assign *jomini.Assignment) {
 
 // value judges a word's variable read, and the word against its position's declared list or form;
 // a constant or parameter is not yet its word, and a word that reads a value stands for a number.
-func (judge *judge) value(at *schema.Reading, scalar *jomini.Scalar) {
+func (judge *judge) value(at *schema.Placement, scalar *jomini.Scalar) {
 	judge.variable(at, scalar)
 	if at.Position == nil {
 		return
@@ -217,21 +217,21 @@ func (judge *judge) value(at *schema.Reading, scalar *jomini.Scalar) {
 		return
 	}
 	code, wrong := "wrong-value-type", false
-	_, listed := slices.BinarySearch(claim.Words, text)
+	_, listed := slices.BinarySearch(claim.Choices, text)
 	switch {
 	case listed:
-	case claim.Type == schema.WordNumber:
+	case claim.Kind == schema.ExpectsNumber:
 		// a script value, a declared command (earnings) or a link (var:x, root.gold) reads a value
 		if last := text[strings.LastIndex(text, ".")+1:]; scalar.Quoted || jomini.Literal(text) != jomini.LitNumber {
 			_, valued := index.Resolve(sess.Install.Schema, sess.Indexes(), index.Ref{Called: game.Blocks[game.BlockValue].Calls, Name: text})
 			_, command := sess.Install.Schema.Commands[last]
 			wrong = !valued && !command && !strings.Contains(last, ":")
 		}
-	case claim.Type == schema.WordBool:
+	case claim.Kind == schema.ExpectsBool:
 		wrong = scalar.Quoted || !slices.Contains(game.Bools, text)
-	case claim.Type == schema.WordDate:
+	case claim.Kind == schema.ExpectsDate:
 		wrong = scalar.Quoted || jomini.Literal(text) != jomini.LitDate
-	case len(claim.Words) > 0:
+	case len(claim.Choices) > 0:
 		code, wrong = "wrong-declared-value", true
 	}
 	if wrong && sess.Install.Schema.MayAccuse(schema.CheckValue, at.Position, nil) {
@@ -263,9 +263,9 @@ func (judge *judge) references(refs []index.Ref) {
 			continue
 		case !s.MayAccuse(schema.CheckValue, position, nil):
 			continue
-		case position.Value.Value.Type == schema.WordFile && ref.Database == schema.File:
+		case position.Value.Value.Kind == schema.ExpectsFile && ref.Database == schema.File:
 			code, message = "missing-file", ref.Name+" exists nowhere in the install or the mods"
-		case position.Value.Value.Type == schema.WordReference && position.Value.Value.Database == ref.Database:
+		case position.Value.Value.Kind == schema.ExpectsReference && position.Value.Value.Database == ref.Database:
 			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.Name)
 		default:
 			continue
@@ -283,7 +283,7 @@ func (judge *judge) references(refs []index.Ref) {
 func (judge *judge) contradicted(position *schema.Position, ref index.Ref) bool {
 	sess := judge.file.sess
 	row := sess.Install.Schema.Databases[ref.Database]
-	for word := range position.Evidence.Values {
+	for word := range position.Vanilla.Values {
 		if row != nil && row.Row.Events && !jomini.IsEventID(word) {
 			continue
 		}

@@ -35,28 +35,28 @@ type Claim[T any] struct {
 	Source Source
 }
 
-// WordType is the kind of word a position holds; WordBlock is a doc's block, whose kind none names.
-type WordType uint8
+// ExpectedKind is the kind of word a position holds; ExpectsBlock is a doc's block, whose kind none names.
+type ExpectedKind uint8
 
 // The kinds of word a position holds.
 const (
-	WordUnknown WordType = iota
-	WordNumber
-	WordBool
-	WordDate
-	WordText
-	WordReference
-	WordLoc
-	WordFile
-	WordScope
-	WordBlock
+	ExpectsUnknown ExpectedKind = iota
+	ExpectsNumber
+	ExpectsBool
+	ExpectsDate
+	ExpectsString
+	ExpectsReference
+	ExpectsLoc
+	ExpectsFile
+	ExpectsScope
+	ExpectsBlock
 )
 
 // Expected is what a source says a position holds.
 type Expected struct {
-	Type     WordType
-	Database string   // WordReference: the database the word names
-	Words    []string // a declared word list, sorted; empty when none
+	Kind     ExpectedKind
+	Database string   // ExpectsReference: the database the word names
+	Choices  []string // a declared word list, sorted; empty when none
 }
 
 // Level is how strongly a position is required inside its parent.
@@ -76,44 +76,44 @@ type Requirement struct {
 	When  string
 }
 
-// Forms is the set of forms vanilla writes at a position, as bits.
-type Forms uint16
+// Shapes is the set of forms vanilla writes at a position, as bits.
+type Shapes uint16
 
 // The forms a written value or block takes.
 const (
-	FormNumber Forms = 1 << iota
-	FormBool
-	FormDate
-	FormWord
-	FormText
-	FormBlock
-	FormCommand // a block that holds a trigger or an effect
-	FormTrigger // a trigger written in the block
-	FormEffect  // an effect written in the block
+	ShapeNumber Shapes = 1 << iota
+	ShapeBool
+	ShapeDate
+	ShapeIdent
+	ShapeString
+	ShapeBlock
+	ShapeCommand // a block that holds a trigger or an effect
+	ShapeTrigger // a trigger written in the block
+	ShapeEffect  // an effect written in the block
 )
 
-// formOf returns the form a scalar is written in.
-func formOf(written *jomini.Scalar) Forms {
+// shapeOf returns the form a scalar is written in.
+func shapeOf(written *jomini.Scalar) Shapes {
 	if written.Quoted {
-		return FormText
+		return ShapeString
 	}
 	switch jomini.Literal(written.Text) {
 	case jomini.LitNumber:
-		return FormNumber
+		return ShapeNumber
 	case jomini.LitDate:
-		return FormDate
+		return ShapeDate
 	}
 	if slices.Contains(game.Bools, written.Text) {
-		return FormBool
+		return ShapeBool
 	}
-	return FormWord
+	return ShapeIdent
 }
 
-// Evidence is what vanilla writes at a position; it is never a claim.
-type Evidence struct {
+// Vanilla is what vanilla writes at a position; it is never a claim.
+type Vanilla struct {
 	In     int            // how many of the parent's written blocks hold this key
 	Blocks int            // how many times this position was written as a block
-	Forms  Forms          // the forms written here
+	Shapes Shapes         // the forms written here
 	Values map[string]int // words written, with counts
 }
 
@@ -128,7 +128,7 @@ type Position struct {
 	Default    Claim[string]
 	Blurb      Claim[string]
 	DeclaredBy Source // the first declared source that writes the position: the dumps anywhere, the docs and wiki only where vanilla writes it too
-	Evidence   Evidence
+	Vanilla    Vanilla
 }
 
 // Command is an effect, trigger or link the dumps declare.
@@ -305,8 +305,8 @@ func (s *Schema) MayAccuse(check Check, position, parent *Position) bool {
 	if !found || state.Stale {
 		return false
 	}
-	listed := check == CheckValue && len(position.Value.Value.Words) > 0
-	if (from == SourceDocs || from == SourceWiki || listed) && position.Evidence.In == 0 {
+	listed := check == CheckValue && len(position.Value.Value.Choices) > 0
+	if (from == SourceDocs || from == SourceWiki || listed) && position.Vanilla.In == 0 {
 		return false
 	}
 	switch check {
@@ -314,7 +314,7 @@ func (s *Schema) MayAccuse(check Check, position, parent *Position) bool {
 		return valueAgrees(position)
 	case CheckRequired:
 		return parent != nil && position.Required.Value.Level == LevelAlways &&
-			position.Evidence.In >= parent.Evidence.Blocks
+			position.Vanilla.In >= parent.Vanilla.Blocks
 	}
 	return true
 }
@@ -323,31 +323,31 @@ func (s *Schema) MayAccuse(check Check, position, parent *Position) bool {
 // writes is one the type allows, and every word it writes is in the declared list.
 func valueAgrees(position *Position) bool {
 	expected := position.Value.Value
-	var allowed Forms
-	switch expected.Type {
-	case WordNumber:
-		allowed = FormNumber
-	case WordBool:
-		allowed = FormBool
-	case WordDate:
-		allowed = FormDate
-	case WordText, WordReference, WordLoc, WordFile, WordScope:
-		allowed = FormWord | FormText
+	var allowed Shapes
+	switch expected.Kind {
+	case ExpectsNumber:
+		allowed = ShapeNumber
+	case ExpectsBool:
+		allowed = ShapeBool
+	case ExpectsDate:
+		allowed = ShapeDate
+	case ExpectsString, ExpectsReference, ExpectsLoc, ExpectsFile, ExpectsScope:
+		allowed = ShapeIdent | ShapeString
 	default:
-		if len(expected.Words) == 0 {
+		if len(expected.Choices) == 0 {
 			return false
 		}
-		allowed = FormWord | FormText
+		allowed = ShapeIdent | ShapeString
 	}
 	// the command forms mark the block, not a value
-	if position.Evidence.Forms&^(allowed|FormCommand|FormTrigger|FormEffect) != 0 {
+	if position.Vanilla.Shapes&^(allowed|ShapeCommand|ShapeTrigger|ShapeEffect) != 0 {
 		return false
 	}
-	if len(expected.Words) == 0 {
+	if len(expected.Choices) == 0 {
 		return true
 	}
-	for word := range position.Evidence.Values {
-		if _, listed := slices.BinarySearch(expected.Words, word); !listed {
+	for word := range position.Vanilla.Values {
+		if _, listed := slices.BinarySearch(expected.Choices, word); !listed {
 			return false
 		}
 	}

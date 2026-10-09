@@ -192,34 +192,34 @@ var phraseRules = []struct {
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:(?:scripted )?(?:int|integer|int32|int31|num|number|float|double|` +
 		`fixed[ _]point)|scripted? value|script_value|0\.0-1\.0)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Type: WordNumber}, from)
+			SetFirst(&found.Value, Expected{Kind: ExpectsNumber}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:bool(?:ean)?|yes/no)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Type: WordBool}, from)
+			SetFirst(&found.Value, Expected{Kind: ExpectsBool}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:date)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Type: WordDate}, from)
+			SetFirst(&found.Value, Expected{Kind: ExpectsDate}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:string|name|text)(?:\s*\)|"?$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Type: WordText}, from)
+			SetFirst(&found.Value, Expected{Kind: ExpectsString}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:scope)(?:\s*\)|"?$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Type: WordScope}, from)
+			SetFirst(&found.Value, Expected{Kind: ExpectsScope}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:loc key|localization[ _]key)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Type: WordLoc}, from)
+			SetFirst(&found.Value, Expected{Kind: ExpectsLoc}, from)
 		}},
 	// event ID names the database whose registry row is Events; on action (name) the OnActions one
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:(event[ _]id)|on[ _]action(?: name)?)(?:[^\w/]|$)`), false,
 		func(s *Schema, found *Position, match []string, from Source) {
 			for name, database := range s.Databases {
 				if match[1] != "" && database.Row.Events || match[1] == "" && database.Row.OnActions {
-					SetFirst(&found.Value, Expected{Type: WordReference, Database: name}, from)
+					SetFirst(&found.Value, Expected{Kind: ExpectsReference, Database: name}, from)
 				}
 			}
 		}},
@@ -233,12 +233,12 @@ var phraseRules = []struct {
 		}},
 	// "path/to/file": one quoted word with a slash
 	{regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), false, func(_ *Schema, found *Position, _ []string, from Source) {
-		SetFirst(&found.Value, Expected{Type: WordFile}, from)
+		SetFirst(&found.Value, Expected{Kind: ExpectsFile}, from)
 	}},
 	// - item: blurb and item - blurb: one word per line
 	{regexp.MustCompile(`^(?:[-*]\s+([\w.]+):\s+[^\s<]|(?:[-*]\s+)?([\w.]+) - \S)`), true,
 		func(_ *Schema, found *Position, match []string, from Source) {
-			found.Value.Value.Words = append(found.Value.Value.Words, match[1]+match[2])
+			found.Value.Value.Choices = append(found.Value.Value.Choices, match[1]+match[2])
 			found.Value.Source = from
 		}},
 }
@@ -490,7 +490,7 @@ func (d doc) catalog(found *Position, text string) string {
 	if rest == text && choices.MatchString(text) {
 		for word := range strings.SplitSeq(text, "/") {
 			if d.catalog(found, word) == word {
-				found.Value.Value.Words, found.Value.Source = append(found.Value.Value.Words, word), d.from
+				found.Value.Value.Choices, found.Value.Source = append(found.Value.Value.Choices, word), d.from
 			}
 		}
 		return ""
@@ -525,10 +525,10 @@ func (d doc) claims(statement jomini.Statement) (found Position) {
 
 	// a doc's block whose kind nothing names states only that the key takes a block
 	if block != nil && found.Block.Source == SourceNone && !d.usage {
-		SetFirst(&found.Value, Expected{Type: WordBlock}, d.from)
+		SetFirst(&found.Value, Expected{Kind: ExpectsBlock}, d.from)
 	}
-	slices.Sort(found.Value.Value.Words)
-	found.Value.Value.Words = slices.Compact(found.Value.Value.Words)
+	slices.Sort(found.Value.Value.Choices)
+	found.Value.Value.Choices = slices.Compact(found.Value.Value.Choices)
 	if len(blurb) > 0 {
 		SetFirst(&found.Blurb, strings.Join(blurb, " "), d.from)
 	}
@@ -545,14 +545,14 @@ func (d doc) scalarClaims(found *Position, statement jomini.Statement, scalar *j
 	switch {
 	case placeholder && d.catalog(found, word) == word:
 		if named := d.schema.DatabaseNamed(word); named != "" {
-			SetFirst(&found.Value, Expected{Type: WordReference, Database: named}, d.from)
+			SetFirst(&found.Value, Expected{Kind: ExpectsReference, Database: named}, d.from)
 		}
 	case !placeholder && d.prose(found, written) && scalar.Quoted && strings.ContainsAny(scalar.Text, " \t"):
 		blurb = append(blurb, scalar.Text)
 	case !placeholder && !d.usage:
-		literals := map[Forms]WordType{FormNumber: WordNumber, FormBool: WordBool, FormDate: WordDate}
-		if typed, literal := literals[formOf(scalar)]; literal {
-			SetFirst(&found.Value, Expected{Type: typed}, d.from)
+		literals := map[Shapes]ExpectedKind{ShapeNumber: ExpectsNumber, ShapeBool: ExpectsBool, ShapeDate: ExpectsDate}
+		if typed, literal := literals[shapeOf(scalar)]; literal {
+			SetFirst(&found.Value, Expected{Kind: typed}, d.from)
 		}
 	}
 	if _, isAssign := statement.(*jomini.Assignment); isAssign && d.usage && found.Block.Source != SourceNone {
@@ -569,9 +569,9 @@ func (d doc) placeholderClaims(found *Position, block *jomini.Block) {
 	}
 	for _, inner := range block.Statements {
 		_, isList := inner.(*jomini.ValueStmt)
-		word, isWord := jomini.ValueOf(inner).(*jomini.Scalar)
-		if isList && isWord && strings.HasPrefix(word.Text, "<") {
-			last := strings.TrimSuffix(word.Text[strings.LastIndexAny(word.Text, "<_ ")+1:], ">")
+		scalar, isScalar := jomini.ValueOf(inner).(*jomini.Scalar)
+		if isList && isScalar && strings.HasPrefix(scalar.Text, "<") {
+			last := strings.TrimSuffix(scalar.Text[strings.LastIndexAny(scalar.Text, "<_ ")+1:], ">")
 			if kind, named := game.Placeholders[strings.ToLower(last)]; named {
 				SetFirst(&found.Block, kind, d.from)
 			}
@@ -591,8 +591,8 @@ func (d doc) state(position *Position, statement jomini.Statement) {
 	SetFirst(&position.Blurb, found.Blurb.Value, found.Blurb.Source)
 }
 
-// docReader holds what reading a doc into a database's tree needs.
-type docReader struct {
+// docWalk holds what reading a doc into a database's tree needs.
+type docWalk struct {
 	doc     doc
 	seen    map[*Position]map[string]bool // under a position: every key name below it, with whether vanilla writes it
 	visitor Visitor
@@ -605,7 +605,7 @@ type docReader struct {
 // a position.
 func (s *Schema) applyDocClaims(parsed *jomini.Result, database *Database, from Source) {
 	attached, _ := parsed.Attach()
-	reader := &docReader{doc: doc{s, parsed, attached, from, false}, seen: map[*Position]map[string]bool{}}
+	reader := &docWalk{doc: doc{s, parsed, attached, from, false}, seen: map[*Position]map[string]bool{}}
 	reader.visitor = Visitor{Alternatives: alternatives, Visit: reader.visit}
 	s.WalkBlock(reader.visitor, nil, parsed.Root.Statements, s.EntryContext(database))
 }
@@ -613,26 +613,26 @@ func (s *Schema) applyDocClaims(parsed *jomini.Result, database *Database, from 
 // gather adds to names every key name at or below a position, with whether vanilla writes it.
 func gather(names map[string]bool, p *Position) {
 	for name, child := range p.Children {
-		names[name] = names[name] || child.Evidence.In > 0
+		names[name] = names[name] || child.Vanilla.In > 0
 		gather(names, child)
 	}
 }
 
 // visit states a reading's claims and returns whether to read its block.
-func (r *docReader) visit(reading *Reading) bool {
+func (r *docWalk) visit(placement *Placement) bool {
 	s, d := r.doc.schema, r.doc
-	if under := reading.BlockContext.Position; under != nil && r.seen[under] == nil {
+	if under := placement.BlockContext.Position; under != nil && r.seen[under] == nil {
 		r.seen[under] = map[string]bool{}
 		gather(r.seen[under], under)
 	}
-	_, isAssign := reading.Statement.(*jomini.Assignment)
+	_, isAssign := placement.Statement.(*jomini.Assignment)
 	switch {
-	case d.failed(reading.Statement):
+	case d.failed(placement.Statement):
 		return false
-	case isAssign && reading.Command == nil && !r.seen[reading.BlockContext.Position][positionName(reading.Name)]:
-		return r.standIn(s, reading)
-	case reading.Position != nil && reading.Command == nil && reading.Position.Evidence.In > 0:
-		d.state(reading.Position, reading.Statement)
+	case isAssign && placement.Command == nil && !r.seen[placement.BlockContext.Position][positionName(placement.Name)]:
+		return r.standIn(s, placement)
+	case placement.Position != nil && placement.Command == nil && placement.Position.Vanilla.In > 0:
+		d.state(placement.Position, placement.Statement)
 	}
 	return true
 }
@@ -641,12 +641,12 @@ func (r *docReader) visit(reading *Reading) bool {
 // as a block is a field it never writes, no entry. The key's block is read in its place where vanilla writes
 // its keys there, else at each position one level below that writes them (my_phase_key = { }); else it reads
 // nothing.
-func (r *docReader) standIn(s *Schema, reading *Reading) bool {
-	block, context := jomini.ChildBlock(reading.Statement), reading.BlockContext
-	reading.Inner = context
-	if context.Position != nil && reading.Holder == nil &&
-		(block != nil || context.Position.Evidence.Forms != FormBlock) {
-		r.doc.state(context.Position, reading.Statement)
+func (r *docWalk) standIn(s *Schema, placement *Placement) bool {
+	block, context := jomini.ChildBlock(placement.Statement), placement.BlockContext
+	placement.Inner = context
+	if context.Position != nil && placement.Holder == nil &&
+		(block != nil || context.Position.Vanilla.Shapes != ShapeBlock) {
+		r.doc.state(context.Position, placement.Statement)
 	}
 	holds := func(at *Position) bool {
 		return block != nil && slices.ContainsFunc(block.Statements, func(inner jomini.Statement) bool {
@@ -683,15 +683,15 @@ func (s *Schema) applyUsage(parsed *jomini.Result, command *Command, written str
 			return true
 		})
 	}
-	visitor := Visitor{Create: true, Alternatives: alternatives, Visit: func(r *Reading) bool {
+	visitor := Visitor{Create: true, Alternatives: alternatives, Visit: func(placement *Placement) bool {
 		switch {
-		case d.failed(r.Statement):
+		case d.failed(placement.Statement):
 			return false
-		case r.Position == command.Args:
-			r.Inner.Kind = game.BlockFields
+		case placement.Position == command.Args:
+			placement.Inner.Kind = game.BlockFields
 		}
-		if r.Position != nil && r.Command == nil {
-			d.state(r.Position, r.Statement)
+		if placement.Position != nil && placement.Command == nil {
+			d.state(placement.Position, placement.Statement)
 		}
 		return true
 	}}

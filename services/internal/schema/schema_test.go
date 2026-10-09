@@ -231,7 +231,7 @@ func dumpKey(out *strings.Builder, indent, path string, key *Position, depth int
 		indent, cmpPath(path),
 		key.Value.Value, key.Value.Source, key.Block.Value, key.Block.Source, key.Scope.Value, key.Scope.Source,
 		key.Required.Value, key.Required.Source, key.Default.Value, key.Default.Source, short(key.Blurb.Value), key.Blurb.Source,
-		key.DeclaredBy, key.Evidence.In, key.Evidence.Blocks, key.Evidence.Forms, key.Evidence.Values)
+		key.DeclaredBy, key.Vanilla.In, key.Vanilla.Blocks, key.Vanilla.Shapes, key.Vanilla.Values)
 	for _, name := range sortedKeys(key.Children) {
 		dumpKey(out, indent, path+"/"+name, key.Children[name], depth+1)
 	}
@@ -268,14 +268,14 @@ func sum(value any) string {
 	return fmt.Sprintf("%d:%08x", len(text), crc32.ChecksumIEEE([]byte(text)))
 }
 
-// readingOf walks a fixture file with its entries and returns the reading of the first statement whose key is
+// placementOf walks a fixture file with its entries and returns the reading of the first statement whose key is
 // name under the given path of keys (an entry's name first); a step written key=value matches the value too.
-func readingOf(t *testing.T, s *Schema, rel string, path ...string) Reading {
+func placementOf(t *testing.T, s *Schema, rel string, path ...string) Placement {
 	t.Helper()
 	file, parsed := fixtureFile(t, s.Game, rel)
-	readings := map[jomini.Statement]Reading{}
-	s.WalkFile(file, parsed, s.FindEntries(file, parsed), Visitor{Visit: func(r *Reading) bool {
-		readings[r.Statement] = *r
+	readings := map[jomini.Statement]Placement{}
+	s.WalkFile(file, parsed, s.FindEntries(file, parsed), Visitor{Visit: func(placement *Placement) bool {
+		readings[placement.Statement] = *placement
 		return true
 	}})
 	return readings[statementAt(t, parsed.Root.Statements, path)]
@@ -302,14 +302,14 @@ func statementAt(t *testing.T, statements []jomini.Statement, path []string) jom
 	return nil
 }
 
-// snippetReading walks a snippet whose top statements are entries of a database and returns the reading of
+// snippetPlacement walks a snippet whose top statements are entries of a database and returns the reading of
 // its first statement whose key is name.
-func snippetReading(s *Schema, database, snippet, name string, create bool) Reading {
+func snippetPlacement(s *Schema, database, snippet, name string, create bool) Placement {
 	parsed := jomini.Parse(snippet)
-	var found Reading
-	visitor := Visitor{Create: create, Visit: func(r *Reading) bool {
-		if r.Name == name && found.Statement == nil {
-			found = *r
+	var found Placement
+	visitor := Visitor{Create: create, Visit: func(placement *Placement) bool {
+		if placement.Name == name && found.Statement == nil {
+			found = *placement
 		}
 		return true
 	}}
@@ -325,51 +325,51 @@ func TestKeyMeaning(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	events, triggers, values := eventsFile, "common/scripted_triggers/v_triggers.txt", "common/script_values/v_values.txt"
 	cases := []struct {
-		name     string
-		reading  Reading
-		rule     game.KeyRule
-		position *Position
-		command  *Command
-		calls    string
+		name      string
+		placement Placement
+		rule      game.KeyRule
+		position  *Position
+		command   *Command
+		calls     string
 	}{
-		{"a fields block reads every key as a position", readingOf(t, s, events, v1, "type"),
+		{"a fields block reads every key as a position", placementOf(t, s, events, v1, "type"),
 			game.KeyRulePosition, s.Databases["events"].Entry.Child("type"), nil, ""},
-		{"a declared effect", readingOf(t, s, events, v1, immediate, "add_gold"),
+		{"a declared effect", placementOf(t, s, events, v1, immediate, "add_gold"),
 			game.KeyRuleCommand, s.Commands["add_gold"].Args, s.Commands["add_gold"], ""},
-		{"a scripted effect vanilla defines", readingOf(t, s, events, v1, immediate, vEffect),
+		{"a scripted effect vanilla defines", placementOf(t, s, events, v1, immediate, vEffect),
 			game.KeyRuleKnownCall, s.ScriptedEntries["effect:v_effect"].Parameters, nil, "effect"},
-		{"a scripted trigger declared inline", readingOf(t, s, triggers, "v_rich_trigger", "OR", "trigger_if", "v_inline_trigger"),
+		{"a scripted trigger declared inline", placementOf(t, s, triggers, "v_rich_trigger", "OR", "trigger_if", "v_inline_trigger"),
 			game.KeyRuleKnownCall, s.ScriptedEntries["trigger:v_inline_trigger"].Parameters, nil, trigger},
-		{"a link", readingOf(t, s, events, v1, immediate, "capital_county"),
+		{"a link", placementOf(t, s, events, v1, immediate, "capital_county"),
 			game.KeyRuleLink, nil, s.Commands["capital_county"], ""},
-		{"an argument the dumps declare", readingOf(t, s, events, v1, immediate, "send_interface_toast", "title"),
+		{"an argument the dumps declare", placementOf(t, s, events, v1, immediate, "send_interface_toast", "title"),
 			game.KeyRuleDeclared, s.Commands["send_interface_toast"].Args.Child("title"), nil, ""},
-		{"an argument vanilla writes", readingOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type"),
+		{"an argument vanilla writes", placementOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type"),
 			game.KeyRuleObserved, s.Commands["send_interface_toast"].Args.Child("message_filter_type"), nil, ""},
-		{"a value operator", readingOf(t, s, values, "big_value", "add"),
+		{"a value operator", placementOf(t, s, values, "big_value", "add"),
 			game.KeyRuleOperator, s.Databases["script_values"].Entry.Child("add"), nil, ""},
-		{"a call where nothing is known", snippetReading(s, "scripted_triggers", "x = { nothing_declares_me = yes }", "nothing_declares_me", false),
+		{"a call where nothing is known", snippetPlacement(s, "scripted_triggers", "x = { nothing_declares_me = yes }", "nothing_declares_me", false),
 			game.KeyRuleCall, nil, nil, trigger},
 	}
 	for _, c := range cases {
-		r := c.reading
-		if r.Rule != c.rule || r.Position != c.position || r.Command != c.command || r.Calls != c.calls {
+		placement := c.placement
+		if placement.Rule != c.rule || placement.Position != c.position || placement.Command != c.command || placement.Calls != c.calls {
 			t.Errorf("%s: rule %d position %p command %p calls %q; want %d %p %p %q",
-				c.name, r.Rule, r.Position, r.Command, r.Calls, c.rule, c.position, c.command, c.calls)
+				c.name, placement.Rule, placement.Position, placement.Command, placement.Calls, c.rule, c.position, c.command, c.calls)
 		}
 	}
 
-	declared := readingOf(t, s, events, v1, immediate, "send_interface_toast", "title").Position
+	declared := placementOf(t, s, events, v1, immediate, "send_interface_toast", "title").Position
 	if declared.DeclaredBy != SourceDumps {
 		t.Errorf("title is declared by %d, want the dumps", declared.DeclaredBy)
 	}
-	observed := readingOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type").Position
-	if observed.DeclaredBy != SourceNone || observed.Evidence.In != 1 {
-		t.Errorf("message_filter_type is declared by %d, written in %d blocks; want none, 1", observed.DeclaredBy, observed.Evidence.In)
+	observed := placementOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type").Position
+	if observed.DeclaredBy != SourceNone || observed.Vanilla.In != 1 {
+		t.Errorf("message_filter_type is declared by %d, written in %d blocks; want none, 1", observed.DeclaredBy, observed.Vanilla.In)
 	}
 
 	// a new position with no claim and no evidence holds an unknown block, whose parent writes no command
-	fresh := snippetReading(fixtureSchema(t, ck3), "events", "x = { fresh = { inner = 1 } }", "inner", true)
+	fresh := snippetPlacement(fixtureSchema(t, ck3), "events", "x = { fresh = { inner = 1 } }", "inner", true)
 	if fresh.Rule != game.KeyRulePositionOrCall || fresh.Calls != "" {
 		t.Errorf("inner: rule %d calls %q; want %d \"\"", fresh.Rule, fresh.Calls, game.KeyRulePositionOrCall)
 	}
@@ -420,18 +420,18 @@ func TestBlockScope(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	events := eventsFile
 	cases := []struct {
-		name    string
-		reading Reading
-		want    string
+		name      string
+		placement Placement
+		want      string
 	}{
-		{"an iterator leads to its target", readingOf(t, s, events, v1, immediate, "every_vassal"), "character"},
-		{"a link leads where its last link does", readingOf(t, s, events, v1, immediate, "capital_county"), "landed_title"},
-		{"the events entry declares no scope", readingOf(t, s, events, v1, immediate, "add_gold"), ""},
-		{"a trigger in an unscoped block", readingOf(t, s, events, v1, trigger, "exists"), ""},
-		{"an on_action starts in its declared scope", readingOf(t, s, "common/on_action/v_on_actions.txt", "on_birth", "effect", "every_vassal"), "character"},
+		{"an iterator leads to its target", placementOf(t, s, events, v1, immediate, "every_vassal"), "character"},
+		{"a link leads where its last link does", placementOf(t, s, events, v1, immediate, "capital_county"), "landed_title"},
+		{"the events entry declares no scope", placementOf(t, s, events, v1, immediate, "add_gold"), ""},
+		{"a trigger in an unscoped block", placementOf(t, s, events, v1, trigger, "exists"), ""},
+		{"an on_action starts in its declared scope", placementOf(t, s, "common/on_action/v_on_actions.txt", "on_birth", "effect", "every_vassal"), "character"},
 	}
 	for _, c := range cases {
-		if got := c.reading.Inner.Scope; got != c.want {
+		if got := c.placement.Inner.Scope; got != c.want {
 			t.Errorf("%s: %q, want %q", c.name, got, c.want)
 		}
 	}
@@ -439,8 +439,8 @@ func TestBlockScope(t *testing.T) {
 
 func TestMayAccuse(t *testing.T) {
 	s := &Schema{Sources: map[Source]SourceState{SourceDocs: {From: "install"}, SourceDumps: {From: "yours", Stale: true}}}
-	number := func(from Source, in int, forms Forms) *Position {
-		return &Position{Value: Claim[Expected]{Expected{Type: WordNumber}, from}, Evidence: Evidence{In: in, Forms: forms}}
+	number := func(from Source, in int, forms Shapes) *Position {
+		return &Position{Value: Claim[Expected]{Expected{Kind: ExpectsNumber}, from}, Vanilla: Vanilla{In: in, Shapes: forms}}
 	}
 	cases := []struct {
 		name     string
@@ -449,9 +449,9 @@ func TestMayAccuse(t *testing.T) {
 		want     bool
 	}{
 		{"a docs claim where vanilla never writes", CheckValue, number(SourceDocs, 0, 0), false},
-		{"a docs claim vanilla agrees with", CheckValue, number(SourceDocs, 1, FormNumber), true},
-		{"a docs claim vanilla contradicts", CheckValue, number(SourceDocs, 1, FormNumber|FormWord), false},
-		{"vanilla never accuses", CheckValue, number(SourceVanilla, 1, FormNumber), false},
+		{"a docs claim vanilla agrees with", CheckValue, number(SourceDocs, 1, ShapeNumber), true},
+		{"a docs claim vanilla contradicts", CheckValue, number(SourceDocs, 1, ShapeNumber|ShapeIdent), false},
+		{"vanilla never accuses", CheckValue, number(SourceVanilla, 1, ShapeNumber), false},
 		{"stale dumps never accuse", CheckCommand, &Position{}, false},
 	}
 	for _, c := range cases {
@@ -482,7 +482,7 @@ func TestFindEntries(t *testing.T) {
 		file, parsed := fixtureFile(t, c.game, c.rel)
 		var got []string
 		for _, entry := range s.FindEntries(file, parsed) {
-			got = append(got, entry.Database+" "+entry.Name)
+			got = append(got, entry.Database+" "+entry.ID)
 		}
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s %s:\n got %v\nwant %v", c.game, c.rel, got, c.want)
@@ -511,16 +511,16 @@ func TestLoadShipped(t *testing.T) {
 	}
 }
 
-func TestWordNames(t *testing.T) {
+func TestMentions(t *testing.T) {
 	s := fixtureSchema(t, ck3)
-	ref := func(database, name string, start, end int) Naming {
-		return Naming{Database: database, Name: name, Range: jomini.Range{Start: start, End: end}}
+	ref := func(database, name string, start, end int) Mention {
+		return Mention{Database: database, ID: name, Range: jomini.Range{Start: start, End: end}}
 	}
-	def := func(database, name string, start, end int) Naming {
-		return Naming{Defines: true, Database: database, Name: name, Range: jomini.Range{Start: start, End: end}}
+	def := func(database, name string, start, end int) Mention {
+		return Mention{Defines: true, Database: database, ID: name, Range: jomini.Range{Start: start, End: end}}
 	}
-	call := func(called, name string, start, end int) Naming {
-		return Naming{Called: called, Name: name, Range: jomini.Range{Start: start, End: end}}
+	call := func(called, name string, start, end int) Mention {
+		return Mention{Called: called, ID: name, Range: jomini.Range{Start: start, End: end}}
 	}
 	const (
 		effects  = "common/scripted_effects/v_effects.txt"
@@ -530,33 +530,33 @@ func TestWordNames(t *testing.T) {
 	cases := []struct {
 		rel          string
 		path         []string
-		want         []Naming
+		want         []Mention
 		nameDatabase string
 	}{
-		{eventsFile, []string{v1, trigger, "exists"}, []Naming{ref("scope", "target", 166, 178)}, ""},
-		{eventsFile, []string{v1, trigger, "exists=title:k_x"}, []Naming{ref("landed_titles", "k_x", 215, 224)}, ""},
+		{eventsFile, []string{v1, trigger, "exists"}, []Mention{ref("scope", "target", 166, 178)}, ""},
+		{eventsFile, []string{v1, trigger, "exists=title:k_x"}, []Mention{ref("landed_titles", "k_x", 215, 224)}, ""},
 		{eventsFile, []string{v1, trigger, "faith"}, nil, ""},
-		{eventsFile, []string{v1, immediate, "save_scope_as"}, []Naming{def("scope", "target", 360, 366)}, "scope"},
-		{eventsFile, []string{v1, immediate, "set_variable", "name"}, []Naming{def("var", "seen", 325, 329)}, "var"},
-		{eventsFile, []string{v1, immediate, "trigger_event"}, []Naming{ref("events", "v.2", 385, 388)}, ""},
-		{eventsFile, []string{v1, immediate, vEffect}, []Naming{call("effect", vEffect, 645, 653)}, ""},
+		{eventsFile, []string{v1, immediate, "save_scope_as"}, []Mention{def("scope", "target", 360, 366)}, "scope"},
+		{eventsFile, []string{v1, immediate, "set_variable", "name"}, []Mention{def("var", "seen", 325, 329)}, "var"},
+		{eventsFile, []string{v1, immediate, "trigger_event"}, []Mention{ref("events", "v.2", 385, 388)}, ""},
+		{eventsFile, []string{v1, immediate, vEffect}, []Mention{call("effect", vEffect, 645, 653)}, ""},
 		{eventsFile, []string{v1, immediate, vEffect, "AMOUNT"},
-			[]Naming{ref(Parameter, "v_effect:AMOUNT", 658, 664)}, ""},
-		{eventsFile, []string{v1, "title"}, []Naming{ref(Localization, "v.1.t", 83, 88)}, ""},
+			[]Mention{ref(Parameter, "v_effect:AMOUNT", 658, 664)}, ""},
+		{eventsFile, []string{v1, "title"}, []Mention{ref(Localization, "v.1.t", 83, 88)}, ""},
 		{"common/traits/v_traits.txt", []string{"brave", "icon"},
-			[]Naming{ref(File, "gfx/interface/icons/traits/brave.dds", 57, 95)}, ""},
-		{effects, []string{vEffect, "add_gold"}, []Naming{def(Parameter, "v_effect:AMOUNT", 25, 33)}, ""},
-		{effects, []string{"v_list_effect", "every_in_list", "variable"}, []Naming{ref("var", "seen_list", 183, 192)}, "var"},
-		{triggers, []string{"v_rich_trigger", "OR", "gold"}, []Naming{ref("script_values", "big_value", 71, 80)}, ""},
-		{triggers, []string{"v_rich_trigger", "big_value"}, []Naming{call(trigger, "big_value", 162, 171)}, ""},
-		{"history/titles/v_titles.txt", []string{"k_x"}, []Naming{ref("landed_titles", "k_x", 0, 3)}, ""},
-		{"history/provinces/v_provinces.txt", []string{"1", "culture"}, []Naming{ref("culture/cultures", "norse", 17, 22)}, ""},
-		{more, []string{"vmore.1", trigger, "gold"}, []Naming{ref("defines", "NWar", 208, 228)}, ""},
+			[]Mention{ref(File, "gfx/interface/icons/traits/brave.dds", 57, 95)}, ""},
+		{effects, []string{vEffect, "add_gold"}, []Mention{def(Parameter, "v_effect:AMOUNT", 25, 33)}, ""},
+		{effects, []string{"v_list_effect", "every_in_list", "variable"}, []Mention{ref("var", "seen_list", 183, 192)}, "var"},
+		{triggers, []string{"v_rich_trigger", "OR", "gold"}, []Mention{ref("script_values", "big_value", 71, 80)}, ""},
+		{triggers, []string{"v_rich_trigger", "big_value"}, []Mention{call(trigger, "big_value", 162, 171)}, ""},
+		{"history/titles/v_titles.txt", []string{"k_x"}, []Mention{ref("landed_titles", "k_x", 0, 3)}, ""},
+		{"history/provinces/v_provinces.txt", []string{"1", "culture"}, []Mention{ref("culture/cultures", "norse", 17, 22)}, ""},
+		{more, []string{"vmore.1", trigger, "gold"}, []Mention{ref("defines", "NWar", 208, 228)}, ""},
 	}
 	for _, c := range cases {
-		r := readingOf(t, s, c.rel, c.path...)
-		if !slices.Equal(r.Names, c.want) || r.NameDatabase != c.nameDatabase {
-			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, r.Names, r.NameDatabase, c.want, c.nameDatabase)
+		placement := placementOf(t, s, c.rel, c.path...)
+		if !slices.Equal(placement.Mentions, c.want) || placement.StoredIn != c.nameDatabase {
+			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, placement.Mentions, placement.StoredIn, c.want, c.nameDatabase)
 		}
 	}
 }
@@ -564,10 +564,10 @@ func TestWordNames(t *testing.T) {
 func TestWalkFileEntries(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	const more = "events/v_more_events.txt"
-	if entry := readingOf(t, s, more, "vmore.1", trigger, "v_inline_trigger").Entry; entry != 1 {
+	if entry := placementOf(t, s, more, "vmore.1", trigger, "v_inline_trigger").Entry; entry != 1 {
 		t.Errorf("vmore.1 › trigger › v_inline_trigger: entry %d, want 1", entry)
 	}
-	if entry := readingOf(t, s, more, "namespace").Entry; entry != -1 {
+	if entry := placementOf(t, s, more, "namespace").Entry; entry != -1 {
 		t.Errorf("namespace: entry %d, want -1", entry)
 	}
 }

@@ -14,11 +14,11 @@ import (
 )
 
 // Entry is one definition a file makes. Mode is the declared mode word stripped from the written name, or
-// ""; Name is "" for an entry that names nothing (an Unnamed row's, a history file).
+// ""; ID is "" for an entry that names nothing (an Unnamed row's, a history file).
 type Entry struct {
-	Database, Name, Mode string
-	Statement            jomini.Statement // the statement that defines it
-	Local                bool             // declared inline by a folder's Keyword in another folder's file
+	Database, ID, Mode string
+	Statement          jomini.Statement // the statement that defines it
+	Local              bool             // declared inline by a folder's Keyword in another folder's file
 }
 
 // NameOf returns a registry row's database name: the row's path without common/.
@@ -95,7 +95,7 @@ func (s *Schema) tableEntries(file inventory.File, own string, found func(Entry)
 			start := offset + strings.Index(line, written)
 			span := jomini.Range{Start: start, End: start + len(written)}
 			found(Entry{
-				Database: database, Name: written,
+				Database: database, ID: written,
 				Statement: &jomini.ValueStmt{Value: &jomini.Scalar{Text: written, Range: span}, Range: span},
 			})
 		}
@@ -172,7 +172,7 @@ func (f *entryFinder) wholeFile(rel string, parsed *jomini.Result) {
 func (f *entryFinder) emit(database, written string, statement jomini.Statement, inside []game.Nested) {
 	mode, name := f.info.Mode(written)
 	f.found(Entry{
-		Database: database, Name: name, Mode: mode, Statement: statement,
+		Database: database, ID: name, Mode: mode, Statement: statement,
 		Local: f.inline[database] && database != f.own,
 	})
 	f.nestedEntries(database, statement, inside)
@@ -200,21 +200,21 @@ func (f *entryFinder) nestedEntries(database string, statement jomini.Statement,
 		}
 		if block := jomini.ChildBlock(statement); block != nil {
 			steps := strings.FieldsFunc(row.Path, func(char rune) bool { return char == '/' })
-			f.readNested(n, block.Statements, steps)
+			f.nestedAt(n, block.Statements, steps)
 		}
 	}
 }
 
-// readNested finds the entries at the end of a row's path of steps: a step is a key pattern, and ** matches
+// nestedAt finds the entries at the end of a row's path of steps: a step is a key pattern, and ** matches
 // any depth.
-func (f *entryFinder) readNested(n nesting, statements []jomini.Statement, steps []string) {
+func (f *entryFinder) nestedAt(n nesting, statements []jomini.Statement, steps []string) {
 	for _, statement := range statements {
 		assign, isAssign := statement.(*jomini.Assignment)
 		if !isAssign {
 			// a word listed at the row's path and shaped as a name is an entry; a constant or a stray ; is none
 			if listed, isList := statement.(*jomini.ValueStmt); isList && len(steps) == 0 {
-				if word, isWord := listed.Value.(*jomini.Scalar); isWord && jomini.IsDefName(word.Text) {
-					f.emit(n.database, word.Text, statement, n.again)
+				if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar && jomini.IsDefName(scalar.Text) {
+					f.emit(n.database, scalar.Text, statement, n.again)
 				}
 			}
 			continue
@@ -231,11 +231,11 @@ func (f *entryFinder) readNested(n nesting, statements []jomini.Statement, steps
 		case len(steps) == 0:
 			f.emit(n.database, key, assign, n.again)
 		case steps[0] == "**":
-			f.readNested(n, []jomini.Statement{assign}, steps[1:])
-			f.readNested(n, below, steps)
+			f.nestedAt(n, []jomini.Statement{assign}, steps[1:])
+			f.nestedAt(n, below, steps)
 		default:
 			if matched, _ := path.Match(steps[0], key); matched {
-				f.readNested(n, below, steps[1:])
+				f.nestedAt(n, below, steps[1:])
 			}
 		}
 	}
@@ -309,11 +309,11 @@ func (f *entryFinder) keywordDeclaration(statements []jomini.Statement, i int, t
 	if !isList || !isAssign {
 		return "", nil
 	}
-	word, isWord := listed.Value.(*jomini.Scalar)
-	if !isWord || f.declares[word.Text] == "" && (!top || f.fileType.WidgetKey == "") {
+	scalar, isScalar := listed.Value.(*jomini.Scalar)
+	if !isScalar || f.declares[scalar.Text] == "" && (!top || f.fileType.WidgetKey == "") {
 		return "", nil
 	}
-	return word.Text, declared
+	return scalar.Text, declared
 }
 
 // entryOf reports the entry a statement is, if any, by the first rule that fits: a file type's name keys,

@@ -362,9 +362,9 @@ func (sess *Session) Title(def index.Def) string {
 		if !isField {
 			continue
 		}
-		position := sess.Install.Schema.ReadKey(sess.Install.Schema.EntryContext(row), field, field.Key.Text, false).Position
+		position := sess.Install.Schema.PlaceKey(sess.Install.Schema.EntryContext(row), field, field.Key.Text, false).Position
 		value, isWord := field.Value.(*jomini.Scalar)
-		if !isWord || position == nil || position.Value.Value.Type != schema.WordLoc {
+		if !isWord || position == nil || position.Value.Value.Kind != schema.ExpectsLoc {
 			continue
 		}
 		if said, found := sess.Loc(value.Text, ""); found {

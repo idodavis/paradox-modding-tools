@@ -47,7 +47,7 @@ func (i *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc bool
 // a definition or a reference with its file, line and entry, and the scope each command, link or
 // link-read word is written in. visit (nil for none) sees each reading; returning false stops the
 // walk.
-func Read(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(*schema.Reading) bool) *Records {
+func Read(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(*schema.Placement) bool) *Records {
 	c := &collector{schema: s, file: file, visit: visit, records: &Records{scoped: map[[2]string]bool{}}}
 	if parsed != nil {
 		c.lines = parsed.Lines()
@@ -58,7 +58,7 @@ func Read(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit fu
 		if assign, isAssign := entry.Statement.(*jomini.Assignment); isAssign {
 			span = assign.Key.Range
 		}
-		c.define(Def{Database: entry.Database, Name: entry.Name, Mode: entry.Mode, Range: span, Local: entry.Local})
+		c.define(Def{Database: entry.Database, Name: entry.ID, Mode: entry.Mode, Range: span, Local: entry.Local})
 	}
 	s.WalkFile(file, parsed, entries, schema.Visitor{Visit: c.collect})
 	return c.records
@@ -70,7 +70,7 @@ type collector struct {
 	file    inventory.File
 	records *Records
 	lines   *jomini.LineIndex // the parse's; a table or sound list is read for them
-	visit   func(*schema.Reading) bool
+	visit   func(*schema.Placement) bool
 	stopped bool
 }
 
@@ -86,7 +86,7 @@ func (c *collector) position(offset int) (line, col int32) {
 }
 
 // define adds a definition where it is written. Entries come first, in the detector's order, so an
-// entry's index in Defs is the Reading.Entry a reference stores as From.
+// entry's index in Defs is the Placement.Entry a reference stores as From.
 func (c *collector) define(def Def) {
 	def.Path = c.file.Path
 	def.Line, def.Col = c.position(def.Range.Start)
@@ -94,34 +94,34 @@ func (c *collector) define(def Def) {
 }
 
 // refer adds a reference where it is written, in the entry the reading is in.
-func (c *collector) refer(ref Ref, r *schema.Reading) {
-	ref.Path, ref.From, ref.InTrigger = c.file.Path, int32(r.Entry), r.InTrigger
+func (c *collector) refer(ref Ref, placement *schema.Placement) {
+	ref.Path, ref.From, ref.InTrigger = c.file.Path, int32(placement.Entry), placement.InTrigger
 	ref.Line, ref.Col = c.position(ref.Range.Start)
 	c.records.Refs = append(c.records.Refs, ref)
 }
 
 // collect records what a reading names and the scope its command, link or link-read word is written
 // in, then hands the reading to visit; once visit returns false the walk reads nothing more.
-func (c *collector) collect(r *schema.Reading) bool {
+func (c *collector) collect(placement *schema.Placement) bool {
 	if c.stopped {
 		return false
 	}
-	for _, naming := range r.Names {
+	for _, naming := range placement.Mentions {
 		if naming.Defines {
-			c.define(Def{Database: naming.Database, Name: naming.Name, Range: naming.Range, Named: naming.Named})
+			c.define(Def{Database: naming.Database, Name: naming.ID, Range: naming.Range, Named: naming.Named})
 		} else {
-			c.refer(Ref{Database: naming.Database, Name: naming.Name, Called: naming.Called, Range: naming.Range}, r)
+			c.refer(Ref{Database: naming.Database, Name: naming.ID, Called: naming.Called, Range: naming.Range}, placement)
 		}
 	}
-	assign, isAssign := r.Statement.(*jomini.Assignment)
-	scalar, isScalar := jomini.ValueOf(r.Statement).(*jomini.Scalar)
-	if r.Scope != "" && isAssign && r.Command != nil {
-		c.records.scoped[scopePair(assign.Key.Text, r.Scope)] = true
+	assign, isAssign := placement.Statement.(*jomini.Assignment)
+	scalar, isScalar := jomini.ValueOf(placement.Statement).(*jomini.Scalar)
+	if placement.Scope != "" && isAssign && placement.Command != nil {
+		c.records.scoped[scopePair(assign.Key.Text, placement.Scope)] = true
 	}
-	if r.Scope != "" && isScalar && c.schema.Link(strings.ToLower(scalar.Text)) != nil {
-		c.records.scoped[scopePair(scalar.Text, r.Scope)] = true
+	if placement.Scope != "" && isScalar && c.schema.Link(strings.ToLower(scalar.Text)) != nil {
+		c.records.scoped[scopePair(scalar.Text, placement.Scope)] = true
 	}
-	if c.visit != nil && !c.visit(r) {
+	if c.visit != nil && !c.visit(placement) {
 		c.stopped = true
 	}
 	return !c.stopped

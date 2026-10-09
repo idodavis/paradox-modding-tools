@@ -1,5 +1,5 @@
 // walk.go is the walker: WalkFile places every statement of a file at its position in the schema's tree,
-// WalkBlock a snippet's; each key is placed by ReadKey.
+// WalkBlock a snippet's; each key is placed by PlaceKey.
 
 package schema
 
@@ -29,8 +29,8 @@ type BlockContext struct {
 	Fields    map[string]bool // in an entry's own block: the key names its database's docs write
 }
 
-// Reading is one statement as the walker reads it.
-type Reading struct {
+// Placement is one statement as the walker reads it.
+type Placement struct {
 	Statement    jomini.Statement
 	Holder       *jomini.Block // the block holding it; nil at a file's top
 	Name         string        // the key name read: the key, or one of a docs key's alternatives
@@ -41,20 +41,20 @@ type Reading struct {
 	Listed       string        // set when its key iterates a scripted list: the iterator prefix
 	Leaf         bool          // the leaf of a dynamic description
 	Entry        int           // the index, in the entries WalkFile was given, of the entry it is in; -1 outside one
-	Names        []Naming      // what its key and value name, in the order the rules fit (names.go)
-	NameDatabase string        // the database a name command's value names here (set_variable: var); "" none
+	Mentions     []Mention     // what its key and value name, in the order the rules fit (mentions.go)
+	StoredIn     string        // the database a name command's value names here (set_variable: var); "" none
 	BlockContext               // where it is written
 	Inner        BlockContext  // where its own block is read
 }
 
-// Naming is one thing a written word names: a definition the word makes in Database (Defines), else a
+// Mention is one thing a written word names: a definition the word makes in Database (Defines), else a
 // reference to Name in Database or, when Called is set, a call resolved by that calling word. Named marks a
 // definition an entry's Names key gives its database rather than an entry of its own.
-type Naming struct {
+type Mention struct {
 	Defines  bool
 	Named    bool
 	Database string
-	Name     string
+	ID       string
 	Called   string
 	Range    jomini.Range
 }
@@ -65,7 +65,7 @@ type Naming struct {
 type Visitor struct {
 	Create       bool
 	Alternatives func(key string) []string
-	Visit        func(*Reading) bool
+	Visit        func(*Placement) bool
 }
 
 // meaning is what a key is: the rule that read it, its position, its declared command or link, the calling
@@ -124,7 +124,7 @@ func (s *Schema) WalkBlock(v Visitor, holder *jomini.Block, statements []jomini.
 
 // block reads a block's statements at a context; holder is nil at a file's top. A statement that starts an entry
 // is read at the entry's position and its block at the entry's context; inside an entry each key is read by
-// ReadKey; anything else stays at the context's position.
+// PlaceKey; anything else stays at the context's position.
 func (w *fileWalk) block(holder *jomini.Block, statements []jomini.Statement, in BlockContext) {
 	s := w.s
 	for index, statement := range statements {
@@ -139,44 +139,44 @@ func (w *fileWalk) block(holder *jomini.Block, statements []jomini.Statement, in
 			}
 		}
 		_, isAssign := statement.(*jomini.Assignment)
-		var readings []Reading
+		var readings []Placement
 		switch {
 		case database != nil:
-			readings = []Reading{s.entryReading(statement, database, in)}
+			readings = []Placement{s.entryPlacement(statement, database, in)}
 		case isAssign && in.InEntry:
-			readings = s.keyReadings(w.v, statements, index, in)
+			readings = s.keyPlacements(w.v, statements, index, in)
 		default:
-			readings = []Reading{{Statement: statement, Position: in.Position, BlockContext: in, Inner: in}}
+			readings = []Placement{{Statement: statement, Position: in.Position, BlockContext: in, Inner: in}}
 		}
 		block := jomini.ChildBlock(statement)
-		for _, reading := range readings {
-			reading.Holder, reading.Entry = holder, entry
+		for _, placement := range readings {
+			placement.Holder, placement.Entry = holder, entry
 			if w.ext != "" {
-				w.names(&reading)
+				w.mentionsOf(&placement)
 			}
-			if w.v.Visit(&reading) && block != nil {
+			if w.v.Visit(&placement) && block != nil {
 				w.inside[block] = entry
-				w.block(block, block.Statements, reading.Inner)
+				w.block(block, block.Statements, placement.Inner)
 			}
 		}
 	}
 }
 
-// entryReading reads a statement that starts an entry of a database. The dumps declare the scope of an
+// entryPlacement reads a statement that starts an entry of a database. The dumps declare the scope of an
 // on_action's block.
-func (s *Schema) entryReading(statement jomini.Statement, database *Database, in BlockContext) Reading {
+func (s *Schema) entryPlacement(statement jomini.Statement, database *Database, in BlockContext) Placement {
 	inner := s.EntryContext(database)
 	if assign, isAssign := statement.(*jomini.Assignment); isAssign && database.Row.OnActions {
 		if scope := s.OnActions[assign.Key.Text].Scope; scope != "" {
 			inner.Scope = scope
 		}
 	}
-	return Reading{Statement: statement, Position: database.Entry, BlockContext: in, Inner: inner}
+	return Placement{Statement: statement, Position: database.Entry, BlockContext: in, Inner: inner}
 }
 
-// keyReadings reads the key of the assignment at statements[index], once for each name the visitor reads
+// keyPlacements reads the key of the assignment at statements[index], once for each name the visitor reads
 // it as. A calling word written before a name calls it by that word: blockoverride "x" { }.
-func (s *Schema) keyReadings(v Visitor, statements []jomini.Statement, index int, in BlockContext) []Reading {
+func (s *Schema) keyPlacements(v Visitor, statements []jomini.Statement, index int, in BlockContext) []Placement {
 	assign := statements[index].(*jomini.Assignment)
 	names := []string{assign.Key.Text}
 	if v.Alternatives != nil {
@@ -184,14 +184,14 @@ func (s *Schema) keyReadings(v Visitor, statements []jomini.Statement, index int
 	}
 	if index > 0 {
 		if listed, isList := statements[index-1].(*jomini.ValueStmt); isList {
-			if word, isWord := listed.Value.(*jomini.Scalar); isWord && len(s.Callees[word.Text]) > 0 {
-				in.Calls = word.Text
+			if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar && len(s.Callees[scalar.Text]) > 0 {
+				in.Calls = scalar.Text
 			}
 		}
 	}
-	readings := make([]Reading, 0, len(names))
+	readings := make([]Placement, 0, len(names))
 	for _, name := range names {
-		readings = append(readings, s.ReadKey(in, assign, name, v.Create))
+		readings = append(readings, s.PlaceKey(in, assign, name, v.Create))
 	}
 	return readings
 }
@@ -210,10 +210,10 @@ func (s *Schema) EntryContext(database *Database) BlockContext {
 	}
 }
 
-// ReadKey reads one key written at a context: what it is, where its block is read, and the scope that block
+// PlaceKey reads one key written at a context: what it is, where its block is read, and the scope that block
 // runs in. With create, the key's position is made.
-func (s *Schema) ReadKey(in BlockContext, statement jomini.Statement, name string, create bool) Reading {
-	r := Reading{Statement: statement, Name: name, BlockContext: in}
+func (s *Schema) PlaceKey(in BlockContext, statement jomini.Statement, name string, create bool) Placement {
+	placement := Placement{Statement: statement, Name: name, BlockContext: in}
 	create = create && in.Position != nil
 	var value jomini.Value
 	if assign, isAssign := statement.(*jomini.Assignment); isAssign {
@@ -223,27 +223,27 @@ func (s *Schema) ReadKey(in BlockContext, statement jomini.Statement, name strin
 	// a date key re-opens the block it stands in (history)
 	literal := jomini.Literal(name)
 	if literal == jomini.LitDate || in.Dated && literal == jomini.LitNumber {
-		r.Inner = in
-		return r
+		placement.Inner = in
+		return placement
 	}
 	// a key holding a parameter or written as a data call is a scope written in place: no position, no call,
 	// scope unknown
 	if s.Commands[strings.ToLower(name)] == nil && writtenInPlace(name) {
-		r.Inner = in
-		r.Inner.Scope, r.Inner.Command, r.Inner.Call = "", "", ""
-		return r
+		placement.Inner = in
+		placement.Inner.Scope, placement.Inner.Command, placement.Inner.Call = "", "", ""
+		return placement
 	}
 
 	m := s.keyMeaning(in, name, in.Position.Child(name), create)
-	r.Rule, r.Position, r.Command, r.Calls, r.Leaf = m.rule, m.position, m.command, m.calls, m.leaf
-	r.Listed = s.listIterated(in, r, name, value)
-	r.Inner = innerContext(in, r, name, value)
+	placement.Rule, placement.Position, placement.Command, placement.Calls, placement.Leaf = m.rule, m.position, m.command, m.calls, m.leaf
+	placement.Listed = s.listIterated(in, placement, name, value)
+	placement.Inner = innerContext(in, placement, name, value)
 
 	// a trigger is exactly a trigger, not one that is also an effect
-	r.InTrigger = in.InTrigger || isCommand(r) && r.Command.Kind == game.KindTrigger
-	r.Inner.InTrigger = r.InTrigger || r.Inner.Kind == game.BlockTriggers
-	r.Inner.Scope = s.blockScope(in, r, name)
-	return r
+	placement.InTrigger = in.InTrigger || isCommand(placement) && placement.Command.Kind == game.KindTrigger
+	placement.Inner.InTrigger = placement.InTrigger || placement.Inner.Kind == game.BlockTriggers
+	placement.Inner.Scope = s.blockScope(in, placement, name)
+	return placement
 }
 
 // writtenInPlace reports whether a key holds a parameter ($ACTOR$, $TARGET$.liege) or is a data call
@@ -258,10 +258,12 @@ func writtenInPlace(name string) bool {
 }
 
 // isLink reports whether a reading's key is a declared link.
-func isLink(r Reading) bool { return r.Command != nil && r.Command.Kind&game.KindLink != 0 }
+func isLink(placement Placement) bool {
+	return placement.Command != nil && placement.Command.Kind&game.KindLink != 0
+}
 
 // isCommand reports whether a reading's key is a declared effect or trigger.
-func isCommand(r Reading) bool { return r.Command != nil && !isLink(r) }
+func isCommand(placement Placement) bool { return placement.Command != nil && !isLink(placement) }
 
 // keyMeaning decides what a key is at a context by the block's rules in order; the first whose test holds
 // wins. In a description block the shape of a dynamic description decides instead.
@@ -332,13 +334,13 @@ func (s *Schema) fits(rule game.KeyRule, k keyFacts) (found meaning, fits bool) 
 		found.position = k.made()
 	case rule == game.KeyRuleLink && k.link != nil:
 		found.command = k.link
-	case rule == game.KeyRuleObserved && (k.create || k.position != nil && k.position.Evidence.In > 0):
+	case rule == game.KeyRuleObserved && (k.create || k.position != nil && k.position.Vanilla.In > 0):
 		found.position = k.made()
 	case rule == game.KeyRulePosition:
 		found.position = k.made()
 	case rule == game.KeyRulePositionOrCall:
 		found.position = k.made()
-		if k.in.Position != nil && k.in.Position.Evidence.Forms&FormCommand != 0 {
+		if k.in.Position != nil && k.in.Position.Vanilla.Shapes&ShapeCommand != 0 {
 			found.calls = k.in.Calls
 		}
 	case rule == game.KeyRuleCall:
@@ -371,8 +373,8 @@ func descriptionMeaning(in BlockContext, name string, made func() *Position, cre
 // listIterated returns the iterator prefix when a key iterates a scripted list: a call in a triggers,
 // effects or value block that starts with an iterator prefix, takes a block and names no known scripted
 // entry iterates the scripted list named by the rest (every_adult_child).
-func (s *Schema) listIterated(in BlockContext, r Reading, name string, value jomini.Value) string {
-	listing := r.Calls != "" && r.Rule != game.KeyRuleKnownCall && jomini.BlockOf(value) != nil
+func (s *Schema) listIterated(in BlockContext, placement Placement, name string, value jomini.Value) string {
+	listing := placement.Calls != "" && placement.Rule != game.KeyRuleKnownCall && jomini.BlockOf(value) != nil
 	if !listing || s.Lists == "" || in.Calls == "" || in.Calls == game.AnyCall {
 		return ""
 	}
@@ -393,16 +395,16 @@ func blockKindOf(position *Position) game.Block {
 		return game.BlockUnknown
 	case position.Block.Source != SourceNone:
 		return position.Block.Value
-	case position.Value.Value.Type == WordNumber && position.Value.Source.Declared(), writesOnlyOperators(position):
+	case position.Value.Value.Kind == ExpectsNumber && position.Value.Source.Declared(), writesOnlyOperators(position):
 		return game.BlockValue
 	}
-	switch position.Evidence.Forms & (FormTrigger | FormEffect) {
-	case FormTrigger:
+	switch position.Vanilla.Shapes & (ShapeTrigger | ShapeEffect) {
+	case ShapeTrigger:
 		return game.BlockTriggers // every command vanilla writes there is a trigger
-	case FormEffect:
+	case ShapeEffect:
 		return game.BlockEffects
 	}
-	if position.Evidence.Forms&FormCommand == 0 && len(position.Children) > 0 {
+	if position.Vanilla.Shapes&ShapeCommand == 0 && len(position.Children) > 0 {
 		return game.BlockFields // vanilla writes keys and no command
 	}
 	return game.BlockUnknown
@@ -442,25 +444,25 @@ func commandBlockKind(command *Command, in game.Block) game.Block {
 // innerContext returns where a key's own block is read, apart from its scope: what the key is decides the
 // position and kind, then the structural keys (random_list's branches, switch's cases), widgets, list
 // iterators and dynamic descriptions adjust them.
-func innerContext(in BlockContext, r Reading, name string, value jomini.Value) BlockContext {
+func innerContext(in BlockContext, placement Placement, name string, value jomini.Value) BlockContext {
 	inner := BlockContext{InEntry: in.InEntry, Bound: in.Bound}
 	lower := strings.ToLower(name)
 	switch {
-	case isLink(r):
+	case isLink(placement):
 		inner = in // a link's block reads where the link stands
 		inner.Command, inner.Call = "", ""
-	case isCommand(r):
-		inner.Position, inner.Command = r.Command.Args, lower
-		inner.Kind = commandBlockKind(r.Command, in.Kind)
-	case r.Rule == game.KeyRuleOperator && r.Position != nil:
-		inner.Position, inner.Kind = r.Position, game.BlockArguments
+	case isCommand(placement):
+		inner.Position, inner.Command = placement.Command.Args, lower
+		inner.Kind = commandBlockKind(placement.Command, in.Kind)
+	case placement.Rule == game.KeyRuleOperator && placement.Position != nil:
+		inner.Position, inner.Kind = placement.Position, game.BlockArguments
 		if game.ValueOperators[lower] {
 			inner.Kind = game.BlockValue // the operator takes a number
 		}
-	case in.Kind == game.BlockDescription && r.Position != nil && name != game.DynamicDescription.Trigger:
-		inner.Position, inner.Kind = r.Position, game.BlockDescription
+	case in.Kind == game.BlockDescription && placement.Position != nil && name != game.DynamicDescription.Trigger:
+		inner.Position, inner.Kind = placement.Position, game.BlockDescription
 	default:
-		inner.Position, inner.Kind = r.Position, blockKindOf(r.Position)
+		inner.Position, inner.Kind = placement.Position, blockKindOf(placement.Position)
 	}
 
 	for _, row := range game.Structurals {
@@ -474,16 +476,16 @@ func innerContext(in BlockContext, r Reading, name string, value jomini.Value) B
 	if in.Kind == game.BlockWidget {
 		inner.Kind = game.BlockWidget // a widget's blocks are widgets again
 	}
-	if r.Listed != "" {
-		inner.Kind = game.ListIterators[r.Listed]
+	if placement.Listed != "" {
+		inner.Kind = game.ListIterators[placement.Listed]
 	}
 	if inner.Calls == "" {
 		inner.Calls = game.Blocks[inner.Kind].Calls
 	}
-	if inner.Kind != game.BlockDescription && r.Position != nil && isDynamicDescription(value) {
-		inner.Kind, inner.Bound, inner.Calls = game.BlockDescription, r.Position, ""
+	if inner.Kind != game.BlockDescription && placement.Position != nil && isDynamicDescription(value) {
+		inner.Kind, inner.Bound, inner.Calls = game.BlockDescription, placement.Position, ""
 	}
-	if r.Calls != "" {
+	if placement.Calls != "" {
 		inner.Call = name // the scripted entry this block calls, whose parameters its keys pass
 	}
 	return inner
@@ -493,32 +495,32 @@ func innerContext(in BlockContext, r Reading, name string, value jomini.Value) B
 // everything; a link or an iterating command leads to its target; a list or a bare target gives no scope; a
 // value or description block, a command's block and a block a source gives a kind stay where they are
 // written; anything else is unknown. A scope the dumps say runs no triggers and no effects is unknown too.
-func (s *Schema) blockScope(in BlockContext, r Reading, name string) string {
+func (s *Schema) blockScope(in BlockContext, placement Placement, name string) string {
 	target, iterates := "", false
 	switch {
-	case isLink(r):
+	case isLink(placement):
 		last := strings.ToLower(name[strings.LastIndexByte(name, '.')+1:]) // a chain leads where its last link does
 		if link := s.Link(last); link != nil {
 			target = link.Out
 		}
-	case isCommand(r):
-		target = r.Command.Out
-		iterates = r.Command.Args.Block.Value == game.BlockTriggers || r.Command.Args.Block.Value == game.BlockEffects
+	case isCommand(placement):
+		target = placement.Command.Out
+		iterates = placement.Command.Args.Block.Value == game.BlockTriggers || placement.Command.Args.Block.Value == game.BlockEffects
 	}
 	_, leads := s.Scopes[target]
-	kind := r.Inner.Kind
+	kind := placement.Inner.Kind
 
-	declared := r.Position != nil && r.Position.Scope.Source != SourceNone
-	followsTarget := isLink(r) || isCommand(r) && iterates && leads && !r.Command.Lists
-	walksList := r.Listed != "" || isCommand(r) && r.Command.Lists
-	bareTarget := isCommand(r) && r.Command.Out != "" && !iterates
-	staysPut := kind == game.BlockValue || kind == game.BlockDescription || isCommand(r) ||
-		r.Position != nil && (r.Position.Block.Source != SourceNone || kind != game.BlockUnknown)
+	declared := placement.Position != nil && placement.Position.Scope.Source != SourceNone
+	followsTarget := isLink(placement) || isCommand(placement) && iterates && leads && !placement.Command.Lists
+	walksList := placement.Listed != "" || isCommand(placement) && placement.Command.Lists
+	bareTarget := isCommand(placement) && placement.Command.Out != "" && !iterates
+	staysPut := kind == game.BlockValue || kind == game.BlockDescription || isCommand(placement) ||
+		placement.Position != nil && (placement.Position.Block.Source != SourceNone || kind != game.BlockUnknown)
 
 	scope := ""
 	switch {
 	case declared:
-		scope = r.Position.Scope.Value
+		scope = placement.Position.Scope.Value
 	case followsTarget && leads:
 		scope = target
 	case followsTarget, walksList, bareTarget:

@@ -190,7 +190,7 @@ func (completer *completer) keys(cursor spot) {
 		allowed &^= game.KindEffect
 	}
 	for _, name := range slices.Sorted(maps.Keys(game.ValueOperators)) {
-		if step := s.ReadKey(inner, nil, name, false); step.Rule == game.KeyRuleOperator {
+		if step := s.PlaceKey(inner, nil, name, false); step.Rule == game.KeyRuleOperator {
 			completer.add(Item{Label: name, Head: need(step.Position)}, reading{key: step.Position, scope: scope})
 		}
 	}
@@ -198,7 +198,7 @@ func (completer *completer) keys(cursor spot) {
 	// the position's keys, stated first, read as the walker reads them; one left to calls is a call
 	names, stated := keys(inner.Position)
 	for i, name := range names {
-		position := s.ReadKey(inner, nil, name, false).Position
+		position := s.PlaceKey(inner, nil, name, false).Position
 		read := reading{key: position, scope: scope}
 		if position == nil {
 			read = reading{ref: &index.Ref{Called: called, Name: name}}
@@ -231,7 +231,7 @@ func (completer *completer) keys(cursor spot) {
 }
 
 // values offers what the statement takes: its declared words, vanilla's (most written first), a
-// referenced database's names or loc keys, and the names its command makes or reads (Names).
+// referenced database's names or loc keys, and the names its command makes or reads (Mentions).
 func (completer *completer) values(cursor spot) {
 	if len(cursor.chain) == 0 {
 		return
@@ -242,23 +242,23 @@ func (completer *completer) values(cursor spot) {
 	}
 	if position := at.Position; position != nil {
 		claim := position.Value.Value
-		words := claim.Words
-		if claim.Type == schema.WordBool {
+		words := claim.Choices
+		if claim.Kind == schema.ExpectsBool {
 			words = game.Bools
 		}
 		for _, word := range words {
 			completer.add(Item{Label: word}, reading{})
 		}
-		written := position.Evidence.Values
+		written := position.Vanilla.Values
 		for _, word := range slices.SortedFunc(maps.Keys(written), func(first, second string) int {
 			return cmp.Or(written[second]-written[first], strings.Compare(first, second))
 		}) {
 			completer.add(Item{Label: word, Rank: 1}, reading{})
 		}
-		switch claim.Type {
-		case schema.WordReference:
+		switch claim.Kind {
+		case schema.ExpectsReference:
 			completer.names(claim.Database, "", 2)
-		case schema.WordLoc:
+		case schema.ExpectsLoc:
 			for _, key := range completer.file.sess.LocKeys(completer.prefix, maxComplete+1) {
 				completer.add(Item{Label: key, Head: heading(schema.Localization), Rank: 3},
 					reading{ref: &index.Ref{Database: schema.Localization, Name: key}})
@@ -267,7 +267,7 @@ func (completer *completer) values(cursor spot) {
 	}
 
 	// the names of the database its command makes or reads them in (set_variable, has_variable)
-	completer.names(at.NameDatabase, "", 2)
+	completer.names(at.StoredIn, "", 2)
 }
 
 // calls offers what may follow in a data call: after [ the global functions, data types and data
@@ -298,9 +298,9 @@ func snippet(name string, position *schema.Position) string {
 	switch {
 	case position == nil:
 		return ""
-	case position.Block.Source != schema.SourceNone || position.Evidence.Forms&^schema.FormCommand == schema.FormBlock:
+	case position.Block.Source != schema.SourceNone || position.Vanilla.Shapes&^schema.ShapeCommand == schema.ShapeBlock:
 		return name + " = {\n\t$0\n}"
-	case position.Value.Source != schema.SourceNone || position.Evidence.Forms&^(schema.FormBlock|schema.FormCommand) != 0:
+	case position.Value.Source != schema.SourceNone || position.Vanilla.Shapes&^(schema.ShapeBlock|schema.ShapeCommand) != 0:
 		return name + " = $0"
 	}
 	return ""

@@ -116,7 +116,7 @@ type reading struct {
 // spot is the cursor's place in a script file, from one walk that stops past it: the statements
 // holding it, outer to inner, and the records so far.
 type spot struct {
-	chain   []schema.Reading
+	chain   []schema.Placement
 	records *index.Records
 	offset  int
 }
@@ -125,7 +125,7 @@ type spot struct {
 // ends at an operator with only blanks up to the offset: a value still to come.
 func (file *file) walk(offset int) spot {
 	cursor := spot{offset: offset}
-	cursor.records = index.Read(file.sess.Install.Schema, file.place.File, file.parsed, func(at *schema.Reading) bool {
+	cursor.records = index.Read(file.sess.Install.Schema, file.place.File, file.parsed, func(at *schema.Placement) bool {
 		span := at.Statement.NodeRange()
 		if span.Start > offset {
 			return false
@@ -140,7 +140,7 @@ func (file *file) walk(offset int) spot {
 }
 
 // block is the innermost statement whose block holds the cursor, -1 at the file's top; its
-// context says how that block reads (schema.Reading's Inner fields).
+// context says how that block reads (schema.Placement's Inner fields).
 func (cursor spot) block() int {
 	holder := -1
 	for i, at := range cursor.chain {
@@ -713,8 +713,8 @@ func takes(key *schema.Position) []string {
 	if names := slices.Sorted(maps.Keys(key.Children)); key.Block.Value == game.BlockArguments && len(names) > 0 {
 		said = append(said, "a block with "+strings.Join(names, ", "))
 	}
-	if len(claim.Words) > 0 {
-		said = append(said, oneOf(claim.Words))
+	if len(claim.Choices) > 0 {
+		said = append(said, oneOf(claim.Choices))
 	}
 	if key.Default.Source != schema.SourceNone {
 		said = append(said, "defaults to "+key.Default.Value)
@@ -746,36 +746,36 @@ var returns = map[game.Block]string{game.BlockTriggers: "yes or no", game.BlockV
 
 // typed is a word type as a card says it; "" unknown.
 func typed(claim schema.Expected) string {
-	return map[schema.WordType]string{
-		schema.WordNumber: "a number", schema.WordBool: "yes or no", schema.WordDate: "a date", schema.WordText: "text",
-		schema.WordReference: game.KindName(claim.Database), schema.WordLoc: "a localization key",
-		schema.WordFile: "a file path", schema.WordScope: "a scope", schema.WordBlock: "a block",
-	}[claim.Type]
+	return map[schema.ExpectedKind]string{
+		schema.ExpectsNumber: "a number", schema.ExpectsBool: "yes or no", schema.ExpectsDate: "a date", schema.ExpectsString: "text",
+		schema.ExpectsReference: game.KindName(claim.Database), schema.ExpectsLoc: "a localization key",
+		schema.ExpectsFile: "a file path", schema.ExpectsScope: "a scope", schema.ExpectsBlock: "a block",
+	}[claim.Kind]
 }
 
 // writes is what vanilla writes at a key, as a card says it: each form it writes there, its words
 // and texts typed by vanilla's names, else its words listed where few.
 func writes(key *schema.Position) (out []string) {
-	words := slices.Sorted(maps.Keys(key.Evidence.Values))
+	words := slices.Sorted(maps.Keys(key.Vanilla.Values))
 	for _, row := range []struct {
-		form schema.Forms
+		form schema.Shapes
 		said string
 	}{
-		{schema.FormNumber, "a number"},
-		{schema.FormBool, "yes or no"},
-		{schema.FormDate, "a date"},
-		{schema.FormWord, "a word"},
-		{schema.FormText, "text"},
-		{schema.FormBlock, "a block"},
+		{schema.ShapeNumber, "a number"},
+		{schema.ShapeBool, "yes or no"},
+		{schema.ShapeDate, "a date"},
+		{schema.ShapeIdent, "a word"},
+		{schema.ShapeString, "text"},
+		{schema.ShapeBlock, "a block"},
 	} {
 		form, said := row.form, row.said
 		switch {
-		case key.Evidence.Forms&form == 0:
+		case key.Vanilla.Shapes&form == 0:
 			continue
-		case form&(schema.FormWord|schema.FormText) == 0:
+		case form&(schema.ShapeIdent|schema.ShapeString) == 0:
 		case key.Value.Source == schema.SourceVanilla:
 			said = typed(key.Value.Value)
-		case form == schema.FormWord && len(words) <= 6:
+		case form == schema.ShapeIdent && len(words) <= 6:
 			said = oneOf(words)
 		}
 		if !slices.Contains(out, said) {
@@ -804,7 +804,7 @@ func keys(position *schema.Position) (names []string, stated int) {
 		}
 	}
 	slices.SortFunc(names, func(first, second string) int {
-		return cmp.Or(rank[first]-rank[second], position.Children[second].Evidence.In-position.Children[first].Evidence.In,
+		return cmp.Or(rank[first]-rank[second], position.Children[second].Vanilla.In-position.Children[first].Vanilla.In,
 			strings.Compare(first, second))
 	})
 	return names, stated

@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
-	"paradox-modding-tools/services/internal/lang/shipped"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/session"
 
@@ -300,7 +300,7 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) *LanguageHealth {
 
 		// the version the scan read, and the one it replaced where the game was updated since
 		health.GameVersion = live.Install.Schema.Version
-		if previous := live.Install.Previous; previous != "" && previous != shipped.Safe(health.GameVersion) {
+		if previous := live.Install.Previous; previous != "" && previous != appdata.SafeName(health.GameVersion) {
 			health.UpdatedFrom = previous
 		}
 		live.RUnlock()

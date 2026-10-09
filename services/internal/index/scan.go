@@ -21,7 +21,6 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/lang/shipped"
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/modfiles"
 	"paradox-modding-tools/services/internal/schema"
@@ -98,7 +97,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	// shipped file that does not decode leaves Build the dump files that exist
 	req.Progress("schema", 0, 1)
 	if len(schema.MissingDumps(input.Dumps)) > 0 {
-		if backup, exact, _ := shipped.Load(req.Game, req.Version); backup != nil {
+		if backup, exact, _ := schema.LoadShipped(req.Game, req.Version); backup != nil {
 			origin := backup.Sources[schema.SourceDumps]
 			origin.From, origin.Stale = "shipped", !exact
 			backup.Sources[schema.SourceDumps] = origin
@@ -287,9 +286,10 @@ func (idx *Index) Reindex(sch *schema.Schema, file inventory.File, text string) 
 	}
 }
 
-// devKey is a dev build's app part of a cache name: dev- and a hash of the engine's code, the files
-// of the game, lang and wiki packages in the repo the build sits in (tests and READMEs aside), so
-// only an engine change rescans. Outside a repo it hashes the executable's path, size and time.
+// devKey is a dev build's app part of a cache name: dev- and a hash of the engine's code, the files of
+// the packages game, jomini, loc, inventory, schema, index and wiki in the repo the build sits in
+// (tests and READMEs aside), so only an engine change rescans. Outside a repo it hashes the
+// executable's path, size and time.
 var devKey = sync.OnceValues(func() (string, error) {
 	executable, err := os.Executable()
 	if err != nil {
@@ -301,7 +301,7 @@ var devKey = sync.OnceValues(func() (string, error) {
 	}
 	sum, engine := sha256.New(), false
 	for repo := filepath.Dir(executable); repo != filepath.Dir(repo) && !engine; repo = filepath.Dir(repo) {
-		for _, dir := range []string{"game", "lang", "wiki"} {
+		for _, dir := range []string{"game", "jomini", "loc", "inventory", "schema", "index", "wiki"} {
 			_ = inventory.Walk(filepath.Join(repo, "services", "internal", dir), func(path string) error {
 				if text, err := os.ReadFile(path); err == nil && !strings.HasSuffix(path, "_test.go") && !strings.HasSuffix(path, ".md") {
 					engine = true
@@ -325,7 +325,7 @@ func cachePath(req Request) (path, ofFolder string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	version, app := shipped.Safe(req.Version), shipped.Safe(req.App)
+	version, app := appdata.SafeName(req.Version), appdata.SafeName(req.App)
 	if req.App == "dev" {
 		if app, err = devKey(); err != nil {
 			return "", "", err
@@ -340,7 +340,7 @@ func cachePath(req Request) (path, ofFolder string, err error) {
 		}
 	}
 	folder := sha256.Sum256([]byte(filepath.Clean(req.Dir)))
-	ofFolder = filepath.Join(dir, fmt.Sprintf("install-%s-%x-", shipped.Safe(req.Game), folder[:6]))
+	ofFolder = filepath.Join(dir, fmt.Sprintf("install-%s-%x-", appdata.SafeName(req.Game), folder[:6]))
 	return fmt.Sprintf("%s%s-%s-%x.gob.gz", ofFolder, version, app, state.Sum(nil)[:6]), ofFolder, nil
 }
 

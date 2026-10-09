@@ -154,3 +154,12 @@ func CopyFile(src, dest string) error {
 		return err
 	})
 }
+
+// unsafeName is what SafeName replaces.
+var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]`)
+
+// SafeName is a name fit for a file name, each character outside [A-Za-z0-9._-] turned into "_":
+// "build 24187685" is build_24187685. The shipped schemas and the install cache are named by it.
+func SafeName(name string) string {
+	return unsafeName.ReplaceAllString(name, "_")
+}

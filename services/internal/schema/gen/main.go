@@ -1,7 +1,7 @@
 // Command gen writes the shipped backup schema of one game version: what the install's dump files
-// declare, saved beside shipped.go. Run it from the repo root:
+// declare, saved beside schema/shipped.go. Run it from the repo root:
 //
-//	go run ./services/internal/lang/shipped/gen -game ck3 [-dir <install root>]
+//	go run ./services/internal/schema/gen -game ck3 [-dir <install root>]
 package main
 
 import (
@@ -16,7 +16,6 @@ import (
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
-	"paradox-modding-tools/services/internal/lang/shipped"
 	"paradox-modding-tools/services/internal/schema"
 )
 
@@ -27,9 +26,9 @@ func main() {
 	log.SetFlags(0)
 
 	// 1. the folder the file lands in, found from the repo root
-	shippedDir := filepath.Join("services", "internal", "lang", "shipped")
+	shippedDir := filepath.Join("services", "internal", "schema")
 	if _, err := os.Stat(filepath.Join(shippedDir, "shipped.go")); err != nil {
-		log.Fatalf("%s not found: run from the repo root (go run ./services/internal/lang/shipped/gen)", shippedDir)
+		log.Fatalf("%s not found: run from the repo root (go run ./services/internal/schema/gen)", shippedDir)
 	}
 
 	// 2. the install and its version
@@ -60,7 +59,7 @@ func main() {
 	}
 	sch.Databases = nil
 
-	// 4. the stored form, as shipped.Load reads it
+	// 4. the stored form, as schema.LoadShipped reads it
 	var encoded bytes.Buffer
 	if err := appdata.Encode(&encoded, sch); err != nil {
 		log.Fatal(err)
@@ -72,7 +71,7 @@ func main() {
 		err = appdata.Decode(bytes.NewReader(data), &decoded)
 		return decoded, err
 	}
-	path := filepath.Join(shippedDir, shipped.Name(*gameID, version))
+	path := filepath.Join(shippedDir, schema.ShippedName(*gameID, version))
 	done := "wrote"
 	if current, err := os.ReadFile(path); err == nil {
 		done = "replaced"

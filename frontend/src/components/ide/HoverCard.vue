@@ -26,15 +26,16 @@ const others = computed(() =>
       : [{ site, part: winner.value < 0 ? "Defined by" : card?.adds?.includes(i) ? "Adds to it" : "Replaces" }],
   ),
 );
+// an origin lists its first two files and counts the rest, so a name written in many files keeps the card short
+const SHOWN = 2;
 /** The sites as rows: a part's sites of one origin together, each file once with how many places it holds. */
 const groups = computed(() => {
   const rows: { part: string; origin: string; files: { rel: string; first: Location; count: number }[] }[] = [];
   for (const { site, part } of kept.value
     ? [{ site: kept.value, part: "Defined by" }, ...others.value]
     : others.value) {
-    let group = rows.at(-1);
-    if (!group || group.part !== part || group.origin !== site.origin)
-      rows.push((group = { part, origin: site.origin, files: [] }));
+    let group = rows.find((row) => row.part === part && row.origin === site.origin);
+    if (!group) rows.push((group = { part, origin: site.origin, files: [] }));
     const file = group.files.find((one) => one.rel === site.rel);
     if (file) file.count++;
     else group.files.push({ rel: site.rel, first: site, count: 1 });
@@ -131,14 +132,15 @@ function open(site: Location): void {
         <p v-if="card.about" class="text-11 text-dimmed">{{ card.about }}</p>
       </div>
       <div v-if="groups.length" class="px-3.5 py-2.5">
-        <!-- each origin's chip, and under it each file once: its line, or how many places it holds (its first opens) -->
+        <!-- each origin's chip, under it its first files once each: the line, or how many places it holds (its first
+             opens); then how many files more -->
         <div class="grid grid-cols-[78px_minmax(0,1fr)] gap-x-2.5 gap-y-2 text-12">
           <template v-for="(group, i) in groups" :key="i">
             <span class="leading-5 text-dimmed">{{ group.part }}</span>
             <span class="flex min-w-0 flex-col items-start gap-0.5">
               <OriginChip :label="store.originName(group.origin)" :color="store.originColor(group.origin)" small />
               <button
-                v-for="file in group.files"
+                v-for="file in group.files.slice(0, SHOWN)"
                 :key="file.rel"
                 type="button"
                 class="cursor-pointer text-start font-mono text-11 break-all text-muted hover:text-highlighted hover:underline"
@@ -147,6 +149,9 @@ function open(site: Location): void {
                 {{ file.count > 1 ? file.rel : `${file.rel}:${file.first.range.start.line + 1}`
                 }}<span v-if="file.count > 1" class="font-sans text-dimmed"> · {{ file.count }} places</span>
               </button>
+              <span v-if="group.files.length > SHOWN" class="text-11 text-dimmed"
+                >+{{ group.files.length - SHOWN }} more</span
+              >
             </span>
           </template>
         </div>

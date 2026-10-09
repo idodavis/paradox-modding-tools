@@ -36,7 +36,7 @@ type scalarFacts struct {
 // mentionsOf fills a reading's StoredIn and Mentions: the key's names, then the value's.
 func (walk *fileWalk) mentionsOf(placement *Placement) {
 	assign, isAssign := placement.Statement.(*jomini.Assignment)
-	command := walk.nameCommand(placement, assign)
+	command := nameCommand(placement, assign)
 	placement.StoredIn = command.Database
 	if isAssign {
 		walk.scalarMentions(placement, &assign.Key, walk.facts(placement, assign, &assign.Key, true), command)
@@ -49,7 +49,7 @@ func (walk *fileWalk) mentionsOf(placement *Placement) {
 // nameCommand returns the name command a statement's value belongs to: the key's own (set_variable
 // = x), else the key inside the command whose block it is in (save_scope_value_as = { name = x });
 // zero for none.
-func (walk *fileWalk) nameCommand(placement *Placement, assign *jomini.Assignment) game.NameCommand {
+func nameCommand(placement *Placement, assign *jomini.Assignment) game.NameCommand {
 	if assign == nil {
 		return game.NameCommand{}
 	}
@@ -67,7 +67,7 @@ func (walk *fileWalk) facts(placement *Placement, assign *jomini.Assignment, sca
 	}
 	if placement.Entry >= 0 {
 		f.isEntry = walk.entries[placement.Entry].Statement == placement.Statement
-		f.database = walk.s.Databases[walk.entries[placement.Entry].Database]
+		f.database = walk.schema.Databases[walk.entries[placement.Entry].Database]
 	}
 	_, constant := jomini.Constant(scalar.Text)
 	f.named = scalar.Text != "" && !constant && len(jomini.Interpolations(scalar.Text)) == 0
@@ -101,11 +101,11 @@ func (walk *fileWalk) prefixReferences(placement *Placement, scalar *jomini.Scal
 	}
 	for part := range strings.SplitSeq(scalar.Text, ".") {
 		prefixed, isPrefixed := jomini.SplitPrefixed(part)
-		if !isPrefixed || walk.s.Link(strings.ToLower(part)) == nil {
+		if !isPrefixed || walk.schema.Link(strings.ToLower(part)) == nil {
 			continue
 		}
 		linked = true
-		if database := walk.s.Prefixes[strings.ToLower(prefixed.Prefix)]; database != "" {
+		if database := walk.schema.Prefixes[strings.ToLower(prefixed.Prefix)]; database != "" {
 			placement.Mentions = append(placement.Mentions, Mention{Database: database, ID: prefixed.Name, Range: scalar.Range})
 		}
 	}
@@ -122,7 +122,7 @@ func (walk *fileWalk) keyMentions(placement *Placement, scalar *jomini.Scalar, f
 	}
 	if f.reads && placement.Listed != "" {
 		placement.Mentions = append(placement.Mentions, Mention{
-			Database: walk.s.Lists, ID: strings.TrimPrefix(scalar.Text, placement.Listed), Range: scalar.Range,
+			Database: walk.schema.Lists, ID: strings.TrimPrefix(scalar.Text, placement.Listed), Range: scalar.Range,
 		})
 	}
 	if f.reads && placement.Calls != "" && f.named {

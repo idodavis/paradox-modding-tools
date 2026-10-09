@@ -81,8 +81,8 @@ type meaning struct {
 // fileWalk is one walk of a file: the entries known, which block belongs to which entry, and what the name rules
 // need of the file (its extension, the events database, the parameters defined so far).
 type fileWalk struct {
-	s       *Schema
-	v       Visitor
+	schema  *Schema
+	visitor Visitor
 	entries []Entry
 	own     map[jomini.Statement]int // an entry's statement: its index in entries
 	inside  map[*jomini.Block]int    // a block: the entry it is in, -1 none
@@ -95,38 +95,38 @@ type fileWalk struct {
 // each reading carrying the entry it is in and what its words name. A whole-file entry (a history file) holds the
 // root's statements as one block. A table or list (parsed nil) has no statements to read: its entries are its
 // records, and the visitor sees nothing.
-func (schema *Schema) WalkFile(file inventory.File, parsed *jomini.Result, entries []Entry, v Visitor) {
+func (schema *Schema) WalkFile(file inventory.File, parsed *jomini.Result, entries []Entry, visitor Visitor) {
 	if parsed == nil {
 		return
 	}
-	w := &fileWalk{
-		s: schema, v: v, entries: entries, own: map[jomini.Statement]int{}, inside: map[*jomini.Block]int{},
+	walk := &fileWalk{
+		schema: schema, visitor: visitor, entries: entries,
+		own: map[jomini.Statement]int{}, inside: map[*jomini.Block]int{},
 		ext:     strings.ToLower(path.Ext(file.Rel)),
 		events:  cmp.Or(schema.DatabasesWhere(func(row game.Folder) bool { return row.Events })...),
 		defined: map[string]bool{},
 	}
 	top := parsed.Root.Statements
 	for i, entry := range entries {
-		w.own[entry.Statement] = i
+		walk.own[entry.Statement] = i
 		if entry.Statement.NodeRange() == parsed.Root.Range {
 			top = []jomini.Statement{entry.Statement}
 		}
 	}
-	w.block(nil, top, BlockContext{})
+	walk.block(nil, top, BlockContext{})
 }
 
 // WalkBlock reads a snippet's statements at a context, with no entries and no names: the docs and the dumps'
 // usages read script this way.
-func (schema *Schema) WalkBlock(v Visitor, holder *jomini.Block, statements []jomini.Statement, in BlockContext) {
-	w := &fileWalk{s: schema, v: v, own: map[jomini.Statement]int{}, inside: map[*jomini.Block]int{}}
-	w.block(holder, statements, in)
+func (schema *Schema) WalkBlock(visitor Visitor, holder *jomini.Block, statements []jomini.Statement, in BlockContext) {
+	walk := &fileWalk{schema: schema, visitor: visitor, own: map[jomini.Statement]int{}, inside: map[*jomini.Block]int{}}
+	walk.block(holder, statements, in)
 }
 
 // block reads a block's statements at a context; holder is nil at a file's top. A statement that starts an entry
 // is read at the entry's position and its block at the entry's context; inside an entry each key is read by
 // PlaceKey; anything else stays at the context's position.
 func (walk *fileWalk) block(holder *jomini.Block, statements []jomini.Statement, in BlockContext) {
-	s := walk.s
 	for index, statement := range statements {
 		entry, inEntry := walk.inside[holder]
 		if !inEntry {
@@ -134,27 +134,27 @@ func (walk *fileWalk) block(holder *jomini.Block, statements []jomini.Statement,
 		}
 		var database *Database
 		if i, isEntry := walk.own[statement]; isEntry {
-			if database = s.Databases[walk.entries[i].Database]; database != nil {
+			if database = walk.schema.Databases[walk.entries[i].Database]; database != nil {
 				entry = i
 			}
 		}
 		_, isAssign := statement.(*jomini.Assignment)
-		var readings []Placement
+		var placements []Placement
 		switch {
 		case database != nil:
-			readings = []Placement{s.entryPlacement(statement, database, in)}
+			placements = []Placement{walk.schema.entryPlacement(statement, database, in)}
 		case isAssign && in.InEntry:
-			readings = s.keyPlacements(walk.v, statements, index, in)
+			placements = walk.schema.keyPlacements(walk.visitor, statements, index, in)
 		default:
-			readings = []Placement{{Statement: statement, Position: in.Position, BlockContext: in, Inner: in}}
+			placements = []Placement{{Statement: statement, Position: in.Position, BlockContext: in, Inner: in}}
 		}
 		block := jomini.ChildBlock(statement)
-		for _, placement := range readings {
+		for _, placement := range placements {
 			placement.Holder, placement.Entry = holder, entry
 			if walk.ext != "" {
 				walk.mentionsOf(&placement)
 			}
-			if walk.v.Visit(&placement) && block != nil {
+			if walk.visitor.Visit(&placement) && block != nil {
 				walk.inside[block] = entry
 				walk.block(block, block.Statements, placement.Inner)
 			}
@@ -176,11 +176,11 @@ func (schema *Schema) entryPlacement(statement jomini.Statement, database *Datab
 
 // keyPlacements reads the key of the assignment at statements[index], once for each name the visitor reads
 // it as. A calling word written before a name calls it by that word: blockoverride "x" { }.
-func (schema *Schema) keyPlacements(v Visitor, statements []jomini.Statement, index int, in BlockContext) []Placement {
+func (schema *Schema) keyPlacements(visitor Visitor, statements []jomini.Statement, index int, in BlockContext) []Placement {
 	assign := statements[index].(*jomini.Assignment)
 	names := []string{assign.Key.Text}
-	if v.Alternatives != nil {
-		names = v.Alternatives(assign.Key.Text)
+	if visitor.Alternatives != nil {
+		names = visitor.Alternatives(assign.Key.Text)
 	}
 	if index > 0 {
 		if listed, isList := statements[index-1].(*jomini.ValueStmt); isList {
@@ -189,11 +189,11 @@ func (schema *Schema) keyPlacements(v Visitor, statements []jomini.Statement, in
 			}
 		}
 	}
-	readings := make([]Placement, 0, len(names))
+	placements := make([]Placement, 0, len(names))
 	for _, name := range names {
-		readings = append(readings, schema.PlaceKey(in, assign, name, v.Create))
+		placements = append(placements, schema.PlaceKey(in, assign, name, visitor.Create))
 	}
-	return readings
+	return placements
 }
 
 // EntryContext returns where a database's entry is read: at its entry position, in the kind of block its

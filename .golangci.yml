@@ -43,4 +43,4 @@ formatters:
 issues:
   # Findings already in the code at the restructure's baseline wait for their stage. A stage reads
   # its files' whole list with --new-from-rev= (empty).
-  new-from-rev: 6a0ea12
+  new-from-rev: 517e3c7

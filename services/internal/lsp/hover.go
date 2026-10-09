@@ -107,7 +107,7 @@ type Signature struct {
 // word is written in.
 type reading struct {
 	ref     *index.Ref
-	key     *schema.Key
+	key     *schema.Position
 	command *schema.Command
 	scope   string
 	holds   game.Block // what the walker reads the key's block as
@@ -265,9 +265,9 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 	}
 
 	// what the word names (a $NAME$ in it included), else what its key reads as
-	sch, read := sess.Install.Schema, reading{ref: named, scope: at.Scope}
+	s, read := sess.Install.Schema, reading{ref: named, scope: at.Scope}
 	if isKey {
-		read.key, read.command = at.Key, at.Command
+		read.key, read.command = at.Position, at.Command
 	}
 	if isKey && (jomini.ChildBlock(at.Statement) != nil || at.Inner.Kind == game.BlockValue) {
 		read.holds = at.Inner.Kind // a value block is also written as a number
@@ -277,11 +277,11 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 	if read.ref == nil && read.command != nil && read.command.Kind&game.KindLink != 0 {
 		from := word.Range.Start
 		for _, part := range strings.Split(word.Text, ".") {
-			if read.command = sch.Link(strings.ToLower(part)); read.command == nil || offset <= from+len(part) {
+			if read.command = s.Link(strings.ToLower(part)); read.command == nil || offset <= from+len(part) {
 				break
 			}
 			read.scope, from = "", from+len(part)+1
-			if _, leads := sch.Scopes[read.command.Out]; leads {
+			if _, leads := s.Scopes[read.command.Out]; leads {
 				read.scope = read.command.Out
 			}
 		}
@@ -290,8 +290,8 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 
 	// a key nothing else reads that names a modifier the dumps list, else the most specific $TYPE$
 	// family it matches
-	if modifier, found := sch.Modifiers[word.Text]; isKey && !described {
-		for _, family := range sch.Modifiers {
+	if modifier, found := s.Modifiers[word.Text]; isKey && !described {
+		for _, family := range s.Modifiers {
 			matched, _ := filepath.Match(family.Pattern, word.Text)
 			longer := len(family.Pattern) > len(modifier.Pattern) ||
 				len(family.Pattern) == len(modifier.Pattern) && family.Pattern < modifier.Pattern
@@ -300,7 +300,7 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 			}
 		}
 		if found || modifier.Pattern != "" {
-			card.Head, card.Prose, card.Stale = "modifier", modifier.Blurb, sch.Sources[schema.SourceDumps].Stale
+			card.Head, card.Prose, card.Stale = "modifier", modifier.Blurb, s.Sources[schema.SourceDumps].Stale
 		}
 	}
 
@@ -325,7 +325,7 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 	if parent := len(cursor.chain) - 2; isKey && parent >= 0 && jomini.Literal(word.Text) == jomini.LitNumber {
 		block, sum, mine := jomini.ChildBlock(cursor.chain[parent].Statement), 0.0, 0.0
 		weighted := slices.ContainsFunc(game.Structurals, func(row game.Structural) bool {
-			return row.Command == at.Place.Command && row.Key == "<number>"
+			return row.Command == at.BlockContext.Command && row.Key == "<number>"
 		})
 		if block != nil && weighted {
 			for _, sibling := range block.Statements {
@@ -356,11 +356,11 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 	if parent := len(cursor.chain) - 2; isKey && read.command == nil && parent >= 0 && card.Head == "" {
 		holder, database := cursor.chain[parent], (*schema.Database)(nil)
 		if holder.Entry >= 0 {
-			database = sch.Databases[cursor.records.Defs[holder.Entry].Database]
+			database = s.Databases[cursor.records.Defs[holder.Entry].Database]
 		}
 		holding, isAssign := holder.Statement.(*jomini.Assignment)
 		switch {
-		case database != nil && holder.Inner.Key == database.Entry:
+		case database != nil && holder.Inner.Position == database.Entry:
 			card.Head = "in " + heading(database.Name)
 		case isAssign:
 			card.Head = "in `" + holding.Key.Text + "`"
@@ -372,9 +372,9 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 // describe fills a card from what a word names, saying whether anything is known of it: a
 // reference's definitions, else a command's or a key's claims. A blurb is the dumps' or the docs'.
 func (file *file) describe(card *Inspect, read reading) bool {
-	sch := file.sess.Install.Schema
+	s := file.sess.Install.Schema
 	shown := func(from schema.Source) {
-		card.Stale = card.Stale || sch.Sources[from].Stale
+		card.Stale = card.Stale || s.Sources[from].Stale
 	}
 	if read.ref != nil && file.defined(card, *read.ref, read.scope, shown) {
 		return true
@@ -387,20 +387,20 @@ func (file *file) describe(card *Inspect, read reading) bool {
 		if card.Scope == "" && len(command.Scopes) == 1 {
 			card.Scope = command.Scopes[0]
 		}
-		if _, leads := sch.Scopes[command.Out]; leads {
+		if _, leads := s.Scopes[command.Out]; leads {
 			card.Leads = command.Out
 		}
 		shown(schema.SourceDumps)
 		key = command.Args
 	case key != nil:
 		card.Need, card.Takes, card.Scope, card.Leads = need(key), takes(key), read.scope, key.Scope.Value
-		if from := key.Blurb.From; from == schema.SourceDumps || from == schema.SourceDocs {
+		if from := key.Blurb.Source; from == schema.SourceDumps || from == schema.SourceDocs {
 			card.Prose = key.Blurb.Value
 			shown(from)
 		}
 		for _, from := range []schema.Source{
-			key.Value.From, key.Block.From, key.Scope.From, key.Required.From,
-			key.Default.From,
+			key.Value.Source, key.Block.Source, key.Scope.Source, key.Required.Source,
+			key.Default.Source,
 		} {
 			shown(from)
 		}
@@ -423,13 +423,13 @@ func (file *file) describe(card *Inspect, read reading) bool {
 // name and what the dumps and docs say of its database; a call nothing defines is unknown. scope is
 // where the reference is written, which a scripted entry runs in when its database declares none.
 func (file *file) defined(card *Inspect, ref index.Ref, scope string, shown func(schema.Source)) bool {
-	sess, sch := file.sess, file.sess.Install.Schema
-	defs, known := index.Resolve(sch, sess.Indexes(), ref)
+	sess, s := file.sess, file.sess.Install.Schema
+	defs, known := index.Resolve(s, sess.Indexes(), ref)
 	database := ref.Database
 	if len(defs) > 0 {
 		database = defs[0].Database
 	}
-	row := sch.Databases[database]
+	row := s.Databases[database]
 	if !known && (ref.Called != "" || row == nil && database != index.Localization && database != index.File) {
 		return false
 	}
@@ -494,20 +494,20 @@ func (file *file) defined(card *Inspect, ref index.Ref, scope string, shown func
 	// what its database's entries are and run in; an on_action's own blurb and scope from the dumps;
 	// the author's comment where nothing declared says more
 	if row != nil {
-		if from := row.Entry.Blurb.From; from == schema.SourceDumps || from == schema.SourceDocs {
+		if from := row.Entry.Blurb.Source; from == schema.SourceDumps || from == schema.SourceDocs {
 			card.About = row.Entry.Blurb.Value
 			shown(from)
 		}
 		card.Scope, card.Returns = row.Entry.Scope.Value, returns[row.Entry.Block.Value]
-		if card.Scope == "" && len(row.Naming.CalledIn) > 0 {
+		if card.Scope == "" && len(row.Row.CalledIn) > 0 {
 			card.Scope = scope
 		}
-		shown(row.Entry.Scope.From)
-		if action, found := sch.OnActions[ref.Name]; found && row.Naming.OnActions {
+		shown(row.Entry.Scope.Source)
+		if action, found := s.OnActions[ref.Name]; found && row.Row.OnActions {
 			card.Prose, card.Scope = action.Blurb, cmp.Or(action.Scope, card.Scope)
 			shown(schema.SourceDumps)
 		}
-		card.Graphed = row.Naming.Events || row.Naming.OnActions
+		card.Graphed = row.Row.Events || row.Row.OnActions
 	}
 	card.Prose = cmp.Or(card.Prose, comment)
 	card.Graphed = card.Graphed || len(defs) > 0 && len(sess.Fires(winner)) > 0
@@ -593,11 +593,11 @@ func SignatureHelp(sess *workspace.Session, path string, line, col int) (*Signat
 // dataCard is a data call step's card: a custom localization a quoted argument names, a data
 // function or concept entry, a function of the type before it, else a data type.
 func (file *file) dataCard(steps []jomini.Step) *Inspect {
-	sch, step := file.sess.Install.Schema, steps[len(steps)-1]
+	s, step := file.sess.Install.Schema, steps[len(steps)-1]
 	card, defined := &Inspect{Word: step.Name, Range: file.span(step.Range), Winner: -1}, false
-	on, stale := leads(sch.DataTypes, steps[:len(steps)-1]), sch.Sources[schema.SourceDumps].Stale
+	on, stale := leads(s.DataTypes, steps[:len(steps)-1]), s.Sources[schema.SourceDumps].Stale
 	for _, arg := range step.Args {
-		if custom, found := sch.CustomLoc[arg.Text]; arg.Quoted && found {
+		if custom, found := s.CustomLoc[arg.Text]; arg.Quoted && found {
 			card.Word, card.Head, card.Scope, card.Stale = arg.Text, "custom localization", custom.Scope, stale
 			card.Takes = []string{oneOf(custom.Entries)}
 			if custom.Parent != "" {
@@ -606,13 +606,13 @@ func (file *file) dataCard(steps []jomini.Step) *Inspect {
 			return card
 		}
 	}
-	for _, name := range sch.Flagged(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
+	for _, name := range s.DatabasesWhere(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
 		if !defined && len(index.Lookup(file.sess.Indexes(), name, step.Name)) > 0 {
 			defined = file.defined(card, index.Ref{Database: name, Name: step.Name}, "", func(schema.Source) {})
 		}
 	}
-	_, isType := sch.DataTypes[step.Name]
-	if function, found := sch.DataTypes[on].Functions[step.Name]; found {
+	_, isType := s.DataTypes[step.Name]
+	if function, found := s.DataTypes[on].Functions[step.Name]; found {
 		card.Head, card.Scope, card.Leads = cmp.Or(card.Head, "data function"), on, function.Returns
 		card.Stale = card.Stale || stale
 	} else if len(steps) == 1 && isType && !defined {
@@ -684,16 +684,16 @@ func kinds(command *schema.Command) string {
 }
 
 // need is what a declared source says of a key being required: optional, required, required when.
-func need(key *schema.Key) string {
+func need(key *schema.Position) string {
 	if key == nil {
 		return ""
 	}
-	switch required := key.Required.Value; required.Need {
-	case schema.NeedOptional:
+	switch required := key.Required.Value; required.Level {
+	case schema.LevelOptional:
 		return "optional"
-	case schema.NeedAlways:
+	case schema.LevelAlways:
 		return "required"
-	case schema.NeedWhen:
+	case schema.LevelConditional:
 		return "required when " + required.When
 	}
 	return ""
@@ -701,22 +701,22 @@ func need(key *schema.Key) string {
 
 // takes is what a key takes, as declared, never vanilla's inference: its block's triggers or
 // effects, its word's type or list (a long one ends with how many more), and its default.
-func takes(key *schema.Key) []string {
+func takes(key *schema.Position) []string {
 	if key == nil {
 		return nil
 	}
 	claim, out := key.Value.Value, []string(nil)
-	if key.Value.From == schema.SourceVanilla {
-		claim = schema.Value{}
+	if key.Value.Source == schema.SourceVanilla {
+		claim = schema.Expected{}
 	}
 	said := []string{held[key.Block.Value], typed(claim)}
-	if names := slices.Sorted(maps.Keys(key.Keys)); key.Block.Value == game.BlockArguments && len(names) > 0 {
+	if names := slices.Sorted(maps.Keys(key.Children)); key.Block.Value == game.BlockArguments && len(names) > 0 {
 		said = append(said, "a block with "+strings.Join(names, ", "))
 	}
 	if len(claim.Words) > 0 {
 		said = append(said, oneOf(claim.Words))
 	}
-	if key.Default.From != schema.SourceNone {
+	if key.Default.Source != schema.SourceNone {
 		said = append(said, "defaults to "+key.Default.Value)
 	}
 	for _, text := range said {
@@ -745,7 +745,7 @@ var held = map[game.Block]string{
 var returns = map[game.Block]string{game.BlockTriggers: "yes or no", game.BlockValue: "a number"}
 
 // typed is a word type as a card says it; "" unknown.
-func typed(claim schema.Value) string {
+func typed(claim schema.Expected) string {
 	return map[schema.WordType]string{
 		schema.WordNumber: "a number", schema.WordBool: "yes or no", schema.WordDate: "a date", schema.WordText: "text",
 		schema.WordReference: game.KindName(claim.Database), schema.WordLoc: "a localization key",
@@ -755,8 +755,8 @@ func typed(claim schema.Value) string {
 
 // writes is what vanilla writes at a key, as a card says it: each form it writes there, its words
 // and texts typed by vanilla's names, else its words listed where few.
-func writes(key *schema.Key) (out []string) {
-	words := slices.Sorted(maps.Keys(key.Seen.Values))
+func writes(key *schema.Position) (out []string) {
+	words := slices.Sorted(maps.Keys(key.Evidence.Values))
 	for _, row := range []struct {
 		form schema.Forms
 		said string
@@ -770,10 +770,10 @@ func writes(key *schema.Key) (out []string) {
 	} {
 		form, said := row.form, row.said
 		switch {
-		case key.Seen.Forms&form == 0:
+		case key.Evidence.Forms&form == 0:
 			continue
 		case form&(schema.FormWord|schema.FormText) == 0:
-		case key.Value.From == schema.SourceVanilla:
+		case key.Value.Source == schema.SourceVanilla:
 			said = typed(key.Value.Value)
 		case form == schema.FormWord && len(words) <= 6:
 			said = oneOf(words)
@@ -792,19 +792,19 @@ func heading(database string) string {
 
 // keys is a position's written keys, placeholders aside: those a declared source states first, then
 // those vanilla writes, the most written first; stated is how many lead.
-func keys(position *schema.Key) (names []string, stated int) {
+func keys(position *schema.Position) (names []string, stated int) {
 	rank := map[string]int{}
-	for name, key := range position.Keys {
+	for name, key := range position.Children {
 		if strings.HasPrefix(name, "<") {
 			continue
 		}
 		names, rank[name] = append(names, name), 1
-		if key.Written != schema.SourceNone {
+		if key.DeclaredBy != schema.SourceNone {
 			rank[name], stated = 0, stated+1
 		}
 	}
 	slices.SortFunc(names, func(first, second string) int {
-		return cmp.Or(rank[first]-rank[second], position.Keys[second].Seen.In-position.Keys[first].Seen.In,
+		return cmp.Or(rank[first]-rank[second], position.Children[second].Evidence.In-position.Children[first].Evidence.In,
 			strings.Compare(first, second))
 	})
 	return names, stated

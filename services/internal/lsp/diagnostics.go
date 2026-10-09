@@ -88,8 +88,8 @@ func Diagnose(sess *workspace.Session, path string, enabled map[string]bool) ([]
 type judge struct {
 	file    *file
 	on      map[string]bool
-	ignored map[int][]string             // by 0-based line: the codes a pmt:ignore comment turns off there; "" for all
-	written map[jomini.Range]*schema.Key // the position each word written as a value sits at, by its span
+	ignored map[int][]string                  // by 0-based line: the codes a pmt:ignore comment turns off there; "" for all
+	written map[jomini.Range]*schema.Position // the position each word written as a value sits at, by its span
 	out     []Diagnostic
 }
 
@@ -130,7 +130,7 @@ func (judge *judge) script() {
 	for _, issue := range judge.file.parsed.Errors {
 		judge.report(issue.Range, 1, string(issue.Code), issue.Message)
 	}
-	judge.written = map[jomini.Range]*schema.Key{}
+	judge.written = map[jomini.Range]*schema.Position{}
 	records := index.Walk(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at index.Context) bool {
 		switch statement := at.Statement.(type) {
 		case *jomini.Assignment:
@@ -153,15 +153,15 @@ func (judge *judge) script() {
 // the dumps say stores none; an undeclared scope, a read through a link, and a word vanilla writes
 // in that scope are quiet.
 func (judge *judge) variable(at index.Context, word *jomini.Scalar) {
-	sess, sch := judge.file.sess, judge.file.sess.Install.Schema
-	scope, declared := sch.Scopes[at.Scope]
+	sess, s := judge.file.sess, judge.file.sess.Install.Schema
+	scope, declared := s.Scopes[at.Scope]
 	if !declared || scope.Variables {
 		return
 	}
 	prefixed, isPrefixed := jomini.SplitPrefixed(word.Text)
-	link, database := sch.Link(strings.ToLower(word.Text)), sch.Prefixes[prefixed.Prefix]
-	if isPrefixed && link != nil && !link.Global && database != "" && sch.Databases[database] == nil &&
-		!sess.Install.Index.Scoped[index.Pair(word.Text, at.Scope)] && sch.Speaks(schema.ClaimCommand, at.Key, nil) {
+	link, database := s.Link(strings.ToLower(word.Text)), s.Prefixes[prefixed.Prefix]
+	if isPrefixed && link != nil && !link.Global && database != "" && s.Databases[database] == nil &&
+		!sess.Install.Index.Scoped[index.Pair(word.Text, at.Scope)] && s.MayAccuse(schema.CheckCommand, at.Position, nil) {
 		judge.report(word.Range, 2, "wrong-scope", fmt.Sprintf("%s reads a variable, but %s stores none",
 			word.Text, plain(at.Scope)))
 	}
@@ -170,11 +170,11 @@ func (judge *judge) variable(at index.Context, word *jomini.Scalar) {
 // key judges a key: a variable read, a command written in a scope it does not run in where vanilla
 // never writes it there, and a key the position's sources call required that its block leaves out.
 func (judge *judge) key(at index.Context, assign *jomini.Assignment) {
-	sess, sch := judge.file.sess, judge.file.sess.Install.Schema
+	sess, s := judge.file.sess, judge.file.sess.Install.Schema
 	judge.variable(at, &assign.Key)
 	if command := at.Command; command != nil && at.Scope != "" && len(command.Scopes) > 0 &&
 		!slices.Contains(command.Scopes, at.Scope) && !sess.Install.Index.Scoped[index.Pair(assign.Key.Text, at.Scope)] &&
-		sch.Speaks(schema.ClaimCommand, at.Key, nil) {
+		s.MayAccuse(schema.CheckCommand, at.Position, nil) {
 		runs := make([]string, len(command.Scopes))
 		for i, scope := range command.Scopes {
 			runs[i] = plain(scope)
@@ -186,17 +186,17 @@ func (judge *judge) key(at index.Context, assign *jomini.Assignment) {
 	// an entry written with a mode word the registry lists (INJECT:) adds to another and may leave
 	// keys out
 	block := jomini.BlockOf(assign.Value)
-	if mode, _ := sess.Game.Mode(assign.Key.Text); block == nil || at.Key == nil || mode != "" {
+	if mode, _ := sess.Game.Mode(assign.Key.Text); block == nil || at.Position == nil || mode != "" {
 		return
 	}
-	written := map[*schema.Key]bool{}
+	written := map[*schema.Position]bool{}
 	for _, statement := range block.Statements {
 		if inner, isInner := statement.(*jomini.Assignment); isInner {
-			written[at.Key.At(inner.Key.Text)] = true
+			written[at.Position.Child(inner.Key.Text)] = true
 		}
 	}
-	for _, name := range slices.Sorted(maps.Keys(at.Key.Keys)) {
-		if child := at.Key.Keys[name]; !written[child] && sch.Speaks(schema.ClaimRequired, child, at.Key) {
+	for _, name := range slices.Sorted(maps.Keys(at.Position.Children)) {
+		if child := at.Position.Children[name]; !written[child] && s.MayAccuse(schema.CheckRequired, child, at.Position) {
 			judge.report(assign.Key.Range, 2, "missing-key",
 				fmt.Sprintf("%s leaves out %s, which the game's docs say it must write", assign.Key.Text, name))
 		}
@@ -207,12 +207,12 @@ func (judge *judge) key(at index.Context, assign *jomini.Assignment) {
 // a constant or parameter is not yet its word, and a word that reads a value stands for a number.
 func (judge *judge) value(at index.Context, scalar *jomini.Scalar) {
 	judge.variable(at, scalar)
-	if at.Key == nil {
+	if at.Position == nil {
 		return
 	}
-	judge.written[scalar.Range] = at.Key
+	judge.written[scalar.Range] = at.Position
 	sess := judge.file.sess
-	claim, text := at.Key.Value.Value, scalar.Text
+	claim, text := at.Position.Value.Value, scalar.Text
 	if _, constant := jomini.Constant(text); constant || len(jomini.Interpolations(text)) > 0 {
 		return
 	}
@@ -234,9 +234,9 @@ func (judge *judge) value(at index.Context, scalar *jomini.Scalar) {
 	case len(claim.Words) > 0:
 		code, wrong = "wrong-declared-value", true
 	}
-	if wrong && sess.Install.Schema.Speaks(schema.ClaimValue, at.Key, nil) {
+	if wrong && sess.Install.Schema.MayAccuse(schema.CheckValue, at.Position, nil) {
 		judge.report(scalar.Range, 2, code, fmt.Sprintf("%s is not allowed here; this key takes %s",
-			text, strings.Join(takes(at.Key), ", ")))
+			text, strings.Join(takes(at.Position), ", ")))
 	}
 }
 
@@ -244,16 +244,16 @@ func (judge *judge) value(at index.Context, scalar *jomini.Scalar) {
 // a word a position declares names a database or a file; vanilla's contradiction keeps it quiet.
 func (judge *judge) references(refs []index.Ref) {
 	sess := judge.file.sess
-	sch := sess.Install.Schema
+	s := sess.Install.Schema
 	for _, ref := range refs {
-		position, row := judge.written[ref.Range], sch.Databases[ref.Database]
-		events := row != nil && row.Naming.Events
+		position, row := judge.written[ref.Range], s.Databases[ref.Database]
+		events := row != nil && row.Row.Events
 		written := strings.Trim(judge.file.text[ref.Range.Start:ref.Range.End], `"`)
 		linked := row != nil && strings.HasSuffix(written, ":"+ref.Name) // a prefix names its game database (title:k_x)
 		var code, message string
 		switch {
-		case events && (position == nil || position.Value.From != schema.SourceNone &&
-			!sch.Speaks(schema.ClaimValue, position, nil)):
+		case events && (position == nil || position.Value.Source != schema.SourceNone &&
+			!s.MayAccuse(schema.CheckValue, position, nil)):
 			continue
 		case events:
 			code, message = "unknown-event", "no event is named "+ref.Name
@@ -261,7 +261,7 @@ func (judge *judge) references(refs []index.Ref) {
 			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.Name)
 		case position == nil || written != ref.Name:
 			continue
-		case !sch.Speaks(schema.ClaimValue, position, nil):
+		case !s.MayAccuse(schema.CheckValue, position, nil):
 			continue
 		case position.Value.Value.Type == schema.WordFile && ref.Database == index.File:
 			code, message = "missing-file", ref.Name+" exists nowhere in the install or the mods"
@@ -270,7 +270,7 @@ func (judge *judge) references(refs []index.Ref) {
 		default:
 			continue
 		}
-		_, known := index.Resolve(sch, sess.Indexes(), ref)
+		_, known := index.Resolve(s, sess.Indexes(), ref)
 		if known || !linked && judge.contradicted(position, ref) {
 			continue
 		}
@@ -280,11 +280,11 @@ func (judge *judge) references(refs []index.Ref) {
 
 // contradicted is whether vanilla itself writes, at the reference's position, a word of the same
 // kind (for an event, an event-shaped word) that nothing defines: then a miss proves nothing.
-func (judge *judge) contradicted(position *schema.Key, ref index.Ref) bool {
+func (judge *judge) contradicted(position *schema.Position, ref index.Ref) bool {
 	sess := judge.file.sess
 	row := sess.Install.Schema.Databases[ref.Database]
-	for word := range position.Seen.Values {
-		if row != nil && row.Naming.Events && !jomini.IsEventID(word) {
+	for word := range position.Evidence.Values {
+		if row != nil && row.Row.Events && !jomini.IsEventID(word) {
 			continue
 		}
 		if _, found := index.Resolve(sess.Install.Schema, sess.Indexes(), index.Ref{Database: ref.Database, Name: word}); !found {
@@ -324,7 +324,7 @@ func (judge *judge) definitions(defs []index.Def) {
 				fmt.Sprintf("%s:%s does nothing: no %s is loaded before it", def.Mode, def.Name, def.Name))
 			continue
 		}
-		if !contends(def) || row.Naming.OnActions || row.Naming.History || sess.Install.Index.Repeated[def.Database] {
+		if !contends(def) || row.Row.OnActions || row.Row.History || sess.Install.Index.Repeated[def.Database] {
 			continue
 		}
 		if other := slices.IndexFunc(loaded, func(other index.Def) bool {

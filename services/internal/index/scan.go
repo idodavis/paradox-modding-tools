@@ -104,7 +104,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 			input.Shipped = backup
 		}
 	}
-	sch, err := schema.Build(ctx, input)
+	s, err := schema.Build(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -112,12 +112,12 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	// 4. the index: each other file parsed and walked once; Ready adds the localization's records in
 	// file order, so no loc file is read again
 	idx := &Index{Files: input.Install, Roots: roots, Records: localized}
-	err = index(ctx, sch, idx, false, func(done, total int) { req.Progress("index", done, total) })
+	err = index(ctx, s, idx, false, func(done, total int) { req.Progress("index", done, total) })
 	if err != nil {
 		return nil, err
 	}
 
-	install := &Install{Schema: sch, Index: idx, Scanned: time.Now()}
+	install := &Install{Schema: s, Index: idx, Scanned: time.Now()}
 	if !cached {
 		return install, nil
 	}
@@ -152,7 +152,7 @@ func schemaInput(req Request, roots []string) schema.Input {
 
 // index reads the files of idx.Files that hold records, localization in every language only when
 // withLoc is set: a worker per CPU parses and walks ahead while Add runs in file order here.
-func index(ctx context.Context, sch *schema.Schema, idx *Index, withLoc bool, progress func(done, total int)) error {
+func index(ctx context.Context, s *schema.Schema, idx *Index, withLoc bool, progress func(done, total int)) error {
 	idx.Ready()
 	var files []inventory.File
 	for _, file := range idx.Files {
@@ -165,7 +165,7 @@ func index(ctx context.Context, sch *schema.Schema, idx *Index, withLoc bool, pr
 	done := 0
 	return inventory.Ordered(ctx, files, func(file inventory.File) *Records {
 		text, _ := file.Text()
-		return read(sch.Game, sch, file, text, nil)
+		return read(s.Game, s, file, text, nil)
 	}, func(file inventory.File, records *Records) {
 		if records != nil {
 			idx.Add(records, file.Path)
@@ -180,13 +180,13 @@ func index(ctx context.Context, sch *schema.Schema, idx *Index, withLoc bool, pr
 // read is one file's records by its format: script walked, a table or sound list walked without a
 // tree, localization parsed with no schema (nil before the schema stage); nil when the format holds
 // none or the language is not kept (languages none: every one).
-func read(gameID string, sch *schema.Schema, file inventory.File, text string, languages []string) *Records {
+func read(gameID string, s *schema.Schema, file inventory.File, text string, languages []string) *Records {
 	switch file.Format {
 	case inventory.Script:
 		parsed := jomini.Parse(text)
-		return Walk(sch, file, &parsed, nil)
+		return Walk(s, file, &parsed, nil)
 	case inventory.Table, inventory.List:
-		return Walk(sch, file, nil, nil)
+		return Walk(s, file, nil, nil)
 	case inventory.Loc:
 		parsed := loc.Parse(text)
 		language := strings.ToLower(cmp.Or(parsed.Language, loc.LanguageFromRel(file.Rel)))
@@ -266,7 +266,7 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 // Reindex walks one file again: its records dropped and added back. A file not yet in Files goes
 // after its origin's last file, so it keeps that origin's place in load order. Every localization
 // language is kept.
-func (idx *Index) Reindex(sch *schema.Schema, file inventory.File, text string) {
+func (idx *Index) Reindex(s *schema.Schema, file inventory.File, text string) {
 	idx.Drop(file.Path)
 	if idx.defs == nil {
 		idx.Ready()
@@ -281,7 +281,7 @@ func (idx *Index) Reindex(sch *schema.Schema, file inventory.File, text string) 
 		idx.Files = slices.Insert(idx.Files, at, file)
 		idx.Place()
 	}
-	if records := read(sch.Game, sch, file, text, nil); records != nil {
+	if records := read(s.Game, s, file, text, nil); records != nil {
 		idx.Add(records, file.Path)
 	}
 }

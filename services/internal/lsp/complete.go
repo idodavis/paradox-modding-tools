@@ -91,17 +91,17 @@ func (file *file) complete(offset int, label string) *completer {
 
 	// a prefixed word: the names of the database its link prefix reads (Schema.Prefixes), spelled
 	// whole, and the scopes the game saves that Resolve knows there
-	sch, prefix := file.sess.Install.Schema, completer.prefix
+	s, prefix := file.sess.Install.Schema, completer.prefix
 	if colon := strings.LastIndexByte(prefix, ':'); colon >= 0 {
 		link := prefix[strings.LastIndexByte(prefix[:colon], '.')+1 : colon]
-		database := sch.Prefixes[link]
+		database := s.Prefixes[link]
 		var saved []string
-		for _, name := range slices.Sorted(maps.Keys(sch.Saved)) {
-			if _, known := index.Resolve(sch, file.sess.Indexes(), index.Ref{Database: database, Name: name}); known {
+		for _, name := range slices.Sorted(maps.Keys(s.Saved)) {
+			if _, known := index.Resolve(s, file.sess.Indexes(), index.Ref{Database: database, Name: name}); known {
 				saved = append(saved, name)
 			}
 		}
-		if sch.Link(link) != nil {
+		if s.Link(link) != nil {
 			completer.names(database, prefix[:colon+1], 2, saved...)
 		}
 		return completer
@@ -150,7 +150,7 @@ func (completer *completer) names(database, spelled string, rank int, more ...st
 // keys offers the keys of the cursor's block: a call's parameters, its position's keys, the
 // commands its kind allows (in scope first), links, the names it calls; at the top, its database's.
 func (completer *completer) keys(cursor spot) {
-	sess, sch := completer.file.sess, completer.file.sess.Install.Schema
+	sess, s := completer.file.sess, completer.file.sess.Install.Schema
 	holder := cursor.block()
 	if holder < 0 {
 		if database := completer.file.place.Database; database != nil {
@@ -177,10 +177,10 @@ func (completer *completer) keys(cursor spot) {
 	// what the body around it offers
 	completer.values(spot{chain: cursor.chain[:holder+1]})
 	inner := at.Inner
-	if inner.Key == nil && len(completer.items) == 0 && holder > 0 {
+	if inner.Position == nil && len(completer.items) == 0 && holder > 0 {
 		inner = cursor.chain[holder-1].Inner
 	}
-	if inner.Key == nil {
+	if inner.Position == nil {
 		return
 	}
 
@@ -190,15 +190,15 @@ func (completer *completer) keys(cursor spot) {
 		allowed &^= game.KindEffect
 	}
 	for _, name := range slices.Sorted(maps.Keys(game.ValueOperators)) {
-		if step := sch.Step(inner, nil, name, false); step.Rule == game.StepOperator {
-			completer.add(Item{Label: name, Head: need(step.Key)}, reading{key: step.Key, scope: scope})
+		if step := s.ReadKey(inner, nil, name, false); step.Rule == game.KeyRuleOperator {
+			completer.add(Item{Label: name, Head: need(step.Position)}, reading{key: step.Position, scope: scope})
 		}
 	}
 
 	// the position's keys, stated first, read as the walker reads them; one left to calls is a call
-	names, stated := keys(inner.Key)
+	names, stated := keys(inner.Position)
 	for i, name := range names {
-		position := sch.Step(inner, nil, name, false).Key
+		position := s.ReadKey(inner, nil, name, false).Position
 		read := reading{key: position, scope: scope}
 		if position == nil {
 			read = reading{ref: &index.Ref{Called: called, Name: name}}
@@ -210,8 +210,8 @@ func (completer *completer) keys(cursor spot) {
 		completer.add(item, read)
 	}
 	// the commands the block's kind allows, in scope first; a Wild Card link has no name to write
-	for _, name := range slices.Sorted(maps.Keys(sch.Commands)) {
-		command := sch.Commands[name]
+	for _, name := range slices.Sorted(maps.Keys(s.Commands)) {
+		command := s.Commands[name]
 		if allowed == 0 || command.Kind&(allowed|game.KindLink) == 0 || command.Wild {
 			continue
 		}
@@ -225,7 +225,7 @@ func (completer *completer) keys(cursor spot) {
 	}
 
 	// the names called here: the entries of the databases a call by the block's kind resolves in
-	for _, name := range sch.Callees[called] {
+	for _, name := range s.Callees[called] {
 		completer.names(name, "", 2)
 	}
 }
@@ -240,7 +240,7 @@ func (completer *completer) values(cursor spot) {
 	if _, isAssign := at.Statement.(*jomini.Assignment); !isAssign {
 		return
 	}
-	if position := at.Key; position != nil {
+	if position := at.Position; position != nil {
 		claim := position.Value.Value
 		words := claim.Words
 		if claim.Type == schema.WordBool {
@@ -249,7 +249,7 @@ func (completer *completer) values(cursor spot) {
 		for _, word := range words {
 			completer.add(Item{Label: word}, reading{})
 		}
-		written := position.Seen.Values
+		written := position.Evidence.Values
 		for _, word := range slices.SortedFunc(maps.Keys(written), func(first, second string) int {
 			return cmp.Or(written[second]-written[first], strings.Compare(first, second))
 		}) {
@@ -273,8 +273,8 @@ func (completer *completer) values(cursor spot) {
 // calls offers what may follow in a data call: after [ the global functions, data types and data
 // function or concept entries; after a dot the functions of the type the steps lead to.
 func (completer *completer) calls(written string) {
-	sch := completer.file.sess.Install.Schema
-	types := sch.DataTypes
+	s := completer.file.sess.Install.Schema
+	types := s.DataTypes
 	if dot := strings.LastIndexByte(written, '.'); dot >= 0 {
 		for _, name := range slices.Sorted(maps.Keys(types[leads(types, jomini.ParseCall(written[:dot], 0))].Functions)) {
 			completer.add(Item{Label: name, Head: "data function", Rank: 1}, reading{})
@@ -287,20 +287,20 @@ func (completer *completer) calls(written string) {
 	for _, name := range slices.Sorted(maps.Keys(types)) {
 		completer.add(Item{Label: name, Head: "data type", Rank: 2}, reading{})
 	}
-	for _, name := range sch.Flagged(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
+	for _, name := range s.DatabasesWhere(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
 		completer.names(name, "", 2)
 	}
 }
 
 // snippet is the editor snippet a key writes: a block where a source declares one or vanilla writes
 // only blocks there, else key = and a value where either says it takes one; "" where neither does.
-func snippet(name string, position *schema.Key) string {
+func snippet(name string, position *schema.Position) string {
 	switch {
 	case position == nil:
 		return ""
-	case position.Block.From != schema.SourceNone || position.Seen.Forms&^schema.FormCommand == schema.FormBlock:
+	case position.Block.Source != schema.SourceNone || position.Evidence.Forms&^schema.FormCommand == schema.FormBlock:
 		return name + " = {\n\t$0\n}"
-	case position.Value.From != schema.SourceNone || position.Seen.Forms&^(schema.FormBlock|schema.FormCommand) != 0:
+	case position.Value.Source != schema.SourceNone || position.Evidence.Forms&^(schema.FormBlock|schema.FormCommand) != 0:
 		return name + " = $0"
 	}
 	return ""

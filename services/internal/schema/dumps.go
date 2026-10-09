@@ -258,7 +258,7 @@ func (schema *Schema) readDumps(files []inventory.File) (written time.Time) {
 					command, named := schema.Commands[entryName], scopes(fields["Command.Scopes"])
 					switch {
 					case command == nil:
-						command = &Command{Scopes: named, Args: &Key{}}
+						command = &Command{Scopes: named, Args: &Position{}}
 						schema.Commands[entryName] = command
 					case len(named) == 0:
 						command.Scopes = nil
@@ -282,7 +282,7 @@ func (schema *Schema) readDumps(files []inventory.File) (written time.Time) {
 					command.Wild = command.Wild || fields["Command.Wild"] == "yes"
 
 					// a Traits value says what the command's own value is; comparison operators say no type
-					claim, traits := Value{}, fields["Command.Args.Value"]
+					claim, traits := Expected{}, fields["Command.Args.Value"]
 					switch {
 					case traits == "yes/no":
 						claim.Type = WordBool
@@ -315,7 +315,7 @@ func (schema *Schema) readDumps(files []inventory.File) (written time.Time) {
 						claim.Words = slices.Compact(claim.Words)
 					}
 					if claim.Type != WordUnknown || claim.Words != nil {
-						Set(&command.Args.Value, claim, SourceDumps)
+						SetFirst(&command.Args.Value, claim, SourceDumps)
 					}
 					if strings.TrimSpace(usage) != "" {
 						usages[entryName] = append(usages[entryName], usage)
@@ -419,7 +419,7 @@ func (schema *Schema) readDumps(files []inventory.File) (written time.Time) {
 
 		// a usage whose blocks write no block placeholder takes arguments only
 		if blocks > 0 && plain == blocks {
-			Set(&command.Args.Block, game.BlockArguments, SourceDumps)
+			SetFirst(&command.Args.Block, game.BlockArguments, SourceDumps)
 		}
 	}
 	return written

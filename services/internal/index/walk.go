@@ -17,18 +17,18 @@ import (
 
 // Context is a step as the index reads it.
 type Context struct {
-	schema.Step
+	schema.Reading
 	Entry int32  // the entry it is in, as an index into the Records' Defs; -1 outside one
 	Names string // the database its value names by a name command (set_variable); "" none
 }
 
 // Walk reads a file with the schema: its records, and each statement's context handed to visit
 // (nil for none); visit returning false stops the walk.
-func Walk(sch *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(Context) bool) *Records {
+func Walk(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(Context) bool) *Records {
 	walker := &walker{
-		sch: sch, file: file, records: &Records{scoped: map[[2]string]bool{}}, visit: visit,
+		schema: s, file: file, records: &Records{scoped: map[[2]string]bool{}}, visit: visit,
 		own: map[jomini.Statement]int32{}, entries: map[*jomini.Block]int32{},
-		events: cmp.Or(sch.Flagged(func(row game.Folder) bool { return row.Events })...),
+		events: cmp.Or(s.DatabasesWhere(func(row game.Folder) bool { return row.Events })...),
 		ext:    strings.ToLower(path.Ext(file.Rel)),
 	}
 
@@ -38,7 +38,7 @@ func Walk(sch *schema.Schema, file inventory.File, parsed *jomini.Result, visit 
 	if parsed != nil {
 		walker.lines, top = parsed.Lines(), parsed.Root.Statements
 	}
-	sch.Entries(file, parsed, func(entry schema.Entry) {
+	s.FindEntries(file, parsed, func(entry schema.Entry) {
 		span := entry.Statement.NodeRange()
 		if assign, isAssign := entry.Statement.(*jomini.Assignment); isAssign {
 			span = assign.Key.Range
@@ -49,20 +49,20 @@ func Walk(sch *schema.Schema, file inventory.File, parsed *jomini.Result, visit 
 		walker.own[entry.Statement] = int32(len(walker.records.Defs))
 		walker.define(Def{Database: entry.Database, Name: entry.Name, Mode: entry.Mode, Range: span, Local: entry.Local})
 	})
-	reader := schema.Reader{Visit: walker.step, Entry: func(statement jomini.Statement) *schema.Database {
+	reader := schema.Visitor{Visit: walker.step, Entry: func(statement jomini.Statement) *schema.Database {
 		if index, isEntry := walker.own[statement]; isEntry {
-			return sch.Databases[walker.records.Defs[index].Database]
+			return s.Databases[walker.records.Defs[index].Database]
 		}
 		return nil
 	}}
-	sch.Read(reader, nil, top, schema.Place{})
+	s.WalkBlock(reader, nil, top, schema.BlockContext{})
 	return walker.records
 }
 
 // walker is one file's walk: its records, the entry each entry statement and written block is in,
 // and the visitor each step is handed to.
 type walker struct {
-	sch     *schema.Schema
+	schema  *schema.Schema
 	file    inventory.File
 	records *Records
 	lines   *jomini.LineIndex
@@ -100,11 +100,11 @@ func (walker *walker) refer(ref Ref, at Context) {
 
 // step reads one statement: the entry it is in, what its key and value name, and the scope its
 // command or link is written in; then it is handed to the visitor.
-func (walker *walker) step(step *schema.Step) bool {
+func (walker *walker) step(step *schema.Reading) bool {
 	if walker.stopped {
 		return false
 	}
-	here := Context{Step: *step, Entry: -1}
+	here := Context{Reading: *step, Entry: -1}
 	if entry, known := walker.entries[step.Holder]; known {
 		here.Entry = entry
 	}
@@ -117,7 +117,7 @@ func (walker *walker) step(step *schema.Step) bool {
 	assign, isAssign := step.Statement.(*jomini.Assignment)
 	value, naming := jomini.ValueOf(step.Statement), game.NameCommand{}
 	if isAssign {
-		naming = game.NameCommands[step.Place.Command+"/"+assign.Key.Text]
+		naming = game.NameCommands[step.BlockContext.Command+"/"+assign.Key.Text]
 		if own, found := game.NameCommands[strings.ToLower(assign.Key.Text)]; found {
 			naming = own
 		}
@@ -135,7 +135,7 @@ func (walker *walker) step(step *schema.Step) bool {
 	if here.Scope != "" && isAssign && here.Command != nil {
 		walker.records.scoped[Pair(assign.Key.Text, here.Scope)] = true
 	}
-	if here.Scope != "" && isScalar && walker.sch.Link(strings.ToLower(scalar.Text)) != nil {
+	if here.Scope != "" && isScalar && walker.schema.Link(strings.ToLower(scalar.Text)) != nil {
 		walker.records.scoped[Pair(scalar.Text, here.Scope)] = true
 	}
 
@@ -153,12 +153,12 @@ func (walker *walker) step(step *schema.Step) bool {
 // that fits, a value by the first value rule, and each $NAME$ an entry of a folder with Parameters
 // writes. A constant (@x) or a word holding a parameter ($X$) names nothing.
 func (walker *walker) word(here Context, word *jomini.Scalar, isKey, makes bool) {
-	sch, step := walker.sch, here.Step
+	s, step := walker.schema, here.Reading
 	_, isEntry := walker.own[step.Statement]
 	assign, isAssign := step.Statement.(*jomini.Assignment)
 	var database *schema.Database
 	if here.Entry >= 0 {
-		database = sch.Databases[walker.records.Defs[here.Entry].Database]
+		database = s.Databases[walker.records.Defs[here.Entry].Database]
 	}
 	_, constant := jomini.Constant(word.Text)
 	named := word.Text != "" && !constant && len(jomini.Interpolations(word.Text)) == 0
@@ -167,30 +167,30 @@ func (walker *walker) word(here Context, word *jomini.Scalar, isKey, makes bool)
 	linked := false
 	for part := range strings.SplitSeq(word.Text, ".") {
 		prefixed, isPrefixed := jomini.SplitPrefixed(part)
-		if !reads || !isPrefixed || sch.Link(strings.ToLower(part)) == nil {
+		if !reads || !isPrefixed || s.Link(strings.ToLower(part)) == nil {
 			continue
 		}
 		linked = true
-		if database := sch.Prefixes[strings.ToLower(prefixed.Prefix)]; database != "" {
+		if database := s.Prefixes[strings.ToLower(prefixed.Prefix)]; database != "" {
 			walker.refer(Ref{Database: database, Name: prefixed.Name, Range: word.Range}, here)
 		}
 	}
 
-	claim, literal := schema.Value{}, jomini.Literal(word.Text)
-	if step.Key != nil {
-		claim = step.Key.Value.Value
+	claim, literal := schema.Expected{}, jomini.Literal(word.Text)
+	if step.Position != nil {
+		claim = step.Position.Value.Value
 	}
 	if isKey {
 		for _, rule := range game.KeyNames {
 			switch {
-			case rule == game.NameHistory && isEntry && database != nil && database.Naming.Of != "":
-				walker.refer(Ref{Database: database.Naming.Of, Name: walker.records.Defs[here.Entry].Name, Range: word.Range}, here)
+			case rule == game.NameHistory && isEntry && database != nil && database.Row.Of != "":
+				walker.refer(Ref{Database: database.Row.Of, Name: walker.records.Defs[here.Entry].Name, Range: word.Range}, here)
 			case rule == game.NameList && reads && step.Listed != "":
-				walker.refer(Ref{Database: sch.Lists, Name: strings.TrimPrefix(word.Text, step.Listed), Range: word.Range}, here)
+				walker.refer(Ref{Database: s.Lists, Name: strings.TrimPrefix(word.Text, step.Listed), Range: word.Range}, here)
 			case rule == game.NameCall && reads && step.Calls != "" && named:
 				walker.refer(Ref{Called: step.Calls, Name: word.Text, Range: word.Range}, here)
-			case rule == game.NameParameter && reads && step.Place.Call != "":
-				walker.refer(Ref{Database: Parameter, Name: step.Place.Call + ":" + word.Text, Range: word.Range}, here)
+			case rule == game.NameParameter && reads && step.Call != "":
+				walker.refer(Ref{Database: Parameter, Name: step.Call + ":" + word.Text, Range: word.Range}, here)
 			}
 		}
 	}
@@ -202,26 +202,26 @@ values:
 		}
 		ref := Ref{Name: word.Text, Range: word.Range}
 		switch {
-		case rule == game.NameHistory && isEntry && database != nil && database.Naming.Of != "":
-			ref.Database = database.Naming.Of // a history entry written key = value (province_mapping)
+		case rule == game.NameHistory && isEntry && database != nil && database.Row.Of != "":
+			ref.Database = database.Row.Of // a history entry written key = value (province_mapping)
 		case rule == game.NameFileRef && isAssign && game.FileTypes[walker.ext].Refs[assign.Key.Text] != "":
 			ref.Database = walker.ext[1:] + "." + game.FileTypes[walker.ext].Refs[assign.Key.Text]
 		case rule == game.NameMade && makes && here.Names != "":
 			walker.define(Def{Database: here.Names, Name: word.Text, Range: word.Range})
-		case rule == game.NameGroup && isAssign && database != nil && step.Place.Key == database.Entry &&
-			slices.Contains(database.Naming.Names, assign.Key.Text):
+		case rule == game.NameGroup && isAssign && database != nil && step.BlockContext.Position == database.Entry &&
+			slices.Contains(database.Row.Names, assign.Key.Text):
 			walker.define(Def{Database: database.Name, Name: word.Text, Range: word.Range, Named: true})
 		case rule == game.NameRead && here.Names != "":
 			ref.Database = here.Names
 		case rule == game.NameClaim && claim.Type == schema.WordReference &&
-			(step.Key.Value.From != schema.SourceVanilla || literal != jomini.LitNumber):
+			(step.Position.Value.Source != schema.SourceVanilla || literal != jomini.LitNumber):
 			ref.Database = claim.Database // vanilla types a position by its words, never its numbers
 		case rule == game.NameClaim && claim.Type == schema.WordLoc:
 			ref.Database = Localization
 		case rule == game.NameClaim && claim.Type == schema.WordFile:
 			ref.Database = File
-		case rule == game.NameValue && literal != jomini.LitNumber && literal != jomini.LitDate && step.Key != nil &&
-			(claim.Type == schema.WordNumber || step.Key.Seen.Forms&schema.FormNumber != 0):
+		case rule == game.NameValue && literal != jomini.LitNumber && literal != jomini.LitDate && step.Position != nil &&
+			(claim.Type == schema.WordNumber || step.Position.Evidence.Forms&schema.FormNumber != 0):
 			ref.Called = game.Blocks[game.BlockValue].Calls
 		case rule == game.NameEvent && jomini.IsEventID(word.Text):
 			ref.Database = walker.events
@@ -235,7 +235,7 @@ values:
 	}
 
 	// an entry of a folder with Parameters defines each $NAME$ it writes, at its first use
-	if database == nil || !database.Naming.Parameters {
+	if database == nil || !database.Row.Parameters {
 		return
 	}
 	start := word.Range.Start

@@ -63,37 +63,37 @@ var choices = regexp.MustCompile(`^[\w.]+(?:/[\w.]+)+$`)
 var phrases = []struct {
 	pattern *regexp.Regexp
 	alone   bool
-	set     func(schema *Schema, found *Key, match []string, from Source)
+	set     func(schema *Schema, found *Position, match []string, from Source)
 }{
 	// default is x, defaults to x, (default = x), default: x, and default x when x is a value: one
 	// word that ends its clause
 	{regexp.MustCompile(`(?i)\bdefaults?(?: is| to| =|:) ['"\x60]?([^\s,;()'"\x60]+?)['"\x60]?` +
-		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), false, func(_ *Schema, found *Key, match []string, from Source) {
-		Set(&found.Default, match[1], from)
+		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), false, func(_ *Schema, found *Position, match []string, from Source) {
+		SetFirst(&found.Default, match[1], from)
 	}},
 	{regexp.MustCompile(`(?i)\bdefault ((?:yes|no|none)\b|-?\d+(?:\.\d+)?|[A-Za-z]\w*(?:[._]\w+)+)` +
-		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), false, func(_ *Schema, found *Key, match []string, from Source) {
-		Set(&found.Default, match[1], from)
+		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), false, func(_ *Schema, found *Position, match []string, from Source) {
+		SetFirst(&found.Default, match[1], from)
 	}},
-	{regexp.MustCompile(`(?i)\boptional\b`), false, func(_ *Schema, found *Key, _ []string, from Source) {
-		Set(&found.Required, Required{Need: NeedOptional}, from)
+	{regexp.MustCompile(`(?i)\boptional\b`), false, func(_ *Schema, found *Position, _ []string, from Source) {
+		SetFirst(&found.Required, Requirement{Level: LevelOptional}, from)
 	}},
-	{regexp.MustCompile(`(?i)^required (?:if|when) (.+)`), false, func(_ *Schema, found *Key, match []string,
+	{regexp.MustCompile(`(?i)^required (?:if|when) (.+)`), false, func(_ *Schema, found *Position, match []string,
 		from Source) {
-		Set(&found.Required, Required{Need: NeedWhen, When: match[1]}, from)
+		SetFirst(&found.Required, Requirement{Level: LevelConditional, When: match[1]}, from)
 	}},
 	{regexp.MustCompile(`(?i)^required(?:[.!]| field\b|$)|\bthis field is required\b`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Required, Required{Need: NeedAlways}, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Required, Requirement{Level: LevelAlways}, from)
 		}},
 	// root = x: the root scope is the first word of x that is a scope the dumps declare
-	{regexp.MustCompile(`(?i)^root (?:=|-) (.+)`), false, func(schema *Schema, found *Key, match []string,
+	{regexp.MustCompile(`(?i)^root (?:=|-) (.+)`), false, func(schema *Schema, found *Position, match []string,
 		from Source) {
 		for _, word := range strings.FieldsFunc(match[1], func(char rune) bool {
 			return !unicode.IsLetter(char) && !unicode.IsDigit(char) && char != '_'
 		}) {
 			if _, declared := schema.Scopes[word]; declared {
-				Set(&found.Scope, word, from)
+				SetFirst(&found.Scope, word, from)
 				return
 			}
 		}
@@ -107,55 +107,55 @@ var phrases = []struct {
 	// not one of a/b alternatives; text, name and scope only as the whole text: prose opens with them
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:(?:scripted )?(?:int|integer|int32|int31|num|number|float|double|` +
 		`fixed[ _]point)|scripted? value|script_value|0\.0-1\.0)(?:[^\w/]|$)`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Value, Value{Type: WordNumber}, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Value, Expected{Type: WordNumber}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:bool(?:ean)?|yes/no)(?:[^\w/]|$)`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Value, Value{Type: WordBool}, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Value, Expected{Type: WordBool}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:date)(?:[^\w/]|$)`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Value, Value{Type: WordDate}, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Value, Expected{Type: WordDate}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:string|name|text)(?:\s*\)|"?$)`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Value, Value{Type: WordText}, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Value, Expected{Type: WordText}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:scope)(?:\s*\)|"?$)`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Value, Value{Type: WordScope}, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Value, Expected{Type: WordScope}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:loc key|localization[ _]key)(?:[^\w/]|$)`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Value, Value{Type: WordLoc}, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Value, Expected{Type: WordLoc}, from)
 		}},
 	// event ID names the database whose registry row is Events; on action (name) the OnActions one
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:(event[ _]id)|on[ _]action(?: name)?)(?:[^\w/]|$)`), false,
-		func(schema *Schema, found *Key, match []string, from Source) {
+		func(schema *Schema, found *Position, match []string, from Source) {
 			for name, database := range schema.Databases {
-				if match[1] != "" && database.Naming.Events || match[1] == "" && database.Naming.OnActions {
-					Set(&found.Value, Value{Type: WordReference, Database: name}, from)
+				if match[1] != "" && database.Row.Events || match[1] == "" && database.Row.OnActions {
+					SetFirst(&found.Value, Expected{Type: WordReference, Database: name}, from)
 				}
 			}
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:triggers?)(?:[^\w/]|$)`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Block, game.BlockTriggers, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Block, game.BlockTriggers, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:effects?)(?:[^\w/]|$)`), false,
-		func(_ *Schema, found *Key, _ []string, from Source) {
-			Set(&found.Block, game.BlockEffects, from)
+		func(_ *Schema, found *Position, _ []string, from Source) {
+			SetFirst(&found.Block, game.BlockEffects, from)
 		}},
 	// "path/to/file": one quoted word with a slash
-	{regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), false, func(_ *Schema, found *Key, _ []string, from Source) {
-		Set(&found.Value, Value{Type: WordFile}, from)
+	{regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), false, func(_ *Schema, found *Position, _ []string, from Source) {
+		SetFirst(&found.Value, Expected{Type: WordFile}, from)
 	}},
 	// - item: blurb and item - blurb: one word per line
 	{regexp.MustCompile(`^(?:[-*]\s+([\w.]+):\s+[^\s<]|(?:[-*]\s+)?([\w.]+) - \S)`), true,
-		func(_ *Schema, found *Key, match []string, from Source) {
+		func(_ *Schema, found *Position, match []string, from Source) {
 			found.Value.Value.Words = append(found.Value.Value.Words, match[1]+match[2])
-			found.Value.From = from
+			found.Value.Source = from
 		}},
 }
 
@@ -358,7 +358,7 @@ func (doc doc) failed(statement jomini.Statement) bool {
 
 // claims is a statement's claims: its value as written, then its comments, through the phrase
 // catalogue; the comment lines the rows do not read whole, headings aside, are its blurb.
-func (doc doc) claims(statement jomini.Statement) (found Key) {
+func (doc doc) claims(statement jomini.Statement) (found Position) {
 	// catalogue reads a text and returns what no row read; a row that claims nothing reads it all
 	var catalogue func(text string) string
 	catalogue = func(text string) string {
@@ -376,7 +376,7 @@ func (doc doc) claims(statement jomini.Statement) (found Key) {
 		if rest == text && choices.MatchString(text) {
 			for word := range strings.SplitSeq(text, "/") {
 				if catalogue(word) == word {
-					found.Value.Value.Words, found.Value.From = append(found.Value.Value.Words, word), doc.from
+					found.Value.Value.Words, found.Value.Source = append(found.Value.Value.Words, word), doc.from
 				}
 			}
 			return ""
@@ -397,19 +397,19 @@ func (doc doc) claims(statement jomini.Statement) (found Key) {
 		placeholder := len(word)+4 == len(written)
 		switch {
 		case placeholder && catalogue(word) == word:
-			if named := doc.schema.Named(word); named != "" {
-				Set(&found.Value, Value{Type: WordReference, Database: named}, doc.from)
+			if named := doc.schema.DatabaseNamed(word); named != "" {
+				SetFirst(&found.Value, Expected{Type: WordReference, Database: named}, doc.from)
 			}
 		case !placeholder && prose(written) && scalar.Quoted && strings.ContainsAny(scalar.Text, " \t"):
 			blurb = append(blurb, scalar.Text)
 		case !placeholder && !doc.usage: // a doc's literal states its form (expiration_days = 3650)
 			literals := map[Forms]WordType{FormNumber: WordNumber, FormBool: WordBool, FormDate: WordDate}
 			if typed, literal := literals[formOf(scalar)]; literal {
-				Set(&found.Value, Value{Type: typed}, doc.from)
+				SetFirst(&found.Value, Expected{Type: typed}, doc.from)
 			}
 		}
-		if isAssign && doc.usage && found.Block.From != SourceNone {
-			Set(&found.Scope, "", doc.from)
+		if isAssign && doc.usage && found.Block.Source != SourceNone {
+			SetFirst(&found.Scope, "", doc.from)
 		}
 	}
 
@@ -422,7 +422,7 @@ func (doc doc) claims(statement jomini.Statement) (found Key) {
 			if isList && isWord && strings.HasPrefix(word.Text, "<") {
 				last := strings.TrimSuffix(word.Text[strings.LastIndexAny(word.Text, "<_ ")+1:], ">")
 				if kind, named := game.Placeholders[strings.ToLower(last)]; named {
-					Set(&found.Block, kind, doc.from)
+					SetFirst(&found.Block, kind, doc.from)
 				}
 			}
 		}
@@ -436,28 +436,28 @@ func (doc doc) claims(statement jomini.Statement) (found Key) {
 	}
 
 	// a doc's block whose kind nothing names states only that the key takes a block
-	if block != nil && found.Block.From == SourceNone && !doc.usage {
-		Set(&found.Value, Value{Type: WordBlock}, doc.from)
+	if block != nil && found.Block.Source == SourceNone && !doc.usage {
+		SetFirst(&found.Value, Expected{Type: WordBlock}, doc.from)
 	}
 	slices.Sort(found.Value.Value.Words)
 	found.Value.Value.Words = slices.Compact(found.Value.Value.Words)
 	if len(blurb) > 0 {
-		Set(&found.Blurb, strings.Join(blurb, " "), doc.from)
+		SetFirst(&found.Blurb, strings.Join(blurb, " "), doc.from)
 	}
 	return found
 }
 
 // state writes a statement's claims at a position, which keeps the first declared source that
 // writes it.
-func (doc doc) state(position *Key, statement jomini.Statement) {
+func (doc doc) state(position *Position, statement jomini.Statement) {
 	found := doc.claims(statement)
-	position.Written = cmp.Or(position.Written, doc.from)
-	Set(&position.Value, found.Value.Value, found.Value.From)
-	Set(&position.Block, found.Block.Value, found.Block.From)
-	Set(&position.Scope, found.Scope.Value, found.Scope.From)
-	Set(&position.Required, found.Required.Value, found.Required.From)
-	Set(&position.Default, found.Default.Value, found.Default.From)
-	Set(&position.Blurb, found.Blurb.Value, found.Blurb.From)
+	position.DeclaredBy = cmp.Or(position.DeclaredBy, doc.from)
+	SetFirst(&position.Value, found.Value.Value, found.Value.Source)
+	SetFirst(&position.Block, found.Block.Value, found.Block.Source)
+	SetFirst(&position.Scope, found.Scope.Value, found.Scope.Source)
+	SetFirst(&position.Required, found.Required.Value, found.Required.Source)
+	SetFirst(&position.Default, found.Default.Value, found.Default.Source)
+	SetFirst(&position.Blurb, found.Blurb.Value, found.Blurb.Source)
 }
 
 // join reads a doc or wiki example into a database's tree. A key at a position vanilla writes gives
@@ -467,55 +467,55 @@ func (doc doc) state(position *Key, statement jomini.Statement) {
 // entry's. A doc never makes a position.
 func (schema *Schema) join(parsed *jomini.Result, database *Database, from Source) {
 	attached, _ := parsed.Attach()
-	doc, seen := doc{schema, parsed, attached, from, false}, map[*Key]map[string]bool{}
-	var gather func(names map[string]bool, key *Key)
-	gather = func(names map[string]bool, key *Key) {
-		for name, child := range key.Keys {
-			names[name] = names[name] || child.Seen.In > 0
+	doc, seen := doc{schema, parsed, attached, from, false}, map[*Position]map[string]bool{}
+	var gather func(names map[string]bool, key *Position)
+	gather = func(names map[string]bool, key *Position) {
+		for name, child := range key.Children {
+			names[name] = names[name] || child.Evidence.In > 0
 			gather(names, child)
 		}
 	}
-	var reader Reader
-	reader = Reader{Names: alternatives, Visit: func(step *Step) bool {
+	var reader Visitor
+	reader = Visitor{Names: alternatives, Visit: func(step *Reading) bool {
 		_, isAssign := step.Statement.(*jomini.Assignment)
-		if under := step.Place.Key; under != nil && seen[under] == nil {
+		if under := step.BlockContext.Position; under != nil && seen[under] == nil {
 			seen[under] = map[string]bool{}
 			gather(seen[under], under)
 		}
 		switch {
 		case doc.failed(step.Statement):
 			return false
-		case isAssign && step.Command == nil && !seen[step.Place.Key][collapse(step.Name)]:
+		case isAssign && step.Command == nil && !seen[step.BlockContext.Position][collapse(step.Name)]:
 			// a value where vanilla writes every entry as a block is a field it never writes, no entry
-			block, place := jomini.ChildBlock(step.Statement), step.Place
-			if step.Inner = place; step.Holder == nil && (block != nil || place.Key.Seen.Forms != FormBlock) {
-				doc.state(place.Key, step.Statement)
+			block, place := jomini.ChildBlock(step.Statement), step.BlockContext
+			if step.Inner = place; step.Holder == nil && (block != nil || place.Position.Evidence.Forms != FormBlock) {
+				doc.state(place.Position, step.Statement)
 			}
 
 			// its block reads in its place where vanilla writes its keys there, else at each position
 			// one level below that writes them (my_phase_key = { }); else it reads nothing
-			holds := func(at *Key) bool {
+			holds := func(at *Position) bool {
 				return block != nil && slices.ContainsFunc(block.Statements, func(inner jomini.Statement) bool {
 					written, isWritten := inner.(*jomini.Assignment)
-					return isWritten && at.At(written.Key.Text) != nil
+					return isWritten && at.Child(written.Key.Text) != nil
 				})
 			}
-			if place.Key == nil || holds(place.Key) {
+			if place.Position == nil || holds(place.Position) {
 				break
 			}
-			for _, below := range place.Key.Keys {
+			for _, below := range place.Position.Children {
 				if holds(below) {
-					place.Key = below
-					schema.Read(reader, block, block.Statements, place)
+					place.Position = below
+					schema.WalkBlock(reader, block, block.Statements, place)
 				}
 			}
 			return false
-		case step.Key != nil && step.Command == nil && step.Key.Seen.In > 0:
-			doc.state(step.Key, step.Statement)
+		case step.Position != nil && step.Command == nil && step.Position.Evidence.In > 0:
+			doc.state(step.Position, step.Statement)
 		}
 		return true
 	}}
-	schema.Read(reader, nil, parsed.Root.Statements, schema.Start(database))
+	schema.WalkBlock(reader, nil, parsed.Root.Statements, schema.EntryContext(database))
 }
 
 // usage reads a dump usage into a command's arguments. Each statement named written, at any depth
@@ -524,9 +524,9 @@ func (schema *Schema) join(parsed *jomini.Result, database *Database, from Sourc
 func (schema *Schema) usage(parsed *jomini.Result, command *Command, written string) {
 	attached, _ := parsed.Attach()
 	doc := doc{schema, parsed, attached, SourceDumps, true}
-	statements, at := parsed.Root.Statements, Place{Key: command.Args, Kind: game.BlockFields, InEntry: true}
+	statements, at := parsed.Root.Statements, BlockContext{Position: command.Args, Kind: game.BlockFields, InEntry: true}
 	if written != "" {
-		statements, at.Key = nil, &Key{Keys: map[string]*Key{collapse(written): command.Args}}
+		statements, at.Position = nil, &Position{Children: map[string]*Position{collapse(written): command.Args}}
 		jomini.Walk(parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
 			if assign, isAssign := statement.(*jomini.Assignment); isAssign && assign.Key.Text == written {
 				statements = append(statements, statement)
@@ -535,19 +535,19 @@ func (schema *Schema) usage(parsed *jomini.Result, command *Command, written str
 			return true
 		})
 	}
-	reader := Reader{Create: true, Names: alternatives, Visit: func(step *Step) bool {
+	reader := Visitor{Create: true, Names: alternatives, Visit: func(step *Reading) bool {
 		switch {
 		case doc.failed(step.Statement):
 			return false
-		case step.Key == command.Args:
+		case step.Position == command.Args:
 			step.Inner.Kind = game.BlockFields
 		}
-		if step.Key != nil && step.Command == nil {
-			doc.state(step.Key, step.Statement)
+		if step.Position != nil && step.Command == nil {
+			doc.state(step.Position, step.Statement)
 		}
 		return true
 	}}
-	schema.Read(reader, nil, statements, at)
+	schema.WalkBlock(reader, nil, statements, at)
 }
 
 // alternatives is a docs key's names: a/b/c and a|b|c name alternatives.

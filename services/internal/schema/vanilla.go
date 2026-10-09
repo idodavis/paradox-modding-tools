@@ -54,9 +54,9 @@ func (schema *Schema) DatabaseAt(rel string) *Database {
 	return schema.Databases[name]
 }
 
-// Entries finds every entry a file defines, in source order, by the registry's rows: one per line
+// FindEntries finds every entry a file defines, in source order, by the registry's rows: one per line
 // of a table or sound list (parsed nil); in script by keyword, file type, or the folder row.
-func (schema *Schema) Entries(file inventory.File, parsed *jomini.Result, found func(Entry)) {
+func (schema *Schema) FindEntries(file inventory.File, parsed *jomini.Result, found func(Entry)) {
 	info, rel := game.Get(schema.Game), file.Rel
 	_, own := schema.folder(rel)
 	ext := strings.ToLower(path.Ext(rel))
@@ -148,7 +148,7 @@ func (schema *Schema) Entries(file inventory.File, parsed *jomini.Result, found 
 	}
 	database, row := schema.Databases[own], game.Folder{}
 	if database != nil {
-		row = database.Naming
+		row = database.Row
 	}
 
 	// a file type's keywords declare an entry inline in <ext>.<word>, global wherever it is written
@@ -288,64 +288,64 @@ func (schema *Schema) observe(entries []Entry) {
 	}
 
 	// a written word's form, and the word, kept at a position; a block is counted there
-	record := func(value jomini.Value, at *Key) {
+	record := func(value jomini.Value, at *Position) {
 		switch written := value.(type) {
 		case *jomini.Scalar:
 			form := formOf(written)
-			at.Seen.Forms |= form
+			at.Evidence.Forms |= form
 			// a word is cloned on every write, since a map write stores its key again: the schema never
 			// pins vanilla's text
 			if form&(FormNumber|FormDate) == 0 {
-				if at.Seen.Values == nil {
-					at.Seen.Values = map[string]int{}
+				if at.Evidence.Values == nil {
+					at.Evidence.Values = map[string]int{}
 				}
-				at.Seen.Values[strings.Clone(written.Text)]++
+				at.Evidence.Values[strings.Clone(written.Text)]++
 			}
 		case *jomini.Block, *jomini.TaggedBlock:
-			at.Seen.Blocks++
-			at.Seen.Forms |= FormBlock
+			at.Evidence.Blocks++
+			at.Evidence.Forms |= FormBlock
 		}
 	}
 
 	// a declared command marks the block it is written in; In counts a key once per block; a key the
 	// walker reads as nothing records nothing, and neither does its block
-	counted := map[*jomini.Block]map[*Key]bool{}
-	reader := Reader{Create: true, Entry: func(statement jomini.Statement) *Database {
+	counted := map[*jomini.Block]map[*Position]bool{}
+	reader := Visitor{Create: true, Entry: func(statement jomini.Statement) *Database {
 		if _, isAssign := statement.(*jomini.Assignment); isAssign {
 			return own[statement] // an entry inside another makes no position there
 		}
 		return nil
-	}, Visit: func(step *Step) bool {
+	}, Visit: func(step *Reading) bool {
 		list, isList := step.Statement.(*jomini.ValueStmt)
 		switch {
 		case own[step.Statement] != nil && (!isList || jomini.BlockOf(list.Value) != nil):
 			return false
 		case isList:
-			record(list.Value, step.Key)
+			record(list.Value, step.Position)
 			return true
 		}
-		if step.Command != nil && step.Command.Kind&game.KindLink == 0 && step.Place.Key != nil {
-			step.Place.Key.Seen.Forms |= FormCommand
+		if step.Command != nil && step.Command.Kind&game.KindLink == 0 && step.BlockContext.Position != nil {
+			step.BlockContext.Position.Evidence.Forms |= FormCommand
 			switch step.Command.Kind {
 			case game.KindTrigger:
-				step.Place.Key.Seen.Forms |= FormTrigger
+				step.BlockContext.Position.Evidence.Forms |= FormTrigger
 			case game.KindEffect:
-				step.Place.Key.Seen.Forms |= FormEffect
+				step.BlockContext.Position.Evidence.Forms |= FormEffect
 			}
 		}
-		if step.Key == nil { // a key whose block reads in place (a link, a date) records nothing itself
-			return step.Command != nil || step.Inner.Key != nil && step.Inner.Key == step.Place.Key
+		if step.Position == nil { // a key whose block reads in place (a link, a date) records nothing itself
+			return step.Command != nil || step.Inner.Position != nil && step.Inner.Position == step.BlockContext.Position
 		}
 		if !step.Leaf {
 			if counted[step.Holder] == nil {
-				counted[step.Holder] = map[*Key]bool{}
+				counted[step.Holder] = map[*Position]bool{}
 			}
-			if !counted[step.Holder][step.Key] {
-				counted[step.Holder][step.Key] = true
-				step.Key.Seen.In++
+			if !counted[step.Holder][step.Position] {
+				counted[step.Holder][step.Position] = true
+				step.Position.Evidence.In++
 			}
 		}
-		record(step.Statement.(*jomini.Assignment).Value, step.Key)
+		record(step.Statement.(*jomini.Assignment).Value, step.Position)
 		return true
 	}}
 
@@ -364,7 +364,7 @@ func (schema *Schema) observe(entries []Entry) {
 			}
 		}
 		if block != nil {
-			schema.Read(reader, block, block.Statements, schema.Start(database))
+			schema.WalkBlock(reader, block, block.Statements, schema.EntryContext(database))
 		}
 	}
 }
@@ -375,12 +375,12 @@ func (schema *Schema) observe(entries []Entry) {
 func (schema *Schema) typeValues(names map[string]map[string]bool, locKeys map[string]bool) {
 	// the words a database's entries write at its row's Names keys name entries too (trait groups)
 	for name, database := range schema.Databases {
-		for _, key := range database.Naming.Names {
-			if position := database.Entry.At(key); position != nil {
+		for _, key := range database.Row.Names {
+			if position := database.Entry.Child(key); position != nil {
 				if names[name] == nil {
 					names[name] = map[string]bool{}
 				}
-				for word := range position.Seen.Values {
+				for word := range position.Evidence.Values {
 					names[name][word] = true
 				}
 			}
@@ -407,7 +407,7 @@ func (schema *Schema) typeValues(names map[string]map[string]bool, locKeys map[s
 	one := func(words []string, inGUI bool) (found string) {
 		for _, database := range holding[words[0]] {
 			missing := func(word string) bool { return !names[database][word] }
-			if gui(database) != inGUI || schema.Databases[database].Naming.History || slices.ContainsFunc(words, missing) {
+			if gui(database) != inGUI || schema.Databases[database].Row.History || slices.ContainsFunc(words, missing) {
 				continue
 			}
 			if found != "" {
@@ -421,10 +421,10 @@ func (schema *Schema) typeValues(names map[string]map[string]bool, locKeys map[s
 	// a position's plain words name one database's entries, else loc keys; a name written after a
 	// link prefix is kept for that prefix, unless it is a link itself (ai_state_value:root)
 	after := map[string]map[string]bool{}
-	var visit func(key *Key, inGUI bool)
-	visit = func(key *Key, inGUI bool) {
+	var visit func(key *Position, inGUI bool)
+	visit = func(key *Position, inGUI bool) {
 		var words []string
-		for word := range key.Seen.Values {
+		for word := range key.Evidence.Values {
 			switch {
 			case len(jomini.Interpolations(word)) > 0:
 			case schema.Link(strings.ToLower(word)) == nil:
@@ -444,14 +444,14 @@ func (schema *Schema) typeValues(names map[string]map[string]bool, locKeys map[s
 				}
 			}
 		}
-		if len(words) > 0 && key.Value.From == SourceNone {
+		if len(words) > 0 && key.Value.Source == SourceNone {
 			if database := one(words, inGUI); database != "" {
-				Set(&key.Value, Value{Type: WordReference, Database: database}, SourceVanilla)
+				SetFirst(&key.Value, Expected{Type: WordReference, Database: database}, SourceVanilla)
 			} else if !slices.ContainsFunc(words, func(word string) bool { return !locKeys[word] }) {
-				Set(&key.Value, Value{Type: WordLoc}, SourceVanilla)
+				SetFirst(&key.Value, Expected{Type: WordLoc}, SourceVanilla)
 			}
 		}
-		for _, child := range key.Keys {
+		for _, child := range key.Children {
 			visit(child, inGUI)
 		}
 	}
@@ -461,8 +461,8 @@ func (schema *Schema) typeValues(names map[string]map[string]bool, locKeys map[s
 	for _, command := range schema.Commands {
 		visit(command.Args, false)
 	}
-	visited := map[*Key]bool{} // an entry is under each word that calls it, and visited once
-	for _, macro := range schema.Macros {
+	visited := map[*Position]bool{} // an entry is under each word that calls it, and visited once
+	for _, macro := range schema.ScriptedEntries {
 		if parameters := macro.Parameters; parameters != nil && !visited[parameters] {
 			visited[parameters] = true
 			visit(parameters, false)

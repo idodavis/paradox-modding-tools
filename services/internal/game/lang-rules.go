@@ -27,43 +27,51 @@ const (
 	BlockWidget                   // a GUI widget: its properties, and blocks that are widgets again
 )
 
-// Step is one way a key can be read; a block tries its steps in order and the first that fits wins.
-type Step uint8
+// KeyRule is one way a key can be read; a block tries its rules in order and the first that fits wins.
+type KeyRule uint8
 
+// The rules a block can read a key by.
 const (
-	StepKnownCall      Step = iota // the name of a scripted entry vanilla defines: a call
-	StepDeclared                   // a key the dumps, docs or wiki declare at this place
-	StepDocumented                 // a key the docs of the entry's database write (Database.Fields)
-	StepCommand                    // a trigger or effect the dumps declare
-	StepOperator                   // a value operator (ValueOperators)
-	StepLink                       // a link the dumps declare, read by name or prefix
-	StepObserved                   // a key vanilla writes at this place
-	StepPosition                   // the place's own key, known or not
-	StepPositionOrCall             // the place's own key, and a call where vanilla writes commands here
-	StepCall                       // any other key: a call to a scripted entry
+	KeyRuleKnownCall      KeyRule = iota // the name of a scripted entry vanilla defines: a call
+	KeyRuleDeclared                      // a key the dumps, docs or wiki declare at this place
+	KeyRuleDocumented                    // a key the docs of the entry's database write (Database.Fields)
+	KeyRuleCommand                       // a trigger or effect the dumps declare
+	KeyRuleOperator                      // a value operator (ValueOperators)
+	KeyRuleLink                          // a link the dumps declare, read by name or prefix
+	KeyRuleObserved                      // a key vanilla writes at this place
+	KeyRulePosition                      // the place's own key, known or not
+	KeyRulePositionOrCall                // the place's own key, and a call where vanilla writes commands here
+	KeyRuleCall                          // any other key: a call to a scripted entry
 )
 
 // BlockRule is how one kind of block reads.
 type BlockRule struct {
-	Keys   []Step // the steps a key is tried as, in order
-	Calls  string // the CalledIn word a call here is resolved by; AnyCall for every scripted folder
-	Allows Kinds  // the commands it holds; inside a trigger, never an effect
+	Keys   []KeyRule // the steps a key is tried as, in order
+	Calls  string    // the CalledIn word a call here is resolved by; AnyCall for every scripted folder
+	Allows Kinds     // the commands it holds; inside a trigger, never an effect
 }
 
 // AnyCall resolves a call in every scripted folder that has a CalledIn.
 const AnyCall = "*"
 
+// The CalledIn words: a scripted folder is called from the blocks that hold its kind.
+const (
+	callTrigger = "trigger"
+	callEffect  = "effect"
+	callValue   = "value"
+)
+
 // Blocks is the rule of each kind of block: keys, calls, allows. A description block reads by
 // DynamicDescription.
 var Blocks = map[Block]BlockRule{
-	BlockFields:    {[]Step{StepPosition}, "", 0},
-	BlockTriggers:  {[]Step{StepKnownCall, StepDeclared, StepCommand, StepLink, StepObserved, StepCall}, "trigger", KindTrigger},
-	BlockEffects:   {[]Step{StepKnownCall, StepDeclared, StepCommand, StepLink, StepObserved, StepCall}, "effect", KindEffect},
-	BlockValue:     {[]Step{StepKnownCall, StepDeclared, StepCommand, StepOperator, StepLink, StepObserved, StepCall}, "value", KindTrigger | KindEffect},
-	BlockArguments: {[]Step{StepKnownCall, StepDeclared, StepCommand, StepObserved, StepCall}, AnyCall, 0},
-	BlockUnknown:   {[]Step{StepKnownCall, StepDeclared, StepCommand, StepLink, StepPositionOrCall}, AnyCall, KindTrigger | KindEffect},
-	BlockSetup:     {[]Step{StepDeclared, StepDocumented, StepKnownCall, StepCommand, StepObserved, StepLink, StepCall}, "effect", KindEffect},
-	BlockWidget:    {[]Step{StepKnownCall, StepPosition}, "widget", 0},
+	BlockFields:    {[]KeyRule{KeyRulePosition}, "", 0},
+	BlockTriggers:  {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callTrigger, KindTrigger},
+	BlockEffects:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callEffect, KindEffect},
+	BlockValue:     {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleOperator, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callValue, KindTrigger | KindEffect},
+	BlockArguments: {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleCall}, AnyCall, 0},
+	BlockUnknown:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRulePositionOrCall}, AnyCall, KindTrigger | KindEffect},
+	BlockSetup:     {[]KeyRule{KeyRuleDeclared, KeyRuleDocumented, KeyRuleKnownCall, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall}, callEffect, KindEffect},
+	BlockWidget:    {[]KeyRule{KeyRuleKnownCall, KeyRulePosition}, "widget", 0},
 }
 
 // ---- Commands: what a declared command is, and what its block holds.
@@ -508,10 +516,10 @@ var sharedNested = []Nested{{Parent: "common/defines", Path: "", Database: "defi
 
 // sharedFolders are every game's folder rows; a row whose folder a game lacks matches nothing.
 var sharedFolders = map[string]Folder{
-	"common/scripted_effects":   {CalledIn: []string{"effect"}, Body: BlockEffects, Keyword: "scripted_effect", Parameters: true},
-	"common/scripted_triggers":  {CalledIn: []string{"trigger"}, Body: BlockTriggers, Keyword: "scripted_trigger", Parameters: true},
-	"common/scripted_modifiers": {CalledIn: []string{"value"}, Parameters: true},
-	"common/script_values":      {CalledIn: []string{"trigger", "value"}, Body: BlockValue},
+	"common/scripted_effects":   {CalledIn: []string{callEffect}, Body: BlockEffects, Keyword: "scripted_effect", Parameters: true},
+	"common/scripted_triggers":  {CalledIn: []string{callTrigger}, Body: BlockTriggers, Keyword: "scripted_trigger", Parameters: true},
+	"common/scripted_modifiers": {CalledIn: []string{callValue}, Parameters: true},
+	"common/script_values":      {CalledIn: []string{callTrigger, callValue}, Body: BlockValue},
 	"common/scripted_lists":     {Iterated: true},
 	"events":                    {Events: true},
 	"common/genes": {Wrappers: []string{"color_genes", "special_genes", "morph_genes", "accessory_genes",

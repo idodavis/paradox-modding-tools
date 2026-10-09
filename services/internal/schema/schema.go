@@ -39,10 +39,10 @@ func (from Source) Declared() bool {
 	return from == SourceDumps || from == SourceDocs || from == SourceWiki
 }
 
-// Said is a claim and the source that stated it; From is SourceNone while the claim is empty.
-type Said[T any] struct {
-	Value T
-	From  Source
+// Claim is a claim and the source that stated it; From is SourceNone while the claim is empty.
+type Claim[T any] struct {
+	Value  T
+	Source Source
 }
 
 // WordType is the kind of word a position holds; WordBlock is a doc's block, whose kind none names.
@@ -61,27 +61,28 @@ const (
 	WordBlock
 )
 
-// Value is what a source says a position holds.
-type Value struct {
+// Expected is what a source says a position holds.
+type Expected struct {
 	Type     WordType
 	Database string   // WordReference: the database the word names
 	Words    []string // a declared word list, sorted; empty when none
 }
 
-// Need is how strongly a position is required inside its parent.
-type Need uint8
+// Level is how strongly a position is required inside its parent.
+type Level uint8
 
+// The levels a position's requirement can have.
 const (
-	NeedUnknown Need = iota
-	NeedOptional
-	NeedAlways
-	NeedWhen
+	LevelUnknown Level = iota
+	LevelOptional
+	LevelAlways
+	LevelConditional
 )
 
-// Required is a position's need, with the condition text for NeedWhen.
-type Required struct {
-	Need Need
-	When string
+// Requirement is a position's need, with the condition text for NeedWhen.
+type Requirement struct {
+	Level Level
+	When  string
 }
 
 // Forms is the set of written forms seen at a position, as bits.
@@ -114,35 +115,35 @@ func formOf(written *jomini.Scalar) Forms {
 	return FormWord
 }
 
-// Seen is vanilla's evidence at a position; it is never a claim.
-type Seen struct {
+// Evidence is vanilla's evidence at a position; it is never a claim.
+type Evidence struct {
 	In     int            // how many of the parent's written blocks hold this key
 	Blocks int            // how many times this position was written as a block
 	Forms  Forms          // the forms written here
 	Values map[string]int // words written, with counts
 }
 
-// Key is one position: its claims, each with its source, and vanilla's evidence.
-type Key struct {
-	Keys     map[string]*Key // below it, by written name or form
-	Value    Said[Value]
-	Block    Said[game.Block]
-	Scope    Said[string]
-	Required Said[Required]
-	Default  Said[string]
-	Blurb    Said[string]
-	// Written is the first declared source that writes the position: the dumps anywhere, the docs
+// Position is one position: its claims, each with its source, and vanilla's evidence.
+type Position struct {
+	Children map[string]*Position // below it, by written name or form
+	Value    Claim[Expected]
+	Block    Claim[game.Block]
+	Scope    Claim[string]
+	Required Claim[Requirement]
+	Default  Claim[string]
+	Blurb    Claim[string]
+	// DeclaredBy is the first declared source that writes the position: the dumps anywhere, the docs
 	// and wiki only where vanilla writes it too.
-	Written Source
-	Seen    Seen
+	DeclaredBy Source
+	Evidence   Evidence
 }
 
 // Command is an effect, trigger or link from the dumps.
 type Command struct {
 	Kind   game.Kinds
-	Scopes []string // where it runs; empty: any
-	Out    string   // where it leads; "" none
-	Args   *Key     // its usage template as positions
+	Scopes []string  // where it runs; empty: any
+	Out    string    // where it leads; "" none
+	Args   *Position // its usage template as positions
 	Blurb  string
 	Global bool // a link the dumps call global: it reads the same from any scope
 	Wild   bool // a link the dumps call Wild Card: a pattern, never read from a written name
@@ -152,13 +153,13 @@ type Command struct {
 // Database is one script folder's entries: the entry position tree and the folder's registry row.
 type Database struct {
 	Name   string
-	Entry  *Key
-	Naming game.Folder
+	Entry  *Position
+	Row    game.Folder
 	Fields map[string]bool // every key name the docs and wiki write in its entries
 }
 
-// Origin is where a source's data came from and whether it is out of date.
-type Origin struct {
+// SourceState is where a source's data came from and whether it is out of date.
+type SourceState struct {
 	From    string    // "yours", "install", "shipped" or "none"
 	Written time.Time // when the source was written, by its oldest file; zero when unknown
 	Stale   bool
@@ -170,29 +171,29 @@ type Scope struct {
 	Variables, Triggers, Effects bool // stores variables, evaluates triggers, executes effects
 }
 
-// Macro is a scripted entry as a call reads it: at its own parameters, or at its database's entry
+// ScriptedEntry is a scripted entry as a call reads it: at its own parameters, or at its database's entry
 // where the database takes none. It names the database, so no entry tree is held twice.
-type Macro struct {
+type ScriptedEntry struct {
 	Database   string
-	Parameters *Key // nil where the database takes no parameters
+	Parameters *Position // nil where the database takes no parameters
 }
 
 // Schema is everything the sources state about one game version.
 type Schema struct {
-	Game, Version string
-	Sources       map[Source]Origin
-	Databases     map[string]*Database
-	Callees       map[string][]string // CalledIn word → the databases a call by it resolves in, in name order
-	Commands      map[string]*Command
-	Scopes        map[string]Scope
-	Saved         map[string]bool // scope names the game saves from code
-	Modifiers     map[string]Modifier
-	OnActions     map[string]OnAction
-	DataTypes     map[string]DataType
-	CustomLoc     map[string]CustomLoc
-	Prefixes      map[string]string // a link prefix → the database the names written after it are in; "" none
-	Macros        map[string]Macro  // vanilla's scripted entries by calling word and name (word:name)
-	Lists         string            // the database of scripted lists (a folder row Iterated); "" none
+	Game, Version   string
+	Sources         map[Source]SourceState
+	Databases       map[string]*Database
+	Callees         map[string][]string // CalledIn word → the databases a call by it resolves in, in name order
+	Commands        map[string]*Command
+	Scopes          map[string]Scope
+	Saved           map[string]bool // scope names the game saves from code
+	Modifiers       map[string]Modifier
+	OnActions       map[string]OnAction
+	DataTypes       map[string]DataType
+	CustomLoc       map[string]CustomLoc
+	Prefixes        map[string]string        // a link prefix → the database the names written after it are in; "" none
+	ScriptedEntries map[string]ScriptedEntry // vanilla's scripted entries by calling word and name (word:name)
+	Lists           string                   // the database of scripted lists (a folder row Iterated); "" none
 }
 
 // Link is the declared link a lower-case key starts with: the first link of a chain (root.liege),
@@ -208,19 +209,19 @@ func (schema *Schema) Link(key string) *Command {
 	return nil
 }
 
-// Named is the database a word names: the one called by the word or the word + "s", else the one
+// DatabaseNamed is the database a word names: the one called by the word or the word + "s", else the one
 // whose last folder is either; never a history database; "" for none or several.
-func (schema *Schema) Named(word string) string {
+func (schema *Schema) DatabaseNamed(word string) string {
 	var named []string
 	for _, name := range []string{word, word + "s"} {
-		if database := schema.Databases[name]; database != nil && !database.Naming.History {
+		if database := schema.Databases[name]; database != nil && !database.Row.History {
 			named = append(named, name)
 		}
 	}
 	exact := len(named) > 0
 	for name, database := range schema.Databases {
 		last := name[strings.LastIndexByte(name, '/')+1:]
-		if !exact && (last == word || last == word+"s") && !database.Naming.History {
+		if !exact && (last == word || last == word+"s") && !database.Row.History {
 			named = append(named, name)
 		}
 	}
@@ -230,11 +231,11 @@ func (schema *Schema) Named(word string) string {
 	return named[0]
 }
 
-// Flagged is the databases whose registry row passes a test (Events, Concepts, a CalledIn word), in
+// DatabasesWhere is the databases whose registry row passes a test (Events, Concepts, a CalledIn word), in
 // name order.
-func (schema *Schema) Flagged(flag func(row game.Folder) bool) (names []string) {
+func (schema *Schema) DatabasesWhere(flag func(row game.Folder) bool) (names []string) {
 	for name, database := range schema.Databases {
-		if flag(database.Naming) {
+		if flag(database.Row) {
 			names = append(names, name)
 		}
 	}
@@ -242,39 +243,40 @@ func (schema *Schema) Flagged(flag func(row game.Folder) bool) (names []string) 
 	return names
 }
 
-// Claim names which claim of a position, or of the dumps, a diagnostic wants to accuse with.
-type Claim uint8
+// Check names which claim of a position, or of the dumps, a diagnostic wants to accuse with.
+type Check uint8
 
+// The claims a diagnostic can accuse with.
 const (
-	ClaimValue Claim = iota
-	ClaimRequired
-	ClaimCommand
+	CheckValue Check = iota
+	CheckRequired
+	CheckCommand
 )
 
-// Speaks is whether a claim may accuse a user's code: a declared source states it, the source is
+// MayAccuse is whether a claim may accuse a user's code: a declared source states it, the source is
 // fresh, and vanilla's evidence at the position does not contradict it.
-func (schema *Schema) Speaks(claim Claim, key, parent *Key) bool {
+func (schema *Schema) MayAccuse(claim Check, key, parent *Position) bool {
 	// only dumps, docs and wiki have Sources entries: the registry classifies and vanilla is
 	// evidence, so neither accuses; nor does a stale source
 	from := SourceDumps
 	switch claim {
-	case ClaimValue:
-		from = key.Value.From
-	case ClaimRequired:
-		from = key.Required.From
+	case CheckValue:
+		from = key.Value.Source
+	case CheckRequired:
+		from = key.Required.Source
 	}
 	if origin, found := schema.Sources[from]; !found || origin.Stale {
 		return false
 	}
 	// a docs or wiki claim, and a declared word list from any source, accuses only at a position
 	// vanilla also writes
-	listed := claim == ClaimValue && len(key.Value.Value.Words) > 0
-	if (from == SourceDocs || from == SourceWiki || listed) && key.Seen.In == 0 {
+	listed := claim == CheckValue && len(key.Value.Value.Words) > 0
+	if (from == SourceDocs || from == SourceWiki || listed) && key.Evidence.In == 0 {
 		return false
 	}
 
 	switch claim {
-	case ClaimValue:
+	case CheckValue:
 		var allowed Forms
 		switch key.Value.Value.Type {
 		case WordNumber:
@@ -293,43 +295,43 @@ func (schema *Schema) Speaks(claim Claim, key, parent *Key) bool {
 			allowed = FormWord | FormText
 		}
 		// the command forms mark the block, not a value
-		if key.Seen.Forms&^(allowed|FormCommand|FormTrigger|FormEffect) != 0 {
+		if key.Evidence.Forms&^(allowed|FormCommand|FormTrigger|FormEffect) != 0 {
 			return false
 		}
 		if words := key.Value.Value.Words; len(words) > 0 {
-			for word := range key.Seen.Values {
+			for word := range key.Evidence.Values {
 				if _, inList := slices.BinarySearch(words, word); !inList {
 					return false
 				}
 			}
 		}
 		return true
-	case ClaimRequired:
+	case CheckRequired:
 		// Without a parent the claim cannot be checked against vanilla.
-		return parent != nil && key.Required.Value.Need == NeedAlways && key.Seen.In >= parent.Seen.Blocks
+		return parent != nil && key.Required.Value.Level == LevelAlways && key.Evidence.In >= parent.Evidence.Blocks
 	}
 	return true
 }
 
-// At is the position under key for a written name, nil when missing or under no position; it never
+// Child is the position under key for a written name, nil when missing or under no position; it never
 // makes one.
-func (key *Key) At(name string) *Key {
+func (key *Position) Child(name string) *Position {
 	if key == nil {
 		return nil
 	}
-	return key.Keys[collapse(name)]
+	return key.Children[collapse(name)]
 }
 
-// Below is At, made when missing; its name is cloned, so a position never pins a source's text.
-func (key *Key) Below(name string) *Key {
-	if child := key.At(name); child != nil {
+// EnsureChild is At, made when missing; its name is cloned, so a position never pins a source's text.
+func (key *Position) EnsureChild(name string) *Position {
+	if child := key.Child(name); child != nil {
 		return child
 	}
-	if key.Keys == nil {
-		key.Keys = map[string]*Key{}
+	if key.Children == nil {
+		key.Children = map[string]*Position{}
 	}
-	child := &Key{}
-	key.Keys[strings.Clone(collapse(name))] = child
+	child := &Position{}
+	key.Children[strings.Clone(collapse(name))] = child
 	return child
 }
 
@@ -348,10 +350,10 @@ func collapse(name string) string {
 	return name
 }
 
-// Set writes a claim only when it is empty: sources write in trust order, so the first one wins.
-func Set[T any](claim *Said[T], value T, from Source) {
-	if claim.From == SourceNone {
-		claim.Value, claim.From = value, from
+// SetFirst writes a claim only when it is empty: sources write in trust order, so the first one wins.
+func SetFirst[T any](claim *Claim[T], value T, from Source) {
+	if claim.Source == SourceNone {
+		claim.Value, claim.Source = value, from
 	}
 }
 
@@ -376,20 +378,20 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		return nil, fmt.Errorf("unknown game %q", input.Game)
 	}
 	schema := &Schema{
-		Game: input.Game, Version: input.Version, Sources: map[Source]Origin{}, Databases: map[string]*Database{},
+		Game: input.Game, Version: input.Version, Sources: map[Source]SourceState{}, Databases: map[string]*Database{},
 	}
 
 	// a database's entry block is a fields block unless its folder row's Body says what the entry
 	// is; each of its Refs names its entries
 	declare := func(name string, row game.Folder) {
-		database := &Database{Name: name, Entry: &Key{}, Naming: row, Fields: map[string]bool{}}
-		Set(&database.Entry.Block, cmp.Or(row.Body, game.BlockFields), SourceRegistry)
+		database := &Database{Name: name, Entry: &Position{}, Row: row, Fields: map[string]bool{}}
+		SetFirst(&database.Entry.Block, cmp.Or(row.Body, game.BlockFields), SourceRegistry)
 		for _, at := range row.Refs {
 			position := database.Entry
 			for step := range strings.SplitSeq(at, "/") {
-				position = position.Below(step)
+				position = position.EnsureChild(step)
 			}
-			Set(&position.Value, Value{Type: WordReference, Database: name}, SourceRegistry)
+			SetFirst(&position.Value, Expected{Type: WordReference, Database: name}, SourceRegistry)
 		}
 		schema.Databases[name] = database
 	}
@@ -433,7 +435,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	// folder's (a file type's own database answers only its own words)
 	schema.Callees = map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
-		called := schema.Databases[name].Naming.CalledIn
+		called := schema.Databases[name].Row.CalledIn
 		if len(called) > 0 && !strings.Contains(name, ".") {
 			called = append(slices.Clone(called), game.AnyCall)
 		}
@@ -441,7 +443,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 			schema.Callees[word] = append(schema.Callees[word], name)
 		}
 	}
-	schema.Lists = cmp.Or(schema.Flagged(func(row game.Folder) bool { return row.Iterated })...)
+	schema.Lists = cmp.Or(schema.DatabasesWhere(func(row game.Folder) bool { return row.Iterated })...)
 
 	// 2. dumps: read from the dump files, or taken whole from a shipped dump part
 	if shipped := input.Shipped; shipped != nil {
@@ -451,9 +453,9 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		schema.Sources[SourceDumps] = shipped.Sources[SourceDumps]
 	} else {
 		written := schema.readDumps(input.Dumps)
-		schema.Sources[SourceDumps] = Origin{From: "none"}
+		schema.Sources[SourceDumps] = SourceState{From: "none"}
 		if !written.IsZero() {
-			schema.Sources[SourceDumps] = Origin{From: "yours", Written: written, Stale: written.Before(input.Updated)}
+			schema.Sources[SourceDumps] = SourceState{From: "yours", Written: written, Stale: written.Before(input.Updated)}
 		}
 	}
 	if input.DumpsOnly {
@@ -495,19 +497,19 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		}
 		examples = append(examples, parsedExample{name, jomini.Parse(normalize(lines)), SourceDocs})
 	}
-	schema.Sources[SourceDocs] = Origin{From: "install", Written: input.Updated}
+	schema.Sources[SourceDocs] = SourceState{From: "install", Written: input.Updated}
 
 	// the wiki: each database's own named pages' <pre> examples; a history database names none. A
 	// sanitized page keeps no version label, so the wiki is never stale.
-	schema.Sources[SourceWiki] = Origin{From: "none"}
+	schema.Sources[SourceWiki] = SourceState{From: "none"}
 	if sidecar, err := os.Stat(input.Wiki); err == nil {
-		schema.Sources[SourceWiki] = Origin{From: "yours", Written: sidecar.ModTime()}
+		schema.Sources[SourceWiki] = SourceState{From: "yours", Written: sidecar.ModTime()}
 	}
 	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if schema.Databases[name].Naming.History {
+		if schema.Databases[name].Row.History {
 			continue
 		}
 		for _, page := range wiki.NamedPages(input.Game, name, "") {
@@ -547,24 +549,24 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	// 5. vanilla's scripted entries first, so observe reads their names as calls (StepKnownCall);
 	// then every file's entries and evidence, in file order, making each database Entries names
 	names := map[string]map[string]bool{}
-	schema.Macros = map[string]Macro{}
+	schema.ScriptedEntries = map[string]ScriptedEntry{}
 
 	// macro keeps a called entry by each word its database is called by (word:name); one of a
 	// database with no parameters reads at its database's entry (every GUI type's block is a widget)
 	macro := func(entry Entry) {
 		database := schema.Databases[entry.Database]
-		if database == nil || len(database.Naming.CalledIn) == 0 {
+		if database == nil || len(database.Row.CalledIn) == 0 {
 			return
 		}
-		called, words := Macro{Database: database.Name}, database.Naming.CalledIn
-		if database.Naming.Parameters {
-			called.Parameters = &Key{}
+		called, words := ScriptedEntry{Database: database.Name}, database.Row.CalledIn
+		if database.Row.Parameters {
+			called.Parameters = &Position{}
 		}
 		if !strings.Contains(entry.Database, ".") {
 			words = append(slices.Clone(words), game.AnyCall)
 		}
 		for _, word := range words {
-			schema.Macros[word+":"+strings.Clone(entry.Name)] = called
+			schema.ScriptedEntries[word+":"+strings.Clone(entry.Name)] = called
 		}
 	}
 	var files []inventory.File
@@ -575,7 +577,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 		if file.Format == inventory.Script && (len(info.Folders[at].CalledIn) > 0 || gui) {
 			text, _ := file.Text()
 			parsed := jomini.Parse(text)
-			schema.Entries(file, &parsed, macro)
+			schema.FindEntries(file, &parsed, macro)
 			parsedFirst[file.Path] = parsed
 		}
 		if file.Format == inventory.Script || file.Format == inventory.Table || file.Format == inventory.List {
@@ -597,7 +599,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 			parsed = &result
 		}
 		var entries []Entry
-		schema.Entries(file, parsed, func(entry Entry) { entries = append(entries, entry) })
+		schema.FindEntries(file, parsed, func(entry Entry) { entries = append(entries, entry) })
 		for _, entry := range entries {
 			if schema.Databases[entry.Database] == nil {
 				ext, _, _ := strings.Cut(entry.Database, ".") // a file type's database holds its Body (gui.x)
@@ -628,7 +630,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	schema.typeValues(names, input.LocKeys)
 	for name := range schema.Commands {
 		if schema.Link(name) != nil && schema.Prefixes[name] == "" {
-			schema.Prefixes[name] = schema.Named(name)
+			schema.Prefixes[name] = schema.DatabaseNamed(name)
 		}
 	}
 

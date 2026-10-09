@@ -322,13 +322,13 @@ func Names(indexes []*Index, database string) []string {
 // Resolve is a reference's definitions: a call's in the databases its CalledIn word names; a scope
 // saved from code, a loc key or a file path known with no definitions; else Lookup. A local
 // definition answers only a reference in its own file.
-func Resolve(sch *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known bool) {
+func Resolve(s *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known bool) {
 	switch {
 	case ref.Called != "":
-		for _, database := range sch.Callees[ref.Called] {
+		for _, database := range s.Callees[ref.Called] {
 			defs = append(defs, Lookup(indexes, database, ref.Name)...)
 		}
-	case ref.Database == game.SavedScopes && sch.Saved[ref.Name]:
+	case ref.Database == game.SavedScopes && s.Saved[ref.Name]:
 		return nil, true
 	case ref.Database == Localization:
 		return nil, slices.ContainsFunc(indexes, func(idx *Index) bool { return len(idx.locs[ref.Name]) > 0 })
@@ -344,10 +344,10 @@ func Resolve(sch *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known b
 
 // Uses is Resolve turned around: every reference to a name of a database, the calls whose
 // CalledIn word resolves in that database included.
-func Uses(sch *schema.Schema, indexes []*Index, database, name string) []Ref {
+func Uses(s *schema.Schema, indexes []*Index, database, name string) []Ref {
 	refs := LookupRefs(indexes, database, name)
 	for _, call := range LookupRefs(indexes, "", name) {
-		if slices.Contains(sch.Callees[call.Called], database) {
+		if slices.Contains(s.Callees[call.Called], database) {
 			refs = append(refs, call)
 		}
 	}
@@ -404,21 +404,21 @@ func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (w
 }
 
 // Fires is whether a reference fires its target: an event or on_action outside a trigger.
-func (ref Ref) Fires(sch *schema.Schema) bool {
-	database := sch.Databases[ref.Database]
-	return !ref.InTrigger && database != nil && (database.Naming.Events || database.Naming.OnActions)
+func (ref Ref) Fires(s *schema.Schema) bool {
+	database := s.Databases[ref.Database]
+	return !ref.InTrigger && database != nil && (database.Row.Events || database.Row.OnActions)
 }
 
 // Runs is whether a reference outside a trigger runs a scripted entry, so what it fires is fired
 // through it: a call, or a name of a database called in effects.
-func (ref Ref) Runs(sch *schema.Schema) bool {
-	database := sch.Databases[ref.Database]
-	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Naming.CalledIn, game.Blocks[game.BlockEffects].Calls))
+func (ref Ref) Runs(s *schema.Schema) bool {
+	database := s.Databases[ref.Database]
+	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Blocks[game.BlockEffects].Calls))
 }
 
 // Scripted is whether a definition is a scripted entry, one a reference may run (Runs): of a
 // database some block calls.
-func (def Def) Scripted(sch *schema.Schema) bool {
-	database := sch.Databases[def.Database]
-	return database != nil && len(database.Naming.CalledIn) > 0
+func (def Def) Scripted(s *schema.Schema) bool {
+	database := s.Databases[def.Database]
+	return database != nil && len(database.Row.CalledIn) > 0
 }

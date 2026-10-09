@@ -30,7 +30,7 @@ func ShippedName(game, version string) string {
 
 // LoadShipped is a game's shipped schema: the exact version's file, else the newest by the names' digit
 // runs (1.20.0.3 over 1.9.2) with exact false; nil and no error when the game has none.
-func LoadShipped(gameID, version string) (sch *Schema, exact bool, err error) {
+func LoadShipped(gameID, version string) (s *Schema, exact bool, err error) {
 	names, err := fs.Glob(shippedFiles, gameID+"-*.gob.gz")
 	if err != nil || len(names) == 0 {
 		return nil, false, err
@@ -53,8 +53,8 @@ func LoadShipped(gameID, version string) (sch *Schema, exact bool, err error) {
 		return nil, false, err
 	}
 	defer file.Close()
-	if err := appdata.Decode(file, &sch); err != nil {
+	if err := appdata.Decode(file, &s); err != nil {
 		return nil, false, err
 	}
-	return sch, exact, nil
+	return s, exact, nil
 }

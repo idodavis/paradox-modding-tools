@@ -50,18 +50,18 @@ func main() {
 
 	// 3. the dump part alone, refused on a partial dump set; the databases the build starts with are
 	// not shipped
-	sch, err := index.BuildSchema(context.Background(), index.Request{Game: *gameID, Dir: *installDir, Version: version})
+	s, err := index.BuildSchema(context.Background(), index.Request{Game: *gameID, Dir: *installDir, Version: version})
 	if err != nil {
 		log.Fatal(err)
 	}
-	if sch.Sources[schema.SourceDumps].From == "none" {
+	if s.Sources[schema.SourceDumps].From == "none" {
 		log.Fatalf("no dump files found for %s: run the game's script_docs and data type dumps first", *gameID)
 	}
-	sch.Databases = nil
+	s.Databases = nil
 
 	// 4. the stored form, as schema.LoadShipped reads it
 	var encoded bytes.Buffer
-	if err := appdata.Encode(&encoded, sch); err != nil {
+	if err := appdata.Encode(&encoded, s); err != nil {
 		log.Fatal(err)
 	}
 

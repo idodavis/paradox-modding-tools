@@ -199,11 +199,11 @@ func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 // it, else one mod's override of another origin's; not in a database where the game repeats names,
 // nor one no schema database names (a parameter, a name script makes).
 func contests(sess *workspace.Session, preview []*index.Index, number func(inventory.File) int) (contested, overrides []Contest) {
-	sch := sess.Install.Schema
+	schema := sess.Install.Schema
 	names := map[[2]string]bool{}
 	for _, records := range sess.Workspace.Records {
 		for _, def := range records.Defs {
-			if def.Name != "" && sch.Databases[def.Database] != nil && !sess.Install.Index.Repeated[def.Database] {
+			if def.Name != "" && schema.Databases[def.Database] != nil && !sess.Install.Index.Repeated[def.Database] {
 				names[[2]string{def.Database, def.Name}] = true
 			}
 		}
@@ -258,7 +258,7 @@ func contests(sess *workspace.Session, preview []*index.Index, number func(inven
 // and those the kept file writes otherwise. Only a file in a folder the install ships files in is the
 // game's: a mod's descriptor, readme, thumbnail or editor settings are not.
 func replaced(sess *workspace.Session, preview []*index.Index, number func(inventory.File) int) (contested, overrides []Contest) {
-	sch := sess.Install.Schema
+	schema := sess.Install.Schema
 	folders := map[string]bool{}
 	for _, file := range sess.Install.Index.Files {
 		if top, _, inFolder := strings.Cut(strings.ToLower(file.Rel), "/"); inFolder {
@@ -277,7 +277,7 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 			if records := idx.Records[file.Path]; records != nil {
 				// its entries, not the names its script makes or declares inline
 				for _, def := range records.Defs {
-					if def.Name != "" && sch.Databases[def.Database] != nil && !def.Local && !def.Named {
+					if def.Name != "" && schema.Databases[def.Database] != nil && !def.Local && !def.Named {
 						defines[file.Path] = append(defines[file.Path], def)
 					}
 				}
@@ -336,7 +336,7 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 
 // dependencies is what each mod needs from another, from the references its loaded files write.
 func dependencies(sess *workspace.Session, number func(inventory.File) int) []Dependency {
-	sch, indexes := sess.Install.Schema, sess.Indexes()
+	schema, indexes := sess.Install.Schema, sess.Indexes()
 	type need struct {
 		from, to string
 		affected bool
@@ -352,12 +352,12 @@ func dependencies(sess *workspace.Session, number func(inventory.File) int) []De
 		for _, ref := range records.Refs {
 			// a name no schema database holds (a loc key, a file, a parameter, a name script makes) is no
 			// mod's entry; a call names none
-			if ref.Database != "" && sch.Databases[ref.Database] == nil {
+			if ref.Database != "" && schema.Databases[ref.Database] == nil {
 				continue
 			}
 			spelled := [4]string{ref.Database, ref.Called, ref.Name, file.Path}
 			if _, done := resolved[spelled]; !done {
-				resolved[spelled], _ = index.Resolve(sch, indexes, ref)
+				resolved[spelled], _ = index.Resolve(schema, indexes, ref)
 			}
 			defs := resolved[spelled]
 
@@ -366,7 +366,7 @@ func dependencies(sess *workspace.Session, number func(inventory.File) int) []De
 			database, removed := ref.Database, len(defs) == 0
 			var landed []need
 			if removed {
-				installed, _ := index.Resolve(sch, []*index.Index{sess.Install.Index}, ref)
+				installed, _ := index.Resolve(schema, []*index.Index{sess.Install.Index}, ref)
 				if len(installed) == 0 {
 					continue
 				}

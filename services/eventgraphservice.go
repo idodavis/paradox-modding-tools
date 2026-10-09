@@ -92,7 +92,7 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 	sess.RLock()
 	defer sess.RUnlock()
 	query = strings.ToLower(query)
-	sch, indexes := sess.Install.Schema, sess.Indexes()
+	schema, indexes := sess.Install.Schema, sess.Indexes()
 
 	// in the files the game loads: what is fired, and what fires it, a scripted entry by what fires
 	// through it (Session.FiredBy)
@@ -104,7 +104,7 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 				continue
 			}
 			for _, ref := range records.Refs {
-				if !ref.Fires(sch) {
+				if !ref.Fires(schema) {
 					continue
 				}
 				fired[ref.Name] = ref.Database
@@ -112,7 +112,7 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 					continue
 				}
 				caller := records.Defs[ref.From]
-				if _, entered := firing[caller]; !entered && caller.Scripted(sch) {
+				if _, entered := firing[caller]; !entered && caller.Scripted(schema) {
 					firing[caller] = sess.FiredBy(caller, false)
 				} else if !entered {
 					firing[caller] = []workspace.Fire{{Name: caller.Name, Database: caller.Database}}
@@ -383,9 +383,9 @@ func (grapher *grapher) def(id string) index.Def {
 	if known {
 		return found
 	}
-	sch := grapher.sess.Install.Schema
-	for _, database := range slices.Sorted(maps.Keys(sch.Databases)) {
-		if defs := index.Lookup(grapher.sess.Indexes(), database, id); len(defs) > 0 && (found.Name == "" || (index.Ref{Database: database}).Fires(sch)) {
+	schema := grapher.sess.Install.Schema
+	for _, database := range slices.Sorted(maps.Keys(schema.Databases)) {
+		if defs := index.Lookup(grapher.sess.Indexes(), database, id); len(defs) > 0 && (found.Name == "" || (index.Ref{Database: database}).Fires(schema)) {
 			found, _, _, _ = grapher.sess.Winner(defs)
 		}
 	}

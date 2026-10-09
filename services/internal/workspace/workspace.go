@@ -244,7 +244,7 @@ func blockFields(block *jomini.Block) []*jomini.Assignment {
 // scripted entry it runs (Ref.Runs) is followed to what it fires, and an entry already met on the
 // way is not entered again.
 func (sess *Session) Fires(from index.Def) []Fire {
-	sch, indexes := sess.Install.Schema, sess.Indexes()
+	s, indexes := sess.Install.Schema, sess.Indexes()
 	seen, out, parsed := map[index.Def]bool{from: true}, []Fire(nil), map[string]*jomini.Result{}
 
 	// follow reads the references written in one definition; via is the entries entered to reach it, start the
@@ -254,10 +254,10 @@ func (sess *Session) Fires(from index.Def) []Fire {
 		for _, ref := range index.Within(indexes, def) {
 			first := cmp.Or(start, &ref)
 			switch {
-			case ref.Fires(sch):
+			case ref.Fires(s):
 				out = append(out, sess.placed(newFire(ref.Name, ref.Database, via), from, *first, def, ref, parsed))
-			case ref.Runs(sch):
-				called, _ := index.Resolve(sch, indexes, ref)
+			case ref.Runs(s):
+				called, _ := index.Resolve(s, indexes, ref)
 				for _, target := range called {
 					if !seen[target] {
 						seen[target] = true
@@ -281,7 +281,7 @@ func byName(fires []Fire) []Fire {
 // or runs this one, a scripted entry followed to what runs it, with the chain as Fires writes it; with place, each
 // placed where it starts in its definition, with the statement that fires this one (which parses its file).
 func (sess *Session) FiredBy(target index.Def, place bool) []Fire {
-	sch, indexes := sess.Install.Schema, sess.Indexes()
+	s, indexes := sess.Install.Schema, sess.Indexes()
 	seen, parsed := map[index.Def]bool{target: true}, map[string]*jomini.Result{}
 
 	// follow reads the references to one definition; a local one answers only its own file's; fired is the
@@ -292,7 +292,7 @@ func (sess *Session) FiredBy(target index.Def, place bool) []Fire {
 	}
 	var follow func(def index.Def, fired *step) []Fire
 	follow = func(def index.Def, fired *step) (out []Fire) {
-		for _, ref := range index.Uses(sch, indexes, def.Database, def.Name) {
+		for _, ref := range index.Uses(s, indexes, def.Database, def.Name) {
 			var caller index.Def
 			for _, idx := range indexes {
 				if records := idx.Records[ref.Path]; records != nil && ref.From >= 0 {
@@ -301,8 +301,8 @@ func (sess *Session) FiredBy(target index.Def, place bool) []Fire {
 			}
 			inner := cmp.Or(fired, &step{caller, ref})
 			switch {
-			case !ref.Fires(sch) && !ref.Runs(sch) || caller.Name == "" || def.Local && ref.Path != def.Path:
-			case caller.Scripted(sch):
+			case !ref.Fires(s) && !ref.Runs(s) || caller.Name == "" || def.Local && ref.Path != def.Path:
+			case caller.Scripted(s):
 				if !seen[caller] {
 					seen[caller] = true
 					for _, up := range follow(caller, inner) {
@@ -362,7 +362,7 @@ func (sess *Session) Title(def index.Def) string {
 		if !isField {
 			continue
 		}
-		position := sess.Install.Schema.Step(sess.Install.Schema.Start(row), field, field.Key.Text, false).Key
+		position := sess.Install.Schema.ReadKey(sess.Install.Schema.EntryContext(row), field, field.Key.Text, false).Position
 		value, isWord := field.Value.(*jomini.Scalar)
 		if !isWord || position == nil || position.Value.Value.Type != schema.WordLoc {
 			continue

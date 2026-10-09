@@ -24,10 +24,10 @@ import (
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/schema"
+	"paradox-modding-tools/services/internal/schema"
 )
 
 // Calendar is the eras a mod writes its dates in. A mod never states them, so the user declares

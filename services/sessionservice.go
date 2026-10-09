@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/schema"
+	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/lang/shipped"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/session"
 
 	"github.com/wailsapp/wails/v3/pkg/application"

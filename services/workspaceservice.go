@@ -15,7 +15,7 @@ import (
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/modfiles"
 	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/steam"

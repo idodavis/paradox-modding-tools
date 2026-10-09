@@ -12,7 +12,7 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
-	"paradox-modding-tools/services/internal/lang/schema"
+	"paradox-modding-tools/services/internal/schema"
 )
 
 // Context is a step as the index reads it.

@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/index"
+	"paradox-modding-tools/services/internal/index"
 )
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {

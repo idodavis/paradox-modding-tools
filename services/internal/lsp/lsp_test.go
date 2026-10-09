@@ -17,8 +17,8 @@ import (
 	"testing"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
-	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/session"
 )
 

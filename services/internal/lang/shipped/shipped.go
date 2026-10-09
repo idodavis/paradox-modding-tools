@@ -12,7 +12,7 @@ import (
 	"strconv"
 
 	"paradox-modding-tools/services/internal/appdata"
-	"paradox-modding-tools/services/internal/lang/schema"
+	"paradox-modding-tools/services/internal/schema"
 )
 
 // files is the shipped schemas. The pattern matches this file too, so an empty set still builds.

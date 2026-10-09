@@ -15,9 +15,9 @@ import (
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/schema"
+	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/lang/shipped"
+	"paradox-modding-tools/services/internal/schema"
 )
 
 func main() {

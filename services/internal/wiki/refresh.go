@@ -1,5 +1,5 @@
 // refresh.go fetches a game's wiki pages again and keeps them in one sidecar file per game under
-// local.CacheDir, reusing every page whose revision has not changed.
+// appdata.CacheDir, reusing every page whose revision has not changed.
 
 package wiki
 
@@ -16,11 +16,11 @@ import (
 	"strings"
 	"sync"
 
-	"paradox-modding-tools/services/internal/local"
+	"paradox-modding-tools/services/internal/appdata"
 )
 
 var (
-	cacheDirFn = local.CacheDir
+	cacheDirFn = appdata.CacheDir
 	refreshMu  sync.Mutex // one refresh at a time
 	memMu      sync.Mutex
 	mem        = map[string]*Sidecar{}
@@ -190,7 +190,7 @@ func save(gameID string, sidecar *Sidecar) error {
 	if err != nil {
 		return err
 	}
-	if err := local.Write(path, func(out io.Writer) error { return json.NewEncoder(out).Encode(sidecar) }); err != nil {
+	if err := appdata.Write(path, func(out io.Writer) error { return json.NewEncoder(out).Encode(sidecar) }); err != nil {
 		return err
 	}
 	memMu.Lock()

@@ -18,8 +18,8 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/local"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -42,7 +42,7 @@ type LogService struct {
 // second launch while the app runs) is not moved aside, so the next report keeps its end. Go's
 // crash output and the standard log package write here too.
 func OpenLog(version string) (*LogService, error) {
-	dir, err := local.AppDir()
+	dir, err := appdata.Dir()
 	if err != nil {
 		return nil, err
 	}

@@ -2,7 +2,7 @@
 // the descriptor round trip in both formats, where a thumbnail is found and installed, and a new
 // mod's skeleton.
 
-package local
+package appdata
 
 import (
 	"errors"

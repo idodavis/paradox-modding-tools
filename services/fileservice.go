@@ -21,8 +21,8 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/inventory"
-	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/texture"
 
 	"paradox-modding-tools/services/internal/game"
@@ -62,7 +62,7 @@ func (f *FileService) RenamePath(oldPath, newPath string) error {
 // went. The trash is emptied when the app starts.
 func (f *FileService) TrashPath(fullPath string) (string, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	app, err := local.AppDir()
+	app, err := appdata.Dir()
 	if fullPath == "." || err != nil {
 		return "", cmp.Or(err, errors.New("path is required"))
 	}
@@ -72,7 +72,7 @@ func (f *FileService) TrashPath(fullPath string) (string, error) {
 
 // ServiceStartup empties the last run's trash: a delete is undone within the run that made it. Wails calls it.
 func (f *FileService) ServiceStartup(context.Context, application.ServiceOptions) error {
-	if app, err := local.AppDir(); err == nil {
+	if app, err := appdata.Dir(); err == nil {
 		_ = os.RemoveAll(filepath.Join(app, "trash"))
 	}
 	return nil
@@ -287,14 +287,14 @@ func (f *FileService) ReadText(fullPath string) (FileText, error) {
 	return textOf(data, fullPath, fullPath), nil
 }
 
-// WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through local.Write, so a
+// WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so a
 // failed save never leaves half a file.
 func (f *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
 	data, err := inventory.EncodeText(text, bom, legacy)
 	if err != nil {
 		return err
 	}
-	return local.WriteBytes(filepath.Clean(fullPath), data)
+	return appdata.WriteBytes(filepath.Clean(fullPath), data)
 }
 
 // ListDirectory lists immediate children of dirPath (non-recursive).

@@ -17,13 +17,13 @@ import (
 	"sync"
 	"time"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/shipped"
 	"paradox-modding-tools/services/internal/loc"
-	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/wiki"
 )
 
@@ -251,7 +251,7 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 
 		// each folder its descriptor unloads, held lower-case, slash separated and without the stage an
 		// inventory root drops
-		descriptor, _ := local.ReadListingFields(info.ID, mod.Dir)
+		descriptor, _ := appdata.ReadListingFields(info.ID, mod.Dir)
 		for _, folder := range descriptor.ReplacePaths {
 			folder = strings.Trim(strings.ReplaceAll(strings.ToLower(folder), `\`, "/"), "/")
 			if stage, rest, staged := strings.Cut(folder, "/"); staged && slices.Contains(info.StageRoots, stage) {
@@ -320,7 +320,7 @@ var devKey = sync.OnceValues(func() (string, error) {
 // cachePath is a request's cache file, install-<game>-<folder>-<version>-<app>-<state>.gob.gz, and
 // its prefix; the state hashes the language, install update time, dump names and dates.
 func cachePath(req Request) (path, ofFolder string, err error) {
-	dir, err := local.CacheDir()
+	dir, err := appdata.CacheDir()
 	if err != nil {
 		return "", "", err
 	}
@@ -368,14 +368,14 @@ func forget(prefix, keep string) (version string, err error) {
 
 // SaveInstall writes the install to its cache file whole, then deletes its install folder's older
 // cache files (Previous takes the first one's version) and every cache file no reader names
-// (neither install- nor wiki-), and the temporary files a run that ended mid-write left (local.Leftover); a write in
+// (neither install- nor wiki-), and the temporary files a run that ended mid-write left (appdata.Leftover); a write in
 // flight keeps its own.
 func SaveInstall(req Request, install *Install) error {
 	path, ofFolder, err := cachePath(req)
 	if err != nil {
 		return err
 	}
-	err = local.Write(path, func(out io.Writer) error { return local.Encode(out, install) })
+	err = appdata.Write(path, func(out io.Writer) error { return appdata.Encode(out, install) })
 	if err != nil {
 		return err
 	}
@@ -383,7 +383,7 @@ func SaveInstall(req Request, install *Install) error {
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	for _, entry := range entries {
 		name, full := entry.Name(), filepath.Join(filepath.Dir(path), entry.Name())
-		if !strings.HasPrefix(name, "install-") && !strings.HasPrefix(name, "wiki-") && (!strings.HasPrefix(name, ".") || local.Leftover(full)) {
+		if !strings.HasPrefix(name, "install-") && !strings.HasPrefix(name, "wiki-") && (!strings.HasPrefix(name, ".") || appdata.Leftover(full)) {
 			_ = os.Remove(full)
 		}
 	}
@@ -412,7 +412,7 @@ func LoadInstall(req Request) (*Install, error) {
 	}
 	defer file.Close()
 	install := &Install{}
-	if err := local.Decode(file, install); err != nil {
+	if err := appdata.Decode(file, install); err != nil {
 		return nil, err
 	}
 	install.Index.Ready()

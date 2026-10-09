@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -560,7 +560,7 @@ func TestLog(t *testing.T) {
 		slog.SetDefault(previous)
 		debug.SetCrashOutput(nil, debug.CrashOptions{}) // lets the temporary folder go
 	})
-	dir, err := local.AppDir()
+	dir, err := appdata.Dir()
 	if err != nil {
 		t.Fatal(err)
 	}

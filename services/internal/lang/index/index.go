@@ -9,11 +9,11 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/local"
 )
 
 // Localization and File are the databases a loc key and a file path name; no definition carries
@@ -174,14 +174,14 @@ func (idx *Index) Ready() {
 func (idx *Index) Place() {
 	idx.order, idx.rels = make(map[string]int, len(idx.Files)), make(map[string]int, len(idx.Files))
 	for i, file := range idx.Files {
-		idx.order[local.PathKey(file.Path)] = i
+		idx.order[appdata.PathKey(file.Path)] = i
 		idx.rels[strings.ToLower(file.Rel)] = i
 	}
 }
 
-// At is the file listed at a path, by its local.PathKey (on Windows, whatever the case it is spelled in).
+// At is the file listed at a path, by its appdata.PathKey (on Windows, whatever the case it is spelled in).
 func (idx *Index) At(path string) (inventory.File, bool) {
-	pos, listed := idx.order[local.PathKey(path)]
+	pos, listed := idx.order[appdata.PathKey(path)]
 	if !listed {
 		return inventory.File{}, false
 	}
@@ -202,10 +202,10 @@ func FileAt(indexes []*Index, rel string) (inventory.File, bool) {
 // Forget removes a deleted file, or every file under a deleted folder, from the index: their records
 // and their places in Files, so they no longer hide files at their Rels.
 func (idx *Index) Forget(path string) {
-	path = local.PathKey(path)
+	path = appdata.PathKey(path)
 	listed := len(idx.Files)
 	idx.Files = slices.DeleteFunc(idx.Files, func(file inventory.File) bool {
-		at := local.PathKey(file.Path)
+		at := appdata.PathKey(file.Path)
 		return at == path || strings.HasPrefix(at, path+string(filepath.Separator))
 	})
 	if len(idx.Files) != listed {
@@ -221,7 +221,7 @@ func (idx *Index) LocKeys() iter.Seq[string] {
 // Loaded is the file listed at a path of the indexes and whether the game loads it: it is hidden by
 // a later file at its Rel, in its index or a later one, or by a later index's Replaced.
 func Loaded(indexes []*Index, path string) (inventory.File, bool) {
-	path = local.PathKey(path)
+	path = appdata.PathKey(path)
 	for rank, idx := range indexes {
 		pos, listed := idx.order[path]
 		if !listed {

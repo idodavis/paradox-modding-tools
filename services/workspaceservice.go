@@ -13,9 +13,9 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/steam"
 )
@@ -258,12 +258,12 @@ func (s *WorkspaceService) mutateWorkspace(workspaceID string, fn func(*Workspac
 
 // DefaultModParent is UserDataDir/<game>/mod, or "".
 func (s *WorkspaceService) DefaultModParent(gameID string) string {
-	return local.DefaultModParent(gameID)
+	return appdata.DefaultModParent(gameID)
 }
 
 // ModFolder is the folder CreateMod makes for a mod named name under parentDir.
 func (s *WorkspaceService) ModFolder(parentDir, name string) string {
-	return filepath.Join(parentDir, local.ModSlug(name))
+	return filepath.Join(parentDir, appdata.ModSlug(name))
 }
 
 // CreateMod writes a new mod skeleton under parentDir and returns its path.
@@ -273,13 +273,13 @@ func (s *WorkspaceService) CreateMod(
 	// WriteNewMod refuses an unknown game or an empty name
 	name = strings.TrimSpace(name)
 	if parentDir == "" {
-		parentDir = local.DefaultModParent(gameID)
+		parentDir = appdata.DefaultModParent(gameID)
 	}
 	if parentDir == "" {
 		return "", fmt.Errorf("parent folder is required")
 	}
 	root := s.ModFolder(parentDir, name)
-	if err := local.WriteNewMod(local.NewModOpts{
+	if err := appdata.WriteNewMod(appdata.NewModOpts{
 		GameID: gameID, Root: root, Name: name, SupportedVersion: supportedVersion,
 		LocLang: locLang, ThumbnailSrc: thumbnailSrc,
 	}); err != nil {
@@ -295,12 +295,12 @@ func (s *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*Workspace
 	if err != nil {
 		return nil, err
 	}
-	fields, err := local.ReadListingFields(gameID, path)
+	fields, err := appdata.ReadListingFields(gameID, path)
 	if err != nil {
 		return nil, err
 	}
 	mod := WorkspaceMod{ID: uuid.New().String(), Name: cmp.Or(fields.Name, filepath.Base(path)), Path: path}
-	if rel, found := local.FindThumbnail(gameID, path, fields.Picture); found {
+	if rel, found := appdata.FindThumbnail(gameID, path, fields.Picture); found {
 		mod.Thumbnail = filepath.Join(path, filepath.FromSlash(rel))
 	}
 	err = s.mutateWorkspace(workspaceID, func(ws *Workspace) error {
@@ -369,16 +369,16 @@ func (s *WorkspaceService) SetModListingImage(workspaceID, modID, src string) (s
 	if err != nil {
 		return "", err
 	}
-	rel, err := local.CopyThumbnail(ws.GameID, mod.Path, src)
+	rel, err := appdata.CopyThumbnail(ws.GameID, mod.Path, src)
 	if err != nil {
 		return "", err
 	}
-	fields, err := local.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
 	if err != nil {
 		return "", err
 	}
 	fields.Picture = picture(rel)
-	if err := local.WriteListingFields(ws.GameID, mod.Path, fields); err != nil {
+	if err := appdata.WriteListingFields(ws.GameID, mod.Path, fields); err != nil {
 		return "", err
 	}
 	image := filepath.Join(mod.Path, filepath.FromSlash(rel))
@@ -496,7 +496,7 @@ func (s *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error
 	if err != nil {
 		return err
 	}
-	return local.WriteBytes(filepath.Join(mod.Path, steam.IgnoreFile), []byte(mod.WorkshopIgnore))
+	return appdata.WriteBytes(filepath.Join(mod.Path, steam.IgnoreFile), []byte(mod.WorkshopIgnore))
 }
 
 // ImportWorkshopIgnore reads .workshop-ignore into workspace config and returns the text.

@@ -3,7 +3,7 @@
 // for a new mod. Which descriptor and which thumbnail folder a game uses are rows in
 // internal/game; what only the Steam Workshop reads lives in internal/steam.
 
-package local
+package appdata
 
 import (
 	"bytes"

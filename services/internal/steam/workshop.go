@@ -24,9 +24,9 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
-	"paradox-modding-tools/services/internal/local"
 )
 
 const (
@@ -50,7 +50,7 @@ const (
 var youtubeID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 // previewExts is what the Workshop shows as an extra preview: what a thumbnail may be, and webp.
-var previewExts = append(slices.Clone(local.ThumbnailExts), ".webp")
+var previewExts = append(slices.Clone(appdata.ThumbnailExts), ".webp")
 
 // Preview is one extra Workshop image or YouTube id on the listing.
 type Preview struct {
@@ -72,7 +72,7 @@ func NewDescription(root, rel, source, name, description string) error {
 	if source == FromBBCode {
 		text = "[b]" + name + "[/b]\n\n" + body + "\n"
 	}
-	return local.WriteBytes(file, []byte(text))
+	return appdata.WriteBytes(file, []byte(text))
 }
 
 // DescriptionRel is a chosen description file as the workspace stores it: relative to the mod
@@ -200,7 +200,7 @@ func saveImage(dir string, extra Extra) error {
 		return err
 	}
 	// whole or not at all: a half image would pass for one already imported
-	return local.Write(dest, func(out io.Writer) error {
+	return appdata.Write(dest, func(out io.Writer) error {
 		_, err := io.Copy(out, resp.Body)
 		return err
 	})
@@ -219,7 +219,7 @@ func AddPreview(modRoot, srcPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := local.CopyFile(srcPath, dest); err != nil {
+	if err := appdata.CopyFile(srcPath, dest); err != nil {
 		return fmt.Errorf("copy preview: %w", err)
 	}
 	return nil
@@ -364,10 +364,10 @@ func CopyMod(src, dest, extraIgnore string) error {
 }
 
 // ZipMod writes what an upload of the mod at src sends into a zip at dest, for a store with no upload of ours
-// (Paradox Mods): whole or not at all (local.Write), streamed, the files at the zip's root.
+// (Paradox Mods): whole or not at all (appdata.Write), streamed, the files at the zip's root.
 func ZipMod(src, dest, extraIgnore string) error {
 	sent, _ := Upload(src, extraIgnore)
-	return local.Write(dest, func(out io.Writer) error {
+	return appdata.Write(dest, func(out io.Writer) error {
 		archive := zip.NewWriter(out)
 		for _, rel := range sent {
 			data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(rel)))
@@ -522,7 +522,7 @@ func writeVideoIDs(root string, ids []string) error {
 	if body != "" {
 		body += "\n"
 	}
-	return local.WriteBytes(filepath.Join(root, filepath.FromSlash(videosRel)), []byte(body))
+	return appdata.WriteBytes(filepath.Join(root, filepath.FromSlash(videosRel)), []byte(body))
 }
 
 func ignoreMatch(rel string, isDir bool, patterns []string) bool {

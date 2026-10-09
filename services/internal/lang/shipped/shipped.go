@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strconv"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/local"
 )
 
 // files is the shipped schemas. The pattern matches this file too, so an empty set still builds.
@@ -59,7 +59,7 @@ func Load(gameID, version string) (sch *schema.Schema, exact bool, err error) {
 		return nil, false, err
 	}
 	defer file.Close()
-	if err := local.Decode(file, &sch); err != nil {
+	if err := appdata.Decode(file, &sch); err != nil {
 		return nil, false, err
 	}
 	return sch, exact, nil

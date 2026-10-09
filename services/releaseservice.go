@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/local"
 	"paradox-modding-tools/services/internal/steam"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -187,7 +187,7 @@ func (r *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSumm
 	if err != nil {
 		return nil, err
 	}
-	fields, err := local.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -202,12 +202,12 @@ func (r *ReleaseService) SaveListing(in Listing) error {
 		return err
 	}
 	root := mod.Path
-	fields := local.ListingFields{
+	fields := appdata.ListingFields{
 		Name: in.Name, Version: in.Version, SupportedVersion: in.SupportedVersion,
 		Tags: in.Tags, RemoteFileID: in.RemoteFileID, Picture: picture(in.ThumbnailRel),
 		ShortDescription: cmp.Or(in.ShortDescription, firstParagraph(in.ReadmeMd)),
 	}
-	if err := local.WriteListingFields(ws.GameID, root, fields); err != nil {
+	if err := appdata.WriteListingFields(ws.GameID, root, fields); err != nil {
 		return err
 	}
 	if source, rel := description(mod); rel != "" {
@@ -217,7 +217,7 @@ func (r *ReleaseService) SaveListing(in Listing) error {
 			text = in.ReadmeBbcode
 		}
 		if exists(file) {
-			if err := local.WriteBytes(file, []byte(text)); err != nil {
+			if err := appdata.WriteBytes(file, []byte(text)); err != nil {
 				return err
 			}
 		}
@@ -225,7 +225,7 @@ func (r *ReleaseService) SaveListing(in Listing) error {
 	// the changelog holds the latest change note; no note, no file
 	changelog := filepath.Join(root, filepath.FromSlash(steam.ChangelogName))
 	if in.ChangeNote != "" {
-		return local.WriteBytes(changelog, []byte(in.ChangeNote))
+		return appdata.WriteBytes(changelog, []byte(in.ChangeNote))
 	}
 	if err := os.Remove(changelog); err != nil && !os.IsNotExist(err) {
 		return err
@@ -244,7 +244,7 @@ func (r *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error 
 	if rel == "" {
 		return fmt.Errorf("steam's own text has no file to create")
 	}
-	fields, err := local.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
 	if err != nil {
 		return err
 	}
@@ -258,12 +258,12 @@ func (r *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbn
 	if err != nil {
 		return nil, err
 	}
-	fields, err := local.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
 	if err != nil {
 		return nil, err
 	}
 	fields.RemoteFileID, fields.Picture = remoteFileID, cmp.Or(picture(thumbnailRel), fields.Picture)
-	if err := local.WriteListingFields(ws.GameID, mod.Path, fields); err != nil {
+	if err := appdata.WriteListingFields(ws.GameID, mod.Path, fields); err != nil {
 		return nil, err
 	}
 	return summarize(ws.GameID, mod, fields), nil
@@ -407,7 +407,7 @@ func (r *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamComp
 		return out, nil
 	}
 	out.From, out.UploadedAt, out.Title, out.Root = page.From, page.At, page.Title, filepath.Join(dir, "files")
-	theirs, err := local.ReadListingFields(ws.GameID, out.Root)
+	theirs, err := appdata.ReadListingFields(ws.GameID, out.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +422,7 @@ func (r *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamComp
 	if !sent {
 		text = page.Description
 	}
-	thumbnail, _ := local.FindThumbnail(ws.GameID, out.Root, theirs.Picture)
+	thumbnail, _ := appdata.FindThumbnail(ws.GameID, out.Root, theirs.Picture)
 	labels := func(extras []steam.Extra) []string {
 		names := []string{}
 		for _, extra := range extras {
@@ -510,7 +510,7 @@ func (r *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
 // fetchItem asks Steam for the mod's Workshop item: its page, and with files its files downloaded; it
 // returns the item's id.
 func (r *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool) (string, steam.Response, error) {
-	fields, err := local.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
 	if err != nil {
 		return "", steam.Response{}, err
 	}
@@ -546,7 +546,7 @@ func (r *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error
 
 func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
 	root := mod.Path
-	fields, err := local.ReadListingFields(ws.GameID, root)
+	fields, err := appdata.ReadListingFields(ws.GameID, root)
 	if err != nil {
 		return nil, err
 	}
@@ -588,15 +588,15 @@ func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, e
 
 // summarize is what a mod's descriptor fields and folder say of its Workshop id, its listing image
 // and its description's file.
-func summarize(gameID string, mod *WorkspaceMod, fields local.ListingFields) *ListingSummary {
+func summarize(gameID string, mod *WorkspaceMod, fields appdata.ListingFields) *ListingSummary {
 	summary := &ListingSummary{RemoteFileID: fields.RemoteFileID}
-	if rel, found := local.FindThumbnail(gameID, mod.Path, fields.Picture); found {
+	if rel, found := appdata.FindThumbnail(gameID, mod.Path, fields.Picture); found {
 		summary.ThumbnailRel, summary.ThumbnailAbs = rel, filepath.Join(mod.Path, filepath.FromSlash(rel))
 	}
 	summary.DescSource, summary.DescRel = description(mod)
 	summary.DescExists = summary.DescRel != "" && exists(filepath.Join(mod.Path, filepath.FromSlash(summary.DescRel)))
 	if dir, page := readSnapshot(fields.RemoteFileID); page != nil {
-		theirs, _ := local.ReadListingFields(gameID, filepath.Join(dir, "files"))
+		theirs, _ := appdata.ReadListingFields(gameID, filepath.Join(dir, "files"))
 		summary.SteamVersion = theirs.Version
 	}
 	return summary
@@ -635,7 +635,7 @@ func sentDescription(mod *WorkspaceMod, listing *Listing) (string, bool) {
 
 // newWork is a folder for one upload or download beside the snapshots, so that it can become one.
 func newWork() (string, error) {
-	cache, err := local.CacheDir()
+	cache, err := appdata.CacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -652,7 +652,7 @@ func snapshotDir(item string) (string, error) {
 	if _, err := strconv.ParseUint(item, 10, 64); err != nil {
 		return "", fmt.Errorf("not a workshop item id: %q", item)
 	}
-	cache, err := local.CacheDir()
+	cache, err := appdata.CacheDir()
 	if err != nil {
 		return "", err
 	}

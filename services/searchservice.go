@@ -19,8 +19,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/sync/errgroup"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/inventory"
-	"paradox-modding-tools/services/internal/local"
 )
 
 // SearchService is the Wails RPC shell for Find in Files. A text search sends each file's hits to
@@ -422,7 +422,7 @@ func (s *SearchService) Replace(ctx context.Context, query TextReplaceQuery) (Te
 	}
 	open := map[string]string{}
 	for path := range query.Open {
-		open[local.PathKey(path)] = path
+		open[appdata.PathKey(path)] = path
 	}
 	out := TextReplaceResult{Texts: map[string]string{}}
 	for _, folder := range query.Search.Folders {
@@ -432,7 +432,7 @@ func (s *SearchService) Replace(ctx context.Context, query TextReplaceQuery) (Te
 		}
 		globs := folderGlobs(folder)
 		err := searchFiles(ctx, root, globs, func(path, rel string) error {
-			if _, held := open[local.PathKey(path)]; held || inventory.Classify(path, filepath.ToSlash(rel)) == inventory.Image {
+			if _, held := open[appdata.PathKey(path)]; held || inventory.Classify(path, filepath.ToSlash(rel)) == inventory.Image {
 				return nil
 			}
 			data := searchable(path, nil)
@@ -443,7 +443,7 @@ func (s *SearchService) Replace(ctx context.Context, query TextReplaceQuery) (Te
 			if replaced == 0 {
 				return nil
 			}
-			if err := local.WriteBytes(path, []byte(text)); err != nil {
+			if err := appdata.WriteBytes(path, []byte(text)); err != nil {
 				return err
 			}
 			out.Replaced += replaced

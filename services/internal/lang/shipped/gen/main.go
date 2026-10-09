@@ -13,11 +13,11 @@ import (
 	"path/filepath"
 	"reflect"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/shipped"
-	"paradox-modding-tools/services/internal/local"
 )
 
 func main() {
@@ -62,14 +62,14 @@ func main() {
 
 	// 4. the stored form, as shipped.Load reads it
 	var encoded bytes.Buffer
-	if err := local.Encode(&encoded, sch); err != nil {
+	if err := appdata.Encode(&encoded, sch); err != nil {
 		log.Fatal(err)
 	}
 
 	// 5. a file of this version stays when it decodes to the same schema (gob map order changes the
 	// bytes on every run); both sides are decoded so empty slices and maps compare alike
 	decode := func(data []byte) (decoded *schema.Schema, err error) {
-		err = local.Decode(bytes.NewReader(data), &decoded)
+		err = appdata.Decode(bytes.NewReader(data), &decoded)
 		return decoded, err
 	}
 	path := filepath.Join(shippedDir, shipped.Name(*gameID, version))

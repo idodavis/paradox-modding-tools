@@ -73,7 +73,7 @@ export function TrashPath(fullPath: string): $CancellablePromise<string> {
 }
 
 /**
- * WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through local.Write, so a
+ * WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so a
  * failed save never leaves half a file.
  */
 export function WriteText(fullPath: string, text: string, bom: boolean, legacy: boolean): $CancellablePromise<void> {

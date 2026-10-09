@@ -22,12 +22,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
 	"paradox-modding-tools/services/internal/lang/schema"
-	"paradox-modding-tools/services/internal/local"
 )
 
 // Calendar is the eras a mod writes its dates in. A mod never states them, so the user declares
@@ -442,7 +442,7 @@ func (sess *Session) Located(path string) (inventory.File, *Mod, bool) {
 
 // Text is a file's text: the open buffer's, else the disk's.
 func (sess *Session) Text(path string) (string, error) {
-	if buffer := sess.buffers[local.PathKey(path)]; buffer != nil {
+	if buffer := sess.buffers[appdata.PathKey(path)]; buffer != nil {
 		return buffer.text, nil
 	}
 	return inventory.File{Path: path}.Text()
@@ -450,7 +450,7 @@ func (sess *Session) Text(path string) (string, error) {
 
 // Parsed is the parse of a file's text: an open buffer's, made once per text, else the disk's.
 func (sess *Session) Parsed(path string) (*jomini.Result, string, error) {
-	if buffer := sess.buffers[local.PathKey(path)]; buffer != nil {
+	if buffer := sess.buffers[appdata.PathKey(path)]; buffer != nil {
 		return &buffer.parsed, buffer.text, nil
 	}
 	text, err := sess.Text(path)
@@ -466,7 +466,7 @@ func (sess *Session) Parsed(path string) (*jomini.Result, string, error) {
 func (sess *Session) DidChange(path, text string) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	key := local.PathKey(path)
+	key := appdata.PathKey(path)
 	opened := sess.buffers[key]
 	if opened == nil {
 		file, _, _ := sess.Located(path)
@@ -485,7 +485,7 @@ func (sess *Session) DidClose(path string) {
 	text, err := inventory.File{Path: filepath.Clean(path)}.Text()
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	key := local.PathKey(path)
+	key := appdata.PathKey(path)
 	opened := sess.buffers[key]
 	if opened == nil {
 		return
@@ -509,7 +509,7 @@ func (sess *Session) DidSave(path string) {
 // and the index reads its format; any other file is only listed or forgotten. An unreadable file keeps its records,
 // since on Windows a save often hits a sharing violation; only a file that is gone loses them.
 func (sess *Session) Changed(path string) {
-	key := local.PathKey(path)
+	key := appdata.PathKey(path)
 	sess.mu.RLock()
 	file, _, ok := sess.Located(path)
 	held := sess.buffers[key] != nil

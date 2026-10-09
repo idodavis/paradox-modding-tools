@@ -18,7 +18,7 @@ import (
 	"strings"
 	"sync"
 
-	"paradox-modding-tools/services/internal/local"
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/wiki"
 
@@ -91,7 +91,7 @@ type AppService struct {
 // OpenApp loads config.json from the app's folder. A missing file is a first run; any other read
 // failure leaves the config read-only.
 func OpenApp() (*AppService, error) {
-	dir, err := local.AppDir()
+	dir, err := appdata.Dir()
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (s *AppService) mutate(section string, fn func(*Config) error) error {
 
 // save writes config.json; the caller holds the lock, or has the AppService to itself.
 func (s *AppService) save() error {
-	return local.Write(s.path, func(out io.Writer) error { return json.NewEncoder(out).Encode(&s.cfg) })
+	return appdata.Write(s.path, func(out io.Writer) error { return json.NewEncoder(out).Encode(&s.cfg) })
 }
 
 // GetVersion returns the app version string.
@@ -204,7 +204,7 @@ func (s *AppService) ResetData() error {
 	}); err != nil {
 		return err
 	}
-	dir, err := local.CacheDir()
+	dir, err := appdata.CacheDir()
 	if err != nil {
 		return fmt.Errorf("cache dir: %w", err)
 	}

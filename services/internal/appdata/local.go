@@ -1,9 +1,9 @@
 // local.go is the folders, the write every other file here goes through, and the stored form.
 
-// Package local is this machine's files: the app's own folders, the write that keeps a reader from
+// Package appdata is this machine's files: the app's own folders, the write that keeps a reader from
 // seeing half a file, the form a cache or shipped file is stored in, and a mod's own files
 // (descriptor, thumbnail, the skeleton of a new mod). Nothing here understands the script language.
-package local
+package appdata
 
 import (
 	"compress/gzip"
@@ -29,8 +29,8 @@ func PathKey(path string) string {
 	return path
 }
 
-// AppDir is the app's own folder under the user's config directory, made if missing.
-func AppDir() (string, error) {
+// Dir is the app's own folder under the user's config directory, made if missing.
+func Dir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -41,7 +41,7 @@ func AppDir() (string, error) {
 
 // CacheDir is where the app keeps what it learned about games and their wikis, made if missing.
 func CacheDir() (string, error) {
-	app, err := AppDir()
+	app, err := Dir()
 	if err != nil {
 		return "", err
 	}

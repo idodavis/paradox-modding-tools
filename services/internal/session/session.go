@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/index"
-	"paradox-modding-tools/services/internal/lang/jomini"
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"

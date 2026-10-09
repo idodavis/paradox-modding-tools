@@ -21,7 +21,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lang/source"
 	"paradox-modding-tools/services/internal/local"
 

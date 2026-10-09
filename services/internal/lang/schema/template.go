@@ -15,7 +15,7 @@ import (
 	gmtext "github.com/yuin/goldmark/text"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/jomini"
 )
 
 // rewrites is the rewrite catalogue, applied in order to a code line before its comment: each match

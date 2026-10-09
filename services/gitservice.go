@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/jomini"
 )
 
 // GitService is the Wails RPC shell for source control. Every method but Repositories takes a

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/jomini"
 )
 
 // Range is a half-open span of UTF-8 byte offsets.

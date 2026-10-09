@@ -27,7 +27,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"paradox-modding-tools/services/internal/lang/jomini"
+	"paradox-modding-tools/services/internal/jomini"
 )
 
 // Format is which reader a file needs.

@@ -1,5 +1,5 @@
 // Package wiki fetches, sanitizes, and looks up Paradox wiki guides and patch notes. It keeps
-// game-keyed sidecars under local.CacheDir. WikiService owns the Wails RPCs; this package must
+// game-keyed sidecars under appdata.CacheDir. WikiService owns the Wails RPCs; this package must
 // not import session or lsp.
 package wiki
 

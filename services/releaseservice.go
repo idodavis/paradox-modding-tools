@@ -19,6 +19,7 @@ import (
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/modfiles"
 	"paradox-modding-tools/services/internal/steam"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -187,7 +188,7 @@ func (r *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSumm
 	if err != nil {
 		return nil, err
 	}
-	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -202,12 +203,12 @@ func (r *ReleaseService) SaveListing(in Listing) error {
 		return err
 	}
 	root := mod.Path
-	fields := appdata.ListingFields{
+	fields := modfiles.ListingFields{
 		Name: in.Name, Version: in.Version, SupportedVersion: in.SupportedVersion,
 		Tags: in.Tags, RemoteFileID: in.RemoteFileID, Picture: picture(in.ThumbnailRel),
 		ShortDescription: cmp.Or(in.ShortDescription, firstParagraph(in.ReadmeMd)),
 	}
-	if err := appdata.WriteListingFields(ws.GameID, root, fields); err != nil {
+	if err := modfiles.WriteDescriptor(ws.GameID, root, fields); err != nil {
 		return err
 	}
 	if source, rel := description(mod); rel != "" {
@@ -244,7 +245,7 @@ func (r *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error 
 	if rel == "" {
 		return fmt.Errorf("steam's own text has no file to create")
 	}
-	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return err
 	}
@@ -258,12 +259,12 @@ func (r *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbn
 	if err != nil {
 		return nil, err
 	}
-	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return nil, err
 	}
 	fields.RemoteFileID, fields.Picture = remoteFileID, cmp.Or(picture(thumbnailRel), fields.Picture)
-	if err := appdata.WriteListingFields(ws.GameID, mod.Path, fields); err != nil {
+	if err := modfiles.WriteDescriptor(ws.GameID, mod.Path, fields); err != nil {
 		return nil, err
 	}
 	return summarize(ws.GameID, mod, fields), nil
@@ -407,7 +408,7 @@ func (r *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamComp
 		return out, nil
 	}
 	out.From, out.UploadedAt, out.Title, out.Root = page.From, page.At, page.Title, filepath.Join(dir, "files")
-	theirs, err := appdata.ReadListingFields(ws.GameID, out.Root)
+	theirs, err := modfiles.ReadDescriptor(ws.GameID, out.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +423,7 @@ func (r *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamComp
 	if !sent {
 		text = page.Description
 	}
-	thumbnail, _ := appdata.FindThumbnail(ws.GameID, out.Root, theirs.Picture)
+	thumbnail, _ := modfiles.Thumbnail(ws.GameID, out.Root, theirs.Picture)
 	labels := func(extras []steam.Extra) []string {
 		names := []string{}
 		for _, extra := range extras {
@@ -510,7 +511,7 @@ func (r *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
 // fetchItem asks Steam for the mod's Workshop item: its page, and with files its files downloaded; it
 // returns the item's id.
 func (r *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool) (string, steam.Response, error) {
-	fields, err := appdata.ReadListingFields(ws.GameID, mod.Path)
+	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return "", steam.Response{}, err
 	}
@@ -546,7 +547,7 @@ func (r *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error
 
 func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
 	root := mod.Path
-	fields, err := appdata.ReadListingFields(ws.GameID, root)
+	fields, err := modfiles.ReadDescriptor(ws.GameID, root)
 	if err != nil {
 		return nil, err
 	}
@@ -588,15 +589,15 @@ func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, e
 
 // summarize is what a mod's descriptor fields and folder say of its Workshop id, its listing image
 // and its description's file.
-func summarize(gameID string, mod *WorkspaceMod, fields appdata.ListingFields) *ListingSummary {
+func summarize(gameID string, mod *WorkspaceMod, fields modfiles.ListingFields) *ListingSummary {
 	summary := &ListingSummary{RemoteFileID: fields.RemoteFileID}
-	if rel, found := appdata.FindThumbnail(gameID, mod.Path, fields.Picture); found {
+	if rel, found := modfiles.Thumbnail(gameID, mod.Path, fields.Picture); found {
 		summary.ThumbnailRel, summary.ThumbnailAbs = rel, filepath.Join(mod.Path, filepath.FromSlash(rel))
 	}
 	summary.DescSource, summary.DescRel = description(mod)
 	summary.DescExists = summary.DescRel != "" && exists(filepath.Join(mod.Path, filepath.FromSlash(summary.DescRel)))
 	if dir, page := readSnapshot(fields.RemoteFileID); page != nil {
-		theirs, _ := appdata.ReadListingFields(gameID, filepath.Join(dir, "files"))
+		theirs, _ := modfiles.ReadDescriptor(gameID, filepath.Join(dir, "files"))
 		summary.SteamVersion = theirs.Version
 	}
 	return summary

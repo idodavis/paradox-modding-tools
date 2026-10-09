@@ -27,6 +27,7 @@ import (
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/inventory"
+	"paradox-modding-tools/services/internal/modfiles"
 )
 
 const (
@@ -50,7 +51,7 @@ const (
 var youtubeID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 // previewExts is what the Workshop shows as an extra preview: what a thumbnail may be, and webp.
-var previewExts = append(slices.Clone(appdata.ThumbnailExts), ".webp")
+var previewExts = append(slices.Clone(modfiles.ThumbnailExts), ".webp")
 
 // Preview is one extra Workshop image or YouTube id on the listing.
 type Preview struct {

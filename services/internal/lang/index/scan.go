@@ -24,6 +24,7 @@ import (
 	"paradox-modding-tools/services/internal/lang/schema"
 	"paradox-modding-tools/services/internal/lang/shipped"
 	"paradox-modding-tools/services/internal/loc"
+	"paradox-modding-tools/services/internal/modfiles"
 	"paradox-modding-tools/services/internal/wiki"
 )
 
@@ -251,7 +252,7 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 
 		// each folder its descriptor unloads, held lower-case, slash separated and without the stage an
 		// inventory root drops
-		descriptor, _ := appdata.ReadListingFields(info.ID, mod.Dir)
+		descriptor, _ := modfiles.ReadDescriptor(info.ID, mod.Dir)
 		for _, folder := range descriptor.ReplacePaths {
 			folder = strings.Trim(strings.ReplaceAll(strings.ToLower(folder), `\`, "/"), "/")
 			if stage, rest, staged := strings.Cut(folder, "/"); staged && slices.Contains(info.StageRoots, stage) {

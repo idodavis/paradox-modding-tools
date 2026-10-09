@@ -3,7 +3,7 @@
 // for a new mod. Which descriptor and which thumbnail folder a game uses are rows in
 // internal/game; what only the Steam Workshop reads lives in internal/steam.
 
-package appdata
+package modfiles
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"strings"
 	"unicode"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 )
 
@@ -63,9 +64,9 @@ var listingFields = []listingField{
 	{json: "id", jsonKeepEmpty: true, value: func(fields *ListingFields) *string { return &fields.ID }},
 }
 
-// ReadListingFields loads the mod's descriptor: descriptor.mod or metadata.json, per its game. A
+// ReadDescriptor loads the mod's descriptor: descriptor.mod or metadata.json, per its game. A
 // missing one reads as no fields.
-func ReadListingFields(gameID, root string) (ListingFields, error) {
+func ReadDescriptor(gameID, root string) (ListingFields, error) {
 	raw, err := os.ReadFile(game.DescriptorPath(gameID, root))
 	if os.IsNotExist(err) {
 		return ListingFields{}, nil
@@ -82,8 +83,8 @@ func ReadListingFields(gameID, root string) (ListingFields, error) {
 	return readDescriptorMod(string(raw)), nil
 }
 
-// WriteListingFields patches the known keys and keeps the rest of the file as written.
-func WriteListingFields(gameID, root string, fields ListingFields) error {
+// WriteDescriptor patches the known keys and keeps the rest of the file as written.
+func WriteDescriptor(gameID, root string, fields ListingFields) error {
 	descriptor := game.DescriptorPath(gameID, root)
 	raw, err := os.ReadFile(descriptor)
 	if err != nil && !os.IsNotExist(err) {
@@ -101,7 +102,7 @@ func WriteListingFields(gameID, root string, fields ListingFields) error {
 	} else {
 		next = []byte(patchDescriptorMod(string(raw), fields))
 	}
-	return WriteBytes(descriptor, next)
+	return appdata.WriteBytes(descriptor, next)
 }
 
 // writeSteamItem keeps a metadata.json mod's Workshop id in steamItemRel; no id, no file.
@@ -113,7 +114,7 @@ func writeSteamItem(root, id string) error {
 		}
 		return nil
 	}
-	return WriteBytes(file, []byte(id+"\n"))
+	return appdata.WriteBytes(file, []byte(id+"\n"))
 }
 
 // ThumbnailExts are the image types a listing thumbnail may be.
@@ -132,9 +133,9 @@ func thumbnailDirs(gameID string) (convention string, dirs []string) {
 	return "", []string{"", game.MetadataDir}
 }
 
-// FindThumbnail is the mod's listing image relative to its root: thumbnail.<ext> where its game
+// Thumbnail is the mod's listing image relative to its root: thumbnail.<ext> where its game
 // or the mod keeps one, else the file the descriptor's picture names beside it or in .metadata.
-func FindThumbnail(gameID, root, picture string) (string, bool) {
+func Thumbnail(gameID, root, picture string) (string, bool) {
 	var candidates []string
 	_, dirs := thumbnailDirs(gameID)
 	for _, dir := range dirs {
@@ -165,11 +166,11 @@ func CopyThumbnail(gameID, root, src string) (string, error) {
 	}
 	convention, _ := thumbnailDirs(gameID)
 	rel := path.Join(convention, "thumbnail"+ext)
-	existing, found := FindThumbnail(gameID, root, "")
+	existing, found := Thumbnail(gameID, root, "")
 	if found {
 		rel = strings.TrimSuffix(existing, path.Ext(existing)) + ext
 	}
-	if err := CopyFile(src, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+	if err := appdata.CopyFile(src, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
 		return "", err
 	}
 	// a new extension: the superseded file goes, so there are never two to choose between
@@ -398,8 +399,8 @@ func DefaultModParent(gameID string) string {
 	return filepath.Join(userData, "mod")
 }
 
-// ModSlug is a filesystem-safe folder name from a display name.
-func ModSlug(name string) string {
+// Slug is a filesystem-safe folder name from a display name.
+func Slug(name string) string {
 	var slug strings.Builder
 	afterUnderscore := false
 	for _, char := range strings.ToLower(strings.TrimSpace(name)) {
@@ -416,14 +417,14 @@ func ModSlug(name string) string {
 	return cmp.Or(strings.Trim(slug.String(), "_"), "mod")
 }
 
-// NewModOpts is what WriteNewMod is asked to make.
+// NewModOpts is what Create is asked to make.
 type NewModOpts struct {
 	GameID, Root, Name, SupportedVersion, LocLang, ThumbnailSrc string
 }
 
-// WriteNewMod creates root with a descriptor, each of the game's ModFolders empty but for a loc
+// Create creates root with a descriptor, each of the game's ModFolders empty but for a loc
 // stub in the localization one's language folder, and the thumbnail when one is given.
-func WriteNewMod(opts NewModOpts) error {
+func Create(opts NewModOpts) error {
 	info := game.Get(opts.GameID)
 	if info == nil {
 		return fmt.Errorf("unknown game %s", opts.GameID)
@@ -455,9 +456,9 @@ func WriteNewMod(opts NewModOpts) error {
 		fields.SupportedVersion = ""
 	}
 	if info.Descriptor == "metadata" {
-		fields.Version, fields.ID = "1.0.0", ModSlug(name)
+		fields.Version, fields.ID = "1.0.0", Slug(name)
 	}
-	if err := WriteListingFields(opts.GameID, root, fields); err != nil {
+	if err := WriteDescriptor(opts.GameID, root, fields); err != nil {
 		return err
 	}
 	language, locDir := cmp.Or(strings.TrimSpace(opts.LocLang), game.BaseLanguage), ""
@@ -474,7 +475,7 @@ func WriteNewMod(opts NewModOpts) error {
 	if locDir == "" {
 		return nil
 	}
-	locName := ModSlug(name) + "_l_" + language + ".yml"
+	locName := Slug(name) + "_l_" + language + ".yml"
 	locBody := append(append([]byte{}, utf8BOM...), []byte("l_"+language+":\n")...)
-	return WriteBytes(filepath.Join(locDir, locName), locBody)
+	return appdata.WriteBytes(filepath.Join(locDir, locName), locBody)
 }

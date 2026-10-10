@@ -189,7 +189,7 @@ refetches when it is shown again.
 | what a doc or dump phrase means | the phrase catalogue in `internal/lang/schema/template.go` |
 | how a dump file is read | the label table in `internal/lang/schema/dumps.go` |
 | a diagnostic | `internal/lsp/diagnostics.go` (`Codes`, the judge) |
-| a hover card's wording | `internal/lsp/hover.go` (`takes`, `writes`, `held`) |
+| a hover card's wording | `internal/lsp/wording.go` (`takesText`, `vanillaWritesText`, `blockHoldsText`) |
 | a Health section | `healthservice.go` |
 | a new frontend call | a service method, then `task common:generate:bindings` |
 

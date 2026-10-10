@@ -50,11 +50,11 @@ func fixture(t *testing.T, id string) (*workspace.Session, string) {
 	if err := os.MkdirAll(filepath.Join(dir, "common"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := workspace.Open(t.Context(), game.Get(id), install, []workspace.Mod{{ID: fixtureMod, Dir: dir, Calendar: workspace.Calendar{{Name: "AC", Offset: 7782}}}}, "")
+	ws, err := workspace.Open(t.Context(), game.Get(id), install, []workspace.Mod{{ID: fixtureMod, Dir: dir, Calendar: workspace.Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return sess, dir
+	return ws, dir
 }
 
 // emptyHome points every home and config variable at a temp dir, so no dump folder, wiki cache or
@@ -202,9 +202,9 @@ func firstDifference(want, got string) string {
 }
 
 // opened puts a file of the mod in the editor with a text, and gives its path.
-func opened(sess *workspace.Session, dir, rel, text string) string {
+func opened(ws *workspace.Session, dir, rel, text string) string {
 	path := filepath.Join(dir, filepath.FromSlash(rel))
-	sess.DidChange(path, text)
+	ws.DidChange(path, text)
 	return path
 }
 
@@ -584,7 +584,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		sess, err := workspace.Open(t.Context(), game.Get(testCase.id), install, []workspace.Mod{{ID: "sample", Dir: mod}}, "")
+		ws, err := workspace.Open(t.Context(), game.Get(testCase.id), install, []workspace.Mod{{ID: "sample", Dir: mod}}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -595,7 +595,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 		var lines []string
 		for _, sample := range samples {
 			path := filepath.Join(mod, filepath.FromSlash(sample.Rel))
-			found, err := Diagnose(sess, path, on)
+			found, err := Diagnose(ws, path, on)
 			if err != nil {
 				t.Fatal(err)
 			}

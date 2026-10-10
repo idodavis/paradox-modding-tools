@@ -51,10 +51,10 @@ type InlayHint struct {
 
 // Format is the edits that indent a script file with tabs by brace depth, or a localization file's
 // entries with one space. Only leading whitespace changes; other formats are left alone.
-func Format(sess *workspace.Session, path, unit string) ([]TextEdit, error) {
-	sess.RLock()
-	defer sess.RUnlock()
-	file, err := open(sess, path)
+func Format(ws *workspace.Session, path, unit string) ([]TextEdit, error) {
+	ws.RLock()
+	defer ws.RUnlock()
+	file, err := open(ws, path)
 	if err != nil {
 		return nil, err
 	}
@@ -89,10 +89,10 @@ func Format(sess *workspace.Session, path, unit string) ([]TextEdit, error) {
 }
 
 // Folding is one range per block of a script file, by the lines of its braces.
-func Folding(sess *workspace.Session, path string) ([]FoldingRange, error) {
-	sess.RLock()
-	defer sess.RUnlock()
-	file, err := open(sess, path)
+func Folding(ws *workspace.Session, path string) ([]FoldingRange, error) {
+	ws.RLock()
+	defer ws.RUnlock()
+	file, err := open(ws, path)
 	if err != nil {
 		return nil, err
 	}
@@ -115,10 +115,10 @@ func Folding(sess *workspace.Session, path string) ([]FoldingRange, error) {
 // CodeActions is the quick-fixes at a position: a BOM for a localization file without one, and a
 // loc key no file defines for a word at a loc-key position, appended to the mod's file of the
 // language.
-func CodeActions(sess *workspace.Session, path string, line, col int) ([]CodeAction, error) {
-	sess.RLock()
-	defer sess.RUnlock()
-	file, err := open(sess, path)
+func CodeActions(ws *workspace.Session, path string, line, col int) ([]CodeAction, error) {
+	ws.RLock()
+	defer ws.RUnlock()
+	file, err := open(ws, path)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func CodeActions(sess *workspace.Session, path string, line, col int) ([]CodeAct
 	if ref == nil || ref.Database != schema.Localization || !loc.LooksLikeKey(ref.ID) {
 		return out, nil
 	}
-	if _, known := index.Resolve(sess.Install.Schema, sess.Indexes(), *ref, path); known {
+	if _, known := index.Resolve(ws.Install.Schema, ws.Indexes(), *ref, path); known {
 		return out, nil
 	}
 	target, at, unended := file.keyFile()
@@ -150,15 +150,15 @@ func CodeActions(sess *workspace.Session, path string, line, col int) ([]CodeAct
 
 // keyFile is the mod's localization file in the workspace's language a new key is appended to, the
 // position at its end, and whether its text lacks a final newline; "" where the mod has none.
-func (file *file) keyFile() (string, Position, bool) {
-	sess := file.sess
-	_, mod, ok := sess.Located(file.path)
+func (file *openFile) keyFile() (string, Position, bool) {
+	ws := file.ws
+	_, mod, ok := ws.Located(file.path)
 	if !ok || mod == nil {
 		return "", Position{}, false
 	}
-	for _, at := range sess.Workspace.Files {
-		if at.Origin == mod.ID && at.Format == inventory.Loc && loc.LanguageFromRel(at.Rel) == sess.Language {
-			if text, err := sess.Text(at.Path); err == nil {
+	for _, at := range ws.Workspace.Files {
+		if at.Origin == mod.ID && at.Format == inventory.Loc && loc.LanguageFromRel(at.Rel) == ws.Language {
+			if text, err := ws.Text(at.Path); err == nil {
 				return at.Path, jomini.NewLineIndex(text).PositionAt(len(text)), text != "" && !strings.HasSuffix(text, "\n")
 			}
 		}
@@ -168,10 +168,10 @@ func (file *file) keyFile() (string, Position, bool) {
 
 // InlayHints is the era's date after every date of a file, where the mod declares a calendar and
 // one of its eras applies.
-func InlayHints(sess *workspace.Session, path string) ([]InlayHint, error) {
-	sess.RLock()
-	defer sess.RUnlock()
-	file, err := open(sess, path)
+func InlayHints(ws *workspace.Session, path string) ([]InlayHint, error) {
+	ws.RLock()
+	defer ws.RUnlock()
+	file, err := open(ws, path)
 	if err != nil {
 		return nil, err
 	}

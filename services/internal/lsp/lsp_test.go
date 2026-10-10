@@ -21,6 +21,7 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
+	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
@@ -779,5 +780,173 @@ func TestSignatureHelp(t *testing.T) {
 	line, col = aim(t, nested, "v_effect", 0)
 	if help, _ := SignatureHelp(install, path, line, col); help != nil {
 		t.Errorf("a scope block inside a token's block is no argument of it: %+v", help)
+	}
+}
+
+func TestDateFact(t *testing.T) {
+	for _, tt := range []struct {
+		text     string
+		calendar workspace.Calendar
+		want     string
+		isDate   bool
+	}{
+		{"8082.1.1", workspace.Calendar{{Name: "AC", Offset: 7782}}, "January 1st, 8082 AD; 300.1.1 AC in this mod's calendar", true},
+		{"-221.3.4", nil, "March 4th, 221 BC", true},
+		{"1066.2.22", nil, "February 22nd, 1066 AD", true},
+		{"1066.13.1", nil, "", true},
+		{"yes", nil, "", false},
+	} {
+		if got, isDate := dateFact(tt.text, tt.calendar); got != tt.want || isDate != tt.isDate {
+			t.Errorf("%s: %q, %v; want %q, %v", tt.text, got, isDate, tt.want, tt.isDate)
+		}
+	}
+}
+
+func TestConstantFact(t *testing.T) {
+	last := jomini.Parse("@x = 5\n@x = 6\nk = @x\n")
+	if value, at, isConstant := constantFact(&last, "@x"); value != "6" || at != 7 || !isConstant {
+		t.Errorf("the last top statement wins: %q at %d, %v", value, at, isConstant)
+	}
+	if _, _, isConstant := constantFact(&last, "@y"); isConstant {
+		t.Error("a constant nothing writes")
+	}
+	block := jomini.Parse("@z = { a = 1 }\n")
+	if _, _, isConstant := constantFact(&block, "@z"); isConstant {
+		t.Error("a block is no value")
+	}
+	plain := jomini.Parse("k = 1\n")
+	if _, _, isConstant := constantFact(&plain, "k"); isConstant {
+		t.Error("a name without @ is no constant")
+	}
+}
+
+func TestWeightFact(t *testing.T) {
+	parsed := jomini.Parse("random_list = {\n\t10 = { }\n\t30 = { }\n}\n")
+	list := parsed.Root.Statements[0].(*jomini.Assignment)
+	holder := jomini.ChildBlock(list)
+	branch := func(i int) *jomini.Assignment { return holder.Statements[i].(*jomini.Assignment) }
+	inList := schema.Context{Shape: game.ShapeEffects, Command: "random_list"}
+	for _, tt := range []struct {
+		what    string
+		branch  *jomini.Assignment
+		holder  *jomini.Block
+		context schema.Context
+		want    int
+	}{
+		{"the first branch", branch(0), holder, inList, 25},
+		{"the second branch", branch(1), holder, inList, 75},
+		{"another command's block", branch(0), holder, schema.Context{Shape: game.ShapeEffects, Command: "if"}, 0},
+		{"no holder", branch(0), nil, inList, 0},
+	} {
+		if got := weightFact(tt.branch, tt.holder, tt.context); got != tt.want {
+			t.Errorf("%s: %d, want %d", tt.what, got, tt.want)
+		}
+	}
+}
+
+func TestColorFact(t *testing.T) {
+	parsed := jomini.Parse("a = rgb { 255 0 0 }\nb = rgb { 1 0.5 0 }\nc = hsv { 0.5 1 1 }\nd = hsv360 { 180 100 100 }\n" +
+		"e = hex { 0xff8000ff }\nf = rgb { 255 0 }\ng = { 1 2 3 }\nh = foo { 1 2 3 }\n")
+	for i, want := range []string{"#ff0000", "#ff8000", "#00ffff", "#00ffff", "#ff8000", "", "", ""} {
+		assign := parsed.Root.Statements[i].(*jomini.Assignment)
+		if got := colorFact(assign); got != want {
+			t.Errorf("%s: %q, want %q", assign.Key.Text, got, want)
+		}
+	}
+}
+
+func TestModifierFact(t *testing.T) {
+	s := goldenInstall(t, ck3).Schema
+	if modifier, found := modifierFact(s, "monthly_prestige"); !found || modifier.Pattern != "" {
+		t.Errorf("a listed modifier: %+v, %v", modifier, found)
+	}
+	if modifier, found := modifierFact(s, "english_opinion"); !found || modifier.Pattern != "*_opinion" {
+		t.Errorf("a name in a $TYPE$ family: %+v, %v", modifier, found)
+	}
+	if _, found := modifierFact(s, "no_such_modifier_xyz"); found {
+		t.Error("a name no modifier has")
+	}
+}
+
+func TestDataCallCard(t *testing.T) {
+	ws, dir := fixture(t, ck3)
+	text := "l_english:\n k:0 \"[GetPlayer.GetName]\"\n"
+	path := opened(ws, dir, "localization/english/m_l_english.yml", text)
+	line, col := aim(t, text, "GetPlayer", 0)
+	card, _ := Hover(ws, path, line, col)
+	if card == nil || card.Head != "data function" || card.Scope == nil || card.Scope.This != "Global" || card.Leads != "Character" {
+		t.Errorf("a global function: %+v", card)
+	}
+	line, col = aim(t, text, "GetName", 0)
+	if card, _ := Hover(ws, path, line, col); card == nil || card.Head != "data function" || card.Scope == nil || card.Scope.This != "Character" {
+		t.Errorf("a function of the type before it: %+v", card)
+	}
+	text = "l_english:\n k:0 \"[NoSuchThing]\"\n"
+	path = opened(ws, dir, "localization/english/n_l_english.yml", text)
+	line, col = aim(t, text, "NoSuchThing", 0)
+	if card, _ := Hover(ws, path, line, col); card != nil {
+		t.Errorf("a step nothing names: %+v", card)
+	}
+}
+
+func TestLocCard(t *testing.T) {
+	ws, dir := fixture(t, ck3)
+	text := "l_english:\n m.k:0 \"Hi\"\n"
+	path := opened(ws, dir, "localization/english/m_l_english.yml", text)
+	line, col := aim(t, text, "m.k", 0)
+	card, _ := Hover(ws, path, line, col)
+	if card == nil || card.Word != "m.k" || card.Head != "localization" || card.Name != "Hi" || card.Winner != 0 || len(card.Sites) != 1 {
+		t.Errorf("a key on its own line: %+v", card)
+	}
+	line, col = aim(t, text, "Hi", 0)
+	if card, _ := Hover(ws, path, line, col); card != nil {
+		t.Errorf("a value is no key: %+v", card)
+	}
+}
+
+func TestCardForReference(t *testing.T) {
+	ws, dir := fixture(t, ck3)
+	text := "namespace = m\nm.1 = {\n\ttrigger = { has_trait = brave }\n}\n"
+	path := opened(ws, dir, "events/x.txt", text)
+	line, col := aim(t, text, "brave", 0)
+	card, _ := Hover(ws, path, line, col)
+	if card == nil || card.Head != "trait" || card.Name != "Brave" || len(card.Sites) != 1 || card.Winner != 0 || card.Graphed ||
+		!strings.HasSuffix(card.Sites[0].Rel, "traits/v_traits.txt") {
+		t.Errorf("a trait: %+v", card)
+	}
+	text = "namespace = m\nm.1 = {\n\timmediate = { trigger_event = v.2 }\n}\n"
+	path = opened(ws, dir, "events/y.txt", text)
+	line, col = aim(t, text, "v.2", 0)
+	if card, _ := Hover(ws, path, line, col); card == nil || card.Head != "event" || card.Name != "Two" || !card.Graphed {
+		t.Errorf("an event: %+v", card)
+	}
+}
+
+func TestCardForCommand(t *testing.T) {
+	ws, dir := fixture(t, ck3)
+	text := "namespace = m\nm.1 = {\n\timmediate = { add_gold = 1 }\n}\n"
+	path := opened(ws, dir, "events/x.txt", text)
+	line, col := aim(t, text, "add_gold", 0)
+	card, _ := Hover(ws, path, line, col)
+	if card == nil || card.Head != "effect" || card.Scope == nil || card.Scope.This != "character" ||
+		card.Scope.Reason != "the one scope it runs in" || card.Prose != "adds gold to a character" ||
+		!slices.Equal(card.Writes, []string{"a number", "script value"}) {
+		t.Errorf("an effect: %+v", card)
+	}
+}
+
+func TestCardForPosition(t *testing.T) {
+	ws, dir := fixture(t, ck3)
+	text := "namespace = m\nm.1 = {\n\tcooldown = { days = 10 }\n}\n"
+	path := opened(ws, dir, "events/x.txt", text)
+	line, col := aim(t, text, "cooldown", 0)
+	card, _ := Hover(ws, path, line, col)
+	if card == nil || card.Head != "in events" || card.Prose != "Time before the event can fire again." || !slices.Equal(card.Takes, []string{"a block"}) {
+		t.Errorf("a key of the entry: %+v", card)
+	}
+	line, col = aim(t, text, "days", 0)
+	card, _ = Hover(ws, path, line, col)
+	if card == nil || card.Head != "in `cooldown`" || card.Prose != "In days." || !slices.Equal(card.Takes, []string{"a number"}) {
+		t.Errorf("a key of a block: %+v", card)
 	}
 }

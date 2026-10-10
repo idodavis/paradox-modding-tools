@@ -243,8 +243,10 @@ func (judge *judge) value(at step, scalar *jomini.Scalar) {
 	}
 }
 
-// references judges the value words the walk read at a position that nothing defines: an event, or
-// a word a position declares names a database or a file; vanilla's contradiction keeps it quiet.
+// references judges the value words the walk read at a position that nothing defines: an event id
+// where a declared source says an event goes, or a word a position declares names a database or a
+// file; a word shaped like an event id where no source types the value is no event, and vanilla's
+// contradiction keeps the rest quiet.
 func (judge *judge) references(found []schema.Occurrence) {
 	sess := judge.file.sess
 	s := sess.Install.Schema
@@ -258,8 +260,7 @@ func (judge *judge) references(found []schema.Occurrence) {
 		linked := row != nil && strings.HasSuffix(written, ":"+ref.ID) // a prefix names its game database (title:k_x)
 		var code, message string
 		switch {
-		case events && (position == nil || position.Value.Source != schema.SourceNone &&
-			!s.MayAccuse(schema.CheckValue, position, nil)):
+		case events && (position == nil || !s.MayAccuse(schema.CheckValue, position, nil)):
 			continue
 		case events:
 			code, message = "unknown-event", "no event is named "+ref.ID

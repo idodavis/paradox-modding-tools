@@ -157,7 +157,7 @@ lint — so every code below describes something in a mod.
 | Code | Says |
 |---|---|
 | `unresolved-ref` | a declared reference names an entry nothing defines anywhere, names created by commands included (`culture:nonexistent`) |
-| `unknown-event` | an event id that no event defines, at a position the walk knows |
+| `unknown-event` | an event id that no event defines, at a position a declared source types as an event; a word shaped like one where no source types the value is quiet |
 | `wrong-value-type` | a value of another type than the position's declared type |
 | `wrong-declared-value` | a word outside the position's declared word list |
 | `wrong-scope` | a command written where the known scope is not one it runs in, judged on the scopes the dumps declare for it, or a variable read in a scope that stores none; the scope is the record's (`root`, `prev` and a saved `scope:x` included) and the message says how it was found; an unknown scope, and a command and scope vanilla writes together (`Index.Scoped`), are quiet |

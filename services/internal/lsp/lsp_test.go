@@ -291,6 +291,8 @@ func TestDiagnose(t *testing.T) {
 		{"a declared cite that resolves", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { exists = title:k_x }\n}\n", nil},
 		{"a declared prefix bound to no kind", "events/x.txt", "namespace = m\nm.1 = {\n\ttrigger = { exists = flag:whatever }\n}\n", nil},
 		{"a bare word nothing declares is never accused", "events/x.txt", "namespace = m\nm.1 = {\n\ttheme = no_such_theme\n}\n", nil},
+		{"an event id no event defines, where the dumps say an event goes", "events/x.txt", "namespace = m\nm.1 = {\n\timmediate = { trigger_event = { id = m.99 } }\n}\n", []string{"unknown-event"}},
+		{"a word shaped like an event id where no source types the value", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { months = zoom_0.5 }\n}\n", nil},
 		{"a value of another type than the game declares", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { days = soon }\n}\n", []string{"wrong-value-type"}},
 		{"a value of the declared type", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { days = 10 }\n}\n", nil},
 		{"a key a learned structure never holds is not judged", "events/x.txt", "namespace = m\nm.1 = {\n\tcooldown = { fortnights = 2 }\n}\n", nil},

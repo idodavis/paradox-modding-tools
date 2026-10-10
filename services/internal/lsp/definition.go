@@ -108,7 +108,8 @@ func References(ws *workspace.Session, path string, line, col int) ([]Location, 
 	return file.uses(*ref), nil
 }
 
-// databases are the databases a reference's name is in: its own, or those a call of its kind resolves in.
+// databases are the databases a reference's name is in: its own, or those a call of its kind
+// resolves in.
 func databases(ws *workspace.Session, ref schema.Occurrence) []string {
 	if ref.Caller != "" {
 		return ws.Install.Schema.Callees[ref.Caller]
@@ -136,9 +137,10 @@ func (file *openFile) uses(ref schema.Occurrence) []Location {
 	return out
 }
 
-// Rename is the edits that rename the name at a place everywhere it is written, in the mods' files. It refuses, with
-// the reason, a name the game defines, one more than one origin defines, a site in the game's files or one that
-// does not read as the name there, and a new name that is no name or is taken.
+// Rename is the edits that rename the name at a place everywhere it is written, in the mods' files.
+// It refuses, with the reason, a name the game defines, one more than one origin defines, a site in
+// the game's files or one that does not read as the name there, and a new name that is no name or
+// is taken.
 func Rename(ws *workspace.Session, path string, line, col int, name string) (WorkspaceEdit, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -233,8 +235,8 @@ func WorkspaceSymbols(ws *workspace.Session, query string) []Symbol {
 	return out
 }
 
-// FindLoc is the localization keys that start with a prefix, at most limit, each where its entry in the workspace's
-// language is (the english one where it has none), for the palette's #.
+// FindLoc is the localization keys that start with a prefix, at most limit, each where its entry in
+// the workspace's language is (the english one where it has none), for the palette's #.
 func FindLoc(ws *workspace.Session, prefix string, limit int) []Symbol {
 	ws.RLock()
 	defer ws.RUnlock()

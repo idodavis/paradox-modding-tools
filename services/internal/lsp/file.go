@@ -1,10 +1,11 @@
-// file.go is what every request starts from: the open file, the cursor's place in it from one walk that
-// stops there, and the editor's positions and locations.
+// file.go is what every request starts from: the open file, the cursor's place in it from one walk
+// that stops there, and the editor's positions and locations.
 
-// Package lsp answers the editor's requests for one open file: the card for what is under the cursor, where
-// it is defined and used, what may be written there, what is wrong, and how the file is folded, formatted and
-// annotated. Every answer starts from one walk of the file over the schema (index.Collect), stopped at the
-// cursor or run whole; payloads carry display data and the frontend templates the text.
+// Package lsp answers the editor's requests for one open file: the card for what is under the
+// cursor, where it is defined and used, what may be written there, what is wrong, and how the file
+// is folded, formatted and annotated. Every answer starts from one walk of the file over the schema
+// (index.Collect), stopped at the cursor or run whole; payloads carry display data and the frontend
+// templates the text.
 package lsp
 
 import (
@@ -27,8 +28,8 @@ type openFile struct {
 	place  workspace.Place
 }
 
-// open reads the file at a path as the request sees it: the editor's text where the file is open there, else
-// the disk's, parsed once per text, and placed in the workspace.
+// open reads the file at a path as the request sees it: the editor's text where the file is open
+// there, else the disk's, parsed once per text, and placed in the workspace.
 func open(ws *workspace.Session, path string) (*openFile, error) {
 	parsed, text, err := ws.Parsed(path)
 	if err != nil {
@@ -70,15 +71,16 @@ func siteOf(ws *workspace.Session, def index.At) Location {
 	return locate(ws, def.File().Path, Position{Line: int(def.Occurrence().Line), Character: int(def.Occurrence().Col)})
 }
 
-// step is one statement of the chain under the cursor: the statement, the context it is written in and the one
-// its block reads in.
+// step is one statement of the chain under the cursor: the statement, the context it is written in
+// and the one its block reads in.
 type step struct {
 	statement jomini.Statement
 	context   schema.Context
 	inner     schema.Context
 }
 
-// command is the declared effect, trigger or link the step's key is, by the rule that read it; nil for none.
+// command is the declared effect, trigger or link the step's key is, by the rule that read it; nil
+// for none.
 func (step step) command(s *schema.Schema) *schema.Command {
 	assign, isAssign := step.statement.(*jomini.Assignment)
 	if !isAssign {
@@ -93,8 +95,8 @@ func (step step) command(s *schema.Schema) *schema.Command {
 	return nil
 }
 
-// cursor is the cursor's place in a script file, from one walk that stops past it: the statements holding it,
-// outer to inner, and the occurrences the walk read up to it.
+// cursor is the cursor's place in a script file, from one walk that stops past it: the statements
+// holding it, outer to inner, and the occurrences the walk read up to it.
 type cursor struct {
 	file        *openFile
 	chain       []step
@@ -102,8 +104,8 @@ type cursor struct {
 	offset      int
 }
 
-// walkTo walks the file up to an offset. A statement holds the offset when its span does, or when it ends at an
-// operator with only blanks up to the offset: a value still to come.
+// walkTo walks the file up to an offset. A statement holds the offset when its span does, or when
+// it ends at an operator with only blanks up to the offset: a value still to come.
 func (file *openFile) walkTo(offset int) cursor {
 	cursor := cursor{file: file, offset: offset}
 	cursor.occurrences, _ = index.Collect(file.ws.Install.Schema, file.place.File, file.parsed,
@@ -122,8 +124,8 @@ func (file *openFile) walkTo(offset int) cursor {
 	return cursor
 }
 
-// blockAt is the index in the chain of the innermost statement whose block holds the cursor, -1 at the file's
-// top; that statement's inner context says how its block reads.
+// blockAt is the index in the chain of the innermost statement whose block holds the cursor, -1 at
+// the file's top; that statement's inner context says how its block reads.
 func (cursor cursor) blockAt() int {
 	holder := -1
 	for i, step := range cursor.chain {
@@ -135,8 +137,9 @@ func (cursor cursor) blockAt() int {
 	return holder
 }
 
-// within is the entry the cursor is in, then the keys of the blocks between it and the cursor; nil outside an
-// entry. The entry's own statement is its name, not a key; an entry with no name starts with its first key.
+// within is the entry the cursor is in, then the keys of the blocks between it and the cursor; nil
+// outside an entry. The entry's own statement is its name, not a key; an entry with no name starts
+// with its first key.
 func (cursor cursor) within() []string {
 	holder := cursor.blockAt()
 	if holder < 0 || cursor.chain[holder].context.Entry < 0 {
@@ -156,10 +159,10 @@ func (cursor cursor) within() []string {
 	return out
 }
 
-// scalarAt is the scalar under the cursor (the innermost statement's key or value; nil for none), whether it is
-// the key, and the definition or reference the walk read inside it ($NAME$ included): of several references (a
-// call's parameter and the call), the first that resolves, else the first; a definition with a name is named as
-// itself.
+// scalarAt is the scalar under the cursor (the innermost statement's key or value; nil for none),
+// whether it is the key, and the definition or reference the walk read inside it ($NAME$ included):
+// of several references (a call's parameter and the call), the first that resolves, else the first;
+// a definition with a name is named as itself.
 func (cursor cursor) scalarAt() (scalar *jomini.Scalar, isKey bool, ref *schema.Occurrence) {
 	if len(cursor.chain) == 0 {
 		return nil, false, nil
@@ -206,8 +209,8 @@ func covers(span jomini.Range, offset int) bool {
 	return span.Start <= offset && offset <= span.End
 }
 
-// locRef is what an offset of a localization file names: a reference the scan read ($key$, a concept), else the
-// line's key; with neither, the data call steps it is in, if any.
+// locRef is what an offset of a localization file names: a reference the scan read ($key$, a
+// concept), else the line's key; with neither, the data call steps it is in, if any.
 func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini.Step) {
 	lines := file.parsed.Lines()
 	start := lines.OffsetAt(lines.PositionAt(offset).Line, 0)
@@ -234,8 +237,8 @@ func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini
 	return ref, nil
 }
 
-// dataCallAt is the data call step at an offset of a text that starts at start: the steps up to it; nil where
-// the offset is in no [ … ] step.
+// dataCallAt is the data call step at an offset of a text that starts at start: the steps up to it;
+// nil where the offset is in no [ … ] step.
 func dataCallAt(text string, start, offset int) []jomini.Step {
 	for _, segment := range jomini.Calls(text, start) {
 		steps := jomini.ParseCall(text[segment.Start-start:segment.End-start], segment.Start)
@@ -248,8 +251,8 @@ func dataCallAt(text string, start, offset int) []jomini.Step {
 	return nil
 }
 
-// stepsLeadTo is the data type a data call's steps lead to: from the global functions, or a data type written
-// first, through each function's return type; "" where a step is unknown.
+// stepsLeadTo is the data type a data call's steps lead to: from the global functions, or a data
+// type written first, through each function's return type; "" where a step is unknown.
 func stepsLeadTo(types map[string]schema.DataType, steps []jomini.Step) string {
 	typeName := game.GlobalType
 	for i, step := range steps {

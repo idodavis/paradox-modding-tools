@@ -68,10 +68,10 @@ func emptyHome(t *testing.T) {
 	}
 }
 
-// goldenInstall scans a fixture install as the goldens' generator does: under an empty home, so no dump folder
-// or wiki cache of this machine is read, from the fixtures' absolute path, and with no cache written (App "").
-// It is its own scan, apart from fixture's: the dumps this machine holds change what accuses, and the goldens
-// were made without them.
+// goldenInstall scans a fixture install as the goldens' generator does: under an empty home, so no
+// dump folder or wiki cache of this machine is read, from the fixtures' absolute path, and with no
+// cache written (App ""). It is its own scan, apart from fixture's: the dumps this machine holds
+// change what accuses, and the goldens were made without them.
 func goldenInstall(t *testing.T, id string) *index.Install {
 	t.Helper()
 	emptyHome(t)
@@ -89,8 +89,8 @@ func goldenInstall(t *testing.T, id string) *index.Install {
 	return install
 }
 
-// goldenSession opens the session the goldens' generator opened: the fixture install with the fixture mod over
-// it, and CK3's mod calendar.
+// goldenSession opens the session the goldens' generator opened: the fixture install with the
+// fixture mod over it, and CK3's mod calendar.
 func goldenSession(t *testing.T, id string) *workspace.Session {
 	t.Helper()
 	install := goldenInstall(t, id)
@@ -112,8 +112,8 @@ func goldenSession(t *testing.T, id string) *workspace.Session {
 // token matches what the goldens' generator counts as a word of a line.
 var token = regexp.MustCompile(`[A-Za-z0-9_.:@$|'\-]+`)
 
-// dumpHovers writes the card at the start of every word of the file as the goldens print it: "-" is no card;
-// "" is a file with no card at all.
+// dumpHovers writes the card at the start of every word of the file as the goldens print it: "-" is
+// no card; "" is a file with no card at all.
 func dumpHovers(t *testing.T, ws *workspace.Session, file inventory.File) string {
 	t.Helper()
 	text, err := file.Text()
@@ -147,8 +147,9 @@ func dumpHovers(t *testing.T, ws *workspace.Session, file inventory.File) string
 	return out.String()
 }
 
-// TestHoverGoldens reproduces every hover golden: the card at every word of every fixture file, printed as the
-// goldens' generator prints it, byte for byte. A card that differs is read, never regenerated here.
+// TestHoverGoldens reproduces every hover golden: the card at every word of every fixture file,
+// printed as the goldens' generator prints it, byte for byte. A card that differs is read, never
+// regenerated here.
 func TestHoverGoldens(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", "testdata"))
 	if err != nil {

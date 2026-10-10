@@ -1,6 +1,7 @@
-// diagnostics.go is what is wrong with a file: one method per code. A code accuses only on a claim a declared
-// source states, fresh, that no vanilla evidence contradicts (schema.MayAccuse); the install's own files are
-// never judged. A code is turned off in the settings, or for a line and the next by `# pmt:ignore code`.
+// diagnostics.go is what is wrong with a file: one method per code. A code accuses only on a claim
+// a declared source states, fresh, that no vanilla evidence contradicts (schema.MayAccuse); the
+// install's own files are never judged. A code is turned off in the settings, or for a line and the
+// next by `# pmt:ignore code`.
 
 package lsp
 
@@ -35,8 +36,8 @@ type Code struct {
 	Default bool   `json:"default"`
 }
 
-// Codes is every check a user may turn off. The parsers' errors are not among them: a file that does not parse
-// is wrong.
+// Codes is every check a user may turn off. The parsers' errors are not among them: a file that
+// does not parse is wrong.
 var Codes = []Code{
 	{"unresolved-ref", "a word naming an entry that nothing defines", true},
 	{"wrong-value-type", "a value of another type than the key takes", true},
@@ -54,15 +55,17 @@ var Codes = []Code{
 
 // judge gathers the findings of one file.
 type judge struct {
-	file      *openFile
-	enabled   map[string]bool
-	ignored   map[int][]string                  // by 0-based line: the codes a pmt:ignore comment turns off there; nil for all
-	positions map[jomini.Range]*schema.Position // the position each value sits at, by its span
+	file    *openFile
+	enabled map[string]bool
+	// by 0-based line: the codes a pmt:ignore comment turns off there; an empty list turns off all
+	ignored map[int][]string
+	// the position each value sits at, by its span
+	positions map[jomini.Range]*schema.Position
 	out       []Diagnostic
 }
 
-// Diagnose is the findings of a mod's script or localization file, with the codes that are on; nil enabled
-// means each code's default. The install's files and other formats have none.
+// Diagnose is the findings of a mod's script or localization file, with the codes that are on; nil
+// enabled means each code's default. The install's files and other formats have none.
 func Diagnose(ws *workspace.Session, path string, enabled map[string]bool) ([]Diagnostic, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -89,8 +92,8 @@ func Diagnose(ws *workspace.Session, path string, enabled map[string]bool) ([]Di
 	return judge.out, nil
 }
 
-// report keeps a finding whose code is on (a code not in Codes, a parser's, is always on) and not turned off on
-// its line by a pmt:ignore comment.
+// report keeps a finding whose code is on (a code not in Codes, a parser's, is always on) and not
+// turned off on its line by a pmt:ignore comment.
 func (judge *judge) report(span jomini.Range, severity int, code, message string) {
 	isCheck := slices.ContainsFunc(Codes, func(known Code) bool { return known.Code == code })
 	if isCheck && !judge.enabled[code] {
@@ -103,8 +106,9 @@ func (judge *judge) report(span jomini.Range, severity int, code, message string
 	judge.out = append(judge.out, Diagnostic{Range: judge.file.span(span), Severity: severity, Code: code, Message: message})
 }
 
-// ignores reads every `# pmt:ignore code, code` comment of a text: its codes, split on commas and blanks, apply
-// to its own line and the line below, unless that line has a comment of its own. No codes turn every check off.
+// ignores reads every `# pmt:ignore code, code` comment of a text: its codes, split on commas and
+// blanks, apply to its own line and the line below, unless that line has a comment of its own. No
+// codes turn every check off.
 func ignores(text string) map[int][]string {
 	ignored := map[int][]string{}
 	for number, line := range strings.Split(text, "\n") {
@@ -118,8 +122,8 @@ func ignores(text string) map[int][]string {
 	return ignored
 }
 
-// script judges a script file: the parser's errors, each statement the walk reads, then the names it refers to
-// and defines.
+// script judges a script file: the parser's errors, each statement the walk reads, then the names
+// it refers to and defines.
 func (judge *judge) script() {
 	file := judge.file
 	for _, parseError := range file.parsed.Errors {
@@ -134,8 +138,9 @@ func (judge *judge) script() {
 	judge.definitions(occurrences)
 }
 
-// statement judges what one statement writes: its key by the scope it runs in and the variable it reads, its
-// block by the keys it leaves out, its value by the scope, the variable and the type it reads.
+// statement judges what one statement writes: its key by the scope it runs in and the variable it
+// reads, its block by the keys it leaves out, its value by the scope, the variable and the type it
+// reads.
 func (judge *judge) statement(at step) {
 	if assign, isAssign := at.statement.(*jomini.Assignment); isAssign {
 		judge.variableRead(at, &assign.Key)
@@ -148,8 +153,8 @@ func (judge *judge) statement(at step) {
 	}
 }
 
-// variableRead finds a variable read in a scope that stores none (wrong-scope: a command written in a scope it
-// does not run in, or a variable read in one that stores none).
+// variableRead finds a variable read in a scope that stores none (wrong-scope: a command written in
+// a scope it does not run in, or a variable read in one that stores none).
 func (judge *judge) variableRead(at step, scalar *jomini.Scalar) {
 	ws := judge.file.ws
 	s, scope := ws.Install.Schema, at.context.Scope
@@ -167,8 +172,8 @@ func (judge *judge) variableRead(at step, scalar *jomini.Scalar) {
 	judge.report(scalar.Range, 2, "wrong-scope", message)
 }
 
-// wrongScope finds a command written in a scope it does not run in (wrong-scope: a command written in a scope it
-// does not run in, or a variable read in one that stores none).
+// wrongScope finds a command written in a scope it does not run in (wrong-scope: a command written
+// in a scope it does not run in, or a variable read in one that stores none).
 func (judge *judge) wrongScope(at step, assign *jomini.Assignment) {
 	ws := judge.file.ws
 	s, scope := ws.Install.Schema, at.context.Scope
@@ -186,9 +191,9 @@ func (judge *judge) wrongScope(at step, assign *jomini.Assignment) {
 	judge.report(assign.Key.Range, 2, "wrong-scope", message)
 }
 
-// missingKey finds the keys of an entry's block that the game's docs say every such block writes and this one
-// leaves out (missing-key: a key the game's docs say every entry writes, left out). A key with a mode word adds
-// to another entry and may leave keys out.
+// missingKey finds the keys of an entry's block that the game's docs say every such block writes
+// and this one leaves out (missing-key: a key the game's docs say every entry writes, left out). A
+// key with a mode word adds to another entry and may leave keys out.
 func (judge *judge) missingKey(at step, assign *jomini.Assignment) {
 	ws := judge.file.ws
 	s, position, block := ws.Install.Schema, at.inner.Position(), jomini.BlockOf(assign.Value)
@@ -210,8 +215,9 @@ func (judge *judge) missingKey(at step, assign *jomini.Assignment) {
 }
 
 // wrongValue finds a value of another type than its key takes, or a word outside the words it takes
-// (wrong-value-type: a value of another type than the key takes; wrong-declared-value: a word outside the words
-// the key takes). It notes the position each value sits at, which unresolved reads.
+// (wrong-value-type: a value of another type than the key takes; wrong-declared-value: a word
+// outside the words the key takes). It notes the position each value sits at, which unresolved
+// reads.
 func (judge *judge) wrongValue(at step, scalar *jomini.Scalar) {
 	ws := judge.file.ws
 	s, text := ws.Install.Schema, scalar.Text
@@ -246,8 +252,9 @@ func (judge *judge) wrongValue(at step, scalar *jomini.Scalar) {
 }
 
 // unresolved finds the names the file refers to that nothing defines: an event id no event defines
-// (unknown-event), a word naming an entry nothing defines (unresolved-ref) and a path that exists nowhere
-// (missing-file). Only a name written as the value of a key a declared source types is judged.
+// (unknown-event), a word naming an entry nothing defines (unresolved-ref) and a path that exists
+// nowhere (missing-file). Only a name written as the value of a key a declared source types is
+// judged.
 func (judge *judge) unresolved(occurrences []schema.Occurrence) {
 	ws := judge.file.ws
 	s := ws.Install.Schema
@@ -283,8 +290,9 @@ func (judge *judge) unresolved(occurrences []schema.Occurrence) {
 	}
 }
 
-// contradicted reports whether vanilla itself writes, at the position, a word of the same kind that the
-// workspace does not know (an event-shaped word, for an events database): a miss then proves nothing.
+// contradicted reports whether vanilla itself writes, at the position, a word of the same kind that
+// the workspace does not know (an event-shaped word, for an events database): a miss then proves
+// nothing.
 func (judge *judge) contradicted(position *schema.Position, ref schema.Occurrence) bool {
 	if position == nil {
 		return false
@@ -300,8 +308,8 @@ func (judge *judge) contradicted(position *schema.Position, ref schema.Occurrenc
 	return false
 }
 
-// definitions finds the names this file defines that the game does not load as written: an INJECT or REPLACE with
-// no target, else a name defined twice.
+// definitions finds the names this file defines that the game does not load as written: an INJECT
+// or REPLACE with no target, else a name defined twice.
 func (judge *judge) definitions(occurrences []schema.Occurrence) {
 	ws := judge.file.ws
 	for _, def := range occurrences {
@@ -319,8 +327,8 @@ func (judge *judge) definitions(occurrences []schema.Occurrence) {
 	}
 }
 
-// orphanMode finds an INJECT or REPLACE with nothing loaded before it (inject-without-target: an INJECT or
-// REPLACE with nothing loaded before it), and reports whether it fired.
+// orphanMode finds an INJECT or REPLACE with nothing loaded before it (inject-without-target: an
+// INJECT or REPLACE with nothing loaded before it), and reports whether it fired.
 func (judge *judge) orphanMode(def schema.Occurrence, loaded []index.At, mine int) bool {
 	_, _, orphans, _ := judge.file.ws.Winner(loaded)
 	if !slices.Contains(orphans, loaded[mine]) {
@@ -331,8 +339,9 @@ func (judge *judge) orphanMode(def schema.Occurrence, loaded []index.At, mine in
 	return true
 }
 
-// duplicate finds a name another mod's file defines too (duplicate-definition: a name the workspace defines
-// twice). The game's own files, on_actions, history and the names vanilla itself repeats are not judged.
+// duplicate finds a name another mod's file defines too (duplicate-definition: a name the workspace
+// defines twice). The game's own files, on_actions, history and the names vanilla itself repeats
+// are not judged.
 func (judge *judge) duplicate(def schema.Occurrence, row *schema.Database, loaded []index.At) {
 	ws := judge.file.ws
 	contends := func(occurrence schema.Occurrence) bool {
@@ -350,9 +359,9 @@ func (judge *judge) duplicate(def schema.Occurrence, row *schema.Database, loade
 	}
 }
 
-// locFile judges a localization file: the parser's errors, a header naming another language than the file, a
-// folder spelled as the game never reads it, and a missing UTF-8 byte order mark (missing-bom, loc-header-mismatch,
-// wrong-localization-folder).
+// locFile judges a localization file: the parser's errors, a header naming another language than
+// the file, a folder spelled as the game never reads it, and a missing UTF-8 byte order mark
+// (missing-bom, loc-header-mismatch, wrong-localization-folder).
 func (judge *judge) locFile() {
 	file := judge.file
 	parsed := loc.Parse(file.text)

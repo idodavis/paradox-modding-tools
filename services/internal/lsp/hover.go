@@ -1,5 +1,5 @@
-// hover.go is the card for what is under the cursor: what the scalar stands for, then each fact its written
-// form adds; a data call's step and a loc file's key have cards of their own.
+// hover.go is the card for what is under the cursor: what the scalar stands for, then each fact its
+// written form adds; a data call's step and a loc file's key have cards of their own.
 
 package lsp
 
@@ -48,8 +48,9 @@ type Inspect struct {
 	Range   Range          `json:"range"`
 }
 
-// subject is what the scalar under the cursor stands for: a reference the walk read in it, else its key's
-// position or command; with where the scalar is written and what the walker reads the key's block as.
+// subject is what the scalar under the cursor stands for: a reference the walk read in it, else its
+// key's position or command; with where the scalar is written and what the walker reads the key's
+// block as.
 type subject struct {
 	ref     *schema.Occurrence
 	key     *schema.Position
@@ -58,8 +59,8 @@ type subject struct {
 	holds   game.Shape
 }
 
-// Hover is the card for the scalar at a position of a script or localization file: what it stands for and each
-// fact its written form adds; nil where the position holds nothing to say.
+// Hover is the card for the scalar at a position of a script or localization file: what it stands
+// for and each fact its written form adds; nil where the position holds nothing to say.
 func Hover(ws *workspace.Session, path string, line, col int) (*Inspect, error) {
 	ws.RLock()
 	defer ws.RUnlock()
@@ -77,8 +78,9 @@ func Hover(ws *workspace.Session, path string, line, col int) (*Inspect, error) 
 	return file.scriptCard(offset), nil
 }
 
-// scriptCard is the card of a script file's offset: what the scalar stands for, then the facts its written form
-// adds, each a call; it is nil where the card would say nothing and the cursor is in no entry.
+// scriptCard is the card of a script file's offset: what the scalar stands for, then the facts its
+// written form adds, each a call; it is nil where the card would say nothing and the cursor is in
+// no entry.
 func (file *openFile) scriptCard(offset int) *Inspect {
 	s := file.ws.Install.Schema
 	cursor := file.walkTo(offset)
@@ -133,10 +135,10 @@ func (file *openFile) scriptCard(offset int) *Inspect {
 	return card
 }
 
-// subjectAt is what the scalar stands for, from the innermost statement: the reference the walk read in it, the
-// scope it is written in and, for a key, its position, its command and what its block holds. A link chain
-// (capital_county.holder) is read part by part: the part under the cursor is the command, led to from the scope
-// the parts before it end in.
+// subjectAt is what the scalar stands for, from the innermost statement: the reference the walk
+// read in it, the scope it is written in and, for a key, its position, its command and what its
+// block holds. A link chain (capital_county.holder) is read part by part: the part under the cursor
+// is the command, led to from the scope the parts before it end in.
 func (cursor cursor) subjectAt(scalar *jomini.Scalar, isKey bool, ref *schema.Occurrence) subject {
 	s := cursor.file.ws.Install.Schema
 	at := cursor.chain[len(cursor.chain)-1]
@@ -166,8 +168,9 @@ func (cursor cursor) subjectAt(scalar *jomini.Scalar, isKey bool, ref *schema.Oc
 	return subject
 }
 
-// describe fills a card from what a scalar stands for: a reference's definitions, else a command's or a key's
-// claims; a stale source among those shown marks the card. It reports whether anything is known.
+// describe fills a card from what a scalar stands for: a reference's definitions, else a command's
+// or a key's claims; a stale source among those shown marks the card. It reports whether anything
+// is known.
 func (file *openFile) describe(card *Inspect, subject subject) bool {
 	s := file.ws.Install.Schema
 	mark := func(from schema.Source) {
@@ -192,9 +195,10 @@ func scopeCard(scope schema.Scope) *schema.Scope {
 	return &scope
 }
 
-// cardForReference fills a reference's card: its database, its sites (the kept one and its adds), its localized
-// name, the comment its author leads it with, and what the dumps and docs say of its database. subject.scope is
-// where the reference is written, which a scripted entry runs in when its database declares none.
+// cardForReference fills a reference's card: its database, its sites (the kept one and its adds),
+// its localized name, the comment its author leads it with, and what the dumps and docs say of its
+// database. subject.scope is where the reference is written, which a scripted entry runs in when
+// its database declares none.
 func (file *openFile) cardForReference(card *Inspect, subject subject, mark func(schema.Source)) bool {
 	ws, s, ref := file.ws, file.ws.Install.Schema, subject.ref
 	defs, known := index.Resolve(s, ws.Indexes(), *ref, file.place.Path)
@@ -249,8 +253,8 @@ func (file *openFile) cardForReference(card *Inspect, subject subject, mark func
 	return true
 }
 
-// placeCard fills the card of a localization key (its text and entry) or of a file path (its place, and for an
-// image its header).
+// placeCard fills the card of a localization key (its text and entry) or of a file path (its place,
+// and for an image its header).
 func (file *openFile) placeCard(card *Inspect, database, id string) {
 	ws := file.ws
 	if database == schema.Localization {
@@ -272,8 +276,9 @@ func (file *openFile) placeCard(card *Inspect, database, id string) {
 	}
 }
 
-// authorComment is the comment a mod's author leads a definition with: the comments attached to its statement
-// that end before it starts, each stripped of its #, joined by newlines; "" for the game's own, a file under no origin or none.
+// authorComment is the comment a mod's author leads a definition with: the comments attached to its
+// statement that end before it starts, each stripped of its #, joined by newlines; "" for the
+// game's own, a file under no origin or none.
 func authorComment(ws *workspace.Session, def index.At) string {
 	if origin := def.File().Origin; origin == game.OriginVanilla || origin == "" {
 		return ""
@@ -292,8 +297,9 @@ func authorComment(ws *workspace.Session, def index.At) string {
 	return strings.Join(lines, "\n")
 }
 
-// cardForCommand fills a declared command's card: what it is, what it takes, the scope it runs in (the one it
-// declares where the block's is unknown) and the scope it leads to. It reports whether the card says anything.
+// cardForCommand fills a declared command's card: what it is, what it takes, the scope it runs in
+// (the one it declares where the block's is unknown) and the scope it leads to. It reports whether
+// the card says anything.
 func (file *openFile) cardForCommand(card *Inspect, subject subject, mark func(schema.Source)) bool {
 	s, command := file.ws.Install.Schema, subject.command
 	card.Head, card.Prose, card.Takes = kindText(command), command.Blurb, takesText(command.Args)
@@ -309,8 +315,9 @@ func (file *openFile) cardForCommand(card *Inspect, subject subject, mark func(s
 	return takesByEvidence(card, command.Args, subject.holds)
 }
 
-// cardForPosition fills a key's card from its position's claims: whether it is required, what it takes, where it
-// runs and leads, and the prose a declared source gives it. It reports whether the card says anything.
+// cardForPosition fills a key's card from its position's claims: whether it is required, what it
+// takes, where it runs and leads, and the prose a declared source gives it. It reports whether the
+// card says anything.
 func cardForPosition(card *Inspect, subject subject, mark func(schema.Source)) bool {
 	key := subject.key
 	card.Need, card.Takes, card.Scope, card.Leads = requirementText(key), takesText(key), scopeCard(subject.scope), key.Scope.Value
@@ -324,9 +331,9 @@ func cardForPosition(card *Inspect, subject subject, mark func(schema.Source)) b
 	return takesByEvidence(card, key, subject.holds)
 }
 
-// takesByEvidence says what a key takes where no source declared it: what its block holds, else what vanilla
-// writes there, an inference that alone does not make the card known. It reports whether the card now says
-// something.
+// takesByEvidence says what a key takes where no source declared it: what its block holds, else
+// what vanilla writes there, an inference that alone does not make the card known. It reports
+// whether the card now says something.
 func takesByEvidence(card *Inspect, position *schema.Position, holds game.Shape) bool {
 	if len(card.Takes) == 0 && blockHoldsText[holds] != "" {
 		card.Takes = []string{blockHoldsText[holds]}
@@ -337,8 +344,8 @@ func takesByEvidence(card *Inspect, position *schema.Position, holds game.Shape)
 	return card.Head != "" || card.Need != "" || card.Prose != "" || len(card.Takes) > 0 || card.Leads != ""
 }
 
-// modifierFact is the modifier the dumps list under a name, else the most specific $TYPE$ family the name
-// matches: the longest pattern, the first by name among equals.
+// modifierFact is the modifier the dumps list under a name, else the most specific $TYPE$ family
+// the name matches: the longest pattern, the first by name among equals.
 func modifierFact(s *schema.Schema, name string) (schema.Modifier, bool) {
 	modifier, declared := s.Modifiers[name]
 	for _, family := range s.Modifiers {
@@ -352,9 +359,9 @@ func modifierFact(s *schema.Schema, name string) (schema.Modifier, bool) {
 	return modifier, declared || modifier.Pattern != ""
 }
 
-// dateFact writes a date out (January 1st, 8082 AD; year -221 is 221 BC), and in the mod's calendar where one
-// of its eras applies (82.1.1 A.C.). isDate says the text is a date at all; a date whose month is out of range
-// is one with no text.
+// dateFact writes a date out (January 1st, 8082 AD; year -221 is 221 BC), and in the mod's calendar
+// where one of its eras applies (82.1.1 A.C.). isDate says the text is a date at all; a date whose
+// month is out of range is one with no text.
 func dateFact(text string, calendar workspace.Calendar) (date string, isDate bool) {
 	if jomini.Literal(text) != jomini.LitDate {
 		return "", false
@@ -390,9 +397,9 @@ func ordinal(number int) string {
 	return strconv.Itoa(number) + suffix
 }
 
-// constantFact is a script constant's value in this file: the value of the last top statement that writes the
-// name with a scalar, and where that statement's key starts; isConstant is false for a name that is no
-// constant (@x) or that no top statement writes so.
+// constantFact is a script constant's value in this file: the value of the last top statement that
+// writes the name with a scalar, and where that statement's key starts; isConstant is false for a
+// name that is no constant (@x) or that no top statement writes so.
 func constantFact(parsed *jomini.Result, name string) (value string, at int, isConstant bool) {
 	if _, constant := jomini.Constant(name); !constant {
 		return "", 0, false
@@ -409,8 +416,8 @@ func constantFact(parsed *jomini.Result, name string) (value string, at int, isC
 	return value, at, isConstant
 }
 
-// weightFact is a numbered branch's share of its siblings' numbers, in percent, where the holder's construct
-// row gives numbered keys a weight (random_list's <number> branches); 0 elsewhere.
+// weightFact is a numbered branch's share of its siblings' numbers, in percent, where the holder's
+// construct row gives numbered keys a weight (random_list's <number> branches); 0 elsewhere.
 func weightFact(branch *jomini.Assignment, holder *jomini.Block, context schema.Context) int {
 	construct, isConstruct := game.ConstructOf(context.Shape, context.Command, "<number>")
 	weighted := isConstruct && construct.Key == "<number>"
@@ -434,8 +441,8 @@ func weightFact(branch *jomini.Assignment, holder *jomini.Block, context schema.
 	return int(mine*100/sum + 0.5)
 }
 
-// colorFact is a color written as a tagged block (rgb { 255 0 0 }) spelled as #rrggbb; "" for any other value, an
-// unknown tag or too few parts.
+// colorFact is a color written as a tagged block (rgb { 255 0 0 }) spelled as #rrggbb; "" for any
+// other value, an unknown tag or too few parts.
 func colorFact(assign *jomini.Assignment) string {
 	tagged, isTagged := assign.Value.(*jomini.TaggedBlock)
 	if !isTagged {
@@ -502,8 +509,8 @@ func hsv(hue, saturation, value float64) (red, green, blue float64) {
 	return value, bottom, falling
 }
 
-// writtenInFact says where a key is written when nothing else names it: in its entry's database where the key
-// sits in the entry's own block, else in the key of the block that holds it.
+// writtenInFact says where a key is written when nothing else names it: in its entry's database
+// where the key sits in the entry's own block, else in the key of the block that holds it.
 func (cursor cursor) writtenInFact(card *Inspect) {
 	if len(cursor.chain) < 2 {
 		return
@@ -523,7 +530,8 @@ func (cursor cursor) writtenInFact(card *Inspect) {
 	}
 }
 
-// bareCard is a card with only the entry and blocks the cursor is in, which draws nothing; nil outside an entry.
+// bareCard is a card with only the entry and blocks the cursor is in, which draws nothing; nil
+// outside an entry.
 func bareCard(within []string, span Range) *Inspect {
 	if len(within) == 0 {
 		return nil
@@ -531,17 +539,17 @@ func bareCard(within []string, span Range) *Inspect {
 	return &Inspect{Within: within, Range: span, Winner: -1}
 }
 
-// saysNothing reports whether a card holds no fact a reader would see: no head, need, prose, date, color,
-// weight, scope led to, takes, writes or sites.
+// saysNothing reports whether a card holds no fact a reader would see: no head, need, prose, date,
+// color, weight, scope led to, takes, writes or sites.
 func saysNothing(card *Inspect) bool {
 	texts := card.Head != "" || card.Need != "" || card.Prose != "" || card.Date != "" || card.Color != "" || card.Leads != ""
 	lists := len(card.Takes) > 0 || len(card.Writes) > 0 || len(card.Sites) > 0
 	return !texts && !lists && card.Weight == 0
 }
 
-// dataCallCard is the card of a data call's last step: a custom localization named by a quoted argument, an
-// entry of the functions or concepts databases, a function of the type the steps before lead to, or a data type;
-// nil where the step is none of them.
+// dataCallCard is the card of a data call's last step: a custom localization named by a quoted
+// argument, an entry of the functions or concepts databases, a function of the type the steps
+// before lead to, or a data type; nil where the step is none of them.
 func (file *openFile) dataCallCard(steps []jomini.Step) *Inspect {
 	ws, s := file.ws, file.ws.Install.Schema
 	step := steps[len(steps)-1]
@@ -583,13 +591,14 @@ func (file *openFile) dataCallCard(steps []jomini.Step) *Inspect {
 	return card
 }
 
-// readInDataCalls reports whether a database holds the entries a data call names: functions and concepts.
+// readInDataCalls reports whether a database holds the entries a data call names: functions and
+// concepts.
 func readInDataCalls(row game.Descriptor) bool {
 	return row.Purpose == game.PurposeFunctions || row.Purpose == game.PurposeConcepts
 }
 
-// locCard is the card in a localization file: a data call's step, a reference the line makes ($key$, a concept)
-// or the line's own key; nil where the offset names nothing that exists.
+// locCard is the card in a localization file: a data call's step, a reference the line makes
+// ($key$, a concept) or the line's own key; nil where the offset names nothing that exists.
 func (file *openFile) locCard(offset int) *Inspect {
 	ws := file.ws
 	ref, steps := file.locRef(offset)

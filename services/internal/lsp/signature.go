@@ -18,9 +18,9 @@ type Signature struct {
 	Docs       string   `json:"docs,omitempty"`
 }
 
-// SignatureHelp is the arguments of the command whose block holds the cursor: the keys a declared source states
-// its block holds, with the command's blurb; nil elsewhere. Only the block the cursor is directly in counts: a
-// key written in a command's block is no argument of a command above it.
+// SignatureHelp is the arguments of the command whose block holds the cursor: the keys a declared
+// source states its block holds, with the command's blurb; nil elsewhere. Only the block the cursor
+// is directly in counts: a key written in a command's block is no argument of a command above it.
 func SignatureHelp(ws *workspace.Session, path string, line, col int) (*Signature, error) {
 	ws.RLock()
 	defer ws.RUnlock()

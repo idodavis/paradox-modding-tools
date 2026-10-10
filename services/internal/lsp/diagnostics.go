@@ -54,11 +54,11 @@ var Codes = []Code{
 
 // judge gathers the findings of one file.
 type judge struct {
-	file    *openFile
-	on      map[string]bool
-	ignored map[int][]string                  // by 0-based line: the codes a pmt:ignore comment turns off there; nil for all
-	written map[jomini.Range]*schema.Position // the position each word written as a value sits at, by its span
-	out     []Diagnostic
+	file      *openFile
+	enabled   map[string]bool
+	ignored   map[int][]string                  // by 0-based line: the codes a pmt:ignore comment turns off there; nil for all
+	positions map[jomini.Range]*schema.Position // the position each value sits at, by its span
+	out       []Diagnostic
 }
 
 // Diagnose is the findings of a mod's script or localization file, with the codes that are on; nil enabled
@@ -80,7 +80,7 @@ func Diagnose(ws *workspace.Session, path string, enabled map[string]bool) ([]Di
 			enabled[code.Code] = code.Default
 		}
 	}
-	judge := &judge{file: file, on: enabled, ignored: ignores(file.text), written: map[jomini.Range]*schema.Position{}}
+	judge := &judge{file: file, enabled: enabled, ignored: ignores(file.text), positions: map[jomini.Range]*schema.Position{}}
 	if file.place.Format == inventory.Loc {
 		judge.locFile()
 	} else {
@@ -93,7 +93,7 @@ func Diagnose(ws *workspace.Session, path string, enabled map[string]bool) ([]Di
 // its line by a pmt:ignore comment.
 func (judge *judge) report(span jomini.Range, severity int, code, message string) {
 	isCheck := slices.ContainsFunc(Codes, func(known Code) bool { return known.Code == code })
-	if isCheck && !judge.on[code] {
+	if isCheck && !judge.enabled[code] {
 		return
 	}
 	codes, isIgnored := judge.ignored[judge.file.parsed.Lines().PositionAt(span.Start).Line]
@@ -197,8 +197,8 @@ func (judge *judge) missingKey(at step, assign *jomini.Assignment) {
 	}
 	writes := map[string]bool{}
 	for _, statement := range block.Statements {
-		if written, isAssign := statement.(*jomini.Assignment); isAssign {
-			writes[written.Key.Text] = true
+		if child, isAssign := statement.(*jomini.Assignment); isAssign {
+			writes[child.Key.Text] = true
 		}
 	}
 	for name, child := range position.Children {
@@ -219,10 +219,10 @@ func (judge *judge) wrongValue(at step, scalar *jomini.Scalar) {
 	if position == nil {
 		return
 	}
-	judge.written[scalar.Range] = position
+	judge.positions[scalar.Range] = position
 	_, isConstant := jomini.Constant(text)
 	claim := position.Value.Value
-	if _, listed := slices.BinarySearch(claim.Choices, text); isConstant || len(jomini.Interpolations(text)) > 0 || listed {
+	if _, isChoice := slices.BinarySearch(claim.Choices, text); isConstant || len(jomini.Interpolations(text)) > 0 || isChoice {
 		return
 	}
 	code, wrong := "wrong-value-type", false
@@ -255,7 +255,7 @@ func (judge *judge) unresolved(occurrences []schema.Occurrence) {
 		if ref.Role != schema.Refers {
 			continue
 		}
-		position, row := judge.written[ref.Range], s.Databases[ref.Database]
+		position, row := judge.positions[ref.Range], s.Databases[ref.Database]
 		text := strings.Trim(judge.file.text[ref.Range.Start:ref.Range.End], `"`)
 		linked := row != nil && strings.HasSuffix(text, ":"+ref.ID)
 		typed := position != nil && s.MayAccuse(schema.CheckValue, position, nil)
@@ -359,9 +359,9 @@ func (judge *judge) locFile() {
 	for _, parseError := range parsed.Errors {
 		judge.report(parseError.Range, 1, "loc-"+string(parseError.Code), parseError.Message)
 	}
-	named := loc.LanguageFromFilename(file.place.Rel)
-	if named != "" && parsed.Language != "" && !strings.EqualFold(named, parsed.Language) {
-		message := fmt.Sprintf("the file is named for %s but its header says l_%s", named, parsed.Language)
+	language := loc.LanguageFromFilename(file.place.Rel)
+	if language != "" && parsed.Language != "" && !strings.EqualFold(language, parsed.Language) {
+		message := fmt.Sprintf("the file is named for %s but its header says l_%s", language, parsed.Language)
 		judge.report(jomini.Range{}, 2, "loc-header-mismatch", message)
 	}
 	rel := strings.ToLower(file.place.Rel)

@@ -105,8 +105,8 @@ func (file *openFile) scriptCard(offset int) *Inspect {
 		card.Key = assign.Key.Text
 	}
 	subject := cursor.subjectAt(scalar, isKey, ref)
-	described := file.describe(card, subject)
-	if modifier, isModifier := modifierFact(s, scalar.Text); isKey && !described && isModifier {
+	known := file.describe(card, subject)
+	if modifier, isModifier := modifierFact(s, scalar.Text); isKey && !known && isModifier {
 		card.Head, card.Prose = "modifier", modifier.Blurb
 		card.Stale = card.Stale || s.Sources[schema.SourceDumps].Stale
 	}
@@ -254,28 +254,28 @@ func (file *openFile) cardForReference(card *Inspect, subject subject, mark func
 func (file *openFile) placeCard(card *Inspect, database, id string) {
 	ws := file.ws
 	if database == schema.Localization {
-		if entry, listed := ws.Loc(id, ""); listed {
+		if entry, known := ws.Loc(id, ""); known {
 			card.Name, card.Winner = loc.Plain(entry.Text()), 0
 			card.Sites = []Location{locate(ws, entry.File().Path, Position{Line: int(entry.Occurrence().Line)})}
 		}
 		return
 	}
-	found, listed := index.FileAt(ws.Indexes(), id)
-	if !listed {
+	fileAt, known := index.FileAt(ws.Indexes(), id)
+	if !known {
 		return
 	}
-	card.Winner, card.Sites = 0, []Location{locate(ws, found.Path, Position{})}
-	if found.Format == inventory.Image {
-		if facts, err := texture.Info(found.Path); err == nil {
+	card.Winner, card.Sites = 0, []Location{locate(ws, fileAt.Path, Position{})}
+	if fileAt.Format == inventory.Image {
+		if facts, err := texture.Info(fileAt.Path); err == nil {
 			card.Image = &facts
 		}
 	}
 }
 
 // authorComment is the comment a mod's author leads a definition with: the comments attached to its statement
-// that end before it starts, each stripped of its #, joined by newlines; "" for the game's own or none.
+// that end before it starts, each stripped of its #, joined by newlines; "" for the game's own, a file under no origin or none.
 func authorComment(ws *workspace.Session, def index.At) string {
-	if def.File().Origin == game.OriginVanilla {
+	if origin := def.File().Origin; origin == game.OriginVanilla || origin == "" {
 		return ""
 	}
 	parsed, statement := ws.Entry(def)
@@ -340,16 +340,16 @@ func takesByEvidence(card *Inspect, position *schema.Position, holds game.Shape)
 // modifierFact is the modifier the dumps list under a name, else the most specific $TYPE$ family the name
 // matches: the longest pattern, the first by name among equals.
 func modifierFact(s *schema.Schema, name string) (schema.Modifier, bool) {
-	modifier, listed := s.Modifiers[name]
+	modifier, declared := s.Modifiers[name]
 	for _, family := range s.Modifiers {
 		matched, _ := filepath.Match(family.Pattern, name)
 		longer := len(family.Pattern) > len(modifier.Pattern) ||
 			len(family.Pattern) == len(modifier.Pattern) && family.Pattern < modifier.Pattern
-		if !listed && family.Pattern != "" && matched && longer {
+		if !declared && family.Pattern != "" && matched && longer {
 			modifier = family
 		}
 	}
-	return modifier, listed || modifier.Pattern != ""
+	return modifier, declared || modifier.Pattern != ""
 }
 
 // dateFact writes a date out (January 1st, 8082 AD; year -221 is 221 BC), and in the mod's calendar where one
@@ -444,23 +444,26 @@ func colorFact(assign *jomini.Assignment) string {
 	var words []string
 	var parts []float64
 	for _, statement := range tagged.Block.Statements {
-		listed, isListed := statement.(*jomini.ValueStmt)
-		if !isListed {
+		value, isValue := statement.(*jomini.ValueStmt)
+		if !isValue {
 			continue
 		}
-		if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar {
+		if scalar, isScalar := value.Value.(*jomini.Scalar); isScalar {
 			words = append(words, scalar.Text)
 			number, _ := strconv.ParseFloat(scalar.Text, 64)
 			parts = append(parts, number)
 		}
 	}
-	found := slices.IndexFunc(game.Colors, func(color game.Color) bool { return strings.EqualFold(color.Tag, tagged.Tag.Text) })
-	if found < 0 {
+	i := slices.IndexFunc(game.Colors, func(color game.Color) bool { return strings.EqualFold(color.Tag, tagged.Tag.Text) })
+	if i < 0 {
 		return ""
 	}
-	row := game.Colors[found]
-	if digits, _ := strings.CutPrefix(strings.Join(words, ""), "0x"); row.Hex && len(words) == 1 && len(digits) >= 6 {
-		return "#" + strings.ToLower(digits[:6])
+	row := game.Colors[i]
+	if row.Hex && len(words) == 1 {
+		if digits := strings.TrimPrefix(strings.ToLower(words[0]), "0x"); len(digits) >= 6 {
+			return "#" + digits[:6]
+		}
+		return ""
 	}
 	switch {
 	case len(parts) < 3:
@@ -531,10 +534,9 @@ func bareCard(within []string, span Range) *Inspect {
 // saysNothing reports whether a card holds no fact a reader would see: no head, need, prose, date, color,
 // weight, scope led to, takes, writes or sites.
 func saysNothing(card *Inspect) bool {
-	named := card.Head != "" || card.Need != "" || card.Prose != "" || card.Date != "" || card.Color != ""
-	counted := card.Weight != 0 || card.Leads != ""
-	listed := len(card.Takes) > 0 || len(card.Writes) > 0 || len(card.Sites) > 0
-	return !named && !counted && !listed
+	texts := card.Head != "" || card.Need != "" || card.Prose != "" || card.Date != "" || card.Color != "" || card.Leads != ""
+	lists := len(card.Takes) > 0 || len(card.Writes) > 0 || len(card.Sites) > 0
+	return !texts && !lists && card.Weight == 0
 }
 
 // dataCallCard is the card of a data call's last step: a custom localization named by a quoted argument, an
@@ -544,7 +546,7 @@ func (file *openFile) dataCallCard(steps []jomini.Step) *Inspect {
 	ws, s := file.ws, file.ws.Install.Schema
 	step := steps[len(steps)-1]
 	card := &Inspect{Word: step.Name, Range: file.span(step.Range), Winner: -1}
-	on := stepsLeadTo(s.DataTypes, steps[:len(steps)-1])
+	typeName := stepsLeadTo(s.DataTypes, steps[:len(steps)-1])
 	stale := s.Sources[schema.SourceDumps].Stale
 	for _, arg := range step.Args {
 		if custom, isCustom := s.CustomLoc[arg.Text]; arg.Quoted && isCustom {
@@ -557,22 +559,22 @@ func (file *openFile) dataCallCard(steps []jomini.Step) *Inspect {
 			return card
 		}
 	}
-	defined := false
+	known := false
 	for _, name := range s.DatabasesWhere(readInDataCalls) {
 		if len(index.Lookup(ws.Indexes(), schema.Defines, name, step.Name)) == 0 {
 			continue
 		}
 		reference := subject{ref: &schema.Occurrence{Database: name, ID: step.Name}}
-		if defined = file.cardForReference(card, reference, func(schema.Source) {}); defined {
+		if known = file.cardForReference(card, reference, func(schema.Source) {}); known {
 			break
 		}
 	}
-	if function, isFunction := s.DataTypes[on].Functions[step.Name]; isFunction {
+	if function, isFunction := s.DataTypes[typeName].Functions[step.Name]; isFunction {
 		card.Head, card.Leads = cmp.Or(card.Head, "data function"), function.Returns
-		card.Scope = scopeCard(schema.Scope{This: on, Reason: "what " + step.Name + " is called on"})
+		card.Scope = scopeCard(schema.Scope{This: typeName, Reason: "what " + step.Name + " is called on"})
 		card.Stale = card.Stale || stale
 	}
-	if _, isType := s.DataTypes[step.Name]; len(steps) == 1 && isType && !defined {
+	if _, isType := s.DataTypes[step.Name]; len(steps) == 1 && isType && !known {
 		card.Head, card.Stale = "data type", card.Stale || stale
 	}
 	if card.Head == "" {

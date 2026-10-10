@@ -61,8 +61,8 @@ type Location struct {
 
 // locate gives the editor's location of a position in a file of the workspace or the install.
 func locate(ws *workspace.Session, path string, at Position) Location {
-	listed, _, _ := ws.Located(path)
-	return Location{Path: path, Origin: listed.Origin, Rel: listed.Rel, Range: Range{Start: at, End: at}}
+	place, _, _ := ws.Located(path)
+	return Location{Path: path, Origin: place.Origin, Rel: place.Rel, Range: Range{Start: at, End: at}}
 }
 
 // siteOf gives where a definition is written.
@@ -251,18 +251,18 @@ func dataCallAt(text string, start, offset int) []jomini.Step {
 // stepsLeadTo is the data type a data call's steps lead to: from the global functions, or a data type written
 // first, through each function's return type; "" where a step is unknown.
 func stepsLeadTo(types map[string]schema.DataType, steps []jomini.Step) string {
-	on := game.GlobalType
+	typeName := game.GlobalType
 	for i, step := range steps {
-		function, isFunction := types[on].Functions[step.Name]
+		function, isFunction := types[typeName].Functions[step.Name]
 		_, isType := types[step.Name]
 		switch {
 		case isFunction:
-			on = function.Returns
+			typeName = function.Returns
 		case i == 0 && isType:
-			on = step.Name
+			typeName = step.Name
 		default:
 			return ""
 		}
 	}
-	return on
+	return typeName
 }

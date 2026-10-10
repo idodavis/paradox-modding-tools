@@ -857,13 +857,13 @@ func TestColorFact(t *testing.T) {
 
 func TestModifierFact(t *testing.T) {
 	s := goldenInstall(t, ck3).Schema
-	if modifier, found := modifierFact(s, "monthly_prestige"); !found || modifier.Pattern != "" {
-		t.Errorf("a listed modifier: %+v, %v", modifier, found)
+	if modifier, isModifier := modifierFact(s, "monthly_prestige"); !isModifier || modifier.Pattern != "" {
+		t.Errorf("a listed modifier: %+v, %v", modifier, isModifier)
 	}
-	if modifier, found := modifierFact(s, "english_opinion"); !found || modifier.Pattern != "*_opinion" {
-		t.Errorf("a name in a $TYPE$ family: %+v, %v", modifier, found)
+	if modifier, isModifier := modifierFact(s, "english_opinion"); !isModifier || modifier.Pattern != "*_opinion" {
+		t.Errorf("a name in a $TYPE$ family: %+v, %v", modifier, isModifier)
 	}
-	if _, found := modifierFact(s, "no_such_modifier_xyz"); found {
+	if _, isModifier := modifierFact(s, "no_such_modifier_xyz"); isModifier {
 		t.Error("a name no modifier has")
 	}
 }

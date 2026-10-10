@@ -72,10 +72,10 @@ func Complete(ws *workspace.Session, path string, line, col int) (*Completion, e
 func (file *openFile) partialAt(offset int) (partial, bool) {
 	lines := file.parsed.Lines()
 	lineStart := lines.OffsetAt(lines.PositionAt(offset).Line, 0)
-	before := file.text[lineStart:offset]
-	if open := strings.LastIndex(before, "["); open >= 0 && !strings.Contains(before[open:], "]") {
-		start := lineStart + open + strings.LastIndexAny(before[open:], "[.") + 1
-		return partial{start: start, end: offset, call: file.text[lineStart+open : start]}, true
+	lineText := file.text[lineStart:offset]
+	if bracket := strings.LastIndex(lineText, "["); bracket >= 0 && !strings.Contains(lineText[bracket:], "]") {
+		start := lineStart + bracket + strings.LastIndexAny(lineText[bracket:], "[.") + 1
+		return partial{start: start, end: offset, call: file.text[lineStart+bracket : start]}, true
 	}
 	if file.place.Format != inventory.Script || file.place.Rel == "" {
 		return partial{}, false
@@ -92,25 +92,25 @@ func (file *openFile) partialAt(offset int) (partial, bool) {
 // value what the position takes, in a data call its next step, after a prefix its names, else the block's keys.
 func (file *openFile) complete(offset int, label string) *completer {
 	completer := &completer{file: file, about: map[string]subject{}}
-	typed, isTyped := file.partialAt(offset)
-	if !isTyped {
+	partial, isPartial := file.partialAt(offset)
+	if !isPartial {
 		return completer
 	}
-	completer.prefix = strings.ToLower(cmp.Or(label, file.text[typed.start:offset]))
-	completer.at = file.span(jomini.Range{Start: typed.start, End: typed.end})
-	before := strings.TrimRight(file.text[:typed.start], " \t\r\n")
-	atValue := strings.ContainsAny(before[max(len(before)-1, 0):], "=<>!?")
+	completer.prefix = strings.ToLower(cmp.Or(label, file.text[partial.start:offset]))
+	completer.at = file.span(jomini.Range{Start: partial.start, End: partial.end})
+	textBefore := strings.TrimRight(file.text[:partial.start], " \t\r\n")
+	atValue := strings.ContainsAny(textBefore[max(len(textBefore)-1, 0):], "=<>!?")
 	switch {
-	case typed.call != "":
-		completer.dataCalls(typed.call)
+	case partial.call != "":
+		completer.dataCalls(partial.call)
 	case strings.Contains(completer.prefix, ":"):
 		completer.prefixedNames()
 	case atValue:
-		if cursor := file.walkTo(typed.start); len(cursor.chain) > 0 {
+		if cursor := file.walkTo(partial.start); len(cursor.chain) > 0 {
 			completer.values(cursor.chain[len(cursor.chain)-1])
 		}
 	default:
-		completer.keys(file.walkTo(typed.start))
+		completer.keys(file.walkTo(partial.start))
 	}
 	return completer
 }
@@ -296,10 +296,10 @@ func (completer *completer) values(at step) {
 		for _, word := range words {
 			completer.add(Item{Label: word}, subject{})
 		}
-		written := slices.SortedFunc(maps.Keys(position.Vanilla.Values), func(first, second string) int {
+		vanillaWords := slices.SortedFunc(maps.Keys(position.Vanilla.Values), func(first, second string) int {
 			return cmp.Or(position.Vanilla.Values[second]-position.Vanilla.Values[first], strings.Compare(first, second))
 		})
-		for _, word := range written {
+		for _, word := range vanillaWords {
 			completer.add(Item{Label: word, Rank: 1}, subject{})
 		}
 		if claim.Type == schema.ValueReference {
@@ -320,8 +320,8 @@ func (completer *completer) values(at step) {
 func (completer *completer) dataCalls(call string) {
 	s := completer.file.ws.Install.Schema
 	if strings.HasSuffix(call, ".") {
-		on := stepsLeadTo(s.DataTypes, jomini.ParseCall(call[:len(call)-1], 0))
-		for _, name := range slices.Sorted(maps.Keys(s.DataTypes[on].Functions)) {
+		typeName := stepsLeadTo(s.DataTypes, jomini.ParseCall(call[:len(call)-1], 0))
+		for _, name := range slices.Sorted(maps.Keys(s.DataTypes[typeName].Functions)) {
 			completer.add(Item{Label: name, Head: "data function", Rank: 1}, subject{})
 		}
 		return

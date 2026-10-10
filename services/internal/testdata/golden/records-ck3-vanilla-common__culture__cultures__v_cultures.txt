@@ -1,3 +1,6 @@
 def culture/cultures "english" mode="" 0-7 @0:0 local=false named=false
-def culture/cultures "french" mode="" 33-39 @3:0 local=false named=false
-def culture/cultures "norse" mode="" 65-70 @6:0 local=false named=false
+def culture/cultures "french" mode="" 75-81 @4:0 local=false named=false
+def culture/cultures "norse" mode="" 137-142 @8:0 local=false named=false
+ref culture/traditions "tradition_x" called="" 47-58 @2:16 from=0 trigger=false
+ref culture/traditions "tradition_y" called="" 59-70 @2:28 from=0 trigger=false
+ref culture/traditions "tradition_y" called="" 121-132 @6:16 from=1 trigger=false

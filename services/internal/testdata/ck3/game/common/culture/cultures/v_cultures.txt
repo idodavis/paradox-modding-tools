@@ -1,8 +1,10 @@
 english = {
 	color = { 1 2 3 }
+	traditions = { tradition_x tradition_y }
 }
 french = {
 	color = { 3 2 1 }
+	traditions = { tradition_y }
 }
 norse = {
 	color = hsv { 0.1 0.2 0.3 }

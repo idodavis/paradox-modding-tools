@@ -68,11 +68,11 @@
      "rel": "common/culture/cultures/v_cultures.txt",
      "range": {
       "start": {
-       "line": 6,
+       "line": 8,
        "character": 0
       },
       "end": {
-       "line": 6,
+       "line": 8,
        "character": 0
       }
      }

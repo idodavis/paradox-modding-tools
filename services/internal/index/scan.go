@@ -63,8 +63,8 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	// no loc file is read again
 	index := &Index{Files: input.Install, Roots: roots}
 	index.Rebuild()
-	for path, found := range localized {
-		index.add(path, found)
+	for path, records := range localized {
+		index.add(path, records)
 	}
 	err = index.collectFiles(ctx, s, false, func(done, total int) { req.Progress("index", done, total) })
 	if err != nil {
@@ -124,11 +124,11 @@ func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[
 		text, _ := file.Text()
 		return collectLoc(req.Game, file, text, languages)
 	}, func(file inventory.File, kept collected) {
-		if len(kept.found) > 0 {
+		if len(kept.occurrences) > 0 {
 			localized[file.Path] = kept
-			for _, found := range kept.found {
-				if found.Role == schema.Localizes {
-					input.LocKeys[found.ID] = true
+			for _, occurrence := range kept.occurrences {
+				if occurrence.Role == schema.Localizes {
+					input.LocKeys[occurrence.ID] = true
 				}
 			}
 		}
@@ -142,9 +142,9 @@ func schemaOf(ctx context.Context, req Request, input schema.Input) (*schema.Sch
 	req.Progress("schema", 0, 1)
 	if len(schema.MissingDumps(input.Dumps)) > 0 {
 		if backup, exact, _ := schema.LoadShipped(req.Game, req.Version); backup != nil {
-			origin := backup.Sources[schema.SourceDumps]
-			origin.From, origin.Stale = "shipped", !exact
-			backup.Sources[schema.SourceDumps] = origin
+			srcState := backup.Sources[schema.SourceDumps]
+			srcState.Origin, srcState.Stale = "shipped", !exact
+			backup.Sources[schema.SourceDumps] = srcState
 			input.Shipped = backup
 		}
 	}
@@ -206,7 +206,7 @@ func (index *Index) Reindex(s *schema.Schema, file inventory.File, text string) 
 		index.Texts = slices.Insert(index.Texts, at, nil)
 		index.Rebuild()
 	}
-	if found := collectFile(s, file, text); len(found.found) > 0 {
-		index.add(file.Path, found)
+	if records := collectFile(s, file, text); len(records.occurrences) > 0 {
+		index.add(file.Path, records)
 	}
 }

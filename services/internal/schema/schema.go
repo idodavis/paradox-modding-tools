@@ -74,8 +74,8 @@ const (
 
 // Requirement is a position's level, with the condition text for LevelConditional.
 type Requirement struct {
-	Level Level
-	When  string
+	Level     Level
+	Condition string
 }
 
 // Shapes is the set of forms vanilla writes at a position, as bits.
@@ -95,17 +95,17 @@ const (
 )
 
 // shapeOf returns the form a scalar is written in.
-func shapeOf(written *jomini.Scalar) Shapes {
-	if written.Quoted {
+func shapeOf(scalar *jomini.Scalar) Shapes {
+	if scalar.Quoted {
 		return ShapeString
 	}
-	switch jomini.Literal(written.Text) {
+	switch jomini.Literal(scalar.Text) {
 	case jomini.LitNumber:
 		return ShapeNumber
 	case jomini.LitDate:
 		return ShapeDate
 	}
-	if slices.Contains(game.Bools, written.Text) {
+	if slices.Contains(game.Bools, scalar.Text) {
 		return ShapeBool
 	}
 	return ShapeIdent
@@ -113,7 +113,7 @@ func shapeOf(written *jomini.Scalar) Shapes {
 
 // Vanilla is what vanilla writes at a position; it is never a claim.
 type Vanilla struct {
-	In     int            // how many of the parent's written blocks hold this key
+	Count  int            // how many of the parent's written blocks hold this key
 	Blocks int            // how many times this position was written as a block
 	Shapes Shapes         // the forms written here
 	Values map[string]int // words written, with counts
@@ -129,16 +129,6 @@ type Claims struct {
 	Blurb    Claim[string]
 }
 
-// Set writes each of found's claims by Claim.Set: where its source outranks the one here.
-func (claims *Claims) Set(found Claims) {
-	claims.Value.Set(found.Value.Value, found.Value.Source)
-	claims.Block.Set(found.Block.Value, found.Block.Source)
-	claims.Scope.Set(found.Scope.Value, found.Scope.Source)
-	claims.Required.Set(found.Required.Value, found.Required.Source)
-	claims.Default.Set(found.Default.Value, found.Default.Source)
-	claims.Blurb.Set(found.Blurb.Value, found.Blurb.Source)
-}
-
 // Position is one place in a database's entry tree or a command's arguments: its claims, each with its
 // source, and vanilla's evidence.
 type Position struct {
@@ -148,12 +138,18 @@ type Position struct {
 	Vanilla    Vanilla
 }
 
-// declare writes what a source states about the position: its claims, and the position as declared by that
-// source where it outranks the one that has, claims or none (name = lists an argument and says nothing of it).
-func (position *Position) declare(found Claims, from Source) {
-	position.Set(found)
-	if position.DeclaredBy == SourceNone || from < position.DeclaredBy {
-		position.DeclaredBy = from
+// declare writes what a source states about the position: each claim by Claim.Set, where its source outranks
+// the one here, and the position as declared by the source where it outranks the one that has, claims or none
+// (name = lists an argument and says nothing of it).
+func (position *Position) declare(claims Claims, source Source) {
+	position.Value.Set(claims.Value.Value, claims.Value.Source)
+	position.Block.Set(claims.Block.Value, claims.Block.Source)
+	position.Scope.Set(claims.Scope.Value, claims.Scope.Source)
+	position.Required.Set(claims.Required.Value, claims.Required.Source)
+	position.Default.Set(claims.Default.Value, claims.Default.Source)
+	position.Blurb.Set(claims.Blurb.Value, claims.Blurb.Source)
+	if position.DeclaredBy == SourceNone || source < position.DeclaredBy {
+		position.DeclaredBy = source
 	}
 }
 
@@ -161,7 +157,7 @@ func (position *Position) declare(found Claims, from Source) {
 type Command struct {
 	Kind   game.Kinds
 	Scopes []string  // where it runs; empty: any
-	Out    string    // where it leads; "" none
+	Target string    // where it leads; "" none
 	Args   *Position // its usage as positions
 	Blurb  string
 	Global bool // a link the dumps call global: it reads the same from any scope
@@ -179,9 +175,9 @@ type Database struct {
 
 // SourceState says where a source's data came from and whether it is out of date.
 type SourceState struct {
-	From    string    // "yours", "install", "shipped" or "none"
-	Written time.Time // when the source was written, by its oldest file; zero when unknown
-	Stale   bool
+	Origin    string    // "yours", "install", "shipped" or "none"
+	WrittenAt time.Time // when the source was written, by its oldest file; zero when unknown
+	Stale     bool
 }
 
 // Scope is one scope type the dumps declare; each flag is false only where the dump says no.
@@ -300,9 +296,9 @@ func positionName(name string) string {
 
 // Set writes a claim when from outranks the source it has: any source outranks an empty claim's none, a lower
 // rank a higher one, and of two equal the first stands; so the order the sources are applied in is irrelevant.
-func (claim *Claim[T]) Set(value T, from Source) {
-	if from != SourceNone && (claim.Source == SourceNone || from < claim.Source) {
-		claim.Value, claim.Source = value, from
+func (claim *Claim[T]) Set(value T, source Source) {
+	if source != SourceNone && (claim.Source == SourceNone || source < claim.Source) {
+		claim.Value, claim.Source = value, source
 	}
 }
 
@@ -321,19 +317,19 @@ const (
 // Sources entry, so they never accuse. A docs or wiki claim, and a declared word list from any source,
 // accuse only where vanilla writes the position.
 func (schema *Schema) MayAccuse(check Check, position, parent *Position) bool {
-	from := SourceDumps
+	source := SourceDumps
 	switch check {
 	case CheckValue:
-		from = position.Value.Source
+		source = position.Value.Source
 	case CheckRequired:
-		from = position.Required.Source
+		source = position.Required.Source
 	}
-	state, found := schema.Sources[from]
+	state, found := schema.Sources[source]
 	if !found || state.Stale {
 		return false
 	}
 	listed := check == CheckValue && len(position.Value.Value.Choices) > 0
-	if (from == SourceDocs || from == SourceWiki || listed) && position.Vanilla.In == 0 {
+	if (source == SourceDocs || source == SourceWiki || listed) && position.Vanilla.Count == 0 {
 		return false
 	}
 	switch check {
@@ -341,7 +337,7 @@ func (schema *Schema) MayAccuse(check Check, position, parent *Position) bool {
 		return valueAgrees(position)
 	case CheckRequired:
 		return parent != nil && position.Required.Value.Level == LevelAlways &&
-			position.Vanilla.In >= parent.Vanilla.Blocks
+			position.Vanilla.Count >= parent.Vanilla.Blocks
 	}
 	return true
 }

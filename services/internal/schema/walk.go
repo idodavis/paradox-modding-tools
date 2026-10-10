@@ -41,7 +41,7 @@ type Placement struct {
 	Listed       string        // set when its key iterates a scripted list: the iterator prefix
 	Leaf         bool          // the leaf of a dynamic description
 	Entry        int           // the index, in the entries WalkFile was given, of the entry it is in; -1 outside one
-	Found        []Occurrence  // what its key and value name, in the order the rules fit (occurrences.go)
+	Occurrences  []Occurrence  // what its key and value name, in the order the rules fit (occurrences.go)
 	StoredIn     string        // the database a name command's value names here (set_variable: var); "" none
 	BlockContext               // where it is written
 	Inner        BlockContext  // where its own block is read
@@ -257,14 +257,14 @@ func (schema *Schema) keyMeaning(in BlockContext, name string, position *Positio
 	}
 
 	lower := strings.ToLower(name)
-	declared := schema.Commands[lower]
+	command := schema.Commands[lower]
 	entry, called := schema.ScriptedEntries[in.Calls+":"+name]
 	k := keyFacts{
 		in: in, name: name, position: position, made: made, create: create,
-		entry: entry, known: called && declared == nil, declared: declared, link: schema.Link(lower),
+		entry: entry, known: called && command == nil, command: command, link: schema.Link(lower),
 	}
-	if declared != nil && declared.Kind&game.KindLink != 0 {
-		k.declared = nil // a link is read by Link
+	if command != nil && command.Kind&game.KindLink != 0 {
+		k.command = nil // a link is read by Link
 	}
 	_, k.isOperator = game.ValueOperators[lower]
 
@@ -287,42 +287,42 @@ type keyFacts struct {
 	create     bool
 	entry      ScriptedEntry // the scripted entry the block's calling word calls by this name
 	known      bool          // there is one, and no declared command has the name
-	declared   *Command      // a declared effect or trigger, else nil
+	command    *Command      // a declared effect or trigger, else nil
 	link       *Command      // the declared link the key starts with
 	isOperator bool
 }
 
 // fits tries one rule against a key and returns what the key is by it; fits is false when the rule does not
 // hold. The meaning keeps the rule either way, so a block with no fitting rule reads by its last.
-func (schema *Schema) fits(rule game.KeyRule, k keyFacts) (found meaning, fits bool) {
+func (schema *Schema) fits(rule game.KeyRule, facts keyFacts) (found meaning, fits bool) {
 	found = meaning{rule: rule}
 	switch {
-	case rule == game.KeyRuleKnownCall && k.known:
-		found.position, found.calls = k.entry.Parameters, k.in.Calls
+	case rule == game.KeyRuleKnownCall && facts.known:
+		found.position, found.calls = facts.entry.Parameters, facts.in.Calls
 		if found.position == nil {
-			found.position = schema.Databases[k.entry.Database].Entry
+			found.position = schema.Databases[facts.entry.Database].Entry
 		}
-	case rule == game.KeyRuleDeclared && k.position != nil && k.position.DeclaredBy != SourceNone:
-		found.position = k.position
-	case rule == game.KeyRuleDocumented && k.in.Fields[positionName(k.name)]:
-		found.position = k.made()
-	case rule == game.KeyRuleCommand && k.declared != nil:
-		found.position, found.command = k.declared.Args, k.declared
-	case rule == game.KeyRuleOperator && k.isOperator:
-		found.position = k.made()
-	case rule == game.KeyRuleLink && k.link != nil:
-		found.command = k.link
-	case rule == game.KeyRuleObserved && (k.create || k.position != nil && k.position.Vanilla.In > 0):
-		found.position = k.made()
+	case rule == game.KeyRuleDeclared && facts.position != nil && facts.position.DeclaredBy != SourceNone:
+		found.position = facts.position
+	case rule == game.KeyRuleDocumented && facts.in.Fields[positionName(facts.name)]:
+		found.position = facts.made()
+	case rule == game.KeyRuleCommand && facts.command != nil:
+		found.position, found.command = facts.command.Args, facts.command
+	case rule == game.KeyRuleOperator && facts.isOperator:
+		found.position = facts.made()
+	case rule == game.KeyRuleLink && facts.link != nil:
+		found.command = facts.link
+	case rule == game.KeyRuleObserved && (facts.create || facts.position != nil && facts.position.Vanilla.Count > 0):
+		found.position = facts.made()
 	case rule == game.KeyRulePosition:
-		found.position = k.made()
+		found.position = facts.made()
 	case rule == game.KeyRulePositionOrCall:
-		found.position = k.made()
-		if k.in.Position != nil && k.in.Position.Vanilla.Shapes&ShapeCommand != 0 {
-			found.calls = k.in.Calls
+		found.position = facts.made()
+		if facts.in.Position != nil && facts.in.Position.Vanilla.Shapes&ShapeCommand != 0 {
+			found.calls = facts.in.Calls
 		}
 	case rule == game.KeyRuleCall:
-		found.position, found.calls = k.made(), k.in.Calls
+		found.position, found.calls = facts.made(), facts.in.Calls
 	default:
 		return found, false
 	}
@@ -479,10 +479,10 @@ func (schema *Schema) blockScope(in BlockContext, placement Placement, name stri
 	case isLink(placement):
 		last := strings.ToLower(name[strings.LastIndexByte(name, '.')+1:]) // a chain leads where its last link does
 		if link := schema.Link(last); link != nil {
-			target = link.Out
+			target = link.Target
 		}
 	case isCommand(placement):
-		target = placement.Command.Out
+		target = placement.Command.Target
 		iterates = placement.Command.Args.Block.Value == game.BlockTriggers || placement.Command.Args.Block.Value == game.BlockEffects
 	}
 	_, leads := schema.Scopes[target]
@@ -491,7 +491,7 @@ func (schema *Schema) blockScope(in BlockContext, placement Placement, name stri
 	declared := placement.Position != nil && placement.Position.Scope.Source != SourceNone
 	followsTarget := isLink(placement) || isCommand(placement) && iterates && leads && !placement.Command.Lists
 	walksList := placement.Listed != "" || isCommand(placement) && placement.Command.Lists
-	bareTarget := isCommand(placement) && placement.Command.Out != "" && !iterates
+	bareTarget := isCommand(placement) && placement.Command.Target != "" && !iterates
 	staysPut := kind == game.BlockValue || kind == game.BlockDescription || isCommand(placement) ||
 		placement.Position != nil && (placement.Position.Block.Source != SourceNone || kind != game.BlockUnknown)
 

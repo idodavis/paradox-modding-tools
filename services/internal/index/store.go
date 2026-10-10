@@ -25,7 +25,7 @@ type Flags uint8
 const (
 	InTrigger Flags = 1 << iota
 	Local
-	Named
+	IsName
 )
 
 // Occurrence is the stored form of a schema.Occurrence, pointer-free: its strings are ordinals into the
@@ -86,10 +86,10 @@ type Index struct {
 
 // collected is one file's occurrences as a worker collected them, before the index interns their strings.
 type collected struct {
-	found    []schema.Occurrence
-	texts    []string // the localization texts, in the Localizes occurrences' order
-	language string   // a localization file's language
-	scoped   map[[2]string]bool
+	occurrences []schema.Occurrence
+	texts       []string // the localization texts, in the Localizes occurrences' order
+	language    string   // a localization file's language
+	scoped      map[[2]string]bool
 }
 
 // Rebuild builds the tables' maps, the postings, the by-database lists and the repeated flags again from Files
@@ -162,9 +162,9 @@ func (index *Index) add(path string, file collected) {
 		index.Rebuild()
 	}
 	pos := index.order[appdata.PathKey(path)]
-	stored, texts := make([]Occurrence, 0, len(file.found)), 0
+	stored, texts := make([]Occurrence, 0, len(file.occurrences)), 0
 	language := uint8(index.Languages.ordinal(file.language))
-	for _, found := range file.found {
+	for _, found := range file.occurrences {
 		occurrence := Occurrence{
 			Range: found.Range, Line: found.Line, Col: found.Col, Role: found.Role, Entry: found.Entry, Text: -1,
 			Database: uint16(index.Databases.ordinal(found.Database)), ID: uint32(index.IDs.ordinal(found.ID)),
@@ -173,7 +173,7 @@ func (index *Index) add(path string, file collected) {
 		if found.Role == schema.Localizes {
 			occurrence.Text, occurrence.Language, texts = int32(texts), language, texts+1
 		}
-		for flag, set := range map[Flags]bool{InTrigger: found.InTrigger, Local: found.Local, Named: found.Named} {
+		for flag, set := range map[Flags]bool{InTrigger: found.InTrigger, Local: found.Local, IsName: found.IsName} {
 			if set {
 				occurrence.Flags |= flag
 			}
@@ -215,15 +215,15 @@ func (index *Index) At(path string) (inventory.File, bool) {
 }
 
 // InFile is every occurrence of the file at a path, in the file's order; none for a path not listed.
-func (index *Index) InFile(path string) (found []At) {
+func (index *Index) InFile(path string) (matches []At) {
 	pos, listed := index.order[appdata.PathKey(path)]
 	if !listed || len(index.Occurrences) <= pos {
 		return nil
 	}
 	for n := range index.Occurrences[pos] {
-		found = append(found, At{index, int32(pos), int32(n)})
+		matches = append(matches, At{index, int32(pos), int32(n)})
 	}
-	return found
+	return matches
 }
 
 // Forget removes a deleted file, or every file under a deleted folder, from the index: their
@@ -232,8 +232,8 @@ func (index *Index) Forget(path string) {
 	path = appdata.PathKey(path)
 	listed := len(index.Files)
 	for pos := len(index.Files) - 1; pos >= 0; pos-- {
-		at := appdata.PathKey(index.Files[pos].Path)
-		if at == path || strings.HasPrefix(at, path+string(filepath.Separator)) {
+		key := appdata.PathKey(index.Files[pos].Path)
+		if key == path || strings.HasPrefix(key, path+string(filepath.Separator)) {
 			index.Files = slices.Delete(index.Files, pos, pos+1)
 			index.Occurrences = slices.Delete(index.Occurrences, pos, pos+1)
 			index.Texts = slices.Delete(index.Texts, pos, pos+1)
@@ -278,7 +278,7 @@ func (at At) Occurrence() schema.Occurrence {
 	return schema.Occurrence{
 		Role: stored.Role, Database: index.Databases.Words[stored.Database], ID: index.IDs.Words[stored.ID],
 		Caller: index.Callers.Words[stored.Caller], Range: stored.Range, Line: stored.Line, Col: stored.Col, Entry: stored.Entry,
-		Mode: index.Modes.Words[stored.Mode], InTrigger: stored.Flags&InTrigger != 0, Local: stored.Flags&Local != 0, Named: stored.Flags&Named != 0,
+		Mode: index.Modes.Words[stored.Mode], InTrigger: stored.Flags&InTrigger != 0, Local: stored.Flags&Local != 0, IsName: stored.Flags&IsName != 0,
 	}
 }
 

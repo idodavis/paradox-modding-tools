@@ -32,7 +32,7 @@ type DocNode struct {
 type doc struct {
 	database string
 	tree     *DocNode // its Children are the top statements
-	from     Source
+	source   Source
 }
 
 // docToken is one token of a docscript line.
@@ -59,7 +59,7 @@ const (
 // docParse is one text being read into a tree: the open blocks, and the comments waiting for a statement.
 type docParse struct {
 	root      *DocNode
-	open      []docBlock // the blocks open, the root first, innermost last
+	blocks    []docBlock // the blocks open, the root first, innermost last
 	offside   bool       // the text leaves blocks open: a code line back at an open block's indentation closes it
 	run       []string   // the whole-line comments on consecutive lines so far, for the next statement
 	runLine   int        // the line the run ends on
@@ -79,17 +79,11 @@ type docBlock struct {
 // no other phrase does; one that names nothing marks a text that claims nothing (a saved scope, a label, a line
 // leading into the next).
 type docPhrase struct {
-	pattern *regexp.Regexp
-	alone   bool
-	kind    ExpectedKind
-	block   game.Block
-	set     func(s *Schema, found *Claims, match []string, from Source)
-}
-
-// docMerge is one doc being merged into a database's tree.
-type docMerge struct {
-	schema *Schema
-	from   Source
+	pattern  *regexp.Regexp
+	fallback bool
+	kind     ExpectedKind
+	block    game.Block
+	claim    func(schema *Schema, claims *Claims, match []string, source Source)
 }
 
 // docPhrases is the phrase table, in the order the phrases are tried.
@@ -97,32 +91,32 @@ var docPhrases = []docPhrase{
 	// default is x, defaults to x, (default = x), default: x, and default x when x is a value: one word
 	// that ends its clause
 	{pattern: regexp.MustCompile(`(?i)\bdefaults?(?: is| to| =|:) ['"\x60]?([^\s,;()'"\x60]+?)['"\x60]?` +
-		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), set: func(_ *Schema, found *Claims, match []string, from Source) {
-		found.Default.Set(match[1], from)
+		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), claim: func(_ *Schema, claims *Claims, match []string, source Source) {
+		claims.Default.Set(match[1], source)
 	}},
 	{pattern: regexp.MustCompile(`(?i)\bdefault ((?:yes|no|none)\b|-?\d+(?:\.\d+)?|[A-Za-z]\w*(?:[._]\w+)+)` +
-		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), set: func(_ *Schema, found *Claims, match []string, from Source) {
-		found.Default.Set(match[1], from)
+		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), claim: func(_ *Schema, claims *Claims, match []string, source Source) {
+		claims.Default.Set(match[1], source)
 	}},
-	{pattern: regexp.MustCompile(`(?i)\boptional\b`), set: func(_ *Schema, found *Claims, _ []string, from Source) {
-		found.Required.Set(Requirement{Level: LevelOptional}, from)
+	{pattern: regexp.MustCompile(`(?i)\boptional\b`), claim: func(_ *Schema, claims *Claims, _ []string, source Source) {
+		claims.Required.Set(Requirement{Level: LevelOptional}, source)
 	}},
-	{pattern: regexp.MustCompile(`(?i)^required (?:if|when) (.+)`), set: func(_ *Schema, found *Claims, match []string,
-		from Source) {
-		found.Required.Set(Requirement{Level: LevelConditional, When: match[1]}, from)
+	{pattern: regexp.MustCompile(`(?i)^required (?:if|when) (.+)`), claim: func(_ *Schema, claims *Claims, match []string,
+		source Source) {
+		claims.Required.Set(Requirement{Level: LevelConditional, Condition: match[1]}, source)
 	}},
 	{pattern: regexp.MustCompile(`(?i)^required(?:[.!]| field\b|$)|\bthis field is required\b`),
-		set: func(_ *Schema, found *Claims, _ []string, from Source) {
-			found.Required.Set(Requirement{Level: LevelAlways}, from)
+		claim: func(_ *Schema, claims *Claims, _ []string, source Source) {
+			claims.Required.Set(Requirement{Level: LevelAlways}, source)
 		}},
 	// root = x: the root scope is the first word of x that is a scope the dumps declare
-	{pattern: regexp.MustCompile(`(?i)^root (?:=|-) (.+)`), set: func(s *Schema, found *Claims, match []string,
-		from Source) {
+	{pattern: regexp.MustCompile(`(?i)^root (?:=|-) (.+)`), claim: func(schema *Schema, claims *Claims, match []string,
+		source Source) {
 		for _, word := range strings.FieldsFunc(match[1], func(char rune) bool {
 			return !unicode.IsLetter(char) && !unicode.IsDigit(char) && char != '_'
 		}) {
-			if _, declared := s.Scopes[word]; declared {
-				found.Scope.Set(word, from)
+			if _, declared := schema.Scopes[word]; declared {
+				claims.Scope.Set(word, source)
 				return
 			}
 		}
@@ -143,10 +137,10 @@ var docPhrases = []docPhrase{
 	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:loc key|localization[ _]key)(?:[^\w/]|$)`), kind: ExpectsLoc},
 	// event ID names the database whose registry row is Events; on action (name) the OnActions one
 	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:(event[ _]id)|on[ _]action(?: name)?)(?:[^\w/]|$)`),
-		set: func(s *Schema, found *Claims, match []string, from Source) {
-			for name, database := range s.Databases {
+		claim: func(schema *Schema, claims *Claims, match []string, source Source) {
+			for name, database := range schema.Databases {
 				if match[1] != "" && database.Row.Events || match[1] == "" && database.Row.OnActions {
-					found.Value.Set(Expected{Kind: ExpectsReference, Database: name}, from)
+					claims.Value.Set(Expected{Kind: ExpectsReference, Database: name}, source)
 				}
 			}
 		}},
@@ -155,10 +149,10 @@ var docPhrases = []docPhrase{
 	// "path/to/file": one quoted word with a slash
 	{pattern: regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), kind: ExpectsFile},
 	// - item: blurb and item - blurb: one word per line
-	{pattern: regexp.MustCompile(`^(?:[-*]\s+([\w.]+):\s+[^\s<]|(?:[-*]\s+)?([\w.]+) - \S)`), alone: true,
-		set: func(_ *Schema, found *Claims, match []string, from Source) {
-			found.Value.Value.Choices = append(found.Value.Value.Choices, match[1]+match[2])
-			found.Value.Source = from
+	{pattern: regexp.MustCompile(`^(?:[-*]\s+([\w.]+):\s+[^\s<]|(?:[-*]\s+)?([\w.]+) - \S)`), fallback: true,
+		claim: func(_ *Schema, claims *Claims, match []string, source Source) {
+			claims.Value.Value.Choices = append(claims.Value.Value.Choices, match[1]+match[2])
+			claims.Value.Source = source
 		}},
 }
 
@@ -180,7 +174,7 @@ var keyWord = regexp.MustCompile(`^-?[\w@$](?:[\w.:@$/|-]*[\w$])?$`)
 // says nothing.
 func parseDocScript(lines []string) *DocNode {
 	parse := &docParse{root: &DocNode{}, runLine: -2, trailLine: -2}
-	parse.open = []docBlock{{node: parse.root}}
+	parse.blocks = []docBlock{{node: parse.root}}
 	braces := 0
 	for _, line := range lines {
 		braces += strings.Count(line, "{") - strings.Count(line, "}")
@@ -194,7 +188,7 @@ func parseDocScript(lines []string) *DocNode {
 			continue
 		}
 		// a commented-out statement reads as one, unless a phrase opens it (# default = yes, # root = character)
-		text, col, inBlock, commented := line, 0, len(parse.open) > 1, strings.HasPrefix(trimmed, "#")
+		text, col, inBlock, commented := line, 0, len(parse.blocks) > 1, strings.HasPrefix(trimmed, "#")
 		if commented {
 			text, col, inBlock = trimmed[1:], len(line)-len(trimmed), false
 		}
@@ -341,53 +335,53 @@ func (parse *docParse) comment(line, col int, text string) {
 // block, braces open and close blocks, a note or the words after a value or a closed block are the statement's
 // prose, and the line's comment and the run above lead its first statement.
 func (parse *docParse) statements(line, indent int, tokens []docToken) {
-	var first, last *DocNode
+	var first, previous *DocNode
 	if parse.offside {
 		// a code line back at an open block's indentation closes that block first; the line's own leading } is one
 		// of those closes
 		closes := 0
-		for closes < len(parse.open)-1 && parse.open[len(parse.open)-1-closes].indent >= indent {
+		for closes < len(parse.blocks)-1 && parse.blocks[len(parse.blocks)-1-closes].indent >= indent {
 			closes++
 		}
 		if closes > 0 && tokens[0].kind == docClose {
 			closes--
 		}
 		for ; closes > 0; closes-- {
-			last = parse.closeBlock()
+			previous = parse.closeBlock()
 		}
 	}
 	for i := 0; i < len(tokens); i++ {
 		token := tokens[i]
 		switch token.kind {
 		case docClose:
-			if len(parse.open) > 1 {
-				last = parse.closeBlock()
+			if len(parse.blocks) > 1 {
+				previous = parse.closeBlock()
 			}
 		case docOpen:
-			if last != nil && !last.Block && last.Key != "" {
-				last.Block = true
+			if previous != nil && !previous.Block && previous.Key != "" {
+				previous.Block = true
 			} else {
-				last = parse.add(&DocNode{Block: true})
+				previous = parse.add(&DocNode{Block: true})
 			}
-			parse.open = append(parse.open, docBlock{last, indent})
+			parse.blocks = append(parse.blocks, docBlock{previous, indent})
 		case docComment:
 			if first != nil {
 				first.Prose = append(first.Prose, strings.TrimSpace(strings.TrimLeft(token.text, "# \t")))
 				parse.trailing, parse.trailLine, parse.trailCol = first, line, token.col
 			}
 		case docNote:
-			if last != nil {
-				last.Prose = append(last.Prose, token.text)
+			if previous != nil {
+				previous.Prose = append(previous.Prose, token.text)
 			}
 		case docOperator:
 		default:
-			node, taken := parse.statement(tokens[i:], last)
-			i += taken - 1
+			node, count := parse.statement(tokens[i:], previous)
+			i += count - 1
 			if node != nil && first == nil {
 				first = node
 			}
 			if node != nil {
-				last = node
+				previous = node
 			}
 		}
 	}
@@ -399,15 +393,15 @@ func (parse *docParse) statements(line, indent int, tokens []docToken) {
 
 // closeBlock closes the innermost open block and returns its statement, which what follows the brace belongs to.
 func (parse *docParse) closeBlock() *DocNode {
-	closed := parse.open[len(parse.open)-1].node
-	parse.open = parse.open[:len(parse.open)-1]
+	closed := parse.blocks[len(parse.blocks)-1].node
+	parse.blocks = parse.blocks[:len(parse.blocks)-1]
 	return closed
 }
 
 // statement reads one statement from the front of tokens: a key before an operator or a brace with its value
 // slot, a <key=value> placeholder, a bullet's key: <placeholder>, or a bare value; nil when the tokens are prose
 // of the statement before, which takes them, or an alternative's separator. It returns how many tokens it took.
-func (parse *docParse) statement(tokens []docToken, last *DocNode) (*DocNode, int) {
+func (parse *docParse) statement(tokens []docToken, previous *DocNode) (*DocNode, int) {
 	first := tokens[0]
 	if key, value, cut := strings.Cut(strings.Trim(first.text, "<>"), "="); first.kind == docPlaceholder && cut {
 		return parse.add(&DocNode{Key: strings.TrimSpace(key), Value: "<" + strings.TrimSpace(value) + ">"}), 1
@@ -422,46 +416,46 @@ func (parse *docParse) statement(tokens []docToken, last *DocNode) (*DocNode, in
 		// after a key = <placeholder> statement on this line, or after a block that closed on it, words are its
 		// prose up to a brace or the comment; a placeholder, or a word standing for a block (effects...), is a
 		// value of its own
-		placeholder := last != nil && last.Key != "" && !last.Block && strings.HasPrefix(last.Value, "<")
-		closed := last != nil && last.Key != "" && last.Block && parse.open[len(parse.open)-1].node != last
+		placeholder := previous != nil && previous.Key != "" && !previous.Block && strings.HasPrefix(previous.Value, "<")
+		closed := previous != nil && previous.Key != "" && previous.Block && parse.blocks[len(parse.blocks)-1].node != previous
 		if first.kind != docPlaceholder && !strings.Contains(first.text, "...") && (placeholder || closed) {
-			words, notes, taken := wordsOf(tokens)
-			last.Prose = append(append(last.Prose, strings.Join(words, " ")), notes...)
-			return nil, max(taken, 1)
+			words, notes, count := wordsOf(tokens)
+			previous.Prose = append(append(previous.Prose, strings.Join(words, " ")), notes...)
+			return nil, max(count, 1)
 		}
 		return parse.add(&DocNode{Value: first.text}), 1
 	}
-	node, taken := &DocNode{Key: strings.Trim(first.text, `"`)}, 2
+	node, count := &DocNode{Key: strings.Trim(first.text, `"`)}, 2
 	switch {
 	case tokens[1].kind == docOpen:
-		taken = 1 // the brace is read by the caller
+		count = 1 // the brace is read by the caller
 	case len(tokens) > 2 && tokens[2].kind == docPlaceholder:
-		node.Value, taken = tokens[2].text, 3
+		node.Value, count = tokens[2].text, 3
 	case len(tokens) > 2 && (tokens[2].kind == docWord || tokens[2].kind == docQuoted):
 		// a value of several words is one quoted text (ai_value = script value), unless a statement follows on
 		// the line (modifier = X days = Y); the notes among them are the statement's prose
-		words, notes, took := wordsOf(tokens[2:])
-		node.Value, node.Prose, taken = strings.Join(words, " "), notes, 2+took
+		words, notes, wordCount := wordsOf(tokens[2:])
+		node.Value, node.Prose, count = strings.Join(words, " "), notes, 2+wordCount
 		if len(words) > 1 {
 			node.Value = `"` + strings.Trim(node.Value, `"`) + `"`
 		}
 	}
-	return parse.add(node), taken
+	return parse.add(node), count
 }
 
 // wordsOf takes the words and the notes at the front of tokens, up to a brace, a placeholder or the comment; when
 // an operator follows them on the line, the last word is the next statement's key and is left (modifier = name
 // days/weeks/months/years = int), and a word standing for a block after the first (modifier = Y effects...) is a
 // value of its own. A dash leading the words introduces them (<name> - name of the flag).
-func wordsOf(tokens []docToken) (words, notes []string, taken int) {
-	for taken < len(tokens) && (tokens[taken].kind == docWord || tokens[taken].kind == docQuoted || tokens[taken].kind == docNote) &&
-		(taken == 0 || !strings.Contains(tokens[taken].text, "...")) {
-		taken++
+func wordsOf(tokens []docToken) (words, notes []string, count int) {
+	for count < len(tokens) && (tokens[count].kind == docWord || tokens[count].kind == docQuoted || tokens[count].kind == docNote) &&
+		(count == 0 || !strings.Contains(tokens[count].text, "...")) {
+		count++
 	}
-	if taken < len(tokens) && tokens[taken].kind == docOperator {
-		taken--
+	if count < len(tokens) && tokens[count].kind == docOperator {
+		count--
 	}
-	for i, token := range tokens[:taken] {
+	for i, token := range tokens[:count] {
 		switch {
 		case token.kind == docNote:
 			notes = append(notes, token.text)
@@ -470,12 +464,12 @@ func wordsOf(tokens []docToken) (words, notes []string, taken int) {
 			words = append(words, token.text)
 		}
 	}
-	return words, notes, taken
+	return words, notes, count
 }
 
 // add appends a node to the innermost open block.
 func (parse *docParse) add(node *DocNode) *DocNode {
-	holder := parse.open[len(parse.open)-1].node
+	holder := parse.blocks[len(parse.blocks)-1].node
 	holder.Children = append(holder.Children, node)
 	return node
 }
@@ -515,11 +509,11 @@ func (schema *Schema) parseDocs(ctx context.Context, input Input) (docs []doc, e
 		}
 		docs = append(docs, doc{name, parseDocScript(lines), SourceDocs})
 	}
-	schema.Sources[SourceDocs] = SourceState{From: "install", Written: input.Updated}
+	schema.Sources[SourceDocs] = SourceState{Origin: "install", WrittenAt: input.Updated}
 
-	schema.Sources[SourceWiki] = SourceState{From: "none"}
+	schema.Sources[SourceWiki] = SourceState{Origin: "none"}
 	if !input.WikiWritten.IsZero() {
-		schema.Sources[SourceWiki] = SourceState{From: "yours", Written: input.WikiWritten}
+		schema.Sources[SourceWiki] = SourceState{Origin: "yours", WrittenAt: input.WikiWritten}
 	}
 	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
 		if err := ctx.Err(); err != nil {
@@ -532,8 +526,8 @@ func (schema *Schema) parseDocs(ctx context.Context, input Input) (docs []doc, e
 			docs = append(docs, doc{name, parseDocScript(strings.Split(text, "\n")), SourceWiki})
 		}
 	}
-	for _, written := range docs {
-		noteFields(written.tree, schema.Databases[written.database].Fields)
+	for _, document := range docs {
+		noteFields(document.tree, schema.Databases[document.database].Fields)
 	}
 	return docs, nil
 }
@@ -557,17 +551,17 @@ func keyNames(key string) []string {
 // database it names; any other value through the table, a quoted text with words left as a blurb), the block
 // placeholders its block lists (limit = { <display_triggers> }), then each line of its prose through the table,
 // what the table leaves of a line being blurb.
-func (schema *Schema) claimsOf(node *DocNode, from Source) (found Claims) {
+func (schema *Schema) claimsOf(node *DocNode, source Source) (claims Claims) {
 	var blurb []string
 	if word, isPlaceholder := strings.CutPrefix(node.Value, "<"); isPlaceholder {
 		word = strings.TrimSuffix(word, ">")
 		named := schema.DatabaseNamed(word)
-		if schema.claimPhrases(&found, word, from) == word && named != "" {
-			found.Value.Set(Expected{Kind: ExpectsReference, Database: named}, from)
+		if schema.claimPhrases(&claims, word, source) == word && named != "" {
+			claims.Value.Set(Expected{Kind: ExpectsReference, Database: named}, source)
 		}
 	} else if node.Value != "" {
-		left := schema.claimPhrases(&found, node.Value, from)
-		if text := strings.Trim(node.Value, `"`); isBlurb(left) && strings.ContainsAny(text, " \t") {
+		rest := schema.claimPhrases(&claims, node.Value, source)
+		if text := strings.Trim(node.Value, `"`); isBlurb(rest) && strings.ContainsAny(text, " \t") {
 			blurb = append(blurb, text)
 		}
 	}
@@ -575,110 +569,109 @@ func (schema *Schema) claimsOf(node *DocNode, from Source) (found Claims) {
 		if child.Key == "" && strings.HasPrefix(child.Value, "<") {
 			last := strings.TrimSuffix(child.Value[strings.LastIndexAny(child.Value, "<_ ")+1:], ">")
 			if kind, named := game.Placeholders[strings.ToLower(last)]; named {
-				found.Block.Set(kind, from)
+				claims.Block.Set(kind, source)
 			}
 		}
 	}
 	for _, said := range node.Prose {
-		if left := schema.claimPhrases(&found, said, from); isBlurb(left) {
+		if rest := schema.claimPhrases(&claims, said, source); isBlurb(rest) {
 			blurb = append(blurb, said)
 		}
 	}
-	slices.Sort(found.Value.Value.Choices)
-	found.Value.Value.Choices = slices.Compact(found.Value.Value.Choices)
+	slices.Sort(claims.Value.Value.Choices)
+	claims.Value.Value.Choices = slices.Compact(claims.Value.Value.Choices)
 	if len(blurb) > 0 {
-		found.Blurb.Set(strings.Join(blurb, " "), from)
+		claims.Blurb.Set(strings.Join(blurb, " "), source)
 	}
-	return found
+	return claims
 }
 
 // claimPhrases writes into found every claim the phrase table reads from a text, and returns what is left for
 // a blurb: the text no phrase read; nothing when a phrase read it whole, a phrase marked it as claiming nothing,
 // or it was an a/b/c list, whose words became choices.
-func (schema *Schema) claimPhrases(found *Claims, text string, from Source) (left string) {
-	left, claimsNothing := text, false
+func (schema *Schema) claimPhrases(claims *Claims, text string, source Source) (rest string) {
+	rest, claimsNothing := text, false
 	for _, phrase := range docPhrases {
 		match := phrase.pattern.FindStringSubmatch(text)
-		if match == nil || phrase.alone && left != text {
+		if match == nil || phrase.fallback && rest != text {
 			continue
 		}
-		left = strings.Replace(left, match[0], "", 1)
+		rest = strings.Replace(rest, match[0], "", 1)
 		switch {
 		case phrase.kind != ExpectsUnknown:
-			found.Value.Set(Expected{Kind: phrase.kind}, from)
+			claims.Value.Set(Expected{Kind: phrase.kind}, source)
 		case phrase.block != game.BlockUnknown:
-			found.Block.Set(phrase.block, from)
-		case phrase.set != nil:
-			phrase.set(schema, found, match, from)
+			claims.Block.Set(phrase.block, source)
+		case phrase.claim != nil:
+			phrase.claim(schema, claims, match, source)
 		default:
 			claimsNothing = true
 		}
 	}
 	switch {
-	case left == text && alternatives.MatchString(text):
+	case rest == text && alternatives.MatchString(text):
 		// a/b/c no phrase reads whole is read word by word: a type word is its type, the rest are choices
 		for word := range strings.SplitSeq(text, "/") {
-			if schema.claimPhrases(found, word, from) == word {
-				found.Value.Value.Choices, found.Value.Source = append(found.Value.Value.Choices, word), from
+			if schema.claimPhrases(claims, word, source) == word {
+				claims.Value.Value.Choices, claims.Value.Source = append(claims.Value.Value.Choices, word), source
 			}
 		}
 		return ""
 	case claimsNothing:
 		return ""
 	}
-	return left
+	return rest
 }
 
 // isBlurb reports whether what the table left of a text still has words in it: prose, kept as a blurb.
-func isBlurb(left string) bool { return strings.ContainsFunc(left, unicode.IsLetter) }
+func isBlurb(rest string) bool { return strings.ContainsFunc(rest, unicode.IsLetter) }
 
 // mergeDocs is step 6: the docs' and wiki's claims merged into the databases they document, after vanilla.
 func (schema *Schema) mergeDocs(docs []doc) {
-	for _, written := range docs {
-		merge := &docMerge{schema: schema, from: written.from}
-		in := schema.EntryContext(schema.Databases[written.database])
-		for _, node := range written.tree.Children {
-			merge.node(node, in, true)
+	for _, document := range docs {
+		in := schema.EntryContext(schema.Databases[document.database])
+		for _, node := range document.tree.Children {
+			schema.mergeNode(node, in, document.source, true)
 		}
 	}
 }
 
-// node merges one node where its key reads at a context. A bare value's claims are the holder's. A key vanilla
-// writes nowhere below the holder is a template (template). A key read as a position vanilla writes gets the
-// node's claims, then its block merges where the walker reads that key's block; a key read as a command or a
-// link gets none, and its block merges where the walker reads it. A doc never makes a position.
-func (merge *docMerge) node(node *DocNode, in BlockContext, top bool) {
+// mergeNode merges one node where its key reads at a context. A bare value's claims are the holder's. A key
+// vanilla writes nowhere below the holder is a template (mergeTemplate). A key read as a position vanilla writes
+// gets the node's claims, then its block merges where the walker reads that key's block; a key read as a command
+// or a link gets none, and its block merges where the walker reads it. A doc never makes a position.
+func (schema *Schema) mergeNode(node *DocNode, in BlockContext, source Source, top bool) {
 	if node.Key == "" {
-		if in.Position != nil && in.Position.Vanilla.In > 0 {
-			merge.set(in.Position, node)
+		if in.Position != nil && in.Position.Vanilla.Count > 0 {
+			in.Position.declare(schema.docClaims(node, source), source)
 		}
 		for _, child := range node.Children { // a block with no key ({ { name = x } }) reads in place
-			merge.node(child, in, false)
+			schema.mergeNode(child, in, source, false)
 		}
 		return
 	}
 	for _, name := range keyNames(node.Key) {
-		placement := merge.schema.PlaceKey(in, nil, name, false)
+		placement := schema.PlaceKey(in, nil, name, false)
 		switch {
 		case placement.Command == nil && (in.Position == nil || !writtenBelow(in.Position, positionName(name))):
-			merge.template(node, in, top)
+			schema.mergeTemplate(node, in, source, top)
 			continue
-		case placement.Position != nil && placement.Command == nil && placement.Position.Vanilla.In > 0:
-			merge.set(placement.Position, node)
+		case placement.Position != nil && placement.Command == nil && placement.Position.Vanilla.Count > 0:
+			placement.Position.declare(schema.docClaims(node, source), source)
 		}
 		for _, child := range node.Children {
-			merge.node(child, placement.Inner, false)
+			schema.mergeNode(child, placement.Inner, source, false)
 		}
 	}
 }
 
-// template merges a node whose key vanilla writes nowhere below where it stands: an example entry's name, a
-// <key>. At the doc's top its claims are the holder's, where the holder is written as more than a block or the
+// mergeTemplate merges a node whose key vanilla writes nowhere below where it stands: an example entry's name,
+// a <key>. At the doc's top its claims are the holder's, where the holder is written as more than a block or the
 // node has one. Its block merges in the holder's place where the holder has a child the block writes, else
 // under each child of the holder that has one (my_phase_key = { }); else nowhere.
-func (merge *docMerge) template(node *DocNode, in BlockContext, top bool) {
+func (schema *Schema) mergeTemplate(node *DocNode, in BlockContext, source Source, top bool) {
 	if in.Position != nil && top && (node.Block || in.Position.Vanilla.Shapes != ShapeBlock) {
-		merge.set(in.Position, node)
+		in.Position.declare(schema.docClaims(node, source), source)
 	}
 	holds := func(at *Position) bool {
 		return node.Block && slices.ContainsFunc(node.Children, func(child *DocNode) bool {
@@ -687,7 +680,7 @@ func (merge *docMerge) template(node *DocNode, in BlockContext, top bool) {
 	}
 	if in.Position == nil || holds(in.Position) {
 		for _, child := range node.Children {
-			merge.node(child, in, false)
+			schema.mergeNode(child, in, source, false)
 		}
 		return
 	}
@@ -695,7 +688,7 @@ func (merge *docMerge) template(node *DocNode, in BlockContext, top bool) {
 		if holds(below) {
 			in.Position = below
 			for _, child := range node.Children {
-				merge.node(child, in, false)
+				schema.mergeNode(child, in, source, false)
 			}
 		}
 	}
@@ -703,26 +696,26 @@ func (merge *docMerge) template(node *DocNode, in BlockContext, top bool) {
 
 // writtenBelow reports whether vanilla writes a position of a name anywhere below one.
 func writtenBelow(position *Position, name string) bool {
-	for written, child := range position.Children {
-		if written == name && child.Vanilla.In > 0 || writtenBelow(child, name) {
+	for key, child := range position.Children {
+		if key == name && child.Vanilla.Count > 0 || writtenBelow(child, name) {
 			return true
 		}
 	}
 	return false
 }
 
-// set writes a node's claims into a position. A doc's block whose shape nothing names states only that the key
-// takes a block, and a doc's literal states its kind (expiration_days = 3650).
-func (merge *docMerge) set(position *Position, node *DocNode) {
-	found := merge.schema.claimsOf(node, merge.from)
-	if node.Block && found.Block.Source == SourceNone {
-		found.Value.Set(Expected{Kind: ExpectsBlock}, merge.from)
+// docClaims is a doc node's claims: its claims by the tables; a block whose kind nothing names states only that
+// the key takes a block; a literal states its kind (expiration_days = 3650).
+func (schema *Schema) docClaims(node *DocNode, source Source) Claims {
+	claims := schema.claimsOf(node, source)
+	if node.Block && claims.Block.Source == SourceNone {
+		claims.Value.Set(Expected{Kind: ExpectsBlock}, source)
 	}
 	if node.Value != "" && !strings.HasPrefix(node.Value, "<") && !strings.HasPrefix(node.Value, `"`) {
 		literals := map[Shapes]ExpectedKind{ShapeNumber: ExpectsNumber, ShapeBool: ExpectsBool, ShapeDate: ExpectsDate}
 		if kind, literal := literals[shapeOf(&jomini.Scalar{Text: node.Value})]; literal {
-			found.Value.Set(Expected{Kind: kind}, merge.from)
+			claims.Value.Set(Expected{Kind: kind}, source)
 		}
 	}
-	position.declare(found, merge.from)
+	return claims
 }

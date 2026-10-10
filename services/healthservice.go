@@ -217,7 +217,7 @@ func contests(sess *workspace.Session, preview []*index.Index, number func(inven
 		return slices.Compare(first[:], second[:])
 	}) {
 		defs := slices.DeleteFunc(index.Lookup(preview, schema.Defines, name[0], name[1]), func(def index.At) bool {
-			return def.Occurrence().Local || def.Occurrence().Named
+			return def.Occurrence().Local || def.Occurrence().IsName
 		})
 		files, origins := make([]inventory.File, len(defs)), map[string]bool{}
 		for i, def := range defs {
@@ -281,7 +281,7 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 			// its entries, not the names its script makes or declares inline
 			for _, at := range index.InFile(file.Path) {
 				def := at.Occurrence()
-				if def.Role == schema.Defines && def.ID != "" && sess.Install.Schema.Databases[def.Database] != nil && !def.Local && !def.Named {
+				if def.Role == schema.Defines && def.ID != "" && sess.Install.Schema.Databases[def.Database] != nil && !def.Local && !def.IsName {
 					defines[file.Path] = append(defines[file.Path], at)
 				}
 			}

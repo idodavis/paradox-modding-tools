@@ -137,10 +137,10 @@ func (schema *Schema) dumpsOrShipped(input Input) {
 		schema.Sources[SourceDumps] = shipped.Sources[SourceDumps]
 		return
 	}
-	written := schema.parseDumps(input.Dumps)
-	schema.Sources[SourceDumps] = SourceState{From: "none"}
-	if !written.IsZero() {
-		schema.Sources[SourceDumps] = SourceState{From: "yours", Written: written, Stale: written.Before(input.Updated)}
+	writtenAt := schema.parseDumps(input.Dumps)
+	schema.Sources[SourceDumps] = SourceState{Origin: "none"}
+	if !writtenAt.IsZero() {
+		schema.Sources[SourceDumps] = SourceState{Origin: "yours", WrittenAt: writtenAt, Stale: writtenAt.Before(input.Updated)}
 	}
 }
 
@@ -173,7 +173,7 @@ type dumpEntry struct {
 
 // parseDumps reads the dump files into the schema and returns when they were written: the dumps are as fresh
 // as their oldest file. Usages are applied last, once every command is declared.
-func (schema *Schema) parseDumps(files []inventory.File) (written time.Time) {
+func (schema *Schema) parseDumps(files []inventory.File) (writtenAt time.Time) {
 	schema.Commands, schema.Scopes, schema.Saved = map[string]*Command{}, map[string]Scope{}, map[string]bool{}
 	schema.Modifiers, schema.OnActions = map[string]Modifier{}, map[string]OnAction{}
 	schema.DataTypes, schema.CustomLoc = map[string]DataType{}, map[string]CustomLoc{}
@@ -193,8 +193,8 @@ func (schema *Schema) parseDumps(files []inventory.File) (written time.Time) {
 			if !found || err != nil {
 				continue
 			}
-			if info, err := os.Stat(file.Path); err == nil && (written.IsZero() || info.ModTime().Before(written)) {
-				written = info.ModTime()
+			if info, err := os.Stat(file.Path); err == nil && (writtenAt.IsZero() || info.ModTime().Before(writtenAt)) {
+				writtenAt = info.ModTime()
 			}
 			for _, e := range splitEntries(kind.entry, kind.labels, content) {
 				switch kind.record {
@@ -215,7 +215,7 @@ func (schema *Schema) parseDumps(files []inventory.File) (written time.Time) {
 		}
 	}
 	schema.mergeUsages(usages)
-	return written
+	return writtenAt
 }
 
 // splitEntries splits a dump file into its entries, each from its header to the next header or a dashes
@@ -297,28 +297,28 @@ func parseEntryBody(body, name, group2 string, labels map[string]string) dumpEnt
 }
 
 // parseScope reads a scope type's entry.
-func (schema *Schema) parseScope(e dumpEntry) {
-	schema.Scopes[e.name] = Scope{
-		Name:      e.name,
-		Variables: e.fields["Scope.Variables"] != "no",
-		Triggers:  e.fields["Scope.Triggers"] != "no",
-		Effects:   e.fields["Scope.Effects"] != "no",
+func (schema *Schema) parseScope(entry dumpEntry) {
+	schema.Scopes[entry.name] = Scope{
+		Name:      entry.name,
+		Variables: entry.fields["Scope.Variables"] != "no",
+		Triggers:  entry.fields["Scope.Triggers"] != "no",
+		Effects:   entry.fields["Scope.Effects"] != "no",
 	}
 }
 
 // parseCommand reads an effect, trigger or link entry into the command of its name. A name written twice is
 // one command that runs where either reading runs.
-func (schema *Schema) parseCommand(e dumpEntry, kind game.Kinds, ranked map[string]int, usages map[string][]string) {
-	if e.group2 != "" { // the block closing the link dump, "Event Targets Saved from Code"
-		for _, line := range e.lines {
+func (schema *Schema) parseCommand(entry dumpEntry, kind game.Kinds, ranked map[string]int, usages map[string][]string) {
+	if entry.group2 != "" { // the block closing the link dump, "Event Targets Saved from Code"
+		for _, line := range entry.lines {
 			if line != "" {
 				schema.Saved[line] = true
 			}
 		}
 		return
 	}
-	name := strings.ToLower(e.name) // script writes AND for and
-	named := scopeList(e.fields["Command.Scopes"])
+	name := strings.ToLower(entry.name) // script writes AND for and
+	named := scopeList(entry.fields["Command.Scopes"])
 	command := schema.Commands[name]
 	switch {
 	case command == nil:
@@ -334,22 +334,22 @@ func (schema *Schema) parseCommand(e dumpEntry, kind game.Kinds, ranked map[stri
 	reading := 2
 	if kind != game.KindLink {
 		reading = 0
-	} else if e.fields["Command.Global"] != yes {
+	} else if entry.fields["Command.Global"] != yes {
 		reading = 1
 	}
-	if _, isRanked := ranked[name]; e.blurb != "" && (!isRanked || reading < ranked[name]) {
-		command.Blurb, ranked[name] = e.blurb, reading
+	if _, isRanked := ranked[name]; entry.blurb != "" && (!isRanked || reading < ranked[name]) {
+		command.Blurb, ranked[name] = entry.blurb, reading
 	}
 	command.Kind |= kind
-	command.Out = cmp.Or(command.Out, e.fields["Command.Out"])
-	command.Global = command.Global || e.fields["Command.Global"] == yes
-	command.Wild = command.Wild || e.fields["Command.Wild"] == yes
+	command.Target = cmp.Or(command.Target, entry.fields["Command.Out"])
+	command.Global = command.Global || entry.fields["Command.Global"] == yes
+	command.Wild = command.Wild || entry.fields["Command.Wild"] == yes
 
-	if claim := schema.valueFromTraits(command, name, e.fields["Command.Args.Value"]); claim.Kind != ExpectsUnknown || claim.Choices != nil {
+	if claim := schema.valueFromTraits(command, name, entry.fields["Command.Args.Value"]); claim.Kind != ExpectsUnknown || claim.Choices != nil {
 		command.Args.Value.Set(claim, SourceDumps)
 	}
-	if strings.TrimSpace(e.usage) != "" {
-		usages[name] = append(usages[name], e.usage)
+	if strings.TrimSpace(entry.usage) != "" {
+		usages[name] = append(usages[name], entry.usage)
 	}
 }
 
@@ -404,43 +404,43 @@ func snakeCase(class string) string {
 }
 
 // parseModifier reads a modifier's entry; a $TYPE$ part names a family matched as a glob.
-func (schema *Schema) parseModifier(e dumpEntry) {
-	if e.group2 != "" { // a --- section --- heading
+func (schema *Schema) parseModifier(entry dumpEntry) {
+	if entry.group2 != "" { // a --- section --- heading
 		return
 	}
 	pattern := ""
-	if spans := jomini.Interpolations(e.name); len(spans) > 0 {
-		pattern = e.name
+	if spans := jomini.Interpolations(entry.name); len(spans) > 0 {
+		pattern = entry.name
 		for _, span := range slices.Backward(spans) {
 			pattern = pattern[:span.Start] + "*" + pattern[span.End:]
 		}
 	}
-	schema.Modifiers[e.name] = Modifier{Pattern: pattern, Blurb: e.blurb}
+	schema.Modifiers[entry.name] = Modifier{Pattern: pattern, Blurb: entry.blurb}
 }
 
 // parseOnAction reads an on_action's entry.
-func (schema *Schema) parseOnAction(e dumpEntry) {
-	schema.OnActions[e.name] = OnAction{Scope: cmp.Or(scopeList(e.fields["OnAction.Scope"])...), Blurb: e.blurb}
+func (schema *Schema) parseOnAction(entry dumpEntry) {
+	schema.OnActions[entry.name] = OnAction{Scope: cmp.Or(scopeList(entry.fields["OnAction.Scope"])...), Blurb: entry.blurb}
 }
 
 // parseCustomLoc reads a custom localization's entry.
-func (schema *Schema) parseCustomLoc(e dumpEntry) {
+func (schema *Schema) parseCustomLoc(entry dumpEntry) {
 	var entries []string
-	for _, line := range e.lines {
+	for _, line := range entry.lines {
 		if line != "" {
 			entries = append(entries, line)
 		}
 	}
-	schema.CustomLoc[e.name] = CustomLoc{
-		Scope: cmp.Or(scopeList(e.fields["CustomLoc.Scope"])...), Parent: e.fields["CustomLoc.Parent"],
-		Suffix: e.fields["CustomLoc.Suffix"], Entries: entries,
+	schema.CustomLoc[entry.name] = CustomLoc{
+		Scope: cmp.Or(scopeList(entry.fields["CustomLoc.Scope"])...), Parent: entry.fields["CustomLoc.Parent"],
+		Suffix: entry.fields["CustomLoc.Suffix"], Entries: entries,
 	}
 }
 
 // parseDataType reads a data type's entry, or one function of one; a function with no type is a global.
-func (schema *Schema) parseDataType(e dumpEntry) {
-	owner, member := e.name, e.group2
-	if member == "" && e.fields["DataType.Functions"] != "Type" {
+func (schema *Schema) parseDataType(entry dumpEntry) {
+	owner, member := entry.name, entry.group2
+	if member == "" && entry.fields["DataType.Functions"] != "Type" {
 		owner, member = game.GlobalType, owner
 	}
 	dataType := schema.DataTypes[owner]
@@ -448,7 +448,7 @@ func (schema *Schema) parseDataType(e dumpEntry) {
 		dataType.Functions = map[string]DataFunction{}
 	}
 	if _, present := dataType.Functions[member]; member != "" && !present {
-		dataType.Functions[member] = DataFunction{Returns: e.fields["DataFunction.Returns"]}
+		dataType.Functions[member] = DataFunction{Returns: entry.fields["DataFunction.Returns"]}
 	}
 	schema.DataTypes[owner] = dataType
 }
@@ -474,7 +474,7 @@ func (schema *Schema) mergeUsages(usages map[string][]string) {
 			}
 		}
 		// a command with no target whose blurb says it iterates runs its block once per list item
-		command.Lists = command.Out == "" && strings.Contains(command.Blurb, game.DumpWords.Iterates)
+		command.Lists = command.Target == "" && strings.Contains(command.Blurb, game.DumpWords.Iterates)
 		if blocks > 0 && plain == blocks {
 			command.Args.Block.Set(game.BlockArguments, SourceDumps)
 		}
@@ -506,14 +506,14 @@ func usageRoots(schema *Schema, tree *DocNode, name string) (roots []*DocNode) {
 }
 
 // namedNodes appends the nodes below one whose key is a name, at any depth, in source order.
-func namedNodes(node *DocNode, name string, found []*DocNode) []*DocNode {
+func namedNodes(node *DocNode, name string, nodes []*DocNode) []*DocNode {
 	for _, child := range node.Children {
 		if strings.EqualFold(child.Key, name) {
-			found = append(found, child)
+			nodes = append(nodes, child)
 		}
-		found = namedNodes(child, name, found)
+		nodes = namedNodes(child, name, nodes)
 	}
-	return found
+	return nodes
 }
 
 // argumentsOnly reports whether a block holds arguments only: no statement in it, at any depth, writes a
@@ -568,9 +568,9 @@ func (schema *Schema) argument(node *DocNode, in BlockContext) {
 // usageClaims is a usage node's claims: its claims by the tables, and no known scope where its value names the
 // kind of block it holds (limit = <triggers>).
 func (schema *Schema) usageClaims(node *DocNode) Claims {
-	found := schema.claimsOf(node, SourceDumps)
-	if node.Key != "" && node.Value != "" && found.Block.Source != SourceNone {
-		found.Scope.Set("", SourceDumps)
+	claims := schema.claimsOf(node, SourceDumps)
+	if node.Key != "" && node.Value != "" && claims.Block.Source != SourceNone {
+		claims.Scope.Set("", SourceDumps)
 	}
-	return found
+	return claims
 }

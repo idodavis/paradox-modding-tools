@@ -38,7 +38,7 @@ type Occurrence struct {
 	Mode      string
 	InTrigger bool
 	Local     bool
-	Named     bool
+	IsName    bool
 }
 
 // Localization and File are the databases a loc key and a file path name; no definition carries
@@ -75,8 +75,8 @@ func (walk *fileWalk) occurrencesOf(placement *Placement) {
 	if scalar, isScalar := jomini.ValueOf(placement.Statement).(*jomini.Scalar); isScalar {
 		walk.scalarOccurrences(placement, scalar, walk.facts(placement, assign, scalar, false), command)
 	}
-	for i := range placement.Found {
-		placement.Found[i].Entry, placement.Found[i].InTrigger = int32(placement.Entry), placement.InTrigger
+	for i := range placement.Occurrences {
+		placement.Occurrences[i].Entry, placement.Occurrences[i].InTrigger = int32(placement.Entry), placement.InTrigger
 	}
 }
 
@@ -114,23 +114,23 @@ func (walk *fileWalk) facts(placement *Placement, assign *jomini.Assignment, sca
 
 // scalarOccurrences adds what one word names: its link parts, then the key rules or the value rule, then
 // its parameters.
-func (walk *fileWalk) scalarOccurrences(placement *Placement, scalar *jomini.Scalar, f scalarFacts, command game.NameCommand) {
-	linked := walk.prefixReferences(placement, scalar, f)
+func (walk *fileWalk) scalarOccurrences(placement *Placement, scalar *jomini.Scalar, facts scalarFacts, command game.NameCommand) {
+	linked := walk.prefixReferences(placement, scalar, facts)
 	switch {
-	case f.isKey:
-		walk.keyOccurrences(placement, scalar, f)
-	case f.reads && !linked && (!f.isEntry || f.key != nil):
+	case facts.isKey:
+		walk.keyOccurrences(placement, scalar, facts)
+	case facts.reads && !linked && (!facts.isEntry || facts.key != nil):
 		// a listed entry's word is its name, not a value
-		walk.valueOccurrence(placement, scalar, f, command)
+		walk.valueOccurrence(placement, scalar, facts, command)
 	}
-	walk.parameterDefinitions(placement, scalar, f)
+	walk.parameterDefinitions(placement, scalar, facts)
 }
 
 // prefixReferences refers, for each prefix:name part of a word that a link reads, to the name in
 // the prefix's database, and reports whether the word has any such part: a linked word takes no
 // value rule.
-func (walk *fileWalk) prefixReferences(placement *Placement, scalar *jomini.Scalar, f scalarFacts) (linked bool) {
-	if !f.reads {
+func (walk *fileWalk) prefixReferences(placement *Placement, scalar *jomini.Scalar, facts scalarFacts) (linked bool) {
+	if !facts.reads {
 		return false
 	}
 	for part := range strings.SplitSeq(scalar.Text, ".") {
@@ -140,7 +140,7 @@ func (walk *fileWalk) prefixReferences(placement *Placement, scalar *jomini.Scal
 		}
 		linked = true
 		if database := walk.schema.Prefixes[strings.ToLower(prefixed.Prefix)]; database != "" {
-			placement.Found = append(placement.Found, Occurrence{Role: Refers, Database: database, ID: prefixed.Name, Range: scalar.Range})
+			placement.Occurrences = append(placement.Occurrences, Occurrence{Role: Refers, Database: database, ID: prefixed.Name, Range: scalar.Range})
 		}
 	}
 	return linked
@@ -150,20 +150,20 @@ func (walk *fileWalk) prefixReferences(placement *Placement, scalar *jomini.Scal
 // key refers to the object it sets up; a call every_x iterates the scripted list x; a key read as a
 // call names a scripted entry by its calling word; a key in a call's block names the called entry's
 // parameter.
-func (walk *fileWalk) keyOccurrences(placement *Placement, scalar *jomini.Scalar, f scalarFacts) {
-	if f.isEntry && f.database != nil && f.database.Row.Of != "" {
-		placement.Found = append(placement.Found, Occurrence{Role: Refers, Database: f.database.Row.Of, ID: walk.entries[placement.Entry].ID, Range: scalar.Range})
+func (walk *fileWalk) keyOccurrences(placement *Placement, scalar *jomini.Scalar, facts scalarFacts) {
+	if facts.isEntry && facts.database != nil && facts.database.Row.Of != "" {
+		placement.Occurrences = append(placement.Occurrences, Occurrence{Role: Refers, Database: facts.database.Row.Of, ID: walk.entries[placement.Entry].ID, Range: scalar.Range})
 	}
-	if f.reads && placement.Listed != "" {
-		placement.Found = append(placement.Found, Occurrence{
+	if facts.reads && placement.Listed != "" {
+		placement.Occurrences = append(placement.Occurrences, Occurrence{
 			Role: Refers, Database: walk.schema.Lists, ID: strings.TrimPrefix(scalar.Text, placement.Listed), Range: scalar.Range,
 		})
 	}
-	if f.reads && placement.Calls != "" && f.named {
-		placement.Found = append(placement.Found, Occurrence{Role: Refers, Caller: placement.Calls, ID: scalar.Text, Range: scalar.Range})
+	if facts.reads && placement.Calls != "" && facts.named {
+		placement.Occurrences = append(placement.Occurrences, Occurrence{Role: Refers, Caller: placement.Calls, ID: scalar.Text, Range: scalar.Range})
 	}
-	if f.reads && placement.Call != "" {
-		placement.Found = append(placement.Found, Occurrence{Role: Refers, Database: Parameter, ID: placement.Call + ":" + scalar.Text, Range: scalar.Range})
+	if facts.reads && placement.Call != "" {
+		placement.Occurrences = append(placement.Occurrences, Occurrence{Role: Refers, Database: Parameter, ID: placement.Call + ":" + scalar.Text, Range: scalar.Range})
 	}
 }
 
@@ -171,32 +171,32 @@ func (walk *fileWalk) keyOccurrences(placement *Placement, scalar *jomini.Scalar
 // reference, made, group, read, claim, value, event. A history key names its object before anything
 // else; a loc key is referred to only where the position's claim says so; vanilla types a position
 // by its words, never its numbers; a word where a number is expected names a script value.
-func (walk *fileWalk) valueOccurrence(placement *Placement, scalar *jomini.Scalar, f scalarFacts, command game.NameCommand) {
+func (walk *fileWalk) valueOccurrence(placement *Placement, scalar *jomini.Scalar, facts scalarFacts, command game.NameCommand) {
 	n := Occurrence{Role: Refers, ID: scalar.Text, Range: scalar.Range}
 	fileRef := ""
-	if f.key != nil {
-		fileRef = game.FileTypes[walk.ext].Refs[f.key.Text]
+	if facts.key != nil {
+		fileRef = game.FileTypes[walk.ext].Refs[facts.key.Text]
 	}
 	switch {
-	case f.isEntry && f.database != nil && f.database.Row.Of != "":
-		n.Database = f.database.Row.Of
+	case facts.isEntry && facts.database != nil && facts.database.Row.Of != "":
+		n.Database = facts.database.Row.Of
 	case fileRef != "":
 		n.Database = walk.ext[1:] + "." + fileRef
 	case command.Makes && placement.StoredIn != "":
 		n.Role, n.Database = Defines, placement.StoredIn
-	case f.key != nil && f.database != nil && placement.BlockContext.Position == f.database.Entry &&
-		slices.Contains(f.database.Row.Names, f.key.Text):
-		n.Role, n.Named, n.Database = Defines, true, f.database.Name
+	case facts.key != nil && facts.database != nil && placement.BlockContext.Position == facts.database.Entry &&
+		slices.Contains(facts.database.Row.Names, facts.key.Text):
+		n.Role, n.IsName, n.Database = Defines, true, facts.database.Name
 	case placement.StoredIn != "":
 		n.Database = placement.StoredIn
-	case f.claim.Kind == ExpectsReference && (placement.Position.Value.Source != SourceVanilla || f.literal != jomini.LitNumber):
-		n.Database = f.claim.Database
-	case f.claim.Kind == ExpectsLoc:
+	case facts.claim.Kind == ExpectsReference && (placement.Position.Value.Source != SourceVanilla || facts.literal != jomini.LitNumber):
+		n.Database = facts.claim.Database
+	case facts.claim.Kind == ExpectsLoc:
 		n.Database = Localization
-	case f.claim.Kind == ExpectsFile:
+	case facts.claim.Kind == ExpectsFile:
 		n.Database = File
-	case f.literal != jomini.LitNumber && f.literal != jomini.LitDate && placement.Position != nil &&
-		(f.claim.Kind == ExpectsNumber || placement.Position.Vanilla.Shapes&ShapeNumber != 0):
+	case facts.literal != jomini.LitNumber && facts.literal != jomini.LitDate && placement.Position != nil &&
+		(facts.claim.Kind == ExpectsNumber || placement.Position.Vanilla.Shapes&ShapeNumber != 0):
 		n.Caller = game.Blocks[game.BlockValue].Calls
 	case jomini.IsEventID(scalar.Text):
 		n.Database = walk.events
@@ -204,14 +204,14 @@ func (walk *fileWalk) valueOccurrence(placement *Placement, scalar *jomini.Scala
 		return
 	}
 	if n.Database != "" || n.Caller != "" {
-		placement.Found = append(placement.Found, n)
+		placement.Occurrences = append(placement.Occurrences, n)
 	}
 }
 
 // parameterDefinitions defines each $NAME$ an entry of a folder with Parameters writes, at its
 // first use in the file.
-func (walk *fileWalk) parameterDefinitions(placement *Placement, scalar *jomini.Scalar, f scalarFacts) {
-	if f.database == nil || !f.database.Row.Parameters {
+func (walk *fileWalk) parameterDefinitions(placement *Placement, scalar *jomini.Scalar, facts scalarFacts) {
+	if facts.database == nil || !facts.database.Row.Parameters {
 		return
 	}
 	start := scalar.Range.Start
@@ -222,7 +222,7 @@ func (walk *fileWalk) parameterDefinitions(placement *Placement, scalar *jomini.
 		name := walk.entries[placement.Entry].ID + ":" + span.Name
 		if !walk.defined[name] {
 			walk.defined[name] = true
-			placement.Found = append(placement.Found, Occurrence{
+			placement.Occurrences = append(placement.Occurrences, Occurrence{
 				Role: Defines, Database: Parameter, ID: name,
 				Range: jomini.Range{Start: start + span.Start, End: start + span.End},
 			})

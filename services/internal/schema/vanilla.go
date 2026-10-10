@@ -163,7 +163,7 @@ func countPlacement(placement *Placement, entries []Entry, counted map[*jomini.B
 		}
 		if !counted[placement.Holder][placement.Position] {
 			counted[placement.Holder][placement.Position] = true
-			placement.Position.Vanilla.In++
+			placement.Position.Vanilla.Count++
 		}
 	}
 	countValue(placement.Statement.(*jomini.Assignment).Value, placement.Position)
@@ -172,23 +172,23 @@ func countPlacement(placement *Placement, entries []Entry, counted map[*jomini.B
 
 // countValue records a written value at a position: a word's form and, unless it is a number or a date,
 // the word itself, cloned so the schema never pins vanilla's text; a block is counted.
-func countValue(value jomini.Value, at *Position) {
-	if at == nil {
+func countValue(value jomini.Value, position *Position) {
+	if position == nil {
 		return
 	}
 	switch written := value.(type) {
 	case *jomini.Scalar:
 		form := shapeOf(written)
-		at.Vanilla.Shapes |= form
+		position.Vanilla.Shapes |= form
 		if form&(ShapeNumber|ShapeDate) == 0 {
-			if at.Vanilla.Values == nil {
-				at.Vanilla.Values = map[string]int{}
+			if position.Vanilla.Values == nil {
+				position.Vanilla.Values = map[string]int{}
 			}
-			at.Vanilla.Values[strings.Clone(written.Text)]++
+			position.Vanilla.Values[strings.Clone(written.Text)]++
 		}
 	case *jomini.Block, *jomini.TaggedBlock:
-		at.Vanilla.Blocks++
-		at.Vanilla.Shapes |= ShapeBlock
+		position.Vanilla.Blocks++
+		position.Vanilla.Shapes |= ShapeBlock
 	}
 }
 

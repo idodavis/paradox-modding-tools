@@ -311,7 +311,7 @@ func plain(scope string) string {
 // entries do not merge (on_actions, history); a file-local name or one an entry gives never counts.
 func (judge *judge) definitions(found []schema.Occurrence) {
 	sess, path := judge.file.sess, judge.file.place.Path
-	contends := func(def schema.Occurrence) bool { return def.Mode == "" && !def.Local && !def.Named }
+	contends := func(def schema.Occurrence) bool { return def.Mode == "" && !def.Local && !def.IsName }
 	for _, def := range found {
 		row := sess.Install.Schema.Databases[def.Database]
 		if def.Role != schema.Defines || def.ID == "" || row == nil {

@@ -20,11 +20,11 @@ import (
 // collector is one file's occurrences as the walk fills them, the scope pairs it writes, and the visitor
 // they are handed to.
 type collector struct {
-	schema  *schema.Schema
-	found   []schema.Occurrence
-	scoped  map[[2]string]bool
-	visit   func(*schema.Placement) bool
-	stopped bool
+	schema      *schema.Schema
+	occurrences []schema.Occurrence
+	scoped      map[[2]string]bool
+	visit       func(*schema.Placement) bool
+	stopped     bool
 }
 
 // collectFiles reads the files of Files that hold occurrences, localization in every language only when
@@ -43,9 +43,9 @@ func (index *Index) collectFiles(ctx context.Context, s *schema.Schema, withLoc 
 	return inventory.Ordered(ctx, files, func(file inventory.File) collected {
 		text, _ := file.Text()
 		return collectFile(s, file, text)
-	}, func(file inventory.File, found collected) {
-		if len(found.found) > 0 {
-			index.add(file.Path, found)
+	}, func(file inventory.File, records collected) {
+		if len(records.occurrences) > 0 {
+			index.add(file.Path, records)
 		}
 		done++
 		if progress != nil {
@@ -60,11 +60,11 @@ func collectFile(s *schema.Schema, file inventory.File, text string) collected {
 	switch file.Format {
 	case inventory.Script:
 		parsed := jomini.Parse(text)
-		found, scoped := Collect(s, file, &parsed, nil)
-		return collected{found: found, scoped: scoped}
+		occurrences, scoped := Collect(s, file, &parsed, nil)
+		return collected{occurrences: occurrences, scoped: scoped}
 	case inventory.Table, inventory.List:
-		found, scoped := Collect(s, file, nil, nil)
-		return collected{found: found, scoped: scoped}
+		occurrences, scoped := Collect(s, file, nil, nil)
+		return collected{occurrences: occurrences, scoped: scoped}
 	case inventory.Loc:
 		return collectLoc(s.Game, file, text, nil)
 	}
@@ -83,12 +83,12 @@ func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit
 		if assign, isAssign := entry.Statement.(*jomini.Assignment); isAssign {
 			span = assign.Key.Range
 		}
-		c.found = append(c.found, schema.Occurrence{
+		c.occurrences = append(c.occurrences, schema.Occurrence{
 			Role: schema.Defines, Database: entry.Database, ID: entry.ID, Mode: entry.Mode, Range: span, Entry: int32(n), Local: entry.Local,
 		})
 	}
 	s.WalkFile(file, parsed, entries, schema.Visitor{Visit: c.collect})
-	if len(c.found) > 0 {
+	if len(c.occurrences) > 0 {
 		lines := (*jomini.LineIndex)(nil)
 		if parsed != nil {
 			lines = parsed.Lines()
@@ -96,12 +96,12 @@ func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit
 			text, _ := file.Text()
 			lines = jomini.NewLineIndex(text)
 		}
-		for n := range c.found {
-			at := lines.PositionAt(c.found[n].Range.Start)
-			c.found[n].Line, c.found[n].Col = int32(at.Line), int32(at.Character)
+		for n := range c.occurrences {
+			at := lines.PositionAt(c.occurrences[n].Range.Start)
+			c.occurrences[n].Line, c.occurrences[n].Col = int32(at.Line), int32(at.Character)
 		}
 	}
-	return c.found, c.scoped
+	return c.occurrences, c.scoped
 }
 
 // collect keeps what a reading names and the scope its command, link or link-read word is written in,
@@ -110,7 +110,7 @@ func (collector *collector) collect(placement *schema.Placement) bool {
 	if collector.stopped {
 		return false
 	}
-	collector.found = append(collector.found, placement.Found...)
+	collector.occurrences = append(collector.occurrences, placement.Occurrences...)
 	assign, isAssign := placement.Statement.(*jomini.Assignment)
 	scalar, isScalar := jomini.ValueOf(placement.Statement).(*jomini.Scalar)
 	if placement.Scope != "" && isAssign && placement.Command != nil {
@@ -149,18 +149,18 @@ func collectLoc(gameID string, file inventory.File, text string, languages []str
 			concepts = schema.NameOf(at)
 		}
 	}
-	found, lines := collected{language: language}, jomini.NewLineIndex(text)
+	records, lines := collected{language: language}, jomini.NewLineIndex(text)
 	refer := func(database, name string, span jomini.Range) {
 		at := lines.PositionAt(span.Start)
-		found.found = append(found.found, schema.Occurrence{
+		records.occurrences = append(records.occurrences, schema.Occurrence{
 			Role: schema.Refers, Database: database, ID: name, Range: span, Line: int32(at.Line), Col: int32(at.Character), Entry: -1,
 		})
 	}
 	for _, entry := range parsed.Entries {
-		found.found = append(found.found, schema.Occurrence{
+		records.occurrences = append(records.occurrences, schema.Occurrence{
 			Role: schema.Localizes, Database: schema.Localization, ID: entry.Key, Range: entry.KeyRange, Line: int32(entry.Line), Entry: -1,
 		})
-		found.texts = append(found.texts, strings.Clone(entry.Value))
+		records.texts = append(records.texts, strings.Clone(entry.Value))
 		for _, interp := range loc.Interps(entry.Value, entry.ValueRange.Start) {
 			refer(schema.Localization, interp.Key, interp.KeyRange)
 		}
@@ -168,7 +168,7 @@ func collectLoc(gameID string, file inventory.File, text string, languages []str
 			conceptReferences(text, entry, concepts, refer)
 		}
 	}
-	return found
+	return records
 }
 
 // conceptReferences refers to each game concept a loc entry's data calls name: [x|E] and

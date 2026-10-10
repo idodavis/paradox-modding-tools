@@ -13,7 +13,7 @@ the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` 
 | `schema.go` | the types (`Schema`, `Database`, `Position` with its `Claims`, `Claim`, `Command`, `Vanilla`, `Shapes`, `ExpectedKind`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
 | `build.go` | the pipeline: `Input`, `Build`, `DatabaseNames` for the scan; step 1, declaring the databases (`declare`, `declareDatabases`) |
 | `dumps.go` | step 2: `dumpsOrShipped`, then the parsers of the console dumps: the label table, one `parse…` per record kind; the usages merged into each command's arguments once every command is declared (`mergeUsages`, `usageRoots`, `mergeUsage`, `argument`) |
-| `docs.go` | the documentation dialect: `parseDocScript`, the one reader of docscript that the install's docs, the wiki's examples and the dumps' usages share (`DocNode`: a statement's key, value slot, prose and block); step 3, `parseDocs`, the docs and examples parsed to trees with every key they write noted for the entry detector; step 6, `mergeDocs`, their claims merged into the entry trees after vanilla (`docMerge`: `node`, `template`, `set`); the phrase table `docPhrases` and `claimsOf`, which both merges read claims with |
+| `docs.go` | the documentation dialect: `parseDocScript`, the one reader of docscript that the install's docs, the wiki's examples and the dumps' usages share (`DocNode`: a statement's key, value slot, prose and block); step 3, `parseDocs`, the docs and examples parsed to trees with every key they write noted for the entry detector; step 6, `mergeDocs`, their claims merged into the entry trees after vanilla (`mergeNode`, `mergeTemplate`, `docClaims`); the phrase table `docPhrases` and `claimsOf`, which both merges read claims with |
 | `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
 | `entries.go` | the entry detector, `FindEntries`: which definitions a file makes, by its folder's row, its nested rows and its file type |
 | `walk.go` | the walker: `WalkFile`, `WalkBlock`, `EntryContext`, `PlaceKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |
@@ -43,7 +43,7 @@ the doc merges place each key with `PlaceKey` alone.
 
 `WalkFile` is the one walk of a whole file: given the entries `FindEntries` returned, it reads every statement in
 source order, outer before inner, and each `Placement` carries the entry it is in (`Entry`, an index into the
-entries, -1 outside one), what its key and value name (`Found`, the occurrences, by the rules of `occurrences.go`) and the database a name
+entries, -1 outside one), what its key and value name (`Occurrences`, by the rules of `occurrences.go`) and the database a name
 command's value names there (`StoredIn`).
 
 ## Docscript
@@ -77,7 +77,7 @@ A key is named by every key rule that fits (`keyOccurrences`), a value by the fi
 | call | a key read as a call | a call reference (`Called`: the block's CalledIn word) |
 | parameter | a key in a call's block | a reference to the called entry's parameter, `<entry>:<NAME>` |
 | made | the value of a name command that makes a name (`save_scope_as`, `set_variable`) | a definition in the name's database |
-| group | a value at a folder's `Names` key | a definition the entry's database names (`Named`) |
+| group | a value at a folder's `Names` key | a definition the entry's database names (`IsName`) |
 | read | the value of a name command that reads one (`has_variable`) | a reference into the name's database |
 | claim | a value at a position typed as a database, a loc key or a file | a reference to it; a number at a position vanilla typed is none |
 | value | a scalar at a position declared to take a number | a call to a script value |

@@ -296,7 +296,7 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) *LanguageHealth {
 	if live := s.get(workspaceID); live != nil {
 		live.RLock()
 		dumps := live.Install.Schema.Sources[schema.SourceDumps]
-		health.Ready, health.DumpsFrom, health.DumpsStale = true, dumps.From, dumps.Stale
+		health.Ready, health.DumpsFrom, health.DumpsStale = true, dumps.Origin, dumps.Stale
 
 		// the version the scan read, and the one it replaced where the game was updated since
 		health.GameVersion = live.Install.Schema.Version

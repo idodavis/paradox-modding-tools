@@ -72,7 +72,7 @@ func dumpRecords(found []At) string {
 			case o.Role != role:
 			case role == schema.Defines:
 				fmt.Fprintf(&out, "def %s %q mode=%q %d-%d @%d:%d local=%t named=%t\n",
-					o.Database, o.ID, o.Mode, o.Range.Start, o.Range.End, o.Line, o.Col, o.Local, o.Named)
+					o.Database, o.ID, o.Mode, o.Range.Start, o.Range.End, o.Line, o.Col, o.Local, o.IsName)
 			case role == schema.Refers:
 				fmt.Fprintf(&out, "ref %s %q called=%q %d-%d @%d:%d from=%d trigger=%t\n",
 					o.Database, o.ID, o.Caller, o.Range.Start, o.Range.End, o.Line, o.Col, o.Entry, o.InTrigger)
@@ -256,7 +256,7 @@ func TestWinnerByHand(t *testing.T) {
 		index := &Index{Files: []inventory.File{{Path: "a", Rel: "a"}, {Path: "b", Rel: "b"}}}
 		index.Rebuild()
 		for i, one := range found {
-			index.add(index.Files[i].Path, collected{found: []schema.Occurrence{one}})
+			index.add(index.Files[i].Path, collected{occurrences: []schema.Occurrence{one}})
 		}
 		return Lookup([]*Index{index}, schema.Defines, events, "x")
 	}

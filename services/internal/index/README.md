@@ -20,7 +20,7 @@ file again; each step is a function named for it, in the file that holds its hal
 
 `Collect(schema, file, parsed, visit)` makes each entry `FindEntries` returns a `schema.Occurrence` that `Defines`,
 first and in source order, then walks the file once with `schema.WalkFile` and appends each placement's occurrences
-(`Found`), gives every occurrence its line and column, and keeps the scope each command, link or link-read scalar is
+(`Occurrences`), gives every occurrence its line and column, and keeps the scope each command, link or link-read scalar is
 written in (`scopePair`). An occurrence's `Entry` is the position, among the file's occurrences, of the definition of
 the entry it is in; an entry's definition points at itself. `visit` sees each placement: the index passes none,
 diagnostics judges each statement, and the editor stops at the cursor. `collectFile` picks by format, and
@@ -56,7 +56,7 @@ Resolve turned around: every reference to a name of a database, the calls into i
 **Entry modes.** `Winner` applies a name's definitions in load order, plain first, then each entry
 mode in the game's processing order: a plain definition or a replacing mode takes the winner's place
 (an earlier one holds in a first-wins database); an inject adds to it; an `INJECT:` or `REPLACE:` with
-nothing before it is an orphan. A plain on_action, a `Named` and a `Local` definition never take a
+nothing before it is an orphan. A plain on_action, an `IsName` and a `Local` definition never take a
 place. Two mods contest a name when one takes the other's place.
 
 **Fires.** `Fires` is a reference to an event or on_action outside a trigger; `Runs` is a call, or a name of a

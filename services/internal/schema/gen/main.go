@@ -54,7 +54,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if s.Sources[schema.SourceDumps].From == "none" {
+	if s.Sources[schema.SourceDumps].Origin == "none" {
 		log.Fatalf("no dump files found for %s: run the game's script_docs and data type dumps first", *gameID)
 	}
 	s.Databases = nil

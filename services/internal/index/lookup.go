@@ -15,19 +15,19 @@ import (
 
 // Lookup is every occurrence of a role of a name across the indexes, in the game's load order: the files
 // the game loads, by Rel, each file's in source order. A call is looked up with Database "".
-func Lookup(indexes []*Index, role schema.Role, database, id string) (found []At) {
+func Lookup(indexes []*Index, role schema.Role, database, id string) (matches []At) {
 	for _, index := range indexes {
 		for _, at := range index.listed(role, database, id) {
 			if _, loaded := Loaded(indexes, at.File().Path); loaded {
-				found = append(found, at)
+				matches = append(matches, at)
 			}
 		}
 	}
-	slices.SortStableFunc(found, func(first, second At) int {
+	slices.SortStableFunc(matches, func(first, second At) int {
 		return cmp.Or(strings.Compare(strings.ToLower(first.File().Rel), strings.ToLower(second.File().Rel)),
 			first.Occurrence().Range.Start-second.Occurrence().Range.Start)
 	})
-	return found
+	return matches
 }
 
 // listed is the index's own occurrences of a role of a name, in file order; none for a name it never met.
@@ -78,7 +78,7 @@ func RefsInside(def At) (refs []At) {
 		return nil
 	}
 	for _, at := range def.index.InFile(def.File().Path) {
-		if found := at.Occurrence(); found.Role == schema.Refers && found.Entry == def.occurrence {
+		if occurrence := at.Occurrence(); occurrence.Role == schema.Refers && occurrence.Entry == def.occurrence {
 			refs = append(refs, at)
 		}
 	}
@@ -142,8 +142,8 @@ func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (wi
 	// in a database whose registry row has OnActions every plain definition after the first adds,
 	// as an inject does; a moded one follows its mode
 	merged := map[string]bool{}
-	for at, row := range info.Folders {
-		merged[schema.NameOf(at)] = row.OnActions
+	for rel, row := range info.Folders {
+		merged[schema.NameOf(rel)] = row.OnActions
 	}
 
 	found := false
@@ -156,7 +156,7 @@ func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (wi
 			}
 
 			// a plain on_action, a name an entry gives (Named) and a local declaration take no place
-			contends := (plain && !merged[def.Database] || mode.Replaces) && !def.Named && !def.Local
+			contends := (plain && !merged[def.Database] || mode.Replaces) && !def.IsName && !def.Local
 
 			// two mods contest when one takes, or tries to take, the other's place
 			if found && contends {

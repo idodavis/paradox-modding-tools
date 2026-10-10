@@ -282,8 +282,8 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 				break
 			}
 			read.scope, from = "", from+len(part)+1
-			if _, leads := s.Scopes[read.command.Out]; leads {
-				read.scope = read.command.Out
+			if _, leads := s.Scopes[read.command.Target]; leads {
+				read.scope = read.command.Target
 			}
 		}
 	}
@@ -388,8 +388,8 @@ func (file *file) describe(card *Inspect, read reading) bool {
 		if card.Scope == "" && len(command.Scopes) == 1 {
 			card.Scope = command.Scopes[0]
 		}
-		if _, leads := s.Scopes[command.Out]; leads {
-			card.Leads = command.Out
+		if _, leads := s.Scopes[command.Target]; leads {
+			card.Leads = command.Target
 		}
 		shown(schema.SourceDumps)
 		key = command.Args
@@ -703,7 +703,7 @@ func need(key *schema.Position) string {
 	case schema.LevelAlways:
 		return "required"
 	case schema.LevelConditional:
-		return "required when " + required.When
+		return "required when " + required.Condition
 	}
 	return ""
 }
@@ -813,7 +813,7 @@ func keys(position *schema.Position) (names []string, stated int) {
 		}
 	}
 	slices.SortFunc(names, func(first, second string) int {
-		return cmp.Or(rank[first]-rank[second], position.Children[second].Vanilla.In-position.Children[first].Vanilla.In,
+		return cmp.Or(rank[first]-rank[second], position.Children[second].Vanilla.Count-position.Children[first].Vanilla.Count,
 			strings.Compare(first, second))
 	})
 	return names, stated

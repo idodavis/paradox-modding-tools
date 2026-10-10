@@ -56,7 +56,7 @@ func fixtureSchema(t *testing.T, id string) *Schema {
 		}
 		if backup != nil {
 			state := backup.Sources[SourceDumps]
-			state.From, state.Stale = "shipped", !exact
+			state.Origin, state.Stale = "shipped", !exact
 			backup.Sources[SourceDumps] = state
 			input.Shipped = backup
 		}
@@ -155,13 +155,13 @@ func dumpSchema(s *Schema) string {
 	p("# enums are numbers; a Said prints value/source")
 	p("game %s version %s", s.Game, s.Version)
 	sources := make([]int, 0)
-	for from := range s.Sources {
-		sources = append(sources, int(from))
+	for source := range s.Sources {
+		sources = append(sources, int(source))
 	}
 	sort.Ints(sources)
-	for _, from := range sources {
-		origin := s.Sources[Source(from)]
-		p("source %d from=%s", from, origin.From)
+	for _, source := range sources {
+		origin := s.Sources[Source(source)]
+		p("source %d from=%s", source, origin.Origin)
 	}
 
 	p("\n## databases")
@@ -177,7 +177,7 @@ func dumpSchema(s *Schema) string {
 	for _, name := range sortedKeys(s.Commands) {
 		command := s.Commands[name]
 		p("command %s kind=%d scopes=%v out=%q global=%t wild=%t lists=%t blurb=%s",
-			name, command.Kind, command.Scopes, command.Out, command.Global, command.Wild, command.Lists, short(command.Blurb))
+			name, command.Kind, command.Scopes, command.Target, command.Global, command.Wild, command.Lists, short(command.Blurb))
 		if command.Args != nil {
 			dumpKey(&out, "  ", "", command.Args, 0)
 		}
@@ -231,7 +231,7 @@ func dumpKey(out *strings.Builder, indent, path string, key *Position, depth int
 		indent, cmpPath(path),
 		key.Value.Value, key.Value.Source, key.Block.Value, key.Block.Source, key.Scope.Value, key.Scope.Source,
 		key.Required.Value, key.Required.Source, key.Default.Value, key.Default.Source, short(key.Blurb.Value), key.Blurb.Source,
-		key.DeclaredBy, key.Vanilla.In, key.Vanilla.Blocks, key.Vanilla.Shapes, key.Vanilla.Values)
+		key.DeclaredBy, key.Vanilla.Count, key.Vanilla.Blocks, key.Vanilla.Shapes, key.Vanilla.Values)
 	for _, name := range sortedKeys(key.Children) {
 		dumpKey(out, indent, path+"/"+name, key.Children[name], depth+1)
 	}
@@ -364,8 +364,8 @@ func TestKeyMeaning(t *testing.T) {
 		t.Errorf("title is declared by %d, want the dumps", declared.DeclaredBy)
 	}
 	observed := placementOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type").Position
-	if observed.DeclaredBy != SourceNone || observed.Vanilla.In != 1 {
-		t.Errorf("message_filter_type is declared by %d, written in %d blocks; want none, 1", observed.DeclaredBy, observed.Vanilla.In)
+	if observed.DeclaredBy != SourceNone || observed.Vanilla.Count != 1 {
+		t.Errorf("message_filter_type is declared by %d, written in %d blocks; want none, 1", observed.DeclaredBy, observed.Vanilla.Count)
 	}
 
 	// a new position with no claim and no evidence holds an unknown block, whose parent writes no command
@@ -438,9 +438,9 @@ func TestBlockScope(t *testing.T) {
 }
 
 func TestMayAccuse(t *testing.T) {
-	s := &Schema{Sources: map[Source]SourceState{SourceDocs: {From: "install"}, SourceDumps: {From: "yours", Stale: true}}}
-	number := func(from Source, in int, forms Shapes) *Position {
-		return &Position{Claims: Claims{Value: Claim[Expected]{Expected{Kind: ExpectsNumber}, from}}, Vanilla: Vanilla{In: in, Shapes: forms}}
+	s := &Schema{Sources: map[Source]SourceState{SourceDocs: {Origin: "install"}, SourceDumps: {Origin: "yours", Stale: true}}}
+	number := func(source Source, in int, forms Shapes) *Position {
+		return &Position{Claims: Claims{Value: Claim[Expected]{Expected{Kind: ExpectsNumber}, source}}, Vanilla: Vanilla{Count: in, Shapes: forms}}
 	}
 	cases := []struct {
 		name     string
@@ -555,11 +555,11 @@ func TestOccurrences(t *testing.T) {
 	}
 	for _, c := range cases {
 		placement := placementOf(t, s, c.rel, c.path...)
-		for i := range placement.Found {
-			placement.Found[i].Entry, placement.Found[i].InTrigger = 0, false // the entry and trigger state are the placement's
+		for i := range placement.Occurrences {
+			placement.Occurrences[i].Entry, placement.Occurrences[i].InTrigger = 0, false // the entry and trigger state are the placement's
 		}
-		if !slices.Equal(placement.Found, c.want) || placement.StoredIn != c.nameDatabase {
-			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, placement.Found, placement.StoredIn, c.want, c.nameDatabase)
+		if !slices.Equal(placement.Occurrences, c.want) || placement.StoredIn != c.nameDatabase {
+			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, placement.Occurrences, placement.StoredIn, c.want, c.nameDatabase)
 		}
 	}
 }

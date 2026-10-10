@@ -79,6 +79,15 @@ func (context Context) Position() *Position {
 	return context.At
 }
 
+// ValuePosition is the position whose claims type a statement's value: the key's own for an assignment (the
+// context its block reads in), the block's for a word listed in it (the context it is written in).
+func ValuePosition(statement jomini.Statement, context, inner Context) *Position {
+	if _, isAssign := statement.(*jomini.Assignment); isAssign {
+		return inner.Position()
+	}
+	return context.Position()
+}
+
 // KeyFacts is what the ten fit tests are tried against: one key at a context.
 type KeyFacts struct {
 	Context Context

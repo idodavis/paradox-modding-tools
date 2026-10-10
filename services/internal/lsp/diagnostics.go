@@ -209,12 +209,13 @@ func (judge *judge) key(at step, assign *jomini.Assignment) {
 // a constant or parameter is not yet its word, and a word that reads a value stands for a number.
 func (judge *judge) value(at step, scalar *jomini.Scalar) {
 	judge.variable(at, scalar)
-	if at.inner.Position() == nil {
+	position := schema.ValuePosition(at.statement, at.context, at.inner)
+	if position == nil {
 		return
 	}
-	judge.written[scalar.Range] = at.inner.Position()
+	judge.written[scalar.Range] = position
 	sess := judge.file.sess
-	claim, text := at.inner.Position().Value.Value, scalar.Text
+	claim, text := position.Value.Value, scalar.Text
 	if _, constant := jomini.Constant(text); constant || len(jomini.Interpolations(text)) > 0 {
 		return
 	}
@@ -236,9 +237,9 @@ func (judge *judge) value(at step, scalar *jomini.Scalar) {
 	case len(claim.Choices) > 0:
 		code, wrong = "wrong-declared-value", true
 	}
-	if wrong && sess.Install.Schema.MayAccuse(schema.CheckValue, at.inner.Position(), nil) {
+	if wrong && sess.Install.Schema.MayAccuse(schema.CheckValue, position, nil) {
 		judge.report(scalar.Range, 2, code, fmt.Sprintf("%s is not allowed here; this key takes %s",
-			text, strings.Join(takes(at.inner.Position()), ", ")))
+			text, strings.Join(takes(position), ", ")))
 	}
 }
 

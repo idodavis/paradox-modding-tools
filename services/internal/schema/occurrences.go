@@ -62,7 +62,7 @@ type scalarFacts struct {
 	reads      bool           // it may refer: a key in an entry, not the entry's own; a value in or at one, a name
 	database   *Database      // the entry's database; nil outside an entry
 	entryID    string         // the entry's ID
-	position   *Position      // the key's own position; nil where its block reads where the key stands
+	position   *Position      // the position that types the word: the key's own, a listed word's block's
 	claim      Expected       // that position's expected value; zero without one
 	literal    jomini.LiteralKind
 	call       bool   // the key is read as a call
@@ -133,7 +133,7 @@ func (walk *fileWalk) facts(context, inner Context, statement jomini.Statement, 
 	facts.named = scalar.Text != "" && !constant && len(jomini.Interpolations(scalar.Text)) == 0
 	inEntry := context.Database != nil
 	facts.reads = isKey && !facts.isEntry && inEntry || !isKey && (facts.isEntry || inEntry) && facts.named
-	if facts.position = inner.Position(); facts.position != nil {
+	if facts.position = ValuePosition(statement, context, inner); facts.position != nil {
 		facts.claim = facts.position.Value.Value
 	}
 	return facts

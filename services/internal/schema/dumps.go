@@ -537,30 +537,31 @@ func (schema *Schema) mergeUsage(root *DocNode, command *Command) {
 		command.Args.declare(schema.usageClaims(root), SourceDumps)
 	}
 	for _, child := range root.Children {
-		schema.argument(child, BlockContext{Position: command.Args, Shape: game.ShapeFields, InEntry: true})
+		// a usage is written in no database: an empty one stands for the entry its arguments are read in
+		schema.argument(child, Context{At: command.Args, Shape: game.ShapeFields, Database: &Database{}, Entry: -1})
 	}
 }
 
 // argument merges one statement of a usage's block as an argument at a context: its position is made on write
 // where the walker reads its key, and gets the statement's claims unless the key is a declared command; its own
 // block's statements are arguments below it. A bare value's claims are the holder's (<optional> after an argument).
-func (schema *Schema) argument(node *DocNode, in BlockContext) {
+func (schema *Schema) argument(node *DocNode, context Context) {
 	if node.Key == "" {
-		if in.Position != nil {
-			in.Position.declare(schema.usageClaims(node), SourceDumps)
+		if context.At != nil {
+			context.At.declare(schema.usageClaims(node), SourceDumps)
 		}
 		for _, child := range node.Children { // a block with no key reads in place
-			schema.argument(child, in)
+			schema.argument(child, context)
 		}
 		return
 	}
 	for _, name := range keyNames(node.Key) {
-		placement := schema.PlaceKey(in, nil, name, true)
-		if placement.Position != nil && placement.Command == nil {
-			placement.Position.declare(schema.usageClaims(node), SourceDumps)
+		inner := schema.Enter(context, &jomini.Assignment{Key: jomini.Scalar{Text: name}}, nil, true)
+		if inner.Position() != nil && inner.Rule != game.KeyRuleCommand && inner.Rule != game.KeyRuleLink {
+			inner.Position().declare(schema.usageClaims(node), SourceDumps)
 		}
 		for _, child := range node.Children {
-			schema.argument(child, placement.Inner)
+			schema.argument(child, inner)
 		}
 	}
 }

@@ -1,6 +1,6 @@
 // docs.go is the documentation dialect: parseDocScript, the one reader of docscript that the install's docs, the
-// wiki's examples and the dumps' usages share; step 3, the docs and examples parsed to trees with every key they
-// write noted for the entry detector; step 6, their claims merged into the entry trees, after vanilla.
+// wiki's examples and the dumps' usages share; step 4, the docs and examples parsed to trees with every key they
+// write noted for the entry detector; step 7, their claims merged into the entry trees, after vanilla.
 
 package schema
 
@@ -474,7 +474,7 @@ func (parse *docParse) add(node *DocNode) *DocNode {
 	return node
 }
 
-// parseDocs is step 3: each prose file of the install, read into its own folder's database, or the folder
+// parseDocs is step 4: each prose file of the install, read into its own folder's database, or the folder
 // beside it that it is named after (history/_characters.info); one under a row above its folder is not read,
 // nor one over a megabyte. A Markdown heading (a # at the start of a .md line) is no comment. Then the wiki's
 // examples, by the declared names. Every key a tree writes is noted in its database's Fields, for the entry
@@ -566,11 +566,10 @@ func (schema *Schema) claimsOf(node *DocNode, source Source) (claims Claims) {
 		}
 	}
 	for _, child := range node.Children {
-		if child.Key == "" && strings.HasPrefix(child.Value, "<") {
-			last := strings.TrimSuffix(child.Value[strings.LastIndexAny(child.Value, "<_ ")+1:], ">")
-			if kind, named := game.Placeholders[strings.ToLower(last)]; named {
-				claims.Holds.Set(kind, source)
-			}
+		if child.Key == "" && strings.HasPrefix(child.Value, "<") { // a block placeholder listed: { <display_triggers> }
+			var fromLastWord Claims
+			schema.claimPhrases(&fromLastWord, strings.TrimSuffix(child.Value[strings.LastIndexAny(child.Value, "<_ ")+1:], ">"), source)
+			claims.Holds.Set(fromLastWord.Holds.Value, fromLastWord.Holds.Source)
 		}
 	}
 	for _, said := range node.Prose {
@@ -626,7 +625,7 @@ func (schema *Schema) claimPhrases(claims *Claims, text string, source Source) (
 // isBlurb reports whether what the table left of a text still has words in it: prose, kept as a blurb.
 func isBlurb(rest string) bool { return strings.ContainsFunc(rest, unicode.IsLetter) }
 
-// mergeDocs is step 6: the docs' and wiki's claims merged into the databases they document, after vanilla.
+// mergeDocs is step 7: the docs' and wiki's claims merged into the databases they document, after vanilla.
 func (schema *Schema) mergeDocs(docs []doc) {
 	for _, document := range docs {
 		in := schema.EntryContext(schema.Databases[document.database])
@@ -640,27 +639,28 @@ func (schema *Schema) mergeDocs(docs []doc) {
 // vanilla writes nowhere below the holder is a template (mergeTemplate). A key read as a position vanilla writes
 // gets the node's claims, then its block merges where the walker reads that key's block; a key read as a command
 // or a link gets none, and its block merges where the walker reads it. A doc never makes a position.
-func (schema *Schema) mergeNode(node *DocNode, in BlockContext, source Source, top bool) {
+func (schema *Schema) mergeNode(node *DocNode, context Context, source Source, top bool) {
 	if node.Key == "" {
-		if in.Position != nil && in.Position.Vanilla.Count > 0 {
-			in.Position.declare(schema.docClaims(node, source), source)
+		if context.At != nil && context.At.Vanilla.Count > 0 {
+			context.At.declare(schema.docClaims(node, source), source)
 		}
 		for _, child := range node.Children { // a block with no key ({ { name = x } }) reads in place
-			schema.mergeNode(child, in, source, false)
+			schema.mergeNode(child, context, source, false)
 		}
 		return
 	}
 	for _, name := range keyNames(node.Key) {
-		placement := schema.PlaceKey(in, nil, name, false)
+		inner := schema.Enter(context, &jomini.Assignment{Key: jomini.Scalar{Text: name}}, nil, false)
+		isCommand := inner.Rule == game.KeyRuleCommand || inner.Rule == game.KeyRuleLink
 		switch {
-		case placement.Command == nil && (in.Position == nil || !writtenBelow(in.Position, positionName(name))):
-			schema.mergeTemplate(node, in, source, top)
+		case !isCommand && (context.At == nil || !writtenBelow(context.At, positionName(name))):
+			schema.mergeTemplate(node, context, source, top)
 			continue
-		case placement.Position != nil && placement.Command == nil && placement.Position.Vanilla.Count > 0:
-			placement.Position.declare(schema.docClaims(node, source), source)
+		case !isCommand && inner.Position() != nil && inner.Position().Vanilla.Count > 0:
+			inner.Position().declare(schema.docClaims(node, source), source)
 		}
 		for _, child := range node.Children {
-			schema.mergeNode(child, placement.Inner, source, false)
+			schema.mergeNode(child, inner, source, false)
 		}
 	}
 }
@@ -669,26 +669,26 @@ func (schema *Schema) mergeNode(node *DocNode, in BlockContext, source Source, t
 // a <key>. At the doc's top its claims are the holder's, where the holder is written as more than a block or the
 // node has one. Its block merges in the holder's place where the holder has a child the block writes, else
 // under each child of the holder that has one (my_phase_key = { }); else nowhere.
-func (schema *Schema) mergeTemplate(node *DocNode, in BlockContext, source Source, top bool) {
-	if in.Position != nil && top && (node.Block || in.Position.Vanilla.Writes != WritesBlock) {
-		in.Position.declare(schema.docClaims(node, source), source)
+func (schema *Schema) mergeTemplate(node *DocNode, context Context, source Source, top bool) {
+	if context.At != nil && top && (node.Block || context.At.Vanilla.Writes != WritesBlock) {
+		context.At.declare(schema.docClaims(node, source), source)
 	}
-	holds := func(at *Position) bool {
+	holds := func(position *Position) bool {
 		return node.Block && slices.ContainsFunc(node.Children, func(child *DocNode) bool {
-			return child.Key != "" && at.Child(child.Key) != nil
+			return child.Key != "" && position.Child(child.Key) != nil
 		})
 	}
-	if in.Position == nil || holds(in.Position) {
+	if context.At == nil || holds(context.At) {
 		for _, child := range node.Children {
-			schema.mergeNode(child, in, source, false)
+			schema.mergeNode(child, context, source, false)
 		}
 		return
 	}
-	for _, below := range in.Position.Children {
+	for _, below := range context.At.Children {
 		if holds(below) {
-			in.Position = below
+			context.At = below
 			for _, child := range node.Children {
-				schema.mergeNode(child, in, source, false)
+				schema.mergeNode(child, context, source, false)
 			}
 		}
 	}

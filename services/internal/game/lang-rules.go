@@ -26,6 +26,7 @@ const (
 	ShapeDescription              // a dynamic description
 	ShapeSetup                    // a history entry's start state: the docs' fields, else effects
 	ShapeWidget                   // a GUI widget: its properties, and blocks that are widgets again
+	ShapeEnclosing                // a construct's or a claim's value for "the holder's shape"
 )
 
 // KeyRule is one way a key can be read; a block tries its rules in order and the first that fits wins.
@@ -43,12 +44,68 @@ const (
 	KeyRulePosition                      // the place's own key, known or not
 	KeyRulePositionOrCall                // the place's own key, and a call where vanilla writes commands here
 	KeyRuleCall                          // any other key: a call to a scripted entry
+	KeyRuleNone                          // no rule: a statement with no key, outside an entry, or reopening its holder
 )
 
-// ShapeRule is how one kind of block reads.
+// Where is where a key's block reads, by the rule that read the key.
+type Where uint8
+
+// The places a key's block can read.
+const (
+	AtChild  Where = iota // the position under the holder by the key's written form, made when the walk creates
+	AtCallee              // the scripted entry's parameters, else its database's entry
+	AtArgs                // the declared command's arguments
+	AtHolder              // where the key stands: a link
+	AtNone                // nowhere: a key no rule places
+)
+
+// HoldsFrom is what decides what a key's block holds.
+type HoldsFrom uint8
+
+// The deciders of a block's shape.
+const (
+	HoldsClaim     HoldsFrom = iota // the position's claim, else its evidence
+	HoldsCommand                    // the command's kinds and the holder's shape
+	HoldsSame                       // the holder's shape
+	HoldsArguments                  // the command's arguments
+)
+
+// ScopeVerb is how a key's block gets its scope.
+type ScopeVerb uint8
+
+// The verbs a block's scope follows.
+const (
+	ScopeStays   ScopeVerb = iota // the holder's scope when the block's shape is known, else unknown
+	ScopeFollows                  // the command's or link's target when it is a scope that runs script, else unknown
+	ScopeUnknown
+)
+
+// KeyRuleRow is the three consequences of reading a key by a rule: where its block reads, what decides what it
+// holds, and how its scope follows. Whether the rule fits is the walker's test of the rule's name (schema/walk.go).
+type KeyRuleRow struct {
+	At    Where
+	Holds HoldsFrom
+	Scope ScopeVerb
+}
+
+// KeyRules is one row per rule.
+var KeyRules = [...]KeyRuleRow{
+	KeyRuleKnownCall:      {AtCallee, HoldsClaim, ScopeStays},
+	KeyRuleDeclared:       {AtChild, HoldsClaim, ScopeStays},
+	KeyRuleDocumented:     {AtChild, HoldsClaim, ScopeStays},
+	KeyRuleCommand:        {AtArgs, HoldsCommand, ScopeFollows},
+	KeyRuleOperator:       {AtChild, HoldsArguments, ScopeStays},
+	KeyRuleLink:           {AtHolder, HoldsSame, ScopeFollows},
+	KeyRuleObserved:       {AtChild, HoldsClaim, ScopeStays},
+	KeyRulePosition:       {AtChild, HoldsClaim, ScopeStays},
+	KeyRulePositionOrCall: {AtChild, HoldsClaim, ScopeStays},
+	KeyRuleCall:           {AtChild, HoldsClaim, ScopeStays},
+}
+
+// ShapeRule is how a block of one shape reads.
 type ShapeRule struct {
-	Keys   []KeyRule // the steps a key is tried as, in order
-	Calls  string    // the CalledIn word a call here is resolved by; AnyCall for every scripted folder
+	Keys   []KeyRule // the rules a key is tried by, in order
+	Caller string    // the word a call here is resolved by; AnyCall for every scripted folder
 	Allows Kinds     // the commands it holds; inside a trigger, never an effect
 }
 
@@ -62,17 +119,18 @@ const (
 	callValue   = "value"
 )
 
-// Shapes is the rule of each kind of block: keys, calls, allows. A description block reads by
-// DynamicDescription.
+// Shapes is the rule of each shape of block: the key rules it tries, the word its calls resolve by, the commands
+// it allows. A description block reads its keys by the construct rows alone.
 var Shapes = map[Shape]ShapeRule{
-	ShapeFields:    {[]KeyRule{KeyRulePosition}, "", 0},
-	ShapeTriggers:  {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callTrigger, KindTrigger},
-	ShapeEffects:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callEffect, KindEffect},
-	ShapeValue:     {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleOperator, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callValue, KindTrigger | KindEffect},
-	ShapeArguments: {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleCall}, AnyCall, 0},
-	ShapeUnknown:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRulePositionOrCall}, AnyCall, KindTrigger | KindEffect},
-	ShapeSetup:     {[]KeyRule{KeyRuleDeclared, KeyRuleDocumented, KeyRuleKnownCall, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall}, callEffect, KindEffect},
-	ShapeWidget:    {[]KeyRule{KeyRuleKnownCall, KeyRulePosition}, "widget", 0},
+	ShapeFields:      {[]KeyRule{KeyRulePosition}, "", 0},
+	ShapeTriggers:    {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callTrigger, KindTrigger},
+	ShapeEffects:     {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callEffect, KindEffect},
+	ShapeValue:       {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleOperator, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callValue, KindTrigger | KindEffect},
+	ShapeArguments:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleCall}, AnyCall, 0},
+	ShapeUnknown:     {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRulePositionOrCall}, AnyCall, KindTrigger | KindEffect},
+	ShapeSetup:       {[]KeyRule{KeyRuleDeclared, KeyRuleDocumented, KeyRuleKnownCall, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall}, callEffect, KindEffect},
+	ShapeWidget:      {[]KeyRule{KeyRuleKnownCall, KeyRulePosition}, "widget", 0},
+	ShapeDescription: {nil, "", 0},
 }
 
 // ---- Commands: what a declared command is, and what its block holds.
@@ -92,19 +150,95 @@ var KindWords = []struct {
 	Word string
 }{{KindEffect, "effect"}, {KindTrigger, "trigger"}, {KindLink, "event target"}}
 
-// Structural is a key inside a command's block whose own block has a fixed kind.
-type Structural struct {
-	Command   string
-	Key       string // the key, by written form (<number>); "" any key
-	Holds     Shape  // the kind its block holds
-	Enclosing bool   // it holds the kind of block the command is written in instead
-	Calls     string // the CalledIn word for calls in its block, where it differs from Holds'
+// Construct is a key the language itself gives a fixed shape to, which no dump declares: inside one command's
+// block (Command; "" any), within a holder of one shape (Within; ShapeUnknown any), a key by its written form (Key:
+// <number>, <any>, a name) or by its prefix (Prefix), read as a call that iterates the scripted list the rest of
+// the key names. Holds is the shape its block holds, ShapeEnclosing the holder's; Scope how its block's scope
+// follows; Caller the word its calls resolve by, "" the shape's own; Leaf marks a description's leaf, read at
+// the position the description belongs to and counted nowhere. The first row that fits wins.
+type Construct struct {
+	Command string
+	Within  Shape
+	Key     string
+	Prefix  bool
+	Holds   Shape
+	Scope   ScopeVerb
+	Caller  string
+	Leaf    bool
 }
 
-// Structurals are random_list's weighted branches and switch's cases.
-var Structurals = []Structural{
-	{Command: "random_list", Key: "<number>", Holds: ShapeEffects, Calls: AnyCall},
-	{Command: "switch", Enclosing: true},
+// AnyKey is the written form every key of a block reads at (switch's cases).
+const AnyKey = "<any>"
+
+// The words of a dynamic description: its markers, its trigger and its leaf.
+const (
+	descFirstValid  = "first_valid"
+	descRandomValid = "random_valid"
+	descTriggered   = "triggered_desc"
+	descTrigger     = "trigger"
+	descLeaf        = "desc"
+)
+
+// Constructs are random_list's weighted branches, switch's cases, the list iterators, a dynamic description's
+// markers, trigger and leaf, a value block's operators, and a widget's blocks.
+var Constructs = []Construct{
+	{Command: "random_list", Key: "<number>", Holds: ShapeEffects, Caller: AnyCall},
+	{Command: "switch", Key: AnyKey, Holds: ShapeEnclosing},
+	{Prefix: true, Key: "every_", Holds: ShapeEffects, Scope: ScopeUnknown},
+	{Prefix: true, Key: "random_", Holds: ShapeEffects, Scope: ScopeUnknown},
+	{Prefix: true, Key: "ordered_", Holds: ShapeEffects, Scope: ScopeUnknown},
+	{Prefix: true, Key: "any_", Holds: ShapeTriggers, Scope: ScopeUnknown},
+	{Within: ShapeDescription, Key: descFirstValid, Holds: ShapeDescription},
+	{Within: ShapeDescription, Key: descRandomValid, Holds: ShapeDescription},
+	{Within: ShapeDescription, Key: descTriggered, Holds: ShapeDescription},
+	{Within: ShapeDescription, Key: descTrigger, Holds: ShapeTriggers},
+	{Within: ShapeDescription, Key: descLeaf, Leaf: true},
+	{Within: ShapeValue, Key: "value", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "add", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "subtract", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "multiply", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "divide", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "modulo", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "min", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "max", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "round", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "round_to", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "ceiling", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "floor", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "fixed_range", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "integer_range", Holds: ShapeValue},
+	{Within: ShapeValue, Key: "abs", Holds: ShapeValue},
+	{Within: ShapeValue, Key: descLeaf, Holds: ShapeArguments},
+	{Within: ShapeValue, Key: "format", Holds: ShapeArguments},
+	{Within: ShapeValue, Key: "save_temporary_value_as", Holds: ShapeArguments},
+	{Within: ShapeWidget, Key: AnyKey, Holds: ShapeWidget},
+}
+
+// ConstructOf returns the first construct row that fits a key written in a block of a shape inside a command's
+// block, by the key's position name; a prefix row never fits here (the walker reads it for a call).
+func ConstructOf(within Shape, command, key string) (Construct, bool) {
+	for _, row := range Constructs {
+		fitsHolder := (row.Command == "" || row.Command == command) && (row.Within == ShapeUnknown || row.Within == within)
+		if fitsHolder && !row.Prefix && (row.Key == key || row.Key == AnyKey) {
+			return row, true
+		}
+	}
+	return Construct{}, false
+}
+
+// IsOperator reports whether a key, as written, is a value block's operator: a construct within a value.
+func IsOperator(key string) bool {
+	return slices.ContainsFunc(Constructs, func(row Construct) bool { return row.Within == ShapeValue && row.Key == key })
+}
+
+// ListIterator returns the construct row whose prefix a key starts with: a call that iterates a scripted list.
+func ListIterator(key string) (Construct, bool) {
+	for _, row := range Constructs {
+		if row.Prefix && strings.HasPrefix(key, row.Key) {
+			return row, true
+		}
+	}
+	return Construct{}, false
 }
 
 // ---- Names: what a written word names: the name commands, the saved-scope database and the list iterators; the
@@ -158,29 +292,15 @@ var NameCommands = map[string]NameCommand{
 	"global_variable_list_size/name": {"global_var", false}, "remove_list_global_variable/name": {"global_var", false},
 }
 
-// ListIterators are the prefixes a scripted list is iterated by (every_<list>), and the kind of
-// block each holds.
-var ListIterators = map[string]Shape{"every_": ShapeEffects, "random_": ShapeEffects, "ordered_": ShapeEffects, "any_": ShapeTriggers}
+// ---- Descriptions.
 
-// ---- Values and descriptions.
-
-// ValueOperators are a value block's operators: true where the operator takes a number, so its own
-// block is a value block; false where its block holds arguments.
-var ValueOperators = map[string]bool{
-	"value": true, "add": true, "subtract": true, "multiply": true, "divide": true, "modulo": true, "min": true,
-	"max": true, "round": true, "round_to": true, "ceiling": true, "floor": true, "fixed_range": true,
-	"integer_range": true, "abs": true, "desc": false, "format": false, "save_temporary_value_as": false,
-}
-
-// DynamicDescription is the shape of a dynamic description. A block is one when it holds a marker
-// whose block holds the leaf or another marker. Inside, a marker holds the shape again, Trigger
-// holds triggers, and the leaf is read as the position the description belongs to. Triggered shows
-// its leaf only while its trigger holds; Random shows one of its own at random, any other marker the
-// first whose trigger holds.
+// DynamicDescription is the words of a dynamic description, as the pages read one (the walker reads them as
+// construct rows). Triggered shows its leaf only while its trigger holds; Random shows one of its own at random,
+// any other marker the first whose trigger holds.
 var DynamicDescription = struct {
 	Markers                          []string
 	Trigger, Leaf, Triggered, Random string
-}{[]string{"first_valid", "random_valid", "triggered_desc"}, "trigger", "desc", "triggered_desc", "random_valid"}
+}{[]string{descFirstValid, descRandomValid, descTriggered}, descTrigger, descLeaf, descTriggered, descRandomValid}
 
 // EventPortraits are the keys an event names its portraits with, by their last word (left_portrait,
 // left_icon), and the key a portrait's block names its character with.
@@ -209,12 +329,6 @@ type Color struct {
 // is at most 1.
 var Colors = []Color{
 	{Tag: "rgb"}, {Tag: "hsv", HSV: true}, {Tag: "hsv360", HSV: true, Hue: 360, Parts: 100}, {Tag: "hex", Hex: true},
-}
-
-// Placeholders are the last words of a block placeholder a block lists ({ <display_triggers> },
-// { <interface effects> }) and the kind of block each names; the first listed wins.
-var Placeholders = map[string]Shape{
-	"effect": ShapeEffects, "effects": ShapeEffects, "trigger": ShapeTriggers, "triggers": ShapeTriggers,
 }
 
 // DumpWords are the dumps' words the engine decides by: a blurb opening "Iterate through" with no

@@ -1,4 +1,4 @@
-// build.go is the pipeline: Build makes one game version's schema in six steps. Step 1, declaring the databases,
+// build.go is the pipeline: Build makes one game version's schema in seven steps. Step 1, declaring the databases,
 // lives here.
 
 package schema
@@ -49,17 +49,29 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	if input.DumpsOnly {
 		return s, nil
 	}
-	docs, err := s.parseDocs(ctx, input) // 3: the docs and the wiki's examples parsed, every key they write noted
+	s.stampConstructs()                  // 3: the constructs' shapes under the commands that hold them
+	docs, err := s.parseDocs(ctx, input) // 4: the docs and the wiki's examples parsed, every key they write noted
 	if err != nil {
 		return nil, err
 	}
-	names, err := s.countVanilla(ctx, input.Install, info) // 4: what vanilla writes, counted
+	names, err := s.countVanilla(ctx, input.Install, info) // 5: what vanilla writes, counted
 	if err != nil {
 		return nil, err
 	}
-	s.inferTypesAndPrefixes(names, input.LocKeys) // 5: a kind where nothing declares one; each prefix's database
-	s.mergeDocs(docs)                             // 6: the docs' claims, merged where vanilla writes
+	s.inferTypesAndPrefixes(names, input.LocKeys) // 6: a kind where nothing declares one; each prefix's database
+	s.mergeDocs(docs)                             // 7: the docs' claims, merged where vanilla writes
 	return s, nil
+}
+
+// stampConstructs is step 3: each construct row that names a command claims, for the registry, the shape the
+// key's block holds at the position under that command's arguments (random_list's <number> branches hold
+// effects, switch's <any> cases hold the enclosing shape), made if missing.
+func (schema *Schema) stampConstructs() {
+	for _, row := range game.Constructs {
+		if command := schema.Commands[row.Command]; row.Command != "" && command != nil {
+			command.Args.EnsureChild(row.Key).Holds.Set(row.Holds, SourceRegistry)
+		}
+	}
 }
 
 // DatabaseNames returns the names of the databases Build will declare for an input: what the install's

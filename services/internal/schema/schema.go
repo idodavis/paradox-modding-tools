@@ -257,12 +257,16 @@ func (schema *Schema) DatabasesWhere(test func(game.Folder) bool) (names []strin
 	return names
 }
 
-// Child returns the position under a written name; nil when there is none.
+// Child returns the position under a written name, or the one every name reads at where the position has
+// <any>; nil when there is none.
 func (position *Position) Child(name string) *Position {
 	if position == nil {
 		return nil
 	}
-	return position.Children[positionName(name)]
+	if child := position.Children[positionName(name)]; child != nil {
+		return child
+	}
+	return position.Children[game.AnyKey]
 }
 
 // EnsureChild returns the position under a written name, making it when it is missing. The name is cloned

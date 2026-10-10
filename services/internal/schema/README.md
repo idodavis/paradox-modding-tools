@@ -16,7 +16,7 @@ the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` 
 | `docs.go` | the documentation dialect: `parseDocScript`, the one reader of docscript that the install's docs, the wiki's examples and the dumps' usages share (`DocNode`: a statement's key, value slot, prose and block); step 3, `parseDocs`, the docs and examples parsed to trees with every key they write noted for the entry detector; step 6, `mergeDocs`, their claims merged into the entry trees after vanilla (`mergeNode`, `mergeTemplate`, `docClaims`); the phrase table `docPhrases` and `claimsOf`, which both merges read claims with |
 | `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
 | `entries.go` | the entry detector, `FindEntries`: which definitions a file makes, by its folder's row, its nested rows and its file type |
-| `walk.go` | the walker: `WalkFile`, `WalkBlock`, `EntryContext`, `PlaceKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |
+| `walk.go` | the walker: `Context` (where statements read), `Visit`, `WalkFile`, `WalkBlock`, `EntryContext`; `Enter`, the one step from the context a statement is written in to the one its block reads in, by the first key rule that fits (`fits`), its row (`game.KeyRules`) and the first construct (`game.Constructs`); `holdsOf`, `commandShape`, `scopeOf` |
 | `occurrences.go` | `Occurrence`, one occurrence of a name with its `Role` (`Defines`, `Refers`, `Localizes`), and the occurrence rules: which entry each scalar of a placed statement stands for (`keyOccurrences`, `valueOccurrence`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
 | `shipped.go` | the backup schemas embedded from `shipped/`, `LoadShipped`; `gen/` writes them |
 
@@ -34,17 +34,21 @@ also needs vanilla to write the position. The registry and vanilla never accuse.
 ## Positions and the walker
 
 A position is a place in a database's entry tree or a command's arguments, keyed by a key's written form: a
-number is `<number>`, a date `<date>`, a `prefix:x` word `<prefix:>`, any other key itself. `WalkBlock` reads
-a block's statements at a `BlockContext` (position, block kind, calling word, scope, inside a trigger or an
-entry); each key becomes a `Placement` by `PlaceKey`, which decides in order what the key is (`keyMeaning`, by the
-block kind's rules in `game.Shapes`), what its block holds (`blockKindOf`, `commandBlockKind`) and the scope
-that block runs in (`blockScope`). Each decision's doc comment states its order. Two readers use the walker: `countFile` and the index's `Collect`;
-the doc merges place each key with `PlaceKey` alone.
+number is `<number>`, a date `<date>`, a `prefix:x` word `<prefix:>`, any other key itself, and every key where
+the position has `<any>` (switch's cases). A `Context` is where statements read: the position, the shape of the
+block, its scope, the word its calls resolve by, the entry and database it is in, and for the block a key opened,
+how that key was read (`Rule`, `Call`, `Command`, `List`, `Leaf`, `Bound`). `Enter` is the one step: a statement
+with no key, outside an entry, a date key or a key written in place reopens its holder; any other key is read by
+the first rule the holder's shape tries whose test holds (`fits`), and the rule's row says where its block reads
+(`At`), what decides what it holds (`Holds`) and how its scope follows (`Scope`); the first construct that fits
+the key refines the shape, a block written as a dynamic description is one whatever the rows say, and a scope
+claim on the key's position beats the verb. Two readers use the walker: `countFile` and the index's `Collect`;
+the doc and usage merges call `Enter` on a synthetic statement.
 
 `WalkFile` is the one walk of a whole file: given the entries `FindEntries` returned, it reads every statement in
-source order, outer before inner, and each `Placement` carries the entry it is in (`Entry`, an index into the
-entries, -1 outside one), what its key and value name (`Occurrences`, by the rules of `occurrences.go`) and the database a name
-command's value names there (`StoredIn`).
+source order, outer before inner, and hands each to the `Visit` with the context it is written in (its `Entry`
+is the entry it is in, -1 outside one), the one its block reads in, and what its key and value name (the
+occurrences, by the rules of `occurrences.go`); `StoredIn` is the database a name command's value names there.
 
 ## Docscript
 

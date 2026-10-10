@@ -11604,7 +11604,7 @@ command random_liege_or_above kind=1 scopes=[character] out="character" global=f
   /weight value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command random_list kind=1 scopes=[] out="" global=false wild=false lists=false blurb="a random list effect"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:1,blocks:1,forms:32,values:map[]
-  /<number> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:2,forms:352,values:map[]
+  /<number> value={0  []}/0 block=3/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:2,forms:352,values:map[]
   /X1 value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /X1/compare_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Y1 effect1"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /X1/modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Y1 effect1"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -13010,8 +13010,8 @@ command send_interface_toast kind=1 scopes=[character] out="" global=false wild=
   /message_filter_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:8,values:map[custom:1]
   /right_icon value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=55:a648e301:"optional, character, artifact, title, dy"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /title value={6  []}/3 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=50:ff6a3c1b:"optional, otherwise takes it from the me"/2 written=2 seen=in:3,blocks:2,forms:40,values:map[v.1.toast:1 v.1.toast_first:2]
-  /title/first_valid value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:2,forms:32,values:map[]
-  /title/first_valid/triggered_desc value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
+  /title/first_valid value={0  []}/0 block=6/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:2,blocks:2,forms:32,values:map[]
+  /title/first_valid/triggered_desc value={0  []}/0 block=6/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:32,values:map[]
   /title/first_valid/triggered_desc/trigger value={0  []}/0 block=2/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:224,values:map[]
   /tooltip value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=50:ff6a3c1b:"optional, otherwise takes it from the me"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default="send_interface_toast"/2 blurb=""/0 written=2 seen=in:1,blocks:0,forms:8,values:map[event_toast:1]
@@ -13853,6 +13853,7 @@ command suzerain kind=4 scopes=[character] out="character" global=false wild=fal
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command switch kind=3 scopes=[] out="" global=false wild=false lists=false blurb=92:e2d39b30:"Switch on a trigger for the evaluation o"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /<any> value={0  []}/0 block=9/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /case_1 value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /case_2 value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /case_n value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]

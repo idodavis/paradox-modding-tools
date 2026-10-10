@@ -359,7 +359,7 @@ func (sess *Session) Title(id string, def index.At) string {
 		if !isField {
 			continue
 		}
-		position := sess.Install.Schema.PlaceKey(sess.Install.Schema.EntryContext(row), field, field.Key.Text, false).Position
+		position := sess.Install.Schema.Enter(sess.Install.Schema.EntryContext(row), field, nil, false).Position()
 		value, isWord := field.Value.(*jomini.Scalar)
 		if !isWord || position == nil || position.Value.Value.Type != schema.ValueLoc {
 			continue

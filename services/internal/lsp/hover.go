@@ -113,10 +113,33 @@ type reading struct {
 	holds   game.Shape // what the walker reads the key's block as
 }
 
+// step is one statement of the chain: the statement, the context it is written in and the one its block
+// reads in.
+type step struct {
+	statement jomini.Statement
+	context   schema.Context
+	inner     schema.Context
+}
+
+// command is the declared effect, trigger or link the step's key is, by the rule that read it; nil for none.
+func (at step) command(s *schema.Schema) *schema.Command {
+	assign, isAssign := at.statement.(*jomini.Assignment)
+	if !isAssign {
+		return nil
+	}
+	switch at.inner.Rule {
+	case game.KeyRuleCommand:
+		return s.Commands[strings.ToLower(assign.Key.Text)]
+	case game.KeyRuleLink:
+		return s.Link(strings.ToLower(assign.Key.Text))
+	}
+	return nil
+}
+
 // spot is the cursor's place in a script file, from one walk that stops past it: the statements
 // holding it, outer to inner, and the occurrences so far.
 type spot struct {
-	chain  []schema.Placement
+	chain  []step
 	found  []schema.Occurrence
 	path   string
 	offset int
@@ -126,26 +149,26 @@ type spot struct {
 // ends at an operator with only blanks up to the offset: a value still to come.
 func (file *file) walk(offset int) spot {
 	cursor := spot{offset: offset, path: file.place.Path}
-	cursor.found, _ = index.Collect(file.sess.Install.Schema, file.place.File, file.parsed, func(at *schema.Placement) bool {
-		span := at.Statement.NodeRange()
+	cursor.found, _ = index.Collect(file.sess.Install.Schema, file.place.File, file.parsed, func(statement jomini.Statement, context schema.Context, inner *schema.Context, _ []schema.Occurrence) bool {
+		span := statement.NodeRange()
 		if span.Start > offset {
 			return false
 		}
-		assign, isAssign := at.Statement.(*jomini.Assignment)
+		assign, isAssign := statement.(*jomini.Assignment)
 		if offset <= span.End || isAssign && assign.Value == nil && strings.TrimSpace(file.text[span.End:offset]) == "" {
-			cursor.chain = append(cursor.chain, *at)
+			cursor.chain = append(cursor.chain, step{statement, context, *inner})
 		}
 		return true
 	})
 	return cursor
 }
 
-// block is the innermost statement whose block holds the cursor, -1 at the file's top; its
-// context says how that block reads (schema.Placement's Inner fields).
+// block is the innermost statement whose block holds the cursor, -1 at the file's top; its inner
+// context says how that block reads.
 func (cursor spot) block() int {
 	holder := -1
 	for i, at := range cursor.chain {
-		block := jomini.ChildBlock(at.Statement)
+		block := jomini.ChildBlock(at.statement)
 		if block != nil && cursor.offset > block.OpenBrace && (block.CloseBrace < 0 || cursor.offset <= block.CloseBrace) {
 			holder = i
 		}
@@ -157,14 +180,14 @@ func (cursor spot) block() int {
 // outside an entry. The entry's own statement is its name, not a key.
 func (cursor spot) within() []string {
 	holder := cursor.block()
-	if holder < 0 || cursor.chain[holder].Entry < 0 {
+	if holder < 0 || cursor.chain[holder].context.Entry < 0 {
 		return nil
 	}
-	entry := cursor.chain[holder].Entry
+	entry := cursor.chain[holder].context.Entry
 	def := cursor.found[entry]
 	out := []string{def.ID}
 	for _, at := range cursor.chain[:holder+1] {
-		if assign, isAssign := at.Statement.(*jomini.Assignment); isAssign && at.Entry == entry && assign.Key.Range != def.Range {
+		if assign, isAssign := at.statement.(*jomini.Assignment); isAssign && at.context.Entry == entry && assign.Key.Range != def.Range {
 			out = append(out, assign.Key.Text)
 		}
 	}
@@ -182,8 +205,8 @@ func (cursor spot) word(sess *workspace.Session) (word *jomini.Scalar, isKey boo
 		return nil, false, nil
 	}
 	at := cursor.chain[len(cursor.chain)-1]
-	word, _ = jomini.ValueOf(at.Statement).(*jomini.Scalar)
-	if assign, isAssign := at.Statement.(*jomini.Assignment); isAssign && within(assign.Key.Range, cursor.offset) {
+	word, _ = jomini.ValueOf(at.statement).(*jomini.Scalar)
+	if assign, isAssign := at.statement.(*jomini.Assignment); isAssign && within(assign.Key.Range, cursor.offset) {
 		word, isKey = &assign.Key, true
 	}
 	if word == nil || !within(word.Range, cursor.offset) {
@@ -245,7 +268,7 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 		return bare(jomini.Range{Start: offset, End: offset}), nil
 	}
 	at := cursor.chain[len(cursor.chain)-1]
-	assign, isAssign := at.Statement.(*jomini.Assignment)
+	assign, isAssign := at.statement.(*jomini.Assignment)
 	card := &Inspect{Word: word.Text, Range: file.span(word.Range), Winner: -1, Within: within}
 	if isAssign {
 		card.Key = assign.Key.Text
@@ -266,12 +289,12 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 	}
 
 	// what the word names (a $NAME$ in it included), else what its key reads as
-	s, read := sess.Install.Schema, reading{ref: named, scope: at.Scope}
+	s, read := sess.Install.Schema, reading{ref: named, scope: at.context.Scope}
 	if isKey {
-		read.key, read.command = at.Position, at.Command
+		read.key, read.command = at.inner.Position(), at.command(s)
 	}
-	if isKey && (jomini.ChildBlock(at.Statement) != nil || at.Inner.Shape == game.ShapeValue) {
-		read.holds = at.Inner.Shape // a value block is also written as a number
+	if isKey && (jomini.ChildBlock(at.statement) != nil || at.inner.Shape == game.ShapeValue) {
+		read.holds = at.inner.Shape // a value block is also written as a number
 	}
 
 	// a link chain's part under the cursor reads through its own link, run where the one before leads
@@ -324,10 +347,9 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 
 	// a weighted branch (Structurals' numbered keys, random_list): its share of its siblings' numbers
 	if parent := len(cursor.chain) - 2; isKey && parent >= 0 && jomini.Literal(word.Text) == jomini.LitNumber {
-		block, sum, mine := jomini.ChildBlock(cursor.chain[parent].Statement), 0.0, 0.0
-		weighted := slices.ContainsFunc(game.Structurals, func(row game.Structural) bool {
-			return row.Command == at.BlockContext.Command && row.Key == "<number>"
-		})
+		block, sum, mine := jomini.ChildBlock(cursor.chain[parent].statement), 0.0, 0.0
+		construct, found := game.ConstructOf(at.context.Shape, at.context.Command, "<number>")
+		weighted := found && construct.Key == "<number>"
 		if block != nil && weighted {
 			for _, sibling := range block.Statements {
 				branch, isBranch := sibling.(*jomini.Assignment)
@@ -356,12 +378,12 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 	}
 	if parent := len(cursor.chain) - 2; isKey && read.command == nil && parent >= 0 && card.Head == "" {
 		holder, database := cursor.chain[parent], (*schema.Database)(nil)
-		if holder.Entry >= 0 {
-			database = s.Databases[cursor.found[holder.Entry].Database]
+		if holder.context.Entry >= 0 {
+			database = s.Databases[cursor.found[holder.context.Entry].Database]
 		}
-		holding, isAssign := holder.Statement.(*jomini.Assignment)
+		holding, isAssign := holder.statement.(*jomini.Assignment)
 		switch {
-		case database != nil && holder.Inner.Position == database.Entry:
+		case database != nil && holder.inner.At == database.Entry:
 			card.Head = "in " + heading(database.Name)
 		case isAssign:
 			card.Head = "in `" + holding.Key.Text + "`"
@@ -587,16 +609,17 @@ func SignatureHelp(sess *workspace.Session, path string, line, col int) (*Signat
 		return nil, nil
 	}
 	at := cursor.chain[holder]
-	assign, isAssign := at.Statement.(*jomini.Assignment)
-	if !isAssign || at.Command == nil || at.Command.Kinds&game.KindLink != 0 {
+	assign, isAssign := at.statement.(*jomini.Assignment)
+	command := at.command(sess.Install.Schema)
+	if !isAssign || command == nil || command.Kinds&game.KindLink != 0 {
 		return nil, nil
 	}
-	names, stated := keys(at.Command.Args)
+	names, stated := keys(command.Args)
 	if names = names[:stated]; len(names) == 0 {
 		return nil, nil
 	}
 	label := assign.Key.Text + " = { " + strings.Join(names, " ") + " }"
-	return &Signature{Label: label, Parameters: names, Docs: at.Command.Blurb}, nil
+	return &Signature{Label: label, Parameters: names, Docs: command.Blurb}, nil
 }
 
 // dataCard is a data call step's card: a custom localization a quoted argument names, a data

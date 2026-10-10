@@ -23,7 +23,7 @@ type collector struct {
 	schema      *schema.Schema
 	occurrences []schema.Occurrence
 	scoped      map[[2]string]bool
-	visit       func(*schema.Placement) bool
+	visit       schema.Visit
 	stopped     bool
 }
 
@@ -73,9 +73,9 @@ func collectFile(s *schema.Schema, file inventory.File, text string) collected {
 
 // Collect walks a file with the schema and collects its occurrences: each entry a definition first, in
 // source order, then what the walk's statements name, each in its entry, each with its line and column; and
-// the scope each command, link or link-read word is written in. visit (nil for none) sees each reading;
+// the scope each command, link or link-read word is written in. visit (nil for none) sees each statement;
 // returning false stops the walk. A table or sound list (parsed nil) is read for its lines.
-func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit func(*schema.Placement) bool) ([]schema.Occurrence, map[[2]string]bool) {
+func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit schema.Visit) ([]schema.Occurrence, map[[2]string]bool) {
 	c := &collector{schema: s, visit: visit, scoped: map[[2]string]bool{}}
 	entries := s.FindEntries(file, parsed)
 	for n, entry := range entries {
@@ -87,7 +87,7 @@ func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit
 			Role: schema.Defines, Database: entry.Database, ID: entry.ID, Mode: entry.Mode, Range: span, Entry: int32(n), Local: entry.Local,
 		})
 	}
-	s.WalkFile(file, parsed, entries, schema.Visitor{Visit: c.collect})
+	s.WalkFile(file, parsed, entries, false, c.collect)
 	if len(c.occurrences) > 0 {
 		lines := (*jomini.LineIndex)(nil)
 		if parsed != nil {
@@ -104,22 +104,23 @@ func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit
 	return c.occurrences, c.scoped
 }
 
-// collect keeps what a reading names and the scope its command, link or link-read word is written in,
-// then hands the reading to visit; once visit returns false the walk reads nothing more.
-func (collector *collector) collect(placement *schema.Placement) bool {
+// collect keeps what a statement's words name and the scope its command, link or link-read word is written in,
+// then hands the statement to visit; once visit returns false the walk reads nothing more.
+func (collector *collector) collect(statement jomini.Statement, context schema.Context, inner *schema.Context, occurrences []schema.Occurrence) bool {
 	if collector.stopped {
 		return false
 	}
-	collector.occurrences = append(collector.occurrences, placement.Occurrences...)
-	assign, isAssign := placement.Statement.(*jomini.Assignment)
-	scalar, isScalar := jomini.ValueOf(placement.Statement).(*jomini.Scalar)
-	if placement.Scope != "" && isAssign && placement.Command != nil {
-		collector.scoped[scopePair(assign.Key.Text, placement.Scope)] = true
+	collector.occurrences = append(collector.occurrences, occurrences...)
+	assign, isAssign := statement.(*jomini.Assignment)
+	scalar, isScalar := jomini.ValueOf(statement).(*jomini.Scalar)
+	isCommand := inner.Rule == game.KeyRuleCommand || inner.Rule == game.KeyRuleLink
+	if context.Scope != "" && isAssign && isCommand {
+		collector.scoped[scopePair(assign.Key.Text, context.Scope)] = true
 	}
-	if placement.Scope != "" && isScalar && collector.schema.Link(strings.ToLower(scalar.Text)) != nil {
-		collector.scoped[scopePair(scalar.Text, placement.Scope)] = true
+	if context.Scope != "" && isScalar && collector.schema.Link(strings.ToLower(scalar.Text)) != nil {
+		collector.scoped[scopePair(scalar.Text, context.Scope)] = true
 	}
-	if collector.visit != nil && !collector.visit(placement) {
+	if collector.visit != nil && !collector.visit(statement, context, inner, occurrences) {
 		collector.stopped = true
 	}
 	return !collector.stopped

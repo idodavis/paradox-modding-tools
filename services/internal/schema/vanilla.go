@@ -1,4 +1,4 @@
-// vanilla.go is steps 4 and 5: what vanilla writes at each position, counted; then the kind a position's
+// vanilla.go is steps 5 and 6: what vanilla writes at each position, counted; then the kind a position's
 // scalars share where nothing declares one, and each prefix's database.
 
 package schema
@@ -109,64 +109,72 @@ func parseScript(file inventory.File) jomini.Result {
 	return jomini.Parse(text)
 }
 
-// countFile walks one vanilla file with its entries and records at each position how often and in what
-// forms vanilla writes it. It records evidence only, never a claim.
+// countFile walks one vanilla file with its entries and records at each position how often and in what forms
+// vanilla writes it. It records evidence only, never a claim.
 func (schema *Schema) countFile(file inventory.File, parsed *jomini.Result, entries []Entry) {
-	counted := map[*jomini.Block]map[*Position]bool{} // In counts a key once per block
-	schema.WalkFile(file, parsed, entries, Visitor{
-		Create: true,
-		Visit:  func(placement *Placement) bool { return countPlacement(placement, entries, counted) },
-	})
+	counter := &counter{schema: schema, entries: entries, counted: map[*jomini.Block]map[*Position]bool{}}
+	schema.WalkFile(file, parsed, entries, true, counter.count)
 }
 
-// countPlacement records one reading of the walk and returns whether to read its block.
-func countPlacement(placement *Placement, entries []Entry, counted map[*jomini.Block]map[*Position]bool) bool {
+// counter is one file's count: its entries, and the positions each block has counted a key at, so a key counts
+// once per block.
+type counter struct {
+	schema  *Schema
+	entries []Entry
+	counted map[*jomini.Block]map[*Position]bool
+}
+
+// count records one statement of the walk and returns whether to read its block.
+func (counter *counter) count(statement jomini.Statement, context Context, inner *Context, _ []Occurrence) bool {
 	// an entry's own statement records its value at the entry's position and counts nothing; a word listed as an
 	// entry is written at its holder's position, so it is recorded there
-	if placement.Entry >= 0 && entries[placement.Entry].Statement == placement.Statement {
-		switch statement := placement.Statement.(type) {
+	if context.Entry >= 0 && counter.entries[context.Entry].Statement == statement {
+		switch written := statement.(type) {
 		case *jomini.Assignment:
-			countValue(statement.Value, placement.Position)
+			countValue(written.Value, inner.At)
 		case *jomini.ValueStmt:
 			if block := jomini.ChildBlock(statement); block != nil {
-				countValue(block, placement.Position)
+				countValue(block, inner.At)
 			} else {
-				countValue(statement.Value, placement.BlockContext.Position)
+				countValue(written.Value, context.At)
 			}
 		}
 		return true
 	}
-	if placement.Entry < 0 {
+	if context.Entry < 0 {
 		return true // outside every entry there is no position: read on for the entries inside
 	}
-	if list, isList := placement.Statement.(*jomini.ValueStmt); isList {
-		countValue(list.Value, placement.Position)
+	if list, isList := statement.(*jomini.ValueStmt); isList {
+		countValue(list.Value, context.At)
 		return true
 	}
-	if command := placement.Command; command != nil && command.Kinds&game.KindLink == 0 && placement.BlockContext.Position != nil {
-		forms := &placement.BlockContext.Position.Vanilla.Writes
-		*forms |= WritesCommand
+	assign := statement.(*jomini.Assignment)
+	if inner.Rule == game.KeyRuleCommand && context.At != nil {
+		command := counter.schema.Commands[strings.ToLower(assign.Key.Text)]
+		writes := &context.At.Vanilla.Writes
+		*writes |= WritesCommand
 		if command.Kinds == game.KindTrigger {
-			*forms |= WritesTrigger
+			*writes |= WritesTrigger
 		}
 		if command.Kinds == game.KindEffect {
-			*forms |= WritesEffect
+			*writes |= WritesEffect
 		}
 	}
-	if placement.Position == nil {
+	position := inner.Position()
+	if position == nil {
 		// a key whose block reads in place, a link or a date, records nothing itself
-		return placement.Command != nil || placement.Inner.Position != nil && placement.Inner.Position == placement.BlockContext.Position
+		return inner.Rule == game.KeyRuleLink || inner.At != nil && inner.At == context.At
 	}
-	if !placement.Leaf {
-		if counted[placement.Holder] == nil {
-			counted[placement.Holder] = map[*Position]bool{}
+	if !inner.Leaf {
+		if counter.counted[context.Block] == nil {
+			counter.counted[context.Block] = map[*Position]bool{}
 		}
-		if !counted[placement.Holder][placement.Position] {
-			counted[placement.Holder][placement.Position] = true
-			placement.Position.Vanilla.Count++
+		if !counter.counted[context.Block][position] {
+			counter.counted[context.Block][position] = true
+			position.Vanilla.Count++
 		}
 	}
-	countValue(placement.Statement.(*jomini.Assignment).Value, placement.Position)
+	countValue(assign.Value, position)
 	return true
 }
 

@@ -1,5 +1,5 @@
-// walk.go is the walker: WalkFile places every statement of a file at its position in the schema's tree,
-// WalkBlock a snippet's; each key is placed by PlaceKey.
+// walk.go is the walker: WalkFile reads every statement of a file in the context it is written in and the one
+// its block reads in, WalkBlock a snippet's; Enter is the one step from the first to the second.
 
 package schema
 
@@ -14,80 +14,89 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// BlockContext is where statements are read.
-type BlockContext struct {
-	Position  *Position       // the position the block reads at; nil when none is known
-	Shape     game.Shape      // what the block holds
-	Calls     string          // the CalledIn word a call in the block resolves by
-	Scope     string          // the scope the block runs in; "" unknown
-	InTrigger bool            // inside a trigger
-	InEntry   bool            // inside a database entry
-	Command   string          // the command whose own block this is, lower-case
-	Call      string          // the scripted entry this block calls, whose parameters its keys pass
-	Bound     *Position       // the position a dynamic description in the block belongs to
-	Dated     bool            // an entry's own block whose number keys are dates (Folder.Dated)
-	Fields    map[string]bool // in an entry's own block: the key names its database's docs write
+// Context is where statements are read: the state a walk inherits at a block, and for the block a statement opens,
+// how that statement was read.
+type Context struct {
+	At        *Position     // the position the block reads at; nil when none is known
+	Shape     game.Shape    // what the block holds
+	Scope     string        // the scope the block runs in; "" unknown
+	Caller    string        // the word a call in the block resolves by
+	Call      string        // the scripted entry this block calls, whose parameters its keys pass; "" none
+	Command   string        // the command whose own block this is, lower-case; "" none
+	List      string        // the scripted list this block iterates, named by the rest of its key; "" none
+	Rule      game.KeyRule  // the rule the key that opened this block was read by
+	Database  *Database     // the database of the entry the block is in; nil outside an entry
+	Entry     int32         // the entry the block is in, as its ordinal in the file's entries; -1 none
+	Bound     *Position     // the position a description's leaf reads at; nil outside a description
+	Block     *jomini.Block // the block whose statements read here; nil at a file's top and for a snippet
+	InTrigger bool          // inside a trigger
+	Leaf      bool          // the statement that opened this context is a description's leaf
 }
 
-// Placement is one statement as the walker reads it.
-type Placement struct {
-	Statement    jomini.Statement
-	Holder       *jomini.Block // the block holding it; nil at a file's top
-	Name         string        // the key name read: the key, or one of a docs key's alternatives
-	Rule         game.KeyRule  // the rule its key was read by
-	Position     *Position     // its position; nil when none
-	Command      *Command      // the declared command or link its key is
-	Calls        string        // set when its key is a call: the CalledIn word it resolves by
-	Listed       string        // set when its key iterates a scripted list: the iterator prefix
-	Leaf         bool          // the leaf of a dynamic description
-	Entry        int           // the index, in the entries WalkFile was given, of the entry it is in; -1 outside one
-	Occurrences  []Occurrence  // what its key and value name, in the order the rules fit (occurrences.go)
-	StoredIn     string        // the database a name command's value names here (set_variable: var); "" none
-	BlockContext               // where it is written
-	Inner        BlockContext  // where its own block is read
+// Position is the own position of the key that opened the context: nil for a link, which reads where it stands,
+// for a statement that reopened its holder, and for one with no key.
+func (context Context) Position() *Position {
+	if context.Rule == game.KeyRuleLink || context.Rule == game.KeyRuleNone {
+		return nil
+	}
+	return context.At
 }
 
-// Visitor is one use of the walker. Create makes the positions it reads (vanilla); Visit sees each reading, may
-// change where its block is read, and returns whether to read that block.
-type Visitor struct {
-	Create bool
-	Visit  func(*Placement) bool
+// KeyFacts is what the ten fit tests are tried against: one key at a context.
+type KeyFacts struct {
+	Context Context
+	Key     string
+	Block   *jomini.Block // the key's own block; nil for a scalar value
+	Child   *Position     // the position under the holder by the key's written form; nil when there is none
+	Command *Command      // the declared effect or trigger of that name; nil for none or for a link
+	Link    *Command      // the declared link the key starts with; nil for none
+	Callee  ScriptedEntry // the scripted entry the holder's caller calls by the key
+	Known   bool          // there is one, and no declared command has the name
+	Create  bool          // the walk makes the positions it reads
 }
 
-// meaning is what a key is: the rule that read it, its position, its declared command or link, the calling
-// word a call resolves by, and whether it is a description's leaf.
-type meaning struct {
-	rule     game.KeyRule
-	position *Position
-	command  *Command
-	calls    string
-	leaf     bool
-}
+// Visit is what a walk hands each statement: the statement, the context it is written in, the one its block
+// reads in (which the visitor may change) and what its words name. False stops that block.
+type Visit func(statement jomini.Statement, context Context, inner *Context, occurrences []Occurrence) bool
 
-// fileWalk is one walk of a file: the entries known, which block belongs to which entry, and what the name rules
-// need of the file (its extension, the events database, the parameters defined so far).
+// fileWalk is one walk of a file: whether it makes positions, the entries known and which statement is an
+// entry's own, and what the occurrence rules need of the file (its extension, the events database, the
+// parameters defined so far).
 type fileWalk struct {
 	schema  *Schema
-	visitor Visitor
+	visit   Visit
+	create  bool
 	entries []Entry
 	own     map[jomini.Statement]int // an entry's statement: its index in entries
-	inside  map[*jomini.Block]int    // a block: the entry it is in, -1 none
 	ext     string                   // the file's extension, lower-case, with its dot; "" for a snippet
 	events  string                   // the database an event id names; "" none
 	defined map[string]bool          // the parameters defined so far, as <entry>:<NAME>
 }
 
-// WalkFile reads a whole file with its entries known: every statement in source order, outer before inner,
-// each reading carrying the entry it is in and what its words name. A whole-file entry (a history file) holds the
-// root's statements as one block. A table or list (parsed nil) has no statements to read: its entries are its
-// records, and the visitor sees nothing.
-func (schema *Schema) WalkFile(file inventory.File, parsed *jomini.Result, entries []Entry, visitor Visitor) {
+// fits is the test of each key rule: whether the rule reads a key, by the facts about it.
+var fits = [...]func(KeyFacts) bool{
+	game.KeyRuleKnownCall:      func(facts KeyFacts) bool { return facts.Known },
+	game.KeyRuleDeclared:       func(facts KeyFacts) bool { return facts.Child != nil && facts.Child.DeclaredBy != SourceNone },
+	game.KeyRuleDocumented:     func(facts KeyFacts) bool { return facts.Context.Database.Fields[positionName(facts.Key)] },
+	game.KeyRuleCommand:        func(facts KeyFacts) bool { return facts.Command != nil },
+	game.KeyRuleOperator:       func(facts KeyFacts) bool { return game.IsOperator(strings.ToLower(facts.Key)) },
+	game.KeyRuleLink:           func(facts KeyFacts) bool { return facts.Link != nil },
+	game.KeyRuleObserved:       func(facts KeyFacts) bool { return facts.Create || facts.Child != nil && facts.Child.Vanilla.Count > 0 },
+	game.KeyRulePosition:       func(KeyFacts) bool { return true },
+	game.KeyRulePositionOrCall: func(KeyFacts) bool { return true },
+	game.KeyRuleCall:           func(KeyFacts) bool { return true },
+}
+
+// WalkFile reads a whole file with its entries known: every statement in source order, outer before inner, each
+// in the context it is written in and the one its block reads in, with what its words name. With create, the
+// walk makes the positions it reads (the count). A whole-file entry (a history file) holds the root's statements
+// as one block. A table or list (parsed nil) has no statements: its entries are its records.
+func (schema *Schema) WalkFile(file inventory.File, parsed *jomini.Result, entries []Entry, create bool, visit Visit) {
 	if parsed == nil {
 		return
 	}
 	walk := &fileWalk{
-		schema: schema, visitor: visitor, entries: entries,
-		own: map[jomini.Statement]int{}, inside: map[*jomini.Block]int{},
+		schema: schema, visit: visit, create: create, entries: entries, own: map[jomini.Statement]int{},
 		ext:     strings.ToLower(path.Ext(file.Rel)),
 		events:  cmp.Or(schema.DatabasesWhere(func(row game.Folder) bool { return row.Events })...),
 		defined: map[string]bool{},
@@ -99,281 +108,236 @@ func (schema *Schema) WalkFile(file inventory.File, parsed *jomini.Result, entri
 			top = []jomini.Statement{entry.Statement}
 		}
 	}
-	walk.block(nil, top, BlockContext{})
+	walk.walk(top, Context{Entry: -1})
 }
 
-// WalkBlock reads a snippet's statements at a context, with no entries and no names: the docs and the dumps'
-// usages read script this way.
-func (schema *Schema) WalkBlock(visitor Visitor, holder *jomini.Block, statements []jomini.Statement, in BlockContext) {
-	walk := &fileWalk{schema: schema, visitor: visitor, own: map[jomini.Statement]int{}, inside: map[*jomini.Block]int{}}
-	walk.block(holder, statements, in)
+// WalkBlock reads a snippet's statements at a context, with no entries and no names: the tests read script this
+// way.
+func (schema *Schema) WalkBlock(context Context, statements []jomini.Statement, create bool, visit Visit) {
+	walk := &fileWalk{schema: schema, visit: visit, create: create, own: map[jomini.Statement]int{}}
+	walk.walk(statements, context)
 }
 
-// block reads a block's statements at a context; holder is nil at a file's top. A statement that starts an entry
-// is read at the entry's position and its block at the entry's context; inside an entry each key is read by
-// PlaceKey; anything else stays at the context's position.
-func (walk *fileWalk) block(holder *jomini.Block, statements []jomini.Statement, in BlockContext) {
-	for index, statement := range statements {
-		entry, inEntry := walk.inside[holder]
-		if !inEntry {
-			entry = -1
+// walk reads a block's statements at a context: for each, the context its block reads in (an entry's statement
+// opens its database's; any other steps by Enter), what its words name, then the visitor, then its block when the
+// visitor agrees. An entry's own statement is read in its holder's context with the entry as its own.
+func (walk *fileWalk) walk(statements []jomini.Statement, context Context) {
+	var previous jomini.Statement
+	for _, statement := range statements {
+		at, inner := context, Context{}
+		if i, isEntry := walk.own[statement]; isEntry && walk.schema.Databases[walk.entries[i].Database] != nil {
+			at.Entry, inner = int32(i), walk.entryOpens(i, statement)
+		} else {
+			inner = walk.schema.Enter(at, statement, previous, walk.create)
 		}
-		var database *Database
-		if i, isEntry := walk.own[statement]; isEntry {
-			if database = walk.schema.Databases[walk.entries[i].Database]; database != nil {
-				entry = i
-			}
-		}
-		_, isAssign := statement.(*jomini.Assignment)
-		var placements []Placement
-		switch {
-		case database != nil:
-			placements = []Placement{walk.schema.entryPlacement(statement, database, in)}
-		case isAssign && in.InEntry:
-			placements = []Placement{walk.schema.keyPlacement(walk.visitor, statements, index, in)}
-		default:
-			placements = []Placement{{Statement: statement, Position: in.Position, BlockContext: in, Inner: in}}
+		var occurrences []Occurrence
+		if walk.ext != "" {
+			occurrences = walk.occurrencesOf(at, inner, statement)
 		}
 		block := jomini.ChildBlock(statement)
-		for _, placement := range placements {
-			placement.Holder, placement.Entry = holder, entry
-			if walk.ext != "" {
-				walk.occurrencesOf(&placement)
-			}
-			if walk.visitor.Visit(&placement) && block != nil {
-				walk.inside[block] = entry
-				walk.block(block, block.Statements, placement.Inner)
-			}
+		inner.Block = block
+		if walk.visit(statement, at, &inner, occurrences) && block != nil {
+			walk.walk(block.Statements, inner)
 		}
+		previous = statement
 	}
 }
 
-// entryPlacement reads a statement that starts an entry of a database. The dumps declare the scope of an
-// on_action's block.
-func (schema *Schema) entryPlacement(statement jomini.Statement, database *Database, in BlockContext) Placement {
-	inner := schema.EntryContext(database)
+// entryOpens is the context an entry's statement opens: its database's, in the scope the dumps declare for an
+// on_action.
+func (walk *fileWalk) entryOpens(i int, statement jomini.Statement) Context {
+	database := walk.schema.Databases[walk.entries[i].Database]
+	inner := walk.schema.EntryContext(database)
+	inner.Entry = int32(i)
 	if assign, isAssign := statement.(*jomini.Assignment); isAssign && database.Row.OnActions {
-		if scope := schema.OnActions[assign.Key.Text].Scope; scope != "" {
+		if scope := walk.schema.OnActions[assign.Key.Text].Scope; scope != "" {
 			inner.Scope = scope
 		}
 	}
-	return Placement{Statement: statement, Position: database.Entry, BlockContext: in, Inner: inner}
+	return inner
 }
 
-// keyPlacement reads the key of the assignment at statements[index]. A calling word written before a name calls
-// it by that word: blockoverride "x" { }.
-func (schema *Schema) keyPlacement(visitor Visitor, statements []jomini.Statement, index int, in BlockContext) Placement {
-	assign := statements[index].(*jomini.Assignment)
-	if index > 0 {
-		if listed, isList := statements[index-1].(*jomini.ValueStmt); isList {
-			if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar && len(schema.Callees[scalar.Text]) > 0 {
-				in.Calls = scalar.Text
-			}
-		}
-	}
-	return schema.PlaceKey(in, assign, assign.Key.Text, visitor.Create)
-}
-
-// EntryContext returns where a database's entry is read: at its entry position, in the kind of block its
-// entry holds, in the scope its entry declares when the dumps say that scope runs triggers or effects.
-func (schema *Schema) EntryContext(database *Database) BlockContext {
-	kind := database.Entry.Holds.Value
-	scope := database.Entry.Scope.Value
+// EntryContext is where a database's entry reads: at its entry position, in the shape its entry holds, in the
+// scope its entry declares when the dumps say that scope runs triggers or effects.
+func (schema *Schema) EntryContext(database *Database) Context {
+	shape, scope := database.Entry.Holds.Value, database.Entry.Scope.Value
 	if state := schema.Scopes[scope]; !state.Triggers && !state.Effects {
 		scope = ""
 	}
-	return BlockContext{
-		Position: database.Entry, Shape: kind, Calls: game.Shapes[kind].Calls, Scope: scope,
-		InTrigger: kind == game.ShapeTriggers, InEntry: true, Dated: database.Row.Dated, Fields: database.Fields,
+	return Context{
+		At: database.Entry, Shape: shape, Scope: scope, Caller: game.Shapes[shape].Caller, Rule: game.KeyRulePosition,
+		Database: database, Entry: -1, InTrigger: shape == game.ShapeTriggers,
 	}
 }
 
-// PlaceKey reads one key written at a context: what it is, where its block is read, and the scope that block
-// runs in. With create, the key's position is made.
-func (schema *Schema) PlaceKey(in BlockContext, statement jomini.Statement, name string, create bool) Placement {
-	placement := Placement{Statement: statement, Name: name, BlockContext: in}
-	create = create && in.Position != nil
-	var value jomini.Value
-	if assign, isAssign := statement.(*jomini.Assignment); isAssign {
-		value = assign.Value
+// Enter is the one step of the walk: from the context a statement is written in to the one its block reads in.
+// Outside an entry, or for a statement with no key, the block reads where the statement stands. A date key (a
+// number in a dated entry) reopens the holder; so does a key holding a parameter or written as a data call, with
+// its scope, command and call unknown. A calling word written before a key calls it by that word (blockoverride
+// "x" { }). Any other key is read by its rule (keyEnter). With create, the key's position is made.
+func (schema *Schema) Enter(context Context, statement, previous jomini.Statement, create bool) Context {
+	assign, isAssign := statement.(*jomini.Assignment)
+	reopened := context
+	reopened.Rule = game.KeyRuleNone
+	if !isAssign || context.Database == nil {
+		return reopened
 	}
-
-	// a date key re-opens the block it stands in (history)
-	literal := jomini.Literal(name)
-	if literal == jomini.LitDate || in.Dated && literal == jomini.LitNumber {
-		placement.Inner = in
-		return placement
+	if caller, isCaller := previous.(*jomini.ValueStmt); isCaller {
+		if scalar, isScalar := caller.Value.(*jomini.Scalar); isScalar && len(schema.Callees[scalar.Text]) > 0 {
+			context.Caller, reopened.Caller = scalar.Text, scalar.Text
+		}
 	}
-	// a key holding a parameter or written as a data call is a scope written in place: no position, no call,
-	// scope unknown
-	if schema.Commands[strings.ToLower(name)] == nil && writtenInPlace(name) {
-		placement.Inner = in
-		placement.Inner.Scope, placement.Inner.Command, placement.Inner.Call = "", "", ""
-		return placement
+	key := assign.Key.Text
+	literal := jomini.Literal(key)
+	if literal == jomini.LitDate || context.Database.Row.Dated && literal == jomini.LitNumber {
+		return reopened
 	}
-
-	m := schema.keyMeaning(in, name, in.Position.Child(name), create)
-	placement.Rule, placement.Position, placement.Command, placement.Calls, placement.Leaf = m.rule, m.position, m.command, m.calls, m.leaf
-	placement.Listed = schema.listIterated(in, placement, name, value)
-	placement.Inner = innerContext(in, placement, name, value)
-
-	// a trigger is exactly a trigger, not one that is also an effect
-	placement.InTrigger = in.InTrigger || isCommand(placement) && placement.Command.Kinds == game.KindTrigger
-	placement.Inner.InTrigger = placement.InTrigger || placement.Inner.Shape == game.ShapeTriggers
-	placement.Inner.Scope = schema.blockScope(in, placement, name)
-	return placement
+	if schema.Commands[strings.ToLower(key)] == nil && writtenInPlace(key) {
+		reopened.Scope, reopened.Command, reopened.Call = "", "", ""
+		return reopened
+	}
+	return schema.keyEnter(context, assign, create)
 }
 
-// writtenInPlace reports whether a key holds a parameter ($ACTOR$, $TARGET$.liege) or is a data call
-// written with arguments (name(…)).
-func writtenInPlace(name string) bool {
-	if len(jomini.Interpolations(name)) > 0 {
+// writtenInPlace reports whether a key holds a parameter ($ACTOR$, $TARGET$.liege) or is a data call written
+// with arguments (name(…)).
+func writtenInPlace(key string) bool {
+	if len(jomini.Interpolations(key)) > 0 {
 		return true
 	}
-	return strings.Contains(name, "(") && slices.ContainsFunc(jomini.ParseCall(name, 0), func(part jomini.Step) bool {
+	return strings.Contains(key, "(") && slices.ContainsFunc(jomini.ParseCall(key, 0), func(part jomini.Step) bool {
 		return part.Range.End-part.Range.Start > len(part.Name)
 	})
 }
 
-// isLink reports whether a reading's key is a declared link.
-func isLink(placement Placement) bool {
-	return placement.Command != nil && placement.Command.Kinds&game.KindLink != 0
+// keyEnter reads a key by the first rule the holder's shape tries whose test holds, else the last tried, and
+// places its block by the rule's row: under the holder by the key's written form (made when the walk creates),
+// at the scripted entry it calls, at the command's arguments, or where the key stands. A call names the entry it
+// calls; a key in a block that writes commands is a call too. Then the block's shape and scope (blockOf).
+func (schema *Schema) keyEnter(context Context, assign *jomini.Assignment, create bool) Context {
+	facts := schema.keyFacts(context, assign, create)
+	row := game.KeyRuleRow{At: game.AtNone}
+	inner := Context{Database: context.Database, Entry: context.Entry, Bound: context.Bound, Rule: game.KeyRulePosition}
+	for _, rule := range game.Shapes[context.Shape].Keys {
+		inner.Rule = rule
+		if fits[rule](facts) {
+			row = game.KeyRules[rule]
+			break
+		}
+	}
+	key := assign.Key.Text
+	switch row.At {
+	case game.AtChild:
+		inner.At = facts.Child
+		if create && context.At != nil {
+			inner.At = context.At.EnsureChild(key)
+		}
+	case game.AtCallee:
+		inner.At, inner.Call = facts.Callee.Parameters, key
+		if inner.At == nil {
+			inner.At = schema.Databases[facts.Callee.Database].Entry
+		}
+	case game.AtArgs:
+		inner.At, inner.Command = facts.Command.Args, strings.ToLower(key)
+	case game.AtHolder:
+		inner.At = context.At
+	}
+	writesCommands := context.At != nil && context.At.Vanilla.Writes&WritesCommand != 0
+	if inner.Rule == game.KeyRuleCall || inner.Rule == game.KeyRulePositionOrCall && writesCommands {
+		inner.Call = key
+	}
+	return schema.blockOf(context, inner, facts, row)
 }
 
-// isCommand reports whether a reading's key is a declared effect or trigger.
-func isCommand(placement Placement) bool { return placement.Command != nil && !isLink(placement) }
-
-// keyMeaning decides what a key is at a context by the block's rules in order; the first whose test holds
-// wins. In a description block the shape of a dynamic description decides instead.
-func (schema *Schema) keyMeaning(in BlockContext, name string, position *Position, create bool) meaning {
-	made := func() *Position {
-		if create {
-			return in.Position.EnsureChild(name)
-		}
-		return position
-	}
-	if in.Shape == game.ShapeDescription {
-		return descriptionMeaning(in, name, made, create)
-	}
-
-	lower := strings.ToLower(name)
+// keyFacts gathers what the fit tests ask of one key: the position under the holder by its written form, the
+// declared command or link it names, the scripted entry the holder's caller calls by it.
+func (schema *Schema) keyFacts(context Context, assign *jomini.Assignment, create bool) KeyFacts {
+	key := assign.Key.Text
+	lower := strings.ToLower(key)
 	command := schema.Commands[lower]
-	entry, called := schema.ScriptedEntries[in.Calls+":"+name]
-	k := keyFacts{
-		in: in, name: name, position: position, made: made, create: create,
-		entry: entry, known: called && command == nil, command: command, link: schema.Link(lower),
+	callee, called := schema.ScriptedEntries[context.Caller+":"+key]
+	facts := KeyFacts{
+		Context: context, Key: key, Block: jomini.BlockOf(assign.Value), Command: command, Link: schema.Link(lower),
+		Callee: callee, Known: called && command == nil, Create: create,
+	}
+	if context.At != nil {
+		facts.Child = context.At.Child(key)
 	}
 	if command != nil && command.Kinds&game.KindLink != 0 {
-		k.command = nil // a link is read by Link
+		facts.Command = nil // a link is read by Link
 	}
-	_, k.isOperator = game.ValueOperators[lower]
-
-	var found meaning
-	for _, rule := range game.Shapes[in.Shape].Keys {
-		var fits bool
-		if found, fits = schema.fits(rule, k); fits {
-			return found
-		}
-	}
-	return found
+	return facts
 }
 
-// keyFacts is what the rules of a block are tried against for one key.
-type keyFacts struct {
-	in         BlockContext
-	name       string
-	position   *Position // the position under the written name; nil when there is none
-	made       func() *Position
-	create     bool
-	entry      ScriptedEntry // the scripted entry the block's calling word calls by this name
-	known      bool          // there is one, and no declared command has the name
-	command    *Command      // a declared effect or trigger, else nil
-	link       *Command      // the declared link the key starts with
-	isOperator bool
-}
-
-// fits tries one rule against a key and returns what the key is by it; fits is false when the rule does not
-// hold. The meaning keeps the rule either way, so a block with no fitting rule reads by its last.
-func (schema *Schema) fits(rule game.KeyRule, facts keyFacts) (found meaning, fits bool) {
-	found = meaning{rule: rule}
+// blockOf is what the block a key opens holds and the scope it runs in. The first construct that fits the key
+// where it stands, or the list iterator a call starts with when the block iterates a scripted list, places a key
+// the shape's rules do not place (a description's markers and trigger read under the holder, their shape claimed
+// for the registry when the walk creates; the leaf reads at the bound position). The shape is the rule's row's
+// (holdsOf, commandShape, the holder's, arguments), then the construct's; a block written as a dynamic description
+// is one whatever the rows say, and entering a description binds its leaf to the position entered. The block's
+// trigger state is the holder's, a trigger's (exactly a trigger, not one that is also an effect), or a triggers
+// block's.
+func (schema *Schema) blockOf(context, inner Context, facts KeyFacts, row game.KeyRuleRow) Context {
+	key, verb := facts.Key, row.Scope
+	construct, found := game.ConstructOf(context.Shape, context.Command, positionName(key))
+	iterates := inner.Call == key && inner.Rule != game.KeyRuleKnownCall && facts.Block != nil &&
+		schema.Lists != "" && context.Caller != "" && context.Caller != game.AnyCall
+	if list, isList := game.ListIterator(key); iterates && isList {
+		construct, found, inner.List = list, true, strings.TrimPrefix(key, list.Key)
+	}
 	switch {
-	case rule == game.KeyRuleKnownCall && facts.known:
-		found.position, found.calls = facts.entry.Parameters, facts.in.Calls
-		if found.position == nil {
-			found.position = schema.Databases[facts.entry.Database].Entry
+	case found && construct.Leaf:
+		inner.At, inner.Leaf = context.Bound, true
+	case found && row.At == game.AtNone:
+		inner.At = facts.Child
+		if facts.Create && context.At != nil {
+			inner.At = context.At.EnsureChild(key)
+			inner.At.Holds.Set(construct.Holds, SourceRegistry)
 		}
-	case rule == game.KeyRuleDeclared && facts.position != nil && facts.position.DeclaredBy != SourceNone:
-		found.position = facts.position
-	case rule == game.KeyRuleDocumented && facts.in.Fields[positionName(facts.name)]:
-		found.position = facts.made()
-	case rule == game.KeyRuleCommand && facts.command != nil:
-		found.position, found.command = facts.command.Args, facts.command
-	case rule == game.KeyRuleOperator && facts.isOperator:
-		found.position = facts.made()
-	case rule == game.KeyRuleLink && facts.link != nil:
-		found.command = facts.link
-	case rule == game.KeyRuleObserved && (facts.create || facts.position != nil && facts.position.Vanilla.Count > 0):
-		found.position = facts.made()
-	case rule == game.KeyRulePosition:
-		found.position = facts.made()
-	case rule == game.KeyRulePositionOrCall:
-		found.position = facts.made()
-		if facts.in.Position != nil && facts.in.Position.Vanilla.Writes&WritesCommand != 0 {
-			found.calls = facts.in.Calls
-		}
-	case rule == game.KeyRuleCall:
-		found.position, found.calls = facts.made(), facts.in.Calls
-	default:
-		return found, false
 	}
-	return found, true
-}
-
-// descriptionMeaning reads a key in a description block: a marker or the trigger is a position, the leaf is
-// the position the description belongs to, and any other key is nothing.
-func descriptionMeaning(in BlockContext, name string, made func() *Position, create bool) meaning {
-	shape := game.DynamicDescription
-	found := meaning{rule: game.KeyRulePosition}
+	switch row.Holds {
+	case game.HoldsClaim:
+		inner.Shape = schema.holdsOf(inner.At)
+	case game.HoldsCommand:
+		inner.Shape = schema.commandShape(facts.Command, context.Shape)
+	case game.HoldsSame:
+		inner.Shape = context.Shape
+	case game.HoldsArguments:
+		inner.Shape = game.ShapeArguments
+	}
 	switch {
-	case slices.Contains(shape.Markers, name):
-		found.position = made()
-	case name == shape.Trigger:
-		found.position = made()
-		if create {
-			found.position.Holds.Set(game.ShapeTriggers, SourceRegistry)
-		}
-	case name == shape.Leaf:
-		found.position, found.leaf = in.Bound, true
+	case found && construct.Leaf:
+		inner.Shape = game.ShapeDescription // a leaf written as a block holds the description again
+	case found && construct.Holds == game.ShapeEnclosing:
+		inner.Shape, inner.Caller, verb = context.Shape, construct.Caller, construct.Scope
+	case found:
+		inner.Shape, inner.Caller, verb = construct.Holds, construct.Caller, construct.Scope
 	}
-	return found
+	if facts.Block != nil && inner.Position() != nil && isDescription(facts.Block) {
+		inner.Shape, inner.Caller = game.ShapeDescription, ""
+	}
+	if inner.Caller == "" {
+		inner.Caller = game.Shapes[inner.Shape].Caller
+	}
+	if inner.Shape == game.ShapeDescription && context.Shape != game.ShapeDescription {
+		inner.Bound = inner.At
+	}
+	inner.Scope = schema.scopeOf(context, inner, facts, verb)
+	exactTrigger := inner.Rule == game.KeyRuleCommand && facts.Command.Kinds == game.KindTrigger
+	inner.InTrigger = context.InTrigger || exactTrigger || inner.Shape == game.ShapeTriggers
+	return inner
 }
 
-// listIterated returns the iterator prefix when a key iterates a scripted list: a call in a triggers,
-// effects or value block that starts with an iterator prefix, takes a block and names no known scripted
-// entry iterates the scripted list named by the rest (every_adult_child).
-func (schema *Schema) listIterated(in BlockContext, placement Placement, name string, value jomini.Value) string {
-	listing := placement.Calls != "" && placement.Rule != game.KeyRuleKnownCall && jomini.BlockOf(value) != nil
-	if !listing || schema.Lists == "" || in.Calls == "" || in.Calls == game.AnyCall {
-		return ""
-	}
-	for prefix := range game.ListIterators {
-		if strings.HasPrefix(name, prefix) {
-			return prefix
-		}
-	}
-	return ""
-}
-
-// blockKindOf returns the kind of block a position holds: its declared kind, else a value block where the
-// position takes a number or vanilla writes only value operators in it, else the kind of command vanilla
-// writes there, else fields where vanilla writes keys and no command.
-func blockKindOf(position *Position) game.Shape {
+// holdsOf is what a position's block holds: its claim; else a value's formula where the position takes a number
+// by a declared source or every key written under it is an operator; else triggers or effects where vanilla
+// writes only one of them there; else fields where vanilla writes keys and no command; else unknown.
+func (schema *Schema) holdsOf(position *Position) game.Shape {
 	switch {
 	case position == nil:
 		return game.ShapeUnknown
 	case position.Holds.Source != SourceNone:
 		return position.Holds.Value
-	case position.Value.Value.Type == ValueNumber && position.Value.Source.Declared(), writesOnlyOperators(position):
+	case position.Value.Value.Type == ValueNumber && position.Value.Source.Declared(), onlyOperators(position):
 		return game.ShapeValue
 	}
 	switch position.Vanilla.Writes & (WritesTrigger | WritesEffect) {
@@ -388,29 +352,48 @@ func blockKindOf(position *Position) game.Shape {
 	return game.ShapeUnknown
 }
 
-// writesOnlyOperators reports whether a position has children and every one is a value operator.
-func writesOnlyOperators(position *Position) bool {
-	for name := range position.Children {
-		if _, operator := game.ValueOperators[name]; !operator {
+// onlyOperators reports whether a position has children and every one is a value operator.
+func onlyOperators(position *Position) bool {
+	for key := range position.Children {
+		if !game.IsOperator(key) {
 			return false
 		}
 	}
 	return len(position.Children) > 0
 }
 
-// commandBlockKind returns the kind of block a command's block is, given the kind of block it is written in:
-// a value block when it takes a number or is written in one, an arguments block when its usage writes
-// arguments only, the enclosing kind when it is both a trigger and an effect, else its own kind.
-func commandBlockKind(command *Command, in game.Shape) game.Shape {
+// isDescription reports whether a block is a dynamic description: it holds a marker whose own block holds the
+// leaf or another marker (title = { first_valid = { triggered_desc = { desc = … } } }).
+func isDescription(block *jomini.Block) bool {
+	words := game.DynamicDescription
+	inside := append([]string{words.Leaf}, words.Markers...)
+	return block != nil && slices.ContainsFunc(block.Statements, func(statement jomini.Statement) bool {
+		assign, isAssign := statement.(*jomini.Assignment)
+		return isAssign && slices.Contains(words.Markers, assign.Key.Text) && writesAny(jomini.BlockOf(assign.Value), inside)
+	})
+}
+
+// writesAny reports whether a block has an assignment to one of the keys.
+func writesAny(block *jomini.Block, keys []string) bool {
+	return block != nil && slices.ContainsFunc(block.Statements, func(statement jomini.Statement) bool {
+		assign, isAssign := statement.(*jomini.Assignment)
+		return isAssign && slices.Contains(keys, assign.Key.Text)
+	})
+}
+
+// commandShape is what a command's block holds, given the shape of the block it is written in: a value's
+// formula when it takes a number or is written in one, arguments when its usages write arguments only, the
+// holder's shape when it is both a trigger and an effect, else its own kind's.
+func (schema *Schema) commandShape(command *Command, holder game.Shape) game.Shape {
 	switch {
-	case blockKindOf(command.Args) == game.ShapeValue:
+	case schema.holdsOf(command.Args) == game.ShapeValue:
 		return game.ShapeValue
 	case command.Args.Holds.Value == game.ShapeArguments:
 		return game.ShapeArguments
-	case in == game.ShapeValue:
+	case holder == game.ShapeValue:
 		return game.ShapeValue
 	case command.Kinds&(game.KindTrigger|game.KindEffect) == game.KindTrigger|game.KindEffect:
-		return in
+		return holder
 	case command.Kinds&game.KindTrigger != 0:
 		return game.ShapeTriggers
 	case command.Kinds&game.KindEffect != 0:
@@ -419,92 +402,31 @@ func commandBlockKind(command *Command, in game.Shape) game.Shape {
 	return game.ShapeUnknown
 }
 
-// innerContext returns where a key's own block is read, apart from its scope: what the key is decides the
-// position and kind, then the structural keys (random_list's branches, switch's cases), widgets, list
-// iterators and dynamic descriptions adjust them.
-func innerContext(in BlockContext, placement Placement, name string, value jomini.Value) BlockContext {
-	inner := BlockContext{InEntry: in.InEntry, Bound: in.Bound}
-	lower := strings.ToLower(name)
-	switch {
-	case isLink(placement):
-		inner = in // a link's block reads where the link stands
-		inner.Command, inner.Call = "", ""
-	case isCommand(placement):
-		inner.Position, inner.Command = placement.Command.Args, lower
-		inner.Shape = commandBlockKind(placement.Command, in.Shape)
-	case placement.Rule == game.KeyRuleOperator && placement.Position != nil:
-		inner.Position, inner.Shape = placement.Position, game.ShapeArguments
-		if game.ValueOperators[lower] {
-			inner.Shape = game.ShapeValue // the operator takes a number
-		}
-	case in.Shape == game.ShapeDescription && placement.Position != nil && name != game.DynamicDescription.Trigger:
-		inner.Position, inner.Shape = placement.Position, game.ShapeDescription
-	default:
-		inner.Position, inner.Shape = placement.Position, blockKindOf(placement.Position)
+// scopeOf is the scope a key's block runs in. A scope claim on the key's position beats the verb. ScopeFollows: a
+// link leads where its last link does; a command leads by commandScope. ScopeStays keeps the holder's scope where
+// the block's shape is known or the position claims one. A scope the dumps say runs no triggers and no effects is
+// unknown.
+func (schema *Schema) scopeOf(context, inner Context, facts KeyFacts, verb game.ScopeVerb) string {
+	position := inner.At
+	if inner.Rule == game.KeyRuleLink {
+		position = nil // a link reads where it stands; the holder's claim is not its own
 	}
-
-	for _, row := range game.Structurals {
-		if row.Command == in.Command && (row.Key == "" || row.Key == positionName(name)) {
-			inner.Shape, inner.Calls = row.Holds, row.Calls
-			if row.Enclosing {
-				inner.Shape = in.Shape
-			}
-		}
-	}
-	if in.Shape == game.ShapeWidget {
-		inner.Shape = game.ShapeWidget // a widget's blocks are widgets again
-	}
-	if placement.Listed != "" {
-		inner.Shape = game.ListIterators[placement.Listed]
-	}
-	if inner.Calls == "" {
-		inner.Calls = game.Shapes[inner.Shape].Calls
-	}
-	if inner.Shape != game.ShapeDescription && placement.Position != nil && isDynamicDescription(value) {
-		inner.Shape, inner.Bound, inner.Calls = game.ShapeDescription, placement.Position, ""
-	}
-	if placement.Calls != "" {
-		inner.Call = name // the scripted entry this block calls, whose parameters its keys pass
-	}
-	return inner
-}
-
-// blockScope returns the scope a key's block runs in. Order matters: a scope the position declares beats
-// everything; a link or an iterating command leads to its target; a list or a bare target gives no scope; a
-// value or description block, a command's block and a block a source gives a kind stay where they are
-// written; anything else is unknown. A scope the dumps say runs no triggers and no effects is unknown too.
-func (schema *Schema) blockScope(in BlockContext, placement Placement, name string) string {
-	target, iterates := "", false
-	switch {
-	case isLink(placement):
-		last := strings.ToLower(name[strings.LastIndexByte(name, '.')+1:]) // a chain leads where its last link does
-		if link := schema.Link(last); link != nil {
-			target = link.Target
-		}
-	case isCommand(placement):
-		target = placement.Command.Target
-		iterates = placement.Command.Args.Holds.Value == game.ShapeTriggers || placement.Command.Args.Holds.Value == game.ShapeEffects
-	}
-	_, leads := schema.Scopes[target]
-	kind := placement.Inner.Shape
-
-	declared := placement.Position != nil && placement.Position.Scope.Source != SourceNone
-	followsTarget := isLink(placement) || isCommand(placement) && iterates && leads && !placement.Command.Lists
-	walksList := placement.Listed != "" || isCommand(placement) && placement.Command.Lists
-	bareTarget := isCommand(placement) && placement.Command.Target != "" && !iterates
-	staysPut := kind == game.ShapeValue || kind == game.ShapeDescription || isCommand(placement) ||
-		placement.Position != nil && (placement.Position.Holds.Source != SourceNone || kind != game.ShapeUnknown)
-
 	scope := ""
 	switch {
-	case declared:
-		scope = placement.Position.Scope.Value
-	case followsTarget && leads:
-		scope = target
-	case followsTarget, walksList, bareTarget:
-		scope = ""
-	case staysPut:
-		scope = in.Scope
+	case position != nil && position.Scope.Source != SourceNone:
+		scope = position.Scope.Value
+	case verb == game.ScopeUnknown:
+	case verb == game.ScopeFollows && inner.Rule == game.KeyRuleLink:
+		last := strings.ToLower(facts.Key[strings.LastIndexByte(facts.Key, '.')+1:])
+		if link := schema.Link(last); link != nil {
+			if _, leads := schema.Scopes[link.Target]; leads {
+				scope = link.Target
+			}
+		}
+	case verb == game.ScopeFollows:
+		scope = schema.commandScope(facts.Command, context.Scope)
+	case verb == game.ScopeStays && (inner.Shape != game.ShapeUnknown || position != nil && position.Holds.Source != SourceNone):
+		scope = context.Scope
 	}
 	if state := schema.Scopes[scope]; !state.Triggers && !state.Effects {
 		scope = ""
@@ -512,26 +434,18 @@ func (schema *Schema) blockScope(in BlockContext, placement Placement, name stri
 	return scope
 }
 
-// isDynamicDescription reports whether a value is a dynamic description: a block that holds a marker whose
-// own block holds the leaf or another marker (title = { first_valid = { triggered_desc = { desc = … } } }).
-func isDynamicDescription(value jomini.Value) bool {
-	shape := game.DynamicDescription
-	inside := append([]string{shape.Leaf}, shape.Markers...)
-	return slices.ContainsFunc(valuesWritten(value, shape.Markers), func(marker jomini.Value) bool {
-		return len(valuesWritten(marker, inside)) > 0
-	})
-}
-
-// valuesWritten returns the values of a block's assignments whose key is one of names.
-func valuesWritten(value jomini.Value, names []string) (values []jomini.Value) {
-	block := jomini.BlockOf(value)
-	if block == nil {
-		return nil
+// commandScope is the scope a command's block runs in: its target when its arguments hold triggers or effects
+// and the target is a scope and it walks no list; unknown when it walks a list or its target is bare; else the
+// holder's.
+func (schema *Schema) commandScope(command *Command, holder string) string {
+	holds := command.Args.Holds.Value
+	iterates := holds == game.ShapeTriggers || holds == game.ShapeEffects
+	_, leads := schema.Scopes[command.Target]
+	switch {
+	case iterates && leads && !command.Lists:
+		return command.Target
+	case command.Lists, command.Target != "" && !iterates:
+		return ""
 	}
-	for _, statement := range block.Statements {
-		if assign, isAssign := statement.(*jomini.Assignment); isAssign && slices.Contains(names, assign.Key.Text) {
-			values = append(values, assign.Value)
-		}
-	}
-	return values
+	return holder
 }

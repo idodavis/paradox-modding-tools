@@ -9344,7 +9344,7 @@ command random_lent_loan kind=1 scopes=[country] out="loan" global=false wild=fa
   /weight value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command random_list kind=1 scopes=[] out="" global=false wild=false lists=false blurb="randomly choose effects from a list"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<number> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="defines an option with base chance 10"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /<number> value={0  []}/0 block=3/1 scope=""/0 required={0 }/0 default=""/0 blurb="defines an option with base chance 10"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /<number>/desc value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=64:bcd2b0fa:"optional loc key to insert into this opt"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /<number>/max value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=74:409dfd81:"optional number to constrain this option"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /<number>/min value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=74:409dfd81:"optional number to constrain this option"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10825,6 +10825,7 @@ command supports_rebel kind=2 scopes=[country] out="rebels" global=false wild=fa
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command switch kind=3 scopes=[] out="" global=false wild=false lists=false blurb=92:e2d39b30:"Switch on a trigger for the evaluation o"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /<any> value={0  []}/0 block=9/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /case_1 value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /case_2 value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /case_n value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]

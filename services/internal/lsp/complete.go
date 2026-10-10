@@ -161,7 +161,7 @@ func (completer *completer) keys(cursor spot) {
 	at := cursor.chain[holder]
 
 	// a call's block passes the parameters the called entry defines, <entry>:<NAME>
-	assign, isAssign := at.Statement.(*jomini.Assignment)
+	assign, isAssign := at.statement.(*jomini.Assignment)
 	if found := slices.IndexFunc(cursor.found, func(ref schema.Occurrence) bool {
 		return isAssign && ref.Role == schema.Refers && ref.Caller != "" && ref.Range == assign.Key.Range
 	}); found >= 0 {
@@ -176,29 +176,37 @@ func (completer *completer) keys(cursor spot) {
 	// a list's words are what its key takes (events = { v.1 }); a block nothing classifies offers
 	// what the body around it offers
 	completer.values(spot{chain: cursor.chain[:holder+1]})
-	inner := at.Inner
-	if inner.Position == nil && len(completer.items) == 0 && holder > 0 {
-		inner = cursor.chain[holder-1].Inner
+	inner := at.inner
+	if inner.At == nil && len(completer.items) == 0 && holder > 0 {
+		inner = cursor.chain[holder-1].inner
 	}
-	if inner.Position == nil {
+	if inner.At == nil {
 		return
 	}
 
 	// a value block's operators; allowed is for the commands below
-	scope, called, allowed := inner.Scope, inner.Calls, game.Shapes[inner.Shape].Allows
+	scope, called, allowed := inner.Scope, inner.Caller, game.Shapes[inner.Shape].Allows
 	if inner.InTrigger {
 		allowed &^= game.KindEffect
 	}
-	for _, name := range slices.Sorted(maps.Keys(game.ValueOperators)) {
-		if step := s.PlaceKey(inner, nil, name, false); step.Rule == game.KeyRuleOperator {
-			completer.add(Item{Label: name, Head: need(step.Position)}, reading{key: step.Position, scope: scope})
+	var operators []string
+	for _, row := range game.Constructs {
+		if row.Within == game.ShapeValue {
+			operators = append(operators, row.Key)
+		}
+	}
+	slices.Sort(operators)
+	for _, name := range operators {
+		entered := s.Enter(inner, &jomini.Assignment{Key: jomini.Scalar{Text: name}}, nil, false)
+		if entered.Rule == game.KeyRuleOperator {
+			completer.add(Item{Label: name, Head: need(entered.Position())}, reading{key: entered.Position(), scope: scope})
 		}
 	}
 
 	// the position's keys, stated first, read as the walker reads them; one left to calls is a call
-	names, stated := keys(inner.Position)
+	names, stated := keys(inner.At)
 	for i, name := range names {
-		position := s.PlaceKey(inner, nil, name, false).Position
+		position := s.Enter(inner, &jomini.Assignment{Key: jomini.Scalar{Text: name}}, nil, false).Position()
 		read := reading{key: position, scope: scope}
 		if position == nil {
 			read = reading{ref: &schema.Occurrence{Caller: called, ID: name}}
@@ -237,10 +245,10 @@ func (completer *completer) values(cursor spot) {
 		return
 	}
 	at := cursor.chain[len(cursor.chain)-1]
-	if _, isAssign := at.Statement.(*jomini.Assignment); !isAssign {
+	if _, isAssign := at.statement.(*jomini.Assignment); !isAssign {
 		return
 	}
-	if position := at.Position; position != nil {
+	if position := at.inner.Position(); position != nil {
 		claim := position.Value.Value
 		words := claim.Choices
 		if claim.Type == schema.ValueBool {
@@ -267,7 +275,7 @@ func (completer *completer) values(cursor spot) {
 	}
 
 	// the names of the database its command makes or reads them in (set_variable, has_variable)
-	completer.names(at.StoredIn, "", 2)
+	completer.names(schema.StoredIn(at.context, at.statement), "", 2)
 }
 
 // calls offers what may follow in a data call: after [ the global functions, data types and data

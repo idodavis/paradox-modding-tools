@@ -196,7 +196,7 @@ func Fires(s *schema.Schema, ref schema.Occurrence) bool {
 // through it: a call, or a name of a database called in effects.
 func Runs(s *schema.Schema, ref schema.Occurrence) bool {
 	database := s.Databases[ref.Database]
-	return !ref.InTrigger && (ref.Caller != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Shapes[game.ShapeEffects].Calls))
+	return !ref.InTrigger && (ref.Caller != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Shapes[game.ShapeEffects].Caller))
 }
 
 // Scripted is whether a definition is a scripted entry, one a reference may run (Runs): of a

@@ -268,17 +268,49 @@ func sum(value any) string {
 	return fmt.Sprintf("%d:%08x", len(text), crc32.ChecksumIEEE([]byte(text)))
 }
 
-// placementOf walks a fixture file with its entries and returns the reading of the first statement whose key is
-// name under the given path of keys (an entry's name first); a step written key=value matches the value too.
-func placementOf(t *testing.T, s *Schema, rel string, path ...string) Placement {
+// step is one statement as the walk read it: the statement, the context it is written in, the one its block
+// reads in, and what its words name.
+type step struct {
+	statement   jomini.Statement
+	context     Context
+	inner       Context
+	occurrences []Occurrence
+}
+
+// commandOf is the declared command or link a step's key is, by the rule that read it; nil for none.
+func commandOf(s *Schema, at step) *Command {
+	assign, isAssign := at.statement.(*jomini.Assignment)
+	if !isAssign {
+		return nil
+	}
+	switch at.inner.Rule {
+	case game.KeyRuleCommand:
+		return s.Commands[strings.ToLower(assign.Key.Text)]
+	case game.KeyRuleLink:
+		return s.Link(strings.ToLower(assign.Key.Text))
+	}
+	return nil
+}
+
+// callerOf is the word a step's key resolves by when it is read as a call; "" when it is not.
+func callerOf(at step) string {
+	if assign, isAssign := at.statement.(*jomini.Assignment); isAssign && at.inner.Call == assign.Key.Text {
+		return at.context.Caller
+	}
+	return ""
+}
+
+// stepAt walks a fixture file with its entries and returns the step of the first statement whose key is name
+// under the given path of keys (an entry's name first); a key written key=value matches the value too.
+func stepAt(t *testing.T, s *Schema, rel string, path ...string) step {
 	t.Helper()
 	file, parsed := fixtureFile(t, s.Game, rel)
-	readings := map[jomini.Statement]Placement{}
-	s.WalkFile(file, parsed, s.FindEntries(file, parsed), Visitor{Visit: func(placement *Placement) bool {
-		readings[placement.Statement] = *placement
+	steps := map[jomini.Statement]step{}
+	s.WalkFile(file, parsed, s.FindEntries(file, parsed), false, func(statement jomini.Statement, context Context, inner *Context, occurrences []Occurrence) bool {
+		steps[statement] = step{statement, context, *inner, occurrences}
 		return true
-	}})
-	return readings[statementAt(t, parsed.Root.Statements, path)]
+	})
+	return steps[statementAt(t, parsed.Root.Statements, path)]
 }
 
 // statementAt returns the first statement whose key is the path's last, following the path's keys down.
@@ -302,80 +334,80 @@ func statementAt(t *testing.T, statements []jomini.Statement, path []string) jom
 	return nil
 }
 
-// snippetPlacement walks a snippet whose top statements are entries of a database and returns the reading of
-// its first statement whose key is name.
-func snippetPlacement(s *Schema, database, snippet, name string, create bool) Placement {
+// snippetStep walks a snippet whose top statements are entries of a database and returns the step of its first
+// statement whose key is name.
+func snippetStep(s *Schema, database, snippet, name string, create bool) step {
 	parsed := jomini.Parse(snippet)
-	var found Placement
-	visitor := Visitor{Create: create, Visit: func(placement *Placement) bool {
-		if placement.Name == name && found.Statement == nil {
-			found = *placement
+	var result step
+	visit := func(statement jomini.Statement, context Context, inner *Context, occurrences []Occurrence) bool {
+		if assign, isAssign := statement.(*jomini.Assignment); isAssign && assign.Key.Text == name && result.statement == nil {
+			result = step{statement, context, *inner, occurrences}
 		}
 		return true
-	}}
+	}
 	for _, statement := range parsed.Root.Statements {
 		if block := jomini.ChildBlock(statement); block != nil {
-			s.WalkBlock(visitor, block, block.Statements, s.EntryContext(s.Databases[database]))
+			s.WalkBlock(s.EntryContext(s.Databases[database]), block.Statements, create, visit)
 		}
 	}
-	return found
+	return result
 }
 
-func TestKeyMeaning(t *testing.T) {
+func TestEnter(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	events, triggers, values := eventsFile, "common/scripted_triggers/v_triggers.txt", "common/script_values/v_values.txt"
 	cases := []struct {
-		name      string
-		placement Placement
-		rule      game.KeyRule
-		position  *Position
-		command   *Command
-		calls     string
+		name     string
+		step     step
+		rule     game.KeyRule
+		position *Position
+		command  *Command
+		caller   string
 	}{
-		{"a fields block reads every key as a position", placementOf(t, s, events, v1, "type"),
+		{"a fields block reads every key as a position", stepAt(t, s, events, v1, "type"),
 			game.KeyRulePosition, s.Databases["events"].Entry.Child("type"), nil, ""},
-		{"a declared effect", placementOf(t, s, events, v1, immediate, "add_gold"),
+		{"a declared effect", stepAt(t, s, events, v1, immediate, "add_gold"),
 			game.KeyRuleCommand, s.Commands["add_gold"].Args, s.Commands["add_gold"], ""},
-		{"a scripted effect vanilla defines", placementOf(t, s, events, v1, immediate, vEffect),
+		{"a scripted effect vanilla defines", stepAt(t, s, events, v1, immediate, vEffect),
 			game.KeyRuleKnownCall, s.ScriptedEntries["effect:v_effect"].Parameters, nil, "effect"},
-		{"a scripted trigger declared inline", placementOf(t, s, triggers, "v_rich_trigger", "OR", "trigger_if", "v_inline_trigger"),
+		{"a scripted trigger declared inline", stepAt(t, s, triggers, "v_rich_trigger", "OR", "trigger_if", "v_inline_trigger"),
 			game.KeyRuleKnownCall, s.ScriptedEntries["trigger:v_inline_trigger"].Parameters, nil, trigger},
-		{"a link", placementOf(t, s, events, v1, immediate, "capital_county"),
+		{"a link", stepAt(t, s, events, v1, immediate, "capital_county"),
 			game.KeyRuleLink, nil, s.Commands["capital_county"], ""},
-		{"an argument the dumps declare", placementOf(t, s, events, v1, immediate, "send_interface_toast", "title"),
+		{"an argument the dumps declare", stepAt(t, s, events, v1, immediate, "send_interface_toast", "title"),
 			game.KeyRuleDeclared, s.Commands["send_interface_toast"].Args.Child("title"), nil, ""},
-		{"an argument vanilla writes", placementOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type"),
+		{"an argument vanilla writes", stepAt(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type"),
 			game.KeyRuleObserved, s.Commands["send_interface_toast"].Args.Child("message_filter_type"), nil, ""},
-		{"a value operator", placementOf(t, s, values, "big_value", "add"),
+		{"a value operator", stepAt(t, s, values, "big_value", "add"),
 			game.KeyRuleOperator, s.Databases["script_values"].Entry.Child("add"), nil, ""},
-		{"a call where nothing is known", snippetPlacement(s, "scripted_triggers", "x = { nothing_declares_me = yes }", "nothing_declares_me", false),
+		{"a call where nothing is known", snippetStep(s, "scripted_triggers", "x = { nothing_declares_me = yes }", "nothing_declares_me", false),
 			game.KeyRuleCall, nil, nil, trigger},
 	}
 	for _, c := range cases {
-		placement := c.placement
-		if placement.Rule != c.rule || placement.Position != c.position || placement.Command != c.command || placement.Calls != c.calls {
-			t.Errorf("%s: rule %d position %p command %p calls %q; want %d %p %p %q",
-				c.name, placement.Rule, placement.Position, placement.Command, placement.Calls, c.rule, c.position, c.command, c.calls)
+		inner, command, caller := c.step.inner, commandOf(s, c.step), callerOf(c.step)
+		if inner.Rule != c.rule || inner.Position() != c.position || command != c.command || caller != c.caller {
+			t.Errorf("%s: rule %d position %p command %p caller %q; want %d %p %p %q",
+				c.name, inner.Rule, inner.Position(), command, caller, c.rule, c.position, c.command, c.caller)
 		}
 	}
 
-	declared := placementOf(t, s, events, v1, immediate, "send_interface_toast", "title").Position
+	declared := stepAt(t, s, events, v1, immediate, "send_interface_toast", "title").inner.Position()
 	if declared.DeclaredBy != SourceDumps {
 		t.Errorf("title is declared by %d, want the dumps", declared.DeclaredBy)
 	}
-	observed := placementOf(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type").Position
+	observed := stepAt(t, s, events, v1, immediate, "send_interface_toast", "message_filter_type").inner.Position()
 	if observed.DeclaredBy != SourceNone || observed.Vanilla.Count != 1 {
 		t.Errorf("message_filter_type is declared by %d, written in %d blocks; want none, 1", observed.DeclaredBy, observed.Vanilla.Count)
 	}
 
 	// a new position with no claim and no evidence holds an unknown block, whose parent writes no command
-	fresh := snippetPlacement(fixtureSchema(t, ck3), "events", "x = { fresh = { inner = 1 } }", "inner", true)
-	if fresh.Rule != game.KeyRulePositionOrCall || fresh.Calls != "" {
-		t.Errorf("inner: rule %d calls %q; want %d \"\"", fresh.Rule, fresh.Calls, game.KeyRulePositionOrCall)
+	fresh := snippetStep(fixtureSchema(t, ck3), "events", "x = { fresh = { inner = 1 } }", "inner", true)
+	if fresh.inner.Rule != game.KeyRulePositionOrCall || fresh.inner.Call != "" {
+		t.Errorf("inner: rule %d call %q; want %d \"\"", fresh.inner.Rule, fresh.inner.Call, game.KeyRulePositionOrCall)
 	}
 }
 
-func TestBlockKindOf(t *testing.T) {
+func TestHoldsOf(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	entry := s.Databases["events"].Entry
 	cases := []struct {
@@ -391,13 +423,13 @@ func TestBlockKindOf(t *testing.T) {
 		{"no position", nil, game.ShapeUnknown},
 	}
 	for _, c := range cases {
-		if got := blockKindOf(c.position); got != c.want {
+		if got := s.holdsOf(c.position); got != c.want {
 			t.Errorf("%s: %d, want %d", c.name, got, c.want)
 		}
 	}
 }
 
-func TestCommandBlockKind(t *testing.T) {
+func TestCommandShape(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	cases := []struct {
 		command string
@@ -410,7 +442,7 @@ func TestCommandBlockKind(t *testing.T) {
 		{"random_list", game.ShapeEffects, game.ShapeArguments},
 	}
 	for _, c := range cases {
-		if got := commandBlockKind(s.Commands[c.command], c.in); got != c.want {
+		if got := s.commandShape(s.Commands[c.command], c.in); got != c.want {
 			t.Errorf("%s in %d: %d, want %d", c.command, c.in, got, c.want)
 		}
 	}
@@ -420,18 +452,18 @@ func TestBlockScope(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	events := eventsFile
 	cases := []struct {
-		name      string
-		placement Placement
-		want      string
+		name string
+		step step
+		want string
 	}{
-		{"an iterator leads to its target", placementOf(t, s, events, v1, immediate, "every_vassal"), "character"},
-		{"a link leads where its last link does", placementOf(t, s, events, v1, immediate, "capital_county"), "landed_title"},
-		{"the events entry declares no scope", placementOf(t, s, events, v1, immediate, "add_gold"), ""},
-		{"a trigger in an unscoped block", placementOf(t, s, events, v1, trigger, "exists"), ""},
-		{"an on_action starts in its declared scope", placementOf(t, s, "common/on_action/v_on_actions.txt", "on_birth", "effect", "every_vassal"), "character"},
+		{"an iterator leads to its target", stepAt(t, s, events, v1, immediate, "every_vassal"), "character"},
+		{"a link leads where its last link does", stepAt(t, s, events, v1, immediate, "capital_county"), "landed_title"},
+		{"the events entry declares no scope", stepAt(t, s, events, v1, immediate, "add_gold"), ""},
+		{"a trigger in an unscoped block", stepAt(t, s, events, v1, trigger, "exists"), ""},
+		{"an on_action starts in its declared scope", stepAt(t, s, "common/on_action/v_on_actions.txt", "on_birth", "effect", "every_vassal"), "character"},
 	}
 	for _, c := range cases {
-		if got := c.placement.Inner.Scope; got != c.want {
+		if got := c.step.inner.Scope; got != c.want {
 			t.Errorf("%s: %q, want %q", c.name, got, c.want)
 		}
 	}
@@ -554,12 +586,12 @@ func TestOccurrences(t *testing.T) {
 		{more, []string{"vmore.1", trigger, "gold"}, []Occurrence{ref("defines", "NWar", 208, 228)}, ""},
 	}
 	for _, c := range cases {
-		placement := placementOf(t, s, c.rel, c.path...)
-		for i := range placement.Occurrences {
-			placement.Occurrences[i].Entry, placement.Occurrences[i].InTrigger = 0, false // the entry and trigger state are the placement's
+		at := stepAt(t, s, c.rel, c.path...)
+		for i := range at.occurrences {
+			at.occurrences[i].Entry, at.occurrences[i].InTrigger = 0, false // the entry and trigger state are the statement's
 		}
-		if !slices.Equal(placement.Occurrences, c.want) || placement.StoredIn != c.nameDatabase {
-			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, placement.Occurrences, placement.StoredIn, c.want, c.nameDatabase)
+		if stored := StoredIn(at.context, at.statement); !slices.Equal(at.occurrences, c.want) || stored != c.nameDatabase {
+			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, at.occurrences, stored, c.want, c.nameDatabase)
 		}
 	}
 }
@@ -567,10 +599,10 @@ func TestOccurrences(t *testing.T) {
 func TestWalkFileEntries(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	const more = "events/v_more_events.txt"
-	if entry := placementOf(t, s, more, "vmore.1", trigger, "v_inline_trigger").Entry; entry != 1 {
+	if entry := stepAt(t, s, more, "vmore.1", trigger, "v_inline_trigger").context.Entry; entry != 1 {
 		t.Errorf("vmore.1 › trigger › v_inline_trigger: entry %d, want 1", entry)
 	}
-	if entry := placementOf(t, s, more, "namespace").Entry; entry != -1 {
+	if entry := stepAt(t, s, more, "namespace").context.Entry; entry != -1 {
 		t.Errorf("namespace: entry %d, want -1", entry)
 	}
 }

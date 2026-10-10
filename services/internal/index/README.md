@@ -19,10 +19,10 @@ file again; each step is a function named for it, in the file that holds its hal
 ## The collector (`collect.go`)
 
 `Collect(schema, file, parsed, visit)` makes each entry `FindEntries` returns a `schema.Occurrence` that `Defines`,
-first and in source order, then walks the file once with `schema.WalkFile` and appends each placement's occurrences
+first and in source order, then walks the file once with `schema.WalkFile` and appends each statement's occurrences
 (`Occurrences`), gives every occurrence its line and column, and keeps the scope each command, link or link-read scalar is
 written in (`scopePair`). An occurrence's `Entry` is the position, among the file's occurrences, of the definition of
-the entry it is in; an entry's definition points at itself. `visit` sees each placement: the index passes none,
+the entry it is in; an entry's definition points at itself. `visit` sees each statement: the index passes none,
 diagnostics judges each statement, and the editor stops at the cursor. `collectFile` picks by format, and
 `Index.collectFiles` runs it on a worker per CPU, handing each file's result (`collected`) to `add` in file order. A
 loc file is collected by `collectLoc`: each entry `Localizes` its key, each `$key$` in a text is a loc reference, and

@@ -131,15 +131,16 @@ func (judge *judge) script() {
 		judge.report(issue.Range, 1, string(issue.Code), issue.Message)
 	}
 	judge.written = map[jomini.Range]*schema.Position{}
-	found, _ := index.Collect(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at *schema.Placement) bool {
-		switch statement := at.Statement.(type) {
+	found, _ := index.Collect(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(statement jomini.Statement, context schema.Context, inner *schema.Context, _ []schema.Occurrence) bool {
+		at := step{statement, context, *inner}
+		switch written := statement.(type) {
 		case *jomini.Assignment:
-			judge.key(at, statement)
-			if scalar, isScalar := statement.Value.(*jomini.Scalar); isScalar {
+			judge.key(at, written)
+			if scalar, isScalar := written.Value.(*jomini.Scalar); isScalar {
 				judge.value(at, scalar)
 			}
 		case *jomini.ValueStmt:
-			if scalar, isScalar := statement.Value.(*jomini.Scalar); isScalar {
+			if scalar, isScalar := written.Value.(*jomini.Scalar); isScalar {
 				judge.value(at, scalar)
 			}
 		}
@@ -152,51 +153,51 @@ func (judge *judge) script() {
 // variable judges a non-global variable read (var:x, not local_var:x) written directly in a scope
 // the dumps say stores none; an undeclared scope, a read through a link, and a word vanilla writes
 // in that scope are quiet.
-func (judge *judge) variable(at *schema.Placement, word *jomini.Scalar) {
+func (judge *judge) variable(at step, word *jomini.Scalar) {
 	sess, s := judge.file.sess, judge.file.sess.Install.Schema
-	scope, declared := s.Scopes[at.Scope]
+	scope, declared := s.Scopes[at.context.Scope]
 	if !declared || scope.Variables {
 		return
 	}
 	prefixed, isPrefixed := jomini.SplitPrefixed(word.Text)
 	link, database := s.Link(strings.ToLower(word.Text)), s.Prefixes[prefixed.Prefix]
 	if isPrefixed && link != nil && !link.Global && database != "" && s.Databases[database] == nil &&
-		!sess.Install.Index.WritesInScope(word.Text, at.Scope) && s.MayAccuse(schema.CheckCommand, at.Position, nil) {
+		!sess.Install.Index.WritesInScope(word.Text, at.context.Scope) && s.MayAccuse(schema.CheckCommand, at.inner.Position(), nil) {
 		judge.report(word.Range, 2, "wrong-scope", fmt.Sprintf("%s reads a variable, but %s stores none",
-			word.Text, plain(at.Scope)))
+			word.Text, plain(at.context.Scope)))
 	}
 }
 
 // key judges a key: a variable read, a command written in a scope it does not run in where vanilla
 // never writes it there, and a key the position's sources call required that its block leaves out.
-func (judge *judge) key(at *schema.Placement, assign *jomini.Assignment) {
+func (judge *judge) key(at step, assign *jomini.Assignment) {
 	sess, s := judge.file.sess, judge.file.sess.Install.Schema
 	judge.variable(at, &assign.Key)
-	if command := at.Command; command != nil && at.Scope != "" && len(command.Scopes) > 0 &&
-		!slices.Contains(command.Scopes, at.Scope) && !sess.Install.Index.WritesInScope(assign.Key.Text, at.Scope) &&
-		s.MayAccuse(schema.CheckCommand, at.Position, nil) {
+	if command := at.command(s); command != nil && at.context.Scope != "" && len(command.Scopes) > 0 &&
+		!slices.Contains(command.Scopes, at.context.Scope) && !sess.Install.Index.WritesInScope(assign.Key.Text, at.context.Scope) &&
+		s.MayAccuse(schema.CheckCommand, at.inner.Position(), nil) {
 		runs := make([]string, len(command.Scopes))
 		for i, scope := range command.Scopes {
 			runs[i] = plain(scope)
 		}
 		judge.report(assign.Key.Range, 2, "wrong-scope", fmt.Sprintf("%s runs on %s, but this block is %s",
-			assign.Key.Text, strings.Join(runs, " or "), plain(at.Scope)))
+			assign.Key.Text, strings.Join(runs, " or "), plain(at.context.Scope)))
 	}
 
 	// an entry written with a mode word the registry lists (INJECT:) adds to another and may leave
 	// keys out
 	block := jomini.BlockOf(assign.Value)
-	if mode, _ := sess.Game.Mode(assign.Key.Text); block == nil || at.Position == nil || mode != "" {
+	if mode, _ := sess.Game.Mode(assign.Key.Text); block == nil || at.inner.Position() == nil || mode != "" {
 		return
 	}
 	written := map[*schema.Position]bool{}
 	for _, statement := range block.Statements {
 		if inner, isInner := statement.(*jomini.Assignment); isInner {
-			written[at.Position.Child(inner.Key.Text)] = true
+			written[at.inner.Position().Child(inner.Key.Text)] = true
 		}
 	}
-	for _, name := range slices.Sorted(maps.Keys(at.Position.Children)) {
-		if child := at.Position.Children[name]; !written[child] && s.MayAccuse(schema.CheckRequired, child, at.Position) {
+	for _, name := range slices.Sorted(maps.Keys(at.inner.Position().Children)) {
+		if child := at.inner.Position().Children[name]; !written[child] && s.MayAccuse(schema.CheckRequired, child, at.inner.Position()) {
 			judge.report(assign.Key.Range, 2, "missing-key",
 				fmt.Sprintf("%s leaves out %s, which the game's docs say it must write", assign.Key.Text, name))
 		}
@@ -205,14 +206,14 @@ func (judge *judge) key(at *schema.Placement, assign *jomini.Assignment) {
 
 // value judges a word's variable read, and the word against its position's declared list or form;
 // a constant or parameter is not yet its word, and a word that reads a value stands for a number.
-func (judge *judge) value(at *schema.Placement, scalar *jomini.Scalar) {
+func (judge *judge) value(at step, scalar *jomini.Scalar) {
 	judge.variable(at, scalar)
-	if at.Position == nil {
+	if at.inner.Position() == nil {
 		return
 	}
-	judge.written[scalar.Range] = at.Position
+	judge.written[scalar.Range] = at.inner.Position()
 	sess := judge.file.sess
-	claim, text := at.Position.Value.Value, scalar.Text
+	claim, text := at.inner.Position().Value.Value, scalar.Text
 	if _, constant := jomini.Constant(text); constant || len(jomini.Interpolations(text)) > 0 {
 		return
 	}
@@ -223,7 +224,7 @@ func (judge *judge) value(at *schema.Placement, scalar *jomini.Scalar) {
 	case claim.Type == schema.ValueNumber:
 		// a script value, a declared command (earnings) or a link (var:x, root.gold) reads a value
 		if last := text[strings.LastIndex(text, ".")+1:]; scalar.Quoted || jomini.Literal(text) != jomini.LitNumber {
-			_, valued := index.Resolve(sess.Install.Schema, sess.Indexes(), schema.Occurrence{Caller: game.Shapes[game.ShapeValue].Calls, ID: text}, "")
+			_, valued := index.Resolve(sess.Install.Schema, sess.Indexes(), schema.Occurrence{Caller: game.Shapes[game.ShapeValue].Caller, ID: text}, "")
 			_, command := sess.Install.Schema.Commands[last]
 			wrong = !valued && !command && !strings.Contains(last, ":")
 		}
@@ -234,9 +235,9 @@ func (judge *judge) value(at *schema.Placement, scalar *jomini.Scalar) {
 	case len(claim.Choices) > 0:
 		code, wrong = "wrong-declared-value", true
 	}
-	if wrong && sess.Install.Schema.MayAccuse(schema.CheckValue, at.Position, nil) {
+	if wrong && sess.Install.Schema.MayAccuse(schema.CheckValue, at.inner.Position(), nil) {
 		judge.report(scalar.Range, 2, code, fmt.Sprintf("%s is not allowed here; this key takes %s",
-			text, strings.Join(takes(at.Position), ", ")))
+			text, strings.Join(takes(at.inner.Position()), ", ")))
 	}
 }
 

@@ -16,19 +16,17 @@ in one row, never as a branch in a reader.
 | Table | Says | Read by |
 |---|---|---|
 | `Shape` | the kinds of block: fields, triggers, effects, arguments, value, description, unknown, setup (a history or start block: its fields, then effects), widget (GUI) | everything |
-| `Shapes` (`ShapeRule`) | per kind: the order a key's readings are tried (`Step`), the word its calls resolve by, the commands it holds | the walker, completion |
+| `Shapes` (`ShapeRule`) | per shape: the key rules it tries in order, the word its calls resolve by, the commands it allows | the walker, completion |
+| `KeyRule`, `KeyRules` (`KeyRuleRow`: `Where`, `HoldsFrom`, `ScopeVerb`) | the ten ways a key can be read, and for each where its block reads, what decides what the block holds, and how its scope follows; whether a rule fits is the walker's test | the walker |
 | `Kinds`, `KindWords` | what a declared command is (effect, trigger, link) and the dumps' word for each | dumps, hover |
 | `Contents`, `ContentsOrder` | what a command's own block holds, first rule that fits | the walker |
-| `Structurals` | keys with a fixed block kind inside a command: random_list's branches, switch's cases | the walker |
-| `ScopeRules` (`When`, `To`) | how the scope changes going into a block, first row that fits | the walker |
+| `Constructs` (`Construct`; `ConstructOf`, `ListIterator`, `IsOperator`, `AnyKey`) | the keys the language gives a fixed shape to and no dump declares: random_list's branches, switch's cases, the list iterators, a description's markers, trigger and leaf, a value block's operators, a widget's blocks; the first row that fits wins | the walker, the schema's stamps, completion, hover |
 | `Name`, `KeyNames`, `ValueNames` | what a key or a value word defines or refers to | the index |
 | `NameCommands`, `SavedScopes` | commands whose value makes or reads a script-made name (`save_scope_as`, `set_variable`, `has_variable`) | the index, the schema's prefixes |
-| `ListIterators` | the prefixes a scripted list is iterated by, and their block kind | the walker, the index |
-| `ValueOperators` | a value block's operators, and whether each takes a number | the walker, completion |
-| `DynamicDescription` | the shape of a dynamic description (`first_valid`, `triggered_desc`, `desc`) | the walker |
+| `DynamicDescription` | the words of a dynamic description (`first_valid`, `triggered_desc`, `desc`), as the pages read one; the walker reads them as construct rows | the event graph's detail, the walker's description test |
 | `Bools`, `Colors`, `GlobalType` | how yes/no, colors and data calls are written | the readers, hover |
 | `EventPortraits`, `OptionFlags` | the keys an event names its portraits with (by their last word, and the one that names the character), the yes-or-no words an option is marked with | the event graph's detail |
-| `Placeholders`, `DumpWords` | the block placeholders' last words and their kinds, the dumps' words the engine decides by (`Iterate through`, `none`/`all`) | the dump and doc readers |
+| `DumpWords` | the dumps' words the engine decides by (`Iterate through`, `none`/`all`) | the dump reader |
 | `MisspelledFolders` | folder names the game never reads | diagnostics |
 | `EntryMode`, `GameInfo.Mode` | the words before a definition's name (`REPLACE:`, `INJECT:`), what each does, and the split of one off a name | the entry detector, diagnostics, `index.Winner` |
 | `FileTypes` | how `.txt`, `.asset`, `.font` and `.gui` files name entries, the block kind their entries hold (`Body`) and the keys that name another entry (`Refs`: `using`, `layer`) | the entry detector, the index |

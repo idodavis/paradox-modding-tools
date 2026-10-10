@@ -346,7 +346,7 @@ func (schema *Schema) parseCommand(e dumpEntry, kind game.Kinds, ranked map[stri
 	command.Wild = command.Wild || e.fields["Command.Wild"] == yes
 
 	if claim := schema.valueFromTraits(command, name, e.fields["Command.Args.Value"]); claim.Kind != ExpectsUnknown || claim.Choices != nil {
-		SetFirst(&command.Args.Value, claim, SourceDumps)
+		command.Args.Value.Set(claim, SourceDumps)
 	}
 	if strings.TrimSpace(e.usage) != "" {
 		usages[name] = append(usages[name], e.usage)
@@ -474,7 +474,7 @@ func (schema *Schema) applyUsages(usages map[string][]string) {
 		command.Lists = command.Out == "" && strings.Contains(command.Blurb, game.DumpWords.Iterates)
 		// every block the usages write under the command holds arguments only: so does the command's
 		if blocks > 0 && plain == blocks {
-			SetFirst(&command.Args.Block, game.BlockArguments, SourceDumps)
+			command.Args.Block.Set(game.BlockArguments, SourceDumps)
 		}
 	}
 }

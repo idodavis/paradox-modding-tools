@@ -95,7 +95,7 @@ These are the terms of the language engine (`services/internal/lang/README.md`),
 | call | a key that is no command or link, naming an entry of a database whose registry row's `CalledIn` holds the block kind it is written in; resolved at query time | a scripted effect, a scripted trigger |
 | dumps | everything the game declares about its language, from `script_docs` and `dump_data_types` | the `logs` and `docs` dumps |
 | docs | the prose the install ships beside its script | `_traits.info`, `readme.txt`, `*.md` |
-| claim | a fact a source states at a position or about a command, with who stated it (`schema.Said`); the first source in trust order (dumps, docs, wiki) to state it keeps it | `Required` optional, `Scope` character |
+| claim | a fact a source states at a position or about a command, with who stated it (`schema.Said`); the highest-ranked source to state it keeps it (`Claim.Set`) | `Required` optional, `Scope` character |
 | declared / evidence | stated by a source (the dumps, the docs, the wiki, the registry) / written in vanilla's files. A name says which; only a claim of the dumps, docs or wiki lets a diagnostic accuse (`schema.Speaks`); the registry's classify | |
 | evidence | what vanilla writes at a position (`schema.Seen`): how many of the parent's blocks hold it, and the forms and values written, with counts. Never a claim, though where no source types a value its words do | `Seen.In`, `Seen.Values` |
 | entry mode | a word before a definition's name that says how it combines with an earlier one | Victoria 3 and EU5 `REPLACE:name`, `INJECT:name` |

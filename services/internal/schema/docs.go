@@ -5,7 +5,6 @@
 package schema
 
 import (
-	"cmp"
 	"context"
 	"maps"
 	"path"
@@ -32,9 +31,8 @@ type example struct {
 
 // parseDocsAndExamples normalizes and parses each doc and wiki example once, with its database. A doc is
 // read into its own folder's database, or the folder beside it that it is named after
-// (history/_characters.info); one under a row above its folder is not read. The wiki's examples follow the
-// docs', so a claim keeps the first source in trust order. A sanitized wiki page keeps no version label, so
-// the wiki is never stale.
+// (history/_characters.info); one under a row above its folder is not read. A sanitized wiki page keeps no
+// version label, so the wiki is never stale.
 func (schema *Schema) parseDocsAndExamples(ctx context.Context, input Input) (examples []example, err error) {
 	for _, file := range input.Install {
 		if err := ctx.Err(); err != nil {
@@ -158,22 +156,22 @@ var phraseRules = []phraseRule{
 	// that ends its clause
 	{regexp.MustCompile(`(?i)\bdefaults?(?: is| to| =|:) ['"\x60]?([^\s,;()'"\x60]+?)['"\x60]?` +
 		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), false, func(_ *Schema, found *Position, match []string, from Source) {
-		SetFirst(&found.Default, match[1], from)
+		found.Default.Set(match[1], from)
 	}},
 	{regexp.MustCompile(`(?i)\bdefault ((?:yes|no|none)\b|-?\d+(?:\.\d+)?|[A-Za-z]\w*(?:[._]\w+)+)` +
 		`(?:[,;)]|\.(?:\s|$)|\s+-\s|$)`), false, func(_ *Schema, found *Position, match []string, from Source) {
-		SetFirst(&found.Default, match[1], from)
+		found.Default.Set(match[1], from)
 	}},
 	{regexp.MustCompile(`(?i)\boptional\b`), false, func(_ *Schema, found *Position, _ []string, from Source) {
-		SetFirst(&found.Required, Requirement{Level: LevelOptional}, from)
+		found.Required.Set(Requirement{Level: LevelOptional}, from)
 	}},
 	{regexp.MustCompile(`(?i)^required (?:if|when) (.+)`), false, func(_ *Schema, found *Position, match []string,
 		from Source) {
-		SetFirst(&found.Required, Requirement{Level: LevelConditional, When: match[1]}, from)
+		found.Required.Set(Requirement{Level: LevelConditional, When: match[1]}, from)
 	}},
 	{regexp.MustCompile(`(?i)^required(?:[.!]| field\b|$)|\bthis field is required\b`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Required, Requirement{Level: LevelAlways}, from)
+			found.Required.Set(Requirement{Level: LevelAlways}, from)
 		}},
 	// root = x: the root scope is the first word of x that is a scope the dumps declare
 	{regexp.MustCompile(`(?i)^root (?:=|-) (.+)`), false, func(s *Schema, found *Position, match []string,
@@ -182,7 +180,7 @@ var phraseRules = []phraseRule{
 			return !unicode.IsLetter(char) && !unicode.IsDigit(char) && char != '_'
 		}) {
 			if _, declared := s.Scopes[word]; declared {
-				SetFirst(&found.Scope, word, from)
+				found.Scope.Set(word, from)
 				return
 			}
 		}
@@ -197,48 +195,48 @@ var phraseRules = []phraseRule{
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:(?:scripted )?(?:int|integer|int32|int31|num|number|float|double|` +
 		`fixed[ _]point)|scripted? value|script_value|0\.0-1\.0)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Kind: ExpectsNumber}, from)
+			found.Value.Set(Expected{Kind: ExpectsNumber}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:bool(?:ean)?|yes/no)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Kind: ExpectsBool}, from)
+			found.Value.Set(Expected{Kind: ExpectsBool}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:date)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Kind: ExpectsDate}, from)
+			found.Value.Set(Expected{Kind: ExpectsDate}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:string|name|text)(?:\s*\)|"?$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Kind: ExpectsString}, from)
+			found.Value.Set(Expected{Kind: ExpectsString}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:scope)(?:\s*\)|"?$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Kind: ExpectsScope}, from)
+			found.Value.Set(Expected{Kind: ExpectsScope}, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:loc key|localization[ _]key)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Value, Expected{Kind: ExpectsLoc}, from)
+			found.Value.Set(Expected{Kind: ExpectsLoc}, from)
 		}},
 	// event ID names the database whose registry row is Events; on action (name) the OnActions one
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:(event[ _]id)|on[ _]action(?: name)?)(?:[^\w/]|$)`), false,
 		func(s *Schema, found *Position, match []string, from Source) {
 			for name, database := range s.Databases {
 				if match[1] != "" && database.Row.Events || match[1] == "" && database.Row.OnActions {
-					SetFirst(&found.Value, Expected{Kind: ExpectsReference, Database: name}, from)
+					found.Value.Set(Expected{Kind: ExpectsReference, Database: name}, from)
 				}
 			}
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:triggers?)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Block, game.BlockTriggers, from)
+			found.Block.Set(game.BlockTriggers, from)
 		}},
 	{regexp.MustCompile(`(?:^"?|\(\s*)(?i:effects?)(?:[^\w/]|$)`), false,
 		func(_ *Schema, found *Position, _ []string, from Source) {
-			SetFirst(&found.Block, game.BlockEffects, from)
+			found.Block.Set(game.BlockEffects, from)
 		}},
 	// "path/to/file": one quoted word with a slash
 	{regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), false, func(_ *Schema, found *Position, _ []string, from Source) {
-		SetFirst(&found.Value, Expected{Kind: ExpectsFile}, from)
+		found.Value.Set(Expected{Kind: ExpectsFile}, from)
 	}},
 	// - item: blurb and item - blurb: one word per line
 	{regexp.MustCompile(`^(?:[-*]\s+([\w.]+):\s+[^\s<]|(?:[-*]\s+)?([\w.]+) - \S)`), true,
@@ -529,12 +527,12 @@ func (doc doc) claimsOf(statement jomini.Statement) (found Position) {
 		}
 	}
 	if block != nil && found.Block.Source == SourceNone && !doc.usage {
-		SetFirst(&found.Value, Expected{Kind: ExpectsBlock}, doc.from)
+		found.Value.Set(Expected{Kind: ExpectsBlock}, doc.from)
 	}
 	slices.Sort(found.Value.Value.Choices)
 	found.Value.Value.Choices = slices.Compact(found.Value.Value.Choices)
 	if len(blurb) > 0 {
-		SetFirst(&found.Blurb, strings.Join(blurb, " "), doc.from)
+		found.Blurb.Set(strings.Join(blurb, " "), doc.from)
 	}
 	return found
 }
@@ -551,7 +549,7 @@ func (doc doc) claimScalar(found *Position, statement jomini.Statement, scalar *
 		blurb = doc.claimValue(found, scalar, written)
 	}
 	if _, isAssign := statement.(*jomini.Assignment); isAssign && doc.usage && found.Block.Source != SourceNone {
-		SetFirst(&found.Scope, "", doc.from)
+		found.Scope.Set("", doc.from)
 	}
 	return blurb
 }
@@ -562,7 +560,7 @@ func (doc doc) claimPlaceholder(found *Position, word string) {
 		return
 	}
 	if named := doc.schema.DatabaseNamed(word); named != "" {
-		SetFirst(&found.Value, Expected{Kind: ExpectsReference, Database: named}, doc.from)
+		found.Value.Set(Expected{Kind: ExpectsReference, Database: named}, doc.from)
 	}
 }
 
@@ -576,7 +574,7 @@ func (doc doc) claimValue(found *Position, scalar *jomini.Scalar, written string
 	case !doc.usage:
 		literals := map[Shapes]ExpectedKind{ShapeNumber: ExpectsNumber, ShapeBool: ExpectsBool, ShapeDate: ExpectsDate}
 		if kind, literal := literals[shapeOf(scalar)]; literal {
-			SetFirst(&found.Value, Expected{Kind: kind}, doc.from)
+			found.Value.Set(Expected{Kind: kind}, doc.from)
 		}
 	}
 	return nil
@@ -594,23 +592,25 @@ func (doc doc) claimPlaceholders(found *Position, block *jomini.Block) {
 		if isList && isScalar && strings.HasPrefix(scalar.Text, "<") {
 			last := strings.TrimSuffix(scalar.Text[strings.LastIndexAny(scalar.Text, "<_ ")+1:], ">")
 			if kind, named := game.Placeholders[strings.ToLower(last)]; named {
-				SetFirst(&found.Block, kind, doc.from)
+				found.Block.Set(kind, doc.from)
 			}
 		}
 	}
 }
 
-// store writes a statement's claims into a position, each only where the position's claim is still empty,
-// and marks the position declared by this source.
+// store writes a statement's claims into a position, each where this source outranks the claim's, and marks
+// the position declared by the highest-ranked source that writes it.
 func (doc doc) store(position *Position, statement jomini.Statement) {
 	found := doc.claimsOf(statement)
-	position.DeclaredBy = cmp.Or(position.DeclaredBy, doc.from)
-	SetFirst(&position.Value, found.Value.Value, found.Value.Source)
-	SetFirst(&position.Block, found.Block.Value, found.Block.Source)
-	SetFirst(&position.Scope, found.Scope.Value, found.Scope.Source)
-	SetFirst(&position.Required, found.Required.Value, found.Required.Source)
-	SetFirst(&position.Default, found.Default.Value, found.Default.Source)
-	SetFirst(&position.Blurb, found.Blurb.Value, found.Blurb.Source)
+	if position.DeclaredBy == SourceNone || doc.from < position.DeclaredBy {
+		position.DeclaredBy = doc.from
+	}
+	position.Value.Set(found.Value.Value, found.Value.Source)
+	position.Block.Set(found.Block.Value, found.Block.Source)
+	position.Scope.Set(found.Scope.Value, found.Scope.Source)
+	position.Required.Set(found.Required.Value, found.Required.Source)
+	position.Default.Set(found.Default.Value, found.Default.Source)
+	position.Blurb.Set(found.Blurb.Value, found.Blurb.Source)
 }
 
 // docWalk is one walk of a doc into a database's tree: the doc, the keys seen under each position, and the

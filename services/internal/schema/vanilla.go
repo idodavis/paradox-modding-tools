@@ -194,8 +194,7 @@ func countValue(value jomini.Value, at *Position) {
 
 // inferTypesAndPrefixes gives positions the type vanilla's words share and each link prefix the database of
 // the names written after it. A prefix names the database of the names script makes (the name commands'
-// first), then the one vanilla's words show, then the one its own name names. It comes before any docs claim,
-// which fill only what is left.
+// first), then the one vanilla's words show, then the one its own name names.
 func (schema *Schema) inferTypesAndPrefixes(names map[string]map[string]bool, locKeys map[string]bool) {
 	schema.Prefixes = map[string]string{}
 	for _, row := range game.NameCommands {
@@ -302,11 +301,11 @@ func (typing *typing) visit(position *Position, inGUI bool) {
 			typing.keepAfterPrefixes(word)
 		}
 	}
-	if len(words) > 0 && position.Value.Source == SourceNone {
+	if len(words) > 0 {
 		if database := typing.one(words, inGUI); database != "" {
-			SetFirst(&position.Value, Expected{Kind: ExpectsReference, Database: database}, SourceVanilla)
+			position.Value.Set(Expected{Kind: ExpectsReference, Database: database}, SourceVanilla)
 		} else if !slices.ContainsFunc(words, func(word string) bool { return !typing.locKeys[word] }) {
-			SetFirst(&position.Value, Expected{Kind: ExpectsLoc}, SourceVanilla)
+			position.Value.Set(Expected{Kind: ExpectsLoc}, SourceVanilla)
 		}
 	}
 	for _, child := range position.Children {

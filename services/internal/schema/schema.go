@@ -12,11 +12,11 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// Source says who stated a claim. The order is the trust order: a source writes a claim only where every
-// earlier one left it empty (SetFirst).
+// Source says who stated a claim; a lower value outranks a higher one, and a claim keeps its highest-ranked
+// source (Set).
 type Source uint8
 
-// The sources, in trust order.
+// The sources, by rank: each outranks the ones after it.
 const (
 	SourceNone     Source = iota
 	SourceRegistry        // the game's rows and the language rules: they classify and never accuse
@@ -129,7 +129,7 @@ type Position struct {
 	Required   Claim[Requirement]
 	Default    Claim[string]
 	Blurb      Claim[string]
-	DeclaredBy Source // the first declared source that writes the position: the dumps anywhere, the docs and wiki only where vanilla writes it too
+	DeclaredBy Source // the highest-ranked declared source that writes the position: the dumps anywhere, the docs and wiki only where vanilla writes it too
 	Vanilla    Vanilla
 }
 
@@ -274,9 +274,10 @@ func positionName(name string) string {
 	return name
 }
 
-// SetFirst writes a claim only while it is empty, so a source writes only what an earlier one left unsaid.
-func SetFirst[T any](claim *Claim[T], value T, from Source) {
-	if claim.Source == SourceNone {
+// Set writes a claim when from outranks the source it has: any source outranks an empty claim's none, a lower
+// rank a higher one, and of two equal the first stands; so the order the sources are applied in is irrelevant.
+func (claim *Claim[T]) Set(value T, from Source) {
+	if from != SourceNone && (claim.Source == SourceNone || from < claim.Source) {
 		claim.Value, claim.Source = value, from
 	}
 }

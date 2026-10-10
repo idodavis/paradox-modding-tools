@@ -1,5 +1,5 @@
-// build.go is the pipeline: Build makes one game version's schema in seven steps, in trust order. Step 1,
-// declaring the databases, lives here.
+// build.go is the pipeline: Build makes one game version's schema in seven steps. Step 1, declaring the
+// databases, lives here.
 
 package schema
 
@@ -30,11 +30,12 @@ type Input struct {
 	Shipped       *Schema             // a shipped dump part, taken in place of reading the dump files
 }
 
-// Build reads every source into the schema, in trust order: the databases the install holds, the dumps, the
-// docs' and wiki's key names, vanilla and the value types it gives, then the docs' and wiki's claims. A claim
-// keeps the first source that states it (SetFirst). No two positions share a subtree, since the cache writes
-// a shared pointer once per reference (a ScriptedEntry names its database). Every string written into a map
-// or a position is cloned, so the schema never pins a file's text.
+// Build reads every source into the schema. A claim keeps its highest-ranked source (Claim.Set), so the steps
+// follow their data, not the ranks: the databases first, since every step reads them; the docs' key names
+// before vanilla, for the entry detector; vanilla whole before its types are inferred; the docs' claims after
+// vanilla, since they merge only where vanilla writes. No two positions share a subtree, since the cache
+// writes a shared pointer once per reference (a ScriptedEntry names its database). Every string written into
+// a map or a position is cloned, so the schema never pins a file's text.
 func Build(ctx context.Context, input Input) (*Schema, error) {
 	info := game.Get(input.Game)
 	if info == nil {
@@ -78,13 +79,13 @@ func DatabaseNames(input Input) []string {
 // entry is; each of the row's Refs names the database's entries.
 func (schema *Schema) declare(name string, row game.Folder) {
 	database := &Database{Name: name, Entry: &Position{}, Row: row, Fields: map[string]bool{}}
-	SetFirst(&database.Entry.Block, cmp.Or(row.Body, game.BlockFields), SourceRegistry)
+	database.Entry.Block.Set(cmp.Or(row.Body, game.BlockFields), SourceRegistry)
 	for _, at := range row.Refs {
 		position := database.Entry
 		for step := range strings.SplitSeq(at, "/") {
 			position = position.EnsureChild(step)
 		}
-		SetFirst(&position.Value, Expected{Kind: ExpectsReference, Database: name}, SourceRegistry)
+		position.Value.Set(Expected{Kind: ExpectsReference, Database: name}, SourceRegistry)
 	}
 	schema.Databases[name] = database
 }

@@ -362,7 +362,7 @@ func descriptionMeaning(in BlockContext, name string, made func() *Position, cre
 	case name == shape.Trigger:
 		found.position = made()
 		if create {
-			SetFirst(&found.position.Block, game.BlockTriggers, SourceRegistry)
+			found.position.Block.Set(game.BlockTriggers, SourceRegistry)
 		}
 	case name == shape.Leaf:
 		found.position, found.leaf = in.Bound, true

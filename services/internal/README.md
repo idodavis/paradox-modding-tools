@@ -9,7 +9,7 @@ the overview and the map. The whole backend, its services and the paths through 
 
 - **Walk once, parse once.** Every install and workspace file is listed and read by its kind:
   script, localization, docs, dumps. A file is parsed once and walked once per stage.
-- **Each fact once, from sources in trust order: dumps, vanilla, docs, wiki.** The dumps declare
+- **Each fact once, from ranked sources: dumps, vanilla, docs, wiki.** The dumps declare
   commands, scopes, links, modifiers and data types. Vanilla is evidence: which positions exist and
   what is written there. The docs say what is optional, required or defaulted. The wiki backs up
   where the docs and dumps are missing.
@@ -31,7 +31,7 @@ LOCALIZATION (english and the workspace language)
 
 SCHEMA (when the game version or a dump file changes; the generator runs the same code)
   install ── parse ── walk (observe) ─┐
-  docs, wiki <pre> ── normalize ── parse ── walk (join) ──► one position tree, in trust order
+  docs, wiki <pre> ── normalize ── parse ── walk (join) ──► one position tree, each claim by rank
   dumps ── label table; usages ── walk (usage) ───┘
 
 INDEX (the install's from the cache; the mods on every launch; one mod file on save)

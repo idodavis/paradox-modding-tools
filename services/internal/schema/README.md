@@ -4,8 +4,8 @@ What the sources state about one game version's script: each database's position
 vanilla's evidence, each command the dumps declare, and the one walker every reader of script uses. It decides
 whether a claim may accuse a user's file (`MayAccuse`) and never looks at a mod.
 
-Read `build.go` first. `Build` makes one game version's schema in seven steps, in trust order, and each step is a
-function named for it, in the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` in
+Read `build.go` first. `Build` makes one game version's schema in seven steps, each a function named for it, in
+the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` in
 `dumps.go`, `parseDocsAndExamples`, `collectDocFields` and `applyExamples` in `docs.go`, `countVanilla` and
 `inferTypesAndPrefixes` in `vanilla.go`.
 
@@ -23,9 +23,10 @@ function named for it, in the file named for the step: `declareDatabases` in `bu
 
 ## Sources, claims and accusing
 
-Sources write in trust order: the registry (the game's rows), the dumps, vanilla, the docs, the wiki. A
-claim keeps the first source that states it (`SetFirst`), so a later source fills only what an earlier one
-left empty. The dumps, docs and wiki declare; vanilla gives evidence (`Position.Vanilla`: how often and in
+The sources are ranked: the registry (the game's rows), the dumps, vanilla, the docs, the wiki. A claim keeps
+the highest-ranked source that states it (`Claim.Set`), whatever order the sources are applied in, so a
+lower-ranked source fills only what a higher one leaves empty; the steps of `Build` follow their data, not the
+ranks. The dumps, docs and wiki declare; vanilla gives evidence (`Position.Vanilla`: how often and in
 what shapes it writes a position) and a value type only where nothing declares one. `MayAccuse` is the one
 rule for when a claim may accuse a user's code: a declared source states it, that source is not stale, and
 vanilla's evidence at the position does not contradict it; a docs or wiki claim, and any declared word list,

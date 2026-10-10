@@ -59,7 +59,7 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 		return nil, err
 	}
 
-	// 5: each other file parsed and walked once; the localization's occurrences were collected in step 3, so
+	// 5: each other file parsed and walked once; the localization's occurrences came with the localization, so
 	// no loc file is read again
 	index := &Index{Files: input.Install, Roots: roots}
 	index.Rebuild()

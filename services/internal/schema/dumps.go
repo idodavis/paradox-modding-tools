@@ -1,4 +1,4 @@
-// dumps.go is step 2: the console dumps, or the shipped backup, parsed into commands, scopes, saved scopes,
+// dumps.go is the console dumps, or the shipped backup, parsed into commands, scopes, saved scopes,
 // modifiers, on_actions, data types and custom loc; the usages merged into each command's arguments.
 
 package schema

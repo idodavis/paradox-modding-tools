@@ -1,4 +1,4 @@
-// windowservice.go opens the app's other windows (O-R24, the MultiWindow board): a page, an editor group, the
+// windowservice.go opens the app's other windows: a page, an editor group, the
 // game's files or the panel, each the frontend at its own route. The windows tell each other what they hold through
 // the events below; Go opens, shows and closes them (the runtime acts only on the window that calls it: Wails sets a
 // call's window to its caller's), and holds a closing one until it has handed its tabs back.

@@ -1,4 +1,4 @@
-// gitservice.go runs the git installed on this machine for the IDE's Source control view (O-R9): one
+// gitservice.go runs the git installed on this machine for the IDE's Source control view: one
 // repository at a time, each command's output told to the frontend's Git output.
 
 package services

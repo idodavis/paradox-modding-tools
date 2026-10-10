@@ -1,6 +1,6 @@
 // docs.go is the documentation dialect: parseDocScript, the one reader of docscript that the install's docs, the
-// wiki's examples and the dumps' usages share; step 4, the docs and examples parsed to trees with every key they
-// write noted for the entry detector; step 7, their claims merged into the entry trees, after vanilla.
+// wiki's examples and the dumps' usages share; the docs and examples parsed to trees with every key they write
+// noted for the entry detector; their claims merged into the entry trees, after vanilla.
 
 package schema
 
@@ -475,7 +475,7 @@ func (parse *docParse) add(node *DocNode) *DocNode {
 	return node
 }
 
-// parseDocs is step 4: each prose file of the install, read into its own folder's database, or the folder
+// parseDocs is each prose file of the install, read into its own folder's database, or the folder
 // beside it that it is named after (history/_characters.info); one under a row above its folder is not read,
 // nor one over a megabyte. A Markdown heading (a # at the start of a .md line) is no comment. Then the wiki's
 // examples, by the declared names. Every key a tree writes is noted in its database's Fields, for the entry
@@ -646,7 +646,7 @@ func (schema *Schema) claimPhrases(claims *Claims, text string, source Source) (
 // isBlurb reports whether what the table left of a text still has words in it: prose, kept as a blurb.
 func isBlurb(rest string) bool { return strings.ContainsFunc(rest, unicode.IsLetter) }
 
-// mergeDocs is step 7: the docs' and wiki's claims merged into the databases they document, after vanilla.
+// mergeDocs is the docs' and wiki's claims merged into the databases they document, after vanilla.
 func (schema *Schema) mergeDocs(docs []doc) {
 	for _, document := range docs {
 		in := schema.EntryContext(schema.Databases[document.database], "")

@@ -93,7 +93,7 @@ type UploadFiles struct {
 }
 
 // SteamCompare is a mod in the workspace against the copy Steam has: the snapshot PMT kept at its
-// last upload, or a download from Steam (O-R14).
+// last upload, or a download from Steam.
 type SteamCompare struct {
 	Item       string             `json:"item"`       // the Workshop id; "" when the mod is not published
 	From       string             `json:"from"`       // "snapshot", "download", or "" with neither

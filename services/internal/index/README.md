@@ -11,7 +11,7 @@ file again; each step is a function named for it, in the file that holds its hal
 | file | holds |
 |---|---|
 | `scan.go` | the pipeline: `Request`, `Install`, `Mod`; `Scan`, `ScanMods`, `Reindex`; the steps only these call: `inventoryOf`, `localizationOf`, `schemaOf`, `schemaInput`, `BuildSchema` |
-| `collect.go` | step 5: `Index.collectFiles`, `collectFile`, `Collect`, `collector.collect`, `scopePair`, `collectLoc`, `conceptReferences` |
+| `collect.go` | `Index.collectFiles`, `collectFile`, `Collect`, `collector.collect`, `scopePair`, `collectLoc`, `conceptReferences` |
 | `store.go` | what a scan keeps: `Occurrence` (the stored form), `At` (a handle), the symbol `table`s, `Index`; `Rebuild`, `add`, `Drop`, `At`, `InFile`, `Forget`, `WritesInScope`, `LocKeys`, `Repeated`; the handle's accessors `Occurrence`, `File`, `Entry`, `Text`, `Language` |
 | `lookup.go` | the store's questions in the game's load order: `Lookup`, `FileAt`, `Loaded`, `RefsInside`, `Names`, `Resolve`, `RefsTo`, `Winner`, `Fires`, `Runs`, `Scripted` |
 | `cache.go` | steps 1 and 6: `fromCache`, `SaveInstall`, `LoadInstall`, `CachedAt`, `DropInstall` and the cache file's name |

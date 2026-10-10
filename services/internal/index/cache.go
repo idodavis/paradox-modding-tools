@@ -1,4 +1,4 @@
-// cache.go is step 1 and step 6: the store loaded again while nothing changed, and saved as one file.
+// cache.go is the store loaded again while nothing changed, and saved as one file.
 // The file is named so that any change to the engine, the install or the dumps is another file.
 
 package index

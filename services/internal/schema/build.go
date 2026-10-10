@@ -1,4 +1,4 @@
-// build.go is the pipeline: Build makes one game version's schema in seven steps. Step 1, declaring the databases,
+// build.go is the pipeline: Build makes one game version's schema, each source in turn. Declaring the databases
 // lives here.
 
 package schema
@@ -62,7 +62,7 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	return s, nil
 }
 
-// stampConstructs is step 3: each construct row that names a command claims, for the registry, the shape the
+// stampConstructs is each construct row that names a command claiming, for the registry, the shape the
 // key's block holds at the position under that command's arguments (random_list's <number> branches hold
 // effects, switch's <any> cases hold the enclosing shape), made if missing.
 func (schema *Schema) stampConstructs() {

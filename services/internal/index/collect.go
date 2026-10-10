@@ -1,4 +1,4 @@
-// collect.go is step 5: one file's occurrences from the schema's walk, for the install's files after the
+// collect.go is one file's occurrences from the schema's walk, for the install's files after the
 // schema is built, for a mod file and for an open file; and the worker pool that collects every file of an
 // index.
 

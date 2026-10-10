@@ -139,7 +139,8 @@ var docPhrases = []docPhrase{
 	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:(event[ _]id)|on[ _]action(?: name)?)(?:[^\w/]|$)`),
 		claim: func(schema *Schema, claims *Claims, match []string, source Source) {
 			for name, database := range schema.Databases {
-				if match[1] != "" && database.Row.Events || match[1] == "" && database.Row.OnActions {
+				purpose := database.Descriptor.Purpose
+				if match[1] != "" && purpose == game.PurposeEvents || match[1] == "" && purpose == game.PurposeOnActions {
 					claims.Value.Set(Expected{Type: ValueReference, Database: name}, source)
 				}
 			}
@@ -489,7 +490,7 @@ func (schema *Schema) parseDocs(ctx context.Context, input Input) (docs []doc, e
 		}
 		at, name := schema.folder(file.Rel)
 		stem := strings.TrimPrefix(strings.TrimSuffix(path.Base(file.Rel), path.Ext(file.Rel)), "_")
-		if beside := NameOf(path.Join(path.Dir(file.Rel), stem)); schema.Databases[beside] != nil {
+		if beside := game.NameOf(path.Join(path.Dir(file.Rel), stem)); schema.Databases[beside] != nil {
 			at, name = path.Dir(file.Rel), beside
 		}
 		if schema.Databases[name] == nil || at != path.Dir(file.Rel) {
@@ -511,23 +512,43 @@ func (schema *Schema) parseDocs(ctx context.Context, input Input) (docs []doc, e
 	}
 	schema.Sources[SourceDocs] = SourceState{Origin: "install", WrittenAt: input.Updated}
 
-	schema.Sources[SourceWiki] = SourceState{Origin: "none"}
-	if !input.WikiWritten.IsZero() {
-		schema.Sources[SourceWiki] = SourceState{Origin: "yours", WrittenAt: input.WikiWritten}
+	wiki, err := schema.parseWiki(ctx, input)
+	if err != nil {
+		return nil, err
 	}
-	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
+	docs = append(docs, wiki...)
+	for _, document := range docs {
+		noteFields(document.tree, schema.Databases[document.database].Fields)
+	}
+	return docs, nil
+}
+
+// parseWiki is the wiki's script examples, asked for by the names of the databases declared so far and parsed
+// into their databases; a history database takes none. A sanitized wiki page keeps no version label, so the
+// wiki is never stale.
+func (schema *Schema) parseWiki(ctx context.Context, input Input) (docs []doc, err error) {
+	schema.Sources[SourceWiki] = SourceState{Origin: "none"}
+	if input.Wiki == nil {
+		return nil, nil
+	}
+	names := slices.Sorted(maps.Keys(schema.Databases))
+	examples, written, err := input.Wiki(names)
+	if err != nil {
+		return nil, err
+	}
+	if !written.IsZero() {
+		schema.Sources[SourceWiki] = SourceState{Origin: "yours", WrittenAt: written}
+	}
+	for _, name := range names {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if schema.Databases[name].Row.History {
+		if schema.Databases[name].Descriptor.Purpose == game.PurposeHistory {
 			continue
 		}
-		for _, text := range input.WikiExamples[name] {
+		for _, text := range examples[name] {
 			docs = append(docs, doc{name, parseDocScript(strings.Split(text, "\n")), SourceWiki})
 		}
-	}
-	for _, document := range docs {
-		noteFields(document.tree, schema.Databases[document.database].Fields)
 	}
 	return docs, nil
 }

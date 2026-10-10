@@ -125,7 +125,7 @@ func (walk *fileWalk) facts(context, inner Context, statement jomini.Statement, 
 	}
 	if context.Entry >= 0 {
 		entry := walk.entries[context.Entry]
-		facts.isEntry, facts.entryID = entry.Statement == statement, entry.ID
+		facts.isEntry, facts.entryID = inner.Defines, entry.ID
 		facts.database = walk.schema.Databases[entry.Database]
 		facts.atEntry = facts.database != nil && context.At == facts.database.Entry
 	}
@@ -179,8 +179,8 @@ func (walk *fileWalk) prefixReferences(occurrences []Occurrence, scalar *jomini.
 // call names a scripted entry by its calling word; a key in a call's block names the called entry's
 // parameter.
 func (walk *fileWalk) keyOccurrences(occurrences []Occurrence, scalar *jomini.Scalar, facts scalarFacts) []Occurrence {
-	if facts.isEntry && facts.database != nil && facts.database.Row.Of != "" {
-		occurrences = append(occurrences, Occurrence{Role: Refers, Database: facts.database.Row.Of, ID: facts.entryID, Range: scalar.Range})
+	if facts.isEntry && facts.database != nil && facts.database.Descriptor.Of != "" {
+		occurrences = append(occurrences, Occurrence{Role: Refers, Database: facts.database.Descriptor.Of, ID: facts.entryID, Range: scalar.Range})
 	}
 	if facts.reads && facts.list != "" {
 		occurrences = append(occurrences, Occurrence{Role: Refers, Database: walk.schema.Lists, ID: facts.list, Range: scalar.Range})
@@ -205,13 +205,13 @@ func (walk *fileWalk) valueOccurrence(occurrences []Occurrence, scalar *jomini.S
 		fileRef = game.FileTypes[walk.ext].Refs[facts.key.Text]
 	}
 	switch {
-	case facts.isEntry && facts.database != nil && facts.database.Row.Of != "":
-		occurrence.Database = facts.database.Row.Of
+	case facts.isEntry && facts.database != nil && facts.database.Descriptor.Of != "":
+		occurrence.Database = facts.database.Descriptor.Of
 	case fileRef != "":
 		occurrence.Database = walk.ext[1:] + "." + fileRef
 	case facts.makes && facts.stored != "":
 		occurrence.Role, occurrence.Database = Defines, facts.stored
-	case facts.key != nil && facts.database != nil && facts.atEntry && slices.Contains(facts.database.Row.Names, facts.key.Text):
+	case facts.key != nil && facts.database != nil && facts.atEntry && slices.Contains(facts.database.Descriptor.Names, facts.key.Text):
 		occurrence.Role, occurrence.IsName, occurrence.Database = Defines, true, facts.database.Name
 	case facts.stored != "":
 		occurrence.Database = facts.stored
@@ -225,7 +225,7 @@ func (walk *fileWalk) valueOccurrence(occurrences []Occurrence, scalar *jomini.S
 		(facts.claim.Type == ValueNumber || facts.position.Vanilla.Writes&WritesNumber != 0):
 		occurrence.Caller = game.Shapes[game.ShapeValue].Caller
 	case jomini.IsEventID(scalar.Text):
-		occurrence.Database = walk.events
+		occurrence.Database = walk.schema.Events
 	default:
 		return occurrences
 	}
@@ -238,7 +238,7 @@ func (walk *fileWalk) valueOccurrence(occurrences []Occurrence, scalar *jomini.S
 // parameterDefinitions defines each $NAME$ an entry of a folder with Parameters writes, at its
 // first use in the file.
 func (walk *fileWalk) parameterDefinitions(occurrences []Occurrence, scalar *jomini.Scalar, facts scalarFacts) []Occurrence {
-	if facts.database == nil || !facts.database.Row.Parameters {
+	if facts.database == nil || !facts.database.Descriptor.Parameters {
 		return occurrences
 	}
 	start := scalar.Range.Start

@@ -251,7 +251,7 @@ func (judge *judge) references(found []schema.Occurrence) {
 			continue
 		}
 		position, row := judge.written[ref.Range], s.Databases[ref.Database]
-		events := row != nil && row.Row.Events
+		events := row != nil && row.Descriptor.Purpose == game.PurposeEvents
 		written := strings.Trim(judge.file.text[ref.Range.Start:ref.Range.End], `"`)
 		linked := row != nil && strings.HasSuffix(written, ":"+ref.ID) // a prefix names its game database (title:k_x)
 		var code, message string
@@ -288,7 +288,7 @@ func (judge *judge) contradicted(position *schema.Position, ref schema.Occurrenc
 	sess := judge.file.sess
 	row := sess.Install.Schema.Databases[ref.Database]
 	for word := range position.Vanilla.Values {
-		if row != nil && row.Row.Events && !jomini.IsEventID(word) {
+		if row != nil && row.Descriptor.Purpose == game.PurposeEvents && !jomini.IsEventID(word) {
 			continue
 		}
 		if _, found := index.Resolve(sess.Install.Schema, sess.Indexes(), schema.Occurrence{Database: ref.Database, ID: word}, ""); !found {
@@ -329,7 +329,7 @@ func (judge *judge) definitions(found []schema.Occurrence) {
 				fmt.Sprintf("%s:%s does nothing: no %s is loaded before it", def.Mode, def.ID, def.ID))
 			continue
 		}
-		if !contends(def) || row.Row.OnActions || row.Row.History || sess.Install.Index.Repeated(def.Database) {
+		if !contends(def) || row.Descriptor.Purpose == game.PurposeOnActions || row.Descriptor.Purpose == game.PurposeHistory || sess.Install.Index.Repeated(def.Database) {
 			continue
 		}
 		if other := slices.IndexFunc(loaded, func(other index.At) bool {

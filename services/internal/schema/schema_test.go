@@ -306,7 +306,7 @@ func stepAt(t *testing.T, s *Schema, rel string, path ...string) step {
 	t.Helper()
 	file, parsed := fixtureFile(t, s.Game, rel)
 	steps := map[jomini.Statement]step{}
-	s.WalkFile(file, parsed, s.FindEntries(file, parsed), false, func(statement jomini.Statement, context Context, inner *Context, occurrences []Occurrence) bool {
+	s.WalkFile(file, parsed, false, func(statement jomini.Statement, context Context, inner *Context, occurrences []Occurrence) bool {
 		steps[statement] = step{statement, context, *inner, occurrences}
 		return true
 	})
@@ -513,7 +513,7 @@ func TestFindEntries(t *testing.T) {
 		s := fixtureSchema(t, c.game)
 		file, parsed := fixtureFile(t, c.game, c.rel)
 		var got []string
-		for _, entry := range s.FindEntries(file, parsed) {
+		for _, entry := range s.WalkFile(file, parsed, false, nil) {
 			got = append(got, entry.Database+" "+entry.ID)
 		}
 		if !slices.Equal(got, c.want) {

@@ -67,7 +67,7 @@ event or an on_action is a fire unless it sits inside a trigger
 | The console command and launch option are the **same** in all three | `-debug_mode` and `script_docs`. Verified by grepping each game binary (`ck3.exe`, `victoria3.exe`, `eu5.exe`); all three also carry the longer alias `script_documentation`. Only the output folder differs, which `GameInfo.ScriptDocsDirs` and `DataTypesDir` already encode — so the walkthrough needs no new per-game data. |
 | Loose `.txt` at the script root is not script | `checksum_manifest.txt`, `credits.txt`. Parsing the manifest as Jomini produced fire edges for `common`, `events`, `history`. A file at the script root belongs to no database. |
 | CK3 faiths have **no folder** | They exist only nested under `religion_types`. Verified: no `faiths/` directory exists. |
-| EU5 `production_methods` **does** have a folder | `in_game/common/production_methods`. A `Nested` row for it would be redundant. |
+| EU5 `production_methods` **does** have a folder | `in_game/common/production_methods`. A nested `Descriptor` row for it would be redundant. |
 
 ### Where the install's version and timestamp are (and are not)
 
@@ -139,8 +139,8 @@ repeated inner key counted as a database would mint phantom definitions:
 | Vic3 | 134 | 5,231 under scripted constants like `@portrait_box_height` |
 
 On CK3 that would be **64% of the entire model**. So nested databases are
-declared, not found: a registry `Nested` row says where keys create entries
-(`GameInfo.Nested`), a constant (`@x`) is never an entry, and in a nested row's
+declared, not found: a nested `Descriptor` row says where keys create entries
+(`Layout.Nested`), a constant (`@x`) is never an entry, and in a nested row's
 own block a key a declared source states is a field.
 
 Root cause worth remembering: `jomini.SplitPrefixed` (`lang/jomini/names.go`)
@@ -301,7 +301,7 @@ that follows only prefixed words is structurally blind to all of them.
 
 A word is a reference only where a declared fact says so, so a field RHS that
 nothing declares to name a database is no reference (`lang/index/README.md`,
-References). CK3's `Nested` rows for `**/parameters` and `**/*_parameters`
+References). CK3's nested `Descriptor` rows for `**/parameters` and `**/*_parameters`
 declare the names such blocks list as entries of the `parameter` database.
 
 ### Game rules (CK3), worked through

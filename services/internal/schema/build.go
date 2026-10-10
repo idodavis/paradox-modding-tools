@@ -20,14 +20,13 @@ import (
 // Input is what the schema stage reads.
 type Input struct {
 	Game, Version string
-	Install       []inventory.File    // the install's inventory, in load order
-	Dumps         []inventory.File    // the dump folders' inventory
-	WikiExamples  map[string][]string // the wiki's script examples by database name, from wiki.ScriptExamples
-	WikiWritten   time.Time           // the wiki sidecar's time; zero for none
-	Updated       time.Time           // game.InstallUpdatedAt
-	LocKeys       map[string]bool     // the install's localization keys, english and the workspace language
-	DumpsOnly     bool                // stop after the databases and dumps: the shipped schema's part
-	Shipped       *Schema             // a shipped dump part, taken in place of reading the dump files
+	Install       []inventory.File                                                 // the install's inventory, in load order
+	Dumps         []inventory.File                                                 // the dump folders' inventory
+	Wiki          func(databases []string) (map[string][]string, time.Time, error) // the wiki's script examples by database and its sidecar's time; nil for none
+	Updated       time.Time                                                        // game.InstallUpdatedAt
+	LocKeys       map[string]bool                                                  // the install's localization keys, english and the workspace language
+	DumpsOnly     bool                                                             // stop after the databases and dumps: the shipped schema's part
+	Shipped       *Schema                                                          // a shipped dump part, taken in place of reading the dump files
 }
 
 // Build reads every source into the schema. A claim keeps its highest-ranked source (Claim.Set), so the steps
@@ -74,22 +73,10 @@ func (schema *Schema) stampConstructs() {
 	}
 }
 
-// DatabaseNames returns the names of the databases Build will declare for an input: what the install's
-// folders and the game's rows make, before any source is read. The scan asks the wiki for examples by them.
-func DatabaseNames(input Input) []string {
-	info := game.Get(input.Game)
-	if info == nil {
-		return nil
-	}
-	s := &Schema{Game: input.Game, Databases: map[string]*Database{}}
-	s.declareDatabases(input.Install, info)
-	return slices.Sorted(maps.Keys(s.Databases))
-}
-
-// declareDatabase makes a database. Its entry block is a fields block unless its folder row's Body says what
-// the entry is; each of the row's Refs names the database's entries.
-func (schema *Schema) declareDatabase(name string, row game.Folder) {
-	database := &Database{Name: name, Entry: &Position{}, Row: row, Fields: map[string]bool{}}
+// declareDatabase makes a database. Its entry block is a fields block unless its descriptor's Body says what
+// the entry holds; each of the descriptor's Refs names the database's entries.
+func (schema *Schema) declareDatabase(name string, row game.Descriptor) {
+	database := &Database{Name: name, Entry: &Position{}, Descriptor: row, Fields: map[string]bool{}}
 	database.Entry.Holds.Set(cmp.Or(row.Body, game.ShapeFields), SourceRegistry)
 	for _, at := range row.Refs {
 		position := database.Entry
@@ -119,36 +106,34 @@ func (schema *Schema) declareDatabases(install []inventory.File, info *game.Game
 	})
 	for _, rel := range scripts {
 		if at, name := schema.folder(rel); at != "." && schema.Databases[name] == nil {
-			schema.declareDatabase(name, info.Folders[at])
+			row, _ := info.At(at)
+			row.Database, row.Path = name, at
+			schema.declareDatabase(name, row)
 		}
 	}
-
-	// a nested row that sets up entries defined elsewhere makes a history database of its keys
-	for _, row := range info.Nested {
-		if row.Of != "" {
-			schema.declareDatabase(NameOf(row.Parent)+"."+row.Database, game.Folder{History: true, Of: row.Of})
-		}
-	}
-
-	// a row named after a file type's own database (gui.type) declares it, with the type's Body
-	for at, row := range info.Folders {
-		if extension, _, cut := strings.Cut(at, "."); cut && game.FileTypes["."+extension].Body != 0 {
+	for _, row := range info.Descriptors {
+		switch {
+		case row.Parent != "" && row.Of != "":
+			schema.declareDatabase(row.Database, row) // a nested database that sets up entries defined elsewhere
+		case row.Path == "" && row.Parent == "":
+			extension, _, _ := strings.Cut(row.Database, ".") // a file type's own database (gui.type), with the type's Body
 			row.Body = game.FileTypes["."+extension].Body
-			schema.declareDatabase(at, row)
+			schema.declareDatabase(row.Database, row)
 		}
 	}
 
-	// the databases a call by each CalledIn word resolves in, in name order; AnyCall every scripted folder's
-	// (a file type's own database answers only its own words)
+	// the databases a call by each caller word resolves in, in name order; AnyCall every scripted folder's (a
+	// file type's own database answers only its own words)
 	schema.Callees = map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(schema.Databases)) {
-		called := schema.Databases[name].Row.CalledIn
-		if len(called) > 0 && !strings.Contains(name, ".") {
-			called = append(slices.Clone(called), game.AnyCall)
+		callers := schema.Databases[name].Descriptor.Callers
+		if len(callers) > 0 && !strings.Contains(name, ".") {
+			callers = append(slices.Clone(callers), game.AnyCall)
 		}
-		for _, word := range called {
+		for _, word := range callers {
 			schema.Callees[word] = append(schema.Callees[word], name)
 		}
 	}
-	schema.Lists = cmp.Or(schema.DatabasesWhere(func(row game.Folder) bool { return row.Iterated })...)
+	schema.Lists = cmp.Or(schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeLists })...)
+	schema.Events = cmp.Or(schema.DatabasesWhere(func(row game.Descriptor) bool { return row.Purpose == game.PurposeEvents })...)
 }

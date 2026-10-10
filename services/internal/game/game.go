@@ -20,6 +20,9 @@ const OriginVanilla = "vanilla"
 // BaseLanguage is the localization every game ships whole, read beside a workspace's language.
 const BaseLanguage = "english"
 
+// MetadataDescriptor is the ModDescriptor of a game whose mods carry .metadata/metadata.json.
+const MetadataDescriptor = "metadata"
+
 // GameInfo is the static identity and convention set for one game. It carries no
 // derived data; the engine scans the install for that.
 type GameInfo struct {
@@ -36,11 +39,11 @@ type GameInfo struct {
 	ScriptRoot string   `json:"-"`
 	StageRoots []string `json:"-"`
 
-	// Descriptor is how a mod root is identified: "mod" (descriptor.mod) or
-	// "metadata" (.metadata/metadata.json).
-	Descriptor string `json:"descriptor,omitempty"`
+	// ModDescriptor is how a mod root is identified: "mod" (descriptor.mod) or
+	// MetadataDescriptor (.metadata/metadata.json).
+	ModDescriptor string `json:"descriptor,omitempty"`
 
-	// ThumbnailDir is where a new listing image goes, from the mod root ("" the root); Descriptor
+	// ThumbnailDir is where a new listing image goes, from the mod root ("" the root); ModDescriptor
 	// does not imply it (Vic3 keeps it at the root). An existing thumbnail stays. Backend-only.
 	ThumbnailDir string `json:"-"`
 
@@ -52,7 +55,7 @@ type GameInfo struct {
 	// GOOS; Workshop publish loads it. A GOOS with no row has no build of the game. Backend-only.
 	SteamLibrary map[string]string `json:"-"`
 
-	// FirstWins is Layout.FirstWinsDatabases as the sentence the Conflicts and Settings pages show.
+	// FirstWins is Layout.FirstWins as the sentence the Conflicts and Settings pages show.
 	FirstWins string `json:"firstWins,omitempty"`
 
 	// Layout is how the game's script files lay out their entries (lang-rules.go). Backend-only.
@@ -80,7 +83,7 @@ var registry = map[string]*GameInfo{
 		ShortName:        "CK3",
 		WikiAPI:          "https://ck3.paradoxwikis.com/api.php",
 		ScriptRoot:       "game",
-		Descriptor:       "mod",
+		ModDescriptor:    "mod",
 		DocsFolderName:   "Crusader Kings III",
 		SteamAppID:       1158310,
 		SteamLibrary:     map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
@@ -95,7 +98,7 @@ var registry = map[string]*GameInfo{
 		ShortName:        "Vic3",
 		WikiAPI:          "https://vic3.paradoxwikis.com/api.php",
 		ScriptRoot:       "game",
-		Descriptor:       "metadata",
+		ModDescriptor:    MetadataDescriptor,
 		DocsFolderName:   "Victoria 3",
 		SteamAppID:       529340,
 		SteamLibrary:     map[string]string{"windows": "binaries/steam_api64.dll", "linux": "binaries/libsteam_api.so"},
@@ -105,13 +108,13 @@ var registry = map[string]*GameInfo{
 		DataTypesCommand: "DumpDataTypes",
 	},
 	"eu5": {
-		ID:         "eu5",
-		Name:       "Europa Universalis V",
-		ShortName:  "EU5",
-		WikiAPI:    "https://eu5.paradoxwikis.com/api.php",
-		ScriptRoot: "game",
-		StageRoots: []string{"in_game", "main_menu", "loading_screen"},
-		Descriptor: "metadata",
+		ID:            "eu5",
+		Name:          "Europa Universalis V",
+		ShortName:     "EU5",
+		WikiAPI:       "https://eu5.paradoxwikis.com/api.php",
+		ScriptRoot:    "game",
+		StageRoots:    []string{"in_game", "main_menu", "loading_screen"},
+		ModDescriptor: MetadataDescriptor,
 		// where EU5 mods keep it
 		ThumbnailDir:     MetadataDir,
 		DocsFolderName:   "Europa Universalis V",
@@ -287,7 +290,7 @@ func DescriptorPath(gameID, root string) string {
 
 // DescriptorFile is the mod-root descriptor's path relative to the mod, in slash form.
 func DescriptorFile(gameID string) string {
-	if info := Get(gameID); info != nil && info.Descriptor == "metadata" {
+	if info := Get(gameID); info != nil && info.ModDescriptor == MetadataDescriptor {
 		return MetadataDir + "/metadata.json"
 	}
 	return "descriptor.mod"

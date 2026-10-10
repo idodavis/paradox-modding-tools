@@ -11,12 +11,12 @@ the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` 
 | file | holds |
 |---|---|
 | `schema.go` | the types (`Schema`, `Database`, `Position` with its `Claims`, `Claim`, `Command`, `Vanilla`, `Writes`, `ValueType`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
-| `build.go` | the pipeline: `Input`, `Build`, `DatabaseNames` for the scan; step 1, declaring the databases (`declare`, `declareDatabases`) |
+| `build.go` | the pipeline: `Input`, `Build`; step 1, declaring the databases (`declare`, `declareDatabases`) |
 | `dumps.go` | step 2: `dumpsOrShipped`, then the parsers of the console dumps: the label table, one `parse…` per record kind; the usages merged into each command's arguments once every command is declared (`mergeUsages`, `usageRoots`, `mergeUsage`, `argument`) |
 | `docs.go` | the documentation dialect: `parseDocScript`, the one reader of docscript that the install's docs, the wiki's examples and the dumps' usages share (`DocNode`: a statement's key, value slot, prose and block); step 3, `parseDocs`, the docs and examples parsed to trees with every key they write noted for the entry detector; step 6, `mergeDocs`, their claims merged into the entry trees after vanilla (`mergeNode`, `mergeTemplate`, `docClaims`); the phrase table `docPhrases` and `claimsOf`, which both merges read claims with |
 | `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
-| `entries.go` | the entry detector, `FindEntries`: which definitions a file makes, by its folder's row, its nested rows and its file type |
-| `walk.go` | the walker: `Context` (where statements read), `Visit`, `WalkFile`, `WalkBlock`, `EntryContext`; `Enter`, the one step from the context a statement is written in to the one its block reads in, by the first key rule that fits (`fits`), its row (`game.KeyRules`) and the first construct (`game.Constructs`); `holdsOf`, `commandShape`, `scopeOf` |
+| `entries.go` | the entry detector, `entryAt`: whether a statement defines an entry and in which database, by the game's `Layout` rows (`game.Descriptor`: identity, wrappers, keywords, nested key paths), the file type and the file's own database (`folder`, `DatabaseAt`); a table's or list's entries (`tableEntries`), a whole-file entry (`wholeFileEntry`) |
+| `walk.go` | the walker: `Context` (where statements read), `Visit`, `WalkFile` (the entries decided as it meets them, `entryOpens` the context an entry opens), `WalkBlock`, `EntryContext`; `Enter`, the one step from the context a statement is written in to the one its block reads in, by the first key rule that fits (`fits`), its row (`game.KeyRules`) and the first construct (`game.Constructs`); `holdsOf`, `commandShape`, `scopeOf` |
 | `occurrences.go` | `Occurrence`, one occurrence of a name with its `Role` (`Defines`, `Refers`, `Localizes`), and the occurrence rules: which entry each scalar of a placed statement stands for (`keyOccurrences`, `valueOccurrence`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
 | `shipped.go` | the backup schemas embedded from `shipped/`, `LoadShipped`; `gen/` writes them |
 
@@ -45,10 +45,12 @@ the key refines the shape, a block written as a dynamic description is one whate
 claim on the key's position beats the verb. Two readers use the walker: `countFile` and the index's `Collect`;
 the doc and usage merges call `Enter` on a synthetic statement.
 
-`WalkFile` is the one walk of a whole file: given the entries `FindEntries` returned, it reads every statement in
-source order, outer before inner, and hands each to the `Visit` with the context it is written in (its `Entry`
-is the entry it is in, -1 outside one), the one its block reads in, and what its key and value name (the
-occurrences, by the rules of `occurrences.go`); `StoredIn` is the database a name command's value names there.
+`WalkFile` is the one walk of a whole file: it reads every statement in source order, outer before inner, decides
+at each whether it defines an entry (`entryAt`: by the game's `Layout` rows, the file type and the file's
+database), and hands each to the `Visit` with the context it is written in (its `Entry` is the entry it is in, -1
+outside one), the one its block reads in, and what its key and value name (the occurrences, by the rules of
+`occurrences.go`); it returns the file's entries, each a `Defines` occurrence, in source order. `StoredIn` is the
+database a name command's value names there.
 
 ## Docscript
 
@@ -78,7 +80,7 @@ A key is named by every key rule that fits (`keyOccurrences`), a value by the fi
 | history | a history entry's top key, and its value where it is written key = value | a reference to the object it sets up (`Of`) |
 | file ref | a value at a key its file type lists (`FileType.Refs`: a GUI `using`) | a reference to that entry |
 | list | a call starting with `every_`, `any_`, `random_`, `ordered_` in a triggers, effects or value block | a reference to that scripted list |
-| call | a key read as a call | a call reference (`Called`: the block's CalledIn word) |
+| call | a key read as a call | a call reference (`Caller`: the word the block resolves calls by, one of the database's `Callers`) |
 | parameter | a key in a call's block | a reference to the called entry's parameter, `<entry>:<NAME>` |
 | made | the value of a name command that makes a name (`save_scope_as`, `set_variable`) | a definition in the name's database |
 | group | a value at a folder's `Names` key | a definition the entry's database names (`IsName`) |

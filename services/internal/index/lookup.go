@@ -139,11 +139,11 @@ func RefsTo(s *schema.Schema, indexes []*Index, database, id string) []At {
 // Winner applies the entry modes to a name's definitions in Lookup's order, plain then each mode's:
 // the winner, its adds, INJECT/REPLACE orphans with no target, and whether two mods contest it.
 func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (winner At, adds, orphans []At, contested bool) {
-	// in a database whose registry row has OnActions every plain definition after the first adds,
-	// as an inject does; a moded one follows its mode
+	// in a database of on_actions every plain definition after the first adds, as an inject does; a moded one
+	// follows its mode
 	merged := map[string]bool{}
-	for rel, row := range info.Folders {
-		merged[schema.NameOf(rel)] = row.OnActions
+	for _, row := range info.Descriptors {
+		merged[row.Database] = row.Purpose == game.PurposeOnActions
 	}
 
 	found := false
@@ -174,7 +174,7 @@ func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (wi
 				} else if !mode.Optional {
 					orphans = append(orphans, at)
 				}
-			case plain && slices.Contains(info.FirstWinsDatabases, def.Database):
+			case plain && slices.Contains(info.Layout.FirstWins, def.Database):
 				// the earlier plain definition holds
 			case contends:
 				winner, adds = at, nil
@@ -189,19 +189,19 @@ func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (wi
 // Fires is whether a reference fires its target: an event or on_action outside a trigger.
 func Fires(s *schema.Schema, ref schema.Occurrence) bool {
 	database := s.Databases[ref.Database]
-	return !ref.InTrigger && database != nil && (database.Row.Events || database.Row.OnActions)
+	return !ref.InTrigger && database != nil && (database.Descriptor.Purpose == game.PurposeEvents || database.Descriptor.Purpose == game.PurposeOnActions)
 }
 
 // Runs is whether a reference outside a trigger runs a scripted entry, so what it fires is fired
 // through it: a call, or a name of a database called in effects.
 func Runs(s *schema.Schema, ref schema.Occurrence) bool {
 	database := s.Databases[ref.Database]
-	return !ref.InTrigger && (ref.Caller != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Shapes[game.ShapeEffects].Caller))
+	return !ref.InTrigger && (ref.Caller != "" || database != nil && slices.Contains(database.Descriptor.Callers, game.Shapes[game.ShapeEffects].Caller))
 }
 
 // Scripted is whether a definition is a scripted entry, one a reference may run (Runs): of a
 // database some block calls.
 func Scripted(s *schema.Schema, def schema.Occurrence) bool {
 	database := s.Databases[def.Database]
-	return database != nil && len(database.Row.CalledIn) > 0
+	return database != nil && len(database.Descriptor.Callers) > 0
 }

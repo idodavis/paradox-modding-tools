@@ -77,17 +77,8 @@ func collectFile(s *schema.Schema, file inventory.File, text string) collected {
 // returning false stops the walk. A table or sound list (parsed nil) is read for its lines.
 func Collect(s *schema.Schema, file inventory.File, parsed *jomini.Result, visit schema.Visit) ([]schema.Occurrence, map[[2]string]bool) {
 	c := &collector{schema: s, visit: visit, scoped: map[[2]string]bool{}}
-	entries := s.FindEntries(file, parsed)
-	for n, entry := range entries {
-		span := entry.Statement.NodeRange()
-		if assign, isAssign := entry.Statement.(*jomini.Assignment); isAssign {
-			span = assign.Key.Range
-		}
-		c.occurrences = append(c.occurrences, schema.Occurrence{
-			Role: schema.Defines, Database: entry.Database, ID: entry.ID, Mode: entry.Mode, Range: span, Entry: int32(n), Local: entry.Local,
-		})
-	}
-	s.WalkFile(file, parsed, entries, false, c.collect)
+	entries := s.WalkFile(file, parsed, false, c.collect)
+	c.occurrences = append(entries, c.occurrences...)
 	if len(c.occurrences) > 0 {
 		lines := (*jomini.LineIndex)(nil)
 		if parsed != nil {
@@ -145,9 +136,9 @@ func collectLoc(gameID string, file inventory.File, text string, languages []str
 		return collected{}
 	}
 	concepts := ""
-	for at, row := range game.Get(gameID).Folders {
-		if row.Concepts {
-			concepts = schema.NameOf(at)
+	for _, row := range game.Get(gameID).Descriptors {
+		if row.Purpose == game.PurposeConcepts {
+			concepts = row.Database
 		}
 	}
 	records, lines := collected{language: language}, jomini.NewLineIndex(text)

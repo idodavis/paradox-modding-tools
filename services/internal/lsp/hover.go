@@ -492,15 +492,15 @@ func (file *file) defined(card *Inspect, ref schema.Occurrence, scope string, sh
 			shown(from)
 		}
 		card.Scope, card.Returns = row.Entry.Scope.Value, returns[row.Entry.Holds.Value]
-		if card.Scope == "" && len(row.Row.CalledIn) > 0 {
+		if card.Scope == "" && len(row.Descriptor.Callers) > 0 {
 			card.Scope = scope
 		}
 		shown(row.Entry.Scope.Source)
-		if action, found := s.OnActions[ref.ID]; found && row.Row.OnActions {
+		if action, found := s.OnActions[ref.ID]; found && row.Descriptor.Purpose == game.PurposeOnActions {
 			card.Prose, card.Scope = action.Blurb, cmp.Or(action.Scope, card.Scope)
 			shown(schema.SourceDumps)
 		}
-		card.Graphed = row.Row.Events || row.Row.OnActions
+		card.Graphed = row.Descriptor.Purpose == game.PurposeEvents || row.Descriptor.Purpose == game.PurposeOnActions
 	}
 	card.Prose, card.Graphed = cmp.Or(card.Prose, comment), card.Graphed || len(defs) > 0 && len(sess.Fires(winner)) > 0
 	return true
@@ -638,7 +638,9 @@ func (file *file) dataCard(steps []jomini.Step) *Inspect {
 			return card
 		}
 	}
-	for _, name := range s.DatabasesWhere(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
+	for _, name := range s.DatabasesWhere(func(row game.Descriptor) bool {
+		return row.Purpose == game.PurposeFunctions || row.Purpose == game.PurposeConcepts
+	}) {
 		if !defined && len(index.Lookup(file.sess.Indexes(), schema.Defines, name, step.Name)) > 0 {
 			defined = file.defined(card, schema.Occurrence{Database: name, ID: step.Name}, "", func(schema.Source) {})
 		}

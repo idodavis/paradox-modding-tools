@@ -5,7 +5,6 @@
 package game
 
 import (
-	"maps"
 	"slices"
 	"strings"
 )
@@ -415,163 +414,219 @@ var FileTypes = map[string]FileType{
 	},
 }
 
-// Folder is one folder's row, by its path from a root (without EU5's stage folder); a path takes
-// the longest row at or above it.
-type Folder struct {
-	History    bool     // the start state of entries defined elsewhere; defines none of its own
-	Of         string   // History: the database its entries are named after
-	ByFile     bool     // History: each file is one entry, named by its stem
+// Identity is how an entry is identified.
+type Identity uint8
+
+// The identities.
+const (
+	IdentityByKey    Identity = iota // the top statement's key names it; an event id where the purpose is events
+	IdentityByField                  // the value of NameKey in its block names it, up to a (
+	IdentityByFile                   // each file is one entry, named by its stem
+	IdentityByColumn                 // each row of a table by its first column, or each word of a list
+	IdentityNone                     // its entries name nothing: generated objects, locators, a history file
+)
+
+// Purpose is what a database is for.
+type Purpose uint8
+
+// The purposes.
+const (
+	PurposeGeneral   Purpose = iota
+	PurposeEvents            // the whole tree is one database, named by event id
+	PurposeOnActions         // its entries are on_actions
+	PurposeLists             // scripted lists, iterated as every_/any_/random_/ordered_<name>
+	PurposeFunctions         // data functions callable in data calls
+	PurposeConcepts          // game concepts named in loc text
+	PurposeHistory           // the start state of entries defined elsewhere (Of), or of its own files
+)
+
+// Descriptor is how one database's entries are written, named and used: one row per database that needs one.
+// A folder with no row is a database of general purpose whose top statements' keys name its entries; a path
+// takes the longest row at or above it.
+type Descriptor struct {
+	Database   string // the database: a folder from a root (decisions), a file, a file type's own (gui.type), a nested one (defines.define)
+	Path       string // the folder or file its entries are written in; "" for a nested or a file type's database
+	Parent     string // nested: the folder or file whose entries hold its keys
+	Within     string // nested: the key path from the holding entry to its keys: "" the entry's own block, options, **/parameters, */*/*
+	Identity   Identity
+	NameKey    string   // IdentityByField: the key whose value names the entry
+	Wrappers   []string // keys at the top that only wrap entries: their blocks hold top statements
+	Keyword    string   // the word that declares an entry inline in any file (scripted_effect x = { })
+	Purpose    Purpose
+	Of         string   // PurposeHistory: the database whose entries its own set up; "" its own files'
 	Dated      bool     // a number key in an entry's own block is a date written short (999, 1077.1)
-	Unnamed    bool     // its entries name nothing: generated objects, locators, path-keyed lists
-	NameKey    string   // every top block is one entry named by this key's value, up to a (
-	Wrappers   []string // keys that only wrap entries: their blocks hold top statements
-	CalledIn   []string // scripted: the CalledIn words (Blocks' Calls) a call by an entry's name is in
-	Body       Shape    // scripted: the kind an entry's block holds; unset means its own fields
-	Keyword    string   // scripted: the word that declares an entry inline in any file
+	Body       Shape    // what an entry's block holds; ShapeUnknown: its own fields
+	Callers    []string // scripted: the words a call by an entry's name resolves by
 	Parameters bool     // scripted: a call passes parameters
-	Events     bool     // the whole tree is one database, named by event id
-	Iterated   bool     // its entries are iterated as every_/any_/random_/ordered_<name> (scripted lists)
-	OnActions  bool     // its entries are on_actions
 	Refs       []string // positions in an entry (key/<number>) whose words name this database's entries
 	Names      []string // keys whose values in an entry also name this database's entries (trait groups)
-	Functions  bool     // its entries are data functions callable in data calls
-	Concepts   bool     // its entries are game concepts named in loc text
-}
-
-// Nested is a place inside an entry where keys define entries of their own.
-type Nested struct {
-	Parent   string // a folder path; the row holds for every database at or below it
-	Path     string // "" the entry's own block, * one key, a leading **/ any depth
-	Database string // the database the keys define; self for the parent's own
-	Of       string // the keys set up entries of this database, defined elsewhere (start state)
-}
-
-// MapTable is a table whose rows are named by their first column.
-type MapTable struct {
-	Database string
-	File     string
 }
 
 // Layout is how one game's script files lay out their entries.
 type Layout struct {
-	Folders            map[string]Folder
-	Nested             []Nested
-	MapTable           MapTable
-	EntryModes         []EntryMode // in the order the game processes them; file order only within one
-	FirstWinsDatabases []string    // the databases whose first definition wins; in every other, the last
+	Descriptors []Descriptor
+	EntryModes  []EntryMode // in the order the game processes them; file order only within one
+	FirstWins   []string    // the databases whose first definition wins; in every other, the last
 }
+
+// NameOf is the database a folder or file from a root makes: its path without common/.
+func NameOf(path string) string { return strings.TrimPrefix(path, "common/") }
 
 // layouts are each game's layout: the shared rows, with its own over them.
 var layouts = map[string]Layout{
 	"ck3": {
-		Folders: withShared(map[string]Folder{
-			"common/on_action": {OnActions: true,
-				Refs: []string{"on_actions", "random_on_action/<number>", "first_valid_on_action", "fallback"}},
-			"common/traits":            {Names: []string{"group", "group_equivalence"}},
-			"gfx/map/map_object_data":  {Unnamed: true},
-			"history/titles":           {History: true, Of: "landed_titles"},
-			"history/provinces":        {History: true, Of: "map_data.definition"},
-			"history/province_mapping": {History: true, Of: "map_data.definition"},
-			"history/cultures":         {History: true, Of: "culture/cultures", ByFile: true},
-			"history/faiths":           {History: true, Of: "religion/faith_types"},
-			"history/artifacts":        {History: true},
-			"history/situations":       {History: true},
-			"history/struggles":        {History: true},
-			"history/wars":             {History: true, Unnamed: true},
-			"history/characters":       {Body: ShapeSetup, Dated: true},
+		Descriptors: withShared([]Descriptor{
+			folder("common/on_action", Descriptor{Purpose: PurposeOnActions,
+				Refs: []string{"on_actions", "random_on_action/<number>", "first_valid_on_action", "fallback"}}),
+			folder("common/traits", Descriptor{Names: []string{"group", "group_equivalence"}}),
+			folder("gfx/map/map_object_data", Descriptor{Identity: IdentityNone}),
+			folder("history/titles", Descriptor{Purpose: PurposeHistory, Of: "landed_titles"}),
+			folder("history/provinces", Descriptor{Purpose: PurposeHistory, Of: "map_data.definition"}),
+			folder("history/province_mapping", Descriptor{Purpose: PurposeHistory, Of: "map_data.definition"}),
+			folder("history/cultures", Descriptor{Purpose: PurposeHistory, Of: "culture/cultures", Identity: IdentityByFile}),
+			folder("history/faiths", Descriptor{Purpose: PurposeHistory, Of: "religion/faith_types"}),
+			folder("history/artifacts", Descriptor{Purpose: PurposeHistory}),
+			folder("history/situations", Descriptor{Purpose: PurposeHistory}),
+			folder("history/struggles", Descriptor{Purpose: PurposeHistory}),
+			folder("history/wars", Descriptor{Purpose: PurposeHistory, Identity: IdentityNone}),
+			folder("history/characters", Descriptor{Body: ShapeSetup, Dated: true}),
+			{Database: "map_data.definition", Path: "map_data/definition.csv", Identity: IdentityByColumn},
+			nested("common/landed_titles", "", ""),
+			nested("common/activities/activity_types", "options", "option_category"),
+			nested("common/activities/activity_types", "phases", "phase"),
+			nested("common", "**/parameters", "parameter"),
+			nested("common", "**/*_parameters", "parameter"),
+			nested("common/game_concepts", "alias", ""),
 		}),
-		Nested: slices.Concat(sharedNested, []Nested{
-			{Parent: "common/landed_titles", Path: "", Database: "self"},
-			{Parent: "common/activities/activity_types", Path: "options", Database: "option_category"},
-			{Parent: "common/activities/activity_types", Path: "phases", Database: "phase"},
-			{Parent: "common", Path: "**/parameters", Database: "parameter"},
-			{Parent: "common", Path: "**/*_parameters", Database: "parameter"},
-			{Parent: "common/game_concepts", Path: "alias", Database: "self"},
-		}),
-		MapTable:           MapTable{Database: "map_data.definition", File: "map_data/definition.csv"},
-		FirstWinsDatabases: []string{"gui.type", "gui.template"},
+		FirstWins: []string{"gui.type", "gui.template"},
 	},
 	"vic3": {
-		Folders: withShared(map[string]Folder{
-			"common/on_actions": {OnActions: true,
-				Refs: []string{"on_actions", "random_on_actions/<number>", "first_valid_on_action", "fallback"}},
-			"gfx/map/map_object_data": {Unnamed: true},
-			"gfx/map/post_effects":    {NameKey: "name", Wrappers: []string{"posteffect_volumes"}},
-			"common/history":          {History: true, Unnamed: true, Body: ShapeEffects}, // COUNTRIES = { … }: effects
+		Descriptors: withShared([]Descriptor{
+			folder("common/on_actions", Descriptor{Purpose: PurposeOnActions,
+				Refs: []string{"on_actions", "random_on_actions/<number>", "first_valid_on_action", "fallback"}}),
+			folder("gfx/map/map_object_data", Descriptor{Identity: IdentityNone}),
+			folder("gfx/map/post_effects", Descriptor{Identity: IdentityByField, NameKey: "name", Wrappers: []string{"posteffect_volumes"}}),
+			folder("common/history", Descriptor{Purpose: PurposeHistory, Identity: IdentityNone, Body: ShapeEffects}), // COUNTRIES = { … }: effects
 		}),
-		Nested:             sharedNested,
-		EntryModes:         entryModes,
-		FirstWinsDatabases: []string{"gui.type", "gui.template", "events"},
+		EntryModes: entryModes,
+		FirstWins:  []string{"gui.type", "gui.template", "events"},
 	},
 	"eu5": {
-		Folders: withShared(map[string]Folder{
-			"common/on_action": {OnActions: true,
-				Refs: []string{"on_actions", "random_on_action/<number>", "first_valid_on_action", "fallback"}},
-			"gfx/map/map_objects":                  {Unnamed: true},
-			"gfx/map/city_data":                    {NameKey: "name"},
-			"setup/start":                          {History: true},
-			"setup/templates":                      {ByFile: true},
-			"map_data/location_templates.txt":      {History: true, Of: "map_data/named_locations"},
-			"map_data/generated_locators_port.txt": {Unnamed: true},
+		Descriptors: withShared([]Descriptor{
+			folder("common/on_action", Descriptor{Purpose: PurposeOnActions,
+				Refs: []string{"on_actions", "random_on_action/<number>", "first_valid_on_action", "fallback"}}),
+			folder("gfx/map/map_objects", Descriptor{Identity: IdentityNone}),
+			folder("gfx/map/city_data", Descriptor{Identity: IdentityByField, NameKey: "name"}),
+			folder("setup/start", Descriptor{Purpose: PurposeHistory}),
+			folder("setup/templates", Descriptor{Identity: IdentityByFile}),
+			folder("map_data/location_templates.txt", Descriptor{Purpose: PurposeHistory, Of: "map_data/named_locations"}),
+			folder("map_data/generated_locators_port.txt", Descriptor{Identity: IdentityNone}),
+			nested("gfx/defines", "", "define"),
+			nested("common/laws", "", "policy"),
+			nested("common/languages", "dialects", "dialect"),
+			nested("common/gods", "omens", "omen"),
+			nested("common/building_types", "unique_production_methods", "unique_production_method"),
+			nested("common/game_concepts", "alias", ""),
+			nested("map_data/definitions.txt", "", "sub_continent"),
+			nested("map_data/definitions.txt", "*", "region"),
+			nested("map_data/definitions.txt", "*/*", "area"),
+			nested("map_data/definitions.txt", "*/*/*", "province"),
+			nested("setup/start", "character_db", "character"),
+			nested("setup/start", "dynasty_manager", "dynasty"),
+			setsUp("setup/start", "countries/countries", "country", "setup/countries"),
+			setsUp("setup/start", "locations", "location", "map_data/named_locations"),
+			setsUp("setup/start", "road_network", "road", "map_data/named_locations"),
+			setsUp("setup/start", "townrights_manager", "town_rights", "map_data/named_locations"),
+			setsUp("setup/start", "building_manager", "building", "building_types"),
+			setsUp("setup/start", "work_of_art_manager", "work_of_art", "artist_work"),
+			setsUp("setup/start", "colony_manager", "colony", "map_data/definitions.txt.province"),
+			setsUp("setup/start", "institution_manager/institutions", "institution", "institution"),
+			setsUp("setup/start", "situation_manager", "situation", "situations"),
 		}),
-		Nested: slices.Concat(sharedNested, []Nested{
-			{Parent: "gfx/defines", Path: "", Database: "define"},
-			{Parent: "common/laws", Path: "", Database: "policy"},
-			{Parent: "common/languages", Path: "dialects", Database: "dialect"},
-			{Parent: "common/gods", Path: "omens", Database: "omen"},
-			{Parent: "common/building_types", Path: "unique_production_methods", Database: "unique_production_method"},
-			{Parent: "common/game_concepts", Path: "alias", Database: "self"},
-			{Parent: "map_data/definitions.txt", Path: "", Database: "sub_continent"},
-			{Parent: "map_data/definitions.txt", Path: "*", Database: "region"},
-			{Parent: "map_data/definitions.txt", Path: "*/*", Database: "area"},
-			{Parent: "map_data/definitions.txt", Path: "*/*/*", Database: "province"},
-			{Parent: "setup/start", Path: "character_db", Database: "character"},
-			{Parent: "setup/start", Path: "dynasty_manager", Database: "dynasty"},
-			{Parent: "setup/start", Path: "countries/countries", Database: "country", Of: "setup/countries"},
-			{Parent: "setup/start", Path: "locations", Database: "location", Of: "map_data/named_locations"},
-			{Parent: "setup/start", Path: "road_network", Database: "road", Of: "map_data/named_locations"},
-			{Parent: "setup/start", Path: "townrights_manager", Database: "town_rights", Of: "map_data/named_locations"},
-			{Parent: "setup/start", Path: "building_manager", Database: "building", Of: "building_types"},
-			{Parent: "setup/start", Path: "work_of_art_manager", Database: "work_of_art", Of: "artist_work"},
-			{Parent: "setup/start", Path: "colony_manager", Database: "colony", Of: "map_data/definitions.txt.province"},
-			{Parent: "setup/start", Path: "institution_manager/institutions", Database: "institution", Of: "institution"},
-			{Parent: "setup/start", Path: "situation_manager", Database: "situation", Of: "situations"},
-		}),
-		EntryModes:         entryModes,
-		FirstWinsDatabases: []string{"events"},
+		EntryModes: entryModes,
+		FirstWins:  []string{"events"},
 	},
 }
 
-// sharedNested are the nested rows every game has.
-var sharedNested = []Nested{{Parent: "common/defines", Path: "", Database: "define"}}
-
-// sharedFolders are every game's folder rows; a row whose folder a game lacks matches nothing.
-var sharedFolders = map[string]Folder{
-	"common/scripted_effects":   {CalledIn: []string{callEffect}, Body: ShapeEffects, Keyword: "scripted_effect", Parameters: true},
-	"common/scripted_triggers":  {CalledIn: []string{callTrigger}, Body: ShapeTriggers, Keyword: "scripted_trigger", Parameters: true},
-	"common/scripted_modifiers": {CalledIn: []string{callValue}, Parameters: true},
-	"common/script_values":      {CalledIn: []string{callTrigger, callValue}, Body: ShapeValue},
-	"common/scripted_lists":     {Iterated: true},
-	"events":                    {Events: true},
-	"common/genes": {Wrappers: []string{"color_genes", "special_genes", "morph_genes", "accessory_genes",
-		"decal_atlases", "age_presets"}},
-	"common/named_colors":              {Wrappers: []string{"colors"}},
-	"data_binding":                     {NameKey: "definition", Functions: true},
-	"common/game_concepts":             {Concepts: true},
-	"common/achievement_groups.txt":    {NameKey: "name"},
-	"common/coat_of_arms/options":      {Unnamed: true},
-	"common/coat_of_arms/coat_of_arms": {Wrappers: []string{"template"}},
-	"common/coat_of_arms/template_lists": {Wrappers: []string{"coat_of_arms_template_lists",
-		"pattern_texture_lists", "colored_emblem_texture_lists", "textured_emblem_texture_lists", "color_lists"}},
-	"gui/scripted_widgets":          {Unnamed: true},
-	"gui.type":                      {CalledIn: []string{"widget"}},        // a widget key naming a type
-	"gui.block":                     {CalledIn: []string{"blockoverride"}}, // blockoverride "x" { }
-	"music/music_player_categories": {NameKey: "id"},
+// shared are every game's rows; a row whose folder a game lacks matches nothing.
+var shared = []Descriptor{
+	folder("common/scripted_effects", Descriptor{Callers: []string{callEffect}, Body: ShapeEffects, Keyword: "scripted_effect", Parameters: true}),
+	folder("common/scripted_triggers", Descriptor{Callers: []string{callTrigger}, Body: ShapeTriggers, Keyword: "scripted_trigger", Parameters: true}),
+	folder("common/scripted_modifiers", Descriptor{Callers: []string{callValue}, Parameters: true}),
+	folder("common/script_values", Descriptor{Callers: []string{callTrigger, callValue}, Body: ShapeValue}),
+	folder("common/scripted_lists", Descriptor{Purpose: PurposeLists}),
+	folder("events", Descriptor{Purpose: PurposeEvents}),
+	folder("common/genes", Descriptor{Wrappers: []string{"color_genes", "special_genes", "morph_genes", "accessory_genes",
+		"decal_atlases", "age_presets"}}),
+	folder("common/named_colors", Descriptor{Wrappers: []string{"colors"}}),
+	folder("data_binding", Descriptor{Identity: IdentityByField, NameKey: "definition", Purpose: PurposeFunctions}),
+	folder("common/game_concepts", Descriptor{Purpose: PurposeConcepts}),
+	folder("common/achievement_groups.txt", Descriptor{Identity: IdentityByField, NameKey: "name"}),
+	folder("common/coat_of_arms/options", Descriptor{Identity: IdentityNone}),
+	folder("common/coat_of_arms/coat_of_arms", Descriptor{Wrappers: []string{"template"}}),
+	folder("common/coat_of_arms/template_lists", Descriptor{Wrappers: []string{"coat_of_arms_template_lists",
+		"pattern_texture_lists", "colored_emblem_texture_lists", "textured_emblem_texture_lists", "color_lists"}}),
+	folder("gui/scripted_widgets", Descriptor{Identity: IdentityNone}),
+	{Database: "gui.type", Callers: []string{"widget"}},         // a widget key naming a type
+	{Database: "gui.block", Callers: []string{"blockoverride"}}, // blockoverride "x" { }
+	folder("music/music_player_categories", Descriptor{Identity: IdentityByField, NameKey: "id"}),
+	nested("common/defines", "", "define"),
 }
 
-// withShared is the shared rows with one game's own rows over them.
-func withShared(own map[string]Folder) map[string]Folder {
-	rows := maps.Clone(sharedFolders)
-	maps.Copy(rows, own)
+// folder is a row for the database a folder or file makes.
+func folder(path string, row Descriptor) Descriptor {
+	row.Database, row.Path = NameOf(path), path
+	return row
+}
+
+// nested is a row for a database whose entries are keys written inside the entries of a folder or file, at a key
+// path from each entry; database "" makes those keys entries of the holding database itself (a title inside a
+// title).
+func nested(parent, within, database string) Descriptor {
+	row := Descriptor{Database: NameOf(parent), Parent: parent, Within: within}
+	if database != "" {
+		row.Database += "." + database
+	}
+	return row
+}
+
+// setsUp is a nested row whose entries are the start state of a database defined elsewhere.
+func setsUp(parent, within, database, of string) Descriptor {
+	row := nested(parent, within, database)
+	row.Purpose, row.Of = PurposeHistory, of
+	return row
+}
+
+// withShared is the shared rows with one game's own rows over them, by database.
+func withShared(own []Descriptor) []Descriptor {
+	rows := slices.Clone(shared)
+	for _, row := range own {
+		if i := slices.IndexFunc(rows, func(had Descriptor) bool { return had.Database == row.Database && had.Within == row.Within }); i >= 0 {
+			rows[i] = row
+		} else {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+// At is the row whose path is a folder or file; false for none.
+func (layout Layout) At(path string) (Descriptor, bool) {
+	for _, row := range layout.Descriptors {
+		if row.Path == path {
+			return row, true
+		}
+	}
+	return Descriptor{}, false
+}
+
+// Nested are the rows whose keys are written inside the entries of a file: those whose parent is the file or
+// a folder above it.
+func (layout Layout) Nested(rel string) (rows []Descriptor) {
+	for _, row := range layout.Descriptors {
+		if row.Parent != "" && (rel == row.Parent || strings.HasPrefix(rel, row.Parent+"/")) {
+			rows = append(rows, row)
+		}
+	}
 	return rows
 }

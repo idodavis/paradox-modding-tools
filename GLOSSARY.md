@@ -79,7 +79,7 @@ These are the terms of the language engine (`services/internal/lang/README.md`),
 | origin | which root a file came from: `vanilla` or a mod's id | |
 | database | all entries of one type: one per script folder of the install, named by the folder's path without `common/` | `traits`; `culture/cultures`; `events`; `gui.type` |
 | definition | one entry of a database, with a name (`index.Def`) | `brave = { … }` |
-| nested database | a database whose entries are written inside another database's entry (a registry `Nested` row) | a landed title inside a title; an activity type's `phases` |
+| nested database | a database whose entries are written inside another database's entry (a `Descriptor` row with `Parent` and `Within`) | a landed title inside a title; an activity type's `phases` |
 | history database | a database whose registry row makes its entries the start state of other databases' entries; it defines none of its own | `history/titles`: `k_france = { 867.1.1 = { holder = 168673 } }`; EU5 `setup/start` |
 | script-made name | a name a command creates while script runs, in a database no folder holds (`game.NameCommands`) | `save_scope_as = x`; `set_variable = { name = y }` |
 | position | a place in a database's entry or in a command's arguments (`schema.Key`); keys collapse only by written form: `<number>`, `<date>`, `<prefix:>` | `trigger` inside an event; `<number>` inside `random_list` |
@@ -92,7 +92,7 @@ These are the terms of the language engine (`services/internal/lang/README.md`),
 | scope type | the class of object a statement runs against | `character`, `landed_title`, `country` |
 | link | a declared hop between scope types | `liege`, `primary_title`, `root` |
 | command | an effect, trigger or link the dumps declare (`schema.Command`) | `add_gold`, `has_trait`, `if`, `every_vassal` |
-| call | a key that is no command or link, naming an entry of a database whose registry row's `CalledIn` holds the block kind it is written in; resolved at query time | a scripted effect, a scripted trigger |
+| call | a key that is no command or link, naming an entry of a database whose `Descriptor.Callers` holds the word the block resolves calls by; resolved at query time | a scripted effect, a scripted trigger |
 | dumps | everything the game declares about its language, from `script_docs` and `dump_data_types` | the `logs` and `docs` dumps |
 | docs | the prose the install ships beside its script | `_traits.info`, `readme.txt`, `*.md` |
 | claim | a fact a source states at a position or about a command, with who stated it (`schema.Said`); the highest-ranked source to state it keeps it (`Claim.Set`) | `Required` optional, `Scope` character |
@@ -124,7 +124,7 @@ Only a declared claim that is fresh and that no evidence contradicts lets a diag
 
 | Name | Lives in |
 |---|---|
-| The language rules (`Shape`, `Shapes`, `KeyRules`, `Constructs`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Folders`, `Nested`, `MapTable`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo` (its `FirstWins` sentence), `UserDataDir`, `DumpDirs`, `ReadGameVersion` — `game.go` | `services/internal/game` — **the only game-aware package** |
+| The language rules (`Shape`, `Shapes`, `KeyRules`, `Constructs`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Descriptor` rows with `Identity` and `Purpose`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo` (its `FirstWins` sentence), `UserDataDir`, `DumpDirs`, `ReadGameVersion` — `game.go` | `services/internal/game` — **the only game-aware package** |
 | The CST, the lexer, the name and literal shapes, encodings; `SplitPrefixed`, `Constant`, `Interpolations` (the spellings inside one word); `Result.Attach` (comments onto statements) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install, a mod or a dump folder, its format, an image's header | `services/internal/lang/source` — one format table for every game |
 | Loc files: entries, interpolations, language | `services/internal/lang/loc` |

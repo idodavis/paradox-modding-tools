@@ -26,10 +26,11 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 	var files []inventory.File
 	for _, file := range install {
 		at, _ := schema.folder(file.Rel)
+		row, _ := info.At(at)
 		gui := game.FileTypes[strings.ToLower(path.Ext(file.Rel))].Keywords != nil
-		if file.Format == inventory.Script && (len(info.Folders[at].CalledIn) > 0 || gui) {
+		if file.Format == inventory.Script && (len(row.Callers) > 0 || gui) {
 			parsed := parseScript(file)
-			for _, entry := range schema.FindEntries(file, &parsed) {
+			for _, entry := range schema.WalkFile(file, &parsed, false, nil) {
 				schema.registerScriptedEntries(entry)
 			}
 			parsedFirst[file.Path] = parsed
@@ -52,21 +53,19 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 		if file.Format == inventory.Script {
 			parsed = &result
 		}
-		entries := schema.FindEntries(file, parsed)
-		for _, entry := range entries {
+		for _, entry := range schema.countFile(file, parsed) {
 			schema.noteEntry(entry, names)
 		}
-		schema.countFile(file, parsed, entries)
 	}
 	return names, inventory.Ordered(ctx, files, work, keep)
 }
 
-// noteEntry makes the database of an entry that has none (a file type's database holds its Body: gui.x),
-// records the name a named entry defines, and registers a scripted entry declared inline.
-func (schema *Schema) noteEntry(entry Entry, names map[string]map[string]bool) {
+// noteEntry makes the database of an entry that has none (a table's, a file type's with its Body: gui.x) and
+// records the name a named entry defines.
+func (schema *Schema) noteEntry(entry Occurrence, names map[string]map[string]bool) {
 	if schema.Databases[entry.Database] == nil {
 		extension, _, _ := strings.Cut(entry.Database, ".")
-		schema.declareDatabase(entry.Database, game.Folder{Body: game.FileTypes["."+extension].Body})
+		schema.declareDatabase(entry.Database, game.Descriptor{Database: entry.Database, Body: game.FileTypes["."+extension].Body})
 	}
 	if entry.ID != "" {
 		if names[entry.Database] == nil {
@@ -74,24 +73,21 @@ func (schema *Schema) noteEntry(entry Entry, names map[string]map[string]bool) {
 		}
 		names[entry.Database][strings.Clone(entry.ID)] = true
 	}
-	if entry.Local {
-		schema.registerScriptedEntries(entry)
-	}
 }
 
 // registerScriptedEntries records a scripted entry vanilla defines, under each word its database is called
 // by. A database that takes parameters gives the entry its own parameters position; one that takes none
 // reads at its database's entry, so no entry tree is held twice.
-func (schema *Schema) registerScriptedEntries(entry Entry) {
+func (schema *Schema) registerScriptedEntries(entry Occurrence) {
 	database := schema.Databases[entry.Database]
-	if database == nil || len(database.Row.CalledIn) == 0 {
+	if database == nil || len(database.Descriptor.Callers) == 0 {
 		return
 	}
 	called := ScriptedEntry{Database: database.Name}
-	if database.Row.Parameters {
+	if database.Descriptor.Parameters {
 		called.Parameters = &Position{}
 	}
-	words := database.Row.CalledIn
+	words := database.Descriptor.Callers
 	if !strings.Contains(database.Name, ".") {
 		words = append(slices.Clone(words), game.AnyCall)
 	}
@@ -109,18 +105,16 @@ func parseScript(file inventory.File) jomini.Result {
 	return jomini.Parse(text)
 }
 
-// countFile walks one vanilla file with its entries and records at each position how often and in what forms
-// vanilla writes it. It records evidence only, never a claim.
-func (schema *Schema) countFile(file inventory.File, parsed *jomini.Result, entries []Entry) {
-	counter := &counter{schema: schema, entries: entries, counted: map[*jomini.Block]map[*Position]bool{}}
-	schema.WalkFile(file, parsed, entries, true, counter.count)
+// countFile walks one vanilla file and records at each position how often and in what forms vanilla writes
+// it, evidence only, never a claim; it returns the entries the file defines.
+func (schema *Schema) countFile(file inventory.File, parsed *jomini.Result) []Occurrence {
+	counter := &counter{schema: schema, counted: map[*jomini.Block]map[*Position]bool{}}
+	return schema.WalkFile(file, parsed, true, counter.count)
 }
 
-// counter is one file's count: its entries, and the positions each block has counted a key at, so a key counts
-// once per block.
+// counter is one file's count: the positions each block has counted a key at, so a key counts once per block.
 type counter struct {
 	schema  *Schema
-	entries []Entry
 	counted map[*jomini.Block]map[*Position]bool
 }
 
@@ -128,7 +122,7 @@ type counter struct {
 func (counter *counter) count(statement jomini.Statement, context Context, inner *Context, _ []Occurrence) bool {
 	// an entry's own statement records its value at the entry's position and counts nothing; a word listed as an
 	// entry is written at its holder's position, so it is recorded there
-	if context.Entry >= 0 && counter.entries[context.Entry].Statement == statement {
+	if inner.Defines {
 		switch written := statement.(type) {
 		case *jomini.Assignment:
 			countValue(written.Value, inner.At)
@@ -232,7 +226,7 @@ func (schema *Schema) inferValueTypes(names map[string]map[string]bool, locKeys 
 
 	// the words a database's entries write at its row's Names keys name entries too (trait groups)
 	for name, database := range schema.Databases {
-		for _, key := range database.Row.Names {
+		for _, key := range database.Descriptor.Names {
 			if child := database.Entry.Child(key); child != nil {
 				if names[name] == nil {
 					names[name] = map[string]bool{}
@@ -281,7 +275,7 @@ func isFileTypeDatabase(name string) bool {
 func (typing *typing) one(words []string, inGUI bool) (found string) {
 	count := 0
 	for _, database := range typing.holding[words[0]] {
-		if isFileTypeDatabase(database) != inGUI || typing.s.Databases[database].Row.History {
+		if isFileTypeDatabase(database) != inGUI || typing.s.Databases[database].Descriptor.Purpose == game.PurposeHistory {
 			continue
 		}
 		if slices.ContainsFunc(words, func(word string) bool { return !typing.names[database][word] }) {

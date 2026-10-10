@@ -78,17 +78,15 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 	return install, SaveInstall(req, install) // 6: the cache
 }
 
-// inventoryOf lists the install's files and the dump folders', and asks the wiki for the examples
-// of the databases they make.
+// inventoryOf lists the install's files and the dump folders', with the wiki to ask for the examples of the
+// databases the schema declares.
 func inventoryOf(req Request) (roots []string, input schema.Input, err error) {
 	req.Progress("inventory", 0, 1)
 	roots = inventory.Roots(req.Dir)
 	input = schemaInput(req, roots)
-	examples, written, err := wiki.ScriptExamples(req.Game, schema.DatabaseNames(input))
-	if err != nil {
-		return nil, schema.Input{}, err
+	input.Wiki = func(databases []string) (map[string][]string, time.Time, error) {
+		return wiki.ScriptExamples(req.Game, databases)
 	}
-	input.WikiExamples, input.WikiWritten = examples, written
 	return roots, input, nil
 }
 

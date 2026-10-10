@@ -74,7 +74,7 @@ func ReadDescriptor(gameID, root string) (ListingFields, error) {
 	if err != nil {
 		return ListingFields{}, err
 	}
-	if info := game.Get(gameID); info != nil && info.Descriptor == "metadata" {
+	if info := game.Get(gameID); info != nil && info.ModDescriptor == game.MetadataDescriptor {
 		fields, err := readMetadataJSON(raw)
 		id, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(steamItemRel)))
 		fields.RemoteFileID = strings.TrimSpace(string(id))
@@ -92,7 +92,7 @@ func WriteDescriptor(gameID, root string, fields ListingFields) error {
 	}
 	// a descriptor that is not there yet is patched from nothing
 	var next []byte
-	if info := game.Get(gameID); info != nil && info.Descriptor == "metadata" {
+	if info := game.Get(gameID); info != nil && info.ModDescriptor == game.MetadataDescriptor {
 		if next, err = patchMetadataJSON(raw, fields); err != nil {
 			return err
 		}
@@ -455,7 +455,7 @@ func Create(opts NewModOpts) error {
 	if strings.EqualFold(fields.SupportedVersion, "latest") {
 		fields.SupportedVersion = ""
 	}
-	if info.Descriptor == "metadata" {
+	if info.ModDescriptor == game.MetadataDescriptor {
 		fields.Version, fields.ID = "1.0.0", Slug(name)
 	}
 	if err := WriteDescriptor(opts.GameID, root, fields); err != nil {

@@ -21,13 +21,13 @@ export interface GameInfo {
     "shortName": string;
 
     /**
-     * Descriptor is how a mod root is identified: "mod" (descriptor.mod) or
-     * "metadata" (.metadata/metadata.json).
+     * ModDescriptor is how a mod root is identified: "mod" (descriptor.mod) or
+     * MetadataDescriptor (.metadata/metadata.json).
      */
     "descriptor"?: string;
 
     /**
-     * FirstWins is Layout.FirstWinsDatabases as the sentence the Conflicts and Settings pages show.
+     * FirstWins is Layout.FirstWins as the sentence the Conflicts and Settings pages show.
      */
     "firstWins"?: string;
 }

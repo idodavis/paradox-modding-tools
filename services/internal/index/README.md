@@ -18,8 +18,8 @@ file again; each step is a function named for it, in the file that holds its hal
 
 ## The collector (`collect.go`)
 
-`Collect(schema, file, parsed, visit)` makes each entry `FindEntries` returns a `schema.Occurrence` that `Defines`,
-first and in source order, then walks the file once with `schema.WalkFile` and appends each statement's occurrences
+`Collect(schema, file, parsed, visit)` walks the file once with `schema.WalkFile`, which returns each entry as a
+`schema.Occurrence` that `Defines`, first and in source order, and appends each statement's occurrences
 (`Occurrences`), gives every occurrence its line and column, and keeps the scope each command, link or link-read scalar is
 written in (`scopePair`). An occurrence's `Entry` is the position, among the file's occurrences, of the definition of
 the entry it is in; an entry's definition points at itself. `visit` sees each statement: the index passes none,
@@ -48,8 +48,8 @@ load order: a file is hidden by a later file at its `Rel`, or by a later index's
 rest sort by `Rel`, then by position in the file. `Names` is every name a database defines, for completion.
 `RefsInside` is the references written inside an entry's definition.
 
-**Resolution.** `Resolve` is the one resolver: a call looks in the databases its CalledIn word names
-(`Schema.Callees`); a scope the game saves from code, a loc key or a file path is known with no
+**Resolution.** `Resolve` is the one resolver: a call looks in the databases its caller word names (`Descriptor.Callers`,
+`Schema.Callees`); a scope the game saves from code, a loc key or a file path is known with no
 definitions; anything else is `Lookup`. A local definition answers only its own file. `RefsTo` is
 Resolve turned around: every reference to a name of a database, the calls into it included.
 

@@ -1,10 +1,10 @@
 // walk.go is the walker: WalkFile reads every statement of a file in the context it is written in and the one
-// its block reads in, WalkBlock a snippet's; Enter is the one step from the first to the second.
+// its block reads in, deciding the entries as it meets them, WalkBlock a snippet's; Enter is the one step from
+// the first context to the second.
 
 package schema
 
 import (
-	"cmp"
 	"path"
 	"slices"
 	"strings"
@@ -31,6 +31,9 @@ type Context struct {
 	Block     *jomini.Block // the block whose statements read here; nil at a file's top and for a snippet
 	InTrigger bool          // inside a trigger
 	Leaf      bool          // the statement that opened this context is a description's leaf
+	Defines   bool          // the statement that opened this context defines an entry
+	top       bool          // the statements here are a file's top ones: the root's, or a wrapper's
+	within    string        // the keys from the entry's own block down to this one, joined by /, as Descriptor.Within
 }
 
 // Position is the own position of the key that opened the context: nil for a link, which reads where it stands,
@@ -59,18 +62,25 @@ type KeyFacts struct {
 // reads in (which the visitor may change) and what its words name. False stops that block.
 type Visit func(statement jomini.Statement, context Context, inner *Context, occurrences []Occurrence) bool
 
-// fileWalk is one walk of a file: whether it makes positions, the entries known and which statement is an
-// entry's own, and what the occurrence rules need of the file (its extension, the events database, the
-// parameters defined so far).
+// fileWalk is one walk of a file: whether it makes positions, the file and its own database, how its entries
+// are told (its file type, the nested descriptors that hold for it, the keywords that declare an entry and the
+// databases they declare), the entries met so far, the statement a whole-file entry is, and the parameters
+// defined so far.
 type fileWalk struct {
-	schema  *Schema
-	visit   Visit
-	create  bool
-	entries []Entry
-	own     map[jomini.Statement]int // an entry's statement: its index in entries
-	ext     string                   // the file's extension, lower-case, with its dot; "" for a snippet
-	events  string                   // the database an event id names; "" none
-	defined map[string]bool          // the parameters defined so far, as <entry>:<NAME>
+	schema   *Schema
+	visit    Visit
+	create   bool
+	rel      string            // the file's path from its root
+	own      string            // the database the file's folder makes; "" at a root
+	database *Database         // that database; nil for none
+	ext      string            // the file's extension, lower-case, with its dot; "" for a snippet
+	fileType game.FileType     // how the extension names entries
+	nested   []game.Descriptor // the nested descriptors that hold for the file
+	declares map[string]string // a keyword → the database an entry it declares is in
+	inline   map[string]bool   // the databases a keyword declares inline in other folders' files
+	entries  []Occurrence      // the definitions met, in source order
+	whole    jomini.Statement  // the statement a whole-file entry is; nil for none
+	defined  map[string]bool   // the parameters defined so far, as <entry>:<NAME>
 }
 
 // fits is the test of each key rule: whether the rule reads a key, by the facts about it.
@@ -87,48 +97,75 @@ var fits = [...]func(KeyFacts) bool{
 	game.KeyRuleCall:           func(KeyFacts) bool { return true },
 }
 
-// WalkFile reads a whole file with its entries known: every statement in source order, outer before inner, each
-// in the context it is written in and the one its block reads in, with what its words name. With create, the
-// walk makes the positions it reads (the count). A whole-file entry (a history file) holds the root's statements
-// as one block. A table or list (parsed nil) has no statements: its entries are its records.
-func (schema *Schema) WalkFile(file inventory.File, parsed *jomini.Result, entries []Entry, create bool, visit Visit) {
-	if parsed == nil {
-		return
-	}
+// WalkFile reads a whole file: every statement in source order, outer before inner, each in the context it is
+// written in and the one its block reads in, with what its words name; it returns the entries the file defines, in
+// source order. With create, the walk makes the positions it reads (the count) and the databases its entries need.
+// A table or list (parsed nil) has no statements: its entries are its rows. An extension no file type names
+// defines nothing.
+func (schema *Schema) WalkFile(file inventory.File, parsed *jomini.Result, create bool, visit Visit) []Occurrence {
+	_, own := schema.folder(file.Rel)
+	layout := game.Get(schema.Game).Layout
 	walk := &fileWalk{
-		schema: schema, visit: visit, create: create, entries: entries, own: map[jomini.Statement]int{},
-		ext:     strings.ToLower(path.Ext(file.Rel)),
-		events:  cmp.Or(schema.DatabasesWhere(func(row game.Folder) bool { return row.Events })...),
-		defined: map[string]bool{},
+		schema: schema, visit: visit, create: create, rel: file.Rel, own: own, database: schema.Databases[own],
+		ext: strings.ToLower(path.Ext(file.Rel)), nested: layout.Nested(file.Rel),
+		declares: map[string]string{}, inline: map[string]bool{}, defined: map[string]bool{},
 	}
-	top := parsed.Root.Statements
-	for i, entry := range entries {
-		walk.own[entry.Statement] = i
-		if entry.Statement.NodeRange() == parsed.Root.Range {
-			top = []jomini.Statement{entry.Statement}
+	if parsed == nil {
+		return walk.tableEntries(file)
+	}
+	fileType, typed := game.FileTypes[walk.ext]
+	if !typed {
+		return nil
+	}
+	walk.fileType = fileType
+	for _, row := range layout.Descriptors {
+		if row.Keyword != "" {
+			walk.declares[row.Keyword], walk.inline[row.Database] = row.Database, true
 		}
 	}
-	walk.walk(top, Context{Entry: -1})
+	for _, word := range fileType.Keywords {
+		walk.declares[word] = walk.ext[1:] + "." + word // a file type's keywords declare an entry in <ext>.<word>
+	}
+	top := parsed.Root.Statements
+	if statement, whole := walk.wholeFileEntry(parsed); whole {
+		top, walk.whole = []jomini.Statement{statement}, statement
+	}
+	for i := range top { // a scripted entry declared inline (at the top, in every install) is called anywhere in its file
+		if entry, _, isEntry := walk.entryAt(Context{Entry: -1, top: true}, top, i); create && isEntry && entry.Local {
+			schema.registerScriptedEntries(entry)
+		}
+	}
+	walk.walk(top, Context{Entry: -1, top: true})
+	return walk.entries
 }
 
 // WalkBlock reads a snippet's statements at a context, with no entries and no names: the tests read script this
 // way.
 func (schema *Schema) WalkBlock(context Context, statements []jomini.Statement, create bool, visit Visit) {
-	walk := &fileWalk{schema: schema, visit: visit, create: create, own: map[jomini.Statement]int{}}
+	walk := &fileWalk{schema: schema, visit: visit, create: create}
 	walk.walk(statements, context)
 }
 
-// walk reads a block's statements at a context: for each, the context its block reads in (an entry's statement
-// opens its database's; any other steps by Enter), what its words name, then the visitor, then its block when the
-// visitor agrees. An entry's own statement is read in its holder's context with the entry as its own.
+// walk reads a block's statements at a context: for each, whether it defines an entry (entryAt) and the context
+// its block reads in (an entry's statement opens its database's; any other steps by Enter), what its words name,
+// then the visitor, then its block when the visitor agrees. An entry's own statement is read in its holder's
+// context with the entry as its own; one whose database the schema lacks is listed, and read as any statement.
 func (walk *fileWalk) walk(statements []jomini.Statement, context Context) {
-	var previous jomini.Statement
-	for _, statement := range statements {
-		at, inner := context, Context{}
-		if i, isEntry := walk.own[statement]; isEntry && walk.schema.Databases[walk.entries[i].Database] != nil {
-			at.Entry, inner = int32(i), walk.entryOpens(i, statement)
-		} else {
+	for i, statement := range statements {
+		at, inner, opened := context, Context{}, false
+		if entry, nested, isEntry := walk.entryAt(context, statements, i); isEntry {
+			walk.entries = append(walk.entries, entry)
+			if inner, opened = walk.entryOpens(context, entry, statement, nested); opened {
+				at.Entry = entry.Entry
+			}
+		}
+		if !opened {
+			var previous jomini.Statement
+			if i > 0 {
+				previous = statements[i-1]
+			}
 			inner = walk.schema.Enter(at, statement, previous, walk.create)
+			inner.top, inner.within = walk.below(context, statement)
 		}
 		var occurrences []Occurrence
 		if walk.ext != "" {
@@ -136,25 +173,54 @@ func (walk *fileWalk) walk(statements []jomini.Statement, context Context) {
 		}
 		block := jomini.ChildBlock(statement)
 		inner.Block = block
-		if walk.visit(statement, at, &inner, occurrences) && block != nil {
+		if (walk.visit == nil || walk.visit(statement, at, &inner, occurrences)) && block != nil {
 			walk.walk(block.Statements, inner)
 		}
-		previous = statement
 	}
 }
 
-// entryOpens is the context an entry's statement opens: its database's, in the scope the dumps declare for an
-// on_action.
-func (walk *fileWalk) entryOpens(i int, statement jomini.Statement) Context {
-	database := walk.schema.Databases[walk.entries[i].Database]
+// below is where a statement that defines no entry reads its block: a wrapper's block holds top statements; any
+// other block inside an entry reads one key further from the entry's own block, never at the top.
+func (walk *fileWalk) below(context Context, statement jomini.Statement) (top bool, within string) {
+	assign, isAssign := statement.(*jomini.Assignment)
+	if !isAssign {
+		return false, context.within
+	}
+	if context.top && jomini.BlockOf(assign.Value) != nil && walk.database != nil &&
+		slices.Contains(walk.database.Descriptor.Wrappers, assign.Key.Text) {
+		return true, ""
+	}
+	if context.Entry < 0 {
+		return false, ""
+	}
+	return false, path.Join(context.within, assign.Key.Text)
+}
+
+// entryOpens is the context an entry's statement opens: its database's (made when the walk creates and none has
+// it; false when none has it and the walk does not), in the scope the dumps declare for an on_action, with the
+// entry as its own. A nested entry's block continues the key path of the entry holding it; any other's starts one.
+func (walk *fileWalk) entryOpens(context Context, entry Occurrence, statement jomini.Statement, nested bool) (Context, bool) {
+	database := walk.schema.Databases[entry.Database]
+	if database == nil && walk.create {
+		extension, _, _ := strings.Cut(entry.Database, ".")
+		walk.schema.declareDatabase(entry.Database, game.Descriptor{Database: entry.Database, Body: game.FileTypes["."+extension].Body})
+		database = walk.schema.Databases[entry.Database]
+	}
+	if database == nil {
+		return Context{}, false
+	}
 	inner := walk.schema.EntryContext(database)
-	inner.Entry = int32(i)
-	if assign, isAssign := statement.(*jomini.Assignment); isAssign && database.Row.OnActions {
+	inner.Entry, inner.Defines = entry.Entry, true
+	assign, isAssign := statement.(*jomini.Assignment)
+	if isAssign && database.Descriptor.Purpose == game.PurposeOnActions {
 		if scope := walk.schema.OnActions[assign.Key.Text].Scope; scope != "" {
 			inner.Scope = scope
 		}
 	}
-	return inner
+	if nested && isAssign {
+		inner.within = path.Join(context.within, assign.Key.Text)
+	}
+	return inner, true
 }
 
 // EntryContext is where a database's entry reads: at its entry position, in the shape its entry holds, in the
@@ -178,7 +244,7 @@ func (schema *Schema) EntryContext(database *Database) Context {
 func (schema *Schema) Enter(context Context, statement, previous jomini.Statement, create bool) Context {
 	assign, isAssign := statement.(*jomini.Assignment)
 	reopened := context
-	reopened.Rule = game.KeyRuleNone
+	reopened.Rule, reopened.Defines = game.KeyRuleNone, false
 	if !isAssign || context.Database == nil {
 		return reopened
 	}
@@ -189,7 +255,7 @@ func (schema *Schema) Enter(context Context, statement, previous jomini.Statemen
 	}
 	key := assign.Key.Text
 	literal := jomini.Literal(key)
-	if literal == jomini.LitDate || context.Database.Row.Dated && literal == jomini.LitNumber {
+	if literal == jomini.LitDate || context.Database.Descriptor.Dated && literal == jomini.LitNumber {
 		return reopened
 	}
 	if schema.Commands[strings.ToLower(key)] == nil && writtenInPlace(key) {

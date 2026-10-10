@@ -295,7 +295,9 @@ func (completer *completer) calls(written string) {
 	for _, name := range slices.Sorted(maps.Keys(types)) {
 		completer.add(Item{Label: name, Head: "data type", Rank: 2}, reading{})
 	}
-	for _, name := range s.DatabasesWhere(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
+	for _, name := range s.DatabasesWhere(func(row game.Descriptor) bool {
+		return row.Purpose == game.PurposeFunctions || row.Purpose == game.PurposeConcepts
+	}) {
 		completer.names(name, "", 2)
 	}
 }

@@ -1,5 +1,5 @@
-// entries.go is the entry detector: it says which definitions a file makes, for the schema's own build and
-// for the index.
+// entries.go is the entry detector: whether a statement defines an entry, and in which database, by the game's
+// layout, the file's type and the file's own database. The walk asks it at every statement.
 
 package schema
 
@@ -13,60 +13,35 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
-// Entry is one definition a file makes. Mode is the declared mode word stripped from the written name, or
-// ""; ID is "" for an entry that names nothing (an Unnamed row's, a history file).
-type Entry struct {
-	Database, ID, Mode string
-	Statement          jomini.Statement // the statement that defines it
-	Local              bool             // declared inline by a folder's Keyword in another folder's file
-}
-
-// NameOf returns a registry row's database name: the row's path without common/.
-func NameOf(rel string) string { return strings.TrimPrefix(rel, "common/") }
-
-// folder returns the registry row a file's database is read by and the database's name: the longest row at
-// or above the path. The game reads a common/ folder whole, so a subfolder with no row is its highest
-// ancestor's database (decisions/dlc_decisions is decisions); common/culture holds no file of its own, so
-// culture/traditions stays.
+// folder is the folder or file whose database a file belongs to, and that database: the longest layout row at or
+// above the path; else the file's folder, raised to the highest common/ ancestor that is a database (the game
+// reads a common/ folder whole, so decisions/dlc_decisions is decisions; common/culture holds no file of its own,
+// so culture/traditions stays).
 func (schema *Schema) folder(rel string) (at, name string) {
-	info := game.Get(schema.Game)
+	layout := game.Get(schema.Game).Layout
 	for up := rel; up != "."; up = path.Dir(up) {
-		if _, found := info.Folders[up]; found {
-			return up, NameOf(up)
+		if row, found := layout.At(up); found {
+			return up, row.Database
 		}
 	}
 	at = path.Dir(rel)
 	for up := path.Dir(at); strings.HasPrefix(up, "common/"); up = path.Dir(up) {
-		if schema.Databases[NameOf(up)] != nil {
+		if schema.Databases[game.NameOf(up)] != nil {
 			at = up
 		}
 	}
-	return at, NameOf(at)
+	return at, game.NameOf(at)
 }
 
-// DatabaseAt returns the database of the file at rel; nil when the schema has none.
+// DatabaseAt is the database of the file at rel; nil when the schema has none.
 func (schema *Schema) DatabaseAt(rel string) *Database {
 	_, name := schema.folder(rel)
 	return schema.Databases[name]
 }
 
-// FindEntries returns every entry a file defines, in source order. A table or list file has no parse; a script
-// file is read by its folder's row, its nested rows and its file type's keywords.
-func (schema *Schema) FindEntries(file inventory.File, parsed *jomini.Result) (entries []Entry) {
-	_, own := schema.folder(file.Rel)
-	collect := func(entry Entry) { entries = append(entries, entry) }
-	if parsed == nil {
-		schema.tableEntries(file, own, collect)
-	} else {
-		schema.scriptEntries(file, own, parsed, collect)
-	}
-	return entries
-}
-
-// tableEntries finds the entries of a table or list file: the map table's first column, or a list's names.
-func (schema *Schema) tableEntries(file inventory.File, own string, collect func(Entry)) {
-	info := game.Get(schema.Game)
-	database := info.MapTable.Database
+// tableEntries are the entries of a table or list file, each named in the file's database: a table's rows by
+// their first column where the layout names them so, a list's words. Any other table defines nothing.
+func (walk *fileWalk) tableEntries(file inventory.File) []Occurrence {
 	cut := func(line string) string { // the entry's name in a line
 		if strings.HasPrefix(line, "#") {
 			return ""
@@ -74,184 +49,190 @@ func (schema *Schema) tableEntries(file inventory.File, own string, collect func
 		name, _, _ := strings.Cut(line, ";")
 		return name
 	}
-	switch {
-	case file.Format == inventory.List:
-		database = own
+	if file.Format == inventory.List {
 		cut = func(line string) string {
 			_, name, _ := strings.Cut(line, " ")
 			return name
 		}
-	case file.Rel != info.MapTable.File:
-		return
+	} else if row, found := game.Get(walk.schema.Game).At(file.Rel); !found || row.Identity != game.IdentityByColumn {
+		return nil
 	}
 	text, err := file.Text()
 	if err != nil {
-		return
+		return nil
 	}
 	offset := 0
 	for line := range strings.SplitAfterSeq(text, "\n") {
-		text := strings.TrimSpace(cut(strings.TrimSpace(line)))
-		if text != "" {
-			start := offset + strings.Index(line, text)
-			span := jomini.Range{Start: start, End: start + len(text)}
-			collect(Entry{
-				Database: database, ID: text,
-				Statement: &jomini.ValueStmt{Value: &jomini.Scalar{Text: text, Range: span}, Range: span},
-			})
+		if name := strings.TrimSpace(cut(strings.TrimSpace(line))); name != "" {
+			start := offset + strings.Index(line, name)
+			walk.entries = append(walk.entries, walk.entry(walk.own, name, jomini.Range{Start: start, End: start + len(name)}))
 		}
 		offset += len(line)
 	}
+	return walk.entries
 }
 
-// entryFinder holds what reading one script file for its entries needs.
-type entryFinder struct {
-	s        *Schema
-	info     *game.GameInfo
-	collect  func(Entry)
-	own      string            // the file's folder's database name
-	ext      string            // the file's extension, lower-case, with its dot
-	database *Database         // the file's folder's database; nil for none
-	row      game.Folder       // its registry row
-	fileType game.FileType     // how the file's extension names entries
-	rows     []game.Nested     // the nested rows that hold for the file's path
-	declares map[string]string // a keyword → the database an entry it declares is in
-	inline   map[string]bool   // the databases a folder's Keyword declares inline in other folders' files
+// wholeFileEntry is the statement a file is whole as, holding the root's statements as one block: where the
+// file's database names each file one entry, or holds the start state of its own files, and the file type names
+// no entries of its own. False for a file of many entries.
+func (walk *fileWalk) wholeFileEntry(parsed *jomini.Result) (jomini.Statement, bool) {
+	if walk.database == nil || walk.fileType.NameKey != "" {
+		return nil, false
+	}
+	row := walk.database.Descriptor
+	ownFiles := row.Purpose == game.PurposeHistory && row.Of == "" && row.Identity != game.IdentityNone
+	if row.Identity != game.IdentityByFile && !ownFiles {
+		return nil, false
+	}
+	root := &jomini.Block{Statements: parsed.Root.Statements, Range: parsed.Root.Range, OpenBrace: -1, CloseBrace: -1}
+	return &jomini.ValueStmt{Value: root, Range: parsed.Root.Range}, true
 }
 
-// scriptEntries finds the entries of a parsed script file.
-func (schema *Schema) scriptEntries(file inventory.File, own string, parsed *jomini.Result, collect func(Entry)) {
-	info := game.Get(schema.Game)
-	ext := strings.ToLower(path.Ext(file.Rel))
-	fileType, typed := game.FileTypes[ext]
-	if !typed {
-		return
+// entryAt is whether the statement at i defines an entry, the entry, and whether it nests in the entry holding it
+// (its block then continues the key path); the first rule that fits decides. A word that declares the next
+// statement (type x = { }) or groups widgets (types x { }) is no entry; what it declares is one of its database.
+// At the top (the root's or a wrapper's statements) the file type's name keys name an entry of the type's own
+// database, else the file's database names the key by its identity; inside an entry, a nested descriptor whose
+// key path matches names a key that is no field, or a listed word shaped as a name.
+func (walk *fileWalk) entryAt(context Context, statements []jomini.Statement, i int) (entry Occurrence, nested, isEntry bool) {
+	statement := statements[i]
+	assign, isAssign := statement.(*jomini.Assignment)
+	block, key, span := jomini.ChildBlock(statement), "", statement.NodeRange()
+	if isAssign {
+		key, span = assign.Key.Text, assign.Key.Range
 	}
-	f := &entryFinder{
-		s: schema, info: info, collect: collect, own: own, ext: ext, database: schema.Databases[own], fileType: fileType,
-		declares: map[string]string{}, inline: map[string]bool{},
+	if statement == walk.whole {
+		name := ""
+		if walk.database.Descriptor.Identity == game.IdentityByFile {
+			name = strings.TrimSuffix(path.Base(walk.rel), path.Ext(walk.rel))
+		}
+		return walk.entry(walk.own, name, span), false, true
 	}
-	if f.database != nil {
-		f.row = f.database.Row
-	}
-	for _, nested := range info.Nested {
-		if nested.Database != "" && (file.Rel == nested.Parent || strings.HasPrefix(file.Rel, nested.Parent+"/")) {
-			f.rows = append(f.rows, nested)
+	if !isAssign && i+1 < len(statements) {
+		if _, declares := walk.declaring(context, statement, statements[i+1]); declares {
+			return entry, false, false
 		}
 	}
-	for at, row := range info.Folders {
-		if row.Keyword != "" {
-			f.declares[row.Keyword], f.inline[NameOf(at)] = NameOf(at), true
+	if isAssign && i > 0 {
+		if word, declares := walk.declaring(context, statements[i-1], statement); declares {
+			return walk.entry(walk.declares[word], key, span), false, walk.declares[word] != ""
 		}
 	}
-	for _, word := range fileType.Keywords {
-		f.declares[word] = ext[1:] + "." + word // a file type's keywords declare an entry in <ext>.<word>
+	if _, constant := jomini.Constant(key); constant {
+		return entry, false, false
 	}
-
-	whole := f.database != nil && fileType.NameKey == "" &&
-		(f.row.ByFile || f.row.History && f.row.Of == "" && !f.row.Unnamed)
-	if whole {
-		f.wholeFile(file.Rel, parsed)
+	fileType, ext := walk.fileType, strings.TrimPrefix(walk.ext, ".")
+	switch {
+	case context.top && block != nil && walk.database != nil && slices.Contains(walk.database.Descriptor.Wrappers, key):
+		return entry, false, false
+	case block != nil && fileType.NameKeyOf[key] != "":
+		name := nameIn(block, fileType.NameKeyOf[key])
+		return walk.entry(ext+"."+key, name, span), false, name != ""
+	case context.top && fileType.NameKey != "":
+		name := nameIn(block, fileType.NameKey)
+		return walk.entry(ext+"."+key, name, span), false, name != ""
+	case context.top && block != nil && fileType.WidgetKey != "":
+		return walk.entry(ext+".widget", nameIn(block, fileType.WidgetKey), span), false, true
+	case context.top && walk.database != nil:
+		return walk.identified(key, block, span)
+	case context.Entry >= 0 && context.Database != nil:
+		return walk.nestedEntry(context, statement, span)
 	}
-	f.walkScript(parsed.Root.Statements, !whole)
+	return entry, false, false
 }
 
-// wholeFile finds the one entry a file is whole: a history file of one entry, named by its stem when the
-// row says each file is one.
-func (finder *entryFinder) wholeFile(rel string, parsed *jomini.Result) {
-	name := ""
-	if finder.row.ByFile {
-		name = strings.TrimSuffix(path.Base(rel), path.Ext(rel))
+// declaring reports whether a word declares the statement after it, and the word: a keyword of the file type or
+// of a database (template x { }, scripted_effect x = { }), or, where the top blocks are widgets, any word before
+// a block (types x { } groups declarations).
+func (walk *fileWalk) declaring(context Context, word, next jomini.Statement) (string, bool) {
+	listed, isList := word.(*jomini.ValueStmt)
+	_, isAssign := next.(*jomini.Assignment)
+	if !isList || !isAssign {
+		return "", false
 	}
-	root := &jomini.Block{
-		Statements: parsed.Root.Statements, Range: parsed.Root.Range, OpenBrace: -1, CloseBrace: -1,
+	scalar, isScalar := listed.Value.(*jomini.Scalar)
+	if !isScalar {
+		return "", false
 	}
-	finder.emit(finder.database.Name, name, &jomini.ValueStmt{Value: root, Range: parsed.Root.Range}, finder.rows)
+	return scalar.Text, walk.declares[scalar.Text] != "" || context.top && walk.fileType.WidgetKey != ""
 }
 
-// emit reports an entry, then the entries nested inside it by the rows that hold for its statement.
-func (finder *entryFinder) emit(database, text string, statement jomini.Statement, inside []game.Nested) {
-	mode, name := finder.info.Mode(text)
-	finder.collect(Entry{
-		Database: database, ID: name, Mode: mode, Statement: statement,
-		Local: finder.inline[database] && database != finder.own,
-	})
-	finder.nestedEntries(database, statement, inside)
+// identified is the entry a top statement is by the file's database's identity: named nothing, by the value of
+// its name key up to a (, or by its own key (an event id where the database is the events').
+func (walk *fileWalk) identified(key string, block *jomini.Block, span jomini.Range) (entry Occurrence, nested, isEntry bool) {
+	row := walk.database.Descriptor
+	switch row.Identity {
+	case game.IdentityNone:
+		return walk.entry(walk.own, "", span), false, true
+	case game.IdentityByField:
+		name, _, _ := strings.Cut(nameIn(block, row.NameKey), "(")
+		name = strings.TrimSpace(name)
+		return walk.entry(walk.own, name, span), false, name != ""
+	}
+	_, name := game.Get(walk.schema.Game).Mode(key)
+	isEvent := row.Purpose != game.PurposeEvents || jomini.IsEventID(name)
+	return walk.entry(walk.own, key, span), false, key != "" && isEvent
 }
 
-// nesting is a nested row as one entry reads it: the database its keys define, and the rows its entries
-// nest by in turn (a self row's keys are the parent's, so they nest again).
-type nesting struct {
-	row      game.Nested
-	database string
-	again    []game.Nested
-	names    map[string]bool // in the entry's own block: the key names that are fields, not entries
-}
-
-// nestedEntries finds the entries a statement holds by each of the rows.
-func (finder *entryFinder) nestedEntries(database string, statement jomini.Statement, rows []game.Nested) {
-	for _, row := range rows {
-		n := nesting{row: row, database: NameOf(row.Parent), again: []game.Nested{row}}
-		if row.Database != "self" {
-			n.database += "." + row.Database
-			n.again = nil
+// nestedEntry is the entry a statement inside an entry is, by the first nested descriptor whose key path from
+// the holding entry matches: a key that is no field, or a listed word shaped as a name. It nests unless its
+// database is the holding entry's own, where the key path starts again (a title inside a title).
+func (walk *fileWalk) nestedEntry(context Context, statement jomini.Statement, span jomini.Range) (entry Occurrence, nested, isEntry bool) {
+	for _, row := range walk.nested {
+		if !matchesWithin(row.Within, context.within) {
+			continue
 		}
-		if holder := finder.s.Databases[database]; row.Path == "" && holder != nil {
-			n.names = holder.Fields
-		}
-		if block := jomini.ChildBlock(statement); block != nil {
-			steps := strings.FieldsFunc(row.Path, func(char rune) bool { return char == '/' })
-			finder.nestedAt(n, block.Statements, steps)
-		}
-	}
-}
-
-// nestedAt finds the entries at the end of a row's path of steps: a step is a key pattern, and ** matches
-// any depth.
-func (finder *entryFinder) nestedAt(nest nesting, statements []jomini.Statement, steps []string) {
-	for _, statement := range statements {
-		assign, isAssign := statement.(*jomini.Assignment)
-		if !isAssign {
-			// a word listed at the row's path and shaped as a name is an entry; a constant or a stray ; is none
-			if listed, isList := statement.(*jomini.ValueStmt); isList && len(steps) == 0 {
-				if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar && jomini.IsDefName(scalar.Text) {
-					finder.emit(nest.database, scalar.Text, statement, nest.again)
-				}
+		nested = row.Database != context.Database.Name
+		switch written := statement.(type) {
+		case *jomini.Assignment:
+			if !walk.isField(written.Key.Text, row, context.Database) {
+				return walk.entry(row.Database, written.Key.Text, span), nested, true
 			}
-			continue
-		}
-		key := assign.Key.Text
-		if finder.isField(nest, key) {
-			continue
-		}
-		var below []jomini.Statement
-		if block := jomini.ChildBlock(assign); block != nil {
-			below = block.Statements
-		}
-		switch {
-		case len(steps) == 0:
-			finder.emit(nest.database, key, assign, nest.again)
-		case steps[0] == "**":
-			finder.nestedAt(nest, []jomini.Statement{assign}, steps[1:])
-			finder.nestedAt(nest, below, steps)
-		default:
-			if matched, _ := path.Match(steps[0], key); matched {
-				finder.nestedAt(nest, below, steps[1:])
+		case *jomini.ValueStmt:
+			if scalar, isScalar := written.Value.(*jomini.Scalar); isScalar && jomini.IsDefName(scalar.Text) {
+				return walk.entry(row.Database, scalar.Text, span), nested, true
 			}
 		}
 	}
+	return entry, false, false
 }
 
-// isField reports whether a key is no entry: a constant, a field of the entry's own block, or a declared
-// command or link there.
-func (finder *entryFinder) isField(nest nesting, key string) bool {
-	if _, constant := jomini.Constant(key); constant || nest.names[positionName(key)] {
+// matchesWithin reports whether a key path (keys joined by /) matches a descriptor's Within: a pattern per key,
+// and a leading ** any number of keys.
+func matchesWithin(within, keys string) bool {
+	if rest, deep := strings.CutPrefix(within, "**/"); deep {
+		for at := 0; at < len(keys); at++ {
+			if (at == 0 || keys[at-1] == '/') && matchesWithin(rest, keys[at:]) {
+				return true
+			}
+		}
+		return false
+	}
+	matched, _ := path.Match(within, keys)
+	return matched
+}
+
+// isField reports whether a key inside an entry is a field of it, no entry: a constant; in the entry's own
+// block, a key the docs give the database, or a declared command (not a wild one) or link.
+func (walk *fileWalk) isField(key string, row game.Descriptor, database *Database) bool {
+	if _, constant := jomini.Constant(key); constant || row.Within == "" && database.Fields[positionName(key)] {
 		return true
 	}
-	command := finder.s.Commands[key]
-	return nest.row.Path == "" && (command != nil && !command.Wild || finder.s.Link(key) != nil)
+	command := walk.schema.Commands[key]
+	return row.Within == "" && (command != nil && !command.Wild || walk.schema.Link(key) != nil)
 }
 
-// nameIn returns the scalar value of the first assignment in a block whose key is key; "" for none.
+// entry is a definition in a database by its written name: the game's mode word split off, at a span, after the
+// file's entries so far, and declared inline where a keyword declares its database in another database's file.
+func (walk *fileWalk) entry(database, written string, span jomini.Range) Occurrence {
+	mode, name := game.Get(walk.schema.Game).Mode(written)
+	return Occurrence{
+		Role: Defines, Database: database, ID: name, Mode: mode, Range: span, Entry: int32(len(walk.entries)),
+		Local: walk.inline[database] && database != walk.own,
+	}
+}
+
+// nameIn is the scalar value of the first assignment in a block whose key is key; "" for none.
 func nameIn(block *jomini.Block, key string) string {
 	if block == nil {
 		return ""
@@ -264,96 +245,4 @@ func nameIn(block *jomini.Block, key string) string {
 		}
 	}
 	return ""
-}
-
-// walkScript reads statements for the entries they declare or are; top says they are a file's top
-// statements (or a wrapper's), where each block is an entry.
-func (finder *entryFinder) walkScript(statements []jomini.Statement, top bool) {
-	for i := 0; i < len(statements); i++ {
-		// a keyword before a name declares it: template x { }
-		if word, declared := finder.keywordDeclaration(statements, i, top); declared != nil {
-			i++
-			if database := finder.declares[word]; database != "" {
-				finder.emit(database, declared.Key.Text, declared, finder.rows)
-			}
-			if block := jomini.ChildBlock(declared); block != nil {
-				finder.walkScript(block.Statements, false)
-			}
-			continue
-		}
-		statement := statements[i]
-		block, key := jomini.ChildBlock(statement), ""
-		if assign, isAssign := statement.(*jomini.Assignment); isAssign {
-			key = assign.Key.Text
-		}
-		if top && block != nil && slices.Contains(finder.row.Wrappers, key) {
-			finder.walkScript(block.Statements, true) // a wrapper's block holds top statements
-			continue
-		}
-		finder.entryOf(statement, block, key, top)
-		if block != nil {
-			finder.walkScript(block.Statements, false)
-		}
-	}
-}
-
-// keywordDeclaration returns the word and the assignment at statements[i:i+2] when a keyword declares the
-// assignment: a file type's keyword anywhere, or, where top blocks are widgets, any word before a top block
-// (types x { }, which only groups declarations).
-func (finder *entryFinder) keywordDeclaration(statements []jomini.Statement, i int, top bool) (string, *jomini.Assignment) {
-	if i+1 >= len(statements) {
-		return "", nil
-	}
-	listed, isList := statements[i].(*jomini.ValueStmt)
-	declared, isAssign := statements[i+1].(*jomini.Assignment)
-	if !isList || !isAssign {
-		return "", nil
-	}
-	scalar, isScalar := listed.Value.(*jomini.Scalar)
-	if !isScalar || finder.declares[scalar.Text] == "" && (!top || finder.fileType.WidgetKey == "") {
-		return "", nil
-	}
-	return scalar.Text, declared
-}
-
-// entryOf reports the entry a statement is, if any, by the first rule that fits: a file type's name keys,
-// then the folder's row.
-func (finder *entryFinder) entryOf(statement jomini.Statement, block *jomini.Block, key string, top bool) {
-	if _, constant := jomini.Constant(key); constant {
-		return
-	}
-	fileType, ext := finder.fileType, finder.ext[1:]
-	switch {
-	case block != nil && fileType.NameKeyOf[key] != "":
-		if text := nameIn(block, fileType.NameKeyOf[key]); text != "" {
-			finder.emit(ext+"."+key, text, statement, nil)
-		}
-	case top && fileType.NameKey != "":
-		if text := nameIn(block, fileType.NameKey); text != "" {
-			finder.emit(ext+"."+key, text, statement, finder.rows)
-		}
-	case top && block != nil && fileType.WidgetKey != "":
-		finder.emit(ext+".widget", nameIn(block, fileType.WidgetKey), statement, nil)
-	case top && finder.database != nil:
-		finder.rowEntry(statement, block, key)
-	}
-}
-
-// rowEntry reports the entry a top statement is by its folder's row: unnamed, named by a key's value, or
-// named by its own key (an event id where the row says so).
-func (finder *entryFinder) rowEntry(statement jomini.Statement, block *jomini.Block, key string) {
-	row, database := finder.row, finder.database.Name
-	switch {
-	case row.Unnamed:
-		finder.emit(database, "", statement, finder.rows)
-	case row.NameKey != "":
-		text, _, _ := strings.Cut(nameIn(block, row.NameKey), "(")
-		if text = strings.TrimSpace(text); text != "" {
-			finder.emit(database, text, statement, finder.rows)
-		}
-	default:
-		if _, name := finder.info.Mode(key); key != "" && (!row.Events || jomini.IsEventID(name)) {
-			finder.emit(database, key, statement, finder.rows)
-		}
-	}
 }

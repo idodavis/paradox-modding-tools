@@ -167,10 +167,10 @@ type Command struct {
 
 // Database is one script folder's entries: the entry's position tree and the folder's registry row.
 type Database struct {
-	Name   string
-	Entry  *Position
-	Row    game.Folder
-	Fields map[string]bool // every key name the docs and wiki write in its entries
+	Name       string
+	Entry      *Position
+	Descriptor game.Descriptor // how its entries are written, named and used
+	Fields     map[string]bool // every key name the docs and wiki write in its entries
 }
 
 // SourceState says where a source's data came from and whether it is out of date.
@@ -208,7 +208,8 @@ type Schema struct {
 	CustomLoc       map[string]CustomLoc
 	Prefixes        map[string]string        // a link prefix → the database the names written after it are in; "" none
 	ScriptedEntries map[string]ScriptedEntry // vanilla's scripted entries by calling word and name (word:name)
-	Lists           string                   // the database of scripted lists (a folder row Iterated); "" none
+	Lists           string                   // the database of scripted lists (a row of PurposeLists); "" none
+	Events          string                   // the database of events (a row of PurposeEvents); "" none
 }
 
 // Link returns the declared link a lower-case key starts with: the first link of a chain (root.liege), by
@@ -229,14 +230,14 @@ func (schema *Schema) Link(key string) *Command {
 func (schema *Schema) DatabaseNamed(word string) string {
 	var named []string
 	for _, name := range []string{word, word + "s"} {
-		if database := schema.Databases[name]; database != nil && !database.Row.History {
+		if database := schema.Databases[name]; database != nil && database.Descriptor.Purpose != game.PurposeHistory {
 			named = append(named, name)
 		}
 	}
 	exact := len(named) > 0
 	for name, database := range schema.Databases {
 		last := name[strings.LastIndexByte(name, '/')+1:]
-		if !exact && !database.Row.History && (last == word || last == word+"s") {
+		if !exact && database.Descriptor.Purpose != game.PurposeHistory && (last == word || last == word+"s") {
 			named = append(named, name)
 		}
 	}
@@ -246,10 +247,10 @@ func (schema *Schema) DatabaseNamed(word string) string {
 	return ""
 }
 
-// DatabasesWhere returns the names of the databases whose registry row passes a test, in name order.
-func (schema *Schema) DatabasesWhere(test func(game.Folder) bool) (names []string) {
+// DatabasesWhere returns the names of the databases whose descriptor passes a test, in name order.
+func (schema *Schema) DatabasesWhere(test func(game.Descriptor) bool) (names []string) {
 	for name, database := range schema.Databases {
-		if test(database.Row) {
+		if test(database.Descriptor) {
 			names = append(names, name)
 		}
 	}

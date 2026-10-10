@@ -230,7 +230,7 @@ func contests(sess *workspace.Session, preview []*index.Index, number func(inven
 		winner, adds, _, betweenMods := sess.Winner(defs)
 		row := Contest{
 			Database: name[0], Kind: game.KindName(name[0]), Name: name[1], Winner: slices.Index(defs, winner),
-			FirstWins: slices.Contains(sess.Game.FirstWinsDatabases, name[0]), Rule: "LIOS",
+			FirstWins: slices.Contains(sess.Game.Layout.FirstWins, name[0]), Rule: "LIOS",
 		}
 		if row.FirstWins {
 			row.Rule = "FIOS"

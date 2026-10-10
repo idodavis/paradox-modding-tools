@@ -38,13 +38,14 @@ func (scope Scope) forget(reason string) Scope {
 	return Scope{Root: scope.Root, Named: scope.Named, Reason: reason}
 }
 
-// save records the scope saved under a name: unknown once the name is saved as two scopes.
-func (scope Scope) save(name string) {
-	if this, saved := scope.Named[name]; saved && this != scope.This {
-		scope.Named[name] = ""
-		return
+// save records a scope saved under a name: this one where the block runs effects, else one the command makes
+// (create_character = { save_scope_as = x } saves the new character), unknown; unknown too once the name is
+// saved as two scopes.
+func (scope Scope) save(name string, this string) {
+	if saved, isSaved := scope.Named[name]; isSaved && saved != this {
+		this = ""
 	}
-	scope.Named[name] = scope.This
+	scope.Named[name] = this
 }
 
 // Context is where statements are read: the state a walk inherits at a block, and for the block a statement opens,
@@ -309,7 +310,11 @@ func (schema *Schema) Enter(context Context, statement, previous jomini.Statemen
 	}
 	if saves := game.NameCommands[strings.ToLower(key)]; saves.Makes && saves.Database == game.SavedScopes && context.Scope.Named != nil {
 		if scalar, isScalar := assign.Value.(*jomini.Scalar); isScalar {
-			context.Scope.save(scalar.Text)
+			this := ""
+			if game.Shapes[context.Shape].Allows&game.KindEffect != 0 {
+				this = context.Scope.This
+			}
+			context.Scope.save(scalar.Text, this)
 		}
 	}
 	return schema.keyEnter(context, assign, create)
@@ -564,7 +569,11 @@ func (schema *Schema) Follow(from Scope, chain string) Scope {
 		case game.LinkThis:
 			continue
 		case game.LinkSaved:
-			at.This, why, whyNot = at.Named[name], "saved as "+part, part+" is not saved above as one scope"
+			saved, isSaved := at.Named[name]
+			at.This, why, whyNot = saved, "saved as "+part, part+" is saved nowhere above"
+			if isSaved {
+				whyNot = "what " + part + " holds is not known"
+			}
 		default:
 			at.This = ""
 			if link != nil && schema.runsScript(link.Target) {

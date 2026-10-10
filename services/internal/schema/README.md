@@ -46,7 +46,9 @@ the first rule the holder's shape tries whose test holds (`fits`), and the rule'
 the key refines the shape, a block written as a dynamic description is one whatever the rows say, and a scope
 claim on the key's position beats the verb. A link chain leads link by link (`Follow`): a declared link to its
 target, `root`, `prev`, `this` and `scope:x` by the record (`game.ScopeLinks`); `save_scope_as` records the scope
-under its name for the entry. Two readers use the walker: `countFile` and the index's `Collect`;
+under its name for the entry where its block runs effects, and inside a command's arguments (`create_character = {
+save_scope_as = x }`) a scope the command makes, unknown. Two readers use the walker: `countFile` and the index's
+`Collect`;
 the doc and usage merges call `Enter` on a synthetic statement.
 
 `WalkFile` is the one walk of a whole file: it reads every statement in source order, outer before inner, decides

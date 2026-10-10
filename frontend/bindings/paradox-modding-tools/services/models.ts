@@ -830,7 +830,7 @@ export interface SourceAt {
 
 /**
  * SteamCompare is a mod in the workspace against the copy Steam has: the snapshot PMT kept at its
- * last upload, or a download from Steam (O-R14).
+ * last upload, or a download from Steam.
  */
 export interface SteamCompare {
     /**

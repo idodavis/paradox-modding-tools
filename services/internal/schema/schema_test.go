@@ -511,16 +511,16 @@ func TestLoadShipped(t *testing.T) {
 	}
 }
 
-func TestMentions(t *testing.T) {
+func TestOccurrences(t *testing.T) {
 	s := fixtureSchema(t, ck3)
-	ref := func(database, name string, start, end int) Mention {
-		return Mention{Database: database, ID: name, Range: jomini.Range{Start: start, End: end}}
+	ref := func(database, name string, start, end int) Occurrence {
+		return Occurrence{Role: Refers, Database: database, ID: name, Range: jomini.Range{Start: start, End: end}}
 	}
-	def := func(database, name string, start, end int) Mention {
-		return Mention{Defines: true, Database: database, ID: name, Range: jomini.Range{Start: start, End: end}}
+	def := func(database, name string, start, end int) Occurrence {
+		return Occurrence{Role: Defines, Database: database, ID: name, Range: jomini.Range{Start: start, End: end}}
 	}
-	call := func(called, name string, start, end int) Mention {
-		return Mention{Called: called, ID: name, Range: jomini.Range{Start: start, End: end}}
+	call := func(called, name string, start, end int) Occurrence {
+		return Occurrence{Role: Refers, Caller: called, ID: name, Range: jomini.Range{Start: start, End: end}}
 	}
 	const (
 		effects  = "common/scripted_effects/v_effects.txt"
@@ -530,33 +530,36 @@ func TestMentions(t *testing.T) {
 	cases := []struct {
 		rel          string
 		path         []string
-		want         []Mention
+		want         []Occurrence
 		nameDatabase string
 	}{
-		{eventsFile, []string{v1, trigger, "exists"}, []Mention{ref("scope", "target", 166, 178)}, ""},
-		{eventsFile, []string{v1, trigger, "exists=title:k_x"}, []Mention{ref("landed_titles", "k_x", 215, 224)}, ""},
+		{eventsFile, []string{v1, trigger, "exists"}, []Occurrence{ref("scope", "target", 166, 178)}, ""},
+		{eventsFile, []string{v1, trigger, "exists=title:k_x"}, []Occurrence{ref("landed_titles", "k_x", 215, 224)}, ""},
 		{eventsFile, []string{v1, trigger, "faith"}, nil, ""},
-		{eventsFile, []string{v1, immediate, "save_scope_as"}, []Mention{def("scope", "target", 360, 366)}, "scope"},
-		{eventsFile, []string{v1, immediate, "set_variable", "name"}, []Mention{def("var", "seen", 325, 329)}, "var"},
-		{eventsFile, []string{v1, immediate, "trigger_event"}, []Mention{ref("events", "v.2", 385, 388)}, ""},
-		{eventsFile, []string{v1, immediate, vEffect}, []Mention{call("effect", vEffect, 645, 653)}, ""},
+		{eventsFile, []string{v1, immediate, "save_scope_as"}, []Occurrence{def("scope", "target", 360, 366)}, "scope"},
+		{eventsFile, []string{v1, immediate, "set_variable", "name"}, []Occurrence{def("var", "seen", 325, 329)}, "var"},
+		{eventsFile, []string{v1, immediate, "trigger_event"}, []Occurrence{ref("events", "v.2", 385, 388)}, ""},
+		{eventsFile, []string{v1, immediate, vEffect}, []Occurrence{call("effect", vEffect, 645, 653)}, ""},
 		{eventsFile, []string{v1, immediate, vEffect, "AMOUNT"},
-			[]Mention{ref(Parameter, "v_effect:AMOUNT", 658, 664)}, ""},
-		{eventsFile, []string{v1, "title"}, []Mention{ref(Localization, "v.1.t", 83, 88)}, ""},
+			[]Occurrence{ref(Parameter, "v_effect:AMOUNT", 658, 664)}, ""},
+		{eventsFile, []string{v1, "title"}, []Occurrence{ref(Localization, "v.1.t", 83, 88)}, ""},
 		{"common/traits/v_traits.txt", []string{"brave", "icon"},
-			[]Mention{ref(File, "gfx/interface/icons/traits/brave.dds", 57, 95)}, ""},
-		{effects, []string{vEffect, "add_gold"}, []Mention{def(Parameter, "v_effect:AMOUNT", 25, 33)}, ""},
-		{effects, []string{"v_list_effect", "every_in_list", "variable"}, []Mention{ref("var", "seen_list", 183, 192)}, "var"},
-		{triggers, []string{"v_rich_trigger", "OR", "gold"}, []Mention{ref("script_values", "big_value", 71, 80)}, ""},
-		{triggers, []string{"v_rich_trigger", "big_value"}, []Mention{call(trigger, "big_value", 162, 171)}, ""},
-		{"history/titles/v_titles.txt", []string{"k_x"}, []Mention{ref("landed_titles", "k_x", 0, 3)}, ""},
-		{"history/provinces/v_provinces.txt", []string{"1", "culture"}, []Mention{ref("culture/cultures", "norse", 17, 22)}, ""},
-		{more, []string{"vmore.1", trigger, "gold"}, []Mention{ref("defines", "NWar", 208, 228)}, ""},
+			[]Occurrence{ref(File, "gfx/interface/icons/traits/brave.dds", 57, 95)}, ""},
+		{effects, []string{vEffect, "add_gold"}, []Occurrence{def(Parameter, "v_effect:AMOUNT", 25, 33)}, ""},
+		{effects, []string{"v_list_effect", "every_in_list", "variable"}, []Occurrence{ref("var", "seen_list", 183, 192)}, "var"},
+		{triggers, []string{"v_rich_trigger", "OR", "gold"}, []Occurrence{ref("script_values", "big_value", 71, 80)}, ""},
+		{triggers, []string{"v_rich_trigger", "big_value"}, []Occurrence{call(trigger, "big_value", 162, 171)}, ""},
+		{"history/titles/v_titles.txt", []string{"k_x"}, []Occurrence{ref("landed_titles", "k_x", 0, 3)}, ""},
+		{"history/provinces/v_provinces.txt", []string{"1", "culture"}, []Occurrence{ref("culture/cultures", "norse", 17, 22)}, ""},
+		{more, []string{"vmore.1", trigger, "gold"}, []Occurrence{ref("defines", "NWar", 208, 228)}, ""},
 	}
 	for _, c := range cases {
 		placement := placementOf(t, s, c.rel, c.path...)
-		if !slices.Equal(placement.Mentions, c.want) || placement.StoredIn != c.nameDatabase {
-			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, placement.Mentions, placement.StoredIn, c.want, c.nameDatabase)
+		for i := range placement.Found {
+			placement.Found[i].Entry, placement.Found[i].InTrigger = 0, false // the entry and trigger state are the placement's
+		}
+		if !slices.Equal(placement.Found, c.want) || placement.StoredIn != c.nameDatabase {
+			t.Errorf("%s %v:\n got %+v %q\nwant %+v %q", c.rel, c.path, placement.Found, placement.StoredIn, c.want, c.nameDatabase)
 		}
 	}
 }

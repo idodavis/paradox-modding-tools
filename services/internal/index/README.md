@@ -2,7 +2,7 @@
 
 What a scan found: each file's definitions, references and localization entries, kept per index and resolved by
 name at query time in the game's load order. The index infers nothing: what a written scalar defines or refers to
-is the schema's (`schema/mentions.go`); the index collects it.
+is the schema's (`schema/occurrences.go`); the index collects it.
 
 Read `scan.go` first. `Scan` runs an install through six steps, `ScanMods` a mod set over it, `Reindex` one saved
 file again; each step is a function named for it, in the file that holds its half: `fromCache` and `SaveInstall` in
@@ -19,7 +19,7 @@ file again; each step is a function named for it, in the file that holds its hal
 ## The collector (`collect.go`)
 
 `Collect(schema, file, parsed, visit)` makes each entry `FindEntries` returns a `Def`, then walks the file once with
-`schema.WalkFile` and turns each placement's `Mentions` into a `Def` or a `Ref` with its file, line and entry (`From`,
+`schema.WalkFile` and turns each placement's occurrences (`Found`) into a `Def` or a `Ref` with its file, line and entry (`From`,
 the entry's index in `Defs`), and keeps the scope each command, link or link-read scalar is written in
 (`scopePair`). `visit` sees each placement: the index passes none, diagnostics judges each statement, and the editor
 stops at the cursor. `collectFile` picks by format, and `Index.collectFiles` runs it on a worker per CPU. A loc file

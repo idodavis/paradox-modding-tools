@@ -231,7 +231,7 @@ func (completer *completer) keys(cursor spot) {
 }
 
 // values offers what the statement takes: its declared words, vanilla's (most written first), a
-// referenced database's names or loc keys, and the names its command makes or reads (Mentions).
+// referenced database's names or loc keys, and the names its command makes or reads (StoredIn).
 func (completer *completer) values(cursor spot) {
 	if len(cursor.chain) == 0 {
 		return

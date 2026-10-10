@@ -41,22 +41,10 @@ type Placement struct {
 	Listed       string        // set when its key iterates a scripted list: the iterator prefix
 	Leaf         bool          // the leaf of a dynamic description
 	Entry        int           // the index, in the entries WalkFile was given, of the entry it is in; -1 outside one
-	Mentions     []Mention     // what its key and value name, in the order the rules fit (mentions.go)
+	Found        []Occurrence  // what its key and value name, in the order the rules fit (occurrences.go)
 	StoredIn     string        // the database a name command's value names here (set_variable: var); "" none
 	BlockContext               // where it is written
 	Inner        BlockContext  // where its own block is read
-}
-
-// Mention is one thing a written word names: a definition the word makes in Database (Defines), else a
-// reference to Name in Database or, when Called is set, a call resolved by that calling word. Named marks a
-// definition an entry's Names key gives its database rather than an entry of its own.
-type Mention struct {
-	Defines  bool
-	Named    bool
-	Database string
-	ID       string
-	Called   string
-	Range    jomini.Range
 }
 
 // Visitor is one use of the walker. Create makes the positions it reads (vanilla, usages); Alternatives lists
@@ -152,7 +140,7 @@ func (walk *fileWalk) block(holder *jomini.Block, statements []jomini.Statement,
 		for _, placement := range placements {
 			placement.Holder, placement.Entry = holder, entry
 			if walk.ext != "" {
-				walk.mentionsOf(&placement)
+				walk.occurrencesOf(&placement)
 			}
 			if walk.visitor.Visit(&placement) && block != nil {
 				walk.inside[block] = entry

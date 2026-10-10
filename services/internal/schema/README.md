@@ -18,7 +18,7 @@ the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` 
 | `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
 | `entries.go` | the entry detector, `FindEntries`: which definitions a file makes, by its folder's row, its nested rows and its file type |
 | `walk.go` | the walker: `WalkFile`, `WalkBlock`, `EntryContext`, `PlaceKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |
-| `mentions.go` | the mention rules: which entry each scalar of a placed statement stands for (`keyMentions`, `valueMention`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
+| `occurrences.go` | `Occurrence`, one occurrence of a name with its `Role` (`Defines`, `Refers`, `Localizes`), and the occurrence rules: which entry each scalar of a placed statement stands for (`keyOccurrences`, `valueOccurrence`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
 | `shipped.go` | the backup schemas embedded from `shipped/`, `LoadShipped`; `gen/` writes them |
 
 ## Sources, claims and accusing
@@ -44,15 +44,15 @@ that block runs in (`blockScope`). Each decision's doc comment states its order.
 
 `WalkFile` is the one walk of a whole file: given the entries `FindEntries` returned, it reads every statement in
 source order, outer before inner, and each `Placement` carries the entry it is in (`Entry`, an index into the
-entries, -1 outside one), what its key and value name (`Mentions`, by the rules of `mentions.go`) and the database a name
+entries, -1 outside one), what its key and value name (`Found`, the occurrences, by the rules of `occurrences.go`) and the database a name
 command's value names there (`StoredIn`). `WalkBlock` reads a snippet (the docs, the dumps' usages): no entries,
 no names.
 
 ## Names
 
-A key is named by every key rule that fits (`keyMentions`), a value by the first value rule that fits (`valueMention`):
+A key is named by every key rule that fits (`keyOccurrences`), a value by the first value rule that fits (`valueOccurrence`):
 
-| Rule | Where | Mention |
+| Rule | Where | Occurrence |
 |---|---|---|
 | history | a history entry's top key, and its value where it is written key = value | a reference to the object it sets up (`Of`) |
 | file ref | a value at a key its file type lists (`FileType.Refs`: a GUI `using`) | a reference to that entry |

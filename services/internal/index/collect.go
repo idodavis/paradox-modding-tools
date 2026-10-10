@@ -106,11 +106,11 @@ func (collector *collector) collect(placement *schema.Placement) bool {
 	if collector.stopped {
 		return false
 	}
-	for _, naming := range placement.Mentions {
-		if naming.Defines {
-			collector.define(Def{Database: naming.Database, Name: naming.ID, Range: naming.Range, Named: naming.Named})
+	for _, found := range placement.Found {
+		if found.Role == schema.Defines {
+			collector.define(Def{Database: found.Database, Name: found.ID, Range: found.Range, Named: found.Named})
 		} else {
-			collector.refer(Ref{Database: naming.Database, Name: naming.ID, Called: naming.Called, Range: naming.Range}, placement)
+			collector.refer(Ref{Database: found.Database, Name: found.ID, Called: found.Caller, Range: found.Range}, placement)
 		}
 	}
 	assign, isAssign := placement.Statement.(*jomini.Assignment)

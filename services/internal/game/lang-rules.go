@@ -246,6 +246,21 @@ func ListIterator(key string) (Construct, bool) {
 // SavedScopes is the database of saved scope names (save_scope_as).
 const SavedScopes = "scope"
 
+// ScopeLink is a link that leads by where script stands, not by a declared target: to the scope the entry runs in,
+// the scope before this one, this one again, or one saved by name (scope:x).
+type ScopeLink uint8
+
+// The scope links.
+const (
+	LinkRoot ScopeLink = iota + 1
+	LinkPrev
+	LinkThis
+	LinkSaved
+)
+
+// ScopeLinks are the scope links by how they are written.
+var ScopeLinks = map[string]ScopeLink{"root": LinkRoot, "prev": LinkPrev, "this": LinkThis, SavedScopes: LinkSaved}
+
 // NameCommand is a command whose value is a name script makes or reads, and the name's database;
 // the link with the same name reads it back (scope:x, var:x).
 type NameCommand struct {

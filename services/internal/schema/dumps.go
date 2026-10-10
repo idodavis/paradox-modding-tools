@@ -174,7 +174,7 @@ type dumpEntry struct {
 // parseDumps reads the dump files into the schema and returns when they were written: the dumps are as fresh
 // as their oldest file. Usages are applied last, once every command is declared.
 func (schema *Schema) parseDumps(files []inventory.File) (writtenAt time.Time) {
-	schema.Commands, schema.Scopes, schema.Saved = map[string]*Command{}, map[string]Scope{}, map[string]bool{}
+	schema.Commands, schema.Scopes, schema.Saved = map[string]*Command{}, map[string]ScopeType{}, map[string]bool{}
 	schema.Modifiers, schema.OnActions = map[string]Modifier{}, map[string]OnAction{}
 	schema.DataTypes, schema.CustomLoc = map[string]DataType{}, map[string]CustomLoc{}
 
@@ -298,7 +298,7 @@ func parseEntryBody(body, name, group2 string, labels map[string]string) dumpEnt
 
 // parseScope reads a scope type's entry.
 func (schema *Schema) parseScope(entry dumpEntry) {
-	schema.Scopes[entry.name] = Scope{
+	schema.Scopes[entry.name] = ScopeType{
 		Name:      entry.name,
 		Variables: entry.fields["Scope.Variables"] != "no",
 		Triggers:  entry.fields["Scope.Triggers"] != "no",

@@ -108,7 +108,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -253,7 +256,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [

@@ -180,8 +180,8 @@ type SourceState struct {
 	Stale     bool
 }
 
-// Scope is one scope type the dumps declare; each flag is false only where the dump says no.
-type Scope struct {
+// ScopeType is one scope type the dumps declare; each flag is false only where the dump says no.
+type ScopeType struct {
 	Name                         string
 	Variables, Triggers, Effects bool // stores variables, evaluates triggers, executes effects
 }
@@ -200,7 +200,7 @@ type Schema struct {
 	Databases       map[string]*Database
 	Callees         map[string][]string // CalledIn word → the databases a call by it resolves in, in name order
 	Commands        map[string]*Command
-	Scopes          map[string]Scope
+	Scopes          map[string]ScopeType
 	Saved           map[string]bool // scope names the game saves from code
 	Modifiers       map[string]Modifier
 	OnActions       map[string]OnAction

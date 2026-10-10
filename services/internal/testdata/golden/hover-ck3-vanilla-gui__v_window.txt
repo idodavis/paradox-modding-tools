@@ -202,7 +202,10 @@
   {
    "word": "GetPlayer",
    "head": "data function",
-   "scope": "Global",
+   "scope": {
+    "this": "Global",
+    "reason": "what GetPlayer is called on"
+   },
    "leads": "Character",
    "winner": -1,
    "stale": true,

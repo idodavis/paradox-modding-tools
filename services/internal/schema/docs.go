@@ -649,7 +649,7 @@ func isBlurb(rest string) bool { return strings.ContainsFunc(rest, unicode.IsLet
 // mergeDocs is step 7: the docs' and wiki's claims merged into the databases they document, after vanilla.
 func (schema *Schema) mergeDocs(docs []doc) {
 	for _, document := range docs {
-		in := schema.EntryContext(schema.Databases[document.database])
+		in := schema.EntryContext(schema.Databases[document.database], "")
 		for _, node := range document.tree.Children {
 			schema.mergeNode(node, in, document.source, true)
 		}

@@ -100,7 +100,7 @@ in [Health]({{< relref "/pages/health" >}})). The checks, each on or off in the 
 |-------|-------|
 | `unresolved-ref` | a word naming an entry that nothing defines |
 | `wrong-value-type` | a value of another type than the key takes |
-| `wrong-scope` | a command written in a scope it does not run in, or a variable read where none is stored |
+| `wrong-scope` | a command written in a scope it does not run in, or a variable read where none is stored; the message says how the scope was found (a link, `root`, `prev`, a saved `scope:x`) |
 | `duplicate-definition` | a name the workspace defines twice |
 | `inject-without-target` | an INJECT or REPLACE with nothing loaded before it |
 | `missing-bom` | a localization file without a UTF-8 byte order mark |

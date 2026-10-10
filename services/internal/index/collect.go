@@ -105,11 +105,11 @@ func (collector *collector) collect(statement jomini.Statement, context schema.C
 	assign, isAssign := statement.(*jomini.Assignment)
 	scalar, isScalar := jomini.ValueOf(statement).(*jomini.Scalar)
 	isCommand := inner.Rule == game.KeyRuleCommand || inner.Rule == game.KeyRuleLink
-	if context.Scope != "" && isAssign && isCommand {
-		collector.scoped[scopePair(assign.Key.Text, context.Scope)] = true
+	if context.Scope.This != "" && isAssign && isCommand {
+		collector.scoped[scopePair(assign.Key.Text, context.Scope.This)] = true
 	}
-	if context.Scope != "" && isScalar && collector.schema.Link(strings.ToLower(scalar.Text)) != nil {
-		collector.scoped[scopePair(scalar.Text, context.Scope)] = true
+	if context.Scope.This != "" && isScalar && collector.schema.Link(strings.ToLower(scalar.Text)) != nil {
+		collector.scoped[scopePair(scalar.Text, context.Scope.This)] = true
 	}
 	if collector.visit != nil && !collector.visit(statement, context, inner, occurrences) {
 		collector.stopped = true

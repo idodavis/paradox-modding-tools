@@ -297,7 +297,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -561,7 +564,10 @@
    "writes": [
     "trait"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -666,7 +672,13 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -960,7 +972,13 @@
    "takes": [
     "effects"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "leads": "character",
    "winner": -1,
    "stale": true,
@@ -989,7 +1007,16 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "target": ""
+    },
+    "reason": "every_vassal leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1037,7 +1064,13 @@
    "takes": [
     "effects"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "leads": "landed_title",
    "winner": -1,
    "stale": true,
@@ -1065,7 +1098,16 @@
    "writes": [
     "one of x"
    ],
-   "scope": "landed_title",
+   "scope": {
+    "this": "landed_title",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "target": ""
+    },
+    "reason": "capital_county leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1140,7 +1182,17 @@
    "takes": [
     "text"
    ],
-   "scope": "dynasty",
+   "scope": {
+    "this": "dynasty",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "dynasty leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1234,7 +1286,18 @@
    "takes": [
     "text"
    ],
-   "scope": "dynasty",
+   "scope": {
+    "this": "dynasty",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "dynasty:dynasty_1 leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1450,7 +1513,15 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1597,7 +1668,15 @@
    "takes": [
     "a block with days, flag, weeks, years"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1643,7 +1722,15 @@
    "takes": [
     "a block with /u003cscope:/u003e, add_dread, desc, left_icon, message_filter_type, right_icon, title, tooltip, type"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1831,7 +1918,15 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1879,7 +1974,15 @@
    "takes": [
     "a block with /u003cscope:/u003e, add_dread, desc, left_icon, message_filter_type, right_icon, title, tooltip, type"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2015,7 +2118,15 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2146,7 +2257,15 @@
    "takes": [
     "a block with /u003cscope:/u003e, add_dread, desc, left_icon, message_filter_type, right_icon, title, tooltip, type"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2300,7 +2419,15 @@
    "takes": [
     "a block with days, modifier, months, target, years"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2532,7 +2659,15 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2647,7 +2782,15 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -2786,7 +2929,15 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "named_dynasty": "dynasty",
+     "own_dynasty": "dynasty",
+     "target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -3148,7 +3299,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [

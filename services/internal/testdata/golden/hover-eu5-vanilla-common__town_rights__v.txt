@@ -3,7 +3,11 @@
    "word": "aga_tr",
    "key": "aga_tr",
    "head": "town right",
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every town right runs in it"
+   },
    "sites": [
     {
      "path": "<fixtures>/mods/eu5/in_game/common/town_rights/m_rights.txt",
@@ -71,7 +75,11 @@
    "writes": [
     "a number"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "root": "country",
+    "reason": "every town right runs in it"
+   },
    "winner": -1,
    "stale": true,
    "within": [

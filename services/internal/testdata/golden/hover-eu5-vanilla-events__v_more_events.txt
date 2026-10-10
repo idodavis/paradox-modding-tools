@@ -134,7 +134,10 @@
    "takes": [
     "triggers"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "reason": "the one scope it runs in"
+   },
    "leads": "location",
    "winner": -1,
    "stale": true,
@@ -163,7 +166,13 @@
    "writes": [
     "a word"
    ],
-   "scope": "location",
+   "scope": {
+    "this": "location",
+    "prev": [
+     ""
+    ],
+    "reason": "any_owned_location leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -910,7 +919,10 @@
    "takes": [
     "effects"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "reason": "the one scope it runs in"
+   },
    "leads": "location",
    "winner": -1,
    "stale": true,
@@ -938,7 +950,13 @@
    "writes": [
     "a number"
    ],
-   "scope": "location",
+   "scope": {
+    "this": "location",
+    "prev": [
+     ""
+    ],
+    "reason": "every_owned_location leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1024,7 +1042,13 @@
    "writes": [
     "a number"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "prev": [
+     ""
+    ],
+    "reason": "c:FRA leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1171,7 +1195,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [

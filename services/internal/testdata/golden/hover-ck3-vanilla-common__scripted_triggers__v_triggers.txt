@@ -164,7 +164,10 @@
    "writes": [
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -282,7 +285,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -456,7 +462,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -562,7 +571,10 @@
    "takes": [
     "triggers"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "leads": "character",
    "winner": -1,
    "stale": true,
@@ -586,7 +598,13 @@
    "word": "v_rich_trigger",
    "key": "v_rich_trigger",
    "head": "scripted trigger",
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "prev": [
+     ""
+    ],
+    "reason": "any_child leads to it"
+   },
    "returns": "yes or no",
    "sites": [
     {

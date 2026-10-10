@@ -225,7 +225,7 @@ func (completer *completer) keys(cursor spot) {
 		}
 		item := Item{Label: name, Head: kinds(command), Rank: 2,
 			Snippet: snippet(name, command.Args)}
-		inScope := scope == "" || len(command.Scopes) == 0 || slices.Contains(command.Scopes, scope)
+		inScope := scope.This == "" || len(command.Scopes) == 0 || slices.Contains(command.Scopes, scope.This)
 		if command.Kinds&allowed != 0 && inScope {
 			item.Rank = 0
 		}

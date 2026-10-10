@@ -381,7 +381,7 @@ export function known(card: Inspect): boolean {
 
 /** A card as the completion list's details, under the item's kind (its detail): its scope, its text and prose. */
 function details(card: Inspect): string {
-  const scope = [card.scope && `${card.scope} scope`, card.returns && `returns ${card.returns}`]
+  const scope = [card.scope?.this && `${card.scope.this} scope`, card.returns && `returns ${card.returns}`]
     .filter(Boolean)
     .join(", ");
   return [scope, card.name && `> ${card.name}`, card.prose, card.about].filter(Boolean).join("\n\n");

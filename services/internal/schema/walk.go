@@ -14,12 +14,45 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 )
 
+// Scope is where a block's script runs: the scope type it is in (This), the one its entry runs in (Root), the ones
+// entered on the way here (Prev, the last the nearest), the scopes its entry has saved by name so far (Named, one
+// map shared by the entry's blocks), and why This is what it is, in plain words. "" is unknown.
+type Scope struct {
+	This   string            `json:"this,omitempty"`
+	Root   string            `json:"root,omitempty"`
+	Prev   []string          `json:"prev,omitempty"`
+	Named  map[string]string `json:"named,omitempty"`
+	Reason string            `json:"reason,omitempty"`
+}
+
+// enter is the record one scope deeper: the scope entered, the one left pushed on Prev, and how it was entered.
+func (scope Scope) enter(this, reason string) Scope {
+	return Scope{
+		This: this, Root: scope.Root, Prev: append(slices.Clip(scope.Prev), scope.This), Named: scope.Named, Reason: reason,
+	}
+}
+
+// forget is the record with the scope and the ones before it unknown, for a reason; the root and the saved scopes
+// are kept.
+func (scope Scope) forget(reason string) Scope {
+	return Scope{Root: scope.Root, Named: scope.Named, Reason: reason}
+}
+
+// save records the scope saved under a name: unknown once the name is saved as two scopes.
+func (scope Scope) save(name string) {
+	if this, saved := scope.Named[name]; saved && this != scope.This {
+		scope.Named[name] = ""
+		return
+	}
+	scope.Named[name] = scope.This
+}
+
 // Context is where statements are read: the state a walk inherits at a block, and for the block a statement opens,
 // how that statement was read.
 type Context struct {
 	At        *Position     // the position the block reads at; nil when none is known
 	Shape     game.Shape    // what the block holds
-	Scope     string        // the scope the block runs in; "" unknown
+	Scope     Scope         // where the block's script runs
 	Caller    string        // the word a call in the block resolves by
 	Call      string        // the scripted entry this block calls, whose parameters its keys pass; "" none
 	Command   string        // the command whose own block this is, lower-case; "" none
@@ -197,8 +230,8 @@ func (walk *fileWalk) below(context Context, statement jomini.Statement) (top bo
 }
 
 // entryOpens is the context an entry's statement opens: its database's (made when the walk creates and none has
-// it; false when none has it and the walk does not), in the scope the dumps declare for an on_action, with the
-// entry as its own. A nested entry's block continues the key path of the entry holding it; any other's starts one.
+// it; false when none has it and the walk does not), with the entry as its own. A nested entry's block continues
+// the key path of the entry holding it; any other's starts one.
 func (walk *fileWalk) entryOpens(context Context, entry Occurrence, statement jomini.Statement, nested bool) (Context, bool) {
 	database := walk.schema.Databases[entry.Database]
 	if database == nil && walk.create {
@@ -209,38 +242,50 @@ func (walk *fileWalk) entryOpens(context Context, entry Occurrence, statement jo
 	if database == nil {
 		return Context{}, false
 	}
-	inner := walk.schema.EntryContext(database)
+	inner := walk.schema.EntryContext(database, entry.ID)
 	inner.Entry, inner.Defines = entry.Entry, true
-	assign, isAssign := statement.(*jomini.Assignment)
-	if isAssign && database.Descriptor.Purpose == game.PurposeOnActions {
-		if scope := walk.schema.OnActions[assign.Key.Text].Scope; scope != "" {
-			inner.Scope = scope
-		}
-	}
-	if nested && isAssign {
+	if assign, isAssign := statement.(*jomini.Assignment); nested && isAssign {
 		inner.within = path.Join(context.within, assign.Key.Text)
 	}
 	return inner, true
 }
 
-// EntryContext is where a database's entry reads: at its entry position, in the shape its entry holds, in the
-// scope its entry declares when the dumps say that scope runs triggers or effects.
-func (schema *Schema) EntryContext(database *Database) Context {
-	shape, scope := database.Entry.Holds.Value, database.Entry.Scope.Value
-	if state := schema.Scopes[scope]; !state.Triggers && !state.Effects {
-		scope = ""
-	}
+// EntryContext is where a database's entry reads: at its entry position, in the shape its entry holds, where its
+// entries run (EntryScope, by the entry's name).
+func (schema *Schema) EntryContext(database *Database, id string) Context {
+	shape := database.Entry.Holds.Value
 	return Context{
-		At: database.Entry, Shape: shape, Scope: scope, Caller: game.Shapes[shape].Caller, Rule: game.KeyRulePosition,
-		Database: database, Entry: -1, InTrigger: shape == game.ShapeTriggers,
+		At: database.Entry, Shape: shape, Scope: schema.EntryScope(database, id), Caller: game.Shapes[shape].Caller,
+		Rule: game.KeyRulePosition, Database: database, Entry: -1, InTrigger: shape == game.ShapeTriggers,
 	}
+}
+
+// EntryScope is where a database's entries run: in the scope the entry declares, when the dumps say it runs script;
+// an on_action in the scope the dumps declare for it by name. That scope is the root; nothing is saved yet.
+func (schema *Schema) EntryScope(database *Database, id string) Scope {
+	scope := Scope{Named: map[string]string{}}
+	if this := database.Entry.Scope.Value; schema.runsScript(this) {
+		scope.This, scope.Reason = this, "every "+game.KindName(database.Name)+" runs in it"
+	}
+	if action := schema.OnActions[id]; database.Descriptor.Purpose == game.PurposeOnActions && action.Scope != "" {
+		scope.This, scope.Reason = action.Scope, id+" runs in it"
+	}
+	scope.Root = scope.This
+	return scope
+}
+
+// runsScript reports whether a scope type the dumps declare evaluates triggers or executes effects.
+func (schema *Schema) runsScript(scope string) bool {
+	state := schema.Scopes[scope]
+	return state.Triggers || state.Effects
 }
 
 // Enter is the one step of the walk: from the context a statement is written in to the one its block reads in.
 // Outside an entry, or for a statement with no key, the block reads where the statement stands. A date key (a
 // number in a dated entry) reopens the holder; so does a key holding a parameter or written as a data call, with
 // its scope, command and call unknown. A calling word written before a key calls it by that word (blockoverride
-// "x" { }). Any other key is read by its rule (keyEnter). With create, the key's position is made.
+// "x" { }). A command that saves the scope under a name (save_scope_as = x) records it for the entry. Any other key
+// is read by its rule (keyEnter). With create, the key's position is made.
 func (schema *Schema) Enter(context Context, statement, previous jomini.Statement, create bool) Context {
 	assign, isAssign := statement.(*jomini.Assignment)
 	reopened := context
@@ -259,8 +304,13 @@ func (schema *Schema) Enter(context Context, statement, previous jomini.Statemen
 		return reopened
 	}
 	if schema.Commands[strings.ToLower(key)] == nil && writtenInPlace(key) {
-		reopened.Scope, reopened.Command, reopened.Call = "", "", ""
+		reopened.Scope, reopened.Command, reopened.Call = context.Scope.forget(key+" is filled in as the game runs"), "", ""
 		return reopened
+	}
+	if saves := game.NameCommands[strings.ToLower(key)]; saves.Makes && saves.Database == game.SavedScopes && context.Scope.Named != nil {
+		if scalar, isScalar := assign.Value.(*jomini.Scalar); isScalar {
+			context.Scope.save(scalar.Text)
+		}
 	}
 	return schema.keyEnter(context, assign, create)
 }
@@ -468,50 +518,83 @@ func (schema *Schema) commandShape(command *Command, holder game.Shape) game.Sha
 	return game.ShapeUnknown
 }
 
-// scopeOf is the scope a key's block runs in. A scope claim on the key's position beats the verb. ScopeFollows: a
-// link leads where its last link does; a command leads by commandScope. ScopeStays keeps the holder's scope where
-// the block's shape is known or the position claims one. A scope the dumps say runs no triggers and no effects is
-// unknown.
-func (schema *Schema) scopeOf(context, inner Context, facts KeyFacts, verb game.ScopeVerb) string {
-	position := inner.At
+// scopeOf is where a key's block runs. A scope claim on the key's position beats the verb and starts a chain of its
+// own. ScopeFollows: a link chain leads link by link (Follow), a command's block as commandScope says. ScopeStays
+// keeps the holder's record where the block's shape is known or the position claims one; else the scope is unknown.
+func (schema *Schema) scopeOf(context, inner Context, facts KeyFacts, verb game.ScopeVerb) Scope {
+	from, key, position := context.Scope, facts.Key, inner.At
 	if inner.Rule == game.KeyRuleLink {
 		position = nil // a link reads where it stands; the holder's claim is not its own
 	}
-	scope := ""
 	switch {
 	case position != nil && position.Scope.Source != SourceNone:
-		scope = position.Scope.Value
-	case verb == game.ScopeUnknown:
-	case verb == game.ScopeFollows && inner.Rule == game.KeyRuleLink:
-		last := strings.ToLower(facts.Key[strings.LastIndexByte(facts.Key, '.')+1:])
-		if link := schema.Link(last); link != nil {
-			if _, leads := schema.Scopes[link.Target]; leads {
-				scope = link.Target
-			}
+		if this := position.Scope.Value; schema.runsScript(this) {
+			return Scope{This: this, Root: this, Named: from.Named, Reason: key + " is declared to run in it"}
 		}
+		return from.forget("where " + key + " runs is not declared")
+	case verb == game.ScopeUnknown:
+		return from.enter("", key+" iterates a list")
+	case verb == game.ScopeFollows && inner.Rule == game.KeyRuleLink:
+		return schema.Follow(from, key)
 	case verb == game.ScopeFollows:
-		scope = schema.commandScope(facts.Command, context.Scope)
+		return schema.commandScope(from, facts.Command, key)
 	case verb == game.ScopeStays && (inner.Shape != game.ShapeUnknown || position != nil && position.Holds.Source != SourceNone):
-		scope = context.Scope
+		return from
 	}
-	if state := schema.Scopes[scope]; !state.Triggers && !state.Effects {
-		scope = ""
-	}
-	return scope
+	return from.forget("what " + key + " holds is not declared")
 }
 
-// commandScope is the scope a command's block runs in: its target when its arguments hold triggers or effects
-// and the target is a scope and it walks no list; unknown when it walks a list or its target is bare; else the
-// holder's.
-func (schema *Schema) commandScope(command *Command, holder string) string {
+// Follow is where a link chain leads from a scope, link by link: a declared link to its target; root to the scope
+// the entry runs in; prev to the scope before this one; this to the same; scope:x to the scope the entry saved as
+// x. A link to a scope type that runs no script, or to a name not saved above as one scope, leads to an unknown
+// one; the links after it still lead where they lead. The block entered has the scope left before it.
+func (schema *Schema) Follow(from Scope, chain string) Scope {
+	at := from
+	for part := range strings.SplitSeq(chain, ".") {
+		prefix, name, _ := strings.Cut(part, ":")
+		why, whyNot := part+" leads to it", "where "+part+" leads is not declared"
+		switch link := schema.Link(strings.ToLower(part)); game.ScopeLinks[strings.ToLower(prefix)] {
+		case game.LinkRoot:
+			at.This, why, whyNot = from.Root, "the root scope", "the root scope is not declared"
+		case game.LinkPrev:
+			at.This, why, whyNot = "", "the previous scope", "the scope before this one is not known"
+			if last := len(at.Prev) - 1; last >= 0 {
+				at.This, at.Prev = at.Prev[last], at.Prev[:last]
+			}
+		case game.LinkThis:
+			continue
+		case game.LinkSaved:
+			at.This, why, whyNot = at.Named[name], "saved as "+part, part+" is not saved above as one scope"
+		default:
+			at.This = ""
+			if link != nil && schema.runsScript(link.Target) {
+				at.This = link.Target
+			}
+		}
+		at.Reason = why
+		if at.This == "" {
+			at.Reason = whyNot
+		}
+	}
+	return from.enter(at.This, at.Reason)
+}
+
+// commandScope is where a command's block runs: in its target when its arguments hold script and it walks no list;
+// unknown when it walks a list, or leads somewhere while its arguments hold no known script; else where its holder
+// runs.
+func (schema *Schema) commandScope(from Scope, command *Command, key string) Scope {
 	holds := command.Args.Holds.Value
 	iterates := holds == game.ShapeTriggers || holds == game.ShapeEffects
 	_, leads := schema.Scopes[command.Target]
 	switch {
+	case iterates && leads && !command.Lists && !schema.runsScript(command.Target):
+		return from.enter("", key+" leads to "+command.Target+", which runs no script")
 	case iterates && leads && !command.Lists:
-		return command.Target
-	case command.Lists, command.Target != "" && !iterates:
-		return ""
+		return from.enter(command.Target, key+" leads to it")
+	case command.Lists:
+		return from.enter("", key+" iterates a list")
+	case command.Target != "" && !iterates:
+		return from.forget("what " + key + " holds is not declared")
 	}
-	return holder
+	return from
 }

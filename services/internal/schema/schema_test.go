@@ -347,7 +347,7 @@ func snippetStep(s *Schema, database, snippet, name string, create bool) step {
 	}
 	for _, statement := range parsed.Root.Statements {
 		if block := jomini.ChildBlock(statement); block != nil {
-			s.WalkBlock(s.EntryContext(s.Databases[database]), block.Statements, create, visit)
+			s.WalkBlock(s.EntryContext(s.Databases[database], ""), block.Statements, create, visit)
 		}
 	}
 	return result
@@ -463,7 +463,7 @@ func TestBlockScope(t *testing.T) {
 		{"an on_action starts in its declared scope", stepAt(t, s, "common/on_action/v_on_actions.txt", "on_birth", "effect", "every_vassal"), "character"},
 	}
 	for _, c := range cases {
-		if got := c.step.inner.Scope; got != c.want {
+		if got := c.step.inner.Scope.This; got != c.want {
 			t.Errorf("%s: %q, want %q", c.name, got, c.want)
 		}
 	}

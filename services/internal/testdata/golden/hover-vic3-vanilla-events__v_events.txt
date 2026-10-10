@@ -159,7 +159,13 @@
    "key": "owner",
    "head": "event target",
    "prose": "Scope to the owner country of object",
-   "scope": "state",
+   "scope": {
+    "this": "state",
+    "prev": [
+     ""
+    ],
+    "reason": "any_scope_state leads to it"
+   },
    "leads": "country",
    "winner": -1,
    "stale": true,
@@ -260,7 +266,13 @@
    "takes": [
     "effects"
    ],
-   "scope": "state",
+   "scope": {
+    "this": "state",
+    "prev": [
+     ""
+    ],
+    "reason": "every_scope_state leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -285,7 +297,13 @@
    "key": "culture",
    "head": "event target",
    "prose": "Scope to pop's or character's culture",
-   "scope": "state",
+   "scope": {
+    "this": "state",
+    "prev": [
+     ""
+    ],
+    "reason": "every_scope_state leads to it"
+   },
    "leads": "culture",
    "winner": -1,
    "stale": true,
@@ -335,7 +353,13 @@
    "writes": [
     "a number"
    ],
-   "scope": "state",
+   "scope": {
+    "this": "state",
+    "prev": [
+     ""
+    ],
+    "reason": "every_scope_state leads to it"
+   },
    "winner": -1,
    "within": [
     "vv.1",
@@ -411,7 +435,16 @@
    "takes": [
     "text"
    ],
-   "scope": "province",
+   "scope": {
+    "this": "province",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "home_province": "province"
+    },
+    "reason": "p:x0974E5 leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -505,7 +538,17 @@
    "takes": [
     "text"
    ],
-   "scope": "province",
+   "scope": {
+    "this": "province",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "away_province": "province",
+     "home_province": "province"
+    },
+    "reason": "p:x4A0B1C leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -592,7 +635,14 @@
    "key": "name",
    "head": "event target",
    "prose": "Scope to the name (as a flag) of a script container",
-   "scope": "container",
+   "scope": {
+    "this": "container",
+    "named": {
+     "away_province": "province",
+     "home_province": "province"
+    },
+    "reason": "the one scope it runs in"
+   },
    "leads": "flag",
    "winner": -1,
    "stale": true,
@@ -691,7 +741,14 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "named": {
+     "away_province": "province",
+     "home_province": "province"
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -907,7 +964,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "country",
+   "scope": {
+    "this": "country",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [

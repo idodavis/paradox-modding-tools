@@ -6,6 +6,9 @@
 import * as jomini$0 from "../jomini/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as schema$0 from "../schema/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as texture$0 from "../texture/models.js";
 
 /**
@@ -113,9 +116,9 @@ export interface Inspect {
     "writes"?: string[] | null;
 
     /**
-     * the scope it runs in; "" unknown
+     * where it runs: the scope, its root, the ones before, the saved scopes, and why; nil unknown
      */
-    "scope"?: string;
+    "scope"?: schema$0.Scope | null;
 
     /**
      * the scope it leads to; "" none

@@ -16,7 +16,7 @@ the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` 
 | `docs.go` | the documentation dialect: `parseDocScript`, the one reader of docscript that the install's docs, the wiki's examples and the dumps' usages share (`DocNode`: a statement's key, value slot, prose and block); step 3, `parseDocs`, the docs and examples parsed to trees with every key they write noted for the entry detector; step 6, `mergeDocs`, their claims merged into the entry trees after vanilla (`mergeNode`, `mergeTemplate`, `docClaims`); the phrase table `docPhrases` and `claimsOf`, which both merges read claims with |
 | `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
 | `entries.go` | the entry detector, `entryAt`: whether a statement defines an entry and in which database, by the game's `Layout` rows (`game.Descriptor`: identity, wrappers, keywords, nested key paths), the file type and the file's own database (`folder`, `DatabaseAt`); a table's or list's entries (`tableEntries`), a whole-file entry (`wholeFileEntry`) |
-| `walk.go` | the walker: `Context` (where statements read), `Visit`, `WalkFile` (the entries decided as it meets them, `entryOpens` the context an entry opens), `WalkBlock`, `EntryContext`; `Enter`, the one step from the context a statement is written in to the one its block reads in, by the first key rule that fits (`fits`), its row (`game.KeyRules`) and the first construct (`game.Constructs`); `holdsOf`, `commandShape`, `scopeOf` |
+| `walk.go` | the walker: `Context` (where statements read), `Visit`, `WalkFile` (the entries decided as it meets them, `entryOpens` the context an entry opens), `WalkBlock`, `EntryContext`, `EntryScope`; `Enter`, the one step from the context a statement is written in to the one its block reads in, by the first key rule that fits (`fits`), its row (`game.KeyRules`) and the first construct (`game.Constructs`); `holdsOf`, `commandShape`, `scopeOf` (the scope record `Scope`: this scope, the entry's root, the ones before, the saved scopes, the reason), `Follow` (a link chain, link by link), `commandScope` |
 | `occurrences.go` | `Occurrence`, one occurrence of a name with its `Role` (`Defines`, `Refers`, `Localizes`), and the occurrence rules: which entry each scalar of a placed statement stands for (`keyOccurrences`, `valueOccurrence`, `prefixReferences`, `parameterDefinitions`); the `Localization`, `File` and `Parameter` databases |
 | `shipped.go` | the backup schemas embedded from `shipped/`, `LoadShipped`; `gen/` writes them |
 
@@ -36,13 +36,17 @@ also needs vanilla to write the position. The registry and vanilla never accuse.
 A position is a place in a database's entry tree or a command's arguments, keyed by a key's written form: a
 number is `<number>`, a date `<date>`, a `prefix:x` word `<prefix:>`, any other key itself, and every key where
 the position has `<any>` (switch's cases). A `Context` is where statements read: the position, the shape of the
-block, its scope, the word its calls resolve by, the entry and database it is in, and for the block a key opened,
-how that key was read (`Rule`, `Call`, `Command`, `List`, `Leaf`, `Bound`). `Enter` is the one step: a statement
+block, where its script runs (`Scope`: this scope, the scope the entry runs in, the ones entered on the way, the
+scopes the entry has saved by name so far, and why, in plain words for the hover card and `wrong-scope`), the word
+its calls resolve by, the entry and database it is in, and for the block a key opened, how that key was read
+(`Rule`, `Call`, `Command`, `List`, `Leaf`, `Bound`). `Enter` is the one step: a statement
 with no key, outside an entry, a date key or a key written in place reopens its holder; any other key is read by
 the first rule the holder's shape tries whose test holds (`fits`), and the rule's row says where its block reads
 (`At`), what decides what it holds (`Holds`) and how its scope follows (`Scope`); the first construct that fits
 the key refines the shape, a block written as a dynamic description is one whatever the rows say, and a scope
-claim on the key's position beats the verb. Two readers use the walker: `countFile` and the index's `Collect`;
+claim on the key's position beats the verb. A link chain leads link by link (`Follow`): a declared link to its
+target, `root`, `prev`, `this` and `scope:x` by the record (`game.ScopeLinks`); `save_scope_as` records the scope
+under its name for the entry. Two readers use the walker: `countFile` and the index's `Collect`;
 the doc and usage merges call `Enter` on a synthetic statement.
 
 `WalkFile` is the one walk of a whole file: it reads every statement in source order, outer before inner, decides

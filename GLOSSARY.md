@@ -91,6 +91,7 @@ These are the terms of the language engine (`services/internal/lang/README.md`),
 | prefix | the word before the colon of a prefixed word | `character`, `title`, `scope`, `var` |
 | scope type | the class of object a statement runs against | `character`, `landed_title`, `country` |
 | link | a declared hop between scope types | `liege`, `primary_title`, `root` |
+| scope record | where a block's script runs (`schema.Scope`): this scope, the scope its entry runs in (root), the ones entered before (prev), the scopes the entry saved by name, and why, in plain words; the hover card carries it and `wrong-scope` says it | `landed_title`, root `character`, "capital_county leads to it" |
 | command | an effect, trigger or link the dumps declare (`schema.Command`) | `add_gold`, `has_trait`, `if`, `every_vassal` |
 | call | a key that is no command or link, naming an entry of a database whose `Descriptor.Callers` holds the word the block resolves calls by; resolved at query time | a scripted effect, a scripted trigger |
 | dumps | everything the game declares about its language, from `script_docs` and `dump_data_types` | the `logs` and `docs` dumps |
@@ -159,7 +160,7 @@ lint — so every code below describes something in a mod.
 | `unknown-event` | an event id that no event defines, at a position the walk knows |
 | `wrong-value-type` | a value of another type than the position's declared type |
 | `wrong-declared-value` | a word outside the position's declared word list |
-| `wrong-scope` | a command written where the known scope is not one it runs in, judged on the scopes the dumps declare for it, or a variable read in a scope that stores none; an unknown scope, and a command and scope vanilla writes together (`Index.Scoped`), are quiet |
+| `wrong-scope` | a command written where the known scope is not one it runs in, judged on the scopes the dumps declare for it, or a variable read in a scope that stores none; the scope is the record's (`root`, `prev` and a saved `scope:x` included) and the message says how it was found; an unknown scope, and a command and scope vanilla writes together (`Index.Scoped`), are quiet |
 | `missing-key` | a key a declared source calls required, left out of an entry. **Off unless the user turns it on** |
 | `duplicate-definition` | a name the workspace defines twice where the entry modes say neither replaces nor injects, the earlier one in load order named |
 | `inject-without-target` | an `INJECT:` or `REPLACE:` entry with nothing loaded before it |

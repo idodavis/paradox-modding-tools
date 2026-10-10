@@ -154,34 +154,35 @@ func (judge *judge) script() {
 // the dumps say stores none; an undeclared scope, a read through a link, and a word vanilla writes
 // in that scope are quiet.
 func (judge *judge) variable(at step, word *jomini.Scalar) {
-	sess, s := judge.file.sess, judge.file.sess.Install.Schema
-	scope, declared := s.Scopes[at.context.Scope]
-	if !declared || scope.Variables {
+	sess, s, scope := judge.file.sess, judge.file.sess.Install.Schema, at.context.Scope
+	state, declared := s.Scopes[scope.This]
+	if !declared || state.Variables {
 		return
 	}
 	prefixed, isPrefixed := jomini.SplitPrefixed(word.Text)
 	link, database := s.Link(strings.ToLower(word.Text)), s.Prefixes[prefixed.Prefix]
 	if isPrefixed && link != nil && !link.Global && database != "" && s.Databases[database] == nil &&
-		!sess.Install.Index.WritesInScope(word.Text, at.context.Scope) && s.MayAccuse(schema.CheckCommand, at.inner.Position(), nil) {
-		judge.report(word.Range, 2, "wrong-scope", fmt.Sprintf("%s reads a variable, but %s stores none",
-			word.Text, plain(at.context.Scope)))
+		!sess.Install.Index.WritesInScope(word.Text, scope.This) && s.MayAccuse(schema.CheckCommand, at.inner.Position(), nil) {
+		judge.report(word.Range, 2, "wrong-scope", fmt.Sprintf("%s reads a variable, but %s stores none (%s)",
+			word.Text, plain(scope.This), scope.Reason))
 	}
 }
 
 // key judges a key: a variable read, a command written in a scope it does not run in where vanilla
-// never writes it there, and a key the position's sources call required that its block leaves out.
+// never writes it there (the message says how the scope was found), and a key the position's sources
+// call required that its block leaves out.
 func (judge *judge) key(at step, assign *jomini.Assignment) {
-	sess, s := judge.file.sess, judge.file.sess.Install.Schema
+	sess, s, scope := judge.file.sess, judge.file.sess.Install.Schema, at.context.Scope
 	judge.variable(at, &assign.Key)
-	if command := at.command(s); command != nil && at.context.Scope != "" && len(command.Scopes) > 0 &&
-		!slices.Contains(command.Scopes, at.context.Scope) && !sess.Install.Index.WritesInScope(assign.Key.Text, at.context.Scope) &&
+	if command := at.command(s); command != nil && scope.This != "" && len(command.Scopes) > 0 &&
+		!slices.Contains(command.Scopes, scope.This) && !sess.Install.Index.WritesInScope(assign.Key.Text, scope.This) &&
 		s.MayAccuse(schema.CheckCommand, at.inner.Position(), nil) {
 		runs := make([]string, len(command.Scopes))
-		for i, scope := range command.Scopes {
-			runs[i] = plain(scope)
+		for i, one := range command.Scopes {
+			runs[i] = plain(one)
 		}
-		judge.report(assign.Key.Range, 2, "wrong-scope", fmt.Sprintf("%s runs on %s, but this block is %s",
-			assign.Key.Text, strings.Join(runs, " or "), plain(at.context.Scope)))
+		judge.report(assign.Key.Range, 2, "wrong-scope", fmt.Sprintf("%s runs on %s, but this block is %s (%s)",
+			assign.Key.Text, strings.Join(runs, " or "), plain(scope.This), scope.Reason))
 	}
 
 	// an entry written with a mode word the registry lists (INJECT:) adds to another and may leave

@@ -45,7 +45,10 @@
    "takes": [
     "yes or no"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -394,7 +397,10 @@
    "writes": [
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -459,7 +465,10 @@
    "writes": [
     "trait"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -659,7 +668,13 @@
    "writes": [
     "trait"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "prev": [
+     ""
+    ],
+    "reason": "character:186004 leads to it"
+   },
    "leads": "trait",
    "winner": -1,
    "stale": true,
@@ -767,7 +782,16 @@
    "takes": [
     "text"
    ],
-   "scope": "culture",
+   "scope": {
+    "this": "culture",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "old_culture": "culture"
+    },
+    "reason": "culture:norse leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -855,7 +879,17 @@
    "takes": [
     "text"
    ],
-   "scope": "landed_title",
+   "scope": {
+    "this": "landed_title",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "far_title": "landed_title",
+     "old_culture": "culture"
+    },
+    "reason": "title:e_y leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -960,7 +994,18 @@
    "takes": [
     "text"
    ],
-   "scope": "landed_title",
+   "scope": {
+    "this": "landed_title",
+    "prev": [
+     ""
+    ],
+    "named": {
+     "far_title": "landed_title",
+     "near_title": "landed_title",
+     "old_culture": "culture"
+    },
+    "reason": "title:k_y leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1116,7 +1161,15 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "far_title": "landed_title",
+     "near_title": "landed_title",
+     "old_culture": "culture"
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -1389,7 +1442,10 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [

@@ -196,7 +196,10 @@
    "takes": [
     "triggers"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "leads": "character",
    "winner": -1,
    "stale": true,
@@ -225,7 +228,13 @@
    "writes": [
     "trait"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "prev": [
+     ""
+    ],
+    "reason": "any_child leads to it"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -691,7 +700,13 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "named": {
+     "mod_target": ""
+    },
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [

@@ -55,6 +55,20 @@ const facts = computed(() => {
     ["Takes", (card.takes?.length ? card.takes : card.writes)?.join("; ")],
     ["Returns", card.returns],
     ["Leads to", card.leads],
+    ["Root", card.scope?.root !== card.scope?.this ? card.scope?.root : ""],
+    [
+      "Previous",
+      [...(card.scope?.prev ?? [])]
+        .reverse()
+        .map((scope) => scope || "unknown")
+        .join(", "),
+    ],
+    [
+      "Saved",
+      Object.entries(card.scope?.named ?? {})
+        .map(([name, type]) => `scope:${name} = ${type || "unknown"}`)
+        .join("; "),
+    ],
     ["Date", card.date],
     ["Weight", card.weight ? `${card.weight}% of its siblings` : ""],
     [
@@ -106,7 +120,11 @@ function open(site: Location): void {
           <UBadge v-if="card.stale" label="outdated script_docs" color="warning" size="sm" />
           <UBadge v-if="overrides" label="Overrides the game" color="purple" size="sm" />
         </div>
-        <div v-if="card.scope" class="font-mono text-11 text-dimmed">{{ card.scope }} scope</div>
+        <div v-if="card.scope" class="font-mono text-11 text-dimmed">
+          {{ card.scope.this || "unknown" }} scope<template v-if="card.scope.reason"
+            >, {{ card.scope.reason }}</template
+          >
+        </div>
       </div>
       <div v-if="facts.length || color" class="px-3.5 py-2.5">
         <!-- a value wraps to three lines, the rest on its tooltip -->

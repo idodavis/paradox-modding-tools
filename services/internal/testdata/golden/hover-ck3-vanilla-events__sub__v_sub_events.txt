@@ -236,7 +236,10 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [
@@ -509,7 +512,10 @@
     "a number",
     "script value"
    ],
-   "scope": "character",
+   "scope": {
+    "this": "character",
+    "reason": "the one scope it runs in"
+   },
    "winner": -1,
    "stale": true,
    "within": [

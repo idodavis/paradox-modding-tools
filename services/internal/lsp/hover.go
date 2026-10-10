@@ -80,7 +80,7 @@ type Inspect struct {
 	Prose   string         `json:"prose,omitempty"`   // what the dumps or docs say of the word
 	Takes   []string       `json:"takes,omitempty"`   // a key or command: what a word there may be
 	Writes  []string       `json:"writes,omitempty"`  // a key nothing declares: what vanilla writes there
-	Scope   string         `json:"scope,omitempty"`   // the scope it runs in; "" unknown
+	Scope   *schema.Scope  `json:"scope,omitempty"`   // where it runs: the scope, its root, the ones before, the saved scopes, and why; nil unknown
 	Leads   string         `json:"leads,omitempty"`   // the scope it leads to; "" none
 	Returns string         `json:"returns,omitempty"` // what a defined name's entries give: yes or no, a number
 	Sites   []Location     `json:"sites,omitempty"`   // where it is defined, in load order
@@ -109,8 +109,8 @@ type reading struct {
 	ref     *schema.Occurrence
 	key     *schema.Position
 	command *schema.Command
-	scope   string
-	holds   game.Shape // what the walker reads the key's block as
+	scope   schema.Scope // where the word is written
+	holds   game.Shape   // what the walker reads the key's block as
 }
 
 // step is one statement of the chain: the statement, the context it is written in and the one its block
@@ -297,17 +297,18 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 		read.holds = at.inner.Shape // a value block is also written as a number
 	}
 
-	// a link chain's part under the cursor reads through its own link, run where the one before leads
+	// a link chain's part under the cursor reads through its own link, run where the parts before it lead
 	if read.ref == nil && read.command != nil && read.command.Kinds&game.KindLink != 0 {
-		from := word.Range.Start
-		for _, part := range strings.Split(word.Text, ".") {
-			if read.command = s.Link(strings.ToLower(part)); read.command == nil || offset <= from+len(part) {
+		parts, from := strings.Split(word.Text, "."), word.Range.Start
+		for i, part := range parts {
+			if offset <= from+len(part) {
+				read.command = s.Link(strings.ToLower(part))
+				if i > 0 {
+					read.scope = s.Follow(at.context.Scope, strings.Join(parts[:i], "."))
+				}
 				break
 			}
-			read.scope, from = "", from+len(part)+1
-			if _, leads := s.Scopes[read.command.Target]; leads {
-				read.scope = read.command.Target
-			}
+			from += len(part) + 1
 		}
 	}
 	described := file.describe(card, read)
@@ -405,18 +406,19 @@ func (file *file) describe(card *Inspect, read reading) bool {
 	key := read.key
 	switch {
 	case read.command != nil:
-		command := read.command
-		card.Head, card.Prose, card.Takes, card.Scope = kinds(command), command.Blurb, takes(command.Args), read.scope
-		if card.Scope == "" && len(command.Scopes) == 1 {
-			card.Scope = command.Scopes[0]
+		command, scope := read.command, read.scope
+		card.Head, card.Prose, card.Takes = kinds(command), command.Blurb, takes(command.Args)
+		if scope.This == "" && len(command.Scopes) == 1 {
+			scope.This, scope.Reason = command.Scopes[0], "the one scope it runs in"
 		}
+		card.Scope = scopeCard(scope)
 		if _, leads := s.Scopes[command.Target]; leads {
 			card.Leads = command.Target
 		}
 		shown(schema.SourceDumps)
 		key = command.Args
 	case key != nil:
-		card.Need, card.Takes, card.Scope, card.Leads = need(key), takes(key), read.scope, key.Scope.Value
+		card.Need, card.Takes, card.Scope, card.Leads = need(key), takes(key), scopeCard(read.scope), key.Scope.Value
 		if from := key.Blurb.Source; from == schema.SourceDumps || from == schema.SourceDocs {
 			card.Prose = key.Blurb.Value
 			shown(from)
@@ -442,10 +444,18 @@ func (file *file) describe(card *Inspect, read reading) bool {
 	return card.Head != "" || card.Need != "" || card.Prose != "" || len(card.Takes) > 0 || card.Leads != ""
 }
 
+// scopeCard is the record a card carries: nil where neither the scope nor its root is known.
+func scopeCard(scope schema.Scope) *schema.Scope {
+	if scope.This == "" && scope.Root == "" {
+		return nil
+	}
+	return &scope
+}
+
 // defined fills a reference's card: its database, its sites (the kept one and its adds), localized
-// name and what the dumps and docs say of its database; a call nothing defines is unknown. scope is
+// name and what the dumps and docs say of its database; a call nothing defines is unknown. context is
 // where the reference is written, which a scripted entry runs in when its database declares none.
-func (file *file) defined(card *Inspect, ref schema.Occurrence, scope string, shown func(schema.Source)) bool {
+func (file *file) defined(card *Inspect, ref schema.Occurrence, context schema.Scope, shown func(schema.Source)) bool {
 	sess, s := file.sess, file.sess.Install.Schema
 	defs, known := index.Resolve(s, sess.Indexes(), ref, file.place.Path)
 	database := ref.Database
@@ -477,27 +487,25 @@ func (file *file) defined(card *Inspect, ref schema.Occurrence, scope string, sh
 		}
 	}
 
-	// its localized name, and the comment a mod's author leads their definition with
+	// its localized name, the comment a mod's author leads their definition with, what its database's
+	// entries are and run in (a scripted entry where it is called), an on_action's own blurb from the
+	// dumps; the author's comment where nothing declared says more
 	comment := ""
 	if row != nil {
 		card.Name = loc.Plain(sess.Title(ref.ID, winner)) // a name nothing defines still shows its own loc key's text
 		comment = leadComment(sess, winner)
-	}
-
-	// what its database's entries are and run in; an on_action's own blurb and scope from the dumps;
-	// the author's comment where nothing declared says more
-	if row != nil {
 		if from := row.Entry.Blurb.Source; from == schema.SourceDumps || from == schema.SourceDocs {
 			card.About = row.Entry.Blurb.Value
 			shown(from)
 		}
-		card.Scope, card.Returns = row.Entry.Scope.Value, returns[row.Entry.Holds.Value]
-		if card.Scope == "" && len(row.Descriptor.Callers) > 0 {
-			card.Scope = scope
+		scope := s.EntryScope(row, ref.ID)
+		if scope.This == "" && len(row.Descriptor.Callers) > 0 {
+			scope = context
 		}
+		card.Scope, card.Returns = scopeCard(scope), returns[row.Entry.Holds.Value]
 		shown(row.Entry.Scope.Source)
 		if action, found := s.OnActions[ref.ID]; found && row.Descriptor.Purpose == game.PurposeOnActions {
-			card.Prose, card.Scope = action.Blurb, cmp.Or(action.Scope, card.Scope)
+			card.Prose = action.Blurb
 			shown(schema.SourceDumps)
 		}
 		card.Graphed = row.Descriptor.Purpose == game.PurposeEvents || row.Descriptor.Purpose == game.PurposeOnActions
@@ -588,7 +596,7 @@ func (file *file) locCard(offset int) *Inspect {
 		return nil
 	}
 	card := &Inspect{Word: ref.ID, Range: file.span(ref.Range), Winner: -1}
-	file.defined(card, *ref, "", func(schema.Source) {})
+	file.defined(card, *ref, schema.Scope{}, func(schema.Source) {})
 	return card
 }
 
@@ -630,7 +638,8 @@ func (file *file) dataCard(steps []jomini.Step) *Inspect {
 	on, stale := leads(s.DataTypes, steps[:len(steps)-1]), s.Sources[schema.SourceDumps].Stale
 	for _, arg := range step.Args {
 		if custom, found := s.CustomLoc[arg.Text]; arg.Quoted && found {
-			card.Word, card.Head, card.Scope, card.Stale = arg.Text, "custom localization", custom.Scope, stale
+			card.Word, card.Head, card.Stale = arg.Text, "custom localization", stale
+			card.Scope = scopeCard(schema.Scope{This: custom.Scope, Reason: "declared for " + arg.Text})
 			card.Takes = []string{oneOf(custom.Entries)}
 			if custom.Parent != "" {
 				card.Takes = append(card.Takes, "parent "+custom.Parent, "suffix "+custom.Suffix)
@@ -642,12 +651,13 @@ func (file *file) dataCard(steps []jomini.Step) *Inspect {
 		return row.Purpose == game.PurposeFunctions || row.Purpose == game.PurposeConcepts
 	}) {
 		if !defined && len(index.Lookup(file.sess.Indexes(), schema.Defines, name, step.Name)) > 0 {
-			defined = file.defined(card, schema.Occurrence{Database: name, ID: step.Name}, "", func(schema.Source) {})
+			defined = file.defined(card, schema.Occurrence{Database: name, ID: step.Name}, schema.Scope{}, func(schema.Source) {})
 		}
 	}
 	_, isType := s.DataTypes[step.Name]
 	if function, found := s.DataTypes[on].Functions[step.Name]; found {
-		card.Head, card.Scope, card.Leads = cmp.Or(card.Head, "data function"), on, function.Returns
+		card.Head, card.Leads = cmp.Or(card.Head, "data function"), function.Returns
+		card.Scope = scopeCard(schema.Scope{This: on, Reason: "what " + step.Name + " is called on"})
 		card.Stale = card.Stale || stale
 	} else if len(steps) == 1 && isType && !defined {
 		card.Head, card.Stale = "data type", stale

@@ -440,7 +440,7 @@ func TestBlockScope(t *testing.T) {
 func TestMayAccuse(t *testing.T) {
 	s := &Schema{Sources: map[Source]SourceState{SourceDocs: {From: "install"}, SourceDumps: {From: "yours", Stale: true}}}
 	number := func(from Source, in int, forms Shapes) *Position {
-		return &Position{Value: Claim[Expected]{Expected{Kind: ExpectsNumber}, from}, Vanilla: Vanilla{In: in, Shapes: forms}}
+		return &Position{Claims: Claims{Value: Claim[Expected]{Expected{Kind: ExpectsNumber}, from}}, Vanilla: Vanilla{In: in, Shapes: forms}}
 	}
 	cases := []struct {
 		name     string

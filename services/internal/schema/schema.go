@@ -119,18 +119,42 @@ type Vanilla struct {
 	Values map[string]int // words written, with counts
 }
 
+// Claims is what the sources state about a position, each claim with its source.
+type Claims struct {
+	Value    Claim[Expected]
+	Block    Claim[game.Block]
+	Scope    Claim[string]
+	Required Claim[Requirement]
+	Default  Claim[string]
+	Blurb    Claim[string]
+}
+
+// Set writes each of found's claims by Claim.Set: where its source outranks the one here.
+func (claims *Claims) Set(found Claims) {
+	claims.Value.Set(found.Value.Value, found.Value.Source)
+	claims.Block.Set(found.Block.Value, found.Block.Source)
+	claims.Scope.Set(found.Scope.Value, found.Scope.Source)
+	claims.Required.Set(found.Required.Value, found.Required.Source)
+	claims.Default.Set(found.Default.Value, found.Default.Source)
+	claims.Blurb.Set(found.Blurb.Value, found.Blurb.Source)
+}
+
 // Position is one place in a database's entry tree or a command's arguments: its claims, each with its
 // source, and vanilla's evidence.
 type Position struct {
-	Children   map[string]*Position // below it, by written name or form
-	Value      Claim[Expected]
-	Block      Claim[game.Block]
-	Scope      Claim[string]
-	Required   Claim[Requirement]
-	Default    Claim[string]
-	Blurb      Claim[string]
+	Children map[string]*Position // below it, by written name or form
+	Claims
 	DeclaredBy Source // the highest-ranked declared source that writes the position: the dumps anywhere, the docs and wiki only where vanilla writes it too
 	Vanilla    Vanilla
+}
+
+// declare writes what a source states about the position: its claims, and the position as declared by that
+// source where it outranks the one that has, claims or none (name = lists an argument and says nothing of it).
+func (position *Position) declare(found Claims, from Source) {
+	position.Set(found)
+	if position.DeclaredBy == SourceNone || from < position.DeclaredBy {
+		position.DeclaredBy = from
+	}
 }
 
 // Command is an effect, trigger or link the dumps declare.

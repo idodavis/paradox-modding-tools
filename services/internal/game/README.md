@@ -28,7 +28,7 @@ in one row, never as a branch in a reader.
 | `DynamicDescription` | the shape of a dynamic description (`first_valid`, `triggered_desc`, `desc`) | the walker |
 | `Bools`, `Colors`, `GlobalType` | how yes/no, colors and data calls are written | the readers, hover |
 | `EventPortraits`, `OptionFlags` | the keys an event names its portraits with (by their last word, and the one that names the character), the yes-or-no words an option is marked with | the event graph's detail |
-| `Placeholders`, `UsagePlaceholder`, `DumpWords` | the block placeholders' last words and their kinds, a usage's placeholder, the dumps' words the engine decides by (`Iterate through`, `none`/`all`) | the dump and doc readers |
+| `Placeholders`, `DumpWords` | the block placeholders' last words and their kinds, the dumps' words the engine decides by (`Iterate through`, `none`/`all`) | the dump and doc readers |
 | `MisspelledFolders` | folder names the game never reads | diagnostics |
 | `EntryMode`, `GameInfo.Mode` | the words before a definition's name (`REPLACE:`, `INJECT:`), what each does, and the split of one off a name | the entry detector, diagnostics, `index.Winner` |
 | `FileTypes` | how `.txt`, `.asset`, `.font` and `.gui` files name entries, the block kind their entries hold (`Body`) and the keys that name another entry (`Refs`: `using`, `layer`) | the entry detector, the index |

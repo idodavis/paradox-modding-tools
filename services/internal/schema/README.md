@@ -4,17 +4,16 @@ What the sources state about one game version's script: each database's position
 vanilla's evidence, each command the dumps declare, and the one walker every reader of script uses. It decides
 whether a claim may accuse a user's file (`MayAccuse`) and never looks at a mod.
 
-Read `build.go` first. `Build` makes one game version's schema in seven steps, each a function named for it, in
-the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` in
-`dumps.go`, `parseDocsAndExamples`, `collectDocFields` and `applyExamples` in `docs.go`, `countVanilla` and
-`inferTypesAndPrefixes` in `vanilla.go`.
+Read `build.go` first. `Build` makes one game version's schema in six steps, each a function named for it, in
+the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` in `dumps.go`, `parseDocs` in
+`docs.go`, `countVanilla` and `inferTypesAndPrefixes` in `vanilla.go`, `mergeDocs` in `docs.go`.
 
 | file | holds |
 |---|---|
-| `schema.go` | the types (`Schema`, `Database`, `Position`, `Claim`, `Command`, `Vanilla`, `Shapes`, `ExpectedKind`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
+| `schema.go` | the types (`Schema`, `Database`, `Position` with its `Claims`, `Claim`, `Command`, `Vanilla`, `Shapes`, `ExpectedKind`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
 | `build.go` | the pipeline: `Input`, `Build`, `DatabaseNames` for the scan; step 1, declaring the databases (`declare`, `declareDatabases`) |
-| `dumps.go` | step 2: `dumpsOrShipped`, then the parsers of the console dumps: the label table, one `parse…` per record kind, the usages |
-| `docs.go` | steps 3, 4 and 7: `example`, `parseDocsAndExamples`, `collectDocFields`, `applyExamples`, then the normalizer, the phrase catalog, the joiner; the dumps' usages (step 2) go through the same path |
+| `dumps.go` | step 2: `dumpsOrShipped`, then the parsers of the console dumps: the label table, one `parse…` per record kind; the usages merged into each command's arguments once every command is declared (`mergeUsages`, `usageRoots`, `mergeUsage`, `argument`) |
+| `docs.go` | the documentation dialect: `parseDocScript`, the one reader of docscript that the install's docs, the wiki's examples and the dumps' usages share (`DocNode`: a statement's key, value slot, prose and block); step 3, `parseDocs`, the docs and examples parsed to trees with every key they write noted for the entry detector; step 6, `mergeDocs`, their claims merged into the entry trees after vanilla (`docMerge`: `node`, `template`, `set`); the phrase table `docPhrases` and `claimsOf`, which both merges read claims with |
 | `vanilla.go` | steps 5 and 6: `countVanilla` and `countFile`, what vanilla writes at each position, and `inferTypesAndPrefixes`, the kind its scalars share where nothing declares one |
 | `entries.go` | the entry detector, `FindEntries`: which definitions a file makes, by its folder's row, its nested rows and its file type |
 | `walk.go` | the walker: `WalkFile`, `WalkBlock`, `EntryContext`, `PlaceKey`, and the four decisions a key leads to (`keyMeaning`, `blockKindOf`, `commandBlockKind`, `blockScope`) |
@@ -39,14 +38,32 @@ number is `<number>`, a date `<date>`, a `prefix:x` word `<prefix:>`, any other 
 a block's statements at a `BlockContext` (position, block kind, calling word, scope, inside a trigger or an
 entry); each key becomes a `Placement` by `PlaceKey`, which decides in order what the key is (`keyMeaning`, by the
 block kind's rules in `game.Blocks`), what its block holds (`blockKindOf`, `commandBlockKind`) and the scope
-that block runs in (`blockScope`). Each decision's doc comment states its order. Four readers use the walker:
-`countFile`, `applyDocClaims`, `applyUsage` and the index's `Collect`.
+that block runs in (`blockScope`). Each decision's doc comment states its order. Two readers use the walker: `countFile` and the index's `Collect`;
+the doc merges place each key with `PlaceKey` alone.
 
 `WalkFile` is the one walk of a whole file: given the entries `FindEntries` returned, it reads every statement in
 source order, outer before inner, and each `Placement` carries the entry it is in (`Entry`, an index into the
 entries, -1 outside one), what its key and value name (`Found`, the occurrences, by the rules of `occurrences.go`) and the database a name
-command's value names there (`StoredIn`). `WalkBlock` reads a snippet (the docs, the dumps' usages): no entries,
-no names.
+command's value names there (`StoredIn`).
+
+## Docscript
+
+The docs, the wiki's examples and the dumps' usages write script with prose in it, in three conventions, and
+`parseDocScript` reads all three into one tree. A line is a statement, a commented-out statement, a comment, a
+brace, prose or a heading. A statement's value slot is one token: a `<placeholder>`, a word, alternatives
+(`yes/no`, `a | b`), a "quoted text", or several words read as one text (`ai_value = script value`); the words
+after a `<placeholder>` or after a block closing on the line are its prose. Braces build the tree, and a text
+whose braces do not balance closes a block when a code line comes back to its indentation. A comment trailing a
+line belongs to the first statement on it; a run of whole-line comments leads the statement under it, and an
+empty comment or a heading keeps the run together. `claimsOf` reads a node's claims from its value slot and each
+line of its prose through `docPhrases`; what no phrase reads is the blurb.
+
+The two merges differ only in where a key is placed. `mergeDocs` places each key where the walker reads it under
+the entry (`PlaceKey`), writes the node's claims where vanilla writes that position, and reads a key vanilla
+writes nowhere below as a template (an example entry's name, a `<key>`) whose block merges in the holder's
+place. `mergeUsages` places a usage's arguments under the command's `Args`, made on write; the nodes that stand
+for the command are `usageRoots`: those named as it, else the one top statement (an alias family's sibling
+name), else the tree itself when the usage lists the arguments.
 
 ## Names
 

@@ -1,4 +1,4 @@
-// vanilla.go is steps 5 and 6: what vanilla writes at each position, counted; then the kind a position's
+// vanilla.go is steps 4 and 5: what vanilla writes at each position, counted; then the kind a position's
 // scalars share where nothing declares one, and each prefix's database.
 
 package schema
@@ -66,7 +66,7 @@ func (schema *Schema) countVanilla(ctx context.Context, install []inventory.File
 func (schema *Schema) noteEntry(entry Entry, names map[string]map[string]bool) {
 	if schema.Databases[entry.Database] == nil {
 		extension, _, _ := strings.Cut(entry.Database, ".")
-		schema.declare(entry.Database, game.Folder{Body: game.FileTypes["."+extension].Body})
+		schema.declareDatabase(entry.Database, game.Folder{Body: game.FileTypes["."+extension].Body})
 	}
 	if entry.ID != "" {
 		if names[entry.Database] == nil {

@@ -216,10 +216,6 @@ var Placeholders = map[string]Block{
 	"effect": BlockEffects, "effects": BlockEffects, "trigger": BlockTriggers, "triggers": BlockTriggers,
 }
 
-// UsagePlaceholder matches a block placeholder in a dump usage line; a usage with none writes
-// arguments only.
-const UsagePlaceholder = `<[^<>\n]*(?i:trigger|effect)[^<>\n]*>|\.\.\.\s*(?i:triggers?|effects?)\s*\.\.\.`
-
 // DumpWords are the dumps' words the engine decides by: a blurb opening "Iterate through" with no
 // target walks a list or variable map, so its block's scope is unknown; none and all name no scope.
 var DumpWords = struct {

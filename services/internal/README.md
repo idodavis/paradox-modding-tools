@@ -31,8 +31,8 @@ LOCALIZATION (english and the workspace language)
 
 SCHEMA (when the game version or a dump file changes; the generator runs the same code)
   install ── parse ── walk (observe) ─┐
-  docs, wiki <pre> ── normalize ── parse ── walk (join) ──► one position tree, each claim by rank
-  dumps ── label table; usages ── walk (usage) ───┘
+  docs, wiki <pre> ── parseDocScript ── merge (PlaceKey) ──► one position tree, each claim by rank
+  dumps ── label table; usages ── parseDocScript ── merge ───┘
 
 INDEX (the install's from the cache; the mods on every launch; one mod file on save)
   file ── parse ── walk (records) ──► Index: each file's definitions and references

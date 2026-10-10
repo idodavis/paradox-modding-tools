@@ -1,5 +1,5 @@
 // dumps.go is step 2: the console dumps, or the shipped backup, parsed into commands, scopes, saved scopes,
-// modifiers, on_actions, data types and custom loc.
+// modifiers, on_actions, data types and custom loc; the usages merged into each command's arguments.
 
 package schema
 
@@ -214,7 +214,7 @@ func (schema *Schema) parseDumps(files []inventory.File) (written time.Time) {
 			}
 		}
 	}
-	schema.applyUsages(usages)
+	schema.mergeUsages(usages)
 	return written
 }
 
@@ -282,7 +282,7 @@ func parseEntryBody(body, name, group2 string, labels map[string]string) dumpEnt
 				lines = append(lines, line[:at])
 				line = line[at:]
 			}
-			if scriptShapes.code.MatchString(strings.TrimLeft(line, " \t")) {
+			if isDocCode(tokenizeDocLine(line), false) {
 				usageAt = len(lines)
 			}
 		}
@@ -364,7 +364,7 @@ func scopeList(list string) (scopes []string) {
 }
 
 // valueFromTraits reads what a command's own value is from the dump's Traits line. A database key trait is
-// read as the usage name = <class>, which claims the reference itself.
+// merged as the usage name = <class>, which claims the reference itself.
 func (schema *Schema) valueFromTraits(command *Command, name, traits string) (claim Expected) {
 	switch {
 	case traits == "yes/no":
@@ -376,8 +376,7 @@ func (schema *Schema) valueFromTraits(command *Command, name, traits string) (cl
 		claim.Kind = ExpectsScope
 	case strings.HasPrefix(traits, "class C") && strings.HasSuffix(traits, "Database key"):
 		class := strings.TrimSuffix(strings.TrimPrefix(traits, "class C"), "Database key")
-		parsed := jomini.Parse(normalize(usageLines(name + " = <" + snakeCase(strings.TrimSpace(class)) + ">")))
-		schema.applyUsage(&parsed, command, name)
+		schema.mergeUsage(parseDocScript([]string{name + " = <" + snakeCase(strings.TrimSpace(class)) + ">"}).Children[0], command)
 	case strings.Contains(traits, ", "):
 		list := traits
 		if _, after, found := strings.Cut(traits, ": "); found {
@@ -454,85 +453,124 @@ func (schema *Schema) parseDataType(e dumpEntry) {
 	schema.DataTypes[owner] = dataType
 }
 
-// placeholder matches a block placeholder in a usage.
-var placeholder = regexp.MustCompile(game.UsagePlaceholder)
-
-// applyUsages stores each command's usages in its arguments, once every command is declared, then decides
-// from them whether the command iterates a list and whether its block takes arguments only.
-func (schema *Schema) applyUsages(usages map[string][]string) {
+// mergeUsages merges each command's usages into its arguments, once every command is declared, then decides
+// from them whether the command iterates a list and whether its block takes arguments only: every block the
+// usages write under the command's name holds arguments only.
+func (schema *Schema) mergeUsages(usages map[string][]string) {
 	for _, name := range slices.Sorted(maps.Keys(usages)) {
 		command := schema.Commands[name]
 		blocks, plain := 0, 0
 		for _, usage := range usages[name] {
-			parsed := jomini.Parse(normalize(usageLines(usage)))
-			written := usageName(&parsed, name)
-			schema.applyUsage(&parsed, command, written)
-			found, plainBlocks := argumentBlocks(usage, written, len(parsed.Root.Statements) > 0)
-			blocks, plain = blocks+found, plain+plainBlocks
+			tree := parseDocScript(strings.Split(usage, "\n"))
+			for _, root := range usageRoots(schema, tree, name) {
+				schema.mergeUsage(root, command)
+				// a block at the top, or the tree itself when the usage lists the arguments, is one of the command's
+				if root.Block && slices.Contains(tree.Children, root) || root == tree && len(tree.Children) > 0 {
+					blocks++
+					if argumentsOnly(root) {
+						plain++
+					}
+				}
+			}
 		}
 		// a command with no target whose blurb says it iterates runs its block once per list item
 		command.Lists = command.Out == "" && strings.Contains(command.Blurb, game.DumpWords.Iterates)
-		// every block the usages write under the command holds arguments only: so does the command's
 		if blocks > 0 && plain == blocks {
 			command.Args.Block.Set(game.BlockArguments, SourceDumps)
 		}
 	}
 }
 
-// usageName returns the key of the first assignment, at any depth, named as the command; failing that the
-// key of the one top statement when it is an assignment (a stale or sibling name); else "".
-func usageName(parsed *jomini.Result, command string) (found string) {
-	jomini.Walk(parsed.Root, func(statement jomini.Statement, _ int, _ *jomini.Block) bool {
-		if assign, isAssign := statement.(*jomini.Assignment); isAssign && strings.EqualFold(assign.Key.Text, command) {
-			found = assign.Key.Text
-			return false
+// usageRoots are the nodes of a usage that stand for the command: every node named as the command, at any depth
+// (add_character_flag = X and add_character_flag = { flag = X }); else the one top statement, as an alias family
+// writes it under a sibling's name (add_loyalists' usage writes add_radicals), unless it is named as no declared
+// command and holds commands, which makes it a script body and no usage (Vic3's generated iterators carry an
+// unrelated scripted trigger); else the tree itself, whose top statements are the arguments.
+func usageRoots(schema *Schema, tree *DocNode, name string) (roots []*DocNode) {
+	roots = namedNodes(tree, name, nil)
+	switch {
+	case len(roots) > 0:
+		return roots
+	case len(tree.Children) == 1 && tree.Children[0].Key != "":
+		root := tree.Children[0]
+		declared := func(key string) bool {
+			return schema.Commands[strings.ToLower(key)] != nil || schema.Link(strings.ToLower(key)) != nil
 		}
-		return true
-	})
-	if found == "" && len(parsed.Root.Statements) == 1 {
-		if assign, isAssign := parsed.Root.Statements[0].(*jomini.Assignment); isAssign {
-			found = assign.Key.Text
+		body := slices.ContainsFunc(root.Children, func(child *DocNode) bool { return child.Key != "" && declared(child.Key) })
+		if !declared(root.Key) && body {
+			return nil
 		}
+		return []*DocNode{root}
+	}
+	return []*DocNode{tree}
+}
+
+// namedNodes appends the nodes below one whose key is a name, at any depth, in source order.
+func namedNodes(node *DocNode, name string, found []*DocNode) []*DocNode {
+	for _, child := range node.Children {
+		if strings.EqualFold(child.Key, name) {
+			found = append(found, child)
+		}
+		found = namedNodes(child, name, found)
 	}
 	return found
 }
 
-// argumentBlocks counts the blocks a usage writes under the command's name, and how many of them hold
-// arguments only: no line is a block placeholder, and each is a statement or a brace. A usage that lists the
-// arguments themselves (written "") is one block, plain when it has no placeholder. It reads the raw text,
-// not the normalized one: normalize turns prose into comments and placeholders into strings, and the
-// question is about the raw shape.
-func argumentBlocks(usage, written string, listsArguments bool) (blocks, plain int) {
-	if written == "" {
-		switch {
-		case !listsArguments:
-			return 0, 0
-		case placeholder.MatchString(usage):
-			return 1, 0
-		}
-		return 1, 1
-	}
-	raw := jomini.Parse(usage)
-	for _, statement := range raw.Root.Statements {
-		assign, isAssign := statement.(*jomini.Assignment)
-		block := jomini.ChildBlock(statement)
-		if !isAssign || block == nil || !strings.EqualFold(assign.Key.Text, written) {
-			continue
-		}
-		end := block.CloseBrace
-		if end < 0 {
-			end = len(usage)
-		}
-		onlyArguments := true
-		for line := range strings.SplitSeq(usage[block.OpenBrace+1:end], "\n") {
-			line, _, _ = strings.Cut(line, "#")
-			onlyArguments = onlyArguments && !placeholder.MatchString(line) &&
-				(strings.Trim(line, "{} \t") == "" || scriptShapes.statement.MatchString(strings.TrimSpace(line)))
-		}
-		blocks++
-		if onlyArguments {
-			plain++
+// argumentsOnly reports whether a block holds arguments only: no statement in it, at any depth, writes a
+// placeholder that names triggers or effects, or ... in their place.
+func argumentsOnly(node *DocNode) bool {
+	for _, child := range node.Children {
+		if blockPlaceholder.MatchString(child.Key) || blockPlaceholder.MatchString(child.Value) || !argumentsOnly(child) {
+			return false
 		}
 	}
-	return blocks, plain
+	return true
+}
+
+// blockPlaceholder matches a placeholder standing for a block of triggers or effects in a usage.
+var blockPlaceholder = regexp.MustCompile(`<[^<>]*(?i:trigger|effect)[^<>]*>|(?i:triggers?|effects?)\.\.\.`)
+
+// mergeUsage merges a node standing for a command into the command's arguments: a named node's own claims are
+// the arguments position's, and each statement in its block is an argument.
+func (schema *Schema) mergeUsage(root *DocNode, command *Command) {
+	if root.Key != "" {
+		command.Args.declare(schema.usageClaims(root), SourceDumps)
+	}
+	for _, child := range root.Children {
+		schema.argument(child, BlockContext{Position: command.Args, Kind: game.BlockFields, InEntry: true})
+	}
+}
+
+// argument merges one statement of a usage's block as an argument at a context: its position is made on write
+// where the walker reads its key, and gets the statement's claims unless the key is a declared command; its own
+// block's statements are arguments below it. A bare value's claims are the holder's (<optional> after an argument).
+func (schema *Schema) argument(node *DocNode, in BlockContext) {
+	if node.Key == "" {
+		if in.Position != nil {
+			in.Position.declare(schema.usageClaims(node), SourceDumps)
+		}
+		for _, child := range node.Children { // a block with no key reads in place
+			schema.argument(child, in)
+		}
+		return
+	}
+	for _, name := range keyNames(node.Key) {
+		placement := schema.PlaceKey(in, nil, name, true)
+		if placement.Position != nil && placement.Command == nil {
+			placement.Position.declare(schema.usageClaims(node), SourceDumps)
+		}
+		for _, child := range node.Children {
+			schema.argument(child, placement.Inner)
+		}
+	}
+}
+
+// usageClaims is a usage node's claims: its claims by the tables, and no known scope where its value names the
+// kind of block it holds (limit = <triggers>).
+func (schema *Schema) usageClaims(node *DocNode) Claims {
+	found := schema.claimsOf(node, SourceDumps)
+	if node.Key != "" && node.Value != "" && found.Block.Source != SourceNone {
+		found.Scope.Set("", SourceDumps)
+	}
+	return found
 }

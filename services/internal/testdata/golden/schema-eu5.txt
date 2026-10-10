@@ -47,8 +47,8 @@ database setup/start.town_rights fields=[]
   (entry) value={0  []}/0 block=1/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 database setup/start.work_of_art fields=[]
   (entry) value={0  []}/0 block=1/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-database town_rights fields=[]
-  (entry) value={0  []}/0 block=1/1 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:1,forms:32,values:map[]
+database town_rights fields=[allow color country_modifier location_modifier potential]
+  (entry) value={9  []}/4 block=1/1 scope="country"/4 required={0 }/0 default=""/0 blurb=""/0 written=4 seen=in:0,blocks:1,forms:32,values:map[]
   /local_trades_per_burgher value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:0,forms:1,values:map[]
 
 ## commands
@@ -93,7 +93,7 @@ command add_avatar kind=1 scopes=[country] out="avatar" global=false wild=false 
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_bonus_warscore kind=1 scopes=[war] out="" global=false wild=false lists=false blurb=57:c086a67c:"adds some bonus war score to the supplie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /amount value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /amount value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="script value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="country scope"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_breach kind=1 scopes=[siege] out="" global=false wild=false lists=false blurb="adds a breach to the current siege"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -115,7 +115,7 @@ command add_circle_satisfaction kind=1 scopes=[imperial_circle] out="" global=fa
 command add_colonial_claim kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=81:86b76737:"Add a colonial claim to the target provi"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /province_definition value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /reason value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[category = /"<exclusive/same_religion>/"]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /reason value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="category = <exclusive/same_religion>"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_complacency kind=1 scopes=[country international_organization] out="" global=false wild=false lists=false blurb="Adds complacency"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_cooldown kind=1 scopes=[country international_organization] out="" global=false wild=false lists=false blurb=67:e3da894e:"adds a cooldown for a country or interna"
@@ -169,9 +169,7 @@ command add_estate_satisfaction kind=1 scopes=[country] out="" global=false wild
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_estate_satisfaction_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=128:cb088e40:"Utility of adding however much estate sa"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /amount value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /amount value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_extended_winter kind=1 scopes=[] out="area" global=false wild=false lists=false blurb="Adds extended winter to target area"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -441,7 +439,7 @@ command add_tribal_cohesion kind=1 scopes=[country international_organization] o
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_truce_with kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=44:3c9b72d7:"Adds a truce with the target country. Us"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[days/months/years = x] [mutual = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="days/months/years = x mutual = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_trust kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="Adds trust (target = x value = y}"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_trust_equilibrium kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="Adds a trust equilibrium modifier,"
@@ -505,22 +503,22 @@ command ai_parliament_issue_resolution_vote_bias kind=2 scopes=[parliament_issue
 command ai_personality kind=4 scopes=[] out="ai_personality" global=true wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command ai_policy_reason_to_join kind=2 scopes=[policy] out="" global=false wild=false lists=false blurb=66:9ee613a1:"Gets the AI evaluation score for joining"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or ai_policy_reason_to_join("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /actor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ai_policy_resolution_keep_bias kind=2 scopes=[policy] out="" global=false wild=false lists=false blurb=61:109abef4:"Gets the AI evaluation score for keeping"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or ai_policy_resolution_keep_bias("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /actor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ai_policy_resolution_propose_bias kind=2 scopes=[policy] out="" global=false wild=false lists=false blurb=63:29dbe8f4:"Gets the AI evaluation score for propsoi"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or ai_policy_resolution_propose_bias("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /actor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ai_policy_resolution_vote_bias kind=2 scopes=[policy] out="" global=false wild=false lists=false blurb=71:375a7f73:"Gets the AI evaluation score for resolut"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or ai_policy_resolution_vote_bias("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /actor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -550,21 +548,21 @@ command and kind=2 scopes=[] out="" global=false wild=false lists=false blurb="a
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command annex_country kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="annexes the target country. Usage:"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=68:ab7400a6:"[reason = /"<Diplomatic|CivilWar|Military"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=62:08481b57:"reason = <Diplomatic|CivilWar|MilitaryCo"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command annexation_cost kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=78:e1c08af3:"How much does the target country cost fo"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or annexation_cost("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command annexation_progress kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=95:63fb6d65:"How high is the annexation progress of t"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or annexation_progress("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command annul_all_treaties_with kind=1 scopes=[country] out="country" global=false wild=false lists=false blurb=70:17b9b4e4:"The current country scope annuls all tre"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command antagonism kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=79:f3f8e069:"is the country's antagonism towards the "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command any_accepted_culture kind=2 scopes=[country] out="culture" global=false wild=false lists=false blurb=50:73fc75b6:"Iterate through all accepted cultures in"
   (entry) value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -1819,7 +1817,7 @@ command artist_skill kind=2 scopes=[character] out="" global=false wild=false li
 command artist_type kind=6 scopes=[] out="artist_type" global=true wild=false lists=false blurb=82:e23a9a99:"Checks if a character is a specific type"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command assert_if kind=3 scopes=[] out="" global=false wild=false lists=false blurb=45:18aa0b2f:"Conditionally cause an assert during run"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={1 }/2 default=""/0 blurb=50:a2ada847:", where X is a trigger and Y is an optio"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /text value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command assert_read kind=3 scopes=[] out="" global=false wild=false lists=false blurb=46:fa19202d:"Conditionally cause an assert during rea"
@@ -1853,15 +1851,15 @@ command average_location_literacy kind=2 scopes=[location] out="" global=false w
 command average_satisfaction kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=99:3f91a4ce:"Checks if a location has a certain avera"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command average_special_status_power kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=68:2dfa7a1b:"Get the average political power of the t"
-  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or average_special_status_power("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command become_hired_by kind=1 scopes=[mercenary] out="country" global=false wild=false lists=false blurb=45:ca59c5ef:"mercenaries are hired by the supplied co"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command besieger_strength kind=2 scopes=[siege] out="" global=false wild=false lists=false blurb=96:81b57e65:"Check the total strength of the besieger"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command bias_value kind=6 scopes=[] out="value" global=false wild=false lists=false blurb=48:3b9e2b81:"Get the value of the given bias modifier"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or bias_value("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command birth_age kind=2 scopes=[character] out="age" global=false wild=false lists=false blurb=89:a99ecb2d:"What Age was the character born in? E.g."
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command birth_location kind=4 scopes=[character] out="location" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
@@ -1873,8 +1871,8 @@ command blocks_full_annexation kind=2 scopes=[peace_treaty] out="" global=false 
 command bond_capacity kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=88:40a826c9:"Checks the remaining bond issuance capac"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command border_distance_to kind=2 scopes=[location country province] out="" global=false wild=false lists=false blurb=89:bd8230a3:"gets distance between borders of two nat"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or border_distance_to(country)"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="x value y operator"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command borrower kind=4 scopes=[loan] out="country" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command bribe_estate kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=111:97b2fc21:"The current country scope bribes the est"
@@ -1926,7 +1924,7 @@ command building_type_is_obsolete kind=2 scopes=[country] out="building_type" gl
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command building_type_max_level kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=77:75c7048c:"Gets the max level for a building type i"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /building_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[owner = /"<country scope>/"]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /building_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="owner = <country scope> value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command bureaucracy_disliked_by_estate kind=2 scopes=[bureaucracy] out="estate" global=false wild=false lists=false blurb=76:d3fa42ee:"is this bureaucracy disliked by this est"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command bureaucracy_disliked_by_estate_type kind=2 scopes=[bureaucracy] out="estate_type" global=false wild=false lists=false blurb=81:bc2ba0e6:"is this bureaucracy disliked by this est"
@@ -2024,10 +2022,9 @@ command can_lead_international_organization kind=2 scopes=[country] out="interna
 command can_leave_international_organization kind=2 scopes=[country] out="international_organization" global=false wild=false lists=false blurb=85:96c31df2:"Can we leave the supplied international "
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command can_make_subject_of kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=121:dda08893:"Can the country in scope become a subjec"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[ignore_war_limitation value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={5 subject_types []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=47:518a45db:"use to ignore allowed_subjugation of the"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={5 subject_types []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=73:1aec08bc:"ignore_war_limitation = yes #use to igno"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command can_marry_character kind=2 scopes=[character] out="character" global=false wild=false lists=false blurb=99:026734d0:"Check if the current character scope can"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command can_pay_price kind=2 scopes=[country] out="price" global=false wild=false lists=false blurb=72:e799ba7f:"Can the country pay the specified price?"
@@ -2089,8 +2086,8 @@ command cast_vote_in_active_resolution kind=4 scopes=[active_resolution] out="" 
 command casus_belli kind=4 scopes=[] out="casus_belli" global=true wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command cb_creation_progress_against kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=96:4954793b:"Checks the progress of the casus belli c"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or cb_creation_progress_against("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_annexation_progress kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=160:8ddbedba:"Changes the progress of annexation for t"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -2109,7 +2106,7 @@ command change_building_owner kind=1 scopes=[building] out="country" global=fals
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_casus_belli_creation_progress kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=81:85eb47b7:"Changes the progress when creating a cas"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_character_allegiance kind=1 scopes=[character] out="rebels" global=false wild=false lists=false blurb=52:fb066b8b:"change rebel allegiance of Character to "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_character_culture kind=1 scopes=[character] out="culture" global=false wild=false lists=false blurb="changes character's culture"
@@ -2119,7 +2116,7 @@ command change_character_estate kind=1 scopes=[character] out="estate_type" glob
 command change_character_modifier_size kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=64:e939ad2a:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_character_religion kind=1 scopes=[character] out="religion" global=false wild=false lists=false blurb="Changes religion for a character"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_colonial_charter_owner kind=1 scopes=[colonial_charter] out="country" global=false wild=false lists=false blurb=52:dce09228:"change owner of a colonial charter to ta"
@@ -2137,7 +2134,7 @@ command change_country_flag kind=1 scopes=[country] out="" global=false wild=fal
 command change_country_modifier_size kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=62:cd0cda1f:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_country_name kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="changes the name of a country"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_country_type kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="Changes the country type!"
@@ -2159,7 +2156,7 @@ command change_dynasty kind=1 scopes=[character] out="dynasty" global=false wild
 command change_dynasty_modifier_size kind=1 scopes=[dynasty] out="" global=false wild=false lists=false blurb=62:c16202d1:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_entrenchment kind=1 scopes=[bureaucracy] out="" global=false wild=false lists=false blurb=58:4ac7061e:"Modifies the entrenchment of a bureaucra"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_exploration_progress kind=1 scopes=[exploration] out="" global=false wild=false lists=false blurb="change the progress of an exploration"
@@ -2187,7 +2184,7 @@ command change_integration_progress kind=1 scopes=[location] out="" global=false
 command change_international_organization_modifier_size kind=1 scopes=[international_organization] out="" global=false wild=false lists=false blurb=81:5b34867b:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_language kind=1 scopes=[culture] out="dialect" global=false wild=false lists=false blurb="changes the language of a culture"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_loan_amount kind=1 scopes=[loan] out="" global=false wild=false lists=false blurb="changes the amount a loan has"
@@ -2207,7 +2204,7 @@ command change_location_controller kind=1 scopes=[location] out="country" global
 command change_location_modifier_size kind=1 scopes=[location] out="" global=false wild=false lists=false blurb=63:77d93f40:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_location_owner kind=1 scopes=[location] out="country" global=false wild=false lists=false blurb=42:0f098e92:"change owner of Location to target count"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_location_owner_forcefully kind=1 scopes=[location] out="country" global=false wild=false lists=false blurb=57:93da14a2:"change owner of Location to target count"
@@ -2251,7 +2248,7 @@ command change_province_integration kind=1 scopes=[province] out="" global=false
 command change_province_modifier_size kind=1 scopes=[province] out="" global=false wild=false lists=false blurb=63:639d6280:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_province_owner kind=1 scopes=[province] out="country" global=false wild=false lists=false blurb=42:771707b9:"change owner of Province to target count"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_raw_material kind=1 scopes=[location] out="goods" global=false wild=false lists=false blurb=47:0d1c61c0:"changes the raw-material produced in a l"
@@ -2259,13 +2256,13 @@ command change_raw_material kind=1 scopes=[location] out="goods" global=false wi
 command change_rebel_modifier_size kind=1 scopes=[rebels] out="" global=false wild=false lists=false blurb=60:d96a9209:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_religion kind=1 scopes=[country] out="religion" global=false wild=false lists=false blurb="Changes religion for a country"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_religion_modifier_size kind=1 scopes=[religion] out="" global=false wild=false lists=false blurb=63:39124272:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_religion_view kind=1 scopes=[religion] out="" global=false wild=false lists=false blurb=77:f9b5d1ef:"Changes the religion view of target.. { "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_score kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="gives (or takes) score a country"
@@ -2281,7 +2278,7 @@ command change_subunit_type kind=1 scopes=[sub_unit] out="unit_type" global=fals
 command change_unit_modifier_size kind=1 scopes=[unit] out="" global=false wild=false lists=false blurb=59:ab648bc2:"Change the strength of a modifier applie"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[recalculate_immediately = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="recalculate_immediately = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_unit_owner kind=1 scopes=[unit] out="country" global=false wild=false lists=false blurb="change owner of unit to target country"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command change_variable kind=1 scopes=[] out="" global=false wild=false lists=false blurb="Changes the value or a numeric variable"
@@ -2298,7 +2295,7 @@ command character_is_in_order kind=2 scopes=[character] out="chivalric_order" gl
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command character_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=146:c9a79b3b:"Does the scoped character have a given m"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command character_name kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=98:6acd009d:"Checks if the character has the same nam"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command character_nickname kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=94:53161c3e:"Check if the character has the same name"
@@ -2349,26 +2346,22 @@ command clear_variable_map kind=1 scopes=[] out="" global=false wild=false lists
 command climate kind=6 scopes=[] out="climate" global=true wild=false lists=false blurb=77:b5fb0732:"Checks if a location is of a specific cl"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command climate_count kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=72:0697cbc2:"Returns the amount of owned locations wi"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or climtae_count("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command climate_percent kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=76:5bbebc07:"Returns the percentage of owned location"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or climate_percent("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command close_all_views kind=1 scopes=[] out="" global=false wild=false lists=false blurb="Closes all views."
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command colonial_charter_distance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=219:f15104b6:"Straight-line distance from country capi"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command colonial_charter_progress kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=91:4762dfd5:"Progress of a colonial charter - usage: "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /province_definition value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /province_definition value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command colonial_charter_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=107:56b9c937:"Utility of a colonial charter - usage: c"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /province_definition value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /source value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /source value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command colonial_charter_value kind=2 scopes=[colonial_charter] out="" global=false wild=false lists=false blurb=61:e7edffab:"value of the colonial charter/nReads game"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command colonial_maintenance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=78:c0a08e21:"What is the xx position (0-1) the countr"
@@ -2406,17 +2399,15 @@ command complete_mission_task kind=1 scopes=[country] out="mission_task" global=
 command conditional_effect kind=1 scopes=[] out="" global=false wild=false lists=false blurb=199:1812ba71:"An effect which works similar to a simpl"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /effect value={0  []}/0 block=3/2 scope=""/2 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /limit value={0  []}/0 block=2/2 scope=""/2 required={0 }/0 default=""/0 blurb="[else = /"<effects>/"]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /limit value={0  []}/0 block=2/2 scope=""/2 required={0 }/0 default=""/0 blurb="else = <effects>"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command conquer_area_preference kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=193:d59e5556:"Gets the AI conquer preference for the s"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command conquer_desire kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=95:50f1344d:"Gets how much the AI wants to conquer th"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command conquistador_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=66:55e7b91d:"Utility of a conquistador - usage: conqu"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /area value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /area value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command consort kind=4 scopes=[country] out="character" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command construct_building kind=1 scopes=[location] out="" global=false wild=false lists=false blurb=67:f8e9d2bd:"/"starts the construction of the specifie"
@@ -2458,8 +2449,8 @@ command country_can_join_international_organization kind=2 scopes=[country] out=
 command country_color kind=4 scopes=[country] out="color" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command country_combined_special_status_power kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=133:96271f9d:"Get the political power of the country w"
-  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=41:13180e6d:"or country_combined_special_status_power"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command country_combined_special_status_power_fraction kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=372:fe2bc64a:"Get the political power fraction of the "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command country_economical_base kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=77:1db17d74:"Checks the total economical base of a co"
@@ -2473,7 +2464,7 @@ command country_government_reform_fully_implemented_date kind=4 scopes=[country]
 command country_government_reform_implementation_date kind=4 scopes=[country] out="date" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command country_has_been_member_for_years kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=98:c79a20fa:"Checks if the country has been in the cu"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=45:b47027d1:"or country_has_been_member_for_years(cou"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command country_has_disease kind=2 scopes=[country] out="disease" global=false wild=false lists=false blurb=69:8dfd0b39:"Checks the presence of a disease in a co"
@@ -2491,14 +2482,14 @@ command country_highest_rated_special_status_power kind=2 scopes=[country] out="
 command country_interaction kind=4 scopes=[] out="country_interaction" global=true wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command country_interaction_acceptance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=174:3fc9f25a:"How high is the target country's AI valu"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or country_interaction_acceptance("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command country_loan_capacity kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=79:47a1c6cd:"Checks how much more money a country can"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command country_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=144:92d5102e:"Does the scoped country have a given mod"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command country_rank kind=4 scopes=[] out="country_rank" global=true wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command country_rank_level kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=70:3e24a69f:"level of the country rank of a country/nR"
@@ -2551,22 +2542,20 @@ command create_holy_site kind=1 scopes=[] out="holy_site" global=false wild=fals
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command create_international_organization kind=1 scopes=[] out="international_organization" global=false wild=false lists=false blurb=201:e6acb607:"Creates an empty international organizat"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=79:6617bab9:"country which would found the IO [creato"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=73:8f0ac2c8:"creator = <country> (country which would"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_location_country_from_province kind=1 scopes=[province] out="country" global=false wild=false lists=false blurb=99:dce723f7:"Creates a new country with the current P"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command create_market kind=1 scopes=[] out="" global=false wild=false lists=false blurb=159:1d267978:"creates a market. Usage: create_market {"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command create_market_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=74:a0984fbf:"Utility of creating a market - usage: cr"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_mercenary kind=1 scopes=[] out="mercenary" global=false wild=false lists=false blurb=63:af8ed0f6:"Creates a mercenary company. Usage:name "
-  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<sub unit category> value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="category tags listed in unit_categories"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="category tags listed in unit_categories"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /<sub unit category> value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="adds"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /<sub unit definition> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=43:c1dc196c:"adds a unit of this type tags in unit_ty"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /area value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /based value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /based value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /borrower value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /cost_multiplier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /home value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -2585,7 +2574,7 @@ command create_rebel kind=1 scopes=[country] out="rebels" global=false wild=fals
 command create_relation kind=1 scopes=[] out="" global=false wild=false lists=false blurb=43:9a30eb45:"Creates a relation with the target count"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /first value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /second value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=64:bddd623d:"[years/months/days = /"<script integer>/" "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /second value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=59:c8c1987f:"years/months/days = <script integer> for"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_route kind=1 scopes=[] out="" global=false wild=false lists=false blurb=432:ed04f306:"Finds route between a select start and e"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -2635,7 +2624,7 @@ command culture_group_population_in_country kind=2 scopes=[country] out="" globa
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command culture_opinion_impact kind=2 scopes=[culture] out="" global=false wild=false lists=false blurb=100:aee04e00:"Opinion impact of a particular culture o"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command culture_percentage kind=2 scopes=[location province province_definition area region sub_continent continent scripted_geography] out="" global=false wild=false lists=false blurb=170:d5620e0f:"Gets the percentage of the population th"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /culture value={5 cultures []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -2759,7 +2748,7 @@ command demote_accepted_culture kind=1 scopes=[country] out="culture" global=fal
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command dependency_length_days kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=125:89f78a95:"returns the number of days a country has"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command destroy_all_buildings_of_type kind=1 scopes=[location] out="building_type" global=false wild=false lists=false blurb=47:40bc2fb4:"destroys the specified building in the l"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command destroy_art kind=1 scopes=[] out="work_of_art" global=false wild=false lists=false blurb="destroys the target art"
@@ -2786,9 +2775,7 @@ command destroy_market kind=1 scopes=[market] out="" global=false wild=false lis
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command destroy_market_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=77:06c24797:"Utility of destroying a market - usage: "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command destroy_mercenary kind=1 scopes=[] out="mercenary" global=false wild=false lists=false blurb="Mercenary gets routed and scatters"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command destroy_movement kind=1 scopes=[movement] out="" global=false wild=false lists=false blurb="Destroys the unit from the current scope"
@@ -2837,7 +2824,7 @@ command disease_affects_pops_here kind=2 scopes=[location] out="disease" global=
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_country_deaths kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=100:22ecadd2:"Checks the number of deaths from a disea"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={5 diseases []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={5 diseases []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_has_outbreak_here kind=2 scopes=[location sub_unit] out="disease" global=false wild=false lists=false blurb=93:b06f4fc6:"Checks if a disease has an outbreak in a"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_has_stagnated kind=2 scopes=[location sub_unit] out="disease" global=false wild=false lists=false blurb=91:b7c4da6d:"Checks if a disease has stagnated in a l"
@@ -2846,20 +2833,20 @@ command disease_is_active kind=2 scopes=[] out="disease" global=false wild=false
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_outbreak_country_deaths kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=120:77147f48:"Checks the number of deaths from an outb"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /disease_outbreak value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /disease_outbreak value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_outbreak_is_active kind=2 scopes=[] out="disease_outbreak" global=false wild=false lists=false blurb=52:2c921ef1:"Checks if a disease outbreak is active i"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_outbreak_presence kind=2 scopes=[location sub_unit] out="" global=false wild=false lists=false blurb=114:e1738003:"Checks the presence of a disease in a lo"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /disease_outbreak value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /disease_outbreak value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_outbreak_total_deaths kind=2 scopes=[disease_outbreak] out="" global=false wild=false lists=false blurb=90:7583f9bf:"How many people have been killed by this"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_presence kind=2 scopes=[location sub_unit] out="" global=false wild=false lists=false blurb=96:88e47dec:"Checks the presence of a disease in a lo"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /disease value={5 diseases []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /disease value={5 diseases []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_resistance kind=2 scopes=[location sub_unit] out="" global=false wild=false lists=false blurb=100:94a00da4:"Checks the resistance to a disease in a "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={5 diseases []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={5 diseases []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command disease_total_deaths kind=2 scopes=[disease] out="" global=false wild=false lists=false blurb=81:9735cb2b:"How many people have been killed by this"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command dismiss_mercenary kind=1 scopes=[country] out="mercenary" global=false wild=false lists=false blurb=44:17129125:"dismisses a mercenary for the target cou"
@@ -2898,12 +2885,12 @@ command doom_percentage kind=2 scopes=[country international_organization] out="
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command drop_antagonism_bomb kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=145:003e6efc:"Drops an antagonism bomb at a location, "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=81:de357985:"[is_taking_value = yes /"<calculates anta"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=77:5f5aa2d2:"is_taking_value = yes <calculates antago"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command dynastic_power kind=2 scopes=[country dynasty] out="" global=false wild=false lists=false blurb=132:f303e9e0:"Returns the dynastic power of the scope "
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or dynastic_power("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command dynasty kind=4 scopes=[] out="dynasty" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command dynasty_exists kind=2 scopes=[] out="" global=false wild=false lists=false blurb="does a tag exist"
@@ -2914,7 +2901,7 @@ command dynasty_home kind=4 scopes=[dynasty] out="location" global=false wild=fa
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command dynasty_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=144:dfc23a3b:"Does the scoped dynasty have a given mod"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command dynasty_name kind=2 scopes=[dynasty] out="" global=false wild=false lists=false blurb=63:fccf535d:"if a dynasty a special name-key/nReads ga"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command education kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=78:63173a65:"Checks if a character has a specific edu"
@@ -2939,7 +2926,7 @@ command employment_system kind=4 scopes=[] out="employment_system" global=true w
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command employment_system_desire kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=71:a3453c14:"returns how much the country wants the t"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command enable_religion kind=1 scopes=[religion] out="" global=false wild=false lists=false blurb="enable/disable a religion"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command end_mission kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=122:428749fe:"The country scope ends its currently act"
@@ -2968,18 +2955,18 @@ command estate_loan_interest kind=2 scopes=[country] out="" global=false wild=fa
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command estate_max_tax kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=92:280776d1:"the current max-tax of an estate in a co"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /estate_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /estate_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command estate_opinion kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=127:5c5852e0:"the current opinion that an estate in a "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /estate_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="country value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command estate_power kind=4 scopes=[country] out="value" global=false wild=false lists=false blurb="The power of an estate"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command estate_privilege kind=4 scopes=[] out="estate_privilege" global=true wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command estate_satisfaction kind=6 scopes=[country] out="value" global=false wild=false lists=false blurb=102:2f7cbd8f:"the current satisfaction of an estate in"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /estate_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /estate_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command estate_target_satisfaction kind=4 scopes=[country] out="value" global=false wild=false lists=false blurb="The target satisfaction of an estate"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command estate_tax kind=2 scopes=[estate] out="" global=false wild=false lists=false blurb=69:bfde15e5:"The current tax the estate has to pay/nRe"
@@ -3915,7 +3902,7 @@ command execute_prisoners kind=1 scopes=[unit] out="" global=false wild=false li
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command execute_propose_effect kind=1 scopes=[] out="" global=false wild=false lists=false blurb=138:b9bf21d6:"Execute the popose_effect of any impleme"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /source value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[<flag> = /"<scope>/"]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /source value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="<flag> = <scope>"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command exists kind=2 scopes=[] out="" global=false wild=false lists=false blurb=86:528d8693:"Checks whether the specified scope targe"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:2,blocks:0,forms:8,values:map[area:loire_area:1 area:paris_area:1 area:thames_area:1 c:ENG:1 continent:asia:1 continent:europe:1 region:britain_region:1 region:china_region:1 region:france_region:1 sub_continent:east_asia:1 sub_continent:western_europe:1]
 command expected_army_size kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=84:b0b846a0:"Checks if a country has a certain expect"
@@ -3942,22 +3929,20 @@ command exploration_time kind=2 scopes=[exploration] out="" global=false wild=fa
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command exploration_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=92:687318e8:"Utility of an exploration to the country"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /area value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command extend_regency kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="extends the regency by X years"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command father kind=4 scopes=[character] out="character" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command favors kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=52:3d77b2c1:"How much favors does the country have in"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command favors_needed_to_annul_relations_with kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=151:592e4b00:"Gets the number of favours needed to ann"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command fertility kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=62:1e1766da:"The fertility of the character/nReads gam"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command finalize_resolution kind=1 scopes=[international_organization situation] out="resolution" global=false wild=false lists=false blurb=82:6a23c88e:"End the target resolution for the curren"
@@ -4073,15 +4058,15 @@ command goods kind=6 scopes=[] out="goods" global=true wild=false lists=false bl
 command goods_category kind=2 scopes=[goods] out="" global=false wild=false lists=false blurb=83:8d20faed:"tests the goods category - raw_material "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command goods_demand_in_market kind=2 scopes=[market] out="" global=false wild=false lists=false blurb=61:4ca85fde:"Checks how much demand exists of a good "
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /goods value={5 goods []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or goods_demand_in_market("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /goods value={5 goods []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command goods_method kind=2 scopes=[goods] out="" global=false wild=false lists=false blurb=89:b76300b3:"tests the goods method - mining/farming/"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command goods_output kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=81:fef98d44:"Check how much goods the scope location "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command goods_supply_in_market kind=2 scopes=[market] out="" global=false wild=false lists=false blurb=61:514cd074:"Checks how much supply exists of a good "
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /goods value={5 goods []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or goods_supply_in_market("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /goods value={5 goods []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command government_power kind=2 scopes=[country international_organization] out="" global=false wild=false lists=false blurb=83:179b399b:"How much government power does the count"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command government_power_percentage kind=2 scopes=[country international_organization] out="" global=false wild=false lists=false blurb=137:3f27cba9:"How high the percentage of the current g"
@@ -4111,7 +4096,7 @@ command group kind=4 scopes=[religion] out="group" global=false wild=false lists
 command had_country_rank_level kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=110:e5b2b2ce:"Checks if a country has been or is curre"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command had_disaster_for_years kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=97:15e76ed4:"Check if the country scope had the speci"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or had_disaster_for_years("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /disaster_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command harbor_capacity_in_area kind=2 scopes=[area] out="" global=false wild=false lists=false blurb=118:508f8dc6:"gets the sum of harbor capacity (harbor "
@@ -4727,7 +4712,7 @@ command international_organization_locations_owned_percentage kind=2 scopes=[int
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command international_organization_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=163:00ae9989:"Does the scoped international organizati"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command international_organization_num_locations kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=111:9b9650c8:"Checks if an international organization "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command international_organization_population kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=127:abb65885:"Checks if an international organization "
@@ -5371,8 +5356,8 @@ command join_active_chivalric_order_of kind=1 scopes=[character] out="country" g
 command join_chivalric_order kind=1 scopes=[character] out="chivalric_order" global=false wild=false lists=false blurb=81:443a62a6:"Joins the specified chivalric order. Rem"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command join_organization_ai_desire kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=85:bc85b109:"Returns the AI desire to join the specif"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or join_organization_ai_desire("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command join_war_against kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=62:70fbe9f7:"joins the target war as an enemy of the "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /call_in_subjects value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -5391,9 +5376,10 @@ command join_war_as_defender kind=1 scopes=[country] out="" global=false wild=fa
   /ignore_rules value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /war value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="war scope"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command join_war_reason kind=2 scopes=[war] out="" global=false wild=false lists=false blurb=46:b10af6fe:"Checks the reason for a country joining "
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /reason value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command join_war_with kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=61:635f669f:"joins the target war as an ally of the t"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /call_in_subjects value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -5408,8 +5394,8 @@ command karma kind=2 scopes=[country international_organization] out="" global=f
 command karma_percentage kind=2 scopes=[country international_organization] out="" global=false wild=false lists=false blurb=126:70124e32:"How high the percentage of the current k"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command kill_character kind=1 scopes=[] out="character" global=false wild=false lists=false blurb="Kills the target character. Usage:"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=96:594ddba2:"[location = /"<location>/"] [disease = /"<d"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=80:158a3f19:"location = <location> disease = <disease"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command kill_character_silently kind=1 scopes=[] out="character" global=false wild=false lists=false blurb=220:594c9b39:"Kills the target character without messa"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command known_in_country kind=4 scopes=[country] out="value" global=false wild=false lists=false blurb=47:61290d44:"The amount of goods known to a speficic "
@@ -5548,14 +5534,14 @@ command location_maritime_merchant_power kind=2 scopes=[location] out="" global=
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command location_maritime_presence_power kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=76:fb89862a:"gets the maritime presence power for a c"
   (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command location_max_population kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=78:66b8e1ba:"Checks if a location has a certain pixel"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command location_max_winter_level kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=77:0df143d6:"Checks the maximum winter level of a loc"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command location_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=145:66a80f68:"Does the scoped province have a given mo"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command location_net_building_profit kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=82:6e48c3b8:"Checks the net profit from buildings in "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command location_num_holy_sites kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=68:42a9cc7b:"Number of holy sites in the location/nRea"
@@ -5563,7 +5549,7 @@ command location_num_holy_sites kind=2 scopes=[location] out="" global=false wil
 command location_num_works_of_art kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=89:3d347b80:"Checks if a location has a certain numbe"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command location_peace_cost kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=94:bda186f5:"/"gets the peace cost for the location ac"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /giver value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /taker value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command location_population_percentage kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=100:eddfa58b:"Checks if a location has a certain perce"
@@ -5571,8 +5557,8 @@ command location_population_percentage kind=2 scopes=[location] out="" global=fa
 command location_privateer_power kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=102:2c0dd6bc:"gets the maritime privateeer power for a"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command location_progress_for_formable kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=93:1079de05:"Checks the progress of the country scope"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /formable_country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or location_progress_for_formable("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /formable_country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command location_rank kind=4 scopes=[] out="location_rank" global=true wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command location_size kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=78:66b8e1ba:"Checks if a location has a certain pixel"
@@ -5614,6 +5600,7 @@ command make_subject_of kind=1 scopes=[country] out="" global=false wild=false l
 command make_unit_available_for_hire kind=1 scopes=[unit] out="mercenary" global=false wild=false lists=false blurb=55:94f81672:"make the usit available for hire as a me"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /cost_multiplier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command manpower kind=2 scopes=[country international_organization] out="" global=false wild=false lists=false blurb=75:464fd6f3:"How much Manpower does the country/IO ha"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command manpower_percentage kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=103:3557c4c1:"Checks the percentage of manpower a coun"
@@ -5762,7 +5749,7 @@ command movement_definition kind=4 scopes=[] out="movement_definition" global=tr
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command movement_presence kind=2 scopes=[location sub_unit] out="" global=false wild=false lists=false blurb=114:ec91e871:"Checks the number of pops affected by a "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /movement value={5 movements []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /movement value={5 movements []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command movement_type kind=4 scopes=[movement] out="movement_definition" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command name_culture kind=4 scopes=[sub_unit] out="culture" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
@@ -5787,7 +5774,7 @@ command need_reforms kind=2 scopes=[religion] out="" global=false wild=false lis
   (entry) value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command needs_opinion_with kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=74:30868194:"Determines if a country needs X more rel"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command no kind=4 scopes=[] out="boolean" global=true wild=false lists=false blurb="Boolean literal for false values"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command nor kind=2 scopes=[] out="" global=false wild=false lists=false blurb="a negated OR trigger"
@@ -5851,8 +5838,9 @@ command num_location_rank kind=4 scopes=[country] out="value" global=false wild=
 command num_locations kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=91:e52ed5be:"Checks if a country has a certain amount"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command num_locations_affected kind=2 scopes=[movement] out="" global=false wild=false lists=false blurb=60:2da4e74c:"calculates the number of locations affec"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command num_locations_owned_or_owned_by_subjects kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=114:68d162d6:"Checks if a country or its direct subjec"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command num_locations_owned_or_owned_by_subjects_or_below kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=131:6c601eab:"Checks if a country, its subjects or its"
@@ -5867,13 +5855,13 @@ command num_of_children kind=2 scopes=[character] out="" global=false wild=false
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command num_of_common_rivals kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=61:cf3391e8:"calculates the amount of common rivals b"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command num_of_common_rivals_and_enemies kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=73:ec1a2746:"calculates the amount of common rivals a"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command num_of_diplomats kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=78:43ee689d:"Checks if a country has an amount of dip"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -5883,7 +5871,7 @@ command num_of_locations_owned_by_io kind=2 scopes=[country] out="" global=false
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command num_of_locations_with_high_conquer_desire kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=137:1b57bdd8:"Gets how many locations the AI wants to "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command num_of_markets_with_merchants kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=101:1321a282:"Checks if a country has merchants in the"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command num_of_non_rural kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=85:51759bcb:"Checks if a country has an amount of tow"
@@ -5957,8 +5945,8 @@ command num_works_of_art kind=2 scopes=[country] out="" global=false wild=false 
 command offensive_alliance_strength kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=182:4a93bc7a:"Strength of an offensive alliance, inclu"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command offer_relation_acceptance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=114:2438419e:"How high is the target country's AI valu"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or offer_relation_acceptance("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command omen kind=4 scopes=[] out="omen" global=true wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -5970,13 +5958,13 @@ command only_allowed_overlord_primary_or_kindred_culture kind=2 scopes=[subject_
   (entry) value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command opinion kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=71:04cb91b8:"is the country's opinion of the target g"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command opinion_difference_between kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=162:b51e1447:"Get the opinion of the current country s"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or opinion_difference_between("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /first value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /second value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /second value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command or kind=2 scopes=[] out="" global=false wild=false lists=false blurb=46:2a0a9522:"at least one entry inside trigger must b"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command ordered_accepted_culture kind=1 scopes=[country] out="culture" global=false wild=false lists=false blurb=50:73fc75b6:"Iterate through all accepted cultures in"
@@ -8406,7 +8394,7 @@ command ordered_work_of_art_in_location kind=1 scopes=[location] out="work_of_ar
 command organization_strength_relative_to_country kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=162:b261b3ac:"Gets the relative strength of the scope "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /exclude_target value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command origin kind=4 scopes=[work_of_art institution disease_outbreak disease] out="location" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command original_attacker_leader kind=4 scopes=[war] out="country" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
@@ -8475,17 +8463,15 @@ command parliament_type_is_locked_in_international_organization kind=2 scopes=[i
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command parliament_type_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=141:75c2722e:"Utility of a parliament type that can su"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /parliament_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /subtract_current value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /subtract_current value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command parliament_type_visible_in kind=2 scopes=[country] out="parliament_type" global=false wild=false lists=false blurb=82:3af23af8:"Can we see a parliament type in the scop"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command parliament_type_visible_in_international_organization kind=2 scopes=[international_organization] out="parliament_type" global=false wild=false lists=false blurb=101:0de83b2d:"Can we see a parliament type in the scop"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_off_loans kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="pays off % of the current loans. Usage:"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /fraction value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[payer = /"<country scope>/"]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /fraction value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="payer = <country scope>"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_policy_price_effect kind=1 scopes=[country international_organization] out="policy" global=false wild=false lists=false blurb=53:f0734160:"executes the policy price effect on the "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_price kind=1 scopes=[country] out="price" global=false wild=false lists=false blurb="Pays a Price from a country"
@@ -8495,14 +8481,16 @@ command payment kind=4 scopes=[] out="payment" global=true wild=false lists=fals
 command payment_contribution kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=82:abcd4345:"Gets how much the country has to pay for"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /payment value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command payment_maintenance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=89:663e198e:"gets the payment maintenance level for a"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /payment value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command peace_treaty kind=4 scopes=[] out="peace_treaty" global=true wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command peace_treaty_antagonism kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=132:a2b7f337:"Get how much antagonism the specified pe"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /loser value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or peace_treaty_antagonism("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /loser value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="target = <thing> value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /peace_treaty value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command peace_treaty_war_score_cost kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=360:8fe4a995:"Get how much war score the specified pea"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -8544,11 +8532,9 @@ command policy_possible_for_country kind=2 scopes=[policy] out="country" global=
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command policy_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=117:a8996d7d:"Utility of a policy that can subtract th"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /law value={5 laws []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /policy value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /subtract_current value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /subtract_current value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command policy_visible_to_international_organization kind=2 scopes=[international_organization] out="policy" global=false wild=false lists=false blurb=92:d3de4adf:"Can we see a policy in the scope interna"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command pop_character_chance kind=2 scopes=[pop] out="" global=false wild=false lists=false blurb=81:0c25650d:"How likely are characters to spawn from "
@@ -8572,18 +8558,18 @@ command population kind=2 scopes=[location province province_definition area reg
 command population_in_area kind=2 scopes=[area] out="" global=false wild=false lists=false blurb=72:7c37a49d:"gets the amount of population in an area"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command population_with_traits kind=2 scopes=[location] out="pop" global=false wild=false lists=false blurb=82:ab12325a:"Checks if the location has x amount of p"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /limit value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="or population_with_traits("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /limit value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb="OR"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /scripted_trigger value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command possible_military_leaders kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=101:feee070b:"Checks if a country has a certain amount"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command post_audio_event kind=1 scopes=[] out="" global=false wild=false lists=false blurb=49:00a4e3c4:"Runs an audio even on a /"persistent/" aud"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /event value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="For example start_debug_music"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /event value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=41:43400909:"audio_event For example start_debug_musi"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /parameters value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /parameters/noise value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /persistent_object value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="For example music_manager"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /persistent_object value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="object_name For example music_manager"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /switches value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /switches/another_switch value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /switches/toggle_1 value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -8683,7 +8669,7 @@ command province_max_food kind=2 scopes=[province] out="" global=false wild=fals
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command province_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=145:66a80f68:"Does the scoped province have a given mo"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command province_monthly_food_production kind=2 scopes=[province] out="" global=false wild=false lists=false blurb=84:957d35a2:"Checks how much food the province produc"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command province_navy_levy_percentage kind=2 scopes=[province] out="" global=false wild=false lists=false blurb=93:6688ecbf:"Percentage of naval levies that can be r"
@@ -8714,12 +8700,12 @@ command purity_percentage kind=2 scopes=[country international_organization] out
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command raise_all_levies kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=73:10de02a4:"The country scope will raise all its lev"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  [army navy]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[instant = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  [army navy]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="instant = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command raise_levies kind=1 scopes=[province] out="" global=false wild=false lists=false blurb=80:0429a709:"The province scope will raise levies of "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  [army navy]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[instant = yes]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  [army navy]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="instant = yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command random kind=1 scopes=[] out="" global=false wild=false lists=false blurb=65:b5215e00:"run an effect depending on a random chan"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /chance value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=68:51f26dd5:"random chance in percent. can also be a "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=43:08e44dda:"optional MTTH-style modifier for the cha"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command random_accepted_culture kind=1 scopes=[country] out="culture" global=false wild=false lists=false blurb=50:73fc75b6:"Iterate through all accepted cultures in"
@@ -9357,7 +9343,7 @@ command random_lent_loan kind=1 scopes=[country] out="loan" global=false wild=fa
   /limit value={0  []}/0 block=2/2 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /weight value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command random_list kind=1 scopes=[] out="" global=false wild=false lists=false blurb="randomly choose effects from a list"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /<number> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="defines an option with base chance 10"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /<number>/desc value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=64:bcd2b0fa:"optional loc key to insert into this opt"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /<number>/max value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=74:409dfd81:"optional number to constrain this option"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -9956,8 +9942,8 @@ command ransom_prisoners kind=1 scopes=[unit] out="" global=false wild=false lis
 command raw_material kind=4 scopes=[location] out="goods" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command raw_material_amount kind=2 scopes=[market province_definition area region sub_continent continent] out="" global=false wild=false lists=false blurb=128:d2aeeb94:"Check how many locations in the province"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /goods value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or raw_material_amount("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /goods value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command raw_material_location kind=4 scopes=[location] out="goods" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command raw_material_occurrence kind=2 scopes=[goods] out="" global=false wild=false lists=false blurb=93:76752b07:"Check how many locations world wide prod"
@@ -9976,7 +9962,7 @@ command rebel_locations kind=2 scopes=[rebels] out="" global=false wild=false li
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command rebel_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=142:42921191:"Does the scoped rebel have a given modif"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command rebel_name_key kind=2 scopes=[rebels] out="" global=false wild=false lists=false blurb=66:7dbb65d2:"if a rebel has a specific name key/nReads"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command rebel_progress kind=2 scopes=[rebels] out="" global=false wild=false lists=false blurb=61:f5069602:"Check the progress of a rebel/nReads game"
@@ -10027,17 +10013,17 @@ command relation_type kind=4 scopes=[] out="relation_type" global=true wild=fals
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command relative_defensive_alliance_strength kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=156:90401a9c:"Gets the relative strength of the scope "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command relative_military_strength kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=77:b7da7dda:"calculates the relative military strengt"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command relative_raw_material_price kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=142:913c26cf:"Checks the price of a location's raw mat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command relative_strength kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=107:5f0dd0d1:"Gets the relative strength of the scope "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command release_non_cores kind=1 scopes=[country] out="" global=false wild=false lists=false blurb="releases all non-core provinces"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command release_only kind=2 scopes=[] out="" global=false wild=false lists=false blurb=45:6183a540:"Checks if the game is in release mode or"
@@ -10062,7 +10048,7 @@ command religion_group_population_in_country kind=2 scopes=[country] out="" glob
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command religion_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=145:76d9dcbb:"Does the scoped religion have a given mo"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command religion_percentage kind=2 scopes=[location province province_definition area region sub_continent continent scripted_geography] out="" global=false wild=false lists=false blurb=171:0fae4e5d:"Gets the percentage of the population th"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /religion value={5 religions []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10099,15 +10085,13 @@ command religious_view kind=2 scopes=[religion] out="" global=false wild=false l
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command religious_view_impact kind=2 scopes=[religion] out="" global=false wild=false lists=false blurb=101:f4e3c3b0:"Opinion impact of a particular religion "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command relocate_market kind=1 scopes=[market] out="location" global=false wild=false lists=false blurb="moves the market to the target location"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command relocate_market_utility kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=89:66ad3404:"Utility of relocating a market - usage: "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<operator> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /new_location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /new_location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remaining_debt kind=2 scopes=[loan] out="" global=false wild=false lists=false blurb=67:35b159c5:"Checks the remaining debt of a loan/nRead"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command remaining_parliament_days kind=2 scopes=[country international_organization] out="" global=false wild=false lists=false blurb=191:309031d9:"Checks how many days are left in the par"
@@ -10288,8 +10272,8 @@ command republican_tradition_percentage kind=2 scopes=[country international_org
 command request_ransom_prisoners kind=1 scopes=[unit] out="" global=false wild=false lists=false blurb=67:742bfb7e:"An offer to ransom the unit's troops is "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command request_relation_acceptance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=116:8ec02e75:"How high is the target country's AI valu"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or request_relation_acceptance("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command requires_goods kind=2 scopes=[production_method] out="goods" global=false wild=false lists=false blurb=104:7562566b:"Returns true if the production method re"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10313,7 +10297,7 @@ command resolution_opinion kind=2 scopes=[country] out="" global=false wild=fals
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /resolution value={5 resolutions []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /vote value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /vote value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command resolution_proposer kind=4 scopes=[active_resolution] out="country" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command resolution_target kind=4 scopes=[active_resolution] out="" global=false wild=false lists=false blurb=86:38553eb6:"Links to the named parameter (from the s"
@@ -10340,23 +10324,23 @@ command reverse_change_cultural_view kind=1 scopes=[culture] out="" global=false
 command reverse_change_religion_view kind=1 scopes=[religion] out="" global=false wild=false lists=false blurb=92:20858c31:"Sets the targets religion view of curren"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command reverse_country_interaction_acceptance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=177:b9cf046b:"How high is the current country's AI val"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=42:57db68a5:"or reverse_country_interaction_acceptanc"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command reverse_cultural_view kind=2 scopes=[culture] out="" global=false wild=false lists=false blurb=138:1e88db1f:"does the target have the specified opini"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command reverse_offer_relation_acceptance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=117:2700c368:"How high is the current country's AI val"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or reverse_offer_relation_acceptance("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command reverse_religious_view kind=2 scopes=[religion] out="" global=false wild=false lists=false blurb=91:bd6e272b:"does the target have the specified opini"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command reverse_religious_view_impact kind=2 scopes=[religion] out="" global=false wild=false lists=false blurb=117:8c71ff4c:"Reverse opinion impact of a particular r"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command reverse_request_relation_acceptance kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=119:85e74e74:"How high is the current country's AI val"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or reverse_request_relation_acceptance("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command reverse_school_opinion kind=2 scopes=[religious_school] out="" global=false wild=false lists=false blurb=89:0a5d007b:"does the target have the specified opini"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10487,8 +10471,8 @@ command set_art_worth kind=1 scopes=[work_of_art] out="" global=false wild=false
 command set_as_commander kind=1 scopes=[unit] out="character" global=false wild=false lists=false blurb=55:a2dd92db:"sets the commander of a unit to the spec"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command set_as_designated_heir kind=1 scopes=[country] out="character" global=false wild=false lists=false blurb=78:91cc47e5:"Sets the target character as the designa"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[reason = /"<reason>/"]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="reason = <reason>"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_automated_system kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=153:1f931fdb:"/"Activate or deactivate the automation o"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /activate value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10599,7 +10583,7 @@ command set_parliament_type kind=1 scopes=[country international_organization] o
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command set_participated_in_parliament kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=106:f42e92b8:"Mark the country as having participated "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=61:696af1c7:"optional, for voting against the parliam"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=61:28fddc92:"vote = no (optional, for voting against "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_personality kind=1 scopes=[country] out="ai_personality" global=false wild=false lists=false blurb="Sets the AI personality for a country"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command set_prestige kind=1 scopes=[country international_organization] out="" global=false wild=false lists=false blurb="Sets prestige"
@@ -10661,7 +10645,7 @@ command set_variable kind=1 scopes=[] out="" global=false wild=false lists=false
 command set_vote kind=1 scopes=[international_organization situation] out="" global=false wild=false lists=false blurb=97:3baac944:"Sets the vote for a country on a resolut"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /resolution value={5 resolutions []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /vote value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[locked = yes/no]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /vote value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="locked = yes/no"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /voter value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_war_exhaustion kind=1 scopes=[country international_organization] out="" global=false wild=false lists=false blurb="Sets WarExhaustion"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10728,24 +10712,22 @@ command special_status kind=4 scopes=[] out="special_status" global=true wild=fa
 command special_status_can_be_bestowed kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=140:fa1b4fef:"Can the supplied special status be besto"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command special_status_power kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=110:dfc57ea8:"Get the political power of the specified"
-  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or special_status_power("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command special_status_power_fraction kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=119:68ac0849:"Get the political power fraction of the "
-  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or special_status_power("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command split_pop kind=1 scopes=[pop] out="" global=false wild=false lists=false blurb=209:4e0aa1a0:"Splits a pop and makes changes to it { s"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command spread_to_location kind=1 scopes=[movement] out="" global=false wild=false lists=false blurb=46:f88e803b:"Spreads the movement to a new location. "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[supporters_percent value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /supporters value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=52:01143cff:"supporters_percent = <> or supporters = "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command spy_network kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=57:5de4696c:"How much spy-network does the country ha"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command stability kind=2 scopes=[country international_organization] out="" global=false wild=false lists=false blurb=76:f989181e:"How much Stability does the country/IO h"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10760,9 +10742,8 @@ command start_conquistador kind=1 scopes=[country] out="" global=false wild=fals
 command start_exploration kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=134:8d76116a:"Creates a new exploration = { area = <ar"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command start_mission kind=1 scopes=[country] out="" global=false wild=false lists=false blurb=106:a3f4bc85:"The country starts immediately the speci"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /mission value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /mission value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=49:24a882f5:"optional any parameters to pass in, eg t"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command start_periphora_towards kind=1 scopes=[work_of_art] out="location" global=false wild=false lists=false blurb=109:bc85e916:"Starts a periphora towards the target lo"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command start_revolt kind=1 scopes=[rebels] out="" global=false wild=false lists=false blurb=68:16360fc0:"Make the rebels rise up against the coun"
@@ -10772,7 +10753,7 @@ command start_tutorial_lesson kind=1 scopes=[] out="" global=false wild=false li
 command start_weather_system kind=1 scopes=[] out="weather_system" global=false wild=false lists=false blurb="Starts off a new weather system. Usage:"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /length value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="[location = /"<waypoint>/"...]"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="location = <waypoint>..."/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /speed value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /strength value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  [cyclone front tornado]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10780,12 +10761,10 @@ command start_weather_system kind=1 scopes=[] out="weather_system" global=false 
   /weather_front_strength_change_percent/<topograpgy> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /width value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command start_work_of_art kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=53:dd3d1189:"Makes the target character start working"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={1 }/2 default=""/0 blurb=52:f755e42f:"optional, will start a random type of Wo"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /quality value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=60:4dd530f2:"optional, will take artist skill into co"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /show_quality value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default="no"/2 blurb=74:cc406569:"by default no, shows the probable qualit"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /work_of_art_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /work_of_art_type: value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /work_of_art_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command state_religion_clergy kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=98:d6bb641c:"Checks the proportion of your population"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command stockpile_in_market kind=4 scopes=[market] out="value" global=false wild=false lists=false blurb=51:110fa387:"The amount of goods stockpiled in a spec"
@@ -10898,11 +10877,11 @@ command top_owner kind=4 scopes=[location] out="country" global=false wild=false
 command topography kind=6 scopes=[] out="topography" global=true wild=false lists=false blurb=85:21fdaa35:"Checks if a location is of a specific To"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command topography_count kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=75:b9dc3fac:"Returns the amount of owned locations wi"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or topography_count("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command topography_percent kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=79:0c741c07:"Returns the percentage of owned location"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or topography_percent("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command total_abilities kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=66:c7502f40:"The total ability of the character/nReads"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command total_accepted_culture_population kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=126:7dc4e61a:"Checks if a country has an acceputed or "
@@ -10925,7 +10904,7 @@ command total_effective_building_levels kind=4 scopes=[country] out="value" glob
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command total_effective_goods_production_buildings kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=81:07f79197:"Returns the number of effective building"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /goods value={5 goods []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /goods value={5 goods []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command total_enemies kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=93:67932dd3:"counts the number of enemies of an inter"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command total_foreign_buildings_levels kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=89:349426ea:"Checks the total number of foreign build"
@@ -10954,16 +10933,16 @@ command total_payment_contribution kind=2 scopes=[international_organization] ou
 command total_population kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=76:604f3aee:"Checks if a country has a certain popula"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command total_population_in_international_organization kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=77:17580ff3:"Checks if the country has the defined am"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=50:838c8fd9:"or total_population_in_international_org"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command total_population_in_international_organization_percentage kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=77:17580ff3:"Checks if the country has the defined am"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=61:485ecc37:"or total_population_in_international_org"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command total_primary_culture_population kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=112:916ddf8b:"Checks if a country has a primary cultur"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command total_special_status_power kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=102:6e52dc06:"Get the political power of all countries"
-  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or total_special_status_power("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command total_special_status_power_fraction kind=2 scopes=[international_organization] out="" global=false wild=false lists=false blurb=320:fd79d337:"Get the percentage political power of th"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command total_sub_unit_category_in_unit kind=4 scopes=[unit] out="value" global=false wild=false lists=false blurb=58:f512e9d3:"Checks the total strength of a subunit-c"
@@ -11022,31 +11001,31 @@ command trigger_else_if kind=2 scopes=[] out="" global=false wild=false lists=fa
   (entry) value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trigger_event_non_silently kind=1 scopes=[] out="" global=false wild=false lists=false blurb=63:a1104e02:"triggers an event or on_action, but show"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="for events"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="for events"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /id value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="for events"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="for events"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trigger_event_silently kind=1 scopes=[] out="" global=false wild=false lists=false blurb="triggers an event or on_action"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /trigger_event value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="or"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /trigger_event/days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="for events"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /trigger_event value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="for events"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /trigger_event/days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /trigger_event/id value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /trigger_event/months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="for events"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /trigger_event/months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /trigger_event/on_action value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /trigger_event/years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="for events"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /trigger_event/years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trigger_if kind=2 scopes=[] out="" global=false wild=false lists=false blurb=67:d733f10a:"Evaluates the triggers if the display_tr"
   (entry) value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trust kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=51:576d710c:"How much trust does the country have in "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trust_equilibrium kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=86:c7468e43:"is the country's trust equilibrium towar"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command unemployed_pops_of_pop_type_in_location kind=2 scopes=[location] out="" global=false wild=false lists=false blurb=98:a9543d8f:"gets the number of unemployed pops of th"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -11060,7 +11039,7 @@ command union kind=4 scopes=[country] out="international_organization" global=fa
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command union_length_days kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=88:a9ce1acf:"returns the number of days a country has"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command union_partner_weight kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=138:77b5792c:"Sum of union_weight modifiers across all"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command unique_international_organization_type_exists kind=2 scopes=[] out="international_organization_type" global=false wild=false lists=false blurb=54:c58ff32a:"Does an international organization of th"
@@ -11077,7 +11056,7 @@ command unit_location kind=4 scopes=[unit] out="location" global=false wild=fals
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command unit_modifier_strength kind=2 scopes=[location country unit character dynasty religion province rebels mercenary international_organization] out="" global=false wild=false lists=false blurb=141:ca6790ae:"Does the scoped unit have a given modifi"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command unit_next_location kind=4 scopes=[unit] out="location" global=false wild=false lists=false blurb=43:ca7a794a:"Unknown, add something in code registrat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command unit_strength kind=2 scopes=[unit] out="" global=false wild=false lists=false blurb=71:a7f668ae:"Check the strength of the unit in scope/n"
@@ -11129,28 +11108,28 @@ command variable_map_size kind=2 scopes=[] out="" global=false wild=false lists=
 command vegetation kind=6 scopes=[] out="vegetation" global=true wild=false lists=false blurb=85:2310d7fe:"Checks if a location is of a specific Ve"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command vegetation_count kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=75:8a96b74b:"Returns the amount of owned locations wi"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or vegetation_count("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command vegetation_percent kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=79:3f3e94e0:"Returns the percentage of owned location"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or vegetation_percent("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command vote_impact_in_resolution kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=125:565479b2:"Check how much vote impact the current c"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or vote_impact_in_resolution("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /resolution value={5 resolutions []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /resolution value={5 resolutions []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command vote_in_active_resolution kind=4 scopes=[active_resolution] out="" global=false wild=false lists=false blurb=117:3238b3e5:"gets the active resolution of the type s"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command vote_is_locked kind=2 scopes=[international_organization situation] out="" global=false wild=false lists=false blurb=109:fa235740:"Is a country's vote locked in the scope "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command vote_percentage_impact_in_resolution kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=136:eada59a7:"Check how much vote percentage impact th"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or vote_percentage_impact_in_resolution("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /resolution value={5 resolutions []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /resolution value={5 resolutions []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command vote_type kind=2 scopes=[resolution] out="" global=false wild=false lists=false blurb=75:916518dd:"Checks the type of the vote in a resolut"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command votes_for_resolution kind=2 scopes=[international_organization situation] out="" global=false wild=false lists=false blurb=125:cd26f979:"Checks the number of votes for a particu"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /outcome value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /outcome value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /resolution value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command wants_casus_belli_with kind=2 scopes=[country] out="country" global=false wild=false lists=false blurb=96:cc9f29ba:"Does country want a casus belli with ano"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -11165,7 +11144,7 @@ command wants_to_give_away_any_province kind=2 scopes=[country] out="" global=fa
 command wants_to_subjugate kind=2 scopes=[country] out="country" global=false wild=false lists=false blurb=75:545ee107:"country wants to subjugate another count"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command war_enthusiasm kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=73:40d69adb:"The war enthusiasm of the current countr"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or war_enthusiasm("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /war value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command war_exhaustion kind=2 scopes=[country international_organization] out="" global=false wild=false lists=false blurb=80:8628ac28:"How much WarExhaustion does the country/"
@@ -11181,20 +11160,20 @@ command war_length kind=2 scopes=[war] out="" global=false wild=false lists=fals
 command war_length_in_years kind=2 scopes=[war] out="" global=false wild=false lists=false blurb=85:434a1c2d:"Checks how many years the current war ha"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command war_score_in_war kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=74:087373b8:"Check how much war score the current cou"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /war value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or war_score_in_war("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /war value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command war_score_in_war_whole_side kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=90:21e23d12:"Check how much war score the war side of"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /war value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or war_score_in_war_whole_side("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /war value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command war_score_of_country kind=2 scopes=[war] out="" global=false wild=false lists=false blurb=74:615130c3:"Check how much war score the target coun"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or war_score_of_country("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command war_score_of_country_side kind=2 scopes=[war] out="" global=false wild=false lists=false blurb=90:48c07e69:"Check how much war score the war side of"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or war_score_of_country_side("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /country value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command war_score_versus kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=103:6d72c88f:"Gets the war score of the scope country "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command war_stalling_length kind=2 scopes=[war] out="" global=false wild=false lists=false blurb=101:4a862a8c:"Checks how many months with no action ha"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command war_stalling_length_in_years kind=2 scopes=[war] out="" global=false wild=false lists=false blurb=100:9123acee:"Checks how many years with no action hav"
@@ -11276,8 +11255,8 @@ command years_active kind=2 scopes=[religion] out="" global=false wild=false lis
 command years_as_rebel kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=84:5701b343:"Check how many years the character has b"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command years_in_international_organization kind=2 scopes=[country] out="" global=false wild=false lists=false blurb=103:9751f889:"Checks if the country scope has been in "
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or years_in_international_organization("/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /international_organization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command years_of_service_as_admiral kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=92:d022122f:"Check how many years the character has s"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command years_of_service_as_general kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=91:50dcf470:"Check how many years the character has s"

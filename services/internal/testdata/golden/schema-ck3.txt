@@ -197,7 +197,7 @@ command accolade_type kind=4 scopes=[] out="accolade_type" global=true wild=fals
 command accolade_type_tier kind=2 scopes=[accolade_type] out="" global=false wild=false lists=false blurb=44:b9838160:"Is the scoped Accolade Type's tier equal"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command activate_struggle_catalyst kind=1 scopes=[struggle] out="" global=false wild=false lists=false blurb="Activate a catalyst,"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=101:2a39b8eb:"where X is a catalystY is scope:characte"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /catalyst value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command active_de_jure_drift_progress kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=""
@@ -229,7 +229,7 @@ command add_amenity_level kind=1 scopes=[character] out="" global=false wild=fal
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_animate_domicile_building kind=1 scopes=[domicile] out="" global=false wild=false lists=false blurb=80:54356e78:"Add building to scoped domicile, ignores"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_artifact_history kind=1 scopes=[artifact] out="" global=false wild=false lists=false blurb=76:6426595e:"Adds a history entry to the artifact, co"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /actor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=69:e31ff61c:"character - who is the actor in the even"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -269,7 +269,7 @@ command add_clerical_realm_to_sub_region kind=1 scopes=[situation_sub_region] ou
 command add_companion kind=1 scopes=[travel_plan] out="character" global=false wild=false lists=false blurb=58:b7caa25e:"Adds a character as a companion to the s"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_confederation_member kind=1 scopes=[confederation] out="character" global=false wild=false lists=false blurb=252:396a55e7:"Adds a character to the scoped confedera"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /add_member value={5 history/characters []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_confederation_member_house kind=1 scopes=[confederation] out="dynasty_house" global=false wild=false lists=false blurb=76:17ee5b9b:"Adds a house to the scoped confederation"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -287,11 +287,11 @@ command add_courtier kind=1 scopes=[character] out="character" global=false wild
 command add_culture_tradition kind=1 scopes=[culture] out="culture_tradition" global=false wild=false lists=false blurb=76:16e2c6ea:"Adds the cultural tradition scope specif"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_dead_character_flag kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=""
-  (entry) value={4  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /flag value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /weeks value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=46:771a1457:"years/weeks/days this flag is supposed t"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /flag value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="name of the flag"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /weeks value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=46:771a1457:"years/weeks/days this flag is supposed t"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=46:771a1457:"years/weeks/days this flag is supposed t"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_defender kind=1 scopes=[war] out="character" global=false wild=false lists=false blurb=56:f872482a:"adds the target character to the scope w"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_dejure_title_to_sub_region kind=1 scopes=[situation_sub_region] out="landed_title" global=false wild=false lists=false blurb=71:17df33a0:"Adds all dejure counties of a landed tit"
@@ -311,7 +311,7 @@ command add_diplomacy_skill kind=1 scopes=[] out="" global=false wild=false list
 command add_doctrine kind=1 scopes=[faith] out="doctrine" global=false wild=false lists=false blurb=105:7cb9fd19:"Add doctrine to faith. will fail if anot"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_domicile_building kind=1 scopes=[domicile] out="" global=false wild=false lists=false blurb=103:e5601c8f:"Add building to scoped domicile, ignores"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_dread kind=1 scopes=[character] out="" global=false wild=false lists=false blurb="adds (or removes) dread to a character"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_durability kind=1 scopes=[artifact] out="" global=false wild=false lists=false blurb=41:0df83a9e:"Add this much to the artifacts durabilit"
@@ -555,8 +555,7 @@ command add_reserved_gold kind=1 scopes=[character] out="" global=false wild=fal
 command add_rite_culture kind=1 scopes=[rite] out="culture" global=false wild=false lists=false blurb=72:240cbc33:"Adds the target culture to the list of c"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_rite_doctrine kind=1 scopes=[rite] out="doctrine" global=false wild=false lists=false blurb=85:114008fe:"Add doctrine to rite. Will fail if anoth"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /add_doctrine value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_rite_tenet kind=1 scopes=[rite] out="tenet" global=false wild=false lists=false blurb="Add tenet to rite/n<rite_scope> = {"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_saint kind=1 scopes=[faith] out="character" global=false wild=false lists=false blurb=180:138764a9:"Adds the target character as saint for t"
@@ -570,8 +569,8 @@ command add_scheme_breach kind=1 scopes=[scheme] out="" global=false wild=false 
 command add_scheme_cooldown kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=136:0edef64a:"Sets a scheme cooldown for the scope cha"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command add_scheme_modifier kind=1 scopes=[scheme] out="" global=false wild=false lists=false blurb="adds the specified scheme modifier,"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=66:d4c57cdd:"days are optional, the modifier will exp"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={1 }/2 default=""/0 blurb=66:d4c57cdd:"days are optional, the modifier will exp"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command add_scheme_progress kind=1 scopes=[scheme] out="" global=false wild=false lists=false blurb=68:ba50b86c:"Add progress to the scope scheme. (progr"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -775,8 +774,8 @@ command ai_start_best_war kind=1 scopes=[character] out="" global=false wild=fal
   /multi_target/max_accumulative_strength value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=183:09fde3b5:"Optional maximum accumulative strength o"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ai_values_divergence kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=""
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="other character"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ai_vengefulness kind=2 scopes=[character] out="" global=false wild=false lists=false blurb="AI vengefulness"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command ai_will_do_contribution kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=168:8d3a51d7:"Compares the scope character's base will"
@@ -900,7 +899,7 @@ command any_attending_character kind=2 scopes=[activity] out="character" global=
   /count value={1  [all]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /percent value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /state value={0  [active passive travel]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-command any_available_rite kind=2 scopes=[character] out="rite" global=false wild=false lists=false blurb=348:0cb54c20:"Iterate through all enabled rites./n/n* so"
+command any_available_rite kind=2 scopes=[character] out="rite" global=false wild=false lists=false blurb="Iterate through all enabled rites."
   (entry) value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /count value={1  [all]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /percent value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -2354,11 +2353,11 @@ command appoint_court_position kind=1 scopes=[character] out="" global=false wil
   /court_position value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=64:a67f30ff:"court position type - court position typ"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /recipient value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=55:ea8ad387:"character scope - target character to re"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command appointment_candidate_accumulated_score kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=120:066234ab:"Charater's accumulated score for appoint"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="scope:title"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command appointment_candidate_score kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=59:9787bfa3:"Charater's total score for appointment f"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="scope:title"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command appointment_level_for_title kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=76:d1ae2e05:"Compare character's currency level requi"
@@ -2406,7 +2405,7 @@ command artifact_slot_type kind=2 scopes=[artifact] out="" global=false wild=fal
 command artifact_type kind=2 scopes=[artifact] out="" global=false wild=false lists=false blurb="is the artifact of the given type?"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command assert_if kind=3 scopes=[] out="" global=false wild=false lists=false blurb=45:18aa0b2f:"Conditionally cause an assert during run"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={1 }/2 default=""/0 blurb=50:a2ada847:", where X is a trigger and Y is an optio"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /text value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command assert_read kind=3 scopes=[] out="" global=false wild=false lists=false blurb=46:fa19202d:"Conditionally cause an assert during rea"
@@ -2416,12 +2415,12 @@ command assign_commander kind=1 scopes=[army] out="character" global=false wild=
 command assign_council_task kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=48:6f216a47:"Assigns the target character to the coun"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /council_task value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /fire_on_actions value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /fire_on_actions value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command assign_councillor_type kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=174:be8ad862:"Assigns the target character to a counci"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /fire_on_actions value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /remove_existing_councillor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /fire_on_actions value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="yes"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /remove_existing_councillor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="no"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command assigned_tax_slot kind=4 scopes=[character] out="tax_slot" global=false wild=false lists=false blurb=64:9c0c93dc:"Get the Tax Slot of which this character"
@@ -2478,8 +2477,7 @@ command begin_create_holding kind=1 scopes=[province] out="" global=false wild=f
 command betrothed kind=4 scopes=[character] out="character" global=false wild=false lists=false blurb=41:10f42d22:"Get the betrothed of the scoped characte"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command birth_date kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=117:af9d754e:"Gets the year and day of birth combined "
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /<scope:> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command blood_legacy_track_perks kind=2 scopes=[dynasty] out="" global=false wild=false lists=false blurb=55:43325882:"How many perks in the lifestyle does thi"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command break_alliance kind=1 scopes=[character] out="character" global=false wild=false lists=false blurb=45:437cab4f:"Breaks the alliance with the target char"
@@ -2710,8 +2708,8 @@ command change_doctrine kind=1 scopes=[faith] out="doctrine" global=false wild=f
 command change_fervor kind=1 scopes=[faith] out="" global=false wild=false lists=false blurb=51:00ab364b:"Changes the fervor of the faith by the g"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="script value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_first_name kind=1 scopes=[character] out="" global=false wild=false lists=false blurb="Change the first name of a character"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /template_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="copy name from the template character"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="copy name from the template character"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /template_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_global_variable kind=1 scopes=[] out="" global=false wild=false lists=false blurb="Changes the value or a numeric variable"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -2793,7 +2791,7 @@ command change_struggle_phase kind=1 scopes=[struggle] out="" global=false wild=
   /struggle_phase value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /with_transition value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command change_struggle_phase_duration kind=1 scopes=[struggle] out="" global=false wild=false lists=false blurb=57:62e94d15:"Change the current phase duration in the"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="or"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="or"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /duration value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /duration/days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /duration/months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -2979,7 +2977,7 @@ command confederation kind=4 scopes=[character] out="confederation" global=false
 command confederation_type kind=4 scopes=[] out="confederation_type" global=true wild=false lists=false blurb="Get the type of a given confederation"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command construct_domicile_building kind=1 scopes=[domicile] out="" global=false wild=false lists=false blurb=91:20f81338:"Construct building to scoped domicile, i"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command consume_banish_reasons kind=1 scopes=[character] out="character" global=false wild=false lists=false blurb=149:bd47d816:"'Consume' all banish reasons that the sc"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command consume_divorce_reasons kind=1 scopes=[character] out="character" global=false wild=false lists=false blurb=150:94d9190d:"'Consume' all divorce reason that the sc"
@@ -3050,7 +3048,7 @@ command county_opinion kind=2 scopes=[landed_title] out="" global=false wild=fal
 command county_opinion_target kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=77:d513fcae:"compares the county's opinion of the tar"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command court_grandeur_base kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=112:6f89e5cd:"Gets the base court grandeur value for a"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command court_grandeur_current kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=115:652c0a97:"Gets the current court grandeur value fo"
@@ -3124,44 +3122,43 @@ command create_cadet_branch kind=1 scopes=[character] out="" global=false wild=f
   /save_scope_as value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /spread_to_descendants value={2  []}/2 block=0/0 scope=""/0 required={1 }/2 default="yes"/2 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_character kind=1 scopes=[] out="" global=false wild=false lists=false blurb="Creates a character"
-  (entry) value={1  []}/2 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb="1 if not specified"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /after_creation value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=66:03fd8d02:"martial/diplomacy/intrigue...  =  will g"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /age value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /after_creation value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=221:50041cc8:"martial/diplomacy/intrigue...  =  will g"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /age value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="culture name OR a culture scope"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /dynasty value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=90:29bec3c8:"generate/inherit/none - What to do if dy"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /dynasty_house value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=43:2cf900ac:"dynasty house name OR a dynasty house sc"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /employer value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=99:7b4d4ed4:"will end up in this court, will become a"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /ethnicities value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /ethnicities value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=45:0781bcc7:"Pick randomly from these ethnicities ins"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /ethnicities/<key> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /ethnicity value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /faith value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=173:b9ccac5b:"faith tag OR a faith scope faith, cultur"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /father value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /fertility value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /fertility value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /gender value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="male/female/character scope"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /gender_female_chance value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="script_value - Range"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /health value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /health value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /location value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=47:f51c9e02:"pool province; mutually exclusive with e"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /mother value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /mother value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /name value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /opposite_gender value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="character scope"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /parents value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /random_culture value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /random_culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /random_culture/norse value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /random_culture/norwegian value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /random_culture/norwegian value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=109:7a218f99:". Random one where the triggers are met "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /random_culture_in_group value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=60:0a80c98b:"culture group name OR a culture scope th"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /random_faith value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /random_faith/cathar value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /random_faith value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /random_faith/cathar value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=109:7a218f99:". Random one where the triggers are met "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /random_faith/catholic value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /random_faith_in_religion value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=55:1197e4bf:"religion tag OR a faith scope there's no"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /random_traits value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /random_traits_list value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /random_traits_list value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=220:a33d482c:"A number of traits specified by count wi"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /random_traits_list/count value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /random_traits_list/traitID value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /real_father value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /real_father value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=64:e12409d2:"should only be set if the real father is"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /rite value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=137:b3e474b1:"rite scope - if this rite belongs to the"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /save_event_target_as value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=44:df81fd4f:"flag - save the character as an event ta"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /save_temporary_event_target_as value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=53:27c77454:"flag - save the character as a temporary"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /template_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /template_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /trait value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="add this trait"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_character_memory kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=121:ffaa0f7a:"Creates a memory for the character of a "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -3232,7 +3229,7 @@ command create_faction kind=1 scopes=[character] out="" global=false wild=false 
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_faction_type_chance kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=117:3c58f02d:"Check if the chance to create a faction "
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="An ongoing faction"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_holy_order kind=1 scopes=[] out="" global=false wild=false lists=false blurb="Create a new holy order"
@@ -3252,7 +3249,6 @@ command create_holy_site kind=1 scopes=[faith] out="" global=false wild=false li
   /barony value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /county value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /eminent value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default="no"/2 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /holy_site_scope_object value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command create_hybrid_culture kind=1 scopes=[character] out="culture" global=false wild=false lists=false blurb=243:fddd5e02:"Creates a new hybrid culture from the sc"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -3455,7 +3451,7 @@ command de_jure_liege kind=4 scopes=[landed_title] out="landed_title" global=fal
 command dead_var kind=4 scopes=[character] out="" global=false wild=false lists=false blurb=87:f3ddf10e:"Reference a previous set dead character "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command death kind=1 scopes=[character] out="" global=false wild=false lists=false blurb="kills a character,"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=74:aab69029:"natural which will pick a natural death "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=213:dbdeecc4:", where X is a character and Y is one of"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /artifact value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /death_reason value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /killer value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -3578,7 +3574,7 @@ command disband_confederation kind=1 scopes=[confederation] out="" global=false 
 command discontent_per_month kind=2 scopes=[faction] out="" global=false wild=false lists=false blurb=59:d8736541:"How much is the Faction's Discontent inc"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command divergence kind=2 scopes=[rite] out="" global=false wild=false lists=false blurb="Divergence between rites"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="scope:target_rite"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command divide_war_chest kind=1 scopes=[ghw] out="" global=false wild=false lists=false blurb=58:f4eb5076:"The scoped GHW gives out its war-chest i"
@@ -3595,7 +3591,7 @@ command do_ghw_title_handout kind=1 scopes=[ghw] out="title_and_vassal_change" g
 command doctrine kind=4 scopes=[] out="doctrine" global=true wild=false lists=false blurb="Get the doctrine with the specified key"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command doctrine_fulfillment_value kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=119:ab40ad03:"Expected base fulfillment value due to v"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="scope:some_doctrine"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command doctrine_has_sin kind=2 scopes=[doctrine] out="trait" global=false wild=false lists=false blurb=53:abc2621b:"Is the target trait sinful for the doctr"
@@ -3625,7 +3621,7 @@ command domain_size_excluding_grace_period kind=2 scopes=[character] out="" glob
 command domicile kind=4 scopes=[character] out="domicile" global=false wild=false lists=false blurb=77:3173cc05:"Get the domicile of the scoped character"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command domicile_building_has_free_internal_slot kind=2 scopes=[domicile] out="" global=false wild=false lists=false blurb=92:69498ff7:"Does scoped domicile have building with "
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command domicile_culture kind=4 scopes=[domicile] out="culture" global=false wild=false lists=false blurb=98:d2b1c9da:"Get current culture of the scoped domici"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command domicile_faith kind=4 scopes=[domicile] out="faith" global=false wild=false lists=false blurb=94:e307afaf:"Get current faith of the scoped domicile"
@@ -3647,7 +3643,7 @@ command dread_modified_ai_boldness kind=2 scopes=[character] out="" global=false
 command duchy kind=4 scopes=[landed_title province] out="landed_title" global=false wild=false lists=false blurb=51:9500ee6f:"Get de jure duchy title of scoped title "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command duel kind=1 scopes=[] out="" global=false wild=false lists=false blurb=221:2e59ce39:"duel effect that selects an effect based"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /challenge_variable value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="(skills = { X1 X2 ... })"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /localization value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /skill value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -3820,7 +3816,7 @@ command every_artifact_house_claimant kind=1 scopes=[artifact] out="dynasty_hous
 command every_attending_character kind=1 scopes=[activity] out="character" global=false wild=false lists=false blurb=184:d345de3c:"Iterate through all characters attending"
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-command every_available_rite kind=1 scopes=[character] out="rite" global=false wild=false lists=false blurb=348:0cb54c20:"Iterate through all enabled rites./n/n* so"
+command every_available_rite kind=1 scopes=[character] out="rite" global=false wild=false lists=false blurb="Iterate through all enabled rites."
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command every_available_task_contract kind=1 scopes=[character] out="task_contract" global=false wild=false lists=false blurb=63:dd10399f:"Iterate through all task contracts of lo"
@@ -4896,11 +4892,11 @@ command exists kind=2 scopes=[] out="" global=false wild=false lists=false blurb
 command expand_clerical_region kind=1 scopes=[landed_title] out="landed_title" global=false wild=false lists=false blurb=234:39bc5e11:"Add the target title's dejure counties t"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command expected_rite_fulfillment_change kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=263:218c2be1:"What is the expected change in base spir"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="scope:some_rite"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command expected_tenet_fulfillment_change kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=64:b9cafb25:"Expected fulfillment change due to chang"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="scope:some_tenet"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command expose_scheme kind=1 scopes=[scheme] out="" global=false wild=false lists=false blurb="Exposes the scheme to the defender"
@@ -5118,9 +5114,13 @@ command great_project kind=4 scopes=[project_contribution] out="great_project" g
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command great_project_build_progress kind=2 scopes=[great_project] out="" global=false wild=false lists=false blurb=102:c08d5de8:"The project's build progress in percenta"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-command great_project_construction_phase_is kind=2 scopes=[great_project] out="" global=false wild=false lists=false blurb=207:983511bf:"Compare against the current construction"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /great_project_construction_phase value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+command great_project_construction_phase_is kind=2 scopes=[great_project] out="" global=false wild=false lists=false blurb=84:d59651e3:"Compare against the current construction"
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /<scope:great_project> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /<scope:great_project>/great_project_construction_phase value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /completed value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="the project was completed"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /in_progress value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="the project has started"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /planned value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="the project is gathering funds"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command great_project_days_to_completion kind=2 scopes=[great_project] out="" global=false wild=false lists=false blurb=162:1c5e77bc:"The number of days until the project is "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command great_project_founder kind=4 scopes=[great_project] out="character" global=false wild=false lists=false blurb=102:831d22ce:"Get the Character who founded the Great "
@@ -5263,11 +5263,9 @@ command has_clerical_region kind=2 scopes=[landed_title] out="" global=false wil
 command has_clerical_region_in_realm kind=2 scopes=[character] out="landed_title" global=false wild=false lists=false blurb=74:3a07353b:"Does the character's realm contain count"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_clothing_gfx kind=2 scopes=[culture] out="" global=false wild=false lists=false blurb="Does the culture have this clothing gfx?"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /has_building_gfx value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command has_coa_gfx kind=2 scopes=[culture] out="" global=false wild=false lists=false blurb="Does the culture have this CoA gfx?"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /has_building_gfx value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command has_coastal_province kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=43:4eaceb6a:"does the county contain a coastal provin"
   (entry) value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command has_cohesion kind=2 scopes=[confederation] out="" global=false wild=false lists=false blurb=44:d17b6fbd:"Does the confederation/bloc have a cohes"
@@ -5349,11 +5347,11 @@ command has_doctrine_parameter kind=2 scopes=[faith] out="" global=false wild=fa
 command has_domicile kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=58:4a1652e6:"Does scoped character have a domicile?/ns"
   (entry) value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_domicile_building kind=2 scopes=[domicile] out="" global=false wild=false lists=false blurb=72:f3a160c8:"Does scoped domicile have building of sp"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_domicile_building_or_higher kind=2 scopes=[domicile] out="" global=false wild=false lists=false blurb=77:bf099915:"Does scoped domicile have building or on"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_domicile_construction kind=2 scopes=[domicile] out="" global=false wild=false lists=false blurb=88:bc70d009:"Is the scoped domicile currently constru"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_domicile_parameter kind=2 scopes=[domicile] out="" global=false wild=false lists=false blurb=87:6b404564:"Does scoped domicile have parameter in o"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_domicile_temperament_high kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=53:e36e9dbd:"Does scoped character have domicile temp"
@@ -5368,7 +5366,10 @@ command has_domicile_temperament_neutral kind=2 scopes=[character] out="" global
 command has_dominant_ruling_gender kind=2 scopes=[faith] out="" global=false wild=false lists=false blurb=131:2ecba71f:"Is the target character's gender a domin"
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command has_dread_level_towards kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=106:900e1daa:"How much is scared the scope character a"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_durability_decay kind=2 scopes=[artifact] out="" global=false wild=false lists=false blurb=126:d29ea26e:"Will the scoped artifact decay over time"
   (entry) value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -5396,7 +5397,7 @@ command has_father kind=2 scopes=[character] out="" global=false wild=false list
   (entry) value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command has_first_name kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=182:9ebd81be:"Does the current character have this fir"
   (entry) value={6  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="All current script scopes available"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=49:5a5e45cc:"check first name / regnal name from the "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_first_name_strict kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=184:abe6275f:"Does the current character have this fir"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
   /has_first_name_base_strict value={6  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="All current script scopes available"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -5640,10 +5641,10 @@ command has_realm_law_in_group kind=2 scopes=[character] out="" global=false wil
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command has_regnal_name kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=155:a470ee01:"Does the current character have this reg"
   (entry) value={6  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="All current script scopes available"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="check regnal from the character"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_regnal_name_strict kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=206:09064acd:"Does the current character have this reg"
   (entry) value={6  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="All current script scopes available"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="check regnal from the character"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_relation_activity_recurrer kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=58:af949587:"Checks for a scripted relationship with "
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command has_relation_antiquarian kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=58:af949587:"Checks for a scripted relationship with "
@@ -5919,9 +5920,9 @@ command has_trait_category kind=2 scopes=[trait] out="" global=false wild=false 
 command has_trait_flag kind=2 scopes=[trait] out="" global=false wild=false lists=false blurb=42:2a779196:"Does the scoped trait have the given fla"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_trait_rank kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=68:43ca47cf:"Compare the trait rank of a character to"
-  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={1  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="can be script value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="need only one of rank or character"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /rank value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=56:f9a86c72:"can be script value # need only one of r"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /rank value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="need only one of rank or character"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /trait value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command has_trait_with_flag kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=58:5c690f6f:"does the scope character have a trait wi"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -6066,7 +6067,7 @@ command important_action_is_valid_but_invisible kind=2 scopes=[character] out=""
 command important_action_is_visible kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=52:fbf56349:"is there an important action shown to th"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command imprison kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=60:c02654ad:"Imprisons the target character as this c"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=61:9302ba16:", where X is a character, Y is a flag, Z"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /reason value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -6249,7 +6250,7 @@ command is_causing_raid_hostility_towards kind=2 scopes=[character] out="charact
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command is_character_interaction_potentially_accepted kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=99:3fece64e:"Is the character interaction specified a"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /ai_accept value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /ai_accept value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="min acceptance value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /interaction value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /recipient value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /required_response value={0  [maybe yes]}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -6668,7 +6669,7 @@ command is_scheme_exposed kind=2 scopes=[scheme] out="" global=false wild=false 
 command is_scheme_target_type kind=2 scopes=[scheme] out="" global=false wild=false lists=false blurb=98:12d552ec:"Does the scheme have a target of the giv"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command is_scheming_against kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=128:d957d12d:"Checks whether the scope character is an"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="limits to schemes of type Y"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /scheme_skill value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -6715,8 +6716,7 @@ command is_target_in_variable_list kind=2 scopes=[] out="" global=false wild=fal
 command is_target_of_council_task kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=100:3532a7ac:"Is the county currently affected by the "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command is_target_of_council_task_or_clone kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=205:0918bf86:"Is the county currently affected by the "
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /is_target_of_council_task value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command is_tax_collector kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=60:de3a795b:"Is this scope character a tax collector?"
   (entry) value={2  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command is_tax_collector_of kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=63:998bc604:"Is the scoped character a tax collector "
@@ -6812,7 +6812,7 @@ command join_era kind=1 scopes=[culture] out="" global=false wild=false lists=fa
 command join_faction kind=1 scopes=[character] out="faction" global=false wild=false lists=false blurb=53:d2f18639:"the character in the scope joins the ass"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command join_faction_chance kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=89:06cc1b34:"Check if the chance of the scope charact"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="An ongoing faction"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command join_faction_forced kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=89:85cf5e08:"the character in the scope is forced to "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -6954,10 +6954,10 @@ command long_term_treasury_maximum kind=2 scopes=[character] out="" global=false
 command long_term_treasury_or_gold kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=109:3cb63cc7:"does the character have the required tre"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command lower_domicile_building kind=1 scopes=[domicile] out="" global=false wild=false lists=false blurb=91:d317a4df:"Downgrade building to previous from scop"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command lower_domicile_building_no_refund kind=1 scopes=[domicile] out="" global=false wild=false lists=false blurb=97:d321dd76:"Downgrade building to previous from scop"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /lower_domicile_building value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /lower_domicile_building value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command lowest_skill kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=136:3ddbd40e:"Is the skill the lowest skill (excluding"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command lowest_skill_including_prowess kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=136:5283cb4b:"Is the skill the lowest skill (including"
@@ -7367,8 +7367,10 @@ command number_of_commander_traits kind=2 scopes=[character] out="" global=false
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_commander_traits_in_common kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=78:c7b1bf0b:"does the character and the target have a"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_concubines kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=49:aed7fae6:"The number of concubines the scoped char"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_desired_concubines kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=86:aac4d110:"The number of fertile concubines the sco"
@@ -7389,38 +7391,50 @@ command number_of_maa_regiments kind=2 scopes=[character] out="" global=false wi
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_opposing_personality_traits kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=79:52d16785:"does the character and the target have a"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_opposing_traits kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=67:8b9d1468:"does the character and the target have a"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_personality_traits kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=53:ebb4ca2d:"does the character have this many person"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_personality_traits_in_common kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=80:00d52b3c:"does the character and the target have a"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_powerful_vassals kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=63:f37be802:"Does the character have a specified numb"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_sinful_traits_in_common kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=108:532e62d0:"do the two characters share a number of "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_stationed_maa_regiments kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=60:9d8cf0e7:"The number of stationed men at arms the "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_traits kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=41:0bac8243:"does the character have this many traits"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_traits_in_common kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=68:549f4b33:"does the character and the target have a"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_tributaries kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=50:99a92665:"The number of tributaries the scoped cha"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_of_virtue_traits_in_common kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=110:bb0d3aa1:"do the two characters share a number of "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command number_title_maa_regiments_of_type kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=96:795a3ff5:"Does the scope character have value amou"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command obedience_target kind=4 scopes=[character] out="character" global=false wild=false lists=false blurb=48:7ca17976:"Get the obedience target of the scoped c"
@@ -7432,11 +7446,11 @@ command obligation_level_score kind=2 scopes=[vassal_contract_obligation_level] 
 command open_appoint_court_position_window kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=92:dd6e8ce2:"Opens the appointment window for the spe"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command open_interaction_window kind=1 scopes=[] out="" global=false wild=false lists=false blurb="Tries to open the defined view."
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=82:3bbefb87:"only works if secondary_actor and second"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /actor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=72:2050024f:"character_actor - must be defined, must "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /interaction value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=52:a2daf400:"interaction_key - the interaction object"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /recipient value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="character_actor - must be defined"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /redirect value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=143:ece69fcb:"[yes|no] - yes by default, redirect the "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /redirect value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="yes|no"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /secondary_actor value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb="character_secondary_actor - optional"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /secondary_recipient value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb="character_secondary_recipient - optional"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target_title value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb="title - optional"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -7452,8 +7466,8 @@ command open_view_data kind=1 scopes=[] out="" global=false wild=false lists=fal
   /view_message value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command opinion kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=73:b6156337:"is the character's opinion of the target"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /[*value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /< value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command or kind=2 scopes=[] out="" global=false wild=false lists=false blurb=46:2a0a9522:"at least one entry inside trigger must b"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:1,forms:224,values:map[]
@@ -7635,7 +7649,7 @@ command ordered_attending_character kind=1 scopes=[activity] out="character" glo
   /min value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /order_by value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /position value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-command ordered_available_rite kind=1 scopes=[character] out="rite" global=false wild=false lists=false blurb=348:0cb54c20:"Iterate through all enabled rites./n/n* so"
+command ordered_available_rite kind=1 scopes=[character] out="rite" global=false wild=false lists=false blurb="Iterate through all enabled rites."
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /check_range_bounds value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=73:7ff7924f:"If you don't want an error logged if the"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -7980,7 +7994,7 @@ command ordered_confederation_type kind=1 scopes=[] out="confederation_type" glo
   /order_by value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /position value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ordered_connected_county kind=1 scopes=[landed_title] out="landed_title" global=false wild=false lists=false blurb=73:c7632649:"Iterate through all counties connected t"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ordered_consort kind=1 scopes=[character] out="character" global=false wild=false lists=false blurb=53:a88785c9:"Iterate through all consorts (concubines"
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /check_range_bounds value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=73:7ff7924f:"If you don't want an error logged if the"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -8102,7 +8116,7 @@ command ordered_county_struggle kind=1 scopes=[landed_title] out="struggle" glob
   /order_by value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /position value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ordered_court_position_candidate kind=1 scopes=[character] out="character" global=false wild=false lists=false blurb=94:677e5d84:"Iterate through all valid candidates for"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ordered_court_position_employer kind=1 scopes=[character] out="character" global=false wild=false lists=false blurb=87:c7679705:"Iterates through all characters that emp"
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /check_range_bounds value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=73:7ff7924f:"If you don't want an error logged if the"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -8112,7 +8126,7 @@ command ordered_court_position_employer kind=1 scopes=[character] out="character
   /order_by value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /position value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ordered_court_position_holder kind=1 scopes=[character] out="character" global=false wild=false lists=false blurb=122:5d687051:"Iterates through all characters employed"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command ordered_court_position_type kind=1 scopes=[] out="court_position_type" global=false wild=false lists=false blurb=57:08e34be6:"Iterate through every court_position_typ"
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /check_range_bounds value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=73:7ff7924f:"If you don't want an error logged if the"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10481,8 +10495,8 @@ command overlord kind=4 scopes=[character] out="character" global=false wild=fal
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command overlord_contract_set_obligation_level kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=71:145450ba:"change the obligation level of the scope"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /vassal_contract_set_obligation_level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /vassal_contract_set_obligation_level/level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="index to obligation level"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /vassal_contract_set_obligation_level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="index to obligation level"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /vassal_contract_set_obligation_level/level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /vassal_contract_set_obligation_level/type value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command owner kind=4 scopes=[domicile] out="character" global=false wild=false lists=false blurb="Get the owner of scoped domicile."
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10525,65 +10539,65 @@ command pay_herd kind=1 scopes=[character] out="" global=false wild=false lists=
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_long_term_gold kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=54:788fe084:"the scope character pays gold to the tar"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /gold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=52:9cf7d859:"from AI budget category 'long term' firs"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=52:9cf7d859:"from AI budget category 'long term' firs"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /gold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_long_term_income kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=96:a2da91a8:"the scope character immediately pays gol"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'long term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'long term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'long term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'long term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_long_term_treasury kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=58:9ac6b6db:"the scope character pays treasury to the"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=130:82061c8d:"from AI budget category 'long term' firs"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /treasury value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_long_term_treasury_income kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=100:7247d833:"the scope character immediately pays tre"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'long term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'long term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'long term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'long term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_reserved_gold kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=54:788fe084:"the scope character pays gold to the tar"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /gold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=51:e9cc0ba7:"from AI budget category 'reserved' first"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=51:e9cc0ba7:"from AI budget category 'reserved' first"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /gold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_reserved_income kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=96:a2da91a8:"the scope character immediately pays gol"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'reserved' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'reserved' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'reserved' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'reserved' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_reserved_treasury kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=58:9ac6b6db:"the scope character pays treasury to the"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=129:fec9a7ed:"from AI budget category 'reserved' first"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /treasury value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_reserved_treasury_income kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=100:7247d833:"the scope character immediately pays tre"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'reserved' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'reserved' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'reserved' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'reserved' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_short_term_gold kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=54:788fe084:"the scope character pays gold to the tar"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /gold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=53:e301f874:"from AI budget category 'short term' fir"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=53:e301f874:"from AI budget category 'short term' fir"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /gold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_short_term_income kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=96:a2da91a8:"the scope character immediately pays gol"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'short term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'short term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'short term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'short term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_short_term_treasury kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=58:9ac6b6db:"the scope character pays treasury to the"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=131:73e0a4af:"from AI budget category 'short term' fir"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /treasury value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_short_term_treasury_income kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=100:7247d833:"the scope character immediately pays tre"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'short term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'short term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'short term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'short term' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_treasury kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=184:c5b0c1ce:"The scoped character pays treasury to th"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10597,25 +10611,25 @@ command pay_treasury_to_gold kind=1 scopes=[character] out="" global=false wild=
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_war_chest_gold kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=54:788fe084:"the scope character pays gold to the tar"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /gold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=52:d65b0975:"from AI budget category 'war chest' firs"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=52:d65b0975:"from AI budget category 'war chest' firs"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /gold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_war_chest_income kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=96:a2da91a8:"the scope character immediately pays gol"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'war chest' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'war chest' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'war chest' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'war chest' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_war_chest_treasury kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=58:9ac6b6db:"the scope character pays treasury to the"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=130:6574f48c:"from AI budget category 'war chest' firs"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /treasury value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command pay_war_chest_treasury_income kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=100:7247d833:"the scope character immediately pays tre"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'war chest' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'war chest' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'war chest' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="AI budget 'war chest' first, then rest"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command percent_enemies_killed kind=2 scopes=[combat_side] out="" global=false wild=false lists=false blurb=67:4c6c0967:"Percantage of enemies killed out of tota"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command perk_points kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=77:d1490bd4:"Does the character have this many perk p"
@@ -10649,7 +10663,7 @@ command piety kind=2 scopes=[character] out="" global=false wild=false lists=fal
 command piety_level kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=49:6c61fd3e:"does the character have the required pie"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command place_in_line_of_succession kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=58:2047574e:"what place in line of succession does th"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="scope:target"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command plan_great_project kind=1 scopes=[province] out="" global=false wild=false lists=false blurb=198:3dac62a4:"Starts funding a Great Project of the sp"
@@ -10838,7 +10852,7 @@ command random_attending_character kind=1 scopes=[activity] out="character" glob
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=2/2 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /weight value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-command random_available_rite kind=1 scopes=[character] out="rite" global=false wild=false lists=false blurb=348:0cb54c20:"Iterate through all enabled rites./n/n* so"
+command random_available_rite kind=1 scopes=[character] out="rite" global=false wild=false lists=false blurb="Iterate through all enabled rites."
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=2/2 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /weight value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -10899,7 +10913,7 @@ command random_character_tenet kind=1 scopes=[character] out="tenet" global=fals
   /knowledge_filter value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /limit value={0  []}/0 block=2/2 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /rite_filter value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=54:3515156f:"will take precedence over faith_filter i"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /status value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=75:e0f6ffaa:"if you specified a rite or faith filter,"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /status value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=123:5e85f1ed:"core | permitted | prohibited | known | "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /weight value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command random_character_to_title_neighboring_and_across_water_county kind=1 scopes=[character] out="landed_title" global=false wild=false lists=false blurb=103:e0a27c15:"Scopes from a character to a neighboring"
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -11592,14 +11606,14 @@ command random_list kind=1 scopes=[] out="" global=false wild=false lists=false 
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:1,blocks:1,forms:32,values:map[]
   /<number> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:1,blocks:2,forms:352,values:map[]
   /X1 value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /X1/compare_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /X1/modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /X1/opinion_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /X1/compare_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Y1 effect1"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /X1/modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Y1 effect1"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /X1/opinion_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Y1 effect1"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /X1/trigger value={0  [disable enables]}/2 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /X2 value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /X2/compare_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /X2/modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /X2/opinion_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /X2/compare_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Y2 effect2"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /X2/modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Y2 effect2"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /X2/opinion_modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="Y2 effect2"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /X2/trigger value={0  [disable enables]}/2 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command random_living_character kind=1 scopes=[] out="character" global=false wild=false lists=false blurb="Iterate through all living characters"
   (entry) value={0  []}/0 block=3/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -12455,11 +12469,11 @@ command remove_concubine kind=1 scopes=[character] out="character" global=false 
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_confederation_member kind=1 scopes=[confederation] out="character" global=false wild=false lists=false blurb=116:d6d51f2e:"Removes the target character from the sc"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /<confederation> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /<confederation> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /remove_member value={5 history/characters []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_confederation_member_house kind=1 scopes=[confederation] out="dynasty_house" global=false wild=false lists=false blurb=55:1a08e447:"Removes the target house from the scoped"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /<confederation> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /<confederation> value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /remove_member_house value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_county_modifier kind=1 scopes=[landed_title] out="" global=false wild=false lists=false blurb="Remove a modifier from a county"
   (entry) value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -12478,10 +12492,10 @@ command remove_dejure_title_from_sub_region kind=1 scopes=[situation_sub_region]
 command remove_doctrine kind=1 scopes=[faith] out="doctrine" global=false wild=false lists=false blurb=43:1f48bf4f:"Remove doctrine from faith<faith_scope> "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_domicile_building kind=1 scopes=[domicile] out="" global=false wild=false lists=false blurb=49:f60dab3d:"Remove building from scoped domicile/ndom"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_domicile_building_no_refund kind=1 scopes=[domicile] out="" global=false wild=false lists=false blurb=57:44caf7bd:"Remove building from scoped domicile wit"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /remove_domicile_building value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /remove_domicile_building value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="domicile building key"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_dynasty_modifier kind=1 scopes=[dynasty] out="" global=false wild=false lists=false blurb="Remove a modifier from a dynasty"
   (entry) value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_dynasty_perk kind=1 scopes=[dynasty] out="" global=false wild=false lists=false blurb="Removes dynasty perk."
@@ -12514,7 +12528,7 @@ command remove_holy_site_artifact kind=1 scopes=[character] out="" global=false 
   /artifact value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /holy_site value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_hook kind=1 scopes=[character] out="" global=false wild=false lists=false blurb="Removes a hook on a character,"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=75:d7287324:", if type is specified, the hook will on"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_house_artifact_claim kind=1 scopes=[dynasty_house] out="artifact" global=false wild=false lists=false blurb=60:c923bf6a:"Removes a claim on the target artifact f"
@@ -12566,9 +12580,9 @@ command remove_manual_participant kind=1 scopes=[situation] out="character" glob
 command remove_nickname kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=56:4982d99c:"Removes any nickname from the current ch"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_opinion kind=1 scopes=[character] out="" global=false wild=false lists=false blurb="Removes a temporary opinion modifier,"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=118:b7571e73:"where X is a character, Y is the opinion"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /modifier value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /single value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /single value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="no by default"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command remove_participant kind=1 scopes=[war] out="character" global=false wild=false lists=false blurb=47:13dc0ebc:"removes the target character from the sc"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -12812,7 +12826,7 @@ command rite_faith kind=4 scopes=[rite] out="faith" global=false wild=false list
 command rite_founder kind=4 scopes=[rite] out="character" global=false wild=false lists=false blurb="Get the founder of scoped rite."
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command rite_fulfillment_score kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=87:f38505a0:"What is the spiritual fulfillment score "
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="scope:some_rite"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command rite_has_allowed_gender_for_clergy kind=2 scopes=[rite] out="" global=false wild=false lists=false blurb=80:0b929c98:"Is the target character of the allowed g"
@@ -12829,7 +12843,6 @@ command rite_has_preferred_gender_for_clergy kind=2 scopes=[rite] out="" global=
   (entry) value={8  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command rite_has_tenet kind=2 scopes=[rite] out="tenet" global=false wild=false lists=false blurb=55:7cead007:"Does the given rite have the given tenet"
   (entry) value={5 religion/tenet_types []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /has_tenet value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command rite_hostility_level kind=2 scopes=[rite] out="" global=false wild=false lists=false blurb=59:a570b75e:"What is the rite's hostility level towar"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -12857,12 +12870,12 @@ command round_variable kind=1 scopes=[] out="" global=false wild=false lists=fal
 command ruin_great_building kind=1 scopes=[province] out="" global=false wild=false lists=false blurb=57:f5a74f31:"The Great Building in the scoped provinc"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command run_interaction kind=1 scopes=[] out="" global=false wild=false lists=false blurb="Execute/send the given interaction"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=82:3bbefb87:"only works if secondary_actor and second"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /actor value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="character_actor - must be defined"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /execute_threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=87:0eb8c454:"accept/maybe/decline - will be executed "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /interaction value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=51:4cb41f85:"interaction_key - the interaction object"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /recipient value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="character_actor - must be defined"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /redirect value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=143:ece69fcb:"[yes|no] - yes by default, redirect the "/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /redirect value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="yes|no"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /secondary_actor value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb="character_secontary_actor - optional"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /secondary_recipient value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb="character_secondary_recipient - optional"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /send_threshold value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=71:e18e1f48:"accept/maybe/decline - will be sent if t"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -12905,7 +12918,7 @@ command scheme_defender kind=4 scopes=[scheme] out="character" global=false wild
 command scheme_duration_days kind=2 scopes=[scheme] out="" global=false wild=false lists=false blurb=43:d4d6c6a3:"The number of days since scheme was star"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command scheme_freeze kind=1 scopes=[scheme] out="" global=false wild=false lists=false blurb=""
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=101:e811ba70:"freezes the scheme for duration X. 0 dur"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /reason value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -13104,9 +13117,7 @@ command set_court_language kind=1 scopes=[character] out="" global=false wild=fa
 command set_court_type kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=51:407763f1:"Set the court type for this character's "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command set_cultural_acceptance kind=1 scopes=[culture] out="" global=false wild=false lists=false blurb=48:8e4ffa18:"Sets cultural acceptance with the target"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={5 culture/cultures []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command set_culture kind=1 scopes=[character] out="culture" global=false wild=false lists=false blurb="Set the culture for this character"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command set_culture_as_involved kind=1 scopes=[struggle] out="culture" global=false wild=false lists=false blurb=49:7d1744e9:"Set a culture as involved in the scoped "
@@ -13127,12 +13138,12 @@ command set_current_court_grandeur kind=1 scopes=[character] out="" global=false
 command set_de_jure_liege_title kind=1 scopes=[landed_title] out="landed_title" global=false wild=false lists=false blurb="Set a new DeJure liege title"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_dead_character_variable kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=""
-  (entry) value={4  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /name value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /weeks value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=46:771a1457:"years/weeks/days this flag is supposed t"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /name value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="name of the variable"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=51:c2d322c9:"any event target, bool, value, script va"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /weeks value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=46:771a1457:"years/weeks/days this flag is supposed t"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=46:771a1457:"years/weeks/days this flag is supposed t"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_death_reason kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=""
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /artifact value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -13221,7 +13232,7 @@ command set_great_building_slot kind=1 scopes=[province] out="" global=false wil
 command set_great_holy_war_target kind=1 scopes=[ghw] out="" global=false wild=false lists=false blurb="Sets the target of the great holy war."
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target_title value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target_title value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="some title"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_heritage_from kind=1 scopes=[culture] out="culture" global=false wild=false lists=false blurb=51:837e66b3:"Set the heritage from the RHS on the sco"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_holding_type kind=1 scopes=[province] out="" global=false wild=false lists=false blurb=206:6aca101c:"Changes the scoped province's holding to"
@@ -13356,7 +13367,7 @@ command set_realm_capital kind=1 scopes=[character] out="landed_title" global=fa
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_regnal_name kind=1 scopes=[character] out="" global=false wild=false lists=false blurb="Set the regnal name of a character."
   (entry) value={6  []}/2 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="All script scopes available"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=41:6e22d3af:"copy regnal/first name from the characte"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command set_relation_activity_recurrer kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=581:ed6b50df:"Sets scripted relationship, set_relation"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command set_relation_antiquarian kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=581:ed6b50df:"Sets scripted relationship, set_relation"
@@ -13595,7 +13606,7 @@ command situation_end_date kind=2 scopes=[situation] out="" global=false wild=fa
 command situation_has_catalyst kind=2 scopes=[situation] out="" global=false wild=false lists=false blurb=104:5afc0dee:"Checks if any sub-region of the situatio"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command situation_participant_group kind=4 scopes=[situation] out="situation_participant_group" global=false wild=false lists=false blurb=120:1eeb819e:"Get the scope of the first situation_par"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command situation_start_date kind=2 scopes=[situation] out="" global=false wild=false lists=false blurb="Date when the situation started."
   (entry) value={3  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command situation_sub_region kind=4 scopes=[situation] out="situation_sub_region" global=false wild=false lists=false blurb=111:7676398e:"Get the scope of the situation sub-regio"
@@ -13690,22 +13701,22 @@ command start_default_task kind=1 scopes=[character] out="" global=false wild=fa
 command start_ghw_war kind=1 scopes=[ghw] out="" global=false wild=false lists=false blurb="Starts the GHW war."
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command start_great_holy_war kind=1 scopes=[faith] out="" global=false wild=false lists=false blurb="Starts a great holy war."
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={1  []}/2 block=4/2 scope=""/0 required={1 }/2 default=""/0 blurb=153:adf06a5e:"Number of days until the war should star"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /someonetarget_title value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /titledelay value={1  []}/2 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=166:b9c31921:"script value Number of days until the wa"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /titledelay value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="script value"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command start_scheme kind=1 scopes=[character] out="" global=false wild=false lists=false blurb="Starts a new scheme of the given type."
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /contract value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb="(Optional) CONTRACT"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /save_scope_as value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb="(Optional) NAME"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="(*) CHARACTER"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={2  []}/2 block=4/2 scope=""/0 required={0 }/0 default="no"/2 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /contract value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /save_scope_as value={0  []}/0 block=0/0 scope=""/0 required={1 }/2 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /target_character value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target_culture value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target_faith value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target_title value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /targets_nothing value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default="no"/2 blurb="(*) yes/no"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /targets_nothing value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command start_situation kind=1 scopes=[] out="" global=false wild=false lists=false blurb=157:d3855481:"Start a Situation of a specific situatio"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /save_scope_as value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /save_temporary_scope_as value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /start_phase value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -13716,7 +13727,7 @@ command start_situation kind=1 scopes=[] out="" global=false wild=false lists=fa
   /sub_region/start_phase value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command start_struggle kind=1 scopes=[] out="" global=false wild=false lists=false blurb="Start a struggle,"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="where X is a struggle type, Y is a phase"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /start_phase value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /struggle_type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command start_travel_plan kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=112:dee4113e:"Start a travel plan. Saving this as a sc"
@@ -13919,22 +13930,19 @@ command tier_difference kind=2 scopes=[character] out="" global=false wild=false
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command time_after_diarch_designated kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=49:933256cc:"How much time passed after diarch was de"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /, value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command time_in_prison kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=47:7e61927d:"for how long has the character been impr"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /, value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command time_in_prison_type kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=69:8239ee99:"for how long has the character been impr"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /, value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /days value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /months value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /years value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command time_of_year kind=2 scopes=[] out="" global=false wild=false lists=false blurb=46:fb858128:"Check if the current date is within the "
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /max value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="default: end of year"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -13956,7 +13964,7 @@ command title_create_faction kind=1 scopes=[landed_title] out="" global=false wi
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command title_create_faction_type_chance kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=120:e66fa736:"Check if the chance to create a faction "
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="An ongoing faction"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command title_domicile kind=4 scopes=[landed_title] out="domicile" global=false wild=false lists=false blurb=67:fba07efa:"Get the domicile associated with the sco"
@@ -13968,7 +13976,7 @@ command title_is_a_faction_member kind=2 scopes=[landed_title] out="" global=fal
 command title_join_faction kind=1 scopes=[landed_title] out="faction" global=false wild=false lists=false blurb=56:53a112f0:"the landed title in the scope joins the "
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command title_join_faction_chance kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=92:3bbcd219:"Check if the chance of the scope landed "
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /faction value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="An ongoing faction"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command title_law_group_at_maximum_level kind=2 scopes=[landed_title] out="" global=false wild=false lists=false blurb=74:d536be96:"Does the scoped title have the maximum l"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
@@ -14009,13 +14017,13 @@ command total_infected_provinces kind=2 scopes=[epidemic] out="" global=false wi
 command trait kind=4 scopes=[] out="trait" global=true wild=false lists=false blurb="Get the trait with the specified key"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command trait_base_spiritual_fulfillment kind=2 scopes=[rite] out="" global=false wild=false lists=false blurb=187:a11702a2:"Signed base spiritual fulfillment the ta"
-  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="scope:some_trait"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trait_compatibility kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=""
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
+  /target value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="other character"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /value value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trait_is_sin kind=2 scopes=[faith] out="trait" global=false wild=false lists=false blurb=74:8984cdc4:"Does the mainline rite of the scoped fai"
   (entry) value={5 traits []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trait_is_sin_rite kind=2 scopes=[rite] out="trait" global=false wild=false lists=false blurb=141:efd46741:"Does the scoped rite consider given trai"
@@ -14038,7 +14046,7 @@ command transfer_to_new_clerical_region kind=1 scopes=[character] out="landed_ti
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command travel_danger_type kind=2 scopes=[province] out="" global=false wild=false lists=false blurb=83:23d9223c:"Checks if a province's danger type is of"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /terrain value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /terrain value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="terrain type"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /travel_plan value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command travel_danger_value kind=2 scopes=[province] out="" global=false wild=false lists=false blurb=63:c10ff6c7:"What is the province's danger value for "
@@ -14099,8 +14107,8 @@ command tributary_contract_obligation_level_can_be_increased kind=2 scopes=[char
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command tributary_contract_set_obligation_level kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=72:71790bea:"change the obligation level of the scope"
   (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
-  /vassal_contract_set_obligation_level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /vassal_contract_set_obligation_level/level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="index to obligation level"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /vassal_contract_set_obligation_level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="index to obligation level"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /vassal_contract_set_obligation_level/level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /vassal_contract_set_obligation_level/type value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trigger_else kind=2 scopes=[] out="" global=false wild=false lists=false blurb=162:6e4440e4:"Evaluates the triggers if the display_tr"
   (entry) value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
@@ -14115,7 +14123,7 @@ command trigger_event kind=1 scopes=[] out="" global=false wild=false lists=fals
   /months value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=128:eee91d0c:"optionally, the event can be delayed via"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /on_action value={5 on_action []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /saved_event_id value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="example: scope:my_flag_name"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /trigger_on_next_date value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb="trigger on a specific date in the future"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /trigger_on_next_date value={0  []}/0 block=2/2 scope=""/2 required={0 }/0 default=""/0 blurb="trigger on a specific date in the future"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /years value={1  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=128:eee91d0c:"optionally, the event can be delayed via"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command trigger_if kind=2 scopes=[] out="" global=false wild=false lists=false blurb=67:d733f10a:"Evaluates the triggers if the display_tr"
   (entry) value={0  []}/0 block=2/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:1,blocks:1,forms:32,values:map[]
@@ -14207,8 +14215,8 @@ command vassal_contract_obligation_level_can_be_increased kind=2 scopes=[charact
 command vassal_contract_obligation_level_score kind=2 scopes=[character] out="" global=false wild=false lists=false blurb=114:2488c634:"The score in favour of the vassal for th"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]
 command vassal_contract_set_obligation_level kind=1 scopes=[character] out="" global=false wild=false lists=false blurb=69:83116628:"change the obligation level of the scope"
-  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
-  /level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb="index to obligation level"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  (entry) value={0  []}/0 block=4/2 scope=""/0 required={0 }/0 default=""/0 blurb="index to obligation level"/2 written=2 seen=in:0,blocks:0,forms:0,values:map[]
+  /level value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
   /type value={4  []}/2 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=2 seen=in:0,blocks:0,forms:0,values:map[]
 command vassal_contract_type kind=4 scopes=[vassal_contract_obligation_level] out="vassal_contract" global=false wild=false lists=false blurb=43:ac16a58d:"Get the type of a given contract obligat"
   (entry) value={0  []}/0 block=0/0 scope=""/0 required={0 }/0 default=""/0 blurb=""/0 written=0 seen=in:0,blocks:0,forms:0,values:map[]

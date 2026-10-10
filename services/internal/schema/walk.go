@@ -47,13 +47,11 @@ type Placement struct {
 	Inner        BlockContext  // where its own block is read
 }
 
-// Visitor is one use of the walker. Create makes the positions it reads (vanilla, usages); Alternatives lists
-// the names a key is read as (a docs key's a/b|c alternatives); Visit sees each reading, may change where its
-// block is read, and returns whether to read that block.
+// Visitor is one use of the walker. Create makes the positions it reads (vanilla); Visit sees each reading, may
+// change where its block is read, and returns whether to read that block.
 type Visitor struct {
-	Create       bool
-	Alternatives func(key string) []string
-	Visit        func(*Placement) bool
+	Create bool
+	Visit  func(*Placement) bool
 }
 
 // meaning is what a key is: the rule that read it, its position, its declared command or link, the calling
@@ -132,7 +130,7 @@ func (walk *fileWalk) block(holder *jomini.Block, statements []jomini.Statement,
 		case database != nil:
 			placements = []Placement{walk.schema.entryPlacement(statement, database, in)}
 		case isAssign && in.InEntry:
-			placements = walk.schema.keyPlacements(walk.visitor, statements, index, in)
+			placements = []Placement{walk.schema.keyPlacement(walk.visitor, statements, index, in)}
 		default:
 			placements = []Placement{{Statement: statement, Position: in.Position, BlockContext: in, Inner: in}}
 		}
@@ -162,14 +160,10 @@ func (schema *Schema) entryPlacement(statement jomini.Statement, database *Datab
 	return Placement{Statement: statement, Position: database.Entry, BlockContext: in, Inner: inner}
 }
 
-// keyPlacements reads the key of the assignment at statements[index], once for each name the visitor reads
-// it as. A calling word written before a name calls it by that word: blockoverride "x" { }.
-func (schema *Schema) keyPlacements(visitor Visitor, statements []jomini.Statement, index int, in BlockContext) []Placement {
+// keyPlacement reads the key of the assignment at statements[index]. A calling word written before a name calls
+// it by that word: blockoverride "x" { }.
+func (schema *Schema) keyPlacement(visitor Visitor, statements []jomini.Statement, index int, in BlockContext) Placement {
 	assign := statements[index].(*jomini.Assignment)
-	names := []string{assign.Key.Text}
-	if visitor.Alternatives != nil {
-		names = visitor.Alternatives(assign.Key.Text)
-	}
 	if index > 0 {
 		if listed, isList := statements[index-1].(*jomini.ValueStmt); isList {
 			if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar && len(schema.Callees[scalar.Text]) > 0 {
@@ -177,11 +171,7 @@ func (schema *Schema) keyPlacements(visitor Visitor, statements []jomini.Stateme
 			}
 		}
 	}
-	placements := make([]Placement, 0, len(names))
-	for _, name := range names {
-		placements = append(placements, schema.PlaceKey(in, assign, name, visitor.Create))
-	}
-	return placements
+	return schema.PlaceKey(in, assign, assign.Key.Text, visitor.Create)
 }
 
 // EntryContext returns where a database's entry is read: at its entry position, in the kind of block its

@@ -3,6 +3,7 @@
    "word": "aga_tr",
    "key": "INJECT:aga_tr",
    "head": "town right",
+   "scope": "country",
    "sites": [
     {
      "path": "<fixtures>/mods/eu5/in_game/common/town_rights/m_rights.txt",
@@ -70,6 +71,7 @@
    "writes": [
     "a number"
    ],
+   "scope": "country",
    "winner": -1,
    "stale": true,
    "within": [
@@ -109,6 +111,7 @@
    "word": "aga_tr",
    "key": "REPLACE:aga_tr",
    "head": "town right",
+   "scope": "country",
    "sites": [
     {
      "path": "<fixtures>/mods/eu5/in_game/common/town_rights/m_rights.txt",
@@ -176,6 +179,7 @@
    "writes": [
     "a number"
    ],
+   "scope": "country",
    "winner": -1,
    "stale": true,
    "within": [
@@ -215,6 +219,7 @@
    "word": "missing_tr",
    "key": "TRY_INJECT:missing_tr",
    "head": "town right",
+   "scope": "country",
    "sites": [
     {
      "path": "<fixtures>/mods/eu5/in_game/common/town_rights/m_rights.txt",
@@ -252,6 +257,7 @@
    "writes": [
     "a number"
    ],
+   "scope": "country",
    "winner": -1,
    "stale": true,
    "within": [

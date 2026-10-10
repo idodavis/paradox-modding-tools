@@ -1,5 +1,5 @@
-// build.go is the pipeline: Build makes one game version's schema in seven steps. Step 1, declaring the
-// databases, lives here.
+// build.go is the pipeline: Build makes one game version's schema in six steps. Step 1, declaring the databases,
+// lives here.
 
 package schema
 
@@ -31,11 +31,11 @@ type Input struct {
 }
 
 // Build reads every source into the schema. A claim keeps its highest-ranked source (Claim.Set), so the steps
-// follow their data, not the ranks: the databases first, since every step reads them; the docs' key names
-// before vanilla, for the entry detector; vanilla whole before its types are inferred; the docs' claims after
-// vanilla, since they merge only where vanilla writes. No two positions share a subtree, since the cache
-// writes a shared pointer once per reference (a ScriptedEntry names its database). Every string written into
-// a map or a position is cloned, so the schema never pins a file's text.
+// follow their data, not the ranks: the databases first, since every step reads them; the docs parsed before
+// vanilla, since the entry detector reads the keys they write; vanilla whole before its types are inferred; the
+// docs' claims merged after vanilla, since they merge only where vanilla writes. No two positions share a
+// subtree, since the cache writes a shared pointer once per reference (a ScriptedEntry names its database).
+// Every string written into a map or a position is cloned, so the schema never pins a file's text.
 func Build(ctx context.Context, input Input) (*Schema, error) {
 	info := game.Get(input.Game)
 	if info == nil {
@@ -49,17 +49,16 @@ func Build(ctx context.Context, input Input) (*Schema, error) {
 	if input.DumpsOnly {
 		return s, nil
 	}
-	examples, err := s.parseDocsAndExamples(ctx, input) // 3: the docs and the wiki's examples, parsed
+	docs, err := s.parseDocs(ctx, input) // 3: the docs and the wiki's examples parsed, every key they write noted
 	if err != nil {
 		return nil, err
 	}
-	s.collectDocFields(examples)                           // 4: every key the docs write, for the entry detector
-	names, err := s.countVanilla(ctx, input.Install, info) // 5: what vanilla writes, counted
+	names, err := s.countVanilla(ctx, input.Install, info) // 4: what vanilla writes, counted
 	if err != nil {
 		return nil, err
 	}
-	s.inferTypesAndPrefixes(names, input.LocKeys) // 6: a kind where nothing declares one; each prefix's database
-	s.applyExamples(examples)                     // 7: the docs' claims, filling what is left
+	s.inferTypesAndPrefixes(names, input.LocKeys) // 5: a kind where nothing declares one; each prefix's database
+	s.mergeDocs(docs)                             // 6: the docs' claims, merged where vanilla writes
 	return s, nil
 }
 
@@ -75,9 +74,9 @@ func DatabaseNames(input Input) []string {
 	return slices.Sorted(maps.Keys(s.Databases))
 }
 
-// declare makes a database. Its entry block is a fields block unless its folder row's Body says what the
-// entry is; each of the row's Refs names the database's entries.
-func (schema *Schema) declare(name string, row game.Folder) {
+// declareDatabase makes a database. Its entry block is a fields block unless its folder row's Body says what
+// the entry is; each of the row's Refs names the database's entries.
+func (schema *Schema) declareDatabase(name string, row game.Folder) {
 	database := &Database{Name: name, Entry: &Position{}, Row: row, Fields: map[string]bool{}}
 	database.Entry.Block.Set(cmp.Or(row.Body, game.BlockFields), SourceRegistry)
 	for _, at := range row.Refs {
@@ -108,14 +107,14 @@ func (schema *Schema) declareDatabases(install []inventory.File, info *game.Game
 	})
 	for _, rel := range scripts {
 		if at, name := schema.folder(rel); at != "." && schema.Databases[name] == nil {
-			schema.declare(name, info.Folders[at])
+			schema.declareDatabase(name, info.Folders[at])
 		}
 	}
 
 	// a nested row that sets up entries defined elsewhere makes a history database of its keys
 	for _, row := range info.Nested {
 		if row.Of != "" {
-			schema.declare(NameOf(row.Parent)+"."+row.Database, game.Folder{History: true, Of: row.Of})
+			schema.declareDatabase(NameOf(row.Parent)+"."+row.Database, game.Folder{History: true, Of: row.Of})
 		}
 	}
 
@@ -123,7 +122,7 @@ func (schema *Schema) declareDatabases(install []inventory.File, info *game.Game
 	for at, row := range info.Folders {
 		if extension, _, cut := strings.Cut(at, "."); cut && game.FileTypes["."+extension].Body != 0 {
 			row.Body = game.FileTypes["."+extension].Body
-			schema.declare(at, row)
+			schema.declareDatabase(at, row)
 		}
 	}
 

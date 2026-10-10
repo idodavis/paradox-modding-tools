@@ -7,10 +7,12 @@
 package lsp
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +26,14 @@ import (
 )
 
 var installs sync.Map
+
+// fixtureMod is the id of the mod the fixture sessions open.
+const fixtureMod = "mod"
+
+// the strings the tests name more than twice
+const (
+	ck3 = "ck3"
+)
 
 // fixture is a session over one fixture install, scanned once, with an empty mod folder per test.
 func fixture(t *testing.T, id string) (*workspace.Session, string) {
@@ -40,11 +50,155 @@ func fixture(t *testing.T, id string) (*workspace.Session, string) {
 	if err := os.MkdirAll(filepath.Join(dir, "common"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sess, err := workspace.Open(t.Context(), game.Get(id), install, []workspace.Mod{{ID: "mod", Dir: dir, Calendar: workspace.Calendar{{Name: "AC", Offset: 7782}}}}, "")
+	sess, err := workspace.Open(t.Context(), game.Get(id), install, []workspace.Mod{{ID: fixtureMod, Dir: dir, Calendar: workspace.Calendar{{Name: "AC", Offset: 7782}}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return sess, dir
+}
+
+// emptyHome points every home and config variable at a temp dir, so no dump folder, wiki cache or
+// cache file of this machine is read or written.
+func emptyHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	for _, name := range []string{"HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"} {
+		t.Setenv(name, home)
+	}
+}
+
+// goldenInstall scans a fixture install as the goldens' generator does: under an empty home, so no dump folder
+// or wiki cache of this machine is read, from the fixtures' absolute path, and with no cache written (App "").
+// It is its own scan, apart from fixture's: the dumps this machine holds change what accuses, and the goldens
+// were made without them.
+func goldenInstall(t *testing.T, id string) *index.Install {
+	t.Helper()
+	emptyHome(t)
+	scan, _ := installs.LoadOrStore("golden-"+id, sync.OnceValues(func() (*index.Install, error) {
+		dir, err := filepath.Abs(filepath.Join("..", "testdata", id))
+		if err != nil {
+			return nil, err
+		}
+		return index.Scan(t.Context(), index.Request{Game: id, Dir: dir, Version: "test"})
+	}))
+	install, err := scan.(func() (*index.Install, error))()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return install
+}
+
+// goldenSession opens the session the goldens' generator opened: the fixture install with the fixture mod over
+// it, and CK3's mod calendar.
+func goldenSession(t *testing.T, id string) *workspace.Session {
+	t.Helper()
+	install := goldenInstall(t, id)
+	dir, err := filepath.Abs(filepath.Join("..", "testdata", "mods", id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mods := []workspace.Mod{{ID: fixtureMod, Dir: dir}}
+	if id == ck3 {
+		mods[0].Calendar = workspace.Calendar{{Name: "AC", Offset: 7782}}
+	}
+	ws, err := workspace.Open(t.Context(), game.Get(id), install, mods, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ws
+}
+
+// token matches what the goldens' generator counts as a word of a line.
+var token = regexp.MustCompile(`[A-Za-z0-9_.:@$|'\-]+`)
+
+// dumpHovers writes the card at the start of every word of the file as the goldens print it: "-" is no card;
+// "" is a file with no card at all.
+func dumpHovers(t *testing.T, ws *workspace.Session, file inventory.File) string {
+	t.Helper()
+	text, err := file.Text()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	any := false
+	for number, line := range strings.Split(text, "\n") {
+		for _, at := range token.FindAllStringIndex(line, -1) {
+			card, err := Hover(ws, file.Path, number, at[0])
+			switch {
+			case err != nil:
+				fmt.Fprintf(&out, "%d:%d %s error: %v\n", number, at[0], line[at[0]:at[1]], err)
+				any = true
+			case card == nil:
+				fmt.Fprintf(&out, "%d:%d %s -\n", number, at[0], line[at[0]:at[1]])
+			default:
+				data, err := json.MarshalIndent(card, "  ", " ")
+				if err != nil {
+					t.Fatal(err)
+				}
+				fmt.Fprintf(&out, "%d:%d %s\n  %s\n", number, at[0], line[at[0]:at[1]], data)
+				any = true
+			}
+		}
+	}
+	if !any {
+		return ""
+	}
+	return out.String()
+}
+
+// TestHoverGoldens reproduces every hover golden: the card at every word of every fixture file, printed as the
+// goldens' generator prints it, byte for byte. A card that differs is read, never regenerated here.
+func TestHoverGoldens(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", "testdata"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{ck3, "vic3", "eu5"} {
+		ws := goldenSession(t, id)
+		for _, index := range ws.Indexes() {
+			for _, file := range index.Files {
+				if file.Format != inventory.Script && file.Format != inventory.Loc {
+					continue
+				}
+				origin := "vanilla"
+				if file.Origin != game.OriginVanilla {
+					origin = "mod"
+				}
+				flat := strings.ReplaceAll(file.Rel, "/", "__")
+				name := fmt.Sprintf("hover-%s-%s-%s.txt", id, origin, strings.TrimSuffix(flat, filepath.Ext(flat)))
+				text := dumpHovers(t, ws, file)
+				text = strings.ReplaceAll(text, strings.ReplaceAll(root, `\`, `\\`), "<fixtures>")
+				text = strings.ReplaceAll(text, root, "<fixtures>")
+				text = strings.ReplaceAll(text, `\\`, "/")
+				text = strings.ReplaceAll(text, `\`, "/")
+				want, err := os.ReadFile(filepath.Join(root, "golden", name))
+				if text == "" && os.IsNotExist(err) {
+					continue
+				}
+				if err != nil || string(want) != text {
+					t.Errorf("%s: %v\n%s", name, err, firstDifference(string(want), text))
+				}
+			}
+		}
+	}
+}
+
+// firstDifference is the first line where two texts differ, with both versions.
+func firstDifference(want, got string) string {
+	wantLines, gotLines := strings.Split(want, "\n"), strings.Split(got, "\n")
+	for i := range max(len(wantLines), len(gotLines)) {
+		wantLine, gotLine := "", ""
+		if i < len(wantLines) {
+			wantLine = wantLines[i]
+		}
+		if i < len(gotLines) {
+			gotLine = gotLines[i]
+		}
+		if wantLine != gotLine {
+			return fmt.Sprintf("line %d\nwant: %s\ngot:  %s", i+1, wantLine, gotLine)
+		}
+	}
+	return ""
 }
 
 // opened puts a file of the mod in the editor with a text, and gives its path.
@@ -259,7 +413,7 @@ func TestSymbols(t *testing.T) {
 	}
 
 	found := WorkspaceSymbols(install, "M.")
-	if len(found) != 2 || found[0].Location.Origin != "mod" {
+	if len(found) != 2 || found[0].Location.Origin != fixtureMod {
 		t.Errorf("the workspace's definitions by a case-blind query: %+v", found)
 	}
 	if WorkspaceSymbols(install, "") != nil {
@@ -391,7 +545,7 @@ func TestInstallsDiagnoseClean(t *testing.T) {
 		"vic3/duplicate-definition": 39, // coat_of_arms/01_subs.txt defines coats of arms twice; the game keeps the last
 		"eu5/unresolved-ref":        218,
 	}
-	for _, testCase := range []struct{ id, env string }{{"ck3", "PMT_TEST_INSTALL_CK3"}, {"vic3", "PMT_TEST_INSTALL_VIC3"}, {"eu5", "PMT_TEST_INSTALL_EU5"}} {
+	for _, testCase := range []struct{ id, env string }{{ck3, "PMT_TEST_INSTALL_CK3"}, {"vic3", "PMT_TEST_INSTALL_VIC3"}, {"eu5", "PMT_TEST_INSTALL_EU5"}} {
 		dir := os.Getenv(testCase.env)
 		if dir == "" {
 			t.Errorf("%s: %s is not set", testCase.id, testCase.env)

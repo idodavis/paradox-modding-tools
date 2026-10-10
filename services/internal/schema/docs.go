@@ -81,8 +81,8 @@ type docBlock struct {
 type docPhrase struct {
 	pattern  *regexp.Regexp
 	fallback bool
-	kind     ExpectedKind
-	block    game.Block
+	kind     ValueType
+	block    game.Shape
 	claim    func(schema *Schema, claims *Claims, match []string, source Source)
 }
 
@@ -129,25 +129,25 @@ var docPhrases = []docPhrase{
 	// type words opening the text or a parenthesis ("Localization key that …", ( bool, optional )), not one
 	// of a/b alternatives; text, name and scope only as the whole text: prose opens with them
 	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:(?:scripted )?(?:int|integer|int32|int31|num|number|float|double|` +
-		`fixed[ _]point)|scripted? value|script_value|0\.0-1\.0)(?:[^\w/]|$)`), kind: ExpectsNumber},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:bool(?:ean)?|yes/no)(?:[^\w/]|$)`), kind: ExpectsBool},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:date)(?:[^\w/]|$)`), kind: ExpectsDate},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:string|name|text)(?:\s*\)|"?$)`), kind: ExpectsString},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:scope)(?:\s*\)|"?$)`), kind: ExpectsScope},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:loc key|localization[ _]key)(?:[^\w/]|$)`), kind: ExpectsLoc},
+		`fixed[ _]point)|scripted? value|script_value|0\.0-1\.0)(?:[^\w/]|$)`), kind: ValueNumber},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:bool(?:ean)?|yes/no)(?:[^\w/]|$)`), kind: ValueBool},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:date)(?:[^\w/]|$)`), kind: ValueDate},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:string|name|text)(?:\s*\)|"?$)`), kind: ValueString},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:scope)(?:\s*\)|"?$)`), kind: ValueScope},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:loc key|localization[ _]key)(?:[^\w/]|$)`), kind: ValueLoc},
 	// event ID names the database whose registry row is Events; on action (name) the OnActions one
 	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:(event[ _]id)|on[ _]action(?: name)?)(?:[^\w/]|$)`),
 		claim: func(schema *Schema, claims *Claims, match []string, source Source) {
 			for name, database := range schema.Databases {
 				if match[1] != "" && database.Row.Events || match[1] == "" && database.Row.OnActions {
-					claims.Value.Set(Expected{Kind: ExpectsReference, Database: name}, source)
+					claims.Value.Set(Expected{Type: ValueReference, Database: name}, source)
 				}
 			}
 		}},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:triggers?)(?:[^\w/]|$)`), block: game.BlockTriggers},
-	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:effects?)(?:[^\w/]|$)`), block: game.BlockEffects},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:triggers?)(?:[^\w/]|$)`), block: game.ShapeTriggers},
+	{pattern: regexp.MustCompile(`(?:^"?|\(\s*)(?i:effects?)(?:[^\w/]|$)`), block: game.ShapeEffects},
 	// "path/to/file": one quoted word with a slash
-	{pattern: regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), kind: ExpectsFile},
+	{pattern: regexp.MustCompile(`^"[^"\s<>]*/[^"\s<>]*"$`), kind: ValueFile},
 	// - item: blurb and item - blurb: one word per line
 	{pattern: regexp.MustCompile(`^(?:[-*]\s+([\w.]+):\s+[^\s<]|(?:[-*]\s+)?([\w.]+) - \S)`), fallback: true,
 		claim: func(_ *Schema, claims *Claims, match []string, source Source) {
@@ -557,7 +557,7 @@ func (schema *Schema) claimsOf(node *DocNode, source Source) (claims Claims) {
 		word = strings.TrimSuffix(word, ">")
 		named := schema.DatabaseNamed(word)
 		if schema.claimPhrases(&claims, word, source) == word && named != "" {
-			claims.Value.Set(Expected{Kind: ExpectsReference, Database: named}, source)
+			claims.Value.Set(Expected{Type: ValueReference, Database: named}, source)
 		}
 	} else if node.Value != "" {
 		rest := schema.claimPhrases(&claims, node.Value, source)
@@ -569,7 +569,7 @@ func (schema *Schema) claimsOf(node *DocNode, source Source) (claims Claims) {
 		if child.Key == "" && strings.HasPrefix(child.Value, "<") {
 			last := strings.TrimSuffix(child.Value[strings.LastIndexAny(child.Value, "<_ ")+1:], ">")
 			if kind, named := game.Placeholders[strings.ToLower(last)]; named {
-				claims.Block.Set(kind, source)
+				claims.Holds.Set(kind, source)
 			}
 		}
 	}
@@ -598,10 +598,10 @@ func (schema *Schema) claimPhrases(claims *Claims, text string, source Source) (
 		}
 		rest = strings.Replace(rest, match[0], "", 1)
 		switch {
-		case phrase.kind != ExpectsUnknown:
-			claims.Value.Set(Expected{Kind: phrase.kind}, source)
-		case phrase.block != game.BlockUnknown:
-			claims.Block.Set(phrase.block, source)
+		case phrase.kind != ValueUnknown:
+			claims.Value.Set(Expected{Type: phrase.kind}, source)
+		case phrase.block != game.ShapeUnknown:
+			claims.Holds.Set(phrase.block, source)
 		case phrase.claim != nil:
 			phrase.claim(schema, claims, match, source)
 		default:
@@ -670,7 +670,7 @@ func (schema *Schema) mergeNode(node *DocNode, in BlockContext, source Source, t
 // node has one. Its block merges in the holder's place where the holder has a child the block writes, else
 // under each child of the holder that has one (my_phase_key = { }); else nowhere.
 func (schema *Schema) mergeTemplate(node *DocNode, in BlockContext, source Source, top bool) {
-	if in.Position != nil && top && (node.Block || in.Position.Vanilla.Shapes != ShapeBlock) {
+	if in.Position != nil && top && (node.Block || in.Position.Vanilla.Writes != WritesBlock) {
 		in.Position.declare(schema.docClaims(node, source), source)
 	}
 	holds := func(at *Position) bool {
@@ -708,13 +708,13 @@ func writtenBelow(position *Position, name string) bool {
 // the key takes a block; a literal states its kind (expiration_days = 3650).
 func (schema *Schema) docClaims(node *DocNode, source Source) Claims {
 	claims := schema.claimsOf(node, source)
-	if node.Block && claims.Block.Source == SourceNone {
-		claims.Value.Set(Expected{Kind: ExpectsBlock}, source)
+	if node.Block && claims.Holds.Source == SourceNone {
+		claims.Value.Set(Expected{Type: ValueBlock}, source)
 	}
 	if node.Value != "" && !strings.HasPrefix(node.Value, "<") && !strings.HasPrefix(node.Value, `"`) {
-		literals := map[Shapes]ExpectedKind{ShapeNumber: ExpectsNumber, ShapeBool: ExpectsBool, ShapeDate: ExpectsDate}
-		if kind, literal := literals[shapeOf(&jomini.Scalar{Text: node.Value})]; literal {
-			claims.Value.Set(Expected{Kind: kind}, source)
+		literals := map[Writes]ValueType{WritesNumber: ValueNumber, WritesBool: ValueBool, WritesDate: ValueDate}
+		if kind, literal := literals[writesOf(&jomini.Scalar{Text: node.Value})]; literal {
+			claims.Value.Set(Expected{Type: kind}, source)
 		}
 	}
 	return claims

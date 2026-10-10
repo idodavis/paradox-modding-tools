@@ -110,7 +110,7 @@ type reading struct {
 	key     *schema.Position
 	command *schema.Command
 	scope   string
-	holds   game.Block // what the walker reads the key's block as
+	holds   game.Shape // what the walker reads the key's block as
 }
 
 // spot is the cursor's place in a script file, from one walk that stops past it: the statements
@@ -270,12 +270,12 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 	if isKey {
 		read.key, read.command = at.Position, at.Command
 	}
-	if isKey && (jomini.ChildBlock(at.Statement) != nil || at.Inner.Kind == game.BlockValue) {
-		read.holds = at.Inner.Kind // a value block is also written as a number
+	if isKey && (jomini.ChildBlock(at.Statement) != nil || at.Inner.Shape == game.ShapeValue) {
+		read.holds = at.Inner.Shape // a value block is also written as a number
 	}
 
 	// a link chain's part under the cursor reads through its own link, run where the one before leads
-	if read.ref == nil && read.command != nil && read.command.Kind&game.KindLink != 0 {
+	if read.ref == nil && read.command != nil && read.command.Kinds&game.KindLink != 0 {
 		from := word.Range.Start
 		for _, part := range strings.Split(word.Text, ".") {
 			if read.command = s.Link(strings.ToLower(part)); read.command == nil || offset <= from+len(part) {
@@ -400,7 +400,7 @@ func (file *file) describe(card *Inspect, read reading) bool {
 			shown(from)
 		}
 		for _, from := range []schema.Source{
-			key.Value.Source, key.Block.Source, key.Scope.Source, key.Required.Source,
+			key.Value.Source, key.Holds.Source, key.Scope.Source, key.Required.Source,
 			key.Default.Source,
 		} {
 			shown(from)
@@ -469,7 +469,7 @@ func (file *file) defined(card *Inspect, ref schema.Occurrence, scope string, sh
 			card.About = row.Entry.Blurb.Value
 			shown(from)
 		}
-		card.Scope, card.Returns = row.Entry.Scope.Value, returns[row.Entry.Block.Value]
+		card.Scope, card.Returns = row.Entry.Scope.Value, returns[row.Entry.Holds.Value]
 		if card.Scope == "" && len(row.Row.CalledIn) > 0 {
 			card.Scope = scope
 		}
@@ -588,7 +588,7 @@ func SignatureHelp(sess *workspace.Session, path string, line, col int) (*Signat
 	}
 	at := cursor.chain[holder]
 	assign, isAssign := at.Statement.(*jomini.Assignment)
-	if !isAssign || at.Command == nil || at.Command.Kind&game.KindLink != 0 {
+	if !isAssign || at.Command == nil || at.Command.Kinds&game.KindLink != 0 {
 		return nil, nil
 	}
 	names, stated := keys(at.Command.Args)
@@ -685,7 +685,7 @@ func locate(sess *workspace.Session, path string, at Position) Location {
 func kinds(command *schema.Command) string {
 	var names []string
 	for _, kind := range game.KindWords {
-		if command.Kind&kind.Kind != 0 {
+		if command.Kinds&kind.Kind != 0 {
 			names = append(names, kind.Word)
 		}
 	}
@@ -718,8 +718,8 @@ func takes(key *schema.Position) []string {
 	if key.Value.Source == schema.SourceVanilla {
 		claim = schema.Expected{}
 	}
-	said := []string{held[key.Block.Value], typed(claim)}
-	if names := slices.Sorted(maps.Keys(key.Children)); key.Block.Value == game.BlockArguments && len(names) > 0 {
+	said := []string{held[key.Holds.Value], typed(claim)}
+	if names := slices.Sorted(maps.Keys(key.Children)); key.Holds.Value == game.ShapeArguments && len(names) > 0 {
 		said = append(said, "a block with "+strings.Join(names, ", "))
 	}
 	if len(claim.Choices) > 0 {
@@ -744,22 +744,28 @@ func oneOf(words []string) string {
 	return "one of " + strings.Join(words, ", ")
 }
 
+// The card's words for a number and a yes-or-no value.
+const (
+	aNumber = "a number"
+	yesOrNo = "yes or no"
+)
+
 // held is what a block of each kind holds, as a card says it.
-var held = map[game.Block]string{
-	game.BlockTriggers: "triggers", game.BlockEffects: "effects", game.BlockValue: "a number",
-	game.BlockDescription: "a description",
+var held = map[game.Shape]string{
+	game.ShapeTriggers: "triggers", game.ShapeEffects: "effects", game.ShapeValue: aNumber,
+	game.ShapeDescription: "a description",
 }
 
 // returns is what a database's entries give where they are run, by what their block is.
-var returns = map[game.Block]string{game.BlockTriggers: "yes or no", game.BlockValue: "a number"}
+var returns = map[game.Shape]string{game.ShapeTriggers: yesOrNo, game.ShapeValue: aNumber}
 
 // typed is a word type as a card says it; "" unknown.
 func typed(claim schema.Expected) string {
-	return map[schema.ExpectedKind]string{
-		schema.ExpectsNumber: "a number", schema.ExpectsBool: "yes or no", schema.ExpectsDate: "a date", schema.ExpectsString: "text",
-		schema.ExpectsReference: game.KindName(claim.Database), schema.ExpectsLoc: "a localization key",
-		schema.ExpectsFile: "a file path", schema.ExpectsScope: "a scope", schema.ExpectsBlock: "a block",
-	}[claim.Kind]
+	return map[schema.ValueType]string{
+		schema.ValueNumber: aNumber, schema.ValueBool: yesOrNo, schema.ValueDate: "a date", schema.ValueString: "text",
+		schema.ValueReference: game.KindName(claim.Database), schema.ValueLoc: "a localization key",
+		schema.ValueFile: "a file path", schema.ValueScope: "a scope", schema.ValueBlock: "a block",
+	}[claim.Type]
 }
 
 // writes is what vanilla writes at a key, as a card says it: each form it writes there, its words
@@ -767,24 +773,24 @@ func typed(claim schema.Expected) string {
 func writes(key *schema.Position) (out []string) {
 	words := slices.Sorted(maps.Keys(key.Vanilla.Values))
 	for _, row := range []struct {
-		form schema.Shapes
+		form schema.Writes
 		said string
 	}{
-		{schema.ShapeNumber, "a number"},
-		{schema.ShapeBool, "yes or no"},
-		{schema.ShapeDate, "a date"},
-		{schema.ShapeIdent, "a word"},
-		{schema.ShapeString, "text"},
-		{schema.ShapeBlock, "a block"},
+		{schema.WritesNumber, aNumber},
+		{schema.WritesBool, yesOrNo},
+		{schema.WritesDate, "a date"},
+		{schema.WritesIdent, "a word"},
+		{schema.WritesString, "text"},
+		{schema.WritesBlock, "a block"},
 	} {
 		form, said := row.form, row.said
 		switch {
-		case key.Vanilla.Shapes&form == 0:
+		case key.Vanilla.Writes&form == 0:
 			continue
-		case form&(schema.ShapeIdent|schema.ShapeString) == 0:
+		case form&(schema.WritesIdent|schema.WritesString) == 0:
 		case key.Value.Source == schema.SourceVanilla:
 			said = typed(key.Value.Value)
-		case form == schema.ShapeIdent && len(words) <= 6:
+		case form == schema.WritesIdent && len(words) <= 6:
 			said = oneOf(words)
 		}
 		if !slices.Contains(out, said) {

@@ -177,7 +177,7 @@ func dumpSchema(s *Schema) string {
 	for _, name := range sortedKeys(s.Commands) {
 		command := s.Commands[name]
 		p("command %s kind=%d scopes=%v out=%q global=%t wild=%t lists=%t blurb=%s",
-			name, command.Kind, command.Scopes, command.Target, command.Global, command.Wild, command.Lists, short(command.Blurb))
+			name, command.Kinds, command.Scopes, command.Target, command.Global, command.Wild, command.Lists, short(command.Blurb))
 		if command.Args != nil {
 			dumpKey(&out, "  ", "", command.Args, 0)
 		}
@@ -229,9 +229,9 @@ func dumpKey(out *strings.Builder, indent, path string, key *Position, depth int
 	}
 	fmt.Fprintf(out, "%s%s value=%v/%d block=%d/%d scope=%q/%d required=%v/%d default=%q/%d blurb=%s/%d written=%d seen=in:%d,blocks:%d,forms:%d,values:%v\n",
 		indent, cmpPath(path),
-		key.Value.Value, key.Value.Source, key.Block.Value, key.Block.Source, key.Scope.Value, key.Scope.Source,
+		key.Value.Value, key.Value.Source, key.Holds.Value, key.Holds.Source, key.Scope.Value, key.Scope.Source,
 		key.Required.Value, key.Required.Source, key.Default.Value, key.Default.Source, short(key.Blurb.Value), key.Blurb.Source,
-		key.DeclaredBy, key.Vanilla.Count, key.Vanilla.Blocks, key.Vanilla.Shapes, key.Vanilla.Values)
+		key.DeclaredBy, key.Vanilla.Count, key.Vanilla.Blocks, key.Vanilla.Writes, key.Vanilla.Values)
 	for _, name := range sortedKeys(key.Children) {
 		dumpKey(out, indent, path+"/"+name, key.Children[name], depth+1)
 	}
@@ -381,14 +381,14 @@ func TestBlockKindOf(t *testing.T) {
 	cases := []struct {
 		name     string
 		position *Position
-		want     game.Block
+		want     game.Shape
 	}{
-		{"an entry's registry claim", entry, game.BlockFields},
-		{"vanilla writes only triggers", entry.Child(trigger), game.BlockTriggers},
-		{"vanilla writes only effects", entry.Child(immediate), game.BlockEffects},
-		{"vanilla writes keys and no command", entry.Child("cooldown"), game.BlockFields},
-		{"no claim, no children", s.Commands["add_gold"].Args, game.BlockUnknown},
-		{"no position", nil, game.BlockUnknown},
+		{"an entry's registry claim", entry, game.ShapeFields},
+		{"vanilla writes only triggers", entry.Child(trigger), game.ShapeTriggers},
+		{"vanilla writes only effects", entry.Child(immediate), game.ShapeEffects},
+		{"vanilla writes keys and no command", entry.Child("cooldown"), game.ShapeFields},
+		{"no claim, no children", s.Commands["add_gold"].Args, game.ShapeUnknown},
+		{"no position", nil, game.ShapeUnknown},
 	}
 	for _, c := range cases {
 		if got := blockKindOf(c.position); got != c.want {
@@ -401,13 +401,13 @@ func TestCommandBlockKind(t *testing.T) {
 	s := fixtureSchema(t, ck3)
 	cases := []struct {
 		command string
-		in      game.Block
-		want    game.Block
+		in      game.Shape
+		want    game.Shape
 	}{
-		{"if", game.BlockEffects, game.BlockEffects},
-		{"if", game.BlockTriggers, game.BlockEffects},
-		{"exists", game.BlockTriggers, game.BlockTriggers},
-		{"random_list", game.BlockEffects, game.BlockArguments},
+		{"if", game.ShapeEffects, game.ShapeEffects},
+		{"if", game.ShapeTriggers, game.ShapeEffects},
+		{"exists", game.ShapeTriggers, game.ShapeTriggers},
+		{"random_list", game.ShapeEffects, game.ShapeArguments},
 	}
 	for _, c := range cases {
 		if got := commandBlockKind(s.Commands[c.command], c.in); got != c.want {
@@ -439,8 +439,8 @@ func TestBlockScope(t *testing.T) {
 
 func TestMayAccuse(t *testing.T) {
 	s := &Schema{Sources: map[Source]SourceState{SourceDocs: {Origin: "install"}, SourceDumps: {Origin: "yours", Stale: true}}}
-	number := func(source Source, in int, forms Shapes) *Position {
-		return &Position{Claims: Claims{Value: Claim[Expected]{Expected{Kind: ExpectsNumber}, source}}, Vanilla: Vanilla{Count: in, Shapes: forms}}
+	number := func(source Source, in int, forms Writes) *Position {
+		return &Position{Claims: Claims{Value: Claim[Expected]{Expected{Type: ValueNumber}, source}}, Vanilla: Vanilla{Count: in, Writes: forms}}
 	}
 	cases := []struct {
 		name     string
@@ -449,9 +449,9 @@ func TestMayAccuse(t *testing.T) {
 		want     bool
 	}{
 		{"a docs claim where vanilla never writes", CheckValue, number(SourceDocs, 0, 0), false},
-		{"a docs claim vanilla agrees with", CheckValue, number(SourceDocs, 1, ShapeNumber), true},
-		{"a docs claim vanilla contradicts", CheckValue, number(SourceDocs, 1, ShapeNumber|ShapeIdent), false},
-		{"vanilla never accuses", CheckValue, number(SourceVanilla, 1, ShapeNumber), false},
+		{"a docs claim vanilla agrees with", CheckValue, number(SourceDocs, 1, WritesNumber), true},
+		{"a docs claim vanilla contradicts", CheckValue, number(SourceDocs, 1, WritesNumber|WritesIdent), false},
+		{"vanilla never accuses", CheckValue, number(SourceVanilla, 1, WritesNumber), false},
 		{"stale dumps never accuse", CheckCommand, &Position{}, false},
 	}
 	for _, c := range cases {

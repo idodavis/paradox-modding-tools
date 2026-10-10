@@ -12,19 +12,20 @@ import (
 
 // ---- Blocks: what a block holds, and how a key written in it is read.
 
-// Block is the kind of content a block holds.
-type Block uint8
+// Shape is the kind of content a block holds.
+type Shape uint8
 
+// The shapes a block can hold.
 const (
-	BlockUnknown     Block = iota // no source says what it holds
-	BlockFields                   // an entry's own keys, or a field's
-	BlockTriggers                 // conditions
-	BlockEffects                  // actions
-	BlockArguments                // a command's arguments only
-	BlockValue                    // a script value's formula
-	BlockDescription              // a dynamic description
-	BlockSetup                    // a history entry's start state: the docs' fields, else effects
-	BlockWidget                   // a GUI widget: its properties, and blocks that are widgets again
+	ShapeUnknown     Shape = iota // no source says what it holds
+	ShapeFields                   // an entry's own keys, or a field's
+	ShapeTriggers                 // conditions
+	ShapeEffects                  // actions
+	ShapeArguments                // a command's arguments only
+	ShapeValue                    // a script value's formula
+	ShapeDescription              // a dynamic description
+	ShapeSetup                    // a history entry's start state: the docs' fields, else effects
+	ShapeWidget                   // a GUI widget: its properties, and blocks that are widgets again
 )
 
 // KeyRule is one way a key can be read; a block tries its rules in order and the first that fits wins.
@@ -44,8 +45,8 @@ const (
 	KeyRuleCall                          // any other key: a call to a scripted entry
 )
 
-// BlockRule is how one kind of block reads.
-type BlockRule struct {
+// ShapeRule is how one kind of block reads.
+type ShapeRule struct {
 	Keys   []KeyRule // the steps a key is tried as, in order
 	Calls  string    // the CalledIn word a call here is resolved by; AnyCall for every scripted folder
 	Allows Kinds     // the commands it holds; inside a trigger, never an effect
@@ -61,17 +62,17 @@ const (
 	callValue   = "value"
 )
 
-// Blocks is the rule of each kind of block: keys, calls, allows. A description block reads by
+// Shapes is the rule of each kind of block: keys, calls, allows. A description block reads by
 // DynamicDescription.
-var Blocks = map[Block]BlockRule{
-	BlockFields:    {[]KeyRule{KeyRulePosition}, "", 0},
-	BlockTriggers:  {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callTrigger, KindTrigger},
-	BlockEffects:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callEffect, KindEffect},
-	BlockValue:     {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleOperator, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callValue, KindTrigger | KindEffect},
-	BlockArguments: {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleCall}, AnyCall, 0},
-	BlockUnknown:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRulePositionOrCall}, AnyCall, KindTrigger | KindEffect},
-	BlockSetup:     {[]KeyRule{KeyRuleDeclared, KeyRuleDocumented, KeyRuleKnownCall, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall}, callEffect, KindEffect},
-	BlockWidget:    {[]KeyRule{KeyRuleKnownCall, KeyRulePosition}, "widget", 0},
+var Shapes = map[Shape]ShapeRule{
+	ShapeFields:    {[]KeyRule{KeyRulePosition}, "", 0},
+	ShapeTriggers:  {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callTrigger, KindTrigger},
+	ShapeEffects:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callEffect, KindEffect},
+	ShapeValue:     {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleOperator, KeyRuleLink, KeyRuleObserved, KeyRuleCall}, callValue, KindTrigger | KindEffect},
+	ShapeArguments: {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleObserved, KeyRuleCall}, AnyCall, 0},
+	ShapeUnknown:   {[]KeyRule{KeyRuleKnownCall, KeyRuleDeclared, KeyRuleCommand, KeyRuleLink, KeyRulePositionOrCall}, AnyCall, KindTrigger | KindEffect},
+	ShapeSetup:     {[]KeyRule{KeyRuleDeclared, KeyRuleDocumented, KeyRuleKnownCall, KeyRuleCommand, KeyRuleObserved, KeyRuleLink, KeyRuleCall}, callEffect, KindEffect},
+	ShapeWidget:    {[]KeyRule{KeyRuleKnownCall, KeyRulePosition}, "widget", 0},
 }
 
 // ---- Commands: what a declared command is, and what its block holds.
@@ -95,14 +96,14 @@ var KindWords = []struct {
 type Structural struct {
 	Command   string
 	Key       string // the key, by written form (<number>); "" any key
-	Holds     Block  // the kind its block holds
+	Holds     Shape  // the kind its block holds
 	Enclosing bool   // it holds the kind of block the command is written in instead
 	Calls     string // the CalledIn word for calls in its block, where it differs from Holds'
 }
 
 // Structurals are random_list's weighted branches and switch's cases.
 var Structurals = []Structural{
-	{Command: "random_list", Key: "<number>", Holds: BlockEffects, Calls: AnyCall},
+	{Command: "random_list", Key: "<number>", Holds: ShapeEffects, Calls: AnyCall},
 	{Command: "switch", Enclosing: true},
 }
 
@@ -159,7 +160,7 @@ var NameCommands = map[string]NameCommand{
 
 // ListIterators are the prefixes a scripted list is iterated by (every_<list>), and the kind of
 // block each holds.
-var ListIterators = map[string]Block{"every_": BlockEffects, "random_": BlockEffects, "ordered_": BlockEffects, "any_": BlockTriggers}
+var ListIterators = map[string]Shape{"every_": ShapeEffects, "random_": ShapeEffects, "ordered_": ShapeEffects, "any_": ShapeTriggers}
 
 // ---- Values and descriptions.
 
@@ -212,8 +213,8 @@ var Colors = []Color{
 
 // Placeholders are the last words of a block placeholder a block lists ({ <display_triggers> },
 // { <interface effects> }) and the kind of block each names; the first listed wins.
-var Placeholders = map[string]Block{
-	"effect": BlockEffects, "effects": BlockEffects, "trigger": BlockTriggers, "triggers": BlockTriggers,
+var Placeholders = map[string]Shape{
+	"effect": ShapeEffects, "effects": ShapeEffects, "trigger": ShapeTriggers, "triggers": ShapeTriggers,
 }
 
 // DumpWords are the dumps' words the engine decides by: a blurb opening "Iterate through" with no
@@ -281,7 +282,7 @@ type FileType struct {
 	Keywords  []string          // the words that declare an entry: type x = button { }
 	NameKeyOf map[string]string // a block key at any depth, and the key whose value names its entry
 	WidgetKey string            // every other top block is an entry of <ext>.widget, named by this key's value
-	Body      Block             // the kind its entries' blocks hold
+	Body      Shape             // the kind its entries' blocks hold
 	Refs      map[string]string // keys whose value names an entry of <ext>.<word>, at any depth
 }
 
@@ -295,7 +296,7 @@ var FileTypes = map[string]FileType{
 		Keywords:  []string{"type", "local_type", "template", "local_template", "block", "layer"},
 		NameKeyOf: map[string]string{"texticon": "icon", "format": "name"},
 		WidgetKey: "name",
-		Body:      BlockWidget,
+		Body:      ShapeWidget,
 		Refs:      map[string]string{"using": "template", "layer": "layer"},
 	},
 }
@@ -311,7 +312,7 @@ type Folder struct {
 	NameKey    string   // every top block is one entry named by this key's value, up to a (
 	Wrappers   []string // keys that only wrap entries: their blocks hold top statements
 	CalledIn   []string // scripted: the CalledIn words (Blocks' Calls) a call by an entry's name is in
-	Body       Block    // scripted: the kind an entry's block holds; unset means its own fields
+	Body       Shape    // scripted: the kind an entry's block holds; unset means its own fields
 	Keyword    string   // scripted: the word that declares an entry inline in any file
 	Parameters bool     // scripted: a call passes parameters
 	Events     bool     // the whole tree is one database, named by event id
@@ -363,7 +364,7 @@ var layouts = map[string]Layout{
 			"history/situations":       {History: true},
 			"history/struggles":        {History: true},
 			"history/wars":             {History: true, Unnamed: true},
-			"history/characters":       {Body: BlockSetup, Dated: true},
+			"history/characters":       {Body: ShapeSetup, Dated: true},
 		}),
 		Nested: slices.Concat(sharedNested, []Nested{
 			{Parent: "common/landed_titles", Path: "", Database: "self"},
@@ -382,7 +383,7 @@ var layouts = map[string]Layout{
 				Refs: []string{"on_actions", "random_on_actions/<number>", "first_valid_on_action", "fallback"}},
 			"gfx/map/map_object_data": {Unnamed: true},
 			"gfx/map/post_effects":    {NameKey: "name", Wrappers: []string{"posteffect_volumes"}},
-			"common/history":          {History: true, Unnamed: true, Body: BlockEffects}, // COUNTRIES = { … }: effects
+			"common/history":          {History: true, Unnamed: true, Body: ShapeEffects}, // COUNTRIES = { … }: effects
 		}),
 		Nested:             sharedNested,
 		EntryModes:         entryModes,
@@ -432,10 +433,10 @@ var sharedNested = []Nested{{Parent: "common/defines", Path: "", Database: "defi
 
 // sharedFolders are every game's folder rows; a row whose folder a game lacks matches nothing.
 var sharedFolders = map[string]Folder{
-	"common/scripted_effects":   {CalledIn: []string{callEffect}, Body: BlockEffects, Keyword: "scripted_effect", Parameters: true},
-	"common/scripted_triggers":  {CalledIn: []string{callTrigger}, Body: BlockTriggers, Keyword: "scripted_trigger", Parameters: true},
+	"common/scripted_effects":   {CalledIn: []string{callEffect}, Body: ShapeEffects, Keyword: "scripted_effect", Parameters: true},
+	"common/scripted_triggers":  {CalledIn: []string{callTrigger}, Body: ShapeTriggers, Keyword: "scripted_trigger", Parameters: true},
 	"common/scripted_modifiers": {CalledIn: []string{callValue}, Parameters: true},
-	"common/script_values":      {CalledIn: []string{callTrigger, callValue}, Body: BlockValue},
+	"common/script_values":      {CalledIn: []string{callTrigger, callValue}, Body: ShapeValue},
 	"common/scripted_lists":     {Iterated: true},
 	"events":                    {Events: true},
 	"common/genes": {Wrappers: []string{"color_genes", "special_genes", "morph_genes", "accessory_genes",

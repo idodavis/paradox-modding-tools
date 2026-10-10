@@ -37,26 +37,26 @@ type Claim[T any] struct {
 	Source Source
 }
 
-// ExpectedKind is the kind of word a position holds; ExpectsBlock is a doc's block, whose kind none names.
-type ExpectedKind uint8
+// ValueType is the kind of word a position holds; ExpectsBlock is a doc's block, whose kind none names.
+type ValueType uint8
 
 // The kinds of word a position holds.
 const (
-	ExpectsUnknown ExpectedKind = iota
-	ExpectsNumber
-	ExpectsBool
-	ExpectsDate
-	ExpectsString
-	ExpectsReference
-	ExpectsLoc
-	ExpectsFile
-	ExpectsScope
-	ExpectsBlock
+	ValueUnknown ValueType = iota
+	ValueNumber
+	ValueBool
+	ValueDate
+	ValueString
+	ValueReference
+	ValueLoc
+	ValueFile
+	ValueScope
+	ValueBlock
 )
 
 // Expected is what a source says a position holds.
 type Expected struct {
-	Kind     ExpectedKind
+	Type     ValueType
 	Database string   // ExpectsReference: the database the word names
 	Choices  []string // a declared word list, sorted; empty when none
 }
@@ -78,51 +78,51 @@ type Requirement struct {
 	Condition string
 }
 
-// Shapes is the set of forms vanilla writes at a position, as bits.
-type Shapes uint16
+// Writes is the set of forms vanilla writes at a position, as bits.
+type Writes uint16
 
 // The forms a written value or block takes.
 const (
-	ShapeNumber Shapes = 1 << iota
-	ShapeBool
-	ShapeDate
-	ShapeIdent
-	ShapeString
-	ShapeBlock
-	ShapeCommand // a block that holds a trigger or an effect
-	ShapeTrigger // a trigger written in the block
-	ShapeEffect  // an effect written in the block
+	WritesNumber Writes = 1 << iota
+	WritesBool
+	WritesDate
+	WritesIdent
+	WritesString
+	WritesBlock
+	WritesCommand // a block that holds a trigger or an effect
+	WritesTrigger // a trigger written in the block
+	WritesEffect  // an effect written in the block
 )
 
-// shapeOf returns the form a scalar is written in.
-func shapeOf(scalar *jomini.Scalar) Shapes {
+// writesOf returns the form a scalar is written in.
+func writesOf(scalar *jomini.Scalar) Writes {
 	if scalar.Quoted {
-		return ShapeString
+		return WritesString
 	}
 	switch jomini.Literal(scalar.Text) {
 	case jomini.LitNumber:
-		return ShapeNumber
+		return WritesNumber
 	case jomini.LitDate:
-		return ShapeDate
+		return WritesDate
 	}
 	if slices.Contains(game.Bools, scalar.Text) {
-		return ShapeBool
+		return WritesBool
 	}
-	return ShapeIdent
+	return WritesIdent
 }
 
 // Vanilla is what vanilla writes at a position; it is never a claim.
 type Vanilla struct {
 	Count  int            // how many of the parent's written blocks hold this key
 	Blocks int            // how many times this position was written as a block
-	Shapes Shapes         // the forms written here
+	Writes Writes         // the forms written here
 	Values map[string]int // words written, with counts
 }
 
 // Claims is what the sources state about a position, each claim with its source.
 type Claims struct {
 	Value    Claim[Expected]
-	Block    Claim[game.Block]
+	Holds    Claim[game.Shape]
 	Scope    Claim[string]
 	Required Claim[Requirement]
 	Default  Claim[string]
@@ -143,7 +143,7 @@ type Position struct {
 // (name = lists an argument and says nothing of it).
 func (position *Position) declare(claims Claims, source Source) {
 	position.Value.Set(claims.Value.Value, claims.Value.Source)
-	position.Block.Set(claims.Block.Value, claims.Block.Source)
+	position.Holds.Set(claims.Holds.Value, claims.Holds.Source)
 	position.Scope.Set(claims.Scope.Value, claims.Scope.Source)
 	position.Required.Set(claims.Required.Value, claims.Required.Source)
 	position.Default.Set(claims.Default.Value, claims.Default.Source)
@@ -155,7 +155,7 @@ func (position *Position) declare(claims Claims, source Source) {
 
 // Command is an effect, trigger or link the dumps declare.
 type Command struct {
-	Kind   game.Kinds
+	Kinds  game.Kinds
 	Scopes []string  // where it runs; empty: any
 	Target string    // where it leads; "" none
 	Args   *Position // its usage as positions
@@ -217,7 +217,7 @@ func (schema *Schema) Link(key string) *Command {
 	first, _, _ := strings.Cut(key, ".")
 	prefix, _, _ := strings.Cut(first, ":")
 	for _, name := range []string{first, prefix} {
-		if command := schema.Commands[name]; command != nil && command.Kind&game.KindLink != 0 && !command.Wild {
+		if command := schema.Commands[name]; command != nil && command.Kinds&game.KindLink != 0 && !command.Wild {
 			return command
 		}
 	}
@@ -346,24 +346,24 @@ func (schema *Schema) MayAccuse(check Check, position, parent *Position) bool {
 // writes is one the type allows, and every word it writes is in the declared list.
 func valueAgrees(position *Position) bool {
 	expected := position.Value.Value
-	var allowed Shapes
-	switch expected.Kind {
-	case ExpectsNumber:
-		allowed = ShapeNumber
-	case ExpectsBool:
-		allowed = ShapeBool
-	case ExpectsDate:
-		allowed = ShapeDate
-	case ExpectsString, ExpectsReference, ExpectsLoc, ExpectsFile, ExpectsScope:
-		allowed = ShapeIdent | ShapeString
+	var allowed Writes
+	switch expected.Type {
+	case ValueNumber:
+		allowed = WritesNumber
+	case ValueBool:
+		allowed = WritesBool
+	case ValueDate:
+		allowed = WritesDate
+	case ValueString, ValueReference, ValueLoc, ValueFile, ValueScope:
+		allowed = WritesIdent | WritesString
 	default:
 		if len(expected.Choices) == 0 {
 			return false
 		}
-		allowed = ShapeIdent | ShapeString
+		allowed = WritesIdent | WritesString
 	}
 	// the command forms mark the block, not a value
-	if position.Vanilla.Shapes&^(allowed|ShapeCommand|ShapeTrigger|ShapeEffect) != 0 {
+	if position.Vanilla.Writes&^(allowed|WritesCommand|WritesTrigger|WritesEffect) != 0 {
 		return false
 	}
 	if len(expected.Choices) == 0 {

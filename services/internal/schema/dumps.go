@@ -340,12 +340,12 @@ func (schema *Schema) parseCommand(entry dumpEntry, kind game.Kinds, ranked map[
 	if _, isRanked := ranked[name]; entry.blurb != "" && (!isRanked || reading < ranked[name]) {
 		command.Blurb, ranked[name] = entry.blurb, reading
 	}
-	command.Kind |= kind
+	command.Kinds |= kind
 	command.Target = cmp.Or(command.Target, entry.fields["Command.Out"])
 	command.Global = command.Global || entry.fields["Command.Global"] == yes
 	command.Wild = command.Wild || entry.fields["Command.Wild"] == yes
 
-	if claim := schema.valueFromTraits(command, name, entry.fields["Command.Args.Value"]); claim.Kind != ExpectsUnknown || claim.Choices != nil {
+	if claim := schema.valueFromTraits(command, name, entry.fields["Command.Args.Value"]); claim.Type != ValueUnknown || claim.Choices != nil {
 		command.Args.Value.Set(claim, SourceDumps)
 	}
 	if strings.TrimSpace(entry.usage) != "" {
@@ -368,12 +368,12 @@ func scopeList(list string) (scopes []string) {
 func (schema *Schema) valueFromTraits(command *Command, name, traits string) (claim Expected) {
 	switch {
 	case traits == "yes/no":
-		claim.Kind = ExpectsBool
+		claim.Type = ValueBool
 	case strings.HasSuffix(traits, " valid date"):
-		claim.Kind = ExpectsDate
+		claim.Type = ValueDate
 	case strings.HasPrefix(traits, "<"): // a comparison operator says no type
 	case strings.HasSuffix(traits, " scope"), strings.HasSuffix(traits, " target"):
-		claim.Kind = ExpectsScope
+		claim.Type = ValueScope
 	case strings.HasPrefix(traits, "class C") && strings.HasSuffix(traits, "Database key"):
 		class := strings.TrimSuffix(strings.TrimPrefix(traits, "class C"), "Database key")
 		schema.mergeUsage(parseDocScript([]string{name + " = <" + snakeCase(strings.TrimSpace(class)) + ">"}).Children[0], command)
@@ -476,7 +476,7 @@ func (schema *Schema) mergeUsages(usages map[string][]string) {
 		// a command with no target whose blurb says it iterates runs its block once per list item
 		command.Lists = command.Target == "" && strings.Contains(command.Blurb, game.DumpWords.Iterates)
 		if blocks > 0 && plain == blocks {
-			command.Args.Block.Set(game.BlockArguments, SourceDumps)
+			command.Args.Holds.Set(game.ShapeArguments, SourceDumps)
 		}
 	}
 }
@@ -537,7 +537,7 @@ func (schema *Schema) mergeUsage(root *DocNode, command *Command) {
 		command.Args.declare(schema.usageClaims(root), SourceDumps)
 	}
 	for _, child := range root.Children {
-		schema.argument(child, BlockContext{Position: command.Args, Kind: game.BlockFields, InEntry: true})
+		schema.argument(child, BlockContext{Position: command.Args, Shape: game.ShapeFields, InEntry: true})
 	}
 }
 
@@ -569,7 +569,7 @@ func (schema *Schema) argument(node *DocNode, in BlockContext) {
 // kind of block it holds (limit = <triggers>).
 func (schema *Schema) usageClaims(node *DocNode) Claims {
 	claims := schema.claimsOf(node, SourceDumps)
-	if node.Key != "" && node.Value != "" && claims.Block.Source != SourceNone {
+	if node.Key != "" && node.Value != "" && claims.Holds.Source != SourceNone {
 		claims.Scope.Set("", SourceDumps)
 	}
 	return claims

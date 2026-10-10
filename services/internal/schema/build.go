@@ -78,13 +78,13 @@ func DatabaseNames(input Input) []string {
 // the entry is; each of the row's Refs names the database's entries.
 func (schema *Schema) declareDatabase(name string, row game.Folder) {
 	database := &Database{Name: name, Entry: &Position{}, Row: row, Fields: map[string]bool{}}
-	database.Entry.Block.Set(cmp.Or(row.Body, game.BlockFields), SourceRegistry)
+	database.Entry.Holds.Set(cmp.Or(row.Body, game.ShapeFields), SourceRegistry)
 	for _, at := range row.Refs {
 		position := database.Entry
 		for step := range strings.SplitSeq(at, "/") {
 			position = position.EnsureChild(step)
 		}
-		position.Value.Set(Expected{Kind: ExpectsReference, Database: name}, SourceRegistry)
+		position.Value.Set(Expected{Type: ValueReference, Database: name}, SourceRegistry)
 	}
 	schema.Databases[name] = database
 }

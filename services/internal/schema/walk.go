@@ -17,7 +17,7 @@ import (
 // BlockContext is where statements are read.
 type BlockContext struct {
 	Position  *Position       // the position the block reads at; nil when none is known
-	Kind      game.Block      // what the block holds
+	Shape     game.Shape      // what the block holds
 	Calls     string          // the CalledIn word a call in the block resolves by
 	Scope     string          // the scope the block runs in; "" unknown
 	InTrigger bool            // inside a trigger
@@ -177,14 +177,14 @@ func (schema *Schema) keyPlacement(visitor Visitor, statements []jomini.Statemen
 // EntryContext returns where a database's entry is read: at its entry position, in the kind of block its
 // entry holds, in the scope its entry declares when the dumps say that scope runs triggers or effects.
 func (schema *Schema) EntryContext(database *Database) BlockContext {
-	kind := database.Entry.Block.Value
+	kind := database.Entry.Holds.Value
 	scope := database.Entry.Scope.Value
 	if state := schema.Scopes[scope]; !state.Triggers && !state.Effects {
 		scope = ""
 	}
 	return BlockContext{
-		Position: database.Entry, Kind: kind, Calls: game.Blocks[kind].Calls, Scope: scope,
-		InTrigger: kind == game.BlockTriggers, InEntry: true, Dated: database.Row.Dated, Fields: database.Fields,
+		Position: database.Entry, Shape: kind, Calls: game.Shapes[kind].Calls, Scope: scope,
+		InTrigger: kind == game.ShapeTriggers, InEntry: true, Dated: database.Row.Dated, Fields: database.Fields,
 	}
 }
 
@@ -218,8 +218,8 @@ func (schema *Schema) PlaceKey(in BlockContext, statement jomini.Statement, name
 	placement.Inner = innerContext(in, placement, name, value)
 
 	// a trigger is exactly a trigger, not one that is also an effect
-	placement.InTrigger = in.InTrigger || isCommand(placement) && placement.Command.Kind == game.KindTrigger
-	placement.Inner.InTrigger = placement.InTrigger || placement.Inner.Kind == game.BlockTriggers
+	placement.InTrigger = in.InTrigger || isCommand(placement) && placement.Command.Kinds == game.KindTrigger
+	placement.Inner.InTrigger = placement.InTrigger || placement.Inner.Shape == game.ShapeTriggers
 	placement.Inner.Scope = schema.blockScope(in, placement, name)
 	return placement
 }
@@ -237,7 +237,7 @@ func writtenInPlace(name string) bool {
 
 // isLink reports whether a reading's key is a declared link.
 func isLink(placement Placement) bool {
-	return placement.Command != nil && placement.Command.Kind&game.KindLink != 0
+	return placement.Command != nil && placement.Command.Kinds&game.KindLink != 0
 }
 
 // isCommand reports whether a reading's key is a declared effect or trigger.
@@ -252,7 +252,7 @@ func (schema *Schema) keyMeaning(in BlockContext, name string, position *Positio
 		}
 		return position
 	}
-	if in.Kind == game.BlockDescription {
+	if in.Shape == game.ShapeDescription {
 		return descriptionMeaning(in, name, made, create)
 	}
 
@@ -263,13 +263,13 @@ func (schema *Schema) keyMeaning(in BlockContext, name string, position *Positio
 		in: in, name: name, position: position, made: made, create: create,
 		entry: entry, known: called && command == nil, command: command, link: schema.Link(lower),
 	}
-	if command != nil && command.Kind&game.KindLink != 0 {
+	if command != nil && command.Kinds&game.KindLink != 0 {
 		k.command = nil // a link is read by Link
 	}
 	_, k.isOperator = game.ValueOperators[lower]
 
 	var found meaning
-	for _, rule := range game.Blocks[in.Kind].Keys {
+	for _, rule := range game.Shapes[in.Shape].Keys {
 		var fits bool
 		if found, fits = schema.fits(rule, k); fits {
 			return found
@@ -318,7 +318,7 @@ func (schema *Schema) fits(rule game.KeyRule, facts keyFacts) (found meaning, fi
 		found.position = facts.made()
 	case rule == game.KeyRulePositionOrCall:
 		found.position = facts.made()
-		if facts.in.Position != nil && facts.in.Position.Vanilla.Shapes&ShapeCommand != 0 {
+		if facts.in.Position != nil && facts.in.Position.Vanilla.Writes&WritesCommand != 0 {
 			found.calls = facts.in.Calls
 		}
 	case rule == game.KeyRuleCall:
@@ -340,7 +340,7 @@ func descriptionMeaning(in BlockContext, name string, made func() *Position, cre
 	case name == shape.Trigger:
 		found.position = made()
 		if create {
-			found.position.Block.Set(game.BlockTriggers, SourceRegistry)
+			found.position.Holds.Set(game.ShapeTriggers, SourceRegistry)
 		}
 	case name == shape.Leaf:
 		found.position, found.leaf = in.Bound, true
@@ -367,25 +367,25 @@ func (schema *Schema) listIterated(in BlockContext, placement Placement, name st
 // blockKindOf returns the kind of block a position holds: its declared kind, else a value block where the
 // position takes a number or vanilla writes only value operators in it, else the kind of command vanilla
 // writes there, else fields where vanilla writes keys and no command.
-func blockKindOf(position *Position) game.Block {
+func blockKindOf(position *Position) game.Shape {
 	switch {
 	case position == nil:
-		return game.BlockUnknown
-	case position.Block.Source != SourceNone:
-		return position.Block.Value
-	case position.Value.Value.Kind == ExpectsNumber && position.Value.Source.Declared(), writesOnlyOperators(position):
-		return game.BlockValue
+		return game.ShapeUnknown
+	case position.Holds.Source != SourceNone:
+		return position.Holds.Value
+	case position.Value.Value.Type == ValueNumber && position.Value.Source.Declared(), writesOnlyOperators(position):
+		return game.ShapeValue
 	}
-	switch position.Vanilla.Shapes & (ShapeTrigger | ShapeEffect) {
-	case ShapeTrigger:
-		return game.BlockTriggers // every command vanilla writes there is a trigger
-	case ShapeEffect:
-		return game.BlockEffects
+	switch position.Vanilla.Writes & (WritesTrigger | WritesEffect) {
+	case WritesTrigger:
+		return game.ShapeTriggers // every command vanilla writes there is a trigger
+	case WritesEffect:
+		return game.ShapeEffects
 	}
-	if position.Vanilla.Shapes&ShapeCommand == 0 && len(position.Children) > 0 {
-		return game.BlockFields // vanilla writes keys and no command
+	if position.Vanilla.Writes&WritesCommand == 0 && len(position.Children) > 0 {
+		return game.ShapeFields // vanilla writes keys and no command
 	}
-	return game.BlockUnknown
+	return game.ShapeUnknown
 }
 
 // writesOnlyOperators reports whether a position has children and every one is a value operator.
@@ -401,22 +401,22 @@ func writesOnlyOperators(position *Position) bool {
 // commandBlockKind returns the kind of block a command's block is, given the kind of block it is written in:
 // a value block when it takes a number or is written in one, an arguments block when its usage writes
 // arguments only, the enclosing kind when it is both a trigger and an effect, else its own kind.
-func commandBlockKind(command *Command, in game.Block) game.Block {
+func commandBlockKind(command *Command, in game.Shape) game.Shape {
 	switch {
-	case blockKindOf(command.Args) == game.BlockValue:
-		return game.BlockValue
-	case command.Args.Block.Value == game.BlockArguments:
-		return game.BlockArguments
-	case in == game.BlockValue:
-		return game.BlockValue
-	case command.Kind&(game.KindTrigger|game.KindEffect) == game.KindTrigger|game.KindEffect:
+	case blockKindOf(command.Args) == game.ShapeValue:
+		return game.ShapeValue
+	case command.Args.Holds.Value == game.ShapeArguments:
+		return game.ShapeArguments
+	case in == game.ShapeValue:
+		return game.ShapeValue
+	case command.Kinds&(game.KindTrigger|game.KindEffect) == game.KindTrigger|game.KindEffect:
 		return in
-	case command.Kind&game.KindTrigger != 0:
-		return game.BlockTriggers
-	case command.Kind&game.KindEffect != 0:
-		return game.BlockEffects
+	case command.Kinds&game.KindTrigger != 0:
+		return game.ShapeTriggers
+	case command.Kinds&game.KindEffect != 0:
+		return game.ShapeEffects
 	}
-	return game.BlockUnknown
+	return game.ShapeUnknown
 }
 
 // innerContext returns where a key's own block is read, apart from its scope: what the key is decides the
@@ -431,37 +431,37 @@ func innerContext(in BlockContext, placement Placement, name string, value jomin
 		inner.Command, inner.Call = "", ""
 	case isCommand(placement):
 		inner.Position, inner.Command = placement.Command.Args, lower
-		inner.Kind = commandBlockKind(placement.Command, in.Kind)
+		inner.Shape = commandBlockKind(placement.Command, in.Shape)
 	case placement.Rule == game.KeyRuleOperator && placement.Position != nil:
-		inner.Position, inner.Kind = placement.Position, game.BlockArguments
+		inner.Position, inner.Shape = placement.Position, game.ShapeArguments
 		if game.ValueOperators[lower] {
-			inner.Kind = game.BlockValue // the operator takes a number
+			inner.Shape = game.ShapeValue // the operator takes a number
 		}
-	case in.Kind == game.BlockDescription && placement.Position != nil && name != game.DynamicDescription.Trigger:
-		inner.Position, inner.Kind = placement.Position, game.BlockDescription
+	case in.Shape == game.ShapeDescription && placement.Position != nil && name != game.DynamicDescription.Trigger:
+		inner.Position, inner.Shape = placement.Position, game.ShapeDescription
 	default:
-		inner.Position, inner.Kind = placement.Position, blockKindOf(placement.Position)
+		inner.Position, inner.Shape = placement.Position, blockKindOf(placement.Position)
 	}
 
 	for _, row := range game.Structurals {
 		if row.Command == in.Command && (row.Key == "" || row.Key == positionName(name)) {
-			inner.Kind, inner.Calls = row.Holds, row.Calls
+			inner.Shape, inner.Calls = row.Holds, row.Calls
 			if row.Enclosing {
-				inner.Kind = in.Kind
+				inner.Shape = in.Shape
 			}
 		}
 	}
-	if in.Kind == game.BlockWidget {
-		inner.Kind = game.BlockWidget // a widget's blocks are widgets again
+	if in.Shape == game.ShapeWidget {
+		inner.Shape = game.ShapeWidget // a widget's blocks are widgets again
 	}
 	if placement.Listed != "" {
-		inner.Kind = game.ListIterators[placement.Listed]
+		inner.Shape = game.ListIterators[placement.Listed]
 	}
 	if inner.Calls == "" {
-		inner.Calls = game.Blocks[inner.Kind].Calls
+		inner.Calls = game.Shapes[inner.Shape].Calls
 	}
-	if inner.Kind != game.BlockDescription && placement.Position != nil && isDynamicDescription(value) {
-		inner.Kind, inner.Bound, inner.Calls = game.BlockDescription, placement.Position, ""
+	if inner.Shape != game.ShapeDescription && placement.Position != nil && isDynamicDescription(value) {
+		inner.Shape, inner.Bound, inner.Calls = game.ShapeDescription, placement.Position, ""
 	}
 	if placement.Calls != "" {
 		inner.Call = name // the scripted entry this block calls, whose parameters its keys pass
@@ -483,17 +483,17 @@ func (schema *Schema) blockScope(in BlockContext, placement Placement, name stri
 		}
 	case isCommand(placement):
 		target = placement.Command.Target
-		iterates = placement.Command.Args.Block.Value == game.BlockTriggers || placement.Command.Args.Block.Value == game.BlockEffects
+		iterates = placement.Command.Args.Holds.Value == game.ShapeTriggers || placement.Command.Args.Holds.Value == game.ShapeEffects
 	}
 	_, leads := schema.Scopes[target]
-	kind := placement.Inner.Kind
+	kind := placement.Inner.Shape
 
 	declared := placement.Position != nil && placement.Position.Scope.Source != SourceNone
 	followsTarget := isLink(placement) || isCommand(placement) && iterates && leads && !placement.Command.Lists
 	walksList := placement.Listed != "" || isCommand(placement) && placement.Command.Lists
 	bareTarget := isCommand(placement) && placement.Command.Target != "" && !iterates
-	staysPut := kind == game.BlockValue || kind == game.BlockDescription || isCommand(placement) ||
-		placement.Position != nil && (placement.Position.Block.Source != SourceNone || kind != game.BlockUnknown)
+	staysPut := kind == game.ShapeValue || kind == game.ShapeDescription || isCommand(placement) ||
+		placement.Position != nil && (placement.Position.Holds.Source != SourceNone || kind != game.ShapeUnknown)
 
 	scope := ""
 	switch {

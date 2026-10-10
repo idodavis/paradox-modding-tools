@@ -220,16 +220,16 @@ func (judge *judge) value(at *schema.Placement, scalar *jomini.Scalar) {
 	_, listed := slices.BinarySearch(claim.Choices, text)
 	switch {
 	case listed:
-	case claim.Kind == schema.ExpectsNumber:
+	case claim.Type == schema.ValueNumber:
 		// a script value, a declared command (earnings) or a link (var:x, root.gold) reads a value
 		if last := text[strings.LastIndex(text, ".")+1:]; scalar.Quoted || jomini.Literal(text) != jomini.LitNumber {
-			_, valued := index.Resolve(sess.Install.Schema, sess.Indexes(), schema.Occurrence{Caller: game.Blocks[game.BlockValue].Calls, ID: text}, "")
+			_, valued := index.Resolve(sess.Install.Schema, sess.Indexes(), schema.Occurrence{Caller: game.Shapes[game.ShapeValue].Calls, ID: text}, "")
 			_, command := sess.Install.Schema.Commands[last]
 			wrong = !valued && !command && !strings.Contains(last, ":")
 		}
-	case claim.Kind == schema.ExpectsBool:
+	case claim.Type == schema.ValueBool:
 		wrong = scalar.Quoted || !slices.Contains(game.Bools, text)
-	case claim.Kind == schema.ExpectsDate:
+	case claim.Type == schema.ValueDate:
 		wrong = scalar.Quoted || jomini.Literal(text) != jomini.LitDate
 	case len(claim.Choices) > 0:
 		code, wrong = "wrong-declared-value", true
@@ -266,9 +266,9 @@ func (judge *judge) references(found []schema.Occurrence) {
 			continue
 		case !s.MayAccuse(schema.CheckValue, position, nil):
 			continue
-		case position.Value.Value.Kind == schema.ExpectsFile && ref.Database == schema.File:
+		case position.Value.Value.Type == schema.ValueFile && ref.Database == schema.File:
 			code, message = "missing-file", ref.ID+" exists nowhere in the install or the mods"
-		case position.Value.Value.Kind == schema.ExpectsReference && position.Value.Value.Database == ref.Database:
+		case position.Value.Value.Type == schema.ValueReference && position.Value.Value.Database == ref.Database:
 			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.ID)
 		default:
 			continue

@@ -143,14 +143,14 @@ func countPlacement(placement *Placement, entries []Entry, counted map[*jomini.B
 		countValue(list.Value, placement.Position)
 		return true
 	}
-	if command := placement.Command; command != nil && command.Kind&game.KindLink == 0 && placement.BlockContext.Position != nil {
-		forms := &placement.BlockContext.Position.Vanilla.Shapes
-		*forms |= ShapeCommand
-		if command.Kind == game.KindTrigger {
-			*forms |= ShapeTrigger
+	if command := placement.Command; command != nil && command.Kinds&game.KindLink == 0 && placement.BlockContext.Position != nil {
+		forms := &placement.BlockContext.Position.Vanilla.Writes
+		*forms |= WritesCommand
+		if command.Kinds == game.KindTrigger {
+			*forms |= WritesTrigger
 		}
-		if command.Kind == game.KindEffect {
-			*forms |= ShapeEffect
+		if command.Kinds == game.KindEffect {
+			*forms |= WritesEffect
 		}
 	}
 	if placement.Position == nil {
@@ -178,9 +178,9 @@ func countValue(value jomini.Value, position *Position) {
 	}
 	switch written := value.(type) {
 	case *jomini.Scalar:
-		form := shapeOf(written)
-		position.Vanilla.Shapes |= form
-		if form&(ShapeNumber|ShapeDate) == 0 {
+		form := writesOf(written)
+		position.Vanilla.Writes |= form
+		if form&(WritesNumber|WritesDate) == 0 {
 			if position.Vanilla.Values == nil {
 				position.Vanilla.Values = map[string]int{}
 			}
@@ -188,7 +188,7 @@ func countValue(value jomini.Value, position *Position) {
 		}
 	case *jomini.Block, *jomini.TaggedBlock:
 		position.Vanilla.Blocks++
-		position.Vanilla.Shapes |= ShapeBlock
+		position.Vanilla.Writes |= WritesBlock
 	}
 }
 
@@ -303,9 +303,9 @@ func (typing *typing) visit(position *Position, inGUI bool) {
 	}
 	if len(words) > 0 {
 		if database := typing.one(words, inGUI); database != "" {
-			position.Value.Set(Expected{Kind: ExpectsReference, Database: database}, SourceVanilla)
+			position.Value.Set(Expected{Type: ValueReference, Database: database}, SourceVanilla)
 		} else if !slices.ContainsFunc(words, func(word string) bool { return !typing.locKeys[word] }) {
-			position.Value.Set(Expected{Kind: ExpectsLoc}, SourceVanilla)
+			position.Value.Set(Expected{Type: ValueLoc}, SourceVanilla)
 		}
 	}
 	for _, child := range position.Children {

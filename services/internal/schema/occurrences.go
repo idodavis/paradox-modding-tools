@@ -189,15 +189,15 @@ func (walk *fileWalk) valueOccurrence(placement *Placement, scalar *jomini.Scala
 		n.Role, n.IsName, n.Database = Defines, true, facts.database.Name
 	case placement.StoredIn != "":
 		n.Database = placement.StoredIn
-	case facts.claim.Kind == ExpectsReference && (placement.Position.Value.Source != SourceVanilla || facts.literal != jomini.LitNumber):
+	case facts.claim.Type == ValueReference && (placement.Position.Value.Source != SourceVanilla || facts.literal != jomini.LitNumber):
 		n.Database = facts.claim.Database
-	case facts.claim.Kind == ExpectsLoc:
+	case facts.claim.Type == ValueLoc:
 		n.Database = Localization
-	case facts.claim.Kind == ExpectsFile:
+	case facts.claim.Type == ValueFile:
 		n.Database = File
 	case facts.literal != jomini.LitNumber && facts.literal != jomini.LitDate && placement.Position != nil &&
-		(facts.claim.Kind == ExpectsNumber || placement.Position.Vanilla.Shapes&ShapeNumber != 0):
-		n.Caller = game.Blocks[game.BlockValue].Calls
+		(facts.claim.Type == ValueNumber || placement.Position.Vanilla.Writes&WritesNumber != 0):
+		n.Caller = game.Shapes[game.ShapeValue].Calls
 	case jomini.IsEventID(scalar.Text):
 		n.Database = walk.events
 	default:

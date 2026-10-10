@@ -84,7 +84,7 @@ These are the terms of the language engine (`services/internal/lang/README.md`),
 | script-made name | a name a command creates while script runs, in a database no folder holds (`game.NameCommands`) | `save_scope_as = x`; `set_variable = { name = y }` |
 | position | a place in a database's entry or in a command's arguments (`schema.Key`); keys collapse only by written form: `<number>`, `<date>`, `<prefix:>` | `trigger` inside an event; `<number>` inside `random_list` |
 | block kind | what a block holds: fields, triggers or effects (`schema.Block`) | `trigger = { … }` is a triggers block; an event's own block is fields |
-| slot | where a key is written: the kind of block it sits in (`game.Block`). The slot decides what the key is (`game.Blocks`, read by `schema.Step`), never the word | a declared command's name in an effects block is the command; in a fields block it is a field |
+| slot | where a key is written: the kind of block it sits in (`game.Shape`). The slot decides what the key is (`game.Shapes`, read by `schema.Step`), never the word | a declared command's name in an effects block is the command; in a fields block it is a field |
 | value | one written word, and the form it is written in: number, date, bool, text or word | `brave`, `character:186004`, `"gfx/x.dds"`, `1066.9.15` |
 | reference | a word at a position whose declared value names a database, or a prefixed word whose prefix is a declared link; a word no source declares is no reference | `trait = brave`, `culture = "norse"`, `holder = 168673` |
 | prefixed word | a word spelled `prefix:name` (`jomini.SplitPrefixed`) | `title:k_france`, `scope:target` |
@@ -124,7 +124,7 @@ Only a declared claim that is fresh and that no evidence contradicts lets a diag
 
 | Name | Lives in |
 |---|---|
-| The language rules (`Block`, `Blocks`, `Contents`, `Structurals`, `ScopeRules`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Folders`, `Nested`, `MapTable`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo` (its `FirstWins` sentence), `UserDataDir`, `DumpDirs`, `ReadGameVersion` — `game.go` | `services/internal/game` — **the only game-aware package** |
+| The language rules (`Shape`, `Shapes`, `Contents`, `Structurals`, `ScopeRules`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Folders`, `Nested`, `MapTable`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo` (its `FirstWins` sentence), `UserDataDir`, `DumpDirs`, `ReadGameVersion` — `game.go` | `services/internal/game` — **the only game-aware package** |
 | The CST, the lexer, the name and literal shapes, encodings; `SplitPrefixed`, `Constant`, `Interpolations` (the spellings inside one word); `Result.Attach` (comments onto statements) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install, a mod or a dump folder, its format, an image's header | `services/internal/lang/source` — one format table for every game |
 | Loc files: entries, interpolations, language | `services/internal/lang/loc` |

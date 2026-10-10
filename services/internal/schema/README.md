@@ -10,7 +10,7 @@ the file named for the step: `declareDatabases` in `build.go`, `dumpsOrShipped` 
 
 | file | holds |
 |---|---|
-| `schema.go` | the types (`Schema`, `Database`, `Position` with its `Claims`, `Claim`, `Command`, `Vanilla`, `Shapes`, `ExpectedKind`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
+| `schema.go` | the types (`Schema`, `Database`, `Position` with its `Claims`, `Claim`, `Command`, `Vanilla`, `Writes`, `ValueType`), `Link`, `DatabaseNamed`, `DatabasesWhere`, `MayAccuse` |
 | `build.go` | the pipeline: `Input`, `Build`, `DatabaseNames` for the scan; step 1, declaring the databases (`declare`, `declareDatabases`) |
 | `dumps.go` | step 2: `dumpsOrShipped`, then the parsers of the console dumps: the label table, one `parse…` per record kind; the usages merged into each command's arguments once every command is declared (`mergeUsages`, `usageRoots`, `mergeUsage`, `argument`) |
 | `docs.go` | the documentation dialect: `parseDocScript`, the one reader of docscript that the install's docs, the wiki's examples and the dumps' usages share (`DocNode`: a statement's key, value slot, prose and block); step 3, `parseDocs`, the docs and examples parsed to trees with every key they write noted for the entry detector; step 6, `mergeDocs`, their claims merged into the entry trees after vanilla (`mergeNode`, `mergeTemplate`, `docClaims`); the phrase table `docPhrases` and `claimsOf`, which both merges read claims with |
@@ -37,7 +37,7 @@ A position is a place in a database's entry tree or a command's arguments, keyed
 number is `<number>`, a date `<date>`, a `prefix:x` word `<prefix:>`, any other key itself. `WalkBlock` reads
 a block's statements at a `BlockContext` (position, block kind, calling word, scope, inside a trigger or an
 entry); each key becomes a `Placement` by `PlaceKey`, which decides in order what the key is (`keyMeaning`, by the
-block kind's rules in `game.Blocks`), what its block holds (`blockKindOf`, `commandBlockKind`) and the scope
+block kind's rules in `game.Shapes`), what its block holds (`blockKindOf`, `commandBlockKind`) and the scope
 that block runs in (`blockScope`). Each decision's doc comment states its order. Two readers use the walker: `countFile` and the index's `Collect`;
 the doc merges place each key with `PlaceKey` alone.
 

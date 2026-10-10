@@ -15,8 +15,8 @@ in one row, never as a branch in a reader.
 
 | Table | Says | Read by |
 |---|---|---|
-| `Block` | the kinds of block: fields, triggers, effects, arguments, value, description, unknown, setup (a history or start block: its fields, then effects), widget (GUI) | everything |
-| `Blocks` (`BlockRule`) | per kind: the order a key's readings are tried (`Step`), the word its calls resolve by, the commands it holds | the walker, completion |
+| `Shape` | the kinds of block: fields, triggers, effects, arguments, value, description, unknown, setup (a history or start block: its fields, then effects), widget (GUI) | everything |
+| `Shapes` (`ShapeRule`) | per kind: the order a key's readings are tried (`Step`), the word its calls resolve by, the commands it holds | the walker, completion |
 | `Kinds`, `KindWords` | what a declared command is (effect, trigger, link) and the dumps' word for each | dumps, hover |
 | `Contents`, `ContentsOrder` | what a command's own block holds, first rule that fits | the walker |
 | `Structurals` | keys with a fixed block kind inside a command: random_list's branches, switch's cases | the walker |

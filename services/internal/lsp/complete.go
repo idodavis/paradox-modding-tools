@@ -185,7 +185,7 @@ func (completer *completer) keys(cursor spot) {
 	}
 
 	// a value block's operators; allowed is for the commands below
-	scope, called, allowed := inner.Scope, inner.Calls, game.Blocks[inner.Kind].Allows
+	scope, called, allowed := inner.Scope, inner.Calls, game.Shapes[inner.Shape].Allows
 	if inner.InTrigger {
 		allowed &^= game.KindEffect
 	}
@@ -212,13 +212,13 @@ func (completer *completer) keys(cursor spot) {
 	// the commands the block's kind allows, in scope first; a Wild Card link has no name to write
 	for _, name := range slices.Sorted(maps.Keys(s.Commands)) {
 		command := s.Commands[name]
-		if allowed == 0 || command.Kind&(allowed|game.KindLink) == 0 || command.Wild {
+		if allowed == 0 || command.Kinds&(allowed|game.KindLink) == 0 || command.Wild {
 			continue
 		}
 		item := Item{Label: name, Head: kinds(command), Rank: 2,
 			Snippet: snippet(name, command.Args)}
 		inScope := scope == "" || len(command.Scopes) == 0 || slices.Contains(command.Scopes, scope)
-		if command.Kind&allowed != 0 && inScope {
+		if command.Kinds&allowed != 0 && inScope {
 			item.Rank = 0
 		}
 		completer.add(item, reading{command: command, scope: scope})
@@ -243,7 +243,7 @@ func (completer *completer) values(cursor spot) {
 	if position := at.Position; position != nil {
 		claim := position.Value.Value
 		words := claim.Choices
-		if claim.Kind == schema.ExpectsBool {
+		if claim.Type == schema.ValueBool {
 			words = game.Bools
 		}
 		for _, word := range words {
@@ -255,10 +255,10 @@ func (completer *completer) values(cursor spot) {
 		}) {
 			completer.add(Item{Label: word, Rank: 1}, reading{})
 		}
-		switch claim.Kind {
-		case schema.ExpectsReference:
+		switch claim.Type {
+		case schema.ValueReference:
 			completer.names(claim.Database, "", 2)
-		case schema.ExpectsLoc:
+		case schema.ValueLoc:
 			for _, key := range completer.file.sess.LocKeys(completer.prefix, maxComplete+1) {
 				completer.add(Item{Label: key, Head: heading(schema.Localization), Rank: 3},
 					reading{ref: &schema.Occurrence{Database: schema.Localization, ID: key}})
@@ -298,9 +298,9 @@ func snippet(name string, position *schema.Position) string {
 	switch {
 	case position == nil:
 		return ""
-	case position.Block.Source != schema.SourceNone || position.Vanilla.Shapes&^schema.ShapeCommand == schema.ShapeBlock:
+	case position.Holds.Source != schema.SourceNone || position.Vanilla.Writes&^schema.WritesCommand == schema.WritesBlock:
 		return name + " = {\n\t$0\n}"
-	case position.Value.Source != schema.SourceNone || position.Vanilla.Shapes&^(schema.ShapeBlock|schema.ShapeCommand) != 0:
+	case position.Value.Source != schema.SourceNone || position.Vanilla.Writes&^(schema.WritesBlock|schema.WritesCommand) != 0:
 		return name + " = $0"
 	}
 	return ""

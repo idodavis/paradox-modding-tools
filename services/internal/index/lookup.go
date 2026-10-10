@@ -3,6 +3,7 @@
 package index
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
@@ -11,6 +12,33 @@ import (
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/schema"
 )
+
+// Lookup is every occurrence of a role of a name across the indexes, in the game's load order: the files
+// the game loads, by Rel, each file's in source order. A call is looked up with Database "".
+func Lookup(indexes []*Index, role schema.Role, database, id string) (found []At) {
+	for _, index := range indexes {
+		for _, at := range index.listed(role, database, id) {
+			if _, loaded := Loaded(indexes, at.File().Path); loaded {
+				found = append(found, at)
+			}
+		}
+	}
+	slices.SortStableFunc(found, func(first, second At) int {
+		return cmp.Or(strings.Compare(strings.ToLower(first.File().Rel), strings.ToLower(second.File().Rel)),
+			first.Occurrence().Range.Start-second.Occurrence().Range.Start)
+	})
+	return found
+}
+
+// listed is the index's own occurrences of a role of a name, in file order; none for a name it never met.
+func (index *Index) listed(role schema.Role, database, id string) []At {
+	databaseOrdinal, inDatabases := index.Databases.ordinals[database]
+	idOrdinal, inIDs := index.IDs.ordinals[id]
+	if !inDatabases || !inIDs {
+		return nil
+	}
+	return index.postings[posting{role, uint16(databaseOrdinal), uint32(idOrdinal)}]
+}
 
 // FileAt is the file at a Rel across the indexes, whatever its case: the last index's that lists
 // it, at its last place there.
@@ -43,116 +71,65 @@ func Loaded(indexes []*Index, path string) (inventory.File, bool) {
 	return inventory.File{}, false
 }
 
-// inLoadOrder returns one name's items across the indexes in the game's load order, by Rel, those
-// in files the game loads.
-func inLoadOrder[Item any](indexes []*Index, list func(index *Index) []*Item, path func(item *Item) string) []Item {
-	type placed struct {
-		item *Item
-		rel  string
+// RefsInside is the references written inside an entry's definition, in its file's order; none for a
+// definition that is no entry (a name script makes inside one).
+func RefsInside(def At) (refs []At) {
+	if def.index == nil || def.Occurrence().Entry != def.occurrence {
+		return nil
 	}
-	var found []placed
-	for _, index := range indexes {
-		for _, item := range list(index) {
-			if file, loaded := Loaded(indexes, path(item)); loaded {
-				found = append(found, placed{item: item, rel: strings.ToLower(file.Rel)})
-			}
-		}
-	}
-
-	// equal Rels left are one file's items, kept in source order
-	slices.SortStableFunc(found, func(first, second placed) int { return strings.Compare(first.rel, second.rel) })
-	items := make([]Item, len(found))
-	for i, entry := range found {
-		items[i] = *entry.item
-	}
-	return items
-}
-
-// Lookup is every definition of a name across the indexes, in load order.
-func Lookup(indexes []*Index, database, name string) []Def {
-	return inLoadOrder(indexes, func(index *Index) []*Def { return index.defs[[2]string{database, name}] },
-		func(def *Def) string { return def.Path })
-}
-
-// LookupRefs is every reference to a name in a file the game loads, in load order.
-func LookupRefs(indexes []*Index, database, name string) []Ref {
-	return inLoadOrder(indexes, func(index *Index) []*Ref { return index.refs[[2]string{database, name}] },
-		func(ref *Ref) string { return ref.Path })
-}
-
-// RefsInside returns the references written inside a definition, in its file's order.
-func RefsInside(indexes []*Index, def Def) (refs []Ref) {
-	for _, index := range indexes {
-		if records := index.Records[def.Path]; records != nil {
-			at := slices.Index(records.Defs, def)
-			for _, ref := range records.Refs {
-				if at >= 0 && int(ref.From) == at {
-					refs = append(refs, ref)
-				}
-			}
+	for _, at := range def.index.InFile(def.File().Path) {
+		if found := at.Occurrence(); found.Role == schema.Refers && found.Entry == def.occurrence {
+			refs = append(refs, at)
 		}
 	}
 	return refs
 }
 
-// LookupLocs is every localization entry of a key across the indexes, in load order.
-func LookupLocs(indexes []*Index, key string) []Loc {
-	return inLoadOrder(indexes, func(index *Index) []*Loc { return index.locs[key] },
-		func(entry *Loc) string { return entry.Path })
-}
-
-// Names is every name defined in a database across the indexes, in load order, each once.
-func Names(indexes []*Index, database string) []string {
-	defs := inLoadOrder(indexes, func(index *Index) (found []*Def) {
-		for _, file := range index.Files {
-			records := index.Records[file.Path]
-			for i := 0; records != nil && i < len(records.Defs); i++ {
-				if records.Defs[i].Database == database {
-					found = append(found, &records.Defs[i])
-				}
+// Names is every name defined in a database across the indexes, each once, the install's first.
+func Names(indexes []*Index, database string) (names []string) {
+	seen := map[string]bool{}
+	for _, index := range indexes {
+		ordinal, known := index.Databases.ordinals[database]
+		for _, id := range index.byDatabase[uint16(ordinal)] {
+			if name := index.IDs.Words[id]; known && !seen[name] {
+				seen[name], names = true, append(names, name)
 			}
-		}
-		return found
-	}, func(def *Def) string { return def.Path })
-
-	seen, names := map[string]bool{}, []string(nil)
-	for _, def := range defs {
-		if def.Name != "" && !seen[def.Name] {
-			seen[def.Name], names = true, append(names, def.Name)
 		}
 	}
 	return names
 }
 
-// Resolve is a reference's definitions: a call's in the databases its CalledIn word names; a scope
-// saved from code, a loc key or a file path known with no definitions; else Lookup. A local
-// definition answers only a reference in its own file.
-func Resolve(s *schema.Schema, indexes []*Index, ref Ref) (defs []Def, known bool) {
+// Resolve is a reference's definitions, the reference given as the walk produced it (from is its file's path,
+// "" for none): a call's in the databases its calling word names; a scope saved from code, a loc key or a file
+// path known with no definitions; else Lookup. A local definition answers only a reference in its own file.
+func Resolve(s *schema.Schema, indexes []*Index, ref schema.Occurrence, from string) (defs []At, known bool) {
 	switch {
-	case ref.Called != "":
-		for _, database := range s.Callees[ref.Called] {
-			defs = append(defs, Lookup(indexes, database, ref.Name)...)
+	case ref.Caller != "":
+		for _, database := range s.Callees[ref.Caller] {
+			defs = append(defs, Lookup(indexes, schema.Defines, database, ref.ID)...)
 		}
-	case ref.Database == game.SavedScopes && s.Saved[ref.Name]:
+	case ref.Database == game.SavedScopes && s.Saved[ref.ID]:
 		return nil, true
 	case ref.Database == schema.Localization:
-		return nil, slices.ContainsFunc(indexes, func(index *Index) bool { return len(index.locs[ref.Name]) > 0 })
+		return nil, slices.ContainsFunc(indexes, func(index *Index) bool {
+			return len(index.listed(schema.Localizes, schema.Localization, ref.ID)) > 0
+		})
 	case ref.Database == schema.File:
-		_, listed := FileAt(indexes, ref.Name)
+		_, listed := FileAt(indexes, ref.ID)
 		return nil, listed
 	default:
-		defs = Lookup(indexes, ref.Database, ref.Name)
+		defs = Lookup(indexes, schema.Defines, ref.Database, ref.ID)
 	}
-	defs = slices.DeleteFunc(defs, func(def Def) bool { return def.Local && def.Path != ref.Path })
+	defs = slices.DeleteFunc(defs, func(def At) bool { return def.Occurrence().Local && def.File().Path != from })
 	return defs, len(defs) > 0
 }
 
 // RefsTo turns Resolve around: it returns every reference to a name of a database, the calls whose
-// CalledIn word resolves in that database included.
-func RefsTo(s *schema.Schema, indexes []*Index, database, name string) []Ref {
-	refs := LookupRefs(indexes, database, name)
-	for _, call := range LookupRefs(indexes, "", name) {
-		if slices.Contains(s.Callees[call.Called], database) {
+// calling word resolves in that database included.
+func RefsTo(s *schema.Schema, indexes []*Index, database, id string) []At {
+	refs := Lookup(indexes, schema.Refers, database, id)
+	for _, call := range Lookup(indexes, schema.Refers, "", id) {
+		if slices.Contains(s.Callees[call.Occurrence().Caller], database) {
 			refs = append(refs, call)
 		}
 	}
@@ -161,7 +138,7 @@ func RefsTo(s *schema.Schema, indexes []*Index, database, name string) []Ref {
 
 // Winner applies the entry modes to a name's definitions in Lookup's order, plain then each mode's:
 // the winner, its adds, INJECT/REPLACE orphans with no target, and whether two mods contest it.
-func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (winner Def, adds, orphans []Def, contested bool) {
+func Winner(info *game.GameInfo, defs []At, origin func(path string) string) (winner At, adds, orphans []At, contested bool) {
 	// in a database whose registry row has OnActions every plain definition after the first adds,
 	// as an inject does; a moded one follows its mode
 	merged := map[string]bool{}
@@ -172,7 +149,8 @@ func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (w
 	found := false
 	for _, mode := range slices.Concat([]game.EntryMode{{}}, info.EntryModes) {
 		plain := mode.Word == ""
-		for _, def := range defs {
+		for _, at := range defs {
+			def := at.Occurrence()
 			if def.Mode != mode.Word {
 				continue
 			}
@@ -182,7 +160,7 @@ func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (w
 
 			// two mods contest when one takes, or tries to take, the other's place
 			if found && contends {
-				incoming, current := origin(def.Path), origin(winner.Path)
+				incoming, current := origin(at.File().Path), origin(winner.File().Path)
 				if incoming != current && incoming != game.OriginVanilla && current != game.OriginVanilla {
 					contested = true
 				}
@@ -192,16 +170,16 @@ func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (w
 			case !found:
 				// nothing to act on: the definition creates its own, or, unless a TRY_ form, is an orphan
 				if plain || mode.Creates {
-					winner, found = def, true
+					winner, found = at, true
 				} else if !mode.Optional {
-					orphans = append(orphans, def)
+					orphans = append(orphans, at)
 				}
 			case plain && slices.Contains(info.FirstWinsDatabases, def.Database):
 				// the earlier plain definition holds
 			case contends:
-				winner, adds = def, nil
+				winner, adds = at, nil
 			default:
-				adds = append(adds, def)
+				adds = append(adds, at)
 			}
 		}
 	}
@@ -209,21 +187,21 @@ func Winner(info *game.GameInfo, defs []Def, origin func(path string) string) (w
 }
 
 // Fires is whether a reference fires its target: an event or on_action outside a trigger.
-func (ref Ref) Fires(s *schema.Schema) bool {
+func Fires(s *schema.Schema, ref schema.Occurrence) bool {
 	database := s.Databases[ref.Database]
 	return !ref.InTrigger && database != nil && (database.Row.Events || database.Row.OnActions)
 }
 
 // Runs is whether a reference outside a trigger runs a scripted entry, so what it fires is fired
 // through it: a call, or a name of a database called in effects.
-func (ref Ref) Runs(s *schema.Schema) bool {
+func Runs(s *schema.Schema, ref schema.Occurrence) bool {
 	database := s.Databases[ref.Database]
-	return !ref.InTrigger && (ref.Called != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Blocks[game.BlockEffects].Calls))
+	return !ref.InTrigger && (ref.Caller != "" || database != nil && slices.Contains(database.Row.CalledIn, game.Blocks[game.BlockEffects].Calls))
 }
 
 // Scripted is whether a definition is a scripted entry, one a reference may run (Runs): of a
 // database some block calls.
-func (def Def) Scripted(s *schema.Schema) bool {
+func Scripted(s *schema.Schema, def schema.Occurrence) bool {
 	database := s.Databases[def.Database]
 	return database != nil && len(database.Row.CalledIn) > 0
 }

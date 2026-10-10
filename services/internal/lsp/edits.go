@@ -130,21 +130,21 @@ func CodeActions(sess *workspace.Session, path string, line, col int) ([]CodeAct
 		return out, nil
 	}
 	ref := file.target(file.parsed.Lines().OffsetAt(line, col))
-	if ref == nil || ref.Database != schema.Localization || !loc.LooksLikeKey(ref.Name) {
+	if ref == nil || ref.Database != schema.Localization || !loc.LooksLikeKey(ref.ID) {
 		return out, nil
 	}
-	if _, known := index.Resolve(sess.Install.Schema, sess.Indexes(), *ref); known {
+	if _, known := index.Resolve(sess.Install.Schema, sess.Indexes(), *ref, path); known {
 		return out, nil
 	}
 	target, at, unended := file.keyFile()
 	if target == "" {
 		return out, nil
 	}
-	entry := fmt.Sprintf(" %s:0 \"\"\n", ref.Name)
+	entry := fmt.Sprintf(" %s:0 \"\"\n", ref.ID)
 	if unended {
 		entry = "\n" + entry
 	}
-	out = append(out, CodeAction{Title: fmt.Sprintf("Create localization key %q", ref.Name), Edit: WorkspaceEdit{Changes: map[string][]TextEdit{target: {{Range: Range{Start: at, End: at}, NewText: entry}}}}})
+	out = append(out, CodeAction{Title: fmt.Sprintf("Create localization key %q", ref.ID), Edit: WorkspaceEdit{Changes: map[string][]TextEdit{target: {{Range: Range{Start: at, End: at}, NewText: entry}}}}})
 	return out, nil
 }
 

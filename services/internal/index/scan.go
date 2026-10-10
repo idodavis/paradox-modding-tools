@@ -59,9 +59,13 @@ func Scan(ctx context.Context, req Request) (*Install, error) {
 		return nil, err
 	}
 
-	// 5: each other file parsed and walked once; the localization's records are already in Records, so
+	// 5: each other file parsed and walked once; the localization's occurrences were collected in step 3, so
 	// no loc file is read again
-	index := &Index{Files: input.Install, Roots: roots, Records: localized}
+	index := &Index{Files: input.Install, Roots: roots}
+	index.Rebuild()
+	for path, found := range localized {
+		index.add(path, found)
+	}
 	err = index.collectFiles(ctx, s, false, func(done, total int) { req.Progress("index", done, total) })
 	if err != nil {
 		return nil, err
@@ -102,10 +106,10 @@ func schemaInput(req Request, roots []string) schema.Input {
 
 // localizationOf reads the install's localization once, in english and the asked language: a file
 // whose path names another language is never read. Its keys go to the schema's input, and its
-// records come back for the index.
-func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[string]*Records, error) {
+// occurrences come back for the index.
+func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[string]collected, error) {
 	req.Progress("localization", 0, 1)
-	languages, localized := []string{game.BaseLanguage, strings.ToLower(req.Language)}, map[string]*Records{}
+	languages, localized := []string{game.BaseLanguage, strings.ToLower(req.Language)}, map[string]collected{}
 	var locs []inventory.File
 	for _, file := range input.Install {
 		if file.Format != inventory.Loc {
@@ -116,14 +120,16 @@ func localizationOf(ctx context.Context, req Request, input *schema.Input) (map[
 		}
 	}
 	input.LocKeys = map[string]bool{}
-	err := inventory.Ordered(ctx, locs, func(file inventory.File) *Records {
+	err := inventory.Ordered(ctx, locs, func(file inventory.File) collected {
 		text, _ := file.Text()
 		return collectLoc(req.Game, file, text, languages)
-	}, func(file inventory.File, kept *Records) {
-		if kept != nil {
+	}, func(file inventory.File, kept collected) {
+		if len(kept.found) > 0 {
 			localized[file.Path] = kept
-			for _, entry := range kept.Loc {
-				input.LocKeys[entry.Key] = true
+			for _, found := range kept.found {
+				if found.Role == schema.Localizes {
+					input.LocKeys[found.ID] = true
+				}
 			}
 		}
 	})
@@ -180,14 +186,14 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 	return index, index.collectFiles(ctx, install.Schema, true, nil)
 }
 
-// Reindex walks one file again: its records dropped and added back. A file not yet in Files goes
+// Reindex walks one file again: its occurrences dropped and added back. A file not yet in Files goes
 // after its origin's last file, so it keeps that origin's place in load order. Every localization
 // language is kept.
 func (index *Index) Reindex(s *schema.Schema, file inventory.File, text string) {
-	index.Drop(file.Path)
-	if index.defs == nil {
+	if index.postings == nil {
 		index.Rebuild()
 	}
+	index.Drop(file.Path)
 	if _, listed := index.At(file.Path); !listed {
 		at := len(index.Files)
 		for pos, other := range index.Files {
@@ -196,9 +202,11 @@ func (index *Index) Reindex(s *schema.Schema, file inventory.File, text string) 
 			}
 		}
 		index.Files = slices.Insert(index.Files, at, file)
-		index.PlaceFiles()
+		index.Occurrences = slices.Insert(index.Occurrences, at, nil)
+		index.Texts = slices.Insert(index.Texts, at, nil)
+		index.Rebuild()
 	}
-	if records := collectFile(s, file, text); records != nil {
-		index.Add(records, file.Path)
+	if found := collectFile(s, file, text); len(found.found) > 0 {
+		index.add(file.Path, found)
 	}
 }

@@ -97,7 +97,7 @@ func (file *file) complete(offset int, label string) *completer {
 		database := s.Prefixes[link]
 		var saved []string
 		for _, name := range slices.Sorted(maps.Keys(s.Saved)) {
-			if _, known := index.Resolve(s, file.sess.Indexes(), index.Ref{Database: database, Name: name}); known {
+			if _, known := index.Resolve(s, file.sess.Indexes(), schema.Occurrence{Database: database, ID: name}, ""); known {
 				saved = append(saved, name)
 			}
 		}
@@ -143,7 +143,7 @@ func (completer *completer) names(database, spelled string, rank int, more ...st
 	}
 	for _, name := range append(index.Names(completer.file.sess.Indexes(), database), more...) {
 		completer.add(Item{Label: spelled + name, Head: game.KindName(database), Rank: rank},
-			reading{ref: &index.Ref{Database: database, Name: name}})
+			reading{ref: &schema.Occurrence{Database: database, ID: name}})
 	}
 }
 
@@ -162,14 +162,14 @@ func (completer *completer) keys(cursor spot) {
 
 	// a call's block passes the parameters the called entry defines, <entry>:<NAME>
 	assign, isAssign := at.Statement.(*jomini.Assignment)
-	if found := slices.IndexFunc(cursor.records.Refs, func(ref index.Ref) bool {
-		return isAssign && ref.Called != "" && ref.Range == assign.Key.Range
+	if found := slices.IndexFunc(cursor.found, func(ref schema.Occurrence) bool {
+		return isAssign && ref.Role == schema.Refers && ref.Caller != "" && ref.Range == assign.Key.Range
 	}); found >= 0 {
-		passed := cursor.records.Refs[found].Name + ":"
+		passed := cursor.found[found].ID + ":"
 		for _, name := range index.Names(sess.Indexes(), schema.Parameter) {
 			if parameter, isPassed := strings.CutPrefix(name, passed); isPassed {
 				completer.add(Item{Label: parameter, Head: heading(schema.Parameter)},
-					reading{ref: &index.Ref{Database: schema.Parameter, Name: name}})
+					reading{ref: &schema.Occurrence{Database: schema.Parameter, ID: name}})
 			}
 		}
 	}
@@ -201,7 +201,7 @@ func (completer *completer) keys(cursor spot) {
 		position := s.PlaceKey(inner, nil, name, false).Position
 		read := reading{key: position, scope: scope}
 		if position == nil {
-			read = reading{ref: &index.Ref{Called: called, Name: name}}
+			read = reading{ref: &schema.Occurrence{Caller: called, ID: name}}
 		}
 		item := Item{Label: name, Head: need(position), Snippet: snippet(name, position), Rank: 1}
 		if i < stated {
@@ -261,7 +261,7 @@ func (completer *completer) values(cursor spot) {
 		case schema.ExpectsLoc:
 			for _, key := range completer.file.sess.LocKeys(completer.prefix, maxComplete+1) {
 				completer.add(Item{Label: key, Head: heading(schema.Localization), Rank: 3},
-					reading{ref: &index.Ref{Database: schema.Localization, Name: key}})
+					reading{ref: &schema.Occurrence{Database: schema.Localization, ID: key}})
 			}
 		}
 	}

@@ -93,30 +93,32 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 	sess.RLock()
 	defer sess.RUnlock()
 	query = strings.ToLower(query)
-	schema, indexes := sess.Install.Schema, sess.Indexes()
+	indexes := sess.Indexes()
 
 	// in the files the game loads: what is fired, and what fires it, a scripted entry by what fires
 	// through it (Session.FiredBy)
-	fired, firing := map[string]string{}, map[index.Def][]workspace.Fire{}
+	fired, firing := map[string]string{}, map[index.At][]workspace.Fire{}
 	for _, idx := range indexes {
 		for _, file := range idx.Files {
-			records := idx.Records[file.Path]
-			if _, loaded := index.Loaded(indexes, file.Path); records == nil || !loaded {
+			found := idx.InFile(file.Path)
+			if _, loaded := index.Loaded(indexes, file.Path); len(found) == 0 || !loaded {
 				continue
 			}
-			for _, ref := range records.Refs {
-				if !ref.Fires(schema) {
+			for _, at := range found {
+				ref := at.Occurrence()
+				if ref.Role != schema.Refers || !index.Fires(sess.Install.Schema, ref) {
 					continue
 				}
-				fired[ref.Name] = ref.Database
-				if ref.From < 0 {
+				fired[ref.ID] = ref.Database
+				caller, inEntry := at.Entry()
+				if !inEntry {
 					continue
 				}
-				caller := records.Defs[ref.From]
-				if _, entered := firing[caller]; !entered && caller.Scripted(schema) {
+				calling := caller.Occurrence()
+				if _, entered := firing[caller]; !entered && index.Scripted(sess.Install.Schema, calling) {
 					firing[caller] = sess.FiredBy(caller, false)
 				} else if !entered {
-					firing[caller] = []workspace.Fire{{Name: caller.Name, Database: caller.Database}}
+					firing[caller] = []workspace.Fire{{Name: calling.ID, Database: calling.Database}}
 				}
 			}
 		}
@@ -126,7 +128,7 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 	// databases takes the first in sorted order, so no map order decides
 	named := map[string]string{}
 	for name, kind := range fired {
-		if strings.Contains(strings.ToLower(name), query) && len(index.Lookup(indexes, kind, name)) > 0 {
+		if strings.Contains(strings.ToLower(name), query) && len(index.Lookup(indexes, schema.Defines, kind, name)) > 0 {
 			named[name] = kind
 		}
 	}
@@ -179,7 +181,7 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 	}
 	builder := newGrapher(sess)
 	root := builder.def(params.Root)
-	if root.Name == "" {
+	if root == (index.At{}) {
 		return &EventGraph{Reason: fmt.Sprintf("Nothing defines %s.", params.Root)}, nil
 	}
 	builder.node(params.Root, true)
@@ -224,7 +226,7 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*E
 
 	// into a root the game fires, one hop: a stub until the page opens it
 	var callers []workspace.Fire
-	if (index.Ref{Database: root.Database}).Fires(sess.Install.Schema) {
+	if index.Fires(sess.Install.Schema, schema.Occurrence{Database: root.Occurrence().Database}) {
 		callers = followed(sess.FiredBy(root, true))
 	}
 	if len(callers) > 0 {
@@ -324,10 +326,9 @@ func (grapher *grapher) reach(root string, depth int, scripted bool, followed fu
 		}
 		seen[id] = true
 		def := grapher.def(id)
-		file, _, _ := grapher.sess.Located(def.Path)
 		out.Reach++
-		out.Kinds[game.KindName(def.Database)]++
-		out.Origins[file.Origin]++
+		out.Kinds[game.KindName(def.Occurrence().Database)]++
+		out.Origins[def.File().Origin]++
 	}
 	count(root)
 	frontier := []string{root}
@@ -369,24 +370,24 @@ type grapher struct {
 	sess  *workspace.Session
 	out   *EventGraph
 	drawn map[string]bool
-	found map[string]index.Def
+	found map[string]index.At
 }
 
 // newGrapher is an empty graph over a session.
 func newGrapher(sess *workspace.Session) *grapher {
-	return &grapher{sess: sess, out: &EventGraph{}, drawn: map[string]bool{}, found: map[string]index.Def{}}
+	return &grapher{sess: sess, out: &EventGraph{}, drawn: map[string]bool{}, found: map[string]index.At{}}
 }
 
 // def is the definition the game keeps of an id, in whichever database defines it: one a fire names
-// (an event, an on_action) before the others; the zero Def where nothing does.
-func (grapher *grapher) def(id string) index.Def {
+// (an event, an on_action) before the others; the zero At where nothing does.
+func (grapher *grapher) def(id string) index.At {
 	found, known := grapher.found[id]
 	if known {
 		return found
 	}
-	schema := grapher.sess.Install.Schema
-	for _, database := range slices.Sorted(maps.Keys(schema.Databases)) {
-		if defs := index.Lookup(grapher.sess.Indexes(), database, id); len(defs) > 0 && (found.Name == "" || (index.Ref{Database: database}).Fires(schema)) {
+	s := grapher.sess.Install.Schema
+	for _, database := range slices.Sorted(maps.Keys(s.Databases)) {
+		if defs := index.Lookup(grapher.sess.Indexes(), schema.Defines, database, id); len(defs) > 0 && (found == (index.At{}) || index.Fires(s, schema.Occurrence{Database: database})) {
 			found, _, _, _ = grapher.sess.Winner(defs)
 		}
 	}
@@ -397,18 +398,17 @@ func (grapher *grapher) def(id string) index.Def {
 // definedBy is whether one of the origins defines an id: the database the graph keeps it in, any copy.
 func (grapher *grapher) definedBy(id string, origins []string) bool {
 	def := grapher.def(id)
-	return slices.ContainsFunc(index.Lookup(grapher.sess.Indexes(), def.Database, id), func(one index.Def) bool {
-		file, _, _ := grapher.sess.Located(one.Path)
-		return slices.Contains(origins, file.Origin)
+	return slices.ContainsFunc(index.Lookup(grapher.sess.Indexes(), schema.Defines, def.Occurrence().Database, id), func(one index.At) bool {
+		return slices.Contains(origins, one.File().Origin)
 	})
 }
 
 // node draws a definition: the one the game keeps, with its title.
 func (grapher *grapher) node(id string, root bool) {
 	def := grapher.def(id)
-	file, _, _ := grapher.sess.Located(def.Path)
+	database := def.Occurrence().Database
 	grapher.drawn[id] = true
-	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: def.Database, Kind: game.KindName(def.Database), Title: grapher.sess.Title(def), Origin: file.Origin, Root: root})
+	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: id, Database: database, Kind: game.KindName(database), Title: grapher.sess.Title(id, def), Origin: def.File().Origin, Root: root})
 }
 
 // Detail is one definition, opened.
@@ -488,22 +488,22 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	defer sess.RUnlock()
 	builder := newGrapher(sess)
 	def := builder.def(id)
-	if def.Name == "" {
+	if def == (index.At{}) {
 		return &Detail{Reason: "Nothing defines " + id + "."}, nil
 	}
-	file, _, _ := sess.Located(def.Path)
+	file, defined := def.File(), def.Occurrence()
 	detail := &Detail{
-		Kind: game.KindName(def.Database), Name: def.Name, Line: int(def.Line), At: file,
+		Kind: game.KindName(defined.Database), Name: defined.ID, Line: int(def.Occurrence().Line), At: file,
 		Fires: sess.Fires(def), FiredBy: sess.FiredBy(def, true),
 	}
 
 	// the block, read from the file: the statement whose key the definition was found at
-	parsed, defined := sess.Entry(def)
-	block := jomini.ChildBlock(defined)
+	parsed, statement := sess.Entry(def)
+	block := jomini.ChildBlock(statement)
 	if block == nil {
 		return detail, nil
 	}
-	detail.Lines = spanLines(parsed, defined.NodeRange(), 0)
+	detail.Lines = spanLines(parsed, statement.NodeRange(), 0)
 	read := eventText{sess, parsed}
 	for _, inner := range block.Statements {
 		assignment, ok := inner.(*jomini.Assignment)
@@ -538,24 +538,25 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	// the references the walk read inside the entry, grouped by database in the order first written;
 	// a call by the database that defines what it calls, and one nothing defines is left out
 	indexes := sess.Indexes()
-	for _, ref := range index.RefsInside(indexes, def) {
+	for _, at := range index.RefsInside(def) {
+		ref := at.Occurrence()
 		database := ref.Database
 		if database == schema.Parameter {
 			continue
 		}
-		if ref.Called != "" {
-			called, known := index.Resolve(sess.Install.Schema, indexes, ref)
+		if ref.Caller != "" {
+			called, known := index.Resolve(sess.Install.Schema, indexes, ref, file.Path)
 			if !known {
 				continue
 			}
-			database = called[0].Database
+			database = called[0].Occurrence().Database
 		}
-		at := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Database == database })
-		if at < 0 {
-			at = len(detail.Refs)
+		group := slices.IndexFunc(detail.Refs, func(group RefGroup) bool { return group.Database == database })
+		if group < 0 {
+			group = len(detail.Refs)
 			detail.Refs = append(detail.Refs, RefGroup{Database: database, Kind: game.KindName(database)})
 		}
-		detail.Refs[at].Refs = append(detail.Refs[at].Refs, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
+		detail.Refs[group].Refs = append(detail.Refs[group].Refs, Cited{Name: ref.ID, Line: int(at.Occurrence().Line), Col: int(at.Occurrence().Col), At: file})
 	}
 	return detail, nil
 }
@@ -622,7 +623,7 @@ func (read eventText) scalar(block *jomini.Block, key string) *jomini.Scalar {
 func (read eventText) version(scalar *jomini.Scalar, when string) Version {
 	version := Version{When: when, Key: scalar.Text, Line: read.parsed.Lines().PositionAt(scalar.Range.Start).Line}
 	if said, ok := read.sess.Loc(scalar.Text, ""); ok {
-		version.Text = said.Text
+		version.Text = said.Text()
 	}
 	return version
 }

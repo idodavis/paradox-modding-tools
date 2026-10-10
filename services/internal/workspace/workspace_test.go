@@ -15,6 +15,7 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
+	"paradox-modding-tools/services/internal/schema"
 )
 
 var scanned = sync.OnceValues(func() (*index.Install, error) {
@@ -41,7 +42,7 @@ func workspace(t *testing.T) (*Session, string) {
 }
 
 func defs(sess *Session, name string) int {
-	return len(index.Lookup(sess.Indexes(), "events", name))
+	return len(index.Lookup(sess.Indexes(), schema.Defines, "events", name))
 }
 
 func TestEdits(t *testing.T) {
@@ -60,8 +61,8 @@ func TestEdits(t *testing.T) {
 	if defs(sess, "f.1") != 0 || defs(sess, "f.2") != 1 {
 		t.Error("a change replaces the file's definitions")
 	}
-	if len(index.Lookup(sess.Indexes(), "events", "m.1")) != 1 {
-		t.Fatalf("the mod's file on disk is indexed to begin with: %+v", index.Lookup(sess.Indexes(), "events", "m.1"))
+	if len(index.Lookup(sess.Indexes(), schema.Defines, "events", "m.1")) != 1 {
+		t.Fatalf("the mod's file on disk is indexed to begin with: %+v", index.Lookup(sess.Indexes(), schema.Defines, "events", "m.1"))
 	}
 	sess.DidChange(strings.ToUpper(events[:1])+events[1:], "namespace = m\nm.9 = { type = character_event }\n")
 	if runtime.GOOS == "windows" && (defs(sess, "m.1") != 0 || defs(sess, "m.9") != 1) {
@@ -88,7 +89,7 @@ func TestEdits(t *testing.T) {
 	if defs(sess, "m.1") != 0 {
 		t.Error("a deleted file keeps no definitions")
 	}
-	if len(index.Lookup(sess.Indexes(), "traits", "brave")) != 2 {
+	if len(index.Lookup(sess.Indexes(), schema.Defines, "traits", "brave")) != 2 {
 		t.Error("another file's records stay")
 	}
 }
@@ -100,7 +101,7 @@ func TestQueries(t *testing.T) {
 	if sess.Language != "english" || len(sess.Mods) != 1 || sess.Mods[0].ID != "mod" || sess.Game.Name != "Crusader Kings III" {
 		t.Errorf("the session knows its language, its mods and its game: %s %+v", sess.Language, sess.Mods)
 	}
-	if winner, _, _, _ := sess.Winner(nil); winner != (index.Def{}) {
+	if winner, _, _, _ := sess.Winner(nil); winner != (index.At{}) {
 		t.Error("no definitions, no winner")
 	}
 
@@ -113,7 +114,7 @@ func TestQueries(t *testing.T) {
 		t.Fatal(err)
 	}
 	sess.Changed(french)
-	if entry, ok := sess.Loc("only_french", "french"); !ok || entry.Text != "Salut" {
+	if entry, ok := sess.Loc("only_french", "french"); !ok || entry.Text() != "Salut" {
 		t.Errorf("a key is found in the asked language: %+v", entry)
 	}
 	if _, ok := sess.Loc("nothing_at_all", ""); ok {
@@ -189,7 +190,7 @@ func TestLockContract(t *testing.T) {
 			defer wg.Done()
 			sess.RLock()
 			defer sess.RUnlock()
-			index.Lookup(sess.Indexes(), "events", "m.1")
+			index.Lookup(sess.Indexes(), schema.Defines, "events", "m.1")
 			sess.Loc("v.1.t", "")
 			sess.Where(events)
 			sess.Parsed(events)

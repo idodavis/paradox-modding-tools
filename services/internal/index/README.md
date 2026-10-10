@@ -1,8 +1,8 @@
 # lang/index
 
-What a scan found: each file's definitions, references and localization entries, kept per index and resolved by
-name at query time in the game's load order. The index infers nothing: what a written scalar defines or refers to
-is the schema's (`schema/occurrences.go`); the index collects it.
+What a scan found: each file's occurrences (a name defined, referred to or localized), kept per index and resolved
+by name at query time in the game's load order. The index infers nothing: what a written scalar defines or refers
+to is the schema's (`schema/occurrences.go`); the index collects it.
 
 Read `scan.go` first. `Scan` runs an install through six steps, `ScanMods` a mod set over it, `Reindex` one saved
 file again; each step is a function named for it, in the file that holds its half: `fromCache` and `SaveInstall` in
@@ -11,38 +11,42 @@ file again; each step is a function named for it, in the file that holds its hal
 | file | holds |
 |---|---|
 | `scan.go` | the pipeline: `Request`, `Install`, `Mod`; `Scan`, `ScanMods`, `Reindex`; the steps only these call: `inventoryOf`, `localizationOf`, `schemaOf`, `schemaInput`, `BuildSchema` |
-| `collect.go` | step 5: `Collect`, `collector` and its methods, `scopePair`, `collectFile`, `collectLoc`, `conceptReferences`, `Index.collectFiles` |
-| `store.go` | what a scan keeps: `Def`, `Ref`, `Loc`, `Records`, `Index`; `Add`, `Drop`, `Rebuild`, `PlaceFiles`, `At`, `Forget`, `WritesInScope`, `LocKeys` |
-| `lookup.go` | the store's questions in the game's load order: `FileAt`, `Loaded`, `inLoadOrder`, `Lookup`, `LookupRefs`, `RefsInside`, `LookupLocs`, `Names`, `Resolve`, `RefsTo`, `Winner`, `Fires`, `Runs`, `Scripted` |
+| `collect.go` | step 5: `Index.collectFiles`, `collectFile`, `Collect`, `collector.collect`, `scopePair`, `collectLoc`, `conceptReferences` |
+| `store.go` | what a scan keeps: `Occurrence` (the stored form), `At` (a handle), the symbol `table`s, `Index`; `Rebuild`, `add`, `Drop`, `At`, `InFile`, `Forget`, `WritesInScope`, `LocKeys`, `Repeated`; the handle's accessors `Occurrence`, `File`, `Entry`, `Text`, `Language` |
+| `lookup.go` | the store's questions in the game's load order: `Lookup`, `FileAt`, `Loaded`, `RefsInside`, `Names`, `Resolve`, `RefsTo`, `Winner`, `Fires`, `Runs`, `Scripted` |
 | `cache.go` | steps 1 and 6: `fromCache`, `SaveInstall`, `LoadInstall`, `CachedAt`, `DropInstall` and the cache file's name |
 
 ## The collector (`collect.go`)
 
-`Collect(schema, file, parsed, visit)` makes each entry `FindEntries` returns a `Def`, then walks the file once with
-`schema.WalkFile` and turns each placement's occurrences (`Found`) into a `Def` or a `Ref` with its file, line and entry (`From`,
-the entry's index in `Defs`), and keeps the scope each command, link or link-read scalar is written in
-(`scopePair`). `visit` sees each placement: the index passes none, diagnostics judges each statement, and the editor
-stops at the cursor. `collectFile` picks by format, and `Index.collectFiles` runs it on a worker per CPU. A loc file
-is collected by `collectLoc`: each `$key$` in a text is a loc reference, and `[x|E]` or `Concept('x', …)` a
-reference to a game concept (`conceptReferences`).
+`Collect(schema, file, parsed, visit)` makes each entry `FindEntries` returns a `schema.Occurrence` that `Defines`,
+first and in source order, then walks the file once with `schema.WalkFile` and appends each placement's occurrences
+(`Found`), gives every occurrence its line and column, and keeps the scope each command, link or link-read scalar is
+written in (`scopePair`). An occurrence's `Entry` is the position, among the file's occurrences, of the definition of
+the entry it is in; an entry's definition points at itself. `visit` sees each placement: the index passes none,
+diagnostics judges each statement, and the editor stops at the cursor. `collectFile` picks by format, and
+`Index.collectFiles` runs it on a worker per CPU, handing each file's result (`collected`) to `add` in file order. A
+loc file is collected by `collectLoc`: each entry `Localizes` its key, each `$key$` in a text is a loc reference, and
+`[x|E]` or `Concept('x', …)` a reference to a game concept (`conceptReferences`).
 
 ## The store and the lookups (`store.go`, `lookup.go`)
 
-An `Index` is one inventory (`Files`) with each file's `Records` by path, its `Roots` in load order,
-and, for the mods' index, the folders its descriptors unload (`Replaced`). `Add`, `Drop` and `Rebuild`
-keep the lookup maps; `Rebuild` builds them again after a cache load. `Add` keeps one copy of each record
-string (names, databases) and gives every record its file's path, so no record pins a file's text
-and a cache load does not copy a name per record. `Repeated` marks the databases where
-vanilla defines one name in two files: there `duplicate-definition` never speaks.
+An `Index` is one inventory (`Files`) with each file's occurrences (`Occurrences`, parallel to `Files`), its
+`Roots` in load order, and, for the mods' index, the folders its descriptors unload (`Replaced`). The stored
+`Occurrence` is pointer-free: its strings are ordinals into five symbol tables (`Databases`, `IDs`, `Callers`,
+`Modes`, `Languages`), so no occurrence pins a file's text and a cache load copies each word once. A query answers
+with handles (`At`), read through `Occurrence()` (the walk's form, strings back), `File()`, `Entry()`, `Text()` and
+`Language()`; the zero `At` is no occurrence. `add`, `Drop` and `Rebuild` keep the postings (a role of a name →
+its occurrences) and the per-database name lists; `Rebuild` builds them again after a cache load, and marks the
+databases where two files define one name (`Repeated`): there `duplicate-definition` never speaks.
 
-**Scopes.** `Add` moves a file's scope pairs into `Index.Scoped`. The install's pairs are vanilla's evidence:
-`WritesInScope` answers whether vanilla writes a word in a scope, and `wrong-scope` accuses only a pair vanilla
-never writes.
+**Scopes.** `add` moves a file's scope pairs into `Index.Scoped`, the one derived set the cache keeps, since a
+scope pair is not an occurrence. The install's pairs are vanilla's evidence: `WritesInScope` answers whether
+vanilla writes a word in a scope, and `wrong-scope` accuses only a pair vanilla never writes.
 
-**Load order.** `Lookup`, `LookupRefs` and `LookupLocs` give a name's items across the indexes in the
-game's load order: a file is hidden by a later file at its `Rel`, or by a later index's `Replaced`
-folder (`Loaded`); the rest sort by `Rel`. `Names` is every name a database defines, for completion.
-`RefsInside` is the references written inside one definition.
+**Load order.** `Lookup(indexes, role, database, id)` gives a role of a name across the indexes in the game's
+load order: a file is hidden by a later file at its `Rel`, or by a later index's `Replaced` folder (`Loaded`); the
+rest sort by `Rel`, then by position in the file. `Names` is every name a database defines, for completion.
+`RefsInside` is the references written inside an entry's definition.
 
 **Resolution.** `Resolve` is the one resolver: a call looks in the databases its CalledIn word names
 (`Schema.Callees`); a scope the game saves from code, a loc key or a file path is known with no
@@ -55,10 +59,10 @@ mode in the game's processing order: a plain definition or a replacing mode take
 nothing before it is an orphan. A plain on_action, a `Named` and a `Local` definition never take a
 place. Two mods contest a name when one takes the other's place.
 
-**Fires.** `Ref.Fires` is a reference to an event or on_action outside a trigger; `Ref.Runs` is a
-call, or a name of a database called in effects, outside a trigger, whose fires are fired through it.
-`Def.Scripted` is a definition a reference may run: one of a database some block calls. The event
-graph's `session.Fires` and `session.FiredBy` follow these three and nothing else.
+**Fires.** `Fires` is a reference to an event or on_action outside a trigger; `Runs` is a call, or a name of a
+database called in effects, outside a trigger, whose fires are fired through it. `Scripted` is a definition a
+reference may run: one of a database some block calls. The event graph's `workspace.Fires` and
+`workspace.FiredBy` follow these three and nothing else.
 
 ## The scan (`scan.go`)
 
@@ -71,7 +75,7 @@ graph's `session.Fires` and `session.FiredBy` follow these three and nothing els
 4. **Schema** (`schemaOf`). `schema.Build` on the user's install, with the local dumps when every dump file is
    there, else the shipped dump part (`schema.LoadShipped`). `BuildSchema` is the generator's dump part.
 5. **Index.** Every script, table and sound list file is read on a worker per CPU and added in file order
-   (`collectFiles`). A mod's localization entries become records too.
+   (`collectFiles`). A mod's localization entries become occurrences too.
 6. **Save** (`SaveInstall`).
 
 `ScanMods` indexes the mods in playset order; `Replaced` comes from each descriptor's

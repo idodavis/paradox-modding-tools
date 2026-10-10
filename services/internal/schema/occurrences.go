@@ -22,15 +22,18 @@ const (
 )
 
 // Occurrence is one occurrence of a name in a file, as the walk produces it: the name's database and ID
-// (a call has Caller set and Database ""), where it is written, the entry it is in (-1 none; a definition's
-// own), and for a definition its mode word, whether it is declared inline (Local) and whether an entry's
-// Names key gives it (Named) rather than an entry of its own. The index stores it with its strings interned.
+// (a call has Caller set and Database ""), where it is written (the line and column are filled by the
+// index's Collect), the entry it is in, and for a definition its mode word, whether it is declared inline
+// (Local) and whether an entry's Names key gives it (Named) rather than an entry of its own. Entry is the
+// position, in the file's occurrences, of the definition of the entry it is in; -1 none; an entry's definition
+// points at itself. The index stores it with its strings interned.
 type Occurrence struct {
 	Role      Role
 	Database  string
 	ID        string
 	Caller    string
 	Range     jomini.Range
+	Line, Col int32
 	Entry     int32
 	Mode      string
 	InTrigger bool

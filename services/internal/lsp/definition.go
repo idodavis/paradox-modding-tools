@@ -27,7 +27,7 @@ type Symbol struct {
 
 // target is the reference or definition at an offset: the one the walk read in a script word, or
 // what a localization file's text or line key names; nil for none.
-func (file *file) target(offset int) *index.Ref {
+func (file *file) target(offset int) *schema.Occurrence {
 	switch {
 	case file.place.Format == inventory.Loc:
 		ref, _ := file.locRef(offset)
@@ -41,11 +41,11 @@ func (file *file) target(offset int) *index.Ref {
 
 // inFile narrows a name no schema database holds (a saved scope, a parameter) to this file's
 // definitions, where it has any: none of them replaces another.
-func (file *file) inFile(defs []index.Def) []index.Def {
-	if len(defs) == 0 || file.sess.Install.Schema.Databases[defs[0].Database] != nil {
+func (file *file) inFile(defs []index.At) []index.At {
+	if len(defs) == 0 || file.sess.Install.Schema.Databases[defs[0].Occurrence().Database] != nil {
 		return defs
 	}
-	if local := slices.DeleteFunc(slices.Clone(defs), func(def index.Def) bool { return def.Path != file.place.Path }); len(local) > 0 {
+	if local := slices.DeleteFunc(slices.Clone(defs), func(def index.At) bool { return def.File().Path != file.place.Path }); len(local) > 0 {
 		return local
 	}
 	return defs
@@ -53,22 +53,22 @@ func (file *file) inFile(defs []index.Def) []index.Def {
 
 // sites is where a reference's name is defined: a loc key's entries, a file's place, or its
 // definitions in load order (inFile) with the one the game keeps first.
-func (file *file) sites(ref index.Ref) []Location {
+func (file *file) sites(ref schema.Occurrence) []Location {
 	sess, indexes := file.sess, file.sess.Indexes()
 	var out []Location
 	switch ref.Database {
 	case schema.Localization:
-		for _, entry := range index.LookupLocs(indexes, ref.Name) {
-			out = append(out, locate(sess, entry.Path, Position{Line: entry.Line}))
+		for _, entry := range index.Lookup(indexes, schema.Localizes, schema.Localization, ref.ID) {
+			out = append(out, locate(sess, entry.File().Path, Position{Line: int(entry.Occurrence().Line)}))
 		}
 	case schema.File:
-		if found, listed := index.FileAt(indexes, ref.Name); listed {
+		if found, listed := index.FileAt(indexes, ref.ID); listed {
 			out = []Location{locate(sess, found.Path, Position{})}
 		}
 	default:
-		defs, _ := index.Resolve(sess.Install.Schema, indexes, ref)
-		if winner, _, _, _ := sess.Winner(defs); slices.Contains(defs, winner) && sess.Install.Schema.Databases[winner.Database] != nil {
-			defs = slices.Insert(slices.DeleteFunc(slices.Clone(defs), func(def index.Def) bool { return def == winner }), 0, winner)
+		defs, _ := index.Resolve(sess.Install.Schema, indexes, ref, file.place.Path)
+		if winner, _, _, _ := sess.Winner(defs); slices.Contains(defs, winner) && sess.Install.Schema.Databases[winner.Occurrence().Database] != nil {
+			defs = slices.Insert(slices.DeleteFunc(slices.Clone(defs), func(def index.At) bool { return def == winner }), 0, winner)
 		}
 		for _, def := range file.inFile(defs) {
 			out = append(out, defined(sess, def))
@@ -109,15 +109,15 @@ func References(sess *workspace.Session, path string, line, col int) ([]Location
 }
 
 // databases are the databases a reference's name is in: its own, or those a call of its kind resolves in.
-func databases(sess *workspace.Session, ref index.Ref) []string {
-	if ref.Called != "" {
-		return sess.Install.Schema.Callees[ref.Called]
+func databases(sess *workspace.Session, ref schema.Occurrence) []string {
+	if ref.Caller != "" {
+		return sess.Install.Schema.Callees[ref.Caller]
 	}
 	return []string{ref.Database}
 }
 
 // uses are a reference's name everywhere it is written: its uses, and where it is defined.
-func (file *file) uses(ref index.Ref) []Location {
+func (file *file) uses(ref schema.Occurrence) []Location {
 	sess := file.sess
 	seen, out := map[Location]bool{}, []Location(nil)
 	add := func(site Location) {
@@ -126,8 +126,8 @@ func (file *file) uses(ref index.Ref) []Location {
 		}
 	}
 	for _, database := range databases(sess, ref) {
-		for _, found := range index.RefsTo(sess.Install.Schema, sess.Indexes(), database, ref.Name) {
-			add(locate(sess, found.Path, Position{Line: int(found.Line), Character: int(found.Col)}))
+		for _, found := range index.RefsTo(sess.Install.Schema, sess.Indexes(), database, ref.ID) {
+			add(locate(sess, found.File().Path, Position{Line: int(found.Occurrence().Line), Character: int(found.Occurrence().Col)}))
 		}
 	}
 	for _, site := range file.sites(ref) {
@@ -156,26 +156,25 @@ func Rename(sess *workspace.Session, path string, line, col int, name string) (W
 	}
 	origins := map[string]bool{}
 	for _, database := range databases(sess, *ref) {
-		if len(index.Lookup(sess.Indexes(), database, name)) > 0 {
+		if len(index.Lookup(sess.Indexes(), schema.Defines, database, name)) > 0 {
 			return edit, fmt.Errorf("%s is taken", name)
 		}
-		for _, def := range index.Lookup(sess.Indexes(), database, ref.Name) {
-			listed, _, _ := sess.Located(def.Path)
-			origins[listed.Origin] = true
+		for _, def := range index.Lookup(sess.Indexes(), schema.Defines, database, ref.ID) {
+			origins[def.File().Origin] = true
 		}
 	}
 	switch {
 	case len(origins) == 0:
-		return edit, fmt.Errorf("nothing defines %s", ref.Name)
+		return edit, fmt.Errorf("nothing defines %s", ref.ID)
 	case origins[game.OriginVanilla]:
-		return edit, fmt.Errorf("the game defines %s, and its files never change", ref.Name)
+		return edit, fmt.Errorf("the game defines %s, and its files never change", ref.ID)
 	case len(origins) > 1:
-		return edit, fmt.Errorf("more than one mod defines %s", ref.Name)
+		return edit, fmt.Errorf("more than one mod defines %s", ref.ID)
 	}
 	texts := map[string][]string{}
 	for _, site := range file.uses(*ref) {
 		if site.Origin == game.OriginVanilla {
-			return edit, fmt.Errorf("the game's %s uses %s, and its files never change", site.Rel, ref.Name)
+			return edit, fmt.Errorf("the game's %s uses %s, and its files never change", site.Rel, ref.ID)
 		}
 		if texts[site.Path] == nil {
 			text, err := sess.Text(site.Path)
@@ -185,10 +184,10 @@ func Rename(sess *workspace.Session, path string, line, col int, name string) (W
 			texts[site.Path] = strings.Split(text, "\n")
 		}
 		at, lines := site.Range.Start, texts[site.Path]
-		if at.Line >= len(lines) || !strings.HasPrefix(lines[at.Line][min(at.Character, len(lines[at.Line])):], ref.Name) {
-			return edit, fmt.Errorf("%s:%d does not read %s where it is used; rename it by hand", site.Rel, at.Line+1, ref.Name)
+		if at.Line >= len(lines) || !strings.HasPrefix(lines[at.Line][min(at.Character, len(lines[at.Line])):], ref.ID) {
+			return edit, fmt.Errorf("%s:%d does not read %s where it is used; rename it by hand", site.Rel, at.Line+1, ref.ID)
 		}
-		end := Position{Line: at.Line, Character: at.Character + len(ref.Name)}
+		end := Position{Line: at.Line, Character: at.Character + len(ref.ID)}
 		edit.Changes[site.Path] = append(edit.Changes[site.Path], TextEdit{Range: Range{Start: at, End: end}, NewText: name})
 	}
 	return edit, nil
@@ -201,16 +200,11 @@ func DocumentSymbols(sess *workspace.Session, path string) ([]Symbol, error) {
 	listed, _, _ := sess.Located(path)
 	var out []Symbol
 	for _, idx := range sess.Indexes() {
-		records := idx.Records[listed.Path]
-		if records == nil {
-			continue
-		}
-		for _, def := range slices.SortedFunc(slices.Values(records.Defs), func(first, second index.Def) int {
-			return cmp.Or(cmp.Compare(first.Line, second.Line), cmp.Compare(first.Col, second.Col))
+		for _, def := range slices.SortedFunc(slices.Values(idx.InFile(listed.Path)), func(first, second index.At) int {
+			return cmp.Or(cmp.Compare(first.Occurrence().Line, second.Occurrence().Line), cmp.Compare(first.Occurrence().Col, second.Occurrence().Col))
 		}) {
-			if def.Name != "" && def.Database != schema.Parameter {
-				out = append(out, Symbol{Name: def.Name, Database: def.Database,
-					Location: defined(sess, def)})
+			if found := def.Occurrence(); found.Role == schema.Defines && found.ID != "" && found.Database != schema.Parameter {
+				out = append(out, Symbol{Name: found.ID, Database: found.Database, Location: defined(sess, def)})
 			}
 		}
 	}
@@ -228,14 +222,11 @@ func WorkspaceSymbols(sess *workspace.Session, query string) []Symbol {
 	}
 	var out []Symbol
 	for _, listed := range sess.Workspace.Files {
-		records := sess.Workspace.Records[listed.Path]
-		if records == nil {
-			continue
-		}
-		for _, def := range records.Defs {
-			if def.Database != schema.Parameter && strings.Contains(strings.ToLower(def.Name), query) && slices.Contains(index.Lookup(sess.Indexes(), def.Database, def.Name), def) {
-				out = append(out, Symbol{Name: def.Name, Database: def.Database,
-					Location: defined(sess, def)})
+		for _, def := range sess.Workspace.InFile(listed.Path) {
+			found := def.Occurrence()
+			if found.Role == schema.Defines && found.Database != schema.Parameter && strings.Contains(strings.ToLower(found.ID), query) &&
+				slices.Contains(index.Lookup(sess.Indexes(), schema.Defines, found.Database, found.ID), def) {
+				out = append(out, Symbol{Name: found.ID, Database: found.Database, Location: defined(sess, def)})
 			}
 		}
 	}
@@ -250,7 +241,7 @@ func FindLoc(sess *workspace.Session, prefix string, limit int) []Symbol {
 	var out []Symbol
 	for _, key := range sess.LocKeys(strings.ToLower(prefix), limit) {
 		if entry, found := sess.Loc(key, sess.Language); found {
-			out = append(out, Symbol{Name: key, Database: "localization", Location: locate(sess, entry.Path, Position{Line: entry.Line})})
+			out = append(out, Symbol{Name: key, Database: "localization", Location: locate(sess, entry.File().Path, Position{Line: int(entry.Occurrence().Line)})})
 		}
 	}
 	return out

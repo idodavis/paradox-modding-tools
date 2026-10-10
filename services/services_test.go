@@ -744,7 +744,7 @@ func TestEnsureSession(t *testing.T) {
 		t.Fatalf("a session built from a scan: %+v (%v)", health, err)
 	}
 	live := svc.get("ws")
-	if live == nil || len(live.Mods) != 1 || len(index.Lookup(live.Indexes(), "traits", "bold")) == 0 {
+	if live == nil || len(live.Mods) != 1 || len(index.Lookup(live.Indexes(), schema.Defines, "traits", "bold")) == 0 {
 		t.Error("the mod is indexed over the install")
 	}
 	if _, err := svc.EnsureSession("nowhere"); err == nil {
@@ -986,8 +986,12 @@ func sweep(t *testing.T, id, name string, sess *workspace.Session) {
 	for _, language := range health.Loc {
 		untranslated += len(language.Untranslated)
 	}
-	for _, records := range sess.Workspace.Records {
-		defs += len(records.Defs)
+	for _, found := range sess.Workspace.Occurrences {
+		for _, occurrence := range found {
+			if occurrence.Role == schema.Defines {
+				defs++
+			}
+		}
 	}
 	var files []inventory.File
 	for _, file := range sess.Workspace.Files {

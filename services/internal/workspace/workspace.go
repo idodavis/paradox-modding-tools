@@ -116,7 +116,7 @@ func (sess *Session) Indexes() []*index.Index {
 
 // Winner is the definition the game keeps of several by the entry modes, its adds, the INJECT and
 // REPLACE definitions with no target, and whether two mods contest the name.
-func (sess *Session) Winner(defs []index.Def) (winner index.Def, adds, orphans []index.Def, contested bool) {
+func (sess *Session) Winner(defs []index.At) (winner index.At, adds, orphans []index.At, contested bool) {
 	return index.Winner(sess.Game, defs, func(path string) string {
 		// a path no mod lists is the install's
 		if file, listed := sess.Workspace.At(path); listed {
@@ -155,9 +155,9 @@ func newFire(name, database, via string) Fire {
 
 // placed is a fire placed: where start sits in from (its site and blocks), and what fire, a reference in def, fires
 // with. The files are parsed once per call, in parsed.
-func (sess *Session) placed(fire Fire, from index.Def, start index.Ref, def index.Def, ref index.Ref, parsed map[string]*jomini.Result) Fire {
-	file, _, _ := sess.Located(start.Path)
-	fire.Path, fire.Rel, fire.Origin, fire.Line = start.Path, file.Rel, file.Origin, start.Line
+func (sess *Session) placed(fire Fire, from, start, def, ref index.At, parsed map[string]*jomini.Result) Fire {
+	file := start.File()
+	fire.Path, fire.Rel, fire.Origin, fire.Line = file.Path, file.Rel, file.Origin, start.Occurrence().Line
 	fire.Block, _, _ = sess.context(from, start, parsed)
 	_, fire.Command, fire.Args = sess.context(def, ref, parsed)
 	return fire
@@ -166,22 +166,23 @@ func (sess *Session) placed(fire Fire, from index.Def, start index.Ref, def inde
 // context is where a reference sits in its definition: the definition's block it is in (with its name's last part
 // where it has one: option a), the statement that holds it, and that statement's other fields as written. A list's
 // weight (random_events' 100 = x) is an argument, and a block's id is its statement's.
-func (sess *Session) context(def index.Def, ref index.Ref, parsed map[string]*jomini.Result) (block, command, args string) {
-	result := parsed[ref.Path]
+func (sess *Session) context(def, ref index.At, parsed map[string]*jomini.Result) (block, command, args string) {
+	in, start := ref.File().Path, ref.Occurrence().Range.Start
+	result := parsed[in]
 	if result == nil {
-		if result, _, _ = sess.Parsed(ref.Path); result == nil {
+		if result, _, _ = sess.Parsed(in); result == nil {
 			return "", "", ""
 		}
-		parsed[ref.Path] = result
+		parsed[in] = result
 	}
-	top := result.AssignmentAt(int(def.Line), int(def.Col))
+	top := result.AssignmentAt(int(def.Occurrence().Line), int(def.Occurrence().Col))
 	if top == nil {
 		return "", "", ""
 	}
 	var path []jomini.Statement
 	for block := jomini.ChildBlock(top); block != nil; {
 		at := slices.IndexFunc(block.Statements, func(st jomini.Statement) bool {
-			return st.NodeRange().Start <= ref.Range.Start && ref.Range.Start < st.NodeRange().End
+			return st.NodeRange().Start <= start && start < st.NodeRange().End
 		})
 		if at < 0 {
 			break
@@ -240,34 +241,34 @@ func blockFields(block *jomini.Block) []*jomini.Assignment {
 	return fields
 }
 
-// Fires is what a definition fires, in name order: events and on_actions only (Ref.Fires). A
-// scripted entry it runs (Ref.Runs) is followed to what it fires, and an entry already met on the
+// Fires is what a definition fires, in name order: events and on_actions only (index.Fires). A
+// scripted entry it runs (index.Runs) is followed to what it fires, and an entry already met on the
 // way is not entered again.
-func (sess *Session) Fires(from index.Def) []Fire {
+func (sess *Session) Fires(from index.At) []Fire {
 	s, indexes := sess.Install.Schema, sess.Indexes()
-	seen, out, parsed := map[index.Def]bool{from: true}, []Fire(nil), map[string]*jomini.Result{}
+	seen, out, parsed := map[index.At]bool{from: true}, []Fire(nil), map[string]*jomini.Result{}
 
 	// follow reads the references written in one definition; via is the entries entered to reach it, start the
-	// reference in from that leads there
-	var follow func(def index.Def, via string, start *index.Ref)
-	follow = func(def index.Def, via string, start *index.Ref) {
-		for _, ref := range index.RefsInside(indexes, def) {
-			first := cmp.Or(start, &ref)
+	// reference in from that leads there (the zero At: the reference itself)
+	var follow func(def index.At, via string, start index.At)
+	follow = func(def index.At, via string, start index.At) {
+		for _, ref := range index.RefsInside(def) {
+			first, found := cmp.Or(start, ref), ref.Occurrence()
 			switch {
-			case ref.Fires(s):
-				out = append(out, sess.placed(newFire(ref.Name, ref.Database, via), from, *first, def, ref, parsed))
-			case ref.Runs(s):
-				called, _ := index.Resolve(s, indexes, ref)
+			case index.Fires(s, found):
+				out = append(out, sess.placed(newFire(found.ID, found.Database, via), from, first, def, ref, parsed))
+			case index.Runs(s, found):
+				called, _ := index.Resolve(s, indexes, found, ref.File().Path)
 				for _, target := range called {
 					if !seen[target] {
 						seen[target] = true
-						follow(target, strings.TrimPrefix(via+" → "+target.Name, " → "), first)
+						follow(target, strings.TrimPrefix(via+" → "+target.Occurrence().ID, " → "), first)
 					}
 				}
 			}
 		}
 	}
-	follow(from, "", nil)
+	follow(from, "", index.At{})
 	return byName(out)
 }
 
@@ -280,41 +281,37 @@ func byName(fires []Fire) []Fire {
 // FiredBy is Fires turned around, in name order: each definition holding a reference that fires
 // or runs this one, a scripted entry followed to what runs it, with the chain as Fires writes it; with place, each
 // placed where it starts in its definition, with the statement that fires this one (which parses its file).
-func (sess *Session) FiredBy(target index.Def, place bool) []Fire {
+func (sess *Session) FiredBy(target index.At, place bool) []Fire {
 	s, indexes := sess.Install.Schema, sess.Indexes()
-	seen, parsed := map[index.Def]bool{target: true}, map[string]*jomini.Result{}
+	seen, parsed := map[index.At]bool{target: true}, map[string]*jomini.Result{}
 
 	// follow reads the references to one definition; a local one answers only its own file's; fired is the
 	// statement that fires the target, met on the first step
 	type step struct {
-		def index.Def
-		ref index.Ref
+		def, ref index.At
 	}
-	var follow func(def index.Def, fired *step) []Fire
-	follow = func(def index.Def, fired *step) (out []Fire) {
-		for _, ref := range index.RefsTo(s, indexes, def.Database, def.Name) {
-			var caller index.Def
-			for _, index := range indexes {
-				if records := index.Records[ref.Path]; records != nil && ref.From >= 0 {
-					caller = records.Defs[ref.From]
-				}
-			}
+	var follow func(def index.At, fired *step) []Fire
+	follow = func(def index.At, fired *step) (out []Fire) {
+		defined := def.Occurrence()
+		for _, ref := range index.RefsTo(s, indexes, defined.Database, defined.ID) {
+			caller, _ := ref.Entry()
+			calling, found := caller.Occurrence(), ref.Occurrence()
 			inner := cmp.Or(fired, &step{caller, ref})
 			switch {
-			case !ref.Fires(s) && !ref.Runs(s) || caller.Name == "" || def.Local && ref.Path != def.Path:
-			case caller.Scripted(s):
+			case !index.Fires(s, found) && !index.Runs(s, found) || calling.ID == "" || defined.Local && ref.File().Path != def.File().Path:
+			case index.Scripted(s, calling):
 				if !seen[caller] {
 					seen[caller] = true
 					for _, up := range follow(caller, inner) {
-						up.Via = strings.TrimPrefix(up.Via+" → "+caller.Name, " → ")
+						up.Via = strings.TrimPrefix(up.Via+" → "+calling.ID, " → ")
 						up.Through = strings.Count(up.Via, " → ") + 1
 						out = append(out, up)
 					}
 				}
 			case place:
-				out = append(out, sess.placed(newFire(caller.Name, caller.Database, ""), caller, ref, inner.def, inner.ref, parsed))
+				out = append(out, sess.placed(newFire(calling.ID, calling.Database, ""), caller, ref, inner.def, inner.ref, parsed))
 			default:
-				out = append(out, newFire(caller.Name, caller.Database, ""))
+				out = append(out, newFire(calling.ID, calling.Database, ""))
 			}
 		}
 		return out
@@ -324,38 +321,38 @@ func (sess *Session) FiredBy(target index.Def, place bool) []Fire {
 
 // Loc is a key's entry in a language, the last loaded: a mod's over the install's. With none in the
 // language it is the english one, so a title shows; whether the key exists is Resolve's to say.
-func (sess *Session) Loc(key, language string) (index.Loc, bool) {
-	entries := index.LookupLocs(sess.Indexes(), key)
+func (sess *Session) Loc(key, language string) (index.At, bool) {
+	entries := index.Lookup(sess.Indexes(), schema.Localizes, schema.Localization, key)
 	for _, wanted := range []string{cmp.Or(language, sess.Language), game.BaseLanguage} {
 		for _, entry := range slices.Backward(entries) {
-			if entry.Language == wanted {
+			if entry.Language() == wanted {
 				return entry, true
 			}
 		}
 	}
-	return index.Loc{}, false
+	return index.At{}, false
 }
 
 // Entry is a definition's statement in its file's parse: the assignment whose key starts at the
 // definition's line and column; nil where its file does not parse or none starts there.
-func (sess *Session) Entry(def index.Def) (*jomini.Result, jomini.Statement) {
-	if def.Path == "" {
+func (sess *Session) Entry(def index.At) (*jomini.Result, jomini.Statement) {
+	if def == (index.At{}) {
 		return nil, nil
 	}
-	parsed, _, err := sess.Parsed(def.Path)
+	parsed, _, err := sess.Parsed(def.File().Path)
 	if err != nil {
 		return nil, nil
 	}
-	return parsed, parsed.AssignmentAt(int(def.Line), int(def.Col))
+	return parsed, parsed.AssignmentAt(int(def.Occurrence().Line), int(def.Occurrence().Col))
 }
 
-// Title is a definition's display name: the text of its name as a loc key, else of its first field
-// typed as a loc key that has text.
-func (sess *Session) Title(def index.Def) string {
-	if said, found := sess.Loc(def.Name, ""); found {
-		return said.Text
+// Title is the display name of a definition of id: the text of the id as a loc key, else of the definition's
+// first field typed as a loc key that has text (the zero At: the loc key alone).
+func (sess *Session) Title(id string, def index.At) string {
+	if said, found := sess.Loc(id, ""); found {
+		return said.Text()
 	}
-	row := sess.Install.Schema.Databases[def.Database]
+	row := sess.Install.Schema.Databases[def.Occurrence().Database]
 	_, entry := sess.Entry(def)
 	for i, block := 0, jomini.ChildBlock(entry); row != nil && block != nil && i < len(block.Statements); i++ {
 		field, isField := block.Statements[i].(*jomini.Assignment)
@@ -368,7 +365,7 @@ func (sess *Session) Title(def index.Def) string {
 			continue
 		}
 		if said, found := sess.Loc(value.Text, ""); found {
-			return said.Text
+			return said.Text()
 		}
 	}
 	return ""

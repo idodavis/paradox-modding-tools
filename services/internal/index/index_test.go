@@ -10,6 +10,7 @@ import (
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/schema"
 )
 
@@ -61,19 +62,24 @@ func fixtureMods(t *testing.T, id string, install *Install) *Index {
 	return mods
 }
 
-// dumpRecords writes a file's records as the goldens print them.
-func dumpRecords(records *Records) string {
+// dumpRecords writes a file's occurrences as the goldens print them: by role, each role in the file's order.
+func dumpRecords(found []At) string {
 	var out strings.Builder
-	for _, def := range records.Defs {
-		fmt.Fprintf(&out, "def %s %q mode=%q %d-%d @%d:%d local=%t named=%t\n",
-			def.Database, def.Name, def.Mode, def.Range.Start, def.Range.End, def.Line, def.Col, def.Local, def.Named)
-	}
-	for _, ref := range records.Refs {
-		fmt.Fprintf(&out, "ref %s %q called=%q %d-%d @%d:%d from=%d trigger=%t\n",
-			ref.Database, ref.Name, ref.Called, ref.Range.Start, ref.Range.End, ref.Line, ref.Col, ref.From, ref.InTrigger)
-	}
-	for _, entry := range records.Loc {
-		fmt.Fprintf(&out, "loc %s %q lang=%s line=%d\n", entry.Key, entry.Text, entry.Language, entry.Line)
+	for _, role := range []schema.Role{schema.Defines, schema.Refers, schema.Localizes} {
+		for _, at := range found {
+			o := at.Occurrence()
+			switch {
+			case o.Role != role:
+			case role == schema.Defines:
+				fmt.Fprintf(&out, "def %s %q mode=%q %d-%d @%d:%d local=%t named=%t\n",
+					o.Database, o.ID, o.Mode, o.Range.Start, o.Range.End, o.Line, o.Col, o.Local, o.Named)
+			case role == schema.Refers:
+				fmt.Fprintf(&out, "ref %s %q called=%q %d-%d @%d:%d from=%d trigger=%t\n",
+					o.Database, o.ID, o.Caller, o.Range.Start, o.Range.End, o.Line, o.Col, o.Entry, o.InTrigger)
+			default:
+				fmt.Fprintf(&out, "loc %s %q lang=%s line=%d\n", o.ID, at.Text(), at.Language(), o.Line)
+			}
+		}
 	}
 	return out.String()
 }
@@ -102,8 +108,8 @@ func TestGoldenRecords(t *testing.T) {
 		install := fixtureInstall(t, id)
 		for _, index := range []*Index{install.Index, fixtureMods(t, id, install)} {
 			for _, file := range index.Files {
-				records := index.Records[file.Path]
-				if records == nil || dumpRecords(records) == "" {
+				found := index.InFile(file.Path)
+				if dumpRecords(found) == "" {
 					continue
 				}
 				origin := "vanilla"
@@ -116,7 +122,7 @@ func TestGoldenRecords(t *testing.T) {
 				want, err := os.ReadFile(filepath.Join(golden, name))
 				if err != nil {
 					t.Errorf("%s: %v", name, err)
-				} else if got := dumpRecords(records); got != string(want) {
+				} else if got := dumpRecords(found); got != string(want) {
 					t.Errorf("%s differs from the golden:\n%s", name, firstDifference(string(want), got))
 				}
 			}
@@ -140,48 +146,48 @@ func TestResolve(t *testing.T) {
 	}
 	cases := []struct {
 		about string
-		ref   Ref
+		ref   schema.Occurrence
+		from  string
 		defs  int
 		known bool
 	}{
-		{"a scope the dumps declare", Ref{Database: game.SavedScopes, Name: "target"}, 0, true},
-		{"a scope an event saves", Ref{Database: game.SavedScopes, Name: "own_dynasty"}, 1, true},
-		{"a scripted effect", Ref{Called: "effect", Name: "v_effect"}, 1, true},
+		{"a scope the dumps declare", schema.Occurrence{Database: game.SavedScopes, ID: "target"}, "", 0, true},
+		{"a scope an event saves", schema.Occurrence{Database: game.SavedScopes, ID: "own_dynasty"}, "", 1, true},
+		{"a scripted effect", schema.Occurrence{Caller: "effect", ID: "v_effect"}, "", 1, true},
 		{"a local trigger from another file",
-			Ref{Called: trigger, Name: inline, Path: pathOf("common/scripted_triggers/v_triggers.txt")}, 0, false},
+			schema.Occurrence{Caller: trigger, ID: inline}, pathOf("common/scripted_triggers/v_triggers.txt"), 0, false},
 		{"a local trigger from its own file",
-			Ref{Called: trigger, Name: inline, Path: pathOf("events/v_more_events.txt")}, 1, true},
-		{"a loc key", Ref{Database: schema.Localization, Name: "v.1.t"}, 0, true},
-		{"a file", Ref{Database: schema.File, Name: "gfx/interface/icons/traits/brave.dds"}, 0, true},
-		{"a trait vanilla and the mod define", Ref{Database: "traits", Name: "brave"}, 2, true},
+			schema.Occurrence{Caller: trigger, ID: inline}, pathOf("events/v_more_events.txt"), 1, true},
+		{"a loc key", schema.Occurrence{Database: schema.Localization, ID: "v.1.t"}, "", 0, true},
+		{"a file", schema.Occurrence{Database: schema.File, ID: "gfx/interface/icons/traits/brave.dds"}, "", 0, true},
+		{"a trait vanilla and the mod define", schema.Occurrence{Database: "traits", ID: "brave"}, "", 2, true},
 	}
 	for _, c := range cases {
-		defs, known := Resolve(install.Schema, indexes, c.ref)
+		defs, known := Resolve(install.Schema, indexes, c.ref, c.from)
 		if len(defs) != c.defs || known != c.known {
 			t.Errorf("%s: %d defs, known %t; want %d, %t", c.about, len(defs), known, c.defs, c.known)
 		}
 	}
 
-	if defs, _ := Resolve(install.Schema, indexes, Ref{Database: game.SavedScopes, Name: "own_dynasty"}); len(defs) == 1 &&
-		defs[0].Path != pathOf("events/v_events.txt") {
-		t.Errorf("own_dynasty is defined in %s, want events/v_events.txt", defs[0].Path)
+	if defs, _ := Resolve(install.Schema, indexes, schema.Occurrence{Database: game.SavedScopes, ID: "own_dynasty"}, ""); len(defs) == 1 &&
+		defs[0].File().Path != pathOf("events/v_events.txt") {
+		t.Errorf("own_dynasty is defined in %s, want events/v_events.txt", defs[0].File().Path)
 	}
-	if defs, _ := Resolve(install.Schema, indexes, Ref{Called: "effect", Name: "v_effect"}); len(defs) == 1 &&
-		defs[0].Database != "scripted_effects" {
-		t.Errorf("v_effect is in %s, want scripted_effects", defs[0].Database)
+	if defs, _ := Resolve(install.Schema, indexes, schema.Occurrence{Caller: "effect", ID: "v_effect"}, ""); len(defs) == 1 &&
+		defs[0].Occurrence().Database != "scripted_effects" {
+		t.Errorf("v_effect is in %s, want scripted_effects", defs[0].Occurrence().Database)
 	}
-	local, _ := Resolve(install.Schema, indexes,
-		Ref{Called: trigger, Name: inline, Path: pathOf("events/v_more_events.txt")})
-	if len(local) == 1 && !local[0].Local {
+	local, _ := Resolve(install.Schema, indexes, schema.Occurrence{Caller: trigger, ID: inline}, pathOf("events/v_more_events.txt"))
+	if len(local) == 1 && !local[0].Occurrence().Local {
 		t.Errorf("v_inline_trigger is not local")
 	}
-	brave, _ := Resolve(install.Schema, indexes, Ref{Database: "traits", Name: "brave"})
+	brave, _ := Resolve(install.Schema, indexes, schema.Occurrence{Database: "traits", ID: "brave"}, "")
 	if len(brave) == 2 {
 		// load order is by Rel: the mod's m_traits.txt sorts before vanilla's v_traits.txt
-		_, first := mods.At(brave[0].Path)
-		_, second := install.Index.At(brave[1].Path)
+		_, first := mods.At(brave[0].File().Path)
+		_, second := install.Index.At(brave[1].File().Path)
 		if !first || !second {
-			t.Errorf("brave's defs are not the mod's then vanilla's: %s, %s", brave[0].Path, brave[1].Path)
+			t.Errorf("brave's defs are not the mod's then vanilla's: %s, %s", brave[0].File().Path, brave[1].File().Path)
 		}
 	}
 }
@@ -196,7 +202,7 @@ func TestWinner(t *testing.T) {
 		install := fixtureInstall(t, id)
 		pairs[id] = pair{install, fixtureMods(t, id, install)}
 	}
-	winner := func(id string, defs []Def) (Def, []Def, []Def) {
+	winner := func(id string, defs []At) (At, []At, []At) {
 		mods := pairs[id].mods
 		origin := func(path string) string {
 			if file, listed := mods.At(path); listed {
@@ -207,41 +213,61 @@ func TestWinner(t *testing.T) {
 		won, adds, orphans, _ := Winner(game.Get(id), defs, origin)
 		return won, adds, orphans
 	}
-	lookup := func(id, database, name string) []Def {
-		return Lookup([]*Index{pairs[id].install.Index, pairs[id].mods}, database, name)
+	lookup := func(id, database, name string) []At {
+		return Lookup([]*Index{pairs[id].install.Index, pairs[id].mods}, schema.Defines, database, name)
 	}
-	fromMod := func(id string, def Def) bool {
-		_, listed := pairs[id].mods.At(def.Path)
+	fromMod := func(id string, def At) bool {
+		_, listed := pairs[id].mods.At(def.File().Path)
 		return listed
+	}
+	mode := func(def At) string { return def.Occurrence().Mode }
+	path := func(def At) string {
+		if def == (At{}) {
+			return ""
+		}
+		return def.File().Path
 	}
 
 	won, adds, orphans := winner("eu5", lookup("eu5", "town_rights", "aga_tr"))
-	if won.Mode != "REPLACE" || !strings.HasSuffix(filepath.ToSlash(won.Path), "m_rights.txt") || len(adds) != 0 || len(orphans) != 0 {
+	if mode(won) != "REPLACE" || !strings.HasSuffix(filepath.ToSlash(path(won)), "m_rights.txt") || len(adds) != 0 || len(orphans) != 0 {
 		t.Errorf("eu5 aga_tr: winner %s %s, %d adds, %d orphans; want the mod's REPLACE, none, none",
-			won.Mode, won.Path, len(adds), len(orphans))
+			mode(won), path(won), len(adds), len(orphans))
 	}
-	if won, _, orphans := winner("eu5", lookup("eu5", "town_rights", "missing_tr")); won.Path != "" || len(orphans) != 0 {
-		t.Errorf("eu5 missing_tr: winner %q, %d orphans; want none: TRY_ does nothing where there is none", won.Path, len(orphans))
+	if won, _, orphans := winner("eu5", lookup("eu5", "town_rights", "missing_tr")); won != (At{}) || len(orphans) != 0 {
+		t.Errorf("eu5 missing_tr: winner %q, %d orphans; want none: TRY_ does nothing where there is none", path(won), len(orphans))
 	}
 	won, adds, _ = winner(vic3, lookup(vic3, "country_definitions", "GBR"))
-	if fromMod(vic3, won) || len(adds) != 1 || adds[0].Mode != "INJECT" || !fromMod(vic3, adds[0]) {
-		t.Errorf("vic3 GBR: winner %s, adds %v; want vanilla's, the mod's INJECT", won.Path, adds)
+	if fromMod(vic3, won) || len(adds) != 1 || mode(adds[0]) != "INJECT" || !fromMod(vic3, adds[0]) {
+		t.Errorf("vic3 GBR: winner %s, adds %v; want vanilla's, the mod's INJECT", path(won), adds)
 	}
 	won, adds, _ = winner(vic3, lookup(vic3, "country_definitions", "FRA"))
-	if won.Mode != "REPLACE" || !fromMod(vic3, won) || len(adds) != 0 {
-		t.Errorf("vic3 FRA: winner %s %s, %d adds; want the mod's REPLACE, none", won.Mode, won.Path, len(adds))
+	if mode(won) != "REPLACE" || !fromMod(vic3, won) || len(adds) != 0 {
+		t.Errorf("vic3 FRA: winner %s %s, %d adds; want the mod's REPLACE, none", mode(won), path(won), len(adds))
 	}
 	won, _, _ = winner(ck3, lookup(ck3, "traits", "brave"))
-	if won.Mode != "" || fromMod(ck3, won) {
-		t.Errorf("ck3 brave: winner %s %s; want vanilla's plain one, the last by Rel", won.Mode, won.Path)
+	if mode(won) != "" || fromMod(ck3, won) {
+		t.Errorf("ck3 brave: winner %s %s; want vanilla's plain one, the last by Rel", mode(won), path(won))
 	}
-	won, _, _ = winner(vic3, []Def{{Database: events, Name: "x", Path: "a"}, {Database: events, Name: "x", Path: "b"}})
-	if won.Path != "a" {
-		t.Errorf("vic3 events: winner %q; want the first, events is first-wins", won.Path)
+}
+
+func TestWinnerByHand(t *testing.T) {
+	// definitions made by hand, one per file a and b of one index, no mod among them
+	made := func(found ...schema.Occurrence) []At {
+		index := &Index{Files: []inventory.File{{Path: "a", Rel: "a"}, {Path: "b", Rel: "b"}}}
+		index.Rebuild()
+		for i, one := range found {
+			index.add(index.Files[i].Path, collected{found: []schema.Occurrence{one}})
+		}
+		return Lookup([]*Index{index}, schema.Defines, events, "x")
 	}
-	won, _, orphans = winner("eu5", []Def{{Database: events, Name: "x", Mode: "INJECT", Path: "a"}})
-	if won.Path != "" || len(orphans) != 1 {
-		t.Errorf("eu5 a lone INJECT: winner %q, %d orphans; want none, one", won.Path, len(orphans))
+	vanilla := func(string) string { return game.OriginVanilla }
+	plain := schema.Occurrence{Role: schema.Defines, Database: events, ID: "x"}
+	if won, _, _, _ := Winner(game.Get(vic3), made(plain, plain), vanilla); won.File().Path != "a" {
+		t.Errorf("vic3 events: winner %q; want the first, events is first-wins", won.File().Path)
+	}
+	injected := schema.Occurrence{Role: schema.Defines, Database: events, ID: "x", Mode: "INJECT"}
+	if won, _, orphans, _ := Winner(game.Get("eu5"), made(injected), vanilla); won != (At{}) || len(orphans) != 1 {
+		t.Errorf("eu5 a lone INJECT: winner %q, %d orphans; want none, one", won.File().Path, len(orphans))
 	}
 }
 
@@ -297,11 +323,22 @@ func TestCacheRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eventV1 := func(install *Install) string { return fmt.Sprint(Lookup([]*Index{install.Index}, events, "v.1")) }
-	if len(loaded.Index.Files) != len(scanned.Index.Files) || len(loaded.Index.Records) != len(scanned.Index.Records) ||
-		eventV1(loaded) != eventV1(scanned) {
-		t.Errorf("loaded: %d files, %d records, v.1 %s; scanned: %d, %d, %s", len(loaded.Index.Files),
-			len(loaded.Index.Records), eventV1(loaded), len(scanned.Index.Files), len(scanned.Index.Records), eventV1(scanned))
+	eventV1 := func(install *Install) (found []schema.Occurrence) {
+		for _, at := range Lookup([]*Index{install.Index}, schema.Defines, events, "v.1") {
+			found = append(found, at.Occurrence())
+		}
+		return found
+	}
+	count := func(install *Install) (occurrences int) {
+		for _, found := range install.Index.Occurrences {
+			occurrences += len(found)
+		}
+		return occurrences
+	}
+	if len(loaded.Index.Files) != len(scanned.Index.Files) || count(loaded) != count(scanned) ||
+		fmt.Sprint(eventV1(loaded)) != fmt.Sprint(eventV1(scanned)) {
+		t.Errorf("loaded: %d files, %d occurrences, v.1 %v; scanned: %d, %d, %v", len(loaded.Index.Files),
+			count(loaded), eventV1(loaded), len(scanned.Index.Files), count(scanned), eventV1(scanned))
 	}
 
 	if err := DropInstall(req); err != nil {

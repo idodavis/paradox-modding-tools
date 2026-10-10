@@ -182,8 +182,11 @@ func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 	for _, path := range slices.Sorted(maps.Keys(found)) {
 		file, _ := sess.Workspace.At(path)
 		language := ""
-		if records := sess.Workspace.Records[path]; records != nil && len(records.Loc) > 0 {
-			language = records.Loc[0].Language
+		for _, at := range sess.Workspace.InFile(path) {
+			if at.Occurrence().Role == schema.Localizes {
+				language = at.Language()
+				break
+			}
 		}
 		for _, diagnostic := range found[path] {
 			at := place{path, diagnostic.Range.Start.Line, diagnostic.Range.Start.Character}
@@ -200,24 +203,25 @@ func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Hea
 // it, else one mod's override of another origin's; not in a database where the game repeats names,
 // nor one no schema database names (a parameter, a name script makes).
 func contests(sess *workspace.Session, preview []*index.Index, number func(inventory.File) int) (contested, overrides []Contest) {
-	schema := sess.Install.Schema
+	s := sess.Install.Schema
 	names := map[[2]string]bool{}
-	for _, records := range sess.Workspace.Records {
-		for _, def := range records.Defs {
-			if def.Name != "" && schema.Databases[def.Database] != nil && !sess.Install.Index.Repeated[def.Database] {
-				names[[2]string{def.Database, def.Name}] = true
+	for _, file := range sess.Workspace.Files {
+		for _, at := range sess.Workspace.InFile(file.Path) {
+			def := at.Occurrence()
+			if def.Role == schema.Defines && def.ID != "" && s.Databases[def.Database] != nil && !sess.Install.Index.Repeated(def.Database) {
+				names[[2]string{def.Database, def.ID}] = true
 			}
 		}
 	}
 	for _, name := range slices.SortedFunc(maps.Keys(names), func(first, second [2]string) int {
 		return slices.Compare(first[:], second[:])
 	}) {
-		defs := slices.DeleteFunc(index.Lookup(preview, name[0], name[1]), func(def index.Def) bool {
-			return def.Local || def.Named
+		defs := slices.DeleteFunc(index.Lookup(preview, schema.Defines, name[0], name[1]), func(def index.At) bool {
+			return def.Occurrence().Local || def.Occurrence().Named
 		})
 		files, origins := make([]inventory.File, len(defs)), map[string]bool{}
 		for i, def := range defs {
-			files[i], _, _ = sess.Located(def.Path)
+			files[i] = def.File()
 			origins[files[i].Origin] = true
 		}
 		if len(origins) < 2 {
@@ -235,14 +239,14 @@ func contests(sess *workspace.Session, preview []*index.Index, number func(inven
 		// sites in the game's order: what Winner counts as an add (an inject, a merged on_action) is
 		// part of the kept one; the kept one's mode, else an add's, is the row's rule
 		for i, def := range defs {
-			site := Site{File: number(files[i]), Line: int(def.Line), Col: int(def.Col)}
+			site := Site{File: number(files[i]), Line: int(def.Occurrence().Line), Col: int(def.Occurrence().Col)}
 			if site.Injected = slices.Contains(adds, def); site.Injected {
-				row.Rule = cmp.Or(def.Mode, row.Rule)
+				row.Rule = cmp.Or(def.Occurrence().Mode, row.Rule)
 			}
 			row.Sites = append(row.Sites, site)
 		}
-		if row.Winner >= 0 && defs[row.Winner].Mode != "" {
-			row.Rule = defs[row.Winner].Mode
+		if row.Winner >= 0 && defs[row.Winner].Occurrence().Mode != "" {
+			row.Rule = defs[row.Winner].Occurrence().Mode
 		}
 		if betweenMods {
 			contested = append(contested, row)
@@ -266,7 +270,7 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 		}
 	}
 	shipped := map[string][]inventory.File{}
-	defines := map[string][]index.Def{}
+	defines := map[string][]index.At{}
 	for _, index := range preview {
 		for _, file := range index.Files {
 			rel := strings.ToLower(file.Rel)
@@ -274,12 +278,11 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 				continue
 			}
 			shipped[rel] = append(shipped[rel], file)
-			if records := index.Records[file.Path]; records != nil {
-				// its entries, not the names its script makes or declares inline
-				for _, def := range records.Defs {
-					if def.Name != "" && sess.Install.Schema.Databases[def.Database] != nil && !def.Local && !def.Named {
-						defines[file.Path] = append(defines[file.Path], def)
-					}
+			// its entries, not the names its script makes or declares inline
+			for _, at := range index.InFile(file.Path) {
+				def := at.Occurrence()
+				if def.Role == schema.Defines && def.ID != "" && sess.Install.Schema.Databases[def.Database] != nil && !def.Local && !def.Named {
+					defines[file.Path] = append(defines[file.Path], at)
 				}
 			}
 		}
@@ -303,17 +306,18 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 			continue
 		}
 		row := Contest{Database: schema.File, Kind: game.KindName(schema.File), Name: files[kept].Rel, Winner: kept, Rule: "LIOS"}
-		keptParse, keptDefs, changed := parse(files[kept]), map[string]index.Def{}, map[string]bool{}
+		keptParse, keptDefs, changed := parse(files[kept]), map[string]index.At{}, map[string]bool{}
 		for _, def := range defines[files[kept].Path] {
-			keptDefs[def.Name] = def
+			keptDefs[def.Occurrence().ID] = def
 		}
 		for i, file := range files {
 			site, parsed := Site{File: number(file)}, parse(file)
 			for _, def := range defines[file.Path] {
-				site.Defines = append(site.Defines, def.Name)
-				if other, both := keptDefs[def.Name]; both && i != kept && parsed != nil && keptParse != nil && !sameStatement(
-					parsed.AssignmentAt(int(def.Line), int(def.Col)), keptParse.AssignmentAt(int(other.Line), int(other.Col))) {
-					site.Changed, changed[def.Name] = append(site.Changed, def.Name), true
+				name := def.Occurrence().ID
+				site.Defines = append(site.Defines, name)
+				if other, both := keptDefs[name]; both && i != kept && parsed != nil && keptParse != nil && !sameStatement(
+					parsed.AssignmentAt(int(def.Occurrence().Line), int(def.Occurrence().Col)), keptParse.AssignmentAt(int(other.Occurrence().Line), int(other.Occurrence().Col))) {
+					site.Changed, changed[name] = append(site.Changed, name), true
 				}
 			}
 			row.Sites = append(row.Sites, site)
@@ -336,28 +340,29 @@ func replaced(sess *workspace.Session, preview []*index.Index, number func(inven
 
 // dependencies is what each mod needs from another, from the references its loaded files write.
 func dependencies(sess *workspace.Session, number func(inventory.File) int) []Dependency {
-	schema, indexes := sess.Install.Schema, sess.Indexes()
+	s, indexes := sess.Install.Schema, sess.Indexes()
 	type need struct {
 		from, to string
 		affected bool
 	}
 	needs := map[need]Dependency{}
-	resolved := map[[4]string][]index.Def{} // a name resolves alike in one file, where a local definition shows
-	compared := map[[2]index.Def]bool{}     // whether a definition's statement differs from the one it hides
+	resolved := map[[4]string][]index.At{} // a name resolves alike in one file, where a local definition shows
+	compared := map[[2]index.At]bool{}     // whether a definition's statement differs from the one it hides
 	for _, file := range sess.Workspace.Files {
-		records := sess.Workspace.Records[file.Path]
-		if _, loaded := index.Loaded(indexes, file.Path); records == nil || !loaded {
+		found := sess.Workspace.InFile(file.Path)
+		if _, loaded := index.Loaded(indexes, file.Path); len(found) == 0 || !loaded {
 			continue
 		}
-		for _, ref := range records.Refs {
+		for _, at := range found {
 			// a name no schema database holds (a loc key, a file, a parameter, a name script makes) is no
 			// mod's entry; a call names none
-			if ref.Database != "" && schema.Databases[ref.Database] == nil {
+			ref := at.Occurrence()
+			if ref.Role != schema.Refers || ref.Database != "" && s.Databases[ref.Database] == nil {
 				continue
 			}
-			spelled := [4]string{ref.Database, ref.Called, ref.Name, file.Path}
+			spelled := [4]string{ref.Database, ref.Caller, ref.ID, file.Path}
 			if _, done := resolved[spelled]; !done {
-				resolved[spelled], _ = index.Resolve(schema, indexes, ref)
+				resolved[spelled], _ = index.Resolve(s, indexes, ref, file.Path)
 			}
 			defs := resolved[spelled]
 
@@ -366,34 +371,33 @@ func dependencies(sess *workspace.Session, number func(inventory.File) int) []De
 			database, removed := ref.Database, len(defs) == 0
 			var landed []need
 			if removed {
-				installed, _ := index.Resolve(schema, []*index.Index{sess.Install.Index}, ref)
+				installed, _ := index.Resolve(s, []*index.Index{sess.Install.Index}, ref, file.Path)
 				if len(installed) == 0 {
 					continue
 				}
-				at, _, _ := sess.Located(installed[0].Path)
-				remover, _ := index.FileAt(indexes, at.Rel)
-				database = cmp.Or(database, installed[0].Database)
+				remover, _ := index.FileAt(indexes, installed[0].File().Rel)
+				database = cmp.Or(database, installed[0].Occurrence().Database)
 				if remover.Origin != "" && remover.Origin != file.Origin && remover.Origin != game.OriginVanilla {
 					landed = append(landed, need{file.Origin, remover.Origin, true})
 				}
 			} else {
 				winner, adds, _, _ := sess.Winner(defs)
-				database = cmp.Or(database, winner.Database)
-				for at, held := range slices.Concat([]index.Def{winner}, adds) {
-					holder, _, _ := sess.Located(held.Path)
+				database = cmp.Or(database, winner.Occurrence().Database)
+				for n, held := range slices.Concat([]index.At{winner}, adds) {
+					holder := held.File()
 					if holder.Origin == "" || holder.Origin == file.Origin || holder.Origin == game.OriginVanilla {
 						continue
 					}
 
 					// an add affects the mod; the winner does when it differs from the one it hides, and
 					// when it hides none the name is only that mod's, so the mod depends on it
-					key := need{file.Origin, holder.Origin, at > 0}
-					if at == 0 {
-						base, differs := hidden(sess, ref, defs, winner, compared)
-						if base.Path != "" && !differs {
+					key := need{file.Origin, holder.Origin, n > 0}
+					if n == 0 {
+						base, differs := hidden(sess, ref, file.Path, defs, winner, compared)
+						if base != (index.At{}) && !differs {
 							continue
 						}
-						key.affected = base.Path != ""
+						key.affected = base != (index.At{})
 					}
 					// a mod's add to its own name, which only it defines, is part of what the mod depends on
 					if !slices.Contains(landed, key) && !slices.Contains(landed, need{file.Origin, holder.Origin, false}) {
@@ -405,7 +409,7 @@ func dependencies(sess *workspace.Session, number func(inventory.File) int) []De
 				row := needs[key]
 				row.From, row.To, row.Affected = key.from, key.to, key.affected
 				row.Sites = append(row.Sites, Site{
-					File: number(file), Line: int(ref.Line), Col: int(ref.Col), Database: database, Name: ref.Name, Removed: removed,
+					File: number(file), Line: int(at.Occurrence().Line), Col: int(at.Occurrence().Col), Database: database, Name: ref.ID, Removed: removed,
 				})
 				needs[key] = row
 			}
@@ -418,17 +422,18 @@ func dependencies(sess *workspace.Session, number func(inventory.File) int) []De
 }
 
 // hidden is the definition a winning one hides, the loaded one before it, else the install's own
-// (the zero Def for none), and whether the two are written otherwise; each pair is compared once.
-func hidden(sess *workspace.Session, ref index.Ref, defs []index.Def, winner index.Def, compared map[[2]index.Def]bool) (index.Def, bool) {
-	var base index.Def
+// (the zero At for none), and whether the two are written otherwise; each pair is compared once. from is
+// the file the reference is written in.
+func hidden(sess *workspace.Session, ref schema.Occurrence, from string, defs []index.At, winner index.At, compared map[[2]index.At]bool) (index.At, bool) {
+	var base index.At
 	if before := slices.Index(defs, winner); before > 0 {
 		base = defs[before-1]
 	} else {
-		installed, _ := index.Resolve(sess.Install.Schema, []*index.Index{sess.Install.Index}, ref)
+		installed, _ := index.Resolve(sess.Install.Schema, []*index.Index{sess.Install.Index}, ref, from)
 		base, _, _, _ = sess.Winner(installed)
 	}
-	pair := [2]index.Def{winner, base}
-	if _, done := compared[pair]; !done && base.Path != "" {
+	pair := [2]index.At{winner, base}
+	if _, done := compared[pair]; !done && base != (index.At{}) {
 		_, winning := sess.Entry(winner)
 		_, hiding := sess.Entry(base)
 		compared[pair] = !sameStatement(winning, hiding)
@@ -441,22 +446,22 @@ func hidden(sess *workspace.Session, ref index.Ref, defs []index.Def, winner ind
 func dangling(sess *workspace.Session, found map[string][]lsp.Diagnostic, number func(inventory.File) int) []Dangling {
 	indexes, rows := sess.Indexes(), map[[2]string]Dangling{}
 	for _, file := range sess.Workspace.Files {
-		records := sess.Workspace.Records[file.Path]
-		if _, loaded := index.Loaded(indexes, file.Path); records == nil || !loaded {
+		written := sess.Workspace.InFile(file.Path)
+		if _, loaded := index.Loaded(indexes, file.Path); len(written) == 0 || !loaded {
 			continue
 		}
 		for _, diagnostic := range found[file.Path] {
 			start := diagnostic.Range.Start
-			at := slices.IndexFunc(records.Refs, func(ref index.Ref) bool {
-				return int(ref.Line) == start.Line && int(ref.Col) == start.Character
+			at := slices.IndexFunc(written, func(at index.At) bool {
+				return at.Occurrence().Role == schema.Refers && int(at.Occurrence().Line) == start.Line && int(at.Occurrence().Col) == start.Character
 			})
 			if !slices.Contains(danglingChecks, diagnostic.Code) || at < 0 {
 				continue
 			}
-			ref := records.Refs[at]
-			key := [2]string{ref.Database, ref.Name}
+			ref := written[at].Occurrence()
+			key := [2]string{ref.Database, ref.ID}
 			row := rows[key]
-			row.Code, row.Database, row.Kind, row.Name = diagnostic.Code, ref.Database, game.KindName(ref.Database), ref.Name
+			row.Code, row.Database, row.Kind, row.Name = diagnostic.Code, ref.Database, game.KindName(ref.Database), ref.ID
 			row.Sites = append(row.Sites, Site{File: number(file), Line: start.Line, Col: start.Character})
 			rows[key] = row
 		}
@@ -522,13 +527,13 @@ func (s *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]str
 	defer sess.RUnlock()
 	out := make([][]string, len(places))
 	for i, place := range places {
-		parsed, entry := sess.Entry(index.Def{Path: place.Path, Line: int32(place.Line), Col: int32(place.Col)})
-		if parsed == nil {
+		parsed, _, err := sess.Parsed(place.Path)
+		if err != nil {
 			continue
 		}
 		offset := parsed.Lines().OffsetAt(place.Line, 0)
 		span, limit := jomini.Range{Start: offset, End: offset}, 0
-		if place.Definition && entry != nil {
+		if entry := parsed.AssignmentAt(place.Line, place.Col); place.Definition && entry != nil {
 			span, limit = entry.NodeRange(), 10
 		}
 		out[i] = spanLines(parsed, span, limit)
@@ -547,26 +552,31 @@ func localization(sess *workspace.Session, number func(inventory.File) int) []La
 	filesIn := map[[2]string][]inventory.File{} // by origin and language: its loc files
 	type written struct {
 		file  inventory.File
-		entry index.Loc
+		entry index.At
 	}
 	var inWorkspaceLanguage []written
 	for _, file := range sess.Workspace.Files {
-		records := sess.Workspace.Records[file.Path]
-		if _, loaded := index.Loaded(indexes, file.Path); records == nil || !loaded {
+		found := sess.Workspace.InFile(file.Path)
+		if _, loaded := index.Loaded(indexes, file.Path); len(found) == 0 || !loaded {
 			continue
 		}
-		for _, entry := range records.Loc {
-			languages[entry.Language] = true
-			if has[entry.Language] == nil {
-				has[entry.Language] = map[string]bool{}
+		fileLanguage := ""
+		for _, entry := range found {
+			if entry.Occurrence().Role != schema.Localizes {
+				continue
 			}
-			has[entry.Language][entry.Key] = true
-			if entry.Language == workspaceLanguage {
+			language, key := entry.Language(), entry.Occurrence().ID
+			languages[language], fileLanguage = true, cmp.Or(fileLanguage, language)
+			if has[language] == nil {
+				has[language] = map[string]bool{}
+			}
+			has[language][key] = true
+			if language == workspaceLanguage {
 				inWorkspaceLanguage = append(inWorkspaceLanguage, written{file, entry})
 			}
 		}
-		if len(records.Loc) > 0 {
-			in := [2]string{file.Origin, records.Loc[0].Language}
+		if fileLanguage != "" {
+			in := [2]string{file.Origin, fileLanguage}
 			filesIn[in] = append(filesIn[in], file)
 		}
 	}
@@ -581,8 +591,9 @@ func localization(sess *workspace.Session, number func(inventory.File) int) []La
 	for _, language := range slices.Sorted(maps.Keys(languages)) {
 		coverage := Language{Language: language}
 		for _, own := range inWorkspaceLanguage {
-			if language != workspaceLanguage && len(filesIn[[2]string{own.file.Origin, language}]) > 0 && !has[language][own.entry.Key] {
-				row := LocRow{Key: own.entry.Key, File: number(own.file), Line: own.entry.Line, Target: target(own.file, language)}
+			key := own.entry.Occurrence().ID
+			if language != workspaceLanguage && len(filesIn[[2]string{own.file.Origin, language}]) > 0 && !has[language][key] {
+				row := LocRow{Key: key, File: number(own.file), Line: int(own.entry.Occurrence().Line), Target: target(own.file, language)}
 				coverage.Untranslated = append(coverage.Untranslated, row)
 			}
 		}
@@ -600,9 +611,8 @@ func (s *HealthService) LocReaders(workspaceID, key string) ([]Cited, error) {
 	sess.RLock()
 	defer sess.RUnlock()
 	var readers []Cited
-	for _, ref := range index.LookupRefs(sess.Indexes(), schema.Localization, key) {
-		file, _, _ := sess.Located(ref.Path)
-		readers = append(readers, Cited{Name: ref.Name, Line: int(ref.Line), Col: int(ref.Col), At: file})
+	for _, ref := range index.Lookup(sess.Indexes(), schema.Refers, schema.Localization, key) {
+		readers = append(readers, Cited{Name: ref.Occurrence().ID, Line: int(ref.Occurrence().Line), Col: int(ref.Occurrence().Col), At: ref.File()})
 	}
 	return readers, nil
 }

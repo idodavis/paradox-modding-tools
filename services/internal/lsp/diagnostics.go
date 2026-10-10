@@ -131,7 +131,7 @@ func (judge *judge) script() {
 		judge.report(issue.Range, 1, string(issue.Code), issue.Message)
 	}
 	judge.written = map[jomini.Range]*schema.Position{}
-	records := index.Collect(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at *schema.Placement) bool {
+	found, _ := index.Collect(sess.Install.Schema, judge.file.place.File, judge.file.parsed, func(at *schema.Placement) bool {
 		switch statement := at.Statement.(type) {
 		case *jomini.Assignment:
 			judge.key(at, statement)
@@ -145,8 +145,8 @@ func (judge *judge) script() {
 		}
 		return true
 	})
-	judge.references(records.Refs)
-	judge.definitions(records.Defs)
+	judge.references(found)
+	judge.definitions(found)
 }
 
 // variable judges a non-global variable read (var:x, not local_var:x) written directly in a scope
@@ -223,7 +223,7 @@ func (judge *judge) value(at *schema.Placement, scalar *jomini.Scalar) {
 	case claim.Kind == schema.ExpectsNumber:
 		// a script value, a declared command (earnings) or a link (var:x, root.gold) reads a value
 		if last := text[strings.LastIndex(text, ".")+1:]; scalar.Quoted || jomini.Literal(text) != jomini.LitNumber {
-			_, valued := index.Resolve(sess.Install.Schema, sess.Indexes(), index.Ref{Called: game.Blocks[game.BlockValue].Calls, Name: text})
+			_, valued := index.Resolve(sess.Install.Schema, sess.Indexes(), schema.Occurrence{Caller: game.Blocks[game.BlockValue].Calls, ID: text}, "")
 			_, command := sess.Install.Schema.Commands[last]
 			wrong = !valued && !command && !strings.Contains(last, ":")
 		}
@@ -242,35 +242,38 @@ func (judge *judge) value(at *schema.Placement, scalar *jomini.Scalar) {
 
 // references judges the value words the walk read at a position that nothing defines: an event, or
 // a word a position declares names a database or a file; vanilla's contradiction keeps it quiet.
-func (judge *judge) references(refs []index.Ref) {
+func (judge *judge) references(found []schema.Occurrence) {
 	sess := judge.file.sess
 	s := sess.Install.Schema
-	for _, ref := range refs {
+	for _, ref := range found {
+		if ref.Role != schema.Refers {
+			continue
+		}
 		position, row := judge.written[ref.Range], s.Databases[ref.Database]
 		events := row != nil && row.Row.Events
 		written := strings.Trim(judge.file.text[ref.Range.Start:ref.Range.End], `"`)
-		linked := row != nil && strings.HasSuffix(written, ":"+ref.Name) // a prefix names its game database (title:k_x)
+		linked := row != nil && strings.HasSuffix(written, ":"+ref.ID) // a prefix names its game database (title:k_x)
 		var code, message string
 		switch {
 		case events && (position == nil || position.Value.Source != schema.SourceNone &&
 			!s.MayAccuse(schema.CheckValue, position, nil)):
 			continue
 		case events:
-			code, message = "unknown-event", "no event is named "+ref.Name
+			code, message = "unknown-event", "no event is named "+ref.ID
 		case linked:
-			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.Name)
-		case position == nil || written != ref.Name:
+			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.ID)
+		case position == nil || written != ref.ID:
 			continue
 		case !s.MayAccuse(schema.CheckValue, position, nil):
 			continue
 		case position.Value.Value.Kind == schema.ExpectsFile && ref.Database == schema.File:
-			code, message = "missing-file", ref.Name+" exists nowhere in the install or the mods"
+			code, message = "missing-file", ref.ID+" exists nowhere in the install or the mods"
 		case position.Value.Value.Kind == schema.ExpectsReference && position.Value.Value.Database == ref.Database:
-			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.Name)
+			code, message = "unresolved-ref", fmt.Sprintf("nothing defines %s %s", game.KindName(ref.Database), ref.ID)
 		default:
 			continue
 		}
-		_, known := index.Resolve(s, sess.Indexes(), ref)
+		_, known := index.Resolve(s, sess.Indexes(), ref, judge.file.place.Path)
 		if known || !linked && judge.contradicted(position, ref) {
 			continue
 		}
@@ -280,14 +283,14 @@ func (judge *judge) references(refs []index.Ref) {
 
 // contradicted is whether vanilla itself writes, at the reference's position, a word of the same
 // kind (for an event, an event-shaped word) that nothing defines: then a miss proves nothing.
-func (judge *judge) contradicted(position *schema.Position, ref index.Ref) bool {
+func (judge *judge) contradicted(position *schema.Position, ref schema.Occurrence) bool {
 	sess := judge.file.sess
 	row := sess.Install.Schema.Databases[ref.Database]
 	for word := range position.Vanilla.Values {
 		if row != nil && row.Row.Events && !jomini.IsEventID(word) {
 			continue
 		}
-		if _, found := index.Resolve(sess.Install.Schema, sess.Indexes(), index.Ref{Database: ref.Database, Name: word}); !found {
+		if _, found := index.Resolve(sess.Install.Schema, sess.Indexes(), schema.Occurrence{Database: ref.Database, ID: word}, ""); !found {
 			return true
 		}
 	}
@@ -306,33 +309,32 @@ func plain(scope string) string {
 // definitions judges a file's loaded named definitions: an INJECT or REPLACE with nothing before
 // it, and a plain name another mod file defines plainly where vanilla never repeats names and
 // entries do not merge (on_actions, history); a file-local name or one an entry gives never counts.
-func (judge *judge) definitions(defs []index.Def) {
-	sess := judge.file.sess
-	contends := func(def index.Def) bool { return def.Mode == "" && !def.Local && !def.Named }
-	for _, def := range defs {
+func (judge *judge) definitions(found []schema.Occurrence) {
+	sess, path := judge.file.sess, judge.file.place.Path
+	contends := func(def schema.Occurrence) bool { return def.Mode == "" && !def.Local && !def.Named }
+	for _, def := range found {
 		row := sess.Install.Schema.Databases[def.Database]
-		if def.Name == "" || row == nil {
+		if def.Role != schema.Defines || def.ID == "" || row == nil {
 			continue
 		}
-		loaded := index.Lookup(sess.Indexes(), def.Database, def.Name)
-		if !slices.Contains(loaded, def) {
+		loaded := index.Lookup(sess.Indexes(), schema.Defines, def.Database, def.ID)
+		mine := slices.IndexFunc(loaded, func(at index.At) bool { return at.File().Path == path && at.Occurrence().Range == def.Range })
+		if mine < 0 {
 			continue
 		}
 		_, _, orphans, _ := sess.Winner(loaded)
-		if slices.Contains(orphans, def) {
+		if slices.Contains(orphans, loaded[mine]) {
 			judge.report(def.Range, 2, "inject-without-target",
-				fmt.Sprintf("%s:%s does nothing: no %s is loaded before it", def.Mode, def.Name, def.Name))
+				fmt.Sprintf("%s:%s does nothing: no %s is loaded before it", def.Mode, def.ID, def.ID))
 			continue
 		}
-		if !contends(def) || row.Row.OnActions || row.Row.History || sess.Install.Index.Repeated[def.Database] {
+		if !contends(def) || row.Row.OnActions || row.Row.History || sess.Install.Index.Repeated(def.Database) {
 			continue
 		}
-		if other := slices.IndexFunc(loaded, func(other index.Def) bool {
-			listed, _, _ := sess.Located(other.Path)
-			return contends(other) && other.Path != def.Path && listed.Origin != game.OriginVanilla
+		if other := slices.IndexFunc(loaded, func(other index.At) bool {
+			return contends(other.Occurrence()) && other.File().Path != path && other.File().Origin != game.OriginVanilla
 		}); other >= 0 {
-			listed, _, _ := sess.Located(loaded[other].Path)
-			judge.report(def.Range, 2, "duplicate-definition", fmt.Sprintf("%s is also defined in %s", def.Name, listed.Rel))
+			judge.report(def.Range, 2, "duplicate-definition", fmt.Sprintf("%s is also defined in %s", def.ID, loaded[other].File().Rel))
 		}
 	}
 }

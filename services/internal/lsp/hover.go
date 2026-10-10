@@ -106,7 +106,7 @@ type Signature struct {
 // reading is what a word names: a reference, else its key's position or command, in the scope the
 // word is written in.
 type reading struct {
-	ref     *index.Ref
+	ref     *schema.Occurrence
 	key     *schema.Position
 	command *schema.Command
 	scope   string
@@ -114,18 +114,19 @@ type reading struct {
 }
 
 // spot is the cursor's place in a script file, from one walk that stops past it: the statements
-// holding it, outer to inner, and the records so far.
+// holding it, outer to inner, and the occurrences so far.
 type spot struct {
-	chain   []schema.Placement
-	records *index.Records
-	offset  int
+	chain  []schema.Placement
+	found  []schema.Occurrence
+	path   string
+	offset int
 }
 
 // walk reads the file up to an offset. A statement holds the offset when its span does, or when it
 // ends at an operator with only blanks up to the offset: a value still to come.
 func (file *file) walk(offset int) spot {
-	cursor := spot{offset: offset}
-	cursor.records = index.Collect(file.sess.Install.Schema, file.place.File, file.parsed, func(at *schema.Placement) bool {
+	cursor := spot{offset: offset, path: file.place.Path}
+	cursor.found, _ = index.Collect(file.sess.Install.Schema, file.place.File, file.parsed, func(at *schema.Placement) bool {
 		span := at.Statement.NodeRange()
 		if span.Start > offset {
 			return false
@@ -160,14 +161,14 @@ func (cursor spot) within() []string {
 		return nil
 	}
 	entry := cursor.chain[holder].Entry
-	def := cursor.records.Defs[entry]
-	out := []string{def.Name}
+	def := cursor.found[entry]
+	out := []string{def.ID}
 	for _, at := range cursor.chain[:holder+1] {
 		if assign, isAssign := at.Statement.(*jomini.Assignment); isAssign && at.Entry == entry && assign.Key.Range != def.Range {
 			out = append(out, assign.Key.Text)
 		}
 	}
-	if def.Name == "" {
+	if def.ID == "" {
 		out = out[1:]
 	}
 	return out
@@ -176,7 +177,7 @@ func (cursor spot) within() []string {
 // word is the scalar under the cursor (the innermost statement's key or value; nil for none), if it
 // is the key, and the definition or reference the walk read inside it ($NAME$ included): of several
 // references (a call's parameter and the call), the first that resolves, else the first.
-func (cursor spot) word(sess *workspace.Session) (word *jomini.Scalar, isKey bool, ref *index.Ref) {
+func (cursor spot) word(sess *workspace.Session) (word *jomini.Scalar, isKey bool, ref *schema.Occurrence) {
 	if len(cursor.chain) == 0 {
 		return nil, false, nil
 	}
@@ -191,24 +192,24 @@ func (cursor spot) word(sess *workspace.Session) (word *jomini.Scalar, isKey boo
 	inWord := func(span jomini.Range) bool {
 		return word.Range.Start <= span.Start && span.End <= word.Range.End && within(span, cursor.offset)
 	}
-	found := slices.IndexFunc(cursor.records.Refs, func(ref index.Ref) bool {
-		if !inWord(ref.Range) {
+	found := slices.IndexFunc(cursor.found, func(ref schema.Occurrence) bool {
+		if ref.Role != schema.Refers || !inWord(ref.Range) {
 			return false
 		}
-		_, known := index.Resolve(sess.Install.Schema, sess.Indexes(), ref)
+		_, known := index.Resolve(sess.Install.Schema, sess.Indexes(), ref, cursor.path)
 		return known
 	})
 	if found < 0 {
-		found = slices.IndexFunc(cursor.records.Refs, func(ref index.Ref) bool { return inWord(ref.Range) })
+		found = slices.IndexFunc(cursor.found, func(ref schema.Occurrence) bool { return ref.Role == schema.Refers && inWord(ref.Range) })
 	}
 	if found >= 0 {
-		return word, isKey, &cursor.records.Refs[found]
+		return word, isKey, &cursor.found[found]
 	}
-	if found := slices.IndexFunc(cursor.records.Defs, func(def index.Def) bool {
-		return def.Name != "" && inWord(def.Range)
+	if found := slices.IndexFunc(cursor.found, func(def schema.Occurrence) bool {
+		return def.Role == schema.Defines && def.ID != "" && inWord(def.Range)
 	}); found >= 0 {
-		def := cursor.records.Defs[found]
-		return word, isKey, &index.Ref{Database: def.Database, Name: def.Name, Path: def.Path}
+		def := cursor.found[found]
+		return word, isKey, &schema.Occurrence{Database: def.Database, ID: def.ID}
 	}
 	return word, isKey, nil
 }
@@ -356,7 +357,7 @@ func Hover(sess *workspace.Session, path string, line, col int) (*Inspect, error
 	if parent := len(cursor.chain) - 2; isKey && read.command == nil && parent >= 0 && card.Head == "" {
 		holder, database := cursor.chain[parent], (*schema.Database)(nil)
 		if holder.Entry >= 0 {
-			database = s.Databases[cursor.records.Defs[holder.Entry].Database]
+			database = s.Databases[cursor.found[holder.Entry].Database]
 		}
 		holding, isAssign := holder.Statement.(*jomini.Assignment)
 		switch {
@@ -422,40 +423,23 @@ func (file *file) describe(card *Inspect, read reading) bool {
 // defined fills a reference's card: its database, its sites (the kept one and its adds), localized
 // name and what the dumps and docs say of its database; a call nothing defines is unknown. scope is
 // where the reference is written, which a scripted entry runs in when its database declares none.
-func (file *file) defined(card *Inspect, ref index.Ref, scope string, shown func(schema.Source)) bool {
+func (file *file) defined(card *Inspect, ref schema.Occurrence, scope string, shown func(schema.Source)) bool {
 	sess, s := file.sess, file.sess.Install.Schema
-	defs, known := index.Resolve(s, sess.Indexes(), ref)
+	defs, known := index.Resolve(s, sess.Indexes(), ref, file.place.Path)
 	database := ref.Database
 	if len(defs) > 0 {
-		database = defs[0].Database
+		database = defs[0].Occurrence().Database
 	}
 	row := s.Databases[database]
-	if !known && (ref.Called != "" || row == nil && database != schema.Localization && database != schema.File) {
+	if !known && (ref.Caller != "" || row == nil && database != schema.Localization && database != schema.File) {
 		return false
 	}
-	card.Word, card.Head = ref.Name, game.KindName(database)
-	if entry, name, cut := strings.Cut(ref.Name, ":"); database == schema.Parameter && cut {
+	card.Word, card.Head = ref.ID, game.KindName(database)
+	if entry, name, cut := strings.Cut(ref.ID, ":"); database == schema.Parameter && cut {
 		card.Word, card.Head = name, "parameter of "+entry
 	}
-
-	// a loc key's text, a file's place and image header
-	switch database {
-	case schema.Localization:
-		if entry, found := sess.Loc(ref.Name, ""); found {
-			card.Name, card.Winner = loc.Plain(entry.Text), 0
-			card.Sites = []Location{locate(sess, entry.Path, Position{Line: entry.Line})}
-		}
-		return true
-	case schema.File:
-		found, listed := index.FileAt(sess.Indexes(), ref.Name)
-		if listed {
-			card.Sites, card.Winner = []Location{locate(sess, found.Path, Position{})}, 0
-		}
-		if found.Format == inventory.Image {
-			if info, err := texture.Info(found.Path); err == nil {
-				card.Image = &info
-			}
-		}
+	if database == schema.Localization || database == schema.File {
+		file.placeCard(card, database, ref.ID)
 		return true
 	}
 
@@ -472,23 +456,10 @@ func (file *file) defined(card *Inspect, ref index.Ref, scope string, shown func
 	}
 
 	// its localized name, and the comment a mod's author leads their definition with
-	listed, _, _ := sess.Located(winner.Path)
-	authored, comment := len(defs) > 0 && listed.Origin != game.OriginVanilla && listed.Origin != "", ""
+	comment := ""
 	if row != nil {
-		winner.Name = ref.Name // a name nothing defines still shows its own loc key's text
-		card.Name = loc.Plain(sess.Title(winner))
-	}
-	if row != nil && authored {
-		if parsed, statement := sess.Entry(winner); statement != nil {
-			attached, _ := parsed.Attach()
-			var lead []string
-			for _, above := range attached[statement] {
-				if text := parsed.Src[above.Range.Start:above.Range.End]; above.Range.End <= statement.NodeRange().Start {
-					lead = append(lead, strings.TrimSpace(strings.TrimLeft(text, "#")))
-				}
-			}
-			comment = strings.Join(lead, "\n")
-		}
+		card.Name = loc.Plain(sess.Title(ref.ID, winner)) // a name nothing defines still shows its own loc key's text
+		comment = leadComment(sess, winner)
 	}
 
 	// what its database's entries are and run in; an on_action's own blurb and scope from the dumps;
@@ -503,31 +474,69 @@ func (file *file) defined(card *Inspect, ref index.Ref, scope string, shown func
 			card.Scope = scope
 		}
 		shown(row.Entry.Scope.Source)
-		if action, found := s.OnActions[ref.Name]; found && row.Row.OnActions {
+		if action, found := s.OnActions[ref.ID]; found && row.Row.OnActions {
 			card.Prose, card.Scope = action.Blurb, cmp.Or(action.Scope, card.Scope)
 			shown(schema.SourceDumps)
 		}
 		card.Graphed = row.Row.Events || row.Row.OnActions
 	}
-	card.Prose = cmp.Or(card.Prose, comment)
-	card.Graphed = card.Graphed || len(defs) > 0 && len(sess.Fires(winner)) > 0
+	card.Prose, card.Graphed = cmp.Or(card.Prose, comment), card.Graphed || len(defs) > 0 && len(sess.Fires(winner)) > 0
 	return true
+}
+
+// placeCard fills a loc key's or a file path's card: the key's text and its entry, or the file's place and, for
+// an image, its header.
+func (file *file) placeCard(card *Inspect, database, id string) {
+	sess := file.sess
+	if database == schema.Localization {
+		if entry, found := sess.Loc(id, ""); found {
+			card.Name, card.Winner = loc.Plain(entry.Text()), 0
+			card.Sites = []Location{locate(sess, entry.File().Path, Position{Line: int(entry.Occurrence().Line)})}
+		}
+		return
+	}
+	found, listed := index.FileAt(sess.Indexes(), id)
+	if listed {
+		card.Sites, card.Winner = []Location{locate(sess, found.Path, Position{})}, 0
+	}
+	if found.Format == inventory.Image {
+		if info, err := texture.Info(found.Path); err == nil {
+			card.Image = &info
+		}
+	}
+}
+
+// leadComment is the comment a mod's author leads a definition with; "" for the game's own or none.
+func leadComment(sess *workspace.Session, def index.At) string {
+	if origin := def.File().Origin; origin == game.OriginVanilla || origin == "" {
+		return ""
+	}
+	parsed, statement := sess.Entry(def)
+	if statement == nil {
+		return ""
+	}
+	attached, _ := parsed.Attach()
+	var lead []string
+	for _, above := range attached[statement] {
+		if text := parsed.Src[above.Range.Start:above.Range.End]; above.Range.End <= statement.NodeRange().Start {
+			lead = append(lead, strings.TrimSpace(strings.TrimLeft(text, "#")))
+		}
+	}
+	return strings.Join(lead, "\n")
 }
 
 // locRef is what an offset of a localization file names: a reference the scan read ($key$, a
 // concept), else the line's key; with neither, the data call steps it is in, if any.
-func (file *file) locRef(offset int) (ref *index.Ref, steps []jomini.Step) {
+func (file *file) locRef(offset int) (ref *schema.Occurrence, steps []jomini.Step) {
 	lines := file.parsed.Lines()
 	start := lines.OffsetAt(lines.PositionAt(offset).Line, 0)
 	line := file.text[start:]
 	line, _, _ = strings.Cut(line, "\n")
 	line = strings.TrimRight(line, "\r")
 	for _, index := range file.sess.Indexes() {
-		listed, found := index.At(file.path)
-		records := index.Records[listed.Path]
-		for i := 0; found && records != nil && i < len(records.Refs); i++ {
-			if within(records.Refs[i].Range, offset) {
-				ref = &records.Refs[i]
+		for _, at := range index.InFile(file.path) {
+			if found := at.Occurrence(); found.Role == schema.Refers && within(found.Range, offset) {
+				ref = &found
 			}
 		}
 	}
@@ -538,7 +547,7 @@ func (file *file) locRef(offset int) (ref *index.Ref, steps []jomini.Step) {
 	key, _, _ := strings.Cut(line[indent:], ":")
 	span := jomini.Range{Start: start + indent, End: start + indent + len(key)}
 	if ref == nil && within(span, offset) {
-		ref = &index.Ref{Database: schema.Localization, Name: key, Range: span}
+		ref = &schema.Occurrence{Role: schema.Refers, Database: schema.Localization, ID: key, Range: span, Entry: -1}
 	}
 	return ref, nil
 }
@@ -553,10 +562,10 @@ func (file *file) locCard(offset int) *Inspect {
 	if ref == nil {
 		return nil
 	}
-	if _, known := index.Resolve(file.sess.Install.Schema, file.sess.Indexes(), *ref); !known {
+	if _, known := index.Resolve(file.sess.Install.Schema, file.sess.Indexes(), *ref, file.path); !known {
 		return nil
 	}
-	card := &Inspect{Word: ref.Name, Range: file.span(ref.Range), Winner: -1}
+	card := &Inspect{Word: ref.ID, Range: file.span(ref.Range), Winner: -1}
 	file.defined(card, *ref, "", func(schema.Source) {})
 	return card
 }
@@ -607,8 +616,8 @@ func (file *file) dataCard(steps []jomini.Step) *Inspect {
 		}
 	}
 	for _, name := range s.DatabasesWhere(func(row game.Folder) bool { return row.Functions || row.Concepts }) {
-		if !defined && len(index.Lookup(file.sess.Indexes(), name, step.Name)) > 0 {
-			defined = file.defined(card, index.Ref{Database: name, Name: step.Name}, "", func(schema.Source) {})
+		if !defined && len(index.Lookup(file.sess.Indexes(), schema.Defines, name, step.Name)) > 0 {
+			defined = file.defined(card, schema.Occurrence{Database: name, ID: step.Name}, "", func(schema.Source) {})
 		}
 	}
 	_, isType := s.DataTypes[step.Name]
@@ -662,8 +671,8 @@ func within(span jomini.Range, offset int) bool {
 }
 
 // defined is where a definition is written.
-func defined(sess *workspace.Session, def index.Def) Location {
-	return locate(sess, def.Path, Position{Line: int(def.Line), Character: int(def.Col)})
+func defined(sess *workspace.Session, def index.At) Location {
+	return locate(sess, def.File().Path, Position{Line: int(def.Occurrence().Line), Character: int(def.Occurrence().Col)})
 }
 
 // locate is the editor's location of a position in a file of the workspace or the install.

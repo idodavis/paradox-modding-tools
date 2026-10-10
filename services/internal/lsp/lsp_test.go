@@ -19,6 +19,7 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -354,7 +355,7 @@ func TestDiagnose(t *testing.T) {
 			if got := codes(file.Path, nil); len(got) != 0 {
 				t.Errorf("an install file: %v", got)
 			}
-			if len(index.Lookup(install.Indexes(), "events", "v.2")) != 1 || len(index.Lookup([]*index.Index{install.Workspace}, "events", "v.1")) != 0 {
+			if len(index.Lookup(install.Indexes(), schema.Defines, "events", "v.2")) != 1 || len(index.Lookup([]*index.Index{install.Workspace}, schema.Defines, "events", "v.1")) != 0 {
 				t.Error("opening an install file indexes nothing")
 			}
 			install.DidClose(file.Path)

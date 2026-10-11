@@ -17,18 +17,30 @@ import * as inventory$0 from "./internal/inventory/models.js";
 // @ts-ignore: Unused imports
 import * as lsp$0 from "./internal/lsp/models.js";
 
+/**
+ * CodeActions is the fixes offered at a position, from lsp.CodeActions.
+ */
 export function CodeActions(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.CodeAction[] | null> {
     return $Call.ByID(1850891185, workspaceID, path, line, col);
 }
 
+/**
+ * Complete is what may be written at a position, from lsp.Complete.
+ */
 export function Complete(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.Completion | null> {
     return $Call.ByID(155217920, workspaceID, path, line, col);
 }
 
+/**
+ * Definition is where the word at a position is defined, from lsp.Definition.
+ */
 export function Definition(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.Location[] | null> {
     return $Call.ByID(1771803486, workspaceID, path, line, col);
 }
 
+/**
+ * Diagnose is the findings of the checks the user has on for a file, from lsp.Diagnose.
+ */
 export function Diagnose(workspaceID: string, path: string): $CancellablePromise<lsp$0.Diagnostic[] | null> {
     return $Call.ByID(2414394907, workspaceID, path);
 }
@@ -41,20 +53,29 @@ export function DiagnosticCodes(): $CancellablePromise<lsp$0.Code[] | null> {
 }
 
 /**
- * DidChange, DidClose and DidSave are the editor's buffer events; an opened buffer is a change.
+ * DidChange is the editor's buffer event for an opened or changed file: an opened buffer is a change.
  */
 export function DidChange(workspaceID: string, path: string, text: string): $CancellablePromise<void> {
     return $Call.ByID(3111290104, workspaceID, path, text);
 }
 
+/**
+ * DidClose is the editor's buffer event for a closed file: its text is forgotten and the disk's is read again.
+ */
 export function DidClose(workspaceID: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(1896704868, workspaceID, path);
 }
 
+/**
+ * DidSave is the editor's buffer event for a saved file: the saved text is indexed again.
+ */
 export function DidSave(workspaceID: string, path: string): $CancellablePromise<void> {
     return $Call.ByID(2784970589, workspaceID, path);
 }
 
+/**
+ * DocumentSymbols is the definitions a file writes, from lsp.DocumentSymbols.
+ */
 export function DocumentSymbols(workspaceID: string, path: string): $CancellablePromise<lsp$0.Symbol[] | null> {
     return $Call.ByID(2046626823, workspaceID, path);
 }
@@ -66,6 +87,9 @@ export function FindLoc(workspaceID: string, prefix: string, limit: number): $Ca
     return $Call.ByID(3583534390, workspaceID, prefix, limit);
 }
 
+/**
+ * FoldingRanges is the blocks of a file that fold, from lsp.Folding.
+ */
 export function FoldingRanges(workspaceID: string, path: string): $CancellablePromise<lsp$0.FoldingRange[] | null> {
     return $Call.ByID(2841121370, workspaceID, path);
 }
@@ -78,14 +102,23 @@ export function FormatDocument(workspaceID: string, path: string): $CancellableP
     return $Call.ByID(3770361501, workspaceID, path);
 }
 
+/**
+ * Hover is the card for the word at a position, from lsp.Hover.
+ */
 export function Hover(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.Inspect | null> {
     return $Call.ByID(4183822451, workspaceID, path, line, col);
 }
 
+/**
+ * InlayHints is the hints drawn inside a file's text, from lsp.InlayHints.
+ */
 export function InlayHints(workspaceID: string, path: string): $CancellablePromise<lsp$0.InlayHint[] | null> {
     return $Call.ByID(1595071124, workspaceID, path);
 }
 
+/**
+ * References is where the word at a position is used, from lsp.References.
+ */
 export function References(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.Location[] | null> {
     return $Call.ByID(3329907361, workspaceID, path, line, col);
 }
@@ -99,20 +132,29 @@ export function Rename(workspaceID: string, path: string, line: number, col: num
 
 /**
  * ReplacedBy is the mods' files at a game file's path from its root, in load order: the copies the game loads in
- * its place (B46).
+ * its place.
  */
 export function ReplacedBy(workspaceID: string, path: string): $CancellablePromise<inventory$0.File[] | null> {
     return $Call.ByID(4213690086, workspaceID, path);
 }
 
+/**
+ * ResolveCompletion is the card of one completion item, from lsp.Resolve.
+ */
 export function ResolveCompletion(workspaceID: string, path: string, item: lsp$0.Item): $CancellablePromise<lsp$0.Inspect | null> {
     return $Call.ByID(1177144527, workspaceID, path, item);
 }
 
+/**
+ * SignatureHelp is the call being written at a position and its parameter, from lsp.SignatureHelp.
+ */
 export function SignatureHelp(workspaceID: string, path: string, line: number, col: number): $CancellablePromise<lsp$0.Signature | null> {
     return $Call.ByID(4126214260, workspaceID, path, line, col);
 }
 
+/**
+ * WorkspaceSymbols is the definitions across the workspace that match a query, from lsp.WorkspaceSymbols.
+ */
 export function WorkspaceSymbols(workspaceID: string, query: string): $CancellablePromise<lsp$0.Symbol[] | null> {
     return $Call.ByID(4029298109, workspaceID, query);
 }

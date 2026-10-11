@@ -1,4 +1,4 @@
-// wikiservice.go is the Wails RPC shell for wiki guides and patch notes.
+// wikiservice.go is the Wails RPC shell for wiki guides and patch notes, and the events of a wiki refresh.
 
 package services
 
@@ -14,21 +14,54 @@ import (
 	"paradox-modding-tools/services/internal/wiki"
 )
 
+// EventWikiUpdated is a game's wiki pages being refreshed: data is WikiUpdated.
+const EventWikiUpdated = "wiki:updated"
+
+// EventWikiProgress is a game's wiki refresh fetching a page: data is WikiProgress.
+const EventWikiProgress = "wiki:progress"
+
+// registers the events so the bindings generator types them
+func init() {
+	application.RegisterEvent[WikiUpdated](EventWikiUpdated)
+	application.RegisterEvent[WikiProgress](EventWikiProgress)
+}
+
+// WikiUpdated is one game's wiki refresh, done; Error says why it failed.
+type WikiUpdated struct {
+	GameID string `json:"gameId"`
+	Error  string `json:"error,omitempty"`
+}
+
+// WikiProgress is one page a game's wiki refresh fetches: its stage (guides, patch notes), how many
+// of the stage's pages are done and how many it fetches.
+type WikiProgress struct {
+	GameID string `json:"gameId"`
+	Stage  string `json:"stage"`
+	Done   int    `json:"done"`
+	Total  int    `json:"total"`
+}
+
 // WikiService serves the wiki guides and patch notes.
 type WikiService struct {
-	Session *SessionService
+	config   *ConfigFile
+	sessions *SessionService
+}
+
+// NewWikiService is the wiki service over the config (the installed games it refreshes) and the live sessions.
+func NewWikiService(config *ConfigFile, sessions *SessionService) *WikiService {
+	return &WikiService{config: config, sessions: sessions}
 }
 
 // Guide returns the Guide pane's tabs for the active file: each page's title, address and headings, its text
 // fetched apart (GuidePage) for the one tab shown. A path under no root gives an empty guide, not an error.
 func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
-	sess, err := s.Session.live(workspaceID)
+	ws, err := s.sessions.openSession(workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	sess.RLock()
-	defer sess.RUnlock()
-	place := sess.PlaceOf(path)
+	ws.RLock()
+	defer ws.RUnlock()
+	place := ws.PlaceOf(path)
 	if place.Origin == "" {
 		return &wiki.Guide{}, nil
 	}
@@ -36,11 +69,11 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	if place.Database != nil {
 		database, kind = place.Database.Name, game.KindName(place.Database.Name)
 	}
-	pages := wiki.PagesFor(sess.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel)
+	pages := wiki.PagesFor(ws.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel)
 	for i := range pages {
 		pages[i].HTML = ""
 	}
-	return &wiki.Guide{Database: database, Kind: kind, Pages: pages, Attribution: wiki.Attribution(sess.Game.ID)}, nil
+	return &wiki.Guide{Database: database, Kind: kind, Pages: pages, Attribution: wiki.Attribution(ws.Game.ID)}, nil
 }
 
 // GuidePage returns one guide page whole, by its title; nil where the wiki has none so named.
@@ -53,7 +86,7 @@ func (s *WikiService) GuidePage(gameID, title string) *wiki.Page {
 // Wails calls it.
 func (s *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	games := map[string]bool{}
-	s.Session.App.read(func(cfg *Config) {
+	s.config.read(func(cfg *Config) {
 		for _, inst := range cfg.Installs {
 			games[inst.GameID] = true
 		}

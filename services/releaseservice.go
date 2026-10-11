@@ -7,6 +7,7 @@ package services
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -39,7 +40,12 @@ func ServeSteamPublish() (exitCode int, served bool) {
 
 // ReleaseService loads, saves and publishes a mod's listing.
 type ReleaseService struct {
-	App *AppService
+	config *ConfigFile
+}
+
+// NewReleaseService is the Release page's service over the config.
+func NewReleaseService(config *ConfigFile) *ReleaseService {
+	return &ReleaseService{config: config}
 }
 
 // Listing is the Release page payload.
@@ -132,13 +138,13 @@ type snapshotPage struct {
 }
 
 // UploadFiles walks a mod as its upload copy does, by its saved ignore text.
-func (r *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles, error) {
-	_, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles, error) {
+	_, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	sent, left := steam.Upload(mod.Path, mod.WorkshopIgnore)
-	files := &UploadFiles{Left: append([]string{}, left...)}
+	sent, skipped := steam.Upload(mod.Path, mod.WorkshopIgnore)
+	files := &UploadFiles{Left: append([]string{}, skipped...)}
 	for _, rel := range sent {
 		if info, err := os.Stat(filepath.Join(mod.Path, filepath.FromSlash(rel))); err == nil {
 			files.Count++
@@ -155,8 +161,8 @@ func init() { application.RegisterEvent[steam.Progress](EventSteamProgress) }
 
 // SteamStatus says why Steam cannot take an upload for a workspace's game now (not running, no account that owns
 // the game signed in, offline); nil when it can. It starts Steam's API in the publish's child, as an upload does.
-func (r *ReleaseService) SteamStatus(workspaceID string) error {
-	library, appID, err := r.steamLibrary(workspaceID)
+func (s *ReleaseService) SteamStatus(workspaceID string) error {
+	library, appID, err := s.steamLibrary(workspaceID)
 	if err != nil {
 		return err
 	}
@@ -165,8 +171,8 @@ func (r *ReleaseService) SteamStatus(workspaceID string) error {
 }
 
 // ExportZip writes a workspace mod's upload copy (its ignore text applied) as a zip at dest, for Paradox Mods.
-func (r *ReleaseService) ExportZip(workspaceID, modID, dest string) error {
-	_, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) ExportZip(workspaceID, modID, dest string) error {
+	_, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
@@ -174,17 +180,17 @@ func (r *ReleaseService) ExportZip(workspaceID, modID, dest string) error {
 }
 
 // LoadListing reads a workspace mod's descriptor and description, writing nothing.
-func (r *ReleaseService) LoadListing(workspaceID, modID string) (*Listing, error) {
-	ws, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) LoadListing(workspaceID, modID string) (*Listing, error) {
+	ws, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	return r.loadFrom(ws, mod)
+	return s.loadFrom(ws, mod)
 }
 
 // ListingSummary reads a mod's Workshop id, listing image and description source, writing nothing.
-func (r *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSummary, error) {
-	ws, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSummary, error) {
+	ws, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
@@ -197,8 +203,8 @@ func (r *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSumm
 
 // SaveListing writes the descriptor, the description to its source's file where the mod has one,
 // and the changelog.
-func (r *ReleaseService) SaveListing(in Listing) error {
-	ws, mod, err := findMod(r.App, in.WorkspaceID, in.ModID)
+func (s *ReleaseService) SaveListing(in Listing) error {
+	ws, mod, err := findMod(s.config, in.WorkspaceID, in.ModID)
 	if err != nil {
 		return err
 	}
@@ -211,17 +217,8 @@ func (r *ReleaseService) SaveListing(in Listing) error {
 	if err := modfiles.WriteDescriptor(ws.GameID, root, fields); err != nil {
 		return err
 	}
-	if source, rel := description(mod); rel != "" {
-		file := filepath.Join(root, filepath.FromSlash(rel))
-		text := in.ReadmeMd
-		if source == steam.FromBBCode {
-			text = in.ReadmeBbcode
-		}
-		if exists(file) {
-			if err := appdata.WriteBytes(file, []byte(text)); err != nil {
-				return err
-			}
-		}
+	if err := writeDescription(mod, in); err != nil {
+		return err
 	}
 	// the changelog holds the latest change note; no note, no file
 	changelog := filepath.Join(root, filepath.FromSlash(steam.ChangelogName))
@@ -234,16 +231,30 @@ func (r *ReleaseService) SaveListing(in Listing) error {
 	return nil
 }
 
+// writeDescription writes the listing's description to the file of its source, where the mod has that file.
+func writeDescription(mod *WorkspaceMod, in Listing) error {
+	source, rel := description(mod)
+	file := filepath.Join(mod.Path, filepath.FromSlash(rel))
+	if rel == "" || !exists(file) {
+		return nil
+	}
+	text := in.ReadmeMd
+	if source == steam.FromBBCode {
+		text = in.ReadmeBbcode
+	}
+	return appdata.WriteBytes(file, []byte(text))
+}
+
 // CreateDescriptionFile writes the mod's missing description file from its name and short
 // description, in its source's markup.
-func (r *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error {
-	ws, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error {
+	ws, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
 	source, rel := description(mod)
 	if rel == "" {
-		return fmt.Errorf("steam's own text has no file to create")
+		return errors.New("steam's own text has no file to create")
 	}
 	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
@@ -254,8 +265,8 @@ func (r *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error 
 
 // SetListingLink writes the descriptor's Workshop id and, where thumbnailRel names one, its picture,
 // and nothing else of the listing; it returns the summary they make.
-func (r *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbnailRel string) (*ListingSummary, error) {
-	ws, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbnailRel string) (*ListingSummary, error) {
+	ws, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
@@ -270,17 +281,17 @@ func (r *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbn
 	return summarize(ws.GameID, mod, fields), nil
 }
 
-// Convert maps listing markup. UI writes Markdown and asks for "bbcode".
-func (r *ReleaseService) Convert(src, to string) steam.Converted {
-	if to == "bbcode" {
-		return steam.MarkdownToBBCode(src)
+// Convert maps listing markup: the text as BBCode where markup is "bbcode", else as Markdown.
+func (s *ReleaseService) Convert(text, markup string) steam.Converted {
+	if markup == "bbcode" {
+		return steam.MarkdownToBBCode(text)
 	}
-	return steam.BBCodeToMarkdown(src)
+	return steam.BBCodeToMarkdown(text)
 }
 
 // editWorkshop applies one edit to the mod's Workshop extras.
-func (r *ReleaseService) editWorkshop(workspaceID, modID string, edit func(modRoot string) error) error {
-	_, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) editWorkshop(workspaceID, modID string, edit func(modRoot string) error) error {
+	_, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
@@ -288,41 +299,41 @@ func (r *ReleaseService) editWorkshop(workspaceID, modID string, edit func(modRo
 }
 
 // AddWorkshopPreview copies an image into workshop/previews (Steam extra cap).
-func (r *ReleaseService) AddWorkshopPreview(workspaceID, modID, srcPath string) error {
-	return r.editWorkshop(workspaceID, modID, func(modRoot string) error {
+func (s *ReleaseService) AddWorkshopPreview(workspaceID, modID, srcPath string) error {
+	return s.editWorkshop(workspaceID, modID, func(modRoot string) error {
 		return steam.AddPreview(modRoot, srcPath)
 	})
 }
 
 // RemoveWorkshopPreview deletes one extra image under workshop/previews.
-func (r *ReleaseService) RemoveWorkshopPreview(workspaceID, modID, rel string) error {
-	return r.editWorkshop(workspaceID, modID, func(modRoot string) error {
+func (s *ReleaseService) RemoveWorkshopPreview(workspaceID, modID, rel string) error {
+	return s.editWorkshop(workspaceID, modID, func(modRoot string) error {
 		return steam.RemovePreview(modRoot, rel)
 	})
 }
 
 // AddWorkshopVideo appends a YouTube id from a watch/embed/youtu.be URL or raw id.
-func (r *ReleaseService) AddWorkshopVideo(workspaceID, modID, urlOrID string) error {
-	return r.editWorkshop(workspaceID, modID, func(modRoot string) error {
+func (s *ReleaseService) AddWorkshopVideo(workspaceID, modID, urlOrID string) error {
+	return s.editWorkshop(workspaceID, modID, func(modRoot string) error {
 		return steam.AddVideo(modRoot, urlOrID)
 	})
 }
 
 // RemoveWorkshopVideo drops one YouTube id from workshop/previews/videos.txt.
-func (r *ReleaseService) RemoveWorkshopVideo(workspaceID, modID, id string) error {
-	return r.editWorkshop(workspaceID, modID, func(modRoot string) error {
+func (s *ReleaseService) RemoveWorkshopVideo(workspaceID, modID, id string) error {
+	return s.editWorkshop(workspaceID, modID, func(modRoot string) error {
 		return steam.RemoveVideo(modRoot, id)
 	})
 }
 
 // PublishSteam publishes the mod, as the workspace has it saved, to the Workshop, saves the item's
 // id, and keeps what it sent as the item's snapshot.
-func (r *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult, error) {
-	ws, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult, error) {
+	ws, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	listing, err := r.loadFrom(ws, mod)
+	listing, err := s.loadFrom(ws, mod)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +342,7 @@ func (r *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult
 	if _, rel := description(mod); sent && !exists(filepath.Join(mod.Path, filepath.FromSlash(rel))) {
 		return nil, fmt.Errorf("the description file %s is missing: create it, or keep Steam's own text", rel)
 	}
-	library, appID, err := r.steamLibrary(ws.ID)
+	library, appID, err := s.steamLibrary(ws.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -340,22 +351,15 @@ func (r *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(work)
+	defer func() { _ = os.RemoveAll(work) }()
 	stage := filepath.Join(work, "files")
 	if err := steam.CopyMod(listing.Root, stage, mod.WorkshopIgnore); err != nil {
 		return nil, err
 	}
-	preview := ""
-	if listing.ThumbnailRel != "" {
-		staged := filepath.Join(stage, filepath.FromSlash(listing.ThumbnailRel))
-		if exists(staged) {
-			preview = staged
-		}
-	}
 	resp, err := steam.Run(library, steam.Request{
 		AppID: appID, Folder: stage,
 		Title: listing.Name, Description: text, KeepDescription: !sent,
-		Preview: preview, PublishedFileID: listing.RemoteFileID,
+		Preview: stagedPreview(stage, listing), PublishedFileID: listing.RemoteFileID,
 		ChangeNote:    listing.ChangeNote,
 		ExtraPreviews: steam.PreviewFiles(listing.Previews),
 		ExtraVideos:   steam.VideoIDs(listing.Previews),
@@ -365,23 +369,10 @@ func (r *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult
 		return nil, err
 	}
 
-	page := snapshotPage{
-		From: "snapshot", Title: listing.Name, Description: text, At: time.Now().UTC().Format(time.RFC3339),
-		Extras: steam.ExtrasOf(listing.Previews),
-	}
-	// what the upload left as it was is what the last copy says Steam had
-	if _, kept := readSnapshot(resp.PublishedFileID); kept != nil {
-		if !sent {
-			page.Description = kept.Description
-		}
-		if len(listing.Previews) == 0 {
-			page.Extras = kept.Extras
-		}
-	}
-	if err := keepSnapshot(work, resp.PublishedFileID, page); err != nil {
+	if err := keepSnapshot(work, resp.PublishedFileID, uploadedPage(listing, text, sent, resp.PublishedFileID)); err != nil {
 		slog.Warn("workshop snapshot not kept", "id", resp.PublishedFileID, "error", err)
 	}
-	if _, err := r.SetListingLink(workspaceID, modID, resp.PublishedFileID, listing.ThumbnailRel); err != nil {
+	if _, err := s.SetListingLink(workspaceID, modID, resp.PublishedFileID, listing.ThumbnailRel); err != nil {
 		return nil, fmt.Errorf("save the workshop id after publish: %w", err)
 	}
 	slog.Info("workshop publish done", "mod", listing.Name, "id", resp.PublishedFileID, "legalAgreement", resp.NeedsLegalAgreement)
@@ -392,18 +383,48 @@ func (r *ReleaseService) PublishSteam(workspaceID, modID string) (*PublishResult
 	return result, nil
 }
 
+// stagedPreview is the listing image's file in the upload copy; "" where the listing has none or the copy lacks it.
+func stagedPreview(stage string, listing *Listing) string {
+	if listing.ThumbnailRel == "" {
+		return ""
+	}
+	staged := filepath.Join(stage, filepath.FromSlash(listing.ThumbnailRel))
+	if !exists(staged) {
+		return ""
+	}
+	return staged
+}
+
+// uploadedPage is the snapshot page of an upload: what it sent, and where the upload left Steam's own description
+// or extras as they were, what the last copy of the item says Steam had.
+func uploadedPage(listing *Listing, text string, sent bool, item string) snapshotPage {
+	page := snapshotPage{
+		From: "snapshot", Title: listing.Name, Description: text, At: time.Now().UTC().Format(time.RFC3339),
+		Extras: steam.ExtrasOf(listing.Previews),
+	}
+	if _, kept := loadSnapshot(item); kept != nil {
+		if !sent {
+			page.Description = kept.Description
+		}
+		if len(listing.Previews) == 0 {
+			page.Extras = kept.Extras
+		}
+	}
+	return page
+}
+
 // CompareWithSteam compares the mod with Steam's copy by its snapshot alone: it never downloads.
-func (r *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamCompare, error) {
-	ws, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamCompare, error) {
+	ws, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	listing, err := r.loadFrom(ws, mod)
+	listing, err := s.loadFrom(ws, mod)
 	if err != nil {
 		return nil, err
 	}
 	out := &SteamCompare{Item: listing.RemoteFileID, Listing: []ListingChange{}, Files: []steam.FileChange{}, OnlyOnSteam: []string{}}
-	dir, page := readSnapshot(listing.RemoteFileID)
+	dir, page := loadSnapshot(listing.RemoteFileID)
 	if page == nil {
 		return out, nil
 	}
@@ -424,55 +445,62 @@ func (r *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamComp
 		text = page.Description
 	}
 	thumbnail, _ := modfiles.Thumbnail(ws.GameID, out.Root, theirs.Picture)
-	labels := func(extras []steam.Extra) []string {
-		names := []string{}
-		for _, extra := range extras {
-			names = append(names, extra.Label())
-		}
-		return names
-	}
-	theirExtras, ourExtras := labels(page.Extras), labels(steam.ExtrasOf(listing.Previews))
-	for _, name := range theirExtras {
-		if !slices.Contains(ourExtras, name) {
-			out.OnlyOnSteam = append(out.OnlyOnSteam, name)
-		}
-	}
+	theirExtras, ourExtras := extraLabels(page.Extras), extraLabels(steam.ExtrasOf(listing.Previews))
+	out.OnlyOnSteam = append(out.OnlyOnSteam, without(theirExtras, ourExtras)...)
 	// a mod with no extras of its own leaves Steam's as they are
 	if len(ourExtras) == 0 {
 		ourExtras = theirExtras
-	}
-	missing := func(from, in []string) []string {
-		return slices.DeleteFunc(slices.Clone(from), func(tag string) bool { return slices.Contains(in, tag) })
 	}
 	// a field whose value reads the same still changes with its file
 	out.Listing = []ListingChange{
 		{Field: "Title", Steam: page.Title, Workspace: listing.Name},
 		{Field: "Description", Steam: page.Description, Workspace: text},
 		{Field: "Tags", Steam: strings.Join(theirs.Tags, ", "), Workspace: strings.Join(listing.Tags, ", "),
-			Added: missing(listing.Tags, theirs.Tags), Removed: missing(theirs.Tags, listing.Tags)},
+			Added: without(listing.Tags, theirs.Tags), Removed: without(theirs.Tags, listing.Tags)},
 		{Field: "Version", Steam: theirs.Version, Workspace: listing.Version},
 		{Field: "Thumbnail", Steam: thumbnail, Workspace: listing.ThumbnailRel, Changed: changed[listing.ThumbnailRel]},
 		{Field: "Screenshots and video", Steam: strings.Join(theirExtras, ", "), Workspace: strings.Join(ourExtras, ", "),
 			Changed: slices.ContainsFunc(listing.Previews, func(extra steam.Preview) bool { return changed[extra.Rel] })},
 	}
-	out.Changes = len(out.Files)
-	for i := range out.Listing {
-		row := &out.Listing[i]
-		if row.Changed = row.Changed || row.Steam != row.Workspace; row.Changed {
-			out.Changes++
-			row.LinesAdded, row.LinesRemoved = steam.LineCounts(row.Steam, row.Workspace)
-		}
-	}
+	out.Changes = len(out.Files) + countChanges(out.Listing)
 	return out, nil
 }
 
+// extraLabels is the names the page's extra images and videos are listed by.
+func extraLabels(extras []steam.Extra) []string {
+	names := []string{}
+	for _, extra := range extras {
+		names = append(names, extra.Label())
+	}
+	return names
+}
+
+// without is the tags that others lack, in order.
+func without(tags, others []string) []string {
+	return slices.DeleteFunc(slices.Clone(tags), func(tag string) bool { return slices.Contains(others, tag) })
+}
+
+// countChanges marks each row that changed, by its flag or by its two sides reading otherwise, with the lines it
+// adds and removes, and counts them.
+func countChanges(rows []ListingChange) int {
+	count := 0
+	for i := range rows {
+		row := &rows[i]
+		if row.Changed = row.Changed || row.Steam != row.Workspace; row.Changed {
+			count++
+			row.LinesAdded, row.LinesRemoved = steam.LineCounts(row.Steam, row.Workspace)
+		}
+	}
+	return count
+}
+
 // DownloadFromSteam replaces the mod's snapshot with Steam's own copy of the item, then compares.
-func (r *ReleaseService) DownloadFromSteam(workspaceID, modID string) (*SteamCompare, error) {
-	ws, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) DownloadFromSteam(workspaceID, modID string) (*SteamCompare, error) {
+	ws, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return nil, err
 	}
-	item, resp, err := r.fetchItem(ws, mod, true)
+	item, resp, err := s.fetchItem(ws, mod, true)
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +508,7 @@ func (r *ReleaseService) DownloadFromSteam(workspaceID, modID string) (*SteamCom
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(work)
+	defer func() { _ = os.RemoveAll(work) }()
 	if err := steam.CopyMod(resp.Folder, filepath.Join(work, "files"), ""); err != nil {
 		return nil, err
 	}
@@ -491,17 +519,17 @@ func (r *ReleaseService) DownloadFromSteam(workspaceID, modID string) (*SteamCom
 	if err := keepSnapshot(work, item, page); err != nil {
 		return nil, err
 	}
-	return r.CompareWithSteam(workspaceID, modID)
+	return s.CompareWithSteam(workspaceID, modID)
 }
 
 // ImportSteamExtras brings the extra images and videos the mod's Workshop item has and the mod lacks into
 // its workshop folder, so an upload keeps them.
-func (r *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
-	ws, mod, err := findMod(r.App, workspaceID, modID)
+func (s *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
+	ws, mod, err := findMod(s.config, workspaceID, modID)
 	if err != nil {
 		return err
 	}
-	_, resp, err := r.fetchItem(ws, mod, false)
+	_, resp, err := s.fetchItem(ws, mod, false)
 	if err != nil {
 		return err
 	}
@@ -510,7 +538,7 @@ func (r *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
 
 // fetchItem asks Steam for the mod's Workshop item: its page, and with files its files downloaded; it
 // returns the item's id.
-func (r *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool) (string, steam.Response, error) {
+func (s *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool) (string, steam.Response, error) {
 	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return "", steam.Response{}, err
@@ -518,7 +546,7 @@ func (r *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool)
 	if fields.RemoteFileID == "" {
 		return "", steam.Response{}, fmt.Errorf("%s is not on the Workshop", mod.Name)
 	}
-	library, appID, err := r.steamLibrary(ws.ID)
+	library, appID, err := s.steamLibrary(ws.ID)
 	if err != nil {
 		return "", steam.Response{}, err
 	}
@@ -528,8 +556,8 @@ func (r *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool)
 
 // steamLibrary is where the workspace's install keeps Steam's library, which the publishing child
 // loads, and the game's app id.
-func (r *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error) {
-	ws, inst, err := r.App.workspace(workspaceID)
+func (s *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error) {
+	ws, inst, err := s.config.workspace(workspaceID)
 	if err != nil {
 		return "", 0, err
 	}
@@ -545,7 +573,8 @@ func (r *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error
 	return library, uint32(info.SteamAppID), err
 }
 
-func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
+// loadFrom reads a mod's listing: its descriptor, its description in its source's file, its changelog and its previews.
+func (s *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
 	root := mod.Path
 	fields, err := modfiles.ReadDescriptor(ws.GameID, root)
 	if err != nil {
@@ -591,19 +620,19 @@ func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, e
 // and its description's file.
 func summarize(gameID string, mod *WorkspaceMod, fields modfiles.ListingFields) *ListingSummary {
 	summary := &ListingSummary{RemoteFileID: fields.RemoteFileID}
-	if rel, found := modfiles.Thumbnail(gameID, mod.Path, fields.Picture); found {
+	if rel, known := modfiles.Thumbnail(gameID, mod.Path, fields.Picture); known {
 		summary.ThumbnailRel, summary.ThumbnailAbs = rel, filepath.Join(mod.Path, filepath.FromSlash(rel))
 	}
 	summary.DescSource, summary.DescRel = description(mod)
 	summary.DescExists = summary.DescRel != "" && exists(filepath.Join(mod.Path, filepath.FromSlash(summary.DescRel)))
-	if dir, page := readSnapshot(fields.RemoteFileID); page != nil {
+	if dir, page := loadSnapshot(fields.RemoteFileID); page != nil {
 		theirs, _ := modfiles.ReadDescriptor(gameID, filepath.Join(dir, "files"))
 		summary.SteamVersion = theirs.Version
 	}
 	return summary
 }
 
-// description is where the mod's Workshop description comes from (PB5), and its file relative to
+// description is where the mod's Workshop description comes from, and its file relative to
 // the mod ("" for Steam's own text). With none chosen, it is the file the mod has, Markdown first,
 // else Steam's own text, so a mod with neither file has nothing written for it.
 func description(mod *WorkspaceMod) (source, rel string) {
@@ -647,7 +676,7 @@ func newWork() (string, error) {
 	return os.MkdirTemp(dir, "work-")
 }
 
-// snapshotDir is where the Workshop item's snapshot is kept (R6): the files Steam has under files/,
+// snapshotDir is where the Workshop item's snapshot is kept: the files Steam has under files/,
 // and listing.json beside them.
 func snapshotDir(item string) (string, error) {
 	if _, err := strconv.ParseUint(item, 10, 64); err != nil {
@@ -680,8 +709,8 @@ func keepSnapshot(work, item string, page snapshotPage) error {
 	return os.Rename(work, dir)
 }
 
-// readSnapshot is the item's snapshot folder and page, or no page when there is none.
-func readSnapshot(item string) (string, *snapshotPage) {
+// loadSnapshot is the item's snapshot folder and page, or no page when there is none.
+func loadSnapshot(item string) (string, *snapshotPage) {
 	dir, err := snapshotDir(item)
 	if err != nil {
 		return "", nil
@@ -702,6 +731,7 @@ func picture(rel string) string {
 	return path.Base(rel)
 }
 
+// exists is whether a file or folder is at the path.
 func exists(file string) bool {
 	_, err := os.Stat(file)
 	return err == nil

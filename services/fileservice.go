@@ -40,75 +40,76 @@ type DirEntry struct {
 }
 
 // CreateDir creates a directory (parents created as needed).
-func (f *FileService) CreateDir(fullPath string) error {
+func (s *FileService) CreateDir(fullPath string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	if fullPath == "." {
-		return fmt.Errorf("path is required")
+		return errors.New("path is required")
 	}
 	return os.MkdirAll(fullPath, 0o755)
 }
 
 // RenamePath renames or moves a file or directory.
-func (f *FileService) RenamePath(oldPath, newPath string) error {
+func (s *FileService) RenamePath(oldPath, newPath string) error {
 	oldPath = filepath.Clean(filepath.FromSlash(oldPath))
 	newPath = filepath.Clean(filepath.FromSlash(newPath))
 	if oldPath == "." || newPath == "." {
-		return fmt.Errorf("path is required")
+		return errors.New("path is required")
 	}
 	return move(oldPath, newPath)
 }
 
 // TrashPath moves a file or directory into PMT's trash, where an undo of the delete finds it, and returns where it
 // went. The trash is emptied when the app starts.
-func (f *FileService) TrashPath(fullPath string) (string, error) {
+func (s *FileService) TrashPath(fullPath string) (string, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	app, err := appdata.Dir()
 	if fullPath == "." || err != nil {
 		return "", cmp.Or(err, errors.New("path is required"))
 	}
-	to := filepath.Join(app, "trash", strconv.FormatInt(time.Now().UnixNano(), 10), filepath.Base(fullPath))
-	return to, move(fullPath, to)
+	trashPath := filepath.Join(app, "trash", strconv.FormatInt(time.Now().UnixNano(), 10), filepath.Base(fullPath))
+	return trashPath, move(fullPath, trashPath)
 }
 
 // ServiceStartup empties the last run's trash: a delete is undone within the run that made it. Wails calls it.
-func (f *FileService) ServiceStartup(context.Context, application.ServiceOptions) error {
+func (s *FileService) ServiceStartup(context.Context, application.ServiceOptions) error {
 	if app, err := appdata.Dir(); err == nil {
 		_ = os.RemoveAll(filepath.Join(app, "trash"))
 	}
 	return nil
 }
 
-// move renames from to to, its folder made first; across drives, which no rename crosses, it copies then removes.
-func move(from, to string) error {
-	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+// move renames source to target, its folder made first; across drives, which no rename crosses, it copies then
+// removes.
+func move(source, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return fmt.Errorf("create parent dir: %w", err)
 	}
-	err := os.Rename(from, to)
-	if err == nil || !errors.Is(err, syscall.EXDEV) && filepath.VolumeName(from) == filepath.VolumeName(to) {
+	err := os.Rename(source, target)
+	if err == nil || !errors.Is(err, syscall.EXDEV) && filepath.VolumeName(source) == filepath.VolumeName(target) {
 		return err
 	}
-	info, err := os.Stat(from)
+	info, err := os.Stat(source)
 	if err != nil {
 		return err
 	}
 	if info.IsDir() {
-		err = os.CopyFS(to, os.DirFS(from))
-	} else if data, read := os.ReadFile(from); read != nil {
-		err = read
+		err = os.CopyFS(target, os.DirFS(source))
+	} else if data, readErr := os.ReadFile(source); readErr != nil {
+		err = readErr
 	} else {
-		err = os.WriteFile(to, data, info.Mode())
+		err = os.WriteFile(target, data, info.Mode())
 	}
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(from)
+	return os.RemoveAll(source)
 }
 
 // DeletePath removes a file or directory recursively.
-func (f *FileService) DeletePath(fullPath string) error {
+func (s *FileService) DeletePath(fullPath string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	if fullPath == "." {
-		return fmt.Errorf("path is required")
+		return errors.New("path is required")
 	}
 	return os.RemoveAll(fullPath)
 }
@@ -122,7 +123,7 @@ type PathStat struct {
 }
 
 // StatPath returns metadata for a path (Exists=false when missing, no error).
-func (f *FileService) StatPath(fullPath string) (PathStat, error) {
+func (s *FileService) StatPath(fullPath string) (PathStat, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	info, err := os.Stat(fullPath)
 	if err != nil {
@@ -148,8 +149,8 @@ type FileText struct {
 	Reject  string `json:"reject,omitempty"`
 }
 
-// textOf is a file's bytes as a FileText, decoded as the engine decodes them (inventory.DecodeText) and classified at path
-// (rel: its path in its root, or the whole path where it has none); binary is refused.
+// textOf is a file's bytes as a FileText, decoded as the engine decodes them (inventory.DecodeText) and
+// classified at path (rel: its path in its root, or the whole path where it has none); binary is refused.
 func textOf(data []byte, path, rel string) FileText {
 	if inventory.Binary(data) {
 		return FileText{Binary: true, Reject: "binary file: the editor opens script, localization and other text files only"}
@@ -168,13 +169,13 @@ func readCapped(fullPath string) (data []byte, missing bool, reject string, err 
 	if err != nil {
 		return nil, false, "", fmt.Errorf("read file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	switch {
 	case err != nil:
 		return nil, false, "", fmt.Errorf("stat file: %w", err)
 	case info.IsDir():
-		return nil, false, "", fmt.Errorf("read file: is a directory")
+		return nil, false, "", errors.New("read file: is a directory")
 	case info.Size() > maxOpenBytes:
 		return nil, false, fmt.Sprintf("file too large to open (%d bytes, max %d)", info.Size(), maxOpenBytes), nil
 	}
@@ -207,7 +208,7 @@ type ImageFacts struct {
 }
 
 // ReadImageFacts is an image file's facts, which its pixels at ImageRoute do not carry.
-func (f *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
+func (s *FileService) ReadImageFacts(fullPath string) (ImageFacts, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	stat, err := os.Stat(fullPath)
 	if err != nil {
@@ -274,7 +275,7 @@ func ServeImages(next http.Handler) http.Handler {
 }
 
 // ReadText is a file as the editor reads it.
-func (f *FileService) ReadText(fullPath string) (FileText, error) {
+func (s *FileService) ReadText(fullPath string) (FileText, error) {
 	data, missing, reject, err := readCapped(fullPath)
 	switch {
 	case err != nil:
@@ -289,7 +290,7 @@ func (f *FileService) ReadText(fullPath string) (FileText, error) {
 
 // WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so a
 // failed save never leaves half a file.
-func (f *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
+func (s *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
 	data, err := inventory.EncodeText(text, bom, legacy)
 	if err != nil {
 		return err
@@ -299,7 +300,7 @@ func (f *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
 
 // ListDirectory lists immediate children of dirPath (non-recursive).
 // showAll lists every name; otherwise skip dotfiles except .metadata.
-func (f *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry, error) {
+func (s *FileService) ListDirectory(dirPath string, showAll bool) ([]DirEntry, error) {
 	dirPath = filepath.Clean(filepath.FromSlash(dirPath))
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {

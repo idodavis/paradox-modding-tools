@@ -17,14 +17,27 @@ import (
 	"sync"
 
 	"paradox-modding-tools/services/internal/inventory"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // GitService is the Wails RPC shell for source control. Every method but Repositories takes a
 // repository's root; git runs one command at a time, so two never fight over the index's lock.
 type GitService struct {
-	App *AppService
-	mu  sync.Mutex
+	config *ConfigFile
+	mu     sync.Mutex
 }
+
+// NewGitService is the source control service over the config (the workspaces' mods whose repositories it lists).
+func NewGitService(config *ConfigFile) *GitService {
+	return &GitService{config: config}
+}
+
+// EventGitOutput is a git command having run: data is GitOutput.
+const EventGitOutput = "git:output"
+
+// registers the event so the bindings generator types it
+func init() { application.RegisterEvent[GitOutput](EventGitOutput) }
 
 // GitOutput is one git command and what it wrote: its errors and progress, and for a command that
 // changes something, what it printed.
@@ -140,7 +153,7 @@ func (s *GitService) Available() bool {
 // Repositories returns each repository holding one of the workspace's mods, once, named after the
 // first mod in it; none when git is missing.
 func (s *GitService) Repositories(workspaceID string) ([]GitRepository, error) {
-	ws, _, err := s.App.workspace(workspaceID)
+	ws, _, err := s.config.workspace(workspaceID)
 	if err != nil || !s.Available() {
 		return nil, nil
 	}
@@ -151,12 +164,12 @@ func (s *GitService) Repositories(workspaceID string) ([]GitRepository, error) {
 			continue
 		}
 		root := filepath.Clean(filepath.FromSlash(strings.TrimSpace(top)))
-		at := slices.IndexFunc(out, func(repo GitRepository) bool { return strings.EqualFold(repo.Root, root) })
-		if at < 0 {
+		i := slices.IndexFunc(out, func(repo GitRepository) bool { return strings.EqualFold(repo.Root, root) })
+		if i < 0 {
 			out = append(out, GitRepository{Root: root, Name: mod.Name, Origin: mod.ID})
-			at = len(out) - 1
+			i = len(out) - 1
 		}
-		out[at].Mods = append(out[at].Mods, mod.ID)
+		out[i].Mods = append(out[i].Mods, mod.ID)
 	}
 	return out, nil
 }
@@ -186,27 +199,19 @@ func (s *GitService) Status(root string) (*GitStatus, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseStatus(root, out), nil
+}
+
+// parseStatus reads porcelain v2's entries, one per NUL: the branch's headers, then each changed, conflicted,
+// untracked and ignored path.
+func parseStatus(root, out string) *GitStatus {
 	status := &GitStatus{Staged: []GitChange{}, Changes: []GitChange{}, Conflicts: []GitChange{}, Ignored: []string{}}
 	entries := strings.Split(out, "\x00")
 	for i := 0; i < len(entries); i++ {
 		entry := entries[i]
 		switch {
-		case strings.HasPrefix(entry, "# branch.oid "):
-			if oid := strings.TrimPrefix(entry, "# branch.oid "); oid != "(initial)" {
-				status.Commit = oid[:min(7, len(oid))]
-			}
-		case strings.HasPrefix(entry, "# branch.head "):
-			if head := strings.TrimPrefix(entry, "# branch.head "); head != "(detached)" {
-				status.Branch = head
-			}
-		case strings.HasPrefix(entry, "# branch.upstream "):
-			status.Upstream = strings.TrimPrefix(entry, "# branch.upstream ")
-		case strings.HasPrefix(entry, "# branch.ab "):
-			counts := strings.Fields(strings.TrimPrefix(entry, "# branch.ab "))
-			if len(counts) == 2 {
-				status.Ahead, _ = strconv.Atoi(strings.TrimPrefix(counts[0], "+"))
-				status.Behind, _ = strconv.Atoi(strings.TrimPrefix(counts[1], "-"))
-			}
+		case strings.HasPrefix(entry, "# branch."):
+			status.readBranch(entry)
 		case strings.HasPrefix(entry, "1 "), strings.HasPrefix(entry, "2 "):
 			// 1 XY sub mH mI mW hH hI path; 2 adds a score, and the old path follows as its own entry
 			fields := strings.SplitN(entry, " ", map[byte]int{'1': 9, '2': 10}[entry[0]])
@@ -233,7 +238,30 @@ func (s *GitService) Status(root string) (*GitStatus, error) {
 			status.Ignored = append(status.Ignored, ignored)
 		}
 	}
-	return status, nil
+	return status
+}
+
+// readBranch takes one "# branch." header of the status: the commit, the branch, its upstream and how far apart
+// they are.
+func (status *GitStatus) readBranch(entry string) {
+	switch {
+	case strings.HasPrefix(entry, "# branch.oid "):
+		if oid := strings.TrimPrefix(entry, "# branch.oid "); oid != "(initial)" {
+			status.Commit = oid[:min(7, len(oid))]
+		}
+	case strings.HasPrefix(entry, "# branch.head "):
+		if head := strings.TrimPrefix(entry, "# branch.head "); head != "(detached)" {
+			status.Branch = head
+		}
+	case strings.HasPrefix(entry, "# branch.upstream "):
+		status.Upstream = strings.TrimPrefix(entry, "# branch.upstream ")
+	case strings.HasPrefix(entry, "# branch.ab "):
+		counts := strings.Fields(strings.TrimPrefix(entry, "# branch.ab "))
+		if len(counts) == 2 {
+			status.Ahead, _ = strconv.Atoi(strings.TrimPrefix(counts[0], "+"))
+			status.Behind, _ = strconv.Atoi(strings.TrimPrefix(counts[1], "-"))
+		}
+	}
 }
 
 // Log returns the newest commits of HEAD's history and its upstream's, at most count, each before its

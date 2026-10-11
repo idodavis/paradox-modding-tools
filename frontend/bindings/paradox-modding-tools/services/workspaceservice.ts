@@ -203,7 +203,8 @@ export function UpdateGameInstall(id: string, path: string): $CancellablePromise
 }
 
 /**
- * UpdateWorkspace updates workspace fields; the session follows a different install by itself (SessionService.get).
+ * UpdateWorkspace updates workspace fields; the session follows a different install by itself (the next request
+ * finds its fingerprint stale).
  */
 export function UpdateWorkspace(id: string, name: string, installID: string): $CancellablePromise<void> {
     return $Call.ByID(2311242704, id, name, installID);

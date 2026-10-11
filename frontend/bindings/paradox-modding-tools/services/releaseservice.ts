@@ -40,10 +40,10 @@ export function CompareWithSteam(workspaceID: string, modID: string): $Cancellab
 }
 
 /**
- * Convert maps listing markup. UI writes Markdown and asks for "bbcode".
+ * Convert maps listing markup: the text as BBCode where markup is "bbcode", else as Markdown.
  */
-export function Convert(src: string, to: string): $CancellablePromise<steam$0.Converted> {
-    return $Call.ByID(599949017, src, to);
+export function Convert(text: string, markup: string): $CancellablePromise<steam$0.Converted> {
+    return $Call.ByID(599949017, text, markup);
 }
 
 /**

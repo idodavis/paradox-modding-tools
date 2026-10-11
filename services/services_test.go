@@ -50,30 +50,30 @@ func openWorkspace(t *testing.T, mods ...map[string]string) *SessionService {
 		id := string(rune('a' + i))
 		playset = append(playset, workspace.Mod{ID: "mod" + id, Dir: dir})
 	}
-	sess, err := workspace.Open(t.Context(), game.Get("ck3"), install, playset, "")
+	ws, err := workspace.Open(t.Context(), game.Get("ck3"), install, playset, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return serving(sess)
+	return serving(ws)
 }
 
-// serving is a session service holding sess as workspace "ws".
-func serving(sess *workspace.Session) *SessionService {
-	served := &SessionService{}
+// serving is a session service holding ws as workspace "ws".
+func serving(ws *workspace.Session) *SessionService {
+	served := NewSessionService(nil, "test")
 	served.start()
-	served.sessions["ws"] = sess
+	served.sessions["ws"] = ws
 	return served
 }
 
 // tempConfig sends APPDATA, XDG_CONFIG_HOME and HOME to a temporary folder and opens a config.json
 // there, unwritten, holding the given installs and workspaces.
-func tempConfig(t *testing.T, installs []GameInstall, workspaces ...Workspace) *AppService {
+func tempConfig(t *testing.T, installs []GameInstall, workspaces ...Workspace) *ConfigFile {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("APPDATA", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
 	t.Setenv("HOME", home)
-	config := newApp(filepath.Join(home, "config.json"))
+	config := openConfigFile(filepath.Join(home, "config.json"))
 	config.cfg.Installs, config.cfg.Workspaces = installs, workspaces
 	return config
 }
@@ -142,7 +142,9 @@ func fixtureService(t *testing.T) *SessionService {
 	config := tempConfig(t,
 		[]GameInstall{{ID: "i1", GameID: "ck3", Name: "CK3", Path: install}},
 		Workspace{ID: "ws", GameID: "ck3", Name: "W", InstallID: "i1", Mods: []WorkspaceMod{{ID: "m", Name: "M", Path: mod}}})
-	return &SessionService{App: config, Scan: func(context.Context, index.Request) (*index.Install, error) { return scanned() }}
+	sessions := NewSessionService(config, "test")
+	sessions.scan = func(context.Context, index.Request) (*index.Install, error) { return scanned() }
+	return sessions
 }
 
 // A config that cannot be read is not a first run: serving it empty and then saving would write
@@ -154,7 +156,7 @@ func TestConfig(t *testing.T) {
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		config := newApp(path)
+		config := openConfigFile(path)
 		if config.loadErr == nil {
 			t.Fatal("want loadErr set for a corrupt config")
 		}
@@ -185,7 +187,7 @@ func TestConfig(t *testing.T) {
 			t.Fatalf("mutate on first run: %v", err)
 		}
 		var installs int
-		newApp(config.path).read(func(cfg *Config) { installs = len(cfg.Installs) })
+		openConfigFile(config.path).read(func(cfg *Config) { installs = len(cfg.Installs) })
 		if installs != 1 {
 			t.Fatalf("got %d installs", installs)
 		}
@@ -208,13 +210,13 @@ func TestEventGraph(t *testing.T) {
 	for i := range 15 {
 		wide += fmt.Sprintf("w.%d = { type = character_event }\n", i+1)
 	}
-	graphs := &EventGraphService{Session: openWorkspace(t, map[string]string{
+	graphs := NewEventGraphService(openWorkspace(t, map[string]string{
 		"events/chain.txt":              chain,
 		"events/wide.txt":               wide,
 		"events/macro.txt":              "namespace = m\nm.1 = {\n\ttype = character_event\n\timmediate = { m_fire = yes }\n}\nm.2 = { type = character_event }\n",
 		"common/scripted_effects/m.txt": "m_fire = {\n\ttrigger_event = m.2\n}\n",
 		"common/on_action/m.txt":        "on_birth = {\n\tevents = { g.3 }\n}\n",
-	})}
+	}))
 	params := Params{Depth: 3, Fanout: 12, MaxNodes: 40}
 
 	drawn, _ := graphs.GetEventGraph("ws", Params{})
@@ -256,7 +258,7 @@ func TestEventGraph(t *testing.T) {
 		t.Errorf("one hop in stops at the caller: %v", ids(got))
 	}
 
-	// a macro is a hop: the edge goes through it, labelled by its chain, the same either way round;
+	// a macro is a hop: the edge goes through it, labeled by its chain, the same either way round;
 	// with the page's macros shown it is a node between the two
 	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Follow: true})
 	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire" || slices.Contains(ids(drawn), "m_fire") {
@@ -292,7 +294,7 @@ func TestEventGraph(t *testing.T) {
 	if _, ok := edge(drawn, "v.1", "v.2"); !ok {
 		t.Errorf("the install's fire: %+v", drawn.Edges)
 	}
-	if got, _ := (&EventGraphService{Session: openWorkspace(t)}).GetEventGraph("ws", Params{Root: "v.1", Depth: 1}); len(got.Nodes) == 0 {
+	if got, _ := NewEventGraphService(openWorkspace(t)).GetEventGraph("ws", Params{Root: "v.1", Depth: 1}); len(got.Nodes) == 0 {
 		t.Error("with no mod at all")
 	}
 
@@ -322,10 +324,10 @@ func TestEventGraph(t *testing.T) {
 }
 
 func TestDetail(t *testing.T) {
-	graphs := &EventGraphService{Session: openWorkspace(t, map[string]string{
+	graphs := NewEventGraphService(openWorkspace(t, map[string]string{
 		"events/m.txt":                         "namespace = m\nm.1 = {\n\ttype = character_event\n\ttitle = v.1.t\n\tdesc = v.1.desc\n\timmediate = { trigger_event = v.2 }\n\toption = {\n\t\tname = v.1.a\n\t}\n}\nm.2 = {\n\toption = {\n\t\tname = {\n\t\t\ttrigger = { always = yes }\n\t\t\ttext = v.1.a\n\t\t}\n\t}\n}\n",
 		"localization/english/m_l_english.yml": "\xEF\xBB\xBFl_english:\n v.1.a:0 \"Go\"\n",
-	})}
+	}))
 	detail, _ := graphs.GetEventDetail("ws", "m.1")
 	if detail.Reason != "" || detail.Kind != "event" || detail.At.Origin != "moda" {
 		t.Fatalf("the header: %+v", detail)
@@ -446,7 +448,7 @@ func TestReadText(t *testing.T) {
 // dangling references and what must never be one, each language's untranslated keys, a site's
 // lines, and the lookup of one key.
 func TestWorkspaceHealth(t *testing.T) {
-	reports := &HealthService{Session: openWorkspace(t,
+	reports := NewHealthService(openWorkspace(t,
 		map[string]string{
 			"common/traits/zz_a.txt":               "brave = { name = x }\nshared_a = { name = x }\nbold = { name = x }\ncraven = { name = x }\n",
 			"events/a.txt":                         "namespace = a\na.1 = {\n\ttype = character_event\n\ttitle = a.1.t\n\ttrigger = {\n\t\thas_trait = brave\n\t\thas_trait = bold_b\n\t\texists = title:k_nowhere\n\t\texists = title:k_x\n\t\tfaith = faith:catholic\n\t\texists = scope:whatever\n\t}\n\timmediate = { add_gold = small_value }\n}\n",
@@ -456,7 +458,7 @@ func TestWorkspaceHealth(t *testing.T) {
 		map[string]string{
 			"common/traits/zz_b.txt":               "brave = {\n" + strings.Repeat("\tname = x\n", 11) + "}\nshared_a = { name = x }\nbold_b = { name = x }\n",
 			"localization/english/b_l_english.yml": "\xEF\xBB\xBFl_english:\n b_only:0 \"B\"\n",
-		})}
+		}))
 	health, _ := reports.GetHealth("ws", HealthParams{})
 
 	// contests: brave is defined three times, the last file loaded wins under LIOS; files load by
@@ -543,15 +545,10 @@ func TestWorkspaceHealth(t *testing.T) {
 	}
 }
 
-func TestLog(t *testing.T) {
-	// the child: this test binary run again as the app, which panics in a goroutine of its own
-	if os.Getenv("PMT_LOG_PANIC") == "1" {
-		if _, err := OpenLog("child"); err != nil {
-			t.Fatal(err)
-		}
-		go func() { panic("pmt test panic") }()
-		select {}
-	}
+// logHome sends APPDATA, XDG_CONFIG_HOME and HOME to a temporary folder, restores the default logger and the crash
+// output when the test ends, and returns pmt.log's path there.
+func logHome(t *testing.T) string {
+	t.Helper()
 	home := t.TempDir()
 	t.Setenv("APPDATA", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
@@ -559,23 +556,33 @@ func TestLog(t *testing.T) {
 	previous := slog.Default()
 	t.Cleanup(func() {
 		slog.SetDefault(previous)
-		debug.SetCrashOutput(nil, debug.CrashOptions{}) // lets the temporary folder go
+		_ = debug.SetCrashOutput(nil, debug.CrashOptions{}) // lets the temporary folder go
 	})
 	dir, err := appdata.Dir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "pmt.log")
-	big := strings.Repeat("x", logRotateAt) + "\n"
+	return filepath.Join(dir, "pmt.log")
+}
 
-	// a run that wrote its end is closed, and its log past 2 MB is moved aside
-	if err := os.WriteFile(path, []byte("msg=\"session start\"\n"+big+"msg=\"session end\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	logs, err := OpenLog("test")
+// openLog is the log service over a log opened for a test.
+func openLog(t *testing.T) *LogService {
+	t.Helper()
+	file, err := OpenLog("test")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return NewLogService(file, nil)
+}
+
+// a run that wrote its end is closed, and its log past 2 MB is moved aside
+func TestLogRotation(t *testing.T) {
+	path := logHome(t)
+	big := strings.Repeat("x", logRotateAt) + "\n"
+	if err := os.WriteFile(path, []byte("msg=\"session start\"\n"+big+"msg=\"session end\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logs := openLog(t)
 	if _, moved := os.Stat(path + ".1"); logs.LastRunCrashed() || moved != nil {
 		t.Errorf("a closed run: crashed %v, moved aside %v", logs.LastRunCrashed(), moved == nil)
 	}
@@ -586,23 +593,35 @@ func TestLog(t *testing.T) {
 	if report := logs.diagnostics(); !strings.Contains(report, "Last scan:\n") || !strings.HasSuffix(strings.TrimSpace(report), `msg="scan end" took=1s`) {
 		t.Errorf("the report: %s", report)
 	}
-	logs.ServiceShutdown()
+	_ = logs.ServiceShutdown()
+}
 
-	// a run with no end crashed, and its log stays whole however long it is
+// a run with no end crashed, and its log stays whole however long it is
+func TestLogAfterNoEnd(t *testing.T) {
+	path := logHome(t)
+	big := strings.Repeat("x", logRotateAt) + "\n"
 	if err := os.WriteFile(path, []byte("msg=\"session start\"\n"+big), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(path + ".1")
-	if logs, err = OpenLog("test"); err != nil {
-		t.Fatal(err)
-	}
+	logs := openLog(t)
 	if _, moved := os.Stat(path + ".1"); !logs.LastRunCrashed() || moved == nil {
 		t.Errorf("a run with no end: crashed %v, moved aside %v", logs.LastRunCrashed(), moved == nil)
 	}
-	logs.ServiceShutdown()
+	_ = logs.ServiceShutdown()
+}
 
-	// a panic in a goroutine of the app's own lands in pmt.log, and the next run reads a crash
-	child := exec.Command(os.Args[0], "-test.run=^TestLog$")
+// a panic in a goroutine of the app's own lands in pmt.log, and the next run reads a crash
+func TestLogPanic(t *testing.T) {
+	// the child: this test binary run again as the app, which panics in a goroutine of its own
+	if os.Getenv("PMT_LOG_PANIC") == "1" {
+		if _, err := OpenLog("child"); err != nil {
+			t.Fatal(err)
+		}
+		go func() { panic("pmt test panic") }()
+		select {}
+	}
+	path := logHome(t)
+	child := exec.Command(os.Args[0], "-test.run=^TestLogPanic$")
 	child.Env = append(os.Environ(), "PMT_LOG_PANIC=1")
 	if err := child.Run(); err == nil {
 		t.Fatal("the child lived through its panic")
@@ -610,10 +629,11 @@ func TestLog(t *testing.T) {
 	if raw, _ := os.ReadFile(path); !strings.Contains(string(raw), "panic: pmt test panic") {
 		t.Errorf("the child's panic is not in pmt.log: %s", raw[max(0, len(raw)-400):])
 	}
-	if logs, err = OpenLog("test"); err != nil || !logs.LastRunCrashed() {
-		t.Errorf("after the child's panic the last run crashed: %v", err)
+	logs := openLog(t)
+	if !logs.LastRunCrashed() {
+		t.Error("after the child's panic the last run crashed")
 	}
-	logs.ServiceShutdown()
+	_ = logs.ServiceShutdown()
 }
 
 func TestTextSearch(t *testing.T) {
@@ -622,7 +642,7 @@ func TestTextSearch(t *testing.T) {
 	writeTree(t, root, searchTree)
 	writeTree(t, other, searchTree)
 	whole := []TextSearchFolder{{Path: root}}
-	svc := &SearchService{}
+	svc := NewSearchService()
 	for _, row := range []struct {
 		name  string
 		query TextSearchQuery
@@ -679,7 +699,7 @@ func TestFileSearchNeedleAndGlob(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	writeTree(t, root, searchTree)
-	svc := &SearchService{}
+	svc := NewSearchService()
 	res := svc.FileSearch(t.Context(), FileSearchQuery{
 		FilePattern: "hit",
 		Folders: []TextSearchFolder{{
@@ -705,22 +725,22 @@ func TestTextSearchCancel(t *testing.T) {
 		files[fmt.Sprintf("dir/%s/f%d.txt", strings.Repeat("a", i%5+1), i)] = strings.Repeat("needle\n", 200)
 	}
 	writeTree(t, root, files)
-	svc := &SearchService{}
+	svc := NewSearchService()
 	query := TextSearchQuery{
 		Pattern: "needle",
 		Folders: []TextSearchFolder{{Path: root}},
 	}
 
-	// the full result, so the cancelled run has something real to be smaller than
+	// the full result, so the canceled run has something real to be smaller than
 	full, err := svc.TextSearch(t.Context(), query)
 	if err != nil {
-		t.Fatalf("uncancelled search: %v", err)
+		t.Fatalf("uncanceled search: %v", err)
 	}
 	if full.Found == 0 {
 		t.Fatal("fixture produced no hits; the test would prove nothing")
 	}
 
-	// cancelled before the call, not on a timer: on a fast machine the search would win the race
+	// canceled before the call, not on a timer: on a fast machine the search would win the race
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	res, err := svc.TextSearch(ctx, query)
@@ -743,8 +763,8 @@ func TestEnsureSession(t *testing.T) {
 	if err != nil || !health.Ready {
 		t.Fatalf("a session built from a scan: %+v (%v)", health, err)
 	}
-	live := svc.get("ws")
-	if live == nil || len(live.Mods) != 1 || len(index.Lookup(live.Indexes(), schema.Defines, "traits", "bold")) == 0 {
+	ws := svc.cachedSession("ws")
+	if ws == nil || len(ws.Mods) != 1 || len(index.Lookup(ws.Indexes(), schema.Defines, "traits", "bold")) == 0 {
 		t.Error("the mod is indexed over the install")
 	}
 	if _, err := svc.EnsureSession("nowhere"); err == nil {
@@ -757,28 +777,49 @@ func TestEnsureSession(t *testing.T) {
 	got := make([]*workspace.Session, 20)
 	for i := range got {
 		wg.Go(func() {
-			got[i], _ = svc.live("ws")
+			got[i], _ = svc.openSession("ws")
 		})
 	}
 	wg.Wait()
-	if got[0] == nil || slices.ContainsFunc(got, func(live *workspace.Session) bool { return live != got[0] }) {
+	if got[0] == nil || slices.ContainsFunc(got, func(ws *workspace.Session) bool { return ws != got[0] }) {
 		t.Error("twenty callers at once share one build and one instance")
 	}
-	if _, err := svc.live(""); err == nil || svc.get("ws") != got[0] {
+	if _, err := svc.openSession(""); err == nil || svc.cachedSession("ws") != got[0] {
 		t.Error("an empty id is refused and the live session is untouched")
 	}
 
 	svc.dropAllExcept("")
-	if svc.get("ws") != nil {
+	if svc.cachedSession("ws") != nil {
 		t.Error("dropping every session leaves none live")
 	}
 }
 
-func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
+// modsService is a workspace service over workspace "ws1" and a folder holding two mod folders, a and b.
+func modsService(t *testing.T) (svc *WorkspaceService, modDir string) {
+	t.Helper()
 	config := tempConfig(t, nil, Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
-	svc := &WorkspaceService{App: config, Session: &SessionService{App: config}}
-	modDir := t.TempDir()
+	svc = NewWorkspaceService(config, NewSessionService(config, "test"))
+	modDir = t.TempDir()
 	writeTree(t, modDir, map[string]string{"a/descriptor.mod": "", "b/descriptor.mod": ""})
+	return svc, modDir
+}
+
+// modIDs is the ids of workspace "ws1"'s mods, in load order.
+func modIDs(t *testing.T, svc *WorkspaceService) []string {
+	t.Helper()
+	ws, _, err := svc.config.workspace("ws1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, mod := range ws.Mods {
+		ids = append(ids, mod.ID)
+	}
+	return ids
+}
+
+func TestWorkspaceService_AddMods(t *testing.T) {
+	svc, modDir := modsService(t)
 
 	// a folder with no descriptor, or no folder at all, is no mod
 	if _, err := svc.AddWorkspaceMod("ws1", modDir); err == nil || !strings.Contains(err.Error(), "descriptor.mod") {
@@ -796,13 +837,23 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws, _, _ := svc.App.workspace("ws1")
-	listed := ws.Mods
-	if len(listed) != 2 || listed[0].ID != alpha.ID || listed[1].ID != beta.ID {
-		t.Fatalf("initial order: %+v", listed)
+	if got := modIDs(t, svc); !slices.Equal(got, []string{alpha.ID, beta.ID}) {
+		t.Fatalf("initial order: %v", got)
 	}
-	if listed[0].SortOrder != 0 || listed[1].SortOrder != 1 {
-		t.Fatalf("sort orders: %d %d", listed[0].SortOrder, listed[1].SortOrder)
+	if alpha.SortOrder != 0 || beta.SortOrder != 1 {
+		t.Fatalf("sort orders: %d %d", alpha.SortOrder, beta.SortOrder)
+	}
+}
+
+func TestWorkspaceService_ReorderRemoveMods(t *testing.T) {
+	svc, modDir := modsService(t)
+	alpha, err := svc.AddWorkspaceMod("ws1", filepath.Join(modDir, "a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	beta, err := svc.AddWorkspaceMod("ws1", filepath.Join(modDir, "b"))
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	if err := svc.ReorderWorkspaceMods("ws1", []string{alpha.ID}); err == nil {
@@ -811,10 +862,8 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.ReorderWorkspaceMods("ws1", []string{beta.ID, alpha.ID}); err != nil {
 		t.Fatal(err)
 	}
-	ws, _, _ = svc.App.workspace("ws1")
-	listed = ws.Mods
-	if len(listed) != 2 || listed[0].ID != beta.ID || listed[1].ID != alpha.ID {
-		t.Fatalf("reordered: %+v", listed)
+	if got := modIDs(t, svc); !slices.Equal(got, []string{beta.ID, alpha.ID}) {
+		t.Fatalf("reordered: %v", got)
 	}
 	workspaces := svc.ListWorkspaces()
 	if len(workspaces) != 1 {
@@ -828,10 +877,8 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.RemoveWorkspaceMod("ws1", beta.ID); err != nil {
 		t.Fatal(err)
 	}
-	ws, _, _ = svc.App.workspace("ws1")
-	listed = ws.Mods
-	if len(listed) != 1 || listed[0].ID != alpha.ID {
-		t.Fatalf("after remove: %+v", listed)
+	if got := modIDs(t, svc); !slices.Equal(got, []string{alpha.ID}) {
+		t.Fatalf("after remove: %v", got)
 	}
 
 	if err := svc.DeleteWorkspace(""); err == nil {
@@ -854,7 +901,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	config := tempConfig(t,
 		[]GameInstall{{ID: "inst1", GameID: "ck3", Name: "My CK3 nickname", Path: install}},
 		Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
-	svc := &WorkspaceService{App: config, Session: &SessionService{App: config}}
+	svc := NewWorkspaceService(config, NewSessionService(config, "test"))
 	writeTree(t, modDir, map[string]string{"descriptor.mod": ""})
 	if _, err := svc.AddWorkspaceMod("ws1", modDir); err != nil {
 		t.Fatal(err)
@@ -886,7 +933,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	if err := svc.UpdateWorkspacePrefs("ws1", true, "health", "", false); err != nil {
 		t.Fatal(err)
 	}
-	ws, _, _ := svc.App.workspace("ws1")
+	ws, _, _ := svc.config.workspace("ws1")
 	if !ws.ResetIdeOnOpen || ws.DefaultTool != "health" || ws.HideExplorerBinaries {
 		t.Fatalf("prefs: %+v", ws)
 	}
@@ -905,7 +952,7 @@ func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 	} {
 		t.Run(testCase.game+"/"+testCase.rel, func(t *testing.T) {
 			config := tempConfig(t, nil, Workspace{ID: "ws", GameID: testCase.game, Name: "T"})
-			svc := &WorkspaceService{App: config, Session: &SessionService{App: config}}
+			svc := NewWorkspaceService(config, NewSessionService(config, "test"))
 			root, want := t.TempDir(), ""
 			writeTree(t, root, map[string]string{game.DescriptorFile(testCase.game): "{}"})
 			if testCase.rel != "" {
@@ -967,26 +1014,26 @@ func TestSweep(t *testing.T) {
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(user, dir)
 			}
-			sess, err := workspace.Open(t.Context(), game.Get(id), scanned, []workspace.Mod{{ID: "mod", Dir: dir}}, "")
+			ws, err := workspace.Open(t.Context(), game.Get(id), scanned, []workspace.Mod{{ID: "mod", Dir: dir}}, "")
 			if err != nil {
 				t.Logf("SWEEP %s %s: %v", id, filepath.Base(descriptor), err)
 				continue
 			}
-			sweep(t, id, filepath.Base(descriptor), sess)
+			sweep(t, id, filepath.Base(descriptor), ws)
 		}
 	}
 }
 
 // sweep reports one mod: the health counts, the findings over a sample of its script files, and
 // the hover answer rate over a sample of the words in a sample of those files.
-func sweep(t *testing.T, id, name string, sess *workspace.Session) {
+func sweep(t *testing.T, id, name string, ws *workspace.Session) {
 	started := time.Now()
-	health, _ := (&HealthService{Session: serving(sess)}).GetHealth("ws", HealthParams{})
+	health, _ := NewHealthService(serving(ws)).GetHealth("ws", HealthParams{})
 	untranslated, defs := 0, 0
 	for _, language := range health.Loc {
 		untranslated += len(language.Untranslated)
 	}
-	for _, found := range sess.Workspace.Occurrences {
+	for _, found := range ws.Workspace.Occurrences {
 		for _, occurrence := range found {
 			if occurrence.Role == schema.Defines {
 				defs++
@@ -994,7 +1041,7 @@ func sweep(t *testing.T, id, name string, sess *workspace.Session) {
 		}
 	}
 	var files []inventory.File
-	for _, file := range sess.Workspace.Files {
+	for _, file := range ws.Workspace.Files {
 		if file.Format == inventory.Script {
 			files = append(files, file)
 		}
@@ -1003,13 +1050,13 @@ func sweep(t *testing.T, id, name string, sess *workspace.Session) {
 
 	findings := map[string]int{}
 	for _, file := range spread(files, diagnosed) {
-		for _, finding := range must(lsp.Diagnose(sess, file.Path, nil)) {
+		for _, finding := range must(lsp.Diagnose(ws, file.Path, nil)) {
 			findings[finding.Code]++
 		}
 	}
 	hovers, answered := 0, 0
 	for _, hoverFile := range spread(files, hoverFiles) {
-		text, err := sess.Text(hoverFile.Path)
+		text, err := ws.Text(hoverFile.Path)
 		if err != nil {
 			continue
 		}
@@ -1028,7 +1075,7 @@ func sweep(t *testing.T, id, name string, sess *workspace.Session) {
 					break
 				}
 				hovers++
-				if card, _ := lsp.Hover(sess, hoverFile.Path, line, col); card != nil {
+				if card, _ := lsp.Hover(ws, hoverFile.Path, line, col); card != nil {
 					answered++
 				}
 			}
@@ -1038,7 +1085,7 @@ func sweep(t *testing.T, id, name string, sess *workspace.Session) {
 		}
 	}
 	fmt.Printf("SWEEP %s %s: %d files, %d defs; contests %d, depends %d, dangling %d, loc untranslated %d; findings %v; hover answered %d of %d; %.1fs\n",
-		id, name, len(sess.Workspace.Files), defs, len(health.Contests), len(health.Depends), len(health.Dangling), untranslated, findings, answered, hovers, time.Since(started).Seconds())
+		id, name, len(ws.Workspace.Files), defs, len(health.Contests), len(health.Depends), len(health.Dangling), untranslated, findings, answered, hovers, time.Since(started).Seconds())
 }
 
 // spread takes at most n files evenly across the list, so a big mod's sample reaches every corner.

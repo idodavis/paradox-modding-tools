@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
+// The events the windows tell each other and Go, declared with the payloads beside them.
 const (
 	EventWindowHeld    = "window:held"    // a window tells the others what it holds: data is WindowHeld
 	EventWindowHello   = "window:hello"   // a window opened and asks the others what they hold: data is its name
@@ -93,9 +94,9 @@ type PanelResults struct {
 // WindowService opens the other windows.
 type WindowService struct{}
 
-// the windows asked about their close (to hand their tabs back, the main window whether to quit), whose next close
-// goes through: a window that cannot answer still closes on a second try
-var held = struct {
+// closeHeld is the windows asked about their close (to hand their tabs back, the main window whether to quit),
+// whose next close goes through: a window that cannot answer still closes on a second try.
+var closeHeld = struct {
 	sync.Mutex
 	asked map[string]bool
 }{asked: map[string]bool{}}
@@ -104,13 +105,13 @@ var held = struct {
 func HoldClose(window *application.WebviewWindow) {
 	name := window.Name()
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
-		held.Lock()
-		defer held.Unlock()
-		if held.asked[name] {
-			delete(held.asked, name)
+		closeHeld.Lock()
+		defer closeHeld.Unlock()
+		if closeHeld.asked[name] {
+			delete(closeHeld.asked, name)
 			return
 		}
-		held.asked[name] = true
+		closeHeld.asked[name] = true
 		event.Cancel()
 		emit(EventWindowClosing, name)
 	})
@@ -122,9 +123,9 @@ func (s *WindowService) QuitAnswer(quit bool) {
 		application.Get().Quit()
 		return
 	}
-	held.Lock()
-	defer held.Unlock()
-	delete(held.asked, "main")
+	closeHeld.Lock()
+	defer closeHeld.Unlock()
+	delete(closeHeld.asked, "main")
 }
 
 // Show brings the window with a name to the front.

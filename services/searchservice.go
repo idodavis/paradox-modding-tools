@@ -17,15 +17,25 @@ import (
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/inventory"
 )
 
+// EventSearchHits is a text search done with a file: data is TextSearchHits.
+const EventSearchHits = "search:hits"
+
+// registers the event so the bindings generator types it
+func init() { application.RegisterEvent[TextSearchHits](EventSearchHits) }
+
 // SearchService is the Wails RPC shell for Find in Files. A text search sends each file's hits to
 // the frontend as search:hits as it finds them.
 type SearchService struct{}
+
+// NewSearchService is the search service; it holds nothing.
+func NewSearchService() *SearchService { return &SearchService{} }
 
 const (
 	searchMaxResults = 10000
@@ -198,7 +208,7 @@ func searchable(path string, buf []byte) []byte {
 	if err != nil {
 		return nil
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	if err != nil || info.Size() == 0 || info.Size() > maxOpenBytes {
 		return nil
@@ -327,7 +337,7 @@ func textSearchFolder(
 }
 
 // searchFiles visits each file under root that the folder's globs keep, by the engine's walk (linked folders
-// followed, .git never entered); visit returning filepath.SkipAll stops it, and so does a cancelled ctx.
+// followed, .git never entered); visit returning filepath.SkipAll stops it, and so does a canceled ctx.
 func searchFiles(ctx context.Context, root string, gs globSet, visit func(path, rel string) error) error {
 	return inventory.Walk(root, func(path string) error {
 		if err := ctx.Err(); err != nil {

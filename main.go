@@ -25,29 +25,17 @@ func main() {
 	}
 
 	// the log first, so every later failure, the standard log's and Wails' own, is written into it
-	logSvc, err := services.OpenLog(version)
+	logFile, err := services.OpenLog(version)
 	if err != nil {
 		log.Fatalf("log: %v", err)
 	}
-	appSvc, err := services.OpenApp()
+	config, err := services.OpenConfig()
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
-	appSvc.Version = version
-	logSvc.App = appSvc
-
-	fileSvc := &services.FileService{}
-	sessSvc := &services.SessionService{App: appSvc}
-	appSvc.Session = sessSvc
-	workspaceSvc := &services.WorkspaceService{App: appSvc, Session: sessSvc}
-	ideSvc := &services.IdeService{Session: sessSvc, App: appSvc}
-	graphSvc := &services.EventGraphService{Session: sessSvc}
-	healthSvc := &services.HealthService{Session: sessSvc}
-	wikiSvc := &services.WikiService{Session: sessSvc}
-	searchSvc := &services.SearchService{}
-	releaseSvc := &services.ReleaseService{App: appSvc}
-	gitSvc := &services.GitService{App: appSvc}
-	windowSvc := &services.WindowService{}
+	sessions := services.NewSessionService(config, version)
+	logSvc := services.NewLogService(logFile, config)
+	appSvc := services.NewAppService(config, sessions, version)
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -57,17 +45,17 @@ func main() {
 		Services: []application.Service{
 			application.NewService(logSvc),
 			application.NewService(appSvc),
-			application.NewService(fileSvc),
-			application.NewService(workspaceSvc),
-			application.NewService(sessSvc),
-			application.NewService(ideSvc),
-			application.NewService(graphSvc),
-			application.NewService(healthSvc),
-			application.NewService(wikiSvc),
-			application.NewService(searchSvc),
-			application.NewService(releaseSvc),
-			application.NewService(gitSvc),
-			application.NewService(windowSvc),
+			application.NewService(&services.FileService{}),
+			application.NewService(services.NewWorkspaceService(config, sessions)),
+			application.NewService(sessions),
+			application.NewService(services.NewIdeService(config, sessions)),
+			application.NewService(services.NewEventGraphService(sessions)),
+			application.NewService(services.NewHealthService(sessions)),
+			application.NewService(services.NewWikiService(config, sessions)),
+			application.NewService(services.NewSearchService()),
+			application.NewService(services.NewReleaseService(config)),
+			application.NewService(services.NewGitService(config)),
+			application.NewService(&services.WindowService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler:    application.BundledAssetFileServer(assets),
@@ -115,7 +103,7 @@ func main() {
 		StartState: application.WindowStateMaximised,
 		URL:        "/",
 	})
-	// its close asks about every window's unsaved files first (H13), and the other windows close with it
+	// its close asks about every window's unsaved files first, and the other windows close with it
 	services.HoldClose(mainWindow)
 	mainWindow.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { app.Quit() })
 

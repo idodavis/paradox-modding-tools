@@ -67,7 +67,7 @@ type EventGraph struct {
 
 // EventGraphService draws the event graph page.
 type EventGraphService struct {
-	Session *SessionService
+	sessions *SessionService
 }
 
 // Roots is a root search's hits, grouped by database, and how many of each database the query
@@ -86,7 +86,7 @@ type DatabaseCount struct {
 // SearchRoots is the fired events and on_actions, and what fires one but a scripted entry, whose id
 // holds the query: ids that start with it first, 50 of one database or 8 of each.
 func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, error) {
-	sess, err := s.Session.live(workspaceID)
+	sess, err := s.sessions.openSession(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*Roots, erro
 
 // GetEventGraph draws the definitions around a root.
 func (s *EventGraphService) GetEventGraph(workspaceID string, params Params) (*EventGraph, error) {
-	sess, err := s.Session.live(workspaceID)
+	sess, err := s.sessions.openSession(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +480,7 @@ type Cited struct {
 
 // GetEventDetail opens one definition by name: the one the game keeps.
 func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, error) {
-	sess, err := s.Session.live(workspaceID)
+	sess, err := s.sessions.openSession(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -697,4 +697,9 @@ func (read eventText) option(block *jomini.Block, line int) Option {
 		}
 	}
 	return option
+}
+
+// NewEventGraphService is the event graph page's service over the live sessions.
+func NewEventGraphService(sessions *SessionService) *EventGraphService {
+	return &EventGraphService{sessions: sessions}
 }

@@ -28,20 +28,32 @@ import (
 // files are kept.
 const logRotateAt = 2 << 20
 
-// LogService owns pmt.log and the logger over it.
-type LogService struct {
-	App    *AppService
-	Logger *slog.Logger
-
+// LogFile is pmt.log opened for this run, and the logger over it; the log is open before the config is read, so
+// every later failure is written into it.
+type LogFile struct {
 	file    *os.File
+	logger  *slog.Logger
 	version string
 	crashed bool // the run before this one ended without writing its session end
+}
+
+// LogService serves pmt.log: the lines the frontend reports, the report for a bug, and the file's close.
+type LogService struct {
+	Logger *slog.Logger // the log's, handed to Wails
+
+	logFile *LogFile
+	config  *ConfigFile
+}
+
+// NewLogService is the log service over the open log and the config (the installs the report lists).
+func NewLogService(file *LogFile, config *ConfigFile) *LogService {
+	return &LogService{Logger: file.logger, logFile: file, config: config}
 }
 
 // OpenLog opens pmt.log for this run. A log whose last session never ended (a crash, a kill, a
 // second launch while the app runs) is not moved aside, so the next report keeps its end. Go's
 // crash output and the standard log package write here too.
-func OpenLog(version string) (*LogService, error) {
+func OpenLog(version string) (*LogFile, error) {
 	dir, err := appdata.Dir()
 	if err != nil {
 		return nil, err
@@ -54,11 +66,11 @@ func OpenLog(version string) (*LogService, error) {
 	}
 	if info, err := os.Stat(path); err == nil && !crashed && info.Size() > logRotateAt {
 		for i := 3; i > 0; i-- {
-			from := path
+			older := path
 			if i > 1 {
-				from = fmt.Sprintf("%s.%d", path, i-1)
+				older = fmt.Sprintf("%s.%d", path, i-1)
 			}
-			os.Rename(from, fmt.Sprintf("%s.%d", path, i)) // an older file that is not there is nothing to move
+			_ = os.Rename(older, fmt.Sprintf("%s.%d", path, i)) // an older file that is not there is nothing to move
 		}
 	}
 
@@ -72,7 +84,7 @@ func OpenLog(version string) (*LogService, error) {
 		logger.Warn("crash output", "error", err)
 	}
 	slog.SetDefault(logger)
-	return &LogService{Logger: logger, file: file, version: version, crashed: crashed}, nil
+	return &LogFile{file: file, logger: logger, version: version, crashed: crashed}, nil
 }
 
 // Log writes a line the frontend reports; level is debug, info, warn or error.
@@ -90,7 +102,7 @@ func (s *LogService) Log(level, msg string, attrs map[string]string) {
 
 // LastRunCrashed reports whether the run before this one ended without closing.
 func (s *LogService) LastRunCrashed() bool {
-	return s.crashed
+	return s.logFile.crashed
 }
 
 // CopyDiagnostics puts the report for a bug report on the clipboard.
@@ -104,14 +116,14 @@ func (s *LogService) CopyDiagnostics() error {
 // ServiceShutdown writes the session's end and closes the file.
 func (s *LogService) ServiceShutdown() error {
 	s.Logger.Info("session end")
-	return s.file.Close()
+	return s.logFile.file.Close()
 }
 
 // diagnostics is the report: the app's version, the OS, each install with its version, the last
 // scan's stage times, and the log's last 200 lines.
 func (s *LogService) diagnostics() string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "Paradox Modding Tools %s\n", s.version)
+	fmt.Fprintf(&out, "Paradox Modding Tools %s\n", s.logFile.version)
 	system := runtime.GOOS + "/" + runtime.GOARCH
 	if app := application.Get(); app != nil {
 		env := app.Env.Info()
@@ -125,21 +137,21 @@ func (s *LogService) diagnostics() string {
 	}
 	fmt.Fprintf(&out, "OS: %s\n", system)
 	var installs []GameInstall
-	if s.App != nil {
-		s.App.read(func(cfg *Config) { installs = slices.Clone(cfg.Installs) })
+	if s.config != nil {
+		s.config.read(func(cfg *Config) { installs = slices.Clone(cfg.Installs) })
 	}
 	for _, install := range installs {
 		fmt.Fprintf(&out, "Install: %s %s, version %s\n", install.GameID, install.Name, game.ReadGameVersion(install.GameID, install.Path))
 	}
 
-	raw, _ := os.ReadFile(s.file.Name())
+	raw, _ := os.ReadFile(s.logFile.file.Name())
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
 	for i, line := range slices.Backward(lines) {
 		if strings.Contains(line, `msg="scan start"`) {
 			out.WriteString("\nLast scan:\n")
-			for _, after := range lines[i:] {
-				if strings.Contains(after, `msg="scan `) {
-					fmt.Fprintf(&out, "%s\n", after)
+			for _, later := range lines[i:] {
+				if strings.Contains(later, `msg="scan `) {
+					fmt.Fprintf(&out, "%s\n", later)
 				}
 			}
 			break

@@ -118,15 +118,15 @@ type SourceAt struct {
 // HealthService answers the health page. It keeps the live session's findings while its records are
 // unchanged; Changes never repeats across sessions, so one set is enough.
 type HealthService struct {
-	Session *SessionService
-	mu      sync.Mutex
-	changes int64                       // the session's Changes the findings were made at
-	found   map[string][]lsp.Diagnostic // by path
+	sessions *SessionService
+	mu       sync.Mutex
+	changes  int64                       // the session's Changes the findings were made at
+	found    map[string][]lsp.Diagnostic // by path
 }
 
 // GetHealth is the workspace's health report.
 func (s *HealthService) GetHealth(workspaceID string, params HealthParams) (*Health, error) {
-	sess, err := s.Session.live(workspaceID)
+	sess, err := s.sessions.openSession(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +519,7 @@ func (s *HealthService) findings(sess *workspace.Session) map[string][]lsp.Diagn
 // GetLines is the source a pane shows at each place: a definition's statement, its first ten lines
 // and a "…" where it runs on, or a reference's line.
 func (s *HealthService) GetLines(workspaceID string, places []SourceAt) ([][]string, error) {
-	sess, err := s.Session.live(workspaceID)
+	sess, err := s.sessions.openSession(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +604,7 @@ func localization(sess *workspace.Session, number func(inventory.File) int) []La
 
 // LocReaders lists everything that reads one localization key.
 func (s *HealthService) LocReaders(workspaceID, key string) ([]Cited, error) {
-	sess, err := s.Session.live(workspaceID)
+	sess, err := s.sessions.openSession(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -615,4 +615,9 @@ func (s *HealthService) LocReaders(workspaceID, key string) ([]Cited, error) {
 		readers = append(readers, Cited{Name: ref.Occurrence().ID, Line: int(ref.Occurrence().Line), Col: int(ref.Occurrence().Col), At: ref.File()})
 	}
 	return readers, nil
+}
+
+// NewHealthService is the Health page's service over the live sessions.
+func NewHealthService(sessions *SessionService) *HealthService {
+	return &HealthService{sessions: sessions}
 }

@@ -10,6 +10,9 @@ import type { Events } from "@wailsio/runtime";
 import type * as services$0 from "../../../../../paradox-modding-tools/services/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import type * as pages$0 from "../../../../../paradox-modding-tools/services/internal/pages/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import type * as steam$0 from "../../../../../paradox-modding-tools/services/internal/steam/models.js";
 
 declare module "@wailsio/runtime" {
@@ -23,7 +26,7 @@ declare module "@wailsio/runtime" {
             "lang:failed": string;
             "lang:ready": string;
             "lang:scan-progress": services$0.ScanProgress;
-            "search:hits": services$0.TextSearchHits;
+            "search:hits": pages$0.TextSearchHits;
             "steam:progress": steam$0.Progress;
             "wiki:progress": services$0.WikiProgress;
             "wiki:updated": services$0.WikiUpdated;

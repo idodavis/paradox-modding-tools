@@ -9,6 +9,9 @@ import * as inventory$0 from "./internal/inventory/models.js";
 import * as lsp$0 from "./internal/lsp/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as pages$0 from "./internal/pages/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as steam$0 from "./internal/steam/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -164,30 +167,6 @@ export interface EventGraph {
 export interface FSChanged {
     "path": string;
     "deleted": boolean;
-}
-
-/**
- * FileSearchHit is one path from FileSearch.
- */
-export interface FileSearchHit {
-    "path": string;
-}
-
-/**
- * FileSearchQuery is a filename search across workspace folders.
- */
-export interface FileSearchQuery {
-    "filePattern": string;
-    "maxResults": number;
-    "folders": TextSearchFolder[] | null;
-}
-
-/**
- * FileSearchResult is the capped path list from FileSearch.
- */
-export interface FileSearchResult {
-    "hits": FileSearchHit[] | null;
-    "limitHit": boolean;
 }
 
 /**
@@ -639,7 +618,7 @@ export interface Option {
  */
 export interface PanelResults {
     "title": string;
-    "rows": TextSearchHit[] | null;
+    "rows": pages$0.TextSearchHit[] | null;
     "done": boolean;
     "capped": boolean;
 }
@@ -880,99 +859,6 @@ export interface SteamCompare {
 export interface TextPart {
     "random"?: boolean;
     "versions": Version[] | null;
-}
-
-/**
- * TextReplaceQuery is a Replace all from the IDE's search: the search, over the mods' folders only (the game's
- * files are never written), the text each match becomes, and the files the editor holds, which it changes itself.
- */
-export interface TextReplaceQuery {
-    "search": TextSearchQuery;
-    "text": string;
-
-    /**
-     * the files open in the editor, by path: their text there, unsaved
-     */
-    "open": { [_ in string]?: string } | null;
-}
-
-/**
- * TextReplaceResult is how many matches a Replace all changed, in how many files, and the new text of each open
- * file it changed, which the editor takes (unsaved).
- */
-export interface TextReplaceResult {
-    "replaced": number;
-    "files": number;
-    "texts": { [_ in string]?: string } | null;
-}
-
-/**
- * TextSearchFolder is one workspace folder plus optional glob filters.
- */
-export interface TextSearchFolder {
-    "path": string;
-
-    /**
-     * told back on its hits
-     */
-    "origin"?: string;
-    "includes"?: string[] | null;
-    "excludes"?: string[] | null;
-}
-
-/**
- * TextSearchHit is one match line, or a reference, as the Search results list it: its file by origin, its 0-based
- * line, its span in UTF-8 bytes as every backend place, and the line's text ("" for a reference: read when shown).
- */
-export interface TextSearchHit {
-    "path": string;
-
-    /**
-     * its path from the folder it was found in, slash separated
-     */
-    "rel": string;
-
-    /**
-     * that folder's
-     */
-    "origin": string;
-    "line": number;
-    "col": number;
-    "end": number;
-    "preview": string;
-}
-
-/**
- * TextSearchHits is one file's hits, sent under their search's ID as it finds them.
- */
-export interface TextSearchHits {
-    "id": string;
-    "hits": TextSearchHit[] | null;
-}
-
-/**
- * TextSearchQuery is a Find-in-Files request from the workbench.
- */
-export interface TextSearchQuery {
-    /**
-     * the search its hits are sent under
-     */
-    "id": string;
-    "pattern": string;
-    "isRegexp": boolean;
-    "isCaseSensitive": boolean;
-    "isWordMatch": boolean;
-    "maxResults": number;
-    "folders": TextSearchFolder[] | null;
-}
-
-/**
- * TextSearchResult is how a text search ended: how many hits it sent, and whether it stopped at
- * the cap.
- */
-export interface TextSearchResult {
-    "found": number;
-    "limitHit": boolean;
 }
 
 /**

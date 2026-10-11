@@ -28,8 +28,6 @@ import (
 	"paradox-modding-tools/services/internal/game"
 )
 
-const maxOpenBytes = 8 << 20
-
 // FileService provides filesystem helpers for the IDE workbench.
 type FileService struct{}
 
@@ -176,8 +174,8 @@ func readCapped(fullPath string) (data []byte, missing bool, reject string, err 
 		return nil, false, "", fmt.Errorf("stat file: %w", err)
 	case info.IsDir():
 		return nil, false, "", errors.New("read file: is a directory")
-	case info.Size() > maxOpenBytes:
-		return nil, false, fmt.Sprintf("file too large to open (%d bytes, max %d)", info.Size(), maxOpenBytes), nil
+	case info.Size() > inventory.MaxTextBytes:
+		return nil, false, fmt.Sprintf("file too large to open (%d bytes, max %d)", info.Size(), inventory.MaxTextBytes), nil
 	}
 	data, err = io.ReadAll(file)
 	if err != nil {

@@ -110,6 +110,9 @@ func (file File) Text() (string, error) {
 // BinaryHead is how many of a file's first bytes Binary reads.
 const BinaryHead = 8000
 
+// MaxTextBytes is the largest text file the editor opens or a search reads.
+const MaxTextBytes = 8 << 20
+
 // Binary is whether a file's first bytes are binary: a NUL among the first BinaryHead, git's own test.
 func Binary(head []byte) bool {
 	return bytes.IndexByte(head[:min(len(head), BinaryHead)], 0) >= 0

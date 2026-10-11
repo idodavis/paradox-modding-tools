@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"paradox-modding-tools/services/internal/lsp"
+	"paradox-modding-tools/services/internal/pages"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -85,10 +86,10 @@ type WindowShow struct {
 // PanelResults is what the sidebar's Search results show: what was looked for, its rows so far, and whether it is
 // done or stopped at the cap.
 type PanelResults struct {
-	Title  string          `json:"title"`
-	Rows   []TextSearchHit `json:"rows"`
-	Done   bool            `json:"done"`
-	Capped bool            `json:"capped"`
+	Title  string                `json:"title"`
+	Rows   []pages.TextSearchHit `json:"rows"`
+	Done   bool                  `json:"done"`
+	Capped bool                  `json:"capped"`
 }
 
 // WindowService opens the other windows.

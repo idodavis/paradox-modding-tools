@@ -146,35 +146,38 @@ func (parser *parser) parseStatement() Statement {
 
 // parseKeyed consumes what follows a key: an operator and its value, a GUI-style block with no
 // operator, or nothing, which makes the key a bare list element. The cursor rests on the token
-// after the statement.
+// after the statement. A value's parse comes back here through parseBlock, once for each level of
+// nesting, so the statement is built by assignment and this frame stays small on that cycle.
 func (parser *parser) parseKeyed(key *Scalar) Statement {
-	next := parser.peek()
-
-	if next.kind == tokOp {
+	switch parser.peek().kind {
+	case tokOp:
 		op := parser.advance()
-		value := parser.parseValueAfterOperator()
-		if value == nil {
-			parser.errors = append(parser.errors, ParseError{
-				Code:    ErrMissingValue,
-				Message: "Missing value after '" + op.value + "'.",
-				Range:   Range{Start: op.start, End: op.end},
-			})
-		}
-		end := op.end
-		if value != nil {
-			end = value.NodeRange().End
-		}
-		return slabAlloc(&parser.assigns, Assignment{Key: *key, Op: op.value, Value: value, Range: Range{Start: key.Range.Start, End: end}})
-	}
-
-	// GUI-style `key { ... }` with no operator.
-	if next.kind == tokLBrace {
-		block := parser.parseBlock()
-		return slabAlloc(&parser.assigns, Assignment{Key: *key, Op: "", Value: block, Range: Range{Start: key.Range.Start, End: block.Range.End}})
+		return parser.assignment(key, op, parser.parseValueAfterOperator())
+	case tokLBrace:
+		// GUI-style `key { ... }` with no operator.
+		return parser.assignment(key, token{}, parser.parseBlock())
 	}
 
 	// Bare scalar — list element.
 	return slabAlloc(&parser.values, ValueStmt{Value: key, Range: key.Range})
+}
+
+// assignment builds the Assignment of a key, its operator token and its value, and records a missing
+// value where an operator has none. A GUI-style `key { ... }` has the zero token, which has no
+// operator text and no end of its own.
+func (parser *parser) assignment(key *Scalar, op token, value Value) Statement {
+	if value == nil {
+		parser.errors = append(parser.errors, ParseError{
+			Code:    ErrMissingValue,
+			Message: "Missing value after '" + op.value + "'.",
+			Range:   Range{Start: op.start, End: op.end},
+		})
+	}
+	end := op.end
+	if value != nil {
+		end = value.NodeRange().End
+	}
+	return slabAlloc(&parser.assigns, Assignment{Key: *key, Op: op.value, Value: value, Range: Range{Start: key.Range.Start, End: end}})
 }
 
 // parseValueAfterOperator consumes the value after an operator: a scalar, a block, a tagged block,

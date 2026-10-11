@@ -1,3 +1,5 @@
+// game.go is each game's identity and where its install, its mods and its user-data folders are found.
+
 // Package game is the only game-aware package in the backend: the table of supported games
 // and what each one's install, mods and wiki look like. It also finds the installs, through the
 // Steam library folders, and each game's user-data folder.
@@ -13,15 +15,6 @@ import (
 	"strings"
 	"time"
 )
-
-// OriginVanilla is the session/IDE origin id for game files.
-const OriginVanilla = "vanilla"
-
-// BaseLanguage is the localization every game ships whole, read beside a workspace's language.
-const BaseLanguage = "english"
-
-// MetadataDescriptor is the ModDescriptor of a game whose mods carry .metadata/metadata.json.
-const MetadataDescriptor = "metadata"
 
 // GameInfo is the static identity and convention set for one game. It carries no
 // derived data; the engine scans the install for that.
@@ -75,6 +68,33 @@ type GameList struct {
 	Games         []*GameInfo `json:"games"`
 }
 
+// DetectedInstall is a game install found on disk.
+type DetectedInstall struct {
+	GameID  string `json:"gameId"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Version string `json:"version"`
+}
+
+// launcherSettings is the part of launcher-settings.json the app reads.
+type launcherSettings struct {
+	RawVersion   string `json:"rawVersion"`
+	Version      string `json:"version"`
+	GameDataPath string `json:"gameDataPath"`
+}
+
+// OriginVanilla is the session/IDE origin id for game files.
+const OriginVanilla = "vanilla"
+
+// BaseLanguage is the localization every game ships whole, read beside a workspace's language.
+const BaseLanguage = "english"
+
+// MetadataDescriptor is the ModDescriptor of a game whose mods carry .metadata/metadata.json.
+const MetadataDescriptor = "metadata"
+
+// MetadataDir is the folder a metadata descriptor sits in (.metadata/metadata.json).
+const MetadataDir = ".metadata"
+
 // registry is the supported-game table, keyed by id.
 var registry = map[string]*GameInfo{
 	"ck3": {
@@ -127,6 +147,18 @@ var registry = map[string]*GameInfo{
 	},
 }
 
+// The patterns that read Steam's library file, an app's manifest and its build id.
+var (
+	vdfPathRe    = regexp.MustCompile(`"path"\s*"([^"]+)"`)
+	installDirRe = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
+	buildIDRe    = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
+)
+
+// dumpDirs are where the console's dumps land in every game, from the user-data folder: CK3 writes
+// script_docs to logs, Vic3 and EU5 event_scopes.log to logs and the rest to docs; dump_data_types
+// writes to logs/data_types.
+var dumpDirs = []string{"logs", "docs", "logs/data_types"}
+
 // Get returns the GameInfo for id, or nil if the game is not supported.
 func Get(id string) *GameInfo {
 	return registry[id]
@@ -137,41 +169,94 @@ func All() []*GameInfo {
 	return []*GameInfo{registry["ck3"], registry["eu5"], registry["vic3"]}
 }
 
-// DetectedInstall is a game install found on disk.
-type DetectedInstall struct {
-	GameID  string `json:"gameId"`
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Version string `json:"version"`
-}
-
-var (
-	vdfPathRe    = regexp.MustCompile(`"path"\s*"([^"]+)"`)
-	installDirRe = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
-	buildIDRe    = regexp.MustCompile(`"buildid"\s*"(\d+)"`)
-)
-
-type launcherSettings struct {
-	RawVersion   string `json:"rawVersion"`
-	Version      string `json:"version"`
-	GameDataPath string `json:"gameDataPath"`
-}
-
-// readLauncher is the install's launcher/launcher-settings.json; empty where there is none.
-func readLauncher(installPath string) (settings launcherSettings) {
-	if installPath == "" {
-		return settings
+// FindInstalls returns Steam-detected installs for a game.
+func FindInstalls(gameID string) []DetectedInstall {
+	info := Get(gameID)
+	if info == nil {
+		return nil
 	}
-	if data, err := os.ReadFile(filepath.Join(installPath, "launcher", "launcher-settings.json")); err == nil {
-		_ = json.Unmarshal(data, &settings)
+	var out []DetectedInstall
+	for _, library := range steamLibraries() {
+		manifest := filepath.Join(library, "steamapps", "appmanifest_"+strconv.Itoa(info.SteamAppID)+".acf")
+		data, err := os.ReadFile(manifest)
+		if err != nil {
+			continue
+		}
+		match := installDirRe.FindSubmatch(data)
+		if match == nil {
+			continue
+		}
+		path := filepath.Join(library, "steamapps", "common", string(match[1]))
+		if !dirExists(path) {
+			continue
+		}
+		out = append(out, DetectedInstall{
+			Name:    info.Name,
+			Path:    path,
+			Version: LoadGameVersion(info.ID, path),
+		})
 	}
-	return settings
+	return out
 }
 
-// ReadGameVersion is launcher-settings.json's rawVersion, else its version without the codename,
+// steamLibraries returns candidate Steam library roots by reading
+// libraryfolders.vdf from each default Steam install location.
+func steamLibraries() []string {
+	seen := map[string]bool{}
+	var libraries []string
+	// Resolved before dedup: ~/.steam/steam is usually a link to ~/.local/share/Steam.
+	add := func(path string) {
+		if path == "" {
+			return
+		}
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			path = resolved
+		}
+		if seen[path] {
+			return
+		}
+		seen[path] = true
+		libraries = append(libraries, path)
+	}
+	for _, root := range defaultSteamRoots() {
+		add(root)
+		vdf := filepath.Join(root, "steamapps", "libraryfolders.vdf")
+		data, err := os.ReadFile(vdf)
+		if err != nil {
+			continue
+		}
+		for _, match := range vdfPathRe.FindAllSubmatch(data, -1) {
+			add(filepath.FromSlash(strings.ReplaceAll(string(match[1]), `\\`, `/`)))
+		}
+	}
+	return libraries
+}
+
+// defaultSteamRoots returns the platform's typical Steam install directories.
+func defaultSteamRoots() []string {
+	switch runtime.GOOS {
+	case "windows":
+		var roots []string
+		for _, env := range []string{"ProgramFiles(x86)", "ProgramFiles"} {
+			if base := os.Getenv(env); base != "" {
+				roots = append(roots, filepath.Join(base, "Steam"))
+			}
+		}
+		return roots
+	default:
+		home, _ := os.UserHomeDir()
+		return []string{
+			filepath.Join(home, ".steam", "steam"),
+			filepath.Join(home, ".local", "share", "Steam"),
+			filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"),
+		}
+	}
+}
+
+// LoadGameVersion is launcher-settings.json's rawVersion, else its version without the codename,
 // else (EU5) the Steam manifest's buildid two folders up, as "build <id>"; "" for none.
-func ReadGameVersion(gameID, installPath string) string {
-	settings := readLauncher(installPath)
+func LoadGameVersion(gameID, installPath string) string {
+	settings := loadLauncher(installPath)
 	if settings.RawVersion != "" {
 		return settings.RawVersion
 	}
@@ -191,10 +276,16 @@ func ReadGameVersion(gameID, installPath string) string {
 	return ""
 }
 
-// dumpDirs are where the console's dumps land in every game, from the user-data folder: CK3 writes
-// script_docs to logs, Vic3 and EU5 event_scopes.log to logs and the rest to docs; dump_data_types
-// writes to logs/data_types.
-var dumpDirs = []string{"logs", "docs", "logs/data_types"}
+// loadLauncher loads the install's launcher/launcher-settings.json; empty where there is none.
+func loadLauncher(installPath string) (settings launcherSettings) {
+	if installPath == "" {
+		return settings
+	}
+	if data, err := os.ReadFile(filepath.Join(installPath, "launcher", "launcher-settings.json")); err == nil {
+		_ = json.Unmarshal(data, &settings)
+	}
+	return settings
+}
 
 // DumpDirs is every folder the game's console dumps land in, for the install at installPath; none
 // where the game has no user-data folder.
@@ -225,6 +316,8 @@ func UserDataDir(gameID, installPath string) string {
 	return ""
 }
 
+// userDataCandidates are the user-data folders a game may keep, most likely first: the launcher's
+// own setting, then the OS conventions.
 func userDataCandidates(gameID, installPath string) []string {
 	info := Get(gameID)
 	if info == nil {
@@ -237,7 +330,7 @@ func userDataCandidates(gameID, installPath string) []string {
 			candidates = append(candidates, filepath.Clean(path))
 		}
 	}
-	add(expandGameDataPath(readLauncher(installPath).GameDataPath))
+	add(expandGameDataPath(loadLauncher(installPath).GameDataPath))
 	home, homeErr := os.UserHomeDir()
 	nativeDocs := ""
 	if homeErr == nil {
@@ -267,6 +360,8 @@ func userDataCandidates(gameID, installPath string) []string {
 	return candidates
 }
 
+// expandGameDataPath is the launcher's gameDataPath with %USER_DOCUMENTS% filled in and the path cleaned;
+// "" for none.
 func expandGameDataPath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -294,95 +389,6 @@ func DescriptorFile(gameID string) string {
 		return MetadataDir + "/metadata.json"
 	}
 	return "descriptor.mod"
-}
-
-// FindInstalls returns Steam-detected installs for a game.
-func FindInstalls(gameID string) []DetectedInstall {
-	info := Get(gameID)
-	if info == nil {
-		return nil
-	}
-	var out []DetectedInstall
-	for _, lib := range steamLibraries() {
-		manifest := filepath.Join(lib, "steamapps", "appmanifest_"+strconv.Itoa(info.SteamAppID)+".acf")
-		data, err := os.ReadFile(manifest)
-		if err != nil {
-			continue
-		}
-		match := installDirRe.FindSubmatch(data)
-		if match == nil {
-			continue
-		}
-		path := filepath.Join(lib, "steamapps", "common", string(match[1]))
-		if !dirExists(path) {
-			continue
-		}
-		out = append(out, DetectedInstall{
-			Name:    info.Name,
-			Path:    path,
-			Version: ReadGameVersion(info.ID, path),
-		})
-	}
-	return out
-}
-
-// steamLibraries returns candidate Steam library roots by reading
-// libraryfolders.vdf from each default Steam install location.
-func steamLibraries() []string {
-	seen := map[string]bool{}
-	var libs []string
-	// Resolved before dedup: ~/.steam/steam is usually a link to ~/.local/share/Steam.
-	add := func(path string) {
-		if path == "" {
-			return
-		}
-		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			path = resolved
-		}
-		if seen[path] {
-			return
-		}
-		seen[path] = true
-		libs = append(libs, path)
-	}
-	for _, root := range defaultSteamRoots() {
-		add(root)
-		vdf := filepath.Join(root, "steamapps", "libraryfolders.vdf")
-		data, err := os.ReadFile(vdf)
-		if err != nil {
-			continue
-		}
-		for _, match := range vdfPathRe.FindAllSubmatch(data, -1) {
-			add(filepath.FromSlash(strings.ReplaceAll(string(match[1]), `\\`, `/`)))
-		}
-	}
-	return libs
-}
-
-// defaultSteamRoots returns the platform's typical Steam install directories.
-func defaultSteamRoots() []string {
-	switch runtime.GOOS {
-	case "windows":
-		var roots []string
-		for _, env := range []string{"ProgramFiles(x86)", "ProgramFiles"} {
-			if base := os.Getenv(env); base != "" {
-				roots = append(roots, filepath.Join(base, "Steam"))
-			}
-		}
-		return roots
-	default:
-		home, _ := os.UserHomeDir()
-		return []string{
-			filepath.Join(home, ".steam", "steam"),
-			filepath.Join(home, ".local", "share", "Steam"),
-			filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"),
-		}
-	}
-}
-
-func dirExists(path string) bool {
-	stat, err := os.Stat(path)
-	return err == nil && stat.IsDir()
 }
 
 // InstallUpdatedAt is the newest mtime among the install's binaries, else its top files: an update
@@ -422,5 +428,8 @@ func newestFileIn(dir string) time.Time {
 	return newest
 }
 
-// MetadataDir is the folder a metadata descriptor sits in (.metadata/metadata.json).
-const MetadataDir = ".metadata"
+// dirExists reports whether path is an existing folder.
+func dirExists(path string) bool {
+	stat, err := os.Stat(path)
+	return err == nil && stat.IsDir()
+}

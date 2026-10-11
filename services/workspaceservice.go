@@ -60,7 +60,7 @@ func (s *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error
 	// a cache file's time and the version per install, so the config lock is back before any of it
 	for i := range out {
 		out[i].ScannedAt = s.sessions.scannedAt(&out[i], languages[out[i].ID])
-		out[i].VersionDetected = game.ReadGameVersion(out[i].GameID, out[i].Path)
+		out[i].VersionDetected = game.LoadGameVersion(out[i].GameID, out[i].Path)
 	}
 	return out, nil
 }
@@ -86,7 +86,7 @@ func (s *WorkspaceService) AddGameInstall(gameID, name, path string) (*GameInsta
 	if err != nil {
 		return nil, fmt.Errorf("insert install: %w", err)
 	}
-	inst.VersionDetected = game.ReadGameVersion(gameID, path)
+	inst.VersionDetected = game.LoadGameVersion(gameID, path)
 	return &inst, nil
 }
 

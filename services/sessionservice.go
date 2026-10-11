@@ -243,7 +243,7 @@ func (s *SessionService) build(workspaceID string) (*workspace.Session, error) {
 // update is another cache file, and the app's own version.
 func (s *SessionService) request(inst *GameInstall, language string) index.Request {
 	return index.Request{
-		Game: inst.GameID, Dir: inst.Path, Version: game.ReadGameVersion(inst.GameID, inst.Path),
+		Game: inst.GameID, Dir: inst.Path, Version: game.LoadGameVersion(inst.GameID, inst.Path),
 		Language: language, App: s.version,
 	}
 }
@@ -326,7 +326,7 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) *LanguageHealth {
 	if inst == nil {
 		return health
 	}
-	health.GameVersion = game.ReadGameVersion(inst.GameID, inst.Path)
+	health.GameVersion = game.LoadGameVersion(inst.GameID, inst.Path)
 	_, statErr := os.Stat(inst.Path)
 	health.InstallOk = statErr == nil
 	health.ScannedAt = s.scannedAt(inst, entry.DefaultLocLang)

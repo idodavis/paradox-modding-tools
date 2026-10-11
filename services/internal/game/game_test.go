@@ -22,21 +22,22 @@ func writeLauncher(t *testing.T, body string) string {
 	return dir
 }
 
-func TestReadGameVersion(t *testing.T) {
-	if got := ReadGameVersion("ck3", writeLauncher(t,
+func TestLoadGameVersion(t *testing.T) {
+	if got := LoadGameVersion("ck3", writeLauncher(t,
 		`{ "rawVersion": "1.12.5", "version": "Scythe v1.12.5" }`)); got != "1.12.5" {
 		t.Fatalf("version = %q want 1.12.5", got)
 	}
-	if got := ReadGameVersion("ck3", t.TempDir()); got != "" {
+	if got := LoadGameVersion("ck3", t.TempDir()); got != "" {
 		t.Fatalf("missing file version = %q want empty", got)
 	}
-	if got := ReadGameVersion("ck3", writeLauncher(t,
+	if got := LoadGameVersion("ck3", writeLauncher(t,
 		`{ "version": "1.13.11 (Chamomile)" }`)); got != "1.13.11" {
 		t.Fatalf("codename strip = %q want 1.13.11", got)
 	}
 }
 
-func TestUserDataDir(t *testing.T) {
+// TestUserDataDirWindows holds the case that runs on Windows: the launcher's own setting.
+func TestUserDataDirWindows(t *testing.T) {
 	t.Run("game_data_path", func(t *testing.T) {
 		userData := t.TempDir()
 		raw, err := json.Marshal(map[string]string{"gameDataPath": userData})
@@ -49,7 +50,10 @@ func TestUserDataDir(t *testing.T) {
 			t.Fatalf("UserDataDir = %q want %q", got, userData)
 		}
 	})
+}
 
+// TestUserDataDirLinux holds the cases that follow Linux's conventions: XDG and Proton.
+func TestUserDataDirLinux(t *testing.T) {
 	t.Run("xdg_beats_missing_documents", func(t *testing.T) {
 		if runtime.GOOS != "linux" {
 			t.Skip("XDG is Linux")
@@ -88,35 +92,35 @@ func TestUserDataDir(t *testing.T) {
 			t.Fatalf("UserDataDir = %q want %q", got, want)
 		}
 	})
+}
 
-	// steamLibraries resolves links before dedup: ~/.steam/steam usually links ~/.local/share/Steam.
-	t.Run("symlinked_root_dedup", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("the ~/.steam/steam convention is Linux/macOS")
+// steamLibraries resolves links before dedup: ~/.steam/steam usually links ~/.local/share/Steam.
+func TestSteamLibrariesLinkedRoots(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the ~/.steam/steam convention is Linux/macOS")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	real := filepath.Join(home, ".local", "share", "Steam")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".steam"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(home, ".steam", "steam")); err != nil {
+		t.Skipf("cannot symlink here: %v", err)
+	}
+	got := steamLibraries()
+	count := 0
+	for _, library := range got {
+		if library == real {
+			count++
 		}
-		home := t.TempDir()
-		t.Setenv("HOME", home)
-		real := filepath.Join(home, ".local", "share", "Steam")
-		if err := os.MkdirAll(real, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.MkdirAll(filepath.Join(home, ".steam"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(real, filepath.Join(home, ".steam", "steam")); err != nil {
-			t.Skipf("cannot symlink here: %v", err)
-		}
-		got := steamLibraries()
-		n := 0
-		for _, library := range got {
-			if library == real {
-				n++
-			}
-		}
-		if n != 1 {
-			t.Fatalf("steamLibraries() = %v, want %q exactly once", got, real)
-		}
-	})
+	}
+	if count != 1 {
+		t.Fatalf("steamLibraries() = %v, want %q exactly once", got, real)
+	}
 }
 
 // InstallUpdatedAt must answer for every game, so the binaries decide, not
@@ -167,8 +171,8 @@ func TestInstallUpdatedAt(t *testing.T) {
 	if err := os.Chtimes(exe, now, now); err != nil {
 		t.Fatal(err)
 	}
-	if after := InstallUpdatedAt(root); !after.After(got) {
-		t.Errorf("rewriting the binary did not move the timestamp: %v then %v", got, after)
+	if updated := InstallUpdatedAt(root); !updated.After(got) {
+		t.Errorf("rewriting the binary did not move the timestamp: %v then %v", got, updated)
 	}
 
 	// No binaries directory: fall back to the install root's own files.

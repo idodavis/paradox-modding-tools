@@ -42,6 +42,13 @@ linters:
       # the format table's rows repeat a word as data
       - path: internal/inventory/inventory\.go
         linters: [goconst]
+      # the registry's rows repeat a word as data
+      - path: internal/game/game\.go
+        linters: [goconst]
+      # GameInfo and GameList are bound payload types, which keep their names
+      - path: internal/game/game\.go
+        linters: [revive]
+        text: "stutters"
 
 formatters:
   enable:

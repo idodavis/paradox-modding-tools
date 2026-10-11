@@ -43,7 +43,7 @@ func main() {
 		}
 		*installDir = installs[0].Path
 	}
-	version := game.ReadGameVersion(info.ID, *installDir)
+	version := game.LoadGameVersion(info.ID, *installDir)
 	if version == "" {
 		log.Fatalf("no game version found for %s", *installDir)
 	}

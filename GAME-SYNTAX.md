@@ -79,7 +79,7 @@ event or an on_action is a fire unless it sits inside a trigger
 
 **EU5 publishes its version nowhere in the install folder.** The version the
 engine reads for it is the Steam manifest's `buildid`, beside the install
-(`game.ReadGameVersion`); freshness never depends on a version string.
+(`game.LoadGameVersion`); freshness never depends on a version string.
 
 `game.InstallUpdatedAt` therefore uses the **newest mtime among `binaries/`**,
 falling back to the install root. It works for all three, needs nothing outside

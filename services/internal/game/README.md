@@ -50,5 +50,5 @@ them.
 `registry` is the table of supported games: names, wiki endpoint, script and stage roots, descriptor
 kind, Documents folder, Steam app id and library, the first-wins sentence the pages show, the new-mod
 folders and the data-types command. `Get` and `All` read it. The rest finds installs
-through Steam's library folders, reads a game's version, and locates its user-data and dump folders on
+through Steam's library folders, loads a game's version, and locates its user-data and dump folders on
 Windows and Linux.

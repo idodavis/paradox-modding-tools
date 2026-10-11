@@ -137,6 +137,7 @@ var Shapes = map[Shape]ShapeRule{
 // Kinds is what a declared command name is, as bits; a name can be more than one.
 type Kinds uint8
 
+// The kinds a declared command can be.
 const (
 	KindEffect Kinds = 1 << iota
 	KindTrigger
@@ -389,12 +390,12 @@ type EntryMode struct {
 }
 
 // Mode splits a game's mode word off a written name: REPLACE:x is x with mode REPLACE.
-func (info *GameInfo) Mode(written string) (mode, name string) {
-	word, rest, cut := strings.Cut(written, ":")
+func (info *GameInfo) Mode(key string) (mode, name string) {
+	word, rest, cut := strings.Cut(key, ":")
 	if cut && slices.ContainsFunc(info.EntryModes, func(entryMode EntryMode) bool { return entryMode.Word == word }) {
 		return word, rest
 	}
-	return "", written
+	return "", key
 }
 
 // entryModes are the words Victoria 3 and EU5 share, in the order the game processes them.
@@ -459,10 +460,12 @@ const (
 // A folder with no row is a database of general purpose whose top statements' keys name its entries; a path
 // takes the longest row at or above it.
 type Descriptor struct {
-	Database   string // the database: a folder from a root (decisions), a file, a file type's own (gui.type), a nested one (defines.define)
-	Path       string // the folder or file its entries are written in; "" for a nested or a file type's database
-	Parent     string // nested: the folder or file whose entries hold its keys
-	Within     string // nested: the key path from the holding entry to its keys: "" the entry's own block, options, **/parameters, */*/*
+	// the database: a folder from a root (decisions), a file, a file type's own (gui.type), a nested one (defines.define)
+	Database string
+	Path     string // the folder or file its entries are written in; "" for a nested or a file type's database
+	Parent   string // nested: the folder or file whose entries hold its keys
+	// nested: the key path from the holding entry to its keys: "" the entry's own block, options, **/parameters, */*/*
+	Within     string
 	Identity   Identity
 	NameKey    string   // IdentityByField: the key whose value names the entry
 	Wrappers   []string // keys at the top that only wrap entries: their blocks hold top statements
@@ -521,7 +524,8 @@ var layouts = map[string]Layout{
 				Refs: []string{"on_actions", "random_on_actions/<number>", "first_valid_on_action", "fallback"}}),
 			folder("gfx/map/map_object_data", Descriptor{Identity: IdentityNone}),
 			folder("gfx/map/post_effects", Descriptor{Identity: IdentityByField, NameKey: "name", Wrappers: []string{"posteffect_volumes"}}),
-			folder("common/history", Descriptor{Purpose: PurposeHistory, Identity: IdentityNone, Body: ShapeEffects}), // COUNTRIES = { … }: effects
+			// COUNTRIES = { … }: effects
+			folder("common/history", Descriptor{Purpose: PurposeHistory, Identity: IdentityNone, Body: ShapeEffects}),
 		}),
 		EntryModes: entryModes,
 		FirstWins:  []string{"gui.type", "gui.template", "events"},
@@ -616,8 +620,10 @@ func setsUp(parent, within, database, of string) Descriptor {
 func withShared(own []Descriptor) []Descriptor {
 	rows := slices.Clone(shared)
 	for _, row := range own {
-		if i := slices.IndexFunc(rows, func(had Descriptor) bool { return had.Database == row.Database && had.Within == row.Within }); i >= 0 {
-			rows[i] = row
+		if index := slices.IndexFunc(rows, func(existing Descriptor) bool {
+			return existing.Database == row.Database && existing.Within == row.Within
+		}); index >= 0 {
+			rows[index] = row
 		} else {
 			rows = append(rows, row)
 		}

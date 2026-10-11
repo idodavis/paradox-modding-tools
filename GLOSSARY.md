@@ -125,7 +125,7 @@ Only a declared claim that is fresh and that no evidence contradicts lets a diag
 
 | Name | Lives in |
 |---|---|
-| The language rules (`Shape`, `Shapes`, `KeyRules`, `Constructs`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Descriptor` rows with `Identity` and `Purpose`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo` (its `FirstWins` sentence), `UserDataDir`, `DumpDirs`, `ReadGameVersion` — `game.go` | `services/internal/game` — **the only game-aware package** |
+| The language rules (`Shape`, `Shapes`, `KeyRules`, `Constructs`, the name rules, `NameCommands`, written forms) and each game's `Layout` (`Descriptor` rows with `Identity` and `Purpose`, `EntryModes`, first-wins databases), `FileTypes` — `lang-rules.go`; `GameInfo` (its `FirstWins` sentence), `UserDataDir`, `DumpDirs`, `LoadGameVersion` — `game.go` | `services/internal/game` — **the only game-aware package** |
 | The CST, the lexer, the name and literal shapes, encodings; `SplitPrefixed`, `Constant`, `Interpolations` (the spellings inside one word); `Result.Attach` (comments onto statements) | `services/internal/lang/jomini` — shared Jomini syntax, no game id |
 | `Roots`, `Inventory`, `Classify`, `File`, `Walk`, `ReadImageInfo`: every file of an install, a mod or a dump folder, its format, an image's header | `services/internal/lang/source` — one format table for every game |
 | Loc files: entries, interpolations, language | `services/internal/lang/loc` |

@@ -74,7 +74,7 @@ func shippedAt(ws *workspace.Session, preview []*index.Index) shippedFiles {
 func (shipped shippedFiles) add(ws *workspace.Session, index *index.Index, folders map[string]bool) {
 	for _, file := range index.Files {
 		rel := strings.ToLower(file.Rel)
-		if top, _, nested := strings.Cut(rel, "/"); !nested || !folders[top] {
+		if top, _, _ := strings.Cut(rel, "/"); !folders[top] {
 			continue
 		}
 		shipped.byRel[rel] = append(shipped.byRel[rel], file)
@@ -143,10 +143,10 @@ func sameStatement(first, second jomini.Node) bool {
 	switch first := first.(type) {
 	case *jomini.Assignment:
 		second, ok := second.(*jomini.Assignment)
-		return ok && first.Key.Text == second.Key.Text && first.Op == second.Op && sameValue(first.Value, second.Value)
+		return ok && first.Key.Text == second.Key.Text && first.Op == second.Op && sameStatement(first.Value, second.Value)
 	case *jomini.ValueStmt:
 		second, ok := second.(*jomini.ValueStmt)
-		return ok && sameValue(first.Value, second.Value)
+		return ok && sameStatement(first.Value, second.Value)
 	case *jomini.Scalar:
 		second, ok := second.(*jomini.Scalar)
 		return ok && first.Text == second.Text
@@ -160,12 +160,4 @@ func sameStatement(first, second jomini.Node) bool {
 		})
 	}
 	return false
-}
-
-// sameValue is whether two values are written alike; a missing value is alike only to another missing one.
-func sameValue(first, second jomini.Value) bool {
-	if first == nil || second == nil {
-		return first == nil && second == nil
-	}
-	return sameStatement(first, second)
 }

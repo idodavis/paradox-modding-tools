@@ -31,10 +31,14 @@ func dangling(ws *workspace.Session, findings map[string][]lsp.Diagnostic, sourc
 			}
 			ref := occurrences[i].Occurrence()
 			key := [2]string{ref.Database, ref.ID}
-			if rows[key] == nil {
-				rows[key] = &Dangling{Code: diagnostic.Code, Database: ref.Database, Kind: game.KindName(ref.Database), Name: ref.ID}
+			row := rows[key]
+			if row == nil {
+				row = &Dangling{Database: ref.Database, Kind: game.KindName(ref.Database), Name: ref.ID}
+				rows[key] = row
 			}
-			rows[key].Sites = append(rows[key].Sites, Site{File: sources.index(file), Line: start.Line, Col: start.Character})
+			// the last check to find the name is the one the row names
+			row.Code = diagnostic.Code
+			row.Sites = append(row.Sites, Site{File: sources.index(file), Line: start.Line, Col: start.Character})
 		}
 	}
 	var out []Dangling

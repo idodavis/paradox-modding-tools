@@ -45,10 +45,12 @@ func workspace(t *testing.T) (*Session, string) {
 	return ws, dir
 }
 
+// defs is how many events of a name the session's indexes define.
 func defs(ws *Session, name string) int {
 	return len(index.Lookup(ws.Indexes(), schema.Defines, "events", name))
 }
 
+// TestEdits covers what the editor's text, a save, a close and a change on disk do to the records.
 func TestEdits(t *testing.T) {
 	ws, dir := workspace(t)
 	events := filepath.Join(dir, "events", "m_events.txt")
@@ -98,6 +100,7 @@ func TestEdits(t *testing.T) {
 	}
 }
 
+// TestQueries covers what the session knows: its language, mods and game, the winner of no definitions, and a key's entry.
 func TestQueries(t *testing.T) {
 	ws, dir := workspace(t)
 
@@ -189,6 +192,7 @@ func TestPlaceOf(t *testing.T) {
 	}
 }
 
+// TestLockContract covers readers and writers together, which -race checks.
 func TestLockContract(t *testing.T) {
 	ws, dir := workspace(t)
 	if err := ws.Watch(func(string) {}); err != nil {
@@ -222,6 +226,7 @@ func TestLockContract(t *testing.T) {
 	wg.Wait()
 }
 
+// fireNamed is the fire of a name among fires.
 func fireNamed(fires []Fire, name string) (Fire, bool) {
 	i := slices.IndexFunc(fires, func(fire Fire) bool { return fire.Name == name })
 	if i < 0 {
@@ -230,6 +235,7 @@ func fireNamed(fires []Fire, name string) (Fire, bool) {
 	return fires[i], true
 }
 
+// TestFireSite covers where a fire is written: its block, the statement that fires and that statement's arguments.
 func TestFireSite(t *testing.T) {
 	ws, _ := workspace(t)
 	first := index.Lookup(ws.Indexes(), schema.Defines, "events", "v.1")[0]

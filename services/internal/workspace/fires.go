@@ -81,12 +81,17 @@ func (walk *fireWalk) follow(def index.At, via string, start index.At) {
 			walk.out = append(walk.out, walk.locateFire(fire, fireRef{walk.from, first}, fireRef{def, ref}))
 		case index.Runs(s, occurrence):
 			called, _ := index.Resolve(s, indexes, occurrence, ref.File().Path)
-			for _, target := range called {
-				if !walk.seen[target] {
-					walk.seen[target] = true
-					walk.follow(target, strings.TrimPrefix(via+" → "+target.Occurrence().ID, " → "), first)
-				}
-			}
+			walk.enter(called, via, first)
+		}
+	}
+}
+
+// enter follows each scripted entry a reference runs that the walk has not entered yet.
+func (walk *fireWalk) enter(called []index.At, via string, start index.At) {
+	for _, target := range called {
+		if !walk.seen[target] {
+			walk.seen[target] = true
+			walk.follow(target, strings.TrimPrefix(via+" → "+target.Occurrence().ID, " → "), start)
 		}
 	}
 }

@@ -196,17 +196,7 @@ func (grapher *grapher) between() {
 func (grapher *grapher) drawScripted() {
 	var edges []Edge
 	for _, edge := range grapher.out.Edges {
-		from, block := edge.From, edge.Block
-		if edge.Via != "" {
-			for _, scripted := range strings.Split(edge.Via, " → ") {
-				if !grapher.drawn[scripted] {
-					grapher.node(scripted, false)
-				}
-				edges = append(edges, Edge{From: from, To: scripted, Block: block})
-				from, block = scripted, ""
-			}
-		}
-		edges = append(edges, Edge{From: from, To: edge.To, Block: block})
+		edges = append(edges, grapher.chain(edge)...)
 	}
 	slices.SortStableFunc(edges, func(first, second Edge) int {
 		return cmp.Compare(first.From+first.To, second.From+second.To)
@@ -214,6 +204,23 @@ func (grapher *grapher) drawScripted() {
 	grapher.out.Edges = slices.CompactFunc(edges, func(first, second Edge) bool {
 		return first.From == second.From && first.To == second.To
 	})
+}
+
+// chain is an edge as the edges between the scripted effects it passes through, the first with the edge's block,
+// drawing each effect not drawn yet; an edge through none is itself.
+func (grapher *grapher) chain(edge Edge) []Edge {
+	var chain []Edge
+	from, block := edge.From, edge.Block
+	if edge.Via != "" {
+		for _, scripted := range strings.Split(edge.Via, " → ") {
+			if !grapher.drawn[scripted] {
+				grapher.node(scripted, false)
+			}
+			chain = append(chain, Edge{From: from, To: scripted, Block: block})
+			from, block = scripted, ""
+		}
+	}
+	return append(chain, Edge{From: from, To: edge.To, Block: block})
 }
 
 // keepOrigins keeps the nodes one of the page's origins defines (the root, and a stub whose node stays, always)

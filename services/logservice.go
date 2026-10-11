@@ -119,6 +119,18 @@ func (s *LogService) ServiceShutdown() error {
 	return s.logFile.file.Close()
 }
 
+// lastScan is the scan lines of the log from the last scan's start on; none where the log holds no scan.
+func lastScan(lines []string) []string {
+	for i, line := range slices.Backward(lines) {
+		if strings.Contains(line, `msg="scan start"`) {
+			return slices.DeleteFunc(slices.Clone(lines[i:]), func(later string) bool {
+				return !strings.Contains(later, `msg="scan `)
+			})
+		}
+	}
+	return nil
+}
+
 // diagnostics is the report: the app's version, the OS, each install with its version, the last
 // scan's stage times, and the log's last 200 lines.
 func (s *LogService) diagnostics() string {
@@ -146,16 +158,8 @@ func (s *LogService) diagnostics() string {
 
 	raw, _ := os.ReadFile(s.logFile.file.Name())
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
-	for i, line := range slices.Backward(lines) {
-		if strings.Contains(line, `msg="scan start"`) {
-			out.WriteString("\nLast scan:\n")
-			for _, later := range lines[i:] {
-				if strings.Contains(later, `msg="scan `) {
-					fmt.Fprintf(&out, "%s\n", later)
-				}
-			}
-			break
-		}
+	if scan := lastScan(lines); len(scan) > 0 {
+		fmt.Fprintf(&out, "\nLast scan:\n%s\n", strings.Join(scan, "\n"))
 	}
 	fmt.Fprintf(&out, "\npmt.log, its last 200 lines:\n%s\n", strings.Join(lines[max(0, len(lines)-200):], "\n"))
 	return out.String()

@@ -184,7 +184,7 @@ func references(ws *workspace.Session, def index.At, file inventory.File) []RefG
 		}
 		if occurrence.Caller != "" {
 			called, known := index.Resolve(ws.Install.Schema, ws.Indexes(), occurrence, file.Path)
-			if !known || len(called) == 0 {
+			if !known {
 				continue
 			}
 			database = called[0].Occurrence().Database

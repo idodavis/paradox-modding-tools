@@ -26,8 +26,7 @@ func oneLine(parsed *jomini.Result, statements []jomini.Statement) string {
 	for _, statement := range statements {
 		span := statement.NodeRange()
 		if inner := jomini.ChildBlock(statement); inner != nil {
-			head := strings.TrimSpace(parsed.Flat(jomini.Range{Start: span.Start, End: inner.OpenBrace}))
-			parts = append(parts, head+" { … }")
+			parts = append(parts, parsed.Flat(jomini.Range{Start: span.Start, End: inner.OpenBrace})+" { … }")
 			continue
 		}
 		parts = append(parts, parsed.Flat(span))
@@ -150,11 +149,8 @@ func (text eventText) option(block *jomini.Block, line int) Option {
 		case field.Key.Text == "name" && isScalar:
 			option.Names = append(option.Names, text.version(scalar, ""))
 		case field.Key.Text == "name":
-			if inner := jomini.BlockOf(field.Value); inner != nil {
-				if label := text.scalar(inner, "text"); label != nil {
-					when, _ := text.trigger(inner)
-					option.Names = append(option.Names, text.version(label, when))
-				}
+			if name, named := text.blockName(field); named {
+				option.Names = append(option.Names, name)
 			}
 		case isScalar && scalar.Text == game.Bools[0] && slices.Contains(game.OptionFlags, field.Key.Text):
 			option.Flags = append(option.Flags, field.Key.Text)
@@ -163,8 +159,25 @@ func (text eventText) option(block *jomini.Block, line int) Option {
 	return option
 }
 
+// blockName is the name an option writes as a block: the text key's word with the block's own trigger.
+func (text eventText) blockName(field *jomini.Assignment) (Version, bool) {
+	inner := jomini.BlockOf(field.Value)
+	if inner == nil {
+		return Version{}, false
+	}
+	label := text.scalar(inner, "text")
+	if label == nil {
+		return Version{}, false
+	}
+	when, _ := text.trigger(inner)
+	return text.version(label, when), true
+}
+
 // blockFieldsOf is a block's assignments; none for no block.
 func blockFieldsOf(block *jomini.Block) []*jomini.Assignment {
+	if block == nil {
+		return nil
+	}
 	var fields []*jomini.Assignment
 	for _, statement := range block.Statements {
 		if assign, isAssign := statement.(*jomini.Assignment); isAssign {

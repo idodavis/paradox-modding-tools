@@ -16,6 +16,7 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/jomini"
+	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
@@ -78,6 +79,7 @@ var searchTree = map[string]string{
 	"a.txt":                   "TOK only\npartialtoken\nanother TOK\n",
 }
 
+// TestTextSearch covers the globs of each folder, what a search never reads, and the query's options.
 func TestTextSearch(t *testing.T) {
 	t.Parallel()
 	root, other := t.TempDir(), t.TempDir()
@@ -136,6 +138,7 @@ func TestTextSearch(t *testing.T) {
 	}
 }
 
+// TestFileSearchNeedleAndGlob covers a file search by a part of the path, held to a folder's globs.
 func TestFileSearchNeedleAndGlob(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -157,6 +160,7 @@ func TestFileSearchNeedleAndGlob(t *testing.T) {
 	}
 }
 
+// TestTextSearchCancel covers a canceled search: it ends with fewer hits and no error.
 func TestTextSearchCancel(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -563,6 +567,7 @@ func firstStatement(text string) jomini.Statement {
 	return jomini.Parse(text).Root.Statements[0]
 }
 
+// TestSameStatement covers when two statements are written alike.
 func TestSameStatement(t *testing.T) {
 	for _, row := range []struct {
 		name          string
@@ -570,6 +575,7 @@ func TestSameStatement(t *testing.T) {
 		alike         bool
 	}{
 		{"the same", assignOne, assignOne, true},
+		{"a value both lack", "a =", "a =", false},
 		{"another value", assignOne, "a = 2", false},
 		{"another key", assignOne, "b = 1", false},
 		{"a value and a block", assignOne, "a = { 1 }", false},
@@ -584,6 +590,7 @@ func TestSameStatement(t *testing.T) {
 	}
 }
 
+// TestStubTitle covers a stub's title: how many are hidden, and of what kind where they are one.
 func TestStubTitle(t *testing.T) {
 	event := func(count int) []workspace.Fire {
 		fires := make([]workspace.Fire, count)
@@ -607,6 +614,7 @@ func TestStubTitle(t *testing.T) {
 	}
 }
 
+// TestFolderGlobs covers which paths a folder's include and exclude globs keep.
 func TestFolderGlobs(t *testing.T) {
 	for _, row := range []struct {
 		name string
@@ -628,6 +636,7 @@ func TestFolderGlobs(t *testing.T) {
 	}
 }
 
+// TestWholeFileTest covers the first look at a file for a plain query, in any case where case is ignored.
 func TestWholeFileTest(t *testing.T) {
 	for _, row := range []struct {
 		name  string
@@ -645,5 +654,29 @@ func TestWholeFileTest(t *testing.T) {
 		if got := wholeFileTest(row.query)([]byte(row.data)); got != row.holds {
 			t.Errorf("%s: holds %v, want %v", row.name, got, row.holds)
 		}
+	}
+}
+
+// TestDanglingCodeIsTheLastFound covers a name two checks both find: its row names the check that found it last.
+func TestDanglingCodeIsTheLastFound(t *testing.T) {
+	ws := healthWorkspace(t)
+	findings := (&Findings{}).Current(ws)
+	var path string
+	var twin lsp.Diagnostic
+	for found, diagnostics := range findings {
+		for _, diagnostic := range diagnostics {
+			if shownBy[diagnostic.Code] == cardDangling {
+				path, twin = found, diagnostic
+			}
+		}
+	}
+	if path == "" {
+		t.Fatal("the fixture has a dangling reference")
+	}
+	twin.Code = "unknown-event"
+	findings[path] = append(findings[path], twin)
+	health := Health(ws, HealthParams{}, findings)
+	if len(health.Dangling) != 1 || health.Dangling[0].Code != "unknown-event" || len(health.Dangling[0].Sites) != 2 {
+		t.Errorf("one row, two sites, the last check's code: %+v", health.Dangling)
 	}
 }

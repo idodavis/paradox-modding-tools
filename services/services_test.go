@@ -71,6 +71,7 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 	}
 }
 
+// dirNames is the names of a directory listing, as a set.
 func dirNames(entries []DirEntry) map[string]bool {
 	out := map[string]bool{}
 	for _, entry := range entries {
@@ -143,6 +144,7 @@ func TestConfig(t *testing.T) {
 	})
 }
 
+// TestListDirectoryMetadata covers what a directory listing hides: dotfiles, but not the metadata folder.
 func TestListDirectoryMetadata(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -307,6 +309,7 @@ func TestLogPanic(t *testing.T) {
 	_ = logs.ServiceShutdown()
 }
 
+// TestEnsureSession covers the session a workspace gets: built once for many callers, kept, and dropped.
 func TestEnsureSession(t *testing.T) {
 	svc := fixtureService(t)
 	before := svc.GetLanguageHealth("ws")
@@ -373,6 +376,7 @@ func modIDs(t *testing.T, svc *WorkspaceService) []string {
 	return ids
 }
 
+// TestWorkspaceService_AddMods covers a folder that is no mod, and the order and sort numbers of mods added.
 func TestWorkspaceService_AddMods(t *testing.T) {
 	svc, modDir := modsService(t)
 
@@ -400,6 +404,7 @@ func TestWorkspaceService_AddMods(t *testing.T) {
 	}
 }
 
+// TestWorkspaceService_ReorderRemoveMods covers a reorder, the list in load order, a removal, and a workspace's deletion.
 func TestWorkspaceService_ReorderRemoveMods(t *testing.T) {
 	svc, modDir := modsService(t)
 	alpha, err := svc.AddWorkspaceMod("ws1", filepath.Join(modDir, "a"))
@@ -450,6 +455,7 @@ func TestWorkspaceService_ReorderRemoveMods(t *testing.T) {
 	}
 }
 
+// TestGetIdeRoots_OrderAndGameTitle covers the IDE's roots: the mod then the game by its title, and the workspace's prefs.
 func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	install := t.TempDir()
 	modDir := t.TempDir()
@@ -655,6 +661,7 @@ func spread(files []inventory.File, n int) []inventory.File {
 	return out
 }
 
+// must is the value, failing the test on an error.
 func must[T any](value T, err error) T {
 	if err != nil {
 		panic(err)

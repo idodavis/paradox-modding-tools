@@ -431,14 +431,7 @@ func (s *GitService) Branches(root string) (*GitBranches, error) {
 			continue
 		}
 		branch := GitBranch{Name: fields[1], Upstream: fields[2], Date: fields[4], Current: fields[5] == "*"}
-		// the track reads "ahead 2, behind 1", either alone, or "gone"
-		for _, part := range strings.Split(fields[3], ", ") {
-			if n, ok := strings.CutPrefix(part, "ahead "); ok {
-				branch.Ahead, _ = strconv.Atoi(n)
-			} else if n, ok := strings.CutPrefix(part, "behind "); ok {
-				branch.Behind, _ = strconv.Atoi(n)
-			}
-		}
+		branch.Ahead, branch.Behind = trackCounts(fields[3])
 		switch {
 		case strings.HasPrefix(fields[0], "refs/heads/"):
 			branches.Local = append(branches.Local, branch)
@@ -449,6 +442,19 @@ func (s *GitService) Branches(root string) (*GitBranches, error) {
 		}
 	}
 	return branches, nil
+}
+
+// trackCounts is how far a branch is from its upstream, read from its track: "ahead 2, behind 1", either alone, or
+// "gone".
+func trackCounts(track string) (ahead, behind int) {
+	for _, part := range strings.Split(track, ", ") {
+		if n, ok := strings.CutPrefix(part, "ahead "); ok {
+			ahead, _ = strconv.Atoi(n)
+		} else if n, ok := strings.CutPrefix(part, "behind "); ok {
+			behind, _ = strconv.Atoi(n)
+		}
+	}
+	return ahead, behind
 }
 
 // Checkout switches to a branch, a remote branch (as a local one tracking it), a tag or a commit; with

@@ -91,18 +91,22 @@ func (s *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceO
 			games[inst.GameID] = true
 		}
 	})
-	go func() {
-		for gameID := range games {
-			done := WikiUpdated{GameID: gameID}
-			if err := wiki.Refresh(ctx, gameID, func(stage string, fetched, total int) {
-				emit(EventWikiProgress, WikiProgress{GameID: gameID, Stage: stage, Done: fetched, Total: total})
-			}); err != nil {
-				done.Error = err.Error()
-			}
-			emit(EventWikiUpdated, done)
-		}
-	}()
+	go refreshWikis(ctx, games)
 	return nil
+}
+
+// refreshWikis refreshes the wiki pages of each game in turn, telling the frontend each page fetched and each game
+// done.
+func refreshWikis(ctx context.Context, games map[string]bool) {
+	for gameID := range games {
+		done := WikiUpdated{GameID: gameID}
+		if err := wiki.Refresh(ctx, gameID, func(stage string, fetched, total int) {
+			emit(EventWikiProgress, WikiProgress{GameID: gameID, Stage: stage, Done: fetched, Total: total})
+		}); err != nil {
+			done.Error = err.Error()
+		}
+		emit(EventWikiUpdated, done)
+	}
 }
 
 // Patches returns the Patch Notes version list, newest first.

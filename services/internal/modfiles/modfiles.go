@@ -204,6 +204,7 @@ func patchDescriptorMod(src string, fields ListingFields) string {
 		src = "version=\"1.0\"\nname=\"mod\"\n"
 	}
 	result := jomini.Parse(src)
+	index := result.Lines()
 	seen := map[string]bool{}
 	var patched strings.Builder
 	cursor := 0 // src[:cursor] is in patched: the statements go in source order, so the ranges never overlap
@@ -216,12 +217,14 @@ func patchDescriptorMod(src string, fields ListingFields) string {
 		field, known := modField(key)
 		span, text := assign.Range, ""
 		switch {
-		case span.Start < cursor:
-			continue // on a line that is already gone
 		case known && field.modDropEmpty && *field.value(&fields) == "":
-			// the whole line goes, every time the key is written
-			first, last := result.Lines().PositionAt(span.Start).Line, result.Lines().PositionAt(span.End).Line
-			span = jomini.Range{Start: max(result.Lines().OffsetAt(first, 0), cursor), End: result.Lines().OffsetAt(last+1, 0)}
+			// the statement and the blanks after it go, and its whole line when it is the line's only content
+			start := index.OffsetAt(index.PositionAt(span.Start).Line, 0)
+			end := index.OffsetAt(index.PositionAt(span.End).Line+1, 0)
+			span.End = len(src) - len(strings.TrimLeft(src[span.End:], " \t"))
+			if strings.TrimSpace(src[start:span.Start]) == "" && strings.TrimSpace(src[span.End:end]) == "" {
+				span = jomini.Range{Start: start, End: end}
+			}
 		case known:
 			// a key with no value yet takes one where the operator ends
 			span, text = jomini.Range{Start: span.End, End: span.End}, quoted(*field.value(&fields))

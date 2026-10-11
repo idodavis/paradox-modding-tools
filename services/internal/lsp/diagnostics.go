@@ -201,10 +201,8 @@ func (judge *judge) missingKey(at step, assign *jomini.Assignment) {
 		return
 	}
 	writes := map[string]bool{}
-	for _, statement := range block.Statements {
-		if child, isAssign := statement.(*jomini.Assignment); isAssign {
-			writes[child.Key.Text] = true
-		}
+	for _, child := range jomini.Fields(block) {
+		writes[child.Key.Text] = true
 	}
 	for name, child := range position.Children {
 		if !writes[name] && s.MayAccuse(schema.CheckRequired, child, position) {

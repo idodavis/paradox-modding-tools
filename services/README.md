@@ -190,8 +190,8 @@ refetches when it is shown again.
 | how a dump file is read | the label table in `internal/lang/schema/dumps.go` |
 | a diagnostic | `internal/lsp/diagnostics.go` (`Codes`, the judge) |
 | a hover card's wording | `internal/lsp/wording.go` (`takesText`, `vanillaWritesText`, `blockHoldsText`) |
-| a Health section | `internal/pages/health_*.go` (one file per card) |
-| what the event graph or a search answers | `internal/pages/graph*.go`, `internal/pages/search*.go` |
+| a Health section | `internal/pages/health_*.go` (contests and overrides, dependencies, localization, findings) |
+| what the event graph or a search answers | `internal/pages/graph.go`, `graph_detail.go`, `search.go` |
 | a new frontend call | a service method, then `task common:generate:bindings` |
 
 A rule is a row, never a branch for one case. The engine infers nothing a table or a declared

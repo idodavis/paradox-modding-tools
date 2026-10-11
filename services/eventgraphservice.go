@@ -20,8 +20,6 @@ func (s *EventGraphService) SearchRoots(workspaceID, query string) (*pages.Roots
 	if err != nil {
 		return nil, err
 	}
-	ws.RLock()
-	defer ws.RUnlock()
 	return pages.SearchRoots(ws, query), nil
 }
 
@@ -31,8 +29,6 @@ func (s *EventGraphService) GetEventGraph(workspaceID string, params pages.Param
 	if err != nil {
 		return nil, err
 	}
-	ws.RLock()
-	defer ws.RUnlock()
 	return pages.Graph(ws, params), nil
 }
 
@@ -42,7 +38,5 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*pages.Detai
 	if err != nil {
 		return nil, err
 	}
-	ws.RLock()
-	defer ws.RUnlock()
 	return pages.EventDetail(ws, id), nil
 }

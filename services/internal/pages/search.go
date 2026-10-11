@@ -1,5 +1,5 @@
-// search.go is Find in Files and Replace all over the workspace's folders, and the file search: each file greped in
-// a worker per core, its hits sent as it is done.
+// search.go is Find in Files and Replace all over the workspace's folders, with their include and exclude globs,
+// and the file search: each file greped in a worker per core, its hits sent as it is done.
 
 package pages
 
@@ -17,14 +17,12 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/inventory"
 )
-
-// maxResults is the most hits a search sends, whatever the page asks for.
-const maxResults = 10000
 
 // TextSearchQuery is a Find-in-Files request from the workbench.
 type TextSearchQuery struct {
@@ -35,6 +33,14 @@ type TextSearchQuery struct {
 	IsWordMatch     bool               `json:"isWordMatch"`
 	MaxResults      int                `json:"maxResults"`
 	Folders         []TextSearchFolder `json:"folders"`
+}
+
+// TextSearchFolder is one workspace folder plus optional glob filters.
+type TextSearchFolder struct {
+	Path     string   `json:"path"`
+	Origin   string   `json:"origin,omitempty"` // told back on its hits
+	Includes []string `json:"includes,omitempty"`
+	Excludes []string `json:"excludes,omitempty"`
 }
 
 // TextSearchHit is one match line, or a reference, as the Search results list it: its file by origin, its 0-based
@@ -117,6 +123,15 @@ type replacer struct {
 	open     map[string]string // the editor's files by appdata.PathKey: their path
 	out      TextReplaceResult
 }
+
+// globSet is a folder's filters as patterns for doublestar: the paths to keep and the paths to drop.
+type globSet struct {
+	includes []string
+	excludes []string
+}
+
+// maxResults is the most hits a search sends, whatever the page asks for.
+const maxResults = 10000
 
 // TextSearch walks workspace folders and greps file bodies in-process, sending each file's hits as it finds them.
 func TextSearch(ctx context.Context, query TextSearchQuery, send func(TextSearchHits)) (TextSearchResult, error) {
@@ -247,6 +262,45 @@ func compileSearch(query TextSearchQuery) (*regexp.Regexp, error) {
 		pattern = `(?i)` + pattern
 	}
 	return regexp.Compile(pattern)
+}
+
+// folderPath is a folder's path as the system writes it; "" for a folder with none.
+func folderPath(folder TextSearchFolder) string {
+	path := filepath.Clean(filepath.FromSlash(folder.Path))
+	if path == "" || path == "." {
+		return ""
+	}
+	return path
+}
+
+// folderGlobs is a folder's filters as rg reads them: a glob with no ** matches at any depth, and a leading "!"
+// makes an include an exclude.
+func folderGlobs(folder TextSearchFolder) globSet {
+	var globs globSet
+	add := func(glob string, exclude bool) {
+		glob = strings.TrimSpace(glob)
+		if rest, negated := strings.CutPrefix(glob, "!"); negated {
+			glob, exclude = strings.TrimSpace(rest), true
+		}
+		if glob == "" {
+			return
+		}
+		if !strings.Contains(glob, "**") {
+			glob = "**/" + strings.TrimPrefix(glob, "/")
+		}
+		if exclude {
+			globs.excludes = append(globs.excludes, glob)
+		} else {
+			globs.includes = append(globs.includes, glob)
+		}
+	}
+	for _, include := range folder.Includes {
+		add(include, false)
+	}
+	for _, exclude := range folder.Excludes {
+		add(exclude, true)
+	}
+	return globs
 }
 
 // folder greps the files under root, sending each one's hits as it is done, at most the search's maxHits in all,
@@ -467,4 +521,24 @@ func searchFiles(ctx context.Context, root string, globs globSet, visit func(pat
 		}
 		return nil
 	})
+}
+
+// pathMatchesGlobs is whether a path from the folder's root is kept: no exclude matches it, and with includes, one
+// matches it.
+func pathMatchesGlobs(rel string, globs globSet) bool {
+	rel = filepath.ToSlash(rel)
+	for _, exclude := range globs.excludes {
+		if matches, _ := doublestar.Match(exclude, rel); matches {
+			return false
+		}
+	}
+	if len(globs.includes) == 0 {
+		return true
+	}
+	for _, include := range globs.includes {
+		if matches, _ := doublestar.Match(include, rel); matches {
+			return true
+		}
+	}
+	return false
 }

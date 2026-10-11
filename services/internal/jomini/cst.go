@@ -208,6 +208,31 @@ func ChildBlock(statement Statement) *Block {
 	return BlockOf(ValueOf(statement))
 }
 
+// Fields is a block's assignments, in order; none for no block.
+func Fields(block *Block) []*Assignment {
+	if block == nil {
+		return nil
+	}
+	var fields []*Assignment
+	for _, statement := range block.Statements {
+		if assign, isAssign := statement.(*Assignment); isAssign {
+			fields = append(fields, assign)
+		}
+	}
+	return fields
+}
+
+// ScalarOf is the one-word value the first assignment of a key in a block writes; nil where the block writes none,
+// or a block.
+func ScalarOf(block *Block, key string) *Scalar {
+	for _, field := range Fields(block) {
+		if scalar, isScalar := field.Value.(*Scalar); isScalar && field.Key.Text == key {
+			return scalar
+		}
+	}
+	return nil
+}
+
 // Walk visits every statement depth-first. depth is 0 at root; parent is the
 // enclosing block (nil at root). Returning false skips the subtree.
 func Walk(root *Root, fn func(st Statement, depth int, parent *Block) bool) {

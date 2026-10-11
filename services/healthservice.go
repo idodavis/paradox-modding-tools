@@ -24,8 +24,6 @@ func (s *HealthService) GetHealth(workspaceID string, params pages.HealthParams)
 		return nil, err
 	}
 	findings := s.findings.Current(ws)
-	ws.RLock()
-	defer ws.RUnlock()
 	return pages.Health(ws, params, findings), nil
 }
 
@@ -35,8 +33,6 @@ func (s *HealthService) GetLines(workspaceID string, places []pages.SourceAt) ([
 	if err != nil {
 		return nil, err
 	}
-	ws.RLock()
-	defer ws.RUnlock()
 	return pages.Lines(ws, places), nil
 }
 
@@ -46,7 +42,5 @@ func (s *HealthService) LocReaders(workspaceID, key string) ([]pages.Cited, erro
 	if err != nil {
 		return nil, err
 	}
-	ws.RLock()
-	defer ws.RUnlock()
 	return pages.LocReaders(ws, key), nil
 }

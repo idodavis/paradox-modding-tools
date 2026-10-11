@@ -1,5 +1,5 @@
 // graph.go is the event graph page: the definitions around a root over what they fire, hop by hop, with stubs for
-// what the page's numbers hide, cut to the origins the page shows.
+// what the page's numbers hide, cut to the origins the page shows; and the roots to pick from.
 
 package pages
 
@@ -62,6 +62,18 @@ type EventGraph struct {
 	Reason    string         `json:"reason,omitempty"`
 }
 
+// Roots is a root search's hits, grouped by database, and how many of each database the query holds.
+type Roots struct {
+	Hits      []Node          `json:"hits"`
+	Databases []DatabaseCount `json:"databases"`
+}
+
+// DatabaseCount is one database and how many roots of it a search holds.
+type DatabaseCount struct {
+	Database string `json:"database"`
+	Count    int    `json:"count"`
+}
+
 // grapher holds one graph as it is drawn: the session, the page's numbers, each definition found once, and the ids
 // drawn.
 type grapher struct {
@@ -72,10 +84,19 @@ type grapher struct {
 	defs   map[string]index.At
 }
 
+// stubMore is the database every stub is drawn in, and the Stub of one standing for fires out of a node.
+const stubMore = "more"
+
+// maxRootsPerDatabase is how many roots of one database a root search draws.
+const maxRootsPerDatabase = 8
+
 // Graph draws the definitions around a root: hop by hop over what they fire, each node's fan-out cut by the page's
 // number, the callers into the root as a stub until the page opens it, every fire between two drawn definitions,
-// the scripted effects drawn where the page shows them, and only the page's origins.
+// the scripted effects drawn where the page shows them, and only the page's origins. It takes the session's read
+// lock.
 func Graph(ws *workspace.Session, params Params) *EventGraph {
+	ws.RLock()
+	defer ws.RUnlock()
 	if params.Root == "" {
 		return &EventGraph{Reason: "Pick a root event."}
 	}
@@ -132,15 +153,6 @@ func (grapher *grapher) node(id string, root bool) {
 	})
 }
 
-// definedBy is whether one of the origins defines the id, in the database the game's definition of it is in, in any
-// copy.
-func (grapher *grapher) definedBy(id string, origins []string) bool {
-	database := grapher.def(id).Occurrence().Database
-	return slices.ContainsFunc(index.Lookup(grapher.ws.Indexes(), schema.Defines, database, id), func(def index.At) bool {
-		return slices.Contains(origins, def.File().Origin)
-	})
-}
-
 // hops draws the fires out of the root, hop by hop, each node's fan-out cut by the page's number, until the depth,
 // a hop with no new node, or the node cap.
 func (grapher *grapher) hops() {
@@ -177,6 +189,106 @@ func (grapher *grapher) hop(id string, hop int) (next []string) {
 		grapher.out.Edges = append(grapher.out.Edges, Edge{From: id, To: fire.Name, Via: fire.Via, Block: fire.Block})
 	}
 	return next
+}
+
+// followed is the fires drawn, through a scripted effect only when the page follows them: every fire with Follow,
+// else the ones with no scripted effect between.
+func followed(params Params, fires []workspace.Fire) []workspace.Fire {
+	if params.Follow {
+		return fires
+	}
+	return slices.DeleteFunc(slices.Clone(fires), func(fire workspace.Fire) bool { return fire.Via != "" })
+}
+
+// moreStub draws what a node's fan-out hides as one stub, joined to the node.
+func (grapher *grapher) moreStub(id string, hidden []workspace.Fire) {
+	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: "more:" + id, Database: stubMore, Stub: stubMore, Title: stubTitle(hidden)})
+	grapher.out.Edges = append(grapher.out.Edges, Edge{From: id, To: "more:" + id})
+}
+
+// stubTitle is how many fires a stub hides, and of what kind where they are all of one database.
+func stubTitle(hidden []workspace.Fire) string {
+	title := fmt.Sprintf("+%d more", len(hidden))
+	database := hidden[0].Database
+	if slices.ContainsFunc(hidden, func(fire workspace.Fire) bool { return fire.Database != database }) {
+		return title
+	}
+	title += " " + game.KindName(database)
+	if len(hidden) > 1 {
+		title += "s"
+	}
+	return title
+}
+
+// countReach counts the definitions within depth hops of the root, each once, by kind and by origin; with
+// Scripted, the scripted effects a chain passes through too.
+func (grapher *grapher) countReach() {
+	grapher.out.Kinds, grapher.out.Origins = map[string]int{}, map[string]int{}
+	seen := map[string]bool{}
+	grapher.countOnce(grapher.params.Root, seen)
+	frontier := []string{grapher.params.Root}
+	for hop := 0; hop < grapher.params.Depth && len(frontier) > 0; hop++ {
+		var next []string
+		for _, id := range frontier {
+			next = append(next, grapher.reachFrom(id, seen)...)
+		}
+		frontier = next
+	}
+}
+
+// reachFrom counts what one node fires that is not counted yet, and says which are new, for the next hop.
+func (grapher *grapher) reachFrom(id string, seen map[string]bool) (next []string) {
+	for _, fire := range followed(grapher.params, grapher.ws.Fires(grapher.def(id))) {
+		if grapher.params.Scripted && fire.Via != "" {
+			for _, scripted := range strings.Split(fire.Via, " → ") {
+				grapher.countOnce(scripted, seen)
+			}
+		}
+		if !seen[fire.Name] {
+			grapher.countOnce(fire.Name, seen)
+			next = append(next, fire.Name)
+		}
+	}
+	return next
+}
+
+// countOnce counts one definition, by its kind and by the origin that defines it, unless it is counted.
+func (grapher *grapher) countOnce(id string, seen map[string]bool) {
+	if seen[id] {
+		return
+	}
+	seen[id] = true
+	def := grapher.def(id)
+	grapher.out.Reach++
+	grapher.out.Kinds[game.KindName(def.Occurrence().Database)]++
+	grapher.out.Origins[def.File().Origin]++
+}
+
+// callersStub draws what fires the root, one hop in, as a stub until the page opens it; a root the game never
+// fires has none.
+func (grapher *grapher) callersStub(root index.At) {
+	params := grapher.params
+	var callers []workspace.Fire
+	if index.Fires(grapher.ws.Install.Schema, schema.Occurrence{Database: root.Occurrence().Database}) {
+		callers = followed(params, grapher.ws.FiredBy(root, true))
+	}
+	if len(callers) == 0 {
+		return
+	}
+	if !slices.Contains(params.Expand, "more-in:"+params.Root) {
+		stub := "more-in:" + params.Root
+		grapher.out.Nodes = append(grapher.out.Nodes, Node{
+			ID: stub, Database: stubMore, Stub: "fired-by", Title: fmt.Sprintf("+%d fired by", len(callers)),
+		})
+		grapher.out.Edges = append(grapher.out.Edges, Edge{From: stub, To: params.Root})
+		return
+	}
+	for _, caller := range callers {
+		if !grapher.drawn[caller.Name] {
+			grapher.node(caller.Name, false)
+		}
+		grapher.out.Edges = append(grapher.out.Edges, Edge{From: caller.Name, To: params.Root, Via: caller.Via, Block: caller.Block})
+	}
 }
 
 // between draws every fire between two drawn definitions, whatever hop found them.
@@ -257,6 +369,15 @@ func (grapher *grapher) keeps(node Node, kept map[string]bool) bool {
 	return grapher.definedBy(node.ID, grapher.params.Origins)
 }
 
+// definedBy is whether one of the origins defines the id, in the database the game's definition of it is in, in any
+// copy.
+func (grapher *grapher) definedBy(id string, origins []string) bool {
+	database := grapher.def(id).Occurrence().Database
+	return slices.ContainsFunc(index.Lookup(grapher.ws.Indexes(), schema.Defines, database, id), func(def index.At) bool {
+		return slices.Contains(origins, def.File().Origin)
+	})
+}
+
 // splice takes a node's edges away and joins each edge into it to each edge out of it, unless the pair is joined
 // already or would loop to where it began.
 func (grapher *grapher) splice(id string) {
@@ -283,4 +404,89 @@ func (grapher *grapher) splice(id string) {
 		}
 	}
 	grapher.out.Edges = rest
+}
+
+// SearchRoots is the fired events and on_actions, and what fires one but a scripted entry, whose id holds the
+// query: ids that start with it first, 8 of each database. It takes the session's read lock.
+func SearchRoots(ws *workspace.Session, query string) *Roots {
+	ws.RLock()
+	defer ws.RUnlock()
+	query = strings.ToLower(query)
+	fired, firing := firedNames(ws)
+	databaseOf := map[string]string{} // by name
+	for name, database := range fired {
+		if strings.Contains(strings.ToLower(name), query) && len(index.Lookup(ws.Indexes(), schema.Defines, database, name)) > 0 {
+			databaseOf[name] = database
+		}
+	}
+	// a name of several databases takes the first in sorted order, so no map order decides
+	for _, roots := range firing {
+		for _, root := range roots {
+			if strings.Contains(strings.ToLower(root.Name), query) && (databaseOf[root.Name] == "" || root.Database < databaseOf[root.Name]) {
+				databaseOf[root.Name] = root.Database
+			}
+		}
+	}
+	byDatabase := map[string][]string{}
+	for name, database := range databaseOf {
+		byDatabase[database] = append(byDatabase[database], name)
+	}
+	out := &Roots{}
+	for database, names := range byDatabase {
+		out.Databases = append(out.Databases, DatabaseCount{Database: database, Count: len(names)})
+	}
+	slices.SortFunc(out.Databases, func(first, second DatabaseCount) int {
+		return cmp.Or(cmp.Compare(second.Count, first.Count), strings.Compare(first.Database, second.Database))
+	})
+	drawn := newGrapher(ws, Params{})
+	for _, count := range out.Databases {
+		names := byDatabase[count.Database]
+		slices.SortFunc(names, func(first, second string) int {
+			return cmp.Or(
+				cmp.Compare(min(strings.Index(strings.ToLower(first), query), 1), min(strings.Index(strings.ToLower(second), query), 1)),
+				strings.Compare(first, second),
+			)
+		})
+		for _, id := range names[:min(maxRootsPerDatabase, len(names))] {
+			drawn.node(id, false)
+		}
+	}
+	position := func(node Node) int {
+		return slices.IndexFunc(out.Databases, func(count DatabaseCount) bool { return count.Database == node.Database })
+	}
+	slices.SortStableFunc(drawn.out.Nodes, func(first, second Node) int { return cmp.Compare(position(first), position(second)) })
+	out.Hits = drawn.out.Nodes
+	return out
+}
+
+// firedNames is, in the files the game loads, what is fired (by database) and what fires it: a scripted entry by
+// what fires through it (FiredBy), another definition by itself.
+func firedNames(ws *workspace.Session) (fired map[string]string, firing map[index.At][]workspace.Fire) {
+	fired, firing = map[string]string{}, map[index.At][]workspace.Fire{}
+	s, indexes := ws.Install.Schema, ws.Indexes()
+	for i := range indexes {
+		for _, file := range indexes[i].Files {
+			if _, loaded := index.Loaded(indexes, file.Path); !loaded {
+				continue
+			}
+			for _, ref := range indexes[i].InFile(file.Path) {
+				occurrence := ref.Occurrence()
+				if occurrence.Role != schema.Refers || !index.Fires(s, occurrence) {
+					continue
+				}
+				fired[occurrence.ID] = occurrence.Database
+				caller, inEntry := ref.Entry()
+				if _, known := firing[caller]; !inEntry || known {
+					continue
+				}
+				calling := caller.Occurrence()
+				if index.Scripted(s, calling) {
+					firing[caller] = ws.FiredBy(caller, false)
+				} else {
+					firing[caller] = []workspace.Fire{{Name: calling.ID, Database: calling.Database}}
+				}
+			}
+		}
+	}
+	return fired, firing
 }

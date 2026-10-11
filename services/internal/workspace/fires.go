@@ -70,7 +70,8 @@ func (ws *Session) newFireWalk(from index.At) *fireWalk {
 }
 
 // follow reads the references written in one definition; via is the entries entered to reach it, start the
-// reference in the walk's origin that leads there (the zero At: the reference itself).
+// reference in the walk's origin that leads there (the zero At: the reference itself). A scripted entry a reference
+// runs is followed once.
 func (walk *fireWalk) follow(def index.At, via string, start index.At) {
 	s, indexes := walk.ws.Install.Schema, walk.ws.Indexes()
 	for _, ref := range index.RefsInside(def) {
@@ -81,17 +82,12 @@ func (walk *fireWalk) follow(def index.At, via string, start index.At) {
 			walk.out = append(walk.out, walk.locateFire(fire, fireRef{walk.from, first}, fireRef{def, ref}))
 		case index.Runs(s, occurrence):
 			called, _ := index.Resolve(s, indexes, occurrence, ref.File().Path)
-			walk.enter(called, via, first)
-		}
-	}
-}
-
-// enter follows each scripted entry a reference runs that the walk has not entered yet.
-func (walk *fireWalk) enter(called []index.At, via string, start index.At) {
-	for _, target := range called {
-		if !walk.seen[target] {
-			walk.seen[target] = true
-			walk.follow(target, strings.TrimPrefix(via+" → "+target.Occurrence().ID, " → "), start)
+			for _, target := range called {
+				if !walk.seen[target] {
+					walk.seen[target] = true
+					walk.follow(target, strings.TrimPrefix(via+" → "+target.Occurrence().ID, " → "), first)
+				}
+			}
 		}
 	}
 }
@@ -175,17 +171,15 @@ func (walk *fireWalk) fireSite(firing fireRef) (block, command, args string) {
 	}
 	if last > 0 {
 		block = keyOf(chain[0])
-		for _, field := range blockFields(jomini.ChildBlock(chain[0])) {
-			if value, isScalar := field.Value.(*jomini.Scalar); isScalar && field.Key.Text == "name" {
-				block += " " + value.Text[strings.LastIndex(value.Text, ".")+1:]
-			}
+		if value := jomini.ScalarOf(jomini.ChildBlock(chain[0]), "name"); value != nil {
+			block += " " + value.Text[strings.LastIndex(value.Text, ".")+1:]
 		}
 	}
 	if last < 0 {
 		return block, "", args
 	}
 	command = keyOf(chain[last])
-	for _, field := range blockFields(jomini.ChildBlock(chain[last])) {
+	for _, field := range jomini.Fields(jomini.ChildBlock(chain[last])) {
 		if jomini.Statement(field) != leaf && field.Value != nil {
 			args = strings.TrimPrefix(args+", "+field.Key.Text+" = "+parsed.Flat(field.Value.NodeRange()), ", ")
 		}
@@ -231,18 +225,4 @@ func newFire(name, database, via string) Fire {
 func byName(fires []Fire) []Fire {
 	slices.SortStableFunc(fires, func(first, second Fire) int { return strings.Compare(first.Name, second.Name) })
 	return slices.CompactFunc(fires, func(first, second Fire) bool { return first.Name == second.Name })
-}
-
-// blockFields is a block's assignments; none for no block.
-func blockFields(block *jomini.Block) []*jomini.Assignment {
-	if block == nil {
-		return nil
-	}
-	var fields []*jomini.Assignment
-	for _, statement := range block.Statements {
-		if assign, isAssign := statement.(*jomini.Assignment); isAssign {
-			fields = append(fields, assign)
-		}
-	}
-	return fields
 }

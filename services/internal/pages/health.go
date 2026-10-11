@@ -4,7 +4,8 @@
 
 // Package pages is what each of the app's pages asks of an open workspace: the Health report, the event graph with
 // one definition's detail, and the searches over the workspace's folders. Each answer is a function of the session
-// (or the folders) and the page's parameters; the services open the session, take its lock and call.
+// (or the folders) and the page's parameters; the services open the session and call, and each answer over a
+// session takes its read lock itself.
 package pages
 
 import (
@@ -115,9 +116,11 @@ type sourceIndex struct {
 }
 
 // Health is the workspace's report: the contests and overrides in the load order asked for, what each mod depends
-// on, the names nothing defines, each language's gaps and the findings no card above lists. It is called under the
-// session's read lock; findings is Findings.Current's, taken before it.
+// on, the names nothing defines, each language's gaps and the findings no card above lists. It takes the session's
+// read lock; findings is Findings.Current's, which takes it itself, so Current is called before.
 func Health(ws *workspace.Session, params HealthParams, findings map[string][]lsp.Diagnostic) *HealthReport {
+	ws.RLock()
+	defer ws.RUnlock()
 	report := &HealthReport{}
 	sources := &sourceIndex{report: report, numbers: map[string]int{}}
 	preview := previewOrder(ws, params.Order)
@@ -133,8 +136,10 @@ func Health(ws *workspace.Session, params HealthParams, findings map[string][]ls
 }
 
 // Lines is the source a pane shows at each place: a definition's statement, its first ten lines and a "…" where it
-// runs on, or a reference's line.
+// runs on, or a reference's line. It takes the session's read lock.
 func Lines(ws *workspace.Session, places []SourceAt) [][]string {
+	ws.RLock()
+	defer ws.RUnlock()
 	out := make([][]string, len(places))
 	for i, place := range places {
 		parsed, _, err := ws.Parsed(place.Path)
@@ -151,8 +156,10 @@ func Lines(ws *workspace.Session, places []SourceAt) [][]string {
 	return out
 }
 
-// LocReaders is everything that reads one localization key.
+// LocReaders is everything that reads one localization key. It takes the session's read lock.
 func LocReaders(ws *workspace.Session, key string) []Cited {
+	ws.RLock()
+	defer ws.RUnlock()
 	var readers []Cited
 	for _, ref := range index.Lookup(ws.Indexes(), schema.Refers, schema.Localization, key) {
 		occurrence := ref.Occurrence()

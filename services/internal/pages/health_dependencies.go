@@ -50,7 +50,9 @@ func dependencies(ws *workspace.Session, sources *sourceIndex) []Dependency {
 	return out
 }
 
-// file takes in each reference of a file that names an entry of a mod: its edges, one use each.
+// file takes in each reference of a file that names an entry of a mod: its edges, one use each. A name no mod's
+// file defines any longer is the other mod's removal; else the edges go to the origins of the definitions the game
+// keeps.
 func (walk *dependencyWalk) file(file inventory.File) {
 	for _, entry := range walk.ws.Workspace.InFile(file.Path) {
 		ref := entry.Occurrence()
@@ -59,7 +61,13 @@ func (walk *dependencyWalk) file(file inventory.File) {
 			continue
 		}
 		defs := walk.resolve(ref, file.Path)
-		edges, database := walk.edges(file, ref, defs)
+		var edges []dependency
+		var database string
+		if len(defs) == 0 {
+			edges, database = walk.removedEdge(file, ref)
+		} else {
+			edges, database = walk.holderEdges(file, ref, defs)
+		}
 		for _, edge := range edges {
 			row := walk.rows[edge]
 			row.From, row.To, row.Affected = edge.from, edge.to, edge.affected
@@ -81,15 +89,6 @@ func (walk *dependencyWalk) resolve(ref schema.Occurrence, path string) []index.
 	defs, _ := index.Resolve(walk.ws.Install.Schema, walk.ws.Indexes(), ref, path)
 	walk.resolved[key] = defs
 	return defs
-}
-
-// edges is the edges a reference makes, and the database its row names: a name no mod's file defines any longer is
-// the other mod's removal, else the origins of the definitions the game keeps.
-func (walk *dependencyWalk) edges(file inventory.File, ref schema.Occurrence, defs []index.At) ([]dependency, string) {
-	if len(defs) == 0 {
-		return walk.removedEdge(file, ref)
-	}
-	return walk.holderEdges(file, ref, defs)
 }
 
 // removedEdge is the edge to the mod whose file leaves out a name the install defines, which this file writes.

@@ -7,7 +7,7 @@
 import { computed, h, ref, resolveComponent, shallowRef, useTemplateRef } from "vue";
 import type { TableColumn } from "@nuxt/ui";
 import type { ColumnFiltersState, HeaderContext, Row as TableRow, SortingState } from "@tanstack/vue-table";
-import type { Contest, Dangling, Dependency, Problem } from "@services/models";
+import type { Contest, Dangling, Dependency, Problem } from "@services/internal/pages/models";
 import type { File as SourceFile } from "@services/internal/inventory/models";
 import { CARDS, typeOf, type Card, type Gap, type Row } from "../../composables/useHealth";
 import { useWorkspaceStore } from "../../stores/workspace";

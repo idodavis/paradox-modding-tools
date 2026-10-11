@@ -31,62 +31,11 @@ export interface Cited {
 }
 
 /**
- * Contest is one name two origins define, its definitions in load order, with the game's rule.
- */
-export interface Contest {
-    "database": string;
-
-    /**
-     * what one of its database is called (game.KindName)
-     */
-    "kind": string;
-    "name": string;
-
-    /**
-     * the position in Sites of the definition the game keeps
-     */
-    "winner": number;
-    "firstWins": boolean;
-
-    /**
-     * FIOS (first wins) or LIOS (last wins), or the deciding entry mode (REPLACE, INJECT)
-     */
-    "rule": string;
-    "sites": Site[] | null;
-}
-
-/**
- * Dangling is one name a mod writes that nothing defines, and where.
- */
-export interface Dangling {
-    /**
-     * the check that found it, one of danglingChecks
-     */
-    "code": string;
-    "database": string;
-    "kind": string;
-    "name": string;
-    "sites": Site[] | null;
-}
-
-/**
  * DatabaseCount is one database and how many roots of it a search holds.
  */
 export interface DatabaseCount {
     "database": string;
     "count": number;
-}
-
-/**
- * Dependency is one mod using a name another mod's definitions decide, and each place it does: it
- * depends on the other where only that mod defines the name, and is affected by it where the
- * other's definition differs from the one it hides, adds to it, or leaves it out.
- */
-export interface Dependency {
-    "from": string;
-    "to": string;
-    "affected": boolean;
-    "sites": Site[] | null;
 }
 
 /**
@@ -340,44 +289,6 @@ export interface GitStatus {
 }
 
 /**
- * Health is the report.
- */
-export interface Health {
-    /**
-     * every file a row names, at the number it names it by
-     */
-    "sources": inventory$0.File[] | null;
-
-    /**
-     * names two or more mods define
-     */
-    "contests": Contest[] | null;
-
-    /**
-     * names one mod defines over, or adds to, another origin's
-     */
-    "overrides": Contest[] | null;
-    "depends": Dependency[] | null;
-    "dangling": Dangling[] | null;
-    "loc": Language[] | null;
-
-    /**
-     * what the editor's checks find that no card above shows
-     */
-    "problems": Problem[] | null;
-}
-
-/**
- * HealthParams is what the page asks for: the load order to preview.
- */
-export interface HealthParams {
-    /**
-     * mod ids in the order to judge; empty for the workspace's own
-     */
-    "order": string[] | null;
-}
-
-/**
  * IdeRoot is one folder in the workspace IDE multi-root set.
  */
 export interface IdeRoot {
@@ -414,18 +325,6 @@ export interface ImageFacts {
     "bytes": number;
     "url": string;
     "reject"?: string;
-}
-
-/**
- * Language is one language's localization gaps.
- */
-export interface Language {
-    "language": string;
-
-    /**
-     * keys a mod has in the workspace language but not in this one
-     */
-    "untranslated": LocRow[] | null;
 }
 
 /**
@@ -563,24 +462,6 @@ export interface ListingSummary {
 }
 
 /**
- * LocRow is one key and the file it is in.
- */
-export interface LocRow {
-    "key": string;
-
-    /**
-     * its number in Sources
-     */
-    "file": number;
-    "line": number;
-
-    /**
-     * the mod's file in the missing language it goes in
-     */
-    "target": number;
-}
-
-/**
  * Node is one definition drawn, or a stub standing for what is hidden.
  */
 export interface Node {
@@ -679,20 +560,6 @@ export interface PathStat {
 }
 
 /**
- * Problem is one finding of the editor's checks, at its site.
- */
-export interface Problem {
-    "code": string;
-    "message": string;
-    "site": Site;
-
-    /**
-     * a localization file's language
-     */
-    "language"?: string;
-}
-
-/**
  * PublishResult is Steam's answer.
  */
 export interface PublishResult {
@@ -756,55 +623,6 @@ export interface Section {
      * a portrait's character
      */
     "portrait"?: string;
-}
-
-/**
- * Site is where a definition or a reference is written.
- */
-export interface Site {
-    /**
-     * its number in Sources
-     */
-    "file": number;
-    "line": number;
-    "col": number;
-
-    /**
-     * a dependency's use: the database and name written there
-     */
-    "database"?: string;
-    "name"?: string;
-
-    /**
-     * a definition added to the kept one (an inject, a merged on_action)
-     */
-    "injected"?: boolean;
-
-    /**
-     * a dependency's use of a name the other mod's file left out
-     */
-    "removed"?: boolean;
-
-    /**
-     * a replaced file's row: the names the file defines
-     */
-    "defines"?: string[] | null;
-
-    /**
-     * and those it and the kept file both define but write otherwise
-     */
-    "changed"?: string[] | null;
-}
-
-/**
- * SourceAt is one place a pane shows the source of: a definition's statement, or a reference's
- * line.
- */
-export interface SourceAt {
-    "path": string;
-    "line": number;
-    "col": number;
-    "definition": boolean;
 }
 
 /**

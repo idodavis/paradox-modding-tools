@@ -10,7 +10,8 @@ import { LastRunCrashed } from "@services/logservice";
 import { ReadImageFacts, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
-import type { EventGraph, GitCommit, Params, Roots, SourceAt } from "@services/models";
+import type { EventGraph, GitCommit, Params, Roots } from "@services/models";
+import type { SourceAt } from "@services/internal/pages/models";
 import {
   Definition,
   DiagnosticCodes,

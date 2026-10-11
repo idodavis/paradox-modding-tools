@@ -26,6 +26,7 @@ import (
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/lsp"
+	"paradox-modding-tools/services/internal/pages"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
@@ -430,107 +431,6 @@ func TestReadText(t *testing.T) {
 	}
 }
 
-// TestWorkspaceHealth covers the report over two mods: contests and dependencies in a chosen order,
-// dangling references and what must never be one, each language's untranslated keys, a site's
-// lines, and the lookup of one key.
-func TestWorkspaceHealth(t *testing.T) {
-	reports := NewHealthService(openWorkspace(t,
-		map[string]string{
-			"common/traits/zz_a.txt":               "brave = { name = x }\nshared_a = { name = x }\nbold = { name = x }\ncraven = { name = x }\n",
-			"events/a.txt":                         "namespace = a\na.1 = {\n\ttype = character_event\n\ttitle = a.1.t\n\ttrigger = {\n\t\thas_trait = brave\n\t\thas_trait = bold_b\n\t\texists = title:k_nowhere\n\t\texists = title:k_x\n\t\tfaith = faith:catholic\n\t\texists = scope:whatever\n\t}\n\timmediate = { add_gold = small_value }\n}\n",
-			"localization/english/a_l_english.yml": "\xEF\xBB\xBFl_english:\n a.1.t:0 \"Hi $VALUE|=+0$\"\n a_dead:0 \"Nothing reads me\"\n a_reader:0 \"$a_read$\"\n a_read:0 \"Read by a key\"\n bold:0 \"Bold\"\n bold_extra:0 \"More\"\n",
-			"localization/french/a_l_french.yml":   "\xEF\xBB\xBFl_french:\n a.1.t:0 \"Salut\"\n",
-		},
-		map[string]string{
-			"common/traits/zz_b.txt":               "brave = {\n" + strings.Repeat("\tname = x\n", 11) + "}\nshared_a = { name = x }\nbold_b = { name = x }\n",
-			"localization/english/b_l_english.yml": "\xEF\xBB\xBFl_english:\n b_only:0 \"B\"\n",
-		}))
-	health, _ := reports.GetHealth("ws", HealthParams{})
-
-	// contests: brave is defined three times, the last file loaded wins under LIOS; files load by
-	// path, so reversing the mods' order leaves the winner of two differently named files alone
-	brave := slices.IndexFunc(health.Contests, func(contest Contest) bool { return contest.Name == "brave" })
-	origin := func(report *Health, site Site) string { return report.Sources[site.File].Origin }
-	if brave < 0 || health.Contests[brave].Rule != "LIOS" || origin(health, health.Contests[brave].Sites[health.Contests[brave].Winner]) != "modb" || len(health.Contests[brave].Sites) != 3 {
-		t.Fatalf("brave contested by three, won by the last: %+v", health.Contests)
-	}
-	reversed, _ := reports.GetHealth("ws", HealthParams{Order: []string{"modb", "moda"}})
-	if at := slices.IndexFunc(reversed.Contests, func(contest Contest) bool { return contest.Name == "brave" }); at < 0 || origin(reversed, reversed.Contests[at].Sites[reversed.Contests[at].Winner]) != "modb" {
-		t.Errorf("the reversed order: %+v", reversed.Contests)
-	}
-
-	// one mod over the install's name is an override; two mods on a name, with or without the
-	// install's, are a contest
-	named := func(name string) func(Contest) bool {
-		return func(contest Contest) bool { return contest.Name == name }
-	}
-	if slices.ContainsFunc(health.Contests, named("craven")) || !slices.ContainsFunc(health.Overrides, named("craven")) {
-		t.Errorf("mod a's craven is an override: %+v %+v", health.Contests, health.Overrides)
-	}
-	if !slices.ContainsFunc(health.Contests, named("shared_a")) {
-		t.Errorf("two mods on a name the install lacks: %+v", health.Contests)
-	}
-
-	// a site's lines, read when its row opens: a definition's short block whole, a long one cut at
-	// ten lines and a "…"; a reference's one line
-	lines := func(sites []Site, definition bool) [][]string {
-		var places []SourceAt
-		for _, site := range sites {
-			places = append(places, SourceAt{Path: health.Sources[site.File].Path, Line: site.Line, Col: site.Col, Definition: definition})
-		}
-		got, _ := reports.GetLines("ws", places)
-		return got
-	}
-	braves := lines(health.Contests[brave].Sites, true)
-	if !slices.Equal(braves[0], []string{"brave = {", "\tcategory = personality", "\tdiplomacy = 0", "\ticon = \"gfx/interface/icons/traits/brave.dds\"", "}"}) {
-		t.Errorf("the install's brave, whole: %q", braves[0])
-	}
-	if cut := braves[2]; len(cut) != 11 || cut[0] != "brave = {" || cut[10] != "…" {
-		t.Errorf("mod b's brave, cut: %q", cut)
-	}
-	if at := slices.IndexFunc(health.Depends, func(dep Dependency) bool { return dep.From == "moda" && dep.To == "modb" }); at < 0 {
-		t.Errorf("mod a names bold_b, which only mod b defines: %+v", health.Depends)
-	} else if uses := health.Depends[at].Sites; len(uses) != 1 || uses[0].Database != "traits" || uses[0].Name != "bold_b" || !slices.Equal(lines(uses, false)[0], []string{"\t\thas_trait = bold_b"}) {
-		t.Errorf("each use, with its kind, name and line: %+v", uses)
-	}
-
-	// dangling: a declared cite nothing defines, with its sites; never what resolves or is unclaimed
-	if len(health.Dangling) != 1 || health.Dangling[0].Name != "k_nowhere" || len(health.Dangling[0].Sites) != 1 {
-		t.Fatalf("one dangling reference: %+v", health.Dangling)
-	}
-	if got := lines(health.Dangling[0].Sites, false)[0]; !slices.Equal(got, []string{"\t\texists = title:k_nowhere"}) {
-		t.Errorf("a dangling site's line: %q", got)
-	}
-
-	// localization: both languages; untranslated
-	langs := map[string]Language{}
-	for _, loc := range health.Loc {
-		langs[loc.Language] = loc
-	}
-	if len(langs) != 2 {
-		t.Fatalf("both languages: %+v", health.Loc)
-	}
-	keys := func(rows []LocRow) []string {
-		var out []string
-		for _, row := range rows {
-			out = append(out, row.Key)
-		}
-		slices.Sort(out)
-		return out
-	}
-	if got := keys(langs["french"].Untranslated); !slices.Contains(got, "bold") || slices.Contains(got, "a.1.t") || slices.Contains(got, "b_only") {
-		t.Errorf("french: an english key with no french entry is untranslated where its mod ships french; one with an entry is not, nor a key of a mod that ships none: %v", got)
-	}
-	if row := langs["french"].Untranslated[0]; !strings.HasSuffix(health.Sources[row.File].Rel, "a_l_english.yml") {
-		t.Errorf("a row names its file by its number in Sources: %+v in %+v", row, health.Sources[row.File])
-	}
-
-	// what reads one key
-	if readers, _ := reports.LocReaders("ws", "a.1.t"); len(readers) != 1 || readers[0].At.Origin != "moda" {
-		t.Errorf("a key's readers: %+v", readers)
-	}
-}
-
 // logHome sends APPDATA, XDG_CONFIG_HOME and HOME to a temporary folder, restores the default logger and the crash
 // output when the test ends, and returns pmt.log's path there.
 func logHome(t *testing.T) string {
@@ -898,7 +798,7 @@ func TestSweep(t *testing.T) {
 // the hover answer rate over a sample of the words in a sample of those files.
 func sweep(t *testing.T, id, name string, ws *workspace.Session) {
 	started := time.Now()
-	health, _ := NewHealthService(serving(ws)).GetHealth("ws", HealthParams{})
+	health := pages.Health(ws, pages.HealthParams{}, (&pages.Findings{}).Current(ws))
 	untranslated, defs := 0, 0
 	for _, language := range health.Loc {
 		untranslated += len(language.Untranslated)

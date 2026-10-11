@@ -4,7 +4,15 @@
  */
 import { computed, onActivated, ref, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
-import type { Contest, Dangling, Dependency, Health, LocRow, Problem, Site } from "@services/models";
+import type {
+  Contest,
+  Dangling,
+  Dependency,
+  HealthReport,
+  LocRow,
+  Problem,
+  Site,
+} from "@services/internal/pages/models";
 import { ReorderWorkspaceMods } from "@services/workspaceservice";
 import { healthQuery } from "../queries";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -92,7 +100,7 @@ export function typeOf(row: Row): { label: string; color: string } {
 }
 
 /** A card's rows in a report. */
-export function rowsOf(health: Health | null | undefined, card: Card): Row[] {
+export function rowsOf(health: HealthReport | null | undefined, card: Card): Row[] {
   const problems = health?.problems ?? [];
   const coded = (of: Card) => problems.filter((problem) => (typeOfCode(problem.code)?.[2] ?? "script") === of);
   switch (card) {

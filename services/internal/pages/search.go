@@ -1,9 +1,6 @@
 // search.go is Find in Files and Replace all over the workspace's folders, and the file search: each file greped in
 // a worker per core, its hits sent as it is done.
 
-// Package pages is what each of the app's pages asks of an open workspace: the Health report, the event graph with
-// one definition's detail, and the searches over the workspace's folders. Each answer is a function of the session
-// (or the folders) and the page's parameters; the services open the session, take its lock and call.
 package pages
 
 import (

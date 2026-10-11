@@ -172,7 +172,7 @@ func ScanMods(ctx context.Context, install *Install, mods []Mod) (*Index, error)
 
 		// each folder its descriptor unloads, held lower-case, slash separated and without the stage an
 		// inventory root drops
-		descriptor, _ := modfiles.ReadDescriptor(info.ID, mod.Dir)
+		descriptor, _ := modfiles.LoadDescriptor(info.ID, mod.Dir)
 		for _, folder := range descriptor.ReplacePaths {
 			folder = strings.Trim(strings.ReplaceAll(strings.ToLower(folder), `\`, "/"), "/")
 			if stage, rest, staged := strings.Cut(folder, "/"); staged && slices.Contains(info.StageRoots, stage) {

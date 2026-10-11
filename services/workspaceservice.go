@@ -305,7 +305,7 @@ func (s *WorkspaceService) AddWorkspaceMod(workspaceID, path string) (*Workspace
 	if err != nil {
 		return nil, err
 	}
-	fields, err := modfiles.ReadDescriptor(gameID, path)
+	fields, err := modfiles.LoadDescriptor(gameID, path)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +383,7 @@ func (s *WorkspaceService) SetModListingImage(workspaceID, modID, src string) (s
 	if err != nil {
 		return "", err
 	}
-	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
+	fields, err := modfiles.LoadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return "", err
 	}

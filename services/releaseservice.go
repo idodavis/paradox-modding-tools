@@ -195,7 +195,7 @@ func (s *ReleaseService) ListingSummary(workspaceID, modID string) (*ListingSumm
 	if err != nil {
 		return nil, err
 	}
-	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
+	fields, err := modfiles.LoadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (s *ReleaseService) CreateDescriptionFile(workspaceID, modID string) error 
 	if rel == "" {
 		return errors.New("steam's own text has no file to create")
 	}
-	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
+	fields, err := modfiles.LoadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return err
 	}
@@ -271,7 +271,7 @@ func (s *ReleaseService) SetListingLink(workspaceID, modID, remoteFileID, thumbn
 	if err != nil {
 		return nil, err
 	}
-	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
+	fields, err := modfiles.LoadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +430,7 @@ func (s *ReleaseService) CompareWithSteam(workspaceID, modID string) (*SteamComp
 		return out, nil
 	}
 	out.From, out.UploadedAt, out.Title, out.Root = page.From, page.At, page.Title, filepath.Join(dir, "files")
-	theirs, err := modfiles.ReadDescriptor(ws.GameID, out.Root)
+	theirs, err := modfiles.LoadDescriptor(ws.GameID, out.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +540,7 @@ func (s *ReleaseService) ImportSteamExtras(workspaceID, modID string) error {
 // fetchItem asks Steam for the mod's Workshop item: its page, and with files its files downloaded; it
 // returns the item's id.
 func (s *ReleaseService) fetchItem(ws *Workspace, mod *WorkspaceMod, files bool) (string, steam.Response, error) {
-	fields, err := modfiles.ReadDescriptor(ws.GameID, mod.Path)
+	fields, err := modfiles.LoadDescriptor(ws.GameID, mod.Path)
 	if err != nil {
 		return "", steam.Response{}, err
 	}
@@ -577,7 +577,7 @@ func (s *ReleaseService) steamLibrary(workspaceID string) (string, uint32, error
 // loadFrom reads a mod's listing: its descriptor, its description in its source's file, its changelog and its previews.
 func (s *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
 	root := mod.Path
-	fields, err := modfiles.ReadDescriptor(ws.GameID, root)
+	fields, err := modfiles.LoadDescriptor(ws.GameID, root)
 	if err != nil {
 		return nil, err
 	}
@@ -627,7 +627,7 @@ func summarize(gameID string, mod *WorkspaceMod, fields modfiles.ListingFields) 
 	summary.DescSource, summary.DescRel = description(mod)
 	summary.DescExists = summary.DescRel != "" && exists(filepath.Join(mod.Path, filepath.FromSlash(summary.DescRel)))
 	if dir, page := loadSnapshot(fields.RemoteFileID); page != nil {
-		theirs, _ := modfiles.ReadDescriptor(gameID, filepath.Join(dir, "files"))
+		theirs, _ := modfiles.LoadDescriptor(gameID, filepath.Join(dir, "files"))
 		summary.SteamVersion = theirs.Version
 	}
 	return summary

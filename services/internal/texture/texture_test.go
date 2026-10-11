@@ -2,13 +2,17 @@ package texture
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"image"
 	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+
+	"paradox-modding-tools/services/internal/inventory"
 )
 
 // dds builds a DDS file head: magic, 124 byte header, and a DX10 header when dxgiFormat is set.
@@ -87,5 +91,57 @@ func TestInfo(t *testing.T) {
 
 	if _, err := Info(filepath.Join(dir, "missing.dds")); err == nil {
 		t.Error("a missing file read without an error")
+	}
+}
+
+// TestInstallImagesHaveHeaders is the gate over the real installs: every non-empty image gives up its header. It
+// opens some sixty thousand images; set PMT_SOURCE_GATE=1 and the three PMT_TEST_INSTALL_ variables.
+func TestInstallImagesHaveHeaders(t *testing.T) {
+	if testing.Short() || os.Getenv("PMT_SOURCE_GATE") == "" {
+		t.Skip("opens every image of three installs; set PMT_SOURCE_GATE=1")
+	}
+
+	for _, testCase := range []struct{ game, env string }{
+		{"ck3", "PMT_TEST_INSTALL_CK3"}, {"vic3", "PMT_TEST_INSTALL_VIC3"}, {"eu5", "PMT_TEST_INSTALL_EU5"},
+	} {
+		install := os.Getenv(testCase.env)
+		if install == "" {
+			t.Errorf("%s is not set: the gate cannot clear a game it never walked", testCase.env)
+			continue
+		}
+
+		var images, bad, empty int
+		var examples []string
+		formats := map[string]int{}
+		for _, file := range inventory.Files("vanilla", inventory.Roots(install)) {
+			if file.Format != inventory.Image {
+				continue
+			}
+
+			// the games ship a handful of zero byte images, which have no header to read
+			if stat, err := os.Stat(file.Path); err == nil && stat.Size() == 0 {
+				empty++
+				continue
+			}
+			images++
+			info, err := Info(file.Path)
+			if err != nil || info.Width <= 0 || info.Height <= 0 {
+				bad++
+				if len(examples) < 8 {
+					examples = append(examples, file.Rel)
+				}
+				continue
+			}
+			formats[info.Format]++
+		}
+		names := make([]string, 0, len(formats))
+		for name := range formats {
+			names = append(names, name)
+		}
+		slices.SortFunc(names, func(first, second string) int { return cmp.Compare(formats[second], formats[first]) })
+		t.Logf("IMAGES %s: %d read, %d failed, %d empty files skipped; formats %v", testCase.game, images, bad, empty, names)
+		if bad > 0 {
+			t.Errorf("%s: %d of %d images gave no header facts, among them %v", testCase.game, bad, images, examples)
+		}
 	}
 }

@@ -1,4 +1,4 @@
-// image.go decodes the games' images a browser cannot draw: DDS (BC1, BC2, BC3, BC7, and an uncompressed surface by
+// decode.go decodes the games' images a browser cannot draw: DDS (BC1, BC2, BC3, BC7, and an uncompressed surface by
 // its channel masks) and TGA (true-color or grey, raw or run-length). BC7's tables are its spec's
 // (ARB_texture_compression_bptc).
 
@@ -17,31 +17,36 @@ import (
 	"strings"
 )
 
-// MaxSide is the most pixels a side of a DDS is decoded at: a bigger one is decoded at its biggest mip level that fits.
-const MaxSide = 4096
-
-// Decode decodes the image at path: a DDS at its first mip level, or the biggest within MaxSide; a TGA; anything
-// else by its magic (the games ship a PNG named .dds). A DDS format it does not decode is an error naming the format.
-func Decode(path string) (image.Image, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	switch {
-	case bytes.HasPrefix(data, []byte("DDS ")):
-		return decodeDDS(data)
-	case strings.EqualFold(filepath.Ext(path), ".tga"):
-		return decodeTGA(data)
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	return img, err
-}
-
 // blockFormat is a block-compressed format: the bytes of each 4×4 block, and its decoder.
 type blockFormat struct {
 	size   int
 	decode func(block []byte, out *[16]color.NRGBA)
 }
+
+// bitReader is the bits of one BC7 block, read lowest bit first from a cursor.
+type bitReader struct {
+	block [17]byte // the block and a spare byte past its end, which a take across the last byte boundary touches
+	pos   int      // the cursor, in bits
+}
+
+// bc7Mode is each BC7 mode's subsets, partition, rotation and index-selection bits, color and alpha bits, a p-bit an
+// endpoint or a subset, and its index bits (a second set for alpha where it has one).
+type bc7Mode struct{ ns, pb, rb, isb, cb, ab, epb, spb, ib, ib2 int }
+
+// bc7State is a BC7 block part-way through its decoding: its bits, its mode, its endpoints, the choices that hold for
+// all 16 pixels, the weights its index bits pick from, and where the next pixel's color and alpha indices start (the
+// color indices of the 16 pixels come first, then the alpha ones).
+type bc7State struct {
+	stream                         bitReader
+	mode                           bc7Mode
+	ends                           [6][4]int
+	partition, rotation, selection int
+	colorWeights, alphaWeights     []int
+	colorPos, alphaPos             int
+}
+
+// MaxSide is the most pixels a side of a DDS is decoded at: a bigger one is decoded at its biggest mip level that fits.
+const MaxSide = 4096
 
 var (
 	bc1Format = blockFormat{8, func(b []byte, out *[16]color.NRGBA) { bc1Color(b, out, false) }}
@@ -57,154 +62,8 @@ var (
 	}
 )
 
-// decodeDDS decodes a DDS's first face at the first mip level within MaxSide.
-func decodeDDS(data []byte) (image.Image, error) {
-	info, err := ddsInfo(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	u32 := func(off int) uint32 { return binary.LittleEndian.Uint32(data[off:]) }
-	offset := 128
-	if string(data[84:88]) == "DX10" {
-		offset = 148
-	}
-
-	// an uncompressed surface's channels: its masks (red, green, blue, alpha), alpha only where its flags say so and a
-	// luminance's grey in all three; a DX10 one's by its byte order
-	const hasAlpha, alphaOnly, luminance = 0x1, 0x2, 0x20000
-	flags, depth, masks := u32(80), int(u32(88)), [4]uint32{u32(92), u32(96), u32(100), u32(104)}
-	switch {
-	case offset == 148 && strings.HasPrefix(info.Format, "RGBA8"):
-		depth, masks = 32, [4]uint32{0xff, 0xff00, 0xff0000, 0xff000000}
-	case offset == 148 && strings.HasPrefix(info.Format, "BGRA8"):
-		depth, masks = 32, [4]uint32{0xff0000, 0xff00, 0xff, 0xff000000}
-	case offset == 148:
-		depth = 0
-	case flags&luminance != 0:
-		masks[1], masks[2] = masks[0], masks[0]
-	}
-	if offset == 128 && flags&(hasAlpha|alphaOnly) == 0 {
-		masks[3] = 0
-	}
-
-	block, compressed := ddsBlocks[info.Format]
-	if !compressed && (depth == 0 || depth%8 != 0 || depth > 32 || masks == [4]uint32{}) {
-		return nil, fmt.Errorf("DDS %s is not shown", info.Format)
-	}
-	size := func(w, h int) int {
-		if compressed {
-			return max(1, (w+3)/4) * max(1, (h+3)/4) * block.size
-		}
-		return w * h * depth / 8
-	}
-	w, h := info.Width, info.Height
-	for level := 1; level < info.Mips && max(w, h) > MaxSide; level++ {
-		offset += size(w, h)
-		w, h = max(1, w/2), max(1, h/2)
-	}
-	if w <= 0 || h <= 0 || offset+size(w, h) > len(data) {
-		return nil, errors.New("the DDS file is shorter than its header says")
-	}
-
-	img := image.NewNRGBA(image.Rect(0, 0, w, h))
-	src := data[offset:]
-	if !compressed {
-		step := depth / 8
-		for i := range w * h {
-			var raw [4]byte
-			copy(raw[:], src[i*step:i*step+step])
-			v := binary.LittleEndian.Uint32(raw[:])
-			img.SetNRGBA(i%w, i/w, color.NRGBA{channel(v, masks[0], 0), channel(v, masks[1], 0), channel(v, masks[2], 0), channel(v, masks[3], 255)})
-		}
-		return img, nil
-	}
-	var px [16]color.NRGBA
-	for by := range (h + 3) / 4 {
-		for bx := range (w + 3) / 4 {
-			block.decode(src[:block.size], &px)
-			src = src[block.size:]
-			for i, c := range px {
-				if x, y := bx*4+i%4, by*4+i/4; x < w && y < h {
-					img.SetNRGBA(x, y, c)
-				}
-			}
-		}
-	}
-	return img, nil
-}
-
-// channel is the 8-bit value of a pixel's channel under its mask; none is the fallback.
-func channel(v, mask uint32, none uint8) uint8 {
-	if mask == 0 {
-		return none
-	}
-	width := bits.OnesCount32(mask)
-	return uint8(uint64((v&mask)>>bits.TrailingZeros32(mask)) * 255 / (1<<width - 1))
-}
-
-// bc1Color decodes a BC1 color block: two RGB565 endpoints and a 2-bit index a pixel. Its four colors are the
-// endpoints and the two between, but where c0 <= c1 in a block of its own the third is halfway and the fourth clear;
-// in BC2 and BC3 (opaque) it is always four.
-func bc1Color(src []byte, out *[16]color.NRGBA, opaque bool) {
-	c0, c1 := binary.LittleEndian.Uint16(src), binary.LittleEndian.Uint16(src[2:])
-	p := [4]color.NRGBA{rgb565(c0), rgb565(c1)}
-	if c0 > c1 || opaque {
-		p[2], p[3] = mix(p[0], p[1], 2, 1, 3), mix(p[0], p[1], 1, 2, 3)
-	} else {
-		p[2] = mix(p[0], p[1], 1, 1, 2)
-	}
-	for i := range out {
-		out[i] = p[src[4+i/4]>>(2*(i%4))&3]
-	}
-}
-
-func rgb565(v uint16) color.NRGBA {
-	r, g, b := uint8(v>>8)&0xf8, uint8(v>>3)&0xfc, uint8(v<<3)
-	return color.NRGBA{r | r>>5, g | g>>6, b | b>>5, 255}
-}
-
-// mix is (a*x + b*y) / d of each color channel, opaque.
-func mix(x, y color.NRGBA, a, b, d int) color.NRGBA {
-	at := func(u, v uint8) uint8 { return uint8((a*int(u) + b*int(v)) / d) }
-	return color.NRGBA{at(x.R, y.R), at(x.G, y.G), at(x.B, y.B), 255}
-}
-
-// bc2 is a 4-bit alpha a pixel, then a BC1 color block.
-func bc2(src []byte, out *[16]color.NRGBA) {
-	bc1Color(src[8:], out, true)
-	for i := range out {
-		a := src[i/2] >> (4 * (i % 2)) & 0xf
-		out[i].A = a<<4 | a
-	}
-}
-
-// bc3 is two alpha endpoints and a 3-bit index a pixel, then a BC1 color block.
-func bc3(src []byte, out *[16]color.NRGBA) {
-	bc1Color(src[8:], out, true)
-	a0, a1 := int(src[0]), int(src[1])
-	alpha := [8]uint8{uint8(a0), uint8(a1)}
-	for k := 2; k < 8; k++ {
-		if a0 > a1 {
-			alpha[k] = uint8(((8-k)*a0 + (k-1)*a1) / 7)
-		} else if k < 6 {
-			alpha[k] = uint8(((6-k)*a0 + (k-1)*a1) / 5)
-		}
-	}
-	if a0 <= a1 {
-		alpha[7] = 255
-	}
-	var index uint64
-	for i, b := range src[2:8] {
-		index |= uint64(b) << (8 * i)
-	}
-	for i := range out {
-		out[i].A = alpha[index>>(3*i)&7]
-	}
-}
-
-// bc7Modes is each BC7 mode's subsets, partition, rotation and index-selection bits, color and alpha bits, a p-bit an
-// endpoint or a subset, and its index bits (a second set for alpha where it has one).
-var bc7Modes = [8]struct{ ns, pb, rb, isb, cb, ab, epb, spb, ib, ib2 int }{
+// bc7Modes is the eight modes' layouts, by the mode's number.
+var bc7Modes = [8]bc7Mode{
 	{3, 4, 0, 0, 4, 0, 1, 0, 3, 0},
 	{2, 6, 0, 0, 6, 0, 0, 1, 3, 0},
 	{3, 6, 0, 0, 5, 0, 0, 0, 2, 0},
@@ -264,20 +123,191 @@ var (
 	}
 )
 
+// Decode decodes the image at path: a DDS at its first mip level, or the biggest within MaxSide; a TGA; anything
+// else by its magic (the games ship a PNG named .dds). A DDS format it does not decode is an error naming the format.
+func Decode(path string) (image.Image, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case bytes.HasPrefix(data, []byte("DDS ")):
+		return decodeDDS(data)
+	case strings.EqualFold(filepath.Ext(path), ".tga"):
+		return decodeTGA(data)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	return img, err
+}
+
+// decodeDDS decodes a DDS's first face at the first mip level within MaxSide.
+func decodeDDS(data []byte) (image.Image, error) {
+	info, err := ddsInfo(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	u32 := func(off int) uint32 { return binary.LittleEndian.Uint32(data[off:]) }
+	offset := 128
+	if string(data[84:88]) == "DX10" {
+		offset = 148
+	}
+	depth, masks := ddsChannels(info, offset, u32)
+
+	block, compressed := ddsBlocks[info.Format]
+	if !compressed && (depth == 0 || depth%8 != 0 || depth > 32 || masks == [4]uint32{}) {
+		return nil, fmt.Errorf("DDS %s is not shown", info.Format)
+	}
+	size := func(width, height int) int {
+		if compressed {
+			return max(1, (width+3)/4) * max(1, (height+3)/4) * block.size
+		}
+		return width * height * depth / 8
+	}
+	width, height := info.Width, info.Height
+	for level := 1; level < info.Mips && max(width, height) > MaxSide; level++ {
+		offset += size(width, height)
+		width, height = max(1, width/2), max(1, height/2)
+	}
+	if width <= 0 || height <= 0 || offset+size(width, height) > len(data) {
+		return nil, errors.New("the DDS file is shorter than its header says")
+	}
+
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	if compressed {
+		drawBlocks(img, data[offset:], block)
+	} else {
+		drawUncompressed(img, data[offset:], depth, masks)
+	}
+	return img, nil
+}
+
+// ddsChannels is an uncompressed surface's bits a pixel and its channel masks (red, green, blue, alpha): alpha only
+// where its flags say so and a luminance's grey in all three; a DX10 surface's by its byte order. Its header fields
+// are read through u32, offset being where its pixels start.
+func ddsChannels(info Facts, offset int, u32 func(int) uint32) (depth int, masks [4]uint32) {
+	const hasAlpha, alphaOnly, luminance = 0x1, 0x2, 0x20000
+	flags := u32(80)
+	depth, masks = int(u32(88)), [4]uint32{u32(92), u32(96), u32(100), u32(104)}
+	switch {
+	case offset == 148 && strings.HasPrefix(info.Format, "RGBA8"):
+		depth, masks = 32, [4]uint32{0xff, 0xff00, 0xff0000, 0xff000000}
+	case offset == 148 && strings.HasPrefix(info.Format, "BGRA8"):
+		depth, masks = 32, [4]uint32{0xff0000, 0xff00, 0xff, 0xff000000}
+	case offset == 148:
+		depth = 0
+	case flags&luminance != 0:
+		masks[1], masks[2] = masks[0], masks[0]
+	}
+	if offset == 128 && flags&(hasAlpha|alphaOnly) == 0 {
+		masks[3] = 0
+	}
+	return depth, masks
+}
+
+// drawUncompressed fills img from an uncompressed surface of depth bits a pixel, each channel under its mask.
+func drawUncompressed(img *image.NRGBA, src []byte, depth int, masks [4]uint32) {
+	width, step := img.Bounds().Dx(), depth/8
+	for i := range width * img.Bounds().Dy() {
+		var raw [4]byte
+		copy(raw[:], src[i*step:i*step+step])
+		value := binary.LittleEndian.Uint32(raw[:])
+		img.SetNRGBA(i%width, i/width, color.NRGBA{channel(value, masks[0], 0), channel(value, masks[1], 0), channel(value, masks[2], 0), channel(value, masks[3], 255)})
+	}
+}
+
+// drawBlocks fills img from block-compressed src, row by row of 4×4 blocks; the pixels of a block past the image's
+// edge are dropped.
+func drawBlocks(img *image.NRGBA, src []byte, block blockFormat) {
+	width, height := img.Bounds().Dx(), img.Bounds().Dy()
+	var pixels [16]color.NRGBA
+	for blockRow := range (height + 3) / 4 {
+		for blockColumn := range (width + 3) / 4 {
+			block.decode(src[:block.size], &pixels)
+			src = src[block.size:]
+			for i, pixel := range pixels {
+				if column, row := blockColumn*4+i%4, blockRow*4+i/4; column < width && row < height {
+					img.SetNRGBA(column, row, pixel)
+				}
+			}
+		}
+	}
+}
+
+// channel is the 8-bit value of a pixel's channel under its mask; none is the fallback.
+func channel(v, mask uint32, none uint8) uint8 {
+	if mask == 0 {
+		return none
+	}
+	width := bits.OnesCount32(mask)
+	return uint8(uint64((v&mask)>>bits.TrailingZeros32(mask)) * 255 / (1<<width - 1))
+}
+
+// bc1Color decodes a BC1 color block: two RGB565 endpoints and a 2-bit index a pixel. Its four colors are the
+// endpoints and the two between, but where c0 <= c1 in a block of its own the third is halfway and the fourth clear;
+// in BC2 and BC3 (opaque) it is always four.
+func bc1Color(src []byte, out *[16]color.NRGBA, opaque bool) {
+	c0, c1 := binary.LittleEndian.Uint16(src), binary.LittleEndian.Uint16(src[2:])
+	p := [4]color.NRGBA{rgb565(c0), rgb565(c1)}
+	if c0 > c1 || opaque {
+		p[2], p[3] = mix(p[0], p[1], 2, 1, 3), mix(p[0], p[1], 1, 2, 3)
+	} else {
+		p[2] = mix(p[0], p[1], 1, 1, 2)
+	}
+	for i := range out {
+		out[i] = p[src[4+i/4]>>(2*(i%4))&3]
+	}
+}
+
+// rgb565 is a 16-bit RGB565 color as 8-bit channels, opaque.
+func rgb565(v uint16) color.NRGBA {
+	r, g, b := uint8(v>>8)&0xf8, uint8(v>>3)&0xfc, uint8(v<<3)
+	return color.NRGBA{r | r>>5, g | g>>6, b | b>>5, 255}
+}
+
+// mix is (a*x + b*y) / d of each color channel, opaque.
+func mix(x, y color.NRGBA, a, b, d int) color.NRGBA {
+	blend := func(u, v uint8) uint8 { return uint8((a*int(u) + b*int(v)) / d) }
+	return color.NRGBA{blend(x.R, y.R), blend(x.G, y.G), blend(x.B, y.B), 255}
+}
+
+// bc2 is a 4-bit alpha a pixel, then a BC1 color block.
+func bc2(src []byte, out *[16]color.NRGBA) {
+	bc1Color(src[8:], out, true)
+	for i := range out {
+		a := src[i/2] >> (4 * (i % 2)) & 0xf
+		out[i].A = a<<4 | a
+	}
+}
+
+// bc3 is two alpha endpoints and a 3-bit index a pixel, then a BC1 color block.
+func bc3(src []byte, out *[16]color.NRGBA) {
+	bc1Color(src[8:], out, true)
+	a0, a1 := int(src[0]), int(src[1])
+	alpha := [8]uint8{uint8(a0), uint8(a1)}
+	for k := 2; k < 8; k++ {
+		if a0 > a1 {
+			alpha[k] = uint8(((8-k)*a0 + (k-1)*a1) / 7)
+		} else if k < 6 {
+			alpha[k] = uint8(((6-k)*a0 + (k-1)*a1) / 5)
+		}
+	}
+	if a0 <= a1 {
+		alpha[7] = 255
+	}
+	var index uint64
+	for i, b := range src[2:8] {
+		index |= uint64(b) << (8 * i)
+	}
+	for i := range out {
+		out[i].A = alpha[index>>(3*i)&7]
+	}
+}
+
 // bc7 decodes a BC7 block: its mode is the count of zero bits before the first one; a block with none is black.
 func bc7(src []byte, out *[16]color.NRGBA) {
-	var block [17]byte // a spare byte past the end, which a read across the last byte boundary touches
-	copy(block[:], src)
-	at := 0
-	read := func(n int) int {
-		if n == 0 {
-			return 0
-		}
-		v := (int(block[at/8]) | int(block[at/8+1])<<8) >> (at % 8) & (1<<n - 1)
-		at += n
-		return v
-	}
-	mode := bits.TrailingZeros8(block[0])
+	var state bc7State
+	copy(state.stream.block[:], src)
+	mode := bits.TrailingZeros8(state.stream.block[0])
 	if mode > 7 {
 		*out = [16]color.NRGBA{}
 		for i := range out {
@@ -285,100 +315,124 @@ func bc7(src []byte, out *[16]color.NRGBA) {
 		}
 		return
 	}
-	at = mode + 1
-	m := bc7Modes[mode]
-	partition, rotation, selection := read(m.pb), read(m.rb), read(m.isb)
+	state.stream.pos = mode + 1
+	state.mode = bc7Modes[mode]
+	state.partition = state.stream.take(state.mode.pb)
+	state.rotation = state.stream.take(state.mode.rb)
+	state.selection = state.stream.take(state.mode.isb)
+	state.ends = bc7Endpoints(&state.stream, state.mode)
 
-	// the endpoints, channel by channel, then their p-bits and their expansion to 8 bits
+	// each pixel's color and alpha indices; a subset's anchor pixel has one bit fewer
+	state.colorPos, state.alphaPos = state.stream.pos, state.stream.pos+16*state.mode.ib-state.mode.ns
+	state.colorWeights, state.alphaWeights = bc7Weights[state.mode.ib], bc7Weights[state.mode.ib]
+	if state.mode.ab > 0 && state.mode.ib2 > 0 {
+		state.alphaWeights = bc7Weights[state.mode.ib2]
+	}
+	for i := range out {
+		out[i] = bc7Pixel(&state, i)
+	}
+}
+
+// bc7Endpoints takes a block's endpoints from stream, channel by channel, then their p-bits, and expands them to 8
+// bits.
+func bc7Endpoints(stream *bitReader, mode bc7Mode) [6][4]int {
 	var ends [6][4]int
-	count := m.ns * 2
-	for c, width := range []int{m.cb, m.cb, m.cb, m.ab} {
+	count := mode.ns * 2
+	for c, width := range []int{mode.cb, mode.cb, mode.cb, mode.ab} {
 		for e := range count {
 			if width == 0 {
 				ends[e][c] = 255
 			} else {
-				ends[e][c] = read(width)
+				ends[e][c] = stream.take(width)
 			}
 		}
 	}
-	cb, ab := m.cb, m.ab
-	if m.epb+m.spb > 0 {
-		cb++
-		if ab > 0 {
-			ab++
+	colorBits, alphaBits := mode.cb, mode.ab
+	if mode.epb+mode.spb > 0 {
+		colorBits++
+		if alphaBits > 0 {
+			alphaBits++
 		}
 	}
 	// a p-bit is each channel's lowest bit: one an endpoint, or one a subset that its two endpoints share
-	p := 0
+	pBit := 0
 	for e := range count {
 		switch {
-		case m.epb > 0, m.spb > 0 && e%2 == 0:
-			p = read(1)
-		case m.spb == 0:
+		case mode.epb > 0, mode.spb > 0 && e%2 == 0:
+			pBit = stream.take(1)
+		case mode.spb == 0:
 			continue
 		}
 		for c := range 4 {
-			if c < 3 || m.ab > 0 {
-				ends[e][c] = ends[e][c]<<1 | p
+			if c < 3 || mode.ab > 0 {
+				ends[e][c] = ends[e][c]<<1 | pBit
 			}
 		}
 	}
 	for e := range count {
 		for c := range 4 {
-			width := cb
+			width := colorBits
 			if c == 3 {
-				width = ab
+				width = alphaBits
 			}
 			if width > 0 {
-				v := ends[e][c] << (8 - width) & 0xff
-				ends[e][c] = v | v>>width
+				value := ends[e][c] << (8 - width) & 0xff
+				ends[e][c] = value | value>>width
 			}
 		}
 	}
+	return ends
+}
 
-	// each pixel's color and alpha indices; a subset's anchor pixel has one bit fewer
-	colorAt, alphaAt := at, at+16*m.ib-m.ns
-	cw, aw := bc7Weights[m.ib], bc7Weights[m.ib]
-	if m.ab > 0 && m.ib2 > 0 {
-		aw = bc7Weights[m.ib2]
+// bc7Pixel is pixel i of a block: its subset's two endpoints, mixed by its color and alpha indices (the same index for
+// both unless the mode has a second set for alpha), with the block's channel rotation applied.
+func bc7Pixel(state *bc7State, i int) color.NRGBA {
+	mode, stream := state.mode, &state.stream
+	subset := 0
+	switch mode.ns {
+	case 2:
+		subset = int(bc7Subsets2[state.partition] >> i & 1)
+	case 3:
+		subset = int(bc7Subsets3[state.partition] >> (2 * i) & 3)
 	}
-	for i := range out {
-		subset := 0
-		switch m.ns {
-		case 2:
-			subset = int(bc7Subsets2[partition] >> i & 1)
-		case 3:
-			subset = int(bc7Subsets3[partition] >> (2 * i) & 3)
-		}
-		ib := m.ib
-		if i == 0 || m.ns == 2 && i == bc7Anchor2[partition] || m.ns == 3 && (i == bc7Anchor3a[partition] || i == bc7Anchor3b[partition]) {
-			ib--
-		}
-		at = colorAt
-		i0 := read(ib)
-		colorAt = at
-		sc, sa := cw[i0], cw[i0]
-		if m.ab > 0 && m.ib2 > 0 {
-			ib2 := m.ib2
-			if i == 0 {
-				ib2--
-			}
-			at = alphaAt
-			i1 := read(ib2)
-			alphaAt = at
-			sc, sa = cw[i0], aw[i1]
-			if selection > 0 {
-				sc, sa = aw[i1], cw[i0]
-			}
-		}
-		e0, e1 := ends[subset*2], ends[subset*2+1]
-		lerp := func(c, s int) uint8 { return uint8(((64-s)*e0[c] + s*e1[c] + 32) >> 6) }
-		px := [4]uint8{lerp(0, sc), lerp(1, sc), lerp(2, sc), lerp(3, sa)}
-		if rotation > 0 {
-			px[rotation-1], px[3] = px[3], px[rotation-1]
-		}
-		out[i] = color.NRGBA{px[0], px[1], px[2], px[3]}
+	ib := mode.ib
+	if i == 0 || mode.ns == 2 && i == bc7Anchor2[state.partition] || mode.ns == 3 && (i == bc7Anchor3a[state.partition] || i == bc7Anchor3b[state.partition]) {
+		ib--
 	}
+	stream.pos = state.colorPos
+	i0 := stream.take(ib)
+	state.colorPos = stream.pos
+	colorWeight, alphaWeight := state.colorWeights[i0], state.colorWeights[i0]
+	if mode.ab > 0 && mode.ib2 > 0 {
+		ib2 := mode.ib2
+		if i == 0 {
+			ib2--
+		}
+		stream.pos = state.alphaPos
+		i1 := stream.take(ib2)
+		state.alphaPos = stream.pos
+		colorWeight, alphaWeight = state.colorWeights[i0], state.alphaWeights[i1]
+		if state.selection > 0 {
+			colorWeight, alphaWeight = state.alphaWeights[i1], state.colorWeights[i0]
+		}
+	}
+	e0, e1 := state.ends[subset*2], state.ends[subset*2+1]
+	lerp := func(index, weight int) uint8 { return uint8(((64-weight)*e0[index] + weight*e1[index] + 32) >> 6) }
+	pixel := [4]uint8{lerp(0, colorWeight), lerp(1, colorWeight), lerp(2, colorWeight), lerp(3, alphaWeight)}
+	if state.rotation > 0 {
+		pixel[state.rotation-1], pixel[3] = pixel[3], pixel[state.rotation-1]
+	}
+	return color.NRGBA{pixel[0], pixel[1], pixel[2], pixel[3]}
+}
+
+// take is the next count bits of the block, lowest first, and moves the cursor past them; none is 0.
+func (bitReader *bitReader) take(count int) int {
+	if count == 0 {
+		return 0
+	}
+	value := (int(bitReader.block[bitReader.pos/8]) | int(bitReader.block[bitReader.pos/8+1])<<8) >> (bitReader.pos % 8) & (1<<count - 1)
+	bitReader.pos += count
+	return value
 }
 
 // decodeTGA decodes a true-color (24 or 32 bits) or grey (8 bits) TGA, raw or run-length, from either origin.

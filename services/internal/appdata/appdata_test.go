@@ -1,4 +1,4 @@
-// local_test.go covers the write that leaves no half-file and no leftovers.
+// appdata_test.go covers the write that leaves no half-file and no leftovers.
 
 package appdata
 
@@ -41,7 +41,9 @@ func TestWrite(t *testing.T) {
 	// a failing fill keeps the previous file and leaves nothing behind
 	boom := errors.New("boom")
 	if err := Write(path, func(out io.Writer) error {
-		io.WriteString(out, "half")
+		if _, err := io.WriteString(out, "half"); err != nil {
+			return err
+		}
 		return boom
 	}); !errors.Is(err, boom) {
 		t.Fatalf("got %v, want boom", err)

@@ -115,7 +115,7 @@ func forgetCaches(prefix, keep string) (version string, err error) {
 // SaveInstall writes the install to its cache file whole, then deletes its install folder's older
 // cache files (Previous takes the first one's version) and every cache file no reader names
 // (neither install- nor wiki-), and the temporary files a run that ended mid-write left
-// (appdata.Leftover); a write in flight keeps its own.
+// (appdata.IsLeftoverTemp); a write in flight keeps its own.
 func SaveInstall(req Request, install *Install) error {
 	path, ofFolder, err := cachePath(req)
 	if err != nil {
@@ -129,7 +129,7 @@ func SaveInstall(req Request, install *Install) error {
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	for _, entry := range entries {
 		name, full := entry.Name(), filepath.Join(filepath.Dir(path), entry.Name())
-		if !strings.HasPrefix(name, "install-") && !strings.HasPrefix(name, "wiki-") && (!strings.HasPrefix(name, ".") || appdata.Leftover(full)) {
+		if !strings.HasPrefix(name, "install-") && !strings.HasPrefix(name, "wiki-") && (!strings.HasPrefix(name, ".") || appdata.IsLeftoverTemp(full)) {
 			_ = os.Remove(full)
 		}
 	}

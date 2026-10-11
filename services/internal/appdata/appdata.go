@@ -1,8 +1,8 @@
-// local.go is the folders, the write every other file here goes through, and the stored form.
+// appdata.go is the folders, the write every other file here goes through, and the stored form.
 
 // Package appdata is this machine's files: the app's own folders, the write that keeps a reader from
-// seeing half a file, the form a cache or shipped file is stored in, and a mod's own files
-// (descriptor, thumbnail, the skeleton of a new mod). Nothing here understands the script language.
+// seeing half a file, the form a cache or shipped file is stored in, and the names fit for them.
+// Nothing here understands the script language.
 package appdata
 
 import (
@@ -19,15 +19,13 @@ import (
 	"sync"
 )
 
-// PathKey is the key a file on this machine is known by: its path cleaned, and on Windows, where the file system
-// ignores case, lower-cased; elsewhere two paths that differ only by case are two files.
-func PathKey(path string) string {
-	path = filepath.Clean(path)
-	if runtime.GOOS == "windows" {
-		return strings.ToLower(path)
-	}
-	return path
-}
+// writing is the temporary files a Write of this process is filling; tempPattern matches the names CreateTemp gives
+// them; unsafeName is what SafeName replaces.
+var (
+	writing     sync.Map
+	tempPattern = regexp.MustCompile(`^\..+\.pmt\d+$`)
+	unsafeName  = regexp.MustCompile(`[^A-Za-z0-9._-]`)
+)
 
 // Dir is the app's own folder under the user's config directory, made if missing.
 func Dir() (string, error) {
@@ -49,18 +47,14 @@ func CacheDir() (string, error) {
 	return dir, os.MkdirAll(dir, 0o755)
 }
 
-// writing is the temporary files a Write of this process is filling; tempPattern matches the names CreateTemp gives
-// them.
-var (
-	writing     sync.Map
-	tempPattern = regexp.MustCompile(`^\..+\.pmt\d+$`)
-)
-
-// Leftover is whether path is a Write's temporary file that no Write of this process is filling: one a run that
-// ended mid-write left behind, which nothing will finish or remove.
-func Leftover(path string) bool {
-	_, held := writing.Load(path)
-	return tempPattern.MatchString(filepath.Base(path)) && !held
+// PathKey is the key a file on this machine is known by: its path cleaned, and on Windows, where the file system
+// ignores case, lower-cased; elsewhere two paths that differ only by case are two files.
+func PathKey(path string) string {
+	path = filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(path)
+	}
+	return path
 }
 
 // Write builds path's new contents through fill in a temporary file beside it, then puts that file
@@ -83,13 +77,13 @@ func Write(path string, fill func(io.Writer) error) error {
 	defer func() { _ = os.Remove(tempName) }() // a no-op once the rename has succeeded
 
 	if err := fill(temp); err != nil {
-		temp.Close()
+		_ = temp.Close()
 		return err
 	}
 	// sync before the rename: a rename can be durable while the bytes are not, which leaves a
 	// file that exists and is empty
 	if err := temp.Sync(); err != nil {
-		temp.Close()
+		_ = temp.Close()
 		return err
 	}
 	if err := temp.Close(); err != nil {
@@ -122,6 +116,26 @@ func WriteBytes(path string, data []byte) error {
 	})
 }
 
+// CopyFile copies src over dest, which is written whole or not at all.
+func CopyFile(src, dest string) error {
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	return Write(dest, func(out io.Writer) error {
+		_, err := io.Copy(out, file)
+		return err
+	})
+}
+
+// IsLeftoverTemp is whether path is a Write's temporary file that no Write of this process is filling: one a run that
+// ended mid-write left behind, which nothing will finish or remove.
+func IsLeftoverTemp(path string) bool {
+	_, filling := writing.Load(path)
+	return tempPattern.MatchString(filepath.Base(path)) && !filling
+}
+
 // Encode writes value to out as gob inside gzip, the form of the install cache and the shipped
 // schemas.
 func Encode(out io.Writer, value any) error {
@@ -132,31 +146,15 @@ func Encode(out io.Writer, value any) error {
 	return zip.Close()
 }
 
-// Decode reads what Encode wrote into value, a pointer.
-func Decode(in io.Reader, value any) error {
-	unzip, err := gzip.NewReader(in)
+// Decode reads what Encode wrote from source into value, a pointer.
+func Decode(source io.Reader, value any) error {
+	unzip, err := gzip.NewReader(source)
 	if err != nil {
 		return err
 	}
-	defer unzip.Close()
+	defer func() { _ = unzip.Close() }()
 	return gob.NewDecoder(unzip).Decode(value)
 }
-
-// CopyFile copies src over dest, which is written whole or not at all.
-func CopyFile(src, dest string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	return Write(dest, func(out io.Writer) error {
-		_, err := io.Copy(out, in)
-		return err
-	})
-}
-
-// unsafeName is what SafeName replaces.
-var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
 // SafeName is a name fit for a file name, each character outside [A-Za-z0-9._-] turned into "_":
 // "build 24187685" is build_24187685. The shipped schemas and the install cache are named by it.

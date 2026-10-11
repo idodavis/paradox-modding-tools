@@ -36,11 +36,11 @@ func Info(path string) (Facts, error) {
 	if err != nil {
 		return Facts{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// by magic, not name: the games ship a PNG named .dds. TGA has no magic, so it goes by name
 	var magic [4]byte
-	io.ReadFull(file, magic[:])
+	_, _ = io.ReadFull(file, magic[:]) // a short file falls through to image.DecodeConfig, which reports it
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return Facts{}, err
 	}
@@ -59,9 +59,9 @@ func Info(path string) (Facts, error) {
 }
 
 // ddsInfo reads the DDS magic, its 124 byte header, and a DX10 header when the FourCC says DX10.
-func ddsInfo(in io.Reader) (Facts, error) {
+func ddsInfo(source io.Reader) (Facts, error) {
 	var head [148]byte
-	n, _ := io.ReadFull(in, head[:])
+	n, _ := io.ReadFull(source, head[:])
 	if n < 128 || string(head[:4]) != "DDS " {
 		return Facts{}, fmt.Errorf("not a DDS file")
 	}
@@ -98,9 +98,9 @@ func ddsInfo(in io.Reader) (Facts, error) {
 }
 
 // tgaInfo reads the 18 byte TGA header.
-func tgaInfo(in io.Reader) (Facts, error) {
+func tgaInfo(source io.Reader) (Facts, error) {
 	var head [18]byte
-	if _, err := io.ReadFull(in, head[:]); err != nil {
+	if _, err := io.ReadFull(source, head[:]); err != nil {
 		return Facts{}, fmt.Errorf("not a TGA file: %w", err)
 	}
 	width, height := binary.LittleEndian.Uint16(head[12:]), binary.LittleEndian.Uint16(head[14:])

@@ -39,6 +39,9 @@ linters:
       # the registry's rows repeat a word as data: two rows naming one database are two facts
       - path: internal/game/lang-rules\.go
         linters: [goconst]
+      # the format table's rows repeat a word as data
+      - path: internal/inventory/inventory\.go
+        linters: [goconst]
 
 formatters:
   enable:

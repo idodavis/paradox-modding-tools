@@ -2,17 +2,21 @@ package inventory
 
 import (
 	"bytes"
-	"cmp"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
+)
 
-	"paradox-modding-tools/services/internal/texture"
+// The files TestWalk's tree holds, which its expected walks name again.
+const (
+	walkFirst  = "a/1.txt"
+	walkDeep   = "a/deep/0.txt"
+	walkSecond = "b/2.txt"
+	walkTop    = "top.txt"
 )
 
 // tree writes files under a folder of the test's own; a value is the file's bytes.
@@ -133,8 +137,7 @@ func TestInventory(t *testing.T) {
 }
 
 // TestInstallsAreClassified is the gate over the real installs: every file has a format or an
-// ignore rule, and every non-empty image gives up its header. It walks three installs and opens
-// some sixty thousand images; set PMT_SOURCE_GATE=1 and the three PMT_TEST_INSTALL_ variables.
+// ignore rule. It walks three installs; set PMT_SOURCE_GATE=1 and the three PMT_TEST_INSTALL_ variables.
 func TestInstallsAreClassified(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_SOURCE_GATE") == "" {
 		t.Skip("walks three installs; set PMT_SOURCE_GATE=1")
@@ -167,51 +170,16 @@ func TestInstallsAreClassified(t *testing.T) {
 		if len(unknown) > 0 {
 			t.Errorf("%s: extensions with no format and no ignore rule: %v", testCase.game, unknown)
 		}
-
-		// every image gives up its header
-		var images, bad, empty int
-		var examples []string
-		formats := map[string]int{}
-		for _, file := range files {
-			if file.Format != Image {
-				continue
-			}
-
-			// the games ship a handful of zero byte images, which have no header to read
-			if stat, err := os.Stat(file.Path); err == nil && stat.Size() == 0 {
-				empty++
-				continue
-			}
-			images++
-			info, err := texture.Info(file.Path)
-			if err != nil || info.Width <= 0 || info.Height <= 0 {
-				bad++
-				if len(examples) < 8 {
-					examples = append(examples, file.Rel)
-				}
-				continue
-			}
-			formats[info.Format]++
-		}
-		names := make([]string, 0, len(formats))
-		for name := range formats {
-			names = append(names, name)
-		}
-		slices.SortFunc(names, func(first, second string) int { return cmp.Compare(formats[second], formats[first]) })
-		t.Logf("IMAGES %s: %d read, %d failed, %d empty files skipped; formats %v", testCase.game, images, bad, empty, names)
-		if bad > 0 {
-			t.Errorf("%s: %d of %d images gave no header facts, among them %v", testCase.game, bad, images, examples)
-		}
 	}
 }
 
 func TestWalk(t *testing.T) {
 	dir := tree(t, map[string]string{
-		"b/2.txt":      "",
-		"a/1.txt":      "",
-		"a/deep/0.txt": "",
-		"top.txt":      "",
-		".git/config":  "",
+		walkSecond:    "",
+		walkFirst:     "",
+		walkDeep:      "",
+		walkTop:       "",
+		".git/config": "",
 	})
 
 	walked := func() []string {
@@ -225,26 +193,26 @@ func TestWalk(t *testing.T) {
 	}
 
 	// name order within a folder, folders entered where they sort, .git skipped
-	want := []string{"a/1.txt", "a/deep/0.txt", "b/2.txt", "top.txt"}
+	want := []string{walkFirst, walkDeep, walkSecond, walkTop}
 	if got := walked(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Walk = %v; want %v", got, want)
 	}
 
 	// a link elsewhere is followed and spelled under the root; a link back to an ancestor is not
 	outside := tree(t, map[string]string{"linked.txt": ""})
-	link := func(target, at string) {
-		if os.Symlink(target, at) == nil {
+	link := func(target, linkPath string) {
+		if os.Symlink(target, linkPath) == nil {
 			return
 		}
 
 		// Windows refuses a symlink without a privilege, and a linked mod folder is usually a junction
-		if out, err := exec.Command("cmd", "/c", "mklink", "/J", at, target).CombinedOutput(); err != nil {
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", linkPath, target).CombinedOutput(); err != nil {
 			t.Skipf("this machine can make neither a symlink nor a junction: %v %s", err, out)
 		}
 	}
 	link(outside, filepath.Join(dir, "c"))
 	link(dir, filepath.Join(dir, "a", "loop"))
-	want = []string{"a/1.txt", "a/deep/0.txt", "b/2.txt", "c/linked.txt", "top.txt"}
+	want = []string{walkFirst, walkDeep, walkSecond, "c/linked.txt", walkTop}
 	if got := walked(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Walk with links = %v; want %v", got, want)
 	}

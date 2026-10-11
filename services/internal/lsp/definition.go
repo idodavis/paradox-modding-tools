@@ -199,7 +199,7 @@ func Rename(ws *workspace.Session, path string, line, col int, name string) (Wor
 func DocumentSymbols(ws *workspace.Session, path string) ([]Symbol, error) {
 	ws.RLock()
 	defer ws.RUnlock()
-	listed, _, _ := ws.Located(path)
+	listed, _, _ := ws.Locate(path)
 	var out []Symbol
 	for _, idx := range ws.Indexes() {
 		for _, def := range slices.SortedFunc(slices.Values(idx.InFile(listed.Path)), func(first, second index.At) int {

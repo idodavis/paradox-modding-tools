@@ -283,7 +283,7 @@ func authorComment(ws *workspace.Session, def index.At) string {
 	if origin := def.File().Origin; origin == game.OriginVanilla || origin == "" {
 		return ""
 	}
-	parsed, statement := ws.Entry(def)
+	parsed, statement := ws.Statement(def)
 	if statement == nil {
 		return ""
 	}

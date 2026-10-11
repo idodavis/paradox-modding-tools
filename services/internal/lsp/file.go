@@ -25,7 +25,7 @@ type openFile struct {
 	path   string
 	text   string
 	parsed *jomini.Result
-	place  workspace.Place
+	place  workspace.FilePlace
 }
 
 // open reads the file at a path as the request sees it: the editor's text where the file is open
@@ -35,7 +35,7 @@ func open(ws *workspace.Session, path string) (*openFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &openFile{ws: ws, path: path, text: text, parsed: parsed, place: ws.Where(path)}, nil
+	return &openFile{ws: ws, path: path, text: text, parsed: parsed, place: ws.PlaceOf(path)}, nil
 }
 
 // span turns a byte span of the file into the editor's range.
@@ -62,7 +62,7 @@ type Location struct {
 
 // locate gives the editor's location of a position in a file of the workspace or the install.
 func locate(ws *workspace.Session, path string, at Position) Location {
-	place, _, _ := ws.Located(path)
+	place, _, _ := ws.Locate(path)
 	return Location{Path: path, Origin: place.Origin, Rel: place.Rel, Range: Range{Start: at, End: at}}
 }
 

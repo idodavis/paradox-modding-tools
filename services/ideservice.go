@@ -212,7 +212,7 @@ func (s *IdeService) ReplacedBy(workspaceID, path string) ([]inventory.File, err
 	}
 	sess.RLock()
 	defer sess.RUnlock()
-	file, mod, ok := sess.Located(path)
+	file, mod, ok := sess.Locate(path)
 	if !ok || mod != nil {
 		return nil, nil
 	}

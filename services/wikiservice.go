@@ -28,7 +28,7 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	}
 	sess.RLock()
 	defer sess.RUnlock()
-	place := sess.Where(path)
+	place := sess.PlaceOf(path)
 	if place.Origin == "" {
 		return &wiki.Guide{}, nil
 	}

@@ -434,8 +434,8 @@ func hidden(sess *workspace.Session, ref schema.Occurrence, from string, defs []
 	}
 	pair := [2]index.At{winner, base}
 	if _, done := compared[pair]; !done && base != (index.At{}) {
-		_, winning := sess.Entry(winner)
-		_, hiding := sess.Entry(base)
+		_, winning := sess.Statement(winner)
+		_, hiding := sess.Statement(base)
 		compared[pair] = !sameStatement(winning, hiding)
 	}
 	return base, compared[pair]

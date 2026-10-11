@@ -675,7 +675,7 @@ func TestCodeActions(t *testing.T) {
 	if err := os.WriteFile(locPath, []byte("l_english:\n k:0 \"v\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	install.Changed(locPath)
+	install.DiskChanged(locPath)
 	install.DidChange(locPath, "l_english:\n k:0 \"v\"\n")
 	actions, _ := CodeActions(install, locPath, 0, 0)
 	if len(actions) != 1 || actions[0].Title != "Add UTF-8 BOM" || actions[0].Edit.Changes[locPath][0].NewText != "\xEF\xBB\xBF" {

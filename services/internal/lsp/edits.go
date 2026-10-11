@@ -152,7 +152,7 @@ func CodeActions(ws *workspace.Session, path string, line, col int) ([]CodeActio
 // position at its end, and whether its text lacks a final newline; "" where the mod has none.
 func (file *openFile) keyFile() (string, Position, bool) {
 	ws := file.ws
-	_, mod, ok := ws.Located(file.path)
+	_, mod, ok := ws.Locate(file.path)
 	if !ok || mod == nil {
 		return "", Position{}, false
 	}

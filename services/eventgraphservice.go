@@ -498,7 +498,7 @@ func (s *EventGraphService) GetEventDetail(workspaceID, id string) (*Detail, err
 	}
 
 	// the block, read from the file: the statement whose key the definition was found at
-	parsed, statement := sess.Entry(def)
+	parsed, statement := sess.Statement(def)
 	block := jomini.ChildBlock(statement)
 	if block == nil {
 		return detail, nil

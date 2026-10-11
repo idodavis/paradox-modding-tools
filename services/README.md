@@ -171,7 +171,7 @@ refetches when it is shown again.
   nothing defines, missing and untranslated localization, and the editor's own findings per file.
 - **Event graph** (`GetEventGraph`, `GetEventDetail`): events and on_actions and what fires them,
   from the references `session.Fires` and `session.FiredBy` follow.
-- **The Wiki pane and Patch Notes**: `wiki.Refresh` stores each game's pages; `PagesFor` picks the
+- **The Wiki pane and Patch Notes**: `wiki.Client.Refresh` stores each game's pages; `PagesFor` picks the
   tabs for the open file.
 - **Publish**: `steam` runs the upload in a second copy of the app (`steam.Serve`, from
   `services.ServeSteamPublish`), which loads the game's own copy of Steam's library.

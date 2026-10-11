@@ -1,6 +1,5 @@
 // sanitize.go is what a fetched wiki page keeps: one copy of the page with only the allowed tags
-// and attributes and none of the wiki's chrome, the section cuts on that copy's top level, and the
-// title filter that decides which pages are worth fetching at all.
+// and attributes and none of the wiki's chrome, and the section cuts on that copy's top level.
 
 package wiki
 
@@ -8,7 +7,6 @@ import (
 	"cmp"
 	"net/url"
 	"path"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,6 +26,7 @@ var (
 	allowed   = map[atom.Atom]bool{}
 )
 
+// init fills allowed with the tags a page keeps.
 func init() {
 	for _, tag := range []atom.Atom{atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6, atom.P, atom.Br, atom.Hr,
 		atom.Blockquote, atom.Ul, atom.Ol, atom.Li, atom.Dl, atom.Dt, atom.Dd, atom.Table, atom.Thead, atom.Tbody,
@@ -43,11 +42,11 @@ func clean(raw, base string) (page string, sections []Section, modding bool) {
 	if err != nil {
 		return "", nil, false
 	}
-	wiki, _ := url.Parse(base)
+	baseURL, _ := url.Parse(base)
 	root := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
 	for node := range doc.Descendants() {
 		if slices.Contains(strings.Fields(attr(node, "class")), "mw-parser-output") {
-			copyAllowed(root, node, wiki)
+			copyAllowed(root, node, baseURL)
 			break
 		}
 	}
@@ -87,50 +86,55 @@ func clean(raw, base string) (page string, sections []Section, modding bool) {
 // modding, read by its words alone, since the wiki also writes "User-modding" and leaves zero-width spaces in headings.
 func hasModding(sections []Section) bool {
 	return slices.ContainsFunc(sections, func(section Section) bool {
-		words := strings.Join(strings.FieldsFunc(strings.ToLower(section.Line), func(r rune) bool { return !unicode.IsLetter(r) }), " ")
+		words := strings.Join(strings.FieldsFunc(strings.ToLower(section.Line), func(char rune) bool { return !unicode.IsLetter(char) }), " ")
 		return words == "modding" || words == "user modding"
 	})
 }
 
-// copyAllowed appends a copy of in's children to out that keeps the allowed tags and attributes,
+// copyAllowed appends a copy of source's children to target that keeps the allowed tags and attributes,
 // unwraps every other tag, and leaves out the wiki's chrome and empty superscripts. A table of more
 // than two rows is kept folded, closed, under a line that says how long it is.
-func copyAllowed(out, in *html.Node, wiki *url.URL) {
-	for child := range in.ChildNodes() {
+func copyAllowed(target, source *html.Node, base *url.URL) {
+	for child := range source.ChildNodes() {
 		switch {
 		case child.Type == html.TextNode:
-			out.AppendChild(&html.Node{Type: html.TextNode, Data: child.Data})
+			target.AppendChild(&html.Node{Type: html.TextNode, Data: child.Data})
 		case child.Type != html.ElementNode || chrome(child):
 		case !allowed[child.DataAtom]:
-			copyAllowed(out, child, wiki)
+			copyAllowed(target, child, base)
 		default:
-			kept := &html.Node{Type: html.ElementNode, Data: child.Data, DataAtom: child.DataAtom, Attr: attrs(child, wiki)}
+			kept := &html.Node{Type: html.ElementNode, Data: child.Data, DataAtom: child.DataAtom, Attr: attrs(child, base)}
 			if kept.DataAtom == atom.A && kept.Attr == nil {
-				copyAllowed(out, child, wiki)
+				copyAllowed(target, child, base)
 				continue
 			}
-			copyAllowed(kept, child, wiki)
-			rows := 0
-			if kept.DataAtom == atom.Table {
-				for descendant := range kept.Descendants() {
-					if descendant.DataAtom == atom.Tr {
-						rows++
-					}
-				}
-			}
-			switch {
+			copyAllowed(kept, child, base)
+			switch rows := tableRows(kept); {
 			case rows > openTableRows:
 				fold := &html.Node{Type: html.ElementNode, Data: "details", DataAtom: atom.Details}
 				summary := &html.Node{Type: html.ElementNode, Data: "summary", DataAtom: atom.Summary}
 				summary.AppendChild(&html.Node{Type: html.TextNode, Data: "Table, " + strconv.Itoa(rows) + " rows"})
 				fold.AppendChild(summary)
 				fold.AppendChild(kept)
-				out.AppendChild(fold)
+				target.AppendChild(fold)
 			case kept.DataAtom != atom.Sup || strings.TrimSpace(text(kept)) != "":
-				out.AppendChild(kept)
+				target.AppendChild(kept)
 			}
 		}
 	}
+}
+
+// tableRows is how many rows a table holds; 0 for any other node.
+func tableRows(node *html.Node) int {
+	rows := 0
+	if node.DataAtom == atom.Table {
+		for descendant := range node.Descendants() {
+			if descendant.DataAtom == atom.Tr {
+				rows++
+			}
+		}
+	}
+	return rows
 }
 
 // chrome reports what a page keeps nowhere: the wiki's navigation, images, citations and the links
@@ -147,16 +151,16 @@ func chrome(node *html.Node) bool {
 // attrs keeps a link's http or https target made absolute (an in-page #anchor as it is) and, for a
 // page of this wiki, its title (data-title), a heading's id (the wiki writes it on a span inside),
 // and a cell's span.
-func attrs(node *html.Node, wiki *url.URL) []html.Attribute {
+func attrs(node *html.Node, base *url.URL) []html.Attribute {
 	switch {
 	case node.DataAtom == atom.A:
 		href := attr(node, "href")
 		if strings.HasPrefix(href, "#") {
 			return []html.Attribute{{Key: "href", Val: href}}
 		}
-		if resolved, err := wiki.Parse(href); href != "" && err == nil && (resolved.Scheme == "http" || resolved.Scheme == "https") {
+		if resolved, err := base.Parse(href); href != "" && err == nil && (resolved.Scheme == "http" || resolved.Scheme == "https") {
 			kept := []html.Attribute{{Key: "href", Val: resolved.String()}}
-			if title := path.Base(resolved.Path); resolved.Host == wiki.Host && !slices.Contains([]string{"/", ".", "wiki", "index.php"}, title) {
+			if title := path.Base(resolved.Path); resolved.Host == base.Host && !slices.Contains([]string{"/", ".", "wiki", "index.php"}, title) {
 				kept = append(kept, html.Attribute{Key: "data-title", Val: strings.ReplaceAll(title, "_", " ")})
 			}
 			return kept
@@ -181,16 +185,17 @@ func attrs(node *html.Node, wiki *url.URL) []html.Attribute {
 	return nil
 }
 
-// blockEnd is where the block that starts at nodes[i] ends: a heading runs to the next heading of
+// blockEnd is where the block that starts at nodes[start] ends: a heading runs to the next heading of
 // its rank or higher, anything else is one node.
-func blockEnd(nodes []*html.Node, i int) int {
-	end := i + 1
-	for level := rank(nodes[i]); level > 0 && end < len(nodes) && (rank(nodes[end]) == 0 || rank(nodes[end]) > level); {
+func blockEnd(nodes []*html.Node, start int) int {
+	end := start + 1
+	for level := rank(nodes[start]); level > 0 && end < len(nodes) && (rank(nodes[end]) == 0 || rank(nodes[end]) > level); {
 		end++
 	}
 	return end
 }
 
+// rank is a heading element's level, 1 to 6; 0 for any other node.
 func rank(node *html.Node) int {
 	if node.Type != html.ElementNode || len(node.Data) != 2 || node.Data[0] != 'h' || node.Data[1] < '1' || node.Data[1] > '6' {
 		return 0
@@ -198,6 +203,7 @@ func rank(node *html.Node) int {
 	return int(node.Data[1] - '0')
 }
 
+// attr is the value of node's attribute key; "" where it has none.
 func attr(node *html.Node, key string) string {
 	for _, attribute := range node.Attr {
 		if attribute.Key == key {
@@ -207,6 +213,7 @@ func attr(node *html.Node, key string) string {
 	return ""
 }
 
+// text is the text of node and everything under it.
 func text(node *html.Node) string {
 	var out strings.Builder
 	for descendant := range node.Descendants() {
@@ -217,30 +224,11 @@ func text(node *html.Node) string {
 	return out.String()
 }
 
+// render is the HTML text of nodes, trimmed.
 func render(nodes []*html.Node) string {
 	var out strings.Builder
 	for _, node := range nodes {
-		html.Render(&out, node)
+		_ = html.Render(&out, node) // a strings.Builder never fails
 	}
 	return strings.TrimSpace(out.String())
-}
-
-var (
-	listOfRe  = regexp.MustCompile(`(?i)^List of\b`)
-	listEndRe = regexp.MustCompile(`(?i)\blist$`)
-	userRe    = regexp.MustCompile(`(?i)^User:`)
-)
-
-// denyExact is the titles no pattern below denies.
-var denyExact = map[string]bool{"pdx deepl": true, "modding tools": true, "exporters": true}
-
-// denied reports whether an article title is skipped (tools, dumps, user pages).
-func denied(title string) bool {
-	return denyExact[NormTitle(title)] || userRe.MatchString(title) || listOfRe.MatchString(title) ||
-		listEndRe.MatchString(strings.TrimSpace(title))
-}
-
-func keepMember(title string, mods map[string]bool) bool {
-	page, _, _ := strings.Cut(title, "/") // a mod's subpage (Way of Kings/Religions) goes with it
-	return !denied(title) && !mods[NormTitle(page)]
 }

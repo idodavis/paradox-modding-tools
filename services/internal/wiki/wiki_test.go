@@ -11,161 +11,74 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
-func TestMain(tests *testing.M) {
-	minInterval = 0
-	os.Exit(tests.Run())
+// The games the tests refresh, the one file kind and path they look pages up for, and the page titles they name.
+const (
+	gameCK3           = "ck3"
+	gameVic3          = "vic3"
+	gameEU5           = "eu5"
+	kindEvent         = "event"
+	relEvent          = "events/foo.txt"
+	relGui            = "gui/window.gui"
+	titleEventModding = "Event modding"
+	titleEventTargets = "Event targets"
+	titleModding      = "Modding"
+	titleEffects      = "Effects"
+	titleTriggers     = "Triggers"
+	titleGUIScript    = "GUI script"
+	titleWayOfKings   = "Way of Kings"
+	titleEffectsList  = "Effects list"
+	titleUserFoo      = "User:Foo"
+	baseCK3           = "https://ck3.paradoxwikis.com/"
+)
+
+// languagePages are the scripting-language pages most games' wikis have, as the guides a file may show.
+var languagePages = []Page{
+	plain(titleTriggers),
+	plain(titleEffects),
+	plain("Scopes"),
+	plain("On actions"),
 }
 
-func forget(gameID string) {
-	memMu.Lock()
-	defer memMu.Unlock()
-	delete(mem, gameID)
+// routingCase is a game's guides and the tabs a file of one kind should get from them.
+type routingCase struct {
+	name, game, kind, rel, primary string
+	pages                          []Page
+	want, not, sections            []string
 }
 
-func useTempCache(t *testing.T) {
+// cleanCase is a fetched page body and what clean should keep of it, drop from it and read from its headings.
+type cleanCase struct {
+	name, body          string
+	want, not, sections []string
+	modding             []string
+}
+
+// plain is a guide page with a paragraph for its text and no headings.
+func plain(title string) Page {
+	return Page{Title: title, HTML: "<p>" + title + "</p>"}
+}
+
+// sectionLines are the headings of a page as their text.
+func sectionLines(sections []Section) []string {
+	var lines []string
+	for _, section := range sections {
+		lines = append(lines, section.Line)
+	}
+	return lines
+}
+
+// assertRouting saves each case's guides and checks the tabs PagesFor picks for its file.
+func assertRouting(t *testing.T, cases []routingCase) {
 	t.Helper()
-	dir := t.TempDir()
-	prev := cacheDirFn
-	cacheDirFn = func() (string, error) { return dir, nil }
-	t.Cleanup(func() {
-		cacheDirFn = prev
-		forget("ck3")
-		forget("vic3")
-		forget("eu5")
-		apiOverride = ""
-	})
-}
-
-func TestLookupRouting(t *testing.T) {
-	lang := []Page{
-		{Title: "Triggers", HTML: "<p>trig</p>"},
-		{Title: "Effects", HTML: "<p>eff</p>"},
-		{Title: "Scopes", HTML: "<p>sc</p>"},
-		{Title: "On actions", HTML: "<p>oa</p>"},
-	}
-	cases := []struct {
-		name, game, kind, rel, primary string
-		pages                          []Page
-		want, not, sections            []string
-	}{
-		{
-			name:    "events ignore Event targets",
-			game:    "ck3",
-			kind:    "event",
-			rel:     "events/foo.txt",
-			primary: "Event modding",
-			pages: append([]Page{
-				{Title: "Event modding", HTML: `<h2 id="Effects">Effects</h2><p>events</p>`,
-					Sections: []Section{{TocLevel: 2, Line: "Effects", Anchor: "Effects"}}},
-				{Title: "Event targets", HTML: "<p>t</p>"},
-				{Title: "Modding", HTML: "<p>hub</p>"},
-			}, lang...),
-			want:     []string{"Triggers", "Effects"},
-			not:      []string{"Event targets", "Modding"},
-			sections: []string{"Effects"},
-		},
-		{
-			name:    "eu5 vanilla events under in_game",
-			game:    "eu5",
-			kind:    "event",
-			rel:     "in_game/events/character/court.txt",
-			primary: "Event modding",
-			pages: append([]Page{
-				{Title: "Event modding", HTML: "<p>e</p>"},
-				{Title: "Event targets", HTML: "<p>t</p>"},
-				{Title: "Modding", HTML: "<p>hub</p>"},
-			}, lang...),
-			want: []string{"Triggers", "Effects"},
-			not:  []string{"Event targets", "Modding"},
-		},
-		{
-			name:    "vic3 scripted effect",
-			game:    "vic3",
-			kind:    "scripted_effect",
-			rel:     "common/scripted_effects/x.txt",
-			primary: "Effect",
-			pages: []Page{
-				{Title: "Effect", HTML: "<p>e</p>"},
-				{Title: "Trigger", HTML: "<p>t</p>"},
-				{Title: "Scope", HTML: "<p>s</p>"},
-				{Title: "On action", HTML: "<p>o</p>"},
-				{Title: "Event modding", HTML: "<p>ev</p>"},
-			},
-			want: []string{"Trigger"},
-			not:  []string{"Event modding"},
-		},
-		{
-			name:    "traits modding",
-			game:    "ck3",
-			kind:    "traits",
-			rel:     "common/traits/x.txt",
-			primary: "Trait modding",
-			pages: append([]Page{
-				{Title: "Trait modding", HTML: "<p>t</p>"},
-				{Title: "Traits", HTML: "<p>ts</p>"},
-			}, lang...),
-			want: []string{"Triggers"},
-		},
-		{
-			name:    "ck3 gui",
-			game:    "ck3",
-			kind:    "gui",
-			rel:     "gui/window.gui",
-			primary: "Interface",
-			pages: []Page{
-				{Title: "Interface", HTML: "<p>i</p>"},
-				{Title: "GUI script", HTML: "<p>g</p>"},
-				{Title: "Effects", HTML: "<p>e</p>"},
-			},
-			want: []string{"GUI script"},
-			not:  []string{"Effects"},
-		},
-		{
-			name:    "vic3 gui",
-			game:    "vic3",
-			kind:    "gui",
-			rel:     "gui/window.gui",
-			primary: "GUI script",
-			pages: []Page{
-				{Title: "GUI script", HTML: "<p>g</p>"},
-				{Title: "Effect", HTML: "<p>e</p>"},
-			},
-			not: []string{"Effect"},
-		},
-		{
-			name:    "ck3 loc",
-			game:    "ck3",
-			kind:    "yml",
-			rel:     "localization/english/foo.yml",
-			primary: "Localization",
-			pages: []Page{
-				{Title: "Localization", HTML: "<p>l</p>"},
-				{Title: "Customizable localization", HTML: "<p>c</p>"},
-				{Title: "Effects", HTML: "<p>e</p>"},
-			},
-			want: []string{"Customizable localization"},
-			not:  []string{"Effects"},
-		},
-		{
-			name: "hub only is empty",
-			game: "ck3",
-			kind: "event",
-			rel:  "events/foo.txt",
-			pages: []Page{
-				{Title: "Modding", HTML: "<p>hub</p>"},
-			},
-		},
-	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			useTempCache(t)
-			if err := save(testCase.game, &Sidecar{Guides: testCase.pages}); err != nil {
+			client := New(t.TempDir())
+			if err := client.save(testCase.game, &Sidecar{Guides: testCase.pages}); err != nil {
 				t.Fatal(err)
 			}
-			got := PagesFor(testCase.game, testCase.kind, testCase.rel)
+			got := client.PagesFor(testCase.game, testCase.kind, testCase.rel)
 			if testCase.primary == "" {
 				if len(got) != 0 {
 					t.Fatalf("pages = %#v want empty", got)
@@ -196,72 +109,12 @@ func TestLookupRouting(t *testing.T) {
 	}
 }
 
-func TestClean(t *testing.T) {
-	t.Parallel()
-	var dump strings.Builder
-	dump.WriteString(`<p>intro</p><table>`)
-	for i := range 25 {
-		fmt.Fprintf(&dump, "<tr><td>dump%d</td></tr>", i)
-	}
-	dump.WriteString(`</table><table><tr><td>keep0</td></tr><tr><td>keep1</td></tr></table>`)
-	cases := []struct {
-		name, body          string
-		want, not, sections []string
-		modding             []string
-	}{
-		{
-			name: "chrome",
-			body: `<div class="navbox">nav</div><div class="thumb">pic</div><img src="x.png"/>
-<p>Hello <a href="/Events">Events</a> <a href="#Location">here</a></p><pre>namespace = foo</pre>`,
-			want: []string{"Hello", `href="https://ck3.paradoxwikis.com/Events"`, `href="#Location"`, "namespace = foo"},
-			not:  []string{"nav", "pic", "<img"},
-		},
-		{
-			name: "a table of more than two rows kept folded, closed; a two-row one as it is",
-			body: dump.String(),
-			want: []string{"intro", "<details><summary>Table, 25 rows</summary><table>", "dump0", "dump24", "</table></details><table>", "keep0", "keep1"},
-			not:  []string{"Table, 2 rows"},
-		},
-		{
-			name:     "heading id",
-			body:     `<h2><span class="mw-headline" id="Effects">Effects</span></h2><p>body</p>`,
-			want:     []string{`id="Effects"`},
-			sections: []string{"Effects"},
-		},
-		{name: "sup", body: `<p>x<sup>2</sup></p>`, want: []string{"<sup>2</sup>"}},
-		{
-			name: "citations",
-			body: `<p>released<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
-<h2>References</h2><ol class="references"><li id="cite_note-1">forum post</li></ol>`,
-			want: []string{"released"},
-			not:  []string{"[1]", "forum post", "cite_note", "References"},
-		},
-		{
-			name:     "top links",
-			body:     `<h2 id="Loc">Location</h2><a href="#top">[top]</a><p>here</p><a href="#Top_folders">Top folders</a>`,
-			want:     []string{"here", "Top folders"},
-			not:      []string{"[top]"},
-			sections: []string{"Location"},
-		},
-		{
-			name: "sections dropped and moved",
-			body: `<h2 id="Loc">Location</h2><p>a</p><h2 id="Tools">Scripting Tools</h2><p>vscode</p>
-<h2 id="See_also">See also</h2><ul><li>x</li></ul><h2 id="Refs">References</h2><ol><li>n</li></ol>
-<h2 id="Ext">External links</h2><ul><li>y</li></ul>`,
-			not:      []string{"See also", "References", "External links"},
-			sections: []string{"Location", "Scripting Tools"},
-		},
-		{
-			name: "modding",
-			body: `<h2>Balance</h2><p>nerf</p><h2>User modding</h2><ul><li>renamed x to y</li></ul>
-<h3>Script</h3><p>deeper</p><h2>Bugfixes</h2><p>crash</p>`,
-			sections: []string{"Balance", "User modding", "Script", "Bugfixes"},
-			modding:  []string{"User modding", "Script"},
-		},
-	}
+// assertClean cleans each case's body and checks what stayed, what went and the headings found.
+func assertClean(t *testing.T, cases []cleanCase) {
+	t.Helper()
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			page, sections, modding := clean(`<div class="mw-parser-output">`+testCase.body+`</div>`, "https://ck3.paradoxwikis.com/")
+			page, sections, modding := clean(`<div class="mw-parser-output">`+testCase.body+`</div>`, baseCK3)
 			for _, text := range testCase.want {
 				if !strings.Contains(page, text) {
 					t.Errorf("%q missing: %s", text, page)
@@ -282,20 +135,203 @@ func TestClean(t *testing.T) {
 	}
 }
 
-func sectionLines(sections []Section) []string {
-	var lines []string
-	for _, section := range sections {
-		lines = append(lines, section.Line)
-	}
-	return lines
+// TestLookupRoutesEventFiles pins that an event file's tabs lead with the event page, add the scripting-language
+// pages and leave out the hub and the targets page, and that a hub alone gives none.
+func TestLookupRoutesEventFiles(t *testing.T) {
+	t.Parallel()
+	assertRouting(t, []routingCase{
+		{
+			name:    "events ignore Event targets",
+			game:    gameCK3,
+			kind:    kindEvent,
+			rel:     relEvent,
+			primary: titleEventModding,
+			pages: append([]Page{
+				{Title: titleEventModding, HTML: `<h2 id="Effects">Effects</h2><p>events</p>`,
+					Sections: []Section{{TocLevel: 2, Line: titleEffects, Anchor: titleEffects}}},
+				plain(titleEventTargets),
+				plain(titleModding),
+			}, languagePages...),
+			want:     []string{titleTriggers, titleEffects},
+			not:      []string{titleEventTargets, titleModding},
+			sections: []string{titleEffects},
+		},
+		{
+			name:    "eu5 vanilla events under in_game",
+			game:    gameEU5,
+			kind:    kindEvent,
+			rel:     "in_game/events/character/court.txt",
+			primary: titleEventModding,
+			pages:   append([]Page{plain(titleEventModding), plain(titleEventTargets), plain(titleModding)}, languagePages...),
+			want:    []string{titleTriggers, titleEffects},
+			not:     []string{titleEventTargets, titleModding},
+		},
+		{
+			name: "hub only is empty",
+			game: gameCK3,
+			kind: kindEvent,
+			rel:  relEvent,
+			pages: []Page{
+				plain(titleModding),
+			},
+		},
+	})
 }
 
+// TestLookupRoutesScriptFiles pins the tabs a scripted effect and a trait file get from their game's pages.
+func TestLookupRoutesScriptFiles(t *testing.T) {
+	t.Parallel()
+	assertRouting(t, []routingCase{
+		{
+			name:    "vic3 scripted effect",
+			game:    gameVic3,
+			kind:    "scripted_effect",
+			rel:     "common/scripted_effects/x.txt",
+			primary: "Effect",
+			pages: []Page{
+				plain("Effect"),
+				plain("Trigger"),
+				plain("Scope"),
+				plain("On action"),
+				plain(titleEventModding),
+			},
+			want: []string{"Trigger"},
+			not:  []string{titleEventModding},
+		},
+		{
+			name:    "traits modding",
+			game:    gameCK3,
+			kind:    "traits",
+			rel:     "common/traits/x.txt",
+			primary: "Trait modding",
+			pages:   append([]Page{plain("Trait modding"), plain("Traits")}, languagePages...),
+			want:    []string{titleTriggers},
+		},
+	})
+}
+
+// TestLookupRoutesByExtension pins the tabs a GUI or localization file gets by its extension.
+func TestLookupRoutesByExtension(t *testing.T) {
+	t.Parallel()
+	assertRouting(t, []routingCase{
+		{
+			name:    "ck3 gui",
+			game:    gameCK3,
+			kind:    "gui",
+			rel:     relGui,
+			primary: "Interface",
+			pages:   []Page{plain("Interface"), plain(titleGUIScript), plain(titleEffects)},
+			want:    []string{titleGUIScript},
+			not:     []string{titleEffects},
+		},
+		{
+			name:    "vic3 gui",
+			game:    gameVic3,
+			kind:    "gui",
+			rel:     relGui,
+			primary: titleGUIScript,
+			pages:   []Page{plain(titleGUIScript), plain("Effect")},
+			not:     []string{"Effect"},
+		},
+		{
+			name:    "ck3 loc",
+			game:    gameCK3,
+			kind:    "yml",
+			rel:     "localization/english/foo.yml",
+			primary: "Localization",
+			pages:   []Page{plain("Localization"), plain("Customizable localization"), plain(titleEffects)},
+			want:    []string{"Customizable localization"},
+			not:     []string{titleEffects},
+		},
+	})
+}
+
+// TestCleanDropsWikiChrome pins that navigation, thumbnails, citations and links back to the top are dropped and
+// links made absolute.
+func TestCleanDropsWikiChrome(t *testing.T) {
+	t.Parallel()
+	assertClean(t, []cleanCase{
+		{
+			name: "chrome",
+			body: `<div class="navbox">nav</div><div class="thumb">pic</div><img src="x.png"/>
+<p>Hello <a href="/Events">Events</a> <a href="#Location">here</a></p><pre>namespace = foo</pre>`,
+			want: []string{"Hello", `href="https://ck3.paradoxwikis.com/Events"`, `href="#Location"`, "namespace = foo"},
+			not:  []string{"nav", "pic", "<img"},
+		},
+		{
+			name: "citations",
+			body: `<p>released<sup id="cite_ref-1" class="reference"><a href="#cite_note-1">[1]</a></sup></p>
+<h2>References</h2><ol class="references"><li id="cite_note-1">forum post</li></ol>`,
+			want: []string{"released"},
+			not:  []string{"[1]", "forum post", "cite_note", "References"},
+		},
+		{
+			name:     "top links",
+			body:     `<h2 id="Loc">Location</h2><a href="#top">[top]</a><p>here</p><a href="#Top_folders">Top folders</a>`,
+			want:     []string{"here", "Top folders"},
+			not:      []string{"[top]"},
+			sections: []string{"Location"},
+		},
+	})
+}
+
+// TestCleanKeepsTablesAndSuperscripts pins that a table of more than two rows is kept folded and a short one as it is.
+func TestCleanKeepsTablesAndSuperscripts(t *testing.T) {
+	t.Parallel()
+	var dump strings.Builder
+	dump.WriteString(`<p>intro</p><table>`)
+	for i := range 25 {
+		fmt.Fprintf(&dump, "<tr><td>dump%d</td></tr>", i)
+	}
+	dump.WriteString(`</table><table><tr><td>keep0</td></tr><tr><td>keep1</td></tr></table>`)
+	assertClean(t, []cleanCase{
+		{
+			name: "a table of more than two rows kept folded, closed; a two-row one as it is",
+			body: dump.String(),
+			want: []string{"intro", "<details><summary>Table, 25 rows</summary><table>", "dump0", "dump24", "</table></details><table>", "keep0", "keep1"},
+			not:  []string{"Table, 2 rows"},
+		},
+		{name: "sup", body: `<p>x<sup>2</sup></p>`, want: []string{"<sup>2</sup>"}},
+	})
+}
+
+// TestCleanReadsHeadings pins the headings, the sections dropped or moved, and which headings make a Modding page.
+func TestCleanReadsHeadings(t *testing.T) {
+	t.Parallel()
+	assertClean(t, []cleanCase{
+		{
+			name:     "heading id",
+			body:     `<h2><span class="mw-headline" id="Effects">Effects</span></h2><p>body</p>`,
+			want:     []string{`id="Effects"`},
+			sections: []string{titleEffects},
+		},
+		{
+			name: "sections dropped and moved",
+			body: `<h2 id="Loc">Location</h2><p>a</p><h2 id="Tools">Scripting Tools</h2><p>vscode</p>
+<h2 id="See_also">See also</h2><ul><li>x</li></ul><h2 id="Refs">References</h2><ol><li>n</li></ol>
+<h2 id="Ext">External links</h2><ul><li>y</li></ul>`,
+			not:      []string{"See also", "References", "External links"},
+			sections: []string{"Location", "Scripting Tools"},
+		},
+		{
+			name: "modding",
+			body: `<h2>Balance</h2><p>nerf</p><h2>User modding</h2><ul><li>renamed x to y</li></ul>
+<h3>Script</h3><p>deeper</p><h2>Bugfixes</h2><p>crash</p>`,
+			sections: []string{"Balance", "User modding", "Script", "Bugfixes"},
+			modding:  []string{"User modding", "Script"},
+		},
+	})
+}
+
+// wikiMock answers the MediaWiki API the way the three wikis do: category listings, parsed pages and, when told to,
+// an HTML challenge page for every request.
 type wikiMock struct {
 	parses    atomic.Int32
 	revid     int
 	challenge bool // answer every request with an HTML challenge page
 }
 
+// handler is the mock's HTTP handler; a zero revid is 10.
 func (wikiMock *wikiMock) handler() http.Handler {
 	if wikiMock.revid == 0 {
 		wikiMock.revid = 10
@@ -310,9 +346,9 @@ func (wikiMock *wikiMock) handler() http.Handler {
 			_, _ = writer.Write([]byte("<!DOCTYPE html><html><body>Just a moment...</body></html>"))
 		case query.Get("generator") == "categorymembers":
 			titles := map[string][]string{
-				"Category:Mods": {"Way of Kings"},
-				"Category:Modding": {"Event modding", "Triggers", "Effects list", "Way of Kings",
-					"List of baronies", "GUI script functions list", "PDX DeepL", "User:Foo"},
+				"Category:Mods": {titleWayOfKings},
+				"Category:Modding": {titleEventModding, titleTriggers, titleEffectsList, titleWayOfKings,
+					"List of baronies", "GUI script functions list", "PDX DeepL", titleUserFoo},
 				"Category:Patches": {"Patch 1.16"},
 			}[query.Get("gcmtitle")]
 			var pages []map[string]any
@@ -345,32 +381,54 @@ func (wikiMock *wikiMock) handler() http.Handler {
 	})
 }
 
-func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
-	useTempCache(t)
+// refreshCK3 refreshes the client's ck3 pages without listening to the progress.
+func refreshCK3(t *testing.T, client *Client) error {
+	t.Helper()
+	return client.Refresh(t.Context(), gameCK3, func(string, int, int) {})
+}
+
+// refreshedWiki is a client over a temporary cache and a mock wiki at revision 42, refreshed once.
+func refreshedWiki(t *testing.T) (*Client, *wikiMock, *httptest.Server) {
+	t.Helper()
+	client := New(t.TempDir())
+	client.interval = 0
 	mock := &wikiMock{revid: 42}
 	srv := httptest.NewServer(mock.handler())
 	t.Cleanup(srv.Close)
-	apiOverride = srv.URL
-
-	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err != nil {
+	client.apiOverride = srv.URL
+	if err := refreshCK3(t, client); err != nil {
 		t.Fatal(err)
 	}
-	first := mock.parses.Load()
-	if first < 2 {
-		t.Fatalf("parses = %d, want Event + Triggers (+ patch)", first)
+	return client, mock, srv
+}
+
+// TestRefreshSavesTheModdingPages pins that a refresh saves the modding pages a lookup then finds, leaves the
+// denied ones out, and marks a patch note with a Modding section.
+func TestRefreshSavesTheModdingPages(t *testing.T) {
+	client, mock, _ := refreshedWiki(t)
+	if parses := mock.parses.Load(); parses < 2 {
+		t.Fatalf("parses = %d, want Event + Triggers (+ patch)", parses)
 	}
-	pages := PagesFor("ck3", "event", "events/foo.txt")
-	if len(pages) == 0 || pages[0].Title != "Event modding" {
+	pages := client.PagesFor(gameCK3, kindEvent, relEvent)
+	if len(pages) == 0 || pages[0].Title != titleEventModding {
 		t.Fatalf("lookup after refresh: %#v", pages)
 	}
 	for _, page := range pages {
-		if page.Title == "Effects list" || page.Title == "Way of Kings" {
+		if page.Title == titleEffectsList || page.Title == titleWayOfKings {
 			t.Fatalf("denied page kept: %s", page.Title)
 		}
 	}
+	if patch := client.PatchByVersion(gameCK3, "1.16"); patch == nil || !patch.Modding {
+		t.Fatalf("patch modding: %#v", patch)
+	}
+}
 
+// TestRefreshKeepsTheModdingTitles pins which titles the filter keeps: the modding pages, not mods, lists, tools
+// or user pages.
+func TestRefreshKeepsTheModdingTitles(t *testing.T) {
+	client, _, _ := refreshedWiki(t)
 	// the title filter: saved guides keep the modding pages and drop mods, lists, tools, user pages
-	sidecar, err := load("ck3")
+	sidecar, err := client.load(gameCK3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,42 +440,47 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 		title string
 		keep  bool
 	}{
-		{"Event modding", true},
-		{"Way of Kings", false},
-		{"Effects list", false},
+		{titleEventModding, true},
+		{titleWayOfKings, false},
+		{titleEffectsList, false},
 		{"List of baronies", false},
 		{"GUI script functions list", false},
 		{"PDX DeepL", false},
-		{"User:Foo", false},
-		{"Triggers", true},
+		{titleUserFoo, false},
+		{titleTriggers, true},
 	} {
 		if slices.Contains(saved, testCase.title) != testCase.keep {
 			t.Errorf("%q saved = %v want %v", testCase.title, !testCase.keep, testCase.keep)
 		}
 	}
+}
 
-	if patch := PatchByVersion("ck3", "1.16"); patch == nil || !patch.Modding {
-		t.Fatalf("patch modding: %#v", patch)
-	}
-
-	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err != nil {
+// TestRefreshSkipsUnchangedRevisions pins that a refresh fetches again only the pages whose revision changed.
+func TestRefreshSkipsUnchangedRevisions(t *testing.T) {
+	client, mock, _ := refreshedWiki(t)
+	first := mock.parses.Load()
+	if err := refreshCK3(t, client); err != nil {
 		t.Fatal(err)
 	}
 	if mock.parses.Load() != first {
 		t.Fatalf("unchanged revid issued parse: %d -> %d", first, mock.parses.Load())
 	}
-
 	mock.revid = 99
-	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err != nil {
+	if err := refreshCK3(t, client); err != nil {
 		t.Fatal(err)
 	}
 	if mock.parses.Load() <= first {
 		t.Fatal("revid change should re-parse")
 	}
+}
 
+// TestRefreshFailureSavesNothing pins that a challenge page is an error carrying its text, and that a failed
+// refresh leaves the saved pages as they were.
+func TestRefreshFailureSavesNothing(t *testing.T) {
+	client, mock, srv := refreshedWiki(t)
 	// an HTML challenge page answered with 200 is an error that carries its text
 	mock.challenge = true
-	err = apiGet(t.Context(), srv.URL, url.Values{"action": {"query"}}, &struct{}{})
+	err := client.apiGet(t.Context(), srv.URL, url.Values{"action": {"query"}}, &struct{}{})
 	if err == nil || !strings.Contains(err.Error(), "wiki http 200") {
 		t.Fatalf("err = %v", err)
 	}
@@ -427,46 +490,46 @@ func TestRefreshFixtureAndSkipUnchanged(t *testing.T) {
 
 	// a dead server is an error, and the failed fetch saves nothing over the pages already kept
 	srv.Close()
-	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err == nil {
+	if err := refreshCK3(t, client); err == nil {
 		t.Fatal("expected error")
 	}
-	forget("ck3")
-	if pages := PagesFor("ck3", "event", "events/foo.txt"); len(pages) == 0 || pages[0].Title != "Event modding" {
+	client.ForgetAll()
+	if pages := client.PagesFor(gameCK3, kindEvent, relEvent); len(pages) == 0 || pages[0].Title != titleEventModding {
 		t.Fatalf("failed fetch must not write sidecar: %#v", pages)
 	}
 }
 
+// TestLiveCK3Refresh refreshes the ck3 wiki over the network, behind PMT_LIVE_WIKI.
 func TestLiveCK3Refresh(t *testing.T) {
 	if os.Getenv("PMT_LIVE_WIKI") == "" {
 		t.Skip("set PMT_LIVE_WIKI=1")
 	}
-	useTempCache(t)
-	prev := minInterval
-	minInterval = time.Second
-	t.Cleanup(func() { minInterval = prev })
-	if err := Refresh(t.Context(), "ck3", func(string, int, int) {}); err != nil {
+	client := New(t.TempDir())
+	if err := refreshCK3(t, client); err != nil {
 		t.Fatal(err)
 	}
-	sidecar, err := load("ck3")
+	sidecar, err := client.load(gameCK3)
 	if err != nil || len(sidecar.Guides) == 0 || len(sidecar.Patches) == 0 {
 		t.Fatalf("live refresh saved %v, %v", sidecar, err)
 	}
 	t.Logf("%d guides, %d patch notes", len(sidecar.Guides), len(sidecar.Patches))
 }
 
+// TestWikiClientDisablesHTTP2 pins that the client's transport offers HTTP/1.1 only, which the wikis' CDN needs.
 func TestWikiClientDisablesHTTP2(t *testing.T) {
-	tr, ok := httpClient.Transport.(*http.Transport)
+	client := New(t.TempDir())
+	transport, ok := client.http.Transport.(*http.Transport)
 	if !ok {
 		t.Fatal("want *http.Transport")
 	}
-	if tr.ForceAttemptHTTP2 {
+	if transport.ForceAttemptHTTP2 {
 		t.Fatal("ForceAttemptHTTP2 must be false")
 	}
-	if tr.TLSNextProto == nil {
+	if transport.TLSNextProto == nil {
 		t.Fatal("nil TLSNextProto allows HTTP/2")
 	}
-	if tr.TLSClientConfig == nil || len(tr.TLSClientConfig.NextProtos) != 1 ||
-		tr.TLSClientConfig.NextProtos[0] != "http/1.1" {
-		t.Fatalf("TLS NextProtos = %v", tr.TLSClientConfig)
+	if transport.TLSClientConfig == nil || len(transport.TLSClientConfig.NextProtos) != 1 ||
+		transport.TLSClientConfig.NextProtos[0] != "http/1.1" {
+		t.Fatalf("TLS NextProtos = %v", transport.TLSClientConfig)
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"paradox-modding-tools/services/internal/loc"
 	"paradox-modding-tools/services/internal/modfiles"
 	"paradox-modding-tools/services/internal/schema"
-	"paradox-modding-tools/services/internal/wiki"
 )
 
 // Request is one install's scan: Version is the game's, Language the localization kept
@@ -24,6 +23,9 @@ type Request struct {
 	Game, Dir, Version, Language string
 	App                          string // the app's version; "dev" keys the cache by the engine's code, "" never caches
 	Progress                     func(stage string, done, total int)
+
+	// Wiki gives the wiki's script examples by database and its sidecar's time; nil for none.
+	Wiki func(databases []string) (map[string][]string, time.Time, error)
 }
 
 // Install is an install's schema and the index of its files.
@@ -84,9 +86,7 @@ func inventoryOf(req Request) (roots []string, input schema.Input, err error) {
 	req.Progress("inventory", 0, 1)
 	roots = inventory.Roots(req.Dir)
 	input = schemaInput(req, roots)
-	input.Wiki = func(databases []string) (map[string][]string, time.Time, error) {
-		return wiki.ScriptExamples(req.Game, databases)
-	}
+	input.Wiki = req.Wiki
 	return roots, input, nil
 }
 

@@ -99,12 +99,13 @@ type ConfigFile struct {
 type AppService struct {
 	config   *ConfigFile
 	sessions *SessionService
+	wikis    *wiki.Client
 	version  string
 }
 
-// NewAppService is the app-wide service over the config, the sessions it resets and the app's version.
-func NewAppService(config *ConfigFile, sessions *SessionService, version string) *AppService {
-	return &AppService{config: config, sessions: sessions, version: version}
+// NewAppService is the app-wide service over the config, the sessions and wiki client it resets and the app's version.
+func NewAppService(config *ConfigFile, sessions *SessionService, wikis *wiki.Client, version string) *AppService {
+	return &AppService{config: config, sessions: sessions, wikis: wikis, version: version}
 }
 
 // OpenConfig loads config.json from the app's folder. A missing file is a first run; any other read failure
@@ -252,7 +253,7 @@ func (s *AppService) ResetData() error {
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("wipe cache: %w", err)
 	}
-	wiki.ForgetAll()
+	s.wikis.ForgetAll()
 	s.sessions.dropAllExcept("")
 	return nil
 }

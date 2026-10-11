@@ -32,6 +32,8 @@ export enum Format {
     $zero = 0,
 
     /**
+     * The formats, by the reader each needs.
+     *
      * an extension the table does not list
      */
     Unknown = 0,

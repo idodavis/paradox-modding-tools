@@ -28,6 +28,7 @@ import (
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/pages"
 	"paradox-modding-tools/services/internal/schema"
+	"paradox-modding-tools/services/internal/wiki"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -92,7 +93,7 @@ func fixtureService(t *testing.T) *SessionService {
 	config := tempConfig(t,
 		[]GameInstall{{ID: "i1", GameID: gameCK3, Name: "CK3", Path: install}},
 		Workspace{ID: "ws", GameID: gameCK3, Name: "W", InstallID: "i1", Mods: []WorkspaceMod{{ID: "m", Name: "M", Path: mod}}})
-	sessions := NewSessionService(config, "test")
+	sessions := NewSessionService(config, "test", wiki.New(t.TempDir()))
 	sessions.scan = func(context.Context, index.Request) (*index.Install, error) { return scanned() }
 	return sessions
 }
@@ -356,7 +357,7 @@ func TestEnsureSession(t *testing.T) {
 func modsService(t *testing.T) (svc *WorkspaceService, modDir string) {
 	t.Helper()
 	config := tempConfig(t, nil, Workspace{ID: "ws1", GameID: gameCK3, Name: "Test", InstallID: installOne})
-	svc = NewWorkspaceService(config, NewSessionService(config, "test"))
+	svc = NewWorkspaceService(config, NewSessionService(config, "test", wiki.New(t.TempDir())))
 	modDir = t.TempDir()
 	writeTree(t, modDir, map[string]string{"a/descriptor.mod": "", "b/descriptor.mod": ""})
 	return svc, modDir
@@ -462,7 +463,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	config := tempConfig(t,
 		[]GameInstall{{ID: installOne, GameID: gameCK3, Name: "My CK3 nickname", Path: install}},
 		Workspace{ID: "ws1", GameID: gameCK3, Name: "Test", InstallID: installOne})
-	svc := NewWorkspaceService(config, NewSessionService(config, "test"))
+	svc := NewWorkspaceService(config, NewSessionService(config, "test", wiki.New(t.TempDir())))
 	writeTree(t, modDir, map[string]string{"descriptor.mod": ""})
 	if _, err := svc.AddWorkspaceMod("ws1", modDir); err != nil {
 		t.Fatal(err)
@@ -513,7 +514,7 @@ func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 	} {
 		t.Run(testCase.game+"/"+testCase.rel, func(t *testing.T) {
 			config := tempConfig(t, nil, Workspace{ID: "ws", GameID: testCase.game, Name: "T"})
-			svc := NewWorkspaceService(config, NewSessionService(config, "test"))
+			svc := NewWorkspaceService(config, NewSessionService(config, "test", wiki.New(t.TempDir())))
 			root, want := t.TempDir(), ""
 			writeTree(t, root, map[string]string{game.DescriptorFile(testCase.game): "{}"})
 			if testCase.rel != "" {

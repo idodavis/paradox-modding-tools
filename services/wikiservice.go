@@ -10,6 +10,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"paradox-modding-tools/services/internal/appdata"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/wiki"
 )
@@ -45,11 +46,23 @@ type WikiProgress struct {
 type WikiService struct {
 	config   *ConfigFile
 	sessions *SessionService
+	wikis    *wiki.Client
 }
 
-// NewWikiService is the wiki service over the config (the installed games it refreshes) and the live sessions.
-func NewWikiService(config *ConfigFile, sessions *SessionService) *WikiService {
-	return &WikiService{config: config, sessions: sessions}
+// NewWikiService is the wiki service over the config (the installed games it refreshes), the live sessions and the
+// wiki client.
+func NewWikiService(config *ConfigFile, sessions *SessionService, wikis *wiki.Client) *WikiService {
+	return &WikiService{config: config, sessions: sessions, wikis: wikis}
+}
+
+// OpenWiki is the wiki client keeping its sidecars in the app's cache folder; main hands it to the services that use
+// it, since the wiki package is internal to this one.
+func OpenWiki() (*wiki.Client, error) {
+	dir, err := appdata.CacheDir()
+	if err != nil {
+		return nil, err
+	}
+	return wiki.New(dir), nil
 }
 
 // Guide returns the Guide pane's tabs for the active file: each page's title, address and headings, its text
@@ -69,7 +82,7 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 	if place.Database != nil {
 		database, kind = place.Database.Name, game.KindName(place.Database.Name)
 	}
-	pages := wiki.PagesFor(ws.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel)
+	pages := s.wikis.PagesFor(ws.Game.ID, cmp.Or(database, strings.TrimPrefix(filepath.Ext(place.Rel), ".")), place.Rel)
 	for i := range pages {
 		pages[i].HTML = ""
 	}
@@ -78,7 +91,7 @@ func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
 
 // GuidePage returns one guide page whole, by its title; nil where the wiki has none so named.
 func (s *WikiService) GuidePage(gameID, title string) *wiki.Page {
-	return wiki.GuidePage(gameID, title)
+	return s.wikis.GuidePage(gameID, title)
 }
 
 // ServiceStartup refreshes, in the background, the wiki pages of every installed game, so the
@@ -91,16 +104,16 @@ func (s *WikiService) ServiceStartup(ctx context.Context, _ application.ServiceO
 			games[inst.GameID] = true
 		}
 	})
-	go refreshWikis(ctx, games)
+	go refreshWikis(ctx, s.wikis, games)
 	return nil
 }
 
 // refreshWikis refreshes the wiki pages of each game in turn, telling the frontend each page fetched and each game
 // done.
-func refreshWikis(ctx context.Context, games map[string]bool) {
+func refreshWikis(ctx context.Context, wikis *wiki.Client, games map[string]bool) {
 	for gameID := range games {
 		done := WikiUpdated{GameID: gameID}
-		if err := wiki.Refresh(ctx, gameID, func(stage string, fetched, total int) {
+		if err := wikis.Refresh(ctx, gameID, func(stage string, fetched, total int) {
 			emit(EventWikiProgress, WikiProgress{GameID: gameID, Stage: stage, Done: fetched, Total: total})
 		}); err != nil {
 			done.Error = err.Error()
@@ -111,10 +124,10 @@ func refreshWikis(ctx context.Context, games map[string]bool) {
 
 // Patches returns the Patch Notes version list, newest first.
 func (s *WikiService) Patches(gameID string) wiki.PatchList {
-	return wiki.Patches(gameID)
+	return s.wikis.Patches(gameID)
 }
 
 // PatchPage returns one patch notes body by title or version label.
 func (s *WikiService) PatchPage(gameID, version string) *wiki.Page {
-	return wiki.PatchByVersion(gameID, version)
+	return s.wikis.PatchByVersion(gameID, version)
 }

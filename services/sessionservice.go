@@ -17,6 +17,7 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/schema"
+	"paradox-modding-tools/services/internal/wiki"
 	"paradox-modding-tools/services/internal/workspace"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -28,6 +29,7 @@ import (
 type SessionService struct {
 	config  *ConfigFile
 	version string
+	wikis   *wiki.Client // the wiki's script examples are a scan's last source
 	// scan is index.Scan; the tests set a stand-in
 	scan func(ctx context.Context, request index.Request) (*index.Install, error)
 
@@ -87,9 +89,9 @@ type FSChanged struct {
 	Deleted bool   `json:"deleted"`
 }
 
-// NewSessionService is the session service over the config, scanning with index.Scan.
-func NewSessionService(config *ConfigFile, version string) *SessionService {
-	return &SessionService{config: config, version: version, scan: index.Scan}
+// NewSessionService is the session service over the config and the wiki client, scanning with index.Scan.
+func NewSessionService(config *ConfigFile, version string, wikis *wiki.Client) *SessionService {
+	return &SessionService{config: config, version: version, wikis: wikis, scan: index.Scan}
 }
 
 // start makes the live sessions' maps on first use.
@@ -240,11 +242,14 @@ func (s *SessionService) build(workspaceID string) (*workspace.Session, error) {
 }
 
 // request is the scan of an install in a language: the version read from the install now, so a game
-// update is another cache file, and the app's own version.
+// update is another cache file, the app's own version, and the wiki's examples for the install's game.
 func (s *SessionService) request(inst *GameInstall, language string) index.Request {
 	return index.Request{
 		Game: inst.GameID, Dir: inst.Path, Version: game.LoadGameVersion(inst.GameID, inst.Path),
 		Language: language, App: s.version,
+		Wiki: func(databases []string) (map[string][]string, time.Time, error) {
+			return s.wikis.ScriptExamples(inst.GameID, databases)
+		},
 	}
 }
 

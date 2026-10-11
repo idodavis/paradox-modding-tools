@@ -51,7 +51,7 @@ age; when any is missing, the shipped dump part for the game version stands in.
 ## The packages
 
 Imports run one way: `jomini` ← `loc`, `source` ← `schema` ← `shipped` ← `index` ← `session` ←
-`lsp`. `schema` reads `game` and `wiki`; `index` reads `game`, `wiki` and `local`.
+`lsp`. `schema` reads `game`; `index` reads `game` and `local`; the wiki client reaches a scan through `index.Request`.
 
 | Package | Is | Design |
 |---|---|---|

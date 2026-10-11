@@ -10,9 +10,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -100,8 +100,15 @@ const (
 	detailsSize        = 16 << 10
 )
 
-// openUGC opens the library at path and binds every function a publish calls, or says which
-// one it lacks.
+// binding is one function of Steam's library: the field of ugcAPI it fills and the symbol it is
+// looked up by.
+type binding struct {
+	fn   any
+	name string
+}
+
+// openUGC runs in the child: it opens the library at path and binds every function a publish
+// calls, or says which one it lacks.
 func openUGC(path string) (*ugcAPI, error) {
 	handle, closeLibrary, err := openLibrary(path)
 	if err != nil {
@@ -114,42 +121,8 @@ func openUGC(path string) (*ugcAPI, error) {
 	}
 
 	api := &ugcAPI{unload: closeLibrary}
-	for _, binding := range []struct {
-		fn   any
-		name string
-	}{
-		{&api.shutdown, "SteamAPI_Shutdown"},
-		{&api.runCallbacks, "SteamAPI_RunCallbacks"},
-		{&api.ugc, versioned(contents, "SteamAPI_SteamUGC_v")},
-		{&api.utils, versioned(contents, "SteamAPI_SteamUtils_v")},
-		{&api.createItem, "SteamAPI_ISteamUGC_CreateItem"},
-		{&api.startUpdate, "SteamAPI_ISteamUGC_StartItemUpdate"},
-		{&api.setTitle, "SteamAPI_ISteamUGC_SetItemTitle"},
-		{&api.setDescription, "SteamAPI_ISteamUGC_SetItemDescription"},
-		{&api.setVisibility, "SteamAPI_ISteamUGC_SetItemVisibility"},
-		{&api.setContent, "SteamAPI_ISteamUGC_SetItemContent"},
-		{&api.setPreview, "SteamAPI_ISteamUGC_SetItemPreview"},
-		{&api.addPreviewFile, "SteamAPI_ISteamUGC_AddItemPreviewFile"},
-		{&api.addPreviewVideo, "SteamAPI_ISteamUGC_AddItemPreviewVideo"},
-		{&api.removePreview, "SteamAPI_ISteamUGC_RemoveItemPreview"},
-		{&api.submit, "SteamAPI_ISteamUGC_SubmitItemUpdate"},
-		{&api.createDetailsQuery, "SteamAPI_ISteamUGC_CreateQueryUGCDetailsRequest"},
-		{&api.longDescription, "SteamAPI_ISteamUGC_SetReturnLongDescription"},
-		{&api.withPreviews, "SteamAPI_ISteamUGC_SetReturnAdditionalPreviews"},
-		{&api.previewCount, "SteamAPI_ISteamUGC_GetQueryUGCNumAdditionalPreviews"},
-		{&api.previewAt, "SteamAPI_ISteamUGC_GetQueryUGCAdditionalPreview"},
-		{&api.sendQuery, "SteamAPI_ISteamUGC_SendQueryUGCRequest"},
-		{&api.queryResult, "SteamAPI_ISteamUGC_GetQueryUGCResult"},
-		{&api.releaseQuery, "SteamAPI_ISteamUGC_ReleaseQueryUGCRequest"},
-		{&api.downloadItem, "SteamAPI_ISteamUGC_DownloadItem"},
-		{&api.installInfo, "SteamAPI_ISteamUGC_GetItemInstallInfo"},
-		{&api.callDone, "SteamAPI_ISteamUtils_IsAPICallCompleted"},
-		{&api.callResult, "SteamAPI_ISteamUtils_GetAPICallResult"},
-		{&api.updateProgress, "SteamAPI_ISteamUGC_GetItemUpdateProgress"},
-		{&api.user, versioned(contents, "SteamAPI_SteamUser_v")},
-		{&api.loggedOn, "SteamAPI_ISteamUser_BLoggedOn"},
-	} {
-		if err := bind(binding.fn, handle, binding.name); err != nil {
+	for _, entry := range bindings(api, contents) {
+		if err := bind(entry.fn, handle, entry.name); err != nil {
 			closeLibrary()
 			return nil, err
 		}
@@ -182,6 +155,45 @@ func openUGC(path string) (*ugcAPI, error) {
 	return api, nil
 }
 
+// bindings is every function of api and the symbol it binds to; contents is the library's file,
+// where the versioned names are looked up.
+//
+//nolint:funlen // a literal table
+func bindings(api *ugcAPI, contents []byte) []binding {
+	return []binding{
+		{&api.shutdown, "SteamAPI_Shutdown"},
+		{&api.runCallbacks, "SteamAPI_RunCallbacks"},
+		{&api.ugc, versioned(contents, "SteamAPI_SteamUGC_v")},
+		{&api.utils, versioned(contents, "SteamAPI_SteamUtils_v")},
+		{&api.createItem, "SteamAPI_ISteamUGC_CreateItem"},
+		{&api.startUpdate, "SteamAPI_ISteamUGC_StartItemUpdate"},
+		{&api.setTitle, "SteamAPI_ISteamUGC_SetItemTitle"},
+		{&api.setDescription, "SteamAPI_ISteamUGC_SetItemDescription"},
+		{&api.setVisibility, "SteamAPI_ISteamUGC_SetItemVisibility"},
+		{&api.setContent, "SteamAPI_ISteamUGC_SetItemContent"},
+		{&api.setPreview, "SteamAPI_ISteamUGC_SetItemPreview"},
+		{&api.addPreviewFile, "SteamAPI_ISteamUGC_AddItemPreviewFile"},
+		{&api.addPreviewVideo, "SteamAPI_ISteamUGC_AddItemPreviewVideo"},
+		{&api.removePreview, "SteamAPI_ISteamUGC_RemoveItemPreview"},
+		{&api.submit, "SteamAPI_ISteamUGC_SubmitItemUpdate"},
+		{&api.createDetailsQuery, "SteamAPI_ISteamUGC_CreateQueryUGCDetailsRequest"},
+		{&api.longDescription, "SteamAPI_ISteamUGC_SetReturnLongDescription"},
+		{&api.withPreviews, "SteamAPI_ISteamUGC_SetReturnAdditionalPreviews"},
+		{&api.previewCount, "SteamAPI_ISteamUGC_GetQueryUGCNumAdditionalPreviews"},
+		{&api.previewAt, "SteamAPI_ISteamUGC_GetQueryUGCAdditionalPreview"},
+		{&api.sendQuery, "SteamAPI_ISteamUGC_SendQueryUGCRequest"},
+		{&api.queryResult, "SteamAPI_ISteamUGC_GetQueryUGCResult"},
+		{&api.releaseQuery, "SteamAPI_ISteamUGC_ReleaseQueryUGCRequest"},
+		{&api.downloadItem, "SteamAPI_ISteamUGC_DownloadItem"},
+		{&api.installInfo, "SteamAPI_ISteamUGC_GetItemInstallInfo"},
+		{&api.callDone, "SteamAPI_ISteamUtils_IsAPICallCompleted"},
+		{&api.callResult, "SteamAPI_ISteamUtils_GetAPICallResult"},
+		{&api.updateProgress, "SteamAPI_ISteamUGC_GetItemUpdateProgress"},
+		{&api.user, versioned(contents, "SteamAPI_SteamUser_v")},
+		{&api.loggedOn, "SteamAPI_ISteamUser_BLoggedOn"},
+	}
+}
+
 // bind points fn at the library's function called name.
 func bind(fn any, handle uintptr, name string) error {
 	address, err := lookupSymbol(handle, name)
@@ -197,11 +209,11 @@ func bind(fn any, handle uintptr, name string) error {
 func versioned(library []byte, prefix string) string {
 	best, bestVersion := prefix, -1
 	for rest := library; ; {
-		at := bytes.Index(rest, []byte(prefix))
-		if at < 0 {
+		pos := bytes.Index(rest, []byte(prefix))
+		if pos < 0 {
 			return best
 		}
-		rest = rest[at+len(prefix):]
+		rest = rest[pos+len(prefix):]
 		digits := 0
 		for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' {
 			digits++
@@ -242,8 +254,8 @@ func (api *ugcAPI) waitCall(call uint64, dest unsafe.Pointer, size, callback int
 	return fmt.Errorf("steam api call timed out")
 }
 
-// start opens library, starts Steam's API on it and returns the UGC interface, with stop to
-// undo both.
+// start runs in the child: it opens library, starts Steam's API on it and returns the UGC
+// interface, with stop to undo both.
 func start(library string) (api *ugcAPI, ugc uintptr, stop func(), err error) {
 	if api, err = openUGC(library); err != nil {
 		return nil, 0, nil, err
@@ -263,8 +275,8 @@ func start(library string) (api *ugcAPI, ugc uintptr, stop func(), err error) {
 	return api, ugc, stop, nil
 }
 
-// publish creates the item where req names none, then sets its content and page and submits it. A new
-// item starts private; an update leaves the visibility its owner set on Steam.
+// publish runs in the child: it creates the item where req names none, then sets its content and page
+// and submits it. A new item starts private; an update leaves the visibility its owner set on Steam.
 func publish(library string, req Request) Response {
 	fileID, err := parseFileID(req.PublishedFileID)
 	if err != nil {
@@ -278,59 +290,27 @@ func publish(library string, req Request) Response {
 
 	needLegal, isNew := false, fileID == 0
 	if isNew {
-		var created createItemResult
-		call := api.createItem(ugc, req.AppID, fileTypeCommunity)
-		if err := api.waitCall(call, unsafe.Pointer(&created), int32(unsafe.Sizeof(created)), createItemCallback); err != nil {
+		if fileID, needLegal, err = createItem(api, ugc, req.AppID); err != nil {
 			return Response{Error: err.Error()}
 		}
-		if created.Result != resultOK {
-			return Response{Error: fmt.Sprintf("CreateItem EResult %d", created.Result)}
-		}
-		fileID = binary.LittleEndian.Uint64(created.FileID[:])
-		needLegal = created.NeedLegal
 	}
 
 	update := api.startUpdate(ugc, req.AppID, fileID)
 	if update == 0 {
 		return Response{Error: "StartItemUpdate failed"}
 	}
-	if !api.setTitle(ugc, update, cString(req.Title)) {
-		return Response{Error: "SetItemTitle failed"}
-	}
-	if !req.KeepDescription && !api.setDescription(ugc, update, cString(req.Description)) {
-		return Response{Error: "SetItemDescription failed"}
-	}
-	if isNew && !api.setVisibility(ugc, update, visibilityPrivate) {
-		return Response{Error: "SetItemVisibility failed"}
-	}
-	if !api.setContent(ugc, update, cString(req.Folder)) {
-		return Response{Error: "SetItemContent failed"}
-	}
-	if !req.KeepExtras {
-		api.clearExtraPreviews(ugc, update)
-	}
-	if req.Preview != "" && !api.setPreview(ugc, update, cString(req.Preview)) {
-		return Response{Error: "SetItemPreview failed"}
-	}
-	for _, image := range req.ExtraPreviews {
-		if !api.addPreviewFile(ugc, update, cString(image), previewTypeImage) {
-			return Response{Error: "AddItemPreviewFile failed"}
-		}
-	}
-	for _, video := range req.ExtraVideos {
-		if !api.addPreviewVideo(ugc, update, cString(video)) {
-			return Response{Error: "AddItemPreviewVideo failed"}
-		}
+	if err := api.fillUpdate(ugc, update, req, isNew); err != nil {
+		return Response{Error: err.Error()}
 	}
 
 	// the upload's progress on stderr, a line each time it moves, for the parent to tell the page
-	var told Progress
+	var lastProgress Progress
 	api.tick = func() {
 		var done, total uint64
-		now := Progress{Stage: updateStages[api.updateProgress(ugc, update, &done, &total)], Done: done, Total: total}
-		if now != told && now.Stage != "" {
-			told = now
-			line, _ := json.Marshal(now)
+		current := Progress{Stage: updateStages[api.updateProgress(ugc, update, &done, &total)], Done: done, Total: total}
+		if current != lastProgress && current.Stage != "" {
+			lastProgress = current
+			line, _ := json.Marshal(current)
 			fmt.Fprintf(os.Stderr, "%s%s\n", progressPrefix, line)
 		}
 	}
@@ -342,8 +322,8 @@ func publish(library string, req Request) Response {
 	if submitted.Result != resultOK {
 		return Response{Error: fmt.Sprintf("SubmitItemUpdate EResult %d", submitted.Result)}
 	}
-	if returned := binary.LittleEndian.Uint64(submitted.FileID[:]); returned != 0 {
-		fileID = returned
+	if submittedID := binary.LittleEndian.Uint64(submitted.FileID[:]); submittedID != 0 {
+		fileID = submittedID
 	}
 	return Response{
 		PublishedFileID:     strconv.FormatUint(fileID, 10),
@@ -351,11 +331,59 @@ func publish(library string, req Request) Response {
 	}
 }
 
+// createItem runs in the child: it asks Steam for a new Workshop item of appID and returns its file id,
+// and whether Steam still wants the Workshop's legal agreement accepted.
+func createItem(api *ugcAPI, ugc uintptr, appID uint32) (fileID uint64, needLegal bool, err error) {
+	var created createItemResult
+	call := api.createItem(ugc, appID, fileTypeCommunity)
+	if err := api.waitCall(call, unsafe.Pointer(&created), int32(unsafe.Sizeof(created)), createItemCallback); err != nil {
+		return 0, false, err
+	}
+	if created.Result != resultOK {
+		return 0, false, fmt.Errorf("CreateItem EResult %d", created.Result)
+	}
+	return binary.LittleEndian.Uint64(created.FileID[:]), created.NeedLegal, nil
+}
+
+// fillUpdate runs in the child: it sets the update's title, description, content, previews and videos
+// from req, and names the setter Steam refused. A new item is made private.
+func (api *ugcAPI) fillUpdate(ugc uintptr, update uint64, req Request, isNew bool) error {
+	if !api.setTitle(ugc, update, cString(req.Title)) {
+		return errors.New("SetItemTitle failed")
+	}
+	if !req.KeepDescription && !api.setDescription(ugc, update, cString(req.Description)) {
+		return errors.New("SetItemDescription failed")
+	}
+	if isNew && !api.setVisibility(ugc, update, visibilityPrivate) {
+		return errors.New("SetItemVisibility failed")
+	}
+	if !api.setContent(ugc, update, cString(req.Folder)) {
+		return errors.New("SetItemContent failed")
+	}
+	if !req.KeepExtras {
+		api.clearExtraPreviews(ugc, update)
+	}
+	if req.Preview != "" && !api.setPreview(ugc, update, cString(req.Preview)) {
+		return errors.New("SetItemPreview failed")
+	}
+	for _, image := range req.ExtraPreviews {
+		if !api.addPreviewFile(ugc, update, cString(image), previewTypeImage) {
+			return errors.New("AddItemPreviewFile failed")
+		}
+	}
+	for _, video := range req.ExtraVideos {
+		if !api.addPreviewVideo(ugc, update, cString(video)) {
+			return errors.New("AddItemPreviewVideo failed")
+		}
+	}
+	return nil
+}
+
 // updateStages are EItemUpdateStatus' stages in words; 0 is none.
 var updateStages = map[int32]string{1: "Preparing the item", 2: "Preparing the files", 3: "Uploading the files", 4: "Uploading the preview", 5: "Committing"}
 
-// status starts Steam's API, which fails with Steam's reason where it is not running or no account that owns the
-// game is signed in, and says whether Steam is online.
+// status runs in the child: it starts Steam's API, which fails with Steam's reason where it is not running or
+// no account that owns the game is signed in, and says whether Steam is online.
 func status(library string) Response {
 	api, _, stop, err := start(library)
 	if err != nil {
@@ -368,8 +396,8 @@ func status(library string) Response {
 	return Response{}
 }
 
-// download reads the item's page, then has Steam download its files and waits until the copy
-// installed is the item's latest update.
+// download runs in the child: it reads the item's page, then has Steam download its files and waits until the
+// copy installed is the item's latest update.
 func download(library string, req Request) Response {
 	fileID, err := parseFileID(req.PublishedFileID)
 	if err != nil || fileID == 0 {
@@ -381,9 +409,25 @@ func download(library string, req Request) Response {
 	}
 	defer stop()
 
+	page, updated, err := itemPage(api, ugc, req, fileID)
+	if err != nil {
+		return Response{Error: err.Error()}
+	}
+	if req.PageOnly {
+		return page
+	}
+	if page.Folder, err = installedFolder(api, ugc, fileID, updated); err != nil {
+		return Response{Error: err.Error()}
+	}
+	return page
+}
+
+// itemPage runs in the child: it reads the item's title, description and extra previews through a details
+// query and returns the page with the time of the item's latest update.
+func itemPage(api *ugcAPI, ugc uintptr, req Request, fileID uint64) (Response, uint32, error) {
 	query := api.createDetailsQuery(ugc, &fileID, 1)
 	if query == invalidQuery {
-		return Response{Error: "CreateQueryUGCDetailsRequest failed"}
+		return Response{}, 0, errors.New("CreateQueryUGCDetailsRequest failed")
 	}
 	defer api.releaseQuery(ugc, query)
 	// without it Steam cuts the description to 255 bytes
@@ -392,24 +436,20 @@ func download(library string, req Request) Response {
 	var done queryCompleted
 	call := api.sendQuery(ugc, query)
 	if err := api.waitCall(call, unsafe.Pointer(&done), int32(unsafe.Sizeof(done)), queryCompletedCallback); err != nil {
-		return Response{Error: err.Error()}
+		return Response{}, 0, err
 	}
 	if done.Result != resultOK {
-		return Response{Error: fmt.Sprintf("SendQueryUGCRequest EResult %d", done.Result)}
+		return Response{}, 0, fmt.Errorf("SendQueryUGCRequest EResult %d", done.Result)
 	}
 	raw := make([]byte, detailsSize)
 	if done.Returned == 0 || !api.queryResult(ugc, query, 0, &raw[0]) {
-		return Response{Error: fmt.Sprintf("steam returned no page for item %d", fileID)}
+		return Response{}, 0, fmt.Errorf("steam returned no page for item %d", fileID)
 	}
 	if result := int32(binary.LittleEndian.Uint32(raw[8:])); result != resultOK {
-		return Response{Error: fmt.Sprintf("GetQueryUGCResult EResult %d", result)}
+		return Response{}, 0, fmt.Errorf("GetQueryUGCResult EResult %d", result)
 	}
-	pack := 8
-	if runtime.GOOS != "windows" {
-		pack = 4
-	}
-	// the owner's 64-bit id, then the times created and updated
-	updated := binary.LittleEndian.Uint32(raw[(detailsOwner+pack-1)/pack*pack+12:])
+	// the item owner's 64-bit id, then the times created and updated
+	updated := binary.LittleEndian.Uint32(raw[(detailsOwner+structPack-1)/structPack*structPack+12:])
 	page := Response{
 		PublishedFileID: req.PublishedFileID,
 		Title:           cText(raw[detailsTitle:detailsDescription]), Description: cText(raw[detailsDescription:detailsOwner]),
@@ -428,12 +468,14 @@ func download(library string, req Request) Response {
 			page.Extras = append(page.Extras, Extra{Video: cText(address[:])})
 		}
 	}
-	if req.PageOnly {
-		return page
-	}
+	return page, updated, nil
+}
 
+// installedFolder runs in the child: it has Steam download the item and waits until the copy installed is at
+// least as new as updated, then returns its folder.
+func installedFolder(api *ugcAPI, ugc uintptr, fileID uint64, updated uint32) (string, error) {
 	if !api.downloadItem(ugc, fileID, true) {
-		return Response{Error: "DownloadItem failed"}
+		return "", errors.New("DownloadItem failed")
 	}
 	var folder [1024]byte
 	for deadline := time.Now().Add(callTimeout); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
@@ -441,11 +483,10 @@ func download(library string, req Request) Response {
 		var size uint64
 		var stamp uint32
 		if api.installInfo(ugc, fileID, &size, &folder[0], uint32(len(folder)), &stamp) && stamp >= updated {
-			page.Folder = cText(folder[:])
-			return page
+			return cText(folder[:]), nil
 		}
 	}
-	return Response{Error: "steam did not finish downloading the item"}
+	return "", errors.New("steam did not finish downloading the item")
 }
 
 // clearExtraPreviews drops every extra preview on the update, so a publish replaces them
@@ -462,6 +503,7 @@ func (api *ugcAPI) clearExtraPreviews(ugc uintptr, update uint64) {
 	}
 }
 
+// parseFileID is a published file id as a number, 0 for none (blank or "0"), or the error of a malformed one.
 func parseFileID(id string) (uint64, error) {
 	id = strings.TrimSpace(id)
 	if id == "" || id == "0" {

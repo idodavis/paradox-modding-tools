@@ -7,6 +7,10 @@ package steam
 
 import "syscall"
 
+// structPack is the byte packing of Steam's callback structs on this build.
+const structPack = 8
+
+// openLibrary loads the library at path and returns its handle with the function that unloads it.
 func openLibrary(path string) (uintptr, func(), error) {
 	handle, err := syscall.LoadLibrary(path)
 	if err != nil {
@@ -15,6 +19,7 @@ func openLibrary(path string) (uintptr, func(), error) {
 	return uintptr(handle), func() { _ = syscall.FreeLibrary(handle) }, nil
 }
 
+// lookupSymbol returns the address of the function called name in the library at handle.
 func lookupSymbol(handle uintptr, name string) (uintptr, error) {
 	return syscall.GetProcAddress(syscall.Handle(handle), name)
 }

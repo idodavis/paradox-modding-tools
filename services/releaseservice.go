@@ -143,7 +143,7 @@ func (s *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles, e
 	if err != nil {
 		return nil, err
 	}
-	sent, skipped := steam.Upload(mod.Path, mod.WorkshopIgnore)
+	sent, skipped := steam.UploadFiles(mod.Path, mod.WorkshopIgnore)
 	files := &UploadFiles{Left: append([]string{}, skipped...)}
 	for _, rel := range sent {
 		if info, err := os.Stat(filepath.Join(mod.Path, filepath.FromSlash(rel))); err == nil {

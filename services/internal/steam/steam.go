@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,15 +101,16 @@ func Library(info *game.GameInfo, installPath string) (string, error) {
 	return library, nil
 }
 
-// Run runs one request in a child process over library and returns Steam's answer, a known
-// failure turned into advice; progress, when given, hears the upload move.
+// Run runs in the editor: it starts the child over library, hands it req on stdin and returns
+// the Response it writes, a known failure turned into advice; progress, when given, hears the
+// upload move.
 func Run(library string, req Request, progress func(Progress)) (Response, error) {
 	// Steam reads the app id from steam_appid.txt in the working directory
 	dir, err := os.MkdirTemp("", "pmt-steam-*")
 	if err != nil {
 		return Response{}, err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	appID := strconv.FormatUint(uint64(req.AppID), 10) + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "steam_appid.txt"), []byte(appID), 0o644); err != nil {
 		return Response{}, err
@@ -136,73 +138,79 @@ func Run(library string, req Request, progress func(Progress)) (Response, error)
 	if err := child.Start(); err != nil {
 		return Response{}, err
 	}
-	// stderr as it comes: progress lines told, the rest kept as what a crash said
-	var said strings.Builder
-	for lines := bufio.NewScanner(stderr); lines.Scan(); {
-		if line, ok := strings.CutPrefix(lines.Text(), progressPrefix); ok {
-			var moved Progress
-			if json.Unmarshal([]byte(line), &moved) == nil && progress != nil {
-				progress(moved)
-			}
-		} else {
-			said.WriteString(lines.Text() + "\n")
-		}
-	}
+	crashText := relayStderr(stderr, progress)
 	err = child.Wait()
 
-	var resp Response
+	var response Response
 	if out.Len() > 0 {
-		_ = json.Unmarshal(out.Bytes(), &resp)
+		_ = json.Unmarshal(out.Bytes(), &response)
 	}
-	if err != nil && resp.Error == "" {
+	if err != nil && response.Error == "" {
 		// the child states its reason on stdout; one that crashed before that left only stderr
-		resp.Error = cmp.Or(strings.TrimSpace(said.String()), err.Error())
+		response.Error = cmp.Or(strings.TrimSpace(crashText), err.Error())
 	}
-	if resp.Error != "" {
-		return Response{}, errors.New(cmp.Or(eresultHint(resp.Error), resp.Error))
+	if response.Error != "" {
+		return Response{}, errors.New(cmp.Or(eresultHint(response.Error), response.Error))
 	}
-	if resp.PublishedFileID == "" && !req.Status {
+	if response.PublishedFileID == "" && !req.Status {
 		return Response{}, fmt.Errorf("steam returned no published file id")
 	}
-	return resp, nil
+	return response, nil
+}
+
+// relayStderr runs in the editor: it reads the child's stderr as it comes, tells each progress
+// line to progress (which may be nil) and returns every other line, which is what a crash said.
+func relayStderr(stderr io.Reader, progress func(Progress)) string {
+	var crashText strings.Builder
+	for lines := bufio.NewScanner(stderr); lines.Scan(); {
+		if line, ok := strings.CutPrefix(lines.Text(), progressPrefix); ok {
+			var step Progress
+			if json.Unmarshal([]byte(line), &step) == nil && progress != nil {
+				progress(step)
+			}
+		} else {
+			crashText.WriteString(lines.Text() + "\n")
+		}
+	}
+	return crashText.String()
 }
 
 // eresultHint is the advice for the EResult a failure names, "" where there is none.
 func eresultHint(failure string) string {
-	_, after, ok := strings.Cut(failure, "EResult ")
+	_, rest, ok := strings.Cut(failure, "EResult ")
 	if !ok {
 		return ""
 	}
 	var code int
-	if _, err := fmt.Sscan(after, &code); err != nil {
+	if _, err := fmt.Sscan(rest, &code); err != nil {
 		return ""
 	}
 	return eresultHints[code]
 }
 
-// Serve is the child, and reports served false for any other run: it reads a Request from
-// stdin, publishes or downloads it through the library named after serveArg, writes the
+// Serve is the child's whole life, and reports served false for any other run: it reads a Request
+// from stdin, publishes or downloads it through the library named after serveArg, writes the
 // Response to stdout, and returns the exit code.
 func Serve() (exitCode int, served bool) {
 	if len(os.Args) < 2 || os.Args[1] != serveArg {
 		return 0, false
 	}
-	resp := Response{Error: "no steam library given"}
+	response := Response{Error: "no steam library given"}
 	if len(os.Args) > 2 {
 		var req Request
 		switch err := json.NewDecoder(os.Stdin).Decode(&req); {
 		case err != nil:
-			resp.Error = err.Error()
+			response.Error = err.Error()
 		case req.Status:
-			resp = status(os.Args[2])
+			response = status(os.Args[2])
 		case req.Download:
-			resp = download(os.Args[2], req)
+			response = download(os.Args[2], req)
 		default:
-			resp = publish(os.Args[2], req)
+			response = publish(os.Args[2], req)
 		}
 	}
-	_ = json.NewEncoder(os.Stdout).Encode(resp)
-	if resp.Error != "" {
+	_ = json.NewEncoder(os.Stdout).Encode(response)
+	if response.Error != "" {
 		return 1, true
 	}
 	return 0, true

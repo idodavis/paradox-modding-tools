@@ -1,5 +1,6 @@
-// bbcode.go maps Markdown to the Steam Workshop's BBCode subset and back. What the Workshop
-// cannot show (tables, task lists, HTML, local images) is dropped and named in the notes.
+// bbcode.go is the Workshop's description format: the BBCode subset Steam shows, written from
+// Markdown and read back into it. What the Workshop cannot show (tables, task lists, HTML, local
+// images) is dropped and named in the notes.
 
 package steam
 
@@ -38,6 +39,10 @@ func MarkdownToBBCode(src string) Converted {
 	return Converted{Text: strings.TrimRight(out.String(), "\n") + "\n", Notes: distinct(notes)}
 }
 
+// renderMarkdown writes node and what it holds as BBCode into out, a note for each construct it drops.
+// A list nested in a list is flattened to one level.
+//
+//nolint:funlen // a switch over the node kinds
 func renderMarkdown(node ast.Node, src []byte, out *strings.Builder, notes *[]string, listDepth int) {
 	switch node.Kind() {
 	case ast.KindDocument:
@@ -108,8 +113,11 @@ func renderMarkdown(node ast.Node, src []byte, out *strings.Builder, notes *[]st
 	}
 }
 
+// writeInlines writes the inline nodes of block as BBCode into out, a note for each construct it drops.
+//
+//nolint:funlen // a switch over the node kinds
 func writeInlines(block ast.Node, src []byte, out *strings.Builder, notes *[]string) {
-	ast.Walk(block, func(inline ast.Node, entering bool) (ast.WalkStatus, error) {
+	_ = ast.Walk(block, func(inline ast.Node, entering bool) (ast.WalkStatus, error) {
 		if inline == block {
 			return ast.WalkContinue, nil
 		}
@@ -207,31 +215,33 @@ func distinct(notes []string) []string {
 
 // BBCodeToMarkdown renders Workshop BBCode as Markdown. A tag outside the Workshop's set
 // stays literal.
+//
+//nolint:funlen // a switch over the tag names
 func BBCodeToMarkdown(src string) Converted {
 	src = strings.ReplaceAll(src, "\r\n", "\n")
 	var out strings.Builder
-	i := 0
-	for i < len(src) {
-		if src[i] != '[' {
-			out.WriteByte(src[i])
-			i++
+	pos := 0
+	for pos < len(src) {
+		if src[pos] != '[' {
+			out.WriteByte(src[pos])
+			pos++
 			continue
 		}
-		name, arg, closing, end, ok := parseTag(src, i)
+		name, arg, closing, end, ok := parseTag(src, pos)
 		if !ok {
 			out.WriteByte('[')
-			i++
+			pos++
 			continue
 		}
 		if closing {
-			out.WriteString(src[i:end])
-			i = end
+			out.WriteString(src[pos:end])
+			pos = end
 			continue
 		}
-		body, after, found := closeTag(src, end, name)
-		if !found {
-			out.WriteString(src[i:end])
-			i = end
+		body, closeEnd, closed := closeTag(src, end, name)
+		if !closed {
+			out.WriteString(src[pos:end])
+			pos = end
 			continue
 		}
 		inner := func() string { return strings.TrimSpace(BBCodeToMarkdown(body).Text) }
@@ -272,73 +282,75 @@ func BBCodeToMarkdown(src string) Converted {
 				out.WriteString("`" + body + "`")
 			}
 		default:
-			out.WriteString(src[i:after])
+			out.WriteString(src[pos:closeEnd])
 		}
-		i = after
+		pos = closeEnd
 	}
 	return Converted{Text: strings.TrimRight(out.String(), "\n") + "\n"}
 }
 
-// parseTag reads the tag starting at src[i]: its lower-cased name, its =argument, whether it
+// parseTag reads the tag starting at src[offset]: its lower-cased name, its =argument, whether it
 // closes, and where it ends.
-func parseTag(src string, i int) (name, arg string, closing bool, end int, ok bool) {
-	if i >= len(src) || src[i] != '[' {
-		return "", "", false, i, false
+func parseTag(src string, offset int) (name, arg string, closing bool, end int, ok bool) {
+	if offset >= len(src) || src[offset] != '[' {
+		return "", "", false, offset, false
 	}
-	j := i + 1
-	if j < len(src) && src[j] == '/' {
+	pos := offset + 1
+	if pos < len(src) && src[pos] == '/' {
 		closing = true
-		j++
+		pos++
 	}
-	start := j
-	for j < len(src) && src[j] != ']' && src[j] != '=' {
-		j++
+	start := pos
+	for pos < len(src) && src[pos] != ']' && src[pos] != '=' {
+		pos++
 	}
-	if j >= len(src) {
-		return "", "", false, i, false
+	if pos >= len(src) {
+		return "", "", false, offset, false
 	}
-	name = strings.ToLower(src[start:j])
-	if src[j] == '=' {
-		j++
-		argStart := j
-		for j < len(src) && src[j] != ']' {
-			j++
+	name = strings.ToLower(src[start:pos])
+	if src[pos] == '=' {
+		pos++
+		argStart := pos
+		for pos < len(src) && src[pos] != ']' {
+			pos++
 		}
-		if j >= len(src) {
-			return "", "", false, i, false
+		if pos >= len(src) {
+			return "", "", false, offset, false
 		}
-		arg = src[argStart:j]
+		arg = src[argStart:pos]
 	}
-	return name, arg, closing, j + 1, name != ""
+	return name, arg, closing, pos + 1, name != ""
 }
 
-// closeTag finds name's closing tag from from on, in any case: the body before it and where it ends.
+// closeTag finds name's closing tag from start on, in any case: the body before it and where it ends.
 // It compares in place, as lower-casing can change the text's length.
-func closeTag(src string, from int, name string) (body string, after int, ok bool) {
+func closeTag(src string, start int, name string) (body string, closeEnd int, ok bool) {
 	needle := "[/" + name + "]"
-	for at := from; ; at += 2 {
-		next := strings.Index(src[at:], "[/")
+	for pos := start; ; pos += 2 {
+		next := strings.Index(src[pos:], "[/")
 		if next < 0 {
-			return "", from, false
+			return "", start, false
 		}
-		at += next
-		if end := at + len(needle); end <= len(src) && strings.EqualFold(src[at:end], needle) {
-			return src[from:at], end, true
+		pos += next
+		if end := pos + len(needle); end <= len(src) && strings.EqualFold(src[pos:end], needle) {
+			return src[start:pos], end, true
 		}
 	}
 }
 
+// listToMarkdown renders the body of a [list] or [olist], its items split at [*], as Markdown list lines;
+// ordered numbers them.
 func listToMarkdown(body string, ordered bool) string {
 	var out strings.Builder
-	n := 1
+	number := 1
 	for _, part := range strings.Split(body, "[*]") {
 		item := strings.TrimSpace(BBCodeToMarkdown(part).Text)
 		if item == "" {
 			continue
 		}
 		if ordered {
-			fmt.Fprintf(&out, "%d. %s\n", n, item)
-			n++
+			fmt.Fprintf(&out, "%d. %s\n", number, item)
+			number++
 		} else {
 			out.WriteString("- " + item + "\n")
 		}

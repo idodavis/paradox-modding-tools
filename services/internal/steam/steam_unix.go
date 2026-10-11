@@ -7,6 +7,10 @@ package steam
 
 import "github.com/ebitengine/purego"
 
+// structPack is the byte packing of Steam's callback structs on this build.
+const structPack = 4
+
+// openLibrary loads the library at path and returns its handle with the function that unloads it.
 func openLibrary(path string) (uintptr, func(), error) {
 	handle, err := purego.Dlopen(path, purego.RTLD_NOW)
 	if err != nil {
@@ -15,6 +19,7 @@ func openLibrary(path string) (uintptr, func(), error) {
 	return handle, func() { _ = purego.Dlclose(handle) }, nil
 }
 
+// lookupSymbol returns the address of the function called name in the library at handle.
 func lookupSymbol(handle uintptr, name string) (uintptr, error) {
 	return purego.Dlsym(handle, name)
 }

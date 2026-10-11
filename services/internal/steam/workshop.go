@@ -30,15 +30,27 @@ import (
 	"paradox-modding-tools/services/internal/modfiles"
 )
 
+// The files under workshop/ a mod keeps for its Workshop page.
 const (
 	DescMdName    = "workshop/mod-description.md"     // the default Markdown description
 	DescBbName    = "workshop/mod-description.bbcode" // the default BBCode description
 	ChangelogName = "workshop/changelog.bbcode"       // the latest change note
-	IgnoreFile    = ".workshop-ignore"                // where the workspace's ignore text is exported beside the mod
+)
 
+// IgnoreFile is where the workspace's ignore text is exported beside the mod.
+const IgnoreFile = ".workshop-ignore"
+
+// Where a mod keeps its extra previews and how many of them Steam takes.
+const (
 	previewDir        = "workshop/previews"
 	videosRel         = "workshop/previews/videos.txt"
 	maxWorkshopExtras = 10
+)
+
+// The two kinds of a Preview.
+const (
+	kindImage   = "image"
+	kindYouTube = "youtube"
 )
 
 // Where a mod's Workshop description comes from.
@@ -78,14 +90,14 @@ func NewDescription(root, rel, source, name, description string) error {
 
 // DescriptionRel is a chosen description file as the workspace stores it: relative to the mod
 // root, which it must be inside, and "" for a default name or no choice. It need not exist yet.
-func DescriptionRel(root, chosen string) (string, error) {
-	chosen = strings.TrimSpace(chosen)
-	if chosen == "" {
+func DescriptionRel(root, choice string) (string, error) {
+	choice = strings.TrimSpace(choice)
+	if choice == "" {
 		return "", nil
 	}
-	abs := chosen
+	abs := choice
 	if !filepath.IsAbs(abs) {
-		abs = filepath.Join(root, filepath.FromSlash(chosen))
+		abs = filepath.Join(root, filepath.FromSlash(choice))
 	}
 	if info, err := os.Stat(abs); err == nil && info.IsDir() {
 		return "", fmt.Errorf("description path is a directory")
@@ -117,11 +129,11 @@ func ScanPreviews(root string) []Preview {
 		slices.Sort(names)
 		for _, name := range names {
 			rel := previewDir + "/" + name
-			out = append(out, Preview{Rel: rel, Abs: filepath.Join(root, filepath.FromSlash(rel)), Kind: "image"})
+			out = append(out, Preview{Rel: rel, Abs: filepath.Join(root, filepath.FromSlash(rel)), Kind: kindImage})
 		}
 	}
 	for _, id := range readVideoIDs(root) {
-		out = append(out, Preview{Kind: "youtube", ID: id})
+		out = append(out, Preview{Kind: kindYouTube, ID: id})
 	}
 	return out
 }
@@ -142,7 +154,7 @@ func (extra Extra) Label() string {
 func ExtrasOf(previews []Preview) []Extra {
 	var extras []Extra
 	for _, preview := range previews {
-		if preview.Kind == "youtube" {
+		if preview.Kind == kindYouTube {
 			extras = append(extras, Extra{Video: preview.ID})
 		} else {
 			extras = append(extras, Extra{Name: path.Base(preview.Rel)})
@@ -171,8 +183,8 @@ func SaveExtras(modRoot string, extras []Extra) error {
 		if have[extra.Name] || extra.URL == "" {
 			continue
 		}
-		if len(ScanPreviews(modRoot)) >= maxWorkshopExtras {
-			return fmt.Errorf("workshop extras cap is %d", maxWorkshopExtras)
+		if err := atExtrasCap(modRoot); err != nil {
+			return err
 		}
 		if err := saveImage(filepath.Join(modRoot, filepath.FromSlash(previewDir)), extra); err != nil {
 			return err
@@ -183,12 +195,22 @@ func SaveExtras(modRoot string, extras []Extra) error {
 
 var imageClient = &http.Client{Timeout: time.Minute}
 
+// atExtrasCap returns the error that refuses another extra where the mod already keeps as many as Steam takes.
+func atExtrasCap(modRoot string) error {
+	if len(ScanPreviews(modRoot)) >= maxWorkshopExtras {
+		return fmt.Errorf("workshop extras cap is %d", maxWorkshopExtras)
+	}
+	return nil
+}
+
+// saveImage downloads the extra's image into dir under its file name, and its type's extension where the
+// name has none Steam shows. The file is whole or not there at all.
 func saveImage(dir string, extra Extra) error {
 	resp, err := imageClient.Get(extra.URL)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", extra.Name, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s: %s", extra.Name, resp.Status)
 	}
@@ -209,8 +231,8 @@ func saveImage(dir string, extra Extra) error {
 
 // AddPreview copies an image into workshop/previews, within Steam's cap on extras.
 func AddPreview(modRoot, srcPath string) error {
-	if len(ScanPreviews(modRoot)) >= maxWorkshopExtras {
-		return fmt.Errorf("workshop extras cap is %d", maxWorkshopExtras)
+	if err := atExtrasCap(modRoot); err != nil {
+		return err
 	}
 	ext := strings.ToLower(filepath.Ext(srcPath))
 	if !slices.Contains(previewExts, ext) {
@@ -244,20 +266,19 @@ func AddVideo(modRoot, urlOrID string) error {
 	if err != nil {
 		return err
 	}
-	previews := ScanPreviews(modRoot)
-	ids := VideoIDs(previews)
+	ids := VideoIDs(ScanPreviews(modRoot))
 	if slices.Contains(ids, id) {
 		return nil
 	}
-	if len(previews) >= maxWorkshopExtras {
-		return fmt.Errorf("workshop extras cap is %d", maxWorkshopExtras)
+	if err := atExtrasCap(modRoot); err != nil {
+		return err
 	}
 	return writeVideoIDs(modRoot, append(ids, id))
 }
 
 // RemoveVideo drops one YouTube id from workshop/previews/videos.txt.
 func RemoveVideo(modRoot, id string) error {
-	kept := slices.DeleteFunc(readVideoIDs(modRoot), func(listed string) bool { return listed == id })
+	kept := slices.DeleteFunc(readVideoIDs(modRoot), func(stored string) bool { return stored == id })
 	return writeVideoIDs(modRoot, kept)
 }
 
@@ -266,7 +287,7 @@ func VideoIDs(previews []Preview) []string {
 	seen := map[string]bool{}
 	var ids []string
 	for _, preview := range previews {
-		if preview.Kind != "youtube" || preview.ID == "" || seen[preview.ID] {
+		if preview.Kind != kindYouTube || preview.ID == "" || seen[preview.ID] {
 			continue
 		}
 		seen[preview.ID] = true
@@ -279,7 +300,7 @@ func VideoIDs(previews []Preview) []string {
 func PreviewFiles(previews []Preview) []string {
 	var out []string
 	for _, preview := range previews {
-		if preview.Kind != "youtube" {
+		if preview.Kind != kindYouTube {
 			out = append(out, preview.Abs)
 		}
 	}
@@ -307,8 +328,8 @@ func parseYouTubeID(urlOrID string) (string, error) {
 	if !strings.Contains(host, "youtube.com") {
 		return "", fmt.Errorf("not a youtube id")
 	}
-	if watched := link.Query().Get("v"); youtubeID.MatchString(watched) {
-		return watched, nil
+	if videoID := link.Query().Get("v"); youtubeID.MatchString(videoID) {
+		return videoID, nil
 	}
 	parts := strings.Split(strings.Trim(link.Path, "/"), "/")
 	if len(parts) >= 2 {
@@ -322,11 +343,11 @@ func parseYouTubeID(urlOrID string) (string, error) {
 	return "", fmt.Errorf("not a youtube id")
 }
 
-// Upload is the mod at root as an upload takes it, relative to root with forward slashes: the
-// files it sends, and those its .gitignore and the extra ignore text leave out. It walks the way
-// the engine does, following linked folders and junctions, because Steam receives real files and
-// mods are often linked from elsewhere.
-func Upload(root, extraIgnore string) (sent, left []string) {
+// UploadFiles is the mod at root as an upload takes it, relative to root with forward slashes: the
+// files it sends, and those its .gitignore and the extra ignore text leave out (skipped). It walks
+// the way the engine does, following linked folders and junctions, because Steam receives real
+// files and mods are often linked from elsewhere.
+func UploadFiles(root, extraIgnore string) (sent, skipped []string) {
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
 	patterns := strings.Split(string(gitignore)+"\n"+extraIgnore, "\n")
 	_ = inventory.Walk(root, func(file string) error {
@@ -335,19 +356,19 @@ func Upload(root, extraIgnore string) (sent, left []string) {
 			return nil
 		}
 		if rel = filepath.ToSlash(rel); ignored(rel, patterns) {
-			left = append(left, rel)
+			skipped = append(skipped, rel)
 		} else {
 			sent = append(sent, rel)
 		}
 		return nil
 	})
-	return sent, left
+	return sent, skipped
 }
 
 // CopyMod copies what an upload of the mod at src sends into dest, a fresh folder nothing reads until
 // the copy is whole: plain writes, no flush per file (a mod has thousands).
 func CopyMod(src, dest, extraIgnore string) error {
-	sent, _ := Upload(src, extraIgnore)
+	sent, _ := UploadFiles(src, extraIgnore)
 	for _, rel := range sent {
 		data, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(rel)))
 		if err != nil {
@@ -367,7 +388,7 @@ func CopyMod(src, dest, extraIgnore string) error {
 // ZipMod writes what an upload of the mod at src sends into a zip at dest, for a store with no upload of ours
 // (Paradox Mods): whole or not at all (appdata.Write), streamed, the files at the zip's root.
 func ZipMod(src, dest, extraIgnore string) error {
-	sent, _ := Upload(src, extraIgnore)
+	sent, _ := UploadFiles(src, extraIgnore)
 	return appdata.Write(dest, func(out io.Writer) error {
 		archive := zip.NewWriter(out)
 		for _, rel := range sent {
@@ -390,32 +411,34 @@ func ZipMod(src, dest, extraIgnore string) error {
 // FileChange is one file an upload changes on Steam: A added, M modified, D deleted, with the lines
 // it adds and removes (LineCounts) unless it is binary.
 type FileChange struct {
-	Rel          string `json:"rel"`
-	Status       string `json:"status"`
-	Binary       bool   `json:"binary"`    // no line diff: a NUL in its first 512 bytes on either side, as the editor's reads judge
+	Rel    string `json:"rel"`
+	Status string `json:"status"`
+	// no line diff: a NUL in its first 512 bytes on either side, as the editor's reads judge
+	Binary       bool   `json:"binary"`
 	Steam        string `json:"steam"`     // its path in Steam's copy, which a new file lacks
 	Workspace    string `json:"workspace"` // its path in the mod, which a removed file lacks
 	LinesAdded   int    `json:"linesAdded"`
 	LinesRemoved int    `json:"linesRemoved"`
 }
 
-// LineCounts is how many lines a change from before to after adds and removes, by the shortest
+// LineCounts is how many lines a change from oldText to newText adds and removes, by the shortest
 // edit between their lines (Myers): each line compared with its line break, as a diff draws them.
-func LineCounts(before, after string) (added, removed int) {
-	old, now := slices.Collect(strings.Lines(before)), slices.Collect(strings.Lines(after))
-	n, m := len(old), len(now)
-	far := make([]int, 2*(n+m)+2) // the furthest x reached on each diagonal k, at far[n+m+k]
+func LineCounts(oldText, newText string) (added, removed int) {
+	oldLines, newLines := slices.Collect(strings.Lines(oldText)), slices.Collect(strings.Lines(newText))
+	oldCount, newCount := len(oldLines), len(newLines)
+	mid := oldCount + newCount
+	far := make([]int, 2*mid+2) // the furthest old line reached on each diagonal k, at far[mid+k]
 	for edits := 0; ; edits++ {
 		for k := -edits; k <= edits; k += 2 {
-			x := far[n+m+k+1] // down from the diagonal above, else right from the one below
-			if k != -edits && (k == edits || far[n+m+k-1] >= far[n+m+k+1]) {
-				x = far[n+m+k-1] + 1
+			oldPos := far[mid+k+1] // down from the diagonal above, else right from the one below
+			if k != -edits && (k == edits || far[mid+k-1] >= far[mid+k+1]) {
+				oldPos = far[mid+k-1] + 1
 			}
-			for y := x - k; x < n && y < m && old[x] == now[y]; y++ {
-				x++
+			for newPos := oldPos - k; oldPos < oldCount && newPos < newCount && oldLines[oldPos] == newLines[newPos]; newPos++ {
+				oldPos++
 			}
-			if far[n+m+k] = x; x >= n && x-k >= m {
-				return (m - n + edits) / 2, (n - m + edits) / 2
+			if far[mid+k] = oldPos; oldPos >= oldCount && oldPos-k >= newCount {
+				return (newCount - oldCount + edits) / 2, (oldCount - newCount + edits) / 2
 			}
 		}
 	}
@@ -424,45 +447,45 @@ func LineCounts(before, after string) (added, removed int) {
 // Changes is what an upload of the mod at root changes in the copy of it Steam has at steamRoot, by
 // path.
 func Changes(steamRoot, root, extraIgnore string) []FileChange {
-	read := func(dir, rel string) []byte {
+	contents := func(dir, rel string) []byte {
 		data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
 		return data
 	}
-	change := func(rel, status string, before, after []byte) FileChange {
-		c := FileChange{Rel: rel, Status: status, Binary: inventory.Binary(before) || inventory.Binary(after)}
+	changeOf := func(rel, status string, theirs, ours []byte) FileChange {
+		change := FileChange{Rel: rel, Status: status, Binary: inventory.Binary(theirs) || inventory.Binary(ours)}
 		if status != "A" {
-			c.Steam = filepath.Join(steamRoot, filepath.FromSlash(rel))
+			change.Steam = filepath.Join(steamRoot, filepath.FromSlash(rel))
 		}
 		if status != "D" {
-			c.Workspace = filepath.Join(root, filepath.FromSlash(rel))
+			change.Workspace = filepath.Join(root, filepath.FromSlash(rel))
 		}
-		if !c.Binary {
-			c.LinesAdded, c.LinesRemoved = LineCounts(string(before), string(after))
+		if !change.Binary {
+			change.LinesAdded, change.LinesRemoved = LineCounts(string(theirs), string(ours))
 		}
-		return c
+		return change
 	}
-	theirs, _ := Upload(steamRoot, "")
+	steamRels, _ := UploadFiles(steamRoot, "")
 	gone := map[string]bool{}
-	for _, rel := range theirs {
+	for _, rel := range steamRels {
 		gone[rel] = true
 	}
-	ours, _ := Upload(root, extraIgnore)
+	modRels, _ := UploadFiles(root, extraIgnore)
 	changes := []FileChange{}
-	for _, rel := range ours {
-		data, before, status := read(root, rel), []byte(nil), "A"
+	for _, rel := range modRels {
+		ours, theirs, status := contents(root, rel), []byte(nil), "A"
 		if gone[rel] {
 			delete(gone, rel)
-			if before = read(steamRoot, rel); bytes.Equal(data, before) {
+			if theirs = contents(steamRoot, rel); bytes.Equal(ours, theirs) {
 				continue
 			}
 			status = "M"
 		}
-		changes = append(changes, change(rel, status, before, data))
+		changes = append(changes, changeOf(rel, status, theirs, ours))
 	}
 	for rel := range gone {
-		changes = append(changes, change(rel, "D", read(steamRoot, rel), nil))
+		changes = append(changes, changeOf(rel, "D", contents(steamRoot, rel), nil))
 	}
-	slices.SortFunc(changes, func(a, b FileChange) int { return strings.Compare(a.Rel, b.Rel) })
+	slices.SortFunc(changes, func(first, second FileChange) int { return strings.Compare(first.Rel, second.Rel) })
 	return changes
 }
 
@@ -476,7 +499,7 @@ func ignored(rel string, patterns []string) bool {
 		return true
 	}
 	for depth, part := range parts {
-		if strings.HasPrefix(part, ".") && !(depth == 0 && part == game.MetadataDir) {
+		if strings.HasPrefix(part, ".") && (depth != 0 || part != game.MetadataDir) {
 			return true
 		}
 		if ignoreMatch(strings.Join(parts[:depth+1], "/"), depth < len(parts)-1, patterns) {
@@ -504,6 +527,7 @@ func uniquePreviewDest(dir, src string) (string, error) {
 	return "", fmt.Errorf("preview name collision")
 }
 
+// readVideoIDs is the YouTube ids in the mod's videos.txt, one a line, skipping any line that is not an id.
 func readVideoIDs(root string) []string {
 	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(videosRel)))
 	if err != nil {
@@ -518,6 +542,7 @@ func readVideoIDs(root string) []string {
 	return ids
 }
 
+// writeVideoIDs replaces the mod's videos.txt with ids, one a line, whole or not at all.
 func writeVideoIDs(root string, ids []string) error {
 	body := strings.Join(ids, "\n")
 	if body != "" {
@@ -526,6 +551,8 @@ func writeVideoIDs(root string, ids []string) error {
 	return appdata.WriteBytes(filepath.Join(root, filepath.FromSlash(videosRel)), []byte(body))
 }
 
+// ignoreMatch is whether the ignore rules, in order, leave rel out: the last rule that matches it
+// decides, and a rule that starts with ! takes a match back. Blank lines and # comments are no rule.
 func ignoreMatch(rel string, isDir bool, patterns []string) bool {
 	matched := false
 	for _, raw := range patterns {
@@ -551,8 +578,8 @@ func matchGitPattern(pattern, rel string, isDir bool) bool {
 		return false
 	}
 	pattern = strings.TrimSuffix(pattern, "/")
-	if after, anchored := strings.CutPrefix(pattern, "/"); anchored {
-		pattern = after
+	if rest, anchored := strings.CutPrefix(pattern, "/"); anchored {
+		pattern = rest
 	} else if pattern != "" {
 		pattern = "**/" + pattern
 	}

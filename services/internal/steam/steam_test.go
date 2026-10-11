@@ -1,11 +1,15 @@
 // steam_test.go covers the Markdown and BBCode conversions both ways, the advice for a known
 // EResult, the gate over the real installs (each game's copy of Steam's library opens and binds
-// every function a publish calls), the YouTube ids a user pastes, what the upload copy keeps,
-// the listing's extra images and videos, and the descriptions written only when missing.
+// every function a publish calls), the YouTube ids a user pastes, what the upload copy keeps, the
+// zip of it, the changes it makes against Steam's copy and their line counts, the listing's extra
+// images and videos, and the descriptions written only when missing.
 
 package steam
 
 import (
+	"archive/zip"
+	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,13 +22,23 @@ import (
 	"paradox-modding-tools/services/internal/game"
 )
 
+// What the tests paste, write and compare more than once.
+const (
+	videoID          = "dQw4w9WgXcQ" // a YouTube id
+	imageText        = "png"         // the contents of a preview the tests never decode
+	twoLines         = "a\nb\n"
+	twoLinesUnbroken = "a\nb"
+	changedFile      = "changed.txt"
+	blobFile         = "blob.bin"
+)
+
 func TestMarkdownToBBCode(t *testing.T) {
 	cases := []struct {
-		name string
-		in   string
-		want string
-		note string
-		back bool // BBCodeToMarkdown reads want back as in
+		name   string
+		source string
+		want   string
+		note   string
+		back   bool // BBCodeToMarkdown reads want back as source
 	}{
 		{"h1", "# Title\n", "[h1]Title[/h1]\n", "", true},
 		{"h2", "## Title\n", "[h2]Title[/h2]\n", "", false},
@@ -53,15 +67,15 @@ func TestMarkdownToBBCode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := MarkdownToBBCode(tc.in)
+			got := MarkdownToBBCode(tc.source)
 			if strings.TrimSpace(got.Text) != strings.TrimSpace(tc.want) {
 				t.Fatalf("text:\n got %q\nwant %q", got.Text, tc.want)
 			}
 			if tc.note != "" && !slices.Contains(got.Notes, tc.note) {
 				t.Fatalf("notes %v want %q", got.Notes, tc.note)
 			}
-			if back := BBCodeToMarkdown(got.Text); tc.back && strings.TrimSpace(back.Text) != strings.TrimSpace(tc.in) {
-				t.Fatalf("read back:\n got %q\nwant %q", back.Text, tc.in)
+			if back := BBCodeToMarkdown(got.Text); tc.back && strings.TrimSpace(back.Text) != strings.TrimSpace(tc.source) {
+				t.Fatalf("read back:\n got %q\nwant %q", back.Text, tc.source)
 			}
 		})
 	}
@@ -125,27 +139,26 @@ func TestInstallsBindSteam(t *testing.T) {
 }
 
 func TestParseYouTubeID(t *testing.T) {
-	const id = "dQw4w9WgXcQ"
 	cases := []struct {
-		name string
-		in   string
-		ok   bool
+		name  string
+		input string
+		ok    bool
 	}{
-		{"raw", id, true},
-		{"watch", "https://www.youtube.com/watch?v=" + id, true},
-		{"watch t", "https://youtube.com/watch?v=" + id + "&t=12", true},
-		{"embed", "https://www.youtube.com/embed/" + id, true},
-		{"short", "https://youtu.be/" + id, true},
-		{"shorts", "https://www.youtube.com/shorts/" + id, true},
-		{"mobile", "https://m.youtube.com/watch?v=" + id, true},
+		{"raw", videoID, true},
+		{"watch", "https://www.youtube.com/watch?v=" + videoID, true},
+		{"watch t", "https://youtube.com/watch?v=" + videoID + "&t=12", true},
+		{"embed", "https://www.youtube.com/embed/" + videoID, true},
+		{"short", "https://youtu.be/" + videoID, true},
+		{"shorts", "https://www.youtube.com/shorts/" + videoID, true},
+		{"mobile", "https://m.youtube.com/watch?v=" + videoID, true},
 		{"bad", "nope", false},
 		{"http img", "https://example.com/a.png", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseYouTubeID(tc.in)
+			got, err := parseYouTubeID(tc.input)
 			if tc.ok {
-				if err != nil || got != id {
+				if err != nil || got != videoID {
 					t.Fatalf("got %q %v", got, err)
 				}
 				return
@@ -251,20 +264,44 @@ func TestCopyMod(t *testing.T) {
 	}
 }
 
-func TestWorkshopExtras(t *testing.T) {
+// writeFiles writes each of files, by its slash path under root and its text.
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, text := range files {
+		file := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// fillExtras adds images to the mod until it holds as many extras as Steam takes.
+func fillExtras(t *testing.T, root string) {
+	t.Helper()
+	shots := t.TempDir()
+	for i := range maxWorkshopExtras {
+		shot := "shot-" + string(rune('a'+i)) + ".png"
+		writeFiles(t, shots, map[string]string{shot: imageText})
+		if err := AddPreview(root, filepath.Join(shots, shot)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestWorkshopPreviews(t *testing.T) {
 	root := t.TempDir()
 	shots := t.TempDir()
 
 	// an image is added, listed and removed
-	src := filepath.Join(shots, "shot.png")
-	if err := os.WriteFile(src, []byte("png"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := AddPreview(root, src); err != nil {
+	writeFiles(t, shots, map[string]string{"shot.png": imageText})
+	if err := AddPreview(root, filepath.Join(shots, "shot.png")); err != nil {
 		t.Fatal(err)
 	}
 	previews := ScanPreviews(root)
-	if len(previews) != 1 || previews[0].Kind != "image" {
+	if len(previews) != 1 || previews[0].Kind != kindImage {
 		t.Fatalf("%+v", previews)
 	}
 	rel := previews[0].Rel
@@ -278,54 +315,139 @@ func TestWorkshopExtras(t *testing.T) {
 		t.Fatal("preview not removed")
 	}
 
+	// past the cap an image is not added
+	fillExtras(t, root)
+	writeFiles(t, shots, map[string]string{"overflow.png": imageText})
+	if err := AddPreview(root, filepath.Join(shots, "overflow.png")); err == nil {
+		t.Fatal("want cap error")
+	}
+}
+
+func TestWorkshopVideos(t *testing.T) {
+	root := t.TempDir()
+
 	// a video is added once, whether as a URL or an id, and removed
-	const id = "dQw4w9WgXcQ"
-	if err := AddVideo(root, "https://youtu.be/"+id); err != nil {
+	if err := AddVideo(root, "https://youtu.be/"+videoID); err != nil {
 		t.Fatal(err)
 	}
-	previews = ScanPreviews(root)
-	if len(previews) != 1 || previews[0].ID != id {
+	previews := ScanPreviews(root)
+	if len(previews) != 1 || previews[0].ID != videoID {
 		t.Fatalf("%+v", previews)
 	}
-	if err := AddVideo(root, id); err != nil {
+	if err := AddVideo(root, videoID); err != nil {
 		t.Fatal(err)
 	}
 	if len(ScanPreviews(root)) != 1 {
 		t.Fatal("duplicate video added")
 	}
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(videosRel)))
+	text, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(videosRel)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(raw)) != id {
-		t.Fatalf("%q", raw)
+	if strings.TrimSpace(string(text)) != videoID {
+		t.Fatalf("%q", text)
 	}
-	if err := RemoveVideo(root, id); err != nil {
+	if err := RemoveVideo(root, videoID); err != nil {
 		t.Fatal(err)
 	}
 	if len(ScanPreviews(root)) != 0 {
 		t.Fatal("video not removed")
 	}
 
-	// past the cap neither an image nor a video is added
-	for i := range maxWorkshopExtras {
-		shot := filepath.Join(shots, "shot-"+string(rune('a'+i))+".png")
-		if err := os.WriteFile(shot, []byte("png"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := AddPreview(root, shot); err != nil {
-			t.Fatal(err)
-		}
+	// past the cap a video is not added
+	fillExtras(t, root)
+	if err := AddVideo(root, videoID); err == nil {
+		t.Fatal("want cap error")
 	}
-	src = filepath.Join(shots, "overflow.png")
-	if err := os.WriteFile(src, []byte("png"), 0o644); err != nil {
+}
+
+func TestLineCounts(t *testing.T) {
+	cases := []struct {
+		label   string
+		oldText string
+		newText string
+		added   int
+		removed int
+	}{
+		{"equal", twoLines, twoLines, 0, 0},
+		{"added", "a\n", twoLines, 1, 0},
+		{"removed", twoLines, "a\n", 0, 1},
+		{"changed", twoLines, "a\nc\n", 1, 1},
+		{"equal without a final line break", twoLinesUnbroken, twoLinesUnbroken, 0, 0},
+		{"final line break added", twoLinesUnbroken, twoLines, 1, 1},
+		{"line added after one without a break", "a", "a\nb", 2, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			added, removed := LineCounts(tc.oldText, tc.newText)
+			if added != tc.added || removed != tc.removed {
+				t.Fatalf("got %d added and %d removed, want %d and %d", added, removed, tc.added, tc.removed)
+			}
+		})
+	}
+}
+
+func TestChanges(t *testing.T) {
+	steamRoot, modRoot := t.TempDir(), t.TempDir()
+	writeFiles(t, steamRoot, map[string]string{
+		"same.txt":        "x\n",
+		changedFile:       twoLines,
+		"aaa-deleted.txt": "gone\n",
+		blobFile:          "\x00\x01",
+	})
+	writeFiles(t, modRoot, map[string]string{
+		"same.txt":   "x\n",
+		changedFile:  "a\nc\nd\n",
+		"added.txt":  "new\n",
+		blobFile:     "\x00\x02",
+		"debug.log":  "ignored by the mod's .gitignore",
+		".gitignore": "*.log\n",
+	})
+	steam := func(rel string) string { return filepath.Join(steamRoot, rel) }
+	workspace := func(rel string) string { return filepath.Join(modRoot, rel) }
+
+	want := []FileChange{
+		{Rel: "aaa-deleted.txt", Status: "D", Steam: steam("aaa-deleted.txt"), LinesRemoved: 1},
+		{Rel: "added.txt", Status: "A", Workspace: workspace("added.txt"), LinesAdded: 1},
+		{Rel: blobFile, Status: "M", Binary: true, Steam: steam(blobFile), Workspace: workspace(blobFile)},
+		{Rel: changedFile, Status: "M", Steam: steam(changedFile), Workspace: workspace(changedFile),
+			LinesAdded: 2, LinesRemoved: 1},
+	}
+	if got := Changes(steamRoot, modRoot, ""); !slices.Equal(got, want) {
+		t.Fatalf("got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestZipMod(t *testing.T) {
+	src := t.TempDir()
+	files := map[string]string{"descriptor.mod": "name=\"m\"\n", "common/a.txt": "a\n"}
+	writeFiles(t, src, files)
+	writeFiles(t, src, map[string]string{".gitignore": "*.log\n", "debug.log": "ignored"})
+	dest := filepath.Join(t.TempDir(), "mod.zip")
+	if err := ZipMod(src, dest, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := AddPreview(root, src); err == nil {
-		t.Fatal("want cap error")
+
+	archive, err := zip.OpenReader(dest)
+	if err != nil {
+		t.Fatalf("the zip is not whole: %v", err)
 	}
-	if err := AddVideo(root, id); err == nil {
-		t.Fatal("want cap error")
+	defer func() { _ = archive.Close() }()
+	got := map[string]string{}
+	for _, entry := range archive.File {
+		file, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		text, err := io.ReadAll(file)
+		_ = file.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got[entry.Name] = string(text)
+	}
+	if !maps.Equal(got, files) {
+		t.Fatalf("the zip holds %q, want %q", got, files)
 	}
 }
 

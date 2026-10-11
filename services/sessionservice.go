@@ -28,7 +28,8 @@ import (
 type SessionService struct {
 	config  *ConfigFile
 	version string
-	scan    func(ctx context.Context, request index.Request) (*index.Install, error) // index.Scan; the tests set a stand-in
+	// scan is index.Scan; the tests set a stand-in
+	scan func(ctx context.Context, request index.Request) (*index.Install, error)
 
 	once         sync.Once
 	mu           sync.RWMutex
@@ -57,7 +58,7 @@ type LanguageHealth struct {
 const (
 	EventLangReady        = "lang:ready"         // a workspace's session is built: data is its id
 	EventLangFailed       = "lang:failed"        // a workspace's session could not be built: data is its id
-	EventLangDropped      = "lang:dropped"       // a workspace's session was closed (its inputs changed, another opened): data is its id
+	EventLangDropped      = "lang:dropped"       // a workspace's session was closed: data is its id
 	EventLangScanProgress = "lang:scan-progress" // an install scan moved: data is ScanProgress
 	EventLangCacheUpdated = "lang:cache-updated" // an install was scanned or loaded from its cache: data is its id
 	EventFSChanged        = "fs:changed"         // a file under a mod changed on disk: data is FSChanged

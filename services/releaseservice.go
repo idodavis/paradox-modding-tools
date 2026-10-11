@@ -81,7 +81,7 @@ type ListingSummary struct {
 	DescSource   string `json:"descSource"` // markdown, bbcode or steam
 	DescRel      string `json:"descRel"`    // the source's file in the mod; "" for steam
 	DescExists   bool   `json:"descExists"`
-	SteamVersion string `json:"steamVersion,omitempty"` // the version in PMT's last copy of the item, read without comparing
+	SteamVersion string `json:"steamVersion,omitempty"` // the version in PMT's last copy of the item
 }
 
 // PublishResult is Steam's answer.
@@ -157,6 +157,7 @@ func (s *ReleaseService) UploadFiles(workspaceID, modID string) (*UploadFiles, e
 // EventSteamProgress is a publish's upload moving: data is steam.Progress.
 const EventSteamProgress = "steam:progress"
 
+// registers the event so the bindings generator types it
 func init() { application.RegisterEvent[steam.Progress](EventSteamProgress) }
 
 // SteamStatus says why Steam cannot take an upload for a workspace's game now (not running, no account that owns

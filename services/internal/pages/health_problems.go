@@ -68,11 +68,11 @@ func problems(ws *workspace.Session, report *HealthReport, findings map[string][
 	shown := map[place]map[string]bool{} // by place: the cards listing a finding there
 	mark := func(card string, sites []Site) {
 		for _, site := range sites {
-			at := place{report.Sources[site.File].Path, site.Line, site.Col}
-			if shown[at] == nil {
-				shown[at] = map[string]bool{}
+			where := place{report.Sources[site.File].Path, site.Line, site.Col}
+			if shown[where] == nil {
+				shown[where] = map[string]bool{}
 			}
-			shown[at][card] = true
+			shown[where][card] = true
 		}
 	}
 	for _, contest := range report.Contests {
@@ -85,9 +85,9 @@ func problems(ws *workspace.Session, report *HealthReport, findings map[string][
 	for _, path := range slices.Sorted(maps.Keys(findings)) {
 		file, _ := ws.Workspace.At(path)
 		language := ""
-		for _, at := range ws.Workspace.InFile(path) {
-			if at.Occurrence().Role == schema.Localizes {
-				language = at.Language()
+		for _, entry := range ws.Workspace.InFile(path) {
+			if entry.Occurrence().Role == schema.Localizes {
+				language = entry.Language()
 				break
 			}
 		}

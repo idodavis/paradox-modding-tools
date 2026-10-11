@@ -17,9 +17,9 @@ import (
 const stubMore = "more"
 
 // moreStub draws what a node's fan-out hides as one stub, joined to the node.
-func (grapher *grapher) moreStub(from string, hidden []workspace.Fire) {
-	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: "more:" + from, Database: stubMore, Stub: stubMore, Title: stubTitle(hidden)})
-	grapher.out.Edges = append(grapher.out.Edges, Edge{From: from, To: "more:" + from})
+func (grapher *grapher) moreStub(id string, hidden []workspace.Fire) {
+	grapher.out.Nodes = append(grapher.out.Nodes, Node{ID: "more:" + id, Database: stubMore, Stub: stubMore, Title: stubTitle(hidden)})
+	grapher.out.Edges = append(grapher.out.Edges, Edge{From: id, To: "more:" + id})
 }
 
 // callersStub draws what fires the root, one hop in, as a stub until the page opens it; a root the game never

@@ -163,7 +163,7 @@ func LocReaders(ws *workspace.Session, key string) []Cited {
 
 // index is a file's number in Sources, which it takes at the end of the list the first time a row names it.
 func (sources *sourceIndex) index(file inventory.File) int {
-	if number, named := sources.numbers[file.Path]; named {
+	if number, known := sources.numbers[file.Path]; known {
 		return number
 	}
 	number := len(sources.report.Sources)

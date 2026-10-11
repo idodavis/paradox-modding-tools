@@ -78,11 +78,11 @@ func (shipped shippedFiles) add(ws *workspace.Session, index *index.Index, folde
 			continue
 		}
 		shipped.byRel[rel] = append(shipped.byRel[rel], file)
-		for _, at := range index.InFile(file.Path) {
-			occurrence := at.Occurrence()
+		for _, def := range index.InFile(file.Path) {
+			occurrence := def.Occurrence()
 			entry := occurrence.Role == schema.Defines && occurrence.ID != ""
 			if entry && ws.Install.Schema.Databases[occurrence.Database] != nil && !occurrence.Local && !occurrence.IsName {
-				shipped.defines[file.Path] = append(shipped.defines[file.Path], at)
+				shipped.defines[file.Path] = append(shipped.defines[file.Path], def)
 			}
 		}
 	}

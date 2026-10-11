@@ -21,14 +21,15 @@ const (
 	EventWindowHeld    = "window:held"    // a window tells the others what it holds: data is WindowHeld
 	EventWindowHello   = "window:hello"   // a window opened and asks the others what they hold: data is its name
 	EventWindowTabs    = "window:tabs"    // tabs handed to a window: data is WindowTabs
-	EventWindowGive    = "window:give"    // a window asked to hand a tab to another (a tab dragged there): data is WindowGive
+	EventWindowGive    = "window:give"    // a window asked to hand a tab to another (dragged there): data is WindowGive
 	EventWindowShow    = "window:show"    // a window asked to the front, at a route or a file: data is WindowShow
-	EventWindowResults = "window:results" // the Search results another window found, told to the main window's sidebar: data is PanelResults
+	EventWindowResults = "window:results" // another window's Search results: data is PanelResults
 	EventWindowClosing = "window:closing" // a window asked to hand its tabs back before it closes: data is its name
 	EventWindowClosed  = "window:closed"  // a window closed: data is its name
 	EventWindowChanged = "window:changed" // a window saved what the others read: data is its name
 )
 
+// registers every event so the bindings generator types them
 func init() {
 	application.RegisterEvent[WindowHeld](EventWindowHeld)
 	application.RegisterEvent[string](EventWindowHello)

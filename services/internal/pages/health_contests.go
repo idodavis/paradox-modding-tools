@@ -48,10 +48,10 @@ func contests(ws *workspace.Session, preview []*index.Index, sources *sourceInde
 func contestedNames(ws *workspace.Session) [][2]string {
 	names := map[[2]string]bool{}
 	for _, file := range ws.Workspace.Files {
-		for _, at := range ws.Workspace.InFile(file.Path) {
-			occurrence := at.Occurrence()
-			named := occurrence.Role == schema.Defines && occurrence.ID != ""
-			if named && ws.Install.Schema.Databases[occurrence.Database] != nil && !ws.Install.Index.Repeated(occurrence.Database) {
+		for _, def := range ws.Workspace.InFile(file.Path) {
+			occurrence := def.Occurrence()
+			defines := occurrence.Role == schema.Defines && occurrence.ID != ""
+			if defines && ws.Install.Schema.Databases[occurrence.Database] != nil && !ws.Install.Index.Repeated(occurrence.Database) {
 				names[[2]string{occurrence.Database, occurrence.ID}] = true
 			}
 		}

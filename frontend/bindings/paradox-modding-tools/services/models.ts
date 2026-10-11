@@ -371,7 +371,7 @@ export interface ListingSummary {
     "descExists": boolean;
 
     /**
-     * the version in PMT's last copy of the item, read without comparing
+     * the version in PMT's last copy of the item
      */
     "steamVersion"?: string;
 }

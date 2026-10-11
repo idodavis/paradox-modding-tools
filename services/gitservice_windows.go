@@ -12,6 +12,7 @@ import (
 
 const createNoWindow = 0x08000000 // CREATE_NO_WINDOW
 
+// init has git run with no console window, which only Windows opens.
 func init() {
 	hideConsole = func(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}

@@ -46,11 +46,11 @@ func spanLines(parsed *jomini.Result, span jomini.Range, limit int) []string {
 		if limit > 0 && len(out) == limit {
 			return append(out, "…")
 		}
-		from, to := lines.OffsetAt(line, 0), len(parsed.Src)
+		start, end := lines.OffsetAt(line, 0), len(parsed.Src)
 		if line+1 < lines.LineCount() {
-			to = lines.OffsetAt(line+1, 0)
+			end = lines.OffsetAt(line+1, 0)
 		}
-		out = append(out, strings.TrimRight(parsed.Src[from:to], "\r\n"))
+		out = append(out, strings.TrimRight(parsed.Src[start:end], "\r\n"))
 	}
 	return out
 }
@@ -151,9 +151,9 @@ func (text eventText) option(block *jomini.Block, line int) Option {
 			option.Names = append(option.Names, text.version(scalar, ""))
 		case field.Key.Text == "name":
 			if inner := jomini.BlockOf(field.Value); inner != nil {
-				if named := text.scalar(inner, "text"); named != nil {
+				if label := text.scalar(inner, "text"); label != nil {
 					when, _ := text.trigger(inner)
-					option.Names = append(option.Names, text.version(named, when))
+					option.Names = append(option.Names, text.version(label, when))
 				}
 			}
 		case isScalar && scalar.Text == game.Bools[0] && slices.Contains(game.OptionFlags, field.Key.Text):

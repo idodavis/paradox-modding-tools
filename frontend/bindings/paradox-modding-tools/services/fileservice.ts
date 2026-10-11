@@ -73,8 +73,8 @@ export function TrashPath(fullPath: string): $CancellablePromise<string> {
 }
 
 /**
- * WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so a
- * failed save never leaves half a file.
+ * WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so
+ * a failed save never leaves half a file.
  */
 export function WriteText(fullPath: string, text: string, bom: boolean, legacy: boolean): $CancellablePromise<void> {
     return $Call.ByID(2180260259, fullPath, text, bom, legacy);

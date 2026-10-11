@@ -204,22 +204,22 @@ func references(ws *workspace.Session, def index.At, file inventory.File) []RefG
 func SearchRoots(ws *workspace.Session, query string) *Roots {
 	query = strings.ToLower(query)
 	fired, firing := firedNames(ws)
-	named := map[string]string{} // by name: its database
+	databaseOf := map[string]string{} // by name
 	for name, database := range fired {
 		if strings.Contains(strings.ToLower(name), query) && len(index.Lookup(ws.Indexes(), schema.Defines, database, name)) > 0 {
-			named[name] = database
+			databaseOf[name] = database
 		}
 	}
 	// a name of several databases takes the first in sorted order, so no map order decides
 	for _, roots := range firing {
 		for _, root := range roots {
-			if strings.Contains(strings.ToLower(root.Name), query) && (named[root.Name] == "" || root.Database < named[root.Name]) {
-				named[root.Name] = root.Database
+			if strings.Contains(strings.ToLower(root.Name), query) && (databaseOf[root.Name] == "" || root.Database < databaseOf[root.Name]) {
+				databaseOf[root.Name] = root.Database
 			}
 		}
 	}
 	byDatabase := map[string][]string{}
-	for name, database := range named {
+	for name, database := range databaseOf {
 		byDatabase[database] = append(byDatabase[database], name)
 	}
 	out := &Roots{}
@@ -276,13 +276,13 @@ func firedNames(ws *workspace.Session) (fired map[string]string, firing map[inde
 // read takes in the references of one loaded file that fire something.
 func (roots *firedRoots) read(occurrences []index.At) {
 	s := roots.ws.Install.Schema
-	for _, at := range occurrences {
-		occurrence := at.Occurrence()
+	for _, ref := range occurrences {
+		occurrence := ref.Occurrence()
 		if occurrence.Role != schema.Refers || !index.Fires(s, occurrence) {
 			continue
 		}
 		roots.fired[occurrence.ID] = occurrence.Database
-		caller, inEntry := at.Entry()
+		caller, inEntry := ref.Entry()
 		if _, known := roots.firing[caller]; !inEntry || known {
 			continue
 		}

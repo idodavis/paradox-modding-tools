@@ -52,8 +52,8 @@ func dependencies(ws *workspace.Session, sources *sourceIndex) []Dependency {
 
 // file takes in each reference of a file that names an entry of a mod: its edges, one use each.
 func (walk *dependencyWalk) file(file inventory.File) {
-	for _, at := range walk.ws.Workspace.InFile(file.Path) {
-		ref := at.Occurrence()
+	for _, entry := range walk.ws.Workspace.InFile(file.Path) {
+		ref := entry.Occurrence()
 		// a loc key, a file, a parameter or a name script makes is no mod's entry, and a call names none
 		if ref.Role != schema.Refers || ref.Database != "" && walk.ws.Install.Schema.Databases[ref.Database] == nil {
 			continue
@@ -136,12 +136,12 @@ func (walk *dependencyWalk) holderEdges(file inventory.File, ref schema.Occurren
 
 // overridden is the definition a winning one hides and whether the two are written otherwise: the one before it
 // in the load order, else the install's own winner, the zero At for none.
-func (walk *dependencyWalk) overridden(ref schema.Occurrence, from string, defs []index.At, winner index.At) (index.At, bool) {
+func (walk *dependencyWalk) overridden(ref schema.Occurrence, path string, defs []index.At, winner index.At) (index.At, bool) {
 	var base index.At
 	if i := slices.Index(defs, winner); i > 0 {
 		base = defs[i-1]
 	} else {
-		installed, _ := index.Resolve(walk.ws.Install.Schema, []*index.Index{walk.ws.Install.Index}, ref, from)
+		installed, _ := index.Resolve(walk.ws.Install.Schema, []*index.Index{walk.ws.Install.Index}, ref, path)
 		base, _, _, _ = walk.ws.Winner(installed)
 	}
 	pair := [2]index.At{winner, base}

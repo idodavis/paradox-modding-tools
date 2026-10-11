@@ -29,16 +29,16 @@ func (grapher *grapher) countReach() {
 	frontier := []string{grapher.params.Root}
 	for hop := 0; hop < grapher.params.Depth && len(frontier) > 0; hop++ {
 		var next []string
-		for _, from := range frontier {
-			next = append(next, grapher.reachFrom(from, seen)...)
+		for _, id := range frontier {
+			next = append(next, grapher.reachFrom(id, seen)...)
 		}
 		frontier = next
 	}
 }
 
 // reachFrom counts what one node fires that is not counted yet, and says which are new, for the next hop.
-func (grapher *grapher) reachFrom(from string, seen map[string]bool) (next []string) {
-	for _, fire := range followed(grapher.params, grapher.ws.Fires(grapher.def(from))) {
+func (grapher *grapher) reachFrom(id string, seen map[string]bool) (next []string) {
+	for _, fire := range followed(grapher.params, grapher.ws.Fires(grapher.def(id))) {
 		if grapher.params.Scripted && fire.Via != "" {
 			for _, scripted := range strings.Split(fire.Via, " → ") {
 				grapher.countOnce(scripted, seen)

@@ -286,8 +286,8 @@ func (s *FileService) ReadText(fullPath string) (FileText, error) {
 	return textOf(data, fullPath, fullPath), nil
 }
 
-// WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so a
-// failed save never leaves half a file.
+// WriteText is the editor's save: the text in the file's own encoding (inventory.EncodeText), through appdata.Write, so
+// a failed save never leaves half a file.
 func (s *FileService) WriteText(fullPath, text string, bom, legacy bool) error {
 	data, err := inventory.EncodeText(text, bom, legacy)
 	if err != nil {

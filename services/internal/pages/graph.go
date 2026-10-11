@@ -147,8 +147,8 @@ func (grapher *grapher) hops() {
 	frontier := []string{grapher.params.Root}
 	for hop := 0; hop < grapher.params.Depth && len(frontier) > 0 && !grapher.out.Truncated; hop++ {
 		var next []string
-		for _, from := range frontier {
-			next = append(next, grapher.hop(from, hop)...)
+		for _, id := range frontier {
+			next = append(next, grapher.hop(id, hop)...)
 		}
 		frontier = next
 	}
@@ -157,13 +157,13 @@ func (grapher *grapher) hops() {
 // hop draws what one node fires, and says which nodes it drew new, for the next hop: the fires past the fan-out
 // are a stub, a new node past the node cap marks the graph truncated at the next hop, and an edge is drawn to a
 // node drawn before as well.
-func (grapher *grapher) hop(from string, hop int) (next []string) {
+func (grapher *grapher) hop(id string, hop int) (next []string) {
 	params := grapher.params
-	fires := followed(params, grapher.ws.Fires(grapher.def(from)))
-	opened := slices.Contains(params.Expand, "more:"+from)
+	fires := followed(params, grapher.ws.Fires(grapher.def(id)))
+	opened := slices.Contains(params.Expand, "more:"+id)
 	for i, fire := range fires {
 		if !opened && params.Fanout > 0 && i >= params.Fanout {
-			grapher.moreStub(from, fires[i:])
+			grapher.moreStub(id, fires[i:])
 			break
 		}
 		if !grapher.drawn[fire.Name] {
@@ -174,7 +174,7 @@ func (grapher *grapher) hop(from string, hop int) (next []string) {
 			grapher.node(fire.Name, false)
 			next = append(next, fire.Name)
 		}
-		grapher.out.Edges = append(grapher.out.Edges, Edge{From: from, To: fire.Name, Via: fire.Via, Block: fire.Block})
+		grapher.out.Edges = append(grapher.out.Edges, Edge{From: id, To: fire.Name, Via: fire.Via, Block: fire.Block})
 	}
 	return next
 }
@@ -266,12 +266,12 @@ func (grapher *grapher) splice(id string) {
 			joined[[2]string{edge.From, edge.To}] = true
 		}
 	}
-	for _, from := range entering {
-		for _, to := range leaving {
-			pair := [2]string{from.From, to.To}
-			if from.From != to.To && !joined[pair] {
+	for _, edgeIn := range entering {
+		for _, edgeOut := range leaving {
+			pair := [2]string{edgeIn.From, edgeOut.To}
+			if edgeIn.From != edgeOut.To && !joined[pair] {
 				joined[pair] = true
-				rest = append(rest, Edge{From: from.From, To: to.To, Block: from.Block})
+				rest = append(rest, Edge{From: edgeIn.From, To: edgeOut.To, Block: edgeIn.Block})
 			}
 		}
 	}

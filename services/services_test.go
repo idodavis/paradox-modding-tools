@@ -1,8 +1,8 @@
-// services_test.go holds the package's tests and what they share: one scan of the ck3 fixture
-// install, a session over it with the mods a test writes, and a config in a temporary folder that
-// APPDATA, XDG_CONFIG_HOME and HOME are sent to, so no test writes into the real user folders. It
-// also holds the sweep, the engine's scoreboard over every mod of a game's mod folder, which runs
-// only behind PMT_TEST_SWEEP (`task test:sweep`).
+// services_test.go covers the services that stay in the package: the config, the log, the live session, the
+// workspace service and the file service, over one scan of the ck3 fixture install and a config in a temporary
+// folder that APPDATA, XDG_CONFIG_HOME and HOME are sent to, so no test writes into the real user folders. It also
+// holds the sweep, the engine's scoreboard over every mod of a game's mod folder, which runs only behind
+// PMT_TEST_SWEEP (`task test:sweep`).
 
 package services
 

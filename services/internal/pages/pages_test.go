@@ -15,6 +15,7 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
+	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
@@ -26,6 +27,16 @@ const (
 	searchToken = "unique_search_token"
 	modA        = "moda"
 	modB        = "modb"
+)
+
+// Strings the table tests repeat: a folder and a file in it, a database, a statement and a pattern.
+const (
+	eventsFile     = "events/a.txt"
+	ddsFile        = "gfx/x.dds"
+	eventsDatabase = "events"
+	assignOne      = "a = 1"
+	rgbBlock       = "a = rgb { 1 2 3 }"
+	tokPattern     = "Tok"
 )
 
 // The events the graph tests draw around: the second of a chain from a mod, its caller's stub, an event firing
@@ -213,7 +224,7 @@ func healthWorkspace(t *testing.T) *workspace.Session {
 	return openWorkspace(t,
 		map[string]string{
 			"common/traits/zz_a.txt":               "brave = { name = x }\nshared_a = { name = x }\nbold = { name = x }\ncraven = { name = x }\n",
-			"events/a.txt":                         "namespace = a\na.1 = {\n\ttype = character_event\n\ttitle = a.1.t\n\ttrigger = {\n\t\thas_trait = brave\n\t\thas_trait = bold_b\n\t\texists = title:k_nowhere\n\t\texists = title:k_x\n\t\tfaith = faith:catholic\n\t\texists = scope:whatever\n\t}\n\timmediate = { add_gold = small_value }\n}\n",
+			eventsFile:                             "namespace = a\na.1 = {\n\ttype = character_event\n\ttitle = a.1.t\n\ttrigger = {\n\t\thas_trait = brave\n\t\thas_trait = bold_b\n\t\texists = title:k_nowhere\n\t\texists = title:k_x\n\t\tfaith = faith:catholic\n\t\texists = scope:whatever\n\t}\n\timmediate = { add_gold = small_value }\n}\n",
 			"localization/english/a_l_english.yml": "\xEF\xBB\xBFl_english:\n a.1.t:0 \"Hi $VALUE|=+0$\"\n a_dead:0 \"Nothing reads me\"\n a_reader:0 \"$a_read$\"\n a_read:0 \"Read by a key\"\n bold:0 \"Bold\"\n bold_extra:0 \"More\"\n",
 			"localization/french/a_l_french.yml":   "\xEF\xBB\xBFl_french:\n a.1.t:0 \"Salut\"\n",
 		},
@@ -492,7 +503,7 @@ func TestSearchRoots(t *testing.T) {
 		t.Errorf("a macro is a hop, not a root: %+v", got)
 	}
 	every := SearchRoots(ws, "")
-	if !slices.ContainsFunc(every.Databases, func(count DatabaseCount) bool { return count.Database == "events" && count.Count > 10 }) {
+	if !slices.ContainsFunc(every.Databases, func(count DatabaseCount) bool { return count.Database == eventsDatabase && count.Count > 10 }) {
 		t.Errorf("every kind's count: %+v", every)
 	}
 }
@@ -544,5 +555,95 @@ func TestDetail(t *testing.T) {
 	}
 	if none := EventDetail(ws, "nothing.1"); none.Reason == "" {
 		t.Error("a name nothing defines")
+	}
+}
+
+// firstStatement is the first statement of a text.
+func firstStatement(text string) jomini.Statement {
+	return jomini.Parse(text).Root.Statements[0]
+}
+
+func TestSameStatement(t *testing.T) {
+	for _, row := range []struct {
+		name          string
+		first, second string
+		alike         bool
+	}{
+		{"the same", assignOne, assignOne, true},
+		{"another value", assignOne, "a = 2", false},
+		{"another key", assignOne, "b = 1", false},
+		{"a value and a block", assignOne, "a = { 1 }", false},
+		{"a comment is outside the tree", "a = { x = 1 # c\n }", "a = { x = 1 }", true},
+		{"quoted or not", `a = "x"`, "a = x", true},
+		{"another tag", rgbBlock, "a = hsv { 1 2 3 }", false},
+		{"the same tag", rgbBlock, rgbBlock, true},
+	} {
+		if got := sameStatement(firstStatement(row.first), firstStatement(row.second)); got != row.alike {
+			t.Errorf("%s: alike %v, want %v", row.name, got, row.alike)
+		}
+	}
+}
+
+func TestStubTitle(t *testing.T) {
+	event := func(count int) []workspace.Fire {
+		fires := make([]workspace.Fire, count)
+		for i := range fires {
+			fires[i] = workspace.Fire{Name: fmt.Sprintf("e.%d", i), Database: eventsDatabase}
+		}
+		return fires
+	}
+	for _, row := range []struct {
+		name   string
+		hidden []workspace.Fire
+		want   string
+	}{
+		{"three events", event(3), "+3 more events"},
+		{"one event", event(1), "+1 more event"},
+		{"an event and an on_action", []workspace.Fire{{Name: "e.0", Database: eventsDatabase}, {Name: "on_x", Database: "on_action"}}, "+2 more"},
+	} {
+		if got := stubTitle(row.hidden); got != row.want {
+			t.Errorf("%s: %q, want %q", row.name, got, row.want)
+		}
+	}
+}
+
+func TestFolderGlobs(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		glob TextSearchFolder
+		kept map[string]bool // by rel
+	}{
+		{"an include", TextSearchFolder{Includes: []string{"*.txt"}}, map[string]bool{eventsFile: true, "a.yml": false}},
+		{"a negated include", TextSearchFolder{Includes: []string{"!*.yml"}}, map[string]bool{"a.yml": false, eventsFile: true}},
+		{"an exclude", TextSearchFolder{Excludes: []string{"**/gfx/**"}}, map[string]bool{ddsFile: false, eventsFile: true}},
+		{"no globs", TextSearchFolder{}, map[string]bool{ddsFile: true, eventsFile: true}},
+		{"a blank glob", TextSearchFolder{Includes: []string{" "}}, map[string]bool{ddsFile: true, eventsFile: true}},
+	} {
+		globs := folderGlobs(row.glob)
+		for rel, want := range row.kept {
+			if got := pathMatchesGlobs(rel, globs); got != want {
+				t.Errorf("%s: %s kept %v, want %v", row.name, rel, got, want)
+			}
+		}
+	}
+}
+
+func TestWholeFileTest(t *testing.T) {
+	for _, row := range []struct {
+		name  string
+		query TextSearchQuery
+		data  string
+		holds bool
+	}{
+		{"any case", TextSearchQuery{Pattern: tokPattern}, "a tok b", true},
+		{"upper case", TextSearchQuery{Pattern: tokPattern}, "TOK", true},
+		{"case-sensitive, the case", TextSearchQuery{Pattern: tokPattern, IsCaseSensitive: true}, "a Tok b", true},
+		{"case-sensitive, another case", TextSearchQuery{Pattern: tokPattern, IsCaseSensitive: true}, "a tok b", false},
+		{"a regular expression tests nothing", TextSearchQuery{Pattern: "x+", IsRegexp: true}, "no match here", true},
+		{"a non-ASCII literal", TextSearchQuery{Pattern: "é"}, "É", true},
+	} {
+		if got := wholeFileTest(row.query)([]byte(row.data)); got != row.holds {
+			t.Errorf("%s: holds %v, want %v", row.name, got, row.holds)
+		}
 	}
 }

@@ -75,26 +75,26 @@ pages; it parses only what it is handed. `go list -deps ./services/...` gives ev
 
 | Part | Service | File | What the frontend calls it for |
 |---|---|---|---|
-| The app and your data | App | `appservice.go` | the version, update checks, the settings map, reset; it holds `config.json` for the other services |
+| The app and your data | App | `appservice.go` | the version, update checks, the settings map, reset; the file also holds `config.json` (`ConfigFile`) for the other services |
 | | Workspace | `workspaceservice.go` | installs, workspaces, mods and their load order, the IDE's roots |
 | | File | `fileservice.go` | the IDE's file system: read, write (atomic), list, rename, delete |
 | | Log | `logservice.go` | the app log (`pmt.log`), the frontend's log lines, crash detection |
 | The open workspace | Session | `sessionservice.go` | `EnsureSession` (open a workspace, scanning if needed), the language health |
 | | Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
-| Pages and tools | Health | `healthservice.go` | the Health page |
-| | EventGraph | `eventgraphservice.go` | the event graph and one event's detail |
+| Pages and tools | Health | `healthservice.go` | the Health page: three calls into `internal/pages` |
+| | EventGraph | `eventgraphservice.go` | the event graph, one event's detail and the root search: three calls into `internal/pages` |
 | | Wiki | `wikiservice.go` | the IDE's Wiki pane and Patch Notes |
-| | Search | `searchservice.go` | the IDE's text and file search, and replace (`search:hits` per file) |
+| | Search | `searchservice.go` | the IDE's text and file search, and replace: three calls into `internal/pages` (`search:hits` per file) |
 | | Git | `gitservice.go` | the IDE's source control: the git installed on this machine, per mod repository (`gitservice_windows.go` hides git's console) |
 | | Release | `releaseservice.go` | the Publish page: descriptor, description, Workshop extras, Steam publish |
 | | Window | `windowservice.go` | the app's other windows: open, show, close (a closing one hands its tabs back first), and the `window:*` events they tell each other by |
 
-Ide, Health, EventGraph and Wiki reach the open workspace through Session (`live`); Session,
-Workspace, Ide, Release and Log read or change your saved data through App (`read`, `mutate`); Git
-reads a workspace's mods through App to find their repositories. File, Search and Window stand alone: the first two
+Ide, Health, EventGraph and Wiki reach the open workspace through Session (`openSession`); Session,
+Workspace, Ide, Release, Log and Wiki read or change your saved data through the ConfigFile (`read`, `mutate`); Git
+reads a workspace's mods through it to find their repositories. File, Search and Window stand alone: the first two
 work on paths the frontend hands them, Window on the app's windows.
 
-Go tells the frontend about state with events (`emit` in `sessionservice.go`): `lang:ready`,
+Go tells the frontend about state with events (`emit` in `appservice.go`; each service declares its own beside their payloads): `lang:ready`,
 `lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `fs:changed`,
 `wiki:updated`, `wiki:progress`, `search:hits` and `git:output`. After changing a service method or a payload type, run
 `task common:generate:bindings`; never edit `frontend/bindings/` by hand.
@@ -190,7 +190,8 @@ refetches when it is shown again.
 | how a dump file is read | the label table in `internal/lang/schema/dumps.go` |
 | a diagnostic | `internal/lsp/diagnostics.go` (`Codes`, the judge) |
 | a hover card's wording | `internal/lsp/wording.go` (`takesText`, `vanillaWritesText`, `blockHoldsText`) |
-| a Health section | `healthservice.go` |
+| a Health section | `internal/pages/health_*.go` (one file per card) |
+| what the event graph or a search answers | `internal/pages/graph*.go`, `internal/pages/search*.go` |
 | a new frontend call | a service method, then `task common:generate:bindings` |
 
 A rule is a row, never a branch for one case. The engine infers nothing a table or a declared

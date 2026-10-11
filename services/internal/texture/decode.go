@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	_ "image/jpeg"
+	_ "image/png"
 	"math/bits"
 	"os"
 	"path/filepath"
@@ -146,12 +148,11 @@ func decodeDDS(data []byte) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	u32 := func(off int) uint32 { return binary.LittleEndian.Uint32(data[off:]) }
 	offset := 128
 	if string(data[84:88]) == "DX10" {
 		offset = 148
 	}
-	depth, masks := ddsChannels(info, offset, u32)
+	depth, masks := ddsChannels(info, data, offset == 148)
 
 	block, compressed := ddsBlocks[info.Format]
 	if !compressed && (depth == 0 || depth%8 != 0 || depth > 32 || masks == [4]uint32{}) {
@@ -181,24 +182,25 @@ func decodeDDS(data []byte) (image.Image, error) {
 	return img, nil
 }
 
-// ddsChannels is an uncompressed surface's bits a pixel and its channel masks (red, green, blue, alpha): alpha only
-// where its flags say so and a luminance's grey in all three; a DX10 surface's by its byte order. Its header fields
-// are read through u32, offset being where its pixels start.
-func ddsChannels(info Facts, offset int, u32 func(int) uint32) (depth int, masks [4]uint32) {
+// ddsChannels is an uncompressed surface's bits a pixel and its channel masks (red, green, blue, alpha), read from
+// the header in data: alpha only where its flags say so and a luminance's grey in all three; a DX10 surface's by its
+// byte order.
+func ddsChannels(info Facts, data []byte, dx10 bool) (depth int, masks [4]uint32) {
 	const hasAlpha, alphaOnly, luminance = 0x1, 0x2, 0x20000
+	u32 := func(offset int) uint32 { return binary.LittleEndian.Uint32(data[offset:]) }
 	flags := u32(80)
 	depth, masks = int(u32(88)), [4]uint32{u32(92), u32(96), u32(100), u32(104)}
 	switch {
-	case offset == 148 && strings.HasPrefix(info.Format, "RGBA8"):
+	case dx10 && strings.HasPrefix(info.Format, "RGBA8"):
 		depth, masks = 32, [4]uint32{0xff, 0xff00, 0xff0000, 0xff000000}
-	case offset == 148 && strings.HasPrefix(info.Format, "BGRA8"):
+	case dx10 && strings.HasPrefix(info.Format, "BGRA8"):
 		depth, masks = 32, [4]uint32{0xff0000, 0xff00, 0xff, 0xff000000}
-	case offset == 148:
+	case dx10:
 		depth = 0
 	case flags&luminance != 0:
 		masks[1], masks[2] = masks[0], masks[0]
 	}
-	if offset == 128 && flags&(hasAlpha|alphaOnly) == 0 {
+	if !dx10 && flags&(hasAlpha|alphaOnly) == 0 {
 		masks[3] = 0
 	}
 	return depth, masks
@@ -234,69 +236,69 @@ func drawBlocks(img *image.NRGBA, src []byte, block blockFormat) {
 }
 
 // channel is the 8-bit value of a pixel's channel under its mask; none is the fallback.
-func channel(v, mask uint32, none uint8) uint8 {
+func channel(value, mask uint32, none uint8) uint8 {
 	if mask == 0 {
 		return none
 	}
 	width := bits.OnesCount32(mask)
-	return uint8(uint64((v&mask)>>bits.TrailingZeros32(mask)) * 255 / (1<<width - 1))
+	return uint8(uint64((value&mask)>>bits.TrailingZeros32(mask)) * 255 / (1<<width - 1))
 }
 
 // bc1Color decodes a BC1 color block: two RGB565 endpoints and a 2-bit index a pixel. Its four colors are the
-// endpoints and the two between, but where c0 <= c1 in a block of its own the third is halfway and the fourth clear;
-// in BC2 and BC3 (opaque) it is always four.
+// endpoints and the two between, but where the first endpoint is not above the second in a block of its own the
+// third is halfway and the fourth clear; in BC2 and BC3 (opaque) it is always four.
 func bc1Color(src []byte, out *[16]color.NRGBA, opaque bool) {
-	c0, c1 := binary.LittleEndian.Uint16(src), binary.LittleEndian.Uint16(src[2:])
-	p := [4]color.NRGBA{rgb565(c0), rgb565(c1)}
-	if c0 > c1 || opaque {
-		p[2], p[3] = mix(p[0], p[1], 2, 1, 3), mix(p[0], p[1], 1, 2, 3)
+	first, second := binary.LittleEndian.Uint16(src), binary.LittleEndian.Uint16(src[2:])
+	palette := [4]color.NRGBA{rgb565(first), rgb565(second)}
+	if first > second || opaque {
+		palette[2], palette[3] = mix(palette[0], palette[1], 2, 3), mix(palette[0], palette[1], 1, 3)
 	} else {
-		p[2] = mix(p[0], p[1], 1, 1, 2)
+		palette[2] = mix(palette[0], palette[1], 1, 2)
 	}
 	for i := range out {
-		out[i] = p[src[4+i/4]>>(2*(i%4))&3]
+		out[i] = palette[src[4+i/4]>>(2*(i%4))&3]
 	}
 }
 
 // rgb565 is a 16-bit RGB565 color as 8-bit channels, opaque.
-func rgb565(v uint16) color.NRGBA {
-	r, g, b := uint8(v>>8)&0xf8, uint8(v>>3)&0xfc, uint8(v<<3)
-	return color.NRGBA{r | r>>5, g | g>>6, b | b>>5, 255}
+func rgb565(packed uint16) color.NRGBA {
+	red, green, blue := uint8(packed>>8)&0xf8, uint8(packed>>3)&0xfc, uint8(packed<<3)
+	return color.NRGBA{red | red>>5, green | green>>6, blue | blue>>5, 255}
 }
 
-// mix is (a*x + b*y) / d of each color channel, opaque.
-func mix(x, y color.NRGBA, a, b, d int) color.NRGBA {
-	blend := func(u, v uint8) uint8 { return uint8((a*int(u) + b*int(v)) / d) }
-	return color.NRGBA{blend(x.R, y.R), blend(x.G, y.G), blend(x.B, y.B), 255}
+// mix is the color part/whole of the way from second to first, a channel at a time, opaque.
+func mix(first, second color.NRGBA, part, whole int) color.NRGBA {
+	blend := func(one, other uint8) uint8 { return uint8((part*int(one) + (whole-part)*int(other)) / whole) }
+	return color.NRGBA{blend(first.R, second.R), blend(first.G, second.G), blend(first.B, second.B), 255}
 }
 
 // bc2 is a 4-bit alpha a pixel, then a BC1 color block.
 func bc2(src []byte, out *[16]color.NRGBA) {
 	bc1Color(src[8:], out, true)
 	for i := range out {
-		a := src[i/2] >> (4 * (i % 2)) & 0xf
-		out[i].A = a<<4 | a
+		alpha := src[i/2] >> (4 * (i % 2)) & 0xf
+		out[i].A = alpha<<4 | alpha
 	}
 }
 
 // bc3 is two alpha endpoints and a 3-bit index a pixel, then a BC1 color block.
 func bc3(src []byte, out *[16]color.NRGBA) {
 	bc1Color(src[8:], out, true)
-	a0, a1 := int(src[0]), int(src[1])
-	alpha := [8]uint8{uint8(a0), uint8(a1)}
+	alpha0, alpha1 := int(src[0]), int(src[1])
+	alpha := [8]uint8{uint8(alpha0), uint8(alpha1)}
 	for k := 2; k < 8; k++ {
-		if a0 > a1 {
-			alpha[k] = uint8(((8-k)*a0 + (k-1)*a1) / 7)
+		if alpha0 > alpha1 {
+			alpha[k] = uint8(((8-k)*alpha0 + (k-1)*alpha1) / 7)
 		} else if k < 6 {
-			alpha[k] = uint8(((6-k)*a0 + (k-1)*a1) / 5)
+			alpha[k] = uint8(((6-k)*alpha0 + (k-1)*alpha1) / 5)
 		}
 	}
-	if a0 <= a1 {
+	if alpha0 <= alpha1 {
 		alpha[7] = 255
 	}
 	var index uint64
-	for i, b := range src[2:8] {
-		index |= uint64(b) << (8 * i)
+	for i, octet := range src[2:8] {
+		index |= uint64(octet) << (8 * i)
 	}
 	for i := range out {
 		out[i].A = alpha[index>>(3*i)&7]
@@ -400,24 +402,24 @@ func bc7Pixel(state *bc7State, i int) color.NRGBA {
 		ib--
 	}
 	stream.pos = state.colorPos
-	i0 := stream.take(ib)
+	colorIndex := stream.take(ib)
 	state.colorPos = stream.pos
-	colorWeight, alphaWeight := state.colorWeights[i0], state.colorWeights[i0]
+	colorWeight, alphaWeight := state.colorWeights[colorIndex], state.colorWeights[colorIndex]
 	if mode.ab > 0 && mode.ib2 > 0 {
 		ib2 := mode.ib2
 		if i == 0 {
 			ib2--
 		}
 		stream.pos = state.alphaPos
-		i1 := stream.take(ib2)
+		alphaIndex := stream.take(ib2)
 		state.alphaPos = stream.pos
-		colorWeight, alphaWeight = state.colorWeights[i0], state.alphaWeights[i1]
+		colorWeight, alphaWeight = state.colorWeights[colorIndex], state.alphaWeights[alphaIndex]
 		if state.selection > 0 {
-			colorWeight, alphaWeight = state.alphaWeights[i1], state.colorWeights[i0]
+			colorWeight, alphaWeight = state.alphaWeights[alphaIndex], state.colorWeights[colorIndex]
 		}
 	}
-	e0, e1 := state.ends[subset*2], state.ends[subset*2+1]
-	lerp := func(index, weight int) uint8 { return uint8(((64-weight)*e0[index] + weight*e1[index] + 32) >> 6) }
+	low, high := state.ends[subset*2], state.ends[subset*2+1]
+	lerp := func(index, weight int) uint8 { return uint8(((64-weight)*low[index] + weight*high[index] + 32) >> 6) }
 	pixel := [4]uint8{lerp(0, colorWeight), lerp(1, colorWeight), lerp(2, colorWeight), lerp(3, alphaWeight)}
 	if state.rotation > 0 {
 		pixel[state.rotation-1], pixel[3] = pixel[3], pixel[state.rotation-1]
@@ -441,7 +443,7 @@ func decodeTGA(data []byte) (image.Image, error) {
 		return nil, errors.New("not a TGA file")
 	}
 	kind, depth, desc := data[2], int(data[16]), data[17]
-	w, h := int(binary.LittleEndian.Uint16(data[12:])), int(binary.LittleEndian.Uint16(data[14:]))
+	width, height := int(binary.LittleEndian.Uint16(data[12:])), int(binary.LittleEndian.Uint16(data[14:]))
 	grey := kind == 3 || kind == 11
 	if data[1] != 0 || kind != 2 && kind != 3 && kind != 10 && kind != 11 || grey && depth != 8 || !grey && depth != 24 && depth != 32 {
 		return nil, fmt.Errorf("TGA type %d at %d bits is not shown", kind, depth)
@@ -450,42 +452,42 @@ func decodeTGA(data []byte) (image.Image, error) {
 	pixels := src
 	if kind >= 10 {
 		// packets: a count, then that many pixels, or one pixel repeated that many times
-		pixels = make([]byte, 0, w*h*step)
-		for len(pixels) < w*h*step && len(src) > 0 {
+		pixels = make([]byte, 0, width*height*step)
+		for len(pixels) < width*height*step && len(src) > 0 {
 			head := int(src[0])
-			n := head&0x7f + 1
+			count := head&0x7f + 1
 			src = src[1:]
 			if head&0x80 == 0 {
-				n = min(n*step, len(src))
-				pixels, src = append(pixels, src[:n]...), src[n:]
+				count = min(count*step, len(src))
+				pixels, src = append(pixels, src[:count]...), src[count:]
 				continue
 			}
 			if len(src) < step {
 				break
 			}
-			for range n {
+			for range count {
 				pixels = append(pixels, src[:step]...)
 			}
 			src = src[step:]
 		}
 	}
-	if len(pixels) < w*h*step {
+	if len(pixels) < width*height*step {
 		return nil, errors.New("the TGA file is shorter than its header says")
 	}
-	img := image.NewNRGBA(image.Rect(0, 0, w, h))
-	for i := range w * h {
-		x, y, p := i%w, i/w, pixels[i*step:]
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for i := range width * height {
+		column, row, pixel := i%width, i/width, pixels[i*step:]
 		if desc&0x20 == 0 {
-			y = h - 1 - y // its first row is the bottom one
+			row = height - 1 - row // its first row is the bottom one
 		}
-		c := color.NRGBA{p[0], p[0], p[0], 255}
+		rgba := color.NRGBA{pixel[0], pixel[0], pixel[0], 255}
 		if !grey {
-			c.R, c.G, c.B = p[2], p[1], p[0]
+			rgba.R, rgba.G, rgba.B = pixel[2], pixel[1], pixel[0]
 		}
 		if step == 4 {
-			c.A = p[3]
+			rgba.A = pixel[3]
 		}
-		img.SetNRGBA(x, y, c)
+		img.SetNRGBA(column, row, rgba)
 	}
 	return img, nil
 }

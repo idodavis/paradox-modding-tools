@@ -69,13 +69,15 @@ type judge struct {
 func Diagnose(ws *workspace.Session, path string, enabled map[string]bool) ([]Diagnostic, error) {
 	ws.RLock()
 	defer ws.RUnlock()
+	// an install's file, or one that is neither script nor localization, has no findings and is not parsed
+	place := ws.PlaceOf(path)
+	isMod := place.Origin != "" && place.Origin != game.OriginVanilla
+	if !isMod || place.Format != inventory.Script && place.Format != inventory.Loc {
+		return nil, nil
+	}
 	file, err := open(ws, path)
 	if err != nil {
 		return nil, err
-	}
-	isMod := file.place.Origin != "" && file.place.Origin != game.OriginVanilla
-	if !isMod || file.place.Format != inventory.Script && file.place.Format != inventory.Loc {
-		return nil, nil
 	}
 	if enabled == nil {
 		enabled = map[string]bool{}
@@ -112,11 +114,11 @@ func (judge *judge) report(span jomini.Range, severity int, code, message string
 func ignores(text string) map[int][]string {
 	ignored := map[int][]string{}
 	for number, line := range strings.Split(text, "\n") {
-		at := strings.Index(line, "pmt:ignore")
-		if at < 0 || !strings.Contains(line[:at], "#") {
+		mark := strings.Index(line, "pmt:ignore")
+		if mark < 0 || !strings.Contains(line[:mark], "#") {
 			continue
 		}
-		codes := strings.FieldsFunc(line[at+len("pmt:ignore"):], func(char rune) bool { return strings.ContainsRune(", \t\r", char) })
+		codes := strings.FieldsFunc(line[mark+len("pmt:ignore"):], func(char rune) bool { return strings.ContainsRune(", \t\r", char) })
 		ignored[number], ignored[number+1] = codes, codes
 	}
 	return ignored

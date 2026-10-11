@@ -360,7 +360,7 @@ no test: re-measure it by reading the install.
 
 | Fact | Test |
 |---|---|
-| Every file of an install has a format or an ignore rule; every image gives up its header | `lang/source/source_test.go` `TestInstallsAreClassified` |
+| Every file of an install has a format or an ignore rule; every image gives up its header | `inventory/inventory_test.go` `TestInstallsAreClassified`, `texture/texture_test.go` `TestInstallImagesHaveHeaders` |
 | Vanilla diagnostics under per-code ceilings | `lsp/lsp_test.go` `TestInstallsDiagnoseClean` |
 
 **Rule for adding to this file:** record the measurement and the reproduction,

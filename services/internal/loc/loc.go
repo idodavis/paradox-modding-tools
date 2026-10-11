@@ -107,21 +107,8 @@ func (scanner *scanner) processLine(line string, base int) {
 	if body, marked := strings.CutPrefix(line, jomini.BOM); scanner.lineNo == 0 && marked {
 		scanner.hadBOM, line, base = true, body, base+len(jomini.BOM)
 	}
-	i := 0
-	sawTab := false
-indent:
-	for i < len(line) {
-		switch line[i] {
-		case ' ':
-			i++
-		case '\t':
-			sawTab = true
-			i++
-		default:
-			break indent
-		}
-	}
-	contentStart := i
+	contentStart := len(line) - len(strings.TrimLeft(line, " \t"))
+	sawTab := strings.Contains(line[:contentStart], "\t")
 	if contentStart >= len(line) || line[contentStart] == '#' {
 		return // blank or comment-only
 	}

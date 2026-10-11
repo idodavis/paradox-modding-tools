@@ -394,16 +394,16 @@ func DefaultModParent(gameID string) string {
 // Slug is a filesystem-safe folder name from a display name.
 func Slug(name string) string {
 	var slug strings.Builder
-	afterUnderscore := false
+	pendingUnderscore := false
 	for _, char := range strings.ToLower(strings.TrimSpace(name)) {
 		if unicode.IsLetter(char) || unicode.IsDigit(char) {
 			slug.WriteRune(char)
-			afterUnderscore = false
+			pendingUnderscore = false
 			continue
 		}
-		if !afterUnderscore {
+		if !pendingUnderscore {
 			slug.WriteByte('_')
-			afterUnderscore = true
+			pendingUnderscore = true
 		}
 	}
 	return cmp.Or(strings.Trim(slug.String(), "_"), "mod")

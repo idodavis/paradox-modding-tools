@@ -483,7 +483,7 @@ func searchable(path string, buf []byte) []byte {
 	// and images out of the search without listing extensions
 	size, probe := int(info.Size()), min(inventory.BinaryHead, int(info.Size()))
 	head := slices.Grow(buf[:0], probe)[:probe]
-	if _, err := io.ReadFull(file, head); err != nil || bytes.IndexByte(head, 0) >= 0 {
+	if _, err := io.ReadFull(file, head); err != nil || inventory.Binary(head) {
 		return nil
 	}
 	data := slices.Grow(head, size-probe)[:size]

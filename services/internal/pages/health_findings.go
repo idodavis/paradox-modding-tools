@@ -12,6 +12,7 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
+	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
@@ -55,6 +56,10 @@ func (findings *Findings) Current(ws *workspace.Session) map[string][]lsp.Diagno
 	}
 	findings.changes, findings.byPath = changes, map[string][]lsp.Diagnostic{}
 	for _, file := range files {
+		// the editor's checks read script and localization; a file of another format is not parsed
+		if file.Format != inventory.Script && file.Format != inventory.Loc {
+			continue
+		}
 		if diagnostics, err := lsp.Diagnose(ws, file.Path, nil); err == nil && len(diagnostics) > 0 {
 			findings.byPath[file.Path] = diagnostics
 		}

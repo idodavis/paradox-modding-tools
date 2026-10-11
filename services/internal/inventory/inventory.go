@@ -14,8 +14,6 @@ package inventory
 import (
 	"bytes"
 	"context"
-	_ "image/jpeg"
-	_ "image/png"
 	"io/fs"
 	"os"
 	"path"

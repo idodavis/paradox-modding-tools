@@ -176,16 +176,16 @@ func (client *Client) SidecarPath(gameID string) string {
 
 // ForgetAll drops every sidecar held in memory; Reset data calls it after deleting the cache.
 func (client *Client) ForgetAll() {
-	client.memLock.Lock()
-	defer client.memLock.Unlock()
+	client.memMu.Lock()
+	defer client.memMu.Unlock()
 	client.mem = map[string]*Sidecar{}
 }
 
 // load reads gameID's sidecar, from memory once read; a missing or unreadable file is an error.
 func (client *Client) load(gameID string) (*Sidecar, error) {
-	client.memLock.Lock()
+	client.memMu.Lock()
 	cached := client.mem[gameID]
-	client.memLock.Unlock()
+	client.memMu.Unlock()
 	if cached != nil {
 		return cached, nil
 	}
@@ -197,9 +197,9 @@ func (client *Client) load(gameID string) (*Sidecar, error) {
 	if err := json.Unmarshal(raw, &sidecar); err != nil {
 		return nil, err
 	}
-	client.memLock.Lock()
+	client.memMu.Lock()
 	client.mem[gameID] = &sidecar
-	client.memLock.Unlock()
+	client.memMu.Unlock()
 	return &sidecar, nil
 }
 
@@ -211,8 +211,8 @@ func (client *Client) save(gameID string, sidecar *Sidecar) error {
 	if err != nil {
 		return err
 	}
-	client.memLock.Lock()
+	client.memMu.Lock()
 	client.mem[gameID] = sidecar
-	client.memLock.Unlock()
+	client.memMu.Unlock()
 	return nil
 }

@@ -123,32 +123,24 @@ func (parser *parser) atEOF() bool {
 
 // parseStatement consumes one statement, `key (op value | block)? | value`, and returns nil where
 // none starts: at the end of input or a closing brace it consumes nothing, and a token that starts
-// no statement it consumes alone.
+// no statement it consumes alone. A key's value parses through parseBlock back into this function,
+// once a nesting level; the statement is built by assignment, a leaf, so this frame stays small on
+// that cycle.
 func (parser *parser) parseStatement() Statement {
 	tok := parser.peek()
-	if tok.kind == tokEOF || tok.kind == tokRBrace {
+	switch tok.kind {
+	case tokEOF, tokRBrace:
 		return nil
-	}
-
-	// A block starting here is an anonymous list element.
-	if tok.kind == tokLBrace {
+	case tokLBrace:
+		// A block starting here is an anonymous list element.
 		block := parser.parseBlock()
 		return slabAlloc(&parser.values, ValueStmt{Value: block, Range: block.Range})
+	case tokWord, tokString:
+	default:
+		parser.advance()
+		return nil
 	}
-
-	if tok.kind == tokWord || tok.kind == tokString {
-		return parser.parseKeyed(parser.makeScalar(parser.advance()))
-	}
-
-	parser.advance()
-	return nil
-}
-
-// parseKeyed consumes what follows a key: an operator and its value, a GUI-style block with no
-// operator, or nothing, which makes the key a bare list element. The cursor rests on the token
-// after the statement. A value's parse comes back here through parseBlock, once for each level of
-// nesting, so the statement is built by assignment and this frame stays small on that cycle.
-func (parser *parser) parseKeyed(key *Scalar) Statement {
+	key := parser.makeScalar(parser.advance())
 	switch parser.peek().kind {
 	case tokOp:
 		op := parser.advance()
@@ -157,8 +149,7 @@ func (parser *parser) parseKeyed(key *Scalar) Statement {
 		// GUI-style `key { ... }` with no operator.
 		return parser.assignment(key, token{}, parser.parseBlock())
 	}
-
-	// Bare scalar — list element.
+	// Bare scalar: a list element.
 	return slabAlloc(&parser.values, ValueStmt{Value: key, Range: key.Range})
 }
 

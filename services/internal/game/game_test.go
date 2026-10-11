@@ -36,8 +36,8 @@ func TestLoadGameVersion(t *testing.T) {
 	}
 }
 
-// TestUserDataDirWindows holds the case that runs on Windows: the launcher's own setting.
-func TestUserDataDirWindows(t *testing.T) {
+// TestUserDataDirLauncherSetting holds the case every OS shares: the launcher's own setting names the user-data folder.
+func TestUserDataDirLauncherSetting(t *testing.T) {
 	t.Run("game_data_path", func(t *testing.T) {
 		userData := t.TempDir()
 		raw, err := json.Marshal(map[string]string{"gameDataPath": userData})

@@ -134,6 +134,10 @@ func TestInstallImagesHaveHeaders(t *testing.T) {
 			}
 			formats[info.Format]++
 		}
+		if images == 0 {
+			t.Errorf("%s: no image under %s: is it the game's root folder?", testCase.game, install)
+			continue
+		}
 		names := make([]string, 0, len(formats))
 		for name := range formats {
 			names = append(names, name)

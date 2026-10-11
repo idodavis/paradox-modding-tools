@@ -157,8 +157,6 @@ func openUGC(path string) (*ugcAPI, error) {
 
 // bindings is every function of api and the symbol it binds to; contents is the library's file,
 // where the versioned names are looked up.
-//
-//nolint:funlen // a literal table
 func bindings(api *ugcAPI, contents []byte) []binding {
 	return []binding{
 		{&api.shutdown, "SteamAPI_Shutdown"},

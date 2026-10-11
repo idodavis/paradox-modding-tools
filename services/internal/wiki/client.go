@@ -33,7 +33,7 @@ type Client struct {
 	callMu     sync.Mutex // guards lastCall
 	lastCall   time.Time
 	refreshing sync.Mutex // one refresh at a time
-	memLock    sync.Mutex // guards mem
+	memMu      sync.Mutex // guards mem
 	mem        map[string]*Sidecar
 }
 

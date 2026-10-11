@@ -23,6 +23,14 @@ type Converted struct {
 	Notes []string `json:"notes,omitempty"`
 }
 
+// bbcodeWriter is one Markdown document on its way to BBCode: its source, the BBCode written so far, and a note for
+// each construct dropped on the way.
+type bbcodeWriter struct {
+	src   []byte
+	out   strings.Builder
+	notes []string
+}
+
 var markdown = goldmark.New(goldmark.WithExtensions(
 	extension.Strikethrough,
 	extension.Table,
@@ -33,21 +41,20 @@ var markdown = goldmark.New(goldmark.WithExtensions(
 func MarkdownToBBCode(src string) Converted {
 	src = strings.ReplaceAll(src, "\r\n", "\n")
 	doc := markdown.Parser().Parse(text.NewReader([]byte(src)))
-	var out strings.Builder
-	var notes []string
-	renderMarkdown(doc, []byte(src), &out, &notes, 0)
-	return Converted{Text: strings.TrimRight(out.String(), "\n") + "\n", Notes: distinct(notes)}
+	writer := &bbcodeWriter{src: []byte(src)}
+	writer.block(doc, 0)
+	return Converted{Text: strings.TrimRight(writer.out.String(), "\n") + "\n", Notes: distinct(writer.notes)}
 }
 
-// renderMarkdown writes node and what it holds as BBCode into out, a note for each construct it drops.
-// A list nested in a list is flattened to one level.
+// block writes node and what it holds as BBCode, a note for each construct it drops. A list nested in a list is
+// flattened to one level.
 //
 //nolint:funlen // a switch over the node kinds
-func renderMarkdown(node ast.Node, src []byte, out *strings.Builder, notes *[]string, listDepth int) {
+func (writer *bbcodeWriter) block(node ast.Node, listDepth int) {
 	switch node.Kind() {
 	case ast.KindDocument:
 		for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-			renderMarkdown(child, src, out, notes, listDepth)
+			writer.block(child, listDepth)
 		}
 	case ast.KindHeading:
 		// Steam has three heading sizes; a smaller heading is bold
@@ -55,68 +62,70 @@ func renderMarkdown(node ast.Node, src []byte, out *strings.Builder, notes *[]st
 		if level := node.(*ast.Heading).Level; level <= 3 {
 			tag = "h" + strconv.Itoa(level)
 		}
-		out.WriteString("[" + tag + "]")
-		writeInlines(node, src, out, notes)
-		out.WriteString("[/" + tag + "]\n\n")
+		writer.out.WriteString("[" + tag + "]")
+		writer.inlines(node)
+		writer.out.WriteString("[/" + tag + "]\n\n")
 	case ast.KindParagraph:
-		writeInlines(node, src, out, notes)
-		out.WriteString("\n\n")
+		writer.inlines(node)
+		writer.out.WriteString("\n\n")
 	case ast.KindBlockquote:
-		out.WriteString("[quote]")
-		var inner strings.Builder
+		writer.out.WriteString("[quote]")
+		inner := &bbcodeWriter{src: writer.src}
 		for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-			renderMarkdown(child, src, &inner, notes, listDepth)
+			inner.block(child, listDepth)
 		}
-		out.WriteString(strings.TrimSpace(inner.String()))
-		out.WriteString("[/quote]\n\n")
+		writer.out.WriteString(strings.TrimSpace(inner.out.String()))
+		writer.notes = append(writer.notes, inner.notes...)
+		writer.out.WriteString("[/quote]\n\n")
 	case ast.KindFencedCodeBlock, ast.KindCodeBlock:
-		out.WriteString("[code]")
+		writer.out.WriteString("[code]")
 		for i := 0; i < node.Lines().Len(); i++ {
 			segment := node.Lines().At(i)
-			out.Write(src[segment.Start:segment.Stop])
+			writer.out.Write(writer.src[segment.Start:segment.Stop])
 		}
-		out.WriteString("[/code]\n\n")
+		writer.out.WriteString("[/code]\n\n")
 	case ast.KindThematicBreak:
-		out.WriteString("[hr][/hr]\n\n")
+		writer.out.WriteString("[hr][/hr]\n\n")
 	case ast.KindList:
 		tag := "list"
 		if node.(*ast.List).IsOrdered() {
 			tag = "olist"
 		}
 		if listDepth > 0 {
-			*notes = append(*notes, "nested lists flattened to one level")
+			writer.notes = append(writer.notes, "nested lists flattened to one level")
 		}
-		out.WriteString("[" + tag + "]")
+		writer.out.WriteString("[" + tag + "]")
 		for listItem := node.FirstChild(); listItem != nil; listItem = listItem.NextSibling() {
-			out.WriteString("[*]")
-			var item strings.Builder
+			writer.out.WriteString("[*]")
+			item := &bbcodeWriter{src: writer.src}
 			for part := listItem.FirstChild(); part != nil; part = part.NextSibling() {
 				if part.Kind() == ast.KindParagraph || part.Kind() == ast.KindTextBlock {
-					writeInlines(part, src, &item, notes)
+					item.inlines(part)
 					continue
 				}
-				renderMarkdown(part, src, &item, notes, listDepth+1)
+				item.block(part, listDepth+1)
 			}
-			out.WriteString(strings.TrimSpace(item.String()))
+			writer.out.WriteString(strings.TrimSpace(item.out.String()))
+			writer.notes = append(writer.notes, item.notes...)
 		}
-		out.WriteString("[/" + tag + "]\n\n")
+		writer.out.WriteString("[/" + tag + "]\n\n")
 	case east.KindTable:
-		*notes = append(*notes, "tables dropped")
+		writer.notes = append(writer.notes, "tables dropped")
 	case east.KindTaskCheckBox:
-		*notes = append(*notes, "task lists dropped")
+		writer.notes = append(writer.notes, "task lists dropped")
 	case ast.KindHTMLBlock:
-		*notes = append(*notes, "HTML dropped")
+		writer.notes = append(writer.notes, "HTML dropped")
 	default:
 		for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-			renderMarkdown(child, src, out, notes, listDepth)
+			writer.block(child, listDepth)
 		}
 	}
 }
 
-// writeInlines writes the inline nodes of block as BBCode into out, a note for each construct it drops.
+// inlines writes the inline nodes of block as BBCode, a note for each construct it drops.
 //
 //nolint:funlen // a switch over the node kinds
-func writeInlines(block ast.Node, src []byte, out *strings.Builder, notes *[]string) {
+func (writer *bbcodeWriter) inlines(block ast.Node) {
 	_ = ast.Walk(block, func(inline ast.Node, entering bool) (ast.WalkStatus, error) {
 		if inline == block {
 			return ast.WalkContinue, nil
@@ -125,15 +134,15 @@ func writeInlines(block ast.Node, src []byte, out *strings.Builder, notes *[]str
 		case ast.KindText:
 			if entering {
 				run := inline.(*ast.Text)
-				out.Write(run.Segment.Value(src))
+				writer.out.Write(run.Segment.Value(writer.src))
 				if run.SoftLineBreak() {
-					out.WriteByte('\n')
+					writer.out.WriteByte('\n')
 				}
 			}
 			return ast.WalkContinue, nil
 		case ast.KindString:
 			if entering {
-				out.Write(inline.(*ast.String).Value)
+				writer.out.Write(inline.(*ast.String).Value)
 			}
 		case ast.KindEmphasis:
 			tag := "i"
@@ -141,36 +150,36 @@ func writeInlines(block ast.Node, src []byte, out *strings.Builder, notes *[]str
 				tag = "b"
 			}
 			if entering {
-				out.WriteString("[" + tag + "]")
+				writer.out.WriteString("[" + tag + "]")
 			} else {
-				out.WriteString("[/" + tag + "]")
+				writer.out.WriteString("[/" + tag + "]")
 			}
 		case east.KindStrikethrough:
 			if entering {
-				out.WriteString("[strike]")
+				writer.out.WriteString("[strike]")
 			} else {
-				out.WriteString("[/strike]")
+				writer.out.WriteString("[/strike]")
 			}
 		case ast.KindCodeSpan:
 			if entering {
-				out.WriteString("[b]")
+				writer.out.WriteString("[b]")
 				for child := inline.FirstChild(); child != nil; child = child.NextSibling() {
 					if run, ok := child.(*ast.Text); ok {
-						out.Write(run.Segment.Value(src))
+						writer.out.Write(run.Segment.Value(writer.src))
 					}
 				}
-				out.WriteString("[/b]")
+				writer.out.WriteString("[/b]")
 			}
 			return ast.WalkSkipChildren, nil
 		case ast.KindLink:
 			if entering {
-				out.WriteString("[url=" + string(inline.(*ast.Link).Destination) + "]")
+				writer.out.WriteString("[url=" + string(inline.(*ast.Link).Destination) + "]")
 			} else {
-				out.WriteString("[/url]")
+				writer.out.WriteString("[/url]")
 			}
 		case ast.KindAutoLink:
 			if entering {
-				out.Write(inline.(*ast.AutoLink).URL(src))
+				writer.out.Write(inline.(*ast.AutoLink).URL(writer.src))
 			}
 			return ast.WalkSkipChildren, nil
 		case ast.KindImage:
@@ -178,20 +187,20 @@ func writeInlines(block ast.Node, src []byte, out *strings.Builder, notes *[]str
 				dest := string(inline.(*ast.Image).Destination)
 				lower := strings.ToLower(dest)
 				if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
-					*notes = append(*notes, "images need a public http(s) URL for Steam; local paths dropped")
+					writer.notes = append(writer.notes, "images need a public http(s) URL for Steam; local paths dropped")
 					return ast.WalkSkipChildren, nil
 				}
-				out.WriteString("[img]" + dest + "[/img]")
+				writer.out.WriteString("[img]" + dest + "[/img]")
 			}
 			return ast.WalkSkipChildren, nil
 		case ast.KindRawHTML:
 			if entering {
-				*notes = append(*notes, "HTML dropped")
+				writer.notes = append(writer.notes, "HTML dropped")
 			}
 			return ast.WalkSkipChildren, nil
 		case east.KindTaskCheckBox:
 			if entering {
-				*notes = append(*notes, "task lists dropped")
+				writer.notes = append(writer.notes, "task lists dropped")
 			}
 			return ast.WalkSkipChildren, nil
 		}

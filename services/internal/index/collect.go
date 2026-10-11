@@ -153,7 +153,7 @@ func collectLoc(gameID string, file inventory.File, text string, languages []str
 			Role: schema.Localizes, Database: schema.Localization, ID: entry.Key, Range: entry.KeyRange, Line: int32(entry.Line), Entry: -1,
 		})
 		records.texts = append(records.texts, strings.Clone(entry.Value))
-		for _, interp := range loc.Interps(entry.Value, entry.ValueRange.Start) {
+		for _, interp := range loc.Interpolations(entry.Value, entry.ValueRange.Start) {
 			refer(schema.Localization, interp.Key, interp.KeyRange)
 		}
 		if concepts != "" {

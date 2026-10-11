@@ -20,6 +20,9 @@ const (
 	tokEOF
 )
 
+// BOM is the UTF-8 byte-order mark; Paradox files are UTF-8, frequently with one.
+const BOM = "\xEF\xBB\xBF"
+
 // token is a single lexeme. start/end are UTF-8 byte offsets into the source.
 // value holds the operator text for tokOp; unterminated marks a string that reached
 // the end of the text before its closing quote.
@@ -198,8 +201,8 @@ func lexWord(text string, cursor *int) token {
 	start := *cursor
 	pos := *cursor
 	for pos < length {
-		cc := text[pos]
-		if cc == '@' && pos+1 < length && text[pos+1] == '[' {
+		char := text[pos]
+		if char == '@' && pos+1 < length && text[pos+1] == '[' {
 			pos += 2
 			for pos < length && text[pos] != ']' && text[pos] != '\n' && text[pos] != '\r' {
 				pos++
@@ -209,14 +212,14 @@ func lexWord(text string, cursor *int) token {
 			}
 			continue
 		}
-		if cc == '?' {
+		if char == '?' {
 			if pos+1 < length && text[pos+1] == '=' {
 				break
 			}
 			pos++
 			continue
 		}
-		if isWordTerminator(cc) {
+		if isWordTerminator(char) {
 			break
 		}
 		pos++
@@ -229,22 +232,24 @@ func lexWord(text string, cursor *int) token {
 	return token{kind: tokWord, start: start, end: pos}
 }
 
+// lineIndentsFrom is each line's brace depth, from the tokens: the depth before the line, less the closing braces
+// that lead it.
 func lineIndentsFrom(src string, toks []token) []int {
-	li := NewLineIndex(src)
-	n := li.LineCount()
-	openBefore := make([]int, n)
-	closers := make([]int, n)
+	index := NewLineIndex(src)
+	count := index.LineCount()
+	openBefore := make([]int, count)
+	closers := make([]int, count)
 	depth := 0
-	ti := 0
-	for line := range n {
+	next := 0
+	for line := range count {
 		openBefore[line] = depth
-		lineEnd := li.length
-		if line+1 < n {
-			lineEnd = li.lineStarts[line+1]
+		lineEnd := index.length
+		if line+1 < count {
+			lineEnd = index.lineStarts[line+1]
 		}
 		leading, sawNon := 0, false
-		for ti < len(toks) && toks[ti].start < lineEnd {
-			switch toks[ti].kind {
+		for next < len(toks) && toks[next].start < lineEnd {
+			switch toks[next].kind {
 			case tokLBrace:
 				depth++
 				sawNon = true
@@ -259,17 +264,14 @@ func lineIndentsFrom(src string, toks []token) []int {
 			default:
 				sawNon = true
 			}
-			ti++
+			next++
 		}
 		closers[line] = leading
 	}
-	out := make([]int, n)
+	out := make([]int, count)
 	for i := range out {
 		depth := max(openBefore[i]-closers[i], 0)
 		out[i] = depth
 	}
 	return out
 }
-
-// BOM is the UTF-8 byte-order mark; Paradox files are UTF-8, frequently with one.
-const BOM = "\xEF\xBB\xBF"

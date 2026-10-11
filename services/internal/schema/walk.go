@@ -335,7 +335,7 @@ func writtenInPlace(key string) bool {
 	if len(jomini.Interpolations(key)) > 0 {
 		return true
 	}
-	return strings.Contains(key, "(") && slices.ContainsFunc(jomini.ParseCall(key, 0), func(part jomini.Step) bool {
+	return strings.Contains(key, "(") && slices.ContainsFunc(jomini.ParseCall(key, 0), func(part jomini.CallStep) bool {
 		return part.Range.End-part.Range.Start > len(part.Name)
 	})
 }

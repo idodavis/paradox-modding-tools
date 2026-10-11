@@ -15,6 +15,14 @@ var (
 	eventIDRe = regexp.MustCompile(`^[\p{L}\p{Nd}_-]*[\p{L}_][\p{L}\p{Nd}_-]*\.\d+$`)
 )
 
+// The words the fixtures repeat.
+const (
+	fixtureKey   = "foo"     // an assignment's key
+	fixtureTrait = "brave"   // a plain name that is no literal and no cite
+	fixtureDate  = "867.1.1" // a date
+	scopePrefix  = "scope"   // the prefix of a scope cite
+)
+
 // topKeys returns the keys of a source's top-level Assignment statements.
 func topKeys(src string) []string {
 	result := Parse(src)
@@ -27,16 +35,13 @@ func topKeys(src string) []string {
 	return keys
 }
 
-func TestParse(t *testing.T) {
+// TestParseTree pins the statements a parse builds: plain and quoted keys, a GUI template, a tagged block.
+func TestParseTree(t *testing.T) {
 	t.Run("basic_assignments", func(t *testing.T) {
 		src := "# header\nfoo = {\n\tid = 1\n}\nbar = 2\n"
 		got := topKeys(src)
-		if len(got) != 2 || got[0] != "foo" || got[1] != "bar" {
+		if len(got) != 2 || got[0] != fixtureKey || got[1] != "bar" {
 			t.Fatalf("top keys = %v", got)
-		}
-		result := Parse(src)
-		if len(result.Comments) != 1 || result.Comments[0].Range.Start != 0 {
-			t.Fatalf("comments = %+v", result.Comments)
 		}
 		quoted := topKeys("\"my key\" = 1\n")
 		if len(quoted) != 1 || quoted[0] != "my key" {
@@ -65,37 +70,6 @@ func TestParse(t *testing.T) {
 		}
 	})
 
-	t.Run("errors", func(t *testing.T) {
-		tests := []struct {
-			name, src  string
-			code       ErrorCode
-			recoverBar bool
-		}{
-			{"unclosed brace", "foo = {\n\tid = 1\n", ErrUnclosedBrace, false},
-			{"unterminated string", "name = \"hello\n", ErrUnterminatedString, false},
-			{"missing value recovers", "foo =\nbar = 1\n", ErrMissingValue, true},
-		}
-		for _, testCase := range tests {
-			t.Run(testCase.name, func(t *testing.T) {
-				result := Parse(testCase.src)
-				found := false
-				for _, issue := range result.Errors {
-					if issue.Code == testCase.code {
-						found = true
-					}
-				}
-				if !found {
-					t.Fatalf("want %s, got %+v", testCase.code, result.Errors)
-				}
-				if testCase.recoverBar {
-					if keys := topKeys(testCase.src); len(keys) != 2 || keys[1] != "bar" {
-						t.Fatalf("recovery failed, keys = %v", keys)
-					}
-				}
-			})
-		}
-	})
-
 	t.Run("tagged_block", func(t *testing.T) {
 		result := Parse("color = rgb { 255 0 0 }\n")
 		assignment, _ := result.Root.Statements[0].(*Assignment)
@@ -104,70 +78,110 @@ func TestParse(t *testing.T) {
 			t.Fatalf("tagged = %T %+v", assignment.Value, assignment)
 		}
 	})
+}
 
-	// LineIndex offset<->position math, including UTF-8 byte columns.
-	t.Run("line_index", func(t *testing.T) {
-		lines := NewLineIndex("ab\ncde\nf")
-		for _, testCase := range []struct{ offset, line, col int }{
-			{0, 0, 0},
-			{2, 0, 2}, // the \n itself sits at end of line 0
-			{3, 1, 0},
-			{6, 1, 3},
-			{7, 2, 0},
-		} {
-			position := lines.PositionAt(testCase.offset)
-			if position.Line != testCase.line || position.Character != testCase.col {
-				t.Errorf("PositionAt(%d) = %d,%d want %d,%d", testCase.offset, position.Line, position.Character, testCase.line, testCase.col)
-			}
-		}
-		text := "ab\ncde\nf"
-		roundTrip := NewLineIndex(text)
-		for offset := 0; offset <= len(text); offset++ {
-			position := roundTrip.PositionAt(offset)
-			if got := roundTrip.OffsetAt(position.Line, position.Character); got != offset {
-				t.Errorf("round trip offset %d -> (%d,%d) -> %d", offset, position.Line, position.Character, got)
-			}
-		}
-		// "é" is two UTF-8 bytes; the column after it is byte column 3.
-		if position := NewLineIndex("aéb").PositionAt(3); position.Line != 0 || position.Character != 3 {
-			t.Fatalf("PositionAt(3) = %+v want line 0 col 3", position)
-		}
-	})
+// TestParseComments pins that a comment is recorded with its range and no statement.
+func TestParseComments(t *testing.T) {
+	result := Parse("# header\nfoo = {\n\tid = 1\n}\nbar = 2\n")
+	if len(result.Comments) != 1 || result.Comments[0].Range.Start != 0 {
+		t.Fatalf("comments = %+v", result.Comments)
+	}
+}
 
-	t.Run("walk_visits_nested", func(t *testing.T) {
-		result := Parse("a = { b = { c = 1 } }\n")
-		want := map[string]int{"a": 0, "b": 1, "c": 2}
-		var keys []string
-		Walk(result.Root, func(statement Statement, depth int, parent *Block) bool {
-			if assignment, ok := statement.(*Assignment); ok {
-				keys = append(keys, assignment.Key.Text)
-				if depth != want[assignment.Key.Text] {
-					t.Errorf("%s depth=%d want %d", assignment.Key.Text, depth, want[assignment.Key.Text])
-				}
-				if assignment.Key.Text == "a" && parent != nil {
-					t.Errorf("a parent=%v", parent)
-				}
-				if assignment.Key.Text == "b" && parent == nil {
-					t.Error("b missing parent")
+// TestParseErrors pins each structural error and that a missing value does not lose the next statement.
+func TestParseErrors(t *testing.T) {
+	tests := []struct {
+		name, src  string
+		code       ErrorCode
+		recoverBar bool
+	}{
+		{"unclosed brace", "foo = {\n\tid = 1\n", ErrUnclosedBrace, false},
+		{"unterminated string", "name = \"hello\n", ErrUnterminatedString, false},
+		{"missing value recovers", "foo =\nbar = 1\n", ErrMissingValue, true},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			result := Parse(testCase.src)
+			found := false
+			for _, issue := range result.Errors {
+				if issue.Code == testCase.code {
+					found = true
 				}
 			}
-			return true
+			if !found {
+				t.Fatalf("want %s, got %+v", testCase.code, result.Errors)
+			}
+			if testCase.recoverBar {
+				if keys := topKeys(testCase.src); len(keys) != 2 || keys[1] != "bar" {
+					t.Fatalf("recovery failed, keys = %v", keys)
+				}
+			}
 		})
-		if len(keys) != 3 || keys[0] != "a" || keys[1] != "b" || keys[2] != "c" {
-			t.Fatalf("walk keys = %v", keys)
-		}
-	})
+	}
+}
 
+// TestLineIndex pins offset and position math, including UTF-8 byte columns.
+func TestLineIndex(t *testing.T) {
+	lines := NewLineIndex("ab\ncde\nf")
+	for _, testCase := range []struct{ offset, line, col int }{
+		{0, 0, 0},
+		{2, 0, 2}, // the \n itself sits at end of line 0
+		{3, 1, 0},
+		{6, 1, 3},
+		{7, 2, 0},
+	} {
+		position := lines.PositionAt(testCase.offset)
+		if position.Line != testCase.line || position.Character != testCase.col {
+			t.Errorf("PositionAt(%d) = %d,%d want %d,%d", testCase.offset, position.Line, position.Character, testCase.line, testCase.col)
+		}
+	}
+	text := "ab\ncde\nf"
+	roundTrip := NewLineIndex(text)
+	for offset := 0; offset <= len(text); offset++ {
+		position := roundTrip.PositionAt(offset)
+		if got := roundTrip.OffsetAt(position.Line, position.Character); got != offset {
+			t.Errorf("round trip offset %d -> (%d,%d) -> %d", offset, position.Line, position.Character, got)
+		}
+	}
+	// "é" is two UTF-8 bytes; the column after it is byte column 3.
+	if position := NewLineIndex("aéb").PositionAt(3); position.Line != 0 || position.Character != 3 {
+		t.Fatalf("PositionAt(3) = %+v want line 0 col 3", position)
+	}
+}
+
+// TestWalkVisitsNested pins the depth and parent Walk passes for each statement.
+func TestWalkVisitsNested(t *testing.T) {
+	result := Parse("a = { b = { c = 1 } }\n")
+	want := map[string]int{"a": 0, "b": 1, "c": 2}
+	var keys []string
+	Walk(result.Root, func(statement Statement, depth int, parent *Block) bool {
+		if assignment, ok := statement.(*Assignment); ok {
+			keys = append(keys, assignment.Key.Text)
+			if depth != want[assignment.Key.Text] {
+				t.Errorf("%s depth=%d want %d", assignment.Key.Text, depth, want[assignment.Key.Text])
+			}
+			if assignment.Key.Text == "a" && parent != nil {
+				t.Errorf("a parent=%v", parent)
+			}
+			if assignment.Key.Text == "b" && parent == nil {
+				t.Error("b missing parent")
+			}
+		}
+		return true
+	})
+	if len(keys) != 3 || keys[0] != "a" || keys[1] != "b" || keys[2] != "c" {
+		t.Fatalf("walk keys = %v", keys)
+	}
 }
 
 func TestNameShapes(t *testing.T) {
 	// real shapes from the three games, the boundary edges, and the non-ASCII names they ship
 	inputs := []string{
 		"", " ", ".", "-", "_", "a", "A", "0", "9",
-		"brave", "k_england", "00_traits", "birth.1", "birth.0001",
+		fixtureTrait, "k_england", "00_traits", "birth.1", "birth.0001",
 		"namespace.1234", "a-b", "a.b", "a..b", "a.", ".a", "-a", "a-",
 		"scope:foo", "title:k_england", "$PARAM$", "yes", "no",
-		"867.1.1", "8082.1.1", "1.0", "1.", "x.1x", "x.1.2",
+		fixtureDate, "8082.1.1", "1.0", "1.", "x.1x", "x.1.2",
 		"UPPER", "Mixed_Case", "with space", "tab\there", "naïve", "café",
 		"a_b_c", "_leading", "trailing_", "__", "a1_b2",
 		"add_gold", "any_trait_in_category", "PRICE", "SCORE_VAR",
@@ -193,7 +207,7 @@ func TestNameShapes(t *testing.T) {
 		})
 	}
 
-	// The three shipped identifiers, stated as behaviour rather than as equivalence
+	// The three shipped identifiers, stated as behavior rather than as equivalence
 	// to a pattern — so the intent survives someone rewriting the patterns.
 	for _, testCase := range []struct {
 		name string
@@ -220,7 +234,7 @@ func TestLiteral(t *testing.T) {
 		{"0.5", LitNumber},
 		{"+2.25", LitNumber},
 		{"1066.9.15", LitDate},
-		{"867.1.1", LitDate},
+		{fixtureDate, LitDate},
 		{"1.1.1.12", LitDate},
 
 		// two dotted parts is an event id or a decimal, never a date
@@ -233,7 +247,7 @@ func TestLiteral(t *testing.T) {
 		{"0x10", NotLiteral},
 		{"inf", NotLiteral},
 
-		{"brave", NotLiteral},
+		{fixtureTrait, NotLiteral},
 		{"yes", NotLiteral},
 		{"", NotLiteral},
 		{"123456.1.1", NotLiteral},
@@ -250,7 +264,7 @@ func TestLiteral(t *testing.T) {
 		ok                     bool
 	}{
 		{"1066.9.15", 1066, 9, 15, 0, true},
-		{"867.1.1", 867, 1, 1, 0, true},
+		{fixtureDate, 867, 1, 1, 0, true},
 		{"1444.11.11.6", 1444, 11, 11, 6, true},
 		{"8209.2.1", 8209, 2, 1, 0, true},
 		{"birth.1001", 0, 0, 0, 0, false},
@@ -274,7 +288,7 @@ func TestSplitPrefixed(t *testing.T) {
 	}{
 		// plain cites, words that are none, and cites with a chain
 		{"culture:english", Prefixed{Prefix: "culture", Name: "english"}, true},
-		{"trait:brave", Prefixed{Prefix: "trait", Name: "brave"}, true},
+		{"trait:brave", Prefixed{Prefix: "trait", Name: fixtureTrait}, true},
 		{"coat_of_arms:b_appleby", Prefixed{Prefix: "coat_of_arms", Name: "b_appleby"}, true},
 		{"title:k_france", Prefixed{Prefix: "title", Name: "k_france"}, true},
 		{"script_value:max_soldiers", Prefixed{Prefix: "script_value", Name: "max_soldiers"}, true},
@@ -283,7 +297,7 @@ func TestSplitPrefixed(t *testing.T) {
 		{"english", Prefixed{}, false},
 		{"capital_province.culture", Prefixed{}, false},
 		{"$COA$", Prefixed{}, false},
-		{"situation:foo.var:x", Prefixed{Prefix: "situation", Name: "foo", Chain: "var:x"}, true},
+		{"situation:foo.var:x", Prefixed{Prefix: "situation", Name: fixtureKey, Chain: "var:x"}, true},
 		{"s:STATE_KENYA.region_state:OMA", Prefixed{Prefix: "s", Name: "STATE_KENYA", Chain: "region_state:OMA"}, true},
 
 		// a prefix is one plain identifier: a dotted word is a scope path whose later step is the cite
@@ -292,16 +306,16 @@ func TestSplitPrefixed(t *testing.T) {
 		{"this.culture:english", Prefixed{}, false},
 
 		// script-made names are cited like any other: no prefix is refused by name
-		{"scope:foo", Prefixed{Prefix: "scope", Name: "foo"}, true},
+		{"scope:foo", Prefixed{Prefix: scopePrefix, Name: fixtureKey}, true},
 		{"var:gold", Prefixed{Prefix: "var", Name: "gold"}, true},
-		{"scope:a.var:b", Prefixed{Prefix: "scope", Name: "a", Chain: "var:b"}, true},
+		{"scope:a.var:b", Prefixed{Prefix: scopePrefix, Name: "a", Chain: "var:b"}, true},
 		{"type:character_event", Prefixed{Prefix: "type", Name: "character_event"}, true},
-		{"scope:my_target.culture", Prefixed{Prefix: "scope", Name: "my_target", Chain: "culture"}, true},
+		{"scope:my_target.culture", Prefixed{Prefix: scopePrefix, Name: "my_target", Chain: "culture"}, true},
 
 		// a number is a legal name, and so is one that is not ASCII
 		{"character:186004", Prefixed{Prefix: "character", Name: "186004"}, true},
 		{"province:1234", Prefixed{Prefix: "province", Name: "1234"}, true},
-		{"scope:Linnéa", Prefixed{Prefix: "scope", Name: "Linnéa"}, true},
+		{"scope:Linnéa", Prefixed{Prefix: scopePrefix, Name: "Linnéa"}, true},
 		{"p:xB0D0E0.state.owner", Prefixed{Prefix: "p", Name: "xB0D0E0", Chain: "state.owner"}, true},
 
 		// a define names its group and its key
@@ -316,7 +330,7 @@ func TestSplitPrefixed(t *testing.T) {
 		{"INJECT:my_building", Prefixed{}, false},
 		{"REPLACE_OR_CREATE:my_building", Prefixed{}, false},
 		{"", Prefixed{}, false},
-		{"scope", Prefixed{}, false},
+		{scopePrefix, Prefixed{}, false},
 		{"scope:", Prefixed{}, false},
 		{":x", Prefixed{}, false},
 		{"1a:x", Prefixed{}, false},
@@ -338,7 +352,7 @@ func TestInterpolations(t *testing.T) {
 	}{
 		// a parameter alone, and a plain scalar
 		{"$TRAIT$", []Span{{"TRAIT", 0, 7}}},
-		{"brave", nil},
+		{fixtureTrait, nil},
 
 		{"scope:$TARGET$", []Span{{"TARGET", 6, 14}}},
 		{"$A$_and_$B_2$", []Span{{"A", 0, 3}, {"B_2", 8, 13}}},

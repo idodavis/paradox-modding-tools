@@ -23,7 +23,7 @@ func IsDefName(name string) bool {
 	for i := 0; i < len(name); {
 		char := name[i]
 		if char < utf8.RuneSelf {
-			if !isAlnumUnder(char) && !(i > 0 && (char == '.' || char == '-')) {
+			if !isAlnumUnder(char) && (i == 0 || char != '.' && char != '-') {
 				return false
 			}
 			i++
@@ -69,6 +69,7 @@ func IsEventID(name string) bool {
 	return true
 }
 
+// isAlnumUnder reports an ASCII letter, a digit or an underscore.
 func isAlnumUnder(char byte) bool {
 	return char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
 		(char >= '0' && char <= '9')
@@ -77,6 +78,7 @@ func isAlnumUnder(char byte) bool {
 // LiteralKind is what a scalar is when it is not a name.
 type LiteralKind uint8
 
+// What a scalar is when it is not a name.
 const (
 	NotLiteral LiteralKind = iota
 	LitNumber              // an integer or decimal, signed or not
@@ -161,7 +163,7 @@ func SplitPrefixed(text string) (Prefixed, bool) {
 	// the prefix: a letter, then letters, digits and underscores, with at least one lower-case letter
 	prefix, lower := text[:colon], false
 	for i, char := range prefix {
-		if !(unicode.IsLetter(char) || char == '_' || (i > 0 && unicode.IsDigit(char))) || (i == 0 && char == '_') {
+		if !unicode.IsLetter(char) && char != '_' && (i == 0 || !unicode.IsDigit(char)) || i == 0 && char == '_' {
 			return Prefixed{}, false
 		}
 		lower = lower || unicode.IsLower(char)
@@ -200,7 +202,7 @@ func SplitPrefixed(text string) (Prefixed, bool) {
 func nameEnd(name string) int {
 	for i := 0; i < len(name); {
 		char, size := utf8.DecodeRuneInString(name[i:])
-		if !(unicode.IsLetter(char) || unicode.IsDigit(char) || char == '_' || char == '-') {
+		if !unicode.IsLetter(char) && !unicode.IsDigit(char) && char != '_' && char != '-' {
 			return i
 		}
 		i += size

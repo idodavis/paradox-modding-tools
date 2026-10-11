@@ -550,7 +550,7 @@ func saysNothing(card *Inspect) bool {
 // dataCallCard is the card of a data call's last step: a custom localization named by a quoted
 // argument, an entry of the functions or concepts databases, a function of the type the steps
 // before lead to, or a data type; nil where the step is none of them.
-func (file *openFile) dataCallCard(steps []jomini.Step) *Inspect {
+func (file *openFile) dataCallCard(steps []jomini.CallStep) *Inspect {
 	ws, s := file.ws, file.ws.Install.Schema
 	step := steps[len(steps)-1]
 	card := &Inspect{Word: step.Name, Range: file.span(step.Range), Winner: -1}

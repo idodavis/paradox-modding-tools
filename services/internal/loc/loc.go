@@ -1,4 +1,4 @@
-// parse.go is a line-by-line, never-panicking scanner emitting entries and typed errors; it also
+// loc.go is a line-by-line, never-panicking scanner emitting entries and typed errors; it also
 // derives a file's language from its name, path or header.
 
 // Package loc parses Paradox's localization "YAML" dialect (not real YAML). It is game-agnostic.
@@ -29,25 +29,17 @@ type Entry struct {
 	Line       int // 0-based
 }
 
-// Interp is a `$key$` (optional `|filter`) reuse inside a loc value.
-type Interp struct {
+// Interpolation is a `$key$` (optional `|filter`) reuse inside a loc value.
+type Interpolation struct {
 	Key      string
 	KeyRange Range // inner key, not `$` or `|filter`
 }
 
-// A parse error is the same as in script (code, message, range); the codes below are loc's own.
-type (
-	ErrorCode = jomini.ErrorCode
-	Error     = jomini.ParseError
-)
+// ErrorCode is a parse error's code, the same type as script's.
+type ErrorCode = jomini.ErrorCode
 
-const (
-	ErrNoHeader            ErrorCode = "no-header"
-	ErrBadEntry            ErrorCode = "bad-entry"
-	ErrTabIndent           ErrorCode = "tab-indent"
-	ErrUnterminatedValue   ErrorCode = "unterminated-value"
-	ErrContentBeforeHeader ErrorCode = "content-before-header"
-)
+// Error is a parse error, the same type as script's.
+type Error = jomini.ParseError
 
 // Result is the parsed localization file.
 type Result struct {
@@ -57,52 +49,49 @@ type Result struct {
 	HadBOM   bool
 }
 
+// scanner holds accumulators across the line-by-line parse.
+type scanner struct {
+	entries   []Entry
+	errs      []Error
+	language  string
+	hasHeader bool
+	hadBOM    bool
+	lineNo    int
+}
+
+// The codes loc's own errors carry; a parse error is otherwise script's (jomini.ParseError).
+const (
+	ErrNoHeader            ErrorCode = "no-header"
+	ErrBadEntry            ErrorCode = "bad-entry"
+	ErrTabIndent           ErrorCode = "tab-indent"
+	ErrUnterminatedValue   ErrorCode = "unterminated-value"
+	ErrContentBeforeHeader ErrorCode = "content-before-header"
+)
+
 // headerRe matches a header line: optional indent, `l_<name>:`, then only trailing
 // whitespace/comment.
 var headerRe = regexp.MustCompile(`^[ \t]*l_([A-Za-z_]+):[ \t]*(#.*)?$`)
 
-// isKeyChar reports the byte classes allowed in a loc key: letters, digits, `_ . - '`.
-func isKeyChar(char byte) bool {
-	switch {
-	case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char >= '0' && char <= '9':
-		return true
-	case char == '_' || char == '.' || char == '-' || char == '\'':
-		return true
-	default:
-		return false
-	}
-}
+// filenameLangRe matches the language between a loc filename's last `l_` token and its extension:
+// `events_l_english.yml` -> "english", `events_l_simp_chinese.yml` -> "simp_chinese".
+var filenameLangRe = regexp.MustCompile(`(?i)^(?:.*_)?l_([a-z_]+)\.(yml|yaml)$`)
+
+// plainMarks is the markup a player never reads: [concept|E] links, $KEY$ interpolations, and the
+// #style … #! formatting around text.
+var plainMarks = regexp.MustCompile(`\[([A-Za-z0-9_.]+)\|[Ee]\]|\$([A-Za-z0-9_.]+)(?:\|[^$]*)?\$|#![ ]?|#[A-Za-z0-9_;]+ `)
 
 // Parse parses localization text. A leading UTF-8 BOM is skipped; ranges stay
 // in the original string. Never panics.
 func Parse(text string) Result {
 	scanner := &scanner{}
-	length := len(text)
-	lineStart := 0
-	for lineStart <= length {
-		lineEnd := lineStart
-		for lineEnd < length && text[lineEnd] != '\n' && text[lineEnd] != '\r' {
-			lineEnd++
-		}
-		nextStart := lineEnd
-		if nextStart < length {
-			if text[nextStart] == '\r' && nextStart+1 < length && text[nextStart+1] == '\n' {
-				nextStart += 2
-			} else {
-				nextStart++
-			}
-		} else {
-			nextStart = length + 1
-		}
-		scanner.processLine(text[lineStart:lineEnd], lineStart)
-		lineStart = nextStart
-		scanner.lineNo++
-		if lineStart > length {
-			break
-		}
+	index := jomini.NewLineIndex(text)
+	for line := range index.LineCount() {
+		start, end := index.OffsetAt(line, 0), index.OffsetAt(line+1, 0)
+		scanner.lineNo = line
+		scanner.processLine(strings.TrimRight(text[start:end], "\r\n"), start)
 	}
 
-	if !scanner.headerFound {
+	if !scanner.hasHeader {
 		scanner.errs = append(scanner.errs, Error{
 			Code:    ErrNoHeader,
 			Message: "No localization header line (e.g. `l_english:`) found.",
@@ -113,58 +102,6 @@ func Parse(text string) Result {
 	return Result{Language: scanner.language, Entries: scanner.entries, Errors: scanner.errs, HadBOM: scanner.hadBOM}
 }
 
-// Interps finds `$key$` / `$key|filter$` interpolations in a loc value.
-// valueStart is the UTF-8 offset of value[0] in the file text.
-func Interps(value string, valueStart int) []Interp {
-	var out []Interp
-	for i := 0; i < len(value); {
-		if value[i] != '$' {
-			i++
-			continue
-		}
-		j := i + 1
-		for j < len(value) && isKeyChar(value[j]) {
-			j++
-		}
-		if j == i+1 {
-			i++
-			continue
-		}
-		closeAt := j
-		filter := ""
-		if closeAt < len(value) && value[closeAt] == '|' {
-			filterStart := closeAt + 1
-			closeAt++
-			for closeAt < len(value) && value[closeAt] != '$' {
-				closeAt++
-			}
-			if closeAt < len(value) {
-				filter = value[filterStart:closeAt]
-			}
-		}
-		if closeAt >= len(value) || value[closeAt] != '$' {
-			i++
-			continue
-		}
-		key := value[i+1 : j]
-		if LooksLikeKey(key) || (strings.EqualFold(key, "VALUE") && filter != "") {
-			out = append(out, Interp{Key: key, KeyRange: Range{Start: valueStart + i + 1, End: valueStart + j}})
-		}
-		i = closeAt + 1
-	}
-	return out
-}
-
-// scanner holds accumulators across the line-by-line parse.
-type scanner struct {
-	entries     []Entry
-	errs        []Error
-	language    string
-	headerFound bool
-	hadBOM      bool
-	lineNo      int
-}
-
 // processLine handles one line; base is the byte offset in text of line[0].
 func (scanner *scanner) processLine(line string, base int) {
 	if body, marked := strings.CutPrefix(line, jomini.BOM); scanner.lineNo == 0 && marked {
@@ -172,14 +109,16 @@ func (scanner *scanner) processLine(line string, base int) {
 	}
 	i := 0
 	sawTab := false
+indent:
 	for i < len(line) {
-		if line[i] == ' ' {
+		switch line[i] {
+		case ' ':
 			i++
-		} else if line[i] == '\t' {
+		case '\t':
 			sawTab = true
 			i++
-		} else {
-			break
+		default:
+			break indent
 		}
 	}
 	contentStart := i
@@ -187,9 +126,9 @@ func (scanner *scanner) processLine(line string, base int) {
 		return // blank or comment-only
 	}
 
-	if !scanner.headerFound {
+	if !scanner.hasHeader {
 		if match := headerRe.FindStringSubmatch(line); strings.Contains(line, "l_") && match != nil {
-			scanner.headerFound, scanner.language = true, match[1]
+			scanner.hasHeader, scanner.language = true, match[1]
 			return
 		}
 		scanner.errs = append(scanner.errs, Error{
@@ -219,41 +158,41 @@ func (scanner *scanner) processLine(line string, base int) {
 
 // parseEntry parses `key(:version)? "value"`; entryBase is the offset of entry[0].
 func (scanner *scanner) parseEntry(entry string, entryBase int, fullLine string, lineBase int) {
-	j := 0
-	for j < len(entry) && isKeyChar(entry[j]) {
-		j++
+	pos := 0
+	for pos < len(entry) && isKeyChar(entry[pos]) {
+		pos++
 	}
-	if j == 0 {
+	if pos == 0 {
 		scanner.badEntry(fullLine, lineBase)
 		return
 	}
-	key := entry[:j]
-	keyRange := Range{Start: entryBase, End: entryBase + j}
+	key := entry[:pos]
+	keyRange := Range{Start: entryBase, End: entryBase + pos}
 
-	if j >= len(entry) || entry[j] != ':' {
+	if pos >= len(entry) || entry[pos] != ':' {
 		scanner.badEntry(fullLine, lineBase)
 		return
 	}
-	j++ // consume ':'
+	pos++ // consume ':'
 
 	version := -1
-	verStart := j
-	for j < len(entry) && entry[j] >= '0' && entry[j] <= '9' {
-		j++
+	versionStart := pos
+	for pos < len(entry) && entry[pos] >= '0' && entry[pos] <= '9' {
+		pos++
 	}
-	if j > verStart {
-		version, _ = strconv.Atoi(entry[verStart:j])
-	}
-
-	for j < len(entry) && (entry[j] == ' ' || entry[j] == '\t') {
-		j++
+	if pos > versionStart {
+		version, _ = strconv.Atoi(entry[versionStart:pos])
 	}
 
-	if j >= len(entry) || entry[j] != '"' {
+	for pos < len(entry) && (entry[pos] == ' ' || entry[pos] == '\t') {
+		pos++
+	}
+
+	if pos >= len(entry) || entry[pos] != '"' {
 		scanner.badEntry(fullLine, lineBase)
 		return
 	}
-	quoteOpen := j
+	quoteOpen := pos
 	valueInnerStart := entryBase + quoteOpen + 1
 
 	// an unterminated value runs to the end of the line
@@ -276,6 +215,7 @@ func (scanner *scanner) parseEntry(entry string, entryBase int, fullLine string,
 	})
 }
 
+// badEntry records a malformed-entry error over the whole line.
 func (scanner *scanner) badEntry(fullLine string, lineBase int) {
 	scanner.errs = append(scanner.errs, Error{
 		Code:    ErrBadEntry,
@@ -284,9 +224,59 @@ func (scanner *scanner) badEntry(fullLine string, lineBase int) {
 	})
 }
 
-// filenameLangRe matches the language between a loc filename's last `l_` token and its extension:
-// `events_l_english.yml` -> "english", `events_l_simp_chinese.yml` -> "simp_chinese".
-var filenameLangRe = regexp.MustCompile(`(?i)^(?:.*_)?l_([a-z_]+)\.(yml|yaml)$`)
+// isKeyChar reports the byte classes allowed in a loc key: letters, digits, `_ . - '`.
+func isKeyChar(char byte) bool {
+	switch {
+	case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char >= '0' && char <= '9':
+		return true
+	case char == '_' || char == '.' || char == '-' || char == '\'':
+		return true
+	default:
+		return false
+	}
+}
+
+// Interpolations finds `$key$` / `$key|filter$` interpolations in a loc value.
+// valueStart is the UTF-8 offset of value[0] in the file text.
+func Interpolations(value string, valueStart int) []Interpolation {
+	var out []Interpolation
+	for pos := 0; pos < len(value); {
+		if value[pos] != '$' {
+			pos++
+			continue
+		}
+		end := pos + 1
+		for end < len(value) && isKeyChar(value[end]) {
+			end++
+		}
+		if end == pos+1 {
+			pos++
+			continue
+		}
+		close := end
+		filter := ""
+		if close < len(value) && value[close] == '|' {
+			filterStart := close + 1
+			close++
+			for close < len(value) && value[close] != '$' {
+				close++
+			}
+			if close < len(value) {
+				filter = value[filterStart:close]
+			}
+		}
+		if close >= len(value) || value[close] != '$' {
+			pos++
+			continue
+		}
+		key := value[pos+1 : end]
+		if LooksLikeKey(key) || (strings.EqualFold(key, "VALUE") && filter != "") {
+			out = append(out, Interpolation{Key: key, KeyRange: Range{Start: valueStart + pos + 1, End: valueStart + end}})
+		}
+		pos = close + 1
+	}
+	return out
+}
 
 // LanguageFromFilename returns the language id encoded in a loc filename, or ""
 // if the name does not follow the `..._l_<language>.yml` convention.
@@ -340,12 +330,14 @@ func LooksLikeKey(name string) bool {
 	return true
 }
 
-// plainMarks is the markup a player never reads: [concept|E] links, $KEY$ interpolations, and the
-// #style … #! formatting around text.
-var plainMarks = regexp.MustCompile(`\[([A-Za-z0-9_.]+)\|[Ee]\]|\$([A-Za-z0-9_.]+)(?:\|[^$]*)?\$|#![ ]?|#[A-Za-z0-9_;]+ `)
-
 // Plain is localization as a player reads it: a concept link as the concept's word, an interpolated
 // key as its name, formatting dropped.
 func Plain(text string) string {
 	return plainMarks.ReplaceAllString(text, "$1$2")
+}
+
+// Stub is a new localization file's contents: the byte order mark the games want, and the header that names its
+// language.
+func Stub(language string) []byte {
+	return []byte(jomini.BOM + "l_" + language + ":\n")
 }

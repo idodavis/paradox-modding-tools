@@ -1,5 +1,5 @@
-// cst.go defines the concrete syntax tree node types, the LineIndex
-// (offset<->position, UTF-8 byte columns), the walk/lookup helpers, and comment attachment.
+// cst.go holds the concrete syntax tree: its node types, the line index (offsets and positions in UTF-8 byte
+// columns), a parse's Result with every reading of it, and the walk and lookup helpers.
 
 package jomini
 
@@ -16,13 +16,6 @@ type Range struct {
 
 // ErrorCode classifies a structural parse error.
 type ErrorCode string
-
-const (
-	ErrUnclosedBrace      ErrorCode = "unclosed-brace"      // reported at the opening brace
-	ErrStrayClose         ErrorCode = "stray-close"         // `}` with no open block
-	ErrUnterminatedString ErrorCode = "unterminated-string" // runs to the end of the text
-	ErrMissingValue       ErrorCode = "missing-value"       // `key =` with nothing after
-)
 
 // ParseError is a recovered structural error; parsing always continues past it.
 type ParseError struct {
@@ -96,31 +89,6 @@ type Comment struct {
 	Range Range
 }
 
-func (root Root) NodeRange() Range               { return root.Range }
-func (scalar Scalar) NodeRange() Range           { return scalar.Range }
-func (block Block) NodeRange() Range             { return block.Range }
-func (taggedBlock TaggedBlock) NodeRange() Range { return taggedBlock.Range }
-func (assign Assignment) NodeRange() Range       { return assign.Range }
-func (valueStmt ValueStmt) NodeRange() Range     { return valueStmt.Range }
-
-// BlockOf returns the Block a value owns (plain or tagged), or nil.
-func BlockOf(value Value) *Block {
-	switch block := value.(type) {
-	case *Block:
-		return block
-	case *TaggedBlock:
-		return &block.Block
-	default:
-		return nil
-	}
-}
-
-func (Scalar) isValue()         {}
-func (Block) isValue()          {}
-func (TaggedBlock) isValue()    {}
-func (Assignment) isStatement() {}
-func (ValueStmt) isStatement()  {}
-
 // Position is a 0-based line and UTF-8 byte column within that line.
 type Position struct {
 	Line      int `json:"line"`
@@ -133,6 +101,24 @@ type LineIndex struct {
 	lineStarts []int
 	length     int
 }
+
+// Result is an immutable parse result. Src is the exact text that was parsed;
+// all node offsets are byte indices into it.
+type Result struct {
+	Root     *Root
+	Errors   []ParseError
+	Comments []Comment
+	Src      string
+	lines    *LineIndex
+}
+
+// The structural errors the parser recovers from, each reported where it is found.
+const (
+	ErrUnclosedBrace      ErrorCode = "unclosed-brace"      // reported at the opening brace
+	ErrStrayClose         ErrorCode = "stray-close"         // `}` with no open block
+	ErrUnterminatedString ErrorCode = "unterminated-string" // runs to the end of the text
+	ErrMissingValue       ErrorCode = "missing-value"       // `key =` with nothing after
+)
 
 // NewLineIndex builds a LineIndex over text. \r\n and lone \r both break a line.
 func NewLineIndex(text string) *LineIndex {
@@ -154,53 +140,230 @@ func NewLineIndex(text string) *LineIndex {
 }
 
 // LineCount returns the number of lines.
-func (li *LineIndex) LineCount() int { return len(li.lineStarts) }
+func (index *LineIndex) LineCount() int { return len(index.lineStarts) }
 
 // PositionAt converts a byte offset to a 0-based (line, byte-column) position.
-func (li *LineIndex) PositionAt(offset int) Position {
+func (index *LineIndex) PositionAt(offset int) Position {
 	if offset < 0 {
 		offset = 0
 	}
-	if offset > li.length {
-		offset = li.length
+	if offset > index.length {
+		offset = index.length
 	}
 	// Greatest lineStart <= offset.
-	line := max(sort.Search(len(li.lineStarts), func(i int) bool {
-		return li.lineStarts[i] > offset
+	line := max(sort.Search(len(index.lineStarts), func(i int) bool {
+		return index.lineStarts[i] > offset
 	})-1, 0)
-	return Position{Line: line, Character: offset - li.lineStarts[line]}
+	return Position{Line: line, Character: offset - index.lineStarts[line]}
 }
 
 // OffsetAt converts a 0-based (line, byte-column) position to a byte offset,
 // clamping the column to the end of its line.
-func (li *LineIndex) OffsetAt(line, col int) int {
+func (index *LineIndex) OffsetAt(line, col int) int {
 	if line < 0 {
 		line = 0
 	}
-	if line >= len(li.lineStarts) {
-		return li.length
+	if line >= len(index.lineStarts) {
+		return index.length
 	}
-	start := li.lineStarts[line]
-	nextStart := li.length
-	if line+1 < len(li.lineStarts) {
-		nextStart = li.lineStarts[line+1]
+	start := index.lineStarts[line]
+	nextStart := index.length
+	if line+1 < len(index.lineStarts) {
+		nextStart = index.lineStarts[line+1]
 	}
 	if col < 0 {
 		col = 0
 	}
-	offset := min(min(start+col, nextStart), li.length)
+	offset := min(min(start+col, nextStart), index.length)
 	return offset
+}
+
+// Lines returns the LineIndex for Src (built at parse time).
+func (result Result) Lines() *LineIndex {
+	if result.lines != nil {
+		return result.lines
+	}
+	return NewLineIndex(result.Src)
+}
+
+// Flat is the source a range covers on one line: its runs of space folded to one, its comments left out.
+func (result Result) Flat(span Range) string {
+	text := []byte(result.Src[span.Start:span.End])
+	for _, comment := range result.Comments {
+		for offset := max(comment.Range.Start, span.Start); offset < min(comment.Range.End, span.End); offset++ {
+			text[offset-span.Start] = ' '
+		}
+	}
+	return strings.Join(strings.Fields(string(text)), " ")
+}
+
+// LineIndents is brace-depth indent per line. It tokenizes Src: a Result does
+// not keep its tokens, because only the two editor-time readers here ever want
+// them and a scan would otherwise carry one buffer per open file.
+func (result Result) LineIndents() []int {
+	toks := tokenize(result.Src)
+	defer putTokens(toks)
+	return lineIndentsFrom(result.Src, toks)
+}
+
+// TokenAt returns the identifier covering off (UTF-8 bytes). Comments yield
+// an empty word. Src is tokenized on the fly; see LineIndents.
+func (result Result) TokenAt(off int) (word string, start, end int) {
+	src := result.Src
+	if off < 0 {
+		off = 0
+	}
+	if off > len(src) {
+		off = len(src)
+	}
+	start, end = off, off
+	var toks []token
+	if src != "" {
+		toks = tokenize(src)
+		defer putTokens(toks)
+	}
+	for _, tok := range toks {
+		if tok.kind == tokEOF || off < tok.start || off > tok.end {
+			continue
+		}
+		if tok.kind == tokComment {
+			return "", off, off
+		}
+		if off == tok.end && tok.start != tok.end {
+			continue
+		}
+		switch tok.kind {
+		case tokWord:
+			return src[tok.start:tok.end], tok.start, tok.end
+		case tokString:
+			return identAt(src, off, tok.start, tok.end)
+		}
+	}
+	return identAt(src, off, 0, len(src))
+}
+
+// identAt returns the identifier touching off within src[lo:hi], with its start and end; the
+// identifier is empty where none touches off.
+func identAt(src string, off, lo, hi int) (string, int, int) {
+	if off < lo {
+		off = lo
+	}
+	if off > hi {
+		off = hi
+	}
+	start, end := off, off
+	for start > lo && isIdentByte(src[start-1]) {
+		start--
+	}
+	for end < hi && end < len(src) && isIdentByte(src[end]) {
+		end++
+	}
+	if start == end {
+		return "", start, end
+	}
+	return src[start:end], start, end
+}
+
+// isIdentByte reports the bytes an identifier is made of: letters, digits, `_`, `.` and `-`.
+func isIdentByte(char byte) bool {
+	return char == '_' || char == '.' || char == '-' ||
+		(char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')
+}
+
+// AssignmentAt is the assignment whose key starts at a line and column of Src; nil where none does.
+func (result Result) AssignmentAt(line, col int) Statement {
+	start, match := result.Lines().OffsetAt(line, col), Statement(nil)
+	Walk(result.Root, func(statement Statement, _ int, _ *Block) bool {
+		if assign, isAssign := statement.(*Assignment); isAssign && assign.Key.Range.Start == start {
+			match = statement
+		}
+		return match == nil && statement.NodeRange().Start <= start && start < statement.NodeRange().End
+	})
+	return match
+}
+
+// Attach gives each statement the comments that belong to it, and the comments that belong to none.
+// Loose comments keep source order.
+func (result Result) Attach() (attached map[Statement][]Comment, loose []Comment) {
+	lines := result.Lines()
+
+	// the outermost statement starting on each line is the shallowest, the first Walk visits at
+	// that depth
+	startsOn, depthOn := map[int]Statement{}, map[int]int{}
+	Walk(result.Root, func(stmt Statement, depth int, _ *Block) bool {
+		line := lines.PositionAt(stmt.NodeRange().Start).Line
+		if seen, ok := depthOn[line]; !ok || depth < seen {
+			startsOn[line], depthOn[line] = stmt, depth
+		}
+		return true
+	})
+
+	// the last trailing comment (or its continuation), and the run of whole-line comments
+	// that may still turn out to lead a statement; its comments wait at the tail of loose
+	attached = map[Statement][]Comment{}
+	var trailing Statement
+	trailAt := Position{Line: -2}
+	runStart, runLine := 0, -2
+	for _, comment := range result.Comments {
+		pos := lines.PositionAt(comment.Range.Start)
+		linePrefix := result.Src[comment.Range.Start-pos.Character : comment.Range.Start]
+		wholeLine := strings.TrimSpace(linePrefix) == ""
+
+		// a comment after code on a line where a statement starts trails the outermost one
+		if stmt, ok := startsOn[pos.Line]; ok {
+			attached[stmt] = append(attached[stmt], comment)
+			trailing, trailAt = stmt, pos
+			continue
+		}
+
+		// a whole-line comment under a trailing comment, in its column, continues it
+		if wholeLine && pos.Line == trailAt.Line+1 && pos.Character == trailAt.Character {
+			attached[trailing] = append(attached[trailing], comment)
+			trailAt = pos
+			continue
+		}
+
+		// a comment after code where no statement starts, such as `} # end`, belongs to none
+		if !wholeLine {
+			loose = append(loose, comment)
+			continue
+		}
+
+		// a run of whole-line comments on consecutive lines leads the statement on the next line
+		if pos.Line != runLine+1 {
+			runStart = len(loose)
+		}
+		runLine = pos.Line
+		loose = append(loose, comment)
+		if stmt, ok := startsOn[pos.Line+1]; ok {
+			attached[stmt] = append(attached[stmt], loose[runStart:]...)
+			loose = loose[:runStart]
+		}
+	}
+	return attached, loose
 }
 
 // ValueOf is the value a statement writes: an assignment's right side, or a listed value.
 func ValueOf(statement Statement) Value {
-	switch written := statement.(type) {
+	switch node := statement.(type) {
 	case *Assignment:
-		return written.Value
+		return node.Value
 	case *ValueStmt:
-		return written.Value
+		return node.Value
 	}
 	return nil
+}
+
+// BlockOf returns the Block a value owns (plain or tagged), or nil.
+func BlockOf(value Value) *Block {
+	switch block := value.(type) {
+	case *Block:
+		return block
+	case *TaggedBlock:
+		return &block.Block
+	default:
+		return nil
+	}
 }
 
 // ChildBlock returns the Block a statement owns (via block or tagged-block value), or nil.
@@ -250,75 +413,27 @@ func Walk(root *Root, fn func(st Statement, depth int, parent *Block) bool) {
 	visit(root.Statements, 0, nil)
 }
 
-// AssignmentAt is the assignment whose key starts at a line and column of Src; nil where none does.
-func (result Result) AssignmentAt(line, col int) Statement {
-	start, found := result.Lines().OffsetAt(line, col), Statement(nil)
-	Walk(result.Root, func(statement Statement, _ int, _ *Block) bool {
-		if assign, isAssign := statement.(*Assignment); isAssign && assign.Key.Range.Start == start {
-			found = statement
-		}
-		return found == nil && statement.NodeRange().Start <= start && start < statement.NodeRange().End
-	})
-	return found
-}
+// NodeRange is the root's span.
+func (root Root) NodeRange() Range { return root.Range }
 
-// Attach gives each statement the comments that belong to it, and the comments that belong to none.
-// Loose comments keep source order.
-func (result Result) Attach() (attached map[Statement][]Comment, loose []Comment) {
-	lines := result.Lines()
+// NodeRange is the scalar's span.
+func (scalar Scalar) NodeRange() Range { return scalar.Range }
 
-	// the outermost statement starting on each line is the shallowest, the first Walk visits at
-	// that depth
-	startsOn, depthOn := map[int]Statement{}, map[int]int{}
-	Walk(result.Root, func(stmt Statement, depth int, _ *Block) bool {
-		line := lines.PositionAt(stmt.NodeRange().Start).Line
-		if seen, ok := depthOn[line]; !ok || depth < seen {
-			startsOn[line], depthOn[line] = stmt, depth
-		}
-		return true
-	})
+// NodeRange is the block's span.
+func (block Block) NodeRange() Range { return block.Range }
 
-	// the last trailing comment (or its continuation), and the run of whole-line comments
-	// that may still turn out to lead a statement; its comments wait at the tail of loose
-	attached = map[Statement][]Comment{}
-	var trailing Statement
-	trailAt := Position{Line: -2}
-	runStart, runLine := 0, -2
-	for _, comment := range result.Comments {
-		pos := lines.PositionAt(comment.Range.Start)
-		before := result.Src[comment.Range.Start-pos.Character : comment.Range.Start]
-		wholeLine := strings.TrimSpace(before) == ""
+// NodeRange is the tagged block's span.
+func (taggedBlock TaggedBlock) NodeRange() Range { return taggedBlock.Range }
 
-		// a comment after code on a line where a statement starts trails the outermost one
-		if stmt, ok := startsOn[pos.Line]; ok {
-			attached[stmt] = append(attached[stmt], comment)
-			trailing, trailAt = stmt, pos
-			continue
-		}
+// NodeRange is the assignment's span.
+func (assign Assignment) NodeRange() Range { return assign.Range }
 
-		// a whole-line comment under a trailing comment, in its column, continues it
-		if wholeLine && pos.Line == trailAt.Line+1 && pos.Character == trailAt.Character {
-			attached[trailing] = append(attached[trailing], comment)
-			trailAt = pos
-			continue
-		}
+// NodeRange is the value statement's span.
+func (valueStmt ValueStmt) NodeRange() Range { return valueStmt.Range }
 
-		// a comment after code where no statement starts, such as `} # end`, belongs to none
-		if !wholeLine {
-			loose = append(loose, comment)
-			continue
-		}
-
-		// a run of whole-line comments on consecutive lines leads the statement on the next line
-		if pos.Line != runLine+1 {
-			runStart = len(loose)
-		}
-		runLine = pos.Line
-		loose = append(loose, comment)
-		if stmt, ok := startsOn[pos.Line+1]; ok {
-			attached[stmt] = append(attached[stmt], loose[runStart:]...)
-			loose = loose[:runStart]
-		}
-	}
-	return attached, loose
-}
+// the role markers: a Scalar, a Block and a TaggedBlock are values, an Assignment and a ValueStmt statements
+func (Scalar) isValue()         {}
+func (Block) isValue()          {}
+func (TaggedBlock) isValue()    {}
+func (Assignment) isStatement() {}
+func (ValueStmt) isStatement()  {}

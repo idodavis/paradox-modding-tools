@@ -211,7 +211,7 @@ func covers(span jomini.Range, offset int) bool {
 
 // locRef is what an offset of a localization file names: a reference the scan read ($key$, a
 // concept), else the line's key; with neither, the data call steps it is in, if any.
-func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini.Step) {
+func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini.CallStep) {
 	lines := file.parsed.Lines()
 	start := lines.OffsetAt(lines.PositionAt(offset).Line, 0)
 	line, _, _ := strings.Cut(file.text[start:], "\n")
@@ -239,7 +239,7 @@ func (file *openFile) locRef(offset int) (ref *schema.Occurrence, steps []jomini
 
 // dataCallAt is the data call step at an offset of a text that starts at start: the steps up to it;
 // nil where the offset is in no [ … ] step.
-func dataCallAt(text string, start, offset int) []jomini.Step {
+func dataCallAt(text string, start, offset int) []jomini.CallStep {
 	for _, segment := range jomini.Calls(text, start) {
 		steps := jomini.ParseCall(text[segment.Start-start:segment.End-start], segment.Start)
 		for i, step := range steps {
@@ -253,7 +253,7 @@ func dataCallAt(text string, start, offset int) []jomini.Step {
 
 // stepsLeadTo is the data type a data call's steps lead to: from the global functions, or a data
 // type written first, through each function's return type; "" where a step is unknown.
-func stepsLeadTo(types map[string]schema.DataType, steps []jomini.Step) string {
+func stepsLeadTo(types map[string]schema.DataType, steps []jomini.CallStep) string {
 	typeName := game.GlobalType
 	for i, step := range steps {
 		function, isFunction := types[typeName].Functions[step.Name]

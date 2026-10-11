@@ -56,7 +56,7 @@ Imports run one way: `jomini` ← `loc`, `source` ← `schema` ← `shipped` ←
 | Package | Is | Design |
 |---|---|---|
 | `jomini` | The parser: error-tolerant, comments kept and attached, UTF-8 byte offsets, the shapes of names, dates, numbers and `prefix:name` words. It knows no game | the headers of `parse.go`, `cst.go`, `names.go` |
-| `loc` | The localization dialect: entries, `$key$`, the language from a header or name, the BOM | the package comment of `parse.go` |
+| `loc` | The localization dialect: entries, `$key$`, the language from a header or name, the BOM | the package comment of `loc.go` |
 | `source` | Every file of an install, a mod or a dump folder, in load order, by format. It interprets nothing | the package comment of `source.go` |
 | `schema` | The position tree, the walker, the dump and doc readers, the entry detector and vanilla's evidence | [schema/README.md](schema/README.md) |
 | `index` | The records, resolution, entry modes, and the scan with its cache | [index/README.md](index/README.md) |

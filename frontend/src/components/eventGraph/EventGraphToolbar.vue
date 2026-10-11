@@ -6,7 +6,7 @@
  */
 import { computed, useTemplateRef } from "vue";
 import { useElementSize } from "@vueuse/core";
-import type { Roots } from "@services/models";
+import type { Roots } from "@services/internal/pages/models";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { plural } from "../../lib/format";
 

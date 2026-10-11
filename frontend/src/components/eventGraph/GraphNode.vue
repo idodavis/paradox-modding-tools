@@ -7,7 +7,7 @@
  */
 import { computed } from "vue";
 import { Handle, Position } from "@vue-flow/core";
-import type { Node } from "@services/models";
+import type { Node } from "@services/internal/pages/models";
 import { kindOf, shapeOf } from "../../composables/useEventGraph";
 import { useWorkspaceStore } from "../../stores/workspace";
 

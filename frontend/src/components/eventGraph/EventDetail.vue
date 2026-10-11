@@ -7,7 +7,7 @@
  */
 import { computed, shallowRef, watch } from "vue";
 import { createReusableTemplate, useClipboard } from "@vueuse/core";
-import type { Cited, Detail, Version } from "@services/models";
+import type { Cited, Detail, Version } from "@services/internal/pages/models";
 import type { Fire } from "@services/internal/workspace/models";
 import { kindOf } from "../../composables/useEventGraph";
 import { useIdeStore } from "../../stores/ide";

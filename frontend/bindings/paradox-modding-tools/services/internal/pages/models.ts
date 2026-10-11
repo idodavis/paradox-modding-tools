@@ -4,6 +4,9 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as inventory$0 from "../inventory/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as workspace$0 from "../workspace/models.js";
 
 /**
  * Cited is one name a block writes, and where.
@@ -55,6 +58,14 @@ export interface Dangling {
 }
 
 /**
+ * DatabaseCount is one database and how many roots of it a search holds.
+ */
+export interface DatabaseCount {
+    "database": string;
+    "count": number;
+}
+
+/**
  * Dependency is one mod using a name another mod's definitions decide, and each place it does: it depends on the
  * other where only that mod defines the name, and is affected by it where the other's definition differs from the
  * one it hides, adds to it, or leaves it out.
@@ -64,6 +75,70 @@ export interface Dependency {
     "to": string;
     "affected": boolean;
     "sites": Site[] | null;
+}
+
+/**
+ * Detail is one definition, opened.
+ */
+export interface Detail {
+    "kind": string;
+    "name": string;
+    "line": number;
+    "at": inventory$0.File;
+
+    /**
+     * the definition as its file writes it
+     */
+    "lines": string[] | null;
+    "sections": Section[] | null;
+    "options": Option[] | null;
+
+    /**
+     * as the graph draws them: events and on_actions, through scripted effects
+     */
+    "fires": workspace$0.Fire[] | null;
+
+    /**
+     * the same, into it
+     */
+    "firedBy": workspace$0.Fire[] | null;
+
+    /**
+     * what the block names, by database in the order first written
+     */
+    "refs": RefGroup[] | null;
+    "reason"?: string;
+}
+
+/**
+ * Edge is one fire drawn; Via names the scripted effects between, in the order they are entered, and Block the
+ * block of its definition the fire sits in (option a, immediate).
+ */
+export interface Edge {
+    "from": string;
+    "to": string;
+    "via": string;
+    "block"?: string;
+}
+
+/**
+ * EventGraph is the page's graph; Reason says why it is empty. Reach counts what the depth holds with no fan-out
+ * or node cap (the definitions, and the scripted effects between when they are drawn), Kinds and Origins split it
+ * by kind (game.KindName) and by the origin that defines each.
+ */
+export interface EventGraph {
+    "nodes": Node[] | null;
+    "edges": Edge[] | null;
+    "truncated": boolean;
+
+    /**
+     * truncated: the hop the node cap cut
+     */
+    "reached"?: number;
+    "reach": number;
+    "kinds": { [_ in string]?: number } | null;
+    "origins": { [_ in string]?: number } | null;
+    "reason"?: string;
 }
 
 /**
@@ -159,6 +234,83 @@ export interface LocRow {
 }
 
 /**
+ * Node is one definition drawn, or a stub standing for what is hidden.
+ */
+export interface Node {
+    "id": string;
+    "database": string;
+
+    /**
+     * what one of its database is called (game.KindName)
+     */
+    "kind": string;
+    "title"?: string;
+    "origin"?: string;
+    "root"?: boolean;
+
+    /**
+     * "more": fires hidden out of the node in its ID; "fired-by": callers hidden
+     */
+    "stub"?: string;
+}
+
+/**
+ * Option is one option block of an event: its trigger on one line, every name it is written with (the first whose
+ * trigger holds shows) and its flags.
+ */
+export interface Option {
+    "line": number;
+    "when"?: string;
+    "names"?: Version[] | null;
+    "flags"?: string[] | null;
+}
+
+/**
+ * Params is what the page asks for. Every number is the page's.
+ */
+export interface Params {
+    /**
+     * the definition to draw around
+     */
+    "root": string;
+
+    /**
+     * hops out of the root
+     */
+    "depth": number;
+
+    /**
+     * edges drawn out of one node before the rest are a stub
+     */
+    "fanout": number;
+
+    /**
+     * nodes drawn before the graph is marked truncated
+     */
+    "maxNodes": number;
+
+    /**
+     * stubs the page opened: more:<id>, more-in:<id>
+     */
+    "expand": string[] | null;
+
+    /**
+     * the origins drawn, with the root and its stubs; empty for all
+     */
+    "origins": string[] | null;
+
+    /**
+     * each scripted effect on a chain drawn as a node between the two it joins
+     */
+    "scripted": boolean;
+
+    /**
+     * fires reached through a scripted effect are drawn; else only direct ones
+     */
+    "follow": boolean;
+}
+
+/**
  * Problem is one finding of the editor's checks, at its site.
  */
 export interface Problem {
@@ -170,6 +322,52 @@ export interface Problem {
      * a localization file's language
      */
     "language"?: string;
+}
+
+/**
+ * RefGroup is the references of one database written in a block; loc keys are database localization, files file.
+ */
+export interface RefGroup {
+    "database": string;
+
+    /**
+     * what one of its database is called (game.KindName)
+     */
+    "kind": string;
+    "refs": Cited[] | null;
+}
+
+/**
+ * Roots is a root search's hits, grouped by database, and how many of each database the query holds.
+ */
+export interface Roots {
+    "hits": Node[] | null;
+    "databases": DatabaseCount[] | null;
+}
+
+/**
+ * Section is one key at the top of the definition's block: its value as written (a block as its statements on one
+ * line, each inner block as { … }), and the text a one-word value has as a loc key.
+ */
+export interface Section {
+    "key": string;
+    "value"?: string;
+    "line": number;
+
+    /**
+     * a block's own trigger, on one line: it applies only then
+     */
+    "when"?: string;
+
+    /**
+     * a text's parts in order: a loc key, or a dynamic description's
+     */
+    "parts"?: TextPart[] | null;
+
+    /**
+     * a portrait's character
+     */
+    "portrait"?: string;
 }
 
 /**
@@ -218,6 +416,15 @@ export interface SourceAt {
     "line": number;
     "col": number;
     "definition": boolean;
+}
+
+/**
+ * TextPart is one part of a text, read in order: one of its versions shows, the first whose trigger holds, or one
+ * of them at random.
+ */
+export interface TextPart {
+    "random"?: boolean;
+    "versions": Version[] | null;
 }
 
 /**
@@ -310,4 +517,15 @@ export interface TextSearchQuery {
 export interface TextSearchResult {
     "found": number;
     "limitHit": boolean;
+}
+
+/**
+ * Version is one text a part can show: its trigger on one line (none: it always can), its loc key and that key's
+ * text, at its line.
+ */
+export interface Version {
+    "when"?: string;
+    "key": string;
+    "text"?: string;
+    "line": number;
 }

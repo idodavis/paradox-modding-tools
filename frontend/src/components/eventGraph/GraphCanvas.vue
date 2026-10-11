@@ -22,7 +22,7 @@ import {
 import { MiniMap } from "@vue-flow/minimap";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
-import type { Edge, Node } from "@services/models";
+import type { Edge, Node } from "@services/internal/pages/models";
 import { reach } from "../../composables/useEventGraph";
 import { plural } from "../../lib/format";
 

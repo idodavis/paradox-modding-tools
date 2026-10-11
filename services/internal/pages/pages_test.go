@@ -15,6 +15,7 @@ import (
 
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
@@ -25,6 +26,17 @@ const (
 	searchToken = "unique_search_token"
 	modA        = "moda"
 	modB        = "modb"
+)
+
+// The events the graph tests draw around: the second of a chain from a mod, its caller's stub, an event firing
+// through a scripted effect and that effect, a wide fan-out, and the install's first event.
+const (
+	chainRoot    = "g.1"
+	chainCaller  = "more-in:g.1"
+	macroRoot    = "m.1"
+	macroEffect  = "m_fire"
+	wideRoot     = "w.0"
+	installEvent = "v.1"
 )
 
 // writeTree writes each text at its slash-separated rel under root.
@@ -316,5 +328,221 @@ func TestHealthLocalization(t *testing.T) {
 	// what reads one key
 	if readers := LocReaders(ws, "a.1.t"); len(readers) != 1 || readers[0].At.Origin != modA {
 		t.Errorf("a key's readers: %+v", readers)
+	}
+}
+
+// ids is the ids of a graph's nodes, in order.
+func ids(graph *EventGraph) []string {
+	var out []string
+	for _, node := range graph.Nodes {
+		out = append(out, node.ID)
+	}
+	return out
+}
+
+// edge is the edge a graph draws between two ids.
+func edge(graph *EventGraph, from, to string) (Edge, bool) {
+	i := slices.IndexFunc(graph.Edges, func(edge Edge) bool { return edge.From == from && edge.To == to })
+	if i < 0 {
+		return Edge{}, false
+	}
+	return graph.Edges[i], true
+}
+
+// graphWorkspace is a session over the fixture install with one mod: a chain g.0 to g.6 and an event nothing
+// connects, a wide fan-out w.0, an event firing through a scripted effect, and an on_action firing g.3.
+func graphWorkspace(t *testing.T) *workspace.Session {
+	t.Helper()
+	chain := "namespace = g\n"
+	for i := range 6 {
+		chain += fmt.Sprintf("g.%d = {\n\ttype = character_event\n\timmediate = { trigger_event = g.%d }\n}\n", i, i+1)
+	}
+	chain += "g.6 = { type = character_event }\ng.9 = { type = character_event }\n"
+	wide := "namespace = w\nw.0 = {\n\ttype = character_event\n\timmediate = {\n"
+	for i := range 15 {
+		wide += fmt.Sprintf("\t\ttrigger_event = w.%d\n", i+1)
+	}
+	wide += "\t}\n}\n"
+	for i := range 15 {
+		wide += fmt.Sprintf("w.%d = { type = character_event }\n", i+1)
+	}
+	return openWorkspace(t, map[string]string{
+		"events/chain.txt":              chain,
+		"events/wide.txt":               wide,
+		"events/macro.txt":              "namespace = m\nm.1 = {\n\ttype = character_event\n\timmediate = { m_fire = yes }\n}\nm.2 = { type = character_event }\n",
+		"common/scripted_effects/m.txt": "m_fire = {\n\ttrigger_event = m.2\n}\n",
+		"common/on_action/m.txt":        "on_birth = {\n\tevents = { g.3 }\n}\n",
+	})
+}
+
+// TestGraphHops covers the graph around a root: an empty root, hops out, the one hop in as a stub and its opening,
+// and the page's origins.
+func TestGraphHops(t *testing.T) {
+	ws := graphWorkspace(t)
+	params := Params{Depth: 3, Fanout: 12, MaxNodes: 40}
+
+	if drawn := Graph(ws, Params{}); len(drawn.Nodes) != 0 || drawn.Reason == "" {
+		t.Errorf("an empty root is answered with a reason: %+v", drawn)
+	}
+	if got := Graph(ws, Params{Root: "nothing.1"}); len(got.Nodes) != 0 || got.Reason == "" {
+		t.Errorf("a root nothing defines: %+v", got)
+	}
+
+	// three hops out, the caller as a stub, the fourth hop not drawn
+	params.Root = chainRoot
+	drawn := Graph(ws, params)
+	for _, want := range []string{chainRoot, "g.2", "g.3", "g.4"} {
+		if !slices.Contains(ids(drawn), want) {
+			t.Errorf("three hops out: no %s in %v", want, ids(drawn))
+		}
+	}
+	if slices.Contains(ids(drawn), "g.5") || slices.Contains(ids(drawn), "g.9") || slices.Contains(ids(drawn), "g.0") || drawn.Truncated {
+		t.Errorf("a fourth hop, an unconnected event and the caller are not drawn: %v", ids(drawn))
+	}
+	if drawn.Nodes[0].ID != chainRoot || !drawn.Nodes[0].Root || drawn.Nodes[0].Origin != modA {
+		t.Errorf("the root and its origin: %+v", drawn.Nodes[0])
+	}
+	if i := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == chainCaller }); i < 0 || drawn.Nodes[i].Stub != "fired-by" || drawn.Nodes[i].Title != "+1 fired by" {
+		t.Errorf("the fired-by stub: %+v", drawn.Nodes)
+	}
+	if found, ok := edge(drawn, chainRoot, "g.2"); !ok || found.Via != "" {
+		t.Errorf("a direct fire is an edge through no scripted effect: %+v", drawn.Edges)
+	}
+
+	// opening the stub draws the caller, and the on_action that fires g.3 is one hop in from g.3 only
+	params.Expand = []string{chainCaller}
+	drawn = Graph(ws, params)
+	if !slices.Contains(ids(drawn), "g.0") || slices.ContainsFunc(drawn.Nodes, func(node Node) bool { return node.Stub == "fired-by" }) {
+		t.Errorf("opening the stub: %v", ids(drawn))
+	}
+	if got := Graph(ws, Params{Root: "g.3", Depth: 1, Expand: []string{"more-in:g.3"}}); !slices.Contains(ids(got), "on_birth") || slices.Contains(ids(got), chainRoot) {
+		t.Errorf("one hop in stops at the caller: %v", ids(got))
+	}
+
+	// the page's origins: the root and its stub stay, a node of another origin goes with its edges
+	if got := Graph(ws, Params{Root: chainRoot, Depth: 3, Origins: []string{game.OriginVanilla}}); !slices.Equal(ids(got), []string{chainRoot, chainCaller}) || len(got.Edges) != 1 {
+		t.Errorf("one origin: %v %+v", ids(got), got.Edges)
+	}
+}
+
+// TestGraphScripted covers a scripted effect as a hop: the edge goes through it, labeled by its chain, the same
+// either way round; with the page's macros shown it is a node between the two.
+func TestGraphScripted(t *testing.T) {
+	ws := graphWorkspace(t)
+
+	drawn := Graph(ws, Params{Root: macroRoot, Depth: 2, Follow: true})
+	if found, ok := edge(drawn, macroRoot, "m.2"); !ok || found.Via != macroEffect || slices.Contains(ids(drawn), macroEffect) {
+		t.Errorf("a fire through a scripted effect: %+v %v", drawn.Edges, ids(drawn))
+	}
+	drawn = Graph(ws, Params{Root: "m.2", Depth: 1, Expand: []string{"more-in:m.2"}, Follow: true})
+	if found, ok := edge(drawn, macroRoot, "m.2"); !ok || found.Via != macroEffect {
+		t.Errorf("the same chain into it: %+v", drawn.Edges)
+	}
+	drawn = Graph(ws, Params{Root: macroRoot, Depth: 2, Scripted: true, Follow: true})
+	into, _ := edge(drawn, macroEffect, "m.2")
+	if _, ok := edge(drawn, macroRoot, macroEffect); !ok || into.Via != "" || !slices.Contains(ids(drawn), macroEffect) {
+		t.Errorf("the macro drawn: %+v %v", drawn.Edges, ids(drawn))
+	}
+	if detail := EventDetail(ws, "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0].Name != macroRoot || detail.FiredBy[0].Kind != "event" || detail.FiredBy[0].Via != macroEffect || detail.FiredBy[0].Through != 1 {
+		t.Errorf("the detail's fired-by, as the graph draws it: %+v", detail.FiredBy)
+	}
+}
+
+// TestGraphLimits covers a wide fan-out (the page's number of targets, then a stub; opened, all), the node cap's
+// truncation, and the install's own fires, with a mod or none.
+func TestGraphLimits(t *testing.T) {
+	ws := graphWorkspace(t)
+
+	drawn := Graph(ws, Params{Root: wideRoot, Depth: 1, Fanout: 12, MaxNodes: 40})
+	if i := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more:w.0" }); i < 0 || drawn.Nodes[i].Title != "+3 more events" || len(drawn.Nodes) != 14 {
+		t.Errorf("the more stub: %d nodes, %+v", len(drawn.Nodes), drawn.Nodes)
+	}
+	if got := Graph(ws, Params{Root: wideRoot, Depth: 1, Fanout: 12, MaxNodes: 40, Expand: []string{"more:w.0"}}); len(got.Nodes) != 16 {
+		t.Errorf("opening the fan-out: %d nodes", len(got.Nodes))
+	}
+	if got := Graph(ws, Params{Root: wideRoot, Depth: 1, MaxNodes: 5}); !got.Truncated || got.Reached != 1 || len(got.Nodes) != 5 {
+		t.Errorf("the node cap, at the hop it cut: %d nodes, truncated %v at %d", len(got.Nodes), got.Truncated, got.Reached)
+	}
+
+	// the install's own fires are drawn with or without a mod
+	drawn = Graph(ws, Params{Root: installEvent, Depth: 1})
+	if _, ok := edge(drawn, installEvent, "v.2"); !ok {
+		t.Errorf("the install's fire: %+v", drawn.Edges)
+	}
+	if got := Graph(openWorkspace(t), Params{Root: installEvent, Depth: 1}); len(got.Nodes) == 0 {
+		t.Error("with no mod at all")
+	}
+}
+
+// TestSearchRoots covers the root search: an install event by its number and by its namespace, the ids that start
+// with the query first; never a name no edge has, nor a macro; and the count of each kind.
+func TestSearchRoots(t *testing.T) {
+	ws := graphWorkspace(t)
+
+	if got := SearchRoots(ws, ".2"); !slices.Contains(ids(&EventGraph{Nodes: got.Hits}), "v.2") {
+		t.Errorf("by number: %+v", got)
+	}
+	if got := SearchRoots(ws, "V."); len(got.Hits) < 2 || got.Hits[0].ID != installEvent || got.Hits[1].ID != "v.2" || got.Hits[0].Origin != game.OriginVanilla {
+		t.Errorf("by namespace: %+v", got)
+	}
+	if got := SearchRoots(ws, "vsub"); len(got.Hits) != 0 {
+		t.Errorf("an event nothing fires and that fires nothing: %+v", got)
+	}
+	if got := SearchRoots(ws, macroEffect); len(got.Hits) != 0 {
+		t.Errorf("a macro is a hop, not a root: %+v", got)
+	}
+	every := SearchRoots(ws, "")
+	if !slices.ContainsFunc(every.Databases, func(count DatabaseCount) bool { return count.Database == "events" && count.Count > 10 }) {
+		t.Errorf("every kind's count: %+v", every)
+	}
+}
+
+// TestDetail covers one event opened: its header, a node's title, its sections and their loc text, its lines, its
+// options, what its block names, and what it fires and is fired by.
+func TestDetail(t *testing.T) {
+	ws := openWorkspace(t, map[string]string{
+		"events/m.txt":                         "namespace = m\nm.1 = {\n\ttype = character_event\n\ttitle = v.1.t\n\tdesc = v.1.desc\n\timmediate = { trigger_event = v.2 }\n\toption = {\n\t\tname = v.1.a\n\t}\n}\nm.2 = {\n\toption = {\n\t\tname = {\n\t\t\ttrigger = { always = yes }\n\t\t\ttext = v.1.a\n\t\t}\n\t}\n}\n",
+		"localization/english/m_l_english.yml": "\xEF\xBB\xBFl_english:\n v.1.a:0 \"Go\"\n",
+	})
+	detail := EventDetail(ws, macroRoot)
+	if detail.Reason != "" || detail.Kind != "event" || detail.At.Origin != modA {
+		t.Fatalf("the header: %+v", detail)
+	}
+	if drawn := Graph(ws, Params{Root: macroRoot, Depth: 1, Fanout: 5, MaxNodes: 10}); len(drawn.Nodes) == 0 || drawn.Nodes[0].Title != "Hello" {
+		t.Errorf("a node's title: %+v", drawn)
+	}
+	if named := EventDetail(ws, "m.2"); len(named.Options) != 1 || named.Options[0].Names[0].Key != "v.1.a" || named.Options[0].Names[0].Text != "Go" {
+		t.Errorf("an option named by a block: %+v", named.Options)
+	}
+	sections := map[string]Section{}
+	for _, section := range detail.Sections {
+		sections[section.Key] = section
+	}
+	if sections["type"].Value != "character_event" || len(detail.Sections) != 5 {
+		t.Errorf("the sections: %+v", detail.Sections)
+	}
+	if desc := sections["desc"].Parts; len(desc) == 0 || desc[0].Versions[0].Text != "Desc" {
+		t.Errorf("a one-word section's loc text: %+v", sections["desc"])
+	}
+	if len(detail.Lines) != 9 || detail.Lines[0] != "m.1 = {" || detail.Lines[5] != "\toption = {" || detail.Lines[8] != "}" {
+		t.Errorf("the definition as its file writes it: %q", detail.Lines)
+	}
+	if len(detail.Options) != 1 || detail.Options[0].Names[0].Key != "v.1.a" || detail.Options[0].Names[0].Text != "Go" {
+		t.Errorf("the options: %+v", detail.Options)
+	}
+	if len(detail.Refs) == 0 || detail.Refs[0].Database != schema.Localization || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != modA {
+		t.Errorf("the block's references, by kind in the order written: %+v", detail.Refs)
+	}
+	if len(detail.Fires) != 1 || detail.Fires[0].Name != "v.2" {
+		t.Errorf("what it fires: %+v", detail.Fires)
+	}
+	if fired := EventDetail(ws, "v.2"); len(fired.FiredBy) == 0 {
+		t.Errorf("what fires it: %+v", fired.FiredBy)
+	}
+	if on := EventDetail(ws, "on_birth"); on.Kind != "on action" || len(on.Sections) == 0 {
+		t.Errorf("an on_action's detail: %+v", on)
+	}
+	if none := EventDetail(ws, "nothing.1"); none.Reason == "" {
+		t.Error("a name nothing defines")
 	}
 }

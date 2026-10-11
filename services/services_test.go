@@ -31,40 +31,18 @@ import (
 	"paradox-modding-tools/services/internal/workspace"
 )
 
+// The games the tests build workspaces for, the install the config tests name, and the format a binary file reads as.
+const (
+	gameCK3      = "ck3"
+	gameEU5      = "eu5"
+	installOne   = "inst1"
+	formatBinary = "binary"
+)
+
 var scanned = sync.OnceValues(func() (*index.Install, error) {
-	dir := filepath.Join("internal", "testdata", "ck3")
-	return index.Scan(context.Background(), index.Request{Game: "ck3", Dir: dir, Version: "test"})
+	dir := filepath.Join("internal", "testdata", gameCK3)
+	return index.Scan(context.Background(), index.Request{Game: gameCK3, Dir: dir, Version: "test"})
 })
-
-// workspace is a session service holding, as workspace "ws", a session over the fixture install
-// with the given mods, each a map of rel to text.
-func openWorkspace(t *testing.T, mods ...map[string]string) *SessionService {
-	t.Helper()
-	install, err := scanned()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var playset []workspace.Mod
-	for i, files := range mods {
-		dir := t.TempDir()
-		writeTree(t, dir, files)
-		id := string(rune('a' + i))
-		playset = append(playset, workspace.Mod{ID: "mod" + id, Dir: dir})
-	}
-	ws, err := workspace.Open(t.Context(), game.Get("ck3"), install, playset, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return serving(ws)
-}
-
-// serving is a session service holding ws as workspace "ws".
-func serving(ws *workspace.Session) *SessionService {
-	served := NewSessionService(nil, "test")
-	served.start()
-	served.sessions["ws"] = ws
-	return served
-}
 
 // tempConfig sends APPDATA, XDG_CONFIG_HOME and HOME to a temporary folder and opens a config.json
 // there, unwritten, holding the given installs and workspaces.
@@ -93,22 +71,6 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 	}
 }
 
-func ids(graph *EventGraph) []string {
-	var out []string
-	for _, node := range graph.Nodes {
-		out = append(out, node.ID)
-	}
-	return out
-}
-
-func edge(graph *EventGraph, from, to string) (Edge, bool) {
-	at := slices.IndexFunc(graph.Edges, func(edge Edge) bool { return edge.From == from && edge.To == to })
-	if at < 0 {
-		return Edge{}, false
-	}
-	return graph.Edges[at], true
-}
-
 func dirNames(entries []DirEntry) map[string]bool {
 	out := map[string]bool{}
 	for _, entry := range entries {
@@ -121,14 +83,14 @@ func dirNames(entries []DirEntry) map[string]bool {
 // workspace with one mod, its cache folder sent to a temporary directory.
 func fixtureService(t *testing.T) *SessionService {
 	t.Helper()
-	install, _ := filepath.Abs(filepath.Join("internal", "testdata", "ck3"))
+	install, _ := filepath.Abs(filepath.Join("internal", "testdata", gameCK3))
 	mod := t.TempDir()
-	if err := os.CopyFS(mod, os.DirFS(filepath.Join("internal", "testdata", "mods", "ck3"))); err != nil {
+	if err := os.CopyFS(mod, os.DirFS(filepath.Join("internal", "testdata", "mods", gameCK3))); err != nil {
 		t.Fatal(err)
 	}
 	config := tempConfig(t,
-		[]GameInstall{{ID: "i1", GameID: "ck3", Name: "CK3", Path: install}},
-		Workspace{ID: "ws", GameID: "ck3", Name: "W", InstallID: "i1", Mods: []WorkspaceMod{{ID: "m", Name: "M", Path: mod}}})
+		[]GameInstall{{ID: "i1", GameID: gameCK3, Name: "CK3", Path: install}},
+		Workspace{ID: "ws", GameID: gameCK3, Name: "W", InstallID: "i1", Mods: []WorkspaceMod{{ID: "m", Name: "M", Path: mod}}})
 	sessions := NewSessionService(config, "test")
 	sessions.scan = func(context.Context, index.Request) (*index.Install, error) { return scanned() }
 	return sessions
@@ -181,183 +143,6 @@ func TestConfig(t *testing.T) {
 	})
 }
 
-// TestEventGraph covers the graph around a root: hops out, the one hop in, macros as hops, the
-// stubs and their opening, the caps the page brings, and an empty root.
-func TestEventGraph(t *testing.T) {
-	chain := "namespace = g\n"
-	for i := range 6 {
-		chain += fmt.Sprintf("g.%d = {\n\ttype = character_event\n\timmediate = { trigger_event = g.%d }\n}\n", i, i+1)
-	}
-	chain += "g.6 = { type = character_event }\ng.9 = { type = character_event }\n"
-	wide := "namespace = w\nw.0 = {\n\ttype = character_event\n\timmediate = {\n"
-	for i := range 15 {
-		wide += fmt.Sprintf("\t\ttrigger_event = w.%d\n", i+1)
-	}
-	wide += "\t}\n}\n"
-	for i := range 15 {
-		wide += fmt.Sprintf("w.%d = { type = character_event }\n", i+1)
-	}
-	graphs := NewEventGraphService(openWorkspace(t, map[string]string{
-		"events/chain.txt":              chain,
-		"events/wide.txt":               wide,
-		"events/macro.txt":              "namespace = m\nm.1 = {\n\ttype = character_event\n\timmediate = { m_fire = yes }\n}\nm.2 = { type = character_event }\n",
-		"common/scripted_effects/m.txt": "m_fire = {\n\ttrigger_event = m.2\n}\n",
-		"common/on_action/m.txt":        "on_birth = {\n\tevents = { g.3 }\n}\n",
-	}))
-	params := Params{Depth: 3, Fanout: 12, MaxNodes: 40}
-
-	drawn, _ := graphs.GetEventGraph("ws", Params{})
-	if len(drawn.Nodes) != 0 || drawn.Reason == "" {
-		t.Errorf("an empty root is answered with a reason: %+v", drawn)
-	}
-	if got, _ := graphs.GetEventGraph("ws", Params{Root: "nothing.1"}); len(got.Nodes) != 0 || got.Reason == "" {
-		t.Errorf("a root nothing defines: %+v", got)
-	}
-
-	// three hops out, the caller as a stub, the fourth hop not drawn
-	params.Root = "g.1"
-	drawn, _ = graphs.GetEventGraph("ws", params)
-	for _, want := range []string{"g.1", "g.2", "g.3", "g.4"} {
-		if !slices.Contains(ids(drawn), want) {
-			t.Errorf("three hops out: no %s in %v", want, ids(drawn))
-		}
-	}
-	if slices.Contains(ids(drawn), "g.5") || slices.Contains(ids(drawn), "g.9") || slices.Contains(ids(drawn), "g.0") || drawn.Truncated {
-		t.Errorf("a fourth hop, an unconnected event and the caller are not drawn: %v", ids(drawn))
-	}
-	if drawn.Nodes[0].ID != "g.1" || !drawn.Nodes[0].Root || drawn.Nodes[0].Origin != "moda" {
-		t.Errorf("the root and its origin: %+v", drawn.Nodes[0])
-	}
-	if at := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more-in:g.1" }); at < 0 || drawn.Nodes[at].Stub != "fired-by" || drawn.Nodes[at].Title != "+1 fired by" {
-		t.Errorf("the fired-by stub: %+v", drawn.Nodes)
-	}
-	if found, ok := edge(drawn, "g.1", "g.2"); !ok || found.Via != "" {
-		t.Errorf("a direct fire is an edge through no scripted effect: %+v", drawn.Edges)
-	}
-
-	// opening the stub draws the caller, and the on_action that fires g.3 is one hop in from g.3 only
-	params.Expand = []string{"more-in:g.1"}
-	drawn, _ = graphs.GetEventGraph("ws", params)
-	if !slices.Contains(ids(drawn), "g.0") || slices.ContainsFunc(drawn.Nodes, func(node Node) bool { return node.Stub == "fired-by" }) {
-		t.Errorf("opening the stub: %v", ids(drawn))
-	}
-	if got, _ := graphs.GetEventGraph("ws", Params{Root: "g.3", Depth: 1, Expand: []string{"more-in:g.3"}}); !slices.Contains(ids(got), "on_birth") || slices.Contains(ids(got), "g.1") {
-		t.Errorf("one hop in stops at the caller: %v", ids(got))
-	}
-
-	// a macro is a hop: the edge goes through it, labeled by its chain, the same either way round;
-	// with the page's macros shown it is a node between the two
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Follow: true})
-	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire" || slices.Contains(ids(drawn), "m_fire") {
-		t.Errorf("a fire through a scripted effect: %+v %v", drawn.Edges, ids(drawn))
-	}
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.2", Depth: 1, Expand: []string{"more-in:m.2"}, Follow: true})
-	if found, ok := edge(drawn, "m.1", "m.2"); !ok || found.Via != "m_fire" {
-		t.Errorf("the same chain into it: %+v", drawn.Edges)
-	}
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 2, Scripted: true, Follow: true})
-	into, _ := edge(drawn, "m_fire", "m.2")
-	if _, ok := edge(drawn, "m.1", "m_fire"); !ok || into.Via != "" || !slices.Contains(ids(drawn), "m_fire") {
-		t.Errorf("the macro drawn: %+v %v", drawn.Edges, ids(drawn))
-	}
-	if detail, _ := graphs.GetEventDetail("ws", "m.2"); len(detail.FiredBy) != 1 || detail.FiredBy[0].Name != "m.1" || detail.FiredBy[0].Kind != "event" || detail.FiredBy[0].Via != "m_fire" || detail.FiredBy[0].Through != 1 {
-		t.Errorf("the detail's fired-by, as the graph draws it: %+v", detail.FiredBy)
-	}
-
-	// a wide fan-out: the page's number of targets, then a stub; opened, all; a node cap truncates
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "w.0", Depth: 1, Fanout: 12, MaxNodes: 40})
-	if at := slices.IndexFunc(drawn.Nodes, func(node Node) bool { return node.ID == "more:w.0" }); at < 0 || drawn.Nodes[at].Title != "+3 more events" || len(drawn.Nodes) != 14 {
-		t.Errorf("the more stub: %d nodes, %+v", len(drawn.Nodes), drawn.Nodes)
-	}
-	if got, _ := graphs.GetEventGraph("ws", Params{Root: "w.0", Depth: 1, Fanout: 12, MaxNodes: 40, Expand: []string{"more:w.0"}}); len(got.Nodes) != 16 {
-		t.Errorf("opening the fan-out: %d nodes", len(got.Nodes))
-	}
-	if got, _ := graphs.GetEventGraph("ws", Params{Root: "w.0", Depth: 1, MaxNodes: 5}); !got.Truncated || got.Reached != 1 || len(got.Nodes) != 5 {
-		t.Errorf("the node cap, at the hop it cut: %d nodes, truncated %v at %d", len(got.Nodes), got.Truncated, got.Reached)
-	}
-
-	// the install's own fires are drawn with or without a mod
-	drawn, _ = graphs.GetEventGraph("ws", Params{Root: "v.1", Depth: 1})
-	if _, ok := edge(drawn, "v.1", "v.2"); !ok {
-		t.Errorf("the install's fire: %+v", drawn.Edges)
-	}
-	if got, _ := NewEventGraphService(openWorkspace(t)).GetEventGraph("ws", Params{Root: "v.1", Depth: 1}); len(got.Nodes) == 0 {
-		t.Error("with no mod at all")
-	}
-
-	// the page's origins: the root and its stub stay, a node of another origin goes with its edges
-	if got, _ := graphs.GetEventGraph("ws", Params{Root: "g.1", Depth: 3, Origins: []string{game.OriginVanilla}}); !slices.Equal(ids(got), []string{"g.1", "more-in:g.1"}) || len(got.Edges) != 1 {
-		t.Errorf("one origin: %v %+v", ids(got), got.Edges)
-	}
-
-	// the root search: an install event by its number and by its namespace, the ids that start with
-	// the query first; never a name no edge has, nor a macro; and the count of each kind
-	if got, _ := graphs.SearchRoots("ws", ".2"); !slices.Contains(ids(&EventGraph{Nodes: got.Hits}), "v.2") {
-		t.Errorf("by number: %+v", got)
-	}
-	if got, _ := graphs.SearchRoots("ws", "V."); len(got.Hits) < 2 || got.Hits[0].ID != "v.1" || got.Hits[1].ID != "v.2" || got.Hits[0].Origin != game.OriginVanilla {
-		t.Errorf("by namespace: %+v", got)
-	}
-	if got, _ := graphs.SearchRoots("ws", "vsub"); len(got.Hits) != 0 {
-		t.Errorf("an event nothing fires and that fires nothing: %+v", got)
-	}
-	if got, _ := graphs.SearchRoots("ws", "m_fire"); len(got.Hits) != 0 {
-		t.Errorf("a macro is a hop, not a root: %+v", got)
-	}
-	every, _ := graphs.SearchRoots("ws", "")
-	if !slices.ContainsFunc(every.Databases, func(count DatabaseCount) bool { return count.Database == "events" && count.Count > 10 }) {
-		t.Errorf("every kind's count: %+v", every)
-	}
-}
-
-func TestDetail(t *testing.T) {
-	graphs := NewEventGraphService(openWorkspace(t, map[string]string{
-		"events/m.txt":                         "namespace = m\nm.1 = {\n\ttype = character_event\n\ttitle = v.1.t\n\tdesc = v.1.desc\n\timmediate = { trigger_event = v.2 }\n\toption = {\n\t\tname = v.1.a\n\t}\n}\nm.2 = {\n\toption = {\n\t\tname = {\n\t\t\ttrigger = { always = yes }\n\t\t\ttext = v.1.a\n\t\t}\n\t}\n}\n",
-		"localization/english/m_l_english.yml": "\xEF\xBB\xBFl_english:\n v.1.a:0 \"Go\"\n",
-	}))
-	detail, _ := graphs.GetEventDetail("ws", "m.1")
-	if detail.Reason != "" || detail.Kind != "event" || detail.At.Origin != "moda" {
-		t.Fatalf("the header: %+v", detail)
-	}
-	if drawn, _ := graphs.GetEventGraph("ws", Params{Root: "m.1", Depth: 1, Fanout: 5, MaxNodes: 10}); len(drawn.Nodes) == 0 || drawn.Nodes[0].Title != "Hello" {
-		t.Errorf("a node's title: %+v", drawn)
-	}
-	if named, _ := graphs.GetEventDetail("ws", "m.2"); len(named.Options) != 1 || named.Options[0].Names[0].Key != "v.1.a" || named.Options[0].Names[0].Text != "Go" {
-		t.Errorf("an option named by a block: %+v", named.Options)
-	}
-	sections := map[string]Section{}
-	for _, section := range detail.Sections {
-		sections[section.Key] = section
-	}
-	if sections["type"].Value != "character_event" || len(detail.Sections) != 5 {
-		t.Errorf("the sections: %+v", detail.Sections)
-	}
-	if desc := sections["desc"].Parts; len(desc) == 0 || desc[0].Versions[0].Text != "Desc" {
-		t.Errorf("a one-word section's loc text: %+v", sections["desc"])
-	}
-	if len(detail.Lines) != 9 || detail.Lines[0] != "m.1 = {" || detail.Lines[5] != "\toption = {" || detail.Lines[8] != "}" {
-		t.Errorf("the definition as its file writes it: %q", detail.Lines)
-	}
-	if len(detail.Options) != 1 || detail.Options[0].Names[0].Key != "v.1.a" || detail.Options[0].Names[0].Text != "Go" {
-		t.Errorf("the options: %+v", detail.Options)
-	}
-	if len(detail.Refs) == 0 || detail.Refs[0].Database != schema.Localization || len(detail.Refs[0].Refs) != 3 || detail.Refs[0].Refs[1].Name != "v.1.desc" || detail.Refs[0].Refs[0].At.Origin != "moda" {
-		t.Errorf("the block's references, by kind in the order written: %+v", detail.Refs)
-	}
-	if len(detail.Fires) != 1 || detail.Fires[0].Name != "v.2" {
-		t.Errorf("what it fires: %+v", detail.Fires)
-	}
-	if detail, _ := graphs.GetEventDetail("ws", "v.2"); len(detail.FiredBy) == 0 {
-		t.Errorf("what fires it: %+v", detail.FiredBy)
-	}
-	if on, _ := graphs.GetEventDetail("ws", "on_birth"); on.Kind != "on action" || len(on.Sections) == 0 {
-		t.Errorf("an on_action's detail: %+v", on)
-	}
-	if none, _ := graphs.GetEventDetail("ws", "nothing.1"); none.Reason == "" {
-		t.Error("a name nothing defines")
-	}
-}
-
 func TestListDirectoryMetadata(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -399,10 +184,10 @@ func TestReadText(t *testing.T) {
 		editor string // what the editor reader's refusal says; "" opens it
 	}{
 		// Paradox ships a lot of these; no browser decodes either.
-		{"dds", append([]byte("DDS "), 0, 0, 0, 0x7C), 0, "binary"},
-		{"tga", []byte{0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}, 0, "binary"},
-		{"exe", append([]byte("MZ"), 0, 0, 0, 0), 0, "binary"},
-		{"arbitrary", []byte{0x13, 0x37, 0x00, 0x42}, 0, "binary"},
+		{"dds", append([]byte("DDS "), 0, 0, 0, 0x7C), 0, formatBinary},
+		{"tga", []byte{0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}, 0, formatBinary},
+		{"exe", append([]byte("MZ"), 0, 0, 0, 0), 0, formatBinary},
+		{"arbitrary", []byte{0x13, 0x37, 0x00, 0x42}, 0, formatBinary},
 		{"text", []byte("hello"), 0, ""},
 		{"large", nil, inventory.MaxTextBytes + 1, "too large"},
 	}
@@ -474,7 +259,7 @@ func TestLogRotation(t *testing.T) {
 	}
 
 	// the report holds the last scan's lines and the log's tail
-	logs.Logger.Info("scan start", "game", "ck3")
+	logs.Logger.Info("scan start", "game", gameCK3)
 	logs.Logger.Info("scan end", "took", "1s")
 	if report := logs.diagnostics(); !strings.Contains(report, "Last scan:\n") || !strings.HasSuffix(strings.TrimSpace(report), `msg="scan end" took=1s`) {
 		t.Errorf("the report: %s", report)
@@ -567,7 +352,7 @@ func TestEnsureSession(t *testing.T) {
 // modsService is a workspace service over workspace "ws1" and a folder holding two mod folders, a and b.
 func modsService(t *testing.T) (svc *WorkspaceService, modDir string) {
 	t.Helper()
-	config := tempConfig(t, nil, Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
+	config := tempConfig(t, nil, Workspace{ID: "ws1", GameID: gameCK3, Name: "Test", InstallID: installOne})
 	svc = NewWorkspaceService(config, NewSessionService(config, "test"))
 	modDir = t.TempDir()
 	writeTree(t, modDir, map[string]string{"a/descriptor.mod": "", "b/descriptor.mod": ""})
@@ -669,8 +454,8 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	install := t.TempDir()
 	modDir := t.TempDir()
 	config := tempConfig(t,
-		[]GameInstall{{ID: "inst1", GameID: "ck3", Name: "My CK3 nickname", Path: install}},
-		Workspace{ID: "ws1", GameID: "ck3", Name: "Test", InstallID: "inst1"})
+		[]GameInstall{{ID: installOne, GameID: gameCK3, Name: "My CK3 nickname", Path: install}},
+		Workspace{ID: "ws1", GameID: gameCK3, Name: "Test", InstallID: installOne})
 	svc := NewWorkspaceService(config, NewSessionService(config, "test"))
 	writeTree(t, modDir, map[string]string{"descriptor.mod": ""})
 	if _, err := svc.AddWorkspaceMod("ws1", modDir); err != nil {
@@ -712,13 +497,13 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 // An empty thumbnail is found on disk per game, EU5's in .metadata; only the backend knows where.
 func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 	for _, testCase := range []struct{ game, rel string }{
-		{"ck3", "thumbnail.png"},
+		{gameCK3, "thumbnail.png"},
 		{"vic3", "thumbnail.png"},
-		{"eu5", ".metadata/thumbnail.png"},
+		{gameEU5, ".metadata/thumbnail.png"},
 		// A mod that put it somewhere else keeps its own choice.
-		{"eu5", "thumbnail.gif"},
+		{gameEU5, "thumbnail.gif"},
 		// A mod with no thumbnail must not be given a path to one that is not there.
-		{"ck3", ""},
+		{gameCK3, ""},
 	} {
 		t.Run(testCase.game+"/"+testCase.rel, func(t *testing.T) {
 			config := tempConfig(t, nil, Workspace{ID: "ws", GameID: testCase.game, Name: "T"})
@@ -757,7 +542,7 @@ func TestSweep(t *testing.T) {
 	if os.Getenv("PMT_TEST_SWEEP") == "" {
 		t.Skip("walks every mod of a game's mod folder; set PMT_TEST_SWEEP=1")
 	}
-	for _, id := range []string{"ck3", "vic3", "eu5"} {
+	for _, id := range []string{gameCK3, "vic3", gameEU5} {
 		install, mods := os.Getenv("PMT_TEST_INSTALL_"+strings.ToUpper(id)), os.Getenv("PMT_TEST_MODS_"+strings.ToUpper(id))
 		if install == "" || mods == "" {
 			continue

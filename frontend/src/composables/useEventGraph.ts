@@ -6,7 +6,7 @@ import { computed, ref, shallowRef, toValue, type MaybeRefOrGetter } from "vue";
 import { useQuery } from "@pinia/colada";
 import { refDebounced } from "@vueuse/core";
 import { Graph, layout } from "@dagrejs/dagre";
-import type { Edge, Node, Params } from "@services/models";
+import type { Edge, Node, Params } from "@services/internal/pages/models";
 import { eventDetailQuery, graphQuery, rootsQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 

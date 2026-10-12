@@ -20,7 +20,7 @@ The backend has four parts, and the folders follow them:
 services/
 ├── *service.go          1. the Wails services (see "Services")
 └── internal/
-    ├── session/         2. one workspace open in the editor: install and mods indexes, open files
+    ├── session/         2. one workspace in the editor and the one open at a time (`Slot`): indexes, open files
     ├── lsp/             2. the editor's requests: hover, completion, navigation, diagnostics, edits
     ├── lang/            3. the language engine (its README: the pipeline and its rules)
     │   ├── jomini/          the parser: syntax tree, names, dates, numbers, BOM; knows no game
@@ -76,11 +76,10 @@ pages; it parses only what it is handed. `go list -deps ./services/...` gives ev
 | Part | Service | File | What the frontend calls it for |
 |---|---|---|---|
 | The app and your data | App | `appservice.go` | the version, update checks, the settings map, reset; the file also holds `config.json` (`ConfigFile`) for the other services |
-| | Workspace | `workspaceservice.go` | installs, workspaces, mods and their load order, the IDE's roots |
+| | Workspace | `workspaceservice.go` | installs, workspaces, mods and their load order, the IDE's roots; `Open` and `State` of the open workspace |
 | | File | `fileservice.go` | the IDE's file system: read, write (atomic), list, rename, delete |
 | | Log | `logservice.go` | the app log (`pmt.log`), the frontend's log lines, crash detection |
-| The open workspace | Session | `sessionservice.go` | `EnsureSession` (open a workspace, scanning if needed), the language health |
-| | Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
+| The open workspace | Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
 | Pages and tools | Health | `healthservice.go` | the Health page: three calls into `internal/pages` |
 | | EventGraph | `eventgraphservice.go` | the event graph, one event's detail and the root search: three calls into `internal/pages` |
 | | Wiki | `wikiservice.go` | the IDE's Wiki pane and Patch Notes |
@@ -89,24 +88,26 @@ pages; it parses only what it is handed. `go list -deps ./services/...` gives ev
 | | Release | `releaseservice.go` | the Publish page: descriptor, description, Workshop extras, Steam publish |
 | | Window | `windowservice.go` | the app's other windows: open, show, close (a closing one hands its tabs back first), and the `window:*` events they tell each other by |
 
-Ide, Health, EventGraph and Wiki reach the open workspace through Session (`openSession`); Session,
+Ide, Health, EventGraph and Wiki reach the open workspace through Workspace (`openWorkspace`);
 Workspace, Ide, Release, Log and Wiki read or change your saved data through the ConfigFile (`read`, `mutate`); Git
 reads a workspace's mods through it to find their repositories. File, Search and Window stand alone: the first two
 work on paths the frontend hands them, Window on the app's windows.
 
-Go tells the frontend about state with events (`emit` in `appservice.go`; each service declares its own beside their payloads): `lang:ready`,
-`lang:failed`, `lang:scan-progress`, `lang:cache-updated`, `fs:changed`,
+Go tells the frontend about state with events (`emit` in `appservice.go`; each service declares its own beside their payloads): `workspace:opened`,
+`workspace:failed`, `workspace:closed`, `install:scanning`, `install:scanned`, `fs:changed`,
 `wiki:updated`, `wiki:progress`, `search:hits` and `git:output`. After changing a service method or a payload type, run
 `task common:generate:bindings`; never edit `frontend/bindings/` by hand.
 
 ## Opening a workspace
 
-Only one workspace is live at a time; opening one closes the others, since an install's index is
-most of a session's memory.
+Only one workspace is open at a time (`workspace.Slot`); opening one closes the one open, since an
+install's index is most of its memory.
 
 ```mermaid
 flowchart TD
-  A[EnsureSession] --> B{install cache file for this version, language, dumps and app?}
+  A[WorkspaceService.Open] --> A1[request: the config's records and their fingerprint]
+  A1 --> A2[Slot.Open: one build for many callers, the one open before it closed]
+  A2 --> B{install cache file for this version, language, dumps and app?}
   B -- yes --> C[index.LoadInstall]
   B -- no --> D[index.Scan]
   D --> D1[inventory: source.Inventory of the install and dump folders]
@@ -114,13 +115,13 @@ flowchart TD
   D2 --> D3["schema.Build: databases, dumps, docs and wiki, vanilla's evidence, value types, docs' claims"]
   D3 --> D4[index: walk every script, table and sound file into records]
   D4 --> D5[index.SaveInstall: the cache, written whole or not at all]
-  C --> E[session.New: index.ScanMods walks the workspace's mods over the install]
+  C --> E[workspace.Open: index.ScanMods walks the workspace's mods over the install]
   D5 --> E
-  E --> F[file watcher started; lang:ready]
+  E --> F[file watcher started; workspace:opened]
 ```
 
-Each stage reports on `lang:scan-progress`. The cache file's name holds every input, so a game
-patch, a new dump or a new app build is another file and the next session scans again by itself.
+Each stage reports on `install:scanning`. The cache file's name holds every input, so a game
+patch, a new dump or a new app build is another file and the next open scans again by itself.
 
 ## An editor request
 

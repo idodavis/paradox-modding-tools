@@ -50,10 +50,10 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 | Concept | Canonical | Kill |
 |---|---|---|
 | Product pane | the Wiki pane, `WikiPane`, `ui.wiki.*` | Guide pane, `GuidePane`, `ui.guide.*`, Helper, HelperPane, `pmt.helper`, `ui.helper`, `ide.helperWidth`, `WikiGuide` |
-| Guide RPC | `WikiService.Guide` | `SessionService.WikiGuide`; query key `wiki-guide` → `guide` |
-| Events | `lang:ready`, `lang:failed`, `lang:dropped`, `config:changed`, `lang:scan-progress`, `lang:cache-updated`, `fs:changed`, `wiki:updated`, `wiki:progress`, `search:hits`, `git:output` | `docs:wiki-*` |
+| Guide RPC | `WikiService.Guide` | `Session.WikiGuide`; query key `wiki-guide` → `guide` |
+| Events | `workspace:opened`, `workspace:failed`, `workspace:closed`, `config:changed`, `install:scanning`, `install:scanned`, `fs:changed`, `wiki:updated`, `wiki:progress`, `search:hits`, `git:output` | `lang:*`, `docs:wiki-*` |
 | Package / load | `package wiki`, `Refresh`, `SidecarPath` | `package docs`, `LoadDocs`, persist `docsPath()` |
-| Dumps health | `LanguageHealth.dumpsFrom` (yours, shipped or none), `dumpsStale` | `docsPresent`, UI “dumps required” |
+| Dumps health | `WorkspaceState.dumpsFrom` (yours, shipped or none), `dumpsStale` | `docsPresent`, UI “dumps required” |
 | Dump signature | `Command.Args` | prose in a usage field; a flat usage map |
 | Dump command text | `Command.Blurb` | a flat doc map |
 | Command input scope | `Command.Scopes` (`[]string`) | a rendered scopes string |
@@ -63,8 +63,8 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 | Def database | `Def.Database`, JSON `database` | `Def.Kind` / `Def.Type`, JSON `kind` / `type` |
 | Absolute path | `path` | `LocEntry.File`, override `file` when absolute |
 | Display relative | `rel` | using `path` as the label |
-| Live session | `LanguageHealth.ready` | `ModelStatus.live` |
-| Query gate file | `useLiveEnabled.ts` | `useSessionQuery.ts` |
+| Open workspace | `WorkspaceState.open` | `ModelStatus.live` |
+| Query gate | `stores/workspace.ts`'s `isOpen` | `useSessionQuery.ts` |
 | Load-order rule | LIOS | **LISO** |
 | Graph layout | dagre | AGENTS elkjs (do not add elkjs) |
 
@@ -132,10 +132,10 @@ Only a declared claim that is fresh and that no evidence contradicts lets a diag
 | `Schema` with `Database`, `Key` (a position), `Command`, `Said` (a claim), `Seen` (vanilla's evidence); `Build`, `Input`; `Speaks`, the one rule for when a claim may accuse; `Read`, `Step` and `Reader`, the walker every reader of script uses; `Link`, `Named`, `Flagged`; `Entries` and `Entry`, the entry detector; the dump reader, the doc normalizer | `services/internal/lang/schema` — the schema stage: what each source states, in trust order |
 | `Load`, `Name`, `Safe`; the generator `gen` | `services/internal/lang/shipped` — the backup schemas, the dump part only, for a user missing a dump file |
 | `Index` with `Def`, `Ref`, `Loc`, `Records`; `Walk` and its `Context`, a file's records by the walker and the name rules; `Scan`, `ScanMods`, `Reindex`, `BuildSchema`; `SaveInstall`, `LoadInstall`, `DropInstall`, `CachedAt`; `Lookup`, `Within`, `Resolve`, `Uses`, `Winner` | `services/internal/lang/index` — the index stage: what a scan found and where, load order, and the install's cache. It infers nothing |
-| `Session` with `New`, `Indexes`, `Winner`, `Loc`, `Entry`, `Title`, `LocKeys`, `Where` (`Place`), `Located`, `Text`, `Parsed`, `Did*`, `Changed`, `Watch`, `Close`; `Watcher`; `Fires` and `FiredBy` (`Fire`: what a definition fires or is fired by, through scripted entries) | `services/internal/session` — one workspace open in the editor, and its lock |
+| `Session` with `New`, `Indexes`, `Winner`, `Loc`, `Entry`, `Title`, `LocKeys`, `Where` (`Place`), `Located`, `Text`, `Parsed`, `Did*`, `Changed`, `Watch`, `Close`; `Watcher`; `Fires` and `FiredBy` (`Fire`: what a definition fires or is fired by, through scripted entries); `Request` and `Slot` (`Open`, `Current`, `Close`, `ScannedAt`: the one workspace open at a time, built once for many callers, with the install's scan) | `services/internal/session` — one workspace open in the editor, and its lock |
 | `Hover` (`Inspect`), `SignatureHelp`, `Complete` (`Item`, `Resolve`), `Definition`, `References`, `DocumentSymbols`, `WorkspaceSymbols`, `Diagnose` (`Codes`), `Format`, `Folding`, `CodeActions`, `InlayHints` | `services/internal/lsp` — the editor's requests, each from one walk of the open file; payloads carry display data |
 | `EventGraphService` (`GetEventGraph`: `Params`, `EventGraph`, `Node`, `Edge`; `GetEventDetail`: `Detail`, `Section`, `Option`; `SearchRoots`: `Roots`, `DatabaseCount`), `HealthService` (`GetHealth`: `HealthParams`, `Health`, `Contest`, `Site`, `Dependency`, `Dangling`, `Language`, `LocRow`, `Problem`; `GetLines`: `SourceAt`; `LocReaders`) | `services/` — a page's question answered from the index's records; every number in a payload is the page's |
-| `AppService` (the app-wide calls: settings, version, updates, `ResetData`; it holds `config.json`), `SessionService` (`EnsureSession`, `GetLanguageHealth`; every scan starts by itself and reports through `lang:scan-progress`), `IdeService` (the editor's requests), `SearchService` (`TextSearch`, `Replace`, `FileSearch`), `GitService` (the git on the PATH, per mod repository), `ReleaseService`, `WorkspaceService`, `FileService`, `LogService`, `WikiService`, the `lang:*` events | `services/` — the Wails layer, services only |
+| `AppService` (the app-wide calls: settings, version, updates, `ResetData`; it holds `config.json`), `IdeService` (the editor's requests), `SearchService` (`TextSearch`, `Replace`, `FileSearch`), `GitService` (the git on the PATH, per mod repository), `ReleaseService`, `WorkspaceService` (installs, workspaces, mods; `Open` and `State` of the open workspace; every scan starts by itself and reports through `install:scanning`), `FileService`, `LogService`, `WikiService`, the workspace and install events | `services/` — the Wails layer, services only |
 | `AppDir`, `CacheDir`, `Write`, `Encode`, `Decode`, `CopyFile`; `ReadListingFields`, `WriteListingFields`, `FindThumbnail`, `CopyThumbnail`, `WriteNewMod` | `services/internal/local` — this machine's files: the app's own, a mod's Paradox files |
 | `Library`, `Run`, `Serve` (a publish run as a second copy of the app); `MarkdownToBBCode`, `BBCodeToMarkdown`; `NewDescription`, `DescriptionRel`; `ScanPreviews`, `ExtrasOf`, `SaveExtras`, `AddPreview`, `AddVideo`, `Remove*`; `Upload`, `CopyMod`, `Changes` | `services/internal/steam` — everything the Steam Workshop reads |
 | Wiki persist / sanitize / the Wiki pane's payload | `services/internal/wiki` |

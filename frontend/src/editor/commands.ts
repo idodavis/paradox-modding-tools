@@ -1,6 +1,6 @@
 /**
- * The IDE's palette commands, registered into the commands store when the editor installs: the compares, Open the
- * event under the cursor, Format, Save, the splits, Find in files and the Wiki pane.
+ * The IDE's palette commands, set in the commands store when the editor installs: the compares, Open the event under
+ * the cursor, Format, Save, the splits, Find in files and the Wiki pane.
  */
 import type { RouteLocationRaw, Router } from "vue-router";
 import { Hover } from "@services/ideservice";
@@ -13,8 +13,8 @@ import { useWorkspaceStore } from "../stores/workspace";
 import { runAction } from "./editor";
 import { diffTab } from "./tabs";
 
-/** Register the IDE's commands: those that need a file are listed only while one is shown. */
-export function registerIdeCommands(router: Router): void {
+/** Set the IDE's commands: those that need a file are listed only while one is shown. */
+export function installIdeCommands(router: Router): void {
   const palette = useCommandsStore();
   const editor = useEditorStore();
   const workspace = useWorkspaceStore();
@@ -152,7 +152,7 @@ export function registerIdeCommands(router: Router): void {
     ];
   }
 
-  palette.register("ide", () => {
+  palette.ideCommands = () => {
     const id = workspace.activeWorkspaceId;
     if (!id) return [];
     return [
@@ -176,5 +176,5 @@ export function registerIdeCommands(router: Router): void {
         onSelect: run(() => (editor.wikiOpen = !editor.wikiOpen)),
       },
     ];
-  });
+  };
 }

@@ -1,12 +1,29 @@
 /**
  * This window and the others: its name and part from the URL, what the other windows hold as each last reported, the
- * folders its explorer shows, a dragged tab's landing place and the arrival queue of tabs handed to it. The main
- * window has the top bar; each other window shows one thing: a workspace page (`page:<route name>`), an editor group
- * (`editor:<n>`), the game's files (`game`), a folder of the workspace (`files:<path>`) or the panel (`panel`). The
- * windows send each other what they hold, so a file is open in one window at a time; closing one hands its tabs
- * back to the main window, and only the main window's close ends the app. The store subscribes to the events about
- * windows and sends this window's state, and starts the modules that answer the events about tabs and results; it
- * reads the editor store for what this window holds, inside its functions.
+ * folders its explorer shows, and the tabs that pass between windows. The main window has the top bar; each other
+ * window shows one thing: a workspace page (`page:<route name>`), an editor group (`editor:<n>`), the game's files
+ * (`game`), a folder of the workspace (`files:<path>`) or the panel (`panel`). A file is open in one window at a time:
+ * a tab handed on carries its unsaved text, and the giver never tells the backend it closed; a tab dragged in is asked
+ * of the window holding it and placed where it was dropped when it comes; a window closing hands its tabs back to the
+ * main window, and only the main window's close ends the app. The store reads the editor store for what this window
+ * holds, inside its functions. The table says who sends and answers each window event.
+ *
+ * | event                | data             | sent by                               | answered by                   |
+ * | -------------------- | ---------------- | ------------------------------------- | ----------------------------- |
+ * | window:opened        | its name         | every window at start                 | broadcastState                |
+ * | window:state         | WindowState      | a window with files, when ready, when | recordWindow                  |
+ * |                      |                  | its state changes, and when asked     |                               |
+ * | window:closed        | the name         | the backend, when a window closed     | here; the panel shows again   |
+ * | window:closing       | the name         | the backend, on its first close       | closing                       |
+ * | window:tabs-handed   | WindowTabs       | handOver, or requestTab for a tab no  | receive                       |
+ * |                      |                  | window holds                          |                               |
+ * | window:tab-requested | WindowTabRequest | requestTab, when another window holds | the holder's handOver         |
+ * |                      |                  | the tab                               |                               |
+ * | window:show          | WindowShow       | the editor store's open; the router's | showing                       |
+ * |                      |                  | guard                                 |                               |
+ * | window:results       | PanelResults     | a window with files, when its results | editor/search.ts, in the main |
+ * |                      |                  | change                                | window                        |
+ * | window:saved         | its name         | saved, after a mutation               | git and Publish read again    |
  */
 import { computed, reactive, shallowRef, watch } from "vue";
 import { defineStore } from "pinia";
@@ -14,11 +31,13 @@ import { useRouter } from "vue-router";
 import { useQueryCache } from "@pinia/colada";
 import { until, watchDebounced } from "@vueuse/core";
 import { Events, Window } from "@wailsio/runtime";
-import type { WindowState } from "@services/models";
+import type { WindowState, WindowTabs } from "@services/models";
 import { Close, Open, QuitAnswer, Show } from "@services/windowservice";
 import { PAGES } from "../app/pages";
-import { installHandover } from "../editor/handover";
+import { pathKey } from "../composables/useIdeRoots";
+import { showText, unsavedText } from "../editor/models";
 import { installSearch } from "../editor/search";
+import { tabOf } from "../editor/tabs";
 import { fileName } from "../lib/format";
 import UnsavedChangesModal from "../ui/UnsavedChangesModal.vue";
 import { useEditorStore, type Edge } from "./editor";
@@ -112,10 +131,62 @@ export const useWindowsStore = defineStore("windows", () => {
     await receiving;
   }
 
-  /** Receive tabs handed to this window, after those handed before. */
-  function receiveTabs(tabs: string[], work: () => Promise<void>): void {
-    tabs.forEach((tab) => arrived.add(tab));
-    receiving = receiving.then(work);
+  /** Hand tabs to another window, each with its file's unsaved text; they go from here, the backend keeping them open.
+   * Resolved once they are sent. */
+  function handOver(target: string, tabs: string[], active = tabs[0] ?? ""): Promise<boolean> {
+    const entries = tabs.map((tab) => {
+      const text = unsavedText(tab);
+      return { tab, unsaved: text !== undefined, text: text ?? "" };
+    });
+    useEditorStore().dropTabs(tabs);
+    return Events.Emit("window:tabs-handed", { to: target, tabs: entries, active });
+  }
+
+  /** Tabs handed to this window, taken after those handed before: each hidden, the one shown last shown, and one
+   * dragged here placed where it was dropped; a file's unsaved text is an edit to the text saved, so its tab is marked
+   * and an undo goes back to the file. */
+  function receive(payload: WindowTabs): void {
+    const tabs = payload.tabs ?? [];
+    tabs.forEach(({ tab }) => arrived.add(tab));
+    receiving = receiving.then(async () => {
+      const editor = useEditorStore();
+      for (const { tab, unsaved, text } of tabs) {
+        editor.addTabHidden(tab);
+        if (unsaved) await showText(tabOf(tab).file, text);
+      }
+      const group = editor.group(editor.focused);
+      if (group?.tabs.includes(payload.active)) group.active = payload.active;
+      for (const { tab } of tabs) {
+        const place = placing.get(tab);
+        placing.delete(tab);
+        if (place) editor.drop(tab, editor.focused, place.group, place.edge, place.nextTab);
+      }
+    });
+  }
+
+  /** A tab into another window: handed on from here, asked of the window holding it, or opened there. */
+  function requestTab(target: string, tab: string): Promise<unknown> {
+    if (useEditorStore().openTabs.includes(tab)) return handOver(target, [tab]);
+    const holder = [...otherWindows.values()].find((one) => one.tabs?.includes(tab));
+    if (holder) return Events.Emit("window:tab-requested", { to: holder.name, tab, window: target });
+    return Events.Emit("window:tabs-handed", { to: target, tabs: [{ tab, unsaved: false, text: "" }], active: tab });
+  }
+
+  /** A tab in a new editor window of its own. */
+  async function openInNewWindow(tab: string): Promise<void> {
+    const name = `editor:${Date.now().toString(36)}`;
+    await openWindow(`/workspace/${useEditorStore().editingWorkspaceId}`, name, fileName(tabOf(tab).file));
+    await requestTab(name, tab);
+  }
+
+  /** A window whose explorer shows folders (the game's files, or one folder), given this window's tabs of files in
+   * them. */
+  async function openFolderWindow(name: string, windowTitle: string, folders: string[]): Promise<void> {
+    const editor = useEditorStore();
+    await openWindow(`/workspace/${editor.editingWorkspaceId}`, name, windowTitle);
+    const keys = folders.map(pathKey);
+    const tabs = editor.openTabs.filter((tab) => keys.some((key) => pathKey(tabOf(tab).file).startsWith(`${key}/`)));
+    if (tabs.length) await handOver(name, tabs);
   }
 
   /** Tell the other windows, if any, that this one saved something they read, so they read it again. */
@@ -125,8 +196,7 @@ export const useWindowsStore = defineStore("windows", () => {
 
   if (!isMain) watch(title, (text) => void Window.SetTitle(text), { immediate: true });
 
-  // tabs handed to this window and results shown to it arrive on any page: the main window holds files on all of them
-  installHandover();
+  // results shown to this window arrive on any page: the main window holds files on all of them
   installSearch();
 
   // what this window holds, sent once ready and again when it changes while another window is open; a window
@@ -138,17 +208,23 @@ export const useWindowsStore = defineStore("windows", () => {
   Events.On("window:state", ({ data }) => data.name !== windowName && recordWindow(data));
   void Events.Emit("window:opened", windowName);
 
+  // tabs handed to this window, and a tab it holds asked for by another window, on any page
+  Events.On("window:tabs-handed", ({ data }) => data.to === windowName && receive(data));
+  Events.On("window:tab-requested", ({ data }) => data.to === windowName && void handOver(data.window, [data.tab]));
+
   // a window closed: its tabs came back before; the panel shows here again
   Events.On("window:closed", ({ data: name }) => {
     otherWindows.delete(name);
     if (name === "panel" && isMain) useEditorStore().panel ||= "problems";
   });
 
-  // this window asked to close: the main window's close hands the unsaved files here, then they are saved, dropped,
-  // or PMT stays; a window of one page or the panel just closes
+  // this window asked to close: a window with files hands them to the main window first; the main window's close
+  // hands the unsaved files here, then they are saved, dropped, or PMT stays
   async function closing(): Promise<void> {
     if (!isMain) {
-      if (!holdsFiles) await Window.Close();
+      const editor = useEditorStore();
+      if (holdsFiles && editor.openTabs.length) await handOver("main", editor.openTabs, editor.activeTab);
+      await Window.Close();
       return;
     }
     await dock((one) => !!one.unsaved?.length);
@@ -178,7 +254,7 @@ export const useWindowsStore = defineStore("windows", () => {
       const all = [...otherWindows.values()].flatMap((one) =>
         Object.entries(one.problems ?? {}).map(([path, list]) => [path, list ?? []] as const),
       );
-      useEditorStore().replaceProblems(new Map(all));
+      useEditorStore().problems = new Map(all);
     });
   }
 
@@ -206,14 +282,12 @@ export const useWindowsStore = defineStore("windows", () => {
     otherWindows,
     roots,
     placing,
-    title,
-    state,
-    ready,
-    broadcastState,
-    recordWindow,
     openWindow,
     dock,
-    receiveTabs,
+    handOver,
+    requestTab,
+    openInNewWindow,
+    openFolderWindow,
     saved,
   };
 });

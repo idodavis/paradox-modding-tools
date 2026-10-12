@@ -73,9 +73,9 @@ Subscribed once, in `app/events.ts`, called from `main.ts`; each event refreshes
 scan progress, the git store). The editor's subscriptions stay with the module that draws them: `fs:changed` in
 `editor/models.ts`, `search:hits` in `editor/search.ts`; a component's own stay in it: Publish's upload progress
 (`steam:progress`) and the status bar's wiki downloads (`wiki:progress`). The windows' events are not
-`app/events.ts`'s: `stores/windows.ts` answers the ones about windows (`window:opened`, `window:state`,
-`window:closed`, `window:closing`, `window:show`, `window:saved`) and `editor/handover.ts` the ones about tabs
-(`window:tabs-handed`, `window:tab-requested`; the protocol table is at its head). Payloads are typed by Go's
+`app/events.ts`'s: `stores/windows.ts` answers them, the ones about windows (`window:opened`, `window:state`,
+`window:closed`, `window:closing`, `window:show`, `window:saved`) and the ones about tabs (`window:tabs-handed`,
+`window:tab-requested`); the protocol table is at its head. Payloads are typed by Go's
 `application.RegisterEvent`, which the bindings declare on `Events.CustomEvents`: no casts.
 
 ```ts

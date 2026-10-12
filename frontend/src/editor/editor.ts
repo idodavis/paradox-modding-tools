@@ -11,7 +11,7 @@ import { monaco } from "../lib/monaco";
 import { useCommandsStore } from "../stores/commands";
 import { useEditorStore } from "../stores/editor";
 import { useSettingsStore } from "../stores/settings";
-import { registerIdeCommands } from "./commands";
+import { installIdeCommands } from "./commands";
 import { installConflicts } from "./conflicts";
 import { bytesAt, flushed, installModels, pathOf, workspaceId } from "./models";
 import { cardSaysSomething, installProviders } from "./providers";
@@ -25,7 +25,7 @@ export function installEditor(router: Router): void {
   installProviders();
   installConflicts();
   installModels();
-  registerIdeCommands(router);
+  installIdeCommands(router);
 
   // the app's palette keys open the palette in an editor too, where Monaco would take them
   const palette = useCommandsStore();

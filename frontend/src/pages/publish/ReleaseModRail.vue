@@ -1,42 +1,40 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="S extends string">
 /**
- * Publish's rail: the workspace's mods with their state on Steam, and the three
- * steps; Compare with Steam opens from Review's checklist and the state bar.
+ * Publish's rail: the workspace's mods with their state on Steam, and the steps the page gives it; Compare with Steam
+ * opens from Review's checklist and the state bar.
  */
 import { computed } from "vue";
 import type { StepperItem } from "@nuxt/ui";
 import type { WorkspaceMod } from "@services/models";
 import { modColor } from "../../stores/workspace";
 import SteamState from "../../ui/SteamState.vue";
-import { STEP_TITLES, type Step } from "./steps";
 import ModThumb from "../../ui/ModThumb.vue";
 
-const { workspaceId, mods, saved } = defineProps<{ workspaceId: string; mods: WorkspaceMod[]; saved: boolean }>();
+const { workspaceId, mods, saved, steps } = defineProps<{
+  workspaceId: string;
+  mods: WorkspaceMod[];
+  saved: boolean;
+  /** The steps in order, each with its title and the line under it. */
+  steps: readonly { value: S; title: string; line: string }[];
+}>();
 const mod = defineModel<string>("mod", { required: true });
-const step = defineModel<Step>("step", { required: true });
+const step = defineModel<S>("step", { required: true });
 
-const ORDER: Step[] = ["listing", "release", "review"];
 // with everything saved, the steps before this one are done and the one after it is next, outlined in the
 // accent; with changes unsaved, Review can't be reached, so nothing unsaved is uploaded
-const steps = computed<StepperItem[]>(() => {
-  const stepIndex = ORDER.indexOf(step.value);
+const items = computed<StepperItem[]>(() => {
+  const stepIndex = steps.findIndex((one) => one.value === step.value);
   const blocked = !saved && step.value !== "review";
-  const items = [
-    { value: "listing", title: STEP_TITLES.listing, line: "What players see" },
-    { value: "release", title: STEP_TITLES.release, line: "What this upload is" },
-    {
-      value: "review",
-      title: STEP_TITLES.review,
-      line: blocked ? "Save to workspace first" : "Check, then send to Steam",
-      disabled: blocked,
-    },
-  ];
-  return items.map(({ line, ...item }, i) => {
+  return steps.map(({ value, title, line }, i) => {
     const done = saved && i < stepIndex;
     const next = saved && i === stepIndex + 1;
+    const review = blocked && value === "review";
+    const text = review ? "Save to workspace first" : line;
     return {
-      ...item,
-      description: done ? "Saved" : next ? `Next: ${line.charAt(0).toLowerCase()}${line.slice(1)}` : line,
+      value,
+      title,
+      disabled: review,
+      description: done ? "Saved" : next ? `Next: ${text.charAt(0).toLowerCase()}${text.slice(1)}` : text,
       icon: done ? "i-lucide-check" : undefined,
       ui: next ? { item: "ring-primary", title: "text-highlighted" } : undefined,
     };
@@ -74,10 +72,10 @@ const steps = computed<StepperItem[]>(() => {
     <span class="px-2.5 pb-1.5 text-11 font-medium text-dimmed">Steps</span>
     <UStepper
       :model-value="step"
-      :items="steps"
+      :items="items"
       orientation="vertical"
       :linear="false"
-      @update:model-value="step = ORDER.find((each) => each === $event) ?? 'listing'"
+      @update:model-value="step = steps.find((one) => one.value === $event)?.value ?? step"
     />
   </section>
 </template>

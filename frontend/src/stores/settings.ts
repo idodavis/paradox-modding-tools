@@ -36,118 +36,132 @@ export const THEMES: readonly ThemeFamily[] = [
   { id: "eu5", label: "Europa Universalis", note: "EU5 workspaces", game: "eu5" },
   { id: "vic3", label: "Victoria", note: "Vic3 workspaces", game: "vic3" },
 ];
-export const MODES: readonly Mode[] = ["dark", "light"];
 
 /** The family with an id; anything else is PMT. */
 function familyOf(id: string | undefined): ThemeFamily {
   return THEMES.find((t) => t.id === id) ?? PMT;
 }
 
-/** The IDE's switches by key: the tab of the IDE's settings card each sits on, its words and its default, in the order
- * the card and the palette list them. */
-export const IDE_SWITCHES = {
-  "ide.wordWrap": { tab: "editor", label: "Word wrap", hint: "Long lines wrap at the editor's edge", default: false },
-  "ide.closeBrackets": {
+/** The IDE's switches: each one's key, the tab of the IDE's settings card it sits on, its words and its default, in the
+ * order the card and the palette list them. */
+export const IDE_SWITCHES = [
+  {
+    key: "ide.wordWrap",
+    tab: "editor",
+    label: "Word wrap",
+    hint: "Long lines wrap at the editor's edge",
+    default: false,
+  },
+  {
+    key: "ide.closeBrackets",
     tab: "editor",
     label: "Close brackets and quotes",
     hint: "Typing { adds the }",
     default: true,
   },
-  "ide.minimap": {
+  {
+    key: "ide.minimap",
     tab: "editor",
     label: "Minimap",
     hint: "The whole file in small at the editor's right edge",
     default: true,
   },
-  "ide.indentGuides": {
+  {
+    key: "ide.indentGuides",
     tab: "editor",
     label: "Indent guides",
     hint: "A line down each block's indentation",
     default: true,
   },
-  "ide.bracketColors": {
+  {
+    key: "ide.bracketColors",
     tab: "editor",
     label: "Bracket pair colors",
     hint: "Each depth of { } in its own color",
     default: true,
   },
-  "ide.whitespace": {
+  {
+    key: "ide.whitespace",
     tab: "editor",
     label: "Show spaces and tabs",
     hint: "Off: only in the selection",
     default: false,
   },
-  "ide.folding": {
+  {
+    key: "ide.folding",
     tab: "language",
     label: "Folding",
     hint: "A block's arrow in the gutter hides its lines",
     default: true,
   },
-  "ide.hover": {
+  {
+    key: "ide.hover",
     tab: "language",
     label: "Hover cards",
     hint: "What a word is, when the pointer rests on it",
     default: true,
   },
-  "ide.complete": {
+  {
+    key: "ide.complete",
     tab: "language",
     label: "Completion list while typing",
     hint: "Off: only Ctrl Space opens it",
     default: true,
   },
-  "ide.predict": {
+  {
+    key: "ide.predict",
     tab: "language",
     label: "Predicted text",
     hint: "The likeliest completion in grey; Tab takes it",
     default: true,
   },
-  "ide.signature": {
+  {
+    key: "ide.signature",
     tab: "language",
     label: "Signature help",
     hint: "What an effect or macro takes, while you fill it in",
     default: true,
   },
-  "ide.stickyFolders": {
+  {
+    key: "ide.stickyFolders",
     tab: "explorer",
     label: "Sticky folders",
     hint: "A folder's name stays on top while you scroll its files",
     default: true,
   },
-  "ide.gameFiles": {
+  {
+    key: "ide.gameFiles",
     tab: "explorer",
     label: "Game files section",
     hint: "The game's files, read only, under the mods",
     default: true,
   },
-  "ide.rootColors": {
+  {
+    key: "ide.rootColors",
     tab: "explorer",
     label: "Color each top folder",
     hint: "A mod's or the game's folder in its color, as well as its bar",
     default: true,
   },
-  "ide.followFile": {
+  {
+    key: "ide.followFile",
     tab: "explorer",
     label: "Follow the open file",
     hint: "The explorer selects the file you switch to",
     default: true,
   },
-  "ui.wiki.follow": {
+  {
+    key: "ui.wiki.follow",
     tab: "wiki",
     label: "Follow the open file",
     hint: "Suggests pages for the file you are editing",
     default: true,
   },
-} as const;
-export type IdeSwitch = keyof typeof IDE_SWITCHES;
-export type SwitchTab = (typeof IDE_SWITCHES)[IdeSwitch]["tab"];
-
-/** Every switch with its key, in the card's order. */
-export const IDE_SWITCH_ROWS = (Object.entries(IDE_SWITCHES) as [IdeSwitch, (typeof IDE_SWITCHES)[IdeSwitch]][]).map(
-  ([key, one]) => ({ key, ...one }),
-);
+] as const;
+type SwitchTab = (typeof IDE_SWITCHES)[number]["tab"];
 
 /** A card tab's switches. */
-export const switchesOf = (tab: SwitchTab) => IDE_SWITCH_ROWS.filter((one) => one.tab === tab);
+export const switchesOf = (tab: SwitchTab) => IDE_SWITCHES.filter((one) => one.tab === tab);
 
 /** Interface scale steps, in percent. */
 export const FONT_SCALES = [80, 90, 100, 110, 120, 130, 140, 150] as const;
@@ -255,10 +269,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
   /** A switch (an IDE switch, a check's ide.diag.<code>, matching the game's theme): the stored choice, else its
    * default, an IDE switch's from IDE_SWITCHES. */
-  function on(
-    key: string,
-    fallback = (IDE_SWITCHES as Record<string, { default: boolean } | undefined>)[key]?.default ?? false,
-  ): boolean {
+  function on(key: string, fallback = IDE_SWITCHES.find((one) => one.key === key)?.default ?? false): boolean {
     const stored = values.value[key];
     return stored ? stored === "on" : fallback;
   }

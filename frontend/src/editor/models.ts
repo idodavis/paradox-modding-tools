@@ -74,7 +74,7 @@ export function setWorkspace(id: string, isReadOnlyPath: (path: string) => boole
 export const isReadOnly = (path: string): boolean => readOnlyRule(path);
 
 /** The path a model's address is of: the tab's spelling, else the backend's, else the address's own. */
-export function pathAt(uri: monaco.Uri): string {
+function pathAt(uri: monaco.Uri): string {
   const key = uri.toString();
   return files.get(key)?.path ?? backendPaths.get(key) ?? uri.fsPath;
 }

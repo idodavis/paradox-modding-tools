@@ -16,7 +16,7 @@ import { DidClose } from "@services/ideservice";
 import type { Diagnostic } from "@services/internal/lsp";
 import type { PanelResults } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
-import { resendOpenFiles, saveFile } from "../editor/models";
+import { saveFile } from "../editor/models";
 import { IMAGES, tabOf, viewsOf, type View } from "../editor/tabs";
 import { useWindowsStore, holdsFiles, isMain, windowName } from "./windows";
 import { useWorkspaceStore } from "./workspace";
@@ -321,11 +321,6 @@ export const useEditorStore = defineStore("editor", () => {
     problems.value.set(backendPath(file), diagnostics);
   }
 
-  /** The panel window's problems: every window's, replacing this window's. */
-  function replaceProblems(all: Map<string, Diagnostic[]>): void {
-    problems.value = all;
-  }
-
   /** Record a rename, move or delete done in the explorer, which an undo can bring back. */
   function recordMove(move: FileMove): void {
     fileMoves.value.done.push(move);
@@ -422,11 +417,6 @@ export const useEditorStore = defineStore("editor", () => {
     saveMutation(files ?? [...unsaved.value]);
   }
 
-  /** The session was built again: each open file's text is sent to it again. */
-  function sessionRebuilt(): void {
-    resendOpenFiles();
-  }
-
   return {
     groups,
     layout,
@@ -441,12 +431,10 @@ export const useEditorStore = defineStore("editor", () => {
     comparing,
     views,
     dragging,
-    fileMoves,
     ideSettingsOpen,
     sidebar,
     panel,
     wikiOpen,
-    layouts,
     activeTab,
     activeFile,
     openTabs,
@@ -454,7 +442,6 @@ export const useEditorStore = defineStore("editor", () => {
     problemCounts,
     group,
     viewOf,
-    backendPath,
     open,
     addTabHidden,
     resizeSplit,
@@ -467,7 +454,6 @@ export const useEditorStore = defineStore("editor", () => {
     moveTabToNextGroup,
     setUnsaved,
     setProblems,
-    replaceProblems,
     recordMove,
     undoMove,
     redoMove,
@@ -475,6 +461,5 @@ export const useEditorStore = defineStore("editor", () => {
     remember,
     save,
     saveFiles,
-    sessionRebuilt,
   };
 });

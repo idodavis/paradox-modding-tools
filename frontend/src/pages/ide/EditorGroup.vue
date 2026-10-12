@@ -12,7 +12,6 @@ import { useQuery } from "@pinia/colada";
 import { refDebounced } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
-import { openInNewWindow, requestTab } from "../../editor/handover";
 import { useCompare } from "../../composables/useCompare";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { hoverQuery, replacedQuery } from "../../queries";
@@ -111,7 +110,11 @@ function tabMenu(tab: string): ContextMenuItem[][] {
       },
     ],
     [
-      { label: "Move into a new window", icon: "i-lucide-app-window", onSelect: () => void openInNewWindow(tab) },
+      {
+        label: "Move into a new window",
+        icon: "i-lucide-app-window",
+        onSelect: () => void windows.openInNewWindow(tab),
+      },
       ...(isMain
         ? []
         : [
@@ -163,7 +166,7 @@ function endDrag(e: DragEvent, path: string): void {
     e.screenX > window.screenX + window.outerWidth ||
     e.screenY < window.screenY ||
     e.screenY > window.screenY + window.outerHeight;
-  if (e.dataTransfer?.dropEffect === "none" && out) void openInNewWindow(path);
+  if (e.dataTransfer?.dropEffect === "none" && out) void windows.openInNewWindow(path);
 }
 const takes = (e: DragEvent) =>
   !!e.dataTransfer?.types.includes(TAB) && (windowPart !== "game" || e.dataTransfer.types.includes(GAME));
@@ -200,7 +203,7 @@ function dropTab(e: DragEvent, edge: Edge, nextTab?: string): void {
   if (dragged) return editor.drop(dragged.tab, dragged.sourceGroup, groupId, edge, nextTab);
   windows.placing.set(tab, { group: groupId, edge, nextTab });
   editor.focused = groupId;
-  void requestTab(windowName, tab);
+  void windows.requestTab(windowName, tab);
 }
 function zoneAt(e: DragEvent): void {
   if (!takes(e)) return;

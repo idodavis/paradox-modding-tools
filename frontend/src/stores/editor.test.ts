@@ -1,50 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp } from "vue";
-import { createMemoryHistory, createRouter } from "vue-router";
-import { createPinia, setActivePinia } from "pinia";
-import { PiniaColada } from "@pinia/colada";
-
-vi.mock("@wailsio/runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@wailsio/runtime")>();
-  return {
-    ...actual,
-    Events: { Emit: vi.fn(() => Promise.resolve()), On: vi.fn(() => () => undefined) },
-    Call: { ...actual.Call, ByID: vi.fn(() => Promise.resolve(null)), ByName: vi.fn(() => Promise.resolve(null)) },
-  };
-});
-vi.mock("@services/ideservice", () => ({ DidClose: vi.fn(() => Promise.resolve()) }));
-vi.mock("@services/fileservice", () => ({ RenamePath: vi.fn(() => Promise.resolve()) }));
-vi.mock("@services/windowservice", () => ({
-  Open: vi.fn(() => Promise.resolve()),
-  Show: vi.fn(() => Promise.resolve()),
-  Close: vi.fn(() => Promise.resolve()),
-  QuitAnswer: vi.fn(() => Promise.resolve()),
-}));
-vi.mock("../editor/models", () => ({ saveFile: vi.fn(), resendOpenFiles: vi.fn() }));
-// the windows store imports the unsaved-changes dialog, a component the tests have no plugin to compile
-vi.mock("../ui/UnsavedChangesModal.vue", () => ({ default: {} }));
-
 import { Events } from "@wailsio/runtime";
 import { DidClose } from "@services/ideservice";
+import { inApp } from "../../vitest.setup";
 import { useEditorStore } from "./editor";
 import { useWindowsStore } from "./windows";
-
-/** The store in an app with a router, as main.ts makes it. */
-function store() {
-  const app = createApp({});
-  const page = { render: () => null };
-  app.use(
-    createRouter({
-      history: createMemoryHistory(),
-      routes: [{ path: "/:all(.*)*", name: "workspace-ide", component: page }],
-    }),
-  );
-  const pinia = createPinia();
-  app.use(pinia);
-  app.use(PiniaColada);
-  setActivePinia(pinia);
-  return app.runWithContext(() => useEditorStore());
-}
 
 describe("groups and layout", () => {
   beforeEach(() => {
@@ -52,7 +11,7 @@ describe("groups and layout", () => {
     vi.mocked(DidClose).mockClear();
   });
   it("opens after the shown tab, once", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("a");
     editor.open("b");
     editor.open("a");
@@ -63,7 +22,7 @@ describe("groups and layout", () => {
     expect(editor.openTabs).toEqual(["a", "c", "b"]);
   });
   it("splits beside, sharing a sibling's room in the same direction, and nests across it", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("a");
     editor.split("right");
     expect(editor.layout).toEqual({ split: "row", parts: [{ group: 1 }, { group: 2 }], sizes: [0.5, 0.5] });
@@ -84,7 +43,7 @@ describe("groups and layout", () => {
     expect(editor.groups.map((group) => group.tabs)).toEqual([["a"], ["a"], ["a"], ["a"]]);
   });
   it("closes a group's last tab and folds the split around it; the focus moves only when its group goes", async () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("a");
     editor.split("right");
     editor.split("down");
@@ -101,7 +60,7 @@ describe("groups and layout", () => {
     expect(DidClose).toHaveBeenCalledTimes(1);
   });
   it("drops a tab before another, into a group, or onto an edge", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("a");
     editor.open("b");
     editor.split("right", "a");
@@ -126,7 +85,7 @@ describe("groups and layout", () => {
     expect(editor.groups.length).toBe(3);
   });
   it("moves the shown tab to the next group, making one when there is none", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("a");
     editor.open("b");
     editor.moveTabToNextGroup();
@@ -140,7 +99,7 @@ describe("groups and layout", () => {
     expect(editor.layout).toEqual({ group: 2 });
   });
   it("remembers and restores a workspace's tabs: others' into the first group, each once, the shown file found", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("a");
     editor.open("b");
     editor.split("right", "b");
@@ -156,7 +115,7 @@ describe("groups and layout", () => {
     expect(editor.editingWorkspaceId).toBe("w");
   });
   it("follows a file moved on disk and closes one deleted", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("C:/m/x/a.txt");
     editor.open("C:/m/b.txt");
     editor.setUnsaved("C:/m/b.txt", true);
@@ -167,7 +126,7 @@ describe("groups and layout", () => {
     expect([...editor.unsaved]).toEqual([]);
   });
   it("lets tabs go to another window and adopts one edited in a peek", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("a");
     editor.open("b");
     editor.setUnsaved("a", true);
@@ -179,7 +138,7 @@ describe("groups and layout", () => {
     expect(editor.groups).toEqual([{ id: 1, tabs: ["b", "c"], active: "b" }]);
   });
   it("shows a file in the window holding it, else in the one whose explorer shows its folder", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     const windows = useWindowsStore();
     windows.otherWindows.set("editor:x", {
       name: "editor:x",
@@ -209,7 +168,7 @@ describe("groups and layout", () => {
     expect(editor.openTabs).toEqual(["C:/m/c.txt"]);
   });
   it("shows a file in the window holding only a diff tab of it", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     const windows = useWindowsStore();
     windows.otherWindows.set("editor:x", {
       name: "editor:x",
@@ -227,13 +186,13 @@ describe("groups and layout", () => {
     expect(editor.openTabs).toEqual([]);
   });
   it("keeps the open tab's spelling for the file and its cursor", () => {
-    const editor = store();
+    const editor = inApp(useEditorStore);
     editor.open("C:/m/a.txt");
     editor.open("c:/M/a.txt", { line: 7, col: 1 });
     expect(editor.openTabs).toEqual(["C:/m/a.txt"]);
     expect(editor.cursor).toEqual({ path: "C:/m/a.txt", line: 7, col: 1 });
   });
   it("starts with the problems panel open", () => {
-    expect(store().panel).toBe("problems");
+    expect(inApp(useEditorStore).panel).toBe("problems");
   });
 });

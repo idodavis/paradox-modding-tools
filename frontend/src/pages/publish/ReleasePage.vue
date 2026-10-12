@@ -9,7 +9,6 @@ import { useRouter } from "vue-router";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import type { Listing } from "@services/models";
 import { SaveListing } from "@services/releaseservice";
-import { STEP_TITLES, type Step } from "./steps";
 import SteamCompareView from "./SteamCompareView.vue";
 import { compareQuery, languageQuery, listingQuery, releaseKeys, summaryQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
@@ -25,6 +24,15 @@ const { id, step: asked = "" } = defineProps<{ id: string; step?: string }>();
 const router = useRouter();
 const store = useWorkspaceStore();
 const queryCache = useQueryCache();
+
+/** The three steps in order: each one's title, the heading's and the rail's, and the rail's line under it. */
+const STEPS = [
+  { value: "listing", title: "Listing and description", line: "What players see" },
+  { value: "release", title: "Version and change note", line: "What this upload is" },
+  { value: "review", title: "Review and upload", line: "Check, then send to Steam" },
+] as const;
+type Step = (typeof STEPS)[number]["value"];
+const titleOf = (value: Step) => STEPS.find((one) => one.value === value)?.title ?? "";
 
 const step = computed<Step>({
   get: () => (asked === "release" || asked === "review" ? asked : "listing"),
@@ -106,10 +114,17 @@ function compare(): void {
 
 <template>
   <div class="flex h-full min-h-0 overflow-hidden">
-    <ReleaseModRail v-model:mod="modId" v-model:step="step" :workspace-id="id" :mods="mods" :saved="!unsaved.length" />
+    <ReleaseModRail
+      v-model:mod="modId"
+      v-model:step="step"
+      :workspace-id="id"
+      :mods="mods"
+      :saved="!unsaved.length"
+      :steps="STEPS"
+    />
     <section v-if="loaded && draft && edited && summary && mod" class="flex min-w-0 grow flex-col overflow-hidden">
       <header class="flex h-14 shrink-0 items-center gap-3 border-b border-default ps-7 pe-5">
-        <h1 class="text-16 whitespace-nowrap">{{ STEP_TITLES[step] }}</h1>
+        <h1 class="text-16 whitespace-nowrap">{{ titleOf(step) }}</h1>
         <span v-if="step === 'review'" class="truncate text-12 text-dimmed"
           >Uploading replaces the files and listing of the Steam item below.</span
         >
@@ -129,7 +144,7 @@ function compare(): void {
           />
           <UButton
             v-else
-            :label="STEP_TITLES[next]"
+            :label="titleOf(next)"
             trailing-icon="i-lucide-arrow-right"
             size="md"
             color="primary"

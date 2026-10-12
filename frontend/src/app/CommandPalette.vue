@@ -16,7 +16,7 @@ import { useIdeRoots } from "../composables/useIdeRoots";
 import { codesQuery, filesQuery, locQuery, rootsQuery, symbolsQuery, workspacesQuery } from "../queries";
 import { useCommandsStore, type CommandItem as Item } from "../stores/commands";
 import { useEditorStore } from "../stores/editor";
-import { IDE_SWITCH_ROWS, useSettingsStore } from "../stores/settings";
+import { IDE_SWITCHES, useSettingsStore } from "../stores/settings";
 import { updatePrefs, useWorkspaceStore } from "../stores/workspace";
 import { PAGES, SETTINGS, SETTINGS_SECTIONS, WORKSPACE_TOOLS, workspaceHomeRoute, type SettingSwitch } from "./pages";
 
@@ -130,7 +130,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
         settings.showTool(tool.name, on),
       ),
     ),
-    ...IDE_SWITCH_ROWS.map((row) =>
+    ...IDE_SWITCHES.map((row) =>
       switchItem(
         row.label,
         row.key.startsWith("ui.wiki") ? "Wiki" : "IDE",
@@ -155,8 +155,8 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
     icon: "i-lucide-refresh-cw",
     onSelect: () => void reloadWindow(),
   };
-  // the pages' own commands, which they register, follow it
-  const commands: Item[] = [reload, ...(id ? palette.commands : [])];
+  // the IDE's commands follow it
+  const commands: Item[] = [reload, ...(id ? palette.ideCommands() : [])];
   // a value opens where it is set: the IDE's settings card, or the settings page at its section
   const values: Item[] = !id
     ? []

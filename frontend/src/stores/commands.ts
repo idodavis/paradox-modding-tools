@@ -1,8 +1,8 @@
 /**
- * The command palette's state: whether it is open and what its search starts with, and the commands the pages
- * register, which the palette lists in its Commands group.
+ * The command palette's state: whether it is open, what its search starts with, and the IDE's commands, which the
+ * palette lists in its Commands group.
  */
-import { computed, shallowRef } from "vue";
+import { shallowRef } from "vue";
 import { defineStore } from "pinia";
 import type { CommandPaletteItem } from "@nuxt/ui";
 
@@ -13,11 +13,8 @@ export const useCommandsStore = defineStore("commands", () => {
   const paletteOpen = shallowRef(false);
   /** What the search starts with: "> " lists the commands, "" the files. */
   const paletteStart = shallowRef<"> " | "">("> ");
-  // each page's commands, as a function of what it shows, by the name it registered under
-  const sources = shallowRef(new Map<string, () => CommandItem[]>());
-
-  /** The commands every source lists now. */
-  const commands = computed(() => [...sources.value.values()].flatMap((items) => items()));
+  /** The IDE's commands as a function of what it shows, set once the editor has installed in this window. */
+  const ideCommands = shallowRef<() => CommandItem[]>(() => []);
 
   /** Open the palette on its commands, or on its files with an empty prefix. */
   function openPalette(prefix: "> " | "" = "> "): void {
@@ -25,10 +22,5 @@ export const useCommandsStore = defineStore("commands", () => {
     paletteOpen.value = true;
   }
 
-  /** Register a page's commands under a name; they are listed for as long as the page lives. */
-  function register(name: string, items: () => CommandItem[]): void {
-    sources.value = new Map(sources.value).set(name, items);
-  }
-
-  return { paletteOpen, paletteStart, commands, openPalette, register };
+  return { paletteOpen, paletteStart, ideCommands, openPalette };
 });

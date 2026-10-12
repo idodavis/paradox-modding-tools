@@ -8,7 +8,7 @@ const URLS = import.meta.glob<string>("./fileicons/*.svg", { query: "?url", impo
 const iconFile = (kind: string) => `./fileicons/paradox-${kind}.svg`;
 
 /** The Paradox files' icons: each kind (its paradox-<kind>.svg) and the extensions it draws. */
-export const ICON_EXTENSIONS = {
+const ICON_EXTENSIONS = {
   script:
     "txt editordata compound schematic aggregate curves layout lines anchor modifierpack guistateset meta smv ugraph dep skin lookup",
   loc: "yml yaml",

@@ -12,15 +12,7 @@ import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraph
 import { GetHealth, GetLines, LocReaders } from "@services/healthservice";
 import type { GitCommit } from "@services/models";
 import type { EventGraph, Params, Roots, SourceAt } from "@services/internal/pages/models";
-import {
-  Definition,
-  DiagnosticCodes,
-  DocumentSymbols,
-  FindLoc,
-  Hover,
-  References,
-  ReplacedBy,
-} from "@services/ideservice";
+import { DiagnosticCodes, DocumentSymbols, FindLoc, Hover, ReplacedBy } from "@services/ideservice";
 import { FileSearch } from "@services/searchservice";
 import { Available, Branches, CommitFiles, Log, Remotes, Repositories, Show, Status } from "@services/gitservice";
 import { CompareWithSteam, ListingSummary, LoadListing, SteamStatus, UploadFiles } from "@services/releaseservice";
@@ -300,7 +292,6 @@ export const filesQuery = defineQueryOptions(
   }),
 );
 
-/** The names a file defines. */
 /** The localization keys starting with a prefix, each at its entry in the workspace's language. */
 export const locQuery = defineQueryOptions(({ id, prefix }: { id: string; prefix: string }) => ({
   key: ["ide", "loc", id, prefix],
@@ -308,31 +299,12 @@ export const locQuery = defineQueryOptions(({ id, prefix }: { id: string; prefix
   enabled: !!id && !!prefix,
 }));
 
+/** The names a file defines. */
 export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
   key: ["ide", "symbols", path],
   query: async () => (await DocumentSymbols(id, path)) ?? [],
   enabled: !!id && !!path,
 }));
-
-/** A word's definitions, or every place that names it, from a place of a file. */
-export const sitesQuery = defineQueryOptions(
-  ({
-    id,
-    path,
-    line,
-    col,
-    mode,
-  }: {
-    id: string;
-    path: string;
-    line: number;
-    col: number;
-    mode: "definition" | "references";
-  }) => ({
-    key: ["ide", "sites", mode, path, line, col],
-    query: async () => (await (mode === "definition" ? Definition : References)(id, path, line, col)) ?? [],
-  }),
-);
 
 export const codesQuery = defineQueryOptions({
   key: ["ide", "codes"],

@@ -7,6 +7,7 @@ import { useQueryCache } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { useDebounceFn } from "@vueuse/core";
 import { scans } from "../composables/useLanguageHealth";
+import { resendOpenFiles } from "../editor/models";
 import { fileKeys, installKeys, languageKeys, sessionKeys, wikiKeys, workspaceKeys } from "../queries";
 import { useEditorStore } from "../stores/editor";
 import { useGitStore } from "../stores/git";
@@ -29,7 +30,7 @@ export function subscribeEvents(): void {
     scans.clear();
     void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
     void queryCache.invalidateQueries({ key: languageKeys.one(id) });
-    if (holdsFiles && editor.editingWorkspaceId === id) editor.sessionRebuilt();
+    if (holdsFiles && editor.editingWorkspaceId === id) resendOpenFiles();
   });
   // a session closed (its inputs changed, or another workspace opened): its state is read again, which builds it anew
   Events.On("lang:dropped", ({ data: id }) => {

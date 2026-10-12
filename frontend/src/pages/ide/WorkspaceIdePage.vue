@@ -15,7 +15,6 @@ import type { IdeRoot } from "@services/models";
 import { Fetch, Pull, Push, Stage, Unstage } from "@services/gitservice";
 import { AddWorkspaceMod } from "@services/workspaceservice";
 import { installEditor } from "../../editor/editor";
-import { openFolderWindow } from "../../editor/handover";
 import { setWorkspace } from "../../editor/models";
 import { useCompare } from "../../composables/useCompare";
 import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
@@ -351,7 +350,7 @@ function showProblems(): void {
                       square
                       aria-label="Open in its own window"
                       @click="
-                        openFolderWindow(
+                        windows.openFolderWindow(
                           'game',
                           'Game files',
                           game.map((root) => root.path),

@@ -1,6 +1,6 @@
 ---
 title: Roadmap
-description: Loose direction — Health-first patching, GUI preview, Event Graph pictures, CK3 map editor, IDE undock.
+description: Loose direction — Health-first patching, GUI preview, Event Graph pictures, CK3 map editor, IDE undock, a terminal and AI agents.
 weight: 7
 ---
 
@@ -74,6 +74,27 @@ flowchart LR
 - **Two workspaces at once:** needs `EnsureSession` to keep more than one session live.
 
 Target: **two workspaces at once, after the one-session rule is relaxed.**
+
+## Terminal and AI agents
+
+**First release: a terminal in the IDE's panel.** Run git, or a command-line agent such as Claude Code or GitHub
+Copilot CLI, beside the editor. The editor follows what the agent does: a file it changes reloads in its tab, a
+`path:line` it prints opens at that line, a selection can be sent to it as a file reference, and source control
+shows its changes as diffs to keep or discard. A change on disk to a tab with unsaved text is flagged with a
+compare, never lost.
+
+Later, in this order, as the pieces mature:
+
+1. **PMT's knowledge for agents.** An MCP server so an agent can ask PMT the problems in a file, where a name is
+   defined, what is valid at a position and what Health finds, and check the Paradox script it writes against the
+   game's own schema. MCP is the one interface both Claude Code and Copilot CLI support for outside tools.
+2. **The agents' editor bridges.** The selection shared live and the agent's edits opened as diffs in the editor,
+   as Claude Code and Copilot CLI do in VS Code. Both bridges are undocumented today; this waits on their
+   documentation.
+3. **Agent chat and tab completion in the editor.** Copilot and Claude in one chat panel through the Agent Client
+   Protocol (ACP), the open standard Zed, JetBrains and Neovim use: plans, edits as diffs you accept, commands run
+   in PMT's terminal; and Copilot's tab completions alongside. Waiting on ACP's second version, which changes how
+   edits and permissions are described.
 
 ## Game coverage
 

@@ -6,12 +6,12 @@ How every file under `frontend/src` is written. The look is `.claude/DESIGN.md`'
 
 ## Layout
 
-A component used by one page lives in that page's folder under `components/` (`library/`, `settings/`, `ide/`,
-`eventGraph/`, `health/`, `release/`); the app's frame (top bar, status bar, command palette, the unsaved-changes
-prompt) in `app/`; a piece two or more pages use in `ui/`. No `.vue` file sits directly in `components/`.
-`composables/`, `stores/`, `lib/` and `ide/` stay flat. The root holds what the whole app shares and starts:
-`main.ts`, `App.vue`, `router.ts`, `queries.ts`, `events.ts`, `windows.ts`, `workspaceTools.ts` (the page and
-settings catalogues).
+Each page is a folder under `pages/` (`library/`, `wizard/`, `settings/`, `health/`, `graph/`, `notes/`,
+`publish/`, `ide/`) holding the page and the components only it uses. The app's frame (top bar, status bar,
+command palette) is `app/`, with the router, the events' refreshes and the page catalogue (`pages.ts`); the
+editor's modules are `editor/`; a component two or more pages use is in `ui/`. `stores/`, `composables/` and
+`lib/` stay flat; the root holds `main.ts` and `queries.ts`. A page never imports another page's folder or the
+frame's components (the lint checks it).
 
 ## Server state
 
@@ -52,13 +52,13 @@ Templates and handlers call `mutate`, never `mutateAsync`. Errors reach the one 
 Workspace pages are children of one `/workspace/:id` route and take `id` as a prop (`props: true`);
 nothing reads `route.params` for it. The top bar is App's, on every page. The router's `beforeEach` alone
 sets the active workspace. Route names are typed (`RouteNamedMap`) and come from the page catalogue
-(`workspaceTools.ts`); pages load lazily; one `KeepAlive` with `include`. A page's facts in the status bar
+(`app/pages.ts`); pages load lazily; one `KeepAlive` with `include`. A page's facts in the status bar
 go through `StatusFacts`, which leaves with a kept-alive page. State a link names (a Settings section, a
 Health card and row) is the route's query, handed to the page by a `props` function, and written back with
 `router.replace`.
 
 ```ts
-{ path: "graph", name: "event-graph", component: () => import("./pages/EventGraphPage.vue"), props: true }
+{ path: "graph", name: "event-graph", component: () => import("../pages/graph/EventGraphPage.vue"), props: true }
 ```
 
 ```vue
@@ -69,11 +69,11 @@ const { id } = defineProps<{ id: string }>();
 
 ## Wails events
 
-Subscribed once, in `events.ts`, called from `main.ts`; each event refreshes what it changes (its queries, the
+Subscribed once, in `app/events.ts`, called from `main.ts`; each event refreshes what it changes (its queries, the
 scan progress, the git store). The subscriptions a component draws stay in it: the IDE's (`fs:changed` to its
 explorer and models, `search:hits` to its search) Publish's upload progress (`steam:progress`) and the status bar's wiki downloads (`wiki:progress`). Payloads are typed by Go's
 `application.RegisterEvent`, which the bindings declare on `Events.CustomEvents`: no casts. The windows' events
-(`window:*`) are there too: what each window holds (`windows.ts`' `others`), tabs handed between them, and a
+(`window:*`) are there too: what each window holds (`stores/windows.ts`' `others`), tabs handed between them, and a
 save in one that the others read again.
 
 ```ts
@@ -110,9 +110,8 @@ const list = useTemplateRef("list");
 Overlays through `useOverlay`, toasts through `useToast`. Sections, steps and segmented choices are `UTabs`,
 `UStepper` or `URadioGroup` with `:items` and item slots; lists are `UListbox` or `UCollapsible`; a link
 action is `UButton variant="link"`; resizable panes are a `USplitter` (its handle themed in `vite.config.ts`, its sizes kept by `auto-save-id`). Nuxt UI's components and composables are
-auto-imported (no deep `@nuxt/ui/…` import), and so are this folder's: a template uses a component under
-`components/` by its file name and never imports it; only a script that needs the component itself (for
-`useOverlay().create`) imports it. Colors by aliases (`primary`, `neutral`, …) and the tokens; theme
+auto-imported (no deep `@nuxt/ui/…` import); our components are imported explicitly, in the `<script setup>` of the
+file whose template uses them. Colors by aliases (`primary`, `neutral`, …) and the tokens; theme
 keys in `vite.config.ts`'s `ui()`, never `ui.base` overrides.
 
 ```ts

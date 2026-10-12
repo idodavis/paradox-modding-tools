@@ -7,8 +7,8 @@ import { defineStore } from "pinia";
 import { useColorMode, usePreferredDark } from "@vueuse/core";
 import { FILE_TREE_DENSITY_PRESETS, type FileTreeDensityKeyword } from "@pierre/trees";
 import { GetSettings, SaveSettings } from "@services/appservice";
-import { WORKSPACE_TOOL_NAMES, type WorkspaceToolName } from "../workspaceTools";
-import { changed } from "../windows";
+import { WORKSPACE_TOOL_NAMES, type WorkspaceToolName } from "../app/pages";
+import { changed } from "./windows";
 import { useWorkspaceStore } from "./workspace";
 
 /** A theme family; its halves are `<id>-dark` and `<id>-light` in styles/themes.css. */

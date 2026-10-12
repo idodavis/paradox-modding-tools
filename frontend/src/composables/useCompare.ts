@@ -4,7 +4,7 @@
  */
 import { toValue, type MaybeRefOrGetter } from "vue";
 import { StatPath } from "@services/fileservice";
-import CompareFiles from "../components/ui/CompareFiles.vue";
+import CompareFiles from "../ui/CompareFiles.vue";
 import { useWorkspaceStore } from "../stores/workspace";
 import { useIdeRoots } from "./useIdeRoots";
 

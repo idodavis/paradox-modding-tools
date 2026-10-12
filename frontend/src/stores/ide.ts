@@ -12,7 +12,7 @@ import { DidClose } from "@services/ideservice";
 import type { Diagnostic } from "@services/internal/lsp";
 import type { PanelResults } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
-import { holdsFiles, isMain, others } from "../windows";
+import { holdsFiles, isMain, others } from "./windows";
 import { useWorkspaceStore } from "./workspace";
 
 /** An editor group: its tabs in order and the one shown. */

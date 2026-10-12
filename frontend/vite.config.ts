@@ -73,6 +73,8 @@ export default defineConfig({
     vue(),
     ui({
       colorMode: true,
+      // our components are imported where they are used; only Nuxt UI's are resolved by name
+      components: { dirs: [] },
       theme: {
         colors: ["primary", "secondary", "success", "info", "warning", "error", "purple"],
       },

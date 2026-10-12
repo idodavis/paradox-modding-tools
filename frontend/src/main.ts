@@ -5,14 +5,14 @@
 import { createApp } from "vue";
 import ui from "@nuxt/ui/vue-plugin";
 import "./styles/nuxt-ui.css";
-import App from "./App.vue";
+import App from "./app/App.vue";
 import { createPinia } from "pinia";
 import { PiniaColada } from "@pinia/colada";
-import router from "./router";
-import { subscribeEvents } from "./events";
+import router from "./app/router";
+import { subscribeEvents } from "./app/events";
 import { useSettingsStore } from "./stores/settings";
 import { Log } from "@services/logservice";
-import { changed } from "./windows";
+import { changed } from "./stores/windows";
 
 // what nothing caught goes to pmt.log, where a bug report finds it
 window.addEventListener("error", (event) => {

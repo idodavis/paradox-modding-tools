@@ -4,17 +4,18 @@
  * bar, and the command palette in every window. The pages are kept alive, so leaving one for another keeps its state
  * (the IDE's editors and drafts among it).
  */
-import { openPalette } from "./CommandPalette.vue";
+import { useCommandsStore } from "../stores/commands";
 import { isMain } from "../stores/windows";
 import CommandPalette from "./CommandPalette.vue";
 import StatusBar from "./StatusBar.vue";
 import TopBar from "./TopBar.vue";
 
 // with a modifier, so they work while typing too (the editor's text is an input to Nuxt UI)
+const palette = useCommandsStore();
 defineShortcuts({
-  meta_k: { handler: () => openPalette(), usingInput: true },
-  meta_shift_p: { handler: () => openPalette(), usingInput: true },
-  meta_p: { handler: () => openPalette(""), usingInput: true },
+  meta_k: { handler: () => palette.openPalette(), usingInput: true },
+  meta_shift_p: { handler: () => palette.openPalette(), usingInput: true },
+  meta_p: { handler: () => palette.openPalette(""), usingInput: true },
 });
 
 const KEPT = [

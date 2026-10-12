@@ -39,10 +39,5 @@ export default defineConfigWithVueTs(
     ["src/stores/**", "src/app/**"],
     [{ group: ["../pages/**"], message: "the frame and the stores reach a page only through the router" }],
   ),
-  // the three imports below are replaced by the commands and editor stores; this block goes with them
-  {
-    files: ["src/app/CommandPalette.vue", "src/pages/ide/CodeEditor.vue"],
-    rules: { "no-restricted-imports": "off" },
-  },
   prettier,
 );

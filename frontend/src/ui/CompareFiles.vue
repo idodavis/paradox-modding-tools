@@ -5,7 +5,8 @@
  */
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { COMPARE_STYLES, compareStyle, diffView } from "../lib/monaco";
+import { compareStyle, diffView } from "../lib/monaco";
+import CompareStyle from "./CompareStyle.vue";
 import { textQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -55,13 +56,7 @@ onBeforeUnmount(() => view.value?.dispose());
 <template>
   <UModal :title="title" fullscreen @update:open="emit('close')">
     <template #actions>
-      <UTabs
-        :model-value="style"
-        :items="COMPARE_STYLES"
-        :content="false"
-        size="xs"
-        @update:model-value="style = $event === 'unified' ? 'unified' : 'split'"
-      />
+      <CompareStyle size="xs" />
     </template>
     <template #body>
       <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-default">

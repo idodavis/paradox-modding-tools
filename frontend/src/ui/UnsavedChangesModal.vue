@@ -7,24 +7,20 @@
 import { computed } from "vue";
 import { useMutation } from "@pinia/colada";
 import { fileName, plural } from "../lib/format";
-import { useIdeStore } from "../stores/ide";
+import { useEditorStore } from "../stores/editor";
 
 const { going = "Switching workspace", files } = defineProps<{ going?: string; files?: string[] }>();
 const emit = defineEmits<{ close: [go: boolean] }>();
 
-const ide = useIdeStore();
-const paths = computed(() => files ?? [...ide.unsaved]);
+const editor = useEditorStore();
+const paths = computed(() => files ?? [...editor.unsaved]);
 const names = computed(() => paths.value.map(fileName));
 const listed = computed(() => {
   const shown = names.value.slice(0, 4).join(", ");
   return names.value.length > 4 ? `${shown} and ${names.value.length - 4} more` : shown;
 });
-// the editor's code is loaded already wherever a file is unsaved
 const { mutate: save, isLoading: saving } = useMutation({
-  mutation: async () => {
-    const editor = await import("../editor/monacoEditor");
-    await (files ? Promise.all(files.map(editor.saveFile)) : editor.saveAll());
-  },
+  mutation: () => editor.saveFiles(paths.value),
   onSuccess: () => emit("close", true),
 });
 </script>

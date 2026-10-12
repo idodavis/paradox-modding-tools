@@ -1,29 +1,3 @@
-<script lang="ts">
-import type { EditorToolbarItem } from "@nuxt/ui";
-
-// every mark and block the BBCode conversion carries (owner, 2026-10-05), but links and images (owner, 2026-10-06)
-export const MARKDOWN_TOOLBAR: EditorToolbarItem[][] = [
-  [
-    { kind: "heading", level: 1, icon: "i-lucide-heading-1", tooltip: { text: "Heading 1" } },
-    { kind: "heading", level: 2, icon: "i-lucide-heading-2", tooltip: { text: "Heading 2" } },
-    { kind: "heading", level: 3, icon: "i-lucide-heading-3", tooltip: { text: "Heading 3" } },
-  ],
-  [
-    { kind: "mark", mark: "bold", icon: "i-lucide-bold", tooltip: { text: "Bold" } },
-    { kind: "mark", mark: "italic", icon: "i-lucide-italic", tooltip: { text: "Italic" } },
-    { kind: "mark", mark: "strike", icon: "i-lucide-strikethrough", tooltip: { text: "Strike" } },
-    { kind: "mark", mark: "code", icon: "i-lucide-code", tooltip: { text: "Code" } },
-  ],
-  [
-    { kind: "bulletList", icon: "i-lucide-list", tooltip: { text: "Bulleted list" } },
-    { kind: "orderedList", icon: "i-lucide-list-ordered", tooltip: { text: "Numbered list" } },
-    { kind: "blockquote", icon: "i-lucide-text-quote", tooltip: { text: "Quote" } },
-    { kind: "codeBlock", icon: "i-lucide-square-code", tooltip: { text: "Code block" } },
-    { kind: "horizontalRule", icon: "i-lucide-separator-horizontal", tooltip: { text: "Rule" } },
-  ],
-];
-</script>
-
 <script setup lang="ts">
 /**
  * The listing's description (the PublishListing board's right column): its source and how to change it,
@@ -37,6 +11,7 @@ import type { Listing, ListingSummary } from "@services/models";
 import { Convert, CreateDescriptionFile, LoadListing } from "@services/releaseservice";
 import { SetWorkspaceModDescription } from "@services/workspaceservice";
 import { pickFile } from "../../lib/nativeDialog";
+import { MARKDOWN_TOOLBAR } from "../../lib/markdown";
 import { releaseKeys } from "../../queries";
 import DescriptionSource from "../../ui/DescriptionSource.vue";
 

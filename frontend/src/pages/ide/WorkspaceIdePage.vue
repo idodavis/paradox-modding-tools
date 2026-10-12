@@ -21,10 +21,11 @@ import { fileName, plural } from "../../lib/format";
 import { languageOf } from "../../lib/monaco";
 import { textQuery } from "../../queries";
 import { useGitStore } from "../../stores/git";
-import { tabOf, useIdeStore } from "../../stores/ide";
+import { useEditorStore } from "../../stores/editor";
+import { tabOf } from "../../editor/tabs";
 import { useSettingsStore } from "../../stores/settings";
 import { Close, Show } from "@services/windowservice";
-import { holdsFiles, isMain, others, roots as windowRoots, windowName, windowPart } from "../../stores/windows";
+import { holdsFiles, isMain, useWindowsStore, windowName, windowPart } from "../../stores/windows";
 import EditorLayout from "./EditorLayout.vue";
 import ExplorerTree from "./ExplorerTree.vue";
 import IdePanel from "./IdePanel.vue";
@@ -36,7 +37,8 @@ import WikiPane from "./WikiPane.vue";
 
 const { id } = defineProps<{ id: string }>();
 
-const ide = useIdeStore();
+const editor = useEditorStore();
+const windows = useWindowsStore();
 const git = useGitStore();
 const settings = useSettingsStore();
 const { data: rec, roots, locate } = useIdeRoots(() => id);
@@ -57,7 +59,7 @@ const hideBinaries = computed(() => !!rec.value?.hideExplorerBinaries);
 const gameShown = computed(() => !!game.value.length && settings.on("ide.gameFiles"));
 
 // the tabs the other windows hold, saved with the main window's so they come back here
-const elsewhere = computed(() => [...others.values()].flatMap((one) => one.tabs ?? []));
+const elsewhere = computed(() => [...windows.otherWindows.values()].flatMap((one) => one.tabs ?? []));
 
 // a workspace's tabs come back in the main window when it opens, unless it starts fresh; those of the one it replaces
 // are saved first; another window starts empty, ready for the tabs handed to it
@@ -66,21 +68,21 @@ watch(
   rec,
   (open) => {
     if (!open || restored === id) return;
-    if (restored && isMain) ide.remember(restored, elsewhere.value);
+    if (restored && isMain) editor.remember(restored, elsewhere.value);
     restored = id;
-    windowRoots.value = own.value.map((root) => root.path);
+    windows.roots = own.value.map((root) => root.path);
     // the panel's window holds no files: its problems are the other windows'
     if (!holdsFiles) return;
     setWorkspace(id, (path) => !!locate(path)?.root.readOnly);
-    ide.restore(id, !isMain || open.resetIdeOnOpen);
+    editor.restore(id, !isMain || open.resetIdeOnOpen);
   },
   { immediate: true },
 );
 watchDebounced(
-  () => [ide.openFiles.join("\n"), elsewhere.value.join("\n"), ide.activePath, JSON.stringify(ide.layout)],
+  () => [editor.openTabs.join("\n"), elsewhere.value.join("\n"), editor.activeTab, JSON.stringify(editor.layout)],
   () => {
     if (!isMain || restored !== id || rec.value?.resetIdeOnOpen) return;
-    ide.remember(id, elsewhere.value);
+    editor.remember(id, elsewhere.value);
   },
   { debounce: 1000 },
 );
@@ -107,13 +109,13 @@ const panes = computed(() => [
     ? [{ id: "sidebar", slot: "sidebar", order: 1, sizeUnit: "px" as const, defaultSize: 264, minSize: 170 }]
     : []),
   ...(windowPart !== "panel" ? [{ id: "editors", slot: "editors", order: 2, minSize: 33 }] : []),
-  ...(isMain && ide.wikiOpen
+  ...(isMain && editor.wikiOpen
     ? [{ id: "wiki", slot: "wiki", order: 3, sizeUnit: "px" as const, defaultSize: 440, minSize: 320 }]
     : []),
 ]);
 const editorPanes = computed(() => [
   { id: "code", slot: "code", order: 1, minSize: 50 },
-  ...(isMain && ide.panel && !others.has("panel")
+  ...(isMain && editor.panel && !windows.otherWindows.has("panel")
     ? [{ id: "panel", slot: "panel", order: 2, sizeUnit: "px" as const, defaultSize: 200, minSize: 120 }]
     : []),
 ]);
@@ -150,26 +152,19 @@ defineShortcuts(
   computed(() =>
     shown.value
       ? {
-          meta_shift_w: key(() => (ide.wikiOpen = !ide.wikiOpen)),
-          meta_shift_f: key(() => (ide.sidebar = "search")),
-          meta_shift_e: key(() => (ide.sidebar = "explorer")),
-          meta_j: key(() => (ide.panel = ide.panel ? "" : "problems")),
-          "meta_\\": key(() => ide.split("right")),
+          meta_shift_w: key(() => (editor.wikiOpen = !editor.wikiOpen)),
+          meta_shift_f: key(() => (editor.sidebar = "search")),
+          meta_shift_e: key(() => (editor.sidebar = "explorer")),
+          meta_j: key(() => (editor.panel = editor.panel ? "" : "problems")),
+          "meta_\\": key(() => editor.split("right")),
         }
       : {},
   ),
 );
 
 // the status bar: the open files' problems, then the shown file's facts
-const counts = computed(() => {
-  const all = [...ide.problems.values()].flat();
-  return {
-    errors: all.filter((found) => found.severity === 1).length,
-    warnings: all.filter((found) => found.severity !== 1).length,
-  };
-});
-const { data: file } = useQuery(() => textQuery(ide.activeFile));
-const diff = computed(() => tabOf(ide.activePath).diff);
+const { data: file } = useQuery(() => textQuery(editor.activeFile));
+const diff = computed(() => tabOf(editor.activeTab).diff);
 const COMPARES = {
   changes: "Comparing the working tree with the staged copy",
   staged: "Comparing the staged copy with the last commit",
@@ -202,7 +197,7 @@ const gitMore = computed<DropdownMenuItem[]>(() => [
       ),
   },
   { label: "Read the repository again", icon: "i-lucide-refresh-cw", onSelect: () => git.refresh() },
-  { label: "Show the Git output", icon: "i-lucide-terminal", onSelect: () => (ide.panel = "git") },
+  { label: "Show the Git output", icon: "i-lucide-terminal", onSelect: () => (editor.panel = "git") },
 ]);
 // the language the editor reads the file in, which Go's format decides
 const KINDS: Record<string, string> = {
@@ -211,9 +206,9 @@ const KINDS: Record<string, string> = {
   "paradox-gui": "Paradox GUI",
   markdown: "Markdown",
 };
-const kind = computed(() => KINDS[languageOf(ide.activeFile, file.value?.format)] ?? "Plain text");
+const kind = computed(() => KINDS[languageOf(editor.activeFile, file.value?.format)] ?? "Plain text");
 function showProblems(): void {
-  ide.panel = "problems";
+  editor.panel = "problems";
 }
 </script>
 
@@ -232,30 +227,30 @@ function showProblems(): void {
               square
               :ui="{ leadingIcon: 'size-4.5' }"
               aria-label="Explorer"
-              :color="ide.sidebar === 'explorer' ? 'primary' : 'neutral'"
-              :variant="ide.sidebar === 'explorer' ? 'soft' : 'ghost'"
-              @click="ide.sidebar = 'explorer'"
+              :color="editor.sidebar === 'explorer' ? 'primary' : 'neutral'"
+              :variant="editor.sidebar === 'explorer' ? 'soft' : 'ghost'"
+              @click="editor.sidebar = 'explorer'"
             />
             <UButton
               icon="i-lucide-search"
               square
               :ui="{ leadingIcon: 'size-4.5' }"
               aria-label="Search"
-              :color="ide.sidebar === 'search' ? 'primary' : 'neutral'"
-              :variant="ide.sidebar === 'search' ? 'soft' : 'ghost'"
-              @click="ide.sidebar = 'search'"
+              :color="editor.sidebar === 'search' ? 'primary' : 'neutral'"
+              :variant="editor.sidebar === 'search' ? 'soft' : 'ghost'"
+              @click="editor.sidebar = 'search'"
             />
             <UButton
               icon="i-lucide-git-compare"
               square
               :ui="{ leadingIcon: 'size-4.5' }"
               aria-label="Source control"
-              :color="ide.sidebar === 'git' ? 'primary' : 'neutral'"
-              :variant="ide.sidebar === 'git' ? 'soft' : 'ghost'"
-              @click="ide.sidebar = 'git'"
+              :color="editor.sidebar === 'git' ? 'primary' : 'neutral'"
+              :variant="editor.sidebar === 'git' ? 'soft' : 'ghost'"
+              @click="editor.sidebar = 'git'"
             />
             <span class="grow" />
-            <template v-if="ide.sidebar === 'git' && git.repo">
+            <template v-if="editor.sidebar === 'git' && git.repo">
               <UTooltip text="Fetch"
                 ><UButton
                   icon="i-lucide-cloud-download"
@@ -285,7 +280,7 @@ function showProblems(): void {
               </UDropdownMenu>
               <USeparator orientation="vertical" class="mx-0.5 h-4" />
             </template>
-            <UTooltip v-if="ide.sidebar === 'explorer'" text="Collapse all">
+            <UTooltip v-if="editor.sidebar === 'explorer'" text="Collapse all">
               <UButton
                 icon="i-lucide-chevrons-down-up"
                 variant="ghost"
@@ -298,7 +293,7 @@ function showProblems(): void {
             <IdeSettingsCard />
           </div>
           <USplitter
-            v-show="ide.sidebar === 'explorer'"
+            v-show="editor.sidebar === 'explorer'"
             :items="explorerPanes"
             orientation="vertical"
             :disabled="!gameOpen"
@@ -344,7 +339,7 @@ function showProblems(): void {
                     <UIcon :name="gameOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />Game
                     files
                   </button>
-                  <UTooltip v-if="!others.has('game')" text="Open in its own window">
+                  <UTooltip v-if="!windows.otherWindows.has('game')" text="Open in its own window">
                     <UButton
                       icon="i-lucide-app-window"
                       variant="ghost"
@@ -362,7 +357,7 @@ function showProblems(): void {
                   </UTooltip>
                 </div>
                 <div
-                  v-if="others.has('game')"
+                  v-if="windows.otherWindows.has('game')"
                   v-show="gameOpen"
                   class="flex flex-col gap-2 px-3 py-1.5 text-12 text-dimmed"
                 >
@@ -384,8 +379,8 @@ function showProblems(): void {
               </div>
             </template>
           </USplitter>
-          <SearchView v-show="ide.sidebar === 'search'" :roots="roots" :hide-binaries="hideBinaries" />
-          <SourceControlView v-if="ide.sidebar === 'git'" />
+          <SearchView v-show="editor.sidebar === 'search'" :roots="roots" :hide-binaries="hideBinaries" />
+          <SourceControlView v-if="editor.sidebar === 'git'" />
         </aside>
         <aside
           v-else
@@ -397,7 +392,7 @@ function showProblems(): void {
       <template #editors>
         <USplitter :items="editorPanes" orientation="vertical" auto-save-id="pmt.ide.editors" class="min-w-0 flex-1">
           <template #code>
-            <div class="flex min-h-0 min-w-0 flex-1"><EditorLayout :node="ide.layout" :workspace-id="id" /></div>
+            <div class="flex min-h-0 min-w-0 flex-1"><EditorLayout :node="editor.layout" :workspace-id="id" /></div>
           </template>
           <template #panel>
             <div class="flex min-h-0 min-w-0 flex-1 border-t border-default"><IdePanel :workspace-id="id" /></div>
@@ -412,19 +407,23 @@ function showProblems(): void {
   <StatusFacts v-if="windowPart !== 'panel'">
     <button
       class="flex h-6 items-center gap-1 text-error"
-      :aria-label="plural(counts.errors, 'error')"
+      :aria-label="plural(editor.problemCounts.errors, 'error')"
       @click="showProblems"
     >
-      <UIcon name="i-lucide-circle-x" class="size-3" />{{ counts.errors }}
+      <UIcon name="i-lucide-circle-x" class="size-3" />{{ editor.problemCounts.errors }}
     </button>
     <button
       class="flex h-6 items-center gap-1 text-warning"
-      :aria-label="plural(counts.warnings, 'warning')"
+      :aria-label="plural(editor.problemCounts.warnings, 'warning')"
       @click="showProblems"
     >
-      <UIcon name="i-lucide-triangle-alert" class="size-3" />{{ counts.warnings }}
+      <UIcon name="i-lucide-triangle-alert" class="size-3" />{{ editor.problemCounts.warnings }}
     </button>
-    <button v-if="git.status" class="flex h-6 items-center gap-1 hover:text-highlighted" @click="ide.sidebar = 'git'">
+    <button
+      v-if="git.status"
+      class="flex h-6 items-center gap-1 hover:text-highlighted"
+      @click="editor.sidebar = 'git'"
+    >
       <UIcon name="i-lucide-git-branch" class="size-3" />{{ git.status.branch || git.status.commit }}
       <template v-if="git.status.upstream"
         ><UIcon name="i-lucide-arrow-down-up" class="size-3" />{{ git.status.ahead }} up,
@@ -435,8 +434,8 @@ function showProblems(): void {
   <StatusFacts v-if="diff" end>
     <span>{{ COMPARES[diff] }}</span>
   </StatusFacts>
-  <StatusFacts v-else-if="ide.activePath" end>
-    <span v-if="ide.caret">Ln {{ ide.caret.line + 1 }}, Col {{ ide.caret.character + 1 }}</span>
+  <StatusFacts v-else-if="editor.activeTab" end>
+    <span v-if="editor.caret">Ln {{ editor.caret.line + 1 }}, Col {{ editor.caret.character + 1 }}</span>
     <span>{{ settings.indentSpaces ? `Spaces: ${settings.indentSize}` : "Tabs" }}</span>
     <span>{{ kind }}</span>
     <span v-if="file && !file.reject">{{ file.legacy ? "Windows-1252" : file.bom ? "UTF-8 BOM" : "UTF-8" }}</span>

@@ -2,7 +2,7 @@
 /**
  * A place in a file as `rel:line`, or the file alone, that opens the IDE there.
  */
-import { useIdeStore } from "../stores/ide";
+import { useEditorStore } from "../stores/editor";
 
 const {
   at,
@@ -13,7 +13,7 @@ const {
   line: number;
   file?: boolean;
 }>();
-const ide = useIdeStore();
+const editor = useEditorStore();
 </script>
 
 <template>
@@ -23,6 +23,6 @@ const ide = useIdeStore();
     size="xs"
     class="max-w-full min-w-0 p-0 font-mono"
     :ui="{ label: 'truncate' }"
-    @click="ide.open(at.path, { line })"
+    @click="editor.open(at.path, { line })"
   />
 </template>

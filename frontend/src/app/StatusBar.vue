@@ -15,7 +15,7 @@ import { CopyDiagnostics } from "@services/logservice";
 import { crashedQuery, versionQuery } from "../queries";
 import { PAGES } from "./pages";
 import { Show } from "@services/windowservice";
-import { isMain, others } from "../stores/windows";
+import { isMain, useWindowsStore } from "../stores/windows";
 import { useWorkspaceStore } from "../stores/workspace";
 
 const route = useRoute();
@@ -54,9 +54,10 @@ const wikis = reactive(new Map<string, WikiProgress>());
 onScopeDispose(Events.On("wiki:progress", ({ data }) => void wikis.set(data.gameId, data)));
 onScopeDispose(Events.On("wiki:updated", ({ data }) => void wikis.delete(data.gameId)));
 
+const { otherWindows } = useWindowsStore();
 const ITEM = "flex h-6 items-center gap-1.25 hover:text-highlighted";
 const windows = computed(() =>
-  [...others.values()].map((one) => ({ label: one.title, onSelect: () => void Show(one.name) })),
+  [...otherWindows.values()].map((one) => ({ label: one.title, onSelect: () => void Show(one.name) })),
 );
 </script>
 

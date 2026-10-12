@@ -16,18 +16,19 @@ import type { IdeRoot } from "@services/models";
 import type { TextSearchHit } from "@services/internal/pages/models";
 import { Replace, TextSearch } from "@services/searchservice";
 import { editorRange } from "../../editor/columns";
+import { binaryGlobs } from "./fileKinds";
 import { editText, openText } from "../../editor/monacoEditor";
 import { fileName, plural } from "../../lib/format";
 import { linesQuery } from "../../queries";
-import { useIdeStore } from "../../stores/ide";
+import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import ConfirmModal from "../../ui/ConfirmModal.vue";
 import OriginDot from "../../ui/OriginDot.vue";
 
 const { roots, hideBinaries } = defineProps<{ roots: IdeRoot[]; hideBinaries: boolean }>();
 
-const ide = useIdeStore();
-const { results } = storeToRefs(ide);
+const editor = useEditorStore();
+const { results } = storeToRefs(editor);
 const store = useWorkspaceStore();
 const toast = useToast();
 
@@ -62,9 +63,6 @@ const globs = (text: string) =>
     .split(",")
     .map((glob) => glob.trim())
     .filter(Boolean);
-// hidden binaries are searched no more than they are listed
-const BINARY_GLOBS = ["*.{dll,exe,pdb,hash,hex,bin,dat}"];
-
 /** The search asked, over some of the folders picked. */
 function query(id: string, searched: IdeRoot[]) {
   return {
@@ -78,7 +76,7 @@ function query(id: string, searched: IdeRoot[]) {
       path: root.path,
       origin: root.origin,
       includes: globs(include.value),
-      excludes: [...globs(exclude.value), ...(hideBinaries ? BINARY_GLOBS : [])],
+      excludes: [...globs(exclude.value), ...(hideBinaries ? binaryGlobs() : [])],
     })),
   };
 }
@@ -184,7 +182,7 @@ async function replaceAll(): Promise<void> {
   // the open files go with their text in the editor, unsaved edits and all; Go replaces there as on disk, and
   // hands their new text back for the editor
   const open = Object.fromEntries(
-    ide.openFiles.flatMap((path) => (openText(path) === undefined ? [] : [[path, openText(path) ?? ""]])),
+    editor.openTabs.flatMap((path) => (openText(path) === undefined ? [] : [[path, openText(path) ?? ""]])),
   );
   const done = await Replace({ search: query("", writable.value), text: replacement.value, open }).catch(
     (error: unknown) => {
@@ -320,7 +318,7 @@ async function replaceAll(): Promise<void> {
             :key="i"
             class="flex h-5.5 w-full items-center ps-7 pe-2.5 text-start font-mono text-11 whitespace-nowrap text-toned hover:bg-accented"
             :title="`${file.rel}:${row.line + 1}`"
-            @click="ide.open(row.path, { line: row.line, col: row.col })"
+            @click="editor.open(row.path, { line: row.line, col: row.col })"
           >
             <span v-for="[before, match, after] in [parts(row)]" :key="0" class="truncate"
               >{{ before }}<b class="rounded-xs bg-(--accent-soft) font-medium text-highlighted">{{ match }}</b

@@ -11,8 +11,9 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import { AddRemote, Commit, Discard, Pull, Push, Stage, Unstage } from "@services/gitservice";
 import type { GitChange } from "@services/models";
 import { plural } from "../../lib/format";
-import { useGitStore } from "../../stores/git";
-import { diffTab, tabOf, useIdeStore } from "../../stores/ide";
+import { GIT_LETTERS, useGitStore } from "../../stores/git";
+import { useEditorStore } from "../../stores/editor";
+import { diffTab, tabOf } from "../../editor/tabs";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import ConfirmModal from "../../ui/ConfirmModal.vue";
@@ -21,7 +22,7 @@ import GitGraph from "./GitGraph.vue";
 import OriginDot from "../../ui/OriginDot.vue";
 
 const git = useGitStore();
-const ide = useIdeStore();
+const editor = useEditorStore();
 const settings = useSettingsStore();
 const store = useWorkspaceStore();
 
@@ -127,7 +128,7 @@ type Section = {
 const openFile = (one: GitChange): Action => ({
   icon: "i-lucide-file",
   label: "Open the file",
-  run: () => ide.open(one.path),
+  run: () => editor.open(one.path),
 });
 const sections = computed<Section[]>(() => {
   const conflicts = status.value?.conflicts ?? [];
@@ -138,7 +139,7 @@ const sections = computed<Section[]>(() => {
           {
             title: "Merge conflicts",
             rows: conflicts,
-            open: (one: GitChange) => ide.open(one.path),
+            open: (one: GitChange) => editor.open(one.path),
             each: (one: GitChange) => [{ icon: "i-lucide-plus", label: "Stage, resolved", run: () => stage([one]) }],
             all: [],
           },
@@ -148,7 +149,7 @@ const sections = computed<Section[]>(() => {
       title: "Staged",
       rows: staged.value,
       diff: "staged" as const,
-      open: (one) => ide.open(diffTab("staged", one.path)),
+      open: (one) => editor.open(diffTab("staged", one.path)),
       each: (one) => [openFile(one), { icon: "i-lucide-minus", label: "Unstage", run: () => unstage([one]) }],
       all: staged.value.length
         ? [{ icon: "i-lucide-minus", label: "Unstage all", run: () => unstage(staged.value) }]
@@ -158,7 +159,7 @@ const sections = computed<Section[]>(() => {
       title: "Changes",
       rows: changes,
       diff: "changes" as const,
-      open: (one) => ide.open(diffTab("changes", one.path)),
+      open: (one) => editor.open(diffTab("changes", one.path)),
       each: (one) => [
         ...(one.letter === "D" ? [] : [openFile(one)]),
         { icon: "i-lucide-undo-2", label: "Discard", run: () => discard([one]), color: "error" },
@@ -175,16 +176,8 @@ const sections = computed<Section[]>(() => {
 });
 
 // the row of the diff shown is lit
-const shown = computed(() => tabOf(ide.activePath));
+const shown = computed(() => tabOf(editor.activeTab));
 
-const LETTERS: Record<string, string> = {
-  A: "text-success",
-  U: "text-success",
-  M: "text-warning",
-  R: "text-info",
-  D: "text-error",
-  "!": "text-error",
-};
 const SECTION = "flex h-7 shrink-0 items-center gap-1.5 ps-3 pe-1.5 text-11 font-semibold whitespace-nowrap text-toned";
 // the graph is a pane under the changes, as tall as it was left (the changes keep room for a few rows), or folded
 // to its header; the splitter keeps its height
@@ -336,7 +329,7 @@ const ROW =
                   :aria-label="act.label"
                   @click.stop="act.run"
                 />
-                <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="LETTERS[one.letter]">{{
+                <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="GIT_LETTERS[one.letter]?.color">{{
                   one.letter
                 }}</b>
               </div>

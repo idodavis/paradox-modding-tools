@@ -1,13 +1,3 @@
-<script lang="ts">
-export type Step = "listing" | "release" | "review";
-/** Each step's title, in the rail and as its page's heading. */
-export const STEP_TITLES: Record<Step, string> = {
-  listing: "Listing and description",
-  release: "Version and change note",
-  review: "Review and upload",
-};
-</script>
-
 <script setup lang="ts">
 /**
  * Publish's rail (the Publish boards' aside): the workspace's mods with their state on Steam, and the three
@@ -18,6 +8,7 @@ import type { StepperItem } from "@nuxt/ui";
 import type { WorkspaceMod } from "@services/models";
 import { modColor } from "../../stores/workspace";
 import SteamState from "../../ui/SteamState.vue";
+import { STEP_TITLES, type Step } from "./steps";
 import Thumb from "../../ui/Thumb.vue";
 
 const { workspaceId, mods, saved } = defineProps<{ workspaceId: string; mods: WorkspaceMod[]; saved: boolean }>();

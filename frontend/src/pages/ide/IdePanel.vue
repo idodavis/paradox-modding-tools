@@ -6,30 +6,24 @@
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { useGitStore } from "../../stores/git";
-import { useIdeStore } from "../../stores/ide";
+import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { Close } from "@services/windowservice";
-import { isMain, openWindow, windowName } from "../../stores/windows";
+import { isMain, useWindowsStore, windowName } from "../../stores/windows";
 import OriginDot from "../../ui/OriginDot.vue";
 
 const { workspaceId } = defineProps<{ workspaceId: string }>();
 
-const ide = useIdeStore();
+const editor = useEditorStore();
+const windows = useWindowsStore();
 const git = useGitStore();
 const store = useWorkspaceStore();
 const { locate } = useIdeRoots(() => workspaceId);
 
 const filter = shallowRef("");
-const counts = computed(() => {
-  const all = [...ide.problems.values()].flat();
-  return {
-    errors: all.filter((found) => found.severity === 1).length,
-    warnings: all.filter((found) => found.severity !== 1).length,
-  };
-});
 const files = computed(() => {
   const needle = filter.value.trim().toLowerCase();
-  return [...ide.problems.entries()]
+  return [...editor.problems.entries()]
     .map(([path, found]) => {
       const at = locate(path);
       const rel = at?.rel ?? path;
@@ -50,13 +44,13 @@ const isTab = (value: string | number) => (value === "git" ? value : "problems")
 // the Git output keeps its newest command in view
 const gitLog = useTemplateRef("gitLog");
 watch(
-  () => [git.output.length, ide.panel],
+  () => [git.output.length, editor.panel],
   () => gitLog.value?.scrollTo({ top: gitLog.value.scrollHeight }),
   { flush: "post" },
 );
 
 function open(at: { path: string; line: number; col: number }): void {
-  ide.open(at.path, { line: at.line, col: at.col });
+  editor.open(at.path, { line: at.line, col: at.col });
 }
 </script>
 
@@ -64,22 +58,32 @@ function open(at: { path: string; line: number; col: number }): void {
   <div class="flex min-h-0 flex-1 flex-col bg-muted text-(length:--ide-ui-font)">
     <div class="flex h-8 shrink-0 items-center gap-0.5 border-b border-default ps-2 pe-1.5">
       <UTabs
-        :model-value="isTab(ide.panel)"
+        :model-value="isTab(editor.panel)"
         :items="TABS"
         :content="false"
         variant="link"
         size="sm"
-        @update:model-value="ide.panel = isTab($event)"
+        @update:model-value="editor.panel = isTab($event)"
       >
         <template #trailing="{ item }">
           <template v-if="item.value === 'problems'">
-            <UBadge v-if="counts.errors" :label="String(counts.errors)" color="error" size="sm" />
-            <UBadge v-if="counts.warnings" :label="String(counts.warnings)" color="warning" size="sm" />
+            <UBadge
+              v-if="editor.problemCounts.errors"
+              :label="String(editor.problemCounts.errors)"
+              color="error"
+              size="sm"
+            />
+            <UBadge
+              v-if="editor.problemCounts.warnings"
+              :label="String(editor.problemCounts.warnings)"
+              color="warning"
+              size="sm"
+            />
           </template>
         </template>
       </UTabs>
       <span class="grow" />
-      <template v-if="ide.panel === 'problems'">
+      <template v-if="editor.panel === 'problems'">
         <UInput v-model="filter" placeholder="Filter problems" size="xs" class="w-50" icon="i-lucide-filter" />
         <UButton
           label="Open in Health"
@@ -96,7 +100,7 @@ function open(at: { path: string; line: number; col: number }): void {
             size="sm"
             square
             aria-label="Open in its own window"
-            @click="openWindow(`/workspace/${workspaceId}`, 'panel', 'Panel')"
+            @click="windows.openWindow(`/workspace/${workspaceId}`, 'panel', 'Panel')"
           />
         </UTooltip>
         <UButton
@@ -105,7 +109,7 @@ function open(at: { path: string; line: number; col: number }): void {
           size="sm"
           square
           aria-label="Close the panel"
-          @click="ide.panel = ''"
+          @click="editor.panel = ''"
         />
       </template>
       <UTooltip v-else text="Back into the main window">
@@ -119,7 +123,11 @@ function open(at: { path: string; line: number; col: number }): void {
         />
       </UTooltip>
     </div>
-    <div v-if="ide.panel === 'git'" ref="gitLog" class="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-11">
+    <div
+      v-if="editor.panel === 'git'"
+      ref="gitLog"
+      class="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-11"
+    >
       <div v-for="(line, i) in git.output" :key="i" class="pb-1.5">
         <div :class="line.failed ? 'text-error' : 'text-dimmed'">&gt; {{ line.command }}</div>
         <pre v-if="line.output" class="whitespace-pre-wrap text-toned">{{ line.output }}</pre>

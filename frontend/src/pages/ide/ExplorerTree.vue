@@ -1,69 +1,3 @@
-<script lang="ts">
-const RAW = import.meta.glob<string>("./fileicons/*.svg", { query: "?raw", import: "default", eager: true });
-const URLS = import.meta.glob<string>("./fileicons/*.svg", { query: "?url", import: "default", eager: true });
-const file = (kind: string) => `../../ide/fileicons/paradox-${kind}.svg`;
-
-/** The Paradox files' icons: each kind (its paradox-<kind>.svg) and the extensions it draws. */
-const EXTENSIONS = {
-  script:
-    "txt editordata compound schematic aggregate curves layout lines anchor modifierpack guistateset meta smv ugraph dep skin lookup",
-  loc: "yml yaml",
-  gui: "gui",
-  mod: "mod info dlc",
-  mesh: "mesh",
-  asset: "asset",
-  anim: "anim animsm guianimset",
-  texture: "dds tga",
-  shader: "shader fxh shadernodes shadergraph",
-  gfx: "gfx",
-  font: "font fnt",
-  audio: "bank bnk wem audio2 ogg wav mp3 flac",
-  video: "bk2",
-  particle: "particle particle2",
-  map: "map terrain heightmap splnet vertical_borders",
-  settings: "settings shortcuts bindings profile config",
-  bbcode: "bbcode",
-};
-const KINDS: Record<string, string> = Object.fromEntries(
-  Object.entries(EXTENSIONS).flatMap(([kind, exts]) => exts.split(" ").map((ext) => [ext, kind])),
-);
-
-/** A Paradox file's icon, for the editor's tabs; none for other files. */
-export function iconOf(path: string): string | undefined {
-  const kind = KINDS[path.slice(path.lastIndexOf(".") + 1).toLowerCase()];
-  return kind && URLS[file(kind)];
-}
-
-// the icons as one sprite in the tree's shadow root, each gradient renamed so no two share an id; and
-// Lucide's app-window, the mark of a folder in a window of its own
-const WINDOW = `<symbol id="pmt-window" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4M2 8h20M6 4v4"/></symbol>`;
-const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position: absolute">${Object.keys(
-  EXTENSIONS,
-)
-  .map((kind) =>
-    RAW[file(kind)]
-      .replace(/<svg[^>]*>/, `<symbol id="pmt-${kind}" viewBox="0 0 800 800">`)
-      .replace("</svg>", "</symbol>")
-      .replaceAll('id="pmt"', `id="pmt-${kind}-fill"`)
-      .replaceAll("url(#pmt)", `url(#pmt-${kind}-fill)`),
-  )
-  .join("")}${WINDOW}</svg>`;
-// Pierre's icons for every other kind of file
-const ICONS = {
-  set: "complete" as const,
-  spriteSheet: SPRITE,
-  byFileExtension: Object.fromEntries(
-    Object.entries(KINDS).map(([ext, kind]) => [ext, { name: `pmt-${kind}`, viewBox: "0 0 800 800" }]),
-  ),
-};
-// the explorer's renames, moves and deletes as disk paths (a delete is a move into PMT's trash), one list for the
-// window's sections: Ctrl Z moves the last back, Ctrl Y or Ctrl Shift Z does it again
-const done: { from: string; to: string; deleted?: boolean }[] = [];
-const undone: typeof done = [];
-// hidden while the workspace hides binaries, as search leaves them out
-export const BINARIES = /\.(dll|exe|pdb|hash|hex|bin|dat)$|^\.git$/i;
-</script>
-
 <script setup lang="ts">
 /**
  * A section of the explorer (the Ide board's sidebar): its roots, each a mod's with its color bar or the game's
@@ -88,10 +22,11 @@ import {
 import { OpenFolder, RemoveWorkspaceMod } from "@services/workspaceservice";
 import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
 import { newWindowWith, openFilesWindow } from "../../editor/monacoEditor";
+import { BINARY_EXTENSIONS, TREE_ICONS } from "./fileKinds";
 import { Close, Show } from "@services/windowservice";
-import { others } from "../../stores/windows";
-import { useGitStore } from "../../stores/git";
-import { useIdeStore } from "../../stores/ide";
+import { useWindowsStore } from "../../stores/windows";
+import { GIT_LETTERS, useGitStore } from "../../stores/git";
+import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import ConfirmModal from "../../ui/ConfirmModal.vue";
@@ -103,7 +38,8 @@ const { workspaceId, roots, hideBinaries } = defineProps<{
 }>();
 const emit = defineEmits<{ compare: [old: string, now: string] }>();
 
-const ide = useIdeStore();
+const editor = useEditorStore();
+const windows = useWindowsStore();
 const git = useGitStore();
 const settings = useSettingsStore();
 const store = useWorkspaceStore();
@@ -148,7 +84,7 @@ async function list(dir: string): Promise<void> {
   if (listed.has(dir)) return;
   listed.add(dir);
   const entries = (await ListDirectory(diskPath(dir), !hideBinaries).catch(() => null)) ?? [];
-  const shown = entries.filter((entry) => !hideBinaries || !BINARIES.test(entry.name));
+  const shown = entries.filter((entry) => !hideBinaries || !BINARY_EXTENSIONS.test(entry.name));
   const paths = shown.map((entry) => `${dir}${entry.name}${entry.isDir ? "/" : ""}`);
   paths.filter((path) => path.endsWith("/")).forEach((path) => folders.add(path));
   tree.value?.batch(paths.filter((path) => !tree.value?.getItem(path)).map((path) => ({ type: "add" as const, path })));
@@ -175,7 +111,7 @@ function mount(): void {
     initialExpansion: "closed",
     density: settings.treeDensity,
     stickyFolders: settings.on("ide.stickyFolders"),
-    icons: ICONS,
+    icons: TREE_ICONS,
     gitStatus: gitStatus.value,
     unsafeCSS: rootRows,
     // a read-only root says so with a lock; a folder in a window of its own with that window's mark
@@ -187,11 +123,11 @@ function mount(): void {
         : null;
     },
     onSelectionChange: (selected) => {
-      ide.selected = selected.filter((path) => !path.endsWith("/")).map(diskPath);
+      editor.selected = selected.filter((path) => !path.endsWith("/")).map(diskPath);
       // the open file selected again (the tree following it) opens nothing: from another page it would go to the IDE
       const [only] = selected;
-      if (selected.length === 1 && only && !only.endsWith("/") && pathKey(diskPath(only)) !== pathKey(ide.activePath))
-        ide.open(diskPath(only));
+      if (selected.length === 1 && only && !only.endsWith("/") && pathKey(diskPath(only)) !== pathKey(editor.activeTab))
+        editor.open(diskPath(only));
     },
     renaming: writable.value && {
       canRename: ({ path }) => path.indexOf("/") < path.length - 1,
@@ -239,21 +175,13 @@ watch(
 onBeforeUnmount(() => tree.value?.cleanUp());
 
 // each repository's changes on its files and folders (O-R63): staged, then unstaged, a file added kept as added
-const STATUSES: Record<string, GitStatus> = {
-  A: "added",
-  M: "modified",
-  D: "deleted",
-  R: "renamed",
-  U: "untracked",
-  "!": "modified",
-};
 const gitStatus = computed<GitStatusEntry[]>(() => {
   const marked = new Map<string, GitStatus>();
   for (const status of Object.values(git.statuses ?? {})) {
     if (!status) continue;
     for (const change of [...(status.staged ?? []), ...(status.changes ?? []), ...(status.conflicts ?? [])]) {
       const path = treePath(change.path);
-      if (path && marked.get(path) !== "added") marked.set(path, STATUSES[change.letter] ?? "modified");
+      if (path && marked.get(path) !== "added") marked.set(path, GIT_LETTERS[change.letter]?.status ?? "modified");
     }
   }
   return [...marked].map(([path, status]) => ({ path, status }));
@@ -278,7 +206,7 @@ watchEffect(() => {
 /** Open the folders down to the open file and select it, while the explorer follows the open file; a diff tab is
  * not followed, since selecting a file opens it. */
 async function follow(): Promise<void> {
-  const path = ide.activePath;
+  const path = editor.activeTab;
   const target = path && settings.on("ide.followFile") ? treePath(path) : undefined;
   const made = tree.value;
   if (!target || !made) return;
@@ -293,7 +221,7 @@ async function follow(): Promise<void> {
   made.scrollToPath(target, { focus: false, offset: "nearest" });
 }
 watch(
-  () => ide.activePath,
+  () => editor.activeTab,
   () => void follow(),
 );
 
@@ -316,7 +244,7 @@ const stop = Events.On("fs:changed", async ({ data }) => {
   const parent = at.slice(0, at.lastIndexOf("/") + 1);
   if (!listed.has(parent) || made.getItem(at) || made.getItem(`${at}/`)) return;
   const stat = await StatPath(data.path).catch(() => null);
-  if (!stat?.exists || (hideBinaries && BINARIES.test(at.slice(parent.length)))) return;
+  if (!stat?.exists || (hideBinaries && BINARY_EXTENSIONS.test(at.slice(parent.length)))) return;
   const path = stat.isDir ? `${at}/` : at;
   if (stat.isDir) folders.add(path);
   if (!made.getItem(path)) made.add(path);
@@ -327,9 +255,9 @@ onBeforeUnmount(stop);
 const { mutate: rename } = useMutation({
   mutation: ({ from, to }: { from: string; to: string }) => RenamePath(diskPath(from), diskPath(to)),
   onSuccess: (_data, { from, to }) => {
-    ide.moved(diskPath(from), diskPath(to));
-    done.push({ from: diskPath(from), to: diskPath(to) });
-    undone.length = 0;
+    const move = { from: diskPath(from), to: diskPath(to) };
+    editor.renameTabs(move.from, move.to);
+    editor.recordMove(move);
   },
   onError: (_error, { from, to }) => tree.value?.move(to, from),
 });
@@ -351,7 +279,7 @@ async function create(dir: string, isFolder: boolean): Promise<void> {
   const stop = made.onMutation("remove", (event) => {
     if (event.path !== path) return;
     stop();
-    void DeletePath(diskPath(path)).then(() => ide.moved(diskPath(path)));
+    void DeletePath(diskPath(path)).then(() => editor.closeTabs(diskPath(path)));
   });
   made.startRenaming(path, { removeIfCanceled: true });
 }
@@ -388,13 +316,13 @@ const menu = computed<ContextMenuItem[][]>(() => {
   const windowed = windowOf(path);
   const selected = (tree.value?.getSelectedPaths() ?? []).filter((p) => !p.endsWith("/"));
   const file = path.endsWith("/") ? "" : diskPath(path);
-  const picked = ide.comparing;
+  const picked = editor.comparing;
   // a mod's own folder in no repository is made one (O-R61), and source control shown
   const bare = root ? git.bare.find((mod) => pathKey(mod.path) === pathKey(diskPath(path))) : undefined;
   return [
     file
       ? [
-          { label: "Open to the side", icon: "i-lucide-columns-2", onSelect: () => ide.split("right", file) },
+          { label: "Open to the side", icon: "i-lucide-columns-2", onSelect: () => editor.split("right", file) },
           { label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void newWindowWith(file) },
         ]
       : windowed
@@ -427,7 +355,7 @@ const menu = computed<ContextMenuItem[][]>(() => {
       : [],
     file
       ? [
-          { label: "Select for compare", onSelect: () => (ide.comparing = file) },
+          { label: "Select for compare", onSelect: () => (editor.comparing = file) },
           {
             label: "Compare with selected",
             disabled: !picked || picked === file,
@@ -450,7 +378,7 @@ const menu = computed<ContextMenuItem[][]>(() => {
             icon: "i-lucide-git-branch-plus",
             onSelect: () => {
               git.initialize(bare);
-              ide.sidebar = "git";
+              editor.sidebar = "git";
             },
           },
         ]
@@ -466,7 +394,7 @@ const menu = computed<ContextMenuItem[][]>(() => {
 const folderWindows = computed(
   () =>
     new Map(
-      [...others.values()]
+      [...windows.otherWindows.values()]
         .filter((one) => one.name.startsWith("files:"))
         .flatMap((one) => (one.roots ?? []).map((root) => [pathKey(root), one.name])),
     ),
@@ -476,7 +404,7 @@ const windowOf = (path: string) => (path.endsWith("/") ? folderWindows.value.get
 // the marks follow the windows as they open and close (the tree draws its rows again)
 watch(
   () => [...folderWindows.value.keys()].join("|"),
-  () => tree.value?.setIcons(ICONS),
+  () => tree.value?.setIcons(TREE_ICONS),
 );
 /** A click on a folder's window mark brings that window up, and leaves the folder as it was. */
 function showFolderWindow(e: MouseEvent): void {
@@ -496,21 +424,14 @@ function openFolderWindow(path: string): void {
   void openFilesWindow(`files:${disk}`, path.replace(/\/$/, "").split("/").at(-1) ?? disk, [disk]);
 }
 
-/** Move the last rename, move or delete back, or do it again; a delete done again closes its tabs. */
-async function replay(back: boolean): Promise<void> {
-  const step = (back ? done : undone).pop();
-  if (!step) return;
-  const [from, to] = back ? [step.to, step.from] : [step.from, step.to];
-  await RenamePath(from, to);
-  ide.moved(from, step.deleted && !back ? undefined : to);
-  (back ? undone : done).push(step);
-}
+// Ctrl Z moves the last rename, move or delete back, Ctrl Y or Ctrl Shift Z does it again
 function onKey(e: KeyboardEvent): void {
   const key = e.key.toLowerCase();
   if (!e.ctrlKey || (key !== "z" && key !== "y") || e.composedPath().some((el) => el instanceof HTMLInputElement))
     return;
   e.preventDefault();
-  void replay(key === "z" && !e.shiftKey);
+  if (key === "z" && !e.shiftKey) editor.undoMove();
+  else editor.redoMove();
 }
 
 /** Delete a path once asked, into PMT's trash; a mod's own folder (its only slash the last) also leaves the workspace. */
@@ -523,11 +444,8 @@ const { mutate: remove } = useMutation({
     const owner = rootOf(path);
     const trashed = await TrashPath(disk);
     tree.value?.remove(path, { recursive: true });
-    ide.moved(disk);
-    if (!root) {
-      done.push({ from: disk, to: trashed, deleted: true });
-      undone.length = 0;
-    }
+    editor.closeTabs(disk);
+    if (!root) editor.recordMove({ from: disk, to: trashed, deleted: true });
     if (owner?.kind === "mod") saveWorkspace(() => RemoveWorkspaceMod(workspaceId, owner.origin ?? ""));
   },
 });

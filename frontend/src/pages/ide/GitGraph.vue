@@ -10,14 +10,15 @@ import { useQuery } from "@pinia/colada";
 import { useInfiniteScroll } from "@vueuse/core";
 import type { GitCommit } from "@services/models";
 import { gitCommitFilesQuery } from "../../queries";
-import { useGitStore } from "../../stores/git";
-import { diffTab, useIdeStore } from "../../stores/ide";
+import { GIT_LETTERS, useGitStore } from "../../stores/git";
+import { useEditorStore } from "../../stores/editor";
+import { diffTab } from "../../editor/tabs";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginDot from "../../ui/OriginDot.vue";
 
 const git = useGitStore();
-const ide = useIdeStore();
+const editor = useEditorStore();
 const settings = useSettingsStore();
 const store = useWorkspaceStore();
 
@@ -110,7 +111,6 @@ useInfiniteScroll(list, git.loadMore, { distance: 80, canLoadMore: () => git.has
 
 const ROW =
   "group flex h-(--row) w-full cursor-pointer items-center gap-2 pe-2.5 text-start whitespace-nowrap text-toned hover:bg-elevated";
-const LETTERS: Record<string, string> = { A: "text-success", M: "text-warning", R: "text-info", D: "text-error" };
 </script>
 
 <template>
@@ -156,7 +156,7 @@ const LETTERS: Record<string, string> = { A: "text-success", M: "text-warning", 
           v-for="change in files"
           :key="change.path"
           :class="ROW"
-          @click="ide.open(diffTab('commit', change.path, row.commit.hash))"
+          @click="editor.open(diffTab('commit', change.path, row.commit.hash))"
         >
           <svg :width="width" :height="settings.treeRow" class="shrink-0" aria-hidden="true">
             <path
@@ -172,7 +172,7 @@ const LETTERS: Record<string, string> = { A: "text-success", M: "text-warning", 
             ><span class="text-highlighted">{{ change.name }}</span>
             <span class="text-dimmed">{{ change.folder }}</span></span
           >
-          <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="LETTERS[change.letter]">{{
+          <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="GIT_LETTERS[change.letter]?.color">{{
             change.letter
           }}</b>
         </div>

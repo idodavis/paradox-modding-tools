@@ -12,7 +12,8 @@ import { useLocalStorage, useTimeAgo } from "@vueuse/core";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import type { Listing, ListingChange } from "@services/models";
 import { DownloadFromSteam } from "@services/releaseservice";
-import { COMPARE_STYLES, compareStyle, diffView, monaco } from "../../lib/monaco";
+import { compareStyle, diffView, monaco } from "../../lib/monaco";
+import CompareStyle from "../../ui/CompareStyle.vue";
 import { compareQuery, releaseKeys, textQuery, uploadFilesQuery } from "../../queries";
 import { day, list, plural } from "../../lib/format";
 import { useSettingsStore } from "../../stores/settings";
@@ -238,12 +239,7 @@ const { mutate: download, isLoading: downloading } = useMutation({
             {{ steam.changes }} differences: {{ changedFields }} in the listing, {{ files.length }} in files
           </span>
           <span class="grow" />
-          <UTabs
-            :model-value="style"
-            :items="COMPARE_STYLES"
-            :content="false"
-            @update:model-value="style = $event === 'unified' ? 'unified' : 'split'"
-          />
+          <CompareStyle />
         </div>
         <p v-if="!steam" class="text-13 text-dimmed">Reading what Steam has…</p>
         <p v-else-if="!steam.item" class="text-13 text-dimmed">

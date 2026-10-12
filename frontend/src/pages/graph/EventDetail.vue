@@ -10,7 +10,7 @@ import { createReusableTemplate, useClipboard } from "@vueuse/core";
 import type { Cited, Detail, Version } from "@services/internal/pages/models";
 import type { Fire } from "@services/internal/workspace/models";
 import { kindOf } from "../../composables/useEventGraph";
-import { useIdeStore } from "../../stores/ide";
+import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { capital, countKinds, plural } from "../../lib/format";
 import LocQuote from "../../ui/LocQuote.vue";
@@ -22,7 +22,7 @@ import SourceLink from "../../ui/SourceLink.vue";
 const { detail, isRoot } = defineProps<{ detail: Detail; isRoot: boolean }>();
 const emit = defineEmits<{ close: []; root: [id: string] }>();
 const store = useWorkspaceStore();
-const ide = useIdeStore();
+const editor = useEditorStore();
 const { copy, copied } = useClipboard();
 
 const kind = computed(() => kindOf(detail.kind));
@@ -136,7 +136,7 @@ const tabs = computed(() => [
 
 /** Open a line of a file in the IDE. */
 function open(path: string, line: number): void {
-  ide.open(path, { line });
+  editor.open(path, { line });
 }
 </script>
 

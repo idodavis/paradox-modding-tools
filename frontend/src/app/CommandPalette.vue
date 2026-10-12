@@ -1,18 +1,3 @@
-<script lang="ts">
-import { shallowRef } from "vue";
-
-/** Whether the palette is open, and what its search starts with: ">" commands, "" files, "@" symbols, "#" events and
- * localization keys. */
-export const paletteOpen = shallowRef(false);
-const start = shallowRef("> ");
-
-/** Open the palette: the top bar's search, Ctrl K and Ctrl Shift P on commands, Ctrl P on files. */
-export function openPalette(prefix: "> " | "" = "> "): void {
-  start.value = prefix;
-  paletteOpen.value = true;
-}
-</script>
-
 <script setup lang="ts">
 /**
  * The command palette (the CommandPalette and PaletteSettings boards) on every page. After ">", the pages, the
@@ -20,21 +5,22 @@ export function openPalette(prefix: "> " | "" = "> "): void {
  * opens the page or the card that sets it. Without it, the workspace's files; after "@", the open file's names; after
  * "#", events and on_actions, the game's included, and the localization keys starting with what is typed.
  */
-import { computed, watch } from "vue";
+import { computed, shallowRef, watch } from "vue";
 import { useRouter, type RouteLocationRaw } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useFuse } from "@vueuse/integrations/useFuse";
 import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
 import { GetEventDetail } from "@services/eventgraphservice";
 import { Hover } from "@services/ideservice";
-import { SWITCHES, ideSettingsOpen } from "../pages/ide/IdeSettingsCard.vue";
 import UnsavedChangesModal from "../ui/UnsavedChangesModal.vue";
 import { useCompare } from "../composables/useCompare";
 import { useIdeRoots } from "../composables/useIdeRoots";
 import { codesQuery, filesQuery, locQuery, rootsQuery, symbolsQuery, workspacesQuery } from "../queries";
 import { useGitStore } from "../stores/git";
-import { diffTab, useIdeStore } from "../stores/ide";
-import { useSettingsStore } from "../stores/settings";
+import { useCommandsStore } from "../stores/commands";
+import { useEditorStore } from "../stores/editor";
+import { diffTab } from "../editor/tabs";
+import { IDE_SWITCH_ROWS, useSettingsStore } from "../stores/settings";
 import { updatePrefs, useWorkspaceStore } from "../stores/workspace";
 import { PAGES, SETTINGS, SETTINGS_SECTIONS, WORKSPACE_TOOLS, workspaceHomeRoute, type SettingSwitch } from "./pages";
 
@@ -44,7 +30,8 @@ const settings = useSettingsStore();
 const { mutate: savePrefs } = useMutation({ mutation: updatePrefs });
 const { data: workspaces } = useQuery(workspacesQuery);
 const { data: codes } = useQuery(codesQuery);
-const ide = useIdeStore();
+const editor = useEditorStore();
+const palette = useCommandsStore();
 const unsavedModal = useOverlay().create(UnsavedChangesModal);
 const git = useGitStore();
 const { roots, locate } = useIdeRoots(() => store.activeWorkspaceId);
@@ -52,7 +39,10 @@ const compare = useCompare(() => store.activeWorkspaceId);
 
 // the search, and what it looks through by its first character
 const term = shallowRef("> ");
-watch(paletteOpen, (open) => open && (term.value = start.value));
+watch(
+  () => palette.paletteOpen,
+  (open) => open && (term.value = palette.paletteStart),
+);
 const mode = computed(() =>
   term.value.startsWith(">")
     ? "commands"
@@ -68,22 +58,25 @@ type Item = CommandPaletteItem & { words?: string; scope?: string; on?: boolean;
 
 function go(to: RouteLocationRaw): void {
   void router.push(to);
-  paletteOpen.value = false;
+  palette.paletteOpen = false;
 }
 
 /** Show a place of a file in the IDE (a 0-based line and UTF-8 byte column). */
 function show(path: string, line = 0, col = 0): void {
-  paletteOpen.value = false;
-  ide.open(path, { line, col });
+  palette.paletteOpen = false;
+  editor.open(path, { line, col });
 }
 
 /** The IDE's editors, from their module, which loads with the IDE page. */
 const editors = () => import("../editor/monacoEditor");
 
 async function graphAtCaret(): Promise<void> {
-  const card = await Hover(store.activeWorkspaceId, ide.activeFile, ide.caret?.line ?? 0, ide.caret?.col ?? 0).catch(
-    () => null,
-  );
+  const card = await Hover(
+    store.activeWorkspaceId,
+    editor.activeFile,
+    editor.caret?.line ?? 0,
+    editor.caret?.col ?? 0,
+  ).catch(() => null);
   if (card?.graphed) go({ name: "event-graph", params: { id: store.activeWorkspaceId }, query: { root: card.word } });
 }
 
@@ -157,17 +150,15 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
         (on) => void settings.showTool(tool.name, on),
       ),
     ),
-    ...Object.values(SWITCHES)
-      .flat()
-      .map((row) =>
-        switchItem(
-          row.label,
-          row.key.startsWith("ui.wiki") ? "Wiki" : "IDE",
-          settings.on(row.key),
-          (on) => void settings.setOn(row.key, on),
-          row.hint,
-        ),
+    ...IDE_SWITCH_ROWS.map((row) =>
+      switchItem(
+        row.label,
+        row.key.startsWith("ui.wiki") ? "Wiki" : "IDE",
+        settings.on(row.key),
+        (on) => void settings.setOn(row.key, on),
+        row.hint,
       ),
+    ),
     ...(codes.value ?? []).map((check) =>
       switchItem(
         `Check: ${check.summary}`,
@@ -179,11 +170,11 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
     ),
   ];
   // the IDE's commands, on the file it shows
-  const active = ide.activeFile;
-  const [first, second] = ide.selected;
-  const picked = ide.comparing;
+  const active = editor.activeFile;
+  const [first, second] = editor.selected;
+  const picked = editor.comparing;
   const run = (fn: () => unknown) => () => {
-    paletteOpen.value = false;
+    palette.paletteOpen = false;
     void fn();
   };
   const compares: Item[] = [
@@ -193,7 +184,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
             label: "Select the active file for compare",
             prefix: "Compare:",
             icon: "i-lucide-diff",
-            onSelect: run(() => (ide.comparing = active)),
+            onSelect: run(() => (editor.comparing = active)),
           },
           ...(picked && picked !== active
             ? [
@@ -211,7 +202,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
                   label: "Active file with the last commit",
                   prefix: "Compare:",
                   icon: "i-lucide-git-compare",
-                  onSelect: run(() => ide.open(diffTab("changes", active))),
+                  onSelect: run(() => editor.open(diffTab("changes", active))),
                 },
               ]
             : []),
@@ -240,7 +231,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
     label: "Reload the window",
     icon: "i-lucide-refresh-cw",
     onSelect: async () => {
-      if (!ide.unsaved.size || (await unsavedModal.open({ going: "Reloading the window" }))) location.reload();
+      if (!editor.unsaved.size || (await unsavedModal.open({ going: "Reloading the window" }))) location.reload();
     },
   };
   const commands: Item[] = !id
@@ -269,27 +260,32 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
                 prefix: "IDE:",
                 icon: "i-lucide-save",
                 kbds: ["Ctrl S"],
-                onSelect: run(async () => (await editors()).saveFile(active)),
+                onSelect: run(() => editor.save([active])),
               },
               {
                 label: "Save all",
                 prefix: "IDE:",
                 icon: "i-lucide-save-all",
-                onSelect: run(async () => (await editors()).saveAll()),
+                onSelect: run(() => editor.save()),
               },
               {
                 label: "Split right",
                 prefix: "IDE:",
                 icon: "i-lucide-columns-2",
                 kbds: ["Ctrl \\"],
-                onSelect: run(() => ide.split("right")),
+                onSelect: run(() => editor.split("right")),
               },
-              { label: "Split down", prefix: "IDE:", icon: "i-lucide-rows-2", onSelect: run(() => ide.split("down")) },
+              {
+                label: "Split down",
+                prefix: "IDE:",
+                icon: "i-lucide-rows-2",
+                onSelect: run(() => editor.split("down")),
+              },
               {
                 label: "Move the editor into the next group",
                 prefix: "IDE:",
                 icon: "i-lucide-arrow-right-to-line",
-                onSelect: run(() => ide.moveToNext()),
+                onSelect: run(() => editor.moveTabToNextGroup()),
               },
             ]
           : []),
@@ -299,16 +295,16 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
           icon: "i-lucide-search",
           kbds: ["Ctrl Shift F"],
           onSelect: () => {
-            ide.sidebar = "search";
+            editor.sidebar = "search";
             go({ name: "workspace-ide", params: { id } });
           },
         },
         {
-          label: ide.wikiOpen ? "Hide the Wiki pane" : "Show the Wiki pane",
+          label: editor.wikiOpen ? "Hide the Wiki pane" : "Show the Wiki pane",
           prefix: "IDE:",
           icon: "i-lucide-book-open",
           kbds: ["Ctrl Shift W"],
-          onSelect: run(() => (ide.wikiOpen = !ide.wikiOpen)),
+          onSelect: run(() => (editor.wikiOpen = !editor.wikiOpen)),
         },
       ];
   // a value opens where it is set: the IDE's settings card, or the settings page at its section
@@ -329,7 +325,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
           onSelect: () => {
             if (section) return go(settingsAt(setting.section));
             go({ name: "workspace-ide", params: { id } });
-            ideSettingsOpen.value = true;
+            editor.ideSettingsOpen = true;
           },
         };
       });
@@ -369,7 +365,7 @@ const { data: files } = useQuery(() =>
   }),
 );
 const { data: symbols } = useQuery(() =>
-  symbolsQuery({ id: id.value, path: mode.value === "symbols" ? ide.activeFile : "" }),
+  symbolsQuery({ id: id.value, path: mode.value === "symbols" ? editor.activeFile : "" }),
 );
 const { data: events } = useQuery(() =>
   rootsQuery({ id: id.value, search: query.value, live: mode.value === "events" && !!query.value }),
@@ -431,7 +427,7 @@ const lists = computed((): CommandPaletteGroup<Item>[] => {
 </script>
 
 <template>
-  <UModal v-model:open="paletteOpen" :ui="{ content: 'top-14 translate-y-0 sm:max-w-160' }">
+  <UModal v-model:open="palette.paletteOpen" :ui="{ content: 'top-14 translate-y-0 sm:max-w-160' }">
     <template #content>
       <UCommandPalette
         v-model:search-term="term"
@@ -439,7 +435,7 @@ const lists = computed((): CommandPaletteGroup<Item>[] => {
         placeholder="Search files, or > for commands and settings"
         :close="true"
         class="max-h-120"
-        @update:open="paletteOpen = false"
+        @update:open="palette.paletteOpen = false"
       >
         <template #close>
           <UKbd value="Esc" />

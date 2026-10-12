@@ -12,17 +12,18 @@ import { useQuery } from "@pinia/colada";
 import { refDebounced } from "@vueuse/core";
 import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
-import { newWindowWith, saveAll, saveFile, sendTab } from "../../editor/monacoEditor";
+import { newWindowWith, sendTab } from "../../editor/monacoEditor";
 import { useCompare } from "../../composables/useCompare";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { hoverQuery, replacedQuery } from "../../queries";
-import { IMAGES, tabOf, useIdeStore, viewsOf, type Edge } from "../../stores/ide";
+import { useEditorStore, type Edge } from "../../stores/editor";
+import { IMAGES, tabOf, viewsOf } from "../../editor/tabs";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { Close } from "@services/windowservice";
-import { isMain, placing, windowName, windowPart } from "../../stores/windows";
+import { isMain, useWindowsStore, windowName, windowPart } from "../../stores/windows";
 import { fileName } from "../../lib/format";
 import UnsavedChangesModal from "../../ui/UnsavedChangesModal.vue";
-import { iconOf } from "./ExplorerTree.vue";
+import { iconOf } from "./fileKinds";
 import CodeEditor from "./CodeEditor.vue";
 import GitDiff from "./GitDiff.vue";
 import ImageView from "./ImageView.vue";
@@ -30,12 +31,13 @@ import OriginDot from "../../ui/OriginDot.vue";
 
 const { workspaceId, groupId } = defineProps<{ workspaceId: string; groupId: number }>();
 
-const ide = useIdeStore();
+const editor = useEditorStore();
+const windows = useWindowsStore();
 const store = useWorkspaceStore();
 const { locate } = useIdeRoots(() => workspaceId);
 const compare = useCompare(() => workspaceId);
 
-const group = computed(() => ide.group(groupId));
+const group = computed(() => editor.group(groupId));
 const active = computed(() => group.value?.active ?? "");
 const diff = computed(() => tabOf(active.value).diff);
 const located = computed(() => locate(active.value));
@@ -51,25 +53,25 @@ function name(tab: string): string {
 function show(path: string): void {
   if (!group.value) return;
   group.value.active = path;
-  ide.focused = groupId;
+  editor.focused = groupId;
 }
 
 // a file's last tab (its own or a diff) closed with unsaved edits asks first, shown so its editor can save
 const unsavedModal = useOverlay().create(UnsavedChangesModal);
 async function close(tab: string): Promise<void> {
   const { file } = tabOf(tab);
-  const elsewhere = ide.groups.some((one) =>
-    one.files.some((other) => tabOf(other).file === file && (other !== tab || one.id !== groupId)),
+  const elsewhere = editor.groups.some((one) =>
+    one.tabs.some((other) => tabOf(other).file === file && (other !== tab || one.id !== groupId)),
   );
-  if (elsewhere || !ide.unsaved.has(file)) return ide.closeIn(groupId, tab);
+  if (elsewhere || !editor.unsaved.has(file)) return editor.closeTab(groupId, tab);
   show(tab);
-  if (await unsavedModal.open({ files: [file], going: "Closing it" })) ide.closeIn(groupId, tab);
+  if (await unsavedModal.open({ files: [file], going: "Closing it" })) editor.closeTab(groupId, tab);
 }
 
 // closing many tabs closes all but the unsaved, which stay to be saved or closed one at a time
 function closeAll(keep?: string): void {
-  for (const tab of [...(group.value?.files ?? [])])
-    if (tab !== keep && !ide.unsaved.has(tabOf(tab).file)) ide.closeIn(groupId, tab);
+  for (const tab of [...(group.value?.tabs ?? [])])
+    if (tab !== keep && !editor.unsaved.has(tabOf(tab).file)) editor.closeTab(groupId, tab);
 }
 const actions = computed<DropdownMenuItem[]>(() => [
   { label: "Close the others", onSelect: () => closeAll(active.value) },
@@ -78,12 +80,12 @@ const actions = computed<DropdownMenuItem[]>(() => [
 
 /** A tab's menu: save and close it, split it off, compare its file. */
 function tabMenu(tab: string): ContextMenuItem[][] {
-  const picked = ide.comparing;
+  const picked = editor.comparing;
   const path = tabOf(tab).file;
   return [
     [
-      { label: "Save", kbds: ["Ctrl S"], disabled: !ide.unsaved.has(path), onSelect: () => void saveFile(path) },
-      { label: "Save all", disabled: !ide.unsaved.size, onSelect: () => void saveAll() },
+      { label: "Save", kbds: ["Ctrl S"], disabled: !editor.unsaved.has(path), onSelect: () => editor.save([path]) },
+      { label: "Save all", disabled: !editor.unsaved.size, onSelect: () => editor.save() },
     ],
     [
       { label: "Close", onSelect: () => close(tab) },
@@ -95,13 +97,13 @@ function tabMenu(tab: string): ContextMenuItem[][] {
         label: "Split right",
         icon: "i-lucide-columns-2",
         kbds: ["Ctrl \\"],
-        onSelect: () => ide.split("right", tab, groupId),
+        onSelect: () => editor.split("right", tab, groupId),
       },
-      { label: "Split down", icon: "i-lucide-rows-2", onSelect: () => ide.split("down", tab, groupId) },
+      { label: "Split down", icon: "i-lucide-rows-2", onSelect: () => editor.split("down", tab, groupId) },
     ],
     [
       { label: "Compare with the game's copy", disabled: readOnly(path), onSelect: () => void compare.withGame(path) },
-      { label: "Select for compare", onSelect: () => (ide.comparing = path) },
+      { label: "Select for compare", onSelect: () => (editor.comparing = path) },
       {
         label: picked && picked !== path ? `Compare with ${name(picked)}` : "Compare with selected",
         disabled: !picked || picked === path,
@@ -148,14 +150,14 @@ function scrollTabs(e: WheelEvent): void {
 const TAB = "application/x-pmt-tab";
 const GAME = "application/x-pmt-game";
 function startDrag(e: DragEvent, path: string): void {
-  ide.dragging = { path, from: groupId };
+  editor.dragging = { tab: path, sourceGroup: groupId };
   e.dataTransfer?.setData(TAB, path);
   if (readOnly(tabOf(path).file)) e.dataTransfer?.setData(GAME, "");
   if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
 }
 // dropped outside this window where no window took it: a new window of its own
 function endDrag(e: DragEvent, path: string): void {
-  ide.dragging = null;
+  editor.dragging = null;
   const out =
     e.screenX < window.screenX ||
     e.screenX > window.screenX + window.outerWidth ||
@@ -171,11 +173,11 @@ const takes = (e: DragEvent) =>
 const over = shallowRef(false);
 const landing = shallowRef<string | null>();
 const zone = shallowRef<Edge | null>(null);
-function hover(e: DragEvent, before?: string | null): void {
+function hover(e: DragEvent, nextTab?: string | null): void {
   if (!takes(e)) return;
   e.preventDefault();
   over.value = true;
-  if (before !== undefined) landing.value = before;
+  if (nextTab !== undefined) landing.value = nextTab;
 }
 function leave(e: DragEvent): void {
   if (e.currentTarget instanceof Node && e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))
@@ -186,18 +188,18 @@ function leave(e: DragEvent): void {
 }
 // a tab dropped on a tab goes before it, on the strip after the last; on the editor, where its zone says; one from
 // another window (none dragged here) is asked of the window holding it, and placed when it comes
-function dropTab(e: DragEvent, edge: Edge, before?: string): void {
-  const dragged = ide.dragging;
+function dropTab(e: DragEvent, edge: Edge, nextTab?: string): void {
+  const dragged = editor.dragging;
   const tab = e.dataTransfer?.getData(TAB);
-  ide.dragging = null;
+  editor.dragging = null;
   over.value = false;
   landing.value = undefined;
   zone.value = null;
   if (!tab || !takes(e)) return;
   e.preventDefault();
-  if (dragged) return ide.drop(dragged.path, dragged.from, groupId, edge, before);
-  placing.set(tab, { group: groupId, edge, before });
-  ide.focused = groupId;
+  if (dragged) return editor.drop(dragged.tab, dragged.sourceGroup, groupId, edge, nextTab);
+  windows.placing.set(tab, { group: groupId, edge, nextTab });
+  editor.focused = groupId;
   void sendTab(windowName, tab);
 }
 function zoneAt(e: DragEvent): void {
@@ -219,7 +221,7 @@ const ZONES: Record<Edge, string> = {
 
 // the breadcrumb's end: where the caret rests, read a moment after it stops
 const caret = refDebounced(
-  computed(() => (ide.focused === groupId ? ide.caret : null)),
+  computed(() => (editor.focused === groupId ? editor.caret : null)),
   300,
 );
 const { data: card } = useQuery(() => ({
@@ -240,15 +242,15 @@ const views = computed(() => {
   );
 });
 function setView(view: string | number): void {
-  ide.views.set(active.value, view === "visual" ? "visual" : "code");
+  editor.views.set(active.value, view === "visual" ? "visual" : "code");
 }
-const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.value) === "visual");
+const image = computed(() => IMAGES.test(active.value) && editor.viewOf(active.value) === "visual");
 </script>
 
 <template>
   <section
     class="flex min-h-0 min-w-0 flex-1 flex-col"
-    @pointerdown="ide.focused = groupId"
+    @pointerdown="editor.focused = groupId"
     @dragover="hover($event)"
     @dragleave="leave"
   >
@@ -264,7 +266,7 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
         class="flex min-w-0 items-start overflow-x-auto overflow-y-hidden [scrollbar-color:auto] [scrollbar-width:auto]"
         @wheel.passive="scrollTabs"
       >
-        <UContextMenu v-for="path in group?.files" :key="path" :items="tabMenu(path)" :ui="{ content: 'w-64' }">
+        <UContextMenu v-for="path in group?.tabs" :key="path" :items="tabMenu(path)" :ui="{ content: 'w-64' }">
           <div
             :data-tab="path"
             draggable="true"
@@ -298,7 +300,7 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
             <!-- an unsaved tab's dot turns into its close button under the pointer -->
             <span class="flex size-5 shrink-0 items-center justify-center">
               <span
-                v-if="ide.unsaved.has(tabOf(path).file)"
+                v-if="editor.unsaved.has(tabOf(path).file)"
                 class="size-1.5 rounded-full bg-(--fg-2) group-hover:hidden"
               />
               <UButton
@@ -308,7 +310,7 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
                 square
                 aria-label="Close"
                 :class="
-                  ide.unsaved.has(tabOf(path).file)
+                  editor.unsaved.has(tabOf(path).file)
                     ? 'hidden group-hover:flex'
                     : path === active
                       ? ''
@@ -331,13 +333,13 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
             square
             aria-label="Split right"
             :disabled="!active"
-            @click="ide.split('right', active, groupId)"
+            @click="editor.split('right', active, groupId)"
           />
         </UTooltip>
         <UDropdownMenu :items="actions">
           <UButton icon="i-lucide-ellipsis" variant="ghost" size="sm" square aria-label="Tab actions" />
         </UDropdownMenu>
-        <template v-if="isMain && groupId === ide.cornerGroup">
+        <template v-if="isMain && groupId === editor.cornerGroup">
           <USeparator orientation="vertical" class="mx-1 h-4" />
           <UTooltip text="Wiki pane" :kbds="['Ctrl Shift W']">
             <UButton
@@ -345,9 +347,9 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
               icon="i-lucide-book-open"
               size="xs"
               color="primary"
-              :variant="ide.wikiOpen ? 'soft' : 'outline'"
-              :aria-pressed="ide.wikiOpen"
-              @click="ide.wikiOpen = !ide.wikiOpen"
+              :variant="editor.wikiOpen ? 'soft' : 'outline'"
+              :aria-pressed="editor.wikiOpen"
+              @click="editor.wikiOpen = !editor.wikiOpen"
             />
           </UTooltip>
         </template>
@@ -374,7 +376,7 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
       </template>
       <UTabs
         v-if="views"
-        :model-value="ide.viewOf(active)"
+        :model-value="editor.viewOf(active)"
         :items="views"
         :content="false"
         size="xs"
@@ -390,7 +392,7 @@ const image = computed(() => IMAGES.test(active.value) && ide.viewOf(active.valu
       </div>
       <!-- while a tab is dragged: where it would go -->
       <div
-        v-if="ide.dragging || over"
+        v-if="editor.dragging || over"
         class="absolute inset-0 z-20"
         @dragover="zoneAt"
         @dragleave="zone = null"

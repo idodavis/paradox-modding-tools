@@ -4,7 +4,7 @@
  * handle between each two that moves the room between them; the parts' shares are the layout's own sizes.
  */
 import { computed } from "vue";
-import type { Layout } from "../../stores/ide";
+import type { Layout } from "../../stores/editor";
 import EditorGroup from "./EditorGroup.vue";
 
 const { node, workspaceId } = defineProps<{ node: Layout; workspaceId: string }>();

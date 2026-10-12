@@ -5,9 +5,9 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import { Events } from "@wailsio/runtime";
 import UnsavedChangesModal from "../ui/UnsavedChangesModal.vue";
-import { useIdeStore } from "../stores/ide";
+import { useEditorStore } from "../stores/editor";
 import { useWorkspaceStore } from "../stores/workspace";
-import { dock, isMain, others } from "../stores/windows";
+import { isMain, useWindowsStore } from "../stores/windows";
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -62,8 +62,15 @@ const unsavedModal = useOverlay().create(UnsavedChangesModal);
 router.beforeEach(async (to, from) => {
   // a window of one thing sends a link to another page to the main window, and the main window one to a page in a
   // window of its own there
+  const windows = useWindowsStore();
   const page = `page:${String(to.name)}`;
-  const elsewhere = isMain ? (others.has(page) ? page : "") : from.name && to.name !== from.name ? "main" : "";
+  const elsewhere = isMain
+    ? windows.otherWindows.has(page)
+      ? page
+      : ""
+    : from.name && to.name !== from.name
+      ? "main"
+      : "";
   if (elsewhere) {
     void Events.Emit("window:show", { to: elsewhere, route: to.fullPath, path: "", line: -1, col: 0 });
     return false;
@@ -71,9 +78,16 @@ router.beforeEach(async (to, from) => {
   if (!("id" in to.params)) return;
   // another workspace's files would take the editors' place: the editor windows hand theirs back, then the unsaved
   // edits are saved or dropped, or we stay
-  const ide = useIdeStore();
-  if (isMain && ide.editing && to.params.id !== ide.editing) await dock((one) => one.name.startsWith("editor:"));
-  if (ide.unsaved.size && ide.editing && to.params.id !== ide.editing && !(await unsavedModal.open())) return false;
+  const editor = useEditorStore();
+  if (isMain && editor.editingWorkspaceId && to.params.id !== editor.editingWorkspaceId)
+    await windows.dock((one) => one.name.startsWith("editor:"));
+  if (
+    editor.unsaved.size &&
+    editor.editingWorkspaceId &&
+    to.params.id !== editor.editingWorkspaceId &&
+    !(await unsavedModal.open())
+  )
+    return false;
   useWorkspaceStore().select(to.params.id);
 });
 

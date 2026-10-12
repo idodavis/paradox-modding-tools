@@ -1,30 +1,24 @@
 /**
  * Go's events, subscribed once at startup (main.ts, in the app's context): each refreshes the queries it
  * changes. The IDE's own subscriptions (fs:changed to its explorer, search:hits to its search) stay in the
- * components that draw them. Then the windows' (windows.ts): what each holds, its title, the tabs handed between
- * them, a file or a link shown in another, and what one saved, which the others read again.
+ * components that draw them; the windows store answers the events about windows, and what follows here is the tabs
+ * handed between them and the results one shows another.
  */
-import { computed, watch } from "vue";
-import type { Router } from "vue-router";
+import { watch } from "vue";
 import { useQueryCache } from "@pinia/colada";
 import { Events, Window } from "@wailsio/runtime";
-import { useDebounceFn, watchDebounced } from "@vueuse/core";
-import type { WindowHeld } from "@services/models";
+import { useDebounceFn } from "@vueuse/core";
 import { scans } from "../composables/useLanguageHealth";
 import { fileKeys, installKeys, languageKeys, sessionKeys, wikiKeys, workspaceKeys } from "../queries";
+import { useEditorStore } from "../stores/editor";
 import { useGitStore } from "../stores/git";
-import { useIdeStore } from "../stores/ide";
 import { useSettingsStore } from "../stores/settings";
-import { useWorkspaceStore } from "../stores/workspace";
-import { QuitAnswer, Show } from "@services/windowservice";
-import UnsavedChangesModal from "../ui/UnsavedChangesModal.vue";
-import { dock, held, holdsFiles, isMain, others, receiveTabs, roots, windowName, windowPart } from "../stores/windows";
-import { fileName } from "../lib/format";
-import { PAGES } from "./pages";
+import { holdsFiles, isMain, useWindowsStore, windowName } from "../stores/windows";
 
-export function subscribeEvents(router: Router): void {
+export function subscribeEvents(): void {
   const queryCache = useQueryCache();
   const toast = useToast();
+  const settings = useSettingsStore();
   Events.On("lang:scan-progress", ({ data }) => {
     scans.set(data.installId, { percent: data.percent, stage: data.stage });
   });
@@ -34,8 +28,8 @@ export function subscribeEvents(router: Router): void {
     scans.clear();
     void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
     void queryCache.invalidateQueries({ key: languageKeys.one(id) });
-    if (holdsFiles && useIdeStore().editing === id)
-      void import("../editor/monacoEditor").then((editor) => editor.rebuilt());
+    if (holdsFiles && useEditorStore().editingWorkspaceId === id)
+      void import("../editor/monacoEditor").then((models) => models.rebuilt());
   });
   // a session closed (its inputs changed, or another workspace opened): its state is read again, which builds it anew
   Events.On("lang:dropped", ({ data: id }) => {
@@ -70,68 +64,25 @@ export function subscribeEvents(router: Router): void {
     void queryCache.invalidateQueries({ key: fileKeys.image(data.path) });
     void gitChanged();
   });
-  Events.On("git:output", ({ data }) => git.told(data));
+  Events.On("git:output", ({ data }) => git.appendOutput(data));
   Events.On("wiki:updated", ({ data }) => {
     void queryCache.invalidateQueries({ key: wikiKeys.all });
     if (data.error) toast.add({ title: "Wiki fetch failed", description: data.error, color: "error" });
   });
 
-  const ide = useIdeStore();
-  const store = useWorkspaceStore();
-  const unsavedModal = useOverlay().create(UnsavedChangesModal);
-  const settings = useSettingsStore();
-  const route = router.currentRoute;
-  // a window's title: what it shows, then its workspace
-  const title = computed(() => {
-    const workspace = store.activeWorkspace;
-    const of = (what: string) => (workspace ? `${what}, ${workspace.name}` : what);
-    const file = fileName(ide.activeFile);
-    if (windowPart === "game") return `Game files, ${store.game(workspace?.gameId ?? "")?.name ?? ""}`;
-    if (windowPart === "files") return of(fileName(windowName));
-    if (windowPart === "panel") return of("Panel");
-    if (windowPart === "editor") return of(file || "Editor");
-    if (windowPart === "page") return of(route.value.name ? PAGES[route.value.name].title : "");
-    return "Paradox Modding Tools";
-  });
-  if (!isMain) watch(title, (text) => void Window.SetTitle(text), { immediate: true });
+  const editor = useEditorStore();
+  const windows = useWindowsStore();
 
-  // what this window holds, told once ready (a window holding files when its editors are set up), and again when it
-  // changes while another window is open
-  const holding = computed<WindowHeld>(() => ({
-    name: windowName,
-    title: title.value,
-    roots: roots.value,
-    tabs: ide.openFiles,
-    unsaved: [...ide.unsaved],
-    problems: Object.fromEntries(ide.problems),
-  }));
-  const ready = computed(() => !holdsFiles || isMain || !!ide.editing);
-  const tell = () => ready.value && void Events.Emit("window:held", holding.value);
-  watchDebounced([holding, ready, () => others.size], () => others.size && tell(), { debounce: 100 });
-  // a window opened asks what the others hold
-  Events.On("window:hello", ({ data: name }) => name !== windowName && tell());
-  Events.On("window:held", ({ data }) => data.name !== windowName && held(data));
-  void Events.Emit("window:hello", windowName);
-  // a window closed: its tabs came back before; the panel shows here again
-  Events.On("window:closed", ({ data: name }) => {
-    others.delete(name);
-    if (name === "panel" && isMain) ide.panel ||= "problems";
-  });
-  // this window asked to close: its tabs go back to the main window first
+  // this window asked to close with files of its own: they go back to the main window first
   Events.On("window:closing", async ({ data: name }) => {
-    if (name !== windowName) return;
-    // the main window's close: the windows with unsaved files hand them here, then they are saved, dropped, or PMT stays
-    if (isMain) {
-      await dock((one) => !!one.unsaved?.length);
-      return void QuitAnswer(!ide.unsaved.size || (await unsavedModal.open({ going: "Closing PMT" })));
-    }
-    if (ide.openFiles.length)
-      await (await import("../editor/monacoEditor")).handOver("main", ide.openFiles, ide.activePath);
+    if (name !== windowName || isMain || !holdsFiles) return;
+    if (editor.openTabs.length)
+      await (await import("../editor/monacoEditor")).handOver("main", editor.openTabs, editor.activeTab);
     void Window.Close();
   });
   Events.On("window:tabs", ({ data }) => {
     if (data.to === windowName)
-      receiveTabs(
+      windows.receiveTabs(
         (data.tabs ?? []).map((one) => one.tab),
         async () => (await import("../editor/monacoEditor")).receive(data),
       );
@@ -140,59 +91,17 @@ export function subscribeEvents(router: Router): void {
   Events.On("window:give", async ({ data }) => {
     if (data.to === windowName) await (await import("../editor/monacoEditor")).handOver(data.window, [data.tab]);
   });
-  // an editor group's window whose last tab went (closed, or moved to another window) closes
-  if (windowPart === "editor")
-    watch(
-      () => ide.openFiles.length,
-      (count, was) => !count && was && void Window.Close(),
-    );
-  // this window asked to the front: at a link, or showing a file (in the IDE, in the main window)
-  Events.On("window:show", async ({ data }) => {
-    if (data.to !== windowName) return;
-    if (data.route) await router.push(data.route);
-    if (data.path) ide.open(data.path, data.line < 0 ? undefined : { line: data.line, col: data.col });
-    await Show(windowName);
-  });
 
-  // the panel's window shows every window's problems
-  if (windowPart === "panel") {
-    watch(others, () => {
-      ide.problems = new Map(
-        [...others.values()].flatMap((one) =>
-          Object.entries(one.problems ?? {}).map(([path, found]) => [path, found ?? []]),
-        ),
-      );
-    });
-  }
   // the main window's sidebar shows the Search results another window finds (its references)
   if (isMain) {
     Events.On("window:results", ({ data }) => {
-      ide.results = { ...data, rows: data.rows ?? [] };
-      ide.sidebar = "search";
+      editor.results = { ...data, rows: data.rows ?? [] };
+      editor.sidebar = "search";
     });
   } else if (holdsFiles) {
     watch(
-      () => ide.results,
+      () => editor.results,
       (results) => results && void Events.Emit("window:results", results),
-    );
-  }
-
-  // another window saved something config.json does not hold (config:changed tells of that): its repositories' state
-  // and Publish's files are read again
-  Events.On("window:changed", ({ data: name }) => {
-    if (name === windowName) return;
-    for (const key of [["git"], ["release"]]) void queryCache.invalidateQueries({ key });
-  });
-
-  // a window of one thing follows the main window to another workspace
-  if (!isMain) {
-    watch(
-      () => store.activeWorkspaceId,
-      (id) => {
-        const now = route.value;
-        if ("id" in now.params && now.params.id !== id)
-          void router.replace({ path: now.fullPath.replace(`/workspace/${now.params.id}`, `/workspace/${id}`) });
-      },
     );
   }
 }

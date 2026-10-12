@@ -3,7 +3,8 @@
  * Accept current, Accept incoming, Accept both and Compare (the file's two sides, from git's index).
  */
 import { monaco } from "../lib/monaco";
-import { diffTab, useIdeStore } from "../stores/ide";
+import { useEditorStore } from "../stores/editor";
+import { diffTab } from "./tabs";
 
 /** A conflict's marker lines, 1-based: <<<<<<<, ||||||| (a base, when git writes one), ======= and >>>>>>>. */
 type Conflict = { start: number; base?: number; middle: number; end: number };
@@ -74,7 +75,7 @@ monaco.editor.registerCommand(
     const found = shown.get(uri);
     const conflict = found?.conflicts.find((c) => c.start === line);
     if (!model || !found || !conflict) return;
-    if (take === "compare") return useIdeStore().open(diffTab("conflict", found.path));
+    if (take === "compare") return useEditorStore().open(diffTab("conflict", found.path));
     accept(model, conflict, take);
   },
 );

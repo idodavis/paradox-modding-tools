@@ -6,15 +6,26 @@
 import { computed, shallowRef, watch } from "vue";
 import { defineStore } from "pinia";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
+import type { GitStatus } from "@pierre/trees";
 import { Init } from "@services/gitservice";
 import type { GitOutput, GitRepository } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { gitAvailableQuery, gitBranchesQuery, gitKeys, gitLogQuery, gitReposQuery, gitStatusesQuery } from "../queries";
-import { useIdeStore } from "./ide";
+import { useEditorStore } from "./editor";
 import { useWorkspaceStore } from "./workspace";
 
+/** Each status letter's color in the change lists and its word in the explorer tree. */
+export const GIT_LETTERS: Record<string, { color: string; status: GitStatus }> = {
+  A: { color: "text-success", status: "added" },
+  U: { color: "text-success", status: "untracked" },
+  M: { color: "text-warning", status: "modified" },
+  R: { color: "text-info", status: "renamed" },
+  D: { color: "text-error", status: "deleted" },
+  "!": { color: "text-error", status: "modified" },
+};
+
 export const useGitStore = defineStore("git", () => {
-  const ide = useIdeStore();
+  const editor = useEditorStore();
   const workspace = useWorkspaceStore();
   const queryCache = useQueryCache();
 
@@ -31,7 +42,7 @@ export const useGitStore = defineStore("git", () => {
   // repositories are read)
   const picked = shallowRef("");
   watch(
-    () => repoOf(ide.activeFile)?.root,
+    () => repoOf(editor.activeFile)?.root,
     (root) => {
       if (root) picked.value = root;
     },
@@ -72,7 +83,7 @@ export const useGitStore = defineStore("git", () => {
 
   // the commands run, the newest last, the last few hundred
   const output = shallowRef<GitOutput[]>([]);
-  function told(line: GitOutput): void {
+  function appendOutput(line: GitOutput): void {
     output.value = [...output.value.slice(-299), line];
   }
 
@@ -105,7 +116,7 @@ export const useGitStore = defineStore("git", () => {
     loadMore,
     branches,
     output,
-    told,
+    appendOutput,
     refresh,
     run,
   };

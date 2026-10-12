@@ -10,11 +10,12 @@ import { useQuery } from "@pinia/colada";
 import { Stage, StageText, Unstage } from "@services/gitservice";
 import { openFile } from "../../editor/monacoEditor";
 import { useIdeRoots } from "../../composables/useIdeRoots";
-import { COMPARE_STYLES, compareStyle, diffView, languageOf, monaco } from "../../lib/monaco";
+import { compareStyle, diffView, languageOf, monaco } from "../../lib/monaco";
+import CompareStyle from "../../ui/CompareStyle.vue";
 import { capital } from "../../lib/format";
 import { gitTextQuery, textQuery } from "../../queries";
 import { useGitStore } from "../../stores/git";
-import { tabOf, type Diff } from "../../stores/ide";
+import { tabOf, type Diff } from "../../editor/tabs";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import OriginDot from "../../ui/OriginDot.vue";
@@ -189,13 +190,7 @@ const SIDES = computed<Record<Diff, [string, string]>>(() => ({
       <span class="grow" />
       <UBadge :label="`+${counts.added}`" color="success" size="sm" />
       <UBadge :label="`-${counts.removed}`" color="error" size="sm" />
-      <UTabs
-        :model-value="style"
-        :items="COMPARE_STYLES"
-        :content="false"
-        size="xs"
-        @update:model-value="style = $event === 'unified' ? 'unified' : 'split'"
-      />
+      <CompareStyle size="xs" />
       <template v-if="diff === 'changes'">
         <UButton
           label="Stage file"

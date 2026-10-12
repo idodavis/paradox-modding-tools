@@ -1,59 +1,15 @@
-<script lang="ts">
-import { shallowRef } from "vue";
-import type { IdeSwitch } from "../../stores/settings";
-
-/** Whether the card is open; the palette opens it. */
-export const ideSettingsOpen = shallowRef(false);
-
-/** Each tab's switches, with the board's words. */
-export const SWITCHES: Record<
-  "editor" | "language" | "explorer" | "wiki",
-  { key: IdeSwitch; label: string; hint: string }[]
-> = {
-  editor: [
-    { key: "ide.wordWrap", label: "Word wrap", hint: "Long lines wrap at the editor's edge" },
-    { key: "ide.closeBrackets", label: "Close brackets and quotes", hint: "Typing { adds the }" },
-    { key: "ide.minimap", label: "Minimap", hint: "The whole file in small at the editor's right edge" },
-    { key: "ide.indentGuides", label: "Indent guides", hint: "A line down each block's indentation" },
-    { key: "ide.bracketColors", label: "Bracket pair colors", hint: "Each depth of { } in its own color" },
-    { key: "ide.whitespace", label: "Show spaces and tabs", hint: "Off: only in the selection" },
-  ],
-  language: [
-    { key: "ide.folding", label: "Folding", hint: "A block's arrow in the gutter hides its lines" },
-    { key: "ide.hover", label: "Hover cards", hint: "What a word is, when the pointer rests on it" },
-    { key: "ide.complete", label: "Completion list while typing", hint: "Off: only Ctrl Space opens it" },
-    { key: "ide.predict", label: "Predicted text", hint: "The likeliest completion in grey; Tab takes it" },
-    { key: "ide.signature", label: "Signature help", hint: "What an effect or macro takes, while you fill it in" },
-  ],
-  explorer: [
-    {
-      key: "ide.stickyFolders",
-      label: "Sticky folders",
-      hint: "A folder's name stays on top while you scroll its files",
-    },
-    { key: "ide.gameFiles", label: "Game files section", hint: "The game's files, read only, under the mods" },
-    {
-      key: "ide.rootColors",
-      label: "Color each top folder",
-      hint: "A mod's or the game's folder in its color, as well as its bar",
-    },
-    { key: "ide.followFile", label: "Follow the open file", hint: "The explorer selects the file you switch to" },
-  ],
-  wiki: [{ key: "ui.wiki.follow", label: "Follow the open file", hint: "Suggests pages for the file you are editing" }],
-};
-</script>
-
 <script setup lang="ts">
 /**
  * The IDE's settings (the IdeSettings and IdeSettingsTabs boards, O-R22): a card opened in the middle of the window
  * (O-R50) from the gear at the end of the sidebar's row. Editor, Language, Checks, Explorer and Wiki; each applies
  * to every workspace and its tab resets to the defaults.
  */
-import { computed } from "vue";
+import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
 import { watchDebounced } from "@vueuse/core";
 import { codesQuery } from "../../queries";
-import { useSettingsStore } from "../../stores/settings";
+import { useEditorStore } from "../../stores/editor";
+import { switchesOf, useSettingsStore } from "../../stores/settings";
 import { TOAST_PREFS, useWikiPrefs } from "../../composables/useWikiPrefs";
 import SettingRow from "../../ui/SettingRow.vue";
 
@@ -62,6 +18,7 @@ type Tab = (typeof TABS)[number];
 const isTab = (value: string | number): value is Tab => TABS.some((name) => name === value);
 
 const settings = useSettingsStore();
+const editor = useEditorStore();
 const { toastPref, setToastPref } = useWikiPrefs();
 const tab = shallowRef<Tab>("editor");
 
@@ -115,12 +72,12 @@ function resetTab(): void {
       "ui.editorFontSize",
       "ide.indent",
       "ide.indentSize",
-      ...SWITCHES.editor.map((s) => s.key),
+      ...switchesOf("editor").map((one) => one.key),
     ],
-    language: SWITCHES.language.map((s) => s.key),
+    language: switchesOf("language").map((one) => one.key),
     checks: (codes.value ?? []).map((check) => `ide.diag.${check.code}`),
-    explorer: ["ui.ideUiFontSize", "ide.density", ...SWITCHES.explorer.map((s) => s.key)],
-    wiki: [...SWITCHES.wiki.map((s) => s.key)],
+    explorer: ["ui.ideUiFontSize", "ide.density", ...switchesOf("explorer").map((one) => one.key)],
+    wiki: switchesOf("wiki").map((one) => one.key),
   };
   if (tab.value === "wiki") void setToastPref("show");
   if (tab.value === "editor") font.value = "Geist Mono";
@@ -133,12 +90,12 @@ function resetTab(): void {
     icon="i-lucide-settings"
     square
     :ui="{ leadingIcon: 'size-4.5' }"
-    :variant="ideSettingsOpen ? 'soft' : 'ghost'"
+    :variant="editor.ideSettingsOpen ? 'soft' : 'ghost'"
     aria-label="IDE settings"
-    @click="ideSettingsOpen = true"
+    @click="editor.ideSettingsOpen = true"
   />
   <!-- one size for every tab, the Editor tab's (the tallest); a longer tab scrolls -->
-  <UModal v-model:open="ideSettingsOpen" :ui="{ content: 'h-163 max-w-158' }">
+  <UModal v-model:open="editor.ideSettingsOpen" :ui="{ content: 'h-163 max-w-158' }">
     <template #content>
       <div class="flex min-h-0 w-158 flex-1 flex-col overflow-hidden">
         <div class="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-1.5">
@@ -151,7 +108,7 @@ function resetTab(): void {
             square
             variant="ghost"
             aria-label="Close"
-            @click="ideSettingsOpen = false"
+            @click="editor.ideSettingsOpen = false"
           />
         </div>
         <UTabs
@@ -186,7 +143,7 @@ function resetTab(): void {
                   <template #trailing><span class="text-11 text-dimmed">px</span></template>
                 </UInput>
               </SettingRow>
-              <SettingRow v-for="row in SWITCHES.editor" :key="row.key" :label="row.label" :hint="row.hint">
+              <SettingRow v-for="row in switchesOf('editor')" :key="row.key" :label="row.label" :hint="row.hint">
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
               <SettingRow label="Indentation" hint="For new lines; a file keeps its own">
@@ -211,7 +168,7 @@ function resetTab(): void {
           </template>
           <template #language>
             <div class="divide-y divide-default">
-              <SettingRow v-for="row in SWITCHES.language" :key="row.key" :label="row.label" :hint="row.hint">
+              <SettingRow v-for="row in switchesOf('language')" :key="row.key" :label="row.label" :hint="row.hint">
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
             </div>
@@ -252,14 +209,14 @@ function resetTab(): void {
                   @update:model-value="settings.set('ide.density', String($event))"
                 />
               </SettingRow>
-              <SettingRow v-for="row in SWITCHES.explorer" :key="row.key" :label="row.label" :hint="row.hint">
+              <SettingRow v-for="row in switchesOf('explorer')" :key="row.key" :label="row.label" :hint="row.hint">
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
             </div>
           </template>
           <template #wiki>
             <div class="divide-y divide-default">
-              <SettingRow v-for="row in SWITCHES.wiki" :key="row.key" :label="row.label" :hint="row.hint">
+              <SettingRow v-for="row in switchesOf('wiki')" :key="row.key" :label="row.label" :hint="row.hint">
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
               </SettingRow>
               <SettingRow label="Suggestion toast" hint="A note when the Wiki has pages for a new file">

@@ -14,7 +14,7 @@ import type { Page } from "@services/internal/wiki/models";
 import { useWikiArticle } from "../../composables/useWikiArticle";
 import { useWikiPrefs } from "../../composables/useWikiPrefs";
 import { guidePageQuery, guideQuery } from "../../queries";
-import { useIdeStore } from "../../stores/ide";
+import { useEditorStore } from "../../stores/editor";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceStore } from "../../stores/workspace";
 import FindBox from "../../ui/FindBox.vue";
@@ -22,7 +22,7 @@ import WikiToc from "../../ui/WikiToc.vue";
 
 const { workspaceId } = defineProps<{ workspaceId: string }>();
 
-const ide = useIdeStore();
+const editor = useEditorStore();
 const settings = useSettingsStore();
 const store = useWorkspaceStore();
 const toast = useToast();
@@ -39,7 +39,7 @@ const panes = computed(() => [
 // the file the pages are for: the open one, or while the pane does not follow, the one it had
 const path = shallowRef("");
 watch(
-  () => ide.activeFile,
+  () => editor.activeFile,
   (open) => {
     if (open && (!path.value || settings.on("ui.wiki.follow"))) path.value = open;
   },
@@ -49,7 +49,7 @@ const {
   data: guide,
   error,
   isPending,
-} = useQuery(() => guideQuery({ id: workspaceId, path: path.value, enabled: ide.wikiOpen || toastAllowed() }));
+} = useQuery(() => guideQuery({ id: workspaceId, path: path.value, enabled: editor.wikiOpen || toastAllowed() }));
 const pages = computed(() => guide.value?.pages ?? []);
 // a tab's page is read whole only when shown, and kept by its title for every file it serves
 
@@ -65,7 +65,7 @@ const { data: full } = useQuery(() =>
   guidePageQuery({
     gameId: store.activeWorkspace?.gameId ?? "",
     title: page.value?.title ?? "",
-    enabled: ide.wikiOpen,
+    enabled: editor.wikiOpen,
   }),
 );
 // a search opens the first page it finds
@@ -86,7 +86,7 @@ const { tocActive, hits, hit, showHit, jumpTo, onWikiClick } = useWikiArticle({
   pages,
   currentIndex: () => Math.max(pages.value.indexOf(page.value as Page), 0),
   query: needle,
-  enabled: () => ide.wikiOpen,
+  enabled: () => editor.wikiOpen,
   onPage(hit) {
     const dest = pages.value[hit.index];
     if (!dest) return;
@@ -102,11 +102,11 @@ const gameName = computed(() => store.game(store.activeWorkspace?.gameId ?? "")?
 const told = new Set<string>();
 watch(guide, (found) => {
   const kind = found?.database;
-  if (ide.wikiOpen || !kind || told.has(kind) || !found.pages?.length || !toastAllowed()) return;
+  if (editor.wikiOpen || !kind || told.has(kind) || !found.pages?.length || !toastAllowed()) return;
   told.add(kind);
   toast.add({
     title: `Wiki: ${found.pages[0]?.title}`,
-    actions: [{ label: "Open", color: "neutral", variant: "outline", onClick: () => void (ide.wikiOpen = true) }],
+    actions: [{ label: "Open", color: "neutral", variant: "outline", onClick: () => void (editor.wikiOpen = true) }],
   });
 });
 watch(
@@ -128,7 +128,7 @@ watch(
         size="sm"
         square
         aria-label="Close the Wiki pane"
-        @click="ide.wikiOpen = false"
+        @click="editor.wikiOpen = false"
       />
     </div>
     <div class="flex h-7.5 shrink-0 items-stretch overflow-hidden border-b border-default">

@@ -20,12 +20,13 @@ import type {
 import type { FileText, WindowTabs } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { fileUri, labels, languageOf, models, monaco } from "../lib/monaco";
-import { tabOf, useIdeStore } from "../stores/ide";
+import { useEditorStore } from "../stores/editor";
+import { tabOf } from "./tabs";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
-import { openPalette } from "../app/CommandPalette.vue";
+import { useCommandsStore } from "../stores/commands";
 import { fileName } from "../lib/format";
-import { openWindow, others, placing } from "../stores/windows";
+import { useWindowsStore } from "../stores/windows";
 import { watchConflicts } from "./conflicts";
 import { editorRange, toBytes } from "./columns";
 
@@ -51,7 +52,9 @@ const spelled = new Map<string, string>();
 let workspaceId = "";
 let locked: (path: string) => boolean = () => false;
 
-const ide = useIdeStore();
+const editorStore = useEditorStore();
+const windowsStore = useWindowsStore();
+const commandsStore = useCommandsStore();
 const settings = useSettingsStore();
 // the providers answer for files only: a compare's sides are models of text alone (inmemory://model/3), which the
 // backend would be asked to read as a file
@@ -189,12 +192,12 @@ function fileOf(model: monaco.editor.ITextModel): File | undefined {
 function changed(file: File): void {
   if (!file.open) {
     openFile(file.path, { text: "", bom: file.bom, legacy: file.legacy });
-    return ide.adopt(file.path);
+    return editorStore.addTabHidden(file.path);
   }
   file.pending = true;
   clearTimeout(file.timer);
   file.timer = window.setTimeout(() => void flush(file), 200);
-  ide.setUnsaved(file.path, file.model.getAlternativeVersionId() !== file.saved);
+  editorStore.setUnsaved(file.path, file.model.getAlternativeVersionId() !== file.saved);
 }
 
 /** Send the edited text to the backend, once, then read its problems again. */
@@ -219,7 +222,7 @@ async function refresh(file: File): Promise<void> {
   const version = file.model.getVersionId();
   const found = (await rpc.Diagnose(workspaceId, file.path).catch(() => null)) ?? [];
   if (file.model.isDisposed() || file.model.getVersionId() !== version) return;
-  ide.problems.set(file.path, found);
+  editorStore.problems.set(file.path, found);
   monaco.editor.setModelMarkers(
     file.model,
     "pmt",
@@ -242,18 +245,18 @@ export async function saveFile(path: string): Promise<void> {
   await WriteText(file.path, text, file.bom, file.legacy);
   await flush(file);
   file.saved = version;
-  ide.setUnsaved(file.path, file.model.getAlternativeVersionId() !== version);
+  editorStore.setUnsaved(file.path, file.model.getAlternativeVersionId() !== version);
   void rpc.DidSave(workspaceId, file.path).then(() => refresh(file));
 }
 
 /** Every file with unsaved edits written. */
 export async function saveAll(): Promise<void> {
-  await Promise.all([...ide.unsaved].map(saveFile));
+  await Promise.all([...editorStore.unsaved].map(saveFile));
 }
 
 // a file no tab shows (its own or a diff) lets its model go, once the tabs' editors have let it go
 watch(
-  () => ide.openFiles.map((tab) => pathKey(tabOf(tab).file)),
+  () => editorStore.openTabs.map((tab) => pathKey(tabOf(tab).file)),
   (open) => {
     for (const file of [...files.values()]) if (file.open && !open.includes(pathKey(file.path))) file.model.dispose();
   },
@@ -269,7 +272,7 @@ Events.On("fs:changed", async ({ data }) => {
   if (read.reject || text === file.model.getValue() || file.model.isDisposed()) return;
   change(file.model, [{ range: file.model.getFullModelRange(), text }]);
   file.saved = file.model.getAlternativeVersionId();
-  ide.setUnsaved(file.path, false);
+  editorStore.setUnsaved(file.path, false);
 });
 
 /** A quick fix's edits, each file's in its model (its tab opened), left unsaved to read. */
@@ -279,7 +282,7 @@ export async function applyFix(action: CodeAction): Promise<void> {
     const read = files.has(fileUri(target).toString()) ? { text: "", bom: false } : await ReadText(target);
     if ("reject" in read && read.reject) continue;
     applyEdits(openFile(target, read), edits);
-    ide.open(target);
+    editorStore.open(target);
   }
 }
 
@@ -304,7 +307,7 @@ export function handOver(to: string, tabs: string[], active = tabs[0] ?? ""): Pr
     const unsaved = !!file && file.model.getAlternativeVersionId() !== file.saved;
     return { tab, unsaved, text: unsaved && file ? file.model.getValue() : "" };
   });
-  ide.release(tabs);
+  editorStore.dropTabs(tabs);
   return Events.Emit("window:tabs", { to, tabs: handed, active });
 }
 
@@ -312,25 +315,25 @@ export function handOver(to: string, tabs: string[], active = tabs[0] ?? ""): Pr
  * text is an edit to the text saved, so its tab is marked and an undo goes back to the file. */
 export async function receive(handed: WindowTabs): Promise<void> {
   for (const { tab, unsaved, text } of handed.tabs ?? []) {
-    ide.adopt(tab);
+    editorStore.addTabHidden(tab);
     const path = tabOf(tab).file;
     if (!unsaved || files.has(fileUri(path).toString())) continue;
     const { model } = fileModel(path, await ReadText(path));
     change(model, [{ range: model.getFullModelRange(), text }]);
   }
-  const group = ide.group(ide.focused);
-  if (group?.files.includes(handed.active)) group.active = handed.active;
+  const group = editorStore.group(editorStore.focused);
+  if (group?.tabs.includes(handed.active)) group.active = handed.active;
   for (const { tab } of handed.tabs ?? []) {
-    const dropped = placing.get(tab);
-    placing.delete(tab);
-    if (dropped) ide.drop(tab, ide.focused, dropped.group, dropped.edge, dropped.before);
+    const dropped = windowsStore.placing.get(tab);
+    windowsStore.placing.delete(tab);
+    if (dropped) editorStore.drop(tab, editorStore.focused, dropped.group, dropped.edge, dropped.nextTab);
   }
 }
 
 /** A tab into another window: handed on from here, asked of the window holding it, or opened there. */
 export function sendTab(to: string, tab: string): Promise<unknown> {
-  if (ide.openFiles.includes(tab)) return handOver(to, [tab]);
-  const holder = [...others.values()].find((one) => one.tabs?.includes(tab));
+  if (editorStore.openTabs.includes(tab)) return handOver(to, [tab]);
+  const holder = [...windowsStore.otherWindows.values()].find((one) => one.tabs?.includes(tab));
   if (holder) return Events.Emit("window:give", { to: holder.name, tab, window: to });
   return Events.Emit("window:tabs", { to, tabs: [{ tab, unsaved: false, text: "" }], active: tab });
 }
@@ -338,16 +341,16 @@ export function sendTab(to: string, tab: string): Promise<unknown> {
 /** A tab in a new editor window of its own. */
 export async function newWindowWith(tab: string): Promise<void> {
   const name = `editor:${Date.now().toString(36)}`;
-  await openWindow(`/workspace/${workspaceId}`, name, fileName(tabOf(tab).file));
+  await windowsStore.openWindow(`/workspace/${workspaceId}`, name, fileName(tabOf(tab).file));
   await sendTab(name, tab);
 }
 
 /** A window whose explorer shows folders (the game's files, or one folder), given this window's tabs of files in
  * them. */
 export async function openFilesWindow(name: string, title: string, folders: string[]): Promise<void> {
-  await openWindow(`/workspace/${workspaceId}`, name, title);
+  await windowsStore.openWindow(`/workspace/${workspaceId}`, name, title);
   const keys = folders.map(pathKey);
-  const tabs = ide.openFiles.filter((tab) => keys.some((key) => pathKey(tabOf(tab).file).startsWith(`${key}/`)));
+  const tabs = editorStore.openTabs.filter((tab) => keys.some((key) => pathKey(tabOf(tab).file).startsWith(`${key}/`)));
   if (tabs.length) await handOver(name, tabs);
 }
 
@@ -579,7 +582,7 @@ monaco.editor.registerEditorOpener({
     const target = monaco.editor.getModel(resource);
     const place = at && ("startLineNumber" in at ? { lineNumber: at.startLineNumber, column: at.startColumn } : at);
     const [line, col] = place && target ? bytesAt(target, place) : [0, 0];
-    ide.open(spelled.get(resource.toString()) ?? resource.fsPath, { line, col });
+    editorStore.open(spelled.get(resource.toString()) ?? resource.fsPath, { line, col });
     return true;
   },
 });
@@ -596,8 +599,8 @@ monaco.editor.onDidCreateEditor((editor) => {
 });
 
 // the app's palette keys open the palette in an editor too, where Monaco would take them
-monaco.editor.registerCommand("pmt.palette", () => openPalette());
-monaco.editor.registerCommand("pmt.files", () => openPalette(""));
+monaco.editor.registerCommand("pmt.palette", () => commandsStore.openPalette());
+monaco.editor.registerCommand("pmt.files", () => commandsStore.openPalette(""));
 monaco.editor.addKeybindingRules([
   { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, command: "pmt.palette" },
   { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, command: "pmt.palette" },
@@ -735,7 +738,7 @@ export function createEditor(host: HTMLElement, shown: monaco.editor.ITextModel)
     const position = editor.getPosition();
     if (!position) return;
     const [, col] = bytesAt(shown, position);
-    ide.caret = { line: position.lineNumber - 1, character: position.column - 1, col };
+    editorStore.caret = { line: position.lineNumber - 1, character: position.column - 1, col };
   }
   editor.onDidFocusEditorText(() => {
     last = editor;

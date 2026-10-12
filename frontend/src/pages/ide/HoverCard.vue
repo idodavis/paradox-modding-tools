@@ -5,17 +5,17 @@
  * replaces. Where the backend has no card (plain text in a localization value) the problems show alone.
  */
 import { computed } from "vue";
-import type { editor } from "monaco-editor/editor/editor.api";
+import type { editor as monacoEditor } from "monaco-editor/editor/editor.api";
 import type { Inspect, Location } from "@services/internal/lsp";
-import { useIdeStore } from "../../stores/ide";
+import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LocQuote from "../../ui/LocQuote.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 
-const { card, problems = [] } = defineProps<{ card: Inspect | null; problems?: editor.IMarker[] }>();
+const { card, problems = [] } = defineProps<{ card: Inspect | null; problems?: monacoEditor.IMarker[] }>();
 
 const store = useWorkspaceStore();
-const ide = useIdeStore();
+const editor = useEditorStore();
 
 const sites = computed(() => card?.sites ?? []);
 const winner = computed(() => card?.winner ?? -1);
@@ -90,7 +90,7 @@ const KEYS = [
 ];
 
 function open(site: Location): void {
-  ide.open(site.path, { line: site.range.start.line, col: site.range.start.character });
+  editor.open(site.path, { line: site.range.start.line, col: site.range.start.character });
 }
 </script>
 

@@ -9,7 +9,7 @@ import { useRouter } from "vue-router";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import type { Listing } from "@services/models";
 import { SaveListing } from "@services/releaseservice";
-import { STEP_TITLES, type Step } from "./ReleaseModRail.vue";
+import { STEP_TITLES, type Step } from "./steps";
 import SteamCompareView from "./SteamCompareView.vue";
 import { compareQuery, languageQuery, listingQuery, releaseKeys, summaryQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";

@@ -11,29 +11,22 @@ import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem } from "@nuxt/ui";
 import * as rpc from "@services/ideservice";
 import type { CodeAction, Inspect } from "@services/internal/lsp";
-import {
-  applyFix,
-  bytesAt,
-  createEditor,
-  editText,
-  editorOptions,
-  openFile,
-  saveFile,
-} from "../../editor/monacoEditor";
+import { applyFix, bytesAt, createEditor, editText, editorOptions, openFile } from "../../editor/monacoEditor";
 import { editorRange } from "../../editor/columns";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { monaco } from "../../lib/monaco";
 import { textQuery } from "../../queries";
-import { useIdeStore } from "../../stores/ide";
+import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
-import { openPalette } from "../../app/CommandPalette.vue";
-import { MARKDOWN_TOOLBAR } from "../publish/DescriptionEditor.vue";
+import { useCommandsStore } from "../../stores/commands";
+import { MARKDOWN_TOOLBAR } from "../../lib/markdown";
 import HoverCard from "./HoverCard.vue";
 
 const { workspaceId, path, group } = defineProps<{ workspaceId: string; path: string; group: number }>();
 
 const router = useRouter();
-const ide = useIdeStore();
+const editor = useEditorStore();
+const palette = useCommandsStore();
 const store = useWorkspaceStore();
 const { locate } = useIdeRoots(() => workspaceId);
 
@@ -48,29 +41,29 @@ watch(
     if (view.value || !el || !read || read.reject) return;
     shown.value = openFile(path, read);
     view.value = createEditor(el, shown.value);
-    const { editor } = view.value;
+    const { editor: codeEditor } = view.value;
     const { CtrlCmd, Shift, Alt } = monaco.KeyMod;
     const { KeyCode } = monaco;
-    editor.addAction({
+    codeEditor.addAction({
       id: "pmt.save",
       label: "Save",
       keybindings: [CtrlCmd | KeyCode.KeyS],
-      run: () => void saveFile(path),
+      run: () => editor.save([path]),
     });
-    editor.addAction({
+    codeEditor.addAction({
       id: "pmt.graph",
       label: "Open in Event Graph",
       keybindings: [CtrlCmd | Shift | KeyCode.KeyG],
       run: () => void graph(),
     });
-    editor.addAction({
+    codeEditor.addAction({
       id: "pmt.findAll",
       label: "Find all references",
       keybindings: [Shift | Alt | KeyCode.F12],
       run: () => void findAll(),
     });
     // the status bar's caret is the shown tab's
-    if (ide.focused === group) view.value.report();
+    if (editor.focused === group) view.value.report();
     showPlace();
   },
   { flush: "post" },
@@ -80,21 +73,21 @@ onBeforeUnmount(() => view.value?.editor.dispose());
 
 /** A place asked of this file in this group: the caret there, scrolled into view. */
 function showPlace(): void {
-  const place = ide.place;
-  const editor = view.value?.editor;
-  if (!editor || !shown.value || place?.path !== path || ide.focused !== group) return;
-  ide.place = null;
+  const place = editor.cursor;
+  const codeEditor = view.value?.editor;
+  if (!codeEditor || !shown.value || place?.path !== path || editor.focused !== group) return;
+  editor.cursor = null;
   const model = shown.value;
   const byte = { line: place.line, character: place.col };
   const at = editorRange({ start: byte, end: byte }, (n) =>
     n < model.getLineCount() ? model.getLineContent(n + 1) : undefined,
   ).start;
   const position = { lineNumber: at.line + 1, column: at.character + 1 };
-  editor.setPosition(position);
-  editor.revealPositionInCenterIfOutsideViewport(position);
-  editor.focus();
+  codeEditor.setPosition(position);
+  codeEditor.revealPositionInCenterIfOutsideViewport(position);
+  codeEditor.focus();
 }
-watch(() => ide.place, showPlace);
+watch(() => editor.cursor, showPlace);
 
 /** The caret as the backend counts, in this editor. */
 function caret(): [line: number, col: number] {
@@ -113,7 +106,7 @@ async function findAll(): Promise<void> {
   const [line, col] = caret();
   const card = await rpc.Hover(workspaceId, path, line, col).catch(() => null);
   const sites = (await rpc.References(workspaceId, path, line, col).catch(() => null)) ?? [];
-  ide.results = {
+  editor.results = {
     title: `References to ${card?.word || "the word"}`,
     rows: sites.map((site) => ({
       path: site.path,
@@ -127,7 +120,7 @@ async function findAll(): Promise<void> {
     done: true,
     capped: false,
   };
-  ide.sidebar = "search";
+  editor.sidebar = "search";
 }
 
 /** Run one of Monaco's actions in this editor. */
@@ -166,16 +159,16 @@ const healthCard = computed(() => {
 
 /** The selections' text, joined by line breaks. */
 function selected(): string {
-  const editor = view.value?.editor;
-  return (editor?.getSelections() ?? []).map((range) => shown.value?.getValueInRange(range) ?? "").join("\n");
+  const codeEditor = view.value?.editor;
+  return (codeEditor?.getSelections() ?? []).map((range) => shown.value?.getValueInRange(range) ?? "").join("\n");
 }
 
 /** Write text over the selections (a paste), or delete them with "" (a cut). */
 function write(text: string): void {
-  const editor = view.value?.editor;
-  editor?.executeEdits(
+  const codeEditor = view.value?.editor;
+  codeEditor?.executeEdits(
     "menu",
-    (editor.getSelections() ?? []).map((range) => ({ range, text })),
+    (codeEditor.getSelections() ?? []).map((range) => ({ range, text })),
   );
 }
 
@@ -243,7 +236,7 @@ const menu = computed<ContextMenuItem[][]>(() =>
         onSelect: async () => write(await Clipboard.Text()),
       },
     ],
-    [{ label: "Command palette", kbds: ["Ctrl Shift P"], onSelect: () => openPalette() }],
+    [{ label: "Command palette", kbds: ["Ctrl Shift P"], onSelect: () => palette.openPalette() }],
   ].filter((items) => items.length),
 );
 
@@ -259,7 +252,7 @@ const keepFocus = {
 };
 
 // Rich: the Markdown as the Publish page's editor writes it, put into the file's text at each edit
-const rich = computed(() => ide.viewOf(path) === "visual");
+const rich = computed(() => editor.viewOf(path) === "visual");
 function writeRich(markdown: string | undefined): void {
   if (markdown !== undefined) editText(path, () => markdown);
 }
@@ -273,12 +266,12 @@ function writeRich(markdown: string | undefined): void {
       class="min-h-0 flex-1 border-s-12 border-(--bg-0)"
       :class="{ hidden: rich }"
       @contextmenu="onContext"
-      @focusin="ide.focused = group"
+      @focusin="editor.focused = group"
     />
   </UContextMenu>
   <UEditor
     v-if="rich && shown"
-    v-slot="{ editor }"
+    v-slot="{ editor: markdownEditor }"
     :model-value="shown.getValue()"
     content-type="markdown"
     :mention="false"
@@ -288,7 +281,7 @@ function writeRich(markdown: string | undefined): void {
     @update:model-value="writeRich"
   >
     <div class="flex h-9 shrink-0 items-center gap-0.5 border-b border-default bg-elevated px-2">
-      <UEditorToolbar :editor="editor" :items="MARKDOWN_TOOLBAR" />
+      <UEditorToolbar :editor="markdownEditor" :items="MARKDOWN_TOOLBAR" />
     </div>
   </UEditor>
   <p v-if="file?.reject" class="absolute inset-x-0 top-10 text-center text-12 text-dimmed">{{ file.reject }}</p>

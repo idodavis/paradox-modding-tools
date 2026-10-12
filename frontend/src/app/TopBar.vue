@@ -11,18 +11,19 @@ import { useQuery } from "@pinia/colada";
 import { until, useElementSize, useTimeAgo } from "@vueuse/core";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
-import { openPalette } from "./CommandPalette.vue";
+import { useCommandsStore } from "../stores/commands";
 import { useLanguageHealth } from "../composables/useLanguageHealth";
 import { sessionQuery, workspacesQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 import { Close, Show } from "@services/windowservice";
-import { others, openWindow } from "../stores/windows";
+import { useWindowsStore } from "../stores/windows";
 import { isWorkspacePage, WORKSPACE_TOOLS, workspaceHomeRoute, type WorkspaceToolName } from "./pages";
 import GameIcon from "../ui/GameIcon.vue";
 
 const route = useRoute();
 const store = useWorkspaceStore();
+const palette = useCommandsStore();
 const settings = useSettingsStore();
 
 const { data: workspaces } = useQuery(workspacesQuery);
@@ -41,10 +42,11 @@ const tabs = computed(() => WORKSPACE_TOOLS.filter((tool) => settings.visibleToo
 // a page in a window of its own: its tab brings that window up, and the main window shows another page; back, the
 // window closes and the page shows here
 const router = useRouter();
-const popped = (name: WorkspaceToolName) => others.has(`page:${name}`);
+const windows = useWindowsStore();
+const popped = (name: WorkspaceToolName) => windows.otherWindows.has(`page:${name}`);
 async function popOut(name: WorkspaceToolName, label: string): Promise<void> {
   const shown = route.name === name;
-  await openWindow(
+  await windows.openWindow(
     shown ? route.fullPath : router.resolve({ name, params: { id: store.activeWorkspaceId } }).fullPath,
     `page:${name}`,
     label,
@@ -223,7 +225,7 @@ const scanText = computed(() =>
           size="sm"
           square
           aria-label="Search and commands"
-          @click="openPalette()"
+          @click="palette.openPalette()"
         />
       </UTooltip>
       <UTooltip :text="settings.mode === 'dark' ? 'Switch to light' : 'Switch to dark'">

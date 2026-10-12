@@ -12,7 +12,7 @@ import router from "./app/router";
 import { subscribeEvents } from "./app/events";
 import { useSettingsStore } from "./stores/settings";
 import { Log } from "@services/logservice";
-import { changed } from "./stores/windows";
+import { useWindowsStore } from "./stores/windows";
 
 // what nothing caught goes to pmt.log, where a bug report finds it
 window.addEventListener("error", (event) => {
@@ -45,13 +45,14 @@ app.use(PiniaColada, {
   // which read again what they show
   mutationOptions: {
     onError: (error) => toast.add({ title: error instanceof Error ? error.message : String(error), color: "error" }),
-    onSuccess: changed,
+    onSuccess: () => useWindowsStore().saved(),
   },
 });
 app.use(router);
 app.use(ui);
 app.runWithContext(() => {
-  subscribeEvents(router);
+  useWindowsStore();
+  subscribeEvents();
   // the settings put the theme and text sizes on the page as they load
   void useSettingsStore().load();
 });

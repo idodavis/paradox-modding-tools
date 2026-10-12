@@ -488,11 +488,11 @@ func (s *WorkspaceService) request(workspaceID string) (workspace.Request, error
 
 // scannedAt is when an install was built, in RFC 3339, read in a language; "" when it never was.
 func (s *WorkspaceService) scannedAt(inst *GameInstall, language string) string {
-	at := s.slot.ScannedAt(workspace.Request{Game: inst.GameID, Dir: inst.Path, Language: language, App: s.version})
-	if at.IsZero() {
+	scanTime := s.slot.ScannedAt(workspace.Request{Game: inst.GameID, Dir: inst.Path, Language: language, App: s.version})
+	if scanTime.IsZero() {
 		return ""
 	}
-	return at.Format(time.RFC3339)
+	return scanTime.Format(time.RFC3339)
 }
 
 // State is what the pages show of a workspace, without opening it: its install and when it was scanned, and when

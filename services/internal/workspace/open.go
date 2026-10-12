@@ -71,9 +71,12 @@ func (s *Slot) Open(ctx context.Context, request Request) (ws *Session, built bo
 		if err != nil {
 			return nil, err
 		}
+		// another id may have finished meanwhile: only one is ever open, so it closes now
 		s.mu.Lock()
+		before, beforeID := s.session, s.id
 		s.session, s.id, s.fingerprint = ws, request.ID, request.Fingerprint
 		s.mu.Unlock()
+		s.release(before, beforeID)
 		return ws, nil
 	})
 	if err != nil {
@@ -109,17 +112,25 @@ func (s *Slot) Close(id string) {
 	}
 	s.session, s.id, s.fingerprint = nil, "", ""
 	s.mu.Unlock()
+	s.release(ws, closing)
+}
+
+// release stops a workspace taken out of the slot and tells Closed its id; nil is no workspace.
+func (s *Slot) release(ws *Session, id string) {
+	if ws == nil {
+		return
+	}
 	ws.Close()
 	if s.Closed != nil {
-		s.Closed(closing)
+		s.Closed(id)
 	}
 }
 
 // ScannedAt is when the request's install was built: as this run built or loaded it, else by the time of its cache
 // file in the request's language; zero with neither.
 func (s *Slot) ScannedAt(request Request) time.Time {
-	if built, ran := s.scanned.Load(request.Dir); ran {
-		return built.(time.Time)
+	if scanTime, ok := s.scanned.Load(request.Dir); ok {
+		return scanTime.(time.Time)
 	}
 	return index.CachedAt(s.indexRequest(request))
 }

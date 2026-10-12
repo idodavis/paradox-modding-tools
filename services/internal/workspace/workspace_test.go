@@ -285,6 +285,49 @@ func TestSlot(t *testing.T) {
 	if slot.Current("ws", "b") != nil || !slices.Equal(closed, []string{"ws", "ws"}) {
 		t.Errorf("closing leaves none, and tells its id: %v", closed)
 	}
+
+	// two workspaces opened at once: the second to finish closes the first, and its id is told
+	ids := []string{"first", "second"}
+	raced, open := openTogether(t, request, ids)
+	if len(raced) != 1 || !slices.Contains(ids, raced[0]) || len(open) != 1 || open[0] == raced[0] {
+		t.Errorf("one open, the other closed and told: closed %v, open %v", raced, open)
+	}
+}
+
+// openTogether opens the workspaces of ids at once, each past the check for another one open before any is built,
+// and gives the ids the slot told closed and the ids still open.
+func openTogether(t *testing.T, request Request, ids []string) (told, open []string) {
+	t.Helper()
+	var closed []string
+	var scanning sync.WaitGroup
+	scanning.Add(len(ids))
+	slot := &Slot{
+		Scan: func(context.Context, index.Request) (*index.Install, error) {
+			scanning.Done()
+			scanning.Wait()
+			return scanned()
+		},
+		Closed: func(id string) { closed = append(closed, id) },
+	}
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Go(func() {
+			own := request
+			own.ID, own.Fingerprint = id, id
+			if _, _, err := slot.Open(t.Context(), own); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	told = slices.Clone(closed)
+	for _, id := range ids {
+		if slot.Current(id, id) != nil {
+			open = append(open, id)
+		}
+	}
+	slot.Close("")
+	return told, open
 }
 
 // fireNamed is the fire of a name among fires.

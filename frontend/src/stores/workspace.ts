@@ -13,6 +13,7 @@ import type { Workspace, WorkspaceMod, WorkspaceState } from "@services/models";
 import { UpdateWorkspacePrefs } from "@services/workspaceservice";
 import { isWorkspacePage } from "../app/pages";
 import { gamesQuery, openQuery, stateQuery, workspacesQuery } from "../queries";
+import { isMain } from "./windows";
 
 /** Each install's scan while it runs, as install:scanning tells it (app/events.ts); a workspace opened or failed
  * ends them. */
@@ -72,38 +73,39 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return !!id && id === activeWorkspaceId.value && !!state.value?.open;
   }
 
-  // the two notices, once per install: a game update rescanned, and no script_docs
+  // the two notices, once per install and by the main window alone: a game update rescanned, and no script_docs
   const toast = useToast();
-  watch(
-    state,
-    (current) => {
-      if (!current?.installId) return;
-      // a scan that replaced another version's: the game was updated, and the new scan is done
-      if (current.updatedFrom && !notices.updated.has(current.installId)) {
-        notices.updated.add(current.installId);
-        toast.add({
-          title: "Game updated",
-          description: `Game updated from ${current.updatedFrom} to ${current.gameVersion} — rescanned.`,
-          color: "warning",
-          icon: "i-lucide-refresh-cw",
-          duration: 0,
-        });
-      }
-      // the type system is the one part of the engine the user makes, so its absence is raised once
-      if (current.open && current.dumpsFrom === "none" && !notices.noDumps.has(current.installId)) {
-        notices.noDumps.add(current.installId);
-        toast.add({
-          title: "No script_docs for this game",
-          description:
-            "Definitions, references, conflicts and localization still work. Scope-aware completion, typed hover and scope diagnostics need the game to print its documentation once.",
-          color: "warning",
-          icon: "i-lucide-triangle-alert",
-          duration: 0,
-        });
-      }
-    },
-    { immediate: true },
-  );
+  if (isMain)
+    watch(
+      state,
+      (current) => {
+        if (!current?.installId) return;
+        // a scan that replaced another version's: the game was updated, and the new scan is done
+        if (current.updatedFrom && !notices.updated.has(current.installId)) {
+          notices.updated.add(current.installId);
+          toast.add({
+            title: "Game updated",
+            description: `Game updated from ${current.updatedFrom} to ${current.gameVersion} — rescanned.`,
+            color: "warning",
+            icon: "i-lucide-refresh-cw",
+            duration: 0,
+          });
+        }
+        // the type system is the one part of the engine the user makes, so its absence is raised once
+        if (current.open && current.dumpsFrom === "none" && !notices.noDumps.has(current.installId)) {
+          notices.noDumps.add(current.installId);
+          toast.add({
+            title: "No script_docs for this game",
+            description:
+              "Definitions, references, conflicts and localization still work. Scope-aware completion, typed hover and scope diagnostics need the game to print its documentation once.",
+            color: "warning",
+            icon: "i-lucide-triangle-alert",
+            duration: 0,
+          });
+        }
+      },
+      { immediate: true },
+    );
 
   /** A game's registry row. */
   function game(id: string): GameInfo | undefined {

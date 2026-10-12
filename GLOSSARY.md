@@ -50,7 +50,7 @@ Load-order is **LIOS** (last in, only saved / last listed wins), with first-wins
 | Concept | Canonical | Kill |
 |---|---|---|
 | Product pane | the Wiki pane, `WikiPane`, `ui.wiki.*` | Guide pane, `GuidePane`, `ui.guide.*`, Helper, HelperPane, `pmt.helper`, `ui.helper`, `ide.helperWidth`, `WikiGuide` |
-| Guide RPC | `WikiService.Guide` | `Session.WikiGuide`; query key `wiki-guide` → `guide` |
+| Guide RPC | `WikiService.Guide` | query key `wiki-guide` → `guide` |
 | Events | `workspace:opened`, `workspace:failed`, `workspace:closed`, `config:changed`, `install:scanning`, `install:scanned`, `fs:changed`, `wiki:updated`, `wiki:progress`, `search:hits`, `git:output` | `lang:*`, `docs:wiki-*` |
 | Package / load | `package wiki`, `Refresh`, `SidecarPath` | `package docs`, `LoadDocs`, persist `docsPath()` |
 | Dumps health | `WorkspaceState.dumpsFrom` (yours, shipped or none), `dumpsStale` | `docsPresent`, UI “dumps required” |

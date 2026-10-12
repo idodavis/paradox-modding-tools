@@ -13,7 +13,7 @@ import { useRouter } from "vue-router";
 import { useQueryCache } from "@pinia/colada";
 import { until, watchDebounced } from "@vueuse/core";
 import { Events, Window } from "@wailsio/runtime";
-import type { WindowHeld } from "@services/models";
+import type { WindowState } from "@services/models";
 import { Close, Open, QuitAnswer, Show } from "@services/windowservice";
 import { PAGES } from "../app/pages";
 import { fileName } from "../lib/format";
@@ -34,7 +34,7 @@ export const useWindowsStore = defineStore("windows", () => {
   const workspace = useWorkspaceStore();
 
   /** What the other windows hold, by name, as each last told. */
-  const otherWindows = reactive(new Map<string, WindowHeld>());
+  const otherWindows = reactive(new Map<string, WindowState>());
   /** The folders this window's explorer shows, whose files open here (the game's files, or a folder's). */
   const roots = shallowRef<string[]>([]);
   /** Where a tab dragged in from another window goes once it is here: its group, the edge, the tab it goes before. */
@@ -60,7 +60,7 @@ export const useWindowsStore = defineStore("windows", () => {
   });
 
   /** What this window holds, as the others are told. */
-  const state = computed<WindowHeld>(() => {
+  const state = computed<WindowState>(() => {
     const editor = useEditorStore();
     return {
       name: windowName,
@@ -76,11 +76,11 @@ export const useWindowsStore = defineStore("windows", () => {
 
   /** Tell the other windows what this window holds. */
   function broadcastState(): void {
-    if (ready.value) void Events.Emit("window:held", state.value);
+    if (ready.value) void Events.Emit("window:state", state.value);
   }
 
   /** A window told what it holds. */
-  function recordWindow(data: WindowHeld): void {
+  function recordWindow(data: WindowState): void {
     otherWindows.set(data.name, data);
     opening.get(data.name)?.();
     opening.delete(data.name);
@@ -97,7 +97,7 @@ export const useWindowsStore = defineStore("windows", () => {
 
   /** Close the windows that match, which hand their tabs back; resolved once they are gone and their tabs here, in
    * whichever order Wails brings the two (it keeps no order between events). */
-  async function dock(which: (one: WindowHeld) => boolean): Promise<void> {
+  async function dock(which: (one: WindowState) => boolean): Promise<void> {
     const closing = [...otherWindows.values()].filter(which);
     const tabs = closing.flatMap((one) => one.tabs ?? []);
     tabs.forEach((tab) => arrived.delete(tab));
@@ -117,7 +117,7 @@ export const useWindowsStore = defineStore("windows", () => {
 
   /** Tell the other windows, if any, that this one saved something they read, so they read it again. */
   function saved(): void {
-    if (otherWindows.size) void Events.Emit("window:changed", windowName);
+    if (otherWindows.size) void Events.Emit("window:saved", windowName);
   }
 
   if (!isMain) watch(title, (text) => void Window.SetTitle(text), { immediate: true });
@@ -127,9 +127,9 @@ export const useWindowsStore = defineStore("windows", () => {
   watchDebounced([state, ready, () => otherWindows.size], () => otherWindows.size && broadcastState(), {
     debounce: 100,
   });
-  Events.On("window:hello", ({ data: name }) => name !== windowName && broadcastState());
-  Events.On("window:held", ({ data }) => data.name !== windowName && recordWindow(data));
-  void Events.Emit("window:hello", windowName);
+  Events.On("window:opened", ({ data: name }) => name !== windowName && broadcastState());
+  Events.On("window:state", ({ data }) => data.name !== windowName && recordWindow(data));
+  void Events.Emit("window:opened", windowName);
 
   // a window closed: its tabs came back before; the panel shows here again
   Events.On("window:closed", ({ data: name }) => {
@@ -160,7 +160,7 @@ export const useWindowsStore = defineStore("windows", () => {
 
   // another window saved something config.json does not hold (config:changed tells of that): its repositories' state
   // and Publish's files are read again
-  Events.On("window:changed", ({ data: name }) => {
+  Events.On("window:saved", ({ data: name }) => {
     if (name === windowName) return;
     for (const key of [["git"], ["release"]]) void queryCache.invalidateQueries({ key });
   });

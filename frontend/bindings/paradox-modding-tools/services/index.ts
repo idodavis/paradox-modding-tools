@@ -58,10 +58,10 @@ export type {
     UploadFiles,
     WikiProgress,
     WikiUpdated,
-    WindowGive,
-    WindowHeld,
     WindowShow,
+    WindowState,
     WindowTab,
+    WindowTabRequest,
     WindowTabs,
     Workspace,
     WorkspaceMod

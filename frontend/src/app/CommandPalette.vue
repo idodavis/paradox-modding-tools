@@ -9,17 +9,13 @@ import { computed, shallowRef, watch } from "vue";
 import { useRouter, type RouteLocationRaw } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useFuse } from "@vueuse/integrations/useFuse";
-import type { CommandPaletteGroup, CommandPaletteItem } from "@nuxt/ui";
+import type { CommandPaletteGroup } from "@nuxt/ui";
 import { GetEventDetail } from "@services/eventgraphservice";
-import { Hover } from "@services/ideservice";
 import UnsavedChangesModal from "../ui/UnsavedChangesModal.vue";
-import { useCompare } from "../composables/useCompare";
 import { useIdeRoots } from "../composables/useIdeRoots";
 import { codesQuery, filesQuery, locQuery, rootsQuery, symbolsQuery, workspacesQuery } from "../queries";
-import { useGitStore } from "../stores/git";
-import { useCommandsStore } from "../stores/commands";
+import { useCommandsStore, type CommandItem as Item } from "../stores/commands";
 import { useEditorStore } from "../stores/editor";
-import { diffTab } from "../editor/tabs";
 import { IDE_SWITCH_ROWS, useSettingsStore } from "../stores/settings";
 import { updatePrefs, useWorkspaceStore } from "../stores/workspace";
 import { PAGES, SETTINGS, SETTINGS_SECTIONS, WORKSPACE_TOOLS, workspaceHomeRoute, type SettingSwitch } from "./pages";
@@ -33,9 +29,7 @@ const { data: codes } = useQuery(codesQuery);
 const editor = useEditorStore();
 const palette = useCommandsStore();
 const unsavedModal = useOverlay().create(UnsavedChangesModal);
-const git = useGitStore();
 const { roots, locate } = useIdeRoots(() => store.activeWorkspaceId);
-const compare = useCompare(() => store.activeWorkspaceId);
 
 // the search, and what it looks through by its first character
 const term = shallowRef("> ");
@@ -54,8 +48,6 @@ const mode = computed(() =>
 );
 const query = computed(() => (mode.value === "files" ? term.value : term.value.slice(1)).trim());
 
-type Item = CommandPaletteItem & { words?: string; scope?: string; on?: boolean; opens?: string };
-
 function go(to: RouteLocationRaw): void {
   void router.push(to);
   palette.paletteOpen = false;
@@ -65,19 +57,6 @@ function go(to: RouteLocationRaw): void {
 function show(path: string, line = 0, col = 0): void {
   palette.paletteOpen = false;
   editor.open(path, { line, col });
-}
-
-/** The IDE's editors, from their module, which loads with the IDE page. */
-const editors = () => import("../editor/monacoEditor");
-
-async function graphAtCaret(): Promise<void> {
-  const card = await Hover(
-    store.activeWorkspaceId,
-    editor.activeFile,
-    editor.caret?.line ?? 0,
-    editor.caret?.col ?? 0,
-  ).catch(() => null);
-  if (card?.graphed) go({ name: "event-graph", params: { id: store.activeWorkspaceId }, query: { root: card.word } });
 }
 
 /** A switch's state and how it flips, where it has a workspace to flip on. */
@@ -169,63 +148,6 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
       ),
     ),
   ];
-  // the IDE's commands, on the file it shows
-  const active = editor.activeFile;
-  const [first, second] = editor.selected;
-  const picked = editor.comparing;
-  const run = (fn: () => unknown) => () => {
-    palette.paletteOpen = false;
-    void fn();
-  };
-  const compares: Item[] = [
-    ...(active
-      ? [
-          {
-            label: "Select the active file for compare",
-            prefix: "Compare:",
-            icon: "i-lucide-diff",
-            onSelect: run(() => (editor.comparing = active)),
-          },
-          ...(picked && picked !== active
-            ? [
-                {
-                  label: "Active file with the file selected",
-                  prefix: "Compare:",
-                  icon: "i-lucide-diff",
-                  onSelect: run(() => compare.files(picked, active)),
-                },
-              ]
-            : []),
-          ...(git.repoOf(active)
-            ? [
-                {
-                  label: "Active file with the last commit",
-                  prefix: "Compare:",
-                  icon: "i-lucide-git-compare",
-                  onSelect: run(() => editor.open(diffTab("changes", active))),
-                },
-              ]
-            : []),
-          {
-            label: "Active file with the game's copy",
-            prefix: "Compare:",
-            icon: "i-lucide-diff",
-            disabled: !!locate(active)?.root.readOnly,
-            onSelect: run(() => compare.withGame(active)),
-          },
-        ]
-      : []),
-    ...(first && second
-      ? [
-          {
-            label: "Two files selected in the explorer",
-            prefix: "Compare:",
-            icon: "i-lucide-diff",
-            onSelect: run(() => compare.files(first, second)),
-          },
-        ]
-      : []),
-  ];
   // the window loaded again, its unsaved files saved or dropped first
   const reload: Item = {
     label: "Reload the window",
@@ -234,79 +156,8 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
       if (!editor.unsaved.size || (await unsavedModal.open({ going: "Reloading the window" }))) location.reload();
     },
   };
-  const commands: Item[] = !id
-    ? [reload]
-    : [
-        reload,
-        ...compares,
-        ...(active
-          ? [
-              {
-                label: "Open the event under the cursor",
-                prefix: "Event Graph:",
-                icon: "i-lucide-git-branch",
-                kbds: ["Ctrl Shift G"],
-                onSelect: run(graphAtCaret),
-              },
-              {
-                label: "Format document",
-                prefix: "IDE:",
-                icon: "i-lucide-align-left",
-                kbds: ["Shift Alt F"],
-                onSelect: run(async () => (await editors()).runAction("editor.action.formatDocument")),
-              },
-              {
-                label: "Save",
-                prefix: "IDE:",
-                icon: "i-lucide-save",
-                kbds: ["Ctrl S"],
-                onSelect: run(() => editor.save([active])),
-              },
-              {
-                label: "Save all",
-                prefix: "IDE:",
-                icon: "i-lucide-save-all",
-                onSelect: run(() => editor.save()),
-              },
-              {
-                label: "Split right",
-                prefix: "IDE:",
-                icon: "i-lucide-columns-2",
-                kbds: ["Ctrl \\"],
-                onSelect: run(() => editor.split("right")),
-              },
-              {
-                label: "Split down",
-                prefix: "IDE:",
-                icon: "i-lucide-rows-2",
-                onSelect: run(() => editor.split("down")),
-              },
-              {
-                label: "Move the editor into the next group",
-                prefix: "IDE:",
-                icon: "i-lucide-arrow-right-to-line",
-                onSelect: run(() => editor.moveTabToNextGroup()),
-              },
-            ]
-          : []),
-        {
-          label: "Find in files",
-          prefix: "IDE:",
-          icon: "i-lucide-search",
-          kbds: ["Ctrl Shift F"],
-          onSelect: () => {
-            editor.sidebar = "search";
-            go({ name: "workspace-ide", params: { id } });
-          },
-        },
-        {
-          label: editor.wikiOpen ? "Hide the Wiki pane" : "Show the Wiki pane",
-          prefix: "IDE:",
-          icon: "i-lucide-book-open",
-          kbds: ["Ctrl Shift W"],
-          onSelect: run(() => (editor.wikiOpen = !editor.wikiOpen)),
-        },
-      ];
+  // the pages' own commands, which they register, follow it
+  const commands: Item[] = [reload, ...(id ? palette.commands : [])];
   // a value opens where it is set: the IDE's settings card, or the settings page at its section
   const values: Item[] = !id
     ? []

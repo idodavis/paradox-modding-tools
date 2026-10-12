@@ -20,6 +20,7 @@ vi.mock("@services/windowservice", () => ({
   Close: vi.fn(() => Promise.resolve()),
   QuitAnswer: vi.fn(() => Promise.resolve()),
 }));
+vi.mock("../editor/models", () => ({ saveFile: vi.fn(), resendOpenFiles: vi.fn() }));
 // the windows store imports the unsaved-changes dialog, a component the tests have no plugin to compile
 vi.mock("../ui/UnsavedChangesModal.vue", () => ({ default: {} }));
 

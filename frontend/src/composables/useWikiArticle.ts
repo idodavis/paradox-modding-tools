@@ -6,7 +6,7 @@
 import { nextTick, shallowRef, toValue, useTemplateRef, watch, type MaybeRefOrGetter } from "vue";
 import { useEventListener } from "@vueuse/core";
 import { Browser } from "@wailsio/runtime";
-import { drawCode } from "../lib/monaco";
+import { drawCode } from "../lib/codeView";
 
 /** A page the pane holds, which a wiki link to it opens there. */
 type WikiArticlePage = { title: string };

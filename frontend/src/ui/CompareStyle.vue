@@ -2,7 +2,7 @@
 /**
  * The choice between a compare's split and unified views, which every compare shares and this computer keeps.
  */
-import { COMPARE_STYLES, compareStyle } from "../lib/monaco";
+import { COMPARE_STYLES, compareStyle } from "../lib/codeView";
 
 const { size = "md" } = defineProps<{ size?: "xs" | "md" }>();
 </script>

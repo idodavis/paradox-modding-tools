@@ -5,7 +5,7 @@
  */
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { compareStyle, diffView } from "../lib/monaco";
+import { compareStyle, diffView } from "../lib/codeView";
 import CompareStyle from "./CompareStyle.vue";
 import { textQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * An editor group's editor (the Ide board's code): the shown tab's file in a Monaco editor (ide/monacoEditor.ts),
+ * An editor group's editor (the Ide board's code): the shown tab's file in a Monaco editor (editor/editor.ts),
  * the hover card over it, and its context menu (the EditorMenu board; the compares are on the tab's menu). A
  * Markdown file shown Rich is the Publish page's editor over the same text.
  */
@@ -11,7 +11,9 @@ import { Clipboard } from "@wailsio/runtime";
 import type { ContextMenuItem } from "@nuxt/ui";
 import * as rpc from "@services/ideservice";
 import type { CodeAction, Inspect } from "@services/internal/lsp";
-import { applyFix, bytesAt, createEditor, editText, editorOptions, openFile } from "../../editor/monacoEditor";
+import { createEditor, editorOptions } from "../../editor/editor";
+import { applyFix, bytesAt, editText, openFile } from "../../editor/models";
+import { showReferences } from "../../editor/search";
 import { editorRange } from "../../editor/columns";
 import { useIdeRoots } from "../../composables/useIdeRoots";
 import { monaco } from "../../lib/monaco";
@@ -63,7 +65,7 @@ watch(
       run: () => void findAll(),
     });
     // the status bar's caret is the shown tab's
-    if (editor.focused === group) view.value.report();
+    if (editor.focused === group) view.value.reportCaret();
     showPlace();
   },
   { flush: "post" },
@@ -104,23 +106,9 @@ async function graph(card?: Inspect | null): Promise<void> {
 /** Every reference to the word at the caret, in the sidebar's Search (the main window's). */
 async function findAll(): Promise<void> {
   const [line, col] = caret();
-  const card = await rpc.Hover(workspaceId, path, line, col).catch(() => null);
-  const sites = (await rpc.References(workspaceId, path, line, col).catch(() => null)) ?? [];
-  editor.results = {
-    title: `References to ${card?.word || "the word"}`,
-    rows: sites.map((site) => ({
-      path: site.path,
-      rel: site.rel,
-      origin: site.origin,
-      line: site.range.start.line,
-      col: site.range.start.character,
-      end: site.range.end.line === site.range.start.line ? site.range.end.character : site.range.start.character,
-      preview: "",
-    })),
-    done: true,
-    capped: false,
-  };
-  editor.sidebar = "search";
+  const card = await rpc.Hover(workspaceId, path, line, col);
+  const sites = (await rpc.References(workspaceId, path, line, col)) ?? [];
+  showReferences(`References to ${card?.word || "the word"}`, sites);
 }
 
 /** Run one of Monaco's actions in this editor. */

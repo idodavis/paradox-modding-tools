@@ -30,15 +30,15 @@ declare module "@wailsio/runtime" {
             "steam:progress": steam$0.Progress;
             "wiki:progress": services$0.WikiProgress;
             "wiki:updated": services$0.WikiUpdated;
-            "window:changed": string;
             "window:closed": string;
             "window:closing": string;
-            "window:give": services$0.WindowGive;
-            "window:held": services$0.WindowHeld;
-            "window:hello": string;
+            "window:opened": string;
             "window:results": services$0.PanelResults;
+            "window:saved": string;
             "window:show": services$0.WindowShow;
-            "window:tabs": services$0.WindowTabs;
+            "window:state": services$0.WindowState;
+            "window:tab-requested": services$0.WindowTabRequest;
+            "window:tabs-handed": services$0.WindowTabs;
         }
     }
 }

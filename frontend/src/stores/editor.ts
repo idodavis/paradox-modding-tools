@@ -1,8 +1,9 @@
 /**
  * The IDE's client state: the editor groups, their tabs and where they sit, the unsaved files, the open files'
  * problems, the caret, the cursor a tab is asked to show, the views, the sidebar, panel and wiki pane, the explorer's
- * selection and its undoable moves. The models and their text are editor/monacoEditor.ts's; this store reaches it for
- * the save, and the windows store for where a file is open, each inside a function.
+ * selection and its undoable moves. The models and their text are editor/models.ts's, which this store reaches for
+ * the save and which reaches it for the tabs, and the windows store is reached for where a file is open, each inside a
+ * function.
  */
 import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
@@ -15,6 +16,7 @@ import { DidClose } from "@services/ideservice";
 import type { Diagnostic } from "@services/internal/lsp";
 import type { PanelResults } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
+import { resendOpenFiles, saveFile } from "../editor/models";
 import { IMAGES, tabOf, viewsOf, type View } from "../editor/tabs";
 import { useWindowsStore, holdsFiles, isMain, windowName } from "./windows";
 import { useWorkspaceStore } from "./workspace";
@@ -401,13 +403,17 @@ export const useEditorStore = defineStore("editor", () => {
 
   /** Write files to disk one after another; a failure rejects, so a caller that awaits it can stay open. */
   async function saveFiles(files: string[]): Promise<void> {
-    const { saveFile } = await import("../editor/monacoEditor");
     for (const file of files) await saveFile(file);
   }
   const { mutate: saveMutation } = useMutation({ mutation: saveFiles });
   /** Save files in the background, every unsaved file when none are named; a failed write toasts. */
   function save(files?: string[]): void {
     saveMutation(files ?? [...unsaved.value]);
+  }
+
+  /** The session was built again: each open file's text is told to it again. */
+  function sessionRebuilt(): void {
+    resendOpenFiles();
   }
 
   return {
@@ -457,5 +463,6 @@ export const useEditorStore = defineStore("editor", () => {
     remember,
     save,
     saveFiles,
+    sessionRebuilt,
   };
 });

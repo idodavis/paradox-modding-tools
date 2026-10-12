@@ -21,7 +21,7 @@ import {
 } from "@services/fileservice";
 import { OpenFolder, RemoveWorkspaceMod } from "@services/workspaceservice";
 import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
-import { newWindowWith, openFilesWindow } from "../../editor/monacoEditor";
+import { openFolderWindow, openInNewWindow } from "../../editor/handover";
 import { BINARY_EXTENSIONS, TREE_ICONS } from "./fileKinds";
 import { Close, Show } from "@services/windowservice";
 import { useWindowsStore } from "../../stores/windows";
@@ -323,11 +323,11 @@ const menu = computed<ContextMenuItem[][]>(() => {
     file
       ? [
           { label: "Open to the side", icon: "i-lucide-columns-2", onSelect: () => editor.split("right", file) },
-          { label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void newWindowWith(file) },
+          { label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void openInNewWindow(file) },
         ]
       : windowed
         ? [{ label: "Close the window", icon: "i-lucide-panel-top-close", onSelect: () => void Close(windowed) }]
-        : [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void openFolderWindow(path) }],
+        : [{ label: "Open in a new window", icon: "i-lucide-app-window", onSelect: () => void popOutFolder(path) }],
     writable.value
       ? [
           {
@@ -419,9 +419,9 @@ function showFolderWindow(e: MouseEvent): void {
 }
 
 /** A folder (a root's too) in a window of its own, with this window's tabs of its files. */
-function openFolderWindow(path: string): void {
+function popOutFolder(path: string): void {
   const disk = diskPath(path);
-  void openFilesWindow(`files:${disk}`, path.replace(/\/$/, "").split("/").at(-1) ?? disk, [disk]);
+  void openFolderWindow(`files:${disk}`, path.replace(/\/$/, "").split("/").at(-1) ?? disk, [disk]);
 }
 
 // Ctrl Z moves the last rename, move or delete back, Ctrl Y or Ctrl Shift Z does it again

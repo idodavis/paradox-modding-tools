@@ -7,17 +7,15 @@
  * all references lists there too. Replace all writes the mods' files (Go), and changes the
  * files open in the editor there, unsaved; the game's files are never changed.
  */
-import { computed, onScopeDispose, shallowRef } from "vue";
+import { computed, shallowRef } from "vue";
 import { watchDebounced } from "@vueuse/core";
 import { storeToRefs } from "pinia";
-import { useQuery } from "@pinia/colada";
-import { Events } from "@wailsio/runtime";
+import { useMutation, useQuery } from "@pinia/colada";
 import type { IdeRoot } from "@services/models";
 import type { TextSearchHit } from "@services/internal/pages/models";
-import { Replace, TextSearch } from "@services/searchservice";
 import { editorRange } from "../../editor/columns";
 import { binaryGlobs } from "./fileKinds";
-import { editText, openText } from "../../editor/monacoEditor";
+import { replaceAll, runSearch, type SearchQuery } from "../../editor/search";
 import { fileName, plural } from "../../lib/format";
 import { linesQuery } from "../../queries";
 import { useEditorStore } from "../../stores/editor";
@@ -30,7 +28,6 @@ const { roots, hideBinaries } = defineProps<{ roots: IdeRoot[]; hideBinaries: bo
 const editor = useEditorStore();
 const { results } = storeToRefs(editor);
 const store = useWorkspaceStore();
-const toast = useToast();
 
 const pattern = shallowRef("");
 const replacement = shallowRef("");
@@ -64,9 +61,8 @@ const globs = (text: string) =>
     .map((glob) => glob.trim())
     .filter(Boolean);
 /** The search asked, over some of the folders picked. */
-function query(id: string, searched: IdeRoot[]) {
+function query(searched: IdeRoot[]): SearchQuery {
   return {
-    id,
     pattern: pattern.value,
     isRegexp: regex.value,
     isCaseSensitive: matchCase.value,
@@ -81,42 +77,11 @@ function query(id: string, searched: IdeRoot[]) {
   };
 }
 
-// the search shown, and its call
-let searching = "";
-let running: ReturnType<typeof TextSearch> | undefined;
-async function run(): Promise<void> {
-  running?.cancel();
-  if (!pattern.value.trim()) return void (results.value = null);
+/** Search the folders picked, with every file folded or open as it was counted. */
+function run(): Promise<void> {
   toggled.value = new Set();
-  const id = crypto.randomUUID();
-  const searched = folders.value;
-  searching = id;
-  results.value = { title: `“${pattern.value}”`, rows: [], done: false, capped: false };
-  running = TextSearch(query(id, searched));
-  const end = await running.catch((error: unknown) => {
-    if (searching === id) toast.add({ title: "The search could not run", description: String(error), color: "error" });
-    return null;
-  });
-  if (searching === id && results.value) results.value = { ...results.value, done: true, capped: !!end?.limitHit };
+  return runSearch(query(folders.value));
 }
-
-// each file's hits as they come, columns in bytes as the IDE's places are
-let frame = 0;
-const stop = Events.On("search:hits", ({ data }) => {
-  const shown = results.value;
-  if (data.id !== searching || !shown) return;
-  (shown.rows ??= []).push(...(data.hits ?? []));
-  // the rows are drawn once a frame, however many files' hits came in it
-  frame ||= requestAnimationFrame(() => {
-    frame = 0;
-    if (results.value) results.value = { ...results.value };
-  });
-});
-onScopeDispose(() => {
-  stop();
-  running?.cancel();
-  cancelAnimationFrame(frame);
-});
 
 // a search runs as it is typed or changed, once the typing stops
 watchDebounced([pattern, regex, matchCase, word, include, exclude, folders], () => void run(), { debounce: 300 });
@@ -176,30 +141,13 @@ function parts(row: TextSearchHit): [string, string, string] {
 // Replace all: in the mods' folders picked; Go writes the files, the editor changes the ones it has open
 const writable = computed(() => folders.value.filter((root) => !root.readOnly));
 const confirm = useOverlay().create(ConfirmModal);
-async function replaceAll(): Promise<void> {
-  const text = `Every match of “${pattern.value}” in the mods' files becomes “${replacement.value}”. The game's files are not changed; a file open in the editor changes there, unsaved.`;
-  if (!(await confirm.open({ title: "Replace all?", text, action: "Replace all" }))) return;
-  // the open files go with their text in the editor, unsaved edits and all; Go replaces there as on disk, and
-  // hands their new text back for the editor
-  const open = Object.fromEntries(
-    editor.openTabs.flatMap((path) => (openText(path) === undefined ? [] : [[path, openText(path) ?? ""]])),
-  );
-  const done = await Replace({ search: query("", writable.value), text: replacement.value, open }).catch(
-    (error: unknown) => {
-      toast.add({ title: "Replace all could not run", description: String(error), color: "error" });
-      return null;
-    },
-  );
-  if (!done) return;
-  const texts = Object.entries(done.texts ?? {});
-  for (const [path, text = ""] of texts) editText(path, () => text);
-  toast.add({
-    title: plural(done.replaced, "replacement"),
-    description: `${plural(done.files - texts.length, "file")} written${texts.length ? `; ${plural(texts.length, "open file")} changed, not saved yet` : ""}.`,
-    color: "success",
-  });
-  void run();
-}
+const { mutate: replaceInFiles } = useMutation({
+  mutation: async () => {
+    const text = `Every match of “${pattern.value}” in the mods' files becomes “${replacement.value}”. The game's files are not changed; a file open in the editor changes there, unsaved.`;
+    if (!(await confirm.open({ title: "Replace all?", text, action: "Replace all" }))) return;
+    await replaceAll(query(writable.value), replacement.value);
+  },
+});
 </script>
 
 <template>
@@ -250,7 +198,7 @@ async function replaceAll(): Promise<void> {
               variant="ghost"
               aria-label="Replace all"
               :disabled="!pattern.trim() || !writable.length"
-              @click="replaceAll"
+              @click="replaceInFiles()"
             />
           </UTooltip>
         </template>

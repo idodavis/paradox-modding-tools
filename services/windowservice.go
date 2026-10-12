@@ -18,33 +18,33 @@ import (
 
 // The events the windows tell each other and Go, declared with the payloads beside them.
 const (
-	EventWindowHeld    = "window:held"    // a window tells the others what it holds: data is WindowHeld
-	EventWindowHello   = "window:hello"   // a window opened and asks the others what they hold: data is its name
-	EventWindowTabs    = "window:tabs"    // tabs handed to a window: data is WindowTabs
-	EventWindowGive    = "window:give"    // a window asked to hand a tab to another (dragged there): data is WindowGive
-	EventWindowShow    = "window:show"    // a window asked to the front, at a route or a file: data is WindowShow
-	EventWindowResults = "window:results" // another window's Search results: data is PanelResults
-	EventWindowClosing = "window:closing" // a window asked to hand its tabs back before it closes: data is its name
-	EventWindowClosed  = "window:closed"  // a window closed: data is its name
-	EventWindowChanged = "window:changed" // a window saved what the others read: data is its name
+	EventWindowOpened       = "window:opened"        // a window opened and asks the others what they hold: data is its name
+	EventWindowState        = "window:state"         // a window tells the others what it holds: data is WindowState
+	EventWindowTabsHanded   = "window:tabs-handed"   // tabs handed to a window: data is WindowTabs
+	EventWindowTabRequested = "window:tab-requested" // a window asked to hand a tab to another (dragged there): data is WindowTabRequest
+	EventWindowShow         = "window:show"          // a window asked to the front, at a route or a file: data is WindowShow
+	EventWindowResults      = "window:results"       // another window's Search results: data is PanelResults
+	EventWindowClosing      = "window:closing"       // a window asked to hand its tabs back before it closes: data is its name
+	EventWindowClosed       = "window:closed"        // a window closed: data is its name
+	EventWindowSaved        = "window:saved"         // a window saved what the others read: data is its name
 )
 
 // registers every event so the bindings generator types them
 func init() {
-	application.RegisterEvent[WindowHeld](EventWindowHeld)
-	application.RegisterEvent[string](EventWindowHello)
-	application.RegisterEvent[WindowTabs](EventWindowTabs)
-	application.RegisterEvent[WindowGive](EventWindowGive)
+	application.RegisterEvent[string](EventWindowOpened)
+	application.RegisterEvent[WindowState](EventWindowState)
+	application.RegisterEvent[WindowTabs](EventWindowTabsHanded)
+	application.RegisterEvent[WindowTabRequest](EventWindowTabRequested)
 	application.RegisterEvent[WindowShow](EventWindowShow)
 	application.RegisterEvent[PanelResults](EventWindowResults)
 	application.RegisterEvent[string](EventWindowClosing)
 	application.RegisterEvent[string](EventWindowClosed)
-	application.RegisterEvent[string](EventWindowChanged)
+	application.RegisterEvent[string](EventWindowSaved)
 }
 
-// WindowHeld is what a window holds: its title, the folders its explorer shows (their files open there), its tabs,
+// WindowState is what a window holds: its title, the folders its explorer shows (their files open there), its tabs,
 // the files among them with unsaved edits (which the main window's close asks about), and their files' problems.
-type WindowHeld struct {
+type WindowState struct {
 	Name     string                      `json:"name"`
 	Title    string                      `json:"title"`
 	Roots    []string                    `json:"roots"`
@@ -67,8 +67,8 @@ type WindowTab struct {
 	Text    string `json:"text"`
 }
 
-// WindowGive asks the window holding a tab to hand it to another.
-type WindowGive struct {
+// WindowTabRequest asks the window holding a tab to hand it to another.
+type WindowTabRequest struct {
 	To     string `json:"to"`
 	Tab    string `json:"tab"`
 	Window string `json:"window"`

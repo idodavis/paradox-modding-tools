@@ -20,6 +20,7 @@ vi.mock("@services/windowservice", () => ({
 }));
 vi.mock("@services/ideservice", () => ({ DidClose: vi.fn(() => Promise.resolve()) }));
 vi.mock("@services/fileservice", () => ({ RenamePath: vi.fn(() => Promise.resolve()) }));
+vi.mock("../editor/models", () => ({ saveFile: vi.fn(), resendOpenFiles: vi.fn() }));
 // the store imports the unsaved-changes dialog, a component the tests have no plugin to compile
 vi.mock("../ui/UnsavedChangesModal.vue", () => ({ default: {} }));
 
@@ -97,6 +98,6 @@ describe("the windows", () => {
     expect(Events.Emit).not.toHaveBeenCalled();
     windows.recordWindow(state("panel"));
     windows.saved();
-    expect(Events.Emit).toHaveBeenCalledWith("window:changed", "main");
+    expect(Events.Emit).toHaveBeenCalledWith("window:saved", "main");
   });
 });

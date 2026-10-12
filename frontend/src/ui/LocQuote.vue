@@ -5,7 +5,7 @@
  * grammar's colors (`lib/code.ts`'s `locTokens`), its \n are line breaks, none kept at either end.
  */
 import { computed } from "vue";
-import { locTokens } from "../lib/monaco";
+import { locTokens } from "../lib/codeView";
 
 const { text, bare = false } = defineProps<{ text: string; bare?: boolean }>();
 

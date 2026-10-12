@@ -7,13 +7,16 @@
  * diff compares. In a window of its own (windows.ts) it shows one part: an editor group, the game's files, or the panel.
  */
 import { computed, onActivated, onDeactivated, shallowRef, useTemplateRef, watch } from "vue";
+import { useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import { useLocalStorage, watchDebounced } from "@vueuse/core";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { IdeRoot } from "@services/models";
 import { Fetch, Pull, Push, Stage, Unstage } from "@services/gitservice";
 import { AddWorkspaceMod } from "@services/workspaceservice";
-import { openFilesWindow, setWorkspace } from "../../editor/monacoEditor";
+import { installEditor } from "../../editor/editor";
+import { openFolderWindow } from "../../editor/handover";
+import { setWorkspace } from "../../editor/models";
 import { useCompare } from "../../composables/useCompare";
 import { pathKey, useIdeRoots } from "../../composables/useIdeRoots";
 import { pickDirectory } from "../../lib/nativeDialog";
@@ -39,6 +42,7 @@ const { id } = defineProps<{ id: string }>();
 
 const editor = useEditorStore();
 const windows = useWindowsStore();
+installEditor(useRouter());
 const git = useGitStore();
 const settings = useSettingsStore();
 const { data: rec, roots, locate } = useIdeRoots(() => id);
@@ -347,7 +351,7 @@ function showProblems(): void {
                       square
                       aria-label="Open in its own window"
                       @click="
-                        openFilesWindow(
+                        openFolderWindow(
                           'game',
                           'Game files',
                           game.map((root) => root.path),

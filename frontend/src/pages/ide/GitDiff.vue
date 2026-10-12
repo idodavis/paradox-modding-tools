@@ -8,9 +8,10 @@
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
 import { Stage, StageText, Unstage } from "@services/gitservice";
-import { openFile } from "../../editor/monacoEditor";
+import { openFile } from "../../editor/models";
 import { useIdeRoots } from "../../composables/useIdeRoots";
-import { compareStyle, diffView, languageOf, monaco } from "../../lib/monaco";
+import { compareStyle, diffView } from "../../lib/codeView";
+import { languageOf, monaco } from "../../lib/monaco";
 import CompareStyle from "../../ui/CompareStyle.vue";
 import { capital } from "../../lib/format";
 import { gitTextQuery, textQuery } from "../../queries";

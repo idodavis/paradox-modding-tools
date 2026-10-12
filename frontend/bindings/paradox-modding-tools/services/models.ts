@@ -500,28 +500,6 @@ export interface WikiUpdated {
 }
 
 /**
- * WindowGive asks the window holding a tab to hand it to another.
- */
-export interface WindowGive {
-    "to": string;
-    "tab": string;
-    "window": string;
-}
-
-/**
- * WindowHeld is what a window holds: its title, the folders its explorer shows (their files open there), its tabs,
- * the files among them with unsaved edits (which the main window's close asks about), and their files' problems.
- */
-export interface WindowHeld {
-    "name": string;
-    "title": string;
-    "roots": string[] | null;
-    "tabs": string[] | null;
-    "unsaved": string[] | null;
-    "problems": { [_ in string]?: lsp$0.Diagnostic[] | null } | null;
-}
-
-/**
  * WindowShow asks a window to come to the front, at a route (a link followed in a window that shows one thing),
  * or showing a file at a 0-based line and UTF-8 byte column; a line of -1 keeps where the file was.
  */
@@ -534,12 +512,34 @@ export interface WindowShow {
 }
 
 /**
+ * WindowState is what a window holds: its title, the folders its explorer shows (their files open there), its tabs,
+ * the files among them with unsaved edits (which the main window's close asks about), and their files' problems.
+ */
+export interface WindowState {
+    "name": string;
+    "title": string;
+    "roots": string[] | null;
+    "tabs": string[] | null;
+    "unsaved": string[] | null;
+    "problems": { [_ in string]?: lsp$0.Diagnostic[] | null } | null;
+}
+
+/**
  * WindowTab is a tab (a file's path, or a diff tab) and, when its file has unsaved edits, its text.
  */
 export interface WindowTab {
     "tab": string;
     "unsaved": boolean;
     "text": string;
+}
+
+/**
+ * WindowTabRequest asks the window holding a tab to hand it to another.
+ */
+export interface WindowTabRequest {
+    "to": string;
+    "tab": string;
+    "window": string;
 }
 
 /**

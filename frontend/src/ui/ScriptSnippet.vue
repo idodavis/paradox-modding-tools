@@ -4,7 +4,7 @@
  * code's colors (a property's value).
  */
 import { computed } from "vue";
-import { codeLines } from "../lib/monaco";
+import { codeLines } from "../lib/codeView";
 
 const {
   text,

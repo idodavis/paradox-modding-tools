@@ -1,10 +1,10 @@
 # pages
 
 What each of the app's pages asks of an open workspace: the Health report, the event graph with one definition's
-detail and the root search, and the searches over the workspace's folders. Each answer is a function of the session
-(or the folders) and the page's parameters, and each answer over a session takes its read lock itself, so a service
-is one call; payloads carry display data and the frontend templates the text. Nothing here persists but `Findings`, the editor's
-findings kept while the session's records are unchanged.
+detail and the root search, and the searches over the workspace's folders. Each answer is a function of the open
+workspace (or the folders) and the page's parameters, and each answer over a workspace takes its read lock itself, so a
+service is one call; payloads carry display data and the frontend templates the text. Nothing here persists but
+`Findings`, the editor's findings kept while the workspace's records are unchanged.
 
 Read `health.go` first.
 

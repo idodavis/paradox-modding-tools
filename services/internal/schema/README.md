@@ -71,7 +71,7 @@ empty comment or a heading keeps the run together. `claimsOf` reads a node's cla
 line of its prose through `docPhrases`; what no phrase reads is the blurb.
 
 The two merges differ only in where a key is placed. `mergeDocs` places each key where the walker reads it under
-the entry (`PlaceKey`), writes the node's claims where vanilla writes that position, and reads a key vanilla
+the entry (`Enter`), writes the node's claims where vanilla writes that position, and reads a key vanilla
 writes nowhere below as a template (an example entry's name, a `<key>`) whose block merges in the holder's
 place. `mergeUsages` places a usage's arguments under the command's `Args`, made on write; the nodes that stand
 for the command are `usageRoots`: those named as it, else the one top statement (an alias family's sibling

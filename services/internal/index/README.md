@@ -1,4 +1,4 @@
-# lang/index
+# index
 
 What a scan found: each file's occurrences (a name defined, referred to or localized), kept per index and resolved
 by name at query time in the game's load order. The index infers nothing: what a written scalar defines or refers
@@ -61,8 +61,8 @@ place. Two mods contest a name when one takes the other's place.
 
 **Fires.** `Fires` is a reference to an event or on_action outside a trigger; `Runs` is a call, or a name of a
 database called in effects, outside a trigger, whose fires are fired through it. `Scripted` is a definition a
-reference may run: one of a database some block calls. The event graph's `workspace.Fires` and
-`workspace.FiredBy` follow these three and nothing else.
+reference may run: one of a database some block calls. The event graph's `Session.Fires` and
+`Session.FiredBy` (package `workspace`) follow these three and nothing else.
 
 ## The scan (`scan.go`)
 

@@ -60,14 +60,18 @@ function beside(node: Layout, groupId: number, edge: Exclude<Edge, "middle">, ad
 /** A layout with a group gone: a split left with one part becomes that part, the shares of the rest add up to 1. */
 function without(node: Layout, groupId: number): Layout | null {
   if ("group" in node) return node.group === groupId ? null : node;
-  const kept = node.parts
+  const remaining = node.parts
     .map((part, i) => ({ part: without(part, groupId), size: node.sizes[i] ?? 0 }))
     .filter((one): one is { part: Layout; size: number } => !!one.part);
-  const [only] = kept;
+  const [only] = remaining;
   if (!only) return null;
-  if (kept.length === 1) return only.part;
-  const total = kept.reduce((sum, one) => sum + one.size, 0) || 1;
-  return { split: node.split, parts: kept.map((one) => one.part), sizes: kept.map((one) => one.size / total) };
+  if (remaining.length === 1) return only.part;
+  const total = remaining.reduce((sum, one) => sum + one.size, 0) || 1;
+  return {
+    split: node.split,
+    parts: remaining.map((one) => one.part),
+    sizes: remaining.map((one) => one.size / total),
+  };
 }
 
 /** The group at the top right: a row's last part, a column's first. */
@@ -189,12 +193,12 @@ export const useEditorStore = defineStore("editor", () => {
 
   /** Take a tab out of a group, showing its neighbor; an emptied group goes unless it is the last. */
   function removeTab(groupId: number, tab: string): void {
-    const from = group(groupId);
-    const index = from?.tabs.indexOf(tab) ?? -1;
-    if (!from || index < 0) return;
-    from.tabs.splice(index, 1);
-    if (from.active === tab) from.active = from.tabs[index] ?? from.tabs.at(-1) ?? "";
-    if (from.tabs.length || groups.value.length === 1) return;
+    const sourceGroup = group(groupId);
+    const index = sourceGroup?.tabs.indexOf(tab) ?? -1;
+    if (!sourceGroup || index < 0) return;
+    sourceGroup.tabs.splice(index, 1);
+    if (sourceGroup.active === tab) sourceGroup.active = sourceGroup.tabs[index] ?? sourceGroup.tabs.at(-1) ?? "";
+    if (sourceGroup.tabs.length || groups.value.length === 1) return;
     groups.value = groups.value.filter((one) => one.id !== groupId);
     layout.value = without(layout.value, groupId) ?? { group: groups.value[0]?.id ?? 1 };
     if (focused.value === groupId) focused.value = order(layout.value)[0] ?? 1;
@@ -213,7 +217,7 @@ export const useEditorStore = defineStore("editor", () => {
     mutation: (file: string) => DidClose(editingWorkspaceId.value, file),
   });
 
-  /** Close a tab of a group; the backend is told when no tab shows its file any more. */
+  /** Close a tab of a group; the backend is notified when no tab shows its file any more. */
   function closeTab(groupId: number, tab: string): void {
     removeTab(groupId, tab);
     const { file } = tabOf(tab);
@@ -235,24 +239,29 @@ export const useEditorStore = defineStore("editor", () => {
   /** Move the tabs of a path, or under it, to its new path, each keeping its place and losing its marks. */
   function renameTabs(path: string, next: string): void {
     const length = path.replace(/[\\/]$/, "").length;
-    const moved = new Set(openTabs.value.filter(within(path)));
-    const renamed = (tab: string) => (moved.has(tab) ? next + tab.slice(length) : tab);
+    const tabsUnder = new Set(openTabs.value.filter(within(path)));
+    const renamed = (tab: string) => (tabsUnder.has(tab) ? next + tab.slice(length) : tab);
     for (const one of groups.value) {
       one.active = renamed(one.active);
       one.tabs = one.tabs.map(renamed);
     }
-    for (const tab of moved) {
+    for (const tab of tabsUnder) {
       unsaved.value.delete(tab);
       problems.value.delete(tab);
     }
   }
 
-  /** Let tabs go to another window: they leave every group and Go is not told, since another window holds them. */
+  /** Let tabs go to another window: they leave every group and Go is not notified, since another window holds them. */
   function dropTabs(tabs: string[]): void {
     for (const tab of tabs) {
       for (const one of [...groups.value]) removeTab(one.id, tab);
       forgetFile(tabOf(tab).file);
     }
+  }
+
+  /** Set the shares of a split's parts, as a splitter's drag leaves them. */
+  function resizeSplit(node: Layout, shares: number[]): void {
+    if ("split" in node) node.sizes = shares;
   }
 
   /** A new group on a group's edge, showing a tab. */
@@ -352,18 +361,18 @@ export const useEditorStore = defineStore("editor", () => {
       focused.value = 1;
       return;
     }
-    const placed = new Set<string>();
+    const restoredKeys = new Set<string>();
     let restored = record.groups.map((one) => {
-      const seen = new Set<string>();
+      const groupKeys = new Set<string>();
       const tabs = one.tabs.filter((tab) => {
         const key = pathKey(tab);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        placed.add(key);
+        if (groupKeys.has(key)) return false;
+        groupKeys.add(key);
+        restoredKeys.add(key);
         return true;
       });
-      const shown = tabs.find((tab) => pathKey(tab) === pathKey(one.active)) ?? tabs[0] ?? "";
-      return { id: one.id, tabs, active: shown };
+      const groupActive = tabs.find((tab) => pathKey(tab) === pathKey(one.active)) ?? tabs[0] ?? "";
+      return { id: one.id, tabs, active: groupActive };
     });
     let restoredLayout = record.layout;
     for (const empty of restored.filter((one) => !one.tabs.length)) {
@@ -375,8 +384,8 @@ export const useEditorStore = defineStore("editor", () => {
     const [first] = restored;
     for (const tab of record.others ?? []) {
       const key = pathKey(tab);
-      if (placed.has(key) || !first) continue;
-      placed.add(key);
+      if (restoredKeys.has(key) || !first) continue;
+      restoredKeys.add(key);
       first.tabs.push(tab);
       first.active ||= tab;
     }
@@ -411,7 +420,7 @@ export const useEditorStore = defineStore("editor", () => {
     saveMutation(files ?? [...unsaved.value]);
   }
 
-  /** The session was built again: each open file's text is told to it again. */
+  /** The session was built again: each open file's text is sent to it again. */
   function sessionRebuilt(): void {
     resendOpenFiles();
   }
@@ -446,6 +455,7 @@ export const useEditorStore = defineStore("editor", () => {
     backendPath,
     open,
     addTabHidden,
+    resizeSplit,
     closeTab,
     closeTabs,
     renameTabs,

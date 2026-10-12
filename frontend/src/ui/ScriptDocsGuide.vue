@@ -39,7 +39,7 @@ const gained = [
   "The citable prefix table (culture:, title:, c:, …)",
 ];
 
-const kept = [
+const worksWithout = [
   "Go to definition, find references, and rename",
   "Workspace Health: conflicts, load order, dangling references",
   "Localization coverage",
@@ -82,7 +82,7 @@ const kept = [
           <div>
             <p class="mb-1 font-medium text-highlighted">Works without it</p>
             <ul class="space-y-1 text-toned">
-              <li v-for="k in kept" :key="k" class="flex gap-2">
+              <li v-for="k in worksWithout" :key="k" class="flex gap-2">
                 <UIcon name="i-lucide-dot" class="mt-1 size-3.5 shrink-0 text-dimmed" />
                 <span>{{ k }}</span>
               </li>

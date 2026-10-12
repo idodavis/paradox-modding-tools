@@ -201,10 +201,10 @@ export function installProviders(): void {
 
   monaco.languages.registerCodeActionProvider(PARADOX, {
     async provideCodeActions(model, range) {
-      const found = await asked(model, range.getStartPosition(), (path, line, col) =>
+      const fixes = await asked(model, range.getStartPosition(), (path, line, col) =>
         rpc.CodeActions(workspaceId, path, line, col),
       );
-      const actions = (found ?? []).map((action) => ({
+      const actions = (fixes ?? []).map((action) => ({
         title: action.title,
         kind: "quickfix",
         command: { id: "pmt.applyFix", title: action.title, arguments: [action] },

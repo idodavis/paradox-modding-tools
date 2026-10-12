@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * Review and upload (the PublishSteam board): where to publish, what to check before an upload (Steam's
+ * Review and upload: where to publish, what to check before an upload (Steam's
  * screenshots and videos among them, which it can bring in; last, what it changes on Steam with the way into the
- * comparison, O-R40), the Steam item and its change note, and Upload, off until everything is saved, whose result
+ * comparison), the Steam item and its change note, and Upload, off until everything is saved, whose result
  * stays on screen. Paradox Mods takes the description as BBCode to paste.
  */
 import { computed, onScopeDispose, shallowRef } from "vue";
@@ -21,7 +21,12 @@ import { healthQuery, imageQuery, languageQuery, releaseKeys, steamStatusQuery, 
 import { bytes, plural } from "../../lib/format";
 
 // saved: nothing unsaved, so an upload sends what is on screen
-const { listing, summary, steam, saved } = defineProps<{
+const {
+  listing,
+  summary,
+  steam = null,
+  saved,
+} = defineProps<{
   listing: Listing;
   summary: ListingSummary;
   steam?: SteamCompare | null;
@@ -45,8 +50,8 @@ const {
   isLoading: checkingSteam,
 } = useQuery(() => steamStatusQuery({ id: listing.workspaceId, enabled: where.value === "steam" }));
 // the upload moving, while it runs
-const moved = shallowRef<Progress | null>(null);
-onScopeDispose(Events.On("steam:progress", ({ data }) => (moved.value = data)));
+const progress = shallowRef<Progress | null>(null);
+onScopeDispose(Events.On("steam:progress", ({ data }) => (progress.value = data)));
 const places: RadioGroupItem[] = [
   {
     label: "Steam Workshop",
@@ -178,7 +183,7 @@ const {
   data: published,
 } = useMutation({
   mutation: () => {
-    moved.value = null;
+    progress.value = null;
     return PublishSteam(listing.workspaceId, listing.modId);
   },
   onSettled: () => queryCache.invalidateQueries({ key: releaseKeys.mod(listing.workspaceId, listing.modId) }),
@@ -219,13 +224,14 @@ async function copyBBCode(): Promise<void> {
             />
             <span class="flex min-w-0 flex-col gap-0.5">
               {{ check.text }}
-              <ULink
+              <UButton
                 v-if="check.link === 'health'"
                 :to="{ name: 'health', params: { id: listing.workspaceId }, query: { card: 'dangling' } }"
-                class="text-12 text-secondary"
-              >
-                Review in Health
-              </ULink>
+                label="Review in Health"
+                variant="link"
+                color="secondary"
+                class="h-5 self-start p-0 text-12"
+              />
               <UButton
                 v-else-if="check.link === 'import'"
                 label="Import them from Steam"
@@ -234,13 +240,14 @@ async function copyBBCode(): Promise<void> {
                 class="h-5 self-start p-0 text-12"
                 @click="importExtras()"
               />
-              <ULink
+              <UButton
                 v-else-if="check.link === 'exclusions'"
                 :to="{ name: 'workspace-settings', params: { id: listing.workspaceId }, query: { section: 'mods' } }"
-                class="text-12 text-secondary"
-              >
-                Edit upload exclusions
-              </ULink>
+                label="Edit upload exclusions"
+                variant="link"
+                color="secondary"
+                class="h-5 self-start p-0 text-12"
+              />
             </span>
           </div>
           <div
@@ -262,8 +269,7 @@ async function copyBBCode(): Promise<void> {
               :model-value="listing.remoteFileId"
               readonly
               placeholder="A new private item"
-              class="grow"
-              :ui="{ base: 'font-mono text-12' }"
+              class="grow font-mono [&_input]:text-12"
             >
               <template #trailing>
                 <span class="truncate text-12 text-dimmed">{{ steam?.title }}</span>
@@ -385,10 +391,12 @@ async function copyBBCode(): Promise<void> {
       <template #body>
         <div class="flex flex-col gap-2">
           <span class="text-13 text-toned"
-            >{{ moved?.stage ?? "Starting Steam"
-            }}<template v-if="moved?.total"> · {{ bytes(moved.done) }} of {{ bytes(moved.total) }}</template></span
+            >{{ progress?.stage ?? "Starting Steam"
+            }}<template v-if="progress?.total">
+              · {{ bytes(progress.done) }} of {{ bytes(progress.total) }}</template
+            ></span
           >
-          <UProgress :model-value="moved?.total ? (moved.done * 100) / moved.total : null" />
+          <UProgress :model-value="progress?.total ? (progress.done * 100) / progress.total : null" />
         </div>
       </template>
     </UModal>

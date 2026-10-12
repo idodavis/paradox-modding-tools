@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The IDE's settings (the IdeSettings and IdeSettingsTabs boards, O-R22): a card opened in the middle of the window
- * (O-R50) from the gear at the end of the sidebar's row. Editor, Language, Checks, Explorer and Wiki; each applies
+ * The IDE's settings: a card opened in the middle of the window
+ * from the gear at the end of the sidebar's row. Editor, Language, Checks, Explorer and Wiki; each applies
  * to every workspace and its tab resets to the defaults.
  */
 import { computed, shallowRef } from "vue";
@@ -57,10 +57,10 @@ const FONTS = [
   "DejaVu Sans Mono",
 ];
 const font = shallowRef(settings.editorFont);
-watchDebounced(font, (name) => void settings.set("ui.editorFont", name?.trim() ?? ""), { debounce: 500 });
+watchDebounced(font, (name) => settings.set("ui.editorFont", name?.trim() ?? ""), { debounce: 500 });
 
 function setNumber(key: "ui.editorFontSize" | "ui.ideUiFontSize" | "ide.indentSize", value: string | number): void {
-  void settings.set(key, String(value));
+  settings.set(key, String(value));
 }
 
 /** Every setting of the open tab back to its default. */
@@ -79,9 +79,9 @@ function resetTab(): void {
     explorer: ["ui.ideUiFontSize", "ide.density", ...switchesOf("explorer").map((one) => one.key)],
     wiki: switchesOf("wiki").map((one) => one.key),
   };
-  if (tab.value === "wiki") void setToastPref("show");
+  if (tab.value === "wiki") setToastPref("show");
   if (tab.value === "editor") font.value = "Geist Mono";
-  void settings.reset(keys[tab.value]);
+  settings.reset(keys[tab.value]);
 }
 </script>
 

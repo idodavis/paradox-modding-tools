@@ -1,25 +1,25 @@
 <script setup lang="ts">
 /**
- * What a word is (the Ide board's hover card, O-R7, O-R51): the problems found there, its kind, name and scope, the
+ * What a word is: the problems found there, its kind, name and scope, the
  * facts it carries (what it takes and returns, ...), its text and prose, and last where it is defined and what it
  * replaces. Where the backend has no card (plain text in a localization value) the problems show alone.
  */
 import { computed } from "vue";
-import type { editor as monacoEditor } from "monaco-editor/editor/editor.api";
+import type { monaco } from "../../lib/monaco";
 import type { Inspect, Location } from "@services/internal/lsp";
 import { useEditorStore } from "../../stores/editor";
 import { useWorkspaceStore } from "../../stores/workspace";
 import LocQuote from "../../ui/LocQuote.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 
-const { card, problems = [] } = defineProps<{ card: Inspect | null; problems?: monacoEditor.IMarker[] }>();
+const { card, problems = [] } = defineProps<{ card: Inspect | null; problems?: monaco.editor.IMarker[] }>();
 
 const store = useWorkspaceStore();
 const editor = useEditorStore();
 
 const sites = computed(() => card?.sites ?? []);
 const winner = computed(() => card?.winner ?? -1);
-const kept = computed(() => sites.value[winner.value]);
+const winningSite = computed(() => sites.value[winner.value]);
 // each other site by its part: added to the kept one, replaced by it, or one of several where none is kept
 const others = computed(() =>
   sites.value.flatMap((site, i) =>
@@ -33,8 +33,8 @@ const SHOWN = 2;
 /** The sites as rows: a part's sites of one origin together, each file once with how many places it holds. */
 const groups = computed(() => {
   const rows: { part: string; origin: string; files: { rel: string; first: Location; count: number }[] }[] = [];
-  for (const { site, part } of kept.value
-    ? [{ site: kept.value, part: "Defined by" }, ...others.value]
+  for (const { site, part } of winningSite.value
+    ? [{ site: winningSite.value, part: "Defined by" }, ...others.value]
     : others.value) {
     let group = rows.find((row) => row.part === part && row.origin === site.origin);
     if (!group) rows.push((group = { part, origin: site.origin, files: [] }));
@@ -46,8 +46,8 @@ const groups = computed(() => {
 });
 const overrides = computed(
   () =>
-    !!kept.value &&
-    kept.value.origin !== store.originVanilla &&
+    !!winningSite.value &&
+    winningSite.value.origin !== store.originVanilla &&
     others.value.some(({ site, part }) => part === "Replaces" && site.origin === store.originVanilla),
 );
 const facts = computed(() => {
@@ -82,7 +82,7 @@ const facts = computed(() => {
 });
 const color = computed(() => (/^#[0-9a-f]{6}$/i.test(card?.color ?? "") ? card?.color : ""));
 // a word that says nothing of itself shows only its problems
-const said = computed(() => !!(card?.head || card?.word || card?.key));
+const identified = computed(() => !!(card?.head || card?.word || card?.key));
 const KEYS = [
   ["F12", "definition"],
   ["Alt F12", "peek"],
@@ -112,7 +112,7 @@ function open(site: Location): void {
       </div>
     </div>
     <template v-if="card">
-      <div v-if="said" class="flex flex-col gap-1 px-3.5 py-2.5">
+      <div v-if="identified" class="flex flex-col gap-1 px-3.5 py-2.5">
         <div class="flex min-w-0 items-center gap-2">
           <UBadge v-if="card.head" :label="card.head" color="info" size="sm" />
           <span class="min-w-0 font-mono text-13 font-semibold break-all text-highlighted">{{
@@ -178,7 +178,7 @@ function open(site: Location): void {
       </div>
       <!-- each key with its word on one line; a narrow card wraps between them -->
       <div
-        v-if="said"
+        v-if="identified"
         class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted px-3.5 py-1.5 text-tiny whitespace-nowrap text-dimmed"
       >
         <span v-for="[key, word] in KEYS" :key="key" class="flex items-center gap-1"

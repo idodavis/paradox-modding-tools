@@ -53,8 +53,8 @@ export function useWikiArticle(opts: {
       const anchor = pendingAnchor.value || firstSectionHit(toValue(opts.sections), needle);
       pendingAnchor.value = "";
       if (anchor) jumpTo(anchor);
-      const named = anchor ? marks.findIndex((mark) => mark.closest(`#${CSS.escape(anchor)}`)) : -1;
-      showHit(Math.max(named, 0), !anchor);
+      const anchorIndex = anchor ? marks.findIndex((mark) => mark.closest(`#${CSS.escape(anchor)}`)) : -1;
+      showHit(Math.max(anchorIndex, 0), !anchor);
       spy();
     },
   );
@@ -177,16 +177,16 @@ function wrapHits(node: Text, needle: string): void {
   const frag = document.createDocumentFragment();
   let i = 0;
   while (i < src.length) {
-    const at = lower.indexOf(q, i);
-    if (at < 0) {
+    const index = lower.indexOf(q, i);
+    if (index < 0) {
       frag.appendChild(document.createTextNode(src.slice(i)));
       break;
     }
-    if (at > i) frag.appendChild(document.createTextNode(src.slice(i, at)));
+    if (index > i) frag.appendChild(document.createTextNode(src.slice(i, index)));
     const mark = document.createElement("mark");
-    mark.textContent = src.slice(at, at + needle.length);
+    mark.textContent = src.slice(index, index + needle.length);
     frag.appendChild(mark);
-    i = at + needle.length;
+    i = index + needle.length;
   }
   node.parentNode?.replaceChild(frag, node);
 }

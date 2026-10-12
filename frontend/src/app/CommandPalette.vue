@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The command palette (the CommandPalette and PaletteSettings boards) on every page. After ">", the pages, the
+ * The command palette on every page. After ">", the pages, the
  * workspaces, the IDE's commands and every setting: a setting that is on or off flips where you are, one with a value
  * opens the page or the card that sets it. Without it, the workspace's files; after "@", the open file's names; after
  * "#", events and on_actions, the game's included, and the localization keys starting with what is typed.
@@ -48,8 +48,8 @@ const mode = computed(() =>
 );
 const query = computed(() => (mode.value === "files" ? term.value : term.value.slice(1)).trim());
 
-function go(to: RouteLocationRaw): void {
-  void router.push(to);
+function go(target: RouteLocationRaw): void {
+  void router.push(target);
   palette.paletteOpen = false;
 }
 
@@ -59,14 +59,18 @@ function show(path: string, line = 0, col = 0): void {
   editor.open(path, { line, col });
 }
 
+async function reloadWindow(): Promise<void> {
+  if (!editor.unsaved.size || (await unsavedModal.open({ going: "Reloading the window" }))) location.reload();
+}
+
 /** A switch's state and how it flips, where it has a workspace to flip on. */
 function flip(id: SettingSwitch): { on: boolean; set: (on: boolean) => void } | undefined {
   const ws = store.activeWorkspace;
   switch (id) {
     case "matchGame":
-      return { on: settings.matchGameTheme, set: (on) => void settings.setOn("ui.matchGameTheme", on) };
+      return { on: settings.matchGameTheme, set: (on) => settings.setOn("ui.matchGameTheme", on) };
     case "followSystem":
-      return { on: settings.appearance === "system", set: (on) => void settings.followSystem(on) };
+      return { on: settings.appearance === "system", set: (on) => settings.followSystem(on) };
     case "reopenTabs":
       return ws && { on: !ws.resetIdeOnOpen, set: (on) => savePrefs({ ws, resetIdeOnOpen: !on }) };
     case "hideBinaries":
@@ -122,11 +126,8 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
       return [switchItem(setting.label, scope, state.on, state.set, setting.words)];
     }),
     ...WORKSPACE_TOOLS.map((tool) =>
-      switchItem(
-        `Show the ${tool.label} page`,
-        "App",
-        settings.visibleTools.includes(tool.name),
-        (on) => void settings.showTool(tool.name, on),
+      switchItem(`Show the ${tool.label} page`, "App", settings.visibleTools.includes(tool.name), (on) =>
+        settings.showTool(tool.name, on),
       ),
     ),
     ...IDE_SWITCH_ROWS.map((row) =>
@@ -134,7 +135,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
         row.label,
         row.key.startsWith("ui.wiki") ? "Wiki" : "IDE",
         settings.on(row.key),
-        (on) => void settings.setOn(row.key, on),
+        (on) => settings.setOn(row.key, on),
         row.hint,
       ),
     ),
@@ -143,7 +144,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
         `Check: ${check.summary}`,
         "IDE",
         settings.on(`ide.diag.${check.code}`, check.default),
-        (on) => void settings.setOn(`ide.diag.${check.code}`, on),
+        (on) => settings.setOn(`ide.diag.${check.code}`, on),
         check.code,
       ),
     ),
@@ -152,9 +153,7 @@ const groups = computed<CommandPaletteGroup<Item>[]>(() => {
   const reload: Item = {
     label: "Reload the window",
     icon: "i-lucide-refresh-cw",
-    onSelect: async () => {
-      if (!editor.unsaved.size || (await unsavedModal.open({ going: "Reloading the window" }))) location.reload();
-    },
+    onSelect: () => void reloadWindow(),
   };
   // the pages' own commands, which they register, follow it
   const commands: Item[] = [reload, ...(id ? palette.commands : [])];
@@ -198,7 +197,7 @@ const { results } = useFuse(query, all, {
   matchAllWhenSearchEmpty: true,
   resultLimit: 40,
 });
-const found = computed(() =>
+const commandGroups = computed(() =>
   groups.value.map((group) => ({
     ...group,
     ignoreFilter: true,
@@ -225,13 +224,13 @@ const { data: locs } = useQuery(() => locQuery({ id: id.value, prefix: mode.valu
 const lists = computed((): CommandPaletteGroup<Item>[] => {
   switch (mode.value) {
     case "commands":
-      return found.value;
+      return commandGroups.value;
     case "files": {
       const items = (files.value?.hits ?? []).map((hit) => {
-        const at = locate(hit.path);
+        const located = locate(hit.path);
         return {
-          label: at?.rel ?? hit.path,
-          suffix: at ? store.originName(at.root.origin ?? "") : "",
+          label: located?.rel ?? hit.path,
+          suffix: located ? store.originName(located.root.origin ?? "") : "",
           icon: "i-lucide-file",
           onSelect: () => show(hit.path),
         };
@@ -258,15 +257,15 @@ const lists = computed((): CommandPaletteGroup<Item>[] => {
         suffix: `${node.kind} · ${store.originName(node.origin ?? "")}`,
         icon: "i-lucide-zap",
         onSelect: async () => {
-          const detail = await GetEventDetail(id.value, node.id).catch(() => null);
+          const detail = await GetEventDetail(id.value, node.id);
           if (detail?.at.path) show(detail.at.path, detail.line);
         },
       }));
-      const keys = (locs.value ?? []).map((found) => ({
-        label: found.name,
-        suffix: store.originName(found.location.origin),
+      const keys = (locs.value ?? []).map((entry) => ({
+        label: entry.name,
+        suffix: store.originName(entry.location.origin),
         icon: "i-lucide-languages",
-        onSelect: () => show(found.location.path, found.location.range.start.line),
+        onSelect: () => show(entry.location.path, entry.location.range.start.line),
       }));
       return [
         { id: "events", label: "Events and on_actions", ignoreFilter: true, items },

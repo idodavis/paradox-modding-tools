@@ -62,9 +62,9 @@ function accept(model: monaco.editor.ITextModel, conflict: Conflict, take: Take)
   const lines = (first: number, last: number) => (last < first ? [] : model.getLinesContent().slice(first - 1, last));
   const current = lines(conflict.start + 1, (conflict.base ?? conflict.middle) - 1);
   const incoming = lines(conflict.middle + 1, conflict.end - 1);
-  const kept = take === "current" ? current : take === "incoming" ? incoming : [...current, ...incoming];
+  const resolved = take === "current" ? current : take === "incoming" ? incoming : [...current, ...incoming];
   const range = new monaco.Range(conflict.start, 1, conflict.end + 1, 1);
-  const text = kept.map((line) => line + model.getEOL()).join("");
+  const text = resolved.map((line) => line + model.getEOL()).join("");
   model.pushStackElement();
   model.pushEditOperations([], [{ range, text }], () => null);
   model.pushStackElement();

@@ -18,8 +18,8 @@ const {
 }>();
 
 async function browse(): Promise<void> {
-  const picked = mode === "folder" ? await pickDirectory(dialogTitle) : await pickFile(dialogTitle, fileFilter);
-  if (picked) path.value = picked;
+  const selection = mode === "folder" ? await pickDirectory(dialogTitle) : await pickFile(dialogTitle, fileFilter);
+  if (selection) path.value = selection;
 }
 </script>
 
@@ -29,8 +29,7 @@ async function browse(): Promise<void> {
       v-model="path"
       readonly
       :placeholder="placeholder"
-      class="min-w-0 flex-1"
-      :ui="{ base: 'font-mono placeholder:font-sans' }"
+      class="min-w-0 flex-1 font-mono [&_input]:placeholder:font-sans"
     />
     <UButton label="Browse" @click="browse" />
   </div>

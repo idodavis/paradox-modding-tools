@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A titled group of fields in a detail card (the Settings board's .grp): its name, a hint and an action
+ * A titled group of fields in a detail card: its name, a hint and an action
  * at the end, then its fields; a rule below.
  */
 const { title, hint = "" } = defineProps<{ title: string; hint?: string }>();

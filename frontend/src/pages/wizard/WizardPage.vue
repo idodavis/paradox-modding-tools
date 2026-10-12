@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A new workspace (the Wizard board): the game, its install, the mods in load order, then a name. It
+ * A new workspace: the game, its install, the mods in load order, then a name. It
  * opens in the IDE once made.
  */
 import { computed, shallowRef, useTemplateRef } from "vue";

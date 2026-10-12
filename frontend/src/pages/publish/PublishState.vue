@@ -12,7 +12,7 @@ import { capital, day, list, plural } from "../../lib/format";
 const {
   unsaved,
   listing,
-  steam,
+  steam = null,
   review = false,
 } = defineProps<{
   unsaved: string[];

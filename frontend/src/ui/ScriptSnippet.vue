@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Read-only code (lib/code.ts): the boards' `.code`, its rows numbered by the file's lines; inline, one line in the
+ * Read-only code (lib/codeView.ts): its rows numbered by the file's lines; inline, one line in the
  * code's colors (a property's value).
  */
 import { computed } from "vue";
@@ -37,7 +37,7 @@ const lines = computed(() => codeLines(text, name));
     class="grid grid-cols-[auto_minmax(0,1fr)] overflow-x-auto font-mono text-(--fg-1) text-code whitespace-pre"
   >
     <template v-for="(line, n) in lines" :key="n">
-      <!-- the board's 48px gutter; a longer number widens it, never to the edge -->
+      <!-- a 48px gutter; a longer number widens it, never to the edge -->
       <span class="min-w-12 ps-3 pe-4 text-end text-(--fg-3) select-none">{{ fromLine + n + 1 }}</span>
       <span>
         <span

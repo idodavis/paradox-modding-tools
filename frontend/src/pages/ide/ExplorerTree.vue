@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A section of the explorer (the Ide board's sidebar): its roots, each a mod's with its color bar or the game's
+ * A section of the explorer: its roots, each a mod's with its color bar or the game's
  * with a lock, their folders listed when opened. Files open in the editor; a writable section creates, renames,
  * moves and deletes in place. It follows the open file, and Go's file watcher (fs:changed).
  */
@@ -49,10 +49,10 @@ const { mutate: saveWorkspace } = useMutation({ mutation: (save: () => Promise<u
 const writable = computed(() => roots.some((root) => !root.readOnly));
 // a root's name in the tree is its label, made unique where two share one
 const names = computed(() => {
-  const seen = new Map<string, number>();
+  const counts = new Map<string, number>();
   return roots.map((root) => {
-    const count = (seen.get(root.label) ?? 0) + 1;
-    seen.set(root.label, count);
+    const count = (counts.get(root.label) ?? 0) + 1;
+    counts.set(root.label, count);
     return count > 1 ? `${root.label} (${count})` : root.label;
   });
 });
@@ -70,29 +70,29 @@ const rootOf = (path: string): IdeRoot | undefined => roots[names.value.indexOf(
 
 /** A file on disk's tree path, where it is under one of this section's roots. */
 function treePath(path: string, dir = false): string | undefined {
-  const at = locate(path, roots);
-  return at && `${names.value[roots.indexOf(at.root)]}/${at.rel}${dir ? "/" : ""}`;
+  const located = locate(path, roots);
+  return located && `${names.value[roots.indexOf(located.root)]}/${located.rel}${dir ? "/" : ""}`;
 }
 
 const host = useTemplateRef("host");
 const tree = shallowRef<FileTree>();
 // the folders read so far, and every folder the tree has
-const listed = new Set<string>();
+const loadedFolders = new Set<string>();
 const folders = new Set<string>();
 
 async function list(dir: string): Promise<void> {
-  if (listed.has(dir)) return;
-  listed.add(dir);
-  const entries = (await ListDirectory(diskPath(dir), !hideBinaries).catch(() => null)) ?? [];
-  const shown = entries.filter((entry) => !hideBinaries || !BINARY_EXTENSIONS.test(entry.name));
-  const paths = shown.map((entry) => `${dir}${entry.name}${entry.isDir ? "/" : ""}`);
+  if (loadedFolders.has(dir)) return;
+  loadedFolders.add(dir);
+  const entries = (await ListDirectory(diskPath(dir), !hideBinaries)) ?? [];
+  const visibleEntries = entries.filter((entry) => !hideBinaries || !BINARY_EXTENSIONS.test(entry.name));
+  const paths = visibleEntries.map((entry) => `${dir}${entry.name}${entry.isDir ? "/" : ""}`);
   paths.filter((path) => path.endsWith("/")).forEach((path) => folders.add(path));
   tree.value?.batch(paths.filter((path) => !tree.value?.getItem(path)).map((path) => ({ type: "add" as const, path })));
 }
 
 function mount(): void {
   tree.value?.cleanUp();
-  listed.clear();
+  loadedFolders.clear();
   folders.clear();
   if (!host.value || !roots.length) return;
   // a root's row, and its copy that sticks at the top, at 600 with its origin's bar on its start, in its origin's
@@ -106,7 +106,7 @@ function mount(): void {
     .join("\n");
   const paths = names.value.map((name) => `${name}/`);
   paths.forEach((path) => folders.add(path));
-  const made = new FileTree({
+  const fileTree = new FileTree({
     paths,
     initialExpansion: "closed",
     density: settings.treeDensity,
@@ -131,33 +131,33 @@ function mount(): void {
     },
     renaming: writable.value && {
       canRename: ({ path }) => path.indexOf("/") < path.length - 1,
-      onRename: ({ sourcePath, destinationPath }) => rename({ from: sourcePath, to: destinationPath }),
+      onRename: ({ sourcePath, destinationPath }) => rename({ path: sourcePath, next: destinationPath }),
     },
     dragAndDrop: writable.value && {
       canDrop: ({ target }) => target.kind === "directory",
       onDropComplete: ({ draggedPaths, target }) => {
-        for (const from of draggedPaths)
-          rename({ from, to: `${target.directoryPath}${from.slice(from.replace(/\/$/, "").lastIndexOf("/") + 1)}` });
+        for (const path of draggedPaths)
+          rename({ path, next: `${target.directoryPath}${path.slice(path.replace(/\/$/, "").lastIndexOf("/") + 1)}` });
       },
     },
   });
   // a folder's children are read when it first opens
-  made.subscribe(() => {
-    for (const dir of folders) if (!listed.has(dir) && isOpen(made, dir)) void list(dir);
+  fileTree.subscribe(() => {
+    for (const dir of folders) if (!loadedFolders.has(dir) && isOpen(fileTree, dir)) void list(dir);
   });
-  made.render({ containerWrapper: host.value });
+  fileTree.render({ containerWrapper: host.value });
   const shadow = host.value.querySelector("*")?.shadowRoot;
   if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, ignoredSheet];
-  tree.value = made;
-  follow();
+  tree.value = fileTree;
+  void follow();
 }
 /** A folder's handle in a tree; none for a file or a path it lacks. */
-function folder(made: FileTree | undefined, dir: string): FileTreeDirectoryHandle | undefined {
-  const item = made?.getItem(dir);
+function folder(fileTree: FileTree | undefined, dir: string): FileTreeDirectoryHandle | undefined {
+  const item = fileTree?.getItem(dir);
   return item && "expand" in item ? item : undefined;
 }
-function isOpen(made: FileTree, dir: string): boolean {
-  return !!folder(made, dir)?.isExpanded();
+function isOpen(fileTree: FileTree, dir: string): boolean {
+  return !!folder(fileTree, dir)?.isExpanded();
 }
 onMounted(mount);
 // each source on its own, so the tree is built again only when one of them changes, not whenever any setting is saved
@@ -174,7 +174,7 @@ watch(
 );
 onBeforeUnmount(() => tree.value?.cleanUp());
 
-// each repository's changes on its files and folders (O-R63): staged, then unstaged, a file added kept as added
+// each repository's changes on its files and folders: staged, then unstaged, a file added kept as added
 const gitStatus = computed<GitStatusEntry[]>(() => {
   const marked = new Map<string, GitStatus>();
   for (const status of Object.values(git.statuses ?? {})) {
@@ -208,17 +208,17 @@ watchEffect(() => {
 async function follow(): Promise<void> {
   const path = editor.activeTab;
   const target = path && settings.on("ide.followFile") ? treePath(path) : undefined;
-  const made = tree.value;
-  if (!target || !made) return;
+  const fileTree = tree.value;
+  if (!target || !fileTree) return;
   const parts = target.split("/");
   for (let i = 1; i < parts.length; i++) {
     const dir = `${parts.slice(0, i).join("/")}/`;
     await list(dir);
-    const item = folder(made, dir);
+    const item = folder(fileTree, dir);
     if (item && !item.isExpanded()) item.expand();
   }
-  if (made.getSelectedPaths()[0] !== target) made.getItem(target)?.select();
-  made.scrollToPath(target, { focus: false, offset: "nearest" });
+  if (fileTree.getSelectedPaths()[0] !== target) fileTree.getItem(target)?.select();
+  fileTree.scrollToPath(target, { focus: false, offset: "nearest" });
 }
 watch(
   () => editor.activeTab,
@@ -232,57 +232,64 @@ function collapseAll(): void {
 defineExpose({ collapseAll });
 
 // Go's file watcher: a path gone leaves the tree, a new one in a folder already read joins it
-const stop = Events.On("fs:changed", async ({ data }) => {
-  const made = tree.value;
-  const at = treePath(data.path);
-  if (!made || !at) return;
+async function onDiskChange(data: { path: string; deleted: boolean }): Promise<void> {
+  const fileTree = tree.value;
+  const treeItemPath = treePath(data.path);
+  if (!fileTree || !treeItemPath) return;
   if (data.deleted) {
-    if (made.getItem(at)) made.remove(at, { recursive: true });
-    else if (made.getItem(`${at}/`)) made.remove(`${at}/`, { recursive: true });
+    if (fileTree.getItem(treeItemPath)) fileTree.remove(treeItemPath, { recursive: true });
+    else if (fileTree.getItem(`${treeItemPath}/`)) fileTree.remove(`${treeItemPath}/`, { recursive: true });
     return;
   }
-  const parent = at.slice(0, at.lastIndexOf("/") + 1);
-  if (!listed.has(parent) || made.getItem(at) || made.getItem(`${at}/`)) return;
-  const stat = await StatPath(data.path).catch(() => null);
-  if (!stat?.exists || (hideBinaries && BINARY_EXTENSIONS.test(at.slice(parent.length)))) return;
-  const path = stat.isDir ? `${at}/` : at;
+  const parent = treeItemPath.slice(0, treeItemPath.lastIndexOf("/") + 1);
+  if (!loadedFolders.has(parent) || fileTree.getItem(treeItemPath) || fileTree.getItem(`${treeItemPath}/`)) return;
+  const stat = await StatPath(data.path);
+  if (!stat.exists || (hideBinaries && BINARY_EXTENSIONS.test(treeItemPath.slice(parent.length)))) return;
+  const path = stat.isDir ? `${treeItemPath}/` : treeItemPath;
   if (stat.isDir) folders.add(path);
-  if (!made.getItem(path)) made.add(path);
-});
+  if (!fileTree.getItem(path)) fileTree.add(path);
+}
+const stop = Events.On("fs:changed", ({ data }) => void onDiskChange(data));
 onBeforeUnmount(stop);
 
 // the tree has moved the path already; a failed rename on disk moves it back
 const { mutate: rename } = useMutation({
-  mutation: ({ from, to }: { from: string; to: string }) => RenamePath(diskPath(from), diskPath(to)),
-  onSuccess: (_data, { from, to }) => {
-    const move = { from: diskPath(from), to: diskPath(to) };
+  mutation: ({ path, next }: { path: string; next: string }) => RenamePath(diskPath(path), diskPath(next)),
+  onSuccess: (_data, { path, next }) => {
+    const move = { from: diskPath(path), to: diskPath(next) };
     editor.renameTabs(move.from, move.to);
     editor.recordMove(move);
   },
-  onError: (_error, { from, to }) => tree.value?.move(to, from),
+  onError: (_error, { path, next }) => tree.value?.move(next, path),
+});
+
+// a name cancelled in the tree drops its row: the file and its tab go too (a path already gone deletes harmlessly)
+const { mutate: deleteCancelled } = useMutation({
+  mutation: (path: string) => DeletePath(diskPath(path)),
+  onSuccess: (_data, path) => editor.closeTabs(diskPath(path)),
 });
 
 /** A new file or folder in a folder, named in place; cancelled (Escape, or no name), it is deleted again. */
-async function create(dir: string, isFolder: boolean): Promise<void> {
-  await list(dir);
-  const taken = (name: string) => tree.value?.getItem(`${dir}${name}`) || tree.value?.getItem(`${dir}${name}/`);
-  let name = isFolder ? "new_folder" : "new_file.txt";
-  for (let n = 2; taken(name); n++) name = isFolder ? `new_folder_${n}` : `new_file_${n}.txt`;
-  const path = `${dir}${name}${isFolder ? "/" : ""}`;
-  await (isFolder ? CreateDir(diskPath(path)) : WriteText(diskPath(path), "", false, false));
-  if (isFolder) folders.add(path);
-  const made = tree.value;
-  if (!made) return;
-  if (!made.getItem(path)) made.add(path);
-  // the tree drops the row when its naming is cancelled: the file and its tab go too (a path already gone deletes
-  // harmlessly)
-  const stop = made.onMutation("remove", (event) => {
-    if (event.path !== path) return;
-    stop();
-    void DeletePath(diskPath(path)).then(() => editor.closeTabs(diskPath(path)));
-  });
-  made.startRenaming(path, { removeIfCanceled: true });
-}
+const { mutate: create } = useMutation({
+  mutation: async ({ dir, isFolder }: { dir: string; isFolder: boolean }) => {
+    await list(dir);
+    const occupied = (name: string) => tree.value?.getItem(`${dir}${name}`) || tree.value?.getItem(`${dir}${name}/`);
+    let name = isFolder ? "new_folder" : "new_file.txt";
+    for (let n = 2; occupied(name); n++) name = isFolder ? `new_folder_${n}` : `new_file_${n}.txt`;
+    const path = `${dir}${name}${isFolder ? "/" : ""}`;
+    await (isFolder ? CreateDir(diskPath(path)) : WriteText(diskPath(path), "", false, false));
+    if (isFolder) folders.add(path);
+    const fileTree = tree.value;
+    if (!fileTree) return;
+    if (!fileTree.getItem(path)) fileTree.add(path);
+    const stop = fileTree.onMutation("remove", (event) => {
+      if (event.path !== path) return;
+      stop();
+      deleteCancelled(path);
+    });
+    fileTree.startRenaming(path, { removeIfCanceled: true });
+  },
+});
 
 // the context menu's row, and the delete it asks about; off a row there is no menu at all
 const target = shallowRef("");
@@ -316,8 +323,8 @@ const menu = computed<ContextMenuItem[][]>(() => {
   const windowed = windowOf(path);
   const selected = (tree.value?.getSelectedPaths() ?? []).filter((p) => !p.endsWith("/"));
   const file = path.endsWith("/") ? "" : diskPath(path);
-  const picked = editor.comparing;
-  // a mod's own folder in no repository is made one (O-R61), and source control shown
+  const comparing = editor.comparing;
+  // a mod's own folder in no repository is made one, and source control shown
   const bare = root ? git.bare.find((mod) => pathKey(mod.path) === pathKey(diskPath(path))) : undefined;
   return [
     file
@@ -333,12 +340,12 @@ const menu = computed<ContextMenuItem[][]>(() => {
           {
             label: "New file",
             icon: "i-lucide-file-plus",
-            onSelect: () => (afterClose = () => void create(dir, false)),
+            onSelect: () => (afterClose = () => create({ dir, isFolder: false })),
           },
           {
             label: "New folder",
             icon: "i-lucide-folder-plus",
-            onSelect: () => (afterClose = () => void create(dir, true)),
+            onSelect: () => (afterClose = () => create({ dir, isFolder: true })),
           },
         ]
       : [],
@@ -358,8 +365,8 @@ const menu = computed<ContextMenuItem[][]>(() => {
           { label: "Select for compare", onSelect: () => (editor.comparing = file) },
           {
             label: "Compare with selected",
-            disabled: !picked || picked === file,
-            onSelect: () => emit("compare", picked, file),
+            disabled: !comparing || comparing === file,
+            onSelect: () => emit("compare", comparing, file),
           },
           ...(selected.length === 2
             ? [
@@ -408,9 +415,9 @@ watch(
 );
 /** A click on a folder's window mark brings that window up, and leaves the folder as it was. */
 function showFolderWindow(e: MouseEvent): void {
-  const at = e.composedPath().filter((el): el is HTMLElement => el instanceof HTMLElement);
-  const name = at.some((el) => el.dataset.itemSection === "decoration")
-    ? windowOf(at.find((el) => el.dataset.itemPath)?.dataset.itemPath ?? "")
+  const elements = e.composedPath().filter((el): el is HTMLElement => el instanceof HTMLElement);
+  const name = elements.some((el) => el.dataset.itemSection === "decoration")
+    ? windowOf(elements.find((el) => el.dataset.itemPath)?.dataset.itemPath ?? "")
     : undefined;
   if (!name) return;
   e.stopPropagation();
@@ -441,12 +448,12 @@ const { mutate: remove } = useMutation({
     const text = `${diskPath(path)} is deleted from disk. ${root ? "The mod also leaves this workspace." : "Ctrl Z in the explorer brings it back until PMT closes."}`;
     if (!(await confirm.open({ title: "Delete from disk?", text, action: "Delete", danger: true }))) return;
     const disk = diskPath(path);
-    const owner = rootOf(path);
+    const rootRow = rootOf(path);
     const trashed = await TrashPath(disk);
     tree.value?.remove(path, { recursive: true });
     editor.closeTabs(disk);
     if (!root) editor.recordMove({ from: disk, to: trashed, deleted: true });
-    if (owner?.kind === "mod") saveWorkspace(() => RemoveWorkspaceMod(workspaceId, owner.origin ?? ""));
+    if (rootRow?.kind === "mod") saveWorkspace(() => RemoveWorkspaceMod(workspaceId, rootRow.origin ?? ""));
   },
 });
 </script>

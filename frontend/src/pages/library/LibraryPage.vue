@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The Library (the Main board): the active workspace at the top, with its install, load order, language
+ * The Library: the active workspace at the top, with its install, load order, language
  * and Health counts, then every workspace by game.
  */
 import { computed, onActivated, shallowRef } from "vue";

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * An editor group's editor (the Ide board's code): the shown tab's file in a Monaco editor (editor/editor.ts),
- * the hover card over it, and its context menu (the EditorMenu board; the compares are on the tab's menu). A
+ * An editor group's editor: the shown tab's file in a Monaco editor (editor/editor.ts),
+ * the hover card over it, and its context menu. A
  * Markdown file shown Rich is the Publish page's editor over the same text.
  */
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
@@ -35,14 +35,14 @@ const { locate } = useIdeRoots(() => workspaceId);
 const { data: file } = useQuery(() => textQuery(path));
 const host = useTemplateRef("host");
 const view = shallowRef<ReturnType<typeof createEditor>>();
-const shown = shallowRef<monaco.editor.ITextModel>();
+const textModel = shallowRef<monaco.editor.ITextModel>();
 
 watch(
   [host, file],
-  ([el, read]) => {
-    if (view.value || !el || !read || read.reject) return;
-    shown.value = openFile(path, read);
-    view.value = createEditor(el, shown.value);
+  ([el, content]) => {
+    if (view.value || !el || !content || content.reject) return;
+    textModel.value = openFile(path, content);
+    view.value = createEditor(el, textModel.value);
     const { editor: codeEditor } = view.value;
     const { CtrlCmd, Shift, Alt } = monaco.KeyMod;
     const { KeyCode } = monaco;
@@ -77,14 +77,14 @@ onBeforeUnmount(() => view.value?.editor.dispose());
 function showPlace(): void {
   const place = editor.cursor;
   const codeEditor = view.value?.editor;
-  if (!codeEditor || !shown.value || place?.path !== path || editor.focused !== group) return;
+  if (!codeEditor || !textModel.value || place?.path !== path || editor.focused !== group) return;
   editor.cursor = null;
-  const model = shown.value;
+  const model = textModel.value;
   const byte = { line: place.line, character: place.col };
-  const at = editorRange({ start: byte, end: byte }, (n) =>
+  const start = editorRange({ start: byte, end: byte }, (n) =>
     n < model.getLineCount() ? model.getLineContent(n + 1) : undefined,
   ).start;
-  const position = { lineNumber: at.line + 1, column: at.character + 1 };
+  const position = { lineNumber: start.line + 1, column: start.character + 1 };
   codeEditor.setPosition(position);
   codeEditor.revealPositionInCenterIfOutsideViewport(position);
   codeEditor.focus();
@@ -94,12 +94,12 @@ watch(() => editor.cursor, showPlace);
 /** The caret as the backend counts, in this editor. */
 function caret(): [line: number, col: number] {
   const position = view.value?.editor.getPosition();
-  return shown.value && position ? bytesAt(shown.value, position) : [0, 0];
+  return textModel.value && position ? bytesAt(textModel.value, position) : [0, 0];
 }
 
 async function graph(card?: Inspect | null): Promise<void> {
   const [line, col] = caret();
-  const word = card ?? (await rpc.Hover(workspaceId, path, line, col).catch(() => null));
+  const word = card ?? (await rpc.Hover(workspaceId, path, line, col));
   if (word?.graphed) void router.push({ name: "event-graph", params: { id: workspaceId }, query: { root: word.word } });
 }
 
@@ -125,13 +125,12 @@ async function onContext(): Promise<void> {
   const [line, col] = caret();
   actions.value = [];
   card.value = null;
-  [actions.value, card.value] = await Promise.all([
-    rpc
-      .CodeActions(workspaceId, path, line, col)
-      .then((found) => found ?? [])
-      .catch(() => []),
-    rpc.Hover(workspaceId, path, line, col).catch(() => null),
+  const [fixes, word] = await Promise.all([
+    rpc.CodeActions(workspaceId, path, line, col),
+    rpc.Hover(workspaceId, path, line, col),
   ]);
+  actions.value = fixes ?? [];
+  card.value = word;
 }
 
 // the Health card a word has rows on: overridden, contested, or defined nowhere
@@ -140,15 +139,15 @@ const healthCard = computed(() => {
   if (!card.value?.word) return "";
   if (!sites.length) return "dangling";
   if (sites.length < 2) return "";
-  const kept = sites[card.value.winner];
+  const winner = sites[card.value.winner];
   const replacesGame = sites.some((site, i) => i !== card.value?.winner && site.origin === store.originVanilla);
-  return kept && kept.origin !== store.originVanilla && replacesGame ? "overrides" : "contests";
+  return winner && winner.origin !== store.originVanilla && replacesGame ? "overrides" : "contests";
 });
 
 /** The selections' text, joined by line breaks. */
 function selected(): string {
   const codeEditor = view.value?.editor;
-  return (codeEditor?.getSelections() ?? []).map((range) => shown.value?.getValueInRange(range) ?? "").join("\n");
+  return (codeEditor?.getSelections() ?? []).map((range) => textModel.value?.getValueInRange(range) ?? "").join("\n");
 }
 
 /** Write text over the selections (a paste), or delete them with "" (a cut). */
@@ -258,9 +257,9 @@ function writeRich(markdown: string | undefined): void {
     />
   </UContextMenu>
   <UEditor
-    v-if="rich && shown"
+    v-if="rich && textModel"
     v-slot="{ editor: markdownEditor }"
-    :model-value="shown.getValue()"
+    :model-value="textModel.getValue()"
     content-type="markdown"
     :mention="false"
     :starter-kit="{ heading: { levels: [1, 2, 3] }, underline: false }"

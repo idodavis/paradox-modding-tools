@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The IDE's panel (the Ide board's Problems, the IdeDiff board's Git output): the open files' problems by file,
+ * The IDE's panel: the open files' problems by file,
  * filtered as typed, with Open in Health; and every git command source control ran, with what it wrote.
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
@@ -24,15 +24,15 @@ const filter = shallowRef("");
 const files = computed(() => {
   const needle = filter.value.trim().toLowerCase();
   return [...editor.problems.entries()]
-    .map(([path, found]) => {
-      const at = locate(path);
-      const rel = at?.rel ?? path;
-      const shown = (found ?? []).filter(
+    .map(([path, problems]) => {
+      const located = locate(path);
+      const rel = located?.rel ?? path;
+      const matching = (problems ?? []).filter(
         (one) => !needle || `${one.message} ${one.code} ${rel}`.toLowerCase().includes(needle),
       );
-      return { path, rel, origin: at?.root.origin ?? "", found: shown };
+      return { path, rel, origin: located?.root.origin ?? "", problems: matching };
     })
-    .filter((file) => file.found.length);
+    .filter((file) => file.problems.length);
 });
 
 const TABS = [
@@ -141,10 +141,10 @@ function open(at: { path: string; line: number; col: number }): void {
         <div class="flex h-6 items-center gap-1.5 px-3 text-12 font-medium whitespace-nowrap text-highlighted">
           <OriginDot :color="store.originColor(file.origin)" small />
           <span class="truncate">{{ file.rel }}</span>
-          <span class="text-11 font-normal text-dimmed">{{ file.found.length }}</span>
+          <span class="text-11 font-normal text-dimmed">{{ file.problems.length }}</span>
         </div>
         <button
-          v-for="(one, i) in file.found"
+          v-for="(one, i) in file.problems"
           :key="i"
           class="flex h-6 w-full items-center gap-2 ps-7.5 pe-3 text-start text-12 whitespace-nowrap text-toned hover:bg-accented"
           @click="open({ path: file.path, line: one.range.start.line, col: one.range.start.character })"

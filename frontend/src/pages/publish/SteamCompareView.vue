@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Compare with Steam (the PublishCompare board), opened full screen over Publish from its upload checklist and
- * its state bar (O-R40): the listing's fields, then the files an upload changes, each with the lines it adds
+ * Compare with Steam, opened full screen over Publish from its upload checklist and
+ * its state bar: the listing's fields, then the files an upload changes, each with the lines it adds
  * and removes, and the one picked drawn as Steam has it beside the workspace's, Split or Unified. Its unchanged
  * lines fold into sections that open; Previous and Next step through its changes, and Find (Ctrl F) through
  * the lines of both sides. Steam's side is the snapshot PMT kept at its last upload, or a download from Steam.
@@ -88,10 +88,10 @@ const files = computed(() =>
 const changedFields = computed(() => (steam.value?.changes ?? 0) - files.value.length);
 const { data: upload } = useQuery(() => uploadFilesQuery(ids.value));
 
-const picked = shallowRef("");
+const selectedValue = shallowRef("");
 const current = computed(() => {
   const rows = [...fields.value, ...files.value];
-  return rows.find((row) => row.value === picked.value) ?? rows.find((row) => row.status !== "=") ?? rows[0];
+  return rows.find((row) => row.value === selectedValue.value) ?? rows.find((row) => row.status !== "=") ?? rows[0];
 });
 
 // the picked row's two sides, a file's read as the editor reads it
@@ -119,7 +119,7 @@ const all = useLocalStorage("pmt.publish.compareAll", false);
 const host = useTemplateRef("host");
 const view = shallowRef<ReturnType<typeof diffView>>();
 /** A line of a side, 1-based: the old file's (deletions) or the new's (additions), and the new file's line beside it. */
-type DiffLine = { side: "deletions" | "additions"; line: number; at: number };
+type DiffLine = { side: "deletions" | "additions"; line: number; unifiedLine: number };
 const lineChanges = shallowRef<monaco.editor.ILineChange[]>([]);
 watch([host, sides], ([el, next], [was]) => {
   // an unchanged row takes the view's element away; the next change draws a new one
@@ -134,7 +134,7 @@ watch([host, sides], ([el, next], [was]) => {
   }
   const name = current.value?.texts ? "field.text" : (current.value?.label ?? "");
   view.value.show({ text: next[0] ?? "", name }, { text: next[1] ?? "", name });
-  at.value = -1;
+  changeIndex.value = -1;
 });
 watch([style, all], () =>
   view.value?.view.updateOptions({
@@ -146,10 +146,11 @@ onBeforeUnmount(() => view.value?.dispose());
 
 /** Show a line: the new file's where it is drawn, else the old file's beside the new one's place. */
 function show(line: DiffLine | undefined): void {
-  const shown = view.value?.view;
-  if (!shown || !line) return;
-  const editor = line.side === "additions" || !split.value ? shown.getModifiedEditor() : shown.getOriginalEditor();
-  const number = line.side === "additions" || split.value ? line.line : line.at;
+  const diffEditor = view.value?.view;
+  if (!diffEditor || !line) return;
+  const editor =
+    line.side === "additions" || !split.value ? diffEditor.getModifiedEditor() : diffEditor.getOriginalEditor();
+  const number = line.side === "additions" || split.value ? line.line : line.unifiedLine;
   editor.revealLineInCenter(number);
   editor.setSelection(new monaco.Range(number, 1, number, 1));
 }
@@ -158,15 +159,19 @@ function show(line: DiffLine | undefined): void {
 const changes = computed((): DiffLine[] =>
   lineChanges.value.map((change) =>
     change.modifiedEndLineNumber > 0
-      ? { side: "additions", line: change.modifiedStartLineNumber, at: change.modifiedStartLineNumber }
-      : { side: "deletions", line: change.originalStartLineNumber, at: Math.max(change.modifiedStartLineNumber, 1) },
+      ? { side: "additions", line: change.modifiedStartLineNumber, unifiedLine: change.modifiedStartLineNumber }
+      : {
+          side: "deletions",
+          line: change.originalStartLineNumber,
+          unifiedLine: Math.max(change.modifiedStartLineNumber, 1),
+        },
   ),
 );
-const at = shallowRef(-1);
+const changeIndex = shallowRef(-1);
 function stepChange(by: number): void {
   const count = changes.value.length;
-  at.value = at.value < 0 ? (by > 0 ? 0 : count - 1) : (at.value + by + count) % count;
-  show(changes.value[at.value]);
+  changeIndex.value = changeIndex.value < 0 ? (by > 0 ? 0 : count - 1) : (changeIndex.value + by + count) % count;
+  show(changes.value[changeIndex.value]);
 }
 
 // Find: every line of either side holding the text, in the order the compare shows them; a line both sides share
@@ -175,7 +180,7 @@ const query = shallowRef("");
 const hits = computed((): DiffLine[] => {
   const needle = query.value.trim().toLowerCase();
   if (!needle || !sides.value) return [];
-  const removed = new Map<number, { place: number; at: number }>();
+  const removed = new Map<number, { place: number; unifiedLine: number }>();
   for (const change of lineChanges.value) {
     const count = change.originalEndLineNumber - change.originalStartLineNumber + 1;
     if (change.originalEndLineNumber === 0) continue;
@@ -183,24 +188,24 @@ const hits = computed((): DiffLine[] => {
     for (let i = 0; i < count; i++)
       removed.set(change.originalStartLineNumber + i, {
         place: next - 1 + (i + 1) / (count + 1),
-        at: Math.max(next, 1),
+        unifiedLine: Math.max(next, 1),
       });
   }
-  const found = (
+  const lineHits = (
     text: string | null,
     side: DiffLine["side"],
-    order: (n: number) => { place: number; at: number } | undefined,
+    order: (n: number) => { place: number; unifiedLine: number } | undefined,
   ) =>
     (text ?? "").split("\n").flatMap((line, i) => {
       const spot = order(i + 1);
       return spot && line.toLowerCase().includes(needle) ? [{ side, line: i + 1, ...spot }] : [];
     });
   return [
-    ...found(sides.value[0], "deletions", (n) => removed.get(n)),
-    ...found(sides.value[1], "additions", (n) => ({ place: n - 1, at: n })),
+    ...lineHits(sides.value[0], "deletions", (n) => removed.get(n)),
+    ...lineHits(sides.value[1], "additions", (n) => ({ place: n - 1, unifiedLine: n })),
   ]
     .sort((a, b) => a.place - b.place)
-    .map(({ side, line, at }) => ({ side, line, at }));
+    .map(({ side, line, unifiedLine }) => ({ side, line, unifiedLine }));
 });
 const hit = shallowRef(0);
 watch(hits, (next) => {
@@ -269,7 +274,7 @@ const { mutate: download, isLoading: downloading } = useMutation({
                 :items="fields"
                 value-key="value"
                 :ui="ROW_UI"
-                @update:model-value="picked = String($event)"
+                @update:model-value="selectedValue = String($event)"
               >
                 <template #item="{ item }">
                   <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="STATUS[item.status]">{{
@@ -298,7 +303,7 @@ const { mutate: download, isLoading: downloading } = useMutation({
                 :items="files"
                 value-key="value"
                 :ui="{ ...ROW_UI, root: 'min-h-0 grow gap-0 overflow-auto rounded-none ring-0' }"
-                @update:model-value="picked = String($event)"
+                @update:model-value="selectedValue = String($event)"
               >
                 <template #item="{ item }">
                   <b class="w-3.5 shrink-0 text-center font-mono font-medium" :class="STATUS[item.status]">{{
@@ -350,7 +355,11 @@ const { mutate: download, isLoading: downloading } = useMutation({
                   @click="stepChange(1)"
                 />
                 <span class="ms-1 text-12 text-dimmed tabular-nums">
-                  {{ at < 0 ? plural(changes.length, "change") : `Change ${at + 1} of ${changes.length}` }}
+                  {{
+                    changeIndex < 0
+                      ? plural(changes.length, "change")
+                      : `Change ${changeIndex + 1} of ${changes.length}`
+                  }}
                 </span>
                 <USwitch
                   v-model="all"

@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
- * A mod's thumbnail (pmt.css .thumb): the image at path on a bg-4 tile, or the tile in the mod's color
- * when it has none. 28px; lg 48, xl 88 and 2xl 104 as the boards draw them; fill, its
- * parent's box (a Workshop screenshot).
+ * A mod's thumbnail: the image at path on a bg-4 tile, or the tile in the mod's color when it has none. 28px; lg
+ * 48, xl 88 and 2xl 104; fill, its parent's box (a Workshop screenshot).
  */
 import { useQuery } from "@pinia/colada";
 import { imageQuery } from "../queries";

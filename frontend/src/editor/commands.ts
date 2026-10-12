@@ -27,9 +27,9 @@ export function registerIdeCommands(router: Router): void {
     palette.paletteOpen = false;
     void fn();
   };
-  const go = (to: RouteLocationRaw) => {
+  const go = (target: RouteLocationRaw) => {
     palette.paletteOpen = false;
-    void router.push(to);
+    void router.push(target);
   };
 
   /** The event under the caret, in the Event Graph. */
@@ -47,7 +47,7 @@ export function registerIdeCommands(router: Router): void {
   function compares(): CommandItem[] {
     const active = editor.activeFile;
     const [first, second] = editor.selected;
-    const picked = editor.comparing;
+    const comparing = editor.comparing;
     const item = (label: string, onSelect: () => void, icon = "i-lucide-diff", disabled = false): CommandItem => ({
       label,
       prefix: "Compare:",
@@ -62,11 +62,11 @@ export function registerIdeCommands(router: Router): void {
               "Select the active file for compare",
               run(() => (editor.comparing = active)),
             ),
-            ...(picked && picked !== active
+            ...(comparing && comparing !== active
               ? [
                   item(
                     "Active file with the file selected",
-                    run(() => compare.files(picked, active)),
+                    run(() => compare.files(comparing, active)),
                   ),
                 ]
               : []),

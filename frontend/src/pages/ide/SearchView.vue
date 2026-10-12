@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Find in files (the Ide board's sidebar Search): a text, or a regular expression, matching case and whole words
+ * Find in files: a text, or a regular expression, matching case and whole words
  * when asked, in the folders picked and the files the include and exclude globs keep, searched as it is typed. Its
  * hits stream in under it as Go finds them (search:hits), drawn once a frame, as a peek lists references: by file,
  * named with its origin and folder, each line with its match in bold, the files past the first 500 hits folded; Find
@@ -92,15 +92,17 @@ const toggled = shallowRef(new Set<string>());
 const files = computed(() => {
   const out = new Map<string, { path: string; rel: string; origin: string; rows: TextSearchHit[]; open: boolean }>();
   for (const row of results.value?.rows ?? []) {
-    const file =
-      out.get(row.path) ??
-      out.set(row.path, { path: row.path, rel: row.rel, origin: row.origin, rows: [], open: false }).get(row.path)!;
+    let file = out.get(row.path);
+    if (!file) {
+      file = { path: row.path, rel: row.rel, origin: row.origin, rows: [], open: false };
+      out.set(row.path, file);
+    }
     file.rows.push(row);
   }
-  let shown = 0;
+  let openRows = 0;
   for (const file of out.values()) {
-    file.open = shown < 500 !== toggled.value.has(file.path);
-    if (file.open) shown += file.rows.length;
+    file.open = openRows < 500 !== toggled.value.has(file.path);
+    if (file.open) openRows += file.rows.length;
   }
   return [...out.values()];
 });
@@ -165,16 +167,16 @@ const { mutate: replaceInFiles } = useMutation({
             aria-label="Clear"
             @click="pattern = ''"
           />
-          <UTooltip v-for="toggle in TOGGLES" :key="toggle.label" :text="toggle.label">
+          <UTooltip v-for="option in TOGGLES" :key="option.label" :text="option.label">
             <UButton
-              :icon="toggle.icon"
+              :icon="option.icon"
               size="xs"
               square
-              :color="toggle.on.value ? 'primary' : 'neutral'"
-              :variant="toggle.on.value ? 'soft' : 'ghost'"
-              :aria-label="toggle.label"
-              :aria-pressed="toggle.on.value"
-              @click="toggle.on.value = !toggle.on.value"
+              :color="option.on.value ? 'primary' : 'neutral'"
+              :variant="option.on.value ? 'soft' : 'ghost'"
+              :aria-label="option.label"
+              :aria-pressed="option.on.value"
+              @click="option.on.value = !option.on.value"
             />
           </UTooltip>
         </template>
@@ -268,9 +270,9 @@ const { mutate: replaceInFiles } = useMutation({
             :title="`${file.rel}:${row.line + 1}`"
             @click="editor.open(row.path, { line: row.line, col: row.col })"
           >
-            <span v-for="[before, match, after] in [parts(row)]" :key="0" class="truncate"
-              >{{ before }}<b class="rounded-xs bg-(--accent-soft) font-medium text-highlighted">{{ match }}</b
-              >{{ after }}</span
+            <span v-for="split in [parts(row)]" :key="split[1]" class="truncate"
+              >{{ split[0] }}<b class="rounded-xs bg-(--accent-soft) font-medium text-highlighted">{{ split[1] }}</b
+              >{{ split[2] }}</span
             >
           </button>
         </template>

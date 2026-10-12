@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** The lines a change adds and removes, "+38 −12" (the PublishCompare board's counts), as Go counts them. */
+/** The lines a change adds and removes, "+38 −12", as Go counts them. */
 defineProps<{ added: number; removed: number }>();
 </script>
 

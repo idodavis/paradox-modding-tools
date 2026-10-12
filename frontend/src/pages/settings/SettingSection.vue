@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * One setting on a Settings page (the Themes board's rows): its name and what it does on the left, its
+ * One setting on a Settings page: its name and what it does on the left, its
  * controls on the right, a rule below.
  */
 const { title, hint = "" } = defineProps<{ title: string; hint?: string }>();

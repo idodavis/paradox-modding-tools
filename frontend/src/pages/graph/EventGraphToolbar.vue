@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * The graph's toolbar (the EventGraph board's): the root, searched by any part of an id; Filters; Follow
+ * The graph's toolbar: the root, searched by any part of an id; Filters; Follow
  * macros; how many nodes are drawn; fit, fold every opened group, full screen, and the detail below or
- * beside. In full screen it floats over the canvas with Exit full screen (the EventGraphFull board's).
+ * beside. In full screen it floats over the canvas with Exit full screen.
  */
 import { computed, useTemplateRef } from "vue";
 import { useElementSize } from "@vueuse/core";

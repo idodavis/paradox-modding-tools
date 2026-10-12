@@ -62,9 +62,9 @@ const zoom = computed(() => Math.round(viewport.value.zoom * 100));
 const lit = computed(() => {
   if (!selectedId) return null;
   const ahead = edges.filter((edge) => !routes.get(`${edge.from}->${edge.to}`)?.back);
-  const between = (from: string, to: string) => {
-    const back = reach(ahead, to, false);
-    return [...reach(ahead, from, true).keys()].filter((id) => back.has(id));
+  const between = (source: string, target: string) => {
+    const back = reach(ahead, target, false);
+    return [...reach(ahead, source, true).keys()].filter((id) => back.has(id));
   };
   const route = new Set([...between(rootId, selectedId), ...between(selectedId, rootId)]);
   const near = new Set([...route, selectedId]);
@@ -124,22 +124,22 @@ const flowEdges = computed((): FlowEdge[] =>
  * between its ends, or a fire back's route, the layout's, from the source's side facing its target through the gaps,
  * level at each bend, labelled midway. */
 function drawn(edge: EdgeProps): [path: string, x: number, y: number] {
-  const at: Point[] = edge.data?.points ?? [];
+  const points: Point[] = edge.data?.points ?? [];
   if (edge.source === edge.target) {
     const { sourceX: x, sourceY: y } = edge;
     const top = y - edge.sourceNode.dimensions.height / 2;
     return [`M${x},${y} C${x + 40},${y} ${x + 24},${top - 32} ${x - 16},${top}`, x + 18, top - 14];
   }
-  if (!at.length) {
+  if (!points.length) {
     const [path, x, y] = getBezierPath(edge);
     return [path, x, y];
   }
-  const path = at.slice(1).reduce((drawn, to, i) => {
-    const from = at[i];
-    const half = (to.x - from.x) / 2;
-    return `${drawn} C${from.x + half},${from.y} ${to.x - half},${to.y} ${to.x},${to.y}`;
-  }, `M${at[0].x},${at[0].y}`);
-  const mid = at[Math.floor(at.length / 2)];
+  const path = points.slice(1).reduce((drawn, point, i) => {
+    const previous = points[i];
+    const half = (point.x - previous.x) / 2;
+    return `${drawn} C${previous.x + half},${previous.y} ${point.x - half},${point.y} ${point.x},${point.y}`;
+  }, `M${points[0].x},${points[0].y}`);
+  const mid = points[Math.floor(points.length / 2)];
   return [path, mid.x, mid.y];
 }
 
@@ -151,18 +151,18 @@ function onClick({ node: { type, data } }: NodeMouseEvent): void {
   if (node.stub) {
     const edge = edges.find((candidate) => candidate.to === node.id || candidate.from === node.id);
     const id = edge && (edge.to === node.id ? edge.from : edge.to);
-    const at = id ? positions.get(id) : undefined;
-    anchor = id && at ? { id, ...at } : undefined;
+    const position = id ? positions.get(id) : undefined;
+    anchor = id && position ? { id, ...position } : undefined;
   }
   emit("select", node);
 }
 watch(
   () => positions,
   (now) => {
-    const at = anchor && now.get(anchor.id);
-    if (anchor && at) {
+    const position = anchor && now.get(anchor.id);
+    if (anchor && position) {
       const { x, y, zoom } = viewport.value;
-      void setViewport({ x: x - (at.x - anchor.x) * zoom, y: y - (at.y - anchor.y) * zoom, zoom });
+      void setViewport({ x: x - (position.x - anchor.x) * zoom, y: y - (position.y - anchor.y) * zoom, zoom });
     }
     anchor = undefined;
   },
@@ -271,7 +271,7 @@ defineExpose({ fit: () => fitView({ padding: 0.15, maxZoom: 1 }) });
 </template>
 
 <style scoped>
-/* the board's canvas: bg-0 under a dot grid on line-1, every 20px */
+/* the canvas: bg-0 under a dot grid on line-1, every 20px */
 .graph {
   background-image: radial-gradient(var(--line-1) 1px, transparent 1px);
   background-size: 20px 20px;

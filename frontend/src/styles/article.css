@@ -1,5 +1,5 @@
-/* A wiki article (the PatchNotes board's `.art`): sanitized wiki HTML, styled by descendant rules.
-   Tags the board does not draw take the same scale. Sizes are rem, so it follows the app's text size. */
+/* A wiki article: sanitized wiki HTML, styled by descendant rules.
+   Tags the article's own styles do not name take the same scale. Sizes are rem, so it follows the app's text size. */
 @layer components {
   .art {
     max-width: 45rem;

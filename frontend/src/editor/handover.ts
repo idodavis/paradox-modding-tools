@@ -59,27 +59,27 @@ async function handBack(): Promise<void> {
 
 /** Hand tabs to another window, each with its file's unsaved text; they go from here, the backend keeping them open.
  * Resolved once they are sent. */
-export function handOver(to: string, tabs: string[], active = tabs[0] ?? ""): Promise<boolean> {
-  const handed = tabs.map((tab) => {
+export function handOver(target: string, tabs: string[], active = tabs[0] ?? ""): Promise<boolean> {
+  const entries = tabs.map((tab) => {
     const text = unsavedText(tab);
     return { tab, unsaved: text !== undefined, text: text ?? "" };
   });
   useEditorStore().dropTabs(tabs);
-  return Events.Emit("window:tabs-handed", { to, tabs: handed, active });
+  return Events.Emit("window:tabs-handed", { to: target, tabs: entries, active });
 }
 
 /** Tabs handed to this window, the last shown one shown, and one dragged here where it was dropped; a file's unsaved
  * text is an edit to the text saved, so its tab is marked and an undo goes back to the file. */
-export async function receive(handed: WindowTabs): Promise<void> {
+export async function receive(payload: WindowTabs): Promise<void> {
   const editor = useEditorStore();
   const windows = useWindowsStore();
-  for (const { tab, unsaved, text } of handed.tabs ?? []) {
+  for (const { tab, unsaved, text } of payload.tabs ?? []) {
     editor.addTabHidden(tab);
     if (unsaved) await showText(tabOf(tab).file, text);
   }
   const group = editor.group(editor.focused);
-  if (group?.tabs.includes(handed.active)) group.active = handed.active;
-  for (const { tab } of handed.tabs ?? []) {
+  if (group?.tabs.includes(payload.active)) group.active = payload.active;
+  for (const { tab } of payload.tabs ?? []) {
     const place = windows.placing.get(tab);
     windows.placing.delete(tab);
     if (place) editor.drop(tab, editor.focused, place.group, place.edge, place.nextTab);
@@ -87,11 +87,11 @@ export async function receive(handed: WindowTabs): Promise<void> {
 }
 
 /** A tab into another window: handed on from here, asked of the window holding it, or opened there. */
-export function requestTab(to: string, tab: string): Promise<unknown> {
-  if (useEditorStore().openTabs.includes(tab)) return handOver(to, [tab]);
+export function requestTab(target: string, tab: string): Promise<unknown> {
+  if (useEditorStore().openTabs.includes(tab)) return handOver(target, [tab]);
   const holder = [...useWindowsStore().otherWindows.values()].find((one) => one.tabs?.includes(tab));
-  if (holder) return Events.Emit("window:tab-requested", { to: holder.name, tab, window: to });
-  return Events.Emit("window:tabs-handed", { to, tabs: [{ tab, unsaved: false, text: "" }], active: tab });
+  if (holder) return Events.Emit("window:tab-requested", { to: holder.name, tab, window: target });
+  return Events.Emit("window:tabs-handed", { to: target, tabs: [{ tab, unsaved: false, text: "" }], active: tab });
 }
 
 /** A tab in a new editor window of its own. */

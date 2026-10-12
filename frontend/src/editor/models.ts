@@ -1,5 +1,5 @@
 /**
- * The files the editors hold: one Monaco model per file, shared by every group that shows it. A model's text is told
+ * The files the editors hold: one Monaco model per file, shared by every group that shows it. A model's text is sent
  * to the backend within 200 ms (the backend counts UTF-8 bytes; columns.ts converts) and its problems come back as
  * markers; a save writes the encoding the file was read in. Every provider reads it, and it calls the editor store
  * for the tabs.
@@ -25,8 +25,8 @@ type Content = Pick<FileText, "text" | "bom"> & Partial<Pick<FileText, "legacy" 
 
 /**
  * A file's model and what the IDE keeps of it: its path as the tabs spell it, its byte order mark and legacy
- * encoding, the version last saved, whether a tab holds it (the backend then has its text), its text not yet told
- * to the backend, the last call that told it, and whether a failure of those calls was logged already.
+ * encoding, the version last saved, whether a tab holds it (the backend then has its text), its text not yet sent
+ * to the backend, the last call that sent it, and whether a failure of those calls was logged already.
  */
 type File = {
   path: string;
@@ -80,7 +80,7 @@ export function pathAt(uri: monaco.Uri): string {
 }
 export const pathOf = (model: monaco.editor.ITextModel): string => pathAt(model.uri);
 
-/** The backend's name for a path, where a place spelled it before a model was made for it. */
+/** The backend's name for a path, where a place named it before a model was made for it. */
 export const backendPathAt = (uri: monaco.Uri): string | undefined => backendPaths.get(uri.toString());
 
 /** A backend range in the model's columns, 1-based; a file no model holds keeps its byte columns. */
@@ -167,7 +167,7 @@ function fileModel(path: string, { text, bom, legacy = false, format }: Content)
 
 const fileOf = (model: monaco.editor.ITextModel): File | undefined => files.get(model.uri.toString());
 
-/** The model a tab shows, its text told to the backend: the one a group or a peek made, else one of the text read. */
+/** The model a tab shows, its text sent to the backend: the one a group or a peek made, else one of the text read. */
 export function openFile(path: string, content: Content): monaco.editor.ITextModel {
   const file = fileModel(path, content);
   if (file.open) return file.model;
@@ -232,7 +232,7 @@ async function diagnose(file: File): Promise<void> {
   );
 }
 
-/** Write a file's text in the encoding it was read in (its byte order mark, Windows-1252), and tell the backend; a
+/** Write a file's text in the encoding it was read in (its byte order mark, Windows-1252), and send it to the backend; a
  * game file is never written. */
 export async function saveFile(path: string): Promise<void> {
   const key = pathKey(path);
@@ -301,7 +301,7 @@ export async function showText(path: string, text: string): Promise<void> {
   change(model, [{ range: model.getFullModelRange(), text }]);
 }
 
-/** The session was built again (its inputs changed, a calendar among them): each open file's text is told to it
+/** The session was built again (its inputs changed, a calendar among them): each open file's text is sent to it
  * again, its problems read again, and the era hints asked again. */
 export function resendOpenFiles(): void {
   for (const file of files.values()) if (file.open) send(file);

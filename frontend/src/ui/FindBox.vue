@@ -12,11 +12,11 @@ const query = defineModel<string>({ required: true });
 const input = useTemplateRef("input");
 const name = useId();
 // shortcuts listen on the document, and a page is kept alive behind the others: only a shown one finds
-const shown = shallowRef(true);
-onActivated(() => (shown.value = true));
-onDeactivated(() => (shown.value = false));
+const visible = shallowRef(true);
+onActivated(() => (visible.value = true));
+onDeactivated(() => (visible.value = false));
 defineShortcuts({
-  ctrl_f: { usingInput: true, handler: () => shown.value && input.value?.inputRef?.focus() },
+  ctrl_f: { usingInput: true, handler: () => visible.value && input.value?.inputRef?.focus() },
   enter: { usingInput: name, handler: () => emit("step", 1) },
   shift_enter: { usingInput: name, handler: () => emit("step", -1) },
 });

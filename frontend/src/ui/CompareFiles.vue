@@ -18,8 +18,8 @@ const {
   old,
   now,
   title = "Compare",
-  tags,
-} = defineProps<{ old: Side; now: Side; title?: string; tags?: [string, string] }>();
+  tags = null,
+} = defineProps<{ old: Side; now: Side; title?: string; tags?: [string, string] | null }>();
 const emit = defineEmits<{ close: [] }>();
 
 const store = useWorkspaceStore();
@@ -27,21 +27,21 @@ const settings = useSettingsStore();
 const style = compareStyle;
 const { data: oldFile, isPending: readingOld } = useQuery(() => textQuery(old.path));
 const { data: newFile, isPending: readingNew } = useQuery(() => textQuery(now.path));
-const before = computed(() => oldFile.value?.text);
-const after = computed(() => newFile.value?.text);
+const oldText = computed(() => oldFile.value?.text);
+const newText = computed(() => newFile.value?.text);
 const host = useTemplateRef("host");
 const view = shallowRef<ReturnType<typeof diffView>>();
-watch([host, before, after], ([el, a, b]) => {
+watch([host, oldText, newText], ([el, a, b]) => {
   if (!el || a === undefined || b === undefined) return;
   if (!view.value) {
-    const made = diffView(el, settings.codeFont, style.value === "split", true);
+    const comparison = diffView(el, settings.codeFont, style.value === "split", true);
     // opened at no line in particular, it shows the first change
-    made.view.onDidUpdateDiff(() => {
-      const first = made.view.getLineChanges()?.[0];
+    comparison.view.onDidUpdateDiff(() => {
+      const first = comparison.view.getLineChanges()?.[0];
       if (!now.line && first)
-        made.view.getModifiedEditor().revealLineInCenter(Math.max(first.modifiedStartLineNumber, 1));
+        comparison.view.getModifiedEditor().revealLineInCenter(Math.max(first.modifiedStartLineNumber, 1));
     });
-    view.value = made;
+    view.value = comparison;
   }
   view.value.show(
     { text: a, name: old.rel, format: oldFile.value?.format },
@@ -75,8 +75,8 @@ onBeforeUnmount(() => view.value?.dispose());
           </div>
         </div>
         <p v-if="readingOld || readingNew" class="p-4 text-12 text-dimmed">Reading the two files…</p>
-        <p v-else-if="before === undefined || after === undefined" class="p-4 text-12 text-dimmed">
-          {{ before === undefined ? old.rel : now.rel }} could not be read.
+        <p v-else-if="oldText === undefined || newText === undefined" class="p-4 text-12 text-dimmed">
+          {{ oldText === undefined ? old.rel : now.rel }} could not be read.
         </p>
         <div ref="host" class="min-h-0 flex-1 border-s-12 border-(--bg-0)" />
       </div>

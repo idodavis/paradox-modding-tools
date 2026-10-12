@@ -1,5 +1,5 @@
 /**
- * Source control's state (O-R9, O-R57): whether git is installed, the repositories of the workspace's mods and the
+ * Source control's state: whether git is installed, the repositories of the workspace's mods and the
  * one shown, which follows the active file's; its status, history and branches; and the Git output, every command
  * GitService ran.
  */
@@ -40,29 +40,29 @@ export const useGitStore = defineStore("git", () => {
 
   // the repository shown: the one picked, which the active file's replaces when the tab changes (or the
   // repositories are read)
-  const picked = shallowRef("");
+  const selectedRoot = shallowRef("");
   watch(
     () => repoOf(editor.activeFile)?.root,
     (root) => {
-      if (root) picked.value = root;
+      if (root) selectedRoot.value = root;
     },
     { immediate: true },
   );
-  const repo = computed(() => repos.value?.find((one) => one.root === picked.value) ?? repos.value?.[0]);
+  const repo = computed(() => repos.value?.find((one) => one.root === selectedRoot.value) ?? repos.value?.[0]);
   const root = computed(() => repo.value?.root ?? "");
 
   /** The workspace's mods no repository holds, once the repositories are read. */
   const bare = computed(() => {
     if (!repos.value) return [];
-    const held = new Set(repos.value.flatMap((one) => one.mods ?? []));
-    return workspace.workspaceMods.filter((mod) => !mod.isBroken && !held.has(mod.id));
+    const repoMods = new Set(repos.value.flatMap((one) => one.mods ?? []));
+    return workspace.workspaceMods.filter((mod) => !mod.isBroken && !repoMods.has(mod.id));
   });
   /** Make a mod's folder a repository (git init), then show it. */
   const { mutate: initialize } = useMutation({
     mutation: (mod: { id: string; path: string }) => Init(mod.path),
     onSuccess: async (_made, mod) => {
       await queryCache.invalidateQueries({ key: gitKeys.repos(workspace.activeWorkspaceId) });
-      picked.value = repos.value?.find((one) => one.mods?.includes(mod.id))?.root ?? picked.value;
+      selectedRoot.value = repos.value?.find((one) => one.mods?.includes(mod.id))?.root ?? selectedRoot.value;
     },
   });
 
@@ -104,7 +104,7 @@ export const useGitStore = defineStore("git", () => {
     available,
     repos,
     repoOf,
-    picked,
+    selectedRoot,
     repo,
     root,
     bare,

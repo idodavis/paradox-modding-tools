@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Health (the Health board): the load order, dragged to preview another; six cards, three the order
+ * Health: the load order, dragged to preview another; six cards, three the order
  * changes and three fixed in the files, each a count; the chosen card's table, and the open row beside it.
  * A link opens a card and a row by name (`?card=&name=`).
  */
@@ -16,7 +16,7 @@ import HealthTable from "./HealthTable.vue";
 import OriginDot from "../../ui/OriginDot.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 
-const { id, card: linkedCard, name } = defineProps<{ id: string; card?: string; name?: string }>();
+const { id, card: linkedCard = "", name = "" } = defineProps<{ id: string; card?: string; name?: string }>();
 
 const router = useRouter();
 const store = useWorkspaceStore();
@@ -27,7 +27,7 @@ const GROUPS: { title: string; hint: string; cards: Card[] }[] = [
   { title: "Load order", hint: "Changes when you reorder mods", cards: ["contests", "overrides", "depends"] },
   { title: "Problems in the mods", hint: "Fixed in the files", cards: ["dangling", "loc", "script"] },
 ];
-const isCard = (value: string | undefined): value is Card => !!value && value in CARDS;
+const isCard = (value: string): value is Card => !!value && value in CARDS;
 
 // the card is the route's, so a link and the tiles pick it alike
 const card = computed({
@@ -39,9 +39,9 @@ const open = shallowRef<Row | null>(null);
 watch(card, () => (open.value = null));
 // a linked name opens its row once the report holds it
 watch([() => name, rows], () => {
-  const named =
+  const linked =
     name && rows.value.find((row) => ("name" in row && row.name === name) || ("key" in row && row.key === name));
-  if (named) open.value = named;
+  if (linked) open.value = linked;
 });
 
 const counts = computed(() =>

@@ -5,11 +5,11 @@
 import { useEditorStore } from "../stores/editor";
 
 const {
-  at,
+  place,
   line,
   file = false,
 } = defineProps<{
-  at: { path: string; rel: string };
+  place: { path: string; rel: string };
   line: number;
   file?: boolean;
 }>();
@@ -18,11 +18,11 @@ const editor = useEditorStore();
 
 <template>
   <UButton
-    :label="file ? at.rel : `${at.rel}:${line + 1}`"
+    :label="file ? place.rel : `${place.rel}:${line + 1}`"
     variant="link"
     size="xs"
     class="max-w-full min-w-0 p-0 font-mono"
     :ui="{ label: 'truncate' }"
-    @click="editor.open(at.path, { line })"
+    @click="editor.open(place.path, { line })"
   />
 </template>

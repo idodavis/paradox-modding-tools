@@ -4,11 +4,11 @@
  */
 import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
+import { useMutation } from "@pinia/colada";
 import { useColorMode, usePreferredDark } from "@vueuse/core";
 import { FILE_TREE_DENSITY_PRESETS, type FileTreeDensityKeyword } from "@pierre/trees";
 import { GetSettings, SaveSettings } from "@services/appservice";
 import { WORKSPACE_TOOL_NAMES, type WorkspaceToolName } from "../app/pages";
-import { useWindowsStore } from "./windows";
 import { useWorkspaceStore } from "./workspace";
 
 /** A theme family; its halves are `<id>-dark` and `<id>-light` in styles/themes.css. */
@@ -214,42 +214,43 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   /** Persist the settings map. */
-  function save(): Promise<void> {
-    return SaveSettings(values.value).then(() => useWindowsStore().saved());
+  const { mutate: persist } = useMutation({ mutation: (all: Record<string, string>) => SaveSettings(all) });
+  function save(): void {
+    persist(values.value);
   }
 
   /** Set one key and persist. */
-  function set(key: string, value: string): Promise<void> {
+  function set(key: string, value: string): void {
     values.value = { ...values.value, [key]: value };
-    return save();
+    save();
   }
 
   /** Keys back to their defaults: each written "", so a changed default is followed. */
-  function reset(keys: readonly string[]): Promise<void> {
+  function reset(keys: readonly string[]): void {
     values.value = { ...values.value, ...Object.fromEntries(keys.map((key) => [key, ""])) };
-    return save();
+    save();
   }
 
   /** Pick a family for every workspace, so matching the workspace's game turns off. */
-  function pickTheme(id: FamilyId): Promise<void> {
+  function pickTheme(id: FamilyId): void {
     values.value = { ...values.value, "_global.theme": id, "ui.matchGameTheme": "off" };
-    return save();
+    save();
   }
 
   /** The top bar's button: the other mode, which stops following Windows. */
-  function toggleMode(): Promise<void> {
-    return set("ui.appearance", mode.value === "dark" ? "light" : "dark");
+  function toggleMode(): void {
+    set("ui.appearance", mode.value === "dark" ? "light" : "dark");
   }
 
   /** Follow Windows' light or dark, or keep the mode showing now. */
-  function followSystem(on: boolean): Promise<void> {
-    return set("ui.appearance", on ? "system" : mode.value);
+  function followSystem(on: boolean): void {
+    set("ui.appearance", on ? "system" : mode.value);
   }
 
   /** Show or hide a page in the workspace's bar. */
-  function showTool(name: WorkspaceToolName, on: boolean): Promise<void> {
+  function showTool(name: WorkspaceToolName, on: boolean): void {
     const others = visibleTools.value.filter((tool) => tool !== name);
-    return set("ui.visibleTools", JSON.stringify(on ? [...others, name] : others));
+    set("ui.visibleTools", JSON.stringify(on ? [...others, name] : others));
   }
 
   /** A switch (an IDE switch, a check's ide.diag.<code>, matching the game's theme): the stored choice, else its
@@ -262,8 +263,8 @@ export const useSettingsStore = defineStore("settings", () => {
     return stored ? stored === "on" : fallback;
   }
 
-  function setOn(key: string, on: boolean): Promise<void> {
-    return set(key, on ? "on" : "off");
+  function setOn(key: string, on: boolean): void {
+    set(key, on ? "on" : "off");
   }
 
   // a new line's indentation and Format document's (ideservice.go reads the same keys)

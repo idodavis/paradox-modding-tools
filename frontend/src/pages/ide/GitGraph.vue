@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Source control's graph (O-R60): the current branch's and its upstream's commits, each a dot on its lane with lines
+ * Source control's graph: the current branch's and its upstream's commits, each a dot on its lane with lines
  * to its parents, its subject, the branches and tags at it and its short hash. A commit opens to the files it
  * changed, each opening the commit's diff; the lanes run on past them. It scrolls on its own, and loads older
  * commits as its end comes into view.
@@ -47,9 +47,9 @@ const rows = computed<Row[]>(() => {
     const [first = "", ...rest] = commit.parents ?? [];
     lanes[lane] = first;
     const merges = rest.map((parent) => {
-      const to = lanes.includes(parent) ? lanes.indexOf(parent) : free();
-      lanes[to] = parent;
-      return to;
+      const mergeLane = lanes.includes(parent) ? lanes.indexOf(parent) : free();
+      lanes[mergeLane] = parent;
+      return mergeLane;
     });
     while (lanes.at(-1) === "") lanes.pop();
     const below = lanes.flatMap((hash, i) => (hash ? [i] : []));
@@ -79,13 +79,13 @@ const color = (lane: number) => COLORS[lane % COLORS.length];
 function lines(row: Row): { d: string; lane: number }[] {
   const h = settings.treeRow;
   const mid = h / 2;
-  const at = x(row.lane);
+  const dotX = x(row.lane);
   return [
     ...row.through.map((lane) => ({ d: `M${x(lane)} 0V${h}`, lane })),
-    ...row.joins.map((lane) => ({ d: `M${x(lane)} 0Q${x(lane)} ${mid} ${at} ${mid}`, lane })),
-    ...(row.top ? [{ d: `M${at} 0V${mid}`, lane: row.lane }] : []),
-    ...(row.commit.parents?.length ? [{ d: `M${at} ${mid}V${h}`, lane: row.lane }] : []),
-    ...row.merges.map((lane) => ({ d: `M${at} ${mid}Q${x(lane)} ${mid} ${x(lane)} ${h}`, lane })),
+    ...row.joins.map((lane) => ({ d: `M${x(lane)} 0Q${x(lane)} ${mid} ${dotX} ${mid}`, lane })),
+    ...(row.top ? [{ d: `M${dotX} 0V${mid}`, lane: row.lane }] : []),
+    ...(row.commit.parents?.length ? [{ d: `M${dotX} ${mid}V${h}`, lane: row.lane }] : []),
+    ...row.merges.map((lane) => ({ d: `M${dotX} ${mid}Q${x(lane)} ${mid} ${x(lane)} ${h}`, lane })),
   ];
 }
 

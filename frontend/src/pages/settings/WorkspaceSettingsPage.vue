@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Settings (the Settings and Themes boards): a workspace's General, Game install, and Mods and load order,
+ * Settings: a workspace's General, Game install, and Mods and load order,
  * then the app's Appearance. Find a setting keeps the sections holding a match. Every change saves at once.
  */
 import { computed, shallowRef, useTemplateRef } from "vue";
@@ -8,7 +8,7 @@ import { useRouter } from "vue-router";
 import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import type { TabsItem } from "@nuxt/ui";
-import type { Workspace, WorkspaceMod } from "@services/models";
+import type { WorkspaceMod } from "@services/models";
 import {
   AddWorkspaceMod,
   ReorderWorkspaceMods,

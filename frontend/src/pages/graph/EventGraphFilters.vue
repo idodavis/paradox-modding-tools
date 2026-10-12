@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The graph's Filters (the EventGraphFilters board): the kinds that become nodes, the origins whose nodes are
+ * The graph's Filters: the kinds that become nodes, the origins whose nodes are
  * drawn, how many steps out and how many nodes. A change applies as it is picked; the button counts the
  * filters away from their defaults.
  */

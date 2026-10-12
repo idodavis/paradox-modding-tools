@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * An image tab (Stage 10's drawing): the image on the theme's checkerboard, fit to the pane until zoomed (Fit, 100%,
+ * An image tab: the image on the theme's checkerboard, fit to the pane until zoomed (Fit, 100%,
  * − and +, Ctrl+wheel around the pointer), and a line with its size, format, mip levels and file size. Go's image
  * route serves it, a DDS or TGA decoded there; a format it does not decode, or a file too large, says so.
  */
@@ -44,13 +44,13 @@ function onWheel(e: WheelEvent): void {
   const box = el.getBoundingClientRect();
   const x = e.clientX - box.left;
   const y = e.clientY - box.top;
-  const before = scale.value;
-  const ratio = zoomTo(before * (e.deltaY < 0 ? 1.25 : 0.8)) / before;
+  const previous = scale.value;
+  const ratio = zoomTo(previous * (e.deltaY < 0 ? 1.25 : 0.8)) / previous;
   void nextTick(() => el.scrollTo((el.scrollLeft + x) * ratio - x, (el.scrollTop + y) * ratio - y));
 }
 
 const facts = computed(() => image.value?.facts);
-const shown = computed(() => image.value && !facts.value?.reject && !failed.value);
+const visible = computed(() => image.value && !facts.value?.reject && !failed.value);
 const line = computed(() => {
   const info = facts.value?.info;
   const width = info?.width || drawn.value.width;
@@ -80,7 +80,7 @@ const why = computed(
     >
       <div class="flex min-h-full w-max min-w-full items-center justify-center p-4">
         <img
-          v-if="shown"
+          v-if="visible"
           :src="image?.src"
           alt=""
           class="max-w-none"
@@ -97,15 +97,15 @@ const why = computed(
     >
       <span class="truncate">{{ line }}</span>
       <span class="grow" />
-      <UButton label="Fit" variant="ghost" size="xs" :disabled="!shown" @click="zoom = undefined" />
-      <UButton label="100%" variant="ghost" size="xs" :disabled="!shown" @click="zoom = 1" />
+      <UButton label="Fit" variant="ghost" size="xs" :disabled="!visible" @click="zoom = undefined" />
+      <UButton label="100%" variant="ghost" size="xs" :disabled="!visible" @click="zoom = 1" />
       <UButton
         icon="i-lucide-minus"
         variant="ghost"
         size="xs"
         square
         aria-label="Zoom out"
-        :disabled="!shown"
+        :disabled="!visible"
         @click="zoomTo(scale * 0.8)"
       />
       <UButton
@@ -114,7 +114,7 @@ const why = computed(
         size="xs"
         square
         aria-label="Zoom in"
-        :disabled="!shown"
+        :disabled="!visible"
         @click="zoomTo(scale * 1.25)"
       />
     </div>

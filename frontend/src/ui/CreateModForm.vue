@@ -11,7 +11,7 @@ import { IMAGE_FILTER } from "../lib/nativeDialog";
 import { modFolderQuery, modParentQuery } from "../queries";
 import { LOC_LANGUAGES } from "../app/pages";
 import FileSelector from "./FileSelector.vue";
-import Thumb from "./Thumb.vue";
+import ModThumb from "./ModThumb.vue";
 
 const {
   gameId,
@@ -89,7 +89,7 @@ const { mutate: create, isLoading: creating } = useMutation({
           </UFormField>
           <UFormField label="Thumbnail" hint="Optional">
             <div class="flex items-center gap-2">
-              <Thumb v-if="thumbnail" :path="thumbnail" />
+              <ModThumb v-if="thumbnail" :path="thumbnail" />
               <FileSelector
                 v-model="thumbnail"
                 mode="file"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A workspace's card in the Library (the Main board's .wsc): its name, its install and the mods it
+ * A workspace's card in the Library: its name, its install and the mods it
  * loads. Opening it makes it the active workspace.
  */
 import { computed } from "vue";

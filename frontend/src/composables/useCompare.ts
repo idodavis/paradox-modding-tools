@@ -1,5 +1,5 @@
 /**
- * The IDE's compares (E10), each in CompareFiles: a file with the game's copy of it, or two files (one selected for
+ * The IDE's compares, each in CompareFiles: a file with the game's copy of it, or two files (one selected for
  * compare, then the other). The tabs' menu, the explorer and the palette open them alike.
  */
 import { toValue, type MaybeRefOrGetter } from "vue";
@@ -16,8 +16,8 @@ export function useCompare(workspaceId: MaybeRefOrGetter<string>) {
 
   /** A file as a side, opened at a 0-based line: its path from its root and its origin where it has one. */
   function side(path: string, line = 0) {
-    const at = locate(path);
-    return { path, rel: at?.rel ?? path, origin: at?.root.origin ?? "", line };
+    const located = locate(path);
+    return { path, rel: located?.rel ?? path, origin: located?.root.origin ?? "", line };
   }
 
   /** Two files, the second opened at a line. */
@@ -27,13 +27,14 @@ export function useCompare(workspaceId: MaybeRefOrGetter<string>) {
 
   /** A mod's file with the game's file at the same path. */
   async function withGame(path: string, line = 0): Promise<void> {
-    const at = locate(path);
+    const located = locate(path);
     const game = roots.value.find((root) => root.readOnly);
-    if (!at || !game || at.root.readOnly) return;
-    const copy = under(game, at.rel);
-    if (!(await StatPath(copy)).exists) return void toast.add({ title: `The game has no ${at.rel}`, color: "neutral" });
+    if (!located || !game || located.root.readOnly) return;
+    const copy = under(game, located.rel);
+    if (!(await StatPath(copy)).exists)
+      return void toast.add({ title: `The game has no ${located.rel}`, color: "neutral" });
     void compare.open({
-      old: { path: copy, rel: at.rel, origin: store.originVanilla, line: 0 },
+      old: { path: copy, rel: located.rel, origin: store.originVanilla, line: 0 },
       now: side(path, line),
     });
   }

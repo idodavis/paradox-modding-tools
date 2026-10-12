@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The IDE (the Ide board): the sidebar's explorer, a section for the mods and one for the game's files, its search
- * and its source control (the IdeDiff board); the editor groups where they sit; the panel's problems, search
+ * The IDE: the sidebar's explorer, a section for the mods and one for the game's files, its search
+ * and its source control; the editor groups where they sit; the panel's problems, search
  * results and Git output; and the Wiki pane. A workspace's tabs come back when it opens, in their groups. The status
  * bar shows the problems and the branch, then the shown file's caret, indentation, kind and encoding, or what a
  * diff compares. In a window of its own (windows.ts) it shows one part: an editor group, the game's files, or the panel.
@@ -56,8 +56,8 @@ const folder = windowPart === "files" ? windowName.slice("files:".length) : "";
 const own = computed<IdeRoot[]>(() => {
   if (windowPart === "game") return game.value;
   const root = roots.value.find((one) => pathKey(one.path) === pathKey(folder));
-  const at = locate(folder);
-  return root ? [root] : at ? [{ ...at.root, label: fileName(folder), path: folder, kind: "folder" }] : [];
+  const located = locate(folder);
+  return root ? [root] : located ? [{ ...located.root, label: fileName(folder), path: folder, kind: "folder" }] : [];
 });
 const hideBinaries = computed(() => !!rec.value?.hideExplorerBinaries);
 const gameShown = computed(() => !!game.value.length && settings.on("ide.gameFiles"));
@@ -148,13 +148,13 @@ const explorerPanes = computed(() => [
 ]);
 
 // the IDE's keys while it is the page shown, in the editor too
-const shown = shallowRef(true);
-onActivated(() => (shown.value = true));
-onDeactivated(() => (shown.value = false));
+const visible = shallowRef(true);
+onActivated(() => (visible.value = true));
+onDeactivated(() => (visible.value = false));
 const key = (handler: () => void) => ({ handler, usingInput: true });
 defineShortcuts(
   computed(() =>
-    shown.value
+    visible.value
       ? {
           meta_shift_w: key(() => (editor.wikiOpen = !editor.wikiOpen)),
           meta_shift_f: key(() => (editor.sidebar = "search")),

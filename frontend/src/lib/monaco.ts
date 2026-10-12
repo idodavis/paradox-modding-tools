@@ -19,7 +19,7 @@ export const hooks: {
   loadModel: (uri: monaco.Uri) => Promise<monaco.editor.ITextModel | null>;
   folderLabel: (uri: monaco.Uri) => string | undefined;
 } = {
-  loadModel: async () => null,
+  loadModel: () => Promise.resolve(null),
   folderLabel: () => undefined,
 };
 

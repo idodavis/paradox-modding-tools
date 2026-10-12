@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The top bar on every page (the boards' .topbar): PMT and the Library, the workspace switcher and the
+ * The top bar on every page: PMT and the Library, the workspace switcher and the
  * workspace's page tabs, then its scan, search, light and dark, and Settings. On a workspace's page it
  * builds the workspace's session. A page but the IDE opens in a window of its own from its tab's menu; its tab then
  * brings that window up, and its menu brings the page back.
@@ -45,14 +45,14 @@ const router = useRouter();
 const windows = useWindowsStore();
 const popped = (name: WorkspaceToolName) => windows.otherWindows.has(`page:${name}`);
 async function popOut(name: WorkspaceToolName, label: string): Promise<void> {
-  const shown = route.name === name;
+  const current = route.name === name;
   await windows.openWindow(
-    shown ? route.fullPath : router.resolve({ name, params: { id: store.activeWorkspaceId } }).fullPath,
+    current ? route.fullPath : router.resolve({ name, params: { id: store.activeWorkspaceId } }).fullPath,
     `page:${name}`,
     label,
   );
   const next = tabs.value.find((tool) => tool.name !== name && !popped(tool.name));
-  if (shown && next) void router.push({ name: next.name, params: { id: store.activeWorkspaceId } });
+  if (current && next) void router.push({ name: next.name, params: { id: store.activeWorkspaceId } });
 }
 async function bringBack(name: WorkspaceToolName): Promise<void> {
   void Close(`page:${name}`);

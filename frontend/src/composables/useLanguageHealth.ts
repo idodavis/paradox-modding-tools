@@ -1,6 +1,6 @@
 /**
  * A workspace's language state: its install, scan and dumps (read without building a session), the
- * install's scan while one runs, and the two notices told once per install.
+ * install's scan while one runs, and the two notices raised once per install.
  */
 import { computed, reactive, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -19,8 +19,8 @@ export function dumpsState(live: LanguageHealth | null | undefined): { ok: boole
   return { ok: false, label: "No script_docs" };
 }
 
-/** Installs already told of, this run: a game update, and no dumps. */
-const told = { updated: new Set<string>(), noDumps: new Set<string>() };
+/** Installs a notice was raised for, this run: a game update, and no dumps. */
+const notices = { updated: new Set<string>(), noDumps: new Set<string>() };
 
 export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
   const { data: health } = useQuery(() => languageQuery(toValue(workspaceId)));
@@ -32,8 +32,8 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     (live) => {
       if (!live?.installId) return;
       // a scan that replaced another version's: the game was updated, and the new scan is done
-      if (live.updatedFrom && !told.updated.has(live.installId)) {
-        told.updated.add(live.installId);
+      if (live.updatedFrom && !notices.updated.has(live.installId)) {
+        notices.updated.add(live.installId);
         toast.add({
           title: "Game updated",
           description: `Game updated from ${live.updatedFrom} to ${live.gameVersion} — rescanned.`,
@@ -42,9 +42,9 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
           duration: 0,
         });
       }
-      // the type system is the one part of the engine the user makes, so its absence is told once
-      if (live.ready && live.dumpsFrom === "none" && !told.noDumps.has(live.installId)) {
-        told.noDumps.add(live.installId);
+      // the type system is the one part of the engine the user makes, so its absence is raised once
+      if (live.ready && live.dumpsFrom === "none" && !notices.noDumps.has(live.installId)) {
+        notices.noDumps.add(live.installId);
         toast.add({
           title: "No script_docs for this game",
           description:

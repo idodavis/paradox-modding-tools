@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A wiki article's headings (the PatchNotes board's "On this page"): each jumps to its heading; the one
+ * A wiki article's headings: each jumps to its heading; the one
  * in view is marked in the accent. A top heading is set in the text's own color and weight, a subheading
  * set in and quieter, a deeper one smaller still. Its parent sets its width; hidden, it is a strip with the
  * button that shows it again.

@@ -24,7 +24,7 @@ export function subscribeEvents(): void {
     scans.set(data.installId, { percent: data.percent, stage: data.stage });
   });
   // one session is built at a time, so its readiness or failure ends every scan shown; the editors holding its
-  // workspace's files tell it their text again
+  // workspace's files send it their text again
   Events.On("lang:ready", ({ data: id }) => {
     scans.clear();
     void queryCache.invalidateQueries({ key: sessionKeys.live(id) });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The listing's images (the PublishListing board's Images, laid out as O-R38 sets them): the thumbnail with
+ * The listing's images: the thumbnail with
  * Change, then the extra screenshots and YouTube videos as Steam's gallery, the picked one large (a video plays
  * in place) with a strip of 116 by 65 pictures, Steam's size, beside it or under it. Each change saves at once.
  */
@@ -20,7 +20,7 @@ import { imageSize } from "../../lib/format";
 import { pickFile } from "../../lib/nativeDialog";
 import { imageQuery, releaseKeys } from "../../queries";
 import { modColor } from "../../stores/workspace";
-import Thumb from "../../ui/Thumb.vue";
+import ModThumb from "../../ui/ModThumb.vue";
 
 const { listing, mod } = defineProps<{ listing: Listing; mod: WorkspaceMod }>();
 
@@ -29,9 +29,9 @@ const { change, changing } = useListingImage(() => listing.workspaceId);
 const { data: thumbnail } = useQuery(() => imageQuery(listing.thumbnailAbs));
 
 const extras = computed(() => listing.previews ?? []);
-const picked = shallowRef(0);
-const shown = computed(() => extras.value[Math.min(picked.value, extras.value.length - 1)]);
-const { data: image } = useQuery(() => imageQuery(shown.value?.kind === "image" ? shown.value.abs : ""));
+const selectedIndex = shallowRef(0);
+const selected = computed(() => extras.value[Math.min(selectedIndex.value, extras.value.length - 1)]);
+const { data: image } = useQuery(() => imageQuery(selected.value?.kind === "image" ? selected.value.abs : ""));
 /** A video's picture, as YouTube serves it. */
 const still = (id: string) => `https://img.youtube.com/vi/${id}/mqdefault.jpg`;
 
@@ -61,7 +61,7 @@ function remove(extra: Preview): void {
 
 <template>
   <!-- the thumbnail on its own row at its own shape; from 672px wide the strip runs down the preview's side and
-       the preview takes the height left, so the column scrolls only below 180px of it (O-R38) -->
+       the preview takes the height left, so the column scrolls only below 180px of it -->
   <div class="@container flex grow flex-col gap-3.5 py-4.5">
     <div class="flex items-center gap-4">
       <img
@@ -70,7 +70,7 @@ function remove(extra: Preview): void {
         alt=""
         class="h-36 max-w-72 shrink-0 rounded-lg border border-accented bg-(--bg-0) object-contain"
       />
-      <Thumb v-else :color="modColor(mod)" size="2xl" />
+      <ModThumb v-else :color="modColor(mod)" size="2xl" />
       <div class="flex min-w-0 flex-col items-start gap-1">
         <span class="text-12 font-medium">Thumbnail</span>
         <span class="text-11 text-dimmed">Shown in the launcher and on Steam</span>
@@ -87,13 +87,13 @@ function remove(extra: Preview): void {
         <span class="text-12 font-medium">Screenshots and videos</span>
         <span class="text-11 text-dimmed">{{ extras.length }} of 10, on Steam only</span>
       </div>
-      <div v-if="shown" class="flex flex-col gap-2 @2xl:min-h-45 @2xl:grow @2xl:basis-0 @2xl:flex-row">
+      <div v-if="selected" class="flex flex-col gap-2 @2xl:min-h-45 @2xl:grow @2xl:basis-0 @2xl:flex-row">
         <div
           class="aspect-video w-full overflow-hidden rounded-lg border border-default bg-(--bg-0) @2xl:h-full @2xl:w-auto @2xl:min-w-0 @2xl:flex-initial"
         >
           <iframe
-            v-if="shown.kind === 'youtube'"
-            :src="`https://www.youtube.com/embed/${shown.id}`"
+            v-if="selected.kind === 'youtube'"
+            :src="`https://www.youtube.com/embed/${selected.id}`"
             title="The YouTube video"
             allow="encrypted-media; picture-in-picture; fullscreen"
             referrerpolicy="strict-origin-when-cross-origin"
@@ -109,11 +109,11 @@ function remove(extra: Preview): void {
               :key="extra.rel || extra.id"
               type="button"
               class="relative m-0.5 flex h-16.25 w-29 shrink-0 rounded-md"
-              :class="extra === shown ? 'ring-2 ring-primary' : 'opacity-60 hover:opacity-100'"
+              :class="extra === selected ? 'ring-2 ring-primary' : 'opacity-60 hover:opacity-100'"
               :aria-label="extra.kind === 'youtube' ? `YouTube video ${extra.id}` : extra.rel"
-              @click="picked = i"
+              @click="selectedIndex = i"
             >
-              <Thumb v-if="extra.kind === 'image'" :path="extra.abs" size="fill" />
+              <ModThumb v-if="extra.kind === 'image'" :path="extra.abs" size="fill" />
               <template v-else>
                 <img :src="still(extra.id)" alt="" class="size-full rounded-md border border-accented object-cover" />
                 <span
@@ -130,9 +130,9 @@ function remove(extra: Preview): void {
         None yet. An upload leaves the ones already on Steam as they are; Import from Steam brings them here.
       </p>
       <div class="flex flex-wrap items-center gap-2">
-        <template v-if="shown">
+        <template v-if="selected">
           <span class="min-w-0 truncate font-mono text-12 text-toned">
-            {{ shown.kind === "youtube" ? `youtube.com/watch?v=${shown.id}` : shown.rel }}
+            {{ selected.kind === "youtube" ? `youtube.com/watch?v=${selected.id}` : selected.rel }}
           </span>
           <UButton
             label="Remove"
@@ -140,7 +140,7 @@ function remove(extra: Preview): void {
             size="sm"
             color="error"
             variant="ghost"
-            @click="remove(shown)"
+            @click="remove(selected)"
           />
           <span class="grow" />
         </template>

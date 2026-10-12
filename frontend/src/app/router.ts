@@ -30,7 +30,7 @@ const router = createRouter({
           name: "health",
           component: () => import("../pages/health/HealthPage.vue"),
           // a link opens a card, and a row by its name
-          props: (to) => ({ ...to.params, card: to.query.card, name: to.query.name }),
+          props: (route) => ({ ...route.params, card: route.query.card, name: route.query.name }),
         },
         {
           path: "patch-notes",
@@ -43,14 +43,14 @@ const router = createRouter({
           name: "release",
           component: () => import("../pages/publish/ReleasePage.vue"),
           // a link opens a step: the listing, the version and change note, or review and upload
-          props: (to) => ({ ...to.params, step: to.query.step }),
+          props: (route) => ({ ...route.params, step: route.query.step }),
         },
         {
           path: "settings",
           name: "workspace-settings",
           component: () => import("../pages/settings/WorkspaceSettingsPage.vue"),
           // the section is in the query, so the palette and links open the one they name
-          props: (to) => ({ ...to.params, section: to.query.section }),
+          props: (route) => ({ ...route.params, section: route.query.section }),
         },
       ],
     },
@@ -59,36 +59,36 @@ const router = createRouter({
 
 const unsavedModal = useOverlay().create(UnsavedChangesModal);
 
-router.beforeEach(async (to, from) => {
+router.beforeEach(async (target, previous) => {
   // a window of one thing sends a link to another page to the main window, and the main window one to a page in a
   // window of its own there
   const windows = useWindowsStore();
-  const page = `page:${String(to.name)}`;
+  const page = `page:${String(target.name)}`;
   const elsewhere = isMain
     ? windows.otherWindows.has(page)
       ? page
       : ""
-    : from.name && to.name !== from.name
+    : previous.name && target.name !== previous.name
       ? "main"
       : "";
   if (elsewhere) {
-    void Events.Emit("window:show", { to: elsewhere, route: to.fullPath, path: "", line: -1, col: 0 });
+    void Events.Emit("window:show", { to: elsewhere, route: target.fullPath, path: "", line: -1, col: 0 });
     return false;
   }
-  if (!("id" in to.params)) return;
+  if (!("id" in target.params)) return;
   // another workspace's files would take the editors' place: the editor windows hand theirs back, then the unsaved
   // edits are saved or dropped, or we stay
   const editor = useEditorStore();
-  if (isMain && editor.editingWorkspaceId && to.params.id !== editor.editingWorkspaceId)
+  if (isMain && editor.editingWorkspaceId && target.params.id !== editor.editingWorkspaceId)
     await windows.dock((one) => one.name.startsWith("editor:"));
   if (
     editor.unsaved.size &&
     editor.editingWorkspaceId &&
-    to.params.id !== editor.editingWorkspaceId &&
+    target.params.id !== editor.editingWorkspaceId &&
     !(await unsavedModal.open())
   )
     return false;
-  useWorkspaceStore().select(to.params.id);
+  useWorkspaceStore().select(target.params.id);
 });
 
 export default router;

@@ -96,7 +96,7 @@ describe("groups and layout", () => {
     expect(editor.focused).toBe(1);
     editor.closeTab(1, "a");
     expect(editor.groups).toEqual([{ id: 1, tabs: [], active: "" }]);
-    // the backend is told through a mutation, a tick later
+    // the backend is notified through a mutation, a tick later
     await vi.waitFor(() => expect(DidClose).toHaveBeenCalled());
     expect(DidClose).toHaveBeenCalledTimes(1);
   });
@@ -197,7 +197,7 @@ describe("groups and layout", () => {
       unsaved: [],
       problems: {},
     });
-    // the windows store told the others it opened
+    // the windows store announced that it opened
     vi.mocked(Events.Emit).mockClear();
     editor.open("c:/M/a.txt");
     editor.open("C:/m/sub/b.txt", { line: 4, col: 2 });

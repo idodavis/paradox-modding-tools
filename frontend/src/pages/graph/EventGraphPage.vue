@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Event Graph (the EventGraph boards): what a root fires and what fires it, laid out left to right by step,
+ * Event Graph: what a root fires and what fires it, laid out left to right by step,
  * with the selected definition opened beside the graph or below it. Full screen keeps the graph and the
  * drawer, the toolbar floating over the graph.
  */
@@ -32,7 +32,7 @@ const {
   detail,
   roots,
   searching,
-  shown,
+  visibleGraph,
   laid,
   filtersOn,
   select,
@@ -75,7 +75,7 @@ const origins = computed(() =>
     count: graph.value?.origins?.[id] ?? 0,
   })),
 );
-const folded = computed(() => shown.value.nodes.filter((node) => node.stub).length);
+const folded = computed(() => visibleGraph.value.nodes.filter((node) => node.stub).length);
 
 // the IDE's "Open in Event Graph" routes here with ?root=; another workspace starts empty
 watch(
@@ -102,7 +102,7 @@ watch(
       :roots="roots"
       :searching="searching"
       :root-kind="rootKind"
-      :nodes="shown.nodes.length"
+      :nodes="visibleGraph.nodes.length"
       :reach="graph?.reach ?? 0"
       @update:root="setRoot"
       @fit="canvas?.fit()"
@@ -135,8 +135,8 @@ watch(
         <div class="relative min-h-0 min-w-0 flex-1">
           <GraphCanvas
             ref="canvas"
-            :nodes="shown.nodes"
-            :edges="shown.edges"
+            :nodes="visibleGraph.nodes"
+            :edges="visibleGraph.edges"
             :positions="laid.positions"
             :routes="laid.routes"
             :heads="laid.heads"
@@ -179,7 +179,7 @@ watch(
     </USplitter>
     <StatusFacts>
       <span>
-        {{ plural(shown.nodes.length, "node")
+        {{ plural(visibleGraph.nodes.length, "node")
         }}{{ graph?.truncated ? `, stopped at the node limit at step ${graph.reached}` : "" }},
         {{ plural(folded, "group") }} folded
       </span>

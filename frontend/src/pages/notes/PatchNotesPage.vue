@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Patch Notes (the PatchNotes board): the game's patch notes from its wiki. The versions, newest first by
+ * Patch Notes: the game's patch notes from its wiki. The versions, newest first by
  * minor version, each with its hotfixes after it, smaller; a dot where a note has a Modding section; the
  * shown note's headings; the note, with Find in these notes (Ctrl F; Enter and Shift Enter step through its
  * hits) and Open on the wiki. `?patch=` names the version shown, else the latest.
@@ -29,7 +29,7 @@ const gameId = computed(() => store.activeWorkspace?.gameId ?? "");
 const { data: list } = useQuery(() => patchesQuery(gameId.value));
 const pages = computed(() => list.value?.pages ?? []);
 const cached = useTimeAgo(() => list.value?.fetched || Date.now());
-/** A version's row; a hotfix's row is the board's smaller .hot. */
+/** A version's row; a hotfix's row is smaller. */
 type Version = {
   label: string;
   value: string;
@@ -182,6 +182,7 @@ const panes = computed(() => [
             />
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto px-8 pt-2 pb-8">
+            <!-- eslint-disable-next-line vue/no-v-html -- sanitized by Go -->
             <article v-if="page?.html" ref="article" class="art" @click="onWikiClick" v-html="page.html" />
             <p v-else class="text-13 text-dimmed">No notes for this version.</p>
           </div>

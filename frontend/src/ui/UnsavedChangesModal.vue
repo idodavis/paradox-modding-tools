@@ -9,15 +9,15 @@ import { useMutation } from "@pinia/colada";
 import { fileName, plural } from "../lib/format";
 import { useEditorStore } from "../stores/editor";
 
-const { going = "Switching workspace", files } = defineProps<{ going?: string; files?: string[] }>();
+const { going = "Switching workspace", files = [] } = defineProps<{ going?: string; files?: string[] }>();
 const emit = defineEmits<{ close: [go: boolean] }>();
 
 const editor = useEditorStore();
-const paths = computed(() => files ?? [...editor.unsaved]);
+const paths = computed(() => (files.length ? files : [...editor.unsaved]));
 const names = computed(() => paths.value.map(fileName));
-const listed = computed(() => {
-  const shown = names.value.slice(0, 4).join(", ");
-  return names.value.length > 4 ? `${shown} and ${names.value.length - 4} more` : shown;
+const summary = computed(() => {
+  const firstNames = names.value.slice(0, 4).join(", ");
+  return names.value.length > 4 ? `${firstNames} and ${names.value.length - 4} more` : firstNames;
 });
 const { mutate: save, isLoading: saving } = useMutation({
   mutation: () => editor.saveFiles(paths.value),
@@ -28,7 +28,7 @@ const { mutate: save, isLoading: saving } = useMutation({
 <template>
   <UModal
     :title="`Save ${plural(names.length, 'file')}?`"
-    :description="`${listed} ${names.length === 1 ? 'has' : 'have'} changes not saved. ${going} without saving drops them.`"
+    :description="`${summary} ${names.length === 1 ? 'has' : 'have'} changes not saved. ${going} without saving drops them.`"
   >
     <template #footer>
       <span class="grow" />

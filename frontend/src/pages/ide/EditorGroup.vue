@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * An editor group (the Ide board's editor): its tabs, each with its file's icon, a dot while unsaved and a lock on
+ * An editor group: its tabs, each with its file's icon, a dot while unsaved and a lock on
  * the game's files, and a menu of what to do with it (a diff tab's is its file's, its diff named after it); a tab dragged onto a tab or the strip goes there, onto the
  * editor's edge into a new group there. The breadcrumb, the file's origin, folders and name, then where the caret
  * is (Inspect.within), and a Markdown file's Raw or Rich; then the shown tab's editor. The group at the top right
  * ends its strip with the Wiki button. A diff tab shows its file's diff (GitDiff) in place of the breadcrumb and editor.
- * A game file a mod replaces says so, with a compare (B46). A tab moves into a window of its own, and back.
+ * A game file a mod replaces says so, with a compare. A tab moves into a window of its own, and back.
  */
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -80,7 +80,7 @@ const actions = computed<DropdownMenuItem[]>(() => [
 
 /** A tab's menu: save and close it, split it off, compare its file. */
 function tabMenu(tab: string): ContextMenuItem[][] {
-  const picked = editor.comparing;
+  const comparing = editor.comparing;
   const path = tabOf(tab).file;
   return [
     [
@@ -88,7 +88,7 @@ function tabMenu(tab: string): ContextMenuItem[][] {
       { label: "Save all", disabled: !editor.unsaved.size, onSelect: () => editor.save() },
     ],
     [
-      { label: "Close", onSelect: () => close(tab) },
+      { label: "Close", onSelect: () => void close(tab) },
       { label: "Close the others", onSelect: () => closeAll(tab) },
       { label: "Close all", onSelect: () => closeAll() },
     ],
@@ -105,9 +105,9 @@ function tabMenu(tab: string): ContextMenuItem[][] {
       { label: "Compare with the game's copy", disabled: readOnly(path), onSelect: () => void compare.withGame(path) },
       { label: "Select for compare", onSelect: () => (editor.comparing = path) },
       {
-        label: picked && picked !== path ? `Compare with ${name(picked)}` : "Compare with selected",
-        disabled: !picked || picked === path,
-        onSelect: () => compare.files(picked, path),
+        label: comparing && comparing !== path ? `Compare with ${name(comparing)}` : "Compare with selected",
+        disabled: !comparing || comparing === path,
+        onSelect: () => compare.files(comparing, path),
       },
     ],
     [
@@ -233,11 +233,11 @@ const folders = computed(() => (located.value?.rel.split("/").length ?? 0) - 1);
 
 // a file with two views (Markdown, SVG) switches on its bar; an image's visual is the image pane
 const views = computed(() => {
-  const named = viewsOf(active.value);
+  const labels = viewsOf(active.value);
   return (
-    named && [
-      { label: named.code, value: "code" },
-      { label: named.visual, value: "visual" },
+    labels && [
+      { label: labels.code, value: "code" },
+      { label: labels.visual, value: "visual" },
     ]
   );
 });

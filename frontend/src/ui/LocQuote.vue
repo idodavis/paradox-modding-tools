@@ -2,7 +2,7 @@
 /**
  * A localization value as the game says it, quoted as the IDE's hover quotes it: a bar on its start in
  * the blue at half strength, on bg-3; bare, the text alone at its parent's size. Its codes take the loc
- * grammar's colors (`lib/code.ts`'s `locTokens`), its \n are line breaks, none kept at either end.
+ * grammar's colors (`lib/codeView.ts`'s `locTokens`), its \n are line breaks, none kept at either end.
  */
 import { computed } from "vue";
 import { locTokens } from "../lib/codeView";

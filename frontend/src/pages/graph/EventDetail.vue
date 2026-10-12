@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The selected definition (the EventGraph board's drawer as O-R35 redraws it): its kind, origin, name and file,
- * Set as root and Open in IDE; then three tabs. The first shows it part by part (O-R37): its type and one-word
+ * The selected definition: its kind, origin, name and file,
+ * Set as root and Open in IDE; then three tabs. The first shows it part by part: its type and one-word
  * properties, its title, portraits, texts and options, a part with versions a version at a time; Links, what it
  * fires and what fires it by kind, and the names it reads; Script, as written, in Health's site card.
  */
@@ -35,18 +35,18 @@ const how = (fire: Fire) =>
   [fire.block, [fire.command, fire.args].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
 
 // the version each stepper shows, by its id; each starts at the first
-const at = shallowRef<Record<string, number>>({});
-type Shown = Partial<Version> & { id: string; index: number; count: number };
-function shown(id: string, versions: Version[] | null | undefined): Shown {
+const indexes = shallowRef<Record<string, number>>({});
+type Current = Partial<Version> & { id: string; index: number; count: number };
+function currentOf(id: string, versions: Version[] | null | undefined): Current {
   const count = versions?.length ?? 0;
-  const index = (at.value[id] ?? 0) % Math.max(count, 1);
+  const index = (indexes.value[id] ?? 0) % Math.max(count, 1);
   return { ...versions?.[index], id, index, count };
 }
-function step({ id, index, count }: Shown, by: number): void {
-  at.value = { ...at.value, [id]: (index + by + count) % count };
+function step({ id, index, count }: Current, by: number): void {
+  indexes.value = { ...indexes.value, [id]: (index + by + count) % count };
 }
-const [DefineStepper, Stepper] = createReusableTemplate<{ shown: Shown }>();
-const [DefineSaid, Said] = createReusableTemplate<{ shown: Shown; random?: boolean; title?: boolean }>();
+const [DefineStepper, Stepper] = createReusableTemplate<{ current: Current }>();
+const [DefineQuote, Quote] = createReusableTemplate<{ current: Current; random?: boolean; title?: boolean }>();
 
 // its parts: the type, the texts (the title first), the portraits, the options, and its properties: the
 // one-word ones, the blocks of one-word keys (a background) and the blocks that apply only when their
@@ -59,12 +59,15 @@ const texts = computed(() =>
     .sort((a, b) => +(b.key === "title") - +(a.key === "title"))
     .map((section) => ({
       ...section,
-      parts: (section.parts ?? []).map((part, p) => ({ ...part, shown: shown(`${section.line}:${p}`, part.versions) })),
+      parts: (section.parts ?? []).map((part, p) => ({
+        ...part,
+        current: currentOf(`${section.line}:${p}`, part.versions),
+      })),
     })),
 );
 const portraits = computed(() => sections.value.filter((section) => section.portrait));
 const options = computed(() =>
-  (detail.options ?? []).map((option) => ({ ...option, shown: shown(`option:${option.line}`, option.names) })),
+  (detail.options ?? []).map((option) => ({ ...option, current: currentOf(`option:${option.line}`, option.names) })),
 );
 const properties = computed(() =>
   sections.value.filter(
@@ -99,8 +102,8 @@ const reads = computed(() =>
   (detail.refs ?? []).map((group) => {
     const names = new Map<string, { name: string; count: number; at: Cited }>();
     for (const cited of group.refs ?? []) {
-      const seen = names.get(cited.name);
-      if (seen) seen.count++;
+      const first = names.get(cited.name);
+      if (first) first.count++;
       else names.set(cited.name, { name: cited.name, count: 1, at: cited });
     }
     return {
@@ -112,13 +115,13 @@ const reads = computed(() =>
   }),
 );
 const uses = computed(() => reads.value.reduce((sum, group) => sum + group.uses, 0));
-const named = computed(() => reads.value.reduce((sum, group) => sum + group.names.length, 0));
+const nameCount = computed(() => reads.value.reduce((sum, group) => sum + group.names.length, 0));
 const openRead = shallowRef("");
 
 watch(
   () => detail.name,
   () => {
-    at.value = {};
+    indexes.value = {};
     allFires.value = allFiredBy.value = false;
     openRead.value = "";
   },
@@ -150,7 +153,7 @@ function open(path: string, line: number): void {
         <UButton icon="i-lucide-x" variant="ghost" size="sm" square aria-label="Close detail" @click="emit('close')" />
       </div>
       <span class="font-mono text-16 leading-5.5 font-semibold break-all text-highlighted">{{ detail.name }}</span>
-      <SourceLink :at="detail.at" :line="detail.line" class="self-start" />
+      <SourceLink :place="detail.at" :line="detail.line" class="self-start" />
       <div class="mt-1.5 flex items-center gap-2">
         <UButton
           label="Set as root"
@@ -171,7 +174,7 @@ function open(path: string, line: number): void {
       :ui="{ list: 'px-3', content: 'min-h-0 overflow-auto' }"
     >
       <template #main>
-        <DefineStepper v-slot="{ shown }">
+        <DefineStepper v-slot="{ current }">
           <span class="flex items-center text-11 text-muted tabular-nums">
             <UButton
               icon="i-lucide-chevron-left"
@@ -179,30 +182,34 @@ function open(path: string, line: number): void {
               size="xs"
               square
               aria-label="Previous version"
-              @click="step(shown, -1)"
+              @click="step(current, -1)"
             />
-            {{ shown.index + 1 }} of {{ shown.count }}
+            {{ current.index + 1 }} of {{ current.count }}
             <UButton
               icon="i-lucide-chevron-right"
               variant="ghost"
               size="xs"
               square
               aria-label="Next version"
-              @click="step(shown, 1)"
+              @click="step(current, 1)"
             />
           </span>
         </DefineStepper>
-        <DefineSaid v-slot="{ shown, random, title }">
+        <DefineQuote v-slot="{ current, random, title }">
           <LocQuote
-            :text="shown.text || `No ${language} text`"
+            :text="current.text || `No ${language} text`"
             bare
             :class="title ? 'text-center text-18 leading-6 font-semibold text-highlighted' : 'text-13 text-highlighted'"
           />
-          <p v-if="shown.when || (shown.index && !random)" class="truncate text-11 text-dimmed" :title="shown.when">
-            when <code v-if="shown.when" class="font-mono text-muted">{{ shown.when }}</code
+          <p
+            v-if="current.when || (current.index && !random)"
+            class="truncate text-11 text-dimmed"
+            :title="current.when"
+          >
+            when <code v-if="current.when" class="font-mono text-muted">{{ current.when }}</code
             ><template v-else>none before it applies</template>
           </p>
-        </DefineSaid>
+        </DefineQuote>
         <div class="flex flex-col gap-2.5 px-4 py-3.5">
           <div class="flex flex-col gap-1">
             <span class="text-11 text-muted">{{ sentence(type) }}</span>
@@ -231,8 +238,8 @@ function open(path: string, line: number): void {
               <span class="flex h-6 items-center text-11 text-muted">
                 {{ sentence(section.key) }}<span class="grow" />
                 <Stepper
-                  v-if="section.parts.length === 1 && section.parts[0].shown.count > 1"
-                  :shown="section.parts[0].shown"
+                  v-if="section.parts.length === 1 && section.parts[0].current.count > 1"
+                  :current="section.parts[0].current"
                 />
               </span>
               <div
@@ -246,9 +253,9 @@ function open(path: string, line: number): void {
                     >Part {{ p + 1 }}{{ part.random ? " · one at random" : "" }}</span
                   >
                   <span class="grow" />
-                  <Stepper v-if="part.shown.count > 1" :shown="part.shown" />
+                  <Stepper v-if="part.current.count > 1" :current="part.current" />
                 </div>
-                <Said :shown="part.shown" :random="part.random" :title="section.key === 'title'" />
+                <Quote :current="part.current" :random="part.random" :title="section.key === 'title'" />
               </div>
             </div>
             <div v-if="portraits.length" class="flex flex-col gap-1.5 px-3.5 py-3">
@@ -277,19 +284,19 @@ function open(path: string, line: number): void {
                 <p v-if="option.when" class="truncate text-11 text-dimmed" :title="option.when">
                   shown when <code class="font-mono text-muted">{{ option.when }}</code>
                 </p>
-                <Said v-if="option.shown.count" :shown="option.shown" />
+                <Quote v-if="option.current.count" :current="option.current" />
                 <span class="flex items-center gap-1.5">
                   <UButton
-                    :label="option.shown.key || 'option'"
+                    :label="option.current.key || 'option'"
                     variant="link"
                     color="neutral"
                     size="xs"
                     class="min-w-0 p-0 font-mono text-dimmed"
-                    @click="open(detail.at.path, option.shown.line ?? option.line)"
+                    @click="open(detail.at.path, option.current.line ?? option.line)"
                   />
                   <UBadge v-for="flag in option.flags" :key="flag" :label="flag" size="sm" />
                   <span class="grow" />
-                  <Stepper v-if="option.shown.count > 1" :shown="option.shown" />
+                  <Stepper v-if="option.current.count > 1" :current="option.current" />
                 </span>
               </div>
             </div>
@@ -395,7 +402,7 @@ function open(path: string, line: number): void {
           </section>
           <section v-if="reads.length" class="flex flex-col gap-1.5">
             <h4 class="flex items-center gap-2 px-2 text-12 font-semibold text-highlighted">
-              Reads<span class="text-11 font-normal text-dimmed">{{ uses }} uses of {{ named }} names</span>
+              Reads<span class="text-11 font-normal text-dimmed">{{ uses }} uses of {{ nameCount }} names</span>
             </h4>
             <div class="flex flex-wrap gap-1 px-2">
               <UButton
@@ -437,7 +444,7 @@ function open(path: string, line: number): void {
               class="flex h-8 items-center gap-2 border-b border-default bg-elevated px-2.5 text-12 whitespace-nowrap"
             >
               <UIcon name="i-lucide-code" class="size-3.5 shrink-0 text-dimmed" />
-              <SourceLink :at="detail.at" :line="detail.line" />
+              <SourceLink :place="detail.at" :line="detail.line" />
               <span class="grow" />
               <span class="text-11 text-dimmed">{{ detail.lines.length }} lines</span>
               <UButton

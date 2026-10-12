@@ -37,12 +37,12 @@ export function useWikiPrefs() {
     }
   }
 
-  function setToastPref(value: ToastPref): Promise<void> {
+  function setToastPref(value: ToastPref): void {
     if (value === "1h") sessionStorage.setItem("pmt.wiki.toast.until", String(Date.now() + 60 * 60 * 1000));
     else sessionStorage.removeItem("pmt.wiki.toast.until");
     if (value === "restart") sessionStorage.setItem("pmt.wiki.toast.restart", "1");
     else sessionStorage.removeItem("pmt.wiki.toast.restart");
-    return settings.set("ui.wiki.toast", value);
+    settings.set("ui.wiki.toast", value);
   }
 
   return { toastPref, toastAllowed, setToastPref };

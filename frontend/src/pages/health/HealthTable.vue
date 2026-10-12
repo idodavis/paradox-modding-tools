@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The chosen card's table (the Health board's left pane): its title, what it lists and a filter, then its
+ * The chosen card's table: its title, what it lists and a filter, then its
  * rows. Each column's head sorts by it and, where its values are few, keeps only the ones ticked. Rows are
  * drawn as they scroll into view.
  */
@@ -76,7 +76,7 @@ function head<T>(label: string, name?: (value: string) => string) {
       ? [...new Set(table.getPreFilteredRowModel().rows.map((row) => String(row.getValue(column.id))))].sort()
       : [];
     const tick = (value: string, checked: boolean) =>
-      column.setFilterValue(checked ? [...wanted, value] : wanted.filter((kept) => kept !== value));
+      column.setFilterValue(checked ? [...wanted, value] : wanted.filter((other) => other !== value));
     const items = [
       [
         { label: "Sort ascending", icon: "i-lucide-arrow-up", onSelect: () => column.toggleSorting(false) },
@@ -120,7 +120,7 @@ function head<T>(label: string, name?: (value: string) => string) {
   };
 }
 
-/** A fixed column width, as the board's colgroup sets it. */
+/** A fixed column width, set on its header and its cells. */
 const width = (cls: string) => ({ class: { th: cls, td: cls } });
 
 const contests: TableColumn<Contest>[] = [
@@ -253,8 +253,8 @@ const columns = computed(
 
 // the open row, by its place in the rows
 const selection = computed(() => {
-  const at = open.value ? rows.indexOf(open.value) : -1;
-  return at < 0 ? {} : { [at]: true };
+  const index = open.value ? rows.indexOf(open.value) : -1;
+  return index < 0 ? {} : { [index]: true };
 });
 
 // rows striped faintly by their place as shown, sorted and filtered
@@ -266,7 +266,7 @@ function select(_event: Event, row: { original: Row }): void {
   open.value = row.original;
 }
 
-// a virtualized row is drawn at the board's 30px, at the page's scale
+// a virtualized row is 30px, at the page's scale
 const rowHeight = () => (30 / 16) * parseFloat(getComputedStyle(document.documentElement).fontSize);
 </script>
 
@@ -295,7 +295,7 @@ const rowHeight = () => (30 / 16) * parseFloat(getComputedStyle(document.documen
       sticky
       :virtualize="{ estimateSize: rowHeight() }"
       empty="Nothing to list."
-      :ui="{ base: 'w-full table-fixed', td: 'truncate', tr: 'cursor-pointer' }"
+      :ui="{ td: 'truncate', tr: 'cursor-pointer' }"
       :row-selection="selection"
       :meta="{ class: { tr: stripe } }"
       class="min-h-0 flex-1"

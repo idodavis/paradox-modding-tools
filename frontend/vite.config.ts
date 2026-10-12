@@ -12,8 +12,20 @@ import path from "path";
 // 28px menu rows, 30px table rows. The colors come from the tokens in styles/themes.css.
 const field = {
   sizes: {
-    sm: { base: "h-7 px-2 py-0 text-12 gap-2", leading: "ps-2", trailing: "pe-2", leadingIcon: "size-3.5", trailingIcon: "size-3.5" },
-    md: { base: "h-8 px-2.5 py-0 text-13 gap-2", leading: "ps-2.5", trailing: "pe-2.5", leadingIcon: "size-3.5", trailingIcon: "size-3.5" },
+    sm: {
+      base: "h-7 px-2 py-0 text-12 gap-2",
+      leading: "ps-2",
+      trailing: "pe-2",
+      leadingIcon: "size-3.5",
+      trailingIcon: "size-3.5",
+    },
+    md: {
+      base: "h-8 px-2.5 py-0 text-13 gap-2",
+      leading: "ps-2.5",
+      trailing: "pe-2.5",
+      leadingIcon: "size-3.5",
+      trailingIcon: "size-3.5",
+    },
   },
   variant: { outline: "bg-(--bg-0) ring-accented" },
   compoundVariants: [
@@ -64,7 +76,9 @@ const contextual = {
   slots: menu.slots,
   variants: {
     size: { md: menu.item },
-    active: { false: { item: "data-highlighted:before:bg-(--accent-soft) data-[state=open]:before:bg-(--accent-soft)" } },
+    active: {
+      false: { item: "data-highlighted:before:bg-(--accent-soft) data-[state=open]:before:bg-(--accent-soft)" },
+    },
   },
 };
 
@@ -82,7 +96,10 @@ export default defineConfig({
         // a pane's resize handle takes no room: a 2px line on the border between two panes, the accent on hover and
         // while dragging (reka's hit area reaches past it)
         splitter: {
-          slots: { handle: "z-10 after:absolute after:bg-(--line-1) data-[state=hover]:after:bg-primary data-[state=drag]:after:bg-primary" },
+          slots: {
+            handle:
+              "z-10 after:absolute after:bg-(--line-1) data-[state=hover]:after:bg-primary data-[state=drag]:after:bg-primary",
+          },
           variants: {
             orientation: {
               horizontal: { handle: "w-0 after:inset-y-0 after:start-1/2 after:w-0.5 after:-translate-x-1/2" },
@@ -91,7 +108,13 @@ export default defineConfig({
           },
         },
         // the type scale and the radii of themes.css, so merged classes keep them
-        tv: { twMergeConfig: { extend: { theme: { text: ["11", "12", "13", "14", "16", "18", "20", "28", "tiny"], radius: ["chip", "tile"] } } } },
+        tv: {
+          twMergeConfig: {
+            extend: {
+              theme: { text: ["11", "12", "13", "14", "16", "18", "20", "28", "tiny"], radius: ["chip", "tile"] },
+            },
+          },
+        },
         button: {
           slots: { leadingIcon: "size-3.5", trailingIcon: "size-3.5" },
           variants: {
@@ -108,7 +131,14 @@ export default defineConfig({
             { color: "neutral", variant: "soft", class: "bg-accented text-highlighted ring ring-inset ring-accented" },
             { color: "primary", variant: "solid", class: "text-(--accent-ink) hover:bg-primary/85" },
             // on
-            { color: "primary", variant: "soft", class: { base: "bg-(--accent-soft) text-highlighted ring ring-inset ring-primary/45", leadingIcon: "text-primary" } },
+            {
+              color: "primary",
+              variant: "soft",
+              class: {
+                base: "bg-(--accent-soft) text-highlighted ring ring-inset ring-primary/45",
+                leadingIcon: "text-primary",
+              },
+            },
             // danger
             { color: "error", variant: "soft", class: "bg-(--red-soft) hover:bg-(--red-soft)" },
             { square: true, size: "xs", class: { base: "size-5.5 px-0 justify-center", leadingIcon: "size-3.5" } },
@@ -138,7 +168,13 @@ export default defineConfig({
             thumb: "bg-(--fg-3) shadow-none data-[state=checked]:bg-(--accent-ink)",
           },
           variants: {
-            size: { md: { base: "w-7.5", container: "h-4.5", thumb: "size-3 data-[state=checked]:translate-x-3 data-[state=checked]:rtl:-translate-x-3" } },
+            size: {
+              md: {
+                base: "w-7.5",
+                container: "h-4.5",
+                thumb: "size-3 data-[state=checked]:translate-x-3 data-[state=checked]:rtl:-translate-x-3",
+              },
+            },
           },
         },
         checkbox: {
@@ -202,7 +238,8 @@ export default defineConfig({
                 item: "flex w-auto flex-1 items-center gap-2 text-start last:flex-none",
                 container: "contents",
                 separator: "static order-last h-px flex-1 bg-accented group-data-[state=completed]:bg-accented",
-                title: "text-12 font-medium whitespace-nowrap text-dimmed group-data-[state=completed]:text-toned group-data-[state=active]:text-highlighted",
+                title:
+                  "text-12 font-medium whitespace-nowrap text-dimmed group-data-[state=completed]:text-toned group-data-[state=active]:text-highlighted",
               },
             },
             {
@@ -217,9 +254,13 @@ export default defineConfig({
                   "data-disabled:opacity-60 data-disabled:hover:bg-transparent",
                 ],
                 container: "static",
-                trigger: [...step.trigger, "cursor-pointer after:absolute after:inset-0 after:rounded-md group-data-disabled:cursor-not-allowed"],
+                trigger: [
+                  ...step.trigger,
+                  "cursor-pointer after:absolute after:inset-0 after:rounded-md group-data-disabled:cursor-not-allowed",
+                ],
                 separator: "hidden",
-                title: "text-13 font-medium text-dimmed group-data-[state=completed]:text-toned group-data-[state=active]:text-highlighted",
+                title:
+                  "text-13 font-medium text-dimmed group-data-[state=completed]:text-toned group-data-[state=active]:text-highlighted",
                 description: "text-11 text-dimmed",
               },
             },
@@ -242,12 +283,19 @@ export default defineConfig({
             size: { md: { trigger: "px-2.5 py-0 text-12 gap-1.5", leadingIcon: "size-3.5" } },
             // pill is pmt.css's .seg, link its .ptabs
             variant: {
-              pill: { list: "h-7 p-0.5 gap-0.5 rounded-md bg-muted ring ring-inset ring-default", trigger: "grow-0 h-5.5 rounded-sm text-toned", indicator: "rounded-sm bg-accented shadow-none" },
+              pill: {
+                list: "h-7 p-0.5 gap-0.5 rounded-md bg-muted ring ring-inset ring-default",
+                trigger: "grow-0 h-5.5 rounded-sm text-toned",
+                indicator: "rounded-sm bg-accented shadow-none",
+              },
               link: { list: "py-0 ps-2 pe-1.5 gap-0.5", trigger: "h-8 text-dimmed", indicator: "h-0.5 -bottom-px" },
             },
           },
           compoundVariants: [
-            { variant: "pill", class: { indicator: "inset-y-0.5 bg-accented", trigger: "data-[state=active]:text-highlighted" } },
+            {
+              variant: "pill",
+              class: { indicator: "inset-y-0.5 bg-accented", trigger: "data-[state=active]:text-highlighted" },
+            },
             // a seg is as wide as its buttons; the orientation would stretch it across its row
             { orientation: "horizontal", variant: "pill", class: { root: "items-start", list: "w-fit" } },
             { variant: "link", class: { indicator: "bg-primary", trigger: "data-[state=active]:text-highlighted" } },
@@ -282,6 +330,7 @@ export default defineConfig({
         },
         table: {
           slots: {
+            base: "w-full table-fixed",
             th: "h-7.5 px-2.5 py-0 text-12 font-medium text-dimmed bg-muted",
             td: "h-7.5 px-2.5 py-0 text-12 text-toned",
             tr: "data-[selected=true]:bg-(--accent-soft) data-[selected=true]:text-highlighted",

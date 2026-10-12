@@ -26,7 +26,7 @@ export function shapeOf(node: Node): Shape {
   if (node.stub) return "group";
   return node.kind === "event" ? "card" : "pill";
 }
-/** Each shape's box at 100%, as the board draws it; the interface scale scales it as it scales the nodes. */
+/** Each shape's box at 100%; the interface scale scales it as it scales the nodes. */
 const BOX: Record<Shape, { width: number; height: number }> = {
   card: { width: 196, height: 56 },
   pill: { width: 176, height: 26 },
@@ -36,13 +36,13 @@ const BOX: Record<Shape, { width: number; height: number }> = {
 /** Each node a start reaches along the fires, forward or back, by its step from the start. */
 export function reach(edges: Edge[], start: string, forward: boolean): Map<string, number> {
   const step = new Map([[start, 0]]);
-  for (let frontier = [start], at = 1; frontier.length; at++) {
+  for (let frontier = [start], depth = 1; frontier.length; depth++) {
     const next: string[] = [];
     for (const edge of edges) {
-      const [from, to] = forward ? [edge.from, edge.to] : [edge.to, edge.from];
-      if (frontier.includes(from) && !step.has(to)) {
-        step.set(to, at);
-        next.push(to);
+      const [source, target] = forward ? [edge.from, edge.to] : [edge.to, edge.from];
+      if (frontier.includes(source) && !step.has(target)) {
+        step.set(target, depth);
+        next.push(target);
       }
     }
     frontier = next;
@@ -72,7 +72,7 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
   );
 
   // the graph without the kinds hidden in the page, and the fires among what is left
-  const shown = computed(() => {
+  const visibleGraph = computed(() => {
     const nodes = (graph.value?.nodes ?? []).filter((node) => !hidden.value.includes(node.kind));
     const ids = new Set(nodes.map((node) => node.id));
     return { nodes, edges: (graph.value?.edges ?? []).filter((edge) => ids.has(edge.from) && ids.has(edge.to)) };
@@ -81,16 +81,16 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
   // each node's step from the root along the fires: what the root reaches after it, what reaches the root
   // before it (a chain of macros into it one step each), and a side branch one step after what fires it
   const steps = computed(() => {
-    const { edges } = shown.value;
+    const { edges } = visibleGraph.value;
     const root = params.value.root;
     const step = reach(edges, root, true);
     for (const [id, back] of reach(edges, root, false)) if (!step.has(id)) step.set(id, -back);
     for (let added = true; added;) {
       added = false;
       for (const edge of edges) {
-        const from = step.get(edge.from);
-        if (from !== undefined && !step.has(edge.to)) {
-          step.set(edge.to, from + 1);
+        const sourceStep = step.get(edge.from);
+        if (sourceStep !== undefined && !step.has(edge.to)) {
+          step.set(edge.to, sourceStep + 1);
           added = true;
         }
       }
@@ -106,19 +106,19 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
     const dag = new Graph();
     dag.setGraph({ rankdir: "LR", nodesep: 12 * unit, ranksep: 60 * unit, marginx: 20 * unit, marginy: 40 * unit });
     dag.setDefaultEdgeLabel(() => ({}));
-    for (const node of shown.value.nodes) {
+    for (const node of visibleGraph.value.nodes) {
       const box = BOX[shapeOf(node)];
       dag.setNode(node.id, { width: box.width * unit, height: box.height * unit });
     }
     const stepsOf = (edge: Edge) => [steps.value.get(edge.from) ?? 0, steps.value.get(edge.to) ?? 0];
-    for (const edge of shown.value.edges) {
+    for (const edge of visibleGraph.value.edges) {
       const [from, to] = stepsOf(edge);
       if (to > from) dag.setEdge(edge.from, edge.to);
       else if (to < from) dag.setEdge(edge.to, edge.from, { minlen: from - to });
     }
     layout(dag);
     const routes = new Map(
-      shown.value.edges.map((edge) => {
+      visibleGraph.value.edges.map((edge) => {
         const [from, to] = stepsOf(edge);
         // a fire back leaves its source's left side and meets its target's right, through dagre's bends between
         const [source, target] = [dag.node(edge.from), dag.node(edge.to)];
@@ -188,7 +188,7 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
     detail,
     roots,
     searching,
-    shown,
+    visibleGraph,
     laid,
     filtersOn,
     select,

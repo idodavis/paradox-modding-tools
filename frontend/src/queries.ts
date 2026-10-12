@@ -259,7 +259,12 @@ export const guidePageQuery = defineQueryOptions(
 /** The source lines of the places a pane shows: a definition's statement, a reference's line. */
 export const linesQuery = defineQueryOptions(
   ({ id, places, live }: { id: string; places: SourceAt[]; live: boolean }) => ({
-    key: ["session", id, "lines", places.map((at) => `${at.path}:${at.line}:${at.col}:${at.definition}`)],
+    key: [
+      "session",
+      id,
+      "lines",
+      places.map((place) => `${place.path}:${place.line}:${place.col}:${place.definition}`),
+    ],
     query: () => GetLines(id, places),
     enabled: !!id && live && places.length > 0,
   }),
@@ -376,12 +381,12 @@ export const uploadFilesQuery = defineQueryOptions(
 );
 
 /** An image file: its URL on Go's image route (a DDS or TGA decoded there), its size in pixels (the header's) and in
- * bytes, and its facts; none when it cannot be read. */
+ * bytes, and its facts; none while it is read, and none when it cannot be (the query's error). */
 export const imageQuery = defineQueryOptions((path: string) => ({
   key: fileKeys.image(path),
   query: async () => {
-    const facts = await ReadImageFacts(path).catch(() => undefined);
-    return facts && { src: facts.url, width: facts.info.width, height: facts.info.height, bytes: facts.bytes, facts };
+    const facts = await ReadImageFacts(path);
+    return { src: facts.url, width: facts.info.width, height: facts.info.height, bytes: facts.bytes, facts };
   },
   enabled: !!path,
 }));

@@ -6,13 +6,13 @@
 import { onActivated, onDeactivated, shallowRef } from "vue";
 
 const { end = false } = defineProps<{ end?: boolean }>();
-const shown = shallowRef(true);
-onActivated(() => (shown.value = true));
-onDeactivated(() => (shown.value = false));
+const visible = shallowRef(true);
+onActivated(() => (visible.value = true));
+onDeactivated(() => (visible.value = false));
 </script>
 
 <template>
-  <Teleport v-if="shown" defer :to="end ? '#status-end' : '#status-start'">
+  <Teleport v-if="visible" defer :to="end ? '#status-end' : '#status-start'">
     <slot />
   </Teleport>
 </template>

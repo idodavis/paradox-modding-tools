@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A game's installs (the Wizard board's install step): those added, to pick one or delete one, and
+ * A game's installs: those added, to pick one or delete one, and
  * adding another, found on this computer or browsed to. The wizard and Settings › Game install use it.
  */
 import { computed, shallowRef } from "vue";

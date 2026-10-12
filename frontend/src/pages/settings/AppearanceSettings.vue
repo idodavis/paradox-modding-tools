@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Settings › Appearance (the Themes board): the theme family and the game switch, following Windows'
+ * Settings › Appearance: the theme family and the game switch, following Windows'
  * light or dark (the top bar switches them), the interface scale, the pages a workspace shows, and the
  * active workspace's mod colors.
  */
@@ -21,11 +21,11 @@ const workspace = useWorkspaceStore();
 const SCALES = FONT_SCALES.map((percent) => ({ label: `${percent}%`, value: percent }));
 
 function setScale(value: string | number): void {
-  void settings.set("ui.fontScale", String(value));
+  settings.set("ui.fontScale", String(value));
 }
 
 function setToolShown(name: WorkspaceToolName, shown: boolean | "indeterminate"): void {
-  void settings.showTool(name, shown === true);
+  settings.showTool(name, shown === true);
 }
 
 /** A family's half in the mode showing now, which its tile previews. */
@@ -117,12 +117,14 @@ const { mutate: resetColors, isLoading: resetting } = useMutation({
     <SettingSection title="Text size">
       <template #hint>
         Scales every page. The editor and panel sizes are in the IDE's own
-        <ULink
+        <UButton
           v-if="workspace.activeWorkspaceId"
           :to="{ name: 'workspace-ide', params: { id: workspace.activeWorkspaceId } }"
-          class="text-secondary"
-          >settings</ULink
-        >
+          label="settings"
+          variant="link"
+          color="secondary"
+          class="h-auto p-0 align-baseline text-[inherit]"
+        />
         <template v-else>settings</template>.
       </template>
       <div class="flex flex-col gap-1.5">

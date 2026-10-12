@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * One mod of a workspace (the Settings board's detail card): its name and folder, color, thumbnail and
+ * One mod of a workspace: its name and folder, color, thumbnail and
  * calendar, then its publishing, who reads it, and what its uploads leave out. Each change saves at once.
  */
 import { computed, shallowRef } from "vue";
@@ -27,7 +27,7 @@ import DescriptionSource from "../../ui/DescriptionSource.vue";
 import FieldGroup from "./FieldGroup.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import OriginColorField from "./OriginColorField.vue";
-import Thumb from "../../ui/Thumb.vue";
+import ModThumb from "../../ui/ModThumb.vue";
 
 const { workspaceId, mod, live = false } = defineProps<{ workspaceId: string; mod: WorkspaceMod; live?: boolean }>();
 const emit = defineEmits<{ removed: [] }>();
@@ -114,8 +114,8 @@ function editBlank(set: Partial<Era>): void {
 
 // an example works out the offset: a year the mod writes and the year a player sees (AGoT writes
 // 8082 for 82, so 8000); only unparseable input gives none
-const exWritten = shallowRef("");
-const exSeen = shallowRef("");
+const exFileYear = shallowRef("");
+const exGameYear = shallowRef("");
 const exEra = shallowRef("");
 const workedOut = computed(() => {
   const yearOf = (raw: string) => {
@@ -123,9 +123,9 @@ const workedOut = computed(() => {
     const year = Number(head);
     return head && head !== "-" && Number.isFinite(year) ? Math.trunc(year) : undefined;
   };
-  const written = yearOf(exWritten.value);
-  const seen = yearOf(exSeen.value);
-  return written === undefined || seen === undefined ? undefined : written - seen;
+  const fileYear = yearOf(exFileYear.value);
+  const gameYear = yearOf(exGameYear.value);
+  return fileYear === undefined || gameYear === undefined ? undefined : fileYear - gameYear;
 });
 
 function unlink(): void {
@@ -180,7 +180,7 @@ function exportExclusions(): void {
 <template>
   <div class="@container flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">
     <div class="flex flex-wrap items-center gap-3.5 border-b border-default px-5 py-4">
-      <Thumb :path="thumbnail" :color="modColor(mod)" size="lg" />
+      <ModThumb :path="thumbnail" :color="modColor(mod)" size="lg" />
       <div class="flex min-w-48 grow basis-0 flex-col gap-0.5">
         <span class="truncate text-16">{{ mod.name }}</span>
         <span class="truncate font-mono text-12 text-dimmed">{{ mod.folder }}</span>
@@ -202,7 +202,7 @@ function exportExclusions(): void {
           </UFormField>
           <UFormField label="Folder">
             <div class="flex gap-2">
-              <UInput :model-value="mod.folder" readonly class="grow" :ui="{ base: 'font-mono' }" />
+              <UInput :model-value="mod.folder" readonly class="grow font-mono" />
               <UButton label="Change" size="md" @click="changeFolder" />
             </div>
           </UFormField>
@@ -211,7 +211,7 @@ function exportExclusions(): void {
         <FieldGroup title="Color" :hint="mod.color ? 'Picked by hand' : `Slot ${mod.slot}, set automatically`">
           <OriginColorField
             :model-value="mod.color ?? ''"
-            :slot="mod.slot"
+            :origin-slot="mod.slot"
             @update:model-value="saveFields({ color: $event })"
             @slot="setSlot"
           />
@@ -219,7 +219,7 @@ function exportExclusions(): void {
 
         <FieldGroup title="Thumbnail" hint="Shown in the launcher, on Steam and in PMT">
           <div class="flex items-end gap-3.5">
-            <Thumb :path="thumbnail" :color="modColor(mod)" size="xl" />
+            <ModThumb :path="thumbnail" :color="modColor(mod)" size="xl" />
             <div class="flex min-w-0 flex-col items-start gap-1.5">
               <span class="truncate font-mono text-12 text-toned">{{ summary?.thumbnailRel || "No thumbnail" }}</span>
               <span v-if="size" class="text-12 text-dimmed">{{ size }}</span>
@@ -253,7 +253,7 @@ function exportExclusions(): void {
               size="md"
               square
               aria-label="Remove this era"
-              @click="setEras(eras.filter((_, at) => at !== i))"
+              @click="setEras(eras.filter((_, index) => index !== i))"
             />
           </div>
           <div v-if="blank" class="flex items-end gap-2.5">
@@ -302,8 +302,8 @@ function exportExclusions(): void {
                     mod writes and the year a player sees.
                   </p>
                   <div class="grid grid-cols-3 gap-2">
-                    <UFormField label="Written"><UInput v-model="exWritten" placeholder="8082.1.1" /></UFormField>
-                    <UFormField label="Seen"><UInput v-model="exSeen" placeholder="82" /></UFormField>
+                    <UFormField label="Written"><UInput v-model="exFileYear" placeholder="8082.1.1" /></UFormField>
+                    <UFormField label="Seen"><UInput v-model="exGameYear" placeholder="82" /></UFormField>
                     <UFormField label="Era"><UInput v-model="exEra" placeholder="AC" /></UFormField>
                   </div>
                   <UButton
@@ -328,9 +328,13 @@ function exportExclusions(): void {
       <div class="flex flex-col">
         <FieldGroup title="Publishing">
           <template #end>
-            <ULink :to="{ name: 'release', params: { id: workspaceId } }" class="text-12 text-secondary"
-              >Open Publish</ULink
-            >
+            <UButton
+              :to="{ name: 'release', params: { id: workspaceId } }"
+              label="Open Publish"
+              variant="link"
+              color="secondary"
+              class="h-auto p-0 text-12"
+            />
           </template>
           <UFormField label="Workshop item">
             <div class="flex gap-2">
@@ -338,26 +342,33 @@ function exportExclusions(): void {
                 :model-value="summary?.remoteFileId"
                 readonly
                 placeholder="Not published"
-                class="grow"
-                :ui="{ base: 'font-mono' }"
+                class="grow font-mono"
               />
               <UButton label="Unlink" variant="ghost" size="md" :disabled="!summary?.remoteFileId" @click="unlink" />
             </div>
           </UFormField>
           <UFormField v-if="summary" label="Description">
             <DescriptionSource :summary="summary">
-              <ULink :to="{ name: 'release', params: { id: workspaceId } }" class="text-secondary"
-                >Change source in Publish</ULink
-              >
+              <UButton
+                :to="{ name: 'release', params: { id: workspaceId } }"
+                label="Change source in Publish"
+                variant="link"
+                color="secondary"
+                class="h-auto p-0"
+              />
             </DescriptionSource>
           </UFormField>
         </FieldGroup>
 
         <FieldGroup title="Used by and uses">
           <template #end>
-            <ULink :to="{ name: 'health', params: { id: workspaceId } }" class="text-12 text-secondary"
-              >Open in Health</ULink
-            >
+            <UButton
+              :to="{ name: 'health', params: { id: workspaceId } }"
+              label="Open in Health"
+              variant="link"
+              color="secondary"
+              class="h-auto p-0 text-12"
+            />
           </template>
           <span v-if="!usage" class="text-12 text-dimmed">Shown once the workspace is open.</span>
           <span v-else-if="!usage.readers.length && !usage.replaced" class="text-12 text-dimmed">
@@ -393,13 +404,7 @@ function exportExclusions(): void {
               <UButton label="Edit" />
               <template #body>
                 <div class="flex flex-col gap-2">
-                  <UTextarea
-                    v-model="draft"
-                    :rows="10"
-                    class="w-full"
-                    :ui="{ base: 'font-mono' }"
-                    placeholder="gfx/source/**"
-                  />
+                  <UTextarea v-model="draft" :rows="10" class="w-full font-mono" placeholder="gfx/source/**" />
                   <div class="flex gap-1">
                     <UButton
                       label="Import .workshop-ignore"

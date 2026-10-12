@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The listing's description (the PublishListing board's right column): its source and how to change it,
+ * The listing's description: its source and how to change it,
  * then Edit, Steam preview (the BBCode an upload sends, read back the way Steam shows it) and BBCode.
  */
 import { computed, shallowRef } from "vue";
@@ -30,10 +30,10 @@ const views = computed<TabsItem[]>(() => [
 ]);
 
 // what an upload sends, and that read back to Markdown: what Steam cannot show is gone from it
-const sent = computedAsync(async () => {
+const upload = computedAsync(async () => {
   if (view.value === "edit" || !editable.value) return undefined;
   const converted = fromMarkdown.value ? await Convert(markdown.value, "bbcode") : { text: bbcode.value, notes: [] };
-  return { ...converted, shown: (await Convert(converted.text, "markdown")).text };
+  return { ...converted, roundTrip: (await Convert(converted.text, "markdown")).text };
 });
 
 // the editor takes no placeholder: one makes it dispatch on creation, and its plugins' appended
@@ -63,7 +63,7 @@ async function pickSource(): Promise<void> {
 const sources = computed<DropdownMenuItem[]>(() => [
   { label: `Markdown, ${listing.descMdRel}`, onSelect: () => setSource("markdown") },
   { label: `BBCode, ${listing.descBbRel}`, onSelect: () => setSource("bbcode") },
-  { label: "Another file in the mod…", onSelect: pickSource },
+  { label: "Another file in the mod…", onSelect: () => void pickSource() },
   { label: "Steam's own text", onSelect: () => setSource("steam") },
 ]);
 </script>
@@ -110,13 +110,12 @@ const sources = computed<DropdownMenuItem[]>(() => [
         v-else-if="view === 'edit'"
         v-model="bbcode"
         variant="none"
-        class="grow bg-(--bg-0)"
-        :ui="{ base: 'h-full resize-none px-4.5 py-4 font-mono text-12 md:text-12' }"
+        class="grow bg-(--bg-0) [&_textarea]:h-full [&_textarea]:resize-none [&_textarea]:px-4.5 [&_textarea]:py-4 [&_textarea]:font-mono [&_textarea]:text-12 md:[&_textarea]:text-12"
       />
-      <template v-else-if="sent">
+      <template v-else-if="upload">
         <UEditor
           v-if="view === 'preview'"
-          :model-value="sent.shown"
+          :model-value="upload.roundTrip"
           content-type="markdown"
           :editable="false"
           :mention="false"
@@ -124,10 +123,10 @@ const sources = computed<DropdownMenuItem[]>(() => [
           :ui="{ content: 'h-full overflow-auto bg-(--bg-0)' }"
         />
         <pre v-else class="min-h-0 grow overflow-auto bg-(--bg-0) px-4.5 py-4 font-mono text-12 whitespace-pre-wrap">{{
-          sent.text
+          upload.text
         }}</pre>
-        <p v-if="sent.notes?.length" class="border-t border-default px-3 py-2 text-11 text-warning">
-          {{ sent.notes.join(" ") }}
+        <p v-if="upload.notes?.length" class="border-t border-default px-3 py-2 text-11 text-warning">
+          {{ upload.notes.join(" ") }}
         </p>
       </template>
     </div>

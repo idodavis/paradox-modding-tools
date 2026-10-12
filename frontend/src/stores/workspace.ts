@@ -59,8 +59,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** An origin's color: the game's own or its near-grey for vanilla, else its mod's. */
   function originColor(id: string): string {
     if (!id || id === originVanilla.value) return activeWorkspace.value?.gameColor || "var(--game)";
-    const found = mod(id);
-    return found ? modColor(found) : "var(--game)";
+    const record = mod(id);
+    return record ? modColor(record) : "var(--game)";
   }
 
   function select(id: string): void {

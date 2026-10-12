@@ -17,7 +17,7 @@ import { useWindowsStore } from "./stores/windows";
 // what nothing caught goes to pmt.log, where a bug report finds it
 window.addEventListener("error", (event) => {
   void Log("error", event.message, {
-    at: `${event.filename}:${event.lineno}:${event.colno}`,
+    location: `${event.filename}:${event.lineno}:${event.colno}`,
     stack: String(event.error?.stack ?? ""),
   });
 });
@@ -41,8 +41,8 @@ app.use(PiniaColada, {
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   },
-  // every failed save is told here, once (Go's error says what went wrong), and every save to the other windows,
-  // which read again what they show
+  // every failed save is shown here, once (Go's error says what went wrong), and every save is announced to the
+  // other windows, which read again what they show
   mutationOptions: {
     onError: (error) => toast.add({ title: error instanceof Error ? error.message : String(error), color: "error" }),
     onSuccess: () => useWindowsStore().saved(),

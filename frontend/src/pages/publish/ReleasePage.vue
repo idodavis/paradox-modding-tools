@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * Publish (the Publish boards): a mod's listing and description, then its version and change note (O-R44), edited
+ * Publish: a mod's listing and description, then its version and change note, edited
  * here and saved into the mod, then reviewed and uploaded to Steam; the comparison with what Steam has opens over
- * any step (O-R40). Each mod keeps its unsaved edits while another is shown.
+ * any step. Each mod keeps its unsaved edits while another is shown.
  */
 import { computed, ref, shallowRef, watchEffect } from "vue";
 import { useRouter } from "vue-router";
@@ -20,7 +20,7 @@ import ReleaseModRail from "./ReleaseModRail.vue";
 import ReviewUpload from "./ReviewUpload.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
 
-const { id, step: asked } = defineProps<{ id: string; step?: string }>();
+const { id, step: asked = "" } = defineProps<{ id: string; step?: string }>();
 
 const router = useRouter();
 const store = useWorkspaceStore();
@@ -150,7 +150,7 @@ function compare(): void {
       </div>
 
       <div v-if="step === 'listing'" class="flex min-h-0 grow gap-9 overflow-x-auto overflow-y-hidden px-7">
-        <!-- the fields and images take the width the description leaves: name and tags side by side (O-R38) -->
+        <!-- the fields and images take the width the description leaves: name and tags side by side -->
         <div class="@container flex min-w-100 flex-1 flex-col overflow-y-auto">
           <div class="grid grid-cols-1 gap-x-4 gap-y-3.5 border-b border-default py-4.5 @2xl:grid-cols-2">
             <UFormField label="Name">
@@ -169,13 +169,13 @@ function compare(): void {
           :summary="summary"
         />
       </div>
-      <!-- what this upload is: its version, the game version it supports and its change note (O-R44) -->
+      <!-- what this upload is: its version, the game version it supports and its change note -->
       <div v-else-if="step === 'release'" class="flex min-h-0 grow flex-col overflow-y-auto px-7">
         <div class="flex w-170 max-w-full flex-col gap-3.5 py-4.5">
           <div class="grid grid-cols-2 gap-x-4">
             <UFormField label="Version" :help="steam?.from ? `Steam has ${steam.version}` : undefined">
               <div class="flex gap-1.5">
-                <UInput v-model="draft.version" size="md" class="grow" :ui="{ base: 'font-mono' }" />
+                <UInput v-model="draft.version" size="md" class="grow font-mono" />
                 <UTooltip v-for="bump in bumps" :key="bump.name" :text="`The next ${bump.name} version`">
                   <UButton
                     :label="bump.version"
@@ -192,7 +192,7 @@ function compare(): void {
               label="Supported game version"
               :help="language?.gameVersion ? `Installed game is ${language.gameVersion}` : undefined"
             >
-              <UInput v-model="draft.supportedVersion" size="md" class="w-full" :ui="{ base: 'font-mono' }" />
+              <UInput v-model="draft.supportedVersion" size="md" class="w-full font-mono" />
             </UFormField>
           </div>
           <UFormField

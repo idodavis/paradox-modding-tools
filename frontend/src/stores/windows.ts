@@ -1,9 +1,9 @@
 /**
- * This window and the others: its name and part from the URL, what the other windows hold as each last told, the
+ * This window and the others: its name and part from the URL, what the other windows hold as each last reported, the
  * folders its explorer shows, a dragged tab's landing place and the arrival queue of tabs handed to it. The main
  * window has the top bar; each other window shows one thing: a workspace page (`page:<route name>`), an editor group
  * (`editor:<n>`), the game's files (`game`), a folder of the workspace (`files:<path>`) or the panel (`panel`). The
- * windows tell each other what they hold, so a file is open in one window at a time; closing one hands its tabs
+ * windows send each other what they hold, so a file is open in one window at a time; closing one hands its tabs
  * back to the main window, and only the main window's close ends the app. The store subscribes to the events about
  * windows and sends this window's state; it reads the editor store for what this window holds, inside its functions.
  */
@@ -33,7 +33,7 @@ export const useWindowsStore = defineStore("windows", () => {
   const queryCache = useQueryCache();
   const workspace = useWorkspaceStore();
 
-  /** What the other windows hold, by name, as each last told. */
+  /** What the other windows hold, by name, as each last reported. */
   const otherWindows = reactive(new Map<string, WindowState>());
   /** The folders this window's explorer shows, whose files open here (the game's files, or a folder's). */
   const roots = shallowRef<string[]>([]);
@@ -59,7 +59,7 @@ export const useWindowsStore = defineStore("windows", () => {
     return "Paradox Modding Tools";
   });
 
-  /** What this window holds, as the others are told. */
+  /** What this window holds, as the others see it. */
   const state = computed<WindowState>(() => {
     const editor = useEditorStore();
     return {
@@ -79,7 +79,7 @@ export const useWindowsStore = defineStore("windows", () => {
     if (ready.value) void Events.Emit("window:state", state.value);
   }
 
-  /** A window told what it holds. */
+  /** A window reported what it holds. */
   function recordWindow(data: WindowState): void {
     otherWindows.set(data.name, data);
     opening.get(data.name)?.();
@@ -122,7 +122,7 @@ export const useWindowsStore = defineStore("windows", () => {
 
   if (!isMain) watch(title, (text) => void Window.SetTitle(text), { immediate: true });
 
-  // what this window holds, told once ready and again when it changes while another window is open; a window
+  // what this window holds, sent once ready and again when it changes while another window is open; a window
   // opened asks what the others hold
   watchDebounced([state, ready, () => otherWindows.size], () => otherWindows.size && broadcastState(), {
     debounce: 100,

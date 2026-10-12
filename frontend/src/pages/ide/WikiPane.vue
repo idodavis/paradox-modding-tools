@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The Wiki pane (the Ide board's Wiki, O-R11, O-R20): the wiki's pages for the open file as tabs, more in a menu;
+ * The Wiki pane: the wiki's pages for the open file as tabs, more in a menu;
  * a search that finds a page and its words; what the file is; the page's contents beside its article, whose links
  * to the file's other pages open here; and the page on the wiki with its license. While closed, a toast tells of
  * a new kind of file the wiki has pages for.
@@ -58,9 +58,9 @@ const needle = computed(() => query.value.trim().toLowerCase());
 const matches = (page: Page) =>
   page.title.toLowerCase().includes(needle.value) ||
   (page.sections ?? []).some((s) => s.line.toLowerCase().includes(needle.value));
-const shown = computed(() => (needle.value ? pages.value.filter(matches) : pages.value));
+const visiblePages = computed(() => (needle.value ? pages.value.filter(matches) : pages.value));
 const title = shallowRef("");
-const page = computed(() => shown.value.find((p) => p.title === title.value) ?? shown.value[0]);
+const page = computed(() => visiblePages.value.find((p) => p.title === title.value) ?? visiblePages.value[0]);
 const { data: full } = useQuery(() =>
   guidePageQuery({
     gameId: store.activeWorkspace?.gameId ?? "",
@@ -68,12 +68,13 @@ const { data: full } = useQuery(() =>
     enabled: editor.wikiOpen,
   }),
 );
+const html = computed(() => full.value?.html);
 // a search opens the first page it finds
-watch(needle, () => (title.value = shown.value[0]?.title ?? title.value));
+watch(needle, () => (title.value = visiblePages.value[0]?.title ?? title.value));
 
 const TABS = 3;
 const more = computed<DropdownMenuItem[]>(() =>
-  shown.value.map((p) => ({
+  visiblePages.value.map((p) => ({
     label: p.title,
     icon: p.title === page.value?.title ? "i-lucide-check" : undefined,
     onSelect: () => (title.value = p.title),
@@ -81,16 +82,16 @@ const more = computed<DropdownMenuItem[]>(() =>
 );
 
 const { tocActive, hits, hit, showHit, jumpTo, onWikiClick } = useWikiArticle({
-  html: () => full.value?.html,
+  html: () => html.value,
   sections: () => page.value?.sections,
   pages,
-  currentIndex: () => Math.max(pages.value.indexOf(page.value as Page), 0),
+  currentIndex: () => Math.max(pages.value.indexOf(page.value), 0),
   query: needle,
   enabled: () => editor.wikiOpen,
   onPage(hit) {
     const dest = pages.value[hit.index];
     if (!dest) return;
-    if (!shown.value.includes(dest)) query.value = "";
+    if (!visiblePages.value.includes(dest)) query.value = "";
     title.value = dest.title;
   },
 });
@@ -98,20 +99,20 @@ const { tocActive, hits, hit, showHit, jumpTo, onWikiClick } = useWikiArticle({
 const host = computed(() => (page.value?.url ? new URL(page.value.url).host : ""));
 const gameName = computed(() => store.game(store.activeWorkspace?.gameId ?? "")?.name ?? "game");
 
-// while the pane is closed, a kind of file the wiki has pages for is told once
-const told = new Set<string>();
-watch(guide, (found) => {
-  const kind = found?.database;
-  if (editor.wikiOpen || !kind || told.has(kind) || !found.pages?.length || !toastAllowed()) return;
-  told.add(kind);
+// while the pane is closed, a kind of file the wiki has pages for is suggested once
+const suggestedKinds = new Set<string>();
+watch(guide, (wikiGuide) => {
+  const kind = wikiGuide?.database;
+  if (editor.wikiOpen || !kind || suggestedKinds.has(kind) || !wikiGuide.pages?.length || !toastAllowed()) return;
+  suggestedKinds.add(kind);
   toast.add({
-    title: `Wiki: ${found.pages[0]?.title}`,
+    title: `Wiki: ${wikiGuide.pages[0]?.title}`,
     actions: [{ label: "Open", color: "neutral", variant: "outline", onClick: () => void (editor.wikiOpen = true) }],
   });
 });
 watch(
   () => workspaceId,
-  () => told.clear(),
+  () => suggestedKinds.clear(),
 );
 </script>
 
@@ -133,7 +134,7 @@ watch(
     </div>
     <div class="flex h-7.5 shrink-0 items-stretch overflow-hidden border-b border-default">
       <button
-        v-for="p in shown.slice(0, TABS)"
+        v-for="p in visiblePages.slice(0, TABS)"
         :key="p.title"
         class="relative flex h-7.5 shrink-0 items-center border-e border-default ps-2.5 pe-1.5 text-12 whitespace-nowrap"
         :class="
@@ -146,7 +147,7 @@ watch(
         {{ p.title }}
       </button>
       <span class="grow" />
-      <UDropdownMenu v-if="shown.length > TABS" :items="more">
+      <UDropdownMenu v-if="visiblePages.length > TABS" :items="more">
         <UButton
           icon="i-lucide-chevron-down"
           variant="ghost"
@@ -189,13 +190,8 @@ watch(
         <div class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3.5 py-3 wrap-break-word">
           <p v-if="isPending && path" class="text-12 text-dimmed">Reading the wiki…</p>
           <p v-else-if="error" class="text-12 text-error">{{ error.message }}</p>
-          <article
-            v-else-if="full?.html"
-            ref="article"
-            class="art max-w-none"
-            @click="onWikiClick"
-            v-html="full.html"
-          />
+          <!-- eslint-disable-next-line vue/no-v-html -- sanitized by Go -->
+          <article v-else-if="html" ref="article" class="art max-w-none" @click="onWikiClick" v-html="html" />
           <p v-else class="text-12 text-dimmed">
             {{ path ? "The wiki has no page for this file." : "Open a file to see its wiki pages." }}
           </p>

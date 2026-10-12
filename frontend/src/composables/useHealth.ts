@@ -95,8 +95,8 @@ const typeOfCode = (code: string) => TYPES.find(([, , , codes]) => codes.include
 /** A problem row's type and color: a gap's, else its check's. */
 export function typeOf(row: Row): { label: string; color: string } {
   const code = "key" in row ? "untranslated" : "code" in row ? row.code : "";
-  const found = typeOfCode(code);
-  return found ? { label: found[0], color: found[1] } : { label: code, color: "neutral" };
+  const type = typeOfCode(code);
+  return type ? { label: type[0], color: type[1] } : { label: code, color: "neutral" };
 }
 
 /** A card's rows in a report. */

@@ -1,6 +1,5 @@
 /*
- * The design tokens (.claude/DESIGN.md; values from .claude/design/pmt.css) and Nuxt UI's variables read from
- * them. A theme is `data-theme` on any element and sets colors only; type and sizes are shared.
+ * The design tokens and Nuxt UI's variables read from them. A theme is `data-theme` on any element and sets colors only; type and sizes are shared.
  */
 
 @font-face {
@@ -47,7 +46,7 @@
   --text-28--font-weight: 600;
   --text-28--letter-spacing: -0.02em;
   /* badges and keys */
-  /* the boards' .code: 12.5 / 20 */
+  /* code: 12.5px over 20px */
   --text-code: 0.78125rem;
   --text-code--line-height: 1.25rem;
   --text-tiny: 0.65625rem;
@@ -515,8 +514,8 @@
   --green-soft: color-mix(in srgb, var(--green) 16%, transparent);
   --purple-soft: color-mix(in srgb, var(--purple) 16%, transparent);
 
-  /* origin slots: one lightness and chroma per theme, a hue per slot: mint, a leaf green and a dark violet (the owner's
-     picks), the others where they sit farthest from every theme's accent, link and colors (the kinds' and tags'); 5 to
+  /* origin slots: one lightness and chroma per theme, a hue per slot: mint, a leaf green and a dark violet, the
+     others where they sit farthest from every theme's accent, link and colors (the kinds' and tags'); 5 to
      7 a little lighter, 8 darker; 9 to 16 repeat 1 to 8 darker. A slot's chroma is the theme's --oc times what its hue
      holds in sRGB beside the others'; each theme's --oc is the most all sixteen hold there. */
   --game: oklch(var(--ol) 0.025 220);

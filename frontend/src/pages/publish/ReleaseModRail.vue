@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Publish's rail (the Publish boards' aside): the workspace's mods with their state on Steam, and the three
- * steps (O-R44); Compare with Steam opens from Review's checklist and the state bar (O-R40).
+ * Publish's rail: the workspace's mods with their state on Steam, and the three
+ * steps; Compare with Steam opens from Review's checklist and the state bar.
  */
 import { computed } from "vue";
 import type { StepperItem } from "@nuxt/ui";
@@ -9,7 +9,7 @@ import type { WorkspaceMod } from "@services/models";
 import { modColor } from "../../stores/workspace";
 import SteamState from "../../ui/SteamState.vue";
 import { STEP_TITLES, type Step } from "./steps";
-import Thumb from "../../ui/Thumb.vue";
+import ModThumb from "../../ui/ModThumb.vue";
 
 const { workspaceId, mods, saved } = defineProps<{ workspaceId: string; mods: WorkspaceMod[]; saved: boolean }>();
 const mod = defineModel<string>("mod", { required: true });
@@ -19,7 +19,7 @@ const ORDER: Step[] = ["listing", "release", "review"];
 // with everything saved, the steps before this one are done and the one after it is next, outlined in the
 // accent; with changes unsaved, Review can't be reached, so nothing unsaved is uploaded
 const steps = computed<StepperItem[]>(() => {
-  const at = ORDER.indexOf(step.value);
+  const stepIndex = ORDER.indexOf(step.value);
   const blocked = !saved && step.value !== "review";
   const items = [
     { value: "listing", title: STEP_TITLES.listing, line: "What players see" },
@@ -32,8 +32,8 @@ const steps = computed<StepperItem[]>(() => {
     },
   ];
   return items.map(({ line, ...item }, i) => {
-    const done = saved && i < at;
-    const next = saved && i === at + 1;
+    const done = saved && i < stepIndex;
+    const next = saved && i === stepIndex + 1;
     return {
       ...item,
       description: done ? "Saved" : next ? `Next: ${line.charAt(0).toLowerCase()}${line.slice(1)}` : line,
@@ -63,7 +63,7 @@ const steps = computed<StepperItem[]>(() => {
       }"
     >
       <template #item="{ item }">
-        <Thumb :path="item.thumbnail" :color="modColor(item)" />
+        <ModThumb :path="item.thumbnail" :color="modColor(item)" />
         <span class="flex min-w-0 grow flex-col">
           <span class="truncate font-medium">{{ item.name }}</span>
           <SteamState :workspace-id="workspaceId" :mod-id="item.id" />

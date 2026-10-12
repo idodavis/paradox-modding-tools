@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * The sidebar's Source control (the IdeDiff board's): the repository, always shown and picked among the workspace's
- * mods' when there are several, a mod in none made one there (O-R57, O-R60, O-R61); the branch and how far it is from its upstream; the message and
+ * The sidebar's Source control: the repository, always shown and picked among the workspace's
+ * mods' when there are several, a mod in none made one there; the branch and how far it is from its upstream; the message and
  * Commit with its options; the conflicts, the staged files and the changes, a file's row opening its diff; and the
- * graph (GitGraph). Its text and rows are the explorer's. Without git it says so (O-R9).
+ * graph (GitGraph). Its text and rows are the explorer's. Without git it says so.
  */
 import { computed, ref, shallowRef } from "vue";
 import { useLocalStorage } from "@vueuse/core";
@@ -36,7 +36,7 @@ const repoMenu = computed<DropdownMenuItem[][]>(() => [
     label: repo.name,
     origin: repo.origin,
     icon: repo.root === git.root ? "i-lucide-check" : undefined,
-    onSelect: () => (git.picked = repo.root),
+    onSelect: () => (git.selectedRoot = repo.root),
   })),
   git.bare.length
     ? [
@@ -63,13 +63,13 @@ const commitOptions = computed<DropdownMenuItem[]>(() => [
     label: "Commit and push",
     icon: "i-lucide-arrow-up-from-line",
     disabled: !canCommit.value,
-    onSelect: () => void commit(false, true),
+    onSelect: () => commit(false, true),
   },
   {
     label: "Amend the last commit",
     icon: "i-lucide-pencil",
     disabled: !message.value.trim() || !status.value?.commit,
-    onSelect: () => void commit(true),
+    onSelect: () => commit(true),
   },
 ]);
 const canCommit = computed(() => !!message.value.trim() && !!staged.value.length);
@@ -162,12 +162,12 @@ const sections = computed<Section[]>(() => {
       open: (one) => editor.open(diffTab("changes", one.path)),
       each: (one) => [
         ...(one.letter === "D" ? [] : [openFile(one)]),
-        { icon: "i-lucide-undo-2", label: "Discard", run: () => discard([one]), color: "error" },
+        { icon: "i-lucide-undo-2", label: "Discard", run: () => void discard([one]), color: "error" },
         { icon: "i-lucide-plus", label: "Stage", run: () => stage([one]) },
       ],
       all: changes.length
         ? [
-            { icon: "i-lucide-undo-2", label: "Discard all changes", run: () => discard(changes), color: "error" },
+            { icon: "i-lucide-undo-2", label: "Discard all changes", run: () => void discard(changes), color: "error" },
             { icon: "i-lucide-plus", label: "Stage all changes", run: () => stage(changes) },
           ]
         : [],
@@ -176,7 +176,7 @@ const sections = computed<Section[]>(() => {
 });
 
 // the row of the diff shown is lit
-const shown = computed(() => tabOf(editor.activeTab));
+const active = computed(() => tabOf(editor.activeTab));
 
 const SECTION = "flex h-7 shrink-0 items-center gap-1.5 ps-3 pe-1.5 text-11 font-semibold whitespace-nowrap text-toned";
 // the graph is a pane under the changes, as tall as it was left (the changes keep room for a few rows), or folded
@@ -260,7 +260,7 @@ const ROW =
           :placeholder="`Message for the commit on ${status?.branch || 'HEAD'}`"
           :rows="3"
           size="sm"
-          :ui="{ base: 'resize-none' }"
+          class="[&_textarea]:resize-none"
         />
         <div class="flex gap-1">
           <UButton
@@ -308,7 +308,7 @@ const ROW =
                 :key="one.path"
                 :class="[
                   ROW,
-                  { 'bg-accented': section.diff && shown.diff === section.diff && shown.file === one.path },
+                  { 'bg-accented': section.diff && active.diff === section.diff && active.file === one.path },
                 ]"
                 @click="section.open(one)"
               >

@@ -58,7 +58,7 @@ type GameInfo struct {
 	// last segment is localization. Backend-only.
 	ModFolders []string `json:"-"`
 	// DataTypesCommand is the console command that writes the data-type dumps. Backend-only: the
-	// frontend reads it from LanguageHealth.
+	// frontend reads it from WorkspaceState.
 	DataTypesCommand string `json:"-"`
 }
 

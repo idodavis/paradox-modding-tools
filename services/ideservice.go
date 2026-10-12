@@ -1,4 +1,4 @@
-// ideservice.go is the Wails RPC shell for the editor: each request resolves the workspace's session and calls
+// ideservice.go is the Wails RPC shell for the editor: each request opens the workspace and calls
 // package lsp. The per-code diagnostic settings (ide.diag.<code>) are applied here, so a toggle takes effect on
 // the next keystroke and the checks stay ignorant of it.
 
@@ -14,13 +14,13 @@ import (
 
 // IdeService is the editor's RPCs.
 type IdeService struct {
-	config   *ConfigFile
-	sessions *SessionService
+	config     *ConfigFile
+	workspaces *WorkspaceService
 }
 
-// NewIdeService is the editor's service over the config and the live sessions.
-func NewIdeService(config *ConfigFile, sessions *SessionService) *IdeService {
-	return &IdeService{config: config, sessions: sessions}
+// NewIdeService is the editor's service over the config and the open workspace.
+func NewIdeService(config *ConfigFile, workspaces *WorkspaceService) *IdeService {
+	return &IdeService{config: config, workspaces: workspaces}
 }
 
 // DiagnosticCodes is every check a user may turn off, with its default.
@@ -47,7 +47,7 @@ func (s *IdeService) enabled() map[string]bool {
 
 // Diagnose is the findings of the checks the user has on for a file, from lsp.Diagnose.
 func (s *IdeService) Diagnose(workspaceID, path string) ([]lsp.Diagnostic, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (s *IdeService) Diagnose(workspaceID, path string) ([]lsp.Diagnostic, error
 
 // Hover is the card for the word at a position, from lsp.Hover.
 func (s *IdeService) Hover(workspaceID, path string, line, col int) (*lsp.Inspect, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (s *IdeService) Hover(workspaceID, path string, line, col int) (*lsp.Inspec
 
 // Complete is what may be written at a position, from lsp.Complete.
 func (s *IdeService) Complete(workspaceID, path string, line, col int) (*lsp.Completion, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (s *IdeService) Complete(workspaceID, path string, line, col int) (*lsp.Com
 
 // ResolveCompletion is the card of one completion item, from lsp.Resolve.
 func (s *IdeService) ResolveCompletion(workspaceID, path string, item lsp.Item) (*lsp.Inspect, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (s *IdeService) ResolveCompletion(workspaceID, path string, item lsp.Item) 
 
 // SignatureHelp is the call being written at a position and its parameter, from lsp.SignatureHelp.
 func (s *IdeService) SignatureHelp(workspaceID, path string, line, col int) (*lsp.Signature, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (s *IdeService) SignatureHelp(workspaceID, path string, line, col int) (*ls
 
 // Definition is where the word at a position is defined, from lsp.Definition.
 func (s *IdeService) Definition(workspaceID, path string, line, col int) ([]lsp.Location, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (s *IdeService) Definition(workspaceID, path string, line, col int) ([]lsp.
 
 // References is where the word at a position is used, from lsp.References.
 func (s *IdeService) References(workspaceID, path string, line, col int) ([]lsp.Location, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (s *IdeService) References(workspaceID, path string, line, col int) ([]lsp.
 
 // DocumentSymbols is the definitions a file writes, from lsp.DocumentSymbols.
 func (s *IdeService) DocumentSymbols(workspaceID, path string) ([]lsp.Symbol, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (s *IdeService) DocumentSymbols(workspaceID, path string) ([]lsp.Symbol, er
 
 // WorkspaceSymbols is the definitions across the workspace that match a query, from lsp.WorkspaceSymbols.
 func (s *IdeService) WorkspaceSymbols(workspaceID, query string) ([]lsp.Symbol, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (s *IdeService) WorkspaceSymbols(workspaceID, query string) ([]lsp.Symbol, 
 // FormatDocument indents a file by depth; a script file in the settings' unit: a tab, or with
 // ide.indent "spaces", ide.indentSize spaces (4 unless 1 to 8).
 func (s *IdeService) FormatDocument(workspaceID, path string) ([]lsp.TextEdit, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (s *IdeService) FormatDocument(workspaceID, path string) ([]lsp.TextEdit, e
 
 // FoldingRanges is the blocks of a file that fold, from lsp.Folding.
 func (s *IdeService) FoldingRanges(workspaceID, path string) ([]lsp.FoldingRange, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (s *IdeService) FoldingRanges(workspaceID, path string) ([]lsp.FoldingRange
 
 // CodeActions is the fixes offered at a position, from lsp.CodeActions.
 func (s *IdeService) CodeActions(workspaceID, path string, line, col int) ([]lsp.CodeAction, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (s *IdeService) CodeActions(workspaceID, path string, line, col int) ([]lsp
 
 // InlayHints is the hints drawn inside a file's text, from lsp.InlayHints.
 func (s *IdeService) InlayHints(workspaceID, path string) ([]lsp.InlayHint, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (s *IdeService) InlayHints(workspaceID, path string) ([]lsp.InlayHint, erro
 
 // DidChange is the editor's buffer event for an opened or changed file: an opened buffer is a change.
 func (s *IdeService) DidChange(workspaceID, path, text string) error {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func (s *IdeService) DidChange(workspaceID, path, text string) error {
 
 // DidClose is the editor's buffer event for a closed file: its text is forgotten and the disk's is read again.
 func (s *IdeService) DidClose(workspaceID, path string) error {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return err
 	}
@@ -195,7 +195,7 @@ func (s *IdeService) DidClose(workspaceID, path string) error {
 
 // DidSave is the editor's buffer event for a saved file: the saved text is indexed again.
 func (s *IdeService) DidSave(workspaceID, path string) error {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return err
 	}
@@ -205,7 +205,7 @@ func (s *IdeService) DidSave(workspaceID, path string) error {
 
 // Rename is the edits that rename the name at a place everywhere the mods write it, or why it cannot (F2).
 func (s *IdeService) Rename(workspaceID, path string, line, col int, name string) (*lsp.WorkspaceEdit, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func (s *IdeService) Rename(workspaceID, path string, line, col int, name string
 
 // FindLoc is the localization keys that start with a prefix, at most limit, each at its entry (the palette's #).
 func (s *IdeService) FindLoc(workspaceID, prefix string, limit int) ([]lsp.Symbol, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func (s *IdeService) FindLoc(workspaceID, prefix string, limit int) ([]lsp.Symbo
 // ReplacedBy is the mods' files at a game file's path from its root, in load order: the copies the game loads in
 // its place.
 func (s *IdeService) ReplacedBy(workspaceID, path string) ([]inventory.File, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}

@@ -37,9 +37,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("cache: %v", err)
 	}
-	sessions := services.NewSessionService(config, version, wikis)
+	workspaces := services.NewWorkspaceService(config, version, wikis)
 	logSvc := services.NewLogService(logFile, config)
-	appSvc := services.NewAppService(config, sessions, wikis, version)
+	appSvc := services.NewAppService(config, workspaces, wikis, version)
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -50,12 +50,11 @@ func main() {
 			application.NewService(logSvc),
 			application.NewService(appSvc),
 			application.NewService(&services.FileService{}),
-			application.NewService(services.NewWorkspaceService(config, sessions)),
-			application.NewService(sessions),
-			application.NewService(services.NewIdeService(config, sessions)),
-			application.NewService(services.NewEventGraphService(sessions)),
-			application.NewService(services.NewHealthService(sessions)),
-			application.NewService(services.NewWikiService(config, sessions, wikis)),
+			application.NewService(workspaces),
+			application.NewService(services.NewIdeService(config, workspaces)),
+			application.NewService(services.NewEventGraphService(workspaces)),
+			application.NewService(services.NewHealthService(workspaces)),
+			application.NewService(services.NewWikiService(config, workspaces, wikis)),
 			application.NewService(services.NewSearchService()),
 			application.NewService(services.NewReleaseService(config)),
 			application.NewService(services.NewGitService(config)),

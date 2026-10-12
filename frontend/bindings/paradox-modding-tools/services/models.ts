@@ -243,42 +243,6 @@ export interface ImageFacts {
 }
 
 /**
- * LanguageHealth is what the health strip shows: whether the session is live, and whose dumps the
- * live schema read.
- */
-export interface LanguageHealth {
-    "installId": string;
-    "installOk": boolean;
-    "gameVersion": string;
-
-    /**
-     * when the install was built, else its cache file written
-     */
-    "scannedAt"?: string;
-
-    /**
-     * the version this run's scan replaced, where it differs
-     */
-    "updatedFrom"?: string;
-    "ready": boolean;
-
-    /**
-     * whose dumps the schema read: yours, shipped or none
-     */
-    "dumpsFrom": string;
-
-    /**
-     * they predate the install, or are another game version's
-     */
-    "dumpsStale": boolean;
-
-    /**
-     * where the game's script_docs writes them
-     */
-    "dumpFolders": string[] | null;
-}
-
-/**
  * Listing is the Release page payload.
  */
 export interface Listing {
@@ -610,4 +574,40 @@ export interface WorkspaceMod {
      * the eras of the mod's dates, set by hand (no mod states them); none leaves dates as written
      */
     "eras"?: workspace$0.Calendar;
+}
+
+/**
+ * WorkspaceState is what the pages show of a workspace: whether it is open, its install, and whose dumps the
+ * schema read.
+ */
+export interface WorkspaceState {
+    "installId": string;
+    "installOk": boolean;
+    "gameVersion": string;
+
+    /**
+     * when the install was built, else its cache file written
+     */
+    "scannedAt"?: string;
+
+    /**
+     * the version this run's scan replaced, where it differs
+     */
+    "updatedFrom"?: string;
+    "open": boolean;
+
+    /**
+     * whose dumps the schema read: yours, shipped or none
+     */
+    "dumpsFrom": string;
+
+    /**
+     * they predate the install, or are another game version's
+     */
+    "dumpsStale": boolean;
+
+    /**
+     * where the game's script_docs writes them
+     */
+    "dumpFolders": string[] | null;
 }

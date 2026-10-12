@@ -1,6 +1,7 @@
 // Package workspace is one workspace open in the editor: the install's schema and index, the mods' index built
 // over it, the files the editor has open, the watcher over the mods' folders, and one lock. It decides nothing
-// about words: the schema's walker does, and a query resolves names across the two indexes in load order.
+// about words: the schema's walker does, and a query resolves names across the two indexes in load order. open.go
+// holds the one workspace open at a time, the Slot.
 //
 // Readers hold RLock for a whole request. The writers (DidChange, DidClose, DidSave, DiskChanged) take the lock
 // themselves and are never called under a read lock.

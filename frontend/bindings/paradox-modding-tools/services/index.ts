@@ -10,7 +10,6 @@ import * as IdeService from "./ideservice.js";
 import * as LogService from "./logservice.js";
 import * as ReleaseService from "./releaseservice.js";
 import * as SearchService from "./searchservice.js";
-import * as SessionService from "./sessionservice.js";
 import * as WikiService from "./wikiservice.js";
 import * as WindowService from "./windowservice.js";
 import * as WorkspaceService from "./workspaceservice.js";
@@ -24,7 +23,6 @@ export {
     LogService,
     ReleaseService,
     SearchService,
-    SessionService,
     WikiService,
     WindowService,
     WorkspaceService
@@ -46,7 +44,6 @@ export type {
     IdeRoot,
     IdeRoots,
     ImageFacts,
-    LanguageHealth,
     Listing,
     ListingChange,
     ListingSummary,
@@ -64,5 +61,6 @@ export type {
     WindowTabRequest,
     WindowTabs,
     Workspace,
-    WorkspaceMod
+    WorkspaceMod,
+    WorkspaceState
 } from "./models.js";

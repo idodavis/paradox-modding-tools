@@ -97,15 +97,16 @@ type ConfigFile struct {
 
 // AppService serves the app-wide calls: the version, the update check, the settings and the reset.
 type AppService struct {
-	config   *ConfigFile
-	sessions *SessionService
-	wikis    *wiki.Client
-	version  string
+	config     *ConfigFile
+	workspaces *WorkspaceService
+	wikis      *wiki.Client
+	version    string
 }
 
-// NewAppService is the app-wide service over the config, the sessions and wiki client it resets and the app's version.
-func NewAppService(config *ConfigFile, sessions *SessionService, wikis *wiki.Client, version string) *AppService {
-	return &AppService{config: config, sessions: sessions, wikis: wikis, version: version}
+// NewAppService is the app-wide service over the config, the workspace service and wiki client it resets, and the
+// app's version.
+func NewAppService(config *ConfigFile, workspaces *WorkspaceService, wikis *wiki.Client, version string) *AppService {
+	return &AppService{config: config, workspaces: workspaces, wikis: wikis, version: version}
 }
 
 // OpenConfig loads config.json from the app's folder. A missing file is a first run; any other read failure
@@ -237,7 +238,7 @@ func (s *AppService) SaveSettings(settings map[string]string) error {
 	})
 }
 
-// ResetData forgets every install and workspace, deletes the caches, and closes the live session.
+// ResetData forgets every install and workspace, deletes the caches, and closes the open workspace.
 // Mod and game folders stay.
 func (s *AppService) ResetData() error {
 	if err := s.config.mutate("", func(cfg *Config) error {
@@ -254,7 +255,7 @@ func (s *AppService) ResetData() error {
 		return fmt.Errorf("wipe cache: %w", err)
 	}
 	s.wikis.ForgetAll()
-	s.sessions.dropAllExcept("")
+	s.workspaces.slot.Close("")
 	return nil
 }
 

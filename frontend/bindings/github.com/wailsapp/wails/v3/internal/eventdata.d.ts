@@ -21,11 +21,8 @@ declare module "@wailsio/runtime" {
             "config:changed": string;
             "fs:changed": services$0.FSChanged;
             "git:output": services$0.GitOutput;
-            "lang:cache-updated": string;
-            "lang:dropped": string;
-            "lang:failed": string;
-            "lang:ready": string;
-            "lang:scan-progress": services$0.ScanProgress;
+            "install:scanned": string;
+            "install:scanning": services$0.ScanProgress;
             "search:hits": pages$0.TextSearchHits;
             "steam:progress": steam$0.Progress;
             "wiki:progress": services$0.WikiProgress;
@@ -39,6 +36,9 @@ declare module "@wailsio/runtime" {
             "window:state": services$0.WindowState;
             "window:tab-requested": services$0.WindowTabRequest;
             "window:tabs-handed": services$0.WindowTabs;
+            "workspace:closed": string;
+            "workspace:failed": string;
+            "workspace:opened": string;
         }
     }
 }

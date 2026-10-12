@@ -226,6 +226,67 @@ func TestLockContract(t *testing.T) {
 	wg.Wait()
 }
 
+// TestSlot covers the one open workspace: built once however many callers ask, kept, built again when its inputs
+// change, and closed with its id told.
+func TestSlot(t *testing.T) {
+	var closed []string
+	slot := &Slot{
+		Scan:   func(context.Context, index.Request) (*index.Install, error) { return scanned() },
+		Closed: func(id string) { closed = append(closed, id) },
+	}
+	_, dir := workspace(t)
+	request := Request{
+		ID: "ws", Game: "ck3", Dir: filepath.Join("..", "testdata", "ck3"), Fingerprint: "a",
+		Mods:     []Mod{{ID: fixtureMod, Dir: dir}},
+		Progress: func(int, string) {}, Scanned: func() {}, Changed: func(string) {},
+	}
+
+	// twenty callers at once share one build, and exactly one of them is told it ran it
+	var wg sync.WaitGroup
+	opened, builds := make([]*Session, 20), make([]bool, 20)
+	for i := range opened {
+		wg.Go(func() {
+			var err error
+			if opened[i], builds[i], err = slot.Open(t.Context(), request); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	ran := 0
+	for i, ws := range opened {
+		if ws != opened[0] {
+			t.Fatal("every caller gets the one workspace")
+		}
+		if builds[i] {
+			ran++
+		}
+	}
+	if ran != 1 || slot.Current("ws", "a") != opened[0] {
+		t.Fatalf("one build, kept: %d ran", ran)
+	}
+	if len(opened[0].Mods) != 1 || defs(opened[0], "m.1") != 1 {
+		t.Error("the mod is indexed over the install")
+	}
+
+	// other inputs build again, and the one before closes
+	request.Fingerprint = "b"
+	again, built, err := slot.Open(t.Context(), request)
+	if err != nil || !built || again == opened[0] || !slices.Equal(closed, []string{"ws"}) {
+		t.Fatalf("a changed fingerprint builds again: %v built %v closed %v", err, built, closed)
+	}
+
+	// a request without an id errors and leaves the open one open
+	if _, _, err := slot.Open(t.Context(), Request{}); err == nil || slot.Current("ws", "b") != again {
+		t.Errorf("an empty id is refused, the open workspace stays: %v", err)
+	}
+
+	slot.Close("")
+	if slot.Current("ws", "b") != nil || !slices.Equal(closed, []string{"ws", "ws"}) {
+		t.Errorf("closing leaves none, and tells its id: %v", closed)
+	}
+}
+
 // fireNamed is the fire of a name among fires.
 func fireNamed(fires []Fire, name string) (Fire, bool) {
 	i := slices.IndexFunc(fires, func(fire Fire) bool { return fire.Name == name })

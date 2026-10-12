@@ -1,4 +1,4 @@
-// services_test.go covers the services that stay in the package: the config, the log, the live session, the
+// services_test.go covers the services that stay in the package: the config, the log, the open workspace, the
 // workspace service and the file service, over one scan of the ck3 fixture install and a config in a temporary
 // folder that APPDATA, XDG_CONFIG_HOME and HOME are sent to, so no test writes into the real user folders. It also
 // holds the sweep, the engine's scoreboard over every mod of a game's mod folder, which runs only behind
@@ -81,9 +81,9 @@ func dirNames(entries []DirEntry) map[string]bool {
 	return out
 }
 
-// fixtureService is a session service over a config holding the ck3 fixture install and one
-// workspace with one mod, its cache folder sent to a temporary directory.
-func fixtureService(t *testing.T) *SessionService {
+// fixtureService is a workspace service over a config holding the ck3 fixture install and one workspace with one
+// mod, scanning the fixture install once.
+func fixtureService(t *testing.T) *WorkspaceService {
 	t.Helper()
 	install, _ := filepath.Abs(filepath.Join("internal", "testdata", gameCK3))
 	mod := t.TempDir()
@@ -93,9 +93,9 @@ func fixtureService(t *testing.T) *SessionService {
 	config := tempConfig(t,
 		[]GameInstall{{ID: "i1", GameID: gameCK3, Name: "CK3", Path: install}},
 		Workspace{ID: "ws", GameID: gameCK3, Name: "W", InstallID: "i1", Mods: []WorkspaceMod{{ID: "m", Name: "M", Path: mod}}})
-	sessions := NewSessionService(config, "test", wiki.New(t.TempDir()))
-	sessions.scan = func(context.Context, index.Request) (*index.Install, error) { return scanned() }
-	return sessions
+	workspaces := NewWorkspaceService(config, "test", wiki.New(t.TempDir()))
+	workspaces.slot.Scan = func(context.Context, index.Request) (*index.Install, error) { return scanned() }
+	return workspaces
 }
 
 // A config that cannot be read is not a first run: serving it empty and then saving would write
@@ -310,46 +310,28 @@ func TestLogPanic(t *testing.T) {
 	_ = logs.ServiceShutdown()
 }
 
-// TestEnsureSession covers the session a workspace gets: built once for many callers, kept, and dropped.
-func TestEnsureSession(t *testing.T) {
+// TestOpen covers the shell over the slot: a workspace's state before and after it opens, one the config lacks,
+// and a deleted one.
+func TestOpen(t *testing.T) {
 	svc := fixtureService(t)
-	before := svc.GetLanguageHealth("ws")
-	if before.Ready || !before.InstallOk || before.InstallID == "" {
-		t.Fatalf("before the first build: no session: %+v", before)
+	before := svc.State("ws")
+	if before.Open || !before.InstallOk || before.InstallID == "" {
+		t.Fatalf("before the first build: not open: %+v", before)
 	}
 
-	health, err := svc.EnsureSession("ws")
-	if err != nil || !health.Ready {
-		t.Fatalf("a session built from a scan: %+v (%v)", health, err)
+	state, err := svc.Open("ws")
+	if err != nil || !state.Open {
+		t.Fatalf("a workspace opened from a scan: %+v (%v)", state, err)
 	}
-	ws := svc.cachedSession("ws")
-	if ws == nil || len(ws.Mods) != 1 || len(index.Lookup(ws.Indexes(), schema.Defines, "traits", "bold")) == 0 {
-		t.Error("the mod is indexed over the install")
+	if !svc.State("ws").Open {
+		t.Error("the state of the open workspace says so")
 	}
-	if _, err := svc.EnsureSession("nowhere"); err == nil {
+	if _, err := svc.Open("nowhere"); err == nil {
 		t.Error("a workspace the config lacks")
 	}
 
-	svc.dropAllExcept("")
-
-	var wg sync.WaitGroup
-	got := make([]*workspace.Session, 20)
-	for i := range got {
-		wg.Go(func() {
-			got[i], _ = svc.openSession("ws")
-		})
-	}
-	wg.Wait()
-	if got[0] == nil || slices.ContainsFunc(got, func(ws *workspace.Session) bool { return ws != got[0] }) {
-		t.Error("twenty callers at once share one build and one instance")
-	}
-	if _, err := svc.openSession(""); err == nil || svc.cachedSession("ws") != got[0] {
-		t.Error("an empty id is refused and the live session is untouched")
-	}
-
-	svc.dropAllExcept("")
-	if svc.cachedSession("ws") != nil {
-		t.Error("dropping every session leaves none live")
+	if err := svc.DeleteWorkspace("ws"); err != nil || svc.State("ws").Open {
+		t.Errorf("a deleted workspace is closed: %v", err)
 	}
 }
 
@@ -357,7 +339,7 @@ func TestEnsureSession(t *testing.T) {
 func modsService(t *testing.T) (svc *WorkspaceService, modDir string) {
 	t.Helper()
 	config := tempConfig(t, nil, Workspace{ID: "ws1", GameID: gameCK3, Name: "Test", InstallID: installOne})
-	svc = NewWorkspaceService(config, NewSessionService(config, "test", wiki.New(t.TempDir())))
+	svc = NewWorkspaceService(config, "test", wiki.New(t.TempDir()))
 	modDir = t.TempDir()
 	writeTree(t, modDir, map[string]string{"a/descriptor.mod": "", "b/descriptor.mod": ""})
 	return svc, modDir
@@ -463,7 +445,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	config := tempConfig(t,
 		[]GameInstall{{ID: installOne, GameID: gameCK3, Name: "My CK3 nickname", Path: install}},
 		Workspace{ID: "ws1", GameID: gameCK3, Name: "Test", InstallID: installOne})
-	svc := NewWorkspaceService(config, NewSessionService(config, "test", wiki.New(t.TempDir())))
+	svc := NewWorkspaceService(config, "test", wiki.New(t.TempDir()))
 	writeTree(t, modDir, map[string]string{"descriptor.mod": ""})
 	if _, err := svc.AddWorkspaceMod("ws1", modDir); err != nil {
 		t.Fatal(err)
@@ -514,7 +496,7 @@ func TestAddWorkspaceModDiscoversTheThumbnail(t *testing.T) {
 	} {
 		t.Run(testCase.game+"/"+testCase.rel, func(t *testing.T) {
 			config := tempConfig(t, nil, Workspace{ID: "ws", GameID: testCase.game, Name: "T"})
-			svc := NewWorkspaceService(config, NewSessionService(config, "test", wiki.New(t.TempDir())))
+			svc := NewWorkspaceService(config, "test", wiki.New(t.TempDir()))
 			root, want := t.TempDir(), ""
 			writeTree(t, root, map[string]string{game.DescriptorFile(testCase.game): "{}"})
 			if testCase.rel != "" {

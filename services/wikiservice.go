@@ -44,15 +44,15 @@ type WikiProgress struct {
 
 // WikiService serves the wiki guides and patch notes.
 type WikiService struct {
-	config   *ConfigFile
-	sessions *SessionService
-	wikis    *wiki.Client
+	config     *ConfigFile
+	workspaces *WorkspaceService
+	wikis      *wiki.Client
 }
 
-// NewWikiService is the wiki service over the config (the installed games it refreshes), the live sessions and the
+// NewWikiService is the wiki service over the config (the installed games it refreshes), the open workspace and the
 // wiki client.
-func NewWikiService(config *ConfigFile, sessions *SessionService, wikis *wiki.Client) *WikiService {
-	return &WikiService{config: config, sessions: sessions, wikis: wikis}
+func NewWikiService(config *ConfigFile, workspaces *WorkspaceService, wikis *wiki.Client) *WikiService {
+	return &WikiService{config: config, workspaces: workspaces, wikis: wikis}
 }
 
 // OpenWiki is the wiki client keeping its sidecars in the app's cache folder; main hands it to the services that use
@@ -68,7 +68,7 @@ func OpenWiki() (*wiki.Client, error) {
 // Guide returns the Guide pane's tabs for the active file: each page's title, address and headings, its text
 // fetched apart (GuidePage) for the one tab shown. A path under no root gives an empty guide, not an error.
 func (s *WikiService) Guide(workspaceID, path string) (*wiki.Guide, error) {
-	ws, err := s.sessions.openSession(workspaceID)
+	ws, err := s.workspaces.openWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}

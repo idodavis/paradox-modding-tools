@@ -1,15 +1,21 @@
-// workspaceservice.go manages the game installs, the workspaces and their mods, and the IDE roots.
+// workspaceservice.go manages the game installs, the workspaces and their mods, the IDE's roots, and the opening of
+// a workspace: the config's records turned into a request for the one open workspace, what the frontend hears of
+// it, and the state a page shows. The events about the open workspace and the installs are declared here.
 
 package services
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -18,19 +24,72 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/index"
 	"paradox-modding-tools/services/internal/modfiles"
+	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/steam"
+	"paradox-modding-tools/services/internal/wiki"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
-// WorkspaceService manages workspaces, game installs, and mods.
+// WorkspaceService manages workspaces, game installs and mods, and opens a workspace.
 type WorkspaceService struct {
-	config   *ConfigFile
-	sessions *SessionService
+	config  *ConfigFile
+	version string
+	wikis   *wiki.Client    // the wiki's script examples are a scan's last source
+	slot    *workspace.Slot // the one open workspace
 }
 
-// NewWorkspaceService is the service over the config and the live sessions it closes.
-func NewWorkspaceService(config *ConfigFile, sessions *SessionService) *WorkspaceService {
-	return &WorkspaceService{config: config, sessions: sessions}
+// NewWorkspaceService is the service over the config and the wiki client, scanning with index.Scan.
+func NewWorkspaceService(config *ConfigFile, version string, wikis *wiki.Client) *WorkspaceService {
+	slot := &workspace.Slot{Scan: index.Scan, Closed: func(id string) { emit(EventWorkspaceClosed, id) }}
+	return &WorkspaceService{config: config, version: version, wikis: wikis, slot: slot}
+}
+
+// WorkspaceState is what the pages show of a workspace: whether it is open, its install, and whose dumps the
+// schema read.
+type WorkspaceState struct {
+	InstallID   string `json:"installId"`
+	InstallOk   bool   `json:"installOk"`
+	GameVersion string `json:"gameVersion"`
+	ScannedAt   string `json:"scannedAt,omitempty"`   // when the install was built, else its cache file written
+	UpdatedFrom string `json:"updatedFrom,omitempty"` // the version this run's scan replaced, where it differs
+	Open        bool   `json:"open"`
+
+	DumpsFrom   string   `json:"dumpsFrom"`   // whose dumps the schema read: yours, shipped or none
+	DumpsStale  bool     `json:"dumpsStale"`  // they predate the install, or are another game version's
+	DumpFolders []string `json:"dumpFolders"` // where the game's script_docs writes them
+}
+
+// The events the frontend listens for about the open workspace and the installs.
+const (
+	EventWorkspaceOpened = "workspace:opened" // a workspace is open, its index built: data is its id
+	EventWorkspaceFailed = "workspace:failed" // a workspace could not be opened: data is its id
+	EventWorkspaceClosed = "workspace:closed" // the open workspace closed: data is its id
+	EventInstallScanning = "install:scanning" // an install's scan moved: data is ScanProgress
+	EventInstallScanned  = "install:scanned"  // an install was scanned or loaded from its cache: data is its id
+	EventFSChanged       = "fs:changed"       // a file under a mod changed on disk: data is FSChanged
+)
+
+// registers every event so the bindings generator types them
+func init() {
+	application.RegisterEvent[string](EventWorkspaceOpened)
+	application.RegisterEvent[string](EventWorkspaceFailed)
+	application.RegisterEvent[string](EventWorkspaceClosed)
+	application.RegisterEvent[ScanProgress](EventInstallScanning)
+	application.RegisterEvent[string](EventInstallScanned)
+	application.RegisterEvent[FSChanged](EventFSChanged)
+}
+
+// ScanProgress is one step of an install scan.
+type ScanProgress struct {
+	InstallID string `json:"installId"`
+	Percent   int    `json:"percent"`
+	Stage     string `json:"stage"`
+}
+
+// FSChanged is one path under a mod that changed on disk; Deleted when it is gone.
+type FSChanged struct {
+	Path    string `json:"path"`
+	Deleted bool   `json:"deleted"`
 }
 
 // Game installs.
@@ -59,7 +118,7 @@ func (s *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error
 
 	// a cache file's time and the version per install, so the config lock is back before any of it
 	for i := range out {
-		out[i].ScannedAt = s.sessions.scannedAt(&out[i], languages[out[i].ID])
+		out[i].ScannedAt = s.scannedAt(&out[i], languages[out[i].ID])
 		out[i].VersionDetected = game.LoadGameVersion(out[i].GameID, out[i].Path)
 	}
 	return out, nil
@@ -192,8 +251,8 @@ func (s *WorkspaceService) CreateWorkspace(
 	return &ws, nil
 }
 
-// UpdateWorkspace updates workspace fields; the session follows a different install by itself (the next request
-// finds its fingerprint stale).
+// UpdateWorkspace updates workspace fields; the open workspace follows a different install by itself (the next
+// request finds its fingerprint stale).
 func (s *WorkspaceService) UpdateWorkspace(id, name, installID string) error {
 	return s.mutateWorkspace(id, func(ws *Workspace) error {
 		ws.Name, ws.InstallID = name, installID
@@ -227,7 +286,7 @@ func (s *WorkspaceService) UpdateWorkspacePrefs(
 	})
 }
 
-// SetWorkspaceLocLang sets the default loc language; a live session is built again with it.
+// SetWorkspaceLocLang sets the default loc language; the open workspace is built again with it.
 func (s *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
 	return s.mutateWorkspace(id, func(ws *Workspace) error {
 		ws.DefaultLocLang = lang
@@ -248,7 +307,7 @@ func (s *WorkspaceService) DeleteWorkspace(id string) error {
 	if err != nil {
 		return err
 	}
-	s.sessions.drop(id)
+	s.slot.Close(id)
 	return nil
 }
 
@@ -346,7 +405,7 @@ func (s *WorkspaceService) modFolderOf(workspaceID, path string) (string, error)
 }
 
 // SetWorkspaceModPath points a mod at another folder, one holding its game's descriptor; the
-// session is built again from it.
+// open workspace is built again from it.
 func (s *WorkspaceService) SetWorkspaceModPath(workspaceID, modID, path string) error {
 	if _, err := s.modFolderOf(workspaceID, path); err != nil {
 		return err
@@ -360,6 +419,111 @@ func (s *WorkspaceService) SetWorkspaceModPath(workspaceID, modID, path string) 
 // OpenFolder shows a folder in the system's file manager.
 func (s *WorkspaceService) OpenFolder(path string) error {
 	return application.Get().Env.OpenFileManager(path, false)
+}
+
+// Opening a workspace.
+
+// Open is the workspace opened, its index built once however many callers ask at once, and its state; opening a
+// workspace closes the one open before it.
+func (s *WorkspaceService) Open(workspaceID string) (*WorkspaceState, error) {
+	if _, err := s.openWorkspace(workspaceID); err != nil {
+		return nil, err
+	}
+	return s.State(workspaceID), nil
+}
+
+// openWorkspace is the workspace's index, opened when it is not: what Open and every page RPC call. The caller
+// whose call built it tells the frontend and logs its name, so the log says whether a page read reaches Go before
+// Open.
+func (s *WorkspaceService) openWorkspace(workspaceID string) (*workspace.Session, error) {
+	request, err := s.request(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	caller, _, _, _ := runtime.Caller(1)
+	ws, built, err := s.slot.Open(context.Background(), request)
+	switch {
+	case built && err != nil:
+		emit(EventWorkspaceFailed, workspaceID)
+	case built:
+		slog.Info("workspace opened", "workspace", workspaceID, "by", runtime.FuncForPC(caller).Name())
+		emit(EventWorkspaceOpened, workspaceID)
+	}
+	return ws, err
+}
+
+// request is what a workspace is opened from, as the config says now. Its fingerprint is the inputs an edit could
+// change: the install and its folder, the language, each mod's id, folder and calendar in load order; a change needs
+// no close of its own, the next request finds the open workspace stale. Its callbacks tell the frontend.
+func (s *WorkspaceService) request(workspaceID string) (workspace.Request, error) {
+	entry, inst, err := s.config.workspace(workspaceID)
+	if err != nil {
+		return workspace.Request{}, err
+	}
+	if inst == nil {
+		return workspace.Request{}, fmt.Errorf("workspace %s has no install", workspaceID)
+	}
+	fingerprint := fmt.Sprintf("%s|%s|%s", inst.ID, inst.Path, entry.DefaultLocLang)
+	var mods []workspace.Mod
+	for _, mod := range entry.Mods {
+		fingerprint += fmt.Sprintf("|%s=%s %v", mod.ID, mod.Path, mod.Eras)
+		mods = append(mods, workspace.Mod{ID: mod.ID, Dir: mod.Path, Calendar: mod.Eras})
+	}
+	return workspace.Request{
+		ID: workspaceID, Game: inst.GameID, Dir: inst.Path, Language: entry.DefaultLocLang, Mods: mods,
+		App: s.version, Fingerprint: fingerprint,
+		Wiki: func(databases []string) (map[string][]string, time.Time, error) {
+			return s.wikis.ScriptExamples(inst.GameID, databases)
+		},
+		Progress: func(percent int, stage string) {
+			emit(EventInstallScanning, ScanProgress{InstallID: inst.ID, Percent: percent, Stage: stage})
+		},
+		Scanned: func() { emit(EventInstallScanned, inst.ID) },
+		Changed: func(path string) {
+			_, err := os.Stat(path)
+			emit(EventFSChanged, FSChanged{Path: path, Deleted: err != nil})
+		},
+	}, nil
+}
+
+// scannedAt is when an install was built, in RFC 3339, read in a language; "" when it never was.
+func (s *WorkspaceService) scannedAt(inst *GameInstall, language string) string {
+	at := s.slot.ScannedAt(workspace.Request{Game: inst.GameID, Dir: inst.Path, Language: language, App: s.version})
+	if at.IsZero() {
+		return ""
+	}
+	return at.Format(time.RFC3339)
+}
+
+// State is what the pages show of a workspace, without opening it: its install and when it was scanned, and when
+// it is open, whose dumps its schema read and the version the scan replaced.
+func (s *WorkspaceService) State(workspaceID string) *WorkspaceState {
+	state := &WorkspaceState{}
+	entry, inst, _ := s.config.workspace(workspaceID)
+	if entry != nil {
+		state.InstallID = entry.InstallID
+	}
+	request, err := s.request(workspaceID)
+	if inst == nil || err != nil {
+		return state
+	}
+	state.GameVersion = game.LoadGameVersion(inst.GameID, inst.Path)
+	_, statErr := os.Stat(inst.Path)
+	state.InstallOk = statErr == nil
+	state.ScannedAt = s.scannedAt(inst, entry.DefaultLocLang)
+	state.DumpFolders = game.DumpDirs(inst.GameID, inst.Path)
+	if ws := s.slot.Current(workspaceID, request.Fingerprint); ws != nil {
+		ws.RLock()
+		dumps := ws.Install.Schema.Sources[schema.SourceDumps]
+		state.Open, state.DumpsFrom, state.DumpsStale = true, dumps.Origin, dumps.Stale
+		// the version the scan read, and the one it replaced where the game was updated since
+		state.GameVersion = ws.Install.Schema.Version
+		if previous := ws.Install.Previous; previous != "" && previous != appdata.SafeName(state.GameVersion) {
+			state.UpdatedFrom = previous
+		}
+		ws.RUnlock()
+	}
+	return state
 }
 
 // UpdateWorkspaceMod updates a mod's name, color, thumbnail and upload exclusions.

@@ -32,7 +32,7 @@ export function GetVersion(): $CancellablePromise<string> {
 }
 
 /**
- * ResetData forgets every install and workspace, deletes the caches, and closes the live session.
+ * ResetData forgets every install and workspace, deletes the caches, and closes the open workspace.
  * Mod and game folders stay.
  */
 export function ResetData(): $CancellablePromise<void> {

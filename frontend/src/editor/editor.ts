@@ -1,8 +1,7 @@
 /**
  * An editor over a file's model: its options from the settings, the hover card's timing and place, the caret
  * reported to the store, and the palette's keys inside Monaco. `installEditor` sets the editor library up once per
- * window: the providers, the conflicts, the files, the handover, the search, the IDE's commands and the font
- * measuring.
+ * window: the providers, the conflicts, the files, the IDE's commands and the font measuring.
  */
 import { shallowRef } from "vue";
 import type { Router } from "vue-router";
@@ -14,10 +13,8 @@ import { useEditorStore } from "../stores/editor";
 import { useSettingsStore } from "../stores/settings";
 import { registerIdeCommands } from "./commands";
 import { installConflicts } from "./conflicts";
-import { installHandover } from "./handover";
 import { bytesAt, flushed, installModels, pathOf, workspaceId } from "./models";
 import { cardSaysSomething, installProviders } from "./providers";
-import { installSearch } from "./search";
 
 let installed = false;
 
@@ -28,8 +25,6 @@ export function installEditor(router: Router): void {
   installProviders();
   installConflicts();
   installModels();
-  installHandover();
-  installSearch();
   registerIdeCommands(router);
 
   // the app's palette keys open the palette in an editor too, where Monaco would take them

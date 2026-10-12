@@ -5,7 +5,8 @@
  * (`editor:<n>`), the game's files (`game`), a folder of the workspace (`files:<path>`) or the panel (`panel`). The
  * windows send each other what they hold, so a file is open in one window at a time; closing one hands its tabs
  * back to the main window, and only the main window's close ends the app. The store subscribes to the events about
- * windows and sends this window's state; it reads the editor store for what this window holds, inside its functions.
+ * windows and sends this window's state, and starts the modules that answer the events about tabs and results; it
+ * reads the editor store for what this window holds, inside its functions.
  */
 import { computed, reactive, shallowRef, watch } from "vue";
 import { defineStore } from "pinia";
@@ -16,6 +17,8 @@ import { Events, Window } from "@wailsio/runtime";
 import type { WindowState } from "@services/models";
 import { Close, Open, QuitAnswer, Show } from "@services/windowservice";
 import { PAGES } from "../app/pages";
+import { installHandover } from "../editor/handover";
+import { installSearch } from "../editor/search";
 import { fileName } from "../lib/format";
 import UnsavedChangesModal from "../ui/UnsavedChangesModal.vue";
 import { useEditorStore, type Edge } from "./editor";
@@ -121,6 +124,10 @@ export const useWindowsStore = defineStore("windows", () => {
   }
 
   if (!isMain) watch(title, (text) => void Window.SetTitle(text), { immediate: true });
+
+  // tabs handed to this window and results shown to it arrive on any page: the main window holds files on all of them
+  installHandover();
+  installSearch();
 
   // what this window holds, sent once ready and again when it changes while another window is open; a window
   // opened asks what the others hold

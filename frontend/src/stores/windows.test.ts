@@ -100,4 +100,12 @@ describe("the windows", () => {
     windows.saved();
     expect(Events.Emit).toHaveBeenCalledWith("window:saved", "main");
   });
+  it("answers tabs handed to it and results shown to it from the start, whatever page it shows", () => {
+    vi.mocked(Events.On).mockClear();
+    store();
+    const names = vi.mocked(Events.On).mock.calls.map((call) => call[0]);
+    expect(names).toContain("window:tabs-handed");
+    expect(names).toContain("window:tab-requested");
+    expect(names).toContain("window:results");
+  });
 });

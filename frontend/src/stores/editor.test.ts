@@ -208,4 +208,32 @@ describe("groups and layout", () => {
     ]);
     expect(editor.openTabs).toEqual(["C:/m/c.txt"]);
   });
+  it("shows a file in the window holding only a diff tab of it", () => {
+    const editor = store();
+    const windows = useWindowsStore();
+    windows.otherWindows.set("editor:x", {
+      name: "editor:x",
+      title: "",
+      roots: [],
+      tabs: ["git:changes:C:/m/a.txt"],
+      unsaved: [],
+      problems: {},
+    });
+    vi.mocked(Events.Emit).mockClear();
+    editor.open("C:/m/a.txt");
+    expect(vi.mocked(Events.Emit).mock.calls).toEqual([
+      ["window:show", { to: "editor:x", route: "", path: "C:/m/a.txt", line: -1, col: 0 }],
+    ]);
+    expect(editor.openTabs).toEqual([]);
+  });
+  it("keeps the open tab's spelling for the file and its cursor", () => {
+    const editor = store();
+    editor.open("C:/m/a.txt");
+    editor.open("c:/M/a.txt", { line: 7, col: 1 });
+    expect(editor.openTabs).toEqual(["C:/m/a.txt"]);
+    expect(editor.cursor).toEqual({ path: "C:/m/a.txt", line: 7, col: 1 });
+  });
+  it("starts with the problems panel open", () => {
+    expect(store().panel).toBe("problems");
+  });
 });

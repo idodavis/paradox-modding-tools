@@ -111,7 +111,7 @@ export const useEditorStore = defineStore("editor", () => {
   const fileMoves = ref<{ done: FileMove[]; undone: FileMove[] }>({ done: [], undone: [] });
   const ideSettingsOpen = shallowRef(false);
   const sidebar = persisted<"explorer" | "search" | "git">("pmt.ide.sidebar", "explorer");
-  const panel = persisted<"problems" | "git" | "">("pmt.ide.panel", "");
+  const panel = persisted<"problems" | "git" | "">("pmt.ide.panel", "problems");
   const wikiOpen = persisted("pmt.ide.wikiOpen", false);
   const layouts = persisted<Record<string, Saved | undefined>>("pmt.ide.layouts", {});
 
@@ -142,9 +142,10 @@ export const useEditorStore = defineStore("editor", () => {
   function windowOf(file: string): string {
     const key = pathKey(file);
     const others = [...useWindowsStore().otherWindows.values()];
-    const holder = others.find((one) => (one.tabs ?? []).some((tab) => pathKey(tab) === key));
+    const holds = (tab: string) => pathKey(tabOf(tab).file) === key;
+    const holder = others.find((one) => (one.tabs ?? []).some(holds));
     if (holder) return holder.name;
-    if (openTabs.value.some((tab) => pathKey(tab) === key)) return windowName;
+    if (openTabs.value.some(holds)) return windowName;
     const folder = others.find((one) => (one.roots ?? []).some((root) => key.startsWith(`${pathKey(root)}/`)));
     if (folder) return folder.name;
     return holdsFiles ? windowName : "main";
@@ -152,31 +153,32 @@ export const useEditorStore = defineStore("editor", () => {
 
   /** Show a file at a place (a 0-based line and UTF-8 byte column) in the window that holds it. */
   function open(file: string, position?: { line: number; col?: number }): void {
-    const target = windowOf(file);
+    const path = backendPath(file);
+    const target = windowOf(path);
     if (target !== windowName) {
       void Events.Emit("window:show", {
         to: target,
         route: "",
-        path: file,
+        path,
         line: position?.line ?? -1,
         col: position?.col ?? 0,
       });
       return;
     }
-    const key = pathKey(file);
+    const key = pathKey(path);
     const holds = (one: Group) => one.tabs.some((tab) => pathKey(tab) === key);
     const here = group(focused.value) ?? groups.value[0];
     const into = (here && holds(here) ? here : groups.value.find(holds)) ?? here;
     if (!into) return;
     let tab = into.tabs.find((one) => pathKey(one) === key);
     if (!tab) {
-      tab = file;
+      tab = path;
       const index = into.tabs.indexOf(into.active);
       into.tabs.splice(index + 1, 0, tab);
     }
     into.active = tab;
     focused.value = into.id;
-    if (position) cursor.value = { path: file, line: position.line, col: position.col ?? 0 };
+    if (position) cursor.value = { path, line: position.line, col: position.col ?? 0 };
     if (isMain && router.currentRoute.value.name !== "workspace-ide")
       void router.push({ name: "workspace-ide", params: { id: workspace.activeWorkspaceId } });
   }

@@ -27,7 +27,7 @@ Confirm `wails3` is on your `PATH` (`$(go env GOPATH)/bin`).
 
 ## Windows extra
 
-The script parser (`services/internal/lang/jomini`) is **pure Go**. Production and `task build` use `CGO_ENABLED=0`. You do not need GCC for a normal Windows desktop build.
+The script parser (`services/internal/jomini`) is **pure Go**. Production and `task build` use `CGO_ENABLED=0`. You do not need GCC for a normal Windows desktop build.
 
 WebView2 must be installed to **run** the app (Win11 usually has it).
 
@@ -120,7 +120,7 @@ Each Go package keeps its tests in one file, `<pkg>_test.go`.
 | Path | Role |
 |------|------|
 | `main.go` | Wails entry, updater (`SHA256SUMS`), single window |
-| `services/` | Wails services only, + `internal/` (game, lang, local, lsp, session, steam, wiki) |
+| `services/` | Wails services only, + `internal/`: the packages [`services/README.md`](https://github.com/idodavis/paradox-modding-tools/blob/master/services/README.md) maps |
 | `frontend/` | Vue 3 + Nuxt UI + Pinia + Pinia Colada; `monaco-editor`, `@pierre/trees` (the explorer), Vue Flow + dagre (the Event Graph) |
 | `docs/` | This site (Hugo). Content in `docs/content/` |
 | `build/` | Wails Taskfiles, icons, Windows `info.json` |

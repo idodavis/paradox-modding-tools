@@ -16,7 +16,7 @@ PMT_TEST_INSTALL_EU5   (dumps in …/Europa Universalis V/docs)
 ```
 
 Measured 2026-09 against CK3 1.19.x, Vic3 and EU5 current on Steam. The engine
-that reads these facts is described in `services/internal/lang/README.md`.
+that reads these facts is described in `services/README.md`.
 
 ---
 
@@ -34,7 +34,7 @@ block syntax differs.
 | `on_actions.log` | `Expected Scope` per on_action | 902 | yes | yes |
 | `modifiers.log` | modifier tokens, use area / mask | 742 | yes | yes |
 
-**Block syntax per game** — the label table `dumpLabels` (`lang/schema/dumps.go`) picks the form per file:
+**Block syntax per game** — the label table `dumpLabels` (`schema/dumps.go`) picks the form per file:
 
 | Form | Used by | Looks like |
 |---|---|---|
@@ -53,7 +53,7 @@ disagree.
 target type; CK3 documents it in prose only. So nothing declares what is fired:
 the registry declares that events are named by event id, and a reference to an
 event or an on_action is a fire unless it sits inside a trigger
-(`lang/index/README.md`, Fires).
+(`index/README.md`, Fires).
 
 ---
 
@@ -61,7 +61,7 @@ event or an on_action is a fire unless it sits inside a trigger
 
 | Fact | Detail |
 |---|---|
-| A database comes from the folder | `common/cultures/` → database `cultures` (`schema.folder`, `lang/schema/README.md`). |
+| A database comes from the folder | `common/cultures/` → database `cultures` (`schema.folder`, `schema/README.md`). |
 | EU5 nests under a stage root | Script lives in `game/in_game/...`, not `game/...`. Walking `game/events` finds nothing on EU5. |
 | script_docs land in different folders | CK3 `logs/`, Vic3 and EU5 `docs/`, all under user data. |
 | The console command and launch option are the **same** in all three | `-debug_mode` and `script_docs`. Verified by grepping each game binary (`ck3.exe`, `victoria3.exe`, `eu5.exe`); all three also carry the longer alias `script_documentation`. Only the output folder differs, which `GameInfo.ScriptDocsDirs` and `DataTypesDir` already encode — so the walkthrough needs no new per-game data. |
@@ -143,11 +143,11 @@ declared, not found: a nested `Descriptor` row says where keys create entries
 (`Layout.Nested`), a constant (`@x`) is never an entry, and in a nested row's
 own block a key a declared source states is a field.
 
-Root cause worth remembering: `jomini.SplitPrefixed` (`lang/jomini/names.go`)
+Root cause worth remembering: `jomini.SplitPrefixed` (`jomini/names.go`)
 accepts any word shaped like `prefix:name` — a one-identifier prefix with a
 lower-case letter, then a well-formed name, member or chain. The lexer is
 deliberately permissive, so a prefixed word is a reference only where its prefix
-is a declared link (`Schema.Link`, `lang/index/README.md`, References).
+is a declared link (`Schema.Link`, `index/README.md`, Resolution).
 
 ### 3c. `random_list` weight vs. fire key — *not* a bug
 
@@ -179,7 +179,7 @@ easy to violate somewhere else by accident.
 What separates an ordinary field from a row is **repetition**, and it is
 evidence only: an ordinary field appears in most instances of the parent
 (`categories` in 81 of 81 game rules, `flag` in 24 of 27 law groups), a row
-appears in one. Vanilla's counts (`Seen.In`) feed completion; a declared source
+appears in one. Vanilla's counts (`Vanilla.Count`) feed completion; a declared source
 decides what is a field, and vanilla alone never accuses.
 
 **Rule: absence is never a claim. Derive membership from how a thing is written,
@@ -300,8 +300,8 @@ that follows only prefixed words is structurally blind to all of them.
 | Cultural parameters | inside culture tradition blocks | `has_cultural_parameter = has_access_to_shieldmaidens` |
 
 A word is a reference only where a declared fact says so, so a field RHS that
-nothing declares to name a database is no reference (`lang/index/README.md`,
-References). CK3's nested `Descriptor` rows for `**/parameters` and `**/*_parameters`
+nothing declares to name a database is no reference (`index/README.md`,
+Resolution). CK3's nested `Descriptor` rows for `**/parameters` and `**/*_parameters`
 declare the names such blocks list as entries of the `parameter` database.
 
 ### Game rules (CK3), worked through
@@ -347,7 +347,7 @@ KPIs stay honest, materialise only what is kept.
 
 The corpus walk is parallel (`source.Ordered`), and worker completion order must
 never decide a fact about the game: every file's records are added in **load
-order**, on one goroutine (`lang/index/README.md`, Scan and cache), the same rule
+order**, on one goroutine (`index/README.md`, The scan), the same rule
 that decides every other override. Parallelism may decide when work happens,
 never what anything is.
 
@@ -440,7 +440,7 @@ key in the file that defines it keep their own handling (§3e).
 The slot decides next. After a word's fixed spelling (`@name`, `$NAME$`,
 `[ … ]`, a prefixed word), a value is a reference only at a position whose
 declared value names a database, so a number names a number-keyed entry only
-there (`lang/index/README.md`, References). Hover and completion answer "what is
+there (`index/README.md`, Resolution). Hover and completion answer "what is
 this" and "what can go here" from the same walk.
 
 ## 11. Loc keys are built out of other loc keys, not only out of definitions
@@ -489,7 +489,7 @@ rules keep that from collapsing back into one loose predicate:
    or all loc keys): it hovers, completes and navigates,
    and never accuses. Only a declared source says what a command or a scope is.
 2. **Nothing permissive runs where a claim accuses.** A claim speaks through one
-   rule, `schema.Speaks`, and a misread doc position stays quiet.
+   rule, `schema.MayAccuse`, and a misread doc position stays quiet.
 
 Which positions hold a localization key is the neighbour to keep honest for the
 same reason: it changes hover and go-to-definition directly. Only a declared
@@ -557,7 +557,7 @@ Two consequences, and they pull in opposite directions from the obvious fix:
   to its own file instead.
 
 PMT does not do this yet: a folder row's `Keyword` declares an inline entry in
-that row's own database (`schema.Entries`, `lang/schema/README.md`), so both of
+that row's own database (`entryAt`, `schema/README.md`), so both of
 the above can happen.
 
 Vanilla repeats names by design too: Vic3 defines 14 coat-of-arms keys twice,
@@ -566,7 +566,7 @@ verified by scanning the files directly, and the game keeps the last.
 ## 15. Each game documents itself in a different shape, and one of them is not prose
 
 Five formats, and every doc line goes through the one normalizer
-(`lang/schema/README.md`), so a format it does not recognise is prose that stays
+(`schema/README.md`, Docscript), so a format it does not recognize is prose that stays
 a comment, not a file it skips; the health strip counts none of it.
 
 | Shape | Game | Example |
@@ -612,7 +612,7 @@ gap.
 Prose wears the same brackets — EU5's `<name of global variable list with the
 list of candidates in>`, Vic3's `<locator_name_1>` — so a bracketed word is a
 type only where the type table lists it (the phrase catalogue,
-`lang/schema/README.md`), and a placeholder names a database only by its name (`Schema.Named`).
+`schema/README.md`), and a placeholder names a database only by its name (`Schema.DatabaseNamed`).
 
 ## 16. What declares an event's scope, and what only looks like it does
 
@@ -644,16 +644,16 @@ the walk must give no root rather than pick one.
 
 PMT does not read this yet: the walk does not carry an on_action's scope into the
 events it fires, and an event body runs in its database's `Scope` claim, else
-unknown (`lang/index/README.md`, Scope and triggers).
+unknown (`index/README.md`, Scopes).
 
-Edges are read from the session rather than the cache, so a mod's own on_action
+Edges are read from the open workspace rather than the cache, so a mod's own on_action
 firing a mod's own event counts exactly as vanilla's does.
 
 ## 17. `root` is only meaningful where a root was declared
 
 Only an on_action declares its own starting scope. Everywhere else nothing
 declares one: PMT starts an entry's body in its database `Entry`'s `Scope` claim
-(`lang/index/README.md`, Scope and triggers); declared links and iterators move
+(`index/README.md`, Scopes); declared links and iterators move
 it from there.
 
 `root` is the exception. It means "the bottom of the stack", and with no declared
@@ -687,8 +687,8 @@ to be judged against. A date is not a chain — `867.1.1` would otherwise step
 through "867", "1", "1".
 
 The walk reads a chain's first part as the link, and the scope leads where the
-chain's last link does (`lang/index/README.md`, What a key is, and Scope and
-triggers).
+chain's last link does (`schema/README.md`, Positions and the walker, and
+`index/README.md`, Scopes).
 
 Saved scopes (`scope:foo`) and prefixed words (`title:k_england`) are followed: a
 prefixed word's block runs in its prefix link's output, and `scope:x = { }` is
@@ -764,8 +764,8 @@ believe.
 **What this costs.** A closed value set is the strongest evidence PMT has for an
 accusing check: the game names the values. If even that can be stale, then every
 declared-source check needs vanilla's evidence before it speaks, not just the
-derived ones. `Speaks` rule 3 is that gate, and the vanilla gate
-(`TestInstallsDiagnoseClean`) is the only place PMT compares its judgement
+derived ones. `MayAccuse`'s vanilla condition is that gate, and the vanilla gate
+(`TestInstallsDiagnoseClean`) is the only place PMT compares its judgment
 against script the game itself ships.
 
 ## 21. A mod's thumbnail location is not implied by its descriptor format

@@ -90,13 +90,14 @@ go test ./...
 | Path | Role |
 |------|------|
 | `main.go` | Wails entry, updater, single window |
-| `services/` | Wails services; `services/internal/` holds the language engine (`lang/*`, `session`, `lsp`) and `game`, `local`, `steam`, `wiki` |
+| `services/` | Wails services; `services/internal/` holds the packages: the engine (`jomini`, `loc`, `inventory`, `schema`, `index`), the open workspace (`workspace`, `lsp`, `pages`) and `game`, `appdata`, `texture`, `modfiles`, `wiki`, `steam` |
 | `frontend/` | Vue 3 + Nuxt UI + Pinia + Pinia Colada; `monaco-editor`, `@pierre/trees`, Vue Flow |
 | `docs/` | User guide (GitHub Pages) |
 | `build/` | Wails Taskfiles and icons |
 
-How the backend fits together, with diagrams of each path: [services/README.md](services/README.md).
-Terms: [GLOSSARY.md](GLOSSARY.md). Notes for coding agents: [AGENTS.md](AGENTS.md).
+How the backend fits together: [services/README.md](services/README.md). The frontend's conventions:
+[frontend/src/README.md](frontend/src/README.md). Terms: [GLOSSARY.md](GLOSSARY.md). Notes for coding agents:
+[AGENTS.md](AGENTS.md).
 
 ## License
 

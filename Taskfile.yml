@@ -87,8 +87,9 @@ tasks:
   test:race:
     summary: >
       What CI runs. The race detector is the only thing that can catch a
-      lock-discipline regression, and GLOSSARY makes that discipline binding on
-      every consolidation. Keep this identical to .github/workflows/test.yml.
+      lock-discipline regression; the discipline is in
+      services/internal/workspace/README.md. Keep this identical to
+      .github/workflows/test.yml.
     dir: services
     cmds:
       - go test -short -race -timeout 60s ./...

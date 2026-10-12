@@ -1,207 +1,123 @@
 # services — the backend
 
-The Go half of Paradox Modding Tools. The files in this folder are the Wails services the frontend
-calls; everything they use is under `internal/`. This page is the map: what each package is, how
-they connect, and what runs on each path. Each engine package keeps its design in its own README.
+The Go half of Paradox Modding Tools. The files in this folder are the Wails services the frontend calls; everything
+they use is under `internal/`. This page is the map: the packages and the one rule that orders them, the services, the
+events, and where a change goes. Each package's design is in its own README.
 
-## Layout
+## The packages
 
-The backend has four parts, and the folders follow them:
+A package imports only the packages above it in this table, and `services/*.go` imports from any of them. Nothing
+under the engine knows about the editor, the pages, the services or the Workshop.
 
-1. **The Wails services**, the files in this folder: the only code the frontend calls.
-2. **The open workspace**, `internal/session` and `internal/lsp`: the workspace you have open, and
-   the editor's requests on it.
-3. **The language engine**, `internal/lang/`: reads an install, its dumps and your mods, and says
-   what every word is.
-4. **Shared packages**, `internal/game`, `local`, `wiki` and `steam`: the game table, this machine's
-   files, the wiki, the Workshop.
+| layer | package | its one job |
+|---|---|---|
+| leaves | [`game`](internal/game/README.md) | What is true of each game: its identity, its language rules as rows, its file layout, where it installs and keeps its data. The only package that tells the games apart. |
+| | [`jomini`](internal/jomini/README.md) | Parse Paradox script text into a syntax tree, and read the shapes of its words (names, dates, numbers, `prefix:name`, `$NAME$`, `[data.calls]`). Knows no game and no file. |
+| | [`loc`](internal/loc/README.md) | Parse the localization dialect: entries, `$key$`, the language of a file. |
+| | [`appdata`](internal/appdata/README.md) | PMT's own files on this machine: the app and cache folders, the atomic write, the stored form of a cache. |
+| files | [`inventory`](internal/inventory/README.md) | Every file of an install, a mod or a dump folder: the roots that mirror the game layout, each file's format and origin, its text read with the right encoding, the walk, the ordered worker pool. |
+| | [`texture`](internal/texture/README.md) | Decode a DDS or TGA to pixels and read an image's header. |
+| | [`modfiles`](internal/modfiles/README.md) | A mod's own Paradox files: its descriptor, its thumbnail, the skeleton of a new mod. |
+| | [`wiki`](internal/wiki/README.md) | The community wiki: fetch pages, sanitize them, store them, look up the pages for a file or a topic, and give the engine the script examples a page holds. |
+| | [`steam`](internal/steam/README.md) | The Workshop: publish and download through the game's own Steam library in a second process, the files a mod keeps for its page, its description format, the upload's file set, the compare with Steam. |
+| engine | [`schema`](internal/schema/README.md) | What the sources state about one game version's language, in trust order, and the one walker every reader of script uses. Carries the backup dump schemas embedded in the app, and their generator. |
+| | [`index`](internal/index/README.md) | What a scan found: each file's definitions, references and localization entries; resolution in load order; the scan and its cache. It interprets no word. |
+| workspace | [`workspace`](internal/workspace/README.md) | A workspace open in the editor: the install's schema and index, the mods' index over it, the open buffers, the watcher, one lock, and the one open at a time. |
+| | [`lsp`](internal/lsp/README.md) | The editor's requests over one open file: hover, completion, definition, references, symbols, diagnostics, edits. |
+| | [`pages`](internal/pages/README.md) | The Go side of each page, answered from the open workspace: the Health report, the event graph and its detail, the text search. |
 
-```
-services/
-├── *service.go          1. the Wails services (see "Services")
-└── internal/
-    ├── session/         2. one workspace in the editor and the one open at a time (`Slot`): indexes, open files
-    ├── lsp/             2. the editor's requests: hover, completion, navigation, diagnostics, edits
-    ├── lang/            3. the language engine (its README: the pipeline and its rules)
-    │   ├── jomini/          the parser: syntax tree, names, dates, numbers, BOM; knows no game
-    │   ├── loc/             the localization dialect: entries, $key$, the language of a file
-    │   ├── source/          every file of an install, mod or dump folder, by format; reads nothing
-    │   ├── schema/          what the sources state, in one tree of positions, and the walker
-    │   ├── shipped/         backup dump schemas for users missing a dump file, and their generator
-    │   └── index/           definitions, references, loc entries; load order; the scan and its cache
-    ├── game/            4. the only game-aware package
-    │   ├── lang-rules.go    Paradox script's language rules as tables, and each game's file Layout
-    │   └── game.go          each game's identity, install and version detection, user-data folders
-    ├── local/           4. this machine's files: app folders, the atomic write, a mod's descriptor
-    ├── wiki/            4. wiki guides and patch notes: fetch, sanitize, store, look up
-    └── steam/           4. Steam Workshop publish (a second process) and the Workshop files
-```
+The saved record of a workspace is `services.Workspace`; the open one is `workspace.Session`. `internal/testdata/` holds
+the fixture installs the tests read.
 
-## How the parts depend on each other
+## What the engine keeps
 
-Each part uses only the parts below it; nothing in the engine knows about the editor, the services or
-the Workshop. Inside the engine, the packages build on each other from the parser up.
-
-```mermaid
-flowchart TD
-  services["1 · services/*.go — the Wails services"]
-  subgraph workspace ["2 · the open workspace"]
-    lsp --> session
-  end
-  subgraph engine ["3 · internal/lang — the language engine"]
-    index --> schema
-    index --> shipped --> schema
-    index --> loc
-    schema --> source --> jomini
-    loc --> jomini
-  end
-  subgraph shared ["4 · shared"]
-    wiki --> local --> game
-  end
-  steam["steam — Workshop publish"]
-  services --> workspace
-  services --> engine
-  services --> steam
-  workspace --> engine
-  engine --> shared
-  steam --> local
-```
-
-Every part may also use `game` (the game table) and `local` (this machine's files). `game` and
-`jomini` use nothing of ours. `schema` reads the rules in `game/lang-rules.go` and the wiki's stored
-pages; it parses only what it is handed. `go list -deps ./services/...` gives every import.
+- **Each fact once, from ranked sources:** the registry, the dumps, vanilla, the docs, the wiki. A claim keeps the
+  highest-ranked source that states it.
+- **Nothing is guessed.** A diagnostic accuses only on a claim a declared source states, fresh, that vanilla does not
+  contradict (`schema.MayAccuse`). What nothing declares stays unknown, and unknown is quiet.
+- **Mods are never authorities.** They give definitions and references only.
+- **Durable.** A game update or a stale dump never brings false findings: features grow quieter, and the app says when
+  its data is stale.
+- **The rules are data.** What Paradox script is lives in `internal/game/lang-rules.go`, a row each, never a branch for
+  one case.
+- **Walk once, parse once.** A file is parsed once per text and walked by the one walker (`schema.WalkFile`).
 
 ## Services
 
-| Part | Service | File | What the frontend calls it for |
-|---|---|---|---|
-| The app and your data | App | `appservice.go` | the version, update checks, the settings map, reset; the file also holds `config.json` (`ConfigFile`) for the other services |
-| | Workspace | `workspaceservice.go` | installs, workspaces, mods and their load order, the IDE's roots; `Open` and `State` of the open workspace |
-| | File | `fileservice.go` | the IDE's file system: read, write (atomic), list, rename, delete |
-| | Log | `logservice.go` | the app log (`pmt.log`), the frontend's log lines, crash detection |
-| The open workspace | Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
-| Pages and tools | Health | `healthservice.go` | the Health page: three calls into `internal/pages` |
-| | EventGraph | `eventgraphservice.go` | the event graph, one event's detail and the root search: three calls into `internal/pages` |
-| | Wiki | `wikiservice.go` | the IDE's Wiki pane and Patch Notes |
-| | Search | `searchservice.go` | the IDE's text and file search, and replace: three calls into `internal/pages` (`search:hits` per file) |
-| | Git | `gitservice.go` | the IDE's source control: the git installed on this machine, per mod repository (`gitservice_windows.go` hides git's console) |
-| | Release | `releaseservice.go` | the Publish page: descriptor, description, Workshop extras, Steam publish |
-| | Window | `windowservice.go` | the app's other windows: open, show, close (a closing one hands its tabs back first), and the `window:*` events they tell each other by |
+| Service | File | What the frontend calls it for |
+|---|---|---|
+| App | `appservice.go` | the version, update checks, the settings map, reset; the file also holds `config.json` (`ConfigFile`) for the other services |
+| Workspace | `workspaceservice.go` | installs, workspaces, mods and their load order, the IDE's roots; `Open` and `State` of the open workspace |
+| File | `fileservice.go` | the IDE's file system: read, write (atomic), list, rename, delete |
+| Log | `logservice.go` | the app log (`pmt.log`), the frontend's log lines, crash detection |
+| Ide | `ideservice.go` | every editor request, one method each, forwarded to `lsp` |
+| Health | `healthservice.go` | the Health page: three calls into `pages` |
+| EventGraph | `eventgraphservice.go` | the event graph, one event's detail and the root search: three calls into `pages` |
+| Search | `searchservice.go` | the IDE's text and file search and replace: three calls into `pages` |
+| Wiki | `wikiservice.go` | the IDE's Wiki pane and Patch Notes |
+| Git | `gitservice.go` | the IDE's source control: the git installed on this machine, per mod repository |
+| Release | `releaseservice.go` | the Publish page: descriptor, description, Workshop extras, Steam publish and compare |
+| Window | `windowservice.go` | the app's other windows: open, show, close, and the `window:*` events they tell each other by |
 
-Ide, Health, EventGraph and Wiki reach the open workspace through Workspace (`openWorkspace`);
-Workspace, Ide, Release, Log and Wiki read or change your saved data through the ConfigFile (`read`, `mutate`); Git
-reads a workspace's mods through it to find their repositories. File, Search and Window stand alone: the first two
-work on paths the frontend hands them, Window on the app's windows.
+A service is a shell: it reaches the open workspace through Workspace (`openWorkspace`), your saved data through
+`ConfigFile` (`read`, `mutate`), calls one function in the package named for the job, and returns. After changing a
+service method or a payload type, run `task common:generate:bindings`; never edit `frontend/bindings/` by hand.
 
-Go tells the frontend about state with events (`emit` in `appservice.go`; each service declares its own beside their payloads): `workspace:opened`,
-`workspace:failed`, `workspace:closed`, `install:scanning`, `install:scanned`, `fs:changed`,
-`wiki:updated`, `wiki:progress`, `search:hits` and `git:output`. After changing a service method or a payload type, run
-`task common:generate:bindings`; never edit `frontend/bindings/` by hand.
+## Events
+
+Go tells the frontend about state with events; each service declares its own beside their payloads.
+
+| Event | Sent when |
+|---|---|
+| `workspace:opened`, `workspace:failed`, `workspace:closed` | a workspace is open with its index built, could not be opened, or closed |
+| `install:scanning`, `install:scanned` | an install's scan reports a stage, and finishes |
+| `config:changed` | `config.json` was written; the data names its section |
+| `fs:changed` | a file of the open workspace changed on disk |
+| `wiki:updated`, `wiki:progress` | a wiki refresh finished, and each page it fetches |
+| `search:hits` | one file's hits of a text search |
+| `git:output` | a git command source control ran |
+| `steam:progress` | a Workshop upload's progress |
+| `window:*` | the windows telling each other what they hold and handing tabs on (`windowservice.go`) |
 
 ## Opening a workspace
 
-Only one workspace is open at a time (`workspace.Slot`); opening one closes the one open, since an
-install's index is most of its memory.
+Only one workspace is open at a time (`workspace.Slot`); opening one closes the one open, since an install's index is
+most of its memory.
 
 ```mermaid
 flowchart TD
-  A[WorkspaceService.Open] --> A1[request: the config's records and their fingerprint]
-  A1 --> A2[Slot.Open: one build for many callers, the one open before it closed]
-  A2 --> B{install cache file for this version, language, dumps and app?}
-  B -- yes --> C[index.LoadInstall]
-  B -- no --> D[index.Scan]
-  D --> D1[inventory: source.Inventory of the install and dump folders]
-  D1 --> D2[localization: english and the workspace language]
-  D2 --> D3["schema.Build: databases, dumps, docs and wiki, vanilla's evidence, value types, docs' claims"]
-  D3 --> D4[index: walk every script, table and sound file into records]
-  D4 --> D5[index.SaveInstall: the cache, written whole or not at all]
-  C --> E[workspace.Open: index.ScanMods walks the workspace's mods over the install]
-  D5 --> E
-  E --> F[file watcher started; workspace:opened]
+  A[WorkspaceService.Open] --> B[Slot.Open: one build for many callers]
+  B --> C{cache file for this install, version, language and dumps?}
+  C -- yes --> D[index.LoadInstall]
+  C -- no --> E[index.Scan: inventory, localization, schema.Build, collect every file]
+  E --> F[index.SaveInstall]
+  D --> G[index.ScanMods: the workspace's mods over the install]
+  F --> G
+  G --> H[watcher started; workspace:opened]
 ```
 
-Each stage reports on `install:scanning`. The cache file's name holds every input, so a game
-patch, a new dump or a new app build is another file and the next open scans again by itself.
-
-## An editor request
-
-Every request is one walk of the open file, stopped at the cursor or run whole.
-
-```mermaid
-sequenceDiagram
-  participant M as the editor (ide/monacoEditor.ts)
-  participant I as IdeService
-  participant L as lsp
-  participant S as session
-  participant W as index.Walk / schema.Read
-  M->>I: Hover(workspace, path, line, col)
-  I->>L: lsp.Hover(session, ...)
-  L->>S: RLock; the open buffer's parse
-  L->>W: walk to the cursor
-  W-->>L: each statement's Step: position, command, scope, block kind
-  L->>S: resolve names across the install and mods indexes
-  L-->>M: the card's payload (the frontend templates the text)
-```
-
-Completion, definition, references, signature help and diagnostics follow the same path. A
-diagnostic accuses only what a declared source states and vanilla does not contradict
-(`schema.Speaks`).
-
-## An edit, a save, a change on disk
-
-```mermaid
-flowchart LR
-  A[DidChange: the editor's text] --> B[session keeps the buffer, parsed once per text]
-  B --> D
-  C[DidSave, DidClose: the disk's text] --> D
-  W[file watcher: a change outside the editor] --> D[session.changed]
-  W --> X[fs:changed to the frontend: the file read again, the explorer updated]
-  D --> E{a mod's file?}
-  E -- yes --> F[index.Reindex: the file walked again]
-  E -- gone --> G[index.Forget]
-  E -- install or no root --> H[nothing]
-```
-
-The install's index never changes from the editor; only the mods' index does. The Health page
-refetches when it is shown again.
-
-## The pages
-
-- **Health** (`GetHealth`): which mod's definition the game keeps where two origins define
-  a name (contests and overrides), what a winning definition depends on or affects, references
-  nothing defines, missing and untranslated localization, and the editor's own findings per file.
-- **Event graph** (`GetEventGraph`, `GetEventDetail`): events and on_actions and what fires them,
-  from the references `session.Fires` and `session.FiredBy` follow.
-- **The Wiki pane and Patch Notes**: `wiki.Client.Refresh` stores each game's pages; `PagesFor` picks the
-  tabs for the open file.
-- **Publish**: `steam` runs the upload in a second copy of the app (`steam.Serve`, from
-  `services.ServeSteamPublish`), which loads the game's own copy of Steam's library.
-- **Source control** (Git): status, log, a commit's files, a file's text at a revision, stage,
-  unstage, discard, `StageText` (one block), commit, branches, checkout, fetch, pull, push and
-  merge, each run of git told on `git:output`.
+Each stage of a scan reports on `install:scanning`. The cache file's name holds every input, so a game patch, a new
+dump or a new app build is another file and the next open scans again by itself.
 
 ## Where to change what
 
 | To change | Edit |
 |---|---|
 | how a key reads in a kind of block, a scope rule, a name rule | a row in `internal/game/lang-rules.go` |
-| a game's folders, nested entries, entry modes | that game's `Layout` in `lang-rules.go` |
+| a game's folders, nested entries, entry modes | that game's `Layout` in `internal/game/lang-rules.go` |
 | a game's identity, install or dump folders | `internal/game/game.go` |
-| what a doc or dump phrase means | the phrase catalogue in `internal/lang/schema/template.go` |
-| how a dump file is read | the label table in `internal/lang/schema/dumps.go` |
-| a diagnostic | `internal/lsp/diagnostics.go` (`Codes`, the judge) |
-| a hover card's wording | `internal/lsp/wording.go` (`takesText`, `vanillaWritesText`, `blockHoldsText`) |
-| a Health section | `internal/pages/health_*.go` (contests and overrides, dependencies, localization, findings) |
+| what a doc or dump phrase means | `docPhrases` in `internal/schema/docs.go`; the dump labels in `internal/schema/dumps.go` |
+| a diagnostic | `internal/lsp/diagnostics.go` (`Codes`) |
+| what a hover card says | `internal/lsp/hover.go` (its facts), `internal/lsp/wording.go` (its words); drawn by `frontend/src/pages/ide/HoverCard.vue` |
+| a Health section | `internal/pages/health_*.go`; its page is `frontend/src/pages/health/` and `frontend/src/composables/useHealth.ts` |
 | what the event graph or a search answers | `internal/pages/graph.go`, `graph_detail.go`, `search.go` |
+| a window event | declared in `windowservice.go`, answered in `frontend/src/stores/windows.ts` (its table is at the head) |
+| a theme token | `frontend/src/styles/themes.css` |
 | a new frontend call | a service method, then `task common:generate:bindings` |
-
-A rule is a row, never a branch for one case. The engine infers nothing a table or a declared
-source does not give it.
 
 ## Tests
 
-Each package has one test file, `<package>_test.go`. The fixtures are small installs under
-`internal/lang/testdata/`.
+Each package has one test file, `<package>_test.go`; the fixtures are small installs under `internal/testdata/`.
 
 | Task | Runs |
 |---|---|
@@ -209,14 +125,10 @@ Each package has one test file, `<package>_test.go`. The fixtures are small inst
 | `task test:race` | the same under the race detector (what CI runs) |
 | `task test:gate` | the gates over real installs; set `PMT_TEST_INSTALL_CK3`, `_VIC3`, `_EU5` to each game's root |
 | `task test:sweep` | not a gate: every mod in a game's mod folder opened, with the findings printed |
+| `task check` | everything a commit must pass, Go and frontend |
 
 ## Further reading
 
-- [`internal/lang/README.md`](internal/lang/README.md): the engine's pipeline and its rules.
-- [`internal/lang/schema/README.md`](internal/lang/schema/README.md),
-  [`index/README.md`](internal/lang/index/README.md),
-  [`shipped/README.md`](internal/lang/shipped/README.md),
-  [`internal/game/README.md`](internal/game/README.md): each package's design.
-- [`GLOSSARY.md`](../GLOSSARY.md): the terms. [`GAME-SYNTAX.md`](../GAME-SYNTAX.md): measured facts
-  about each game's script.
-- [`docs/content/develop.md`](../docs/content/develop.md): building and running the app.
+[`GLOSSARY.md`](../GLOSSARY.md) holds the terms and [`GAME-SYNTAX.md`](../GAME-SYNTAX.md) what each game's script
+does, measured. The frontend's shape and conventions are [`frontend/src/README.md`](../frontend/src/README.md).
+Building and running the app: [`docs/content/develop.md`](../docs/content/develop.md).

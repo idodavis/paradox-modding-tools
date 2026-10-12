@@ -1,28 +1,111 @@
-/* PMT mint docs chrome: dark #12151d / #14171f, link #46d1a4, accent #e9be4f. */
-:root {
-  --bg: #12151d;
-  --side: #14171f;
-  --chrome: #1a1e28;
-  --input: #0d1016;
-  --text: #9fb9d0;
-  --head: #c5d4e2;
-  --link: #46d1a4;
-  --accent: #e9be4f;
-  --border: #2a3140;
-  --error: #ff6d5c;
+/*
+ * The docs site, in the app's own theme. The two token blocks below are the `pmt-dark` and `pmt-light` blocks of
+ * frontend/src/styles/themes.css, copied unchanged: a token's value changes there first. The page's theme follows the
+ * system (baseof.html sets data-theme); type, spacing and radii are the app's scale (article.css is the prose).
+ */
+
+@font-face {
+  font-family: "Geist";
+  src: url("../assets/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../assets/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+[data-theme="pmt-dark"] {
+  --bg-0: #0f1116;
+  --bg-1: #13161c;
+  --bg-2: #181c24;
+  --bg-3: #1e232c;
+  --bg-4: #262c37;
+  --line-1: #232933;
+  --line-2: #303743;
+  --fg-1: #e8ecf1;
+  --fg-2: #aab4c1;
+  --fg-3: #7f8a98;
+  --accent: #ffc933;
+  --accent-ink: #1a1405;
+  --link: #4cd3a6;
+  --red: #f0716b;
+  --orange: #f0a04b;
+  --blue: #6fb7f0;
+  --green: #5ccb8f;
+  --purple: #b19cf5;
+  --syn-kw: #6fb7f0;
+  --syn-str: #5ccb8f;
+  --syn-num: #f0a04b;
+  --syn-fn: #b19cf5;
+  --syn-ref: #4cd3a6;
+  --syn-com: #7f8a98;
+  --ol: 0.76;
+  --oc: 0.174;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line-2);
+  color-scheme: dark;
+}
+
+[data-theme="pmt-light"] {
+  --bg-0: #ffffff;
+  --bg-1: #f4f5f8;
+  --bg-2: #eceef2;
+  --bg-3: #ffffff;
+  --bg-4: #e2e5eb;
+  --line-1: #e1e4ea;
+  --line-2: #cfd4dd;
+  --fg-1: #1a1f27;
+  --fg-2: #4d5866;
+  --fg-3: #636e7c;
+  --accent: #b8860b;
+  --accent-ink: #1a1405;
+  --link: #138a66;
+  --red: #c4372f;
+  --orange: #b8650e;
+  --blue: #2568b8;
+  --green: #1f8a4c;
+  --purple: #6b4fd1;
+  --syn-kw: #2568b8;
+  --syn-str: #1f8a4c;
+  --syn-num: #b8650e;
+  --syn-fn: #6b4fd1;
+  --syn-ref: #138a66;
+  --syn-com: #6b7684;
+  --ol: 0.56;
+  --oc: 0.121;
+  --shadow: 0 8px 24px rgba(20, 30, 50, 0.16), 0 0 0 1px var(--line-2);
+  color-scheme: light;
+}
+
+[data-theme] {
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --link-soft: color-mix(in srgb, var(--link) 14%, transparent);
+  /* prose links a little toward the text color: the light theme's link token is 4:1 on its ground, which a UI
+     label can carry and a paragraph cannot */
+  --prose-link: color-mix(in srgb, var(--link) 78%, var(--fg-1));
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
 
 html, body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 16px/1.55 system-ui, sans-serif;
+  background: var(--bg-1);
+  color: var(--fg-2);
+  font: 0.875rem/1.375rem var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: var(--line-2) transparent; }
 
 .frame {
   display: flex;
@@ -36,9 +119,9 @@ a:hover { text-decoration: underline; }
   width: 16.5rem;
   height: 100vh;
   overflow: auto;
-  background: var(--side);
-  border-right: 1px solid var(--border);
-  padding: 1rem 0.85rem 2rem;
+  background: var(--bg-2);
+  border-right: 1px solid var(--line-1);
+  padding: 1rem 0.75rem 2rem;
   flex-shrink: 0;
 }
 
@@ -46,8 +129,10 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  color: var(--head);
-  font-weight: 700;
+  color: var(--fg-1);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   margin-bottom: 0.85rem;
 }
 
@@ -57,12 +142,16 @@ a:hover { text-decoration: underline; }
 
 #q {
   width: 100%;
-  background: var(--input);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--fg-1);
+  border: 1px solid var(--line-2);
   border-radius: 6px;
-  padding: 0.4rem 0.55rem;
+  padding: 0.375rem 0.5rem;
+  font: inherit;
+  font-size: 0.8125rem;
 }
+
+#q::placeholder { color: var(--fg-3); }
 
 .hits {
   list-style: none;
@@ -72,37 +161,41 @@ a:hover { text-decoration: underline; }
   z-index: 5;
   left: 0;
   right: 0;
-  background: var(--chrome);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--bg-3);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
   max-height: 16rem;
   overflow: auto;
 }
 
 .hits a {
   display: block;
-  padding: 0.35rem 0.6rem;
-  color: var(--head);
+  padding: 0.3rem 0.6rem;
+  color: var(--fg-1);
 }
 
-.hits a:hover { background: var(--input); }
+.hits a:hover { background: var(--bg-4); text-decoration: none; }
 
 .nav a, .nav summary {
   display: block;
-  color: var(--text);
-  padding: 0.28rem 0.4rem;
-  border-radius: 4px;
+  color: var(--fg-2);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
 }
 
-.nav details { margin: 0.15rem 0; }
-.nav details > a { padding-left: 1rem; font-size: 0.92rem; }
+.nav a:hover, .nav summary:hover { background: var(--bg-3); color: var(--fg-1); text-decoration: none; }
+.nav details { margin: 0.125rem 0; }
+.nav details > a { padding-left: 1rem; }
 .nav summary { cursor: pointer; list-style: none; }
 .nav summary::-webkit-details-marker { display: none; }
 .nav summary a { display: inline; padding: 0; color: inherit; }
+.nav summary a:hover { background: none; }
 
 .nav a.active, .nav summary.active {
-  background: var(--chrome);
-  color: var(--link);
+  background: var(--bg-4);
+  color: var(--fg-1);
 }
 
 .main { flex: 1; min-width: 0; }
@@ -112,89 +205,148 @@ a:hover { text-decoration: underline; }
   justify-content: flex-end;
   align-items: center;
   gap: 1rem;
-  padding: 0.7rem 1.5rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 1.5rem;
+  border-bottom: 1px solid var(--line-1);
 }
 
-.aux { display: flex; gap: 1rem; font-weight: 600; }
+.aux { display: flex; gap: 1rem; font-size: 0.8125rem; font-weight: 500; }
+.aux a { color: var(--fg-2); }
+.aux a:hover { color: var(--fg-1); text-decoration: none; }
 
 .menu-btn {
   display: none;
   margin-right: auto;
-  background: var(--chrome);
-  color: var(--head);
-  border: 1px solid var(--border);
+  background: var(--bg-3);
+  color: var(--fg-1);
+  border: 1px solid var(--line-2);
   border-radius: 6px;
-  padding: 0.3rem 0.6rem;
+  padding: 0.25rem 0.6rem;
+  font: inherit;
+  font-size: 0.8125rem;
 }
 
+/* the article: the app's wiki-article scale (frontend/src/styles/article.css) */
 .prose {
   max-width: 52rem;
   padding: 1.5rem 1.75rem 3rem;
 }
 
-.prose h1, .prose h2, .prose h3, .prose h4 {
-  color: var(--head);
-  line-height: 1.25;
+.prose > :first-child { margin-top: 0; }
+
+.prose :is(h1, h2, h3) { color: var(--fg-1); }
+
+.prose h1 {
+  font-size: 1.75rem;
+  line-height: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
 }
 
-.prose h1 { font-size: 2rem; margin: 0 0 1rem; }
-.prose h2 { font-size: 1.35rem; margin: 1.8rem 0 0.7rem; }
-.prose h3 { font-size: 1.1rem; }
+.prose h2 {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid var(--line-1);
+}
 
-.prose p, .prose li { margin: 0.55rem 0; }
+.prose h3 {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.prose :is(h4, h5, h6) {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.375rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-3);
+}
+
+.prose p { margin: 0.5rem 0; }
+.prose li { margin: 0.25rem 0; }
+.prose li::marker { color: var(--fg-3); }
+.prose :is(b, strong) { font-weight: 600; color: var(--fg-1); }
+.prose a { color: var(--prose-link); }
+.prose img { max-width: 100%; height: auto; }
 
 .prose table {
   width: 100%;
+  margin: 0.75rem 0;
   border-collapse: collapse;
-  background: var(--chrome);
-  font-size: 0.95rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
 }
 
-.prose th, .prose td {
-  border: 1px solid var(--border);
-  padding: 0.4rem 0.55rem;
+.prose :is(th, td) {
+  border: 1px solid var(--line-1);
+  padding: 0.25rem 0.5rem;
   text-align: left;
   vertical-align: top;
 }
 
-.prose th { color: var(--head); }
+.prose th { background: var(--bg-2); color: var(--fg-1); font-weight: 600; }
 
-.prose pre, .prose code {
-  background: var(--input);
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.78125rem;
+  color: var(--fg-1);
+  background: var(--bg-3);
+  padding: 0.0625rem 0.3125rem;
   border-radius: 4px;
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.88em;
 }
-
-.prose code { padding: 0.1em 0.3em; }
 
 .prose pre {
-  padding: 0.85rem 1rem;
+  margin: 0.75rem 0;
+  padding: 0.375rem 0.75rem;
   overflow: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-1);
+  border-radius: 8px;
+  background: var(--bg-0);
+  font: 0.78125rem/1.25rem var(--font-mono);
 }
 
-.prose pre code { padding: 0; background: none; }
+.prose pre code { padding: 0; background: none; font: inherit; }
 
 .prose blockquote {
-  margin: 1rem 0;
-  padding: 0.2rem 0.9rem;
-  border-left: 3px solid var(--accent);
-  color: var(--head);
+  margin: 0.75rem 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--line-2);
+  color: var(--fg-2);
 }
+
+/* highlighted code (Hugo's chroma classes) in the page's syntax tokens */
+.chroma { background: none; color: var(--fg-1); }
+.chroma :is(.k, .kc, .kd, .kn, .kp, .kr, .kt, .nt, .ow) { color: var(--syn-kw); }
+.chroma :is(.s, .sa, .sb, .sc, .s1, .s2, .se, .sh, .si, .sx) { color: var(--syn-str); }
+.chroma :is(.m, .mb, .mf, .mh, .mi, .il, .mo) { color: var(--syn-num); }
+.chroma :is(.nf, .fm, .nc, .nd, .nn) { color: var(--syn-fn); }
+.chroma :is(.nv, .vc, .vg, .vi, .no, .nb, .bp, .na) { color: var(--syn-ref); }
+.chroma :is(.c, .c1, .ch, .cm, .cp, .cpf, .cs) { color: var(--syn-com); font-style: italic; }
+.chroma :is(.o, .p) { color: var(--fg-2); }
 
 .callout {
-  margin: 1rem 0;
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--chrome);
+  --kind: var(--accent);
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line-1);
+  border-left: 3px solid var(--kind);
+  border-radius: 8px;
+  background: var(--bg-3);
 }
 
-.callout-warning { border-left: 4px solid var(--accent); }
-.callout-note { border-left: 4px solid #89e0eb; }
-.callout-important { border-left: 4px solid var(--link); }
+.callout strong { color: var(--fg-1); }
+.callout-warning { --kind: var(--orange); }
+.callout-note { --kind: var(--blue); }
+.callout-important { --kind: var(--accent); }
 
 .pmt-banner {
   display: block;
@@ -202,26 +354,26 @@ a:hover { text-decoration: underline; }
   max-width: 56rem;
   margin: 0 0 1.5rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-1);
 }
 
 .pmt-shot-note {
-  margin: 1rem 0;
-  padding: 0.75rem 1rem;
-  border-left: 3px solid var(--link);
-  background: var(--chrome);
-  color: var(--text);
-  font-size: 0.9rem;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 2px solid var(--link);
+  background: var(--bg-3);
+  color: var(--fg-2);
+  font-size: 0.8125rem;
 }
 
-.edit { margin-top: 2.5rem; font-size: 0.9rem; }
+.edit { margin-top: 2.5rem; font-size: 0.8125rem; }
 
 .foot {
   margin-top: 1.5rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.85rem;
-  color: #7f96ad;
+  border-top: 1px solid var(--line-1);
+  font-size: 0.75rem;
+  color: var(--fg-3);
 }
 
 .visually-hidden {

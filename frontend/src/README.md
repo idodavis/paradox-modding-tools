@@ -70,11 +70,13 @@ const { id } = defineProps<{ id: string }>();
 ## Wails events
 
 Subscribed once, in `app/events.ts`, called from `main.ts`; each event refreshes what it changes (its queries, the
-scan progress, the git store). The subscriptions a component draws stay in it: the IDE's (`fs:changed` to its
-explorer and models, `search:hits` to its search) Publish's upload progress (`steam:progress`) and the status bar's wiki downloads (`wiki:progress`). Payloads are typed by Go's
-`application.RegisterEvent`, which the bindings declare on `Events.CustomEvents`: no casts. The windows' events
-(`window:*`) are there too: what each window holds (`stores/windows.ts`' `others`), tabs handed between them, and a
-save in one that the others read again.
+scan progress, the git store). The editor's subscriptions stay with the module that draws them: `fs:changed` in
+`editor/models.ts`, `search:hits` in `editor/search.ts`; a component's own stay in it: Publish's upload progress
+(`steam:progress`) and the status bar's wiki downloads (`wiki:progress`). The windows' events are not
+`app/events.ts`'s: `stores/windows.ts` answers the ones about windows (`window:opened`, `window:state`,
+`window:closed`, `window:closing`, `window:show`, `window:saved`) and `editor/handover.ts` the ones about tabs
+(`window:tabs-handed`, `window:tab-requested`; the protocol table is at its head). Payloads are typed by Go's
+`application.RegisterEvent`, which the bindings declare on `Events.CustomEvents`: no casts.
 
 ```ts
 Events.On("lang:ready", ({ data: id }) => void queryCache.invalidateQueries({ key: sessionKeys.live(id) }));

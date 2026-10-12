@@ -16,11 +16,10 @@ import OriginDot from "../../ui/OriginDot.vue";
 import ScriptSnippet from "../../ui/ScriptSnippet.vue";
 import SourceLink from "../../ui/SourceLink.vue";
 
-const { workspaceId, row, sources, live } = defineProps<{
+const { workspaceId, row, sources } = defineProps<{
   workspaceId: string;
   row: Row | null;
   sources: SourceFile[];
-  live: boolean;
 }>();
 
 const store = useWorkspaceStore();
@@ -41,12 +40,9 @@ const { data: lines } = useQuery(() =>
           col: site.col,
           definition: !!contest.value,
         })),
-    live,
   }),
 );
-const { data: readers } = useQuery(() =>
-  locReadersQuery({ id: workspaceId, key: row && "key" in row ? row.key : "", live }),
-);
+const { data: readers } = useQuery(() => locReadersQuery({ id: workspaceId, key: row && "key" in row ? row.key : "" }));
 
 const title = computed(() => {
   if (!row) return "";

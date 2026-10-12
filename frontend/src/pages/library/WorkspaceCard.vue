@@ -9,7 +9,7 @@ import { useQuery } from "@pinia/colada";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { Workspace } from "@services/models";
 import RemoveWorkspaceModal from "../../ui/RemoveWorkspaceModal.vue";
-import { languageQuery } from "../../queries";
+import { stateQuery } from "../../queries";
 import { useSettingsStore } from "../../stores/settings";
 import { modColor } from "../../stores/workspace";
 import { workspaceHomeRoute } from "../../app/pages";
@@ -19,12 +19,14 @@ const { workspace, active = false } = defineProps<{ workspace: Workspace; active
 
 const router = useRouter();
 const settings = useSettingsStore();
-const { data: health } = useQuery(() => languageQuery(workspace.id));
+const { data: state } = useQuery(() => stateQuery(workspace.id));
 const removeModal = useOverlay().create(RemoveWorkspaceModal);
 /** "1.14.2, install OK", the version left out where the install gives none. */
 const install = computed(() => {
-  const live = health.value;
-  return live ? [live.gameVersion, live.installOk ? "install OK" : "install not found"].filter(Boolean).join(", ") : "";
+  const current = state.value;
+  return current
+    ? [current.gameVersion, current.installOk ? "install OK" : "install not found"].filter(Boolean).join(", ")
+    : "";
 });
 
 const more = computed<DropdownMenuItem[]>(() => [

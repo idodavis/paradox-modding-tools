@@ -10,7 +10,7 @@ import { useMutation, useQuery, useQueryCache } from "@pinia/colada";
 import type { Listing } from "@services/models";
 import { SaveListing } from "@services/releaseservice";
 import SteamCompareView from "./SteamCompareView.vue";
-import { compareQuery, languageQuery, listingQuery, releaseKeys, summaryQuery } from "../../queries";
+import { compareQuery, listingQuery, releaseKeys, stateQuery, summaryQuery } from "../../queries";
 import { useWorkspaceStore } from "../../stores/workspace";
 import DescriptionEditor from "./DescriptionEditor.vue";
 import ListingImages from "./ListingImages.vue";
@@ -51,7 +51,7 @@ const ids = computed(() => ({ workspaceId: id, modId: modId.value }));
 const { data: loaded } = useQuery(() => listingQuery(ids.value));
 const { data: summary } = useQuery(() => summaryQuery(ids.value));
 const { data: steam } = useQuery(() => compareQuery(ids.value));
-const { data: language } = useQuery(() => languageQuery(id));
+const { data: state } = useQuery(() => stateQuery(id));
 
 /** The fields edited here until a save, by what the state bar calls them; images and links save at once. */
 const EDITED = {
@@ -205,7 +205,7 @@ function compare(): void {
             </UFormField>
             <UFormField
               label="Supported game version"
-              :help="language?.gameVersion ? `Installed game is ${language.gameVersion}` : undefined"
+              :help="state?.gameVersion ? `Installed game is ${state.gameVersion}` : undefined"
             >
               <UInput v-model="draft.supportedVersion" size="md" class="w-full font-mono" />
             </UFormField>

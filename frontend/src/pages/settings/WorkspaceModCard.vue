@@ -29,7 +29,7 @@ import OriginChip from "../../ui/OriginChip.vue";
 import OriginColorField from "./OriginColorField.vue";
 import ModThumb from "../../ui/ModThumb.vue";
 
-const { workspaceId, mod, live = false } = defineProps<{ workspaceId: string; mod: WorkspaceMod; live?: boolean }>();
+const { workspaceId, mod } = defineProps<{ workspaceId: string; mod: WorkspaceMod }>();
 const emit = defineEmits<{ removed: [] }>();
 
 const store = useWorkspaceStore();
@@ -37,7 +37,7 @@ const queryCache = useQueryCache();
 const ids = computed(() => ({ workspaceId, modId: mod.id }));
 const { data: summary } = useQuery(() => summaryQuery(ids.value));
 const { data: upload } = useQuery(() => uploadFilesQuery(ids.value));
-const { data: health } = useQuery(() => healthQuery({ id: workspaceId, live }));
+const { data: health } = useQuery(() => healthQuery({ id: workspaceId }));
 const thumbnail = computed(() => mod.thumbnail || summary.value?.thumbnailAbs || "");
 const { data: image } = useQuery(() => imageQuery(thumbnail.value));
 

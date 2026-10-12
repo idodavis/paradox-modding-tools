@@ -53,7 +53,7 @@ export function reach(edges: Edge[], start: string, forward: boolean): Map<strin
 /** The page's defaults: three steps out, 120 nodes, fan-outs past six folded, macros followed. */
 const DEFAULTS = { depth: 3, maxNodes: 120, fanout: 6, origins: [] as string[], scripted: true, follow: true };
 
-export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefOrGetter<boolean>) {
+export function useEventGraph(workspaceId: MaybeRefOrGetter<string>) {
   const params = ref<Params>({ root: "", expand: [], ...DEFAULTS });
   const hidden = ref<string[]>([]);
   const selected = shallowRef("");
@@ -61,14 +61,10 @@ export function useEventGraph(workspaceId: MaybeRefOrGetter<string>, live: Maybe
   const search = refDebounced(searchTerm, 200);
   const settings = useSettingsStore();
 
-  const { data: graph, error } = useQuery(() =>
-    graphQuery({ id: toValue(workspaceId), params: params.value, live: toValue(live) }),
-  );
-  const { data: detail } = useQuery(() =>
-    eventDetailQuery({ id: toValue(workspaceId), event: selected.value, live: toValue(live) }),
-  );
+  const { data: graph, error } = useQuery(() => graphQuery({ id: toValue(workspaceId), params: params.value }));
+  const { data: detail } = useQuery(() => eventDetailQuery({ id: toValue(workspaceId), event: selected.value }));
   const { data: roots, isLoading: searching } = useQuery(() =>
-    rootsQuery({ id: toValue(workspaceId), search: search.value, live: toValue(live) }),
+    rootsQuery({ id: toValue(workspaceId), search: search.value }),
   );
 
   // the graph without the kinds hidden in the page, and the fires among what is left

@@ -15,9 +15,9 @@ import type { Progress } from "@services/internal/steam/models";
 import { Convert, ExportZip, ImportSteamExtras, PublishSteam } from "@services/releaseservice";
 import { OpenFolder } from "@services/workspaceservice";
 import { pickSave } from "../../lib/nativeDialog";
-import { useLiveEnabled } from "../../composables/useLiveEnabled";
 import { rowsOf, sitesOf } from "../../composables/useHealth";
-import { healthQuery, imageQuery, languageQuery, releaseKeys, steamStatusQuery, uploadFilesQuery } from "../../queries";
+import { healthQuery, imageQuery, releaseKeys, stateQuery, steamStatusQuery, uploadFilesQuery } from "../../queries";
+import { useWorkspaceStore } from "../../stores/workspace";
 import { bytes, plural } from "../../lib/format";
 
 // saved: nothing unsaved, so an upload sends what is on screen
@@ -36,9 +36,9 @@ const emit = defineEmits<{ back: []; compare: [] }>();
 
 const queryCache = useQueryCache();
 const ids = computed(() => ({ workspaceId: listing.workspaceId, modId: listing.modId }));
-const live = useLiveEnabled(() => listing.workspaceId);
-const { data: health } = useQuery(() => healthQuery({ id: listing.workspaceId, live: live.value }));
-const { data: language } = useQuery(() => languageQuery(listing.workspaceId));
+const store = useWorkspaceStore();
+const { data: health } = useQuery(() => healthQuery({ id: listing.workspaceId }));
+const { data: state } = useQuery(() => stateQuery(listing.workspaceId));
 const { data: upload } = useQuery(() => uploadFilesQuery(ids.value));
 const { data: image } = useQuery(() => imageQuery(listing.thumbnailAbs));
 
@@ -102,7 +102,7 @@ const checks = computed((): Check[] => {
           },
     {
       ok: undefined,
-      text: `Supports game ${listing.supportedVersion || "any version"}, installed ${language.value?.gameVersion ?? "unknown"}`,
+      text: `Supports game ${listing.supportedVersion || "any version"}, installed ${state.value?.gameVersion ?? "unknown"}`,
     },
     image.value
       ? {
@@ -110,7 +110,7 @@ const checks = computed((): Check[] => {
           text: `Thumbnail ${image.value.width} by ${image.value.height}, ${small ? "under" : "over Steam's"} 1 MB`,
         }
       : { ok: false, text: "No thumbnail" },
-    !live.value
+    !store.isOpen(listing.workspaceId)
       ? { ok: undefined, text: "Dangling references show once the workspace is open" }
       : {
           ok: !dangling,

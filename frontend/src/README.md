@@ -19,7 +19,8 @@ Every binding read is a Pinia Colada `useQuery` built from one `defineQueryOptio
 the one place for keys: each option writes its own, and a key factory exists only for a key that an event or a
 mutation refreshes. Stores hold client state only: no `loading`, `error`, `refresh` or copy of server data. A
 write to `config.json` refreshes what it feeds through `config:changed`; any other mutation invalidates the
-keys it changes. Query functions are pure: no store writes, no `EnsureSession`.
+keys it changes. Query functions make no store writes; a read of the open workspace's index is enabled by the
+store's `isOpen`.
 
 ```ts
 // queries.ts
@@ -79,7 +80,7 @@ scan progress, the git store). The editor's subscriptions stay with the module t
 `application.RegisterEvent`, which the bindings declare on `Events.CustomEvents`: no casts.
 
 ```ts
-Events.On("lang:ready", ({ data: id }) => void queryCache.invalidateQueries({ key: sessionKeys.live(id) }));
+Events.On("workspace:opened", ({ data: id }) => void queryCache.invalidateQueries({ key: workspaceKeys.open(id) }));
 ```
 
 ## Composables
@@ -88,8 +89,8 @@ Events.On("lang:ready", ({ data: id }) => void queryCache.invalidateQueries({ ke
 (`useEventListener`, `useIntervalFn`) or `onScopeDispose`. An async watcher is a query, or uses `onCleanup`.
 
 ```ts
-export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
-  const { data: health } = useQuery(() => languageQuery(toValue(workspaceId)));
+export function useIdeRoots(workspaceId: MaybeRefOrGetter<string>) {
+  const { data } = useQuery(() => ideRootsQuery(toValue(workspaceId)));
 ```
 
 ## Components

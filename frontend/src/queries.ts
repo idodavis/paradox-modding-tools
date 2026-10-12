@@ -1,8 +1,8 @@
 /**
  * Every binding the pages read, as Pinia Colada query options, one per RPC, each with its key; the keys an
- * event or a mutation refreshes are exported. A workspace's session-backed reads sit under ["session", id], so
- * an event or a mutation refreshes one workspace's and never builds another's (EnsureSession and GetHealth
- * build a session, dropping the live one).
+ * event or a mutation refreshes are exported. The open workspace's reads sit under ["workspace", id], so an event
+ * or a mutation refreshes one workspace's and never opens another (Open and the page RPCs open a workspace,
+ * closing the one open).
  */
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
@@ -16,7 +16,6 @@ import { DiagnosticCodes, DocumentSymbols, FindLoc, Hover, ReplacedBy } from "@s
 import { FileSearch } from "@services/searchservice";
 import { Available, Branches, CommitFiles, Log, Remotes, Repositories, Show, Status } from "@services/gitservice";
 import { CompareWithSteam, ListingSummary, LoadListing, SteamStatus, UploadFiles } from "@services/releaseservice";
-import { EnsureSession, GetLanguageHealth } from "@services/sessionservice";
 import { Guide, GuidePage, PatchPage, Patches } from "@services/wikiservice";
 import {
   DefaultModParent,
@@ -26,25 +25,22 @@ import {
   ListGames,
   ListWorkspaces,
   ModFolder,
+  Open,
+  State,
 } from "@services/workspaceservice";
+import { useWorkspaceStore } from "./stores/workspace";
 
 export const workspaceKeys = {
   /** Every workspace, and under it each one's own reads. */
   all: ["workspaces"] as const,
+  /** The open workspace, and under it everything read from its index. */
+  open: (id: string) => ["workspace", id] as const,
+  /** A workspace's state, read without opening it; every workspace's under `states`. */
+  state: (id: string) => ["workspace-state", id] as const,
+  states: ["workspace-state"] as const,
 };
 
 export const installKeys = { all: ["installs"] as const };
-
-export const sessionKeys = {
-  /** The live session, and under it everything read from it. */
-  live: (id: string) => ["session", id] as const,
-};
-
-/** The scan and dumps state, read without building a session. */
-export const languageKeys = {
-  all: ["language"] as const,
-  one: (id: string) => ["language", id] as const,
-};
 
 export const releaseKeys = {
   /** A mod's listing, and under it everything read of it. */
@@ -169,50 +165,47 @@ export const modFolderQuery = defineQueryOptions(({ parent, name }: { parent: st
   enabled: !!parent && !!name.trim(),
 }));
 
-/** The workspace's live session: built once, then its health. */
-export const sessionQuery = defineQueryOptions((id: string) => ({
-  key: sessionKeys.live(id),
-  query: () => EnsureSession(id),
+/** The workspace opened: its index built once, then its state. */
+export const openQuery = defineQueryOptions((id: string) => ({
+  key: workspaceKeys.open(id),
+  query: () => Open(id),
   enabled: !!id,
 }));
 
-export const languageQuery = defineQueryOptions((id: string) => ({
-  key: languageKeys.one(id),
-  query: () => GetLanguageHealth(id),
+/** A workspace's state: its install and scan, whether it is open and whose dumps it read, without opening it. */
+export const stateQuery = defineQueryOptions((id: string) => ({
+  key: workspaceKeys.state(id),
+  query: () => State(id),
   enabled: !!id,
 }));
 
-/** The Health report for a load order (empty: the workspace's own); only while the session is live. */
-export const healthQuery = defineQueryOptions(
-  ({ id, order = [], live }: { id: string; order?: readonly string[]; live: boolean }) => ({
-    key: ["session", id, "health", [...order]],
-    query: () => GetHealth(id, { order: [...order] }),
-    enabled: !!id && live,
-  }),
-);
+/** The Health report for a load order (empty: the workspace's own); only while the workspace is open. */
+export const healthQuery = defineQueryOptions(({ id, order = [] }: { id: string; order?: readonly string[] }) => ({
+  key: [...workspaceKeys.open(id), "health", [...order]],
+  query: () => GetHealth(id, { order: [...order] }),
+  enabled: useWorkspaceStore().isOpen(id),
+}));
 
 /** The event graph around a root, the one drawn kept while the next is read. */
-export const graphQuery = defineQueryOptions(({ id, params, live }: { id: string; params: Params; live: boolean }) => ({
-  key: ["session", id, "graph", params],
+export const graphQuery = defineQueryOptions(({ id, params }: { id: string; params: Params }) => ({
+  key: [...workspaceKeys.open(id), "graph", params],
   query: () => GetEventGraph(id, params),
-  enabled: !!id && live,
+  enabled: useWorkspaceStore().isOpen(id),
   placeholderData: (previous: EventGraph | null | undefined) => previous,
 }));
 
 /** One definition of the graph, opened. */
-export const eventDetailQuery = defineQueryOptions(
-  ({ id, event, live }: { id: string; event: string; live: boolean }) => ({
-    key: ["session", id, "event-detail", event],
-    query: () => GetEventDetail(id, event),
-    enabled: !!id && live && !!event,
-  }),
-);
+export const eventDetailQuery = defineQueryOptions(({ id, event }: { id: string; event: string }) => ({
+  key: [...workspaceKeys.open(id), "event-detail", event],
+  query: () => GetEventDetail(id, event),
+  enabled: useWorkspaceStore().isOpen(id) && !!event,
+}));
 
 /** The roots a search holds, by kind. */
-export const rootsQuery = defineQueryOptions(({ id, search, live }: { id: string; search: string; live: boolean }) => ({
-  key: ["session", id, "roots", search],
+export const rootsQuery = defineQueryOptions(({ id, search }: { id: string; search: string }) => ({
+  key: [...workspaceKeys.open(id), "roots", search],
   query: () => SearchRoots(id, search),
-  enabled: !!id && live,
+  enabled: useWorkspaceStore().isOpen(id),
   placeholderData: (previous: Roots | null | undefined) => previous,
 }));
 
@@ -249,24 +242,21 @@ export const guidePageQuery = defineQueryOptions(
 );
 
 /** The source lines of the places a pane shows: a definition's statement, a reference's line. */
-export const linesQuery = defineQueryOptions(
-  ({ id, places, live }: { id: string; places: SourceAt[]; live: boolean }) => ({
-    key: [
-      "session",
-      id,
-      "lines",
-      places.map((place) => `${place.path}:${place.line}:${place.col}:${place.definition}`),
-    ],
-    query: () => GetLines(id, places),
-    enabled: !!id && live && places.length > 0,
-  }),
-);
+export const linesQuery = defineQueryOptions(({ id, places }: { id: string; places: SourceAt[] }) => ({
+  key: [
+    ...workspaceKeys.open(id),
+    "lines",
+    places.map((place) => `${place.path}:${place.line}:${place.col}:${place.definition}`),
+  ],
+  query: () => GetLines(id, places),
+  enabled: useWorkspaceStore().isOpen(id) && places.length > 0,
+}));
 
 /** What reads a localization key. */
-export const locReadersQuery = defineQueryOptions(({ id, key, live }: { id: string; key: string; live: boolean }) => ({
-  key: ["session", id, "loc", key],
+export const locReadersQuery = defineQueryOptions(({ id, key }: { id: string; key: string }) => ({
+  key: [...workspaceKeys.open(id), "loc", key],
   query: () => LocReaders(id, key),
-  enabled: !!id && live && !!key,
+  enabled: useWorkspaceStore().isOpen(id) && !!key,
 }));
 
 /** The mods' copies of a game file, which the game loads in its place. */

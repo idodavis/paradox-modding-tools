@@ -13,11 +13,10 @@ import { ResetData } from "@services/appservice";
 import CreateModForm from "../../ui/CreateModForm.vue";
 import RemoveWorkspaceModal from "../../ui/RemoveWorkspaceModal.vue";
 import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
-import { healthQuery, languageQuery, workspacesQuery } from "../../queries";
-import { modColor, useWorkspaceStore } from "../../stores/workspace";
+import { healthQuery, stateQuery, workspacesQuery } from "../../queries";
+import { dumpsState, modColor, useWorkspaceStore } from "../../stores/workspace";
 import { plural } from "../../lib/format";
 import { rowsOf } from "../../composables/useHealth";
-import { dumpsState } from "../../composables/useLanguageHealth";
 import GameIcon from "../../ui/GameIcon.vue";
 import OriginChip from "../../ui/OriginChip.vue";
 import StatusFacts from "../../ui/StatusFacts.vue";
@@ -33,25 +32,23 @@ const guide = overlay.create(ScriptDocsGuide);
 
 const { data: workspaces, isPending } = useQuery(workspacesQuery);
 const { activeWorkspace: active } = storeToRefs(store);
-const { data: language } = useQuery(() => languageQuery(active.value?.id ?? ""));
-const { data: health, refresh } = useQuery(() =>
-  healthQuery({ id: active.value?.id ?? "", live: !!language.value?.ready }),
-);
+const { data: state } = useQuery(() => stateQuery(active.value?.id ?? ""));
+const { data: health, refresh } = useQuery(() => healthQuery({ id: active.value?.id ?? "" }));
 // edits made since were indexed, so counts a while old are asked for again on return
 onActivated(() => {
-  if (active.value && language.value?.ready) void refresh();
+  if (active.value && store.isOpen(active.value.id)) void refresh();
 });
 
-const scanned = useTimeAgo(() => language.value?.scannedAt ?? 0);
+const scanned = useTimeAgo(() => state.value?.scannedAt ?? 0);
 /** "Crusader Kings III 1.14.2, install OK. Scanned 4 minutes ago." */
 const installLine = computed(() => {
   const ws = active.value;
-  const live = language.value;
-  const name = [store.game(ws?.gameId ?? "")?.name, live?.gameVersion].filter(Boolean).join(" ");
+  const current = state.value;
+  const name = [store.game(ws?.gameId ?? "")?.name, current?.gameVersion].filter(Boolean).join(" ");
   if (!ws?.installId) return `${name}, no install set.`;
-  if (!live) return name;
-  const state = `${name}, ${live.installOk ? "install OK" : "install not found"}.`;
-  return live.scannedAt ? `${state} Scanned ${scanned.value}.` : state;
+  if (!current) return name;
+  const line = `${name}, ${current.installOk ? "install OK" : "install not found"}.`;
+  return current.scannedAt ? `${line} Scanned ${scanned.value}.` : line;
 });
 
 const games = computed(() =>
@@ -65,7 +62,7 @@ const summary = computed(() => {
   return `${plural(count, "workspace")} across ${plural(across, "game")}.`;
 });
 
-const dumps = computed(() => dumpsState(language.value));
+const dumps = computed(() => dumpsState(state.value));
 
 // the Health page's own tiles' counts
 const counts = computed(() =>
@@ -97,7 +94,7 @@ function newMod(): void {
     gameId: ws.gameId,
     workspaceId: ws.id,
     locLang: ws.defaultLocLang || "english",
-    supportedVersion: language.value?.gameVersion ?? "",
+    supportedVersion: state.value?.gameVersion ?? "",
   });
 }
 
@@ -188,7 +185,7 @@ const { mutate: resetData, isLoading: resetting } = useMutation({
               v-if="dumps"
               type="button"
               class="flex h-5 items-center gap-1.25 self-start text-12 text-toned hover:text-highlighted"
-              @click="guide.open({ folders: language?.dumpFolders ?? [] })"
+              @click="guide.open({ folders: state?.dumpFolders ?? [] })"
             >
               <UIcon
                 :name="dumps.ok ? 'i-lucide-check' : 'i-lucide-triangle-alert'"

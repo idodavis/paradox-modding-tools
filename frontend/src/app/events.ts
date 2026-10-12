@@ -6,13 +6,13 @@
 import { useQueryCache } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { useDebounceFn } from "@vueuse/core";
-import { scans } from "../composables/useLanguageHealth";
 import { resendOpenFiles } from "../editor/models";
-import { fileKeys, installKeys, languageKeys, sessionKeys, wikiKeys, workspaceKeys } from "../queries";
+import { fileKeys, installKeys, wikiKeys, workspaceKeys } from "../queries";
 import { useEditorStore } from "../stores/editor";
 import { useGitStore } from "../stores/git";
 import { useSettingsStore } from "../stores/settings";
 import { holdsFiles } from "../stores/windows";
+import { scans } from "../stores/workspace";
 
 export function subscribeEvents(): void {
   const queryCache = useQueryCache();
@@ -21,38 +21,39 @@ export function subscribeEvents(): void {
   const git = useGitStore();
   const editor = useEditorStore();
 
-  Events.On("lang:scan-progress", ({ data }) => {
+  Events.On("install:scanning", ({ data }) => {
     scans.set(data.installId, { percent: data.percent, stage: data.stage });
   });
-  // one session is built at a time, so its readiness or failure ends every scan shown; the editors holding its
-  // workspace's files send it their text again
-  Events.On("lang:ready", ({ data: id }) => {
+  // one workspace is open at a time, so its opening or failure ends every scan shown; the editors holding its
+  // files send it their text again
+  Events.On("workspace:opened", ({ data: id }) => {
     scans.clear();
-    void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
-    void queryCache.invalidateQueries({ key: languageKeys.one(id) });
+    void queryCache.invalidateQueries({ key: workspaceKeys.open(id) });
+    void queryCache.invalidateQueries({ key: workspaceKeys.state(id) });
     if (holdsFiles && editor.editingWorkspaceId === id) resendOpenFiles();
   });
-  // a session closed (its inputs changed, or another workspace opened): its state is read again, which builds it anew
-  Events.On("lang:dropped", ({ data: id }) => {
-    void queryCache.invalidateQueries({ key: sessionKeys.live(id) });
-    void queryCache.invalidateQueries({ key: languageKeys.one(id) });
+  // the open workspace closed (its inputs changed, or another opened): its state is read again, and its pages'
+  // reads open it again where one is shown
+  Events.On("workspace:closed", ({ data: id }) => {
+    void queryCache.invalidateQueries({ key: workspaceKeys.open(id) });
+    void queryCache.invalidateQueries({ key: workspaceKeys.state(id) });
   });
-  // a failure refreshes no query: the rebuild would fail again
-  Events.On("lang:failed", ({ data: id }) => {
+  // a failure refreshes no read of the index: the build would fail again
+  Events.On("workspace:failed", ({ data: id }) => {
     scans.clear();
-    void queryCache.invalidateQueries({ key: languageKeys.one(id) });
+    void queryCache.invalidateQueries({ key: workspaceKeys.state(id) });
   });
-  // an install was scanned or read from its cache: its scan time and version
-  Events.On("lang:cache-updated", () => {
+  // an install was scanned or read from its cache: its scan time and version, in every workspace's state
+  Events.On("install:scanned", () => {
     void queryCache.invalidateQueries({ key: installKeys.all });
-    void queryCache.invalidateQueries({ key: languageKeys.all });
+    void queryCache.invalidateQueries({ key: workspaceKeys.states });
   });
   // config.json was written, in any window: what its section feeds is read again (a reset, "", all of it). The
-  // workspaces and installs feed the repositories they hold and Publish's listings; the language health first asks
-  // the session, which closes itself where its inputs changed (lang:dropped)
+  // workspaces and installs feed the repositories they hold and Publish's listings; the workspace's state first
+  // asks Go, which closes the open workspace where its inputs changed (workspace:closed)
   Events.On("config:changed", ({ data: section }) => {
     if (section !== "settings")
-      for (const key of [workspaceKeys.all, installKeys.all, languageKeys.all, ["git-repos"], ["release"]])
+      for (const key of [workspaceKeys.all, installKeys.all, workspaceKeys.states, ["git-repos"], ["release"]])
         void queryCache.invalidateQueries({ key });
     if (section === "settings" || !section) void settings.load();
   });

@@ -8,7 +8,6 @@ import { computed, useTemplateRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useFullscreen, useLocalStorage } from "@vueuse/core";
 import { useEventGraph } from "../../composables/useEventGraph";
-import { useLiveEnabled } from "../../composables/useLiveEnabled";
 import { useWorkspaceStore } from "../../stores/workspace";
 import { plural } from "../../lib/format";
 import EventDetail from "./EventDetail.vue";
@@ -21,7 +20,6 @@ const { id: workspaceId } = defineProps<{ id: string }>();
 
 const route = useRoute();
 const store = useWorkspaceStore();
-const live = useLiveEnabled(() => workspaceId);
 const {
   params,
   hidden,
@@ -38,7 +36,7 @@ const {
   select,
   setRoot,
   resetFilters,
-} = useEventGraph(() => workspaceId, live);
+} = useEventGraph(() => workspaceId);
 const canvas = useTemplateRef("canvas");
 const page = useTemplateRef<HTMLElement>("page");
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(page);

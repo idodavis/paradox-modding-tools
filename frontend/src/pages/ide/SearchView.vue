@@ -122,7 +122,6 @@ const { data: lines } = useQuery(() =>
   linesQuery({
     id: store.activeWorkspaceId,
     places: missing.value.map((row) => ({ path: row.path, line: row.line, col: row.col, definition: false })),
-    live: true,
   }),
 );
 /** A result's line split around its match. */

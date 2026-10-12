@@ -217,9 +217,10 @@ const { data: files } = useQuery(() =>
 const { data: symbols } = useQuery(() =>
   symbolsQuery({ id: id.value, path: mode.value === "symbols" ? editor.activeFile : "" }),
 );
-const { data: events } = useQuery(() =>
-  rootsQuery({ id: id.value, search: query.value, live: mode.value === "events" && !!query.value }),
-);
+const { data: events } = useQuery(() => ({
+  ...rootsQuery({ id: id.value, search: query.value }),
+  enabled: mode.value === "events" && !!query.value && store.isOpen(id.value),
+}));
 const { data: locs } = useQuery(() => locQuery({ id: id.value, prefix: mode.value === "events" ? query.value : "" }));
 const lists = computed((): CommandPaletteGroup<Item>[] => {
   switch (mode.value) {

@@ -9,7 +9,6 @@ import { useRouter } from "vue-router";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import { CARDS, rowsOf, typeOf, useHealth, type Card, type Row } from "../../composables/useHealth";
 import { countKinds } from "../../lib/format";
-import { useLiveEnabled } from "../../composables/useLiveEnabled";
 import { useWorkspaceStore } from "../../stores/workspace";
 import HealthDetail from "./HealthDetail.vue";
 import HealthTable from "./HealthTable.vue";
@@ -20,8 +19,7 @@ const { id, card: linkedCard = "", name = "" } = defineProps<{ id: string; card?
 
 const router = useRouter();
 const store = useWorkspaceStore();
-const live = useLiveEnabled(() => id);
-const { order, dirty, health, error, isPending, save, saving } = useHealth(() => id, live);
+const { order, dirty, health, error, isPending, save, saving } = useHealth(() => id);
 
 const GROUPS: { title: string; hint: string; cards: Card[] }[] = [
   { title: "Load order", hint: "Changes when you reorder mods", cards: ["contests", "overrides", "depends"] },
@@ -142,7 +140,7 @@ const PANES = [{ slot: "table", defaultSize: 65, minSize: 20, maxSize: 80 }, { s
         />
       </template>
       <template #detail>
-        <HealthDetail :workspace-id="id" :row="open" :sources="health?.sources ?? []" :live="live" />
+        <HealthDetail :workspace-id="id" :row="open" :sources="health?.sources ?? []" />
       </template>
     </USplitter>
 

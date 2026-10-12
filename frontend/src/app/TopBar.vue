@@ -1,19 +1,18 @@
 <script setup lang="ts">
 /**
- * The top bar on every page: PMT and the Library, the workspace switcher and the
- * workspace's page tabs, then its scan, search, light and dark, and Settings. On a workspace's page it
- * builds the workspace's session. A page but the IDE opens in a window of its own from its tab's menu; its tab then
- * brings that window up, and its menu brings the page back.
+ * The top bar on every page: PMT and the Library, the workspace switcher and the workspace's page tabs, then its
+ * scan, search, light and dark, and Settings. A page but the IDE opens in a window of its own from its tab's menu;
+ * its tab then brings that window up, and its menu brings the page back.
  */
 import { computed, useTemplateRef } from "vue";
+import { storeToRefs } from "pinia";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import { until, useElementSize, useTimeAgo } from "@vueuse/core";
 import type { ContextMenuItem, DropdownMenuItem } from "@nuxt/ui";
 import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
 import { useCommandsStore } from "../stores/commands";
-import { useLanguageHealth } from "../composables/useLanguageHealth";
-import { sessionQuery, workspacesQuery } from "../queries";
+import { workspacesQuery } from "../queries";
 import { useSettingsStore } from "../stores/settings";
 import { useWorkspaceStore } from "../stores/workspace";
 import { Close, Show } from "@services/windowservice";
@@ -27,10 +26,7 @@ const palette = useCommandsStore();
 const settings = useSettingsStore();
 
 const { data: workspaces } = useQuery(workspacesQuery);
-// the open workspace's session, built on its pages only (the router's guard makes it the active one); none on the
-// Library and the wizard
-useQuery(() => sessionQuery(route.name && isWorkspacePage(route.name) ? store.activeWorkspaceId : ""));
-const { health, scan } = useLanguageHealth(() => store.activeWorkspaceId);
+const { state, scan } = storeToRefs(store);
 
 const TAB = "flex h-11 items-center gap-1.5 px-2.5 -mb-px border-b-2 text-13 font-medium whitespace-nowrap";
 function tabClass(on: boolean): string[] {
@@ -112,7 +108,7 @@ const switcher = computed(
 );
 
 const scanned = useTimeAgo<"second" | "minute" | "hour" | "day" | "week" | "month" | "year">(
-  () => health.value?.scannedAt ?? 0,
+  () => state.value?.scannedAt ?? 0,
   {
     messages: {
       justNow: "just now",
@@ -132,7 +128,7 @@ const scanned = useTimeAgo<"second" | "minute" | "hour" | "day" | "week" | "mont
 
 /** "1.14.2 scanned 4 min ago"; a narrow bar keeps the age. */
 const scanText = computed(() =>
-  [compact.value ? "" : health.value?.gameVersion, `scanned ${scanned.value}`].filter(Boolean).join(" "),
+  [compact.value ? "" : state.value?.gameVersion, `scanned ${scanned.value}`].filter(Boolean).join(" "),
 );
 </script>
 
@@ -203,19 +199,19 @@ const scanText = computed(() =>
 
     <div class="ms-auto flex shrink-0 items-center gap-1.5">
       <div
-        v-if="health"
+        v-if="state"
         class="flex h-7 items-center gap-1.5 rounded-md border border-default bg-elevated ps-2 pe-2.5 text-12 whitespace-nowrap text-toned"
       >
         <span
           class="size-1.75 shrink-0 rounded-full"
-          :class="[health.installOk ? 'bg-success' : 'bg-error', { 'animate-pulse': scan }]"
+          :class="[state.installOk ? 'bg-success' : 'bg-error', { 'animate-pulse': scan }]"
         />
         <template v-if="scan">
           <span>{{ scan.stage }}</span>
           <span class="tabular-nums">{{ scan.percent }}%</span>
         </template>
-        <span v-else-if="!health.installOk">Install not found</span>
-        <span v-else-if="health.scannedAt">{{ scanText }}</span>
+        <span v-else-if="!state.installOk">Install not found</span>
+        <span v-else-if="state.scannedAt">{{ scanText }}</span>
         <span v-else>Not scanned</span>
       </div>
       <UTooltip text="Search and commands" :kbds="['meta', 'K']">

@@ -19,11 +19,9 @@ import {
 import CreateModForm from "../../ui/CreateModForm.vue";
 import RemoveWorkspaceModal from "../../ui/RemoveWorkspaceModal.vue";
 import ScriptDocsGuide from "../../ui/ScriptDocsGuide.vue";
-import { dumpsState } from "../../composables/useLanguageHealth";
-import { useLiveEnabled } from "../../composables/useLiveEnabled";
 import { pickDirectory } from "../../lib/nativeDialog";
-import { languageQuery, workspacesQuery } from "../../queries";
-import { modColor, updatePrefs, useWorkspaceStore } from "../../stores/workspace";
+import { stateQuery, workspacesQuery } from "../../queries";
+import { dumpsState, modColor, updatePrefs, useWorkspaceStore } from "../../stores/workspace";
 import { LOC_LANGUAGES, SETTINGS, SETTINGS_SECTIONS, WORKSPACE_TOOLS, type SettingsSection } from "../../app/pages";
 import AppearanceSettings from "./AppearanceSettings.vue";
 import FieldGroup from "./FieldGroup.vue";
@@ -49,8 +47,7 @@ const guide = overlay.create(ScriptDocsGuide);
 const { data: workspaces } = useQuery(workspacesQuery);
 const workspace = computed(() => workspaces.value?.find((ws) => ws.id === id));
 const game = computed(() => store.game(workspace.value?.gameId ?? ""));
-const { data: language } = useQuery(() => languageQuery(id));
-const live = useLiveEnabled(() => id);
+const { data: state } = useQuery(() => stateQuery(id));
 const { mutate: savePrefs } = useMutation({ mutation: updatePrefs });
 const { mutate: run } = useMutation({ mutation: (save: () => Promise<unknown>) => save() });
 const PAGE_ITEMS: { label: string; value: string }[] = WORKSPACE_TOOLS.map((tool) => ({
@@ -140,7 +137,7 @@ const installId = computed({
   },
 });
 
-const dumps = computed(() => dumpsState(language.value));
+const dumps = computed(() => dumpsState(state.value));
 
 // Mods and load order: the game, then the mods in the order they load
 const mods = computed<WorkspaceMod[]>({
@@ -190,7 +187,7 @@ function createNew(): void {
     gameId: ws.gameId,
     workspaceId: ws.id,
     locLang: ws.defaultLocLang || "english",
-    supportedVersion: language.value?.gameVersion ?? "",
+    supportedVersion: state.value?.gameVersion ?? "",
   });
 }
 
@@ -316,18 +313,14 @@ function rowClass(on: boolean): string[] {
               :color="dumps ? (dumps.ok ? 'success' : 'warning') : 'neutral'"
             />
           </div>
-          <p
-            v-for="folder in language?.dumpFolders ?? []"
-            :key="folder"
-            class="font-mono text-12 break-all text-dimmed"
-          >
+          <p v-for="folder in state?.dumpFolders ?? []" :key="folder" class="font-mono text-12 break-all text-dimmed">
             {{ folder }}
           </p>
           <UButton
             label="How to make script_docs"
             icon="i-lucide-book-open"
             class="self-start"
-            @click="guide.open({ folders: language?.dumpFolders ?? [] })"
+            @click="guide.open({ folders: state?.dumpFolders ?? [] })"
           />
         </SettingSection>
       </div>
@@ -413,7 +406,6 @@ function rowClass(on: boolean): string[] {
               :key="selected.id"
               :workspace-id="id"
               :mod="selected"
-              :live="live"
               @removed="chosen = ''"
             />
             <div v-else class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-default bg-muted">

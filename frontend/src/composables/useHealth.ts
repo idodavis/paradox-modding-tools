@@ -128,7 +128,7 @@ function sameOrder(first: readonly string[], second: readonly string[]): boolean
   return first.length === second.length && first.every((id, i) => id === second[i]);
 }
 
-export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefOrGetter<boolean>) {
+export function useHealth(workspaceId: MaybeRefOrGetter<string>) {
   const store = useWorkspaceStore();
 
   // the workspace's order as Go keeps it; a drag survives a refresh that leaves it as it was
@@ -150,9 +150,7 @@ export function useHealth(workspaceId: MaybeRefOrGetter<string>, live: MaybeRefO
     error,
     isPending,
     refetch,
-  } = useQuery(() =>
-    healthQuery({ id: toValue(workspaceId), order: dirty.value ? order.value : [], live: toValue(live) }),
-  );
+  } = useQuery(() => healthQuery({ id: toValue(workspaceId), order: dirty.value ? order.value : [] }));
   // the page is kept alive, so a report already shown is asked for again on return: edits made
   // meanwhile were indexed (a first visit's fetch is still running, and a refetch would cancel it)
   onActivated(() => {

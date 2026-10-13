@@ -13,7 +13,7 @@ import { useLocalStorage } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { RenamePath } from "@services/fileservice";
 import { DidClose } from "@services/ideservice";
-import type { Diagnostic } from "@services/internal/lsp";
+import type { Diagnostic, Range } from "@services/internal/lsp";
 import type { PanelResults } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { saveFile } from "../editor/models";
@@ -29,6 +29,8 @@ export type Layout = { group: number } | { split: "row" | "column"; parts: Layou
 export type Edge = "left" | "right" | "up" | "down" | "middle";
 /** A place a tab is asked to show: a 0-based line and UTF-8 byte column, as the backend counts. */
 export type Cursor = { path: string; line: number; col: number };
+/** The statement a file's code marks: the widget the Visual view selected, where this file writes it. */
+export type Marked = { path: string; range: Range };
 /** A rename, move or delete done in the explorer; a delete moved the path into the trash. */
 export type FileMove = { from: string; to: string; deleted?: boolean };
 
@@ -103,6 +105,7 @@ export const useEditorStore = defineStore("editor", () => {
   const problems = ref(new Map<string, Diagnostic[]>());
   const caret = ref<{ line: number; character: number; col: number } | null>(null);
   const cursor = ref<Cursor | null>(null);
+  const marked = ref<Marked | null>(null);
   const results = ref<PanelResults | null>(null);
   const selected = ref<string[]>([]);
   const comparing = ref("");
@@ -440,6 +443,7 @@ export const useEditorStore = defineStore("editor", () => {
     problems,
     caret,
     cursor,
+    marked,
     results,
     selected,
     comparing,

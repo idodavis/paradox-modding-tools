@@ -50,7 +50,7 @@ func main() {
 		application.NewService(&services.FileService{}),
 		application.NewService(workspaces),
 		application.NewService(services.NewIdeService(config, workspaces)),
-		application.NewService(services.NewDrawService(workspaces, config)),
+		application.NewService(services.NewDrawService(workspaces)),
 		application.NewService(services.NewEventGraphService(workspaces)),
 		application.NewService(services.NewHealthService(workspaces)),
 		application.NewService(services.NewWikiService(config, workspaces, wikis)),

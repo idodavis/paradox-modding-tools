@@ -1,11 +1,10 @@
-// draw_test.go covers the GUI render on the ck3 fixture install: the evaluator's answers and the facts it keeps, the
-// block reader, the opening state, a window resolved through its types, templates and blocks, and the golden list.
+// draw_test.go covers the GUI render on the ck3 fixture install: the block reader, the opening state, a window
+// resolved through its types, templates and blocks, the layout's branches and rules, an entry drawn alone, and a
+// part's properties.
 
 package draw
 
 import (
-	"encoding/json"
-	"flag"
 	"fmt"
 	"math"
 	"os"
@@ -21,8 +20,6 @@ import (
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/workspace"
 )
-
-var update = flag.Bool("update", false, "write the goldens instead of comparing")
 
 var installs sync.Map
 
@@ -61,10 +58,17 @@ func fixture(t *testing.T) (*workspace.Session, string) {
 	return ws, dir
 }
 
-// request is the fixture window drawn at the board's resolution with no facts.
+// request is the fixture window drawn at the board's resolution.
 func request(name string) Request {
 	path, _ := filepath.Abs(filepath.Join("..", "testdata", ck3, "game", "gui", "v_window.gui"))
 	return Request{Path: path, Name: name, Width: 1920, Height: 1080, Scale: 1, Language: game.BaseLanguage}
+}
+
+// modRequest is a window of a mod file written for the test, drawn at a small resolution.
+func modRequest(ws *workspace.Session, dir, name, text string) Request {
+	path := filepath.Join(dir, "gui", name+".gui")
+	ws.DidChange(path, text)
+	return Request{Path: path, Name: name, Width: 100, Height: 100, Scale: 1, Language: game.BaseLanguage}
 }
 
 func TestBlockReader(t *testing.T) {
@@ -100,52 +104,9 @@ func TestOpeningState(t *testing.T) {
 	}
 }
 
-func TestEvaluate(t *testing.T) {
-	ws, _ := fixture(t)
-	facts := map[string]string{"Character.GetAge": "20", "Envoy.GetName": "Tlacaelel"}
-	evaluator := newEvaluator(ws, facts, game.BaseLanguage)
-	for _, tt := range []struct {
-		call, context, want string
-		row                 int
-		answer              answer
-		function            string // the Function the call's fact names; "" for no fact
-	}{
-		{"yes", "", "", -1, answer{kind: game.DataBool, yes: true, known: true}, ""},
-		{"'(int32)16'", "", "", -1, answer{kind: game.DataNumber, number: 16, known: true}, ""},
-		{"GetVariableSystem.Exists('family')", "", "", -1, answer{kind: game.DataBool, known: true}, "VariableSystem.Exists"},
-		{"Not(GetVariableSystem.Exists('family'))", "", "", -1, answer{kind: game.DataBool, yes: true, known: true}, ""},
-		{"And(GetPlayer.IsAlive, GetVariableSystem.Exists('x'))", "", "", -1, answer{kind: game.DataBool, known: true}, ""},
-		{"Or(GetPlayer.IsAlive, GetPlayer.IsValid)", "", "", -1, answer{kind: game.DataBool, yes: true, known: true}, ""},
-		{"GetPlayer.IsAlive", "", "", -1, answer{kind: game.DataBool}, "Character.IsAlive"},
-		{"Character.IsValid", "Character", "", -1, answer{kind: game.DataBool, yes: true, known: true}, ""},
-		{"GreaterThan_int32(GetPlayer.GetAge, '(int32)16')", "", "", -1, answer{kind: game.DataBool, yes: true, known: true}, ""},
-		{"GreaterThan_int32(GetPlayer.GetAge, '(int32)30')", "", "", -1, answer{kind: game.DataBool, known: true}, ""},
-		{"GetPlayer.GetName", "", game.DataText, -1, answer{kind: game.DataText, text: "Name"}, "Character.GetName"},
-		{"Envoy.GetName", "", "", -1, answer{kind: game.DataText, text: "Tlacaelel", known: true}, ""},
-		{"Select_CString(GetPlayer.IsAlive, 'A', 'B')", "", "", -1, answer{kind: game.DataText, text: "A"}, ""},
-		{"Localize('v_key')", "", "", -1, answer{kind: game.DataText, text: "Fixture text", known: true}, ""},
-		{"PdxGuiWidget.GetIndexInDataModel", "", "", 1, answer{kind: game.DataNumber, number: 1, known: true}, ""},
-		{"IsDataModelEmpty(GetPlayer.GetVassals)", "", "", -1, answer{kind: game.DataBool, known: true}, ""},
-		{"PdxGuiWidget.IsTooltipLocked", "", "", -1, answer{kind: game.DataBool, known: true}, "PdxGuiWidget.IsTooltipLocked"},
-		{"NoSuchType.Char", "", "", -1, answer{kind: game.DataObject}, ""},
-	} {
-		evaluator.context, evaluator.row = tt.context, tt.row
-		got := evaluator.evaluate(tt.call, tt.want)
-		if got != tt.answer {
-			t.Errorf("%s: %+v, want %+v", tt.call, got, tt.answer)
-		}
-		if fact, asked := evaluator.asked[fold(tt.call)]; tt.function != "" && (!asked || fact.Function != tt.function) {
-			t.Errorf("%s: asked %+v, want the function %s", tt.call, fact, tt.function)
-		}
-	}
-	if !evaluator.missing["data function NoSuchType.Char"] {
-		t.Errorf("a step no type declares is missing: %v", evaluator.missing)
-	}
-}
-
 func TestResolveFixture(t *testing.T) {
 	ws, _ := fixture(t)
-	resolved, root, err := resolve(ws, request(layoutWindow), nil)
+	resolved, root, err := resolve(ws, request(layoutWindow))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,14 +135,11 @@ func TestResolveFixture(t *testing.T) {
 	if list := box.children[4]; list.rows != 3 {
 		t.Errorf("a data model draws three rows: %d", list.rows)
 	}
-	if variable := box.children[5]; variable.visibility != Hidden || variable.fact != "GetVariableSystem.Exists('v_flag')" {
-		t.Errorf("a variable is unset as the window opens: %+v", variable.visibility)
+	if bound := box.children[6]; bound.hidden {
+		t.Errorf("a visible that is a binding is the game's to answer, so the widget is drawn: %+v", bound)
 	}
-	if alive := box.children[6]; alive.visibility != Unknown {
-		t.Errorf("game data is unknown: %+v", alive.visibility)
-	}
-	if !slices.Contains(resolved.list.Missing, "texture v_frame.dds") {
-		t.Errorf("a texture by a path nothing holds is listed: %v", resolved.list.Missing)
+	if !resolved.missing["Texture not found: v_frame.dds"] {
+		t.Errorf("a texture by a path nothing holds is listed: %v", resolved.missing)
 	}
 	if len(resolved.list.Fonts) != 1 || resolved.list.Fonts[0].Name != "v_font" || resolved.list.Fonts[0].Style != "regular" {
 		t.Errorf("one font row: %+v", resolved.list.Fonts)
@@ -191,73 +149,8 @@ func TestResolveFixture(t *testing.T) {
 			t.Errorf("part %d's parent %d is not before it", i, part.Parent)
 		}
 	}
-	button, err := GUI(ws, request("v_button"), nil)
-	if err != nil || len(button.Parts) != 1 || button.Parts[0].Kind != "button" {
-		t.Errorf("a type is drawn alone as one widget of its kind: %+v, %v", button.Parts, err)
-	}
-	template, err := GUI(ws, request("v_faded"), nil)
-	if err != nil || len(template.Parts) != 1 || template.Parts[0].Key != "widget" {
-		t.Errorf("a template is drawn alone as a widget that uses it: %+v, %v", template.Parts, err)
-	}
-	if _, err := GUI(ws, request("no_such_window"), nil); err == nil {
+	if _, err := GUI(ws, request("no_such_window")); err == nil {
 		t.Error("a name the file does not hold is refused")
-	}
-}
-
-// portable is a list's text with the fixtures' folder and the system's path separator taken out, as the goldens are.
-func portable(text string) string {
-	root, _ := filepath.Abs(filepath.Join("..", "testdata"))
-	text = strings.ReplaceAll(text, strings.ReplaceAll(root, `\`, `\\`), "<fixtures>")
-	text = strings.ReplaceAll(text, root, "<fixtures>")
-	return strings.ReplaceAll(text, `\\`, "/")
-}
-
-// firstDifference is the first line where two texts differ, with both versions.
-func firstDifference(want, got string) string {
-	wantLines, gotLines := strings.Split(want, "\n"), strings.Split(got, "\n")
-	for i := range max(len(wantLines), len(gotLines)) {
-		wantLine, gotLine := "", ""
-		if i < len(wantLines) {
-			wantLine = wantLines[i]
-		}
-		if i < len(gotLines) {
-			gotLine = gotLines[i]
-		}
-		if wantLine != gotLine {
-			return fmt.Sprintf("line %d\nwant: %s\ngot:  %s", i+1, wantLine, gotLine)
-		}
-	}
-	return ""
-}
-
-func TestGoldenList(t *testing.T) {
-	ws, _ := fixture(t)
-	golden := filepath.Join("..", "testdata", "golden", "draw-ck3-vanilla-gui__v_window.json")
-	var lists []*List
-	for _, name := range []string{"v_window", "v_other_window", layoutWindow} {
-		list, err := GUI(ws, request(name), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lists = append(lists, list)
-	}
-	encoded, err := json.MarshalIndent(lists, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := portable(string(encoded)) + "\n"
-	if *update {
-		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	want, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(want) != got {
-		t.Errorf("the draw golden differs:\n%s", firstDifference(string(want), got))
 	}
 }
 
@@ -301,12 +194,12 @@ func TestLayoutBranches(t *testing.T) {
 
 func TestPlaceFixture(t *testing.T) {
 	ws, _ := fixture(t)
-	list, err := GUI(ws, request(layoutWindow), nil)
+	list, err := GUI(ws, request(layoutWindow))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if list.Width != 1920 || list.Height != 1080 {
-		t.Errorf("the scene is the resolution: %d by %d", list.Width, list.Height)
+		t.Errorf("a window's scene is the resolution: %d by %d", list.Width, list.Height)
 	}
 	root := list.Elements[0]
 	if root.Part != 0 || root.Box.Width != 200 || root.Box.Height != 100 {
@@ -322,61 +215,232 @@ func TestPlaceFixture(t *testing.T) {
 	if len(tops) < 2 || tops[1]-tops[0] != 24 {
 		t.Errorf("the second button sits 20 + 4 below the first: %v", tops)
 	}
-	hidden := slices.IndexFunc(list.Parts, func(part Part) bool { return part.Visibility == Hidden })
-	if hidden < 0 || slices.ContainsFunc(list.Elements, func(element Element) bool { return element.Part == hidden }) {
-		t.Errorf("a hidden part has no element: part %d", hidden)
+	// the data model's item: one part, drawn once a row
+	item := slices.IndexFunc(list.Parts, func(part Part) bool {
+		return part.Key == "v_label" && list.Parts[part.Parent].Key == "vbox"
+	})
+	rows := 0
+	for _, element := range list.Elements {
+		if element.Part == item && element.Text == nil {
+			rows++
+		}
 	}
-	hideUnknown := request(layoutWindow)
-	hideUnknown.HideUnknown = true
-	fewer, err := GUI(ws, hideUnknown, nil)
-	if err != nil || len(fewer.Elements) >= len(list.Elements) {
-		t.Errorf("hide unknown drops the unknown part's elements: %d of %d, %v", len(fewer.Elements), len(list.Elements), err)
+	if item < 0 || rows != 3 {
+		t.Errorf("a data model's item is drawn once a row: part %d drawn %d times", item, rows)
 	}
 }
 
-func TestPropertiesAndEdit(t *testing.T) {
+func TestVisible(t *testing.T) {
 	ws, dir := fixture(t)
-	path := filepath.Join(dir, "gui", "m_window.gui")
-	ws.DidChange(path, "window = {\n\tname = \"m\"\n\tv_box = {\n\t\tusing = v_sized\n\t\tspacing = 4\n\t}\n}\n")
-	req := Request{Path: path, Name: "m", Width: 100, Height: 100, Scale: 1, Language: game.BaseLanguage}
-	rows, err := Properties(ws, req, nil, 1)
+	list, err := GUI(ws, modRequest(ws, dir, "h", "window = {\n\tname = \"h\"\n\tsize = { 20 20 }\n\tvisible = no\n"+
+		"\twidget = { visible = no size = { 10 10 } }\n\twidget = { visible = \"[GetPlayer.IsAlive]\" size = { 10 10 } }\n}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var drawn []int
+	for _, element := range list.Elements {
+		drawn = append(drawn, element.Part)
+	}
+	if fmt.Sprint(drawn) != "[0 2]" {
+		t.Errorf("the entry is drawn whatever its visible says, visible = no hides, a binding draws: %v", drawn)
+	}
+}
+
+func TestProperties(t *testing.T) {
+	ws, dir := fixture(t)
+	req := modRequest(ws, dir, "m", "window = {\n\tname = \"m\"\n\tv_box = {\n\t\tusing = v_sized\n\t\tspacing = 4\n\t}\n}\n")
+	rows, err := Properties(ws, req, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	size := slices.IndexFunc(rows, func(row Property) bool { return row.Key == "size" })
 	spacing := slices.IndexFunc(rows, func(row Property) bool { return row.Key == "spacing" })
-	if size < 0 || spacing < 0 || rows[size].WrittenBy != "v_sized" || rows[size].Kind != "number" || rows[spacing].WrittenBy != "" {
-		t.Errorf("the rows say who wrote each: %+v", rows)
+	if size < 0 || spacing < 0 || rows[size].WrittenBy != "v_sized" || rows[size].Value != "{ 100 20 }" || rows[spacing].WrittenBy != "" {
+		t.Errorf("the rows say what each is written as and who wrote it: %+v", rows)
 	}
-	edits, err := Edit(ws, req, nil, Change{Part: 1, Key: "spacing", Value: "8", Before: -1})
-	if err != nil || len(edits) != 1 || edits[0].NewText != "8" || edits[0].Range.Start.Line != 4 {
-		t.Errorf("an own key's value is replaced in place: %+v, %v", edits, err)
-	}
-	edits, err = Edit(ws, req, nil, Change{Part: 1, Key: "width", Value: "{ 50 50 }", Before: -1})
-	if err != nil || len(edits) != 1 || edits[0].NewText != "\n\t\twidth = { 50 50 }" || edits[0].Range.Start.Line != 4 {
-		t.Errorf("a key the block does not write is added after its last statement: %+v, %v", edits, err)
-	}
-	edits, err = Edit(ws, req, nil, Change{Part: 1, Remove: true, Before: -1})
-	if err != nil || len(edits) != 1 || edits[0].NewText != "" || edits[0].Range.Start.Line != 1 {
-		t.Errorf("a removed part takes its line with it: %+v, %v", edits, err)
-	}
-	if _, err := Edit(ws, request("v_window"), nil, Change{Part: 1, Key: "x", Before: -1}); err == nil {
-		t.Error("the game's files are read only")
+	if _, err := Properties(ws, req, 9); err == nil {
+		t.Error("a part the window has not is refused")
 	}
 }
 
-func TestPruneFacts(t *testing.T) {
-	ws, _ := fixture(t)
-	remaining, dropped := PruneFacts(ws, map[string]string{"Character.GetName": "x", "Character.GetOldName": "y"})
-	if len(remaining) != 1 || fmt.Sprint(dropped) != "[Character.GetOldName]" {
-		t.Errorf("a fact no function backs is dropped: %v %v", remaining, dropped)
+// partNamed is the index of the part with a name; -1 for none.
+func partNamed(list *List, name string) int {
+	return slices.IndexFunc(list.Parts, func(part Part) bool { return part.Name == name })
+}
+
+// boxOf is the box of the first element a part draws; false for none.
+func boxOf(list *List, part int) (Box, bool) {
+	i := slices.IndexFunc(list.Elements, func(element Element) bool { return element.Part == part })
+	if i < 0 {
+		return Box{}, false
 	}
+	return list.Elements[i].Box, true
+}
+
+// childBoxes are the boxes of the parts under a part, in the order the list gives them.
+func childBoxes(list *List, parent int) []Box {
+	var boxes []Box
+	for part := range list.Parts {
+		if box, drawn := boxOf(list, part); drawn && list.Parts[part].Parent == parent {
+			boxes = append(boxes, box)
+		}
+	}
+	return boxes
+}
+
+func TestAnchors(t *testing.T) {
+	ws, _ := fixture(t)
+	rules, err := GUI(ws, request("v_layout_rules"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	container := partNamed(rules, "v_container")
+	box, _ := boxOf(rules, container)
+	icons := childBoxes(rules, container)
+	if len(icons) != 2 || icons[0].X+icons[0].Width != box.X+box.Width {
+		t.Errorf("a child anchored right with no widgetanchor ends at the container's right edge: %+v in %+v", icons, box)
+	}
+	entry, err := GUI(ws, request("v_hidden_entry"))
+	if err != nil || len(entry.Elements) == 0 || entry.Elements[0].Box.X+entry.Elements[0].Box.Width != 1920 {
+		t.Errorf("a window anchored top right ends at the scene's right edge: %+v, %v", entry.Elements, err)
+	}
+}
+
+func TestPercentSizes(t *testing.T) {
+	ws, _ := fixture(t)
+	list, err := GUI(ws, request("v_layout_rules"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := partNamed(list, "v_row")
+	box, _ := boxOf(list, row)
+	tabs := childBoxes(list, row)
+	if box.Width != 300 || len(tabs) != 3 {
+		t.Fatalf("the row takes its parent's room: %+v with %d tabs", box, len(tabs))
+	}
+	for _, tab := range tabs {
+		if tab.Width != 100 {
+			t.Errorf("each tab is a third of the row: %+v", tabs)
+		}
+	}
+}
+
+func TestContentSizes(t *testing.T) {
+	ws, _ := fixture(t)
+	list, err := GUI(ws, request("v_layout_rules"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	window, _ := boxOf(list, 0)
+	for _, tt := range []struct {
+		name string
+		want Box
+	}{
+		{"v_container", Box{X: window.X, Y: window.Y, Width: 20, Height: 30}},
+		{"v_background", window},
+		{"v_flow", Box{Width: 40, Height: 10}},
+		{"v_nothing", Box{}},
+	} {
+		got, drawn := boxOf(list, partNamed(list, tt.name))
+		if !drawn || got.Width != tt.want.Width || got.Height != tt.want.Height ||
+			tt.name != "v_flow" && tt.name != "v_nothing" && (got.X != tt.want.X || got.Y != tt.want.Y) {
+			t.Errorf("%s: %+v, want %+v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestEntriesAlone(t *testing.T) {
+	ws, _ := fixture(t)
+	button, err := GUI(ws, request("v_button"))
+	if err != nil || len(button.Parts) != 1 || button.Parts[0].Kind != "button" || button.Width != 10 || button.Height != 10 {
+		t.Errorf("a type is drawn alone as one widget of its kind, on a scene of its size: %+v, %d by %d, %v",
+			button.Parts, button.Width, button.Height, err)
+	}
+	template, err := GUI(ws, request("v_faded"))
+	if err != nil || len(template.Parts) != 1 || template.Parts[0].Key != "widget" ||
+		!slices.Contains(template.Missing, "Nothing to draw: v_faded has no size and no texture of its own") {
+		t.Errorf("a template is drawn alone as a widget that uses it, and one with no size is listed: %+v, %v, %v",
+			template.Parts, template.Missing, err)
+	}
+	icon, err := GUI(ws, request("v_icon"))
+	if err != nil || len(icon.Elements) != 1 || icon.Elements[0].Box.Width != 8 || icon.Elements[0].Box.Height != 8 ||
+		icon.Elements[0].Texture == nil || !strings.Contains(icon.Elements[0].Texture.URL, "v_bg.dds") {
+		t.Errorf("a text icon is its texture at its size: %+v, %v", icon.Elements, err)
+	}
+	format, err := GUI(ws, request("v_format"))
+	texts := 0
+	for _, element := range format.Elements {
+		if element.Text != nil && element.Text.Lines[0].Runs[0].Text == "Sample text" {
+			texts++
+		}
+	}
+	if err != nil || texts != 1 || format.Width == 0 {
+		t.Errorf("a format is a sample text in it, on a scene of the text's size: %+v, %v", format.Elements, err)
+	}
+}
+
+func TestTextDefault(t *testing.T) {
+	ws, _ := fixture(t)
+	list, err := GUI(ws, request("v_default_text"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := 0
+	for _, element := range list.Elements {
+		if element.Text == nil {
+			continue
+		}
+		texts++
+		if element.Text.Font != "v_font" || element.Text.Size != 12 {
+			t.Errorf("a text with no font size takes the install's textbox style: %+v", element.Text)
+		}
+	}
+	if texts != 2 {
+		t.Errorf("a textbox and a button, both with a text: %d drawn, missing %v", texts, list.Missing)
+	}
+}
+
+func TestBindingsAsWritten(t *testing.T) {
+	ws, _ := fixture(t)
+	list, err := GUI(ws, request("v_other_window"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var drawn []string
+	for _, element := range list.Elements {
+		if element.Text != nil {
+			drawn = append(drawn, element.Text.Lines[0].Runs[0].Text)
+		}
+	}
+	if fmt.Sprint(drawn) != "[[GetPlayer.GetName]]" {
+		t.Errorf("a text that is a binding is drawn as written: %q", drawn)
+	}
+}
+
+// layoutCounts are what a render's layout is read by: the elements wholly off the scene and the content-sized holders
+// of children with no size. A window drawn with every branch at once runs past the screen, so they are logged, never
+// asserted.
+func layoutCounts(list *List) (offScene, zeroSized int) {
+	holders := map[int]bool{}
+	for _, part := range list.Parts {
+		holders[part.Parent] = true
+	}
+	for _, element := range list.Elements {
+		box := element.Box
+		if box.X+box.Width <= 0 || box.Y+box.Height <= 0 || box.X >= float64(list.Width) || box.Y >= float64(list.Height) {
+			offScene++
+		}
+		if _, sized := game.Sizings[list.Parts[element.Part].Kind]; sized && holders[element.Part] && (box.Width == 0 || box.Height == 0) {
+			zeroSized++
+		}
+	}
+	return offScene, zeroSized
 }
 
 // TestInstallsResolve is the gate: a named window of each of the three installs resolves with every type and
-// template it names found, the text measured with the real fonts, and a render timed; what else is missing (a file
-// the install lacks, a fact nobody answered) is logged by kind. It runs only with
-// PMT_VANILLA_GATE=1 and the three PMT_TEST_INSTALL_ variables.
+// template it names found, the text measured with the real fonts, something drawn, and a render timed; what else is
+// missing (a file the install lacks) and the layout's counts are logged. It runs only with PMT_VANILLA_GATE=1 and
+// the three PMT_TEST_INSTALL_ variables.
 func TestInstallsResolve(t *testing.T) {
 	if testing.Short() || os.Getenv("PMT_VANILLA_GATE") == "" {
 		t.Skip("resolves windows of the three installs; set PMT_VANILLA_GATE=1")
@@ -405,17 +469,22 @@ func TestInstallsResolve(t *testing.T) {
 			continue
 		}
 		started := time.Now()
-		list, err := GUI(ws, Request{Path: file.Path, Name: tt.name, Width: 1920, Height: 1080, Scale: 1, Language: game.BaseLanguage}, nil)
+		list, err := GUI(ws, Request{Path: file.Path, Name: tt.name, Width: 1920, Height: 1080, Scale: 1, Language: game.BaseLanguage})
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("%s %s: %d parts, %d elements, %d facts, %d fonts, %d missing in %s", tt.id, tt.name, len(list.Parts),
-			len(list.Elements), len(list.Facts), len(list.Fonts), len(list.Missing), time.Since(started).Round(time.Millisecond))
+		offScene, zeroSized := layoutCounts(list)
+		t.Logf("%s %s: %d parts, %d elements (%d off the scene, %d holders with no size), %d fonts, %d missing in %s",
+			tt.id, tt.name, len(list.Parts), len(list.Elements), offScene, zeroSized, len(list.Fonts), len(list.Missing),
+			time.Since(started).Round(time.Millisecond))
+		if len(list.Elements) == 0 {
+			t.Errorf("%s %s: nothing is drawn", tt.id, tt.name)
+		}
 		kinds := map[string]int{}
 		for _, missing := range list.Missing {
-			kind, _, _ := strings.Cut(missing, " ")
+			kind, _, _ := strings.Cut(missing, ":")
 			kinds[kind]++
-			if kind == "type" || kind == "template" {
+			if kind == "Type not found" || kind == "Template not found" {
 				t.Errorf("%s %s: the install declares no %s", tt.id, tt.name, missing)
 			}
 		}

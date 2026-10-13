@@ -1,11 +1,12 @@
 // gui_resolve.go is pass 1: a GUI file's entry resolved into a tree of widgets. Each widget's type chain is followed
 // to its built-in kind, its templates and blocks expanded in the order they apply, the state a window opens in
-// applied, its visibility answered, and its text and textures found; every widget is listed as a part.
+// applied, and its text and textures found; every widget is listed as a part.
 
 package draw
 
 import (
 	"fmt"
+	"iter"
 	"maps"
 	"slices"
 	"strconv"
@@ -24,59 +25,64 @@ import (
 // maxDepth is how deep types, templates and widgets nest before a cycle is assumed.
 const maxDepth = 40
 
-// defaultRows is how many rows a data model draws where no fact gives its count.
+// defaultRows is how many rows a data model draws: its binding's count is the game's to know.
 const defaultRows = 3
 
+// widgetCaller is the word a widget key naming a type is resolved by.
+var widgetCaller = game.Shapes[game.ShapeWidget].Caller
+
 // entryHow is how each database a file's entries are drawn from is drawn: a window is its own statement, a type is
-// drawn by naming it and a template by using it.
+// drawn by naming it, a template by using it, a text icon as the icon it is and a format as a text in it.
 var entryHow = map[string]string{
 	"gui.widget": entryWidget, "gui.type": entryType, "gui.local_type": entryType,
 	"gui.template": entryTemplate, "gui.local_template": entryTemplate,
+	"gui.texticon": entryTextIcon, "gui.format": entryFormat,
 }
 
-// How an entry is drawn: a window is its own statement, a type is named and a template used.
+// How an entry is drawn: a window is its own statement, a type is named, a template used, a text icon is an icon
+// of its texture and size, and a format is a sample text written in it.
 const (
 	entryWidget   = "widget"
 	entryType     = "type"
 	entryTemplate = "template"
+	entryTextIcon = "texticon"
+	entryFormat   = "format"
 )
 
-// resolver is pass 1 over one request: the workspace, the parses made for it, the evaluator with the facts, and the
-// list being built with what was not found.
+// resolver is pass 1 over one request: the workspace, the parses made for it, and the list being built with what was
+// not found.
 type resolver struct {
-	ws        *workspace.Session
-	parses    workspace.Parses
-	evaluator *evaluator
-	list      *List
-	request   Request
-	fonts     map[string]*face // by name, style and size, the faces opened for this render
-	missing   map[string]bool
-	places    map[string]inventory.File // by path, where each file sits
+	ws       *workspace.Session
+	parses   workspace.Parses
+	list     *List
+	request  Request
+	alone    bool             // the entry is a type, template, text icon or format drawn by itself, not a window
+	fonts    map[string]*face // by name, style and size, the faces opened for this render
+	fallback *widget          // the install's textbox type: the style a text with none of its own is drawn in
+	missing  misses
+	places   map[string]inventory.File // by path, where each file sits
 }
 
 // resolve runs pass 1: the entry found by name, its widget tree resolved, every part listed.
-func resolve(ws *workspace.Session, request Request, facts map[string]string) (*resolver, *widget, error) {
-	evaluator := newEvaluator(ws, facts, request.Language)
+func resolve(ws *workspace.Session, request Request) (*resolver, *widget, error) {
 	resolver := &resolver{
-		ws: ws, parses: workspace.Parses{}, evaluator: evaluator, request: request, fonts: map[string]*face{},
-		missing: evaluator.missing, places: map[string]inventory.File{},
-		list: &List{Elements: []Element{}, Parts: []Part{}, Fonts: []Font{}, Facts: []Fact{}, Missing: []string{}},
+		ws: ws, parses: workspace.Parses{}, request: request, fonts: map[string]*face{},
+		missing: misses{}, places: map[string]inventory.File{},
+		list: &List{Elements: []Element{}, Parts: []Part{}, Fonts: []Font{}, Missing: []string{}},
 	}
+	resolver.fallback = resolver.textDefault()
 	entry, key, err := resolver.entry(request.Path, request.Name)
 	if err != nil {
 		return nil, nil, err
 	}
 	root := resolver.widget(nil, key, entry, 0)
 	resolver.list.Parts[0].Name = request.Name
-	for _, asked := range evaluator.order {
-		resolver.list.Facts = append(resolver.list.Facts, evaluator.asked[asked])
-	}
-	resolver.list.Missing = slices.Sorted(maps.Keys(resolver.missing))
 	return resolver, root, nil
 }
 
 // entry is the statement the request's name resolves to in the file, and the key it is drawn by: a window is its
-// own statement; a type is drawn by its name with nothing of its own, and a template by a widget that uses it.
+// own statement; a type is drawn by its name with nothing of its own, a template by a widget that uses it, a text icon
+// by an icon of its texture and size, and a format by a text written in it.
 func (resolver *resolver) entry(path, name string) (statement, string, error) {
 	parsed, _, err := resolver.ws.Parsed(resolver.parses, path)
 	if err != nil {
@@ -90,33 +96,74 @@ func (resolver *resolver) entry(path, name string) (statement, string, error) {
 			if occurrence.Role != schema.Defines || occurrence.ID != name || !drawable || !isAssign {
 				continue
 			}
-			own, key := statement{assign: assign, parsed: parsed, path: path}, assign.Key.Text
-			switch how {
-			case entryType:
-				own.assign, own.made, key = &jomini.Assignment{Key: assign.Key, Value: &jomini.Block{}, Range: assign.Range}, true, name
-			case entryTemplate:
-				using := &jomini.Assignment{Key: jomini.Scalar{Text: usingKey}, Value: &jomini.Scalar{Text: name}}
-				block := &jomini.Block{Statements: []jomini.Statement{using}}
-				own.assign, own.made, key = &jomini.Assignment{Key: jomini.Scalar{Text: entryWidget}, Value: block, Range: assign.Range}, true, entryWidget
+			if how == entryWidget {
+				return statement{assign: assign, parsed: parsed, path: path}, assign.Key.Text, nil
 			}
-			return own, key, nil
+			resolver.alone = true
+			drawn, key := resolver.entryAssign(how, assign, name)
+			return statement{assign: drawn, parsed: parsed, path: path}, key, nil
 		}
 	}
-	return statement{}, "", fmt.Errorf("%s holds no window, type or template named %q", path, name)
+	return statement{}, "", fmt.Errorf("%s holds no window, type, template, text icon or format named %q", path, name)
+}
+
+// entryAssign is the statement an entry that is no window is drawn as, and the key it is drawn by: a type is its
+// name with an empty block, a template a widget using it, a text icon an icon of its iconsize's texture and size, and
+// a format a textbox whose text is a sample in the format. A text icon with no texture is listed and drawn as an
+// icon with none.
+func (resolver *resolver) entryAssign(how string, assign *jomini.Assignment, name string) (*jomini.Assignment, string) {
+	switch how {
+	case entryType:
+		return &jomini.Assignment{Key: assign.Key, Value: &jomini.Block{}, Range: assign.Range}, name
+	case entryTemplate:
+		using := &jomini.Assignment{Key: jomini.Scalar{Text: usingKey}, Value: &jomini.Scalar{Text: name}}
+		return blockOf(entryWidget, assign.Range, using), entryWidget
+	case entryFormat:
+		sample := &jomini.Scalar{Text: "#" + name + " Sample text#!", Quoted: true}
+		text := &jomini.Assignment{Key: jomini.Scalar{Text: "text"}, Value: sample}
+		return blockOf("textbox", assign.Range, text), "textbox"
+	}
+	texture := iconFields(assign)
+	if texture == nil {
+		resolver.missing.add("texticon", name)
+	}
+	return blockOf("icon", assign.Range, texture...), "icon"
+}
+
+// blockOf is an assignment of a key to a block of statements, written at a span.
+func blockOf(key string, span jomini.Range, statements ...jomini.Statement) *jomini.Assignment {
+	return &jomini.Assignment{Key: jomini.Scalar{Text: key}, Value: &jomini.Block{Statements: statements}, Range: span}
+}
+
+// iconFields are the texture and size a text icon's iconsize block writes; nil where it writes no texture.
+func iconFields(assign *jomini.Assignment) []jomini.Statement {
+	for _, field := range jomini.Fields(jomini.ChildBlock(assign)) {
+		iconsize := jomini.BlockOf(field.Value)
+		if !strings.EqualFold(field.Key.Text, "iconsize") || jomini.ScalarOf(iconsize, "texture") == nil {
+			continue
+		}
+		var statements []jomini.Statement
+		for _, inner := range jomini.Fields(iconsize) {
+			if strings.EqualFold(inner.Key.Text, "texture") || strings.EqualFold(inner.Key.Text, "size") {
+				statements = append(statements, inner)
+			}
+		}
+		return statements
+	}
+	return nil
 }
 
 // widget resolves one widget statement under a parent: its kind and chain, its statements expanded, its opening
-// state, its children, visibility, text and textures; a Part is appended for it first, so a parent's index is lower
-// than its descendants'.
+// state, its children, text and textures; a Part is appended for it first, so a parent's index is lower than its
+// descendants'.
 func (resolver *resolver) widget(parent *widget, key string, own statement, depth int) *widget {
-	node := &widget{part: len(resolver.list.Parts), source: own, row: -1, overrides: map[string]statement{}, visibility: Shown, scale: resolver.scale(), alpha: 1}
+	node := &widget{part: len(resolver.list.Parts), overrides: map[string]statement{}, scale: resolver.scale(), alpha: 1}
 	parentPart := -1
 	if parent != nil {
 		parentPart = parent.part
-		node.dataType, node.row, node.inRows = parent.dataType, parent.row, parent.inRows
 		maps.Copy(node.overrides, parent.overrides)
 	}
-	resolver.list.Parts = append(resolver.list.Parts, Part{Parent: parentPart, Key: key, Location: resolver.location(own), Visibility: Shown})
+	resolver.list.Parts = append(resolver.list.Parts, Part{Parent: parentPart, Key: key, Location: resolver.location(own)})
 	kind, chain := resolver.chain(key)
 	node.kind, node.class = kind, game.LayoutClasses[kind]
 	resolver.list.Parts[node.part].Kind = kind
@@ -131,11 +178,11 @@ func (resolver *resolver) widget(parent *widget, key string, own statement, dept
 	if name, isNamed := node.scalar("name"); isNamed {
 		resolver.list.Parts[node.part].Name = name
 	}
-	resolver.dataContext(node)
-	resolver.rows(node)
+	if _, has := node.scalar("datamodel"); has {
+		node.rows = defaultRows
+	}
 	resolver.children(node, depth)
-	resolver.visibility(node)
-	resolver.list.Parts[node.part].Visibility, resolver.list.Parts[node.part].Fact = node.visibility, node.fact
+	node.hidden = hidden(node)
 	if alpha, has := resolver.number(node, "alpha"); has {
 		node.alpha = min(max(alpha, 0), 1)
 	}
@@ -145,14 +192,14 @@ func (resolver *resolver) widget(parent *widget, key string, own statement, dept
 }
 
 // children resolves the child statements an expansion found, each under the widget; the data model's item is the
-// template of its rows, whose widgets are resolved once with the rows they are drawn for.
+// template of its rows, whose widgets are resolved once and drawn once a row.
 func (resolver *resolver) children(node *widget, depth int) {
 	for _, child := range node.pending {
 		node.children = append(node.children, resolver.widget(node, child.assign.Key.Text, child, depth+1))
 	}
 	for _, child := range node.items {
 		template := resolver.widget(node, child.assign.Key.Text, child, depth+1)
-		template.template, template.inRows = true, max(node.rows, 1)
+		template.template = true
 		node.children = append(node.children, template)
 	}
 }
@@ -177,10 +224,10 @@ func (resolver *resolver) location(assignment statement) lsp.Location {
 func (resolver *resolver) chain(key string) (kind string, blocks []statement) {
 	kind = key
 	for range maxDepth {
-		block, isType := resolver.typeOf(kind)
+		block, isType := resolver.lookup(widgetCaller, kind)
 		if !isType {
 			if !resolver.ws.Install.Schema.WidgetKinds[kind] {
-				resolver.missing["type "+kind] = true
+				resolver.missing.add("type", kind)
 			}
 			slices.Reverse(blocks)
 			return kind, blocks
@@ -196,14 +243,14 @@ func (resolver *resolver) chain(key string) (kind string, blocks []statement) {
 		}
 		kind = base
 	}
-	resolver.missing["type "+key+": a cycle"] = true
+	resolver.missing.add("cycle", key)
 	return key, nil
 }
 
-// typeOf is the statement of the type a name is called: one declared in this file first, else the winning one of
-// the install and the mods; false for none.
-func (resolver *resolver) typeOf(name string) (statement, bool) {
-	ref := schema.Occurrence{Role: schema.Refers, Caller: game.Shapes[game.ShapeWidget].Caller, ID: name}
+// lookup is the statement of the definition a caller's word resolves a name to: one declared in this file first, else
+// the load order's winner; false for none, which its caller lists where it wants a miss.
+func (resolver *resolver) lookup(caller, name string) (statement, bool) {
+	ref := schema.Occurrence{Role: schema.Refers, Caller: caller, ID: name}
 	defs, _ := index.Resolve(resolver.ws.Install.Schema, resolver.ws.Indexes(), ref, resolver.request.Path)
 	if len(defs) == 0 {
 		return statement{}, false
@@ -229,69 +276,55 @@ func (resolver *resolver) definition(def index.At, writtenBy string) (statement,
 	return statement{assign: assign, parsed: parsed, path: def.File().Path, writtenBy: writtenBy}, true
 }
 
-// template is the statement of the template a name is called: one declared in this file first, else the winning one;
-// false for none, which is listed.
-func (resolver *resolver) template(name string) (statement, bool) {
-	ref := schema.Occurrence{Role: schema.Refers, Caller: usingKey, ID: name}
-	defs, _ := index.Resolve(resolver.ws.Install.Schema, resolver.ws.Indexes(), ref, resolver.request.Path)
-	if len(defs) == 0 {
-		resolver.missing["template "+name] = true
-		return statement{}, false
+// fields yields each assignment of a source's block as a statement of the same file, with the word written just
+// before it (block or blockoverride; "" for none).
+func fields(source statement) iter.Seq2[string, statement] {
+	return func(yield func(string, statement) bool) {
+		block := jomini.ChildBlock(source.assign)
+		if block == nil {
+			return
+		}
+		previous := ""
+		for _, item := range block.Statements {
+			assign, isAssign := item.(*jomini.Assignment)
+			if isAssign && !yield(previous, source.child(assign)) {
+				return
+			}
+			previous = ""
+			if listed, isListed := item.(*jomini.ValueStmt); isListed {
+				if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar {
+					previous = strings.ToLower(scalar.Text)
+				}
+			}
+		}
 	}
-	winner, _, _, _ := resolver.ws.Winner(defs)
-	if local := slices.IndexFunc(defs, func(def index.At) bool { return def.Occurrence().Local }); local >= 0 {
-		winner = defs[local]
-	}
-	return resolver.definition(winner, name)
+}
+
+// child is an assignment of the source's block as a statement of the same file, written by the same type or template.
+func (source statement) child(assign *jomini.Assignment) statement {
+	return statement{assign: assign, parsed: source.parsed, path: source.path, writtenBy: source.writtenBy}
 }
 
 // scanOverrides records the blockoverrides a source writes, and those of the templates it uses, before any block is
 // expanded: a later one replaces an earlier, so the widget's own win.
 func (resolver *resolver) scanOverrides(node *widget, source statement, depth int) {
-	block := jomini.ChildBlock(source.assign)
-	if block == nil || depth > maxDepth {
+	if depth > maxDepth {
 		return
 	}
-	previous := ""
-	for _, item := range block.Statements {
-		if listed, isListed := item.(*jomini.ValueStmt); isListed {
-			previous = ""
-			if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar {
-				previous = strings.ToLower(scalar.Text)
-			}
-			continue
-		}
-		assign, isAssign := item.(*jomini.Assignment)
-		if !isAssign {
-			previous = ""
-			continue
-		}
-		assignment := statement{assign: assign, parsed: source.parsed, path: source.path, writtenBy: source.writtenBy}
+	for previous, assignment := range fields(source) {
 		switch {
 		case previous == "blockoverride":
-			node.overrides[assign.Key.Text] = assignment
-		case strings.EqualFold(assign.Key.Text, usingKey):
-			if used, isTemplate := resolver.usedTemplate(assign); isTemplate {
+			node.overrides[assignment.assign.Key.Text] = assignment
+		case strings.EqualFold(assignment.assign.Key.Text, usingKey):
+			scalar, isScalar := assignment.assign.Value.(*jomini.Scalar)
+			if !isScalar {
+				continue
+			}
+			if used, isTemplate := resolver.lookup(usingKey, scalar.Text); isTemplate {
 				resolver.scanOverrides(node, used, depth+1)
 			}
 		}
-		previous = ""
 	}
-}
-
-// usedTemplate is the template a using statement names, without listing a miss: the expansion lists it.
-func (resolver *resolver) usedTemplate(assign *jomini.Assignment) (statement, bool) {
-	scalar, isScalar := assign.Value.(*jomini.Scalar)
-	if !isScalar {
-		return statement{}, false
-	}
-	ref := schema.Occurrence{Role: schema.Refers, Caller: usingKey, ID: scalar.Text}
-	defs, _ := index.Resolve(resolver.ws.Install.Schema, resolver.ws.Indexes(), ref, resolver.request.Path)
-	if len(defs) == 0 {
-		return statement{}, false
-	}
-	winner, _, _, _ := resolver.ws.Winner(defs)
-	return resolver.definition(winner, scalar.Text)
 }
 
 // expand appends a block's statements to the widget in the order they apply: a using puts the template's statements
@@ -299,28 +332,12 @@ func (resolver *resolver) usedTemplate(assign *jomini.Assignment) (statement, bo
 // resolves as a widget is a child; an item under a datamodel is the row's template; every other statement applies
 // to the widget.
 func (resolver *resolver) expand(node *widget, source statement, depth int) {
-	block := jomini.ChildBlock(source.assign)
-	if block == nil {
-		return
-	}
 	if depth > maxDepth {
-		resolver.missing["template "+source.writtenBy+": a cycle"] = true
+		resolver.missing.add("templatecycle", source.writtenBy)
 		return
 	}
-	previous := ""
-	for _, item := range block.Statements {
-		if listed, isListed := item.(*jomini.ValueStmt); isListed {
-			previous = ""
-			if scalar, isScalar := listed.Value.(*jomini.Scalar); isScalar {
-				previous = strings.ToLower(scalar.Text)
-			}
-			continue
-		}
-		if assign, isAssign := item.(*jomini.Assignment); isAssign {
-			assignment := statement{assign: assign, parsed: source.parsed, path: source.path, writtenBy: source.writtenBy}
-			resolver.apply(node, assignment, previous, depth)
-		}
-		previous = ""
+	for previous, assignment := range fields(source) {
+		resolver.apply(node, assignment, previous, depth)
 	}
 }
 
@@ -337,11 +354,7 @@ func (resolver *resolver) apply(node *widget, assignment statement, previous str
 		resolver.expand(node, source, depth+1)
 	case previous == "blockoverride":
 	case key == usingKey:
-		if scalar, isScalar := assignment.assign.Value.(*jomini.Scalar); isScalar {
-			if used, isTemplate := resolver.template(scalar.Text); isTemplate {
-				resolver.expand(node, used, depth+1)
-			}
-		}
+		resolver.use(node, assignment, depth)
 	case key == "item" && jomini.ChildBlock(assignment.assign) != nil:
 		resolver.collectItem(node, assignment)
 	case jomini.ChildBlock(assignment.assign) != nil && resolver.isWidget(assignment.assign.Key.Text):
@@ -351,18 +364,32 @@ func (resolver *resolver) apply(node *widget, assignment statement, previous str
 	}
 }
 
+// use expands the template a using statement names at its place; a template nothing defines is listed.
+func (resolver *resolver) use(node *widget, assignment statement, depth int) {
+	scalar, isScalar := assignment.assign.Value.(*jomini.Scalar)
+	if !isScalar {
+		return
+	}
+	used, isTemplate := resolver.lookup(usingKey, scalar.Text)
+	if !isTemplate {
+		resolver.missing.add("template", scalar.Text)
+		return
+	}
+	resolver.expand(node, used, depth+1)
+}
+
 // collectItem takes the widgets an item block holds as the template of a data model's rows.
 func (resolver *resolver) collectItem(node *widget, item statement) {
 	for _, inner := range jomini.Fields(jomini.ChildBlock(item.assign)) {
 		if jomini.ChildBlock(inner) != nil && resolver.isWidget(inner.Key.Text) {
-			node.items = append(node.items, statement{assign: inner, parsed: item.parsed, path: item.path, writtenBy: item.writtenBy})
+			node.items = append(node.items, item.child(inner))
 		}
 	}
 }
 
 // isWidget reports whether a block-valued key names a widget: a type, or a kind the install implies.
 func (resolver *resolver) isWidget(key string) bool {
-	if _, isType := resolver.typeOf(key); isType {
+	if _, isType := resolver.lookup(widgetCaller, key); isType {
 		return true
 	}
 	return resolver.ws.Install.Schema.WidgetKinds[key]
@@ -387,95 +414,24 @@ func (resolver *resolver) opening(node *widget) {
 			if _, isScalar := field.Value.(*jomini.Scalar); isScalar && !slices.ContainsFunc(game.StateControls, func(control string) bool {
 				return strings.EqualFold(control, field.Key.Text)
 			}) {
-				node.statements = append(node.statements, statement{assign: field, parsed: state.parsed, path: state.path, writtenBy: state.writtenBy})
+				node.statements = append(node.statements, state.child(field))
 			}
 		}
 	}
 }
 
-// dataContext notes the data type the widget's datacontext leads to, which its children read their bindings in.
-func (resolver *resolver) dataContext(node *widget) {
-	text, has := node.scalar(game.FileTypes[".gui"].ContextKey)
-	if !has {
-		return
-	}
-	if call, isBinding := bindingOf(text); isBinding {
-		node.dataType = resolver.ws.Install.Schema.CallLeadsTo(jomini.ParseCall(call, 0), node.dataType)
-	}
+// hidden reports whether the widget writes visible = no; a visible that is a binding is the game's to answer, so the
+// widget is drawn.
+func hidden(node *widget) bool {
+	text, _ := node.scalar("visible")
+	return strings.EqualFold(text, no) || strings.EqualFold(text, "false")
 }
 
-// rows is how many rows a data model draws: its fact's count where one is set, else three.
-func (resolver *resolver) rows(node *widget) {
-	text, has := node.scalar("datamodel")
-	if !has {
-		return
-	}
-	node.rows = defaultRows
-	if call, isBinding := bindingOf(text); isBinding {
-		resolver.evaluator.context, resolver.evaluator.row = node.dataType, node.row
-		if answer := resolver.evaluator.evaluate(call, game.DataList); answer.known {
-			node.rows = answer.count
-		}
-	}
-}
-
-// visibility is the widget's visibility: visible = no is Hidden; a binding is the evaluator's answer, Hidden on no,
-// Shown on yes, Unknown otherwise, with the fact that decides it; a row template's is the join of its rows'.
-func (resolver *resolver) visibility(node *widget) {
-	text, has := node.scalar("visible")
-	if !has {
-		return
-	}
-	call, isBinding := bindingOf(text)
-	if !isBinding {
-		if strings.EqualFold(text, no) || strings.EqualFold(text, "false") {
-			node.visibility = Hidden
-		}
-		return
-	}
-	rows := max(node.inRows, 1)
-	for row := range rows {
-		resolver.evaluator.context, resolver.evaluator.row, resolver.evaluator.touched = node.dataType, row, nil
-		if node.inRows == 0 {
-			resolver.evaluator.row = node.row
-		}
-		answer := resolver.evaluator.evaluate(call, game.DataBool)
-		state := Unknown
-		if answer.known {
-			state = map[bool]string{true: Shown, false: Hidden}[answer.yes]
-		}
-		node.byRow = append(node.byRow, state)
-		if row == 0 && len(resolver.evaluator.touched) > 0 {
-			node.fact = resolver.evaluator.touched[0]
-		}
-	}
-	node.visibility = joinVisibility(node.byRow)
-	if node.inRows == 0 {
-		node.byRow = nil
-	}
-}
-
-// joinVisibility is a row template's visibility over its rows: Shown where any row shows it, else Unknown where any
-// is unknown, else Hidden.
-func joinVisibility(rows []string) string {
-	switch {
-	case slices.Contains(rows, Shown):
-		return Shown
-	case slices.Contains(rows, Unknown):
-		return Unknown
-	}
-	return Hidden
-}
-
-// bindingOf is the call a value holds when the whole value is one binding ([GetPlayer.GetName]); false for any
-// other text.
-func bindingOf(text string) (string, bool) {
+// isBinding reports whether the whole of a value is one binding ([GetPlayer.GetName]), which no file answers.
+func isBinding(text string) bool {
 	text = strings.TrimSpace(text)
 	calls := jomini.Calls(text, 0)
-	if len(calls) != 1 || calls[0].Start != 0 || calls[0].End != len(text) || !strings.HasSuffix(text, "]") {
-		return "", false
-	}
-	return text[1 : len(text)-1], true
+	return len(calls) == 1 && calls[0].Start == 0 && calls[0].End == len(text) && strings.HasSuffix(text, "]")
 }
 
 // textures is the widget's textures: texture through FileAt across the indexes, then each modify_texture in order; a
@@ -509,34 +465,26 @@ func (resolver *resolver) textures(node *widget) {
 func fieldStatements(assignment statement) []statement {
 	var out []statement
 	for _, field := range jomini.Fields(jomini.ChildBlock(assignment.assign)) {
-		out = append(out, statement{assign: field, parsed: assignment.parsed, path: assignment.path, writtenBy: assignment.writtenBy})
+		out = append(out, assignment.child(field))
 	}
 	return out
 }
 
 // textureOf is the texture a holder (a widget, or a modify_texture block as one) writes: the file's route and size,
-// the frame, the sprite's border, tiling, mirroring, fit, tint and blend.
+// the frame, the sprite's border, tiling, mirroring, fit, tint and blend; none where the texture is a binding.
 func (resolver *resolver) textureOf(holder *widget) (Texture, bool) {
 	path, has := holder.scalar("texture")
-	if !has {
+	if !has || isBinding(path) {
 		return Texture{}, false
-	}
-	if call, isBinding := bindingOf(path); isBinding {
-		resolver.evaluator.context = holder.dataType
-		answer := resolver.evaluator.evaluate(call, game.DataText)
-		if !answer.known {
-			return Texture{}, false
-		}
-		path = answer.text
 	}
 	file, listed := index.FileAt(resolver.ws.Indexes(), path)
 	if !listed {
-		resolver.missing["texture "+path] = true
+		resolver.missing.add("texture", path)
 		return Texture{}, false
 	}
 	facts, err := texture.Info(file.Path)
 	if err != nil {
-		resolver.missing["texture "+path] = true
+		resolver.missing.add("texture", path)
 		return Texture{}, false
 	}
 	loaded := Texture{URL: fileURL(file), Width: facts.Width, Height: facts.Height, Blend: blendNormal}
@@ -577,7 +525,7 @@ func (resolver *resolver) sprite(holder *widget, drawn *Texture) {
 		if blend, known := blendModes[choices[0]]; known {
 			drawn.Blend = blend
 		} else {
-			resolver.missing["blend_mode "+choices[0]] = true
+			resolver.missing.add("blend", choices[0])
 		}
 	}
 }
@@ -602,21 +550,15 @@ func borderOf(holder *widget) [4]int {
 	return border
 }
 
-// number is the widget's value for a key as a number, a binding answered by the evaluator where it is known.
+// number is the widget's value for a key as a number; false where it is not written, or is a binding.
 func (resolver *resolver) number(node *widget, key string) (float64, bool) {
 	if numbers, has := node.numbers(key); has && len(numbers) > 0 {
 		return numbers[0], true
 	}
 	text, has := node.scalar(key)
-	if !has {
+	if !has || isBinding(text) {
 		return 0, false
 	}
-	call, isBinding := bindingOf(text)
-	if !isBinding {
-		number, err := strconv.ParseFloat(text, 64)
-		return number, err == nil
-	}
-	resolver.evaluator.context, resolver.evaluator.row = node.dataType, node.row
-	answer := resolver.evaluator.evaluate(call, game.DataNumber)
-	return answer.number, answer.known && answer.kind == game.DataNumber
+	number, err := strconv.ParseFloat(text, 64)
+	return number, err == nil
 }

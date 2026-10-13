@@ -7,15 +7,14 @@ package draw
 
 import "paradox-modding-tools/services/internal/lsp"
 
-// List is one render of a file's window: what to draw, its structure, and what it asked.
+// List is one render of a file's entry: what to draw, its structure, and what nothing found.
 type List struct {
-	Width    int       `json:"width"`  // the scene in pixels: the window at its resolution
+	Width    int       `json:"width"`  // the scene in pixels: a window's resolution, or the size of an entry drawn alone
 	Height   int       `json:"height"` // the scene in pixels
 	Elements []Element `json:"elements"`
 	Parts    []Part    `json:"parts"`
 	Fonts    []Font    `json:"fonts"`
-	Facts    []Fact    `json:"facts"`
-	Missing  []string  `json:"missing"`
+	Missing  []string  `json:"missing"` // what was not found, each a sentence the status line shows
 }
 
 // Element is one painted rectangle, in paint order, at an absolute box.
@@ -67,32 +66,13 @@ type Run struct {
 	Icon   string  `json:"icon"`
 }
 
-// Part is one thing the tree lists: a widget, drawn or not.
+// Part is one widget of the entry, drawn or not, with where it is written.
 type Part struct {
-	Parent     int          `json:"parent"` // -1 at the root
-	Key        string       `json:"key"`    // the statement's key: hbox, text_single
-	Kind       string       `json:"kind"`   // the built-in kind it resolves to
-	Name       string       `json:"name"`   // name = "…" where there is one
-	Location   lsp.Location `json:"location"`
-	Visibility string       `json:"visibility"` // Shown, Hidden or Unknown
-	Fact       string       `json:"fact"`       // the Fact.Call that decides Visibility; "" for none
-}
-
-// The three visibilities a part can have.
-const (
-	Shown   = "shown"
-	Hidden  = "hidden"
-	Unknown = "unknown"
-)
-
-// Fact is a binding's question and its answer: the call as the evaluator reached it, the type and function it
-// asks, what it returns, and the answer where one is known.
-type Fact struct {
-	Call     string `json:"call"`     // GetPlayer.GetName
-	Function string `json:"function"` // Character.GetName
-	Returns  string `json:"returns"`  // bool, number, text, list or object
-	Value    string `json:"value"`    // the answer as written; "" when not Known
-	Known    bool   `json:"known"`
+	Parent   int          `json:"parent"` // -1 at the root
+	Key      string       `json:"key"`    // the statement's key: hbox, text_single
+	Kind     string       `json:"kind"`   // the built-in kind it resolves to
+	Name     string       `json:"name"`   // name = "…" where there is one
+	Location lsp.Location `json:"location"`
 }
 
 // Font is one face the texts use: the game's font name, the style the file is for, and the file route's URL.
@@ -110,21 +90,10 @@ type Box struct {
 	Height float64 `json:"height"`
 }
 
-// Property is one resolved property of a part with the type or template that wrote it ("" the part itself), the
-// kind of input it takes and the choices a texture, font or declared list offers.
+// Property is one resolved property of a part, as written, with the type or template that wrote it ("" the part
+// itself).
 type Property struct {
-	Key       string   `json:"key"`
-	Value     string   `json:"value"`
-	Kind      string   `json:"kind"`
-	WrittenBy string   `json:"writtenBy"`
-	Options   []string `json:"options,omitempty"`
-}
-
-// Change is one edit from the panel: a key set or added, the part removed, or the part moved before another.
-type Change struct {
-	Part   int    `json:"part"`
-	Key    string `json:"key"`
-	Value  string `json:"value"`
-	Remove bool   `json:"remove"`
-	Before int    `json:"before"` // the part to move this one before; -1 for no move
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	WrittenBy string `json:"writtenBy"`
 }

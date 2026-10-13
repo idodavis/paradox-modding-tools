@@ -16,21 +16,6 @@ export interface Box {
 }
 
 /**
- * Change is one edit from the panel: a key set or added, the part removed, or the part moved before another.
- */
-export interface Change {
-    "part": number;
-    "key": string;
-    "value": string;
-    "remove": boolean;
-
-    /**
-     * the part to move this one before; -1 for no move
-     */
-    "before": number;
-}
-
-/**
  * Element is one painted rectangle, in paint order, at an absolute box.
  */
 export interface Element {
@@ -40,33 +25,6 @@ export interface Element {
     "alpha": number;
     "texture"?: Texture | null;
     "text"?: Text | null;
-}
-
-/**
- * Fact is a binding's question and its answer: the call as the evaluator reached it, the type and function it
- * asks, what it returns, and the answer where one is known.
- */
-export interface Fact {
-    /**
-     * GetPlayer.GetName
-     */
-    "call": string;
-
-    /**
-     * Character.GetName
-     */
-    "function": string;
-
-    /**
-     * bool, number, text, list or object
-     */
-    "returns": string;
-
-    /**
-     * the answer as written; "" when not Known
-     */
-    "value": string;
-    "known": boolean;
 }
 
 /**
@@ -87,11 +45,11 @@ export interface Line {
 }
 
 /**
- * List is one render of a file's window: what to draw, its structure, and what it asked.
+ * List is one render of a file's entry: what to draw, its structure, and what nothing found.
  */
 export interface List {
     /**
-     * the scene in pixels: the window at its resolution
+     * the scene in pixels: a window's resolution, or the size of an entry drawn alone
      */
     "width": number;
 
@@ -102,12 +60,15 @@ export interface List {
     "elements": Element[] | null;
     "parts": Part[] | null;
     "fonts": Font[] | null;
-    "facts": Fact[] | null;
+
+    /**
+     * what was not found, each a sentence the status line shows
+     */
     "missing": string[] | null;
 }
 
 /**
- * Part is one thing the tree lists: a widget, drawn or not.
+ * Part is one widget of the entry, drawn or not, with where it is written.
  */
 export interface Part {
     /**
@@ -130,33 +91,21 @@ export interface Part {
      */
     "name": string;
     "location": lsp$0.Location;
-
-    /**
-     * Shown, Hidden or Unknown
-     */
-    "visibility": string;
-
-    /**
-     * the Fact.Call that decides Visibility; "" for none
-     */
-    "fact": string;
 }
 
 /**
- * Property is one resolved property of a part with the type or template that wrote it ("" the part itself), the
- * kind of input it takes and the choices a texture, font or declared list offers.
+ * Property is one resolved property of a part, as written, with the type or template that wrote it ("" the part
+ * itself).
  */
 export interface Property {
     "key": string;
     "value": string;
-    "kind": string;
     "writtenBy": string;
-    "options"?: string[] | null;
 }
 
 /**
  * Request is what a GUI render is asked for: the file, the entry drawn, the resolution and UI scale the window is
- * laid out at, the language of its texts, and whether an unknown widget is laid out as hidden.
+ * laid out at, and the language of its texts.
  */
 export interface Request {
     "path": string;
@@ -165,7 +114,6 @@ export interface Request {
     "height": number;
     "scale": number;
     "language": string;
-    "hideUnknown": boolean;
 }
 
 /**

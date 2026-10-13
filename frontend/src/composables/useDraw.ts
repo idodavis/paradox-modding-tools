@@ -5,29 +5,25 @@
  */
 import { computed, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { useQuery } from "@pinia/colada";
-import { drawQuery, symbolsQuery } from "../queries";
+import { drawQuery, entriesQuery } from "../queries";
 import { useDrawStore } from "../stores/draw";
 import { useEditorStore } from "../stores/editor";
 import { pathKey } from "./useIdeRoots";
-
-// the databases of what a window is drawn from: a top-level widget, or a type or template drawn alone
-const ENTRY_DATABASES = ["gui.widget", "gui.type", "gui.template", "gui.local_type", "gui.local_template"];
 
 /** Reads a GUI file's window for its pane and its panel: the entries it holds, the one drawn and the list. */
 export function useDraw(workspaceId: MaybeRefOrGetter<string>, path: MaybeRefOrGetter<string>) {
   const store = useDrawStore();
   const editor = useEditorStore();
 
-  const { data: symbols } = useQuery(() => symbolsQuery({ id: toValue(workspaceId), path: toValue(path) }));
-  const entrySymbols = computed(() => (symbols.value ?? []).filter((one) => ENTRY_DATABASES.includes(one.database)));
-  const entries = computed(() => [...new Set(entrySymbols.value.map((one) => one.name))]);
+  const { data: entrySymbols } = useQuery(() => entriesQuery({ id: toValue(workspaceId), path: toValue(path) }));
+  const entries = computed(() => [...new Set((entrySymbols.value ?? []).map((one) => one.name))]);
 
   /** The entry the caret is in, while this file's code is shown with the caret in it. */
   function caretEntry(): string | undefined {
     const caret = editor.caret;
     const file = toValue(path);
     if (!caret || editor.viewOf(file) !== "split" || pathKey(editor.activeFile) !== pathKey(file)) return undefined;
-    return entrySymbols.value.findLast(({ location: { range } }) => {
+    return entrySymbols.value?.findLast(({ location: { range } }) => {
       const start = range.start;
       return start.line < caret.line || (start.line === caret.line && start.character <= caret.col);
     })?.name;

@@ -528,11 +528,6 @@ export interface Workspace {
     "resetIdeOnOpen": boolean;
     "hideExplorerBinaries": boolean;
     "defaultTool"?: string;
-
-    /**
-     * the answers to what bindings ask, by fact key
-     */
-    "facts"?: { [_ in string]?: string } | null;
     "mods": WorkspaceMod[] | null;
 }
 

@@ -6,7 +6,7 @@
  */
 import { defineQueryOptions } from "@pinia/colada";
 import { GetVersion } from "@services/appservice";
-import { GUI, Properties } from "@services/drawservice";
+import { Entries, GUI, Properties } from "@services/drawservice";
 import { LastRunCrashed } from "@services/logservice";
 import { ReadImageFacts, ReadText } from "@services/fileservice";
 import { GetEventDetail, GetEventGraph, SearchRoots } from "@services/eventgraphservice";
@@ -52,8 +52,12 @@ export const releaseKeys = {
 
 export const wikiKeys = { all: ["wiki"] as const };
 
-/** A GUI file's drawn list, and a part's properties; a file's change or a fact's answer reads them again. */
-export const drawKeys = { list: ["draw"] as const, properties: ["draw-properties"] as const };
+/** A GUI file's drawn list, a part's properties and the entries it holds; a file's change reads them again. */
+export const drawKeys = {
+  list: ["draw"] as const,
+  properties: ["draw-properties"] as const,
+  entries: ["draw-entries"] as const,
+};
 
 /** The source lines of the open workspace's places, which an edit of a file changes. */
 export const linesKeys = (id: string) => [...workspaceKeys.open(id), "lines"] as const;
@@ -300,6 +304,13 @@ export const symbolsQuery = defineQueryOptions(({ id, path }: { id: string; path
   enabled: !!id && !!path,
 }));
 
+/** What a GUI file can draw: its windows, types, templates, text icons and formats, in file order. */
+export const entriesQuery = defineQueryOptions(({ id, path }: { id: string; path: string }) => ({
+  key: [...drawKeys.entries, id, path],
+  query: async () => (await Entries(id, path)) ?? [],
+  enabled: useWorkspaceStore().isOpen(id) && !!path,
+}));
+
 /** A drawn window: the file it is of (a list kept while the next is read must be that file's), the list, and the
  * milliseconds Go took. */
 export type Rendered = { path: string; list: List | null; renderedMs: number };
@@ -315,7 +326,6 @@ export const drawQuery = defineQueryOptions(({ id, request }: { id: string; requ
     request.height,
     request.scale,
     request.language,
-    request.hideUnknown,
   ],
   query: async (): Promise<Rendered> => {
     const startTime = performance.now();
@@ -338,7 +348,6 @@ export const propertiesQuery = defineQueryOptions(
       request.height,
       request.scale,
       request.language,
-      request.hideUnknown,
       part,
     ],
     query: async () => (await Properties(id, request, part)) ?? [],

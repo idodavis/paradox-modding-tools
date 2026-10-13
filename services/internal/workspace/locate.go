@@ -130,13 +130,19 @@ func (ws *Session) Loc(key, language string) (index.At, bool) {
 	return index.At{}, false
 }
 
-// Title is the display name of a definition of id: the text of the id as a loc key, else of the definition's first
-// field typed as a loc key that has text (the zero At: the loc key alone).
+// Title is the display name of a definition of id: the text of the id as a loc key (after its database's prefix where
+// it has one), else of the definition's first field typed as a loc key that has text (the zero At: the loc key alone).
 func (ws *Session) Title(id string, def index.At) string {
-	if entry, known := ws.Loc(id, ""); known {
-		return entry.Text()
-	}
 	row := ws.Install.Schema.Databases[def.Occurrence().Database]
+	keys := []string{id}
+	if row != nil && row.Descriptor.LocPrefix != "" {
+		keys = []string{row.Descriptor.LocPrefix + id, id}
+	}
+	for _, key := range keys {
+		if entry, known := ws.Loc(key, ""); known {
+			return entry.Text()
+		}
+	}
 	_, statement := ws.Statement(def)
 	for i, block := 0, jomini.ChildBlock(statement); row != nil && block != nil && i < len(block.Statements); i++ {
 		field, isField := block.Statements[i].(*jomini.Assignment)

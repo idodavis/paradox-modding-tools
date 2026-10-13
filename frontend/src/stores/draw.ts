@@ -34,7 +34,6 @@ export const useDrawStore = defineStore("draw", () => {
   const height = computed(() => RESOLUTIONS.find((one) => one.value === width.value)?.height ?? 1080);
   const scale = useLocalStorage("pmt.draw.scale", 1);
   const bounds = useLocalStorage("pmt.draw.bounds", false);
-  const hideUnknown = useLocalStorage("pmt.draw.hideUnknown", false);
 
   // the workspace's language first; the one chosen is kept, else it is the one shown
   const defaultLanguage = computed(() => workspace.activeWorkspace?.defaultLocLang || "english");
@@ -52,7 +51,7 @@ export const useDrawStore = defineStore("draw", () => {
   const picked = ref(new Map<string, string>());
   const selected = ref(new Map<string, number>());
 
-  /** What a file's entry is drawn as: the toolbar's resolution, scale, language and whether unknown widgets hide. */
+  /** What a file's entry is drawn as: the toolbar's resolution, scale and language. */
   function requestOf(path: string, entry: string): DrawRequest {
     return {
       path,
@@ -61,9 +60,8 @@ export const useDrawStore = defineStore("draw", () => {
       height: height.value,
       scale: scale.value,
       language: language.value,
-      hideUnknown: hideUnknown.value,
     };
   }
 
-  return { width, height, scale, bounds, hideUnknown, language, languages, picked, selected, requestOf };
+  return { width, height, scale, bounds, language, languages, picked, selected, requestOf };
 });

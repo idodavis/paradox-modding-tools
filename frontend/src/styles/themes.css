@@ -628,3 +628,7 @@
 .monaco-editor .pmt-conflict-incoming {
   background: var(--blue-soft);
 }
+/* the widget the Visual view selected (ide/CodeEditor.vue): its lines, where this file writes it */
+.monaco-editor .pmt-marked-widget {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

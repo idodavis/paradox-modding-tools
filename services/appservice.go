@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -53,17 +52,16 @@ type GameInstall struct {
 
 // Workspace is a user-defined mod working environment tied to a game.
 type Workspace struct {
-	ID                   string            `json:"id"`
-	GameID               string            `json:"gameId"`
-	Name                 string            `json:"name"`
-	InstallID            string            `json:"installId"`
-	DefaultLocLang       string            `json:"defaultLocLang"`
-	GameColor            string            `json:"gameColor,omitempty"`
-	ResetIdeOnOpen       bool              `json:"resetIdeOnOpen"`
-	HideExplorerBinaries bool              `json:"hideExplorerBinaries"`
-	DefaultTool          string            `json:"defaultTool,omitempty"`
-	Facts                map[string]string `json:"facts,omitempty"` // the answers to what bindings ask, by fact key
-	Mods                 []WorkspaceMod    `json:"mods"`
+	ID                   string         `json:"id"`
+	GameID               string         `json:"gameId"`
+	Name                 string         `json:"name"`
+	InstallID            string         `json:"installId"`
+	DefaultLocLang       string         `json:"defaultLocLang"`
+	GameColor            string         `json:"gameColor,omitempty"`
+	ResetIdeOnOpen       bool           `json:"resetIdeOnOpen"`
+	HideExplorerBinaries bool           `json:"hideExplorerBinaries"`
+	DefaultTool          string         `json:"defaultTool,omitempty"`
+	Mods                 []WorkspaceMod `json:"mods"`
 }
 
 // WorkspaceMod is a mod attached to a workspace.
@@ -268,9 +266,8 @@ func emit(event string, data any) {
 	}
 }
 
-// cloneWorkspace is a copy of a workspace with its own mods, in load order, and its own facts.
+// cloneWorkspace is a copy of a workspace with its own mods, in load order.
 func cloneWorkspace(ws Workspace) Workspace {
-	ws.Facts = maps.Clone(ws.Facts)
 	ws.Mods = slices.Clone(ws.Mods)
 	slices.SortFunc(ws.Mods, loadOrder)
 	return ws

@@ -507,7 +507,9 @@ func TestFindEntries(t *testing.T) {
 		{ck3, "gui/v_window.gui", []string{
 			"gui.type v_button", "gui.type v_label", "gui.template v_plain", "gui.template v_faded",
 			"gui.widget v_window", "gui.widget v_other_window", "gui.template v_sized", "gui.type v_box", "gui.block rows",
-			"gui.widget v_layout_window", "gui.type window", "gui.type widget", "gui.type icon",
+			"gui.widget v_layout_window", "gui.type window", "gui.type widget", "gui.type icon", "gui.type v_tab",
+			"gui.type v_textbox", "gui.widget v_layout_rules", "gui.widget v_hidden_entry", "gui.widget v_default_text",
+			"gui.widget v_concepts", "gui.texticon v_icon", "gui.format v_format",
 		}},
 	}
 	for _, c := range cases {

@@ -55,17 +55,18 @@ Above the editor, the path to the file and, at the caret, the blocks it is in. A
 A GUI file (**.gui**) has a **Code** / **Visual** / **Split** switch there, and a button that opens its **Widgets**
 panel in the right column. Visual draws the file's window or widget from the game's own data: its types and templates,
 textures, fonts and localization, at the resolution and UI scale you pick (**1280 by 720** up to **3840 by 2160**,
-**100%** to **200%**) and in the language you pick. The toolbar chooses which window, type or template of the file to
-draw; **Bounds** outlines every element and **Hide unknown** lays out what the game would decide at runtime as hidden.
-Zoom with **Ctrl** and the wheel, or **Fit**, **100%**, **−** and **+**. Click an element to select its widget; Split
-shows the code beside the picture, and the caret and the selection follow each other.
+**100%** to **200%**) and in the language you pick. It is a structural preview: the layout is the game's rules with no
+game running, so a vanilla window is a stress test of them, not a promise that it looks as it does in the game. The
+toolbar chooses which window, type, template, text icon or format of the file to draw; a type, template, text icon or
+format is drawn by itself, at its own size. **Bounds** outlines every element. Zoom with **Ctrl** and the wheel, or
+**Fit**, **100%**, **−** and **+**. Click an element to select its widget; Split shows the code beside the picture, where
+the caret and the selection follow each other and the selected widget's lines are marked.
 
-The Widgets panel lists the window's widgets as a tree, the selected widget's properties with who wrote each (the
-widget, or the type or template it comes from), the **sample data** its bindings ask, and its script. A property you
-change is written into the widget's own block through the editor, so Undo and Save work as for any edit; a game file's
-properties are read only. What a binding asks that nothing in the files answers (a character's name, whether a flag is
-set) is drawn faded and listed as sample data: set an answer there once, and the workspace keeps it. A status line
-says what the game's files did not give: a template, texture or font that was not found, and how long the render took.
+The Widgets panel shows where the selected widget sits (the way down to it from the window, each step a click) and its
+properties as written, with who wrote each: the widget, or the type or template it comes from. Nothing the game would
+decide at runtime is simulated, and nothing asks you to answer it: a widget whose `visible` is a binding is drawn, a
+text that is a binding shows the binding itself, and a texture that is one is left empty. A status line says what the
+game's files did not give: a template, texture or font that was not found, and how long the render took.
 
 The status bar shows the open files' errors and warnings, the git branch, then the caret's line and column, the
 indentation, the file's kind and its encoding (UTF-8, or UTF-8 BOM).

@@ -43,6 +43,7 @@
    "head": "in gui type",
    "writes": [
     "a number",
+    "one of 100%",
     "a block"
    ],
    "winner": -1,
@@ -1422,6 +1423,7 @@
    "head": "in `v_button`",
    "writes": [
     "a number",
+    "one of 100%",
     "a block"
    ],
    "winner": -1,
@@ -1532,6 +1534,7 @@
    "head": "in `v_button`",
    "writes": [
     "a number",
+    "one of 100%",
     "a block"
    ],
    "winner": -1,
@@ -2328,6 +2331,21 @@
        "character": 25
       }
      }
+    },
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 93,
+       "character": 13
+      },
+      "end": {
+       "line": 93,
+       "character": 13
+      }
+     }
     }
    ],
    "winner": -1,
@@ -2372,6 +2390,21 @@
        "character": 43
       }
      }
+    },
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 93,
+       "character": 31
+      },
+      "end": {
+       "line": 93,
+       "character": 31
+      }
+     }
     }
    ],
    "winner": -1,
@@ -2399,6 +2432,7 @@
    "head": "in `widget`",
    "writes": [
     "a number",
+    "one of 100%",
     "a block"
    ],
    "winner": -1,
@@ -2604,6 +2638,7 @@
    "head": "in `widget`",
    "writes": [
     "a number",
+    "one of 100%",
     "a block"
    ],
    "winner": -1,
@@ -2773,3 +2808,3270 @@
    }
   }
 56:12 icon -
+57:0 type -
+57:5 v_tab
+  {
+   "word": "v_tab",
+   "key": "v_tab",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 57,
+       "character": 5
+      },
+      "end": {
+       "line": 57,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 57,
+     "character": 5
+    },
+    "end": {
+     "line": 57,
+     "character": 10
+    }
+   }
+  }
+57:13 button -
+58:1 layoutpolicy_horizontal
+  {
+   "word": "layoutpolicy_horizontal",
+   "key": "layoutpolicy_horizontal",
+   "head": "in gui type",
+   "writes": [
+    "one of expanding"
+   ],
+   "winner": -1,
+   "within": [
+    "v_tab"
+   ],
+   "range": {
+    "start": {
+     "line": 58,
+     "character": 1
+    },
+    "end": {
+     "line": 58,
+     "character": 24
+    }
+   }
+  }
+58:27 expanding
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_tab"
+   ],
+   "range": {
+    "start": {
+     "line": 58,
+     "character": 27
+    },
+    "end": {
+     "line": 58,
+     "character": 36
+    }
+   }
+  }
+60:0 type -
+60:5 v_textbox
+  {
+   "word": "v_textbox",
+   "key": "v_textbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 60,
+       "character": 5
+      },
+      "end": {
+       "line": 60,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 60,
+     "character": 5
+    },
+    "end": {
+     "line": 60,
+     "character": 14
+    }
+   }
+  }
+60:17 textbox -
+61:0 window
+  {
+   "word": "v_layout_rules",
+   "key": "window",
+   "head": "gui widget",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 61,
+       "character": 0
+      },
+      "end": {
+       "line": 61,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 61,
+     "character": 0
+    },
+    "end": {
+     "line": 61,
+     "character": 6
+    }
+   }
+  }
+62:1 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in gui widget",
+   "writes": [
+    "gui widget"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 62,
+     "character": 1
+    },
+    "end": {
+     "line": 62,
+     "character": 5
+    }
+   }
+  }
+62:9 v_layout_rules
+  {
+   "word": "v_layout_rules",
+   "key": "name",
+   "head": "gui widget",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 61,
+       "character": 0
+      },
+      "end": {
+       "line": 61,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 62,
+     "character": 8
+    },
+    "end": {
+     "line": 62,
+     "character": 24
+    }
+   }
+  }
+63:1 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in gui widget",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 63,
+     "character": 1
+    },
+    "end": {
+     "line": 63,
+     "character": 5
+    }
+   }
+  }
+63:10 400
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 63,
+     "character": 10
+    },
+    "end": {
+     "line": 63,
+     "character": 13
+    }
+   }
+  }
+63:14 300
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 63,
+     "character": 14
+    },
+    "end": {
+     "line": 63,
+     "character": 17
+    }
+   }
+  }
+64:1 container
+  {
+   "word": "container",
+   "key": "container",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 4,
+       "character": 5
+      },
+      "end": {
+       "line": 4,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 64,
+     "character": 1
+    },
+    "end": {
+     "line": 64,
+     "character": 10
+    }
+   }
+  }
+65:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `container`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container"
+   ],
+   "range": {
+    "start": {
+     "line": 65,
+     "character": 2
+    },
+    "end": {
+     "line": 65,
+     "character": 6
+    }
+   }
+  }
+65:10 v_container
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container"
+   ],
+   "range": {
+    "start": {
+     "line": 65,
+     "character": 9
+    },
+    "end": {
+     "line": 65,
+     "character": 22
+    }
+   }
+  }
+66:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "container"
+   ],
+   "range": {
+    "start": {
+     "line": 66,
+     "character": 2
+    },
+    "end": {
+     "line": 66,
+     "character": 6
+    }
+   }
+  }
+66:11 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 66,
+     "character": 11
+    },
+    "end": {
+     "line": 66,
+     "character": 15
+    }
+   }
+  }
+66:20 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 66,
+     "character": 20
+    },
+    "end": {
+     "line": 66,
+     "character": 22
+    }
+   }
+  }
+66:23 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 66,
+     "character": 23
+    },
+    "end": {
+     "line": 66,
+     "character": 25
+    }
+   }
+  }
+66:28 parentanchor
+  {
+   "word": "parentanchor",
+   "key": "parentanchor",
+   "head": "in `icon`",
+   "writes": [
+    "one of right"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 66,
+     "character": 28
+    },
+    "end": {
+     "line": 66,
+     "character": 40
+    }
+   }
+  }
+66:43 right
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 66,
+     "character": 43
+    },
+    "end": {
+     "line": 66,
+     "character": 48
+    }
+   }
+  }
+67:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "container"
+   ],
+   "range": {
+    "start": {
+     "line": 67,
+     "character": 2
+    },
+    "end": {
+     "line": 67,
+     "character": 6
+    }
+   }
+  }
+67:11 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 67,
+     "character": 11
+    },
+    "end": {
+     "line": 67,
+     "character": 15
+    }
+   }
+  }
+67:20 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 67,
+     "character": 20
+    },
+    "end": {
+     "line": 67,
+     "character": 22
+    }
+   }
+  }
+67:23 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 67,
+     "character": 23
+    },
+    "end": {
+     "line": 67,
+     "character": 25
+    }
+   }
+  }
+67:28 position
+  {
+   "word": "position",
+   "key": "position",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 67,
+     "character": 28
+    },
+    "end": {
+     "line": 67,
+     "character": 36
+    }
+   }
+  }
+67:41 0
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon",
+    "position"
+   ],
+   "range": {
+    "start": {
+     "line": 67,
+     "character": 41
+    },
+    "end": {
+     "line": 67,
+     "character": 42
+    }
+   }
+  }
+67:43 20
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "container",
+    "icon",
+    "position"
+   ],
+   "range": {
+    "start": {
+     "line": 67,
+     "character": 43
+    },
+    "end": {
+     "line": 67,
+     "character": 45
+    }
+   }
+  }
+69:1 background
+  {
+   "word": "background",
+   "key": "background",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 5
+      },
+      "end": {
+       "line": 5,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 69,
+     "character": 1
+    },
+    "end": {
+     "line": 69,
+     "character": 11
+    }
+   }
+  }
+69:16 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `background`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "background"
+   ],
+   "range": {
+    "start": {
+     "line": 69,
+     "character": 16
+    },
+    "end": {
+     "line": 69,
+     "character": 20
+    }
+   }
+  }
+69:24 v_background
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "background"
+   ],
+   "range": {
+    "start": {
+     "line": 69,
+     "character": 23
+    },
+    "end": {
+     "line": 69,
+     "character": 37
+    }
+   }
+  }
+70:1 vbox
+  {
+   "word": "vbox",
+   "key": "vbox",
+   "head": "in gui widget",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 70,
+     "character": 1
+    },
+    "end": {
+     "line": 70,
+     "character": 5
+    }
+   }
+  }
+71:2 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `vbox`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox"
+   ],
+   "range": {
+    "start": {
+     "line": 71,
+     "character": 2
+    },
+    "end": {
+     "line": 71,
+     "character": 6
+    }
+   }
+  }
+71:11 300
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 71,
+     "character": 11
+    },
+    "end": {
+     "line": 71,
+     "character": 14
+    }
+   }
+  }
+71:15 40
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 71,
+     "character": 15
+    },
+    "end": {
+     "line": 71,
+     "character": 17
+    }
+   }
+  }
+72:2 hbox
+  {
+   "word": "hbox",
+   "key": "hbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 5
+      },
+      "end": {
+       "line": 6,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "vbox"
+   ],
+   "range": {
+    "start": {
+     "line": 72,
+     "character": 2
+    },
+    "end": {
+     "line": 72,
+     "character": 6
+    }
+   }
+  }
+73:3 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `hbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 73,
+     "character": 3
+    },
+    "end": {
+     "line": 73,
+     "character": 7
+    }
+   }
+  }
+73:11 v_row
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 73,
+     "character": 10
+    },
+    "end": {
+     "line": 73,
+     "character": 17
+    }
+   }
+  }
+74:3 layoutpolicy_horizontal
+  {
+   "word": "layoutpolicy_horizontal",
+   "key": "layoutpolicy_horizontal",
+   "head": "in `hbox`",
+   "writes": [
+    "one of expanding"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 74,
+     "character": 3
+    },
+    "end": {
+     "line": 74,
+     "character": 26
+    }
+   }
+  }
+74:29 expanding
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 74,
+     "character": 29
+    },
+    "end": {
+     "line": 74,
+     "character": 38
+    }
+   }
+  }
+75:3 v_tab
+  {
+   "word": "v_tab",
+   "key": "v_tab",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 57,
+       "character": 5
+      },
+      "end": {
+       "line": 57,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 75,
+     "character": 3
+    },
+    "end": {
+     "line": 75,
+     "character": 8
+    }
+   }
+  }
+75:13 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `v_tab`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab"
+   ],
+   "range": {
+    "start": {
+     "line": 75,
+     "character": 13
+    },
+    "end": {
+     "line": 75,
+     "character": 17
+    }
+   }
+  }
+75:22 100
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 75,
+     "character": 22
+    },
+    "end": {
+     "line": 75,
+     "character": 26
+    }
+   }
+  }
+75:27 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 75,
+     "character": 27
+    },
+    "end": {
+     "line": 75,
+     "character": 29
+    }
+   }
+  }
+76:3 v_tab
+  {
+   "word": "v_tab",
+   "key": "v_tab",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 57,
+       "character": 5
+      },
+      "end": {
+       "line": 57,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 76,
+     "character": 3
+    },
+    "end": {
+     "line": 76,
+     "character": 8
+    }
+   }
+  }
+76:13 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `v_tab`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab"
+   ],
+   "range": {
+    "start": {
+     "line": 76,
+     "character": 13
+    },
+    "end": {
+     "line": 76,
+     "character": 17
+    }
+   }
+  }
+76:22 100
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 76,
+     "character": 22
+    },
+    "end": {
+     "line": 76,
+     "character": 26
+    }
+   }
+  }
+76:27 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 76,
+     "character": 27
+    },
+    "end": {
+     "line": 76,
+     "character": 29
+    }
+   }
+  }
+77:3 v_tab
+  {
+   "word": "v_tab",
+   "key": "v_tab",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 57,
+       "character": 5
+      },
+      "end": {
+       "line": 57,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox"
+   ],
+   "range": {
+    "start": {
+     "line": 77,
+     "character": 3
+    },
+    "end": {
+     "line": 77,
+     "character": 8
+    }
+   }
+  }
+77:13 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `v_tab`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab"
+   ],
+   "range": {
+    "start": {
+     "line": 77,
+     "character": 13
+    },
+    "end": {
+     "line": 77,
+     "character": 17
+    }
+   }
+  }
+77:22 100
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 77,
+     "character": 22
+    },
+    "end": {
+     "line": 77,
+     "character": 26
+    }
+   }
+  }
+77:27 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "vbox",
+    "hbox",
+    "v_tab",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 77,
+     "character": 27
+    },
+    "end": {
+     "line": 77,
+     "character": 29
+    }
+   }
+  }
+80:1 flowcontainer
+  {
+   "word": "flowcontainer",
+   "key": "flowcontainer",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 7,
+       "character": 5
+      },
+      "end": {
+       "line": 7,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 80,
+     "character": 1
+    },
+    "end": {
+     "line": 80,
+     "character": 14
+    }
+   }
+  }
+81:2 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `flowcontainer`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer"
+   ],
+   "range": {
+    "start": {
+     "line": 81,
+     "character": 2
+    },
+    "end": {
+     "line": 81,
+     "character": 6
+    }
+   }
+  }
+81:10 v_flow
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer"
+   ],
+   "range": {
+    "start": {
+     "line": 81,
+     "character": 9
+    },
+    "end": {
+     "line": 81,
+     "character": 17
+    }
+   }
+  }
+82:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer"
+   ],
+   "range": {
+    "start": {
+     "line": 82,
+     "character": 2
+    },
+    "end": {
+     "line": 82,
+     "character": 6
+    }
+   }
+  }
+82:11 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 82,
+     "character": 11
+    },
+    "end": {
+     "line": 82,
+     "character": 15
+    }
+   }
+  }
+82:20 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 82,
+     "character": 20
+    },
+    "end": {
+     "line": 82,
+     "character": 22
+    }
+   }
+  }
+82:23 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 82,
+     "character": 23
+    },
+    "end": {
+     "line": 82,
+     "character": 25
+    }
+   }
+  }
+83:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer"
+   ],
+   "range": {
+    "start": {
+     "line": 83,
+     "character": 2
+    },
+    "end": {
+     "line": 83,
+     "character": 6
+    }
+   }
+  }
+83:11 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 83,
+     "character": 11
+    },
+    "end": {
+     "line": 83,
+     "character": 15
+    }
+   }
+  }
+83:20 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 83,
+     "character": 20
+    },
+    "end": {
+     "line": 83,
+     "character": 22
+    }
+   }
+  }
+83:23 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 83,
+     "character": 23
+    },
+    "end": {
+     "line": 83,
+     "character": 25
+    }
+   }
+  }
+84:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer"
+   ],
+   "range": {
+    "start": {
+     "line": 84,
+     "character": 2
+    },
+    "end": {
+     "line": 84,
+     "character": 6
+    }
+   }
+  }
+84:11 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 84,
+     "character": 11
+    },
+    "end": {
+     "line": 84,
+     "character": 15
+    }
+   }
+  }
+84:20 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 84,
+     "character": 20
+    },
+    "end": {
+     "line": 84,
+     "character": 22
+    }
+   }
+  }
+84:23 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 84,
+     "character": 23
+    },
+    "end": {
+     "line": 84,
+     "character": 25
+    }
+   }
+  }
+85:2 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer"
+   ],
+   "range": {
+    "start": {
+     "line": 85,
+     "character": 2
+    },
+    "end": {
+     "line": 85,
+     "character": 6
+    }
+   }
+  }
+85:11 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `icon`",
+   "writes": [
+    "a number",
+    "one of 100%",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon"
+   ],
+   "range": {
+    "start": {
+     "line": 85,
+     "character": 11
+    },
+    "end": {
+     "line": 85,
+     "character": 15
+    }
+   }
+  }
+85:20 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 85,
+     "character": 20
+    },
+    "end": {
+     "line": 85,
+     "character": 22
+    }
+   }
+  }
+85:23 10
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "flowcontainer",
+    "icon",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 85,
+     "character": 23
+    },
+    "end": {
+     "line": 85,
+     "character": 25
+    }
+   }
+  }
+87:1 widget
+  {
+   "word": "widget",
+   "key": "widget",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 55,
+       "character": 5
+      },
+      "end": {
+       "line": 55,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_layout_rules"
+   ],
+   "range": {
+    "start": {
+     "line": 87,
+     "character": 1
+    },
+    "end": {
+     "line": 87,
+     "character": 7
+    }
+   }
+  }
+87:12 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in `widget`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "widget"
+   ],
+   "range": {
+    "start": {
+     "line": 87,
+     "character": 12
+    },
+    "end": {
+     "line": 87,
+     "character": 16
+    }
+   }
+  }
+87:20 v_nothing
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_layout_rules",
+    "widget"
+   ],
+   "range": {
+    "start": {
+     "line": 87,
+     "character": 19
+    },
+    "end": {
+     "line": 87,
+     "character": 30
+    }
+   }
+  }
+89:0 window
+  {
+   "word": "v_hidden_entry",
+   "key": "window",
+   "head": "gui widget",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 89,
+       "character": 0
+      },
+      "end": {
+       "line": 89,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 89,
+     "character": 0
+    },
+    "end": {
+     "line": 89,
+     "character": 6
+    }
+   }
+  }
+90:1 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in gui widget",
+   "writes": [
+    "gui widget"
+   ],
+   "winner": -1,
+   "within": [
+    "v_hidden_entry"
+   ],
+   "range": {
+    "start": {
+     "line": 90,
+     "character": 1
+    },
+    "end": {
+     "line": 90,
+     "character": 5
+    }
+   }
+  }
+90:9 v_hidden_entry
+  {
+   "word": "v_hidden_entry",
+   "key": "name",
+   "head": "gui widget",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 89,
+       "character": 0
+      },
+      "end": {
+       "line": 89,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_hidden_entry"
+   ],
+   "range": {
+    "start": {
+     "line": 90,
+     "character": 8
+    },
+    "end": {
+     "line": 90,
+     "character": 24
+    }
+   }
+  }
+91:1 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in gui widget",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_hidden_entry"
+   ],
+   "range": {
+    "start": {
+     "line": 91,
+     "character": 1
+    },
+    "end": {
+     "line": 91,
+     "character": 5
+    }
+   }
+  }
+91:10 100
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_hidden_entry",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 91,
+     "character": 10
+    },
+    "end": {
+     "line": 91,
+     "character": 13
+    }
+   }
+  }
+91:14 50
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_hidden_entry",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 91,
+     "character": 14
+    },
+    "end": {
+     "line": 91,
+     "character": 16
+    }
+   }
+  }
+92:1 parentanchor
+  {
+   "word": "parentanchor",
+   "key": "parentanchor",
+   "head": "in gui widget",
+   "writes": [
+    "one of top|right"
+   ],
+   "winner": -1,
+   "within": [
+    "v_hidden_entry"
+   ],
+   "range": {
+    "start": {
+     "line": 92,
+     "character": 1
+    },
+    "end": {
+     "line": 92,
+     "character": 13
+    }
+   }
+  }
+92:16 top|right
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_hidden_entry"
+   ],
+   "range": {
+    "start": {
+     "line": 92,
+     "character": 16
+    },
+    "end": {
+     "line": 92,
+     "character": 25
+    }
+   }
+  }
+93:1 visible
+  {
+   "word": "visible",
+   "key": "visible",
+   "head": "in gui widget",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_hidden_entry"
+   ],
+   "range": {
+    "start": {
+     "line": 93,
+     "character": 1
+    },
+    "end": {
+     "line": 93,
+     "character": 8
+    }
+   }
+  }
+93:13 GetVariableSystem.Exists
+  {
+   "word": "GetVariableSystem",
+   "head": "data function",
+   "scope": {
+    "this": "Global",
+    "reason": "what GetVariableSystem is called on"
+   },
+   "leads": "VariableSystem",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 50,
+       "character": 25
+      },
+      "end": {
+       "line": 50,
+       "character": 25
+      }
+     }
+    },
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 93,
+       "character": 13
+      },
+      "end": {
+       "line": 93,
+       "character": 13
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_hidden_entry"
+   ],
+   "range": {
+    "start": {
+     "line": 93,
+     "character": 13
+    },
+    "end": {
+     "line": 93,
+     "character": 30
+    }
+   }
+  }
+93:38 'x'
+  {
+   "word": "Exists",
+   "head": "data function",
+   "scope": {
+    "this": "VariableSystem",
+    "reason": "what Exists is called on"
+   },
+   "leads": "bool",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 50,
+       "character": 43
+      },
+      "end": {
+       "line": 50,
+       "character": 43
+      }
+     }
+    },
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 93,
+       "character": 31
+      },
+      "end": {
+       "line": 93,
+       "character": 31
+      }
+     }
+    }
+   ],
+   "winner": -1,
+   "stale": true,
+   "within": [
+    "v_hidden_entry"
+   ],
+   "range": {
+    "start": {
+     "line": 93,
+     "character": 31
+    },
+    "end": {
+     "line": 93,
+     "character": 42
+    }
+   }
+  }
+95:0 window
+  {
+   "word": "v_default_text",
+   "key": "window",
+   "head": "gui widget",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 95,
+       "character": 0
+      },
+      "end": {
+       "line": 95,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 95,
+     "character": 0
+    },
+    "end": {
+     "line": 95,
+     "character": 6
+    }
+   }
+  }
+96:1 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in gui widget",
+   "writes": [
+    "gui widget"
+   ],
+   "winner": -1,
+   "within": [
+    "v_default_text"
+   ],
+   "range": {
+    "start": {
+     "line": 96,
+     "character": 1
+    },
+    "end": {
+     "line": 96,
+     "character": 5
+    }
+   }
+  }
+96:9 v_default_text
+  {
+   "word": "v_default_text",
+   "key": "name",
+   "head": "gui widget",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 95,
+       "character": 0
+      },
+      "end": {
+       "line": 95,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_default_text"
+   ],
+   "range": {
+    "start": {
+     "line": 96,
+     "character": 8
+    },
+    "end": {
+     "line": 96,
+     "character": 24
+    }
+   }
+  }
+97:1 v_textbox
+  {
+   "word": "v_textbox",
+   "key": "v_textbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 60,
+       "character": 5
+      },
+      "end": {
+       "line": 60,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_default_text"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 1
+    },
+    "end": {
+     "line": 97,
+     "character": 10
+    }
+   }
+  }
+97:15 text
+  {
+   "word": "text",
+   "key": "text",
+   "head": "in `v_textbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_default_text",
+    "v_textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 15
+    },
+    "end": {
+     "line": 97,
+     "character": 19
+    }
+   }
+  }
+97:23 v_key
+  {
+   "word": "v_key",
+   "key": "text",
+   "head": "localization",
+   "name": "Fixture text",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 73,
+       "character": 0
+      },
+      "end": {
+       "line": 73,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_default_text",
+    "v_textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 97,
+     "character": 22
+    },
+    "end": {
+     "line": 97,
+     "character": 29
+    }
+   }
+  }
+98:1 button
+  {
+   "word": "button",
+   "key": "button",
+   "head": "in gui widget",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_default_text"
+   ],
+   "range": {
+    "start": {
+     "line": 98,
+     "character": 1
+    },
+    "end": {
+     "line": 98,
+     "character": 7
+    }
+   }
+  }
+98:12 text
+  {
+   "word": "text",
+   "key": "text",
+   "head": "in `button`",
+   "writes": [
+    "a localization key"
+   ],
+   "winner": -1,
+   "within": [
+    "v_default_text",
+    "button"
+   ],
+   "range": {
+    "start": {
+     "line": 98,
+     "character": 12
+    },
+    "end": {
+     "line": 98,
+     "character": 16
+    }
+   }
+  }
+98:20 v_key
+  {
+   "word": "v_key",
+   "key": "text",
+   "head": "localization",
+   "name": "Fixture text",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/localization/english/v_l_english.yml",
+     "origin": "vanilla",
+     "rel": "localization/english/v_l_english.yml",
+     "range": {
+      "start": {
+       "line": 73,
+       "character": 0
+      },
+      "end": {
+       "line": 73,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_default_text",
+    "button"
+   ],
+   "range": {
+    "start": {
+     "line": 98,
+     "character": 19
+    },
+    "end": {
+     "line": 98,
+     "character": 26
+    }
+   }
+  }
+100:0 window
+  {
+   "word": "v_concepts",
+   "key": "window",
+   "head": "gui widget",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 100,
+       "character": 0
+      },
+      "end": {
+       "line": 100,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 100,
+     "character": 0
+    },
+    "end": {
+     "line": 100,
+     "character": 6
+    }
+   }
+  }
+101:1 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in gui widget",
+   "writes": [
+    "gui widget"
+   ],
+   "winner": -1,
+   "within": [
+    "v_concepts"
+   ],
+   "range": {
+    "start": {
+     "line": 101,
+     "character": 1
+    },
+    "end": {
+     "line": 101,
+     "character": 5
+    }
+   }
+  }
+101:9 v_concepts
+  {
+   "word": "v_concepts",
+   "key": "name",
+   "head": "gui widget",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 100,
+       "character": 0
+      },
+      "end": {
+       "line": 100,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_concepts"
+   ],
+   "range": {
+    "start": {
+     "line": 101,
+     "character": 8
+    },
+    "end": {
+     "line": 101,
+     "character": 20
+    }
+   }
+  }
+102:1 textbox
+  {
+   "word": "textbox",
+   "key": "textbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 5
+      },
+      "end": {
+       "line": 0,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_concepts"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 1
+    },
+    "end": {
+     "line": 102,
+     "character": 8
+    }
+   }
+  }
+102:13 text
+  {
+   "word": "text",
+   "key": "text",
+   "head": "in `textbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_concepts",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 13
+    },
+    "end": {
+     "line": 102,
+     "character": 17
+    }
+   }
+  }
+102:22 v_concept|E
+  {
+   "word": "v_concept",
+   "head": "game concept",
+   "name": "Fixture concept",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/game_concepts/v_concepts.txt",
+     "origin": "vanilla",
+     "rel": "common/game_concepts/v_concepts.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_concepts",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 22
+    },
+    "end": {
+     "line": 102,
+     "character": 31
+    }
+   }
+  }
+102:35 rules
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_concepts",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 102,
+     "character": 20
+    },
+    "end": {
+     "line": 102,
+     "character": 41
+    }
+   }
+  }
+103:1 textbox
+  {
+   "word": "textbox",
+   "key": "textbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 5
+      },
+      "end": {
+       "line": 0,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_concepts"
+   ],
+   "range": {
+    "start": {
+     "line": 103,
+     "character": 1
+    },
+    "end": {
+     "line": 103,
+     "character": 8
+    }
+   }
+  }
+103:13 text
+  {
+   "word": "text",
+   "key": "text",
+   "head": "in `textbox`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_concepts",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 103,
+     "character": 13
+    },
+    "end": {
+     "line": 103,
+     "character": 17
+    }
+   }
+  }
+103:22 v_nothing|E
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_concepts",
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 103,
+     "character": 20
+    },
+    "end": {
+     "line": 103,
+     "character": 35
+    }
+   }
+  }
+105:0 texticon
+  {
+   "word": "v_icon",
+   "key": "texticon",
+   "head": "gui texticon",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 105,
+       "character": 0
+      },
+      "end": {
+       "line": 105,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 105,
+     "character": 0
+    },
+    "end": {
+     "line": 105,
+     "character": 8
+    }
+   }
+  }
+106:1 icon
+  {
+   "word": "icon",
+   "key": "icon",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 56,
+       "character": 5
+      },
+      "end": {
+       "line": 56,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_icon"
+   ],
+   "range": {
+    "start": {
+     "line": 106,
+     "character": 1
+    },
+    "end": {
+     "line": 106,
+     "character": 5
+    }
+   }
+  }
+106:8 v_icon
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_icon"
+   ],
+   "range": {
+    "start": {
+     "line": 106,
+     "character": 8
+    },
+    "end": {
+     "line": 106,
+     "character": 14
+    }
+   }
+  }
+107:1 iconsize
+  {
+   "word": "iconsize",
+   "key": "iconsize",
+   "head": "in gui texticon",
+   "writes": [
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_icon"
+   ],
+   "range": {
+    "start": {
+     "line": 107,
+     "character": 1
+    },
+    "end": {
+     "line": 107,
+     "character": 9
+    }
+   }
+  }
+107:14 texture
+  {
+   "word": "texture",
+   "key": "texture",
+   "head": "in `iconsize`",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_icon",
+    "iconsize"
+   ],
+   "range": {
+    "start": {
+     "line": 107,
+     "character": 14
+    },
+    "end": {
+     "line": 107,
+     "character": 21
+    }
+   }
+  }
+107:25 gfx
+  {
+   "word": "gfx/interface/v_bg.dds",
+   "key": "texture",
+   "head": "file",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gfx/interface/v_bg.dds",
+     "origin": "vanilla",
+     "rel": "gfx/interface/v_bg.dds",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "image": {
+    "width": 4,
+    "height": 4,
+    "format": "DXT1",
+    "mips": 1
+   },
+   "within": [
+    "v_icon",
+    "iconsize"
+   ],
+   "range": {
+    "start": {
+     "line": 107,
+     "character": 24
+    },
+    "end": {
+     "line": 107,
+     "character": 48
+    }
+   }
+  }
+107:29 interface
+  {
+   "word": "gfx/interface/v_bg.dds",
+   "key": "texture",
+   "head": "file",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gfx/interface/v_bg.dds",
+     "origin": "vanilla",
+     "rel": "gfx/interface/v_bg.dds",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "image": {
+    "width": 4,
+    "height": 4,
+    "format": "DXT1",
+    "mips": 1
+   },
+   "within": [
+    "v_icon",
+    "iconsize"
+   ],
+   "range": {
+    "start": {
+     "line": 107,
+     "character": 24
+    },
+    "end": {
+     "line": 107,
+     "character": 48
+    }
+   }
+  }
+107:39 v_bg.dds
+  {
+   "word": "gfx/interface/v_bg.dds",
+   "key": "texture",
+   "head": "file",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gfx/interface/v_bg.dds",
+     "origin": "vanilla",
+     "rel": "gfx/interface/v_bg.dds",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "image": {
+    "width": 4,
+    "height": 4,
+    "format": "DXT1",
+    "mips": 1
+   },
+   "within": [
+    "v_icon",
+    "iconsize"
+   ],
+   "range": {
+    "start": {
+     "line": 107,
+     "character": 24
+    },
+    "end": {
+     "line": 107,
+     "character": 48
+    }
+   }
+  }
+107:49 size
+  {
+   "word": "size",
+   "key": "size",
+   "head": "in `iconsize`",
+   "writes": [
+    "a number",
+    "a block"
+   ],
+   "winner": -1,
+   "within": [
+    "v_icon",
+    "iconsize"
+   ],
+   "range": {
+    "start": {
+     "line": 107,
+     "character": 49
+    },
+    "end": {
+     "line": 107,
+     "character": 53
+    }
+   }
+  }
+107:58 8
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_icon",
+    "iconsize",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 107,
+     "character": 58
+    },
+    "end": {
+     "line": 107,
+     "character": 59
+    }
+   }
+  }
+107:60 8
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_icon",
+    "iconsize",
+    "size"
+   ],
+   "range": {
+    "start": {
+     "line": 107,
+     "character": 60
+    },
+    "end": {
+     "line": 107,
+     "character": 61
+    }
+   }
+  }
+109:0 format
+  {
+   "word": "v_format",
+   "key": "format",
+   "head": "gui format",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 109,
+       "character": 0
+      },
+      "end": {
+       "line": 109,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 109,
+     "character": 0
+    },
+    "end": {
+     "line": 109,
+     "character": 6
+    }
+   }
+  }
+110:1 name
+  {
+   "word": "name",
+   "key": "name",
+   "head": "in gui format",
+   "writes": [
+    "gui format"
+   ],
+   "winner": -1,
+   "within": [
+    "v_format"
+   ],
+   "range": {
+    "start": {
+     "line": 110,
+     "character": 1
+    },
+    "end": {
+     "line": 110,
+     "character": 5
+    }
+   }
+  }
+110:9 v_format
+  {
+   "word": "v_format",
+   "key": "name",
+   "head": "gui format",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/v_window.gui",
+     "origin": "vanilla",
+     "rel": "gui/v_window.gui",
+     "range": {
+      "start": {
+       "line": 109,
+       "character": 0
+      },
+      "end": {
+       "line": 109,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "v_format"
+   ],
+   "range": {
+    "start": {
+     "line": 110,
+     "character": 8
+    },
+    "end": {
+     "line": 110,
+     "character": 18
+    }
+   }
+  }
+111:1 format
+  {
+   "word": "format",
+   "key": "format",
+   "head": "in gui format",
+   "writes": [
+    "text"
+   ],
+   "winner": -1,
+   "within": [
+    "v_format"
+   ],
+   "range": {
+    "start": {
+     "line": 111,
+     "character": 1
+    },
+    "end": {
+     "line": 111,
+     "character": 7
+    }
+   }
+  }
+111:11 bold
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "v_format"
+   ],
+   "range": {
+    "start": {
+     "line": 111,
+     "character": 10
+    },
+    "end": {
+     "line": 111,
+     "character": 16
+    }
+   }
+  }

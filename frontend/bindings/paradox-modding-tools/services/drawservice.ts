@@ -18,31 +18,22 @@ import * as draw$0 from "./internal/draw/models.js";
 import * as lsp$0 from "./internal/lsp/models.js";
 
 /**
- * Edit is the text edits one change from the Widgets panel makes, by file; the page applies them through the editor.
+ * Entries is what a GUI file can draw: its windows, types, templates, text icons and formats, in file order.
  */
-export function Edit(workspaceID: string, request: draw$0.Request, change: draw$0.Change): $CancellablePromise<lsp$0.TextEdit[] | null> {
-    return $Call.ByID(2759310437, workspaceID, request, change);
+export function Entries(workspaceID: string, path: string): $CancellablePromise<lsp$0.Symbol[] | null> {
+    return $Call.ByID(1015550551, workspaceID, path);
 }
 
 /**
- * GUI is a GUI file's window drawn as a list at the request's resolution, scale and language, over the workspace's
- * facts.
+ * GUI is a GUI file's entry drawn as a list at the request's resolution, scale and language.
  */
 export function GUI(workspaceID: string, request: draw$0.Request): $CancellablePromise<draw$0.List | null> {
     return $Call.ByID(1007593076, workspaceID, request);
 }
 
 /**
- * Properties is a part's properties as the Widgets panel lists them: each key's last value, who wrote it and the
- * choices its input offers.
+ * Properties is a part's properties as the Widgets panel lists them: each key's last value and who wrote it.
  */
 export function Properties(workspaceID: string, request: draw$0.Request, part: number): $CancellablePromise<draw$0.Property[] | null> {
     return $Call.ByID(4086947928, workspaceID, request, part);
-}
-
-/**
- * SetFact answers a binding's question for the workspace, or takes the answer back where the fact is not Known.
- */
-export function SetFact(workspaceID: string, fact: draw$0.Fact): $CancellablePromise<void> {
-    return $Call.ByID(1970738641, workspaceID, fact);
 }

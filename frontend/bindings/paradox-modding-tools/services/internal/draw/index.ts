@@ -3,9 +3,7 @@
 
 export type {
     Box,
-    Change,
     Element,
-    Fact,
     Font,
     Line,
     List,

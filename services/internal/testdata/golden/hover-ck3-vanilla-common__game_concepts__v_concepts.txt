@@ -1,0 +1,35 @@
+0:0 v_concept
+  {
+   "word": "v_concept",
+   "key": "v_concept",
+   "head": "game concept",
+   "name": "Fixture concept",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/common/game_concepts/v_concepts.txt",
+     "origin": "vanilla",
+     "rel": "common/game_concepts/v_concepts.txt",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 0
+    },
+    "end": {
+     "line": 0,
+     "character": 9
+    }
+   }
+  }

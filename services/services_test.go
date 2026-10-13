@@ -653,30 +653,13 @@ func must[T any](value T, err error) T {
 	return value
 }
 
-// TestDrawService covers the Visual view's shell: a window drawn from the fixture, a fact answered and taken back
-// through the record, a stale fact pruned as the workspace opens, and a workspace nobody listed refused.
+// TestDrawService covers the Visual view's shell: a window drawn from the fixture, and a workspace nobody listed
+// refused.
 func TestDrawService(t *testing.T) {
 	workspaces := fixtureService(t)
-	service := NewDrawService(workspaces, workspaces.config)
-	facts := func() map[string]string {
-		entry, _, err := workspaces.config.workspace("ws")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return entry.Facts
-	}
-	name := draw.Fact{Call: "Character.GetName", Function: "Character.GetName", Returns: game.DataText, Value: "Bob", Known: true}
-	stale := draw.Fact{Call: "Character.GetOldName", Function: "Character.GetOldName", Returns: game.DataText, Value: "Al", Known: true}
-	for _, fact := range []draw.Fact{name, stale} {
-		if err := service.SetFact("ws", fact); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(facts()) != 2 {
-		t.Errorf("both answers are kept before the workspace opens: %v", facts())
-	}
-	if _, err := workspaces.Open("ws"); err != nil || len(facts()) != 1 || facts()["Character.GetName"] != "Bob" {
-		t.Errorf("opening prunes the answer no function backs: %v, %v", facts(), err)
+	service := NewDrawService(workspaces)
+	if _, err := workspaces.Open("ws"); err != nil {
+		t.Fatal(err)
 	}
 	request := draw.Request{
 		Path: filepath.Join("internal", "testdata", gameCK3, "game", "gui", "v_window.gui"), Name: "v_window",
@@ -685,10 +668,6 @@ func TestDrawService(t *testing.T) {
 	list, err := service.GUI("ws", request)
 	if err != nil || len(list.Parts) == 0 {
 		t.Fatalf("a window drawn: %v", err)
-	}
-	name.Known = false
-	if err := service.SetFact("ws", name); err != nil || len(facts()) != 0 {
-		t.Errorf("an answer taken back: %v, %v", facts(), err)
 	}
 	if _, err := service.GUI("nobody", request); err == nil {
 		t.Error("a workspace nobody listed is refused")

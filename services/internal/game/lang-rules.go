@@ -425,22 +425,6 @@ var DumpWords = struct {
 // GlobalType is the data type a data call's first step is read on.
 const GlobalType = "Global"
 
-// What a value of the data system is, as a binding's answer and a fact's Returns say it.
-const (
-	DataBool   = "bool"
-	DataNumber = "number"
-	DataText   = "text"
-	DataList   = "list"
-	DataObject = "object"
-)
-
-// DataKinds is what each primitive type of the data system is, by its name; any other type is an object, and a list
-// where a data model reads it. No dump states which return types are numbers or text.
-var DataKinds = map[string]string{
-	"bool": DataBool, "int32": DataNumber, "uint32": DataNumber, "int64": DataNumber, "uint64": DataNumber,
-	"float": DataNumber, "double": DataNumber, "CFixedPoint": DataNumber, "CString": DataText, "CUTF8String": DataText,
-}
-
 // ---- Files and folders: where entries are and how they are named.
 
 // MisspelledFolders are folder names the game never reads, by the name it reads instead.
@@ -589,6 +573,7 @@ type Descriptor struct {
 	Local      bool     // its entries answer only in the file that declares them
 	Refs       []Ref    // positions in an entry (key/<number>) whose words name an entry of a database
 	Names      []string // keys whose values in an entry also name this database's entries (trait groups)
+	LocPrefix  string   // what the loc key of an entry's name puts before the entry's name; "" the name is the key
 }
 
 // Layout is how one game's script files lay out their entries.
@@ -601,12 +586,16 @@ type Layout struct {
 // NameOf is the database a folder or file from a root makes: its path without common/.
 func NameOf(path string) string { return strings.TrimPrefix(path, "common/") }
 
+// conceptPrefix is what CK3 and EU5 put before a game concept's name for its loc key; Vic3's names are their own keys.
+const conceptPrefix = "game_concept_"
+
 // layouts are each game's layout: the shared rows, with its own over them.
 var layouts = map[string]Layout{
 	"ck3": {
 		Descriptors: withShared([]Descriptor{
 			folder("common/on_action", Descriptor{Purpose: PurposeOnActions,
 				Refs: []Ref{{At: "on_actions"}, {At: "random_on_action/<number>"}, {At: "first_valid_on_action"}, {At: "fallback"}}}),
+			folder("common/game_concepts", Descriptor{Purpose: PurposeConcepts, LocPrefix: conceptPrefix}),
 			folder("common/traits", Descriptor{Names: []string{"group", "group_equivalence"}}),
 			folder("gfx/map/map_object_data", Descriptor{Identity: IdentityNone}),
 			folder("history/titles", Descriptor{Purpose: PurposeHistory, Of: "landed_titles"}),
@@ -647,6 +636,7 @@ var layouts = map[string]Layout{
 				Refs: []Ref{{At: "on_actions"}, {At: "random_on_action/<number>"}, {At: "first_valid_on_action"}, {At: "fallback"}}}),
 			folder("gfx/map/map_objects", Descriptor{Identity: IdentityNone}),
 			folder("gfx/map/city_data", Descriptor{Identity: IdentityByField, NameKey: "name"}),
+			folder("common/game_concepts", Descriptor{Purpose: PurposeConcepts, LocPrefix: conceptPrefix}),
 			folder("setup/start", Descriptor{Purpose: PurposeHistory}),
 			folder("setup/templates", Descriptor{Identity: IdentityByFile}),
 			folder("map_data/location_templates.txt", Descriptor{Purpose: PurposeHistory, Of: "map_data/named_locations"}),
@@ -779,8 +769,6 @@ const (
 	LayoutGrid                      // children in cells
 	LayoutFlow                      // children along a direction, wrapping
 	LayoutScroll                    // one content, clipped and scrolled
-	LayoutText                      // a text
-	LayoutImage                     // a texture
 )
 
 // LayoutClasses is each built-in kind that arranges its children by other than its anchors, by the kind's name; a
@@ -791,8 +779,30 @@ var LayoutClasses = map[string]LayoutClass{
 	"fixedgridbox": LayoutGrid, "dynamicgridbox": LayoutGrid,
 	"flowcontainer": LayoutFlow,
 	"scrollarea":    LayoutScroll, "uberscrollarea": LayoutScroll, "scrollvbox": LayoutScroll,
-	"textbox": LayoutText, "ubertextbox": LayoutText, "editbox": LayoutText, "debug_textbox": LayoutText,
-	"icon": LayoutImage, "background": LayoutImage,
+}
+
+// Sizing is how a built-in widget kind finds its size on an axis it declares none for.
+type Sizing uint8
+
+// The sizings; a kind with no row is zero where it declares no size.
+const (
+	SizeChildren Sizing = iota + 1 // a row's or column's children summed along it, the widest across
+	SizeBounds                     // the bounds of its children placed by their anchors with no room
+	SizeCells                      // the bounds of its placed cells (a flow, a grid)
+	SizeParent                     // the room it is given: it fills what holds it
+	SizeText                       // its measured text
+	SizeTexture                    // its texture's pixels
+)
+
+// Sizings is each built-in kind that sizes by other than its declaration, by the kind's name. Vanilla CK3 writes a
+// size on under 3% of these and on 83% or more of the kinds left out (widget, margin_widget, scrollarea, window).
+var Sizings = map[string]Sizing{
+	"hbox": SizeChildren, "uberhbox": SizeChildren, "vbox": SizeChildren, "ubervbox": SizeChildren,
+	"container": SizeBounds, "button_group": SizeBounds,
+	"flowcontainer": SizeCells, "fixedgridbox": SizeCells, "dynamicgridbox": SizeCells,
+	"background": SizeParent,
+	"textbox":    SizeText, "ubertextbox": SizeText, "editbox": SizeText, "debug_textbox": SizeText,
+	"icon": SizeTexture,
 }
 
 // LayoutPolicy is what a layoutpolicy word means for a widget's sizes in a row or column.
@@ -808,70 +818,8 @@ var LayoutPolicies = map[string]LayoutPolicy{
 	"shrinking": {Shrinks: true}, "fixed": {Fixed: true},
 }
 
-// Computation is what the evaluator computes a global function as.
-type Computation uint8
-
-// The computations.
-const (
-	ComputeAnd         Computation = iota // no when a side is no, yes when every side is yes, else unknown
-	ComputeOr                             // yes when a side is yes, no when every side is no, else unknown
-	ComputeNot                            // the opposite; unknown stays unknown
-	ComputeCompare                        // two known numbers or texts compared by the name's verb
-	ComputeArithmetic                     // two known numbers combined by the name's verb; unknown otherwise
-	ComputeParity                         // IsOdd and IsEven of a known number
-	ComputeListCount                      // IsDataModelEmpty no, DataModelHasItems yes, GetDataModelSize the count
-	ComputeTextEmpty                      // StringIsEmpty of the text: no for a stand-in
-	ComputeValid                          // IsValid: yes, a stand-in exists
-	ComputeSelect                         // Select_*(cond, a, b): a or b by a known cond, else a
-	ComputeLocalize                       // Localize('KEY'): the key's text
-	ComputeConcatenate                    // Concatenate: the texts joined
-	ComputeConvert                        // FixedPointToFloat, IntToFixedPoint, FixedPointToInt: the number itself
-	ComputeRowIndex                       // GetIndexInDataModel: the data model row this widget is drawn for
-)
-
-// ComputedFunction is one global function, or a family of them by prefix, and its computation.
-type ComputedFunction struct {
-	Name   string
-	Prefix bool
-	Computation
-}
-
-// ComputedFunctions are Jomini's global functions whose meaning is the engine's, not game data; the dumps declare
-// their names and return types. An exact name is tried before a prefix.
-var ComputedFunctions = []ComputedFunction{
-	{Name: "And", Computation: ComputeAnd}, {Name: "Or", Computation: ComputeOr}, {Name: "Not", Computation: ComputeNot},
-	{Name: "And", Prefix: true, Computation: ComputeAnd}, {Name: "Or", Prefix: true, Computation: ComputeOr},
-	{Name: "ObjectsEqual", Computation: ComputeCompare},
-	{Name: "EqualTo_", Prefix: true, Computation: ComputeCompare}, {Name: "NotEqualTo_", Prefix: true, Computation: ComputeCompare},
-	{Name: "GreaterThan_", Prefix: true, Computation: ComputeCompare},
-	{Name: "GreaterThanOrEqualTo_", Prefix: true, Computation: ComputeCompare},
-	{Name: "LessThan_", Prefix: true, Computation: ComputeCompare},
-	{Name: "LessThanOrEqualTo_", Prefix: true, Computation: ComputeCompare},
-	{Name: "Add_", Prefix: true, Computation: ComputeArithmetic}, {Name: "Subtract_", Prefix: true, Computation: ComputeArithmetic},
-	{Name: "Multiply_", Prefix: true, Computation: ComputeArithmetic}, {Name: "Divide_", Prefix: true, Computation: ComputeArithmetic},
-	{Name: "Min_", Prefix: true, Computation: ComputeArithmetic}, {Name: "Max_", Prefix: true, Computation: ComputeArithmetic},
-	{Name: "Abs_", Prefix: true, Computation: ComputeArithmetic},
-	{Name: "IsOdd_", Prefix: true, Computation: ComputeParity}, {Name: "IsEven_", Prefix: true, Computation: ComputeParity},
-	{Name: "IsDataModelEmpty", Computation: ComputeListCount}, {Name: "DataModelHasItems", Computation: ComputeListCount},
-	{Name: "GetDataModelSize", Computation: ComputeListCount},
-	{Name: "StringIsEmpty", Computation: ComputeTextEmpty}, {Name: "IsValid", Computation: ComputeValid},
-	{Name: "Select_", Prefix: true, Computation: ComputeSelect}, {Name: "Localize", Computation: ComputeLocalize},
-	{Name: "Concatenate", Computation: ComputeConcatenate},
-	{Name: "FixedPointToFloat", Computation: ComputeConvert}, {Name: "IntToFixedPoint", Computation: ComputeConvert},
-	{Name: "FixedPointToInt", Computation: ComputeConvert},
-	{Name: "GetIndexInDataModel", Computation: ComputeRowIndex},
-}
-
 // OpeningState is the state a window runs as the game opens it; a state with trigger_on_create = yes runs too.
 const OpeningState = "_show"
 
 // StateControls are the keys of a state that run it rather than say how the widget ends up.
 var StateControls = []string{"name", "using", "on_start", "on_finish", "duration", "delay", "next", "trigger_on_create"}
-
-// UnsetAtOpen are the function names that read what is unset as the game opens a window: a UI variable or tab
-// (Exists, HasValue, IsTabSelected, Get), and the pointer, which is nowhere yet. In the three games' dumps those
-// names belong only to the variable systems, the tab holders and the widgets' pointer state.
-var UnsetAtOpen = []string{
-	"Exists", "HasValue", "IsTabSelected", "Get", "IsTooltipLocked", "IsHovered", "IsMouseOver", "IsHighlighted",
-	"IsPressed",
-}

@@ -238,12 +238,17 @@ export default defineConfig({
             body: "pb-1 text-12",
           },
         },
-        // a 22px row at 12px, the picked one on the accent's soft fill with a 2px accent bar
+        // a 22px row at 12px, the picked one on the accent's soft fill with a 2px accent bar; the rows are never cut, a deep
+        // one scrolls the panel
         tree: {
-          slots: { linkLabel: "font-mono text-11.5" },
+          slots: {
+            itemWithChildren: "ps-1 -ms-px",
+            linkLabel: "font-mono text-11.5 text-clip whitespace-nowrap",
+          },
           variants: {
             size: {
               md: {
+                listWithChildren: "ms-2",
                 link: "h-5.5 px-2 py-0 gap-1.5 text-12 rounded-sm before:rounded-sm",
                 linkLeadingIcon: "size-3.5",
                 linkTrailingIcon: "size-3.5",

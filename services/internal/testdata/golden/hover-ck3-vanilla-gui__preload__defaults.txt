@@ -1,0 +1,281 @@
+0:0 type -
+0:5 textbox
+  {
+   "word": "textbox",
+   "key": "textbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 5
+      },
+      "end": {
+       "line": 0,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 0,
+     "character": 5
+    },
+    "end": {
+     "line": 0,
+     "character": 12
+    }
+   }
+  }
+0:15 textbox -
+1:1 font
+  {
+   "word": "font",
+   "key": "font",
+   "head": "in gui type",
+   "writes": [
+    "font font"
+   ],
+   "winner": -1,
+   "within": [
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 1
+    },
+    "end": {
+     "line": 1,
+     "character": 5
+    }
+   }
+  }
+1:9 v_font
+  {
+   "word": "v_font",
+   "key": "font",
+   "head": "font font",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/fonts/v.font",
+     "origin": "vanilla",
+     "rel": "fonts/v.font",
+     "range": {
+      "start": {
+       "line": 0,
+       "character": 0
+      },
+      "end": {
+       "line": 0,
+       "character": 0
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "within": [
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 1,
+     "character": 8
+    },
+    "end": {
+     "line": 1,
+     "character": 16
+    }
+   }
+  }
+2:1 fontsize
+  {
+   "word": "fontsize",
+   "key": "fontsize",
+   "head": "in gui type",
+   "writes": [
+    "a number"
+   ],
+   "winner": -1,
+   "within": [
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 1
+    },
+    "end": {
+     "line": 2,
+     "character": 9
+    }
+   }
+  }
+2:12 12
+  {
+   "word": "",
+   "winner": -1,
+   "within": [
+    "textbox"
+   ],
+   "range": {
+    "start": {
+     "line": 2,
+     "character": 12
+    },
+    "end": {
+     "line": 2,
+     "character": 14
+    }
+   }
+  }
+4:0 type -
+4:5 container
+  {
+   "word": "container",
+   "key": "container",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 4,
+       "character": 5
+      },
+      "end": {
+       "line": 4,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 4,
+     "character": 5
+    },
+    "end": {
+     "line": 4,
+     "character": 14
+    }
+   }
+  }
+4:17 container -
+5:0 type -
+5:5 background
+  {
+   "word": "background",
+   "key": "background",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 5,
+       "character": 5
+      },
+      "end": {
+       "line": 5,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 5,
+     "character": 5
+    },
+    "end": {
+     "line": 5,
+     "character": 15
+    }
+   }
+  }
+5:18 background -
+6:0 type -
+6:5 hbox
+  {
+   "word": "hbox",
+   "key": "hbox",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 6,
+       "character": 5
+      },
+      "end": {
+       "line": 6,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 6,
+     "character": 5
+    },
+    "end": {
+     "line": 6,
+     "character": 9
+    }
+   }
+  }
+6:12 hbox -
+7:0 type -
+7:5 flowcontainer
+  {
+   "word": "flowcontainer",
+   "key": "flowcontainer",
+   "head": "gui type",
+   "sites": [
+    {
+     "path": "<fixtures>/ck3/game/gui/preload/defaults.gui",
+     "origin": "vanilla",
+     "rel": "gui/preload/defaults.gui",
+     "range": {
+      "start": {
+       "line": 7,
+       "character": 5
+      },
+      "end": {
+       "line": 7,
+       "character": 5
+      }
+     }
+    }
+   ],
+   "winner": 0,
+   "range": {
+    "start": {
+     "line": 7,
+     "character": 5
+    },
+    "end": {
+     "line": 7,
+     "character": 18
+    }
+   }
+  }
+7:21 flowcontainer -

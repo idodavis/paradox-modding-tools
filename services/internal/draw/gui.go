@@ -1,27 +1,24 @@
-// gui.go is a GUI file's window drawn as a list: the request, the three calls the service makes (GUI, Properties,
-// Edit), and the widget the two passes share with the block reader that every lookup of a property goes through.
+// gui.go is a GUI file's entry drawn as a list: the request, the calls the service makes (Entries, GUI, Properties),
+// and the widget the two passes share with the block reader that every lookup of a property goes through.
 
 package draw
 
 import (
-	"cmp"
-	"errors"
 	"fmt"
+	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/index"
-	"paradox-modding-tools/services/internal/inventory"
 	"paradox-modding-tools/services/internal/jomini"
 	"paradox-modding-tools/services/internal/lsp"
-	"paradox-modding-tools/services/internal/schema"
 	"paradox-modding-tools/services/internal/workspace"
 )
 
 // The words several readers and tables share: the blend modes the page draws, the anchor word for the middle of a
-// box, a yes and a no, and the word a color is written with.
+// box, a yes and a no, and the words a color, a font and a template are written with.
 const (
 	blendNormal = "normal"
 	blendMask   = "mask"
@@ -29,6 +26,7 @@ const (
 	yes         = "yes"
 	no          = "no"
 	colorKey    = "color"
+	fontKey     = "font"
 	usingKey    = "using"
 )
 
@@ -36,23 +34,21 @@ const (
 const FileRoute = "/pmt/file"
 
 // Request is what a GUI render is asked for: the file, the entry drawn, the resolution and UI scale the window is
-// laid out at, the language of its texts, and whether an unknown widget is laid out as hidden.
+// laid out at, and the language of its texts.
 type Request struct {
-	Path        string  `json:"path"`
-	Name        string  `json:"name"`
-	Width       int     `json:"width"`
-	Height      int     `json:"height"`
-	Scale       float64 `json:"scale"`
-	Language    string  `json:"language"`
-	HideUnknown bool    `json:"hideUnknown"`
+	Path     string  `json:"path"`
+	Name     string  `json:"name"`
+	Width    int     `json:"width"`
+	Height   int     `json:"height"`
+	Scale    float64 `json:"scale"`
+	Language string  `json:"language"`
 }
 
 // widget is one resolved widget: its part, its kind and layout class, every statement that applies to it in the
 // order they apply (the chain's, each template's where it is used, its own), its children, and what the passes
-// found: rows, visibility, text, textures, sizes and box.
+// found: rows, text, textures, sizes and box.
 type widget struct {
 	part       int
-	source     statement // the statement the widget is written as: its own block is what an edit changes
 	kind       string
 	class      game.LayoutClass
 	statements []statement
@@ -60,13 +56,8 @@ type widget struct {
 	pending    []statement          // the child statements found while expanding, resolved once it is done
 	items      []statement          // the widgets of a data model's item, the template of its rows
 	overrides  map[string]statement // the blockoverrides in force, by the block's name
-	dataType   string               // the data type the nearest datacontext leads to; "" none
 	rows       int                  // a data model's rows drawn; 0 for no data model
-	row        int                  // the data model row this widget is drawn for; -1 for none
-	inRows     int                  // the rows of the data model this widget is a template of; 0 for none
-	byRow      []string             // a row template's visibility in each of its rows
-	visibility string
-	fact       string
+	hidden     bool                 // visible = no: the widget and what it holds are not drawn
 	text       *Text
 	lineWidths []float64 // the width of each of the text's lines
 	lineHeight float64   // how far apart the text's lines sit
@@ -86,7 +77,6 @@ type statement struct {
 	parsed    *jomini.Result
 	path      string
 	writtenBy string
-	made      bool // the statement is made for an entry drawn alone: no text of the file's holds it
 }
 
 // size is a width and a height: positive in pixels, negative a fraction of the parent's (-1 is 100%), zero unset.
@@ -102,27 +92,55 @@ var blendModes = map[string]string{
 // fitTypes are the fittype words a texture is drawn by, the page's background rule for each being its own.
 var fitTypes = map[string]bool{"centercrop": true, center: true, "start": true, "end": true, "fill": true}
 
-// FactKey is the key a fact is kept under: its call with the spaces folded, else its function.
-func FactKey(fact Fact) string {
-	return cmp.Or(fold(fact.Call), fact.Function)
+// missingKinds is what each kind of thing not found is called on the status line; %s is its name.
+var missingKinds = map[string]string{
+	"template": "Template not found: %s", "type": "Type not found: %s",
+	"cycle": "Type cycle: %s", "templatecycle": "Template cycle: %s",
+	"texture": "Texture not found: %s", fontKey: "Font not found: %s", "fontsize": "Font size missing: %s",
+	"format": "Text format not found: %s", "texticon": "Text icon not found: %s", "loc": "Localization key not found: %s",
+	"blend": "Blend mode not drawn: %s", "glyph": "Glyph missing for %s",
+	"empty": "Nothing to draw: %s has no size and no texture of its own",
 }
 
-// GUI resolves the file's entry into a list: pass 1 over the parse, the indexes and the facts, pass 2 over the
-// resolved tree at the request's size. The caller holds the workspace's read lock.
-func GUI(ws *workspace.Session, request Request, facts map[string]string) (*List, error) {
-	resolved, root, err := resolve(ws, request, facts)
+// misses is what a render did not find, each a sentence the status line shows.
+type misses map[string]bool
+
+// add lists a thing not found: its kind's sentence with its name.
+func (misses misses) add(kind, name string) {
+	misses[fmt.Sprintf(missingKinds[kind], name)] = true
+}
+
+// Entries is what a GUI file can draw: the symbols whose database an entry is drawn from (a window, type, template,
+// text icon or format), in the file's order.
+func Entries(ws *workspace.Session, path string) ([]lsp.Symbol, error) {
+	symbols, err := lsp.DocumentSymbols(ws, path)
 	if err != nil {
 		return nil, err
 	}
-	resolved.list.Width, resolved.list.Height = request.Width, request.Height
-	resolved.list.Elements = place(root, request)
+	return slices.DeleteFunc(symbols, func(symbol lsp.Symbol) bool { return entryHow[symbol.Database] == "" }), nil
+}
+
+// GUI resolves the file's entry into a list: pass 1 over the parse and the indexes, pass 2 over the resolved tree at
+// the request's size. The scene is a window's resolution, or the size of an entry drawn alone, which is listed when it
+// has none. The caller holds the workspace's read lock.
+func GUI(ws *workspace.Session, request Request) (*List, error) {
+	resolved, root, err := resolve(ws, request)
+	if err != nil {
+		return nil, err
+	}
+	elements, scene := place(root, request, resolved.alone)
+	if resolved.alone && (scene.width == 0 || scene.height == 0) {
+		resolved.missing.add("empty", request.Name)
+	}
+	resolved.list.Elements = elements
+	resolved.list.Width, resolved.list.Height = int(math.Ceil(scene.width)), int(math.Ceil(scene.height))
+	resolved.list.Missing = slices.Sorted(maps.Keys(resolved.missing))
 	return resolved.list, nil
 }
 
-// Properties is the part's effective properties: every key that applies to it with its last value, who wrote it, the
-// kind of input and its choices.
-func Properties(ws *workspace.Session, request Request, facts map[string]string, part int) ([]Property, error) {
-	resolved, root, err := resolve(ws, request, facts)
+// Properties is the part's effective properties: every key that applies to it with its last value and who wrote it.
+func Properties(ws *workspace.Session, request Request, part int) ([]Property, error) {
+	_, root, err := resolve(ws, request)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +155,7 @@ func Properties(ws *workspace.Session, request Request, facts map[string]string,
 		if key == "state" {
 			continue
 		}
-		row := resolved.property(assignment)
+		row := Property{Key: assignment.assign.Key.Text, Value: valueText(assignment), WrittenBy: assignment.writtenBy}
 		if seen, repeated := positions[key]; repeated {
 			rows[seen] = row
 			continue
@@ -161,31 +179,6 @@ func (node *widget) find(part int) *widget {
 	return nil
 }
 
-// property is a statement as a row of the panel: its key and value, who wrote it, and the input its value is
-// written for, with the choices a texture or a font offers.
-func (resolver *resolver) property(assignment statement) Property {
-	key := assignment.assign.Key.Text
-	row := Property{Key: key, Value: valueText(assignment), WrittenBy: assignment.writtenBy, Kind: "text"}
-	if ref, has := refOf(key); has && ref.Database == game.File {
-		row.Kind, row.Options = "texture", resolver.imageFiles()
-		return row
-	} else if has && ref.Database == fontDatabase {
-		row.Kind, row.Options = "font", index.Names(resolver.ws.Indexes(), fontDatabase)
-		return row
-	}
-	switch value := strings.ToLower(row.Value); {
-	case value == yes || value == no:
-		row.Kind = game.DataBool
-	case isNumbers(assignment.assign.Value):
-		row.Kind = "number"
-	default:
-		if _, _, isColor := jomini.ColorParts(assignment.assign.Value); isColor && len(valuesOf(assignment.assign.Value)) >= 3 {
-			row.Kind = colorKey
-		}
-	}
-	return row
-}
-
 // valueText is what a statement's value is written as: a word's text, or a block as written.
 func valueText(assignment statement) string {
 	if scalar, isScalar := assignment.assign.Value.(*jomini.Scalar); isScalar {
@@ -195,95 +188,6 @@ func valueText(assignment statement) string {
 		return ""
 	}
 	return assignment.parsed.Flat(assignment.assign.Value.NodeRange())
-}
-
-// isNumbers reports whether a value is a number or a block of numbers and percents.
-func isNumbers(value jomini.Value) bool {
-	texts := valuesOf(value)
-	for _, text := range texts {
-		if _, isNumber := numberOf(text); !isNumber {
-			return false
-		}
-	}
-	return len(texts) > 0
-}
-
-// refOf is the file type's Ref row a key is written under.
-func refOf(key string) (game.Ref, bool) {
-	refs := game.FileTypes[".gui"].Refs
-	i := slices.IndexFunc(refs, func(ref game.Ref) bool { return ref.At == key })
-	if i < 0 {
-		return game.Ref{}, false
-	}
-	return refs[i], true
-}
-
-// imageFiles is every image the install and the mods hold under gfx, by its path from its root.
-func (resolver *resolver) imageFiles() []string {
-	var rels []string
-	for _, scanned := range resolver.ws.Indexes() {
-		for _, file := range scanned.Files {
-			if file.Format == inventory.Image && strings.HasPrefix(file.Rel, "gfx/") {
-				rels = append(rels, file.Rel)
-			}
-		}
-	}
-	slices.Sort(rels)
-	return slices.Compact(rels)
-}
-
-// Edit is the text edits one change from the panel makes in the file: a key's own statement's value replaced, or the
-// key added to the widget's own block, the part's statement removed, or moved before another part's. A file under
-// the install is refused.
-func Edit(ws *workspace.Session, request Request, facts map[string]string, change Change) ([]lsp.TextEdit, error) {
-	_, root, err := resolve(ws, request, facts)
-	if err != nil {
-		return nil, err
-	}
-	target := root.find(change.Part)
-	if target == nil || target.source.made || target.source.assign == nil {
-		return nil, fmt.Errorf("part %d is no statement of the file to change", change.Part)
-	}
-	if file, _, _ := ws.Locate(target.source.path); file.Origin == game.OriginVanilla {
-		return nil, errGameFile
-	}
-	switch {
-	case change.Remove:
-		return []lsp.TextEdit{removal(target.source)}, nil
-	case change.Before >= 0:
-		return move(root, target, change.Before)
-	}
-	return []lsp.TextEdit{setKey(target, change.Key, change.Value)}, nil
-}
-
-// PruneFacts is the workspace's facts without those whose function nothing declares or names, and the keys it
-// dropped: a fact is kept where the key is named by a data function reference or leads to a function the dumps
-// declare.
-func PruneFacts(ws *workspace.Session, facts map[string]string) (remaining map[string]string, dropped []string) {
-	remaining = map[string]string{}
-	for key, value := range facts {
-		if declared(ws, key) {
-			remaining[key] = value
-		} else {
-			dropped = append(dropped, key)
-		}
-	}
-	slices.Sort(dropped)
-	return remaining, dropped
-}
-
-// declared reports whether a fact's key names a data function: one a binding refers to, or the last step of its
-// call is a function of the type the steps before it lead to.
-func declared(ws *workspace.Session, key string) bool {
-	if len(index.Lookup(ws.Indexes(), schema.Refers, game.DataFunction, key)) > 0 {
-		return true
-	}
-	steps := jomini.ParseCall(key, 0)
-	if len(steps) == 0 {
-		return false
-	}
-	_, _, exists := ws.Install.Schema.CallStep(steps, len(steps)-1, "")
-	return exists
 }
 
 // last is the statement that last wrote a key, without regard to case; false for none. The block reader: every
@@ -373,84 +277,4 @@ func numberOf(text string) (float64, bool) {
 	}
 	number, err := strconv.ParseFloat(text, 64)
 	return number, err == nil
-}
-
-// errGameFile is the refusal of an edit to a file under the install.
-var errGameFile = errors.New("the game's files are read only")
-
-// setKey is the edit that writes a key's value in the widget's own block: the value of the key's last statement
-// there replaced, else the key added after the block's last statement, indented as the statements are.
-func setKey(target *widget, key, value string) lsp.TextEdit {
-	source := target.source
-	block := jomini.ChildBlock(source.assign)
-	fields := jomini.Fields(block)
-	for _, field := range slices.Backward(fields) {
-		if strings.EqualFold(field.Key.Text, key) && field.Value != nil {
-			return textEdit(source.parsed, field.Value.NodeRange(), value)
-		}
-	}
-	src := source.parsed.Src
-	offset, indent := block.Range.Start+1, indentOf(src, source.assign.Range.Start)+"\t"
-	if len(fields) > 0 {
-		last := fields[len(fields)-1]
-		offset, indent = last.NodeRange().End, indentOf(src, last.Range.Start)
-		if !strings.Contains(src[block.Range.Start:last.Range.Start], "\n") {
-			indent += "\t"
-		}
-	}
-	return textEdit(source.parsed, jomini.Range{Start: offset, End: offset}, "\n"+indent+key+" = "+value)
-}
-
-// removal is the edit that removes a statement and the line break before it.
-func removal(source statement) lsp.TextEdit {
-	src := source.parsed.Src
-	start := source.assign.Range.Start
-	if line := lineStart(src, start); strings.TrimSpace(src[line:start]) == "" {
-		start = line
-		if start > 0 {
-			start--
-		}
-		if start > 0 && src[start] == '\n' && src[start-1] == '\r' {
-			start--
-		}
-	}
-	return textEdit(source.parsed, jomini.Range{Start: start, End: source.assign.Range.End}, "")
-}
-
-// move is the edits that take a part's statement out of its place and write it before another part's, in the same
-// file.
-func move(root, target *widget, before int) ([]lsp.TextEdit, error) {
-	other := root.find(before)
-	if other == nil || other.source.made || other.source.path != target.source.path {
-		return nil, fmt.Errorf("part %d cannot be moved before part %d", target.part, before)
-	}
-	src := target.source.parsed.Src
-	text := src[target.source.assign.Range.Start:target.source.assign.Range.End]
-	line := lineStart(src, other.source.assign.Range.Start)
-	insert := textEdit(target.source.parsed, jomini.Range{Start: line, End: line}, indentOf(src, line)+text+"\n")
-	return []lsp.TextEdit{removal(target.source), insert}, nil
-}
-
-// textEdit is a replacement of a span of a parse's text, in the editor's positions.
-func textEdit(parsed *jomini.Result, span jomini.Range, text string) lsp.TextEdit {
-	lines := parsed.Lines()
-	return lsp.TextEdit{
-		Range:   lsp.Range{Start: lines.PositionAt(span.Start), End: lines.PositionAt(span.End)},
-		NewText: text,
-	}
-}
-
-// lineStart is the offset of the start of the line an offset is on.
-func lineStart(src string, offset int) int {
-	return strings.LastIndexByte(src[:offset], '\n') + 1
-}
-
-// indentOf is the blanks a line starts with: the line an offset is on, or the one that starts at it.
-func indentOf(src string, offset int) string {
-	start := lineStart(src, offset)
-	end := start
-	for end < len(src) && (src[end] == ' ' || src[end] == '\t') {
-		end++
-	}
-	return src[start:end]
 }

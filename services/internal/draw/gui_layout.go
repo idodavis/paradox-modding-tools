@@ -30,44 +30,47 @@ var (
 )
 
 // place runs pass 2: the rows of every data model drawn, the root at its size, each widget's children by its layout
-// class, pre-order, writing each widget's box; then the elements in paint order.
-func place(root *widget, request Request) []Element {
-	tree := instance(root, -1, request.HideUnknown)
+// class, pre-order, writing each widget's box; then the elements in paint order, and the scene they are drawn on: a
+// window's resolution, or the size of an entry drawn alone.
+func place(root *widget, request Request, alone bool) ([]Element, size) {
+	tree := instance(root)
+	tree.hidden = false // the entry drawn by name is drawn whatever its own visible says
 	resolution := size{width: float64(request.Width), height: float64(request.Height)}
-	tree.box = rootBox(tree, resolution)
+	tree.box = rootBox(tree, resolution, alone)
 	arrange(tree)
-	return elementsOf(tree, 1, nil, []Element{})
+	scene := resolution
+	if alone {
+		scene = size{width: tree.box.Width, height: tree.box.Height}
+	}
+	return elementsOf(tree, 1, nil, []Element{}), scene
 }
 
-// instance is a copy of a widget with the rows of its data model drawn: its template children once per row, each
-// copy with its row's visibility, and with hide, a widget that is unknown laid out as hidden.
-func instance(node *widget, row int, hide bool) *widget {
+// instance is a copy of a widget with the rows of its data model drawn: its template children once per row.
+func instance(node *widget) *widget {
 	copied := *node
-	if row >= 0 && row < len(node.byRow) {
-		copied.visibility = node.byRow[row]
-	}
-	if hide && copied.visibility == Unknown {
-		copied.visibility = Hidden
-	}
 	copied.children = nil
 	for _, child := range node.children {
 		if !child.template {
-			copied.children = append(copied.children, instance(child, row, hide))
+			copied.children = append(copied.children, instance(child))
 		}
 	}
-	for index := range node.rows {
+	for range node.rows {
 		for _, child := range node.children {
 			if child.template {
-				copied.children = append(copied.children, instance(child, index, hide))
+				copied.children = append(copied.children, instance(child))
 			}
 		}
 	}
 	return &copied
 }
 
-// rootBox is the root's box: its size (a percent of the resolution), else the resolution, anchored in it.
-func rootBox(root *widget, resolution size) Box {
+// rootBox is the root's box: a window's size (a percent of the resolution), else the resolution, anchored in it; an
+// entry drawn alone is its own size at the origin, the resolution being the room its percents take.
+func rootBox(root *widget, resolution size, alone bool) Box {
 	own := preferredSize(root, resolution)
+	if alone {
+		return Box{Width: own.width, Height: own.height}
+	}
 	if own.width == 0 {
 		own.width = resolution.width
 	}
@@ -90,7 +93,6 @@ func arrange(node *widget) {
 		placeFlow(node)
 	case game.LayoutScroll:
 		placeScroll(node)
-	case game.LayoutText, game.LayoutImage:
 	default:
 		placePlain(node)
 	}
@@ -161,7 +163,7 @@ func preferredSize(node *widget, room size) size {
 	if preferred.height == 0 {
 		preferred.height = contentOf(node, room, true)
 	}
-	if node.class == game.LayoutImage && node.content.width > 0 {
+	if game.Sizings[node.kind] == game.SizeTexture && node.content.width > 0 {
 		preferred = byRatio(preferred, node.content)
 	}
 	return clamped(node, preferred)
@@ -205,40 +207,94 @@ func clamped(node *widget, preferred size) size {
 	return preferred
 }
 
-// contentOf is what a widget holds on one axis where it declares no size: its text or texture, or its children by
-// its class (a row sums widths and takes the tallest, a column the mirror, with spacing and margins); else zero.
+// contentOf is what a widget finds on one axis where it declares no size, by its kind's sizing: the room it is given,
+// its text or texture, or what its children make with no room to take a percent of; zero for a kind with no row.
 func contentOf(node *widget, room size, vertical bool) float64 {
-	axis := func(measured size) float64 {
-		if vertical {
-			return measured.height
-		}
-		return measured.width
-	}
-	switch node.class {
-	case game.LayoutText, game.LayoutImage:
-		return axis(node.content)
-	case game.LayoutRow, game.LayoutColumn:
-		stacked := (node.class == game.LayoutColumn) == vertical
-		total, widest, count := 0.0, 0.0, 0
-		for _, child := range node.children {
-			if child.visibility == Hidden && ignoresHidden(node) {
-				continue
-			}
-			length := axis(preferredSize(child, room))
-			total, widest, count = total+length, max(widest, length), count+1
-		}
-		leading, top, trailing, bottom := node.margins()
-		around := leading + trailing
-		if vertical {
-			around = top + bottom
-		}
-		if stacked {
-			spacing, _ := node.single("spacing")
-			return total + spacing*float64(max(count-1, 0)) + around
-		}
-		return widest + around
+	switch game.Sizings[node.kind] {
+	case game.SizeParent:
+		return axisOf(room, vertical)
+	case game.SizeText, game.SizeTexture:
+		return axisOf(node.content, vertical)
+	case game.SizeChildren:
+		return node.stackedContent(vertical)
+	case game.SizeBounds:
+		return axisOf(node.reach(), vertical) + node.around(vertical)
+	case game.SizeCells:
+		return axisOf(node.cellsContent(room), vertical) + node.around(vertical)
 	}
 	return 0
+}
+
+// axisOf is a size on one axis.
+func axisOf(measured size, vertical bool) float64 {
+	if vertical {
+		return measured.height
+	}
+	return measured.width
+}
+
+// around is the margins on both sides of an axis.
+func (node *widget) around(vertical bool) float64 {
+	leading, top, trailing, bottom := node.margins()
+	if vertical {
+		return top + bottom
+	}
+	return leading + trailing
+}
+
+// stackedContent is what a row's or column's children make on an axis: along the box their sizes summed with the
+// spacing between and the margins around, across it the largest.
+func (node *widget) stackedContent(vertical bool) float64 {
+	stacked := (node.class == game.LayoutColumn) == vertical
+	total, widest, count := 0.0, 0.0, 0
+	for _, child := range node.children {
+		if givesNoRoom(node, child) {
+			continue
+		}
+		length := axisOf(preferredSize(child, size{}), vertical)
+		total, widest, count = total+length, max(widest, length), count+1
+	}
+	if stacked {
+		spacing, _ := node.single("spacing")
+		return total + spacing*float64(max(count-1, 0)) + node.around(vertical)
+	}
+	return widest + node.around(vertical)
+}
+
+// reach is how far a widget's children extend from its origin, each placed by its anchors in an empty cell: the
+// origin and every box they take.
+func (node *widget) reach() size {
+	var low, high size
+	for _, child := range node.children {
+		if givesNoRoom(node, child) {
+			continue
+		}
+		box := anchored(child, Box{}, preferredSize(child, size{}))
+		low = size{width: min(low.width, box.X), height: min(low.height, box.Y)}
+		high = size{width: max(high.width, box.X+box.Width), height: max(high.height, box.Y+box.Height)}
+	}
+	return size{width: high.width - low.width, height: high.height - low.height}
+}
+
+// cellsContent is the size a grid's cells or a flow's children take where a room limits their rows: its largest cell
+// by its columns and rows, or the flow's children laid along their direction.
+func (node *widget) cellsContent(room size) size {
+	if node.class == game.LayoutFlow {
+		var extent size
+		for _, box := range flowBoxes(node, size{}, room) {
+			extent = size{width: max(extent.width, box.X+box.Width), height: max(extent.height, box.Y+box.Height)}
+		}
+		return extent
+	}
+	cell, columns := gridShape(node, size{}, room.width)
+	if columns == 0 {
+		return size{}
+	}
+	count := len(node.children)
+	return size{
+		width:  float64(min(columns, count)) * cell.width,
+		height: float64((count+columns-1)/columns) * cell.height,
+	}
 }
 
 // ignoresHidden reports whether a box gives a hidden child no room (ignoreinvisible = yes).
@@ -247,11 +303,20 @@ func ignoresHidden(node *widget) bool {
 	return strings.EqualFold(value, yes)
 }
 
-// anchored is the box a widget of a size takes inside a cell: the point of it its widgetanchor names on the point of
-// the cell its parentanchor names, then moved by its position.
+// givesNoRoom reports whether a box holds a child as though it were not there: it is hidden and the box ignores
+// what is.
+func givesNoRoom(node, child *widget) bool {
+	return child.hidden && ignoresHidden(node)
+}
+
+// anchored is the box a widget of a size takes inside a cell: the point of it its widgetanchor names (its
+// parentanchor where it names none) on the point of the cell its parentanchor names, then moved by its position.
 func anchored(node *widget, cell Box, own size) Box {
 	parentAcross, parentDown := anchorOf(node, "parentanchor")
-	selfAcross, selfDown := anchorOf(node, "widgetanchor")
+	selfAcross, selfDown := parentAcross, parentDown
+	if _, named := node.choices("widgetanchor"); named {
+		selfAcross, selfDown = anchorOf(node, "widgetanchor")
+	}
 	offset := node.pair("position")
 	if value, has := node.single("position_x"); has {
 		offset.width = value
@@ -334,7 +399,7 @@ func placeBox(node *widget, vertical bool) {
 	room := size{width: cell.Width, height: cell.Height}
 	var visible []*widget
 	for _, child := range node.children {
-		if child.visibility != Hidden || !ignoresHidden(node) {
+		if !givesNoRoom(node, child) {
 			visible = append(visible, child)
 		}
 	}
@@ -455,25 +520,35 @@ func abovePreferred(items []item, room float64) []float64 {
 	}
 }
 
-// placeGrid lays a grid's children out in its columns and rows at its cell size: a fixed grid by addcolumn and
-// addrow, a dynamic one by its largest child, wrapping after datamodel_wrap columns.
-func placeGrid(node *widget) {
-	cell := node.inner()
-	room := size{width: cell.Width, height: cell.Height}
-	columnWidth, _ := node.single("addcolumn")
-	rowHeight, _ := node.single("addrow")
+// gridShape is a grid's cell size and its columns across a width: the cell is addcolumn and addrow, or its largest
+// child at a room's percents; the columns are datamodel_wrap's or as many cells as the width holds, one at least. A
+// grid with no cell has no columns.
+func gridShape(node *widget, room size, width float64) (cell size, columns int) {
+	cell.width, _ = node.single("addcolumn")
+	cell.height, _ = node.single("addrow")
 	for _, child := range node.children {
 		preferred := preferredSize(child, room)
-		columnWidth, rowHeight = max(columnWidth, preferred.width), max(rowHeight, preferred.height)
+		cell = size{width: max(cell.width, preferred.width), height: max(cell.height, preferred.height)}
 	}
-	if columnWidth == 0 {
-		return
+	if cell.width == 0 {
+		return cell, 0
 	}
-	columns := int(cell.Width / columnWidth)
+	columns = int(width / cell.width)
 	if wrap, has := node.numbers("datamodel_wrap"); has && wrap[0] > 0 {
 		columns = int(wrap[0])
 	}
-	columns = max(columns, 1)
+	return cell, max(columns, 1)
+}
+
+// placeGrid lays a grid's children out in its columns and rows at its cell size: a fixed grid by addcolumn and
+// addrow, a dynamic one by its largest child, wrapping after datamodel_wrap columns.
+func placeGrid(node *widget) {
+	inner := node.inner()
+	room := size{width: inner.Width, height: inner.Height}
+	cell, columns := gridShape(node, room, inner.Width)
+	if columns == 0 {
+		return
+	}
 	flipped, _ := node.scalar("flipdirection")
 	rows := (len(node.children) + columns - 1) / columns
 	for i, child := range node.children {
@@ -482,26 +557,25 @@ func placeGrid(node *widget) {
 			column, row = i/rows, i%rows
 		}
 		own := preferredSize(child, room)
-		origin := Box{X: cell.X + float64(column)*columnWidth, Y: cell.Y + float64(row)*rowHeight}
-		child.box = Box{X: origin.X, Y: origin.Y, Width: max(own.width, 0), Height: max(own.height, 0)}
+		child.box = Box{
+			X: inner.X + float64(column)*cell.width, Y: inner.Y + float64(row)*cell.height,
+			Width: max(own.width, 0), Height: max(own.height, 0),
+		}
 	}
 }
 
-// placeFlow lays a flow's children out along its direction (horizontal unless it says vertical), each at its
-// preferred size, wrapping at the box's size on that axis, spacing between them.
-func placeFlow(node *widget) {
-	cell := node.inner()
-	room := size{width: cell.Width, height: cell.Height}
+// flowBoxes are a flow's children's boxes from its origin, in the children's order: each at its preferred size in a
+// room, along its direction (horizontal unless it says vertical) with spacing between, wrapping where the next would
+// pass a limit room's size on that axis; a limit of zero wraps never. A child the flow ignores has no box.
+func flowBoxes(node *widget, room, limit size) []Box {
 	choices, _ := node.choices("direction")
 	vertical := slices.Contains(choices, "vertical")
 	spacing, _ := node.single("spacing")
 	along, line, thickest := 0.0, 0.0, 0.0
-	limit := cell.Width
-	if vertical {
-		limit = cell.Height
-	}
-	for _, child := range node.children {
-		if child.visibility == Hidden && ignoresHidden(node) {
+	edge := axisOf(limit, vertical)
+	boxes := make([]Box, len(node.children))
+	for i, child := range node.children {
+		if givesNoRoom(node, child) {
 			continue
 		}
 		own := preferredSize(child, room)
@@ -509,15 +583,27 @@ func placeFlow(node *widget) {
 		if vertical {
 			length, thick = own.height, own.width
 		}
-		if along > 0 && along+length > limit {
+		if along > 0 && edge > 0 && along+length > edge {
 			along, line, thickest = 0, line+thickest+spacing, 0
 		}
+		boxes[i] = Box{X: along, Y: line, Width: own.width, Height: own.height}
 		if vertical {
-			child.box = Box{X: cell.X + line, Y: cell.Y + along, Width: own.width, Height: own.height}
-		} else {
-			child.box = Box{X: cell.X + along, Y: cell.Y + line, Width: own.width, Height: own.height}
+			boxes[i].X, boxes[i].Y = line, along
 		}
 		along, thickest = along+length+spacing, max(thickest, thick)
+	}
+	return boxes
+}
+
+// placeFlow lays a flow's children out along its direction, each at its preferred size, wrapping at the box's size
+// on that axis.
+func placeFlow(node *widget) {
+	inner := node.inner()
+	room := size{width: inner.Width, height: inner.Height}
+	for i, box := range flowBoxes(node, room, room) {
+		if child := node.children[i]; !givesNoRoom(node, child) {
+			child.box = Box{X: inner.X + box.X, Y: inner.Y + box.Y, Width: box.Width, Height: box.Height}
+		}
 	}
 }
 
@@ -540,7 +626,7 @@ func placeScroll(node *widget) {
 // elementsOf adds the widget's elements and its children's, in paint order, parents before children: one element a
 // texture, or one bare where it has none, then one for the text. A hidden widget and what it holds have none.
 func elementsOf(node *widget, alpha float64, clip *Box, out []Element) []Element {
-	if node.visibility == Hidden {
+	if node.hidden {
 		return out
 	}
 	alpha *= node.alpha
@@ -571,16 +657,7 @@ func elementsOf(node *widget, alpha float64, clip *Box, out []Element) []Element
 // alignedText is a text's lines placed in the box its align words name: left, hcenter or right across, top, vcenter
 // or bottom down.
 func alignedText(node *widget, box Box) *Text {
-	choices, _ := node.choices("align")
-	var acrossFraction, downFraction float64
-	for _, choice := range choices {
-		if fraction, isNamed := across[choice]; isNamed {
-			acrossFraction = fraction
-		}
-		if fraction, isNamed := down[choice]; isNamed {
-			downFraction = fraction
-		}
-	}
+	acrossFraction, downFraction := anchorOf(node, "align")
 	aligned := *node.text
 	aligned.Lines = make([]Line, len(node.text.Lines))
 	block := 0.0

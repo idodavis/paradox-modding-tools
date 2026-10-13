@@ -55,3 +55,59 @@ window = {
 type window = window { }
 type widget = widget { }
 type icon = icon { }
+type v_tab = button {
+	layoutpolicy_horizontal = expanding
+}
+type v_textbox = textbox { }
+window = {
+	name = "v_layout_rules"
+	size = { 400 300 }
+	container = {
+		name = "v_container"
+		icon = { size = { 10 10 } parentanchor = right }
+		icon = { size = { 10 10 } position = { 0 20 } }
+	}
+	background = { name = "v_background" }
+	vbox = {
+		size = { 300 40 }
+		hbox = {
+			name = "v_row"
+			layoutpolicy_horizontal = expanding
+			v_tab = { size = { 100% 10 } }
+			v_tab = { size = { 100% 10 } }
+			v_tab = { size = { 100% 10 } }
+		}
+	}
+	flowcontainer = {
+		name = "v_flow"
+		icon = { size = { 10 10 } }
+		icon = { size = { 10 10 } }
+		icon = { size = { 10 10 } }
+		icon = { size = { 10 10 } }
+	}
+	widget = { name = "v_nothing" }
+}
+window = {
+	name = "v_hidden_entry"
+	size = { 100 50 }
+	parentanchor = top|right
+	visible = "[GetVariableSystem.Exists('x')]"
+}
+window = {
+	name = "v_default_text"
+	v_textbox = { text = "v_key" }
+	button = { text = "v_key" }
+}
+window = {
+	name = "v_concepts"
+	textbox = { text = "[v_concept|E] rules" }
+	textbox = { text = "[v_nothing|E]" }
+}
+texticon = {
+	icon = v_icon
+	iconsize = { texture = "gfx/interface/v_bg.dds" size = { 8 8 } }
+}
+format = {
+	name = "v_format"
+	format = "bold"
+}

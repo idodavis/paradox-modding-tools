@@ -48,7 +48,6 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 | prefixed word | a word spelled `prefix:name`; the prefix is a declared link | `jomini.SplitPrefixed` |
 | data call | a `[…]` expression in GUI or localization | `jomini.ParseCall` |
 | data function | one function of a data type, written `Type.Function`; each step of a binding refers to one | `game.DataFunction` |
-| fact | what a binding asks the game, with the answer the user gave once per workspace; a binding no fact or rule answers is not known | `draw.Fact`, `services.Workspace` (`Facts`) |
 | position | a place in a database's entry or in a command's arguments; keys collapse only by written form (`<number>`, `<date>`, `<prefix:>`) | `schema.Position` |
 | shape | what a block holds: fields, triggers, effects, arguments, value, description, setup or widget | `game.Shape` |
 | key rule | one way a key can be read; a block tries its rules in order and the first that fits wins | `game.KeyRule` |
@@ -70,11 +69,10 @@ does, measured against real installs, is in [GAME-SYNTAX.md](GAME-SYNTAX.md); ho
 |---|---|---|
 | hover card | what the editor shows for the word under the cursor: what it is, what it takes, where it is defined | `lsp.Hover`, `frontend/src/ui/HoverCard.vue` |
 | Visual view | a `.gui` file drawn from its text, beside Code and Split | `frontend/src/draw/`, `frontend/src/editor/tabs.ts` |
-| draw list | one render of a window: the elements to paint, the tree of its parts, the fonts and facts it asked | `draw.List` |
+| draw list | one render of a GUI entry: the elements to paint, its parts and the fonts they use | `draw.List` |
 | element | one painted rectangle of a draw list, at an absolute box, with its texture or text | `draw.Element` |
-| part | one widget of a window, listed whether it is drawn or not | `draw.Part` |
-| visibility | whether a part is shown, hidden or unknown as its `visible` is answered | `draw.Part` |
-| panel | the Widgets panel in the IDE's right column: the tree, a part's properties, the sample data, its script | `frontend/src/draw/GuiDetail.vue` |
+| part | one widget of an entry, listed whether it is drawn or not, with where it is written | `draw.Part` |
+| panel | the Widgets panel in the IDE's right column: where the selected widget sits, and its properties | `frontend/src/draw/GuiDetail.vue` |
 | diagnostic | something wrong in a mod's file, with a code; the code is what `# pmt:ignore <code>` and the settings toggle name | `lsp.Diagnose` |
 | tab | an open file's path, or a diff tab `git:<changes\|staged\|conflict>:<path>` or `git:commit@<hash>:<path>` | `frontend/src/editor/tabs.ts` |
 | editor group | a strip of tabs in the IDE; the groups sit in rows and columns, laid out per workspace | `frontend/src/stores/editor.ts` |

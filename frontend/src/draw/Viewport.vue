@@ -49,9 +49,11 @@ defineExpose({ zoom });
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col bg-(--bg-0)">
+    <!-- a fitted content needs no scrollbar, and one would shrink the room the fit is measured in -->
     <div
       ref="pane"
-      class="relative min-h-0 flex-1 overflow-auto"
+      class="relative min-h-0 flex-1"
+      :class="fit ? 'overflow-hidden' : 'overflow-auto'"
       style="background: repeating-conic-gradient(var(--bg-0) 0 25%, var(--bg-4) 0 50%) 0 0 / 16px 16px"
       @wheel="onWheel"
     >

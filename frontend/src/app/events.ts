@@ -7,7 +7,7 @@ import { useQueryCache } from "@pinia/colada";
 import { Events } from "@wailsio/runtime";
 import { useDebounceFn } from "@vueuse/core";
 import { resendOpenFiles, textEdited } from "../editor/models";
-import { drawKeys, fileKeys, installKeys, linesKeys, wikiKeys, workspaceKeys } from "../queries";
+import { drawKeys, fileKeys, installKeys, wikiKeys, workspaceKeys } from "../queries";
 import { useEditorStore } from "../stores/editor";
 import { useGitStore } from "../stores/git";
 import { useSettingsStore } from "../stores/settings";
@@ -20,6 +20,8 @@ export function subscribeEvents(): void {
   const settings = useSettingsStore();
   const git = useGitStore();
   const editor = useEditorStore();
+  // the windows drawn: the lists, the properties of their parts and the entries of their files
+  const drawn = [drawKeys.list, drawKeys.properties, drawKeys.entries];
 
   Events.On("install:scanning", ({ data }) => {
     scans.set(data.installId, { percent: data.percent, stage: data.stage });
@@ -30,7 +32,7 @@ export function subscribeEvents(): void {
     scans.clear();
     void queryCache.invalidateQueries({ key: workspaceKeys.open(id) });
     void queryCache.invalidateQueries({ key: workspaceKeys.state(id) });
-    for (const key of [drawKeys.list, drawKeys.properties]) void queryCache.invalidateQueries({ key });
+    for (const key of drawn) void queryCache.invalidateQueries({ key });
     if (holdsFiles && editor.editingWorkspaceId === id) resendOpenFiles();
   });
   // the open workspace closed (its inputs changed, or another opened): its state is read again, and its pages'
@@ -54,32 +56,25 @@ export function subscribeEvents(): void {
   // asks Go, which closes the open workspace where its inputs changed (workspace:closed)
   Events.On("config:changed", ({ data: section }) => {
     if (section !== "settings")
-      for (const key of [
-        workspaceKeys.all,
-        installKeys.all,
-        workspaceKeys.states,
-        ["git-repos"],
-        ["release"],
-        drawKeys.list,
-        drawKeys.properties,
-      ])
+      for (const key of [workspaceKeys.all, installKeys.all, workspaceKeys.states, ["git-repos"], ["release"]])
         void queryCache.invalidateQueries({ key });
     if (section === "settings" || !section) void settings.load();
   });
-  // a file changed on disk is read again; source control reads its repository again once a burst of changes is over
+  // a file changed on disk is read again; source control reads its repository and the windows drawn are drawn again
+  // once a burst of changes is over, any file being a template or texture of a window
   const gitChanged = useDebounceFn(() => git.refresh(), 500);
-  // any file may be a template or texture of a drawn window
+  const drawChanged = useDebounceFn(() => {
+    for (const key of drawn) void queryCache.invalidateQueries({ key });
+  }, 300);
   Events.On("fs:changed", ({ data }) => {
     void queryCache.invalidateQueries({ key: fileKeys.text(data.path) });
     void queryCache.invalidateQueries({ key: fileKeys.image(data.path) });
-    for (const key of [drawKeys.list, drawKeys.properties]) void queryCache.invalidateQueries({ key });
+    void drawChanged();
     void gitChanged();
   });
-  // an edit the backend has now, saved or not: the windows drawn from it, the lines shown of it and the names it
-  // defines are read again
+  // an edit the backend has now, saved or not: the windows drawn from it are drawn again
   textEdited.event(() => {
-    for (const key of [drawKeys.list, drawKeys.properties, linesKeys(editor.editingWorkspaceId), ["ide", "symbols"]])
-      void queryCache.invalidateQueries({ key });
+    for (const key of drawn) void queryCache.invalidateQueries({ key });
   });
   Events.On("git:output", ({ data }) => git.appendOutput(data));
   Events.On("wiki:updated", ({ data }) => {

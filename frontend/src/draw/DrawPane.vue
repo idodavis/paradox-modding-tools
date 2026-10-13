@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
  * A GUI file's window drawn from Go's list on the zoomable floor, under a toolbar: the entry it draws (a window, type
- * or template of the file), the resolution and UI scale it is laid out at, the language of its texts, whether every
- * element's bounds are marked and whether what the game does not know is hidden. The list is drawn as it comes: each
- * element a box with its texture or its lines of text. A click selects the part (and, with the code beside it, puts
- * the caret there); the caret in the code selects the part it is in; the pointer resting on a part shows its card.
+ * or template, text icon or format of the file), the resolution and UI scale it is laid out at, the language of its
+ * texts and whether every element's bounds are marked. The list is drawn as it comes: each element a box with its
+ * texture or its lines of text. A click selects the part (and, with the code beside it, puts the caret there); the
+ * caret in the code selects the part it is in; the code marks the selected part's lines where this file writes it;
+ * the pointer resting on a part shows its card.
  */
 import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch, type CSSProperties } from "vue";
 import { useQuery } from "@pinia/colada";
@@ -32,8 +33,6 @@ const { entries, entry, selected, list, parts, renderedMs, error } = useDraw(
 const viewport = useTemplateRef("viewport");
 const scene = useTemplateRef("scene");
 
-// the opacity of what depends on a fact the game does not know, unless it is hidden
-const UNKNOWN_FADE = 0.35;
 // how a texture with no frame is drawn in its box, by its fittype; fill, and a fittype none of these, stretch it
 const FILL = { size: "100% 100%", position: "0 0" };
 const FITS: Record<string, { size: string; position: string }> = {
@@ -48,21 +47,6 @@ const MARKS = {
   hovered: { style: "dashed", color: "var(--link)", width: 1.5, offset: 0 },
   bounds: { style: "dashed", color: "color-mix(in srgb, var(--link) 45%, transparent)", width: 1, offset: 0 },
 } as const;
-// what Go did not find, by the kind its string starts with: the thing and, after it, its name
-const MISSING = [
-  { kind: "template", noun: "Template" },
-  { kind: "type", noun: "Type" },
-  { kind: "texture", noun: "Texture" },
-  { kind: "font", noun: "Font" },
-  { kind: "fontsize", noun: "Font size" },
-  { kind: "format", noun: "Text format" },
-  { kind: "texticon", noun: "Text icon" },
-  { kind: "loc", noun: "Localization key" },
-  { kind: "data function", noun: "Data function" },
-  { kind: "blend_mode", noun: "Blend mode" },
-  { kind: "glyph", noun: "Glyph" },
-];
-const CYCLE = ": a cycle";
 
 /** An element outlined by a kind of mark. */
 type Mark = { element: DrawElement; kind: keyof typeof MARKS };
@@ -140,11 +124,10 @@ function textureStyle(texture: Texture): CSSProperties {
 
 /** The CSS of an element: its box, alpha and clip, then its texture's or its text's. */
 function styleOf(element: DrawElement): CSSProperties {
-  const faded = parts.value[element.part]?.visibility === "unknown" && !store.hideUnknown;
   const { text } = element;
   return {
     ...boxStyle(element.box),
-    opacity: element.alpha * (faded ? UNKNOWN_FADE : 1),
+    opacity: element.alpha,
     clipPath: element.clip ? clipOf(element.box, element.clip) : undefined,
     ...(element.texture ? textureStyle(element.texture) : {}),
     ...(text
@@ -152,6 +135,9 @@ function styleOf(element: DrawElement): CSSProperties {
       : {}),
   };
 }
+
+// every element's style at once, so the pointer moving over the scene redraws its marks and not the elements
+const styles = computed(() => (list.value?.elements ?? []).map(styleOf));
 
 // the fonts the list's texts use, registered with the page while a list names them
 const faces = new Map<string, FontFace>();
@@ -237,11 +223,14 @@ watch(caret, (position) => {
   if (deepest >= 0 && placeOf(parts.value[deepest]) !== placeOf(parts.value[selected.value])) selected.value = deepest;
 });
 
-// a part selected elsewhere (the tree, the code) comes into view
+// a part selected elsewhere (the panel, the code) comes into view, and the code marks it where this file writes it
 watch(selected, async (part) => {
+  const place = parts.value[part]?.location;
+  editor.marked = place && pathKey(place.path) === pathKey(path) ? { path, range: place.range } : null;
   await nextTick();
   scene.value?.querySelector(`[data-part="${part}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
 });
+onScopeDispose(() => (editor.marked = null));
 
 // the pointer resting on a part half a second shows its card, which goes a moment after the pointer leaves the part
 // unless it is on the card
@@ -287,9 +276,6 @@ function holdCard(hold: boolean): void {
 }
 
 const restingPart = computed(() => (resting.value ? parts.value[resting.value.part] : undefined));
-const restingFact = computed(() =>
-  restingPart.value?.fact ? list.value?.facts?.find((fact) => fact.call === restingPart.value?.fact) : undefined,
-);
 const { data: card } = useQuery(() => ({
   ...hoverQuery({
     id: workspaceId,
@@ -299,9 +285,7 @@ const { data: card } = useQuery(() => ({
   }),
   enabled: !!restingPart.value,
 }));
-const cardShown = computed(
-  () => !!resting.value && (!!restingFact.value || (!!card.value && cardSaysSomething(card.value))),
-);
+const cardShown = computed(() => !!resting.value && !!card.value && cardSaysSomething(card.value));
 const reference = computed(() => {
   const anchor = resting.value?.anchor;
   return anchor ? { getBoundingClientRect: () => anchor } : undefined;
@@ -311,18 +295,10 @@ const keepFocus = {
   onCloseAutoFocus: (e: Event) => e.preventDefault(),
 };
 
-/** What Go did not find, as a sentence: its kind's thing, then its name. */
-function missingText(text: string): string {
-  const row = MISSING.find((one) => text === one.kind || text.startsWith(`${one.kind} `));
-  if (!row) return text;
-  const subject = text.slice(row.kind.length + 1);
-  if (subject.endsWith(CYCLE)) return `${row.noun} cycle: ${subject.slice(0, -CYCLE.length)}`;
-  return subject ? `${row.noun} not found: ${subject}` : `${row.noun} not found`;
-}
+// what Go did not find: the first sentence it gives and the count of the rest
 const missing = computed(() => {
-  const all = list.value?.missing ?? [];
-  const [first] = all;
-  return first ? `${missingText(first)}${all.length > 1 ? `, ${all.length - 1} more` : ""}` : "";
+  const [first, ...rest] = list.value?.missing ?? [];
+  return first ? `${first}${rest.length ? `, ${rest.length} more` : ""}` : "";
 });
 
 // what the floor says while there is no list to draw
@@ -349,7 +325,6 @@ const empty = computed(() => {
       <USelect v-model="store.language" :items="store.languages" size="xs" class="w-32" />
       <span class="grow" />
       <USwitch v-model="store.bounds" label="Bounds" />
-      <USwitch v-model="store.hideUnknown" label="Hide unknown" />
     </div>
     <div class="relative flex min-h-0 flex-1 flex-col">
       <Viewport ref="viewport" :width="list?.width ?? store.width" :height="list?.height ?? store.height">
@@ -365,7 +340,7 @@ const empty = computed(() => {
             :key="i"
             :data-part="element.part"
             class="absolute box-border"
-            :style="styleOf(element)"
+            :style="styles[i]"
           >
             <template v-if="element.text">
               <div
@@ -421,17 +396,7 @@ const empty = computed(() => {
           @mouseenter="holdCard(true)"
           @mouseleave="holdCard(false)"
         >
-          <HoverCard :card="card ?? null">
-            <template v-if="restingFact" #lead>
-              <div class="flex items-center gap-3 text-12">
-                <span class="min-w-0 font-mono text-11 break-all text-toned">{{ restingFact.call }}</span>
-                <span class="grow" />
-                <span :class="restingFact.known ? 'text-highlighted' : 'text-dimmed'">{{
-                  restingFact.known ? restingFact.value : "not known"
-                }}</span>
-              </div>
-            </template>
-          </HoverCard>
+          <HoverCard :card="card ?? null" />
         </div>
       </template>
     </UPopover>

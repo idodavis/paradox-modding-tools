@@ -847,8 +847,9 @@ find "<game>" -name '*.gui' -print0 | xargs -0 grep -hoE '^\s*name\s*=\s*_[a-z_]
 **What no file answers.** A binding's function names tell what it reads. `Exists`, `HasValue`, `IsTabSelected` and
 `Get` belong only to the variable systems, the tab holders and `Context`; `IsTooltipLocked` only to `PdxGuiWidget`; the
 pointer's `IsHovered`, `IsMouseOver`, `IsHighlighted` and `IsPressed` to widgets. All of them read what is unset as a
-window opens, so each answers no. The rest is game data the files do not hold (`ScriptedRelation.HasRelationBetween`,
-CK3 6,900 uses; `ConditionLine.HasFailed`, EU5 4,874): a stand-in that says it is not known.
+window opens. The rest is game data the files do not hold (`ScriptedRelation.HasRelationBetween`, CK3 6,900 uses;
+`ConditionLine.HasFailed`, EU5 4,874). The preview answers none of them: a bound `visible` draws its widget and a
+bound text is drawn as written.
 
 ```
 cat "<Documents>/<game>/logs/data_types/"*.txt | grep -oE '^[A-Za-z0-9_]+\.(Exists|HasValue|IsTabSelected|Get|IsTooltipLocked|IsHovered|IsMouseOver|IsHighlighted|IsPressed)\(' | sort | uniq -c
@@ -874,12 +875,61 @@ has no `ż`, Open Sans no CJK), so a glyph is measured in the first file of the 
 `gui.format` entries of `;`-joined words (`color:{r,g,b}`, `bold`, `italic`, another format's name); text icons are
 `texticon` entries. In localization, `#format text#!`, `@icon!`, `$key$` and `[call]` are the markup (CK3 `#EMP` 5,890
 uses, Vic3 `#v` 3,147, EU5 `#T` 1,275; `[…]` 195,886, 61,161 and 114,128). The default font and size of a text are the
-types' own: `type textbox = textbox { font = "StandardGameFont" fontsize = 15 … }`.
+types' own: `preload/defaults.gui` declares `type textbox = textbox { font = "StandardGameFont" fontsize = 15 … }` (lines
+141 to 146) and the same for `type editbox`, and no other type of the file declares a font; a widget that is no text
+box (a `game_button` with a `text`) writes no size of its own and is drawn in this one.
 
 ```
 grep -oE 'style\s*=\s*\w+' "<game>/fonts/fonts.font" | sort | uniq -c
 grep -rn -A3 '^\s*format = {' "<game>/gui/preload/textformatting.gui"
 cat "<game>/localization/english/"*.yml | grep -oE '#[A-Za-z_]+' | sort | uniq -c | sort -rn | head
+```
+
+**Anchors.** A widget names the point of its parent it sits at with `parentanchor` (CK3 4,407 lines) and the point of
+itself that goes there with `widgetanchor` (328 lines): the second is left out almost always, and then the game puts the
+widget's own `parentanchor` point on it. `window_council.gui` writes `parentanchor = top|right` with no `widgetanchor`
+and the game docks the window at the right edge; `window_character.gui` writes a 25 by 25 button with `parentanchor =
+center` and no `widgetanchor`, which the game centers.
+
+```
+grep -rhoi parentanchor "<ck3>/game/gui" | wc -l
+grep -rhoi widgetanchor "<ck3>/game/gui" | wc -l
+```
+
+**Where a widget's size comes from.** The layout kinds are written without a size and the plain kinds with one. Every
+block-valued key of every vanilla CK3 `.gui`, with and without a direct `size`: `hbox` 3,507 blocks, 20 sized; `vbox`
+3,149, 12; `container` 1,009, 32; `flowcontainer` 517, 9; `fixedgridbox` 305, 10; `dynamicgridbox` 52, 0;
+`background` 2,321, 19; `text_single` 3,418, 72 (1,106 with a `minimumsize` or `maximumsize`, 399 with `autoresize`);
+against `icon` 2,431, 2,205; `widget` 1,955, 1,633; `margin_widget` 97, 89; `scrollarea` 63, 59; `overlappingitembox`
+21, 18; `button_group` 42, 5. So the first group takes its size from what it holds or from its parent, the second
+declares it. The counts come from a parse; this reproduces them to a few percent, a line at a time:
+
+```
+find "<ck3>/game/gui" -name '*.gui' -print0 | xargs -0 cat | awk '{ l=$0; sub(/#.*/,"",l); if (d>0 && l~/^[ \t]*size[ \t]*=/) s[d]=1; k=""; if (l~/^[ \t]*[A-Za-z_0-9]+[ \t]*=[ \t]*\{/) { k=l; sub(/^[ \t]*/,"",k); sub(/[ \t]*=.*/,"",k) }; f=1; for (i=1;i<=length(l);i++) { c=substr(l,i,1); if (c=="{") { d++; n[d]=f?k:""; f=0; s[d]=0 } else if (c=="}" && d>0) { if (n[d]!="") { t[n[d]]++; if (s[d]) w[n[d]]++ } d-- } } } END { for (k in t) print k, t[k], w[k]+0 }' | sort -k2 -rn | head -30
+```
+
+**A percent size and the box that holds it.** `Window_Size_MainTab` is `size = { 655 100% }` and `Window_Margins_Sidebar` is
+`margin_right = 18`, with no size: `shared/windows.gui` gives the character window's main column a width and its sidebar
+none. Five `button_tab`s at `size = { 100% 42 }` under one `hbox` share the box's width (610 there, 122 each); they do
+not make it five windows wide.
+
+```
+grep -n -A3 'template Window_Size_MainTab\|template Window_Margins_Sidebar' "<ck3>/game/gui/shared/windows.gui"
+```
+
+**A concept's loc key.** `common/game_concepts` holds 1,126 entries in CK3, 611 in Vic3 and 695 in EU5 (under
+`main_menu/common/game_concepts`). The title of one is the loc key of its name in the game's english folder, with a
+prefix in two games: CK3 `abandon_celibacy`, `abandon_hook_interaction` and `absolute_control` are `game_concept_<name>`;
+EU5 `ability`, `accepted_culture`, `action` and `societal_value` are `game_concept_<name>`
+(`main_menu/localization/english`); Vic3 `concept_acceptance`, `concept_acceptance_status` and
+`concept_accepted_culture` are their own keys. A concept block holds `alias` and `texture` and no loc field, so its
+title is found by the key and by nothing in the block. In a text the link is `[name|E]`; The Fallen Eagle's
+`bottom_bar` writes seven of them (`dux`, `caliph_autho`, `great_house_favor`, `great_house_strength`,
+`magister_militum`, `zakah_bank`, `augustus`).
+
+```
+grep -c . "<ck3>/game/common/game_concepts/"*.txt | head
+grep -rn '^game_concept_abandon_celibacy\|^ game_concept_abandon_celibacy' "<ck3>/game/localization/english" | head -3
 ```
 
 **A block named in a type is overridden below it.** `blockoverride "n" { … }` written in a widget replaces the `block

@@ -36,7 +36,7 @@ const maxNesting = 10
 // format, but for the words that are drawn as plain text.
 var (
 	formatKeys = []string{colorKey, "bold", "italic"}
-	plainKeys  = []string{"size", "glow_color", "glow_offset", "shadow", "underline", "font"}
+	plainKeys  = []string{"size", "glow_color", "glow_offset", "shadow", "underline", fontKey}
 )
 
 // face is one opened font at one size: the row the page registers, and the files of the language's group in order,
@@ -67,7 +67,10 @@ func (resolver *resolver) text(node *widget) *Text {
 	}
 	pixels, sized := resolver.number(node, "fontsize")
 	if !sized {
-		resolver.missing["fontsize "+node.kind] = true
+		pixels, sized = resolver.number(resolver.fallback, "fontsize")
+	}
+	if !sized {
+		resolver.missing.add("fontsize", node.kind)
 		return nil
 	}
 	regular := resolver.fontOf(node, "regular", int(pixels*resolver.scale()))
@@ -78,49 +81,30 @@ func (resolver *resolver) text(node *widget) *Text {
 	if color, isColor := resolver.color(node, "fontcolor"); isColor {
 		base.color = color
 	}
-	runs := resolver.runs(node, resolver.valueText(node, value, raw), base, 0)
+	runs := resolver.runs(resolver.valueText(value, raw), base, 0)
 	lines, widths := resolver.breakLines(node, runs, int(pixels*resolver.scale()))
 	node.lineWidths, node.lineHeight = widths, lineHeight(regular)
 	node.content = size{width: slices.Max(widths), height: float64(len(lines)) * node.lineHeight}
 	return &Text{Font: regular.font.Name, Size: int(pixels * resolver.scale()), Color: base.color, Lines: lines}
 }
 
-// valueText is the text a widget's text value stands for: a binding's answer, a key's loc entry, else the value;
-// a raw text is its value as written.
-func (resolver *resolver) valueText(node *widget, value string, raw bool) string {
-	if call, isBinding := bindingOf(value); isBinding && !raw {
-		return resolver.answerText(node, call)
-	}
+// valueText is the text a widget's text value stands for: a key's loc entry in the request's language, else the value
+// as written, which a binding is too, since only the game answers it; a raw text is its value as written.
+func (resolver *resolver) valueText(value string, raw bool) string {
 	if raw || !loc.LooksLikeKey(value) || len(jomini.Calls(value, 0)) > 0 {
 		return value
 	}
-	if localized, known := resolver.evaluator.loc(value); known {
-		return localized
+	if entry, known := resolver.ws.Loc(value, resolver.request.Language); known {
+		return entry.Text()
 	}
-	resolver.missing["loc "+value] = true
+	resolver.missing.add("loc", value)
 	return value
 }
 
-// answerText is the text of a binding: its answer as the evaluator gives it, a stand-in's words included.
-func (resolver *resolver) answerText(node *widget, call string) string {
-	resolver.evaluator.context, resolver.evaluator.row = node.dataType, node.row
-	answer := resolver.evaluator.evaluate(call, game.DataText)
-	switch answer.kind {
-	case game.DataNumber:
-		return strconv.FormatFloat(answer.number, 'f', -1, 64)
-	case game.DataBool:
-		if answer.yes {
-			return yes
-		}
-		return no
-	}
-	return answer.text
-}
-
 // runs turns a text's markup into runs: a format's words resolved through the gui.format entries, an icon's
-// texture through the gui.texticon entries, a $key$'s text through the loc entries, a [call]'s through the
-// evaluator; an interpolation nested too deep is dropped.
-func (resolver *resolver) runs(node *widget, value string, base style, depth int) []Run {
+// texture through the gui.texticon entries, a $key$'s text through the loc entries, a [call] as written; an
+// interpolation nested too deep is dropped.
+func (resolver *resolver) runs(value string, base style, depth int) []Run {
 	var runs []Run
 	for _, segment := range loc.Segments(value) {
 		current := base
@@ -134,10 +118,9 @@ func (resolver *resolver) runs(node *widget, value string, base style, depth int
 			run.Icon = resolver.icon(segment.Icon)
 			runs = append(runs, run)
 		case segment.Key != "" && depth < maxNesting:
-			runs = append(runs, resolver.runs(node, resolver.valueText(node, segment.Key, false), current, depth+1)...)
+			runs = append(runs, resolver.runs(resolver.valueText(segment.Key, false), current, depth+1)...)
 		case segment.Call != "":
-			call, _, _ := strings.Cut(segment.Call, "|")
-			run.Text = resolver.answerText(node, call)
+			run.Text = "[" + segment.Call + "]"
 			runs = append(runs, run)
 		case segment.Text != "":
 			run.Text = segment.Text
@@ -147,12 +130,23 @@ func (resolver *resolver) runs(node *widget, value string, base style, depth int
 	return runs
 }
 
+// textDefault is the install's textbox type as a widget whose statements are its chain's fields: the font and size a
+// text with none of its own is drawn in.
+func (resolver *resolver) textDefault() *widget {
+	_, blocks := resolver.chain("textbox")
+	holder := &widget{}
+	for _, block := range blocks {
+		holder.statements = append(holder.statements, fieldStatements(block)...)
+	}
+	return holder
+}
+
 // format applies a named format's words to a style: its color, bold and italic, and the formats it names in turn; a
 // name no entry has is drawn plain and listed.
 func (resolver *resolver) format(name string, current style, depth int) style {
 	definition, defined := resolver.entryFields(formatDatabase, name)
 	if !defined || depth >= maxNesting {
-		resolver.missing["format "+name] = true
+		resolver.missing.add("format", name)
 		return current
 	}
 	text, _ := definition.scalar("format")
@@ -217,7 +211,7 @@ func (resolver *resolver) icon(name string) string {
 			}
 		}
 	}
-	resolver.missing["texticon "+name] = true
+	resolver.missing.add("texticon", name)
 	return ""
 }
 
@@ -248,11 +242,14 @@ func (resolver *resolver) entryFields(database, name string) (*widget, bool) {
 // font entry's fontstyle for the style, its fontfiles entry's group for the language, each file opened once per
 // render; a font that is not found goes to Missing and gives none.
 func (resolver *resolver) fontOf(node *widget, fontStyle string, pixels int) *face {
-	name, hasFont := node.scalar("font")
+	name, hasFont := node.scalar(fontKey)
+	if !hasFont {
+		name, hasFont = resolver.fallback.scalar(fontKey)
+	}
 	if !hasFont {
 		names := index.Names(resolver.ws.Indexes(), fontDatabase)
 		if len(names) == 0 {
-			resolver.missing["font"] = true
+			resolver.missing.add(fontKey, "no font entry")
 			return nil
 		}
 		name = names[0]
@@ -281,7 +278,7 @@ func (resolver *resolver) scale() float64 {
 func (resolver *resolver) openFace(name, fontStyle string, pixels int) *face {
 	definition, defined := resolver.entryFields(fontDatabase, name)
 	if !defined {
-		resolver.missing["font "+name] = true
+		resolver.missing.add(fontKey, name)
 		return nil
 	}
 	files, resolved := resolver.styleFiles(definition, fontStyle)
@@ -290,12 +287,12 @@ func (resolver *resolver) openFace(name, fontStyle string, pixels int) *face {
 		file, listed := index.FileAt(resolver.ws.Indexes(), rel)
 		parsed, err := parseFont(file, listed)
 		if err != nil {
-			resolver.missing["font "+rel] = true
+			resolver.missing.add(fontKey, rel)
 			continue
 		}
 		sized, err := opentype.NewFace(parsed, &opentype.FaceOptions{Size: float64(pixels), DPI: 72, Hinting: font.HintingNone})
 		if err != nil {
-			resolver.missing["font "+rel] = true
+			resolver.missing.add(fontKey, rel)
 			continue
 		}
 		if opened.font.URL == "" {
@@ -304,7 +301,7 @@ func (resolver *resolver) openFace(name, fontStyle string, pixels int) *face {
 		opened.files = append(opened.files, sized)
 	}
 	if len(opened.files) == 0 {
-		resolver.missing["font "+name] = true
+		resolver.missing.add(fontKey, name)
 		return nil
 	}
 	return opened
@@ -492,7 +489,7 @@ func (resolver *resolver) advance(piece Run, typeface *face, height float64) flo
 			break
 		}
 		if !measured {
-			resolver.missing["glyph "+resolver.request.Language] = true
+			resolver.missing.add("glyph", resolver.request.Language)
 		}
 		previous = char
 	}

@@ -846,6 +846,14 @@ find "<game>" -name '*.gui' -print0 | xargs -0 grep -hE '^\s*size = \{ *(-[0-9]+
 find "<game>" -name '*.gui' -print0 | xargs -0 grep -hE '^\s*maximumsize = \{.*-1' | wc -l
 ```
 
+**A row or column under a plain widget takes the room its children expand into.** Of the `hbox` and `vbox` written
+directly under a `window`, `widget`, `container` or `margin_widget` in CK3 (549), 4 declare a `size`; 366 hold a
+child with `layoutpolicy_horizontal = expanding` or `growing` across the column (or `_vertical` across the row) or a
+percent size, and 5 of those carry a `parentanchor` or `position`; 18 with no such child carry one (a footer row of
+buttons at `bottom|hcenter`). So a window's main column fills the window and a footer row keeps its content size.
+Measured by a walk of every file through the engine's parse, each box's direct children read for the policy across
+the box and for a `%` in `size`.
+
 **A `background` fills its parent and takes no place among its siblings.** It is written directly under a row,
 column, flow or grid (CK3 17 times on the line after the box opens, more further in) and over the whole box; laid out as
 an item it pushed every sibling by the box's width. **A `multiline` text takes the width the layout gives it** and

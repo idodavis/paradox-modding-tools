@@ -110,14 +110,39 @@ const detail = computed(
   () => !!editor.panels.get(editor.activeFile) && !!viewsOf(locate(editor.activeFile)?.rel ?? editor.activeFile)?.panel,
 );
 
-// the panes, their sizes kept by the splitters: the sidebar, the editors (at least a third of the page) and, while
-// one is open, the file's panel or else the Wiki pane; under the editors the panel (the editors keeping half); in the
-// explorer the mods' section and the game's files under it, which fold to their header and give the mods their room
+// the panes, their sizes kept by the splitters: the sidebar (folded to its strip of tabs when dragged shut or its
+// open tab is clicked again), the editors (at least a third of the page) and, while one is open, the file's panel or
+// else the Wiki pane; under the editors the panel (the editors keeping half); in the explorer the mods' section and
+// the game's files under it, which fold to their header and give the mods their room
 const gameOpen = useLocalStorage("pmt.ide.gameOpen", true);
+const STRIP = 36;
 const panes = computed(() => [
-  ...(isMain || own.value.length
-    ? [{ id: "sidebar", slot: "sidebar", order: 1, sizeUnit: "px" as const, defaultSize: 264, minSize: 170 }]
-    : []),
+  ...(!(isMain || own.value.length)
+    ? []
+    : editor.sidebarOpen
+      ? [
+          {
+            id: "sidebar",
+            slot: "sidebar",
+            order: 1,
+            sizeUnit: "px" as const,
+            defaultSize: 264,
+            minSize: 170,
+            collapsible: true,
+            collapsedSize: STRIP,
+          },
+        ]
+      : [
+          {
+            id: "sidebar-folded",
+            slot: "sidebar",
+            order: 1,
+            sizeUnit: "px" as const,
+            defaultSize: STRIP,
+            minSize: STRIP,
+            maxSize: STRIP,
+          },
+        ]),
   ...(windowPart !== "panel" ? [{ id: "editors", slot: "editors", order: 2, minSize: 33 }] : []),
   ...(detail.value
     ? [{ id: "detail", slot: "detail", order: 3, sizeUnit: "px" as const, defaultSize: 360, minSize: 280 }]
@@ -165,14 +190,30 @@ defineShortcuts(
     visible.value
       ? {
           meta_shift_w: key(() => (editor.wikiOpen = !editor.wikiOpen)),
-          meta_shift_f: key(() => (editor.sidebar = "search")),
-          meta_shift_e: key(() => (editor.sidebar = "explorer")),
+          meta_shift_f: key(() => editor.openSidebar("search")),
+          meta_shift_e: key(() => editor.openSidebar("explorer")),
           meta_j: key(() => (editor.panel = editor.panel ? "" : "problems")),
           "meta_\\": key(() => editor.split("right")),
         }
       : {},
   ),
 );
+
+// the sidebar's tabs: the explorer, the search and source control; a tab clicked while it is the open one folds the
+// sidebar to its strip, and a tab of the strip opens it again
+const SIDEBAR_TABS = [
+  { tab: "explorer", icon: "i-lucide-files", label: "Explorer" },
+  { tab: "search", icon: "i-lucide-search", label: "Search" },
+  { tab: "git", icon: "i-lucide-git-compare", label: "Source control" },
+] as const;
+function clickSidebar(tab: (typeof SIDEBAR_TABS)[number]["tab"]): void {
+  if (editor.sidebarOpen && editor.sidebar === tab) editor.sidebarOpen = false;
+  else editor.openSidebar(tab);
+}
+/** The sidebar dragged shut folds to its strip. */
+function onCollapse(index: number): void {
+  if (panes.value[index]?.id === "sidebar") editor.sidebarOpen = false;
+}
 
 // the status bar: the open files' problems, then the shown file's facts
 const { data: file } = useQuery(() => textQuery(editor.activeFile));
@@ -227,39 +268,41 @@ function showProblems(): void {
 <template>
   <div class="nokey flex h-full min-h-0">
     <IdePanel v-if="windowPart === 'panel'" :workspace-id="id" />
-    <USplitter :items="panes" auto-save-id="pmt.ide" class="min-w-0 flex-1">
+    <USplitter :items="panes" auto-save-id="pmt.ide" class="min-w-0 flex-1" @collapse="onCollapse">
       <template #sidebar>
         <aside
-          v-if="isMain"
+          v-if="isMain && !editor.sidebarOpen"
+          class="flex min-h-0 w-9 flex-1 flex-col items-center gap-0.5 border-e border-default bg-muted py-1.5"
+        >
+          <UTooltip v-for="one in SIDEBAR_TABS" :key="one.tab" :text="one.label" :content="{ side: 'right' }">
+            <UButton
+              :icon="one.icon"
+              square
+              variant="ghost"
+              color="neutral"
+              :ui="{ leadingIcon: 'size-4.5' }"
+              :aria-label="one.label"
+              @click="clickSidebar(one.tab)"
+            />
+          </UTooltip>
+          <span class="grow" />
+          <IdeSettingsCard />
+        </aside>
+        <aside
+          v-else-if="isMain"
           class="flex min-h-0 min-w-0 flex-1 flex-col border-e border-default bg-muted text-(length:--ide-ui-font)"
         >
           <div class="flex h-9 shrink-0 items-center gap-0.5 border-b border-default px-1.5">
             <UButton
-              icon="i-lucide-files"
+              v-for="one in SIDEBAR_TABS"
+              :key="one.tab"
+              :icon="one.icon"
               square
               :ui="{ leadingIcon: 'size-4.5' }"
-              aria-label="Explorer"
-              :color="editor.sidebar === 'explorer' ? 'primary' : 'neutral'"
-              :variant="editor.sidebar === 'explorer' ? 'soft' : 'ghost'"
-              @click="editor.sidebar = 'explorer'"
-            />
-            <UButton
-              icon="i-lucide-search"
-              square
-              :ui="{ leadingIcon: 'size-4.5' }"
-              aria-label="Search"
-              :color="editor.sidebar === 'search' ? 'primary' : 'neutral'"
-              :variant="editor.sidebar === 'search' ? 'soft' : 'ghost'"
-              @click="editor.sidebar = 'search'"
-            />
-            <UButton
-              icon="i-lucide-git-compare"
-              square
-              :ui="{ leadingIcon: 'size-4.5' }"
-              aria-label="Source control"
-              :color="editor.sidebar === 'git' ? 'primary' : 'neutral'"
-              :variant="editor.sidebar === 'git' ? 'soft' : 'ghost'"
-              @click="editor.sidebar = 'git'"
+              :aria-label="one.label"
+              :color="editor.sidebar === one.tab ? 'primary' : 'neutral'"
+              :variant="editor.sidebar === one.tab ? 'soft' : 'ghost'"
+              @click="clickSidebar(one.tab)"
             />
             <span class="grow" />
             <template v-if="editor.sidebar === 'git' && git.repo">

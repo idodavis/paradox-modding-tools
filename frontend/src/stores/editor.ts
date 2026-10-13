@@ -18,6 +18,7 @@ import type { PanelResults } from "@services/models";
 import { pathKey } from "../composables/useIdeRoots";
 import { saveFile } from "../editor/models";
 import { IMAGES, tabOf, viewsOf, type View } from "../editor/tabs";
+import { useSettingsStore } from "./settings";
 import { useWindowsStore, holdsFiles, isMain, windowName } from "./windows";
 import { useWorkspaceStore } from "./workspace";
 
@@ -115,6 +116,7 @@ export const useEditorStore = defineStore("editor", () => {
   const fileMoves = ref<{ done: FileMove[]; undone: FileMove[] }>({ done: [], undone: [] });
   const ideSettingsOpen = shallowRef(false);
   const sidebar = persisted<"explorer" | "search" | "git">("pmt.ide.sidebar", "explorer");
+  const sidebarOpen = persisted("pmt.ide.sidebarOpen", true);
   const panel = persisted<"problems" | "git" | "">("pmt.ide.panel", "problems");
   const wikiOpen = persisted("pmt.ide.wikiOpen", false);
   const layouts = persisted<Record<string, Saved | undefined>>("pmt.ide.layouts", {});
@@ -130,9 +132,19 @@ export const useEditorStore = defineStore("editor", () => {
     return { errors, warnings: all.length - errors };
   });
 
-  /** A file's view: the one set for it, else what its kind opens in, else code, or visual for an image. */
+  /** A file's view: the one set for it, else what the IDE settings say its kind opens in (`ide.view.<ext>`), else
+   * what its kind opens in, else code, or visual for an image. */
   function viewOf(path: string): View {
-    return views.value.get(path) ?? viewsOf(path)?.first ?? (IMAGES.test(path) ? "visual" : "code");
+    const row = viewsOf(path);
+    const chosen = row && useSettingsStore().values[`ide.view.${row.ext}`];
+    const fits = chosen === "code" || chosen === "visual" || (chosen === "split" && row?.split);
+    return views.value.get(path) ?? (fits ? chosen : row?.first) ?? (IMAGES.test(path) ? "visual" : "code");
+  }
+
+  /** Shows a sidebar tab, opening the sidebar where it is folded. */
+  function openSidebar(tab: "explorer" | "search" | "git"): void {
+    sidebar.value = tab;
+    sidebarOpen.value = true;
   }
 
   /** A file as an open tab spells it, else as given: the backend and the models know it by that spelling. */
@@ -452,6 +464,8 @@ export const useEditorStore = defineStore("editor", () => {
     dragging,
     ideSettingsOpen,
     sidebar,
+    sidebarOpen,
+    openSidebar,
     panel,
     wikiOpen,
     activeTab,

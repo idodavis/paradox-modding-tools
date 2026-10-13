@@ -68,7 +68,11 @@ and `maximumsize = { 400 -1 }` for no maximum. A kind that fills its parent (`ba
 siblings: it is laid over the parent's whole box, and the parent's children are placed and measured without it. A flow
 or grid measures its cells with the limit it will be placed at, the room held to its own size and maximum. A text's
 words are measured once (`pieces`) and its lines broken where it is placed: at its `max_width`, else its declared
-width, else, where it is `multiline`, at the width the layout gives it.
+width, else, where it is `multiline`, at the width the layout gives it; measured with no room, such a text is its
+longest word wide. A row or column under a parent that does not lay it out (a window, a widget, a container, a scroll
+area) takes the parent's room on an axis it declares no size for where one of its children expands or takes a percent
+on it, and its content on any other axis (`spanned`): a window's main column fills the window, a footer row of fixed
+buttons keeps its size and its anchor.
 
 ## Decisions
 

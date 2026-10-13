@@ -1,12 +1,14 @@
 <script setup lang="ts">
 /**
  * The Widgets panel of a GUI file: under the file's header, where the selected widget sits (its ancestors, each a
- * click away), whether it is shown for this session, and its properties as written in the code's colors, each with
- * who wrote it: the widget, or the type or template it comes from. The selection is the pane's or the caret's.
+ * click away), whether it is shown for this session, and its properties as written in the code's colors, grouped by
+ * who wrote them: the widget itself first, then each type or template it comes from. The selection is the pane's or
+ * the caret's.
  */
 import { computed } from "vue";
 import { useQuery } from "@pinia/colada";
 import type { BreadcrumbItem } from "@nuxt/ui";
+import type { Property } from "@services/internal/draw";
 import { useDraw } from "../composables/useDraw";
 import { useIdeRoots } from "../composables/useIdeRoots";
 import { fileName } from "../lib/format";
@@ -45,6 +47,17 @@ const shown = computed(() => !store.hidden.get(path)?.has(selected.value));
 const { data: properties } = useQuery(() =>
   propertiesQuery({ id: workspaceId, request: request.value, part: part.value ? selected.value : -1 }),
 );
+
+// the properties by who wrote them, the widget's own first, then each writer as it first appears
+const groups = computed(() => {
+  const by = new Map<string, Property[]>([["", []]]);
+  for (const property of properties.value ?? []) {
+    const rows = by.get(property.writtenBy) ?? [];
+    rows.push(property);
+    by.set(property.writtenBy, rows);
+  }
+  return [...by].filter(([, rows]) => rows.length).map(([writer, rows]) => ({ writer, rows }));
+});
 </script>
 
 <template>
@@ -78,17 +91,25 @@ const { data: properties } = useQuery(() =>
           @update:model-value="store.toggleHidden(path, selected)"
         />
       </div>
-      <div class="min-h-0 flex-1 divide-y divide-default overflow-auto">
-        <div
-          v-for="property in properties"
-          :key="property.key"
-          class="flex items-baseline gap-3 px-3.5 py-1.5 text-11.5 odd:bg-elevated/40"
-        >
-          <span class="shrink-0 text-muted">{{ property.key }}</span>
-          <span v-if="property.writtenBy" class="truncate text-11 text-dimmed">from {{ property.writtenBy }}</span>
-          <span class="grow" />
-          <ScriptSnippet :text="property.value" :name="path" inline class="min-w-0 text-end break-all" />
-        </div>
+      <div class="min-h-0 flex-1 overflow-auto">
+        <section v-for="group in groups" :key="group.writer">
+          <div class="flex h-7 items-center gap-1.5 border-y border-default bg-elevated/60 px-3.5 text-11 text-dimmed">
+            <template v-if="group.writer">
+              from <span class="truncate font-mono text-muted" :title="group.writer">{{ group.writer }}</span>
+            </template>
+            <template v-else>this widget</template>
+          </div>
+          <div
+            v-for="property in group.rows"
+            :key="property.key"
+            class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-baseline gap-x-4 px-3.5 py-1.5 text-11.5 odd:bg-elevated/30"
+          >
+            <span class="truncate font-medium text-toned" :title="property.key">{{ property.key }}</span>
+            <span class="min-w-0 truncate text-end" :title="property.value">
+              <ScriptSnippet :text="property.value" :name="path" inline />
+            </span>
+          </div>
+        </section>
       </div>
     </template>
     <p v-else class="px-3.5 py-2 text-11 text-dimmed">Click a widget in the picture, or put the caret in one.</p>

@@ -8,6 +8,7 @@ import { computed, shallowRef } from "vue";
 import { useQuery } from "@pinia/colada";
 import { watchDebounced } from "@vueuse/core";
 import { codesQuery } from "../../queries";
+import { VIEW_ROWS, type ViewRow } from "../../editor/tabs";
 import { useEditorStore } from "../../stores/editor";
 import { switchesOf, useSettingsStore } from "../../stores/settings";
 import { TOAST_PREFS, useWikiPrefs } from "../../composables/useWikiPrefs";
@@ -58,6 +59,15 @@ const FONTS = [
 const font = shallowRef(settings.editorFont);
 watchDebounced(font, (name) => settings.set("ui.editorFont", name?.trim() ?? ""), { debounce: 500 });
 
+// the view a kind of file opens in: the kinds with views (tabs.ts), each with its own names for them
+const OPENS = VIEW_ROWS.filter((row) => row.ext);
+const viewKey = (row: ViewRow) => `ide.view.${row.ext}`;
+const viewsOf = (row: ViewRow) => [
+  { label: row.code, value: "code" },
+  ...(row.split ? [{ label: "Split", value: "split" }] : []),
+  { label: row.visual, value: "visual" },
+];
+
 function setNumber(key: "ui.editorFontSize" | "ui.ideUiFontSize" | "ide.indentSize", value: string | number): void {
   settings.set(key, String(value));
 }
@@ -71,6 +81,7 @@ function resetTab(): void {
       "ui.editorFontSize",
       "ide.indent",
       "ide.indentSize",
+      ...OPENS.map(viewKey),
       ...switchesOf("editor").map((one) => one.key),
     ],
     language: switchesOf("language").map((one) => one.key),
@@ -162,6 +173,21 @@ function resetTab(): void {
                 orientation="horizontal"
               >
                 <USwitch :model-value="settings.on(row.key)" @update:model-value="settings.setOn(row.key, $event)" />
+              </UFormField>
+              <UFormField
+                v-for="row in OPENS"
+                :key="row.ext"
+                :label="`${row.ext?.toUpperCase()} files open in`"
+                description="A tab's own switch still changes it"
+                orientation="horizontal"
+              >
+                <UTabs
+                  :model-value="settings.values[viewKey(row)] || row.first"
+                  :items="viewsOf(row)"
+                  :content="false"
+                  size="xs"
+                  @update:model-value="settings.set(viewKey(row), String($event))"
+                />
               </UFormField>
               <UFormField
                 label="Indentation"

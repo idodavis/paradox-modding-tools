@@ -361,6 +361,14 @@ func TestContentSizes(t *testing.T) {
 			t.Errorf("a multiline text takes the width it is given and wraps there: %+v", element)
 		}
 	}
+	spanning, _ := boxOf(list, partNamed(list, "v_spanning"))
+	if spanning.Width != window.Width || spanning.Height != 10 {
+		t.Errorf("a column under a plain widget with a child expanding across it takes the room on that axis: %+v", spanning)
+	}
+	footer, _ := boxOf(list, partNamed(list, "v_footer"))
+	if footer.Width != 10 || footer.Y+footer.Height != window.Y+window.Height || footer.X != window.X+(window.Width-10)/2 {
+		t.Errorf("a row with no expanding child keeps its content size and its anchor: %+v in %+v", footer, window)
+	}
 }
 
 func TestEntriesAlone(t *testing.T) {

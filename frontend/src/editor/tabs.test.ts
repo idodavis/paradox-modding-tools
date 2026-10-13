@@ -14,7 +14,7 @@ describe("tab keys", () => {
       ext: "gui",
       code: "Code",
       visual: "Visual",
-      first: "code",
+      first: "split",
       split: true,
       panel: "Widgets",
     });

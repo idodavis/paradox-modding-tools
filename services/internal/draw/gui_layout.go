@@ -205,7 +205,7 @@ func preferredSize(node *widget, room size) size {
 	declared := node.extent("size")
 	preferred := size{width: sizeOf(declared.width, room.width), height: sizeOf(declared.height, room.height)}
 	if auto, _ := node.scalar("autoresize"); strings.EqualFold(auto, yes) && node.text != nil {
-		preferred = textExtent(node, wrapAt(node, room.width))
+		preferred = textExtent(node, room.width)
 	}
 	if preferred.width == 0 {
 		preferred.width = contentOf(node, room, false)
@@ -267,7 +267,7 @@ func contentOf(node *widget, room size, vertical bool) float64 {
 		if node.text == nil {
 			return 0
 		}
-		return axisOf(textExtent(node, wrapAt(node, room.width)), vertical)
+		return axisOf(textExtent(node, room.width), vertical)
 	case game.SizeTexture:
 		return axisOf(node.content, vertical)
 	case game.SizeChildren:
@@ -406,12 +406,42 @@ func anchorOf(node *widget, key string) (acrossFraction, downFraction float64) {
 	return acrossFraction, downFraction
 }
 
-// placePlain places each child by its anchors and position in the box of its parent.
+// placePlain places each child by its anchors and position in the box of its parent, a row or column whose children
+// expand across it taking the parent's room.
 func placePlain(node *widget) {
 	cell := node.inner()
+	room := size{width: cell.Width, height: cell.Height}
 	for _, child := range placed(node) {
-		child.box = anchored(child, cell, preferredSize(child, size{width: cell.Width, height: cell.Height}))
+		child.box = anchored(child, cell, spanned(child, preferredSize(child, room), room))
 	}
+}
+
+// spanned is a row's or column's size under a parent that does not lay it out: on an axis it declares no size for,
+// where one of its children expands or takes a percent, it takes the room, as a window's main column does; on any
+// other axis its own size. Vanilla CK3 writes 549 such boxes, 4 with a size, 366 with such a child, and anchors or
+// positions 23, so a footer row of buttons keeps its own size and its anchor.
+func spanned(child *widget, own, room size) size {
+	if child.class != game.LayoutRow && child.class != game.LayoutColumn {
+		return own
+	}
+	declared := child.extent("size")
+	if declared.width == 0 && reaches(child, false) {
+		own.width = room.width
+	}
+	if declared.height == 0 && reaches(child, true) {
+		own.height = room.height
+	}
+	return clamped(child, own)
+}
+
+// reaches reports whether a child of a box expands or takes a percent on an axis.
+func reaches(node *widget, vertical bool) bool {
+	for _, child := range placed(node) {
+		if policyOf(child, vertical).Grows || axisOf(child.extent("size"), vertical) < 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // policyOf is the layout policy a widget writes for an axis (layoutpolicy_horizontal or _vertical), none where it
@@ -660,12 +690,12 @@ func placeFlow(node *widget) {
 }
 
 // placeScroll lays a scroll area's content out at its own size, starting at the area's top left, clipped to the
-// area: nothing is scrolled.
+// area: nothing is scrolled. A content with no width takes the area's.
 func placeScroll(node *widget) {
 	cell := node.inner()
 	room := size{width: cell.Width, height: cell.Height}
 	for _, child := range placed(node) {
-		own := preferredSize(child, room)
+		own := spanned(child, preferredSize(child, room), room)
 		if own.width == 0 && child.extent("size").width == 0 {
 			own.width = cell.Width
 		}
@@ -734,8 +764,17 @@ func wrapAt(node *widget, width float64) float64 {
 	return width
 }
 
-// textExtent is what a text measures broken at a limit: its widest line and its lines' height.
-func textExtent(node *widget, limit float64) size {
-	lines, widths := linesAt(node, limit)
+// textExtent is what a text measures in a width: its lines broken where it wraps, the widest and their height. A
+// multiline text with no width of its own, measured with no room (its parent is sized by its content), has no width
+// yet: it measures its longest word, one line high, so a column it sits in is as wide as its other children.
+func textExtent(node *widget, width float64) size {
+	if node.multiline && node.textLimit == 0 && width == 0 {
+		longest := 0.0
+		for _, word := range node.pieces {
+			longest = max(longest, word.advance)
+		}
+		return size{width: longest, height: node.lineHeight}
+	}
+	lines, widths := linesAt(node, wrapAt(node, width))
 	return size{width: slices.Max(widths), height: float64(len(lines)) * node.lineHeight}
 }

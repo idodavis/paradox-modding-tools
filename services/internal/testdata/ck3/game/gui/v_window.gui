@@ -102,6 +102,15 @@ window = {
 		size = { 60 100 }
 		textbox = { name = "v_multi" text = "v_long" font = "v_font" fontsize = 16 multiline = yes layoutpolicy_horizontal = expanding }
 	}
+	vbox = {
+		name = "v_spanning"
+		icon = { size = { 10 10 } layoutpolicy_horizontal = expanding }
+	}
+	hbox = {
+		name = "v_footer"
+		parentanchor = bottom|hcenter
+		icon = { size = { 10 10 } }
+	}
 }
 window = {
 	name = "v_hidden_entry"

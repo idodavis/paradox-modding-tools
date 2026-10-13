@@ -6,7 +6,8 @@
 export type View = "code" | "split" | "visual";
 
 /** A kind of file with views, found by its extension or the folder it sits in: what its code and visual views are
- * called, the one it opens in, whether it can be split, and the name of its panel ("" for none). */
+ * called, the one it opens in unless the IDE settings say another (`ide.view.<ext>`), whether it can be split, and
+ * the name of its panel ("" for none). */
 export type ViewRow = {
   ext?: string;
   folder?: string;
@@ -27,7 +28,7 @@ export const IMAGES = /\.(png|jpe?g|gif|webp|bmp|ico|dds|tga|svg)$/i;
 export const VIEW_ROWS: ViewRow[] = [
   { ext: "md", code: "Raw", visual: "Rich", first: "code", split: false, panel: "" },
   { ext: "svg", code: "Text", visual: "Image", first: "visual", split: false, panel: "" },
-  { ext: "gui", code: "Code", visual: "Visual", first: "code", split: true, panel: "Widgets" },
+  { ext: "gui", code: "Code", visual: "Visual", first: "split", split: true, panel: "Widgets" },
 ];
 
 /** The tab of a file's diff; a commit's names the commit. */

@@ -55,7 +55,8 @@ overridden as the widget's own are, so a color overlay's `block "master_color_fr
 An overlay is masked by the widget's texture (`Texture.Mask`), since the game keeps the texture's alpha, so a color
 added to a flat icon shows in the glyph's shape; a `mask` or `alphamultiply` overlay masks the texture instead. A
 binding (`[GetPlayer.GetName]`) is the game's to answer, so nothing answers it: a `visible` that is one draws the
-widget, a `text` that is one is drawn as written, a `texture` or a number that is one is none. One thing the text
+widget, a `text` that is one is drawn as written, a `texture` that is one is written in the widget's box as its text,
+and a number that is one is none. One thing the text
 alone says: two siblings whose `visible` bindings are `[X]` and `[Not(X)]` are shown one at a time, so the later shares
 the earlier's place (`Pair`) instead of taking one of its own.
 

@@ -71,8 +71,9 @@ The Widgets panel shows where the selected widget sits (the way down to it from 
 **Shown** switch that hides the widget and everything in it until the app closes, and its properties as written, with
 who wrote each: the widget, or the type or template it comes from. Nothing the game would decide at runtime is
 simulated, and nothing asks you to answer it: a widget whose `visible` is a binding is drawn (hide it with the switch
-to see the window without it), a text that is a binding shows the binding itself, and a texture that is one is left
-empty. A tooltip is not drawn in its window, and a background lies under what its widget holds. Two siblings shown on a binding and its negation (`[X]` and `[Not(X)]`) share one place, the second drawn
+to see the window without it), a text that is a binding shows the binding itself, and a texture that is one shows the
+binding written in its box. An entry with nothing to draw, a type with no size and no texture of its own, says so on
+the floor. A tooltip is not drawn in its window, and a background lies under what its widget holds. Two siblings shown on a binding and its negation (`[X]` and `[Not(X)]`) share one place, the second drawn
 over the first, since the game shows one of them. A status line says what the game's files did not give: a template, texture or font that was not found, and how
 long the render took.
 

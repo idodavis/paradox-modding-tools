@@ -44,8 +44,7 @@ type style struct {
 }
 
 // text resolves a widget's text: the value's loc entry in the request's language else english (a key), the value
-// itself (a literal), its markup as runs, in the font and at the size written, each style the runs use listed for the
-// page to load. A text with no font size, or a font with no file, is listed and drawn as none.
+// itself (a literal), or the binding its texture is, drawn in the widget's font.
 func (resolver *resolver) text(node *widget) *Text {
 	value, has := node.scalar("text")
 	raw := false
@@ -54,8 +53,18 @@ func (resolver *resolver) text(node *widget) *Text {
 		raw = true
 	}
 	if !has {
-		return nil
+		// a texture that is a binding is the game's to answer, so the binding is written in the box instead
+		value, has = node.scalar("texture")
+		if !has || !isBinding(value) {
+			return nil
+		}
 	}
+	return resolver.styled(node, value, raw)
+}
+
+// styled is a text value drawn in the widget's font, at its size and color, its markup as runs, each style the runs
+// use listed for the page to load; nil, listed, for a widget with no font size or a font with no file.
+func (resolver *resolver) styled(node *widget, value string, raw bool) *Text {
 	pixels, sized := resolver.number(node, "fontsize")
 	if !sized {
 		pixels, sized = resolver.number(resolver.fallback, "fontsize")

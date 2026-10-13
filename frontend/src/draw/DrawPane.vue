@@ -194,9 +194,9 @@ const missing = computed(() => {
   return first ? `${first}${rest.length ? `, ${rest.length} more` : ""}` : "";
 });
 
-// what the floor says while there is no list to draw
+// what the floor says while there is no list to draw, or why the entry drawn shows nothing
 const empty = computed(() => {
-  if (list.value) return "";
+  if (list.value) return list.value.missing?.find((sentence) => sentence.startsWith("Nothing to draw")) ?? "";
   if (!entry.value) return "No window";
   return error.value ? error.value.message : "Drawing";
 });

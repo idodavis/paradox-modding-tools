@@ -91,23 +91,32 @@ const groups = computed(() => {
           @update:model-value="store.toggleHidden(path, selected)"
         />
       </div>
-      <div class="min-h-0 flex-1 overflow-auto">
-        <section v-for="group in groups" :key="group.writer">
-          <div class="flex h-7 items-center gap-1.5 border-y border-default bg-elevated/60 px-3.5 text-11 text-dimmed">
+      <!-- one card per writer: a filled header naming it, its rows inside -->
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3.5">
+        <section
+          v-for="group in groups"
+          :key="group.writer"
+          class="shrink-0 overflow-hidden rounded-lg border border-default bg-elevated"
+        >
+          <div class="flex h-7 items-center gap-1.5 border-b border-default bg-accented/40 px-3 text-11 text-toned">
+            <UIcon :name="group.writer ? 'i-lucide-layers-2' : 'i-lucide-square-dashed'" class="size-3.5 text-dimmed" />
             <template v-if="group.writer">
-              from <span class="truncate font-mono text-muted" :title="group.writer">{{ group.writer }}</span>
+              <span class="text-dimmed">from</span>
+              <span class="truncate font-mono font-semibold" :title="group.writer">{{ group.writer }}</span>
             </template>
-            <template v-else>this widget</template>
+            <span v-else class="font-semibold">This widget</span>
           </div>
-          <div
-            v-for="property in group.rows"
-            :key="property.key"
-            class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-baseline gap-x-4 px-3.5 py-1.5 text-11.5 odd:bg-elevated/30"
-          >
-            <span class="truncate font-medium text-toned" :title="property.key">{{ property.key }}</span>
-            <span class="min-w-0 truncate text-end" :title="property.value">
-              <ScriptSnippet :text="property.value" :name="path" inline />
-            </span>
+          <div class="divide-y divide-default">
+            <div
+              v-for="property in group.rows"
+              :key="property.key"
+              class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-baseline gap-x-4 px-3 py-1.5 text-11.5"
+            >
+              <span class="truncate font-medium text-toned" :title="property.key">{{ property.key }}</span>
+              <span class="min-w-0 truncate text-end" :title="property.value">
+                <ScriptSnippet :text="property.value" :name="path" inline />
+              </span>
+            </div>
           </div>
         </section>
       </div>

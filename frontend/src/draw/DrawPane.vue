@@ -9,7 +9,7 @@
  */
 import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from "vue";
 import { useQuery } from "@pinia/colada";
-import { refDebounced, useElementSize, useTimeoutFn } from "@vueuse/core";
+import { refDebounced, useResizeObserver, useTimeoutFn } from "@vueuse/core";
 import type { Element as DrawElement } from "@services/internal/draw";
 import type { Range } from "@services/internal/lsp";
 import { useDraw } from "../composables/useDraw";
@@ -41,10 +41,37 @@ function holds({ start, end }: Range, line: number, col: number): boolean {
   return afterStart && beforeEnd;
 }
 
-// the scene: a window's resolution, laid out at the UI scale; an entry drawn alone is its own size, measured
-const own = useElementSize(scene);
-const sceneWidth = computed(() => list.value?.width || own.width.value);
-const sceneHeight = computed(() => list.value?.height || own.height.value);
+// the scene: a window's resolution, laid out at the UI scale; an entry drawn alone is the extent of everything it
+// draws, measured once drawn and again when its root changes size (its fonts loading), the root moved so what hangs
+// above or left of it is on the scene
+const root = useTemplateRef("root");
+const extent = shallowRef({ x: 0, y: 0, width: 0, height: 0 });
+function measure(): void {
+  const origin = scene.value?.querySelector('[data-element="0"]');
+  if (!origin || list.value?.width) {
+    extent.value = { x: 0, y: 0, width: 0, height: 0 };
+    return;
+  }
+  const zoom = viewport.value?.zoom ?? 1;
+  const at = origin.getBoundingClientRect();
+  let left = 0;
+  let top = 0;
+  let right = at.width;
+  let bottom = at.height;
+  for (const drawn of origin.parentElement?.querySelectorAll("[data-element]") ?? []) {
+    const box = drawn.getBoundingClientRect();
+    if (!box.width || !box.height) continue;
+    left = Math.min(left, box.left - at.left);
+    top = Math.min(top, box.top - at.top);
+    right = Math.max(right, box.right - at.left);
+    bottom = Math.max(bottom, box.bottom - at.top);
+  }
+  extent.value = { x: -left / zoom, y: -top / zoom, width: (right - left) / zoom, height: (bottom - top) / zoom };
+}
+watch([list, hidden], () => nextTick(measure), { flush: "post" });
+useResizeObserver(root, measure);
+const sceneWidth = computed(() => list.value?.width || extent.value.width);
+const sceneHeight = computed(() => list.value?.height || extent.value.height);
 
 // the fonts the list's texts use, registered with the page while a list names them
 const faces = new Map<string, FontFace>();
@@ -224,19 +251,29 @@ const empty = computed(() => {
         <div
           ref="scene"
           class="pmt-scene relative grid bg-default"
-          :class="[store.bounds && 'pmt-bounds', list?.width ? 'size-full' : 'h-max w-max']"
-          :style="{ '--zoom': viewport?.zoom ?? 1, gridTemplate: '100% / 100%' }"
+          :class="[store.bounds && 'pmt-bounds', list?.width && 'size-full']"
+          :style="{
+            '--zoom': viewport?.zoom ?? 1,
+            gridTemplate: '100% / 100%',
+            ...(list?.width ? {} : { width: `${extent.width}px`, height: `${extent.height}px` }),
+          }"
           @click="pick"
           @pointermove="track"
           @pointerleave="untrack"
         >
-          <DrawnWindow
-            v-if="list"
-            :elements="elements"
-            :hidden="hidden"
-            :selected="selected"
-            :scale="list.width ? store.scale : 1"
-          />
+          <div
+            ref="root"
+            class="grid"
+            :style="{ gridArea: '1 / 1', gridTemplate: '100% / 100%', translate: `${extent.x}px ${extent.y}px` }"
+          >
+            <DrawnWindow
+              v-if="list"
+              :elements="elements"
+              :hidden="hidden"
+              :selected="selected"
+              :scale="list.width ? store.scale : 1"
+            />
+          </div>
         </div>
       </Viewport>
       <p v-if="empty" class="pointer-events-none absolute inset-0 flex items-center justify-center text-12 text-dimmed">

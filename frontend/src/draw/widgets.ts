@@ -269,18 +269,16 @@ function layerStyle(texture: Texture): CSSProperties {
   const style: CSSProperties = {};
   if (texture.mirror) style.transform = "scaleX(-1)";
   if (texture.blend && texture.blend !== "normal") style.mixBlendMode = texture.blend as CSSProperties["mixBlendMode"];
-  if (texture.border.some((inset) => inset > 0)) {
-    const slices = texture.border.map((inset) => `${inset}px`).join(" ");
-    return {
-      ...style,
-      borderStyle: "solid",
-      borderWidth: slices,
-      borderImage: `${image} ${texture.border.join(" ")} fill / ${slices} ${texture.tiled ? "repeat" : "stretch"}`,
-    };
-  }
-  const placed = imageOf(texture);
   // a tint multiplies the image under a layer of its color, and the image's own alpha keeps the shape
   const tinted = texture.tint !== "";
+  if (texture.border.some((inset) => inset > 0)) {
+    const slices = texture.border.map((inset) => `${inset}px`).join(" ");
+    const sliced = `${image} ${texture.border.join(" ")} fill / ${slices} / 0 ${texture.tiled ? "repeat" : "stretch"}`;
+    // a sliced image under a tint is the tint in the image's shape: the game's frame masks are white
+    if (tinted) return { ...style, backgroundColor: texture.tint, WebkitMaskBoxImage: sliced };
+    return { ...style, borderStyle: "solid", borderWidth: slices, borderImage: sliced };
+  }
+  const placed = imageOf(texture);
   const masks = [
     ...(tinted ? [{ image, ...placed }] : []),
     ...(texture.mask ? [{ image: `url(${quote(texture.mask.url)})`, ...imageOf(texture.mask) }] : []),

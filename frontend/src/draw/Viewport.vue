@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * A pane's floor: its content, of a given size in CSS pixels, on the theme's checkerboard, fit to the pane until
- * zoomed (Fit, 100%, − and +, Ctrl+wheel around the pointer). A row under it holds the pane's own controls, then the
- * zoom's buttons. The content is scaled, not resized, so text stays crisp.
+ * zoomed (Fit, 100%, − and +, Ctrl+wheel around the pointer) or dragged, which pans it. A row under it holds the
+ * pane's own controls, then the zoom's buttons. The content is scaled, not resized, so text stays crisp.
  */
 import { computed, nextTick, shallowRef, useTemplateRef } from "vue";
 import { useElementSize } from "@vueuse/core";
@@ -31,6 +31,38 @@ function zoomTo(level: number): number {
   return chosen.value;
 }
 
+// a drag pans the content; a press that moves less than a few pixels is a click and reaches what is under it
+const DRAG = 4;
+let press: { x: number; y: number; left: number; top: number; moved: boolean } | null = null;
+function onPointerDown(e: PointerEvent): void {
+  const el = pane.value;
+  if (e.button !== 0 || !el) return;
+  press = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, moved: false };
+}
+function onPointerMove(e: PointerEvent): void {
+  const el = pane.value;
+  if (!press || !el || !(e.buttons & 1)) return;
+  const dx = e.clientX - press.x;
+  const dy = e.clientY - press.y;
+  if (!press.moved && Math.abs(dx) < DRAG && Math.abs(dy) < DRAG) return;
+  if (!press.moved) {
+    press.moved = true;
+    el.setPointerCapture(e.pointerId);
+    if (fit.value) zoomTo(zoom.value);
+  }
+  el.scrollTo(press.left - dx, press.top - dy);
+}
+let dragged = false;
+function onPointerUp(): void {
+  dragged = !!press?.moved;
+  press = null;
+}
+/** The click that ends a drag reaches nothing under the pointer. */
+function onClick(e: MouseEvent): void {
+  if (dragged) e.stopPropagation();
+  dragged = false;
+}
+
 // Ctrl+wheel zooms around the pointer: the point under it stays there
 function onWheel(e: WheelEvent): void {
   const el = pane.value;
@@ -56,6 +88,11 @@ defineExpose({ zoom });
       :class="fit ? 'overflow-hidden' : 'overflow-auto'"
       style="background: repeating-conic-gradient(var(--bg-0) 0 25%, var(--bg-4) 0 50%) 0 0 / 16px 16px"
       @wheel="onWheel"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+      @click.capture="onClick"
     >
       <div class="flex min-h-full w-max min-w-full items-center justify-center p-4">
         <!-- the scaled box takes the room the scaled content needs, which a transform leaves unchanged -->

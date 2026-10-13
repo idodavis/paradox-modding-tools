@@ -110,7 +110,7 @@ const groups = computed(() => {
             <div
               v-for="property in group.rows"
               :key="property.key"
-              class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-baseline gap-x-4 px-3 py-1.5 text-11.5"
+              class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-baseline gap-x-4 px-3 py-1.5 text-11.5 even:bg-accented/20"
             >
               <span class="truncate font-medium text-toned" :title="property.key">{{ property.key }}</span>
               <span class="min-w-0 truncate text-end" :title="property.value">

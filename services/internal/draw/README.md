@@ -46,7 +46,10 @@ are resolved once and drawn once a row. A text with no `fontsize` takes the font
 type.
 
 A binding (`[GetPlayer.GetName]`) is the game's to answer, so nothing answers it: a `visible` that is one draws the
-widget, a `text` that is one is drawn as written, a `texture` or a number that is one is none.
+widget, a `text` that is one is drawn as written, a `texture` or a number that is one is none. One thing the text
+alone says: two siblings whose `visible` bindings are `[X]` and `[Not(X)]` are shown one at a time, so the later
+takes the earlier's place (`pairAlternatives`: `either` on the earlier, `alternate` on the later) instead of a place
+of its own.
 
 ## Pass 2: place
 
@@ -72,7 +75,9 @@ width, else, where it is `multiline`, at the width the layout gives it; measured
 longest word wide. A row or column under a parent that does not lay it out (a window, a widget, a container, a scroll
 area) takes the parent's room on an axis it declares no size for where one of its children expands or takes a percent
 on it, and its content on any other axis (`spanned`): a window's main column fills the window, a footer row of fixed
-buttons keeps its size and its anchor.
+buttons keeps its size and its anchor. A widget whose place a sibling takes (`either`) is as big as the bigger of
+them, so the place holds whichever the game shows; the sibling gets the same box once the widget is placed, and is
+drawn over it.
 
 ## Decisions
 

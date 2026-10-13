@@ -111,6 +111,12 @@ window = {
 		parentanchor = bottom|hcenter
 		icon = { size = { 10 10 } }
 	}
+	vbox = {
+		name = "v_either"
+		icon = { name = "v_yes" size = { 10 10 } visible = "[GetPlayer.IsAlive]" }
+		icon = { name = "v_no" size = { 10 30 } visible = "[Not( GetPlayer.IsAlive )]" }
+		icon = { name = "v_after" size = { 10 10 } }
+	}
 }
 window = {
 	name = "v_hidden_entry"

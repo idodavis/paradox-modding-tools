@@ -14,11 +14,11 @@ def gui.type "icon" mode="" 1099-1103 @56:5 local=false named=false
 def gui.type "v_tab" mode="" 1120-1125 @57:5 local=false named=false
 def gui.type "v_textbox" mode="" 1181-1190 @60:5 local=false named=false
 def gui.widget "v_layout_rules" mode="" 1205-1211 @61:0 local=false named=false
-def gui.widget "v_hidden_entry" mode="" 2497-2503 @114:0 local=false named=false
-def gui.widget "v_default_text" mode="" 2625-2631 @120:0 local=false named=false
-def gui.widget "v_concepts" mode="" 2724-2730 @125:0 local=false named=false
-def gui.texticon "v_icon" mode="" 2840-2848 @130:0 local=false named=false
-def gui.format "v_format" mode="" 2936-2942 @134:0 local=false named=false
+def gui.widget "v_hidden_entry" mode="" 2737-2743 @120:0 local=false named=false
+def gui.widget "v_default_text" mode="" 2865-2871 @126:0 local=false named=false
+def gui.widget "v_concepts" mode="" 2964-2970 @131:0 local=false named=false
+def gui.texticon "v_icon" mode="" 3080-3088 @136:0 local=false named=false
+def gui.format "v_format" mode="" 3176-3182 @140:0 local=false named=false
 ref  "button" called="widget" 32-38 @1:17 from=0 trigger=false
 ref file "v_frame.dds" called="" 72-85 @3:12 from=0 trigger=false
 ref  "textbox" called="widget" 105-112 @5:16 from=1 trigger=false
@@ -160,19 +160,35 @@ ref parameter "hbox:parentanchor" called="" 2432-2444 @110:2 from=15 trigger=fal
 ref  "icon" called="widget" 2464-2468 @111:2 from=15 trigger=false
 ref parameter "hbox:icon" called="" 2464-2468 @111:2 from=15 trigger=false
 ref parameter "icon:size" called="" 2473-2477 @111:11 from=15 trigger=false
-ref gui.widget "v_hidden_entry" called="" 2516-2532 @115:8 from=16 trigger=false
-ref datafunction "Global.GetVariableSystem" called="" 2591-2608 @118:13 from=16 trigger=false
-ref datafunction "VariableSystem.Exists" called="" 2609-2620 @118:31 from=16 trigger=false
-ref gui.widget "v_default_text" called="" 2644-2660 @121:8 from=17 trigger=false
-ref  "v_textbox" called="widget" 2662-2671 @122:1 from=17 trigger=false
-ref parameter "v_textbox:text" called="" 2676-2680 @122:15 from=17 trigger=false
-ref localization "v_key" called="" 2683-2690 @122:22 from=17 trigger=false
-ref localization "v_key" called="" 2712-2719 @123:19 from=17 trigger=false
-ref gui.widget "v_concepts" called="" 2743-2755 @126:8 from=18 trigger=false
-ref  "textbox" called="widget" 2757-2764 @127:1 from=18 trigger=false
-ref parameter "textbox:text" called="" 2769-2773 @127:13 from=18 trigger=false
-ref  "textbox" called="widget" 2801-2808 @128:1 from=18 trigger=false
-ref parameter "textbox:text" called="" 2813-2817 @128:13 from=18 trigger=false
-ref  "icon" called="widget" 2854-2858 @131:1 from=19 trigger=false
-ref file "gfx/interface/v_bg.dds" called="" 2892-2916 @132:24 from=19 trigger=false
-ref gui.format "v_format" called="" 2955-2965 @135:8 from=20 trigger=false
+ref  "icon" called="widget" 2527-2531 @115:2 from=15 trigger=false
+ref parameter "icon:name" called="" 2536-2540 @115:11 from=15 trigger=false
+ref parameter "icon:size" called="" 2551-2555 @115:26 from=15 trigger=false
+ref parameter "icon:visible" called="" 2568-2575 @115:43 from=15 trigger=false
+ref datafunction "Global.GetPlayer" called="" 2580-2589 @115:55 from=15 trigger=false
+ref datafunction "Character.IsAlive" called="" 2590-2597 @115:65 from=15 trigger=false
+ref  "icon" called="widget" 2604-2608 @116:2 from=15 trigger=false
+ref parameter "icon:name" called="" 2613-2617 @116:11 from=15 trigger=false
+ref parameter "icon:size" called="" 2627-2631 @116:25 from=15 trigger=false
+ref parameter "icon:visible" called="" 2644-2651 @116:42 from=15 trigger=false
+ref datafunction "Global.Not" called="" 2656-2680 @116:54 from=15 trigger=false
+ref datafunction "Global.GetPlayer" called="" 2661-2670 @116:59 from=15 trigger=false
+ref datafunction "Character.IsAlive" called="" 2671-2678 @116:69 from=15 trigger=false
+ref  "icon" called="widget" 2687-2691 @117:2 from=15 trigger=false
+ref parameter "icon:name" called="" 2696-2700 @117:11 from=15 trigger=false
+ref parameter "icon:size" called="" 2713-2717 @117:28 from=15 trigger=false
+ref gui.widget "v_hidden_entry" called="" 2756-2772 @121:8 from=16 trigger=false
+ref datafunction "Global.GetVariableSystem" called="" 2831-2848 @124:13 from=16 trigger=false
+ref datafunction "VariableSystem.Exists" called="" 2849-2860 @124:31 from=16 trigger=false
+ref gui.widget "v_default_text" called="" 2884-2900 @127:8 from=17 trigger=false
+ref  "v_textbox" called="widget" 2902-2911 @128:1 from=17 trigger=false
+ref parameter "v_textbox:text" called="" 2916-2920 @128:15 from=17 trigger=false
+ref localization "v_key" called="" 2923-2930 @128:22 from=17 trigger=false
+ref localization "v_key" called="" 2952-2959 @129:19 from=17 trigger=false
+ref gui.widget "v_concepts" called="" 2983-2995 @132:8 from=18 trigger=false
+ref  "textbox" called="widget" 2997-3004 @133:1 from=18 trigger=false
+ref parameter "textbox:text" called="" 3009-3013 @133:13 from=18 trigger=false
+ref  "textbox" called="widget" 3041-3048 @134:1 from=18 trigger=false
+ref parameter "textbox:text" called="" 3053-3057 @134:13 from=18 trigger=false
+ref  "icon" called="widget" 3094-3098 @137:1 from=19 trigger=false
+ref file "gfx/interface/v_bg.dds" called="" 3132-3156 @138:24 from=19 trigger=false
+ref gui.format "v_format" called="" 3195-3205 @141:8 from=20 trigger=false

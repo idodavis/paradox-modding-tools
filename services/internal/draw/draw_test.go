@@ -369,6 +369,14 @@ func TestContentSizes(t *testing.T) {
 	if footer.Width != 10 || footer.Y+footer.Height != window.Y+window.Height || footer.X != window.X+(window.Width-10)/2 {
 		t.Errorf("a row with no expanding child keeps its content size and its anchor: %+v in %+v", footer, window)
 	}
+	either, _ := boxOf(list, partNamed(list, "v_either"))
+	yes, _ := boxOf(list, partNamed(list, "v_yes"))
+	no, _ := boxOf(list, partNamed(list, "v_no"))
+	after, _ := boxOf(list, partNamed(list, "v_after"))
+	if yes.Y != no.Y || after.Y != yes.Y+30 || either.Height != 40 {
+		t.Errorf("siblings visible on a call and its negation share one place, as big as the bigger: %+v %+v %+v in %+v",
+			yes, no, after, either)
+	}
 }
 
 func TestEntriesAlone(t *testing.T) {

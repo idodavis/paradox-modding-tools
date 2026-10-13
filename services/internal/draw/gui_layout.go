@@ -48,20 +48,33 @@ func place(root *widget, request Request, alone bool) ([]Element, size) {
 // instance is a copy of a widget with the rows of its data model drawn: its template children once per row.
 func instance(node *widget) *widget {
 	copied := *node
-	copied.children = nil
+	copied.children = twins(node, false)
+	for range node.rows {
+		copied.children = append(copied.children, twins(node, true)...)
+	}
+	return &copied
+}
+
+// twins are copies of a widget's children, the rows' template ones or the others, each one's shared places pointing
+// at the copies of its siblings.
+func twins(node *widget, template bool) []*widget {
+	copies := map[*widget]*widget{}
+	var out []*widget
 	for _, child := range node.children {
-		if !child.template {
-			copied.children = append(copied.children, instance(child))
+		if child.template == template {
+			copies[child] = instance(child)
+			out = append(out, copies[child])
 		}
 	}
-	for range node.rows {
-		for _, child := range node.children {
-			if child.template {
-				copied.children = append(copied.children, instance(child))
+	for child, twin := range copies {
+		twin.either = nil
+		for _, other := range child.either {
+			if twinOf, isTwin := copies[other]; isTwin {
+				twin.either = append(twin.either, twinOf)
 			}
 		}
 	}
-	return &copied
+	return out
 }
 
 // rootBox is the root's box: a window's size (a percent of the resolution), else the resolution, anchored in it; an
@@ -81,7 +94,7 @@ func rootBox(root *widget, resolution size, alone bool) Box {
 }
 
 // arrange places every widget's children inside its box: a child that fills its parent over the whole box, the rest
-// by the widget's layout class; then each child's own.
+// by the widget's layout class, a child that takes a sibling's place over that sibling; then each child's own.
 func arrange(node *widget) {
 	for _, child := range node.children {
 		if fills(child) {
@@ -101,6 +114,11 @@ func arrange(node *widget) {
 		placeScroll(node)
 	default:
 		placePlain(node)
+	}
+	for _, child := range node.children {
+		for _, other := range child.either {
+			other.box = child.box
+		}
 	}
 	for _, child := range node.children {
 		arrange(child)
@@ -166,11 +184,12 @@ func fills(child *widget) bool {
 	return game.Sizings[child.kind] == game.SizeParent
 }
 
-// placed are the children a widget lays out: those that take a place among their siblings and are given room.
+// placed are the children a widget lays out: those that take a place of their own among their siblings and are
+// given room; a child that takes an earlier sibling's place is laid over it once the sibling is placed.
 func placed(node *widget) []*widget {
 	var out []*widget
 	for _, child := range node.children {
-		if !fills(child) && !givesNoRoom(node, child) {
+		if !fills(child) && !child.alternate && !givesNoRoom(node, child) {
 			out = append(out, child)
 		}
 	}
@@ -200,7 +219,8 @@ func (node *widget) inner() Box {
 }
 
 // preferredSize is the widget's own size given the room its parent gives: the declared size, a fraction of the room,
-// or what the widget holds; held by its minimum and maximum.
+// or what the widget holds; held by its minimum and maximum. A widget whose place a sibling takes is as big as the
+// bigger of them, so the place holds whichever the game shows.
 func preferredSize(node *widget, room size) size {
 	declared := node.extent("size")
 	preferred := size{width: sizeOf(declared.width, room.width), height: sizeOf(declared.height, room.height)}
@@ -216,7 +236,12 @@ func preferredSize(node *widget, room size) size {
 	if game.Sizings[node.kind] == game.SizeTexture && node.content.width > 0 {
 		preferred = byRatio(preferred, node.content)
 	}
-	return clamped(node, preferred)
+	preferred = clamped(node, preferred)
+	for _, other := range node.either {
+		theirs := preferredSize(other, room)
+		preferred = size{width: max(preferred.width, theirs.width), height: max(preferred.height, theirs.height)}
+	}
+	return preferred
 }
 
 // sizeOf is one axis of a declared size: pixels, a fraction of the room, or zero where it is unset.

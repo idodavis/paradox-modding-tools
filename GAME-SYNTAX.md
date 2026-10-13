@@ -854,6 +854,11 @@ buttons at `bottom|hcenter`). So a window's main column fills the window and a f
 Measured by a walk of every file through the engine's parse, each box's direct children read for the policy across
 the box and for a `%` in `size`.
 
+**Siblings shown on a binding and its negation.** Among the children of one block, a `visible = "[X]"` beside a
+`visible = "[Not(X)]"` (spaces ignored) is a pair the game shows one of: CK3 780 pairs in 680 blocks of 8,632 bound
+`visible`s, Vic3 1,279 in 986 of 7,487, EU5 (`game/in_game/gui`) 1,132 in 984 of 7,902, The Fallen Eagle 257 in 213 of
+2,658. Measured by a walk of every file through the engine's parse, each block's direct children's `visible` read.
+
 **A `background` fills its parent and takes no place among its siblings.** It is written directly under a row,
 column, flow or grid (CK3 17 times on the line after the box opens, more further in) and over the whole box; laid out as
 an item it pushed every sibling by the box's width. **A `multiline` text takes the width the layout gives it** and

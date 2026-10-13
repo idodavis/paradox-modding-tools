@@ -182,6 +182,7 @@ func (resolver *resolver) widget(parent *widget, key string, own statement, dept
 		node.rows = defaultRows
 	}
 	resolver.children(node, depth)
+	pairAlternatives(node)
 	node.hidden = hidden(node)
 	if alpha, has := resolver.number(node, "alpha"); has {
 		node.alpha = min(max(alpha, 0), 1)
@@ -425,6 +426,33 @@ func (resolver *resolver) opening(node *widget) {
 func hidden(node *widget) bool {
 	text, _ := node.scalar("visible")
 	return strings.EqualFold(text, no) || strings.EqualFold(text, "false")
+}
+
+// pairAlternatives finds the children whose visible bindings are each other's negation, [X] and [Not(X)]: the game
+// shows one of them, so the later takes the earlier's place instead of one of its own.
+func pairAlternatives(node *widget) {
+	calls := make([]string, len(node.children))
+	for i, child := range node.children {
+		text, _ := child.scalar("visible")
+		if isBinding(text) {
+			calls[i] = strings.Join(strings.Fields(text[1:len(text)-1]), "")
+		}
+	}
+	for i, first := range node.children {
+		for j := i + 1; j < len(node.children); j++ {
+			later := node.children[j]
+			if calls[i] == "" || later.alternate || !negates(calls[i], calls[j]) {
+				continue
+			}
+			later.alternate = true
+			first.either = append(first.either, later)
+		}
+	}
+}
+
+// negates reports whether two calls are each other's negation: one is Not(the other).
+func negates(one, other string) bool {
+	return other == "Not("+one+")" || one == "Not("+other+")"
 }
 
 // isBinding reports whether the whole of a value is one binding ([GetPlayer.GetName]), which no file answers.

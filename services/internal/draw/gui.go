@@ -58,6 +58,8 @@ type widget struct {
 	overrides  map[string]statement // the blockoverrides in force, by the block's name
 	rows       int                  // a data model's rows drawn; 0 for no data model
 	hidden     bool                 // visible = no: the widget and what it holds are not drawn
+	either     []*widget            // the later siblings whose visible negates this one's: they take its place
+	alternate  bool                 // the widget takes an earlier sibling's place, so its box lays it out not
 	text       *Text                // the text's font, size and color; its lines are broken where it is placed
 	pieces     []piece              // the text's words, measured, which its lines are broken from
 	lineHeight float64              // how far apart the text's lines sit

@@ -32,25 +32,11 @@ func main() {
 	}
 
 	// 2. the install and its version
-	info := game.Get(*gameID)
-	if info == nil {
-		log.Fatalf("unknown game %q: pass -game ck3, vic3 or eu5", *gameID)
-	}
-	if *installDir == "" {
-		installs := game.FindInstalls(*gameID)
-		if len(installs) == 0 {
-			log.Fatalf("no Steam install of %s found: pass -dir", *gameID)
-		}
-		*installDir = installs[0].Path
-	}
-	version := game.LoadGameVersion(info.ID, *installDir)
-	if version == "" {
-		log.Fatalf("no game version found for %s", *installDir)
-	}
+	root, version := installAndVersion(*gameID, *installDir)
 
 	// 3. the dump part alone, refused on a partial dump set; the databases the build starts with are
 	// not shipped
-	s, err := index.BuildSchema(context.Background(), index.Request{Game: *gameID, Dir: *installDir, Version: version})
+	s, err := index.BuildSchema(context.Background(), index.Request{Game: *gameID, Dir: root, Version: version})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,16 +53,41 @@ func main() {
 
 	// 5. a file of this version stays when it decodes to the same schema (gob map order changes the
 	// bytes on every run); both sides are decoded so empty slices and maps compare alike
+	writeShipped(filepath.Join(shippedDir, schema.ShippedName(*gameID, version)), encoded.Bytes())
+}
+
+// installAndVersion returns the install root of a game, the first Steam install found when dir is empty, and the
+// version read there; it exits when either is missing.
+func installAndVersion(gameID, dir string) (string, string) {
+	info := game.Get(gameID)
+	if info == nil {
+		log.Fatalf("unknown game %q: pass -game ck3, vic3 or eu5", gameID)
+	}
+	if dir == "" {
+		installs := game.FindInstalls(gameID)
+		if len(installs) == 0 {
+			log.Fatalf("no Steam install of %s found: pass -dir", gameID)
+		}
+		dir = installs[0].Path
+	}
+	version := game.LoadGameVersion(info.ID, dir)
+	if version == "" {
+		log.Fatalf("no game version found for %s", dir)
+	}
+	return dir, version
+}
+
+// writeShipped saves the stored form at path, unless the file there already decodes to the same schema.
+func writeShipped(path string, encoded []byte) {
 	decode := func(data []byte) (decoded *schema.Schema, err error) {
 		err = appdata.Decode(bytes.NewReader(data), &decoded)
 		return decoded, err
 	}
-	path := filepath.Join(shippedDir, schema.ShippedName(*gameID, version))
 	done := "wrote"
 	if current, err := os.ReadFile(path); err == nil {
 		done = "replaced"
 		old, oldErr := decode(current)
-		fresh, freshErr := decode(encoded.Bytes())
+		fresh, freshErr := decode(encoded)
 		if freshErr != nil {
 			log.Fatal(freshErr)
 		}
@@ -85,8 +96,8 @@ func main() {
 			return
 		}
 	}
-	if err := os.WriteFile(path, encoded.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("%s %s (%d bytes)", done, path, encoded.Len())
+	log.Printf("%s %s (%d bytes)", done, path, len(encoded))
 }

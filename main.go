@@ -41,25 +41,36 @@ func main() {
 	logSvc := services.NewLogService(logFile, config)
 	appSvc := services.NewAppService(config, workspaces, wikis, version)
 
-	app := application.New(application.Options{
+	// registered first, so Wails shuts it down last and the others' shutdowns are logged
+	app := newApp(logSvc, []application.Service{
+		application.NewService(logSvc),
+		application.NewService(appSvc),
+		application.NewService(&services.FileService{}),
+		application.NewService(workspaces),
+		application.NewService(services.NewIdeService(config, workspaces)),
+		application.NewService(services.NewEventGraphService(workspaces)),
+		application.NewService(services.NewHealthService(workspaces)),
+		application.NewService(services.NewWikiService(config, workspaces, wikis)),
+		application.NewService(services.NewSearchService()),
+		application.NewService(services.NewReleaseService(config)),
+		application.NewService(services.NewGitService(config)),
+		application.NewService(&services.WindowService{}),
+	})
+	initUpdater(app)
+	openMainWindow(app)
+
+	if err := app.Run(); err != nil {
+		log.Fatalf("app.Run: %v", err)
+	}
+}
+
+// newApp makes the application over its services: the assets, the single-instance rule and the platform options.
+func newApp(logSvc *services.LogService, list []application.Service) *application.App {
+	return application.New(application.Options{
 		Name:        "paradox-modding-tools",
 		Description: "Desktop tools for Paradox Interactive game modding",
 		Logger:      logSvc.Logger,
-		// registered first, so Wails shuts it down last and the others' shutdowns are logged
-		Services: []application.Service{
-			application.NewService(logSvc),
-			application.NewService(appSvc),
-			application.NewService(&services.FileService{}),
-			application.NewService(workspaces),
-			application.NewService(services.NewIdeService(config, workspaces)),
-			application.NewService(services.NewEventGraphService(workspaces)),
-			application.NewService(services.NewHealthService(workspaces)),
-			application.NewService(services.NewWikiService(config, workspaces, wikis)),
-			application.NewService(services.NewSearchService()),
-			application.NewService(services.NewReleaseService(config)),
-			application.NewService(services.NewGitService(config)),
-			application.NewService(&services.WindowService{}),
-		},
+		Services:    list,
 		Assets: application.AssetOptions{
 			Handler:    application.BundledAssetFileServer(assets),
 			Middleware: services.ServeImages,
@@ -82,7 +93,10 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
+}
 
+// initUpdater points the updater at the project's GitHub releases.
+func initUpdater(app *application.App) {
 	gh, err := github.New(github.Config{
 		Repository:    "idodavis/paradox-modding-tools",
 		ChecksumAsset: "SHA256SUMS",
@@ -97,7 +111,10 @@ func main() {
 	}); err != nil {
 		log.Fatalf("updater.Init: %v", err)
 	}
+}
 
+// openMainWindow opens the main window and quits the app when it closes.
+func openMainWindow(app *application.App) {
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:       "main",
 		Title:      "Paradox Modding Tools",
@@ -109,8 +126,4 @@ func main() {
 	// its close asks about every window's unsaved files first, and the other windows close with it
 	services.HoldClose(mainWindow)
 	mainWindow.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { app.Quit() })
-
-	if err := app.Run(); err != nil {
-		log.Fatalf("app.Run: %v", err)
-	}
 }

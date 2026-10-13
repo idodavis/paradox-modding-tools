@@ -49,12 +49,10 @@ linters:
       - path: internal/game/game\.go
         linters: [revive]
         text: "stutters"
+      # the code table spells each code, and each report names its own
+      - path: internal/lsp/diagnostics\.go
+        linters: [goconst]
 
 formatters:
   enable:
     - gofmt
-
-issues:
-  # Findings already in the code at the restructure's baseline wait for their stage. A stage reads
-  # its files' whole list with --new-from-rev= (empty).
-  new-from-rev: 517e3c7

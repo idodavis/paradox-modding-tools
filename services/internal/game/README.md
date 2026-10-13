@@ -27,9 +27,12 @@ The schema's walker (`schema/walk.go`) reads script by these tables and nothing 
 | `Layout` (`Descriptor`, `Identity`, `Purpose`) | per game, one row per database that needs one: how its entries are identified, what it is for, wrappers, the keyword that declares an entry inline, dated blocks, what an entry's block holds, the words a call resolves by, parameters, references and names; nested databases by their `Parent` and key path `Within`; entry modes; first-wins databases | the schema, the index |
 
 **How a key reads.** In a block of a shape, the walker tries `Shapes[shape].Keys` in order and the first rule that fits
-decides: a vanilla scripted entry's name is a call, then a declared position, a declared command, a value operator, a
-link, a position vanilla writes, the position itself, else a call. To change how keys read in a kind of block, reorder
-or edit that row.
+decides. A triggers or effects block tries a vanilla scripted entry's name (a call), a declared position, a declared
+command, a link, a position vanilla writes, else a call; a value block tries a value operator after the commands; an
+arguments block reads no links; a setup block tries the declared and documented positions before a call; a block of
+unknown shape ends with its own position or a call; a fields block reads its own positions, a widget a call or its
+positions, and a description block only the construct rows. To change how keys read in a kind of block, reorder or
+edit that row.
 
 **Layouts.** A folder row holds for its path and everything below it; a path takes the longest row at or above it
 (`Layout.At`). A database is found in the install, one per script folder (a `common/` subfolder joins its ancestor's),

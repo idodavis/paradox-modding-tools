@@ -109,9 +109,9 @@ dump or a new app build is another file and the next open scans again by itself.
 | what a doc or dump phrase means | `docPhrases` in `internal/schema/docs.go`; the dump labels in `internal/schema/dumps.go` |
 | a diagnostic | `internal/lsp/diagnostics.go` (`Codes`) |
 | what a hover card says | `internal/lsp/hover.go` (its facts), `internal/lsp/wording.go` (its words); drawn by `frontend/src/pages/ide/HoverCard.vue` |
-| a Health section | `internal/pages/health_*.go`; its page is `frontend/src/pages/health/` and `frontend/src/composables/useHealth.ts` |
+| a Health section | `internal/pages/health.go` (the cards and which code each lists) and `health_*.go`; its page is `frontend/src/pages/health/` and `frontend/src/composables/useHealth.ts` |
 | what the event graph or a search answers | `internal/pages/graph.go`, `graph_detail.go`, `search.go` |
-| a window event | declared in `windowservice.go`, answered in `frontend/src/stores/windows.ts` (its table is at the head) |
+| a window event | declared in `windowservice.go`, answered where the table at the head of `frontend/src/stores/windows.ts` says |
 | a theme token | `frontend/src/styles/themes.css` |
 | a new frontend call | a service method, then `task common:generate:bindings` |
 

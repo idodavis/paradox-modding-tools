@@ -25,9 +25,12 @@ and `queries.ts`.
 
 A page imports from `stores/`, `queries.ts`, `lib/`, `composables/`, `ui/` and itself, never another page's folder and
 never the frame's components. `editor/` is imported only by `pages/ide/` and the stores; `ui/`, `composables/` and
-`lib/` import no page, frame or editor module; the frame and the stores reach a page only through the router.
+`lib/` import no page, frame or editor module; the frame and the stores reach a page only through the router. Two
+exceptions: the page catalogue `app/pages.ts` is imported by pages and `ui/` as data, and `app/events.ts` imports
+`editor/models.ts` to send the open files again.
 
-_Checked by:_ eslint's `no-restricted-imports` blocks in `frontend/eslint.config.js`.
+_Checked by:_ partly, eslint's `no-restricted-imports` blocks in `frontend/eslint.config.js`: they allow
+`app/pages.ts` by name, and no block covers the frame importing `editor/`; the rest is review.
 
 ## Server state
 
@@ -95,8 +98,9 @@ progress, the git store). The editor's subscriptions stay with the module that d
 `editor/models.ts`, `search:hits` in `editor/search.ts`; a component's own stay in it: Publish's upload progress
 (`steam:progress`) and the status bar's wiki downloads (`wiki:progress`). The windows' events are not `app/events.ts`'s:
 `stores/windows.ts` answers them, the ones about windows (`window:opened`, `window:state`, `window:closed`,
-`window:closing`, `window:show`, `window:saved`) and the ones about tabs (`window:tabs-handed`, `window:tab-requested`);
-the protocol table is at its head. Payloads are typed by Go's `application.RegisterEvent`, which the bindings declare on
+`window:closing`, `window:show`, `window:saved`) and the ones about tabs (`window:tabs-handed`, `window:tab-requested`),
+but for another window's search results (`window:results`), which `editor/search.ts` answers; the protocol table is at
+the head of `stores/windows.ts`. Payloads are typed by Go's `application.RegisterEvent`, which the bindings declare on
 `Events.CustomEvents`: no casts.
 
 ```ts
@@ -192,17 +196,17 @@ _Checked by:_ review.
 
 ## Where to change what
 
-| To change                     | Edit                                                                                                 |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
-| a theme token, or add a theme | `styles/themes.css` (a block of tokens per `data-theme`; the family list is in `stores/settings.ts`) |
-| a window event                | `services/windowservice.go` declares it; `stores/windows.ts` answers it, its table at the head       |
-| what a page reads from Go     | its option in `queries.ts`, then the component's `useQuery`                                          |
-| what an event refreshes       | `app/events.ts`                                                                                      |
-| a command in the palette      | `stores/commands.ts` holds them; the IDE's are registered by `editor/commands.ts`                    |
-| the hover card's look         | `pages/ide/HoverCard.vue`; its words are the backend's (`services/internal/lsp/wording.go`)          |
-| a Health section              | `pages/health/` and `composables/useHealth.ts`; its rows are `services/internal/pages/health_*.go`   |
-| the event graph               | `pages/graph/` and `composables/useEventGraph.ts`                                                    |
-| a setting                     | its typed accessor in `stores/settings.ts`                                                           |
+| To change                     | Edit                                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| a theme token, or add a theme | `styles/themes.css` (a block of tokens per `data-theme`; the family list is in `stores/settings.ts`)                                                   |
+| a window event                | `services/windowservice.go` declares it; the table at the head of `stores/windows.ts` says who answers                                                 |
+| what a page reads from Go     | its option in `queries.ts`, then the component's `useQuery`                                                                                            |
+| what an event refreshes       | `app/events.ts`                                                                                                                                        |
+| a command in the palette      | `app/CommandPalette.vue` builds the pages', workspaces' and settings' rows; the IDE's are registered by `editor/commands.ts` into `stores/commands.ts` |
+| the hover card's look         | `pages/ide/HoverCard.vue`; its words are the backend's (`services/internal/lsp/wording.go`)                                                            |
+| a Health section              | `pages/health/` and `composables/useHealth.ts`; its rows are `services/internal/pages/health.go` and `health_*.go`                                     |
+| the event graph               | `pages/graph/` and `composables/useEventGraph.ts`                                                                                                      |
+| a setting                     | its typed accessor in `stores/settings.ts`                                                                                                             |
 
 ## Smallest
 

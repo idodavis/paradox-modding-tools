@@ -90,7 +90,7 @@ go test ./...
 | Path | Role |
 |------|------|
 | `main.go` | Wails entry, updater, single window |
-| `services/` | Wails services; `services/internal/` holds the packages: the engine (`jomini`, `loc`, `inventory`, `schema`, `index`), the open workspace (`workspace`, `lsp`, `pages`) and `game`, `appdata`, `texture`, `modfiles`, `wiki`, `steam` |
+| `services/` | Wails services; `services/internal/` holds the packages in layers: the leaves (`game`, `jomini`, `loc`, `appdata`), the files (`inventory`, `texture`, `modfiles`, `wiki`, `steam`), the engine (`schema`, `index`) and the workspace (`workspace`, `lsp`, `pages`) |
 | `frontend/` | Vue 3 + Nuxt UI + Pinia + Pinia Colada; `monaco-editor`, `@pierre/trees`, Vue Flow |
 | `docs/` | User guide (GitHub Pages) |
 | `build/` | Wails Taskfiles and icons |

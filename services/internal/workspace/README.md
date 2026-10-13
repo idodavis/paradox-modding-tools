@@ -18,8 +18,8 @@ query resolves names across the two indexes in load order. The open one is `Sess
 - **One open at a time.** `Slot.Open` closes the open one before another builds, since an install's index is most of its
   memory; callers asking for the same workspace share one build. `Slot` imports no Wails: what happened comes back
   through the request's callbacks and `Closed`.
-- **One lock.** A reader holds `RLock` for a whole request; the writers (`DidChange`, `DiskChanged`) lock themselves and
-  are never called under a read lock.
+- **One lock.** A reader holds `RLock` for a whole request; the writers (`DidChange`, `DidSave`, `DidClose`,
+  `DiskChanged`) lock themselves and are never called under a read lock.
 - **The install's index never changes from the editor.** A saved or changed mod file is walked again into the mods'
   index (`index.Reindex`) and a deleted one forgotten (`index.Forget`); a file of the install or outside any root does
   nothing.

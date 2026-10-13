@@ -290,6 +290,7 @@ const halves = [
             "
             :title="locate(tabOf(path).file)?.rel ?? path"
             @click="show(path)"
+            @dblclick="editor.pin(path)"
             @auxclick.middle="close(path)"
             @dragstart="startDrag($event, path)"
             @dragend="endDrag($event, path)"
@@ -304,7 +305,8 @@ const halves = [
               v-if="landing === path"
               class="pointer-events-none absolute inset-y-1 -start-px w-0.5 rounded-full bg-primary"
             />
-            <span class="truncate">{{ name(path) }}</span>
+            <!-- a preview tab, the next single click's to replace, reads in italics -->
+            <span class="truncate" :class="{ italic: path === editor.preview }">{{ name(path) }}</span>
             <span v-if="tabOf(path).diff" class="text-dimmed">{{
               tabOf(path).commit?.slice(0, 7) ?? tabOf(path).diff
             }}</span>
@@ -400,9 +402,9 @@ const halves = [
           size="xs"
           square
           color="primary"
-          :variant="editor.panels.get(active) ? 'soft' : 'ghost'"
+          :variant="editor.panelOpen(active) ? 'soft' : 'ghost'"
           :aria-label="`${row.panel} panel`"
-          :aria-pressed="!!editor.panels.get(active)"
+          :aria-pressed="editor.panelOpen(active)"
           @click="editor.togglePanel(active)"
         />
       </UTooltip>

@@ -127,7 +127,7 @@ function mount(): void {
       // the open file selected again (the tree following it) opens nothing: from another page it would go to the IDE
       const [only] = selected;
       if (selected.length === 1 && only && !only.endsWith("/") && pathKey(diskPath(only)) !== pathKey(editor.activeTab))
-        editor.open(diskPath(only));
+        editor.open(diskPath(only), undefined, true);
     },
     renaming: writable.value && {
       canRename: ({ path }) => path.indexOf("/") < path.length - 1,
@@ -504,6 +504,7 @@ const { mutate: remove } = useMutation({
         @contextmenu.capture="onContext"
         @keydown="onKey"
         @click.capture="showFolderWindow"
+        @dblclick="editor.pin(editor.activeTab)"
       />
     </UContextMenu>
   </div>

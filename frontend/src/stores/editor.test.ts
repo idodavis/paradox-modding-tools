@@ -5,6 +5,9 @@ import { inApp } from "../../vitest.setup";
 import { useEditorStore } from "./editor";
 import { useWindowsStore } from "./windows";
 
+// the settings the editor reads a kind's view from, with none set; the real store puts the theme on the page
+vi.mock("./settings", () => ({ useSettingsStore: () => ({ values: {} }) }));
+
 describe("groups and layout", () => {
   beforeEach(() => {
     vi.mocked(Events.Emit).mockClear();
@@ -192,19 +195,19 @@ describe("groups and layout", () => {
     expect(editor.openTabs).toEqual(["C:/m/a.txt"]);
     expect(editor.cursor).toEqual({ path: "C:/m/a.txt", line: 7, col: 1 });
   });
-  it("opens a file's panel with Visual and never with Split or Code", () => {
+  it("opens a file's panel while it is drawn, Visual or Split, until it is toggled, and a view change lets it follow again", () => {
     const editor = inApp(useEditorStore);
     editor.open("gui/a.gui");
-    editor.setView("gui/a.gui", "visual");
-    expect(editor.panels.get("gui/a.gui")).toBe(true);
-    editor.setView("gui/a.gui", "split");
-    expect(editor.panels.get("gui/a.gui")).toBe(true);
-    editor.togglePanel("gui/a.gui");
-    expect(editor.panels.get("gui/a.gui")).toBe(false);
     editor.setView("gui/a.gui", "code");
-    expect(editor.panels.get("gui/a.gui")).toBe(false);
-    editor.setView("readme.md", "visual");
-    expect(editor.panels.get("readme.md")).toBeUndefined();
+    expect(editor.panelOpen("gui/a.gui")).toBe(false);
+    editor.setView("gui/a.gui", "visual");
+    expect(editor.panelOpen("gui/a.gui")).toBe(true);
+    editor.setView("gui/a.gui", "split");
+    expect(editor.panelOpen("gui/a.gui")).toBe(true);
+    editor.togglePanel("gui/a.gui");
+    expect(editor.panelOpen("gui/a.gui")).toBe(false);
+    editor.setView("gui/a.gui", "visual");
+    expect(editor.panelOpen("gui/a.gui")).toBe(true);
   });
   it("starts with the problems panel open", () => {
     expect(inApp(useEditorStore).panel).toBe("problems");

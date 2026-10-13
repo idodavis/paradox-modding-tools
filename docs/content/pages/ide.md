@@ -52,10 +52,12 @@ tabs than fit, the strip scrolls (with the mouse wheel too).
 Above the editor, the path to the file and, at the caret, the blocks it is in. A Markdown file has a **Raw** /
 **Rich** switch there: Raw is its text, Rich the same editor as Publish's description.
 
-A GUI file (**.gui**) has a **Code** / **Visual** / **Split** switch there, and a button that opens its **Widgets**
-panel in the right column. It opens in Split; the IDE settings' Editor tab picks what each kind of file with views
-opens in. The sidebar folds to a strip of its tabs when you click the open tab's icon again or drag it shut, and a
-strip icon opens it again. Visual draws the file's window or widget from the game's own data: its types and templates,
+A GUI file (**.gui**) has a **Code** / **Visual** / **Split** switch there, and a button for its **Widgets** panel in
+the right column, which is open while the file is drawn (Visual or Split) until you close it. The file opens in
+Split; the IDE settings' Editor tab picks what each kind of file with views opens in. The sidebar folds to a strip of its tabs when you click the open tab's icon again or drag it shut, and a
+strip icon opens it again. A single click on a file in the explorer opens it in a preview tab, in italics, which the
+next single click replaces; a double click on the file or its tab, an edit, or opening it from anywhere else keeps
+the tab. Visual draws the file's window or widget from the game's own data: its types and templates,
 textures, fonts and localization, at the resolution and UI scale you pick (**1280 by 720** up to **3840 by 2160**,
 **100%** to **200%**) and in the language you pick. It is a structural preview: the layout is the game's rules with no
 game running, so a vanilla window is a stress test of them, not a promise that it looks as it does in the game. The

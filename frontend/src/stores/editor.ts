@@ -107,6 +107,9 @@ export const useEditorStore = defineStore("editor", () => {
   const caret = ref<{ line: number; character: number; col: number } | null>(null);
   const cursor = ref<Cursor | null>(null);
   const marked = ref<Marked | null>(null);
+  // the tab a single click opened, which the next single click replaces until a double click, an edit or another
+  // way of opening it keeps it; "" for none
+  const preview = ref("");
   const results = ref<PanelResults | null>(null);
   const selected = ref<string[]>([]);
   const comparing = ref("");
@@ -153,17 +156,23 @@ export const useEditorStore = defineStore("editor", () => {
     return openTabs.value.find((tab) => pathKey(tab) === key) ?? file;
   }
 
-  /** Show a file in a view; Visual also opens the panel of a kind that has one, Split and Code leave it as it is. */
+  /** Show a file in a view; its panel follows the view again until it is toggled. */
   function setView(file: string, view: View): void {
     const path = backendPath(file);
     views.value.set(path, view);
-    if (view === "visual" && viewsOf(path)?.panel) panels.value.set(path, true);
+    panels.value.delete(path);
+  }
+
+  /** Whether a file's panel is open: as it was toggled, else open while the file is drawn (Visual or Split). */
+  function panelOpen(file: string): boolean {
+    const path = backendPath(file);
+    return panels.value.get(path) ?? viewOf(path) !== "code";
   }
 
   /** Open a file's panel, or close it. */
   function togglePanel(file: string): void {
     const path = backendPath(file);
-    panels.value.set(path, !panels.value.get(path));
+    panels.value.set(path, !panelOpen(path));
   }
 
   /** The window a file shows in: the one holding a tab of it, else this one with it, else the one whose folders hold
@@ -180,8 +189,10 @@ export const useEditorStore = defineStore("editor", () => {
     return holdsFiles ? windowName : "main";
   }
 
-  /** Show a file at a place (a 0-based line and UTF-8 byte column) in the window that holds it. */
-  function open(file: string, position?: { line: number; col?: number }): void {
+  /** Show a file at a place (a 0-based line and UTF-8 byte column) in the window that holds it. Opened as a preview
+   * (a single click), a file new to the group takes the place of the group's preview tab, unless that one has unsaved
+   * edits; opened any other way, it keeps its tab. */
+  function open(file: string, position?: { line: number; col?: number }, asPreview = false): void {
     const path = backendPath(file);
     const target = windowOf(path);
     if (target !== windowName) {
@@ -200,16 +211,27 @@ export const useEditorStore = defineStore("editor", () => {
     const into = (here && holds(here) ? here : groups.value.find(holds)) ?? here;
     if (!into) return;
     let tab = into.tabs.find((one) => pathKey(one) === key);
+    const fresh = !tab;
     if (!tab) {
       tab = path;
-      const index = into.tabs.indexOf(into.active);
-      into.tabs.splice(index + 1, 0, tab);
+      const replaced = asPreview && into.tabs.includes(preview.value) && !unsaved.value.has(preview.value);
+      const index = replaced ? into.tabs.indexOf(preview.value) : into.tabs.indexOf(into.active) + 1;
+      into.tabs.splice(index, 0, tab);
+      if (replaced) closeTab(into.id, preview.value);
     }
+    // a tab that is already there keeps what it is: a single click on a kept tab does not make it the preview
+    if (fresh && asPreview) preview.value = tab;
+    else if (!asPreview) pin(tab);
     into.active = tab;
     focused.value = into.id;
     if (position) cursor.value = { path, line: position.line, col: position.col ?? 0 };
     if (isMain && router.currentRoute.value.name !== "workspace-ide")
       void router.push({ name: "workspace-ide", params: { id: workspace.activeWorkspaceId } });
+  }
+
+  /** Keeps a tab that was a preview: the next single click opens beside it. */
+  function pin(tab: string): void {
+    if (pathKey(tab) === pathKey(preview.value)) preview.value = "";
   }
 
   /** A file edited in a peek gets a tab after the shown one, shown only when its group shows nothing. */
@@ -228,6 +250,7 @@ export const useEditorStore = defineStore("editor", () => {
     const index = sourceGroup?.tabs.indexOf(tab) ?? -1;
     if (!sourceGroup || index < 0) return;
     sourceGroup.tabs.splice(index, 1);
+    pin(tab);
     if (sourceGroup.active === tab) sourceGroup.active = sourceGroup.tabs[index] ?? sourceGroup.tabs.at(-1) ?? "";
     if (sourceGroup.tabs.length || groups.value.length === 1) return;
     groups.value = groups.value.filter((one) => one.id !== groupId);
@@ -339,11 +362,12 @@ export const useEditorStore = defineStore("editor", () => {
     else drop(tab, focused.value, next, "middle");
   }
 
-  /** Mark a file unsaved or saved, under the spelling its tab has. */
+  /** Mark a file unsaved or saved, under the spelling its tab has; an edit keeps a preview tab. */
   function setUnsaved(file: string, isUnsaved: boolean): void {
     const path = backendPath(file);
     if (isUnsaved) unsaved.value.add(path);
     else unsaved.value.delete(path);
+    if (isUnsaved) pin(path);
   }
 
   function setProblems(file: string, diagnostics: Diagnostic[]): void {
@@ -456,6 +480,8 @@ export const useEditorStore = defineStore("editor", () => {
     caret,
     cursor,
     marked,
+    preview,
+    pin,
     results,
     selected,
     comparing,
@@ -476,6 +502,7 @@ export const useEditorStore = defineStore("editor", () => {
     group,
     viewOf,
     setView,
+    panelOpen,
     togglePanel,
     open,
     addTabHidden,

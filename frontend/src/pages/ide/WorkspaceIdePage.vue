@@ -107,7 +107,7 @@ function collapseAll(): void {
 
 // the shown file's panel, while its kind has one and it is open
 const detail = computed(
-  () => !!editor.panels.get(editor.activeFile) && !!viewsOf(locate(editor.activeFile)?.rel ?? editor.activeFile)?.panel,
+  () => editor.panelOpen(editor.activeFile) && !!viewsOf(locate(editor.activeFile)?.rel ?? editor.activeFile)?.panel,
 );
 
 // the panes, their sizes kept by the splitters: the sidebar (folded to its strip of tabs when dragged shut or its

@@ -1,109 +1,103 @@
 <script setup lang="ts">
 /**
- * A pane's floor: its content, of a given size in CSS pixels, on the theme's checkerboard, fit to the pane until
- * zoomed (Fit, 100%, − and +, Ctrl+wheel around the pointer) or dragged, which pans it. A row under it holds the
- * pane's own controls, then the zoom's buttons. The content is scaled, not resized, so text stays crisp.
+ * A pane's floor: its content, of a given size in CSS pixels, on the theme's checkerboard, under a camera (Panzoom):
+ * dragged anywhere to pan, Ctrl+wheel to zoom around the pointer, the wheel alone to pan; fit to the pane until the
+ * user moves it, and again after Fit (100%, − and + zoom around the middle). A row under it holds the pane's own
+ * controls, then the zoom's buttons. The content is scaled, not resized, so text stays crisp.
  */
-import { computed, nextTick, shallowRef, useTemplateRef } from "vue";
+import { computed, onMounted, onScopeDispose, shallowRef, useTemplateRef, watch } from "vue";
+import Panzoom, { type PanzoomObject } from "@panzoom/panzoom";
 import { useElementSize } from "@vueuse/core";
 
 const { width, height } = defineProps<{ width: number; height: number }>();
-/** Whether the content fits the pane: true until the user zooms, and again after Fit. */
+/** Whether the content fits the pane: true until the user moves it, and again after Fit. */
 const fit = defineModel<boolean>("fit", { default: true });
 
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 32;
 
 const pane = useTemplateRef("pane");
+const content = useTemplateRef("content");
 const size = useElementSize(pane);
 
-// the zoom the user chose; a content that fits is shown at the zoom that fits it to the pane, never past its own size
-const chosen = shallowRef(1);
+// the camera, and the scale it shows, which the marks read
+let camera: PanzoomObject | null = null;
+const zoom = shallowRef(1);
+// the content's middle sits on the pane's middle, so a zoom about its own middle keeps it there and Fit is one scale
+const centered = computed(() => ({
+  width: `${width}px`,
+  height: `${height}px`,
+  left: `calc(50% - ${width / 2}px)`,
+  top: `calc(50% - ${height / 2}px)`,
+}));
+
+/** The zoom that fits the content to the pane, never past its own size. */
 const fitted = computed(() =>
   width ? Math.min(1, (size.width.value - 32) / width, (size.height.value - 32) / height) : 1,
 );
-const zoom = computed(() => Math.max(MIN_ZOOM, fit.value ? fitted.value : chosen.value));
 
-/** Zoom to a level within the limits, which ends the fit; the level it took. */
-function zoomTo(level: number): number {
-  chosen.value = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, level));
+/** Shows the content whole, in the middle, and keeps it so until the user moves it. */
+function showFitted(): void {
+  camera?.zoom(Math.max(MIN_ZOOM, fitted.value), { animate: false, force: true });
+  camera?.pan(0, 0, { animate: false, force: true });
+  fit.value = true;
+}
+
+/** Zoom to a level within the limits, about the middle, which ends the fit. */
+function zoomTo(level: number): void {
+  camera?.zoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, level)), { animate: false });
   fit.value = false;
-  return chosen.value;
 }
 
-// a drag pans the content; a press that moves less than a few pixels is a click and reaches what is under it
-const DRAG = 4;
-let press: { x: number; y: number; left: number; top: number; moved: boolean } | null = null;
-function onPointerDown(e: PointerEvent): void {
-  const el = pane.value;
-  if (e.button !== 0 || !el) return;
-  press = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, moved: false };
+// Ctrl+wheel zooms around the pointer; the wheel alone pans, as a scrolled floor would
+function onWheel(e: WheelEvent): void {
+  e.preventDefault();
+  if (e.ctrlKey) camera?.zoomWithWheel(e, { step: 0.25 });
+  else camera?.pan(-e.deltaX / zoom.value, -e.deltaY / zoom.value, { relative: true, animate: false });
+  fit.value = false;
 }
-function onPointerMove(e: PointerEvent): void {
-  const el = pane.value;
-  if (!press || !el || !(e.buttons & 1)) return;
-  const dx = e.clientX - press.x;
-  const dy = e.clientY - press.y;
-  if (!press.moved && Math.abs(dx) < DRAG && Math.abs(dy) < DRAG) return;
-  if (!press.moved) {
-    press.moved = true;
-    el.setPointerCapture(e.pointerId);
-    if (fit.value) zoomTo(zoom.value);
-  }
-  el.scrollTo(press.left - dx, press.top - dy);
-}
+
+// a drag's end is a click the content must not see, or a drag would select the widget under the pointer
 let dragged = false;
-function onPointerUp(): void {
-  dragged = !!press?.moved;
-  press = null;
-}
-/** The click that ends a drag reaches nothing under the pointer. */
 function onClick(e: MouseEvent): void {
   if (dragged) e.stopPropagation();
   dragged = false;
 }
 
-// Ctrl+wheel zooms around the pointer: the point under it stays there
-function onWheel(e: WheelEvent): void {
-  const el = pane.value;
-  if (!e.ctrlKey || !el) return;
-  e.preventDefault();
-  const box = el.getBoundingClientRect();
-  const x = e.clientX - box.left;
-  const y = e.clientY - box.top;
-  const previous = zoom.value;
-  const ratio = zoomTo(previous * (e.deltaY < 0 ? 1.25 : 0.8)) / previous;
-  void nextTick(() => el.scrollTo((el.scrollLeft + x) * ratio - x, (el.scrollTop + y) * ratio - y));
-}
+onMounted(() => {
+  if (!content.value) return;
+  camera = Panzoom(content.value, { canvas: true, minScale: MIN_ZOOM, maxScale: MAX_ZOOM, cursor: "grab" });
+  content.value.addEventListener("panzoomchange", (e: Event) => {
+    zoom.value = (e as CustomEvent<{ scale: number }>).detail.scale;
+  });
+  content.value.addEventListener("panzoomstart", () => (dragged = false));
+  content.value.addEventListener("panzoompan", (e: Event) => {
+    if ((e as CustomEvent<{ originalEvent?: Event }>).detail.originalEvent) {
+      dragged = true;
+      fit.value = false;
+    }
+  });
+  showFitted();
+});
+onScopeDispose(() => camera?.destroy());
+
+// a fitted content follows the pane and its own size
+watch([fitted, () => width, () => height], () => fit.value && showFitted());
 
 defineExpose({ zoom });
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col bg-(--bg-0)">
-    <!-- a fitted content needs no scrollbar, and one would shrink the room the fit is measured in -->
     <div
       ref="pane"
-      class="relative min-h-0 flex-1"
-      :class="fit ? 'overflow-hidden' : 'overflow-auto'"
+      class="relative min-h-0 flex-1 overflow-hidden"
       style="background: repeating-conic-gradient(var(--bg-0) 0 25%, var(--bg-4) 0 50%) 0 0 / 16px 16px"
       @wheel="onWheel"
-      @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
-      @pointerup="onPointerUp"
-      @pointercancel="onPointerUp"
       @click.capture="onClick"
     >
-      <div class="flex min-h-full w-max min-w-full items-center justify-center p-4">
-        <!-- the scaled box takes the room the scaled content needs, which a transform leaves unchanged -->
-        <div class="relative shrink-0" :style="{ width: `${width * zoom}px`, height: `${height * zoom}px` }">
-          <div
-            class="absolute top-0 left-0 origin-top-left"
-            :style="{ width: `${width}px`, height: `${height}px`, transform: `scale(${zoom})` }"
-          >
-            <slot />
-          </div>
-        </div>
+      <div ref="content" class="absolute" :style="centered">
+        <slot />
       </div>
     </div>
     <div
@@ -111,7 +105,7 @@ defineExpose({ zoom });
     >
       <slot name="toolbar" />
       <span class="grow" />
-      <UButton label="Fit" variant="ghost" size="xs" :disabled="!width" @click="fit = true" />
+      <UButton label="Fit" variant="ghost" size="xs" :disabled="!width" @click="showFitted" />
       <UButton label="100%" variant="ghost" size="xs" :disabled="!width" @click="zoomTo(1)" />
       <UButton
         icon="i-lucide-minus"

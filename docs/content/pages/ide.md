@@ -64,7 +64,7 @@ words the file writes, the same box model the game uses, with no game running, s
 of it, not a promise that it looks as it does in the game. The
 toolbar chooses which window, type, template, text icon or format of the file to draw; a type, template, text icon or
 format is drawn by itself, at its own size. **Bounds** outlines every widget. Zoom with **Ctrl** and the wheel, or
-**Fit**, **100%**, **−** and **+**, and drag the floor to pan. An entry drawn alone is shown whole, whatever hangs
+**Fit**, **100%**, **−** and **+**; drag the floor to pan, or use the wheel alone. An entry drawn alone is shown whole, whatever hangs
 outside its own box included. Click a widget to select it; Split shows the code beside the picture, where
 the caret and the selection follow each other and the selected widget's lines are marked.
 

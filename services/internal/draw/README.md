@@ -47,7 +47,9 @@ type.
 
 A widget's textures are its `texture` and then each `modify_texture` in order, the latter's blocks expanded and
 overridden as the widget's own are, so a color overlay's `block "master_color_frame" { frame = 7 }` picks its frame;
-a frame is drawn scaled to the widget's box. A binding (`[GetPlayer.GetName]`) is the game's to answer, so nothing
+a frame is drawn scaled to the widget's box. An overlay is masked by the widget's texture (`Texture.Mask`), since the
+game keeps the texture's alpha, so a color added to a flat icon shows in the glyph's shape; a `mask` or
+`alphamultiply` overlay masks the texture instead. A binding (`[GetPlayer.GetName]`) is the game's to answer, so nothing
 answers it: a `visible` that is one draws the
 widget, a `text` that is one is drawn as written, a `texture` or a number that is one is none. One thing the text
 alone says: two siblings whose `visible` bindings are `[X]` and `[Not(X)]` are shown one at a time, so the later

@@ -186,7 +186,8 @@ export interface Texture {
     "blend": string;
 
     /**
-     * the URL of the texture that masks this one
+     * the texture whose alpha masks this one, drawn as its own URL, frame and fit say: an overlay is masked by the
+     * widget's texture, the widget's texture by a mask overlay; nil for none
      */
-    "mask"?: string;
+    "mask"?: Texture | null;
 }

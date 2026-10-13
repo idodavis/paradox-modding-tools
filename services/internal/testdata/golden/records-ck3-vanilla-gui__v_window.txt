@@ -8,18 +8,18 @@ def gui.template "v_sized" mode="" 377-384 @26:9 local=false named=false
 def gui.type "v_box" mode="" 413-418 @29:5 local=false named=false
 def gui.block "rows" mode="" 435-441 @30:7 local=false named=false
 def gui.widget "v_layout_window" mode="" 466-472 @34:0 local=false named=false
-def gui.block "v_pick" mode="" 895-903 @47:83 local=false named=false
-def gui.type "window" mode="" 1162-1168 @57:5 local=false named=false
-def gui.type "widget" mode="" 1187-1193 @58:5 local=false named=false
-def gui.type "icon" mode="" 1212-1216 @59:5 local=false named=false
-def gui.type "v_tab" mode="" 1233-1238 @60:5 local=false named=false
-def gui.type "v_textbox" mode="" 1294-1303 @63:5 local=false named=false
-def gui.widget "v_layout_rules" mode="" 1318-1324 @64:0 local=false named=false
-def gui.widget "v_hidden_entry" mode="" 2850-2856 @123:0 local=false named=false
-def gui.widget "v_default_text" mode="" 2978-2984 @129:0 local=false named=false
-def gui.widget "v_concepts" mode="" 3077-3083 @134:0 local=false named=false
-def gui.texticon "v_icon" mode="" 3193-3201 @139:0 local=false named=false
-def gui.format "v_format" mode="" 3289-3295 @143:0 local=false named=false
+def gui.block "v_pick" mode="" 933-941 @49:83 local=false named=false
+def gui.type "window" mode="" 1200-1206 @59:5 local=false named=false
+def gui.type "widget" mode="" 1225-1231 @60:5 local=false named=false
+def gui.type "icon" mode="" 1250-1254 @61:5 local=false named=false
+def gui.type "v_tab" mode="" 1271-1276 @62:5 local=false named=false
+def gui.type "v_textbox" mode="" 1332-1341 @65:5 local=false named=false
+def gui.widget "v_layout_rules" mode="" 1356-1362 @66:0 local=false named=false
+def gui.widget "v_hidden_entry" mode="" 2888-2894 @125:0 local=false named=false
+def gui.widget "v_default_text" mode="" 3016-3022 @131:0 local=false named=false
+def gui.widget "v_concepts" mode="" 3115-3121 @136:0 local=false named=false
+def gui.texticon "v_icon" mode="" 3231-3239 @141:0 local=false named=false
+def gui.format "v_format" mode="" 3327-3333 @145:0 local=false named=false
 ref  "button" called="widget" 32-38 @1:17 from=0 trigger=false
 ref file "v_frame.dds" called="" 72-85 @3:12 from=0 trigger=false
 ref  "textbox" called="widget" 105-112 @5:16 from=1 trigger=false
@@ -59,139 +59,141 @@ ref  "icon" called="widget" 762-766 @45:2 from=9 trigger=false
 ref parameter "v_box:icon" called="" 762-766 @45:2 from=9 trigger=false
 ref parameter "icon:texture" called="" 774-781 @46:3 from=9 trigger=false
 ref file "gfx/interface/v_frame.dds" called="" 784-811 @46:13 from=9 trigger=false
-ref parameter "icon:modify_texture" called="" 815-829 @47:3 from=9 trigger=false
-ref file "gfx/interface/v_bg.dds" called="" 844-868 @47:32 from=9 trigger=false
-ref parameter "v_box:vbox" called="" 926-930 @49:2 from=9 trigger=false
-ref datafunction "Global.GetPlayer" called="" 952-961 @50:17 from=9 trigger=false
-ref datafunction "Character.GetVassals" called="" 962-972 @50:27 from=9 trigger=false
-ref  "v_label" called="widget" 987-994 @51:12 from=9 trigger=false
-ref  "widget" called="widget" 1009-1015 @53:2 from=9 trigger=false
-ref parameter "v_box:widget" called="" 1009-1015 @53:2 from=9 trigger=false
-ref parameter "widget:visible" called="" 1020-1027 @53:13 from=9 trigger=false
-ref datafunction "Global.GetVariableSystem" called="" 1032-1049 @53:25 from=9 trigger=false
-ref datafunction "VariableSystem.Exists" called="" 1050-1066 @53:43 from=9 trigger=false
-ref parameter "widget:size" called="" 1069-1073 @53:62 from=9 trigger=false
-ref  "widget" called="widget" 1090-1096 @54:2 from=9 trigger=false
-ref parameter "v_box:widget" called="" 1090-1096 @54:2 from=9 trigger=false
-ref parameter "widget:visible" called="" 1101-1108 @54:13 from=9 trigger=false
-ref datafunction "Global.GetPlayer" called="" 1113-1122 @54:25 from=9 trigger=false
-ref datafunction "Character.IsAlive" called="" 1123-1130 @54:35 from=9 trigger=false
-ref parameter "widget:size" called="" 1133-1137 @54:45 from=9 trigger=false
-ref  "window" called="widget" 1171-1177 @57:14 from=11 trigger=false
-ref  "widget" called="widget" 1196-1202 @58:14 from=12 trigger=false
-ref  "icon" called="widget" 1219-1223 @59:12 from=13 trigger=false
-ref  "button" called="widget" 1241-1247 @60:13 from=14 trigger=false
-ref  "textbox" called="widget" 1306-1313 @63:17 from=15 trigger=false
-ref gui.widget "v_layout_rules" called="" 1337-1353 @65:8 from=16 trigger=false
-ref  "container" called="widget" 1375-1384 @67:1 from=16 trigger=false
-ref parameter "container:name" called="" 1391-1395 @68:2 from=16 trigger=false
-ref  "icon" called="widget" 1414-1418 @69:2 from=16 trigger=false
-ref parameter "container:icon" called="" 1414-1418 @69:2 from=16 trigger=false
-ref parameter "icon:size" called="" 1423-1427 @69:11 from=16 trigger=false
-ref parameter "icon:parentanchor" called="" 1440-1452 @69:28 from=16 trigger=false
-ref  "icon" called="widget" 1465-1469 @70:2 from=16 trigger=false
-ref parameter "container:icon" called="" 1465-1469 @70:2 from=16 trigger=false
-ref parameter "icon:size" called="" 1474-1478 @70:11 from=16 trigger=false
-ref parameter "icon:position" called="" 1491-1499 @70:28 from=16 trigger=false
-ref  "background" called="widget" 1517-1527 @72:1 from=16 trigger=false
-ref parameter "background:name" called="" 1532-1536 @72:16 from=16 trigger=false
-ref  "hbox" called="widget" 1588-1592 @75:2 from=16 trigger=false
-ref parameter "hbox:name" called="" 1600-1604 @76:3 from=16 trigger=false
-ref parameter "hbox:layoutpolicy_horizontal" called="" 1618-1641 @77:3 from=16 trigger=false
-ref  "v_tab" called="widget" 1657-1662 @78:3 from=16 trigger=false
-ref parameter "hbox:v_tab" called="" 1657-1662 @78:3 from=16 trigger=false
-ref parameter "v_tab:size" called="" 1667-1671 @78:13 from=16 trigger=false
-ref  "100%" called="value" 1676-1680 @78:22 from=16 trigger=false
-ref  "v_tab" called="widget" 1691-1696 @79:3 from=16 trigger=false
-ref parameter "hbox:v_tab" called="" 1691-1696 @79:3 from=16 trigger=false
-ref parameter "v_tab:size" called="" 1701-1705 @79:13 from=16 trigger=false
-ref  "100%" called="value" 1710-1714 @79:22 from=16 trigger=false
-ref  "v_tab" called="widget" 1725-1730 @80:3 from=16 trigger=false
-ref parameter "hbox:v_tab" called="" 1725-1730 @80:3 from=16 trigger=false
-ref parameter "v_tab:size" called="" 1735-1739 @80:13 from=16 trigger=false
-ref  "100%" called="value" 1744-1748 @80:22 from=16 trigger=false
-ref  "flowcontainer" called="widget" 1764-1777 @83:1 from=16 trigger=false
-ref parameter "flowcontainer:name" called="" 1784-1788 @84:2 from=16 trigger=false
-ref  "icon" called="widget" 1802-1806 @85:2 from=16 trigger=false
-ref parameter "flowcontainer:icon" called="" 1802-1806 @85:2 from=16 trigger=false
-ref parameter "icon:size" called="" 1811-1815 @85:11 from=16 trigger=false
-ref  "icon" called="widget" 1832-1836 @86:2 from=16 trigger=false
-ref parameter "flowcontainer:icon" called="" 1832-1836 @86:2 from=16 trigger=false
-ref parameter "icon:size" called="" 1841-1845 @86:11 from=16 trigger=false
-ref  "icon" called="widget" 1862-1866 @87:2 from=16 trigger=false
-ref parameter "flowcontainer:icon" called="" 1862-1866 @87:2 from=16 trigger=false
-ref parameter "icon:size" called="" 1871-1875 @87:11 from=16 trigger=false
-ref  "icon" called="widget" 1892-1896 @88:2 from=16 trigger=false
-ref parameter "flowcontainer:icon" called="" 1892-1896 @88:2 from=16 trigger=false
-ref parameter "icon:size" called="" 1901-1905 @88:11 from=16 trigger=false
-ref  "widget" called="widget" 1924-1930 @90:1 from=16 trigger=false
-ref parameter "widget:name" called="" 1935-1939 @90:12 from=16 trigger=false
-ref  "hbox" called="widget" 1957-1961 @91:1 from=16 trigger=false
-ref parameter "hbox:name" called="" 1968-1972 @92:2 from=16 trigger=false
-ref  "background" called="widget" 1988-1998 @93:2 from=16 trigger=false
-ref parameter "hbox:background" called="" 1988-1998 @93:2 from=16 trigger=false
-ref parameter "background:name" called="" 2003-2007 @93:17 from=16 trigger=false
-ref  "icon" called="widget" 2026-2030 @94:2 from=16 trigger=false
-ref parameter "hbox:icon" called="" 2026-2030 @94:2 from=16 trigger=false
-ref parameter "icon:size" called="" 2035-2039 @94:11 from=16 trigger=false
-ref  "icon" called="widget" 2056-2060 @95:2 from=16 trigger=false
-ref parameter "hbox:icon" called="" 2056-2060 @95:2 from=16 trigger=false
-ref parameter "icon:size" called="" 2065-2069 @95:11 from=16 trigger=false
-ref  "hbox" called="widget" 2088-2092 @97:1 from=16 trigger=false
-ref parameter "hbox:name" called="" 2099-2103 @98:2 from=16 trigger=false
-ref parameter "hbox:size" called="" 2118-2122 @99:2 from=16 trigger=false
-ref  "icon" called="widget" 2138-2142 @100:2 from=16 trigger=false
-ref parameter "hbox:icon" called="" 2138-2142 @100:2 from=16 trigger=false
-ref parameter "icon:name" called="" 2147-2151 @100:11 from=16 trigger=false
-ref parameter "icon:size" called="" 2169-2173 @100:33 from=16 trigger=false
-ref parameter "icon:layoutpolicy_horizontal" called="" 2186-2209 @100:50 from=16 trigger=false
-ref  "textbox" called="widget" 2280-2287 @105:2 from=16 trigger=false
-ref parameter "textbox:name" called="" 2292-2296 @105:14 from=16 trigger=false
-ref parameter "textbox:text" called="" 2309-2313 @105:31 from=16 trigger=false
-ref localization "v_long" called="" 2316-2324 @105:38 from=16 trigger=false
-ref parameter "textbox:font" called="" 2325-2329 @105:47 from=16 trigger=false
-ref font.font "v_font" called="" 2332-2340 @105:54 from=16 trigger=false
-ref parameter "textbox:fontsize" called="" 2341-2349 @105:63 from=16 trigger=false
-ref parameter "textbox:multiline" called="" 2355-2364 @105:77 from=16 trigger=false
-ref parameter "textbox:layoutpolicy_horizontal" called="" 2371-2394 @105:93 from=16 trigger=false
-ref  "icon" called="widget" 2446-2450 @109:2 from=16 trigger=false
-ref parameter "icon:size" called="" 2455-2459 @109:11 from=16 trigger=false
-ref parameter "icon:layoutpolicy_horizontal" called="" 2472-2495 @109:28 from=16 trigger=false
-ref  "hbox" called="widget" 2514-2518 @111:1 from=16 trigger=false
-ref parameter "hbox:name" called="" 2525-2529 @112:2 from=16 trigger=false
-ref parameter "hbox:parentanchor" called="" 2545-2557 @113:2 from=16 trigger=false
-ref  "icon" called="widget" 2577-2581 @114:2 from=16 trigger=false
-ref parameter "hbox:icon" called="" 2577-2581 @114:2 from=16 trigger=false
-ref parameter "icon:size" called="" 2586-2590 @114:11 from=16 trigger=false
-ref  "icon" called="widget" 2640-2644 @118:2 from=16 trigger=false
-ref parameter "icon:name" called="" 2649-2653 @118:11 from=16 trigger=false
-ref parameter "icon:size" called="" 2664-2668 @118:26 from=16 trigger=false
-ref parameter "icon:visible" called="" 2681-2688 @118:43 from=16 trigger=false
-ref datafunction "Global.GetPlayer" called="" 2693-2702 @118:55 from=16 trigger=false
-ref datafunction "Character.IsAlive" called="" 2703-2710 @118:65 from=16 trigger=false
-ref  "icon" called="widget" 2717-2721 @119:2 from=16 trigger=false
-ref parameter "icon:name" called="" 2726-2730 @119:11 from=16 trigger=false
-ref parameter "icon:size" called="" 2740-2744 @119:25 from=16 trigger=false
-ref parameter "icon:visible" called="" 2757-2764 @119:42 from=16 trigger=false
-ref datafunction "Global.Not" called="" 2769-2793 @119:54 from=16 trigger=false
-ref datafunction "Global.GetPlayer" called="" 2774-2783 @119:59 from=16 trigger=false
-ref datafunction "Character.IsAlive" called="" 2784-2791 @119:69 from=16 trigger=false
-ref  "icon" called="widget" 2800-2804 @120:2 from=16 trigger=false
-ref parameter "icon:name" called="" 2809-2813 @120:11 from=16 trigger=false
-ref parameter "icon:size" called="" 2826-2830 @120:28 from=16 trigger=false
-ref gui.widget "v_hidden_entry" called="" 2869-2885 @124:8 from=17 trigger=false
-ref datafunction "Global.GetVariableSystem" called="" 2944-2961 @127:13 from=17 trigger=false
-ref datafunction "VariableSystem.Exists" called="" 2962-2973 @127:31 from=17 trigger=false
-ref gui.widget "v_default_text" called="" 2997-3013 @130:8 from=18 trigger=false
-ref  "v_textbox" called="widget" 3015-3024 @131:1 from=18 trigger=false
-ref parameter "v_textbox:text" called="" 3029-3033 @131:15 from=18 trigger=false
-ref localization "v_key" called="" 3036-3043 @131:22 from=18 trigger=false
-ref localization "v_key" called="" 3065-3072 @132:19 from=18 trigger=false
-ref gui.widget "v_concepts" called="" 3096-3108 @135:8 from=19 trigger=false
-ref  "textbox" called="widget" 3110-3117 @136:1 from=19 trigger=false
-ref parameter "textbox:text" called="" 3122-3126 @136:13 from=19 trigger=false
-ref  "textbox" called="widget" 3154-3161 @137:1 from=19 trigger=false
-ref parameter "textbox:text" called="" 3166-3170 @137:13 from=19 trigger=false
-ref  "icon" called="widget" 3207-3211 @140:1 from=20 trigger=false
-ref file "gfx/interface/v_bg.dds" called="" 3245-3269 @141:24 from=20 trigger=false
-ref gui.format "v_format" called="" 3308-3318 @144:8 from=21 trigger=false
+ref parameter "icon:framesize" called="" 815-824 @47:3 from=9 trigger=false
+ref parameter "icon:upframe" called="" 838-845 @48:3 from=9 trigger=false
+ref parameter "icon:modify_texture" called="" 853-867 @49:3 from=9 trigger=false
+ref file "gfx/interface/v_bg.dds" called="" 882-906 @49:32 from=9 trigger=false
+ref parameter "v_box:vbox" called="" 964-968 @51:2 from=9 trigger=false
+ref datafunction "Global.GetPlayer" called="" 990-999 @52:17 from=9 trigger=false
+ref datafunction "Character.GetVassals" called="" 1000-1010 @52:27 from=9 trigger=false
+ref  "v_label" called="widget" 1025-1032 @53:12 from=9 trigger=false
+ref  "widget" called="widget" 1047-1053 @55:2 from=9 trigger=false
+ref parameter "v_box:widget" called="" 1047-1053 @55:2 from=9 trigger=false
+ref parameter "widget:visible" called="" 1058-1065 @55:13 from=9 trigger=false
+ref datafunction "Global.GetVariableSystem" called="" 1070-1087 @55:25 from=9 trigger=false
+ref datafunction "VariableSystem.Exists" called="" 1088-1104 @55:43 from=9 trigger=false
+ref parameter "widget:size" called="" 1107-1111 @55:62 from=9 trigger=false
+ref  "widget" called="widget" 1128-1134 @56:2 from=9 trigger=false
+ref parameter "v_box:widget" called="" 1128-1134 @56:2 from=9 trigger=false
+ref parameter "widget:visible" called="" 1139-1146 @56:13 from=9 trigger=false
+ref datafunction "Global.GetPlayer" called="" 1151-1160 @56:25 from=9 trigger=false
+ref datafunction "Character.IsAlive" called="" 1161-1168 @56:35 from=9 trigger=false
+ref parameter "widget:size" called="" 1171-1175 @56:45 from=9 trigger=false
+ref  "window" called="widget" 1209-1215 @59:14 from=11 trigger=false
+ref  "widget" called="widget" 1234-1240 @60:14 from=12 trigger=false
+ref  "icon" called="widget" 1257-1261 @61:12 from=13 trigger=false
+ref  "button" called="widget" 1279-1285 @62:13 from=14 trigger=false
+ref  "textbox" called="widget" 1344-1351 @65:17 from=15 trigger=false
+ref gui.widget "v_layout_rules" called="" 1375-1391 @67:8 from=16 trigger=false
+ref  "container" called="widget" 1413-1422 @69:1 from=16 trigger=false
+ref parameter "container:name" called="" 1429-1433 @70:2 from=16 trigger=false
+ref  "icon" called="widget" 1452-1456 @71:2 from=16 trigger=false
+ref parameter "container:icon" called="" 1452-1456 @71:2 from=16 trigger=false
+ref parameter "icon:size" called="" 1461-1465 @71:11 from=16 trigger=false
+ref parameter "icon:parentanchor" called="" 1478-1490 @71:28 from=16 trigger=false
+ref  "icon" called="widget" 1503-1507 @72:2 from=16 trigger=false
+ref parameter "container:icon" called="" 1503-1507 @72:2 from=16 trigger=false
+ref parameter "icon:size" called="" 1512-1516 @72:11 from=16 trigger=false
+ref parameter "icon:position" called="" 1529-1537 @72:28 from=16 trigger=false
+ref  "background" called="widget" 1555-1565 @74:1 from=16 trigger=false
+ref parameter "background:name" called="" 1570-1574 @74:16 from=16 trigger=false
+ref  "hbox" called="widget" 1626-1630 @77:2 from=16 trigger=false
+ref parameter "hbox:name" called="" 1638-1642 @78:3 from=16 trigger=false
+ref parameter "hbox:layoutpolicy_horizontal" called="" 1656-1679 @79:3 from=16 trigger=false
+ref  "v_tab" called="widget" 1695-1700 @80:3 from=16 trigger=false
+ref parameter "hbox:v_tab" called="" 1695-1700 @80:3 from=16 trigger=false
+ref parameter "v_tab:size" called="" 1705-1709 @80:13 from=16 trigger=false
+ref  "100%" called="value" 1714-1718 @80:22 from=16 trigger=false
+ref  "v_tab" called="widget" 1729-1734 @81:3 from=16 trigger=false
+ref parameter "hbox:v_tab" called="" 1729-1734 @81:3 from=16 trigger=false
+ref parameter "v_tab:size" called="" 1739-1743 @81:13 from=16 trigger=false
+ref  "100%" called="value" 1748-1752 @81:22 from=16 trigger=false
+ref  "v_tab" called="widget" 1763-1768 @82:3 from=16 trigger=false
+ref parameter "hbox:v_tab" called="" 1763-1768 @82:3 from=16 trigger=false
+ref parameter "v_tab:size" called="" 1773-1777 @82:13 from=16 trigger=false
+ref  "100%" called="value" 1782-1786 @82:22 from=16 trigger=false
+ref  "flowcontainer" called="widget" 1802-1815 @85:1 from=16 trigger=false
+ref parameter "flowcontainer:name" called="" 1822-1826 @86:2 from=16 trigger=false
+ref  "icon" called="widget" 1840-1844 @87:2 from=16 trigger=false
+ref parameter "flowcontainer:icon" called="" 1840-1844 @87:2 from=16 trigger=false
+ref parameter "icon:size" called="" 1849-1853 @87:11 from=16 trigger=false
+ref  "icon" called="widget" 1870-1874 @88:2 from=16 trigger=false
+ref parameter "flowcontainer:icon" called="" 1870-1874 @88:2 from=16 trigger=false
+ref parameter "icon:size" called="" 1879-1883 @88:11 from=16 trigger=false
+ref  "icon" called="widget" 1900-1904 @89:2 from=16 trigger=false
+ref parameter "flowcontainer:icon" called="" 1900-1904 @89:2 from=16 trigger=false
+ref parameter "icon:size" called="" 1909-1913 @89:11 from=16 trigger=false
+ref  "icon" called="widget" 1930-1934 @90:2 from=16 trigger=false
+ref parameter "flowcontainer:icon" called="" 1930-1934 @90:2 from=16 trigger=false
+ref parameter "icon:size" called="" 1939-1943 @90:11 from=16 trigger=false
+ref  "widget" called="widget" 1962-1968 @92:1 from=16 trigger=false
+ref parameter "widget:name" called="" 1973-1977 @92:12 from=16 trigger=false
+ref  "hbox" called="widget" 1995-1999 @93:1 from=16 trigger=false
+ref parameter "hbox:name" called="" 2006-2010 @94:2 from=16 trigger=false
+ref  "background" called="widget" 2026-2036 @95:2 from=16 trigger=false
+ref parameter "hbox:background" called="" 2026-2036 @95:2 from=16 trigger=false
+ref parameter "background:name" called="" 2041-2045 @95:17 from=16 trigger=false
+ref  "icon" called="widget" 2064-2068 @96:2 from=16 trigger=false
+ref parameter "hbox:icon" called="" 2064-2068 @96:2 from=16 trigger=false
+ref parameter "icon:size" called="" 2073-2077 @96:11 from=16 trigger=false
+ref  "icon" called="widget" 2094-2098 @97:2 from=16 trigger=false
+ref parameter "hbox:icon" called="" 2094-2098 @97:2 from=16 trigger=false
+ref parameter "icon:size" called="" 2103-2107 @97:11 from=16 trigger=false
+ref  "hbox" called="widget" 2126-2130 @99:1 from=16 trigger=false
+ref parameter "hbox:name" called="" 2137-2141 @100:2 from=16 trigger=false
+ref parameter "hbox:size" called="" 2156-2160 @101:2 from=16 trigger=false
+ref  "icon" called="widget" 2176-2180 @102:2 from=16 trigger=false
+ref parameter "hbox:icon" called="" 2176-2180 @102:2 from=16 trigger=false
+ref parameter "icon:name" called="" 2185-2189 @102:11 from=16 trigger=false
+ref parameter "icon:size" called="" 2207-2211 @102:33 from=16 trigger=false
+ref parameter "icon:layoutpolicy_horizontal" called="" 2224-2247 @102:50 from=16 trigger=false
+ref  "textbox" called="widget" 2318-2325 @107:2 from=16 trigger=false
+ref parameter "textbox:name" called="" 2330-2334 @107:14 from=16 trigger=false
+ref parameter "textbox:text" called="" 2347-2351 @107:31 from=16 trigger=false
+ref localization "v_long" called="" 2354-2362 @107:38 from=16 trigger=false
+ref parameter "textbox:font" called="" 2363-2367 @107:47 from=16 trigger=false
+ref font.font "v_font" called="" 2370-2378 @107:54 from=16 trigger=false
+ref parameter "textbox:fontsize" called="" 2379-2387 @107:63 from=16 trigger=false
+ref parameter "textbox:multiline" called="" 2393-2402 @107:77 from=16 trigger=false
+ref parameter "textbox:layoutpolicy_horizontal" called="" 2409-2432 @107:93 from=16 trigger=false
+ref  "icon" called="widget" 2484-2488 @111:2 from=16 trigger=false
+ref parameter "icon:size" called="" 2493-2497 @111:11 from=16 trigger=false
+ref parameter "icon:layoutpolicy_horizontal" called="" 2510-2533 @111:28 from=16 trigger=false
+ref  "hbox" called="widget" 2552-2556 @113:1 from=16 trigger=false
+ref parameter "hbox:name" called="" 2563-2567 @114:2 from=16 trigger=false
+ref parameter "hbox:parentanchor" called="" 2583-2595 @115:2 from=16 trigger=false
+ref  "icon" called="widget" 2615-2619 @116:2 from=16 trigger=false
+ref parameter "hbox:icon" called="" 2615-2619 @116:2 from=16 trigger=false
+ref parameter "icon:size" called="" 2624-2628 @116:11 from=16 trigger=false
+ref  "icon" called="widget" 2678-2682 @120:2 from=16 trigger=false
+ref parameter "icon:name" called="" 2687-2691 @120:11 from=16 trigger=false
+ref parameter "icon:size" called="" 2702-2706 @120:26 from=16 trigger=false
+ref parameter "icon:visible" called="" 2719-2726 @120:43 from=16 trigger=false
+ref datafunction "Global.GetPlayer" called="" 2731-2740 @120:55 from=16 trigger=false
+ref datafunction "Character.IsAlive" called="" 2741-2748 @120:65 from=16 trigger=false
+ref  "icon" called="widget" 2755-2759 @121:2 from=16 trigger=false
+ref parameter "icon:name" called="" 2764-2768 @121:11 from=16 trigger=false
+ref parameter "icon:size" called="" 2778-2782 @121:25 from=16 trigger=false
+ref parameter "icon:visible" called="" 2795-2802 @121:42 from=16 trigger=false
+ref datafunction "Global.Not" called="" 2807-2831 @121:54 from=16 trigger=false
+ref datafunction "Global.GetPlayer" called="" 2812-2821 @121:59 from=16 trigger=false
+ref datafunction "Character.IsAlive" called="" 2822-2829 @121:69 from=16 trigger=false
+ref  "icon" called="widget" 2838-2842 @122:2 from=16 trigger=false
+ref parameter "icon:name" called="" 2847-2851 @122:11 from=16 trigger=false
+ref parameter "icon:size" called="" 2864-2868 @122:28 from=16 trigger=false
+ref gui.widget "v_hidden_entry" called="" 2907-2923 @126:8 from=17 trigger=false
+ref datafunction "Global.GetVariableSystem" called="" 2982-2999 @129:13 from=17 trigger=false
+ref datafunction "VariableSystem.Exists" called="" 3000-3011 @129:31 from=17 trigger=false
+ref gui.widget "v_default_text" called="" 3035-3051 @132:8 from=18 trigger=false
+ref  "v_textbox" called="widget" 3053-3062 @133:1 from=18 trigger=false
+ref parameter "v_textbox:text" called="" 3067-3071 @133:15 from=18 trigger=false
+ref localization "v_key" called="" 3074-3081 @133:22 from=18 trigger=false
+ref localization "v_key" called="" 3103-3110 @134:19 from=18 trigger=false
+ref gui.widget "v_concepts" called="" 3134-3146 @137:8 from=19 trigger=false
+ref  "textbox" called="widget" 3148-3155 @138:1 from=19 trigger=false
+ref parameter "textbox:text" called="" 3160-3164 @138:13 from=19 trigger=false
+ref  "textbox" called="widget" 3192-3199 @139:1 from=19 trigger=false
+ref parameter "textbox:text" called="" 3204-3208 @139:13 from=19 trigger=false
+ref  "icon" called="widget" 3245-3249 @142:1 from=20 trigger=false
+ref file "gfx/interface/v_bg.dds" called="" 3283-3307 @143:24 from=20 trigger=false
+ref gui.format "v_format" called="" 3346-3356 @146:8 from=21 trigger=false

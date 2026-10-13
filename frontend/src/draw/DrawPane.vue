@@ -77,8 +77,21 @@ function clipOf(box: Box, clip: Box): string {
   return `inset(${px(...[top, right, bottom, left].map((side) => Math.max(0, side)))})`;
 }
 
+/** How a texture's image lies in a box: a frame fills the box, the whole image scaled as the frame is and moved so
+ * the frame sits at the origin; else its fit. */
+function layerOf(texture: Texture, box: Box): { size: string; position: string } {
+  const { frame } = texture;
+  if (frame.width <= 0 || frame.height <= 0) return FITS[texture.fit] ?? FILL;
+  const scaleX = box.width / frame.width;
+  const scaleY = box.height / frame.height;
+  return {
+    size: px(texture.width * scaleX, texture.height * scaleY),
+    position: px(-frame.x * scaleX, -frame.y * scaleY),
+  };
+}
+
 /** The CSS of a texture in a box: its frame scaled to the box or its fit, its slices, its mirror, tint, blend and
- * mask. */
+ * the mask that keeps it to another texture's shape. */
 function textureStyle(texture: Texture, box: Box): CSSProperties {
   const image = `url(${quote(texture.url)})`;
   const style: CSSProperties = {};
@@ -93,19 +106,12 @@ function textureStyle(texture: Texture, box: Box): CSSProperties {
       borderImage: `${image} ${texture.border.join(" ")} fill / ${slices} ${texture.tiled ? "repeat" : "stretch"}`,
     };
   }
-  // a frame fills the box: the whole image is scaled as the frame is, and moved so the frame sits at the origin
-  const { frame } = texture;
-  const framed = frame.width > 0 && frame.height > 0;
-  const scaleX = framed ? box.width / frame.width : 1;
-  const scaleY = framed ? box.height / frame.height : 1;
-  const layer = framed
-    ? { size: px(texture.width * scaleX, texture.height * scaleY), position: px(-frame.x * scaleX, -frame.y * scaleY) }
-    : (FITS[texture.fit] ?? FILL);
+  const layer = layerOf(texture, box);
   // a tint multiplies the image under a layer of its color, and the image's own alpha keeps the shape
   const tinted = texture.tint !== "";
   const masks = [
     ...(tinted ? [{ image, ...layer }] : []),
-    ...(texture.mask ? [{ image: `url(${quote(texture.mask)})`, ...FILL }] : []),
+    ...(texture.mask ? [{ image: `url(${quote(texture.mask.url)})`, ...layerOf(texture.mask, box) }] : []),
   ];
   return {
     ...style,

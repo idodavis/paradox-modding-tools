@@ -463,8 +463,9 @@ func isBinding(text string) bool {
 }
 
 // textures is the widget's textures: texture through FileAt across the indexes, then each modify_texture in order,
-// its blocks expanded and overridden as the widget's are (a color overlay picks its frame in one); a file not found
-// goes to Missing.
+// its blocks expanded and overridden as the widget's are (a color overlay picks its frame in one), each masked by the
+// widget's texture since the game keeps its alpha, or masking it where the blend says so; a file not found goes to
+// Missing.
 func (resolver *resolver) textures(node *widget) {
 	first, textured := resolver.textureOf(node)
 	if !textured {
@@ -484,8 +485,9 @@ func (resolver *resolver) textures(node *widget) {
 		switch {
 		case !isTexture:
 		case more.Blend == blendMask:
-			node.textures[0].Mask = more.URL
+			node.textures[0].Mask = &more
 		default:
+			more.Mask = &first
 			node.textures = append(node.textures, more)
 		}
 	}
@@ -525,15 +527,13 @@ func (resolver *resolver) textureOf(holder *widget) (Texture, bool) {
 	return loaded, true
 }
 
-// sprite reads how a holder draws its texture: frame, border, tiling, mirroring, fit, tint and blend.
+// sprite reads how a holder draws its texture: its frame of a strip, border, tiling, mirroring, fit, tint and blend.
 func (resolver *resolver) sprite(holder *widget, drawn *Texture) {
-	if frame, has := holder.numbers("frame"); has && len(frame) > 0 {
-		if cell, sized := holder.numbers("framesize"); sized && len(cell) == 2 && cell[0] > 0 && drawn.Width > 0 {
-			columns := max(int(float64(drawn.Width)/cell[0]), 1)
-			index := max(int(frame[0])-1, 0)
-			drawn.Frame = Box{
-				X: float64(index%columns) * cell[0], Y: float64(index/columns) * cell[1], Width: cell[0], Height: cell[1],
-			}
+	if cell, sized := holder.numbers("framesize"); sized && len(cell) == 2 && cell[0] > 0 && drawn.Width > 0 {
+		columns := max(int(float64(drawn.Width)/cell[0]), 1)
+		index := frameOf(holder)
+		drawn.Frame = Box{
+			X: float64(index%columns) * cell[0], Y: float64(index/columns) * cell[1], Width: cell[0], Height: cell[1],
 		}
 	}
 	drawn.Border = borderOf(holder)
@@ -558,6 +558,18 @@ func (resolver *resolver) sprite(holder *widget, drawn *Texture) {
 			resolver.missing.add("blend", choices[0])
 		}
 	}
+}
+
+// frameOf is the index of the frame a holder draws of its strip: its frame, else its upframe (a button at rest),
+// else the first. Vanilla CK3 writes framesize 671 times, frame 845 and upframe 107; a strip with neither shows its
+// first frame.
+func frameOf(holder *widget) int {
+	for _, key := range []string{"frame", "upframe"} {
+		if numbers, has := holder.numbers(key); has && len(numbers) > 0 {
+			return max(int(numbers[0])-1, 0)
+		}
+	}
+	return 0
 }
 
 // borderOf is a sprite's insets top, right, bottom and left: spriteborder as one value for every side or a

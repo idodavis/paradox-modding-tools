@@ -36,10 +36,12 @@ type Texture struct {
 	Border [4]int `json:"border"` // spriteborder insets top, right, bottom, left; zero is stretched
 	Tiled  bool   `json:"tiled"`  // corneredtiled
 	Mirror bool   `json:"mirror"`
-	Fit    string `json:"fit"`            // fittype as written, lower-cased
-	Tint   string `json:"tint"`           // a CSS color; "" none
-	Blend  string `json:"blend"`          // blend_mode as a CSS blend mode
-	Mask   string `json:"mask,omitempty"` // the URL of the texture that masks this one
+	Fit    string `json:"fit"`   // fittype as written, lower-cased
+	Tint   string `json:"tint"`  // a CSS color; "" none
+	Blend  string `json:"blend"` // blend_mode as a CSS blend mode
+	// the texture whose alpha masks this one, drawn as its own URL, frame and fit say: an overlay is masked by the
+	// widget's texture, the widget's texture by a mask overlay; nil for none
+	Mask *Texture `json:"mask,omitempty"`
 }
 
 // Text is lines of runs, already broken and measured; Font names a Fonts row's Name.

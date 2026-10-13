@@ -45,6 +45,8 @@ window = {
 		v_label = { text = "v_key" font = "v_font" fontsize = 16 }
 		icon = {
 			texture = "gfx/interface/v_frame.dds"
+			framesize = { 2 2 }
+			upframe = 2
 			modify_texture = { texture = "gfx/interface/v_bg.dds" framesize = { 2 2 } block "v_pick" { frame = 3 } }
 		}
 		vbox = {
